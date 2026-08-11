@@ -235,6 +235,23 @@ public:
     // gameplay pause). Console command `sunfreeze`; see render_time().
     void set_sun_freeze(bool on);
     bool sun_freeze() const { return sunFreeze_; }
+    // Diagnostic: `lightdbg` bisect of the sun-visibility product (see
+    // Renderer3DVk::set_light_debug_mask for the bit meanings).
+    void set_light_debug_mask(std::uint32_t m) {
+        renderer3dVk_.set_light_debug_mask(m);
+    }
+    std::uint32_t light_debug_mask() const {
+        return renderer3dVk_.light_debug_mask();
+    }
+    // Diagnostics are per-run TOOLS, not settings: every game session boots
+    // the universal default — everything on, nothing frozen. Called from the
+    // one session door (boot_world) so no console toggle can leak into a new
+    // game or a load (owner rule 2026-08-11; same bug class as playerZ_,
+    // problems.md engine-state-not-reset).
+    void reset_render_diagnostics() {
+        sunFreeze_ = false;
+        renderer3dVk_.set_light_debug_mask(0);
+    }
     float cam_height_m() const { return cam_.pos.y; }
     // Player feet altitude (metres). Kept under its historical name for the
     // flight smoke, but flight no longer has its own camera scalar — flying

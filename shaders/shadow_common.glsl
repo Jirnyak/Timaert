@@ -18,17 +18,16 @@
 #define TIMAERT_SHADOW_COMMON_GLSL
 
 // Receiver footprint in texels, per receiver KIND — the one knob, derived:
-//   MESHES (terrain, walls) apply the lookup per fragment, so the kernel only
-//   shapes penumbra softness: 1.5 texels — the tightest that still overlaps
-//   neighbouring compares.
-//   BILLBOARDS apply ONE base lookup FLAT across the whole sprite, so any
-//   flip of that lookup blinks the whole tree. The camera-fitted volume
-//   re-centres in whole-texel steps as the player walks, and rasterised
-//   caster edges land ±1 texel differently each re-centre — the kernel must
-//   OVERLAP that jitter to turn the flip into a slide: 1.5 + 1.5 (one texel
-//   of jitter on either side) = 3.0.
+// every receiver now applies the lookup PER FRAGMENT (billboards since the
+// xy-at-fragment / z-at-axis split in billboard.vert), and the light frame
+// is world-anchored (compute_shadow_basis) so rasterised caster edges land
+// on the same texels every frame — no jitter for the kernel to hide. The
+// kernel therefore only shapes penumbra softness: 1.5 texels — the tightest
+// that still overlaps neighbouring compares. The historic 3.0 billboard
+// widening existed to overlap the ±1-texel re-centre jitter of the old
+// camera-fitted volume; that jitter is dead, so the constant went with it.
 #define TIMAERT_SHADOW_SPREAD_MESH      1.5
-#define TIMAERT_SHADOW_SPREAD_BILLBOARD 3.0
+#define TIMAERT_SHADOW_SPREAD_BILLBOARD 1.5
 
 // Core lookup: x = 3×3 hw-PCF shadow value over `spreadTexels`, y = the
 // volume's validity weight (1 deep inside, fading over the last ~6% of the

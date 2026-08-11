@@ -1761,6 +1761,10 @@ void boot_world(App& app, std::uint32_t seed,
     }
     destroy_world(app);
     boot_trace("destroyed previous world");
+    // Every session starts at the universal default: render diagnostics
+    // (sunfreeze, lightdbg) are per-run tools and must never leak into a new
+    // game or a load through the surviving engine object.
+    app.subworld.reset_render_diagnostics();
 
     sm::register_builtin_spells();
 #ifndef NDEBUG
@@ -3494,6 +3498,31 @@ void register_console_commands(App& app) {
             c.printfln(Lvl::Ok, "sun %s",
                        app.subworld.sun_freeze() ? "FROZEN (render only)"
                                                  : "running");
+            return true;
+        });
+
+    con.register_cmd("lightdbg", "lightdbg [march|clouds|map|nl|off]",
+        "bisect the sun-visibility product: toggle one term off per call "
+        "(diagnostic; `off` restores all)",
+        [&app](Con& c, const std::vector<std::string>& args) {
+            std::uint32_t m = app.subworld.light_debug_mask();
+            if (!args.empty()) {
+                const std::string& a = args[0];
+                if      (a == "march")  m ^= 1u;
+                else if (a == "clouds") m ^= 2u;
+                else if (a == "map")    m ^= 4u;
+                else if (a == "nl")     m ^= 8u;
+                else if (a == "off")    m = 0u;
+                else {
+                    c.printfln(Lvl::Error, "unknown term '%s'", a.c_str());
+                    return true;
+                }
+                app.subworld.set_light_debug_mask(m);
+            }
+            c.printfln(Lvl::Ok,
+                       "light terms: march=%s clouds=%s objectmap=%s nl=%s",
+                       (m & 1u) ? "OFF" : "on", (m & 2u) ? "OFF" : "on",
+                       (m & 4u) ? "OFF" : "on", (m & 8u) ? "OFF" : "on");
             return true;
         });
 

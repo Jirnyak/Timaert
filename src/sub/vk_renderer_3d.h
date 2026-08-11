@@ -35,6 +35,14 @@ class SeamlessSubworldManager;
 class Renderer3DVk {
 public:
     static constexpr int kMeshDim = 192; // quads per side (matches GL)
+    // Shadow-march heightfield domain = the window plus a one-window apron on
+    // every side (3× span, 9216 m). Same 16 m texel as the window grid; the
+    // apron rows come from the macro cell skeleton (see upload()). 3 windows
+    // because the march's own reach (16 geometric steps from 12 m ≈ 3.2 km)
+    // is one window span — a wider apron would never be sampled.
+    static constexpr int kHeightExtFactor = 3;
+    static constexpr int kHeightExtDim =
+        kHeightExtFactor * kMeshDim + 1; // 577 texels per side
     // Per-frame-in-flight ring depth. MUST equal gpu::VulkanRenderer::
     // kMaxFramesInFlight — the per-frame light SSBO ring is indexed by the
     // renderer's currentFrame, so a mismatch would alias two frames onto one
@@ -92,6 +100,10 @@ public:
     // whenever heightVtxM_ changes (full rebuild or seam re-centre); the
     // flight ceiling derives from it (sub/height.h). 0 until first upload.
     float max_height_m() const { return maxHeightM_; }
+    // `lightdbg` bisect mask (lighting.glsl lit_surface): bit0 march, bit1
+    // clouds, bit2 object maps, bit3 N·L — set bit lifts that term to 1.
+    void set_light_debug_mask(std::uint32_t m) { lightDebugMask_ = m; }
+    std::uint32_t light_debug_mask() const { return lightDebugMask_; }
     static void tile_to_world(float px, float py, float& wx, float& wz);
 
 private:
@@ -140,6 +152,9 @@ private:
     // Used by sample_height_m() so the engine can seat the first-person
     // camera on the terrain without keeping a second copy.
     std::vector<float>  heightVtxM_;
+    // kHeightExtDim² staging for the march heightfield upload: exact window
+    // heights in the interior block, macro-skeleton apron around (upload()).
+    std::vector<float>  heightExtM_;
     // Min/max of heightVtxM_ — the flight ceiling reads the max
     // (max_height_m()); the SHADOW volume is fitted vertically to BOTH plus a
     // structure allowance, so a low sun no longer projects a fictitious
@@ -162,6 +177,7 @@ private:
     gpu::VulkanBuffer  lightFieldStaging_[kFramesInFlight] = {};
     std::vector<std::uint8_t> lightFieldPixels_;
     std::uint32_t lightFieldFrame_ = 0;
+    std::uint32_t lightDebugMask_ = 0; // `lightdbg`; 0 in shipping frames
     void rebuild_light_field(VkCommandBuffer cmd, ecs::World* ecs,
                              const sm::vec3& camPos, std::uint32_t slot);
     // Absolute world-space origin (metres) of the current composite: the world

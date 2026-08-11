@@ -36,6 +36,30 @@ namespace sm::sub
     constexpr float kMacroSeaLevel = 0.40f;
     constexpr float kLandMargin    = 0.02f;
 
+    // THE cell-skeleton height law (normalised 0..1): the deterministic
+    // per-cell column the generator bilinears into its macro manifold BEFORE
+    // any noise or ridges (base_generator.cpp remapped[] / peakHeight[]).
+    // Shared with the shadow-march apron (vk_renderer_3d upload): terrain
+    // beyond the loaded window is represented by this skeleton at macro-cell
+    // resolution, so out-of-window massifs keep casting into the window and
+    // the march never pops at a recenter. Mountains answer with their CREST
+    // base (the peak law minus its per-cell jitter/neighbour terms, unclamped
+    // — the generator adds those on top): the crest is what decides "does
+    // that ridge block the sun", and it is the level real in-window ridges
+    // reach, so a massif sliding from apron to window changes its cast
+    // shadow least.
+    inline float skeleton_cell_height01(float macroH, bool isWater,
+                                        bool isMountain) {
+        if (isWater) {
+            const float t = std::max(0.0f, macroH / kMacroSeaLevel);
+            return t * t * WATER_LEVEL;
+        }
+        if (isMountain) return 0.80f + macroH * 0.15f;
+        constexpr float kLandFloor = WATER_LEVEL + kLandMargin;
+        const float landScale = (1.0f - kLandFloor) / (1.0f - kMacroSeaLevel);
+        return kLandFloor + (macroH - kMacroSeaLevel) * landScale;
+    }
+
     struct BiomeConfig
     {
         float treeDensity;

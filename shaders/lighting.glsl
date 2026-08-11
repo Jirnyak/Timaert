@@ -29,6 +29,7 @@
 // this file's headline — can stay at the top.
 float cloud_sun_visibility(vec2 worldXZ);
 float terrain_visibility(vec3 worldPos);
+uint  light_debug_bits(); // `lightdbg` bisect mask (terrainParams.y, 0 = off)
 
 // base    — unlit surface albedo (procedural ground, sprite texel, wall colour).
 // ambient — non-directional fill (day sky → night moonlight); applied unshadowed.
@@ -48,6 +49,12 @@ float terrain_visibility(vec3 worldPos);
 //           multiplied in this ONE place so every lit object obeys at once.
 vec3 lit_surface(vec3 base, vec3 ambient, vec3 sunColor, float sunTerm,
                  float shadow, vec3 worldPos) {
+    // Diagnostic bisect (console `lightdbg`): terrainParams.y carries a bit
+    // mask that force-lifts one member of the visibility product to 1 so the
+    // eye can name which term draws a given darkening. 0 in shipping frames.
+    uint dbg = light_debug_bits();
+    if ((dbg & 4u) != 0u) shadow = 1.0;
+    if ((dbg & 8u) != 0u) sunTerm = 1.0;
     // When the direct term is already ~nothing — night, deep dusk, a fully
     // map-shadowed point — skip the relief march and the cloud field: their
     // product could only darken a zero. This is the single gate that makes
@@ -56,8 +63,9 @@ vec3 lit_surface(vec3 base, vec3 ambient, vec3 sunColor, float sunTerm,
     if (peak <= 0.004) return base * ambient;
     return base * (ambient
                    + sunColor * sunTerm * shadow
-                     * terrain_visibility(worldPos)
-                     * cloud_sun_visibility(worldPos.xz));
+                     * ((dbg & 1u) != 0u ? 1.0 : terrain_visibility(worldPos))
+                     * ((dbg & 2u) != 0u ? 1.0
+                                         : cloud_sun_visibility(worldPos.xz)));
 }
 
 // ---------------------------------------------------------------------------
@@ -116,10 +124,20 @@ vec4 far_light_clip(vec3 worldPos) {
     return u_pointLights.lightMvpFar * vec4(worldPos, 1.0);
 }
 
-// The window heightfield in metres (vertex-grid resolution), uploaded by the
-// renderer whenever the loaded window's heights change. Same set-0 residence
-// as everything above: one binding, every lit pass sees the same relief.
+uint light_debug_bits() {
+    return uint(u_pointLights.terrainParams.y);
+}
+
+// The march heightfield in metres: exact window heights in the interior,
+// macro-skeleton apron beyond it (terrainParams.z = the world span this
+// texture covers; the window span stays in .x for the light field). Uploaded
+// by the renderer whenever the loaded window's heights change. Same set-0
+// residence as everything above: one binding, every lit pass sees the same
+// relief.
 layout(set = 0, binding = 2) uniform sampler2D u_heightM;
+
+// world → u_heightM UV through the texture's own span (0 span = no field).
+float height_field_span() { return u_pointLights.terrainParams.z; }
 
 // Relief member of the sun-visibility law: march from the surface point
 // toward the celestial light across the window heightfield and measure how
@@ -129,10 +147,11 @@ layout(set = 0, binding = 2) uniform sampler2D u_heightM;
 //
 // The march starts ~12 m out (past its own height cell — no self-speckle;
 // crisp near-field shadows are the object map's member of the law, not ours)
-// and grows geometrically to the window edge in 20 steps. Analytic against
-// the heightfield ⇒ no zebra, no shimmer, works identically in flight.
+// and grows geometrically across the extended domain — its reach (~3.2 km)
+// is one window span, exactly the apron width. Analytic against the
+// heightfield ⇒ no zebra, no shimmer, works identically in flight.
 float terrain_visibility(vec3 worldPos) {
-    float span = u_pointLights.terrainParams.x;
+    float span = height_field_span();
     vec3  L    = u_pointLights.sunDirW.xyz;
     // No heightfield, or the light is at/below the horizon (its direct
     // radiance is ~0 there — see the day/night contract): skip the march.
@@ -161,7 +180,13 @@ float terrain_visibility(vec3 worldPos) {
 // Peak dimming is 0.62: a cloud bank reads clearly but never fakes night.
 float cloud_sun_visibility(vec2 worldXZ) {
     vec4 sp = u_pointLights.skyParams;
-    float cover = cloud_cover(worldXZ * TIMAERT_CLOUD_WORLD_SCALE,
+    // ABSOLUTE world coords (window pos + composite origin from the spare
+    // sunDirW.w / terrainParams.w lanes): the cloud field must not resample
+    // when the 3×3 window recentres at a seam — same anchor rule as
+    // mesh.frag's ground detail.
+    vec2 absXZ = worldXZ + vec2(u_pointLights.sunDirW.w,
+                                u_pointLights.terrainParams.w);
+    float cover = cloud_cover(absXZ * TIMAERT_CLOUD_WORLD_SCALE,
                               sp.x, sp.yz, sp.w);
     return 1.0 - 0.62 * cover;
 }
@@ -199,7 +224,12 @@ vec3 light_field(vec3 worldPos) {
     if (span <= 0.0) return vec3(0.0);
     vec2 uv = worldPos.xz / span + 0.5;
     vec3 pool = texture(u_lightField, uv).rgb * TIMAERT_LIGHT_FIELD_SCALE;
-    float ground = texture(u_heightM, uv).r;
+    // Ground height reads u_heightM through the height field's OWN span —
+    // the texture is wider than the light-field window (march apron). A
+    // heightfield-less writer (harness) gets flat ground, not a divide by 0.
+    float hspan = height_field_span();
+    float ground = hspan > 0.0
+        ? texture(u_heightM, worldPos.xz / hspan + 0.5).r : 0.0;
     float vert = clamp(1.0 - (worldPos.y - ground) / 12.0, 0.0, 1.0);
     return pool * vert;
 }

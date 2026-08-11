@@ -402,14 +402,17 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
     if (!shadowFar_.init(dev, 4096)) {
         std::fprintf(stderr, "[Renderer3DVk] far shadow map FAILED\n");
     }
-    // The window heightfield for the terrain-occlusion march. Created ZEROED
-    // here because the set-0 descriptor below needs a valid view before the
-    // first upload(); flat-zero heights occlude nothing, so frames rendered
-    // before the first upload are simply unoccluded — honest and inert.
+    // The heightfield for the terrain-occlusion march: the window PLUS a
+    // one-window macro-skeleton apron on every side (kHeightExtFactor), so
+    // massifs beyond the window keep casting into it and shadows never
+    // depend on where the player stands. Created ZEROED here because the
+    // set-0 descriptor below needs a valid view before the first upload();
+    // flat-zero heights occlude nothing, so frames rendered before the
+    // first upload are simply unoccluded — honest and inert.
     {
-        const std::uint32_t Nv = std::uint32_t(kMeshDim + 1);
-        std::vector<float> zeros(std::size_t(Nv) * Nv, 0.0f);
-        if (!heightTex_.create_r32f(dev, Nv, Nv, zeros.data(),
+        const std::uint32_t Ne = std::uint32_t(kHeightExtDim);
+        std::vector<float> zeros(std::size_t(Ne) * Ne, 0.0f);
+        if (!heightTex_.create_r32f(dev, Ne, Ne, zeros.data(),
                                     /*linearFilter=*/true, /*repeat=*/false)) {
             std::fprintf(stderr, "[Renderer3DVk] height texture FAILED\n");
         }
@@ -1445,12 +1448,83 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
         }
         if (minHeightM_ > maxHeightM_) minHeightM_ = 0.0f;
         // Push the fresh heightfield to the GPU copy the terrain-occlusion
-        // march samples (lighting.glsl u_heightM). Same blocking-update
-        // contract as materialTex_ right below in this function.
+        // march samples (lighting.glsl u_heightM): exact window heights in
+        // the interior, macro-skeleton apron around them (kHeightExtFactor),
+        // so massifs beyond the window keep casting into it. Same
+        // blocking-update contract as materialTex_ right below.
         if (heightTex_.image != VK_NULL_HANDLE) {
+            const int Ne = kHeightExtDim;
+            const float texelM = 2.0f * kWorldExtent / float(N); // 16 m
+            heightExtM_.assign(std::size_t(Ne) * Ne, 0.0f);
+            // Cell-skeleton grid around the window: the extended domain is
+            // 3×3 windows = 9×9 macro cells; +1 ring for the bilinear
+            // support of edge texels ⇒ 11×11 resolver calls per rebuild
+            // (each is the same cheap macro lookup window cells use).
+            constexpr int kGridR = 5; // cells each side of the centre cell
+            constexpr int kGridW = 2 * kGridR + 1;
+            float cellM[kGridW * kGridW];
+            for (int gy = 0; gy < kGridW; ++gy)
+                for (int gx = 0; gx < kGridW; ++gx) {
+                    const CellContext c = mgr.resolve_cell(
+                        mgr.center_cx() + gx - kGridR,
+                        mgr.center_cy() + gy - kGridR);
+                    // Mountain crest clamp mirrors the generator's peak law
+                    // bounds (base_generator.cpp peakHeight[]).
+                    float h01 = skeleton_cell_height01(
+                        c.macroHeight, c.biome == Biome::Water,
+                        c.biome == Biome::Mountain);
+                    if (c.biome == Biome::Mountain)
+                        h01 = std::clamp(h01, 0.80f, 1.04f);
+                    cellM[gy * kGridW + gx] = h01 * kHeightScaleM;
+                }
+            const int off = (kHeightExtFactor / 2) * kMeshDim; // interior at 192
+            const float extHalfM = float(kHeightExtFactor) * kWorldExtent;
+            // Feather half a macro cell from the window edge into the
+            // skeleton: the skeleton has no noise/ridges, so a raw step at
+            // the boundary would march as a phantom cliff. Half a cell is
+            // the generator's own column-blend scale.
+            const float featherM = float(kCellSize) * kTileMeters * 0.5f;
+            for (int y = 0; y < Ne; ++y) {
+                for (int x = 0; x < Ne; ++x) {
+                    const int ix = x - off, iy = y - off;
+                    if (ix >= 0 && ix < Nv && iy >= 0 && iy < Nv) {
+                        heightExtM_[std::size_t(y) * Ne + x] =
+                            heightVtxM_[std::size_t(iy) * Nv + ix];
+                        continue;
+                    }
+                    const float wx = -extHalfM + float(x) * texelM;
+                    const float wz = -extHalfM + float(y) * texelM;
+                    // Bilinear between the four nearest cell CENTRES.
+                    const float cellSpanM = float(kCellSize) * kTileMeters;
+                    const float fx = wx / cellSpanM + float(kGridR) - 0.5f;
+                    const float fy = wz / cellSpanM + float(kGridR) - 0.5f;
+                    const int gx0 = std::clamp(int(std::floor(fx)), 0, kGridW - 2);
+                    const int gy0 = std::clamp(int(std::floor(fy)), 0, kGridW - 2);
+                    const float tx = std::clamp(fx - float(gx0), 0.0f, 1.0f);
+                    const float ty = std::clamp(fy - float(gy0), 0.0f, 1.0f);
+                    const float h00 = cellM[gy0 * kGridW + gx0];
+                    const float h10 = cellM[gy0 * kGridW + gx0 + 1];
+                    const float h01v = cellM[(gy0 + 1) * kGridW + gx0];
+                    const float h11 = cellM[(gy0 + 1) * kGridW + gx0 + 1];
+                    float skel = (h00 * (1.0f - tx) + h10 * tx) * (1.0f - ty)
+                               + (h01v * (1.0f - tx) + h11 * tx) * ty;
+                    // Distance beyond the window edge → feather weight.
+                    const float dxOut = std::max(
+                        {0.0f, -kWorldExtent - wx, wx - kWorldExtent});
+                    const float dzOut = std::max(
+                        {0.0f, -kWorldExtent - wz, wz - kWorldExtent});
+                    const float w = std::min(
+                        1.0f, std::max(dxOut, dzOut) / featherM);
+                    const float edge = heightVtxM_[
+                        std::size_t(std::clamp(iy, 0, Nv - 1)) * Nv
+                        + std::size_t(std::clamp(ix, 0, Nv - 1))];
+                    heightExtM_[std::size_t(y) * Ne + x] =
+                        edge * (1.0f - w) + skel * w;
+                }
+            }
             heightTex_.update_region(
                 dev, 0, 0, heightTex_.width, heightTex_.height,
-                reinterpret_cast<const std::uint8_t*>(heightVtxM_.data()));
+                reinterpret_cast<const std::uint8_t*>(heightExtM_.data()));
         }
         if (kProf) msHeight = profMs(s, profNow());
     }
@@ -2777,11 +2851,20 @@ void Renderer3DVk::gather_point_lights(ecs::World* ecs, std::uint32_t slot,
     buf->sunDirW[0] = sunDir.x;
     buf->sunDirW[1] = sunDir.y;
     buf->sunDirW[2] = sunDir.z;
-    buf->sunDirW[3] = 0.0f;
+    // Composite origin (metres): the cloud-shadow term keys the cloud field
+    // to ABSOLUTE world coords through these two lanes (w here + w below),
+    // the same anchor mesh.frag uses for ground detail — otherwise the whole
+    // cloud-shadow pattern teleports by a cell at every seam recenter.
+    buf->sunDirW[3] = groundOriginX_;
     buf->terrainParams[0] = float(kFullSize) * kTileMeters;
-    buf->terrainParams[1] = 0.0f;
-    buf->terrainParams[2] = 0.0f;
-    buf->terrainParams[3] = 0.0f;
+    buf->terrainParams[1] = float(lightDebugMask_); // `lightdbg` bisect, 0 = off
+    // World span the u_heightM texture covers — the window plus its
+    // macro-skeleton apron (kHeightExtFactor windows). The march and the
+    // light field's ground sample map world→UV through THIS number; the
+    // window span above keeps serving the light-field texture itself.
+    buf->terrainParams[2] =
+        float(kHeightExtFactor) * float(kFullSize) * kTileMeters;
+    buf->terrainParams[3] = groundOriginY_; // cloud anchor, see sunDirW above
     // The wide shadow level's matrix, computed by record_shadow just before
     // this (frame(): prepare → shadow → main); receivers rebuild the far
     // light-clip from vWorld (lighting.glsl far_light_clip).

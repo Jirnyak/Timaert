@@ -140,6 +140,11 @@ public:
 
     int  center_cx() const { return cx_; }
     int  center_cy() const { return cy_; }
+    // Resolve ANY cell's macro context through the engine-installed resolver —
+    // the same one door the window cells come through. The shadow apron
+    // (vk_renderer_3d upload) asks for the ring of cells beyond the window so
+    // out-of-window massifs keep casting into it.
+    CellContext resolve_cell(int cx, int cy) const { return resolver_(cx, cy); }
 
     // Snapshot every currently loaded cell into the per-session save cache.
     // Called when the player leaves the subworld so the next visit

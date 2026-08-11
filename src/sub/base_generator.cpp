@@ -237,18 +237,12 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
         if (bc.duneNoise)  needsDune  = true;
         if (bc.swampPools) needsSwamp = true;
 
-        if (nbBiome[i] == Biome::Water) {
-            // Water cell: t=1 at shoreline (mh=seaLevel), t=0 at deep ocean.
-            // Squared curve drops the bed quickly so deep water sits well
-            // below WATER_LEVEL → global water plane covers it cleanly.
-            const float t = std::max(0.0f, mh / kSeaLevel);
-            remapped[i] = t * t * kWaterLevel;
-        } else {
-            // Land cell: lift macroHeight from kLandFloor (at shoreline)
-            // up to 1.0 (at peak) so even the just-above-sea land cell
-            // sits safely above the water plane after bilinear blend.
-            remapped[i] = kLandFloor + (mh - kSeaLevel) * landScale;
-        }
+        // Water: t=1 at shoreline, t=0 at deep ocean, squared so deep water
+        // sits well below the plane. Land: lifted from kLandFloor (shoreline)
+        // to 1.0 (peak). THE law lives in skeleton_cell_height01
+        // (base_generator.h) — the shadow apron reads the same door.
+        remapped[i] = skeleton_cell_height01(mh, nbBiome[i] == Biome::Water,
+                                             /*isMountain=*/false);
 
         // Universal flattening (terrain_mod_for): a cell that carries a road
         // or a settlement calms its OWN ridge/noise/gradient columns. Applied
@@ -267,7 +261,10 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
         const int cellGY = globalOffsetY / cellSize + cy;
         const float jitter = terrain_noise_ts(cellGX, cellGY, seed ^ 0x5A17u) - 0.5f;
         if (isMtn) {
-            peakHeight[i] = std::clamp(0.80f + mh * 0.15f + adjMtn * 0.02f
+            // Crest base from THE skeleton law (base_generator.h); jitter and
+            // neighbour-massif lift stay the generator's own on top.
+            peakHeight[i] = std::clamp(skeleton_cell_height01(mh, false, true)
+                                      + adjMtn * 0.02f
                                       + jitter * 0.045f, 0.80f, 1.04f);
         } else {
             peakHeight[i] = std::clamp(remapped[i] + 0.07f + adjMtn * 0.015f

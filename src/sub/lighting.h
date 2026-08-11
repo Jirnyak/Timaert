@@ -105,7 +105,12 @@ struct GpuLightBuffer {
     std::uint32_t _pad[3];
     float         skyParams[4];
     float         sunDirW[4];       // xyz = celestial light dir, w unused
-    float         terrainParams[4]; // x = window world span (m), yzw unused
+    float         terrainParams[4]; // x = window world span (m; light field),
+                                    // y = `lightdbg` bisect mask (0 = off),
+                                    // z = u_heightM world span (window +
+                                    //     march apron; 0 = no heightfield),
+                                    // w = composite origin Z (cloud anchor;
+                                    //     origin X rides sunDirW.w)
     float         lightMvpFar[16];
     GpuLight      lights[kSubworldMaxLights];
 };
