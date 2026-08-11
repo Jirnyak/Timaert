@@ -222,6 +222,7 @@ enum class SmokeAction : std::uint8_t {
     SpawnSquadAtPlayer,
     ForceEncounter,
     CaptureFrame,
+    StatsSettle,
     OpenMap,
     OpenStats,
     SpendAttributeVit,
@@ -259,6 +260,8 @@ struct SmokeScript {
     bool failed = false;
     bool verifyDestroyAfterShell = false;
     bool pendingLoadBoot = false;
+    // stats_settle: rendered frames already idled through (see the case).
+    int settleFrames = 0;
     bool capturePending = false;
     int captureActionIndex = 0;
     // capture_frame on the MACRO map applies its opt-in mutations (modal
@@ -519,6 +522,7 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"spawn_squad_at_player", SmokeAction::SpawnSquadAtPlayer},
     {"force_encounter", SmokeAction::ForceEncounter},
     {"capture_frame", SmokeAction::CaptureFrame},
+    {"stats_settle", SmokeAction::StatsSettle},
     {"open_map", SmokeAction::OpenMap},
     {"open_stats", SmokeAction::OpenStats},
     {"spend_attribute_vit", SmokeAction::SpendAttributeVit},
@@ -8683,6 +8687,22 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::StatsSettle: {
+            // Perf idle: hold the frame loop for 600 rendered frames (~10 s at
+            // the 60 Hz cap = ten [stats] windows) so an A/B measurement sees
+            // the WARM steady state, not the paperdoll pool's cold start.
+            // Diagnostic only — asserts nothing itself; the [stats] lines are
+            // the product. 600 = 10 × the stats window of 60 frames.
+            if (app.smoke.settleFrames == 0) {
+                std::fprintf(stderr, "[smoke] action=stats_settle (600 frames)\n");
+                std::fflush(stderr);
+            }
+            if (++app.smoke.settleFrames >= 600) {
+                app.smoke.settleFrames = 0;
+                ++app.smoke.cursor;
+            }
             break;
         }
         case SmokeAction::CaptureFrame: {
