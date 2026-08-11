@@ -24,15 +24,26 @@
 
 namespace
 {
+    // MUST mirror shaders/macro.frag's push_constant Push block byte for byte
+    // (shared-shader contract: this harness compiles the SHIPPING shader). The
+    // old 32-byte layout drifted when the shader grew cam/viewSize/zoom and
+    // the night lanes — the pipeline then failed to build and the smoke could
+    // not validate anything.
     struct Push
     {
         float resolution[2];
         float mapSize[2];
-        float viewCells;
+        float cam[2];       // world-pixel offset at screen centre
+        float viewSize[2];  // viewport size in pixels
+        float zoom;         // pixels per world cell
         float seaLevel;
         float seed;
-        float time;
+        float timeOfDay;    // 0..1
+        float nightDarken;  // 0..1
+        float elapsed;      // real seconds
     };
+    static_assert(sizeof(Push) == 56,
+                  "macro.frag push block is 56 bytes — keep this in lockstep");
 
     // A compact toroidal value-noise world: RGBA8 = height, moisture,
     // temperature, mask. Same spirit as the game's master texture (a real,
@@ -259,18 +270,27 @@ int main(int, char**)
     constexpr std::uint32_t kWorld = 256;
     constexpr float kSea = 0.40f;
     constexpr std::uint32_t kSeed = 1337u;
-    gpu::VulkanTexture master, featureTex, zoneTex, riverTex;
+    // macro.frag samples SIX maps (set 0, bindings 0-5): master, feature,
+    // zone, river, light field, tree map. The harness feeds all six or the
+    // pipeline does not build; light field + tree map are zeroed (no night
+    // glow, no forests) — inert, honest placeholders.
+    constexpr std::uint32_t kMacroMaps = 6;
+    gpu::VulkanTexture master, featureTex, zoneTex, riverTex, lightTex, treeTex;
     {
         std::vector<std::uint8_t> mp = gen_master(kWorld, kWorld, kSeed);
         std::vector<std::uint8_t> fp = gen_feature(mp, kWorld, kWorld, kSea);
         std::vector<std::uint8_t> zp = gen_zone(mp, kWorld, kWorld, kSea);
         std::vector<std::uint8_t> rp = gen_river(mp, kWorld, kWorld, kSea);
+        std::vector<std::uint8_t> zeros(std::size_t(kWorld) * kWorld * 4u, 0u);
         bool ok = master.create_rgba8(dev, kWorld, kWorld, mp.data(), true, true)
                && featureTex.create_rgba8(dev, kWorld, kWorld, fp.data(), false, true)
                && zoneTex.create_rgba8(dev, kWorld, kWorld, zp.data(), false, true)
-               && riverTex.create_rgba8(dev, kWorld, kWorld, rp.data(), true, true);
+               && riverTex.create_rgba8(dev, kWorld, kWorld, rp.data(), true, true)
+               && lightTex.create_rgba8(dev, kWorld, kWorld, zeros.data(), true, true)
+               && treeTex.create_r8(dev, kWorld, kWorld, zeros.data(), true, true);
         if (!ok) {
             std::fprintf(stderr, "[gpu_smoke] world textures FAILED\n");
+            treeTex.destroy(dev); lightTex.destroy(dev);
             riverTex.destroy(dev); zoneTex.destroy(dev);
             featureTex.destroy(dev); master.destroy(dev);
             renderer.destroy();
@@ -281,14 +301,13 @@ int main(int, char**)
         }
     }
 
-    // Descriptor set 0 = the four world maps (master, feature, zone, river),
-    // bound once (static for the world).
+    // Descriptor set 0 = the six world maps, bound once (static for the world).
     VkDescriptorSetLayout macroSetLayout = VK_NULL_HANDLE;
     VkDescriptorPool macroPool = VK_NULL_HANDLE;
     VkDescriptorSet macroSet = VK_NULL_HANDLE;
     {
-        VkDescriptorSetLayoutBinding bindings[4]{};
-        for (std::uint32_t i = 0; i < 4; ++i) {
+        VkDescriptorSetLayoutBinding bindings[kMacroMaps]{};
+        for (std::uint32_t i = 0; i < kMacroMaps; ++i) {
             bindings[i].binding = i;
             bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             bindings[i].descriptorCount = 1;
@@ -296,11 +315,12 @@ int main(int, char**)
         }
         VkDescriptorSetLayoutCreateInfo dlci{};
         dlci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        dlci.bindingCount = 4;
+        dlci.bindingCount = kMacroMaps;
         dlci.pBindings = bindings;
         vkCreateDescriptorSetLayout(dev.device, &dlci, nullptr, &macroSetLayout);
 
-        VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4};
+        VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                kMacroMaps};
         VkDescriptorPoolCreateInfo dpci{};
         dpci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         dpci.maxSets = 1;
@@ -315,11 +335,11 @@ int main(int, char**)
         dsai.pSetLayouts = &macroSetLayout;
         vkAllocateDescriptorSets(dev.device, &dsai, &macroSet);
 
-        const gpu::VulkanTexture* texes[4] = {&master, &featureTex, &zoneTex,
-                                              &riverTex};
-        VkDescriptorImageInfo dii[4]{};
-        VkWriteDescriptorSet writes[4]{};
-        for (std::uint32_t i = 0; i < 4; ++i) {
+        const gpu::VulkanTexture* texes[kMacroMaps] = {
+            &master, &featureTex, &zoneTex, &riverTex, &lightTex, &treeTex};
+        VkDescriptorImageInfo dii[kMacroMaps]{};
+        VkWriteDescriptorSet writes[kMacroMaps]{};
+        for (std::uint32_t i = 0; i < kMacroMaps; ++i) {
             dii[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             dii[i].imageView = texes[i]->view;
             dii[i].sampler = texes[i]->sampler;
@@ -330,7 +350,7 @@ int main(int, char**)
             writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             writes[i].pImageInfo = &dii[i];
         }
-        vkUpdateDescriptorSets(dev.device, 4, writes, 0, nullptr);
+        vkUpdateDescriptorSets(dev.device, kMacroMaps, writes, 0, nullptr);
     }
 
     // Biome synth pipeline (glslc-compiled SPIR-V from <exe dir>/shaders/).
@@ -439,10 +459,19 @@ int main(int, char**)
             pc.resolution[1] = static_cast<float>(ext.height);
             pc.mapSize[0] = static_cast<float>(kWorld);
             pc.mapSize[1] = static_cast<float>(kWorld);
-            pc.viewCells = 48.0f;
+            // Camera centred on the world, ~48 cells across the viewport —
+            // the same framing the old viewCells lane asked for, expressed in
+            // the shader's current cam/viewSize/zoom vocabulary.
+            pc.zoom = static_cast<float>(ext.width) / 48.0f;
+            pc.cam[0] = static_cast<float>(kWorld) * 0.5f * pc.zoom;
+            pc.cam[1] = static_cast<float>(kWorld) * 0.5f * pc.zoom;
+            pc.viewSize[0] = static_cast<float>(ext.width);
+            pc.viewSize[1] = static_cast<float>(ext.height);
             pc.seaLevel = kSea;
             pc.seed = static_cast<float>(kSeed);
-            pc.time = static_cast<float>(frame) * 0.05f;
+            pc.timeOfDay = 0.5f;   // noon — full daylight, night lanes inert
+            pc.nightDarken = 0.0f;
+            pc.elapsed = static_cast<float>(frame) * 0.05f;
             vkCmdPushConstants(c, pipeline.layout, VK_SHADER_STAGE_FRAGMENT_BIT,
                                0, sizeof(pc), &pc);
             vkCmdDraw(c, 3, 1, 0, 0);
@@ -456,7 +485,8 @@ int main(int, char**)
             ImGui::Text("GPU: %s", dev.props.deviceName);
             ImGui::Text("%.1f FPS (%.3f ms)", ImGui::GetIO().Framerate,
                         1000.0f / ImGui::GetIO().Framerate);
-            ImGui::Text("Macro synth: master+feature+zone+river (4 images)");
+            ImGui::Text("Macro synth: master+feature+zone+river+light+tree "
+                        "(6 images)");
             ImGui::Checkbox("ImGui demo window", &showDemo);
             ImGui::End();
             if (showDemo) ImGui::ShowDemoWindow(&showDemo);
@@ -478,6 +508,8 @@ int main(int, char**)
     pipeline.destroy(dev);
     vkDestroyDescriptorPool(dev.device, macroPool, nullptr);
     vkDestroyDescriptorSetLayout(dev.device, macroSetLayout, nullptr);
+    treeTex.destroy(dev);
+    lightTex.destroy(dev);
     riverTex.destroy(dev);
     zoneTex.destroy(dev);
     featureTex.destroy(dev);

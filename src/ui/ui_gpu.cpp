@@ -95,7 +95,13 @@ void destroy_ui_texture(ImTextureID tex) {
     for (auto it = g_entries.begin(); it != g_entries.end(); ++it) {
         if (it->id == tex) {
             ImGui_ImplVulkan_RemoveTexture(texid_to_ds(tex));
-            it->vk.destroy(*g_dev);
+            // The frame in flight may still sample this texture through last
+            // frame's ImGui draw data — park it in the graveyard (fenced in
+            // acquire_frame) instead of destroying it under the GPU. This was
+            // the last destroy-in-flight path (audit III.9): the dimension-
+            // change rebuild in recreate_ui_texture above lands here.
+            g_dev->defer_destroy_image(it->vk.image, it->vk.view,
+                                       it->vk.sampler, it->vk.memory);
             g_entries.erase(it);
             return;
         }
