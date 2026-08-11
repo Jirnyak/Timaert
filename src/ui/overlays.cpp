@@ -3177,6 +3177,13 @@ namespace sm::ui
                     draw_map_disc(rgba, side, px, py,
                                   std::max(1, r), IM_COL32(92, 92, 98, 255), 0.95f);
                     break;
+                case sub::Structure::Fence:
+                    // Knee-high field wall: same stone family as Wall, drawn
+                    // fainter so furlong grids read as texture, not ramparts.
+                    draw_map_disc(rgba, side, px, py,
+                                  std::max(1, r), IM_COL32(112, 108, 100, 255),
+                                  0.60f);
+                    break;
                 case sub::Structure::Bridge:
                     draw_map_rect(rgba, side, px, py,
                                   std::max(1, r), 1,
