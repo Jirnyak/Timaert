@@ -24,6 +24,13 @@ namespace gpu
         // usage (e.g. VK_BUFFER_USAGE_VERTEX_BUFFER_BIT). Adds TRANSFER_DST.
         bool create_device_local(const VulkanDevice& dev, const void* data,
                                  VkDeviceSize bytes, VkBufferUsageFlags usage);
+        // Allocation ONLY — no staging copy, no submit, no wait. For buffers
+        // whose content is recorded into a frame command buffer right after
+        // creation (grown instance buffers replaced mid-frame). Contents are
+        // undefined until written. Adds TRANSFER_DST like create_device_local.
+        bool create_device_local_uninit(const VulkanDevice& dev,
+                                        VkDeviceSize bytes,
+                                        VkBufferUsageFlags usage);
         // Allocates a HOST_VISIBLE | HOST_COHERENT buffer of `bytes` and leaves
         // it PERSISTENTLY MAPPED at `mapped`. For per-frame data that changes
         // every frame (e.g. a light SSBO in a per-frame-in-flight ring): unlike

@@ -49,6 +49,25 @@ namespace gpu
         bool update_region(const VulkanDevice& dev, std::uint32_t x,
                            std::uint32_t y, std::uint32_t w, std::uint32_t h,
                            const std::uint8_t* pixels);
+        // RECORDED twin of update_region: the copy source is `stagingOff` bytes
+        // into a caller-owned host-visible buffer (already filled), and the
+        // layout barriers + copy are recorded into `cmd` instead of submitted
+        // and fenced. Queue-scope FRAGMENT_SHADER→TRANSFER ordering makes it
+        // safe against the frame in flight with NO stall — this is the per-frame
+        // path; the blocking twin remains for load-time. `discard` marks a
+        // whole-image overwrite: prior contents enter as UNDEFINED (required on
+        // the first fill of an empty-created image, free bandwidth otherwise).
+        bool update_region_recorded(VkCommandBuffer cmd, VkBuffer staging,
+                                    VkDeviceSize stagingOff, std::uint32_t x,
+                                    std::uint32_t y, std::uint32_t w,
+                                    std::uint32_t h, bool discard);
+        // Image + view + sampler with NO pixel upload and NO submit: layout is
+        // UNDEFINED until the first update_region_recorded(..., discard=true)
+        // fills it inside a frame. For images whose content is born mid-frame
+        // (the material grid at first subworld entry).
+        bool create_r8_empty(const VulkanDevice& dev, std::uint32_t width,
+                             std::uint32_t height, bool linearFilter,
+                             bool repeat);
         // Read the whole image back into `out` (resized to width*height*bpp) via
         // an image→buffer copy. Transitions SHADER_READ→TRANSFER_SRC→SHADER_READ
         // and blocks on a fence. Diagnostics/verification only (never per frame);
@@ -82,5 +101,26 @@ namespace gpu
                        std::uint32_t dstX, std::uint32_t dstY,
                        std::uint32_t copyW, std::uint32_t copyH,
                        const FreshRegion* fresh, std::size_t nFresh);
+
+    // Fresh rect whose pixels already sit `stagingOff` bytes into the caller's
+    // staging buffer — the recorded twin's counterpart of FreshRegion.
+    struct FreshRegionStaged
+    {
+        std::uint32_t x = 0, y = 0, w = 0, h = 0;
+        VkDeviceSize stagingOff = 0;
+    };
+
+    // RECORDED twin of blit_shift_r8: same relocation (overlap image copy +
+    // fresh-cell fills, dst discarded), but recorded into `cmd` with fresh
+    // pixels sourced from one host-visible staging buffer at per-rect offsets.
+    // No submit, no fence — queue-scope FRAGMENT_SHADER→TRANSFER barriers
+    // order it after the in-flight frame's sampling of BOTH images.
+    bool blit_shift_r8_recorded(VkCommandBuffer cmd, VulkanTexture& src,
+                                VulkanTexture& dst, std::uint32_t srcX,
+                                std::uint32_t srcY, std::uint32_t dstX,
+                                std::uint32_t dstY, std::uint32_t copyW,
+                                std::uint32_t copyH, VkBuffer staging,
+                                const FreshRegionStaged* fresh,
+                                std::size_t nFresh);
 
 } // namespace gpu

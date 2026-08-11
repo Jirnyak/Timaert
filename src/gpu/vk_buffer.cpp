@@ -116,6 +116,16 @@ namespace gpu
         return ok;
     }
 
+    bool VulkanBuffer::create_device_local_uninit(const VulkanDevice& dev,
+                                                  VkDeviceSize bytes,
+                                                  VkBufferUsageFlags usage)
+    {
+        size = bytes;
+        return make_buffer(dev, bytes, usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &buffer,
+                           &memory);
+    }
+
     bool VulkanBuffer::create_host_mapped(const VulkanDevice& dev,
                                           VkDeviceSize bytes,
                                           VkBufferUsageFlags usage)
