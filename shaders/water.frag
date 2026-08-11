@@ -24,15 +24,39 @@ float wn(vec2 p) {
                mix(wh(i + vec2(0, 1)), wh(i + vec2(1, 1)), f.x), f.y);
 }
 
+// The wave field: three octaves of drifting value noise on a slowly-churning
+// warped domain. Each octave drifts its OWN direction and speed and the warp
+// drifts on a third clock, so the pattern never tiles and never repeats — the
+// surface churns organically instead of sliding past as one frozen sheet.
+// `fade` kills each octave at the camera distance where its wavelength drops
+// toward a pixel: near water ripples, far water flattens toward a clean mirror
+// instead of the shimmering noise-mush a fixed 33 cm ripple becomes at 500 m.
+float wave_h(vec2 w, float time, vec3 fade) {
+    return (wn(w * 0.16 + vec2( time * 0.09,  time * 0.06)) - 0.5) * 1.00 * fade.x
+         + (wn(w * 0.70 + vec2(-time * 0.21,  time * 0.15)) - 0.5) * 0.42 * fade.y
+         + (wn(w * 2.60 + vec2( time * 0.50, -time * 0.31)) - 0.5) * 0.16 * fade.z;
+}
+
 void main() {
     float time = pc.params.x;
     vec2 w = vWorld.xz;
-    vec2 drift = vec2(time * 0.3, time * 0.2);
-    float e = 0.15;
-    float n0 = wn(w * 3.0 + drift);
-    float nx = wn((w + vec2(e, 0.0)) * 3.0 + drift) - n0;
-    float nz = wn((w + vec2(0.0, e)) * 3.0 + drift) - n0;
-    vec3 N = normalize(vec3(-nx * 2.5, 1.0, -nz * 2.5));
+    float dist = length(pc.camPos.xyz - vWorld);
+    // Domain warp, computed ONCE (it is low-frequency; the finite-difference
+    // taps below ride the same warped sheet, which is exactly what keeps the
+    // derived normal coherent).
+    vec2 churn = vec2(time * 0.017, -time * 0.013);
+    vec2 ww = w + (vec2(wn(w * 0.09 + churn),
+                        wn(w * 0.09 + churn + 37.2)) - 0.5) * 4.0;
+    // Per-octave distance windows: swell / chop / ripple.
+    vec3 fade = vec3(1.0 - smoothstep(250.0, 1100.0, dist),
+                     1.0 - smoothstep(50.0, 260.0, dist),
+                     1.0 - smoothstep(12.0, 60.0, dist));
+    float e = 0.35;
+    float h0 = wave_h(ww, time, fade);
+    float hx = wave_h(ww + vec2(e, 0.0), time, fade) - h0;
+    float hz = wave_h(ww + vec2(0.0, e), time, fade) - h0;
+    vec3 N = normalize(vec3(-hx * 2.3, 1.0, -hz * 2.3));
+    float n0 = clamp(h0 + 0.5, 0.0, 1.0);
     vec3 V = normalize(pc.camPos.xyz - vWorld);
     vec3 L = normalize(pc.sunDir.xyz);
 
