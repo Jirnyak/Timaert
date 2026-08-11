@@ -134,26 +134,53 @@ void main() {
     float path = pow(nh, pathExp) * lowLight;
     col += pc.sunColor.rgb * (core * 0.9 + path * 1.7) * cloudVis;
 
+    // Surf: three INDEPENDENT scales of chaos, multiplied — the anti-doily.
+    // The failed first cut was one 20 cm noise thresholded along the whole
+    // shoreline: a continuous lace ribbon, identical everywhere, pulsing in
+    // sync. Each of its three sins is answered by its own layer:
+    //   1) PATCHES (10s of metres) — a slowly-drifting two-octave field
+    //      decides WHERE surf lives at all. Stretches of foam appear, migrate
+    //      and dissolve; between them the waterline stays clean. Kills the
+    //      unbroken ribbon AND the everywhere-synchronised pulse: each reach
+    //      of coast lives on its own clock.
+    //   2) BREAKERS — the swell itself, sampled UN-faded (the camera-distance
+    //      fade that flattens far water must not becalm the far surf),
+    //      arriving over the shallows: a crest strikes, rolls shoreward
+    //      (depth-phase, scrambled per-stretch by the crest value) and dies.
+    //      Waves become events, not texture.
+    //   3) FROTH (sub-metre) — ragged flakes carved out of the strike by a
+    //      density-dependent threshold: dense cores read near-solid with torn
+    //      holes, thin edges scatter into clumps. The finest octave fades by
+    //      ~150 m so distant surf reads as soft white patches, not fizz.
+    float shoreZ = 1.0 - smoothstep(0.0, 3.0, depth);
+    if (shoreZ > 0.0) {
+        float pf = wn(w * 0.035 + vec2(time * 0.010, -time * 0.008))
+                 + wn(w * 0.085 + vec2(-time * 0.014, time * 0.011)) * 0.5;
+        float foamPatch = smoothstep(0.55, 0.95, pf);
+        float crest = wn(w * 0.16 + vec2(time * 0.09, time * 0.06));
+        float roll  = 0.5 + 0.5 * sin(depth * 2.5 + time * 1.3 + crest * 6.0);
+        float breaker = smoothstep(0.50, 0.85, crest * 0.60 + roll * 0.40);
+        float frothFade = 1.0 - smoothstep(30.0, 150.0, dist);
+        float fr = wn(w * 1.7 + vec2(time * 0.35, time * 0.22)) * 0.6
+                 + wn(w * 4.5 + vec2(-time * 0.55, time * 0.40)) * 0.4 * frothFade;
+        float density = foamPatch * breaker * shoreZ;
+        float foam = density * smoothstep(0.55 - 0.35 * density,
+                                          0.80 - 0.20 * density, fr);
+        // Waterline residual — the thin lace right at the edge, but ONLY
+        // inside a living foamPatch; between patches the shoreline rests bare.
+        float edge = (1.0 - smoothstep(0.0, 0.45, depth)) * foamPatch;
+        foam = max(foam, edge * smoothstep(0.35, 0.75, fr));
+        col = mix(col, vec3(0.87, 0.91, 0.93) * (amb + 0.55),
+                  clamp(foam, 0.0, 1.0));
+        alpha = max(alpha, min(foam * 1.3, 0.95));
+    }
+
     // Positional lights reflected on the water (specular glint form). Added
     // AFTER the day/night ambient wash — a torch or spell reflection on the
     // surface is its own light source, not scaled by the sun's time of day, so a
     // lantern on the shore paints a shimmering coloured streak on the ripples at
     // night exactly as the same light pools on the ground beside it. Inert until
     // an emitter exists (returns 0 when the light buffer is empty).
-    // Surf: a breathing foam front at the shoreline. The pulse phase rides
-    // DEPTH, so the bands run parallel to ANY shore automatically and roll
-    // toward it as time advances; the noise breaks the front into froth so it
-    // never reads as a printed stripe. Gone by ~1.4 m of depth.
-    float shore = 1.0 - smoothstep(0.0, 1.4, depth);
-    if (shore > 0.0) {
-        float fn = wn(w * 5.0 + vec2(time * 0.7, time * 0.5));
-        float pulse = 0.5 + 0.5 * sin(depth * 4.5 + time * 1.6 + fn * 2.2);
-        float foam = shore * smoothstep(0.60, 0.85,
-                                        fn * 0.5 + pulse * 0.35 + shore * 0.25);
-        col = mix(col, vec3(0.86, 0.90, 0.92) * (amb + 0.55), foam);
-        alpha = max(alpha, min(foam * 1.4, 0.95));
-    }
-
     col += point_lights_spec(vWorld, N, V);
     outColor = vec4(col, alpha);
 }
