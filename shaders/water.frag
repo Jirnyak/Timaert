@@ -76,8 +76,44 @@ void main() {
     vec3 water = mix(vec3(0.04, 0.15, 0.24), vec3(0.13, 0.38, 0.42), clear);
     water *= 0.8 + 0.4 * n0;
     float alpha = mix(0.88, 0.35, clear);
-    vec3 skyish = vec3(0.45, 0.62, 0.85);
-    vec3 col = mix(water, skyish, fres * 0.6);
+
+    float amb = pc.params.y;
+    // The honest sky in the mirror: built from the SAME quantities that paint
+    // the world. dayF is recovered from the ambient law (lighting.h:
+    // ambient.y = 0.08 + dayF*0.32); the gradient constants are sky.frag's
+    // own zenith/horizon pairs; twilight warmth comes from sunColor, which
+    // compute_light_parameters already turns orange at a low sun — so dawn
+    // and dusk stain the lake without the shader ever knowing the hour.
+    vec3 R = reflect(-V, N);
+    float ry = clamp(R.y, 0.02, 1.0);
+    float dayF = clamp((amb - 0.08) / 0.32, 0.0, 1.0);
+    vec3 sky = mix(mix(vec3(0.04, 0.04, 0.09), vec3(0.01, 0.01, 0.05), ry),
+                   mix(vec3(0.58, 0.68, 0.82), vec3(0.18, 0.30, 0.62), ry),
+                   dayF);
+    float warmth = clamp(pc.sunColor.r - pc.sunColor.b, 0.0, 1.0);
+    sky = mix(sky, vec3(0.60, 0.25, 0.08), warmth * (1.0 - ry) * 0.8);
+    // Clouds lie mirrored on the water: march the reflected ray to a ~500 m
+    // deck and sample the ONE cloud field (clouds.glsl) — the cloud you see
+    // overhead, the shadow that crawls under your feet and the reflection on
+    // the lake are the same object. cloudVis (the field straight above) also
+    // gates the sun/moon glints below: no glitter road under an overcast sky.
+    vec4 sp = u_pointLights.skyParams;
+    float cloudVis = 1.0;
+    if (sp.w > 0.01) {
+        cloudVis = cloud_sun_visibility(w);
+        vec2 cp = (w + R.xz / max(R.y, 0.12) * 500.0) * TIMAERT_CLOUD_WORLD_SCALE;
+        float cc = cloud_cover(cp, sp.x, sp.yz, sp.w);
+        vec3 cCol = mix(vec3(0.06, 0.06, 0.10), vec3(0.92, 0.92, 0.96), dayF);
+        cCol = mix(cCol, vec3(0.95, 0.55, 0.20), warmth * 0.5);
+        sky = mix(sky, cCol, cc * 0.55);
+    }
+
+    // The body is lit by the day (the ambient wash); the mirror is NOT — the
+    // sky colours above are already day/night honest, and washing them again
+    // would double-darken the night reflection.
+    water *= amb + 0.65;
+    vec3 col = mix(water, sky, 0.10 + 0.75 * fres);
+    alpha = mix(alpha, 0.95, fres);
 
     // Specular reflection of the active body (sun by day, moon by night — the
     // renderer folds whichever is up into sunDir/sunColor, so this one block
@@ -96,10 +132,7 @@ void main() {
     float lowLight = 1.0 - clamp(abs(L.y), 0.0, 1.0);
     float pathExp = mix(400.0, 14.0, lowLight);
     float path = pow(nh, pathExp) * lowLight;
-    col += pc.sunColor.rgb * (core * 0.9 + path * 1.7);
-
-    float amb = pc.params.y;
-    col *= amb + 0.65;
+    col += pc.sunColor.rgb * (core * 0.9 + path * 1.7) * cloudVis;
 
     // Positional lights reflected on the water (specular glint form). Added
     // AFTER the day/night ambient wash — a torch or spell reflection on the
