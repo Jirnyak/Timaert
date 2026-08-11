@@ -761,18 +761,54 @@ the renderer-side mechanics in brief:
 - **Material (shift)** — a **GPU ping-pong**: two R8 images
   (`materialTex_ ↔ materialTexAlt_`). One `vkCmdCopyImage` relocates the unchanged
   6/9 (axis) or 4/9 (diagonal) overlap on the GPU, `vkCmdCopyBufferToImage` fills
-  only the fresh cells, then the two images `std::swap` and the set-1 descriptor is
-  rewritten to the new front (`gpu::blit_shift_r8`,
+  only the fresh cells, then the two images `std::swap` and `matFront_` flips
+  between TWO descriptor sets written once at image birth — no descriptor is ever
+  rewritten at runtime (`gpu::blit_shift_r8_recorded`,
   [vk_texture.cpp](src/gpu/vk_texture.cpp)). Valid because
   `material_new[cell] == material_old[shifted-from cell]` over the overlap.
-- **Fence contract** — `upload()` runs at the same fenced point as the in-place
-  image updates, so the swap + `vkUpdateDescriptorSets` are safe with no in-flight
-  frame sampling the image; validation reports zero new barrier/layout errors.
 
-Result: the crossing frame's `upload3d` dropped from **11.2 ms → 6.5 ms** — one
-frame, well under the 16.6 ms / 60 fps budget — with GPU-readback and
-FP-tolerance self-checks proving the incremental result byte/precision-identical
-to a full rebuild.
+### The real fence contract (Session 19, 2026-08-11)
+
+The paragraph this section used to end with claimed `upload()` ran "at a fenced
+point". It did not: the seam path performed five-to-seven blocking
+submit+`vkQueueWaitIdle` round-trips per crossing INSIDE the open frame (each a
+full queue drain — §20's sin, at the seam), destroyed grown instance buffers the
+in-flight frame could still read, and rewrote the material set in place (audit
+III.9/III.14). The contract is now real, and it is barriers, not stalls:
+
+- **`upload()` is the CPU stage only.** It runs in the sim tick (overlapping the
+  GPU's previous frame), fills persistent scratch, and queues ops in `PendingGpu`.
+- **`flush_uploads(cmd)` records the GPU writes onto the frame's command buffer**
+  (first thing in `prepare_frame`) through a per-frame-in-flight **staging arena**
+  (host-mapped ring, 8 MiB po2 floor, grows on demand) — the same contract the
+  light field already used.
+- **Ordering:** one queue-scope `VERTEX_INPUT→TRANSFER` execution barrier per
+  frame covers every write-after-read against the frame in flight (including the
+  NPC/creature/particle `vkCmdUpdateBuffer` paths, which previously had no guard
+  and survived only because the blocking submits drained the queue);
+  `TRANSFER→VERTEX_INPUT|INDEX_READ` covers this frame's read-after-write; images
+  keep their queue-scope `FRAGMENT_SHADER→TRANSFER` layout transitions.
+- **Destruction goes to the graveyard** (`VulkanDevice::defer_destroy`): handles
+  park for `kGraveyardDelayFrames` and die after their fence provably passed —
+  never `vkDestroyBuffer` mid-flight, never `vkDeviceWaitIdle` mid-frame.
+- **Consecutive uploads between flushes MERGE** (a skipped frame on resize, or a
+  smoke that ticks framelessly): absolute scratches overwrite, cells OR, a full
+  write supersedes, and a NEW shift landing on unflushed material degrades that
+  round to a full rebuild — `CompositeDirty::merge`'s own fallback, one
+  accumulator downstream. A drain cell landing inside a shift's relocated
+  overlap is applied AFTER the blit (overlapping transfer writes in one batch
+  are unordered).
+- **Frameless smokes must drain explicitly** — `SubworldEngine::
+  debug_flush_gpu_uploads()` (one-shot fenced submit); without it every upload
+  sees unborn GPU buffers and degrades to the always-correct full path, and the
+  incremental machinery under test never runs (`subworld_seam` does this).
+
+Result: the crossing's CPU stage dropped **5.5 ms → 1.35 ms** and the GPU copies
+now overlap the frame instead of draining the queue; frames are byte-identical
+(md5) to the blocking build, and the GPU-readback self-checks
+(`TIMAERT_SEAM_SELFCHECK`, which switches the material shift to the blocking
+twin so the readback sees executed results) still prove the incremental result
+identical to a full rebuild.
 
 ---
 

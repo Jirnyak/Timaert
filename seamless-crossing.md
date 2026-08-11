@@ -13,16 +13,16 @@ for the surrounding subsystems; read this for the crossing itself.
 > longer felt. A structure-shade pop at every seam was found and fixed on the way
 > (Inc 6) — a defect, not a cost.
 >
-> What remains, measured and deliberately NOT done: every `VulkanBuffer::update`
-> and `create_device_local` ends in `vkQueueWaitIdle`, which costs **0.39-0.60 ms
-> almost regardless of size** (2 KB costs what 1.2 MB costs — it is a round trip,
-> not a copy). Four of them per upload ⇒ ~1.8 ms of the 4.25 ms is pure stall.
-> Batching them into one command buffer and one wait would save ~1.35 ms per
-> upload — about **1.25x on the crossing frame, not 5x** — at the cost of N live
-> staging buffers, a second path for images, and one frame of garbage geometry if
-> a resource is ever forgotten. The owner's call was to stop here: the freeze is
-> not felt, and the change is not free. See problems.md entry 15 for the full
-> reasoning and the capability guide that came out of it.
+> ~~What remains, measured and deliberately NOT done: every `VulkanBuffer::update`
+> and `create_device_local` ends in `vkQueueWaitIdle`...~~ **DONE 2026-08-11
+> (Session 19), and further than the batching sketched here:** the seam path no
+> longer submits AT ALL — `upload()` is the CPU stage (runs in the sim tick),
+> and the GPU writes are recorded onto the frame's own command buffer through a
+> per-frame-in-flight staging arena, ordered by queue-scope barriers instead of
+> stalls. Zero `vkQueueWaitIdle`, zero mid-frame submits; the crossing's CPU
+> stage measured 5.5 → 1.35 ms and destroyed-in-flight hazards went with it
+> (deferred-destruction graveyard). See render.md §The real fence contract and
+> problems.md §22б.
 >
 > **Status (2026-07-28).** SHIPPED. The player crosses 1024-tile cell
 > boundaries with the 3×3 window re-centring underneath them and there is no
@@ -276,11 +276,18 @@ grid) follows the same shape:
 4. Add a self-check: exact compare if the payload is integer, FP-tolerance if it
    is float under `-ffast-math`.
 
-**Fence contract.** `upload()` runs at the same fenced point as the existing
-in-place image updates (engine `prepare_frame` / `record_shadow`), so no
-in-flight frame samples the image — the `std::swap` + `vkUpdateDescriptorSets`
-are safe under exactly the contract the create/`update_region` paths already
-rely on. Validation confirms zero new barrier/layout errors.
+**Fence contract (rewritten 2026-08-11, Session 19).** The paragraph that stood
+here claimed `upload()` ran "at a fenced point"; it did not (audit III.9/III.14
+— blocking submits mid-frame, a destroy the in-flight frame could read, a
+descriptor rewritten in use). The real contract: `upload()` is CPU-only and
+queues ops; `flush_uploads` records them onto the FRAME's command buffer via a
+staging-arena ring; write-after-read against the frame in flight is one
+queue-scope `VERTEX_INPUT→TRANSFER` barrier per frame; the material swap flips
+between two descriptor sets written once at image birth; retired resources die
+in the fence-tracked graveyard. Full write-up: render.md §The real fence
+contract. A frameless smoke must drain via
+`SubworldEngine::debug_flush_gpu_uploads()` or the incremental paths degrade to
+the full rebuild and are not exercised.
 
 ---
 
