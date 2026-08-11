@@ -235,7 +235,13 @@ float compute_shadow_basis(const Camera& cam, const WorldTime& time,
     // towers, the spire, trees (tree_atlas heights are well under this).
     constexpr float kShadowStructureAllowanceM = 35.0f;
     constexpr float kShadowMarginM = 80.0f;
-    constexpr float kShadowEyeDistanceM = 4200.0f;
+    // The eye stands on the sun axis over a FIXED world anchor, never over the
+    // camera: the texel snap below only holds the map still if the snap grid
+    // itself stands still in the world. Distance must clear the farthest the
+    // box can sit from the anchor along the light axis: window centre → corner
+    // = kWorldExtent·√2 ≈ 2172 m, plus the far box half-diagonal ≤ ~1500 m ⇒
+    // 8192 (2^13) leaves better than ×2 headroom at any sun elevation.
+    constexpr float kShadowEyeDistanceM = 8192.0f;
 
     const SunInfo sun = compute_sun(time);
     vec3 toSun = normalize({sun.sunDir.x, sun.sunDir.y, sun.sunDir.z});
@@ -263,11 +269,12 @@ float compute_shadow_basis(const Camera& cam, const WorldTime& time,
     const vec3 boxMax = {cam.pos.x + kShadowRadiusM,
                          maxYM + kShadowStructureAllowanceM,
                          cam.pos.z + kShadowRadiusM};
-    const vec3 boxCenter = {(boxMin.x + boxMax.x) * 0.5f,
-                            (boxMin.y + boxMax.y) * 0.5f,
-                            (boxMin.z + boxMax.z) * 0.5f};
-    const vec3 eye = boxCenter + toSun * kShadowEyeDistanceM;
-    const mat4 lightView = mat4_lookAt(eye, boxCenter, lightUp);
+    // World-anchored light frame: window centre, constant between recenters.
+    // The camera-chasing ortho window is expressed inside this frame and
+    // advances in whole-texel steps only.
+    const vec3 anchor = {kWorldExtent, 0.0f, kWorldExtent};
+    const vec3 eye = anchor + toSun * kShadowEyeDistanceM;
+    const mat4 lightView = mat4_lookAt(eye, anchor, lightUp);
 
     float minX =  1.0e30f, minY =  1.0e30f, minZ =  1.0e30f;
     float maxX = -1.0e30f, maxY = -1.0e30f, maxZ = -1.0e30f;
@@ -293,8 +300,16 @@ float compute_shadow_basis(const Camera& cam, const WorldTime& time,
     centerX = std::floor(centerX / texel + 0.5f) * texel;
     centerY = std::floor(centerY / texel + 0.5f) * texel;
 
-    const float nearD = std::max(0.5f, -maxZ - kShadowMarginM);
-    const float farD = std::max(nearD + 10.0f, -minZ + kShadowMarginM);
+    // In the anchored frame the box slides along the light axis as the camera
+    // walks, so near/far are quantised to a coarse step: the receiver bias is
+    // normalised by (far - near), and a continuously sliding depth window
+    // would wobble that threshold in metres every frame. floor/ceil expand
+    // outward — the box is never clipped.
+    constexpr float kShadowDepthStepM = 32.0f;
+    float nearD = std::max(0.5f, -maxZ - kShadowMarginM);
+    float farD = std::max(nearD + 10.0f, -minZ + kShadowMarginM);
+    nearD = std::max(0.5f, std::floor(nearD / kShadowDepthStepM) * kShadowDepthStepM);
+    farD = std::ceil(farD / kShadowDepthStepM) * kShadowDepthStepM;
     lightMvp = mat4_mul(vk_ortho(centerX - span * 0.5f,
                                  centerX + span * 0.5f,
                                  centerY - span * 0.5f,
