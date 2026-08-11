@@ -61,7 +61,21 @@ void main() {
     vec3 L = normalize(pc.sunDir.xyz);
 
     float fres = pow(1.0 - max(dot(N, V), 0.0), 3.0);
-    vec3 water = mix(vec3(0.05, 0.18, 0.28), vec3(0.10, 0.34, 0.42), n0);
+    // Depth from the window heightfield (set 0 binding 2 — already bound for
+    // every lit pass, zero new plumbing): the water knows how deep it stands
+    // at this very point. Beer-style transmittance turns metres into colour —
+    // bright turquoise shallows falling to the dark deep — and into
+    // transparency: the bed shows through a knee-deep shore and vanishes under
+    // a real lake. span==0 (the heightfield-less smoke harness) degrades to
+    // all-deep, the pre-depth look.
+    float span = u_pointLights.terrainParams.x;
+    float depth = 30.0;
+    if (span > 0.0)
+        depth = max(pc.params.z - texture(u_heightM, w / span + 0.5).r, 0.0);
+    float clear = exp(-depth * 0.30);
+    vec3 water = mix(vec3(0.04, 0.15, 0.24), vec3(0.13, 0.38, 0.42), clear);
+    water *= 0.8 + 0.4 * n0;
+    float alpha = mix(0.88, 0.35, clear);
     vec3 skyish = vec3(0.45, 0.62, 0.85);
     vec3 col = mix(water, skyish, fres * 0.6);
 
@@ -93,6 +107,20 @@ void main() {
     // lantern on the shore paints a shimmering coloured streak on the ripples at
     // night exactly as the same light pools on the ground beside it. Inert until
     // an emitter exists (returns 0 when the light buffer is empty).
+    // Surf: a breathing foam front at the shoreline. The pulse phase rides
+    // DEPTH, so the bands run parallel to ANY shore automatically and roll
+    // toward it as time advances; the noise breaks the front into froth so it
+    // never reads as a printed stripe. Gone by ~1.4 m of depth.
+    float shore = 1.0 - smoothstep(0.0, 1.4, depth);
+    if (shore > 0.0) {
+        float fn = wn(w * 5.0 + vec2(time * 0.7, time * 0.5));
+        float pulse = 0.5 + 0.5 * sin(depth * 4.5 + time * 1.6 + fn * 2.2);
+        float foam = shore * smoothstep(0.60, 0.85,
+                                        fn * 0.5 + pulse * 0.35 + shore * 0.25);
+        col = mix(col, vec3(0.86, 0.90, 0.92) * (amb + 0.55), foam);
+        alpha = max(alpha, min(foam * 1.4, 0.95));
+    }
+
     col += point_lights_spec(vWorld, N, V);
-    outColor = vec4(col, 0.82);
+    outColor = vec4(col, alpha);
 }
