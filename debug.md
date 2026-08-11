@@ -117,6 +117,23 @@ stress the UI). The game HUD (F3) shows FPS/camera/world counters. For a quick
 apples-to-apples, run `GPU_SMOKE_FRAMES=600 ./build-prof/gpu_smoke` and report
 the printed frame count / any stalls.
 
+### 7.-1 Render-diagnostic console commands
+
+* `fpshud [on|off]` — persistent framerate chip.
+* `sunfreeze [on|off]` — pin the sun/moon for RENDERING only (sim keeps
+  running). Separates "flickers with the moving sun" from "flickers on its
+  own".
+* `lightdbg [march|clouds|map|nl|off]` — bisect the sun-visibility product
+  (lighting.glsl `lit_surface`): each call toggles ONE term off — terrain
+  march, cloud shadows, object shadow maps, or the N·L response — so the eye
+  can name which member draws a given darkening. No argument prints state;
+  `off` restores all.
+
+RULE (owner, 2026-08-11): these are per-run tools, not settings. `boot_world`
+resets them on every new game and every load — the game has no graphics
+options at this stage; every session starts with everything on, working as
+designed. Never make a diagnostic persist.
+
 ### 7.0 What a low frame rate now MEANS
 
 One turn of the loop is one tick **and** one frame, so the frame rate and the

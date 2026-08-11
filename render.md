@@ -214,8 +214,36 @@ The shaded surface colour — **defined once** for every lit object in
 [shaders/lighting.glsl](shaders/lighting.glsl) as `lit_surface()`:
 
 ```
-col = base · (ambient.rgb + sunColor.rgb · sunTerm · shadowFactor)
+col = base · (ambient.rgb + sunColor.rgb · sunTerm
+              · shadowFactor        // object maps, near/far handoff
+              · terrain_visibility  // heightfield march: ridges occlude
+              · cloud_visibility)   // drifting cloud field overhead
 ```
+
+Three occluder classes, each answered by the data that owns it, multiplied in
+this one place. Facts that keep the product honest (all 2026-08-11):
+
+* the shadow maps' light frame is **anchored in the world**, not on the
+  camera (`compute_shadow_basis`): the texel snap only holds the map still
+  because the snap grid itself stands still;
+* billboards receive shadow **per fragment** — light-clip xy from the true
+  fragment position, z from the trunk axis at the same height, so a shadow
+  edge covers exactly the part of the sprite it mathematically reaches and
+  self-shadow acne is impossible by construction (`billboard.vert`);
+* the march heightfield `u_heightM` is the window **plus a one-window apron**
+  of macro-skeleton heights on every side (`skeleton_cell_height01`,
+  base_generator.h — the generator's own per-cell column law, one door), so
+  massifs beyond the loaded window keep casting and shadows never depend on
+  where the player stands; its span rides `terrainParams.z`;
+* the cloud-shadow term keys the cloud field to **absolute** world coords
+  (composite origin in `sunDirW.w`/`terrainParams.w` — the same anchor
+  mesh.frag uses for ground detail), so the pattern survives a seam recenter.
+
+Diagnostics: console `lightdbg [march|clouds|map|nl|off]` lifts one member of
+the product to 1 at a time (bisect-by-eye; mask in `terrainParams.y`);
+`sunfreeze` pins the sun for rendering only. Both are per-run TOOLS, not
+settings — `boot_world` resets them, so every new game or load starts at the
+universal default with everything on.
 
 Every lit fragment stage — terrain ([mesh.frag](shaders/mesh.frag)), structures
 ([struct.frag](shaders/struct.frag)), and the tree / NPC / creature billboards
