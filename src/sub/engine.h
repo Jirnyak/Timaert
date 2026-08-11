@@ -173,6 +173,11 @@ public:
 
     void tick(float dt);
     void prepare_frame(VkCommandBuffer cmd);
+    // SMOKE/DIAGNOSTIC door: drain the tick's queued GPU uploads through a
+    // one-shot fenced submit. A smoke that ticks the sim without rendering
+    // frames must call this between ticks (the real loop drains them in
+    // prepare_frame) — see Renderer3DVk::flush_uploads_blocking.
+    void debug_flush_gpu_uploads();
 
     // Depth-only shadow casters, recorded BEFORE the main render pass.
     void record_shadow(VkCommandBuffer cmd);

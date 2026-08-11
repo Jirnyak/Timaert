@@ -2634,8 +2634,11 @@ void SubworldEngine::tick(float dt) {
 
     if (timing.crossed && seam_trace_enabled()) {
         const double totalMs = elapsed_ms(seamStart, Clock::now());
+        // upload3d is the CPU stage only: the GPU writes are recorded onto the
+        // frame's command buffer by prepare_frame (flush_uploads) and no
+        // longer block anything here.
         std::fprintf(stderr,
-            "[seam-cross] gen=%.3fms smooth=%.3fms upload3d=%.3fms total=%.3fms\n",
+            "[seam-cross] gen=%.3fms smooth=%.3fms upload3dCpu=%.3fms total=%.3fms\n",
             timing.genMs, timing.smoothMs, upload3dMs, totalMs);
         std::fflush(stderr);
     }
@@ -2765,6 +2768,9 @@ void SubworldEngine::tick(float dt) {
 
 void SubworldEngine::prepare_frame(VkCommandBuffer cmd) {
     if (!active_ || !dev_) return;
+    // Late-dirty catch (CPU stage): anything the tick did not drain. The GPU
+    // writes it queues are recorded by renderer's prepare_frame right below
+    // (flush_uploads), so this frame's shadow + main passes read fresh data.
     if (pendingUpload3d_.any) {
         renderer3dVk_.upload(*dev_, mgr_, pendingUpload3d_);
         pendingUpload3d_ = {};
@@ -2784,12 +2790,21 @@ void SubworldEngine::prepare_frame(VkCommandBuffer cmd) {
     renderer3dVk_.stage_particles(cmd, particleScratch_.data(), n);
 }
 
-void SubworldEngine::record_shadow(VkCommandBuffer cmd) {
+void SubworldEngine::debug_flush_gpu_uploads() {
     if (!active_ || !dev_) return;
     if (pendingUpload3d_.any) {
         renderer3dVk_.upload(*dev_, mgr_, pendingUpload3d_);
         pendingUpload3d_ = {};
     }
+    renderer3dVk_.flush_uploads_blocking();
+}
+
+void SubworldEngine::record_shadow(VkCommandBuffer cmd) {
+    if (!active_ || !dev_) return;
+    // No upload drain here: prepare_frame ALWAYS runs first in the frame
+    // (app/main.cpp) and both drains pendingUpload3d_ and flushes the queued
+    // GPU writes. Draining here would update the instance counts a frame
+    // before their buffers — a count/data desync the draws below would read.
     // The camera is a pure READER of the player's vertical: eye height above
     // the feet that tick()'s sync_player_vertical simulated (resting on the
     // support surface, falling with gravity, or flying). No physics here —

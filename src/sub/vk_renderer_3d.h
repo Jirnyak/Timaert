@@ -16,6 +16,7 @@
 #include "core/math.h"
 
 #include "assets/paperdoll_atlas.h"
+#include "gpu/bb_instance.h"
 #include "gpu/vk_buffer.h"
 #include "gpu/vk_pipeline.h"
 #include "gpu/vk_shadow.h"
@@ -72,11 +73,15 @@ public:
     void stage_particles(VkCommandBuffer cmd, const void* data,
                          std::uint32_t count);
 
-    // Rebuild device-local terrain mesh + instance buffers from the seamless
-    // manager. Load-time / on seam-cross only — never per frame. `dirty` scopes
-    // the work: a full rebuild (first upload, seam shift, height smooth) or only
-    // the 1024-tile cells the manager stitched in on async drains — the latter
-    // is what keeps a boundary crossing off the frame-time budget.
+    // CPU stage of a terrain/instance rebuild: resample heights, fill material
+    // bytes and rebuild instance lists into persistent scratch, then queue the
+    // matching GPU writes in pend_. Runs in the SIM tick (overlapping the GPU's
+    // previous frame); the queued writes are recorded into the next frame's
+    // command buffer by prepare_frame → flush_uploads. It used to also perform
+    // the GPU writes as blocking submits — up to seven vkQueueWaitIdle drains
+    // per seam crossing, plus a buffer destroy the in-flight frame could still
+    // be reading (audit III.9/III.14). `dirty` scopes the work exactly as
+    // before: full rebuild, seam shift, or only the stitched cells.
     void upload(const gpu::VulkanDevice& dev, const SeamlessSubworldManager& mgr,
                 const CompositeDirty& dirty);
 
@@ -147,7 +152,13 @@ private:
     gpu::VulkanTexture    materialTexAlt_{};
     VkDescriptorSetLayout materialSetLayout_ = VK_NULL_HANDLE;
     VkDescriptorPool      materialPool_      = VK_NULL_HANDLE;
-    VkDescriptorSet       materialSet_       = VK_NULL_HANDLE;
+    // TWO material sets, written ONCE when the textures are born: [0] points
+    // at the image originally in materialTex_, [1] at the alt. A ping-pong
+    // swap just flips matFront_ — rewriting one set in place was a write to a
+    // descriptor the in-flight frame still reads (audit III.14; the "safe
+    // here" comment above it claimed a fence contract that did not exist).
+    VkDescriptorSet       materialSets_[2]   = {};
+    std::uint32_t         matFront_          = 0;
     // Cached heightmap in metres at vertex-grid resolution (Nv × Nv).
     // Used by sample_height_m() so the engine can seat the first-person
     // camera on the terrain without keeping a second copy.
@@ -273,6 +284,84 @@ private:
     gpu::VulkanBuffer   creatureInstBuf_{};
     std::uint32_t       creatureCount_ = 0;
     gpu::VulkanPipeline shadowCreaturePipe_{};
+
+    // ── Deferred GPU writes (the seam path) ──
+    // upload() queues here; flush_uploads() records into the frame's command
+    // buffer through the staging arena. A second upload() before the flush
+    // MERGES (ticks normally flush every frame, but a skipped frame — resize,
+    // or a smoke that ticks without rendering — stacks uploads): the height /
+    // vertex / instance scratches are absolute recomputes so overwrite is the
+    // merge; matCells OR; a full material write supersedes everything; and a
+    // NEW shift cannot land on unflushed material (pending cells are in the
+    // pre-shift frame) — upload() degrades that round to a full material
+    // rebuild, mirroring CompositeDirty::merge's fallback.
+    struct PendingGpu {
+        bool heightTex = false;   // heightExtM_ → heightTex_ (full image)
+        bool terrainVtx = false;  // vtxScratch_ → terrainVtx_
+        bool terrainIdx = false;  // idxScratch_ → terrainIdx_ (first build)
+        enum class Mat : std::uint8_t {
+            None,   // no base op (matCells may still hold per-cell writes)
+            Create, // first build: create both images + write both sets
+            Full,   // matScratch_ → full-image overwrite
+            Shift   // GPU overlap copy; consumes matCells as its fresh rects
+        } mat = Mat::None;
+        std::int32_t shiftSrcX = 0, shiftSrcY = 0;
+        std::int32_t shiftDstX = 0, shiftDstY = 0;
+        std::int32_t shiftW = 0, shiftH = 0;
+        bool matCells[9] = {};
+        bool trees = false, boxes = false, cyls = false;
+        bool selfCheck = false; // TIMAERT_SEAM_SELFCHECK: blocking twins + readback
+        bool any() const {
+            bool cells = false;
+            for (bool c : matCells) cells |= c;
+            return heightTex || terrainVtx || terrainIdx || mat != Mat::None
+                || cells || trees || boxes || cyls;
+        }
+    };
+    PendingGpu pend_{};
+    // Persistent CPU scratch the pending ops read from. Byte vectors where the
+    // element type is renderer-internal (Vtx / StructInstance).
+    std::vector<std::uint8_t>  vtxScratch_;
+    std::vector<std::uint32_t> idxScratch_;
+    std::vector<std::uint8_t>  matScratch_;
+    std::vector<std::uint8_t>  matCellScratch_[9];
+    std::vector<std::uint8_t>  matSelfRef_; // selfcheck reference (env only)
+    std::vector<gpu::BbInstance> treeScratch_;
+    std::vector<std::uint8_t>  boxScratch_;
+    std::vector<std::uint8_t>  cylScratch_;
+    // Staging arena ring (host-mapped, one per frame in flight): flush_uploads
+    // memcpys scratch into the CURRENT slot and records copies from it. The
+    // slot advances once per prepared frame, so a slot is rewritten only after
+    // its frame's fence has been waited — same contract as lightFieldStaging_.
+    // Grows on demand; the outgrown buffer goes to the graveyard because the
+    // in-flight frame's copies may still source from it.
+    gpu::VulkanBuffer stageArena_[kFramesInFlight] = {};
+    std::uint32_t     arenaSlot_ = 0;
+    VkDeviceSize      arenaOff_ = 0;
+    // Copy `bytes` of `src` into the current arena slot; returns the offset,
+    // or VK_WHOLE_SIZE on allocation failure.
+    VkDeviceSize arena_push(const void* src, VkDeviceSize bytes);
+    // Record every queued GPU write into `cmd` (prepare_frame calls this
+    // before anything else records). Under pend_.selfCheck falls back to the
+    // blocking twins so the readback-and-compare sees executed results.
+    void flush_uploads(VkCommandBuffer cmd);
+
+public:
+    // SMOKE/DIAGNOSTIC door: flush the queued GPU writes through a one-shot
+    // submitted-and-fenced command buffer. The real loop flushes on the
+    // frame's command buffer (prepare_frame); a smoke that ticks the sim
+    // WITHOUT rendering frames must call this between ticks, or every upload
+    // sees its buffers still unborn and degrades to the always-correct full
+    // rebuild — and the incremental seam machinery under test never runs.
+    void flush_uploads_blocking();
+
+private:
+    // Ensure `buf` holds `count` elements of `elemSize` (grow = graveyard the
+    // old allocation + create uninitialised), then record the copy from the
+    // arena. Returns false on failure (caller zeroes its draw count).
+    bool flush_instances(VkCommandBuffer cmd, gpu::VulkanBuffer& buf,
+                         std::size_t& cap, const void* data, std::size_t count,
+                         std::size_t elemSize, const char* what);
 
     // ── FX: additive particle billboards (spell trails, impacts, blood, embers,
     //    explosions). Drawn after creatures, before water, with depth-test on /

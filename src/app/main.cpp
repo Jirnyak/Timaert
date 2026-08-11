@@ -4809,8 +4809,16 @@ bool run_subworld_seam_smoke(App& app) {
                  app.subworld.player_x(), app.subworld.player_y());
     std::fflush(stderr);
 
+    // Frameless smoke: the real loop drains each tick's queued GPU uploads in
+    // prepare_frame, but this action ticks without rendering. Drain explicitly
+    // between ticks, or every upload sees unborn GPU buffers and degrades to
+    // the always-correct FULL rebuild — and the incremental seam machinery
+    // this smoke exists to exercise (GPU shift blit + per-cell drains + their
+    // self-check) never runs.
+    app.subworld.debug_flush_gpu_uploads();
     RuntimeFrameStats frameStats =
         advance_sim_seconds(app, 1.0f / 60.0f, false);
+    app.subworld.debug_flush_gpu_uploads();
     std::fprintf(stderr, "[smoke] subworld_seam crossed ticked=%d active=%d center=%d,%d\n",
                  frameStats.ticked ? 1 : 0,
                  frameStats.subworldActive ? 1 : 0,
@@ -4846,6 +4854,10 @@ bool run_subworld_seam_smoke(App& app) {
     }
     for (int i = 0; i < kSubworldSeamSmokeSettleFrames; ++i) {
         frameStats = advance_sim_seconds(app, 1.0f / 60.0f, false);
+        // Same frameless-smoke drain as above: each settle tick's async
+        // cell drains must reach the GPU before the next tick's upload
+        // inspects the renderer's state.
+        app.subworld.debug_flush_gpu_uploads();
         if (!frameStats.ticked || !frameStats.subworldActive) {
             smoke_fail(app, "subworld_seam settle tick inactive");
             app.subworld.leave(true);

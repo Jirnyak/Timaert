@@ -547,9 +547,10 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         }
     }
 
-    // Material texture descriptor set (set 1 on the terrain pipeline). Allocated
-    // once here; upload() bakes the full-res tile texture and (re)writes this set
-    // to point at it. The layout must exist before the terrain pipeline below.
+    // Material texture descriptor sets (set 1 on the terrain pipeline). TWO
+    // sets allocated here — one per ping-pong image — and written exactly once
+    // when the images are born (flush_uploads). A crossing then swaps by
+    // flipping matFront_ instead of rewriting a set an in-flight frame reads.
     {
         VkDescriptorSetLayoutBinding b{};
         b.binding = 0;
@@ -562,21 +563,23 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         dlci.pBindings = &b;
         vkCreateDescriptorSetLayout(dev.device, &dlci, nullptr, &materialSetLayout_);
 
-        VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1};
+        VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2};
         VkDescriptorPoolCreateInfo dpci{};
         dpci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        dpci.maxSets = 1;
+        dpci.maxSets = 2;
         dpci.poolSizeCount = 1;
         dpci.pPoolSizes = &ps;
         vkCreateDescriptorPool(dev.device, &dpci, nullptr, &materialPool_);
 
+        const VkDescriptorSetLayout layouts[2] = {materialSetLayout_,
+                                                  materialSetLayout_};
         VkDescriptorSetAllocateInfo dsai{};
         dsai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
         dsai.descriptorPool = materialPool_;
-        dsai.descriptorSetCount = 1;
-        dsai.pSetLayouts = &materialSetLayout_;
-        vkAllocateDescriptorSets(dev.device, &dsai, &materialSet_);
-        // Image view/sampler are bound in upload() once the tile texture exists.
+        dsai.descriptorSetCount = 2;
+        dsai.pSetLayouts = layouts;
+        vkAllocateDescriptorSets(dev.device, &dsai, materialSets_);
+        // Image views/samplers are bound once the tile textures exist.
     }
 
     // A1: Terrain mesh pipeline (mesh.vert + mesh.frag).
@@ -958,8 +961,12 @@ void Renderer3DVk::destroy(const gpu::VulkanDevice& dev) {
     if (materialPool_ != VK_NULL_HANDLE) {
         vkDestroyDescriptorPool(dev.device, materialPool_, nullptr);
         materialPool_ = VK_NULL_HANDLE;
-        materialSet_  = VK_NULL_HANDLE;
+        materialSets_[0] = VK_NULL_HANDLE;
+        materialSets_[1] = VK_NULL_HANDLE;
+        matFront_ = 0;
     }
+    for (auto& a : stageArena_) a.destroy(dev);
+    pend_ = PendingGpu{};
     if (materialSetLayout_ != VK_NULL_HANDLE) {
         vkDestroyDescriptorSetLayout(dev.device, materialSetLayout_, nullptr);
         materialSetLayout_ = VK_NULL_HANDLE;
@@ -974,6 +981,26 @@ void Renderer3DVk::destroy(const gpu::VulkanDevice& dev) {
 
 void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
                                   float elapsed, const sm::vec3& camPos) {
+    // New frame ⇒ next staging-arena slot (its fence was waited in acquire).
+    arenaSlot_ = (arenaSlot_ + 1u) % std::uint32_t(kFramesInFlight);
+    arenaOff_ = 0;
+
+    // ONE write-after-read guard for every buffer this frame overwrites in
+    // place (seam flush below, NPC/creature/particle vkCmdUpdateBuffer later).
+    // The frame in flight may still be reading them as vertex input; this
+    // queue-scope execution dependency orders ALL of this frame's transfer
+    // writes after it. Without it the single-instance buffers were a WAR race
+    // the old code never lost only because its blocking submits drained the
+    // queue (audit III.9).
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
+                         nullptr, 0, nullptr);
+
+    // Record the seam-path GPU writes queued by upload() — BEFORE anything
+    // else records, so the shadow and main passes of THIS frame read the
+    // freshly stitched world.
+    flush_uploads(cmd);
+
     // The light field refresh (its own cadence gate lives inside). Must run
     // before the render pass opens — it records a staged image copy.
     if (ecs && uploaded_) {
@@ -1177,48 +1204,6 @@ void Renderer3DVk::stage_particles(VkCommandBuffer cmd, const void* data,
 // (renderer_3d.cpp lines 853-935).
 // ──────────────────────────────────────────────────────────────────────
 
-namespace {
-
-// Upload an instance set into a REUSED device-local buffer.
-//
-// The set changes on every seam crossing and every async cell drain, and the
-// old code destroyed and re-created the buffer each time. Measured, that
-// allocate-bind-stage-submit-wait was ~90% of the whole rebuild: the CPU loop
-// that builds ten thousand tree instances costs 0.08 ms, the buffer churn
-// around it cost 0.7-1.2 ms. Keeping the allocation and overwriting it in place
-// is the entire difference.
-//
-// Grows by half again plus a floor, so a world that gains a few trees per
-// crossing stops reallocating almost immediately. Spare capacity past `count`
-// is never read — the draw uses the count, not the buffer size.
-template <typename Inst>
-bool upload_instances(const gpu::VulkanDevice& dev, gpu::VulkanBuffer& buf,
-                      std::size_t& capacity, const std::vector<Inst>& src,
-                      const char* what) {
-    if (src.empty()) return true;
-    if (src.size() > capacity) {
-        buf.destroy(dev);
-        capacity = src.size() + src.size() / 2 + 64;
-        std::vector<Inst> padded(capacity);
-        std::copy(src.begin(), src.end(), padded.begin());
-        if (!buf.create_device_local(dev, padded.data(),
-                                     padded.size() * sizeof(Inst),
-                                     VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)) {
-            std::fprintf(stderr, "[Renderer3DVk] %s buffer FAILED\n", what);
-            capacity = 0;
-            return false;
-        }
-        return true;
-    }
-    if (!buf.update(dev, src.data(), src.size() * sizeof(Inst))) {
-        std::fprintf(stderr, "[Renderer3DVk] %s buffer update FAILED\n", what);
-        return false;
-    }
-    return true;
-}
-
-} // namespace
-
 void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldManager& mgr,
                           const CompositeDirty& dirty) {
     const int N   = kMeshDim;
@@ -1239,8 +1224,7 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
         return std::chrono::duration<double, std::milli>(b - a).count();
     };
     const auto pStart = profNow();
-    double msHeight = 0, msVerts = 0, msTerrainBuf = 0, msMat = 0, msTree = 0,
-           msStruct = 0, msMatFill = 0;
+    double msHeight = 0, msVerts = 0, msTree = 0, msStruct = 0, msMatFill = 0;
 
     // ── Incremental scope ──
     // The first upload (device buffers / image not yet created) forces a full
@@ -1264,8 +1248,16 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
     const bool shiftMaterial = wantShift;  // 3c-3: material image slides on a shift
     const bool doFullHeight =
         dirty.fullHeight || !vtxExists || (wantShift && !shiftHeight);
+    // A new relocation cannot land on UNFLUSHED material work: pending cell
+    // scratches (and a pending shift) are expressed in the pre-shift frame.
+    // Degrade this round to a full rebuild — CompositeDirty::merge's own
+    // fallback, one accumulator downstream. Reachable only when a frame was
+    // skipped between ticks (resize/minimize) or a smoke ticks framelessly.
+    bool matPendingUnflushed = pend_.mat != PendingGpu::Mat::None;
+    for (bool c : pend_.matCells) matPendingUnflushed |= c;
     const bool doFullMaterial =
-        dirty.fullMaterial || !matExists || (wantShift && !shiftMaterial);
+        dirty.fullMaterial || !matExists || (wantShift && !shiftMaterial)
+        || (wantShift && matPendingUnflushed);
     // Material relocation (3c-3): slide the GPU image for the overlap and fill
     // only the fresh cells, instead of rebuilding the whole 3072² material.
     // Gated off when a full rebuild is already happening (first build / explicit
@@ -1447,11 +1439,10 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
             if (h < minHeightM_) minHeightM_ = h;
         }
         if (minHeightM_ > maxHeightM_) minHeightM_ = 0.0f;
-        // Push the fresh heightfield to the GPU copy the terrain-occlusion
-        // march samples (lighting.glsl u_heightM): exact window heights in
-        // the interior, macro-skeleton apron around them (kHeightExtFactor),
-        // so massifs beyond the window keep casting into it. Same
-        // blocking-update contract as materialTex_ right below.
+        // Rebuild the march heightfield (lighting.glsl u_heightM): exact
+        // window heights in the interior, macro-skeleton apron around them
+        // (kHeightExtFactor), so massifs beyond the window keep casting into
+        // it. CPU fill only — the image write is queued for flush_uploads.
         if (heightTex_.image != VK_NULL_HANDLE) {
             const int Ne = kHeightExtDim;
             const float texelM = 2.0f * kWorldExtent / float(N); // 16 m
@@ -1522,9 +1513,7 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                         edge * (1.0f - w) + skel * w;
                 }
             }
-            heightTex_.update_region(
-                dev, 0, 0, heightTex_.width, heightTex_.height,
-                reinterpret_cast<const std::uint8_t*>(heightExtM_.data()));
+            pend_.heightTex = true;
         }
         if (kProf) msHeight = profMs(s, profNow());
     }
@@ -1538,7 +1527,8 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
     if (doHeight) {
         const auto sv = profNow();
         const float cell = 2.0f * kWorldExtent / float(N);
-        std::vector<Vtx> verts(vertexCount);
+        vtxScratch_.resize(vertexCount * sizeof(Vtx));
+        Vtx* verts = reinterpret_cast<Vtx*>(vtxScratch_.data());
         for (int y = 0; y < Nv; ++y) {
             for (int x = 0; x < Nv; ++x) {
                 const auto i = std::size_t(y) * Nv + x;
@@ -1561,47 +1551,30 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
             }
         }
 
-        if (terrainIdx_.buffer == VK_NULL_HANDLE) {
-            std::vector<std::uint32_t> idx;
-            idx.reserve(std::size_t(N) * N * 6);
+        if (terrainIdx_.buffer == VK_NULL_HANDLE && !pend_.terrainIdx) {
+            idxScratch_.clear();
+            idxScratch_.reserve(std::size_t(N) * N * 6);
             for (int y = 0; y < N; ++y) {
                 for (int x = 0; x < N; ++x) {
                     auto a = std::uint32_t(y) * std::uint32_t(Nv) + std::uint32_t(x);
                     auto b = a + 1;
                     auto c = a + std::uint32_t(Nv);
                     auto d = c + 1;
-                    idx.push_back(a); idx.push_back(c); idx.push_back(b);
-                    idx.push_back(b); idx.push_back(c); idx.push_back(d);
+                    idxScratch_.push_back(a);
+                    idxScratch_.push_back(c);
+                    idxScratch_.push_back(b);
+                    idxScratch_.push_back(b);
+                    idxScratch_.push_back(c);
+                    idxScratch_.push_back(d);
                 }
             }
-            if (!terrainIdx_.create_device_local(
-                     dev, idx.data(), idx.size() * sizeof(std::uint32_t),
-                     VK_BUFFER_USAGE_INDEX_BUFFER_BIT)) {
-                std::fprintf(stderr, "[Renderer3DVk] terrain index buffer FAILED\n");
-                indexCount_ = 0;
-                uploaded_ = false;
-                return;
-            }
-            indexCount_ = static_cast<std::uint32_t>(idx.size());
+            pend_.terrainIdx = true;
+            indexCount_ = static_cast<std::uint32_t>(idxScratch_.size());
         }
+        // Vertex buffer is fixed-size (Nv×Nv): flush_uploads creates it once
+        // and thereafter overwrites it in place on the frame's command buffer.
+        pend_.terrainVtx = true;
         if (kProf) msVerts = profMs(sv, profNow());
-
-        // Vertex buffer is fixed-size (Nv×Nv): create once, then overwrite IN
-        // PLACE (no realloc / no queue-idle churn on a fresh buffer).
-        const auto sb = profNow();
-        const VkDeviceSize vtxBytes = verts.size() * sizeof(Vtx);
-        const bool vtxOk =
-            (terrainVtx_.buffer == VK_NULL_HANDLE)
-                ? terrainVtx_.create_device_local(dev, verts.data(), vtxBytes,
-                                                  VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
-                : terrainVtx_.update(dev, verts.data(), vtxBytes);
-        if (!vtxOk) {
-            std::fprintf(stderr, "[Renderer3DVk] terrain vertex buffer FAILED\n");
-            uploaded_ = false;
-            return;
-        }
-        uploaded_ = true;
-        if (kProf) msTerrainBuf = profMs(sb, profNow());
     }
 
     // ── Full-resolution tile material texture (sampled per-fragment by
@@ -1818,51 +1791,19 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 fillCellMaterial(idx, dst, kFullSize, (idx % 3) * kCellSize,
                                  (idx / 3) * kCellSize);
         };
-        // Point material set (set 1, binding 0) at a texture's view+sampler.
-        // Used on the first create and after each ping-pong swap. Safe here:
-        // upload() runs at the same fenced point as the in-place image updates,
-        // so no in-flight frame samples the set (same contract as update_*).
-        auto writeMaterialDescriptor = [&](const gpu::VulkanTexture& tex) {
-            VkDescriptorImageInfo dii{};
-            dii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            dii.imageView = tex.view;
-            dii.sampler = tex.sampler;
-            VkWriteDescriptorSet w{};
-            w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            w.dstSet = materialSet_;
-            w.dstBinding = 0;
-            w.descriptorCount = 1;
-            w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            w.pImageInfo = &dii;
-            vkUpdateDescriptorSets(dev.device, 1, &w, 0, nullptr);
-        };
-
         if (doFullMaterial) {
             const auto sf = profNow();
-            std::vector<std::uint8_t> matPix(std::size_t(kFullSize) * kFullSize);
-            fillFullMaterial(matPix.data());
+            matScratch_.resize(std::size_t(kFullSize) * kFullSize);
+            fillFullMaterial(matScratch_.data());
             if (kProf) msMatFill = profMs(sf, profNow());
-            const auto sg = profNow();
-            if (materialTex_.image == VK_NULL_HANDLE) {
-                if (!materialTex_.create_r8(dev, kFullSize, kFullSize, matPix.data(),
-                                            /*linearFilter=*/false, /*repeat=*/false)) {
-                    std::fprintf(stderr, "[Renderer3DVk] material texture FAILED\n");
-                } else {
-                    // Ping-pong sibling (3c-3): same size/format, seeded with the
-                    // same pixels so it is a valid sampled image immediately. It
-                    // becomes the GPU copy destination on the first seam crossing.
-                    if (!materialTexAlt_.create_r8(
-                            dev, kFullSize, kFullSize, matPix.data(),
-                            /*linearFilter=*/false, /*repeat=*/false))
-                        std::fprintf(stderr,
-                            "[Renderer3DVk] material alt texture FAILED\n");
-                    writeMaterialDescriptor(materialTex_);
-                }
-            } else {
-                materialTex_.update_region(dev, 0, 0, kFullSize, kFullSize,
-                                           matPix.data());
-            }
-            if (kProf) msMat = profMs(sg, profNow());
+            // First build creates both ping-pong images and writes both
+            // descriptor sets in flush_uploads; later full refreshes overwrite
+            // the front image in place there. A full write supersedes any
+            // pending shift/cell work — clear it.
+            pend_.mat = materialTex_.image == VK_NULL_HANDLE
+                            ? PendingGpu::Mat::Create
+                            : PendingGpu::Mat::Full;
+            for (bool& c : pend_.matCells) c = false;
         } else if (doShiftMaterial) {
             // Seam crossing (3c-3): the manager already shifted composite_tiles_
             // and per-cell biome by (shiftX,shiftY), so material_new[cell] ==
@@ -1875,95 +1816,54 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
             const int py = -dirty.shiftY * kCellSize;
             const int adx = px < 0 ? -px : px;
             const int ady = py < 0 ? -py : py;
-            const int copyW = kFullSize - adx;
-            const int copyH = kFullSize - ady;
-            const int srcX = px > 0 ? 0 : -px;
-            const int dstX = px > 0 ? px : 0;
-            const int srcY = py > 0 ? 0 : -py;
-            const int dstY = py > 0 ? py : 0;
 
-            // Fill each fresh cell's 1024² material into its own buffer; the
-            // FreshRegion pointers must outlive the blit, so keep them all here.
-            std::vector<std::uint8_t> freshPix[9];
-            std::vector<gpu::FreshRegion> fresh;
-            fresh.reserve(9);
+            // Fill each fresh cell's 1024² material into its scratch slot;
+            // flush_uploads records the on-GPU overlap copy + these fills.
             for (int idx = 0; idx < 9; ++idx) {
                 if (!dirty.materialCells[std::size_t(idx)]) continue;
-                const int ox = idx % 3, oy = idx / 3;
-                auto& buf = freshPix[idx];
+                auto& buf = matCellScratch_[idx];
                 buf.resize(std::size_t(kCellSize) * kCellSize);
                 fillCellMaterial(idx, buf.data(), kCellSize, 0, 0);
-                fresh.push_back({std::uint32_t(ox * kCellSize),
-                                 std::uint32_t(oy * kCellSize),
-                                 std::uint32_t(kCellSize),
-                                 std::uint32_t(kCellSize), buf.data()});
+                pend_.matCells[idx] = true;
             }
             if (kProf) msMatFill = profMs(sf, profNow());
 
-            const auto sg = profNow();
-            const bool blitOk =
-                copyW > 0 && copyH > 0
-                && gpu::blit_shift_r8(dev, materialTex_, materialTexAlt_,
-                                      std::uint32_t(srcX), std::uint32_t(srcY),
-                                      std::uint32_t(dstX), std::uint32_t(dstY),
-                                      std::uint32_t(copyW), std::uint32_t(copyH),
-                                      fresh.data(), fresh.size());
-            if (blitOk) {
-                // materialTexAlt_ now holds the relocated + refreshed material;
-                // make it the sampled image and keep the old one as next scratch.
-                std::swap(materialTex_, materialTexAlt_);
-                writeMaterialDescriptor(materialTex_);
-            } else {
-                // Vulkan failure: fall back to a full in-place refresh so the
-                // image is never left stale (correctness over speed).
-                std::fprintf(stderr,
-                    "[Renderer3DVk] material shift blit FAILED — full fallback\n");
-                std::vector<std::uint8_t> matPix(
-                    std::size_t(kFullSize) * kFullSize);
-                fillFullMaterial(matPix.data());
-                materialTex_.update_region(dev, 0, 0, kFullSize, kFullSize,
-                                           matPix.data());
-            }
-            if (kProf) msMat = profMs(sg, profNow());
+            pend_.mat = PendingGpu::Mat::Shift;
+            pend_.shiftW = kFullSize - adx;
+            pend_.shiftH = kFullSize - ady;
+            pend_.shiftSrcX = px > 0 ? 0 : -px;
+            pend_.shiftDstX = px > 0 ? px : 0;
+            pend_.shiftSrcY = py > 0 ? 0 : -py;
+            pend_.shiftDstY = py > 0 ? py : 0;
 
             if (kSelfCheck) {
-                // Definitive end-to-end proof for the riskiest sub-step: read the
-                // GPU material image back and compare to a from-scratch recompute
-                // from the manager's shifted tiles + biome. Catches a wrong copy
-                // rect, a missed fresh cell, OR a MoltenVK copy fault — none of
-                // which a CPU-only mirror would see. Material ids are exact bytes
-                // (no fast-math), so any nonzero mismatch is a real defect.
-                std::vector<std::uint8_t> gpuPix;
-                std::size_t selfMism = 0;
-                if (materialTex_.read_back(dev, gpuPix)
-                    && gpuPix.size() == std::size_t(kFullSize) * kFullSize) {
-                    std::vector<std::uint8_t> want(
-                        std::size_t(kFullSize) * kFullSize);
-                    fillFullMaterial(want.data());
-                    for (std::size_t i = 0; i < want.size(); ++i)
-                        if (gpuPix[i] != want[i]) ++selfMism;
-                } else {
-                    selfMism = static_cast<std::size_t>(-1);  // readback failed
-                }
-                std::fprintf(stderr,
-                    "[seam-selfcheck] material shift mismatch=%zu\n", selfMism);
-                std::fflush(stderr);
+                // Reference for the post-execution readback compare in
+                // flush_uploads (which switches to the blocking twin under
+                // this env so the readback sees executed results): a full
+                // from-scratch recompute of the shifted material. The manager
+                // does not mutate between this tick and the frame's flush —
+                // same thread — so the reference is exact.
+                matSelfRef_.resize(std::size_t(kFullSize) * kFullSize);
+                fillFullMaterial(matSelfRef_.data());
+                pend_.selfCheck = true;
             }
         } else {
-            // Incremental: recompute + upload only the dirty cells' 1024² rects.
+            // Incremental: recompute only the dirty cells' 1024² rects; the
+            // per-rect image writes are queued for flush_uploads.
             const auto sf = profNow();
             std::vector<std::uint8_t> refPix;  // full reference, self-check only
             if (kSelfCheck) {
                 refPix.assign(std::size_t(kFullSize) * kFullSize, 0);
                 fillFullMaterial(refPix.data());
             }
-            std::vector<std::uint8_t> sub(std::size_t(kCellSize) * kCellSize);
-            double gpuMs = 0.0;
             std::size_t selfMism = 0;
             for (int idx = 0; idx < 9; ++idx) {
                 if (!dirty.materialCells[std::size_t(idx)]) continue;
                 const int ox = idx % 3, oy = idx / 3;
+                auto& sub = matCellScratch_[idx];
+                sub.resize(std::size_t(kCellSize) * kCellSize);
                 fillCellMaterial(idx, sub.data(), kCellSize, 0, 0);
+                pend_.matCells[idx] = true;
                 if (kSelfCheck) {
                     for (int y = 0; y < kCellSize; ++y) {
                         const std::size_t refRow =
@@ -1975,15 +1875,11 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                                 != refPix[refRow + std::size_t(x)]) ++selfMism;
                     }
                 }
-                const auto sg = profNow();
-                materialTex_.update_region(dev, ox * kCellSize, oy * kCellSize,
-                                           kCellSize, kCellSize, sub.data());
-                gpuMs += profMs(sg, profNow());
             }
-            if (kProf) {
-                msMat = gpuMs;
-                msMatFill = profMs(sf, profNow()) - gpuMs;
-            }
+            // No base op: matCells alone carry the work. If a Shift or Full
+            // is already pending, the cells simply ride it (Shift consumes
+            // them as fresh rects; Full is applied first, cells after).
+            if (kProf) msMatFill = profMs(sf, profNow());
             if (kSelfCheck) {
                 std::fprintf(stderr,
                     "[seam-selfcheck] material incremental mismatch=%zu\n",
@@ -2003,7 +1899,8 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
         const auto st = profNow();
         {
             const auto& structs = mgr.structures();
-            std::vector<gpu::BbInstance> trees;
+            std::vector<gpu::BbInstance>& trees = treeScratch_;
+            trees.clear();
             trees.reserve(structs.size());
             for (const auto& s : structs) {
                 // Crops ride the tree billboard pass — same quad, same
@@ -2062,8 +1959,7 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                                  0xFFFFFFFFu});
             }
             treeCount_ = static_cast<std::uint32_t>(trees.size());
-            if (!upload_instances(dev, treeInstBuf_, treeInstCap_, trees, "tree"))
-                treeCount_ = 0;
+            pend_.trees = true;
         }
         if (kProf) msTree = profMs(st, profNow());
 
@@ -2126,30 +2022,462 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                                 shade, s.yaw});
             }
             structCount_ = static_cast<std::uint32_t>(boxes.size());
-            if (!upload_instances(dev, structInstBuf_, structInstCap_, boxes,
-                                  "struct"))
-                structCount_ = 0;
+            boxScratch_.resize(boxes.size() * sizeof(StructInstance));
+            std::memcpy(boxScratch_.data(), boxes.data(), boxScratch_.size());
+            pend_.boxes = true;
             cylCount_ = static_cast<std::uint32_t>(cyls.size());
-            if (!upload_instances(dev, cylInstBuf_, cylInstCap_, cyls,
-                                  "cylinder"))
-                cylCount_ = 0;
+            cylScratch_.resize(cyls.size() * sizeof(StructInstance));
+            std::memcpy(cylScratch_.data(), cyls.data(), cylScratch_.size());
+            pend_.cyls = true;
         }
         if (kProf) msStruct = profMs(ss, profNow());
     }
 
     if (kProf) {
+        // CPU stage only: the GPU writes are recorded by flush_uploads onto
+        // the frame's command buffer and take no blocking wall-clock here.
         std::fprintf(stderr,
             "[upload3d-prof] shift=%d,%d fullH=%d cells=%d "
-            "height=%.3f verts=%.3f terrainBuf=%.3f "
-            "matFill=%.3f matGpu=%.3f tree=%.3f struct=%.3f TOTAL=%.3f (ms)\n",
+            "height=%.3f verts=%.3f "
+            "matFill=%.3f tree=%.3f struct=%.3f TOTAL(cpu)=%.3f (ms)\n",
             dirty.shiftX, dirty.shiftY, doFullHeight ? 1 : 0,
             (dirty.heightCells[0]?1:0)+(dirty.heightCells[1]?1:0)+(dirty.heightCells[2]?1:0)
             +(dirty.heightCells[3]?1:0)+(dirty.heightCells[4]?1:0)+(dirty.heightCells[5]?1:0)
             +(dirty.heightCells[6]?1:0)+(dirty.heightCells[7]?1:0)+(dirty.heightCells[8]?1:0),
-            msHeight, msVerts, msTerrainBuf, msMatFill, msMat,
+            msHeight, msVerts, msMatFill,
             msTree, msStruct, profMs(pStart, profNow()));
         std::fflush(stderr);
     }
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// flush_uploads — record the seam-path GPU writes queued by upload() onto
+// the frame's command buffer. Replaces what used to be five-to-seven
+// BLOCKING submit+vkQueueWaitIdle round-trips per crossing (each a full
+// mid-frame queue drain — problems.md §20's sin, at the seam) and one
+// destroy of a buffer the in-flight frame could still be reading.
+// ──────────────────────────────────────────────────────────────────────
+
+VkDeviceSize Renderer3DVk::arena_push(const void* src, VkDeviceSize bytes) {
+    gpu::VulkanBuffer& a = stageArena_[arenaSlot_];
+    const VkDeviceSize need = arenaOff_ + bytes;
+    if (a.buffer == VK_NULL_HANDLE || a.size < need) {
+        // po2 growth from an 8 MiB floor. Derivation: a steady-state axis
+        // crossing stages ~6.1 MB (3 fresh material cells 3×1024² + march
+        // heightfield 577²×4B + terrain vertices 193²×32B + instances); the
+        // first build and the rare full-material fallback stage ~13 MB and
+        // simply grow the slot once. The outgrown buffer may be the source of
+        // copies already recorded THIS frame — graveyard, never destroy.
+        VkDeviceSize cap = VkDeviceSize(8) << 20;
+        while (cap < need) cap <<= 1;
+        if (a.buffer != VK_NULL_HANDLE) {
+            dev_->defer_destroy(a.buffer, a.memory);
+            a.buffer = VK_NULL_HANDLE;
+            a.memory = VK_NULL_HANDLE;
+            a.mapped = nullptr;
+            a.size = 0;
+        }
+        if (!a.create_host_mapped(*dev_, cap,
+                                  VK_BUFFER_USAGE_TRANSFER_SRC_BIT)) {
+            std::fprintf(stderr, "[Renderer3DVk] staging arena FAILED (%llu B)\n",
+                         static_cast<unsigned long long>(cap));
+            return VK_WHOLE_SIZE;
+        }
+    }
+    std::memcpy(static_cast<std::uint8_t*>(a.mapped) + arenaOff_, src,
+                static_cast<std::size_t>(bytes));
+    const VkDeviceSize off = arenaOff_;
+    // 256-align the next offset: covers vkCmdCopyBufferToImage's texel-size
+    // multiples (1B R8 / 4B R32F) and every optimalBufferCopyOffsetAlignment
+    // in the wild, so one rule serves all ops.
+    arenaOff_ = (need + 255u) & ~VkDeviceSize(255u);
+    return off;
+}
+
+bool Renderer3DVk::flush_instances(VkCommandBuffer cmd, gpu::VulkanBuffer& buf,
+                                   std::size_t& cap, const void* data,
+                                   std::size_t count, std::size_t elemSize,
+                                   const char* what) {
+    if (count == 0) return true; // nothing to draw; the buffer is never read
+    if (count > cap) {
+        // Grow by half again plus a floor (same policy the blocking path had),
+        // but the outgrown allocation goes to the graveyard: the frame in
+        // flight may still be drawing from it.
+        if (buf.buffer != VK_NULL_HANDLE) {
+            dev_->defer_destroy(buf.buffer, buf.memory);
+            buf.buffer = VK_NULL_HANDLE;
+            buf.memory = VK_NULL_HANDLE;
+            buf.size = 0;
+        }
+        cap = count + count / 2 + 64;
+        if (!buf.create_device_local_uninit(
+                *dev_, VkDeviceSize(cap) * elemSize,
+                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)) {
+            std::fprintf(stderr, "[Renderer3DVk] %s buffer FAILED\n", what);
+            cap = 0;
+            return false;
+        }
+    }
+    const VkDeviceSize bytes = VkDeviceSize(count) * elemSize;
+    const VkDeviceSize off = arena_push(data, bytes);
+    if (off == VK_WHOLE_SIZE) return false;
+    VkBufferCopy r{off, 0, bytes};
+    vkCmdCopyBuffer(cmd, stageArena_[arenaSlot_].buffer, buf.buffer, 1, &r);
+    return true;
+}
+
+void Renderer3DVk::flush_uploads(VkCommandBuffer cmd) {
+    if (!dev_ || !pend_.any()) return;
+    const gpu::VulkanDevice& dev = *dev_;
+    const PendingGpu p = pend_;
+    pend_ = PendingGpu{}; // consumed; failures below log, they do not retry
+    bool anyBufferCopy = false;
+
+    // ── Terrain index (first build only) ──
+    if (p.terrainIdx) {
+        const VkDeviceSize bytes =
+            VkDeviceSize(idxScratch_.size()) * sizeof(std::uint32_t);
+        if (!terrainIdx_.create_device_local_uninit(
+                dev, bytes, VK_BUFFER_USAGE_INDEX_BUFFER_BIT)) {
+            std::fprintf(stderr, "[Renderer3DVk] terrain index buffer FAILED\n");
+            indexCount_ = 0;
+        } else {
+            const VkDeviceSize off = arena_push(idxScratch_.data(), bytes);
+            if (off == VK_WHOLE_SIZE) {
+                indexCount_ = 0;
+            } else {
+                VkBufferCopy r{off, 0, bytes};
+                vkCmdCopyBuffer(cmd, stageArena_[arenaSlot_].buffer,
+                                terrainIdx_.buffer, 1, &r);
+                anyBufferCopy = true;
+            }
+        }
+    }
+
+    // ── Terrain vertices (fixed Nv×Nv size: create once, overwrite in place) ──
+    if (p.terrainVtx) {
+        const VkDeviceSize bytes = VkDeviceSize(vtxScratch_.size());
+        bool vtxOk = terrainVtx_.buffer != VK_NULL_HANDLE
+                  || terrainVtx_.create_device_local_uninit(
+                         dev, bytes, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+        if (vtxOk) {
+            const VkDeviceSize off = arena_push(vtxScratch_.data(), bytes);
+            if (off != VK_WHOLE_SIZE) {
+                VkBufferCopy r{off, 0, bytes};
+                vkCmdCopyBuffer(cmd, stageArena_[arenaSlot_].buffer,
+                                terrainVtx_.buffer, 1, &r);
+                anyBufferCopy = true;
+            }
+        } else {
+            std::fprintf(stderr, "[Renderer3DVk] terrain vertex buffer FAILED\n");
+        }
+        uploaded_ = vtxOk && indexCount_ > 0;
+    }
+
+    // ── Instance sets ──
+    if (p.trees
+        && !flush_instances(cmd, treeInstBuf_, treeInstCap_,
+                            treeScratch_.data(), treeScratch_.size(),
+                            sizeof(gpu::BbInstance), "tree"))
+        treeCount_ = 0;
+    if (p.boxes
+        && !flush_instances(cmd, structInstBuf_, structInstCap_,
+                            boxScratch_.data(),
+                            boxScratch_.size() / sizeof(StructInstance),
+                            sizeof(StructInstance), "struct"))
+        structCount_ = 0;
+    if (p.cyls
+        && !flush_instances(cmd, cylInstBuf_, cylInstCap_,
+                            cylScratch_.data(),
+                            cylScratch_.size() / sizeof(StructInstance),
+                            sizeof(StructInstance), "cylinder"))
+        cylCount_ = 0;
+    anyBufferCopy |= p.trees || p.boxes || p.cyls;
+
+    // ── RAW guard for every buffer written above: this frame's vertex/index
+    //    reads wait for this frame's transfer writes. (The WAR guard against
+    //    the PREVIOUS frame is the execution barrier prepare_frame records
+    //    before calling here.) ──
+    if (anyBufferCopy) {
+        VkMemoryBarrier mb{};
+        mb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        mb.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        mb.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT
+                         | VK_ACCESS_INDEX_READ_BIT;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0, 1, &mb, 0,
+                             nullptr, 0, nullptr);
+    }
+
+    // ── March heightfield (image; its recorded twin carries its own
+    //    queue-scope layout barriers) ──
+    if (p.heightTex && heightTex_.image != VK_NULL_HANDLE) {
+        const VkDeviceSize bytes =
+            VkDeviceSize(heightExtM_.size()) * sizeof(float);
+        const VkDeviceSize off = arena_push(heightExtM_.data(), bytes);
+        if (off != VK_WHOLE_SIZE)
+            heightTex_.update_region_recorded(cmd, stageArena_[arenaSlot_].buffer,
+                                              off, 0, 0, heightTex_.width,
+                                              heightTex_.height,
+                                              /*discard=*/true);
+    }
+
+    // ── Material image ──
+    // Per-cell write, shared by every base op below. The cell scratch holds
+    // the NEWEST content for its rect, so cells are always applied AFTER the
+    // base op (a Full computed one tick earlier, a Shift's relocation).
+    auto applyCell = [&](int idx, bool blocking) {
+        if (blocking) {
+            materialTex_.update_region(dev,
+                                       std::uint32_t((idx % 3) * kCellSize),
+                                       std::uint32_t((idx / 3) * kCellSize),
+                                       std::uint32_t(kCellSize),
+                                       std::uint32_t(kCellSize),
+                                       matCellScratch_[idx].data());
+            return;
+        }
+        const VkDeviceSize off =
+            arena_push(matCellScratch_[idx].data(),
+                       VkDeviceSize(matCellScratch_[idx].size()));
+        if (off == VK_WHOLE_SIZE) return;
+        materialTex_.update_region_recorded(
+            cmd, stageArena_[arenaSlot_].buffer, off,
+            std::uint32_t((idx % 3) * kCellSize),
+            std::uint32_t((idx / 3) * kCellSize), std::uint32_t(kCellSize),
+            std::uint32_t(kCellSize), /*discard=*/false);
+    };
+    // Cells the Shift's blit consumes as its fresh rects vs cells it must NOT:
+    // a drain that completed between the crossing and this flush can land
+    // INSIDE the relocated overlap, and overlapping transfer writes to one
+    // image in a single batch are unordered — those cells are applied after
+    // the blit instead. A cell is the blit's own fresh rect iff its rect is
+    // disjoint from the dst overlap rect.
+    bool cellAfterBase[9] = {};
+    bool anyCellAfterBase = false;
+    for (int idx = 0; idx < 9; ++idx) {
+        if (!p.matCells[idx]) continue;
+        cellAfterBase[idx] = true;
+        anyCellAfterBase = true;
+    }
+    switch (p.mat) {
+    case PendingGpu::Mat::None:
+        break;
+    case PendingGpu::Mat::Create: {
+        if (!materialTex_.create_r8_empty(dev, kFullSize, kFullSize,
+                                          /*linearFilter=*/false,
+                                          /*repeat=*/false)
+            || !materialTexAlt_.create_r8_empty(dev, kFullSize, kFullSize,
+                                                /*linearFilter=*/false,
+                                                /*repeat=*/false)) {
+            std::fprintf(stderr, "[Renderer3DVk] material texture FAILED\n");
+            break;
+        }
+        // Write BOTH descriptor sets exactly once — neither is referenced by
+        // any pending command buffer yet (draws gate on uploaded_ and bind
+        // only the front set). From here on a ping-pong swap flips matFront_
+        // and never touches a descriptor again.
+        VkDescriptorImageInfo dii[2]{};
+        VkWriteDescriptorSet w[2]{};
+        const gpu::VulkanTexture* tex[2] = {&materialTex_, &materialTexAlt_};
+        for (int i = 0; i < 2; ++i) {
+            dii[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            dii[i].imageView = tex[i]->view;
+            dii[i].sampler = tex[i]->sampler;
+            w[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            w[i].dstSet = materialSets_[i];
+            w[i].dstBinding = 0;
+            w[i].descriptorCount = 1;
+            w[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            w[i].pImageInfo = &dii[i];
+        }
+        vkUpdateDescriptorSets(dev.device, 2, w, 0, nullptr);
+        matFront_ = 0;
+        const VkDeviceSize off =
+            arena_push(matScratch_.data(), VkDeviceSize(matScratch_.size()));
+        if (off != VK_WHOLE_SIZE)
+            materialTex_.update_region_recorded(cmd,
+                                                stageArena_[arenaSlot_].buffer,
+                                                off, 0, 0, kFullSize, kFullSize,
+                                                /*discard=*/true);
+        // The alt image stays UNDEFINED until the first shift discards it —
+        // its set is never bound before that shift flips the front.
+        break;
+    }
+    case PendingGpu::Mat::Full: {
+        const VkDeviceSize off =
+            arena_push(matScratch_.data(), VkDeviceSize(matScratch_.size()));
+        if (off != VK_WHOLE_SIZE)
+            materialTex_.update_region_recorded(cmd,
+                                                stageArena_[arenaSlot_].buffer,
+                                                off, 0, 0, kFullSize, kFullSize,
+                                                /*discard=*/true);
+        break;
+    }
+    case PendingGpu::Mat::Shift: {
+        // Which cells the blit takes as fresh rects: exactly those disjoint
+        // from the dst overlap rect (together they tile the discarded dst).
+        // A cell INTERSECTING the overlap is a newer drain landing on
+        // relocated content — it stays in cellAfterBase for the loop below.
+        auto cellIsBlitFresh = [&](int idx) {
+            const int cx0 = (idx % 3) * kCellSize, cx1 = cx0 + kCellSize;
+            const int cy0 = (idx / 3) * kCellSize, cy1 = cy0 + kCellSize;
+            const int ox0 = p.shiftDstX, ox1 = p.shiftDstX + p.shiftW;
+            const int oy0 = p.shiftDstY, oy1 = p.shiftDstY + p.shiftH;
+            return cx1 <= ox0 || cx0 >= ox1 || cy1 <= oy0 || cy0 >= oy1;
+        };
+        if (p.selfCheck) {
+            // Diagnostics (TIMAERT_SEAM_SELFCHECK): the readback below must
+            // see EXECUTED results, so this one path keeps the blocking twin.
+            // The stall is the diagnostic's price, never shipping's.
+            std::vector<gpu::FreshRegion> fresh;
+            fresh.reserve(9);
+            for (int idx = 0; idx < 9; ++idx) {
+                if (!p.matCells[idx] || !cellIsBlitFresh(idx)) continue;
+                cellAfterBase[idx] = false;
+                fresh.push_back({std::uint32_t((idx % 3) * kCellSize),
+                                 std::uint32_t((idx / 3) * kCellSize),
+                                 std::uint32_t(kCellSize),
+                                 std::uint32_t(kCellSize),
+                                 matCellScratch_[idx].data()});
+            }
+            const bool blitOk =
+                p.shiftW > 0 && p.shiftH > 0
+                && gpu::blit_shift_r8(dev, materialTex_, materialTexAlt_,
+                                      std::uint32_t(p.shiftSrcX),
+                                      std::uint32_t(p.shiftSrcY),
+                                      std::uint32_t(p.shiftDstX),
+                                      std::uint32_t(p.shiftDstY),
+                                      std::uint32_t(p.shiftW),
+                                      std::uint32_t(p.shiftH), fresh.data(),
+                                      fresh.size());
+            if (blitOk) {
+                std::swap(materialTex_, materialTexAlt_);
+                matFront_ ^= 1u;
+            } else {
+                std::fprintf(stderr,
+                             "[Renderer3DVk] material shift blit FAILED\n");
+            }
+            // Overlap-landing cells still blocking here, BEFORE the compare.
+            for (int idx = 0; idx < 9; ++idx)
+                if (cellAfterBase[idx]) applyCell(idx, /*blocking=*/true);
+            anyCellAfterBase = false;
+            // End-to-end proof for the riskiest sub-step: read the GPU image
+            // back and compare with the from-scratch reference upload()
+            // computed from the same shifted manager state. Material ids are
+            // exact bytes — any nonzero mismatch is a real defect.
+            std::vector<std::uint8_t> gpuPix;
+            std::size_t selfMism = 0;
+            if (materialTex_.read_back(dev, gpuPix)
+                && gpuPix.size() == matSelfRef_.size()) {
+                for (std::size_t i = 0; i < gpuPix.size(); ++i)
+                    if (gpuPix[i] != matSelfRef_[i]) ++selfMism;
+            } else {
+                selfMism = static_cast<std::size_t>(-1); // readback failed
+            }
+            std::fprintf(stderr,
+                         "[seam-selfcheck] material shift mismatch=%zu\n",
+                         selfMism);
+            std::fflush(stderr);
+            break;
+        }
+        std::vector<gpu::FreshRegionStaged> fresh;
+        fresh.reserve(9);
+        bool stagedOk = true;
+        for (int idx = 0; idx < 9; ++idx) {
+            if (!p.matCells[idx] || !cellIsBlitFresh(idx)) continue;
+            const VkDeviceSize off =
+                arena_push(matCellScratch_[idx].data(),
+                           VkDeviceSize(matCellScratch_[idx].size()));
+            if (off == VK_WHOLE_SIZE) {
+                stagedOk = false;
+                break;
+            }
+            cellAfterBase[idx] = false;
+            fresh.push_back({std::uint32_t((idx % 3) * kCellSize),
+                             std::uint32_t((idx / 3) * kCellSize),
+                             std::uint32_t(kCellSize),
+                             std::uint32_t(kCellSize), off});
+        }
+        const bool blitOk =
+            stagedOk && p.shiftW > 0 && p.shiftH > 0
+            && gpu::blit_shift_r8_recorded(
+                   cmd, materialTex_, materialTexAlt_,
+                   std::uint32_t(p.shiftSrcX), std::uint32_t(p.shiftSrcY),
+                   std::uint32_t(p.shiftDstX), std::uint32_t(p.shiftDstY),
+                   std::uint32_t(p.shiftW), std::uint32_t(p.shiftH),
+                   stageArena_[arenaSlot_].buffer, fresh.data(), fresh.size());
+        if (blitOk) {
+            // materialTexAlt_ now (in queue order) holds the relocated +
+            // refreshed material; flip the front. The old front is next
+            // crossing's scratch — no destroy, no descriptor write.
+            std::swap(materialTex_, materialTexAlt_);
+            matFront_ ^= 1u;
+        } else {
+            // Both images exist whenever mat==Shift, so this is unreachable
+            // short of arena exhaustion; the material is stale for one
+            // crossing then. Loud, honest, no silent fallback that would need
+            // manager state flush no longer has.
+            std::fprintf(stderr,
+                         "[Renderer3DVk] material shift record FAILED — "
+                         "material stale until next crossing\n");
+        }
+        break;
+    }
+    }
+
+    // ── Per-cell material writes riding whatever base op ran above: a plain
+    //    drain (no base op), newer cells over a one-tick-older Full, or drain
+    //    cells that landed inside a Shift's relocated overlap. ──
+    if (anyCellAfterBase && materialTex_.image != VK_NULL_HANDLE) {
+        for (int idx = 0; idx < 9; ++idx)
+            if (cellAfterBase[idx]) applyCell(idx, /*blocking=*/false);
+    }
+}
+
+void Renderer3DVk::flush_uploads_blocking() {
+    if (!dev_ || !pend_.any()) return;
+    const gpu::VulkanDevice& dev = *dev_;
+    VkCommandPoolCreateInfo pci{};
+    pci.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    pci.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+    pci.queueFamilyIndex = dev.families.graphics;
+    VkCommandPool pool = VK_NULL_HANDLE;
+    if (vkCreateCommandPool(dev.device, &pci, nullptr, &pool) != VK_SUCCESS)
+        return;
+    VkCommandBufferAllocateInfo cai{};
+    cai.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    cai.commandPool = pool;
+    cai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cai.commandBufferCount = 1;
+    VkCommandBuffer cmd = VK_NULL_HANDLE;
+    if (vkAllocateCommandBuffers(dev.device, &cai, &cmd) != VK_SUCCESS) {
+        vkDestroyCommandPool(dev.device, pool, nullptr);
+        return;
+    }
+    VkCommandBufferBeginInfo bi{};
+    bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkBeginCommandBuffer(cmd, &bi);
+    // Same WAR guard prepare_frame gives the in-frame flush: an earlier real
+    // frame may still be in flight reading the buffers we overwrite.
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
+                         nullptr, 0, nullptr);
+    arenaOff_ = 0; // one-shot: the fence below retires the slot before reuse
+    flush_uploads(cmd);
+    vkEndCommandBuffer(cmd);
+    VkSubmitInfo si{};
+    si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    si.commandBufferCount = 1;
+    si.pCommandBuffers = &cmd;
+    VkFenceCreateInfo fci{};
+    fci.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    VkFence fence = VK_NULL_HANDLE;
+    vkCreateFence(dev.device, &fci, nullptr, &fence);
+    vkQueueSubmit(dev.graphicsQueue, 1, &si, fence);
+    vkWaitForFences(dev.device, 1, &fence, VK_TRUE, UINT64_MAX);
+    vkDestroyFence(dev.device, fence, nullptr);
+    vkDestroyCommandPool(dev.device, pool, nullptr);
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -2481,9 +2809,10 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       terrainPipe_.pipeline);
-    // set 0 = shadow sampler + light SSBO, set 1 = full-res tile material tex.
-    if (litSet != VK_NULL_HANDLE && materialSet_ != VK_NULL_HANDLE) {
-        const VkDescriptorSet sets[2] = {litSet, materialSet_};
+    // set 0 = shadow sampler + light SSBO, set 1 = full-res tile material tex
+    // (the ping-pong FRONT set — a crossing flips matFront_, never a write).
+    if (litSet != VK_NULL_HANDLE && materialTex_.image != VK_NULL_HANDLE) {
+        const VkDescriptorSet sets[2] = {litSet, materialSets_[matFront_]};
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 terrainPipe_.layout, 0, 2, sets, 0, nullptr);
     }
