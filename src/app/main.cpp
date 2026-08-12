@@ -208,6 +208,7 @@ enum class SmokeAction : std::uint8_t {
     SubworldSpDrain,
     SubworldEnter,
     SubworldExitRemap,
+    DungeonHouse,
     TriggerBattleStart,
     WaitVisible,
     OpenSettlementBuild,
@@ -508,6 +509,7 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"subworld_sp_drain", SmokeAction::SubworldSpDrain},
     {"subworld_enter", SmokeAction::SubworldEnter},
     {"subworld_exit_remap", SmokeAction::SubworldExitRemap},
+    {"dungeon_house", SmokeAction::DungeonHouse},
     {"trigger_battle_start", SmokeAction::TriggerBattleStart},
     {"wait_visible", SmokeAction::WaitVisible},
     {"open_settlement_build", SmokeAction::OpenSettlementBuild},
@@ -5754,6 +5756,159 @@ bool run_subworld_loot_xp_smoke(App& app) {
     return true;
 }
 
+// dungeon_house — Inc 1 end-to-end: E at a house wall → a sealed interior on
+// the same engine → E on the exit pad → back on the doorstep. Asserts the
+// scene flag, the exactly-one-PlayerTag invariant at every stage, and that
+// the same door deterministically re-derives the same interior (a tile-grid
+// hash across two independent visits).
+bool run_dungeon_house_smoke(App& app) {
+    if (!smoke_boot_invariants_hold(app)) {
+        smoke_print_counts(app, "dungeon_house_boot_failed");
+        smoke_fail(app, "dungeon_house boot invariants");
+        return false;
+    }
+    if (app.subworld.active()) {
+        smoke_fail(app, "dungeon_house already active");
+        return false;
+    }
+    if (app.gs.politik.cities.empty()) {
+        smoke_fail(app, "dungeon_house no cities");
+        return false;
+    }
+
+    const float oldX = app.gs.player.x;
+    const float oldY = app.gs.player.y;
+    const auto oldSubState = app.gs.subState;
+    const int oldUiSettlement = app.ui.settlementId;
+    auto restore = [&]() {
+        if (app.subworld.active()) app.subworld.leave(true);
+        app.gs.player.x = oldX;
+        app.gs.player.y = oldY;
+        app.gs.subState = oldSubState;
+        app.ui.settlementId = oldUiSettlement;
+    };
+
+    // Land on the first city: its centre cell is guaranteed houses.
+    app.gs.player.x = float(app.gs.politik.cities[0].x);
+    app.gs.player.y = float(app.gs.politik.cities[0].y);
+    app.gs.subState.settlementId = -1;
+    app.ui.settlementId = -1;
+    app.subworld.enter(app.gs, app.terrain, app.features, app.ecs,
+                       app.bus, &app.zones, &app.treeLayer);
+    if (!app.subworld.active()) {
+        restore();
+        smoke_fail(app, "dungeon_house enter failed");
+        return false;
+    }
+
+    auto playerTags = [&]() {
+        int n = 0;
+        for (auto e : app.ecs.reg.view<sm::ecs::PlayerTag>()) {
+            (void)e;
+            ++n;
+        }
+        return n;
+    };
+    auto hashTiles = [&]() {
+        std::uint32_t h = 2166136261u;
+        for (std::uint8_t b : app.subworld.mgr().tiles()) {
+            h = (h ^ b) * 16777619u;
+        }
+        return h;
+    };
+
+    // Nearest house to the window centre — central by construction, so the
+    // doorstep stays inside the centre cell (no seam crossing mid-smoke).
+    const auto& structs = app.subworld.mgr().structures();
+    const float mid = float(sm::sub::kFullSize) / 2.0f;
+    int best = -1;
+    float bestD2 = 1e30f;
+    for (std::size_t i = 0; i < structs.size(); ++i) {
+        const auto& s = structs[i];
+        if (s.kind != sm::sub::Structure::House) continue;
+        const float dx = s.x - mid;
+        const float dy = s.y - mid;
+        const float d2 = dx * dx + dy * dy;
+        if (d2 < bestD2) {
+            bestD2 = d2;
+            best = int(i);
+        }
+    }
+    if (best < 0) {
+        restore();
+        smoke_fail(app, "dungeon_house no house in window");
+        return false;
+    }
+    const sm::sub::Structure house = structs[std::size_t(best)];
+    // Stand exactly on the house's local +X axis, 2 tiles off the wall face —
+    // squarely inside the door-knock reach whatever the building's yaw.
+    const float halfX = house.hx > 0.0f ? house.hx : house.radius;
+    const float standX = house.x + (halfX + 2.0f) * std::cos(house.yaw);
+    const float standY = house.y + (halfX + 2.0f) * std::sin(house.yaw);
+    app.subworld.set_player_pos(standX, standY);
+    app.subworld.tick(0.016f);
+    // Re-pin after the settle tick: a frame of simulation (separation, ground
+    // follow) can drift the body a hair, and "nearest door" between two
+    // different spots is two different doors — the determinism claim below is
+    // about ONE door, so both visits must knock from the same tile.
+    app.subworld.set_player_pos(standX, standY);
+
+    const int tagsBefore = playerTags();
+    const bool entered = app.subworld.interact();
+    const bool inD1 = app.subworld.in_dungeon();
+    const int tagsIn = playerTags();
+    const std::uint32_t h1 = inD1 ? hashTiles() : 0u;
+    app.subworld.tick(0.016f);
+
+    // Opt-in (TIMAERT_SMOKE_DUNGEON_STAY=1): stop INSIDE the interior so a
+    // following capture_frame photographs the dungeon scene itself (the
+    // capture lands ≥1 frame later, per the smoke capture law). The
+    // round-trip half of the invariants is skipped on purpose.
+    if (std::getenv("TIMAERT_SMOKE_DUNGEON_STAY")) {
+        std::fprintf(stderr,
+                     "[smoke] dungeon_house STAY entered=%d in=%d tags=%d/%d\n",
+                     entered ? 1 : 0, inD1 ? 1 : 0, tagsBefore, tagsIn);
+        std::fflush(stderr);
+        if (!entered || !inD1 || tagsBefore != 1 || tagsIn != 1) {
+            smoke_fail(app, "dungeon_house stay invariant");
+            return false;
+        }
+        return true;
+    }
+
+    // The player spawned ON the exit pad — E walks straight back out.
+    const bool exited = app.subworld.interact();
+    const bool outOk = app.subworld.active() && !app.subworld.in_dungeon();
+    const int tagsOut = playerTags();
+    app.subworld.tick(0.016f);
+
+    // Re-enter the same door: re-pin to the same knock tile (the return spot
+    // is within reach, but "nearest" must be judged from the identical spot),
+    // then the same identity must re-derive the same interior, byte for byte.
+    app.subworld.set_player_pos(standX, standY);
+    const bool entered2 = app.subworld.interact();
+    const bool inD2 = app.subworld.in_dungeon();
+    const std::uint32_t h2 = inD2 ? hashTiles() : 0u;
+    const bool exited2 = app.subworld.interact();
+    restore();
+
+    std::fprintf(stderr,
+                 "[smoke] dungeon_house entered=%d/%d in=%d/%d exited=%d/%d "
+                 "out=%d tags=%d/%d/%d hash=%08x/%08x\n",
+                 entered ? 1 : 0, entered2 ? 1 : 0, inD1 ? 1 : 0, inD2 ? 1 : 0,
+                 exited ? 1 : 0, exited2 ? 1 : 0, outOk ? 1 : 0,
+                 tagsBefore, tagsIn, tagsOut, h1, h2);
+    std::fflush(stderr);
+
+    if (!entered || !inD1 || !exited || !outOk || !entered2 || !inD2
+        || !exited2 || tagsBefore != 1 || tagsIn != 1 || tagsOut != 1
+        || h1 != h2) {
+        smoke_fail(app, "dungeon_house invariant");
+        return false;
+    }
+    return true;
+}
+
 bool run_subworld_enemy_feedback_smoke(App& app) {
     if (!smoke_boot_invariants_hold(app)) {
         smoke_print_counts(app, "subworld_enemy_feedback_boot_failed");
@@ -7939,6 +8094,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr, "[smoke] action=subworld_exit_gate\n");
             std::fflush(stderr);
             if (run_subworld_exit_gate_smoke(app)) ++app.smoke.cursor;
+            break;
+        case SmokeAction::DungeonHouse:
+            std::fprintf(stderr, "[smoke] action=dungeon_house\n");
+            std::fflush(stderr);
+            if (run_dungeon_house_smoke(app)) ++app.smoke.cursor;
             break;
         case SmokeAction::SubworldLootXp:
             std::fprintf(stderr, "[smoke] action=subworld_loot_xp\n");

@@ -44,6 +44,25 @@ enum class DangerLevel : std::uint8_t {
     Red,
 };
 
+// What the one engine is currently simulating: the seamless 3×3 overworld
+// window, or a pocket interior (dungeon) projected behind a door. One engine,
+// one ECS, one renderer — the dungeon REPLACES the overworld session (owner
+// ruling 2026-08-12), it never runs beside it.
+enum class SceneKind : std::uint8_t { Overworld, Dungeon };
+
+// Live dungeon session bookkeeping. The dungeon is a projection OF the
+// subworld: identity is {door cell, ordinal, level} (see map_data.h
+// DungeonRef), and everything here is derivable again from that identity —
+// nothing is saved (macro-only persistence law).
+struct DungeonSession {
+    DungeonRef ref{};
+    int doorCx = 0, doorCy = 0;   // wrapped macro cell of the entered door
+    // Where the player stood when opening the door, cell-local to the door's
+    // cell — the spot the exit walks back out to.
+    float returnLocalX = 0.0f, returnLocalY = 0.0f;
+    float floorHeight = 0.0f;     // door cell's macroHeight = interior floor
+};
+
 constexpr int kCombatLogLimit = 20;
 constexpr int kCombatLogMaxVisible = 5;
 constexpr float kCombatLogVisibleSeconds = 4.0f;
@@ -98,13 +117,22 @@ public:
     // (macro/tree_layer.h). When present it feeds CellContext.treeCount so
     // generation is count-driven, and felling a tree in here decrements the
     // owning cell's count (micro → macro writeback via gs.treeOverrides).
+    // `posOverride` (optional, window tile coords {x, y}): land the player at
+    // an exact spot instead of the entry-side placement — the dungeon exit
+    // walks back out to the very tile the door was opened from, BEFORE the
+    // squad ring / macro projections spawn around the player.
     void enter(GameState& gs, const TerrainData& terrain,
                const FeatureLayer& features, ecs::World& ecs,
                EventBus& bus,
                const ZoneLayer* zones = nullptr,
-               TreeLayer* treeLayer = nullptr);
+               TreeLayer* treeLayer = nullptr,
+               const float* posOverride = nullptr);
     void leave(bool force = false);
     bool interact();
+    // True while the active scene is a dungeon interior (see SceneKind).
+    bool in_dungeon() const {
+        return active_ && sceneKind_ == SceneKind::Dungeon;
+    }
     // Fell the nearest standing tree within `maxDist` of the player — the ONE
     // harvesting path (a no-target melee swing routes here; console `chop`
     // and smokes call it with a Tree filter): the manager removes the nearest
@@ -310,6 +338,8 @@ public:
 private:
     bool active_ = false;
     bool inited_ = false;
+    SceneKind sceneKind_ = SceneKind::Overworld;
+    DungeonSession dungeon_{};
     // Accumulated composite-dirty scope awaiting the next renderer upload. The
     // manager's dirty state is cleared the moment we consume it, so a deferred
     // upload (prepare_frame / record_shadow) must hold the union of every
@@ -424,6 +454,24 @@ private:
     // legitimately moves the scalars ∓cell; the tick commits that back onto the
     // entity so it stays the single source of truth. HP stays macro-authoritative
     // (combatStats -> entity in sync; entity -> currentHp in reconcile).
+    // ── Dungeon session (SceneKind::Dungeon) ──
+    // Overworld interact() face: find a house door within reach and step
+    // through it. Tears the overworld session down through the ordinary
+    // leave() (danger gate + every write-back), then raises the interior
+    // scene on the same engine. False = nothing in reach / gate refused.
+    bool try_enter_dungeon();
+    // Dungeon interact() face: E on the exit pad walks back out to the very
+    // spot the door was opened from. Gated by the same danger law as any
+    // subworld exit.
+    bool try_exit_dungeon();
+    // Raise the interior scene: static 3×3 window (door cell = the interior,
+    // ring = sealed Void filler) through the ordinary manager/renderer path.
+    // No fauna, no squad, no macro projections — the player enters alone
+    // (owner ruling 2026-08-12).
+    void enter_dungeon_scene(GameState& gs, const TerrainData& terrain,
+                             const FeatureLayer& features, ecs::World& ecs,
+                             EventBus& bus, const ZoneLayer* zones,
+                             TreeLayer* treeLayer);
     void spawn_player_entity();
     void clear_player_entity();
     void sync_player_entity_position();

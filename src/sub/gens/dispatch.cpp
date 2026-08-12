@@ -1,4 +1,5 @@
 #include "sub/gens/dispatch.h"
+#include "sub/dgn/dispatch.h"
 #include "macro/tree_layer.h"
 #include "sub/base_generator.h"
 #include "sub/city_layout.h"
@@ -35,6 +36,9 @@ static bool is_road_feature(std::uint8_t);
 static void sync_water_tiles_from_heightmap(SubworldMapData&);
 
 SubworldMode resolve_mode(const CellContext& ctx) {
+    // An interior context outranks everything: the cell shows what stands
+    // BEHIND a door, not the land the door stands on (sub/dgn/).
+    if (ctx.dungeon.kind != DungeonRef::None) return SubworldMode::Dungeon;
     const FeatureType feature = FeatureLayer::decode(std::uint8_t(ctx.feature));
     switch (ctx.landmarkKind) {
         case CellLandmarkKind::City:    return SubworldMode::City;
@@ -72,6 +76,13 @@ void dispatch_generate(const CellContext& ctx, const float nbHeights[9],
                        const float* nbFertility) {
     CellContext safeCtx = ctx;
     safeCtx.feature = FeatureLayer::decode(std::uint8_t(ctx.feature));
+    // Interior scene: the dungeon module writes the whole cell itself (flat
+    // field, sealed geometry) — the open-air terrain pipeline below would
+    // only be thrown away.
+    if (safeCtx.dungeon.kind != DungeonRef::None) {
+        dispatch_generate_dungeon(safeCtx, out);
+        return;
+    }
     std::uint8_t safeFeature[9]{};
     for (int i = 0; i < 9; ++i) {
         safeFeature[i] = std::uint8_t(FeatureLayer::decode(nbFeature[i]));

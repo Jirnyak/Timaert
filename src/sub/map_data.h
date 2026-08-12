@@ -54,10 +54,39 @@ static_assert(sizeof(kTileMovementSpeed) / sizeof(float) == std::size_t(TILE_COU
 enum class SubworldMode : std::uint8_t {
     Open, City, Village, Forest, Mountain, Swamp, Ruin, Water, Grassland, Road, Spire,
     Field,
+    // An INTERIOR scene (house / castle / cave floor) projected behind a door
+    // of some subworld structure — not the open air of its macro cell. Routed
+    // to the self-contained sub/dgn/ generators; never produced by the macro
+    // resolver (see CellContext::DungeonRef).
+    Dungeon,
 };
 
 enum class CellLandmarkKind : std::uint8_t {
     None = 0, City, Village, Ruin, Spire,
+};
+
+// Dungeon door reference. When `kind` is non-None the window cell is an
+// INTERIOR scene entered through a door standing on macro cell (cx, cy) —
+// not that cell's open air. The subworld engine synthesises these contexts
+// for its dungeon session (the dungeon is a projection OF the subworld, the
+// same way the subworld is a projection of the macro map); the macro
+// resolver never sets one. Identity is {cell, ordinal, level}: ordinal is
+// the building's deterministic index within its cell's generation order, so
+// the same seed always opens the same interior behind the same door.
+struct DungeonRef {
+    enum Kind : std::uint8_t {
+        None = 0,
+        House = 1,      // a settlement building's interior
+        Void = 0xFF,    // sealed filler for the dungeon window's ring cells
+    };
+    std::uint8_t  kind = None;
+    std::uint8_t  level = 0;    // floor index; stairs re-enter at level ± 1
+    std::uint16_t ordinal = 0;  // building index within its owning cell
+    // Exterior footprint half-extents (tiles) of the entered building — the
+    // interior keeps the building's real proportions and scales them up
+    // (M&M scale, owner ruling 2026-08-12: inside is roomier than outside).
+    float footHx = 0.0f;
+    float footHy = 0.0f;
 };
 
 // CellContext — what the macroworld knows about a single cell.
@@ -99,6 +128,9 @@ struct CellContext {
     // The crop scatter plants its natural yield minus this, so returning to
     // a harvested field does NOT resurrect the wheat. 0 = unscarred.
     int cropHarvested = 0;
+    // Interior-scene door (see DungeonRef). kind == None for every real
+    // macro cell; the engine's dungeon session is the only writer.
+    DungeonRef dungeon{};
 };
 
 // The effective landmark of a cell for terrain purposes. A macro settlement

@@ -12,6 +12,7 @@
 #include "sub/battle.h"
 #include "sub/spell_effects.h"
 #include "sub/base_generator.h"
+#include "sub/dgn/dispatch.h"
 #include "sub/body.h"
 #include "sub/material.h"
 #include "ecs/npc_character.h"
@@ -117,6 +118,11 @@ constexpr std::uint32_t kMacroProjectionSalt =
     std::uint32_t{2147483647} + std::uint32_t{1181783497};
 constexpr std::uint32_t kEntityLootMix =
     std::uint32_t{2147483647} + std::uint32_t{506952114};
+// Dungeon seed namespace: one interior identity {door cell, ordinal, level}
+// must hash apart from every overworld per-cell seed stream, or a house
+// basement could collide with (and cache-poison) its own cell's terrain.
+constexpr std::uint32_t kDungeonSeedSalt =
+    std::uint32_t{2147483647} + std::uint32_t{347922777};
 constexpr std::uint32_t kNpcMissileSpellId = 0x4E50434Du; // "NPCM"
 
 // ── Body size and eyesight, straight from the authoring tables ─────────────
@@ -531,10 +537,14 @@ void SubworldEngine::enter(GameState& gs, const TerrainData& terrain,
                            const FeatureLayer& features, ecs::World& ecs,
                            EventBus& bus,
                            const ZoneLayer* zones,
-                           TreeLayer* treeLayer) {
+                           TreeLayer* treeLayer,
+                           const float* posOverride) {
     statusLine_.clear();
     statusTimer_ = 0.0f;
     combatLogCount_ = 0;
+    // A normal enter is always the open-air window; the dungeon session sets
+    // its own scene through enter_dungeon_scene.
+    sceneKind_ = SceneKind::Overworld;
     // A fresh session starts with no known threat: the exit gate can be asked
     // before the first combat tick runs.
     playerThreatD2_ = kNoThreatDistance2;
@@ -582,6 +592,13 @@ void SubworldEngine::enter(GameState& gs, const TerrainData& terrain,
             + entry_axis_pos(sdx, gs.player.entryTicks, float(kCellSize), 0.5f);
         playerY_ = float(kCellSize)
             + entry_axis_pos(sdy, gs.player.entryTicks, float(kCellSize), 0.5f);
+    }
+    // Exact landing spot (dungeon exit: back out of the very door you opened).
+    // Applied BEFORE the squad / projection spawns below, so the entourage
+    // rings the player's true position.
+    if (posOverride) {
+        playerX_ = std::clamp(posOverride[0], 1.0f, float(kFullSize - 2));
+        playerY_ = std::clamp(posOverride[1], 1.0f, float(kFullSize - 2));
     }
     playerAttackHeld_ = false;
     playerAttackTimer_ = 0.0f;
@@ -1625,8 +1642,10 @@ bool SubworldEngine::interact() {
         }
     }
     if (best == entt::null) {
-        set_status("No corpse loot nearby.");
-        return false;
+        // No corpse in reach — the same E is the universal door: outside it
+        // steps through the nearest house door, inside it walks back out.
+        if (sceneKind_ == SceneKind::Dungeon) return try_exit_dungeon();
+        return try_enter_dungeon();
     }
 
     auto& loot = reg.get<ecs::CorpseLoot>(best);
@@ -2295,6 +2314,13 @@ void SubworldEngine::leave(bool force) {
         set_status("Exit blocked: hostiles are too close in this danger zone.");
         return;
     }
+    // Inside a dungeon the way out is its door (owner topology 2026-08-12:
+    // macro ← subworld ← dungeon; no direct interior→map hop). A forced
+    // leave (load, menu, teardown) still rips straight through to the map.
+    if (!force && sceneKind_ == SceneKind::Dungeon) {
+        set_status("Find the door.");
+        return;
+    }
     entt::entity possessedMacro = entt::null;   // set iff exit was AS a lord (5e-2)
     if (active_) {
         resolve_subworld_deaths(true);
@@ -2306,7 +2332,12 @@ void SubworldEngine::leave(bool force) {
         if (ecs_ && gs_) {
             drain_dead_leader_squads(*ecs_, gs_->deserterPool);
         }
-        mgr_.snapshot_all_to_cache();
+        // A dungeon is a pure projection — nothing below the door is worth
+        // caching (the overworld cache carries felled trees etc.; an interior
+        // re-derives byte-identically from its identity).
+        if (sceneKind_ != SceneKind::Dungeon) {
+            mgr_.snapshot_all_to_cache();
+        }
         // Sync the player's MACRO position from where they actually ended
         // up in the subworld. The seamless manager re-centres the 3×3 grid
         // when the player crosses a cell boundary, so `mgr_.center_cx()/cy()`
@@ -2350,6 +2381,8 @@ void SubworldEngine::leave(bool force) {
     }
     active_ = false;
     pendingUpload3d_ = {};
+    sceneKind_ = SceneKind::Overworld;
+    dungeon_ = {};
     gs_ = nullptr;
     terrain_ = nullptr;
     features_ = nullptr;
@@ -2365,6 +2398,235 @@ void SubworldEngine::leave(bool force) {
     statusLine_.clear();
     statusTimer_ = 0.0f;
     combatLogCount_ = 0;
+}
+
+// ── Dungeon session (SceneKind::Dungeon) ───────────────────────────────────
+
+// Squared 2D distance from a point to the SURFACE of a structure's oriented
+// footprint (0 inside). The door-reach test asks it, so a big house is
+// enterable from its wall face, not only from its distant centre.
+static float structure_surface_dist2(const Structure& s, float px, float py) {
+    const float dx = px - s.x;
+    const float dy = py - s.y;
+    const float c = std::cos(s.yaw);
+    const float sn = std::sin(s.yaw);
+    const float lx = dx * c + dy * sn;
+    const float ly = -dx * sn + dy * c;
+    const float qx = std::max(0.0f, std::abs(lx) - structure_half_x(s));
+    const float qy = std::max(0.0f, std::abs(ly) - structure_half_y(s));
+    return qx * qx + qy * qy;
+}
+
+// Deterministic interior seed: {door cell, ordinal, level} ⇒ one seed,
+// forever — same FNV-style mixing as the per-cell squad/projection salts.
+static std::uint32_t dungeon_seed(std::uint32_t worldSeed, int cx, int cy,
+                                  std::uint16_t ordinal, std::uint8_t level) {
+    std::uint32_t h = worldSeed ^ kDungeonSeedSalt;
+    h = (h ^ (std::uint32_t(cx) * kCellSeedX)) * kFnvPrime;
+    h = (h ^ (std::uint32_t(cy) * kCellSeedY)) * kFnvPrime;
+    h = (h ^ (std::uint32_t(ordinal) << 8 | std::uint32_t(level))) * kFnvPrime;
+    return h;
+}
+
+bool SubworldEngine::try_enter_dungeon() {
+    if (!active_ || sceneKind_ != SceneKind::Overworld || !gs_ || !terrain_) {
+        return false;
+    }
+    // Nearest house whose wall face is within arm's reach — the same reach
+    // as a melee swing (one body law: if you can strike it, you can knock).
+    const auto& structs = mgr_.structures();
+    int bestIdx = -1;
+    float bestD2 = kPlayerMeleeRange * kPlayerMeleeRange;
+    for (std::size_t i = 0; i < structs.size(); ++i) {
+        const Structure& s = structs[i];
+        if (s.kind != Structure::House) continue;
+        const float d2 = structure_surface_dist2(s, playerX_, playerY_);
+        if (d2 <= bestD2) {
+            bestD2 = d2;
+            bestIdx = int(i);
+        }
+    }
+    if (bestIdx < 0) {
+        set_status("Nothing to interact with.");
+        return false;
+    }
+    const Structure house = structs[std::size_t(bestIdx)];
+
+    // Identity: the door's macro cell + the house's deterministic ordinal
+    // within that cell (composite structures preserve per-cell generation
+    // order — rebuild_composite_structures appends cell by cell).
+    const int winCellX = std::clamp(int(house.x) / kCellSize, 0, 2);
+    const int winCellY = std::clamp(int(house.y) / kCellSize, 0, 2);
+    std::uint16_t ordinal = 0;
+    for (int i = 0; i < bestIdx; ++i) {
+        const Structure& s = structs[std::size_t(i)];
+        if (s.kind != Structure::House) continue;
+        if (std::clamp(int(s.x) / kCellSize, 0, 2) != winCellX) continue;
+        if (std::clamp(int(s.y) / kCellSize, 0, 2) != winCellY) continue;
+        ++ordinal;
+    }
+    const int mapW = terrain_->width;
+    const int mapH = terrain_->height;
+    if (mapW <= 0 || mapH <= 0) return false;
+    int doorCx = (mgr_.center_cx() + winCellX - 1) % mapW;
+    int doorCy = (mgr_.center_cy() + winCellY - 1) % mapH;
+    if (doorCx < 0) doorCx += mapW;
+    if (doorCy < 0) doorCy += mapH;
+
+    DungeonSession ses{};
+    ses.ref.kind = DungeonRef::House;
+    ses.ref.level = 0;
+    ses.ref.ordinal = ordinal;
+    ses.ref.footHx = structure_half_x(house);
+    ses.ref.footHy = structure_half_y(house);
+    ses.doorCx = doorCx;
+    ses.doorCy = doorCy;
+    ses.returnLocalX = playerX_ - float(winCellX * kCellSize);
+    ses.returnLocalY = playerY_ - float(winCellY * kCellSize);
+    ses.floorHeight = resolve_context(doorCx, doorCy).macroHeight;
+
+    // Tear the overworld session down through the one ordinary door: leave()
+    // runs the danger gate and every write-back. If the gate refuses (it set
+    // the status line), the world is untouched and so are we.
+    GameState& gs = *gs_;
+    const TerrainData& terrain = *terrain_;
+    const FeatureLayer& features = *features_;
+    ecs::World& ecs = *ecs_;
+    EventBus& bus = *bus_;
+    const ZoneLayer* zones = zones_;
+    TreeLayer* treeLayer = treeLayer_;
+    leave();
+    if (active_) return false;
+
+    dungeon_ = ses;
+    sceneKind_ = SceneKind::Dungeon;
+    enter_dungeon_scene(gs, terrain, features, ecs, bus, zones, treeLayer);
+    return true;
+}
+
+void SubworldEngine::enter_dungeon_scene(GameState& gs,
+                                         const TerrainData& terrain,
+                                         const FeatureLayer& features,
+                                         ecs::World& ecs, EventBus& bus,
+                                         const ZoneLayer* zones,
+                                         TreeLayer* treeLayer) {
+    statusLine_.clear();
+    statusTimer_ = 0.0f;
+    combatLogCount_ = 0;
+    playerThreatD2_ = kNoThreatDistance2;
+    gs_ = &gs; terrain_ = &terrain; features_ = &features;
+    ecs_ = &ecs; bus_ = &bus; zones_ = zones; treeLayer_ = treeLayer;
+
+    // Synthetic resolver: the door cell IS the interior, the ring is sealed
+    // Void filler. Everything downstream (workers, composite, renderer,
+    // collision) runs the ordinary window path — a dungeon is just a window
+    // whose macro context says "behind a door" (pocket-subworld model).
+    const DungeonSession ses = dungeon_;
+    const std::uint32_t worldSeed = gs.worldSeed;
+    auto resolver = [ses, worldSeed](int x, int y) {
+        CellContext ctx{};
+        ctx.cx = x;
+        ctx.cy = y;
+        ctx.macroHeight = ses.floorHeight;
+        ctx.biome = Biome::Mountain; // masonry/rock material ring underfoot
+        ctx.feature = FT_None;
+        ctx.landmarkSettlementId = -1;
+        ctx.landmarkSize = 0;
+        ctx.kingdomIdx = -1;
+        ctx.worldSeed = worldSeed;
+        const bool centre = (x == ses.doorCx && y == ses.doorCy);
+        ctx.dungeon = centre
+            ? ses.ref
+            : DungeonRef{DungeonRef::Void, ses.ref.level, 0, 0.0f, 0.0f};
+        ctx.seed = dungeon_seed(worldSeed, x, y,
+                                centre ? ses.ref.ordinal : std::uint16_t(0),
+                                ses.ref.level);
+        return ctx;
+    };
+    mgr_.init(ses.doorCx, ses.doorCy, resolver);
+    const CompositeDirty enterDirty = mgr_.consume_composite_dirty_cells();
+    if (dev_) renderer3dVk_.upload(*dev_, mgr_, enterDirty);
+    active_ = true;
+    pendingUpload3d_ = {};
+    structIndexDirty_ = true;
+
+    // The player materialises on the exit pad — the inside face of the door.
+    float ex = 0.0f, ey = 0.0f;
+    dungeon_entry_point(ses.ref, ex, ey);
+    playerX_ = float(kCellSize) + ex;
+    playerY_ = float(kCellSize) + ey;
+    playerAttackHeld_ = false;
+    playerAttackTimer_ = 0.0f;
+    playerVz_ = 0.0f;
+    playerZ_ = renderer3dVk_.sample_height_m(playerX_, playerY_);
+    playerGrounded_ = true;
+    spellRng_ = Rng{dungeon_seed(worldSeed, ses.doorCx, ses.doorCy,
+                                 ses.ref.ordinal, ses.ref.level)};
+    // Alone by law (owner 2026-08-12): no fauna, no squad, no macro
+    // projections — the interior populates itself (Inc 2+).
+    spawn_player_entity();
+    if (gs_) {
+        set_flying(spellbook_has_sustained(gs_->player.spellBook, "flight"));
+    }
+}
+
+bool SubworldEngine::try_exit_dungeon() {
+    if (!active_ || sceneKind_ != SceneKind::Dungeon || !gs_ || !terrain_) {
+        return false;
+    }
+    // E works on the exit pad — the same spot you arrived on, at the same
+    // reach every interaction uses.
+    float ex = 0.0f, ey = 0.0f;
+    dungeon_entry_point(dungeon_.ref, ex, ey);
+    const float wx = float(kCellSize) + ex;
+    const float wy = float(kCellSize) + ey;
+    const float dx = playerX_ - wx;
+    const float dy = playerY_ - wy;
+    if (dx * dx + dy * dy > kPlayerMeleeRange * kPlayerMeleeRange) {
+        set_status("Nothing to interact with.");
+        return false;
+    }
+    // The same danger law as any subworld exit: the door does not save you
+    // while hostiles stand at your back (owner ruling 2026-08-12).
+    if (exit_blocked_by_danger()) {
+        set_status("Exit blocked: hostiles are too close in this danger zone.");
+        return false;
+    }
+
+    GameState& gs = *gs_;
+    const TerrainData& terrain = *terrain_;
+    const FeatureLayer& features = *features_;
+    ecs::World& ecs = *ecs_;
+    EventBus& bus = *bus_;
+    const ZoneLayer* zones = zones_;
+    TreeLayer* treeLayer = treeLayer_;
+    const DungeonSession ses = dungeon_;
+
+    // Interior teardown: deaths settle their ledgers (write-backs), then the
+    // reaper takes every scene body including the player flag. No macro
+    // remap and no cache snapshot — we return to the overworld window, and a
+    // projection has nothing worth caching.
+    resolve_subworld_deaths(true);
+    clear_subworld_entities(ecs);
+    clear_player_entity();
+    structIndex_.clear();
+    structIndexDirty_ = true;
+    active_ = false;
+    pendingUpload3d_ = {};
+    sceneKind_ = SceneKind::Overworld;
+    dungeon_ = {};
+
+    // Land the macro player on the door's cell, then re-enter the overworld
+    // at the very spot the door was opened from.
+    gs.player.x = float(ses.doorCx);
+    gs.player.y = float(ses.doorCy);
+    gs.player.entryDir = kEntryDirNone;
+    gs.player.entryTicks = 0;
+    gs.player.entryTickAccum = 0;
+    const float pos[2] = {float(kCellSize) + ses.returnLocalX,
+                          float(kCellSize) + ses.returnLocalY};
+    enter(gs, terrain, features, ecs, bus, zones, treeLayer, pos);
+    return true;
 }
 
 float SubworldEngine::player_muzzle_z() const {
@@ -2517,6 +2779,9 @@ void SubworldEngine::set_player_pos(float x, float y) {
 
 void SubworldEngine::respawn_fauna() {
     if (!active_) return;
+    // An interior owns its own population (Inc 2+); the overworld fauna
+    // pass has no business inside a dungeon window.
+    if (sceneKind_ == SceneKind::Dungeon) return;
     // Rebuild the whole 3×3 scene from scratch via the enter() path. Under the
     // seamless per-cell model each cell's fauna is deterministic from its
     // absolute macro seed, so this reproduces the current scene exactly rather
@@ -2588,7 +2853,12 @@ void SubworldEngine::tick(float dt) {
     pull_player_entity_to_scalars();
     int prevCx = mgr_.center_cx(), prevCy = mgr_.center_cy();
     const auto seamStart = Clock::now();
-    mgr_.check_boundary(playerX_, playerY_);
+    // A dungeon window is STATIC: no seam, no re-centre — the interior is
+    // walled and its ring is sealed Void filler. The initial build was fully
+    // synchronous (load_all), so there are no async cells to drain either.
+    if (sceneKind_ != SceneKind::Dungeon) {
+        mgr_.check_boundary(playerX_, playerY_);
+    }
     const SeamTiming timing = mgr_.last_seam_timing();
     const bool centerChanged = prevCx != mgr_.center_cx() || prevCy != mgr_.center_cy();
     const CompositeDirty dirtyNow = mgr_.consume_composite_dirty_cells();
