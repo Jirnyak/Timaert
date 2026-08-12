@@ -61,10 +61,11 @@ static float smooth_noise_ts(float x, float y, std::uint32_t seed) {
 }
 
 // Sea-level / water-plane constants live in base_generator.h as the
-// single source of truth. We alias here for readability.
+// single source of truth. We alias here for readability. (kSeaLevel /
+// kLandFloor aliases and the landScale remap they fed died with the
+// terrain-shadow session's rewrite of the land remap — deleted, not kept
+// "for reference"; base_generator.h still owns the real constants.)
 constexpr float kWaterLevel = WATER_LEVEL;
-constexpr float kSeaLevel   = kMacroSeaLevel;
-constexpr float kLandFloor  = WATER_LEVEL + kLandMargin;
 
 TerrainMod terrain_mod_for(CellLandmarkKind landmark, FeatureType feature) {
     // ONE data table: how strongly each macro content class calms the terrain
@@ -203,12 +204,6 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
     float remapped[9];
     float peakHeight[9];
     bool needsDune = false, needsSwamp = false;
-    // Land remap: shoreline (mh = kSeaLevel) maps to kLandFloor (= WATER_LEVEL
-    // + kLandMargin), peak (mh = 1) maps to 1. Compress the upper end so
-    // mountain ceiling stays at 1.0 — `apply_mountain_ridges` adds the
-    // extra rise above 1.0 from its own per-cell `peakHeight`.
-    const float landScale = (1.0f - kLandFloor) / (1.0f - kSeaLevel);
-
     for (int i = 0; i < 9; ++i) {
         // Mountains are a biome now (elevation-classified), so ridge/peak
         // amplification keys off the neighbour biome, not a feature byte.

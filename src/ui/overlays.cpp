@@ -3195,8 +3195,11 @@ namespace sm::ui
                     break;
                 case sub::Structure::Tree:
                 case sub::Structure::Crop:
-                    // Both read from the tile layer already (TREE_DECOR /
+                case sub::Structure::Furnish:
+                    // Tree/Crop read from the tile layer already (TREE_DECOR /
                     // TILE_FIELD); thousands of dots would smear the map.
+                    // Furniture reads from its painted TILE_HOUSE footprint
+                    // the same way — a bed is texture, not a landmark.
                     break;
                 }
             }

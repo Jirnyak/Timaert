@@ -80,7 +80,9 @@ struct DungeonRef {
         Void = 0xFF,    // sealed filler for the dungeon window's ring cells
     };
     std::uint8_t  kind = None;
-    std::uint8_t  level = 0;    // floor index; stairs re-enter at level ± 1
+    // Storey, SIGNED: 0 = the level the door opens onto, +1 up, -1 a cellar.
+    // Stairs re-enter the same identity at level ± 1 (sub/dgn/dispatch.h).
+    std::int8_t   level = 0;
     std::uint16_t ordinal = 0;  // building index within its owning cell
     // Exterior footprint half-extents (tiles) of the entered building — the
     // interior keeps the building's real proportions and scales them up
@@ -145,8 +147,8 @@ inline CellLandmarkKind effective_landmark(const CellContext& ctx) {
 
 struct Structure {
     enum Kind : std::uint8_t { Tree = 0, Rock, House, Wall, Bridge, Crop,
-                               Fence } kind;
-    static constexpr int kKindCount = int(Fence) + 1;
+                               Fence, Furnish } kind;
+    static constexpr int kKindCount = int(Furnish) + 1;
     // Footprint silhouette. Box is the default; Cylinder renders (and collides)
     // as a round prism — wall towers, gate jambs, the spire. One byte, not a
     // new Kind: shape is orthogonal to what the thing IS.
@@ -211,6 +213,12 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     // Fence: the field balks' boulder walls — knee-high, honest to walk
     // around (solid), drawn by the same box pass as walls in stone flavour.
     /* Fence  */ {"",     0.3f, 0.4f,  0.0f, true,  ""},
+    // Furnish: interior furniture (beds, tables, chests — sub/dgn/). Solid so
+    // a room fights around its furniture; waist-high floor (0.4 m) so a chest
+    // is never inflated to a pillar by the legacy stub rule. Drawn wood-
+    // flavoured in the box pass. No loot row yet — a chest that PAYS is a
+    // future increment through this same row.
+    /* Furnish*/ {"",     0.5f, 0.4f,  0.0f, true,  ""},
 };
 
 inline constexpr const StructureKindRow& structure_kind_row(Structure::Kind k) {

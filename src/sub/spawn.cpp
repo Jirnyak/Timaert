@@ -432,6 +432,118 @@ void maybe_emplace_carried_light(entt::registry& reg,
                              def.lightRadius, def.lightIntensity});
 }
 
+// ── Dungeon residents (sub/dgn interiors) ────────────────────────────────
+
+int spawn_dungeon_residents(ecs::World& w,
+                            const SeamlessSubworldManager& mgr,
+                            std::uint32_t seed,
+                            std::uint16_t settlementFaction,
+                            int count,
+                            int levelBonus,
+                            float x0, float y0, float x1, float y1,
+                            MacroStockKey populationKey) {
+    if (count <= 0) return 0;
+    const auto& tiles = mgr.tiles();
+    if (tiles.size() < std::size_t(kFullSize) * std::size_t(kFullSize)) {
+        return 0;
+    }
+    Rng rng(seed ^ 0xD0E51DE7u);
+    int placed = 0;
+    for (int i = 0; i < count; ++i) {
+        // Plain interior floor only: partitions paint TILE_WALL, furniture
+        // paints TILE_HOUSE, the exit pad TILE_ROAD — a resident stands on
+        // none of them.
+        float fx = 0.0f, fy = 0.0f;
+        bool found = false;
+        for (int attempt = 0; attempt < 24 && !found; ++attempt) {
+            fx = x0 + rng.next_f01() * std::max(0.0f, x1 - x0);
+            fy = y0 + rng.next_f01() * std::max(0.0f, y1 - y0);
+            const int ix = int(fx), iy = int(fy);
+            if (ix < 1 || iy < 1 || ix >= kFullSize - 1 || iy >= kFullSize - 1) {
+                continue;
+            }
+            if (tiles[std::size_t(iy) * kFullSize + std::size_t(ix)]
+                != TILE_SQUARE) {
+                continue;
+            }
+            found = true;
+        }
+        if (!found) continue;
+        const NPCType type = pick_civilian_type(rng);
+        // The same derived-citizen birth as the street (one row of one law):
+        // level from the settlement's context bonus, loan from the SAME
+        // population stock — a death in here pays the town back exactly like
+        // a death on the square.
+        spawn_derived_body(w.reg,
+            HumanoidBody{
+                type, fx, fy, settlementFaction,
+                normalize_soldier_level(npc_def(type).baseLevel
+                                        + int(rng.next_u32() % 3u) + levelBonus),
+                seed ^ (std::uint32_t(i) * 7919u),
+                /*combatant*/false},
+            /*faceSalt*/std::uint32_t(i) * 7919u,
+            BodyLoan::from(MacroStock::Population, populationKey));
+        ++placed;
+    }
+    return placed;
+}
+
+int spawn_dungeon_vermin(ecs::World& w,
+                         const SeamlessSubworldManager& mgr,
+                         std::uint32_t seed,
+                         LandmarkKind tableKind,
+                         Biome biome,
+                         int treeCount,
+                         int levelBonus,
+                         float hpMult,
+                         float damageMult,
+                         int budget,
+                         float x0, float y0, float x1, float y1,
+                         MacroStockKey faunaKey) {
+    if (budget <= 0) return 0;
+    const auto& tiles = mgr.tiles();
+    if (tiles.size() < std::size_t(kFullSize) * std::size_t(kFullSize)) {
+        return 0;
+    }
+    // One table resolve, the same one the open cell runs.
+    const FaunaTable& table = get_fauna_table(biome, treeCount, tableKind);
+    std::uint32_t rngState = seed ^ 0xCE11A5u;
+    auto picks = roll_fauna(table, rngState);
+    if (picks.empty()) return 0;
+
+    Rng pos(rngState);
+    auto& reg = w.reg;
+    int placed = 0;
+    for (const auto& p : picks) {
+        if (placed >= budget) break;
+        const FaunaEntry& f = *p.entry;
+        float fx = 0.0f, fy = 0.0f;
+        bool found = false;
+        for (int attempt = 0; attempt < 24 && !found; ++attempt) {
+            fx = x0 + pos.next_f01() * std::max(0.0f, x1 - x0);
+            fy = y0 + pos.next_f01() * std::max(0.0f, y1 - y0);
+            const int ix = int(fx), iy = int(fy);
+            if (ix < 1 || iy < 1 || ix >= kFullSize - 1 || iy >= kFullSize - 1) {
+                continue;
+            }
+            if (tiles[std::size_t(iy) * kFullSize + std::size_t(ix)]
+                != TILE_SQUARE) {
+                continue;
+            }
+            found = true;
+        }
+        if (!found) continue;
+        const int npcLevel = normalize_soldier_level(
+            int(f.baseLevel) + int(std::floor(pos.next_f01() * 2.0f))
+            + levelBonus);
+        emplace_fauna_entity(reg, f, faction_index(p.factionId), fx, fy,
+                             npcLevel, hpMult, damageMult,
+                             BodyLoan::from(MacroStock::FaunaCount, faunaKey));
+        ++placed;
+    }
+    return placed;
+}
+
 // ── Per-cell population + seamless persistence helpers ───────────────────
 
 void clear_subworld_world_entities(ecs::World& w) {

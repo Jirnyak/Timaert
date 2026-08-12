@@ -5860,11 +5860,92 @@ bool run_dungeon_house_smoke(App& app) {
     const std::uint32_t h1 = inD1 ? hashTiles() : 0u;
     app.subworld.tick(0.016f);
 
-    // Opt-in (TIMAERT_SMOKE_DUNGEON_STAY=1): stop INSIDE the interior so a
-    // following capture_frame photographs the dungeon scene itself (the
-    // capture lands ≥1 frame later, per the smoke capture law). The
-    // round-trip half of the invariants is skipped on purpose.
+    // Storeys (Inc 3) + the cellar's own population (Inc 4). A big enough
+    // house carries a climbing shaft; every second one keeps a cellar. Both
+    // are the same identity one level along, so we probe whichever this house
+    // has and assert what that storey promises.
+    const int lvl0 = app.subworld.dungeon_level();
+    int lvlUp = 0, lvlBack = 0, lvlDown = 0, lvlBack2 = 0;
+    int vermin = 0, faunaBefore = -1, faunaAfter = -1;
+    if (app.subworld.debug_take_stairs(/*up*/true)) {
+        lvlUp = app.subworld.dungeon_level();
+        app.subworld.tick(0.016f);
+        // The street door does not exist up here: stand clear of the shaft,
+        // in the middle of the room, and E must find nothing at all.
+        app.subworld.set_player_pos(float(sm::sub::kFullSize) / 2.0f,
+                                    float(sm::sub::kFullSize) / 2.0f);
+        app.subworld.tick(0.016f);
+        if (app.subworld.interact() || !app.subworld.in_dungeon()) {
+            smoke_fail(app, "dungeon_house upper storey had a way out");
+            return false;
+        }
+        if (app.subworld.debug_take_stairs(/*up*/true)) {
+            lvlBack = app.subworld.dungeon_level();
+            app.subworld.tick(0.016f);
+        }
+    }
+    if (app.subworld.debug_take_stairs(/*up*/false)) {
+        lvlDown = app.subworld.dungeon_level();
+        app.subworld.tick(0.016f);
+        // The vermin of the dark: creatures borrowed from the CELL's
+        // fauna_count, so a kill down here thins the cell for good.
+        entt::entity beast = entt::null;
+        sm::ecs::MacroDebt beastDebt{};
+        for (auto e : app.ecs.reg.view<sm::ecs::MacroDebt, sm::ecs::Health,
+                                       sm::ecs::SubworldTag>(
+                 entt::exclude<sm::ecs::Dead>)) {
+            const auto& d = app.ecs.reg.get<sm::ecs::MacroDebt>(e);
+            if (d.stock != std::uint8_t(sm::MacroStock::FaunaCount)) continue;
+            ++vermin;
+            if (beast == entt::null) {
+                beast = e;
+                beastDebt = d;
+            }
+        }
+        if (beast != entt::null) {
+            sm::MacroWorld mw{&app.gs, &app.treeLayer, &app.ecs, &app.terrain};
+            const sm::MacroStockKey key{-1, beastDebt.cellX, beastDebt.cellY};
+            faunaBefore = sm::macro_stock_read(mw, sm::MacroStock::FaunaCount,
+                                               key);
+            app.ecs.reg.get<sm::ecs::Health>(beast).hp = 0.0f;
+            app.ecs.reg.emplace_or_replace<sm::ecs::Dead>(beast);
+            app.subworld.tick(0.016f);
+            faunaAfter = sm::macro_stock_read(mw, sm::MacroStock::FaunaCount,
+                                              key);
+        }
+        if (app.subworld.debug_take_stairs(/*up*/false)) {
+            lvlBack2 = app.subworld.dungeon_level();
+            app.subworld.tick(0.016f);
+        }
+    }
+    // Whatever storeys this house has, we must be standing on the level the
+    // door opens onto again — and back on its threshold, because a shaft
+    // trip left us in a corner of the room.
+    float exitX = 0.0f, exitY = 0.0f;
+    if (app.subworld.dungeon_level() != 0
+        || !app.subworld.dungeon_exit_point(exitX, exitY)) {
+        smoke_fail(app, "dungeon_house did not return to the door storey");
+        return false;
+    }
+    app.subworld.set_player_pos(exitX, exitY);
+    app.subworld.tick(0.016f);
+
+    // Opt-in (TIMAERT_SMOKE_DUNGEON_STAY=1, optionally with
+    // TIMAERT_SMOKE_DUNGEON_LEVEL=-1|0|1): stop INSIDE the interior on that
+    // storey so a following capture_frame photographs the dungeon scene
+    // itself (the capture lands ≥1 frame later, per the smoke capture law).
+    // The round-trip half of the invariants is skipped on purpose.
     if (std::getenv("TIMAERT_SMOKE_DUNGEON_STAY")) {
+        int want = 0;
+        if (const char* lv = std::getenv("TIMAERT_SMOKE_DUNGEON_LEVEL")) {
+            want = std::atoi(lv);
+        }
+        if (want > 0) (void)app.subworld.debug_take_stairs(/*up*/true);
+        if (want < 0) (void)app.subworld.debug_take_stairs(/*up*/false);
+        app.subworld.tick(0.016f);
+        std::fprintf(stderr, "[smoke] dungeon_house STAY level=%d\n",
+                     app.subworld.dungeon_level());
+        std::fflush(stderr);
         std::fprintf(stderr,
                      "[smoke] dungeon_house STAY entered=%d in=%d tags=%d/%d\n",
                      entered ? 1 : 0, inD1 ? 1 : 0, tagsBefore, tagsIn);
@@ -5876,8 +5957,44 @@ bool run_dungeon_house_smoke(App& app) {
         return true;
     }
 
-    // The player spawned ON the exit pad — E walks straight back out.
-    const bool exited = app.subworld.interact();
+    // Inc 2: the household — real people of this town, borrowed from ITS
+    // population stock. Killing one behind the door must thin the town in
+    // the same tick, through the same receipt a street kill settles.
+    int residents = 0;
+    entt::entity victim = entt::null;
+    sm::ecs::MacroDebt victimDebt{};
+    for (auto e : app.ecs.reg.view<sm::ecs::NPCKind, sm::ecs::MacroDebt,
+                                   sm::ecs::Health, sm::ecs::SubworldTag>(
+             entt::exclude<sm::ecs::Dead>)) {
+        const auto& d = app.ecs.reg.get<sm::ecs::MacroDebt>(e);
+        if (d.stock != std::uint8_t(sm::MacroStock::Population)) continue;
+        ++residents;
+        if (victim == entt::null) {
+            victim = e;
+            victimDebt = d;
+        }
+    }
+    int popBefore = -1, popAfter = -1;
+    if (victim != entt::null) {
+        sm::MacroWorld mw{&app.gs, &app.treeLayer, &app.ecs, &app.terrain};
+        const sm::MacroStockKey key{victimDebt.subject, victimDebt.cellX,
+                                    victimDebt.cellY};
+        popBefore = sm::macro_stock_read(mw, sm::MacroStock::Population, key);
+        auto& h = app.ecs.reg.get<sm::ecs::Health>(victim);
+        h.hp = 0.0f;
+        app.ecs.reg.emplace_or_replace<sm::ecs::Dead>(victim);
+        app.subworld.tick(0.016f);
+        popAfter = sm::macro_stock_read(mw, sm::MacroStock::Population, key);
+    }
+
+    // The player spawned ON the exit pad — E walks back out. A corpse in
+    // reach outranks the door (loot the body on the doorstep, then leave),
+    // so drain E until the scene actually flips.
+    bool exited = false;
+    for (int i = 0; i < 4 && !exited; ++i) {
+        if (!app.subworld.interact()) break;
+        exited = !app.subworld.in_dungeon();
+    }
     const bool outOk = app.subworld.active() && !app.subworld.in_dungeon();
     const int tagsOut = playerTags();
     app.subworld.tick(0.016f);
@@ -5894,15 +6011,34 @@ bool run_dungeon_house_smoke(App& app) {
 
     std::fprintf(stderr,
                  "[smoke] dungeon_house entered=%d/%d in=%d/%d exited=%d/%d "
-                 "out=%d tags=%d/%d/%d hash=%08x/%08x\n",
+                 "out=%d tags=%d/%d/%d hash=%08x/%08x residents=%d "
+                 "pop=%d->%d storeys=%d/%d/%d/%d/%d vermin=%d fauna=%d->%d\n",
                  entered ? 1 : 0, entered2 ? 1 : 0, inD1 ? 1 : 0, inD2 ? 1 : 0,
                  exited ? 1 : 0, exited2 ? 1 : 0, outOk ? 1 : 0,
-                 tagsBefore, tagsIn, tagsOut, h1, h2);
+                 tagsBefore, tagsIn, tagsOut, h1, h2, residents,
+                 popBefore, popAfter,
+                 lvl0, lvlUp, lvlBack, lvlDown, lvlBack2,
+                 vermin, faunaBefore, faunaAfter);
     std::fflush(stderr);
+
+    // Storey invariants only bind when the house HAS that storey (a small
+    // house has no upper room, half of them have no cellar) — a shaft that
+    // was taken must land one level along and come back to the door level.
+    const bool storeysOk =
+        lvl0 == 0
+        && (lvlUp == 0 || (lvlUp == 1 && lvlBack == 0))
+        && (lvlDown == 0 || (lvlDown == -1 && lvlBack2 == 0));
+    // A cellar that spawned vermin must pay the cell back on a kill.
+    const bool verminOk = vermin == 0
+        || (faunaBefore > 0 && faunaAfter == faunaBefore - 1);
 
     if (!entered || !inD1 || !exited || !outOk || !entered2 || !inD2
         || !exited2 || tagsBefore != 1 || tagsIn != 1 || tagsOut != 1
-        || h1 != h2) {
+        || h1 != h2
+        // A city house holds a household, and a death behind the door thins
+        // the town by exactly one, in the tick it happens.
+        || residents < 1 || popBefore <= 0 || popAfter != popBefore - 1
+        || !storeysOk || !verminOk) {
         smoke_fail(app, "dungeon_house invariant");
         return false;
     }

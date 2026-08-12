@@ -1976,7 +1976,8 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
             boxes.reserve(structs.size());
             for (const auto& s : structs) {
                 if (s.kind != Structure::House && s.kind != Structure::Wall
-                    && s.kind != Structure::Fence) continue;
+                    && s.kind != Structure::Fence
+                    && s.kind != Structure::Furnish) continue;
                 const float baseM = sample_height_m(s.x, s.y);
                 if (baseM < kSeaLevelM - 0.5f) continue;
                 float wx, wz;
@@ -2018,7 +2019,9 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 auto& list = (s.shape == Structure::Cylinder) ? cyls : boxes;
                 list.push_back({wx, py, wz,
                                 halfX, halfY, halfZ,
-                                s.kind == Structure::House ? 1.0f : 0.0f,
+                                s.kind == Structure::House
+                                        || s.kind == Structure::Furnish
+                                    ? 1.0f : 0.0f,
                                 shade, s.yaw});
             }
             structCount_ = static_cast<std::uint32_t>(boxes.size());

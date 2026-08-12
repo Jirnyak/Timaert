@@ -118,11 +118,6 @@ constexpr std::uint32_t kMacroProjectionSalt =
     std::uint32_t{2147483647} + std::uint32_t{1181783497};
 constexpr std::uint32_t kEntityLootMix =
     std::uint32_t{2147483647} + std::uint32_t{506952114};
-// Dungeon seed namespace: one interior identity {door cell, ordinal, level}
-// must hash apart from every overworld per-cell seed stream, or a house
-// basement could collide with (and cache-poison) its own cell's terrain.
-constexpr std::uint32_t kDungeonSeedSalt =
-    std::uint32_t{2147483647} + std::uint32_t{347922777};
 constexpr std::uint32_t kNpcMissileSpellId = 0x4E50434Du; // "NPCM"
 
 // ── Body size and eyesight, straight from the authoring tables ─────────────
@@ -1643,8 +1638,12 @@ bool SubworldEngine::interact() {
     }
     if (best == entt::null) {
         // No corpse in reach — the same E is the universal door: outside it
-        // steps through the nearest house door, inside it walks back out.
-        if (sceneKind_ == SceneKind::Dungeon) return try_exit_dungeon();
+        // steps through the nearest house door; inside, a shaft underfoot
+        // changes storey and the threshold walks back out.
+        if (sceneKind_ == SceneKind::Dungeon) {
+            if (try_take_dungeon_stairs()) return true;
+            return try_exit_dungeon();
+        }
         return try_enter_dungeon();
     }
 
@@ -2417,17 +2416,6 @@ static float structure_surface_dist2(const Structure& s, float px, float py) {
     return qx * qx + qy * qy;
 }
 
-// Deterministic interior seed: {door cell, ordinal, level} ⇒ one seed,
-// forever — same FNV-style mixing as the per-cell squad/projection salts.
-static std::uint32_t dungeon_seed(std::uint32_t worldSeed, int cx, int cy,
-                                  std::uint16_t ordinal, std::uint8_t level) {
-    std::uint32_t h = worldSeed ^ kDungeonSeedSalt;
-    h = (h ^ (std::uint32_t(cx) * kCellSeedX)) * kFnvPrime;
-    h = (h ^ (std::uint32_t(cy) * kCellSeedY)) * kFnvPrime;
-    h = (h ^ (std::uint32_t(ordinal) << 8 | std::uint32_t(level))) * kFnvPrime;
-    return h;
-}
-
 bool SubworldEngine::try_enter_dungeon() {
     if (!active_ || sceneKind_ != SceneKind::Overworld || !gs_ || !terrain_) {
         return false;
@@ -2483,7 +2471,16 @@ bool SubworldEngine::try_enter_dungeon() {
     ses.doorCy = doorCy;
     ses.returnLocalX = playerX_ - float(winCellX * kCellSize);
     ses.returnLocalY = playerY_ - float(winCellY * kCellSize);
-    ses.floorHeight = resolve_context(doorCx, doorCy).macroHeight;
+    const CellContext doorCtx = resolve_context(doorCx, doorCy);
+    ses.floorHeight = doorCtx.macroHeight;
+    // Settlement context for the interior's own population — the same
+    // numbers the street spawner reads (spawn_cell), captured once here.
+    ses.settlementId = doorCtx.landmarkSettlementId;
+    ses.landmarkPop = doorCtx.landmarkSize;
+    ses.zoneLevel = (zones_ && !zones_->data.empty())
+        ? int(zones_->at(doorCx, doorCy)) : 0;
+    ses.faction = faction_index_for_kingdom(gs_->politik, doorCtx.kingdomIdx);
+    ses.arrival = DungeonArrival::Door;   // in off the street
 
     // Tear the overworld session down through the one ordinary door: leave()
     // runs the danger gate and every write-back. If the gate refuses (it set
@@ -2538,7 +2535,7 @@ void SubworldEngine::enter_dungeon_scene(GameState& gs,
         ctx.dungeon = centre
             ? ses.ref
             : DungeonRef{DungeonRef::Void, ses.ref.level, 0, 0.0f, 0.0f};
-        ctx.seed = dungeon_seed(worldSeed, x, y,
+        ctx.seed = dungeon_scene_seed(worldSeed, x, y,
                                 centre ? ses.ref.ordinal : std::uint16_t(0),
                                 ses.ref.level);
         return ctx;
@@ -2550,9 +2547,20 @@ void SubworldEngine::enter_dungeon_scene(GameState& gs,
     pendingUpload3d_ = {};
     structIndexDirty_ = true;
 
-    // The player materialises on the exit pad — the inside face of the door.
+    // The player materialises on the threshold they came in by.
     float ex = 0.0f, ey = 0.0f;
-    dungeon_entry_point(ses.ref, ex, ey);
+    switch (ses.arrival) {
+        case DungeonArrival::ShaftUp:
+            dungeon_stair_point(ses.ref, /*up*/true, ex, ey);
+            break;
+        case DungeonArrival::ShaftDown:
+            dungeon_stair_point(ses.ref, /*up*/false, ex, ey);
+            break;
+        case DungeonArrival::Door:
+        default:
+            dungeon_entry_point(ses.ref, ex, ey);
+            break;
+    }
     playerX_ = float(kCellSize) + ex;
     playerY_ = float(kCellSize) + ey;
     playerAttackHeld_ = false;
@@ -2560,21 +2568,191 @@ void SubworldEngine::enter_dungeon_scene(GameState& gs,
     playerVz_ = 0.0f;
     playerZ_ = renderer3dVk_.sample_height_m(playerX_, playerY_);
     playerGrounded_ = true;
-    spellRng_ = Rng{dungeon_seed(worldSeed, ses.doorCx, ses.doorCy,
+    spellRng_ = Rng{dungeon_scene_seed(worldSeed, ses.doorCx, ses.doorCy,
                                  ses.ref.ordinal, ses.ref.level)};
     // Alone by law (owner 2026-08-12): no fauna, no squad, no macro
-    // projections — the interior populates itself (Inc 2+).
+    // projections — the interior populates ITSELF from the door's context.
     spawn_player_entity();
+    // The household: a deterministic handful of the settlement's people,
+    // borrowed from the SAME population stock as the street crowd — but only
+    // while the town still has people to lend. A door in an emptied town
+    // opens on an empty house; that is the honest reading of the stock.
+    // Living storeys only: a cellar is nobody's bedroom (its own population
+    // is the vermin below).
+    if (ses.ref.kind == DungeonRef::House && ses.ref.level >= 0
+        && ses.settlementId >= 0 && ecs_) {
+        MacroWorld mw{gs_, treeLayer_, ecs_, terrain_};
+        const MacroStockKey popKey{ses.settlementId,
+                                   std::int16_t(ses.doorCx),
+                                   std::int16_t(ses.doorCy)};
+        const int popNow = macro_stock_read(mw, MacroStock::Population, popKey);
+        // Household size: 1–3 souls per hearth, one more in a crowded town
+        // (≥128 — a full city, not a hamlet), never more than the town has.
+        const std::uint32_t dSeed = dungeon_scene_seed(
+            worldSeed, ses.doorCx, ses.doorCy, ses.ref.ordinal, ses.ref.level);
+        const int household = std::min(popNow,
+            1 + int((dSeed >> 8) % 3u) + (ses.landmarkPop >= 128 ? 1 : 0));
+        // The street spawner's own context-scale terms (spawn_cell_npcs).
+        int levelBonus = 0;
+        if (ses.landmarkPop > 0) {
+            levelBonus +=
+                int(std::floor(std::sqrt(float(ses.landmarkPop) / 100.0f)));
+        }
+        if (ses.zoneLevel > 2) levelBonus += ses.zoneLevel - 2;
+        const DungeonRoom room = dungeon_room(ses.ref);
+        spawn_dungeon_residents(*ecs_, mgr_,
+            dSeed ^ 0x5EEDD00Du,
+            ses.faction, household, levelBonus,
+            float(kCellSize) + room.cx - room.hx,
+            float(kCellSize) + room.cy - room.hy,
+            float(kCellSize) + room.cx + room.hx,
+            float(kCellSize) + room.cy + room.hy,
+            popKey);
+    }
+    // What lives under the floor. A cellar reads the RUIN row family of the
+    // one monster table (what creeps into the dark below men's houses) and
+    // borrows from the cell's OWN fauna_count — so a cleared cellar stays
+    // cleared until the single regrowth law (32 game days a head) refills the
+    // cell, and the same law serves the open world. The danger zone prices
+    // the fight exactly as it prices one outdoors.
+    if (ses.ref.kind == DungeonRef::House && ses.ref.level < 0 && ecs_) {
+        MacroWorld mw{gs_, treeLayer_, ecs_, terrain_};
+        const MacroStockKey faunaKey{-1, std::int16_t(ses.doorCx),
+                                     std::int16_t(ses.doorCy)};
+        const int budget = macro_stock_read(mw, MacroStock::FaunaCount, faunaKey);
+        int levelBonus = 0;
+        float hpMult = 1.0f, damageMult = 1.0f;
+        if (ses.zoneLevel > 2) {
+            const int zb = ses.zoneLevel - 2;
+            levelBonus += zb;
+            const float boost = 1.0f + float(zb) * 0.18f;
+            hpMult = boost;
+            damageMult = boost;
+        }
+        const DungeonRoom room = dungeon_room(ses.ref);
+        const CellContext doorCtx = resolve_context(ses.doorCx, ses.doorCy);
+        spawn_dungeon_vermin(*ecs_, mgr_,
+            dungeon_scene_seed(worldSeed, ses.doorCx, ses.doorCy,
+                               ses.ref.ordinal, ses.ref.level),
+            LandmarkKind::Ruin, doorCtx.biome, doorCtx.treeCount,
+            levelBonus, hpMult, damageMult, budget,
+            float(kCellSize) + room.cx - room.hx,
+            float(kCellSize) + room.cy - room.hy,
+            float(kCellSize) + room.cx + room.hx,
+            float(kCellSize) + room.cy + room.hy,
+            faunaKey);
+    }
     if (gs_) {
         set_flying(spellbook_has_sustained(gs_->player.spellBook, "flight"));
     }
+}
+
+bool SubworldEngine::try_take_dungeon_stairs() {
+    if (!active_ || sceneKind_ != SceneKind::Dungeon || !gs_ || !terrain_) {
+        return false;
+    }
+    const DungeonRef ref = dungeon_.ref;
+    const int level = int(ref.level);
+    // Which shafts stand on THIS storey — the same rule the generator stamps
+    // its pads by (sub/dgn/dispatch.h), asked of the same three functions, so
+    // a pad you can see is a pad that works.
+    const bool hasUpper = dungeon_has_upper(ref);
+    const bool hasCellar = dungeon_has_cellar(ref, gs_->worldSeed,
+                                              dungeon_.doorCx, dungeon_.doorCy);
+    const bool padNW = (level == 0 && hasUpper) || level == 1;
+    const bool padNE = (level == 0 && hasCellar) || level == -1;
+    if (!padNW && !padNE) return false;
+
+    const float reach2 = kPlayerMeleeRange * kPlayerMeleeRange;
+    auto on_pad = [&](bool up, float& ox, float& oy) {
+        float sx = 0.0f, sy = 0.0f;
+        dungeon_stair_point(ref, up, sx, sy);
+        ox = float(kCellSize) + sx;
+        oy = float(kCellSize) + sy;
+        const float dx = playerX_ - ox;
+        const float dy = playerY_ - oy;
+        return dx * dx + dy * dy <= reach2;
+    };
+    float wx = 0.0f, wy = 0.0f;
+    // The NW shaft joins 0↔+1 and the NE shaft 0↔-1, so the storey you stand
+    // on decides which way a shaft goes: from the ground floor both lead
+    // away, from a storey the only shaft on it leads back.
+    int target = level;
+    DungeonArrival arrival = DungeonArrival::Door;
+    if (padNW && on_pad(/*up*/true, wx, wy)) {
+        target = (level == 0) ? 1 : 0;
+        arrival = DungeonArrival::ShaftUp;
+    } else if (padNE && on_pad(/*up*/false, wx, wy)) {
+        target = (level == 0) ? -1 : 0;
+        arrival = DungeonArrival::ShaftDown;
+    } else {
+        return false;
+    }
+    // A stair is a way out of the room you are in: the same danger law that
+    // holds the street door shut holds it (owner ruling 2026-08-12).
+    if (exit_blocked_by_danger()) {
+        set_status("The stair is cut off: hostiles are too close.");
+        return false;
+    }
+
+    GameState& gs = *gs_;
+    const TerrainData& terrain = *terrain_;
+    const FeatureLayer& features = *features_;
+    ecs::World& ecs = *ecs_;
+    EventBus& bus = *bus_;
+    const ZoneLayer* zones = zones_;
+    TreeLayer* treeLayer = treeLayer_;
+
+    // Storey teardown: the same reaping as an exit (deaths settle their
+    // ledgers, every scene body goes), but we never surface — the next scene
+    // is the same interior identity one level along.
+    resolve_subworld_deaths(true);
+    clear_subworld_entities(ecs);
+    clear_player_entity();
+    structIndex_.clear();
+    structIndexDirty_ = true;
+    active_ = false;
+    pendingUpload3d_ = {};
+
+    dungeon_.ref.level = std::int8_t(target);
+    dungeon_.arrival = arrival;
+    sceneKind_ = SceneKind::Dungeon;
+    enter_dungeon_scene(gs, terrain, features, ecs, bus, zones, treeLayer);
+    set_status(target > level ? "Up the stairs." : "Down the stairs.");
+    return true;
+}
+
+bool SubworldEngine::dungeon_exit_point(float& x, float& y) const {
+    if (!in_dungeon() || dungeon_.ref.level != 0) return false;
+    float ex = 0.0f, ey = 0.0f;
+    dungeon_entry_point(dungeon_.ref, ex, ey);
+    x = float(kCellSize) + ex;
+    y = float(kCellSize) + ey;
+    return true;
+}
+
+bool SubworldEngine::debug_take_stairs(bool up) {
+    if (!in_dungeon()) return false;
+    // Stand ON the shaft, then take it through the ordinary player path —
+    // a harness must not get a second stair implementation.
+    float sx = 0.0f, sy = 0.0f;
+    dungeon_stair_point(dungeon_.ref, up, sx, sy);
+    set_player_pos(float(kCellSize) + sx, float(kCellSize) + sy);
+    return try_take_dungeon_stairs();
 }
 
 bool SubworldEngine::try_exit_dungeon() {
     if (!active_ || sceneKind_ != SceneKind::Dungeon || !gs_ || !terrain_) {
         return false;
     }
-    // E works on the exit pad — the same spot you arrived on, at the same
+    // The street door exists on the storey it opens onto, and nowhere else:
+    // from an upper room or a cellar the only way out is back down/up the
+    // shaft you came by.
+    if (dungeon_.ref.level != 0) {
+        set_status("No way out here — take the stairs.");
+        return false;
+    }
+    // E works on the threshold — the same spot you arrived on, at the same
     // reach every interaction uses.
     float ex = 0.0f, ey = 0.0f;
     dungeon_entry_point(dungeon_.ref, ex, ey);
@@ -3093,7 +3271,15 @@ void SubworldEngine::record_main(VkCommandBuffer cmd, VkExtent2D ext,
     const bool hasteAura =
         spellbook_has_sustained(gs_->player.spellBook, "haste");
     const bool flightAura = flying();
-    renderer3dVk_.record_main(cmd, ext, cam_, render_time(), WATER_LEVEL,
+    // An interior has no sea. The world's water plane sits at WATER_LEVEL
+    // (0.40 of the normalised height range) and an interior floor is its
+    // cell's own macroHeight — which for a coastal town is BELOW that, so the
+    // shared plane flooded the room. Heights are normalised [0,1], so 0 is
+    // beneath every floor that can exist: one number retires the whole class
+    // of "sea inside a cellar" bugs.
+    const float waterLevel =
+        sceneKind_ == SceneKind::Dungeon ? 0.0f : WATER_LEVEL;
+    renderer3dVk_.record_main(cmd, ext, cam_, render_time(), waterLevel,
                               &mgr_, ecs_, hasteAura, flightAura,
                               playerX_, playerY_, elapsed_, frameIndex);
 }

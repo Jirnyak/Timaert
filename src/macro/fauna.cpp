@@ -203,6 +203,17 @@ const FaunaEntry* creature_def_from_kind(std::uint16_t kindType) {
 // ── The honest headcount (Session 16) ────────────────────────────────
 
 int fauna_cell_capacity(Biome biome, int treeCount, LandmarkKind landmark) {
+    // A settled cell's wild heads live UNDER it, not on its square: the
+    // street table is deliberately empty (get_fauna_table above), but the
+    // cellars behind its doors are the one place vermin still hold (sub/dgn
+    // reads the Ruin family for them). Without this the stock a cellar
+    // borrows from would be zero and every town cellar would be swept clean
+    // by definition. The allowance is the Ruin table's own FLOOR — the least
+    // a den of that family ever holds — so a town is the poorest hunting
+    // ground that still is one.
+    if (landmark == LandmarkKind::City || landmark == LandmarkKind::Village) {
+        return int(kTblRuin.minCount);
+    }
     return int(get_fauna_table(biome, treeCount, landmark).maxCount);
 }
 

@@ -54,13 +54,26 @@ enum class SceneKind : std::uint8_t { Overworld, Dungeon };
 // subworld: identity is {door cell, ordinal, level} (see map_data.h
 // DungeonRef), and everything here is derivable again from that identity —
 // nothing is saved (macro-only persistence law).
+// Which threshold the player came in by — the tile they materialise on when
+// the scene is raised. A storey has up to three (street door, climbing shaft,
+// descending shaft) and the level alone cannot say which was used.
+enum class DungeonArrival : std::uint8_t { Door, ShaftUp, ShaftDown };
+
 struct DungeonSession {
     DungeonRef ref{};
+    DungeonArrival arrival = DungeonArrival::Door;
     int doorCx = 0, doorCy = 0;   // wrapped macro cell of the entered door
     // Where the player stood when opening the door, cell-local to the door's
     // cell — the spot the exit walks back out to.
     float returnLocalX = 0.0f, returnLocalY = 0.0f;
     float floorHeight = 0.0f;     // door cell's macroHeight = interior floor
+    // Door-cell settlement context, captured at enter — who lives behind
+    // this door and how strong the place makes them. The interior populates
+    // with the SAME numbers the street spawner uses (one context, one law).
+    int settlementId = -1;        // landmark id; -1 = a wilderness building
+    int landmarkPop = 0;          // settlement population (level bonus term)
+    int zoneLevel = 0;            // macro danger zone (level/hp/damage term)
+    std::uint16_t faction = 0;    // owning kingdom's registry faction index
 };
 
 constexpr int kCombatLogLimit = 20;
@@ -133,6 +146,21 @@ public:
     bool in_dungeon() const {
         return active_ && sceneKind_ == SceneKind::Dungeon;
     }
+    // Storey of the active interior (0 outside one): 0 = the level the door
+    // opens onto, +1 up, -1 a cellar. Read by the HUD and the smokes.
+    int dungeon_level() const {
+        return in_dungeon() ? int(dungeon_.ref.level) : 0;
+    }
+    // Window-tile position of this storey's street threshold — the tile E
+    // leaves the building from. False when the storey has none (an upper
+    // room, a cellar: their only ways out are their shafts), or outside an
+    // interior. Read by the HUD (way-out marker) and the smokes.
+    bool dungeon_exit_point(float& x, float& y) const;
+    // Walk onto the shaft this storey carries and take it — the harness face
+    // of the stair the player reaches with E. `up` picks the climbing (NW)
+    // shaft, else the descending (NE) one. False when this storey has no such
+    // shaft (or we are not in an interior at all).
+    bool debug_take_stairs(bool up);
     // Fell the nearest standing tree within `maxDist` of the player — the ONE
     // harvesting path (a no-target melee swing routes here; console `chop`
     // and smokes call it with a Tree filter): the manager removes the nearest
@@ -464,6 +492,10 @@ private:
     // spot the door was opened from. Gated by the same danger law as any
     // subworld exit.
     bool try_exit_dungeon();
+    // E on a stair shaft: same interior identity, level ± 1 — a dungeon→
+    // dungeon scene swap that never touches the overworld. Gated by the same
+    // danger law (a stair is a way out too).
+    bool try_take_dungeon_stairs();
     // Raise the interior scene: static 3×3 window (door cell = the interior,
     // ring = sealed Void filler) through the ordinary manager/renderer path.
     // No fauna, no squad, no macro projections — the player enters alone

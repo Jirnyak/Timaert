@@ -167,6 +167,47 @@ void spawn_cell_npcs(ecs::World& w,
                      // context wired (tests/harness) = the old unbounded roll.
                      int faunaCount = -1);
 
+// ── Dungeon residents (sub/dgn interiors) ────────────────────────────────
+//
+// The household of ONE interior: `count` civilians drawn from the SAME
+// population stock as the street crowd — each body carries the settlement's
+// Population loan, so a death behind a door pays the town back through the
+// exact write-back path a street kill uses (owner ruling 2026-08-12: one
+// stock system, никакой второй копии). Spots are rolled inside the window-
+// tile rectangle [x0,x1]×[y0,y1] on plain interior floor (TILE_SQUARE), so
+// residents never spawn inside partition walls or furniture. Deterministic
+// from `seed`. Returns the number actually placed.
+int spawn_dungeon_residents(ecs::World& w,
+                            const SeamlessSubworldManager& mgr,
+                            std::uint32_t seed,
+                            std::uint16_t settlementFaction,
+                            int count,
+                            int levelBonus,
+                            float x0, float y0, float x1, float y1,
+                            MacroStockKey populationKey);
+
+// The vermin of ONE interior (a cellar, a cave floor): creatures rolled from
+// the SAME global monster table the open world uses — `tableKind` picks the
+// row family (a cellar reads the Ruin table: what lives in the dark under
+// men's floors), `biome` and `treeCount` complete the ordinary resolve — and
+// borrowed from the SAME fauna_count stock as the cell above, so a kill down
+// here thins the cell for good and the ONE regrowth law (32 game days a head,
+// macro/fauna.h) brings it back. `budget` is that stock: nothing embodies
+// beyond what still stands. Placement is plain interior floor (TILE_SQUARE)
+// inside [x0,x1]×[y0,y1]. Deterministic from `seed`; returns how many stood up.
+int spawn_dungeon_vermin(ecs::World& w,
+                         const SeamlessSubworldManager& mgr,
+                         std::uint32_t seed,
+                         LandmarkKind tableKind,
+                         Biome biome,
+                         int treeCount,
+                         int levelBonus,
+                         float hpMult,
+                         float damageMult,
+                         int budget,
+                         float x0, float y0, float x1, float y1,
+                         MacroStockKey faunaKey);
+
 // Destroy every world-owned subworld creature (fauna + citizens), preserving the
 // player-side projections (PlayerTag / PlayerSoldierTag) that follow the player
 // across re-centres rather than belonging to a cell. Used for a clean slate on

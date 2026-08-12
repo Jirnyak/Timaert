@@ -8,6 +8,27 @@
 
 namespace sm::sub {
 
+// THE dungeon seed rule — one identity {door cell, ordinal, level} ⇒ one
+// scene, forever. Lives in the dungeon module so the engine (session
+// resolver) and the generators (level-independent rolls, e.g. the cellar
+// coin, which must read the level-0 stream) share one hash.
+std::uint32_t dungeon_scene_seed(std::uint32_t worldSeed, int cx, int cy,
+                                 std::uint16_t ordinal, std::int8_t level);
+
+// ── Storeys ─────────────────────────────────────────────────────────────────
+// A house is up to three levels: cellar (-1) ↔ ground (0) ↔ upper (+1),
+// joined by two stair SHAFTS at fixed corners of the room — NW climbs
+// (0↔+1), NE descends (0↔-1). Fixed corners make the shafts a shared rule
+// (generator stamps the pads, engine reads E on them, tests assert both)
+// instead of plumbed data.
+bool dungeon_has_upper(const DungeonRef& ref);
+bool dungeon_has_cellar(const DungeonRef& ref, std::uint32_t worldSeed,
+                        int cx, int cy);
+// Pad centre (cell-local tiles) of the climbing (NW) / descending (NE)
+// shaft for this footprint's room. Positions are level-independent — a
+// shaft is one vertical line through the house.
+void dungeon_stair_point(const DungeonRef& ref, bool up, float& x, float& y);
+
 // Interior room rectangle (cell-local tile coords) derived from the door's
 // exterior footprint — the ONE geometry rule shared by the generator, the
 // engine's entry placement, and the tests. Dispatches on ref.kind.
