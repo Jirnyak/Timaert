@@ -581,8 +581,13 @@ static void scatter_cave_mouths(SubworldMapData& out, const CellContext& ctx) {
         m.kind = Structure::CaveMouth;
         m.x = float(x) + 0.5f;
         m.y = float(y) + 0.5f;
-        m.hx = structure_min_half_xy(Structure::CaveMouth);
-        m.hy = m.hx * 0.5f;
+        // Mouths differ in size, and the size MATTERS: the cavern behind is
+        // cut to this footprint (sub/dgn/cave.cpp), so a crack in the rock
+        // opens on a burrow and a yawning gap opens on a hall. A constant
+        // here would make every cave in the world the same size.
+        m.hx = structure_min_half_xy(Structure::CaveMouth)
+             * (0.75f + r.next_f01() * 1.25f);
+        m.hy = m.hx * (0.4f + r.next_f01() * 0.3f);
         m.radius = m.hx;
         m.height = structure_min_height(Structure::CaveMouth);
         m.yaw = r.next_f01() * 3.14159265f;

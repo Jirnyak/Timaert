@@ -40,6 +40,12 @@ constexpr float kCeilingSlabM = 1.0f;
 // The cell's edge must stay solid rock: the dungeon window's ring cells are
 // sealed Void filler and nothing playable may touch them.
 constexpr float kCellApronTiles = 48.0f;
+// A mouth opens on a hall: the opening you squeeze through is small, the
+// chamber behind it is not. ×8 — twice the house scale — is what makes the
+// narrowest mouth the table allows (half-extents 2.0 × 1.0) still clear the
+// manoeuvre floor above, so a mouth's size DRIVES its cavern instead of
+// always clamping to the same minimum.
+constexpr float kMouthScale = 8.0f;
 
 namespace {
 
@@ -106,8 +112,8 @@ DungeonRoom dungeon_cave_room(const DungeonRef& ref) {
     // A mouth is as wide as the opening in the rock allows, within the span a
     // fight needs. The footprint travels on the ref exactly as a house's does.
     const float maxHalf = float(kCellSize) / 2.0f - kCellApronTiles;
-    room.hx = std::clamp(ref.footHx * 4.0f, kChamberMinHalf, maxHalf);
-    room.hy = std::clamp(ref.footHy * 4.0f, kChamberMinHalf, maxHalf);
+    room.hx = std::clamp(ref.footHx * kMouthScale, kChamberMinHalf, maxHalf);
+    room.hy = std::clamp(ref.footHy * kMouthScale, kChamberMinHalf, maxHalf);
     return room;
 }
 
@@ -166,8 +172,14 @@ void gen_dungeon_cave(const CellContext& ctx, SubworldMapData& out) {
     // through the one point-light path and cost the cave no code of its own —
     // and they are why a cavern reads as a place rather than as a black
     // screen with a monster in it.
-    for (const auto& spot : {std::pair<float, float>{mouth.cx, mouth.cy},
-                             std::pair<float, float>{lastX, lastY}}) {
+    // The deep torch stands a few paces OFF the hoard, not on it: both are
+    // solid props, and a lantern inside a chest is a body that cannot be
+    // walked around by anything. Four tiles is one body diameter plus the
+    // chest's own half — the smallest gap that is honestly a gap.
+    constexpr float kTorchOffTiles = 4.0f;
+    for (const auto& spot :
+             {std::pair<float, float>{mouth.cx, mouth.cy},
+              std::pair<float, float>{lastX + kTorchOffTiles, lastY}}) {
         Structure torch{};
         torch.kind = Structure::Lantern;
         torch.x = spot.first;

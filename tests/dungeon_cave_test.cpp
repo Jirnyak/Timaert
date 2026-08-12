@@ -351,6 +351,40 @@ void test_props() {
     CHECK(structure_interact(Structure::Door) == InteractId::Door,
           "contract: the Door prop carries the Door verb");
 
+    // No two SOLID props may share a square. The deep torch used to be placed
+    // on the very tile of the hoard — a lantern wholly inside a chest, i.e. a
+    // body nothing could walk around — which is exactly the class of defect a
+    // grown layout hides well, because nothing looks wrong from a distance.
+    int solidPairs = 0, overlaps = 0;
+    for (std::size_t i = 0; i < out.structures.size(); ++i) {
+        const Structure& a = out.structures[i];
+        if (!structure_is_solid(a.kind) || a.zBase > 0.0f) continue;
+        for (std::size_t j = i + 1; j < out.structures.size(); ++j) {
+            const Structure& b = out.structures[j];
+            if (!structure_is_solid(b.kind) || b.zBase > 0.0f) continue;
+            ++solidPairs;
+            // Surface distance is zero exactly when one footprint reaches
+            // into the other — the same measure the reach tests use.
+            if (structure_surface_dist2(a, b.x, b.y) <= 0.0f) ++overlaps;
+        }
+    }
+    CHECK(solidPairs > 0 && overlaps == 0,
+          "no two grounded solid props stand inside one another");
+
+    // The mouth's footprint DRIVES its cavern, as a house's drives its rooms:
+    // a wider opening in the rock opens on a wider chamber. Derived from the
+    // module's own rule (dungeon_cave_room), never from a pinned number.
+    DungeonRef narrow = make_cave_ctx(kSeeds[0]).dungeon;
+    DungeonRef wide = narrow;
+    narrow.footHx = 1.5f;
+    narrow.footHy = 1.0f;
+    wide.footHx = narrow.footHx * 3.0f;
+    wide.footHy = narrow.footHy * 3.0f;
+    const DungeonRoom narrowRoom = dungeon_room(narrow);
+    const DungeonRoom wideRoom = dungeon_room(wide);
+    CHECK(wideRoom.hx > narrowRoom.hx && wideRoom.hy > narrowRoom.hy,
+          "a wider mouth opens on a wider chamber — the footprint is not dead");
+
     // The chest sits on carved floor, or its reward is inside the rock.
     int chestsOnFloor = 0, chestSamples = 0;
     for (const Structure& s : out.structures) {
