@@ -313,8 +313,9 @@ void gen_dungeon_house(const CellContext& ctx, SubworldMapData& out) {
         s.x = cx;
         s.y = cy;
         s.yaw = yaw;
-        s.hx = structure_min_half_xy(kind) * (kind == Structure::Door ? 3.0f
-                                                                      : 1.0f);
+        // A leaf 1.5 tiles across, like the street door it mirrors; a stair
+        // block keeps its own footprint.
+        s.hx = kind == Structure::Door ? 0.75f : structure_min_half_xy(kind);
         s.hy = structure_min_half_xy(kind);
         s.radius = std::max(s.hx, s.hy);
         s.height = structure_min_height(kind);
@@ -323,9 +324,13 @@ void gen_dungeon_house(const CellContext& ctx, SubworldMapData& out) {
     };
     if (level == 0) {
         pave_pad(px, py);
-        // The exit door stands ON the south wall the pad faces, so it reads
-        // as the way out from anywhere in the room.
-        place_prop(Structure::Door, px, room.cy + room.hy + wallHalf, 0, 0.0f);
+        // The exit door hangs on the INNER face of the south wall — pushed
+        // into the room by its own half-depth, or the wall band (which is
+        // 2·wallHalf thick) would swallow the leaf whole and the way out
+        // would be invisible from inside, exactly as it was outside.
+        const float doorHalfY = structure_min_half_xy(Structure::Door);
+        place_prop(Structure::Door, px, room.cy + room.hy - doorHalfY, 0,
+                   0.0f);
     }
     if (padNW) {
         pave_pad(nwX, nwY);

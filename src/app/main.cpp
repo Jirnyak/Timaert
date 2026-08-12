@@ -5975,10 +5975,14 @@ bool run_dungeon_house_smoke(App& app) {
         // there, and set_player_pos does not resolve solids the way walking
         // does.)
         float sx = 0.0f, sy = 0.0f;
+        float faceYaw = -1.5707963f;            // north, up the hall
         if (app.subworld.dungeon_exit_point(sx, sy)) {
-            app.subworld.set_player_pos(sx, sy - 2.0f);
+            // Back off the threshold into the room and turn round to look AT
+            // it: the way out is the thing worth photographing.
+            app.subworld.set_player_pos(sx, sy - 6.0f);
+            faceYaw = 1.5707963f;               // south, at the door
         }
-        app.subworld.rotate_camera(-1.5707963f - app.subworld.cam_yaw(), 0.0f);
+        app.subworld.rotate_camera(faceYaw - app.subworld.cam_yaw(), 0.0f);
         app.subworld.tick(0.016f);
         std::fprintf(stderr, "[smoke] dungeon_house STAY level=%d\n",
                      app.subworld.dungeon_level());

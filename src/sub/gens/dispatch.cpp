@@ -594,13 +594,16 @@ static bool add_house_obb(SubworldMapData& out, float cx, float cy,
     // +local-Y face, its own leaf, carrying the ordinal that names this house.
     Structure d{};
     d.kind = Structure::Door;
-    d.x = cx - hy * sn;      // centre of the +Y face in world tiles
-    d.y = cy + hy * cs;
-    d.yaw = yaw;
-    // A leaf a body can walk through, not the whole wall: one body diameter
-    // (sub/body.h radius 1.5 → 3 tiles) capped by the wall it hangs on.
-    d.hx = std::min(hx, 1.0f);
+    // A leaf, not a gate: 1.5 tiles across and half a tile deep, HUNG ON the
+    // wall — its centre is pushed out by its own half-depth so the whole leaf
+    // stands proud of the facade. Centred flush (the first cut) it was half
+    // swallowed by the house box and, on a wall of the same colour, invisible.
+    d.hx = std::min(hx * 0.6f, 0.75f);
     d.hy = structure_min_half_xy(Structure::Door);
+    const float out_ = hy + d.hy;
+    d.x = cx - out_ * sn;      // outward normal of the +local-Y face
+    d.y = cy + out_ * cs;
+    d.yaw = yaw;
     d.radius = std::max(d.hx, d.hy);
     d.height = structure_min_height(Structure::Door);
     d.tag = ordinal;

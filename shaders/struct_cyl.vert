@@ -24,6 +24,11 @@ layout(location = 1) out vec3 vWorld;
 layout(location = 2) out float vType;
 layout(location = 3) out float vLocalY;
 layout(location = 4) out float vSeed;
+// Same varying set as struct.vert — the two stages SHARE struct.frag, so a
+// missing output here is undefined data in the fragment stage. A cylinder has
+// no flat face: hand it its angular position and height instead, which is the
+// honest analogue (and what a lantern's head/post split reads).
+layout(location = 5) out vec2 vFace;
 
 const int kSides = 12;
 const float kTwoPi = 6.28318530718;
@@ -63,5 +68,8 @@ void main() {
     vNormal = n;
     vWorld = world;
     vType = iType;
+    // Angular position around the prism, mapped to the same [-1,1] range a
+    // flat face uses, so struct.frag needs no idea which shape it is drawing.
+    vFace = vec2(atan(n.z, n.x) / 3.14159265, vLocalY);
     vSeed = iSeed;
 }

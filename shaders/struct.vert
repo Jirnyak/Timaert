@@ -23,6 +23,11 @@ layout(location = 1) out vec3 vWorld;
 layout(location = 2) out float vType;
 layout(location = 3) out float vLocalY; // cube-space y in [-1,1] (roof band)
 layout(location = 4) out float vSeed;
+// Face-local coordinates in [-1,1]²: x across the face, y up it. A prop whose
+// pattern must hold its shape whatever its size (a door's frame and handle)
+// needs the FACE, not world metres — world-space patterns stretch with the
+// box and slide when the prop is moved.
+layout(location = 5) out vec2 vFace;
 
 void main() {
     const vec3 FN[6] = vec3[6](vec3(0, 0, 1), vec3(0, 0, -1), vec3(1, 0, 0),
@@ -49,5 +54,6 @@ void main() {
     vWorld = world;
     vType = iType;
     vLocalY = corner.y;
+    vFace = q;
     vSeed = iSeed;
 }

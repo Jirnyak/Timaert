@@ -269,8 +269,22 @@ struct StructureKindRow {
         Solid,      // the oriented box / cylinder structure pass
     };
     Draw draw;
-    // Solid-pass material: wood grain vs masonry.
-    bool wood;
+    // Solid-pass material — WHAT IT LOOKS LIKE, resolved once per kind and
+    // handed to the structure shader as the instance's material index. The
+    // shader has one branch per row (shaders/struct.frag), so giving a new
+    // prop its own look is a row here and a branch there, never a pipeline.
+    // Before this it was a single wood/stone BOOL that meant "draw me like a
+    // house", which painted every door and every bed with the house's red
+    // ROOF band across its top — a door was a red smear on a wall, and on a
+    // reddish wall it was nothing at all.
+    enum class Material : std::uint8_t {
+        Stone = 0,   // ramparts, field balks
+        House,       // tan wall + red roof band (only a building has a roof)
+        Wood,        // planks all over: furniture, decks
+        Door,        // planked leaf with a frame and a handle
+        Lantern,     // dark post with a burning head
+    };
+    Material material;
     // What pressing E on this prop does (InteractId::None = scenery).
     InteractId interact;
     // Light this prop casts, as 0xRRGGBB + reach in tiles (0 radius = dark).
@@ -285,27 +299,34 @@ struct StructureKindRow {
 };
 inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     /* Tree   */ {"tree", 1.6f, 3.5f, 14.0f, false, "You fell a tree",
-                  StructureKindRow::Draw::Billboard, true,
+                  StructureKindRow::Draw::Billboard,
+                  StructureKindRow::Material::Wood,
                   InteractId::None, 0u, 0.0f, 0.0f},
     /* Rock   */ {"",     1.6f, 3.5f,  0.0f, false, "",
-                  StructureKindRow::Draw::None, false,
+                  StructureKindRow::Draw::None,
+                  StructureKindRow::Material::Stone,
                   InteractId::None, 0u, 0.0f, 0.0f},
     /* House  */ {"",     1.6f, 3.5f,  0.0f, true,  "",
-                  StructureKindRow::Draw::Solid, true,
+                  StructureKindRow::Draw::Solid,
+                  StructureKindRow::Material::House,
                   InteractId::None, 0u, 0.0f, 0.0f},
     /* Wall   */ {"",     1.2f, 4.0f,  0.0f, true,  "",
-                  StructureKindRow::Draw::Solid, false,
+                  StructureKindRow::Draw::Solid,
+                  StructureKindRow::Material::Stone,
                   InteractId::None, 0u, 0.0f, 0.0f},
     /* Bridge */ {"",     1.6f, 3.5f,  0.0f, false, "",
-                  StructureKindRow::Draw::None, true,
+                  StructureKindRow::Draw::None,
+                  StructureKindRow::Material::Wood,
                   InteractId::None, 0u, 0.0f, 0.0f},
     /* Crop   */ {"crop", 0.4f, 0.5f,  1.2f, false, "You harvest the crop",
-                  StructureKindRow::Draw::Billboard, true,
+                  StructureKindRow::Draw::Billboard,
+                  StructureKindRow::Material::Wood,
                   InteractId::None, 0u, 0.0f, 0.0f},
     // Fence: the field balks' boulder walls — knee-high, honest to walk
     // around (solid), drawn by the same box pass as walls in stone flavour.
     /* Fence  */ {"",     0.3f, 0.4f,  0.0f, true,  "",
-                  StructureKindRow::Draw::Solid, false,
+                  StructureKindRow::Draw::Solid,
+                  StructureKindRow::Material::Stone,
                   InteractId::None, 0u, 0.0f, 0.0f},
     // Furnish: interior furniture (beds, tables, chests — sub/dgn/). Solid so
     // a room fights around its furniture; waist-high floor (0.4 m) so a chest
@@ -313,27 +334,31 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     // flavoured in the box pass. No loot row yet — a chest that PAYS is a
     // future increment through this same row.
     /* Furnish*/ {"",     0.5f, 0.4f,  0.0f, true,  "",
-                  StructureKindRow::Draw::Solid, true,
+                  StructureKindRow::Draw::Solid,
+                  StructureKindRow::Material::Wood,
                   InteractId::None, 0u, 0.0f, 0.0f},
     // Door: the way in. Not solid — it hangs flush on a wall that already
     // blocks, and a door you bump into instead of opening is a door that
     // fights the player. A leaf is 2 m tall (a body plus its hat) and half a
     // tile wide, which is what makes it READ as a door from the street.
     /* Door   */ {"",     0.5f, 2.0f,  0.0f, false, "",
-                  StructureKindRow::Draw::Solid, true,
+                  StructureKindRow::Draw::Solid,
+                  StructureKindRow::Material::Door,
                   InteractId::Door, 0u, 0.0f, 0.0f},
     // Lantern: a post with a flame on top. Solid so it is a real obstacle you
     // walk around, knee-thin. Warm 0xFFB060 at 24 tiles — the carried-torch
     // family (sub/lighting.h), hung at 3 m: above a body's head, so it lights
     // the street rather than the walker's boots.
     /* Lantern*/ {"",     0.3f, 3.0f,  0.0f, true,  "",
-                  StructureKindRow::Draw::Solid, true,
+                  StructureKindRow::Draw::Solid,
+                  StructureKindRow::Material::Lantern,
                   InteractId::None, 0xFFB060u, 24.0f, 3.0f},
     // Stairs: the shaft between storeys, drawn as a low block you step onto.
     // Not solid (you stand ON its tile and press E), knee-high so it reads as
     // a flight of steps and not a table.
     /* Stairs */ {"",     1.5f, 0.5f,  0.0f, false, "",
-                  StructureKindRow::Draw::Solid, true,
+                  StructureKindRow::Draw::Solid,
+                  StructureKindRow::Material::Wood,
                   InteractId::Stairs, 0u, 0.0f, 0.0f},
 };
 
@@ -358,8 +383,8 @@ inline constexpr bool structure_is_lootable(Structure::Kind k) {
 inline constexpr StructureKindRow::Draw structure_draw(Structure::Kind k) {
     return structure_kind_row(k).draw;
 }
-inline constexpr bool structure_is_wood(Structure::Kind k) {
-    return structure_kind_row(k).wood;
+inline constexpr StructureKindRow::Material structure_material(Structure::Kind k) {
+    return structure_kind_row(k).material;
 }
 inline constexpr InteractId structure_interact(Structure::Kind k) {
     return structure_kind_row(k).interact;

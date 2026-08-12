@@ -127,7 +127,8 @@ struct BbPush {
 struct StructInstance {
     float px, py, pz; // centre (world)
     float hx, hy, hz; // half-extents (cylinder: hx = hz = radius)
-    float type;       // 0 = wall, 1 = house
+    float type;       // StructureKindRow::Material index (map_data.h) — the
+                      // prop's LOOK, dispatched in shaders/struct.frag
     float seed;
     float yaw;        // rotation about vertical, radians (unused on cylinders)
 };
@@ -2025,7 +2026,7 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 auto& list = (s.shape == Structure::Cylinder) ? cyls : boxes;
                 list.push_back({wx, py, wz,
                                 halfX, halfY, halfZ,
-                                structure_is_wood(s.kind) ? 1.0f : 0.0f,
+                                float(int(structure_material(s.kind))),
                                 shade, s.yaw});
             }
             structCount_ = static_cast<std::uint32_t>(boxes.size());
