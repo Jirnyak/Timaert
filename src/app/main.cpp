@@ -5857,6 +5857,40 @@ bool run_dungeon_house_smoke(App& app) {
         const float want = std::atan2(door.y - standY, door.x - standX);
         app.subworld.rotate_camera(want - app.subworld.cam_yaw(), 0.0f);
     };
+    // The non-portal verbs, proving the table carries more than doors: a
+    // well pays in the one currency travel spends, a sign pays in words.
+    // Both are exercised through the SAME dispatch a keypress runs. The tick
+    // is load-bearing: the aim reads the prop cache, which the scene builds
+    // on its first tick.
+    app.subworld.tick(0.016f);
+    int wells = 0, signs = 0;
+    int spBefore = 0, spAfter = 0;
+    bool drank = false, readSign = false;
+    {
+        const sm::sub::Structure* well = nullptr;
+        const sm::sub::Structure* sign = nullptr;
+        for (const auto& s : app.subworld.mgr().structures()) {
+            if (s.kind == sm::sub::Structure::Well) { ++wells; if (!well) well = &s; }
+            if (s.kind == sm::sub::Structure::Sign) { ++signs; if (!sign) sign = &s; }
+        }
+        if (well != nullptr) {
+            // Spend some stamina first, or a full bar makes the well refuse —
+            // which is itself correct, and not what we are testing here.
+            app.gs.player.combatStats.currentSp =
+                app.gs.player.combatStats.maxSp / 2;
+            spBefore = app.gs.player.combatStats.currentSp;
+            app.subworld.set_player_pos(well->x, well->y - 2.0f);
+            app.subworld.rotate_camera(1.5707963f - app.subworld.cam_yaw(), 0.0f);
+            drank = app.subworld.interact();
+            spAfter = app.gs.player.combatStats.currentSp;
+        }
+        if (sign != nullptr) {
+            app.subworld.set_player_pos(sign->x, sign->y - 2.0f);
+            app.subworld.rotate_camera(1.5707963f - app.subworld.cam_yaw(), 0.0f);
+            readSign = app.subworld.interact();
+        }
+    }
+
     face_door();
     app.subworld.tick(0.016f);
     // Re-aim after the settle tick: a frame of simulation can drift the body,
@@ -6135,7 +6169,8 @@ bool run_dungeon_house_smoke(App& app) {
                  "out=%d tags=%d/%d/%d hash=%08x/%08x residents=%d "
                  "pop=%d->%d storeys=%d/%d/%d/%d/%d vermin=%d fauna=%d->%d "
                  "floorTile=%d quickExit=%d chests=%d searched=%d "
-                 "store=%d->%d bag=%d->%d rep=%d->%d\n",
+                 "store=%d->%d bag=%d->%d rep=%d->%d "
+                 "wells=%d signs=%d drank=%d sp=%d->%d read=%d\n",
                  entered ? 1 : 0, entered2 ? 1 : 0, inD1 ? 1 : 0, inD2 ? 1 : 0,
                  exited ? 1 : 0, exited2 ? 1 : 0, outOk ? 1 : 0,
                  tagsBefore, tagsIn, tagsOut, h1, h2, residents,
@@ -6144,7 +6179,8 @@ bool run_dungeon_house_smoke(App& app) {
                  vermin, faunaBefore, faunaAfter, floorTile,
                  quickExit ? 1 : 0, chestProps, searched ? 1 : 0,
                  storeBefore, storeAfter, bagBefore, bagAfter,
-                 repBefore, repAfter);
+                 repBefore, repAfter, wells, signs, drank ? 1 : 0,
+                 spBefore, spAfter, readSign ? 1 : 0);
     std::fflush(stderr);
 
     // Storey invariants only bind when the house HAS that storey (a small
@@ -6170,7 +6206,11 @@ bool run_dungeon_house_smoke(App& app) {
         || chestProps < 1 || !searched
         || storeAfter >= storeBefore
         || bagAfter - bagBefore != storeBefore - storeAfter
-        || repAfter >= repBefore) {
+        || repAfter >= repBefore
+        // A settlement keeps a well and a board, and both answer E: the well
+        // in stamina, the board in words.
+        || wells < 1 || signs < 1 || !drank || spAfter <= spBefore
+        || !readSign) {
         smoke_fail(app, "dungeon_house invariant");
         return false;
     }

@@ -163,6 +163,14 @@ enum class InteractId : std::uint8_t {
     // The corpse of something you killed — not a composite prop but an ECS
     // body; it shares the verb so one prompt and one keypress serve both.
     Loot,
+    // Drink: the well at the heart of a village. It pays in the ONE currency
+    // travel spends — stamina — because the world already prices a journey
+    // in SP and a drink is what shortens one.
+    Drink,
+    // Read: a signpost. It costs nothing and changes nothing; it tells you
+    // where you are. Extensibility is not only about mechanics: a verb with
+    // no consequence proves the table carries flavour as cheaply as force.
+    Read,
     // A household chest: what it holds is not invented, it is TAKEN from the
     // store of the place that owns the house (owner ruling W2: a landmark's
     // store IS its inventory), so an emptied town has empty chests and a
@@ -185,6 +193,8 @@ inline constexpr InteractRow kInteractRows[int(InteractId::Count)] = {
     /* Stairs */ {"Take stairs", 5.0f},
     /* Loot   */ {"Loot",       12.0f},
     /* Search */ {"Search",      5.0f},
+    /* Drink  */ {"Drink",       5.0f},
+    /* Read   */ {"Read",        5.0f},
 };
 inline constexpr const InteractRow& interact_row(InteractId i) {
     return kInteractRows[int(i) < int(InteractId::Count) ? int(i) : 0];
@@ -193,8 +203,8 @@ inline constexpr const InteractRow& interact_row(InteractId i) {
 struct Structure {
     enum Kind : std::uint8_t { Tree = 0, Rock, House, Wall, Bridge, Crop,
                                Fence, Furnish, Door, Lantern, Stairs,
-                               Chest, CaveMouth } kind;
-    static constexpr int kKindCount = int(CaveMouth) + 1;
+                               Chest, CaveMouth, Well, Sign } kind;
+    static constexpr int kKindCount = int(Sign) + 1;
     // Footprint silhouette. Box is the default; Cylinder renders (and collides)
     // as a round prism — wall towers, gate jambs, the spire. One byte, not a
     // new Kind: shape is orthogonal to what the thing IS.
@@ -294,6 +304,8 @@ struct StructureKindRow {
         Lantern,     // dark post with a burning head
         Chest,       // banded coffer: dark timber with iron straps
         CaveMouth,   // rock face swallowing a black opening
+        Well,        // wet stone curb over dark water
+        Sign,        // painted board on a post
     };
     Material material;
     // What pressing E on this prop does (InteractId::None = scenery).
@@ -393,6 +405,19 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::CaveMouth,
                   InteractId::Door, DungeonRef::Cave, 0u, 0.0f, 0.0f},
+    // Well: waist-high stonework you walk around (solid), drawn as a round
+    // curb because that is what a well IS — the cylinder pass already has
+    // the shape, so this costs no geometry.
+    /* Well   */ {"",     1.6f, 1.2f,  0.0f, true,  "",
+                  StructureKindRow::Draw::Solid,
+                  StructureKindRow::Material::Well,
+                  InteractId::Drink, DungeonRef::None, 0u, 0.0f, 0.0f},
+    // Sign: a board at head height on a thin post. Not solid — you read it,
+    // you do not walk into it.
+    /* Sign   */ {"",     0.9f, 2.2f,  0.0f, false, "",
+                  StructureKindRow::Draw::Solid,
+                  StructureKindRow::Material::Sign,
+                  InteractId::Read, DungeonRef::None, 0u, 0.0f, 0.0f},
 };
 
 inline constexpr const StructureKindRow& structure_kind_row(Structure::Kind k) {

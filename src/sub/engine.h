@@ -163,6 +163,16 @@ public:
     // farmed by leaving and coming back. False when there is nothing to
     // take. Public because the harness searches without a reticle.
     bool search_chest(const Structure& chest);
+    // Drink at a well: pays in the ONE currency travel spends. A draught is
+    // worth an hour of rest — the same fraction of the bar the rest law
+    // grants per game hour (macro/attributes.h), so a well shortens a journey
+    // by exactly as much as sitting down for an hour would, and no law is
+    // invented to say it. False when the bar is already full.
+    bool drink_from_well();
+    // Read a signpost: names the place it stands in. Costs nothing, changes
+    // nothing, and proves the interaction table carries flavour as cheaply as
+    // it carries force.
+    bool read_sign();
     // What pressing E right now would do, as the verb the HUD shows under the
     // crosshair ("Enter", "Loot", …). Empty string = nothing is being looked
     // at. Pure query — the same resolution the keypress runs, so the prompt

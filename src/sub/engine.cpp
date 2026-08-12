@@ -1767,6 +1767,10 @@ bool SubworldEngine::interact() {
         switch (structure_interact(prop->kind)) {
             case InteractId::Search:
                 return search_chest(*prop);
+            case InteractId::Drink:
+                return drink_from_well();
+            case InteractId::Read:
+                return read_sign();
             case InteractId::Door:
                 return sceneKind_ == SceneKind::Dungeon
                     ? try_exit_dungeon()
@@ -2779,6 +2783,51 @@ void SubworldEngine::enter_dungeon_scene(GameState& gs,
     if (gs_) {
         set_flying(spellbook_has_sustained(gs_->player.spellBook, "flight"));
     }
+}
+
+bool SubworldEngine::drink_from_well() {
+    if (!active_ || !gs_) return false;
+    auto& cs = gs_->player.combatStats;
+    if (cs.currentSp >= cs.maxSp) {
+        set_status("You are not thirsty.");
+        return false;
+    }
+    // An hour of rest, taken standing: the rest law's own per-hour fraction
+    // of the bar (kSpRegenPctPerHour), so the well cannot be a better rest
+    // than resting and cannot be a worse one.
+    const int gain = std::max(1, int(float(cs.maxSp) * kSpRegenPctPerHour));
+    cs.currentSp = std::min(cs.maxSp, cs.currentSp + gain);
+    char msg[64];
+    std::snprintf(msg, sizeof(msg), "You drink deep. +%d SP", gain);
+    set_status(msg);
+    return true;
+}
+
+bool SubworldEngine::read_sign() {
+    if (!active_ || !gs_) return false;
+    // A sign says where you are, in the world's own words: the settlement
+    // standing on this cell, else the land itself.
+    const CellContext ctx = resolve_context(mgr_.center_cx(), mgr_.center_cy());
+    const char* place = nullptr;
+    for (const auto& s : gs_->settlements) {
+        if (s.id == ctx.landmarkSettlementId) { place = s.name.c_str(); break; }
+    }
+    if (!place) {
+        for (const auto& v : gs_->villages) {
+            if (v.id == ctx.landmarkSettlementId) {
+                place = v.name.c_str();
+                break;
+            }
+        }
+    }
+    char msg[96];
+    if (place) {
+        std::snprintf(msg, sizeof(msg), "\"%s\"", place);
+    } else {
+        std::snprintf(msg, sizeof(msg), "The board is weathered blank.");
+    }
+    set_status(msg);
+    return true;
 }
 
 bool SubworldEngine::search_chest(const Structure& chest) {

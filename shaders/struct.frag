@@ -79,7 +79,14 @@ void main() {
         float h = length(vec2(vFace.x - 0.55, vFace.y + 0.05) * vec2(1.0, 1.6));
         base = mix(base, vec3(0.80, 0.68, 0.32),
                    1.0 - smoothstep(0.07, 0.11, h));
-    } else if (vType > 4.5) {
+    } else if (vType < 4.5) {
+        // Lantern: a dark post whose head burns. The glow is emissive — the
+        // light it CASTS is a real point light (the prop table's light row),
+        // this is only the lamp reading as lit from any distance.
+        vec3 post = vec3(0.22, 0.18, 0.14);
+        float head = smoothstep(0.55, 0.75, vLocalY);
+        base = mix(post, vec3(1.00, 0.78, 0.42), head);
+    } else if (vType < 5.5) {
         // Chest: dark timber banded with iron. The straps are face-space
         // bars, so a coffer of any size wears the same ironwork.
         vec3 timber = vec3(0.26, 0.16, 0.09)
@@ -88,13 +95,30 @@ void main() {
         float strap = max(smoothstep(0.16, 0.10, abs(abs(vFace.x) - 0.55)),
                           smoothstep(0.14, 0.08, abs(vFace.y)));
         base = mix(timber, vec3(0.32, 0.33, 0.35), strap);
+    } else if (vType < 6.5) {
+        // Cave mouth: rock with a black opening bitten out of it. The dark is
+        // an ellipse in face space, so a mouth of any size keeps its shape —
+        // and it is nearly black, because what is behind it is not lit from
+        // out here. That contrast IS the read: a hole, not a boulder.
+        vec3 rock = vec3(0.38, 0.36, 0.33)
+                    * (0.80 + 0.20 * s_hash(vWorld.xz * 6.0 + vSeed));
+        float hole = length(vec2(vFace.x, (vFace.y + 0.25) * 1.15));
+        base = mix(vec3(0.03, 0.03, 0.04), rock,
+                   smoothstep(0.55, 0.80, hole));
+    } else if (vType < 7.5) {
+        // Well: wet stones with dark water at the crown, so a curb reads as
+        // full rather than as a barrel.
+        vec3 stone = vec3(0.46, 0.46, 0.44)
+                     * (0.82 + 0.18 * s_hash(vWorld.xz * 5.0 + vSeed));
+        base = vLocalY > 0.92 ? vec3(0.06, 0.10, 0.14) : stone;
     } else {
-        // Lantern: a dark post whose head burns. The glow is emissive — the
-        // light it CASTS is a real point light (the prop table's light row),
-        // this is only the lamp reading as lit from any distance.
-        vec3 post = vec3(0.22, 0.18, 0.14);
-        float head = smoothstep(0.55, 0.75, vLocalY);
-        base = mix(post, vec3(1.00, 0.78, 0.42), head);
+        // Sign: a pale painted board over a dark post — the board is the
+        // upper part of the face, the post the strip below it.
+        float board = smoothstep(-0.10, 0.05, vFace.y);
+        vec3 plank = vec3(0.62, 0.50, 0.30)
+                     * (0.90 + 0.10 * s_hash(vec2(floor(vFace.x * 5.0),
+                                                  floor(vFace.y * 5.0)) + vSeed));
+        base = mix(vec3(0.28, 0.20, 0.13), plank, board);
     }
 
     vec3 N = normalize(vNormal);

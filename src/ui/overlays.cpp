@@ -3198,6 +3198,8 @@ namespace sm::ui
                 case sub::Structure::Stairs:
                 case sub::Structure::Chest:
                 case sub::Structure::CaveMouth:
+                case sub::Structure::Well:
+                case sub::Structure::Sign:
                 case sub::Structure::Tree:
                 case sub::Structure::Crop:
                 case sub::Structure::Furnish:

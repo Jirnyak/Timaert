@@ -30,6 +30,7 @@ static void gen_spire     (const CellContext&, const Biome nbBiome[9], const std
 static void gen_ruin      (const CellContext&, const Biome nbBiome[9], const std::uint8_t nbFeature[9], const int nbTreeCount[9], SubworldMapData&);
 static void scatter_forest_glades(const CellContext&, SubworldMapData&);
 static void scatter_cave_mouths(SubworldMapData&, const CellContext&);
+static void stamp_village_green(SubworldMapData&, int, std::uint32_t);
 static void scatter_field_crops(const CellContext&, SubworldMapData&);
 static void carve_organic_road(SubworldMapData&, int, int, int, int, std::uint32_t);
 static void edge_anchor_target(const CellContext&, int, int, int&, int&);
@@ -510,6 +511,42 @@ static void scatter_street_lanterns(SubworldMapData& out, int center,
             out.structures.push_back(s);
         }
     }
+}
+
+// The heart of a settlement: a well on the square and a signboard beside it.
+// Both stand on the paved centre every settlement generator lays down, so the
+// rule is the same for a city and a village and neither generator has to know
+// what the other did.
+static void stamp_village_green(SubworldMapData& out, int center,
+                                std::uint32_t seed) {
+    Rng r(seed);
+    // The well sits a few paces off the exact centre — a square with a hole
+    // dead in the middle is a diagram, not a place.
+    const float ang = r.next_f01() * 6.2831853f;
+    const float off = 3.0f + r.next_f01() * 3.0f;
+    Structure w{};
+    w.kind = Structure::Well;
+    w.x = float(center) + std::cos(ang) * off;
+    w.y = float(center) + std::sin(ang) * off;
+    w.hx = structure_min_half_xy(Structure::Well);
+    w.hy = w.hx;
+    w.radius = w.hx;
+    w.height = structure_min_height(Structure::Well);
+    w.shape = Structure::Cylinder;      // a curb is round
+    out.structures.push_back(w);
+
+    // The board faces the well across the square, so whoever reads it is
+    // standing where the place can be seen.
+    Structure sg{};
+    sg.kind = Structure::Sign;
+    sg.x = float(center) - std::cos(ang) * (off + 4.0f);
+    sg.y = float(center) - std::sin(ang) * (off + 4.0f);
+    sg.hx = structure_min_half_xy(Structure::Sign);
+    sg.hy = sg.hx * 0.25f;
+    sg.radius = sg.hx;
+    sg.height = structure_min_height(Structure::Sign);
+    sg.yaw = ang;
+    out.structures.push_back(sg);
 }
 
 // Cave mouths: openings in the rock of a highland cell. Placement is the
@@ -1195,6 +1232,7 @@ static void gen_city(const CellContext& ctx, const Biome nbBiome[9],
     // thoroughfares. Spacing is the lantern's own reach from the prop table —
     // pools that just meet, so a street reads as lit rather than as beads.
     scatter_street_lanterns(out, center, wallR, ctx.seed ^ 0x1A47E27u);
+    stamp_village_green(out, center, ctx.seed ^ 0x3E11A0u);
 
     const int targetFields = std::min(80, std::max(6, population / 50));
     std::array<int, 80> fieldX{};
@@ -1257,6 +1295,7 @@ static void gen_village(const CellContext& ctx, const Biome nbBiome[9],
     const int squareSize = 3 + int(r.next_u32() % 4u);
     stamp_rect(out, center - squareSize / 2, center - squareSize / 2,
                squareSize, squareSize, TILE_SQUARE, 1);
+    stamp_village_green(out, center, ctx.seed ^ 0x3E11A0u);
 
     // Village footprint from the same authority the city uses and the citizen
     // populator reads (sub/city_layout.h).
