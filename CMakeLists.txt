@@ -608,6 +608,20 @@ timaert_test(dungeon_house_test
         src/sub/dgn/cave.cpp
     LINK_SDL)
 
+# Dungeon cave interior (sub/dgn/cave.cpp): a cavern CARVED out of solid rock —
+# the headline claim is connectivity (the chamber chain is unbroken for any
+# seed), plus the floor/wall paint distinction the composite's consumers read.
+# Same generator stack as dungeon_house_test: the route under test is
+# dispatch_generate's early return into the dungeon dispatch.
+timaert_test(dungeon_cave_test
+    SOURCES
+        src/sub/base_generator.cpp
+        src/sub/gens/dispatch.cpp
+        src/sub/dgn/dispatch.cpp
+        src/sub/dgn/house.cpp
+        src/sub/dgn/cave.cpp
+    LINK_SDL)
+
 # Universal prop / interaction system: the kStructureKindRows draw / light /
 # interact columns, the city doors + street lanterns, the interior door and
 # stair blocks, and the snapshot merge that must carry every prop KIND across
