@@ -527,12 +527,20 @@ verified byte-identical (md5) to a build without it. Harness overrides:
   mix their tree colours naturally on forest borders.
 - **NPCs** — **instanced paper-doll billboards**. The micro-world uses the same
   composited character atlas frames as the macro overlay via
-  `character::PaperdollAtlas` + `gpu::SpriteArray` (48×48 `sampler2DArray`).
+  `character::PaperdollAtlas` + `gpu::SpriteArray`. The pool holds **8192
+  slots**: four 48×48 frames packed 2×2 into each 96×96 array layer (slot =
+  layer·4 + quadrant), because MoltenVK caps `maxImageArrayLayers` at 2048
+  while a 5k city's active working set measures ~7.2k unique frames — below
+  that capacity the LRU thrashed forever (128 recomposes every warm frame,
+  every fifth body degraded to its canonical pose; Session 28, 2026-08-13).
   `prepare_frame()` resolves the current `AnimationState` (`Idle`/`Walk` plus
-  direction from `SubworldAi::vx/vy`), uploads any newly composed layers before
-  the render pass, and fills the NPC instance buffer with `{pos, size, layer}`.
-  The lit pass samples [shaders/npc.frag](shaders/npc.frag); the shadow pass
-  samples the same layer alpha in [shaders/shadow_npc.frag](shaders/shadow_npc.frag).
+  direction from `SubworldAi::vx/vy`), uploads any newly composed frames
+  before the render pass, and fills the NPC instance buffer with
+  `{pos, size, slot}`. Both consumers decode the packing through the ONE
+  `doll_sample()` in [shaders/doll_pool.glsl](shaders/doll_pool.glsl): the lit
+  pass [shaders/npc.frag](shaders/npc.frag) and the shadow pass
+  [shaders/shadow_npc.frag](shaders/shadow_npc.frag) sample the same slot, so
+  the silhouette can never disagree with the body.
 
 ## Water
 
