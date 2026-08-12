@@ -5884,6 +5884,25 @@ bool run_dungeon_house_smoke(App& app) {
     const std::uint32_t h1 = inD1 ? hashTiles() : 0u;
     app.subworld.tick(0.016f);
 
+    // You must LAND INSIDE the house, and still be inside it a tick later
+    // once collision has had its say: an interior that spits the player
+    // through its own wall is the worst kind of broken, because the room
+    // still looks right from outside it.
+    auto standing_on = [&]() {
+        const auto& t = app.subworld.mgr().tiles();
+        const int ix = int(app.subworld.player_x());
+        const int iy = int(app.subworld.player_y());
+        if (ix < 0 || iy < 0 || ix >= sm::sub::kFullSize
+            || iy >= sm::sub::kFullSize) {
+            return int(-1);
+        }
+        const std::size_t i = std::size_t(iy) * sm::sub::kFullSize + ix;
+        return i < t.size() ? int(t[i]) : -1;
+    };
+    const int floorTile = standing_on();
+    const bool onFloor = floorTile == sm::sub::TILE_ROAD
+                      || floorTile == sm::sub::TILE_SQUARE;
+
     // Storeys (Inc 3) + the cellar's own population (Inc 4). A big enough
     // house carries a climbing shaft; every second one keeps a cellar. Both
     // are the same identity one level along, so we probe whichever this house
@@ -6059,18 +6078,33 @@ bool run_dungeon_house_smoke(App& app) {
         app.subworld.rotate_camera(1.5707963f - app.subworld.cam_yaw(), 0.0f);
         exited2 = app.subworld.interact() && !app.subworld.in_dungeon();
     }
+
+    // The universal quick exit: from INSIDE an interior, with nothing on you,
+    // the leave key surfaces you straight to the map — no walk back to the
+    // door, no stair climb. Enter once more (we are standing on the doorstep
+    // after the walked exit), then leave from within.
+    app.subworld.tick(0.016f);
+    face_door();
+    bool quickExit = false;
+    if (app.subworld.interact() && app.subworld.in_dungeon()) {
+        app.subworld.tick(0.016f);
+        app.subworld.leave();
+        quickExit = !app.subworld.active();
+    }
     restore();
 
     std::fprintf(stderr,
                  "[smoke] dungeon_house entered=%d/%d in=%d/%d exited=%d/%d "
                  "out=%d tags=%d/%d/%d hash=%08x/%08x residents=%d "
-                 "pop=%d->%d storeys=%d/%d/%d/%d/%d vermin=%d fauna=%d->%d\n",
+                 "pop=%d->%d storeys=%d/%d/%d/%d/%d vermin=%d fauna=%d->%d "
+                 "floorTile=%d quickExit=%d\n",
                  entered ? 1 : 0, entered2 ? 1 : 0, inD1 ? 1 : 0, inD2 ? 1 : 0,
                  exited ? 1 : 0, exited2 ? 1 : 0, outOk ? 1 : 0,
                  tagsBefore, tagsIn, tagsOut, h1, h2, residents,
                  popBefore, popAfter,
                  lvl0, lvlUp, lvlBack, lvlDown, lvlBack2,
-                 vermin, faunaBefore, faunaAfter);
+                 vermin, faunaBefore, faunaAfter, floorTile,
+                 quickExit ? 1 : 0);
     std::fflush(stderr);
 
     // Storey invariants only bind when the house HAS that storey (a small
@@ -6090,7 +6124,7 @@ bool run_dungeon_house_smoke(App& app) {
         // A city house holds a household, and a death behind the door thins
         // the town by exactly one, in the tick it happens.
         || residents < 1 || popBefore <= 0 || popAfter != popBefore - 1
-        || !storeysOk || !verminOk) {
+        || !storeysOk || !verminOk || !onFloor || !quickExit) {
         smoke_fail(app, "dungeon_house invariant");
         return false;
     }

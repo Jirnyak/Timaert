@@ -1204,14 +1204,20 @@ room is walled and the ring is filler), and the interior renders with **no
 sea** (the world water plane sits at `WATER_LEVEL` and would flood a floor
 lower than it).
 
-**One door, one key.** `E` is the universal interaction: outside it steps
-through the nearest house wall in melee reach; inside, a stair shaft under
-your feet changes storey and the threshold walks you back out to the exact
-tile you knocked from. Corpse loot still outranks both — the same E, ordered
-by what is actually in reach. Every one of these exits obeys the subworld's
-danger gate, and `leave()` from inside refuses (except when forced by a load
-or menu teardown): the topology is macro ← subworld ← dungeon, with no
-interior→map shortcut.
+**One door, one key.** `E` is the universal interaction: outside it opens the
+door prop you are looking at; inside, a stair shaft under your feet changes
+storey and the threshold walks you back out to the exact tile you knocked
+from. Corpse loot outranks both — the same E, ordered by what is under the
+reticle.
+
+**Two ways out, both gated by danger.** The *walked* way is the door or the
+stair: it puts you back on the doorstep you came from, one layer up. The
+*quick* way is the ordinary leave key, and it surfaces you straight to the
+**map** from any storey — the same universal exit the open subworld has, so a
+cellar is not a place the player must walk out of backwards. It is gated on
+the HUD's own danger gem being green, asked of the interior itself rather
+than of the cell's zone: a dungeon's macro cell is a town square, whose zone
+would report the safety of the *street* while a troll stands behind you.
 
 **Storeys.** `DungeonRef::level` is signed: 0 is the level the door opens
 onto, +1 up, −1 a cellar. A stair is the same portal as the street door

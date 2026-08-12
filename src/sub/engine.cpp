@@ -2446,11 +2446,17 @@ void SubworldEngine::leave(bool force) {
         set_status("Exit blocked: hostiles are too close in this danger zone.");
         return;
     }
-    // Inside a dungeon the way out is its door (owner topology 2026-08-12:
-    // macro ← subworld ← dungeon; no direct interior→map hop). A forced
-    // leave (load, menu, teardown) still rips straight through to the map.
-    if (!force && sceneKind_ == SceneKind::Dungeon) {
-        set_status("Find the door.");
+    // The universal way out (owner ruling 2026-08-12, revised): the leave key
+    // surfaces you to the MAP from wherever you stand — a cellar as readily as
+    // an open field — as long as nothing is on you. That "nothing" is the same
+    // danger gem the HUD shows, asked of the interior itself, because a
+    // dungeon's macro cell is a town square and its zone would report the
+    // safety of the STREET while a troll is two paces behind you. The door and
+    // the stairs stay the walked way out; this is the one that respects the
+    // player's time.
+    if (!force && sceneKind_ == SceneKind::Dungeon
+        && danger_level() != DangerLevel::Green) {
+        set_status("Too dangerous to slip away — fight or find the door.");
         return;
     }
     entt::entity possessedMacro = entt::null;   // set iff exit was AS a lord (5e-2)
