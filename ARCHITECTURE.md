@@ -1157,9 +1157,29 @@ That last column is the interaction: `InteractId` plus `kInteractRows`
 (`{verb, reachTiles}`). A prop that carries one is interactive; a prop that
 does not is scenery. Per-*instance* payload rides `Structure::tag` — a door
 carries the ordinal of the building it opens, a stair carries its direction.
-So a new interaction ("drink from the well", "ring the bell") is **one prop
-row plus one case in the single dispatcher**, and it is visible, solid, lit,
-minimapped and testable the day its row lands.
+So a new interaction is **one prop row plus one case in the single
+dispatcher**, and it is visible, solid, lit, minimapped and testable the day
+its row lands. A door additionally declares WHICH interior it opens
+(`opens`), which is why a house leaf and a cave mouth share one entry path
+with no chain in the engine.
+
+The verbs that exist show the shape the table is meant to hold, and each one
+pays through a system that was already there rather than inventing its own:
+
+| Verb | Prop | What it does | Whose law it borrows |
+|------|------|--------------|----------------------|
+| `Door` | house leaf, cave mouth | raises the interior it declares | the dungeon session |
+| `Stairs` | shaft block | same identity, one storey along | the dungeon session |
+| `Loot` | corpse | the kill's own drop | the one loot registry |
+| `Search` | chest | hands over a stack of the OWNING landmark's store, at a price in standing | `Settlement::inventory` + `add_player_reputation` |
+| `Drink` | well | an hour of rest, standing | `kSpRegenPctPerHour` |
+| `Read` | signboard | names the place | the settlement roster |
+
+The chest is the pattern to copy when a verb must GIVE something. It has no
+loot row: a prop that conjures goods is a prop the player farms by walking
+out and back in, since interiors re-derive from their identity. So it draws
+from the store of whoever owns the place — an emptied town has bare chests,
+and the goods return only the way that town's goods ever return.
 
 Targeting is **by look, never by proximity** (owner ruling 2026-08-12): the
 resolver takes the prop under the reticle inside a forward cone on the camera
@@ -1234,10 +1254,22 @@ the same receipt a street kill settles, and the single regrowth law refills
 it. There is no dungeon respawn system.
 
 **Modules.** `sub/dgn/dispatch.{h,cpp}` mirrors `sub/gens/dispatch`: one
-self-contained TU per interior kind (`house.cpp` today), routed by
-`DungeonRef::kind`. Adding an interior — a cave, a keep, an authored dungeon
-from L4 `content/` — is one module plus one row, exactly like adding a
-subworld generator.
+self-contained TU per interior kind, routed by `DungeonRef::kind`. Adding an
+interior — a keep, a barrow, an authored dungeon from L4 `content/` — is one
+module plus one row, exactly like adding a subworld generator.
+
+Two kinds ship. **`house.cpp`** stamps a rectangle: rooms cut by partitions
+with one doorway each, furniture, a household, storeys joined by shafts.
+**`cave.cpp`** grows a shape instead: chambers chained by wandering
+galleries carved out of solid rock, connected by construction because
+consecutive carve discs always share ground. The difference is the point of
+the layer — a house is understood from its doorway, a cave has to be walked.
+
+An interior must be able to say **which tile is its floor**
+(`dungeon_floor_tile`): a hall is flagged, a cavern is bare scree, and every
+placement pass (residents, vermin) reads that rather than assuming a house.
+The cave's first cut used one tile id for floor and walls alike and nothing
+could be placed in it at all.
 
 ### 3D Rendering Pipeline
 

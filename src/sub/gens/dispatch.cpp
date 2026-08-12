@@ -462,7 +462,14 @@ static void flatten_footprint(SubworldMapData& out, int x, int y, int w, int h) 
 static void scatter_street_lanterns(SubworldMapData& out, int center,
                                     int radius, std::uint32_t seed) {
     const float reach = structure_kind_row(Structure::Lantern).lightRadiusTiles;
-    const int step = std::max(8, int(reach));
+    // Spacing is HALF the reach, not the whole of it. A pool falls off
+    // quadratically to nothing at `reach`, so posts a full reach apart meet
+    // where both give nothing — a street of beads with dark between them.
+    // At half, every point of the lane lies inside two pools and the street
+    // is lit. The cost is the light FIELD's (sub/lighting.h): a splat of a
+    // few dozen 3 m cells per lamp, rebuilt every 8th frame, so density here
+    // is bought with arithmetic nobody can feel.
+    const int step = std::max(8, int(reach) / 2);
     Rng r(seed);
     auto is_lane = [&](int x, int y) {
         if (x < 1 || y < 1 || x >= kCellSize - 1 || y >= kCellSize - 1) {
