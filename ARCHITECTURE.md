@@ -1142,6 +1142,60 @@ all: grid allocation, neighbour-aware heightmap generation (with coastal
 sculpting, mountain amplification, biome-specific terrain),
 `to_map_data()` serialisation, and low-level grid primitives.
 
+### Dungeons — the interior layer (`src/sub/dgn/`)
+
+**A dungeon is a pocket subworld.** Behind every door there is a scene the
+same engine simulates, draws and fights in — one `SubworldEngine`, one ECS,
+one renderer. There is no interior engine, no second combat path, no second
+persistence rule; a dungeon is the subworld with its 3×3 window pinned and
+its context saying *"this is what stands behind a door"*.
+
+**Identity, not storage.** A `DungeonRef` (`sub/map_data.h`, carried on
+`CellContext`) is `{kind, level, ordinal, footprint}`; with the door's macro
+cell and the world seed it hashes — through the one `dungeon_scene_seed` —
+into the scene. Same door, same interior, byte for byte, forever. Nothing
+below the map is saved, exactly as nothing below the map is saved for the
+subworld: the interior is a projection of a projection, and every lasting
+act pays UP through a macro stock.
+
+**The scene.** `enter_dungeon_scene` installs a synthetic resolver on the
+ordinary `SeamlessSubworldManager`: the door's cell resolves to the interior,
+the eight ring cells to sealed `DungeonRef::Void` filler. Everything
+downstream — composite, upload, collision index, battle pass — runs the
+unchanged window path. The window is static (no seam check, no re-centre: the
+room is walled and the ring is filler), and the interior renders with **no
+sea** (the world water plane sits at `WATER_LEVEL` and would flood a floor
+lower than it).
+
+**One door, one key.** `E` is the universal interaction: outside it steps
+through the nearest house wall in melee reach; inside, a stair shaft under
+your feet changes storey and the threshold walks you back out to the exact
+tile you knocked from. Corpse loot still outranks both — the same E, ordered
+by what is actually in reach. Every one of these exits obeys the subworld's
+danger gate, and `leave()` from inside refuses (except when forced by a load
+or menu teardown): the topology is macro ← subworld ← dungeon, with no
+interior→map shortcut.
+
+**Storeys.** `DungeonRef::level` is signed: 0 is the level the door opens
+onto, +1 up, −1 a cellar. A stair is the same portal as the street door
+pointed at the same identity one level along — a dungeon→dungeon scene swap
+that never surfaces. Two shafts sit at fixed room corners (NW joins 0↔+1, NE
+joins 0↔−1) so the geometry is a rule the generator stamps, the engine reads
+and the test asserts, rather than data plumbed between them.
+
+**Population comes from the same stocks as everything else.** Residents are
+derived citizens carrying the settlement's `Population` loan; cellar vermin
+are creatures from the one monster table carrying the cell's `FaunaCount`
+loan. A kill behind a door thins the town or the cell in that tick, through
+the same receipt a street kill settles, and the single regrowth law refills
+it. There is no dungeon respawn system.
+
+**Modules.** `sub/dgn/dispatch.{h,cpp}` mirrors `sub/gens/dispatch`: one
+self-contained TU per interior kind (`house.cpp` today), routed by
+`DungeonRef::kind`. Adding an interior — a cave, a keep, an authored dungeon
+from L4 `content/` — is one module plus one row, exactly like adding a
+subworld generator.
+
 ### 3D Rendering Pipeline
 
 The 2D tile grid is the source of truth. The 3D renderer reads the same data:
