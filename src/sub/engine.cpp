@@ -792,6 +792,46 @@ void SubworldEngine::spawn_player_entity() {
                              kPlayerLightRadiusM, kPlayerLightIntensity});
 }
 
+void SubworldEngine::rebuild_prop_cache() {
+    if (!ecs_) return;
+    auto& reg = ecs_->reg;
+    // The interactive shortlist: doors and stairs among tens of thousands of
+    // trees, so the per-frame aim scan (and the HUD prompt that runs it) walks
+    // a handful of records instead of the whole composite.
+    interactProps_.clear();
+    for (const Structure& s : mgr_.structures()) {
+        if (structure_interact(s.kind) != InteractId::None) {
+            interactProps_.push_back(s);
+        }
+    }
+    for (entt::entity e : propLights_) {
+        if (reg.valid(e)) reg.destroy(e);
+    }
+    propLights_.clear();
+    // A lit prop's flame is a body like any other: Position + LightEmitter +
+    // SubworldTag is exactly what the renderer's light gather asks for, so a
+    // lantern needs no renderer code of its own. It carries nothing else — no
+    // health, no AI, no sprite — so no other system can see it.
+    for (const Structure& s : mgr_.structures()) {
+        if (!structure_is_lit(s.kind)) continue;
+        const StructureKindRow& row = structure_kind_row(s.kind);
+        const float seatM = renderer3dVk_.sample_height_m(s.x, s.y);
+        const entt::entity e = reg.create();
+        reg.emplace<ecs::Position>(e, s.x, s.y, seatM);
+        reg.emplace<ecs::SubworldTag>(e);
+        reg.emplace<ecs::LightEmitter>(e, ecs::LightEmitter{
+            0.0f, row.lightHeightM, 0.0f,
+            float((row.lightRgb >> 16) & 0xFFu) / 255.0f,
+            float((row.lightRgb >>  8) & 0xFFu) / 255.0f,
+            float( row.lightRgb        & 0xFFu) / 255.0f,
+            // A tile IS a metre in this world (the renderer's kTileMeters is
+            // 1), so the row's reach in tiles is its reach in metres.
+            row.lightRadiusTiles,
+            1.0f});
+        propLights_.push_back(e);
+    }
+}
+
 void SubworldEngine::pull_player_entity_to_scalars() {
     if (!ecs_) return;
     auto& reg = ecs_->reg;
@@ -1115,6 +1155,10 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
 void SubworldEngine::spawn_all_cells() {
     if (!ecs_) return;
     clear_subworld_world_entities(*ecs_);
+    // The reaper above takes prop lights with everything else world-owned —
+    // drop the stale handles so the next rebuild does not free them twice.
+    propLights_.clear();
+    structIndexDirty_ = true;
     for (int oy = -1; oy <= 1; ++oy)
         for (int ox = -1; ox <= 1; ++ox)
             spawn_cell(ox, oy);
@@ -1619,32 +1663,121 @@ bool SubworldEngine::exit_blocked_by_danger() const {
     return has_hostile_near_player(kDetectionRadius);
 }
 
-bool SubworldEngine::interact() {
-    if (!active_ || !ecs_ || !gs_) return false;
+// ── The ONE interaction rule ────────────────────────────────────────────────
+// Everything the player can press E on — a door, a stair, a corpse — answers
+// the same three questions: where is it, how close must I be, and what is the
+// verb. So there is one resolver and one keypress; the prop table (map_data.h
+// kStructureKindRows / kInteractRows) supplies the answers, and adding "drink
+// from the well" never touches this code.
+//
+// Targeting is by LOOK ONLY (owner ruling 2026-08-12): the thing under your
+// reticle, never the thing nearest your feet. The cone is on the camera yaw —
+// the same primitive possession aims with — so pitch never loses a target at
+// your feet, and two doors side by side are two different choices.
+constexpr float kInteractConeCos = 0.70710678f;   // 45° half-angle
+
+// Angular error of a point against the camera bearing; NaN-free and cheap.
+// Returns -1 when the point lies outside the cone (facing test failed).
+static float aim_score(float px, float py, float yaw, float tx, float ty) {
+    const float dx = tx - px;
+    const float dy = ty - py;
+    const float len = std::sqrt(dx * dx + dy * dy);
+    if (len < 1e-4f) return 1.0f;               // standing on it: perfect aim
+    const float dot = (std::cos(yaw) * dx + std::sin(yaw) * dy) / len;
+    return dot >= kInteractConeCos ? dot : -1.0f;
+}
+
+const Structure* SubworldEngine::aimed_prop() const {
+    const Structure* best = nullptr;
+    float bestScore = -1.0f;
+    for (const Structure& s : interactProps_) {
+        const InteractRow& row = interact_row(structure_interact(s.kind));
+        const float reach = row.reachTiles;
+        if (structure_surface_dist2(s, playerX_, playerY_) > reach * reach) {
+            continue;
+        }
+        const float score = aim_score(playerX_, playerY_, cam_.yaw, s.x, s.y);
+        if (score > bestScore) {
+            bestScore = score;
+            best = &s;
+        }
+    }
+    return best;
+}
+
+// The corpse under the reticle, by the same cone and the Loot verb's reach.
+entt::entity SubworldEngine::aimed_corpse() const {
+    if (!ecs_) return entt::null;
     auto& reg = ecs_->reg;
+    const float reach = interact_row(InteractId::Loot).reachTiles;
+    entt::entity best = entt::null;
+    float bestScore = -1.0f;
     auto view = reg.view<ecs::Position, ecs::Structure, ecs::CorpseLoot,
                          ecs::SubworldTag>();
-    entt::entity best = entt::null;
-    float bestD2 = 12.0f * 12.0f;
     for (auto e : view) {
         const auto& st = view.get<ecs::Structure>(e);
         if (st.kind != ecs::Structure::Corpse) continue;
         const auto& p = view.get<ecs::Position>(e);
-        const float d2 = dist3sq(p.x, p.y, p.z, playerX_, playerY_, playerZ_);
-        if (d2 <= bestD2) {
-            bestD2 = d2;
+        if (dist3sq(p.x, p.y, p.z, playerX_, playerY_, playerZ_)
+            > reach * reach) {
+            continue;
+        }
+        const float score = aim_score(playerX_, playerY_, cam_.yaw, p.x, p.y);
+        if (score > bestScore) {
+            bestScore = score;
             best = e;
         }
     }
-    if (best == entt::null) {
-        // No corpse in reach — the same E is the universal door: outside it
-        // steps through the nearest house door; inside, a shaft underfoot
-        // changes storey and the threshold walks back out.
-        if (sceneKind_ == SceneKind::Dungeon) {
-            if (try_take_dungeon_stairs()) return true;
-            return try_exit_dungeon();
+    return best;
+}
+
+const char* SubworldEngine::interact_prompt() const {
+    if (!active_ || !ecs_) return "";
+    // Corpses first — a body you just felled lies closer than the door
+    // behind it, and looting it is what the player means.
+    if (aimed_corpse() != entt::null) {
+        return interact_row(InteractId::Loot).verb;
+    }
+    if (const Structure* p = aimed_prop()) {
+        const InteractId id = structure_interact(p->kind);
+        // The one door reads both ways: from the street it takes you in, from
+        // inside it puts you out. The ACTION is identical (one prop, one row,
+        // one dispatch) — only the word the player is shown follows the side
+        // they stand on, which is a label, not a second behaviour.
+        if (id == InteractId::Door && sceneKind_ == SceneKind::Dungeon) {
+            return "Leave";
         }
-        return try_enter_dungeon();
+        return interact_row(id).verb;
+    }
+    return "";
+}
+
+bool SubworldEngine::interact() {
+    if (!active_ || !ecs_ || !gs_) return false;
+    auto& reg = ecs_->reg;
+    const entt::entity best = aimed_corpse();
+    if (best == entt::null) {
+        // Nothing dead under the reticle — then it is a prop, and the prop's
+        // own row says what happens. One dispatch, one place to extend.
+        const Structure* prop = aimed_prop();
+        if (!prop) {
+            set_status("Nothing to interact with.");
+            return false;
+        }
+        switch (structure_interact(prop->kind)) {
+            case InteractId::Door:
+                return sceneKind_ == SceneKind::Dungeon
+                    ? try_exit_dungeon()
+                    : enter_dungeon_by_door(*prop);
+            case InteractId::Stairs:
+                return try_take_dungeon_stairs();
+            case InteractId::Loot:
+            case InteractId::None:
+            case InteractId::Count:
+                break;
+        }
+        set_status("Nothing to interact with.");
+        return false;
     }
 
     auto& loot = reg.get<ecs::CorpseLoot>(best);
@@ -2391,6 +2524,8 @@ void SubworldEngine::leave(bool force) {
     treeLayer_ = nullptr;
     structIndex_.clear();
     structIndexDirty_ = true;
+    propLights_.clear();   // reaped with the scene above
+    interactProps_.clear();
     playerAttackHeld_ = false;
     playerVz_ = 0.0f;
     playerAttackTimer_ = 0.0f;
@@ -2401,57 +2536,32 @@ void SubworldEngine::leave(bool force) {
 
 // ── Dungeon session (SceneKind::Dungeon) ───────────────────────────────────
 
-// Squared 2D distance from a point to the SURFACE of a structure's oriented
-// footprint (0 inside). The door-reach test asks it, so a big house is
-// enterable from its wall face, not only from its distant centre.
-static float structure_surface_dist2(const Structure& s, float px, float py) {
-    const float dx = px - s.x;
-    const float dy = py - s.y;
-    const float c = std::cos(s.yaw);
-    const float sn = std::sin(s.yaw);
-    const float lx = dx * c + dy * sn;
-    const float ly = -dx * sn + dy * c;
-    const float qx = std::max(0.0f, std::abs(lx) - structure_half_x(s));
-    const float qy = std::max(0.0f, std::abs(ly) - structure_half_y(s));
-    return qx * qx + qy * qy;
-}
-
-bool SubworldEngine::try_enter_dungeon() {
+bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
     if (!active_ || sceneKind_ != SceneKind::Overworld || !gs_ || !terrain_) {
         return false;
     }
-    // Nearest house whose wall face is within arm's reach — the same reach
-    // as a melee swing (one body law: if you can strike it, you can knock).
+    // The door names its building by ordinal within its window cell — the
+    // count the generator stamped it with, over the SAME per-cell order the
+    // composite preserves (rebuild_composite_structures appends cell by
+    // cell). Find that house: its footprint is what the interior is built to.
+    const int winCellX = std::clamp(int(door.x) / kCellSize, 0, 2);
+    const int winCellY = std::clamp(int(door.y) / kCellSize, 0, 2);
+    const std::uint16_t ordinal = door.tag;
     const auto& structs = mgr_.structures();
-    int bestIdx = -1;
-    float bestD2 = kPlayerMeleeRange * kPlayerMeleeRange;
-    for (std::size_t i = 0; i < structs.size(); ++i) {
-        const Structure& s = structs[i];
-        if (s.kind != Structure::House) continue;
-        const float d2 = structure_surface_dist2(s, playerX_, playerY_);
-        if (d2 <= bestD2) {
-            bestD2 = d2;
-            bestIdx = int(i);
-        }
-    }
-    if (bestIdx < 0) {
-        set_status("Nothing to interact with.");
-        return false;
-    }
-    const Structure house = structs[std::size_t(bestIdx)];
-
-    // Identity: the door's macro cell + the house's deterministic ordinal
-    // within that cell (composite structures preserve per-cell generation
-    // order — rebuild_composite_structures appends cell by cell).
-    const int winCellX = std::clamp(int(house.x) / kCellSize, 0, 2);
-    const int winCellY = std::clamp(int(house.y) / kCellSize, 0, 2);
-    std::uint16_t ordinal = 0;
-    for (int i = 0; i < bestIdx; ++i) {
-        const Structure& s = structs[std::size_t(i)];
+    const Structure* house = nullptr;
+    std::uint16_t seen = 0;
+    for (const Structure& s : structs) {
         if (s.kind != Structure::House) continue;
         if (std::clamp(int(s.x) / kCellSize, 0, 2) != winCellX) continue;
         if (std::clamp(int(s.y) / kCellSize, 0, 2) != winCellY) continue;
-        ++ordinal;
+        if (seen == ordinal) { house = &s; break; }
+        ++seen;
+    }
+    if (!house) {
+        // A door whose building is gone is a bug in whoever placed it, not a
+        // silent no-op: say so rather than swallowing the keypress.
+        set_status("This door leads nowhere.");
+        return false;
     }
     const int mapW = terrain_->width;
     const int mapH = terrain_->height;
@@ -2465,8 +2575,8 @@ bool SubworldEngine::try_enter_dungeon() {
     ses.ref.kind = DungeonRef::House;
     ses.ref.level = 0;
     ses.ref.ordinal = ordinal;
-    ses.ref.footHx = structure_half_x(house);
-    ses.ref.footHy = structure_half_y(house);
+    ses.ref.footHx = structure_half_x(*house);
+    ses.ref.footHy = structure_half_y(*house);
     ses.doorCx = doorCx;
     ses.doorCy = doorCy;
     ses.returnLocalX = playerX_ - float(winCellX * kCellSize);
@@ -2711,6 +2821,8 @@ bool SubworldEngine::try_take_dungeon_stairs() {
     clear_player_entity();
     structIndex_.clear();
     structIndexDirty_ = true;
+    propLights_.clear();   // reaped with the scene above
+    interactProps_.clear();
     active_ = false;
     pendingUpload3d_ = {};
 
@@ -2789,6 +2901,8 @@ bool SubworldEngine::try_exit_dungeon() {
     clear_player_entity();
     structIndex_.clear();
     structIndexDirty_ = true;
+    propLights_.clear();   // reaped with the scene above
+    interactProps_.clear();
     active_ = false;
     pendingUpload3d_ = {};
     sceneKind_ = SceneKind::Overworld;
@@ -3077,6 +3191,9 @@ void SubworldEngine::tick(float dt) {
     if (structIndexDirty_) {
         structIndex_.rebuild(mgr_.structures(),
                              &SubworldEngine::battle_height_callback, this);
+        // Props follow the same signal: the set of props just changed, so
+        // the flames and the interactive shortlist changed with it.
+        rebuild_prop_cache();
         structIndexDirty_ = false;
     }
 

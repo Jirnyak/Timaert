@@ -603,6 +603,19 @@ timaert_test(dungeon_house_test
         src/sub/dgn/house.cpp
     LINK_SDL)
 
+# Universal prop / interaction system: the kStructureKindRows draw / light /
+# interact columns, the city doors + street lanterns, the interior door and
+# stair blocks, and the snapshot merge that must carry every prop KIND across
+# a revisit — hence map_factory.cpp on top of the dungeon_house_test stack.
+timaert_test(prop_interaction_test
+    SOURCES
+        src/sub/base_generator.cpp
+        src/sub/gens/dispatch.cpp
+        src/sub/dgn/dispatch.cpp
+        src/sub/dgn/house.cpp
+        src/sub/map_factory.cpp
+    LINK_SDL)
+
 timaert_test(mountain_mesh_smoothness_test
     SOURCES
         src/sub/base_generator.cpp)

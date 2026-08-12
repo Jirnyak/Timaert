@@ -303,9 +303,38 @@ void gen_dungeon_house(const CellContext& ctx, SubworldMapData& out) {
             }
         }
     };
-    if (level == 0) pave_pad(px, py);
-    if (padNW) pave_pad(nwX, nwY);
-    if (padNE) pave_pad(neX, neY);
+    // Every threshold is a PROP you can see and aim at, not a patch of paint:
+    // the way out is the same kind of door that let you in, and each shaft
+    // carries a stair block. The interaction comes from their table rows.
+    auto place_prop = [&](Structure::Kind kind, float cx, float cy,
+                          std::uint16_t tag, float yaw) {
+        Structure s{};
+        s.kind = kind;
+        s.x = cx;
+        s.y = cy;
+        s.yaw = yaw;
+        s.hx = structure_min_half_xy(kind) * (kind == Structure::Door ? 3.0f
+                                                                      : 1.0f);
+        s.hy = structure_min_half_xy(kind);
+        s.radius = std::max(s.hx, s.hy);
+        s.height = structure_min_height(kind);
+        s.tag = tag;
+        out.structures.push_back(s);
+    };
+    if (level == 0) {
+        pave_pad(px, py);
+        // The exit door stands ON the south wall the pad faces, so it reads
+        // as the way out from anywhere in the room.
+        place_prop(Structure::Door, px, room.cy + room.hy + wallHalf, 0, 0.0f);
+    }
+    if (padNW) {
+        pave_pad(nwX, nwY);
+        place_prop(Structure::Stairs, nwX, nwY, /*tag: up*/1, 0.0f);
+    }
+    if (padNE) {
+        pave_pad(neX, neY);
+        place_prop(Structure::Stairs, neX, neY, /*tag: down*/0, 0.0f);
+    }
 
     // ── Furniture: every room gets a household's worth ──────────────────────
     // Sizes in tiles (half-extents) at the body scale the combat runs on:

@@ -5817,15 +5817,17 @@ bool run_dungeon_house_smoke(App& app) {
         return h;
     };
 
-    // Nearest house to the window centre — central by construction, so the
-    // doorstep stays inside the centre cell (no seam crossing mid-smoke).
+    // Nearest DOOR prop to the window centre — central by construction, so
+    // the doorstep stays inside the centre cell (no seam crossing mid-smoke).
+    // The door is what the player interacts with now; a house without one is
+    // a house nobody can enter, so finding none is a failure, not a skip.
     const auto& structs = app.subworld.mgr().structures();
     const float mid = float(sm::sub::kFullSize) / 2.0f;
     int best = -1;
     float bestD2 = 1e30f;
     for (std::size_t i = 0; i < structs.size(); ++i) {
         const auto& s = structs[i];
-        if (s.kind != sm::sub::Structure::House) continue;
+        if (s.kind != sm::sub::Structure::Door) continue;
         const float dx = s.x - mid;
         const float dy = s.y - mid;
         const float d2 = dx * dx + dy * dy;
@@ -5836,22 +5838,44 @@ bool run_dungeon_house_smoke(App& app) {
     }
     if (best < 0) {
         restore();
-        smoke_fail(app, "dungeon_house no house in window");
+        smoke_fail(app, "dungeon_house no door in window");
         return false;
     }
-    const sm::sub::Structure house = structs[std::size_t(best)];
-    // Stand exactly on the house's local +X axis, 2 tiles off the wall face —
-    // squarely inside the door-knock reach whatever the building's yaw.
-    const float halfX = house.hx > 0.0f ? house.hx : house.radius;
-    const float standX = house.x + (halfX + 2.0f) * std::cos(house.yaw);
-    const float standY = house.y + (halfX + 2.0f) * std::sin(house.yaw);
-    app.subworld.set_player_pos(standX, standY);
+    const sm::sub::Structure door = structs[std::size_t(best)];
+    // Stand on the door's outward normal, just inside the door verb's reach
+    // (kInteractRows), and LOOK at it — targeting is by aim now, so the smoke
+    // must aim like a player. Standing at the edge of reach rather than nose
+    // to the timber is also what a capture wants: a door you can SEE.
+    const float standoff =
+        sm::sub::interact_row(sm::sub::InteractId::Door).reachTiles - 1.0f;
+    const float standX = door.x - standoff * std::sin(door.yaw);
+    const float standY = door.y + standoff * std::cos(door.yaw);
+    auto face_door = [&]() {
+        app.subworld.set_player_pos(standX, standY);
+        const float want = std::atan2(door.y - standY, door.x - standX);
+        app.subworld.rotate_camera(want - app.subworld.cam_yaw(), 0.0f);
+    };
+    face_door();
     app.subworld.tick(0.016f);
-    // Re-pin after the settle tick: a frame of simulation (separation, ground
-    // follow) can drift the body a hair, and "nearest door" between two
-    // different spots is two different doors — the determinism claim below is
-    // about ONE door, so both visits must knock from the same tile.
-    app.subworld.set_player_pos(standX, standY);
+    // Re-aim after the settle tick: a frame of simulation can drift the body,
+    // and the determinism claim below is about ONE door seen from ONE spot.
+    face_door();
+
+    // Opt-in (TIMAERT_SMOKE_DOORSTEP=1): stop HERE, on the doorstep looking
+    // at the door, so a following capture_frame photographs the prop and the
+    // interaction prompt it raises. Asserts what it proves: a door is in
+    // reach and the engine offers its verb.
+    if (std::getenv("TIMAERT_SMOKE_DOORSTEP")) {
+        const char* verb = app.subworld.interact_prompt();
+        std::fprintf(stderr, "[smoke] dungeon_house DOORSTEP prompt='%s'\n",
+                     verb ? verb : "");
+        std::fflush(stderr);
+        if (verb == nullptr || verb[0] == '\0') {
+            smoke_fail(app, "dungeon_house doorstep offers no verb");
+            return false;
+        }
+        return true;
+    }
 
     const int tagsBefore = playerTags();
     const bool entered = app.subworld.interact();
@@ -5928,6 +5952,9 @@ bool run_dungeon_house_smoke(App& app) {
         return false;
     }
     app.subworld.set_player_pos(exitX, exitY);
+    // Face the exit door: it stands on the south wall the threshold looks at,
+    // and E is aim-driven, so the smoke must look at it like a player.
+    app.subworld.rotate_camera(1.5707963f - app.subworld.cam_yaw(), 0.0f);
     app.subworld.tick(0.016f);
 
     // Opt-in (TIMAERT_SMOKE_DUNGEON_STAY=1, optionally with
@@ -5942,6 +5969,16 @@ bool run_dungeon_house_smoke(App& app) {
         }
         if (want > 0) (void)app.subworld.debug_take_stairs(/*up*/true);
         if (want < 0) (void)app.subworld.debug_take_stairs(/*up*/false);
+        // Photograph the ROOM: stand on the threshold — the one spot the
+        // generator guarantees is open — and look north up the hall. (The
+        // room centre is NOT safe to teleport onto: a partition may stand
+        // there, and set_player_pos does not resolve solids the way walking
+        // does.)
+        float sx = 0.0f, sy = 0.0f;
+        if (app.subworld.dungeon_exit_point(sx, sy)) {
+            app.subworld.set_player_pos(sx, sy - 2.0f);
+        }
+        app.subworld.rotate_camera(-1.5707963f - app.subworld.cam_yaw(), 0.0f);
         app.subworld.tick(0.016f);
         std::fprintf(stderr, "[smoke] dungeon_house STAY level=%d\n",
                      app.subworld.dungeon_level());
@@ -5999,14 +6036,25 @@ bool run_dungeon_house_smoke(App& app) {
     const int tagsOut = playerTags();
     app.subworld.tick(0.016f);
 
-    // Re-enter the same door: re-pin to the same knock tile (the return spot
-    // is within reach, but "nearest" must be judged from the identical spot),
-    // then the same identity must re-derive the same interior, byte for byte.
-    app.subworld.set_player_pos(standX, standY);
+    // Re-enter the same door: stand and look exactly as before (the return
+    // spot is within reach, but the AIM must be judged from the identical
+    // spot), then the same identity must re-derive the same interior. The
+    // tick above is load-bearing — the prop cache the aim reads is rebuilt
+    // with the solidity index, i.e. on the scene's first tick.
+    face_door();
     const bool entered2 = app.subworld.interact();
     const bool inD2 = app.subworld.in_dungeon();
     const std::uint32_t h2 = inD2 ? hashTiles() : 0u;
-    const bool exited2 = app.subworld.interact();
+    // Leave the same way a player would: tick (so the scene's prop cache is
+    // built), stand on the threshold, look at its door, press E.
+    app.subworld.tick(0.016f);
+    bool exited2 = false;
+    float x2 = 0.0f, y2 = 0.0f;
+    if (app.subworld.dungeon_exit_point(x2, y2)) {
+        app.subworld.set_player_pos(x2, y2);
+        app.subworld.rotate_camera(1.5707963f - app.subworld.cam_yaw(), 0.0f);
+        exited2 = app.subworld.interact() && !app.subworld.in_dungeon();
+    }
     restore();
 
     std::fprintf(stderr,
@@ -10573,6 +10621,31 @@ void frame(App& app, int simSteps) {
                                 ImVec2(cx, cy - gap), bright, thick);
                     fg->AddLine(ImVec2(cx, cy + gap),
                                 ImVec2(cx, cy + gap + arm), bright, thick);
+
+                    // Interaction prompt, under the reticle: the verb of
+                    // whatever is being looked at, quoting the LIVE binding
+                    // (the same honesty rule as the pause badge). It is the
+                    // engine's own resolution, so the prompt can never
+                    // promise an action the keypress would not perform.
+                    const char* verb = app.subworld.interact_prompt();
+                    if (verb != nullptr && verb[0] != '\0') {
+                        const SDL_Scancode useSc =
+                            app.keymap.get(sm::ui::ActionId::Interact);
+                        char prompt[96];
+                        if (useSc != SDL_SCANCODE_UNKNOWN) {
+                            std::snprintf(prompt, sizeof(prompt), "[%s] %s",
+                                          SDL_GetScancodeName(useSc), verb);
+                        } else {
+                            std::snprintf(prompt, sizeof(prompt), "%s", verb);
+                        }
+                        const ImVec2 ts = ImGui::CalcTextSize(prompt);
+                        const float px = cx - ts.x * 0.5f;
+                        const float py = cy + gap + arm + 8.0f * sc;
+                        fg->AddText(ImVec2(px + 1.0f, py + 1.0f),
+                                    IM_COL32(0, 0, 0, 160), prompt);
+                        fg->AddText(ImVec2(px, py),
+                                    IM_COL32(240, 232, 200, 235), prompt);
+                    }
                 }
                 if (app.uiSettings.visible(sm::ui::UiElementId::SubDangerGem))
                     draw_subworld_danger_gem(app.subworld, app.uiSettings.scale(sm::ui::UiElementId::SubDangerGem));

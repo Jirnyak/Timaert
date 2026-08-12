@@ -453,6 +453,76 @@ static void flatten_footprint(SubworldMapData& out, int x, int y, int w, int h) 
 // silhouette the 3D pass draws and the collision index blocks with. Clearance
 // is checked on the footprint's AABB plus a 1-tile ring (conservative for a
 // rotated box, which only costs a few rejected attempts).
+// Street lanterns: posts on the verge of paved ground, spaced by the light's
+// own reach so their pools just meet. Placed on plain ground ADJACENT to a
+// road/square tile — on the verge, never in the lane, so nothing a body walks
+// down is blocked by a post.
+static void scatter_street_lanterns(SubworldMapData& out, int center,
+                                    int radius, std::uint32_t seed) {
+    const float reach = structure_kind_row(Structure::Lantern).lightRadiusTiles;
+    const int step = std::max(8, int(reach));
+    Rng r(seed);
+    auto is_lane = [&](int x, int y) {
+        if (x < 1 || y < 1 || x >= kCellSize - 1 || y >= kCellSize - 1) {
+            return false;
+        }
+        const std::uint8_t t = out.tiles[std::size_t(y) * kCellSize + x];
+        return t == TILE_ROAD || t == TILE_SQUARE;
+    };
+    // Start from the LANE and step off it, rather than from a lattice hoping
+    // to land on a verge: a dense town's verges are mostly house footprint,
+    // so the hopeful version lit three posts in a city of four hundred houses
+    // (caught by prop_interaction_test, 2026-08-12).
+    auto placeable = [&](int x, int y) {
+        if (x < 2 || y < 2 || x >= kCellSize - 2 || y >= kCellSize - 2) {
+            return false;
+        }
+        const std::uint8_t t = out.tiles[std::size_t(y) * kCellSize + x];
+        return t == TILE_GRASS || t == TILE_EMPTY || t == TILE_FIELD;
+    };
+    for (int y = center - radius; y <= center + radius; y += step) {
+        for (int x = center - radius; x <= center + radius; x += step) {
+            // Jitter along the lattice so the town does not look surveyed.
+            const int lx = x + int(r.next_u32() % 5u) - 2;
+            const int ly = y + int(r.next_u32() % 5u) - 2;
+            if (!is_lane(lx, ly)) continue;      // find the lane…
+            // …then step onto its verge, whichever side has room. Three
+            // tiles is the widest a post may stand from the lane it lights
+            // before it stops reading as street furniture.
+            int px = -1, py = -1;
+            for (int d = 1; d <= 3 && px < 0; ++d) {
+                if      (placeable(lx + d, ly)) { px = lx + d; py = ly; }
+                else if (placeable(lx - d, ly)) { px = lx - d; py = ly; }
+                else if (placeable(lx, ly + d)) { px = lx; py = ly + d; }
+                else if (placeable(lx, ly - d)) { px = lx; py = ly - d; }
+            }
+            if (px < 0) continue;
+            Structure s{};
+            s.kind = Structure::Lantern;
+            s.x = float(px) + 0.5f;
+            s.y = float(py) + 0.5f;
+            s.hx = structure_min_half_xy(Structure::Lantern);
+            s.hy = s.hx;
+            s.radius = s.hx;
+            s.height = structure_min_height(Structure::Lantern);
+            s.shape = Structure::Cylinder;      // a post, not a crate
+            out.structures.push_back(s);
+        }
+    }
+}
+
+// How many houses this cell has raised so far — the ordinal the next one
+// gets. The interior behind a door is found by counting Houses in the door's
+// window cell (engine.cpp enter_dungeon_by_door), so the number a door is
+// stamped with must be produced by the same counting rule.
+static std::uint16_t house_count(const SubworldMapData& out) {
+    std::uint16_t n = 0;
+    for (const Structure& s : out.structures) {
+        if (s.kind == Structure::House) ++n;
+    }
+    return n;
+}
+
 static bool add_house_obb(SubworldMapData& out, float cx, float cy,
                           float hx, float hy, float yaw, float height,
                           bool requireClear) {
@@ -513,7 +583,28 @@ static bool add_house_obb(SubworldMapData& out, float cx, float cy,
     s.yaw = yaw;
     s.hx = hx;
     s.hy = hy;
+    // Every house is built with its ordinal already known — it is simply how
+    // many houses this cell has raised so far, which is exactly the number
+    // the composite will count back when a door is opened.
+    const std::uint16_t ordinal = house_count(out);
     out.structures.push_back(s);
+
+    // ...and the door it is entered by. A building without a visible way in
+    // is a building the player cannot read: the door hangs flush on the
+    // +local-Y face, its own leaf, carrying the ordinal that names this house.
+    Structure d{};
+    d.kind = Structure::Door;
+    d.x = cx - hy * sn;      // centre of the +Y face in world tiles
+    d.y = cy + hy * cs;
+    d.yaw = yaw;
+    // A leaf a body can walk through, not the whole wall: one body diameter
+    // (sub/body.h radius 1.5 → 3 tiles) capped by the wall it hangs on.
+    d.hx = std::min(hx, 1.0f);
+    d.hy = structure_min_half_xy(Structure::Door);
+    d.radius = std::max(d.hx, d.hy);
+    d.height = structure_min_height(Structure::Door);
+    d.tag = ordinal;
+    out.structures.push_back(d);
     return true;
 }
 
@@ -1060,6 +1151,10 @@ static void gen_city(const CellContext& ctx, const Biome nbBiome[9],
     }
     stamp_rect(out, center - squareSize / 2, center - squareSize / 2,
                squareSize, squareSize, TILE_SQUARE, 1);
+    // Street lighting: a town that keeps a wall keeps lamps along its
+    // thoroughfares. Spacing is the lantern's own reach from the prop table —
+    // pools that just meet, so a street reads as lit rather than as beads.
+    scatter_street_lanterns(out, center, wallR, ctx.seed ^ 0x1A47E27u);
 
     const int targetFields = std::min(80, std::max(6, population / 50));
     std::array<int, 80> fieldX{};

@@ -1142,6 +1142,43 @@ all: grid allocation, neighbour-aware heightmap generation (with coastal
 sculpting, mountain amplification, biome-specific terrain),
 `to_map_data()` serialisation, and low-level grid primitives.
 
+### Props and interactions — one table, one keypress
+
+The world is built in two passes, and the second one is data. Generators place
+**props** — every physical thing that is not terrain: trees, walls, houses,
+crops, furniture, doors, lanterns, stairs. All of them are `Structure` records
+in the one composite array, and everything the engine wants to know about a
+kind is a **column in `kStructureKindRows`** (`sub/map_data.h`): its size
+floors, whether it is solid, what it drops, *which render pass draws it*
+(`Draw::Billboard` / `Draw::Solid`), whether it is wood or masonry, what light
+it casts — and what pressing **E** on it does.
+
+That last column is the interaction: `InteractId` plus `kInteractRows`
+(`{verb, reachTiles}`). A prop that carries one is interactive; a prop that
+does not is scenery. Per-*instance* payload rides `Structure::tag` — a door
+carries the ordinal of the building it opens, a stair carries its direction.
+So a new interaction ("drink from the well", "ring the bell") is **one prop
+row plus one case in the single dispatcher**, and it is visible, solid, lit,
+minimapped and testable the day its row lands.
+
+Targeting is **by look, never by proximity** (owner ruling 2026-08-12): the
+resolver takes the prop under the reticle inside a forward cone on the camera
+yaw, within that verb's own reach measured to the prop's *surface*. The HUD
+prompt under the crosshair (`interact_prompt()`) runs the exact same
+resolution, so it can never offer a verb the keypress will not perform.
+Corpses answer the same rule with the `Loot` verb although they are ECS
+bodies rather than composite props — one keypress, one mental model.
+
+Lit props need no renderer code: the engine hangs an ordinary
+`ecs::LightEmitter` body on each one (`rebuild_prop_cache`, rebuilt on the
+same "structures changed" signal as the solidity index), so a street lantern
+reaches the shader through the very path a carried torch does.
+
+*Scar tissue:* the session cache's `restore_into` diffed a hardcoded five
+kinds, so every prop added after `Bridge` — crops, fences, furniture, and then
+doors — was silently dropped when the player walked out of a cell and back.
+A count that must track a table now reads the table (`Structure::kKindCount`).
+
 ### Dungeons — the interior layer (`src/sub/dgn/`)
 
 **A dungeon is a pocket subworld.** Behind every door there is a scene the

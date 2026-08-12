@@ -1904,9 +1904,13 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
             trees.reserve(structs.size());
             for (const auto& s : structs) {
                 // Crops ride the tree billboard pass — same quad, same
-                // shadow caster, their own sprite row picked by KIND.
+                // shadow caster, their own sprite row picked by KIND. Which
+                // props belong to this pass is the table's column.
                 const bool isCrop = s.kind == Structure::Crop;
-                if (s.kind != Structure::Tree && !isCrop) continue;
+                if (structure_draw(s.kind)
+                    != StructureKindRow::Draw::Billboard) {
+                    continue;
+                }
                 float wx, wz;
                 tile_to_world(s.x, s.y, wx, wz);
                 const float baseM = sample_height_m(s.x, s.y);
@@ -1975,9 +1979,11 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
             std::vector<StructInstance> cyls;
             boxes.reserve(structs.size());
             for (const auto& s : structs) {
-                if (s.kind != Structure::House && s.kind != Structure::Wall
-                    && s.kind != Structure::Fence
-                    && s.kind != Structure::Furnish) continue;
+                // Which pass draws a prop is the prop table's column, not a
+                // list here: a new kind is visible the day its row lands.
+                if (structure_draw(s.kind) != StructureKindRow::Draw::Solid) {
+                    continue;
+                }
                 const float baseM = sample_height_m(s.x, s.y);
                 if (baseM < kSeaLevelM - 0.5f) continue;
                 float wx, wz;
@@ -2019,9 +2025,7 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 auto& list = (s.shape == Structure::Cylinder) ? cyls : boxes;
                 list.push_back({wx, py, wz,
                                 halfX, halfY, halfZ,
-                                s.kind == Structure::House
-                                        || s.kind == Structure::Furnish
-                                    ? 1.0f : 0.0f,
+                                structure_is_wood(s.kind) ? 1.0f : 0.0f,
                                 shade, s.yaw});
             }
             structCount_ = static_cast<std::uint32_t>(boxes.size());

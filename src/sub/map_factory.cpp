@@ -62,8 +62,13 @@ void restore_into(const SavedSubworld& saved, SubworldMapData& fresh) {
         }
     }
 
-    // Group structures by kind on both sides.
-    constexpr int kKinds = 5; // Tree, Rock, House, Wall, Bridge
+    // Group structures by kind on both sides — EVERY kind the prop table
+    // knows. This used to be a literal 5 (Tree/Rock/House/Wall/Bridge), so
+    // every prop added after it — crops, field fences, furniture, and now
+    // doors and lanterns — was silently DROPPED from a revisited cell: walk
+    // out of a town and back and its doors were gone. A count that must
+    // track a table is read from the table.
+    constexpr int kKinds = Structure::kKindCount;
     std::array<std::vector<const Structure*>, kKinds> savedByKind{};
     std::array<std::vector<const Structure*>, kKinds> freshByKind{};
     for (const auto& s : saved.structures) {

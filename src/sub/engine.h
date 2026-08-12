@@ -156,6 +156,11 @@ public:
     // room, a cellar: their only ways out are their shafts), or outside an
     // interior. Read by the HUD (way-out marker) and the smokes.
     bool dungeon_exit_point(float& x, float& y) const;
+    // What pressing E right now would do, as the verb the HUD shows under the
+    // crosshair ("Enter", "Loot", …). Empty string = nothing is being looked
+    // at. Pure query — the same resolution the keypress runs, so the prompt
+    // can never promise an action the key will not perform.
+    const char* interact_prompt() const;
     // Walk onto the shaft this storey carries and take it — the harness face
     // of the stair the player reaches with E. `up` picks the climbing (NW)
     // shaft, else the descending (NE) one. False when this storey has no such
@@ -383,6 +388,14 @@ private:
     // battle pass and spell projectiles (blocking) — one solidity authority.
     StructureIndex structIndex_;
     bool structIndexDirty_ = true;
+    // Bodies carrying the lights of lit props (rebuild_prop_cache). Held so a
+    // rebuild can retire the previous set; they are ordinary scene entities
+    // otherwise, reaped with everything else on leave.
+    std::vector<entt::entity> propLights_;
+    // Copies of every prop in the composite whose kind carries an interaction
+    // (doors, stairs — a handful per scene next to tens of thousands of
+    // trees). Copies, not indices: the composite reindexes on every seam.
+    std::vector<Structure> interactProps_;
     // Universal transient-VFX pool (spell trails, impacts, blood, embers). Pure
     // CPU sim (sub/particles.h): ticked each frame in tick(), packed + handed to
     // the renderer's additive pass in prepare_frame(). Lives on the engine, not
@@ -483,11 +496,6 @@ private:
     // entity so it stays the single source of truth. HP stays macro-authoritative
     // (combatStats -> entity in sync; entity -> currentHp in reconcile).
     // ── Dungeon session (SceneKind::Dungeon) ──
-    // Overworld interact() face: find a house door within reach and step
-    // through it. Tears the overworld session down through the ordinary
-    // leave() (danger gate + every write-back), then raises the interior
-    // scene on the same engine. False = nothing in reach / gate refused.
-    bool try_enter_dungeon();
     // Dungeon interact() face: E on the exit pad walks back out to the very
     // spot the door was opened from. Gated by the same danger law as any
     // subworld exit.
@@ -504,6 +512,24 @@ private:
                              const FeatureLayer& features, ecs::World& ecs,
                              EventBus& bus, const ZoneLayer* zones,
                              TreeLayer* treeLayer);
+    // Rebuild what the engine keeps ABOUT props, from the one composite:
+    // the lights of lit props (hung as ordinary `LightEmitter` bodies, so a
+    // street lantern and a carried torch reach the shader through the same
+    // path) and the short list of INTERACTIVE props, so the per-frame aim
+    // scan walks a handful of doors instead of every tree in the window.
+    // Runs on the same "structures changed" signal as the solidity index.
+    void rebuild_prop_cache();
+    // The prop the player is looking at, or nullptr. Pure query over the
+    // interactive cache: forward cone on the camera yaw, within the verb's
+    // own reach measured to the prop's SURFACE.
+    const Structure* aimed_prop() const;
+    // The corpse under the reticle (entt::null if none) — same cone, the
+    // Loot verb's own reach.
+    entt::entity aimed_corpse() const;
+    // Step through a door prop: resolves the building it belongs to (its
+    // `tag` is that house's ordinal within the window cell) and raises the
+    // interior. False if the building cannot be resolved.
+    bool enter_dungeon_by_door(const Structure& door);
     void spawn_player_entity();
     void clear_player_entity();
     void sync_player_entity_position();

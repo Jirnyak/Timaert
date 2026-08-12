@@ -145,10 +145,47 @@ inline CellLandmarkKind effective_landmark(const CellContext& ctx) {
     return CellLandmarkKind::None;
 }
 
+// ── What a prop DOES when the player presses E on it ────────────────────────
+// The world is built in two passes: generators place PROPS (geometry — trees,
+// walls, houses, doors, lanterns), then this one column says which of them are
+// also INTERACTIVE and with what verb. Adding "drink from the well" is a row
+// in the prop table plus a case in the one dispatcher — never a new system, and
+// never a special case in the engine's input path.
+enum class InteractId : std::uint8_t {
+    None = 0,
+    // Step through into the interior behind this door (sub/dgn). The prop's
+    // `tag` names WHICH building: the house's ordinal within its cell.
+    Door,
+    // Take the shaft this prop stands on: `tag` 1 = up, 0 = down.
+    Stairs,
+    // The corpse of something you killed — not a composite prop but an ECS
+    // body; it shares the verb so one prompt and one keypress serve both.
+    Loot,
+    Count,
+};
+
+struct InteractRow {
+    // Shown in the HUD prompt as "[E] <verb>".
+    const char* verb;
+    // How far the player may stand from the prop's surface, in tiles. A door
+    // is arm's length (the melee reach every other contact uses); a corpse is
+    // picked up from a little further because you loot what fell around you.
+    float reachTiles;
+};
+inline constexpr InteractRow kInteractRows[int(InteractId::Count)] = {
+    /* None   */ {"",            0.0f},
+    /* Door   */ {"Enter",       5.0f},
+    /* Stairs */ {"Take stairs", 5.0f},
+    /* Loot   */ {"Loot",       12.0f},
+};
+inline constexpr const InteractRow& interact_row(InteractId i) {
+    return kInteractRows[int(i) < int(InteractId::Count) ? int(i) : 0];
+}
+
 struct Structure {
     enum Kind : std::uint8_t { Tree = 0, Rock, House, Wall, Bridge, Crop,
-                               Fence, Furnish } kind;
-    static constexpr int kKindCount = int(Furnish) + 1;
+                               Fence, Furnish, Door, Lantern, Stairs } kind;
+    static constexpr int kKindCount = int(Stairs) + 1;
     // Footprint silhouette. Box is the default; Cylinder renders (and collides)
     // as a round prism — wall towers, gate jambs, the spire. One byte, not a
     // new Kind: shape is orthogonal to what the thing IS.
@@ -163,6 +200,11 @@ struct Structure {
     float zBase = 0.0f;  // bottom lift above the terrain seat, metres — gate
                          // lintels / decks: bodies pass beneath, stand on top
     Shape shape = Box;
+    // Per-INSTANCE payload for the prop's interaction (the kind decides the
+    // verb, this decides which one of them this is): a door carries its
+    // building's ordinal, a stair carries its direction. Meaningless — and
+    // ignored — for a kind with no interaction.
+    std::uint16_t tag = 0;
 };
 
 // ── Structure geometry — the ONE contract shared by the 3D renderer and the
@@ -175,6 +217,21 @@ inline float structure_half_x(const Structure& s) {
 }
 inline float structure_half_y(const Structure& s) {
     return s.hy > 0.0f ? s.hy : s.radius;
+}
+
+// Squared 2D distance from a point to the SURFACE of a prop's oriented
+// footprint (0 inside it). Reach is measured to the surface, never to the
+// centre, or a wide building would be unreachable from its own doorstep.
+inline float structure_surface_dist2(const Structure& s, float px, float py) {
+    const float dx = px - s.x;
+    const float dy = py - s.y;
+    const float c = std::cos(s.yaw);
+    const float sn = std::sin(s.yaw);
+    const float lx = dx * c + dy * sn;
+    const float ly = -dx * sn + dy * c;
+    const float qx = std::max(0.0f, std::abs(lx) - structure_half_x(s));
+    const float qy = std::max(0.0f, std::abs(ly) - structure_half_y(s));
+    return qx * qx + qy * qy;
 }
 
 // ── The ONE per-kind prop row. The size-floor / loot forks that used to live
@@ -202,23 +259,82 @@ struct StructureKindRow {
     bool solid;
     // Status line the harvest door prints ("" = not harvestable).
     const char* harvestMsg;
+    // Which pass draws this prop. Two hardcoded kind lists used to live in
+    // the renderer (one per pass), so every new prop was invisible until
+    // somebody remembered to edit both — the door bug that started this
+    // system. Now the row says it.
+    enum class Draw : std::uint8_t {
+        None = 0,   // not drawn yet (Rock, Bridge)
+        Billboard,  // camera-facing quad from the tree atlas
+        Solid,      // the oriented box / cylinder structure pass
+    };
+    Draw draw;
+    // Solid-pass material: wood grain vs masonry.
+    bool wood;
+    // What pressing E on this prop does (InteractId::None = scenery).
+    InteractId interact;
+    // Light this prop casts, as 0xRRGGBB + reach in tiles (0 radius = dark).
+    // The engine hangs a LightEmitter on every lit prop through the ONE
+    // point-light path (sub/lighting.h), so a lantern lights the street with
+    // the same code a carried torch lights a corridor.
+    std::uint32_t lightRgb;
+    float lightRadiusTiles;
+    // Metres above the prop's seat the light hangs — a lantern burns at its
+    // crown, not at the foot of its post.
+    float lightHeightM;
 };
 inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
-    /* Tree   */ {"tree", 1.6f, 3.5f, 14.0f, false, "You fell a tree"},
-    /* Rock   */ {"",     1.6f, 3.5f,  0.0f, false, ""},
-    /* House  */ {"",     1.6f, 3.5f,  0.0f, true,  ""},
-    /* Wall   */ {"",     1.2f, 4.0f,  0.0f, true,  ""},
-    /* Bridge */ {"",     1.6f, 3.5f,  0.0f, false, ""},
-    /* Crop   */ {"crop", 0.4f, 0.5f,  1.2f, false, "You harvest the crop"},
+    /* Tree   */ {"tree", 1.6f, 3.5f, 14.0f, false, "You fell a tree",
+                  StructureKindRow::Draw::Billboard, true,
+                  InteractId::None, 0u, 0.0f, 0.0f},
+    /* Rock   */ {"",     1.6f, 3.5f,  0.0f, false, "",
+                  StructureKindRow::Draw::None, false,
+                  InteractId::None, 0u, 0.0f, 0.0f},
+    /* House  */ {"",     1.6f, 3.5f,  0.0f, true,  "",
+                  StructureKindRow::Draw::Solid, true,
+                  InteractId::None, 0u, 0.0f, 0.0f},
+    /* Wall   */ {"",     1.2f, 4.0f,  0.0f, true,  "",
+                  StructureKindRow::Draw::Solid, false,
+                  InteractId::None, 0u, 0.0f, 0.0f},
+    /* Bridge */ {"",     1.6f, 3.5f,  0.0f, false, "",
+                  StructureKindRow::Draw::None, true,
+                  InteractId::None, 0u, 0.0f, 0.0f},
+    /* Crop   */ {"crop", 0.4f, 0.5f,  1.2f, false, "You harvest the crop",
+                  StructureKindRow::Draw::Billboard, true,
+                  InteractId::None, 0u, 0.0f, 0.0f},
     // Fence: the field balks' boulder walls — knee-high, honest to walk
     // around (solid), drawn by the same box pass as walls in stone flavour.
-    /* Fence  */ {"",     0.3f, 0.4f,  0.0f, true,  ""},
+    /* Fence  */ {"",     0.3f, 0.4f,  0.0f, true,  "",
+                  StructureKindRow::Draw::Solid, false,
+                  InteractId::None, 0u, 0.0f, 0.0f},
     // Furnish: interior furniture (beds, tables, chests — sub/dgn/). Solid so
     // a room fights around its furniture; waist-high floor (0.4 m) so a chest
     // is never inflated to a pillar by the legacy stub rule. Drawn wood-
     // flavoured in the box pass. No loot row yet — a chest that PAYS is a
     // future increment through this same row.
-    /* Furnish*/ {"",     0.5f, 0.4f,  0.0f, true,  ""},
+    /* Furnish*/ {"",     0.5f, 0.4f,  0.0f, true,  "",
+                  StructureKindRow::Draw::Solid, true,
+                  InteractId::None, 0u, 0.0f, 0.0f},
+    // Door: the way in. Not solid — it hangs flush on a wall that already
+    // blocks, and a door you bump into instead of opening is a door that
+    // fights the player. A leaf is 2 m tall (a body plus its hat) and half a
+    // tile wide, which is what makes it READ as a door from the street.
+    /* Door   */ {"",     0.5f, 2.0f,  0.0f, false, "",
+                  StructureKindRow::Draw::Solid, true,
+                  InteractId::Door, 0u, 0.0f, 0.0f},
+    // Lantern: a post with a flame on top. Solid so it is a real obstacle you
+    // walk around, knee-thin. Warm 0xFFB060 at 24 tiles — the carried-torch
+    // family (sub/lighting.h), hung at 3 m: above a body's head, so it lights
+    // the street rather than the walker's boots.
+    /* Lantern*/ {"",     0.3f, 3.0f,  0.0f, true,  "",
+                  StructureKindRow::Draw::Solid, true,
+                  InteractId::None, 0xFFB060u, 24.0f, 3.0f},
+    // Stairs: the shaft between storeys, drawn as a low block you step onto.
+    // Not solid (you stand ON its tile and press E), knee-high so it reads as
+    // a flight of steps and not a table.
+    /* Stairs */ {"",     1.5f, 0.5f,  0.0f, false, "",
+                  StructureKindRow::Draw::Solid, true,
+                  InteractId::Stairs, 0u, 0.0f, 0.0f},
 };
 
 inline constexpr const StructureKindRow& structure_kind_row(Structure::Kind k) {
@@ -238,6 +354,18 @@ inline constexpr bool structure_is_solid(Structure::Kind k) {
 }
 inline constexpr bool structure_is_lootable(Structure::Kind k) {
     return structure_kind_row(k).lootId[0] != '\0';
+}
+inline constexpr StructureKindRow::Draw structure_draw(Structure::Kind k) {
+    return structure_kind_row(k).draw;
+}
+inline constexpr bool structure_is_wood(Structure::Kind k) {
+    return structure_kind_row(k).wood;
+}
+inline constexpr InteractId structure_interact(Structure::Kind k) {
+    return structure_kind_row(k).interact;
+}
+inline constexpr bool structure_is_lit(Structure::Kind k) {
+    return structure_kind_row(k).lightRadiusTiles > 0.0f;
 }
 
 // Visible/solid height in metres. A decayed record (negative height — the

@@ -3193,13 +3193,17 @@ namespace sm::ui
                     draw_map_disc(rgba, side, px, py,
                                   std::max(1, r), IM_COL32(112, 112, 116, 255), 0.70f);
                     break;
+                case sub::Structure::Door:
+                case sub::Structure::Lantern:
+                case sub::Structure::Stairs:
                 case sub::Structure::Tree:
                 case sub::Structure::Crop:
                 case sub::Structure::Furnish:
-                    // Tree/Crop read from the tile layer already (TREE_DECOR /
-                    // TILE_FIELD); thousands of dots would smear the map.
-                    // Furniture reads from its painted TILE_HOUSE footprint
-                    // the same way — a bed is texture, not a landmark.
+                    // Everything here reads from the tile layer already
+                    // (TREE_DECOR / TILE_FIELD / the painted footprints), and
+                    // a town holds HUNDREDS of doors and lanterns: marking
+                    // them turned the minimap into one yellow blanket. A dot
+                    // per prop is only worth it when props are rare.
                     break;
                 }
             }
