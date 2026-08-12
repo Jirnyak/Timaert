@@ -555,6 +555,7 @@ timaert_test(subworld_generator_parity_test
         src/sub/gens/dispatch.cpp
         src/sub/dgn/dispatch.cpp
         src/sub/dgn/house.cpp
+        src/sub/dgn/cave.cpp
     LINK_SDL)
 
 timaert_test(tree_layer_test
@@ -569,6 +570,7 @@ timaert_test(city_distribution_test
         src/sub/gens/dispatch.cpp
         src/sub/dgn/dispatch.cpp
         src/sub/dgn/house.cpp
+        src/sub/dgn/cave.cpp
     LINK_SDL)
 
 timaert_test(material_seam_test
@@ -582,6 +584,7 @@ timaert_test(structure_collide_test
         src/sub/gens/dispatch.cpp
         src/sub/dgn/dispatch.cpp
         src/sub/dgn/house.cpp
+        src/sub/dgn/cave.cpp
     LINK_SDL)
 
 timaert_test(house_pad_flatten_test
@@ -590,6 +593,7 @@ timaert_test(house_pad_flatten_test
         src/sub/gens/dispatch.cpp
         src/sub/dgn/dispatch.cpp
         src/sub/dgn/house.cpp
+        src/sub/dgn/cave.cpp
     LINK_SDL)
 # Dungeon house interior (sub/dgn/house.cpp): sealed room projected from the
 # door's DungeonRef, routed through dispatch_generate's early return — links
@@ -601,6 +605,7 @@ timaert_test(dungeon_house_test
         src/sub/gens/dispatch.cpp
         src/sub/dgn/dispatch.cpp
         src/sub/dgn/house.cpp
+        src/sub/dgn/cave.cpp
     LINK_SDL)
 
 # Universal prop / interaction system: the kStructureKindRows draw / light /
@@ -613,6 +618,7 @@ timaert_test(prop_interaction_test
         src/sub/gens/dispatch.cpp
         src/sub/dgn/dispatch.cpp
         src/sub/dgn/house.cpp
+        src/sub/dgn/cave.cpp
         src/sub/map_factory.cpp
     LINK_SDL)
 
@@ -627,7 +633,8 @@ timaert_test(subworld_async_seam_test
         src/sub/map_factory.cpp
         src/sub/gens/dispatch.cpp
         src/sub/dgn/dispatch.cpp
-        src/sub/dgn/house.cpp)
+        src/sub/dgn/house.cpp
+        src/sub/dgn/cave.cpp)
 
 timaert_test(subworld_spawn_parity_test
     SOURCES
@@ -639,6 +646,7 @@ timaert_test(subworld_spawn_parity_test
         src/sub/gens/dispatch.cpp
         src/sub/dgn/dispatch.cpp
         src/sub/dgn/house.cpp
+        src/sub/dgn/cave.cpp
         src/macro/player_entity.cpp
     LINK_ENTT)
 # Pure-logic unit tests for the RPG spine (character_sheet.h) + unified loot
@@ -822,6 +830,7 @@ timaert_test(settlement_faction_test
         src/sub/gens/dispatch.cpp
         src/sub/dgn/dispatch.cpp
         src/sub/dgn/house.cpp
+        src/sub/dgn/cave.cpp
         src/macro/player_entity.cpp
     LINK_ENTT)
 
@@ -835,6 +844,7 @@ timaert_test(carried_light_spawn_test
         src/sub/gens/dispatch.cpp
         src/sub/dgn/dispatch.cpp
         src/sub/dgn/house.cpp
+        src/sub/dgn/cave.cpp
         src/macro/player_entity.cpp
     LINK_ENTT)
 # A settlement's people live inside the settlement: the citizen spawner must
@@ -852,6 +862,7 @@ timaert_test(city_population_inside_walls_test
         src/sub/gens/dispatch.cpp
         src/sub/dgn/dispatch.cpp
         src/sub/dgn/house.cpp
+        src/sub/dgn/cave.cpp
         src/macro/player_entity.cpp
     LINK_ENTT)
 # Particle-sim contract (FX Inc A): the transient-VFX pool is Vulkan-free by

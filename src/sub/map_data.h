@@ -77,6 +77,8 @@ struct DungeonRef {
     enum Kind : std::uint8_t {
         None = 0,
         House = 1,      // a settlement building's interior
+        Cave = 2,       // a cavern behind a mouth in rock — the first
+                        //   interior that is nobody's property
         Void = 0xFF,    // sealed filler for the dungeon window's ring cells
     };
     std::uint8_t  kind = None;
@@ -191,8 +193,8 @@ inline constexpr const InteractRow& interact_row(InteractId i) {
 struct Structure {
     enum Kind : std::uint8_t { Tree = 0, Rock, House, Wall, Bridge, Crop,
                                Fence, Furnish, Door, Lantern, Stairs,
-                               Chest } kind;
-    static constexpr int kKindCount = int(Chest) + 1;
+                               Chest, CaveMouth } kind;
+    static constexpr int kKindCount = int(CaveMouth) + 1;
     // Footprint silhouette. Box is the default; Cylinder renders (and collides)
     // as a round prism — wall towers, gate jambs, the spire. One byte, not a
     // new Kind: shape is orthogonal to what the thing IS.
@@ -291,10 +293,15 @@ struct StructureKindRow {
         Door,        // planked leaf with a frame and a handle
         Lantern,     // dark post with a burning head
         Chest,       // banded coffer: dark timber with iron straps
+        CaveMouth,   // rock face swallowing a black opening
     };
     Material material;
     // What pressing E on this prop does (InteractId::None = scenery).
     InteractId interact;
+    // For a prop whose verb is Door: WHICH interior it opens. A column, not
+    // a branch in the engine — the day a keep or a barrow wants its own
+    // module, it is one row here and one case in the dungeon dispatch.
+    DungeonRef::Kind opens;
     // Light this prop casts, as 0xRRGGBB + reach in tiles (0 radius = dark).
     // The engine hangs a LightEmitter on every lit prop through the ONE
     // point-light path (sub/lighting.h), so a lantern lights the street with
@@ -309,33 +316,33 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     /* Tree   */ {"tree", 1.6f, 3.5f, 14.0f, false, "You fell a tree",
                   StructureKindRow::Draw::Billboard,
                   StructureKindRow::Material::Wood,
-                  InteractId::None, 0u, 0.0f, 0.0f},
+                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f},
     /* Rock   */ {"",     1.6f, 3.5f,  0.0f, false, "",
                   StructureKindRow::Draw::None,
                   StructureKindRow::Material::Stone,
-                  InteractId::None, 0u, 0.0f, 0.0f},
+                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f},
     /* House  */ {"",     1.6f, 3.5f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::House,
-                  InteractId::None, 0u, 0.0f, 0.0f},
+                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f},
     /* Wall   */ {"",     1.2f, 4.0f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Stone,
-                  InteractId::None, 0u, 0.0f, 0.0f},
+                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f},
     /* Bridge */ {"",     1.6f, 3.5f,  0.0f, false, "",
                   StructureKindRow::Draw::None,
                   StructureKindRow::Material::Wood,
-                  InteractId::None, 0u, 0.0f, 0.0f},
+                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f},
     /* Crop   */ {"crop", 0.4f, 0.5f,  1.2f, false, "You harvest the crop",
                   StructureKindRow::Draw::Billboard,
                   StructureKindRow::Material::Wood,
-                  InteractId::None, 0u, 0.0f, 0.0f},
+                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f},
     // Fence: the field balks' boulder walls — knee-high, honest to walk
     // around (solid), drawn by the same box pass as walls in stone flavour.
     /* Fence  */ {"",     0.3f, 0.4f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Stone,
-                  InteractId::None, 0u, 0.0f, 0.0f},
+                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f},
     // Furnish: interior furniture (beds, tables, chests — sub/dgn/). Solid so
     // a room fights around its furniture; waist-high floor (0.4 m) so a chest
     // is never inflated to a pillar by the legacy stub rule. Drawn wood-
@@ -344,7 +351,7 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     /* Furnish*/ {"",     0.5f, 0.4f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Wood,
-                  InteractId::None, 0u, 0.0f, 0.0f},
+                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f},
     // Door: the way in. Not solid — it hangs flush on a wall that already
     // blocks, and a door you bump into instead of opening is a door that
     // fights the player. A leaf is 2 m tall (a body plus its hat) and half a
@@ -352,7 +359,7 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     /* Door   */ {"",     0.5f, 2.0f,  0.0f, false, "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Door,
-                  InteractId::Door, 0u, 0.0f, 0.0f},
+                  InteractId::Door, DungeonRef::House, 0u, 0.0f, 0.0f},
     // Lantern: a post with a flame on top. Solid so it is a real obstacle you
     // walk around, knee-thin. Warm 0xFFB060 at 24 tiles — the carried-torch
     // family (sub/lighting.h), hung at 3 m: above a body's head, so it lights
@@ -360,14 +367,14 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     /* Lantern*/ {"",     0.3f, 3.0f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Lantern,
-                  InteractId::None, 0xFFB060u, 24.0f, 3.0f},
+                  InteractId::None, DungeonRef::None, 0xFFB060u, 24.0f, 3.0f},
     // Stairs: the shaft between storeys, drawn as a low block you step onto.
     // Not solid (you stand ON its tile and press E), knee-high so it reads as
     // a flight of steps and not a table.
     /* Stairs */ {"",     1.5f, 0.5f,  0.0f, false, "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Wood,
-                  InteractId::Stairs, 0u, 0.0f, 0.0f},
+                  InteractId::Stairs, DungeonRef::None, 0u, 0.0f, 0.0f},
     // Chest: the household's store, waist-high and solid like the furniture
     // it is. It has no loot ROW of its own on purpose — a chest does not
     // conjure goods, it hands over what the place that owns it actually has
@@ -376,7 +383,16 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     /* Chest  */ {"",     0.8f, 0.9f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Chest,
-                  InteractId::Search, 0u, 0.0f, 0.0f},
+                  InteractId::Search, DungeonRef::None, 0u, 0.0f, 0.0f},
+    // CaveMouth: a dark opening in rock. The SAME door verb as a house's
+    // leaf — the column below is what makes it open a cavern instead of a
+    // parlour — so the player learns one key and the engine keeps one path.
+    // Wide and low, so it reads as a hole rather than a shed, and not solid:
+    // you walk into the mouth, you do not bump into it.
+    /* CaveMth*/ {"",     2.0f, 3.0f,  0.0f, false, "",
+                  StructureKindRow::Draw::Solid,
+                  StructureKindRow::Material::CaveMouth,
+                  InteractId::Door, DungeonRef::Cave, 0u, 0.0f, 0.0f},
 };
 
 inline constexpr const StructureKindRow& structure_kind_row(Structure::Kind k) {
@@ -405,6 +421,10 @@ inline constexpr StructureKindRow::Material structure_material(Structure::Kind k
 }
 inline constexpr InteractId structure_interact(Structure::Kind k) {
     return structure_kind_row(k).interact;
+}
+// Which interior a Door-verb prop opens (DungeonRef::None for every other).
+inline constexpr DungeonRef::Kind structure_opens(Structure::Kind k) {
+    return structure_kind_row(k).opens;
 }
 inline constexpr bool structure_is_lit(Structure::Kind k) {
     return structure_kind_row(k).lightRadiusTiles > 0.0f;

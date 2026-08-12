@@ -441,6 +441,7 @@ int spawn_dungeon_residents(ecs::World& w,
                             int count,
                             int levelBonus,
                             float x0, float y0, float x1, float y1,
+                            std::uint8_t floorTile,
                             MacroStockKey populationKey) {
     if (count <= 0) return 0;
     const auto& tiles = mgr.tiles();
@@ -451,8 +452,8 @@ int spawn_dungeon_residents(ecs::World& w,
     int placed = 0;
     for (int i = 0; i < count; ++i) {
         // Plain interior floor only: partitions paint TILE_WALL, furniture
-        // paints TILE_HOUSE, the exit pad TILE_ROAD — a resident stands on
-        // none of them.
+        // paints TILE_HOUSE, the threshold TILE_ROAD — a body stands on none
+        // of them, and WHICH tile is floor is the interior's own answer.
         float fx = 0.0f, fy = 0.0f;
         bool found = false;
         for (int attempt = 0; attempt < 24 && !found; ++attempt) {
@@ -463,7 +464,7 @@ int spawn_dungeon_residents(ecs::World& w,
                 continue;
             }
             if (tiles[std::size_t(iy) * kFullSize + std::size_t(ix)]
-                != TILE_SQUARE) {
+                != floorTile) {
                 continue;
             }
             found = true;
@@ -499,6 +500,7 @@ int spawn_dungeon_vermin(ecs::World& w,
                          float damageMult,
                          int budget,
                          float x0, float y0, float x1, float y1,
+                         std::uint8_t floorTile,
                          MacroStockKey faunaKey) {
     if (budget <= 0) return 0;
     const auto& tiles = mgr.tiles();
@@ -527,7 +529,7 @@ int spawn_dungeon_vermin(ecs::World& w,
                 continue;
             }
             if (tiles[std::size_t(iy) * kFullSize + std::size_t(ix)]
-                != TILE_SQUARE) {
+                != floorTile) {
                 continue;
             }
             found = true;

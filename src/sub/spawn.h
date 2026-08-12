@@ -184,6 +184,11 @@ int spawn_dungeon_residents(ecs::World& w,
                             int count,
                             int levelBonus,
                             float x0, float y0, float x1, float y1,
+                            // What this interior's WALKABLE ground is paved
+                            // with (sub/dgn dungeon_floor_tile). A hall is
+                            // flagged, a cavern is scree: the placement must
+                            // ask the place, not assume a house.
+                            std::uint8_t floorTile,
                             MacroStockKey populationKey);
 
 // The vermin of ONE interior (a cellar, a cave floor): creatures rolled from
@@ -206,6 +211,7 @@ int spawn_dungeon_vermin(ecs::World& w,
                          float damageMult,
                          int budget,
                          float x0, float y0, float x1, float y1,
+                         std::uint8_t floorTile,
                          MacroStockKey faunaKey);
 
 // Destroy every world-owned subworld creature (fauna + citizens), preserving the

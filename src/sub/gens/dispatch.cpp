@@ -29,6 +29,7 @@ static void gen_field     (const CellContext&, const Biome nbBiome[9], const std
 static void gen_spire     (const CellContext&, const Biome nbBiome[9], const std::uint8_t nbFeature[9], const int nbTreeCount[9], SubworldMapData&);
 static void gen_ruin      (const CellContext&, const Biome nbBiome[9], const std::uint8_t nbFeature[9], const int nbTreeCount[9], SubworldMapData&);
 static void scatter_forest_glades(const CellContext&, SubworldMapData&);
+static void scatter_cave_mouths(SubworldMapData&, const CellContext&);
 static void scatter_field_crops(const CellContext&, SubworldMapData&);
 static void carve_organic_road(SubworldMapData&, int, int, int, int, std::uint32_t);
 static void edge_anchor_target(const CellContext&, int, int, int&, int&);
@@ -508,6 +509,42 @@ static void scatter_street_lanterns(SubworldMapData& out, int center,
             s.shape = Structure::Cylinder;      // a post, not a crate
             out.structures.push_back(s);
         }
+    }
+}
+
+// Cave mouths: openings in the rock of a highland cell. Placement is the
+// cell's OWN business (the self-contained generator rule), the interior behind
+// each is not — the prop's table row says it opens a Cave, and the ordinal it
+// carries names WHICH cave of this cell, exactly as a house door names a house.
+//
+// A mouth is rare on purpose: a cell holds at most a couple, so finding one is
+// worth something. Whether a given cell has any at all is the cell's own coin,
+// so caves cluster where the rock does rather than dotting every hill.
+static void scatter_cave_mouths(SubworldMapData& out, const CellContext& ctx) {
+    Rng r(ctx.seed ^ 0xCA5E0FFu);
+    // Two thirds of highland cells keep no cave: the map should not become a
+    // sieve, and an empty hillside is what makes the next one worth entering.
+    if ((r.next_u32() % 3u) != 0u) return;
+    const int wanted = 1 + int(r.next_u32() % 2u);
+    // Ground the mouth against real rock: the mountain stamp painted TILE_ROCK
+    // where the massif stands, so a mouth can only open where there IS stone.
+    int placed = 0;
+    for (int attempt = 0; attempt < 64 && placed < wanted; ++attempt) {
+        const int x = 64 + int(r.next_u32() % std::uint32_t(kCellSize - 128));
+        const int y = 64 + int(r.next_u32() % std::uint32_t(kCellSize - 128));
+        if (out.tiles[std::size_t(y) * kCellSize + x] != TILE_ROCK) continue;
+        Structure m{};
+        m.kind = Structure::CaveMouth;
+        m.x = float(x) + 0.5f;
+        m.y = float(y) + 0.5f;
+        m.hx = structure_min_half_xy(Structure::CaveMouth);
+        m.hy = m.hx * 0.5f;
+        m.radius = m.hx;
+        m.height = structure_min_height(Structure::CaveMouth);
+        m.yaw = r.next_f01() * 3.14159265f;
+        m.tag = std::uint16_t(placed);
+        out.structures.push_back(m);
+        ++placed;
     }
 }
 
@@ -1353,6 +1390,7 @@ static void gen_mountain(const CellContext& ctx, const Biome nbBiome[9],
     scatter_universal_trees(out, kCellSize,
         ctx.cx * kCellSize, ctx.cy * kCellSize,
         nbBiome, nbTreeCount, /*clearRadius*/ 0, ctx.seed);
+    scatter_cave_mouths(out, ctx);
 }
 
 // Water cells: lay biome ground + run the universal tree scatter (water

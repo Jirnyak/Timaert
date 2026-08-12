@@ -2548,28 +2548,38 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
     if (!active_ || sceneKind_ != SceneKind::Overworld || !gs_ || !terrain_) {
         return false;
     }
-    // The door names its building by ordinal within its window cell — the
-    // count the generator stamped it with, over the SAME per-cell order the
-    // composite preserves (rebuild_composite_structures appends cell by
-    // cell). Find that house: its footprint is what the interior is built to.
+    // WHICH interior this door opens is the prop table's column, not a chain
+    // here: a house leaf opens a House, a mouth in the rock opens a Cave.
+    const DungeonRef::Kind opens = structure_opens(door.kind);
+    if (opens == DungeonRef::None) return false;
     const int winCellX = std::clamp(int(door.x) / kCellSize, 0, 2);
     const int winCellY = std::clamp(int(door.y) / kCellSize, 0, 2);
     const std::uint16_t ordinal = door.tag;
-    const auto& structs = mgr_.structures();
-    const Structure* house = nullptr;
-    std::uint16_t seen = 0;
-    for (const Structure& s : structs) {
-        if (s.kind != Structure::House) continue;
-        if (std::clamp(int(s.x) / kCellSize, 0, 2) != winCellX) continue;
-        if (std::clamp(int(s.y) / kCellSize, 0, 2) != winCellY) continue;
-        if (seen == ordinal) { house = &s; break; }
-        ++seen;
-    }
-    if (!house) {
-        // A door whose building is gone is a bug in whoever placed it, not a
-        // silent no-op: say so rather than swallowing the keypress.
-        set_status("This door leads nowhere.");
-        return false;
+    // A house door names its building by ordinal within its window cell — the
+    // count the generator stamped it with, over the SAME per-cell order the
+    // composite preserves (rebuild_composite_structures appends cell by cell)
+    // — because the interior is built to that building's footprint. A cave
+    // mouth needs no such lookup: the hill behind it is its own shape, so the
+    // mouth's own footprint is what the cavern is cut to.
+    const Structure* shape = &door;
+    if (opens == DungeonRef::House) {
+        const auto& structs = mgr_.structures();
+        const Structure* house = nullptr;
+        std::uint16_t seen = 0;
+        for (const Structure& s : structs) {
+            if (s.kind != Structure::House) continue;
+            if (std::clamp(int(s.x) / kCellSize, 0, 2) != winCellX) continue;
+            if (std::clamp(int(s.y) / kCellSize, 0, 2) != winCellY) continue;
+            if (seen == ordinal) { house = &s; break; }
+            ++seen;
+        }
+        if (!house) {
+            // A door whose building is gone is a bug in whoever placed it,
+            // not a silent no-op: say so rather than swallow the keypress.
+            set_status("This door leads nowhere.");
+            return false;
+        }
+        shape = house;
     }
     const int mapW = terrain_->width;
     const int mapH = terrain_->height;
@@ -2580,11 +2590,11 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
     if (doorCy < 0) doorCy += mapH;
 
     DungeonSession ses{};
-    ses.ref.kind = DungeonRef::House;
+    ses.ref.kind = std::uint8_t(opens);
     ses.ref.level = 0;
     ses.ref.ordinal = ordinal;
-    ses.ref.footHx = structure_half_x(*house);
-    ses.ref.footHy = structure_half_y(*house);
+    ses.ref.footHx = structure_half_x(*shape);
+    ses.ref.footHy = structure_half_y(*shape);
     ses.doorCx = doorCx;
     ses.doorCy = doorCy;
     ses.returnLocalX = playerX_ - float(winCellX * kCellSize);
@@ -2725,15 +2735,21 @@ void SubworldEngine::enter_dungeon_scene(GameState& gs,
             float(kCellSize) + room.cy - room.hy,
             float(kCellSize) + room.cx + room.hx,
             float(kCellSize) + room.cy + room.hy,
-            popKey);
+            std::uint8_t(dungeon_floor_tile(ses.ref)), popKey);
     }
-    // What lives under the floor. A cellar reads the RUIN row family of the
-    // one monster table (what creeps into the dark below men's houses) and
-    // borrows from the cell's OWN fauna_count — so a cleared cellar stays
-    // cleared until the single regrowth law (32 game days a head) refills the
-    // cell, and the same law serves the open world. The danger zone prices
-    // the fight exactly as it prices one outdoors.
-    if (ses.ref.kind == DungeonRef::House && ses.ref.level < 0 && ecs_) {
+    // What lives in the dark. A cellar and a cavern hold the same thing by
+    // the same law: the RUIN row family of the one monster table (what creeps
+    // into places men do not light), borrowed from the cell's OWN fauna_count
+    // — so a cleared den stays cleared until the single regrowth law (32 game
+    // days a head) refills the cell, and that law already serves the open
+    // world. The difference between a townhouse cellar and a hillside cave is
+    // not a rule: it is the cell they stand on, because a town cell's wild
+    // capacity is the Ruin table's floor while a mountain's is its own full
+    // headcount. The danger zone prices the fight exactly as it does outdoors.
+    const bool denOfBeasts =
+        (ses.ref.kind == DungeonRef::House && ses.ref.level < 0)
+        || ses.ref.kind == DungeonRef::Cave;
+    if (denOfBeasts && ecs_) {
         MacroWorld mw{gs_, treeLayer_, ecs_, terrain_};
         const MacroStockKey faunaKey{-1, std::int16_t(ses.doorCx),
                                      std::int16_t(ses.doorCy)};
@@ -2758,7 +2774,7 @@ void SubworldEngine::enter_dungeon_scene(GameState& gs,
             float(kCellSize) + room.cy - room.hy,
             float(kCellSize) + room.cx + room.hx,
             float(kCellSize) + room.cy + room.hy,
-            faunaKey);
+            std::uint8_t(dungeon_floor_tile(ses.ref)), faunaKey);
     }
     if (gs_) {
         set_flying(spellbook_has_sustained(gs_->player.spellBook, "flight"));

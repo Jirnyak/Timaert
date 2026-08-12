@@ -38,9 +38,17 @@ static void gen_dungeon_void(const CellContext& ctx, SubworldMapData& out) {
     out.waterLevel = 0.0f;
 }
 
+Tile dungeon_floor_tile(const DungeonRef& ref) {
+    switch (ref.kind) {
+        case DungeonRef::Cave: return TILE_ROCK;    // scree
+        default:               return TILE_SQUARE;  // flagged hall
+    }
+}
+
 DungeonRoom dungeon_room(const DungeonRef& ref) {
     switch (ref.kind) {
         case DungeonRef::House: return dungeon_house_room(ref);
+        case DungeonRef::Cave:  return dungeon_cave_room(ref);
         default:                return DungeonRoom{};
     }
 }
@@ -58,6 +66,8 @@ void dungeon_entry_point(const DungeonRef& ref, float& x, float& y) {
 }
 
 bool dungeon_has_upper(const DungeonRef& ref) {
+    // A cave has no storeys: it has depth, and depth is walked, not climbed.
+    if (ref.kind == DungeonRef::Cave) return false;
     // A storey is worth climbing only if it seats a room you can fight in:
     // both interior half-spans at least the manoeuvre floor the partitions
     // are cut to (sub/dgn/house.cpp kMinRoomSpanTiles = 12 — a doorway plus
@@ -68,6 +78,7 @@ bool dungeon_has_upper(const DungeonRef& ref) {
 
 bool dungeon_has_cellar(const DungeonRef& ref, std::uint32_t worldSeed,
                         int cx, int cy) {
+    if (ref.kind == DungeonRef::Cave) return false;   // see above
     // Design parameter, not an invariant: every second hearth keeps a
     // cellar. Rolled from the LEVEL-0 stream so every storey of one house
     // agrees on whether the shaft below exists.
@@ -88,6 +99,7 @@ void dungeon_stair_point(const DungeonRef& ref, bool up, float& x, float& y) {
 void dispatch_generate_dungeon(const CellContext& ctx, SubworldMapData& out) {
     switch (ctx.dungeon.kind) {
         case DungeonRef::House: gen_dungeon_house(ctx, out); break;
+        case DungeonRef::Cave:  gen_dungeon_cave(ctx, out);  break;
         case DungeonRef::Void:
         default:                gen_dungeon_void(ctx, out);  break;
     }

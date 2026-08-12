@@ -29,6 +29,12 @@ bool dungeon_has_cellar(const DungeonRef& ref, std::uint32_t worldSeed,
 // shaft is one vertical line through the house.
 void dungeon_stair_point(const DungeonRef& ref, bool up, float& x, float& y);
 
+// The tile an interior's WALKABLE ground is paved with. Placement code (the
+// resident and vermin spawners) reads the composite's tiles, so the module
+// that carved the place is the one that must say which of them is floor —
+// a house is flagged and paved, a cave is bare scree.
+Tile dungeon_floor_tile(const DungeonRef& ref);
+
 // Interior room rectangle (cell-local tile coords) derived from the door's
 // exterior footprint — the ONE geometry rule shared by the generator, the
 // engine's entry placement, and the tests. Dispatches on ref.kind.
@@ -50,5 +56,10 @@ void dispatch_generate_dungeon(const CellContext& ctx, SubworldMapData& out);
 // House interior (sub/dgn/house.cpp — self-contained module).
 void gen_dungeon_house(const CellContext& ctx, SubworldMapData& out);
 DungeonRoom dungeon_house_room(const DungeonRef& ref);
+
+// Cave interior (sub/dgn/cave.cpp — self-contained module). Its "room" is
+// the MOUTH chamber: the part the shared rules address, the rest is walked.
+void gen_dungeon_cave(const CellContext& ctx, SubworldMapData& out);
+DungeonRoom dungeon_cave_room(const DungeonRef& ref);
 
 } // namespace sm::sub

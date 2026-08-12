@@ -209,6 +209,7 @@ enum class SmokeAction : std::uint8_t {
     SubworldEnter,
     SubworldExitRemap,
     DungeonHouse,
+    DungeonCave,
     TriggerBattleStart,
     WaitVisible,
     OpenSettlementBuild,
@@ -510,6 +511,7 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"subworld_enter", SmokeAction::SubworldEnter},
     {"subworld_exit_remap", SmokeAction::SubworldExitRemap},
     {"dungeon_house", SmokeAction::DungeonHouse},
+    {"dungeon_cave", SmokeAction::DungeonCave},
     {"trigger_battle_start", SmokeAction::TriggerBattleStart},
     {"wait_visible", SmokeAction::WaitVisible},
     {"open_settlement_build", SmokeAction::OpenSettlementBuild},
@@ -6175,6 +6177,163 @@ bool run_dungeon_house_smoke(App& app) {
     return true;
 }
 
+// dungeon_cave — the first interior nobody owns. Walks the map until it finds
+// a highland cell whose rock has a mouth in it, enters through that mouth, and
+// asserts what a CAVE promises that a house does not: a walked shape (every
+// opened tile reachable from the threshold), wild beasts drawn from the cell's
+// own full headcount, and no storeys.
+bool run_dungeon_cave_smoke(App& app) {
+    if (!smoke_boot_invariants_hold(app)) {
+        smoke_print_counts(app, "dungeon_cave_boot_failed");
+        smoke_fail(app, "dungeon_cave boot invariants");
+        return false;
+    }
+    const float oldX = app.gs.player.x;
+    const float oldY = app.gs.player.y;
+    const auto oldSubState = app.gs.subState;
+    auto restore = [&]() {
+        if (app.subworld.active()) app.subworld.leave(true);
+        app.gs.player.x = oldX;
+        app.gs.player.y = oldY;
+        app.gs.subState = oldSubState;
+    };
+
+    // Mountain cells are where rock is, and rock is where a mouth can open.
+    // Two thirds of them keep no cave (the generator's own coin), so the
+    // search walks candidates until one bears fruit — and says how many it
+    // tried, because "found none" must be distinguishable from "looked once".
+    int tried = 0;
+    int mouths = 0;
+    const sm::sub::Structure* mouth = nullptr;
+    for (int cy = 0; cy < app.gs.mapH && mouths == 0; cy += 7) {
+        for (int cx = 0; cx < app.gs.mapW && mouths == 0; cx += 7) {
+            const std::size_t midx =
+                (std::size_t(cy) * std::size_t(app.terrain.width)
+                 + std::size_t(cx)) * 4u;
+            if (midx + 3u >= app.terrain.rgba.size()) continue;
+            if (app.terrain.rgba[midx + 3u] < 128) continue;   // sea
+            if (float(app.terrain.rgba[midx + 0u]) / 255.0f
+                < sm::kMountainBiomeLevel) continue;
+            ++tried;
+            if (tried > 24) break;                             // bounded hunt
+            app.gs.player.x = float(cx);
+            app.gs.player.y = float(cy);
+            app.gs.subState.settlementId = -1;
+            app.subworld.enter(app.gs, app.terrain, app.features, app.ecs,
+                               app.bus, &app.zones, &app.treeLayer);
+            if (!app.subworld.active()) continue;
+            app.subworld.tick(0.016f);
+            for (const auto& s : app.subworld.mgr().structures()) {
+                if (s.kind != sm::sub::Structure::CaveMouth) continue;
+                ++mouths;
+                if (!mouth) mouth = &s;
+            }
+            if (mouths == 0) app.subworld.leave(true);
+        }
+    }
+    if (mouths == 0 || mouth == nullptr) {
+        restore();
+        std::fprintf(stderr, "[smoke] dungeon_cave tried=%d found no mouth\n",
+                     tried);
+        std::fflush(stderr);
+        smoke_fail(app, "dungeon_cave no cave mouth in any highland cell");
+        return false;
+    }
+
+    // Stand off the mouth and look at it — the same aim the player uses.
+    const sm::sub::Structure m = *mouth;
+    const float standX = m.x - 4.0f * std::sin(m.yaw);
+    const float standY = m.y + 4.0f * std::cos(m.yaw);
+    app.subworld.set_player_pos(standX, standY);
+    app.subworld.rotate_camera(
+        std::atan2(m.y - standY, m.x - standX) - app.subworld.cam_yaw(), 0.0f);
+    const bool entered = app.subworld.interact();
+    const bool inCave = app.subworld.in_dungeon();
+    app.subworld.tick(0.016f);
+
+    // Opt-in (TIMAERT_SMOKE_CAVE_STAY=1): stop inside, looking up the first
+    // gallery, so a following capture_frame photographs the cavern.
+    if (std::getenv("TIMAERT_SMOKE_CAVE_STAY")) {
+        app.subworld.rotate_camera(-1.5707963f - app.subworld.cam_yaw(), 0.0f);
+        app.subworld.tick(0.016f);
+        std::fprintf(stderr, "[smoke] dungeon_cave STAY in=%d\n",
+                     inCave ? 1 : 0);
+        std::fflush(stderr);
+        if (!entered || !inCave) {
+            smoke_fail(app, "dungeon_cave stay invariant");
+            return false;
+        }
+        return true;
+    }
+
+    // What this harness can honestly see of the SHAPE is where the player is
+    // standing and what the cavern holds: the composite carries tiles, not
+    // the walkable grid (a cave's floor and its walls are the same stone, so
+    // only `trav` tells them apart), and that grid lives on the generated map
+    // — which is where the reachability proof belongs, and is asserted in
+    // dungeon_cave_test. Here we prove the LIVE facts a test cannot: that a
+    // mouth in the world opens, lands the player on open ground, and lets go.
+    int floorTile = -1;
+    int hoards = 0;
+    if (inCave) {
+        const auto& tiles = app.subworld.mgr().tiles();
+        const int ix = int(app.subworld.player_x());
+        const int iy = int(app.subworld.player_y());
+        const std::size_t i = std::size_t(iy) * sm::sub::kFullSize + ix;
+        if (i < tiles.size()) floorTile = int(tiles[i]);
+        for (const auto& st : app.subworld.mgr().structures()) {
+            if (st.kind == sm::sub::Structure::Chest) ++hoards;
+        }
+    }
+    const bool onFloor = floorTile == sm::sub::TILE_ROAD
+                      || floorTile == sm::sub::TILE_ROCK;
+
+    int vermin = 0;
+    for (auto e : app.ecs.reg.view<sm::ecs::MacroDebt, sm::ecs::SubworldTag>()) {
+        if (app.ecs.reg.get<sm::ecs::MacroDebt>(e).stock
+            == std::uint8_t(sm::MacroStock::FaunaCount)) {
+            ++vermin;
+        }
+    }
+    const int level = app.subworld.dungeon_level();
+    // No storeys underground: a cave has depth, and depth is walked.
+    const bool noStairs = !app.subworld.debug_take_stairs(true)
+                       && !app.subworld.debug_take_stairs(false);
+    // The quick exit obeys the danger law BOTH ways, and a cave with beasts
+    // in it is the honest place to prove it: while they are on you the map is
+    // not an escape hatch, and once they are down it is.
+    app.subworld.leave();
+    const bool refusedWhileHunted = vermin > 0 && app.subworld.in_dungeon();
+    if (vermin > 0) {
+        app.subworld.dev_kill_all_hostiles();
+        app.subworld.tick(0.016f);   // let the threat scan settle
+        app.subworld.tick(0.016f);
+    }
+    app.subworld.leave();
+    const bool leftToMap = !app.subworld.active();
+    restore();
+
+    std::fprintf(stderr,
+                 "[smoke] dungeon_cave tried=%d mouths=%d entered=%d in=%d "
+                 "level=%d floorTile=%d hoards=%d vermin=%d noStairs=%d "
+                 "hunted=%d leftToMap=%d\n",
+                 tried, mouths, entered ? 1 : 0, inCave ? 1 : 0, level,
+                 floorTile, hoards, vermin, noStairs ? 1 : 0,
+                 refusedWhileHunted ? 1 : 0, leftToMap ? 1 : 0);
+    std::fflush(stderr);
+
+    if (!entered || !inCave || level != 0 || !onFloor || hoards < 1
+        || !noStairs || !leftToMap
+        // A cave without beasts is a cave the fauna stock could not pay for,
+        // which is legitimate on a hunted cell — but if it HAD beasts, the
+        // gate must have held while they lived.
+        || (vermin > 0 && !refusedWhileHunted)) {
+        smoke_fail(app, "dungeon_cave invariant");
+        return false;
+    }
+    return true;
+}
+
 bool run_subworld_enemy_feedback_smoke(App& app) {
     if (!smoke_boot_invariants_hold(app)) {
         smoke_print_counts(app, "subworld_enemy_feedback_boot_failed");
@@ -8365,6 +8524,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr, "[smoke] action=dungeon_house\n");
             std::fflush(stderr);
             if (run_dungeon_house_smoke(app)) ++app.smoke.cursor;
+            break;
+        case SmokeAction::DungeonCave:
+            std::fprintf(stderr, "[smoke] action=dungeon_cave\n");
+            std::fflush(stderr);
+            if (run_dungeon_cave_smoke(app)) ++app.smoke.cursor;
             break;
         case SmokeAction::SubworldLootXp:
             std::fprintf(stderr, "[smoke] action=subworld_loot_xp\n");
