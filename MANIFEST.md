@@ -47,6 +47,7 @@ focused doc in this directory alongside the README, which orchestrates them.
 | Macroworld | [macroworld.md](macroworld.md) | World state, terrain gen, time, politik, pathfinding |
 | Microworld | [microworld.md](microworld.md) | Seamless 3×3 subworld, generators, 2D/3D renderers |
 | Seam crossing | [seamless-crossing.md](seamless-crossing.md) | Hitch-free cell-boundary crossing: GPU toroidal shift, O(new content) upload |
+| Dungeons & props | [dungeons.md](dungeons.md) | The interior layer (houses, cellars, caves) as pocket subworlds behind a door — identity not storage, storeys as portals — and the ONE prop table whose columns decide look, light and what pressing E does |
 | Biomes | [biomes.md](biomes.md) | 3×3 climate matrix + Water/Mountain by elevation, procedural GPU biome textures |
 | Landmarks | [landmarks.md](landmarks.md) | Settlements, spires, dungeons, markers |
 | Features | [features.md](features.md) | Roads, dirt roads, trees (feature layer; mountains are a biome) |

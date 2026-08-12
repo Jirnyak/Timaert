@@ -707,10 +707,29 @@ it about the vertical by `yaw`** — houses stand at random orientations with
 independent width/length, wall pieces follow the ring's curvature as yawed
 chords. [struct_cyl.vert](shaders/struct_cyl.vert) generates the prism (sides +
 top cap) for the round bodies. [struct.frag](shaders/struct.frag) is shared by
-both: colour keys off `type` (stone vs. tan house body + red-brown roof band),
-lit by the shared sun + ambient + PCF shadow. Both shapes cast
+both, lit by the shared sun + ambient + PCF shadow; both shapes cast
 ([shadow_struct.vert](shaders/shadow_struct.vert) /
 [shadow_cyl.vert](shaders/shadow_cyl.vert)) and receive shadows.
+
+**Material is a column, not a flag.** The instance's `type` is the prop's
+`StructureKindRow::Material` index ([map_data.h](src/sub/map_data.h)), and the
+fragment stage has **one branch per row** — masonry, house body + roof band,
+plank timber, a door's framed leaf with its handle, a lantern's burning head, a
+banded chest, a cave mouth's near-black opening, a well's waterline, a painted
+board. Giving a new prop its own look is a row there and a branch here; there
+is no second pipeline and no atlas. It used to be a single wood/stone BOOL that
+really meant *"draw me like a house"*, which is why every door and every bed
+wore the house's red **roof** across its top and a door was invisible on a
+reddish wall.
+
+Two things make those patterns hold their shape. The branches are ordered by
+**ascending** index (a chain of `>` thresholds silently drifts out of step with
+the enum — a well once drew as a signboard), and both vertex stages emit
+**face-local `[-1,1]²`** (`vFace`): a pattern in world metres stretches with the
+box and slides when the prop moves, so a door's frame and handle are drawn in
+the face's own space. The cylinder stage maps its angle onto the same range —
+the two stages share one fragment stage, so a varying missing from either is
+undefined data in the shader.
 
 **Seating** comes from the shared helpers in
 [src/sub/map_data.h](src/sub/map_data.h) (`structure_half_x/y`,

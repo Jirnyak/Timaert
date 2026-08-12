@@ -46,6 +46,14 @@ one enum value plus one table row (the same *spec-table → auto UI* idiom as
   fires when the pressed scancode is its binding AND its scope listens in the
   active world. E is the equipment sheet above ground and the interact hand
   below — two actions, one physical key, zero special cases.
+- The interact hand targets **by look**, never by proximity: the prop under the
+  reticle, within that verb's own reach. The HUD prints `[<key>] <verb>` under
+  the crosshair from the very same resolution the keypress runs, quoting the
+  live binding — so the prompt cannot promise an action the key will not
+  perform. Verbs and props: [dungeons.md](dungeons.md).
+- The leave key is the universal way out: from the open subworld it surfaces
+  you to the map, and from inside an interior it does the same from any storey
+  — both gated on the danger law.
 
 ## Persistence
 

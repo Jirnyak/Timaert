@@ -361,7 +361,21 @@ GPU ping-pong, the shift math, the self-checks, and the hard-won gotchas
 ## Data-driven extension
 
 Add a biome → one `BiomeConfig` + one ground texture. Add a landmark → one
-self-contained generator TU in [gens/](src/sub/gens).
+self-contained generator TU in [gens/](src/sub/gens). Add an **interior** →
+one self-contained module in [dgn/](src/sub/dgn) plus its row. Add a **prop**
+(door, lantern, chest, well…) → one row in `kStructureKindRows`, whose columns
+decide which pass draws it, how it looks, what light it casts and what pressing
+E on it does.
+
+## The layer below: interiors
+
+A door in the subworld opens on a **dungeon** — a pocket scene raised on this
+same engine, ECS and renderer, with the 3×3 window pinned and its ring sealed.
+Houses, cellars and caves are its two shipped generators; a dungeon is a
+projection OF the subworld exactly as the subworld is a projection of the map,
+so nothing below the door is saved and every lasting act pays up through a
+macro stock. The whole layer, the prop table it stands on and the one E-verb
+dispatch are written up in **[dungeons.md](dungeons.md)**.
 
 ## Connections
 
