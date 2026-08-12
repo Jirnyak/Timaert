@@ -13,7 +13,7 @@
 // What the fields mean is decided PER PASS by `kind`:
 //   trees      kind = sprite row (species / crop), seed = procedural variation
 //   creatures  kind = CreatureArchetype,           seed = procedural variation
-//   NPCs       kind = paper-doll pool layer,       seed = unused (0)
+//   NPCs       kind = paper-doll pool slot,        seed = unused (0)
 //
 // `seed` carries a FLOAT'S BITS (floatBitsToUint on the CPU side,
 // uintBitsToFloat in the shader): the procedural coverage functions take the

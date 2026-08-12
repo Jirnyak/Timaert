@@ -3,7 +3,7 @@
 // Paper-doll NPC billboard fragment stage (universal billboard.vert feeds it).
 // NPCs are the BANK branch of the sprite law: the 37-layer composite was
 // resolved to texels once per unique frame (assets/paperdoll_atlas.h) and this
-// stage samples the finished pool layer — `kind` IS the layer index. The pool
+// stage samples the finished pool slot — `kind` IS the slot index. The pool
 // stores frames feet-at-v0 (rows flipped at upload), so the sample is the
 // world convention with no per-stage flip.
 //
@@ -14,9 +14,10 @@
 // lit pass is the rule (src/sub/lighting.h).
 #include "shadow_common.glsl"
 #include "lighting.glsl"
+#include "doll_pool.glsl"
 
 layout(location = 0) in vec2 vUv;
-layout(location = 1) flat in uint vKind;   // paper-doll pool layer
+layout(location = 1) flat in uint vKind;   // paper-doll pool slot
 layout(location = 4) in vec4 vLightClip;
 layout(location = 5) in vec3 vWorld;
 layout(location = 6) in vec3 vAxisWorld;
@@ -36,11 +37,12 @@ layout(push_constant) uniform Push {
     mat4 lightMvp;
 } pc;
 
-// The paper-doll sprite pool: every composited 48x48 frame is one array layer.
+// The paper-doll sprite pool: composited 48x48 frames packed 2×2 per array
+// layer — `kind` is the pool SLOT, decoded by doll_sample (doll_pool.glsl).
 layout(set = 1, binding = 0) uniform sampler2DArray uDolls;
 
 void main() {
-    vec4 finalColor = texture(uDolls, vec3(vUv, float(vKind)));
+    vec4 finalColor = doll_sample(uDolls, vUv, vKind);
     if (finalColor.a < 0.01) discard;
 
     // Into the one lighting path, at the very end: the paper-doll is composed

@@ -237,6 +237,7 @@ if(NOT EMSCRIPTEN)
     set(_timaert_shader_incs
         ${CMAKE_SOURCE_DIR}/shaders/tree_sprite.glsl
         ${CMAKE_SOURCE_DIR}/shaders/npc_sprite.glsl
+        ${CMAKE_SOURCE_DIR}/shaders/doll_pool.glsl
         ${CMAKE_SOURCE_DIR}/shaders/creature_sprite.glsl
         ${CMAKE_SOURCE_DIR}/shaders/shadow_common.glsl
         ${CMAKE_SOURCE_DIR}/shaders/lighting.glsl

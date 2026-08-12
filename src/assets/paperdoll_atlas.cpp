@@ -38,15 +38,15 @@ bool PaperdollAtlas::init(const gpu::VulkanDevice& dev) {
     if (!pool_.init(dev, std::uint32_t(kLogicalTileSize),
                     std::uint32_t(kLogicalTileSize), kPoolLayers,
                     /*linearFilter=*/false, kStagingRing,
-                    kPoolFramesInFlight)) {
+                    kPoolFramesInFlight, kSubTiles)) {
         std::fprintf(stderr, "[paperdoll] sprite pool init failed\n");
         return false;
     }
 
-    layerKey_.assign(kPoolLayers, 0u);
-    layerStamp_.assign(kPoolLayers, 0u);
+    slotKey_.assign(kPoolSlots, 0u);
+    slotStamp_.assign(kPoolSlots, 0u);
     stamp_ = 0;
-    nextFreshLayer_ = 0;
+    nextFreshSlot_ = 0;
     composeScratch_.assign(
         std::size_t(kLogicalTileSize) * kLogicalTileSize * 4u, 0u);
 
@@ -55,9 +55,9 @@ bool PaperdollAtlas::init(const gpu::VulkanDevice& dev) {
 
 void PaperdollAtlas::destroy(const gpu::VulkanDevice& dev) {
     pool_.destroy(dev);
-    frameToLayer_.clear();
-    layerKey_.clear();
-    layerStamp_.clear();
+    keyToSlot_.clear();
+    slotKey_.clear();
+    slotStamp_.clear();
     descriptorCache_.clear();
     composeScratch_.clear();
     atlasPixels_.clear();
@@ -110,10 +110,10 @@ void PaperdollAtlas::begin_frame() {
     static const bool statsOn = std::getenv("TIMAERT_DOLL_STATS") != nullptr;
     if (statsOn && stamp_ > 0 && stamp_ % 120u == 0u) {
         std::fprintf(stderr,
-                     "[dolls] frames=%u hits=%u miss=%u noLayer=%u resident=%zu\n",
-                     stamp_, statHits_, statMisses_, statNoLayer_,
-                     frameToLayer_.size());
-        statHits_ = statMisses_ = statNoLayer_ = 0;
+                     "[dolls] frames=%u hits=%u miss=%u noSlot=%u resident=%zu\n",
+                     stamp_, statHits_, statMisses_, statNoSlot_,
+                     keyToSlot_.size());
+        statHits_ = statMisses_ = statNoSlot_ = 0;
     }
     ++stamp_;
     pool_.begin_frame();
@@ -122,26 +122,28 @@ void PaperdollAtlas::begin_frame() {
 std::uint32_t PaperdollAtlas::claim_and_compose(
     std::uint64_t key, const CharacterDescriptor& descriptor,
     const AnimationState& animation) {
-    // Claim a layer — a never-used one first, else the least recently
-    // stamped. A layer stamped THIS frame is being drawn and is untouchable;
+    // Claim a slot — a never-used one first, else the least recently
+    // stamped. A slot stamped THIS frame is being drawn and is untouchable;
     // one stamped last frame is safe to overwrite, because the upload records
     // into this frame's command buffer, which the queue executes strictly
-    // after the previous frame's draws.
-    std::uint32_t layer;
-    if (nextFreshLayer_ < kPoolLayers) {
-        layer = nextFreshLayer_++;
+    // after the previous frame's draws. The eviction scan is linear over the
+    // pool, which is fine ONLY because it runs on a miss with the pool full —
+    // steady state is sized so misses are churn-rare, not per-body.
+    std::uint32_t slot;
+    if (nextFreshSlot_ < kPoolSlots) {
+        slot = nextFreshSlot_++;
     } else {
-        std::uint32_t best = kNoLayer;
+        std::uint32_t best = kNoSlot;
         std::uint32_t bestStamp = stamp_;
-        for (std::uint32_t i = 0; i < kPoolLayers; ++i) {
-            if (layerStamp_[i] < bestStamp) {
-                bestStamp = layerStamp_[i];
+        for (std::uint32_t i = 0; i < kPoolSlots; ++i) {
+            if (slotStamp_[i] < bestStamp) {
+                bestStamp = slotStamp_[i];
                 best = i;
             }
         }
-        if (best == kNoLayer) return kNoLayer; // whole pool visible this frame
-        layer = best;
-        frameToLayer_.erase(layerKey_[layer]);
+        if (best == kNoSlot) return kNoSlot; // whole pool visible this frame
+        slot = best;
+        keyToSlot_.erase(slotKey_[slot]);
     }
 
     // Compose the frame. A frame with no drawable layers stays fully
@@ -161,86 +163,86 @@ std::uint32_t PaperdollAtlas::claim_and_compose(
                     px + std::size_t(bot) * rowBytes, rowBytes);
         std::memcpy(px + std::size_t(bot) * rowBytes, rowTmp.data(), rowBytes);
     }
-    return layer;
+    return slot;
 }
 
-void PaperdollAtlas::commit_layer(std::uint64_t key, std::uint32_t layer) {
-    frameToLayer_.emplace(key, layer);
-    layerKey_[layer] = key;
-    layerStamp_[layer] = stamp_;
+void PaperdollAtlas::commit_slot(std::uint64_t key, std::uint32_t slot) {
+    keyToSlot_.emplace(key, slot);
+    slotKey_[slot] = key;
+    slotStamp_[slot] = stamp_;
 }
 
-void PaperdollAtlas::release_layer(std::uint32_t layer) {
-    // Give a claimed-but-not-uploaded layer back: a fresh one returns to the
+void PaperdollAtlas::release_slot(std::uint32_t slot) {
+    // Give a claimed-but-not-uploaded slot back: a fresh one returns to the
     // fresh pool; an evicted one is left unmapped with the oldest possible
     // stamp, so it is the first victim next time.
-    if (layer + 1 == nextFreshLayer_) {
-        --nextFreshLayer_;
+    if (slot + 1 == nextFreshSlot_) {
+        --nextFreshSlot_;
     } else {
-        layerKey_[layer] = 0u;
-        layerStamp_[layer] = 0u;
+        slotKey_[slot] = 0u;
+        slotStamp_[slot] = 0u;
     }
 }
 
-std::uint32_t PaperdollAtlas::layer_for(VkCommandBuffer cmd,
+std::uint32_t PaperdollAtlas::slot_for(VkCommandBuffer cmd,
                                         const CharacterDescriptor& descriptor,
                                         const AnimationState& animation) {
-    if (!loaded_) return kNoLayer;
-    return layer_for_keyed(cmd, paperdoll_frame_key(descriptor, animation),
+    if (!loaded_) return kNoSlot;
+    return slot_for_keyed(cmd, paperdoll_frame_key(descriptor, animation),
                            descriptor, animation);
 }
 
-std::uint32_t PaperdollAtlas::layer_for_keyed(
+std::uint32_t PaperdollAtlas::slot_for_keyed(
     VkCommandBuffer cmd, std::uint64_t key,
     const CharacterDescriptor& descriptor, const AnimationState& animation) {
-    if (!loaded_) return kNoLayer;
+    if (!loaded_) return kNoSlot;
 
-    auto it = frameToLayer_.find(key);
-    if (it != frameToLayer_.end()) {
-        layerStamp_[it->second] = stamp_;
+    auto it = keyToSlot_.find(key);
+    if (it != keyToSlot_.end()) {
+        slotStamp_[it->second] = stamp_;
         ++statHits_;
         return it->second;
     }
 
-    const std::uint32_t layer = claim_and_compose(key, descriptor, animation);
-    if (layer == kNoLayer) {
-        ++statNoLayer_;
-        return kNoLayer;
+    const std::uint32_t slot = claim_and_compose(key, descriptor, animation);
+    if (slot == kNoSlot) {
+        ++statNoSlot_;
+        return kNoSlot;
     }
 
-    if (!pool_.upload_layer(cmd, layer, composeScratch_.data())) {
-        release_layer(layer); // staging ring exhausted this frame
-        ++statNoLayer_;
-        return kNoLayer;
+    if (!pool_.upload_slot(cmd, slot, composeScratch_.data())) {
+        release_slot(slot); // staging ring exhausted this frame
+        ++statNoSlot_;
+        return kNoSlot;
     }
 
     ++statMisses_;
-    commit_layer(key, layer);
-    return layer;
+    commit_slot(key, slot);
+    return slot;
 }
 
-std::uint32_t PaperdollAtlas::layer_for_now(const gpu::VulkanDevice& dev,
+std::uint32_t PaperdollAtlas::slot_for_now(const gpu::VulkanDevice& dev,
                                             const CharacterDescriptor& descriptor,
                                             const AnimationState& animation) {
-    if (!loaded_) return kNoLayer;
+    if (!loaded_) return kNoSlot;
 
     const std::uint64_t key = paperdoll_frame_key(descriptor, animation);
-    auto it = frameToLayer_.find(key);
-    if (it != frameToLayer_.end()) {
-        layerStamp_[it->second] = stamp_;
+    auto it = keyToSlot_.find(key);
+    if (it != keyToSlot_.end()) {
+        slotStamp_[it->second] = stamp_;
         return it->second;
     }
 
-    const std::uint32_t layer = claim_and_compose(key, descriptor, animation);
-    if (layer == kNoLayer) return kNoLayer;
+    const std::uint32_t slot = claim_and_compose(key, descriptor, animation);
+    if (slot == kNoSlot) return kNoSlot;
 
-    if (!pool_.upload_layer_now(dev, layer, composeScratch_.data())) {
-        release_layer(layer);
-        return kNoLayer;
+    if (!pool_.upload_slot_now(dev, slot, composeScratch_.data())) {
+        release_slot(slot);
+        return kNoSlot;
     }
 
-    commit_layer(key, layer);
-    return layer;
+    commit_slot(key, slot);
+    return slot;
 }
 
 } // namespace sm::character

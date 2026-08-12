@@ -1018,8 +1018,8 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
         npcs.reserve(kMaxEntityInstances);
         const auto* const* descBySeed = descBySeed_;
         const float tMs = elapsed * 1000.0f;
-        // Advance the sprite-pool LRU clock; every layer_for below may record
-        // a layer upload on `cmd`, which is legal only before the render pass.
+        // Advance the sprite-pool LRU clock; every slot_for below may record
+        // a slot upload on `cmd`, which is legal only before the render pass.
         paperdoll_.begin_frame();
         // Exclude the player body: first-person, the camera sits at it, so a
         // possessed humanoid (Inc 5c — a foreign body carrying PlayerTag now
@@ -1070,7 +1070,7 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
                 | (std::uint64_t(anim.animation) << 16)
                 | (std::uint64_t(anim.direction) << 8)
                 | std::uint64_t(anim.frame);
-            // Resolve the composited frame to its pool layer (composes +
+            // Resolve the composited frame to its pool slot (composes +
             // records the upload on a miss). If the pool cannot take THIS
             // frame right now (staging slice full), fall back to the body's
             // canonical frame (Idle/Front/0 — resident after its first use):
@@ -1078,14 +1078,14 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
             // VANISHING for a frame. A body may only disappear if even the
             // canonical frame cannot be served, which a 256-descriptor pool
             // cannot make happen in practice.
-            std::uint32_t layer =
-                paperdoll_.layer_for_keyed(cmd, frameKey, desc, anim);
-            if (layer == character::PaperdollAtlas::kNoLayer) {
+            std::uint32_t slot =
+                paperdoll_.slot_for_keyed(cmd, frameKey, desc, anim);
+            if (slot == character::PaperdollAtlas::kNoSlot) {
                 const character::AnimationState canonical{};
-                layer = paperdoll_.layer_for_keyed(
+                slot = paperdoll_.slot_for_keyed(
                     cmd, std::uint64_t(quantizedSeed) << 24, desc, canonical);
             }
-            if (layer == character::PaperdollAtlas::kNoLayer) continue;
+            if (slot == character::PaperdollAtlas::kNoSlot) continue;
 
             float wx = 0.0f, wz = 0.0f;
             tile_to_world(pos.x, pos.y, wx, wz);
@@ -1104,7 +1104,7 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
             const float size = (spr && spr->height > 0.0f) ? spr->height : 2.0f;
             inst.halfW = size * 0.5f; // the doll quad is square
             inst.height = size;
-            inst.kind = layer;
+            inst.kind = slot;
             inst.seed = 0u;
             inst.tint = 0xFFFFFFFFu;
             npcs.push_back(inst);

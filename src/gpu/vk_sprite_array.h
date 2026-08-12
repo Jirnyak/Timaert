@@ -8,26 +8,29 @@
 // submit+fence per texture (see problems.md). Adding a sprite becomes "write a
 // layer", not "allocate another descriptor set".
 //
-// A "layer" is one resident sprite frame: a full tileW×tileH RGBA image at a
-// fixed integer index. The shader picks one with texture(sampler2DArray,
-// vec3(uv, layer)). A single animated NPC needs MANY layers (direction × frame
-// × animation); each unique composited (seed, anim, dir, frame) occupies one.
-// layerCount is therefore the resident working-set size, not a monster count —
-// the LRU cache (step 2) evicts the oldest layer when the pool is full.
+// A "slot" is one resident sprite frame: a tileW×tileH RGBA image at a fixed
+// integer index. A single animated NPC needs MANY slots (direction × frame ×
+// animation); each unique composited (seed, anim, dir, frame) occupies one.
+// slot_count() is therefore the resident working-set size, not a monster
+// count — the LRU cache (in assets/) evicts the oldest slot when full.
+//
+// Slots and Vulkan array layers are DIFFERENT axes: `subTiles` packs a
+// subTiles×subTiles grid of slots into each layer (slot = layer·subTiles² +
+// quadrant), because MoltenVK caps maxImageArrayLayers at 2048 while a city's
+// active working set of paper-doll frames measures ~4.3k (2026-08-13, 5k
+// settlement) — capacity has to grow INSIDE a layer, not by adding layers.
+// The shader decodes the same packing (shaders/doll_pool.glsl).
 //
 // Tile size is per-POOL and matches the source art, not a power-of-two rule:
 // with NEAREST + no mips + no compression, POT buys nothing here.
 //   - paperdolls (people/NPCs/mobs): 48×48, NEAREST  (kLogicalTileSize; art-locked)
-//   - trees / spell & VFX effects:   64×64            (TreeAtlas::kTileSize)
-// 1024 layers @ 48² ≈ 9.4 MB VRAM (16.7 MB @ 64²) — headroom well under
-// MoltenVK's maxImageArrayLayers (2048).
 //
-// Layers are filled on demand: a CPU LRU cache (in assets/, step 2) maps a
-// sprite-frame hash -> layer index, then calls upload_layer(cmd, layer, rgba),
+// Slots are filled on demand: a CPU LRU cache (in assets/) maps a
+// sprite-frame hash -> slot index, then calls upload_slot(cmd, slot, rgba),
 // which records a staging copy onto the FRAME command buffer — no per-upload
 // submit/fence (the no-stall transfer rule from ARCHITECTURE.md). Record these
 // uploads BEFORE begin_render_pass(): a layout transition of a non-attachment
-// image is illegal inside an active render pass. upload_layer_now() is the
+// image is illegal inside an active render pass. upload_slot_now() is the
 // load-time blocking variant for preloading a batch before the first frame.
 #pragma once
 
@@ -42,12 +45,17 @@ namespace gpu
 
     struct SpriteArray
     {
-        // Fixed per-layer tile size + total layer capacity, chosen per size
-        // class (e.g. 48x48 paperdolls, 64x64 effects). All layers share one
-        // sampler and live in one 2D-array image.
+        // Fixed per-SLOT tile size + array-layer capacity, chosen per size
+        // class (e.g. 48x48 paperdolls). All slots share one sampler and live
+        // in one 2D-array image of (tileW·subTiles)×(tileH·subTiles) layers.
         std::uint32_t tileW = 0;
         std::uint32_t tileH = 0;
         std::uint32_t layerCount = 0;
+        std::uint32_t subTiles = 1;
+
+        std::uint32_t slot_count() const {
+            return layerCount * subTiles * subTiles;
+        }
 
         VkImage image = VK_NULL_HANDLE;
         VkDeviceMemory memory = VK_NULL_HANDLE;
@@ -63,7 +71,7 @@ namespace gpu
 
         // Create the array (all layers cleared to transparent and left in
         // SHADER_READ_ONLY_OPTIMAL) + sampler + descriptor. `stagingRing`
-        // host-visible tiles back the per-frame upload_layer() path.
+        // host-visible tiles back the per-frame upload_slot() path.
         //
         // `framesInFlight` MAKES the old "size it to uploads × frames in
         // flight" advice a mechanism: the ring is sliced into that many equal
@@ -77,23 +85,24 @@ namespace gpu
         bool init(const VulkanDevice& dev, std::uint32_t tileW,
                   std::uint32_t tileH, std::uint32_t layerCount,
                   bool linearFilter, std::uint32_t stagingRing = 32,
-                  std::uint32_t framesInFlight = 2);
+                  std::uint32_t framesInFlight = 2,
+                  std::uint32_t subTiles = 1);
 
         // Call once at frame start (before recording uploads): advances the
         // staging ring to the next frame's slice.
         void begin_frame();
 
-        // Record a single-layer upload into `cmd`. MUST be recorded before the
-        // main render pass begins. Returns false if the staging ring is
-        // exhausted this frame (caller uploads it a later frame) — never blocks,
-        // never submits.
-        bool upload_layer(VkCommandBuffer cmd, std::uint32_t layer,
-                          const std::uint8_t* rgba);
+        // Record a single-slot upload (one tileW×tileH frame) into `cmd`. MUST
+        // be recorded before the main render pass begins. Returns false if the
+        // staging ring is exhausted this frame (caller uploads it a later
+        // frame) — never blocks, never submits.
+        bool upload_slot(VkCommandBuffer cmd, std::uint32_t slot,
+                         const std::uint8_t* rgba);
 
-        // Load-time blocking upload of one layer (own transient pool + fence).
+        // Load-time blocking upload of one slot (own transient pool + fence).
         // For preloading a batch before the first frame; never call per frame.
-        bool upload_layer_now(const VulkanDevice& dev, std::uint32_t layer,
-                              const std::uint8_t* rgba);
+        bool upload_slot_now(const VulkanDevice& dev, std::uint32_t slot,
+                             const std::uint8_t* rgba);
 
         void destroy(const VulkanDevice& dev);
 

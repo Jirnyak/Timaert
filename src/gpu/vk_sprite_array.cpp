@@ -67,11 +67,15 @@ namespace gpu
                                  nullptr, 1, &b);
         }
 
-        // Record: barrier layer -> TRANSFER_DST, copy staging -> layer, barrier
-        // layer -> SHADER_READ. Shared by the per-frame and blocking paths.
-        void record_layer_copy(VkCommandBuffer cmd, VkImage image,
-                               VkBuffer staging, std::uint32_t layer,
-                               std::uint32_t w, std::uint32_t h)
+        // Record: barrier layer -> TRANSFER_DST, copy staging -> the slot's
+        // sub-rect of its layer, barrier layer -> SHADER_READ. Shared by the
+        // per-frame and blocking paths. The barrier covers the whole layer
+        // (the finest subresource granularity Vulkan has) — correct, merely
+        // wider than the written rect.
+        void record_slot_copy(VkCommandBuffer cmd, VkImage image,
+                              VkBuffer staging, std::uint32_t layer,
+                              std::int32_t offX, std::int32_t offY,
+                              std::uint32_t w, std::uint32_t h)
         {
             layer_barrier(cmd, image, layer,
                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
@@ -82,6 +86,7 @@ namespace gpu
 
             VkBufferImageCopy region{};
             region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, layer, 1};
+            region.imageOffset = {offX, offY, 0};
             region.imageExtent = {w, h, 1};
             vkCmdCopyBufferToImage(cmd, staging, image,
                                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
@@ -99,14 +104,17 @@ namespace gpu
     bool SpriteArray::init(const VulkanDevice& d, std::uint32_t w,
                            std::uint32_t h, std::uint32_t layers,
                            bool linearFilter, std::uint32_t stagingRing,
-                           std::uint32_t framesInFlight)
+                           std::uint32_t framesInFlight,
+                           std::uint32_t grid)
     {
         if (w == 0 || h == 0 || layers == 0 || stagingRing == 0
-            || framesInFlight == 0 || stagingRing < framesInFlight)
+            || framesInFlight == 0 || stagingRing < framesInFlight
+            || grid == 0)
             return false;
         tileW = w;
         tileH = h;
         layerCount = layers;
+        subTiles = grid;
         framesInFlight_ = framesInFlight;
         sliceSize_ = stagingRing / framesInFlight;
         frameParity_ = 0;
@@ -118,7 +126,7 @@ namespace gpu
         ici.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
         ici.imageType = VK_IMAGE_TYPE_2D;
         ici.format = VK_FORMAT_R8G8B8A8_UNORM;
-        ici.extent = {w, h, 1};
+        ici.extent = {w * grid, h * grid, 1};
         ici.mipLevels = 1;
         ici.arrayLayers = layers;
         ici.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -293,23 +301,27 @@ namespace gpu
         sliceEnd_ = stagingCursor_ + sliceSize_;
     }
 
-    bool SpriteArray::upload_layer(VkCommandBuffer cmd, std::uint32_t layer,
-                                   const std::uint8_t* rgba)
+    bool SpriteArray::upload_slot(VkCommandBuffer cmd, std::uint32_t slot,
+                                  const std::uint8_t* rgba)
     {
-        if (layer >= layerCount || !rgba) return false;
+        if (slot >= slot_count() || !rgba) return false;
         if (stagingCursor_ >= sliceEnd_) return false; // slice exhausted
         Staging& s = staging_[stagingCursor_++];
         const std::size_t bytes = std::size_t(tileW) * tileH * 4u;
         std::memcpy(s.mapped, rgba, bytes);
-        record_layer_copy(cmd, image, s.buffer, layer, tileW, tileH);
+        const std::uint32_t perLayer = subTiles * subTiles;
+        record_slot_copy(cmd, image, s.buffer, slot / perLayer,
+                         std::int32_t(slot % subTiles * tileW),
+                         std::int32_t(slot % perLayer / subTiles * tileH),
+                         tileW, tileH);
         return true;
     }
 
-    bool SpriteArray::upload_layer_now(const VulkanDevice& d,
-                                       std::uint32_t layer,
-                                       const std::uint8_t* rgba)
+    bool SpriteArray::upload_slot_now(const VulkanDevice& d,
+                                      std::uint32_t slot,
+                                      const std::uint8_t* rgba)
     {
-        if (layer >= layerCount || !rgba) return false;
+        if (slot >= slot_count() || !rgba) return false;
         const VkDeviceSize bytes = static_cast<VkDeviceSize>(tileW) * tileH * 4;
         VkBuffer staging = VK_NULL_HANDLE;
         VkDeviceMemory stagingMem = VK_NULL_HANDLE;
@@ -340,7 +352,11 @@ namespace gpu
         bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         vkBeginCommandBuffer(cmd, &bi);
-        record_layer_copy(cmd, image, staging, layer, tileW, tileH);
+        const std::uint32_t perLayer = subTiles * subTiles;
+        record_slot_copy(cmd, image, staging, slot / perLayer,
+                         std::int32_t(slot % subTiles * tileW),
+                         std::int32_t(slot % perLayer / subTiles * tileH),
+                         tileW, tileH);
         vkEndCommandBuffer(cmd);
 
         VkSubmitInfo si{};

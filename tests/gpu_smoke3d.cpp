@@ -136,8 +136,8 @@ namespace
     };
 
     // Distinct paper-doll identities preloaded into the sprite pool; instances
-    // reference them round-robin (a fresh pool assigns layers 0..N-1 in
-    // layer_for_now call order, so doll ordinal == pool layer here).
+    // reference them round-robin (a fresh pool assigns slots 0..N-1 in
+    // slot_for_now call order, so doll ordinal == pool slot here).
     constexpr std::uint32_t kNpcDollCount = 8;
 
     struct BbPush
@@ -1205,15 +1205,15 @@ int main(int, char**)
         bool dollsOk = npcDolls.init(dev);
         if (dollsOk) {
             // Preload the identities the instances reference: a fresh pool
-            // assigns layers 0..kNpcDollCount-1 in call order, matching the
-            // round-robin `layer` baked into the instance buffer above.
+            // assigns slots 0..kNpcDollCount-1 in call order, matching the
+            // round-robin slot baked into the instance buffer above.
             const sm::character::AnimationState idle{};
             for (std::uint32_t k = 0; k < kNpcDollCount && dollsOk; ++k) {
-                const std::uint32_t layer = npcDolls.layer_for_now(
+                const std::uint32_t slot = npcDolls.slot_for_now(
                     dev,
                     npcDolls.descriptor_for_seed(0x9E3779B9u + k * 0x85EBCA6Bu),
                     idle);
-                dollsOk = (layer == k);
+                dollsOk = (slot == k);
             }
         }
         if (!dollsOk) {
