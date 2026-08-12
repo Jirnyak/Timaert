@@ -3196,6 +3196,7 @@ namespace sm::ui
                 case sub::Structure::Door:
                 case sub::Structure::Lantern:
                 case sub::Structure::Stairs:
+                case sub::Structure::Chest:
                 case sub::Structure::Tree:
                 case sub::Structure::Crop:
                 case sub::Structure::Furnish:

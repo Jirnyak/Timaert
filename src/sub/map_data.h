@@ -161,6 +161,11 @@ enum class InteractId : std::uint8_t {
     // The corpse of something you killed — not a composite prop but an ECS
     // body; it shares the verb so one prompt and one keypress serve both.
     Loot,
+    // A household chest: what it holds is not invented, it is TAKEN from the
+    // store of the place that owns the house (owner ruling W2: a landmark's
+    // store IS its inventory), so an emptied town has empty chests and a
+    // chest cannot be farmed by walking out and back in.
+    Search,
     Count,
 };
 
@@ -177,6 +182,7 @@ inline constexpr InteractRow kInteractRows[int(InteractId::Count)] = {
     /* Door   */ {"Enter",       5.0f},
     /* Stairs */ {"Take stairs", 5.0f},
     /* Loot   */ {"Loot",       12.0f},
+    /* Search */ {"Search",      5.0f},
 };
 inline constexpr const InteractRow& interact_row(InteractId i) {
     return kInteractRows[int(i) < int(InteractId::Count) ? int(i) : 0];
@@ -184,8 +190,9 @@ inline constexpr const InteractRow& interact_row(InteractId i) {
 
 struct Structure {
     enum Kind : std::uint8_t { Tree = 0, Rock, House, Wall, Bridge, Crop,
-                               Fence, Furnish, Door, Lantern, Stairs } kind;
-    static constexpr int kKindCount = int(Stairs) + 1;
+                               Fence, Furnish, Door, Lantern, Stairs,
+                               Chest } kind;
+    static constexpr int kKindCount = int(Chest) + 1;
     // Footprint silhouette. Box is the default; Cylinder renders (and collides)
     // as a round prism — wall towers, gate jambs, the spire. One byte, not a
     // new Kind: shape is orthogonal to what the thing IS.
@@ -283,6 +290,7 @@ struct StructureKindRow {
         Wood,        // planks all over: furniture, decks
         Door,        // planked leaf with a frame and a handle
         Lantern,     // dark post with a burning head
+        Chest,       // banded coffer: dark timber with iron straps
     };
     Material material;
     // What pressing E on this prop does (InteractId::None = scenery).
@@ -360,6 +368,15 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Wood,
                   InteractId::Stairs, 0u, 0.0f, 0.0f},
+    // Chest: the household's store, waist-high and solid like the furniture
+    // it is. It has no loot ROW of its own on purpose — a chest does not
+    // conjure goods, it hands over what the place that owns it actually has
+    // (macro/economy.h settlement inventory), which is why it cannot be
+    // farmed and why an emptied town's chests are bare.
+    /* Chest  */ {"",     0.8f, 0.9f,  0.0f, true,  "",
+                  StructureKindRow::Draw::Solid,
+                  StructureKindRow::Material::Chest,
+                  InteractId::Search, 0u, 0.0f, 0.0f},
 };
 
 inline constexpr const StructureKindRow& structure_kind_row(Structure::Kind k) {

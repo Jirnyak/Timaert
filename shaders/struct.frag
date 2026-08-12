@@ -79,6 +79,15 @@ void main() {
         float h = length(vec2(vFace.x - 0.55, vFace.y + 0.05) * vec2(1.0, 1.6));
         base = mix(base, vec3(0.80, 0.68, 0.32),
                    1.0 - smoothstep(0.07, 0.11, h));
+    } else if (vType > 4.5) {
+        // Chest: dark timber banded with iron. The straps are face-space
+        // bars, so a coffer of any size wears the same ironwork.
+        vec3 timber = vec3(0.26, 0.16, 0.09)
+                      * (0.85 + 0.15 * s_hash(vec2(floor(vFace.x * 4.0),
+                                                   floor(vFace.y * 3.0)) + vSeed));
+        float strap = max(smoothstep(0.16, 0.10, abs(abs(vFace.x) - 0.55)),
+                          smoothstep(0.14, 0.08, abs(vFace.y)));
+        base = mix(timber, vec3(0.32, 0.33, 0.35), strap);
     } else {
         // Lantern: a dark post whose head burns. The glow is emissive — the
         // light it CASTS is a real point light (the prop table's light row),

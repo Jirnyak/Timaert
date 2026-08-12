@@ -50,15 +50,15 @@ enum class DangerLevel : std::uint8_t {
 // ruling 2026-08-12), it never runs beside it.
 enum class SceneKind : std::uint8_t { Overworld, Dungeon };
 
-// Live dungeon session bookkeeping. The dungeon is a projection OF the
-// subworld: identity is {door cell, ordinal, level} (see map_data.h
-// DungeonRef), and everything here is derivable again from that identity —
-// nothing is saved (macro-only persistence law).
 // Which threshold the player came in by — the tile they materialise on when
 // the scene is raised. A storey has up to three (street door, climbing shaft,
 // descending shaft) and the level alone cannot say which was used.
 enum class DungeonArrival : std::uint8_t { Door, ShaftUp, ShaftDown };
 
+// Live dungeon session bookkeeping. The dungeon is a projection OF the
+// subworld: identity is {door cell, ordinal, level} (see map_data.h
+// DungeonRef), and everything here is derivable again from that identity —
+// nothing is saved (macro-only persistence law).
 struct DungeonSession {
     DungeonRef ref{};
     DungeonArrival arrival = DungeonArrival::Door;
@@ -156,6 +156,13 @@ public:
     // room, a cellar: their only ways out are their shafts), or outside an
     // interior. Read by the HUD (way-out marker) and the smokes.
     bool dungeon_exit_point(float& x, float& y) const;
+    // Search a chest: hands over ONE stack from the store of the place that
+    // owns this interior (a landmark's store is its Inventory — owner ruling
+    // W2), charging the theft to the player's standing with that realm. An
+    // empty town has empty chests; nothing is conjured, so nothing can be
+    // farmed by leaving and coming back. False when there is nothing to
+    // take. Public because the harness searches without a reticle.
+    bool search_chest(const Structure& chest);
     // What pressing E right now would do, as the verb the HUD shows under the
     // crosshair ("Enter", "Loot", …). Empty string = nothing is being looked
     // at. Pure query — the same resolution the keypress runs, so the prompt

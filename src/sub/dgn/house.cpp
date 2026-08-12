@@ -98,7 +98,8 @@ struct RoomRect {
 // out of a doorway (gap tiles are flanked by TILE_WALL inside 2 tiles) and
 // leaves a body-wide corridor around every piece.
 bool try_place_furnish(SubworldMapData& out, Rng& rng, const RoomRect& r,
-                       float hx, float hy, float heightM) {
+                       float hx, float hy, float heightM,
+                       Structure::Kind kind = Structure::Furnish) {
     for (int attempt = 0; attempt < 12; ++attempt) {
         const float fx = r.x0 + hx + 2.0f
             + rng.next_f01() * std::max(0.0f, r.spanX() - 2.0f * (hx + 2.0f));
@@ -117,7 +118,7 @@ bool try_place_furnish(SubworldMapData& out, Rng& rng, const RoomRect& r,
         }
         if (!clear) continue;
         Structure s{};
-        s.kind = Structure::Furnish;
+        s.kind = kind;
         s.x = fx;
         s.y = fy;
         s.radius = std::max(hx, hy);
@@ -352,7 +353,15 @@ void gen_dungeon_house(const CellContext& ctx, SubworldMapData& out) {
             const RoomRect& r = rects[i];
             (void)try_place_furnish(out, rng, r, 2.0f, 1.2f, 0.6f); // bed
             (void)try_place_furnish(out, rng, r, 1.6f, 1.6f, 0.9f); // table
-            (void)try_place_furnish(out, rng, r, 1.0f, 0.8f, 0.6f); // chest
+            // The chest is the household's store made touchable — the same
+            // furniture placement, its own kind, so E on it reaches the
+            // town's inventory (engine search_chest).
+            (void)try_place_furnish(out, rng, r,
+                                    structure_min_half_xy(Structure::Chest),
+                                    structure_min_half_xy(Structure::Chest)
+                                        * 0.75f,
+                                    structure_min_height(Structure::Chest),
+                                    Structure::Chest);
         }
     }
 }

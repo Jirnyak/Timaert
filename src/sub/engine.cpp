@@ -1765,6 +1765,8 @@ bool SubworldEngine::interact() {
             return false;
         }
         switch (structure_interact(prop->kind)) {
+            case InteractId::Search:
+                return search_chest(*prop);
             case InteractId::Door:
                 return sceneKind_ == SceneKind::Dungeon
                     ? try_exit_dungeon()
@@ -2761,6 +2763,71 @@ void SubworldEngine::enter_dungeon_scene(GameState& gs,
     if (gs_) {
         set_flying(spellbook_has_sustained(gs_->player.spellBook, "flight"));
     }
+}
+
+bool SubworldEngine::search_chest(const Structure& chest) {
+    if (!active_ || !gs_ || sceneKind_ != SceneKind::Dungeon) return false;
+    // Whose house is this? The interior carries its landmark from the door
+    // it was entered by, and a landmark's STORE is its Inventory — the same
+    // one the market sells from and the day-loop eats from. So a chest is a
+    // window into the town's own goods, not a second economy.
+    Inventory* store = nullptr;
+    const char* factionId = nullptr;
+    if (dungeon_.settlementId >= 0) {
+        for (auto& s : gs_->settlements) {
+            if (s.id == dungeon_.settlementId
+                && s.x == dungeon_.doorCx && s.y == dungeon_.doorCy) {
+                store = &s.inventory;
+                factionId = faction_id_for_index(
+                    faction_index_for_kingdom(gs_->politik, s.kingdomIdx));
+                break;
+            }
+        }
+        if (!store) {
+            for (auto& v : gs_->villages) {
+                if (v.id == dungeon_.settlementId
+                    && v.x == dungeon_.doorCx && v.y == dungeon_.doorCy) {
+                    store = &v.inventory;
+                    factionId = faction_id_for_index(
+                        faction_index_for_kingdom(gs_->politik, v.kingdomIdx));
+                    break;
+                }
+            }
+        }
+    }
+    if (!store || store->stacks.empty()) {
+        set_status("The chest is empty.");
+        return false;
+    }
+
+    // Which stack this chest holds is decided by the chest, not by the die:
+    // its position hashes into the store, so searching the SAME chest twice
+    // in one visit does not re-roll the town's goods into your favour.
+    Rng pick(dungeon_scene_seed(gs_->worldSeed, dungeon_.doorCx,
+                                dungeon_.doorCy, dungeon_.ref.ordinal,
+                                dungeon_.ref.level)
+             ^ (std::uint32_t(chest.x) << 16) ^ std::uint32_t(chest.y));
+    const std::size_t slot =
+        std::size_t(pick.next_u32() % std::uint32_t(store->stacks.size()));
+    const std::string id = store->stacks[slot].id;
+    // A householder's chest holds a householder's portion — one to three of
+    // whatever the town has, never the granary in one armful.
+    const int take = std::min(store->stacks[slot].count,
+                              1 + int(pick.next_u32() % 3u));
+    store->remove(id, take);
+    gs_->player.inventory.add(id, take);
+
+    // Theft is theft: the same standing the world already tracks, moved by
+    // the same door a struck bystander moves it (add_player_reputation), so
+    // there is no second crime ledger. Robbing a realm blind eventually
+    // makes it hostile through the ordinary threshold.
+    if (factionId && factionId[0] != '\0') {
+        add_player_reputation(*gs_, factionId, kHitRepPenalty);
+    }
+    char msg[96];
+    std::snprintf(msg, sizeof(msg), "Taken: %s x%d", id.c_str(), take);
+    set_status(msg);
+    return true;
 }
 
 bool SubworldEngine::try_take_dungeon_stairs() {

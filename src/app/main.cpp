@@ -6017,6 +6017,41 @@ bool run_dungeon_house_smoke(App& app) {
         return true;
     }
 
+    // The chest hands over the TOWN'S OWN goods: the store shrinks by what
+    // the player gains, and the theft is charged to their standing. Nothing
+    // is conjured, so an emptied town has empty chests.
+    int chestProps = 0;
+    for (const auto& s : app.subworld.mgr().structures()) {
+        if (s.kind == sm::sub::Structure::Chest) ++chestProps;
+    }
+    int storeBefore = 0, storeAfter = 0, bagBefore = 0, bagAfter = 0;
+    int repBefore = 0, repAfter = 0;
+    bool searched = false;
+    {
+        sm::Settlement* town = nullptr;
+        for (auto& s : app.gs.settlements) {
+            if (s.x == int(app.gs.player.x) && s.y == int(app.gs.player.y)) {
+                town = &s;
+                break;
+            }
+        }
+        const sm::sub::Structure* chest = nullptr;
+        for (const auto& s : app.subworld.mgr().structures()) {
+            if (s.kind == sm::sub::Structure::Chest) { chest = &s; break; }
+        }
+        if (town != nullptr && chest != nullptr && !town->inventory.stacks.empty()) {
+            const char* fid = sm::faction_id_for_index(
+                sm::faction_index_for_kingdom(app.gs.politik, town->kingdomIdx));
+            storeBefore = town->inventory.total();
+            bagBefore = app.gs.player.inventory.total();
+            repBefore = sm::player_reputation(&app.gs, fid);
+            searched = app.subworld.search_chest(*chest);
+            storeAfter = town->inventory.total();
+            bagAfter = app.gs.player.inventory.total();
+            repAfter = sm::player_reputation(&app.gs, fid);
+        }
+    }
+
     // Inc 2: the household — real people of this town, borrowed from ITS
     // population stock. Killing one behind the door must thin the town in
     // the same tick, through the same receipt a street kill settles.
@@ -6097,14 +6132,17 @@ bool run_dungeon_house_smoke(App& app) {
                  "[smoke] dungeon_house entered=%d/%d in=%d/%d exited=%d/%d "
                  "out=%d tags=%d/%d/%d hash=%08x/%08x residents=%d "
                  "pop=%d->%d storeys=%d/%d/%d/%d/%d vermin=%d fauna=%d->%d "
-                 "floorTile=%d quickExit=%d\n",
+                 "floorTile=%d quickExit=%d chests=%d searched=%d "
+                 "store=%d->%d bag=%d->%d rep=%d->%d\n",
                  entered ? 1 : 0, entered2 ? 1 : 0, inD1 ? 1 : 0, inD2 ? 1 : 0,
                  exited ? 1 : 0, exited2 ? 1 : 0, outOk ? 1 : 0,
                  tagsBefore, tagsIn, tagsOut, h1, h2, residents,
                  popBefore, popAfter,
                  lvl0, lvlUp, lvlBack, lvlDown, lvlBack2,
                  vermin, faunaBefore, faunaAfter, floorTile,
-                 quickExit ? 1 : 0);
+                 quickExit ? 1 : 0, chestProps, searched ? 1 : 0,
+                 storeBefore, storeAfter, bagBefore, bagAfter,
+                 repBefore, repAfter);
     std::fflush(stderr);
 
     // Storey invariants only bind when the house HAS that storey (a small
@@ -6124,7 +6162,13 @@ bool run_dungeon_house_smoke(App& app) {
         // A city house holds a household, and a death behind the door thins
         // the town by exactly one, in the tick it happens.
         || residents < 1 || popBefore <= 0 || popAfter != popBefore - 1
-        || !storeysOk || !verminOk || !onFloor || !quickExit) {
+        || !storeysOk || !verminOk || !onFloor || !quickExit
+        // A house has a chest, and searching it MOVES goods from the town's
+        // store into the bag — same count out as in — at a price in standing.
+        || chestProps < 1 || !searched
+        || storeAfter >= storeBefore
+        || bagAfter - bagBefore != storeBefore - storeAfter
+        || repAfter >= repBefore) {
         smoke_fail(app, "dungeon_house invariant");
         return false;
     }
