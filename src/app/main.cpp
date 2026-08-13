@@ -1737,7 +1737,7 @@ void bake_macro_light_field(const App& app, std::vector<std::uint8_t>& out) {
 }
 
 // Re-bake the light field and hand ONLY the new field to the renderer (surgical
-// binding-4 update — the world textures stay intact). Call whenever the glow-
+// binding-3 update — the world textures stay intact). Call whenever the glow-
 // driving world state changes after boot: settlements loaded from a save, or
 // populations drifting as the daily economy ticks. No-op until the renderer has
 // had its first full upload() in boot_world.
@@ -2143,11 +2143,11 @@ bool boot_world_from_save(App& app, const std::string& path) {
     // boot_world() above baked glow from the GENERATED settlements; we then
     // swapped in the LOADED settlements/villages/spires. Re-bake so night glow
     // reflects the loaded world (real populations, depleted spires dark), not
-    // the throwaway generated one. Surgical binding-4 update — the world
+    // the throwaway generated one. Surgical binding-3 update — the world
     // textures boot_world() uploaded stay valid.
     rebake_macro_lights(app);
     // boot_world() derived a VIRGIN tree layer and uploaded it; the save
-    // carries the LIVING grid whole (v36) — restore it and refresh binding 5
+    // carries the LIVING grid whole (v36) — restore it and refresh binding 4
     // the same surgical way the light field just was. A size mismatch is
     // unreachable past the version gate; if a corrupt file gets here, the
     // virgin derivation stands and we say so.
@@ -3432,13 +3432,13 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         process_world_events(app);
         // Flush any pending glow refresh now, on the macro path, before this
         // frame renders the map: covers population drift this frame and drift
-        // accumulated while in the subworld. One surgical binding-4 re-upload,
+        // accumulated while in the subworld. One surgical binding-3 re-upload,
         // only when actually dirty — never per frame.
         if (app.macroLightsDirty) {
             rebake_macro_lights(app);
             app.macroLightsDirty = false;
         }
-        // Same discipline for the tree-count field (binding 5): felled trees
+        // Same discipline for the tree-count field (binding 4): felled trees
         // bumped TreeLayer.revision (usually while inside the subworld);
         // refresh the map-sprite density once, on the macro path, only when a
         // count actually changed — never per frame.

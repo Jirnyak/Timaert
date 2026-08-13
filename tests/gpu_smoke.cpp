@@ -203,31 +203,6 @@ namespace
         return px;
     }
 
-    // River strength map (0..255) packed in R: two curvy channels on land.
-    std::vector<std::uint8_t> gen_river(const std::vector<std::uint8_t>& m,
-                                        std::uint32_t w, std::uint32_t h,
-                                        float sea)
-    {
-        std::vector<std::uint8_t> px(static_cast<std::size_t>(w) * h * 4, 0);
-        for (std::uint32_t y = 0; y < h; ++y) {
-            for (std::uint32_t x = 0; x < w; ++x) {
-                std::size_t i = (static_cast<std::size_t>(y) * w + x) * 4;
-                px[i + 3] = 255;
-                float H = m[i] / 255.0f;
-                if (H < sea) continue;
-                float yr = h * 0.32f + std::sin(x * 0.035f) * h * 0.13f
-                           + std::sin(x * 0.012f) * h * 0.05f;
-                float d1 = static_cast<float>(y) - yr;
-                float xr = w * 0.50f + std::sin(y * 0.05f) * w * 0.10f;
-                float d2 = static_cast<float>(x) - xr;
-                float s1 = std::exp(-(d1 * d1) / (2.0f * 1.6f * 1.6f));
-                float s2 = std::exp(-(d2 * d2) / (2.0f * 1.3f * 1.3f));
-                float s = std::max(s1, s2);
-                px[i] = static_cast<std::uint8_t>((s > 1.0f ? 1.0f : s) * 255.0f);
-            }
-        }
-        return px;
-    }
 } // namespace
 
 int main(int, char**)
@@ -264,34 +239,33 @@ int main(int, char**)
         return 3;
     }
 
-    // World data textures: master (climate) + feature/zone/river R8 byte maps
-    // packed in the R channel. feature/zone sampled nearest, master/river
-    // linear. This is the full data pipeline the macro fragment synth consumes.
+    // World data textures: master (climate) + feature/zone R8 byte maps
+    // packed in the R channel. feature/zone sampled nearest, master linear.
+    // This is the full data pipeline the macro fragment synth consumes.
     constexpr std::uint32_t kWorld = 256;
     constexpr float kSea = 0.40f;
     constexpr std::uint32_t kSeed = 1337u;
-    // macro.frag samples SIX maps (set 0, bindings 0-5): master, feature,
-    // zone, river, light field, tree map. The harness feeds all six or the
+    // macro.frag samples FIVE maps (set 0, bindings 0-4): master, feature,
+    // zone, light field, tree map (the dead u_riverMap binding is gone —
+    // rivers are honest water cells). The harness feeds all five or the
     // pipeline does not build; light field + tree map are zeroed (no night
     // glow, no forests) — inert, honest placeholders.
-    constexpr std::uint32_t kMacroMaps = 6;
-    gpu::VulkanTexture master, featureTex, zoneTex, riverTex, lightTex, treeTex;
+    constexpr std::uint32_t kMacroMaps = 5;
+    gpu::VulkanTexture master, featureTex, zoneTex, lightTex, treeTex;
     {
         std::vector<std::uint8_t> mp = gen_master(kWorld, kWorld, kSeed);
         std::vector<std::uint8_t> fp = gen_feature(mp, kWorld, kWorld, kSea);
         std::vector<std::uint8_t> zp = gen_zone(mp, kWorld, kWorld, kSea);
-        std::vector<std::uint8_t> rp = gen_river(mp, kWorld, kWorld, kSea);
         std::vector<std::uint8_t> zeros(std::size_t(kWorld) * kWorld * 4u, 0u);
         bool ok = master.create_rgba8(dev, kWorld, kWorld, mp.data(), true, true)
                && featureTex.create_rgba8(dev, kWorld, kWorld, fp.data(), false, true)
                && zoneTex.create_rgba8(dev, kWorld, kWorld, zp.data(), false, true)
-               && riverTex.create_rgba8(dev, kWorld, kWorld, rp.data(), true, true)
                && lightTex.create_rgba8(dev, kWorld, kWorld, zeros.data(), true, true)
                && treeTex.create_r8(dev, kWorld, kWorld, zeros.data(), true, true);
         if (!ok) {
             std::fprintf(stderr, "[gpu_smoke] world textures FAILED\n");
             treeTex.destroy(dev); lightTex.destroy(dev);
-            riverTex.destroy(dev); zoneTex.destroy(dev);
+            zoneTex.destroy(dev);
             featureTex.destroy(dev); master.destroy(dev);
             renderer.destroy();
             dev.destroy();
@@ -301,7 +275,7 @@ int main(int, char**)
         }
     }
 
-    // Descriptor set 0 = the six world maps, bound once (static for the world).
+    // Descriptor set 0 = the five world maps, bound once (static for the world).
     VkDescriptorSetLayout macroSetLayout = VK_NULL_HANDLE;
     VkDescriptorPool macroPool = VK_NULL_HANDLE;
     VkDescriptorSet macroSet = VK_NULL_HANDLE;
@@ -336,7 +310,7 @@ int main(int, char**)
         vkAllocateDescriptorSets(dev.device, &dsai, &macroSet);
 
         const gpu::VulkanTexture* texes[kMacroMaps] = {
-            &master, &featureTex, &zoneTex, &riverTex, &lightTex, &treeTex};
+            &master, &featureTex, &zoneTex, &lightTex, &treeTex};
         VkDescriptorImageInfo dii[kMacroMaps]{};
         VkWriteDescriptorSet writes[kMacroMaps]{};
         for (std::uint32_t i = 0; i < kMacroMaps; ++i) {
@@ -368,8 +342,7 @@ int main(int, char**)
             std::fprintf(stderr, "[gpu_smoke] pipeline FAILED\n");
             vkDestroyDescriptorPool(dev.device, macroPool, nullptr);
             vkDestroyDescriptorSetLayout(dev.device, macroSetLayout, nullptr);
-            riverTex.destroy(dev);
-            zoneTex.destroy(dev);
+                    zoneTex.destroy(dev);
             featureTex.destroy(dev);
             master.destroy(dev);
             renderer.destroy();
@@ -510,7 +483,6 @@ int main(int, char**)
     vkDestroyDescriptorSetLayout(dev.device, macroSetLayout, nullptr);
     treeTex.destroy(dev);
     lightTex.destroy(dev);
-    riverTex.destroy(dev);
     zoneTex.destroy(dev);
     featureTex.destroy(dev);
     master.destroy(dev);

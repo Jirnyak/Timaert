@@ -9,9 +9,8 @@
 layout(set = 0, binding = 0) uniform sampler2D u_master;     // R=h G=moist B=temp A=mask
 layout(set = 0, binding = 1) uniform sampler2D u_featureMap; // R8: FeatureType byte
 layout(set = 0, binding = 2) uniform sampler2D u_zoneMap;    // R8: zone 0..9
-layout(set = 0, binding = 3) uniform sampler2D u_riverMap;   // R8 river mask (gameplay state; no longer sampled for the ground render -- rivers render as Biome::Water)
-layout(set = 0, binding = 4) uniform sampler2D u_lightField; // RGB night glow (macro_lighting bake)
-layout(set = 0, binding = 5) uniform sampler2D u_treeMap;    // R8: tree count / 16384 (macro/tree_layer.h)
+layout(set = 0, binding = 3) uniform sampler2D u_lightField; // RGB night glow (macro_lighting bake)
+layout(set = 0, binding = 4) uniform sampler2D u_treeMap;    // R8: tree count / 16384 (macro/tree_layer.h)
 
 layout(push_constant) uniform Push {
     vec2 resolution;

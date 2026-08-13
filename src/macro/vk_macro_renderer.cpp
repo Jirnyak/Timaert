@@ -75,9 +75,9 @@ bool encode_tree_field(const TreeLayer* layer, std::vector<std::uint8_t>& out,
 
 bool MacroRendererVk::init(const gpu::VulkanDevice& dev, VkRenderPass pass) {
     // Descriptor set 0 = five combined image samplers
-    // (master/feature/zone/river + night light field).
-    VkDescriptorSetLayoutBinding bindings[6]{};
-    for (std::uint32_t i = 0; i < 6; ++i) {
+    // (master/feature/zone + night light field + tree field).
+    VkDescriptorSetLayoutBinding bindings[5]{};
+    for (std::uint32_t i = 0; i < 5; ++i) {
         bindings[i].binding = i;
         bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         bindings[i].descriptorCount = 1;
@@ -85,12 +85,12 @@ bool MacroRendererVk::init(const gpu::VulkanDevice& dev, VkRenderPass pass) {
     }
     VkDescriptorSetLayoutCreateInfo dlci{};
     dlci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    dlci.bindingCount = 6;
+    dlci.bindingCount = 5;
     dlci.pBindings = bindings;
     if (vkCreateDescriptorSetLayout(dev.device, &dlci, nullptr, &setLayout_) != VK_SUCCESS)
         return false;
 
-    VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 6};
+    VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5};
     VkDescriptorPoolCreateInfo dpci{};
     dpci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     dpci.maxSets = 1;
@@ -122,7 +122,6 @@ bool MacroRendererVk::init(const gpu::VulkanDevice& dev, VkRenderPass pass) {
 void MacroRendererVk::free_textures(const gpu::VulkanDevice& dev) {
     treeField_.destroy(dev);
     lightField_.destroy(dev);
-    river_.destroy(dev);
     zone_.destroy(dev);
     feature_.destroy(dev);
     master_.destroy(dev);
@@ -172,19 +171,9 @@ void MacroRendererVk::upload(const gpu::VulkanDevice& dev, const TerrainData& td
         zone_.create_rgba8(dev, 1, 1, tmp.data(), false, true);
     }
 
-    // River: R8 -> RGBA8, linear.
-    if (!td.riverData.empty()) {
-        expand_r8(td.riverData.data(), td.width, td.height, tmp);
-        river_.create_rgba8(dev, std::uint32_t(td.width), std::uint32_t(td.height),
-                            tmp.data(), true, true);
-    } else {
-        expand_r8(&blank, 1, 1, tmp);
-        river_.create_rgba8(dev, 1, 1, tmp.data(), true, true);
-    }
-
     // Light field: per-cell RGB night glow (macro_lighting bake), linear+repeat
     // for smooth torus-wrapped falloff. 1x1 black when no lights are supplied,
-    // so binding 4 is always valid.
+    // so binding 3 is always valid.
     if (lightFieldRgba && lightFieldW > 0 && lightFieldH > 0) {
         lightField_.create_rgba8(dev, lightFieldW, lightFieldH,
                                  lightFieldRgba, true, true);
@@ -195,7 +184,7 @@ void MacroRendererVk::upload(const gpu::VulkanDevice& dev, const TerrainData& td
 
     // Tree-count field: R8 density (count/16384) -> RGBA8, nearest — cell
     // probes must read exact per-cell values, like the feature map. 1x1 zero
-    // when no layer is supplied, so binding 5 is always valid.
+    // when no layer is supplied, so binding 4 is always valid.
     {
         std::vector<std::uint8_t> tb;
         int tw = 0, th = 0;
@@ -209,12 +198,12 @@ void MacroRendererVk::upload(const gpu::VulkanDevice& dev, const TerrainData& td
         }
     }
 
-    // Bind the six textures into set 0.
-    const gpu::VulkanTexture* tex[6] = {&master_, &feature_, &zone_, &river_,
+    // Bind the five textures into set 0.
+    const gpu::VulkanTexture* tex[5] = {&master_, &feature_, &zone_,
                                         &lightField_, &treeField_};
-    VkDescriptorImageInfo dii[6]{};
-    VkWriteDescriptorSet writes[6]{};
-    for (std::uint32_t i = 0; i < 6; ++i) {
+    VkDescriptorImageInfo dii[5]{};
+    VkWriteDescriptorSet writes[5]{};
+    for (std::uint32_t i = 0; i < 5; ++i) {
         dii[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         dii[i].imageView = tex[i]->view;
         dii[i].sampler = tex[i]->sampler;
@@ -225,7 +214,7 @@ void MacroRendererVk::upload(const gpu::VulkanDevice& dev, const TerrainData& td
         writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         writes[i].pImageInfo = &dii[i];
     }
-    vkUpdateDescriptorSets(dev.device, 6, writes, 0, nullptr);
+    vkUpdateDescriptorSets(dev.device, 5, writes, 0, nullptr);
     uploaded_ = true;
 }
 
@@ -250,7 +239,7 @@ void MacroRendererVk::upload_tree_field(const gpu::VulkanDevice& dev,
         treeField_.create_rgba8(dev, 1, 1, tmp.data(), false, true);
     }
 
-    // Rewrite only binding 5; the other samplers stay live.
+    // Rewrite only binding 4; the other samplers stay live.
     VkDescriptorImageInfo dii{};
     dii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     dii.imageView = treeField_.view;
@@ -258,7 +247,7 @@ void MacroRendererVk::upload_tree_field(const gpu::VulkanDevice& dev,
     VkWriteDescriptorSet write{};
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     write.dstSet = set_;
-    write.dstBinding = 5;
+    write.dstBinding = 4;
     write.descriptorCount = 1;
     write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     write.pImageInfo = &dii;
@@ -289,8 +278,8 @@ void MacroRendererVk::upload_light_field(const gpu::VulkanDevice& dev,
         lightField_.create_rgba8(dev, 1, 1, blackRGBA, true, true);
     }
 
-    // Rewrite only binding 4; the other four samplers still point at the live
-    // master/feature/zone/river textures.
+    // Rewrite only binding 3; the other samplers still point at the live
+    // master/feature/zone textures.
     VkDescriptorImageInfo dii{};
     dii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     dii.imageView = lightField_.view;
@@ -298,7 +287,7 @@ void MacroRendererVk::upload_light_field(const gpu::VulkanDevice& dev,
     VkWriteDescriptorSet write{};
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     write.dstSet = set_;
-    write.dstBinding = 4;
+    write.dstBinding = 3;
     write.descriptorCount = 1;
     write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     write.pImageInfo = &dii;

@@ -1,5 +1,5 @@
 // Vulkan macro-map renderer — draws shaders/macro.frag (the procedural 2D world
-// map fragment synth) from the CPU climate master + feature/zone/river byte
+// map fragment synth) from the CPU climate master + feature/zone byte
 // grids. Replaces the GL MacroRenderer at the Vulkan cutover; compiles
 // alongside it beforehand. Backend = gpu/ (Vulkan); this is an L1 macro concept.
 #pragma once
@@ -26,7 +26,7 @@ public:
     bool init(const gpu::VulkanDevice& dev, VkRenderPass pass);
     void destroy(const gpu::VulkanDevice& dev);
 
-    // (Re)upload the world data textures (master + feature + zone + river) plus
+    // (Re)upload the world data textures (master + feature + zone) plus
     // the optional per-cell RGB night-light field (macro_lighting bake) and the
     // optional per-cell tree-count layer (macro/tree_layer.h — encoded as R8
     // count/16384, binding 5; 1x1 zero when absent). The light field is
@@ -40,7 +40,7 @@ public:
                 const TreeLayer* treeLayer = nullptr);
 
     // Surgically re-upload ONLY the per-cell night-light field (binding 4),
-    // leaving the master/feature/zone/river textures untouched. Refreshes night
+    // leaving the master/feature/zone textures untouched. Refreshes night
     // glow when the world state that drives it changes mid-session (settlements
     // loaded from a save, populations drifting across the daily economy tick)
     // without the cost of a full world re-upload. No-op until upload() has run
@@ -66,7 +66,7 @@ public:
 private:
     void free_textures(const gpu::VulkanDevice& dev);
 
-    gpu::VulkanTexture master_{}, feature_{}, zone_{}, river_{};
+    gpu::VulkanTexture master_{}, feature_{}, zone_{};
     gpu::VulkanTexture lightField_{};  // per-cell RGB night glow (binding 4)
     gpu::VulkanTexture treeField_{};   // per-cell tree count R8 (binding 5)
     VkDescriptorSetLayout setLayout_ = VK_NULL_HANDLE;
