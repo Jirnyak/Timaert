@@ -402,6 +402,10 @@ timaert_test(macro_snapshot_test
         src/macro/items.cpp
     LINK_SDL LINK_ENTT)
 
+# Header-only on purpose: the spell DATA registry (macro/spells.h) is a
+# constexpr table with no TU — the test guards its append-only ordinals.
+timaert_test(spell_registry_test)
+
 timaert_test(spell_casting_effects_test
     SOURCES
         src/events/event_bus.cpp
