@@ -549,10 +549,17 @@ timaert_test(river_generation_test
         src/macro/map_generator.cpp
         src/sub/base_generator.cpp)
 
+# The field stamp reads fertility through the resource-field registry (R2),
+# so spawners.cpp now carries the registry chain (and entt via the
+# macro_stock context envelope).
+
 timaert_test(feature_layer_parity_test
     SOURCES
         src/macro/spawners.cpp
-    LINK_SDL)
+        src/macro/macro_stock.cpp
+        src/macro/tree_layer.cpp
+        src/macro/fauna.cpp
+    LINK_SDL LINK_ENTT)
 # Header-only classifier test (biomes.h): mountains are a biome by elevation.
 
 timaert_test(biome_classifier_test

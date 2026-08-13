@@ -59,15 +59,25 @@ FeatureLayer build_feature_layer(const TerrainData& td,
 // Stamp FT_Field farmland around villages — the owner-requested man-made
 // feature and the grain DEPOSIT of the economy loop. Fully CONTEXTUAL, no
 // RNG: for each village the ring of cells within Chebyshev radius 1..2 is
-// scored by the terrain's moisture channel (u_master.G — the fertility the
-// world already carries), and the kFieldsPerVillage wettest land cells that
-// carry no feature yet become fields. Never overwrites roads, never touches
-// water, torus-wrapped. A future runtime "деревня распахала новое поле" is
-// the same stamp on one cell.
+// scored by the cell's WHEAT POTENTIAL read through the resource-field
+// registry (ResourceFieldId::Wheat — one door for fertility, so the parcels
+// a village ploughs and the score that placed the village there can never
+// drift apart), and the kFieldsPerVillage best land cells that carry no
+// feature yet become fields. Never overwrites roads, never touches water,
+// torus-wrapped. A future runtime "деревня распахала новое поле" is the
+// same stamp on one cell.
+//
+// `world` carries the registry context (gs + terrain). Passing a context
+// whose terrain is null falls back to nothing stamped — fail closed.
+struct MacroWorld;
 struct FieldSite { int x = 0; int y = 0; };
 inline constexpr int kFieldsPerVillage = 4;
 inline constexpr std::uint8_t kFieldMoistureMin = 96;  // of 255
-void stamp_field_features(FeatureLayer& fl, const TerrainData& td,
+// The same bar in the registry's units (stands per cell): the wheat
+// baseline scales the fertility channel by kMaxWheatStandsPerCell/255, so
+// the ploughable threshold travels with it instead of being re-derived.
+int field_wheat_min();
+void stamp_field_features(FeatureLayer& fl, const MacroWorld& world,
                           const std::vector<FieldSite>& villages,
                           float seaLevel = 0.40f);
 

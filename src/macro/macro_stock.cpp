@@ -119,11 +119,11 @@ std::uint32_t field_cell_index(const MacroWorld& w, int x, int y) {
 }
 
 // Wheat potential: the climate's fertility channel (master G — the same
-// number the field stamp scores cells by), scaled to stands per cell.
+// number the field stamp scores cells by), scaled to stands per cell by
+// kMaxWheatStandsPerCell (resource_field.h — the row's own door, so the
+// field stamp and the settlement score share this scale).
 // Settlement (FT_Field parcels, garden plots) only decides WHERE this
 // potential is embodied — it never enters the baseline.
-constexpr int kMaxWheatStandsPerCell = 4096;   // po2 scale of the estimate
-
 int wheat_baseline(const MacroWorld& w, int x, int y) {
     const int wx = FeatureLayer::wrap_coord(x, w.terrain->width);
     const int wy = FeatureLayer::wrap_coord(y, w.terrain->height);

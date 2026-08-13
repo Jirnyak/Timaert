@@ -40,6 +40,13 @@ enum class ResourceFieldId : std::uint8_t {
     Count,
 };
 
+// The wheat row's SCALE: the fertility channel (0..255) maps onto this many
+// stands in a cell. It lives here, at the row's own door, because everyone
+// who prices fertility must price it the same way — the field stamp's
+// ploughable bar and the settlement score's arable term both derive from
+// this number rather than each re-deriving one of their own.
+constexpr int kMaxWheatStandsPerCell = 4096;   // po2 scale of the estimate
+
 struct ResourceFieldDef {
     const char* id;
     // The pure baseline: world context → capacity of one WRAPPED cell.

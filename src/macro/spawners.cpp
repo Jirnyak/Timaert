@@ -1,6 +1,8 @@
 #include "macro/spawners.h"
 #include "macro/biomes.h"
+#include "macro/macro_stock.h"      // MacroWorld — the registry's context
 #include "macro/pathfinding.h"
+#include "macro/resource_field.h"
 #include "core/rng.h"
 #include "core/torus.h"
 #include <algorithm>
@@ -757,7 +759,14 @@ namespace sm
         return fl;
     }
 
-    void stamp_field_features(FeatureLayer& fl, const TerrainData& td,
+    int field_wheat_min() {
+        // The ploughable bar, carried into the registry's units by the
+        // wheat baseline's own scale — ONE fertility door, so raising the
+        // bar or rescaling the field can never leave the two disagreeing.
+        return int(kFieldMoistureMin) * kMaxWheatStandsPerCell / 255;
+    }
+
+    void stamp_field_features(FeatureLayer& fl, const MacroWorld& world,
                               const std::vector<FieldSite>& villages,
                               float seaLevel)
     {
@@ -765,13 +774,16 @@ namespace sm
         if (!FeatureLayer::cell_count_for(fl.width, fl.height, total)
             || fl.data.size() < total)
             return;
+        if (!world.terrain) return;
+        const TerrainData& td = *world.terrain;
         if (td.width != fl.width || td.height != fl.height
             || td.rgba.size() < total * 4u)
             return;
 
         const int w = fl.width;
         const int h = fl.height;
-        auto cell_ok = [&](int x, int y, std::uint8_t& moistureOut) {
+        const int wheatMin = field_wheat_min();
+        auto cell_ok = [&](int x, int y, int& wheatOut) {
             const std::size_t idx =
                 std::size_t(y) * std::size_t(w) + std::size_t(x);
             if (fl.data[idx] != FT_None) return false;  // roads win
@@ -779,15 +791,16 @@ namespace sm
             const float height01 = float(td.rgba[idx * 4u + 0]) / 255.0f;
             if (alpha == 0 || height01 < seaLevel) return false;   // water
             if (height01 >= kMountainBiomeLevel) return false;     // no rock terraces
-            moistureOut = td.rgba[idx * 4u + 1];
-            return moistureOut >= kFieldMoistureMin;
+            // The ONE fertility door: potential minus what play has taken.
+            wheatOut = resource_field_read(world, ResourceFieldId::Wheat, x, y);
+            return wheatOut >= wheatMin;
         };
 
         for (const FieldSite& v : villages) {
             // Candidates: the Chebyshev radius 1..2 ring around the village
             // cell, in fixed scan order — the pick is deterministic from the
             // world data alone (context, not dice).
-            struct Candidate { int x, y; std::uint8_t moisture; };
+            struct Candidate { int x, y; int wheat; };
             Candidate best[kFieldsPerVillage];
             int found = 0;
             for (int dy = -2; dy <= 2; ++dy) {
@@ -795,18 +808,18 @@ namespace sm
                     if (dx == 0 && dy == 0) continue;
                     const int x = FeatureLayer::wrap_coord(v.x + dx, w);
                     const int y = FeatureLayer::wrap_coord(v.y + dy, h);
-                    std::uint8_t moisture = 0;
-                    if (!cell_ok(x, y, moisture)) continue;
-                    // Insertion into the wettest-first shortlist.
+                    int wheat = 0;
+                    if (!cell_ok(x, y, wheat)) continue;
+                    // Insertion into the fattest-first shortlist.
                     int at = found < kFieldsPerVillage ? found : -1;
                     for (int k = 0; k < found; ++k) {
-                        if (moisture > best[k].moisture) { at = k; break; }
+                        if (wheat > best[k].wheat) { at = k; break; }
                     }
                     if (at < 0) continue;
                     const int last = found < kFieldsPerVillage
                         ? found : kFieldsPerVillage - 1;
                     for (int k = last; k > at; --k) best[k] = best[k - 1];
-                    best[at] = Candidate{x, y, moisture};
+                    best[at] = Candidate{x, y, wheat};
                     if (found < kFieldsPerVillage) ++found;
                 }
             }

@@ -1960,7 +1960,7 @@ void boot_world(App& app, std::uint32_t seed,
         fieldSites.reserve(app.gs.villages.size());
         for (const auto& v : app.gs.villages)
             fieldSites.push_back(sm::FieldSite{v.x, v.y});
-        sm::stamp_field_features(app.features, app.terrain, fieldSites,
+        sm::stamp_field_features(app.features, siteCtx.w, fieldSites,
                                  lp.seaLevel);
     }
     sm::build_tree_grid(app.treeGrid, app.trees, app.gs.mapW, app.gs.mapH);
