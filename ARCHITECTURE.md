@@ -1641,7 +1641,12 @@ track knows where the engine is and where it will snag.
    ("a registry ordinal + a spec passed down; the app closes the loop") or
    decide the registries (spells/creatures/items — pure data tables) belong
    BELOW the world layers, with only effects/logic staying in `content/`.
-   Owner's call; until then, copy the spire channel verbatim.
+   → OWNER RULED 2026-08-14: prepare the fix — the session prompt is ready
+   (proposals/session-prompts.md § «Сессия — РЕЕСТРЫ КАК ФУНДАМЕНТ»),
+   fork decided in-session; the key fact is that macro/ is ALREADY the home
+   of every other data table (factions, creatures, items, npc types,
+   landmarks, gatherers) — spells are the lone exception, and only because
+   their row mixes data with the effect's spawn function.
 2. **`CellContext` grows a field per fact** (`landmarkSize` now doubles as
    spire tier; `landmarkDepleted` added). Each stateful landmark class will
    want more. At two tenants it is fine; at four, fold them into one
