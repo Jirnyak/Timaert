@@ -15,6 +15,7 @@
 //   * a malformed receipt changes nothing (fail closed).
 #include "check.h"
 
+#include "macro/deposit_layer.h"
 #include "macro/macro_stock.h"
 #include "macro/squad.h"
 #include "macro/state.h"
@@ -332,6 +333,52 @@ void test_trees_are_a_carrier_row() {
           "no silent regrowth: the felled cell holds until the growth law");
 }
 
+// The deposit rows (Clay/Iron/Stone) are carrier rows too: one registry
+// door, per-kind maps underneath. What must hold: a write lands in ITS kind
+// and no other, an absent vein refuses the write (mining invents no
+// geology), and the scar slots stay empty.
+void test_deposits_are_carrier_rows() {
+    using namespace sm;
+    sm::GameState gs = make_world();
+    sm::DepositLayer deposits;
+    deposits.width = gs.mapW;
+    deposits.height = gs.mapH;
+    deposits.cells[std::size_t(DepositKind::Stone)]
+        [deposits.wrap_index(9, 9)] = 1000;
+    deposits.cells[std::size_t(DepositKind::Iron)]
+        [deposits.wrap_index(9, 9)] = 64;   // a vein IN the quarry
+    MacroWorld w{&gs, nullptr, nullptr, nullptr, &deposits};
+
+    CHECK(resource_field_read(w, ResourceFieldId::Stone, 9, 9) == 1000
+              && resource_field_read(w, ResourceFieldId::Iron, 9, 9) == 64,
+          "each kind's row reads its own map of the shared cell");
+
+    resource_field_apply(w, ResourceFieldId::Iron, 9, 9, -60);
+    CHECK(resource_field_read(w, ResourceFieldId::Iron, 9, 9) == 4
+              && resource_field_read(w, ResourceFieldId::Stone, 9, 9) == 1000,
+          "mining one kind never bleeds into the other kind's map");
+
+    resource_field_apply(w, ResourceFieldId::Clay, 9, 9, +500);
+    CHECK(resource_field_read(w, ResourceFieldId::Clay, 9, 9) == 0
+              && deposits.cells[std::size_t(DepositKind::Clay)].empty(),
+          "a kind the cell does not hold refuses the write: mining invents "
+          "no geology");
+
+    resource_field_apply(w, ResourceFieldId::Iron, 9, 9, -100);
+    CHECK(resource_field_read(w, ResourceFieldId::Iron, 9, 9) == 0
+              && deposits.cells[std::size_t(DepositKind::Iron)].count(
+                     deposits.wrap_index(9, 9)),
+          "an over-drained vein clamps to zero and stays a visible cell");
+
+    for (std::size_t f : {std::size_t(ResourceFieldId::Clay),
+                          std::size_t(ResourceFieldId::Iron),
+                          std::size_t(ResourceFieldId::Stone)}) {
+        CHECK(gs.resourceScars[f].empty(),
+              "a deposit row's scar slot stays EMPTY - the cells are the "
+              "only state");
+    }
+}
+
 } // namespace
 
 int main() {
@@ -343,5 +390,6 @@ int main() {
     test_the_roster_row_pays_by_name();
     test_dead_leader_squads_fall_into_the_pool();
     test_trees_are_a_carrier_row();
+    test_deposits_are_carrier_rows();
     return sm::test::report("macro_stock_test");
 }

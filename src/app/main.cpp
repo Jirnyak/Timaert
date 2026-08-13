@@ -1687,7 +1687,7 @@ bool save_game_checked(App& app, bool autosave = false) {
     const std::string& path = autosave ? app.autosavePath : app.savePath;
     const bool ok = sm::save_game(app.gs, app.activeQuests,
                                   stage_save_state(app), app.treeLayer.data,
-                                  path);
+                                  app.deposits, path);
     refresh_save_summary(app);
     if (!ok)
         std::fprintf(stderr, "save_game FAILED: %s\n", path.c_str());
@@ -1839,11 +1839,11 @@ void boot_world(App& app, std::uint32_t seed,
     // The score context politics reads (R2): the crown decides how many
     // and whose, the ground decides where and how large.
     sm::SettlementSiteContext siteCtx{};
-    siteCtx.w.gs      = &app.gs;
-    siteCtx.w.trees   = &app.treeLayer;
-    siteCtx.w.terrain = &app.terrain;
-    siteCtx.deposits  = &app.deposits;
-    siteCtx.seaLevel8 = std::uint8_t(lp.seaLevel * 255.0f);
+    siteCtx.w.gs       = &app.gs;
+    siteCtx.w.trees    = &app.treeLayer;
+    siteCtx.w.terrain  = &app.terrain;
+    siteCtx.w.deposits = &app.deposits;
+    siteCtx.seaLevel8  = std::uint8_t(lp.seaLevel * 255.0f);
     app.gs.politik = sm::generate_politik(app.gs.worldSeed, app.gs.mapW, app.gs.mapH,
                                           &app.terrain, std::uint8_t(lp.seaLevel * 255.0f),
                                           targetTotalCities, &siteCtx);
@@ -1870,7 +1870,7 @@ void boot_world(App& app, std::uint32_t seed,
                     if (app.terrain.is_water(x, y, sea8)) water = true;
                     else if (app.terrain.moisture_at(x, y)
                              >= sm::kFieldMoistureMin) plough = true;
-                    if (app.deposits.at(x, y)) deposit = true;
+                    if (app.deposits.any_at(x, y)) deposit = true;
                 }
             nearWater   += water   ? 1 : 0;
             nearPlough  += plough  ? 1 : 0;
@@ -2057,7 +2057,9 @@ bool boot_world_from_save(App& app, const std::string& path) {
     std::vector<sm::Quest> loadedQuests;
     std::vector<sm::MacroNpcRecord> loadedMacro;
     std::vector<std::uint16_t> loadedTrees;
-    if (!sm::load_game(fresh, loadedQuests, loadedMacro, loadedTrees, path)) {
+    sm::DepositLayer loadedDeposits;
+    if (!sm::load_game(fresh, loadedQuests, loadedMacro, loadedTrees,
+                       loadedDeposits, path)) {
         return false;
     }
     // registerIntroStory=TRUE even on load (v25): node definitions are code
@@ -2114,7 +2116,6 @@ bool boot_world_from_save(App& app, const std::string& path) {
     app.gs.factions          = std::move(fresh.factions);
     app.gs.subState          = std::move(fresh.subState);
     app.gs.deserterPool      = fresh.deserterPool;
-    app.gs.depositOverrides  = std::move(fresh.depositOverrides);   // v26
     app.activeQuests         = std::move(loadedQuests);
     app.questMarkerSig       = 0;   // force quest-marker rebuild on next tick
 
@@ -2165,9 +2166,9 @@ bool boot_world_from_save(App& app, const std::string& path) {
     }
     app.macro.upload_tree_field(app.device, &app.treeLayer);
     app.uploadedTreeRev = app.treeLayer.revision;
-    // Same for the mineral deposits: virgin derivation, then the drained
-    // veins the save remembers.
-    sm::apply_deposit_overrides(app.deposits, app.gs.depositOverrides);
+    // Same for the mineral deposits: the save carries the living cells
+    // whole (v37) — drained veins stay drained, discovered ones stay found.
+    sm::restore_deposit_cells(app.deposits, loadedDeposits);
     return true;
 }
 
@@ -8087,7 +8088,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             if (!sm::save_game(app.gs, app.activeQuests,
                                stage_save_state(app), app.treeLayer.data,
-                               app.savePath)) {
+                               app.deposits, app.savePath)) {
                 smoke_fail(app, "save_game returned false");
                 break;
             }

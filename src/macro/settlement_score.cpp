@@ -78,16 +78,22 @@ int forest_term(const SettlementSiteContext& ctx, int x, int y) {
 
 // ── Deposit: the richest vein within reach, decayed by distance ─────────
 int deposit_term(const SettlementSiteContext& ctx, int x, int y) {
-    if (!ctx.deposits) return 0;
+    if (!ctx.w.deposits) return 0;
     int best = 0;
     for (int dy = -kSettlementReach; dy <= kSettlementReach; ++dy) {
         for (int dx = -kSettlementReach; dx <= kSettlementReach; ++dx) {
-            const DepositCell* cell = ctx.deposits->at(x + dx, y + dy);
-            if (!cell) continue;
-            // Iron is the prize; stone and clay are common wealth.
-            const int base = cell->kind == DepositKind::Iron ? 16 : 8;
             const int d = std::max(std::abs(dx), std::abs(dy));
-            best = std::max(best, base >> d);
+            // Iron is the prize; stone and clay are common wealth. A cell
+            // may carry several kinds (a vein IN a quarry) — the richest
+            // prize prices the site. Presence is what settles people; a
+            // temporarily dry vein still anchors a mining village.
+            for (int k = 0; k < kDepositKindCount; ++k) {
+                const DepositKind kind = DepositKind(k);
+                if (!ctx.w.deposits->remaining_at(kind, x + dx, y + dy))
+                    continue;
+                const int base = kind == DepositKind::Iron ? 16 : 8;
+                best = std::max(best, base >> d);
+            }
         }
     }
     return best;

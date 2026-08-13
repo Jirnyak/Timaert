@@ -3,21 +3,25 @@
 // Agents farm the nearest deposit to their home exactly as woodcutters farm
 // the nearest forest.
 //
-// Same discipline as macro/tree_layer.h, the proven template:
-//   · the LAYER is derived — a pure function of terrain + worldSeed, rebuilt
-//     every boot, never serialized;
-//   · what play changes (a vein drained by miners) persists as SPARSE
-//     overrides in GameState (v26), re-applied on load;
-//   · ONE mutation door (set_deposit_remaining) keeps layer and overrides in
-//     lockstep — never poke `cells` directly.
+// Since R2 each kind is a CARRIER row of the resource-field registry
+// (macro/resource_field.h): this layer is the rows' live state, mutated only
+// through resource_field_apply, and the save carries the cells WHOLE (the
+// same Persistence ruling the tree grid rides under). The derivation is the
+// field's initial condition, rebuilt for a NEW game only.
+//
+// A cell may hold SEVERAL kinds — a discovered iron vein lives IN a stone
+// mountain and the quarry does not vanish (owner: у каждого ресурса своё
+// поле, никто не исчезает). That is why storage is one sparse map PER KIND,
+// not one kind per cell: the old single-kind DepositCell could only express
+// discovery as a kind-SWAP, which silently deleted the stone.
 //
 // An exhausted deposit KEEPS its cell with remaining == 0: "the vein ran
-// dry" is a visible fact of the world (and the hook for the iron-discovery
+// dry" is a visible fact of the world (and the input of the iron-discovery
 // rule), not a silent disappearance.
 //
-// Grain is deliberately NOT here (it is the FT_Field feature), nor wood (the
-// tree layer): each raw commodity lives in the world through the carrier
-// that already owns its kind of renewal.
+// Grain is deliberately NOT here (the Wheat row prices fertility), nor wood
+// (the Trees row): each commodity lives through the carrier that already
+// owns its kind of renewal.
 #pragma once
 #include <cstdint>
 #include <unordered_map>
@@ -27,47 +31,41 @@
 namespace sm {
 
 enum class DepositKind : std::uint8_t { Clay = 0, Iron = 1, Stone = 2 };
+inline constexpr int kDepositKindCount = 3;
 
 // The commodity id each kind yields — the ONE dictionary's noun.
 const char* deposit_commodity_id(DepositKind kind);
 
-struct DepositCell {
-    DepositKind  kind;
-    std::int32_t remaining;
-};
-
-// Sparse per-cell mutations: cell index (y*width+x) → packed
-// {kind, remaining}. The value carries the KIND because play can now CHANGE
-// it — a discovered vein (W2c) turns a stone quarry into an iron cell, and
-// that must survive a load against the virgin derivation. GameState stores
-// this map raw (like treeOverrides) to dodge include cycles.
-using DepositOverrides = std::unordered_map<std::uint32_t, std::uint64_t>;
-
-inline std::uint64_t pack_deposit_override(DepositKind kind,
-                                           std::int32_t remaining) {
-    const std::uint32_t r = remaining < 0 ? 0u : std::uint32_t(remaining);
-    return (std::uint64_t(std::uint8_t(kind)) << 32) | std::uint64_t(r);
-}
-inline DepositKind override_kind(std::uint64_t v) {
-    return DepositKind(std::uint8_t(v >> 32));
-}
-inline std::int32_t override_remaining(std::uint64_t v) {
-    return std::int32_t(std::uint32_t(v));
-}
-
 struct DepositLayer {
     int width = 0;
     int height = 0;
-    std::unordered_map<std::uint32_t, DepositCell> cells;
+    // kind → (cell index → remaining units). Presence IS the deposit: a dry
+    // vein stays in its map at 0. Mutate through the registry only.
+    std::unordered_map<std::uint32_t, std::int32_t>
+        cells[kDepositKindCount];
     // Runtime dirty counter for future consumers; never serialized.
     std::uint32_t revision = 0;
 
-    const DepositCell* at(int x, int y) const {
-        if (width <= 0 || height <= 0) return nullptr;
+    std::uint32_t wrap_index(int x, int y) const {
         const std::uint32_t xi = std::uint32_t(((x % width) + width) % width);
         const std::uint32_t yi = std::uint32_t(((y % height) + height) % height);
-        const auto it = cells.find(yi * std::uint32_t(width) + xi);
-        return it == cells.end() ? nullptr : &it->second;
+        return yi * std::uint32_t(width) + xi;
+    }
+    // The kind's units standing at a WRAPPED cell; null = no such deposit
+    // here (distinct from a dry one, which returns a pointer to 0).
+    const std::int32_t* remaining_at(DepositKind kind, int x, int y) const {
+        if (width <= 0 || height <= 0) return nullptr;
+        const auto& m = cells[std::size_t(kind)];
+        const auto it = m.find(wrap_index(x, y));
+        return it == m.end() ? nullptr : &it->second;
+    }
+    // Any deposit of any kind here? (worldgen reporting, map tooltips)
+    bool any_at(int x, int y) const {
+        if (width <= 0 || height <= 0) return false;
+        const std::uint32_t i = wrap_index(x, y);
+        for (const auto& m : cells)
+            if (m.count(i)) return true;
+        return false;
     }
 };
 
@@ -78,25 +76,29 @@ struct DepositLayer {
 DepositLayer build_deposit_layer(const TerrainData& terrain,
                                  std::uint32_t seed, float seaLevel);
 
-// THE mutation door: clamps at zero (a dry vein stays a visible cell),
-// records the override, bumps the revision. A cell that was never a deposit
-// is refused — mining cannot invent geology (discovery is its own rule).
-bool set_deposit_remaining(DepositLayer& layer, DepositOverrides& overrides,
+// THE quantity door (the registry's carrier hook lands here): clamps at zero
+// (a dry vein stays a visible cell), bumps the revision. A cell that was
+// never a deposit of this kind is refused — MINING cannot invent geology;
+// creation goes through create_deposit below, deliberately.
+bool set_deposit_remaining(DepositLayer& layer, DepositKind kind,
                            int x, int y, std::int32_t remaining);
 
-// Load path: re-apply persisted mutations onto the freshly derived layer.
-// An override on a derived cell sets its kind and remaining; an override on
-// a cell the derivation does not name CREATES it — that is how a discovered
-// vein survives a load.
-void apply_deposit_overrides(DepositLayer& layer,
-                             const DepositOverrides& overrides);
+// The GENESIS door: the world creates geology — a discovered vein, a future
+// growth law. Inserts (or refills) the kind's cell and bumps the revision.
+void create_deposit(DepositLayer& layer, DepositKind kind,
+                    int x, int y, std::int32_t amount);
+
+// Load path (v37): overwrite the live cells with the save's (the save
+// carries them whole). Width/height stay the layer's own — the version gate
+// makes a foreign-map save unreachable; stale indices are dropped.
+void restore_deposit_cells(DepositLayer& layer, const DepositLayer& loaded);
 
 // ── Iron discovery (owner's rule, W2c) ───────────────────────────────────
 // As the world's iron runs OUT, the chance of striking a new vein rises:
 // chance/day = depletion × 1/8 (a fully mined-out world prospects at
 // 12.5 %/day; an untouched world never strikes anything). The vein opens in
 // mountain context without new plumbing: a random STONE cell — mountain by
-// construction — turns out to hold iron.
+// construction — turns out to ALSO hold iron; the quarry stays.
 
 // How much of the world's iron has been mined away, in [0, 1]. The virgin
 // amount is ironCells × kIronBase — dry cells keep their cells, so the
@@ -107,10 +109,9 @@ inline float iron_discovery_chance_per_day(float depletion) {
     return depletion * (1.0f / 8.0f);
 }
 
-// Strike a new vein: converts an rng-chosen Stone cell into Iron at
-// kIronBase and records the override. Returns false when the world has no
-// stone cell to strike.
-bool discover_iron_vein(DepositLayer& layer, DepositOverrides& overrides,
-                        std::uint32_t roll);
+// Strike a new vein: an rng-chosen Stone cell that does not yet hold iron
+// gains an Iron cell at kIronBase (through the genesis door). Returns false
+// when no such stone cell exists.
+bool discover_iron_vein(DepositLayer& layer, std::uint32_t roll);
 
 } // namespace sm

@@ -66,18 +66,20 @@ DepositLayer build_deposit_layer(const TerrainData& terrain,
             const float h01 = float(terrain.height_at(x, y)) / 255.0f;
             const bool mountain = h01 >= kMountainBiomeLevel;
             // Mountains hold the minerals; iron is the rare one, and where
-            // both would land, the SCARCE kind wins the cell.
+            // both would land at derivation, the SCARCE kind takes the cell
+            // (discovery may later add iron INTO a stone cell — that is the
+            // one way a cell comes to carry two kinds).
             if (mountain) {
                 if ((hash3(std::uint32_t(x), std::uint32_t(y),
                            seed ^ kIronSalt) & kIronChanceMask) == 0) {
-                    layer.cells.emplace(idx,
-                        DepositCell{DepositKind::Iron, kIronBase});
+                    layer.cells[std::size_t(DepositKind::Iron)]
+                        .emplace(idx, kIronBase);
                     continue;
                 }
                 if ((hash3(std::uint32_t(x), std::uint32_t(y),
                            seed ^ kStoneSalt) & kStoneChanceMask) == 0) {
-                    layer.cells.emplace(idx,
-                        DepositCell{DepositKind::Stone, kStoneBase});
+                    layer.cells[std::size_t(DepositKind::Stone)]
+                        .emplace(idx, kStoneBase);
                 }
                 continue;
             }
@@ -85,41 +87,42 @@ DepositLayer build_deposit_layer(const TerrainData& terrain,
             if ((hash3(std::uint32_t(x), std::uint32_t(y),
                        seed ^ kClaySalt) & kClayChanceMask) == 0
                 && river_adjacent(terrain, x, y)) {
-                layer.cells.emplace(idx,
-                    DepositCell{DepositKind::Clay, kClayBase});
+                layer.cells[std::size_t(DepositKind::Clay)]
+                    .emplace(idx, kClayBase);
             }
         }
     }
     return layer;
 }
 
-bool set_deposit_remaining(DepositLayer& layer, DepositOverrides& overrides,
+bool set_deposit_remaining(DepositLayer& layer, DepositKind kind,
                            int x, int y, std::int32_t remaining) {
     if (layer.width <= 0 || layer.height <= 0) return false;
-    const std::uint32_t xi =
-        std::uint32_t(((x % layer.width) + layer.width) % layer.width);
-    const std::uint32_t yi =
-        std::uint32_t(((y % layer.height) + layer.height) % layer.height);
-    const std::uint32_t idx = yi * std::uint32_t(layer.width) + xi;
-    auto it = layer.cells.find(idx);
-    if (it == layer.cells.end()) return false;   // mining invents no geology
-    const std::int32_t v = remaining < 0 ? 0 : remaining;
-    it->second.remaining = v;
-    overrides[idx] = pack_deposit_override(it->second.kind, v);
+    auto& m = layer.cells[std::size_t(kind)];
+    auto it = m.find(layer.wrap_index(x, y));
+    if (it == m.end()) return false;   // mining invents no geology
+    it->second = remaining < 0 ? 0 : remaining;
     ++layer.revision;
     return true;
 }
 
-void apply_deposit_overrides(DepositLayer& layer,
-                             const DepositOverrides& overrides) {
-    for (const auto& [idx, packed] : overrides) {
-        const DepositCell cell{override_kind(packed),
-                               override_remaining(packed)};
-        auto it = layer.cells.find(idx);
-        if (it == layer.cells.end()) {
-            layer.cells.emplace(idx, cell);   // a discovered vein reborn
-        } else {
-            it->second = cell;
+void create_deposit(DepositLayer& layer, DepositKind kind,
+                    int x, int y, std::int32_t amount) {
+    if (layer.width <= 0 || layer.height <= 0) return;
+    layer.cells[std::size_t(kind)][layer.wrap_index(x, y)] =
+        amount < 0 ? 0 : amount;
+    ++layer.revision;
+}
+
+void restore_deposit_cells(DepositLayer& layer, const DepositLayer& loaded) {
+    if (layer.width <= 0 || layer.height <= 0) return;
+    const std::uint32_t n =
+        std::uint32_t(layer.width) * std::uint32_t(layer.height);
+    for (std::size_t k = 0; k < std::size_t(kDepositKindCount); ++k) {
+        layer.cells[k].clear();
+        for (const auto& [idx, remaining] : loaded.cells[k]) {
+            if (idx >= n) continue;   // stale index vs a corrupt file: drop
+            layer.cells[k].emplace(idx, remaining);
         }
     }
     ++layer.revision;
@@ -128,10 +131,10 @@ void apply_deposit_overrides(DepositLayer& layer,
 float iron_depletion(const DepositLayer& layer) {
     std::int64_t remaining = 0;
     std::int64_t cells = 0;
-    for (const auto& [idx, cell] : layer.cells) {
-        if (cell.kind != DepositKind::Iron) continue;
+    for (const auto& [idx, rem] : layer.cells[std::size_t(DepositKind::Iron)]) {
+        (void)idx;
         ++cells;
-        remaining += cell.remaining;
+        remaining += rem;
     }
     if (cells == 0) return 0.0f;
     const std::int64_t virgin = cells * std::int64_t(kIronBase);
@@ -139,23 +142,27 @@ float iron_depletion(const DepositLayer& layer) {
     return d < 0.0f ? 0.0f : (d > 1.0f ? 1.0f : d);
 }
 
-bool discover_iron_vein(DepositLayer& layer, DepositOverrides& overrides,
-                        std::uint32_t roll) {
-    // Count the stone cells, then walk to the roll-th one — two passes over
-    // a sparse map, once a day at most.
-    std::uint32_t stoneCells = 0;
-    for (const auto& [idx, cell] : layer.cells) {
-        if (cell.kind == DepositKind::Stone) ++stoneCells;
+bool discover_iron_vein(DepositLayer& layer, std::uint32_t roll) {
+    // Candidates: stone cells NOT yet holding iron (striking the same cell
+    // twice would just refill it — that is a refill, not a discovery). Two
+    // passes over a sparse map, once a day at most.
+    const auto& stone = layer.cells[std::size_t(DepositKind::Stone)];
+    const auto& iron  = layer.cells[std::size_t(DepositKind::Iron)];
+    std::uint32_t candidates = 0;
+    for (const auto& [idx, rem] : stone) {
+        (void)rem;
+        if (!iron.count(idx)) ++candidates;
     }
-    if (stoneCells == 0) return false;
-    std::uint32_t target = roll % stoneCells;
-    for (auto& [idx, cell] : layer.cells) {
-        if (cell.kind != DepositKind::Stone) continue;
+    if (candidates == 0) return false;
+    std::uint32_t target = roll % candidates;
+    for (const auto& [idx, rem] : stone) {
+        (void)rem;
+        if (iron.count(idx)) continue;
         if (target-- != 0) continue;
-        cell.kind = DepositKind::Iron;
-        cell.remaining = kIronBase;
-        overrides[idx] = pack_deposit_override(DepositKind::Iron, kIronBase);
-        ++layer.revision;
+        // The quarry STAYS — iron is found IN the mountain, nothing vanishes.
+        const int x = int(idx % std::uint32_t(layer.width));
+        const int y = int(idx / std::uint32_t(layer.width));
+        create_deposit(layer, DepositKind::Iron, x, y, kIronBase);
         return true;
     }
     return false;

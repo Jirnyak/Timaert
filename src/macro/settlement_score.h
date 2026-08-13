@@ -59,13 +59,12 @@ static_assert(sizeof(kSettlementScoreRows) / sizeof(kSettlementScoreRows[0])
 // people actually farm — the same radius stamp_field_features ploughs.
 inline constexpr int kSettlementReach = 2;
 
-// Everything the score reads. MacroWorld is the registry's own envelope
-// (terrain + tree layer + scars via gs); deposits still ride their own
-// carrier until the R2 migration folds them into the registry.
+// Everything the score reads. MacroWorld is the registry's own envelope —
+// terrain, tree layer, deposit layer and scars all ride it, and every term
+// prices cells through the ONE registry door.
 struct SettlementSiteContext {
-    MacroWorld          w{};
-    const DepositLayer* deposits = nullptr;
-    std::uint8_t        seaLevel8 = 0;
+    MacroWorld   w{};
+    std::uint8_t seaLevel8 = 0;
 };
 
 // The one door: capacity of a WRAPPED cell as a settlement site.

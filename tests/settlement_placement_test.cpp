@@ -109,11 +109,11 @@ void make_settled_world(World& w) {
 
 SettlementSiteContext site_ctx(World& w) {
     SettlementSiteContext ctx{};
-    ctx.w.gs      = &w.gs;
-    ctx.w.trees   = &w.trees;
-    ctx.w.terrain = &w.td;
-    ctx.deposits  = &w.deposits;
-    ctx.seaLevel8 = kSeaLevel8;
+    ctx.w.gs       = &w.gs;
+    ctx.w.trees    = &w.trees;
+    ctx.w.terrain  = &w.td;
+    ctx.w.deposits = &w.deposits;
+    ctx.seaLevel8  = kSeaLevel8;
     return ctx;
 }
 
@@ -288,7 +288,7 @@ void test_villages_stand_next_to_something() {
                 if (!w.td.is_water(x, y, kSeaLevel8)
                     && int(w.td.moisture_at(x, y)) >= int(kFieldMoistureMin))
                     found = true;
-                if (w.deposits.at(x, y)) found = true;
+                if (w.deposits.any_at(x, y)) found = true;
                 if (int(w.trees.at(x, y)) >= 4096) found = true;
             }
         }

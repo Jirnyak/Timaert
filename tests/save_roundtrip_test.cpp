@@ -345,12 +345,7 @@ sm::GameState make_state() {
     gs.subState.pendingEncounterIdx = 4;
 
 
-    // Deposit overrides (v30 packed): a part-drained stone cell, a dry iron
-    // one, and a DISCOVERED vein on a cell the derivation never named.
-    gs.depositOverrides[99u] = sm::pack_deposit_override(
-        sm::DepositKind::Stone, 1500);
-    gs.depositOverrides[100u] = sm::pack_deposit_override(
-        sm::DepositKind::Iron, 0);
+
     // v33: sparse fauna-count overrides — a hunted cell and an emptied one.
     gs.resourceScars[std::size_t(sm::ResourceFieldId::Fauna)][42u * 1024u + 17u] = 3u;
     gs.resourceScars[std::size_t(sm::ResourceFieldId::Fauna)][11u] = 0u;
@@ -368,6 +363,21 @@ std::vector<std::uint16_t> make_tree_counts() {
     treeCounts[17] = 12000u;   // a thickened cell
     treeCounts[7]  = 0u;       // a clear-cut cell - must NOT resurrect
     return treeCounts;
+}
+
+// v37: the deposit cells ride the save whole, one sparse map per kind. The
+// fixture holds a part-drained stone cell, a DRY iron cell (remaining 0 is a
+// visible fact, not an absence), and one cell carrying BOTH kinds — the
+// discovered-vein-in-a-quarry case the per-kind storage exists for.
+sm::DepositLayer make_deposits() {
+    sm::DepositLayer d;
+    d.width = 512;
+    d.height = 256;
+    d.cells[std::size_t(sm::DepositKind::Stone)][99u] = 1500;
+    d.cells[std::size_t(sm::DepositKind::Iron)][100u] = 0;
+    d.cells[std::size_t(sm::DepositKind::Stone)][100u] = 60000;
+    d.cells[std::size_t(sm::DepositKind::Clay)][7u] = 4096;
+    return d;
 }
 
 sm::Quest make_quest(const char* id) {
@@ -490,6 +500,7 @@ int main() {
 
     sm::GameState gs = make_state();
     const std::vector<std::uint16_t> treeCounts = make_tree_counts();
+    const sm::DepositLayer deposits = make_deposits();
     sm::EventBus bus;
     sm::QuestEngine questEngine;
     std::vector<sm::Quest> quests;
@@ -503,7 +514,8 @@ int main() {
     }
 
     const std::vector<sm::MacroNpcRecord> macroFixture = make_macro_records();
-    if (!sm::save_game(gs, quests, macroFixture, treeCounts, path)) {
+    if (!sm::save_game(gs, quests, macroFixture, treeCounts, deposits,
+                       path)) {
         return fail("save_game returned false");
     }
 
@@ -523,7 +535,9 @@ int main() {
     std::vector<sm::Quest> loadedQuests;
     std::vector<sm::MacroNpcRecord> loadedMacro;
     std::vector<std::uint16_t> loadedTrees;
-    if (!sm::load_game(loaded, loadedQuests, loadedMacro, loadedTrees, path)) {
+    sm::DepositLayer loadedDeposits;
+    if (!sm::load_game(loaded, loadedQuests, loadedMacro, loadedTrees,
+                       loadedDeposits, path)) {
         return fail("load_game failed");
     }
     if (loaded.version != sm::kSaveVersion) return fail("loaded version mismatch");
@@ -757,14 +771,15 @@ int main() {
             loaded.deserterPool, static_cast<std::uint8_t>(sm::NPCType::Woodcutter)) != 2) {
         return fail("deserter pool lost");
     }
-    if (loaded.depositOverrides.size() != 2
-        || sm::override_kind(loaded.depositOverrides.at(99u))
-               != sm::DepositKind::Stone
-        || sm::override_remaining(loaded.depositOverrides.at(99u)) != 1500
-        || sm::override_kind(loaded.depositOverrides.at(100u))
-               != sm::DepositKind::Iron
-        || sm::override_remaining(loaded.depositOverrides.at(100u)) != 0) {
-        return fail("deposit overrides (kind + remaining) lost");
+    for (std::size_t k = 0; k < std::size_t(sm::kDepositKindCount); ++k) {
+        if (loadedDeposits.cells[k] != deposits.cells[k]) {
+            return fail("deposit cells lost (kind block mismatch)");
+        }
+    }
+    if (loadedDeposits.cells[std::size_t(sm::DepositKind::Iron)].at(100u) != 0
+        || loadedDeposits.cells[std::size_t(sm::DepositKind::Stone)].at(100u)
+               != 60000) {
+        return fail("the dry vein and its host quarry did not both survive");
     }
     if (loadedTrees != treeCounts) return fail("tree grid lost");
     if (loadedTrees.at(7) != 0u || loadedTrees.at(17) != 12000u) {
@@ -849,9 +864,10 @@ int main() {
     std::vector<sm::Quest> sentinelQuests;
     std::vector<sm::MacroNpcRecord> sentinelMacro;
     std::vector<std::uint16_t> sentinelTrees(3, 42u);
+    sm::DepositLayer sentinelDeposits;
     sentinelQuests.push_back(make_quest("sentinel"));
     if (sm::load_game(sentinel, sentinelQuests, sentinelMacro, sentinelTrees,
-                      truncatedPath)) {
+                      sentinelDeposits, truncatedPath)) {
         return fail("truncated payload accepted");
     }
     if (sentinel.mapW != 11 || sentinelQuests[0].id != "sentinel"
@@ -868,7 +884,7 @@ int main() {
     sentinel.mapW = 22;
     sentinelQuests[0].id = "sentinel_corrupt";
     if (sm::load_game(sentinel, sentinelQuests, sentinelMacro, sentinelTrees,
-                      corruptPath)) {
+                      sentinelDeposits, corruptPath)) {
         return fail("corrupt payload accepted");
     }
     if (sentinel.mapW != 22 || sentinelQuests[0].id != "sentinel_corrupt") {
@@ -888,7 +904,8 @@ int main() {
     std::vector<sm::Quest> badQuests;
     std::vector<sm::MacroNpcRecord> badMacro;
     std::vector<std::uint16_t> badTrees;
-    if (sm::load_game(badState, badQuests, badMacro, badTrees,
+    sm::DepositLayer badDeposits;
+    if (sm::load_game(badState, badQuests, badMacro, badTrees, badDeposits,
                       badVersionPath)) {
         return fail("bad version accepted");
     }
@@ -901,6 +918,7 @@ int main() {
     invalidSquadState.player.army.members.push_back(sm::SoldierRecord{
         10001u, static_cast<std::uint8_t>(sm::NPCType::Count), 1});
     if (sm::save_game(invalidSquadState, quests, macroFixture, treeCounts,
+                      deposits,
                       temp_save_path("timaert_invalid_squad_save.bin"))) {
         return fail("invalid squad kind saved");
     }
@@ -910,7 +928,7 @@ int main() {
     {
         std::vector<sm::MacroNpcRecord> invalidMacro = make_macro_records();
         invalidMacro[0].kind.type = std::uint16_t(sm::NPCType::Count);
-        if (sm::save_game(gs, quests, invalidMacro, treeCounts,
+        if (sm::save_game(gs, quests, invalidMacro, treeCounts, deposits,
                           temp_save_path("timaert_invalid_macro_save.bin"))) {
             return fail("invalid macro npc kind saved");
         }
@@ -939,15 +957,16 @@ int main() {
     const std::string ringPath = temp_save_path("timaert_ring_log_save.bin");
     remove_slot_files(ringPath);
     if (!sm::save_game(ringState, quests, macroFixture, treeCounts,
-                       ringPath)) {
+                       deposits, ringPath)) {
         return fail("a ring-capped (full) event log must still save");
     }
     sm::GameState ringLoaded{};
     std::vector<sm::Quest> ringQuests;
     std::vector<sm::MacroNpcRecord> ringMacro;
     std::vector<std::uint16_t> ringTrees;
+    sm::DepositLayer ringDeposits;
     if (!sm::load_game(ringLoaded, ringQuests, ringMacro, ringTrees,
-                       ringPath)) {
+                       ringDeposits, ringPath)) {
         return fail("full-log save did not load back");
     }
     if (ringLoaded.player.eventLog.size() != sm::kMaxEventLogEntries
@@ -960,7 +979,7 @@ int main() {
     // proving the cap that used to silently kill saves is still enforced.
     ringState.player.eventLog.push_back({sm::LogType::World, "overflow", 0});
     if (sm::save_game(ringState, quests, macroFixture, treeCounts,
-                      ringPath)) {
+                      deposits, ringPath)) {
         return fail("an over-cap event log saved — write guard disarmed");
     }
     remove_slot_files(ringPath);

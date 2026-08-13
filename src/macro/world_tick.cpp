@@ -182,7 +182,7 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
             const float chance =
                 iron_discovery_chance_per_day(iron_depletion(*deposits));
             if (chance > 0.0f && runtime.jitter.next_f01() < chance) {
-                if (discover_iron_vein(*deposits, gs.depositOverrides,
+                if (discover_iron_vein(*deposits,
                                        runtime.jitter.next_u32())) {
                     push_event_log(gs.player,
                                    {LogType::World,

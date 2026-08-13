@@ -47,6 +47,7 @@ namespace sm {
 
 struct GameState;
 struct TreeLayer;
+struct DepositLayer;
 struct TerrainData;
 namespace ecs { struct World; }
 
@@ -86,6 +87,7 @@ struct MacroWorld {
     ecs::World* world = nullptr;   // the roster row lives on squad entities
     const TerrainData* terrain = nullptr;   // the fauna row derives its
                                             //   baseline from the cell's biome
+    DepositLayer* deposits = nullptr;       // the Clay/Iron/Stone carrier
 };
 
 // How much of this stock stands here — what a spawner asks before it embodies.

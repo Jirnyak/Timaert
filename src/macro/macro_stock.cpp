@@ -6,6 +6,7 @@
 
 #include "ecs/world.h"
 #include "macro/army.h"
+#include "macro/deposit_layer.h"
 #include "macro/fauna.h"
 #include "macro/map_generator.h"
 #include "macro/state.h"
@@ -148,12 +149,39 @@ void trees_apply(MacroWorld& w, int x, int y, int delta) {
     set_tree_count(*w.trees, x, y, now + delta);
 }
 
+// Clay/Iron/Stone: carrier rows over the deposit layer — one sparse map per
+// kind, PRESENCE is the deposit (a dry vein reads 0 through a live cell; a
+// cell with no vein reads 0 through absence and REFUSES writes — mining
+// invents no geology; genesis goes through create_deposit, deliberately).
+template <DepositKind K>
+int deposit_read(const MacroWorld& w, int x, int y) {
+    if (!w.deposits) return 0;
+    const std::int32_t* r = w.deposits->remaining_at(K, x, y);
+    return r ? int(*r) : 0;
+}
+template <DepositKind K>
+void deposit_apply(MacroWorld& w, int x, int y, int delta) {
+    if (!w.deposits || delta == 0) return;
+    const std::int32_t* r = w.deposits->remaining_at(K, x, y);
+    if (!r) return;   // fail closed: no vein here to move
+    set_deposit_remaining(*w.deposits, K, x, y, *r + delta);
+}
+
 constexpr ResourceFieldDef kResourceFields[] = {
     /* Wheat */ {"wheat", &wheat_baseline, &crop_regrow_period_days,
                  nullptr, nullptr},
     /* Fauna */ {"fauna", &fauna_baseline, &fauna_regrow_period_days,
                  nullptr, nullptr},
     /* Trees */ {"trees", nullptr, nullptr, &trees_read, &trees_apply},
+    /* Clay  */ {"clay",  nullptr, nullptr,
+                 &deposit_read<DepositKind::Clay>,
+                 &deposit_apply<DepositKind::Clay>},
+    /* Iron  */ {"iron",  nullptr, nullptr,
+                 &deposit_read<DepositKind::Iron>,
+                 &deposit_apply<DepositKind::Iron>},
+    /* Stone */ {"stone", nullptr, nullptr,
+                 &deposit_read<DepositKind::Stone>,
+                 &deposit_apply<DepositKind::Stone>},
 };
 static_assert(sizeof(kResourceFields) / sizeof(kResourceFields[0])
                   == std::size_t(ResourceFieldId::Count),

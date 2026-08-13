@@ -136,7 +136,7 @@ void populate_landmarks_from_politik(GameState& gs,
                                      const TerrainData& terrain,
                                      std::uint8_t seaLevel8,
                                      TreeLayer& trees,
-                                     const DepositLayer& deposits) {
+                                     DepositLayer& deposits) {
     gs.settlements.clear();
     gs.villages.clear();
     gs.spires.clear();
@@ -194,7 +194,7 @@ void populate_landmarks_from_politik(GameState& gs,
     site.w.gs      = &gs;
     site.w.trees   = &trees;
     site.w.terrain = &terrain;
-    site.deposits  = &deposits;
+    site.w.deposits = &deposits;
     site.seaLevel8 = seaLevel8;
     const int spacing = derive_city_spacing(&terrain, seaLevel8,
                                             gs.mapW, gs.mapH,

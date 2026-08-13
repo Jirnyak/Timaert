@@ -106,7 +106,11 @@ namespace sm {
 // and the save carries the tree grid WHOLE (a living, growing field is not
 // derivable from seed + sparse scars) — `treeOverrides` died with the
 // derive-plus-overlay model.
-constexpr int kSaveVersion = 36;
+// v37: deposits are three carrier rows (Clay/Iron/Stone) with one sparse map
+// PER KIND — a cell may hold several kinds (iron found IN a stone mountain;
+// nothing vanishes), so the single-kind packed override died and the save
+// carries the deposit cells whole, like the tree grid.
+constexpr int kSaveVersion = 37;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
@@ -327,17 +331,10 @@ struct GameState {
     // AGENTS carrying real cargo between real inventories — macro/npc_ai.cpp
     // ai_caravan.)
 
-    // (treeOverrides is GONE (v36): the forest is the Trees carrier row of
-    // the resource-field registry, and the save carries the TreeLayer grid
-    // whole — save.cpp takes the layer alongside the state.)
-
-    // Sparse deposit mutations (v26, packed since v30): cell index →
-    // {kind, remaining} packed u64 (macro/deposit_layer.h pack/unpack). The
-    // layer derives from the seed each boot; what persists is what play
-    // changed — drained veins AND discovered ones (a stone quarry struck
-    // iron, W2c). Raw map shape kept as a plain map to avoid an include
-    // cycle.
-    std::unordered_map<std::uint32_t, std::uint64_t> depositOverrides;
+    // (treeOverrides and depositOverrides are GONE (v36/v37): forests and
+    // deposits are carrier rows of the resource-field registry, and the save
+    // carries their live state whole — save.cpp takes the carriers alongside
+    // the state.)
 
     // The resource fields' scars (v35, macro/resource_field.h): one map per
     // ResourceFieldId, cell index → units play has taken and regrowth has
@@ -433,6 +430,6 @@ void populate_landmarks_from_politik(GameState& gs,
                                      const TerrainData& terrain,
                                      std::uint8_t seaLevel8,
                                      TreeLayer& trees,
-                                     const DepositLayer& deposits);
+                                     DepositLayer& deposits);
 
 } // namespace sm

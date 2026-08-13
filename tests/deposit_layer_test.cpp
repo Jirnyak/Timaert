@@ -1,12 +1,15 @@
-// The world's mineral deposits (macro/deposit_layer.h, W2a). Pinned:
+// The world's mineral deposits (macro/deposit_layer.h, W2a; carrier rows
+// since R2). Pinned:
 //   · CONTEXT LAW — clay only on river-adjacent lowland, iron/stone only in
 //     the mountains, nothing in the water;
 //   · determinism — one seed, one geology;
-//   · the ONE mutation door records overrides, refuses to invent geology on
-//     a non-deposit cell, clamps at zero, and a dry vein stays a VISIBLE
-//     cell (the iron-discovery rule needs the fact);
-//   · load path — a virgin derivation plus the overrides equals the saved
-//     world.
+//   · the quantity door refuses to invent geology on a non-deposit cell,
+//     clamps at zero, and a dry vein stays a VISIBLE cell (the
+//     iron-discovery rule needs the fact);
+//   · discovery ADDS iron INTO a stone cell — the quarry survives (owner:
+//     у каждого ресурса своё поле, никто не исчезает);
+//   · load path (v37) — restoring the saved cells reproduces the mutated
+//     world, drained and discovered alike.
 #include "check.h"
 
 #include "macro/deposit_layer.h"
@@ -16,6 +19,12 @@
 namespace {
 
 using namespace sm;
+
+int total_cells(const DepositLayer& layer) {
+    int n = 0;
+    for (const auto& m : layer.cells) n += int(m.size());
+    return n;
+}
 
 // A little world: sea on the left edge, a river column at x=8, a mountain
 // band at y>=48, plain grassland elsewhere.
@@ -47,19 +56,18 @@ void test_deposits_obey_the_world() {
     const float seaLevel = 0.4f;
     const DepositLayer layer = build_deposit_layer(td, 777u, seaLevel);
 
-    CHECK_OR_RETURN(!layer.cells.empty(), "the little world holds deposits");
+    CHECK_OR_RETURN(total_cells(layer) > 0, "the little world holds deposits");
 
-    int clay = 0, iron = 0, stone = 0;
     bool contextHolds = true;
-    for (const auto& [idx, cell] : layer.cells) {
-        const int x = int(idx % std::uint32_t(td.width));
-        const int y = int(idx / std::uint32_t(td.width));
-        const bool mountain = td.height_at(x, y) / 255.0f >= 0.75f;
-        const bool water = td.is_water(x, y, std::uint8_t(seaLevel * 255.0f));
-        contextHolds = contextHolds && !water;
-        switch (cell.kind) {
-            case DepositKind::Clay: {
-                ++clay;
+    for (int k = 0; k < kDepositKindCount; ++k) {
+        for (const auto& [idx, remaining] : layer.cells[k]) {
+            const int x = int(idx % std::uint32_t(td.width));
+            const int y = int(idx / std::uint32_t(td.width));
+            const bool mountain = td.height_at(x, y) / 255.0f >= 0.75f;
+            const bool water =
+                td.is_water(x, y, std::uint8_t(seaLevel * 255.0f));
+            contextHolds = contextHolds && !water && remaining > 0;
+            if (DepositKind(k) == DepositKind::Clay) {
                 bool nearRiver = false;
                 for (int dy = -1; dy <= 1; ++dy)
                     for (int dx = -1; dx <= 1; ++dx) {
@@ -69,71 +77,81 @@ void test_deposits_obey_the_world() {
                             || td.riverData[yi * td.width + xi] == 255;
                     }
                 contextHolds = contextHolds && nearRiver && !mountain;
-                break;
+            } else {
+                contextHolds = contextHolds && mountain;
             }
-            case DepositKind::Iron:  ++iron;  contextHolds = contextHolds && mountain; break;
-            case DepositKind::Stone: ++stone; contextHolds = contextHolds && mountain; break;
         }
-        contextHolds = contextHolds && cell.remaining > 0;
     }
-    CHECK(contextHolds, "clay hugs rivers, minerals hug mountains, water holds nothing");
-    CHECK(stone > 0, "the mountain band yields stone");
-    // Iron is 1-in-256 of ~1024 mountain cells and clay 1-in-64 of ~96
-    // river-adjacent cells — the law is context, not census, so no count
-    // pins beyond stone; the kinds must merely partition the cells.
-    CHECK(clay + iron + stone == int(layer.cells.size()),
-          "every deposit cell is exactly one of the three kinds");
+    CHECK(contextHolds,
+          "clay hugs rivers, minerals hug mountains, water holds nothing");
+    CHECK(!layer.cells[std::size_t(DepositKind::Stone)].empty(),
+          "the mountain band yields stone");
+    // At DERIVATION the kinds partition the cells (iron wins where both
+    // roll); only DISCOVERY may later stack a second kind onto a cell.
+    bool disjoint = true;
+    for (const auto& [idx, rem] : layer.cells[std::size_t(DepositKind::Iron)]) {
+        (void)rem;
+        disjoint = disjoint
+            && !layer.cells[std::size_t(DepositKind::Stone)].count(idx)
+            && !layer.cells[std::size_t(DepositKind::Clay)].count(idx);
+    }
+    CHECK(disjoint, "virgin geology holds one kind per cell");
 
     // One seed, one geology.
     const DepositLayer again = build_deposit_layer(td, 777u, seaLevel);
-    CHECK(again.cells.size() == layer.cells.size(),
-          "the same seed derives the same geology");
+    bool same = true;
+    for (int k = 0; k < kDepositKindCount; ++k)
+        same = same && again.cells[k] == layer.cells[k];
+    CHECK(same, "the same seed derives the same geology");
     // A different seed shuffles the sites.
     const DepositLayer other = build_deposit_layer(td, 778u, seaLevel);
-    bool identical = other.cells.size() == layer.cells.size();
-    if (identical) {
-        for (const auto& [idx, cell] : layer.cells) {
-            identical = identical && other.cells.count(idx) != 0;
-        }
-    }
+    bool identical = true;
+    for (int k = 0; k < kDepositKindCount; ++k)
+        identical = identical && other.cells[k] == layer.cells[k];
     CHECK(!identical, "a different seed is a different geology");
 }
 
-void test_the_mutation_door_and_the_load_path() {
+void test_the_quantity_door_and_the_load_path() {
     const TerrainData td = make_world();
     DepositLayer layer = build_deposit_layer(td, 777u, 0.4f);
-    CHECK_OR_RETURN(!layer.cells.empty(), "fixture holds deposits");
+    CHECK_OR_RETURN(!layer.cells[std::size_t(DepositKind::Stone)].empty(),
+                    "fixture holds stone");
 
-    const auto first = layer.cells.begin();
+    const auto first = layer.cells[std::size_t(DepositKind::Stone)].begin();
     const int x = int(first->first % std::uint32_t(layer.width));
     const int y = int(first->first / std::uint32_t(layer.width));
 
-    DepositOverrides overrides;
-    CHECK(set_deposit_remaining(layer, overrides, x, y, 5),
+    const std::uint32_t rev0 = layer.revision;
+    CHECK(set_deposit_remaining(layer, DepositKind::Stone, x, y, 5),
           "the door mutates a real deposit");
-    CHECK(layer.at(x, y) != nullptr && layer.at(x, y)->remaining == 5,
-          "the layer shows the drained vein");
-    CHECK(overrides.size() == 1, "the mutation left its override");
+    const std::int32_t* rem = layer.remaining_at(DepositKind::Stone, x, y);
+    CHECK(rem != nullptr && *rem == 5, "the layer shows the drained vein");
+    CHECK(layer.revision > rev0, "the mutation moved the revision");
 
     // Draining below zero clamps; the DRY vein keeps its cell.
-    CHECK(set_deposit_remaining(layer, overrides, x, y, -3),
+    CHECK(set_deposit_remaining(layer, DepositKind::Stone, x, y, -3),
           "over-draining clamps, not refuses");
-    CHECK(layer.at(x, y) != nullptr && layer.at(x, y)->remaining == 0,
+    rem = layer.remaining_at(DepositKind::Stone, x, y);
+    CHECK(rem != nullptr && *rem == 0,
           "a dry vein stays a visible cell at zero");
 
-    // Mining cannot invent geology: a plain grass cell (x=32,y=8 is neither
-    // river-adjacent nor mountain in the fixture... it may still be a clay
-    // roll; use a WATER cell, which never hosts a deposit).
-    CHECK(!set_deposit_remaining(layer, overrides, 1, 8, 100),
-          "a non-deposit cell refuses the door");
+    // Mining cannot invent geology: a water cell never hosts a deposit, and
+    // a stone write cannot touch another kind's map either.
+    CHECK(!set_deposit_remaining(layer, DepositKind::Stone, 1, 8, 100),
+          "a non-deposit cell refuses the quantity door");
+    CHECK(!set_deposit_remaining(layer, DepositKind::Iron, x, y, 100)
+              || layer.cells[std::size_t(DepositKind::Iron)].count(
+                     layer.wrap_index(x, y)),
+          "a kind the cell does not hold refuses the door");
 
-    // The load path: virgin derivation + overrides == the saved world.
+    // The load path (v37): the save carries the cells whole; restoring them
+    // onto a virgin derivation reproduces the mutated world.
     DepositLayer loaded = build_deposit_layer(td, 777u, 0.4f);
-    apply_deposit_overrides(loaded, overrides);
-    CHECK(loaded.at(x, y) != nullptr && loaded.at(x, y)->remaining == 0,
-          "the drained vein survives a load");
-    CHECK(loaded.cells.size() == layer.cells.size(),
-          "overrides drain veins, never add or remove cells");
+    restore_deposit_cells(loaded, layer);
+    rem = loaded.remaining_at(DepositKind::Stone, x, y);
+    CHECK(rem != nullptr && *rem == 0, "the drained vein survives a load");
+    CHECK(total_cells(loaded) == total_cells(layer),
+          "the restore reproduces every cell, adds none");
 }
 
 void test_iron_discovery() {
@@ -146,15 +164,22 @@ void test_iron_discovery() {
           "full veins = zero discovery chance");
 
     // Mine the world's iron OUT through the door.
-    DepositOverrides overrides;
     int ironBefore = 0;
-    for (const auto& [idx, cell] : layer.cells) {
-        if (cell.kind != DepositKind::Iron) continue;
-        ++ironBefore;
-        const int x = int(idx % std::uint32_t(layer.width));
-        const int y = int(idx / std::uint32_t(layer.width));
-        CHECK(set_deposit_remaining(layer, overrides, x, y, 0),
-              "the vein drains through the one door");
+    {
+        // Collect first: the door mutates the map we would be walking.
+        std::vector<std::uint32_t> veins;
+        for (const auto& [idx, rem] :
+             layer.cells[std::size_t(DepositKind::Iron)]) {
+            (void)rem;
+            veins.push_back(idx);
+        }
+        for (const std::uint32_t idx : veins) {
+            ++ironBefore;
+            const int x = int(idx % std::uint32_t(layer.width));
+            const int y = int(idx / std::uint32_t(layer.width));
+            CHECK(set_deposit_remaining(layer, DepositKind::Iron, x, y, 0),
+                  "the vein drains through the one door");
+        }
     }
     CHECK_OR_RETURN(ironBefore > 0, "the fixture holds iron to exhaust");
     CHECK(iron_depletion(layer) == 1.0f,
@@ -162,33 +187,43 @@ void test_iron_discovery() {
     CHECK(iron_discovery_chance_per_day(1.0f) > 0.0f,
           "an empty world prospects hopefully");
 
-    // The strike: a stone quarry turns out to hold iron.
-    CHECK_OR_RETURN(discover_iron_vein(layer, overrides, 5u),
+    // The strike: a stone quarry turns out to ALSO hold iron.
+    const int stoneBefore =
+        int(layer.cells[std::size_t(DepositKind::Stone)].size());
+    CHECK_OR_RETURN(discover_iron_vein(layer, 5u),
                     "the strike lands on a stone cell");
     int ironFresh = 0;
-    for (const auto& [idx, cell] : layer.cells) {
-        if (cell.kind == DepositKind::Iron && cell.remaining > 0) ++ironFresh;
+    std::uint32_t freshIdx = 0;
+    for (const auto& [idx, rem] :
+         layer.cells[std::size_t(DepositKind::Iron)]) {
+        if (rem > 0) { ++ironFresh; freshIdx = idx; }
     }
     CHECK(ironFresh == 1, "exactly one fresh vein opened");
     CHECK(iron_depletion(layer) < 1.0f, "the strike relieves the depletion");
+    // NOTHING VANISHES: the host quarry keeps its stone cell — the vein was
+    // found IN the mountain, and the old kind-swap that deleted it is dead.
+    CHECK(layer.cells[std::size_t(DepositKind::Stone)].count(freshIdx) == 1,
+          "the host quarry survives the discovery");
+    CHECK(int(layer.cells[std::size_t(DepositKind::Stone)].size())
+              == stoneBefore,
+          "discovery adds iron, it deletes no stone");
 
-    // The discovered vein SURVIVES a load: virgin derivation + overrides.
+    // The discovered vein SURVIVES a load (v37: cells ride the save whole).
     DepositLayer loaded = build_deposit_layer(td, 777u, 0.4f);
-    apply_deposit_overrides(loaded, overrides);
-    int loadedFresh = 0;
-    for (const auto& [idx, cell] : loaded.cells) {
-        if (cell.kind == DepositKind::Iron && cell.remaining > 0) ++loadedFresh;
-    }
-    CHECK(loadedFresh == 1, "the discovered vein is reborn on load");
-    CHECK(loaded.cells.size() == layer.cells.size(),
-          "discovery converts a cell, it does not invent geology");
+    restore_deposit_cells(loaded, layer);
+    const std::int32_t* rem = loaded.remaining_at(
+        DepositKind::Iron, int(freshIdx % std::uint32_t(loaded.width)),
+        int(freshIdx / std::uint32_t(loaded.width)));
+    CHECK(rem != nullptr && *rem > 0, "the discovered vein is reborn on load");
+    CHECK(total_cells(loaded) == total_cells(layer),
+          "the restore carries the discovery, invents nothing further");
 }
 
 } // namespace
 
 int main() {
     test_deposits_obey_the_world();
-    test_the_mutation_door_and_the_load_path();
+    test_the_quantity_door_and_the_load_path();
     test_iron_discovery();
     return sm::test::report("deposit_layer_test");
 }

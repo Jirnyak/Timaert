@@ -41,6 +41,9 @@ enum class ResourceFieldId : std::uint8_t {
     Wheat = 0,   // standing-wheat potential — fertility (climate G channel)
     Fauna,       // wild headcount — biome capacity (macro/fauna.h)
     Trees,       // forest of a cell — carrier row (macro/tree_layer.h grid)
+    Clay,        // alluvial pits — carrier row (macro/deposit_layer.h)
+    Iron,        // finite mountain veins — carrier row (deposit_layer.h)
+    Stone,       // quasi-infinite quarries — carrier row (deposit_layer.h)
     Count,
 };
 

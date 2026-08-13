@@ -472,6 +472,7 @@ timaert_test(macro_npc_ai_parity_test
         # The squad threat step settles auto-battles through THE ledger
         # (macro/squad.h → macro_stock), so the AI now links the rows too.
         src/macro/macro_stock.cpp
+        src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
         src/macro/tree_layer.cpp
         # The caravan agent weighs its cargo hold (items.cpp).
@@ -485,6 +486,7 @@ timaert_test(squad_war_test
     SOURCES
         src/macro/npc_ai.cpp
         src/macro/macro_stock.cpp
+        src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
         src/macro/tree_layer.cpp
         # spawn_squad (Inc 7) is born through make_npc — the one creation
@@ -506,6 +508,7 @@ timaert_test(squad_travel_test
     SOURCES
         src/macro/npc_ai.cpp
         src/macro/macro_stock.cpp
+        src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
         src/macro/tree_layer.cpp
         src/macro/items.cpp
@@ -850,6 +853,7 @@ timaert_test(woodcutter_gather_test
     SOURCES
         src/macro/npc_ai.cpp
         src/macro/macro_stock.cpp
+        src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
         src/macro/tree_layer.cpp
         src/macro/npc_spawn.cpp
@@ -932,6 +936,7 @@ timaert_test(body_contract_test
         src/sub/material.cpp
         src/macro/fauna.cpp
         src/macro/macro_stock.cpp
+        src/macro/deposit_layer.cpp
         src/macro/tree_layer.cpp
         src/macro/items.cpp
     LINK_ENTT)
@@ -943,6 +948,7 @@ timaert_test(body_contract_test
 timaert_test(macro_stock_test
     SOURCES
         src/macro/macro_stock.cpp
+        src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
         src/macro/tree_layer.cpp
     LINK_ENTT)

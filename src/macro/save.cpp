@@ -1,4 +1,5 @@
 #include "macro/save.h"
+#include "macro/deposit_layer.h"
 #include "macro/state.h"
 #include "macro/macro_snapshot.h"
 #include "events/quests/quest_types.h"
@@ -941,7 +942,8 @@ void write_payload(Writer& w, const GameState& s,
                    const std::string& savedAt,
                    const std::vector<Quest>& activeQuests,
                    const std::vector<MacroNpcRecord>& macroNpcs,
-                   const std::vector<std::uint16_t>& treeCounts) {
+                   const std::vector<std::uint16_t>& treeCounts,
+                   const DepositLayer& deposits) {
     w.pod(s.worldSeed);
     w.pod(s.mapW);
     w.pod(s.mapH);
@@ -989,15 +991,19 @@ void write_payload(Writer& w, const GameState& s,
         for (const std::uint16_t c : treeCounts) w.pod(c);
     }
 
-    // v26: sparse deposit overrides — same pattern, same determinism rule.
-    // v30: the value is the packed {kind, remaining} u64.
-    if (w.count(s.depositOverrides.size(), kMaxTreeOverrides)) {
-        std::vector<std::pair<std::uint32_t, std::uint64_t>> cells(
-            s.depositOverrides.begin(), s.depositOverrides.end());
+    // v37: the deposit cells WHOLE, one block per kind in DepositKind order
+    // — carrier rows, same ruling as the tree grid. Sorted by cell index:
+    // the map's iteration order is unspecified and the payload is
+    // checksummed, so the byte stream must be deterministic.
+    for (std::size_t k = 0; k < std::size_t(kDepositKindCount); ++k) {
+        const auto& cellsOfKind = deposits.cells[k];
+        if (!w.count(cellsOfKind.size(), kMaxTreeOverrides)) continue;
+        std::vector<std::pair<std::uint32_t, std::int32_t>> cells(
+            cellsOfKind.begin(), cellsOfKind.end());
         std::sort(cells.begin(), cells.end());
-        for (const auto& [idx, packed] : cells) {
+        for (const auto& [idx, remaining] : cells) {
             w.pod(idx);
-            w.pod(packed);
+            w.pod(remaining);
         }
     }
 
@@ -1043,7 +1049,8 @@ void write_payload(Writer& w, const GameState& s,
 
 void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
                   std::vector<MacroNpcRecord>& macroNpcs,
-                  std::vector<std::uint16_t>& treeCounts) {
+                  std::vector<std::uint16_t>& treeCounts,
+                  DepositLayer& deposits) {
     s.version = kSaveVersion;
     r.pod(s.worldSeed);
     r.pod(s.mapW);
@@ -1113,15 +1120,19 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
     treeCounts.resize(n);
     for (std::uint32_t i = 0; i < n && r.ok; ++i) r.pod(treeCounts[i]);
 
-    if (!read_count(r, n, kMaxTreeOverrides)) return;   // v26: deposits
-    s.depositOverrides.clear();
-    s.depositOverrides.reserve(n);
-    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-        std::uint32_t idx = 0;
-        std::uint64_t packed = 0;
-        r.pod(idx);
-        r.pod(packed);
-        if (r.ok) s.depositOverrides[idx] = packed;
+    // v37: the deposit cells, one block per kind (see the write side).
+    for (std::size_t k = 0; k < std::size_t(kDepositKindCount); ++k) {
+        if (!read_count(r, n, kMaxTreeOverrides)) return;
+        auto& cellsOfKind = deposits.cells[k];
+        cellsOfKind.clear();
+        cellsOfKind.reserve(n);
+        for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+            std::uint32_t idx = 0;
+            std::int32_t remaining = 0;
+            r.pod(idx);
+            r.pod(remaining);
+            if (r.ok) cellsOfKind[idx] = remaining;
+        }
     }
 
     // v35: the resource fields' scars, one generic block per field.
@@ -1173,7 +1184,8 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
 bool load_payload_from_file(const std::string& path, GameState& s,
                             std::vector<Quest>& activeQuests,
                             std::vector<MacroNpcRecord>& macroNpcs,
-                            std::vector<std::uint16_t>& treeCounts) {
+                            std::vector<std::uint16_t>& treeCounts,
+                            DepositLayer& deposits) {
     std::vector<std::uint8_t> file;
     if (!read_file(path, file)) return false;
 
@@ -1186,14 +1198,17 @@ bool load_payload_from_file(const std::string& path, GameState& s,
     std::vector<Quest> loadedQuests;
     std::vector<MacroNpcRecord> loadedMacro;
     std::vector<std::uint16_t> loadedTrees;
+    DepositLayer loadedDeposits;
     Reader r{file.data() + kHeaderBytes, static_cast<std::size_t>(h.payloadSize)};
-    read_payload(r, loaded, loadedQuests, loadedMacro, loadedTrees);
+    read_payload(r, loaded, loadedQuests, loadedMacro, loadedTrees,
+                 loadedDeposits);
     if (!r.ok || r.pos != r.size) return false;
 
     s = std::move(loaded);
     activeQuests = std::move(loadedQuests);
     macroNpcs = std::move(loadedMacro);
     treeCounts = std::move(loadedTrees);
+    deposits = std::move(loadedDeposits);
     return true;
 }
 
@@ -1202,12 +1217,14 @@ bool load_payload_from_file(const std::string& path, GameState& s,
 bool save_game(const GameState& s, const std::vector<Quest>& activeQuests,
                const std::vector<MacroNpcRecord>& macroNpcs,
                const std::vector<std::uint16_t>& treeCounts,
+               const DepositLayer& deposits,
                const std::string& path) {
     Writer payload;
     payload.bytes.reserve(64u * 1024u);
     const std::string savedAt = save_timestamp_for(s);
     if (savedAt.empty()) return false;
-    write_payload(payload, s, savedAt, activeQuests, macroNpcs, treeCounts);
+    write_payload(payload, s, savedAt, activeQuests, macroNpcs, treeCounts,
+                  deposits);
     if (!payload.ok || payload.bytes.size() > kMaxPayloadBytes) return false;
 
     SaveHeader h;
@@ -1222,9 +1239,10 @@ bool save_game(const GameState& s, const std::vector<Quest>& activeQuests,
 bool load_game(GameState& s, std::vector<Quest>& activeQuests,
                std::vector<MacroNpcRecord>& macroNpcs,
                std::vector<std::uint16_t>& treeCounts,
+               DepositLayer& deposits,
                const std::string& path) {
     return load_payload_from_file(path, s, activeQuests, macroNpcs,
-                                  treeCounts);
+                                  treeCounts, deposits);
 }
 
 SaveSummary inspect_save(const std::string& path) {
