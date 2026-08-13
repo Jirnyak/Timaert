@@ -1601,6 +1601,78 @@ passing this test does not prove full TS quest parity.
 
 ---
 
+## Content as rows — the spire probe (2026-08-14)
+
+The spire track (one macro landmark + contextual subworld + a dungeon kind +
+an interactive prop + a world event, fe5d389..6ccdfe3) was a deliberate PROBE
+of the engine goal: *adding content of this class must be putting rows on the
+core, never writing systems*. The honest report card, so the next content
+track knows where the engine is and where it will snag.
+
+### Held as engine (rows only, zero new systems)
+
+- **Landmark registry row** (`macro/landmark_registry.h`): colour, glyph,
+  zone band, night glow — map, tooltips and lighting read it unasked.
+- **Macro sprite**: one `SpriteId` + one filename row (+ glyph fallback).
+- **The one monster table + FaunaCount ledger**: the spire's garrison cost
+  NOTHING — `kTblSpire` existed, the cell's headcount priced the yard, the
+  storeys and the regrowth through the SAME rows a hunt settles. This is the
+  strongest subsystem in the probe.
+- **Prop table** (`kStructureKindRows`): gate, orb, the Learn verb — rows +
+  one dispatcher case; light from the row's columns; material = one shader
+  branch. Exactly as designed.
+- **Dungeon identity model** (`{kind, level, ordinal}` + one seed rule +
+  portal shafts + synthetic resolver): a whole new interior KIND is one
+  self-contained module TU + dispatch cases; session, ECS, renderer and
+  collision untouched.
+- **Event bus + effect applicator**: a world fact = one tag + payload.
+- **Test/smoke idioms** (check.h invariants, negative controls, STAY photo
+  hooks): cloned in an hour.
+
+### Rubbed (the future spaghetti generators, in order of cost)
+
+1. **Layering vs the content registries.** Spell tier had to be CARRIED as
+   data through four hops (`Spire.tier` → `landmarkSize` → gate `tag` →
+   `DungeonRef.ordinal`) because macro/sub may not read `content/`, and the
+   app layer closes the ordinal→id loop in TWO places (boot spell list, event
+   pump). It works and it is layer-clean — but every future content class
+   whose rows the WORLD must know (items in props? monster-specific
+   landmarks?) will re-derive this channel. Either bless it as THE pattern
+   ("a registry ordinal + a spec passed down; the app closes the loop") or
+   decide the registries (spells/creatures/items — pure data tables) belong
+   BELOW the world layers, with only effects/logic staying in `content/`.
+   Owner's call; until then, copy the spire channel verbatim.
+2. **`CellContext` grows a field per fact** (`landmarkSize` now doubles as
+   spire tier; `landmarkDepleted` added). Each stateful landmark class will
+   want more. At two tenants it is fine; at four, fold them into one
+   landmark-payload struct.
+3. **Landmark consumers are hand-enumerated.** The World Map panel, the
+   macro overlay and `collect_landmarks` each iterate settlements / villages
+   / spires as SEPARATE loops — a new landmark kind means touching every
+   consumer (the map panel simply did not know spires existed). The registry
+   row should drive ONE draw loop per consumer.
+4. **Parallel enum↔row tables have no guard.** `kInteractRows` ran three
+   verbs out of enum order for months (well prompted "Search"). Any new
+   parallel table needs a static_assert per row or designated initializers.
+5. **Smoke reach.** No scripted teleport exists, so distant content needs a bespoke
+   C++ smoke action (~200 lines) instead of a declarative scenario. Worth
+   growing script primitives (goto_landmark / interact_aimed / take_stairs)
+   when the third such smoke appears.
+6. **Event pump subtleties.** `tick_events()` is the LIVE buffer (flush
+   evacuates it), and emitting from inside a handler grows the vector under
+   the span. Both are now written at the pump — read them before adding a
+   consumer.
+
+### Verdict
+
+~80 % of the track was genuinely rows-on-the-core; the two real system
+additions (roof exit physics hop, the ordinal channel) were each under a
+hundred lines and both are reusable. The engine claim mostly HOLDS for this
+content class — the six snags above are the maintenance list that keeps it
+true.
+
+---
+
 ## Rules
 
 1. **No upward includes.** L1 never includes from L2/L3/L4. L3 never
