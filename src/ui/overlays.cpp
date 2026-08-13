@@ -3208,6 +3208,7 @@ namespace sm::ui
                     break;
                 case sub::Structure::Door:
                 case sub::Structure::SpireGate:
+                case sub::Structure::SpireOrb:
                 case sub::Structure::Lantern:
                 case sub::Structure::Stairs:
                 case sub::Structure::Chest:

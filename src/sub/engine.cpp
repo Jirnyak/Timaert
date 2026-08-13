@@ -1085,6 +1085,7 @@ CellContext SubworldEngine::resolve_context(int x, int y) const {
                 // which the tower reads as its storey count.
                 c.landmarkSize = int(sp.tier);
                 c.landmarkKind = CellLandmarkKind::Spire;
+                c.landmarkDepleted = sp.depleted;
                 break;
             }
         }
@@ -1696,9 +1697,22 @@ const Structure* SubworldEngine::aimed_prop() const {
     for (const Structure& s : interactProps_) {
         const InteractRow& row = interact_row(structure_interact(s.kind));
         const float reach = row.reachTiles;
-        if (structure_surface_dist2(s, playerX_, playerY_) > reach * reach) {
-            continue;
+        float d2 = structure_surface_dist2(s, playerX_, playerY_);
+        if (s.zBase > 0.0f) {
+            // A LIFTED prop (the roof orb) is reachable from its own deck,
+            // not from the ground a tower-height beneath it: the vertical
+            // gap to the prop's solid span joins the reach test. Ground
+            // props (zBase 0) keep the plain 2D math — a doorstep and a
+            // doorstep's doorstep never differ by storeys.
+            const float seat = renderer3dVk_.sample_height_m(s.x, s.y);
+            const float zLow = seat + s.zBase;
+            const float zHigh = zLow + structure_visible_height(s);
+            const float dz = playerZ_ < zLow ? zLow - playerZ_
+                           : playerZ_ > zHigh ? playerZ_ - zHigh
+                                              : 0.0f;
+            d2 += dz * dz;
         }
+        if (d2 > reach * reach) continue;
         const float score = aim_score(playerX_, playerY_, cam_.yaw, s.x, s.y);
         if (score > bestScore) {
             bestScore = score;
@@ -1780,6 +1794,8 @@ bool SubworldEngine::interact() {
                     : enter_dungeon_by_door(*prop);
             case InteractId::Stairs:
                 return try_take_dungeon_stairs();
+            case InteractId::Learn:
+                return learn_from_spire_orb(*prop);
             case InteractId::Loot:
             case InteractId::None:
             case InteractId::Count:
@@ -2896,6 +2912,59 @@ bool SubworldEngine::drink_from_well() {
     char msg[64];
     std::snprintf(msg, sizeof(msg), "You drink deep. +%d SP", gain);
     set_status(msg);
+    return true;
+}
+
+bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
+    if (!active_ || !gs_ || !bus_ || !terrain_
+        || sceneKind_ != SceneKind::Overworld) {
+        return false;
+    }
+    // The orb stands on its spire's own macro cell — resolved the way a door
+    // resolves its interior's cell (window offset from the composite centre).
+    const int winCellX = std::clamp(int(orb.x) / kCellSize, 0, 2);
+    const int winCellY = std::clamp(int(orb.y) / kCellSize, 0, 2);
+    const int mapW = terrain_->width;
+    const int mapH = terrain_->height;
+    if (mapW <= 0 || mapH <= 0) return false;
+    int cx = (mgr_.center_cx() + winCellX - 1) % mapW;
+    int cy = (mgr_.center_cy() + winCellY - 1) % mapH;
+    if (cx < 0) cx += mapW;
+    if (cy < 0) cy += mapH;
+    Spire* spire = nullptr;
+    for (auto& sp : gs_->spires) {
+        if (sp.x == cx && sp.y == cy) {
+            spire = &sp;
+            break;
+        }
+    }
+    if (!spire || spire->depleted) {
+        // A stale scene can outlive the fact (the world remembers, the
+        // composite does not, yet): the prop answers, the spire does not.
+        set_status("The orb is dark and silent.");
+        return false;
+    }
+    // The macro fact, paid in the same keypress — the search_chest pattern:
+    // a subworld act with lasting meaning writes UP immediately. Only the
+    // player can stand here (interactions are his alone), so this flag is
+    // player-earned by construction, not by a special case.
+    spire->depleted = true;
+    // The orb burns out of the scene like a felled tree (owning cell data +
+    // composite + dirty signals in one call), so its glow dies now — not on
+    // the next visit.
+    int mcx = 0, mcy = 0;
+    const Structure::Kind orbKind = Structure::SpireOrb;
+    mgr_.fell_prop_near(orb.x, orb.y, 4.0f, mcx, mcy, nullptr, &orbKind);
+    // The world fact for every observer. The spell itself lands through
+    // SpellLearned once the app layer resolves the ordinal — only content/
+    // knows the registry, and this engine never will.
+    GameEvent ev{EventTag::SpireDepleted};
+    ev.a = spire->id;
+    ev.b = int(spire->spellId);
+    ev.ix = cx;
+    ev.iy = cy;
+    bus_->emit(ev);
+    set_status("The orb's light passes into you.");
     return true;
 }
 

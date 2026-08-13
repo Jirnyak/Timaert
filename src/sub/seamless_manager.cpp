@@ -453,7 +453,10 @@ bool SeamlessSubworldManager::fell_prop_near(float x, float y, float maxDist,
     float bestD2 = maxDist * maxDist;
     for (std::size_t i = 0; i < composite_struct_.size(); ++i) {
         const Structure& s = composite_struct_[i];
-        if (!structure_is_lootable(s.kind)) continue;
+        // The loot gate protects the BARE swing (no onlyKind) from felling
+        // walls; a caller that names a kind knows what it is consuming —
+        // that is how the spire orb (no loot row) is taken by its verb.
+        if (!onlyKind && !structure_is_lootable(s.kind)) continue;
         if (onlyKind && s.kind != *onlyKind) continue;
         const float dx = s.x - x, dy = s.y - y;
         const float d2 = dx * dx + dy * dy;

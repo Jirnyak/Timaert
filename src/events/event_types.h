@@ -47,7 +47,13 @@ namespace sm
         Custom,
         PlayerEnterSettlement, // s1 = settlement name, a/ix = settlement id
         PlayerLeaveSettlement, // s1 = settlement name, a/ix = settlement id
-        LastSerializable = PlayerLeaveSettlement,
+        SpireDepleted,    // a = spire id, b = spell registry ordinal,
+                          // ix/iy = the spire's macro cell. The world fact
+                          // "this spire is consumed"; the spell itself lands
+                          // via the SpellLearned event the app layer emits
+                          // after resolving the ordinal (only content/ knows
+                          // the registry).
+        LastSerializable = SpireDepleted,
 
         // Compatibility aliases retained for existing native call sites.
         QuestAccepted = QuestStart,
@@ -60,7 +66,7 @@ namespace sm
     static_assert(EventTag::QuestObjectiveProgress == EventTag::QuestUpdate);
     static_assert(EventTag::QuestCompleted == EventTag::QuestComplete);
     static_assert(EventTag::QuestFailed == EventTag::QuestFail);
-    static_assert(EventTag::LastSerializable == EventTag::PlayerLeaveSettlement);
+    static_assert(EventTag::LastSerializable == EventTag::SpireDepleted);
 
     // Native-only guard: event is still observable/history-visible, but the
     // TS-equivalent state mutation already happened before emit.

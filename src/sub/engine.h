@@ -173,6 +173,11 @@ public:
     // nothing, and proves the interaction table carries flavour as cheaply as
     // it carries force.
     bool read_sign();
+    // The spire orb: flips the spire's depleted flag (the macro fact), burns
+    // the orb out of the scene, and emits SpireDepleted — the app layer
+    // resolves the spell ordinal and teaches the book (layering: only
+    // content/ knows the registry).
+    bool learn_from_spire_orb(const Structure& orb);
     // What pressing E right now would do, as the verb the HUD shows under the
     // crosshair ("Enter", "Loot", …). Empty string = nothing is being looked
     // at. Pure query — the same resolution the keypress runs, so the prompt

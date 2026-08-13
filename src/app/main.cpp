@@ -65,6 +65,7 @@
 #include "content/plot/intro.h"
 #include "content/quests/procedural.h"
 #include "sub/engine.h"
+#include "sub/dgn/dispatch.h"
 #include "sub/map_factory.h"
 #include "sub/tree_atlas.h"
 #include "macro/fauna.h"
@@ -212,6 +213,7 @@ enum class SmokeAction : std::uint8_t {
     SubworldExitRemap,
     DungeonHouse,
     DungeonCave,
+    SpireClimb,
     TriggerBattleStart,
     WaitVisible,
     OpenSettlementBuild,
@@ -515,6 +517,7 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"subworld_exit_remap", SmokeAction::SubworldExitRemap},
     {"dungeon_house", SmokeAction::DungeonHouse},
     {"dungeon_cave", SmokeAction::DungeonCave},
+    {"spire_climb", SmokeAction::SpireClimb},
     {"trigger_battle_start", SmokeAction::TriggerBattleStart},
     {"wait_visible", SmokeAction::WaitVisible},
     {"open_settlement_build", SmokeAction::OpenSettlementBuild},
@@ -3006,7 +3009,41 @@ void apply_pending_event_effects(App& app) {
         const std::size_t end = events.size();
         std::span<const sm::GameEvent> pending(events.data() + begin, end - begin);
         sm::apply_events(pending, app.gs);
+        // The spire's spell rides here, beside the generic applicator: only
+        // THIS layer can turn the event's registry ordinal into a spell id
+        // (content/ is above events/), so the app closes the loop the same
+        // way it feeds generate_spires its spell list at boot. Follow-up
+        // events are collected and emitted AFTER the span walk — emit grows
+        // the very vector the span points into — and the while loop then
+        // picks them up as the next batch.
+        std::vector<sm::GameEvent> followups;
+        bool spireDied = false;
+        for (const sm::GameEvent& ev : pending) {
+            if (ev.tag != sm::EventTag::SpireDepleted) continue;
+            spireDied = true;
+            const auto& spells = sm::spell_registry().all();
+            if (ev.b >= 0 && std::size_t(ev.b) < spells.size()) {
+                const sm::SpellDef& def = spells[std::size_t(ev.b)];
+                if (sm::spellbook_learn(app.gs.player.spellBook, def.id)) {
+                    char msg[96];
+                    std::snprintf(msg, sizeof(msg), "You have learned %s!",
+                                  def.name.c_str());
+                    sm::push_event_log(app.gs.player,
+                                       {sm::LogType::World, msg,
+                                        app.gs.worldTime.day()});
+                    // The observers' fact: quests and logic nodes watch
+                    // SpellLearned, not spires. The applicator's own learn
+                    // is idempotent, so the double door cannot double-teach.
+                    sm::GameEvent learned{sm::EventTag::SpellLearned};
+                    learned.s1 = def.id;
+                    followups.push_back(std::move(learned));
+                }
+            }
+        }
         app.appliedEventCount = end;
+        for (const sm::GameEvent& ev : followups) app.bus.emit(ev);
+        // The map's night glow loses a consumed spire with its orb.
+        if (spireDied) rebake_macro_lights(app);
     }
 }
 
@@ -6543,6 +6580,254 @@ bool run_dungeon_cave_smoke(App& app) {
     return true;
 }
 
+// spire_climb — the whole spire loop in one live pass: teleport to a spire
+// whose spell the player does not know, enter the scorched cell, walk the
+// gate, climb every storey through its demon guard, take the roof hatch onto
+// the crown, touch the orb, and come away with the spell — the spire flipped
+// depleted, the orb burned out of the scene, the fact in the event log.
+bool run_spire_climb_smoke(App& app) {
+    if (!smoke_boot_invariants_hold(app)) {
+        smoke_print_counts(app, "spire_climb_boot_failed");
+        smoke_fail(app, "spire_climb boot invariants");
+        return false;
+    }
+    const float oldX = app.gs.player.x;
+    const float oldY = app.gs.player.y;
+    const auto oldSubState = app.gs.subState;
+    auto restore = [&]() {
+        if (app.subworld.active()) app.subworld.leave(true);
+        app.gs.player.x = oldX;
+        app.gs.player.y = oldY;
+        app.gs.subState = oldSubState;
+    };
+
+    // The TALLEST spire whose spell is still unlearned (the starter spell
+    // owns one too — skip it, its orb would be a no-gain touch): the top
+    // tier exercises the whole shaft ladder, not just one climb.
+    const auto& spells = sm::spell_registry().all();
+    const sm::Spire* target = nullptr;
+    for (const auto& sp : app.gs.spires) {
+        if (sp.depleted || sp.spellId >= spells.size()) continue;
+        if (sm::spellbook_has_learned(app.gs.player.spellBook,
+                                      spells[sp.spellId].id)) {
+            continue;
+        }
+        if (!target || sp.tier > target->tier) target = &sp;
+    }
+    if (!target) {
+        smoke_fail(app, "spire_climb found no unlearned spire");
+        return false;
+    }
+    const sm::SpellDef& def = spells[target->spellId];
+    const int tier = int(target->tier);
+    const int spireId = target->id;
+
+    // Stand on the spire's cell and enter its open-air scene.
+    app.gs.player.x = float(target->x);
+    app.gs.player.y = float(target->y);
+    app.gs.subState.settlementId = -1;
+    app.subworld.enter(app.gs, app.terrain, app.features, app.ecs, app.bus,
+                       &app.zones, &app.treeLayer);
+    if (!app.subworld.active()) {
+        restore();
+        smoke_fail(app, "spire_climb could not enter the spire cell");
+        return false;
+    }
+    app.subworld.tick(0.016f);
+    const float groundZ = app.subworld.player_z();
+
+    // The tower's furniture: the gate on the south face, the orb on the crown.
+    const sm::sub::Structure* gate = nullptr;
+    int orbsBefore = 0;
+    for (const auto& s : app.subworld.mgr().structures()) {
+        if (s.kind == sm::sub::Structure::SpireGate) gate = &s;
+        if (s.kind == sm::sub::Structure::SpireOrb) ++orbsBefore;
+    }
+    if (!gate || orbsBefore != 1) {
+        restore();
+        std::fprintf(stderr, "[smoke] spire_climb gate=%d orbs=%d\n",
+                     gate ? 1 : 0, orbsBefore);
+        std::fflush(stderr);
+        smoke_fail(app, "spire_climb tower furniture missing");
+        return false;
+    }
+    const int gateTier = int(gate->tag);
+
+    // Opt-in photo stops (TIMAERT_SMOKE_SPIRE_STAY=ground|hall|roof): halt at
+    // a viewpoint so a following capture_frame photographs the scene — the
+    // cave smoke's STAY pattern, three storeys of it.
+    const char* stay = std::getenv("TIMAERT_SMOKE_SPIRE_STAY");
+    if (stay && std::strcmp(stay, "ground") == 0) {
+        const float vx = gate->x;
+        const float vy = gate->y + 28.0f;
+        app.subworld.set_player_pos(vx, vy);
+        app.subworld.rotate_camera(
+            -1.5707963f - app.subworld.cam_yaw(), 0.35f);
+        app.subworld.tick(0.016f);
+        return true;
+    }
+
+    // The scorched yard is garrisoned too (kTblSpire roams the open cell),
+    // and the door obeys the danger law — clear the yard first, the way a
+    // player must, and count the fallen as the garrison they are (the same
+    // FaunaCount heads the tower borrows from).
+    const int yardGuards = app.subworld.dev_kill_all_hostiles();
+    app.subworld.tick(0.016f);
+    app.subworld.tick(0.016f);
+
+    // Walk the gate the player's way: stand off it, look at it, press E.
+    const sm::sub::Structure g = *gate;
+    app.subworld.set_player_pos(g.x, g.y + 3.0f);
+    app.subworld.rotate_camera(
+        std::atan2(g.y - (g.y + 3.0f), 0.0f) - app.subworld.cam_yaw(), 0.0f);
+    const bool entered = app.subworld.interact();
+    app.subworld.tick(0.016f);
+    const bool inTower = app.subworld.in_dungeon();
+
+    if (stay && std::strcmp(stay, "hall") == 0) {
+        if (!entered || !inTower) {
+            smoke_fail(app, "spire_climb stay=hall could not enter");
+            return false;
+        }
+        // The threshold is the hall's south edge: face NORTH, into the room.
+        app.subworld.rotate_camera(
+            -1.5707963f - app.subworld.cam_yaw(), 0.05f);
+        app.subworld.tick(0.016f);
+        return true;
+    }
+
+    // Climb: every storey holds its guard (counted on arrival, then cleared —
+    // the stairs obey the danger law, so a climb IS a fight).
+    auto count_guards = [&]() {
+        int n = 0;
+        for (auto e
+             : app.ecs.reg.view<sm::ecs::MacroDebt, sm::ecs::SubworldTag>()) {
+            if (app.ecs.reg.get<sm::ecs::MacroDebt>(e).stock
+                == std::uint8_t(sm::MacroStock::FaunaCount)) {
+                ++n;
+            }
+        }
+        return n;
+    };
+    int guardsSeen = inTower ? count_guards() : 0;
+    int climbs = 0;
+    bool climbStuck = false;
+    while (inTower && app.subworld.dungeon_level() < tier - 1) {
+        app.subworld.dev_kill_all_hostiles();
+        app.subworld.tick(0.016f);
+        app.subworld.tick(0.016f);
+        if (!app.subworld.debug_take_stairs(true)) {
+            climbStuck = true;
+            break;
+        }
+        app.subworld.tick(0.016f);
+        ++climbs;
+        guardsSeen += count_guards();
+        if (climbs > 8) { climbStuck = true; break; }   // runaway guard
+    }
+    const int topLevel = app.subworld.dungeon_level();
+
+    // The hatch: stand on its pad, look at it, press E — out onto the crown.
+    bool onRoof = false;
+    float roofZ = 0.0f;
+    if (inTower && !climbStuck) {
+        app.subworld.dev_kill_all_hostiles();
+        app.subworld.tick(0.016f);
+        app.subworld.tick(0.016f);
+        float hx = 0.0f, hy = 0.0f;
+        sm::sub::DungeonRef ref{};
+        ref.kind = sm::sub::DungeonRef::SpireTower;
+        ref.level = std::int8_t(topLevel);
+        ref.ordinal = std::uint16_t(tier);
+        sm::sub::dungeon_roof_hatch_point(ref, hx, hy);
+        const float wx = float(sm::sub::kCellSize) + hx;
+        const float wy = float(sm::sub::kCellSize) + hy + 2.0f;
+        app.subworld.set_player_pos(wx, wy);
+        app.subworld.rotate_camera(
+            std::atan2(hy - (hy + 2.0f), 0.0f) - app.subworld.cam_yaw(), 0.0f);
+        app.subworld.interact();
+        app.subworld.tick(0.016f);
+        onRoof = app.subworld.active() && !app.subworld.in_dungeon();
+        roofZ = app.subworld.player_z();
+    }
+
+    if (stay && std::strcmp(stay, "roof") == 0) {
+        if (!onRoof) {
+            smoke_fail(app, "spire_climb stay=roof never reached the crown");
+            return false;
+        }
+        const float c = float(sm::sub::kCellSize) * 1.5f;
+        app.subworld.set_player_pos(c, c + 4.0f);
+        app.subworld.rotate_camera(
+            -1.5707963f - app.subworld.cam_yaw(), -0.1f);
+        app.subworld.tick(0.016f);
+        return true;
+    }
+
+    // The orb: it stands at the composite centre (the tower's own cell is the
+    // window's centre cell); the roof exit already left us beside it.
+    bool learned = false;
+    bool depletedFlag = false;
+    int orbsAfter = -1;
+    bool logged = false;
+    if (onRoof) {
+        const float c = float(sm::sub::kCellSize) * 1.5f;
+        app.subworld.set_player_pos(c, c + 2.0f);
+        app.subworld.rotate_camera(
+            std::atan2(-2.0f, 0.0f) - app.subworld.cam_yaw(), 0.0f);
+        app.subworld.interact();
+        app.subworld.tick(0.016f);
+        // The pump: emits land in the LIVE tick buffer, so applying pending
+        // effects is all the frame loop itself would do (its flush comes
+        // after application, not before). One call — the pump loops until
+        // the buffer stops growing, so the follow-up SpellLearned is
+        // delivered in the same pass.
+        apply_pending_event_effects(app);
+        learned = sm::spellbook_has_learned(app.gs.player.spellBook, def.id);
+        for (const auto& sp : app.gs.spires) {
+            if (sp.id == spireId) depletedFlag = sp.depleted;
+        }
+        orbsAfter = 0;
+        for (const auto& s : app.subworld.mgr().structures()) {
+            if (s.kind == sm::sub::Structure::SpireOrb) ++orbsAfter;
+        }
+        for (const auto& e : app.gs.player.eventLog) {
+            if (e.message.find("You have learned") != std::string::npos) {
+                logged = true;
+            }
+        }
+    }
+    restore();
+
+    std::fprintf(stderr,
+                 "[smoke] spire_climb spell=%s tier=%d gateTier=%d entered=%d "
+                 "inTower=%d climbs=%d top=%d yard=%d guards=%d stuck=%d "
+                 "onRoof=%d dz=%.1f learned=%d depleted=%d orbsAfter=%d "
+                 "logged=%d\n",
+                 def.id.c_str(), tier, gateTier, entered ? 1 : 0,
+                 inTower ? 1 : 0,
+                 climbs, topLevel, yardGuards, guardsSeen,
+                 climbStuck ? 1 : 0,
+                 onRoof ? 1 : 0, roofZ - groundZ, learned ? 1 : 0,
+                 depletedFlag ? 1 : 0, orbsAfter, logged ? 1 : 0);
+    std::fflush(stderr);
+
+    if (!entered || !inTower || gateTier != tier || climbStuck
+        || topLevel != tier - 1 || climbs != tier - 1 || !onRoof
+        // The crown stands a tower height over the ground the player entered
+        // on (the flattened plateau): most of that height must be under him.
+        || roofZ - groundZ < sm::sub::kSpireTowerHeightM * 0.8f
+        // The garrison is ONE headcount: the yard's roamers and the storey
+        // guards borrow from the same FaunaCount, so between them a fresh
+        // spire must have fielded somebody.
+        || yardGuards + guardsSeen < 1 || !learned || !depletedFlag
+        || orbsAfter != 0 || !logged) {
+        smoke_fail(app, "spire_climb invariant");
+        return false;
+    }
+    return true;
+}
+
 bool run_subworld_enemy_feedback_smoke(App& app) {
     if (!smoke_boot_invariants_hold(app)) {
         smoke_print_counts(app, "subworld_enemy_feedback_boot_failed");
@@ -8743,6 +9028,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr, "[smoke] action=dungeon_cave\n");
             std::fflush(stderr);
             if (run_dungeon_cave_smoke(app)) ++app.smoke.cursor;
+            break;
+        case SmokeAction::SpireClimb:
+            std::fprintf(stderr, "[smoke] action=spire_climb\n");
+            std::fflush(stderr);
+            if (run_spire_climb_smoke(app)) ++app.smoke.cursor;
             break;
         case SmokeAction::SubworldLootXp:
             std::fprintf(stderr, "[smoke] action=subworld_loot_xp\n");

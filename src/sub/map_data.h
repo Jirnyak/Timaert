@@ -134,6 +134,10 @@ struct CellContext {
     // The crop scatter plants its natural yield minus this, so returning to
     // a harvested field does NOT resurrect the wheat. 0 = unscarred.
     int cropHarvested = 0;
+    // A consumed landmark (today: a depleted spire — the orb is gone and its
+    // light with it). Generation reads it like any other context fact, so
+    // the scene truthfully shows what the macro world remembers.
+    bool landmarkDepleted = false;
     // Interior-scene door (see DungeonRef). kind == None for every real
     // macro cell; the engine's dungeon session is the only writer.
     DungeonRef dungeon{};
@@ -178,6 +182,10 @@ enum class InteractId : std::uint8_t {
     // store IS its inventory), so an emptied town has empty chests and a
     // chest cannot be farmed by walking out and back in.
     Search,
+    // Learn: the spire orb. The one interaction only the PLAYER can mean —
+    // it writes into his spell book — but the mechanism is the ordinary verb
+    // row: any future knowledge-granting prop is a row, not a system.
+    Learn,
     Count,
 };
 
@@ -189,14 +197,19 @@ struct InteractRow {
     // picked up from a little further because you loot what fell around you.
     float reachTiles;
 };
+// Order MUST mirror the enum above — this table is indexed by InteractId.
+// (Scar: the rows once ran Search/Drink/Read against an enum that ran
+// Drink/Read/Search, so the well prompted "Search", the sign "Drink" and the
+// chest "Read". Same 5-tile reach on all three hid it from every smoke.)
 inline constexpr InteractRow kInteractRows[int(InteractId::Count)] = {
-    /* None   */ {"",            0.0f},
-    /* Door   */ {"Enter",       5.0f},
-    /* Stairs */ {"Take stairs", 5.0f},
-    /* Loot   */ {"Loot",       12.0f},
-    /* Search */ {"Search",      5.0f},
-    /* Drink  */ {"Drink",       5.0f},
-    /* Read   */ {"Read",        5.0f},
+    /* None   */ {"",             0.0f},
+    /* Door   */ {"Enter",        5.0f},
+    /* Stairs */ {"Take stairs",  5.0f},
+    /* Loot   */ {"Loot",        12.0f},
+    /* Drink  */ {"Drink",        5.0f},
+    /* Read   */ {"Read",         5.0f},
+    /* Search */ {"Search",       5.0f},
+    /* Learn  */ {"Learn spell",  5.0f},
 };
 inline constexpr const InteractRow& interact_row(InteractId i) {
     return kInteractRows[int(i) < int(InteractId::Count) ? int(i) : 0];
@@ -205,8 +218,9 @@ inline constexpr const InteractRow& interact_row(InteractId i) {
 struct Structure {
     enum Kind : std::uint8_t { Tree = 0, Rock, House, Wall, Bridge, Crop,
                                Fence, Furnish, Door, Lantern, Stairs,
-                               Chest, CaveMouth, Well, Sign, SpireGate } kind;
-    static constexpr int kKindCount = int(SpireGate) + 1;
+                               Chest, CaveMouth, Well, Sign, SpireGate,
+                               SpireOrb } kind;
+    static constexpr int kKindCount = int(SpireOrb) + 1;
     // Footprint silhouette. Box is the default; Cylinder renders (and collides)
     // as a round prism — wall towers, gate jambs, the spire. One byte, not a
     // new Kind: shape is orthogonal to what the thing IS.
@@ -308,6 +322,7 @@ struct StructureKindRow {
         CaveMouth,   // rock face swallowing a black opening
         Well,        // wet stone curb over dark water
         Sign,        // painted board on a post
+        SpireOrb,    // dark plinth crowned by a burning blue orb
     };
     Material material;
     // What pressing E on this prop does (InteractId::None = scenery).
@@ -429,6 +444,15 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Door,
                   InteractId::Door, DungeonRef::SpireTower, 0u, 0.0f, 0.0f},
+    // SpireOrb: the spell on the crown — a waist-high plinth (solid: you walk
+    // around a shrine, not through it) burning the spire's cold blue, the
+    // same tint the macro map glows at night (landmark_registry.h spire row,
+    // 0xA86CFF family). Lantern-law light: the emissive head reads from any
+    // distance, the point light is the row below.
+    /* SpireOrb*/{"",     0.8f, 1.6f,  0.0f, true,  "",
+                  StructureKindRow::Draw::Solid,
+                  StructureKindRow::Material::SpireOrb,
+                  InteractId::Learn, DungeonRef::None, 0xA86CFFu, 24.0f, 1.4f},
 };
 
 inline constexpr const StructureKindRow& structure_kind_row(Structure::Kind k) {

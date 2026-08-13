@@ -1494,6 +1494,21 @@ static void gen_spire(const CellContext& ctx, const Biome nbBiome[9],
         gate.tag = std::uint16_t(std::clamp(ctx.landmarkSize, 1, 5));
         out.structures.push_back(gate);
     }
+    // The prize on the crown: the orb, seated on the tower top (zBase = the
+    // shared tower height) — visible from the ground as a blue star, reached
+    // through the climb. A CONSUMED spire raises no orb: the scene shows
+    // what the macro world remembers (ctx.landmarkDepleted).
+    if (!ctx.landmarkDepleted) {
+        Structure orb{};
+        orb.kind = Structure::SpireOrb;
+        orb.shape = Structure::Cylinder;
+        orb.x = float(cx);
+        orb.y = float(cy);
+        orb.radius = structure_min_half_xy(Structure::SpireOrb);
+        orb.height = structure_min_height(Structure::SpireOrb);
+        orb.zBase = kSpireTowerHeightM;
+        out.structures.push_back(orb);
+    }
     scatter_universal_trees(out, kCellSize,
         ctx.cx * kCellSize, ctx.cy * kCellSize,
         nbBiome, nbTreeCount, /*clearRadius*/ kScorchRadius, ctx.seed);

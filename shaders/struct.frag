@@ -111,7 +111,7 @@ void main() {
         vec3 stone = vec3(0.46, 0.46, 0.44)
                      * (0.82 + 0.18 * s_hash(vWorld.xz * 5.0 + vSeed));
         base = vLocalY > 0.92 ? vec3(0.06, 0.10, 0.14) : stone;
-    } else {
+    } else if (vType < 8.5) {
         // Sign: a pale painted board over a dark post — the board is the
         // upper part of the face, the post the strip below it.
         float board = smoothstep(-0.10, 0.05, vFace.y);
@@ -119,6 +119,18 @@ void main() {
                      * (0.90 + 0.10 * s_hash(vec2(floor(vFace.x * 5.0),
                                                   floor(vFace.y * 5.0)) + vSeed));
         base = mix(vec3(0.28, 0.20, 0.13), plank, board);
+    } else {
+        // Spire orb: a black plinth whose crown BURNS the spire's own night
+        // tint (macro landmark row 0xA86CFF family) — the lantern's law: a
+        // vertical head band reads from every side and any distance (the
+        // light it CASTS is the prop row's point light), with a white-hot
+        // rim right at the top edge.
+        vec3 plinth = vec3(0.10, 0.09, 0.13)
+                      * (0.85 + 0.15 * s_hash(vWorld.xz * 8.0 + vSeed));
+        float head = smoothstep(0.55, 0.80, vLocalY);
+        vec3 glow = mix(vec3(0.66, 0.42, 1.00), vec3(0.98, 0.92, 1.00),
+                        smoothstep(0.88, 1.00, vLocalY));
+        base = mix(plinth, glow, head);
     }
 
     vec3 N = normalize(vNormal);
