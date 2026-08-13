@@ -16,6 +16,11 @@ Modular spell framework: **adding a spell is one file, no engine changes.**
   sustainedDrainCarry }; API `learn / set_active / can_cast / cast / tick`.
 - **Registry** maps spell id → type metadata + effect. Modules: fireball,
   ice-shard, lightning-chain, energy-beam, magic-bolt, armageddon, flight, haste.
+  **Ruled to migrate** (owner 2026-08-14, ARCHITECTURE.md Rule 13): the row
+  today mixes DATA (tier, mana, damage numbers) with BEHAVIOUR (the spawn
+  fn), which strands it above the world layers — the data half moves to a
+  `macro/` registry beside items/fauna, effects stay up here bound by id.
+  Session armed: proposals/session-prompts.md § «РЕЕСТРЫ КАК ФУНДАМЕНТ».
 - Effects become ECS projectile/beam descriptors rendered as 3D billboards /
   ribbons in the subworld.
 - **Flight rules a new spell inherits for free** (`sub/spell_effects.cpp`, detail

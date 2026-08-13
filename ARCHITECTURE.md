@@ -1641,12 +1641,14 @@ track knows where the engine is and where it will snag.
    ("a registry ordinal + a spec passed down; the app closes the loop") or
    decide the registries (spells/creatures/items — pure data tables) belong
    BELOW the world layers, with only effects/logic staying in `content/`.
-   → OWNER RULED 2026-08-14: prepare the fix — the session prompt is ready
-   (proposals/session-prompts.md § «Сессия — РЕЕСТРЫ КАК ФУНДАМЕНТ»),
-   fork decided in-session; the key fact is that macro/ is ALREADY the home
-   of every other data table (factions, creatures, items, npc types,
-   landmarks, gatherers) — spells are the lone exception, and only because
-   their row mixes data with the effect's spawn function.
+   → OWNER RULED 2026-08-14: option B. The registries ARE data and live in
+   the world layers; `content/` keeps only effects and logic, bound to the
+   rows by id (now Rule 13 below). Physically only the spell registry
+   moves — creatures, items, factions, npc types, landmarks, gatherers
+   already live in macro/; spells were the lone exception, and only
+   because their row mixes data with the effect's spawn function. The
+   migration session is armed: proposals/session-prompts.md
+   § «Сессия — РЕЕСТРЫ КАК ФУНДАМЕНТ».
 2. **`CellContext` grows a field per fact** (`landmarkSize` now doubles as
    spire tier; `landmarkDepleted` added). Each stateful landmark class will
    want more. At two tenants it is fine; at four, fold them into one
@@ -1710,6 +1712,18 @@ true.
     in hot paths.
 12. **`GLOB_RECURSE`.** Drop a `.cpp` in one of the configured `src/`
     module directories, including `assets/`, and it is compiled.
+13. **A content class = a DATA registry in the world layers + behaviour
+    bound by id above** (owner ruling 2026-08-14, out of the spire probe).
+    The registry is a table of pure-data rows with APPEND-ONLY ordinals
+    (the creature-catalog law), living in `macro/` beside factions,
+    creatures, items, npc types and landmarks; `content/` and `sub/` hold
+    only the effects and logic they bind to those rows by id (the living
+    precedents: creature row → archetype silhouette in the shader,
+    structure material row → its `struct.frag` branch). The world may
+    always ASK a registry; it never carries a registry's numbers around
+    as cargo. Spell rows migrate to comply (the one exception standing);
+    every future class — skills, perks, resources, features, quest
+    entities — is born this way.
     Do not edit `CMakeLists.txt` for individual files.
 13. **No save compatibility.** Bump `kSaveVersion` for any breaking
     change. No legacy code paths.
