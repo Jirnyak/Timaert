@@ -1,9 +1,17 @@
-#include "content/spells/registry.h"
-#include "content/spells/spell_types.h"
+// Spell effects — the behaviour half of the spell content class. The data
+// half is macro/spells.h (kSpellDefs); this TU binds one spawn function to
+// each row BY ORDINAL through kSpellEffects, and the static_asserts below
+// refuse to compile a table that drifted out of step (the kInteractRows
+// lesson: a parallel table without a guard ran verbs out of order for
+// months). Adding a spell = one data row there + one effect row here.
+#include "content/spells/casting.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+
+#include "ecs/components.h"
+#include "ecs/world.h"
 
 namespace sm {
 
@@ -12,7 +20,6 @@ namespace {
 constexpr float kArmageddonTau = 6.28318530717958647692f;
 constexpr float kArmageddonPerMeteorBlast = 25.0f;
 constexpr int kArmageddonMinMeteors = 16;
-constexpr float kDefaultProjectileLife = 3.0f;
 constexpr std::uint32_t kArmageddonMixA = std::uint32_t{747796405};
 constexpr std::uint32_t kArmageddonMixB =
     std::uint32_t{2147483647} + std::uint32_t{743852806};
@@ -39,9 +46,9 @@ std::uint32_t armageddon_seed(const SpellSpawnContext& c) {
 // caster's own hit shell (playerRadius + projectileRadius) and then flies away,
 // so it can never detonate on the caster at the muzzle. The universal "any
 // projectile can hit anyone" rule is unchanged — the caster simply never
-// overlaps their own outgoing bolt. Mirrors TS engine.ts's player.radius + 2,
-// with the projectile's own radius added so the clearance also holds for fat
-// bolts (e.g. the fireball, radius 2.5, which the bare +2 margin did not clear).
+// overlaps their own outgoing bolt, and the projectile's own radius is added
+// so the clearance also holds for fat bolts (e.g. the fireball, radius 2.5,
+// which a bare +2 margin did not clear).
 float caster_spawn_offset(const SpellSpawnContext& c, float projectileRadius) {
     return c.playerRadius + projectileRadius + 2.0f;
 }
@@ -112,27 +119,27 @@ void emplace_projectile(ecs::World& w, const SpellSpawnContext& c,
 void spawn_fireball(ecs::World& w, const SpellSpawnContext& c) {
     const float speed = c.speed > 0.0f ? c.speed : 280.0f;
     const float radius = c.projectileRadius > 0.0f ? c.projectileRadius : 2.5f;
-    emplace_projectile(w, c, speed, radius, kDefaultProjectileLife, c.effectRadius,
-                       0xFF, 0xCC, 0x00);
+    emplace_projectile(w, c, speed, radius, kDefaultProjectileLifeS,
+                       c.effectRadius, 0xFF, 0xCC, 0x00);
 }
 
 void spawn_ice_shard(ecs::World& w, const SpellSpawnContext& c) {
     const float speed = c.speed > 0.0f ? c.speed : 350.0f;
     const float radius = c.projectileRadius > 0.0f ? c.projectileRadius : 1.5f;
-    emplace_projectile(w, c, speed, radius, kDefaultProjectileLife, 0.0f,
+    emplace_projectile(w, c, speed, radius, kDefaultProjectileLifeS, 0.0f,
                        0xFF, 0xFF, 0xFF);
 }
 
 void spawn_magic_bolt(ecs::World& w, const SpellSpawnContext& c) {
     const float speed = c.speed > 0.0f ? c.speed : 400.0f;
     const float radius = c.projectileRadius > 0.0f ? c.projectileRadius : 1.5f;
-    emplace_projectile(w, c, speed, radius, kDefaultProjectileLife, 0.0f,
+    emplace_projectile(w, c, speed, radius, kDefaultProjectileLifeS, 0.0f,
                        0xE0, 0xC0, 0xFF);
 }
 
 void spawn_lightning_chain(ecs::World& w, const SpellSpawnContext& c) {
     const float radius = c.projectileRadius > 0.0f ? c.projectileRadius : 1.5f;
-    emplace_projectile(w, c, 300.0f, radius, kDefaultProjectileLife, 0.0f,
+    emplace_projectile(w, c, 300.0f, radius, kDefaultProjectileLifeS, 0.0f,
                        0xFF, 0xEE, 0x44);
 }
 
@@ -193,148 +200,66 @@ void spawn_armageddon(ecs::World& w, const SpellSpawnContext& c) {
     }
 }
 
+// ── The binding table ──────────────────────────────────────────────────────
+// Row i binds kSpellDefs[i]. nullptr = the spell has no subworld spawn (self
+// buffs — the spellbook applies them without an effect entity).
+struct SpellEffectRow {
+    std::string_view id;   // MUST equal kSpellDefs[row].id — asserted below
+    SpellSpawnFn     spawn;
+};
+
+constexpr SpellEffectRow kSpellEffects[] = {
+    {"fireball",        &spawn_fireball},
+    {"ice_shard",       &spawn_ice_shard},
+    {"magic_bolt",      &spawn_magic_bolt},
+    {"lightning_chain", &spawn_lightning_chain},
+    {"energy_beam",     &spawn_energy_beam},
+    {"armageddon",      &spawn_armageddon},
+    {"haste",           nullptr},
+    {"flight",          nullptr},
+};
+
+static_assert(sizeof(kSpellEffects) / sizeof(kSpellEffects[0])
+                  == std::size_t(kSpellCount),
+              "every kSpellDefs row needs exactly one kSpellEffects row");
+
+constexpr bool spell_effects_rows_match() {
+    for (int i = 0; i < kSpellCount; ++i)
+        if (kSpellEffects[i].id != kSpellDefs[i].id) return false;
+    return true;
+}
+static_assert(spell_effects_rows_match(),
+              "kSpellEffects row order must mirror kSpellDefs — the ordinal "
+              "IS the binding");
+
 } // namespace
 
-void register_builtin_spells() {
-    auto& r = spell_registry();
+bool cast_spell(ecs::World& w, const SpellDef& spell,
+                const SpellSpawnContext& ctx) {
+    const int ord = spell_ordinal(spell.id);
+    if (ord < 0) return false;
+    const SpellSpawnFn fn = kSpellEffects[ord].spawn;
+    if (!fn) return false;
+    fn(w, ctx);
+    return true;
+}
 
-    r.add({"fireball", "Fireball", "*", "\xF0\x9F\x94\xA5",
-        SpellTag::Fire, SpellTag::Fire,
-        std::uint8_t{1},
-        SpellRarity::Common,
-        DeliveryShape::Projectile, 2, 60, 2.0f, 0.3f, false, 0.0f,
-        true, true, 30.0f, 0.0f, 48.0f, 0, 0.0f, 280.0f, 0.0f, true,
-        "burning", 3.0f,
-        1.2f, 0.0f, 0.5f, 2.5f, kDefaultProjectileLife, 0.0f, &spawn_fireball,
-        "Hurls a ball of fire that explodes on impact, burning everything in the blast radius - allies included. The classic.",
-        MacroEffectType::DamageRegion, 10.0f, 0.0f,
-        std::array<const char*, kMaxSpellFlavorItems>{
-            "Strong AoE damage", "Burning DOT", "Good at chokepoints"},
-        std::uint8_t{3},
-        std::array<const char*, kMaxSpellFlavorItems>{
-            "Friendly fire", "Cast time", "Higher mana cost"},
-        std::uint8_t{3}});
-
-    r.add({"ice_shard", "Ice Shard", "I", "\xE2\x9D\x84",
-        SpellTag::Ice, SpellTag::Ice,
-        std::uint8_t{1},
-        SpellRarity::Uncommon,
-        DeliveryShape::Projectile, 2, 30, 1.5f, 0.2f, false, 0.0f,
-        true, true, 40.0f, 0.0f, 0.0f, 0, 0.0f, 350.0f, 0.0f, false,
-        "chilled", 4.0f,
-        1.4f, 0.3f, 0.0f, 1.5f, kDefaultProjectileLife, 0.0f, &spawn_ice_shard,
-        "A razor-sharp shard of magical ice that pierces flesh and numbs the soul. Excellent against bosses and elites - useless against a horde.",
-        MacroEffectType::BuffArmy, -5.0f, 1.0f,
-        std::array<const char*, kMaxSpellFlavorItems>{
-            "High single-target burst", "Chill slows enemy", "No friendly fire"},
-        std::uint8_t{3},
-        std::array<const char*, kMaxSpellFlavorItems>{
-            "Single target only", "Short cooldown still matters",
-            "Weak vs crowds"},
-        std::uint8_t{3}});
-
-    r.add({"magic_bolt", "Magic Bolt", "+", "\xE2\x9C\xA6",
-        SpellTag::Arcane,
-        SpellTag::Arcane, std::uint8_t{1},
-        SpellRarity::Common,
-        DeliveryShape::Projectile, 1, 10, 0.0f, 0.0f, false, 0.0f,
-        true, false, 12.0f, 0.0f, 0.0f, 0, 0.0f, 400.0f, 0.0f, false,
-        "", 0.0f,
-        1.0f, 0.0f, 0.0f, 1.5f, kDefaultProjectileLife, 0.0f, &spawn_magic_bolt,
-        "A bolt of raw arcane energy. Cheap, fast, reliable - the bread and butter of every spell-caster. Won't win wars, but keeps you alive.",
-        MacroEffectType::None, 0.0f, 0.0f,
-        std::array<const char*, kMaxSpellFlavorItems>{
-            "No cooldown", "Low mana cost", "Fast projectile"},
-        std::uint8_t{3},
-        std::array<const char*, kMaxSpellFlavorItems>{
-            "Weak scaling at high tiers", "No AoE", "No utility"},
-        std::uint8_t{3}});
-
-    r.add({"lightning_chain", "Lightning Chain", "Z", "\xE2\x9B\xA7",
-        SpellTag::Lightning,
-        SpellTag::Lightning, std::uint8_t{1}, SpellRarity::Rare,
-        DeliveryShape::Chain, 3, 60, 4.0f, 0.1f, false, 0.0f,
-        true, true, 22.0f, 0.0f, 0.0f, 4, 0.70f, 0.0f, 0.0f, false,
-        "shocked", 2.0f,
-        1.0f, 0.0f, 0.4f, 1.5f, kDefaultProjectileLife, 0.0f, &spawn_lightning_chain,
-        "Lightning arcs from the first target to nearby enemies, losing force with each jump. Brilliant against scattered groups - unreliable when you need precision.",
-        MacroEffectType::DamageRegion, 5.0f, 0.0f,
-        std::array<const char*, kMaxSpellFlavorItems>{
-            "Hits up to 5 targets", "Shock interrupts", "Fast cast"},
-        std::uint8_t{3},
-        std::array<const char*, kMaxSpellFlavorItems>{
-            "Unpredictable jumps", "Damage decays per jump", "High mana"},
-        std::uint8_t{3}});
-
-    r.add({"energy_beam", "Energy Beam", "=", "\xE2\x9A\xA1",
-        SpellTag::Arcane,
-        SpellTag::Light, std::uint8_t{2},
-        SpellRarity::Uncommon,
-        DeliveryShape::Beam, 2, 100, 2.5f, 0.4f, false, 0.0f,
-        true, false, 25.0f, 0.0f, 8.0f, 0, 0.0f, 0.0f, 0.0f, true,
-        "", 0.0f,
-        1.1f, 0.0f, 0.3f, 1.5f, 0.35f, 300.0f, &spawn_energy_beam,
-        "A searing beam of pure energy cuts through everything in its path. Devastating against enemies foolish enough to line up.",
-        MacroEffectType::None, 0.0f, 0.0f,
-        std::array<const char*, kMaxSpellFlavorItems>{
-            "Pierces all enemies in line", "Instant hit", "Great vs formations"},
-        std::uint8_t{3},
-        std::array<const char*, kMaxSpellFlavorItems>{
-            "Requires aim", "Friendly fire", "Medium-high mana"},
-        std::uint8_t{3}});
-
-    r.add({"armageddon", "Armageddon", "X", "\xE2\x98\xA0",
-        SpellTag::Fire,
-        SpellTag::Dark, std::uint8_t{2},
-        SpellRarity::Mythic,
-        DeliveryShape::Nova, 5, 1000, 120.0f, 2.0f, false, 0.0f,
-        true, true, 80.0f, 0.0f, 160.0f, 0, 0.0f, 0.0f, 0.0f, true,
-        "burning", 8.0f,
-        2.0f, 0.5f, 1.0f, 2.5f, 2.0f, 0.0f, &spawn_armageddon,
-        "Rain fire and ruin upon the world. Everything burns - enemies, allies, buildings, reputation. The ultimate expression of magical supremacy and moral bankruptcy.",
-        MacroEffectType::DamageRegion, 50.0f, 0.0f,
-        std::array<const char*, kMaxSpellFlavorItems>{
-            "Massive AoE", "Battle-ending power", "Burns everything"},
-        std::uint8_t{3},
-        std::array<const char*, kMaxSpellFlavorItems>{
-            "Friendly fire", "2s cast time", "Enormous mana cost",
-            "Faction reputation hit", "2 min cooldown"},
-        std::uint8_t{5}});
-
-    r.add({"haste", "Haste", ">", "\xF0\x9F\x92\xA8",
-        SpellTag::Body, SpellTag::Air,
-        std::uint8_t{2},
-        SpellRarity::Uncommon,
-        DeliveryShape::Self, 2, 0, 0.0f, 0.0f, true, 10.0f,
-        true, true, 0.0f, 0.0f, 0.0f, 0, 0.0f, 0.0f, 0.0f, false,
-        "hasted", 0.0f,
-        0.5f, 1.2f, 0.0f, 0.0f, 0.0f, 0.0f, nullptr,
-        "Accelerates body and mind. In combat, you move and strike faster. On the world map, your party covers ground at supernatural speed.",
-        MacroEffectType::TravelSpeed, 1.5f, 8.0f,
-        std::array<const char*, kMaxSpellFlavorItems>{
-            "Move + attack speed up", "Great for kiting", "Works on world map"},
-        std::uint8_t{3},
-        std::array<const char*, kMaxSpellFlavorItems>{
-            "No direct damage", "Continuous mana drain", "Buff upkeep tax"},
-        std::uint8_t{3}});
-
-    r.add({"flight", "Flight", "^", "\xF0\x9F\x95\x8A",
-        SpellTag::Air, SpellTag::Arcane,
-        std::uint8_t{2},
-        SpellRarity::Rare,
-        DeliveryShape::Self, 3, 0, 0.0f, 0.0f, true, 20.0f,
-        true, true, 0.0f, 0.0f, 0.0f, 0, 0.0f, 0.0f, 0.0f, false,
-        "flying", 0.0f,
-        0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, nullptr,
-        "Rise above the ground and soar. Walls, rivers, mountains - none of it matters while you fly. But the magic fades fast, and the fall is unforgiving.",
-        MacroEffectType::IgnoreTerrain, 1.0f, 12.0f,
-        std::array<const char*, kMaxSpellFlavorItems>{
-            "Ignore all terrain penalties", "Fly over obstacles",
-            "Strategic repositioning"},
-        std::uint8_t{3},
-        std::array<const char*, kMaxSpellFlavorItems>{
-            "High mana drain", "No combat benefit", "Blocked indoors"},
-        std::uint8_t{3}});
+bool cast_spell(ecs::World& w, std::string_view id,
+                std::uint32_t playerId, float px, float py, float nx, float ny) {
+    const SpellDef* s = spell_find(id);
+    if (!s) return false;
+    SpellSpawnContext ctx{px, py,
+                          0.0f,
+                          kSpellCasterRadius,
+                          nx, ny, 0.0f,
+                          s->baseDamage,
+                          s->speed > 0.0f ? s->speed : 300.0f,
+                          s->projectileRadius,
+                          s->friendlyFire ? s->baseRadius : 0.0f,
+                          s->friendlyFire,
+                          playerId,
+                          stable_spell_id(s->id)};
+    return cast_spell(w, *s, ctx);
 }
 
 } // namespace sm

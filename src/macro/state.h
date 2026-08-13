@@ -160,7 +160,7 @@ struct Village {
 struct Spire {
     int id;
     int x, y;
-    std::uint32_t spellId; // spell_registry() registration ordinal (append-only)
+    std::uint32_t spellId; // kSpellDefs row ordinal (macro/spells.h, append-only)
     // SpellDef.tier (1..5), captured at placement: the one difficulty context
     // every downstream consumer reads (tower storeys = tier; the placement
     // zone gate already spent it). Stored because the subworld layer may not

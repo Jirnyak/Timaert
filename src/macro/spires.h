@@ -18,8 +18,8 @@ struct GameState;
 struct TerrainData;
 struct ZoneLayer;
 
-// One row per learnable spell. `spellOrdinal` is the spell's registration
-// index in spell_registry() — append-only, like the creature catalog
+// One row per learnable spell. `spellOrdinal` is the spell's row index in
+// kSpellDefs (macro/spells.h) — append-only, like the creature catalog
 // (macro/fauna.cpp kCreatureCatalog): reordering registrations would silently
 // re-key every spire in every save.
 struct SpireSpellSpec {

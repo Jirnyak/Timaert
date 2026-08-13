@@ -10,7 +10,6 @@
 #include "macro/items.h"
 #include "macro/politik.h"
 #include "content/spells/spell_book.h"
-#include "content/spells/spell_types.h"
 #include "content/plot/encounters.h"
 #include "content/plot/intro.h"
 #include "events/event_bus.h"
@@ -1421,10 +1420,10 @@ namespace sm::ui
                     ImGui::Text("MP %d / %d", p.combatStats.currentMp, p.combatStats.maxMp);
                     if (!p.spellBook.activeSpellId.empty())
                     {
-                        const SpellDef *active = spell_registry().find(p.spellBook.activeSpellId);
+                        const SpellDef *active = spell_find(p.spellBook.activeSpellId);
                         ImGui::SameLine();
                         ImGui::TextDisabled("Active: %s",
-                                            active ? active->name.c_str()
+                                            active ? active->name
                                                    : p.spellBook.activeSpellId.c_str());
                     }
                     ImGui::Separator();
@@ -1449,14 +1448,14 @@ namespace sm::ui
                         ImGui::TableHeadersRow();
                         for (const auto &id : learned)
                         {
-                            const SpellDef *def = spell_registry().find(id);
+                            const SpellDef *def = spell_find(id);
                             ImGui::TableNextRow();
                             ImGui::TableNextColumn();
                             if (def)
                             {
                                 const char *icon =
                                     (def->icon && def->icon[0] != '\0') ? def->icon : "?";
-                                ImGui::Text("%s %s", icon, def->name.c_str());
+                                ImGui::Text("%s %s", icon, def->name);
                             }
                             else
                             {
@@ -1467,7 +1466,7 @@ namespace sm::ui
                                 ImGui::BeginTooltip();
                                 const char *icon =
                                     (def->icon && def->icon[0] != '\0') ? def->icon : "?";
-                                ImGui::Text("%s %s", icon, def->name.c_str());
+                                ImGui::Text("%s %s", icon, def->name);
                                 ImGui::TextDisabled("%s / Tier %d / %s",
                                                     spell_rarity_label(def->rarity),
                                                     def->tier,
@@ -1494,29 +1493,21 @@ namespace sm::ui
                                                         def->macroPower,
                                                         def->macroDuration);
                                 }
-                                if (def->prosCount > 0)
+                                if (spell_flavor_count(def->pros) > 0)
                                 {
                                     ImGui::Separator();
                                     ImGui::TextUnformatted("Pros");
-                                    const std::size_t n = std::min<std::size_t>(
-                                        def->prosCount, kMaxSpellFlavorItems);
-                                    for (std::size_t i = 0; i < n; ++i)
-                                    {
-                                        if (def->pros[i] && def->pros[i][0] != '\0')
-                                            ImGui::BulletText("%s", def->pros[i]);
-                                    }
+                                    const int n = spell_flavor_count(def->pros);
+                                    for (int i = 0; i < n; ++i)
+                                        ImGui::BulletText("%s", def->pros[i]);
                                 }
-                                if (def->consCount > 0)
+                                if (spell_flavor_count(def->cons) > 0)
                                 {
                                     ImGui::Separator();
                                     ImGui::TextUnformatted("Cons");
-                                    const std::size_t n = std::min<std::size_t>(
-                                        def->consCount, kMaxSpellFlavorItems);
-                                    for (std::size_t i = 0; i < n; ++i)
-                                    {
-                                        if (def->cons[i] && def->cons[i][0] != '\0')
-                                            ImGui::BulletText("%s", def->cons[i]);
-                                    }
+                                    const int n = spell_flavor_count(def->cons);
+                                    for (int i = 0; i < n; ++i)
+                                        ImGui::BulletText("%s", def->cons[i]);
                                 }
                                 ImGui::EndTooltip();
                             }
@@ -1533,7 +1524,7 @@ namespace sm::ui
                             ImGui::TableNextColumn();
                             if (def)
                             {
-                                if (def->tagCount > 1)
+                                if (def->secondaryTag != def->tag)
                                 {
                                     ImGui::Text("%s/%s",
                                                 spell_tag_label(def->tag),

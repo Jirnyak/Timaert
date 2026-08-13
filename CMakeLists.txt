@@ -410,8 +410,7 @@ timaert_test(spell_casting_effects_test
     SOURCES
         src/events/event_bus.cpp
         src/content/spells/spell_book.cpp
-        src/content/spells/spell_types.cpp
-        src/content/spells/registry.cpp
+        src/content/spells/effects.cpp
         # Projectile contact now asks sub/body.h for a body's width, and that reads
         # the MONSTER table (creature_def_from_kind) like melee always has — so this
         # test links the table rather than a second opinion about how wide a wolf is.

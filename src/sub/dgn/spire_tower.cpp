@@ -39,7 +39,7 @@ inline std::size_t cell_at(int x, int y) {
 int dungeon_spire_tower_floors(const DungeonRef& ref) {
     // ordinal = the spell's tier (1..5). Clamp because a foreign ordinal
     // must degrade to a legal tower, not to UB — the clamp bounds are the
-    // spell tier domain (spell_types.h: tier 1..5).
+    // spell tier domain (macro/spells.h: tier 1..5).
     return std::clamp(int(ref.ordinal), 1, 5);
 }
 

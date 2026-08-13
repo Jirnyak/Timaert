@@ -59,9 +59,8 @@
 #include "macro/audio.h"
 #include "macro/save.h"
 #include "macro/seasons.h"
-#include "content/spells/registry.h"
+#include "content/spells/casting.h"
 #include "content/spells/spell_book.h"
-#include "content/spells/spell_types.h"
 #include "content/plot/intro.h"
 #include "content/quests/procedural.h"
 #include "sub/engine.h"
@@ -622,9 +621,9 @@ bool parse_smoke_script(const char* script, SmokeScript& out) {
 void smoke_print_counts(const App& app, const char* label) {
     if (!app.smoke.enabled) return;
     std::fprintf(stderr,
-                 "[smoke] %s spells=%zu bus=%zu logic=%zu active=%zu world=%d state=%d\n",
+                 "[smoke] %s spells=%d bus=%zu logic=%zu active=%zu world=%d state=%d\n",
                  label,
-                 sm::spell_registry().size(),
+                 sm::kSpellCount,
                  app.bus.subscription_count(),
                  app.logic.node_count(),
                  app.logic.active_count(),
@@ -636,8 +635,6 @@ void smoke_print_counts(const App& app, const char* label) {
 bool smoke_boot_invariants_hold(const App& app) {
     return app.worldLoaded
         && app.state == sm::ui::AppState::Playing
-        && sm::spell_registry().is_consistent()
-        && sm::spell_registry().size() > 0
         && app.bus.subscription_count() == 0
         && app.logic.is_consistent()
         && app.logic.node_count() > 0
@@ -647,7 +644,6 @@ bool smoke_boot_invariants_hold(const App& app) {
 bool smoke_destroy_invariants_hold(const App& app) {
     return !app.worldLoaded
         && app.state == sm::ui::AppState::Title
-        && sm::spell_registry().is_consistent()
         && app.bus.subscription_count() == 0
         && app.logic.is_consistent()
         && app.logic.node_count() == 0
@@ -1774,11 +1770,6 @@ void boot_world(App& app, std::uint32_t seed,
     // game or a load through the surviving engine object.
     app.subworld.reset_render_diagnostics();
 
-    sm::register_builtin_spells();
-#ifndef NDEBUG
-    assert(sm::spell_registry().is_consistent());
-    assert(sm::spell_registry().size() > 0);
-#endif
     sm::LayerParameters lp = lpOverride ? *lpOverride : sm::LayerParameters{};
     lp.seed = float(seed % 100000u);
     app.gs = sm::default_game_state(seed, mapW, mapH, lp, targetTotalCities);
@@ -1983,11 +1974,10 @@ void boot_world(App& app, std::uint32_t seed,
     // (boot_world_from_save), exactly like settlements.
     {
         std::vector<sm::SpireSpellSpec> spireSpells;
-        const auto& allSpells = sm::spell_registry().all();
-        spireSpells.reserve(allSpells.size());
-        for (std::size_t i = 0; i < allSpells.size(); ++i) {
+        spireSpells.reserve(std::size_t(sm::kSpellCount));
+        for (int i = 0; i < sm::kSpellCount; ++i) {
             spireSpells.push_back(sm::SpireSpellSpec{
-                std::uint32_t(i), std::uint8_t(allSpells[i].tier)});
+                std::uint32_t(i), std::uint8_t(sm::kSpellDefs[i].tier)});
         }
         sm::generate_spires(app.gs, app.zones, app.terrain,
                             std::uint8_t(lp.seaLevel * 255.0f), spireSpells);
@@ -2562,7 +2552,7 @@ bool cast_active_spell(App& app) {
         return false;
     }
 
-    const sm::SpellDef* def = sm::spell_registry().find(id);
+    const sm::SpellDef* def = sm::spell_find(id);
     if (!def) {
         emit_spell_cast(app, id, false, "Unknown spell");
         return false;
@@ -3021,13 +3011,12 @@ void apply_pending_event_effects(App& app) {
         for (const sm::GameEvent& ev : pending) {
             if (ev.tag != sm::EventTag::SpireDepleted) continue;
             spireDied = true;
-            const auto& spells = sm::spell_registry().all();
-            if (ev.b >= 0 && std::size_t(ev.b) < spells.size()) {
-                const sm::SpellDef& def = spells[std::size_t(ev.b)];
+            if (ev.b >= 0 && ev.b < sm::kSpellCount) {
+                const sm::SpellDef& def = sm::kSpellDefs[ev.b];
                 if (sm::spellbook_learn(app.gs.player.spellBook, def.id)) {
                     char msg[96];
                     std::snprintf(msg, sizeof(msg), "You have learned %s!",
-                                  def.name.c_str());
+                                  def.name);
                     sm::push_event_log(app.gs.player,
                                        {sm::LogType::World, msg,
                                         app.gs.worldTime.day()});
@@ -4088,9 +4077,9 @@ void register_console_commands(App& app) {
 
     con.register_cmd("spells", "spells", "list every spell id in the registry (source of truth)",
         [](Con& c, const std::vector<std::string>&) {
-            for (const auto& s : sm::spell_registry().all())
-                c.printfln(Lvl::Info, "  %-16s  %s", s.id.c_str(), s.name.c_str());
-            c.printfln(Lvl::Ok, "%zu spells", sm::spell_registry().size());
+            for (const auto& s : sm::kSpellDefs)
+                c.printfln(Lvl::Info, "  %-16s  %s", s.id, s.name);
+            c.printfln(Lvl::Ok, "%d spells", sm::kSpellCount);
             return true;
         });
 
@@ -4099,7 +4088,7 @@ void register_console_commands(App& app) {
         [&app](Con& c, const std::vector<std::string>& a) {
             if (a.empty()) return false;
             const std::string& id = a[0];
-            if (!sm::spell_registry().find(id)) {
+            if (!sm::spell_find(id)) {
                 c.error("unknown spell '" + id + "' - type 'spells' for the list");
                 return true;
             }
@@ -4114,7 +4103,7 @@ void register_console_commands(App& app) {
         "learn every spell in the registry",
         [&app](Con& c, const std::vector<std::string>&) {
             int learned = 0;
-            for (const auto& s : sm::spell_registry().all())
+            for (const auto& s : sm::kSpellDefs)
                 if (sm::spellbook_learn(app.gs.player.spellBook, s.id)) ++learned;
             c.printfln(Lvl::Ok, "learned %d new spell(s); know %zu total", learned,
                        app.gs.player.spellBook.learned.size());
@@ -6604,12 +6593,12 @@ bool run_spire_climb_smoke(App& app) {
     // The TALLEST spire whose spell is still unlearned (the starter spell
     // owns one too — skip it, its orb would be a no-gain touch): the top
     // tier exercises the whole shaft ladder, not just one climb.
-    const auto& spells = sm::spell_registry().all();
     const sm::Spire* target = nullptr;
     for (const auto& sp : app.gs.spires) {
-        if (sp.depleted || sp.spellId >= spells.size()) continue;
+        if (sp.depleted || sp.spellId >= std::uint32_t(sm::kSpellCount))
+            continue;
         if (sm::spellbook_has_learned(app.gs.player.spellBook,
-                                      spells[sp.spellId].id)) {
+                                      sm::kSpellDefs[sp.spellId].id)) {
             continue;
         }
         if (!target || sp.tier > target->tier) target = &sp;
@@ -6618,7 +6607,7 @@ bool run_spire_climb_smoke(App& app) {
         smoke_fail(app, "spire_climb found no unlearned spire");
         return false;
     }
-    const sm::SpellDef& def = spells[target->spellId];
+    const sm::SpellDef& def = sm::kSpellDefs[target->spellId];
     const int tier = int(target->tier);
     const int spireId = target->id;
 
@@ -6804,7 +6793,7 @@ bool run_spire_climb_smoke(App& app) {
                  "inTower=%d climbs=%d top=%d yard=%d guards=%d stuck=%d "
                  "onRoof=%d dz=%.1f learned=%d depleted=%d orbsAfter=%d "
                  "logged=%d\n",
-                 def.id.c_str(), tier, gateTier, entered ? 1 : 0,
+                 def.id, tier, gateTier, entered ? 1 : 0,
                  inTower ? 1 : 0,
                  climbs, topLevel, yardGuards, guardsSeen,
                  climbStuck ? 1 : 0,
@@ -7849,7 +7838,7 @@ bool run_console_smoke(App& app) {
     }
 
     con.execute("learnall");
-    if (app.gs.player.spellBook.learned.size() != sm::spell_registry().size()) {
+    if (app.gs.player.spellBook.learned.size() != std::size_t(sm::kSpellCount)) {
         restore(); smoke_fail(app, "console learnall count mismatch"); return false;
     }
 

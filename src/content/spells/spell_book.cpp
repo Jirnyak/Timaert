@@ -54,7 +54,7 @@ CastCheck spellbook_can_cast_ex(const SpellBook& sb,
                                 const CombatStats& combat,
                                 const std::string& id,
                                 bool inMicro) {
-    const SpellDef* d = spell_registry().find(id);
+    const SpellDef* d = spell_find(id);
     if (!d) return {false, "Unknown spell", 0.0f};
     if (!spellbook_has_learned(sb, id)) return {false, "Spell not learned", 0.0f};
     if (d->sustained && spellbook_has_sustained(sb, id)) return {true, "", 0.0f};
@@ -76,7 +76,7 @@ CastCheck spellbook_can_cast_ex(const SpellBook& sb,
 
 int spellbook_start_cast(SpellBook& sb, CombatStats& combat,
                          const std::string& id) {
-    const SpellDef* d = spell_registry().find(id);
+    const SpellDef* d = spell_find(id);
     if (!d) return 0;
     if (d->sustained) {
         spellbook_toggle_sustained(sb, id);
@@ -98,7 +98,7 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, CombatStats& combat,
                     SpellRngFn rng01,
                     void* rngUser) {
     if (!spellbook_can_cast_ex(sb, combat, id, inMicro).ok) return false;
-    const SpellDef* d = spell_registry().find(id);
+    const SpellDef* d = spell_find(id);
     if (!d) return false;
     if (d->sustained || d->shape == DeliveryShape::Self) {
         spellbook_start_cast(sb, combat, id);
@@ -147,7 +147,7 @@ void spellbook_tick(SpellBook& sb, CombatStats& combat, float dt) {
 
     float drainPerSecond = 0.0f;
     for (auto it = sb.sustainedActive.begin(); it != sb.sustainedActive.end(); ) {
-        const SpellDef* d = spell_registry().find(*it);
+        const SpellDef* d = spell_find(*it);
         if (!d || !d->sustained) {
             it = sb.sustainedActive.erase(it);
             continue;
@@ -164,7 +164,7 @@ void spellbook_tick(SpellBook& sb, CombatStats& combat, float dt) {
     if (combat.currentMp <= 0) {
         for (std::size_t i = sb.sustainedActive.size(); i > 0; --i) {
             const std::size_t idx = i - 1;
-            const SpellDef* d = spell_registry().find(sb.sustainedActive[idx]);
+            const SpellDef* d = spell_find(sb.sustainedActive[idx]);
             if (!d || !d->sustained || d->manaDrain * dt > 0.0f) {
                 sb.sustainedActive.erase(sb.sustainedActive.begin()
                                          + std::ptrdiff_t(idx));
@@ -191,7 +191,7 @@ void spellbook_tick(SpellBook& sb, CombatStats& combat, float dt) {
     for (std::size_t i = sb.sustainedActive.size();
          i > 0 && remainingDrain > 0; --i) {
         const std::size_t idx = i - 1;
-        const SpellDef* d = spell_registry().find(sb.sustainedActive[idx]);
+        const SpellDef* d = spell_find(sb.sustainedActive[idx]);
         if (!d || !d->sustained) {
             sb.sustainedActive.erase(sb.sustainedActive.begin()
                                      + std::ptrdiff_t(idx));

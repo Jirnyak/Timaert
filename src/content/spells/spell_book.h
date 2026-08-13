@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <string>
 
-#include "content/spells/spell_types.h"
+#include "content/spells/casting.h"
 #include "macro/attributes.h"
 #include "macro/spell_book_state.h"
 

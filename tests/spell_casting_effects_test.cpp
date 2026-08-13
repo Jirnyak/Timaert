@@ -1,5 +1,5 @@
 #include "check.h"
-#include "content/spells/registry.h"
+#include "content/spells/casting.h"
 #include "content/spells/spell_book.h"
 #include "ecs/world.h"
 #include "sub/spell_effects.h"
@@ -123,7 +123,6 @@ float seq_rng01(void* user) {
 } // namespace
 
 int main() {
-    sm::register_builtin_spells();
 
     sm::ecs::World world;
     sm::SpellBook book;
@@ -133,45 +132,45 @@ int main() {
     sm::Attributes attributes{};
     sm::Skills skills{};
 
-    const sm::SpellDef* fireDef = sm::spell_registry().find("fireball");
-    const sm::SpellDef* iceDef = sm::spell_registry().find("ice_shard");
-    const sm::SpellDef* magicDef = sm::spell_registry().find("magic_bolt");
-    const sm::SpellDef* chainDef = sm::spell_registry().find("lightning_chain");
-    const sm::SpellDef* beamDef = sm::spell_registry().find("energy_beam");
-    const sm::SpellDef* armDef = sm::spell_registry().find("armageddon");
-    const sm::SpellDef* hasteDef = sm::spell_registry().find("haste");
-    const sm::SpellDef* flightDef = sm::spell_registry().find("flight");
-    if (!fireDef || fireDef->tagCount != 1
+    const sm::SpellDef* fireDef = sm::spell_find("fireball");
+    const sm::SpellDef* iceDef = sm::spell_find("ice_shard");
+    const sm::SpellDef* magicDef = sm::spell_find("magic_bolt");
+    const sm::SpellDef* chainDef = sm::spell_find("lightning_chain");
+    const sm::SpellDef* beamDef = sm::spell_find("energy_beam");
+    const sm::SpellDef* armDef = sm::spell_find("armageddon");
+    const sm::SpellDef* hasteDef = sm::spell_find("haste");
+    const sm::SpellDef* flightDef = sm::spell_find("flight");
+    if (!fireDef || fireDef->secondaryTag != fireDef->tag
         || !sm::spell_has_tag(*fireDef, sm::SpellTag::Fire)
         || std::strcmp(fireDef->statusEffect, "burning") != 0
         || !nearf(fireDef->statusDuration, 3.0f)) {
         return fail("fireball metadata wrong");
     }
-    if (!iceDef || iceDef->tagCount != 1
+    if (!iceDef || iceDef->secondaryTag != iceDef->tag
         || !sm::spell_has_tag(*iceDef, sm::SpellTag::Ice)
         || std::strcmp(iceDef->statusEffect, "chilled") != 0
         || !nearf(iceDef->statusDuration, 4.0f)) {
         return fail("ice_shard metadata wrong");
     }
-    if (!chainDef || chainDef->tagCount != 1
+    if (!chainDef || chainDef->secondaryTag != chainDef->tag
         || !sm::spell_has_tag(*chainDef, sm::SpellTag::Lightning)
         || std::strcmp(chainDef->statusEffect, "shocked") != 0
         || !nearf(chainDef->statusDuration, 2.0f)) {
         return fail("lightning_chain metadata wrong");
     }
-    if (!beamDef || beamDef->tagCount != 2
+    if (!beamDef || beamDef->secondaryTag == beamDef->tag
         || !sm::spell_has_tag(*beamDef, sm::SpellTag::Arcane)
         || !sm::spell_has_tag(*beamDef, sm::SpellTag::Light)
         || beamDef->statusEffect[0] != '\0') {
         return fail("energy_beam metadata wrong");
     }
-    if (!hasteDef || hasteDef->tagCount != 2
+    if (!hasteDef || hasteDef->secondaryTag == hasteDef->tag
         || !sm::spell_has_tag(*hasteDef, sm::SpellTag::Body)
         || !sm::spell_has_tag(*hasteDef, sm::SpellTag::Air)
         || std::strcmp(hasteDef->statusEffect, "hasted") != 0) {
         return fail("haste metadata wrong");
     }
-    if (!flightDef || flightDef->tagCount != 2
+    if (!flightDef || flightDef->secondaryTag == flightDef->tag
         || !sm::spell_has_tag(*flightDef, sm::SpellTag::Air)
         || !sm::spell_has_tag(*flightDef, sm::SpellTag::Arcane)
         || std::strcmp(flightDef->statusEffect, "flying") != 0) {
@@ -236,20 +235,20 @@ int main() {
         return fail("spell description metadata wrong");
     }
     if (!magicDef || magicDef->macroType != sm::MacroEffectType::None
-        || magicDef->prosCount != 3
+        || sm::spell_flavor_count(magicDef->pros) != 3
         || std::strcmp(magicDef->pros[0], "No cooldown") != 0
         || std::strcmp(magicDef->cons[2], "No utility") != 0) {
         return fail("magic_bolt flavor metadata wrong");
     }
     if (fireDef->macroType != sm::MacroEffectType::DamageRegion
         || !nearf(fireDef->macroPower, 10.0f)
-        || fireDef->prosCount != 3
+        || sm::spell_flavor_count(fireDef->pros) != 3
         || std::strcmp(fireDef->pros[1], "Burning DOT") != 0) {
         return fail("fireball macro/flavor metadata wrong");
     }
     if (!armDef || armDef->macroType != sm::MacroEffectType::DamageRegion
         || !nearf(armDef->macroPower, 50.0f)
-        || armDef->consCount != 5
+        || sm::spell_flavor_count(armDef->cons) != 5
         || std::strcmp(armDef->cons[4], "2 min cooldown") != 0) {
         return fail("armageddon macro/flavor metadata wrong");
     }
