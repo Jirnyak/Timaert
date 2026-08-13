@@ -2092,10 +2092,15 @@ void SubworldEngine::tick_subworld_combat(float dt) {
     auto& reg = ecs_->reg;
 
     // ── Gather: ECS → SoA, O(N) ────────────────────────────────────────────
-    // Every living combat body enters the snapshot, including ones this pass
-    // must not move: the player body and fleeing wildlife are pinned (BU_Pinned)
-    // so they still block and can still be targeted. No actor is special-cased
-    // out of existence — only its execution unit differs.
+    // Every living body enters the snapshot — the SAME set the spell pass
+    // targets (is_spell_target: Health + SubworldTag, alive), so a body that a
+    // projectile can strike is never invisible to the grids that will answer
+    // for it. Combat is read per-body, not demanded by the view: a weaponless
+    // body rides with honest zeros for speed/reach (owner ruling 2026-08-05 —
+    // no special cases, a peasant is targetable by his real faction and flees
+    // rather than fights). Bodies this pass must not move are pinned
+    // (BU_Pinned) so they still block and can still be targeted. No actor is
+    // special-cased out of existence — only its execution unit differs.
     //
     // Faction identity is the id STRING, interned here into a dense index. The
     // set is rebuilt every tick, so a faction that walks into the window (or a
@@ -2114,21 +2119,21 @@ void SubworldEngine::tick_subworld_combat(float dt) {
     std::uint64_t playerExtraMask = 0ull;
     float threat2 = kNoThreatDistance2;
 
-    auto actorView = reg.view<ecs::Position, ecs::Health, ecs::Combat,
+    auto actorView = reg.view<ecs::Position, ecs::Health,
                               ecs::SubworldTag>(entt::exclude<ecs::Dead>);
     for (auto e : actorView) {
         const auto& p = actorView.get<ecs::Position>(e);
         const auto& hp = actorView.get<ecs::Health>(e);
-        const auto& c = actorView.get<ecs::Combat>(e);
         if (hp.hp <= 0.0f) continue;
+        const auto* c = reg.try_get<ecs::Combat>(e);
 
         BattleUnitDesc d{};
         d.x = p.x; d.y = p.y; d.z = p.z;
         d.radius = body_radius(reg, e);
-        d.speed = c.speed;
-        d.reach = c.attackRange;
+        d.speed = c ? c->speed : 0.0f;
+        d.reach = c ? c->attackRange : 0.0f;
         d.sight = body_sight(reg, e);
-        if (c.kind == ecs::Combat::Missile) d.flags |= BU_Missile;
+        if (c && c->kind == ecs::Combat::Missile) d.flags |= BU_Missile;
         if (reg.any_of<ecs::Flying>(e)) d.flags |= BU_Flying;
 
         const bool owned = reg.any_of<ecs::PlayerSoldierTag>(e);
@@ -2145,9 +2150,10 @@ void SubworldEngine::tick_subworld_combat(float dt) {
                      : battleFactions_.intern(
                            faction_id_for_kind(reg.try_get<ecs::NPCKind>(e))));
 
-        // The player body is input-driven; a fleeing body is driven by sub/ai.cpp.
-        // Both are real obstacles and real targets, so they are pinned, not cut.
-        if (isPlayer) d.flags |= BU_Pinned;
+        // The player body is input-driven; a fleeing body is driven by sub/ai.cpp;
+        // a weaponless body has no combat drive at all. All are real obstacles
+        // and real targets, so they are pinned, not cut.
+        if (isPlayer || !c) d.flags |= BU_Pinned;
         if (auto* ai = reg.try_get<ecs::SubworldAi>(e)) {
             d.vx = ai->vx;
             d.vy = ai->vy;
@@ -2303,7 +2309,13 @@ void SubworldEngine::tick_subworld_combat(float dt) {
         if (!reg.valid(targetEnt) || !alive_subworld_entity(reg, targetEnt))
             continue;
 
-        auto& c = reg.get<ecs::Combat>(e);
+        // A weaponless body can be a target but never an attacker — it has
+        // nothing to strike with. try_get, not get: the snapshot now admits
+        // bodies without Combat, and steering's inReach flag is not a promise
+        // that the body owns a weapon.
+        auto* cp = reg.try_get<ecs::Combat>(e);
+        if (!cp) continue;
+        auto& c = *cp;
         if (c.cooldownTimer > 0.0f) continue;
         const bool owned = reg.any_of<ecs::PlayerSoldierTag>(e);
         if (c.kind == ecs::Combat::Missile) {
