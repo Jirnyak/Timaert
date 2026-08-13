@@ -206,6 +206,51 @@ void test_roulette_is_red() {
           "placement holds — the negative control is red");
 }
 
+// Villages SCATTER around their town — they do not clump (owner's report
+// from the live map: "деревни кластерами через блок вплотную"). The law
+// that spreads them is separation = half the hinterland, so two villages
+// of one city can never sit a block apart, and no city with admissible
+// ground is left hamlet-less.
+void test_villages_scatter_around_their_town() {
+    World w;
+    make_settled_world(w);
+    CHECK_OR_RETURN(!w.gs.villages.empty(), "the lush world settles villages");
+    const int spacing = derive_city_spacing(&w.td, kSeaLevel8, kW, kH,
+                                            int(w.gs.politik.cities.size()));
+    const int reach = std::max(4, spacing / 2);
+    // Stated in WORLD terms — half the hinterland — deliberately NOT via
+    // village_separation(): a property asserted through the function under
+    // test is a tautology, and the flat-4 law would slip through it.
+    const int mustBeApart = reach / 2;
+    CHECK(mustBeApart > kVillageSeparationFloor,
+          "the fixture's hinterland is big enough for the floor not to be "
+          "the operative law");
+    int closest = 1 << 20;
+    for (const auto& a : w.gs.villages) {
+        for (const auto& b : w.gs.villages) {
+            if (&a == &b || a.nearestCityId != b.nearestCityId) continue;
+            const int ddx = std::min(std::abs(a.x - b.x), kW - std::abs(a.x - b.x));
+            const int ddy = std::min(std::abs(a.y - b.y), kH - std::abs(a.y - b.y));
+            closest = std::min(closest, std::max(ddx, ddy));
+        }
+    }
+    if (closest < (1 << 20)) {
+        CHECK(closest >= mustBeApart,
+              "two villages of one city never stand closer than half their "
+              "hinterland — they scatter around the town, never clump");
+    }
+
+    // Every city whose hinterland holds ANY admissible ground keeps at
+    // least one village.
+    for (const auto& s : w.gs.settlements) {
+        const City& c = w.gs.politik.cities[std::size_t(s.id)];
+        if (hinterland_scores(w, c).empty()) continue;
+        int mine = 0;
+        for (const auto& v : w.gs.villages) if (v.nearestCityId == s.id) ++mine;
+        CHECK(mine >= 1, "a city with admissible ground is never hamlet-less");
+    }
+}
+
 void test_count_derives_from_capacity() {
     World w;
     make_settled_world(w);
@@ -253,6 +298,73 @@ void test_villages_stand_next_to_something() {
           "at least half the villages stand next to something gatherable");
 }
 
+// ── Cities read the ground too (R2, second half) ────────────────────────
+// Politics decides HOW MANY and WHOSE; the score decides WHERE and HOW
+// LARGE. Pinned: land only, the population LAW (souls = per-score rate ×
+// capacity, floored — never dice), and the control that scored placement
+// actually lifts the ground under the cities against the first-valid old
+// law (site = nullptr degrades to exactly that).
+long long mean_city_score_x100(World& w, const Politik& p) {
+    SettlementSiteContext ctx = site_ctx(w);
+    long long sum = 0;
+    for (const auto& c : p.cities)
+        sum += std::max(0, settlement_site_score(
+            ctx, SettlementScoreRow::City, c.x, c.y));
+    return p.cities.empty() ? 0
+                            : sum * 100 / static_cast<long long>(p.cities.size());
+}
+
+void test_cities_read_the_ground() {
+    World w;
+    w.td = make_world();
+    std::vector<std::uint8_t> mask(std::size_t(kW) * kH, 0);
+    w.trees = build_tree_layer(w.td, mask.data(), mask.size());
+    w.deposits = build_deposit_layer(w.td, 777u, kSeaLevel);
+    w.gs.worldSeed = 777u;
+    w.gs.mapW = kW;
+    w.gs.mapH = kH;
+    SettlementSiteContext ctx = site_ctx(w);
+
+    const Politik scored = generate_politik(777u, kW, kH, &w.td, kSeaLevel8,
+                                            12, &ctx);
+    CHECK_OR_RETURN(!scored.cities.empty(), "the world holds cities");
+    for (const auto& c : scored.cities) {
+        CHECK(!w.td.is_water(c.x, c.y, kSeaLevel8), "no city on water");
+        const int score = settlement_site_score(
+            ctx, SettlementScoreRow::City, c.x, c.y);
+        const bool isCapital = [&] {
+            for (const auto& kg : scored.kingdoms)
+                if (kg.capitalCityIdx >= 0
+                    && &scored.cities[std::size_t(kg.capitalCityIdx)] == &c)
+                    return true;
+            return false;
+        }();
+        CHECK(c.population == (isCapital ? capital_population(score)
+                                         : city_population(score)),
+              "a city's souls follow the population law, never dice");
+    }
+
+    // The control: the same politics WITHOUT the score (the old first-valid
+    // law) settles on measurably poorer ground.
+    const Politik blind = generate_politik(777u, kW, kH, &w.td, kSeaLevel8,
+                                           12, nullptr);
+    CHECK(mean_city_score_x100(w, scored) > mean_city_score_x100(w, blind),
+          "scored placement stands cities on better ground than the blind "
+          "first-valid law");
+
+    // One seed, one politics.
+    const Politik again = generate_politik(777u, kW, kH, &w.td, kSeaLevel8,
+                                           12, &ctx);
+    CHECK_OR_RETURN(again.cities.size() == scored.cities.size(),
+                    "two runs raise the same number of cities");
+    bool same = true;
+    for (std::size_t i = 0; i < scored.cities.size(); ++i)
+        same = same && again.cities[i].x == scored.cities[i].x
+                    && again.cities[i].y == scored.cities[i].y
+                    && again.cities[i].population == scored.cities[i].population;
+    CHECK(same, "one seed, one crowned world");
+}
+
 void test_determinism() {
     World a, b;
     make_settled_world(a);
@@ -275,8 +387,10 @@ int main() {
     test_vetoes_hold();
     test_villages_take_the_best_land();
     test_roulette_is_red();
+    test_villages_scatter_around_their_town();
     test_count_derives_from_capacity();
     test_villages_stand_next_to_something();
+    test_cities_read_the_ground();
     test_determinism();
     return sm::test::report("settlement_placement_test");
 }

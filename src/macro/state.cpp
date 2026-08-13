@@ -156,8 +156,9 @@ void populate_landmarks_from_politik(GameState& gs,
         s.x           = c.x;
         s.y           = c.y;
         s.kingdomIdx  = c.kingdomIdx;
-        s.population  = c.population > 0 ? c.population
-                                         : 200 + int(rng.next_u32() % 800u);
+        // Politik prices every city's souls from its ground (R2); the old
+        // 200+rng%800 fallback was the last population dice standing.
+        s.population  = std::max(1, c.population);
         s.mood        = SettlementMood::Stable;
         s.garrison    = default_squad();
         // Born mid-life (owner): the market has wares on day one, and the
@@ -223,29 +224,38 @@ void populate_landmarks_from_politik(GameState& gs,
                 cands.push_back(Candidate{score, x, y});
             }
         }
-        const int n = std::min<long long>(
+        // Capacity says how many the land feeds; a city with ANY admissible
+        // ground keeps at least one village (owner: a town with no hamlet
+        // at all reads as a bug, not as honesty).
+        const int n = std::max<long long>(1, std::min<long long>(
             kMaxVillagesPerCity,
-            hinterlandCapacity / kVillageCapacityQuota);
-        if (n <= 0 || cands.empty()) continue;
+            hinterlandCapacity / kVillageCapacityQuota));
+        if (cands.empty()) continue;
         // Best sites first; ties resolved by scan order (y, then x) so
         // the pick is a fact of the world data, not of the sort.
         std::stable_sort(cands.begin(), cands.end(),
                          [](const Candidate& a, const Candidate& b) {
                              return a.score > b.score;
                          });
+        // Villages DIVIDE the city's land rather than share one pocket of
+        // it: the separation is half the hinterland, so the k best sites
+        // land in different quarters of the ring and scatter AROUND the
+        // town instead of stacking a block apart in the single fattest
+        // corner. A crowded-out candidate is skipped, not downgraded —
+        // the next-best free site wins, which is what spreads them.
+        const int separation = village_separation(reach);
         int placed = 0;
         for (const Candidate& c : cands) {
             if (placed >= n) break;
-            // Separation keeps two villages' field reaches off the same
-            // ploughland (torus distance, against every village so far —
-            // neighbouring hinterlands may touch at the rim).
+            // Torus distance against every village so far — neighbouring
+            // hinterlands may touch at the rim.
             bool crowded = false;
             for (const auto& other : gs.villages) {
                 const int ddx = std::min(std::abs(c.x - other.x),
                                          gs.mapW - std::abs(c.x - other.x));
                 const int ddy = std::min(std::abs(c.y - other.y),
                                          gs.mapH - std::abs(c.y - other.y));
-                if (std::max(ddx, ddy) < kVillageSeparation) {
+                if (std::max(ddx, ddy) < separation) {
                     crowded = true;
                     break;
                 }

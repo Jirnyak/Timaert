@@ -1,6 +1,7 @@
 #include "macro/politik.h"
 #include "macro/faction.h"
 #include "macro/map_generator.h"
+#include "macro/settlement_score.h"
 #include "core/rng.h"
 #include "core/torus.h"
 #include <algorithm>
@@ -36,29 +37,19 @@ static bool terrain_matches_map(const TerrainData* terrain, int mapW, int mapH) 
         && terrain->has_rgba_storage();
 }
 
-// Spiral search for nearest land tile within `maxR` cells. Returns true if
-// found and writes the cell into (*outX, *outY); false otherwise.
-static bool find_nearest_land(const TerrainData& td, std::uint8_t seaLevel8,
-                              int cx, int cy, int maxR, int* outX, int* outY) {
-    if (!td.has_rgba_storage()) return false;
-    auto is_land = [&](int x, int y) {
-        x = wrapi(x, td.width); y = wrapi(y, td.height);
-        return td.rgba[std::size_t(y * td.width + x) * 4 + 0] >= seaLevel8;
-    };
-    if (is_land(cx, cy)) { *outX = wrapi(cx, td.width); *outY = wrapi(cy, td.height); return true; }
-    for (int r = 1; r <= maxR; ++r) {
-        for (int dy = -r; dy <= r; ++dy) {
-            for (int dx = -r; dx <= r; ++dx) {
-                if (std::abs(dx) != r && std::abs(dy) != r) continue;
-                int nx = cx + dx, ny = cy + dy;
-                if (is_land(nx, ny)) {
-                    *outX = wrapi(nx, td.width); *outY = wrapi(ny, td.height); return true;
-                }
-            }
-        }
-    }
-    return false;
+// A city candidate priced through the ONE door (R2). A null site prices
+// every cell equally at zero — argmax then degrades to "first valid",
+// which is the honest behaviour for callers with no resource world.
+static int city_site_score(const SettlementSiteContext* site, int x, int y) {
+    return site ? settlement_site_score(*site, SettlementScoreRow::City, x, y)
+                : 0;
 }
+
+// How many anchor-jitter draws a city ponders before settling: a sampling
+// width of the candidate distribution, not a distance in world units —
+// wide enough that the best of the draws tracks the neighbourhood's real
+// optimum, small enough that placement stays O(cities).
+constexpr int kCityCandidateDraws = 64;
 
 int derive_city_spacing(const TerrainData* terrain, std::uint8_t seaLevel8,
                         int mapW, int mapH, int totalCities) {
@@ -84,7 +75,8 @@ int derive_city_spacing(const TerrainData* terrain, std::uint8_t seaLevel8,
 
 Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
                         const TerrainData* terrain, std::uint8_t seaLevel8,
-                        int targetTotalCities) {
+                        int targetTotalCities,
+                        const SettlementSiteContext* site) {
     Politik P;
     std::size_t totalCells = 0;
     if (!TerrainData::cell_count_for(mapW, mapH, totalCells))
@@ -142,83 +134,94 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
         int effMax = std::max(effMin, int(std::lround(float(def.maxCities) * cityScale)));
         int target = effMin + int(r.next_u32() % std::uint32_t(effMax - effMin + 1));
 
-        // Capital — start at def coords, snap to nearest land respecting
-        // minDist against earlier capitals.
+        // Capital — the crown claims the BEST-scoring valid cell within its
+        // own spacing disk of the registry seed (the disk is the land this
+        // capital will hold anyway; beyond it is another city's ground).
+        // Only when the whole disk holds nothing does the walk keep going
+        // to 2×spacing and take the first valid cell, vetoes waived — a
+        // kingdom is crowned even in a wasteland (the old 120-cell spiral's
+        // one honest job).
         int cx = wrapi(int(def.cx * mapW), mapW);
         int cy = wrapi(int(def.cy * mapH), mapH);
         if (useTerrain) {
-            int nx = cx, ny = cy;
-            // Walk a spiral; accept first land tile that's also far enough
-            // from already-placed capitals.
+            int bestX = cx, bestY = cy, bestScore = -1;
             bool placed = false;
-            for (int rad = 0; rad <= 120 && !placed; ++rad) {
-                if (rad == 0) {
-                    if (is_land(cx, cy) && find_close_city(P, cx, cy, minDist, mapW, mapH) < 0) {
-                        nx = cx; ny = cy; placed = true; break;
-                    }
-                    continue;
-                }
+            for (int rad = 0; rad <= 2 * minDist && !placed; ++rad) {
                 for (int dy = -rad; dy <= rad && !placed; ++dy) {
                     for (int dx = -rad; dx <= rad && !placed; ++dx) {
                         if (std::abs(dx) != rad && std::abs(dy) != rad) continue;
-                        int tx = wrapi(cx + dx, mapW), ty = wrapi(cy + dy, mapH);
+                        const int tx = wrapi(cx + dx, mapW);
+                        const int ty = wrapi(cy + dy, mapH);
                         if (!is_land(tx, ty)) continue;
-                        if (find_close_city(P, tx, ty, minDist, mapW, mapH) >= 0) continue;
-                        nx = tx; ny = ty; placed = true;
+                        if (find_close_city(P, tx, ty, minDist, mapW, mapH) >= 0)
+                            continue;
+                        if (rad > minDist) {
+                            // Fallback land: first valid cell wins as-is.
+                            bestX = tx; bestY = ty; bestScore = 0;
+                            placed = true;
+                            break;
+                        }
+                        const int score = city_site_score(site, tx, ty);
+                        if (score < 0) continue;   // vetoed ground
+                        if (score > bestScore) {
+                            bestScore = score; bestX = tx; bestY = ty;
+                        }
                     }
                 }
+                // The disk is searched and something stood in it: done.
+                if (rad == minDist && bestScore >= 0) break;
             }
-            cx = nx; cy = ny;
+            cx = bestX; cy = bestY;
         }
         kg.capitalCityIdx = int(P.cities.size());
         City cap; cap.x = cx; cap.y = cy;
         cap.name = generate_name(kg.language, std::uint32_t(P.cities.size()) * 2654435761u);
         cap.kingdomIdx = k;
         for (int& c : cap.connections) c = -1;
-        cap.population = 4000 + int(r.next_u32() % 3000u);
+        // Souls derive from the ground the crown chose (settlement_score.h).
+        cap.population = capital_population(city_site_score(site, cx, cy));
         P.cities.push_back(std::move(cap));
         kg.cityIdxs.push_back(kg.capitalCityIdx);
 
         // Scatter remaining cities with **organic growth** clustering:
         // each new city picks a random already-placed kingdom city as
-        // anchor (capital weighted slightly higher) and jitters at a
-        // small radius (~2-3× minDist). This produces natural chains
-        // and clusters — towns sprout near towns — instead of uniform
-        // random scatter. The anchor radius is bounded by `scatterMax`
-        // so big maps still spread the kingdom across its region.
-        const int scatterMax = std::max(120, std::max(mapW / 6, minDist * 4));
-        const int jitter = std::clamp(minDist * 3, 24, scatterMax);
-        const int landSearch = std::max(8, minDist / 2);
+        // anchor — the capital at its natural 1/n, no thumb on the
+        // scale — and jitters within 2× the spacing law (any closer is
+        // rejected by the spacing itself, so a child lands in the
+        // annulus [spacing, 2×spacing] of its parent: towns sprout near
+        // towns). The score judges ALL the draws and the best valid one
+        // is settled; a neighbourhood whose every draw is water or
+        // vetoed ground simply yields no city — the kingdom stays
+        // smaller, which is the ground's honest answer.
+        const int jitter = 2 * minDist;
         for (int n = 1; n < target; ++n) {
-            for (int tries = 0; tries < 64; ++tries) {
-                // Pick parent: 35% capital, 65% any existing kingdom city.
-                int anchorIdx = kg.capitalCityIdx;
-                if (kg.cityIdxs.size() > 1 && (r.next_u32() % 100u) >= 35u) {
-                    anchorIdx = kg.cityIdxs[std::size_t(
-                        r.next_u32() % std::uint32_t(kg.cityIdxs.size()))];
-                }
+            int bestX = 0, bestY = 0, bestScore = -1;
+            for (int tries = 0; tries < kCityCandidateDraws; ++tries) {
+                const int anchorIdx = kg.cityIdxs[std::size_t(
+                    r.next_u32() % std::uint32_t(kg.cityIdxs.size()))];
                 const int ax = P.cities[std::size_t(anchorIdx)].x;
                 const int ay = P.cities[std::size_t(anchorIdx)].y;
-                int rx = wrapi(ax + int(r.next_u32() % std::uint32_t(2 * jitter + 1))
-                                  - jitter, mapW);
-                int ry = wrapi(ay + int(r.next_u32() % std::uint32_t(2 * jitter + 1))
-                                  - jitter, mapH);
-                if (!is_land(rx, ry)) {
-                    if (useTerrain && !find_nearest_land(*terrain, seaLevel8, rx, ry,
-                                                         landSearch, &rx, &ry))
-                        continue;
-                }
+                const int rx = wrapi(ax + int(r.next_u32()
+                                              % std::uint32_t(2 * jitter + 1))
+                                        - jitter, mapW);
+                const int ry = wrapi(ay + int(r.next_u32()
+                                              % std::uint32_t(2 * jitter + 1))
+                                        - jitter, mapH);
+                if (!is_land(rx, ry)) continue;
                 if (find_close_city(P, rx, ry, minDist, mapW, mapH) >= 0) continue;
-                int idx = int(P.cities.size());
-                City c; c.x = rx; c.y = ry;
-                c.name = generate_name(kg.language, std::uint32_t(idx) * 2654435761u);
-                c.kingdomIdx = k;
-                for (int& cc : c.connections) cc = -1;
-                c.population = 800 + int(r.next_u32() % 1500u);
-                P.cities.push_back(std::move(c));
-                kg.cityIdxs.push_back(idx);
-                break;
+                const int score = city_site_score(site, rx, ry);
+                if (score < 0) continue;   // vetoed ground
+                if (score > bestScore) { bestScore = score; bestX = rx; bestY = ry; }
             }
+            if (bestScore < 0) continue;
+            int idx = int(P.cities.size());
+            City c; c.x = bestX; c.y = bestY;
+            c.name = generate_name(kg.language, std::uint32_t(idx) * 2654435761u);
+            c.kingdomIdx = k;
+            for (int& cc : c.connections) cc = -1;
+            c.population = city_population(bestScore);
+            P.cities.push_back(std::move(c));
+            kg.cityIdxs.push_back(idx);
         }
         P.kingdoms.push_back(std::move(kg));
     }
@@ -235,29 +238,49 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
         && !P.cities.empty()) {
         const int deficit = targetTotalCities - int(P.cities.size());
         const int maxGlobalTries = std::max(512, deficit * 32);
-        const int topupJitter = std::clamp(minDist * 3, 24,
-                                std::max(120, std::max(mapW / 6, minDist * 4)));
-        for (int t = 0; t < maxGlobalTries
-                     && int(P.cities.size()) < targetTotalCities; ++t) {
-            // Anchor on a random existing city → keeps clustering natural.
-            const int anchor = int(r.next_u32() % std::uint32_t(P.cities.size()));
-            const int ax = P.cities[std::size_t(anchor)].x;
-            const int ay = P.cities[std::size_t(anchor)].y;
-            int rx = wrapi(ax + int(r.next_u32() % std::uint32_t(2 * topupJitter + 1))
-                              - topupJitter, mapW);
-            int ry = wrapi(ay + int(r.next_u32() % std::uint32_t(2 * topupJitter + 1))
-                              - topupJitter, mapH);
-            if (!is_land(rx, ry)) continue;
-            if (find_close_city(P, rx, ry, minDist, mapW, mapH) >= 0) continue;
+        const int topupJitter = 2 * minDist;   // the same distance law
+        int t = 0;
+        while (int(P.cities.size()) < targetTotalCities) {
+            // One city = the best of kCityCandidateDraws anchor-jitter
+            // draws, same as kingdom scatter; the draw budget below is
+            // only the never-spin-forever valve for saturated maps.
+            int bestX = 0, bestY = 0, bestScore = -1, bestAnchor = -1;
+            bool budgetLeft = true;
+            for (int tries = 0; tries < kCityCandidateDraws; ++tries) {
+                if (t++ >= maxGlobalTries) { budgetLeft = false; break; }
+                // Anchor on a random existing city → clustering stays natural.
+                const int anchor =
+                    int(r.next_u32() % std::uint32_t(P.cities.size()));
+                const int ax = P.cities[std::size_t(anchor)].x;
+                const int ay = P.cities[std::size_t(anchor)].y;
+                const int rx = wrapi(ax + int(r.next_u32()
+                                              % std::uint32_t(2 * topupJitter + 1))
+                                        - topupJitter, mapW);
+                const int ry = wrapi(ay + int(r.next_u32()
+                                              % std::uint32_t(2 * topupJitter + 1))
+                                        - topupJitter, mapH);
+                if (!is_land(rx, ry)) continue;
+                if (find_close_city(P, rx, ry, minDist, mapW, mapH) >= 0) continue;
+                const int score = city_site_score(site, rx, ry);
+                if (score < 0) continue;
+                if (score > bestScore) {
+                    bestScore = score; bestX = rx; bestY = ry;
+                    bestAnchor = anchor;
+                }
+            }
+            if (bestScore < 0) {
+                if (!budgetLeft) break;
+                continue;
+            }
             // Inherit anchor's kingdom — clusters stay politically coherent.
-            int bestK = P.cities[std::size_t(anchor)].kingdomIdx;
-            int idx = int(P.cities.size());
-            City c; c.x = rx; c.y = ry;
+            const int bestK = P.cities[std::size_t(bestAnchor)].kingdomIdx;
+            const int idx = int(P.cities.size());
+            City c; c.x = bestX; c.y = bestY;
             c.name = generate_name(P.kingdoms[std::size_t(bestK)].language,
                                    std::uint32_t(idx) * 2654435761u);
             c.kingdomIdx = bestK;
             for (int& cc : c.connections) cc = -1;
-            c.population = 600 + int(r.next_u32() % 1200u);
+            c.population = city_population(bestScore);
             P.cities.push_back(std::move(c));
             P.kingdoms[std::size_t(bestK)].cityIdxs.push_back(idx);
         }

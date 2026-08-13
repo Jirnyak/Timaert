@@ -133,10 +133,18 @@ int derive_city_spacing(const TerrainData* terrain, std::uint8_t seaLevel8,
 // kingdom's min/max is scaled by `target / registryTotal`, so the world
 // ends up with approximately the requested number of cities while each
 // kingdom keeps its relative weight. Min capped at 1 city per kingdom.
+//
+// `site` (R2) is the resource-score context: politics keeps deciding HOW
+// MANY cities and WHOSE, the score decides WHERE among the candidates —
+// and HOW LARGE (population derives from the site's capacity). A null
+// site prices every cell equally (tests, resource-less callers), which
+// degrades to the old first-valid placement.
+struct SettlementSiteContext;
 Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
                         const TerrainData* terrain = nullptr,
                         std::uint8_t seaLevel8 = 0,
-                        int targetTotalCities = 0);
+                        int targetTotalCities = 0,
+                        const SettlementSiteContext* site = nullptr);
 
 // Belt-and-suspenders: nudge any city left on water onto the nearest land
 // cell. Becomes mostly a no-op when `generate_politik` is called with a

@@ -1833,9 +1833,17 @@ void boot_world(App& app, std::uint32_t seed,
                                            lp.seaLevel);
     boot_trace("resource layers built");
 
+    // The score context politics reads (R2): the crown decides how many
+    // and whose, the ground decides where and how large.
+    sm::SettlementSiteContext siteCtx{};
+    siteCtx.w.gs      = &app.gs;
+    siteCtx.w.trees   = &app.treeLayer;
+    siteCtx.w.terrain = &app.terrain;
+    siteCtx.deposits  = &app.deposits;
+    siteCtx.seaLevel8 = std::uint8_t(lp.seaLevel * 255.0f);
     app.gs.politik = sm::generate_politik(app.gs.worldSeed, app.gs.mapW, app.gs.mapH,
                                           &app.terrain, std::uint8_t(lp.seaLevel * 255.0f),
-                                          targetTotalCities);
+                                          targetTotalCities, &siteCtx);
     boot_trace("politik generated");
     sm::snap_cities_to_land(app.gs.politik, app.terrain, std::uint8_t(lp.seaLevel * 255.0f));
     sm::finalize_politik(app.gs.politik, app.terrain, std::uint8_t(lp.seaLevel * 255.0f));
@@ -1866,10 +1874,37 @@ void boot_world(App& app, std::uint32_t seed,
             nearDeposit += deposit ? 1 : 0;
         }
         const int n = std::max(1, int(app.gs.villages.size()));
+        // A town with no hamlet at all reads as a bug; count them out loud.
+        std::vector<int> perCity(app.gs.settlements.size(), 0);
+        for (const auto& v : app.gs.villages)
+            if (v.nearestCityId >= 0
+                && v.nearestCityId < int(perCity.size()))
+                ++perCity[std::size_t(v.nearestCityId)];
+        int villageless = 0;
+        for (int c : perCity) if (c == 0) ++villageless;
+        // And how far apart they actually stand: the mean nearest-neighbour
+        // distance among villages of the SAME city — the number that reads
+        // "scattered around the town" versus "clumped a block apart".
+        long long nnSum = 0;
+        int nnCount = 0;
+        for (const auto& v : app.gs.villages) {
+            int nearest = 1 << 20;
+            for (const auto& o : app.gs.villages) {
+                if (&o == &v || o.nearestCityId != v.nearestCityId) continue;
+                const int ddx = std::min(std::abs(v.x - o.x),
+                                         app.gs.mapW - std::abs(v.x - o.x));
+                const int ddy = std::min(std::abs(v.y - o.y),
+                                         app.gs.mapH - std::abs(v.y - o.y));
+                nearest = std::min(nearest, std::max(ddx, ddy));
+            }
+            if (nearest < (1 << 20)) { nnSum += nearest; ++nnCount; }
+        }
         std::fprintf(stderr,
-                     "[worldgen] cities=%zu villages=%zu nearWater=%d%% "
-                     "nearPlough=%d%% nearDeposit=%d%%\n",
+                     "[worldgen] cities=%zu villages=%zu villageless=%d "
+                     "vilSpacing=%lld nearWater=%d%% nearPlough=%d%% "
+                     "nearDeposit=%d%%\n",
                      app.gs.settlements.size(), app.gs.villages.size(),
+                     villageless, nnCount ? nnSum / nnCount : 0,
                      100 * nearWater / n, 100 * nearPlough / n,
                      100 * nearDeposit / n);
         std::fflush(stderr);

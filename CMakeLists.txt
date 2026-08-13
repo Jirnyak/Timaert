@@ -531,7 +531,15 @@ timaert_test(road_river_generation_test
         src/macro/pathfinding.cpp
         src/macro/politik.cpp
         src/macro/language.cpp
-    LINK_SDL)
+        # R2: city placement prices candidates through the settlement score,
+        # so politik.cpp now carries the score chain (and entt via the
+        # macro_stock context envelope) even where the test passes no site.
+        src/macro/settlement_score.cpp
+        src/macro/macro_stock.cpp
+        src/macro/tree_layer.cpp
+        src/macro/deposit_layer.cpp
+        src/macro/fauna.cpp
+    LINK_SDL LINK_ENTT)
 # River generation invariants (macro heap-A* trace + below-sea carve) and the
 # honest subworld river descent. Pure CPU synth: generate_terrain() and
 # generate_heightmap() need no GPU, so this target links neither SDL2 nor Vulkan.

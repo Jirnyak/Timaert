@@ -22,6 +22,7 @@
 // there. Deterministic: pure reads, no dice, ties broken by scan order.
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 
@@ -82,10 +83,38 @@ inline constexpr int kVillagePopFloor = 16;
 // villages a city's land carries is its total admissible score / quota.
 inline constexpr int kVillageCapacityQuota = 16384;   // po2, calibrated below
 
-// Guard rail for lush deltas, and the spacing between village sites —
-// separation keeps their radius-2 field reaches from stacking on the
-// same ploughland.
+// Guard rail for lush deltas.
 inline constexpr int kMaxVillagesPerCity = 4;
-inline constexpr int kVillageSeparation = 4;
+
+// The FLOOR of the spacing between village sites (tiny maps). On a real
+// hinterland the separation derives from the hinterland itself — villages
+// DIVIDE the city's land, each claiming half the reach (see
+// village_separation) — so the best sites of one lush pocket cannot all
+// crowd into it: the k-best spread around the town instead of stacking a
+// block apart (owner: "рассеяны вокруг, не плотными кластерами").
+inline constexpr int kVillageSeparationFloor = 4;
+
+inline int village_separation(int hinterlandReach) {
+    return std::max(kVillageSeparationFloor, hinterlandReach / 2);
+}
+
+// Cities live by the same law (the old 4000+rng%3000 / 800+rng%1500 /
+// 600+rng%1200 dice are dead): souls = per-score rate × site capacity,
+// floored — a capital is the crown's seat and holds a court whatever
+// the ground yields. The city score ceiling is 128 (Σ weight × 16), so
+// capitals span 2048..8192 and cities 512..2048 — the old orders of
+// magnitude, now earned by the land instead of rolled.
+inline constexpr int kCapitalPopPerScore = 64;
+inline constexpr int kCityPopPerScore = 16;
+inline constexpr int kCapitalPopFloor = 2048;
+inline constexpr int kCityPopFloor = 512;
+
+inline int capital_population(int score) {
+    return std::max(kCapitalPopFloor,
+                    kCapitalPopPerScore * std::max(0, score));
+}
+inline int city_population(int score) {
+    return std::max(kCityPopFloor, kCityPopPerScore * std::max(0, score));
+}
 
 } // namespace sm
