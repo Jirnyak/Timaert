@@ -89,51 +89,49 @@ set(IMGUI_SOURCES
     ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp)
 
 set(TIMAERT_SDL2_MIXER_TARGET "")
-if(NOT EMSCRIPTEN)
-    find_package(SDL2 REQUIRED)
-    set(TIMAERT_SDL2_INCLUDE_DIRS "")
-    if(TARGET SDL2::SDL2)
-        get_target_property(_TIMAERT_SDL2_TARGET_INCLUDES
-            SDL2::SDL2 INTERFACE_INCLUDE_DIRECTORIES)
-        if(_TIMAERT_SDL2_TARGET_INCLUDES)
-            list(APPEND TIMAERT_SDL2_INCLUDE_DIRS
-                ${_TIMAERT_SDL2_TARGET_INCLUDES})
-        endif()
+find_package(SDL2 REQUIRED)
+set(TIMAERT_SDL2_INCLUDE_DIRS "")
+if(TARGET SDL2::SDL2)
+    get_target_property(_TIMAERT_SDL2_TARGET_INCLUDES
+        SDL2::SDL2 INTERFACE_INCLUDE_DIRECTORIES)
+    if(_TIMAERT_SDL2_TARGET_INCLUDES)
+        list(APPEND TIMAERT_SDL2_INCLUDE_DIRS
+            ${_TIMAERT_SDL2_TARGET_INCLUDES})
     endif()
-    if(TIMAERT_SDL2_INCLUDE_DIRS STREQUAL "" AND SDL2_DIR)
-        get_filename_component(_TIMAERT_SDL2_ROOT "${SDL2_DIR}/.." ABSOLUTE)
-        if(EXISTS "${_TIMAERT_SDL2_ROOT}/include/SDL2/SDL_opengl.h"
-           OR EXISTS "${_TIMAERT_SDL2_ROOT}/include/SDL_opengl.h")
-            list(APPEND TIMAERT_SDL2_INCLUDE_DIRS
-                "${_TIMAERT_SDL2_ROOT}/include")
-        endif()
-    endif()
-    if(NOT TIMAERT_SDL2_INCLUDE_DIRS STREQUAL "")
-        include_directories(SYSTEM ${TIMAERT_SDL2_INCLUDE_DIRS})
-    endif()
-    find_package(SDL2_mixer CONFIG QUIET)
-    if(TARGET SDL2_mixer::SDL2_mixer)
-        set(TIMAERT_SDL2_MIXER_TARGET SDL2_mixer::SDL2_mixer)
-    elseif(TARGET SDL2_mixer::SDL2_mixer-static)
-        set(TIMAERT_SDL2_MIXER_TARGET SDL2_mixer::SDL2_mixer-static)
-    else()
-        find_package(PkgConfig QUIET)
-        if(PkgConfig_FOUND)
-            pkg_check_modules(SDL2_MIXER QUIET IMPORTED_TARGET SDL2_mixer)
-            if(TARGET PkgConfig::SDL2_MIXER)
-                set(TIMAERT_SDL2_MIXER_TARGET PkgConfig::SDL2_MIXER)
-            endif()
-        endif()
-    endif()
-    if(TIMAERT_SDL2_MIXER_TARGET STREQUAL "")
-        message(FATAL_ERROR
-            "SDL_mixer dependency missing: native audio requires SDL2_mixer. "
-            "Install SDL2_mixer or build the Emscripten target.")
-    endif()
-    # Vulkan is the rendering/compute backend (macOS via MoltenVK). SDL stays
-    # platform/input/audio only. See ARCHITECTURE.md Rendering & Compute Backend.
-    find_package(Vulkan REQUIRED)
 endif()
+if(TIMAERT_SDL2_INCLUDE_DIRS STREQUAL "" AND SDL2_DIR)
+    get_filename_component(_TIMAERT_SDL2_ROOT "${SDL2_DIR}/.." ABSOLUTE)
+    if(EXISTS "${_TIMAERT_SDL2_ROOT}/include/SDL2/SDL_opengl.h"
+       OR EXISTS "${_TIMAERT_SDL2_ROOT}/include/SDL_opengl.h")
+        list(APPEND TIMAERT_SDL2_INCLUDE_DIRS
+            "${_TIMAERT_SDL2_ROOT}/include")
+    endif()
+endif()
+if(NOT TIMAERT_SDL2_INCLUDE_DIRS STREQUAL "")
+    include_directories(SYSTEM ${TIMAERT_SDL2_INCLUDE_DIRS})
+endif()
+find_package(SDL2_mixer CONFIG QUIET)
+if(TARGET SDL2_mixer::SDL2_mixer)
+    set(TIMAERT_SDL2_MIXER_TARGET SDL2_mixer::SDL2_mixer)
+elseif(TARGET SDL2_mixer::SDL2_mixer-static)
+    set(TIMAERT_SDL2_MIXER_TARGET SDL2_mixer::SDL2_mixer-static)
+else()
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(SDL2_MIXER QUIET IMPORTED_TARGET SDL2_mixer)
+        if(TARGET PkgConfig::SDL2_MIXER)
+            set(TIMAERT_SDL2_MIXER_TARGET PkgConfig::SDL2_MIXER)
+        endif()
+    endif()
+endif()
+if(TIMAERT_SDL2_MIXER_TARGET STREQUAL "")
+    message(FATAL_ERROR
+        "SDL_mixer dependency missing: native audio requires SDL2_mixer. "
+        "Install SDL2_mixer or build the Emscripten target.")
+endif()
+# Vulkan is the rendering/compute backend (macOS via MoltenVK). SDL stays
+# platform/input/audio only. See ARCHITECTURE.md Rendering & Compute Backend.
+find_package(Vulkan REQUIRED)
 
 file(GLOB_RECURSE SAMOSBOR_SOURCES CONFIGURE_DEPENDS
     src/app/*.cpp src/core/*.cpp src/gpu/*.cpp src/ecs/*.cpp
@@ -144,10 +142,6 @@ file(GLOB_RECURSE SAMOSBOR_SOURCES CONFIGURE_DEPENDS
 file(GLOB TIMAERT_GPU_SOURCES CONFIGURE_DEPENDS src/gpu/*.cpp)
 
 add_executable(${PROJECT_NAME} ${SAMOSBOR_SOURCES})
-if(EMSCRIPTEN)
-    set_target_properties(${PROJECT_NAME} PROPERTIES SUFFIX ".html")
-endif()
-
 target_sources(${PROJECT_NAME} PRIVATE ${IMGUI_SOURCES})
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
@@ -173,23 +167,21 @@ if(EXISTS "${_TIMAERT_TS_ASSETS}")
     endif()
 endif()
 
-if(NOT EMSCRIPTEN)
-    target_link_libraries(${PROJECT_NAME} PRIVATE SDL2::SDL2 Vulkan::Vulkan)
-    if(NOT TIMAERT_SDL2_MIXER_TARGET STREQUAL "")
-        target_link_libraries(${PROJECT_NAME} PRIVATE ${TIMAERT_SDL2_MIXER_TARGET})
-    endif()
-    if(WIN32)
-        target_link_libraries(${PROJECT_NAME} PRIVATE SDL2::SDL2main)
+target_link_libraries(${PROJECT_NAME} PRIVATE SDL2::SDL2 Vulkan::Vulkan)
+if(NOT TIMAERT_SDL2_MIXER_TARGET STREQUAL "")
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${TIMAERT_SDL2_MIXER_TARGET})
+endif()
+if(WIN32)
+    target_link_libraries(${PROJECT_NAME} PRIVATE SDL2::SDL2main)
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:SDL2::SDL2>
+            $<TARGET_FILE_DIR:${PROJECT_NAME}>)
+    if(TARGET SDL2_mixer::SDL2_mixer)
         add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                $<TARGET_FILE:SDL2::SDL2>
+                $<TARGET_FILE:SDL2_mixer::SDL2_mixer>
                 $<TARGET_FILE_DIR:${PROJECT_NAME}>)
-        if(TARGET SDL2_mixer::SDL2_mixer)
-            add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    $<TARGET_FILE:SDL2_mixer::SDL2_mixer>
-                    $<TARGET_FILE_DIR:${PROJECT_NAME}>)
-        endif()
     endif()
 endif()
 
@@ -229,88 +221,86 @@ endif()
 target_link_libraries(${PROJECT_NAME} PRIVATE timaert_build_flags)
 
 # Vulkan bring-up verification target (fast compile/run loop for the migration).
-if(NOT EMSCRIPTEN)
-    # Compile GLSL -> SPIR-V with glslc (located by find_package(Vulkan)).
-    set(_timaert_spv_dir ${CMAKE_BINARY_DIR}/shaders)
-    file(MAKE_DIRECTORY ${_timaert_spv_dir})
-    set(_timaert_spv_files "")
-    set(_timaert_shader_incs
-        ${CMAKE_SOURCE_DIR}/shaders/tree_sprite.glsl
-        ${CMAKE_SOURCE_DIR}/shaders/doll_pool.glsl
-        ${CMAKE_SOURCE_DIR}/shaders/creature_sprite.glsl
-        ${CMAKE_SOURCE_DIR}/shaders/shadow_common.glsl
-        ${CMAKE_SOURCE_DIR}/shaders/lighting.glsl
-        ${CMAKE_SOURCE_DIR}/shaders/clouds.glsl)
-    foreach(_sh fullscreen.vert macro.frag mesh.vert mesh.frag billboard.vert tree.frag sky.frag shadow_mesh.vert shadow_mesh.frag shadow_bb.vert shadow_tree.frag water.vert water.frag struct.vert struct.frag struct_cyl.vert shadow_cyl.vert shadow_struct.vert shadow_struct.frag npc.frag shadow_npc.frag creature.frag shadow_creature.frag particle.vert particle.frag precip.frag)
-        add_custom_command(
-            OUTPUT ${_timaert_spv_dir}/${_sh}.spv
-            COMMAND ${Vulkan_GLSLC_EXECUTABLE} -O
-                ${CMAKE_SOURCE_DIR}/shaders/${_sh}
-                -o ${_timaert_spv_dir}/${_sh}.spv
-            DEPENDS ${CMAKE_SOURCE_DIR}/shaders/${_sh} ${_timaert_shader_incs}
-            COMMENT "glslc ${_sh}")
-        list(APPEND _timaert_spv_files ${_timaert_spv_dir}/${_sh}.spv)
-    endforeach()
-    add_custom_target(timaert_shaders DEPENDS ${_timaert_spv_files})
-    add_dependencies(${PROJECT_NAME} timaert_shaders)
+# Compile GLSL -> SPIR-V with glslc (located by find_package(Vulkan)).
+set(_timaert_spv_dir ${CMAKE_BINARY_DIR}/shaders)
+file(MAKE_DIRECTORY ${_timaert_spv_dir})
+set(_timaert_spv_files "")
+set(_timaert_shader_incs
+    ${CMAKE_SOURCE_DIR}/shaders/tree_sprite.glsl
+    ${CMAKE_SOURCE_DIR}/shaders/doll_pool.glsl
+    ${CMAKE_SOURCE_DIR}/shaders/creature_sprite.glsl
+    ${CMAKE_SOURCE_DIR}/shaders/shadow_common.glsl
+    ${CMAKE_SOURCE_DIR}/shaders/lighting.glsl
+    ${CMAKE_SOURCE_DIR}/shaders/clouds.glsl)
+foreach(_sh fullscreen.vert macro.frag mesh.vert mesh.frag billboard.vert tree.frag sky.frag shadow_mesh.vert shadow_mesh.frag shadow_bb.vert shadow_tree.frag water.vert water.frag struct.vert struct.frag struct_cyl.vert shadow_cyl.vert shadow_struct.vert shadow_struct.frag npc.frag shadow_npc.frag creature.frag shadow_creature.frag particle.vert particle.frag precip.frag)
+    add_custom_command(
+        OUTPUT ${_timaert_spv_dir}/${_sh}.spv
+        COMMAND ${Vulkan_GLSLC_EXECUTABLE} -O
+            ${CMAKE_SOURCE_DIR}/shaders/${_sh}
+            -o ${_timaert_spv_dir}/${_sh}.spv
+        DEPENDS ${CMAKE_SOURCE_DIR}/shaders/${_sh} ${_timaert_shader_incs}
+        COMMENT "glslc ${_sh}")
+    list(APPEND _timaert_spv_files ${_timaert_spv_dir}/${_sh}.spv)
+endforeach()
+add_custom_target(timaert_shaders DEPENDS ${_timaert_spv_files})
+add_dependencies(${PROJECT_NAME} timaert_shaders)
 
-    add_executable(gpu_smoke tests/gpu_smoke.cpp ${TIMAERT_GPU_SOURCES}
-        ${imgui_SOURCE_DIR}/imgui.cpp
-        ${imgui_SOURCE_DIR}/imgui_draw.cpp
-        ${imgui_SOURCE_DIR}/imgui_tables.cpp
-        ${imgui_SOURCE_DIR}/imgui_widgets.cpp
-        ${imgui_SOURCE_DIR}/imgui_demo.cpp
-        ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp
-        ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp)
-    add_dependencies(gpu_smoke timaert_shaders)
-    set_target_properties(gpu_smoke PROPERTIES
-        CXX_STANDARD 23
-        CXX_STANDARD_REQUIRED ON
-        CXX_EXTENSIONS OFF)
-    target_include_directories(gpu_smoke PRIVATE ${CMAKE_SOURCE_DIR}/src
-        ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
-    target_link_libraries(gpu_smoke PRIVATE SDL2::SDL2 Vulkan::Vulkan)
-    if(NOT MSVC)
-        target_compile_options(gpu_smoke PRIVATE -fno-rtti -fno-exceptions)
-    endif()
+add_executable(gpu_smoke tests/gpu_smoke.cpp ${TIMAERT_GPU_SOURCES}
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${imgui_SOURCE_DIR}/imgui_demo.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp)
+add_dependencies(gpu_smoke timaert_shaders)
+set_target_properties(gpu_smoke PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(gpu_smoke PRIVATE ${CMAKE_SOURCE_DIR}/src
+    ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
+target_link_libraries(gpu_smoke PRIVATE SDL2::SDL2 Vulkan::Vulkan)
+if(NOT MSVC)
+    target_compile_options(gpu_smoke PRIVATE -fno-rtti -fno-exceptions)
+endif()
 
-    # Phase 5 subworld 3D foundation harness (depth + mesh pipeline + camera).
-    # Carries the real PaperdollAtlas (npc.frag set1 contract) — hence the two
-    # assets TUs and the stb include dir.
-    add_executable(gpu_smoke3d tests/gpu_smoke3d.cpp ${TIMAERT_GPU_SOURCES}
-        src/assets/paperdoll_atlas.cpp
-        src/assets/character_paperdoll.cpp)
-    add_dependencies(gpu_smoke3d timaert_shaders)
-    set_target_properties(gpu_smoke3d PROPERTIES
-        CXX_STANDARD 23
-        CXX_STANDARD_REQUIRED ON
-        CXX_EXTENSIONS OFF)
-    target_include_directories(gpu_smoke3d PRIVATE
-        ${CMAKE_SOURCE_DIR}/src ${stb_SOURCE_DIR})
-    target_link_libraries(gpu_smoke3d PRIVATE SDL2::SDL2 Vulkan::Vulkan)
-    if(NOT MSVC)
-        target_compile_options(gpu_smoke3d PRIVATE -fno-rtti -fno-exceptions)
-    endif()
+# Phase 5 subworld 3D foundation harness (depth + mesh pipeline + camera).
+# Carries the real PaperdollAtlas (npc.frag set1 contract) — hence the two
+# assets TUs and the stb include dir.
+add_executable(gpu_smoke3d tests/gpu_smoke3d.cpp ${TIMAERT_GPU_SOURCES}
+    src/assets/paperdoll_atlas.cpp
+    src/assets/character_paperdoll.cpp)
+add_dependencies(gpu_smoke3d timaert_shaders)
+set_target_properties(gpu_smoke3d PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(gpu_smoke3d PRIVATE
+    ${CMAKE_SOURCE_DIR}/src ${stb_SOURCE_DIR})
+target_link_libraries(gpu_smoke3d PRIVATE SDL2::SDL2 Vulkan::Vulkan)
+if(NOT MSVC)
+    target_compile_options(gpu_smoke3d PRIVATE -fno-rtti -fno-exceptions)
+endif()
 
-    # Offscreen macro-map screenshot tool: renders the shipping macro.frag via
-    # MacroRendererVk into an offscreen image and dumps PPM frames (headless
-    # visual-regression capture for the 2D world map). Faithful mountain mask is
-    # derived in-tool, so it links only the GPU + macro-render + terrain synth
-    # sources -- no spawners/politik/pathfinding chain.
-    add_executable(macro_shot tests/macro_shot.cpp ${TIMAERT_GPU_SOURCES}
-        src/macro/vk_macro_renderer.cpp
-        src/macro/map_generator.cpp
-        src/macro/tree_layer.cpp)
-    add_dependencies(macro_shot timaert_shaders)
-    set_target_properties(macro_shot PROPERTIES
-        CXX_STANDARD 23
-        CXX_STANDARD_REQUIRED ON
-        CXX_EXTENSIONS OFF)
-    target_include_directories(macro_shot PRIVATE ${CMAKE_SOURCE_DIR}/src)
-    target_link_libraries(macro_shot PRIVATE SDL2::SDL2 Vulkan::Vulkan)
-    if(NOT MSVC)
-        target_compile_options(macro_shot PRIVATE -fno-rtti -fno-exceptions)
-    endif()
+# Offscreen macro-map screenshot tool: renders the shipping macro.frag via
+# MacroRendererVk into an offscreen image and dumps PPM frames (headless
+# visual-regression capture for the 2D world map). Faithful mountain mask is
+# derived in-tool, so it links only the GPU + macro-render + terrain synth
+# sources -- no spawners/politik/pathfinding chain.
+add_executable(macro_shot tests/macro_shot.cpp ${TIMAERT_GPU_SOURCES}
+    src/macro/vk_macro_renderer.cpp
+    src/macro/map_generator.cpp
+    src/macro/tree_layer.cpp)
+add_dependencies(macro_shot timaert_shaders)
+set_target_properties(macro_shot PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(macro_shot PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(macro_shot PRIVATE SDL2::SDL2 Vulkan::Vulkan)
+if(NOT MSVC)
+    target_compile_options(macro_shot PRIVATE -fno-rtti -fno-exceptions)
 endif()
 
 # ── ONE way to declare a test ──────────────────────────────────────────────
@@ -349,14 +339,12 @@ function(timaert_test _name)
     if(_t_LINK_ENTT)
         target_link_libraries(${_name} PRIVATE EnTT::EnTT)
     endif()
-    if(NOT EMSCRIPTEN)
-        if(_t_LINK_SDL OR _t_LINK_MIXER)
-            target_link_libraries(${_name} PRIVATE SDL2::SDL2)
-        endif()
-        if(_t_LINK_MIXER AND NOT TIMAERT_SDL2_MIXER_TARGET STREQUAL "")
-            target_link_libraries(${_name} PRIVATE ${TIMAERT_SDL2_MIXER_TARGET})
-            target_compile_definitions(${_name} PRIVATE TIMAERT_HAS_SDL_MIXER=1)
-        endif()
+    if(_t_LINK_SDL OR _t_LINK_MIXER)
+        target_link_libraries(${_name} PRIVATE SDL2::SDL2)
+    endif()
+    if(_t_LINK_MIXER AND NOT TIMAERT_SDL2_MIXER_TARGET STREQUAL "")
+        target_link_libraries(${_name} PRIVATE ${TIMAERT_SDL2_MIXER_TARGET})
+        target_compile_definitions(${_name} PRIVATE TIMAERT_HAS_SDL_MIXER=1)
     endif()
     # Declared here, so a BUILT test is a RUN test. No second list to forget.
     add_test(NAME ${_name} COMMAND ${_name})
