@@ -1806,6 +1806,32 @@ void boot_world(App& app, std::uint32_t seed,
     app.terrain = sm::generate_terrain(app.gs.mapW, app.gs.mapH, lp);
     boot_trace("terrain generated");
 
+    // The owner's causality IS the boot order: terrain → climate → RESOURCES →
+    // and only then settlement. Trees and deposits are pure functions of
+    // terrain + seed (neither reads politik), so they are derived before the
+    // political layer — settlement placement reads them (R2).
+    app.trees = sm::spawn_trees(app.terrain, app.gs.worldSeed, 0.18f, lp.seaLevel);
+    boot_trace("trees spawned");
+    // The per-cell tree-count layer: the spawn_trees massif mask (the organic
+    // FBM лесные массивы) carries the forest term, biomes add a small
+    // ambience (16384 = the golden densest massif interior). New game ⇒ no
+    // overrides; the load path re-applies gs.treeOverrides after the swap.
+    {
+        std::vector<std::uint8_t> forestMask(
+            std::size_t(app.gs.mapW) * std::size_t(app.gs.mapH), 0);
+        for (const auto& t : app.trees) {
+            const std::size_t i = std::size_t(sm::wrapi(t.y, app.gs.mapH))
+                                * std::size_t(app.gs.mapW)
+                                + std::size_t(sm::wrapi(t.x, app.gs.mapW));
+            if (i < forestMask.size()) forestMask[i] = 1;
+        }
+        app.treeLayer = sm::build_tree_layer(app.terrain, forestMask.data(),
+                                             forestMask.size());
+    }
+    app.deposits = sm::build_deposit_layer(app.terrain, app.gs.worldSeed,
+                                           lp.seaLevel);
+    boot_trace("resource layers built");
+
     app.gs.politik = sm::generate_politik(app.gs.worldSeed, app.gs.mapW, app.gs.mapH,
                                           &app.terrain, std::uint8_t(lp.seaLevel * 255.0f),
                                           targetTotalCities);
@@ -1816,8 +1842,6 @@ void boot_world(App& app, std::uint32_t seed,
                                         std::uint8_t(lp.seaLevel * 255.0f));
     boot_trace("landmarks populated");
 
-    app.trees = sm::spawn_trees(app.terrain, app.gs.worldSeed, 0.18f, lp.seaLevel);
-    boot_trace("trees spawned");
     sm::RoadTraceStats roadStats;
     auto roads = sm::trace_roads(app.terrain, app.gs.politik, &roadStats, lp.seaLevel);
     if (boot_trace_enabled()) {
@@ -1872,24 +1896,6 @@ void boot_world(App& app, std::uint32_t seed,
                                  lp.seaLevel);
     }
     sm::build_tree_grid(app.treeGrid, app.trees, app.gs.mapW, app.gs.mapH);
-    // The per-cell tree-count layer: the spawn_trees massif mask (the organic
-    // FBM лесные массивы) carries the forest term, biomes add a small
-    // ambience (16384 = the golden densest massif interior). New game ⇒ no
-    // overrides; the load path re-applies gs.treeOverrides after the swap.
-    {
-        std::vector<std::uint8_t> forestMask(
-            std::size_t(app.gs.mapW) * std::size_t(app.gs.mapH), 0);
-        for (const auto& t : app.trees) {
-            const std::size_t i = std::size_t(sm::wrapi(t.y, app.gs.mapH))
-                                * std::size_t(app.gs.mapW)
-                                + std::size_t(sm::wrapi(t.x, app.gs.mapW));
-            if (i < forestMask.size()) forestMask[i] = 1;
-        }
-        app.treeLayer = sm::build_tree_layer(app.terrain, forestMask.data(),
-                                             forestMask.size());
-    }
-    app.deposits = sm::build_deposit_layer(app.terrain, app.gs.worldSeed,
-                                           lp.seaLevel);
     boot_trace("features and tree grid built");
 
     std::vector<sm::ZoneSeed> zsCities, zsVills;
