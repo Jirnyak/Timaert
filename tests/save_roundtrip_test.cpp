@@ -12,6 +12,8 @@
 
 #include <cstdint>
 #include <cstdio>
+#include "check.h"
+
 #include <cstdlib>
 #include <cmath>
 #include <string>
@@ -19,10 +21,16 @@
 
 namespace {
 
-int fail(const char* msg) {
-    std::fprintf(stderr, "FAIL save_roundtrip_test: %s\n", msg);
-    return 1;
-}
+// The charged `int fail()` is dead (Testing law #1: tests/check.h is the
+// only way to fail). A gate that trips records into the ONE counter nothing
+// can invert, then bails exactly as the old flow did; reaching the end of
+// run_roundtrip() records the single positive check, so a run that bailed
+// early can never read as green and a run that ran nothing fails by count.
+#define FAIL_BAIL(msg)                                              \
+    do {                                                            \
+        ::sm::test::check(false, (msg), __FILE__, __LINE__);        \
+        return;                                                     \
+    } while (0)
 
 std::string join_path(const std::string& dir, const char* name) {
     if (dir.empty()) return name;
@@ -481,11 +489,9 @@ sm::Quest make_quest(const char* id) {
     return q;
 }
 
-} // namespace
-
-int main() {
+void run_roundtrip() {
     if (static_cast<std::uint8_t>(sm::GameSubStateKind::Event) != 4u) {
-        return fail("unexpected sub-state enum layout");
+        FAIL_BAIL("unexpected sub-state enum layout");
     }
 
     const std::string path = temp_save_path("timaert_save_roundtrip_v8.bin");
@@ -505,31 +511,31 @@ int main() {
     sm::QuestEngine questEngine;
     std::vector<sm::Quest> quests;
     questEngine.accept(quests, make_quest("q_active"), gs.player, bus);
-    if (quests.size() != 1) return fail("QuestEngine::accept did not activate quest");
+    if (quests.size() != 1) FAIL_BAIL("QuestEngine::accept did not activate quest");
     bool sawQuestStart = false;
     for (const auto& ev : bus.tick_events())
         sawQuestStart = sawQuestStart || ev.tag == sm::EventTag::QuestStart;
     if (!sawQuestStart) {
-        return fail("QuestEngine::accept did not emit QuestStart");
+        FAIL_BAIL("QuestEngine::accept did not emit QuestStart");
     }
 
     const std::vector<sm::MacroNpcRecord> macroFixture = make_macro_records();
     if (!sm::save_game(gs, quests, macroFixture, treeCounts, deposits,
                        path)) {
-        return fail("save_game returned false");
+        FAIL_BAIL("save_game returned false");
     }
 
     std::vector<std::uint8_t> bytes;
-    if (!read_all(path, bytes)) return fail("save file unreadable");
-    if (bytes.empty()) return fail("save file is empty");
+    if (!read_all(path, bytes)) FAIL_BAIL("save file unreadable");
+    if (bytes.empty()) FAIL_BAIL("save file is empty");
 
     const sm::SaveSummary summary = sm::inspect_save(path);
-    if (summary.status != sm::SaveInspectStatus::Ready) return fail("inspect not ready");
-    if (summary.version != sm::kSaveVersion) return fail("version mismatch");
-    if (summary.worldSeed != gs.worldSeed) return fail("summary seed mismatch");
-    if (summary.day != gs.worldTime.day()) return fail("summary day mismatch");
-    if (summary.saveName != "roundtrip") return fail("summary save name mismatch");
-    if (!valid_saved_at(summary.savedAt)) return fail("summary savedAt invalid");
+    if (summary.status != sm::SaveInspectStatus::Ready) FAIL_BAIL("inspect not ready");
+    if (summary.version != sm::kSaveVersion) FAIL_BAIL("version mismatch");
+    if (summary.worldSeed != gs.worldSeed) FAIL_BAIL("summary seed mismatch");
+    if (summary.day != gs.worldTime.day()) FAIL_BAIL("summary day mismatch");
+    if (summary.saveName != "roundtrip") FAIL_BAIL("summary save name mismatch");
+    if (!valid_saved_at(summary.savedAt)) FAIL_BAIL("summary savedAt invalid");
 
     sm::GameState loaded{};
     std::vector<sm::Quest> loadedQuests;
@@ -538,196 +544,196 @@ int main() {
     sm::DepositLayer loadedDeposits;
     if (!sm::load_game(loaded, loadedQuests, loadedMacro, loadedTrees,
                        loadedDeposits, path)) {
-        return fail("load_game failed");
+        FAIL_BAIL("load_game failed");
     }
-    if (loaded.version != sm::kSaveVersion) return fail("loaded version mismatch");
-    if (loaded.saveName != "roundtrip") return fail("save name lost");
-    if (loaded.savedAt != summary.savedAt) return fail("savedAt lost");
-    if (loaded.worldSeed != gs.worldSeed) return fail("world seed lost");
-    if (loaded.mapW != 512 || loaded.mapH != 256) return fail("map size lost");
-    if (loaded.cityCountTarget != 77) return fail("city target lost");
+    if (loaded.version != sm::kSaveVersion) FAIL_BAIL("loaded version mismatch");
+    if (loaded.saveName != "roundtrip") FAIL_BAIL("save name lost");
+    if (loaded.savedAt != summary.savedAt) FAIL_BAIL("savedAt lost");
+    if (loaded.worldSeed != gs.worldSeed) FAIL_BAIL("world seed lost");
+    if (loaded.mapW != 512 || loaded.mapH != 256) FAIL_BAIL("map size lost");
+    if (loaded.cityCountTarget != 77) FAIL_BAIL("city target lost");
     if (!nearf(loaded.mapParams.seaLevel, 0.55f)
         || !nearf(loaded.mapParams.heightScale, 1.25f)
         || !nearf(loaded.mapParams.moistureScale, 0.75f)) {
-        return fail("map params lost");
+        FAIL_BAIL("map params lost");
     }
     if (loaded.worldTime.day() != 12 || loaded.worldTime.hour() != 13
         || loaded.worldTime.minute() != 14) {
-        return fail("world time lost");
+        FAIL_BAIL("world time lost");
     }
     if (loaded.lastWorldRebakeDay != 9) {
-        return fail("lastWorldRebakeDay (autosave phase) lost");
+        FAIL_BAIL("lastWorldRebakeDay (autosave phase) lost");
     }
     if (loaded.nextMacroSpawnOrdinal != 41) {
-        return fail("nextMacroSpawnOrdinal (identity issuer) lost");
+        FAIL_BAIL("nextMacroSpawnOrdinal (identity issuer) lost");
     }
     if (loaded.worldTickRt.pendingDailyTicks != 3
         || loaded.worldTickRt.nextDailyTickDay != 13
         || loaded.worldTickRt.subworldStepRemainder != 11
         || loaded.worldTickRt.jitter.state != 0xDEADBEEFu) {
-        return fail("world-tick runtime (queue/remainder/jitter) lost");
+        FAIL_BAIL("world-tick runtime (queue/remainder/jitter) lost");
     }
     if (loaded.macroAiRhythm.jitter.state != 0xFEEDF00Du
         || loaded.macroAiRhythm.sweepAccum != 21
         || loaded.macroAiRhythm.pendingSweeps != 2
         || loaded.macroAiRhythm.sweepCursor != 57) {
-        return fail("macro-AI rhythm lost");
+        FAIL_BAIL("macro-AI rhythm lost");
     }
     if (loaded.logicNodesRegistered.size() != 2
         || loaded.logicNodesRegistered[0] != "plot_chapter_1"
         || loaded.logicNodesActive.size() != 1
         || loaded.logicNodesActive[0] != "plot_chapter_1") {
-        return fail("story progress (logic nodes) lost");
+        FAIL_BAIL("story progress (logic nodes) lost");
     }
 
     // ── The macro-ECS snapshot (v23) round-trips record-for-record ────────
     if (loadedMacro.size() != macroFixture.size()) {
-        return fail("macro snapshot record count lost");
+        FAIL_BAIL("macro snapshot record count lost");
     }
     {
         const sm::MacroNpcRecord& a = loadedMacro[0];
         const sm::MacroNpcRecord& want = macroFixture[0];
-        if (a.spawnId.index != want.spawnId.index) return fail("macro ordinal lost");
+        if (a.spawnId.index != want.spawnId.index) FAIL_BAIL("macro ordinal lost");
         if (a.pos.x != want.pos.x || a.pos.y != want.pos.y) {
-            return fail("macro position lost");
+            FAIL_BAIL("macro position lost");
         }
         if (a.kind.type != want.kind.type
             || a.kind.factionIdx != want.kind.factionIdx) {
-            return fail("macro kind/faction lost");
+            FAIL_BAIL("macro kind/faction lost");
         }
         if (a.health.hp != want.health.hp || a.health.maxHp != want.health.maxHp) {
-            return fail("macro wounds lost");
+            FAIL_BAIL("macro wounds lost");
         }
-        if (a.level.value != want.level.value) return fail("macro level lost");
-        if (a.runtime.sp != -25) return fail("macro SP debt lost");
-        if (a.runtime.xp != 555) return fail("macro leader xp lost");
+        if (a.level.value != want.level.value) FAIL_BAIL("macro level lost");
+        if (a.runtime.sp != -25) FAIL_BAIL("macro SP debt lost");
+        if (a.runtime.xp != 555) FAIL_BAIL("macro leader xp lost");
         if (a.runtime.targetX != want.runtime.targetX
             || a.runtime.state != want.runtime.state
             || a.runtime.entryDir != want.runtime.entryDir
             || a.runtime.tickAccum != want.runtime.tickAccum) {
-            return fail("macro runtime state lost");
+            FAIL_BAIL("macro runtime state lost");
         }
         if (a.traits.count != 2 || a.traits.traits[1] != 4) {
-            return fail("macro traits lost");
+            FAIL_BAIL("macro traits lost");
         }
         if (a.character.visualSeed != 0xABCD1234u
             || a.character.nameIdx != 7) {
-            return fail("macro character identity lost");
+            FAIL_BAIL("macro character identity lost");
         }
         if (a.hasOrders != 1 || a.orders.waypointCount != 2
             || a.orders.currentWaypoint != 1
             || a.orders.waypoints[3] != 8) {
-            return fail("macro squad orders lost");
+            FAIL_BAIL("macro squad orders lost");
         }
-        if (a.dead != 0) return fail("living macro NPC loaded dead");
+        if (a.dead != 0) FAIL_BAIL("living macro NPC loaded dead");
         if (a.inventory.stacks.size() != 1
             || a.inventory.stacks[0].id != "itm_bread"
             || a.inventory.stacks[0].count != 3) {
-            return fail("macro inventory lost");
+            FAIL_BAIL("macro inventory lost");
         }
         if (a.roster.size() != 2
             || a.roster[0].kind != std::uint8_t(sm::NPCType::Guard)
             || a.roster[0].level != 4
             || a.roster[1].entityId != 901u) {
-            return fail("macro roster lost");
+            FAIL_BAIL("macro roster lost");
         }
     }
     if (loadedMacro[1].dead != 1 || loadedMacro[1].health.hp != 0.0f) {
-        return fail("the killed lord did not stay dead across the save");
+        FAIL_BAIL("the killed lord did not stay dead across the save");
     }
     if (loaded.worldTime.tick != gs.worldTime.tick) {
-        return fail("world time not exact to the tick");
+        FAIL_BAIL("world time not exact to the tick");
     }
 
     const sm::PlayerState& p = loaded.player;
-    if (p.name != "Tester") return fail("player name lost");
+    if (p.name != "Tester") FAIL_BAIL("player name lost");
     if (p.ageDays != 1234 || !nearf(p.x, 41.5f) || !nearf(p.y, 82.25f)) {
-        return fail("player position or age lost");
+        FAIL_BAIL("player position or age lost");
     }
-    if (sm::wallet_value(p.inventory) != 999) return fail("player coin lost");
+    if (sm::wallet_value(p.inventory) != 999) FAIL_BAIL("player coin lost");
     {
         const sm::MemoryEntry* debt = sm::recall(
             p.memory, sm::AgentMemoryKind::Debt, 7, sm::kDebtToSettlement);
         if (!debt || sm::memory_amount(*debt) != 15) {
-            return fail("the player's debt fact lost");
+            FAIL_BAIL("the player's debt fact lost");
         }
     }
     if (p.sheet.attributes.str != 7 || p.sheet.attributes.intl != 11 || p.sheet.attributes.spd != 15) {
-        return fail("player attributes lost");
+        FAIL_BAIL("player attributes lost");
     }
     if (p.sheet.skills.bodybuilding != 1 || p.sheet.skills.spellcraft != 6
         || p.sheet.skills.weightlifting != 7) {
-        return fail("player skills lost");
+        FAIL_BAIL("player skills lost");
     }
     if (p.sheet.levelData.level != 6 || p.sheet.levelData.exp != 321
         || p.sheet.levelData.expToNext != 6543
         || p.sheet.levelData.attributePoints != 4
         || p.sheet.levelData.skillPoints != 5
         || p.sheet.levelData.perkPoints != 6) {
-        return fail("player level data lost");
+        FAIL_BAIL("player level data lost");
     }
     if (p.combatStats.currentHp != 33 || p.combatStats.maxMp != 222
         || !nearf(p.combatStats.spRegen, 3.75f)) {
-        return fail("player combat stats lost");
+        FAIL_BAIL("player combat stats lost");
     }
     if (!sm::has_perk(p.sheet.perks, sm::PerkID::Natural)
         || !sm::has_perk(p.sheet.perks, sm::PerkID::Educated)) {
-        return fail("player perks lost");
+        FAIL_BAIL("player perks lost");
     }
     if (p.inventory.count("misc_gem") != 3 || p.inventory.count("bread") != 11) {
-        return fail("inventory lost");
+        FAIL_BAIL("inventory lost");
     }
     if (sm::player_reputation(&loaded, "guild") != 42) {
-        return fail("player standing lost (his row in the faction matrix)");
+        FAIL_BAIL("player standing lost (his row in the faction matrix)");
     }
     if (sm::faction_relation(&loaded, "guild", sm::kPlayerFactionId) != 42) {
-        return fail("player standing is not symmetric after a save round-trip");
+        FAIL_BAIL("player standing is not symmetric after a save round-trip");
     }
     if (p.entryDir != sm::pack_entry_dir(0, 1) || p.entryTicks != 7) {
-        return fail("entry-side context lost");
+        FAIL_BAIL("entry-side context lost");
     }
     if (sm::count_soldiers_of_kind(
             p.army, static_cast<std::uint8_t>(sm::NPCType::Peasant)) != 4
         || sm::count_soldiers_of_kind(
             p.army, static_cast<std::uint8_t>(sm::NPCType::Guard)) != 3) {
-        return fail("player army lost");
+        FAIL_BAIL("player army lost");
     }
     bool foundNormalizedSoldier = false;
     for (const auto& soldier : p.army.members) {
         if (soldier.entityId == 9999u) {
-            if (soldier.level != 1) return fail("soldier level not normalized on save");
+            if (soldier.level != 1) FAIL_BAIL("soldier level not normalized on save");
             foundNormalizedSoldier = true;
         }
     }
-    if (!foundNormalizedSoldier) return fail("normalized soldier lost");
+    if (!foundNormalizedSoldier) FAIL_BAIL("normalized soldier lost");
     if (!has_string(p.codexUnlocked, "codex.alpha")
         || p.eventLog.empty() || p.eventLog[0].message != "saved event") {
-        return fail("codex or event log lost");
+        FAIL_BAIL("codex or event log lost");
     }
     if (!sm::spellbook_has_learned(p.spellBook, "spell.spark")
         || !sm::spellbook_has_learned(p.spellBook, "haste")) {
-        return fail("spell learned state lost");
+        FAIL_BAIL("spell learned state lost");
     }
     if (p.spellBook.activeSpellId != "spell.spark") {
-        return fail("active spell lost");
+        FAIL_BAIL("active spell lost");
     }
     const auto cdIt = p.spellBook.cooldowns.find("spell.spark");
     if (cdIt == p.spellBook.cooldowns.end() || !nearf(cdIt->second, 2.5f)) {
-        return fail("spell cooldown lost");
+        FAIL_BAIL("spell cooldown lost");
     }
     if (!sm::spellbook_has_sustained(p.spellBook, "haste")) {
-        return fail("sustained spell state lost");
+        FAIL_BAIL("sustained spell state lost");
     }
     const auto peaceIt = p.factionPeaceUntilDay.find("guild");
     if (peaceIt == p.factionPeaceUntilDay.end() || peaceIt->second != 55
         || p.completedQuestIds.empty() || p.completedQuestIds[0] != "q_done_round") {
-        return fail("quest completion or peace state lost");
+        FAIL_BAIL("quest completion or peace state lost");
     }
     if (p.failedQuestIds.empty() || p.failedQuestIds[0] != "q_failed_round") {
-        return fail("failed quest ledger lost");
+        FAIL_BAIL("failed quest ledger lost");
     }
     if (loaded.settlements.empty() || loaded.settlements[0].population != 777) {
-        return fail("settlement lost");
+        FAIL_BAIL("settlement lost");
     }
     const sm::Settlement& city = loaded.settlements[0];
     if (city.name != "Round City" || city.mood != sm::SettlementMood::Tense
@@ -735,67 +741,67 @@ int main() {
         || city.history.days.size() != 2 || city.history.population[1] != 777
         || sm::count_soldiers_of_kind(
             city.garrison, static_cast<std::uint8_t>(sm::NPCType::Peasant)) != 1) {
-        return fail("settlement details lost");
+        FAIL_BAIL("settlement details lost");
     }
     if (city.starvedYesterday != 12 || city.unmetYesterday != 34
         || city.famineActive != 1 || !nearf(city.popGrowthCarry, 0.375f)) {
-        return fail("settlement honest-day readouts (v29) lost");
+        FAIL_BAIL("settlement honest-day readouts (v29) lost");
     }
     if (loaded.villages.empty()
         || loaded.villages[0].starvedYesterday != 5
         || loaded.villages[0].unmetYesterday != 7
         || loaded.villages[0].famineActive != 1
         || !nearf(loaded.villages[0].popGrowthCarry, -0.25f)) {
-        return fail("village honest-day readouts (v29) lost");
+        FAIL_BAIL("village honest-day readouts (v29) lost");
     }
     if (loaded.spires.empty() || !loaded.spires[0].depleted
         || loaded.spires[0].spellId != 99) {
-        return fail("spire lost");
+        FAIL_BAIL("spire lost");
     }
     if (loaded.markers.empty() || loaded.markers[0].id != "marker.round"
         || loaded.markers[0].style != sm::MarkerStyle::Danger) {
-        return fail("marker lost");
+        FAIL_BAIL("marker lost");
     }
     const auto factionIt = loaded.factions.find("guild");
-    if (factionIt == loaded.factions.end()) return fail("faction lost");
+    if (factionIt == loaded.factions.end()) FAIL_BAIL("faction lost");
     const auto relationIt = factionIt->second.relations.find("other");
     if (relationIt == factionIt->second.relations.end() || relationIt->second != -5) {
-        return fail("faction relation lost");
+        FAIL_BAIL("faction relation lost");
     }
     if (loaded.subState.kind != sm::GameSubStateKind::Trading
         || loaded.subState.settlementId != 7
         || loaded.subState.pendingEncounterIdx != 4) {
-        return fail("sub-state lost");
+        FAIL_BAIL("sub-state lost");
     }
     if (sm::count_soldiers_of_kind(
             loaded.deserterPool, static_cast<std::uint8_t>(sm::NPCType::Woodcutter)) != 2) {
-        return fail("deserter pool lost");
+        FAIL_BAIL("deserter pool lost");
     }
     for (std::size_t k = 0; k < std::size_t(sm::kDepositKindCount); ++k) {
         if (loadedDeposits.cells[k] != deposits.cells[k]) {
-            return fail("deposit cells lost (kind block mismatch)");
+            FAIL_BAIL("deposit cells lost (kind block mismatch)");
         }
     }
     if (loadedDeposits.cells[std::size_t(sm::DepositKind::Iron)].at(100u) != 0
         || loadedDeposits.cells[std::size_t(sm::DepositKind::Stone)].at(100u)
                != 60000) {
-        return fail("the dry vein and its host quarry did not both survive");
+        FAIL_BAIL("the dry vein and its host quarry did not both survive");
     }
-    if (loadedTrees != treeCounts) return fail("tree grid lost");
+    if (loadedTrees != treeCounts) FAIL_BAIL("tree grid lost");
     if (loadedTrees.at(7) != 0u || loadedTrees.at(17) != 12000u) {
-        return fail("felled/thickened tree cells did not round-trip");
+        FAIL_BAIL("felled/thickened tree cells did not round-trip");
     }
     if (loaded.resourceScars[std::size_t(sm::ResourceFieldId::Fauna)].size() != 2
         || loaded.resourceScars[std::size_t(sm::ResourceFieldId::Fauna)].at(42u * 1024u + 17u) != 3u
         || loaded.resourceScars[std::size_t(sm::ResourceFieldId::Fauna)].at(11u) != 0u) {
-        return fail("fauna overrides lost");
+        FAIL_BAIL("fauna overrides lost");
     }
     if (loaded.resourceScars[std::size_t(sm::ResourceFieldId::Wheat)].size() != 1
         || loaded.resourceScars[std::size_t(sm::ResourceFieldId::Wheat)].at(23u * 1024u + 5u) != 12u) {
-        return fail("crop harvest scars lost");
+        FAIL_BAIL("crop harvest scars lost");
     }
     if (loadedQuests.size() != 1 || loadedQuests[0].id != "q_active") {
-        return fail("active quest lost");
+        FAIL_BAIL("active quest lost");
     }
     if (!loadedQuests[0].objectives.empty()) {
         const sm::Objective& o = loadedQuests[0].objectives[0];
@@ -804,7 +810,7 @@ int main() {
             || o.targetSettlementId != 9 || o.npcType != 11
             || o.count != 3 || o.killed != 1 || o.zoneRadius != 2.5f
             || o.action != "chop") {
-            return fail("objective fields lost");
+            FAIL_BAIL("objective fields lost");
         }
     }
     if (loadedQuests[0].objectives.empty()
@@ -853,11 +859,11 @@ int main() {
         || loadedQuests[0].onAccept[11].tag != sm::EventTag::TimeAdvance
         || loadedQuests[0].onAccept[11].fx != 12.5f
         || loadedQuests[0].onAccept[11].fy != 18.25f) {
-        return fail("active quest details lost");
+        FAIL_BAIL("active quest details lost");
     }
 
     if (!write_all(truncatedPath, bytes, bytes.size() / 2u)) {
-        return fail("could not write truncated file");
+        FAIL_BAIL("could not write truncated file");
     }
     sm::GameState sentinel{};
     sentinel.mapW = 11;
@@ -868,37 +874,37 @@ int main() {
     sentinelQuests.push_back(make_quest("sentinel"));
     if (sm::load_game(sentinel, sentinelQuests, sentinelMacro, sentinelTrees,
                       sentinelDeposits, truncatedPath)) {
-        return fail("truncated payload accepted");
+        FAIL_BAIL("truncated payload accepted");
     }
     if (sentinel.mapW != 11 || sentinelQuests[0].id != "sentinel"
         || sentinelTrees.size() != 3) {
-        return fail("failed truncated load mutated state");
+        FAIL_BAIL("failed truncated load mutated state");
     }
 
     std::vector<std::uint8_t> corrupt = bytes;
-    if (corrupt.size() <= 20u) return fail("header too small");
+    if (corrupt.size() <= 20u) FAIL_BAIL("header too small");
     corrupt[corrupt.size() - 1u] ^= 0x5au;
     if (!write_all(corruptPath, corrupt, corrupt.size())) {
-        return fail("could not write corrupt file");
+        FAIL_BAIL("could not write corrupt file");
     }
     sentinel.mapW = 22;
     sentinelQuests[0].id = "sentinel_corrupt";
     if (sm::load_game(sentinel, sentinelQuests, sentinelMacro, sentinelTrees,
                       sentinelDeposits, corruptPath)) {
-        return fail("corrupt payload accepted");
+        FAIL_BAIL("corrupt payload accepted");
     }
     if (sentinel.mapW != 22 || sentinelQuests[0].id != "sentinel_corrupt") {
-        return fail("failed corrupt load mutated state");
+        FAIL_BAIL("failed corrupt load mutated state");
     }
 
     std::vector<std::uint8_t> badVersion = bytes;
-    if (badVersion.size() < 8u) return fail("header too small for version");
+    if (badVersion.size() < 8u) FAIL_BAIL("header too small for version");
     badVersion[4] = 0x0f;
     badVersion[5] = 0x27;
     badVersion[6] = 0x00;
     badVersion[7] = 0x00;
     if (!write_all(badVersionPath, badVersion, badVersion.size())) {
-        return fail("could not write bad version file");
+        FAIL_BAIL("could not write bad version file");
     }
     sm::GameState badState{};
     std::vector<sm::Quest> badQuests;
@@ -907,11 +913,11 @@ int main() {
     sm::DepositLayer badDeposits;
     if (sm::load_game(badState, badQuests, badMacro, badTrees, badDeposits,
                       badVersionPath)) {
-        return fail("bad version accepted");
+        FAIL_BAIL("bad version accepted");
     }
     const sm::SaveSummary badSummary = sm::inspect_save(badVersionPath);
     if (badSummary.status != sm::SaveInspectStatus::VersionMismatch) {
-        return fail("bad version inspect status wrong");
+        FAIL_BAIL("bad version inspect status wrong");
     }
 
     sm::GameState invalidSquadState = gs;
@@ -920,7 +926,7 @@ int main() {
     if (sm::save_game(invalidSquadState, quests, macroFixture, treeCounts,
                       deposits,
                       temp_save_path("timaert_invalid_squad_save.bin"))) {
-        return fail("invalid squad kind saved");
+        FAIL_BAIL("invalid squad kind saved");
     }
 
     // A macro record with a garbage NPC type must refuse to save — the same
@@ -930,7 +936,7 @@ int main() {
         invalidMacro[0].kind.type = std::uint16_t(sm::NPCType::Count);
         if (sm::save_game(gs, quests, invalidMacro, treeCounts, deposits,
                           temp_save_path("timaert_invalid_macro_save.bin"))) {
-            return fail("invalid macro npc kind saved");
+            FAIL_BAIL("invalid macro npc kind saved");
         }
     }
 
@@ -945,20 +951,20 @@ int main() {
                             "entry " + std::to_string(i), int(i)});
     }
     if (ringState.player.eventLog.size() != sm::kMaxEventLogEntries) {
-        return fail("event-log ring did not cap at kMaxEventLogEntries");
+        FAIL_BAIL("event-log ring did not cap at kMaxEventLogEntries");
     }
     if (ringState.player.eventLog.front().message != "entry 100") {
-        return fail("event-log ring did not drop the OLDEST entries");
+        FAIL_BAIL("event-log ring did not drop the OLDEST entries");
     }
     if (ringState.player.eventLog.back().message
         != "entry " + std::to_string(sm::kMaxEventLogEntries + 99u)) {
-        return fail("event-log ring lost the newest entry");
+        FAIL_BAIL("event-log ring lost the newest entry");
     }
     const std::string ringPath = temp_save_path("timaert_ring_log_save.bin");
     remove_slot_files(ringPath);
     if (!sm::save_game(ringState, quests, macroFixture, treeCounts,
                        deposits, ringPath)) {
-        return fail("a ring-capped (full) event log must still save");
+        FAIL_BAIL("a ring-capped (full) event log must still save");
     }
     sm::GameState ringLoaded{};
     std::vector<sm::Quest> ringQuests;
@@ -967,20 +973,20 @@ int main() {
     sm::DepositLayer ringDeposits;
     if (!sm::load_game(ringLoaded, ringQuests, ringMacro, ringTrees,
                        ringDeposits, ringPath)) {
-        return fail("full-log save did not load back");
+        FAIL_BAIL("full-log save did not load back");
     }
     if (ringLoaded.player.eventLog.size() != sm::kMaxEventLogEntries
         || ringLoaded.player.eventLog.front().message != "entry 100"
         || ringLoaded.player.eventLog.back().message
            != "entry " + std::to_string(sm::kMaxEventLogEntries + 99u)) {
-        return fail("full event log did not round-trip entry-for-entry");
+        FAIL_BAIL("full event log did not round-trip entry-for-entry");
     }
     // NEGATIVE CONTROL: bypass the door and overflow — the writer must refuse,
     // proving the cap that used to silently kill saves is still enforced.
     ringState.player.eventLog.push_back({sm::LogType::World, "overflow", 0});
     if (sm::save_game(ringState, quests, macroFixture, treeCounts,
                       deposits, ringPath)) {
-        return fail("an over-cap event log saved — write guard disarmed");
+        FAIL_BAIL("an over-cap event log saved — write guard disarmed");
     }
     remove_slot_files(ringPath);
 
@@ -992,5 +998,12 @@ int main() {
     remove_slot_files(corruptPath);
     remove_slot_files(badVersionPath);
     remove_slot_files(path);
-    return 0;
+    CHECK(true, "every roundtrip gate above passed");
+}
+
+} // namespace
+
+int main() {
+    run_roundtrip();
+    return sm::test::report("save_roundtrip_test");
 }
