@@ -309,7 +309,7 @@ sampled once in the macro synth's `nightDarken` stage:
 - **Brightness** has one director knob, `kMacroGlowGain` (`macro_lighting.h`),
   applied in the bake before the `kMacroGlowCeil` clamp/encode.
 - **Upload** is surgical: `vk_macro_renderer::upload_light_field` rewrites only
-  descriptor **set 0 / binding 4**, leaving the master/feature/zone/river synth
+  descriptor **set 0 / binding 3**, leaving the master/feature/zone synth
   inputs live.
 - **Re-baked** on world-gen, save-load, and daily population drift only — never
   per frame.

@@ -107,7 +107,8 @@ the shared roll:
 
 Felling therefore closes the macro → micro → macro loop in one act: the tree
 leaves the cell's structure list, the owning macro cell's `TreeLayer` count
-drops by one through `gs.treeOverrides` (save-stable, thins the map sprite),
+drops by one through the registry's Trees row (save-stable — the living
+grid rides the save whole — and thins the map sprite),
 and the trunk becomes cargo in the player's pack.
 
 > **Status: new and unsettled.** The prop payout shipped as the first step of

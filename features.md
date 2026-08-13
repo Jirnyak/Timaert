@@ -61,17 +61,19 @@ is the ONE authority three consumers read:
   blended across the ring exactly as before — seams stay smooth.
 
 **Micro → macro writeback**: felling a tree in the subworld (a no-target melee
-swing, console `chop`, future лесорубы) removes its `Structure::Tree` from the
-owning cell + composite (`SeamlessSubworldManager::fell_tree_near`) and
-decrements the owning macro cell's count via `set_tree_count`. Mutations
-persist as **sparse overrides** (`GameState.treeOverrides`, cell → count,
-save **v13**) re-applied over the derived layer on load — derive, don't
-store, plus a mutation overlay. `TreeLayer.revision` drives a surgical
-binding-5 re-upload (`upload_tree_field`), never per frame. The writeback is
-delta-only by design: an untouched visit changes nothing, so the probabilistic
-scatter can never drift the macro counts. Locked by `tree_layer_test`
-(formula, torus build, clamps, override round-trip, scatter calibration ±20%)
-and the console-smoke `chop` block (in-game count decrement + override).
+swing, console `chop`, the woodcutter agents) removes its `Structure::Tree`
+from the owning cell + composite (`SeamlessSubworldManager::fell_tree_near`)
+and decrements the owning macro cell's count through the registry's Trees
+CARRIER row (`resource_field_apply` — [resources.md](resources.md)). The
+grid is the row's LIVING state: the save carries it whole (**v36**; the old
+sparse `treeOverrides` died with the derive-plus-overlay model, because a
+growing forest outruns its derivation). `TreeLayer.revision` drives a
+surgical binding-4 re-upload (`upload_tree_field`), never per frame. The
+writeback is delta-only by design: an untouched visit changes nothing, so
+the probabilistic scatter can never drift the macro counts. Locked by
+`tree_layer_test` (formula, torus build, clamps, v36 restore round-trip,
+scatter calibration ±20%) and the console-smoke `chop` block (in-game count
+decrement + revision).
 
 ## Data-driven extension
 

@@ -35,13 +35,18 @@ caravans find their legs.
 
 Grain = FT_Field cells; wood = the tree layer; clay / stone / iron = the
 deposit layer (cells derived from seed: clay by rivers, minerals in the
-mountains; drained-and-discovered state persists as overrides). Iron is
-FINITE — and as the world's iron runs out, the daily discovery roll rises
-(depletion × 1/8 a day) until a stone quarry strikes a new vein: world news
-in the player's journal. (Deposits are not yet DRAWN on the map — debt.)
+mountains; the living cells ride the save WHOLE since v37, one sparse map
+per KIND — a discovered vein lives IN its host quarry and deletes nothing).
+Iron is FINITE — and as the world's iron runs out, the discovery chance
+rises (depletion × 1/8 a day, now a Geology row of the ONE growth law —
+[resources.md](resources.md)) until a stone quarry strikes a new vein:
+world news in the player's journal. (Deposits are not yet DRAWN on the map
+— the future prospecting skill is the planned reveal.)
 Wildlife too is a world-cell stock (Session 16): `fauna_count` derives from
 the cell's own spawn table, the hunt scars it through the one receipt path,
-and it regrows a head a season — see [monsters.md](monsters.md).
+and beasts breed back where beasts still live (one head per 32-day epoch at
+a living edge; a valley emptied whole is extinct) — see
+[monsters.md](monsters.md) and [resources.md](resources.md).
 
 ## Work is agents
 

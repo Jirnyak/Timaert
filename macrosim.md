@@ -43,15 +43,17 @@ upkeep row. Balance baseline: 1 gold/day for the weakest hireable.
 > Города и деревни рядом с месторождением — это должно быть основой всего
 > (и генерации и организации).»
 
-Resources are PRIMARY, settlement is DERIVED. The structural half is built
-(`macro/resource_field.h`, R1 2026-08-09): every resource field of the world
-is one container — baseline = a pure function of terrain/climate + world
-seed (features and landmarks NEVER enter a baseline; a parcel only decides
-WHERE wheat potential is embodied), storage = sparse SCAR overrides in one
-dialect (taken and not yet regrown — subtracts correctly from any embodied
-yield), self-cleaning, one regrow door on the daily tick with a per-field
-cadence. Rows today: **Wheat** (fertility = the climate master's G channel)
-and **Fauna**; the macro_stock ledger rows call through the container.
+Resources are PRIMARY, settlement is DERIVED. The whole system now has its
+own write-up — **[resources.md](resources.md)** — and is COMPLETE through
+the living-fields track (2026-08-13): every resource of the world is a row
+of ONE registry (`macro/resource_field.h`) — Wheat, Fauna, Trees, Clay,
+Iron, Stone — with two storage dialects behind the one
+`resource_field_read`/`apply` door (sparse scars for baseline-capped rows;
+whole CARRIERS for fields that outgrow their derivation), and ONE growth
+law (`resource_fields_daily_growth`, epoch slices of 32 days): the forest
+plants the forest, beasts breed where beasts are, wheat replants its
+fertility, iron is born where the world ran scarce. The macro_stock ledger
+rows call through the registry.
 
 The BEHAVIOURAL half is built too (R2, 2026-08-13): settlement placement
 now READS the resources through one suitability door,
@@ -69,16 +71,15 @@ join it as it stands, and the honest answer was to defer rather than
 force it:
 
 - **Deposits** — striking a new vein CHANGES a cell's kind (stone →
-  iron). The registry's model is `baseline − scar` clamped to the
-  baseline; creating geology is not a subtraction, so the row would need
-  a second mechanism, i.e. a new concept in the container.
-- **Trees** — `TreeLayer.data` holds the CURRENT count (overrides are
-  applied into it) and the renderer uploads exactly that grid as
-  `u_treeMap`. The registry needs the grid to be a BASELINE with scars
-  kept apart, and 21 call sites across 8 files read `.at()` expecting
-  current: any one missed silently regrows a felled forest.
+  iron). Creating geology is not a subtraction — SOLVED (2026-08-13) by
+  the CARRIER dialect: one sparse map per KIND (a discovered vein lives IN
+  its host quarry, nothing vanishes) and a deliberate genesis door.
+- **Trees** — `TreeLayer.data` holds the CURRENT count and the renderer
+  uploads exactly that grid as `u_treeMap` — SOLVED (same day) by making
+  the grid itself the carrier row's live state: the registry maintains the
+  very cache the 21 readers already read, so a missed reader cannot exist.
 
-Both are a session of their own, with their own negative controls.
+Both shipped in the living-fields track — see [resources.md](resources.md).
 
 ## Resource squads — owner-approved DESIGN (not yet built)
 
@@ -97,22 +98,20 @@ be hardcoded to "woodcutter":
    tables, never a per-role constant.
 3. **Farm.** Woodcutters O(n)-search the nearest forest-class cells of the
    **TreeLayer field** (the `ai_woodcutter` / `TreeGrid` path must migrate
-   off the legacy `app.trees` point list) and harvest via `set_tree_count`
-   — the count drops, the map sprite thins, the subworld agrees, the save
-   carries it. Harvest amount is bounded by remaining capacity.
+   off the legacy `app.trees` point list) and harvest via the registry's
+   Trees row (`resource_field_apply`) — the count drops, the map sprite
+   thins, the subworld agrees, the save carries it. Harvest amount is
+   bounded by remaining capacity.
 4. **Return.** A squad REMEMBERS its home landmark (village id), walks
    back, deposits `Wood` into the village `Inventory`/`eco.resources`, and
    dissolves back into `population` — the same universal
    squad ↔ settlement lifecycle garrisons use.
-5. **Regrowth = an ECOSYSTEM** (owner decision — no baseline cap). One
-   universal field-regrowth on the existing `WorldTime`, timescale YEARS of
-   game time, rate fully CONTEXTUAL from the procedural map itself:
-   - the 3×3 tree gradient (dense neighbours seed faster — the same
-     smoothness rule as the derivation);
-   - biome + climate (temperature/moisture): deserts and mountains grow
-     poorly, wet warm biomes fast — the SAME classification inputs
-     `derived_tree_count` already reads;
-   - the seasons system (`macro/seasons.h`): no growth in winter.
+5. **Regrowth = an ECOSYSTEM** — BUILT (2026-08-13): the ONE growth law
+   of [resources.md](resources.md) — the 3×3 density gradient seeds the
+   forest, the biome ambient table gates it (deserts almost never, water
+   never), timescale years (a clear-cut inside a living massif ≈ 3.5
+   game years). Seasonal modulation (no growth in winter) remains a
+   future data-entry into the same `growthAt` door, not a mechanism.
    Rates are data rows per biome, to be balanced BY TESTS later.
    Engineering note for the implementer: keep growth lazily computable from
    `(count, lastChangedDay, context)` so ticks stay cheap and saves stay

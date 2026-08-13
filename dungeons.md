@@ -180,7 +180,9 @@ to unified combat).
   tick, through the receipt a street kill settles.
 - **Vermin** (cellars, caves): creatures from the Ruin family of the one
   monster table, borrowed from the cell's own `FaunaCount`. A cleared den stays
-  cleared until the single 32-day regrowth law refills the cell — one respawn
+  cleared until the ONE growth law breeds the cell back from its living
+  neighbours (resources.md; a den emptied with its whole valley stays
+  empty) — one respawn
   system for subworld and dungeon (owner ruling). The difference between a
   townhouse cellar and a hillside den is not a rule but the cell: a settled
   cell's wild capacity is the Ruin table's floor, a mountain's is its own full

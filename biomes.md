@@ -41,5 +41,6 @@ Biome rendering is currently a GLSL fragment synth. Under Vulkan it becomes a
 SPIR-V graphics pipeline reading the same data textures (`u_master`,
 `u_featureMap`, `u_zoneMap`) — the per-biome math is unchanged. Rivers need no
 input of their own: carved to `Biome::Water` in generation, they fall out of
-`u_master`'s height/mask like any sea cell, so `u_riverMap` is retained only as
-gameplay state.
+`u_master`'s height/mask like any sea cell. (The dead `u_riverMap` binding was
+deleted 2026-08-13; the river mask lives on CPU-side as gameplay state —
+`TerrainData.riverData`.)

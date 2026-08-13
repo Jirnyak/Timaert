@@ -37,7 +37,7 @@ rasterisation per frame.
 ```
 GameState ──collect_macro_lights──▶ [MacroLight…] ──bake_light_field(+features)──▶ RGBA8 field
                                                                                         │
-                                                        upload_light_field (binding 4) ─┘
+                                                        upload_light_field (binding 3) ─┘
                                                                                         │
                                         macro.frag: sample u_lightField, decode, add at night
 ```
@@ -215,15 +215,15 @@ towns, lower for a darker night.** This is the one number a director turns.
 
 The macro renderer's descriptor **set 0** is a small fixed array of combined
 image samplers (master / feature / zone / river synth inputs + the light field at
-**binding 4**). `vk_macro_renderer.cpp` exposes two paths:
+**binding 3**). `vk_macro_renderer.cpp` exposes two paths:
 
 - **`upload(dev, …, lightFieldRgba, w, h)`** — the full boot/world-change upload;
   builds the light-field texture alongside the other synth inputs. A light field
-  is **always** bound (a 1×1 black texture if none is supplied) so binding 4 is
+  is **always** bound (a 1×1 black texture if none is supplied) so binding 3 is
   never invalid.
 - **`upload_light_field(dev, rgba, w, h)`** — the mid-game **surgical** re-upload:
   `vkDeviceWaitIdle` → destroy the old `lightField_` → recreate it → rewrite
-  **only** descriptor binding 4. Bindings 0–3 (master/feature/zone/river) stay
+  **only** descriptor binding 3. Bindings 0–2 (master/feature/zone) stay
   live and untouched, so a rebake costs one texture, not a full descriptor
   rebuild.
 
@@ -333,7 +333,7 @@ macro map and confirm a growing/shrinking town's glow tracks its population.
 |---|---|
 | `src/macro/macro_lighting.h` | `MacroLight`, `kMacroGlowCeil`, **`kMacroGlowGain`**, API + docs |
 | `src/macro/macro_lighting.cpp` | `collect_macro_lights`, `bake_light_field`, cost table, Dijkstra |
-| `src/macro/vk_macro_renderer.{h,cpp}` | `upload()` + surgical `upload_light_field()` (binding 4) |
+| `src/macro/vk_macro_renderer.{h,cpp}` | `upload()` + surgical `upload_light_field()` (binding 3) |
 | `src/app/main.cpp` | `bake_macro_light_field`, `rebake_macro_lights`, dirty-flag triggers |
 | `shaders/macro.frag` | samples `u_lightField`, decodes `· 1.5`, adds at night |
 | `tests/macro_lighting_test.cpp` | unit coverage incl. the gain / anti-saturation lock |

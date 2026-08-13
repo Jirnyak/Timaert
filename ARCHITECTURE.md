@@ -682,8 +682,10 @@ nightDarken                            ← time-of-day tint + baked night-glow f
 cell below sea level, so `bt_biome()` classifies it as `Biome::Water` and it
 renders through the ordinary sea-water path *inside* `biomeTextureOverlay` —
 crisp banks, no halo. The old translucent `riverOverlay`/`riverVisualValue` is
-retired from the shipping `macro.frag`; `u_riverMap` survives only as gameplay
-state. Full write-up: [macroworld.md](macroworld.md) § Rivers.
+retired from the shipping `macro.frag`, and the dead `u_riverMap` binding was
+deleted outright (2026-08-13) — the river mask lives on CPU-side as gameplay
+state (`TerrainData.riverData`). Full write-up: [macroworld.md](macroworld.md)
+§ Rivers.
 
 The `nightDarken` stage does more than dim: at night it also **adds a baked
 night-light field** sampled at the cell's map UV — settlement/village/spire glow
@@ -725,7 +727,6 @@ no atlas, no PNG.**
 | `u_master`               | `macro/map_generator.cpp` (RGBA8 FBO readback + GPU texture) | R=height, G=moisture, B=temperature, A=mask |
 | `u_featureMap`           | `macro/features.h` `FeatureLayer` (R8 texture)      | R=`FeatureType` byte            |
 | `u_zoneMap`              | `macro/zones.cpp` (R8 texture)                      | R=zone byte (0..9)              |
-| `u_riverMap`             | `macro/map_generator.cpp` river mask                | R=river mask (gameplay state; rivers are carved to `Biome::Water` in generation, so the ground render no longer samples this) |
 | `u_seaLevel`, `u_seed`, `u_mapSize`, `u_zoom`, `u_viewSize`, `u_cam`, `u_timeOfDay` | game settings | scalars |
 
 Any future overlay can read these without touching the data pipeline.

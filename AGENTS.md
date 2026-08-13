@@ -390,9 +390,9 @@ Two consequences, and they are rules, not preferences:
 2. **Every subworld action with a lasting meaning MUST have a macro write-back.**
    If a thing you did down there leaves no trace up here, the world forgot it
    the moment you climbed out, and that is a bug in the action, not in the save.
-   The felled-tree counter (`macro/tree_layer.h`) is the pattern to copy;
-   killing a settlement's people currently has NO such write-back and is
-   therefore incomplete.
+   The macro-stock ledger (`macro/macro_stock.h`) over the resource-field
+   registry (resources.md) is the pattern to copy — trees, people, fauna,
+   crops and deposits all settle through it today.
 
 What must be in the snapshot (owner's list, in order): **all macro ECS
 entities** (lords, bandits, caravans, citizens — position, HP, AI state,
