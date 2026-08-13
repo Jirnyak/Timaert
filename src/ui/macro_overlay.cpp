@@ -447,13 +447,15 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
         }
     }
 
-    // Spires — magical towers; alternate light/dark variants by id parity.
+    // Spires — magical towers. The sprite variant IS the state: the lit orb
+    // stands while the spire holds its spell, the dark tower is a consumed
+    // one (same rule as the night glow, macro_lighting.cpp).
     for (const auto& sp : gs.spires) {
         ImVec2 p = world_to_screen(float(sp.x) + 0.5f, float(sp.y) + 0.5f,
                                    camX, camY, zoom, viewW, viewH, mapW, mapH);
         if (!on_screen(p, viewW, viewH, 128.0f)) continue;
         const float size = landmark_size(zoom, 26.0f, 160.0f);
-        const SpriteId variant = (sp.id & 1) ? SpriteId::SpireDark
+        const SpriteId variant = sp.depleted ? SpriteId::SpireDark
                                              : SpriteId::Spire;
         const ImU32 tint = sp.depleted ? IM_COL32(120, 90, 130, 200)
                                        : IM_COL32(220, 180, 240, 230);

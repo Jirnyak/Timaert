@@ -825,6 +825,13 @@ timaert_test(crop_stock_test
         src/macro/items.cpp
     LINK_ENTT)
 
+# Spire placement is pure macro worldgen: the generator TU alone, fixtures
+# hand-build terrain and zones (no state.cpp, no content layer — the spell
+# list arrives as plain SpireSpellSpec data, the same way main.cpp passes it).
+timaert_test(spire_generation_test
+    SOURCES
+        src/macro/spires.cpp)
+
 timaert_test(fauna_stock_test
     SOURCES
         src/macro/macro_stock.cpp

@@ -37,6 +37,7 @@
 #include "macro/spawners.h"
 #include "macro/tree_layer.h"
 #include "macro/deposit_layer.h"
+#include "macro/spires.h"
 #include "macro/zones.h"
 #include "macro/politik.h"
 #include "macro/vk_macro_renderer.h"
@@ -1971,6 +1972,49 @@ void boot_world(App& app, std::uint32_t seed,
                                    app.terrain.rgba.size(),
                                    &app.treeLayer);
     boot_trace("zones generated");
+
+    // Spires need the zone field (their placement law), so they are the one
+    // landmark placed after generate_zones rather than in
+    // populate_landmarks_from_politik (which cleared the list). One spire per
+    // registered spell; a load overwrites gs.spires from the save afterwards
+    // (boot_world_from_save), exactly like settlements.
+    {
+        std::vector<sm::SpireSpellSpec> spireSpells;
+        const auto& allSpells = sm::spell_registry().all();
+        spireSpells.reserve(allSpells.size());
+        for (std::size_t i = 0; i < allSpells.size(); ++i) {
+            spireSpells.push_back(sm::SpireSpellSpec{
+                std::uint32_t(i), std::uint8_t(allSpells[i].tier)});
+        }
+        sm::generate_spires(app.gs, app.zones, app.terrain,
+                            std::uint8_t(lp.seaLevel * 255.0f), spireSpells);
+        boot_trace("spires placed");
+        if (boot_trace_enabled()) {
+            // The placement report card: every spell offered, every spire in
+            // the wild band, and a spread that reads "scattered", not "heap".
+            int zoneMin = 9, zoneMax = 0, minPair = app.gs.mapW + app.gs.mapH;
+            for (const auto& sp : app.gs.spires) {
+                const int z = int(app.zones.at(sp.x, sp.y));
+                zoneMin = std::min(zoneMin, z);
+                zoneMax = std::max(zoneMax, z);
+                for (const auto& o : app.gs.spires) {
+                    if (&o == &sp) continue;
+                    const int ddx = std::min(std::abs(sp.x - o.x),
+                                             app.gs.mapW - std::abs(sp.x - o.x));
+                    const int ddy = std::min(std::abs(sp.y - o.y),
+                                             app.gs.mapH - std::abs(sp.y - o.y));
+                    minPair = std::min(minPair, std::max(ddx, ddy));
+                }
+            }
+            std::fprintf(stderr,
+                         "[worldgen] spires=%zu/%zu zones=[%d..%d] "
+                         "minPairDist=%d\n",
+                         app.gs.spires.size(), spireSpells.size(),
+                         app.gs.spires.empty() ? 0 : zoneMin,
+                         app.gs.spires.empty() ? 0 : zoneMax, minPair);
+            std::fflush(stderr);
+        }
+    }
 
     if (!app.macro.init(app.device, app.renderer.renderPass)) {
         boot_trace("macro renderer init failed");
