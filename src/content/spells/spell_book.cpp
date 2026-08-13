@@ -50,15 +50,6 @@ int spell_radius(const SpellDef& spell,
         * (1.0f + scaleFactor * spell.scalingRadius)));
 }
 
-float spell_duration(const SpellDef& spell,
-                     const Attributes& attributes,
-                     const Skills& skills) {
-    if (spell.duration <= 0.0f) return 0.0f;
-    const float s = spell_strength(spell, attributes, skills);
-    const float scaleFactor = s / (s + 50.0f);
-    return spell.duration * (1.0f + scaleFactor * spell.scalingDuration);
-}
-
 CastCheck spellbook_can_cast_ex(const SpellBook& sb,
                                 const CombatStats& combat,
                                 const std::string& id,
@@ -81,11 +72,6 @@ CastCheck spellbook_can_cast_ex(const SpellBook& sb,
         }
     }
     return {true, "", 0.0f};
-}
-
-bool spellbook_can_cast(const SpellBook& sb, const CombatStats& combat,
-                        const std::string& id) {
-    return spellbook_can_cast_ex(sb, combat, id, true).ok;
 }
 
 int spellbook_start_cast(SpellBook& sb, CombatStats& combat,

@@ -36,20 +36,6 @@ void draw_dim_background(float alpha) {
                       IM_COL32(0, 0, 0, int(alpha * 255.0f)));
 }
 
-void bar(const char* label, int cur, int max, ImU32 col, float width) {
-    ImGui::Text("%-3s %4d/%4d", label, cur, max);
-    ImGui::SameLine();
-    auto* dl = ImGui::GetWindowDrawList();
-    ImVec2 p = ImGui::GetCursorScreenPos();
-    const float h = ImGui::GetTextLineHeight();
-    dl->AddRectFilled(p, ImVec2(p.x + width, p.y + h), IM_COL32(20, 20, 20, 200), 2.0f);
-    float frac = max > 0 ? float(cur) / float(max) : 0.0f;
-    if (frac < 0) frac = 0; if (frac > 1) frac = 1;
-    dl->AddRectFilled(p, ImVec2(p.x + width * frac, p.y + h), col, 2.0f);
-    dl->AddRect(p, ImVec2(p.x + width, p.y + h), IM_COL32(255, 255, 255, 60), 2.0f);
-    ImGui::Dummy(ImVec2(width, h));
-}
-
 } // namespace
 
 ShellResult draw_title_menu(int /*vw*/, int /*vh*/) {

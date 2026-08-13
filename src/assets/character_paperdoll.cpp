@@ -586,26 +586,6 @@ const AtlasEntry* AtlasData::entry(std::size_t index) const {
     return &entries[index];
 }
 
-const char* category_name(Category category) {
-    const std::size_t i = ci(category);
-    return i < kCategoryNames.size() ? kCategoryNames[i] : "";
-}
-
-const char* animation_name(AnimationType animation) {
-    switch (animation) {
-        case AnimationType::Idle: return "idle";
-        case AnimationType::Walk: return "walk";
-        case AnimationType::Run: return "run";
-        case AnimationType::Pickup: return "pickup";
-        case AnimationType::Strike: return "strike";
-        case AnimationType::Chop: return "chop";
-        case AnimationType::Seed: return "seed";
-        case AnimationType::Water: return "water";
-        case AnimationType::Reap: return "reap";
-        default: return "";
-    }
-}
-
 const char* direction_name(Direction direction) {
     switch (direction) {
         case Direction::Front: return "front";
@@ -697,11 +677,6 @@ bool is_animation_complete(const AnimationState& state) {
     const int frame = int(state.frame);
     return frame == count - 1
         && state.frameTimerMs >= float(delays[std::size_t(frame)]);
-}
-
-void reset_animation(AnimationState& state) {
-    state.frame = 0;
-    state.frameTimerMs = 0.0f;
 }
 
 CharacterDescriptor make_default_character() {

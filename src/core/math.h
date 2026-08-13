@@ -11,9 +11,7 @@ struct vec3 { float x, y, z; };
 struct vec4 { float x, y, z, w; };
 struct ivec2 { int x, y; };
 
-inline vec2 v2(float x, float y) { return {x, y}; }
 inline vec3 v3(float x, float y, float z) { return {x, y, z}; }
-inline vec4 v4(float x, float y, float z, float w) { return {x, y, z, w}; }
 
 inline vec2 operator+(vec2 a, vec2 b) { return {a.x + b.x, a.y + b.y}; }
 inline vec2 operator-(vec2 a, vec2 b) { return {a.x - b.x, a.y - b.y}; }
@@ -55,16 +53,6 @@ inline mat4 mat4_mul(const mat4& a, const mat4& b) {
     return r;
 }
 
-inline mat4 mat4_perspective(float fovyRad, float aspect, float zn, float zf) {
-    mat4 r{};
-    float f = 1.0f / std::tan(fovyRad * 0.5f);
-    r.m[0] = f / aspect;
-    r.m[5] = f;
-    r.m[10] = (zf + zn) / (zn - zf);
-    r.m[11] = -1.0f;
-    r.m[14] = (2.0f * zf * zn) / (zn - zf);
-    return r;
-}
 
 inline mat4 mat4_lookAt(vec3 eye, vec3 center, vec3 up) {
     vec3 f = normalize(center - eye);
@@ -80,16 +68,5 @@ inline mat4 mat4_lookAt(vec3 eye, vec3 center, vec3 up) {
     return r;
 }
 
-inline mat4 mat4_ortho(float l, float r, float b, float t, float zn, float zf) {
-    mat4 m{};
-    m.m[0] = 2.0f / (r - l);
-    m.m[5] = 2.0f / (t - b);
-    m.m[10] = -2.0f / (zf - zn);
-    m.m[12] = -(r + l) / (r - l);
-    m.m[13] = -(t + b) / (t - b);
-    m.m[14] = -(zf + zn) / (zf - zn);
-    m.m[15] = 1.0f;
-    return m;
-}
 
 } // namespace sm

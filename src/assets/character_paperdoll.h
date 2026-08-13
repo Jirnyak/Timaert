@@ -193,8 +193,6 @@ struct RenderLayer {
     PaletteConfig palette{};
 };
 
-const char* category_name(Category category);
-const char* animation_name(AnimationType animation);
 const char* direction_name(Direction direction);
 
 int animation_frame_count(AnimationType animation);
@@ -208,7 +206,6 @@ void update_animation(AnimationState& state, float deltaMs, bool loop = true);
 void set_animation(AnimationState& state, AnimationType animation);
 void set_direction(AnimationState& state, Direction direction);
 bool is_animation_complete(const AnimationState& state);
-void reset_animation(AnimationState& state);
 
 int calculate_tile_index(AnimationType animation, Direction direction, std::uint8_t frame);
 CharacterDescriptor make_default_character();

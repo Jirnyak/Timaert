@@ -941,15 +941,6 @@ namespace sm::ui
             ImGui::Text("%d", value);
         }
 
-        void draw_info_overview_row(const char *label, float value)
-        {
-            ImGui::TableNextRow();
-            ImGui::TableNextColumn();
-            ImGui::TextDisabled("%s", label);
-            ImGui::TableNextColumn();
-            ImGui::Text("%.1f", value);
-        }
-
         void draw_objective_line(const Objective &o)
         {
             const char *done = o.completed ? "[x]" : "[ ]";

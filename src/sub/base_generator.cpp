@@ -332,7 +332,7 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
                     // height is a gentle ~35%, and even ridges keep a quarter
                     // of their body through town — softened shoulders, never
                     // a wall, never a plate. House pads still flatten their
-                    // own footprints regardless (flatten_footprint).
+                    // own footprints regardless (the house-pad OBB flatten).
                     macroH += (remapped[i] - macroH) * (w * 0.35f);
                     localMtn *= 1.0f - w * 0.8f;
                     localGrd *= 1.0f - w * 0.8f;

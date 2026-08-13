@@ -29,16 +29,10 @@ int spell_heal(const SpellDef& spell,
 int spell_radius(const SpellDef& spell,
                  const Attributes& attributes,
                  const Skills& skills);
-float spell_duration(const SpellDef& spell,
-                     const Attributes& attributes,
-                     const Skills& skills);
-
 CastCheck spellbook_can_cast_ex(const SpellBook& sb,
                                 const CombatStats& combat,
                                 const std::string& id,
                                 bool inMicro);
-bool spellbook_can_cast(const SpellBook& sb, const CombatStats& combat,
-                        const std::string& id);
 int spellbook_start_cast(SpellBook& sb, CombatStats& combat,
                          const std::string& id);
 bool spellbook_cast(ecs::World& w, SpellBook& sb, CombatStats& combat,

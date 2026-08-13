@@ -367,6 +367,10 @@ void test_the_caravan_trades_on_its_memory() {
 
 int main() {
     test_the_chop_is_real_and_the_haul_comes_home();
+    // Was DEFINED and never CALLED — found the day -Wunused-function came
+    // on (С3): a silently never-running test, the exact family check.h's
+    // zero-checks rule hunts, hidden one scope deeper.
+    test_no_layer_no_chop();
     test_the_farmer_works_the_field();
     test_farmer_without_terrain_conjures_nothing();
     test_agent_memory_is_bounded_and_current();

@@ -83,9 +83,6 @@ const std::string& pick_consonant(const Language& lang, Rng& rng) {
 
 } // namespace
 
-const std::vector<std::string>& default_vowels()     { return kDefaultVowels; }
-const std::vector<std::string>& default_consonants() { return kDefaultConsonants; }
-
 Language create_language(std::uint32_t seed) {
     return create_language(seed, kDefaultVowels, kDefaultConsonants);
 }
@@ -179,31 +176,5 @@ std::string generate_name(const Language& lang, std::uint32_t entitySeed) {
     return generate_name(lang, rng);
 }
 
-std::string generate_unique_name(const Language& lang,
-                                 Rng& rng,
-                                 std::vector<std::string>& used,
-                                 int maxAttempts) {
-    auto contains = [&](const std::string& s) {
-        return std::find(used.begin(), used.end(), s) != used.end();
-    };
-
-    for (int i = 0; i < maxAttempts; ++i) {
-        std::string n = generate_name(lang, rng);
-        if (!contains(n)) {
-            used.push_back(n);
-            return n;
-        }
-    }
-
-    int suffix = 2;
-    const std::string base = generate_name(lang, rng);
-    std::string finalName = base + " " + std::to_string(suffix);
-    while (contains(finalName)) {
-        ++suffix;
-        finalName = base + " " + std::to_string(suffix);
-    }
-    used.push_back(finalName);
-    return finalName;
-}
 
 } // namespace sm

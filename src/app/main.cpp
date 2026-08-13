@@ -950,13 +950,6 @@ void open_settlement_panel(App& app, sm::ui::SettlementPanelTab tab) {
     app.ui.settlement = true;
 }
 
-const char* macro_npc_display_name(sm::NPCType type,
-                                   const sm::ecs::NpcCharacter& ch) {
-    const sm::NpcTypeDef& def = sm::npc_def(type);
-    if (def.nameCount > 0) return def.names[ch.nameIdx % def.nameCount];
-    return def.label;
-}
-
 bool route_macro_npc_attack(App& app, entt::entity npc) {
     if (!app.worldLoaded || app.subworld.active()) return false;
     auto& reg = app.ecs.reg;

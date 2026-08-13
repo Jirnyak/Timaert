@@ -221,7 +221,7 @@ if(MSVC)
         _HAS_EXCEPTIONS=0 _CRT_SECURE_NO_WARNINGS)
 else()
     target_compile_options(timaert_build_flags INTERFACE
-        -Wall -Wextra -Wno-unused-parameter -Wno-unused-function
+        -Wall -Wextra -Wno-unused-parameter
         -fno-rtti -fno-exceptions
         # -fno-finite-math-only keeps NaN/Inf checks working under fast-math.
         -ffast-math -fno-finite-math-only)
@@ -236,7 +236,6 @@ if(NOT EMSCRIPTEN)
     set(_timaert_spv_files "")
     set(_timaert_shader_incs
         ${CMAKE_SOURCE_DIR}/shaders/tree_sprite.glsl
-        ${CMAKE_SOURCE_DIR}/shaders/npc_sprite.glsl
         ${CMAKE_SOURCE_DIR}/shaders/doll_pool.glsl
         ${CMAKE_SOURCE_DIR}/shaders/creature_sprite.glsl
         ${CMAKE_SOURCE_DIR}/shaders/shadow_common.glsl

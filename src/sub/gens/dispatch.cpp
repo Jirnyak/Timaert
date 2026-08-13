@@ -380,22 +380,6 @@ static void stamp_rect(SubworldMapData& out, int x, int y, int w, int h,
     }
 }
 
-static bool rect_clear_for_urban(const SubworldMapData& out, int x, int y,
-                                 int w, int h) {
-    if (x < 2 || y < 2 || x + w >= kCellSize - 2 || y + h >= kCellSize - 2) {
-        return false;
-    }
-    for (int yy = y - 1; yy <= y + h; ++yy) {
-        for (int xx = x - 1; xx <= x + w; ++xx) {
-            const std::uint8_t t = out.tiles[std::size_t(yy) * kCellSize + xx];
-            if (t == TILE_ROAD || t == TILE_HOUSE || t == TILE_WALL
-             || t == TILE_SQUARE || t == TILE_FIELD) {
-                return false;
-            }
-        }
-    }
-    return true;
-}
 
 static bool has_tile_near(const SubworldMapData& out, int x, int y,
                           int radius, std::uint8_t tile) {
@@ -413,44 +397,11 @@ static bool has_tile_near(const SubworldMapData& out, int x, int y,
     return false;
 }
 
-// Flatten the heightmap under a building footprint to its mean elevation so the
-// structure box — which the 3D renderer seats at a SINGLE centre height
-// (`sample_height_m(s.x, s.y)`) — sits on level ground instead of poking through
-// / floating above a tilted, noisy slope (the "towns on cliffs" report). This is
-// a genuinely different operation from the road smoother: a road corridor stays
-// harmonic (curvature-free but slope-following), while a building floor is dead
-// level. Callers guarantee footprints are strictly cell-interior (≥2-tile margin
-// from every edge), so the pad reads/writes only interior tiles and is therefore
-// seam-IDENTICAL whether baked per-cell or inherited by the 3×3 composite (which
-// just memcpy's the per-cell heightmaps). Using the footprint MEAN balances cut
-// vs fill so the pad seats naturally in the relief (neither a mesa nor a pit).
-static void flatten_footprint(SubworldMapData& out, int x, int y, int w, int h) {
-    const int x0 = std::max(0, x);
-    const int y0 = std::max(0, y);
-    const int x1 = std::min(kCellSize, x + w);
-    const int y1 = std::min(kCellSize, y + h);
-    if (x1 <= x0 || y1 <= y0) return;
-    double sum = 0.0;
-    int cnt = 0;
-    for (int yy = y0; yy < y1; ++yy) {
-        for (int xx = x0; xx < x1; ++xx) {
-            sum += out.heightmap[std::size_t(yy) * kCellSize + xx];
-            ++cnt;
-        }
-    }
-    if (cnt == 0) return;
-    const float level = float(sum / double(cnt));
-    for (int yy = y0; yy < y1; ++yy) {
-        for (int xx = x0; xx < x1; ++xx) {
-            out.heightmap[std::size_t(yy) * kCellSize + xx] = level;
-        }
-    }
-}
 
 // Oriented house: the universal placement primitive. Stamps the ROTATED
 // footprint (every tile whose centre falls inside the yawed box, slightly
 // fattened so the tile stamp fully covers the solid), flattens exactly those
-// cells to their mean (same cut-vs-fill pad rationale as flatten_footprint),
+// cells to their mean (cut-vs-fill: a pad is carved as much as built),
 // and emits ONE oriented Structure record — independent width/length/yaw, the
 // silhouette the 3D pass draws and the collision index blocks with. Clearance
 // is checked on the footprint's AABB plus a 1-tile ring (conservative for a
