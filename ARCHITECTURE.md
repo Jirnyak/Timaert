@@ -50,7 +50,13 @@ orchestrates layers via thin wrappers — it never owns game logic.
 
 > **Strict O(N) simulation bound.** During any active simulation tick (subworld ECS or macroworld), **nothing greater than O(N) is permitted**.
 > Never write O(N²) scans for proximity, line-of-sight, or AI targeting.
-> **This is exactly why we bake paths and use spatial hashes.** Use `sm::SpatialHash` for radius queries and precomputed grids for navigation.
+> **This is exactly why we bake paths and use bucket grids.** For radius
+> queries use the battle grids (`sub/battle.h` `UnitGrid` — the AI's budgeted
+> `contact_scan`, the spell broad phase `SpellNeighborsFn`) or the collision
+> bins (`sub/collide.h`), and precomputed grids for navigation. The last
+> violator — four full-registry scans per projectile per tick in
+> `spell_effects.cpp` — fell 2026-08-13; `spell_broadphase_parity_test` holds
+> the door.
 
 ## Discreteness & Number Style
 

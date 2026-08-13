@@ -133,10 +133,11 @@ The SAME records the renderer draws are indexed as solid volumes by
 **`src/sub/collide.h`** (`StructureIndex`, rebuilt on the composite's
 `CompositeDirty.structs` signal). One solidity authority for every mover:
 
-- **Blocking** — the player (walking AND flying), wander/flee AI
-  (`tick_npc_ai`), the mass-battle pass (`BattleTerrain.canStand`) and spawn
-  placement all refuse steps into a solid's side, with axis sliding. Spell
-  bolts detonate on masonry like they detonate on terrain.
+- **Blocking** — the player (walking AND flying), the mass-battle pass
+  (`BattleTerrain.canStand`) — which moves EVERY non-player body, wander and
+  flee included: brains in `tick_npc_ai` write intent only, one owner of
+  legs — and spawn placement all refuse steps into a solid's side, with axis
+  sliding. Spell bolts detonate on masonry like they detonate on terrain.
 - **Support** — the surface under any body's feet is `max(terrain, highest
   structure top within a step)`: anyone can STAND on a wall walk, roof or
   lintel, walk off edges honestly, and a flyer descending onto a wall lands
