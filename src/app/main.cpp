@@ -6853,7 +6853,15 @@ bool run_subworld_reputation_hit_smoke(App& app) {
                               -sm::player_reputation(&app.gs, "empire"));
     const float px = app.subworld.player_x();
     const float py = app.subworld.player_y();
-    const float tx = std::min(px + 2.0f, float(sm::sub::kFullSize - 2));
+    // OUTSIDE the separation ring. Bodies push each other apart — all bodies,
+    // now that fleeing minds are steered like everyone else — and the ring
+    // around the player is (kPlayerBodyRadius + peasant radius) * 1.15 ≈ 2.36.
+    // At 2.0 the peasant stood INSIDE it and the crowd law honestly walked him
+    // out, tripping the strict neutralMove wire below. At 3.0 separation is
+    // silent and that wire again measures the one thing it means to: a neutral
+    // bystander does not RUN before he is wronged. (Melee still reaches: range
+    // is 5.)
+    const float tx = std::min(px + 3.0f, float(sm::sub::kFullSize - 2));
     // The peasant stands on the ground under ITS OWN feet, which is what every
     // real spawned body does. A hand-placed 0.0f buried it a kilometre down (z
     // is world elevation in metres) and every 3D reach missed it; borrowing the

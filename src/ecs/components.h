@@ -71,9 +71,16 @@ struct NPCKind { std::uint16_t type; std::uint16_t factionIdx; };
 
 // Subworld behaviour state (mirrors `subworld/ai.ts`). Only attached to
 // SubworldTag entities; engine dispatches Wander/Flee/Combat by `kind`.
-// `vx/vy` are the current velocity (units / s); `aiTimer` counts down to
-// the next direction change for wander/flee; `wanderSpeed` is the slow
-// idle pace (Combat uses Combat::speed instead).
+// ONE owner of legs. `wantVx/wantVy` are the brain's INTENT — the wander
+// amble or the flee sprint, written ONLY by tick_npc_ai (the Combat mind
+// wants nothing here; its drive is the influence field). `vx/vy` are the
+// body's ACTUAL velocity, written back each tick by the battle steering
+// pass, which is the only thing that ever moves a body. The two used to be
+// one field, and two integrators fought over it: steering decayed the
+// brain's chosen pace toward zero within ~6 ticks and wrote the corpse of
+// it back, so wanderers twitched for a tenth of a second per decision and
+// stood the rest. `aiTimer` counts down to the next decision; `wanderSpeed`
+// is the slow idle pace (Combat uses Combat::speed instead).
 struct SubworldAi {
     enum Kind : std::uint8_t { Wander = 0, Flee = 1, Combat = 2 };
     Kind  kind;
@@ -81,6 +88,13 @@ struct SubworldAi {
     float vx, vy;
     float wanderSpeed;
     float radius;
+    float wantVx = 0.0f, wantVy = 0.0f;
+    // Decision counter, folded into the wander RNG seed. The seed used to be
+    // entity-bits ⊕ position — safe while the brain moved its own body, fatal
+    // once it stopped: a wanderer that rolled "stand" froze its position, and
+    // a frozen position re-rolled the SAME "stand" forever. The counter
+    // advances per decision, so a standing mind still changes its mind.
+    std::uint32_t seq = 0;
 };
 
 // Per-NPC level (matches TS `npc.level`). Drives loot tables, combat

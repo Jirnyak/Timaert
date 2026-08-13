@@ -94,6 +94,7 @@ void BattleUnits::reserve(int n) {
     const std::size_t c = std::size_t(n);
     x.reserve(c); y.reserve(c); z.reserve(c);
     vx.reserve(c); vy.reserve(c);
+    intentVx.reserve(c); intentVy.reserve(c);
     radius.reserve(c); speed.reserve(c); reach.reserve(c); sight.reserve(c);
     enemyMask.reserve(c); faction.reserve(c); flags.reserve(c);
     target.reserve(c); inReach.reserve(c);
@@ -105,6 +106,7 @@ void BattleUnits::clear() {
     maxReach = 0.0f;
     x.clear(); y.clear(); z.clear();
     vx.clear(); vy.clear();
+    intentVx.clear(); intentVy.clear();
     radius.clear(); speed.clear(); reach.clear(); sight.clear();
     enemyMask.clear(); faction.clear(); flags.clear();
     target.clear(); inReach.clear();
@@ -115,6 +117,7 @@ int BattleUnits::add(const BattleUnitDesc& d) {
     const int idx = count++;
     x.push_back(d.x); y.push_back(d.y); z.push_back(d.z);
     vx.push_back(d.vx); vy.push_back(d.vy);
+    intentVx.push_back(d.intentVx); intentVy.push_back(d.intentVy);
     radius.push_back(d.radius); speed.push_back(d.speed);
     reach.push_back(d.reach); sight.push_back(d.sight);
     enemyMask.push_back(d.enemyMask);
@@ -446,6 +449,11 @@ void steer_battle(BattleUnits& u, const UnitGrid& fine, const UnitGrid& pick,
         const float px = u.x[si], py = u.y[si], pz = u.z[si];
         const float ri = u.radius[si];
         const bool pinned = (u.flags[si] & BU_Pinned) != 0u;
+        // A passive body is one whose MIND refuses the war (a Flee brain): the
+        // combat drive below never claims it, so a village at war does not
+        // conscript its deer. Its legs follow its intent, and the intent of a
+        // frightened thing near danger is to run.
+        const bool passive = (u.flags[si] & BU_Passive) != 0u;
 
         // ── 1. Contact scan ────────────────────────────────────────────────
         // On the PICK grid, whose cell is the crowd's longest reach: a query of
@@ -489,11 +497,12 @@ void steer_battle(BattleUnits& u, const UnitGrid& fine, const UnitGrid& pick,
                 }
             }
         };
-        if (u.enemyMask[si] != 0ull) contact_scan(pickR);
+        if (!passive && u.enemyMask[si] != 0ull) contact_scan(pickR);
 
         // ── 2. Where this body WANTS to be ─────────────────────────────────
         float seekX = 0.0f, seekY = 0.0f;
-        if (best < 0 && u.enemyMask[si] != 0ull && !field.hasSite.empty()) {
+        if (!passive && best < 0 && u.enemyMask[si] != 0ull
+            && !field.hasSite.empty()) {
             // No contact: read ONE field cell. This is the whole long-range
             // navigation system — no neighbour query, no player special case,
             // and no distance leash. The body advances iff its cell is ALERTED,
@@ -609,6 +618,24 @@ void steer_battle(BattleUnits& u, const UnitGrid& fine, const UnitGrid& pick,
 
         if (pinned) continue;   // a target and an obstacle, but not our body to move
 
+        // ── 2b. No war claims this body → its own mind does ────────────────
+        // ONE owner of legs: a body with no contact target and no alerted
+        // field cell follows its brain's intent (SubworldAi.wantVx/Vy — the
+        // wander amble, the flee sprint), through the SAME separation, solids,
+        // slope cost and bounds as any fighter. The intent vector carries its
+        // own pace, overriding u.speed below: a browsing wolf ambles at 40 %
+        // of its combat sprint because its mind said so, and a weaponless
+        // body (speed 0) can still run because its legs answer to its pace,
+        // not to its weapon. The moment a combat drive claims the body —
+        // contact or an alerted cell — intent yields without a blend: war is
+        // not a suggestion.
+        float pace = -1.0f;               // < 0: combat drive, pace is u.speed
+        if (best < 0 && length2d(seekX, seekY) <= 1.0e-4f) {
+            const float ix = u.intentVx[si], iy = u.intentVy[si];
+            const float il = length2d(ix, iy);
+            if (il > 1.0e-4f) { seekX = ix; seekY = iy; pace = il; }
+        }
+
         // ── 3. Bodies push each other apart ────────────────────────────────
         // On the FINE grid, sized to the bodies themselves.
         float sepX = 0.0f, sepY = 0.0f;
@@ -710,14 +737,16 @@ void steer_battle(BattleUnits& u, const UnitGrid& fine, const UnitGrid& pick,
 
         float wantVx = 0.0f, wantVy = 0.0f;
         if (dirLen > 1.0e-4f) {
-            const float sp = u.speed[si] * speedMul;
+            const float sp = (pace >= 0.0f ? pace : u.speed[si]) * speedMul;
             wantVx = dirX / dirLen * sp;
             wantVy = dirY / dirLen * sp;
         }
 
         // Acceleration limit is what makes a charge read as MASS: no unit flips
-        // its velocity in one frame, so lines bend instead of snapping.
-        const float amax = u.speed[si] * prm.accelPerSpeed * dt;
+        // its velocity in one frame, so lines bend instead of snapping. The
+        // intent pace joins the max so a weaponless body (speed 0) can still
+        // reach the pace its mind asked for.
+        const float amax = std::max(u.speed[si], pace) * prm.accelPerSpeed * dt;
         float dvx = wantVx - u.vx[si], dvy = wantVy - u.vy[si];
         const float dvLen = length2d(dvx, dvy);
         if (dvLen > amax && dvLen > 1.0e-6f) {

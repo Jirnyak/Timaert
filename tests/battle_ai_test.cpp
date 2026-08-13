@@ -1185,6 +1185,71 @@ void test_determinism_and_capacity() {
 
 } // namespace
 
+// ── 11. One owner of legs ──────────────────────────────────────────────────
+// A body nobody's war claims follows its brain's intent (SubworldAi.wantVx/Vy,
+// gathered into BattleUnits.intentVx/Vy) at the INTENT'S own pace; a BU_Passive
+// body — a Flee mind — is never conscripted by its faction's war; and the war
+// drive overrides intent outright the moment it claims a body.
+void test_intent_and_passive() {
+    const BattleParams prm{};
+    const BattleTerrain flat = flat_terrain();
+    const float dt = 1.0f / 60.0f;
+
+    // Intent executes at the mind's pace — the amble it chose, not the combat
+    // sprint on the body's sheet.
+    {
+        BattleUnits u{};
+        u.add(soldier(1000.0f, 1000.0f, 0, 0ull));
+        u.intentVx[0] = 3.0f;                    // the sheet says kSpeed = 35
+        UnitGrid fine{}, pick{};
+        InfluenceField f{};
+        for (int i = 0; i < 300; ++i)
+            advance(u, fine, pick, f, flat, prm, dt, nullptr);
+        const float walked = u.x[0] - 1000.0f;
+        const float wantWalk = 3.0f * 300.0f * dt;
+        check(std::fabs(u.y[0] - 1000.0f) < 0.01f, "intent walk holds its line");
+        check(std::fabs(walked - wantWalk) < 1.0f,
+              "intent executes at the mind's pace, not the sheet's sprint");
+    }
+
+    // Same faction, same enemy mask, same war: the armed twin marches, the
+    // fearful one stands. The twin IS the negative control here — it proves
+    // the war drive this deer refused was live.
+    {
+        BattleUnits u{};
+        const std::size_t deer = std::size_t(u.add(soldier(
+            1000.0f, 1000.0f, 0, mask_of(1))));
+        u.flags[deer] |= BU_Passive;
+        const std::size_t levy = std::size_t(u.add(soldier(
+            1000.0f, 1040.0f, 0, mask_of(1))));
+        u.add(soldier(1150.0f, 1020.0f, 1, mask_of(0)));
+        UnitGrid fine{}, pick{};
+        InfluenceField f{};
+        for (int i = 0; i < 240; ++i)
+            advance(u, fine, pick, f, flat, prm, dt, nullptr);
+        check(u.target[deer] < 0, "a passive body never picks a target");
+        check(std::fabs(u.x[deer] - 1000.0f) < 5.0f,
+              "a passive body is not conscripted by its faction's war");
+        check(u.x[levy] > 1030.0f,
+              "the armed twin marched (the war drive was live)");
+    }
+
+    // War is not a suggestion: a body with an enemy to fight ignores its
+    // stroll entirely — no blend, no averaging.
+    {
+        BattleUnits u{};
+        u.add(soldier(1000.0f, 1000.0f, 0, mask_of(1)));
+        u.intentVx[0] = -3.0f;                   // the mind wants to walk away…
+        u.add(soldier(1100.0f, 1000.0f, 1, mask_of(0)));
+        UnitGrid fine{}, pick{};
+        InfluenceField f{};
+        for (int i = 0; i < 240; ++i)
+            advance(u, fine, pick, f, flat, prm, dt, nullptr);
+        check(u.target[0] == 1 && u.inReach[0] != 0u,
+              "the war drive overrides intent outright");
+    }
+}
+
 int main() {
     test_factions();
     test_faction_mask_freshness();
@@ -1200,6 +1265,7 @@ int main() {
     test_linear_scaling();
     test_terrain_table();
     test_single_bandit();
+    test_intent_and_passive();
     test_determinism_and_capacity();
 
     if (fails == 0) std::fprintf(stderr, "battle_ai_test: OK\n");

@@ -2150,14 +2150,21 @@ void SubworldEngine::tick_subworld_combat(float dt) {
                      : battleFactions_.intern(
                            faction_id_for_kind(reg.try_get<ecs::NPCKind>(e))));
 
-        // The player body is input-driven; a fleeing body is driven by sub/ai.cpp;
-        // a weaponless body has no combat drive at all. All are real obstacles
-        // and real targets, so they are pinned, not cut.
-        if (isPlayer || !c) d.flags |= BU_Pinned;
+        // ONE mover. The only pinned body is the player's, whose mover is the
+        // input. Everyone else — fighter, wanderer, fleeing deer, weaponless
+        // husk — is steered here, from the intent its brain wrote this tick
+        // (sub/ai.cpp) when no combat drive claims it. vx/vy seed the steering
+        // pass's persistent velocity, scattered back below.
+        if (isPlayer) d.flags |= BU_Pinned;
         if (auto* ai = reg.try_get<ecs::SubworldAi>(e)) {
             d.vx = ai->vx;
             d.vy = ai->vy;
-            if (!owned && ai->kind == ecs::SubworldAi::Flee) d.flags |= BU_Pinned;
+            d.intentVx = ai->wantVx;
+            d.intentVy = ai->wantVy;
+            // A Flee mind never answers its faction's war — its answer to
+            // danger IS the running. Passive: a target and an obstacle, but
+            // the combat drive may not conscript it.
+            if (ai->kind == ecs::SubworldAi::Flee) d.flags |= BU_Passive;
         }
         // A body flagged individually hostile to the player records that as a
         // private grudge, and hands the player side the reciprocal bit — the one
@@ -3439,8 +3446,7 @@ void SubworldEngine::tick(float dt) {
         push_scalars_to_player_entity();
         tick_player_melee(dt);
         tick_npc_ai(*ecs_, playerX_, playerY_, std::uint32_t{0}, dt,
-                    &SubworldEngine::player_threat_callback, this,
-                    &SubworldEngine::solid_can_stand_callback, this);
+                    &SubworldEngine::player_threat_callback, this);
         tick_subworld_combat(dt);
         ecs::sys::tick_visual_interp(*ecs_, dt);
         ecs::sys::tick_combat_cooldowns(*ecs_, dt);

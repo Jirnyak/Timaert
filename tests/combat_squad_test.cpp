@@ -205,6 +205,34 @@ int main() {
         return fail("statless combat-AI body must be inert, not chase the player");
     }
 
+    // ── The brain writes INTENT, never a position ──────────────────────────
+    // One owner of legs: tick_npc_ai for a Wander mind decides wantVx/Vy and
+    // must leave Position strictly alone (the battle steering pass executes).
+    // And a STANDING mind must still be able to change it: the decision seed
+    // folds in SubworldAi.seq, because entity⊕position alone froze a standing
+    // body — its position stopped changing, so it re-rolled the same "stand"
+    // forever, and deer petrified on their first idle roll.
+    auto wanderer = world.reg.create();
+    world.reg.emplace<sm::ecs::Position>(wanderer, 200.0f, 200.0f, 0.0f);
+    world.reg.emplace<sm::ecs::SubworldAi>(wanderer,
+                                           sm::ecs::SubworldAi::Wander,
+                                           0.0f, 0.0f, 0.0f, 8.0f, 0.6f);
+    bool decidedToWalk = false;
+    bool decidedToStand = false;
+    for (int i = 0; i < 400; ++i) {
+        sm::sub::tick_npc_ai(world, 140.0f, 100.0f, 0u, 0.5f);
+        const auto& wai = world.reg.get<sm::ecs::SubworldAi>(wanderer);
+        if (wai.wantVx != 0.0f || wai.wantVy != 0.0f) decidedToWalk = true;
+        else decidedToStand = true;
+    }
+    const auto& wpos = world.reg.get<sm::ecs::Position>(wanderer);
+    if (wpos.x != 200.0f || wpos.y != 200.0f) {
+        return fail("a wander brain must never write Position");
+    }
+    if (!decidedToWalk || !decidedToStand) {
+        return fail("a standing mind stopped deciding (seq missing from seed)");
+    }
+
     std::printf("OK combat_squad_test hired=%zu garrison=%zu upkeep=%d discounted=%d generated=%zu projected=%d malformed_tiles=%d ai_owner=1 unique_ids=1\n",
                 player.members.size(), garrison.members.size(),
                 baseUpkeep, charismaUpkeep, generated.garrison.members.size(),

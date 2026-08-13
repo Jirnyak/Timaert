@@ -1,6 +1,9 @@
-// Subworld AI tick. Wander/Flee movement lives here; real combat actors
-// with ecs::Combat are positioned and attacked by SubworldEngine so they
-// do not integrate twice in one frame.
+// Subworld AI tick — the BRAIN pass. Wander/Flee decide what a body wants
+// and write SubworldAi.wantVx/Vy; the battle steering pass (driven from
+// SubworldEngine) is the ONE owner of every body's position and executes
+// that intent with the same separation, solids and terrain as any fighter.
+// Nothing here ever writes Position, so nothing can integrate twice in one
+// frame.
 #pragma once
 #include <cstdint>
 #include "ecs/world.h"
@@ -16,17 +19,12 @@ constexpr int   kHitRepPenalty    = -1;
 
 using PlayerThreatFn = bool (*)(void* user, std::uint32_t entityId);
 
-// Solid-structure gate (sub/collide.h, wired by the engine): may a body of
-// radius r with feet at z occupy (x, y)? Same contract as BattleTerrain's
-// canStand — one rule for every mover in the subworld.
-using SolidCanStandFn = bool (*)(void* user, float x, float y,
-                                 float r, float z);
-
+// A brain needs no collision gate: walls, bounds and the crowd are the
+// steering pass's business. The SolidCanStandFn parameter died with the
+// private integrator.
 void tick_npc_ai(ecs::World& w, float playerX, float playerY,
                  std::uint32_t playerEntityId, float dt,
                  PlayerThreatFn threatFn = nullptr,
-                 void* threatUser = nullptr,
-                 SolidCanStandFn canStand = nullptr,
-                 void* canStandUser = nullptr);
+                 void* threatUser = nullptr);
 
 } // namespace sm::sub

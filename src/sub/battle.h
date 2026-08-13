@@ -124,9 +124,13 @@ enum BattleUnitFlags : std::uint8_t {
     BU_None    = 0,
     BU_Missile = 1u << 0,   // fights at range: holds stand-off, never closes
     BU_Pinned  = 1u << 1,   // a real target and a real obstacle, but NOT steered
-                            // here (the player body; fleeing wildlife owned by
-                            // sub/ai.cpp). Its position is never written back.
+                            // here (the player body — its mover is the input).
+                            // Its position is never written back.
     BU_Flying  = 1u << 2,   // owns its Z: terrain water/slope must not touch it
+    BU_Passive = 1u << 3,   // the mind refuses the war drive (a Flee brain):
+                            // never contact-scans, never answers the field,
+                            // never strikes — its intent rules its legs. Still
+                            // a real target, still separates, still blocks.
 };
 
 // One unit as handed to the battle pass. POD; the caller fills it from the ECS.
@@ -137,6 +141,12 @@ struct BattleUnitDesc {
     float speed = 0.0f;         // world units / s
     float reach = 0.0f;         // attack range, world units (surface-to-centre)
     float sight = 200.0f;       // own detection range; relays through comrades
+    // The brain's intent (SubworldAi.wantVx/Vy): the velocity this body's own
+    // mind asks for. Executed by the steering pass ONLY while no combat drive
+    // claims the body (no contact target, no alerted field cell), so a wander
+    // amble yields to a battle the moment one starts. The vector carries its
+    // own pace — a fleeing deer runs at flee speed, not at its combat sprint.
+    float intentVx = 0.0f, intentVy = 0.0f;
     std::uint64_t enemyMask = 0;
     std::int16_t  faction = -1; // interned index, -1 = factionless (fights none)
     std::uint8_t  flags = BU_None;
@@ -149,6 +159,7 @@ struct BattleUnits {
     int count = 0;
     std::vector<float> x, y, z;
     std::vector<float> vx, vy;
+    std::vector<float> intentVx, intentVy;
     std::vector<float> radius, speed, reach, sight;
     std::vector<std::uint64_t> enemyMask;
     std::vector<std::int16_t>  faction;
