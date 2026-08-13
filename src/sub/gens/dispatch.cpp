@@ -1419,8 +1419,6 @@ static void gen_water(const CellContext& ctx, const Biome nbBiome[9],
 // Spire landmark: tower footprint plus scorch and crater tiles.
 static void gen_spire(const CellContext& ctx, const Biome nbBiome[9],
                       const std::uint8_t nbFeature[9], const int nbTreeCount[9], SubworldMapData& out) {
-    constexpr int kTowerDiameter = 14;
-    constexpr int kTowerHeight = 96;
     constexpr int kScorchRadius = 90;
     constexpr int kCraterInner = 18;
     constexpr int kCraterRing = 22;
@@ -1466,17 +1464,35 @@ static void gen_spire(const CellContext& ctx, const Biome nbBiome[9],
         }
     }
 
-    // The spire itself: one ROUND tower (a 96 m grey box read as a crate;
-    // the cylinder shape finally makes it a spire).
+    // The spire itself: one ROUND tower (the cylinder shape is what makes it
+    // a spire and not a crate). Dimensions are the dungeon layer's shared
+    // authority (dgn/dispatch.h) — the roof exit stands the player at this
+    // exact crown.
     {
         Structure spire{};
         spire.kind = Structure::Wall;
         spire.x = float(cx);
         spire.y = float(cy);
-        spire.radius = float(kTowerDiameter) * 0.5f;
-        spire.height = float(kTowerHeight);
+        spire.radius = kSpireTowerRadiusTiles;
+        spire.height = kSpireTowerHeightM;
         spire.shape = Structure::Cylinder;
         out.structures.push_back(spire);
+    }
+    // The gate on the south face — the CaveMouth pattern: a Door-verb prop
+    // whose row opens the tower's own interior. tag carries the spell's
+    // tier (resolve_context stamps it into landmarkSize for spire cells),
+    // which the dungeon reads as its storey count (DungeonRef::ordinal).
+    {
+        Structure gate{};
+        gate.kind = Structure::SpireGate;
+        gate.x = float(cx);
+        gate.y = float(cy) + kSpireTowerRadiusTiles;
+        gate.hx = 0.75f; // a leaf 1.5 tiles across, the street-door width
+        gate.hy = structure_min_half_xy(Structure::SpireGate);
+        gate.radius = std::max(gate.hx, gate.hy);
+        gate.height = structure_min_height(Structure::SpireGate);
+        gate.tag = std::uint16_t(std::clamp(ctx.landmarkSize, 1, 5));
+        out.structures.push_back(gate);
     }
     scatter_universal_trees(out, kCellSize,
         ctx.cx * kCellSize, ctx.cy * kCellSize,

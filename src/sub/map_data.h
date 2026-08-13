@@ -79,6 +79,8 @@ struct DungeonRef {
         House = 1,      // a settlement building's interior
         Cave = 2,       // a cavern behind a mouth in rock — the first
                         //   interior that is nobody's property
+        SpireTower = 3, // the spire's tower: storeys climbed bottom to top,
+                        //   ordinal = the spire spell's TIER = storey count
         Void = 0xFF,    // sealed filler for the dungeon window's ring cells
     };
     std::uint8_t  kind = None;
@@ -203,8 +205,8 @@ inline constexpr const InteractRow& interact_row(InteractId i) {
 struct Structure {
     enum Kind : std::uint8_t { Tree = 0, Rock, House, Wall, Bridge, Crop,
                                Fence, Furnish, Door, Lantern, Stairs,
-                               Chest, CaveMouth, Well, Sign } kind;
-    static constexpr int kKindCount = int(Sign) + 1;
+                               Chest, CaveMouth, Well, Sign, SpireGate } kind;
+    static constexpr int kKindCount = int(SpireGate) + 1;
     // Footprint silhouette. Box is the default; Cylinder renders (and collides)
     // as a round prism — wall towers, gate jambs, the spire. One byte, not a
     // new Kind: shape is orthogonal to what the thing IS.
@@ -418,6 +420,15 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Sign,
                   InteractId::Read, DungeonRef::None, 0u, 0.0f, 0.0f},
+    // SpireGate: the tower's own doorway — the CaveMouth pattern (a Door verb
+    // whose `opens` column names its OWN interior), sized like the house leaf
+    // it visually is (the Door material draws it). One kind serves both ends
+    // of the climb: the gate at the tower's foot and the roof hatch on the
+    // top storey — the dungeon session reads which end from the storey.
+    /* SpireGt*/ {"",     0.5f, 2.0f,  0.0f, false, "",
+                  StructureKindRow::Draw::Solid,
+                  StructureKindRow::Material::Door,
+                  InteractId::Door, DungeonRef::SpireTower, 0u, 0.0f, 0.0f},
 };
 
 inline constexpr const StructureKindRow& structure_kind_row(Structure::Kind k) {

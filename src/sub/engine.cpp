@@ -1080,7 +1080,10 @@ CellContext SubworldEngine::resolve_context(int x, int y) const {
         for (const auto& sp : gs_->spires) {
             if (sp.x == xi && sp.y == yi) {
                 c.landmarkSettlementId = sp.id;
-                c.landmarkSize = 0;
+                // A spire's "size" IS its spell's tier — the strength column
+                // of this landmark. gen_spire stamps it into the gate's tag,
+                // which the tower reads as its storey count.
+                c.landmarkSize = int(sp.tier);
                 c.landmarkKind = CellLandmarkKind::Spire;
                 break;
             }
@@ -2756,14 +2759,18 @@ void SubworldEngine::enter_dungeon_scene(GameState& gs,
     pendingUpload3d_ = {};
     structIndexDirty_ = true;
 
-    // The player materialises on the threshold they came in by.
+    // The player materialises on the threshold they came in by. A shaft
+    // arrival lands where the MODULE says that shaft tops/bottoms out
+    // (dungeon_shaft_arrival_point — a house shaft is one vertical line, a
+    // tower's ladder alternates sides), so placement can never disagree
+    // with the stamped pads.
     float ex = 0.0f, ey = 0.0f;
     switch (ses.arrival) {
         case DungeonArrival::ShaftUp:
-            dungeon_stair_point(ses.ref, /*up*/true, ex, ey);
+            dungeon_shaft_arrival_point(ses.ref, /*wentUp*/true, ex, ey);
             break;
         case DungeonArrival::ShaftDown:
-            dungeon_stair_point(ses.ref, /*up*/false, ex, ey);
+            dungeon_shaft_arrival_point(ses.ref, /*wentUp*/false, ex, ey);
             break;
         case DungeonArrival::Door:
         default:
@@ -2827,9 +2834,15 @@ void SubworldEngine::enter_dungeon_scene(GameState& gs,
     // not a rule: it is the cell they stand on, because a town cell's wild
     // capacity is the Ruin table's floor while a mountain's is its own full
     // headcount. The danger zone prices the fight exactly as it does outdoors.
+    // A spire tower is garrisoned on EVERY storey — the spire's demons are
+    // the cell's own headcount (kTblSpire is what a spire cell's FaunaCount
+    // capacity already counts), so clearing the climb thins the spire
+    // through the same receipt a hunt settles, and the one growth law is
+    // what re-summons the guard.
     const bool denOfBeasts =
         (ses.ref.kind == DungeonRef::House && ses.ref.level < 0)
-        || ses.ref.kind == DungeonRef::Cave;
+        || ses.ref.kind == DungeonRef::Cave
+        || ses.ref.kind == DungeonRef::SpireTower;
     if (denOfBeasts && ecs_) {
         MacroWorld mw{gs_, treeLayer_, ecs_, terrain_};
         const MacroStockKey faunaKey{-1, std::int16_t(ses.doorCx),
@@ -2846,10 +2859,16 @@ void SubworldEngine::enter_dungeon_scene(GameState& gs,
         }
         const DungeonRoom room = dungeon_room(ses.ref);
         const CellContext doorCtx = resolve_context(ses.doorCx, ses.doorCy);
+        // The den's table is its landmark's: a spire storey draws the Spire
+        // family (demons), a cellar and a cave the Ruin family — the same
+        // routing the open cell runs (get_fauna_table).
+        const LandmarkKind denKind = ses.ref.kind == DungeonRef::SpireTower
+            ? LandmarkKind::Spire
+            : LandmarkKind::Ruin;
         spawn_dungeon_vermin(*ecs_, mgr_,
             dungeon_scene_seed(worldSeed, ses.doorCx, ses.doorCy,
                                ses.ref.ordinal, ses.ref.level),
-            LandmarkKind::Ruin, doorCtx.biome, doorCtx.treeCount,
+            denKind, doorCtx.biome, doorCtx.treeCount,
             levelBonus, hpMult, damageMult, budget,
             float(kCellSize) + room.cx - room.hx,
             float(kCellSize) + room.cy - room.hy,
@@ -2980,12 +2999,17 @@ bool SubworldEngine::try_take_dungeon_stairs() {
     const int level = int(ref.level);
     // Which shafts stand on THIS storey — the same rule the generator stamps
     // its pads by (sub/dgn/dispatch.h), asked of the same three functions, so
-    // a pad you can see is a pad that works.
+    // a pad you can see is a pad that works. A tower's pads are directional
+    // (W always climbs, E always descends — the ladder of shafts); a house's
+    // two shafts each join a fixed pair of storeys.
+    const bool tower = ref.kind == DungeonRef::SpireTower;
     const bool hasUpper = dungeon_has_upper(ref);
     const bool hasCellar = dungeon_has_cellar(ref, gs_->worldSeed,
                                               dungeon_.doorCx, dungeon_.doorCy);
-    const bool padNW = (level == 0 && hasUpper) || level == 1;
-    const bool padNE = (level == 0 && hasCellar) || level == -1;
+    const bool padNW = tower ? hasUpper
+                             : (level == 0 && hasUpper) || level == 1;
+    const bool padNE = tower ? level > 0
+                             : (level == 0 && hasCellar) || level == -1;
     if (!padNW && !padNE) return false;
 
     const float reach2 = kPlayerMeleeRange * kPlayerMeleeRange;
@@ -2999,16 +3023,16 @@ bool SubworldEngine::try_take_dungeon_stairs() {
         return dx * dx + dy * dy <= reach2;
     };
     float wx = 0.0f, wy = 0.0f;
-    // The NW shaft joins 0↔+1 and the NE shaft 0↔-1, so the storey you stand
-    // on decides which way a shaft goes: from the ground floor both lead
-    // away, from a storey the only shaft on it leads back.
+    // House: the NW shaft joins 0↔+1 and the NE shaft 0↔-1, so the storey
+    // you stand on decides which way a shaft goes. Tower: the pads ARE the
+    // directions — W is always one storey up, E always one down.
     int target = level;
     DungeonArrival arrival = DungeonArrival::Door;
     if (padNW && on_pad(/*up*/true, wx, wy)) {
-        target = (level == 0) ? 1 : 0;
+        target = tower ? level + 1 : (level == 0) ? 1 : 0;
         arrival = DungeonArrival::ShaftUp;
     } else if (padNE && on_pad(/*up*/false, wx, wy)) {
-        target = (level == 0) ? -1 : 0;
+        target = tower ? level - 1 : (level == 0) ? -1 : 0;
         arrival = DungeonArrival::ShaftDown;
     } else {
         return false;
@@ -3072,24 +3096,41 @@ bool SubworldEngine::try_exit_dungeon() {
     if (!active_ || sceneKind_ != SceneKind::Dungeon || !gs_ || !terrain_) {
         return false;
     }
-    // The street door exists on the storey it opens onto, and nowhere else:
-    // from an upper room or a cellar the only way out is back down/up the
-    // shaft you came by.
-    if (dungeon_.ref.level != 0) {
-        set_status("No way out here — take the stairs.");
-        return false;
+    // The street door exists on the storey it opens onto — and a spire
+    // tower's TOP storey has a second way out: the roof hatch onto the
+    // crown. Which threshold the keypress means is decided by reach, the
+    // same rule that resolves two doors side by side.
+    const bool tower = dungeon_.ref.kind == DungeonRef::SpireTower;
+    const int topLevel =
+        tower ? dungeon_spire_tower_floors(dungeon_.ref) - 1 : 0;
+    bool roofExit = false;
+    if (tower && int(dungeon_.ref.level) == topLevel) {
+        float hx = 0.0f, hy = 0.0f;
+        dungeon_roof_hatch_point(dungeon_.ref, hx, hy);
+        const float dx = playerX_ - (float(kCellSize) + hx);
+        const float dy = playerY_ - (float(kCellSize) + hy);
+        roofExit = dx * dx + dy * dy
+                <= kPlayerMeleeRange * kPlayerMeleeRange;
     }
-    // E works on the threshold — the same spot you arrived on, at the same
-    // reach every interaction uses.
-    float ex = 0.0f, ey = 0.0f;
-    dungeon_entry_point(dungeon_.ref, ex, ey);
-    const float wx = float(kCellSize) + ex;
-    const float wy = float(kCellSize) + ey;
-    const float dx = playerX_ - wx;
-    const float dy = playerY_ - wy;
-    if (dx * dx + dy * dy > kPlayerMeleeRange * kPlayerMeleeRange) {
-        set_status("Nothing to interact with.");
-        return false;
+    if (!roofExit) {
+        // From an upper room or a cellar the only way out is back down/up
+        // the shaft you came by.
+        if (dungeon_.ref.level != 0) {
+            set_status("No way out here — take the stairs.");
+            return false;
+        }
+        // E works on the threshold — the same spot you arrived on, at the
+        // same reach every interaction uses.
+        float ex = 0.0f, ey = 0.0f;
+        dungeon_entry_point(dungeon_.ref, ex, ey);
+        const float wx = float(kCellSize) + ex;
+        const float wy = float(kCellSize) + ey;
+        const float dx = playerX_ - wx;
+        const float dy = playerY_ - wy;
+        if (dx * dx + dy * dy > kPlayerMeleeRange * kPlayerMeleeRange) {
+            set_status("Nothing to interact with.");
+            return false;
+        }
     }
     // The same danger law as any subworld exit: the door does not save you
     // while hostiles stand at your back (owner ruling 2026-08-12).
@@ -3124,15 +3165,38 @@ bool SubworldEngine::try_exit_dungeon() {
     dungeon_ = {};
 
     // Land the macro player on the door's cell, then re-enter the overworld
-    // at the very spot the door was opened from.
+    // at the very spot the door was opened from — or, through the hatch, ON
+    // the tower's crown: the cylinder's centre, one tower height above the
+    // ground the honest support physics already carries bodies on.
     gs.player.x = float(ses.doorCx);
     gs.player.y = float(ses.doorCy);
     gs.player.entryDir = kEntryDirNone;
     gs.player.entryTicks = 0;
     gs.player.entryTickAccum = 0;
-    const float pos[2] = {float(kCellSize) + ses.returnLocalX,
-                          float(kCellSize) + ses.returnLocalY};
+    // gen_spire stamps the tower at its cell's midpoint, and the re-entered
+    // window is centred on that cell.
+    const float crown = float(kCellSize) + float(kCellSize) / 2.0f;
+    const float pos[2] = {
+        roofExit ? crown : float(kCellSize) + ses.returnLocalX,
+        roofExit ? crown : float(kCellSize) + ses.returnLocalY};
     enter(gs, terrain, features, ecs, bus, zones, treeLayer, pos);
+    if (roofExit && active_) {
+        // enter() seated the player on the terrain sample; lift to the crown
+        // (structure top = seat + height, the one geometry contract). The
+        // next vertical_step finds the cylinder top as support and stands.
+        playerZ_ = renderer3dVk_.sample_height_m(playerX_, playerY_)
+                 + kSpireTowerHeightM;
+        playerVz_ = 0.0f;
+        playerGrounded_ = true;
+        if (ecs_) {
+            const auto e = player_entity();
+            if (e != entt::null) {
+                if (auto* p = ecs_->reg.try_get<ecs::Position>(e)) {
+                    p->z = playerZ_;
+                }
+            }
+        }
+    }
     return true;
 }
 

@@ -714,6 +714,7 @@ void write_spire(Writer& w, const Spire& s) {
     w.pod(s.x);
     w.pod(s.y);
     w.pod(s.spellId);
+    w.pod(s.tier);   // v38
     write_bool(w, s.depleted);
 }
 
@@ -722,6 +723,7 @@ void read_spire(Reader& r, Spire& s) {
     r.pod(s.x);
     r.pod(s.y);
     r.pod(s.spellId);
+    r.pod(s.tier);   // v38
     read_bool(r, s.depleted);
 }
 

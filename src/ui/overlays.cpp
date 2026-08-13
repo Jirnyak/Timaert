@@ -3207,6 +3207,7 @@ namespace sm::ui
                                   std::max(1, r), IM_COL32(112, 112, 116, 255), 0.70f);
                     break;
                 case sub::Structure::Door:
+                case sub::Structure::SpireGate:
                 case sub::Structure::Lantern:
                 case sub::Structure::Stairs:
                 case sub::Structure::Chest:

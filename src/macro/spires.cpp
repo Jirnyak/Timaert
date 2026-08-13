@@ -102,6 +102,7 @@ void generate_spires(GameState& gs, const ZoneLayer& zones,
         sp.x        = bestX;
         sp.y        = bestY;
         sp.spellId  = spec.spellOrdinal;
+        sp.tier     = std::uint8_t(tier);
         sp.depleted = false;
         gs.spires.push_back(sp);
     }

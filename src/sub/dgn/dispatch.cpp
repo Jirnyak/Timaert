@@ -47,9 +47,10 @@ Tile dungeon_floor_tile(const DungeonRef& ref) {
 
 DungeonRoom dungeon_room(const DungeonRef& ref) {
     switch (ref.kind) {
-        case DungeonRef::House: return dungeon_house_room(ref);
-        case DungeonRef::Cave:  return dungeon_cave_room(ref);
-        default:                return DungeonRoom{};
+        case DungeonRef::House:      return dungeon_house_room(ref);
+        case DungeonRef::Cave:       return dungeon_cave_room(ref);
+        case DungeonRef::SpireTower: return dungeon_spire_tower_room(ref);
+        default:                     return DungeonRoom{};
     }
 }
 
@@ -68,6 +69,10 @@ void dungeon_entry_point(const DungeonRef& ref, float& x, float& y) {
 bool dungeon_has_upper(const DungeonRef& ref) {
     // A cave has no storeys: it has depth, and depth is walked, not climbed.
     if (ref.kind == DungeonRef::Cave) return false;
+    // A tower climbs 0..floors-1; every storey below the top has a way up.
+    if (ref.kind == DungeonRef::SpireTower) {
+        return int(ref.level) < dungeon_spire_tower_floors(ref) - 1;
+    }
     // A storey is worth climbing only if it seats a room you can fight in:
     // both interior half-spans at least the manoeuvre floor the partitions
     // are cut to (sub/dgn/house.cpp kMinRoomSpanTiles = 12 — a doorway plus
@@ -79,6 +84,9 @@ bool dungeon_has_upper(const DungeonRef& ref) {
 bool dungeon_has_cellar(const DungeonRef& ref, std::uint32_t worldSeed,
                         int cx, int cy) {
     if (ref.kind == DungeonRef::Cave) return false;   // see above
+    // A tower rises; nothing of it is dug. Its downward shafts live BETWEEN
+    // storeys (E pad, dungeon_stair_point), never below the ground floor.
+    if (ref.kind == DungeonRef::SpireTower) return false;
     // Design parameter, not an invariant: every second hearth keeps a
     // cellar. Rolled from the LEVEL-0 stream so every storey of one house
     // agrees on whether the shaft below exists.
@@ -88,20 +96,46 @@ bool dungeon_has_cellar(const DungeonRef& ref, std::uint32_t worldSeed,
 }
 
 void dungeon_stair_point(const DungeonRef& ref, bool up, float& x, float& y) {
+    const DungeonRoom room = dungeon_room(ref);
+    // A tower hall is ROUND: the rect's corners lie outside the circle, so
+    // its pads sit on the W/E axis instead — 6 tiles in from the wall (the
+    // 3×3 pad plus a body radius, sub/body.h, clear of the masonry ring).
+    if (ref.kind == DungeonRef::SpireTower) {
+        x = up ? room.cx - room.hx + 6.0f : room.cx + room.hx - 6.0f;
+        y = room.cy;
+        return;
+    }
     // One vertical line per shaft, level-independent: NW climbs, NE
     // descends. 4 tiles off the corner — one doorway width — so the pad
     // clears the outer walls and any partition ever nudged against them.
-    const DungeonRoom room = dungeon_room(ref);
     x = up ? room.cx - room.hx + 4.0f : room.cx + room.hx - 4.0f;
     y = room.cy - room.hy + 4.0f;
 }
 
+void dungeon_shaft_arrival_point(const DungeonRef& ref, bool wentUp,
+                                 float& x, float& y) {
+    // A tower's up-shaft tops out at the new storey's DOWN pad (and the
+    // down-shaft lands on the UP pad) — the ladder alternates sides. A
+    // house shaft is one vertical line: you arrive on the pad you took.
+    const bool pad = ref.kind == DungeonRef::SpireTower ? !wentUp : wentUp;
+    dungeon_stair_point(ref, pad, x, y);
+}
+
+void dungeon_roof_hatch_point(const DungeonRef& ref, float& x, float& y) {
+    // North point of the hall's axis, the same 6-tile wall clearance the
+    // stair pads keep — the one spot on the top storey no shaft occupies.
+    const DungeonRoom room = dungeon_room(ref);
+    x = room.cx;
+    y = room.cy - room.hy + 6.0f;
+}
+
 void dispatch_generate_dungeon(const CellContext& ctx, SubworldMapData& out) {
     switch (ctx.dungeon.kind) {
-        case DungeonRef::House: gen_dungeon_house(ctx, out); break;
-        case DungeonRef::Cave:  gen_dungeon_cave(ctx, out);  break;
+        case DungeonRef::House:      gen_dungeon_house(ctx, out);       break;
+        case DungeonRef::Cave:       gen_dungeon_cave(ctx, out);        break;
+        case DungeonRef::SpireTower: gen_dungeon_spire_tower(ctx, out); break;
         case DungeonRef::Void:
-        default:                gen_dungeon_void(ctx, out);  break;
+        default:                     gen_dungeon_void(ctx, out);        break;
     }
 }
 

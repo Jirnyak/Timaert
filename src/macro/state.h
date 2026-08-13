@@ -110,7 +110,10 @@ namespace sm {
 // PER KIND — a cell may hold several kinds (iron found IN a stone mountain;
 // nothing vanishes), so the single-kind packed override died and the save
 // carries the deposit cells whole, like the tree grid.
-constexpr int kSaveVersion = 37;
+// v38: Spire carries its spell's tier — the spire's whole context (zone gate
+// at placement, tower storey count, guard site) derives from it, and the
+// subworld may not reach up into the spell registry to recompute it.
+constexpr int kSaveVersion = 38;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
@@ -157,7 +160,12 @@ struct Village {
 struct Spire {
     int id;
     int x, y;
-    std::uint32_t spellId;
+    std::uint32_t spellId; // spell_registry() registration ordinal (append-only)
+    // SpellDef.tier (1..5), captured at placement: the one difficulty context
+    // every downstream consumer reads (tower storeys = tier; the placement
+    // zone gate already spent it). Stored because the subworld layer may not
+    // reach up into content/ to re-derive it from spellId.
+    std::uint8_t tier = 1;
     bool depleted;
 };
 
