@@ -52,12 +52,33 @@ dialect (taken and not yet regrown — subtracts correctly from any embodied
 yield), self-cleaning, one regrow door on the daily tick with a per-field
 cadence. Rows today: **Wheat** (fertility = the climate master's G channel)
 and **Fauna**; the macro_stock ledger rows call through the container.
-Trees (rendered full grid) and deposits (per-cell KIND) still live in their
-own carriers and join the registry in R2.
 
-The BEHAVIOURAL half — settlement placement actually READING the resources
-(today a village is a random ring around its city, land being the only
-criterion) — is the R2 session: proposals/session-prompts.md → Сессия 25.
+The BEHAVIOURAL half is built too (R2, 2026-08-13): settlement placement
+now READS the resources through one suitability door,
+`macro/settlement_score.h` — see [landmarks.md](landmarks.md) for the model
+and ARCHITECTURE.md §Politics System for the pipeline. The boot order is
+the law itself: trees and deposits derive before politics, because
+placement reads them. The field stamp reads fertility through the registry
+too, so the parcels a village ploughs and the capacity that drew it there
+cannot drift apart.
+
+**Not yet unified: STORAGE.** Trees (a rendered full grid) and deposits
+(per-cell KIND) still live in their own carriers. R1 promised their rows
+would join the registry in R2; R2's reconnaissance found why they cannot
+join it as it stands, and the honest answer was to defer rather than
+force it:
+
+- **Deposits** — striking a new vein CHANGES a cell's kind (stone →
+  iron). The registry's model is `baseline − scar` clamped to the
+  baseline; creating geology is not a subtraction, so the row would need
+  a second mechanism, i.e. a new concept in the container.
+- **Trees** — `TreeLayer.data` holds the CURRENT count (overrides are
+  applied into it) and the renderer uploads exactly that grid as
+  `u_treeMap`. The registry needs the grid to be a BASELINE with scars
+  kept apart, and 21 call sites across 8 files read `.at()` expecting
+  current: any one missed silently regrows a felled forest.
+
+Both are a session of their own, with their own negative controls.
 
 ## Resource squads — owner-approved DESIGN (not yet built)
 

@@ -310,14 +310,31 @@ them. Pure data: no rendering, no events, no UI.
 
 **Pipeline:**
 
-1. **`generate_politik(seed, mapW, mapH)`** — iterates `kingdom_defs()`
-   (data registry of `{id, lineage, region, minCities, maxCities,
-   capital_requires_lake, color_rgb, priority}`), places one capital per
-   kingdom, scatters child cities around it, then per kingdom builds a
-   **Prim's MST** seeded at the capital + one extra nearest non-connected
-   edge per city for redundancy (cap 4 connections), and finally one
-   inter-kingdom **bridge road** between every kingdom pair whose closest
-   city pair is within `0.35 ×` the half-diagonal.
+1. **`generate_politik(seed, mapW, mapH, terrain, seaLevel8, target, site)`**
+   — iterates `kingdom_defs()` (data registry of `{id, lineage, region,
+   minCities, maxCities, capital_requires_lake, color_rgb, priority}`),
+   places one capital per kingdom, scatters child cities around it, then
+   per kingdom builds a **Prim's MST** seeded at the capital + one extra
+   nearest non-connected edge per city for redundancy (cap 4 connections),
+   and finally one inter-kingdom **bridge road** between every kingdom
+   pair whose closest city pair is within `0.35 ×` the half-diagonal.
+
+   **Politics says how many and whose; the ground says where** (R2).
+   Every candidate cell is priced by `settlement_site_score` through the
+   `site` context, and the best valid draw is settled — a capital takes
+   the best cell within its own spacing disk, child cities the best of
+   their anchor-jitter draws. Populations derive from that same score
+   (`capital_population` / `city_population`), never from dice. Passing
+   `site = nullptr` prices every cell at zero, which degrades to the old
+   first-valid placement — that arm is the negative control in
+   `settlement_placement_test`.
+
+   **One distance law.** `derive_city_spacing(terrain, seaLevel8, w, h, n)`
+   is the single door: nearest-neighbour distance of *n* points over the
+   land area, times 0.6. City rejection uses it, anchor jitter is `2 ×`
+   it (so a child lands in the annulus `[spacing, 2 × spacing]` of its
+   parent), and village hinterlands are **half** of it. No other
+   placement distance exists.
 2. **`snap_cities_to_land(politik, terrain, seaLevel8, radius)`** — bounded
    spiral BFS that nudges every city onto the nearest land cell. Required
    because `generate_politik` is terrain-agnostic; without this pass cities

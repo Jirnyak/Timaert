@@ -95,9 +95,14 @@ focused doc in this directory alongside the README, which orchestrates them.
   settles the **wheat resource field**: `macro/resource_field.h` is the ONE
   container (baseline = pure climate, scar overrides, self-cleaning, one
   regrow door; rows: Wheat, Fauna; save v35). The owner's causality law —
-  мир → рельеф → климат → ресурсы → заселение — has its structural half
-  built; the behavioural half (settlement placement reading resources) is
-  the R2 session (proposals/session-prompts.md → Сессия 25). See
+  мир → рельеф → климат → ресурсы → заселение — is now built end to end:
+  R2 (2026-08-13) made placement READ the resources through one
+  suitability door, `macro/settlement_score.h` (weights as data, capacity
+  deciding where a place stands, how many souls live there and how many
+  villages a city's land feeds), and moved trees and deposits ahead of
+  politics in the boot so it can. Storage stays un-unified on purpose —
+  see macrosim.md for why a discovered vein and a rendered tree grid do
+  not fit the scar model. See
   [macrosim.md](macrosim.md) § Resource fields.
 - Seamless 3×3 subworld (3072×3072) with neighbour-aware heightmap, coastal
   sculpting, mountain amplification, biome-specific terrain shaping. Cell-boundary

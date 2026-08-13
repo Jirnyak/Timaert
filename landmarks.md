@@ -5,6 +5,7 @@ spires/dungeons, and runtime markers.
 
 - **Code:** [macro/state.h](src/macro/state.h) (`Settlement`, `Village`,
   `Spire`), [macro/politik.h](src/macro/politik.h) (placement),
+  [macro/settlement_score.h](src/macro/settlement_score.h) (site capacity),
   [macro/markers.h](src/macro/markers.h), subworld
   [gens/](src/sub/gens) (interiors)
 - **TS origin:** `game/politik.ts`, `game/markers.ts`, `subworld/city-generator.ts`…
@@ -12,8 +13,30 @@ spires/dungeons, and runtime markers.
 
 ## Model
 
-- **Placement:** capitals + cities from politik (kingdom-driven); villages
-  scattered; spires from `generate_spires()` gated on zone ≥ 5.
+- **Placement:** SETTLEMENT IS DOWNSTREAM OF THE GROUND (R2, session 25).
+  `settlement_site_score` is the one suitability door: terms 0..16 for
+  arable (the wheat row of the resource registry), water, forest and
+  deposits, vetoes on water / forest-massif / mountain rock, and weights
+  as DATA — one row per settlement class. Capitals and cities: politics
+  decides how many and whose, the score decides where among the valid
+  candidates. Villages: the whole hinterland (half the city spacing) is
+  scanned and the best sites win.
+- **A village is not TYPED by its resource.** Peasants work whatever
+  stands around them, so one weights row prices grain, water, wood and
+  ore together; a village that grows up beside a vein is a mining village
+  by neighbourhood, not by a field in the save.
+- **Capacity answers three questions with one number:** where a place
+  stands (argmax), how many souls live there (population = rate × score,
+  floored), and how many villages a city's land feeds (summed hinterland
+  capacity / quota, at least one wherever any ground is admissible).
+  Villages divide that land — separation is half the hinterland — so they
+  scatter around the town instead of clumping in its fattest corner.
+- **Spires** from `generate_spires()` gated on zone ≥ 5.
+- **Boot order is the law:** trees and deposits are derived BEFORE
+  politics, because placement reads them.
+- **Report card:** the `[worldgen]` boot line prints `cities`, `villages`,
+  `villageless`, `vilSpacing` and the share of villages standing by water
+  / ploughland / a vein — the causality, measured on every world.
 - **Interiors:** entering a landmark cell runs its self-contained subworld
   generator (city streets/walls, village farms/houses, ruins).
 - **Markers:** universal overlay — 4 styles (quest/poi/danger/waypoint), each a
@@ -25,7 +48,9 @@ spires/dungeons, and runtime markers.
 ## Data-driven extension
 
 Add a kingdom/capital rule → one `kingdom_defs()` row. Add a marker style → one
-`MarkerStyle` enumerator + one `kMarkerGlyph` / `kMarkerColor` entry.
+`MarkerStyle` enumerator + one `kMarkerGlyph` / `kMarkerColor` entry. Change
+what land a settlement class wants → one `kSettlementScoreRows` row (weights
+only). Teach the score a new resource → one term reading its registry row.
 
 ## Connections
 

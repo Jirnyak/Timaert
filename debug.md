@@ -190,6 +190,18 @@ resting 6 m above the terrain it was comparing against), another had a live
 peasant wander into a bolt's line of fire. Both were real; both were invisible on
 seed 12345.
 
+**And take the baseline BEFORE you change the world.** A change to world
+generation moves every layout-dependent smoke, so "red after" means nothing
+without "green before" on the same seeds — record the sweep first and explain
+every difference against it. That discipline is also how you tell a genuine
+regression from a smoke that was never world-independent to begin with:
+`macro_npc_trace` asserted `visualMid > baseX` and so silently demanded the
+NPC walk EAST, which held only until resource-placed settlements (R2) moved
+the nearest town west. The march it guards was perfect. **State the property,
+never re-pin the number** — it now counts STEPS (Chebyshev, so a diagonal hop
+costs one while spanning √2) and asks the glide to land strictly between start
+and finish in any direction.
+
 ### 7.1 Seam-crossing profiling (the one that bites)
 
 A subworld cell crossing is the spikiest frame in the game. Two env vars:
