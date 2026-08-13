@@ -40,11 +40,15 @@ struct SaveSummary {
 // `macroNpcs` is the flattened macro-ECS (macro/macro_snapshot.h) — a
 // REQUIRED parameter on purpose: a call site that could omit it would write
 // a world with no lords in it and nobody would notice until a load.
+// `treeCounts` is the living tree grid (TreeLayer.data, v36) — required for
+// the same reason: omit it and every felled forest silently regrows on load.
 bool save_game(const GameState& s, const std::vector<Quest>& activeQuests,
                const std::vector<MacroNpcRecord>& macroNpcs,
+               const std::vector<std::uint16_t>& treeCounts,
                const std::string& path);
 bool load_game(GameState& s, std::vector<Quest>& activeQuests,
                std::vector<MacroNpcRecord>& macroNpcs,
+               std::vector<std::uint16_t>& treeCounts,
                const std::string& path);
 SaveSummary inspect_save(const std::string& path);
 

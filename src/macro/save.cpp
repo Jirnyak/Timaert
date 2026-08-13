@@ -38,6 +38,9 @@ constexpr std::uint32_t kMaxQuests = 4096u;
 // Tree-count overrides are one entry per MUTATED cell; the cap is the whole
 // map (1024×1024) — anything beyond that is a corrupt count, fail closed.
 constexpr std::uint32_t kMaxTreeOverrides = 1u << 20;
+// The whole tree grid rides in the save (v36) — cap = a 1024² map, the same
+// ceiling the sparse maps above already assumed.
+constexpr std::uint32_t kMaxTreeGridCells = 1u << 20;
 constexpr std::uint32_t kMaxQuestParts = 4096u;
 constexpr std::uint32_t kMaxSoldiers = 8192u;
 // The macro-ECS snapshot (v23): one record per living macro NPC. The cap is
@@ -937,7 +940,8 @@ void read_quest(Reader& r, Quest& q) {
 void write_payload(Writer& w, const GameState& s,
                    const std::string& savedAt,
                    const std::vector<Quest>& activeQuests,
-                   const std::vector<MacroNpcRecord>& macroNpcs) {
+                   const std::vector<MacroNpcRecord>& macroNpcs,
+                   const std::vector<std::uint16_t>& treeCounts) {
     w.pod(s.worldSeed);
     w.pod(s.mapW);
     w.pod(s.mapH);
@@ -976,17 +980,13 @@ void write_payload(Writer& w, const GameState& s,
     write_squad(w, s.deserterPool);
 
 
-    // v13: sparse tree-count overrides, sorted by cell index — the map's
-    // iteration order is unspecified and the payload is checksummed, so the
-    // byte stream must be deterministic (same rule as the faction map).
-    if (w.count(s.treeOverrides.size(), kMaxTreeOverrides)) {
-        std::vector<std::pair<std::uint32_t, std::uint16_t>> cells(
-            s.treeOverrides.begin(), s.treeOverrides.end());
-        std::sort(cells.begin(), cells.end());
-        for (const auto& [idx, count] : cells) {
-            w.pod(idx);
-            w.pod(count);
-        }
+    // v36: the tree grid WHOLE — the forest is a living carrier field
+    // (macro/resource_field.h Trees row): it grows past its virgin
+    // derivation, so "sparse overrides" stopped being sparse and the save
+    // just writes the state down (Persistence ruling). Cell order IS the
+    // byte order — deterministic by construction.
+    if (w.count(treeCounts.size(), kMaxTreeGridCells)) {
+        for (const std::uint16_t c : treeCounts) w.pod(c);
     }
 
     // v26: sparse deposit overrides — same pattern, same determinism rule.
@@ -1042,7 +1042,8 @@ void write_payload(Writer& w, const GameState& s,
 }
 
 void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
-                  std::vector<MacroNpcRecord>& macroNpcs) {
+                  std::vector<MacroNpcRecord>& macroNpcs,
+                  std::vector<std::uint16_t>& treeCounts) {
     s.version = kSaveVersion;
     r.pod(s.worldSeed);
     r.pod(s.mapW);
@@ -1105,16 +1106,12 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
     read_sub_state(r, s.subState);
     read_squad(r, s.deserterPool);
 
-    if (!read_count(r, n, kMaxTreeOverrides)) return;
-    s.treeOverrides.clear();
-    s.treeOverrides.reserve(n);
-    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-        std::uint32_t idx = 0;
-        std::uint16_t count = 0;
-        r.pod(idx);
-        r.pod(count);
-        if (r.ok) s.treeOverrides[idx] = count;
-    }
+    // v36: the whole tree grid (see the write side); the caller validates
+    // it against the loaded map dims (restore_tree_counts).
+    if (!read_count(r, n, kMaxTreeGridCells)) return;
+    treeCounts.clear();
+    treeCounts.resize(n);
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) r.pod(treeCounts[i]);
 
     if (!read_count(r, n, kMaxTreeOverrides)) return;   // v26: deposits
     s.depositOverrides.clear();
@@ -1175,7 +1172,8 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
 
 bool load_payload_from_file(const std::string& path, GameState& s,
                             std::vector<Quest>& activeQuests,
-                            std::vector<MacroNpcRecord>& macroNpcs) {
+                            std::vector<MacroNpcRecord>& macroNpcs,
+                            std::vector<std::uint16_t>& treeCounts) {
     std::vector<std::uint8_t> file;
     if (!read_file(path, file)) return false;
 
@@ -1187,13 +1185,15 @@ bool load_payload_from_file(const std::string& path, GameState& s,
     GameState loaded;
     std::vector<Quest> loadedQuests;
     std::vector<MacroNpcRecord> loadedMacro;
+    std::vector<std::uint16_t> loadedTrees;
     Reader r{file.data() + kHeaderBytes, static_cast<std::size_t>(h.payloadSize)};
-    read_payload(r, loaded, loadedQuests, loadedMacro);
+    read_payload(r, loaded, loadedQuests, loadedMacro, loadedTrees);
     if (!r.ok || r.pos != r.size) return false;
 
     s = std::move(loaded);
     activeQuests = std::move(loadedQuests);
     macroNpcs = std::move(loadedMacro);
+    treeCounts = std::move(loadedTrees);
     return true;
 }
 
@@ -1201,12 +1201,13 @@ bool load_payload_from_file(const std::string& path, GameState& s,
 
 bool save_game(const GameState& s, const std::vector<Quest>& activeQuests,
                const std::vector<MacroNpcRecord>& macroNpcs,
+               const std::vector<std::uint16_t>& treeCounts,
                const std::string& path) {
     Writer payload;
     payload.bytes.reserve(64u * 1024u);
     const std::string savedAt = save_timestamp_for(s);
     if (savedAt.empty()) return false;
-    write_payload(payload, s, savedAt, activeQuests, macroNpcs);
+    write_payload(payload, s, savedAt, activeQuests, macroNpcs, treeCounts);
     if (!payload.ok || payload.bytes.size() > kMaxPayloadBytes) return false;
 
     SaveHeader h;
@@ -1220,8 +1221,10 @@ bool save_game(const GameState& s, const std::vector<Quest>& activeQuests,
 
 bool load_game(GameState& s, std::vector<Quest>& activeQuests,
                std::vector<MacroNpcRecord>& macroNpcs,
+               std::vector<std::uint16_t>& treeCounts,
                const std::string& path) {
-    return load_payload_from_file(path, s, activeQuests, macroNpcs);
+    return load_payload_from_file(path, s, activeQuests, macroNpcs,
+                                  treeCounts);
 }
 
 SaveSummary inspect_save(const std::string& path) {

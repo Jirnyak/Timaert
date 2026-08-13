@@ -129,7 +129,7 @@ public:
     // `treeLayer` (optional): the mutable macro tree-count layer
     // (macro/tree_layer.h). When present it feeds CellContext.treeCount so
     // generation is count-driven, and felling a tree in here decrements the
-    // owning cell's count (micro → macro writeback via gs.treeOverrides).
+    // owning cell's count (micro → macro writeback via the Trees row).
     // `posOverride` (optional, window tile coords {x, y}): land the player at
     // an exact spot instead of the entry-side placement — the dungeon exit
     // walks back out to the very tile the door was opened from, BEFORE the
@@ -187,8 +187,8 @@ public:
     // harvesting path (a no-target melee swing routes here; console `chop`
     // and smokes call it with a Tree filter): the manager removes the nearest
     // LOOTABLE prop from its owning cell + composite. A felled tree also
-    // decrements the owning macro cell's TreeLayer count through
-    // gs.treeOverrides (micro → macro writeback); other kinds settle their
+    // decrements the owning macro cell's TreeLayer count through the
+    // registry's Trees row (micro → macro writeback); other kinds settle their
     // own ledgers as they grow them. `onlyKind` narrows the search to one
     // kind. Optional outs report the owning macro cell and (for trees) its
     // count BEFORE the decrement. Returns false when nothing is in reach.

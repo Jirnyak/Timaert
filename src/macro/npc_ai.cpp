@@ -405,18 +405,22 @@ void ai_woodcutter(entt::entity self, ecs::Position& p,
         --rt.stateTimer;
         if (rt.stateTimer <= 0) {
             // The chop is REAL (W2b): the trip's yield leaves the world
-            // through the one set_tree_count door and rides home in the
+            // through the registry's Trees row and rides home in the
             // woodcutter's OWN bag — kill him on the road and the wood is
             // loot, not bookkeeping. kGatherPerWorkerDay is the same anchor
             // the economy day-loop gathers by: one law of labour.
             if (ctx.trees && ctx.world) {
                 const int tx = int(rt.targetX);
                 const int ty = int(rt.targetY);
-                const int have = int(ctx.trees->at(tx, ty));
+                MacroWorld mw{};
+                mw.gs    = ctx.gs;
+                mw.trees = ctx.trees;
+                const int have = resource_field_read(
+                    mw, ResourceFieldId::Trees, tx, ty);
                 const int take = std::min(kGatherPerWorkerDay, have);
                 if (take > 0) {
-                    set_tree_count(*ctx.trees, ctx.gs->treeOverrides,
-                                   tx, ty, have - take);
+                    resource_field_apply(mw, ResourceFieldId::Trees,
+                                         tx, ty, -take);
                     if (auto* bag = ctx.world->reg.try_get<ecs::NpcInventory>(
                             self)) {
                         bag->inv.add("wood", take);

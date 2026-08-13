@@ -1484,8 +1484,8 @@ bool SubworldEngine::harvest_prop_near_player(float maxDist,
     // through a counter of its own: one tree gone in the subworld is one unit
     // spent from this cell's forest. A prop is not an ECS entity, so it carries
     // no receipt — an act that resolves instantly pays instantly, straight into
-    // the same table row the living things settle against. Recorded in
-    // gs.treeOverrides so it survives save/load and thins the map sprite
+    // the same table row the living things settle against. The grid rides
+    // the save whole (v36) so it survives load, and thins the map sprite
     // (TreeLayer.revision drives the u_treeMap refresh). Other kinds settle
     // their own rows as they grow them (crops → Field Inc F3).
     int prev = 0;

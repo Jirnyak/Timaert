@@ -104,8 +104,8 @@ struct TickContext {
     // featureless free-road world: weight 1.0 everywhere, no water — the
     // greedy step then walks exactly the straight line it always walked.
     const PathCostData* pathCost = nullptr;
-    // The LIVE tree layer (W2b): a woodcutter's chop goes through the one
-    // set_tree_count door (overrides via gs->treeOverrides), so the wood he
+    // The LIVE tree layer (W2b): a woodcutter's chop goes through the
+    // registry's Trees carrier row (resource_field_apply), so the wood he
     // hauls home really left the world. nullptr = agents work no honest
     // gathering (tests without a world stay as they were).
     TreeLayer* trees = nullptr;

@@ -1,7 +1,8 @@
 // The first honest work-loop (W2b): a village woodcutter CHOPS the world and
 // HAULS it home. Pinned:
-//   · the chop leaves through the ONE set_tree_count door — the layer count
-//     really falls and the override is recorded (a save remembers the stump);
+//   · the chop leaves through the registry's Trees carrier row — the layer
+//     count really falls and the revision moves (the grid rides the save
+//     whole, v36, so a save remembers the stump);
 //   · the haul rides in the woodcutter's OWN bag and lands in his HOME
 //     village's universal inventory (the home-link fix: a village man works
 //     for the village, not for the nearest city);
@@ -97,8 +98,9 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
     CHECK(storeGained > 0, "the haul reached the village store");
     CHECK(layerLost == storeGained + inBag,
           "CONSERVATION: layer loss == store gain + what still rides the bag");
-    CHECK(!gs.treeOverrides.empty(),
-          "the chop left an override - a save remembers the stump");
+    CHECK(layer.revision > 0,
+          "the chop moved the grid revision - the map sprite and the save "
+          "(which carries the grid whole) both see the stump");
     CHECK(gs.villages[0].inventory.count("wood") > 0
               && gs.settlements.empty(),
           "the village man hauls for the VILLAGE (no city even exists here)");

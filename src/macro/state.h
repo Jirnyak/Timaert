@@ -102,7 +102,11 @@ namespace sm {
 // scars live in `resourceScars[ResourceFieldId]` — one dialect (the SCAR),
 // one generic save block per field. The old fauna remaining-count override
 // died with its dialect.
-constexpr int kSaveVersion = 35;
+// v36: the forest is the Trees CARRIER row of the resource-field registry
+// and the save carries the tree grid WHOLE (a living, growing field is not
+// derivable from seed + sparse scars) — `treeOverrides` died with the
+// derive-plus-overlay model.
+constexpr int kSaveVersion = 36;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
@@ -323,25 +327,24 @@ struct GameState {
     // AGENTS carrying real cargo between real inventories — macro/npc_ai.cpp
     // ai_caravan.)
 
-    // Sparse tree-count mutations: cell index (y*mapW+x) → current count.
-    // The full TreeLayer is derived from the seed each boot (macro/tree_layer.h);
-    // only cells changed by play persist here (v13). Same shape as
-    // sm::TreeOverrides — kept as a plain map to avoid an include cycle.
-    std::unordered_map<std::uint32_t, std::uint16_t> treeOverrides;
+    // (treeOverrides is GONE (v36): the forest is the Trees carrier row of
+    // the resource-field registry, and the save carries the TreeLayer grid
+    // whole — save.cpp takes the layer alongside the state.)
 
     // Sparse deposit mutations (v26, packed since v30): cell index →
     // {kind, remaining} packed u64 (macro/deposit_layer.h pack/unpack). The
     // layer derives from the seed each boot; what persists is what play
     // changed — drained veins AND discovered ones (a stone quarry struck
-    // iron, W2c). Raw map shape like treeOverrides, same include-cycle
-    // reason.
+    // iron, W2c). Raw map shape kept as a plain map to avoid an include
+    // cycle.
     std::unordered_map<std::uint32_t, std::uint64_t> depositOverrides;
 
     // The resource fields' scars (v35, macro/resource_field.h): one map per
     // ResourceFieldId, cell index → units play has taken and regrowth has
-    // not yet returned. ONE dialect for every field — the baseline is
-    // derived (pure terrain/climate), the scar is the only storage, a
-    // healed cell erases itself.
+    // not yet returned. Sparse-dialect rows only (wheat, fauna) — the
+    // baseline is derived (pure terrain/climate), the scar is the only
+    // storage, a healed cell erases itself. Carrier rows (trees) keep this
+    // slot EMPTY: their live state is their carrier, saved whole.
     std::unordered_map<std::uint32_t, std::uint16_t>
         resourceScars[std::size_t(ResourceFieldId::Count)];
 };

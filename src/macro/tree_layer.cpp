@@ -46,8 +46,7 @@ TreeLayer build_tree_layer(const TerrainData& terrain,
     return layer;
 }
 
-void set_tree_count(TreeLayer& layer, TreeOverrides& overrides,
-                    int x, int y, int count) {
+void set_tree_count(TreeLayer& layer, int x, int y, int count) {
     if (!layer.has_complete_storage()) return;
     const int wx = FeatureLayer::wrap_coord(x, layer.width);
     const int wy = FeatureLayer::wrap_coord(y, layer.height);
@@ -57,21 +56,23 @@ void set_tree_count(TreeLayer& layer, TreeOverrides& overrides,
     if (count > kMaxTreesPerCell) count = kMaxTreesPerCell;
     if (layer.data[i] == std::uint16_t(count)) return;
     layer.data[i] = std::uint16_t(count);
-    overrides[std::uint32_t(i)] = std::uint16_t(count);
     ++layer.revision;
 }
 
-void apply_tree_overrides(TreeLayer& layer, const TreeOverrides& overrides) {
-    if (!layer.has_complete_storage() || overrides.empty()) return;
-    const std::size_t n = layer.cell_count();
+bool restore_tree_counts(TreeLayer& layer,
+                         const std::vector<std::uint16_t>& counts) {
+    if (!layer.has_complete_storage()
+        || counts.size() != layer.cell_count()) {
+        return false;
+    }
     bool changed = false;
-    for (const auto& [idx, count] : overrides) {
-        if (std::size_t(idx) >= n) continue; // stale save vs smaller map: skip
-        const std::uint16_t v = count > kMaxTreesPerCell
-            ? std::uint16_t(kMaxTreesPerCell) : count;
-        if (layer.data[idx] != v) { layer.data[idx] = v; changed = true; }
+    for (std::size_t i = 0; i < counts.size(); ++i) {
+        const std::uint16_t v = counts[i] > kMaxTreesPerCell
+            ? std::uint16_t(kMaxTreesPerCell) : counts[i];
+        if (layer.data[i] != v) { layer.data[i] = v; changed = true; }
     }
     if (changed) ++layer.revision;
+    return true;
 }
 
 } // namespace sm

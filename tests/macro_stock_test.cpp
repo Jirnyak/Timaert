@@ -290,6 +290,48 @@ void test_dead_leader_squads_fall_into_the_pool() {
           "draining again pays nothing: the pool is never billed twice");
 }
 
+// The Trees row is a CARRIER row (resource_field.h): its live state is the
+// dense grid the map renders, not a sparse scar map. The discipline that
+// makes that safe for the 21 direct grid readers: every registry write lands
+// in the grid AND moves its revision (the u_treeMap refresh driver), and the
+// scar slot for Trees stays EMPTY — a scar there would be a second, silently
+// diverging copy of the forest.
+void test_trees_are_a_carrier_row() {
+    using namespace sm;
+    sm::GameState gs = make_world();
+    sm::TreeLayer trees;
+    trees.width = gs.mapW;
+    trees.height = gs.mapH;
+    trees.data.assign(std::size_t(gs.mapW) * std::size_t(gs.mapH), 500);
+    // Real terrain, so the daily-regrow walk below actually RUNS (it is
+    // fail-closed without terrain, and a walk that never ran proves nothing).
+    sm::TerrainData td;
+    td.width = gs.mapW;
+    td.height = gs.mapH;
+    td.rgba.assign(std::size_t(gs.mapW) * std::size_t(gs.mapH) * 4u, 128);
+    MacroWorld w{&gs, &trees, nullptr, &td};
+
+    const std::uint32_t rev0 = trees.revision;
+    resource_field_apply(w, ResourceFieldId::Trees, 5, 6, -123);
+    CHECK(int(trees.at(5, 6)) == 377,
+          "a registry write lands in the very grid the renderer draws");
+    CHECK(resource_field_read(w, ResourceFieldId::Trees, 5, 6) == 377,
+          "the registry reads the same grid back");
+    CHECK(trees.revision == rev0 + 1,
+          "a registry write moves the grid revision (u_treeMap refresh)");
+    CHECK(gs.resourceScars[std::size_t(ResourceFieldId::Trees)].empty(),
+          "the Trees scar slot stays EMPTY - the grid is the only state");
+    CHECK(resource_field_scar(gs, ResourceFieldId::Trees, 6u * 64u + 5u) == 0,
+          "a carrier row reports no scar");
+
+    // Behaviour frozen in Inc A: the daily heal walks sparse rows only —
+    // a felled forest must NOT creep back until the growth law (Inc C)
+    // arrives deliberately. (Also guards the null regrowPeriodDays row.)
+    resource_fields_daily_regrow(w, /*day=*/32 * 64);
+    CHECK(int(trees.at(5, 6)) == 377,
+          "no silent regrowth: the felled cell holds until the growth law");
+}
+
 } // namespace
 
 int main() {
@@ -300,5 +342,6 @@ int main() {
     test_malformed_receipts_do_nothing();
     test_the_roster_row_pays_by_name();
     test_dead_leader_squads_fall_into_the_pool();
+    test_trees_are_a_carrier_row();
     return sm::test::report("macro_stock_test");
 }

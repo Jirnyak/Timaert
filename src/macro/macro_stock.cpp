@@ -23,17 +23,13 @@ struct MacroStockRow {
     void (*write)(MacroWorld&, MacroStockKey, int delta);
 };
 
-// ── tree_count: the forest of one cell ─────────────────────────────────────
+// ── tree_count: the forest of one cell — the registry's carrier row ───────
 int read_tree_count(const MacroWorld& w, MacroStockKey k) {
-    if (!w.trees) return 0;
-    return int(w.trees->at(k.cellX, k.cellY));
+    return resource_field_read(w, ResourceFieldId::Trees, k.cellX, k.cellY);
 }
 
 void write_tree_count(MacroWorld& w, MacroStockKey k, int delta) {
-    if (!w.trees || !w.gs || delta == 0) return;
-    const int now  = int(w.trees->at(k.cellX, k.cellY));
-    const int next = std::clamp(now + delta, 0, kMaxTreesPerCell);
-    set_tree_count(*w.trees, w.gs->treeOverrides, k.cellX, k.cellY, next);
+    resource_field_apply(w, ResourceFieldId::Trees, k.cellX, k.cellY, delta);
 }
 
 // ── population: the people of a named place ────────────────────────────────
@@ -107,9 +103,9 @@ void write_roster(MacroWorld& w, MacroStockKey k, int delta) {
 
 // ── The ONE resource-field container (macro/resource_field.h) ─────────────
 // Baseline = pure terrain/climate (resources come BEFORE settlement — the
-// owner's causality), storage = the SCAR, one dialect for every field.
-// The two rows below (fauna, wheat) read and write through it; trees and
-// deposits join the registry in the settlement-from-resources session (R2).
+// owner's causality); storage follows the row's law (resource_field.h):
+// sparse scar rows (fauna, wheat) and carrier rows (trees — the dense grid
+// the map renders). Deposits join as carrier rows in Inc B.
 
 std::uint32_t field_cell_index(const MacroWorld& w, int x, int y) {
     const int wx = FeatureLayer::wrap_coord(x, w.terrain->width);
@@ -138,9 +134,26 @@ int fauna_baseline(const MacroWorld& w, int x, int y) {
     return fauna_cell_capacity_at(w.gs, w.terrain, w.trees, x, y);
 }
 
+// Trees: the carrier row. The live state is the dense TreeLayer grid the
+// map renders (worldgen filled it; growth and felling move it from there —
+// the virgin derivation is an initial condition, not an attractor), so
+// read/apply go to the grid, and set_tree_count keeps clamp + revision at
+// the layer's own door.
+int trees_read(const MacroWorld& w, int x, int y) {
+    return w.trees ? int(w.trees->at(x, y)) : 0;
+}
+void trees_apply(MacroWorld& w, int x, int y, int delta) {
+    if (!w.trees || delta == 0) return;
+    const int now = int(w.trees->at(x, y));
+    set_tree_count(*w.trees, x, y, now + delta);
+}
+
 constexpr ResourceFieldDef kResourceFields[] = {
-    /* Wheat */ {"wheat", &wheat_baseline, &crop_regrow_period_days},
-    /* Fauna */ {"fauna", &fauna_baseline, &fauna_regrow_period_days},
+    /* Wheat */ {"wheat", &wheat_baseline, &crop_regrow_period_days,
+                 nullptr, nullptr},
+    /* Fauna */ {"fauna", &fauna_baseline, &fauna_regrow_period_days,
+                 nullptr, nullptr},
+    /* Trees */ {"trees", nullptr, nullptr, &trees_read, &trees_apply},
 };
 static_assert(sizeof(kResourceFields) / sizeof(kResourceFields[0])
                   == std::size_t(ResourceFieldId::Count),
@@ -160,17 +173,22 @@ const ResourceFieldDef& resource_field_def(ResourceFieldId f) {
 }
 
 int resource_field_read(const MacroWorld& w, ResourceFieldId f, int x, int y) {
+    const ResourceFieldDef& def = resource_field_def(f);
+    if (def.carrierRead) return def.carrierRead(w, x, y);
     if (!w.gs || !w.terrain || w.terrain->width <= 0) return 0;
     const auto& scars = w.gs->resourceScars[std::size_t(f)];
     int scar = 0;
     const auto it = scars.find(field_cell_index(w, x, y));
     if (it != scars.end()) scar = int(it->second);
-    return std::max(0, resource_field_def(f).baseline(w, x, y) - scar);
+    return std::max(0, def.baseline(w, x, y) - scar);
 }
 
 void resource_field_apply(MacroWorld& w, ResourceFieldId f, int x, int y,
                           int delta) {
-    if (!w.gs || !w.terrain || w.terrain->width <= 0 || delta == 0) return;
+    if (delta == 0) return;
+    const ResourceFieldDef& carrier = resource_field_def(f);
+    if (carrier.carrierApply) { carrier.carrierApply(w, x, y, delta); return; }
+    if (!w.gs || !w.terrain || w.terrain->width <= 0) return;
     auto& scars = scars_of(*w.gs, f);
     const std::uint32_t idx = field_cell_index(w, x, y);
     int scar = 0;
@@ -198,6 +216,7 @@ void resource_fields_daily_regrow(MacroWorld& w, int day) {
     if (!w.gs || !w.terrain || w.terrain->width <= 0 || day <= 0) return;
     for (std::size_t f = 0; f < std::size_t(ResourceFieldId::Count); ++f) {
         const ResourceFieldDef& def = kResourceFields[f];
+        if (!def.regrowPeriodDays) continue;   // carrier rows do not heal
         const int period = def.regrowPeriodDays();
         if (period <= 0 || day % period != 0) continue;
         // Collect the keys first: the +1 goes through the field's write,

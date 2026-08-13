@@ -332,9 +332,10 @@ struct App {
     sm::TerrainData      terrain{};
     sm::FeatureLayer     features;
     sm::ZoneLayer        zones;
-    // Derived per-cell tree counts (macro/tree_layer.h); mutations persist as
-    // gs.treeOverrides. uploadedTreeRev mirrors treeLayer.revision so the
-    // u_treeMap texture refreshes only when a count actually changed.
+    // Derived per-cell tree counts (macro/tree_layer.h) — the LIVING grid of
+    // the registry's Trees row; the save carries it whole (v36).
+    // uploadedTreeRev mirrors treeLayer.revision so the u_treeMap texture
+    // refreshes only when a count actually changed.
     sm::TreeLayer        treeLayer;
     std::uint32_t        uploadedTreeRev = 0;
     // Derived mineral deposits (macro/deposit_layer.h, W2a); mutations
@@ -1685,7 +1686,8 @@ bool save_game_checked(App& app, bool autosave = false) {
     }
     const std::string& path = autosave ? app.autosavePath : app.savePath;
     const bool ok = sm::save_game(app.gs, app.activeQuests,
-                                  stage_save_state(app), path);
+                                  stage_save_state(app), app.treeLayer.data,
+                                  path);
     refresh_save_summary(app);
     if (!ok)
         std::fprintf(stderr, "save_game FAILED: %s\n", path.c_str());
@@ -1815,8 +1817,9 @@ void boot_world(App& app, std::uint32_t seed,
     boot_trace("trees spawned");
     // The per-cell tree-count layer: the spawn_trees massif mask (the organic
     // FBM лесные массивы) carries the forest term, biomes add a small
-    // ambience (16384 = the golden densest massif interior). New game ⇒ no
-    // overrides; the load path re-applies gs.treeOverrides after the swap.
+    // ambience (16384 = the golden densest massif interior). This derivation
+    // is the field's INITIAL CONDITION; the load path restores the saved
+    // living grid after the swap.
     {
         std::vector<std::uint8_t> forestMask(
             std::size_t(app.gs.mapW) * std::size_t(app.gs.mapH), 0);
@@ -2053,7 +2056,10 @@ bool boot_world_from_save(App& app, const std::string& path) {
     sm::GameState fresh;
     std::vector<sm::Quest> loadedQuests;
     std::vector<sm::MacroNpcRecord> loadedMacro;
-    if (!sm::load_game(fresh, loadedQuests, loadedMacro, path)) return false;
+    std::vector<std::uint16_t> loadedTrees;
+    if (!sm::load_game(fresh, loadedQuests, loadedMacro, loadedTrees, path)) {
+        return false;
+    }
     // registerIntroStory=TRUE even on load (v25): node definitions are code
     // and must all exist before the saved story progress is replayed below.
     // The old `false` here was the 3-nodes -> 1 bug: a loaded game lost the
@@ -2108,7 +2114,6 @@ bool boot_world_from_save(App& app, const std::string& path) {
     app.gs.factions          = std::move(fresh.factions);
     app.gs.subState          = std::move(fresh.subState);
     app.gs.deserterPool      = fresh.deserterPool;
-    app.gs.treeOverrides     = std::move(fresh.treeOverrides);
     app.gs.depositOverrides  = std::move(fresh.depositOverrides);   // v26
     app.activeQuests         = std::move(loadedQuests);
     app.questMarkerSig       = 0;   // force quest-marker rebuild on next tick
@@ -2147,10 +2152,17 @@ bool boot_world_from_save(App& app, const std::string& path) {
     // the throwaway generated one. Surgical binding-4 update — the world
     // textures boot_world() uploaded stay valid.
     rebake_macro_lights(app);
-    // boot_world() derived a VIRGIN tree layer and uploaded it; re-apply the
-    // loaded mutations (felled cells) and refresh binding 5 the same surgical
-    // way the light field just was.
-    sm::apply_tree_overrides(app.treeLayer, app.gs.treeOverrides);
+    // boot_world() derived a VIRGIN tree layer and uploaded it; the save
+    // carries the LIVING grid whole (v36) — restore it and refresh binding 5
+    // the same surgical way the light field just was. A size mismatch is
+    // unreachable past the version gate; if a corrupt file gets here, the
+    // virgin derivation stands and we say so.
+    if (!sm::restore_tree_counts(app.treeLayer, loadedTrees)) {
+        std::fprintf(stderr,
+                     "load_game: tree grid size %zu != map cells %zu — "
+                     "keeping virgin forest\n",
+                     loadedTrees.size(), app.treeLayer.cell_count());
+    }
     app.macro.upload_tree_field(app.device, &app.treeLayer);
     app.uploadedTreeRev = app.treeLayer.revision;
     // Same for the mineral deposits: virgin derivation, then the drained
@@ -7974,7 +7986,8 @@ bool run_console_smoke(App& app) {
     }
 
     // ── tree-count writeback: felling one tree costs its macro cell EXACTLY
-    // one count, recorded as a sparse override (the save-stable mutation).
+    // one count and moves the grid revision (the save carries the grid whole,
+    // so the revision is also what proves the stump reaches u_treeMap).
     // Self-sufficient: enters a subworld if none is active and leaves again.
     {
         const bool wasActive = app.subworld.active();
@@ -7986,7 +7999,7 @@ bool run_console_smoke(App& app) {
             smoke_fail(app, "chop: subworld enter failed");
             return false;
         }
-        const std::size_t ovBefore = app.gs.treeOverrides.size();
+        const std::uint32_t revBefore = app.treeLayer.revision;
         const int woodBefore = app.gs.player.inventory.count("wood");
         int cx = 0, cy = 0, prev = 0;
         // The whole 3×3 composite is in reach: any tree in the window works.
@@ -8001,18 +8014,13 @@ bool run_console_smoke(App& app) {
         }
         const int after = int(app.treeLayer.at(cx, cy));
         const int expected = prev > 0 ? prev - 1 : 0;
-        const std::size_t idx = std::size_t(sm::FeatureLayer::wrap_coord(cy, app.gs.mapH))
-                              * std::size_t(app.gs.mapW)
-                              + std::size_t(sm::FeatureLayer::wrap_coord(cx, app.gs.mapW));
         // prev == 0 is legal (a tree on a zero-count cell's dry water margin):
-        // the count clamps at 0 and no override is written.
+        // the count clamps at 0 and the revision does not move.
         const bool changed = prev > 0;
         if (after != expected
-            || (changed
-                && (app.gs.treeOverrides.size() != ovBefore + 1u
-                    || !app.gs.treeOverrides.count(std::uint32_t(idx))))) {
+            || (changed && app.treeLayer.revision == revBefore)) {
             if (!wasActive) app.subworld.leave(true);
-            smoke_fail(app, "chop: macro count/override did not track the felled tree");
+            smoke_fail(app, "chop: macro count/revision did not track the felled tree");
             return false;
         }
         // The micro half of the same rule: the felled trunk pays out through
@@ -8078,7 +8086,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             if (!sm::save_game(app.gs, app.activeQuests,
-                               stage_save_state(app), app.savePath)) {
+                               stage_save_state(app), app.treeLayer.data,
+                               app.savePath)) {
                 smoke_fail(app, "save_game returned false");
                 break;
             }

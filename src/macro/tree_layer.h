@@ -9,10 +9,11 @@
 // 16384 × (massif cells in the 3×3 / 9), smooth by construction (the 3×3
 // fraction is a box filter over the binary mask); each biome adds a small
 // AMBIENT base, deliberately kept below the map-sprite threshold so the map
-// draws massifs, not biome carpets. Regenerated from the seed on every boot,
-// NOT serialized wholesale; what persists is the sparse override map in
-// GameState (`treeOverrides`): only cells mutated by play (felled trees,
-// future woodcutters) — derive-don't-store plus a mutation overlay.
+// draws massifs, not biome carpets. That derivation is the field's INITIAL
+// CONDITION only: the forest is the Trees carrier row of the resource-field
+// registry (macro/resource_field.h) and lives from there — felling spends
+// it, growth thickens it past its virgin state. The save carries the grid
+// whole (a living field is not derivable from seed + scars).
 //
 // Consumers (everything forests used to do through FT_Tree now reads this):
 //   - macro.frag `u_treeMap` (count/16384 as R8) — the map sprite density.
@@ -24,7 +25,7 @@
 //   - continuous scaling (macro path cost, night-glow canopy occlusion,
 //     danger-zone forest boost) — count / 16384.
 //   - felling a tree in the subworld decrements the owning cell's count
-//     through set_tree_count (micro → macro writeback).
+//     through the registry (resource_field_apply → this grid).
 #pragma once
 #include <cstdint>
 #include <unordered_map>
@@ -48,9 +49,6 @@ constexpr int kForestClassTreeCount = 8192;
 inline bool is_forest_cell(int treeCount) {
     return treeCount >= kForestClassTreeCount;
 }
-
-// Sparse persisted mutations: cell index (y*width+x) → current count.
-using TreeOverrides = std::unordered_map<std::uint32_t, std::uint16_t>;
 
 // Ambient trees a biome carries OUTSIDE any forest massif — scattered lone
 // trees, not woodland. Deliberately far below kForestClassTreeCount so biome
@@ -118,13 +116,16 @@ TreeLayer build_tree_layer(const TerrainData& terrain,
                            const std::uint8_t* forestMask,
                            std::size_t forestMaskCount);
 
-// Set one cell's count: clamps to [0, kMaxTreesPerCell], writes the layer,
-// records the sparse override and bumps `revision`. This is THE mutation path
-// (felled trees, future woodcutters) — never poke `data` directly.
-void set_tree_count(TreeLayer& layer, TreeOverrides& overrides,
-                    int x, int y, int count);
+// Set one cell's count: clamps to [0, kMaxTreesPerCell], writes the grid and
+// bumps `revision`. This is the GRID's one poke door — gameplay never calls
+// it directly, it mutates through resource_field_apply (the Trees carrier
+// row), so the ledger and the renderer can never see different forests.
+void set_tree_count(TreeLayer& layer, int x, int y, int count);
 
-// Re-apply persisted overrides onto a freshly derived layer (load path).
-void apply_tree_overrides(TreeLayer& layer, const TreeOverrides& overrides);
+// Load path: overwrite the grid with the save's counts (the save carries the
+// living field whole). Refuses a size mismatch — the version gate makes that
+// unreachable short of a corrupt file; virgin derivation then stands.
+bool restore_tree_counts(TreeLayer& layer,
+                         const std::vector<std::uint16_t>& counts);
 
 } // namespace sm
