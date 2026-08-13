@@ -33,10 +33,12 @@ is the addition operator, not a routine to write.** Spec: [lore.md](lore.md)
 
 ## Connections
 
-Spires require zone ≥ 5 ([landmarks.md](landmarks.md)); subworld spawns scale
+Spires demand zone ≥ 4 + their spell's tier — tier 1 opens in "Untamed",
+tier 5 in "Hellgate" ([landmarks.md](landmarks.md)); subworld spawns scale
 with zone (+monster level, +18% hp/damage per level above 2,
-[microcombat.md](microcombat.md)); the danger level gates subworld exit
-(yellow/red → no exit); the map overlay renders the green→red field.
+[microcombat.md](microcombat.md) — condemned, see below); the danger level
+gates subworld exit (yellow/red → no exit); the map overlay renders the
+green→red field.
 
 ## Owner ruling 2026-08-13 — stat scaling is condemned
 

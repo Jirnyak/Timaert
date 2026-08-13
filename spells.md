@@ -40,10 +40,29 @@ Empire of Light's religion is a forgery, so a cleric's miracles literally *are*
 the heresy his order burns villages for — the same rows in the same file
 ([lore.md](lore.md) §3.2, §4.1).
 
+## Learning — the spires
+
+The in-world way to a spell is its SPIRE ([landmarks.md](landmarks.md)):
+one per registered spell, standing in the wild band its `tier` demands,
+guarded by the demon family of its own cell's headcount. The player
+climbs the tower ([dungeons.md](dungeons.md) §Spire tower), steps onto
+the crown and touches the orb — the spire flips `depleted` forever (dark
+sprite, no glow, no orb), and the spell lands in the book.
+
+The seam between layers is an event: the engine emits
+`EventTag::SpireDepleted` (spire id + spell registry ordinal); the app
+layer resolves the ordinal — only content/ knows the registry — teaches
+the book, writes "You have learned X!" to the log and emits
+`SpellLearned` for observers (quests watch spells, not spires). Console
+`learn` and quest rewards remain the other two doors into the same
+idempotent `spellbook_learn`.
+
 ## Data-driven extension
 
 Add a spell → register it in `registry.cpp` + (if it has a visual) one
-`spell_effects` descriptor. Sustained spells drain mana via `tick`.
+`spell_effects` descriptor. Sustained spells drain mana via `tick`. The
+next world offers the new spell's spire with no further change — count,
+placement and the tower's storeys all derive from the registry row.
 
 ## Connections
 

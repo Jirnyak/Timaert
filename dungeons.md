@@ -76,7 +76,7 @@ per kind, routed by `DungeonRef::kind`. A module owes three answers:
   cave's first cut used one tile id for floor and walls alike and *nothing*
   could be placed in it.
 
-Two kinds ship, and the difference between them is the point of the layer:
+Three kinds ship, and the differences between them are the point of the layer:
 
 **`house.cpp` stamps.** A rectangle cut by partitions with one doorway each,
 furniture placed with a clearance ring, a household, storeys joined by shafts.
@@ -87,6 +87,19 @@ solid rock; connectivity holds by construction because consecutive carve discs
 always share ground. A cave has to be walked. The mouth's footprint drives the
 cavern (a crack opens on a burrow, a yawning gap on a hall), which is why the
 mouths are rolled at different sizes where they are placed.
+
+**`spire_tower.cpp` climbs.** One round hall per storey (the exterior 7-tile
+cylinder at the shared ×4 interior scale), a masonry ring of oriented chords,
+storeys 0..tier−1 where `ordinal` IS the spire spell's tier — every spire
+raises the same tower, only its height varies, so unlike a house the module
+ignores the door's footprint. The shafts form a LADDER: the W pad always
+climbs, the E pad always descends (an up-shaft tops out on the next storey's
+DOWN pad — `dungeon_shaft_arrival_point` is the one dispatch that keeps the
+engine's placement and the module's pads agreeing). The top storey has a
+second way out: the roof HATCH, which ends the session on the tower's CROWN
+in the open-air scene (`playerZ = seat + kSpireTowerHeightM`; the honest
+support physics stands the body on the cylinder), where the orb waits
+([spells.md](spells.md) §Learning).
 
 ## 4. Props and the one interaction
 
@@ -141,6 +154,14 @@ binding.
 | `Search` | chest | a stack of the owning landmark's store, at a price in standing | `Settlement::inventory` + `add_player_reputation` |
 | `Drink` | well | an hour of rest, standing | `kSpRegenPctPerHour` |
 | `Read` | signboard | names the place | the settlement roster |
+| `Learn` | spire orb | flips the spire depleted, burns the orb out of the scene, teaches the spell | `EventTag::SpireDepleted` → the app's ordinal resolve ([spells.md](spells.md) §Learning) |
+
+(The row order of `kInteractRows` MUST mirror the enum — it once ran
+Search/Drink/Read against an enum running Drink/Read/Search, so the well
+prompted "Search", the sign "Drink", the chest "Read"; the shared 5-tile
+reach hid the swap from every smoke. And a zBase-LIFTED prop joins the reach
+test with its vertical gap — the roof orb is reachable from its deck, not
+from the ground a tower-height below.)
 
 **The chest is the pattern for any verb that must GIVE.** It has no loot row:
 a prop that conjures goods is a prop the player farms by walking out and back
@@ -178,15 +199,17 @@ to unified combat).
   the settlement's `Population` stock, bounded by it — a door in an emptied
   town opens on an empty house. A death behind the door thins the town in that
   tick, through the receipt a street kill settles.
-- **Vermin** (cellars, caves): creatures from the Ruin family of the one
-  monster table, borrowed from the cell's own `FaunaCount`. A cleared den stays
-  cleared until the ONE growth law breeds the cell back from its living
-  neighbours (resources.md; a den emptied with its whole valley stays
-  empty) — one respawn
-  system for subworld and dungeon (owner ruling). The difference between a
-  townhouse cellar and a hillside den is not a rule but the cell: a settled
-  cell's wild capacity is the Ruin table's floor, a mountain's is its own full
-  headcount.
+- **Vermin** (cellars, caves, spire storeys): creatures from the den's own
+  landmark family of the one monster table — Ruin for a cellar or a cave,
+  Spire (the demon rows) for a tower storey — borrowed from the cell's own
+  `FaunaCount`. A cleared den stays cleared until the ONE growth law breeds
+  the cell back from its living neighbours (resources.md; a den emptied with
+  its whole valley stays empty) — one respawn system for subworld and dungeon
+  (owner ruling). The difference between a townhouse cellar, a hillside den
+  and a spire storey is not a rule but the cell: a settled cell's wild
+  capacity is the Ruin table's floor, a mountain's is its own full headcount,
+  a spire cell's is its demon garrison — and the scorched yard's roamers and
+  the storey guards thin the SAME headcount.
 
 ## 6. What is deliberately not here
 
@@ -206,6 +229,8 @@ to unified combat).
 |-------|----------------|
 | `dungeon_house_test` | room geometry, connectivity per seed/footprint with a severed-row control, pad safety, partitions, furniture, ceiling, Void filler |
 | `dungeon_cave_test` | flood-fill reachability with a walled-ring control, floor/wall distinguishable by tile, apron, prop set + no two grounded solids inside one another, footprint drives the chamber, no storeys, determinism |
+| `spire_tower_test` | round hall inside the room circle for every tier × storey, the shaft-ladder rule (pads, tags, hatch, gate), connectivity, sealed masonry ring with a removed-chord control, one cylinder ceiling on the wall crowns, shaft-arrival mapping, floors clamp, severed-hall control |
 | `prop_interaction_test` | table consistency, door-per-house with a gapless ordinal set, interior door/stair geometry, snapshot round trip whose control strips a kind from *both* sides |
 | smoke `dungeon_house` | enter through the aimed door, land on floor, household + population write-back, storeys, cellar vermin + fauna write-back, chest moves goods and costs standing, well and board, quick exit, tile-hash determinism |
 | smoke `dungeon_cave` | hunts a real mouth in the world, enters, hoard present, no stairs, and the danger gate **both** ways |
+| smoke `spire_climb` | the whole spire loop live: yard fight (the danger law holds the gate while demons roam), gate, every storey's guard, roof hatch onto the crown (Δz = the tower height), orb → spell learned + spire depleted + orb gone + log entry; STAY hooks (`TIMAERT_SMOKE_SPIRE_STAY=ground\|hall\|roof`) for photo regressions |
