@@ -37,3 +37,14 @@ Spires require zone ≥ 5 ([landmarks.md](landmarks.md)); subworld spawns scale
 with zone (+monster level, +18% hp/damage per level above 2,
 [microcombat.md](microcombat.md)); the danger level gates subworld exit
 (yellow/red → no exit); the map overlay renders the green→red field.
+
+## Owner ruling 2026-08-13 — stat scaling is condemned
+
+The zone stat boost (+level, +18% hp/damage) is a hidden auto-level and will
+be REMOVED: a creature's strength is its table row; the zone must shape the
+COMPOSITION of what spawns, via weight streams composed from every context
+system (biome, forest, landmark, zone, later weather/black-energy field).
+Zones themselves are unfinished (static after boot, never re-baked). The
+session prompt is ready:
+[proposals/session-prompts.md](proposals/session-prompts.md)
+§ «Сессия — ЗОНЫ И КОНТЕКСТНЫЙ СПАВН».
