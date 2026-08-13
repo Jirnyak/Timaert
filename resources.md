@@ -101,8 +101,13 @@ Planned on the same rows, no new dialects (owner's design intent,
 2026-08-13):
 
 * **The economy entire** (work_vector №1): every gatherer role is "walk to
-  the nearest cell where `read > 0`, take through `apply`, haul home" — the
-  woodcutter is the template; miners farm the deposit rows the same way.
+  the nearest cell where `read > 0`, take through `apply`, haul home". The
+  first slice is BUILT (2026-08-13): ONE `ai_gatherer` loop drives every
+  profession from a `kGathererDefs` row — {type, registry row, commodity,
+  worksite} — woodcutter, farmer, miner, quarryman and clay-digger are five
+  rows of it, and a village raises the professions its own ground holds (a
+  live vein inside `kGathererReach` spawns its man; specialisation stays
+  context, never a village type).
 * **The player as harvester**: the player takes through the same doors and
   receipts as any agent — his chop already does (the console `chop`, the
   subworld prop harvest).

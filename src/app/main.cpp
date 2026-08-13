@@ -2003,7 +2003,24 @@ void boot_world(App& app, std::uint32_t seed,
     // A loaded world does NOT respawn its people from the seed — the macro
     // snapshot restores them (Session 17); only a NEW world gets a genesis.
     if (spawnMacroNpcs) {
-        sm::spawn_macro_npcs(app.gs, app.ecs, app.terrain, app.gs.worldSeed);
+        sm::spawn_macro_npcs(app.gs, app.ecs, app.terrain, app.gs.worldSeed,
+                             &app.deposits);
+        if (boot_trace_enabled()) {
+            // The causality report's second half: ore inside a village's
+            // reach raises its profession — count the men the ground raised.
+            int miners = 0, quarrymen = 0, clayDiggers = 0;
+            for (auto [e, kind] : app.ecs.reg.view<sm::ecs::NPCKind>().each()) {
+                (void)e;
+                if (kind.type == std::uint16_t(sm::NPCType::Miner)) ++miners;
+                else if (kind.type == std::uint16_t(sm::NPCType::Quarryman)) ++quarrymen;
+                else if (kind.type == std::uint16_t(sm::NPCType::ClayDigger)) ++clayDiggers;
+            }
+            std::fprintf(stderr,
+                         "[worldgen] professions miners=%d quarrymen=%d "
+                         "clayDiggers=%d\n",
+                         miners, quarrymen, clayDiggers);
+            std::fflush(stderr);
+        }
         boot_trace("macro npcs spawned");
     }
 
@@ -3364,7 +3381,8 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
                                            kSubworldMacroNpcTicksPerStep,
                                            /*allowAutoBattle*/false,
                                            &app.pathCost, &app.treeLayer,
-                                           &app.features, &app.terrain);
+                                           &app.features, &app.terrain,
+                                           &app.deposits);
         emit_time_advance_if_needed(app, stats.timeTick);
         process_world_events(app);
     } else {
@@ -3411,7 +3429,8 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         sm::tick_macro_npc_ai(app.gs, app.ecs, &app.treeGrid, app.npcAi,
                               std::uint64_t(stats.timeTick.ticksAdvanced),
                               /*allowAutoBattle*/true, &app.pathCost,
-                              &app.treeLayer, &app.features, &app.terrain);
+                              &app.treeLayer, &app.features, &app.terrain,
+                              &app.deposits);
         // The other half of the geometric meeting: a squad may have stepped
         // onto the PLAYER's cell during its own think.
         detect_forced_encounter(app);

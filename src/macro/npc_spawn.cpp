@@ -3,6 +3,7 @@
 #include "macro/currency.h"
 #include "macro/faction.h"
 #include "macro/npc.h"
+#include "macro/deposit_layer.h"
 #include "macro/npc_ai.h"
 #include "macro/squad.h"
 #include "macro/items.h"
@@ -190,7 +191,8 @@ std::uint16_t settlement_faction_index(const GameState& gs, int kingdomIdx) {
 
 
 void spawn_macro_npcs(GameState& gs, ecs::World& w,
-                      const TerrainData& terrain, std::uint32_t seed) {
+                      const TerrainData& terrain, std::uint32_t seed,
+                      const DepositLayer* deposits) {
     Rng rng(seed + 7777u);
     // Genesis of the ordinal stream (v23): the boot spawn starts the ONE
     // persistent counter at zero; every later runtime spawn continues it and
@@ -303,6 +305,36 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
             // man — his haul lands in the village store, not a city's.
             make_npc(w, NPCType::Woodcutter, fIdx, p.x, p.y, v.id, rng,
                      spawnIndex, -1, /*homeIsVillage=*/true);
+        }
+        // Village-context professions (resources.md): a live vein inside the
+        // gatherer reach raises ITS profession — the same table row the AI
+        // works by, so presence of ore IS the presence of miners. One man
+        // per kind present; specialisation stays context, never a type.
+        if (deposits) {
+            constexpr struct { DepositKind kind; NPCType type; } kMineRoles[] = {
+                {DepositKind::Iron,  NPCType::Miner},
+                {DepositKind::Stone, NPCType::Quarryman},
+                {DepositKind::Clay,  NPCType::ClayDigger},
+            };
+            for (const auto& role : kMineRoles) {
+                bool near = false;
+                for (const auto& [idx, remaining]
+                     : deposits->cells[std::size_t(role.kind)]) {
+                    if (remaining <= 0) continue;
+                    const float dsq = torus_dist_sq(
+                        float(int(idx % std::uint32_t(mw))),
+                        float(int(idx / std::uint32_t(mw))),
+                        float(v.x), float(v.y), float(mw), float(mh));
+                    if (dsq <= float(kGathererReach) * float(kGathererReach)) {
+                        near = true;
+                        break;
+                    }
+                }
+                if (!near) continue;
+                auto p = find_valid_spawn(v.x, v.y, 10, rng, mw, mh, terrain);
+                make_npc(w, role.type, fIdx, p.x, p.y, v.id, rng,
+                         spawnIndex, -1, /*homeIsVillage=*/true);
+            }
         }
     }
 }

@@ -20,6 +20,9 @@ namespace sm {
 
 enum class NPCType : std::uint8_t {
     Peasant = 0, Woodcutter, Merchant, Caravan, Bandit, Guard, Witch, Sorceress,
+    // The gatherer professions of the deposit rows (resources.md): a
+    // profession per resource, appended so saved kinds stay stable.
+    Miner, Quarryman, ClayDigger,
     Count,
 };
 
@@ -41,12 +44,14 @@ enum class NPCTrait : std::uint8_t {
 // keeps the registry POD + constexpr-friendly and lets the AI layer be
 // swapped without touching this header.
 enum class AIBehaviour : std::uint8_t {
-    HomeWanderer = 0, Woodcutter, Trader, Nomad,
+    // ONE loop for every gathering profession (owner: a profession per
+    // resource, rows not code): find the worksite the profession's row
+    // names (forest cell / home field / home deposit), work it through the
+    // resource-field registry, haul the commodity home. The per-profession
+    // nuance is a kGathererDefs row (npc_ai.cpp); with no worksite or no
+    // wired layer the man falls back to the home wander, fail closed.
+    Gatherer = 0, Trader, Nomad,
     Aggressive, Patrol, Teleporter, Wanderer,
-    // Works the nearest FT_Field of its home and hauls the grain back (W2b)
-    // — the woodcutter's loop with a field for a forest. Falls back to the
-    // home wander when no field (a city peasant) or no feature layer wired.
-    Farmer,
     // The city's trading agent (W2b): remembers the home market at departure
     // (AgentMemory MarketSnapshot), carries exports to the city's villages
     // in its OWN bag and hauls back what the snapshot says the city LACKS.
@@ -116,7 +121,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // Peasant
     {
         "Peasant", "/assets/sprites/peasant_256.png", 25, 1,
-        AIBehaviour::Farmer, kPeasantCombat, 1, true, 10,
+        AIBehaviour::Gatherer, kPeasantCombat, 1, true, 10,
         {{"Ivan","Pyotr","Sergey","Dmitry","Alexei","Nikolai","Vasily","Grigory",
           "Fedor","Andrei","Olga","Natalya","Katya","Masha","Dasha"}}, 15,
         {{"The harvest has been poor this year...",
@@ -128,7 +133,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // Woodcutter
     {
         "Woodcutter", "/assets/sprites/peasant_256.png", 30, 1,
-        AIBehaviour::Woodcutter, kWoodcutterCombat, 1, true, 12,
+        AIBehaviour::Gatherer, kWoodcutterCombat, 1, true, 12,
         {{"Borislav","Timofey","Yegor","Luka","Matvey"}}, 5,
         {{"These woods hold many secrets.",
           "Good timber is hard to find lately.",
@@ -203,6 +208,34 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "Few mortals seek me out willingly.",
           "I deal in mysteries beyond your understanding.",
           "Power has a price. Are you willing to pay?"}}, 4,
+    },
+    // Miner — the iron villages' man (spawned where a vein anchors the home)
+    {
+        "Miner", "/assets/sprites/peasant_256.png", 30, 1,
+        AIBehaviour::Gatherer, kWoodcutterCombat, 1, true, 12,
+        {{"Prokhor","Savva","Demyan","Zakhar","Foma"}}, 5,
+        {{"The vein runs deep, but so do we.",
+          "Iron feeds this village better than grain ever did.",
+          "Mind the shafts after rain.",
+          "Every ingot you buy began as my day's sweat."}}, 4,
+    },
+    // Quarryman — stone out of the mountain, the same law of labour
+    {
+        "Quarryman", "/assets/sprites/peasant_256.png", 30, 1,
+        AIBehaviour::Gatherer, kWoodcutterCombat, 1, true, 12,
+        {{"Gavril","Osip","Trofim","Nazar","Kondrat"}}, 5,
+        {{"Stone does not grow back. Good thing there is a mountain of it.",
+          "Every wall you have ever leaned on came through hands like mine.",
+          "The quarry sings if you strike it right."}}, 3,
+    },
+    // Clay-digger — the riverbank's man
+    {
+        "Clay-digger", "/assets/sprites/peasant_256.png", 30, 1,
+        AIBehaviour::Gatherer, kWoodcutterCombat, 1, true, 12,
+        {{"Yermolai","Panteley","Averyan","Selivan","Mitrofan"}}, 5,
+        {{"Good clay wants a river and patience.",
+          "Bricks, pots, ovens - it all starts in my pit.",
+          "Cold work, wet work, honest work."}}, 3,
     },
 };
 

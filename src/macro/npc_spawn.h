@@ -18,8 +18,14 @@
 
 namespace sm {
 
+// `deposits` (optional): the village-context professions — a village whose
+// hinterland holds a live vein raises the matching gatherer (miner /
+// quarryman / clay-digger); specialisation is CONTEXT, never a village
+// type (owner ruling, R2). nullptr = no mining professions spawn.
+struct DepositLayer;
 void spawn_macro_npcs(GameState& gs, ecs::World& w,
-                      const TerrainData& terrain, std::uint32_t seed);
+                      const TerrainData& terrain, std::uint32_t seed,
+                      const DepositLayer* deposits = nullptr);
 
 // Spawn ONE macro NPC of the named registry type near macro cell (x, y) —
 // the consumer half of the SpawnEntity event (quest onAccept is the producer:

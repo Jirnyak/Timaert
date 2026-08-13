@@ -1,6 +1,7 @@
 // Macroworld NPC AI — full behaviour set, faithful port of `npc-ai.ts`.
 #include "macro/npc_ai.h"
 #include "macro/agent_memory.h"
+#include "macro/deposit_layer.h"
 #include "macro/econ_day.h"
 #include "macro/macro_stock.h"
 #include "macro/entry_context.h"
@@ -368,24 +369,108 @@ void ai_home_wanderer(ecs::Position& p, ecs::MacroNpcRuntime& rt,
     }
 }
 
-void ai_woodcutter(entt::entity self, ecs::Position& p,
-                   ecs::MacroNpcRuntime& rt, const TickContext& ctx) {
+// ── The ONE gatherer loop — a profession is a ROW, never a branch ─────────
+// (owner: «профессия на каждый ресурс, дата-контекст, универсально»;
+// resources.md). Idle → find the worksite the row names → travel → WORK
+// (take from the resource-field registry into the OWN bag — kill the man on
+// the road and the haul is loot, not bookkeeping) → return (deliver into
+// the HOME store). kGatherPerWorkerDay is the same anchor the economy
+// day-loop gathers by: one law of labour. No worksite or no wired layer =
+// the home wander, fail closed — nothing is conjured.
+
+// How a profession finds its worksite. Three shapes, priced by the world:
+enum class Worksite : std::uint8_t {
+    ForestCell,   // nearest forest-class cell (the TreeGrid index)
+    HomeField,    // the home's nearest FT_Field parcel
+    Deposit,      // the home's nearest deposit cell of the row's kind
+};
+
+struct GathererDef {
+    NPCType         type;
+    ResourceFieldId row;        // what leaves the world
+    const char*     commodity;  // what rides the bag and lands in the store
+    Worksite        worksite;
+};
+
+constexpr GathererDef kGathererDefs[] = {
+    {NPCType::Peasant,    ResourceFieldId::Wheat, "grain", Worksite::HomeField},
+    {NPCType::Woodcutter, ResourceFieldId::Trees, "wood",  Worksite::ForestCell},
+    {NPCType::Miner,      ResourceFieldId::Iron,  "iron",  Worksite::Deposit},
+    {NPCType::Quarryman,  ResourceFieldId::Stone, "stone", Worksite::Deposit},
+    {NPCType::ClayDigger, ResourceFieldId::Clay,  "clay",  Worksite::Deposit},
+};
+
+const GathererDef* gatherer_def(NPCType t) {
+    for (const GathererDef& d : kGathererDefs)
+        if (d.type == t) return &d;
+    return nullptr;
+}
+
+// The home's nearest live cell of the row's deposit kind, torus-metric,
+// capped at kGathererReach. The deposit maps are sparse, so this is a walk
+// over a handful of cells, not the map.
+bool find_home_deposit(const TickContext& ctx, ResourceFieldId row,
+                       const XY& home, XY& out) {
+    if (!ctx.deposits || ctx.mapW <= 0) return false;
+    const DepositKind kind =
+        DepositKind(std::uint8_t(row) - std::uint8_t(ResourceFieldId::Clay));
+    const auto& cells = ctx.deposits->cells[std::size_t(kind)];
+    float bestSq = float(kGathererReach) * float(kGathererReach);
+    bool found = false;
+    for (const auto& [idx, remaining] : cells) {
+        if (remaining <= 0) continue;   // a dry vein is a fact, not a job
+        const float x = float(int(idx % std::uint32_t(ctx.mapW)));
+        const float y = float(int(idx / std::uint32_t(ctx.mapW)));
+        const float dsq = torus_dist_sq(home.x, home.y, x, y,
+                                        float(ctx.mapW), float(ctx.mapH));
+        if (dsq <= bestSq) {
+            bestSq = dsq;
+            out = XY{x, y};
+            found = true;
+        }
+    }
+    return found;
+}
+
+bool find_worksite(const GathererDef& def, const TickContext& ctx,
+                   const ecs::Position& p, const XY& home, XY& out) {
+    switch (def.worksite) {
+        case Worksite::ForestCell:
+            return ctx.treeGrid
+                && find_nearest_tree_grid(*ctx.treeGrid, p.x, p.y,
+                                          ctx.mapW, ctx.mapH, out);
+        case Worksite::HomeField:
+            return find_home_field(ctx, p.x, p.y, home, out);
+        case Worksite::Deposit:
+            return find_home_deposit(ctx, def.row, home, out);
+    }
+    return false;
+}
+
+void ai_gatherer(entt::entity self, ecs::Position& p,
+                 const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
+                 const TickContext& ctx) {
     XY home;
     if (!home_pos(rt, ctx, home)) return;
+    const GathererDef* def = gatherer_def(NPCType(kind.type));
+    if (!def) { ai_home_wanderer(p, rt, ctx); return; }
 
     if (rt.state == std::uint8_t(NS::Idle)) {
         --rt.stateTimer;
         if (rt.stateTimer <= 0) {
-            XY tree;
-            bool got = ctx.treeGrid
-                ? find_nearest_tree_grid(*ctx.treeGrid, p.x, p.y,
-                                         ctx.mapW, ctx.mapH, tree)
-                : false;
-            if (got) {
-                rt.targetX = tree.x; rt.targetY = tree.y;
+            XY site;
+            if (find_worksite(*def, ctx, p, home, site)) {
+                rt.targetX = site.x; rt.targetY = site.y;
                 rt.state = std::uint8_t(NS::Traveling);
+            } else if (torus_dist_sq(p.x, p.y, home.x, home.y,
+                                     float(ctx.mapW), float(ctx.mapH))
+                       > 400.0f) {
+                // No work and far afield: come home first — the exact
+                // HomeWanderer rule every gatherer degrades to.
+                rt.targetX = home.x; rt.targetY = home.y;
+                rt.state = std::uint8_t(NS::Returning);
             } else {
-                XY t = pick_random_nearby(home.x, home.y, 10, ctx);
+                XY t = pick_random_nearby(home.x, home.y, 12, ctx);
                 rt.targetX = t.x; rt.targetY = t.y;
                 rt.state = std::uint8_t(NS::Wandering);
             }
@@ -404,26 +489,22 @@ void ai_woodcutter(entt::entity self, ecs::Position& p,
     if (rt.state == std::uint8_t(NS::Working)) {
         --rt.stateTimer;
         if (rt.stateTimer <= 0) {
-            // The chop is REAL (W2b): the trip's yield leaves the world
-            // through the registry's Trees row and rides home in the
-            // woodcutter's OWN bag — kill him on the road and the wood is
-            // loot, not bookkeeping. kGatherPerWorkerDay is the same anchor
-            // the economy day-loop gathers by: one law of labour.
-            if (ctx.trees && ctx.world) {
+            // The take is REAL: the trip's yield leaves the world through
+            // the profession's registry row and rides home in the OWN bag.
+            // A row whose layers are not wired reads 0 and takes nothing —
+            // the fail-closed rule every gatherer shares.
+            if (ctx.world) {
                 const int tx = int(rt.targetX);
                 const int ty = int(rt.targetY);
-                MacroWorld mw{};
-                mw.gs    = ctx.gs;
-                mw.trees = ctx.trees;
-                const int have = resource_field_read(
-                    mw, ResourceFieldId::Trees, tx, ty);
+                MacroWorld mw{ctx.gs, ctx.trees, ctx.world, ctx.terrain,
+                              ctx.deposits};
+                const int have = resource_field_read(mw, def->row, tx, ty);
                 const int take = std::min(kGatherPerWorkerDay, have);
                 if (take > 0) {
-                    resource_field_apply(mw, ResourceFieldId::Trees,
-                                         tx, ty, -take);
+                    resource_field_apply(mw, def->row, tx, ty, -take);
                     if (auto* bag = ctx.world->reg.try_get<ecs::NpcInventory>(
                             self)) {
-                        bag->inv.add("wood", take);
+                        bag->inv.add(def->commodity, take);
                     }
                 }
             }
@@ -438,95 +519,7 @@ void ai_woodcutter(entt::entity self, ecs::Position& p,
             // Home with the haul: everything gathered lands in the HOME
             // store — the same universal inventory the market sells from.
             if (rt.state == std::uint8_t(NS::Returning)) {
-                deliver_bag_home(self, rt, ctx, "wood");
-            }
-            rt.state = std::uint8_t(NS::Idle);
-            rt.stateTimer = std::int16_t(6 + rand_int(ctx, 12));
-            return;
-        }
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
-    }
-}
-
-// The farmer: the woodcutter's loop with a FIELD for a forest (W2b). The
-// field itself is the renewable source — v1 draws at labour pace with no
-// depletion; the seasonal harvest pulse and field exhaustion are the layer's
-// own later increment, not this behaviour's. No field / no feature layer =
-// the plain home wander, so a CITY peasant keeps his old day.
-void ai_farmer(entt::entity self, ecs::Position& p,
-               ecs::MacroNpcRuntime& rt, const TickContext& ctx) {
-    XY home;
-    if (!home_pos(rt, ctx, home)) return;
-
-    if (rt.state == std::uint8_t(NS::Idle)) {
-        --rt.stateTimer;
-        if (rt.stateTimer <= 0) {
-            XY field;
-            if (find_home_field(ctx, p.x, p.y, home, field)) {
-                rt.targetX = field.x;
-                rt.targetY = field.y;
-                rt.state = std::uint8_t(NS::Traveling);
-            } else if (torus_dist_sq(p.x, p.y, home.x, home.y,
-                                     float(ctx.mapW), float(ctx.mapH))
-                       > 400.0f) {
-                // No field and far afield: come home first — the exact
-                // HomeWanderer rule this behaviour degrades to.
-                rt.targetX = home.x;
-                rt.targetY = home.y;
-                rt.state = std::uint8_t(NS::Returning);
-            } else {
-                XY t = pick_random_nearby(home.x, home.y, 12, ctx);
-                rt.targetX = t.x;
-                rt.targetY = t.y;
-                rt.state = std::uint8_t(NS::Wandering);
-            }
-        }
-        return;
-    }
-    if (rt.state == std::uint8_t(NS::Traveling)) {
-        if (at_target(p, rt, ctx)) {
-            rt.state = std::uint8_t(NS::Working);
-            rt.stateTimer = std::int16_t(8 + rand_int(ctx, 8));
-            return;
-        }
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
-        return;
-    }
-    if (rt.state == std::uint8_t(NS::Working)) {
-        --rt.stateTimer;
-        if (rt.stateTimer <= 0) {
-            // The reap is REAL (Field Inc F4): the trip's yield leaves the
-            // world through the one crop_count row — the same ledger the
-            // player's sickle settles against — so the field the farmer
-            // works really thins and regrows on the world clock. Same law
-            // of labour as the woodcutter's chop above; nullptr terrain =
-            // no honest reaping, nothing conjured (his fail-closed rule).
-            if (ctx.features && ctx.world && ctx.terrain) {
-                MacroWorld mw{ctx.gs, ctx.trees, ctx.world, ctx.terrain};
-                const MacroStockKey key{-1, std::int16_t(rt.targetX),
-                                        std::int16_t(rt.targetY)};
-                const int have =
-                    macro_stock_read(mw, MacroStock::CropCount, key);
-                const int take = std::min(kGatherPerWorkerDay, have);
-                if (take > 0) {
-                    macro_stock_apply(mw, MacroStock::CropCount, key, -take);
-                    if (auto* bag = ctx.world->reg.try_get<ecs::NpcInventory>(
-                            self)) {
-                        bag->inv.add("grain", take);
-                    }
-                }
-            }
-            rt.targetX = home.x;
-            rt.targetY = home.y;
-            rt.state = std::uint8_t(NS::Returning);
-        }
-        return;
-    }
-    if (rt.state == std::uint8_t(NS::Wandering)
-        || rt.state == std::uint8_t(NS::Returning)) {
-        if (at_target(p, rt, ctx)) {
-            if (rt.state == std::uint8_t(NS::Returning)) {
-                deliver_bag_home(self, rt, ctx, "grain");
+                deliver_bag_home(self, rt, ctx, def->commodity);
             }
             rt.state = std::uint8_t(NS::Idle);
             rt.stateTimer = std::int16_t(6 + rand_int(ctx, 12));
@@ -1154,9 +1147,7 @@ void dispatch(AIBehaviour b, entt::entity e, ecs::Position& p,
               const TickContext& ctx) {
     if (squad_threat_step(e, p, kind, rt, ctx)) return;
     switch (b) {
-        case AIBehaviour::HomeWanderer: ai_home_wanderer(p, rt, ctx); break;
-        case AIBehaviour::Woodcutter:   ai_woodcutter(e, p, rt, ctx); break;
-        case AIBehaviour::Farmer:       ai_farmer    (e, p, rt, ctx); break;
+        case AIBehaviour::Gatherer:     ai_gatherer(e, p, kind, rt, ctx); break;
         case AIBehaviour::CaravanTrade: ai_caravan   (e, p, rt, ctx); break;
         case AIBehaviour::Trader:       ai_trader       (p, rt, ctx); break;
         case AIBehaviour::Nomad:        ai_nomad        (p, rt, ctx); break;
@@ -1221,7 +1212,8 @@ void tick_macro_npc_ai(GameState& gs, ecs::World& w,
                        const PathCostData* pathCost,
                        TreeLayer* trees,
                        const FeatureLayer* features,
-                       const TerrainData* terrain) {
+                       const TerrainData* terrain,
+                       DepositLayer* deposits) {
     auto& reg = w.reg;
     auto view = reg.view<ecs::Position, ecs::NPCKind,
                          ecs::MacroNpcRuntime, ecs::Health>(
@@ -1244,6 +1236,8 @@ void tick_macro_npc_ai(GameState& gs, ecs::World& w,
     ctx.trees    = trees;
     ctx.features = features;
     ctx.terrain  = terrain;
+    ctx.deposits = deposits;
+    ctx.deposits = deposits;
 
     for (auto e : view) {
         auto& p    = view.get<ecs::Position>(e);
@@ -1320,7 +1314,8 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     GameState& gs, ecs::World& w, const TreeGrid* treeGrid,
     MacroNpcAiRuntime& runtime, std::uint64_t ticks, int max_npc_ticks,
     bool allowAutoBattle, const PathCostData* pathCost, TreeLayer* trees,
-    const FeatureLayer* features, const TerrainData* terrain) {
+    const FeatureLayer* features, const TerrainData* terrain,
+    DepositLayer* deposits) {
     MacroNpcAiSliceResult result{};
     if (max_npc_ticks <= 0) return result;
 

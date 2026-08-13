@@ -16,6 +16,7 @@
 #include "macro/faction.h"
 #include "macro/npc.h"
 #include "macro/squad.h"
+#include "macro/deposit_layer.h"
 #include "macro/tree_layer.h"
 
 #include <cstdint>
@@ -365,6 +366,107 @@ void test_the_caravan_trades_on_its_memory() {
           "CONSERVATION: cargo moves, it is never minted or dropped");
 }
 
+// The miner: the SAME gatherer row-loop as the chop above, pointed at a
+// deposit (resources.md — a profession per resource, a row not a branch).
+// Pinned: the ore leaves through the Iron carrier row, hauls home into the
+// village store, CONSERVES, the drained vein stays a VISIBLE cell at 0 and
+// a dry world gives the miner nothing further; no deposit layer wired = no
+// ore conjured (the shared fail-closed rule).
+void test_the_miner_works_the_vein() {
+    GameState gs{};
+    gs.mapW = kMap;
+    gs.mapH = kMap;
+    Village vil{};
+    vil.id = 3;
+    vil.x = 10;
+    vil.y = 10;
+    gs.villages.push_back(vil);
+
+    DepositLayer deposits;
+    deposits.width = kMap;
+    deposits.height = kMap;
+    const std::uint32_t veinIdx = 10u * std::uint32_t(kMap) + 14u;
+    deposits.cells[std::size_t(DepositKind::Iron)][veinIdx] = 20;
+
+    ecs::World w;
+    auto& reg = w.reg;
+    const auto e = reg.create();
+    reg.emplace<ecs::Position>(e, 10.0f, 10.0f, 0.0f);
+    reg.emplace<ecs::VisualPos>(e, 10.0f, 10.0f, 0.0f);
+    reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Miner),
+                              std::uint16_t(faction_index("timaert")));
+    ecs::MacroNpcRuntime rt{};
+    rt.homeSettlementId = vil.id;
+    rt.homeIsVillage = 1;
+    rt.targetSettlementId = -1;
+    rt.targetX = 10.0f;
+    rt.targetY = 10.0f;
+    rt.state = std::uint8_t(NPCState::Idle);
+    rt.stateTimer = 0;
+    refresh_leader_travel_stats(
+        rt, make_character_sheet(NPCType::Miner, 3, leader_sheet_seed(13u)));
+    rt.sp = rt.maxSp;
+    reg.emplace<ecs::MacroNpcRuntime>(e, rt);
+    reg.emplace<ecs::MacroSpawnId>(e, 13u);
+    reg.emplace<ecs::NpcLevel>(e, std::int16_t(3));
+    reg.emplace<ecs::Health>(e, 30.0f, 30.0f);
+    reg.emplace<ecs::SquadRoster>(e);
+    reg.emplace<ecs::NpcInventory>(e);
+
+    MacroNpcAiRuntime art{};
+    reset_macro_npc_ai_runtime(art, 70u);
+    for (int i = 0; i < 400; ++i) {
+        tick_macro_npc_ai(gs, w, nullptr, art, kAiTicks,
+                          /*allowAutoBattle=*/true, nullptr, nullptr,
+                          nullptr, nullptr, &deposits);
+    }
+
+    const int veinLeft =
+        deposits.cells[std::size_t(DepositKind::Iron)].at(veinIdx);
+    const int veinLost = 20 - veinLeft;
+    const int storeGained = gs.villages[0].inventory.count("iron");
+    const int inBag = w.reg.get<ecs::NpcInventory>(e).inv.count("iron");
+
+    CHECK(veinLost > 0, "the dig really drained the vein");
+    CHECK(storeGained > 0, "the haul reached the village store");
+    CHECK(veinLost == storeGained + inBag,
+          "CONSERVATION: vein loss == store gain + what still rides the bag");
+    CHECK(deposits.cells[std::size_t(DepositKind::Iron)].count(veinIdx) == 1,
+          "a drained vein stays a VISIBLE cell - geology never disappears");
+    CHECK(veinLeft >= 0, "the vein bottoms out at dry, never negative");
+    // The world ran dry: 20 units at kGatherPerWorkerDay per trip is gone
+    // within the 400 thinks — a dry vein is no worksite, so the miner
+    // gathers nothing further and the totals stay conserved.
+    CHECK(veinLeft == 0, "the little vein was mined OUT within the run");
+    CHECK(storeGained + inBag == 20,
+          "everything the vein ever held is accounted for");
+
+    // No deposit layer wired = no ore conjured (the shared fail-closed rule).
+    GameState gs2{};
+    gs2.mapW = kMap;
+    gs2.mapH = kMap;
+    gs2.villages.push_back(vil);
+    ecs::World w2;
+    const auto e2 = w2.reg.create();
+    w2.reg.emplace<ecs::Position>(e2, 10.0f, 10.0f, 0.0f);
+    w2.reg.emplace<ecs::VisualPos>(e2, 10.0f, 10.0f, 0.0f);
+    w2.reg.emplace<ecs::NPCKind>(e2, std::uint16_t(NPCType::Miner),
+                                 std::uint16_t(faction_index("timaert")));
+    w2.reg.emplace<ecs::MacroNpcRuntime>(e2, rt);
+    w2.reg.emplace<ecs::MacroSpawnId>(e2, 14u);
+    w2.reg.emplace<ecs::NpcLevel>(e2, std::int16_t(3));
+    w2.reg.emplace<ecs::Health>(e2, 30.0f, 30.0f);
+    w2.reg.emplace<ecs::SquadRoster>(e2);
+    w2.reg.emplace<ecs::NpcInventory>(e2);
+    MacroNpcAiRuntime art2{};
+    reset_macro_npc_ai_runtime(art2, 71u);
+    for (int i = 0; i < 200; ++i) {
+        tick_macro_npc_ai(gs2, w2, nullptr, art2, kAiTicks);
+    }
+    CHECK(gs2.villages[0].inventory.count("iron") == 0,
+          "no deposit layer => no honest ore, and none minted from nothing");
+}
+
 int main() {
     test_the_chop_is_real_and_the_haul_comes_home();
     // Was DEFINED and never CALLED — found the day -Wunused-function came
@@ -373,6 +475,7 @@ int main() {
     test_no_layer_no_chop();
     test_the_farmer_works_the_field();
     test_farmer_without_terrain_conjures_nothing();
+    test_the_miner_works_the_vein();
     test_agent_memory_is_bounded_and_current();
     test_the_caravan_trades_on_its_memory();
     return sm::test::report("woodcutter_gather_test");

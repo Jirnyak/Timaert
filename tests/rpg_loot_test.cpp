@@ -195,8 +195,13 @@ static void test_sheet_determinism() {
 
 static void test_npc_loot_id() {
     expect(std::string(npc_loot_id(0)) == "peasant", "npc_loot_id(0)=peasant");
-    expect(std::string(npc_loot_id(7)) == "sorceress", "npc_loot_id(7)=sorceress");
-    expect(std::string(npc_loot_id(8)) == "", "npc_loot_id(8)= (out of range)");
+    // Derived from the enum, never a pinned literal (Testing law #4): the
+    // last row is whatever type the registry ends on, and one PAST the end
+    // is out of range — both stay true however many professions are added.
+    expect(std::string(npc_loot_id(int(sm::NPCType::Count) - 1)) == "claydigger",
+           "the last registry row names its loot profile");
+    expect(std::string(npc_loot_id(int(sm::NPCType::Count))) == "",
+           "one past the registry end is out of range");
     expect(std::string(npc_loot_id(-1)) == "", "npc_loot_id(-1)= (negative)");
     // Every humanoid NPCType must resolve to a registered, rollable profile.
     for (int t = 0; t < int(NPCType::Count); ++t) {

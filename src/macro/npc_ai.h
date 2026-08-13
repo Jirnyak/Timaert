@@ -13,6 +13,8 @@
 
 namespace sm {
 
+struct DepositLayer;
+
 // How often a macro NPC thinks, in WORLD TICKS (core/time.h) — not in wall
 // seconds. On the map that is 32 ticks = half a real second, exactly what it
 // always was. Underground it is half a second of WORLD time, which is eight
@@ -36,6 +38,13 @@ inline constexpr float kAiPeriodSeconds =
 // 256 thinks make the day, exactly.
 inline constexpr float kAiTickGameHours =
     24.0f * float(kAiTicks) / float(kTicksPerDay);
+
+// A profession works ITS OWN village's ground: half the live worlds'
+// village spacing (~21-23 cells, derive_city_spacing/2) rounded to po2 —
+// a work trip stays inside the home hinterland, never the neighbour's.
+// The spawn side reads the same number: ore inside this reach raises the
+// profession, and the man it raises can actually walk to the ore.
+inline constexpr int kGathererReach = 16;
 
 struct TreeGrid {
     int cellSize = 32;
@@ -117,6 +126,10 @@ struct TickContext {
     // map both key off it. nullptr = no honest reaping (same fail-closed
     // rule as the woodcutter's `trees`).
     const TerrainData* terrain = nullptr;
+    // The deposit layer (resources.md): a miner/quarryman/clay-digger works
+    // the home's nearest cell of his row's kind. nullptr = no honest
+    // mining, the man wanders home — same fail-closed rule as the rest.
+    DepositLayer* deposits = nullptr;
 };
 
 // Macro-view path: scans all macro NPCs each step and dispatches those whose
@@ -128,7 +141,8 @@ void tick_macro_npc_ai(GameState& gs, ecs::World& w,
                        const PathCostData* pathCost = nullptr,
                        TreeLayer* trees = nullptr,
                        const FeatureLayer* features = nullptr,
-                       const TerrainData* terrain = nullptr);
+                       const TerrainData* terrain = nullptr,
+                       DepositLayer* deposits = nullptr);
 
 // Smooth macro NPC render positions toward their logical cell positions.
 // Mirrors TS `visualX/Y` interpolation and snaps long seam/teleport jumps.
@@ -145,6 +159,7 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     const PathCostData* pathCost = nullptr,
     TreeLayer* trees = nullptr,
     const FeatureLayer* features = nullptr,
-    const TerrainData* terrain = nullptr);
+    const TerrainData* terrain = nullptr,
+    DepositLayer* deposits = nullptr);
 
 } // namespace sm
