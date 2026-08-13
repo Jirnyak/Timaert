@@ -87,3 +87,45 @@ of the renderer: 4 equal seasons starting at Spring on day 1, contiguous
 periodic and total over non-positive days, and the offset ordering. Latest run:
 `OK seasons_test: 4x32-day year from day 1=Spring, pure+periodic, wraps
 non-positive days, offsets summer>spring(0)>=autumn>winter (year=128 days)`.
+
+## Seasons & Weather — the system to be (owner's vision, 2026-08-13)
+
+> Recorded ahead of its own track: «сезонность — это не ресурсы, а отдельная
+> большая система: и снег, и времена года, и снег в макромире, и дожди, и
+> засухи — расширяемо». What stands above is the CALENDAR half, already
+> live; what follows is the WEATHER half and the ruling that shapes it.
+
+**The ruling — weather is a FIELD.** The engine is data-oriented and already
+speaks fields fluently ([resources.md](resources.md)): per-cell quantities
+over the macro map behind one read door. Weather joins that family — one
+uniform design, not a second dialect: a WEATHER FIELD over macro cells
+(precipitation / cloud / wind / drought state per cell), the macro truth the
+owner's «макро = истина, микро рендерит» law always intended. The subworld
+sky already carries the receiving lanes (SkyContext precip01/cloudiness01/
+wind — deliberately laid in Sky Inc E for exactly this): `build_sky_context`
+stops deriving weather from the bare calendar (`weather_at` — today a
+GLOBAL function, the same rain over the whole planet) and starts reading
+the field at the player's cell. Whether the field's content is derived
+fresh each day (climate × calendar × seed, nothing serialized) or carries
+simulated state is the track's own first decision — the FIELD shape is
+decided, the filling of it is not.
+
+**Consumers the track wires (each a data hook, никогда ветка):**
+
+| Consumer | Hook |
+| --- | --- |
+| Growth law | a season/weather multiplier in `growthAt` (resources.md) — no growth in winter, droughts starve the fields; deliberately deferred INTO this track so growth is balanced once, not twice |
+| Fields & farmer | seasonal crops (golden in autumn, bare in winter — the Session 24 остаток) and the reaping gate |
+| Subworld sky | already renders precip/clouds/lightning — switches source from calendar to field |
+| Macro map | SNOW in the macroworld: the map palette reads the same field (winter whitens the cold latitudes), the seasonal `tintRGB` finally gets its macro consumer |
+| Travel | snow/mud as movement-cost context (the same terrain-weight table, a data column — Session 21's one law of movement) |
+| Fauna / economy | breeding seasons, `yieldMul` finally wired, drought → famine pressure through the honest econ day |
+
+**Extensibility promise:** a weather KIND (hail, storm, drought, blizzard)
+is a row; a consumer is a hook reading the field. Nothing here may grow an
+if-chain per season — the `SeasonDef`/`kSeasonPrecip` table idiom is the
+template.
+
+The track's prompt lives in
+[proposals/session-prompts.md](proposals/session-prompts.md) § «Сессия —
+сезоны и погода».
