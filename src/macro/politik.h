@@ -112,11 +112,23 @@ inline std::uint16_t faction_index_for_cell(const Politik& politik,
     return faction_index_for_kingdom(politik, owner == 0xffu ? -1 : int(owner));
 }
 
+// THE distance law of the settled world, in one door: the minimum
+// inter-city spacing, derived from land area and settlement count —
+// nearest-neighbour distance of N points scattered over area A is
+// ≈ √(A/N), and 60% of that is the rejection radius. City placement
+// enforces it (generate_politik), and village hinterlands are HALF of
+// it: a village belongs to the nearest city by construction, so half
+// the spacing is exactly the land that city can claim. Land is counted
+// by a subsampled scan (every 4th cell); a null/mismatched terrain
+// counts the whole map as land.
+struct TerrainData;
+int derive_city_spacing(const TerrainData* terrain, std::uint8_t seaLevel8,
+                        int mapW, int mapH, int totalCities);
+
 // Place capitals and scatter kingdom cities, build MST + extra inter-kingdom
 // links. When `terrain` is provided, candidate positions are restricted to
 // land tiles, and the minimum inter-city separation is derived from the
 // land area / target city count (no hardcoded distance).
-struct TerrainData;
 // `targetTotalCities` (when > 0) overrides the registry totals: every
 // kingdom's min/max is scaled by `target / registryTotal`, so the world
 // ends up with approximately the requested number of cities while each

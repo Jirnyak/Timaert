@@ -779,6 +779,27 @@ timaert_test(econ_v1_test
 timaert_test(deposit_layer_test
     SOURCES
         src/macro/deposit_layer.cpp)
+# R2 — settlement derives from resources: the veto/percentile/negative-control
+# contract on village placement (macro/settlement_score.{h,cpp} + the
+# hinterland scan in state.cpp). Links the whole generation chain the score
+# reads through: the registry door (macro_stock), trees, deposits, and the
+# state/politik pair that settles the world.
+
+timaert_test(settlement_placement_test
+    SOURCES
+        src/macro/state.cpp
+        src/macro/politik.cpp
+        src/macro/settlement_score.cpp
+        src/macro/macro_stock.cpp
+        src/macro/tree_layer.cpp
+        src/macro/deposit_layer.cpp
+        src/macro/fauna.cpp
+        src/macro/map_generator.cpp
+        src/macro/language.cpp
+        src/macro/items.cpp
+        src/macro/economy.cpp
+        src/macro/econ_day.cpp
+    LINK_ENTT)
 
 timaert_test(price_law_test
     SOURCES

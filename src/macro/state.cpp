@@ -7,9 +7,12 @@
 #include "macro/faction.h"
 #include "macro/map_generator.h"
 #include "macro/language.h"
+#include "macro/settlement_score.h"
 #include "core/rng.h"
 #include "core/torus.h"
+#include <algorithm>
 #include <array>
+#include <vector>
 
 namespace sm {
 
@@ -131,7 +134,9 @@ GameState default_game_state(std::uint32_t seed, int mapW, int mapH,
 // All deterministic via `gs.worldSeed`. Idempotent: clears prior lists.
 void populate_landmarks_from_politik(GameState& gs,
                                      const TerrainData& terrain,
-                                     std::uint8_t seaLevel8) {
+                                     std::uint8_t seaLevel8,
+                                     TreeLayer& trees,
+                                     const DepositLayer& deposits) {
     gs.settlements.clear();
     gs.villages.clear();
     gs.spires.clear();
@@ -140,12 +145,6 @@ void populate_landmarks_from_politik(GameState& gs,
     }
 
     Rng rng(gs.worldSeed ^ 0xC1A05E1Du);
-
-    auto land_at = [&](int x, int y) -> bool {
-        int wx = wrapi(x, terrain.width);
-        int wy = wrapi(y, terrain.height);
-        return !terrain.is_water(wx, wy, seaLevel8);
-    };
 
     const auto& cities = gs.politik.cities;
     gs.settlements.reserve(cities.size());
@@ -181,30 +180,84 @@ void populate_landmarks_from_politik(GameState& gs,
         gs.settlements.push_back(std::move(s));
     }
 
-    // ── Villages: 1–3 per settlement, scattered on land within a ring.
+    // ── Villages: resources decide (R2). Politics placed the cities;
+    // each city's hinterland — half the city spacing, the land nearest
+    // to it by construction — is scanned WHOLE, every candidate priced
+    // by THE settlement score, and villages take the best sites in
+    // order. The COUNT derives from the hinterland's summed capacity (a
+    // lush delta feeds more mouths than a dry steppe, a barren one
+    // feeds none), the POPULATION from the chosen site's own score. The
+    // old dice — 1+rng%3 villages, 18 blind darts whose only criterion
+    // was "land", 30+rng%90 souls — are dead; rng still names things.
+    SettlementSiteContext site{};
+    site.w.gs      = &gs;
+    site.w.trees   = &trees;
+    site.w.terrain = &terrain;
+    site.deposits  = &deposits;
+    site.seaLevel8 = seaLevel8;
+    const int spacing = derive_city_spacing(&terrain, seaLevel8,
+                                            gs.mapW, gs.mapH,
+                                            int(cities.size()));
+    const int reach = std::max(4, spacing / 2);
+
+    struct Candidate { int score, x, y; };
+    std::vector<Candidate> cands;
+    cands.reserve(std::size_t(2 * reach + 1) * std::size_t(2 * reach + 1));
+
     int villageId = 0;
     for (const auto& s : gs.settlements) {
-        const int n = 1 + int(rng.next_u32() % 3u);   // 1..3
-        for (int v = 0; v < n; ++v) {
-            int vx = s.x;
-            int vy = s.y;
-            bool placed = false;
-            for (int attempt = 0; attempt < 18; ++attempt) {
-                float ang = rng.next_f01() * 6.2831853f;
-                int   dist = 4 + int(rng.next_u32() % 11u);  // 4..14 cells
-                int   tx = wrapi(s.x + int(std::cos(ang) * float(dist)),
-                                 gs.mapW);
-                int   ty = wrapi(s.y + int(std::sin(ang) * float(dist)),
-                                 gs.mapH);
-                if (land_at(tx, ty)) { vx = tx; vy = ty; placed = true; break; }
+        cands.clear();
+        long long hinterlandCapacity = 0;
+        for (int dy = -reach; dy <= reach; ++dy) {
+            for (int dx = -reach; dx <= reach; ++dx) {
+                // The town works its own kSettlementReach ring; a village
+                // starts beyond it.
+                if (std::max(std::abs(dx), std::abs(dy)) <= kSettlementReach)
+                    continue;
+                const int x = wrapi(s.x + dx, gs.mapW);
+                const int y = wrapi(s.y + dy, gs.mapH);
+                const int score = settlement_site_score(
+                    site, SettlementScoreRow::Village, x, y);
+                if (score < 0) continue;   // vetoed ground
+                hinterlandCapacity += score;
+                cands.push_back(Candidate{score, x, y});
             }
-            if (!placed) continue;
+        }
+        const int n = std::min<long long>(
+            kMaxVillagesPerCity,
+            hinterlandCapacity / kVillageCapacityQuota);
+        if (n <= 0 || cands.empty()) continue;
+        // Best sites first; ties resolved by scan order (y, then x) so
+        // the pick is a fact of the world data, not of the sort.
+        std::stable_sort(cands.begin(), cands.end(),
+                         [](const Candidate& a, const Candidate& b) {
+                             return a.score > b.score;
+                         });
+        int placed = 0;
+        for (const Candidate& c : cands) {
+            if (placed >= n) break;
+            // Separation keeps two villages' field reaches off the same
+            // ploughland (torus distance, against every village so far —
+            // neighbouring hinterlands may touch at the rim).
+            bool crowded = false;
+            for (const auto& other : gs.villages) {
+                const int ddx = std::min(std::abs(c.x - other.x),
+                                         gs.mapW - std::abs(c.x - other.x));
+                const int ddy = std::min(std::abs(c.y - other.y),
+                                         gs.mapH - std::abs(c.y - other.y));
+                if (std::max(ddx, ddy) < kVillageSeparation) {
+                    crowded = true;
+                    break;
+                }
+            }
+            if (crowded) continue;
             Village vil{};
             vil.id            = villageId++;
-            vil.x             = vx;
-            vil.y             = vy;
+            vil.x             = c.x;
+            vil.y             = c.y;
             vil.kingdomIdx    = s.kingdomIdx;
-            vil.population    = 30 + int(rng.next_u32() % 90u);   // 30..119
+            // The land feeds as many as it yields: souls ARE the score.
+            vil.population    = std::max(kVillagePopFloor, c.score);
             vil.mood          = SettlementMood::Stable;
             vil.nearestCityId = s.id;
             seed_landmark_inventory(
@@ -219,6 +272,7 @@ void populate_landmarks_from_politik(GameState& gs,
                 vil.name = "Hamlet";
             }
             gs.villages.push_back(std::move(vil));
+            ++placed;
         }
     }
 }

@@ -60,6 +60,28 @@ static bool find_nearest_land(const TerrainData& td, std::uint8_t seaLevel8,
     return false;
 }
 
+int derive_city_spacing(const TerrainData* terrain, std::uint8_t seaLevel8,
+                        int mapW, int mapH, int totalCities) {
+    std::size_t totalCells = 0;
+    if (!TerrainData::cell_count_for(mapW, mapH, totalCells)) return 8;
+    if (totalCities < 1) totalCities = 1;
+    int areaCells = int(std::min<std::size_t>(
+        totalCells, std::size_t(std::numeric_limits<int>::max())));
+    if (terrain_matches_map(terrain, mapW, mapH)) {
+        // Fast land-count via subsampled scan (every 4th cell — 16× speed).
+        int land = 0, sampled = 0;
+        for (int y = 0; y < mapH; y += 4)
+            for (int x = 0; x < mapW; x += 4) {
+                ++sampled;
+                if (terrain->rgba[std::size_t(y * mapW + x) * 4 + 0] >= seaLevel8) ++land;
+            }
+        if (sampled > 0)
+            areaCells = int(float(land) / float(sampled) * float(mapW * mapH));
+    }
+    return std::max(8,
+        int(0.60f * std::sqrt(float(areaCells) / float(totalCities))));
+}
+
 Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
                         const TerrainData* terrain, std::uint8_t seaLevel8,
                         int targetTotalCities) {
@@ -87,28 +109,13 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
         : 1.0f;
 
     // ── Data-driven minimum spacing ────────────────────────────────
-    // Estimate total target city count, then derive a Poisson-disk
-    // separation from the available (land) area: nearest-neighbour
-    // distance for N uniformly-scattered points in area A is ≈ √(A/N).
-    // We use 60% of that as the rejection radius — enough to feel
+    // ONE distance law (politik.h derive_city_spacing): Poisson-disk
+    // separation from the available land area — enough to feel
     // "natural" without leaving the map sparse.
-    int totalTarget = (targetTotalCities > 0) ? targetTotalCities : registryTotal;
-    if (totalTarget < 1) totalTarget = 1;
-    int areaCells = int(std::min<std::size_t>(
-        totalCells, std::size_t(std::numeric_limits<int>::max())));
-    if (useTerrain) {
-        // Fast land-count via subsampled scan (every 4th cell — 16× speed).
-        int land = 0, sampled = 0;
-        for (int y = 0; y < mapH; y += 4)
-            for (int x = 0; x < mapW; x += 4) {
-                ++sampled;
-                if (terrain->rgba[std::size_t(y * mapW + x) * 4 + 0] >= seaLevel8) ++land;
-            }
-        if (sampled > 0)
-            areaCells = int(float(land) / float(sampled) * float(mapW * mapH));
-    }
-    const int minDist = std::max(8,
-        int(0.60f * std::sqrt(float(areaCells) / float(totalTarget))));
+    const int totalTarget = (targetTotalCities > 0) ? targetTotalCities
+                                                    : registryTotal;
+    const int minDist = derive_city_spacing(useTerrain ? terrain : nullptr,
+                                            seaLevel8, mapW, mapH, totalTarget);
 
     // Land predicate (defaults to "everywhere is land" when no terrain).
     auto is_land = [&](int x, int y) -> bool {

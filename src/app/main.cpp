@@ -33,6 +33,7 @@
 #include "macro/state.h"
 #include "macro/character_sheet.h"
 #include "macro/map_generator.h"
+#include "macro/settlement_score.h"
 #include "macro/spawners.h"
 #include "macro/tree_layer.h"
 #include "macro/deposit_layer.h"
@@ -1839,8 +1840,40 @@ void boot_world(App& app, std::uint32_t seed,
     sm::snap_cities_to_land(app.gs.politik, app.terrain, std::uint8_t(lp.seaLevel * 255.0f));
     sm::finalize_politik(app.gs.politik, app.terrain, std::uint8_t(lp.seaLevel * 255.0f));
     sm::populate_landmarks_from_politik(app.gs, app.terrain,
-                                        std::uint8_t(lp.seaLevel * 255.0f));
+                                        std::uint8_t(lp.seaLevel * 255.0f),
+                                        app.treeLayer, app.deposits);
     boot_trace("landmarks populated");
+    if (boot_trace_enabled()) {
+        // The R2 report card: how many villages actually stand next to the
+        // resources the score placed them by. The old roulette scored ~25%
+        // on water; the causality law should hold most of the world.
+        int nearWater = 0, nearPlough = 0, nearDeposit = 0;
+        const std::uint8_t sea8 = std::uint8_t(lp.seaLevel * 255.0f);
+        for (const auto& v : app.gs.villages) {
+            bool water = false, plough = false, deposit = false;
+            for (int dy = -sm::kSettlementReach; dy <= sm::kSettlementReach; ++dy)
+                for (int dx = -sm::kSettlementReach; dx <= sm::kSettlementReach;
+                     ++dx) {
+                    const int x = sm::wrapi(v.x + dx, app.gs.mapW);
+                    const int y = sm::wrapi(v.y + dy, app.gs.mapH);
+                    if (app.terrain.is_water(x, y, sea8)) water = true;
+                    else if (app.terrain.moisture_at(x, y)
+                             >= sm::kFieldMoistureMin) plough = true;
+                    if (app.deposits.at(x, y)) deposit = true;
+                }
+            nearWater   += water   ? 1 : 0;
+            nearPlough  += plough  ? 1 : 0;
+            nearDeposit += deposit ? 1 : 0;
+        }
+        const int n = std::max(1, int(app.gs.villages.size()));
+        std::fprintf(stderr,
+                     "[worldgen] cities=%zu villages=%zu nearWater=%d%% "
+                     "nearPlough=%d%% nearDeposit=%d%%\n",
+                     app.gs.settlements.size(), app.gs.villages.size(),
+                     100 * nearWater / n, 100 * nearPlough / n,
+                     100 * nearDeposit / n);
+        std::fflush(stderr);
+    }
 
     sm::RoadTraceStats roadStats;
     auto roads = sm::trace_roads(app.terrain, app.gs.politik, &roadStats, lp.seaLevel);

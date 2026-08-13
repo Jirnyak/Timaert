@@ -418,12 +418,18 @@ GameState  default_game_state(std::uint32_t seed, int mapW, int mapH,
 // Bridge politik → landmark lists. After `generate_politik` (and the
 // `snap_cities_to_land` post-pass) the `gs.politik.cities` array holds
 // the world's capitals and major cities. This populates the gameplay-
-// facing `gs.settlements` (one per politik city) and scatters 1–3
-// villages around each city on land cells. Idempotent — clears prior
-// landmarks before populating.
+// facing `gs.settlements` (one per politik city) and settles villages
+// on the best-scoring cells of each city's hinterland (R2: resources
+// are primary, settlement is derived — macro/settlement_score.h), so
+// the tree and deposit layers must exist BEFORE this runs. Idempotent —
+// clears prior landmarks before populating.
 struct TerrainData;  // fwd
+struct TreeLayer;
+struct DepositLayer;
 void populate_landmarks_from_politik(GameState& gs,
                                      const TerrainData& terrain,
-                                     std::uint8_t seaLevel8);
+                                     std::uint8_t seaLevel8,
+                                     TreeLayer& trees,
+                                     const DepositLayer& deposits);
 
 } // namespace sm
