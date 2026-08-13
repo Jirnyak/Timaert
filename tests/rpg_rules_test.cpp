@@ -12,6 +12,7 @@
 //      pricing (formerly dead code while three homegrown UI laws diverged)
 //      with context (mood/trait) as one multiplier column.
 
+#include "check.h"
 #include "macro/attributes.h"
 #include "macro/economy.h"
 
@@ -20,7 +21,9 @@
 namespace {
 
 int fail(const char* msg) {
-    std::fprintf(stderr, "FAIL rpg_rules_test: %s\n", msg);
+    // Testing law #1: the verdict lives in the ONE check.h counter — the
+    // returned int is vestigial and IGNORED; main ends with report().
+    sm::test::check(false, msg, "tests/rpg_rules_test.cpp", 0);
     return 1;
 }
 
@@ -107,5 +110,6 @@ int main() {
     }
 
     std::printf("rpg_rules_test: preserve=ok wis=ok price_law=ok\n");
-    return 0;
+    CHECK(true, "every gate above held");
+    return sm::test::report("rpg_rules_test");
 }

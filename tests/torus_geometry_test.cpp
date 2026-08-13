@@ -9,6 +9,7 @@
 // an existing road is skipped. This test encodes exactly those road scenarios
 // so the geometry can't silently drift.
 
+#include "check.h"
 #include "core/torus.h"
 
 #include <cmath>
@@ -17,7 +18,9 @@
 namespace {
 
 int fail(const char* msg) {
-    std::fprintf(stderr, "FAIL torus_geometry_test: %s\n", msg);
+    // Testing law #1: the verdict lives in the ONE check.h counter — the
+    // returned int is vestigial and IGNORED; main ends with report().
+    sm::test::check(false, msg, "tests/torus_geometry_test.cpp", 0);
     return 1;
 }
 
@@ -102,5 +105,6 @@ int main() {
     std::printf("OK torus_geometry_test: bearings normalize + wrap short-way; "
                 "road-fan guard flags collinear/shallow fans, keeps "
                 "perpendicular/opposite/45-degree loops (cos>%.2f)\n", double(kFan));
-    return 0;
+    CHECK(true, "every gate above held");
+    return sm::test::report("torus_geometry_test");
 }

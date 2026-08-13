@@ -15,6 +15,7 @@
 // SHAPE of the distribution, not exact bin counts), so this locks the behaviour
 // without being brittle.
 
+#include "check.h"
 #include "sub/gens/dispatch.h"
 #include "sub/map_data.h"
 
@@ -29,7 +30,9 @@ using namespace sm::sub;
 namespace {
 
 int fail(const char* msg) {
-    std::fprintf(stderr, "FAIL city_distribution_test: %s\n", msg);
+    // Testing law #1: the verdict lives in the ONE check.h counter — the
+    // returned int is vestigial and IGNORED; main ends with report().
+    sm::test::check(false, msg, "tests/city_distribution_test.cpp", 0);
     return 1;
 }
 
@@ -173,5 +176,6 @@ int main() {
                 "(min/max >= 0.20) and radially spread (outer-half frac "
                 ">= 0.30), across seeds/populations\n",
                 int(sizeof(cases) / sizeof(cases[0])));
-    return 0;
+    CHECK(true, "every gate above held");
+    return sm::test::report("city_distribution_test");
 }

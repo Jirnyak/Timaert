@@ -1,3 +1,4 @@
+#include "check.h"
 #include "content/spells/registry.h"
 #include "content/spells/spell_book.h"
 #include "ecs/world.h"
@@ -11,7 +12,9 @@
 namespace {
 
 int fail(const char* msg) {
-    std::fprintf(stderr, "FAIL: %s\n", msg);
+    // Testing law #1: the verdict lives in the ONE check.h counter — the
+    // returned int is vestigial and IGNORED; main ends with report().
+    sm::test::check(false, msg, "tests/spell_casting_effects_test.cpp", 0);
     return 1;
 }
 
@@ -919,5 +922,6 @@ int main() {
                  "PASS: projectiles=%d mp=%d cooldowns=%zu sustained=%zu\n",
                  projectile_count(world), combat.currentMp,
                  book.cooldowns.size(), book.sustainedActive.size());
-    return 0;
+    CHECK(true, "every gate above held");
+    return sm::test::report("spell_casting_effects_test");
 }

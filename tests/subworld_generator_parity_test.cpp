@@ -1,3 +1,4 @@
+#include "check.h"
 #include "sub/gens/dispatch.h"
 #include "macro/tree_layer.h"
 #include "sub/base_generator.h"
@@ -70,7 +71,9 @@ std::vector<Glade> expected_forest_glades(const sm::sub::CellContext& ctx) {
 }
 
 int fail(const char* msg) {
-    std::cerr << msg << "\n";
+    // Testing law #1: the verdict lives in the ONE check.h counter — the
+    // returned int is vestigial and IGNORED; main ends with report().
+    sm::test::check(false, msg, "tests/subworld_generator_parity_test.cpp", 0);
     return 1;
 }
 
@@ -1215,5 +1218,6 @@ int main() {
               << " grassland_trees=" << grassTrees
               << " swamp_trees=" << swampTrees
               << " field_tiles=" << fieldTiles << "\n";
-    return 0;
+    CHECK(true, "every gate above held");
+    return sm::test::report("subworld_generator_parity_test");
 }

@@ -20,6 +20,7 @@
 //
 // Pure ECS + data assertions: no Vulkan, no window, no GameState needed beyond a
 // hand-built Politik. Manager construction mirrors subworld_spawn_parity_test.
+#include "check.h"
 #include "ecs/components.h"
 #include "ecs/world.h"
 #include "macro/faction.h"
@@ -34,7 +35,9 @@
 namespace {
 
 int fail(const char* msg) {
-    std::fprintf(stderr, "FAIL settlement_faction_test: %s\n", msg);
+    // Testing law #1: the verdict lives in the ONE check.h counter — the
+    // returned int is vestigial and IGNORED; main ends with report().
+    sm::test::check(false, msg, "tests/settlement_faction_test.cpp", 0);
     return 1;
 }
 
@@ -232,5 +235,6 @@ int main() {
     std::printf("OK settlement_faction_test resolver=1 ground=1 "
                 "realm_citizens=1 empire_unbroken=1\n");
     sm::sub::clear_saved_subworlds();
-    return 0;
+    CHECK(true, "every gate above held");
+    return sm::test::report("settlement_faction_test");
 }

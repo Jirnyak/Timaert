@@ -22,6 +22,7 @@
 // Pure ECS + data assertions — no Vulkan, no window. Mirrors the construction
 // style of subworld_spawn_parity_test (same manager init) so it stays in lock-
 // step with the shipping spawn path rather than re-deriving it.
+#include "check.h"
 #include "ecs/components.h"
 #include "ecs/world.h"
 #include "macro/faction.h"
@@ -36,7 +37,9 @@
 namespace {
 
 int fail(const char* msg) {
-    std::fprintf(stderr, "FAIL carried_light_spawn_test: %s\n", msg);
+    // Testing law #1: the verdict lives in the ONE check.h counter — the
+    // returned int is vestigial and IGNORED; main ends with report().
+    sm::test::check(false, msg, "tests/carried_light_spawn_test.cpp", 0);
     return 1;
 }
 
@@ -169,5 +172,6 @@ int main() {
 
     std::printf("OK carried_light_spawn_test type_contract=1 spawn_attach=1\n");
     sm::sub::clear_saved_subworlds();
-    return 0;
+    CHECK(true, "every gate above held");
+    return sm::test::report("carried_light_spawn_test");
 }

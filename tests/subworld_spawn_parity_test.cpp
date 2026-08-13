@@ -1,3 +1,4 @@
+#include "check.h"
 #include "macro/faction.h"
 #include "sub/spawn.h"
 #include "core/rng.h"
@@ -36,7 +37,9 @@ struct SpawnRecord {
 };
 
 int fail(const char* msg) {
-    std::fprintf(stderr, "FAIL subworld_spawn_parity_test: %s\n", msg);
+    // Testing law #1: the verdict lives in the ONE check.h counter — the
+    // returned int is vestigial and IGNORED; main ends with report().
+    sm::test::check(false, msg, "tests/subworld_spawn_parity_test.cpp", 0);
     return 1;
 }
 
@@ -873,5 +876,6 @@ int main() {
                 "identity_remap=1\n",
                 actual.size(), centre.seed, kZoneLevel);
     sm::sub::clear_saved_subworlds();
-    return 0;
+    CHECK(true, "every gate above held");
+    return sm::test::report("subworld_spawn_parity_test");
 }

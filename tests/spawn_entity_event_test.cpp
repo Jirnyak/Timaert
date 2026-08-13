@@ -13,6 +13,7 @@
 //   * an unknown token spawns NOTHING and returns false (no silent Bandit
 //     fallback here — that is the subworld console's own historical rule).
 
+#include "check.h"
 #include "macro/npc_spawn.h"
 #include "macro/npc.h"
 #include "macro/faction.h"
@@ -26,7 +27,9 @@
 namespace {
 
 int fail(const char* msg) {
-    std::fprintf(stderr, "FAIL spawn_entity_event_test: %s\n", msg);
+    // Testing law #1: the verdict lives in the ONE check.h counter — the
+    // returned int is vestigial and IGNORED; main ends with report().
+    sm::test::check(false, msg, "tests/spawn_entity_event_test.cpp", 0);
     return 1;
 }
 
@@ -97,5 +100,6 @@ int main() {
 
     std::printf("spawn_entity_event_test: refuse=ok spawn=ok faction=ok "
                 "level=ok scatter=ok ordinal=ok\n");
-    return 0;
+    CHECK(true, "every gate above held");
+    return sm::test::report("spawn_entity_event_test");
 }

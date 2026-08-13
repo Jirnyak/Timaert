@@ -1,3 +1,4 @@
+#include "check.h"
 #include "macro/items.h"
 
 #include <cstdio>
@@ -6,7 +7,9 @@
 namespace {
 
 int fail(const char* msg) {
-    std::fprintf(stderr, "item_use_parity_test FAIL: %s\n", msg);
+    // Testing law #1: the verdict lives in the ONE check.h counter — the
+    // returned int is vestigial and IGNORED; main ends with report().
+    sm::test::check(false, msg, "tests/item_use_parity_test.cpp", 0);
     return 1;
 }
 
@@ -75,5 +78,6 @@ int main() {
     if (!test_food_and_non_consumables()) return 1;
 
     std::printf("OK item_use_parity_test hp=ok full=ok food=ok non_consumable=ok\n");
-    return 0;
+    CHECK(true, "every gate above held");
+    return sm::test::report("item_use_parity_test");
 }

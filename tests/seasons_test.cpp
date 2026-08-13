@@ -13,6 +13,7 @@
 // If any of these regress, seasonal foliage silently drifts even though it
 // still compiles.
 
+#include "check.h"
 #include "macro/seasons.h"
 
 #include <cstdio>
@@ -21,7 +22,9 @@
 namespace {
 
 int fail(const char* msg) {
-    std::fprintf(stderr, "FAIL seasons_test: %s\n", msg);
+    // Testing law #1: the verdict lives in the ONE check.h counter — the
+    // returned int is vestigial and IGNORED; main ends with report().
+    sm::test::check(false, msg, "tests/seasons_test.cpp", 0);
     return 1;
 }
 
@@ -83,5 +86,6 @@ int main() {
     std::printf("OK seasons_test: 4x%d-day year from day 1=Spring, pure+periodic, "
                 "wraps non-positive days, offsets summer>spring(0)>=autumn>winter "
                 "(year=%d days)\n", kDaysPerSeason, kDaysPerYear);
-    return 0;
+    CHECK(true, "every gate above held");
+    return sm::test::report("seasons_test");
 }

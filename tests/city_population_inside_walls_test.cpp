@@ -25,6 +25,7 @@
 //   5. The extracted footprint formulas (sub/city_layout.h) still reproduce the
 //      literals gen_city / gen_village carried before they were hoisted out —
 //      the refactor must not have moved a single wall.
+#include "check.h"
 #include "ecs/components.h"
 #include "ecs/world.h"
 #include "macro/faction.h"
@@ -41,7 +42,9 @@
 namespace {
 
 int fail(const char* msg) {
-    std::fprintf(stderr, "FAIL city_population_inside_walls_test: %s\n", msg);
+    // Testing law #1: the verdict lives in the ONE check.h counter — the
+    // returned int is vestigial and IGNORED; main ends with report().
+    sm::test::check(false, msg, "tests/city_population_inside_walls_test.cpp", 0);
     return 1;
 }
 
@@ -279,5 +282,6 @@ int main() {
     }
 
     std::printf("PASS city_population_inside_walls_test\n");
-    return 0;
+    CHECK(true, "every gate above held");
+    return sm::test::report("city_population_inside_walls_test");
 }

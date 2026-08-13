@@ -27,6 +27,7 @@
 // heightmaps). So a flattened pad is byte-identical on the per-cell and
 // composite paths — no new seam. (subworld_async_seam_test still passes.)
 
+#include "check.h"
 #include "sub/gens/dispatch.h"
 #include "sub/map_data.h"
 
@@ -41,7 +42,9 @@ using namespace sm::sub;
 namespace {
 
 int fail(const char* msg) {
-    std::fprintf(stderr, "FAIL house_pad_flatten_test: %s\n", msg);
+    // Testing law #1: the verdict lives in the ONE check.h counter — the
+    // returned int is vestigial and IGNORED; main ends with report().
+    sm::test::check(false, msg, "tests/house_pad_flatten_test.cpp", 0);
     return 1;
 }
 
@@ -218,5 +221,6 @@ int main() {
                 "(negative control: mean range is %.2f%% of relief)\n",
                 totalFootprints, worstMean, kMaxMeanRange, worstRange,
                 kMaxWorstRange, reliefSeen, 100.0f * worstMean / reliefSeen);
-    return 0;
+    CHECK(true, "every gate above held");
+    return sm::test::report("house_pad_flatten_test");
 }

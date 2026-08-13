@@ -16,6 +16,7 @@
 // route system itself; a caravan holds POINTERS to nothing: it stands in a
 // real village and moves real stacks.)
 
+#include "check.h"
 #include "macro/agent_memory.h"
 #include "macro/faction.h"
 #include "macro/npc.h"
@@ -30,7 +31,9 @@
 namespace {
 
 int fail(const char* msg) {
-    std::fprintf(stderr, "FAIL trade_law_test: %s\n", msg);
+    // Testing law #1: the verdict lives in the ONE check.h counter — the
+    // returned int is vestigial and IGNORED; main ends with report().
+    sm::test::check(false, msg, "tests/trade_law_test.cpp", 0);
     return 1;
 }
 
@@ -119,5 +122,6 @@ int main() {
     }
 
     std::printf("trade_law_test: caravan_torus=ok garrison_cap=ok\n");
-    return 0;
+    CHECK(true, "every gate above held");
+    return sm::test::report("trade_law_test");
 }

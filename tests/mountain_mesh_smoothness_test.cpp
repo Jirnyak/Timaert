@@ -29,6 +29,7 @@
 //     mountain curvature must still exceed plains curvature (mountains keep
 //     their character; they are not smoothed into meadows).
 
+#include "check.h"
 #include "sub/base_generator.h"
 #include "sub/map_data.h"
 
@@ -44,7 +45,9 @@ using namespace sm::sub;
 namespace {
 
 int fail(const char* msg) {
-    std::fprintf(stderr, "FAIL mountain_mesh_smoothness_test: %s\n", msg);
+    // Testing law #1: the verdict lives in the ONE check.h counter — the
+    // returned int is vestigial and IGNORED; main ends with report().
+    sm::test::check(false, msg, "tests/mountain_mesh_smoothness_test.cpp", 0);
     return 1;
 }
 
@@ -213,5 +216,6 @@ int main() {
                 "plains)\n",
                 sizeof(cases) / sizeof(cases[0]), worstMedian, kMaxMedianCurv,
                 worstRange, worstMedianMtn, worstRangeRatio, worstCurvRatio);
-    return 0;
+    CHECK(true, "every gate above held");
+    return sm::test::report("mountain_mesh_smoothness_test");
 }

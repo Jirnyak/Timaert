@@ -1,3 +1,4 @@
+#include "check.h"
 #include "macro/npc_spawn.h"
 #include "ecs/components.h"
 
@@ -6,7 +7,9 @@
 namespace {
 
 int fail(const char* msg) {
-    std::fprintf(stderr, "FAIL npc_spawn_contract_test: %s\n", msg);
+    // Testing law #1: the verdict lives in the ONE check.h counter — the
+    // returned int is vestigial and IGNORED; main ends with report().
+    sm::test::check(false, msg, "tests/npc_spawn_contract_test.cpp", 0);
     return 1;
 }
 
@@ -88,5 +91,6 @@ int main() {
 
     std::printf("npc_spawn_contract_test: ok spawned=%d mismatch=%d\n",
                 spawned, count_macro_npcs(mismatchWorld));
-    return 0;
+    CHECK(true, "every gate above held");
+    return sm::test::report("npc_spawn_contract_test");
 }

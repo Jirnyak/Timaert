@@ -1,3 +1,4 @@
+#include "check.h"
 #include "macro/faction.h"
 #include "macro/npc.h"
 #include "ecs/components.h"
@@ -11,7 +12,9 @@
 namespace {
 
 int fail(const char* msg) {
-    std::fprintf(stderr, "FAIL combat_squad_test: %s\n", msg);
+    // Testing law #1: the verdict lives in the ONE check.h counter — the
+    // returned int is vestigial and IGNORED; main ends with report().
+    sm::test::check(false, msg, "tests/combat_squad_test.cpp", 0);
     return 1;
 }
 
@@ -237,5 +240,6 @@ int main() {
                 player.members.size(), garrison.members.size(),
                 baseUpkeep, charismaUpkeep, generated.garrison.members.size(),
                 projected, malformedProjected);
-    return 0;
+    CHECK(true, "every gate above held");
+    return sm::test::report("combat_squad_test");
 }

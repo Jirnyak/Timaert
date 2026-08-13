@@ -15,6 +15,7 @@
 //      emits FamineEnded exactly once when bread arrives (facts fire on
 //      TRANSITIONS, not every day).
 
+#include "check.h"
 #include "macro/econ_day.h"
 #include "macro/items.h"
 
@@ -25,7 +26,9 @@
 namespace {
 
 int fail(const char* msg) {
-    std::fprintf(stderr, "FAIL econ_v1_test: %s\n", msg);
+    // Testing law #1: the verdict lives in the ONE check.h counter — the
+    // returned int is vestigial and IGNORED; main ends with report().
+    sm::test::check(false, msg, "tests/econ_v1_test.cpp", 0);
     return 1;
 }
 
@@ -404,5 +407,6 @@ int main() {
                 "no_starvation=ok famine_transitions=ok consume_laws=ok "
                 "produce_fair=ok birth_stocks=ok population_law=ok "
                 "adapter=ok days=%d\n", kDays);
-    return 0;
+    CHECK(true, "every gate above held");
+    return sm::test::report("econ_v1_test");
 }

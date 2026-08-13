@@ -19,6 +19,7 @@
 //   • relations decided by an if-chain over id strings — now a symmetric
 //     temperament matrix plus an authored pair-override table, both data.
 
+#include "check.h"
 #include "macro/state.h"
 #include "macro/faction.h"   // registry + kHostileThreshold — THE hostility line lives with the relations
 #include "macro/politik.h"
@@ -30,7 +31,9 @@
 namespace {
 
 int fail(const char* msg) {
-    std::fprintf(stderr, "FAIL faction_relations_test: %s\n", msg);
+    // Testing law #1: the verdict lives in the ONE check.h counter — the
+    // returned int is vestigial and IGNORED; main ends with report().
+    sm::test::check(false, msg, "tests/faction_relations_test.cpp", 0);
     return 1;
 }
 
@@ -190,5 +193,6 @@ int main() {
                 "space, symmetric bands, magika registered, kingdoms resolve, "
                 "overrides applied (threshold=%d)\n",
                 kFactionCount, sm::kHostileThreshold);
-    return 0;
+    CHECK(true, "every gate above held");
+    return sm::test::report("faction_relations_test");
 }

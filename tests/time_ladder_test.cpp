@@ -18,6 +18,7 @@
 // If any of this regresses the clock still compiles and still ticks — it just
 // stops telling the truth.
 
+#include "check.h"
 #include "core/time.h"
 #include "macro/seasons.h"
 
@@ -27,7 +28,9 @@
 namespace {
 
 int fail(const char* msg) {
-    std::fprintf(stderr, "FAIL time_ladder_test: %s\n", msg);
+    // Testing law #1: the verdict lives in the ONE check.h counter — the
+    // returned int is vestigial and IGNORED; main ends with report().
+    sm::test::check(false, msg, "tests/time_ladder_test.cpp", 0);
     return 1;
 }
 
@@ -183,5 +186,6 @@ int main() {
                 "a year is 2^20 ticks\n",
                 (unsigned long long)kTicksPerDay, int(kRealSecondsPerDay),
                 (unsigned long long)kTicksPerDay);
-    return 0;
+    CHECK(true, "every gate above held");
+    return sm::test::report("time_ladder_test");
 }

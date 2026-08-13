@@ -1,3 +1,4 @@
+#include "check.h"
 #include "macro/audio.h"
 
 #if defined(TIMAERT_HAS_SDL_MIXER)
@@ -10,8 +11,9 @@
 namespace {
 
 int fail(const char* msg, const sm::AudioSystem& audio) {
-    std::fprintf(stderr, "audio_runtime_test FAIL: %s error=%s\n",
-                 msg, audio.last_error());
+    // Testing law #1: the verdict lives in the ONE check.h counter — the
+    // returned int is vestigial and IGNORED; main ends with report().
+    sm::test::check(false, msg, "tests/audio_runtime_test.cpp", 0);
     return 1;
 }
 
@@ -81,6 +83,7 @@ int main() {
     afterScoped.shutdown();
 
     std::printf("OK audio_runtime_test dummy_driver init decode play stop shutdown\n");
-    return 0;
+    CHECK(true, "every gate above held");
+    return sm::test::report("audio_runtime_test");
 #endif
 }
