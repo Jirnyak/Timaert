@@ -116,12 +116,8 @@ inline void stamp_macro_debt(entt::registry& reg, entt::entity e,
 // per event class, never from whichever system happens to notice first.
 void settle_macro_debt(MacroWorld& w, const ecs::MacroDebt& d, int sign);
 
-// Regrowth walks through ONE door now — resource_fields_daily_regrow
-// (macro/resource_field.h), every field on its own cadence.
-
-// The wheat regrowth cadence in GAME days — one stand per period per scarred
-// cell. Flat v1 (owner 2026-08-09, the fauna precedent): season/biome
-// context will enter THROUGH THIS DOOR as data, not as a second mechanism.
-int crop_regrow_period_days();
+// Birth walks through ONE door now — resource_fields_daily_growth
+// (macro/resource_field.h): every field grows by the one law, its context
+// a row, never a second mechanism.
 
 } // namespace sm

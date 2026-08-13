@@ -252,6 +252,4 @@ int fauna_cell_capacity_at(const GameState* gs, const TerrainData* terrain,
     return fauna_cell_capacity(biome, treeCount, landmark_kind_at(*gs, wx, wy));
 }
 
-int fauna_regrow_period_days() { return 32; }
-
 } // namespace sm

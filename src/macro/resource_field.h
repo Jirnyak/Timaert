@@ -54,6 +54,35 @@ enum class ResourceFieldId : std::uint8_t {
 // this number rather than each re-deriving one of their own.
 constexpr int kMaxWheatStandsPerCell = 4096;   // po2 scale of the estimate
 
+// ── The ONE growth/diffusion law (owner, R2 track) ────────────────────────
+// Every field is BORN from time and context through the same walker; the
+// nuances are the row's data, never a second system. The map is walked in
+// EPOCH slices: a cell is due once per kGrowthEpochDays, and one game day
+// processes cells/32 of the domain — smooth long-term dynamics need no
+// full-map day and no per-tick work.
+//
+// kGrowthEpochDays = 32: the year is 128 days = 4 seasons × 32 — the same
+// month the path grid is re-baked on (Session 21), and exactly the old
+// wheat/fauna healing period, so their law (+1 per visit) is preserved by
+// construction.
+constexpr int kGrowthEpochDays = 32;
+
+inline bool growth_cell_due(std::uint32_t cellIdx, int day) {
+    return int(cellIdx % std::uint32_t(kGrowthEpochDays))
+        == day % kGrowthEpochDays;
+}
+
+// What ground the walker covers for a row:
+//   None        — the field does not grow (stone, clay: quasi-static).
+//   CarrierGrid — every cell of the dense carrier (trees: чащобы thicken,
+//                 forests spread into neighbours).
+//   OwnScars    — only cells play has scarred (wheat, fauna: capacity is
+//                 the baseline, so unscarred cells have nowhere to grow).
+//   Geology     — lump birth on the HOST row's cells that lack this row
+//                 (iron: the scarcer the world's iron, the likelier a stone
+//                 quarry turns out to hold a vein — the W2c rule as a row).
+enum class GrowthDomain : std::uint8_t { None, CarrierGrid, OwnScars, Geology };
+
 struct ResourceFieldDef {
     const char* id;
     // The pure baseline: world context → capacity of one WRAPPED cell.
@@ -61,10 +90,12 @@ struct ResourceFieldDef {
     // row's baseline is its initial condition only (null: the carrier was
     // filled by worldgen and lives its own life from there).
     int (*baseline)(const MacroWorld& w, int x, int y);
-    // Regrowth cadence in GAME days — a function pointer so the number
-    // keeps living at its own single door (fauna.h / macro_stock.cpp).
-    // Sparse rows only; 0/null = the field never heals by itself.
-    int (*regrowPeriodDays)();
+    // The growth law. growthAt = units born at a DUE cell this visit (for
+    // Geology: the lump a fresh vein opens with). Pure and deterministic —
+    // context in, delta out; the walker owns dueness and the write.
+    GrowthDomain growthDomain;
+    int (*growthAt)(const MacroWorld& w, int x, int y);
+    ResourceFieldId growthHost;   // Geology only: whose cells host the birth
     // Carrier hooks — both set = the row's live state is a dense structure
     // outside the scar maps (trees: the TreeLayer grid the map renders).
     // Read is the current count; apply clamps to the row's own cap, writes
@@ -92,8 +123,11 @@ void resource_field_apply(MacroWorld& w, ResourceFieldId f, int x, int y,
 int resource_field_scar(const GameState& gs, ResourceFieldId f,
                         std::uint32_t cellIdx);
 
-// One daily step for EVERY field: on its own cadence, every scarred cell
-// heals one unit through resource_field_apply (whose write self-cleans).
-void resource_fields_daily_regrow(MacroWorld& w, int day);
+// One daily step for EVERY field — THE growth/diffusion door: each row's
+// due slice of its domain is visited, growthAt prices the birth, and the
+// write goes through the row's own dialect (scar heal / carrier apply /
+// genesis). Replaces both the old scar-heal walk and the bespoke iron
+// discovery.
+void resource_fields_daily_growth(MacroWorld& w, int day);
 
 } // namespace sm

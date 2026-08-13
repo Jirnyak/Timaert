@@ -945,6 +945,17 @@ timaert_test(body_contract_test
 # borrows from the map above it and how it pays back. Pure state + table, no
 # renderer and no SDL — it links the stock rows, the tree layer they write
 # through, and EnTT for the receipt component.
+# The ONE growth/diffusion law of the resource fields (R2): forest plants
+# the forest, beasts breed where beasts are, iron is born where scarce —
+# one walker, rows for context, pure calendar determinism.
+timaert_test(resource_growth_test
+    SOURCES
+        src/macro/macro_stock.cpp
+        src/macro/deposit_layer.cpp
+        src/macro/fauna.cpp
+        src/macro/tree_layer.cpp
+    LINK_ENTT)
+
 timaert_test(macro_stock_test
     SOURCES
         src/macro/macro_stock.cpp

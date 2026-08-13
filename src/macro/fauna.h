@@ -125,15 +125,9 @@ struct TreeLayer;
 int fauna_cell_capacity_at(const GameState* gs, const TerrainData* terrain,
                            const TreeLayer* trees, int x, int y);
 
-// Regrowth cadence: one head per scarred cell every this many game days
-// (32, po2 — a season per head; a culled meadow pack returns in about a
-// year of the 128-day calendar). Context — season, zone danger, biome —
-// enters THIS one door as data when it arrives (owner 2026-08-07), never
-// a second call site.
-int fauna_regrow_period_days();
-// (The regrowth step itself, fauna_daily_regrow, is stock machinery — a
-// walk over the override map applying this table's row — and lives with
-// the rows: macro/macro_stock.h.)
+// (The breeding step is the ONE growth law — resource_fields_daily_growth,
+// macro/resource_field.h: beasts breed where beasts are, capped by this
+// capacity — and lives with the rows: macro/macro_stock.cpp.)
 
 // ── Global monster registry ──────────────────────────────────────────
 // The single source of truth for every creature (rabbit → dragon), mirroring

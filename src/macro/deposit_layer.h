@@ -114,4 +114,8 @@ inline float iron_discovery_chance_per_day(float depletion) {
 // when no such stone cell exists.
 bool discover_iron_vein(DepositLayer& layer, std::uint32_t roll);
 
+// The lump a fresh vein opens with (kIronBase) — the Iron row's growth
+// number, living at the deposit table's own door.
+int iron_vein_lump();
+
 } // namespace sm

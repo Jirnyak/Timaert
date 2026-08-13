@@ -304,12 +304,17 @@ void test_trees_are_a_carrier_row() {
     trees.width = gs.mapW;
     trees.height = gs.mapH;
     trees.data.assign(std::size_t(gs.mapW) * std::size_t(gs.mapH), 500);
-    // Real terrain, so the daily-regrow walk below actually RUNS (it is
-    // fail-closed without terrain, and a walk that never ran proves nothing).
+    // Real terrain (dry land, meadow climate), so the growth walk below
+    // actually RUNS (it is fail-closed without terrain, and a walk that
+    // never ran proves nothing).
     sm::TerrainData td;
     td.width = gs.mapW;
     td.height = gs.mapH;
     td.rgba.assign(std::size_t(gs.mapW) * std::size_t(gs.mapH) * 4u, 128);
+    for (std::size_t i = 0; i < td.rgba.size(); i += 4) {
+        td.rgba[i + 0] = 180;   // height: land, below the mountain line
+        td.rgba[i + 3] = 255;   // mask: land
+    }
     MacroWorld w{&gs, &trees, nullptr, &td};
 
     const std::uint32_t rev0 = trees.revision;
@@ -325,12 +330,18 @@ void test_trees_are_a_carrier_row() {
     CHECK(resource_field_scar(gs, ResourceFieldId::Trees, 6u * 64u + 5u) == 0,
           "a carrier row reports no scar");
 
-    // Behaviour frozen in Inc A: the daily heal walks sparse rows only —
-    // a felled forest must NOT creep back until the growth law (Inc C)
-    // arrives deliberately. (Also guards the null regrowPeriodDays row.)
-    resource_fields_daily_regrow(w, /*day=*/32 * 64);
-    CHECK(int(trees.at(5, 6)) == 377,
-          "no silent regrowth: the felled cell holds until the growth law");
+    // Inc C: the growth law is live. The felled cell sits among live
+    // forest (neighbours at 500), so its due slice day births trees back —
+    // through the SAME carrier door (grid + revision), never a scar.
+    const int before = int(trees.at(5, 6));
+    const std::uint32_t cellIdx = 6u * 64u + 5u;
+    const int dueDay =
+        int(cellIdx % std::uint32_t(kGrowthEpochDays)) + kGrowthEpochDays;
+    resource_fields_daily_growth(w, dueDay);
+    CHECK(int(trees.at(5, 6)) > before,
+          "a due visit among live forest births trees into the grid");
+    CHECK(gs.resourceScars[std::size_t(ResourceFieldId::Trees)].empty(),
+          "growth writes the carrier, never a scar");
 }
 
 // The deposit rows (Clay/Iron/Stone) are carrier rows too: one registry

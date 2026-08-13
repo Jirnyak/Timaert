@@ -110,18 +110,23 @@ void test_regrow_self_cleans_when_whole() {
     CHECK(gs.resourceScars[std::size_t(ResourceFieldId::Wheat)].size() == 1, "the cut leaves a scar");
     const int cut = macro_stock_read(w, MacroStock::CropCount, cell_key(3, 1));
 
-    resource_fields_daily_regrow(w, crop_regrow_period_days());
+    // The ONE growth law visits a cell once per epoch, on the cell's own
+    // slice day (idx % kGrowthEpochDays) — the slice discipline is part of
+    // the law, so a non-due day moves nothing.
+    const std::uint32_t idx = 1u * 4u + 3u;   // cell (3,1) of the 4×4 world
+    const int dueDay = int(idx % std::uint32_t(kGrowthEpochDays));
+    resource_fields_daily_growth(w, dueDay + 1);
+    CHECK(macro_stock_read(w, MacroStock::CropCount, cell_key(3, 1)) == cut,
+          "a day that is not this cell's slice grows nothing here");
+    resource_fields_daily_growth(w, dueDay + kGrowthEpochDays);
     CHECK(macro_stock_read(w, MacroStock::CropCount, cell_key(3, 1)) == cut + 1,
-          "one regrow step returns one stand");
-    resource_fields_daily_regrow(w, crop_regrow_period_days());
+          "one due visit returns one stand");
+    resource_fields_daily_growth(w, dueDay + 2 * kGrowthEpochDays);
     CHECK(gs.resourceScars[std::size_t(ResourceFieldId::Wheat)].empty(),
           "a cell healed back to whole erases its own override");
-    resource_fields_daily_regrow(w, crop_regrow_period_days());
+    resource_fields_daily_growth(w, dueDay + 3 * kGrowthEpochDays);
     CHECK(gs.resourceScars[std::size_t(ResourceFieldId::Wheat)].empty(),
-          "regrowing an unscarred world is a no-op, not a creation engine");
-
-    CHECK(crop_regrow_period_days() > 0,
-          "the regrow cadence is real game time");
+          "growing an unscarred wheat field is a no-op, not a creation engine");
 }
 
 void test_no_terrain_fails_closed() {

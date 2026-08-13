@@ -102,28 +102,30 @@ void test_regrow_runs_on_game_days() {
     CHECK(cap >= 3, "the fixture needs three heads to cull");
     macro_stock_apply(w, MacroStock::FaunaCount, cell_key(3, 1), -3);
 
-    // Two full regrow periods of queued GAME days, processed in one call:
-    // the cadence is the calendar's, not the frame's.
-    const int period = fauna_regrow_period_days();
-    CHECK(period > 0, "the regrow period is real");
+    // Two full growth epochs of queued GAME days, processed in one call:
+    // the cadence is the calendar's, not the frame's. The cell's slice day
+    // occurs exactly twice in 64 consecutive days, and its 3×3 valley is
+    // alive (only 3 heads of 9 cells' capacity gone), so the breeding law
+    // grants one head per visit.
+    const int period = kGrowthEpochDays;
     WorldTickRuntime rt{};
     rt.pendingDailyTicks = 2 * period;
     rt.nextDailyTickDay = 1;
     const int processed = process_world_daily_ticks(
-        gs, rt, /*max_daily_ticks*/ 2 * period, nullptr, &w);
+        gs, rt, /*max_daily_ticks*/ 2 * period, &w);
     CHECK(processed == 2 * period, "every queued day was simulated");
     CHECK(macro_stock_read(w, MacroStock::FaunaCount, cell_key(3, 1))
               == cap - 3 + 2,
-          "two periods passed = exactly two heads regrown");
+          "two epochs passed = exactly two heads bred");
 
-    // Without the macro context the wilds sleep — regrowth needs its world.
+    // Without the macro context the wilds sleep — growth needs its world.
     macro_stock_apply(w, MacroStock::FaunaCount, cell_key(3, 1), -1);
     const int before = macro_stock_read(w, MacroStock::FaunaCount, cell_key(3, 1));
     rt.pendingDailyTicks = 2 * period;
     rt.nextDailyTickDay = 1;
-    process_world_daily_ticks(gs, rt, 2 * period, nullptr, nullptr);
+    process_world_daily_ticks(gs, rt, 2 * period, nullptr);
     CHECK(macro_stock_read(w, MacroStock::FaunaCount, cell_key(3, 1)) == before,
-          "no macro context wired = no regrowth (fail closed)");
+          "no macro context wired = no growth (fail closed)");
 }
 
 void test_no_context_fails_closed() {

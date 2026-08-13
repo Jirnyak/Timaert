@@ -128,6 +128,8 @@ void restore_deposit_cells(DepositLayer& layer, const DepositLayer& loaded) {
     ++layer.revision;
 }
 
+int iron_vein_lump() { return kIronBase; }
+
 float iron_depletion(const DepositLayer& layer) {
     std::int64_t remaining = 0;
     std::int64_t cells = 0;

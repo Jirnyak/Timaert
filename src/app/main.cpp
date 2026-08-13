@@ -3349,11 +3349,11 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         stats.timeTick =
             sm::tick_world_subworld_steps(app.gs, app.gs.worldTickRt, 1);
         sm::MacroWorld subMacroWorld{&app.gs, &app.treeLayer, &app.ecs,
-                                     &app.terrain};
+                                     &app.terrain, &app.deposits};
         stats.timeTick.dailyTicksProcessed =
             sm::process_world_daily_ticks(app.gs, app.gs.worldTickRt,
                                           kSubworldDailyTicksPerStep,
-                                          &app.deposits, &subMacroWorld);
+                                          &subMacroWorld);
         stats.timeTick.dailyBudgetExhausted =
             app.gs.worldTickRt.pendingDailyTicks > 0;
         // Daily sim ran while in the subworld → glow-driving populations may
@@ -3383,10 +3383,10 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // the just-finalised player scalar onto its Position each macro tick.
         sm::ensure_macro_player_entity(app.gs, app.ecs);
         sm::MacroWorld macroTickWorld{&app.gs, &app.treeLayer, &app.ecs,
-                                      &app.terrain};
+                                      &app.terrain, &app.deposits};
         stats.timeTick = sm::tick_world(app.gs, app.gs.worldTickRt, 1,
                                         /*max_daily_ticks=*/32,
-                                        &app.deposits, &macroTickWorld);
+                                        &macroTickWorld);
         if (stats.timeTick.dailyTicksProcessed > 0) app.macroLightsDirty = true;
         // The MONTHLY re-bake (owner, Session 21 follow-up). Chopping changes
         // forest weights but the baked cost grid — the one both the player's
@@ -4049,12 +4049,13 @@ void register_console_commands(App& app) {
             float hours = 0.0f;
             if (!sm::dev::arg_float(a, 0, hours)) return false;
             if (hours <= 0.0f) { c.error("hours must be positive (clock only moves forward)"); return true; }
-            sm::MacroWorld mw{&app.gs, &app.treeLayer, &app.ecs, &app.terrain};
+            sm::MacroWorld mw{&app.gs, &app.treeLayer, &app.ecs, &app.terrain,
+                              &app.deposits};
             const sm::WorldTickResult r = sm::tick_world(
                 app.gs, app.gs.worldTickRt,
                 sm::ticks_to_advance_minutes(app.gs.worldTime.tick,
                                              std::int64_t(hours * 60.0f + 0.5f)),
-                /*max_daily_ticks=*/32, &app.deposits, &mw);
+                /*max_daily_ticks=*/32, &mw);
             c.printfln(Lvl::Ok, "advanced %.2f h -> day %d, %02d:%02d  (%d daily tick(s))",
                        hours, app.gs.worldTime.day(), app.gs.worldTime.hour(),
                        app.gs.worldTime.minute(), r.dailyTicksProcessed);

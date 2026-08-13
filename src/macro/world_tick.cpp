@@ -164,8 +164,7 @@ WorldTickResult advance_world_clock(GameState& gs, WorldTickRuntime& runtime,
 }
 
 int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
-                              int max_daily_ticks, DepositLayer* deposits,
-                              MacroWorld* macro) {
+                              int max_daily_ticks, MacroWorld* macro) {
     if (max_daily_ticks <= 0) return 0;
 
     int processed = 0;
@@ -175,33 +174,15 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
         tick_villages_   (gs.villages,    day, runtime);
         tick_player_daily_(gs.player);
 
-        // Iron discovery (owner's rule, W2c): the emptier the world's veins,
-        // the likelier a stone quarry strikes iron today. A fact the player
-        // hears about — new geology is world news.
-        if (deposits) {
-            const float chance =
-                iron_discovery_chance_per_day(iron_depletion(*deposits));
-            if (chance > 0.0f && runtime.jitter.next_f01() < chance) {
-                if (discover_iron_vein(*deposits,
-                                       runtime.jitter.next_u32())) {
-                    push_event_log(gs.player,
-                                   {LogType::World,
-                                    "Prospectors struck a new iron vein.",
-                                    day});
-                }
-            }
-        }
-
-        // Fauna regrowth (Session 16): on its period, every scarred cell
-        // gains one head toward its baseline through the stock row — the
-        // write self-cleans healed cells, so the walk shrinks as the world
-        // heals. The cadence is GAME days, so resting a month regrows what
-        // a month regrows, however few frames it took.
-        // Resource regrowth (Field Inc F7 / R1): ONE door walks every
-        // resource field on its own cadence — a scarred cell heals one unit
-        // per period, and the write self-cleans healed cells.
+        // The ONE growth/diffusion law (R2 track): every resource field is
+        // born from time and context through the same walker — the forest
+        // plants the forest, beasts breed where beasts are, wheat replants
+        // its fertility, and iron strikes where the world ran scarce (the
+        // old bespoke W2c roll is now the Iron row's Geology domain). The
+        // cadence is GAME days, so resting a month grows what a month
+        // grows, however few frames it took.
         if (macro && day > 0) {
-            resource_fields_daily_regrow(*macro, day);
+            resource_fields_daily_growth(*macro, day);
         }
 
         --runtime.pendingDailyTicks;
@@ -214,11 +195,10 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
 
 WorldTickResult tick_world(GameState& gs, WorldTickRuntime& runtime,
                            std::uint64_t ticks, int max_daily_ticks,
-                           DepositLayer* deposits, MacroWorld* macro) {
+                           MacroWorld* macro) {
     WorldTickResult result = advance_world_clock(gs, runtime, ticks);
     result.dailyTicksProcessed =
-        process_world_daily_ticks(gs, runtime, max_daily_ticks, deposits,
-                                  macro);
+        process_world_daily_ticks(gs, runtime, max_daily_ticks, macro);
     result.dailyBudgetExhausted = runtime.pendingDailyTicks > 0;
     return result;
 }

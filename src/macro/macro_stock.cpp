@@ -13,7 +13,10 @@
 #include "macro/tree_layer.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <vector>
+
+#include "core/rng.h"
 
 namespace sm {
 namespace {
@@ -149,6 +152,15 @@ void trees_apply(MacroWorld& w, int x, int y, int delta) {
     set_tree_count(*w.trees, x, y, now + delta);
 }
 
+// The registry row id → the deposit layer's kind (the deposit rows are a
+// contiguous enum block; the static_assert below keeps that a fact).
+DepositKind deposit_kind_of(ResourceFieldId f) {
+    return DepositKind(std::uint8_t(f) - std::uint8_t(ResourceFieldId::Clay));
+}
+static_assert(int(ResourceFieldId::Iron) == int(ResourceFieldId::Clay) + 1
+                  && int(ResourceFieldId::Stone) == int(ResourceFieldId::Clay) + 2,
+              "deposit rows must mirror DepositKind order");
+
 // Clay/Iron/Stone: carrier rows over the deposit layer — one sparse map per
 // kind, PRESENCE is the deposit (a dry vein reads 0 through a live cell; a
 // cell with no vein reads 0 through absence and REFUSES writes — mining
@@ -167,19 +179,93 @@ void deposit_apply(MacroWorld& w, int x, int y, int delta) {
     set_deposit_remaining(*w.deposits, K, x, y, *r + delta);
 }
 
+// ── The growth laws — the per-row CONTEXT of the one birth mechanism ──────
+
+// Wheat: fertility is the whole context (the baseline already prices it),
+// so a reaped cell replants one stand per visit — one per kGrowthEpochDays,
+// the exact rate of the old 32-day healing period.
+int wheat_growth_at(const MacroWorld&, int, int) { return 1; }
+
+// Fauna: beasts breed where beasts are. One head per visit while at least
+// HALF the 3×3 valley is alive (the old 1/32-days rate at a living edge);
+// a wiped-out region has nobody left to breed, and repopulates from its
+// edges inward — or never, if the whole valley was emptied.
+int fauna_growth_at(const MacroWorld& w, int x, int y) {
+    int alive = 0, cap = 0;
+    for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            cap   += fauna_cell_capacity_at(w.gs, w.terrain, w.trees,
+                                            x + dx, y + dy);
+            alive += resource_field_read(w, ResourceFieldId::Fauna,
+                                         x + dx, y + dy);
+        }
+    }
+    if (cap <= 0) return 0;
+    return (2 * alive >= cap) ? 1 : 0;
+}
+
+// Trees: the forest plants the forest. Growth per visit derives from
+// r = 1/1024 of the local 3×3 density per DAY:
+//   perVisit = localSum9 × kGrowthEpochDays / (9 × 1024)
+// so a clear-cut cell inside a living massif (neighbour density 16384)
+// gains ~512/visit and crosses the forest class (8192) in ~14 visits ≈ 448
+// days ≈ 3.5 game years — the owner's "вырубка среди леса зарастает ~4
+// года". Below a local mean of ~288 trees the integer term is 0: scattered
+// brush does not seed a forest. The biome GATE reuses the ambient table
+// (no new constants): min(kBiomeBaseTreeCount, 1024)/1024 — taiga and
+// tropics (≥1024) grow at full rate, meadow at ~0.6, desert (40) almost
+// never, water not at all.
+int trees_growth_at(const MacroWorld& w, int x, int y) {
+    if (!w.trees || !w.gs || !w.terrain || !w.terrain->has_rgba_storage())
+        return 0;
+    int sum = 0;
+    for (int dy = -1; dy <= 1; ++dy)
+        for (int dx = -1; dx <= 1; ++dx)
+            sum += int(w.trees->at(x + dx, y + dy));
+    int growth = sum * kGrowthEpochDays / (9 * 1024);
+    if (growth <= 0) return 0;
+    const int wx = FeatureLayer::wrap_coord(x, w.terrain->width);
+    const int wy = FeatureLayer::wrap_coord(y, w.terrain->height);
+    const std::size_t src =
+        (std::size_t(wy) * std::size_t(w.terrain->width) + std::size_t(wx))
+        * 4u;
+    if (src + 3u >= w.terrain->rgba.size()) return 0;
+    const Biome biome = biome_at(float(w.terrain->rgba[src + 2u]) / 255.0f,
+                                 float(w.terrain->rgba[src + 1u]) / 255.0f,
+                                 float(w.terrain->rgba[src + 0u]) / 255.0f,
+                                 w.gs->mapParams.seaLevel,
+                                 kMountainBiomeLevel);
+    const int b = int(biome);
+    const int base = (b >= 0 && b < 11) ? int(kBiomeBaseTreeCount[b]) : 0;
+    return growth * std::min(base, 1024) / 1024;
+}
+
+// Iron: born where it is SCARCE (the owner's negative context) — the lump a
+// fresh vein opens with; the walker's Geology domain owns the global
+// scarcity roll and the host-cell pick (the W2c rule as a table row).
+int iron_growth_at(const MacroWorld&, int, int) { return iron_vein_lump(); }
+
 constexpr ResourceFieldDef kResourceFields[] = {
-    /* Wheat */ {"wheat", &wheat_baseline, &crop_regrow_period_days,
-                 nullptr, nullptr},
-    /* Fauna */ {"fauna", &fauna_baseline, &fauna_regrow_period_days,
-                 nullptr, nullptr},
-    /* Trees */ {"trees", nullptr, nullptr, &trees_read, &trees_apply},
-    /* Clay  */ {"clay",  nullptr, nullptr,
+    /* Wheat */ {"wheat", &wheat_baseline,
+                 GrowthDomain::OwnScars, &wheat_growth_at,
+                 ResourceFieldId::Wheat, nullptr, nullptr},
+    /* Fauna */ {"fauna", &fauna_baseline,
+                 GrowthDomain::OwnScars, &fauna_growth_at,
+                 ResourceFieldId::Fauna, nullptr, nullptr},
+    /* Trees */ {"trees", nullptr,
+                 GrowthDomain::CarrierGrid, &trees_growth_at,
+                 ResourceFieldId::Trees, &trees_read, &trees_apply},
+    /* Clay  */ {"clay",  nullptr,
+                 GrowthDomain::None, nullptr, ResourceFieldId::Clay,
                  &deposit_read<DepositKind::Clay>,
                  &deposit_apply<DepositKind::Clay>},
-    /* Iron  */ {"iron",  nullptr, nullptr,
+    /* Iron  */ {"iron",  nullptr,
+                 GrowthDomain::Geology, &iron_growth_at,
+                 ResourceFieldId::Stone,
                  &deposit_read<DepositKind::Iron>,
                  &deposit_apply<DepositKind::Iron>},
-    /* Stone */ {"stone", nullptr, nullptr,
+    /* Stone */ {"stone", nullptr,
+                 GrowthDomain::None, nullptr, ResourceFieldId::Stone,
                  &deposit_read<DepositKind::Stone>,
                  &deposit_apply<DepositKind::Stone>},
 };
@@ -240,25 +326,110 @@ int resource_field_scar(const GameState& gs, ResourceFieldId f,
     return it != scars.end() ? int(it->second) : 0;
 }
 
-void resource_fields_daily_regrow(MacroWorld& w, int day) {
-    if (!w.gs || !w.terrain || w.terrain->width <= 0 || day <= 0) return;
+void resource_fields_daily_growth(MacroWorld& w, int day) {
+    if (!w.gs || day <= 0) return;
     for (std::size_t f = 0; f < std::size_t(ResourceFieldId::Count); ++f) {
         const ResourceFieldDef& def = kResourceFields[f];
-        if (!def.regrowPeriodDays) continue;   // carrier rows do not heal
-        const int period = def.regrowPeriodDays();
-        if (period <= 0 || day % period != 0) continue;
-        // Collect the keys first: the +1 goes through the field's write,
-        // which self-cleans a healed cell OUT of the map we are walking.
-        std::vector<std::uint32_t> scarred;
-        scarred.reserve(w.gs->resourceScars[f].size());
-        for (const auto& [idx, scar] : w.gs->resourceScars[f]) {
-            (void)scar;
-            scarred.push_back(idx);
+        switch (def.growthDomain) {
+        case GrowthDomain::None:
+            break;
+
+        case GrowthDomain::CarrierGrid: {
+            // The due 1/32 slice of the dense carrier (8192 cells of a
+            // 512² map): each cell is visited once per epoch and gets an
+            // epoch's worth of growth — smooth long-term dynamics, no
+            // full-map day.
+            if (!w.trees || !w.trees->has_complete_storage()) break;
+            const int W = w.trees->width;
+            const std::size_t n = w.trees->cell_count();
+            for (std::size_t idx = std::size_t(day % kGrowthEpochDays);
+                 idx < n; idx += std::size_t(kGrowthEpochDays)) {
+                const int x = int(idx % std::size_t(W));
+                const int y = int(idx / std::size_t(W));
+                const int born = def.growthAt(w, x, y);
+                if (born > 0) {
+                    resource_field_apply(w, ResourceFieldId(f), x, y, born);
+                }
+            }
+            break;
         }
-        for (const std::uint32_t idx : scarred) {
-            const int x = int(idx % std::uint32_t(w.terrain->width));
-            const int y = int(idx / std::uint32_t(w.terrain->width));
-            resource_field_apply(w, ResourceFieldId(f), x, y, +1);
+
+        case GrowthDomain::OwnScars: {
+            // Only scarred cells can grow (capacity is the baseline).
+            // Collect the due keys first: the write self-cleans a healed
+            // cell OUT of the map we are walking.
+            if (!w.terrain || w.terrain->width <= 0) break;
+            std::vector<std::uint32_t> due;
+            for (const auto& [idx, scar] : w.gs->resourceScars[f]) {
+                (void)scar;
+                if (growth_cell_due(idx, day)) due.push_back(idx);
+            }
+            for (const std::uint32_t idx : due) {
+                const int x = int(idx % std::uint32_t(w.terrain->width));
+                const int y = int(idx / std::uint32_t(w.terrain->width));
+                const int born = def.growthAt(w, x, y);
+                if (born > 0) {
+                    resource_field_apply(w, ResourceFieldId(f), x, y, born);
+                }
+            }
+            break;
+        }
+
+        case GrowthDomain::Geology: {
+            // Lump birth on the HOST row's cells that lack this row — the
+            // scarcer the world's stock, the likelier a strike (W2c):
+            // chance/day = depletion × 1/8. Deterministic: the roll is a
+            // pure hash of (worldSeed, day) — no RNG stream consumed, a
+            // reload replays the same calendar.
+            if (!w.deposits) break;
+            const auto& own =
+                w.deposits->cells[std::size_t(deposit_kind_of(
+                    ResourceFieldId(f)))];
+            const int lump = def.growthAt(w, 0, 0);
+            if (lump <= 0 || own.empty()) break;   // an ownless world never
+                                                   // knew this metal at all
+            std::int64_t remaining = 0;
+            for (const auto& [idx, rem] : own) { (void)idx; remaining += rem; }
+            const std::int64_t virgin =
+                std::int64_t(own.size()) * std::int64_t(lump);
+            // depletion ∈ [0,1] in 1/8 steps of the day roll below: the
+            // comparison runs in integers — hash24 < depletion × 2^24 / 8.
+            const std::uint64_t hash24 =
+                hash3(std::uint32_t(day), 0x6E0Cu, w.gs->worldSeed) >> 8;
+            const std::uint64_t bar = virgin > 0
+                ? std::uint64_t((virgin - remaining) * (1 << 24)
+                                / (virgin * 8))
+                : 0u;
+            if (hash24 >= bar) break;
+            // Candidates: host cells not yet holding this row, in SORTED
+            // order (the map's iteration order is unspecified — the pick
+            // must not depend on it).
+            const auto& host =
+                w.deposits->cells[std::size_t(deposit_kind_of(
+                    def.growthHost))];
+            std::vector<std::uint32_t> candidates;
+            candidates.reserve(host.size());
+            for (const auto& [idx, rem] : host) {
+                (void)rem;
+                if (!own.count(idx)) candidates.push_back(idx);
+            }
+            if (candidates.empty()) break;
+            std::sort(candidates.begin(), candidates.end());
+            const std::uint32_t pick =
+                hash3(std::uint32_t(day), 0x51F7u, w.gs->worldSeed)
+                % std::uint32_t(candidates.size());
+            const std::uint32_t idx = candidates[pick];
+            const int x = int(idx % std::uint32_t(w.deposits->width));
+            const int y = int(idx / std::uint32_t(w.deposits->width));
+            create_deposit(*w.deposits,
+                           deposit_kind_of(ResourceFieldId(f)), x, y, lump);
+            // New geology is world news (W2c kept its voice).
+            char line[64];
+            std::snprintf(line, sizeof(line),
+                          "Prospectors struck a new %s vein.", def.id);
+            push_event_log(w.gs->player, {LogType::World, line, day});
+            break;
+        }
         }
     }
 }
@@ -313,7 +484,6 @@ const char* macro_stock_id(MacroStock s) {
     return row_of(s).id;
 }
 
-int crop_regrow_period_days() { return 32; }   // po2 game days per stand
 
 void settle_macro_debt(MacroWorld& w, const ecs::MacroDebt& d, int sign) {
     if (d.stock >= std::uint8_t(MacroStock::Count) || d.amount == 0) return;
