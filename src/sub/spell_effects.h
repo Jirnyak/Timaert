@@ -20,6 +20,25 @@ using SpellCanHitFn = bool (*)(void* user,
                                const ecs::Projectile& projectile,
                                std::uint32_t targetEntityId);
 
+// Broad-phase candidate enumeration — the battle bucket grids, reached through
+// the engine the same way height and solidity are. Fills `out` with up to
+// `maxOut` entity ids whose CENTRES may lie within `r` of (x, y), and returns
+// how many. The promise is a SUPERSET: extras are harmless (the exact 3D
+// checks in this TU are the only filter that decides hits), a MISS is a bug —
+// so the provider pads the query with everything the caller cannot know: the
+// fattest body radius in the crowd and the largest per-tick step (the grid is
+// built before steering moves bodies). The caller asks in terms of its own
+// geometry alone.
+//
+// Returns -1 when completeness cannot be promised this tick (the battle
+// gather hit its ceiling, or the candidates outnumber maxOut): the caller
+// then falls back to the full registry scan, so a projectile is never
+// blinded by an overloaded broad phase — a miss from exhaustion would be a
+// bug, not an approximation (unlike the AI's budgeted contact scan, which is
+// a legitimate heuristic). Null = always the full scan (headless tests).
+using SpellNeighborsFn = int (*)(void* user, float x, float y, float r,
+                                 std::uint32_t* out, int maxOut);
+
 // Transient-VFX seam for the spell tick. `event` selects what happened; the
 // engine turns it into a particle burst (this TU stays renderer/particle-free,
 // exactly like SpellDamageLogFn keeps it log-free). `entity` is ALWAYS the bolt
@@ -53,6 +72,10 @@ void tick_spell_projectiles(ecs::World& w,
                             // keeps structures transparent (headless tests).
                             bool (*solidFn)(void*, float, float, float) = nullptr,
                             void* solidUser = nullptr,
+                            // Broad phase (see SpellNeighborsFn above). Null
+                            // keeps the O(N·M) full scan — correct, just slow.
+                            SpellNeighborsFn neighborsFn = nullptr,
+                            void* neighborsUser = nullptr,
                             // THE LID of the 3×3 box. The window is a closed
                             // volume: four walls in XY and a floor of terrain
                             // and masonry were always checked, but the top was

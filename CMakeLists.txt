@@ -919,6 +919,19 @@ timaert_test(battle_ai_test
     SOURCES
         src/sub/battle.cpp)
 
+# The spell broad phase is a structural swap and this is its proof: for the
+# same scene, the grid-backed candidate enumeration produces EXACTLY the hits
+# of the full O(N·M) scan it replaced (the reference is the shipping nullptr
+# arm, not a copy), the -1 arm is lossless, and a LOSSY broad phase visibly
+# breaks the parity — the built-in negative control.
+timaert_test(spell_broadphase_parity_test
+    SOURCES
+        src/sub/spell_effects.cpp
+        src/sub/battle.cpp
+        src/macro/fauna.cpp
+        src/events/event_bus.cpp
+    LINK_ENTT)
+
 # The agreement between the two laws of battle (macro/auto_battle.h): the
 # resolver is header-only sheet math; battle.cpp is linked so the fought
 # version can be simulated headless with the shipping steering.

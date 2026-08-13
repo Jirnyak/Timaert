@@ -59,6 +59,49 @@ bool is_spell_target(const entt::registry& reg, entt::entity e,
     return true;
 }
 
+// ── Broad phase ────────────────────────────────────────────────────────────
+// The candidate buffer matches the battle snapshot's own ceiling
+// (kMaxBattleUnits = 16384): the grid can never hold more bodies than that,
+// so overflow is impossible by construction and the -1 arm below is reserved
+// for a broad phase that KNOWS it is incomplete (a truncated gather).
+constexpr int kMaxSpellNeighbors = 16384;
+
+// Enumerate every body that MAY matter within `r` of (cx, cy) and hand each
+// (entity, position) to `fn`. Three arms, one promise — nobody is missed:
+//   • a broad phase that answers: its candidates, a strict superset;
+//   • a broad phase that returns -1 ("cannot promise completeness"): the
+//     full registry scan, exactly the pre-grid behaviour;
+//   • no broad phase at all (headless tests, harnesses): the full scan.
+// The exact hit rules — is_spell_target and the 3D distances — stay in the
+// callers; this helper decides only WHO gets asked, never who gets hit.
+template <typename Fn>
+void for_each_spell_candidate(ecs::World& w,
+                              SpellNeighborsFn neighborsFn,
+                              void* neighborsUser,
+                              float cx, float cy, float r,
+                              Fn&& fn) {
+    if (neighborsFn) {
+        // Static: one 64 KiB buffer for the whole single-threaded spell tick,
+        // touched only as far as it is filled.
+        static std::uint32_t buf[kMaxSpellNeighbors];
+        const int n = neighborsFn(neighborsUser, cx, cy, r,
+                                  buf, kMaxSpellNeighbors);
+        if (n >= 0) {
+            for (int i = 0; i < n; ++i) {
+                const entt::entity e = entt::entity(buf[std::size_t(i)]);
+                if (!w.reg.valid(e)) continue;
+                if (const auto* tp = w.reg.try_get<ecs::Position>(e)) {
+                    fn(e, *tp);
+                }
+            }
+            return;
+        }
+    }
+    auto targets = w.reg.view<ecs::Position, ecs::Health>(
+        entt::exclude<ecs::Dead>);
+    for (auto e : targets) fn(e, targets.get<ecs::Position>(e));
+}
+
 void queue_reap(std::array<entt::entity, kMaxSpellReaps>& reaps,
                 int& reapCount,
                 entt::entity e) {
@@ -163,29 +206,37 @@ entt::entity find_projectile_hit(ecs::World& w,
                                  const ecs::Projectile& p,
                                  entt::entity skipOwner,
                                  SpellCanHitFn canHitFn,
-                                 void* canHitUser) {
-    auto targets = w.reg.view<ecs::Position, ecs::Health>(
-        entt::exclude<ecs::Dead>);
+                                 void* canHitUser,
+                                 SpellNeighborsFn neighborsFn,
+                                 void* neighborsUser) {
     entt::entity best = entt::null;
     float bestT = 2.0f;
-    for (auto e : targets) {
-        if (e == projectile) continue;
-        if (e == skipOwner) continue;
-        if (!is_spell_target(w.reg, e, p, canHitFn, canHitUser)) continue;
-        const auto& tp = targets.get<ecs::Position>(e);
-        const float r = p.radius + body_radius(w.reg, e);
-        const float t = segment_closest_t(fromX, fromY, fromZ,
-                                          pos.x, pos.y, pos.z,
-                                          tp.x, tp.y, tp.z);
-        const float cx = fromX + (pos.x - fromX) * t;
-        const float cy = fromY + (pos.y - fromY) * t;
-        const float cz = fromZ + (pos.z - fromZ) * t;
-        const float dx = tp.x - cx, dy = tp.y - cy, dz = tp.z - cz;
-        if (dx * dx + dy * dy + dz * dz <= r * r && t < bestT) {
-            bestT = t;
-            best = e;
-        }
-    }
+    // Broad phase: the circle around the swept segment's 2D midpoint, wide
+    // enough for the segment's own half-length plus the bolt's radius. Target
+    // body radii and per-tick drift are the PROVIDER's padding (see
+    // SpellNeighborsFn) — the ask here is the bolt's geometry alone.
+    const float segX = pos.x - fromX, segY = pos.y - fromY;
+    const float qr =
+        0.5f * std::sqrt(segX * segX + segY * segY) + p.radius;
+    for_each_spell_candidate(w, neighborsFn, neighborsUser,
+                             (fromX + pos.x) * 0.5f, (fromY + pos.y) * 0.5f, qr,
+        [&](entt::entity e, const ecs::Position& tp) {
+            if (e == projectile) return;
+            if (e == skipOwner) return;
+            if (!is_spell_target(w.reg, e, p, canHitFn, canHitUser)) return;
+            const float r = p.radius + body_radius(w.reg, e);
+            const float t = segment_closest_t(fromX, fromY, fromZ,
+                                              pos.x, pos.y, pos.z,
+                                              tp.x, tp.y, tp.z);
+            const float cx = fromX + (pos.x - fromX) * t;
+            const float cy = fromY + (pos.y - fromY) * t;
+            const float cz = fromZ + (pos.z - fromZ) * t;
+            const float dx = tp.x - cx, dy = tp.y - cy, dz = tp.z - cz;
+            if (dx * dx + dy * dy + dz * dz <= r * r && t < bestT) {
+                bestT = t;
+                best = e;
+            }
+        });
     return best;
 }
 
@@ -198,22 +249,26 @@ void apply_spell_blast(ecs::World& w,
                        SpellDamageLogFn logFn,
                        void* logUser,
                        SpellCanHitFn canHitFn,
-                       void* canHitUser) {
+                       void* canHitUser,
+                       SpellNeighborsFn neighborsFn,
+                       void* neighborsUser) {
     if (p.blastRadius <= 0.0f) return;
-    auto targets = w.reg.view<ecs::Position, ecs::Health>(
-        entt::exclude<ecs::Dead>);
-    for (auto e : targets) {
-        if (!is_spell_target(w.reg, e, p, canHitFn, canHitUser)) continue;
-        const auto& tp = targets.get<ecs::Position>(e);
-        const float dx = tp.x - pos.x;
-        const float dy = tp.y - pos.y;
-        const float dz = tp.z - pos.z;
-        const float r = p.blastRadius;
-        if (dx * dx + dy * dy + dz * dz <= r * r) {
-            apply_spell_damage(w, reaps, reapCount, bus, e, p, p.damage,
-                               logFn, logUser, canHitFn, canHitUser);
-        }
-    }
+    // Broad phase: the blast sphere's own 2D shadow. A centre within
+    // blastRadius in 3D is within it in 2D — dropping a coordinate never
+    // grows a distance — so the circle is a superset of the sphere.
+    for_each_spell_candidate(w, neighborsFn, neighborsUser,
+                             pos.x, pos.y, p.blastRadius,
+        [&](entt::entity e, const ecs::Position& tp) {
+            if (!is_spell_target(w.reg, e, p, canHitFn, canHitUser)) return;
+            const float dx = tp.x - pos.x;
+            const float dy = tp.y - pos.y;
+            const float dz = tp.z - pos.z;
+            const float r = p.blastRadius;
+            if (dx * dx + dy * dy + dz * dz <= r * r) {
+                apply_spell_damage(w, reaps, reapCount, bus, e, p, p.damage,
+                                   logFn, logUser, canHitFn, canHitUser);
+            }
+        });
 }
 
 void apply_spell_beam(ecs::World& w,
@@ -225,35 +280,45 @@ void apply_spell_beam(ecs::World& w,
                       SpellDamageLogFn logFn,
                       void* logUser,
                       SpellCanHitFn canHitFn,
-                      void* canHitUser) {
+                      void* canHitUser,
+                      SpellNeighborsFn neighborsFn,
+                      void* neighborsUser) {
     if (p.beamLength <= 0.0f || p.damage <= 0.0f) return;
     const float len = std::sqrt(p.vx * p.vx + p.vy * p.vy + p.vz * p.vz);
     if (len <= 0.001f) return;
     const float nx = p.vx / len;
     const float ny = p.vy / len;
     const float nz_b = p.vz / len;
-    auto targets = w.reg.view<ecs::Position, ecs::Health>(
-        entt::exclude<ecs::Dead>);
-    for (auto e : targets) {
-        if (!is_spell_target(w.reg, e, p, canHitFn, canHitUser)) continue;
-        const auto& tp = targets.get<ecs::Position>(e);
-        const float dx = tp.x - p.originX;
-        const float dy = tp.y - p.originY;
-        // Beam origin Z: the beam entity's position is at the beam midpoint,
-        // so the origin Z = beamPos.z - nz_b * beamLength/2.
-        const float originZ = beamPos.z - nz_b * (p.beamLength * 0.5f);
-        const float dz = tp.z - originZ;
-        const float along = dx * nx + dy * ny + dz * nz_b;
-        if (along < 0.0f || along > p.beamLength) continue;
-        const float px = dx - nx * along;
-        const float py = dy - ny * along;
-        const float pz = dz - nz_b * along;
-        const float r = p.radius * 2.0f + body_radius(w.reg, e);
-        if (px * px + py * py + pz * pz <= r * r) {
-            apply_spell_damage(w, reaps, reapCount, bus, e, p, p.damage,
-                               logFn, logUser, canHitFn, canHitUser);
-        }
-    }
+    // Broad phase: the circle around the beam's own 2D projection — midpoint
+    // of the projected segment, radius its half-length plus the beam's width.
+    // Projection only shrinks distances, so any body the 3D perpendicular
+    // test below could accept lies inside this circle; a steep beam projects
+    // SHORT and the circle stays honest because the half-length uses the
+    // projected direction, not the 3D length.
+    const float qx = p.originX + nx * (p.beamLength * 0.5f);
+    const float qy = p.originY + ny * (p.beamLength * 0.5f);
+    const float qr = 0.5f * p.beamLength * std::sqrt(nx * nx + ny * ny)
+                   + p.radius * 2.0f;
+    for_each_spell_candidate(w, neighborsFn, neighborsUser, qx, qy, qr,
+        [&](entt::entity e, const ecs::Position& tp) {
+            if (!is_spell_target(w.reg, e, p, canHitFn, canHitUser)) return;
+            const float dx = tp.x - p.originX;
+            const float dy = tp.y - p.originY;
+            // Beam origin Z: the beam entity's position is at the beam
+            // midpoint, so the origin Z = beamPos.z - nz_b * beamLength/2.
+            const float originZ = beamPos.z - nz_b * (p.beamLength * 0.5f);
+            const float dz = tp.z - originZ;
+            const float along = dx * nx + dy * ny + dz * nz_b;
+            if (along < 0.0f || along > p.beamLength) return;
+            const float px = dx - nx * along;
+            const float py = dy - ny * along;
+            const float pz = dz - nz_b * along;
+            const float r = p.radius * 2.0f + body_radius(w.reg, e);
+            if (px * px + py * py + pz * pz <= r * r) {
+                apply_spell_damage(w, reaps, reapCount, bus, e, p, p.damage,
+                                   logFn, logUser, canHitFn, canHitUser);
+            }
+        });
 }
 
 bool already_chained(const std::array<entt::entity, 8>& chainHits,
@@ -274,7 +339,9 @@ void apply_spell_chain(ecs::World& w,
                        SpellDamageLogFn logFn,
                        void* logUser,
                        SpellCanHitFn canHitFn,
-                       void* canHitUser) {
+                       void* canHitUser,
+                       SpellNeighborsFn neighborsFn,
+                       void* neighborsUser) {
     if (p.chainRemaining <= 0 || p.chainDecay <= 0.0f || p.chainRadius <= 0.0f) {
         return;
     }
@@ -291,20 +358,21 @@ void apply_spell_chain(ecs::World& w,
 
         entt::entity best = entt::null;
         float bestD2 = p.chainRadius * p.chainRadius;
-        auto targets = w.reg.view<ecs::Position, ecs::Health>(
-            entt::exclude<ecs::Dead>);
-        for (auto e : targets) {
-            if (!is_spell_target(w.reg, e, p, canHitFn, canHitUser)) continue;
-            if (already_chained(chainHits, hitCount, e)) continue;
-            const auto& tp = targets.get<ecs::Position>(e);
-            const float dx = tp.x - cp->x;
-            const float dy = tp.y - cp->y;
-            const float d2 = dx * dx + dy * dy;
-            if (d2 <= bestD2) {
-                bestD2 = d2;
-                best = e;
-            }
-        }
+        // Broad phase per hop: the chain's next victim is judged by 2D
+        // distance from the current one, so the query IS the exact radius.
+        for_each_spell_candidate(w, neighborsFn, neighborsUser,
+                                 cp->x, cp->y, p.chainRadius,
+            [&](entt::entity e, const ecs::Position& tp) {
+                if (!is_spell_target(w.reg, e, p, canHitFn, canHitUser)) return;
+                if (already_chained(chainHits, hitCount, e)) return;
+                const float dx = tp.x - cp->x;
+                const float dy = tp.y - cp->y;
+                const float d2 = dx * dx + dy * dy;
+                if (d2 <= bestD2) {
+                    bestD2 = d2;
+                    best = e;
+                }
+            });
         if (best == entt::null) break;
         apply_spell_damage(w, reaps, reapCount, bus, best, p, damage,
                            logFn, logUser, canHitFn, canHitUser);
@@ -329,6 +397,8 @@ void tick_spell_projectiles(ecs::World& w,
                             void* heightUser,
                             bool (*solidFn)(void*, float, float, float),
                             void* solidUser,
+                            SpellNeighborsFn neighborsFn,
+                            void* neighborsUser,
                             float ceilingM) {
     auto view = w.reg.view<ecs::Position, ecs::Projectile>();
     std::array<entt::entity, kMaxSpellReaps> reaps{};
@@ -343,10 +413,12 @@ void tick_spell_projectiles(ecs::World& w,
         if (p.lifeTimer <= 0.0f) {
             if (p.kind == ecs::Projectile::Beam) {
                 apply_spell_beam(w, reaps, reapCount, bus, pos, p,
-                                 logFn, logUser, canHitFn, canHitUser);
+                                 logFn, logUser, canHitFn, canHitUser,
+                                 neighborsFn, neighborsUser);
             } else if (p.explodeOnExpiry) {
                 apply_spell_blast(w, reaps, reapCount, bus, pos, p,
-                                  logFn, logUser, canHitFn, canHitUser);
+                                  logFn, logUser, canHitFn, canHitUser,
+                                  neighborsFn, neighborsUser);
                 // Detonated on expiry (only bolts with a blast do this) — burst.
                 if (fxFn) fxFn(fxUser, SpellFxEvent::Impact,
                                std::uint32_t(e), pos.x, pos.y, pos.z,
@@ -380,7 +452,9 @@ void tick_spell_projectiles(ecs::World& w,
             // Hit the ground! Snap to ground level for the blast effect.
             pos.z = groundM;
             if (p.blastRadius > 0.0f) {
-                apply_spell_blast(w, reaps, reapCount, bus, pos, p, logFn, logUser, canHitFn, canHitUser);
+                apply_spell_blast(w, reaps, reapCount, bus, pos, p, logFn,
+                                  logUser, canHitFn, canHitUser,
+                                  neighborsFn, neighborsUser);
             }
             queue_reap(reaps, reapCount, e);
             continue;
@@ -392,7 +466,8 @@ void tick_spell_projectiles(ecs::World& w,
             // impact burst so a bolt dying on masonry flashes like any other.
             if (p.blastRadius > 0.0f) {
                 apply_spell_blast(w, reaps, reapCount, bus, pos, p, logFn,
-                                  logUser, canHitFn, canHitUser);
+                                  logUser, canHitFn, canHitUser,
+                                  neighborsFn, neighborsUser);
             }
             if (fxFn) fxFn(fxUser, SpellFxEvent::Impact, std::uint32_t(e),
                            pos.x, pos.y, pos.z, pos.x, pos.y, pos.z,
@@ -413,7 +488,8 @@ void tick_spell_projectiles(ecs::World& w,
         // immunity for whoever fired it.
         entt::entity hit =
             find_projectile_hit(w, e, prevX, prevY, prevZ, pos, p,
-                                entt::null, canHitFn, canHitUser);
+                                entt::null, canHitFn, canHitUser,
+                                neighborsFn, neighborsUser);
 
         // THE MUZZLE STRETCH, birth tick only. A bolt is born
         // caster_spawn_offset ahead of its caster (1.5 + 1.5 + 2.0 = 5.0 units
@@ -456,7 +532,8 @@ void tick_spell_projectiles(ecs::World& w,
                     const entt::entity muzzleHit =
                         find_projectile_hit(w, e, op->x, op->y, prevZ,
                                             spawnPos, p, owner,
-                                            canHitFn, canHitUser);
+                                            canHitFn, canHitUser,
+                                            neighborsFn, neighborsUser);
                     // This stretch happens BEFORE the travel above, so whatever
                     // it finds is struck first.
                     if (muzzleHit != entt::null) hit = muzzleHit;
@@ -466,12 +543,14 @@ void tick_spell_projectiles(ecs::World& w,
         if (hit != entt::null) {
             if (p.blastRadius > 0.0f) {
                 apply_spell_blast(w, reaps, reapCount, bus, pos, p,
-                                  logFn, logUser, canHitFn, canHitUser);
+                                  logFn, logUser, canHitFn, canHitUser,
+                                  neighborsFn, neighborsUser);
             } else {
                 apply_spell_damage(w, reaps, reapCount, bus, hit, p, p.damage,
                                    logFn, logUser, canHitFn, canHitUser);
                 apply_spell_chain(w, reaps, reapCount, bus, hit, p,
-                                  logFn, logUser, canHitFn, canHitUser);
+                                  logFn, logUser, canHitFn, canHitUser,
+                                  neighborsFn, neighborsUser);
             }
             // Impact burst at the hit point (before the bolt is reaped so its
             // Sprite tint is still readable engine-side).

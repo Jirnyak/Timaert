@@ -435,6 +435,15 @@ private:
     BattleParams            battleParams_{};
     // Parallel to battle_: the entity each SoA index came from.
     std::vector<entt::entity> battleEnts_;
+    // The spell broad phase's honesty bits (spell_neighbors_callback). The
+    // gather sets truncated when the 16k ceiling cut bodies out of the grids —
+    // the callback then answers -1 and the spell tick falls back to its full
+    // scan, because a body missing from the grid must not be missing from the
+    // world. maxStep is the farthest any body can move between the grid build
+    // and the spell tick (steering runs in between): the callback pads every
+    // query with it plus the fattest body radius.
+    bool  battleGatherTruncated_ = false;
+    float battleMaxStepM_ = 0.0f;
     // Faction identity is the id STRING (the universal key gs->factions,
     // reputation and loot profiles already use), interned per tick into dense
     // indices. There is no faction roster in the engine and no limit on the
@@ -604,6 +613,11 @@ private:
                                        const ecs::Projectile& projectile,
                                        std::uint32_t targetEntityId);
     static float spell_height_callback(void* user, float x, float y);
+    // Spell broad phase over battlePick_ (the contact grid): full-radius walk,
+    // NO visit budget — a projectile miss from an exhausted budget would be a
+    // bug, not an approximation, unlike the AI's budgeted contact scan.
+    static int spell_neighbors_callback(void* user, float x, float y, float r,
+                                        std::uint32_t* out, int maxOut);
     // Terrain hook for the battle pass (sub/battle.h stays Vulkan-free, so it
     // reaches the CPU heightfield through a function pointer, not an include).
     static float battle_height_callback(void* user, float x, float y);

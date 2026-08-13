@@ -2065,6 +2065,49 @@ bool SubworldEngine::spell_solid_callback(void* user, float x, float y,
     return self->structIndex_.solid_at(x, y, z);
 }
 
+// The spell tick's broad phase, answered from battlePick_ — the contact grid
+// tick_subworld_combat already built and paid for this very tick (it runs
+// right before tick_spell_projectiles). Semantics are the SpellNeighborsFn
+// contract: a superset of every body whose centre may lie within `r`, or -1
+// when that promise cannot be kept. Unlike contact_scan this walk has NO
+// visit budget — the AI may legitimately stop looking, a projectile may not.
+//
+// The padding is the two things the asker cannot know: the grid holds
+// positions from BEFORE steering moved bodies (≤ battleMaxStepM_ of drift),
+// and "centre within r" must survive the fattest body in the crowd when the
+// asker measures surface contact (battle_.maxRadius).
+int SubworldEngine::spell_neighbors_callback(void* user, float x, float y,
+                                             float r, std::uint32_t* out,
+                                             int maxOut) {
+    auto* self = static_cast<SubworldEngine*>(user);
+    if (self->battleGatherTruncated_) return -1;
+    const BattleUnits& u = self->battle_;
+    if (u.count <= 0) return 0;             // an honestly empty world
+    const UnitGrid& g = self->battlePick_;
+    const float rr = r + self->battleMaxStepM_ + u.maxRadius;
+    const float rr2 = rr * rr;
+    const int c0 = g.col_of(x - rr), c1 = g.col_of(x + rr);
+    const int r0 = g.row_of(y - rr), r1 = g.row_of(y + rr);
+    int n = 0;
+    for (int cy = r0; cy <= r1; ++cy) {
+        for (int cx = c0; cx <= c1; ++cx) {
+            const std::size_t ci = std::size_t(cy) * std::size_t(g.cols)
+                                 + std::size_t(cx);
+            const std::uint32_t b = g.begin[ci];
+            const std::uint32_t e = g.begin[ci + 1u];
+            for (std::uint32_t k = b; k < e; ++k) {
+                const std::size_t sj = std::size_t(g.items[k]);
+                const float dx = u.x[sj] - x, dy = u.y[sj] - y;
+                if (dx * dx + dy * dy > rr2) continue;
+                if (n >= maxOut) return -1; // cannot promise completeness
+                out[n++] = std::uint32_t(
+                    entt::to_integral(self->battleEnts_[sj]));
+            }
+        }
+    }
+    return n;
+}
+
 // THE relation rule, and the only place it lives: ONE lookup in the ONE matrix,
 // for every pair the battle pass interns. There is no player branch any more —
 // the player is an ordinary row (macro/faction.h), his standing IS his row, and
@@ -2118,6 +2161,11 @@ void SubworldEngine::tick_subworld_combat(float dt) {
     battlePlayerFaction_ = battleFactions_.intern(kPlayerFactionId);
     std::uint64_t playerExtraMask = 0ull;
     float threat2 = kNoThreatDistance2;
+    battleGatherTruncated_ = false;
+    // The fastest DRIVE in the crowd — combat sprint or brain intent,
+    // whichever is larger — bounds how far any body can move per tick, which
+    // is exactly the staleness the spell broad phase must pad its queries by.
+    float maxDrive = 0.0f;
 
     auto actorView = reg.view<ecs::Position, ecs::Health,
                               ecs::SubworldTag>(entt::exclude<ecs::Dead>);
@@ -2175,10 +2223,20 @@ void SubworldEngine::tick_subworld_combat(float dt) {
             playerExtraMask |= (1ull << d.faction);
         }
 
+        maxDrive = std::max(maxDrive, std::max(d.speed,
+            std::sqrt(d.intentVx * d.intentVx + d.intentVy * d.intentVy)));
+
         const int idx = battle_.add(d);
-        if (idx < 0) break;                 // 16k ceiling: shared with the renderer
+        if (idx < 0) {                      // 16k ceiling: shared with the renderer
+            // Bodies past the ceiling exist in the world but not in the grids.
+            // The spell broad phase must know it is blind to them — it answers
+            // -1 and the spell tick falls back to the full scan.
+            battleGatherTruncated_ = true;
+            break;
+        }
         battleEnts_.push_back(e);
     }
+    battleMaxStepM_ = maxDrive * dt;
     if (battle_.count <= 0) {
         playerThreatD2_ = kNoThreatDistance2;
         return;
@@ -3460,6 +3518,12 @@ void SubworldEngine::tick(float dt) {
                                &SubworldEngine::spell_height_callback,
                                this,
                                &SubworldEngine::spell_solid_callback,
+                               this,
+                               // Broad phase: the battle contact grid, built
+                               // by tick_subworld_combat moments ago. This is
+                               // what retires the O(N·M) full scans — see
+                               // SpellNeighborsFn for the honesty contract.
+                               &SubworldEngine::spell_neighbors_callback,
                                this,
                                // The window's ONE ceiling — the same surface
                                // flying bodies are clamped to, here used to
