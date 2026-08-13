@@ -5601,25 +5601,50 @@ bool run_macro_npc_trace_smoke(App& app) {
     sm::tick_macro_npc_visuals(app.ecs, app.gs.mapW, app.gs.mapH, 0.25f);
     const float visualEnd = visual.vx;
 
-    const bool logicalMoved =
-        int(std::lround(logicalX)) == sm::wrapi(baseX + 3, app.gs.mapW)
-        && int(std::lround(logicalY)) == baseY;
+    // The march is checked as a PROPERTY, never as a compass bearing: this
+    // NPC's brain may legitimately re-target (a caravan with no honest home
+    // city degrades to the nomad, which picks its own settlement), and WHICH
+    // way that lies is a fact of the world layout, not of the mechanics. The
+    // old invariant read `visualMid > baseX` and so silently demanded an
+    // EASTWARD walk — it went red the day resource-placed settlements moved
+    // the nearest town west (R2), while the budget and the glide it means to
+    // guard were both perfect. Distance travelled says the same thing about
+    // the mechanics and says it on every world.
+    const float marched = sm::torus_dist(float(baseX), float(baseY),
+                                         logicalX, logicalY,
+                                         float(app.gs.mapW),
+                                         float(app.gs.mapH));
+    const float glidedMid = sm::torus_dist(float(baseX), float(baseY),
+                                           visualMid, visual.vy,
+                                           float(app.gs.mapW),
+                                           float(app.gs.mapH));
+    // The budget is counted in STEPS, and a step is one greedy 8-neighbour
+    // hop — so a diagonal leg costs one step while spanning √2 of ground.
+    // Chebyshev distance is exactly "how many hops", which is what the
+    // 3-road-cells-per-think march law spends (a straight walk marches
+    // 3.00, a walk with one diagonal 3.16 — both are three steps).
+    const int stepsX = std::abs(int(std::lround(logicalX)) - baseX);
+    const int stepsY = std::abs(int(std::lround(logicalY)) - baseY);
+    const int steps = std::max(std::min(stepsX, app.gs.mapW - stepsX),
+                               std::min(stepsY, app.gs.mapH - stepsY));
+    const bool logicalMoved = steps == 3;
     const bool visualSmoothed =
         visualBefore == float(baseX)
-        && visualMid > float(baseX)
-        && visualMid < logicalX
+        && glidedMid > 0.0f
+        && glidedMid < marched
         && std::fabs(visualEnd - logicalX) < 0.001f;
 
     std::fprintf(stderr,
                  "[smoke] macro_npc_trace entity=%u maxSp=%d "
                  "rest=%d:%d recovered=%d move=%.1f,%.1f->%.1f,%.1f "
-                 "visual=%.2f->%.2f->%.2f\n",
+                 "steps=%d marched=%.2f visual=%.2f->%.2f->%.2f\n",
                  unsigned(entt::to_integral(e)),
                  maxSp,
                  recoveredSp,
                  recoveredState,
                  recovered ? 1 : 0,
                  float(baseX), float(baseY), logicalX, logicalY,
+                 steps, marched,
                  visualBefore, visualMid, visualEnd);
     std::fflush(stderr);
 
