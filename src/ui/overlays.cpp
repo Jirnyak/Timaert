@@ -4,6 +4,8 @@
 #include "macro/map_generator.h"
 #include "macro/biomes.h"
 #include "macro/landmark_registry.h"
+#include "macro/landmark_iter.h"
+#include "ui/landmark_draw.h"
 #include "macro/npc.h"
 #include "macro/economy.h"
 #include "macro/faction.h"
@@ -2740,39 +2742,47 @@ namespace sm::ui
             {
                 return origin.y + (float(terrain.height - 1 - worldY)) * sy;
             };
-            // Cities (yellow rings).
-            for (const auto &c : gs.politik.cities)
-            {
-                ImVec2 p(origin.x + float(c.x) * sx, wy(c.y));
-                dl->AddCircleFilled(p, 3.0f, IM_COL32(255, 220, 90, 230), 8);
-                dl->AddCircle(p, 3.5f, IM_COL32(40, 30, 0, 255), 8, 1.0f);
-            }
-            // Villages (small brown dots).
-            for (const auto &v : gs.villages)
-            {
-                ImVec2 p(origin.x + float(v.x) * sx, wy(v.y));
-                dl->AddCircleFilled(p, 1.6f, IM_COL32(180, 140, 90, 220), 6);
-            }
-            // Spires — diamonds in the landmark table's own tint (one colour
-            // authority, landmark_registry.h); a consumed spire goes ashen.
-            {
-                const std::uint32_t argb =
-                    landmark_def(LandmarkType::Spire).color;
-                const ImU32 lit = IM_COL32((argb >> 16) & 0xFF,
-                                           (argb >> 8) & 0xFF,
-                                           argb & 0xFF, 240);
-                const ImU32 ash = IM_COL32(110, 100, 120, 200);
-                for (const auto &sp : gs.spires)
+            // Landmarks — ONE data-driven loop: shape and radius from the
+            // presentation row (ui/landmark_draw.h), colour from the ONE
+            // authority (the registry row); a consumed landmark goes ashen.
+            for_each_landmark(gs, [&](const LandmarkView &lm) {
+                const LandmarkDrawRow &row = landmark_draw(lm.type);
+                const std::uint32_t argb = landmark_def(lm.type).color;
+                // Ashen = the lit colour at half strength — one derivation,
+                // no second colour vocabulary for the depleted state.
+                const ImU32 mark = lm.depleted
+                    ? IM_COL32(((argb >> 16) & 0xFF) / 2,
+                               ((argb >> 8) & 0xFF) / 2,
+                               (argb & 0xFF) / 2, 200)
+                    : IM_COL32((argb >> 16) & 0xFF, (argb >> 8) & 0xFF,
+                               argb & 0xFF, 230);
+                // Outline = the lit colour at quarter strength, full alpha.
+                const ImU32 rim = IM_COL32(((argb >> 16) & 0xFF) / 4,
+                                           ((argb >> 8) & 0xFF) / 4,
+                                           (argb & 0xFF) / 4, 255);
+                ImVec2 p(origin.x + float(lm.x) * sx, wy(lm.y));
+                switch (row.mini)
                 {
-                    ImVec2 p(origin.x + float(sp.x) * sx, wy(sp.y));
+                case MiniShape::Ring:
+                    dl->AddCircleFilled(p, row.miniR, mark, 8);
+                    dl->AddCircle(p, row.miniR + 0.5f, rim, 8, 1.0f);
+                    break;
+                case MiniShape::Dot:
+                    dl->AddCircleFilled(p, row.miniR, mark, 6);
+                    break;
+                case MiniShape::Diamond:
+                {
                     const ImVec2 pts[4] = {
-                        ImVec2(p.x, p.y - 4.0f), ImVec2(p.x + 4.0f, p.y),
-                        ImVec2(p.x, p.y + 4.0f), ImVec2(p.x - 4.0f, p.y)};
-                    dl->AddConvexPolyFilled(pts, 4, sp.depleted ? ash : lit);
-                    dl->AddPolyline(pts, 4, IM_COL32(20, 10, 40, 255),
-                                    ImDrawFlags_Closed, 1.0f);
+                        ImVec2(p.x, p.y - row.miniR),
+                        ImVec2(p.x + row.miniR, p.y),
+                        ImVec2(p.x, p.y + row.miniR),
+                        ImVec2(p.x - row.miniR, p.y)};
+                    dl->AddConvexPolyFilled(pts, 4, mark);
+                    dl->AddPolyline(pts, 4, rim, ImDrawFlags_Closed, 1.0f);
+                    break;
                 }
-            }
+                }
+            });
             // Player crosshair (cyan).
             {
                 ImVec2 p(origin.x + gs.player.x * sx,

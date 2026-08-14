@@ -1,4 +1,5 @@
 #include "macro/landmark_registry.h"
+#include "macro/landmark_iter.h"
 #include "macro/state.h"
 #include "macro/markers.h"
 #include <cstdio>
@@ -6,13 +7,6 @@
 namespace sm {
 
 namespace {
-
-// Match TS Tailwind class colours from landmark-registry.ts as ARGB.
-// text-amber-300, text-lime-300, text-purple-300, text-cyan-300.
-constexpr std::uint32_t kColorCity    = 0xFFFCD34Du; // amber-300
-constexpr std::uint32_t kColorVillage = 0xFFBEF264u; // lime-300
-constexpr std::uint32_t kColorSpire   = 0xFFD8B4FEu; // purple-300
-constexpr std::uint32_t kColorMarker  = 0xFF67E8F9u; // cyan-300
 
 const char* mood_label(SettlementMood m) {
     switch (m) {
@@ -35,6 +29,27 @@ const char* marker_kind(MarkerStyle s) {
     return "?";
 }
 
+// The per-kind DETAIL line is the one thing the registry row cannot express —
+// it reads kind-specific state. Everything else (kind label, colour, the id
+// prefix) comes from the row.
+void detail_line(const LandmarkView& lm, char* buf, std::size_t n) {
+    switch (lm.type) {
+        case LandmarkType::City:
+            std::snprintf(buf, n, "pop %d \xC2\xB7 %s",
+                          lm.population, mood_label(lm.mood));
+            return;
+        case LandmarkType::Village:
+            std::snprintf(buf, n, "pop %d", lm.population);
+            return;
+        case LandmarkType::Spire:
+            std::snprintf(buf, n, "%s", lm.depleted ? "depleted" : "active");
+            return;
+        default:
+            buf[0] = '\0';
+            return;
+    }
+}
+
 } // namespace
 
 std::vector<LandmarkEntry> collect_landmarks(const GameState& gs) {
@@ -42,31 +57,18 @@ std::vector<LandmarkEntry> collect_landmarks(const GameState& gs) {
     out.reserve(gs.settlements.size() + gs.villages.size()
               + gs.spires.size() + gs.markers.size());
 
-    char buf[64];
+    for_each_landmark(gs, [&](const LandmarkView& lm) {
+        const LandmarkDef& def = landmark_def(lm.type);
+        char buf[64];
+        detail_line(lm, buf, sizeof(buf));
+        out.push_back({std::string(def.label),
+                       std::string(def.id) + "_" + std::to_string(lm.id),
+                       lm.name, buf, lm.x, lm.y, def.color});
+    });
 
-    for (const auto& s : gs.settlements) {
-        std::snprintf(buf, sizeof(buf), "pop %d \xC2\xB7 %s",
-                      s.population, mood_label(s.mood));
-        out.push_back({"City",
-                       "city_" + std::to_string(s.id),
-                       s.name, buf, s.x, s.y, kColorCity});
-    }
-    for (const auto& v : gs.villages) {
-        std::snprintf(buf, sizeof(buf), "pop %d", v.population);
-        out.push_back({"Village",
-                       "village_" + std::to_string(v.id),
-                       v.name, buf, v.x, v.y, kColorVillage});
-    }
-    for (const auto& sp : gs.spires) {
-        std::snprintf(buf, sizeof(buf), "spell 0x%08X",
-                      static_cast<unsigned>(sp.spellId));
-        out.push_back({"Spire",
-                       "spire_" + std::to_string(sp.id),
-                       sp.depleted ? "Depleted Spire" : "Spire",
-                       sp.depleted ? "depleted" : "active",
-                       sp.x, sp.y, kColorSpire});
-        (void)buf;
-    }
+    // Markers are the mobile pin layer (markers.h), not a placed landmark
+    // kind — they keep their own colour and enumeration.
+    constexpr std::uint32_t kColorMarker = 0xFF67E8F9u; // cyan-300
     for (const auto& m : gs.markers) {
         out.push_back({"Marker",
                        "marker_" + m.id,

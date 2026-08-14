@@ -14,6 +14,8 @@
 #include "ecs/world.h"
 #include "ecs/components.h"
 #include "macro/state.h"
+#include "macro/landmark_iter.h"
+#include "ui/landmark_draw.h"
 #include "macro/markers.h"
 #include "macro/tree_layer.h"
 #include "macro/npc.h"
@@ -359,17 +361,19 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
 
     // ── Hover-cell highlight + tooltip (chrome) and settlement pick (input).
     if (cursor.hoverValid) {
-        // Settlement under the cursor is resolved ALWAYS — click-to-select
-        // must keep working even when the overlay chrome is hidden.
+        // Landmark under the cursor is resolved ALWAYS — click-to-select
+        // must keep working even when the overlay chrome is hidden. One
+        // visitor pass names EVERY kind (first hit wins, in the visitor's
+        // resolve_context priority order) and picks the settlement id for
+        // the click when the hit is a city.
         const char* landmark = "";
         int hoverSettlementId = -1;
-        for (const auto& s : gs.settlements) {
-            if (s.x == cursor.hoverX && s.y == cursor.hoverY) {
-                landmark = s.name.c_str();
-                hoverSettlementId = s.id;
-                break;
-            }
-        }
+        for_each_landmark(gs, [&](const LandmarkView& lm) {
+            if (lm.x != cursor.hoverX || lm.y != cursor.hoverY) return;
+            if (!landmark[0]) landmark = lm.name;
+            if (lm.type == LandmarkType::City && hoverSettlementId < 0)
+                hoverSettlementId = lm.id;
+        });
 
         if (showMarkers) {
             // After the Y flip the cell's screen rect has top = wy+1, bottom = wy.
@@ -382,11 +386,6 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
             // Tooltip: biome / feature / landmark / coords.
             Biome b = biome_at_cell(terrain, cursor.hoverX, cursor.hoverY, 0.40f);
             FeatureType f = features.at(cursor.hoverX, cursor.hoverY);
-            if (landmark[0] == 0) {
-                for (const auto& v : gs.villages) {
-                    if (v.x == cursor.hoverX && v.y == cursor.hoverY) { landmark = v.name.c_str(); break; }
-                }
-            }
             ImGui::BeginTooltip();
             ImGui::Text("(%d, %d)", cursor.hoverX, cursor.hoverY);
             ImGui::TextColored(ImVec4(0.55f, 0.95f, 0.55f, 1), "%s", kBiomes[b].name);
@@ -415,52 +414,32 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
     }
 
 
-    // Settlements — real city PNG sprite, anchored to cell centre, scaled
-    // with zoom via the universal landmark rule (sprite covers 2 cells).
-    for (const auto& s : gs.settlements) {
-        ImVec2 p = world_to_screen(float(s.x) + 0.5f, float(s.y) + 0.5f,
+    // Landmarks — ONE data-driven loop: the visitor enumerates, the
+    // presentation row (ui/landmark_draw.h) sizes and gates, the sprite
+    // variant IS the state (a consumed spire draws its dark tower — same
+    // rule as the night glow, macro_lighting.cpp), and the glyph-circle
+    // fallback takes its colour from the ONE authority, the registry row.
+    for_each_landmark(gs, [&](const LandmarkView& lm) {
+        const LandmarkDrawRow& row = landmark_draw(lm.type);
+        if (row.minZoom > 0.0f && zoom < row.minZoom) return;
+        ImVec2 p = world_to_screen(float(lm.x) + 0.5f, float(lm.y) + 0.5f,
                                    camX, camY, zoom, viewW, viewH, mapW, mapH);
-        if (!on_screen(p, viewW, viewH, 128.0f)) continue;
-        const float size = landmark_size(zoom, 28.0f, 192.0f);
-        draw_sprite(dl, p, SpriteId::City, size, IM_COL32(255, 220, 90, 230));
-        if (zoom >= 6.0f && !s.name.empty()) {
-            ImVec2 ts = ImGui::CalcTextSize(s.name.c_str());
+        if (!on_screen(p, viewW, viewH, 128.0f)) return;
+        const float size = landmark_size(zoom, row.basePx, row.maxPx);
+        const std::uint32_t argb = landmark_def(lm.type).color;
+        const ImU32 fallback = IM_COL32((argb >> 16) & 0xFF, (argb >> 8) & 0xFF,
+                                        argb & 0xFF, 230);
+        draw_sprite(dl, p, lm.depleted ? row.spriteDepleted : row.sprite,
+                    size, fallback);
+        if (row.labelZoom > 0.0f && zoom >= row.labelZoom && lm.name[0]) {
+            ImVec2 ts = ImGui::CalcTextSize(lm.name);
             ImVec2 tp(p.x - ts.x * 0.5f, p.y - size * 0.5f - ts.y - 2.0f);
             dl->AddRectFilled(ImVec2(tp.x - 3, tp.y - 1),
                               ImVec2(tp.x + ts.x + 3, tp.y + ts.y + 1),
                               IM_COL32(0, 0, 0, 140), 2.0f);
-            dl->AddText(tp, IM_COL32(255, 245, 200, 255), s.name.c_str());
+            dl->AddText(tp, IM_COL32(255, 245, 200, 255), lm.name);
         }
-    }
-
-    // Villages — same universal landmark rule as cities (256-px PNG with
-    // 128-px central cell area). Hidden when very far out so they don't
-    // collapse into single-pixel noise.
-    if (zoom >= 3.0f) {
-        for (const auto& v : gs.villages) {
-            ImVec2 p = world_to_screen(float(v.x) + 0.5f, float(v.y) + 0.5f,
-                                       camX, camY, zoom, viewW, viewH, mapW, mapH);
-            if (!on_screen(p, viewW, viewH, 96.0f)) continue;
-            const float size = landmark_size(zoom, 22.0f, 144.0f);
-            draw_sprite(dl, p, SpriteId::Village, size,
-                        IM_COL32(180, 140, 90, 220));
-        }
-    }
-
-    // Spires — magical towers. The sprite variant IS the state: the lit orb
-    // stands while the spire holds its spell, the dark tower is a consumed
-    // one (same rule as the night glow, macro_lighting.cpp).
-    for (const auto& sp : gs.spires) {
-        ImVec2 p = world_to_screen(float(sp.x) + 0.5f, float(sp.y) + 0.5f,
-                                   camX, camY, zoom, viewW, viewH, mapW, mapH);
-        if (!on_screen(p, viewW, viewH, 128.0f)) continue;
-        const float size = landmark_size(zoom, 26.0f, 160.0f);
-        const SpriteId variant = sp.depleted ? SpriteId::SpireDark
-                                             : SpriteId::Spire;
-        const ImU32 tint = sp.depleted ? IM_COL32(120, 90, 130, 200)
-                                       : IM_COL32(220, 180, 240, 230);
-        draw_sprite(dl, p, variant, size, tint);
-    }
+    });
 
     // NPCs — real character PNGs, sized to fit ONE cell (NPCs are mobile
     // entities, not landmarks; the 256-px sprite is rendered to occupy
