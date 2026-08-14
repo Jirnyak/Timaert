@@ -112,9 +112,15 @@ forest,** flowing *around* dense stands rather than through them. (The
 forest-occlusion behaviour is the effect the owner specifically called out as
 good — preserve it.)
 
+> **Where the propagation lives now.** The bounded Dijkstra, the cost table
+> and the climb toll moved to `macro/optics.h` (`optical_sweep`) — the SAME
+> physics drives the player's sight in the fog-of-war layer
+> (`macro/knowledge.h`, save v40). This file keeps only the glow-specific
+> halves: emitter census, falloff deposit, encode.
+
 ### Increment C — elevation occlusion (`cellHeights != nullptr`)
 The same Dijkstra also pays an **elevation toll**: every *uphill* step adds
-`kGlowClimbCost` (60) per unit of normalized rise; downhill is free (glow spills
+`kClimbOpticalCost` (60) per unit of normalized rise; downhill is free (glow spills
 into valleys below a hilltop town). This is what makes **bare massifs occlude
 again** — mountains are a *biome* (elevation-classified, `biomes.h`), not a
 feature byte, so heights are the only signal they leave. A typical massif rise

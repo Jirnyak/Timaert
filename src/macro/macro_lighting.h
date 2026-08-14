@@ -75,12 +75,15 @@ std::vector<MacroLight> collect_macro_lights(const GameState& gs);
 //
 // `cellHeights` (optional, width*height normalized 0..1 macro heights) adds the
 // ELEVATION term to the same Dijkstra (increment C — the deferred pass from the
-// mountains→biome refactor): every UPHILL step pays `kGlowClimbCost` per unit
-// of rise, so a ridge between a town and a valley smothers the glow exactly
-// like a forest does — bare massifs occlude again, from the heightmap itself
-// (mountains are a biome, not a feature). Downhill is free: glow spilling into
-// a valley below a hilltop town stays visible. Flat heights ⇒ byte-identical to
-// the heights-free bake. Ignored on the radial (no-features) path.
+// mountains→biome refactor): every UPHILL step pays `kClimbOpticalCost` per
+// unit of rise, so a ridge between a town and a valley smothers the glow
+// exactly like a forest does — bare massifs occlude again, from the heightmap
+// itself (mountains are a biome, not a feature). Downhill is free: glow
+// spilling into a valley below a hilltop town stays visible. Flat heights ⇒
+// byte-identical to the heights-free bake. Ignored on the radial (no-features)
+// path. The propagation itself — costs, climb term, torus Dijkstra — lives in
+// macro/optics.h (optical_sweep), SHARED with the player's sight
+// (macro/knowledge.h): glow reach and eye reach are one physics.
 //
 // An empty (0-sized) feature layer takes the nullptr path. The nullptr path is
 // exact isotropic falloff — not an octile approximation — so callers with no
@@ -94,12 +97,5 @@ void bake_light_field(int width, int height,
                       const FeatureLayer* features = nullptr,
                       const std::vector<float>* cellHeights = nullptr,
                       const std::vector<float>* treeDensity = nullptr);
-
-// Optical cost of climbing one full unit of normalized height against the
-// glow (per Dijkstra step, scaled by the step's rise). Tuned so a typical
-// massif rise (~0.2 above the surrounding plain) exceeds any settlement
-// radius — a range wall reads opaque — while gentle hills only shorten the
-// glow. One knob, like kMacroGlowGain.
-inline constexpr float kGlowClimbCost = 60.0f;
 
 } // namespace sm

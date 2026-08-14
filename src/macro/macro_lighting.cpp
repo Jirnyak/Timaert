@@ -2,13 +2,13 @@
 
 #include "macro/features.h"
 #include "macro/landmark_registry.h"
+#include "macro/optics.h"
 #include "macro/state.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <limits>
-#include <queue>
 
 namespace sm {
 namespace {
@@ -53,35 +53,6 @@ inline int wrap_index(int v, int n) {
     return r;
 }
 
-// ── Increment B: terrain-occluded propagation ──────────────────────────────
-// Per-feature optical cost: how much "reach budget" traversing one cell of that
-// feature spends. Open land is the 1.0 baseline; roads spend less so light runs
-// along them; tree canopy spends several× so glow dies sooner and a solid stand
-// goes dark inside. Data-driven: a new feature's light behaviour is one row
-// here, never a branch in the bake loop. Indexed by FeatureType, so the row
-// order MUST track features.h's byte contract.
-//
-// Mountains and forests are deliberately absent: mountains are a *biome*
-// (biomes.h Biome::Mountain, occluded via the elevation term below) and
-// forests are the tree-count field (macro/tree_layer.h) — canopy occlusion is
-// the CONTINUOUS kCanopyOpticalCost term added per unit of tree density, so a
-// deep massif smothers glow exactly like the old FT_Tree row while thin cover
-// only dims it.
-constexpr float kFeatureOpticalCost[] = {
-    1.00f,  // FT_None     open baseline
-    0.65f,  // FT_Road     clear + reflective — carries light furthest
-    0.85f,  // FT_DirtRoad mostly clear — light runs along it, near open
-};
-// Full forest (density 1.0) spends 1.0 + 1.5 = 2.5 per cell — the exact
-// budget the old binary FT_Tree row charged.
-constexpr float kCanopyOpticalCost = 1.50f;
-inline float feature_optical_cost(FeatureType t) {
-    const std::size_t i = std::size_t(t);
-    const std::size_t n = sizeof(kFeatureOpticalCost) / sizeof(kFeatureOpticalCost[0]);
-    const float c = (i < n) ? kFeatureOpticalCost[i] : 1.0f;
-    return c < 0.05f ? 0.05f : c;  // floor keeps the Dijkstra frontier finite
-}
-
 // Accumulate one light's isotropic radial (Euclidean) contribution — the
 // increment-A path, used when no feature layer is supplied. Exact falloff, so
 // the no-terrain output is bit-for-bit the original radial bake.
@@ -113,103 +84,31 @@ void accumulate_radial(const MacroLight& L, int width, int height,
     }
 }
 
-// Priority-queue node for the bounded Dijkstra: optical distance + cell.
-struct LightNode {
-    float d;
-    int x, y;
-};
-struct LightNodeGreater {
-    bool operator()(const LightNode& a, const LightNode& b) const {
-        return a.d > b.d;
-    }
-};
-
 // Accumulate one light's terrain-occluded contribution — the increment-B path.
-// Bounded Dijkstra from the emitter over optical distance: the settled distance
-// of each cell is its cheapest optical path from the source, so light bends
-// around obstacles instead of shining through them. `dist` and `touched` are
-// caller-owned scratch reused across lights — `dist` is reset only over the
-// cells this light touched (never a full width*height clear per light).
+// The bounded Dijkstra itself lives in macro/optics.h (optical_sweep): sight
+// and glow are ONE propagation physics; this visitor only deposits the glow
+// falloff at each settled optical distance.
 void accumulate_occluded(const MacroLight& L, int width, int height,
-                         const FeatureLayer& feat,
-                         const std::vector<float>* heights,
-                         const std::vector<float>* treeDensity,
+                         const OpticalWorld& world,
                          std::vector<float>& acc,
-                         std::vector<float>& dist,
-                         std::vector<std::size_t>& touched) {
+                         OpticalScratch& scratch) {
     const float radius = std::max(L.radius, 0.001f);
     const float wr = L.r * L.intensity;
     const float wg = L.g * L.intensity;
     const float wb = L.b * L.intensity;
-    const int sx = wrap_index(int(std::floor(L.nx * float(width))), width);
-    const int sy = wrap_index(int(std::floor(L.ny * float(height))), height);
+    const int sx = int(std::floor(L.nx * float(width)));
+    const int sy = int(std::floor(L.ny * float(height)));
 
-    auto index = [width](int x, int y) {
-        return std::size_t(y) * std::size_t(width) + std::size_t(x);
-    };
-
-    // 8-neighbourhood with Euclidean step lengths so open-terrain optical
-    // distance tracks true distance (octile), not Manhattan.
-    static const int kNX[8] = {1, -1, 0, 0, 1, 1, -1, -1};
-    static const int kNY[8] = {0, 0, 1, -1, 1, -1, 1, -1};
-    static const float kNL[8] = {1.0f,        1.0f,        1.0f,        1.0f,
-                                 1.41421356f, 1.41421356f, 1.41421356f, 1.41421356f};
-
-    std::priority_queue<LightNode, std::vector<LightNode>, LightNodeGreater> pq;
-    const std::size_t s = index(sx, sy);
-    dist[s] = 0.0f;
-    touched.push_back(s);
-    pq.push({0.0f, sx, sy});
-
-    while (!pq.empty()) {
-        const LightNode cur = pq.top();
-        pq.pop();
-        const std::size_t ci = index(cur.x, cur.y);
-        if (cur.d > dist[ci])
-            continue;  // stale entry superseded by a cheaper relaxation
-
-        // Deposit this cell's glow at its settled (minimum) optical distance.
-        const float f = 1.0f - cur.d / radius;
-        if (f > 0.0f) {
-            const float w2 = f * f;
-            const std::size_t o = ci * 3u;
-            acc[o + 0] += wr * w2;
-            acc[o + 1] += wg * w2;
-            acc[o + 2] += wb * w2;
-        }
-
-        for (int k = 0; k < 8; ++k) {
-            const int nx = wrap_index(cur.x + kNX[k], width);
-            const int ny = wrap_index(cur.y + kNY[k], height);
-            float base = feature_optical_cost(feat.at(nx, ny));
-            if (treeDensity) {
-                // Canopy occlusion, continuous in the tree count (the old
-                // binary FT_Tree row): full forest adds 1.5, ambience ~0.
-                base += kCanopyOpticalCost * (*treeDensity)[index(nx, ny)];
-            }
-            float step = kNL[k] * base;
-            if (heights) {
-                // Elevation term (increment C): climbing against the glow
-                // costs kGlowClimbCost per unit of rise; descending is free
-                // (light spills downhill into valleys). This is what makes a
-                // bare massif opaque to a town's glow — heightmap-driven,
-                // no feature byte involved.
-                const float rise = (*heights)[index(nx, ny)]
-                                 - (*heights)[ci];
-                if (rise > 0.0f) step += kGlowClimbCost * rise;
-            }
-            const float nd = cur.d + step;
-            if (nd >= radius)
-                continue;  // beyond reach (f <= 0) — prune the frontier
-            const std::size_t ni = index(nx, ny);
-            if (nd < dist[ni]) {
-                if (dist[ni] == std::numeric_limits<float>::infinity())
-                    touched.push_back(ni);
-                dist[ni] = nd;
-                pq.push({nd, nx, ny});
-            }
-        }
-    }
+    optical_sweep(width, height, sx, sy, radius, world, scratch,
+                  [&](std::size_t ci, float d) {
+        const float f = 1.0f - d / radius;
+        if (f <= 0.0f) return;
+        const float w2 = f * f;
+        const std::size_t o = ci * 3u;
+        acc[o + 0] += wr * w2;
+        acc[o + 1] += wg * w2;
+        acc[o + 2] += wb * w2;
+    });
 }
 
 } // namespace
@@ -255,26 +154,16 @@ void bake_light_field(int width, int height,
     const std::size_t cells = std::size_t(width) * std::size_t(height);
     std::vector<float> acc(cells * 3, 0.0f);
 
-    // Heights participate only when they cover the grid (fail-closed to the
-    // heights-free bake otherwise).
-    const std::vector<float>* hs =
-        (cellHeights && cellHeights->size() == cells) ? cellHeights : nullptr;
-    const std::vector<float>* td =
-        (treeDensity && treeDensity->size() == cells) ? treeDensity : nullptr;
-
     // With a feature layer, propagate each light through the terrain (increment
     // B). Without one — or with an empty layer — fall back to the exact radial
     // falloff (increment A), which is bit-for-bit identical to the original.
+    // (optical_sweep itself fail-closes heights/treeDensity that do not cover
+    // the grid, and restores its scratch after every light.)
     if (features && features->width > 0 && features->height > 0) {
-        std::vector<float> dist(cells, std::numeric_limits<float>::infinity());
-        std::vector<std::size_t> touched;
-        for (const MacroLight& L : lights) {
-            accumulate_occluded(L, width, height, *features, hs, td,
-                                acc, dist, touched);
-            for (std::size_t t : touched)
-                dist[t] = std::numeric_limits<float>::infinity();
-            touched.clear();
-        }
+        const OpticalWorld world{features, cellHeights, treeDensity};
+        OpticalScratch scratch;
+        for (const MacroLight& L : lights)
+            accumulate_occluded(L, width, height, world, acc, scratch);
     } else {
         for (const MacroLight& L : lights)
             accumulate_radial(L, width, height, acc);
