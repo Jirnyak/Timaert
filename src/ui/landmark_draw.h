@@ -14,6 +14,7 @@
 #include <cstdint>
 
 #include "assets/sprite_atlas.h"
+#include "core/table_guard.h"
 #include "macro/landmark_registry.h"
 
 namespace sm::ui {
@@ -57,12 +58,7 @@ inline constexpr LandmarkDrawRow
      22.0f, 144.0f, 0.0f, 0.0f, MiniShape::Dot, 1.6f},
 };
 
-constexpr bool landmark_draw_rows_match() {
-    for (std::size_t i = 0; i < std::size_t(LandmarkType::Count); ++i)
-        if (kLandmarkDraw[i].type != LandmarkType(i)) return false;
-    return true;
-}
-static_assert(landmark_draw_rows_match(),
+static_assert(rows_in_enum_order(kLandmarkDraw, &LandmarkDrawRow::type),
               "kLandmarkDraw row order must mirror LandmarkType — the enum "
               "index IS the binding");
 

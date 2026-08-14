@@ -150,17 +150,27 @@ entt::entity make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
     // drops his purse like any other loot. Amounts are the data row below;
     // the extra RNG draw re-rolls worlds (v31 — old saves are void anyway).
     {
-        struct PurseRow { int min, max; };
+        struct PurseRow { NPCType type; int min, max; };
+        // (Scar: this table silently zero-filled when NPCType grew the three
+        // gatherer professions — a miner spawned with an empty purse. The
+        // row-order guard makes a short table refuse to compile instead.)
         static constexpr PurseRow kNpcPurse[std::size_t(NPCType::Count)] = {
-            {1, 10},    // Peasant
-            {1, 10},    // Woodcutter
-            {50, 200},  // Merchant
-            {50, 200},  // Caravan
-            {5, 30},    // Bandit
-            {5, 20},    // Guard
-            {10, 40},   // Witch
-            {10, 40},   // Sorceress
+            {NPCType::Peasant,    1, 10},
+            {NPCType::Woodcutter, 1, 10},
+            {NPCType::Merchant,   50, 200},
+            {NPCType::Caravan,    50, 200},
+            {NPCType::Bandit,     5, 30},
+            {NPCType::Guard,      5, 20},
+            {NPCType::Witch,      10, 40},
+            {NPCType::Sorceress,  10, 40},
+            // The gatherer professions carry a labourer's pocket, like the
+            // peasant/woodcutter class they share their build with.
+            {NPCType::Miner,      1, 10},
+            {NPCType::Quarryman,  1, 10},
+            {NPCType::ClayDigger, 1, 10},
         };
+        static_assert(rows_in_enum_order(kNpcPurse, &PurseRow::type),
+                      "kNpcPurse row order must mirror NPCType");
         const PurseRow& purse = kNpcPurse[std::size_t(type)];
         const int coins = purse.min
             + int(rng.next_u32() % std::uint32_t(purse.max - purse.min + 1));

@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <vector>
+#include "core/table_guard.h"
 #include "macro/biomes.h"
 #include "macro/features.h"
 
@@ -190,6 +191,7 @@ enum class InteractId : std::uint8_t {
 };
 
 struct InteractRow {
+    InteractId id;   // MUST equal the row's index (guard below)
     // Shown in the HUD prompt as "[E] <verb>".
     const char* verb;
     // How far the player may stand from the prop's surface, in tiles. A door
@@ -197,20 +199,22 @@ struct InteractRow {
     // picked up from a little further because you loot what fell around you.
     float reachTiles;
 };
-// Order MUST mirror the enum above — this table is indexed by InteractId.
+// Indexed by InteractId; the static_assert refuses a drifted table.
 // (Scar: the rows once ran Search/Drink/Read against an enum that ran
 // Drink/Read/Search, so the well prompted "Search", the sign "Drink" and the
 // chest "Read". Same 5-tile reach on all three hid it from every smoke.)
 inline constexpr InteractRow kInteractRows[int(InteractId::Count)] = {
-    /* None   */ {"",             0.0f},
-    /* Door   */ {"Enter",        5.0f},
-    /* Stairs */ {"Take stairs",  5.0f},
-    /* Loot   */ {"Loot",        12.0f},
-    /* Drink  */ {"Drink",        5.0f},
-    /* Read   */ {"Read",         5.0f},
-    /* Search */ {"Search",       5.0f},
-    /* Learn  */ {"Learn spell",  5.0f},
+    { InteractId::None,   "",             0.0f},
+    { InteractId::Door,   "Enter",        5.0f},
+    { InteractId::Stairs, "Take stairs",  5.0f},
+    { InteractId::Loot,   "Loot",        12.0f},
+    { InteractId::Drink,  "Drink",        5.0f},
+    { InteractId::Read,   "Read",         5.0f},
+    { InteractId::Search, "Search",       5.0f},
+    { InteractId::Learn,  "Learn spell",  5.0f},
 };
+static_assert(rows_in_enum_order(kInteractRows, &InteractRow::id),
+              "kInteractRows row order must mirror InteractId");
 inline constexpr const InteractRow& interact_row(InteractId i) {
     return kInteractRows[int(i) < int(InteractId::Count) ? int(i) : 0];
 }
@@ -274,6 +278,8 @@ inline float structure_surface_dist2(const Structure& s, float px, float py) {
 // Crop kind is that third prop, so here is the table. Adding a structure kind
 // = one row; every per-kind question below reads its column. ──
 struct StructureKindRow {
+    // MUST equal the row's index in kStructureKindRows (guard below the table).
+    Structure::Kind kind;
     // Key into the ONE loot registry (`roll_loot_profile`, macro/items.h) —
     // the same resolver a kill goes through. Empty id = drops nothing (yet),
     // and the harvest door skips the kind entirely.
@@ -342,33 +348,33 @@ struct StructureKindRow {
     float lightHeightM;
 };
 inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
-    /* Tree   */ {"tree", 1.6f, 3.5f, 14.0f, false, "You fell a tree",
+    { Structure::Tree, "tree", 1.6f, 3.5f, 14.0f, false, "You fell a tree",
                   StructureKindRow::Draw::Billboard,
                   StructureKindRow::Material::Wood,
                   InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f},
-    /* Rock   */ {"",     1.6f, 3.5f,  0.0f, false, "",
+    { Structure::Rock, "",     1.6f, 3.5f,  0.0f, false, "",
                   StructureKindRow::Draw::None,
                   StructureKindRow::Material::Stone,
                   InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f},
-    /* House  */ {"",     1.6f, 3.5f,  0.0f, true,  "",
+    { Structure::House, "",     1.6f, 3.5f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::House,
                   InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f},
-    /* Wall   */ {"",     1.2f, 4.0f,  0.0f, true,  "",
+    { Structure::Wall, "",     1.2f, 4.0f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Stone,
                   InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f},
-    /* Bridge */ {"",     1.6f, 3.5f,  0.0f, false, "",
+    { Structure::Bridge, "",     1.6f, 3.5f,  0.0f, false, "",
                   StructureKindRow::Draw::None,
                   StructureKindRow::Material::Wood,
                   InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f},
-    /* Crop   */ {"crop", 0.4f, 0.5f,  1.2f, false, "You harvest the crop",
+    { Structure::Crop, "crop", 0.4f, 0.5f,  1.2f, false, "You harvest the crop",
                   StructureKindRow::Draw::Billboard,
                   StructureKindRow::Material::Wood,
                   InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f},
     // Fence: the field balks' boulder walls — knee-high, honest to walk
     // around (solid), drawn by the same box pass as walls in stone flavour.
-    /* Fence  */ {"",     0.3f, 0.4f,  0.0f, true,  "",
+    { Structure::Fence, "",     0.3f, 0.4f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Stone,
                   InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f},
@@ -377,7 +383,7 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     // is never inflated to a pillar by the legacy stub rule. Drawn wood-
     // flavoured in the box pass. No loot row yet — a chest that PAYS is a
     // future increment through this same row.
-    /* Furnish*/ {"",     0.5f, 0.4f,  0.0f, true,  "",
+    { Structure::Furnish, "",     0.5f, 0.4f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Wood,
                   InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f},
@@ -385,7 +391,7 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     // blocks, and a door you bump into instead of opening is a door that
     // fights the player. A leaf is 2 m tall (a body plus its hat) and half a
     // tile wide, which is what makes it READ as a door from the street.
-    /* Door   */ {"",     0.5f, 2.0f,  0.0f, false, "",
+    { Structure::Door, "",     0.5f, 2.0f,  0.0f, false, "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Door,
                   InteractId::Door, DungeonRef::House, 0u, 0.0f, 0.0f},
@@ -393,14 +399,14 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     // walk around, knee-thin. Warm 0xFFB060 at 24 tiles — the carried-torch
     // family (sub/lighting.h), hung at 3 m: above a body's head, so it lights
     // the street rather than the walker's boots.
-    /* Lantern*/ {"",     0.3f, 3.0f,  0.0f, true,  "",
+    { Structure::Lantern, "",     0.3f, 3.0f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Lantern,
                   InteractId::None, DungeonRef::None, 0xFFB060u, 24.0f, 3.0f},
     // Stairs: the shaft between storeys, drawn as a low block you step onto.
     // Not solid (you stand ON its tile and press E), knee-high so it reads as
     // a flight of steps and not a table.
-    /* Stairs */ {"",     1.5f, 0.5f,  0.0f, false, "",
+    { Structure::Stairs, "",     1.5f, 0.5f,  0.0f, false, "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Wood,
                   InteractId::Stairs, DungeonRef::None, 0u, 0.0f, 0.0f},
@@ -409,7 +415,7 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     // conjure goods, it hands over what the place that owns it actually has
     // (macro/economy.h settlement inventory), which is why it cannot be
     // farmed and why an emptied town's chests are bare.
-    /* Chest  */ {"",     0.8f, 0.9f,  0.0f, true,  "",
+    { Structure::Chest, "",     0.8f, 0.9f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Chest,
                   InteractId::Search, DungeonRef::None, 0u, 0.0f, 0.0f},
@@ -418,20 +424,20 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     // parlour — so the player learns one key and the engine keeps one path.
     // Wide and low, so it reads as a hole rather than a shed, and not solid:
     // you walk into the mouth, you do not bump into it.
-    /* CaveMth*/ {"",     2.0f, 3.0f,  0.0f, false, "",
+    { Structure::CaveMouth, "",     2.0f, 3.0f,  0.0f, false, "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::CaveMouth,
                   InteractId::Door, DungeonRef::Cave, 0u, 0.0f, 0.0f},
     // Well: waist-high stonework you walk around (solid), drawn as a round
     // curb because that is what a well IS — the cylinder pass already has
     // the shape, so this costs no geometry.
-    /* Well   */ {"",     1.6f, 1.2f,  0.0f, true,  "",
+    { Structure::Well, "",     1.6f, 1.2f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Well,
                   InteractId::Drink, DungeonRef::None, 0u, 0.0f, 0.0f},
     // Sign: a board at head height on a thin post. Not solid — you read it,
     // you do not walk into it.
-    /* Sign   */ {"",     0.9f, 2.2f,  0.0f, false, "",
+    { Structure::Sign, "",     0.9f, 2.2f,  0.0f, false, "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Sign,
                   InteractId::Read, DungeonRef::None, 0u, 0.0f, 0.0f},
@@ -440,7 +446,7 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     // it visually is (the Door material draws it). One kind serves both ends
     // of the climb: the gate at the tower's foot and the roof hatch on the
     // top storey — the dungeon session reads which end from the storey.
-    /* SpireGt*/ {"",     0.5f, 2.0f,  0.0f, false, "",
+    { Structure::SpireGate, "",     0.5f, 2.0f,  0.0f, false, "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Door,
                   InteractId::Door, DungeonRef::SpireTower, 0u, 0.0f, 0.0f},
@@ -449,11 +455,13 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     // same tint the macro map glows at night (landmark_registry.h spire row,
     // 0xA86CFF family). Lantern-law light: the emissive head reads from any
     // distance, the point light is the row below.
-    /* SpireOrb*/{"",     0.8f, 1.6f,  0.0f, true,  "",
+    { Structure::SpireOrb, "",     0.8f, 1.6f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::SpireOrb,
                   InteractId::Learn, DungeonRef::None, 0xA86CFFu, 24.0f, 1.4f},
 };
+static_assert(rows_in_enum_order(kStructureKindRows, &StructureKindRow::kind),
+              "kStructureKindRows row order must mirror Structure::Kind");
 
 inline constexpr const StructureKindRow& structure_kind_row(Structure::Kind k) {
     return kStructureKindRows[int(k) < Structure::kKindCount ? int(k) : 0];

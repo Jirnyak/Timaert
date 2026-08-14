@@ -22,6 +22,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include "core/table_guard.h"
 #include <cstdint>
 
 namespace sm {
@@ -63,6 +64,8 @@ inline constexpr MoonDef kMoons[std::size_t(MoonId::Count)] = {
     { MoonId::Pale,    "Selûne",      1.00f,   0xE8ECF5u,     28,        0,    9.0f },
     { MoonId::Crimson, "Vharûn",     0.55f,   0xD98A6Au,     11,        3,  -16.0f },
 };
+static_assert(rows_in_enum_order(kMoons, &MoonDef::id),
+              "kMoons row order must mirror MoonId");
 
 inline constexpr const MoonDef& moon_def(MoonId m) {
     return kMoons[std::size_t(m)];

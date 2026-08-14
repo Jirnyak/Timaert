@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/table_guard.h"
 #include "macro/army.h"      // CombatTemplate (per-role authored base)
 #include "macro/attributes.h"
 #include "macro/npc.h"
@@ -42,6 +43,8 @@ namespace csheet_detail {
 // base of 1, and every row has at least one non-zero skill weight. This is
 // pure tunable data (see MASTER_PROMPT §9.3); adding a role = one more row.
 struct RoleWeights {
+    // MUST equal the row's index in kRoleWeights (guard below the table).
+    NPCType type;
     // str, vit, end, wil, intl, wis, lck, cha, spd
     std::uint8_t attr[9];
     // bodybuilding, meditation, athletics, travel, fighter, marathon,
@@ -51,32 +54,31 @@ struct RoleWeights {
 
 inline constexpr RoleWeights kRoleWeights[int(NPCType::Count)] = {
     // Peasant     — hardy laborer, no combat training
-    {{3, 3, 3, 1, 1, 2, 1, 1, 1}, {3, 0, 1, 1, 1, 3, 0, 2}},
+    {NPCType::Peasant, {3, 3, 3, 1, 1, 2, 1, 1, 1}, {3, 0, 1, 1, 1, 3, 0, 2}},
     // Woodcutter  — strong laborer
-    {{4, 3, 3, 1, 1, 1, 1, 1, 1}, {3, 0, 1, 1, 1, 2, 0, 4}},
+    {NPCType::Woodcutter, {4, 3, 3, 1, 1, 1, 1, 1, 1}, {3, 0, 1, 1, 1, 2, 0, 4}},
     // Merchant    — social, lucky, sedentary
-    {{1, 2, 2, 1, 2, 3, 3, 4, 1}, {1, 1, 1, 2, 0, 1, 0, 2}},
+    {NPCType::Merchant, {1, 2, 2, 1, 2, 3, 3, 4, 1}, {1, 1, 1, 2, 0, 1, 0, 2}},
     // Caravan     — mobile trader: lives on the road, hence both movement skills
-    {{2, 2, 3, 1, 1, 2, 2, 3, 3}, {1, 1, 3, 4, 0, 2, 0, 2}},
+    {NPCType::Caravan, {2, 2, 3, 1, 1, 2, 2, 3, 3}, {1, 1, 3, 4, 0, 2, 0, 2}},
     // Bandit      — aggressive melee raider, fast on his feet
-    {{4, 3, 2, 1, 1, 1, 2, 1, 3}, {2, 0, 3, 2, 4, 1, 0, 1}},
+    {NPCType::Bandit, {4, 3, 2, 1, 1, 1, 2, 1, 3}, {2, 0, 3, 2, 4, 1, 0, 1}},
     // Guard       — disciplined tank
-    {{4, 4, 3, 1, 1, 2, 1, 2, 2}, {3, 0, 2, 1, 3, 2, 0, 1}},
+    {NPCType::Guard, {4, 4, 3, 1, 1, 2, 1, 2, 2}, {3, 0, 2, 1, 3, 2, 0, 1}},
     // Witch       — practical caster
-    {{1, 2, 1, 4, 4, 3, 2, 2, 1}, {0, 4, 1, 1, 0, 1, 4, 0}},
+    {NPCType::Witch, {1, 2, 1, 4, 4, 3, 2, 2, 1}, {0, 4, 1, 1, 0, 1, 4, 0}},
     // Sorceress   — elite caster
-    {{1, 2, 1, 4, 5, 3, 3, 3, 1}, {0, 4, 1, 1, 0, 1, 5, 0}},
+    {NPCType::Sorceress, {1, 2, 1, 4, 5, 3, 3, 3, 1}, {0, 4, 1, 1, 0, 1, 5, 0}},
     // Miner       — strong laborer (the woodcutter's build, underground)
-    {{4, 3, 3, 1, 1, 1, 1, 1, 1}, {3, 0, 1, 1, 1, 2, 0, 4}},
+    {NPCType::Miner, {4, 3, 3, 1, 1, 1, 1, 1, 1}, {3, 0, 1, 1, 1, 2, 0, 4}},
     // Quarryman   — strong laborer
-    {{4, 3, 3, 1, 1, 1, 1, 1, 1}, {3, 0, 1, 1, 1, 2, 0, 4}},
+    {NPCType::Quarryman, {4, 3, 3, 1, 1, 1, 1, 1, 1}, {3, 0, 1, 1, 1, 2, 0, 4}},
     // Clay-digger — hardy laborer (the peasant's build, wetter)
-    {{3, 3, 3, 1, 1, 2, 1, 1, 1}, {3, 0, 1, 1, 1, 3, 0, 2}},
+    {NPCType::ClayDigger, {3, 3, 3, 1, 1, 2, 1, 1, 1}, {3, 0, 1, 1, 1, 3, 0, 2}},
 };
 
-static_assert(sizeof(kRoleWeights) / sizeof(kRoleWeights[0])
-                  == std::size_t(NPCType::Count),
-              "role weight table must cover every humanoid NPCType");
+static_assert(rows_in_enum_order(kRoleWeights, &RoleWeights::type),
+              "kRoleWeights row order must mirror NPCType");
 
 inline const RoleWeights& role_weights(NPCType role) {
     const int idx = int(role);

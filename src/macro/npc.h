@@ -9,6 +9,7 @@
 // No other file needs to change.
 #pragma once
 #include <array>
+#include "core/table_guard.h"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -71,6 +72,8 @@ constexpr std::size_t kMaxNpcTalkLines = 6;
 constexpr int kNpcUpkeepNone = -1;
 
 struct NpcTypeDef {
+    // MUST equal the row's index in kNpcTypeDefs (guard below the table).
+    NPCType         type;
     const char*     label;
     const char*     portrait;
     int             baseHp;
@@ -120,7 +123,7 @@ inline constexpr CombatTemplate kSorceressCombat {70, 22, 25, 25.0f,1.8f, "Src",
 inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // Peasant
     {
-        "Peasant", "/assets/sprites/peasant_256.png", 25, 1,
+        NPCType::Peasant, "Peasant", "/assets/sprites/peasant_256.png", 25, 1,
         AIBehaviour::Gatherer, kPeasantCombat, 1, true, 10,
         {{"Ivan","Pyotr","Sergey","Dmitry","Alexei","Nikolai","Vasily","Grigory",
           "Fedor","Andrei","Olga","Natalya","Katya","Masha","Dasha"}}, 15,
@@ -132,7 +135,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     },
     // Woodcutter
     {
-        "Woodcutter", "/assets/sprites/peasant_256.png", 30, 1,
+        NPCType::Woodcutter, "Woodcutter", "/assets/sprites/peasant_256.png", 30, 1,
         AIBehaviour::Gatherer, kWoodcutterCombat, 1, true, 12,
         {{"Borislav","Timofey","Yegor","Luka","Matvey"}}, 5,
         {{"These woods hold many secrets.",
@@ -142,7 +145,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     },
     // Merchant
     {
-        "Merchant", "/assets/sprites/corovan_256.png", 30, 3,
+        NPCType::Merchant, "Merchant", "/assets/sprites/corovan_256.png", 30, 3,
         AIBehaviour::Trader, kMerchantCombat, kNpcUpkeepNone, false, 30,
         {{"Kartash","Bazukin","Torgin","Menkov","Skaldin"}}, 5,
         {{"Looking to trade? I have fine wares!",
@@ -152,7 +155,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     },
     // Caravan
     {
-        "Caravan", "/assets/sprites/corovan_256.png", 25, 2,
+        NPCType::Caravan, "Caravan", "/assets/sprites/corovan_256.png", 25, 2,
         AIBehaviour::CaravanTrade, kCaravanCombat, kNpcUpkeepNone, false, 20,
         {{"Putnik","Dorozhkin","Obozov","Strannik","Koleso"}}, 5,
         {{"Long road ahead. Care to trade before I move on?",
@@ -162,7 +165,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     },
     // Bandit
     {
-        "Bandit", "/assets/sprites/imp_golem_256.png", 50, 2,
+        NPCType::Bandit, "Bandit", "/assets/sprites/imp_golem_256.png", 50, 2,
         AIBehaviour::Aggressive, kBanditCombat, kNpcUpkeepNone, false, 20,
         {{"Razboy","Diki","Grozny","Slyak","Khvat"}}, 5,
         {{"Your gold or your life!",
@@ -172,7 +175,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     },
     // Guard
     {
-        "Guard", "/assets/sprites/peasant_256.png", 55, 3,
+        NPCType::Guard, "Guard", "/assets/sprites/peasant_256.png", 55, 3,
         AIBehaviour::Patrol, kGuardCombat, 3, true, 30,
         {{"Strazhnik","Boyar","Vityaz","Desyatnik","Druzhina"}}, 5,
         {{"Move along, citizen. Nothing to see here.",
@@ -191,7 +194,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     },
     // Witch
     {
-        "Witch", "/assets/sprites/witch_256.png", 60, 5,
+        NPCType::Witch, "Witch", "/assets/sprites/witch_256.png", 60, 5,
         AIBehaviour::Teleporter, kWitchCombat, kNpcUpkeepNone, false, 50,
         {{"Yaga","Vedma","Znakharka","Koldunia","Volshebnitsa"}}, 5,
         {{"The spirits whisper of your coming...",
@@ -201,7 +204,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     },
     // Sorceress
     {
-        "Sorceress", "/assets/sprites/witch_256.png", 70, 6,
+        NPCType::Sorceress, "Sorceress", "/assets/sprites/witch_256.png", 70, 6,
         AIBehaviour::Wanderer, kSorceressCombat, kNpcUpkeepNone, false, 60,
         {{"Charodejka","Zaklinatelnitsa","Mistika","Runara","Svetozara"}}, 5,
         {{"The arcane currents shift around you...",
@@ -211,7 +214,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     },
     // Miner — the iron villages' man (spawned where a vein anchors the home)
     {
-        "Miner", "/assets/sprites/peasant_256.png", 30, 1,
+        NPCType::Miner, "Miner", "/assets/sprites/peasant_256.png", 30, 1,
         AIBehaviour::Gatherer, kWoodcutterCombat, 1, true, 12,
         {{"Prokhor","Savva","Demyan","Zakhar","Foma"}}, 5,
         {{"The vein runs deep, but so do we.",
@@ -221,7 +224,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     },
     // Quarryman — stone out of the mountain, the same law of labour
     {
-        "Quarryman", "/assets/sprites/peasant_256.png", 30, 1,
+        NPCType::Quarryman, "Quarryman", "/assets/sprites/peasant_256.png", 30, 1,
         AIBehaviour::Gatherer, kWoodcutterCombat, 1, true, 12,
         {{"Gavril","Osip","Trofim","Nazar","Kondrat"}}, 5,
         {{"Stone does not grow back. Good thing there is a mountain of it.",
@@ -230,7 +233,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     },
     // Clay-digger — the riverbank's man
     {
-        "Clay-digger", "/assets/sprites/peasant_256.png", 30, 1,
+        NPCType::ClayDigger, "Clay-digger", "/assets/sprites/peasant_256.png", 30, 1,
         AIBehaviour::Gatherer, kWoodcutterCombat, 1, true, 12,
         {{"Yermolai","Panteley","Averyan","Selivan","Mitrofan"}}, 5,
         {{"Good clay wants a river and patience.",
@@ -238,6 +241,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "Cold work, wet work, honest work."}}, 3,
     },
 };
+static_assert(rows_in_enum_order(kNpcTypeDefs, &NpcTypeDef::type),
+              "kNpcTypeDefs row order must mirror NPCType");
 
 inline constexpr const NpcTypeDef& npc_def(NPCType t) {
     return kNpcTypeDefs[std::size_t(t)];

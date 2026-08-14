@@ -82,6 +82,7 @@ inline constexpr float kSkySeasonTintStrength = 0.30f;
 enum class PrecipKind : std::uint8_t { Rain = 0, Snow, Hail };
 
 struct SeasonPrecipDef {
+    Season       id;             // MUST equal the row's index (guard below)
     float        chance01;       // fraction of the season's days that are wet
     float        stormChance01;  // of wet RAIN days, fraction that thunder
     std::uint8_t kindWeights[3]; // relative weights: Rain, Snow, Hail
@@ -90,12 +91,14 @@ struct SeasonPrecipDef {
 // Indexed by macro/seasons.h Season. Adding a season there without a row
 // here is the static_assert below, not a silent out-of-bounds read.
 inline constexpr SeasonPrecipDef kSeasonPrecip[std::size_t(Season::Count)] = {
-    // season    chance  storm   rain snow hail
-    /*Spring*/ { 0.35f,  0.15f, { 5,   2,   2 } },
-    /*Summer*/ { 0.25f,  0.35f, { 1,   0,   0 } },
-    /*Autumn*/ { 0.45f,  0.10f, { 6,   1,   0 } },
-    /*Winter*/ { 0.40f,  0.00f, { 0,   1,   0 } },
+    // season           chance  storm   rain snow hail
+    { Season::Spring,   0.35f,  0.15f, { 5,   2,   2 } },
+    { Season::Summer,   0.25f,  0.35f, { 1,   0,   0 } },
+    { Season::Autumn,   0.45f,  0.10f, { 6,   1,   0 } },
+    { Season::Winter,   0.40f,  0.00f, { 0,   1,   0 } },
 };
+static_assert(rows_in_enum_order(kSeasonPrecip, &SeasonPrecipDef::id),
+              "kSeasonPrecip row order must mirror Season");
 static_assert(sizeof(kSeasonPrecip) / sizeof(kSeasonPrecip[0])
                   == std::size_t(Season::Count),
               "every season needs a precipitation row");

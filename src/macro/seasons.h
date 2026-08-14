@@ -17,6 +17,7 @@
 #pragma once
 
 #include <cstddef>
+#include "core/table_guard.h"
 #include <cstdint>
 
 namespace sm {
@@ -53,6 +54,8 @@ inline constexpr SeasonDef kSeasons[std::size_t(Season::Count)] = {
     { Season::Autumn, "Autumn",     -0.05f,     0.90f,  0xC87A3Au },
     { Season::Winter, "Winter",     -0.20f,     0.60f,  0xBFD0E0u },
 };
+static_assert(rows_in_enum_order(kSeasons, &SeasonDef::id),
+              "kSeasons row order must mirror Season");
 
 inline constexpr int kDaysPerYear = kDaysPerSeason * int(Season::Count);
 

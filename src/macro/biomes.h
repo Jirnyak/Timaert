@@ -1,6 +1,7 @@
 // 3x3 biome matrix — temperature × moisture. Mirrors src/game/biomes.ts.
 #pragma once
 #include <cstdint>
+#include "core/table_guard.h"
 #include <array>
 
 namespace sm {
@@ -39,6 +40,10 @@ inline constexpr BiomeDef kBiomes[11] = {
     {Water,    "Water",    0.18f, 0.30f, 0.55f},
     {Mountain, "Mountain", 0.55f, 0.53f, 0.50f},
 };
+static_assert(sizeof(kBiomes) / sizeof(kBiomes[0]) == std::size_t(Mountain) + 1,
+              "kBiomes must have exactly one row per Biome");
+static_assert(rows_in_enum_order(kBiomes, &BiomeDef::id),
+              "kBiomes row order must mirror Biome");
 
 // Temperature row × moisture col → Biome. Mirrors BIOME_MATRIX +
 // `biomeFromClimate` (round-to-nearest of t01 * (rows-1)).
