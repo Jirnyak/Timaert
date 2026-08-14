@@ -154,12 +154,14 @@ binding.
 | `Search` | chest | a stack of the owning landmark's store, at a price in standing | `Settlement::inventory` + `add_player_reputation` |
 | `Drink` | well | an hour of rest, standing | `kSpRegenPctPerHour` |
 | `Read` | signboard | names the place | the settlement roster |
-| `Learn` | spire orb | flips the spire depleted, burns the orb out of the scene, teaches the spell | `EventTag::SpireDepleted` → the app's ordinal resolve ([spells.md](spells.md) §Learning) |
+| `Learn` | spire orb | flips the spire depleted, burns the orb out of the scene, teaches the spell | `EventTag::SpireDepleted` → the effect applicator's ordinal resolve ([spells.md](spells.md) §Learning) |
 
-(The row order of `kInteractRows` MUST mirror the enum — it once ran
-Search/Drink/Read against an enum running Drink/Read/Search, so the well
-prompted "Search", the sign "Drink", the chest "Read"; the shared 5-tile
-reach hid the swap from every smoke. And a zBase-LIFTED prop joins the reach
+(The row order of `kInteractRows` mirrors the enum UNDER GUARD now — each
+row carries its `InteractId` and a `rows_in_enum_order` static_assert
+(core/table_guard.h) makes a swap a compile error. The scar it answers: the
+rows once ran Search/Drink/Read against an enum running Drink/Read/Search,
+so the well prompted "Search", the sign "Drink", the chest "Read"; the
+shared 5-tile reach hid the swap from every smoke. And a zBase-LIFTED prop joins the reach
 test with its vertical gap — the roof orb is reachable from its deck, not
 from the ground a tower-height below.)
 

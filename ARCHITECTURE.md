@@ -1641,26 +1641,31 @@ track knows where the engine is and where it will snag.
    ("a registry ordinal + a spec passed down; the app closes the loop") or
    decide the registries (spells/creatures/items — pure data tables) belong
    BELOW the world layers, with only effects/logic staying in `content/`.
-   → OWNER RULED 2026-08-14: option B. The registries ARE data and live in
-   the world layers; `content/` keeps only effects and logic, bound to the
-   rows by id (now Rule 13 below). Physically only the spell registry
-   moves — creatures, items, factions, npc types, landmarks, gatherers
-   already live in macro/; spells were the lone exception, and only
-   because their row mixes data with the effect's spawn function. The
-   migration session is armed: proposals/session-prompts.md
-   § «Сессия — РЕЕСТРЫ КАК ФУНДАМЕНТ».
-2. **`CellContext` grows a field per fact** (`landmarkSize` now doubles as
-   spire tier; `landmarkDepleted` added). Each stateful landmark class will
-   want more. At two tenants it is fine; at four, fold them into one
-   landmark-payload struct.
-3. **Landmark consumers are hand-enumerated.** The World Map panel, the
-   macro overlay and `collect_landmarks` each iterate settlements / villages
-   / spires as SEPARATE loops — a new landmark kind means touching every
-   consumer (the map panel simply did not know spires existed). The registry
-   row should drive ONE draw loop per consumer.
-4. **Parallel enum↔row tables have no guard.** `kInteractRows` ran three
-   verbs out of enum order for months (well prompted "Search"). Any new
-   parallel table needs a static_assert per row or designated initializers.
+   → OWNER RULED 2026-08-14: option B, and the migration SHIPPED the same
+   day. The spell registry is `macro/spells.h kSpellDefs` (constexpr rows,
+   append-only ordinals, `spell_registry_test` pins them); `content/spells/`
+   keeps only the spawn functions, bound row-for-row through `kSpellEffects`
+   (static_assert refuses a drifted table). The four-hop cargo channel is
+   gone: `generate_spires` reads the table itself (`SpireSpellSpec` dead),
+   `Spire.tier` derives from `spellId` at read (save v39), and the
+   SpireDepleted learn lives in the effect applicator — zero app loops.
+   Rule 13 below is the law all future content classes follow.
+2. **`CellContext` grows a field per fact** — CLOSED 2026-08-14: the five
+   landmark columns folded into ONE `LandmarkContext` payload
+   (`ctx.landmark.{kind,id,size,kingdomIdx,depleted}`); a new landmark fact
+   is a member there, never another context column.
+3. **Landmark consumers are hand-enumerated** — CLOSED 2026-08-14:
+   `macro/landmark_iter.h for_each_landmark()` is the one enumerator, and
+   every consumer (map overlay draw + hover, minimap, `collect_landmarks`)
+   is ONE data-driven loop over it dispatching on the registry row plus its
+   `ui/landmark_draw.h` presentation row. A new landmark kind = registry
+   row + draw row + one visitor yield; colour has ONE authority
+   (`kLandmarks[].color`).
+4. **Parallel enum↔row tables have no guard** — CLOSED 2026-08-14: every
+   enum-indexed table's row now carries its own enum as a column and
+   static_asserts `rows_in_enum_order` (`core/table_guard.h`). The sweep
+   caught a live defect: `kNpcPurse` had silently zero-filled when NPCType
+   grew the gatherer professions — miners spawned with empty purses.
 5. **Smoke reach.** No scripted teleport exists, so distant content needs a bespoke
    C++ smoke action (~200 lines) instead of a declarative scenario. Worth
    growing script primitives (goto_landmark / interact_aimed / take_stairs)

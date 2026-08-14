@@ -2,11 +2,12 @@
 
 Modular spell framework: **adding a spell is one file, no engine changes.**
 
-- **Code:** [content/spells/](src/content/spells) —
-  [spell_types.h](src/content/spells/spell_types.h),
-  [spell_book.h](src/content/spells/spell_book.h),
-  [registry.cpp](src/content/spells/registry.cpp);
-  effects in [sub/spell_effects.h](src/sub/spell_effects.h)
+- **Code:** data rows in [macro/spells.h](src/macro/spells.h) (`kSpellDefs`);
+  behaviour in [content/spells/](src/content/spells) —
+  [casting.h](src/content/spells/casting.h) (the binding contract),
+  [effects.cpp](src/content/spells/effects.cpp) (spawn fns, `kSpellEffects`),
+  [spell_book.h](src/content/spells/spell_book.h);
+  projectile ticking in [sub/spell_effects.h](src/sub/spell_effects.h)
 - **TS origin:** `game/spells/*`
 - **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) §Spell System
 
@@ -14,13 +15,15 @@ Modular spell framework: **adding a spell is one file, no engine changes.**
 
 - **`SpellBook`** { learned, activeSpellId, cooldowns, sustainedActive,
   sustainedDrainCarry }; API `learn / set_active / can_cast / cast / tick`.
-- **Registry** maps spell id → type metadata + effect. Modules: fireball,
-  ice-shard, lightning-chain, energy-beam, magic-bolt, armageddon, flight, haste.
-  **Ruled to migrate** (owner 2026-08-14, ARCHITECTURE.md Rule 13): the row
-  today mixes DATA (tier, mana, damage numbers) with BEHAVIOUR (the spawn
-  fn), which strands it above the world layers — the data half moves to a
-  `macro/` registry beside items/fauna, effects stay up here bound by id.
-  Session armed: proposals/session-prompts.md § «РЕЕСТРЫ КАК ФУНДАМЕНТ».
+- **Registry** = `kSpellDefs` (macro/spells.h): one constexpr DATA row per
+  spell — fireball, ice-shard, magic-bolt, lightning-chain, energy-beam,
+  armageddon, haste, flight — with APPEND-ONLY ordinals (the row index rides
+  saves as `Spire.spellId`; `spell_registry_test` pins the order). Living in
+  the world layers per ARCHITECTURE.md Rule 13 (owner 2026-08-14), it is
+  askable by worldgen (`generate_spires`), the subworld (tier at resolve)
+  and the event applicator alike. BEHAVIOUR binds above: `kSpellEffects`
+  (content/spells/effects.cpp) holds one spawn fn per row, ordinal-parallel
+  under a static_assert that refuses a drifted table.
 - Effects become ECS projectile/beam descriptors rendered as 3D billboards /
   ribbons in the subworld.
 - **Flight rules a new spell inherits for free** (`sub/spell_effects.cpp`, detail
@@ -55,17 +58,21 @@ the crown and touches the orb — the spire flips `depleted` forever (dark
 sprite, no glow, no orb), and the spell lands in the book.
 
 The seam between layers is an event: the engine emits
-`EventTag::SpireDepleted` (spire id + spell registry ordinal); the app
-layer resolves the ordinal — only content/ knows the registry — teaches
-the book, writes "You have learned X!" to the log and emits
-`SpellLearned` for observers (quests watch spells, not spires). Console
-`learn` and quest rewards remain the other two doors into the same
-idempotent `spellbook_learn`.
+`EventTag::SpireDepleted` (spire id + spell registry ordinal); the effect
+applicator (events/effect_applicator.cpp) resolves the ordinal against
+`kSpellDefs` — the registry lives below it now (Rule 13) — teaches the
+book, writes "You have learned X!" to the log and hands a `SpellLearned`
+follow-up back to the caller to emit for observers (quests watch spells,
+not spires; the caller owns the bus and the emit-after-the-span-walk
+order). Console `learn` and quest rewards remain the other two doors
+into the same idempotent `spellbook_learn`.
 
 ## Data-driven extension
 
-Add a spell → register it in `registry.cpp` + (if it has a visual) one
-`spell_effects` descriptor. Sustained spells drain mana via `tick`. The
+Add a spell → APPEND one data row to `kSpellDefs` (macro/spells.h; never
+reorder — ordinals are forever) + one effect row to `kSpellEffects`
+(content/spells/effects.cpp; the static_assert refuses a mismatch;
+nullptr for self-buffs). Sustained spells drain mana via `tick`. The
 next world offers the new spell's spire with no further change — count,
 placement and the tower's storeys all derive from the registry row.
 

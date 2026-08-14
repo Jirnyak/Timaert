@@ -44,8 +44,9 @@ spires/dungeons, and runtime markers.
   worlds missing the band; deterministic from `worldSeed`. Placed AFTER
   `generate_zones` in boot (the one landmark outside
   `populate_landmarks_from_politik`, which only clears the list).
-  `Spire.tier` rides the save (v38) because the subworld may not reach
-  into the spell registry. A CONSUMED spire (the player learned its
+  `Spire.spellId` (the registry ordinal) is the ONE saved key; tier is
+  asked from `kSpellDefs` at the moment of reading (v39 — the registry
+  lives in the world layers, Rule 13). A CONSUMED spire (the player learned its
   spell, [dungeons.md](dungeons.md) §Spire tower) flips `depleted`:
   dark map sprite, no night glow, no orb.
 - **Boot order is the law:** trees and deposits are derived BEFORE
