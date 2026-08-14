@@ -1973,14 +1973,8 @@ void boot_world(App& app, std::uint32_t seed,
     // registered spell; a load overwrites gs.spires from the save afterwards
     // (boot_world_from_save), exactly like settlements.
     {
-        std::vector<sm::SpireSpellSpec> spireSpells;
-        spireSpells.reserve(std::size_t(sm::kSpellCount));
-        for (int i = 0; i < sm::kSpellCount; ++i) {
-            spireSpells.push_back(sm::SpireSpellSpec{
-                std::uint32_t(i), std::uint8_t(sm::kSpellDefs[i].tier)});
-        }
         sm::generate_spires(app.gs, app.zones, app.terrain,
-                            std::uint8_t(lp.seaLevel * 255.0f), spireSpells);
+                            std::uint8_t(lp.seaLevel * 255.0f));
         boot_trace("spires placed");
         if (boot_trace_enabled()) {
             // The placement report card: every spell offered, every spire in
@@ -2000,9 +1994,9 @@ void boot_world(App& app, std::uint32_t seed,
                 }
             }
             std::fprintf(stderr,
-                         "[worldgen] spires=%zu/%zu zones=[%d..%d] "
+                         "[worldgen] spires=%zu/%d zones=[%d..%d] "
                          "minPairDist=%d\n",
-                         app.gs.spires.size(), spireSpells.size(),
+                         app.gs.spires.size(), sm::kSpellCount,
                          app.gs.spires.empty() ? 0 : zoneMin,
                          app.gs.spires.empty() ? 0 : zoneMax, minPair);
             std::fflush(stderr);
@@ -2998,36 +2992,16 @@ void apply_pending_event_effects(App& app) {
         const std::size_t begin = app.appliedEventCount;
         const std::size_t end = events.size();
         std::span<const sm::GameEvent> pending(events.data() + begin, end - begin);
-        sm::apply_events(pending, app.gs);
-        // The spire's spell rides here, beside the generic applicator: only
-        // THIS layer can turn the event's registry ordinal into a spell id
-        // (content/ is above events/), so the app closes the loop the same
-        // way it feeds generate_spires its spell list at boot. Follow-up
-        // events are collected and emitted AFTER the span walk — emit grows
-        // the very vector the span points into — and the while loop then
-        // picks them up as the next batch.
+        // The applicator owns every state mutation (a SpireDepleted teaches
+        // its spell there — events/ may ask the registry itself, Rule 13);
+        // the app owns the bus, so announcements come back as followups and
+        // are emitted AFTER the span walk (emit grows the very vector the
+        // span points into) — the while loop picks them up as the next batch.
         std::vector<sm::GameEvent> followups;
+        sm::apply_events(pending, app.gs, &followups);
         bool spireDied = false;
         for (const sm::GameEvent& ev : pending) {
-            if (ev.tag != sm::EventTag::SpireDepleted) continue;
-            spireDied = true;
-            if (ev.b >= 0 && ev.b < sm::kSpellCount) {
-                const sm::SpellDef& def = sm::kSpellDefs[ev.b];
-                if (sm::spellbook_learn(app.gs.player.spellBook, def.id)) {
-                    char msg[96];
-                    std::snprintf(msg, sizeof(msg), "You have learned %s!",
-                                  def.name);
-                    sm::push_event_log(app.gs.player,
-                                       {sm::LogType::World, msg,
-                                        app.gs.worldTime.day()});
-                    // The observers' fact: quests and logic nodes watch
-                    // SpellLearned, not spires. The applicator's own learn
-                    // is idempotent, so the double door cannot double-teach.
-                    sm::GameEvent learned{sm::EventTag::SpellLearned};
-                    learned.s1 = def.id;
-                    followups.push_back(std::move(learned));
-                }
-            }
+            if (ev.tag == sm::EventTag::SpireDepleted) spireDied = true;
         }
         app.appliedEventCount = end;
         for (const sm::GameEvent& ev : followups) app.bus.emit(ev);
@@ -6601,14 +6575,17 @@ bool run_spire_climb_smoke(App& app) {
                                       sm::kSpellDefs[sp.spellId].id)) {
             continue;
         }
-        if (!target || sp.tier > target->tier) target = &sp;
+        if (!target || sm::kSpellDefs[sp.spellId].tier
+                           > sm::kSpellDefs[target->spellId].tier) {
+            target = &sp;
+        }
     }
     if (!target) {
         smoke_fail(app, "spire_climb found no unlearned spire");
         return false;
     }
     const sm::SpellDef& def = sm::kSpellDefs[target->spellId];
-    const int tier = int(target->tier);
+    const int tier = def.tier;
     const int spireId = target->id;
 
     // Stand on the spire's cell and enter its open-air scene.

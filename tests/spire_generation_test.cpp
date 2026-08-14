@@ -1,26 +1,27 @@
 // Spire placement (macro/spires.cpp). Pinned promises:
-//   · one spire per learnable spell, id = list index, spellId = the spell's
-//     registration ordinal, born un-depleted;
+//   · one spire per kSpellDefs row (the generator asks the spell registry
+//     itself — Rule 13), id = list index, spellId = the row's append-only
+//     ordinal, born un-depleted;
 //   · a spire stands on land, inside the landmark table's own zone band
 //     (landmark_def(Spire).minZone), and the top-tier spell's spire stands at
 //     the band's CAP — the doom spell lives where the world is at its worst;
 //   · no spire shares a cell with any named place (a co-located spire would
 //     be shadowed by resolve_context's scan order), and the pick spreads:
 //     best-candidate sampling never stacks two spires side by side;
-//   · placement is a fact of (world seed, spell list): same seed reproduces
-//     the sites, another seed moves them;
+//   · placement is a fact of the world seed (the spell rows are compile-time
+//     constants): same seed reproduces the sites, another seed moves them;
 //   · a world with no admissible ground places NOTHING (negative control for
 //     the zone gate and the occupancy veto both).
 #include "check.h"
 
 #include "macro/landmark_registry.h"
 #include "macro/map_generator.h"
+#include "macro/spells.h"
 #include "macro/spires.h"
 #include "macro/state.h"
 #include "macro/zones.h"
 
 #include <algorithm>
-#include <array>
 #include <cstdint>
 #include <cstdlib>
 
@@ -72,11 +73,14 @@ GameState world(std::uint32_t seed) {
     return gs;
 }
 
-// The full tier ladder, one spell per tier (ordinals deliberately not 0-based
-// consecutive from tier, so spellId == ordinal is a real assertion).
-constexpr std::array<SpireSpellSpec, 5> kLadder{{
-    {7, 1}, {3, 2}, {11, 3}, {0, 4}, {5, 5},
-}};
+// The registry ordinal of the highest-tier spell — derived from the SAME
+// table the generator reads, never restated.
+int top_tier_ordinal() {
+    int best = 0;
+    for (int i = 1; i < kSpellCount; ++i)
+        if (kSpellDefs[i].tier > kSpellDefs[best].tier) best = i;
+    return best;
+}
 
 int torus_cheb(int ax, int ay, int bx, int by) {
     int dx = std::abs(ax - bx);
@@ -90,17 +94,16 @@ void test_one_spire_per_spell_in_the_band() {
     GameState gs = world(12345u);
     const TerrainData terrain = banded_terrain();
     const ZoneLayer zones = banded_zones();
-    generate_spires(gs, zones, terrain, kSea8,
-                    std::span<const SpireSpellSpec>(kLadder));
+    generate_spires(gs, zones, terrain, kSea8);
 
     const LandmarkDef& def = landmark_def(LandmarkType::Spire);
-    CHECK_OR_RETURN(gs.spires.size() == kLadder.size(),
+    CHECK_OR_RETURN(gs.spires.size() == std::size_t(kSpellCount),
                     "every learnable spell got its spire");
     for (std::size_t i = 0; i < gs.spires.size(); ++i) {
         const Spire& sp = gs.spires[i];
         CHECK(sp.id == int(i), "spire id is its list index");
-        CHECK(sp.spellId == kLadder[i].spellOrdinal,
-              "the spire carries its spell's registration ordinal");
+        CHECK(sp.spellId == std::uint32_t(i),
+              "the spire carries its spell's registry ordinal");
         CHECK(!sp.depleted, "a fresh spire holds its spell");
         CHECK(!terrain.is_water(sp.x, sp.y, kSea8), "a spire stands on land");
         CHECK(int(zones.at(sp.x, sp.y)) >= int(def.minZone),
@@ -108,8 +111,8 @@ void test_one_spire_per_spell_in_the_band() {
     }
     // The top-tier spell demands the band's cap (the table's maxZone), and
     // this world has free zone-9 ground, so no relaxation may kick in.
-    CHECK(int(zones.at(gs.spires.back().x, gs.spires.back().y))
-              == int(def.maxZone),
+    const Spire& doom = gs.spires[std::size_t(top_tier_ordinal())];
+    CHECK(int(zones.at(doom.x, doom.y)) == int(def.maxZone),
           "the top-tier spire stands at the band's cap");
     // Best-candidate spread: with the whole wild half free, spires never end
     // up stacked or adjacent (the veto alone only forbids the same cell).
@@ -126,16 +129,13 @@ void test_placement_is_a_fact_of_the_seed() {
     const TerrainData terrain = banded_terrain();
     const ZoneLayer zones = banded_zones();
     GameState a = world(12345u), b = world(12345u), c = world(777u);
-    generate_spires(a, zones, terrain, kSea8,
-                    std::span<const SpireSpellSpec>(kLadder));
-    generate_spires(b, zones, terrain, kSea8,
-                    std::span<const SpireSpellSpec>(kLadder));
-    generate_spires(c, zones, terrain, kSea8,
-                    std::span<const SpireSpellSpec>(kLadder));
+    generate_spires(a, zones, terrain, kSea8);
+    generate_spires(b, zones, terrain, kSea8);
+    generate_spires(c, zones, terrain, kSea8);
 
     CHECK_OR_RETURN(a.spires.size() == b.spires.size()
-                        && a.spires.size() == kLadder.size(),
-                    "both same-seed runs placed the full ladder");
+                        && a.spires.size() == std::size_t(kSpellCount),
+                    "both same-seed runs placed the full registry");
     bool identical = true;
     for (std::size_t i = 0; i < a.spires.size(); ++i)
         identical = identical && a.spires[i].x == b.spires[i].x
@@ -158,8 +158,7 @@ void test_no_admissible_ground_places_nothing() {
         tame.width = kW;
         tame.height = kH;
         tame.data.assign(std::size_t(kW * kH), 0);
-        generate_spires(gs, tame, terrain, kSea8,
-                        std::span<const SpireSpellSpec>(kLadder));
+        generate_spires(gs, tame, terrain, kSea8);
         CHECK(gs.spires.empty(), "no wild land = no spires");
     }
     // Negative control 2: an all-ocean world offers no site either.
@@ -169,19 +168,18 @@ void test_no_admissible_ground_places_nothing() {
         ocean.width = kW;
         ocean.height = kH;
         ocean.rgba.assign(std::size_t(kW * kH) * 4u, 0);
-        generate_spires(gs, banded_zones(), ocean, kSea8,
-                        std::span<const SpireSpellSpec>(kLadder));
+        generate_spires(gs, banded_zones(), ocean, kSea8);
         CHECK(gs.spires.empty(), "no land = no spires");
     }
 }
 
 void test_named_places_veto_their_cells() {
     // The only wild ground is a 16×16 block (zone 9 at x,y in [32,48)); the
-    // rest of the world is tame. With the block free the spire lands inside
-    // it; with a village on EVERY block cell the spire has nowhere to go —
-    // the occupancy veto is real. (A block, not a single cell: placement is
-    // candidate sampling, and one cell in 4096 is a needle the sampler is not
-    // promised to find.)
+    // rest of the world is tame. With the block free every registry spell's
+    // spire lands inside it; with a village on EVERY block cell the spires
+    // have nowhere to go — the occupancy veto is real. (A block, not a single
+    // cell: placement is candidate sampling, and one cell in 4096 is a needle
+    // the sampler is not promised to find.)
     const TerrainData terrain = banded_terrain();
     ZoneLayer pin;
     pin.width = kW;
@@ -190,17 +188,17 @@ void test_named_places_veto_their_cells() {
     for (int y = 32; y < 48; ++y)
         for (int x = 32; x < 48; ++x)
             pin.data[std::size_t(y) * kW + std::size_t(x)] = 9;
-    const std::array<SpireSpellSpec, 1> one{{{0, 5}}};
 
     {
         GameState gs = world(12345u);
-        generate_spires(gs, pin, terrain, kSea8,
-                        std::span<const SpireSpellSpec>(one));
-        CHECK_OR_RETURN(gs.spires.size() == 1,
-                        "the wild block hosts the spire");
-        CHECK(gs.spires[0].x >= 32 && gs.spires[0].x < 48
-                  && gs.spires[0].y >= 32 && gs.spires[0].y < 48,
-              "the spire stands inside the only admissible ground");
+        generate_spires(gs, pin, terrain, kSea8);
+        CHECK_OR_RETURN(gs.spires.size() == std::size_t(kSpellCount),
+                        "the wild block hosts every spire");
+        int inside = 0;
+        for (const auto& sp : gs.spires)
+            if (sp.x >= 32 && sp.x < 48 && sp.y >= 32 && sp.y < 48) ++inside;
+        CHECK(inside == kSpellCount,
+              "every spire stands inside the only admissible ground");
     }
     {
         GameState gs = world(12345u);
@@ -211,8 +209,7 @@ void test_named_places_veto_their_cells() {
                 v.y = y;
                 gs.villages.push_back(v);
             }
-        generate_spires(gs, pin, terrain, kSea8,
-                        std::span<const SpireSpellSpec>(one));
+        generate_spires(gs, pin, terrain, kSea8);
         CHECK(gs.spires.empty(),
               "named places on every admissible cell veto the spire");
     }

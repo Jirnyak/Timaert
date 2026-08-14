@@ -18,6 +18,7 @@
 #include "ecs/npc_character.h"
 #include "sub/height.h"
 #include "ecs/systems.h"
+#include "macro/spells.h"
 #include "macro/state.h"
 #include "macro/entry_context.h"
 #include "macro/npc.h"
@@ -1081,9 +1082,13 @@ CellContext SubworldEngine::resolve_context(int x, int y) const {
             if (sp.x == xi && sp.y == yi) {
                 c.landmarkSettlementId = sp.id;
                 // A spire's "size" IS its spell's tier — the strength column
-                // of this landmark. gen_spire stamps it into the gate's tag,
-                // which the tower reads as its storey count.
-                c.landmarkSize = int(sp.tier);
+                // of this landmark, asked from the spell registry by ordinal
+                // (Rule 13; a foreign ordinal degrades to tier 1, the same
+                // legal-tower rule dungeon_spire_tower_floors clamps by).
+                // gen_spire stamps it into the gate's tag, which the tower
+                // reads as its storey count.
+                c.landmarkSize = sp.spellId < std::uint32_t(kSpellCount)
+                                     ? kSpellDefs[sp.spellId].tier : 1;
                 c.landmarkKind = CellLandmarkKind::Spire;
                 c.landmarkDepleted = sp.depleted;
                 break;

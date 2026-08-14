@@ -1,7 +1,9 @@
 #include "events/effect_applicator.h"
 #include "macro/currency.h"
+#include "macro/spells.h"
 #include "events/event_log_util.h"
 #include <algorithm>
+#include <cstdio>
 
 namespace sm {
 
@@ -35,10 +37,33 @@ void apply_effect(PlayerState& p, const GameEvent& ev) {
 
 } // namespace
 
-void apply_events(std::span<const GameEvent> events, GameState& gs) {
+void apply_events(std::span<const GameEvent> events, GameState& gs,
+                  std::vector<GameEvent>* followups) {
     PlayerState& p = gs.player;
     for (auto& ev : events) {
         switch (ev.tag) {
+            case EventTag::SpireDepleted:
+                // The orb taught its spell: resolve the registry ordinal the
+                // engine emitted (ev.b) against kSpellDefs — the applicator
+                // may ask the registry itself now (Rule 13). Learn + journal
+                // only on FIRST learn; the SpellLearned announcement below is
+                // re-applied idempotently by this same switch.
+                if (ev.b < std::uint32_t(kSpellCount)) {
+                    const SpellDef& def = kSpellDefs[ev.b];
+                    if (spellbook_learn(p.spellBook, def.id)) {
+                        char msg[96];
+                        std::snprintf(msg, sizeof(msg),
+                                      "You have learned %s!", def.name);
+                        push_event_log(p, {LogType::World, msg,
+                                           gs.worldTime.day()});
+                        if (followups) {
+                            GameEvent learned{EventTag::SpellLearned};
+                            learned.s1 = def.id;
+                            followups->push_back(std::move(learned));
+                        }
+                    }
+                }
+                break;
             case EventTag::QuestComplete:
                 if (ev.b != kEventEffectAlreadyApplied) {
                     push_string(p.completedQuestIds, ev.s1);
@@ -93,8 +118,10 @@ void apply_events(std::span<const GameEvent> events, GameState& gs) {
     }
 }
 
-void apply_events(const std::vector<GameEvent>& events, GameState& gs) {
-    apply_events(std::span<const GameEvent>(events.data(), events.size()), gs);
+void apply_events(const std::vector<GameEvent>& events, GameState& gs,
+                  std::vector<GameEvent>* followups) {
+    apply_events(std::span<const GameEvent>(events.data(), events.size()), gs,
+                 followups);
 }
 
 } // namespace sm

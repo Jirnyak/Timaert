@@ -113,7 +113,11 @@ namespace sm {
 // v38: Spire carries its spell's tier — the spire's whole context (zone gate
 // at placement, tower storey count, guard site) derives from it, and the
 // subworld may not reach up into the spell registry to recompute it.
-constexpr int kSaveVersion = 38;
+// v39: the tier cache dies — the spell registry moved into the world layers
+// (macro/spells.h, ARCHITECTURE.md Rule 13), so every consumer derives tier
+// from spellId at the moment of reading. The save stops carrying a registry
+// number as cargo.
+constexpr int kSaveVersion = 39;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
@@ -160,12 +164,10 @@ struct Village {
 struct Spire {
     int id;
     int x, y;
-    std::uint32_t spellId; // kSpellDefs row ordinal (macro/spells.h, append-only)
-    // SpellDef.tier (1..5), captured at placement: the one difficulty context
-    // every downstream consumer reads (tower storeys = tier; the placement
-    // zone gate already spent it). Stored because the subworld layer may not
-    // reach up into content/ to re-derive it from spellId.
-    std::uint8_t tier = 1;
+    // kSpellDefs row ordinal (macro/spells.h, append-only). The spire's whole
+    // difficulty context — placement gate, tower storeys, guard site — is the
+    // spell's tier, derived from this ordinal at the moment of reading.
+    std::uint32_t spellId;
     bool depleted;
 };
 

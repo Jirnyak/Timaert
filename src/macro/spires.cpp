@@ -1,6 +1,7 @@
 #include "macro/spires.h"
 #include "macro/landmark_registry.h"
 #include "macro/map_generator.h"
+#include "macro/spells.h"
 #include "macro/state.h"
 #include "macro/zones.h"
 #include "core/rng.h"
@@ -43,8 +44,7 @@ bool cell_occupied(const GameState& gs, int x, int y) {
 } // namespace
 
 void generate_spires(GameState& gs, const ZoneLayer& zones,
-                     const TerrainData& terrain, std::uint8_t seaLevel8,
-                     std::span<const SpireSpellSpec> spells) {
+                     const TerrainData& terrain, std::uint8_t seaLevel8) {
     if (gs.mapW <= 0 || gs.mapH <= 0 || !terrain.has_rgba_storage()
         || !zones.has_data_storage()) {
         return;
@@ -53,15 +53,15 @@ void generate_spires(GameState& gs, const ZoneLayer& zones,
     // Own deterministic stream, distinct from the landmark-naming salt in
     // populate_landmarks_from_politik (0xC1A05E1D).
     Rng rng(gs.worldSeed ^ 0x59B12E50u);
-    gs.spires.reserve(gs.spires.size() + spells.size());
+    gs.spires.reserve(gs.spires.size() + std::size_t(kSpellCount));
 
-    for (const SpireSpellSpec& spec : spells) {
+    for (int ord = 0; ord < kSpellCount; ++ord) {
         // The tier walks the gate through the table's own band: tier 1 opens
         // at minZone ("Untamed"), tier 5 demands maxZone ("Hellgate") — the
         // spire of a doom spell stands where the world is at its worst, and
         // its garrison strength follows from the site's own spawn context,
         // not from any per-spire scaling.
-        const int tier = std::clamp(int(spec.tier), 1,
+        const int tier = std::clamp(kSpellDefs[ord].tier, 1,
                                     int(def.maxZone) - int(def.minZone) + 1);
         int bestX = -1, bestY = -1, bestScore = -1;
         int gate = std::min<int>(def.maxZone, int(def.minZone) + tier - 1);
@@ -92,17 +92,16 @@ void generate_spires(GameState& gs, const ZoneLayer& zones,
             // A world can genuinely lack admissible land (all-ocean or fully
             // civilized test maps). The spell is then not offered — say so.
             std::fprintf(stderr,
-                         "[worldgen] spire for spell ordinal %u: no admissible "
+                         "[worldgen] spire for spell ordinal %d: no admissible "
                          "site at any zone >= %d\n",
-                         spec.spellOrdinal, int(def.minZone));
+                         ord, int(def.minZone));
             continue;
         }
         Spire sp{};
         sp.id       = int(gs.spires.size());
         sp.x        = bestX;
         sp.y        = bestY;
-        sp.spellId  = spec.spellOrdinal;
-        sp.tier     = std::uint8_t(tier);
+        sp.spellId  = std::uint32_t(ord);
         sp.depleted = false;
         gs.spires.push_back(sp);
     }
