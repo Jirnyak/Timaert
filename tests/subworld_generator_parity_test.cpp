@@ -168,8 +168,8 @@ int main() {
     // Forest is a COUNT class now (macro/tree_layer.h): a massif-interior
     // count drives Forest mode, no feature byte involved.
     ctx.treeCount = kMaxTreesPerCell;
-    ctx.landmarkSettlementId = -1;
-    ctx.landmarkSize = 0;
+    ctx.landmark.id = -1;
+    ctx.landmark.size = 0;
     ctx.seed = 0x12345678u;
 
     float nbH[9];
@@ -238,9 +238,9 @@ int main() {
     grassTrail.macroHeight = 0.62f;
     grassTrail.biome = Meadow;
     grassTrail.feature = FT_None;
-    grassTrail.landmarkSettlementId = -1;
-    grassTrail.landmarkSize = 0;
-    grassTrail.landmarkKind = CellLandmarkKind::None;
+    grassTrail.landmark.id = -1;
+    grassTrail.landmark.size = 0;
+    grassTrail.landmark.kind = CellLandmarkKind::None;
     grassTrail.seed = 0x51525354u;
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
     nbF[3] = std::uint8_t(FT_Road);
@@ -281,9 +281,9 @@ int main() {
     swampTrail.macroHeight = 0.57f;
     swampTrail.biome = Swamp;
     swampTrail.feature = FT_None;
-    swampTrail.landmarkSettlementId = -1;
-    swampTrail.landmarkSize = 0;
-    swampTrail.landmarkKind = CellLandmarkKind::None;
+    swampTrail.landmark.id = -1;
+    swampTrail.landmark.size = 0;
+    swampTrail.landmark.kind = CellLandmarkKind::None;
     swampTrail.seed = 0x71727374u;
     fill_flat_neighbors(nbH, nbB, nbF, Swamp, FT_None);
     nbF[5] = std::uint8_t(FT_Road);
@@ -303,9 +303,9 @@ int main() {
     mountainTrail.macroHeight = 0.84f;
     mountainTrail.biome = Mountain;   // elevation-classified biome, not a feature
     mountainTrail.feature = FT_None;
-    mountainTrail.landmarkSettlementId = -1;
-    mountainTrail.landmarkSize = 0;
-    mountainTrail.landmarkKind = CellLandmarkKind::None;
+    mountainTrail.landmark.id = -1;
+    mountainTrail.landmark.size = 0;
+    mountainTrail.landmark.kind = CellLandmarkKind::None;
     mountainTrail.seed = 0x81828384u;
     fill_flat_neighbors(nbH, nbB, nbF, Mountain, FT_None);
     nbF[1] = std::uint8_t(FT_Road);
@@ -325,9 +325,9 @@ int main() {
     spire.macroHeight = 0.62f;
     spire.biome = Meadow;
     spire.feature = FT_None;
-    spire.landmarkSettlementId = 77;
-    spire.landmarkSize = 0;
-    spire.landmarkKind = CellLandmarkKind::Spire;
+    spire.landmark.id = 77;
+    spire.landmark.size = 0;
+    spire.landmark.kind = CellLandmarkKind::Spire;
     spire.seed = 0x2468ACE0u;
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
 
@@ -396,9 +396,9 @@ int main() {
     ruin.macroHeight = 0.62f;
     ruin.biome = Meadow;
     ruin.feature = FT_None;
-    ruin.landmarkSettlementId = 88;
-    ruin.landmarkSize = 4;
-    ruin.landmarkKind = CellLandmarkKind::Ruin;
+    ruin.landmark.id = 88;
+    ruin.landmark.size = 4;
+    ruin.landmark.kind = CellLandmarkKind::Ruin;
     ruin.seed = 0x13579BDFu;
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
 
@@ -450,9 +450,9 @@ int main() {
     city.macroHeight = 0.64f;
     city.biome = Meadow;
     city.feature = FT_None;
-    city.landmarkSettlementId = 101;
-    city.landmarkSize = 6000;
-    city.landmarkKind = CellLandmarkKind::City;
+    city.landmark.id = 101;
+    city.landmark.size = 6000;
+    city.landmark.kind = CellLandmarkKind::City;
     city.seed = 0x0BADF00Du;
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
 
@@ -518,9 +518,9 @@ int main() {
     village.macroHeight = 0.59f;
     village.biome = Meadow;
     village.feature = FT_None;
-    village.landmarkSettlementId = 202;
-    village.landmarkSize = 120;
-    village.landmarkKind = CellLandmarkKind::Village;
+    village.landmark.id = 202;
+    village.landmark.size = 120;
+    village.landmark.kind = CellLandmarkKind::Village;
     village.seed = 0x00C0FFEEu;
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
 
@@ -577,9 +577,9 @@ int main() {
     road.macroHeight = 0.35f;
     road.biome = Water;
     road.feature = FT_Road;
-    road.landmarkSettlementId = -1;
-    road.landmarkSize = 0;
-    road.landmarkKind = CellLandmarkKind::None;
+    road.landmark.id = -1;
+    road.landmark.size = 0;
+    road.landmark.kind = CellLandmarkKind::None;
     road.seed = 0x10203040u;
     fill_flat_neighbors(nbH, nbB, nbF, Water, FT_Road);
     nbF[3] = std::uint8_t(FT_Road);
@@ -664,9 +664,9 @@ int main() {
     grass.macroHeight = 0.62f;
     grass.biome = Meadow;
     grass.feature = FT_None;
-    grass.landmarkSettlementId = -1;
-    grass.landmarkSize = 0;
-    grass.landmarkKind = CellLandmarkKind::None;
+    grass.landmark.id = -1;
+    grass.landmark.size = 0;
+    grass.landmark.kind = CellLandmarkKind::None;
     grass.seed = 0xAABBCCDDu;
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
 
@@ -741,9 +741,9 @@ int main() {
     water.macroHeight = 0.28f;
     water.biome = Water;
     water.feature = FT_None;
-    water.landmarkSettlementId = -1;
-    water.landmarkSize = 0;
-    water.landmarkKind = CellLandmarkKind::None;
+    water.landmark.id = -1;
+    water.landmark.size = 0;
+    water.landmark.kind = CellLandmarkKind::None;
     water.seed = 0x31415926u;
     fill_flat_neighbors(nbH, nbB, nbF, Water, FT_None);
     for (float& h : nbH) h = water.macroHeight;
@@ -812,9 +812,9 @@ int main() {
     swamp.macroHeight = 0.56f;
     swamp.biome = Swamp;
     swamp.feature = FT_None;
-    swamp.landmarkSettlementId = -1;
-    swamp.landmarkSize = 0;
-    swamp.landmarkKind = CellLandmarkKind::None;
+    swamp.landmark.id = -1;
+    swamp.landmark.size = 0;
+    swamp.landmark.kind = CellLandmarkKind::None;
     swamp.seed = 0x27182818u;
     fill_flat_neighbors(nbH, nbB, nbF, Swamp, FT_None);
 
@@ -836,9 +836,9 @@ int main() {
     mountain.macroHeight = 0.84f;
     mountain.biome = Mountain;   // elevation-classified biome, not a feature
     mountain.feature = FT_None;
-    mountain.landmarkSettlementId = -1;
-    mountain.landmarkSize = 0;
-    mountain.landmarkKind = CellLandmarkKind::None;
+    mountain.landmark.id = -1;
+    mountain.landmark.size = 0;
+    mountain.landmark.kind = CellLandmarkKind::None;
     mountain.seed = 0x55667788u;
     fill_flat_neighbors(nbH, nbB, nbF, Mountain, FT_None);
 
@@ -869,9 +869,9 @@ int main() {
     field.macroHeight = 0.62f;
     field.biome = Meadow;
     field.feature = FT_Field;
-    field.landmarkSettlementId = -1;
-    field.landmarkSize = 0;
-    field.landmarkKind = CellLandmarkKind::None;
+    field.landmark.id = -1;
+    field.landmark.size = 0;
+    field.landmark.kind = CellLandmarkKind::None;
     field.seed = 0xf1e1d001u;
     field.treeCount = 64;
     field.fertility01 = 0.70f;

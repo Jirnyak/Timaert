@@ -96,6 +96,28 @@ struct DungeonRef {
     float footHy = 0.0f;
 };
 
+// The landmark standing on a cell — ONE payload, not a field per fact
+// (owner ruling 2026-08-14: at two tenants ad-hoc fields were fine, at five
+// they fold). A new landmark fact is a member here, not another CellContext
+// column.
+struct LandmarkContext {
+    CellLandmarkKind kind = CellLandmarkKind::None;
+    int  id   = -1;   // the landmark's id within its kind; -1 = none
+    // Strength/size in the landmark's own currency: a settlement's population,
+    // a spire's spell tier (asked from the spell registry at resolve).
+    int  size = 0;
+    // Owning kingdom (index into Politik::kingdoms; -1 = none / unowned). The
+    // subworld does not know what a kingdom IS — it carries the index so the
+    // engine can resolve the citizens' faction through the one macro resolver
+    // (faction_index_for_kingdom), instead of every settlement in the world
+    // fielding imperial guards.
+    int  kingdomIdx = -1;
+    // Consumed (today: a depleted spire — the orb is gone and its light with
+    // it). Generation reads it like any other context fact, so the scene
+    // truthfully shows what the macro world remembers.
+    bool depleted = false;
+};
+
 // CellContext — what the macroworld knows about a single cell.
 struct CellContext {
     int   cx, cy;
@@ -103,15 +125,7 @@ struct CellContext {
     float macroTemperature = 0.5f; // 0..1, used for TS tree species bands
     Biome biome;
     FeatureType feature;
-    int   landmarkSettlementId; // -1 = none
-    int   landmarkSize;         // population / strength
-    CellLandmarkKind landmarkKind = CellLandmarkKind::None;
-    // Owning kingdom of the landmark on this cell (index into Politik::kingdoms;
-    // -1 = none / unowned). The subworld does not know what a kingdom IS — it
-    // carries the index so the engine can resolve the citizens' faction through
-    // the one macro resolver (faction_index_for_kingdom), instead of every
-    // settlement in the world fielding imperial guards.
-    int   kingdomIdx = -1;
+    LandmarkContext landmark{};
     std::uint32_t seed;
     // Macro TreeLayer count for this cell (0..16384); -1 = unknown — the
     // generator re-derives it from biome/features (tests, bare resolvers).
@@ -135,22 +149,18 @@ struct CellContext {
     // The crop scatter plants its natural yield minus this, so returning to
     // a harvested field does NOT resurrect the wheat. 0 = unscarred.
     int cropHarvested = 0;
-    // A consumed landmark (today: a depleted spire — the orb is gone and its
-    // light with it). Generation reads it like any other context fact, so
-    // the scene truthfully shows what the macro world remembers.
-    bool landmarkDepleted = false;
     // Interior-scene door (see DungeonRef). kind == None for every real
     // macro cell; the engine's dungeon session is the only writer.
     DungeonRef dungeon{};
 };
 
 // The effective landmark of a cell for terrain purposes. A macro settlement
-// projects as a City cell even when landmarkKind is None (mirrors
-// resolve_mode's `landmarkSettlementId >= 0` branch) — one helper so terrain
+// projects as a City cell even when landmark.kind is None (mirrors
+// resolve_mode's `landmark.id >= 0` branch) — one helper so terrain
 // flattening and mode resolution can never disagree.
 inline CellLandmarkKind effective_landmark(const CellContext& ctx) {
-    if (ctx.landmarkKind != CellLandmarkKind::None) return ctx.landmarkKind;
-    if (ctx.landmarkSettlementId >= 0) return CellLandmarkKind::City;
+    if (ctx.landmark.kind != CellLandmarkKind::None) return ctx.landmark.kind;
+    if (ctx.landmark.id >= 0) return CellLandmarkKind::City;
     return CellLandmarkKind::None;
 }
 

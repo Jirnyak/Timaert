@@ -75,9 +75,9 @@ PadStat measure(int cx, int cy, std::uint32_t seed, int population,
     ctx.macroHeight = 0.72f;              // elevated -> real slope under the town
     ctx.biome = Meadow;
     ctx.feature = FT_None;
-    ctx.landmarkSettlementId = 55;
-    ctx.landmarkSize = population;
-    ctx.landmarkKind = kind;
+    ctx.landmark.id = 55;
+    ctx.landmark.size = population;
+    ctx.landmark.kind = kind;
     ctx.seed = seed;
 
     // Deliberately sloped neighbourhood so footprints land on a genuine incline

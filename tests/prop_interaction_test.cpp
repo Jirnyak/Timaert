@@ -81,9 +81,9 @@ CellContext make_city_ctx(std::uint32_t seed) {
     ctx.macroHeight = 0.64f;
     ctx.biome = Meadow;
     ctx.feature = FT_None;
-    ctx.landmarkSettlementId = 101;
-    ctx.landmarkSize = 2000;
-    ctx.landmarkKind = CellLandmarkKind::City;
+    ctx.landmark.id = 101;
+    ctx.landmark.size = 2000;
+    ctx.landmark.kind = CellLandmarkKind::City;
     ctx.seed = seed;
     return ctx;
 }
@@ -95,8 +95,8 @@ CellContext make_house_ctx(float footHx, float footHy, std::int8_t level) {
     ctx.macroHeight = 0.62f;
     ctx.biome = Meadow;
     ctx.feature = FT_None;
-    ctx.landmarkSettlementId = -1;
-    ctx.landmarkSize = 0;
+    ctx.landmark.id = -1;
+    ctx.landmark.size = 0;
     ctx.seed = 0xD00DCAFEu;
     ctx.dungeon.kind = DungeonRef::House;
     ctx.dungeon.level = level;

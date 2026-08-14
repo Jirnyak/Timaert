@@ -63,8 +63,8 @@ CellContext make_ctx(std::uint8_t kind, float footHx, float footHy) {
     ctx.macroHeight = 0.62f;
     ctx.biome = Meadow;
     ctx.feature = FT_None;
-    ctx.landmarkSettlementId = -1;
-    ctx.landmarkSize = 0;
+    ctx.landmark.id = -1;
+    ctx.landmark.size = 0;
     ctx.seed = 0xD00DCAFEu;
     ctx.dungeon.kind = kind;
     ctx.dungeon.level = 0;

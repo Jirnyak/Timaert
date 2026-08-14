@@ -82,9 +82,9 @@ sm::sub::CellContext meadow_cell(int cx, int cy) {
     c.macroHeight = 0.62f;
     c.biome = sm::Biome::Meadow;
     c.feature = sm::FT_None;
-    c.landmarkSettlementId = -1;
-    c.landmarkSize = 0;
-    c.landmarkKind = sm::sub::CellLandmarkKind::None;
+    c.landmark.id = -1;
+    c.landmark.size = 0;
+    c.landmark.kind = sm::sub::CellLandmarkKind::None;
     c.seed = 0x24680000u
         ^ (std::uint32_t(cx) * 73856093u)
         ^ (std::uint32_t(cy) * 19349663u);

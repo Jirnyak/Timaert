@@ -1051,46 +1051,46 @@ CellContext SubworldEngine::resolve_context(int x, int y) const {
         c.cropHarvested = resource_field_scar(*gs_, ResourceFieldId::Wheat,
                                               std::uint32_t(idx));
     }
-    c.landmarkSettlementId = -1;
-    c.landmarkSize = 0;
-    c.landmarkKind = CellLandmarkKind::None;
-    c.kingdomIdx = -1;
+    c.landmark.id = -1;
+    c.landmark.size = 0;
+    c.landmark.kind = CellLandmarkKind::None;
+    c.landmark.kingdomIdx = -1;
     // Linear scan is fine — settlements are a small set (< 100) and resolve is
     // called O(9) times per enter / re-centre.
     for (const auto& s : gs_->settlements) {
         if (s.x == xi && s.y == yi) {
-            c.landmarkSettlementId = s.id;
-            c.landmarkSize = s.population;
-            c.landmarkKind = CellLandmarkKind::City;
-            c.kingdomIdx = s.kingdomIdx;
+            c.landmark.id = s.id;
+            c.landmark.size = s.population;
+            c.landmark.kind = CellLandmarkKind::City;
+            c.landmark.kingdomIdx = s.kingdomIdx;
             break;
         }
     }
-    if (c.landmarkSettlementId < 0) {
+    if (c.landmark.id < 0) {
         for (const auto& v : gs_->villages) {
             if (v.x == xi && v.y == yi) {
-                c.landmarkSettlementId = v.id;
-                c.landmarkSize = v.population;
-                c.landmarkKind = CellLandmarkKind::Village;
-                c.kingdomIdx = v.kingdomIdx;
+                c.landmark.id = v.id;
+                c.landmark.size = v.population;
+                c.landmark.kind = CellLandmarkKind::Village;
+                c.landmark.kingdomIdx = v.kingdomIdx;
                 break;
             }
         }
     }
-    if (c.landmarkSettlementId < 0) {
+    if (c.landmark.id < 0) {
         for (const auto& sp : gs_->spires) {
             if (sp.x == xi && sp.y == yi) {
-                c.landmarkSettlementId = sp.id;
+                c.landmark.id = sp.id;
                 // A spire's "size" IS its spell's tier — the strength column
                 // of this landmark, asked from the spell registry by ordinal
                 // (Rule 13; a foreign ordinal degrades to tier 1, the same
                 // legal-tower rule dungeon_spire_tower_floors clamps by).
                 // gen_spire stamps it into the gate's tag, which the tower
                 // reads as its storey count.
-                c.landmarkSize = sp.spellId < std::uint32_t(kSpellCount)
+                c.landmark.size = sp.spellId < std::uint32_t(kSpellCount)
                                      ? kSpellDefs[sp.spellId].tier : 1;
-                c.landmarkKind = CellLandmarkKind::Spire;
-                c.landmarkDepleted = sp.depleted;
+                c.landmark.kind = CellLandmarkKind::Spire;
+                c.landmark.depleted = sp.depleted;
                 break;
             }
         }
@@ -1107,14 +1107,14 @@ namespace {
 // settlement id with no explicit kind is treated as a city (matches the old
 // centre-only path). Kept local — the only consumer is spawn_cell below.
 LandmarkKind to_landmark_kind(const CellContext& c) {
-    switch (c.landmarkKind) {
+    switch (c.landmark.kind) {
         case CellLandmarkKind::City:    return LandmarkKind::City;
         case CellLandmarkKind::Village: return LandmarkKind::Village;
         case CellLandmarkKind::Ruin:    return LandmarkKind::Ruin;
         case CellLandmarkKind::Spire:   return LandmarkKind::Spire;
         case CellLandmarkKind::None:    break;
     }
-    return c.landmarkSettlementId >= 0 ? LandmarkKind::City : LandmarkKind::None;
+    return c.landmark.id >= 0 ? LandmarkKind::City : LandmarkKind::None;
 }
 } // namespace
 
@@ -1140,7 +1140,7 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
     // HERE, where the GameState is, and handed to the spawner as a plain index
     // so sub/spawn.cpp stays free of macro state (macro/politik.h owns the rule).
     const std::uint16_t settlementFaction =
-        faction_index_for_kingdom(gs_->politik, ctx.kingdomIdx);
+        faction_index_for_kingdom(gs_->politik, ctx.landmark.kingdomIdx);
     // The wild headcount standing on this cell — the honest CAP on how many
     // creatures embody (macro/macro_stock.h fauna row: spawn-table capacity
     // minus what the hunt has taken). Asked HERE, where the GameState is,
@@ -1150,12 +1150,12 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
         faunaWorld, MacroStock::FaunaCount,
         MacroStockKey{-1, std::int16_t(wcx), std::int16_t(wcy)});
     spawn_cell_npcs(*ecs_, ctx.biome, ctx.treeCount, to_landmark_kind(ctx), mgr_,
-                    ox, oy, ctx.seed, settlementFaction, ctx.landmarkSize,
+                    ox, oy, ctx.seed, settlementFaction, ctx.landmark.size,
                     zoneLevel,
                     // The macro stock these citizens are borrowed from: this
                     // cell's named place. Killing one of them pays the map back
                     // (macro/macro_stock.h) instead of vanishing without trace.
-                    ctx.landmarkSettlementId, wcx, wcy, faunaCount);
+                    ctx.landmark.id, wcx, wcy, faunaCount);
 }
 
 // Clean fill of all nine window cells — enter() / fresh scene. The player's
@@ -2708,11 +2708,11 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
     ses.floorHeight = doorCtx.macroHeight;
     // Settlement context for the interior's own population — the same
     // numbers the street spawner reads (spawn_cell), captured once here.
-    ses.settlementId = doorCtx.landmarkSettlementId;
-    ses.landmarkPop = doorCtx.landmarkSize;
+    ses.settlementId = doorCtx.landmark.id;
+    ses.landmarkPop = doorCtx.landmark.size;
     ses.zoneLevel = (zones_ && !zones_->data.empty())
         ? int(zones_->at(doorCx, doorCy)) : 0;
-    ses.faction = faction_index_for_kingdom(gs_->politik, doorCtx.kingdomIdx);
+    ses.faction = faction_index_for_kingdom(gs_->politik, doorCtx.landmark.kingdomIdx);
     ses.arrival = DungeonArrival::Door;   // in off the street
 
     // Tear the overworld session down through the one ordinary door: leave()
@@ -2760,9 +2760,9 @@ void SubworldEngine::enter_dungeon_scene(GameState& gs,
         ctx.macroHeight = ses.floorHeight;
         ctx.biome = Biome::Mountain; // masonry/rock material ring underfoot
         ctx.feature = FT_None;
-        ctx.landmarkSettlementId = -1;
-        ctx.landmarkSize = 0;
-        ctx.kingdomIdx = -1;
+        ctx.landmark.id = -1;
+        ctx.landmark.size = 0;
+        ctx.landmark.kingdomIdx = -1;
         ctx.worldSeed = worldSeed;
         const bool centre = (x == ses.doorCx && y == ses.doorCy);
         ctx.dungeon = centre
@@ -2980,11 +2980,11 @@ bool SubworldEngine::read_sign() {
     const CellContext ctx = resolve_context(mgr_.center_cx(), mgr_.center_cy());
     const char* place = nullptr;
     for (const auto& s : gs_->settlements) {
-        if (s.id == ctx.landmarkSettlementId) { place = s.name.c_str(); break; }
+        if (s.id == ctx.landmark.id) { place = s.name.c_str(); break; }
     }
     if (!place) {
         for (const auto& v : gs_->villages) {
-            if (v.id == ctx.landmarkSettlementId) {
+            if (v.id == ctx.landmark.id) {
                 place = v.name.c_str();
                 break;
             }

@@ -63,14 +63,14 @@ sm::sub::CellResolver settlement_resolver(sm::sub::CellLandmarkKind kind,
         c.macroTemperature = 0.5f;
         c.biome = sm::Biome::Meadow;
         c.feature = sm::FT_None;
-        c.landmarkSettlementId = -1;
-        c.landmarkSize = 0;
-        c.landmarkKind = sm::sub::CellLandmarkKind::None;
+        c.landmark.id = -1;
+        c.landmark.size = 0;
+        c.landmark.kind = sm::sub::CellLandmarkKind::None;
         c.treeCount = 0;
         if (cx == 0 && cy == 0) {
-            c.landmarkSettlementId = 7;
-            c.landmarkSize = pop;
-            c.landmarkKind = kind;
+            c.landmark.id = 7;
+            c.landmark.size = pop;
+            c.landmark.kind = kind;
         }
         c.seed = 0x5E771EDu ^ (std::uint32_t(cx) * 73856093u)
                             ^ (std::uint32_t(cy) * 19349663u);

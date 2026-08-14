@@ -42,14 +42,14 @@ SubworldMode resolve_mode(const CellContext& ctx) {
     // BEHIND a door, not the land the door stands on (sub/dgn/).
     if (ctx.dungeon.kind != DungeonRef::None) return SubworldMode::Dungeon;
     const FeatureType feature = FeatureLayer::decode(std::uint8_t(ctx.feature));
-    switch (ctx.landmarkKind) {
+    switch (ctx.landmark.kind) {
         case CellLandmarkKind::City:    return SubworldMode::City;
         case CellLandmarkKind::Village: return SubworldMode::Village;
         case CellLandmarkKind::Ruin:    return SubworldMode::Ruin;
         case CellLandmarkKind::Spire:   return SubworldMode::Spire;
         case CellLandmarkKind::None:    break;
     }
-    if (ctx.landmarkSettlementId >= 0) return SubworldMode::City;
+    if (ctx.landmark.id >= 0) return SubworldMode::City;
     // Features come before the biome base: what men built on the cell decides
     // what the cell IS underfoot, then the biome fills in the terrain, then
     // trees compose on top (a forested peak is a Mountain cell with scattered
@@ -1152,7 +1152,7 @@ static void gen_city(const CellContext& ctx, const Biome nbBiome[9],
 
     Rng r(ctx.seed ^ 0xC1C1C1u);
     int center = kCellSize / 2;
-    const int population = std::max(50, ctx.landmarkSize);
+    const int population = std::max(50, ctx.landmark.size);
     // Footprint from the one settlement-layout authority (sub/city_layout.h) —
     // the same call the citizen populator makes, so walls and people can never
     // describe different towns.
@@ -1252,7 +1252,7 @@ static void gen_village(const CellContext& ctx, const Biome nbBiome[9],
     clear_decor_tiles(out);
     Rng r(ctx.seed ^ 0xABCDEFu);
     int center = kCellSize / 2;
-    const int population = std::max(10, ctx.landmarkSize);
+    const int population = std::max(10, ctx.landmark.size);
     const RoadAxisSet axes = settlement_road_axes(nbFeature);
     carve_settlement_main_roads(out, ctx, axes, center, ctx.seed ^ 0xA115EEDu);
     const int squareSize = 3 + int(r.next_u32() % 4u);
@@ -1480,7 +1480,7 @@ static void gen_spire(const CellContext& ctx, const Biome nbBiome[9],
     }
     // The gate on the south face — the CaveMouth pattern: a Door-verb prop
     // whose row opens the tower's own interior. tag carries the spell's
-    // tier (resolve_context stamps it into landmarkSize for spire cells),
+    // tier (resolve_context stamps it into landmark.size for spire cells),
     // which the dungeon reads as its storey count (DungeonRef::ordinal).
     {
         Structure gate{};
@@ -1491,14 +1491,14 @@ static void gen_spire(const CellContext& ctx, const Biome nbBiome[9],
         gate.hy = structure_min_half_xy(Structure::SpireGate);
         gate.radius = std::max(gate.hx, gate.hy);
         gate.height = structure_min_height(Structure::SpireGate);
-        gate.tag = std::uint16_t(std::clamp(ctx.landmarkSize, 1, 5));
+        gate.tag = std::uint16_t(std::clamp(ctx.landmark.size, 1, 5));
         out.structures.push_back(gate);
     }
     // The prize on the crown: the orb, seated on the tower top (zBase = the
     // shared tower height) — visible from the ground as a blue star, reached
     // through the climb. A CONSUMED spire raises no orb: the scene shows
-    // what the macro world remembers (ctx.landmarkDepleted).
-    if (!ctx.landmarkDepleted) {
+    // what the macro world remembers (ctx.landmark.depleted).
+    if (!ctx.landmark.depleted) {
         Structure orb{};
         orb.kind = Structure::SpireOrb;
         orb.shape = Structure::Cylinder;
@@ -1625,7 +1625,7 @@ static void gen_ruin(const CellContext& ctx, const Biome nbBiome[9],
     const RoadDirSet dirs = connected_road_dirs(nbFeature);
     carve_landmark_anchor_roads(out, ctx, dirs, center, ctx.seed ^ 0xA8A1EADu);
 
-    const int difficulty = std::max(1, ctx.landmarkSize);
+    const int difficulty = std::max(1, ctx.landmark.size);
     const int rings = std::max(1, std::min(3, (difficulty + 2) / 3));
     for (int ring = 0; ring < rings; ++ring) {
         const float radius = float(kCellSize) * (0.12f + float(ring) * 0.10f);

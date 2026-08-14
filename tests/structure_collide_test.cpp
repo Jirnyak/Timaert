@@ -174,9 +174,9 @@ void part_b_generated_city() {
     city.macroHeight = 0.64f;
     city.biome = Meadow;
     city.feature = FT_None;
-    city.landmarkSettlementId = 101;
-    city.landmarkSize = 6000;
-    city.landmarkKind = CellLandmarkKind::City;
+    city.landmark.id = 101;
+    city.landmark.size = 6000;
+    city.landmark.kind = CellLandmarkKind::City;
     city.seed = 0x0BADF00Du;
     city.treeCount = 0;
 

@@ -843,9 +843,9 @@ namespace sm::ui
             ctx.macroHeight = 0.55f;
             ctx.biome = Meadow;
             ctx.feature = FT_None;
-            ctx.landmarkSettlementId = s.id;
-            ctx.landmarkSize = s.population;
-            ctx.landmarkKind = sub::CellLandmarkKind::City;
+            ctx.landmark.id = s.id;
+            ctx.landmark.size = s.population;
+            ctx.landmark.kind = sub::CellLandmarkKind::City;
             ctx.seed = previewSeed;
 
             float nbHeights[9]{};

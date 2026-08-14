@@ -72,8 +72,8 @@ CellContext make_cave_ctx(std::uint32_t seed) {
     ctx.macroHeight = 0.62f;
     ctx.biome = Mountain;
     ctx.feature = FT_None;
-    ctx.landmarkSettlementId = -1;
-    ctx.landmarkSize = 0;
+    ctx.landmark.id = -1;
+    ctx.landmark.size = 0;
     ctx.seed = seed;
     ctx.dungeon.kind = DungeonRef::Cave;
     ctx.dungeon.level = 0;

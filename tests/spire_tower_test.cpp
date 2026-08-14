@@ -49,8 +49,8 @@ CellContext make_ctx(int tier, int level) {
     ctx.macroHeight = 0.58f;
     ctx.biome = Meadow;
     ctx.feature = FT_None;
-    ctx.landmarkSettlementId = -1;
-    ctx.landmarkSize = 0;
+    ctx.landmark.id = -1;
+    ctx.landmark.size = 0;
     ctx.seed = 0x5B12E7EAu;
     ctx.worldSeed = 0xC0FFEE11u;
     ctx.dungeon.kind = DungeonRef::SpireTower;
