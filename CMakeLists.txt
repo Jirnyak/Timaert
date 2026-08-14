@@ -390,7 +390,15 @@ timaert_test(save_roundtrip_test
         src/macro/save.cpp
         # wallet math reads the item catalog (currency.h).
         src/macro/items.cpp
+        # the fixture builds a real knowledge grid (v40) via knowledge_reset.
+        src/macro/knowledge.cpp
     LINK_SDL LINK_ENTT)
+
+# Sight-as-light: the knowledge layer's law (Unknown/Explored/Visible, decay,
+# reveal) over the shared optical sweep — relations against the cost table.
+timaert_test(knowledge_test
+    SOURCES
+        src/macro/knowledge.cpp)
 
 timaert_test(macro_snapshot_test
     SOURCES

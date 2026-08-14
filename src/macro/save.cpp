@@ -991,6 +991,16 @@ void write_payload(Writer& w, const GameState& s,
         for (const std::uint16_t c : treeCounts) w.pod(c);
     }
 
+    // v40: the player's map knowledge WHOLE, one byte per cell. Visible (2)
+    // is a session projection of where the player stands — it decays to
+    // Explored on write, and a load recomputes sight from the restored
+    // position. Cell order IS the byte order — deterministic by construction.
+    if (w.count(s.knowledge.data.size(), kMaxTreeGridCells)) {
+        for (const std::uint8_t v : s.knowledge.data)
+            w.pod(std::uint8_t(v >= kKnowledgeExplored ? kKnowledgeExplored
+                                                       : kKnowledgeUnknown));
+    }
+
     // v37: the deposit cells WHOLE, one block per kind in DepositKind order
     // — carrier rows, same ruling as the tree grid. Sorted by cell index:
     // the map's iteration order is unspecified and the payload is
@@ -1119,6 +1129,32 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
     treeCounts.clear();
     treeCounts.resize(n);
     for (std::uint32_t i = 0; i < n && r.ok; ++i) r.pod(treeCounts[i]);
+
+    // v40: the knowledge grid. Zero cells means the layer was never built (a
+    // partial state some tests save) — the world simply stays dark, because
+    // an absent grid answers Unknown (fail closed). A NON-zero count must
+    // cover the loaded map exactly or the payload is corrupt. Bytes are
+    // clamped into the persistent alphabet {Unknown, Explored}; sight (2) is
+    // recomputed after the load, never trusted from disk.
+    if (!read_count(r, n, kMaxTreeGridCells)) return;
+    if (n > 0) {
+        std::size_t expected = 0;
+        if (!FeatureLayer::cell_count_for(s.mapW, s.mapH, expected)
+            || std::size_t(n) != expected) {
+            r.ok = false;
+            return;
+        }
+        s.knowledge.width = s.mapW;
+        s.knowledge.height = s.mapH;
+        s.knowledge.data.assign(expected, kKnowledgeUnknown);
+        for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+            std::uint8_t v = 0;
+            r.pod(v);
+            s.knowledge.data[i] = v >= kKnowledgeExplored ? kKnowledgeExplored
+                                                          : kKnowledgeUnknown;
+        }
+        ++s.knowledge.revision;
+    }
 
     // v37: the deposit cells, one block per kind (see the write side).
     for (std::size_t k = 0; k < std::size_t(kDepositKindCount); ++k) {

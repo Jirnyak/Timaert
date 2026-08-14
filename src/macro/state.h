@@ -16,6 +16,7 @@
 #include "macro/npc.h"
 #include "macro/economy.h"
 #include "macro/politik.h"
+#include "macro/knowledge.h"
 #include "macro/markers.h"
 #include "macro/spell_book_state.h"
 #include "macro/map_generator.h"
@@ -117,7 +118,13 @@ namespace sm {
 // (macro/spells.h, ARCHITECTURE.md Rule 13), so every consumer derives tier
 // from spellId at the moment of reading. The save stops carrying a registry
 // number as cargo.
-constexpr int kSaveVersion = 39;
+// v40: the player's knowledge of the map (macro/knowledge.h) — the explored
+// grid rides the save whole, one byte per cell. Visible (2) is a session
+// projection of where the player stands and decays to Explored (1) on write;
+// a load recomputes sight from the restored position. Terra incognita became
+// a fact of the world, so a v39 save — a world the player "knew" entirely —
+// no longer describes one.
+constexpr int kSaveVersion = 40;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
@@ -309,6 +316,10 @@ struct GameState {
     std::vector<Village>    villages;
     std::vector<Spire>      spires;
     std::vector<Marker>     markers;
+    // The player's map knowledge (v40): Unknown / Explored / Visible per cell.
+    // Explored persists; Visible is re-derived from the player's position
+    // (update_player_sight) — save.cpp clamps it away on write.
+    KnowledgeLayer knowledge;
     std::unordered_map<std::string, Faction> factions;
 
     Politik politik;

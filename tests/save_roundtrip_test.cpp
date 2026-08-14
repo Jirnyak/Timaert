@@ -194,6 +194,14 @@ sm::GameState make_state() {
     gs.mapParams.heightScale = 1.25f;
     gs.mapParams.moistureScale = 0.75f;
     gs.cityCountTarget = 77;
+    // The knowledge grid (v40): a real world always covers the map (the
+    // reader rejects any other non-zero size). Explored cells prove the
+    // memory persists; the Visible one proves the write-side clamp — sight
+    // is a projection of where the player stands, never save cargo.
+    sm::knowledge_reset(gs.knowledge, gs.mapW, gs.mapH);
+    gs.knowledge.data[0] = sm::kKnowledgeExplored;
+    gs.knowledge.data[777] = sm::kKnowledgeExplored;
+    gs.knowledge.data[1234] = sm::kKnowledgeVisible;
     // Deliberately NOT on a minute boundary: the clock is one integer now, so
     // a save states the instant to the tick, not to the nearest minute.
     gs.worldTime = sm::world_time_at(12, 13, 14);
@@ -584,6 +592,24 @@ void run_roundtrip() {
         || loaded.logicNodesActive.size() != 1
         || loaded.logicNodesActive[0] != "plot_chapter_1") {
         FAIL_BAIL("story progress (logic nodes) lost");
+    }
+
+    // ── The knowledge grid (v40) ──────────────────────────────────────────
+    if (loaded.knowledge.width != loaded.mapW
+        || loaded.knowledge.height != loaded.mapH
+        || !loaded.knowledge.has_complete_storage()) {
+        FAIL_BAIL("knowledge grid does not cover the loaded map");
+    }
+    if (loaded.knowledge.data[0] != sm::kKnowledgeExplored
+        || loaded.knowledge.data[777] != sm::kKnowledgeExplored) {
+        FAIL_BAIL("explored cells (the player's memory) lost");
+    }
+    if (loaded.knowledge.data[1234] != sm::kKnowledgeExplored) {
+        FAIL_BAIL("Visible must decay to Explored across a save - sight is a "
+                  "projection, not cargo");
+    }
+    if (loaded.knowledge.data[42] != sm::kKnowledgeUnknown) {
+        FAIL_BAIL("an unvisited cell invented knowledge across the save");
     }
 
     // ── The macro-ECS snapshot (v23) round-trips record-for-record ────────

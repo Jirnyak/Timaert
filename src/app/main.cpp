@@ -32,6 +32,7 @@
 #include "events/quests/quest_engine.h"
 #include "macro/state.h"
 #include "macro/character_sheet.h"
+#include "macro/knowledge.h"
 #include "macro/map_generator.h"
 #include "macro/settlement_score.h"
 #include "macro/spawners.h"
@@ -65,6 +66,8 @@
 #include "content/quests/procedural.h"
 #include "sub/engine.h"
 #include "sub/dgn/dispatch.h"
+#include "sub/height.h"
+#include "sub/map_data.h"
 #include "sub/map_factory.h"
 #include "sub/tree_atlas.h"
 #include "macro/fauna.h"
@@ -343,6 +346,21 @@ struct App {
     // Derived mineral deposits (macro/deposit_layer.h, W2a); mutations
     // persist as gs.depositOverrides.
     sm::DepositLayer     deposits;
+    // The player's sight session state (macro/knowledge.h): the current
+    // Visible set + the sweep scratch. The persistent grid lives on
+    // gs.knowledge; this half is exactly what a load must NOT keep.
+    sm::SightRuntime     sightRt;
+    // Cached float views of the optical world — heights from the terrain R
+    // channel, tree density from the live tree layer — shared by the
+    // night-glow bake and the player-sight sweep (ONE physics, one cache).
+    // Rebuilt only when the tree revision moves: a chop changes what both
+    // light and sight can pass; terrain is boot-static.
+    struct OpticalCache {
+        std::vector<float> heights, treeDensity;
+        std::uint32_t treeRev = std::uint32_t(-1);
+        int w = 0, h = 0;
+    };
+    OpticalCache         optical;
     sm::MacroRendererVk  macro;
     // Set when the daily world sim changes glow-driving state (populations, and
     // any future opt-in emitter) so the night-light field can be re-baked. Set
@@ -1626,6 +1644,11 @@ void destroy_world(App& app) {
     app.availableSettlementQuests.clear();
     app.availableQuestSettlementId = -1;
     app.availableQuestDay = -1;
+    // Sight is a projection of a world that is about to die: the Visible-cell
+    // list and the last-cell anchor must not survive into the next one (the
+    // invalid anchor is what forces the first sweep of a fresh boot or load).
+    app.sightRt = sm::SightRuntime{};
+    app.optical = App::OpticalCache{};
     if (!app.worldLoaded) return;
     sm::destroy_terrain(app.terrain);
     app.terrain = {};
@@ -1698,42 +1721,72 @@ void open_load_screen(App& app) {
     app.state = sm::ui::AppState::Load;
 }
 
+// The optical world the night-glow bake and the player's sight both read —
+// ONE payload (macro/optics.h), assembled from App's cache. Heights come from
+// the terrain R channel (the elevation term that walls glow and sight off
+// behind ridges); tree density from the live tree layer (a felled forest lets
+// more of both through on the next refresh). Rebuilt only when the tree
+// revision moves — the cheap per-call check is two integer compares.
+sm::OpticalWorld optical_world(App& app) {
+    auto& oc = app.optical;
+    if (oc.w != app.gs.mapW || oc.h != app.gs.mapH
+        || oc.treeRev != app.treeLayer.revision) {
+        oc.w = app.gs.mapW;
+        oc.h = app.gs.mapH;
+        oc.treeRev = app.treeLayer.revision;
+        const std::size_t cells =
+            std::size_t(app.gs.mapW) * std::size_t(app.gs.mapH);
+        oc.heights.clear();
+        if (app.terrain.width == app.gs.mapW
+            && app.terrain.height == app.gs.mapH
+            && app.terrain.rgba.size() >= cells * 4u) {
+            oc.heights.resize(cells);
+            for (std::size_t i = 0; i < cells; ++i)
+                oc.heights[i] = float(app.terrain.rgba[i * 4u]) / 255.0f;
+        }
+        oc.treeDensity.clear();
+        if (app.treeLayer.has_complete_storage()
+            && app.treeLayer.width == app.gs.mapW
+            && app.treeLayer.height == app.gs.mapH) {
+            oc.treeDensity.resize(cells);
+            for (std::size_t i = 0; i < cells; ++i)
+                oc.treeDensity[i] = float(app.treeLayer.data[i])
+                                  / float(sm::kMaxTreesPerCell);
+        }
+    }
+    sm::OpticalWorld world{};
+    world.features = &app.features;
+    world.heights = oc.heights.empty() ? nullptr : &oc.heights;
+    world.treeDensity = oc.treeDensity.empty() ? nullptr : &oc.treeDensity;
+    return world;
+}
+
+// THE sight-budget door: how much open ground the player's eye can spend per
+// sweep (macro/knowledge.h update_player_sight). Derived, not tuned — a
+// standing eye at sub::kBodyEyeM metres sees to the horizon of an Earth-sized
+// world, d = √(2·R·h) ≈ 4.7 km, and a macro cell is sub::kCellSize (1024)
+// tiles = metres across, so ≈ 4.6 cells of open land — less through canopy,
+// nothing past a ridge (optics.h spends the same budget faster there).
+// Attributes and skills will MULTIPLY here when the RPG track lands: one
+// door, one number, every consumer downstream of it.
+float player_sight_budget_cells() {
+    constexpr float kEarthRadiusM = 6.371e6f;
+    return std::sqrt(2.0f * kEarthRadiusM * sm::sub::kBodyEyeM)
+         / float(sm::sub::kCellSize);
+}
+
 // Bake the macroworld night-light field from the CURRENT world state: enumerate
 // every emitting landmark (settlements/villages/active spires + any future
 // opt-in POI) and rasterise the terrain-occluded glow the macro shader adds at
 // night. The single source of truth for the bake — shared by the boot path and
-// every mid-session refresh so the two can never drift apart. Feature layer is
-// passed so glow propagates through terrain (open land carries it far, forest
-// dims it, mountains wall it off — increment B).
-void bake_macro_light_field(const App& app, std::vector<std::uint8_t>& out) {
+// every mid-session refresh so the two can never drift apart. The optical
+// world is passed so glow propagates through terrain (open land carries it
+// far, forest dims it, mountains wall it off — increments B/C).
+void bake_macro_light_field(App& app, std::vector<std::uint8_t>& out) {
     std::vector<sm::MacroLight> lights = sm::collect_macro_lights(app.gs);
-    // Per-cell normalized heights (terrain R channel) so the bake's elevation
-    // term can wall glow off behind ridges — bare massifs occlude again
-    // (increment C; mountains are a biome, not a feature byte).
-    std::vector<float> heights;
-    const std::size_t cells =
-        std::size_t(app.gs.mapW) * std::size_t(app.gs.mapH);
-    if (app.terrain.width == app.gs.mapW
-        && app.terrain.height == app.gs.mapH
-        && app.terrain.rgba.size() >= cells * 4u) {
-        heights.resize(cells);
-        for (std::size_t i = 0; i < cells; ++i)
-            heights[i] = float(app.terrain.rgba[i * 4u]) / 255.0f;
-    }
-    // Canopy occlusion reads the live tree-count layer (0..1 density), so a
-    // felled forest lets more glow through on the next rebake.
-    std::vector<float> treeDensity;
-    if (app.treeLayer.has_complete_storage()
-        && app.treeLayer.width == app.gs.mapW
-        && app.treeLayer.height == app.gs.mapH) {
-        treeDensity.resize(app.treeLayer.cell_count());
-        for (std::size_t i = 0; i < treeDensity.size(); ++i)
-            treeDensity[i] = float(app.treeLayer.data[i])
-                           / float(sm::kMaxTreesPerCell);
-    }
-    sm::bake_light_field(app.gs.mapW, app.gs.mapH, lights, out, &app.features,
-                         heights.empty() ? nullptr : &heights,
-                         treeDensity.empty() ? nullptr : &treeDensity);
+    const sm::OpticalWorld world = optical_world(app);
+    sm::bake_light_field(app.gs.mapW, app.gs.mapH, lights, out, world.features,
+                         world.heights, world.treeDensity);
 }
 
 // Re-bake the light field and hand ONLY the new field to the renderer (surgical
@@ -1774,6 +1827,10 @@ void boot_world(App& app, std::uint32_t seed,
     lp.seed = float(seed % 100000u);
     app.gs = sm::default_game_state(seed, mapW, mapH, lp, targetTotalCities);
     boot_trace("default game state");
+    // A new world starts DARK (v40): all-Unknown knowledge. The spawn's
+    // surroundings open by the ordinary sight law — the first frame's sweep
+    // from the player's cell — not by a special starting reveal.
+    sm::knowledge_reset(app.gs.knowledge, app.gs.mapW, app.gs.mapH);
     sm::reset_world_tick_runtime(app.gs.worldTickRt, seed);
     sm::reset_player_recovery(app.playerRecovery);
     app.travelStamina = sm::TravelStamina{};
@@ -2154,6 +2211,10 @@ bool boot_world_from_save(App& app, const std::string& path) {
     app.gs.villages          = std::move(fresh.villages);
     app.gs.spires            = std::move(fresh.spires);
     app.gs.markers           = std::move(fresh.markers);
+    // The explored map (v40). Visible cells were clamped away on write; the
+    // first sight sweep after this load re-opens them from the restored
+    // position (destroy_world invalidated the sight anchor).
+    app.gs.knowledge         = std::move(fresh.knowledge);
     app.gs.factions          = std::move(fresh.factions);
     app.gs.subState          = std::move(fresh.subState);
     app.gs.deserterPool      = fresh.deserterPool;
@@ -3371,6 +3432,16 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     constexpr float dt = sm::kStepSeconds;
     RuntimeFrameStats stats{};
     if (app.state != sm::ui::AppState::Playing || !app.worldLoaded) return stats;
+
+    // The player's sight follows their CELL, not the frame: this call is one
+    // integer compare until they cross a cell border, then one bounded optical
+    // sweep (macro/knowledge.h). Above the pause gate on purpose — a fresh
+    // boot or load runs its first sweep here (the sight anchor starts invalid)
+    // even while a panel holds the world still, so the map is never blank
+    // around a player who has not yet unpaused.
+    sm::update_player_sight(app.gs.knowledge, app.sightRt, optical_world(app),
+                            app.gs.player.x, app.gs.player.y,
+                            player_sight_budget_cells());
 
     // THE pause, asked once, for whichever world is on screen. Everything below
     // this line is simulation — the clock, the daily sim, NPC AI, recovery, the
