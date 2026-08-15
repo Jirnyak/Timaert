@@ -24,6 +24,7 @@ layout(push_constant) uniform Push {
     float timeOfDay; // 0..1
     float nightDarken; // 0..1 night strength (TS GameScreen curve)
     float elapsed;   // real seconds — drives haze flow / water shimmer
+    float mapStyle;  // 0 = the living world; 1 = the CHART (map page document)
 } pc;
 
 layout(location = 0) out vec4 outColor;
@@ -899,6 +900,59 @@ vec3 mountainOverlay(vec2 worldPx, vec3 col) {
     return mix(col, relief, covA);                          // covA = crisp alpha
 }
 
+// ── The CHART (pc.mapStyle) — the map page's DOCUMENT rendering ─────────────
+// The map is an IMAGE of the world, not the world (owner ruling 2026-08-15):
+// flat atlas colours per biome, a water depth ramp, one thin inked coastline
+// iso-line, ink-stroked roads, a FIXED north-west cartographic hillshade —
+// and none of the living layers: no clock, no night, no glints, no motion.
+// The knowledge law collapses to two states here: a chart shows what has been
+// CHARTED (Explored and Visible draw the same), and black where nothing has.
+vec3 chartCompose(vec2 worldPx, vec2 mapUV) {
+    vec2 cell = floor(worldPx);
+    vec4 m = texture(u_master, mapUV);
+    vec3 col;
+    if (m.a < 0.5 || m.r < pc.seaLevel) {
+        // Water — depth ramp (the old minimap's exact shading, full-res now).
+        float depth = clamp(1.0 - m.r / max(pc.seaLevel, 1e-4), 0.0, 1.0);
+        col = vec3(0.10, 0.20, 0.40) + vec3(0.08, 0.20, 0.20) * (1.0 - depth);
+    } else {
+        int b = bt_biome(cell);
+        col = bt_baseColor(b);
+        // Altitude shade (same ramp the minimap used) + a whisper of paper
+        // grain so flat fields read as print, not as vector fill.
+        col *= 0.85 + (m.r - 0.5) * 0.35;
+        col += (bt_noise_p(worldPx * 0.9, pc.mapSize * 0.9) - 0.5) * 0.03;
+        // Forests darken the print with their density — the tree field is
+        // the ONE forest authority, on the chart as everywhere.
+        float trees = texture(u_treeMap, mapUV).r;
+        col = mix(col, vec3(0.16, 0.30, 0.16), trees * 0.55);
+        // Cartographic relief: the SAME smooth height the world view shades
+        // by, but under a fixed NW atlas light — relief on a chart does not
+        // follow the sun.
+        float e  = 1.5;
+        float hL = mtnHeightSmooth(worldPx - vec2(e, 0.0));
+        float hR = mtnHeightSmooth(worldPx + vec2(e, 0.0));
+        float hD = mtnHeightSmooth(worldPx - vec2(0.0, e));
+        float hU = mtnHeightSmooth(worldPx + vec2(0.0, e));
+        vec3  N  = normalize(vec3((hL - hR) * 14.0, (hD - hU) * 14.0, 1.0));
+        col *= clamp(0.60 + 0.55 * dot(N, normalize(vec3(-0.5, 0.5, 0.8))),
+                     0.60, 1.20);
+        // Roads are ink strokes: the feature byte fills its cell, darkened —
+        // readable at every zoom, no cobble texture on a document.
+        float fb = texture(u_featureMap, mapUV).r * 255.0;
+        if (fb > 0.5 && fb < 2.5)
+            col = mix(col, vec3(0.24, 0.16, 0.10), fb < 1.5 ? 0.75 : 0.55);
+    }
+    // ONE inked coastline: the sea-level iso-line of the smooth height field
+    // — thin, continuous, drawn on water and land alike.
+    float hs = mtnHeightSmooth(worldPx);
+    float ink = 1.0 - smoothstep(0.004, 0.012, abs(hs - pc.seaLevel));
+    col = mix(col, vec3(0.06, 0.08, 0.10), ink * 0.85);
+    // Charted or dark — the whole knowledge law of a document.
+    col *= clamp(texture(u_knowledgeMap, mapUV).r * 2.0, 0.0, 1.0);
+    return col;
+}
+
 void main() {
     // Screen pixel -> world pixel, matching the GL macro renderer:
     //   worldPx = (uv - 0.5) * viewSize / zoom + cam
@@ -908,6 +962,13 @@ void main() {
     uv.y = 1.0 - uv.y;
     vec2 worldPx = (uv - 0.5) * pc.viewSize / pc.zoom + pc.cam;
     vec2 mapUV = fract(worldPx / pc.mapSize);
+
+    // The map page draws the CHART and nothing below runs — the living
+    // composition (sun, night, glints, decor) belongs to the world.
+    if (pc.mapStyle > 0.5) {
+        outColor = vec4(chartCompose(worldPx, mapUV), 1.0);
+        return;
+    }
 
     vec3 col = biomeTextureOverlay(worldPx);
     // Universal relief light: the SAME celestial bearing shades ALL land from

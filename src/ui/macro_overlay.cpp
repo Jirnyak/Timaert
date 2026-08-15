@@ -298,7 +298,7 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
                         int viewW, int viewH, int mapW, int mapH,
                         bool showMarkers,
                         bool showQuestMarkers, float questMarkerScale,
-                        const TreeLayer* treeLayer) {
+                        const TreeLayer* treeLayer, bool mapPage) {
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
     ImGuiIO& io = ImGui::GetIO();
     const ImU32 paperdollTint = paperdoll_tint_for_time(gs.worldTime);
@@ -326,7 +326,9 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
             cursor.hoverX = cx;
             cursor.hoverY = cy;
 
-            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            // The map page is a DOCUMENT: clicking it never orders a march
+            // (main.cpp turns the page's clicks into pin toggles instead).
+            if (!mapPage && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
                 cursor.requestPath = true;
                 cursor.requestX = cx;
                 cursor.requestY = cy;
@@ -426,7 +428,9 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
         }
 
         cursor.hoverSettlementId = hoverSettlementId;
-        if (hoverSettlementId >= 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        // Same document rule: a chart click opens no settlement panels.
+        if (!mapPage && hoverSettlementId >= 0
+            && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
             cursor.clickedSettlementId = hoverSettlementId;
         }
     }
@@ -474,7 +478,8 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
     // the procedural feature shaders (trees / mountains / roads) read
     // cleanly — at zoom < 10 px/cell a 256-px sprite shrinks to a
     // monochromatic blob that visually competes with the GLSL features.
-    if (zoom >= 10.0f) {
+    // A chart carries no living walkers — the world does (document rule).
+    if (!mapPage && zoom >= 10.0f) {
         auto view = w.reg.view<ecs::Position, ecs::NPCKind, ecs::Health>(
             entt::exclude<ecs::Dead, ecs::PlayerTag>);  // possessed macro NPC = player, not a figure (Inc 5e-2)
         for (auto e : view) {
@@ -570,6 +575,12 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
                             * std::clamp(questMarkerScale, 0.4f, 3.0f);
         const float r = glyphPx * 0.72f;                       // pin disc radius
         for (const auto& m : gs.markers) {
+            // Surface law (markers.h kMarkerSurface): the map is an IMAGE of
+            // the world — a waypoint is ink on the chart and never floats in
+            // the world; quest/POI/danger signal on both.
+            const std::size_t si = std::size_t(m.style) & 3u;
+            if (!(kMarkerSurface[si] & (mapPage ? kMarkerOnMap : kMarkerOnWorld)))
+                continue;
             // Pins live on the map the player HAS: an uncharted cell shows
             // nothing — a quest that wants to point into the dark reveals its
             // target area first (reveal_area).
@@ -579,20 +590,37 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
             ImVec2 p = world_to_screen(m.x + 0.5f, m.y + 0.5f,
                                        camX, camY, zoom, viewW, viewH, mapW, mapH);
             if (!on_screen(p, viewW, viewH, 96.0f)) continue;
-            const std::size_t si = std::size_t(m.style) & 3u;
-            const char* glyph = kMarkerGlyph[si];
             const ImU32 col   = marker_imcol(kMarkerColor[si]);
             // Float clear of anything on the cell (a city sprite's half-height).
             const float above = landmark_size(zoom, 28.0f, 192.0f) * 0.5f + r + 4.0f;
             const ImVec2 c(p.x, p.y - above);                  // pin centre
-            // Dark disc + coloured ring so the glyph reads over any biome.
+            // Dark disc + coloured ring so the pin reads over any biome.
             dl->AddCircleFilled(c, r, IM_COL32(0, 0, 0, 150), 20);
             dl->AddCircle(c, r, col, 20, 2.0f);
-            const ImVec2 ts = font->CalcTextSizeA(glyphPx, FLT_MAX, 0.0f, glyph);
-            const ImVec2 tp(c.x - ts.x * 0.5f, c.y - ts.y * 0.5f);
-            dl->AddText(font, glyphPx, ImVec2(tp.x + 1.0f, tp.y + 1.0f),
-                        IM_COL32(0, 0, 0, 190), glyph);        // shadow
-            dl->AddText(font, glyphPx, tp, col, glyph);
+            // The "!" styles are text; ★ and ◆ are NOT in ImGui's default
+            // font (they fell back to "?") — those two draw their shape as
+            // GEOMETRY, which also matches the map page legend's swatches.
+            if (m.style == MarkerStyle::Waypoint) {
+                const float dr = r * 0.55f;
+                const ImVec2 pts[4] = {ImVec2(c.x, c.y - dr),
+                                       ImVec2(c.x + dr, c.y),
+                                       ImVec2(c.x, c.y + dr),
+                                       ImVec2(c.x - dr, c.y)};
+                dl->AddConvexPolyFilled(pts, 4, col);
+            } else if (m.style == MarkerStyle::POI) {
+                const float lr = r * 0.62f, sr = r * 0.26f;
+                dl->AddLine(ImVec2(c.x - lr, c.y), ImVec2(c.x + lr, c.y), col, 2.0f);
+                dl->AddLine(ImVec2(c.x, c.y - lr), ImVec2(c.x, c.y + lr), col, 2.0f);
+                dl->AddLine(ImVec2(c.x - sr, c.y - sr), ImVec2(c.x + sr, c.y + sr), col, 1.5f);
+                dl->AddLine(ImVec2(c.x - sr, c.y + sr), ImVec2(c.x + sr, c.y - sr), col, 1.5f);
+            } else {
+                const char* glyph = kMarkerGlyph[si];
+                const ImVec2 ts = font->CalcTextSizeA(glyphPx, FLT_MAX, 0.0f, glyph);
+                const ImVec2 tp(c.x - ts.x * 0.5f, c.y - ts.y * 0.5f);
+                dl->AddText(font, glyphPx, ImVec2(tp.x + 1.0f, tp.y + 1.0f),
+                            IM_COL32(0, 0, 0, 190), glyph);    // shadow
+                dl->AddText(font, glyphPx, tp, col, glyph);
+            }
             // Label beneath the pin once zoomed in enough to read it.
             if (zoom >= 6.0f && !m.label.empty()) {
                 const ImVec2 ls = ImGui::CalcTextSize(m.label.c_str());

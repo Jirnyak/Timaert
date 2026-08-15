@@ -11224,7 +11224,8 @@ void frame(App& app, int simSteps) {
             app.macro.record(cmd, ext, app.terrain,
                              rCamX, rCamY, rZoom,
                              app.gs.mapParams.seaLevel, tod,
-                             float(SDL_GetTicks()) * 0.001f);
+                             float(SDL_GetTicks()) * 0.001f,
+                             /*mapStyle=*/mapOpen);
         }
     }
     const auto tSceneEnd = cpuNow();
@@ -11259,17 +11260,16 @@ void frame(App& app, int simSteps) {
                                    app.uiSettings.visible(sm::ui::UiElementId::MacroOverlay),
                                    app.uiSettings.visible(sm::ui::UiElementId::QuestMarkers),
                                    app.uiSettings.scale(sm::ui::UiElementId::QuestMarkers),
-                                   &app.treeLayer);
-        // Player pins (Inc 4): a DOUBLE-click on the map page toggles a
-        // waypoint on the hovered cell — through the universal markers.h
-        // layer, so the pin persists, draws with the ◆ style everywhere and
-        // obeys the knowledge law. Only cells the player KNOWS can carry a
-        // pin (a mark in terra incognita would be an invisible mark), and
-        // the double-click's first press ordered a march — a pin is not an
-        // order, so the queued path is cancelled.
+                                   &app.treeLayer, mapOpen);
+        // Player pins: the map is a DOCUMENT — a click on it commands
+        // nothing in the world (the overlay suppressed travel and settlement
+        // clicks on the page), it ANNOTATES: toggle a waypoint on the
+        // clicked cell, through the universal markers.h layer (persists in
+        // the save; kMarkerSurface keeps it off the world view — ink lives
+        // on the chart). Only charted cells can carry ink.
         if (mapOpen && app.cursor.hoverValid
             && !ImGui::GetIO().WantCaptureMouse
-            && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)
+            && ImGui::IsMouseClicked(ImGuiMouseButton_Left)
             && app.gs.knowledge.at(app.cursor.hoverX, app.cursor.hoverY)
                    != sm::kKnowledgeUnknown) {
             char pinId[32];
@@ -11280,9 +11280,6 @@ void frame(App& app, int simSteps) {
                                float(app.cursor.hoverX),
                                float(app.cursor.hoverY));
             }
-            app.cursor.path.clear();
-            app.cursor.pathIdx = 0;
-            app.cursor.requestPath = false;
         }
         if (mapOpen) {
             sm::ui::draw_map_screen(app.mapScreen, app.gs, &app.ui.map,

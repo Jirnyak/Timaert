@@ -36,6 +36,20 @@ inline constexpr std::uint32_t kMarkerColor[4] = {
     0xFF90EE90u,  // waypoint #90ee90 light-green
 };
 
+// Which SURFACE a style lives on. The map is an IMAGE of the world, not the
+// world (owner ruling 2026-08-15): the player's own waypoints are ink on the
+// chart and never float in the world; quest / POI / danger pins are world
+// signals and show on both. One row per style — a new style states its
+// surface here, never a branch in a renderer.
+inline constexpr std::uint8_t kMarkerOnWorld = 1u;
+inline constexpr std::uint8_t kMarkerOnMap   = 2u;
+inline constexpr std::uint8_t kMarkerSurface[4] = {
+    kMarkerOnWorld | kMarkerOnMap,  // quest
+    kMarkerOnWorld | kMarkerOnMap,  // poi
+    kMarkerOnWorld | kMarkerOnMap,  // danger
+    kMarkerOnMap,                   // waypoint — map annotation only
+};
+
 inline bool has_marker(const std::vector<Marker>& m, const std::string& id) {
     for (const auto& mk : m) if (mk.id == id) return true;
     return false;

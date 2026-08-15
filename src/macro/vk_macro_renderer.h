@@ -68,9 +68,13 @@ public:
                                 const KnowledgeLayer* knowledge);
 
     // Record the fullscreen map draw for the current framebuffer.
+    // `mapStyle` selects the CHART composition (the map page's document
+    // rendering — flat atlas colours, inked coast/roads, fixed relief light,
+    // no clock) instead of the living world; defaulted off so every
+    // harness and the live view keep their pictures unchanged.
     void record(VkCommandBuffer cmd, VkExtent2D ext, const TerrainData& td,
                 float camX, float camY, float zoom, float seaLevel,
-                float timeOfDay, float elapsed);
+                float timeOfDay, float elapsed, bool mapStyle = false);
 
     bool ready() const { return uploaded_; }
 

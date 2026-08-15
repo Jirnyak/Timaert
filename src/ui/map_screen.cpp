@@ -123,8 +123,23 @@ void draw_map_screen(MapScreenState& st, GameState& gs, bool* open,
         for (std::size_t s = 0; s < 4; ++s) {
             if (!styleSeen[s]) continue;
             const ImVec2 cur = ImGui::GetCursorScreenPos();
-            dl->AddText(ImVec2(cur.x + sw * 0.4f, cur.y),
-                        argb_im(kMarkerColor[s], 255), kMarkerGlyph[s]);
+            const ImU32 mc = argb_im(kMarkerColor[s], 255);
+            const ImVec2 c(cur.x + sw, cur.y + rowH * 0.42f);
+            // The same shape language the pins draw with (macro_overlay):
+            // geometry for waypoint/POI (★◆ are not in the font), text "!"
+            // for the quest/danger styles.
+            if (MarkerStyle(s) == MarkerStyle::Waypoint) {
+                const ImVec2 pts[4] = {ImVec2(c.x, c.y - sw),
+                                       ImVec2(c.x + sw, c.y),
+                                       ImVec2(c.x, c.y + sw),
+                                       ImVec2(c.x - sw, c.y)};
+                dl->AddConvexPolyFilled(pts, 4, mc);
+            } else if (MarkerStyle(s) == MarkerStyle::POI) {
+                dl->AddLine(ImVec2(c.x - sw, c.y), ImVec2(c.x + sw, c.y), mc, 2.0f);
+                dl->AddLine(ImVec2(c.x, c.y - sw), ImVec2(c.x, c.y + sw), mc, 2.0f);
+            } else {
+                dl->AddText(ImVec2(c.x - sw * 0.3f, cur.y), mc, kMarkerGlyph[s]);
+            }
             ImGui::Dummy(ImVec2(sw * 2.4f, rowH * 0.8f));
             ImGui::SameLine();
             ImGui::Text("%s", kMarkerLegendLabel[s]);
@@ -149,7 +164,7 @@ void draw_map_screen(MapScreenState& st, GameState& gs, bool* open,
                 anyPin = true;
             }
             ImGui::PushID(++pinRow);
-            if (ImGui::SmallButton("\xE2\x97\x8E")) {  // ◎ centre the camera
+            if (ImGui::SmallButton("go")) {  // centre the camera on the pin
                 st.camX = m.x + 0.5f;
                 st.camY = m.y + 0.5f;
             }
@@ -168,7 +183,7 @@ void draw_map_screen(MapScreenState& st, GameState& gs, bool* open,
         }
 
         ImGui::Separator();
-        ImGui::TextDisabled("wheel zoom · drag pan · click travel · 2x-click pin");
+        ImGui::TextDisabled("wheel zoom · drag pan · click pin");
         (void)viewH;
     }
     ImGui::End();

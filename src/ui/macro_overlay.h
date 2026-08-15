@@ -58,6 +58,10 @@ using MacroWalkReachedFn = void (*)(void* user, int x, int y);
 // pass — the floating quest "!" pins and any other entry in `gs.markers`; wired
 // to the QuestMarkers UI-settings element. The pass is data-driven: it renders
 // whatever producers have pushed into `gs.markers`, with no per-style code here.
+// `mapPage` = drawing under the map page's camera (ui/map_screen.h). The map
+// is a DOCUMENT: no click may command the world (no travel orders, no
+// settlement opening), no living walkers are drawn, and the marker pass
+// filters styles by kMarkerSurface — waypoints are ink that exists only here.
 void draw_macro_overlay(GameState& gs, ecs::World& w,
                         const TerrainData& terrain,
                         const FeatureLayer& features,
@@ -67,7 +71,8 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
                         bool showMarkers = true,
                         bool showQuestMarkers = true,
                         float questMarkerScale = 1.0f,
-                        const TreeLayer* treeLayer = nullptr);
+                        const TreeLayer* treeLayer = nullptr,
+                        bool mapPage = false);
 
 // Advance auto-walk: if `cursor.path` is non-empty, move `gs.player` toward
 // the next cell at `cellsPerSec`. Calls `onReached` once per entered path cell.
