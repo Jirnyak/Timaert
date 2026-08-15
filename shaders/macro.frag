@@ -1104,22 +1104,6 @@ void main() {
     col = featureDecor(worldPx, col);
     col = zoneTintOverlay(mapUV, col);
 
-    // ── The knowledge capture point (macro/knowledge.h). Memory keeps the
-    // WHOLE terrain — ground, relief, mountains, roads, forests, zone tint:
-    // the Explored look is exactly the visible picture drained to a cool
-    // graphite luminance (owner ruling 2026-08-15: everything shows in the
-    // remembered zone EXCEPT entities — and entities are CPU overlays, gated
-    // by the same knowledge door). Only the effects of the MOMENT compose
-    // below this line — night, settlement glow, water glints: memory does
-    // not flicker with the hour. The law is applied at the end of main();
-    // this is merely where the sketch is taken.
-    // The memory look: NOT grey — drowned. Colours survive at low tide
-    // (~1/3 of their saturation), under a cool cast and dimmed, like ground
-    // seen through still water (owner ruling 2026-08-15): the remembered
-    // world stays legible as country, just visibly not-now.
-    float memL = dot(col, vec3(0.299, 0.587, 0.114));
-    vec3 memoryCol = mix(col, vec3(memL), 0.62) * vec3(0.70, 0.76, 0.86);
-
     // Night tint (TS renderer.ts night pass) + universal landmark/settlement
     // glow. The light field stores summed glow encoded as value/kMacroGlowCeil
     // (=1.5); decode by multiplying back, then add it in only as night falls
@@ -1139,16 +1123,19 @@ void main() {
     // ── The knowledge law (macro/knowledge.h, R8 binding 5) ──────────────
     // Encoded level/2: 0 = terra incognita, ½ = explored memory, 1 = in
     // sight now. Linear-sampled, so the border breathes across a cell
-    // instead of stepping. Two blends state the whole stage table:
-    //   below Visible  → the full living picture fades to the memory sketch
-    //                    captured above (relief + roads, graphite grey; no
-    //                    trees, zones, night, lights or glints — those are
-    //                    the world as it IS, and memory only keeps the map);
-    //   below Explored → everything fades to black. The world is dark until
-    //                    an eye has spent optical budget on it.
+    // instead of stepping. The remembered zone is THE SAME finished frame —
+    // sun, shadows, night, town glow, water glints, everything — merely
+    // DROWNED: ~1/3 of its saturation under a cool cast, slightly dimmed,
+    // like ground seen through still water (owner ruling 2026-08-15: the
+    // only differences between the zones are the fade and the entities,
+    // which are CPU overlays gated by the same knowledge door). Below
+    // Explored everything fades to black: the world is dark until an eye
+    // has spent optical budget on it.
     float know     = texture(u_knowledgeMap, mapUV).r * 2.0;
     float explored = clamp(know, 0.0, 1.0);
     float visible  = clamp(know - 1.0, 0.0, 1.0);
-    col = mix(memoryCol, col, visible) * explored;
+    float memL     = dot(col, vec3(0.299, 0.587, 0.114));
+    vec3  drowned  = mix(col, vec3(memL), 0.62) * vec3(0.70, 0.76, 0.86);
+    col = mix(drowned, col, visible) * explored;
     outColor = vec4(col, 1.0);
 }
