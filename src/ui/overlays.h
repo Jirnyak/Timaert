@@ -106,7 +106,9 @@ bool set_story_overlay_value(StoryOverlayState& state,
                              const char* value);
 bool complete_story_overlay(StoryOverlayState& state, EventBus& bus);
 void draw_story_overlay(StoryOverlayState& state, EventBus& bus);
-void draw_map_overlay(GameState& gs, const TerrainData& terrain, bool* open, float scale = 1.0f);
+// (The macro "World Map" minimap window is GONE — the M toggle now opens the
+// full-screen map page, ui/map_screen.h: the shipping macro shader under a
+// second camera. Subworld map overlays below are untouched.)
 void draw_encounter_modal(GameState& gs, EventBus& bus);
 
 // Subworld minimap — circular HUD always-on (top-right) showing the local

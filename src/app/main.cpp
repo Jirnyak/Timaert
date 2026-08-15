@@ -33,6 +33,7 @@
 #include "macro/state.h"
 #include "macro/character_sheet.h"
 #include "macro/knowledge.h"
+#include "ui/map_screen.h"
 #include "macro/map_generator.h"
 #include "macro/settlement_score.h"
 #include "macro/spawners.h"
@@ -346,6 +347,9 @@ struct App {
     // Mirrors gs.knowledge.revision so the u_knowledgeMap texture refreshes
     // only when sight actually moved (a cell crossing / a quest reveal).
     std::uint32_t        uploadedKnowledgeRev = 0;
+    // The full-screen map page's own camera + chrome state (ui/map_screen.h).
+    // Session-only; survives page closes so the player returns to their view.
+    sm::ui::MapScreenState mapScreen;
     // Derived mineral deposits (macro/deposit_layer.h, W2a); mutations
     // persist as gs.depositOverrides.
     sm::DepositLayer     deposits;
@@ -503,6 +507,13 @@ struct App {
 };
 
 bool modal_overlay_active(const App& app);
+
+// The full-screen macro map page is open: the M toggle, on the macro layer,
+// in play. Everyone who swaps a camera or reroutes an input asks THIS.
+bool macro_map_open(const App& app) {
+    return app.ui.map && app.worldLoaded && !app.subworld.active()
+        && app.state == sm::ui::AppState::Playing;
+}
 
 bool smoke_token_equals(std::string_view token, const char* lit) {
     std::size_t n = 0;
@@ -2806,6 +2817,18 @@ void handle_event_playing(App& app, const SDL_Event& e) {
             break;
         }
         case SDL_MOUSEWHEEL:
+            if (macro_map_open(app)) {
+                // The map page's camera: same step, but the floor is the
+                // whole world fitted to the viewport, not the live minimum.
+                float& z = app.mapScreen.zoom;
+                if (e.wheel.y > 0) z *= kMacroZoomStep;
+                if (e.wheel.y < 0) z /= kMacroZoomStep;
+                const float fit =
+                    sm::ui::map_fit_zoom(app.height, app.gs.mapH);
+                if (z < fit) z = fit;
+                if (z > kMacroZoomMax) z = kMacroZoomMax;
+                break;
+            }
             if (e.wheel.y > 0) app.zoom *= kMacroZoomStep;
             if (e.wheel.y < 0) app.zoom /= kMacroZoomStep;
             if (app.zoom < kMacroZoomMin) app.zoom = kMacroZoomMin;
@@ -2849,6 +2872,22 @@ void handle_event_playing(App& app, const SDL_Event& e) {
                 int dy = e.motion.y - app.panLastMouseY;
                 app.panLastMouseX = e.motion.x;
                 app.panLastMouseY = e.motion.y;
+                if (macro_map_open(app)) {
+                    // The map page pans by direct GRAB — the world sticks to
+                    // the cursor, 1:1: mouse deltas are logical points, the
+                    // camera is drawable px/cell, so divide by the logical
+                    // zoom (zoom/dpr). Torus wrap keeps every position legal.
+                    int lw = app.width, lh = app.height;
+                    SDL_GetWindowSize(app.window, &lw, &lh);
+                    const float dpr =
+                        (lw > 0) ? float(app.width) / float(lw) : 1.0f;
+                    const float zl = app.mapScreen.zoom / dpr;
+                    if (zl > 0.0f) {
+                        app.mapScreen.camX -= float(dx) / zl;
+                        app.mapScreen.camY += float(dy) / zl;
+                    }
+                    break;
+                }
                 const float pxPerCell = 16.0f * app.zoom;
                 // Joystick-style: camera follows the cursor direction.
                 // World +Y is screen-UP, so cursor-DOWN → camera-DOWN means
@@ -11146,8 +11185,32 @@ void frame(App& app, int simSteps) {
         } else {
             const float tod = (float(app.gs.worldTime.hour())
                                + float(app.gs.worldTime.minute()) / 60.0f) / 24.0f;
+            // The map page (M) is the SAME world drawn through a second
+            // camera: on the open edge it anchors on the player (first open
+            // lands at the world-fit floor — the whole map in the viewport),
+            // then record() simply takes the page's camera instead of the
+            // live one. One shader, one upload set, two cameras.
+            const bool mapOpen = macro_map_open(app);
+            if (mapOpen && !app.mapScreen.wasOpen) {
+                if (app.mapScreen.zoom <= 0.0f) {
+                    // First open lands at the REGION scale: the geometric
+                    // mean of the page's own zoom bounds (world-fit floor,
+                    // live-view ceiling) — derived from the bounds, not
+                    // tuned, and equally far from "one black planet" and
+                    // "one street" whatever the map or window size.
+                    app.mapScreen.zoom = std::sqrt(
+                        sm::ui::map_fit_zoom(app.height, app.gs.mapH)
+                        * kMacroZoomMax);
+                }
+                app.mapScreen.camX = app.gs.player.x + 0.5f;
+                app.mapScreen.camY = app.gs.player.y + 0.5f;
+            }
+            app.mapScreen.wasOpen = mapOpen;
+            const float rCamX = mapOpen ? app.mapScreen.camX : app.camX;
+            const float rCamY = mapOpen ? app.mapScreen.camY : app.camY;
+            const float rZoom = mapOpen ? app.mapScreen.zoom : app.zoom;
             app.macro.record(cmd, ext, app.terrain,
-                             app.camX, app.camY, app.zoom,
+                             rCamX, rCamY, rZoom,
                              app.gs.mapParams.seaLevel, tod,
                              float(SDL_GetTicks()) * 0.001f);
         }
@@ -11167,17 +11230,29 @@ void frame(App& app, int simSteps) {
         const float dpr = (logicalW > 0)
                             ? float(app.width) / float(logicalW)
                             : 1.0f;
-        const float zoomLogical = app.zoom / dpr;
+        // The map page swaps ITS camera under the one overlay — landmarks,
+        // pins, walkers, the player and click-to-travel all follow the page
+        // for free, under the same knowledge law.
+        const bool mapOpen = macro_map_open(app);
+        const float oCamX = mapOpen ? app.mapScreen.camX : app.camX;
+        const float oCamY = mapOpen ? app.mapScreen.camY : app.camY;
+        const float zoomLogical =
+            (mapOpen ? app.mapScreen.zoom : app.zoom) / dpr;
         sm::ui::draw_macro_overlay(app.gs, app.ecs,
                                    app.terrain, app.features,
                                    app.cursor,
-                                   app.camX, app.camY, zoomLogical,
+                                   oCamX, oCamY, zoomLogical,
                                    logicalW, logicalH,
                                    app.gs.mapW, app.gs.mapH,
                                    app.uiSettings.visible(sm::ui::UiElementId::MacroOverlay),
                                    app.uiSettings.visible(sm::ui::UiElementId::QuestMarkers),
                                    app.uiSettings.scale(sm::ui::UiElementId::QuestMarkers),
                                    &app.treeLayer);
+        if (mapOpen) {
+            sm::ui::draw_map_screen(app.mapScreen, app.gs, &app.ui.map,
+                                    logicalW, logicalH,
+                                    app.uiSettings.scale(sm::ui::UiElementId::PanelMap));
+        }
         if (app.cursor.hoverSettlementId >= 0) {
             app.ui.settlementId = app.cursor.hoverSettlementId;
         }
@@ -11272,8 +11347,19 @@ void frame(App& app, int simSteps) {
                     app.ui.character = true;
                     app.ui.characterTab = sm::ui::CharacterPanelTab::Equipment;
                 }
-                if (tb.zoomIn)  { app.zoom *= kMacroZoomStep; if (app.zoom > kMacroZoomMax) app.zoom = kMacroZoomMax; }
-                if (tb.zoomOut) { app.zoom /= kMacroZoomStep; if (app.zoom < kMacroZoomMin) app.zoom = kMacroZoomMin; }
+                if (tb.zoomIn || tb.zoomOut) {
+                    // The toolbar +/- drive whichever camera owns the screen:
+                    // the map page's when it is open, the live one otherwise.
+                    const bool mapOpen = macro_map_open(app);
+                    float& z = mapOpen ? app.mapScreen.zoom : app.zoom;
+                    const float lo = mapOpen
+                        ? sm::ui::map_fit_zoom(app.height, app.gs.mapH)
+                        : kMacroZoomMin;
+                    if (tb.zoomIn)  z *= kMacroZoomStep;
+                    if (tb.zoomOut) z /= kMacroZoomStep;
+                    if (z > kMacroZoomMax) z = kMacroZoomMax;
+                    if (z < lo) z = lo;
+                }
                 if (tb.toggleSubworld) {
                     if (!app.subworld.active())
                         app.subworld.enter(app.gs, app.terrain, app.features, app.ecs, app.bus, &app.zones, &app.treeLayer);
@@ -11482,10 +11568,10 @@ void frame(App& app, int simSteps) {
                         app.subworld.cam_yaw(),
                         &app.ui.map,
                         app.uiSettings.scale(sm::ui::UiElementId::PanelMap));
-            } else {
-                if (app.uiSettings.visible(sm::ui::UiElementId::PanelMap))
-                    sm::ui::draw_map_overlay(app.gs, app.terrain, &app.ui.map, app.uiSettings.scale(sm::ui::UiElementId::PanelMap));
             }
+            // (Macro: the M toggle is the full-screen map PAGE — drawn on the
+            // world-overlay path above (ui/map_screen.h), not a window here.
+            // The 256px minimap window died with it.)
             sm::ui::draw_encounter_modal(app.gs, app.bus);
             draw_pre_battle_modal(app);
             // Right-edge nearby-NPC stack (mirrors NpcProximityPanel.svelte).
