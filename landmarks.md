@@ -61,7 +61,9 @@ spires/dungeons, and runtime markers.
   generator (city streets/walls, village farms/houses, ruins).
 - **Markers:** universal overlay — 4 styles (quest/poi/danger/waypoint), each a
   glyph + ARGB colour in `kMarkerGlyph` / `kMarkerColor`, stored in
-  `GameState::markers` and drawn by style in `draw_macro_overlay`. Quests
+  `GameState::markers` and drawn by style in `draw_macro_overlay`. Each style
+  states its SURFACE as data (`kMarkerSurface`, [map.md](map.md)): waypoints
+  are map-page ink only, quest/POI/danger signal in the world too. Quests
   auto-produce the gold "!" pins (`rebuild_quest_markers`, [quests.md](quests.md));
   the **QuestMarkers** UI element toggles/scales them ([ui-settings.md](ui-settings.md)).
 

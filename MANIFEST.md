@@ -64,6 +64,7 @@ focused doc in this directory alongside the README, which orchestrates them.
 | Progression | [progression.md](progression.md) | Levels, spell unlocks, plot/events, game arc |
 | Rendering | [render.md](render.md) | Vulkan render passes, dynamic lighting, shadow mapping, sky/stars, water |
 | Macro lighting | [macro-lighting.md](macro-lighting.md) | ONE celestial light for the 2D world map: day/night relief hillshade (sun→moon sweep), water sun/moon glint, baked night-glow field with feature- **and elevation-**occluded spread |
+| Map & knowledge | [map.md](map.md) | THE fog-of-war + map doc: knowledge layer (Unknown/Explored/Visible, save v40), sight-as-light over the one optical sweep, the drowned-memory render law, the full-screen chart page (M), marker surfaces, subworld minimap/map |
 | GPU backend | [vulkan.md](vulkan.md) | Vulkan backend modules, MoltenVK, GPU-driven compute simulation |
 | UI settings | [ui-settings.md](ui-settings.md) | ONE universal show/hide + resize registry for every HUD element & panel, macro + micro; global prefs file |
 
@@ -516,7 +517,7 @@ See [controls.md](controls.md).
 | T              | Toggle Settlement overlay                 |
 | Q              | Toggle Quest log                          |
 | C              | Toggle Codex                              |
-| M              | Toggle world map overlay                  |
+| M              | World map page (macro: full-screen chart; subworld: 3×3 map) |
 | F3             | Toggle debug HUD                          |
 | F5 / F9        | Quick-save / open load screen             |
 | Esc (fixed)    | Open the game menu (Resume / Save / Load / Codex / **Interface** / **Controls** / Title / Quit) — the MENU, not the pause |

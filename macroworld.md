@@ -108,6 +108,14 @@ daily population drift (`WorldTickResult.dailyTicksProcessed > 0`). One knob,
 `kMacroGlowGain`, sets master brightness. Full write-up:
 **[macro-lighting.md](macro-lighting.md)**.
 
+## Knowledge (fog of war)
+
+The player does not know the world from turn one: per-cell knowledge
+(Unknown / Explored / Visible, save v40) with sight propagated by the same
+terrain-optical sweep as the night glow. The whole system — mechanic, render
+law, the map page, future vision skills and trackers — is written up in
+[map.md](map.md), THE doc.
+
 ## Connections
 
 Feeds every subworld cell a `CellContext` (single source of truth — the

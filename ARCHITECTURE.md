@@ -758,14 +758,14 @@ Any future overlay can read these without touching the data pipeline.
 
 Each is one new GLSL snippet + one uniform — never a refactor.
 
-### Knowledge Layer (fog of war)
+### Knowledge Layer (fog of war) — see [map.md](map.md), THE doc
 
 The player's knowledge of the macro map ([macro/knowledge.h](src/macro/knowledge.h),
 save v40): one byte per cell — `Unknown` (terra incognita, drawn black),
-`Explored` (memory: a graphite pencil sketch of relief + roads, faded
-landmarks, markers), `Visible` (in sight now: the full living picture, and
-the only level that shows NPCs). Only Explored persists; Visible is
-recomputed whenever the player's cell changes.
+`Explored` (memory: the same finished frame DROWNED — ⅓ saturation, cool
+cast; only entities are hidden), `Visible` (in sight now: the living
+picture, the only level that shows NPCs). Only Explored persists; Visible
+is recomputed whenever the player's cell changes.
 
 **Sight IS light**: `update_player_sight` runs the same bounded
 terrain-optical Dijkstra as the night-glow bake
@@ -776,10 +776,12 @@ standing eye's horizon (`player_sight_budget_cells`, main.cpp) and is the
 ONE door future attributes/skills multiply. `reveal_area` is the
 quest/event door (marks memory, never sight).
 
-**Render law** (macro.frag): the compose chain captures its memory sketch
-after roads and applies two blends at the end — below Visible the living
-picture fades to the sketch, below Explored everything fades to black.
-CPU consumers (landmark/NPC/marker overlays, tooltips) ask
+**Render law** (macro.frag): two blends over the finished frame — below
+Visible it fades to its drowned self, below Explored to black. The map
+page (M, [ui/map_screen.h](src/ui/map_screen.h)) is a MENU drawing an
+IMAGE of the world: the CHART composition (`pc.mapStyle`) + primitives
+only; a map click annotates (waypoint pins are map-only ink,
+`kMarkerSurface`) and never commands the world. CPU consumers ask
 `gs.knowledge.at(x, y)` — the one door, fail-closed to Unknown.
 
 ### Marker System
