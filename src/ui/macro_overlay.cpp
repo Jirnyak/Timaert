@@ -298,7 +298,7 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
                         int viewW, int viewH, int mapW, int mapH,
                         bool showMarkers,
                         bool showQuestMarkers, float questMarkerScale,
-                        const TreeLayer* treeLayer, bool mapPage) {
+                        const TreeLayer* treeLayer) {
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
     ImGuiIO& io = ImGui::GetIO();
     const ImU32 paperdollTint = paperdoll_tint_for_time(gs.worldTime);
@@ -326,9 +326,7 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
             cursor.hoverX = cx;
             cursor.hoverY = cy;
 
-            // The map page is a DOCUMENT: clicking it never orders a march
-            // (main.cpp turns the page's clicks into pin toggles instead).
-            if (!mapPage && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
                 cursor.requestPath = true;
                 cursor.requestX = cx;
                 cursor.requestY = cy;
@@ -428,9 +426,7 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
         }
 
         cursor.hoverSettlementId = hoverSettlementId;
-        // Same document rule: a chart click opens no settlement panels.
-        if (!mapPage && hoverSettlementId >= 0
-            && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        if (hoverSettlementId >= 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
             cursor.clickedSettlementId = hoverSettlementId;
         }
     }
@@ -478,8 +474,7 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
     // the procedural feature shaders (trees / mountains / roads) read
     // cleanly — at zoom < 10 px/cell a 256-px sprite shrinks to a
     // monochromatic blob that visually competes with the GLSL features.
-    // A chart carries no living walkers — the world does (document rule).
-    if (!mapPage && zoom >= 10.0f) {
+    if (zoom >= 10.0f) {
         auto view = w.reg.view<ecs::Position, ecs::NPCKind, ecs::Health>(
             entt::exclude<ecs::Dead, ecs::PlayerTag>);  // possessed macro NPC = player, not a figure (Inc 5e-2)
         for (auto e : view) {
@@ -579,7 +574,7 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
             // the world — a waypoint is ink on the chart and never floats in
             // the world; quest/POI/danger signal on both.
             const std::size_t si = std::size_t(m.style) & 3u;
-            if (!(kMarkerSurface[si] & (mapPage ? kMarkerOnMap : kMarkerOnWorld)))
+            if (!(kMarkerSurface[si] & kMarkerOnWorld))
                 continue;
             // Pins live on the map the player HAS: an uncharted cell shows
             // nothing — a quest that wants to point into the dark reveals its

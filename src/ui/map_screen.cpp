@@ -1,7 +1,9 @@
 #include "ui/map_screen.h"
 
+#include "macro/biomes.h"
 #include "macro/landmark_iter.h"
 #include "macro/landmark_registry.h"
+#include "macro/map_generator.h"
 #include "macro/markers.h"
 #include "macro/state.h"
 #include "ui/landmark_draw.h"
@@ -9,6 +11,7 @@
 
 #include "imgui.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -17,28 +20,75 @@ namespace sm::ui {
 
 namespace {
 
+// The canonical camera transform (shader: worldPx = (uv-0.5)·view/zoom + cam;
+// world +Y = screen UP), torus-wrapped — the page's own copy, because the map
+// deliberately shares NO drawing with the world overlay.
+inline float wrap_delta(float d, float period) {
+    if (d >  period * 0.5f) d -= period;
+    if (d < -period * 0.5f) d += period;
+    return d;
+}
+inline ImVec2 to_screen(float wx, float wy, const MapScreenState& st,
+                        float zoomL, int viewW, int viewH, int mapW, int mapH) {
+    const float dx = wrap_delta(wx - st.camX, float(mapW));
+    const float dy = wrap_delta(wy - st.camY, float(mapH));
+    return ImVec2(viewW * 0.5f + dx * zoomL, viewH * 0.5f - dy * zoomL);
+}
+
 ImU32 argb_im(std::uint32_t argb, int alpha) {
     return IM_COL32((argb >> 16) & 0xFF, (argb >> 8) & 0xFF, argb & 0xFF,
                     alpha);
 }
 
-// The legend swatch speaks the SAME visual language as the map pins: shape
-// from the presentation row (ui/landmark_draw.h MiniShape), colour from the
-// ONE registry authority — the legend can never drift from the map.
-void legend_shape(ImDrawList* dl, ImVec2 c, MiniShape shape, float r,
-                  ImU32 col) {
+// The chart's ONE shape vocabulary — primitives only (owner ruling: no
+// sprites, no paperdolls on a document). Landmarks use their presentation
+// row's MiniShape; the same routine draws the legend swatches, so map and
+// legend can never drift.
+void chart_shape(ImDrawList* dl, ImVec2 c, MiniShape shape, float r,
+                 ImU32 fill, ImU32 rim) {
     switch (shape) {
         case MiniShape::Ring:
-            dl->AddCircleFilled(c, r, col, 10);
-            dl->AddCircle(c, r + 1.5f, col, 10, 1.0f);
+            dl->AddCircleFilled(c, r, fill, 16);
+            dl->AddCircle(c, r + 1.0f, rim, 16, 1.5f);
             break;
         case MiniShape::Dot:
-            dl->AddCircleFilled(c, r * 0.8f, col, 8);
+            dl->AddCircleFilled(c, r * 0.8f, fill, 12);
             break;
         case MiniShape::Diamond: {
             const ImVec2 pts[4] = {ImVec2(c.x, c.y - r), ImVec2(c.x + r, c.y),
                                    ImVec2(c.x, c.y + r), ImVec2(c.x - r, c.y)};
+            dl->AddConvexPolyFilled(pts, 4, fill);
+            dl->AddPolyline(pts, 4, rim, ImDrawFlags_Closed, 1.0f);
+            break;
+        }
+    }
+}
+
+// Marker ink on the chart: the waypoint diamond and the POI cross are
+// geometry (★◆ are not in the font); quest/danger keep their "!" glyph.
+void marker_ink(ImDrawList* dl, ImVec2 c, MarkerStyle style, float r,
+                ImU32 col) {
+    switch (style) {
+        case MarkerStyle::Waypoint: {
+            const ImVec2 pts[4] = {ImVec2(c.x, c.y - r), ImVec2(c.x + r, c.y),
+                                   ImVec2(c.x, c.y + r), ImVec2(c.x - r, c.y)};
             dl->AddConvexPolyFilled(pts, 4, col);
+            dl->AddPolyline(pts, 4, IM_COL32(0, 0, 0, 200), ImDrawFlags_Closed,
+                            1.0f);
+            break;
+        }
+        case MarkerStyle::POI:
+            dl->AddLine(ImVec2(c.x - r, c.y), ImVec2(c.x + r, c.y), col, 2.0f);
+            dl->AddLine(ImVec2(c.x, c.y - r), ImVec2(c.x, c.y + r), col, 2.0f);
+            break;
+        default: {  // quest / danger — a typographic "!" is chart-native
+            ImFont* font = ImGui::GetFont();
+            const float px = r * 2.2f;
+            const ImVec2 ts = font->CalcTextSizeA(px, 3.4e38f, 0.0f, "!");
+            const ImVec2 tp(c.x - ts.x * 0.5f, c.y - ts.y * 0.5f);
+            dl->AddText(font, px, ImVec2(tp.x + 1, tp.y + 1),
+                        IM_COL32(0, 0, 0, 200), "!");
+            dl->AddText(font, px, tp, col, "!");
             break;
         }
     }
@@ -49,6 +99,23 @@ void legend_shape(ImDrawList* dl, ImVec2 c, MiniShape shape, float r,
 constexpr const char* kMarkerLegendLabel[4] = {"Quest", "Point of interest",
                                                "Danger", "Waypoint"};
 
+// Cell-centre biome via the ONE authority (biomes.h biome_at), from the same
+// master texels the chart shader prints — the tooltip names what is drawn.
+Biome chart_biome(const TerrainData& t, int x, int y, float seaLevel) {
+    if (t.width <= 0 || t.height <= 0) return Biome::Water;
+    const int wx = ((x % t.width) + t.width) % t.width;
+    const int wy = ((y % t.height) + t.height) % t.height;
+    const std::size_t i = (std::size_t(wy) * std::size_t(t.width)
+                           + std::size_t(wx)) * 4u;
+    if (i + 3u >= t.rgba.size()) return Biome::Water;
+    const float h = float(t.rgba[i + 0]) / 255.0f;
+    const float m = float(t.rgba[i + 1]) / 255.0f;
+    const float tt = float(t.rgba[i + 2]) / 255.0f;
+    const bool masked = t.rgba[i + 3] < 128;
+    if (masked) return Biome::Water;
+    return biome_at(tt, m, h, seaLevel, kMountainBiomeLevel);
+}
+
 } // namespace
 
 float map_fit_zoom(int viewHPx, int mapH) {
@@ -56,12 +123,128 @@ float map_fit_zoom(int viewHPx, int mapH) {
     return float(viewHPx) / float(mapH);
 }
 
-void draw_map_screen(MapScreenState& st, GameState& gs, bool* open,
-                     int /*viewW*/, int viewH, float scale) {
+void draw_map_screen(MapScreenState& st, GameState& gs,
+                     const TerrainData& terrain, bool* open,
+                     int viewW, int viewH, float zoomLogical, float scale) {
     if (!open || !*open) return;
+    const int mapW = gs.mapW, mapH = gs.mapH;
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();
+    ImGuiIO& io = ImGui::GetIO();
 
-    // Explored census — recounted only when knowledge actually moved (the
-    // page pauses the world, so that is the opening sweep or a quest reveal).
+    // ── The page's own cursor: hover cell, tooltip, click = pin toggle.
+    // The map is a DOCUMENT — a click annotates it and commands nothing in
+    // the world (no marches, no settlement panels; the world overlay is not
+    // even drawn while the page is open).
+    if (!io.WantCaptureMouse && zoomLogical > 0.0f) {
+        const ImVec2 mp = io.MousePos;
+        if (mp.x >= 0 && mp.y >= 0 && mp.x < float(viewW)
+            && mp.y < float(viewH)) {
+            const float wx = st.camX + (mp.x - viewW * 0.5f) / zoomLogical;
+            const float wy = st.camY - (mp.y - viewH * 0.5f) / zoomLogical;
+            const int cx = ((int(std::floor(wx)) % mapW) + mapW) % mapW;
+            const int cy = ((int(std::floor(wy)) % mapH) + mapH) % mapH;
+            const std::uint8_t know = gs.knowledge.at(cx, cy);
+
+            // Hover rect (cell top = wy+1 after the Y flip).
+            const ImVec2 tl = to_screen(float(cx), float(cy) + 1.0f, st,
+                                        zoomLogical, viewW, viewH, mapW, mapH);
+            const ImVec2 br = to_screen(float(cx) + 1.0f, float(cy), st,
+                                        zoomLogical, viewW, viewH, mapW, mapH);
+            dl->AddRect(tl, br, IM_COL32(255, 255, 255, 160), 0.0f, 0, 1.5f);
+
+            ImGui::BeginTooltip();
+            ImGui::Text("(%d, %d)", cx, cy);
+            if (know == kKnowledgeUnknown) {
+                ImGui::TextColored(ImVec4(0.55f, 0.55f, 0.60f, 1),
+                                   "Uncharted");
+            } else {
+                const Biome b = chart_biome(terrain, cx, cy,
+                                            gs.mapParams.seaLevel);
+                ImGui::TextColored(ImVec4(0.55f, 0.95f, 0.55f, 1), "%s",
+                                   kBiomes[std::size_t(b)].name);
+                for_each_landmark(gs, [&](const LandmarkView& lm) {
+                    if (lm.x == cx && lm.y == cy && lm.name[0])
+                        ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.4f, 1), "%s",
+                                           lm.name);
+                });
+            }
+            ImGui::EndTooltip();
+
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)
+                && know != kKnowledgeUnknown) {
+                char pinId[32];
+                std::snprintf(pinId, sizeof pinId, "user_%d_%d", cx, cy);
+                if (!remove_marker(gs.markers, pinId)) {
+                    add_marker(gs.markers, pinId, MarkerStyle::Waypoint,
+                               float(cx), float(cy));
+                }
+            }
+        }
+    }
+
+    // ── Landmarks — primitives only: the presentation row's MiniShape at
+    // the registry's ONE colour; ashen when depleted, faded when merely
+    // remembered. The mark grows to half its cell when zoomed in, floored
+    // at the row's legend radius so it never dissolves at world-fit.
+    for_each_landmark(gs, [&](const LandmarkView& lm) {
+        const std::uint8_t know = gs.knowledge.at(lm.x, lm.y);
+        if (know == kKnowledgeUnknown) return;
+        const bool faded = know < kKnowledgeVisible;
+        const LandmarkDrawRow& row = landmark_draw(lm.type);
+        const ImVec2 p = to_screen(float(lm.x) + 0.5f, float(lm.y) + 0.5f, st,
+                                   zoomLogical, viewW, viewH, mapW, mapH);
+        if (p.x < -64 || p.x > viewW + 64 || p.y < -64 || p.y > viewH + 64)
+            return;
+        const float r = std::max(row.miniR * 2.0f, zoomLogical * 0.5f);
+        const std::uint32_t argb = landmark_def(lm.type).color;
+        // Depleted = half strength, remembered = reduced alpha — the same
+        // derivations the old panel used; ONE colour authority throughout.
+        const std::uint32_t base = lm.depleted
+            ? ((argb >> 1) & 0x7F7F7Fu) : argb;
+        const ImU32 fill = argb_im(base, faded ? 140 : 230);
+        const ImU32 rim = argb_im(base >> 2 & 0x3F3F3Fu, 255);
+        chart_shape(dl, p, row.mini, r, fill, rim);
+        if (row.labelZoom > 0.0f && zoomLogical >= row.labelZoom
+            && lm.name[0]) {
+            const ImVec2 ts = ImGui::CalcTextSize(lm.name);
+            const ImVec2 tp(p.x - ts.x * 0.5f, p.y - r - ts.y - 3.0f);
+            dl->AddText(tp, IM_COL32(20, 22, 26, 220), lm.name);
+            dl->AddText(ImVec2(tp.x - 1, tp.y - 1),
+                        IM_COL32(235, 232, 220, faded ? 150 : 255), lm.name);
+        }
+    });
+
+    // ── Marker ink (kMarkerSurface & Map): waypoints and any world signal
+    // that also prints on the chart. Drawn at the cell, primitive shapes.
+    for (const Marker& m : gs.markers) {
+        const std::size_t si = std::size_t(m.style) & 3u;
+        if (!(kMarkerSurface[si] & kMarkerOnMap)) continue;
+        if (gs.knowledge.at(int(std::floor(m.x)), int(std::floor(m.y)))
+            == kKnowledgeUnknown)
+            continue;
+        const ImVec2 p = to_screen(m.x + 0.5f, m.y + 0.5f, st, zoomLogical,
+                                   viewW, viewH, mapW, mapH);
+        if (p.x < -32 || p.x > viewW + 32 || p.y < -32 || p.y > viewH + 32)
+            continue;
+        const float r = std::max(4.0f, zoomLogical * 0.4f);
+        marker_ink(dl, p, m.style, r, argb_im(kMarkerColor[si], 255));
+    }
+
+    // ── The player — a position mark, not a figure: cyan ring + crosshair
+    // (the old panel's mark, at page scale).
+    {
+        const ImVec2 p = to_screen(gs.player.x + 0.5f, gs.player.y + 0.5f, st,
+                                   zoomLogical, viewW, viewH, mapW, mapH);
+        const ImU32 cy = IM_COL32(80, 240, 240, 255);
+        const float r = std::max(4.0f, zoomLogical * 0.35f);
+        dl->AddCircle(p, r, cy, 16, 2.0f);
+        dl->AddLine(ImVec2(p.x - r * 1.8f, p.y), ImVec2(p.x + r * 1.8f, p.y),
+                    cy, 1.2f);
+        dl->AddLine(ImVec2(p.x, p.y - r * 1.8f), ImVec2(p.x, p.y + r * 1.8f),
+                    cy, 1.2f);
+    }
+
+    // ── Chrome: header readout + legend + the pin list.
     if (st.censusRev != gs.knowledge.revision
         && gs.knowledge.has_complete_storage()) {
         unsigned long long n = 0;
@@ -74,9 +257,6 @@ void draw_map_screen(MapScreenState& st, GameState& gs, bool* open,
     const double exploredPct =
         cells > 0.0 ? 100.0 * double(st.exploredCells) / cells : 0.0;
 
-    // Discovered landmarks, by type — the legend lists only what the player's
-    // map KNOWS: an uncharted world shows an honest empty legend, and totals
-    // never leak how much world is left.
     int discovered[std::size_t(LandmarkType::Count)] = {};
     for_each_landmark(gs, [&](const LandmarkView& lm) {
         if (gs.knowledge.at(lm.x, lm.y) != kKnowledgeUnknown)
@@ -84,8 +264,9 @@ void draw_map_screen(MapScreenState& st, GameState& gs, bool* open,
     });
     bool styleSeen[4] = {};
     for (const Marker& m : gs.markers) {
-        if (gs.knowledge.at(int(std::floor(m.x)), int(std::floor(m.y)))
-            != kKnowledgeUnknown)
+        if ((kMarkerSurface[std::size_t(m.style) & 3u] & kMarkerOnMap)
+            && gs.knowledge.at(int(std::floor(m.x)), int(std::floor(m.y)))
+                   != kKnowledgeUnknown)
             styleSeen[std::size_t(m.style) & 3u] = true;
     }
 
@@ -102,9 +283,7 @@ void draw_map_screen(MapScreenState& st, GameState& gs, bool* open,
         ImGui::Text("Charted %.2f%%", exploredPct);
         ImGui::Separator();
 
-        // Legend — one loop over the landmark registry, one over the marker
-        // styles; swatches reuse the map's own shapes and colours.
-        ImDrawList* dl = ImGui::GetWindowDrawList();
+        ImDrawList* wdl = ImGui::GetWindowDrawList();
         const float rowH = ImGui::GetTextLineHeightWithSpacing();
         const float sw = rowH * 0.45f;
         for (std::size_t t = 0; t < std::size_t(LandmarkType::Count); ++t) {
@@ -112,8 +291,9 @@ void draw_map_screen(MapScreenState& st, GameState& gs, bool* open,
             const LandmarkDef& def = kLandmarks[t];
             const LandmarkDrawRow& row = kLandmarkDraw[t];
             const ImVec2 cur = ImGui::GetCursorScreenPos();
-            legend_shape(dl, ImVec2(cur.x + sw, cur.y + rowH * 0.42f),
-                         row.mini, sw, argb_im(def.color, 230));
+            chart_shape(wdl, ImVec2(cur.x + sw, cur.y + rowH * 0.42f),
+                        row.mini, sw, argb_im(def.color, 230),
+                        argb_im((def.color >> 2) & 0x3F3F3Fu, 255));
             ImGui::Dummy(ImVec2(sw * 2.4f, rowH * 0.8f));
             ImGui::SameLine();
             ImGui::Text("%.*s", int(def.label.size()), def.label.data());
@@ -123,33 +303,14 @@ void draw_map_screen(MapScreenState& st, GameState& gs, bool* open,
         for (std::size_t s = 0; s < 4; ++s) {
             if (!styleSeen[s]) continue;
             const ImVec2 cur = ImGui::GetCursorScreenPos();
-            const ImU32 mc = argb_im(kMarkerColor[s], 255);
-            const ImVec2 c(cur.x + sw, cur.y + rowH * 0.42f);
-            // The same shape language the pins draw with (macro_overlay):
-            // geometry for waypoint/POI (★◆ are not in the font), text "!"
-            // for the quest/danger styles.
-            if (MarkerStyle(s) == MarkerStyle::Waypoint) {
-                const ImVec2 pts[4] = {ImVec2(c.x, c.y - sw),
-                                       ImVec2(c.x + sw, c.y),
-                                       ImVec2(c.x, c.y + sw),
-                                       ImVec2(c.x - sw, c.y)};
-                dl->AddConvexPolyFilled(pts, 4, mc);
-            } else if (MarkerStyle(s) == MarkerStyle::POI) {
-                dl->AddLine(ImVec2(c.x - sw, c.y), ImVec2(c.x + sw, c.y), mc, 2.0f);
-                dl->AddLine(ImVec2(c.x, c.y - sw), ImVec2(c.x, c.y + sw), mc, 2.0f);
-            } else {
-                dl->AddText(ImVec2(c.x - sw * 0.3f, cur.y), mc, kMarkerGlyph[s]);
-            }
+            marker_ink(wdl, ImVec2(cur.x + sw, cur.y + rowH * 0.42f),
+                       MarkerStyle(s), sw, argb_im(kMarkerColor[s], 255));
             ImGui::Dummy(ImVec2(sw * 2.4f, rowH * 0.8f));
             ImGui::SameLine();
             ImGui::Text("%s", kMarkerLegendLabel[s]);
         }
 
-        // The player's own pins — the "user_" waypoints the page's
-        // double-click toggles (main.cpp). Rename in place, jump the camera
-        // to one, or lift it; everything else about a pin (draw style,
-        // colour, persistence, the knowledge gate) is the ordinary
-        // markers.h layer.
+        // The player's own pins: rename in place, jump the camera, or lift.
         bool anyPin = false;
         int pinRow = 0;
         for (auto it = gs.markers.begin(); it != gs.markers.end();) {
@@ -164,7 +325,7 @@ void draw_map_screen(MapScreenState& st, GameState& gs, bool* open,
                 anyPin = true;
             }
             ImGui::PushID(++pinRow);
-            if (ImGui::SmallButton("go")) {  // centre the camera on the pin
+            if (ImGui::SmallButton("go")) {
                 st.camX = m.x + 0.5f;
                 st.camY = m.y + 0.5f;
             }
@@ -184,7 +345,6 @@ void draw_map_screen(MapScreenState& st, GameState& gs, bool* open,
 
         ImGui::Separator();
         ImGui::TextDisabled("wheel zoom · drag pan · click pin");
-        (void)viewH;
     }
     ImGui::End();
 }

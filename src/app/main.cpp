@@ -11243,49 +11243,29 @@ void frame(App& app, int simSteps) {
         const float dpr = (logicalW > 0)
                             ? float(app.width) / float(logicalW)
                             : 1.0f;
-        // The map page swaps ITS camera under the one overlay — landmarks,
-        // pins, walkers, the player and click-to-travel all follow the page
-        // for free, under the same knowledge law.
+        // The map page is a MENU over the game, not a filter on it: while it
+        // is open the world overlay — paperdolls, walkers, travel routes,
+        // click-to-travel — is NOT drawn at all. The page draws its own
+        // primitives over the chart basemap (ui/map_screen.h) and its only
+        // click is the pin toggle.
         const bool mapOpen = macro_map_open(app);
-        const float oCamX = mapOpen ? app.mapScreen.camX : app.camX;
-        const float oCamY = mapOpen ? app.mapScreen.camY : app.camY;
-        const float zoomLogical =
-            (mapOpen ? app.mapScreen.zoom : app.zoom) / dpr;
+        if (mapOpen) {
+            sm::ui::draw_map_screen(app.mapScreen, app.gs, app.terrain,
+                                    &app.ui.map, logicalW, logicalH,
+                                    app.mapScreen.zoom / dpr,
+                                    app.uiSettings.scale(sm::ui::UiElementId::PanelMap));
+        } else {
+        const float zoomLogical = app.zoom / dpr;
         sm::ui::draw_macro_overlay(app.gs, app.ecs,
                                    app.terrain, app.features,
                                    app.cursor,
-                                   oCamX, oCamY, zoomLogical,
+                                   app.camX, app.camY, zoomLogical,
                                    logicalW, logicalH,
                                    app.gs.mapW, app.gs.mapH,
                                    app.uiSettings.visible(sm::ui::UiElementId::MacroOverlay),
                                    app.uiSettings.visible(sm::ui::UiElementId::QuestMarkers),
                                    app.uiSettings.scale(sm::ui::UiElementId::QuestMarkers),
-                                   &app.treeLayer, mapOpen);
-        // Player pins: the map is a DOCUMENT — a click on it commands
-        // nothing in the world (the overlay suppressed travel and settlement
-        // clicks on the page), it ANNOTATES: toggle a waypoint on the
-        // clicked cell, through the universal markers.h layer (persists in
-        // the save; kMarkerSurface keeps it off the world view — ink lives
-        // on the chart). Only charted cells can carry ink.
-        if (mapOpen && app.cursor.hoverValid
-            && !ImGui::GetIO().WantCaptureMouse
-            && ImGui::IsMouseClicked(ImGuiMouseButton_Left)
-            && app.gs.knowledge.at(app.cursor.hoverX, app.cursor.hoverY)
-                   != sm::kKnowledgeUnknown) {
-            char pinId[32];
-            std::snprintf(pinId, sizeof pinId, "user_%d_%d",
-                          app.cursor.hoverX, app.cursor.hoverY);
-            if (!sm::remove_marker(app.gs.markers, pinId)) {
-                sm::add_marker(app.gs.markers, pinId, sm::MarkerStyle::Waypoint,
-                               float(app.cursor.hoverX),
-                               float(app.cursor.hoverY));
-            }
-        }
-        if (mapOpen) {
-            sm::ui::draw_map_screen(app.mapScreen, app.gs, &app.ui.map,
-                                    logicalW, logicalH,
-                                    app.uiSettings.scale(sm::ui::UiElementId::PanelMap));
-        }
+                                   &app.treeLayer);
         if (app.cursor.hoverSettlementId >= 0) {
             app.ui.settlementId = app.cursor.hoverSettlementId;
         }
@@ -11316,9 +11296,10 @@ void frame(App& app, int simSteps) {
                 }
             }
         }
+        }  // !mapOpen — the world's overlay + its click resolution
     }
 
-    
+
     sm::ui::ShellResult shell{};
     switch (app.state) {
         case sm::ui::AppState::Title:
