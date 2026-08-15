@@ -47,6 +47,18 @@ inline void add_marker(std::vector<Marker>& m, std::string id, MarkerStyle s,
     m.push_back({std::move(id), s, x, y, std::move(label)});
 }
 
+// Remove ONE marker by exact id. Returns whether it existed — the map page's
+// double-click uses the answer as its toggle (absent → place, present → lift).
+inline bool remove_marker(std::vector<Marker>& m, const std::string& id) {
+    for (auto it = m.begin(); it != m.end(); ++it) {
+        if (it->id == id) {
+            m.erase(it);
+            return true;
+        }
+    }
+    return false;
+}
+
 inline void remove_markers_by_prefix(std::vector<Marker>& m, const std::string& prefix) {
     m.erase(std::remove_if(m.begin(), m.end(),
         [&](const Marker& mk) { return mk.id.rfind(prefix, 0) == 0; }),

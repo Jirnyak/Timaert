@@ -44,10 +44,13 @@ struct MapScreenState {
 float map_fit_zoom(int viewHPx, int mapH);
 
 // The page chrome: header readout (size, seed, position, explored share,
-// discovered landmark counts) + the registry-driven legend. Draws on top of
-// the shader basemap + world overlay; writes *open = false when the user
-// closes the page. `viewW/viewH` in logical points, like every ImGui panel.
-void draw_map_screen(MapScreenState& st, const GameState& gs, bool* open,
+// discovered landmark counts), the registry-driven legend, and the player's
+// own pins (rename / centre-on / remove — placement is the page's
+// double-click, main.cpp). Draws on top of the shader basemap + world
+// overlay; writes *open = false when the user closes the page. `gs` is
+// mutable for exactly one reason: the pin list edits gs.markers.
+// `viewW/viewH` in logical points, like every ImGui panel.
+void draw_map_screen(MapScreenState& st, GameState& gs, bool* open,
                      int viewW, int viewH, float scale);
 
 } // namespace sm::ui

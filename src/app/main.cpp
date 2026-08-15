@@ -3452,6 +3452,18 @@ void process_world_events(App& app) {
         sig != app.questMarkerSig) {
         sm::rebuild_quest_markers(app.gs, app.activeQuests);
         app.questMarkerSig = sig;
+        // A quest that points at the world OPENS it (Inc 4): every quest
+        // pin's surroundings join the map as MEMORY — the giver described
+        // the place — through the same reveal door and the same eye budget
+        // as the player's own sight. Re-revealing known ground is a cheap
+        // bounded no-op, so re-running on every marker-set change is fine.
+        for (const sm::Marker& m : app.gs.markers) {
+            if (m.style == sm::MarkerStyle::Quest) {
+                sm::reveal_area(app.gs.knowledge, optical_world(app),
+                                app.sightRt.scratch, m.x, m.y,
+                                player_sight_budget_cells());
+            }
+        }
     }
     apply_pending_event_effects(app);
     apply_pending_story_results(app);
@@ -11248,6 +11260,30 @@ void frame(App& app, int simSteps) {
                                    app.uiSettings.visible(sm::ui::UiElementId::QuestMarkers),
                                    app.uiSettings.scale(sm::ui::UiElementId::QuestMarkers),
                                    &app.treeLayer);
+        // Player pins (Inc 4): a DOUBLE-click on the map page toggles a
+        // waypoint on the hovered cell — through the universal markers.h
+        // layer, so the pin persists, draws with the ◆ style everywhere and
+        // obeys the knowledge law. Only cells the player KNOWS can carry a
+        // pin (a mark in terra incognita would be an invisible mark), and
+        // the double-click's first press ordered a march — a pin is not an
+        // order, so the queued path is cancelled.
+        if (mapOpen && app.cursor.hoverValid
+            && !ImGui::GetIO().WantCaptureMouse
+            && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)
+            && app.gs.knowledge.at(app.cursor.hoverX, app.cursor.hoverY)
+                   != sm::kKnowledgeUnknown) {
+            char pinId[32];
+            std::snprintf(pinId, sizeof pinId, "user_%d_%d",
+                          app.cursor.hoverX, app.cursor.hoverY);
+            if (!sm::remove_marker(app.gs.markers, pinId)) {
+                sm::add_marker(app.gs.markers, pinId, sm::MarkerStyle::Waypoint,
+                               float(app.cursor.hoverX),
+                               float(app.cursor.hoverY));
+            }
+            app.cursor.path.clear();
+            app.cursor.pathIdx = 0;
+            app.cursor.requestPath = false;
+        }
         if (mapOpen) {
             sm::ui::draw_map_screen(app.mapScreen, app.gs, &app.ui.map,
                                     logicalW, logicalH,

@@ -11,6 +11,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 
 namespace sm::ui {
 
@@ -55,7 +56,7 @@ float map_fit_zoom(int viewHPx, int mapH) {
     return float(viewHPx) / float(mapH);
 }
 
-void draw_map_screen(MapScreenState& st, const GameState& gs, bool* open,
+void draw_map_screen(MapScreenState& st, GameState& gs, bool* open,
                      int /*viewW*/, int viewH, float scale) {
     if (!open || !*open) return;
 
@@ -129,8 +130,45 @@ void draw_map_screen(MapScreenState& st, const GameState& gs, bool* open,
             ImGui::Text("%s", kMarkerLegendLabel[s]);
         }
 
+        // The player's own pins — the "user_" waypoints the page's
+        // double-click toggles (main.cpp). Rename in place, jump the camera
+        // to one, or lift it; everything else about a pin (draw style,
+        // colour, persistence, the knowledge gate) is the ordinary
+        // markers.h layer.
+        bool anyPin = false;
+        int pinRow = 0;
+        for (auto it = gs.markers.begin(); it != gs.markers.end();) {
+            Marker& m = *it;
+            if (m.style != MarkerStyle::Waypoint
+                || m.id.rfind("user_", 0) != 0) {
+                ++it;
+                continue;
+            }
+            if (!anyPin) {
+                ImGui::Separator();
+                anyPin = true;
+            }
+            ImGui::PushID(++pinRow);
+            if (ImGui::SmallButton("\xE2\x97\x8E")) {  // ◎ centre the camera
+                st.camX = m.x + 0.5f;
+                st.camY = m.y + 0.5f;
+            }
+            ImGui::SameLine();
+            char buf[64];
+            std::snprintf(buf, sizeof buf, "%s", m.label.c_str());
+            ImGui::SetNextItemWidth(ImGui::GetFontSize() * 9.0f);
+            char hint[32];
+            std::snprintf(hint, sizeof hint, "%d, %d", int(m.x), int(m.y));
+            if (ImGui::InputTextWithHint("##pin", hint, buf, sizeof buf))
+                m.label = buf;
+            ImGui::SameLine();
+            const bool lift = ImGui::SmallButton("x");
+            ImGui::PopID();
+            it = lift ? gs.markers.erase(it) : it + 1;
+        }
+
         ImGui::Separator();
-        ImGui::TextDisabled("wheel zoom  ·  drag pan  ·  click travel");
+        ImGui::TextDisabled("wheel zoom · drag pan · click travel · 2x-click pin");
         (void)viewH;
     }
     ImGui::End();
