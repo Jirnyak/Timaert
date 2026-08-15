@@ -1101,19 +1101,20 @@ void main() {
     // Rivers need no overlay: carved below sea in generation, they render as
     // Biome::Water inside biomeTextureOverlay() -- crisp banks, exactly like the sea.
     col = roadOverlay(mapUV, col);
-
-    // ── The knowledge capture point (macro/knowledge.h). Everything composed
-    // SO FAR — ground + relief light + mountains + roads — is what memory
-    // keeps: the Explored look is this picture drained to a cool graphite
-    // luminance, a pencil map of relief and roads. Everything composed BELOW
-    // this line (tree sprites, danger tint, night + glow, water glint) exists
-    // only where the eye is NOW — the Visible level. The law is applied at
-    // the end of main(); this is merely where the sketch is taken.
-    float memL = dot(col, vec3(0.299, 0.587, 0.114));
-    vec3 memoryCol = memL * vec3(0.58, 0.60, 0.64);
-
     col = featureDecor(worldPx, col);
     col = zoneTintOverlay(mapUV, col);
+
+    // ── The knowledge capture point (macro/knowledge.h). Memory keeps the
+    // WHOLE terrain — ground, relief, mountains, roads, forests, zone tint:
+    // the Explored look is exactly the visible picture drained to a cool
+    // graphite luminance (owner ruling 2026-08-15: everything shows in the
+    // remembered zone EXCEPT entities — and entities are CPU overlays, gated
+    // by the same knowledge door). Only the effects of the MOMENT compose
+    // below this line — night, settlement glow, water glints: memory does
+    // not flicker with the hour. The law is applied at the end of main();
+    // this is merely where the sketch is taken.
+    float memL = dot(col, vec3(0.299, 0.587, 0.114));
+    vec3 memoryCol = memL * vec3(0.58, 0.60, 0.64);
 
     // Night tint (TS renderer.ts night pass) + universal landmark/settlement
     // glow. The light field stores summed glow encoded as value/kMacroGlowCeil
