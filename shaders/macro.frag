@@ -1113,8 +1113,12 @@ void main() {
     // below this line — night, settlement glow, water glints: memory does
     // not flicker with the hour. The law is applied at the end of main();
     // this is merely where the sketch is taken.
+    // The memory look: NOT grey — drowned. Colours survive at low tide
+    // (~1/3 of their saturation), under a cool cast and dimmed, like ground
+    // seen through still water (owner ruling 2026-08-15): the remembered
+    // world stays legible as country, just visibly not-now.
     float memL = dot(col, vec3(0.299, 0.587, 0.114));
-    vec3 memoryCol = memL * vec3(0.58, 0.60, 0.64);
+    vec3 memoryCol = mix(col, vec3(memL), 0.62) * vec3(0.70, 0.76, 0.86);
 
     // Night tint (TS renderer.ts night pass) + universal landmark/settlement
     // glow. The light field stores summed glow encoded as value/kMacroGlowCeil
