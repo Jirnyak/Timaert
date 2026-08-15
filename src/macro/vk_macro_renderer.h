@@ -20,6 +20,7 @@ struct TerrainData;
 struct FeatureLayer;
 struct ZoneLayer;
 struct TreeLayer;
+struct KnowledgeLayer;
 
 class MacroRendererVk {
 public:
@@ -37,7 +38,8 @@ public:
                 const FeatureLayer& features, const ZoneLayer& zones,
                 const std::uint8_t* lightFieldRgba = nullptr,
                 std::uint32_t lightFieldW = 0, std::uint32_t lightFieldH = 0,
-                const TreeLayer* treeLayer = nullptr);
+                const TreeLayer* treeLayer = nullptr,
+                const KnowledgeLayer* knowledge = nullptr);
 
     // Surgically re-upload ONLY the per-cell night-light field (binding 4),
     // leaving the master/feature/zone textures untouched. Refreshes night
@@ -50,11 +52,20 @@ public:
                             const std::uint8_t* lightFieldRgba,
                             std::uint32_t lightFieldW, std::uint32_t lightFieldH);
 
-    // Surgically re-upload ONLY the tree-count field (binding 5) — same
+    // Surgically re-upload ONLY the tree-count field (binding 4) — same
     // discipline as upload_light_field. Called when TreeLayer.revision moves
     // (felled trees / future woodcutters), never per frame.
     void upload_tree_field(const gpu::VulkanDevice& dev,
                            const TreeLayer* treeLayer);
+
+    // Refresh ONLY the knowledge field (binding 5). Unlike the doors above
+    // this one runs OFTEN — every player cell crossing bumps the revision —
+    // so when the grid dims are unchanged it rewrites the R8 image IN PLACE
+    // (VulkanTexture::update_region: queue-ordered barriers, its own fence,
+    // no vkDeviceWaitIdle drain). The realloc path survives only for a
+    // dimension change, which a full upload() covers anyway.
+    void upload_knowledge_field(const gpu::VulkanDevice& dev,
+                                const KnowledgeLayer* knowledge);
 
     // Record the fullscreen map draw for the current framebuffer.
     void record(VkCommandBuffer cmd, VkExtent2D ext, const TerrainData& td,
@@ -67,8 +78,9 @@ private:
     void free_textures(const gpu::VulkanDevice& dev);
 
     gpu::VulkanTexture master_{}, feature_{}, zone_{};
-    gpu::VulkanTexture lightField_{};  // per-cell RGB night glow (binding 4)
-    gpu::VulkanTexture treeField_{};   // per-cell tree count R8 (binding 5)
+    gpu::VulkanTexture lightField_{};  // per-cell RGB night glow (binding 3)
+    gpu::VulkanTexture treeField_{};   // per-cell tree count R8 (binding 4)
+    gpu::VulkanTexture knowledgeField_{}; // per-cell knowledge R8 (binding 5)
     VkDescriptorSetLayout setLayout_ = VK_NULL_HANDLE;
     VkDescriptorPool pool_ = VK_NULL_HANDLE;
     VkDescriptorSet set_ = VK_NULL_HANDLE;

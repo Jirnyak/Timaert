@@ -343,6 +343,9 @@ struct App {
     // refreshes only when a count actually changed.
     sm::TreeLayer        treeLayer;
     std::uint32_t        uploadedTreeRev = 0;
+    // Mirrors gs.knowledge.revision so the u_knowledgeMap texture refreshes
+    // only when sight actually moved (a cell crossing / a quest reveal).
+    std::uint32_t        uploadedKnowledgeRev = 0;
     // Derived mineral deposits (macro/deposit_layer.h, W2a); mutations
     // persist as gs.depositOverrides.
     sm::DepositLayer     deposits;
@@ -2077,8 +2080,9 @@ void boot_world(App& app, std::uint32_t seed,
     app.macro.upload(app.device, app.terrain, app.features, app.zones,
                      macroLightField.empty() ? nullptr : macroLightField.data(),
                      std::uint32_t(app.gs.mapW), std::uint32_t(app.gs.mapH),
-                     &app.treeLayer);
+                     &app.treeLayer, &app.gs.knowledge);
     app.uploadedTreeRev = app.treeLayer.revision;
+    app.uploadedKnowledgeRev = app.gs.knowledge.revision;
     boot_trace("world data uploaded");
     // TODO: rebuild_landmarks (PHASE C — landmark glyphs/lights).
 
@@ -3442,6 +3446,15 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     sm::update_player_sight(app.gs.knowledge, app.sightRt, optical_world(app),
                             app.gs.player.x, app.gs.player.y,
                             player_sight_budget_cells());
+    // Refresh u_knowledgeMap (binding 5) the moment the layer moved — here,
+    // not in the ticked section, because the first sweep of a fresh boot or
+    // load runs while the world is still paused and the map must not draw a
+    // frame of yesterday's fog. In-place texel rewrite, no realloc.
+    if (app.gs.knowledge.revision != app.uploadedKnowledgeRev
+        && app.macro.ready()) {
+        app.macro.upload_knowledge_field(app.device, &app.gs.knowledge);
+        app.uploadedKnowledgeRev = app.gs.knowledge.revision;
+    }
 
     // THE pause, asked once, for whichever world is on screen. Everything below
     // this line is simulation — the clock, the daily sim, NPC AI, recovery, the

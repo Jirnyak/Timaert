@@ -128,7 +128,7 @@ SpriteId npc_sprite(NPCType t) {
 // off the cell it belongs to and produce the diagonal offset shift
 // we were seeing).
 void draw_sprite(ImDrawList* dl, ImVec2 c, SpriteId id, float pixSize,
-                 ImU32 fallbackCol) {
+                 ImU32 fallbackCol, ImU32 tint = IM_COL32_WHITE) {
     const Sprite* s = sprite_get(id);
     const float r = pixSize * 0.5f;
     if (!s) {
@@ -137,7 +137,7 @@ void draw_sprite(ImDrawList* dl, ImVec2 c, SpriteId id, float pixSize,
     }
     ImVec2 tl(c.x - r, c.y - r);
     ImVec2 br(c.x + r, c.y + r);
-    dl->AddImage(s->tex, tl, br);
+    dl->AddImage(s->tex, tl, br, ImVec2(0, 0), ImVec2(1, 1), tint);
 }
 
 character::CharacterTextureCache& paperdoll_cache() {
@@ -383,27 +383,45 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
                                         camX, camY, zoom, viewW, viewH, mapW, mapH);
             dl->AddRect(tl, br, IM_COL32(255, 255, 255, 180), 0.0f, 0, 1.5f);
 
-            // Tooltip: biome / feature / landmark / coords.
-            Biome b = biome_at_cell(terrain, cursor.hoverX, cursor.hoverY, 0.40f);
-            FeatureType f = features.at(cursor.hoverX, cursor.hoverY);
+            // Tooltip: biome / feature / landmark / coords — but only what
+            // the player KNOWS (macro/knowledge.h). Terra incognita answers
+            // its coordinates and nothing else.
+            const std::uint8_t hoverKnow =
+                gs.knowledge.at(cursor.hoverX, cursor.hoverY);
             ImGui::BeginTooltip();
             ImGui::Text("(%d, %d)", cursor.hoverX, cursor.hoverY);
-            ImGui::TextColored(ImVec4(0.55f, 0.95f, 0.55f, 1), "%s", kBiomes[b].name);
-            const char* fn = feature_name(f);
-            if (fn[0]) ImGui::TextColored(ImVec4(1.00f, 0.75f, 0.40f, 1), "%s", fn);
-            // Forest is a count class, not a feature: label it from the
-            // tree-count layer, with the live number (рубка visibly ticks it).
-            if (treeLayer && treeLayer->has_complete_storage()) {
-                const int tc = int(treeLayer->at(cursor.hoverX, cursor.hoverY));
-                if (is_forest_cell(tc)) {
-                    ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.45f, 1),
-                                       "Forest (%d trees)", tc);
-                } else if (tc > 0) {
-                    ImGui::TextColored(ImVec4(0.45f, 0.75f, 0.45f, 1),
-                                       "Trees: %d", tc);
+            if (hoverKnow == kKnowledgeUnknown) {
+                ImGui::TextColored(ImVec4(0.55f, 0.55f, 0.60f, 1),
+                                   "Uncharted");
+            } else {
+                Biome b = biome_at_cell(terrain, cursor.hoverX, cursor.hoverY,
+                                        0.40f);
+                FeatureType f = features.at(cursor.hoverX, cursor.hoverY);
+                ImGui::TextColored(ImVec4(0.55f, 0.95f, 0.55f, 1), "%s",
+                                   kBiomes[b].name);
+                const char* fn = feature_name(f);
+                if (fn[0])
+                    ImGui::TextColored(ImVec4(1.00f, 0.75f, 0.40f, 1), "%s", fn);
+                // Forest is a count class, not a feature: label it from the
+                // tree-count layer, with the live number (рубка visibly ticks
+                // it) — a LIVE reading, so it speaks only inside current
+                // sight; memory keeps the map, not this season's tree count.
+                if (hoverKnow == kKnowledgeVisible && treeLayer
+                    && treeLayer->has_complete_storage()) {
+                    const int tc =
+                        int(treeLayer->at(cursor.hoverX, cursor.hoverY));
+                    if (is_forest_cell(tc)) {
+                        ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.45f, 1),
+                                           "Forest (%d trees)", tc);
+                    } else if (tc > 0) {
+                        ImGui::TextColored(ImVec4(0.45f, 0.75f, 0.45f, 1),
+                                           "Trees: %d", tc);
+                    }
                 }
+                if (landmark[0])
+                    ImGui::TextColored(ImVec4(1.00f, 0.90f, 0.40f, 1), "%s",
+                                       landmark);
             }
-            if (landmark[0]) ImGui::TextColored(ImVec4(1.00f, 0.90f, 0.40f, 1), "%s", landmark);
             ImGui::EndTooltip();
         }
 
@@ -420,6 +438,12 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
     // rule as the night glow, macro_lighting.cpp), and the glyph-circle
     // fallback takes its colour from the ONE authority, the registry row.
     for_each_landmark(gs, [&](const LandmarkView& lm) {
+        // The knowledge law (macro/knowledge.h): terra incognita hides even
+        // the glyph; an Explored landmark is MEMORY and draws faded — same
+        // sprite, same ONE registry colour, alpha alone says "remembered".
+        const std::uint8_t know = gs.knowledge.at(lm.x, lm.y);
+        if (know == kKnowledgeUnknown) return;
+        const bool faded = know < kKnowledgeVisible;
         const LandmarkDrawRow& row = landmark_draw(lm.type);
         if (row.minZoom > 0.0f && zoom < row.minZoom) return;
         ImVec2 p = world_to_screen(float(lm.x) + 0.5f, float(lm.y) + 0.5f,
@@ -428,16 +452,18 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
         const float size = landmark_size(zoom, row.basePx, row.maxPx);
         const std::uint32_t argb = landmark_def(lm.type).color;
         const ImU32 fallback = IM_COL32((argb >> 16) & 0xFF, (argb >> 8) & 0xFF,
-                                        argb & 0xFF, 230);
+                                        argb & 0xFF, faded ? 120 : 230);
         draw_sprite(dl, p, lm.depleted ? row.spriteDepleted : row.sprite,
-                    size, fallback);
+                    size, fallback,
+                    faded ? IM_COL32(255, 255, 255, 120) : IM_COL32_WHITE);
         if (row.labelZoom > 0.0f && zoom >= row.labelZoom && lm.name[0]) {
             ImVec2 ts = ImGui::CalcTextSize(lm.name);
             ImVec2 tp(p.x - ts.x * 0.5f, p.y - size * 0.5f - ts.y - 2.0f);
             dl->AddRectFilled(ImVec2(tp.x - 3, tp.y - 1),
                               ImVec2(tp.x + ts.x + 3, tp.y + ts.y + 1),
-                              IM_COL32(0, 0, 0, 140), 2.0f);
-            dl->AddText(tp, IM_COL32(255, 245, 200, 255), lm.name);
+                              IM_COL32(0, 0, 0, faded ? 90 : 140), 2.0f);
+            dl->AddText(tp, IM_COL32(255, 245, 200, faded ? 140 : 255),
+                        lm.name);
         }
     });
 
@@ -459,6 +485,11 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
             const ecs::VisualPos* visual = w.reg.try_get<ecs::VisualPos>(e);
             const float drawX = visual ? visual->vx : pos.x;
             const float drawY = visual ? visual->vy : pos.y;
+            // A living walker is the WORLD, not the map: memory keeps no
+            // people. Only cells in the player's current sight draw theirs.
+            if (gs.knowledge.at(int(std::floor(drawX)), int(std::floor(drawY)))
+                != kKnowledgeVisible)
+                continue;
             // +0.5 so the sprite sits at the CELL CENTRE (the GLSL grid
             // bounds cells at integer worldPx, so cell (X,Y) spans
             // [X..X+1, Y..Y+1] and its centre is at X+0.5, Y+0.5).
@@ -539,6 +570,12 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
                             * std::clamp(questMarkerScale, 0.4f, 3.0f);
         const float r = glyphPx * 0.72f;                       // pin disc radius
         for (const auto& m : gs.markers) {
+            // Pins live on the map the player HAS: an uncharted cell shows
+            // nothing — a quest that wants to point into the dark reveals its
+            // target area first (reveal_area).
+            if (gs.knowledge.at(int(std::floor(m.x)), int(std::floor(m.y)))
+                == kKnowledgeUnknown)
+                continue;
             ImVec2 p = world_to_screen(m.x + 0.5f, m.y + 0.5f,
                                        camX, camY, zoom, viewW, viewH, mapW, mapH);
             if (!on_screen(p, viewW, viewH, 96.0f)) continue;

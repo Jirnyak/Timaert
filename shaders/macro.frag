@@ -11,6 +11,7 @@ layout(set = 0, binding = 1) uniform sampler2D u_featureMap; // R8: FeatureType 
 layout(set = 0, binding = 2) uniform sampler2D u_zoneMap;    // R8: zone 0..9
 layout(set = 0, binding = 3) uniform sampler2D u_lightField; // RGB night glow (macro_lighting bake)
 layout(set = 0, binding = 4) uniform sampler2D u_treeMap;    // R8: tree count / 16384 (macro/tree_layer.h)
+layout(set = 0, binding = 5) uniform sampler2D u_knowledgeMap; // R8: knowledge level / 2 (macro/knowledge.h)
 
 layout(push_constant) uniform Push {
     vec2 resolution;
@@ -1017,6 +1018,17 @@ void main() {
     // Rivers need no overlay: carved below sea in generation, they render as
     // Biome::Water inside biomeTextureOverlay() -- crisp banks, exactly like the sea.
     col = roadOverlay(mapUV, col);
+
+    // ── The knowledge capture point (macro/knowledge.h). Everything composed
+    // SO FAR — ground + relief light + mountains + roads — is what memory
+    // keeps: the Explored look is this picture drained to a cool graphite
+    // luminance, a pencil map of relief and roads. Everything composed BELOW
+    // this line (tree sprites, danger tint, night + glow, water glint) exists
+    // only where the eye is NOW — the Visible level. The law is applied at
+    // the end of main(); this is merely where the sketch is taken.
+    float memL = dot(col, vec3(0.299, 0.587, 0.114));
+    vec3 memoryCol = memL * vec3(0.58, 0.60, 0.64);
+
     col = featureDecor(worldPx, col);
     col = zoneTintOverlay(mapUV, col);
 
@@ -1035,5 +1047,20 @@ void main() {
     // it rides on top of the night darkening (the moon road stays visible on
     // dark water, exactly like the 3D water's glints).
     col += waterGlint;
+
+    // ── The knowledge law (macro/knowledge.h, R8 binding 5) ──────────────
+    // Encoded level/2: 0 = terra incognita, ½ = explored memory, 1 = in
+    // sight now. Linear-sampled, so the border breathes across a cell
+    // instead of stepping. Two blends state the whole stage table:
+    //   below Visible  → the full living picture fades to the memory sketch
+    //                    captured above (relief + roads, graphite grey; no
+    //                    trees, zones, night, lights or glints — those are
+    //                    the world as it IS, and memory only keeps the map);
+    //   below Explored → everything fades to black. The world is dark until
+    //                    an eye has spent optical budget on it.
+    float know     = texture(u_knowledgeMap, mapUV).r * 2.0;
+    float explored = clamp(know, 0.0, 1.0);
+    float visible  = clamp(know - 1.0, 0.0, 1.0);
+    col = mix(memoryCol, col, visible) * explored;
     outColor = vec4(col, 1.0);
 }

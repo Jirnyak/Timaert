@@ -2637,9 +2637,13 @@ namespace sm::ui
             std::uint32_t seed = 0;
             int srcW = 0;
             int srcH = 0;
+            // Knowledge revision the bitmap was baked against — the panel
+            // pauses the world, so this moves only between visits.
+            std::uint32_t knowRev = std::uint32_t(-1);
         };
 
-        void build_minimap(MiniMapCache &mm, const TerrainData &terrain, std::uint32_t seed)
+        void build_minimap(MiniMapCache &mm, const TerrainData &terrain, std::uint32_t seed,
+                           const KnowledgeLayer &knowledge)
         {
             constexpr int kMaxSide = 256;
             int side = std::min(kMaxSide, std::max(terrain.width, terrain.height));
@@ -2686,6 +2690,21 @@ namespace sm::ui
                         g *= shade;
                         b *= shade;
                     }
+                    // The knowledge law, mirrored from macro.frag: terra
+                    // incognita is black, Explored is the graphite-grey
+                    // memory sketch (luminance only), Visible keeps colour.
+                    const std::uint8_t know = knowledge.at(sx, sy);
+                    if (know == kKnowledgeUnknown)
+                    {
+                        r = g = b = 0.02f;
+                    }
+                    else if (know == kKnowledgeExplored)
+                    {
+                        const float lum = r * 0.299f + g * 0.587f + b * 0.114f;
+                        r = lum * 0.58f;
+                        g = lum * 0.60f;
+                        b = lum * 0.64f;
+                    }
                     std::size_t d = std::size_t(y) * W + x;
                     rgba[d * 4 + 0] = std::uint8_t(std::clamp(r, 0.0f, 1.0f) * 255.0f);
                     rgba[d * 4 + 1] = std::uint8_t(std::clamp(g, 0.0f, 1.0f) * 255.0f);
@@ -2701,6 +2720,7 @@ namespace sm::ui
             mm.seed = seed;
             mm.srcW = srcW;
             mm.srcH = srcH;
+            mm.knowRev = knowledge.revision;
         }
     } // namespace
 
@@ -2709,9 +2729,10 @@ namespace sm::ui
         if (!open || !*open)
             return;
         static MiniMapCache mm;
-        if (mm.tex == 0 || mm.seed != gs.worldSeed || mm.srcW != terrain.width || mm.srcH != terrain.height)
+        if (mm.tex == 0 || mm.seed != gs.worldSeed || mm.srcW != terrain.width
+            || mm.srcH != terrain.height || mm.knowRev != gs.knowledge.revision)
         {
-            build_minimap(mm, terrain, gs.worldSeed);
+            build_minimap(mm, terrain, gs.worldSeed, gs.knowledge);
         }
 
         ImGui::SetNextWindowSize(ImVec2(620 * scale, 720 * scale), ImGuiCond_FirstUseEver);
@@ -2746,6 +2767,12 @@ namespace sm::ui
             // presentation row (ui/landmark_draw.h), colour from the ONE
             // authority (the registry row); a consumed landmark goes ashen.
             for_each_landmark(gs, [&](const LandmarkView &lm) {
+                // The knowledge law: uncharted landmarks do not exist on the
+                // player's map; remembered (not currently seen) ones fade.
+                const std::uint8_t know = gs.knowledge.at(lm.x, lm.y);
+                if (know == kKnowledgeUnknown)
+                    return;
+                const bool faded = know < kKnowledgeVisible;
                 const LandmarkDrawRow &row = landmark_draw(lm.type);
                 const std::uint32_t argb = landmark_def(lm.type).color;
                 // Ashen = the lit colour at half strength — one derivation,
@@ -2753,9 +2780,9 @@ namespace sm::ui
                 const ImU32 mark = lm.depleted
                     ? IM_COL32(((argb >> 16) & 0xFF) / 2,
                                ((argb >> 8) & 0xFF) / 2,
-                               (argb & 0xFF) / 2, 200)
+                               (argb & 0xFF) / 2, faded ? 120 : 200)
                     : IM_COL32((argb >> 16) & 0xFF, (argb >> 8) & 0xFF,
-                               argb & 0xFF, 230);
+                               argb & 0xFF, faded ? 130 : 230);
                 // Outline = the lit colour at quarter strength, full alpha.
                 const ImU32 rim = IM_COL32(((argb >> 16) & 0xFF) / 4,
                                            ((argb >> 8) & 0xFF) / 4,

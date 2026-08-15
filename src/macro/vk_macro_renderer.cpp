@@ -2,6 +2,7 @@
 
 #include "gpu/vk_device.h"
 #include "macro/features.h"
+#include "macro/knowledge.h"
 #include "macro/map_generator.h"
 #include "macro/tree_layer.h"
 #include "macro/zones.h"
@@ -52,6 +53,26 @@ void expand_r8(const std::uint8_t* src, int w, int h,
     }
 }
 
+// Encode the knowledge layer for the shader: one byte per cell, level/2 in
+// UNORM (0 / 128 / 255 for Unknown / Explored / Visible). Sampled with LINEAR
+// + repeat so the fog border breathes across a cell instead of stepping;
+// macro.frag decodes with sample * 2.
+bool encode_knowledge_field(const KnowledgeLayer* k,
+                            std::vector<std::uint8_t>& out, int& w, int& h) {
+    if (!k || !k->has_complete_storage()) return false;
+    w = k->width;
+    h = k->height;
+    const std::size_t n = std::size_t(w) * std::size_t(h);
+    out.resize(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        const std::uint8_t v = k->data[i];
+        out[i] = v >= kKnowledgeVisible ? 255u
+               : v == kKnowledgeExplored ? 128u
+                                         : 0u;
+    }
+    return true;
+}
+
 // Encode the tree-count layer for the shader: one byte per cell,
 // round(count / 16384 * 255) — u_treeMap reads it back as density [0,1].
 // 64-tree quantisation is far below anything the map sprite can resolve.
@@ -74,10 +95,10 @@ bool encode_tree_field(const TreeLayer* layer, std::vector<std::uint8_t>& out,
 } // namespace
 
 bool MacroRendererVk::init(const gpu::VulkanDevice& dev, VkRenderPass pass) {
-    // Descriptor set 0 = five combined image samplers
-    // (master/feature/zone + night light field + tree field).
-    VkDescriptorSetLayoutBinding bindings[5]{};
-    for (std::uint32_t i = 0; i < 5; ++i) {
+    // Descriptor set 0 = six combined image samplers
+    // (master/feature/zone + night light field + tree field + knowledge).
+    VkDescriptorSetLayoutBinding bindings[6]{};
+    for (std::uint32_t i = 0; i < 6; ++i) {
         bindings[i].binding = i;
         bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         bindings[i].descriptorCount = 1;
@@ -85,12 +106,12 @@ bool MacroRendererVk::init(const gpu::VulkanDevice& dev, VkRenderPass pass) {
     }
     VkDescriptorSetLayoutCreateInfo dlci{};
     dlci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    dlci.bindingCount = 5;
+    dlci.bindingCount = 6;
     dlci.pBindings = bindings;
     if (vkCreateDescriptorSetLayout(dev.device, &dlci, nullptr, &setLayout_) != VK_SUCCESS)
         return false;
 
-    VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5};
+    VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 6};
     VkDescriptorPoolCreateInfo dpci{};
     dpci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     dpci.maxSets = 1;
@@ -120,6 +141,7 @@ bool MacroRendererVk::init(const gpu::VulkanDevice& dev, VkRenderPass pass) {
 }
 
 void MacroRendererVk::free_textures(const gpu::VulkanDevice& dev) {
+    knowledgeField_.destroy(dev);
     treeField_.destroy(dev);
     lightField_.destroy(dev);
     zone_.destroy(dev);
@@ -131,7 +153,8 @@ void MacroRendererVk::upload(const gpu::VulkanDevice& dev, const TerrainData& td
                              const FeatureLayer& features, const ZoneLayer& zones,
                              const std::uint8_t* lightFieldRgba,
                              std::uint32_t lightFieldW, std::uint32_t lightFieldH,
-                             const TreeLayer* treeLayer) {
+                             const TreeLayer* treeLayer,
+                             const KnowledgeLayer* knowledge) {
     if (uploaded_) {
         vkDeviceWaitIdle(dev.device);
         free_textures(dev);
@@ -198,12 +221,31 @@ void MacroRendererVk::upload(const gpu::VulkanDevice& dev, const TerrainData& td
         }
     }
 
-    // Bind the five textures into set 0.
-    const gpu::VulkanTexture* tex[5] = {&master_, &feature_, &zone_,
-                                        &lightField_, &treeField_};
-    VkDescriptorImageInfo dii[5]{};
-    VkWriteDescriptorSet writes[5]{};
-    for (std::uint32_t i = 0; i < 5; ++i) {
+    // Knowledge field: R8 level/2 (see encode_knowledge_field), LINEAR +
+    // repeat so the fog border breathes across the torus. When no layer is
+    // supplied — the dev harnesses (macro_shot, gpu_smoke) and any caller
+    // predating the fog — a 1×1 VISIBLE texel is bound: their pictures stay
+    // exactly the world with no fog, and binding 5 is always valid. The game
+    // itself always passes the real grid (boot_world resets it).
+    {
+        std::vector<std::uint8_t> kb;
+        int kw = 0, kh = 0;
+        if (encode_knowledge_field(knowledge, kb, kw, kh)) {
+            knowledgeField_.create_r8(dev, std::uint32_t(kw), std::uint32_t(kh),
+                                      kb.data(), true, true);
+        } else {
+            const std::uint8_t visible = 255u;
+            knowledgeField_.create_r8(dev, 1, 1, &visible, true, true);
+        }
+    }
+
+    // Bind the six textures into set 0.
+    const gpu::VulkanTexture* tex[6] = {&master_, &feature_, &zone_,
+                                        &lightField_, &treeField_,
+                                        &knowledgeField_};
+    VkDescriptorImageInfo dii[6]{};
+    VkWriteDescriptorSet writes[6]{};
+    for (std::uint32_t i = 0; i < 6; ++i) {
         dii[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         dii[i].imageView = tex[i]->view;
         dii[i].sampler = tex[i]->sampler;
@@ -214,8 +256,48 @@ void MacroRendererVk::upload(const gpu::VulkanDevice& dev, const TerrainData& td
         writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         writes[i].pImageInfo = &dii[i];
     }
-    vkUpdateDescriptorSets(dev.device, 5, writes, 0, nullptr);
+    vkUpdateDescriptorSets(dev.device, 6, writes, 0, nullptr);
     uploaded_ = true;
+}
+
+void MacroRendererVk::upload_knowledge_field(const gpu::VulkanDevice& dev,
+                                             const KnowledgeLayer* knowledge) {
+    if (!uploaded_) return;
+
+    std::vector<std::uint8_t> kb;
+    int kw = 0, kh = 0;
+    if (!encode_knowledge_field(knowledge, kb, kw, kh)) return;
+
+    // The common case — every player cell crossing: the grid dims are those
+    // the texture was created with, so rewrite the texels IN PLACE. The copy
+    // is queue-ordered behind the in-flight frame's sampling (update_region's
+    // FRAGMENT_SHADER→TRANSFER barrier) and waits only on its own transfer
+    // fence — no realloc, no descriptor rewrite, no vkDeviceWaitIdle drain.
+    if (knowledgeField_.width == std::uint32_t(kw)
+        && knowledgeField_.height == std::uint32_t(kh)) {
+        knowledgeField_.update_region(dev, 0, 0, std::uint32_t(kw),
+                                      std::uint32_t(kh), kb.data());
+        return;
+    }
+
+    // Dimension change (a different world) — the rare path, same discipline
+    // as upload_tree_field: idle, recreate, rewrite binding 5.
+    vkDeviceWaitIdle(dev.device);
+    knowledgeField_.destroy(dev);
+    knowledgeField_.create_r8(dev, std::uint32_t(kw), std::uint32_t(kh),
+                              kb.data(), true, true);
+    VkDescriptorImageInfo dii{};
+    dii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    dii.imageView = knowledgeField_.view;
+    dii.sampler = knowledgeField_.sampler;
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = set_;
+    write.dstBinding = 5;
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    write.pImageInfo = &dii;
+    vkUpdateDescriptorSets(dev.device, 1, &write, 0, nullptr);
 }
 
 void MacroRendererVk::upload_tree_field(const gpu::VulkanDevice& dev,

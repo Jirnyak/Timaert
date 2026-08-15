@@ -727,6 +727,9 @@ no atlas, no PNG.**
 | `u_master`               | `macro/map_generator.cpp` (RGBA8 FBO readback + GPU texture) | R=height, G=moisture, B=temperature, A=mask |
 | `u_featureMap`           | `macro/features.h` `FeatureLayer` (R8 texture)      | R=`FeatureType` byte            |
 | `u_zoneMap`              | `macro/zones.cpp` (R8 texture)                      | R=zone byte (0..9)              |
+| `u_lightField`           | `macro/macro_lighting.cpp` bake (RGBA8, binding 3)  | RGB=night glow / `kMacroGlowCeil` |
+| `u_treeMap`              | `macro/tree_layer.h` (R8, binding 4)                | R=tree count / 16384            |
+| `u_knowledgeMap`         | `macro/knowledge.h` (R8, binding 5)                 | R=knowledge level / 2 (0 Unknown, ½ Explored, 1 Visible) |
 | `u_seaLevel`, `u_seed`, `u_mapSize`, `u_zoom`, `u_viewSize`, `u_cam`, `u_timeOfDay` | game settings | scalars |
 
 Any future overlay can read these without touching the data pipeline.
@@ -754,6 +757,30 @@ Any future overlay can read these without touching the data pipeline.
 | Seasonal foliage     | `WorldTime.season` + biome                   | swap palette in `bt_<biome>()`              |
 
 Each is one new GLSL snippet + one uniform — never a refactor.
+
+### Knowledge Layer (fog of war)
+
+The player's knowledge of the macro map ([macro/knowledge.h](src/macro/knowledge.h),
+save v40): one byte per cell — `Unknown` (terra incognita, drawn black),
+`Explored` (memory: a graphite pencil sketch of relief + roads, faded
+landmarks, markers), `Visible` (in sight now: the full living picture, and
+the only level that shows NPCs). Only Explored persists; Visible is
+recomputed whenever the player's cell changes.
+
+**Sight IS light**: `update_player_sight` runs the same bounded
+terrain-optical Dijkstra as the night-glow bake
+([macro/optics.h](src/macro/optics.h) `optical_sweep`) — roads carry the
+eye far, canopy smothers it per unit of tree density, a ridge walls it off
+while a hilltop overlooks its valley. The budget is derived from the
+standing eye's horizon (`player_sight_budget_cells`, main.cpp) and is the
+ONE door future attributes/skills multiply. `reveal_area` is the
+quest/event door (marks memory, never sight).
+
+**Render law** (macro.frag): the compose chain captures its memory sketch
+after roads and applies two blends at the end — below Visible the living
+picture fades to the sketch, below Explored everything fades to black.
+CPU consumers (landmark/NPC/marker overlays, tooltips) ask
+`gs.knowledge.at(x, y)` — the one door, fail-closed to Unknown.
 
 ### Marker System
 
