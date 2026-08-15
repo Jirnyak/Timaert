@@ -357,6 +357,12 @@ struct App {
     // Visible set + the sweep scratch. The persistent grid lives on
     // gs.knowledge; this half is exactly what a load must NOT keep.
     sm::SightRuntime     sightRt;
+    // Dev console `revealmap`: while on, the sight projection is pinned to
+    // "everything" and the per-frame sweep is suspended. Toggling off does
+    // NOT un-reveal anything — it merely wakes the ordinary law, whose next
+    // sweep decays the pinned Visible set to Explored: the map stays charted
+    // (drowned), the live disc returns. Session-only, never saved.
+    bool                 revealMapOn = false;
     // Cached float views of the optical world — heights from the terrain R
     // channel, tree density from the live tree layer — shared by the
     // night-glow bake and the player-sight sweep (ONE physics, one cache).
@@ -1663,6 +1669,7 @@ void destroy_world(App& app) {
     // invalid anchor is what forces the first sweep of a fresh boot or load).
     app.sightRt = sm::SightRuntime{};
     app.optical = App::OpticalCache{};
+    app.revealMapOn = false;   // full vision dies with the world it revealed
     if (!app.worldLoaded) return;
     sm::destroy_terrain(app.terrain);
     app.terrain = {};
@@ -3493,10 +3500,14 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     // sweep (macro/knowledge.h). Above the pause gate on purpose — a fresh
     // boot or load runs its first sweep here (the sight anchor starts invalid)
     // even while a panel holds the world still, so the map is never blank
-    // around a player who has not yet unpaused.
-    sm::update_player_sight(app.gs.knowledge, app.sightRt, optical_world(app),
-                            app.gs.player.x, app.gs.player.y,
-                            player_sight_budget_cells());
+    // around a player who has not yet unpaused. The `revealmap` console
+    // toggle suspends the sweep while it pins the projection to "everything".
+    if (!app.revealMapOn) {
+        sm::update_player_sight(app.gs.knowledge, app.sightRt,
+                                optical_world(app),
+                                app.gs.player.x, app.gs.player.y,
+                                player_sight_budget_cells());
+    }
     // Refresh u_knowledgeMap (binding 5) the moment the layer moved — here,
     // not in the ticked section, because the first sweep of a fresh boot or
     // load runs while the world is still paused and the map must not draw a
@@ -3829,6 +3840,43 @@ void register_console_commands(App& app) {
             c.printfln(Lvl::Ok, "day %d, %02d:%02d",
                        app.gs.worldTime.day(), app.gs.worldTime.hour(),
                        app.gs.worldTime.minute());
+            return true;
+        });
+
+    con.register_cmd("revealmap", "revealmap",
+        "toggle full vision: on = the whole map is Visible; off = the "
+        "ordinary decay law runs and the map stays CHARTED (drowned)",
+        [&app](Con& c, const std::vector<std::string>&) {
+            auto& k = app.gs.knowledge;
+            if (!k.has_complete_storage()) {
+                c.printfln(Lvl::Error, "no knowledge layer (no world loaded)");
+                return true;
+            }
+            app.revealMapOn = !app.revealMapOn;
+            if (app.revealMapOn) {
+                // Pin the projection to "everything" — every cell Visible
+                // AND registered in the sight list, so switching off simply
+                // hands the whole map to the ordinary Visible→Explored decay.
+                // No un-reveal path exists, because the system needs none:
+                // vision is a projection, memory is what it leaves behind.
+                app.sightRt.visibleCells.clear();
+                app.sightRt.visibleCells.reserve(k.data.size());
+                for (std::size_t i = 0; i < k.data.size(); ++i) {
+                    k.data[i] = sm::kKnowledgeVisible;
+                    app.sightRt.visibleCells.push_back(std::uint32_t(i));
+                }
+                ++k.revision;
+                c.printfln(Lvl::Ok, "full vision ON (%zu cells)",
+                           k.data.size());
+            } else {
+                // Wake the ordinary law: an invalid sight anchor forces the
+                // next tick's sweep — the pinned set decays to Explored, the
+                // real disc re-sweeps from the player's cell.
+                app.sightRt.lastCellX = INT32_MIN;
+                app.sightRt.lastCellY = INT32_MIN;
+                c.printfln(Lvl::Ok,
+                           "full vision OFF — the map stays charted");
+            }
             return true;
         });
 
