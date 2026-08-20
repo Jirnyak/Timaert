@@ -210,7 +210,7 @@ enum class SmokeAction : std::uint8_t {
     SubworldReputationHit,
     SubworldMouseRelease,
     SubworldTreeAnchor,
-    SubworldNoRecovery,
+    SubworldRecovery,
     SubworldSpDrain,
     SubworldEnter,
     SubworldExitRemap,
@@ -548,7 +548,7 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"subworld_reputation_hit", SmokeAction::SubworldReputationHit},
     {"subworld_mouse_release", SmokeAction::SubworldMouseRelease},
     {"subworld_tree_anchor", SmokeAction::SubworldTreeAnchor},
-    {"subworld_no_recovery", SmokeAction::SubworldNoRecovery},
+    {"subworld_recovery", SmokeAction::SubworldRecovery},
     {"subworld_sp_drain", SmokeAction::SubworldSpDrain},
     {"subworld_enter", SmokeAction::SubworldEnter},
     {"subworld_exit_remap", SmokeAction::SubworldExitRemap},
@@ -3560,14 +3560,15 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
                        /*steps=*/1u);
     if (app.subworld.active()) {
         stats.subworldActive = true;
+        float movedThisStep = 0.0f;
         if (allowInput) {
             const float prevX = app.subworld.player_x();
             const float prevY = app.subworld.player_y();
             poll_movement(app, dt);
             const float movedX = app.subworld.player_x() - prevX;
             const float movedY = app.subworld.player_y() - prevY;
-            (void)charge_subworld_sp_for_distance(
-                app, std::sqrt(movedX * movedX + movedY * movedY));
+            movedThisStep = std::sqrt(movedX * movedX + movedY * movedY);
+            (void)charge_subworld_sp_for_distance(app, movedThisStep);
         }
         stats.timeTick =
             sm::tick_world_subworld_steps(app.gs, app.gs.worldTickRt, 1);
@@ -3583,6 +3584,25 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // have drifted. Mark dirty; the macro path re-bakes on return (we never
         // sync the GPU for the map while the subworld is what's on screen).
         if (stats.timeTick.dailyTicksProcessed > 0) app.macroLightsDirty = true;
+        // Recovery is driven by TIME, in both worlds and by the same law
+        // (macro/player_recovery.h). Underground the clock crawls, so standing
+        // still under a hill mends at the macro rate per game HOUR — sixteen
+        // times slower on the wall clock, which is what makes waiting out a
+        // wound down there an actual wait rather than a free heal.
+        //
+        // BEFORE subworld.tick on purpose: that tick opens by pulling the macro
+        // scalar into the player entity's Health and closes by pushing the
+        // post-combat result back, so a heal applied after it would be undone by
+        // the next tick's pull.
+        //
+        // Walking is not resting, exactly as marching is not on the map: the
+        // legs pay the same kMarchRecoveryPct on stamina, and health and mana
+        // are untouched by the distinction.
+        sm::apply_minute_recovery(app.gs.player,
+                                  stats.timeTick.minutesAdvanced,
+                                  app.playerRecovery,
+                                  movedThisStep > 0.0f ? sm::kMarchRecoveryPct
+                                                       : 1.0f);
         app.subworld.tick(dt);
         // The macro world thinks on WORLD time, so underground it thinks as
         // slowly as the day passes: kSubworldTickDivisor steps buy one tick,
@@ -3635,7 +3655,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // turns a journey into a budget he has to plan instead of an allowance
         // that pays for itself — see macro/movement_cost.h kMarchRecoveryPct.
         const bool marching = !app.cursor.path.empty();
-        sm::apply_macro_minute_recovery(app.gs.player,
+        sm::apply_minute_recovery(app.gs.player,
                                         stats.timeTick.minutesAdvanced,
                                         app.playerRecovery,
                                         marching ? sm::kMarchRecoveryPct : 1.0f);
@@ -4948,14 +4968,24 @@ bool run_subworld_time_smoke(App& app) {
     return true;
 }
 
-bool run_subworld_no_recovery_smoke(App& app) {
+// ONE recovery law, proven by making the two worlds agree.
+//
+// This smoke used to assert the OPPOSITE — that a body underground recovers
+// NOTHING — which is how a defect ends up with a guard on it (AGENTS.md testing
+// law #7): the macro branch called apply_minute_recovery and the subworld
+// branch simply did not, and a green smoke said that was intended. Owner ruling
+// 2026-08-20: recovery is driven by TIME, so what it now proves is that the
+// same game minutes buy the same points in both worlds. Underground those
+// minutes cost sixteen times more real seconds, which is the whole point and
+// costs this file nothing to state.
+bool run_subworld_recovery_smoke(App& app) {
     if (!smoke_boot_invariants_hold(app)) {
-        smoke_print_counts(app, "subworld_no_recovery_boot_failed");
-        smoke_fail(app, "subworld_no_recovery boot invariants");
+        smoke_print_counts(app, "subworld_recovery_boot_failed");
+        smoke_fail(app, "subworld_recovery boot invariants");
         return false;
     }
     if (app.subworld.active()) {
-        smoke_fail(app, "subworld_no_recovery already active");
+        smoke_fail(app, "subworld_recovery already active");
         return false;
     }
 
@@ -4981,7 +5011,7 @@ bool run_subworld_no_recovery_smoke(App& app) {
     app.subworld.enter(app.gs, app.terrain, app.features, app.ecs,
                        app.bus, &app.zones, &app.treeLayer);
     if (!app.subworld.active()) {
-        smoke_fail(app, "subworld_no_recovery enter failed");
+        smoke_fail(app, "subworld_recovery enter failed");
         return false;
     }
     {
@@ -5002,14 +5032,15 @@ bool run_subworld_no_recovery_smoke(App& app) {
     }
 
     int minutesAdvanced = 0;
-    // Ten real seconds underground. At the subworld divisor that is a handful
-    // of game minutes — long enough that recovery would have shown up by now if
-    // it were going to, which is the whole claim this smoke makes.
-    const int kFrames = 10 * int(sm::kTicksPerRealSecond);
+    // A real MINUTE of standing still. Underground the clock crawls, so this is
+    // still only tens of game minutes — enough to buy whole points off an
+    // hourly rate, which is what makes the comparison below meaningful instead
+    // of a race between two roundings.
+    const int kFrames = 60 * int(sm::kTicksPerRealSecond);
     for (int i = 0; i < kFrames; ++i) {
         RuntimeFrameStats frameStats = tick_playing_runtime(app, false);
         if (!frameStats.ticked || !frameStats.subworldActive) {
-            smoke_fail(app, "subworld_no_recovery runtime tick inactive");
+            smoke_fail(app, "subworld_recovery runtime tick inactive");
             return false;
         }
         minutesAdvanced += frameStats.timeTick.minutesAdvanced;
@@ -5020,15 +5051,43 @@ bool run_subworld_no_recovery_smoke(App& app) {
     const int afterSp = app.gs.player.combatStats.currentSp;
     app.subworld.leave(true);
 
+    // The REFERENCE: the same body, the same minutes, on the map. Not a
+    // restated formula — the very function the macro branch calls, which is
+    // exactly the claim being made ("one law, both worlds"). It also catches
+    // something a hand-written expectation could not: the subworld pays its
+    // minutes in many small chunks and this pays them in one, so the
+    // fractional carry has to make those identical or the answer drifts.
+    sm::PlayerState reference = app.gs.player;
+    reference.combatStats.currentHp = 5;
+    reference.combatStats.currentMp = 5;
+    reference.combatStats.currentSp = 5;
+    sm::PlayerRecoveryAccumulator referenceAcc{};
+    sm::apply_minute_recovery(reference, minutesAdvanced, referenceAcc);
+
     std::fprintf(stderr,
-                 "[smoke] subworld_no_recovery steps=%d "
-                 "minutes=%d hp=%d mp=%d sp=%d\n",
-                 kFrames, minutesAdvanced,
-                 afterHp, afterMp, afterSp);
+                 "[smoke] subworld_recovery steps=%d minutes=%d "
+                 "hp=%d mp=%d sp=%d expect hp=%d mp=%d sp=%d\n",
+                 kFrames, minutesAdvanced, afterHp, afterMp, afterSp,
+                 reference.combatStats.currentHp,
+                 reference.combatStats.currentMp,
+                 reference.combatStats.currentSp);
     std::fflush(stderr);
 
-    if (minutesAdvanced <= 0 || afterHp != 5 || afterMp != 5 || afterSp != 5) {
-        smoke_fail(app, "subworld_no_recovery invariant");
+    if (minutesAdvanced <= 0) {
+        smoke_fail(app, "subworld_recovery bought no game minutes");
+        return false;
+    }
+    // The measurement must have MEASURED: if the reference itself gained
+    // nothing, the run was too short and an equal-and-unmoved pair would pass
+    // while proving that recovery is still switched off.
+    if (reference.combatStats.currentHp <= 5) {
+        smoke_fail(app, "subworld_recovery reference gained nothing");
+        return false;
+    }
+    if (afterHp != reference.combatStats.currentHp
+        || afterMp != reference.combatStats.currentMp
+        || afterSp != reference.combatStats.currentSp) {
+        smoke_fail(app, "subworld_recovery differs from the macro law");
         return false;
     }
     return true;
@@ -9249,10 +9308,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fflush(stderr);
             if (run_subworld_tree_anchor_smoke(app)) ++app.smoke.cursor;
             break;
-        case SmokeAction::SubworldNoRecovery:
-            std::fprintf(stderr, "[smoke] action=subworld_no_recovery\n");
+        case SmokeAction::SubworldRecovery:
+            std::fprintf(stderr, "[smoke] action=subworld_recovery\n");
             std::fflush(stderr);
-            if (run_subworld_no_recovery_smoke(app)) ++app.smoke.cursor;
+            if (run_subworld_recovery_smoke(app)) ++app.smoke.cursor;
             break;
         case SmokeAction::SubworldSpDrain:
             std::fprintf(stderr, "[smoke] action=subworld_sp_drain\n");

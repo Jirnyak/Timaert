@@ -319,7 +319,7 @@ void test_travel_balance_holds_its_intent() {
     resting.combatStats = fresh;
     resting.combatStats.currentSp = 0;
     sm::PlayerRecoveryAccumulator acc{};
-    sm::apply_macro_minute_recovery(resting, 8 * 60, acc);
+    sm::apply_minute_recovery(resting, 8 * 60, acc);
     expect(resting.combatStats.currentSp >= fresh.maxSp - 1,
            "eight hours of rest refill the whole bar (the 1/8-per-hour law)");
 
@@ -327,7 +327,7 @@ void test_travel_balance_holds_its_intent() {
     marching.combatStats = fresh;
     marching.combatStats.currentSp = 0;
     sm::PlayerRecoveryAccumulator marchAcc{};
-    sm::apply_macro_minute_recovery(marching, 8 * 60, marchAcc,
+    sm::apply_minute_recovery(marching, 8 * 60, marchAcc,
                                     sm::kMarchRecoveryPct);
     expect(marching.combatStats.currentSp == 0,
            "marching returns no stamina — a journey is paid for, not subsidised");

@@ -148,7 +148,7 @@ else is denominated in game time:
 | Rate | Unit | Where |
 |---|---|---|
 | macro march | 32 cells per game **hour** | `macro/movement_cost.h` |
-| bar recovery | 10 points per game **hour** | `macro/player_recovery.cpp` |
+| bar recovery | 10 points per game **hour**, in BOTH worlds | `macro/player_recovery.cpp` |
 | travel stamina | per **cell**, not per hour | `macro/movement_cost.h` |
 | macro NPC thinking | every 32 **ticks** | `macro/npc_ai.h` |
 | player time-in-cell | every 32 **ticks** | `app/main.cpp` |

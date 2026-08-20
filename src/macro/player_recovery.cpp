@@ -44,7 +44,7 @@ void reset_player_recovery(PlayerRecoveryAccumulator& accumulator) {
     accumulator = PlayerRecoveryAccumulator{};
 }
 
-void apply_macro_minute_recovery(PlayerState& player,
+void apply_minute_recovery(PlayerState& player,
                                  int minutes,
                                  PlayerRecoveryAccumulator& accumulator,
                                  float staminaRate) {

@@ -1,4 +1,12 @@
-// Macro-view per-minute player recovery. Mirrors GameScreen.svelte wrapper.
+// THE per-minute player recovery — one law for both worlds.
+//
+// It was macro-only, and that was not a design: underground NOTHING came back,
+// not health, not mana, not stamina, because this call simply was not on that
+// branch. Owner ruling 2026-08-20: recovery is driven by TIME, so a body
+// standing still under a hill mends at the same rate per game hour as one
+// standing still on the road — which, since the clock down there crawls at
+// kSubworldTickDivisor steps per tick, means sixteen times slower by the wall
+// clock. Waiting out a wound underground is meant to cost a real wait.
 #pragma once
 
 #include "macro/state.h"
@@ -18,7 +26,7 @@ void reset_player_recovery(PlayerRecoveryAccumulator& accumulator);
 // motion are not resting — and while they recovered anyway, travel was paid for
 // by a standing income rather than by the traveller. Health and mana are
 // unaffected: this is a statement about stamina, not about healing.
-void apply_macro_minute_recovery(PlayerState& player,
+void apply_minute_recovery(PlayerState& player,
                                  int minutes,
                                  PlayerRecoveryAccumulator& accumulator,
                                  float staminaRate = 1.0f);
