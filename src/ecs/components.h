@@ -157,6 +157,11 @@ struct MacroDebt {
     // bit), so a death removes the very soldier who fell, not "one of them".
     // -1 = the stock is anonymous (population, trees) and needs no name.
     std::int32_t  detail = -1;
+    // Which register `subject` is drawn on: cities and villages are numbered
+    // from zero independently, so the id alone does not name a place
+    // (macro/macro_stock.h). Trailing and defaulted — a cell-subject receipt
+    // never sets it.
+    std::uint8_t  subjectIsVillage = 0;
 };
 
 // Backlink from a PROJECTED subworld body to the persistent macro NPC entity it

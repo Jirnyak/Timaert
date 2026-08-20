@@ -164,6 +164,11 @@ void spawn_cell_npcs(ecs::World& w,
                      // death in the subworld is paid back to the map above.
                      // -1 means "no named place here" — nothing is borrowed.
                      int landmarkSubjectId = -1,
+                     // Which register that id is drawn on — cities and villages
+                     // are numbered independently (macro/macro_stock.h), so a
+                     // borrowed citizen's receipt has to name the list as well
+                     // as the number.
+                     bool landmarkIsVillage = false,
                      int macroCellX = 0,
                      int macroCellY = 0,
                      // The wild headcount standing on this cell — the honest

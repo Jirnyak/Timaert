@@ -77,6 +77,14 @@ struct MacroStockKey {
     // pattern — ids may use the high bit); -1 = no name, the stock is a plain
     // number. Anonymous rows ignore it, so every existing key stays valid.
     std::int32_t detail = -1;
+    // WHICH REGISTER the subject id is drawn on. Cities and villages are
+    // numbered from zero INDEPENDENTLY (state.cpp: `s.id = int(i)` and
+    // `vil.id = villageId++`), so an id alone does not name a place — and the
+    // lookup searched the cities first. Killing ten peasants in village 3 took
+    // ten souls off CITY 3 on the other side of the map; past the last city's
+    // id the deaths vanished with no payer at all. Trailing and defaulted, so
+    // every key that means a CELL (subject = -1) is unaffected.
+    bool subjectIsVillage = false;
 };
 
 // Everything a row may need in order to read or write itself. It grows by a
@@ -108,7 +116,7 @@ inline void stamp_macro_debt(entt::registry& reg, entt::entity e,
                              std::uint16_t amount = 1) {
     reg.emplace_or_replace<ecs::MacroDebt>(
         e, std::uint8_t(stock), key.subject, key.cellX, key.cellY, amount,
-        key.detail);
+        key.detail, std::uint8_t(key.subjectIsVillage ? 1 : 0));
 }
 
 // Settle one debt. `sign` is -1 when the borrowed thing is consumed (a citizen

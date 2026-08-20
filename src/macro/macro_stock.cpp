@@ -38,22 +38,28 @@ void write_tree_count(MacroWorld& w, MacroStockKey k, int delta) {
 
 // ── population: the people of a named place ────────────────────────────────
 // A settlement and a village are the same kind of subject here — a named place
-// with people in it — and their ids share one space, so one lookup serves both.
-int* find_population(const MacroWorld& w, std::int32_t subject) {
+// with people in it — but they are numbered in TWO independent registers, so
+// the key has to say which one it means (macro_stock.h subjectIsVillage). The
+// comment that used to stand here claimed the ids shared one space; they never
+// did, and the lookup that trusted it charged a city for a village's dead.
+int* find_population(const MacroWorld& w, std::int32_t subject, bool village) {
     if (!w.gs || subject < 0) return nullptr;
+    if (village) {
+        for (auto& v : w.gs->villages) if (v.id == subject) return &v.population;
+        return nullptr;
+    }
     for (auto& s : w.gs->settlements) if (s.id == subject) return &s.population;
-    for (auto& v : w.gs->villages)    if (v.id == subject) return &v.population;
     return nullptr;
 }
 
 int read_population(const MacroWorld& w, MacroStockKey k) {
-    const int* p = find_population(w, k.subject);
+    const int* p = find_population(w, k.subject, k.subjectIsVillage);
     return p ? *p : 0;
 }
 
 void write_population(MacroWorld& w, MacroStockKey k, int delta) {
     if (delta == 0) return;
-    int* p = find_population(w, k.subject);
+    int* p = find_population(w, k.subject, k.subjectIsVillage);
     if (!p) return;
     // A place can be emptied but never owe people.
     *p = std::max(0, *p + delta);
@@ -488,7 +494,8 @@ const char* macro_stock_id(MacroStock s) {
 void settle_macro_debt(MacroWorld& w, const ecs::MacroDebt& d, int sign) {
     if (d.stock >= std::uint8_t(MacroStock::Count) || d.amount == 0) return;
     macro_stock_apply(w, MacroStock(d.stock),
-                      MacroStockKey{d.subject, d.cellX, d.cellY, d.detail},
+                      MacroStockKey{d.subject, d.cellX, d.cellY, d.detail,
+                                    d.subjectIsVillage != 0},
                       sign * int(d.amount));
 }
 

@@ -535,6 +535,7 @@ void spawn_cell_npcs(ecs::World& w,
                      std::uint16_t settlementFaction,
                      int landmarkPop,
                      int landmarkSubjectId,
+                     bool landmarkIsVillage,
                      int macroCellX,
                      int macroCellY,
                      int faunaCount) {
@@ -556,7 +557,9 @@ void spawn_cell_npcs(ecs::World& w,
                                 landmarkPop, originX, originY,
                                 MacroStockKey{landmarkSubjectId,
                                               std::int16_t(macroCellX),
-                                              std::int16_t(macroCellY)});
+                                              std::int16_t(macroCellY),
+                                              /*detail*/-1,
+                                              landmarkIsVillage});
 
     const FaunaTable& table = get_fauna_table(biome, treeCount, landmark);
     std::uint32_t rngState = cellSeed ^ 0xFAEAu;
