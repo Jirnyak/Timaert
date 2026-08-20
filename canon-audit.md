@@ -311,3 +311,80 @@ S7 требует одного честного перепекания на ка
 сетки), `politik.cpp` построчно, `vk_renderer_3d.cpp` целиком, `gens/dispatch.cpp` (2330
 строк) на числа с потолка, тороидальность рек и Вороного, дисциплина O(N) в горячих циклах
 рендера, `src/gpu/`, большая часть `ui/`.
+
+## H. Механический свип: мёртвый код и дубли (вызывающие проверены поиском)
+
+**H1. Второй A\* слово в слово.** `spawners.cpp:108-392` (`road_octile_torus`,
+`RoadIndexedHeap`, `find_road_path`) — построчный клон `pathfinding.cpp:22-271` над ТЕМ ЖЕ
+`costGrid`, тем же тором и той же эвристикой `0.4142136f`. Отличий два: генерационный
+scratch (перф) и порог воды. ~280 строк. → слить, `blockAbove` параметром.
+
+**H2. ДВА макро-ИИ драйвера, и игра выбирает между ними по тому, ГДЕ ИГРОК.** Живой баг из
+этого (потерянный указатель на депозиты) **исправлен (0a80266)**; сама двойня осталась:
+`tick_macro_npc_ai` и `tick_macro_npc_ai_budgeted` собирают по своей копии контекста из
+семнадцати полей. → один драйвер с бюджетом, полный проход = бюджет без предела.
+
+**H3. `Settlement` и `Village` — две структуры на одну строку канона.** `Village` это
+`Settlement` минус гарнизон плюс `nearestCityId`; 89 упоминаний в 20 файлах, всегда парой с
+близнецом (`tick_settlements_`/`tick_villages_`, два блока сейва, по два цикла в `zones`,
+`macro_lighting`, `spires`, `settlement_score`, `npc_ai`). Раскол не косметический — он
+ПРИЧИНА отсутствующего поведения: у `tick_villages_` просто нет вызова `econ_produce_day`,
+поэтому деревни ничего не производят (B5), и `generate_quests_for_village`
+(`procedural.cpp:458`) не вызывается никем — деревни не выдают квестов. → одна строка
+ландмарка (S9), гарнизон и «ближайший город» — колонки.
+
+**H4. 133 строки, которые не компилирует ни одна цель.** `audio.cpp:454-586` — `#else`
+ветка `TIMAERT_HAS_SDL_MIXER`, а `CMakeLists.txt:127` при отсутствии микшера делает
+`FATAL_ERROR`. Внутри — ВТОРАЯ таблица ассетов (`switch`-цепочки с именами файлов) рядом с
+живыми `kMusicAssets`/`kSfxAssets`. → удалить вместе с `#if`.
+
+**H5. Цепная молния недостижима, и тест это ПАРКУЕТ.** `spell_effects.cpp:324-383`
+`apply_spell_chain` возвращается на первой строке всегда: три поля `ecs::Projectile`
+(`chainRemaining/chainDecay/chainRadius`) читаются, но не пишутся нигде; `SpellDef::chainCount`
+заполнен в 8 строках и не читается никем. `spell_casting_effects_test.cpp:471` описывает это
+прозой и намеренно не утверждает ничего — S26 запрещает («тест никогда не охраняет дефект»).
+
+**H6. Зелья нельзя выпить.** `items.cpp:356 use_item` — пять вызовов, ВСЕ в тесте
+`item_use_parity_test`. В интерфейсе инвентаря есть только ярлык типа предмета, кнопки
+«использовать» нет нигде. Зелёный ctest удостоверяет фичу, которой в игре нет.
+
+**H7. `landmark_registry.cpp` целиком мёртв** (`collect_landmarks` без вызывающих; его
+приватные помощники `mood_label`/`marker_kind`/`detail_line` живут только ради него), а
+**заголовок физически склеен из двух файлов** — два `#pragma once` на строках 10 и 36.
+
+**H8. Шесть копий `wrapi`** (`optics.h:90`, `macro_lighting.cpp:49`, `map_generator.cpp:174`,
+`features.h:61`, `pathfinding.cpp:27`, `deposit_layer.h:49`) при живом `core/torus.h:7`; две
+копии `wrap_delta` (`macro_overlay.cpp:43`, `map_screen.cpp:26`); две `cell_count_for`
+(`features.h:51`, `map_generator.h:33`).
+
+**H9. Однократный командный буфер Vulkan написан шесть раз** (`vk_texture.cpp:115,238,442,556`,
+`vk_sprite_array.cpp:150,344`) — пул→барьер→копия→барьер→фенс→ждать→разрушить. ~200 строк, и
+вся поверхность утечек фенса/пула схлопывается в одну точку.
+
+**H10. `biome_at_cell` (`macro_overlay.cpp:67`) ≡ `chart_biome` (`map_screen.cpp:104`)**, но у
+первого нет проверок границ и альфа-маски → чтение за пределами короткого `rgba`.
+
+**H11. Поля, в которые только пишут:** `NpcCharacter::tintR/G/B` (билборд берёт цвет из
+строки спрайта), `SpellDef::duration/scalingDuration/projectileLife` (заданы во всех 8
+строках, не читаются), `DepositLayer::revision`, `BattleStats::steered`,
+`CompletedSaveJob::saveMs`, `DerivedBonuses::relationBonus`, `RoadAxisSet::anchored`.
+
+**H12. Мёртвые значения перечислений:** **14 из 24 `PerkID`** (`GodsMark`, `Saint`,
+`DeathWord`, `Antimagus`, `MagicBody`, `BloodMagic`, `Autist`, `Specialization`,
+`Generalist`, `Apostle`, `Demiurg`, `Revenant`, `Stonks`, `Sacrilegist`) — ни строки в
+`kPerkList`, ни эффекта, ни упоминания; держатся комментарием «ради совместимости сейва» с
+форматом, который проект объявил ничего не стоящим. Плюс `GameSubStateKind::Paused` и
+`ViewingMap`.
+
+**H13. Мелочь на один заход:** `commodity_def`, `deposit_commodity_id`,
+`structure_is_decayed` (дубль проверки знака, инлайн в `map_data.h:520`),
+`find_saved_subworld` (сырая обёртка над `_ref`-формой) — ноль ссылок; парсер KV-файла в
+`keymap.cpp:96` — копия `ui_settings.cpp:53` (комментарий это признаёт); четыре мёртвых
+`#include`; три протухших TODO, включая `main.cpp:2105` `rebuild_landmarks (PHASE C)` —
+функции с таким именем не существует, задача решена иначе; пролог смоука продублирован
+пятью копиями в `main.cpp`.
+
+**Что вернулось ЧИСТЫМ** (сказано вслух, чтобы никто не перепроверял): закомментированного
+кода нет НИ ОДНОЙ строки; TODO всего три, `FIXME`/`HACK`/`XXX` — ноль; система фракций
+действительно едина (один склад отношений, одна дверь `faction_relation`); солнце одно
+(`celestial.h:137 sun_dir` служит и небу, и свету).
