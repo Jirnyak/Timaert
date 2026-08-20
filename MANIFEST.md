@@ -63,6 +63,7 @@ focused doc in this directory alongside the README, which orchestrates them.
 | Quests | [quests.md](quests.md) | Objective/reward registries, procedural generation, world-map quest markers |
 | Progression | [progression.md](progression.md) | Levels, spell unlocks, plot/events, game arc |
 | Rendering | [render.md](render.md) | Vulkan render passes, dynamic lighting, shadow mapping, sky/stars, water |
+| Sprites | [sprites.md](sprites.md) | THE one sprite law: a kind is a row, drawn art wins, procedural archetype is the floor, one coverage = one shadow; the paper-doll composite's retirement and the future голыш+palette+clothes tier |
 | Macro lighting | [macro-lighting.md](macro-lighting.md) | ONE celestial light for the 2D world map: day/night relief hillshade (sun→moon sweep), water sun/moon glint, baked night-glow field with feature- **and elevation-**occluded spread |
 | Map & knowledge | [map.md](map.md) | THE fog-of-war + map doc: knowledge layer (Unknown/Explored/Visible, save v40), sight-as-light over the one optical sweep, the drowned-memory render law, the full-screen chart page (M), marker surfaces, subworld minimap/map |
 | GPU backend | [vulkan.md](vulkan.md) | Vulkan backend modules, MoltenVK, GPU-driven compute simulation |
