@@ -493,6 +493,12 @@ timaert_test(macro_npc_ai_parity_test
 # THE wrap: one law, and the named doors that must not become second bodies.
 # Six private copies lived in macro/ until 2026-08-20 — six chances to forget
 # the negative case, and a forgotten modulo is a seam (CANON.md S1).
+# A cell is a place: the same macro cell must generate the same subworld
+# however the player arrived, and the world's own seam must still join.
+timaert_test(subworld_cell_identity_test
+    SOURCES
+        src/sub/base_generator.cpp)
+
 timaert_test(torus_wrap_test
     SOURCES
         src/macro/deposit_layer.cpp)

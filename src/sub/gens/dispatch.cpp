@@ -128,7 +128,7 @@ void dispatch_generate(const CellContext& ctx, const float nbHeights[9],
     generate_heightmap(out.heightmap, kCellSize, nbHeights, nbBiome,
                        safeCtx.biome, safeCtx.seed,
                        safeCtx.cx * kCellSize, safeCtx.cy * kCellSize,
-                       nbMods);
+                       nbMods, safeCtx.worldCellsX);
     out.tiles.assign(std::size_t(kCellSize) * kCellSize, std::uint8_t(TILE_GRASS));
     out.trav.assign (std::size_t(kCellSize) * kCellSize, 1);
     out.structures.clear();

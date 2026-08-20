@@ -45,15 +45,38 @@ static float terrain_noise_ts(int x, int y, std::uint32_t seed) {
 
 // Single-octave smoothstep value noise on the TS hash. Mirrors
 // `smoothTerrainNoise` from base-generator.ts.
-static float smooth_noise_ts(float x, float y, std::uint32_t seed) {
+//
+// `period` is how many lattice cells the WHOLE WORLD spans at this frequency;
+// 0 means "no world around this call" (bare fixtures and tests). When it is
+// given, the lattice is snapped to a whole number of cells and the sample point
+// stretched to match, so the field meets itself exactly at the world's edge —
+// the same construction the macro layer uses (CANON.md S1). It has to be the
+// WORLD's span and nothing smaller: a period that fits inside the view is what
+// makes procedural ground look like wallpaper, and a period of a million tiles
+// cannot repeat inside a thousand kilometres.
+static float smooth_noise_ts(float x, float y, std::uint32_t seed,
+                             float period = 0.0f) {
+    int wrapTo = 0;
+    if (period >= 1.0f) {
+        const float whole = std::round(period);
+        const float k = whole / period;
+        x *= k;
+        y *= k;
+        wrapTo = int(whole);
+    }
     int ix = int(std::floor(x)), iy = int(std::floor(y));
     float fx = x - ix, fy = y - iy;
     float sx = fx * fx * (3.0f - 2.0f * fx);
     float sy = fy * fy * (3.0f - 2.0f * fy);
-    float n00 = terrain_noise_ts(ix,     iy,     seed);
-    float n10 = terrain_noise_ts(ix + 1, iy,     seed);
-    float n01 = terrain_noise_ts(ix,     iy + 1, seed);
-    float n11 = terrain_noise_ts(ix + 1, iy + 1, seed);
+    int ix0 = ix, iy0 = iy, ix1 = ix + 1, iy1 = iy + 1;
+    if (wrapTo > 0) {
+        ix0 = wrapi(ix0, wrapTo); iy0 = wrapi(iy0, wrapTo);
+        ix1 = wrapi(ix1, wrapTo); iy1 = wrapi(iy1, wrapTo);
+    }
+    float n00 = terrain_noise_ts(ix0, iy0, seed);
+    float n10 = terrain_noise_ts(ix1, iy0, seed);
+    float n01 = terrain_noise_ts(ix0, iy1, seed);
+    float n11 = terrain_noise_ts(ix1, iy1, seed);
     return n00 * (1 - sx) * (1 - sy)
          + n10 * sx * (1 - sy)
          + n01 * (1 - sx) * sy
@@ -112,19 +135,24 @@ static float soft_compress_peak(float h) {
 }
 
 static float apply_mountain_ridges(float h, int gx, int gy, float macroH,
-                                   float peakTarget, float rw) {
+                                   float peakTarget, float rw,
+                                   float worldTiles) {
     if (rw <= 0.01f) return h;
     constexpr std::uint32_t kRidgeSeed = 0xD37A115u;
+    // Every octave below closes on the world: the period handed to the noise is
+    // the world's tile span at that frequency.
+    const auto per = [worldTiles](float freq) { return worldTiles * freq; };
     const float wx = float(gx)
         + (smooth_noise_ts(float(gx) * 0.002f + 71.7f,
-                           float(gy) * 0.002f, kRidgeSeed) - 0.5f) * 90.0f;
+                           float(gy) * 0.002f, kRidgeSeed, per(0.002f)) - 0.5f) * 90.0f;
     const float wy = float(gy)
         + (smooth_noise_ts(float(gx) * 0.002f,
-                           float(gy) * 0.002f + 31.1f, kRidgeSeed) - 0.5f) * 90.0f;
+                           float(gy) * 0.002f + 31.1f, kRidgeSeed, per(0.002f)) - 0.5f) * 90.0f;
     constexpr float kFreqs[2] = {0.0026f, 0.006f};
     float ridge = 0.0f, amp = 1.0f, wt = 1.0f;
     for (int o = 0; o < 2; ++o) {
-        float sig = smooth_noise_ts(wx * kFreqs[o], wy * kFreqs[o], kRidgeSeed);
+        float sig = smooth_noise_ts(wx * kFreqs[o], wy * kFreqs[o], kRidgeSeed,
+                                    per(kFreqs[o]));
         // COMPROMISE crest (owner round 3): the C1 parabola 4s(1−s) alone
         // made homogeneous hills — no crests, no gullies, no character; the
         // classic ridged fold (1−|2s−1|)² alone aliased its corner harmonics
@@ -149,7 +177,7 @@ static float apply_mountain_ridges(float h, int gx, int gy, float macroH,
     // mountain_mesh_smoothness_test parity) at a slope cost of only a few
     // degrees. λ=120 tiles stays well above the 32-tile mesh Nyquist.
     const float crag = smooth_noise_ts(wx * 0.0085f, wy * 0.0085f,
-                                       kRidgeSeed ^ 0x9E3779B9u);
+                                       kRidgeSeed ^ 0x9E3779B9u, per(0.0085f));
     const float cragAmp = 0.004f + 0.004f * ridge; // crags live on the ridges
     // Valley floor must track the surrounding macro altitude, not collapse
     // to half of it. The original `macroH * 0.5f` produced a 400+ m trench
@@ -169,7 +197,8 @@ static float apply_mountain_ridges(float h, int gx, int gy, float macroH,
     // massif FINGERS into the plain — foothill spurs and bays instead of a
     // clean contour. Smoothstep keeps both ends C1.
     const float edgeN = smooth_noise_ts(wx * 0.0035f + 211.0f,
-                                        wy * 0.0035f + 97.0f, kRidgeSeed);
+                                        wy * 0.0035f + 97.0f, kRidgeSeed,
+                                        per(0.0035f));
     const float t     = std::clamp(rw * 1.2f + (edgeN - 0.5f) * 0.55f,
                                    0.0f, 1.0f);
     const float blend = t * t * (3.0f - 2.0f * t);
@@ -181,7 +210,12 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
                         const Biome nbBiome[9],
                         Biome biome, std::uint32_t seed,
                         int globalOffsetX, int globalOffsetY,
-                        const TerrainMod* nbMods) {
+                        const TerrainMod* nbMods, int worldCellsX) {
+    // The world's tile span — what every global-coordinate noise below closes
+    // on. 0 (a bare fixture with no world around it) means "do not wrap", which
+    // is what the tests that generate a lone cell want.
+    const float worldTiles = float(std::max(0, worldCellsX)) * float(cellSize);
+    const auto per = [worldTiles](float freq) { return worldTiles * freq; };
     out.assign(std::size_t(cellSize) * cellSize, 0.0f);
     const float invCS = 1.0f / float(cellSize);
 
@@ -351,8 +385,17 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
 
             // Multi-octave terrain noise in global tile coords with a fixed
             // world seed → continuous across cell boundaries.
-            const int gxi = globalOffsetX + x;
-            const int gyi = globalOffsetY + y;
+            // The tile's place IN THE WORLD, and the world is a torus: a cell
+            // reached by walking east off the last column is the same cell as
+            // the one entered from the map, so its tiles must carry the same
+            // global coordinate either way. Wrapping here rather than trusting
+            // every caller is what makes that a property of construction — and
+            // it costs nothing at the seam, because the noise above closes on
+            // the same span (CANON.md S1/S2).
+            const int gxi = worldTiles > 0.0f
+                ? wrapi(globalOffsetX + x, int(worldTiles)) : globalOffsetX + x;
+            const int gyi = worldTiles > 0.0f
+                ? wrapi(globalOffsetY + y, int(worldTiles)) : globalOffsetY + y;
             constexpr std::uint32_t kDetailSeed = 0xD37A115u;
             // Detail octaves must stay above the 3D mesh Nyquist (~32-tile
             // wavelength on the 16-tile-spaced terrain mesh). The old 0.06
@@ -362,8 +405,10 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
             // amplifies it. Dropping it makes the 3D relief match the smooth
             // shaded relief on the map.
             float noise = 0.0f;
-            noise += smooth_noise_ts(float(gxi) * 0.008f, float(gyi) * 0.008f, kDetailSeed) * 0.5f;
-            noise += smooth_noise_ts(float(gxi) * 0.02f,  float(gyi) * 0.02f,  kDetailSeed) * 0.25f;
+            noise += smooth_noise_ts(float(gxi) * 0.008f, float(gyi) * 0.008f,
+                                     kDetailSeed, per(0.008f)) * 0.5f;
+            noise += smooth_noise_ts(float(gxi) * 0.02f,  float(gyi) * 0.02f,
+                                     kDetailSeed, per(0.02f)) * 0.25f;
             noise = std::clamp(noise / 0.75f, 0.0f, 1.0f);
 
             // Smooth manifold: relief = macroH² + gradient. Macro height
@@ -374,14 +419,16 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
             float h = macroH + (noise - 0.5f) * relief * localHS * localMtn;
 
             if (rw > 0.0f) {
-                h = apply_mountain_ridges(h, gxi, gyi, macroH, localPeak, rw);
+                h = apply_mountain_ridges(h, gxi, gyi, macroH, localPeak, rw,
+                                          worldTiles);
             }
 
             if (needsDune) {
                 const float duneF = blend(duneFactor) * (1.0f - plateauW);
                 if (duneF > 0.01f) {
                     h += (smooth_noise_ts(float(gxi) * 0.012f,
-                                          float(gyi) * 0.018f, kDetailSeed) - 0.5f)
+                                          float(gyi) * 0.018f, kDetailSeed,
+                                          per(0.012f)) - 0.5f)
                        * 0.15f * duneF;
                 }
             }
@@ -389,9 +436,10 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
             if (sf > 0.01f) {
                 const float lowland = smooth_noise_ts(
                     float(gxi) * 0.006f + 200.0f,
-                    float(gyi) * 0.006f + 200.0f, kDetailSeed);
+                    float(gyi) * 0.006f + 200.0f, kDetailSeed, per(0.006f));
                 const float bog = smooth_noise_ts(
-                    float(gxi) * 0.025f, float(gyi) * 0.025f, kDetailSeed);
+                    float(gxi) * 0.025f, float(gyi) * 0.025f, kDetailSeed,
+                    per(0.025f));
                 const float dip = (1.0f - lowland) * 0.05f
                                 + (1.0f - bog) * 0.04f;
                 h -= dip * sf * (1.0f - plateauW);

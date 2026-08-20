@@ -120,7 +120,19 @@ struct LandmarkContext {
 
 // CellContext — what the macroworld knows about a single cell.
 struct CellContext {
+    // WHICH CELL OF THE WORLD this is — the wrapped macro index, [0, worldCells).
+    // It used to be the window's running counter, which never wrapped: walk east
+    // off the last column and the cell called itself 1024 while reading macro
+    // cell 0's biome. Everything downstream that keys off the number — the
+    // detail-noise offset, the road anchor seed, the tile hash — therefore built
+    // a DIFFERENT subworld for the same place depending on how you arrived
+    // (measured: 100 % of tiles differ, up to 63 m of height, road anchors 146 m
+    // apart). A cell is a place, so its name is its place (CANON.md S1/S2).
     int   cx, cy;
+    // How big the world this cell belongs to is, in cells. The generator needs
+    // it to close its noise on the world rather than on nothing — the same law
+    // the macro layer follows. 0 = a bare fixture with no world around it.
+    int   worldCellsX = 0, worldCellsY = 0;
     float macroHeight;   // 0..1
     float macroTemperature = 0.5f; // 0..1, used for TS tree species bands
     Biome biome;

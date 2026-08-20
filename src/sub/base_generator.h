@@ -128,7 +128,13 @@ namespace sm::sub
                             std::uint32_t seed,
                             int globalOffsetX = 0,
                             int globalOffsetY = 0,
-                            const TerrainMod *nbMods = nullptr);
+                            const TerrainMod *nbMods = nullptr,
+                            // The world's width in CELLS. Every global-coordinate
+                            // noise below closes on it, so the ground meets
+                            // itself at the world's edge instead of stepping
+                            // (CANON.md S1). 0 = a lone cell with no world
+                            // around it (fixtures): do not wrap.
+                            int worldCellsX = 0);
 
     // Fill base tiles for a biome (open ground / forest scatter / desert).
     void fill_base_tiles(std::vector<std::uint8_t> &tiles, int cellSize,

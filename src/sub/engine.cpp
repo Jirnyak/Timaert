@@ -1019,7 +1019,10 @@ CellContext SubworldEngine::resolve_context(int x, int y) const {
     const float m = float(terrain_->rgba[idx * 4 + 1]) / 255.0f;
     const float t = float(terrain_->rgba[idx * 4 + 2]) / 255.0f;
     const std::uint8_t mask = terrain_->rgba[idx * 4 + 3];
-    c.cx = x; c.cy = y;
+    // The WRAPPED index: one cell of the world, one subworld, however the
+    // player reached it.
+    c.cx = xi; c.cy = yi;
+    c.worldCellsX = W; c.worldCellsY = H;
     c.macroHeight = h;
     // Season nudges ONLY the temperature that drives tree-species selection
     // (foliage shifts toward evergreen/autumn in the cold half of the year);
