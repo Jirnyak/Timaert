@@ -1,4 +1,5 @@
 #include "content/spells/spell_book.h"
+#include "core/time.h"
 
 #include <cstddef>
 #include <cmath>
@@ -8,9 +9,11 @@ namespace sm {
 
 namespace {
 
-std::string cooldown_reason(float seconds) {
+// The one place steps turn back into seconds: a human reads seconds.
+std::string cooldown_reason(std::uint32_t steps) {
     char buf[32]{};
-    std::snprintf(buf, sizeof(buf), "Cooldown %.1fs", double(seconds));
+    std::snprintf(buf, sizeof(buf), "Cooldown %.1fs",
+                  double(seconds_from_steps(steps)));
     return std::string(buf);
 }
 
@@ -61,8 +64,9 @@ CastCheck spellbook_can_cast_ex(const SpellBook& sb,
     if (combat.currentMp < d->manaCost) return {false, "Not enough mana", 0.0f};
 
     const auto it = sb.cooldowns.find(id);
-    if (it != sb.cooldowns.end() && it->second > 0.0f) {
-        return {false, cooldown_reason(it->second), it->second};
+    if (it != sb.cooldowns.end() && it->second > 0u) {
+        return {false, cooldown_reason(it->second),
+                seconds_from_steps(it->second)};
     }
 
     if (inMicro && !d->hasMicro) return {false, "Cannot use here", 0.0f};
@@ -84,8 +88,9 @@ int spellbook_start_cast(SpellBook& sb, CombatStats& combat,
     }
     combat.currentMp -= d->manaCost;
     if (combat.currentMp < 0) combat.currentMp = 0;
+    // The table authors seconds; the world counts steps.
     if (d->cooldown > 0.0f) {
-        sb.cooldowns[id] = d->cooldown;
+        sb.cooldowns[id] = steps_from_seconds(d->cooldown);
     }
     return d->manaCost;
 }
@@ -130,12 +135,14 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, CombatStats& combat,
     return true;
 }
 
-void spellbook_tick(SpellBook& sb, CombatStats& combat, float dt) {
+void spellbook_tick(SpellBook& sb, CombatStats& combat, std::uint32_t steps) {
+    if (steps == 0u) return;
+    const float dt = float(steps) * kStepSeconds;   // for the per-second rates
     for (auto it = sb.cooldowns.begin(); it != sb.cooldowns.end(); ) {
-        it->second -= dt;
-        if (it->second <= 0.0f) {
+        if (it->second <= steps) {
             it = sb.cooldowns.erase(it);
         } else {
+            it->second -= steps;
             ++it;
         }
     }

@@ -42,6 +42,9 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, CombatStats& combat,
                     float nx, float ny, float nz, bool inMicro,
                     SpellRngFn rng01 = nullptr,
                     void* rngUser = nullptr);
-void spellbook_tick(SpellBook& sb, CombatStats& combat, float dt);
+// Advance every timer the book owns by `steps` simulation steps (core/time.h).
+// It used to take a float dt of real seconds — the same wall-clock coupling the
+// tick ladder abolished everywhere else.
+void spellbook_tick(SpellBook& sb, CombatStats& combat, std::uint32_t steps);
 
 } // namespace sm

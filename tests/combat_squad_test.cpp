@@ -171,7 +171,7 @@ int main() {
 
     auto hostile = world.reg.create();
     world.reg.emplace<sm::ecs::Position>(hostile, 100.0f, 100.0f, 0.0f);
-    world.reg.emplace<sm::ecs::Combat>(hostile, 5.0f, 20.0f, 3.0f, 1.0f, 0.0f,
+    world.reg.emplace<sm::ecs::Combat>(hostile, 5.0f, 20.0f, 3.0f, 1.0f, 0u,
                                        sm::ecs::Combat::Melee);
     world.reg.emplace<sm::ecs::SubworldAi>(hostile, sm::ecs::SubworldAi::Combat,
                                            0.0f, 4.0f, 4.0f, 8.0f, 1.0f);

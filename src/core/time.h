@@ -38,6 +38,36 @@ inline constexpr std::uint64_t kTicksPerDay        = 8192;  // 2^13
 // continent while you clear one room.
 inline constexpr std::uint64_t kSubworldTickDivisor = 16;   // 2^4
 
+// ── The STEP: what a fight is measured in ─────────────────────────────────
+// A blow lands, a spell comes off cooldown and a sustained drain is paid in
+// SIMULATION STEPS — the same integer quantum a tick is cut from, never a float
+// of wall-clock seconds. On the macro layer a step IS a tick; underground the
+// clock crawls at kSubworldTickDivisor steps per tick while the body keeps
+// moving at the full step rate, and combat follows the BODY, because a fight is
+// something you live through rather than something the calendar meters out.
+//
+// This is a law, not an exception. Cooldowns used to be floats decremented by
+// dt: three rates quoted in real seconds while time.md claimed exactly one
+// documented exception (kSubworldWalkTilesPerSecond). Now the exception is
+// named and it is this ladder — integers, deterministic, and no wall clock in
+// sight, which is the property the tick ladder exists to protect.
+inline constexpr std::uint32_t kStepsPerSecond =
+    static_cast<std::uint32_t>(kTicksPerRealSecond);
+
+// Authored seconds (a table's `cooldown`) → steps. Rounds to nearest so a row
+// that says 0.8 s is not silently truncated to 51 steps' worth of 0.797.
+inline constexpr std::uint32_t steps_from_seconds(float seconds) {
+    return seconds > 0.0f
+        ? static_cast<std::uint32_t>(seconds * float(kStepsPerSecond) + 0.5f)
+        : 0u;
+}
+
+// Steps → seconds, for the one thing that legitimately wants them: telling a
+// human how long is left ("Cooldown 1.4s").
+inline constexpr float seconds_from_steps(std::uint32_t steps) {
+    return float(steps) / float(kStepsPerSecond);
+}
+
 // ── Real time, for the two places that are allowed to know about it ───────
 // The fixed simulation step, in seconds: what every dt-taking system is fed.
 inline constexpr float kStepSeconds = 1.0f / float(kTicksPerRealSecond);

@@ -780,7 +780,7 @@ void SubworldEngine::spawn_player_entity() {
         : kPlayerBaseMeleeDamage;
     reg.emplace<ecs::Combat>(
         e, ecs::Combat{meleeDamage, 0.0f, kPlayerMeleeRange,
-                       kPlayerMeleeCooldown, 0.0f, ecs::Combat::Melee});
+                       kPlayerMeleeCooldown, 0u, ecs::Combat::Melee});
     reg.emplace<ecs::SubworldTag>(e);
     // First honest point-light emitter (Inc 4): a warm carried lantern. Gathered
     // by the renderer through the universal view<Position, LightEmitter,
@@ -1895,7 +1895,7 @@ bool SubworldEngine::spawn_npc_body(const char* npcTypeId,
         reg.emplace<ecs::Health>(e, hp, hp);
         reg.emplace<ecs::Combat>(e,
             std::floor(float(cd->combat.damage) * scale),
-            cd->combat.speed, cd->combat.attackRange, cd->combat.cooldown, 0.0f,
+            cd->combat.speed, cd->combat.attackRange, cd->combat.cooldown, 0u,
             cd->combat.attackKind == CombatTemplate::Missile ? ecs::Combat::Missile
                                                              : ecs::Combat::Melee);
         maybe_emplace_missile_attack(reg, e, cd->combat);
@@ -2364,7 +2364,7 @@ void SubworldEngine::tick_subworld_combat(float dt) {
         // not just player-dealt hits — an NPC-vs-NPC skirmish sprays too.
         reg.emplace_or_replace<ecs::DamageFx>(
             target, ecs::DamageFx{hp->hp <= 0.0f});
-        c.cooldownTimer = c.cooldown;
+        c.cooldownSteps = steps_from_seconds(c.cooldown);
         if (hp->hp <= 0.0f && !reg.any_of<ecs::Dead>(target)) {
             reg.emplace<ecs::Dead>(target);
             // A dead player is a game-over, not an NPC kill: skip the NpcDeath
@@ -2408,13 +2408,13 @@ void SubworldEngine::tick_subworld_combat(float dt) {
         auto* cp = reg.try_get<ecs::Combat>(e);
         if (!cp) continue;
         auto& c = *cp;
-        if (c.cooldownTimer > 0.0f) continue;
+        if (c.cooldownSteps > 0u) continue;
         const bool owned = reg.any_of<ecs::PlayerSoldierTag>(e);
         if (c.kind == ecs::Combat::Missile) {
             const auto& p = reg.get<ecs::Position>(e);
             const auto& tp = reg.get<ecs::Position>(targetEnt);
             spawn_npc_missile(reg, e, p, c, tp.x, tp.y, tp.z);
-            c.cooldownTimer = c.cooldown;
+            c.cooldownSteps = steps_from_seconds(c.cooldown);
             continue;
         }
         strike(e, targetEnt, c, owned);
@@ -3648,7 +3648,7 @@ void SubworldEngine::tick(float dt) {
                     &SubworldEngine::player_threat_callback, this);
         tick_subworld_combat(dt);
         ecs::sys::tick_visual_interp(*ecs_, dt);
-        ecs::sys::tick_combat_cooldowns(*ecs_, dt);
+        ecs::sys::tick_combat_cooldowns(*ecs_, /*steps=*/1u);
         tick_spell_projectiles(*ecs_, bus_, dt,
                                &SubworldEngine::spell_damage_log_callback,
                                this,

@@ -1,4 +1,6 @@
 #include "check.h"
+
+#include "core/time.h"
 #include "content/spells/casting.h"
 #include "content/spells/spell_book.h"
 #include "ecs/world.h"
@@ -425,7 +427,7 @@ int main() {
         return fail("world-map fireball mutated state");
     }
 
-    sm::spellbook_tick(book, combat, 10.0f);
+    sm::spellbook_tick(book, combat, sm::steps_from_seconds(10.0f));
     if (book.cooldowns.find("fireball") != book.cooldowns.end()) {
         return fail("fireball cooldown did not expire");
     }
@@ -509,7 +511,7 @@ int main() {
         return fail("haste not sustained");
     }
     const int beforeDrain = combat.currentMp;
-    sm::spellbook_tick(book, combat, 1.2f);
+    sm::spellbook_tick(book, combat, sm::steps_from_seconds(1.2f));
     if (beforeDrain - combat.currentMp != 12) {
         return fail("haste fractional drain wrong");
     }
@@ -517,7 +519,7 @@ int main() {
         return fail("haste dropped while mana remained");
     }
     combat.currentMp = 1;
-    sm::spellbook_tick(book, combat, 1.0f);
+    sm::spellbook_tick(book, combat, sm::steps_from_seconds(1.0f));
     if (combat.currentMp != 0 || sm::spellbook_has_sustained(book, "haste")) {
         return fail("haste did not stop on mana depletion");
     }
@@ -532,12 +534,27 @@ int main() {
                             0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, true)) {
         return fail("zero-mp sustained setup rejected");
     }
-    sm::spellbook_tick(zeroTickBook, zeroTickCombat, 0.10f);
-    if (zeroTickCombat.currentMp != 0
-        || !sm::spellbook_has_sustained(zeroTickBook, "haste")) {
-        return fail("zero-mp sustained setup did not reach TS boundary");
+    // The PROPERTY, not a pinned boundary: a sustained spell burns the pool one
+    // step at a time and stays up for exactly as long as there is mana, then
+    // drops on the first step after it runs out. This used to be two magic
+    // durations (0.10 s then 0.05 s) chosen to land exactly on the drain's
+    // float boundary — a test that broke the moment the clock became integer
+    // and proved nothing about intent either way.
+    int stepsToEmpty = 0;
+    while (zeroTickCombat.currentMp > 0 && stepsToEmpty < int(sm::kStepsPerSecond)) {
+        sm::spellbook_tick(zeroTickBook, zeroTickCombat, 1u);
+        ++stepsToEmpty;
     }
-    sm::spellbook_tick(zeroTickBook, zeroTickCombat, 0.05f);
+    if (zeroTickCombat.currentMp != 0) {
+        return fail("sustained drain never emptied a one-point pool");
+    }
+    if (stepsToEmpty <= 0) {
+        return fail("the pool emptied without a single step being taken");
+    }
+    if (!sm::spellbook_has_sustained(zeroTickBook, "haste")) {
+        return fail("sustained spell dropped while it was still being paid for");
+    }
+    sm::spellbook_tick(zeroTickBook, zeroTickCombat, 1u);
     if (sm::spellbook_has_sustained(zeroTickBook, "haste")) {
         return fail("zero-mp sustained spell survived positive drain tick");
     }
@@ -555,7 +572,7 @@ int main() {
     if (!sm::spellbook_has_sustained(flightBook, "flight")) {
         return fail("flight not sustained");
     }
-    sm::spellbook_tick(flightBook, flightCombat, 0.5f);
+    sm::spellbook_tick(flightBook, flightCombat, sm::steps_from_seconds(0.5f));
     if (flightCombat.currentMp != 40) {
         return fail("flight drain wrong");
     }
@@ -574,7 +591,8 @@ int main() {
                                0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, true)) {
         return fail("multi sustained setup cast rejected");
     }
-    sm::spellbook_tick(multiSustainBook, multiSustainCombat, 1.0f);
+    sm::spellbook_tick(multiSustainBook, multiSustainCombat,
+                       sm::steps_from_seconds(1.0f));
     if (multiSustainCombat.currentMp != 0
         || sm::spellbook_has_sustained(multiSustainBook, "haste")
         || !sm::spellbook_has_sustained(multiSustainBook, "flight")

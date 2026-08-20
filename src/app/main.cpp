@@ -3532,9 +3532,13 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
 
     stats.ticked = true;
     apply_pending_event_effects(app);
+    // ONE simulation step per turn of the loop — the book's own quantum, not
+    // the wall clock's. Underground the world CLOCK crawls (one tick per
+    // kSubworldTickDivisor steps) while the fight keeps the full step rate, so
+    // a cooldown is the same length of FIGHT in both worlds (core/time.h).
     sm::spellbook_tick(app.gs.player.spellBook,
                        app.gs.player.combatStats,
-                       dt);
+                       /*steps=*/1u);
     if (app.subworld.active()) {
         stats.subworldActive = true;
         if (allowInput) {
@@ -7017,7 +7021,7 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
         hostile, sm::ecs::NPCKind{std::uint16_t(0x1FE), std::uint16_t(2)});
     reg.emplace<sm::ecs::Health>(hostile, 18.0f, 18.0f);
     reg.emplace<sm::ecs::Combat>(hostile,
-        7.0f, 0.0f, 8.0f, 0.30f, 0.0f, sm::ecs::Combat::Melee);
+        7.0f, 0.0f, 8.0f, 0.30f, 0u, sm::ecs::Combat::Melee);
     reg.emplace<sm::ecs::SubworldTag>(hostile);
     reg.emplace<sm::ecs::SubworldAi>(hostile,
         sm::ecs::SubworldAi::Combat, 0.0f, 0.0f, 0.0f, 0.0f, 1.2f);
@@ -7147,7 +7151,7 @@ bool run_subworld_missile_feedback_smoke(App& app) {
         0.0f,
         45.0f,
         0.30f,
-        0.0f,
+        0u,
         sm::ecs::Combat::Missile);
     reg.emplace<sm::ecs::MissileAttack>(
         hostile, 160.0f, 0.0f, std::uint32_t{0xFFA070D0u});
@@ -7491,7 +7495,7 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     reg.emplace<sm::ecs::Health>(target, 40.0f, 40.0f);
     reg.emplace<sm::ecs::Combat>(
         target,
-        3.0f, 20.0f, 2.0f, 1.5f, 0.0f,
+        3.0f, 20.0f, 2.0f, 1.5f, 0u,
         sm::ecs::Combat::Melee);
     reg.emplace<sm::ecs::SubworldAi>(
         target,
@@ -10209,7 +10213,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             const auto cdIt = book.activeSpellId.empty()
                 ? book.cooldowns.end()
                 : book.cooldowns.find(book.activeSpellId);
-            const float cd = cdIt == book.cooldowns.end() ? 0.0f : cdIt->second;
+            const float cd = cdIt == book.cooldowns.end()
+                                 ? 0.0f
+                                 : sm::seconds_from_steps(cdIt->second);
             std::fprintf(stderr,
                          "[smoke] spell_overlay learned=%zu active=%s mp=%d/%d cd=%.2f sustained=%zu\n",
                          book.learned.size(),

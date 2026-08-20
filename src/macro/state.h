@@ -124,7 +124,10 @@ namespace sm {
 // a load recomputes sight from the restored position. Terra incognita became
 // a fact of the world, so a v39 save — a world the player "knew" entirely —
 // no longer describes one.
-constexpr int kSaveVersion = 40;
+// v41: spell cooldowns are STEPS, not float seconds (core/time.h). The field
+// changed type as well as meaning, so a v40 slot's floats would be read as
+// enormous step counts — a saved book would come back locked for hours.
+constexpr int kSaveVersion = 41;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 

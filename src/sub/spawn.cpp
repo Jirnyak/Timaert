@@ -170,7 +170,7 @@ entt::entity emplace_body(entt::registry& reg, const HumanoidBody& body,
     reg.emplace<ecs::NPCKind>(e, std::uint16_t(body.type), body.faction);
     reg.emplace<ecs::Health>(e, hp, maxHp);
     reg.emplace<ecs::Combat>(e,
-        damage, pc.speed, pc.attackRange, pc.cooldown, 0.0f,
+        damage, pc.speed, pc.attackRange, pc.cooldown, 0u,
         pc.attackKind == CombatTemplate::Missile ? ecs::Combat::Missile
                                                  : ecs::Combat::Melee);
     maybe_emplace_missile_attack(reg, e, pc);
@@ -298,7 +298,7 @@ void emplace_fauna_entity(entt::registry& reg, const FaunaEntry& f,
     reg.emplace<ecs::Health>(e, hp, hp);
     reg.emplace<ecs::Combat>(e,
         damage, f.combat.speed, f.combat.attackRange,
-        f.combat.cooldown, 0.0f,
+        f.combat.cooldown, 0u,
         f.combat.attackKind == CombatTemplate::Missile ? ecs::Combat::Missile
                                                        : ecs::Combat::Melee);
     maybe_emplace_missile_attack(reg, e, f.combat);

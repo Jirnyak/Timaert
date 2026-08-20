@@ -2,6 +2,7 @@
 // src/game/spells/spell-types.ts without depending on content/ or UI.
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -12,8 +13,13 @@ namespace sm {
 struct SpellBook {
     std::vector<std::string> learned;
     std::string activeSpellId;
-    std::unordered_map<std::string, float> cooldowns;
+    // Steps remaining, not seconds left (core/time.h): a fight is measured in
+    // the simulation's own integer quantum, so a spell comes back at the same
+    // pace whether the world clock above is racing or crawling.
+    std::unordered_map<std::string, std::uint32_t> cooldowns;
     std::vector<std::string> sustainedActive;
+    // Fractional mana owed by sustained spells, carried between steps: a drain
+    // of 3 mana/second is 3/64 per step and the pool is an integer.
     float sustainedDrainCarry = 0.0f;
 };
 

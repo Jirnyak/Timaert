@@ -271,7 +271,7 @@ sm::GameState make_state() {
         sm::LogEntry{sm::LogType::World, "saved event", 12});
     sm::spellbook_learn(gs.player.spellBook, "spell.spark");
     sm::spellbook_set_active(gs.player.spellBook, "spell.spark");
-    gs.player.spellBook.cooldowns["spell.spark"] = 2.5f;
+    gs.player.spellBook.cooldowns["spell.spark"] = sm::steps_from_seconds(2.5f);
     sm::spellbook_learn(gs.player.spellBook, "haste");
     sm::spellbook_toggle_sustained(gs.player.spellBook, "haste");
     gs.player.factionPeaceUntilDay["guild"] = 55;
@@ -743,8 +743,11 @@ void run_roundtrip() {
     if (p.spellBook.activeSpellId != "spell.spark") {
         FAIL_BAIL("active spell lost");
     }
+    // Steps are integers: an exact compare, not a float tolerance. The old
+    // nearf() here was tolerance for a quantity that never needed any.
     const auto cdIt = p.spellBook.cooldowns.find("spell.spark");
-    if (cdIt == p.spellBook.cooldowns.end() || !nearf(cdIt->second, 2.5f)) {
+    if (cdIt == p.spellBook.cooldowns.end()
+        || cdIt->second != sm::steps_from_seconds(2.5f)) {
         FAIL_BAIL("spell cooldown lost");
     }
     if (!sm::spellbook_has_sustained(p.spellBook, "haste")) {

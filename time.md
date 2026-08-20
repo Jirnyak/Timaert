@@ -153,11 +153,28 @@ else is denominated in game time:
 | macro NPC thinking | every 32 **ticks** | `macro/npc_ai.h` |
 | player time-in-cell | every 32 **ticks** | `app/main.cpp` |
 | subworld walk | 96 tiles per **real** second | `app/main.cpp` |
+| spell cooldown | authored seconds → **steps** | `content/spells/spell_book.cpp` |
+| melee cooldown | authored seconds → **steps** | `ecs/systems.cpp` |
+| sustained mana drain | per **step** | `content/spells/spell_book.cpp` |
 
-That last row is the deliberate exception. Down in the subworld you are a body
-doing a thing in real time; up on the map you are an abstraction of a journey.
-Two kinds of motion, two denominators, and the difference is written down rather
-than stumbled into.
+The last four rows are the subworld's own denominator, and they are the
+deliberate exception. Down there you are a body doing a thing; up on the map you
+are an abstraction of a journey. Two kinds of motion, two denominators, and the
+difference is written down rather than stumbled into.
+
+**The STEP, not the second.** The three cooldown rows above used to be floats
+decremented by a `dt` of real seconds, while this page claimed exactly ONE
+exception — so the law said one thing and the code did another in three places,
+which is how an audit ends up reporting an exploit that does not exist (19.26
+claimed magic was 16× more productive underground; it is not, because nothing
+regenerates underground at all). They are integers now, counted in simulation
+STEPS (`core/time.h kStepsPerSecond`), which changes nothing about how a fight
+feels and everything about what it is: no wall clock, no float, deterministic,
+and the same length of FIGHT whether the clock above races or crawls.
+
+Taking "everything in ticks" literally was measured and rejected: a world tick
+underground is 0.25 real seconds, so a one-second cooldown would become sixteen
+real seconds and combat would stop being combat.
 
 The point of the rest of the table: **the length of a day is a matter of feel,
 not of balance.** Lengthen it and the world simply takes longer to live through

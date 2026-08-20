@@ -27,11 +27,12 @@ void tick_visual_interp(World& w, float dt) {
     }
 }
 
-void tick_combat_cooldowns(World& w, float dt) {
+void tick_combat_cooldowns(World& w, std::uint32_t steps) {
+    if (steps == 0u) return;
     auto view = w.reg.view<Combat>();
     for (auto e : view) {
         auto& c = view.get<Combat>(e);
-        if (c.cooldownTimer > 0.0f) c.cooldownTimer -= dt;
+        c.cooldownSteps = c.cooldownSteps > steps ? c.cooldownSteps - steps : 0u;
     }
 }
 

@@ -364,11 +364,14 @@ void read_string_int_map(Reader& r, std::unordered_map<std::string, int>& m,
     }
 }
 
-void write_string_float_map(Writer& w,
-                            const std::unordered_map<std::string, float>& m,
-                            std::uint32_t cap = kMaxSmallVector) {
+// The spellbook's cooldowns are STEPS now (core/time.h), so the map they ride
+// in is integer. Kept beside its float twin rather than templated: two callers,
+// two plain functions, and a reader can see exactly what lands on disk.
+void write_string_u32_map(Writer& w,
+                          const std::unordered_map<std::string, std::uint32_t>& m,
+                          std::uint32_t cap = kMaxSmallVector) {
     if (!w.count(m.size(), cap)) return;
-    std::vector<std::pair<std::string, float>> rows;
+    std::vector<std::pair<std::string, std::uint32_t>> rows;
     rows.reserve(m.size());
     for (const auto& [k, v] : m) rows.emplace_back(k, v);
     std::sort(rows.begin(), rows.end(),
@@ -379,16 +382,16 @@ void write_string_float_map(Writer& w,
     }
 }
 
-void read_string_float_map(Reader& r,
-                           std::unordered_map<std::string, float>& m,
-                           std::uint32_t cap = kMaxSmallVector) {
+void read_string_u32_map(Reader& r,
+                         std::unordered_map<std::string, std::uint32_t>& m,
+                         std::uint32_t cap = kMaxSmallVector) {
     std::uint32_t n = 0;
     if (!read_count(r, n, cap)) return;
     m.clear();
     m.reserve(n);
     for (std::uint32_t i = 0; i < n && r.ok; ++i) {
         std::string k;
-        float v = 0.0f;
+        std::uint32_t v = 0;
         r.str(k);
         r.pod(v);
         m.emplace(std::move(k), v);
@@ -568,14 +571,14 @@ void read_perks(Reader& r, Perks& perks) {
 void write_spell_book(Writer& w, const SpellBook& spellBook) {
     write_string_vector(w, spellBook.learned);
     w.str(spellBook.activeSpellId);
-    write_string_float_map(w, spellBook.cooldowns);
+    write_string_u32_map(w, spellBook.cooldowns);
     write_string_vector(w, spellBook.sustainedActive);
 }
 
 void read_spell_book(Reader& r, SpellBook& spellBook) {
     read_string_vector(r, spellBook.learned);
     r.str(spellBook.activeSpellId);
-    read_string_float_map(r, spellBook.cooldowns);
+    read_string_u32_map(r, spellBook.cooldowns);
     read_string_vector(r, spellBook.sustainedActive);
 }
 

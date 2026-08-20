@@ -37,8 +37,13 @@ struct Combat {
     float damage;
     float speed;            // grid units / s
     float attackRange;
-    float cooldown;
-    float cooldownTimer;
+    float cooldown;         // authored seconds (the table's own number)
+    // Steps left before this body may strike again (core/time.h). It was a
+    // float decremented by dt — a rate quoted in REAL seconds inside a world
+    // that runs on an integer tick, and one of three such exceptions where the
+    // ladder claimed exactly one. Integer now, and a blow lands after the same
+    // amount of FIGHT whether the clock above races or crawls.
+    std::uint32_t cooldownSteps;
     enum Kind : std::uint8_t { Melee = 0, Missile = 1 } kind;
 };
 

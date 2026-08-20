@@ -1550,8 +1550,9 @@ namespace sm::ui
                                 ImGui::TextDisabled("-");
                             ImGui::TableNextColumn();
                             const auto cdIt = p.spellBook.cooldowns.find(id);
-                            if (cdIt != p.spellBook.cooldowns.end() && cdIt->second > 0.0f)
-                                ImGui::Text("%.1fs", cdIt->second);
+                            if (cdIt != p.spellBook.cooldowns.end() && cdIt->second > 0u)
+                                ImGui::Text("%.1fs",
+                                            double(sm::seconds_from_steps(cdIt->second)));
                             else if (def && def->cooldown > 0.0f)
                                 ImGui::Text("%.1fs", def->cooldown);
                             else
