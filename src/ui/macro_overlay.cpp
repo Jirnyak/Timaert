@@ -96,16 +96,11 @@ ImU32 npc_color(NPCType t) {
     }
 }
 
-// NPC type → real PNG sprite from public/assets/sprites/.
+// NPC type → its picture. The kind's own row says which; this used to be a
+// switch here, which is exactly the if-chain a data-driven registry forbids —
+// a new NPC kind had to remember to come and edit the map's drawing code.
 SpriteId npc_sprite(NPCType t) {
-    switch (t) {
-        case NPCType::Caravan:   return SpriteId::Caravan;
-        case NPCType::Bandit:    return SpriteId::ImpGolem;
-        case NPCType::Witch:     return SpriteId::Witch;
-        case NPCType::Sorceress: return SpriteId::Cultistka;
-        // Peasant / Woodcutter / Merchant / Guard share the peasant atlas.
-        default:                 return SpriteId::Peasant;
-    }
+    return npc_def(t).sprite;
 }
 
 // Draw a centered sprite at screen pos `c`, sized `pixSize` (square).
@@ -489,7 +484,7 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
         ImVec2 p = world_to_screen(gs.player.x + 0.5f, gs.player.y + 0.5f,
                                    camX, camY, zoom, viewW, viewH, mapW, mapH);
         const float size = std::clamp(zoom * 1.1f, 14.0f, 64.0f);
-        draw_sprite(dl, p, SpriteId::Player, size,
+        draw_sprite(dl, p, SpriteId::Peasant, size,
                     IM_COL32(255, 255, 255, 255), figureTint);
     }
 }

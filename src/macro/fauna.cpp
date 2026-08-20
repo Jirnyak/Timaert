@@ -14,52 +14,51 @@
 
 namespace sm {
 
-using CA = CreatureArchetype; // body plan for the procedural creature billboard
 
 // ── Combat templates for wildlife ────────────────────────────────────
 //
 // Mirrors the TS critter list verbatim (hp / damage / speed / range /
 // cooldown / label match the .ts file line-for-line).
-static const FaunaEntry kRabbit  {"rabbit", "Rabbit",        15, "wildlife", FaunaAi::Flee,
-    {  5,  0, 55, 0, 9.0f, "Rbt"}, 1, 0xB8A080u, 0.4f, CA::Quadruped};
-static const FaunaEntry kDeer    {"deer", "Deer",          12, "wildlife", FaunaAi::Flee,
-    { 15,  2, 50, 2, 2.0f, "Der"}, 1, 0xA08060u, 0.6f, CA::Quadruped};
-static const FaunaEntry kFox     {"fox", "Fox",            8, "wildlife", FaunaAi::Wander,
-    { 12,  4, 45, 2, 1.2f, "Fox"}, 1, 0xCC6633u, 0.5f, CA::Quadruped};
-static const FaunaEntry kWolf    {"wolf", "Wolf",           6, "wildlife", FaunaAi::Combat,
-    { 30, 10, 50, 3, 1.0f, "Wlf"}, 2, 0x666666u, 0.7f, CA::Quadruped};
-static const FaunaEntry kBear    {"bear", "Bear",           3, "wildlife", FaunaAi::Combat,
-    { 80, 18, 35, 3, 1.5f, "Ber"}, 3, 0x5A3A1Au, 1.0f, CA::Quadruped};
-static const FaunaEntry kBoar    {"boar", "Boar",           5, "wildlife", FaunaAi::Combat,
-    { 40, 12, 40, 3, 1.2f, "Bor"}, 2, 0x6B4E37u, 0.7f, CA::Quadruped};
-static const FaunaEntry kSnake   {"snake", "Snake",          4, "wildlife", FaunaAi::Combat,
-    { 10,  8, 30, 2, 0.8f, "Snk"}, 1, 0x3A5A2Au, 0.3f, CA::Serpent};
-static const FaunaEntry kHawk    {"hawk", "Hawk",           3, "wildlife", FaunaAi::Wander,
-    {  8,  5, 60, 3, 1.0f, "Hwk"}, 1, 0x8B6B4Bu, 0.4f, CA::Avian};
-static const FaunaEntry kFrog    {"frog", "Frog",          10, "wildlife", FaunaAi::Flee,
-    {  3,  0, 30, 0, 9.0f, "Frg"}, 1, 0x2A8A2Au, 0.3f, CA::Critter};
-static const FaunaEntry kGoat    {"goat", "Mountain Goat",  8, "wildlife", FaunaAi::Flee,
-    { 20,  5, 40, 2, 1.5f, "Mgt"}, 1, 0xB0A090u, 0.6f, CA::Quadruped};
-static const FaunaEntry kEagle   {"eagle", "Eagle",          4, "wildlife", FaunaAi::Wander,
-    { 12,  7, 65, 3, 1.0f, "Egl"}, 2, 0x5A4030u, 0.5f, CA::Avian};
-static const FaunaEntry kCroc    {"crocodile", "Crocodile",      4, "wildlife", FaunaAi::Combat,
-    { 50, 15, 25, 3, 1.5f, "Crc"}, 3, 0x4A6A3Au, 0.8f, CA::Quadruped};
+static const FaunaEntry kRabbit{"rabbit", "Rabbit",        15, "wildlife", FaunaAi::Flee,
+    {  5,  0, 55, 0, 9.0f, "Rbt"}, 1, 0.4f, SpriteId::Rabbit};
+static const FaunaEntry kDeer{"deer", "Deer",          12, "wildlife", FaunaAi::Flee,
+    { 15,  2, 50, 2, 2.0f, "Der"}, 1, 0.6f, SpriteId::Deer};
+static const FaunaEntry kFox{"fox", "Fox",            8, "wildlife", FaunaAi::Wander,
+    { 12,  4, 45, 2, 1.2f, "Fox"}, 1, 0.5f, SpriteId::Fox};
+static const FaunaEntry kWolf{"wolf", "Wolf",           6, "wildlife", FaunaAi::Combat,
+    { 30, 10, 50, 3, 1.0f, "Wlf"}, 2, 0.7f, SpriteId::Wolf};
+static const FaunaEntry kBear{"bear", "Bear",           3, "wildlife", FaunaAi::Combat,
+    { 80, 18, 35, 3, 1.5f, "Ber"}, 3, 1.0f, SpriteId::Bear};
+static const FaunaEntry kBoar{"boar", "Boar",           5, "wildlife", FaunaAi::Combat,
+    { 40, 12, 40, 3, 1.2f, "Bor"}, 2, 0.7f, SpriteId::Boar};
+static const FaunaEntry kSnake{"snake", "Snake",          4, "wildlife", FaunaAi::Combat,
+    { 10,  8, 30, 2, 0.8f, "Snk"}, 1, 0.3f, SpriteId::Snake};
+static const FaunaEntry kHawk{"hawk", "Hawk",           3, "wildlife", FaunaAi::Wander,
+    {  8,  5, 60, 3, 1.0f, "Hwk"}, 1, 0.4f, SpriteId::Hawk};
+static const FaunaEntry kFrog{"frog", "Frog",          10, "wildlife", FaunaAi::Flee,
+    {  3,  0, 30, 0, 9.0f, "Frg"}, 1, 0.3f, SpriteId::Frog};
+static const FaunaEntry kGoat{"goat", "Mountain Goat",  8, "wildlife", FaunaAi::Flee,
+    { 20,  5, 40, 2, 1.5f, "Mgt"}, 1, 0.6f, SpriteId::Goat};
+static const FaunaEntry kEagle{"eagle", "Eagle",          4, "wildlife", FaunaAi::Wander,
+    { 12,  7, 65, 3, 1.0f, "Egl"}, 2, 0.5f, SpriteId::Eagle};
+static const FaunaEntry kCroc{"crocodile", "Crocodile",      4, "wildlife", FaunaAi::Combat,
+    { 50, 15, 25, 3, 1.5f, "Crc"}, 3, 0.8f, SpriteId::Crocodile};
 
 // ── Monsters ────────────────────────────────────────────────────────
-static const FaunaEntry kGoblin  {"goblin", "Goblin",         4, "demons",  FaunaAi::Combat,
-    { 25,  8, 40, 3, 1.0f, "Gbl"}, 2, 0x4A8A2Au, 0.6f, CA::Biped};
+static const FaunaEntry kGoblin{"goblin", "Goblin",         4, "demons",  FaunaAi::Combat,
+    { 25,  8, 40, 3, 1.0f, "Gbl"}, 2, 0.6f, SpriteId::Goblin};
 static const FaunaEntry kSkeleton{"skeleton", "Skeleton",       3, "demons",  FaunaAi::Combat,
-    { 35, 10, 30, 3, 1.2f, "Skl"}, 3, 0xD0C8B0u, 0.6f, CA::Undead};
-static const FaunaEntry kTroll   {"troll", "Troll",          1, "demons",  FaunaAi::Combat,
-    {120, 25, 25, 4, 2.0f, "Trl"}, 5, 0x3A6A3Au, 1.2f, CA::Biped};
+    { 35, 10, 30, 3, 1.2f, "Skl"}, 3, 0.6f, SpriteId::Skeleton};
+static const FaunaEntry kTroll{"troll", "Troll",          1, "demons",  FaunaAi::Combat,
+    {120, 25, 25, 4, 2.0f, "Trl"}, 5, 1.2f, SpriteId::Troll};
 static const FaunaEntry kSwampThing{"swamp_thing", "Swamp Thing",  3, "demons",  FaunaAi::Combat,
-    { 60, 14, 20, 4, 1.5f, "Swt"}, 3, 0x2A4A1Au, 0.9f, CA::Biped};
+    { 60, 14, 20, 4, 1.5f, "Swt"}, 3, 0.9f, SpriteId::SwampThing};
 static const FaunaEntry kIceWraith{"ice_wraith", "Ice Wraith",    2, "demons",  FaunaAi::Combat,
-    { 45, 16, 35, 5, 1.3f, "Iwr"}, 4, 0xA0D0E0u, 0.7f, CA::Undead};
+    { 45, 16, 35, 5, 1.3f, "Iwr"}, 4, 0.7f, SpriteId::IceWraith};
 static const FaunaEntry kSandScorpion{"sand_scorpion", "Sand Scorpion",5,"demons", FaunaAi::Combat,
-    { 35, 12, 35, 3, 1.0f, "Ssc"}, 2, 0xC0A050u, 0.6f, CA::Quadruped};
+    { 35, 12, 35, 3, 1.0f, "Ssc"}, 2, 0.6f, SpriteId::SandScorpion};
 static const FaunaEntry kStoneGolem{"stone_golem", "Stone Golem",  1, "demons",  FaunaAi::Combat,
-    {150, 20, 15, 4, 2.5f, "Glm"}, 5, 0x7A7A7Au, 1.3f, CA::Hulk};
+    {150, 20, 15, 4, 2.5f, "Glm"}, 5, 1.3f, SpriteId::StoneGolem};
 
 // ── Per-table entry arrays (null-terminated) ─────────────────────────
 //

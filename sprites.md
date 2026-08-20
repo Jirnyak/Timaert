@@ -65,10 +65,33 @@ a walker.
 Knowingly lost on the map: per-soul appearance, the walk cycle, four facings.
 The subworld kept all three — the bank was not touched.
 
-**Stage 2 — PENDING.** `npc_sprite()` is still a `switch` over `NPCType`
-(`macro_overlay.cpp`), which is the very `if`-chain rule 1 forbids. It becomes
-ONE row table — kind → {asset, archetype, tint, size} — read by the macro map
-and the subworld through one door. Witches, lords, a peasant king: one row each.
+**Stage 2 — SHIPPED.** THE table exists: `macro/sprite_rows.h`, one row per
+visible kind — `{id, name, asset, archetype, tint}` — with the enum-order guard
+(`rows_in_enum_order`). A goblin and a peasant are now adjacent rows in one
+list; one names a body plan, the other a PNG.
+
+Four scattered look-registries collapsed into it:
+- `kAssets` (11 PNG rows in `sprite_atlas.cpp`) — gone; the atlas is now only a
+  loader that turns a row's `asset` into a texture;
+- `npc_sprite()`'s `switch` over `NPCType` — gone; the kind's own row says which
+  picture it wears, so a new NPC kind no longer has to remember to edit the
+  map's drawing code;
+- `NpcTypeDef::portrait`, a path string with **zero readers** — a fourth asset
+  vocabulary nobody was speaking. Swapped for `NpcTypeDef::sprite`, so the row
+  did not grow and dead data became live;
+- `FaunaEntry::color` + `FaunaEntry::archetype` — moved into the table, along
+  with `CreatureArchetype` and the billboard aspect ratios, so every statement
+  about how a thing LOOKS lives in one header.
+
+Kinds share rows on purpose: eleven NPC types resolve to five pictures, because
+every unremarkable townsman is a peasant to the eye. Creatures do not share —
+each names the row of its own name, which `sprite_rows_test` enforces (with a
+negative control proving the check can fail: pointing goblin at troll's row
+reddens it).
+
+Landmarks were already in this shape before the track (`kLandmarkDraw` rows,
+guarded, with a documented glyph fallback and spire active/spent as two separate
+sprite rows), so they only changed vocabulary.
 
 **Stage 3 — PENDING.** `npc.frag` and `creature.frag` merge: bank slot if the
 row has art, procedural silhouette if it does not. The A7 (NPC) and A8

@@ -313,11 +313,13 @@ void emplace_fauna_entity(entt::registry& reg, const FaunaEntry& f,
     reg.emplace<ecs::SubworldAi>(e, aiKind, /*aiTimer*/0.0f,
         /*vx*/0.0f, /*vy*/0.0f,
         /*wanderSpeed*/f.combat.speed * 0.40f, f.radius);
-    const std::uint8_t cr = std::uint8_t((f.color >> 16) & 0xFFu);
-    const std::uint8_t cg = std::uint8_t((f.color >>  8) & 0xFFu);
-    const std::uint8_t cb = std::uint8_t( f.color        & 0xFFu);
+    // Look comes from the row's sprite — ONE table for every visible kind.
+    const SpriteDef& look = sprite_row(f.sprite);
+    const std::uint8_t cr = std::uint8_t((look.tint >> 16) & 0xFFu);
+    const std::uint8_t cg = std::uint8_t((look.tint >>  8) & 0xFFu);
+    const std::uint8_t cb = std::uint8_t( look.tint        & 0xFFu);
     reg.emplace<ecs::Sprite>(e, typeId, cr, cg, cb, std::uint8_t(255), f.radius,
-                             std::uint8_t(f.archetype), body_height_m(f));
+                             look.archetype, body_height_m(f));
     // The receipt, stamped by the birth (the spawn_derived_body doctrine): a
     // wild head is one unit of its cell's fauna_count made visible, and its
     // death thins the cell for good. No loan = a creature from thin air

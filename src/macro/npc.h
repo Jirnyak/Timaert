@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <cstdint>
 #include "macro/army.h"
+#include "macro/sprite_rows.h"
 
 namespace sm {
 
@@ -75,7 +76,12 @@ struct NpcTypeDef {
     // MUST equal the row's index in kNpcTypeDefs (guard below the table).
     NPCType         type;
     const char*     label;
-    const char*     portrait;
+    // This kind's picture — a row of THE sprite table (macro/sprite_rows.h),
+    // which decides drawn art vs procedural body. Kinds share rows on purpose:
+    // every unremarkable townsman is a peasant to the eye. It replaced a dead
+    // `portrait` path string that no code ever read — a fourth asset vocabulary
+    // nobody was speaking.
+    SpriteId        sprite;
     int             baseHp;
     int             baseLevel;
     AIBehaviour     ai;
@@ -123,7 +129,7 @@ inline constexpr CombatTemplate kSorceressCombat {70, 22, 25, 25.0f,1.8f, "Src",
 inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // Peasant
     {
-        NPCType::Peasant, "Peasant", "/assets/sprites/peasant_256.png", 25, 1,
+        NPCType::Peasant, "Peasant", SpriteId::Peasant, 25, 1,
         AIBehaviour::Gatherer, kPeasantCombat, 1, true, 10,
         {{"Ivan","Pyotr","Sergey","Dmitry","Alexei","Nikolai","Vasily","Grigory",
           "Fedor","Andrei","Olga","Natalya","Katya","Masha","Dasha"}}, 15,
@@ -135,7 +141,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     },
     // Woodcutter
     {
-        NPCType::Woodcutter, "Woodcutter", "/assets/sprites/peasant_256.png", 30, 1,
+        NPCType::Woodcutter, "Woodcutter", SpriteId::Peasant, 30, 1,
         AIBehaviour::Gatherer, kWoodcutterCombat, 1, true, 12,
         {{"Borislav","Timofey","Yegor","Luka","Matvey"}}, 5,
         {{"These woods hold many secrets.",
@@ -145,7 +151,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     },
     // Merchant
     {
-        NPCType::Merchant, "Merchant", "/assets/sprites/corovan_256.png", 30, 3,
+        NPCType::Merchant, "Merchant", SpriteId::Caravan, 30, 3,
         AIBehaviour::Trader, kMerchantCombat, kNpcUpkeepNone, false, 30,
         {{"Kartash","Bazukin","Torgin","Menkov","Skaldin"}}, 5,
         {{"Looking to trade? I have fine wares!",
@@ -155,7 +161,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     },
     // Caravan
     {
-        NPCType::Caravan, "Caravan", "/assets/sprites/corovan_256.png", 25, 2,
+        NPCType::Caravan, "Caravan", SpriteId::Caravan, 25, 2,
         AIBehaviour::CaravanTrade, kCaravanCombat, kNpcUpkeepNone, false, 20,
         {{"Putnik","Dorozhkin","Obozov","Strannik","Koleso"}}, 5,
         {{"Long road ahead. Care to trade before I move on?",
@@ -165,7 +171,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     },
     // Bandit
     {
-        NPCType::Bandit, "Bandit", "/assets/sprites/imp_golem_256.png", 50, 2,
+        NPCType::Bandit, "Bandit", SpriteId::Bandit, 50, 2,
         AIBehaviour::Aggressive, kBanditCombat, kNpcUpkeepNone, false, 20,
         {{"Razboy","Diki","Grozny","Slyak","Khvat"}}, 5,
         {{"Your gold or your life!",
@@ -175,7 +181,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     },
     // Guard
     {
-        NPCType::Guard, "Guard", "/assets/sprites/peasant_256.png", 55, 3,
+        NPCType::Guard, "Guard", SpriteId::Peasant, 55, 3,
         AIBehaviour::Patrol, kGuardCombat, 3, true, 30,
         {{"Strazhnik","Boyar","Vityaz","Desyatnik","Druzhina"}}, 5,
         {{"Move along, citizen. Nothing to see here.",
@@ -194,7 +200,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     },
     // Witch
     {
-        NPCType::Witch, "Witch", "/assets/sprites/witch_256.png", 60, 5,
+        NPCType::Witch, "Witch", SpriteId::Witch, 60, 5,
         AIBehaviour::Teleporter, kWitchCombat, kNpcUpkeepNone, false, 50,
         {{"Yaga","Vedma","Znakharka","Koldunia","Volshebnitsa"}}, 5,
         {{"The spirits whisper of your coming...",
@@ -204,7 +210,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     },
     // Sorceress
     {
-        NPCType::Sorceress, "Sorceress", "/assets/sprites/witch_256.png", 70, 6,
+        NPCType::Sorceress, "Sorceress", SpriteId::Sorceress, 70, 6,
         AIBehaviour::Wanderer, kSorceressCombat, kNpcUpkeepNone, false, 60,
         {{"Charodejka","Zaklinatelnitsa","Mistika","Runara","Svetozara"}}, 5,
         {{"The arcane currents shift around you...",
@@ -214,7 +220,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     },
     // Miner — the iron villages' man (spawned where a vein anchors the home)
     {
-        NPCType::Miner, "Miner", "/assets/sprites/peasant_256.png", 30, 1,
+        NPCType::Miner, "Miner", SpriteId::Peasant, 30, 1,
         AIBehaviour::Gatherer, kWoodcutterCombat, 1, true, 12,
         {{"Prokhor","Savva","Demyan","Zakhar","Foma"}}, 5,
         {{"The vein runs deep, but so do we.",
@@ -224,7 +230,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     },
     // Quarryman — stone out of the mountain, the same law of labour
     {
-        NPCType::Quarryman, "Quarryman", "/assets/sprites/peasant_256.png", 30, 1,
+        NPCType::Quarryman, "Quarryman", SpriteId::Peasant, 30, 1,
         AIBehaviour::Gatherer, kWoodcutterCombat, 1, true, 12,
         {{"Gavril","Osip","Trofim","Nazar","Kondrat"}}, 5,
         {{"Stone does not grow back. Good thing there is a mountain of it.",
@@ -233,7 +239,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     },
     // Clay-digger — the riverbank's man
     {
-        NPCType::ClayDigger, "Clay-digger", "/assets/sprites/peasant_256.png", 30, 1,
+        NPCType::ClayDigger, "Clay-digger", SpriteId::Peasant, 30, 1,
         AIBehaviour::Gatherer, kWoodcutterCombat, 1, true, 12,
         {{"Yermolai","Panteley","Averyan","Selivan","Mitrofan"}}, 5,
         {{"Good clay wants a river and patience.",

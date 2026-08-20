@@ -187,9 +187,13 @@ std::vector<SpawnRecord> expected_cell_fauna(
         r.level = std::int16_t(level);
         r.ai = ai_kind(f.ai);
         r.kind = combat_kind(f.combat);
-        r.r = std::uint8_t((f.color >> 16) & 0xFFu);
-        r.g = std::uint8_t((f.color >> 8) & 0xFFu);
-        r.b = std::uint8_t(f.color & 0xFFu);
+        // The tint is the row's PICTURE, not a number restated here: a creature
+        // and its sprite row are bound through THE sprite table, so this asserts
+        // the binding holds rather than that someone can copy a literal.
+        const std::uint32_t tint = sm::sprite_row(f.sprite).tint;
+        r.r = std::uint8_t((tint >> 16) & 0xFFu);
+        r.g = std::uint8_t((tint >> 8) & 0xFFu);
+        r.b = std::uint8_t(tint & 0xFFu);
         out.push_back(r);
     }
 

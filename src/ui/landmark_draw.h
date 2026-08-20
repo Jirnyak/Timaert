@@ -7,7 +7,7 @@
 //
 // Adding a landmark kind = its registry row + one row here (+ a yield in
 // macro/landmark_iter.h when it gains storage). Kinds without drawn art use
-// SpriteId::Count_ — sprite_get() returns null and the draw falls back to a
+// SpriteId::None — sprite_get() returns null and the draw falls back to a
 // glyph circle in the row colour.
 #pragma once
 #include <cstddef>
@@ -25,7 +25,7 @@ enum class MiniShape : std::uint8_t { Ring, Dot, Diamond };
 
 struct LandmarkDrawRow {
     LandmarkType type;        // MUST equal its index — asserted below
-    SpriteId sprite;          // Count_ = no art, glyph-circle fallback
+    SpriteId sprite;          // None = no art, glyph-circle fallback
     SpriteId spriteDepleted;  // variant for a consumed landmark (== sprite
                               // when the kind cannot deplete)
     float basePx;             // landmark_size() floor at low zoom
@@ -38,23 +38,23 @@ struct LandmarkDrawRow {
 
 inline constexpr LandmarkDrawRow
     kLandmarkDraw[std::size_t(LandmarkType::Count)] = {
-    {LandmarkType::None,    SpriteId::Count_, SpriteId::Count_,
+    {LandmarkType::None,    SpriteId::None, SpriteId::None,
      0.0f, 0.0f, 0.0f, 0.0f, MiniShape::Dot, 0.0f},
     {LandmarkType::City,    SpriteId::City, SpriteId::City,
      28.0f, 192.0f, 0.0f, 6.0f, MiniShape::Ring, 3.0f},
     {LandmarkType::Village, SpriteId::Village, SpriteId::Village,
      22.0f, 144.0f, 3.0f, 0.0f, MiniShape::Dot, 1.6f},
-    {LandmarkType::Spire,   SpriteId::Spire, SpriteId::SpireDark,
+    {LandmarkType::Spire,   SpriteId::SpireActive, SpriteId::SpireSpent,
      26.0f, 160.0f, 0.0f, 0.0f, MiniShape::Diamond, 4.0f},
-    {LandmarkType::Ruin,    SpriteId::Count_, SpriteId::Count_,
+    {LandmarkType::Ruin,    SpriteId::None, SpriteId::None,
      22.0f, 144.0f, 0.0f, 0.0f, MiniShape::Dot, 1.6f},
-    {LandmarkType::Lair,    SpriteId::Count_, SpriteId::Count_,
+    {LandmarkType::Lair,    SpriteId::None, SpriteId::None,
      22.0f, 144.0f, 0.0f, 0.0f, MiniShape::Dot, 1.6f},
-    {LandmarkType::Shrine,  SpriteId::Count_, SpriteId::Count_,
+    {LandmarkType::Shrine,  SpriteId::None, SpriteId::None,
      22.0f, 144.0f, 0.0f, 0.0f, MiniShape::Dot, 1.6f},
-    {LandmarkType::Mine,    SpriteId::Count_, SpriteId::Count_,
+    {LandmarkType::Mine,    SpriteId::None, SpriteId::None,
      22.0f, 144.0f, 0.0f, 0.0f, MiniShape::Dot, 1.6f},
-    {LandmarkType::Tower,   SpriteId::Count_, SpriteId::Count_,
+    {LandmarkType::Tower,   SpriteId::None, SpriteId::None,
      22.0f, 144.0f, 0.0f, 0.0f, MiniShape::Dot, 1.6f},
 };
 

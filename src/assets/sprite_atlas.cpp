@@ -23,26 +23,6 @@
 namespace sm {
 namespace {
 
-struct Entry { SpriteId id; const char* file; };
-
-// Map enum → real filename in public/assets/sprites/.
-constexpr std::array<Entry, std::size_t(SpriteId::Count_)> kAssets = {{
-    { SpriteId::City,      "city_256.png"      },
-    { SpriteId::Village,   "village_256.png"   },
-    { SpriteId::Spire,     "spireA_256.png"    },
-    { SpriteId::SpireDark, "spireD_256.png"    },
-    // The player has no drawn figure of his own yet: `player.png` is the
-    // title-screen skull, not a walker. A row whose art is missing borrows
-    // the nearest kind's — one line to change when the figure is drawn.
-    { SpriteId::Player,    "peasant_256.png"   },
-    { SpriteId::Peasant,   "peasant_256.png"   },
-    { SpriteId::Caravan,   "corovan_256.png"   },
-    { SpriteId::Witch,     "witch_256.png"     },
-    { SpriteId::Cultistka, "cultistka_256.png" },
-    { SpriteId::ImpGolem,  "imp_golem_256.png" },
-    { SpriteId::Coins,     "coins.png"         },
-}};
-
 std::array<Sprite, std::size_t(SpriteId::Count_)> g_sprites{};
 
 // Try a list of candidate paths until one decodes.
@@ -69,8 +49,9 @@ void load_one(SpriteId id) {
     if (s.tried) return;
     s.tried = true;
 
-    const char* file = nullptr;
-    for (const auto& a : kAssets) if (a.id == id) { file = a.file; break; }
+    // The row IS the list. A row that names no art is not a failure — it is a
+    // procedural body, and its consumer knows to draw one.
+    const char* file = sprite_row(id).asset;
     if (!file) return;
 
     int w = 0, h = 0;

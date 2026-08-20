@@ -724,6 +724,13 @@ timaert_test(targeting_test
 timaert_test(fauna_registry_test
     SOURCES
         src/macro/fauna.cpp)
+# THE sprite table (macro/sprite_rows.h): totality over the creature catalog and
+# the NPC kinds, every row drawable, the creature↔row name binding, and the
+# negative control that the binding check can actually fail. Pure data — it
+# links the fauna registry only to walk the catalog.
+timaert_test(sprite_rows_test
+    SOURCES
+        src/macro/fauna.cpp)
 # Universal UI settings registry (ui_settings.cpp): spec-seeded defaults, the
 # forgiving text-KV load/save round-trip, unknown-key / out-of-range tolerance,
 # and reset_defaults(). Pure logic — it never opens a window, so it links only

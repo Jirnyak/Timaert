@@ -13,6 +13,7 @@
 #include "macro/biomes.h"
 #include "macro/features.h"
 #include "macro/army.h"
+#include "macro/sprite_rows.h"
 
 namespace sm {
 
@@ -32,43 +33,6 @@ enum class FaunaAi : std::uint8_t { Wander = 0, Flee = 1, Combat = 2 };
 // a DEMON creature (3) as brothers — the spell friendly-fire check used the
 // raw index). One id space ends that class of bug. nullptr = factionless.
 
-// Procedural body plan for the subworld 3D creature billboard. The fauna table
-// declares each creature's shape; the renderer draws the matching silhouette
-// (and its real shadow). A drawn atlas/image sprite overrides the procedural
-// body later (universal sprite resolver) with no engine change. Keep the values
-// in sync with shaders/creature_sprite.glsl.
-enum class CreatureArchetype : std::uint8_t {
-    Quadruped = 0, // horizontal 4-legged beast (rabbit / wolf / bear / croc …)
-    Avian     = 1, // winged (hawk / eagle)
-    Serpent   = 2, // legless sinuous (snake)
-    Biped     = 3, // upright humanoid monster (goblin / troll / swamp thing)
-    Undead    = 4, // thin bony / ghostly upright (skeleton / ice wraith)
-    Hulk      = 5, // massive blocky (stone golem)
-    Critter   = 6, // tiny squat blob (frog)
-};
-
-// (width, height) billboard multipliers per body plan — how much quad one
-// unit of creature `size` buys. This lived as a GLSL function copied into
-// creature.vert AND shadow_creature.vert under a "MUST match" comment; since
-// the unified billboard idiom (gpu/bb_instance.h) the aspect is applied ONCE
-// on the CPU and both silhouettes read the same instance extents — the data
-// belongs beside the enum it describes, not in two shaders.
-struct CreatureAspect {
-    float w, h;
-};
-inline constexpr CreatureAspect kCreatureAspects[7] = {
-    {1.70f, 1.15f}, // Quadruped (wide, low)
-    {1.50f, 1.05f}, // Avian
-    {1.15f, 1.50f}, // Serpent (tall)
-    {1.25f, 1.80f}, // Biped
-    {1.10f, 1.80f}, // Undead
-    {1.80f, 2.05f}, // Hulk
-    {0.95f, 0.80f}, // Critter
-};
-inline CreatureAspect creature_arch_aspect(std::uint8_t archetype) {
-    return kCreatureAspects[archetype < 7 ? archetype : 6];
-}
-
 struct FaunaEntry {
     const char*       id;          // stable machine id ("wolf") — source of truth
     const char*       label;       // display name ("Wolf")
@@ -77,9 +41,12 @@ struct FaunaEntry {
     FaunaAi           ai;
     CombatTemplate    combat;
     std::uint8_t      baseLevel;
-    std::uint32_t     color;       // 0xRRGGBB packed
     float             radius;
-    CreatureArchetype archetype;   // procedural body plan (render only)
+    // This creature's picture — a row of THE sprite table
+    // (macro/sprite_rows.h). It carries the body plan the shader draws AND
+    // the tint, which used to be two columns here: the look of a goblin now
+    // sits in the same list as the look of a peasant.
+    SpriteId          sprite;
     const char*       lootId = nullptr; // loot-profile override; null => faction default
     std::uint16_t     xpReward = 0;     // per-creature XP base; 0 => generic level-scaled
 };

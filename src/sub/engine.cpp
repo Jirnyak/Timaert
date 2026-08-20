@@ -1911,11 +1911,13 @@ bool SubworldEngine::spawn_npc_body(const char* npcTypeId,
             ecs::NpcInventory bag = *inventoryOverride;
             reg.emplace<ecs::NpcInventory>(e, std::move(bag));
         }
-        const std::uint8_t cr = std::uint8_t((cd->color >> 16) & 0xFFu);
-        const std::uint8_t cg = std::uint8_t((cd->color >>  8) & 0xFFu);
-        const std::uint8_t cb = std::uint8_t( cd->color        & 0xFFu);
+        // Look comes from the row's sprite — ONE table for every visible kind.
+        const SpriteDef& look = sprite_row(cd->sprite);
+        const std::uint8_t cr = std::uint8_t((look.tint >> 16) & 0xFFu);
+        const std::uint8_t cg = std::uint8_t((look.tint >>  8) & 0xFFu);
+        const std::uint8_t cb = std::uint8_t( look.tint        & 0xFFu);
         reg.emplace<ecs::Sprite>(e, typeId, cr, cg, cb, std::uint8_t(255),
-                                 cd->radius, std::uint8_t(cd->archetype),
+                                 cd->radius, look.archetype,
                                  body_height_m(*cd));
 
         char msg[160]{};
