@@ -36,7 +36,7 @@ void maybe_emplace_missile_attack(entt::registry& reg, entt::entity e,
 void maybe_emplace_carried_light(entt::registry& reg, entt::entity e,
                                  const NpcTypeDef& def);
 
-// ── THE birth of a subworld humanoid: two forms, one axis ─────────────────
+// ── THE birth of a subworld BODY: two forms, one axis ─────────────────────
 //
 // THE RULE (owner, 2026-08-06). The macro world is the source of truth and it
 // holds exactly two kinds of thing, so a body can come into being in exactly
@@ -58,7 +58,12 @@ void maybe_emplace_carried_light(entt::registry& reg, entt::entity e,
 //   above; the body copies them down, and what happens to the body is written
 //   back up. He is the only body that remembers anything, because he is the only
 //   body there is something to remember about.
-struct HumanoidBody {
+// A body of ANY row — a peasant, a lord, a wolf. There was a second birth
+// beside this one for creatures until 2026-08-20, differing in exactly two
+// numbers (a radius the row authors and a tint the sprite table already held)
+// and in one assumption that was never true: that a beast is a different KIND
+// of thing from a man (CANON.md S4/S16).
+struct BodySpec {
     NPCType       type;
     float         x = 0.0f;
     float         y = 0.0f;
@@ -92,7 +97,7 @@ struct BodyLoan {
 // applied INTO this body's own sheet before combat is projected from it —
 // ruling №2, never a second multiplier beside the sheet. nullptr (every
 // non-squad body) applies nothing.
-entt::entity spawn_derived_body(entt::registry& reg, const HumanoidBody& body,
+entt::entity spawn_derived_body(entt::registry& reg, const BodySpec& body,
                                 std::uint32_t faceSalt,
                                 const BodyLoan& loan = BodyLoan::none(),
                                 const AuraMods* aura = nullptr);

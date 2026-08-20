@@ -40,25 +40,25 @@ namespace sm::sub {
 // human's half-width: 1 world unit ≈ 1 metre.
 inline constexpr float kBodyRadiusFallback = 0.55f;
 
-inline const FaunaEntry* creature_row_for(const ecs::NPCKind* kind) {
-    if (!kind || !is_monster_kind(kind->type)) return nullptr;
-    return creature_def_from_kind(kind->type);
-}
-
-inline const NpcTypeDef* humanoid_row_for(const ecs::NPCKind* kind) {
-    if (!kind || kind->type >= std::uint16_t(NPCType::Count)) return nullptr;
-    return &npc_def(static_cast<NPCType>(std::uint8_t(kind->type)));
+// THE row behind a body, whatever it is. There were two of these — one that
+// looked a kind up in the monster catalog and one that looked it up in the NPC
+// registry — for as long as there were two tables. There is one table, so
+// there is one lookup, and a caller no longer has to ask which sort of thing
+// it is holding before it can ask what that thing is (CANON.md S16).
+inline const NpcTypeDef* row_for(const ecs::NPCKind* kind) {
+    if (!kind || !valid_npc_kind(kind->type)) return nullptr;
+    return &npc_def(static_cast<NPCType>(kind->type));
 }
 
 // THE combat half-width of a body, in world units (≈ metres).
 inline float body_radius(const entt::registry& reg, entt::entity e) {
     if (const auto* br = reg.try_get<ecs::BodyRadius>(e)) return br->radius;
     const auto* kind = reg.try_get<ecs::NPCKind>(e);
-    if (const FaunaEntry* cr = creature_row_for(kind)) {
-        if (cr->radius > 0.0f) return cr->radius;
-    }
-    if (const NpcTypeDef* nd = humanoid_row_for(kind)) {
-        if (nd->combat.bodyRadius > 0.0f) return nd->combat.bodyRadius;
+    if (const NpcTypeDef* row = row_for(kind)) {
+        // The row's own authored width first (a rabbit says how wide a rabbit
+        // is), then what its combat line implies for a man-shaped thing.
+        if (row->radius > 0.0f) return row->radius;
+        if (row->combat.bodyRadius > 0.0f) return row->combat.bodyRadius;
     }
     if (const auto* ai = reg.try_get<ecs::SubworldAi>(e)) return ai->radius;
     if (const auto* sp = reg.try_get<ecs::Sprite>(e)) return sp->scale;

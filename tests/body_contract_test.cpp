@@ -416,7 +416,7 @@ void test_a_derived_body_stores_only_what_its_seed_cannot_say() {
     // would cost a city of five thousand people five thousand allocations to
     // say what one integer says.
     const entt::entity e = sub::spawn_derived_body(reg,
-        sub::HumanoidBody{NPCType::Peasant, 8.0f, 9.0f, /*faction*/1,
+        sub::BodySpec{NPCType::Peasant, 8.0f, 9.0f, /*faction*/1,
                           /*level*/2, /*seed*/4242u, /*combatant*/false},
         /*faceSalt*/7u);
     CHECK_OR_RETURN(e != entt::null && reg.valid(e), "a derived body is born");
@@ -430,7 +430,7 @@ void test_a_derived_body_stores_only_what_its_seed_cannot_say() {
     // Borrowed, and it says so. The receipt is stamped BY the birth, so a
     // spawner cannot draw on a stock and forget to write it down.
     const entt::entity borrowed = sub::spawn_derived_body(reg,
-        sub::HumanoidBody{NPCType::Guard, 8.0f, 9.0f, 1, 2, 99u, false},
+        sub::BodySpec{NPCType::Guard, 8.0f, 9.0f, 1, 2, 99u, false},
         /*faceSalt*/1u,
         sub::BodyLoan::from(MacroStock::Population, MacroStockKey{7, 3, 4}));
     CHECK_OR_RETURN(borrowed != entt::null, "a borrowed body is born");
@@ -443,9 +443,9 @@ void test_a_derived_body_stores_only_what_its_seed_cannot_say() {
     // Two bodies from the same seed but a different salt are different people —
     // otherwise a crowd is one man standing in many places.
     const entt::entity a = sub::spawn_derived_body(reg,
-        sub::HumanoidBody{NPCType::Peasant, 1.0f, 1.0f, 1, 1, 5150u, false}, 1u);
+        sub::BodySpec{NPCType::Peasant, 1.0f, 1.0f, 1, 1, 5150u, false}, 1u);
     const entt::entity b = sub::spawn_derived_body(reg,
-        sub::HumanoidBody{NPCType::Peasant, 2.0f, 2.0f, 1, 1, 5150u, false}, 2u);
+        sub::BodySpec{NPCType::Peasant, 2.0f, 2.0f, 1, 1, 5150u, false}, 2u);
     CHECK_OR_RETURN(a != entt::null && b != entt::null, "both crowd bodies born");
     CHECK(reg.get<ecs::NpcCharacter>(a).visualSeed
               != reg.get<ecs::NpcCharacter>(b).visualSeed,
@@ -467,7 +467,7 @@ void test_two_bodies_of_one_kind_can_differ_in_height() {
     int seen = 0;
     for (std::uint32_t i = 0; i < 64u; ++i) {
         const entt::entity e = sub::spawn_derived_body(reg,
-            sub::HumanoidBody{NPCType::Peasant, 5.0f, 5.0f, 1, 2,
+            sub::BodySpec{NPCType::Peasant, 5.0f, 5.0f, 1, 2,
                               /*seed*/1000u + i, false},
             /*faceSalt*/i * 7919u);
         if (e == entt::null) continue;

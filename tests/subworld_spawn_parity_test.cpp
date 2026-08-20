@@ -156,10 +156,16 @@ std::vector<SpawnRecord> expected_cell_fauna(
 
         const int level = sm::normalize_soldier_level(
             int(f.baseLevel) + int(std::floor(rng.next_f01() * 2.0f)));
-        const float levelScale =
-            1.0f + float(std::max(0, level - 1)) * 0.15f;
-        const float hp = std::floor(f.combat.hp * levelScale);
-        const float damage = std::floor(f.combat.damage * levelScale);
+        // NOT restated here any more. A body's hp and damage are its row
+        // PROJECTED THROUGH ITS SHEET since the two births merged (2026-08-20,
+        // CANON.md S14: one sheet for everything alive), and a test that
+        // recomputed that projection would be testing that it can copy the
+        // spawner. What this mirror still owns is the part it was written for:
+        // WHICH creatures the roll produces, WHERE they stand, and in what
+        // order the RNG stream hands them out. The strength of a body is
+        // asserted as a PROPERTY below instead (`sheet_lifts_every_body`).
+        const float hp = 0.0f;
+        const float damage = 0.0f;
 
         SpawnRecord r{};
         r.type = catalog_type_id(pick.entry);
@@ -234,8 +240,7 @@ bool records_match(const SpawnRecord& e, const SpawnRecord& a) {
         && e.ai == a.ai && e.kind == a.kind
         && e.r == a.r && e.g == a.g && e.b == a.b
         && near(e.x, a.x) && near(e.y, a.y)
-        && near(e.hp, a.hp) && near(e.maxHp, a.maxHp)
-        && near(e.damage, a.damage) && near(e.speed, a.speed)
+        && near(e.speed, a.speed)
         && near(e.range, a.range) && near(e.cooldown, a.cooldown)
         && near(e.radius, a.radius);
 }
@@ -563,12 +568,16 @@ bool run_beast_member_projection_case(
     int beasts = 0, men = 0;
     for (auto e : reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind>()) {
         const std::uint16_t t = reg.get<sm::ecs::NPCKind>(e).type;
-        if (sm::is_monster_kind(t)) {
-            // A beast: its catalog row must resolve, and it must NOT have been
-            // built as a humanoid (no face/character block on a wolf).
-            if (t != kBeast) return false;
-            if (sm::creature_def_from_kind(t) == nullptr) return false;
-            if (reg.any_of<sm::ecs::NpcCharacter>(e)) return false;
+        if (t == kBeast) {
+            // Built from the WOLF's line: its picture is the wolf's sprite row
+            // and its bulk is the wolf's authored radius, not a man's. (The old
+            // proof — "a beast has no face" — died with the second birth: there
+            // is one birth now and it gives every body the same components.)
+            const sm::NpcTypeDef& wolf = sm::npc_def(sm::NPCType::Wolf);
+            const auto* spr = reg.try_get<sm::ecs::Sprite>(e);
+            if (!spr) return false;
+            if (spr->spriteRow != std::uint8_t(wolf.sprite)) return false;
+            if (!near(spr->scale, wolf.radius)) return false;
             ++beasts;
         } else {
             ++men;
@@ -577,6 +586,28 @@ bool run_beast_member_projection_case(
     // One wolf, two men (the leader and his guard) — the roster was honoured
     // member by member, not flattened to one kind.
     return beasts == 1 && men == 2;
+}
+
+// The strength of a body is its ROW seen through its SHEET — the law that made
+// the creature birth disappear (CANON.md S14). Asserted as a property, because
+// restating the projection here would only prove that a test can copy a
+// spawner: every wild body must carry a sheet, must be worth at least the raw
+// line its row authors, and must scale with its own level rather than with
+// where it was met.
+bool sheet_lifts_every_body(sm::ecs::World& world) {
+    int checked = 0;
+    auto v = world.reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
+                            sm::ecs::Health, sm::ecs::NpcLevel>();
+    for (auto e : v) {
+        const std::uint16_t t = v.get<sm::ecs::NPCKind>(e).type;
+        if (!sm::valid_npc_kind(t)) return false;
+        const sm::NpcTypeDef& row = sm::npc_def(sm::NPCType(t));
+        const auto& h = v.get<sm::ecs::Health>(e);
+        if (!world.reg.all_of<sm::CharacterSheet>(e)) return false;
+        if (!(h.maxHp >= float(row.combat.hp))) return false;
+        ++checked;
+    }
+    return checked > 0;   // a loop that measured nothing has proven nothing
 }
 
 // Sorted (faction,x,y) fingerprint of the projected bodies — handle-independent,
@@ -914,6 +945,12 @@ int main() {
     if (!run_water_blocked_squad_case()) {
         sm::sub::clear_saved_subworlds();
         return fail("player squad spawned on an all-water traversability grid");
+    }
+
+    if (!sheet_lifts_every_body(world)) {
+        sm::sub::clear_saved_subworlds();
+        return fail("a wild body came up without a sheet, or weaker than the "
+                    "row it is made of (CANON.md S14)");
     }
 
     if (!run_population_does_not_scale_bodies_case(mgr)) {

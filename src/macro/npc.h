@@ -432,9 +432,7 @@ inline bool is_monster_kind(std::uint16_t raw) {
     return valid_npc_kind(raw) && is_creature_row(NPCType(raw));
 }
 
-// The humanoid row behind a record, or Peasant for anything that has none.
-// Callers that can meet a monster must ask `is_monster_kind` FIRST — this
-// function cannot answer for a beast and does not pretend to.
+// The row behind a record, or Peasant for a number that names none.
 inline NPCType soldier_npc_type(const SoldierRecord& s) {
     return s.kind < std::uint16_t(NPCType::Count) ? NPCType(s.kind)
                                                   : NPCType::Peasant;
@@ -450,11 +448,11 @@ inline int npc_upkeep_base(NPCType t) {
     return upkeep < 0 ? 0 : upkeep;
 }
 
-// A beast draws no pay: upkeep is a wage, and nobody wages a wolf. Its cost to
-// a squad is what it eats out of the world, not out of a purse — so a monster
-// member is honestly free to keep, and free to hire (there is nobody to pay).
+// A beast draws no pay — and the ROW already says so: every creature line
+// authors `kNpcUpkeepNone`, which npc_upkeep_base reads as zero. The special
+// case that used to stand here asked whether the record was a monster, which
+// is a question about a class of thing rather than about this thing's column.
 inline int soldier_upkeep(const SoldierRecord& s) {
-    if (is_monster_kind(s.kind)) return 0;
     return npc_upkeep_base(soldier_npc_type(s)) * soldier_level_factor(s.level);
 }
 

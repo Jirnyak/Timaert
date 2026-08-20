@@ -130,18 +130,15 @@ constexpr std::uint32_t kNpcMissileSpellId = 0x4E50434Du; // "NPCM"
 // fauna.cpp and no code at all. ecs::BodyRadius still wins when present, because
 // the player body is the camera and carries an explicit radius.
 // Body SIZE moved to sub/body.h (`body_radius`), where BOTH weapons now read it.
-// This file's copy was the better of the two — it consulted the monster and NPC
-// tables — but keeping a private one here is exactly what let the projectile
-// copy drift away from it unnoticed. The row lookups went with it, as
-// `creature_row_for` / `humanoid_row_for`, and SIGHT below reads those same rows.
+// This file's copy was the better of the two — it consulted both body tables —
+// but keeping a private one here is exactly what let the projectile copy drift
+// away from it unnoticed. The row lookup went with it, as `row_for`, and SIGHT
+// below reads the same row.
 
 float body_sight(const entt::registry& reg, entt::entity e) {
     const auto* kind = reg.try_get<ecs::NPCKind>(e);
-    if (const FaunaEntry* cr = creature_row_for(kind)) {
-        if (cr->combat.sight > 0.0f) return cr->combat.sight;
-    }
-    if (const NpcTypeDef* nd = humanoid_row_for(kind)) {
-        if (nd->combat.sight > 0.0f) return nd->combat.sight;
+    if (const NpcTypeDef* row = row_for(kind)) {
+        if (row->combat.sight > 0.0f) return row->combat.sight;
     }
     return kDetectionRadius;
 }
@@ -225,14 +222,17 @@ bool token_equals(const char* raw, const char* lit) {
     return *raw == '\0' && *lit == '\0';
 }
 
+// A token names a ROW, and the row says its own name: every line of the one
+// body table carries a stable `id` column, so this is a scan over the table
+// rather than a hand-kept if-chain (which knew seven of the eleven roles and
+// none of the creatures — `spawn wolf` used to fall through to Bandit here and
+// only worked because a second, creature-only branch caught it downstream).
+// An unknown token still becomes a bandit: something hostile appears, which is
+// what a spawn command that names nothing recognisable should do.
 NPCType npc_type_from_token(const char* token) {
-    if (token_equals(token, "peasant")) return NPCType::Peasant;
-    if (token_equals(token, "woodcutter")) return NPCType::Woodcutter;
-    if (token_equals(token, "merchant")) return NPCType::Merchant;
-    if (token_equals(token, "caravan")) return NPCType::Caravan;
-    if (token_equals(token, "guard")) return NPCType::Guard;
-    if (token_equals(token, "witch")) return NPCType::Witch;
-    if (token_equals(token, "sorceress")) return NPCType::Sorceress;
+    for (const NpcTypeDef& row : kNpcTypeDefs) {
+        if (row.id && token_equals(token, row.id)) return row.type;
+    }
     return NPCType::Bandit;
 }
 
@@ -1866,63 +1866,13 @@ bool SubworldEngine::spawn_npc_body(const char* npcTypeId,
         fy = playerY_;
     }
 
-    // ── Monster branch ──────────────────────────────────────────
-    // The token names a creature in the global monster table (fauna.h). A
-    // monster is a SEPARATE branch from an NPC: it gets no character sheet /
-    // traits, and its Sprite carries the procedural archetype. This is the same
-    // component layout the ambient fauna populator emplaces (spawn.cpp), so a
-    // console `spawn wolf` and a biome-spawned wolf are the same entity. The
-    // death path rolls loot from the creature's lootId, so no bag is pre-rolled
-    // here (unless the caller supplied an explicit inventoryOverride).
-    if (const FaunaEntry* cd = creature_def(npcTypeId)) {
-        const int clvl = normalize_soldier_level(std::max(level, int(cd->baseLevel)));
-        const float scale = 1.0f + float(std::max(0, clvl - 1)) * 0.15f;
-        const int catIdx = creature_index(cd);
-        const std::uint16_t typeId =
-            std::uint16_t(catIdx < 0 ? 0 : catIdx);
-
-        auto e = reg.create();
-        reg.emplace<ecs::Position>(e, fx, fy, 0.0f);
-        reg.emplace<ecs::VisualPos>(e, fx, fy, 32.0f);
-        // uint16(-1) == kNoFaction: an unregistered/absent creature faction is
-        // honestly factionless, not accidentally faction 0.
-        reg.emplace<ecs::NPCKind>(
-            e, typeId, std::uint16_t(faction_index(cd->factionId)));
-        const float hp = std::floor(float(cd->combat.hp) * scale);
-        reg.emplace<ecs::Health>(e, hp, hp);
-        reg.emplace<ecs::Combat>(e,
-            std::floor(float(cd->combat.damage) * scale),
-            cd->combat.speed, cd->combat.attackRange, cd->combat.cooldown, 0u,
-            cd->combat.attackKind == CombatTemplate::Missile ? ecs::Combat::Missile
-                                                             : ecs::Combat::Melee);
-        maybe_emplace_missile_attack(reg, e, cd->combat);
-        reg.emplace<ecs::NpcLevel>(e, std::int16_t(clvl));
-        reg.emplace<ecs::SubworldTag>(e);
-        const ecs::SubworldAi::Kind aiKind = subworld_ai_for(cd->ai);
-        reg.emplace<ecs::SubworldAi>(e, aiKind, /*aiTimer*/0.0f,
-            /*vx*/0.0f, /*vy*/0.0f,
-            /*wanderSpeed*/cd->combat.speed * 0.40f, cd->radius);
-        if (inventoryOverride) {
-            ecs::NpcInventory bag = *inventoryOverride;
-            reg.emplace<ecs::NpcInventory>(e, std::move(bag));
-        }
-        // Look comes from the row's sprite — ONE table for every visible kind.
-        const SpriteDef& look = sprite_row(cd->sprite);
-        const std::uint8_t cr = std::uint8_t((look.tint >> 16) & 0xFFu);
-        const std::uint8_t cg = std::uint8_t((look.tint >>  8) & 0xFFu);
-        const std::uint8_t cb = std::uint8_t( look.tint        & 0xFFu);
-        reg.emplace<ecs::Sprite>(e, typeId, cr, cg, cb, std::uint8_t(255),
-                                 cd->radius, std::uint8_t(cd->sprite),
-                                 body_height_m(*cd));
-
-        char msg[160]{};
-        std::snprintf(msg, sizeof(msg), "Encounter spawned: %s",
-                      displayName && displayName[0] ? displayName : cd->label);
-        set_status(msg);
-        return true;
-    }
-
-    // ── Humanoid branch ─────────────────────────────────────────
+    // The token names a row of THE one body table, and that is the end of the
+    // question: `spawn wolf` and `spawn bandit` take the same path from here.
+    // A whole separate branch used to stand here — a third hand-written birth
+    // that emplaced its own components for creatures, with its own wander pace
+    // (0.40 against everyone else's 0.35), its own visual catch-up and its own
+    // level scale. It existed only because creatures were a second table.
+    // ── The one birth ───────────────────────────────────────────
     // A body spawned by fiat is still a DERIVED body (sub/spawn.h): drawn from
     // its row and its seed, remembering nothing, owing nothing — the loan is
     // explicitly `none`, because "borrowed from thin air" has to be a decision
@@ -1950,7 +1900,7 @@ bool SubworldEngine::spawn_npc_body(const char* npcTypeId,
         ^ (std::uint32_t(int(fx)) * 73856093u)
         ^ (std::uint32_t(int(fy)) * 19349663u);
     const entt::entity e = spawn_derived_body(reg,
-        HumanoidBody{type, fx, fy, bodyFaction, lvl, bodySeed,
+        BodySpec{type, fx, fy, bodyFaction, lvl, bodySeed,
                      /*combatant*/true},
         /*faceSalt*/bodySeed);
 
@@ -2481,16 +2431,13 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
 
             if (lastHit && lastHit->playerOwned) {
                 int xp = exp_from_fight(lvl);
-                if (kind && kind->type < std::uint16_t(NPCType::Count)) {
-                    xp = npc_xp_reward(static_cast<NPCType>(std::uint8_t(kind->type)), lvl);
-                } else if (kind) {
-                    // Monster: per-creature XP base (fauna.h xpReward) scaled by
-                    // level like npc_xp_reward. xpReward 0 keeps the generic
-                    // exp_from_fight(lvl) fallback (behavior-preserving).
-                    if (const FaunaEntry* cd = creature_def_from_kind(kind->type);
-                        cd && cd->xpReward > 0) {
-                        xp = int(cd->xpReward) + (lvl - 1) * 5;
-                    }
+                // One row, one formula. What a kill is worth is the row's own
+                // xpReward stepped by level; a row that names none (0) keeps the
+                // generic exp_from_fight(lvl) above. There used to be two of
+                // these — the humanoid one via npc_xp_reward, the creature one
+                // written out again — computing the same thing.
+                if (const NpcTypeDef* row = row_for(kind); row && row->xpReward > 0) {
+                    xp = row->xpReward + (lvl - 1) * 5;
                 }
                 // The wis dividend: kill XP scales by the sheet's expMult
                 // (owner ruling 2026-08-05 — the attribute is live now).
@@ -2516,15 +2463,14 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 // lootId (null => faction default). Both share one resolver, so a
                 // Bandits-faction creature now drops real items via the "bandits"
                 // profile instead of nothing (the old faction-string gap).
-                const char* lootId;
-                if (kind->type < std::uint16_t(NPCType::Count)) {
-                    lootId = npc_loot_id(int(kind->type));
-                } else if (const FaunaEntry* cd = creature_def_from_kind(kind->type);
-                           cd && cd->lootId && cd->lootId[0]) {
-                    lootId = cd->lootId;
-                } else {
-                    lootId = faction_id_for_kind(kind);
-                }
+                // The row answers first with its own column, then with the
+                // per-role list, and a row that says nothing either way drops
+                // by its faction. One chain for a bandit and for a wolf.
+                const NpcTypeDef* row = row_for(kind);
+                const char* lootId = row && row->lootId && row->lootId[0]
+                    ? row->lootId
+                    : npc_loot_id(int(kind->type));
+                if (!lootId || !lootId[0]) lootId = faction_id_for_kind(kind);
                 auto stacks = roll_loot_profile(lootId, lvl, &loot_rng_f01);
                 for (const ItemStack& s : stacks) inv.add(s.id, s.count);
             }
