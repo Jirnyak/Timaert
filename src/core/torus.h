@@ -27,6 +27,20 @@ inline float wrapf(float v, float size) {
     return m < 0 ? m + size : m;
 }
 
+// THE signed shortest offset between two points of a wrapped axis: which way,
+// and how far, is `to − from` when there is no long way round. `std::remainder`
+// is the whole answer — it folds ANY difference into (−period/2, +period/2],
+// however many worlds apart the two numbers drifted.
+//
+// The UI carried two copies of this (macro_overlay.cpp, map_screen.cpp) written
+// as a single conditional subtraction, which corrects exactly ONE period: pan a
+// map page past ~1.5 world widths and every landmark, pin and player mark
+// silently misses by a whole world and is culled off-screen — the "a marker
+// cannot be found across the seam" report.
+inline float torus_delta(float d, float period) {
+    return period > 0.0f ? std::remainder(d, period) : d;
+}
+
 inline float torus_dist(float ax, float ay, float bx, float by, float w, float h) {
     float dx = std::fabs(ax - bx);
     float dy = std::fabs(ay - by);

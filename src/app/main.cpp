@@ -2890,8 +2890,19 @@ void handle_event_playing(App& app, const SDL_Event& e) {
                         (lw > 0) ? float(app.width) / float(lw) : 1.0f;
                     const float zl = app.mapScreen.zoom / dpr;
                     if (zl > 0.0f) {
-                        app.mapScreen.camX -= float(dx) / zl;
-                        app.mapScreen.camY += float(dy) / zl;
+                        // Kept inside the world on every drag: the page's
+                        // backdrop tiles for ever (the shader takes fract of
+                        // the world coordinate), so an un-wrapped camera drifts
+                        // silently until the overlay's toroidal fold is a whole
+                        // world out and every landmark, pin and player mark is
+                        // culled off-screen. The ground looks fine the whole
+                        // time, which is what made it hard to see.
+                        app.mapScreen.camX = sm::wrapf(
+                            app.mapScreen.camX - float(dx) / zl,
+                            float(app.gs.mapW));
+                        app.mapScreen.camY = sm::wrapf(
+                            app.mapScreen.camY + float(dy) / zl,
+                            float(app.gs.mapH));
                     }
                     break;
                 }
@@ -3089,8 +3100,19 @@ void update_camera(App& app, float dt) {
     app.camTargetX = app.gs.player.x + 0.5f + app.camPanX;
     app.camTargetY = app.gs.player.y + 0.5f + app.camPanY;
     const float a = 1.0f - std::exp(-dt * 8.0f);
-    app.camX += (app.camTargetX - app.camX) * a;
-    app.camY += (app.camTargetY - app.camY) * a;
+    // The camera follows across the SHORT way, because the world is a torus and
+    // there is no long way (CANON.md S1). Without this the player's step from
+    // the last column to the first flipped the target by a whole world, and the
+    // camera — which eases at a fixed rate — flew the entire map to catch up,
+    // for the better part of a second, while the overlay above it (which HAS
+    // always used the toroidal delta) stood still: the markers hung in place and
+    // the ground bolted out from under them.
+    app.camX = sm::wrapf(app.camX
+        + sm::torus_delta(app.camTargetX - app.camX, float(app.gs.mapW)) * a,
+        float(app.gs.mapW));
+    app.camY = sm::wrapf(app.camY
+        + sm::torus_delta(app.camTargetY - app.camY, float(app.gs.mapH)) * a,
+        float(app.gs.mapH));
 }
 
 // ── HUD / Debug ───────────────────────────────────────────────

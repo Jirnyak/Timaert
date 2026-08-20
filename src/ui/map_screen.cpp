@@ -24,9 +24,7 @@ namespace {
 // world +Y = screen UP), torus-wrapped — the page's own copy, because the map
 // deliberately shares NO drawing with the world overlay.
 inline float wrap_delta(float d, float period) {
-    if (d >  period * 0.5f) d -= period;
-    if (d < -period * 0.5f) d += period;
-    return d;
+    return torus_delta(d, period);   // core/torus.h owns the fold
 }
 inline ImVec2 to_screen(float wx, float wy, const MapScreenState& st,
                         float zoomL, int viewW, int viewH, int mapW, int mapH) {

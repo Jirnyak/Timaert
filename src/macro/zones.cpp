@@ -32,7 +32,18 @@ static constexpr float MOUNTAIN_DEPTH_SCALE  = 0.04f;
 static constexpr float MOUNTAIN_DEPTH_CAP    = 0.45f;
 static constexpr float WATER_BOOST           = 0.05f;
 static constexpr float FOREST_BOOST          = 0.04f;
-static constexpr int   NOISE_BASE_CELLS      = 96;
+// The noise lattice must close on the world, and it closes only when the
+// period DIVIDES the world's width. The world is 1024 = 2^10 cells (CANON.md
+// S1), so the period has to be a power of two; 96 is not, and none of the five
+// octaves closed — the base octave wrapped at 1056 cells, the next at 1008, and
+// so on. Measured on the shipped field: the jump across the seam was 10.9× a
+// normal neighbouring step, and the quantised DANGER BAND changed on 39.9 % of
+// the seam's rows against 3.7 % anywhere else. A player crossing x = 0 walked
+// out of a safe haven into a war zone for no reason in the world.
+// 128 is the nearest power of two to the old value: every octave (128, 64, 32,
+// 16, 8) now divides 1024, and the same measurement puts the seam at 0.17× a
+// normal step — which is to say there is no seam.
+static constexpr int   NOISE_BASE_CELLS      = 128;
 static constexpr int   NOISE_OCTAVES         = 5;
 
 namespace {

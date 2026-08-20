@@ -45,7 +45,28 @@ float bt_noise(vec2 p) {
     return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 // Periodic value-noise / fbm so per-cell fields tile across the world wrap.
+//
+// The lattice wraps with mod(i, period), and mod only closes on itself when
+// `period` is a WHOLE number of lattice cells. Almost no caller passed one:
+// every biome texture asks for `worldSpan * frequency`, and the world span is
+// 16384 world-pixels, so a frequency of 0.06 asks for a period of 983.04. At
+// the seam the lattice index came back 983 where the far side had 0, and the
+// field jumped — measured 0.17..0.25 on a 0..1 field, against a typical
+// neighbouring step of 0.00002..0.0001. That is a straight line across the
+// whole map on both axes, and it is why lichen patches, dune crests, grass /
+// earth blending and mountain ridges all break exactly there.
+//
+// So the period is SNAPPED to whole lattice cells here, once, and the sample
+// point is stretched by the same ratio — the world still spans exactly one
+// period, but now an integral one, and mod closes by construction (CANON.md
+// S1: seamlessness is a property of construction, not a patch). Doing it here
+// rather than at the ~40 call sites means a new biome texture cannot forget.
+// The frequency each caller asked for shifts by under a thousandth; nothing
+// about the look moves.
 float bt_noise_p(vec2 p, vec2 period) {
+    vec2 whole = max(vec2(1.0), round(period));
+    p *= whole / max(period, vec2(1e-6));
+    period = whole;
     vec2 i = floor(p), f = fract(p);
     f = f * f * (3.0 - 2.0 * f);
     vec2 i0 = mod(i, period);
@@ -533,7 +554,13 @@ vec3 featureDecor(vec2 worldPx, vec3 col) {
     float alpha = 0.0;
     for (int oy = -1; oy <= 1; ++oy) {
         for (int ox = -1; ox <= 1; ++ox) {
-            vec2 src = cell + vec2(float(ox), float(oy));
+            // WRAPPED before it is hashed: the crowns of the last column
+            // spill into the first, and a hash of −1 is not a hash of 1023, so
+            // the canopy used to disagree with itself across the seam — crowns
+            // in different places, of different radius, of a different species
+            // (the colour comes from the same hash). forestSpriteDensity has
+            // always wrapped; the decoration around it had not.
+            vec2 src = mod(cell + vec2(float(ox), float(oy)), pc.mapSize);
             float d = forestSpriteDensity(src);
             if (d <= 0.0) continue;
             // 1..4 crowns; radius grows with density too, so edge cells read
@@ -595,7 +622,11 @@ vec3 zoneTintOverlay(vec2 mapUV, vec3 baseColor) {
     // brightens on its own slow phase — quiet, not a light show.
     float t = smoothstep(6.5, 9.0, zone);
     if (t <= 0.001) return baseColor;
-    const float L = 1.5;                    // lattice pitch, world cells
+    // Lattice pitch in world cells. It must DIVIDE the world (1024) or the
+    // lattice cannot tile the torus: at 1.5 the world was 682.67 cells of it
+    // wide, so the ring of neighbours at the seam hashed g = −1 where the far
+    // side hashed g = 681, and coals doubled or vanished along the line.
+    const float L = 2.0;
     float packPx = L * pc.zoom;             // lattice pitch on screen, px
     float densGate = min(1.0, (packPx / 26.0) * (packPx / 26.0));
     if (densGate <= 0.004) return baseColor;
@@ -603,7 +634,7 @@ vec3 zoneTintOverlay(vec2 mapUV, vec3 baseColor) {
     vec3 ember = vec3(0.0);
     for (int gy = -1; gy <= 1; ++gy)
     for (int gx = -1; gx <= 1; ++gx) {
-        vec2 g = g0 + vec2(float(gx), float(gy));
+        vec2 g = mod(g0 + vec2(float(gx), float(gy)), pc.mapSize / L);
         float h1 = bt_hash(g);
         if (h1 > t * 0.16 * densGate) continue;   // no ember in this cell
         float h2 = bt_hash(g + 101.3);

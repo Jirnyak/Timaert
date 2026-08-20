@@ -40,10 +40,9 @@ namespace sm::ui {
 
 namespace {
 
+// (was a private one-period fold — core/torus.h owns the real one)
 inline float wrap_delta(float d, float period) {
-    if (d >  period * 0.5f) d -= period;
-    if (d < -period * 0.5f) d += period;
-    return d;
+    return torus_delta(d, period);
 }
 
 inline ImVec2 world_to_screen(float wx, float wy, float camX, float camY,

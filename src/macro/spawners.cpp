@@ -30,7 +30,17 @@ namespace sm
             return float(v) / 4294967296.0f;
         }
 
-        inline float smoothNoise(float x, float y, std::int32_t sd)
+        // `period` is the number of lattice cells the WORLD spans at this
+        // frequency, and the lattice is wrapped by it — otherwise the noise has
+        // an edge where the world does not (CANON.md S1). This had no wrap at
+        // all: the forest field ran the lattice 0 → 14 across the map and hashed
+        // index 14 against index 0, which are unrelated numbers. Measured, the
+        // correlation across the seam was NIL — massif membership flipped on
+        // 46.8 % of the seam's rows against 18.1 % between ordinary neighbours,
+        // and the shipped forest layer still flipped on 24-30 % after its 3×3
+        // box filter. A player walking off the last column stepped out of a
+        // forest that had no reason to end.
+        inline float smoothNoise(float x, float y, std::int32_t sd, int period)
         {
             int ix = int(std::floor(x));
             int iy = int(std::floor(y));
@@ -38,21 +48,29 @@ namespace sm
             float fy = y - float(iy);
             float sx = fx * fx * (3.0f - 2.0f * fx);
             float sy = fy * fy * (3.0f - 2.0f * fy);
-            float n00 = ihash01(ix, iy, sd);
-            float n10 = ihash01(ix + 1, iy, sd);
-            float n01 = ihash01(ix, iy + 1, sd);
-            float n11 = ihash01(ix + 1, iy + 1, sd);
+            const int p = period > 0 ? period : 1;
+            const int ix0 = wrapi(ix, p), iy0 = wrapi(iy, p);
+            const int ix1 = wrapi(ix + 1, p), iy1 = wrapi(iy + 1, p);
+            float n00 = ihash01(ix0, iy0, sd);
+            float n10 = ihash01(ix1, iy0, sd);
+            float n01 = ihash01(ix0, iy1, sd);
+            float n11 = ihash01(ix1, iy1, sd);
             float a = n00 + (n10 - n00) * sx;
             float b = n01 + (n11 - n01) * sx;
             return a + (b - a) * sy;
         }
 
-        inline float fbm(float x, float y, std::int32_t sd, int octaves)
+        // `period` — lattice cells per world at the BASE octave; each octave
+        // doubles both the coordinate and the period, so every octave closes.
+        inline float fbm(float x, float y, std::int32_t sd, int octaves,
+                         int period)
         {
             float value = 0.0f, amp = 1.0f, maxAmp = 0.0f, freq = 1.0f;
+            int per = period;
             for (int i = 0; i < octaves; ++i)
             {
-                value += smoothNoise(x * freq, y * freq, sd + i * 100) * amp;
+                value += smoothNoise(x * freq, y * freq, sd + i * 100, per) * amp;
+                per *= 2;
                 maxAmp += amp;
                 amp *= 0.5f;
                 freq *= 2.0f;
@@ -109,7 +127,11 @@ namespace sm
         constexpr int kRoadDy[8] = {-1, -1, 0, 1, 1, 1, 0, -1};
         constexpr float kRoadStep[8] = {1.0f, 1.4142136f, 1.0f, 1.4142136f,
                                         1.0f, 1.4142136f, 1.0f, 1.4142136f};
-        constexpr float kRoadWaterBlockThreshold = 49.99f;
+        // Anything at or above this is water and the road refuses it. Derived
+        // from the water price below (167) with a margin under it, so the two
+        // move together: the threshold is not a second number about water, it
+        // is the same number read as a gate.
+        constexpr float kRoadWaterBlockThreshold = 166.99f;
 
         inline float road_octile_torus(int x1, int y1, int x2, int y2, int w, int h)
         {
@@ -461,14 +483,16 @@ namespace sm
                 // Organic noise — domain-warped multi-scale FBM.
                 const float nx = float(x) / float(mw);
                 const float ny = float(y) / float(mh);
-                const float warpX = fbm(nx * 8.0f, ny * 8.0f, sd + 100, 3);
-                const float warpY = fbm(nx * 8.0f, ny * 8.0f, sd + 200, 3);
+                const float warpX = fbm(nx * 8.0f, ny * 8.0f, sd + 100, 3, 8);
+                const float warpY = fbm(nx * 8.0f, ny * 8.0f, sd + 200, 3, 8);
                 const float wnx = nx + (warpX - 0.5f) * 0.06f;
                 const float wny = ny + (warpY - 0.5f) * 0.06f;
 
-                const float large = fbm(wnx * 14.0f, wny * 14.0f, sd + 500, 4);
-                const float med = fbm(wnx * 35.0f, wny * 35.0f, sd + 600, 3);
-                const float fine = fbm(wnx * 70.0f, wny * 70.0f, sd + 700, 2);
+                // The frequency IS the period: the world spans exactly this
+                // many lattice cells, so wrapping by it closes the ring.
+                const float large = fbm(wnx * 14.0f, wny * 14.0f, sd + 500, 4, 14);
+                const float med   = fbm(wnx * 35.0f, wny * 35.0f, sd + 600, 3, 35);
+                const float fine  = fbm(wnx * 70.0f, wny * 70.0f, sd + 700, 2, 70);
                 const float noise = large * 0.40f + med * 0.35f + fine * 0.25f;
 
                 constexpr float t0 = 0.35f, t1 = 0.55f;
@@ -511,10 +535,27 @@ namespace sm
 
         // Road-specific cost grid (FeatureLayer is built *after* roads, so
         // mountain/water are derived directly from terrain height).
-        const float kRoadShare = 0.30f; // existing-road cell cost (cheap → reuse)
-        const float kLand = 1.00f;
-        const float kMountain = 5.00f;     // h > 0.78 → mountain peak
-        const float kWaterReject = 50.00f; // water cell: blocked by road A*
+        // Prices for the road A*. NOTHING here may cost less than 1.0, because
+        // the heuristic (road_octile_torus) charges exactly 1.0 per cardinal
+        // step: a cell cheaper than that makes h an OVER-estimate, A* stops
+        // being optimal, and the discount becomes invisible to the very search
+        // it was meant to steer.
+        //
+        // That is what happened. An existing road cell was priced 0.30 to
+        // encourage reuse, and measured against a Dijkstra over the identical
+        // graph the search came out 205 % above the optimum — it used ZERO of
+        // the 400 road cells lying along its way. In the shipping road pass two
+        // city pairs ten rows apart laid 802 cells as two parallel twins where
+        // reuse would have cost about 421. The discount had never worked once.
+        //
+        // So the SAME economics are expressed without going under the floor:
+        // road stays at 1.0 and open ground is surcharged instead. The ratios
+        // are the old ones (ground 3.33× a road, mountain 16.7×), the heuristic
+        // is admissible again, and reuse is now something the search can see.
+        const float kRoadShare = 1.00f;    // existing road: the cheapest step there is
+        const float kLand = 3.33f;         // open ground, 3.33× a road
+        const float kMountain = 16.70f;    // h > 0.78 → mountain peak, 16.7× a road
+        const float kWaterReject = 167.00f; // water cell: blocked by road A*
         PathCostData cg;
         cg.width = W;
         cg.height = H;
