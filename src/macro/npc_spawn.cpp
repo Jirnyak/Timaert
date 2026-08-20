@@ -421,4 +421,58 @@ entt::entity spawn_squad(GameState& gs, ecs::World& w,
     return leader;
 }
 
+int raise_deserter_bands(GameState& gs, ecs::World& w,
+                         const TerrainData& terrain, int day) {
+    auto& pool = gs.deserterPool.members;
+    if (pool.empty() || gs.mapW <= 0 || gs.mapH <= 0) return 0;
+
+    // √(pool) men walk off today — the garrison's own law, applied to the pile
+    // (see the header for why this needs no rate constant). At least one, never
+    // more than the pool holds: the pool is the only bound.
+    const int poolSize = int(pool.size());
+    const int take = std::min(poolSize,
+                              std::max(1, int(std::sqrt(float(poolSize)))));
+
+    // The freshest arrivals leave first — the men of the last rout, still
+    // together, walk off before the old hands who have been drifting for weeks.
+    std::vector<SoldierRecord> band(pool.end() - take, pool.end());
+    pool.erase(pool.end() - take, pool.end());
+
+    // Slot 0 is the leader, always (CANON.md S4): the strongest man of the
+    // group is the one the rest follow. Ties break on the earlier record so the
+    // choice is deterministic.
+    std::size_t best = 0;
+    for (std::size_t i = 1; i < band.size(); ++i) {
+        if (band[i].level > band[best].level) best = i;
+    }
+    const SoldierRecord captain = band[best];
+    band.erase(band.begin() + std::ptrdiff_t(best));
+
+    // WHERE is not the pool's question (header): uniform land today, the blood
+    // field tomorrow — this is the single line that changes then.
+    Rng rng(hash3(std::uint32_t(day), gs.worldSeed, 0xDE5E27u));
+    const XY site = find_valid_spawn(int(rng.next_u32() % std::uint32_t(gs.mapW)),
+                                     int(rng.next_u32() % std::uint32_t(gs.mapH)),
+                                     /*radius*/8, rng, gs.mapW, gs.mapH, terrain);
+
+    SquadSpec spec{};
+    spec.leaderType = valid_npc_kind(captain.kind)
+        ? NPCType(captain.kind) : NPCType::Bandit;
+    spec.leaderLevel = captain.level;
+    spec.x = site.x;
+    spec.y = site.y;
+    // A leaderless armed man is an outlaw — deserters fly no realm's colours.
+    spec.factionIndex = faction_index("bandits");
+    spec.members = std::move(band);
+
+    if (spawn_squad(gs, w, terrain, spec) == entt::null) {
+        // The map refused the spawn: the men go back, because the pool is a
+        // conservation law and a failed roll may not eat anybody.
+        pool.push_back(captain);
+        for (const SoldierRecord& r : spec.members) pool.push_back(r);
+        return 0;
+    }
+    return take;
+}
+
 } // namespace sm

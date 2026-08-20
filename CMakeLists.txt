@@ -376,7 +376,10 @@ timaert_test(world_tick_parity_test
         src/macro/macro_stock.cpp
         src/macro/fauna.cpp
         src/macro/tree_layer.cpp
-    LINK_ENTT)
+        # ...and raises deserter bands out of the pool, through the ONE
+        # creation door (spawn_squad → make_npc).
+        src/macro/npc_spawn.cpp
+    LINK_SDL LINK_ENTT)
 
 timaert_test(player_recovery_parity_test
     SOURCES
@@ -479,6 +482,16 @@ timaert_test(macro_npc_ai_parity_test
 # Squad↔squad war on the macro map (Session 15 Inc 5): perception, flee /
 # pursue by the one strength law, and same-cell battles settled through the
 # ledger. Same links as the parity test above — it drives the same AI.
+# The deserter pool's conservation law, both directions: a beaten squad pays
+# its survivors in (macro/squad.h) and the daily raiser walks them back out as
+# bands (npc_spawn.h). Asserts the LAW — nobody minted, nobody lost, the pile
+# empties in finite time — not the size of a day's exodus.
+timaert_test(deserter_bands_test
+    SOURCES
+        src/macro/npc_spawn.cpp
+        src/macro/items.cpp
+    LINK_SDL LINK_ENTT)
+
 timaert_test(squad_war_test
     SOURCES
         src/macro/npc_ai.cpp
@@ -884,7 +897,9 @@ timaert_test(fauna_stock_test
         src/macro/deposit_layer.cpp
         src/macro/econ_day.cpp
         src/macro/items.cpp
-    LINK_ENTT)
+        # world_tick's daily step raises deserter bands (npc_spawn.h).
+        src/macro/npc_spawn.cpp
+    LINK_SDL LINK_ENTT)
 
 timaert_test(woodcutter_gather_test
     SOURCES

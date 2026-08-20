@@ -16,6 +16,7 @@
 #include "macro/fauna.h"
 #include "macro/macro_stock.h"
 #include "macro/npc.h"
+#include "macro/npc_spawn.h"
 #include "core/rng.h"
 #include <algorithm>
 #include <cmath>
@@ -183,6 +184,15 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
         // grows, however few frames it took.
         if (macro && day > 0) {
             resource_fields_daily_growth(*macro, day);
+        }
+
+        // The deserter pool's other half. Beaten armies pour INTO it
+        // (macro/squad.h) and, from here, walk back OUT of it as bands — the
+        // conservation law closed. The pool is an abstract count, so the day's
+        // exodus is √(pool) men and the site is the field's business, not the
+        // stock's (macro/npc_spawn.h).
+        if (macro && macro->world && macro->terrain) {
+            raise_deserter_bands(gs, *macro->world, *macro->terrain, day);
         }
 
         --runtime.pendingDailyTicks;
