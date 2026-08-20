@@ -4,6 +4,7 @@
 // Octile heuristic with torus wrap (consistent for 8-directional A*).
 // Indexed binary min-heap collapses duplicates, matching TS MinHeap.
 
+#include "core/torus.h"
 #include "macro/pathfinding.h"
 #include "macro/movement_cost.h"
 #include "macro/biomes.h"
@@ -24,11 +25,8 @@ namespace sm
         constexpr float STEP_COST[8] = {1.0f, 1.4142136f, 1.0f, 1.4142136f,
                                         1.0f, 1.4142136f, 1.0f, 1.4142136f};
 
-        inline int pf_wrap(int v, int m)
-        {
-            int r = v % m;
-            return r < 0 ? r + m : r;
-        }
+        // (was a private copy of the torus wrap — core/torus.h owns it)
+        inline int pf_wrap(int v, int m) { return wrapi(v, m); }
 
         inline float octile_torus(int x1, int y1, int x2, int y2, int w, int h)
         {

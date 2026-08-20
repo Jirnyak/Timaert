@@ -7,6 +7,7 @@
 // tree-count field (macro/tree_layer.h) — a forested mountain is the
 // Mountain biome with a high tree count, no feature byte involved.
 #pragma once
+#include "core/torus.h"
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -58,15 +59,11 @@ struct FeatureLayer {
         return true;
     }
 
-    static int wrap_coord(int value, int limit) {
-        if (limit <= 0)
-            return 0;
-        const std::int64_t l = std::int64_t(limit);
-        std::int64_t r = std::int64_t(value) % l;
-        if (r < 0)
-            r += l;
-        return int(r);
-    }
+    // The one torus wrap (core/torus.h). This copy was the strongest of the
+    // six — its guard and its 64-bit intermediate are what `wrapi` now has —
+    // and the name survives because a dozen call sites read it as documentation
+    // ("wrap this into the feature grid").
+    static int wrap_coord(int value, int limit) { return wrapi(value, limit); }
 
     std::size_t cell_count() const {
         std::size_t n = 0;

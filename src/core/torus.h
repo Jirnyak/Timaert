@@ -1,12 +1,25 @@
 // Torus geometry helpers — wraparound for the macroworld.
 #pragma once
 #include <cmath>
+#include <cstdint>
 
 namespace sm {
 
+// THE wrap. Six copies of this function lived in macro/ — `wrap_index` twice,
+// `wrap_cell`, `wrap_coord`, `pf_wrap` — one per author who needed a torus and
+// did not look for the one that existed. That is six chances to forget the
+// modulo on the day a new field is written, and a forgotten modulo IS a seam
+// (CANON.md S1: seamlessness is a property of construction).
+//
+// It takes the strongest body of the six: a 64-bit intermediate, so a
+// coordinate far outside the map cannot overflow on the way in, and a
+// fail-closed answer for a degenerate size, because `v % 0` is undefined
+// behaviour and a world with no width is a caller's bug, not a crash site.
 inline int wrapi(int v, int size) {
-    int m = v % size;
-    return m < 0 ? m + size : m;
+    if (size <= 0) return 0;
+    std::int64_t m = std::int64_t(v) % std::int64_t(size);
+    if (m < 0) m += size;
+    return int(m);
 }
 
 inline float wrapf(float v, float size) {

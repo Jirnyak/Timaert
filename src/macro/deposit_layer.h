@@ -23,6 +23,7 @@
 // (the Trees row): each commodity lives through the carrier that already
 // owns its kind of renewal.
 #pragma once
+#include "core/torus.h"
 #include <cstdint>
 #include <unordered_map>
 
@@ -46,10 +47,11 @@ struct DepositLayer {
     // Runtime dirty counter for future consumers; never serialized.
     std::uint32_t revision = 0;
 
+    // Packs a WRAPPED cell into a flat index. The wrap itself is the one in
+    // core/torus.h; it used to be written out twice inline right here.
     std::uint32_t wrap_index(int x, int y) const {
-        const std::uint32_t xi = std::uint32_t(((x % width) + width) % width);
-        const std::uint32_t yi = std::uint32_t(((y % height) + height) % height);
-        return yi * std::uint32_t(width) + xi;
+        return std::uint32_t(wrapi(y, height)) * std::uint32_t(width)
+             + std::uint32_t(wrapi(x, width));
     }
     // The kind's units standing at a WRAPPED cell; null = no such deposit
     // here (distinct from a dry one, which returns a pointer to 0).

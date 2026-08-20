@@ -1,3 +1,4 @@
+#include "core/torus.h"
 #include "macro/macro_lighting.h"
 
 #include "macro/features.h"
@@ -46,12 +47,8 @@ void push_light(std::vector<MacroLight>& out, int w, int h,
     out.push_back(L);
 }
 
-inline int wrap_index(int v, int n) {
-    int r = v % n;
-    if (r < 0)
-        r += n;
-    return r;
-}
+// (was a private copy of the torus wrap — core/torus.h owns it)
+inline int wrap_index(int v, int n) { return wrapi(v, n); }
 
 // Accumulate one light's isotropic radial (Euclidean) contribution — the
 // increment-A path, used when no feature layer is supplied. Exact falloff, so

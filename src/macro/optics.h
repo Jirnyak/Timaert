@@ -13,6 +13,7 @@
 // settled distance is the CHEAPEST optical path from the source — light and
 // sight bend around obstacles instead of shining through them.
 #pragma once
+#include "core/torus.h"
 #include <cstddef>
 #include <cstdint>
 #include <cmath>
@@ -87,11 +88,8 @@ struct Node {
 struct NodeGreater {
     bool operator()(const Node& a, const Node& b) const { return a.d > b.d; }
 };
-inline int wrap_index(int v, int n) {
-    int r = v % n;
-    if (r < 0) r += n;
-    return r;
-}
+// (was a private copy of the torus wrap — core/torus.h owns it)
+inline int wrap_index(int v, int n) { return wrapi(v, n); }
 }  // namespace optics_detail
 
 // Bounded Dijkstra from (sx, sy): calls visit(cellIdx, opticalDist) exactly

@@ -1,3 +1,4 @@
+#include "core/torus.h"
 #include "macro/map_generator.h"
 #include "macro/biomes.h"
 #include <algorithm>
@@ -171,10 +172,8 @@ constexpr std::uint16_t kRiverDistInf = 65535u;
 constexpr int kRiverExploreCap = 60000;
 constexpr int kRiverDirs[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
 
-inline int wrap_cell(int v, int size) {
-    int m = v % size;
-    return m < 0 ? m + size : m;
-}
+// (was a private copy of the torus wrap — core/torus.h owns it)
+inline int wrap_cell(int v, int size) { return wrapi(v, size); }
 
 inline int cell_index(int x, int y, int w) {
     return y * w + x;

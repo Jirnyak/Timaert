@@ -490,6 +490,13 @@ timaert_test(macro_npc_ai_parity_test
 # its survivors in (macro/squad.h) and the daily raiser walks them back out as
 # bands (npc_spawn.h). Asserts the LAW — nobody minted, nobody lost, the pile
 # empties in finite time — not the size of a day's exodus.
+# THE wrap: one law, and the named doors that must not become second bodies.
+# Six private copies lived in macro/ until 2026-08-20 — six chances to forget
+# the negative case, and a forgotten modulo is a seam (CANON.md S1).
+timaert_test(torus_wrap_test
+    SOURCES
+        src/macro/deposit_layer.cpp)
+
 timaert_test(deserter_bands_test
     SOURCES
         src/macro/npc_spawn.cpp
