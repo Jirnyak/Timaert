@@ -127,7 +127,12 @@ namespace sm {
 // v41: spell cooldowns are STEPS, not float seconds (core/time.h). The field
 // changed type as well as meaning, so a v40 slot's floats would be read as
 // enormous step counts — a saved book would come back locked for hours.
-constexpr int kSaveVersion = 41;
+// v42: a squad member's `kind` is 16 bits — the ONE id space bodies already
+// share (humanoid ordinal below 0x100, monster catalog row at or above it).
+// A beast could not stand in a roster while the field was a byte, so a wolf
+// pack was not expressible as a squad; the macro snapshot refused monster
+// entities for the same reason. Both are now open (CANON.md S4/S16).
+constexpr int kSaveVersion = 42;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 

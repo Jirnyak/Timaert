@@ -166,8 +166,14 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     a.orders.waypoints[2] = 7;
     a.orders.waypoints[3] = 8;
     a.inventory.add("itm_bread", 3);
-    a.roster.push_back(sm::make_soldier(std::uint8_t(sm::NPCType::Guard), 4, 900u));
-    a.roster.push_back(sm::make_soldier(std::uint8_t(sm::NPCType::Peasant), 2, 901u));
+    a.roster.push_back(sm::make_soldier(std::uint16_t(sm::NPCType::Guard), 4, 900u));
+    a.roster.push_back(sm::make_soldier(std::uint16_t(sm::NPCType::Peasant), 2, 901u));
+    // v42: a BEAST in the roster. A squad is a squad whatever it is made of
+    // (CANON.md S4/S16), and while `kind` was a byte the monster half of the id
+    // space (0x100 | catalog row) could not be written down at all — the record
+    // was silently dropped by the validity gate on the way out.
+    a.roster.push_back(sm::make_soldier(
+        std::uint16_t(0x100u | 0u), 3, 902u));
     out.push_back(std::move(a));
 
     sm::MacroNpcRecord d{};
@@ -657,11 +663,19 @@ void run_roundtrip() {
             || a.inventory.stacks[0].count != 3) {
             FAIL_BAIL("macro inventory lost");
         }
-        if (a.roster.size() != 2
-            || a.roster[0].kind != std::uint8_t(sm::NPCType::Guard)
+        if (a.roster.size() != 3
+            || a.roster[0].kind != std::uint16_t(sm::NPCType::Guard)
             || a.roster[0].level != 4
             || a.roster[1].entityId != 901u) {
             FAIL_BAIL("macro roster lost");
+        }
+        // The beast came back a beast — not truncated to its low byte, not
+        // dropped, not turned into whatever humanoid that byte would name.
+        if (a.roster[2].kind != std::uint16_t(0x100u | 0u)
+            || a.roster[2].level != 3
+            || a.roster[2].entityId != 902u
+            || sm::creature_def_from_kind(a.roster[2].kind) == nullptr) {
+            FAIL_BAIL("a monster member did not survive the save");
         }
     }
     if (loadedMacro[1].dead != 1 || loadedMacro[1].health.hp != 0.0f) {

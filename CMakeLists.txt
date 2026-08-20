@@ -394,6 +394,8 @@ timaert_test(save_roundtrip_test
         src/macro/items.cpp
         # the fixture builds a real knowledge grid (v40) via knowledge_reset.
         src/macro/knowledge.cpp
+        # npc.h now answers for BOTH halves of the kind id space.
+        src/macro/fauna.cpp
     LINK_SDL LINK_ENTT)
 
 # Sight-as-light: the knowledge layer's law (Unknown/Explored/Visible, decay,
@@ -410,6 +412,8 @@ timaert_test(macro_snapshot_test
         # test links the spawner and the loot it rolls.
         src/macro/npc_spawn.cpp
         src/macro/items.cpp
+        # npc.h now answers for BOTH halves of the kind id space.
+        src/macro/fauna.cpp
     LINK_SDL LINK_ENTT)
 
 # Header-only on purpose: the spell DATA registry (macro/spells.h) is a
@@ -490,6 +494,8 @@ timaert_test(deserter_bands_test
     SOURCES
         src/macro/npc_spawn.cpp
         src/macro/items.cpp
+        # npc.h answers for both halves of the kind id space (monsters too).
+        src/macro/fauna.cpp
     LINK_SDL LINK_ENTT)
 
 timaert_test(squad_war_test
@@ -1045,7 +1051,9 @@ timaert_test(spell_broadphase_parity_test
 # version can be simulated headless with the shipping steering.
 timaert_test(auto_battle_test
     SOURCES
-        src/sub/battle.cpp)
+        src/sub/battle.cpp
+        # npc.h answers for both halves of the kind id space (monsters too).
+        src/macro/fauna.cpp)
 
 # ── CTest registration ─────────────────────────────────────────────────────
 # There is nothing here any more, and that is the point: timaert_test() calls

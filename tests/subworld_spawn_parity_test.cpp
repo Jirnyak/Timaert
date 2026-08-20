@@ -523,6 +523,60 @@ MacroSeeds seed_macro_npcs(entt::registry& reg, int mapW) {
     return s;
 }
 
+// A squad is a squad whatever it is made of (CANON.md S4/S16). A pack leader's
+// roster may name BEASTS, and each of them must come down as its own catalog
+// row — a sheet-less creature body — while a man in the same roster still comes
+// down a man. Before the kind field was widened this was not expressible: the
+// monster half of the id space (0x100 | row) did not fit in a byte, so a wolf
+// in a roster either vanished at the validity gate or arrived as whatever
+// humanoid its low byte happened to name.
+bool run_beast_member_projection_case(
+    const sm::sub::SeamlessSubworldManager& mgr) {
+    constexpr int kMapW = 1024, kMapH = 1024;
+    constexpr std::uint16_t kBeast = std::uint16_t(0x100u | 0u);
+
+    sm::ecs::World world{};
+    auto& reg = world.reg;
+
+    auto leader = reg.create();
+    reg.emplace<sm::ecs::MacroNpcRuntime>(leader);
+    reg.emplace<sm::ecs::MacroSpawnId>(leader, std::uint32_t(0));
+    reg.emplace<sm::ecs::Position>(leader, 0.0f, 0.0f, 0.0f);
+    reg.emplace<sm::ecs::NPCKind>(leader, std::uint16_t(sm::NPCType::Bandit),
+                                  std::uint16_t(3));
+    reg.emplace<sm::ecs::Health>(leader, 10.0f, 10.0f);
+    reg.emplace<sm::ecs::NpcLevel>(leader, std::int16_t(3));
+    reg.emplace<sm::ecs::NpcCharacter>(leader, sm::ecs::NpcCharacter{});
+
+    sm::ecs::SquadRoster roster{};
+    roster.members.push_back(sm::make_soldier(kBeast, 2, 5001u));
+    roster.members.push_back(sm::make_soldier(
+        std::uint16_t(sm::NPCType::Guard), 2, 5002u));
+    reg.emplace<sm::ecs::SquadRoster>(leader, roster);
+
+    const int projected = sm::sub::project_macro_npcs_into_subworld(
+        world, mgr, /*cx*/0, /*cy*/0, kMapW, kMapH, 0xBEA57u);
+    if (projected != 3) return false;   // the leader and both of his members
+
+    int beasts = 0, men = 0;
+    for (auto e : reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind>()) {
+        const std::uint16_t t = reg.get<sm::ecs::NPCKind>(e).type;
+        if (t >= std::uint16_t(sm::NPCType::Count)) {
+            // A beast: its catalog row must resolve, and it must NOT have been
+            // built as a humanoid (no face/character block on a wolf).
+            if (t != kBeast) return false;
+            if (sm::creature_def_from_kind(t) == nullptr) return false;
+            if (reg.any_of<sm::ecs::NpcCharacter>(e)) return false;
+            ++beasts;
+        } else {
+            ++men;
+        }
+    }
+    // One wolf, two men (the leader and his guard) — the roster was honoured
+    // member by member, not flattened to one kind.
+    return beasts == 1 && men == 2;
+}
+
 // Sorted (faction,x,y) fingerprint of the projected bodies — handle-independent,
 // so it compares cleanly across two worlds for the determinism check.
 std::vector<std::array<float, 3>> projection_fingerprint(sm::ecs::World& world) {
@@ -879,6 +933,12 @@ int main() {
     if (!run_reentry_determinism_case(mgr)) {
         sm::sub::clear_saved_subworlds();
         return fail("per-cell fauna respawn is not deterministic from its seed");
+    }
+
+    if (!run_beast_member_projection_case(mgr)) {
+        sm::sub::clear_saved_subworlds();
+        return fail("a BEAST in a roster did not come down as its own row "
+                    "(squads carry men and monsters alike — CANON.md S4/S16)");
     }
 
     if (!run_macro_projection_case(mgr)) {

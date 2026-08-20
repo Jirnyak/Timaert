@@ -126,7 +126,11 @@ struct NpcTraits {
 // roster remains authoritative; the ECS entity is a session projection.
 struct SoldierLink {
     std::uint32_t entityId;
-    std::uint8_t  kind;
+    // The same 16-bit kind a roster record carries (macro/army.h): a humanoid
+    // ordinal below 0x100, a monster catalog row at or above it. A beast in a
+    // squad is an ordinary member, so its link has to be able to say which
+    // beast.
+    std::uint16_t kind;
     std::int16_t  level;
 };
 

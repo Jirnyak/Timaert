@@ -10,6 +10,7 @@
 #pragma once
 #include <array>
 #include "core/table_guard.h"
+#include "macro/fauna.h"   // the OTHER half of the kind id space (monsters)
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -262,12 +263,25 @@ inline constexpr bool combatant_behaviour(AIBehaviour ai) {
     return ai == AIBehaviour::Aggressive || ai == AIBehaviour::Patrol;
 }
 
-inline bool valid_npc_kind(std::uint8_t raw) {
-    return raw < static_cast<std::uint8_t>(NPCType::Count);
+// THE id space, both halves of it: below 0x100 a row of this table, at or
+// above it a row of the monster catalog (macro/fauna.h). Anywhere a "kind"
+// travels — a roster record, an ECS NPCKind, a save — it is this number, and
+// a wolf is as legal as a spearman (CANON.md S16: one table, no second
+// vocabulary for beasts).
+inline bool is_monster_kind(std::uint16_t raw) {
+    return creature_def_from_kind(raw) != nullptr;
 }
 
+inline bool valid_npc_kind(std::uint16_t raw) {
+    return raw < static_cast<std::uint16_t>(NPCType::Count) || is_monster_kind(raw);
+}
+
+// The humanoid row behind a record, or Peasant for anything that has none.
+// Callers that can meet a monster must ask `is_monster_kind` FIRST — this
+// function cannot answer for a beast and does not pretend to.
 inline NPCType soldier_npc_type(const SoldierRecord& s) {
-    return valid_npc_kind(s.kind) ? NPCType(s.kind) : NPCType::Peasant;
+    return s.kind < std::uint16_t(NPCType::Count) ? NPCType(s.kind)
+                                                  : NPCType::Peasant;
 }
 
 inline bool npc_hireable(NPCType t) {
@@ -280,7 +294,11 @@ inline int npc_upkeep_base(NPCType t) {
     return upkeep < 0 ? 0 : upkeep;
 }
 
+// A beast draws no pay: upkeep is a wage, and nobody wages a wolf. Its cost to
+// a squad is what it eats out of the world, not out of a purse — so a monster
+// member is honestly free to keep, and free to hire (there is nobody to pay).
 inline int soldier_upkeep(const SoldierRecord& s) {
+    if (is_monster_kind(s.kind)) return 0;
     return npc_upkeep_base(soldier_npc_type(s)) * soldier_level_factor(s.level);
 }
 

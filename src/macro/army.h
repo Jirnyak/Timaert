@@ -52,7 +52,13 @@ struct CombatTemplate {
 
 struct SoldierRecord {
     std::uint32_t entityId = 0; // stable save id, not an EnTT handle
-    std::uint8_t  kind     = 0; // NPCType value; validated by npc.h helpers
+    // WHAT this member is, in the ONE id space every body already shares with
+    // the ECS (`ecs::NPCKind.type`): a humanoid is its `NPCType` ordinal, a
+    // monster is `0x100 | catalog index` (macro/fauna.h). Sixteen bits, because
+    // a beast must be able to stand in a roster exactly like a man — a wolf
+    // pack IS a squad, and the byte this used to be could not say so
+    // (CANON.md S4/S16). Validated by npc.h `valid_npc_kind`.
+    std::uint16_t kind     = 0;
     std::int16_t  level    = 1;
 };
 
@@ -68,7 +74,7 @@ inline int normalize_soldier_level(int level) {
     return level;
 }
 
-inline SoldierRecord make_soldier(std::uint8_t kind, int level,
+inline SoldierRecord make_soldier(std::uint16_t kind, int level,
                                   std::uint32_t entityId) {
     SoldierRecord s{};
     s.entityId = entityId;
@@ -81,7 +87,7 @@ inline int total_soldiers(const SoldierSquad& squad) {
     return static_cast<int>(squad.members.size());
 }
 
-inline int count_soldiers_of_kind(const SoldierSquad& squad, std::uint8_t kind) {
+inline int count_soldiers_of_kind(const SoldierSquad& squad, std::uint16_t kind) {
     int n = 0;
     for (const auto& s : squad.members) {
         if (s.kind == kind) ++n;

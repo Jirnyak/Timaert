@@ -949,16 +949,28 @@ int project_macro_npcs_into_subworld(ecs::World& w,
                                         std::int16_t(int(mpos.y)),
                                         std::int32_t(rec.entityId)})
                     : BodyLoan::none();
-                spawn_derived_body(reg,
-                    HumanoidBody{
-                        static_cast<NPCType>(rec.kind), mfx, mfy,
-                        kind.factionIdx,
-                        normalize_soldier_level(rec.level),
-                        ((seed ^ salt) + std::uint32_t(m) * 2654435761u)
-                            ^ (rec.entityId << 7),
-                        /*combatant*/true},
-                    /*faceSalt*/std::uint32_t(m) * 2654435761u ^ 0x9E3779B9u,
-                    loan, &leaderAura);
+                // The member's row decides which birth he gets, and that is the
+                // whole difference between a man and a beast in a squad: a
+                // humanoid ordinal builds a sheet-bearing body (and takes the
+                // leader's aura), a monster row builds a sheet-less one off its
+                // own catalog line. Both carry the same roster receipt, so a
+                // wolf's death pays the pack back exactly like a spearman's.
+                if (const FaunaEntry* beast = creature_def_from_kind(rec.kind)) {
+                    emplace_fauna_entity(reg, *beast, kind.factionIdx, mfx, mfy,
+                                         normalize_soldier_level(rec.level),
+                                         loan);
+                } else {
+                    spawn_derived_body(reg,
+                        HumanoidBody{
+                            static_cast<NPCType>(rec.kind), mfx, mfy,
+                            kind.factionIdx,
+                            normalize_soldier_level(rec.level),
+                            ((seed ^ salt) + std::uint32_t(m) * 2654435761u)
+                                ^ (rec.entityId << 7),
+                            /*combatant*/true},
+                        /*faceSalt*/std::uint32_t(m) * 2654435761u ^ 0x9E3779B9u,
+                        loan, &leaderAura);
+                }
                 ++projected;
             }
         }
