@@ -871,18 +871,28 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                     ImGui::PushStyleColor(ImGuiCol_Border,
                                           (fcol & 0x00FFFFFFu) | 0x60000000u);
                     ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 2.0f);
-                    ImGui::BeginChild("##row", ImVec2(0.0f, 88.0f), true,
+                    // Both sizes are DERIVED from what the row actually holds,
+                    // because both used to be pixels off the ceiling (a 40-px
+                    // picture beside a 51-px block of text, in an 88-px row).
+                    // The picture is as tall as the three lines it stands
+                    // beside — name, role · level, faction — and the row is
+                    // that block plus the button strip under it. Nothing here
+                    // is a constant, so the whole card follows the font instead
+                    // of shearing away from it the moment the text grows.
+                    const ImGuiStyle& rowStyle = ImGui::GetStyle();
+                    const float kindPx = ImGui::GetTextLineHeightWithSpacing() * 3.0f;
+                    const float rowPx = kindPx + ImGui::GetFrameHeight()
+                                      + rowStyle.ItemSpacing.y
+                                      + rowStyle.WindowPadding.y * 2.0f;
+                    ImGui::BeginChild("##row", ImVec2(0.0f, rowPx), true,
                                       ImGuiWindowFlags_NoScrollbar);
 
                     // Sprite — the kind's drawn PNG, falls back to a blank.
                     {
                         const Sprite* sp = sprite_get(npc_sprite(t));
-                        if (sp && sp->tex) {
-                            ImGui::Image(sp->tex,
-                                         ImVec2(40, 40));
-                        } else {
-                            ImGui::Dummy(ImVec2(40, 40));
-                        }
+                        const ImVec2 side(kindPx, kindPx);
+                        if (sp && sp->tex) ImGui::Image(sp->tex, side);
+                        else               ImGui::Dummy(side);
                     }
                     ImGui::SameLine();
 
