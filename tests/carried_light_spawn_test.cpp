@@ -105,8 +105,7 @@ bool run_spawn_attach_contract(const sm::sub::SeamlessSubworldManager& mgr) {
                              0xC0FFEE11u,
                              /*settlementFaction*/
                              std::uint16_t(sm::faction_index("empire")),
-                             /*landmarkPop*/4000,
-                             /*zoneLevel*/0);
+                             /*landmarkPop*/4000);
 
     const sm::NpcTypeDef& guardDef = sm::npc_def(sm::NPCType::Guard);
 

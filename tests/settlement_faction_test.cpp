@@ -155,8 +155,7 @@ bool run_citizens_wear_their_realm(const sm::sub::SeamlessSubworldManager& mgr) 
                              /*ox*/0, /*oy*/0,
                              0xB105A11u,
                              /*settlementFaction*/magica,
-                             /*landmarkPop*/2000,
-                             /*zoneLevel*/0);
+                             /*landmarkPop*/2000);
 
     int citizens = 0;
     int wrongFaction = 0;
@@ -189,8 +188,7 @@ bool run_imperial_city_still_imperial(const sm::sub::SeamlessSubworldManager& mg
                              /*ox*/0, /*oy*/0,
                              0xB105A12u,
                              /*settlementFaction*/empire,
-                             /*landmarkPop*/400,
-                             /*zoneLevel*/0);
+                             /*landmarkPop*/400);
 
     int citizens = 0;
     auto view = world.reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind>();

@@ -103,8 +103,7 @@ std::vector<SpawnRecord> expected_cell_fauna(
     int ox,
     int oy,
     std::uint32_t seed,
-    int landmarkPop,
-    int zoneLevel) {
+    int landmarkPop) {
 
     const int originX = (ox + 1) * sm::sub::kCellSize;
     const int originY = (oy + 1) * sm::sub::kCellSize;
@@ -115,22 +114,11 @@ std::vector<SpawnRecord> expected_cell_fauna(
     const std::vector<sm::FaunaPick> picks =
         sm::roll_fauna(table, rngState);
 
-    int levelBonus = 0;
-    float hpMult = 1.0f;
-    float damageMult = 1.0f;
-    if (landmark == sm::LandmarkKind::City
-        || landmark == sm::LandmarkKind::Village) {
-        if (landmarkPop > 0) {
-            levelBonus += int(std::floor(std::sqrt(float(landmarkPop) / 100.0f)));
-        }
-    }
-    if (zoneLevel > 2) {
-        const int zb = zoneLevel - 2;
-        levelBonus += zb;
-        const float boost = 1.0f + float(zb) * 0.18f;
-        hpMult = boost;
-        damageMult = boost;
-    }
+    // No context markup: a creature is its ROW and its own level (CANON.md S12).
+    // The settlement's √(pop/100) bonus and the zone's +level / ×1.18 hp+damage
+    // died 2026-08-20 — and `landmarkPop` stays a parameter precisely so this
+    // mirror keeps proving it changes NOTHING about a body.
+    (void)landmarkPop;
 
     const auto& tiles = mgr.tiles();
     const bool tilesUsable =
@@ -165,12 +153,11 @@ std::vector<SpawnRecord> expected_cell_fauna(
         if (!placed) continue;
 
         const int level = sm::normalize_soldier_level(
-            int(f.baseLevel) + int(std::floor(rng.next_f01() * 2.0f)) + levelBonus);
+            int(f.baseLevel) + int(std::floor(rng.next_f01() * 2.0f)));
         const float levelScale =
             1.0f + float(std::max(0, level - 1)) * 0.15f;
-        const float hp = std::floor(f.combat.hp * hpMult * levelScale);
-        const float damage =
-            std::floor(f.combat.damage * damageMult * levelScale);
+        const float hp = std::floor(f.combat.hp * levelScale);
+        const float damage = std::floor(f.combat.damage * levelScale);
 
         SpawnRecord r{};
         r.type = catalog_type_id(pick.entry);
@@ -285,23 +272,22 @@ int compare_records(const std::vector<SpawnRecord>& expected,
 // creatures, exactly like SubworldEngine::spawn_cell resolving center+offset.
 void spawn_cell_at(sm::ecs::World& world,
                    const sm::sub::SeamlessSubworldManager& mgr,
-                   int ox, int oy, int absCx, int absCy, int zoneLevel) {
+                   int ox, int oy, int absCx, int absCy) {
     const sm::sub::CellContext c = meadow_cell(absCx, absCy);
     sm::sub::spawn_cell_npcs(world, c.biome, c.feature,
                              sm::LandmarkKind::None, mgr,
                              ox, oy, c.seed,
                              std::uint16_t(sm::faction_index("empire")),
-                             0, zoneLevel);
+                             0);
 }
 
 // Fill all nine window cells for a manager centred on macro (0,0): window offset
 // (ox,oy) IS absolute cell (ox,oy) here.
 void spawn_all_cells(sm::ecs::World& world,
-                     const sm::sub::SeamlessSubworldManager& mgr,
-                     int zoneLevel) {
+                     const sm::sub::SeamlessSubworldManager& mgr) {
     for (int oy = -1; oy <= 1; ++oy)
         for (int ox = -1; ox <= 1; ++ox)
-            spawn_cell_at(world, mgr, ox, oy, ox, oy, zoneLevel);
+            spawn_cell_at(world, mgr, ox, oy, ox, oy);
 }
 
 bool run_water_blocked_squad_case() {
@@ -381,17 +367,54 @@ bool run_city_population_projection_case(
     return count >= 24 && guards >= 2 && merchants >= 1 && woodcutters >= 1;
 }
 
+// A place decides HOW MANY people stand in it — never how strong each of them is
+// (CANON.md S12; the owner's words 2026-08-20: «в большом городе просто больше
+// стражников, а так они такие же»). Both halves are asserted here, and the first
+// is a NEGATIVE CONTROL for the deleted √(pop/100) auto-level: with the old code
+// a 4000-soul city handed every citizen +6 levels, so the band check below failed
+// outright. The band itself is not a restated literal — it is what the spawner is
+// allowed to add over a row: `baseLevel + rng%3`.
+bool run_population_does_not_scale_bodies_case(
+    const sm::sub::SeamlessSubworldManager& mgr) {
+    struct Town { int pop; int count; };
+    Town towns[2] = {{40, 0}, {4000, 0}};
+
+    for (Town& t : towns) {
+        sm::ecs::World world{};
+        sm::sub::spawn_cell_npcs(world,
+                                 sm::Biome::Meadow, sm::FT_None,
+                                 sm::LandmarkKind::City, mgr,
+                                 /*ox*/0, /*oy*/0,
+                                 0xFACEB00Cu,
+                                 std::uint16_t(sm::faction_index("empire")),
+                                 t.pop);
+        auto view = world.reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
+                                   sm::ecs::NpcLevel, sm::ecs::NpcCharacter>();
+        for (auto e : view) {
+            const std::uint16_t typeId = view.get<sm::ecs::NPCKind>(e).type;
+            if (typeId >= std::uint16_t(sm::NPCType::Count)) continue;  // fauna
+            const int lvl = int(view.get<sm::ecs::NpcLevel>(e).value);
+            const int base = int(sm::npc_def(sm::NPCType(typeId)).baseLevel);
+            const int ceiling = sm::normalize_soldier_level(base + 2);
+            const int floorLvl = sm::normalize_soldier_level(base);
+            if (lvl < floorLvl || lvl > ceiling) return false;
+            ++t.count;
+        }
+    }
+    // ...and the town's size still shows, in the only place it may: the crowd.
+    return towns[0].count > 0 && towns[1].count > towns[0].count;
+}
+
 // Symptom #3 — the core seamless-persistence invariant. Fill the 3×3, then cross
 // +x and back. Content shared between the old and new windows must be carried
 // verbatim (shifted, not re-rolled), only departed cells evicted, and a return
 // trip must reproduce the original scene bit-for-bit (fresh-respawn determinism).
-bool run_carry_across_case(const sm::sub::SeamlessSubworldManager& mgr,
-                           int zoneLevel) {
+bool run_carry_across_case(const sm::sub::SeamlessSubworldManager& mgr) {
     const float kCell = float(sm::sub::kCellSize);
     const float kFull = float(sm::sub::kFullSize);
 
     sm::ecs::World world{};
-    spawn_all_cells(world, mgr, zoneLevel);
+    spawn_all_cells(world, mgr);
     const std::vector<SpawnRecord> before = actual_fauna(world);
     if (before.empty()) return false;
 
@@ -400,7 +423,7 @@ bool run_carry_across_case(const sm::sub::SeamlessSubworldManager& mgr,
     sm::sub::rebase_subworld_entities(world, -kCell, 0.0f);
     sm::sub::despawn_subworld_entities_outside_window(world);
     for (int oy = -1; oy <= 1; ++oy)
-        spawn_cell_at(world, mgr, /*ox*/1, oy, /*absCx*/2, oy, zoneLevel);
+        spawn_cell_at(world, mgr, /*ox*/1, oy, /*absCx*/2, oy);
     const std::vector<SpawnRecord> after = actual_fauna(world);
 
     // Invariant 1: nothing drifted outside the composite window.
@@ -435,7 +458,7 @@ bool run_carry_across_case(const sm::sub::SeamlessSubworldManager& mgr,
     sm::sub::rebase_subworld_entities(world, kCell, 0.0f);
     sm::sub::despawn_subworld_entities_outside_window(world);
     for (int oy = -1; oy <= 1; ++oy)
-        spawn_cell_at(world, mgr, /*ox*/-1, oy, /*absCx*/-1, oy, zoneLevel);
+        spawn_cell_at(world, mgr, /*ox*/-1, oy, /*absCx*/-1, oy);
     const std::vector<SpawnRecord> roundTrip = actual_fauna(world);
     return compare_records(before, roundTrip) == 0;
 }
@@ -444,13 +467,13 @@ bool run_carry_across_case(const sm::sub::SeamlessSubworldManager& mgr,
 // fresh must be deterministic per cell (same seed → same set), the property the
 // future per-macro-cell visitation counter will perturb on purpose.
 bool run_reentry_determinism_case(
-    const sm::sub::SeamlessSubworldManager& mgr, int zoneLevel) {
+    const sm::sub::SeamlessSubworldManager& mgr) {
     sm::ecs::World a{};
-    spawn_cell_at(a, mgr, /*ox*/0, /*oy*/0, /*absCx*/7, /*absCy*/3, zoneLevel);
+    spawn_cell_at(a, mgr, /*ox*/0, /*oy*/0, /*absCx*/7, /*absCy*/3);
     const std::vector<SpawnRecord> first = actual_fauna(a);
 
     sm::ecs::World b{};
-    spawn_cell_at(b, mgr, /*ox*/0, /*oy*/0, /*absCx*/7, /*absCy*/3, zoneLevel);
+    spawn_cell_at(b, mgr, /*ox*/0, /*oy*/0, /*absCx*/7, /*absCy*/3);
     const std::vector<SpawnRecord> second = actual_fauna(b);
 
     return !first.empty() && compare_records(first, second) == 0;
@@ -536,7 +559,7 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // Ordinary fauna in the centre cell, so the reaper-skip check has non-
     // projection bodies to actually reap. Fauna carries no MacroNpcRuntime, so
     // the projection's source view never sees it.
-    spawn_cell_at(world, mgr, /*ox*/0, /*oy*/0, /*absCx*/0, /*absCy*/0, 0);
+    spawn_cell_at(world, mgr, /*ox*/0, /*oy*/0, /*absCx*/0, /*absCy*/0);
     int faunaBefore = 0;
     for (auto e : reg.view<sm::ecs::SubworldTag>(
              entt::exclude<sm::ecs::MacroOrigin>)) {
@@ -815,19 +838,16 @@ int main() {
     mgr.init(0, 0, meadow_cell);
     mgr.consume_composite_dirty();
 
-    constexpr int kZoneLevel = 5;
-
     // ── Per-cell fauna parity: the centre cell's ECS entities must match the
     // TS-derived roll, now scattered within the centre sub-region only. ──
     const sm::sub::CellContext centre = meadow_cell(0, 0);
     sm::ecs::World world{};
-    spawn_cell_at(world, mgr, /*ox*/0, /*oy*/0, /*absCx*/0, /*absCy*/0,
-                  kZoneLevel);
+    spawn_cell_at(world, mgr, /*ox*/0, /*oy*/0, /*absCx*/0, /*absCy*/0);
 
     const std::vector<SpawnRecord> expected =
         expected_cell_fauna(mgr, sm::Biome::Meadow, sm::FT_None,
                             sm::LandmarkKind::None, 0, 0,
-                            centre.seed, 0, kZoneLevel);
+                            centre.seed, 0);
     const std::vector<SpawnRecord> actual = actual_fauna(world);
     const int cmp = compare_records(expected, actual);
     if (cmp != 0) {
@@ -840,17 +860,23 @@ int main() {
         return fail("player squad spawned on an all-water traversability grid");
     }
 
+    if (!run_population_does_not_scale_bodies_case(mgr)) {
+        sm::sub::clear_saved_subworlds();
+        return fail("a settlement's population moved a body's LEVEL "
+                    "(auto-level by town size is deleted — CANON.md S12)");
+    }
+
     if (!run_city_population_projection_case(mgr)) {
         sm::sub::clear_saved_subworlds();
         return fail("city population projection missing roles or off-cell");
     }
 
-    if (!run_carry_across_case(mgr, kZoneLevel)) {
+    if (!run_carry_across_case(mgr)) {
         sm::sub::clear_saved_subworlds();
         return fail("seam crossing did not carry/evict/respawn cells correctly");
     }
 
-    if (!run_reentry_determinism_case(mgr, kZoneLevel)) {
+    if (!run_reentry_determinism_case(mgr)) {
         sm::sub::clear_saved_subworlds();
         return fail("per-cell fauna respawn is not deterministic from its seed");
     }
@@ -874,11 +900,11 @@ int main() {
                     "find/husk-swap/snap/miss)");
     }
 
-    std::printf("OK subworld_spawn_parity_test fauna=%zu seed=%u zone=%d "
+    std::printf("OK subworld_spawn_parity_test fauna=%zu seed=%u no_autolevel=%d "
                 "water_squad_blocked=1 city_projection=1 carry_across=1 "
                 "reentry_determinism=1 macro_projection=1 exit_remap=1 "
                 "identity_remap=1\n",
-                actual.size(), centre.seed, kZoneLevel);
+                actual.size(), centre.seed, 1);
     sm::sub::clear_saved_subworlds();
     CHECK(true, "every gate above held");
     return sm::test::report("subworld_spawn_parity_test");

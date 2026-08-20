@@ -67,12 +67,12 @@ struct DungeonSession {
     // cell — the spot the exit walks back out to.
     float returnLocalX = 0.0f, returnLocalY = 0.0f;
     float floorHeight = 0.0f;     // door cell's macroHeight = interior floor
-    // Door-cell settlement context, captured at enter — who lives behind
-    // this door and how strong the place makes them. The interior populates
-    // with the SAME numbers the street spawner uses (one context, one law).
+    // Door-cell settlement context, captured at enter — WHO lives behind this
+    // door and HOW MANY of them. The interior populates through the SAME
+    // spawner the street uses (one context, one law), and like the street it
+    // reads no strength from the place: a body is its row (CANON.md S12).
     int settlementId = -1;        // landmark id; -1 = a wilderness building
-    int landmarkPop = 0;          // settlement population (level bonus term)
-    int zoneLevel = 0;            // macro danger zone (level/hp/damage term)
+    int landmarkPop = 0;          // settlement population (household-size term)
     std::uint16_t faction = 0;    // owning kingdom's registry faction index
 };
 

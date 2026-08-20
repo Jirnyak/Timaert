@@ -131,9 +131,13 @@ entt::entity spawn_tracked_body(entt::registry& reg, entt::entity macro,
 // per-entity storage. Settlement citizens are re-derived from the persistent
 // macro context, so cities are preserved across re-entry by construction.
 //
-// `landmarkPop` is settlement population (0 if none) and feeds the √(pop/100)
-// level bonus from the context scale. `zoneLevel` is the macro zones difficulty
-// (0..9); zones >2 add (z-2) levels and 1+(z-2)*0.18 hp/damage multipliers.
+// `landmarkPop` is settlement population (0 if none). It decides HOW MANY people
+// stand here and nothing else: a big town simply has more guards on its streets,
+// and each of them is the same guard his row describes. There is no level bonus
+// and no stat multiplier on this path — a creature's strength IS its row (CANON.md
+// S12). The danger zone shapes WHICH rows a place rolls, never their numbers; the
+// old √(pop/100) level bonus and the zone's +1 level / ×(1+0.18·(z−2)) hp+damage
+// markup were a hidden auto-level and were deleted 2026-08-20 by owner's ruling.
 //
 // `settlementFaction` is the registry index EVERY citizen of this cell's town is
 // stamped with — the faction of the kingdom that owns it, resolved by the caller
@@ -151,7 +155,6 @@ void spawn_cell_npcs(ecs::World& w,
                      std::uint32_t cellSeed,
                      std::uint16_t settlementFaction,
                      int landmarkPop = 0,
-                     int zoneLevel   = 0,
                      // Which macro stock the citizens are borrowed FROM: the
                      // settlement/village id and the cell it stands in. Every
                      // citizen is stamped with it (macro/macro_stock.h), so a
@@ -182,7 +185,6 @@ int spawn_dungeon_residents(ecs::World& w,
                             std::uint32_t seed,
                             std::uint16_t settlementFaction,
                             int count,
-                            int levelBonus,
                             float x0, float y0, float x1, float y1,
                             // What this interior's WALKABLE ground is paved
                             // with (sub/dgn dungeon_floor_tile). A hall is
@@ -206,9 +208,6 @@ int spawn_dungeon_vermin(ecs::World& w,
                          LandmarkKind tableKind,
                          Biome biome,
                          int treeCount,
-                         int levelBonus,
-                         float hpMult,
-                         float damageMult,
                          int budget,
                          float x0, float y0, float x1, float y1,
                          std::uint8_t floorTile,

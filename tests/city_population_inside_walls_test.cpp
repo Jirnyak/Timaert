@@ -133,8 +133,7 @@ Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
                              /*ox*/0, /*oy*/0,
                              seed,
                              std::uint16_t(sm::faction_index("empire")),
-                             pop,
-                             /*zoneLevel*/0);
+                             pop);
 
     const bool city = landmark == sm::LandmarkKind::City;
     const float radius = sm::sub::settlement_population_radius(city, pop);

@@ -209,7 +209,6 @@ void spawn_settlement_population(ecs::World& w,
                                  std::uint32_t seed,
                                  std::uint16_t settlementFaction,
                                  int landmarkPop,
-                                 int levelBonus,
                                  int originX,
                                  int originY,
                                  MacroStockKey populationKey) {
@@ -252,9 +251,10 @@ void spawn_settlement_population(ecs::World& w,
         }
         // A citizen is DERIVED — he is one unit of this place's population made
         // visible, and nothing about him is remembered above. What is CONTEXT
-        // here: which town's faction he wears, what the place's level does to
-        // him, and that he lives his errands rather than fighting. Everything
-        // else comes from his row and his seed.
+        // here: which town's faction he wears, and that he lives his errands
+        // rather than fighting. His STRENGTH is not context — it is his row.
+        // A capital's guard and a hamlet's guard are the same guard; the capital
+        // simply fields more of them (CANON.md S12).
         //
         // The loan says which stock he was drawn from, so his death pays the
         // settlement back without anyone asking what kind of body it was: a town
@@ -264,7 +264,7 @@ void spawn_settlement_population(ecs::World& w,
             HumanoidBody{
                 type, fx, fy, settlementFaction,
                 normalize_soldier_level(npc_def(type).baseLevel
-                                        + int(rng.next_u32() % 3u) + levelBonus),
+                                        + int(rng.next_u32() % 3u)),
                 seed ^ (std::uint32_t(i) * 7919u),
                 /*combatant*/false},
             /*faceSalt*/std::uint32_t(i) * 7919u,
@@ -274,11 +274,12 @@ void spawn_settlement_population(ecs::World& w,
 
 // Emplace one fauna creature at (fx,fy). Shared by the per-cell and the
 // whole-window spawn paths so the entity layout lives in exactly one place. The
-// caller decides npcLevel and the context multipliers (they consume the caller's
-// RNG stream in order); the per-level HP/damage scale folds in here.
+// caller decides npcLevel (it consumes the caller's RNG stream); the per-level
+// HP/damage scale folds in here. There is no context multiplier: what a creature
+// is worth is its ROW and its level, not where the player met it (CANON.md S12).
 void emplace_fauna_entity(entt::registry& reg, const FaunaEntry& f,
                           std::uint16_t faction, float fx, float fy,
-                          int npcLevel, float hpMult, float damageMult,
+                          int npcLevel,
                           const BodyLoan& loan = BodyLoan::none()) {
     const float levelScale = 1.0f + float(std::max(0, npcLevel - 1)) * 0.15f;
     // Synthetic NPCKind id: (0x100 | stable monster-catalog index). The high
@@ -293,8 +294,8 @@ void emplace_fauna_entity(entt::registry& reg, const FaunaEntry& f,
     reg.emplace<ecs::Position>(e, fx, fy, 0.0f);
     reg.emplace<ecs::VisualPos>(e, fx, fy, 32.0f);
     reg.emplace<ecs::NPCKind>(e, typeId, faction);
-    const float hp = std::floor(f.combat.hp * hpMult * levelScale);
-    const float damage = std::floor(f.combat.damage * damageMult * levelScale);
+    const float hp = std::floor(f.combat.hp * levelScale);
+    const float damage = std::floor(f.combat.damage * levelScale);
     reg.emplace<ecs::Health>(e, hp, hp);
     reg.emplace<ecs::Combat>(e,
         damage, f.combat.speed, f.combat.attackRange,
@@ -441,7 +442,6 @@ int spawn_dungeon_residents(ecs::World& w,
                             std::uint32_t seed,
                             std::uint16_t settlementFaction,
                             int count,
-                            int levelBonus,
                             float x0, float y0, float x1, float y1,
                             std::uint8_t floorTile,
                             MacroStockKey populationKey) {
@@ -474,14 +474,13 @@ int spawn_dungeon_residents(ecs::World& w,
         if (!found) continue;
         const NPCType type = pick_civilian_type(rng);
         // The same derived-citizen birth as the street (one row of one law):
-        // level from the settlement's context bonus, loan from the SAME
-        // population stock — a death in here pays the town back exactly like
-        // a death on the square.
+        // level from his own row, loan from the SAME population stock — a death
+        // in here pays the town back exactly like a death on the square.
         spawn_derived_body(w.reg,
             HumanoidBody{
                 type, fx, fy, settlementFaction,
                 normalize_soldier_level(npc_def(type).baseLevel
-                                        + int(rng.next_u32() % 3u) + levelBonus),
+                                        + int(rng.next_u32() % 3u)),
                 seed ^ (std::uint32_t(i) * 7919u),
                 /*combatant*/false},
             /*faceSalt*/std::uint32_t(i) * 7919u,
@@ -497,9 +496,6 @@ int spawn_dungeon_vermin(ecs::World& w,
                          LandmarkKind tableKind,
                          Biome biome,
                          int treeCount,
-                         int levelBonus,
-                         float hpMult,
-                         float damageMult,
                          int budget,
                          float x0, float y0, float x1, float y1,
                          std::uint8_t floorTile,
@@ -538,10 +534,9 @@ int spawn_dungeon_vermin(ecs::World& w,
         }
         if (!found) continue;
         const int npcLevel = normalize_soldier_level(
-            int(f.baseLevel) + int(std::floor(pos.next_f01() * 2.0f))
-            + levelBonus);
+            int(f.baseLevel) + int(std::floor(pos.next_f01() * 2.0f)));
         emplace_fauna_entity(reg, f, faction_index(p.factionId), fx, fy,
-                             npcLevel, hpMult, damageMult,
+                             npcLevel,
                              BodyLoan::from(MacroStock::FaunaCount, faunaKey));
         ++placed;
     }
@@ -584,7 +579,6 @@ void spawn_cell_npcs(ecs::World& w,
                      std::uint32_t cellSeed,
                      std::uint16_t settlementFaction,
                      int landmarkPop,
-                     int zoneLevel,
                      int landmarkSubjectId,
                      int macroCellX,
                      int macroCellY,
@@ -593,27 +587,18 @@ void spawn_cell_npcs(ecs::World& w,
     const int originX = (ox + 1) * kCellSize;
     const int originY = (oy + 1) * kCellSize;
 
-    // Context scale — identical modifiers to the whole-window path, but keyed to
-    // THIS cell's macro context so each of the 3×3 cells is populated on its own
-    // terms (a city cell fills with citizens even when it is not the centre —
-    // which is what stops a city from vanishing when you step one cell out).
-    int   levelBonus = 0;
-    float hpMult     = 1.0f;
-    float damageMult = 1.0f;
-    if (landmark == LandmarkKind::City || landmark == LandmarkKind::Village) {
-        if (landmarkPop > 0)
-            levelBonus += int(std::floor(std::sqrt(float(landmarkPop) / 100.0f)));
-    }
-    if (zoneLevel > 2) {
-        const int   zb = zoneLevel - 2;
-        levelBonus += zb;
-        const float boost = 1.0f + float(zb) * 0.18f;
-        hpMult     = boost;
-        damageMult = boost;
-    }
-
+    // Context decides WHO and HOW MANY stand on this cell — never what they are
+    // worth. Each of the 3×3 cells populates on its own macro terms (a city cell
+    // fills with citizens even when it is not the centre — which is what stops a
+    // city from vanishing when you step one cell out), and every body that stands
+    // up is exactly its table row. The two markups that used to live here — the
+    // settlement's √(pop/100) level bonus and the danger zone's +1 level with a
+    // 1+0.18·(z−2) hp/damage multiplier — were a hidden auto-level: they made the
+    // same guard stronger for standing in a bigger town and the same wolf tougher
+    // for standing in a redder province. Deleted 2026-08-20 (CANON.md S12); when
+    // the zone is meant to matter it must weight the TABLE, not the body.
     spawn_settlement_population(w, landmark, mgr, cellSeed, settlementFaction,
-                                landmarkPop, levelBonus, originX, originY,
+                                landmarkPop, originX, originY,
                                 MacroStockKey{landmarkSubjectId,
                                               std::int16_t(macroCellX),
                                               std::int16_t(macroCellY)});
@@ -660,11 +645,10 @@ void spawn_cell_npcs(ecs::World& w,
         if (!placed) continue;
 
         const int npcLevel = normalize_soldier_level(
-            int(f.baseLevel) + int(std::floor(pos.next_f01() * 2.0f)) + levelBonus);
+            int(f.baseLevel) + int(std::floor(pos.next_f01() * 2.0f)));
         emplace_fauna_entity(reg, f,
                              std::uint16_t(faction_index(p.factionId)),
-                             fx, fy,
-                             npcLevel, hpMult, damageMult, faunaLoan);
+                             fx, fy, npcLevel, faunaLoan);
         --budget;
     }
 }

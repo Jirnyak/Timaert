@@ -1134,8 +1134,6 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
     const int W = terrain_->width, H = terrain_->height;
     const int wcx = ((ccx % W) + W) % W;
     const int wcy = ((ccy % H) + H) % H;
-    const int zoneLevel = (zones_ && !zones_->data.empty())
-        ? int(zones_->at(wcx, wcy)) : 0;
     // Citizens belong to the kingdom that owns this cell's settlement — resolved
     // HERE, where the GameState is, and handed to the spawner as a plain index
     // so sub/spawn.cpp stays free of macro state (macro/politik.h owns the rule).
@@ -1151,7 +1149,6 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
         MacroStockKey{-1, std::int16_t(wcx), std::int16_t(wcy)});
     spawn_cell_npcs(*ecs_, ctx.biome, ctx.treeCount, to_landmark_kind(ctx), mgr_,
                     ox, oy, ctx.seed, settlementFaction, ctx.landmark.size,
-                    zoneLevel,
                     // The macro stock these citizens are borrowed from: this
                     // cell's named place. Killing one of them pays the map back
                     // (macro/macro_stock.h) instead of vanishing without trace.
@@ -2713,8 +2710,6 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
     // numbers the street spawner reads (spawn_cell), captured once here.
     ses.settlementId = doorCtx.landmark.id;
     ses.landmarkPop = doorCtx.landmark.size;
-    ses.zoneLevel = (zones_ && !zones_->data.empty())
-        ? int(zones_->at(doorCx, doorCy)) : 0;
     ses.faction = faction_index_for_kingdom(gs_->politik, doorCtx.landmark.kingdomIdx);
     ses.arrival = DungeonArrival::Door;   // in off the street
 
@@ -2832,17 +2827,10 @@ void SubworldEngine::enter_dungeon_scene(GameState& gs,
             worldSeed, ses.doorCx, ses.doorCy, ses.ref.ordinal, ses.ref.level);
         const int household = std::min(popNow,
             1 + int((dSeed >> 8) % 3u) + (ses.landmarkPop >= 128 ? 1 : 0));
-        // The street spawner's own context-scale terms (spawn_cell_npcs).
-        int levelBonus = 0;
-        if (ses.landmarkPop > 0) {
-            levelBonus +=
-                int(std::floor(std::sqrt(float(ses.landmarkPop) / 100.0f)));
-        }
-        if (ses.zoneLevel > 2) levelBonus += ses.zoneLevel - 2;
         const DungeonRoom room = dungeon_room(ses.ref);
         spawn_dungeon_residents(*ecs_, mgr_,
             dSeed ^ 0x5EEDD00Du,
-            ses.faction, household, levelBonus,
+            ses.faction, household,
             float(kCellSize) + room.cx - room.hx,
             float(kCellSize) + room.cy - room.hy,
             float(kCellSize) + room.cx + room.hx,
@@ -2857,7 +2845,9 @@ void SubworldEngine::enter_dungeon_scene(GameState& gs,
     // world. The difference between a townhouse cellar and a hillside cave is
     // not a rule: it is the cell they stand on, because a town cell's wild
     // capacity is the Ruin table's floor while a mountain's is its own full
-    // headcount. The danger zone prices the fight exactly as it does outdoors.
+    // headcount. What the den's creatures are WORTH is their rows — the danger
+    // zone does not price them here any more than it does outdoors (CANON.md
+    // S12); when it earns a say it will weight the table, not the bodies.
     // A spire tower is garrisoned on EVERY storey — the spire's demons are
     // the cell's own headcount (kTblSpire is what a spire cell's FaunaCount
     // capacity already counts), so clearing the climb thins the spire
@@ -2872,15 +2862,6 @@ void SubworldEngine::enter_dungeon_scene(GameState& gs,
         const MacroStockKey faunaKey{-1, std::int16_t(ses.doorCx),
                                      std::int16_t(ses.doorCy)};
         const int budget = macro_stock_read(mw, MacroStock::FaunaCount, faunaKey);
-        int levelBonus = 0;
-        float hpMult = 1.0f, damageMult = 1.0f;
-        if (ses.zoneLevel > 2) {
-            const int zb = ses.zoneLevel - 2;
-            levelBonus += zb;
-            const float boost = 1.0f + float(zb) * 0.18f;
-            hpMult = boost;
-            damageMult = boost;
-        }
         const DungeonRoom room = dungeon_room(ses.ref);
         const CellContext doorCtx = resolve_context(ses.doorCx, ses.doorCy);
         // The den's table is its landmark's: a spire storey draws the Spire
@@ -2892,8 +2873,7 @@ void SubworldEngine::enter_dungeon_scene(GameState& gs,
         spawn_dungeon_vermin(*ecs_, mgr_,
             dungeon_scene_seed(worldSeed, ses.doorCx, ses.doorCy,
                                ses.ref.ordinal, ses.ref.level),
-            denKind, doorCtx.biome, doorCtx.treeCount,
-            levelBonus, hpMult, damageMult, budget,
+            denKind, doorCtx.biome, doorCtx.treeCount, budget,
             float(kCellSize) + room.cx - room.hx,
             float(kCellSize) + room.cy - room.hy,
             float(kCellSize) + room.cx + room.hx,
