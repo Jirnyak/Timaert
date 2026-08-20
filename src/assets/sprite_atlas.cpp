@@ -31,7 +31,10 @@ constexpr std::array<Entry, std::size_t(SpriteId::Count_)> kAssets = {{
     { SpriteId::Village,   "village_256.png"   },
     { SpriteId::Spire,     "spireA_256.png"    },
     { SpriteId::SpireDark, "spireD_256.png"    },
-    { SpriteId::Player,    "player.png"        },
+    // The player has no drawn figure of his own yet: `player.png` is the
+    // title-screen skull, not a walker. A row whose art is missing borrows
+    // the nearest kind's — one line to change when the figure is drawn.
+    { SpriteId::Player,    "peasant_256.png"   },
     { SpriteId::Peasant,   "peasant_256.png"   },
     { SpriteId::Caravan,   "corovan_256.png"   },
     { SpriteId::Witch,     "witch_256.png"     },

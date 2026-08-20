@@ -25,8 +25,6 @@
 #include "macro/features.h"
 #include "macro/map_generator.h"
 #include "assets/sprite_atlas.h"
-#include "assets/character_paperdoll.h"
-#include "assets/character_paperdoll_gl.h"
 
 #include "imgui.h"
 
@@ -140,62 +138,10 @@ void draw_sprite(ImDrawList* dl, ImVec2 c, SpriteId id, float pixSize,
     dl->AddImage(s->tex, tl, br, ImVec2(0, 0), ImVec2(1, 1), tint);
 }
 
-character::CharacterTextureCache& paperdoll_cache() {
-    static character::CharacterTextureCache cache;
-    return cache;
-}
-
-character::Direction direction_from_delta(float dx, float dy) {
-    if (std::fabs(dx) > std::fabs(dy)) {
-        return dx < 0.0f ? character::Direction::Left
-                         : character::Direction::Right;
-    }
-    if (std::fabs(dy) > 0.001f) {
-        return dy > 0.0f ? character::Direction::Back
-                         : character::Direction::Front;
-    }
-    return character::Direction::Front;
-}
-
-character::Direction npc_direction(const ecs::Position& pos,
-                                   const ecs::VisualPos* visual,
-                                   const ecs::MacroNpcRuntime* rt,
-                                   int mapW,
-                                   int mapH) {
-    float dx = visual ? wrap_delta(pos.x - visual->vx, float(mapW)) : 0.0f;
-    float dy = visual ? wrap_delta(pos.y - visual->vy, float(mapH)) : 0.0f;
-    if (dx * dx + dy * dy <= 0.0001f) {
-        if (!rt || rt->visualSpeed <= 0.05f) {
-            return character::Direction::Front;
-        }
-        dx = wrap_delta(rt->targetX - pos.x, float(mapW));
-        dy = wrap_delta(rt->targetY - pos.y, float(mapH));
-    }
-    return direction_from_delta(dx, dy);
-}
-
-bool npc_visually_moving(const ecs::Position& pos,
-                         const ecs::VisualPos* visual,
-                         int mapW,
-                         int mapH) {
-    if (!visual) return false;
-    const float dx = wrap_delta(pos.x - visual->vx, float(mapW));
-    const float dy = wrap_delta(pos.y - visual->vy, float(mapH));
-    return dx * dx + dy * dy > 0.0001f;
-}
-
-character::Direction player_direction(const GameState& gs,
-                                      const MacroCursor& cursor) {
-    if (cursor.path.empty() || cursor.pathIdx >= cursor.path.size()) {
-        return character::Direction::Front;
-    }
-    const PathPoint& next = cursor.path[cursor.pathIdx];
-    const float dx = wrap_delta(float(next.x) - gs.player.x, float(gs.mapW));
-    const float dy = wrap_delta(float(next.y) - gs.player.y, float(gs.mapH));
-    return direction_from_delta(dx, dy);
-}
-
-float paperdoll_night_darken(const WorldTime& time) {
+// How dark a FIGURE on the map stands at this hour. The ground has its own
+// celestial light in macro.frag; a figure is drawn over it by ImGui and would
+// otherwise keep full daylight colour at midnight — one law, two renderers.
+float figure_night_darken(const WorldTime& time) {
     int minutes = time.hour() * 60 + time.minute();
     minutes %= 24 * 60;
     if (minutes < 0) minutes += 24 * 60;
@@ -207,57 +153,14 @@ float paperdoll_night_darken(const WorldTime& time) {
     return (progress - 0.75f) / 0.15f;
 }
 
-ImU32 paperdoll_tint_for_time(const WorldTime& time) {
-    const float mix = paperdoll_night_darken(time) * 0.82f;
+ImU32 figure_tint_for_time(const WorldTime& time) {
+    const float mix = figure_night_darken(time) * 0.82f;
     if (mix <= 0.0f) return IM_COL32(255, 255, 255, 255);
     auto channel = [mix](float tint) {
         const float v = std::clamp(1.0f + (tint - 1.0f) * mix, 0.0f, 1.0f);
         return int(v * 255.0f + 0.5f);
     };
     return IM_COL32(channel(0.05f), channel(0.05f), channel(0.15f), 255);
-}
-
-character::AppearancePreset appearance_preset_for_npc(NPCType type) {
-    switch (type) {
-        case NPCType::Merchant:
-        case NPCType::Caravan:
-            return character::AppearancePreset::Backpack;
-        case NPCType::Guard:
-            return character::AppearancePreset::ShoulderArmor;
-        case NPCType::Witch:
-        case NPCType::Sorceress:
-            return character::AppearancePreset::Horns;
-        default:
-            return character::AppearancePreset::None;
-    }
-}
-
-void draw_paperdoll(ImDrawList* dl,
-                    ImVec2 c,
-                    std::uint32_t seed,
-                    character::AppearancePreset preset,
-                    character::AnimationType anim,
-                    character::Direction dir,
-                    float pixSize,
-                    SpriteId fallback,
-                    ImU32 fallbackCol,
-                    ImU32 tintCol) {
-    const float tMs = float(ImGui::GetTime() * 1000.0);
-    const character::AnimationState state = character::make_animation_state(anim, dir, tMs);
-    character::CharacterTextureCache& cache = paperdoll_cache();
-    const character::CharacterTexture* tex =
-        cache.texture_for(cache.descriptor_for_seed(seed, preset), state);
-    if (!tex || !tex->tex) {
-        draw_sprite(dl, c, fallback, pixSize, fallbackCol);
-        return;
-    }
-    const float r = pixSize * 0.5f;
-    dl->AddImage(tex->tex,
-                 ImVec2(c.x - r, c.y - r),
-                 ImVec2(c.x + r, c.y + r),
-                 ImVec2(0.0f, 0.0f),
-                 ImVec2(1.0f, 1.0f),
-                 tintCol);
 }
 
 // Universal landmark scale. `zoom` is pixels-per-cell (range [4, 96]); a
@@ -301,7 +204,7 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
                         const TreeLayer* treeLayer) {
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
     ImGuiIO& io = ImGui::GetIO();
-    const ImU32 paperdollTint = paperdoll_tint_for_time(gs.worldTime);
+    const ImU32 figureTint = figure_tint_for_time(gs.worldTime);
 
     // ── Mouse → cell. `viewW`/`viewH` are logical points (matching
     // ImGui's coordinate system); `zoom` is logical-points-per-cell.
@@ -499,62 +402,13 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
             const NPCType t = NPCType(kind.type);
             const SpriteId sid = npc_sprite(t);
             const ImU32 col = npc_color(t);
-            const character::AppearancePreset preset = appearance_preset_for_npc(t);
             // One cell wide; clamp so it stays readable on the world map
             // and never devours surrounding cells when zoomed in.
             const float size = std::clamp(zoom, 12.0f, 56.0f);
-            const bool squad =
-                t == NPCType::Caravan ||
-                t == NPCType::Bandit  ||
-                t == NPCType::Guard   ||
-                t == NPCType::Sorceress;
-            if (squad) {
-                const float dx = size * 0.30f;
-                const float dy = size * 0.18f;
-                const ecs::NpcCharacter* ch = w.reg.try_get<ecs::NpcCharacter>(e);
-                const ecs::MacroNpcRuntime* rt = w.reg.try_get<ecs::MacroNpcRuntime>(e);
-                const bool moving =
-                    npc_visually_moving(pos, visual, mapW, mapH);
-                const character::AnimationType anim =
-                    moving ? character::AnimationType::Walk
-                           : character::AnimationType::Idle;
-                const character::Direction dir =
-                    npc_direction(pos, visual, rt, mapW, mapH);
-                if (ch) {
-                    draw_paperdoll(dl, ImVec2(p.x - dx, p.y - dy),
-                                   ch->visualSeed ^ 0xA341u, preset, anim,
-                                   dir,
-                                   size * 0.75f, sid, col, paperdollTint);
-                    draw_paperdoll(dl, ImVec2(p.x + dx, p.y - dy),
-                                   ch->visualSeed ^ 0xB653u, preset, anim,
-                                   dir,
-                                   size * 0.75f, sid, col, paperdollTint);
-                    draw_paperdoll(dl, ImVec2(p.x, p.y + dy),
-                                   ch->visualSeed, preset, anim,
-                                   dir,
-                                   size, sid, col, paperdollTint);
-                } else {
-                    draw_sprite(dl, ImVec2(p.x - dx, p.y - dy), sid, size * 0.75f, col);
-                    draw_sprite(dl, ImVec2(p.x + dx, p.y - dy), sid, size * 0.75f, col);
-                    draw_sprite(dl, ImVec2(p.x,       p.y + dy), sid, size,         col);
-                }
-            } else {
-                const ecs::NpcCharacter* ch = w.reg.try_get<ecs::NpcCharacter>(e);
-                const ecs::MacroNpcRuntime* rt = w.reg.try_get<ecs::MacroNpcRuntime>(e);
-                if (ch) {
-                    const bool moving =
-                        npc_visually_moving(pos, visual, mapW, mapH);
-                    const character::AnimationType anim =
-                        moving ? character::AnimationType::Walk
-                               : character::AnimationType::Idle;
-                    const character::Direction dir =
-                        npc_direction(pos, visual, rt, mapW, mapH);
-                    draw_paperdoll(dl, p, ch->visualSeed, preset, anim,
-                                   dir, size, sid, col, paperdollTint);
-                } else {
-                    draw_sprite(dl, p, sid, size, col);
-                }
-            }
+            // ONE walker, ONE sprite — a squad is not drawn as a crowd of
+            // figures. Its kind IS its picture; how many souls march under it
+            // is the roster's business, not the map's (owner, 2026-08-20).
+            draw_sprite(dl, p, sid, size, col, figureTint);
         }
     }
 
@@ -635,14 +489,8 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
         ImVec2 p = world_to_screen(gs.player.x + 0.5f, gs.player.y + 0.5f,
                                    camX, camY, zoom, viewW, viewH, mapW, mapH);
         const float size = std::clamp(zoom * 1.1f, 14.0f, 64.0f);
-        const bool walking = !cursor.path.empty() && cursor.pathIdx < cursor.path.size();
-        draw_paperdoll(dl, p, gs.worldSeed ^ 0x7150A11u,
-                       character::AppearancePreset::None,
-                       walking ? character::AnimationType::Walk
-                               : character::AnimationType::Idle,
-                       player_direction(gs, cursor),
-                       size, SpriteId::Player, IM_COL32(255, 255, 255, 255),
-                       paperdollTint);
+        draw_sprite(dl, p, SpriteId::Player, size,
+                    IM_COL32(255, 255, 255, 255), figureTint);
     }
 }
 
@@ -1031,21 +879,8 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                     ImGui::BeginChild("##row", ImVec2(0.0f, 88.0f), true,
                                       ImGuiWindowFlags_NoScrollbar);
 
-                    // Sprite — tries the real PNG, falls back to a coloured dot.
-                    const character::AnimationState portraitAnim =
-                        character::make_animation_state(character::AnimationType::Idle,
-                                                        character::Direction::Front,
-                                                        0.0f);
-                    const character::CharacterTexture* portrait =
-                        paperdoll_cache().texture_for(
-                            paperdoll_cache().descriptor_for_seed(
-                                ch.visualSeed,
-                                appearance_preset_for_npc(t)),
-                            portraitAnim);
-                    if (portrait && portrait->tex) {
-                        ImGui::Image(portrait->tex,
-                                     ImVec2(40, 40));
-                    } else {
+                    // Sprite — the kind's drawn PNG, falls back to a blank.
+                    {
                         const Sprite* sp = sprite_get(npc_sprite(t));
                         if (sp && sp->tex) {
                             ImGui::Image(sp->tex,
