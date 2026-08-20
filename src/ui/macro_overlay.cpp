@@ -896,31 +896,63 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                     }
                     ImGui::SameLine();
 
+                    // The chip on the right is as wide as the widest thing it
+                    // can ever hold, measured rather than guessed — 44 px was a
+                    // number off the ceiling and the text beside it did not
+                    // know the chip existed at all. The two OVERLAPPED: a long
+                    // middle line ran straight under the HP figures and drew
+                    // "Woodcutter · L73/473" out of two legible strings
+                    // (audit 4.1's family, seen in a capture).
+                    const float chipW = ImGui::CalcTextSize("9999/9999").x;
+                    const float chipX =
+                        ImGui::GetWindowWidth() - chipW - rowStyle.WindowPadding.x;
+
+                    // So the text column is CLIPPED at the chip's edge. A name
+                    // too long for the card is cut off, which reads as "there
+                    // is more" — two strings printed through each other read as
+                    // corruption.
+                    const ImVec2 textMin = ImGui::GetCursorScreenPos();
+                    ImGui::PushClipRect(
+                        textMin,
+                        ImVec2(ImGui::GetWindowPos().x + chipX
+                                   - rowStyle.ItemSpacing.x,
+                               textMin.y + rowPx),
+                        true);
                     ImGui::BeginGroup();
                     ImGui::PushStyleColor(ImGuiCol_Text, fcol);
                     ImGui::TextUnformatted(npcName);
                     ImGui::PopStyleColor();
-                    ImGui::TextDisabled("%s · Lv.%d", def.label, int(lvl.value));
+                    // The role alone. The level moved to the numbers column on
+                    // the right, where it belongs beside the HP: words on the
+                    // left, figures on the right, and the longest line on each
+                    // side got shorter for free — which is why the two columns
+                    // stopped fighting over the same pixels.
+                    ImGui::TextDisabled("%s", def.label);
                     ImGui::PushStyleColor(ImGuiCol_Text,
                                           (fcol & 0x00FFFFFFu) | 0xC0000000u);
                     ImGui::TextUnformatted(fname);
                     ImGui::PopStyleColor();
                     ImGui::EndGroup();
+                    ImGui::PopClipRect();
 
                     // Right-aligned direction + HP chip.
-                    const float chipW = 44.0f;
                     ImGui::SameLine();
-                    ImGui::SetCursorPosX(ImGui::GetWindowWidth() - chipW - 8.0f);
+                    ImGui::SetCursorPosX(chipX);
                     ImGui::BeginGroup();
                     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 210, 120, 255));
                     ImGui::Text("%s", r.dir);
                     ImGui::PopStyleColor();
+                    ImGui::TextDisabled("Lv.%d", int(lvl.value));
                     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(220, 90, 90, 255));
                     ImGui::Text("%d/%d", int(hp.hp), int(hp.maxHp));
                     ImGui::PopStyleColor();
                     ImGui::EndGroup();
 
-                    ImGui::SetCursorPosY(58.0f);
+                    // The button strip sits directly under the text block, at
+                    // the height that block actually occupies. It used to be a
+                    // literal 58, tuned against the row's old literal 88, so a
+                    // change to either silently slid the buttons.
+                    ImGui::SetCursorPosY(kindPx + rowStyle.WindowPadding.y);
                     if (ImGui::Button("Talk", ImVec2(54, 22))) {
                         clear_trade_popup();
                         g_talk_npc = r.e;
