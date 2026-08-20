@@ -1879,7 +1879,7 @@ bool SubworldEngine::spawn_npc_body(const char* npcTypeId,
         const float scale = 1.0f + float(std::max(0, clvl - 1)) * 0.15f;
         const int catIdx = creature_index(cd);
         const std::uint16_t typeId =
-            std::uint16_t(0x100 | (catIdx < 0 ? 0 : catIdx));
+            std::uint16_t(catIdx < 0 ? 0 : catIdx);
 
         auto e = reg.create();
         reg.emplace<ecs::Position>(e, fx, fy, 0.0f);

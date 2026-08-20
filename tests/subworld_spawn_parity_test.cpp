@@ -50,7 +50,7 @@ int fail(const char* msg) {
 // catalog row, never a label hash.
 std::uint16_t catalog_type_id(const sm::FaunaEntry* entry) {
     const int idx = sm::creature_index(entry);
-    return std::uint16_t(0x100 | (idx < 0 ? 0 : idx));
+    return std::uint16_t(idx < 0 ? 0 : idx);
 }
 
 // The stance a row folds to is not restated here — it is asked of the SAME
@@ -535,7 +535,7 @@ MacroSeeds seed_macro_npcs(entt::registry& reg, int mapW) {
 bool run_beast_member_projection_case(
     const sm::sub::SeamlessSubworldManager& mgr) {
     constexpr int kMapW = 1024, kMapH = 1024;
-    constexpr std::uint16_t kBeast = std::uint16_t(0x100u | 0u);
+    constexpr std::uint16_t kBeast = std::uint16_t(sm::NPCType::Wolf);
 
     sm::ecs::World world{};
     auto& reg = world.reg;
@@ -563,7 +563,7 @@ bool run_beast_member_projection_case(
     int beasts = 0, men = 0;
     for (auto e : reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind>()) {
         const std::uint16_t t = reg.get<sm::ecs::NPCKind>(e).type;
-        if (t >= std::uint16_t(sm::NPCType::Count)) {
+        if (sm::is_monster_kind(t)) {
             // A beast: its catalog row must resolve, and it must NOT have been
             // built as a humanoid (no face/character block on a wolf).
             if (t != kBeast) return false;

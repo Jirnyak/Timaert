@@ -41,7 +41,7 @@ namespace sm::sub {
 inline constexpr float kBodyRadiusFallback = 0.55f;
 
 inline const FaunaEntry* creature_row_for(const ecs::NPCKind* kind) {
-    if (!kind || kind->type < std::uint16_t{0x100}) return nullptr;
+    if (!kind || !is_monster_kind(kind->type)) return nullptr;
     return creature_def_from_kind(kind->type);
 }
 
@@ -91,16 +91,15 @@ inline float body_shape_height_scale(std::uint8_t bodyShape) {
     return kBodyShapeHeightScale[bodyShape & 0x3u];
 }
 
-// Drawn height of a humanoid row, before individual variation.
-inline float body_height_m(const NpcTypeDef& def) {
-    return def.combat.bodyHeight > 0.0f ? def.combat.bodyHeight : kHumanHeightM;
-}
-
-// Drawn height of a creature row. `FaunaEntry::radius` speaks when the row's
-// combat template stays silent — the same fallback order the width uses.
-inline float body_height_m(const FaunaEntry& row) {
+// Drawn height of ANY row, before individual variation. There were two of
+// these — one for men, one for beasts — until the tables merged; they were
+// never in disagreement, only in different files. The answer is the row's own
+// authored height, then what its body radius implies, then the human default:
+// three sentences that a wolf and a guard both read top to bottom.
+inline float body_height_m(const NpcTypeDef& row) {
     if (row.combat.bodyHeight > 0.0f) return row.combat.bodyHeight;
-    return row.radius * kCreatureHeightPerRadius;
+    if (row.radius > 0.0f)            return row.radius * kCreatureHeightPerRadius;
+    return kHumanHeightM;
 }
 
 // KNOWN CONFLATION, left deliberately. Step 5 reads `Sprite.scale`, which is a

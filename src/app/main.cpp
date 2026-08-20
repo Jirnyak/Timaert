@@ -8404,7 +8404,7 @@ bool run_console_smoke(App& app) {
                              sm::ecs::Health>(
             entt::exclude<sm::ecs::Dead, sm::ecs::PlayerSoldierTag>);
         for (auto e : view) {
-            if (view.get<sm::ecs::NPCKind>(e).type >= std::uint16_t{0x100}) ++n;
+            if (sm::is_monster_kind(view.get<sm::ecs::NPCKind>(e).type)) ++n;
         }
         return n;
     };

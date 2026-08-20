@@ -198,15 +198,25 @@ static void test_npc_loot_id() {
     // Derived from the enum, never a pinned literal (Testing law #4): the
     // last row is whatever type the registry ends on, and one PAST the end
     // is out of range — both stay true however many professions are added.
-    expect(std::string(npc_loot_id(int(sm::NPCType::Count) - 1)) == "claydigger",
-           "the last registry row names its loot profile");
+    expect(std::string(npc_loot_id(int(sm::NPCType::ClayDigger))) == "claydigger",
+           "the last ROLE row names its loot profile");
     expect(std::string(npc_loot_id(int(sm::NPCType::Count))) == "",
            "one past the registry end is out of range");
     expect(std::string(npc_loot_id(-1)) == "", "npc_loot_id(-1)= (negative)");
-    // Every humanoid NPCType must resolve to a registered, rollable profile.
+    // Every ROLE row must resolve to a registered, rollable profile. A creature
+    // row answers with "" on purpose — it names its drop in its own `lootId`
+    // column and otherwise takes its faction's default (macro/npc.h), so the
+    // per-role list stops where the roles stop. That boundary is asserted right
+    // below rather than assumed.
     for (int t = 0; t < int(NPCType::Count); ++t) {
         const char* id = npc_loot_id(t);
         char msg[96];
+        if (sm::is_creature_row(NPCType(t))) {
+            std::snprintf(msg, sizeof msg,
+                          "creature row %d defers its loot to its own column", t);
+            expect(std::string(id).empty(), msg);
+            continue;
+        }
         std::snprintf(msg, sizeof msg, "npc_loot_id(%d) resolves to a profile", t);
         // rng_high on a real profile yields a vector (possibly empty); an
         // UNKNOWN id would also yield empty, so instead assert rng_zero (which

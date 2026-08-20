@@ -1,11 +1,10 @@
 // Unit tests for the global creature registry (sm::sub, src/sub/fauna.cpp).
 // Pins the stable-id contract the subworld spawn / death / loot path relies on:
 //
-//   * the catalog index IS the creature's stable id;
-//   * ECS NPCKind.type bakes it as (0x100 | index), and the 0x100 bit is the
-//     load-bearing "monster vs humanoid NPC" discriminator;
+//   * a creature's stable id IS its ordinal in THE one body table — there is
+//     no monster catalog beside it and no `0x100` bit any more (2026-08-20);
 //   * creature_def_from_kind() recovers the exact row, returning nullptr for
-//     humanoid kinds (< 0x100) and for out-of-range indices.
+//     the humanoid rows and for anything that names no row at all.
 //
 // If catalog order ever changed (which would silently re-key live and saved
 // entities) or the bit contract regressed, these assertions fail. Plain main(),
@@ -53,35 +52,37 @@ int main() {
     // ── round-trip: index <-> kind <-> def <-> id ───────────────────────────
     for (int i = 0; i < n; ++i) {
         const FaunaEntry* e = catalog[i];
-        const std::uint16_t kind = std::uint16_t(0x100 | i);
+        const std::uint16_t kind = std::uint16_t(sm::creature_index(e));
 
         expect(sm::creature_def_from_kind(kind) == e,
-               "creature_def_from_kind(0x100|i) recovers catalog[i]");
-        expect(sm::creature_index(e) == i,
-               "creature_index(catalog[i]) == i");
+               "creature_def_from_kind(ordinal) recovers the row");
+        expect(sm::creature_index(e) == int(kind),
+               "a row's index IS the kind it answers to");
         expect(sm::creature_def(e->id) == e,
                "creature_def(id) recovers the same entry");
-        expect(sm::creature_index(sm::creature_def_from_kind(kind)) == i,
+        expect(sm::creature_index(sm::creature_def_from_kind(kind)) == int(kind),
                "kind -> def -> index closes the loop");
 
-        // The 0x100 bit is load-bearing: the SAME numeric value without the bit
-        // is a humanoid NPCType slot, not this monster.
-        expect(sm::creature_def_from_kind(std::uint16_t(i)) == nullptr,
-               "the index without the 0x100 monster bit is not a creature");
+        // (The old "same number without the 0x100 bit is a humanoid" check
+        // died with the bit: there is no second number to compare against any
+        // more. What it guarded — humanoid rows are not creatures — is asserted
+        // directly over the role rows below.)
     }
 
-    // ── humanoid kinds (< 0x100) are never creatures ─────────────────────────
-    for (std::uint16_t k : {std::uint16_t(0), std::uint16_t(1), std::uint16_t(7),
-                            std::uint16_t(8), std::uint16_t(0xFF)}) {
+    // ── the humanoid rows are never creatures ────────────────────────────────
+    for (std::uint16_t k : {std::uint16_t(sm::NPCType::Peasant),
+                            std::uint16_t(sm::NPCType::Guard),
+                            std::uint16_t(sm::NPCType::Sorceress),
+                            std::uint16_t(sm::NPCType::ClayDigger)}) {
         expect(sm::creature_def_from_kind(k) == nullptr,
-               "kindType < 0x100 (humanoid NPCType) -> nullptr");
+               "a humanoid row is not a creature");
     }
 
-    // ── out-of-range monster indices -> nullptr ──────────────────────────────
-    expect(sm::creature_def_from_kind(std::uint16_t(0x100 | n)) == nullptr,
-           "0x100|size (one past the last creature) -> nullptr");
+    // ── a kind that names no row at all -> nullptr ───────────────────────────
+    expect(sm::creature_def_from_kind(std::uint16_t(sm::NPCType::Count)) == nullptr,
+           "one past the last row -> nullptr");
     expect(sm::creature_def_from_kind(std::uint16_t(0x1FF)) == nullptr,
-           "0x1FF (masked index 255, out of range) -> nullptr");
+           "a number far outside the table -> nullptr");
 
     // ── unknown id / null / non-catalog pointer ──────────────────────────────
     expect(sm::creature_def("definitely_not_a_creature_id") == nullptr,

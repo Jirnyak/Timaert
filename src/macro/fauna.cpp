@@ -15,50 +15,30 @@
 namespace sm {
 
 
-// ── Combat templates for wildlife ────────────────────────────────────
-//
-// Mirrors the TS critter list verbatim (hp / damage / speed / range /
-// cooldown / label match the .ts file line-for-line).
-static const FaunaEntry kRabbit{"rabbit", "Rabbit",        15, "wildlife", AIBehaviour::Flee,
-    {  5,  0, 55, 0, 9.0f, "Rbt"}, 1, 0.4f, SpriteId::Rabbit};
-static const FaunaEntry kDeer{"deer", "Deer",          12, "wildlife", AIBehaviour::Flee,
-    { 15,  2, 50, 2, 2.0f, "Der"}, 1, 0.6f, SpriteId::Deer};
-static const FaunaEntry kFox{"fox", "Fox",            8, "wildlife", AIBehaviour::Wanderer,
-    { 12,  4, 45, 2, 1.2f, "Fox"}, 1, 0.5f, SpriteId::Fox};
-static const FaunaEntry kWolf{"wolf", "Wolf",           6, "wildlife", AIBehaviour::Aggressive,
-    { 30, 10, 50, 3, 1.0f, "Wlf"}, 2, 0.7f, SpriteId::Wolf};
-static const FaunaEntry kBear{"bear", "Bear",           3, "wildlife", AIBehaviour::Aggressive,
-    { 80, 18, 35, 3, 1.5f, "Ber"}, 3, 1.0f, SpriteId::Bear};
-static const FaunaEntry kBoar{"boar", "Boar",           5, "wildlife", AIBehaviour::Aggressive,
-    { 40, 12, 40, 3, 1.2f, "Bor"}, 2, 0.7f, SpriteId::Boar};
-static const FaunaEntry kSnake{"snake", "Snake",          4, "wildlife", AIBehaviour::Aggressive,
-    { 10,  8, 30, 2, 0.8f, "Snk"}, 1, 0.3f, SpriteId::Snake};
-static const FaunaEntry kHawk{"hawk", "Hawk",           3, "wildlife", AIBehaviour::Wanderer,
-    {  8,  5, 60, 3, 1.0f, "Hwk"}, 1, 0.4f, SpriteId::Hawk};
-static const FaunaEntry kFrog{"frog", "Frog",          10, "wildlife", AIBehaviour::Flee,
-    {  3,  0, 30, 0, 9.0f, "Frg"}, 1, 0.3f, SpriteId::Frog};
-static const FaunaEntry kGoat{"goat", "Mountain Goat",  8, "wildlife", AIBehaviour::Flee,
-    { 20,  5, 40, 2, 1.5f, "Mgt"}, 1, 0.6f, SpriteId::Goat};
-static const FaunaEntry kEagle{"eagle", "Eagle",          4, "wildlife", AIBehaviour::Wanderer,
-    { 12,  7, 65, 3, 1.0f, "Egl"}, 2, 0.5f, SpriteId::Eagle};
-static const FaunaEntry kCroc{"crocodile", "Crocodile",      4, "wildlife", AIBehaviour::Aggressive,
-    { 50, 15, 25, 3, 1.5f, "Crc"}, 3, 0.8f, SpriteId::Crocodile};
-
-// ── Monsters ────────────────────────────────────────────────────────
-static const FaunaEntry kGoblin{"goblin", "Goblin",         4, "demons",  AIBehaviour::Aggressive,
-    { 25,  8, 40, 3, 1.0f, "Gbl"}, 2, 0.6f, SpriteId::Goblin};
-static const FaunaEntry kSkeleton{"skeleton", "Skeleton",       3, "demons",  AIBehaviour::Aggressive,
-    { 35, 10, 30, 3, 1.2f, "Skl"}, 3, 0.6f, SpriteId::Skeleton};
-static const FaunaEntry kTroll{"troll", "Troll",          1, "demons",  AIBehaviour::Aggressive,
-    {120, 25, 25, 4, 2.0f, "Trl"}, 5, 1.2f, SpriteId::Troll};
-static const FaunaEntry kSwampThing{"swamp_thing", "Swamp Thing",  3, "demons",  AIBehaviour::Aggressive,
-    { 60, 14, 20, 4, 1.5f, "Swt"}, 3, 0.9f, SpriteId::SwampThing};
-static const FaunaEntry kIceWraith{"ice_wraith", "Ice Wraith",    2, "demons",  AIBehaviour::Aggressive,
-    { 45, 16, 35, 5, 1.3f, "Iwr"}, 4, 0.7f, SpriteId::IceWraith};
-static const FaunaEntry kSandScorpion{"sand_scorpion", "Sand Scorpion",5,"demons", AIBehaviour::Aggressive,
-    { 35, 12, 35, 3, 1.0f, "Ssc"}, 2, 0.6f, SpriteId::SandScorpion};
-static const FaunaEntry kStoneGolem{"stone_golem", "Stone Golem",  1, "demons",  AIBehaviour::Aggressive,
-    {150, 20, 15, 4, 2.5f, "Glm"}, 5, 1.3f, SpriteId::StoneGolem};
+// The creature rows live in THE one body table (macro/npc.h). They used to be
+// nineteen `static const FaunaEntry` objects right here — a second table of
+// bodies, addressed by a second id encoding. What is left is nineteen names
+// for rows of the first one, so the spawn tables below still read like a
+// bestiary while there is only one bestiary in the program.
+static const FaunaEntry& kRabbit = kNpcTypeDefs[std::size_t(NPCType::Rabbit)];
+static const FaunaEntry& kDeer = kNpcTypeDefs[std::size_t(NPCType::Deer)];
+static const FaunaEntry& kFox = kNpcTypeDefs[std::size_t(NPCType::Fox)];
+static const FaunaEntry& kWolf = kNpcTypeDefs[std::size_t(NPCType::Wolf)];
+static const FaunaEntry& kBear = kNpcTypeDefs[std::size_t(NPCType::Bear)];
+static const FaunaEntry& kBoar = kNpcTypeDefs[std::size_t(NPCType::Boar)];
+static const FaunaEntry& kSnake = kNpcTypeDefs[std::size_t(NPCType::Snake)];
+static const FaunaEntry& kHawk = kNpcTypeDefs[std::size_t(NPCType::Hawk)];
+static const FaunaEntry& kFrog = kNpcTypeDefs[std::size_t(NPCType::Frog)];
+static const FaunaEntry& kGoat = kNpcTypeDefs[std::size_t(NPCType::Goat)];
+static const FaunaEntry& kEagle = kNpcTypeDefs[std::size_t(NPCType::Eagle)];
+static const FaunaEntry& kCroc = kNpcTypeDefs[std::size_t(NPCType::Croc)];
+static const FaunaEntry& kGoblin = kNpcTypeDefs[std::size_t(NPCType::Goblin)];
+static const FaunaEntry& kSkeleton = kNpcTypeDefs[std::size_t(NPCType::Skeleton)];
+static const FaunaEntry& kTroll = kNpcTypeDefs[std::size_t(NPCType::Troll)];
+static const FaunaEntry& kSwampThing = kNpcTypeDefs[std::size_t(NPCType::SwampThing)];
+static const FaunaEntry& kIceWraith = kNpcTypeDefs[std::size_t(NPCType::IceWraith)];
+static const FaunaEntry& kSandScorpion = kNpcTypeDefs[std::size_t(NPCType::SandScorpion)];
+static const FaunaEntry& kStoneGolem = kNpcTypeDefs[std::size_t(NPCType::StoneGolem)];
 
 // ── Per-table entry arrays (null-terminated) ─────────────────────────
 //
@@ -163,7 +143,7 @@ std::vector<FaunaPick> roll_fauna(const FaunaTable& table,
 //
 // Flat enumeration of every distinct creature, exactly once. The catalog
 // index IS the stable creature id baked into ECS `NPCKind.type` as
-// (0x100 | index) by the subworld spawn path. Order is append-only: never
+// by the one table's ordinal. Order is append-only: never
 // reorder (would silently re-key live entities); add new creatures at the end.
 static const FaunaEntry* const kCreatureCatalog[] = {
     &kRabbit, &kDeer, &kFox, &kWolf, &kBear, &kBoar, &kSnake, &kHawk,
@@ -184,19 +164,23 @@ const FaunaEntry* creature_def(std::string_view id) {
     return nullptr;
 }
 
+// A row's index IS its kind — it is a member of the one table, so the answer
+// is where it sits in that table. This used to be a linear search through a
+// second array, which is what having a second array costs.
 int creature_index(const FaunaEntry* entry) {
     if (!entry) return -1;
-    for (int i = 0; i < int(std::size(kCreatureCatalog)); ++i) {
-        if (kCreatureCatalog[i] == entry) return i;
-    }
-    return -1;
+    const std::size_t i = std::size_t(entry - &kNpcTypeDefs[0]);
+    return i < std::size_t(NPCType::Count) ? int(i) : -1;
 }
 
 const FaunaEntry* creature_def_from_kind(std::uint16_t kindType) {
-    if (kindType < std::uint16_t{0x100}) return nullptr; // humanoid NPCType, not a monster
-    const std::size_t idx = std::size_t(kindType & 0xFFu);
-    if (idx >= std::size(kCreatureCatalog)) return nullptr;
-    return kCreatureCatalog[idx];
+    if (!valid_npc_kind(kindType)) return nullptr;      // names no row at all
+    if (!is_creature_row(NPCType(kindType))) return nullptr; // a man, not a beast
+    // The kind IS the row. There is no index to mask and no second array to
+    // index into — that masking (`kindType & 0xFF` into the catalog) was the
+    // old encoding's last hiding place, and it silently answered with the
+    // WRONG creature the moment the catalog stopped being the id space.
+    return &kNpcTypeDefs[std::size_t(kindType)];
 }
 
 // ── The honest headcount (Session 16) ────────────────────────────────

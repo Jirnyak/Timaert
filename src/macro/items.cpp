@@ -237,10 +237,19 @@ constexpr LootProfile kLootProfiles[] = {
 // comment asking that the two be kept in sync. A comment is not a mechanism
 // (problems.md 18): the project has already lost two pairs kept that way. The
 // second table is gone, and what is left is checked by the compiler.
+//
+// The creature rows name their profile in their own `lootId` column and fall
+// back to their faction's default, which is why this list carries a nullptr
+// for each of them rather than a made-up name: one row, one answer, and the
+// column that already existed wins over a second list.
 constexpr const char* kNpcLootId[] = {
     "peasant", "woodcutter", "merchant", "caravan",
     "bandit", "guard", "witch", "sorceress",
     "miner", "quarryman", "claydigger",
+    // creatures — see npc.h `lootId` / `factionId`
+    nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+    nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+    nullptr, nullptr, nullptr,
 };
 
 // Every humanoid row names a profile, and every profile it names exists. A new
@@ -251,6 +260,10 @@ static_assert(std::size(kNpcLootId) == std::size_t(NPCType::Count),
 
 constexpr bool every_npc_loot_id_resolves() {
     for (const char* id : kNpcLootId) {
+        // nullptr is an ANSWER, not a gap: this row defers to its own column
+        // and its faction's default (the creature rows). What must not happen
+        // is a row naming a profile the registry does not have.
+        if (!id) continue;
         bool found = false;
         for (const LootProfile& p : kLootProfiles) {
             found = found || std::string_view(id) == std::string_view(p.id);
@@ -325,7 +338,11 @@ std::vector<ItemStack> roll_loot_profile(const char* lootId, int level, RngFn rn
 
 const char* npc_loot_id(int npcType) noexcept {
     if (npcType < 0 || npcType >= static_cast<int>(std::size(kNpcLootId))) return "";
-    return kNpcLootId[npcType];
+    // A row that names no profile of its own answers with the empty string, not
+    // with a null the caller has to remember to check. The creature rows are
+    // that case: they defer to their own column and their faction's default.
+    const char* id = kNpcLootId[npcType];
+    return id ? id : "";
 }
 
 int generate_loot_gold(int level, const char* factionId, RngFn rng) {

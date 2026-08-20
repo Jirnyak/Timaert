@@ -14,6 +14,7 @@
 #include "macro/features.h"
 #include "macro/army.h"
 #include "macro/behaviour.h"
+#include "macro/npc.h"
 #include "macro/sprite_rows.h"
 
 namespace sm {
@@ -35,23 +36,11 @@ enum class LandmarkKind : std::uint8_t {
 // a DEMON creature (3) as brothers — the spell friendly-fire check used the
 // raw index). One id space ends that class of bug. nullptr = factionless.
 
-struct FaunaEntry {
-    const char*       id;          // stable machine id ("wolf") — source of truth
-    const char*       label;       // display name ("Wolf")
-    std::uint16_t     weight;
-    const char*       factionId;   // registry id ("wildlife"), nullptr = none
-    AIBehaviour       ai;
-    CombatTemplate    combat;
-    std::uint8_t      baseLevel;
-    float             radius;
-    // This creature's picture — a row of THE sprite table
-    // (macro/sprite_rows.h). It carries the body plan the shader draws AND
-    // the tint, which used to be two columns here: the look of a goblin now
-    // sits in the same list as the look of a peasant.
-    SpriteId          sprite;
-    const char*       lootId = nullptr; // loot-profile override; null => faction default
-    std::uint16_t     xpReward = 0;     // per-creature XP base; 0 => generic level-scaled
-};
+// A creature row IS an npc row (owner, 2026-08-20: one system). The struct
+// that used to live here is `NpcTypeDef` in macro/npc.h, and every creature is
+// a member of the ONE table there — this alias survives only so the spawn
+// tables below read as what they are: lists of rows a place may roll.
+using FaunaEntry = NpcTypeDef;
 
 struct FaunaTable {
     const FaunaEntry* const* entries;

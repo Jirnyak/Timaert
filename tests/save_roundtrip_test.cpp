@@ -173,7 +173,7 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     // space (0x100 | catalog row) could not be written down at all — the record
     // was silently dropped by the validity gate on the way out.
     a.roster.push_back(sm::make_soldier(
-        std::uint16_t(0x100u | 0u), 3, 902u));
+        std::uint16_t(sm::NPCType::Wolf), 3, 902u));
     out.push_back(std::move(a));
 
     sm::MacroNpcRecord d{};
@@ -671,11 +671,11 @@ void run_roundtrip() {
         }
         // The beast came back a beast — not truncated to its low byte, not
         // dropped, not turned into whatever humanoid that byte would name.
-        if (a.roster[2].kind != std::uint16_t(0x100u | 0u)
+        if (a.roster[2].kind != std::uint16_t(sm::NPCType::Wolf)
             || a.roster[2].level != 3
             || a.roster[2].entityId != 902u
-            || sm::creature_def_from_kind(a.roster[2].kind) == nullptr) {
-            FAIL_BAIL("a monster member did not survive the save");
+            || !sm::is_monster_kind(a.roster[2].kind)) {
+            FAIL_BAIL("a beast member did not survive the save");
         }
     }
     if (loadedMacro[1].dead != 1 || loadedMacro[1].health.hp != 0.0f) {

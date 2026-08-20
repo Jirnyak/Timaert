@@ -282,13 +282,11 @@ void emplace_fauna_entity(entt::registry& reg, const FaunaEntry& f,
                           int npcLevel,
                           const BodyLoan& loan = BodyLoan::none()) {
     const float levelScale = 1.0f + float(std::max(0, npcLevel - 1)) * 0.15f;
-    // Synthetic NPCKind id: (0x100 | stable monster-catalog index). The high
-    // 0x100 bit marks a monster (vs a humanoid NPCType < Count); the low byte is
-    // the creature's catalog index, recoverable on the death / loot path via
-    // creature_def_from_kind(). Faction goes through verbatim.
+    // The kind IS the row's ordinal in the one body table — the `0x100 | index`
+    // encoding that used to mark "monster" died with the second table. Faction
+    // goes through verbatim.
     const int catIdx = creature_index(&f);
-    const std::uint16_t typeId =
-        std::uint16_t(0x100 | (catIdx < 0 ? 0 : catIdx));
+    const std::uint16_t typeId = std::uint16_t(catIdx < 0 ? 0 : catIdx);
 
     auto e = reg.create();
     reg.emplace<ecs::Position>(e, fx, fy, 0.0f);
@@ -356,9 +354,12 @@ entt::entity spawn_tracked_body(entt::registry& reg, entt::entity macro,
         return entt::null;
     }
     const auto& kind = reg.get<ecs::NPCKind>(macro);
-    // Guard on the WIDE type before narrowing, so a monster id (0x100 | idx)
-    // can never alias a humanoid row.
-    if (kind.type >= std::uint16_t(NPCType::Count)) return entt::null;
+    // A TRACKED body copies a macro entity's face and wounds down, and only a
+    // row with a face can be tracked — the sheet-bearing half of the birth is
+    // still humanoid-only until the two births merge. A kind that names no row
+    // at all is refused outright.
+    if (!valid_npc_kind(kind.type)) return entt::null;
+    if (is_creature_row(NPCType(kind.type))) return entt::null;
 
     const auto& health = reg.get<ecs::Health>(macro);
     const float fraction = health.maxHp > 0.0f
