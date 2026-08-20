@@ -259,6 +259,74 @@ void test_no_layer_no_chop() {
 
 } // namespace
 
+// THE SAME MINE, THROUGH THE OTHER DRIVER. There are two macro-AI drivers and
+// the game picks between them by WHERE THE PLAYER IS: the budgeted one runs
+// while he is in a subworld (main.cpp), the full one while he is on the map.
+// The budgeted one was assembling its own copy of the tick context and had
+// silently lost one pointer of the seventeen — the deposit layer — so every
+// miner, quarryman and clay-digger in the world stopped digging the moment the
+// player walked through a door, and resumed when he came out. The world must
+// live the same with him and without him (CANON.md S2), so the two drivers
+// have to agree about the same mine.
+void test_the_mine_runs_while_the_player_is_away() {
+    using namespace sm;
+    constexpr int kMap = 32;
+    GameState gs{};
+    gs.mapW = kMap;
+    gs.mapH = kMap;
+    Village vil{};
+    vil.id = 3;
+    vil.x = 10;
+    vil.y = 10;
+    gs.villages.push_back(vil);
+
+    DepositLayer deposits;
+    deposits.width = kMap;
+    deposits.height = kMap;
+    const std::uint32_t veinIdx = 10u * std::uint32_t(kMap) + 14u;
+    deposits.cells[std::size_t(DepositKind::Iron)][veinIdx] = 20;
+
+    ecs::World w;
+    auto& reg = w.reg;
+    const auto e = reg.create();
+    reg.emplace<ecs::Position>(e, 10.0f, 10.0f, 0.0f);
+    reg.emplace<ecs::VisualPos>(e, 10.0f, 10.0f, 0.0f);
+    reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Miner),
+                              std::uint16_t(faction_index("timaert")));
+    ecs::MacroNpcRuntime rt{};
+    rt.homeSettlementId = vil.id;
+    rt.homeIsVillage = 1;
+    rt.targetSettlementId = -1;
+    rt.targetX = 10.0f;
+    rt.targetY = 10.0f;
+    rt.state = std::uint8_t(NPCState::Idle);
+    rt.stateTimer = 0;
+    refresh_leader_travel_stats(
+        rt, make_character_sheet(NPCType::Miner, 3, leader_sheet_seed(13u)));
+    rt.sp = rt.maxSp;
+    reg.emplace<ecs::MacroNpcRuntime>(e, rt);
+    reg.emplace<ecs::MacroSpawnId>(e, 13u);
+    reg.emplace<ecs::NpcLevel>(e, std::int16_t(3));
+    reg.emplace<ecs::Health>(e, 30.0f, 30.0f);
+    reg.emplace<ecs::SquadRoster>(e);
+    reg.emplace<ecs::NpcInventory>(e);
+
+    MacroNpcAiRuntime art{};
+    reset_macro_npc_ai_runtime(art, 70u);
+    for (int i = 0; i < 400; ++i) {
+        tick_macro_npc_ai_budgeted(gs, w, nullptr, art, kAiTicks,
+                                   /*max_npc_ticks=*/64,
+                                   /*allowAutoBattle=*/true, nullptr, nullptr,
+                                   nullptr, nullptr, &deposits);
+    }
+
+    const int veinLeft =
+        deposits.cells[std::size_t(DepositKind::Iron)].at(veinIdx);
+    CHECK(20 - veinLeft > 0,
+          "the mine is worked while the player is underground, exactly as it "
+          "is worked while he is on the map");
+}
+
 void test_agent_memory_is_bounded_and_current() {
     AgentMemory m{};
     MemoryEntry e{};
@@ -476,6 +544,7 @@ int main() {
     test_the_farmer_works_the_field();
     test_farmer_without_terrain_conjures_nothing();
     test_the_miner_works_the_vein();
+    test_the_mine_runs_while_the_player_is_away();
     test_agent_memory_is_bounded_and_current();
     test_the_caravan_trades_on_its_memory();
     return sm::test::report("woodcutter_gather_test");

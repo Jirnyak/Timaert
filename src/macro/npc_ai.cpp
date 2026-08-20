@@ -1243,7 +1243,6 @@ void tick_macro_npc_ai(GameState& gs, ecs::World& w,
     ctx.features = features;
     ctx.terrain  = terrain;
     ctx.deposits = deposits;
-    ctx.deposits = deposits;
 
     for (auto e : view) {
         auto& p    = view.get<ecs::Position>(e);
@@ -1362,6 +1361,15 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     ctx.trees    = trees;
     ctx.features = features;
     ctx.terrain  = terrain;
+    // THE line this driver never had. Its twin above assigned it twice — the
+    // same paste that dropped it here — and the two drivers are picked by WHERE
+    // THE PLAYER IS (main.cpp: the budgeted one runs while he is underground).
+    // A gatherer whose row names a deposit fails closed without this pointer
+    // (find_home_deposit), so every miner, quarryman and clay-digger in the
+    // world stopped digging the moment the player stepped through a door and
+    // started again when he came out. The world is supposed to live the same
+    // with him and without him (CANON.md S2).
+    ctx.deposits = deposits;
 
     while (runtime.pendingSweeps > 0
            && result.npcsProcessed < max_npc_ticks) {
