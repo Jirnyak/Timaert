@@ -197,13 +197,14 @@ struct NpcCharacter {
     std::uint8_t  pad0, pad1, pad2;
 };
 
-// Sprite (atlas index + tint). `archetype` selects the procedural creature
-// body plan for the subworld 3D billboard pass (see shaders/creature_sprite.glsl
-// and sm::CreatureArchetype). 0xFF = "not a procedural creature": town
-// NPCs (paper-doll), spell projectiles and engine sprites keep the default and
-// are rendered by their own passes / not proceduralised. This is the seed of
-// the universal sprite resolver — a drawn atlas/image sprite will override the
-// procedural body later without an engine change.
+// Sprite (atlas index + tint). `spriteRow` is this body's row in THE sprite
+// table (macro/sprite_rows.h) held as a raw ordinal, because the ECS layer may
+// not include macro/ — the same reason the procedural archetype it replaced was
+// a bare byte. The row decides everything about the look: drawn art if the
+// artist drew this kind, a procedural body plan if he did not, and the renderer
+// asks the row rather than branching on what sort of thing this is. Row 0
+// (SpriteId::None) is the default and means "not drawn as a body at all" —
+// spell projectiles and engine sprites keep it and no body pass claims them.
 // `scale` is the body's physical half-width (the same number sub/body.h calls
 // the combat radius); `height` is how TALL it is drawn, in metres. Two numbers,
 // because a billboard has two dimensions and a tree has said so all along
@@ -214,7 +215,7 @@ struct NpcCharacter {
 // 0 = not stated: the draw path derives it the old way, so anything that is not
 // a body (a projectile card) is unaffected.
 struct Sprite { std::uint16_t atlasId; std::uint8_t r, g, b, a; float scale;
-                std::uint8_t archetype = 0xFF; float height = 0.0f; };
+                std::uint8_t spriteRow = 0; float height = 0.0f; };
 
 // Positional point-light emitter (graphics only). Any subworld entity carrying
 // one casts a point light: the 3D renderer gathers view<Position, LightEmitter,

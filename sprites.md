@@ -93,27 +93,62 @@ Landmarks were already in this shape before the track (`kLandmarkDraw` rows,
 guarded, with a documented glyph fallback and spire active/spent as two separate
 sprite rows), so they only changed vocabulary.
 
-**Stage 3 — PENDING.** `npc.frag` and `creature.frag` merge: bank slot if the
-row has art, procedural silhouette if it does not. The A7 (NPC) and A8
-(creature) passes collapse into one, two pipelines and two shadow pipelines
-become one and one. The humanoid/monster split disappears from the renderer
-because it was never a rendering distinction.
+**Stages 3 and 4 — SHIPPED, and in the opposite order to the one first
+planned.** The plan said "merge the shaders, then kill the composite". That was
+wrong, and the reconnaissance said so: `npc.frag` samples a SLOT and does not
+care what is in it, so the composite could be retired without the shader
+changing by a line. What had to change was who fills the slots.
 
-**Stage 4 — PENDING.** The composite dies: `character_paperdoll.{h,cpp}`,
-`paperdoll_atlas.*`, `doll_pool.glsl`, `assets/character/atlas.bin` + `atlas.png`,
-`character_paperdoll_test`. ~2.5k lines and the last dependency on the TS-era
-atlas leave the project. This lands only once drawn art (or the голыши system
-below) covers humanoids — retiring it earlier leaves people in the subworld as
-motionless cards facing one way.
+`assets/sprite_bank.{h,cpp}` fills them: every drawn body row decoded once at
+load into one array layer, one image, one sampler, one descriptor set. That is
+the whole class. What it replaced needed an LRU, a staging ring sliced per
+frame in flight, a per-frame clock, a bijective frame key, a fallback to a
+canonical pose for a starved body, and a 256-seed quantisation — all of it
+machinery for a working set of thousands, and all of it gone with the set:
 
-## Slot size — open, owner's call
+| | paper-doll pool | sprite bank |
+|---|---|---|
+| slots in play | up to 8192 | **5** (one per drawn body) |
+| VRAM | 75.5 MB | 1.3 MB |
+| uploads | per frame, staged, raced once | once, at load |
+| cold start | real (a walking crowd missed) | none — complete at boot |
 
-The bank packs slots into array layers because MoltenVK caps
-`maxImageArrayLayers` at 2048. Today: 48×48 frames, 2×2 per 96² layer, 8192
-slots ≈ 75.5 MB. At 128×128 the same 8192 slots cost ≈ 536 MB — which is why the
-size question is *bound to* the per-kind collapse above, not free on its own.
-Drawn art currently exists in two sizes (128² for peasant/witch/city/corovan/
-male/female, 256² for the newer set) and one size must win.
+Deleted: `character_paperdoll.{h,cpp}`, `paperdoll_atlas.{h,cpp}`,
+`character_paperdoll_test`, `assets/character/atlas.bin` + `atlas.png` — the last
+dependency on the TS-era atlas — plus the renderer's `descBySeed_` cache and its
+facing helper.
+
+The pass split changed with it, and this is the part that matters: it used to
+ask *what sort of thing is this* (`archetype == 0xFF` ⇒ paper-doll pass), and
+now it asks *what does this row have* — drawn art goes to the banked pass, a
+body plan to the procedural one, neither to nobody. `ecs::Sprite::archetype`
+became `ecs::Sprite::spriteRow` (a raw ordinal, because ECS may not include
+macro/), so a body carries its row and the renderer reads the table like
+everyone else.
+
+The shader merge that stage 3 was *supposed* to be is now the small cleanup it
+should always have been, and is deliberately NOT done yet: `npc.frag` and
+`creature.frag` still differ in one line of intent (sample a slot vs. evaluate a
+silhouette). Merging buys two pipelines and two shadow pipelines back.
+
+Cost, accepted knowingly by the owner: a human in the subworld is one static
+picture per kind, camera-facing — the same terms every procedural monster has
+always had. Walk cycles and facings return with the artist's sheets.
+
+**Scar, paid on the first frame of the cutover:** a PNG arrives head-first
+(row 0 = the top), the bank stores the world convention (v = 0 at the FEET), and
+the pool this replaced flipped rows at upload. The bank did not, and the entire
+town stood on its head. It cost one capture to see and one loop to fix — which
+is the argument for looking at a frame rather than trusting a green build.
+
+## Slot size — settled at 256²
+
+The size question was bound to the per-kind collapse, not free on its own: at
+the old demand, 128² slots would have cost ~536 MB. With a picture per kind the
+whole question evaporates — five slots at the artist's authored 256² cost 1.3 MB,
+so art is stored at the resolution it was drawn and nothing is rescaled into
+blur. The bank refuses a sheet of any other size, loudly, rather than
+guessing.
 
 ## The future: NPCs are голыши, not paper dolls
 

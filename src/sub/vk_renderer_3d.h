@@ -15,7 +15,7 @@
 
 #include "core/math.h"
 
-#include "assets/paperdoll_atlas.h"
+#include "assets/sprite_bank.h"
 #include "gpu/bb_instance.h"
 #include "gpu/vk_buffer.h"
 #include "gpu/vk_pipeline.h"
@@ -267,14 +267,13 @@ private:
     // the per-NPC hash-map lookup was paid thousands of times a frame in a
     // city (the `rec` column). Pointers into the atlas's node-based cache
     // are stable for the atlas's lifetime; cleared in destroy().
-    mutable const character::CharacterDescriptor* descBySeed_[257] = {};
 
     // ── A7: NPCs ──
     gpu::VulkanPipeline npcPipe_{};
     gpu::VulkanBuffer   npcInstBuf_{};
     std::uint32_t       npcCount_ = 0;
     gpu::VulkanPipeline shadowNpcPipe_{};
-    character::PaperdollAtlas paperdoll_{};
+    SpriteBank bank_{};
 
     // ── A8: Creatures (procedural fauna billboards; monsters ≠ NPCs) ──
     // Any entity with a Sprite whose archetype != 0xFF is drawn here as a

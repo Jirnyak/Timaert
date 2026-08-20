@@ -1599,7 +1599,8 @@ void SubworldEngine::tick_damage_fx() {
         // archetype 0xFF) is flesh ⇒ blood.
         FxKind kind = FxKind::Blood;
         if (const auto* spr = reg.try_get<ecs::Sprite>(e)) {
-            const auto arch = static_cast<CreatureArchetype>(spr->archetype);
+            const auto arch = static_cast<CreatureArchetype>(
+                sprite_row(SpriteId(spr->spriteRow)).archetype);
             if (arch == CreatureArchetype::Undead
                 || arch == CreatureArchetype::Hulk) {
                 kind = FxKind::Dust;
@@ -1917,7 +1918,7 @@ bool SubworldEngine::spawn_npc_body(const char* npcTypeId,
         const std::uint8_t cg = std::uint8_t((look.tint >>  8) & 0xFFu);
         const std::uint8_t cb = std::uint8_t( look.tint        & 0xFFu);
         reg.emplace<ecs::Sprite>(e, typeId, cr, cg, cb, std::uint8_t(255),
-                                 cd->radius, look.archetype,
+                                 cd->radius, std::uint8_t(cd->sprite),
                                  body_height_m(*cd));
 
         char msg[160]{};

@@ -21,7 +21,7 @@
 // binary; this harness doesn't link that TU, so it hosts its own.
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
-#include "assets/paperdoll_atlas.h"
+#include "assets/sprite_bank.h"
 
 #include "core/math.h"
 #include "sub/lighting.h" // GpuLightBuffer — exact std430 layout for set0/binding1
@@ -135,10 +135,12 @@ namespace
                           // harness scene keeps its boxes axis-aligned)
     };
 
-    // Distinct paper-doll identities preloaded into the sprite pool; instances
-    // reference them round-robin (a fresh pool assigns slots 0..N-1 in
-    // slot_for_now call order, so doll ordinal == pool slot here).
-    constexpr std::uint32_t kNpcDollCount = 8;
+    // Distinct drawn bodies resident in the sprite bank; instances reference
+    // them round-robin. Derived from THE sprite table, not chosen: the bank
+    // holds one slot per drawn body row (assets/sprite_bank.h), so the harness
+    // exercises exactly the set the game ships and can never index an empty
+    // layer if the artist adds or removes a picture.
+    constexpr std::uint32_t kNpcDollCount = sm::sprite_bank_slot_count();
 
     struct BbPush
     {
@@ -1183,12 +1185,12 @@ int main(int, char**)
     // NPC paper-doll billboard pipeline (instanced, receives shadow) + its
     // depth-only shadow caster (reuses the shared npc sprite coverage).
     gpu::VulkanPipeline npcPipeline, npcShadowPipeline;
-    // The REAL paper-doll pool (assets/character/atlas.* composed into the
-    // sprite pool): npc.frag samples it at set 1 in the lit pass, shadow_npc
-    // at set 0 in the depth-only pass. Mirroring the shipping pool keeps this
-    // harness honest about the npc shader contract — a stub sprite source
-    // silently went stale once before and turned the whole smoke red.
-    sm::character::PaperdollAtlas npcDolls;
+    // The REAL sprite bank (assets/sprites/*.png resident as array layers):
+    // npc.frag samples it at set 1 in the lit pass, shadow_npc at set 0 in the
+    // depth-only pass. Mirroring the shipping bank keeps this harness honest
+    // about the npc shader contract — a stub sprite source silently went stale
+    // once before and turned the whole smoke red.
+    sm::SpriteBank npcDolls;
     {
         char* base = SDL_GetBasePath();
         char vp[1024], fp[1024], sv[1024], sf[1024];
@@ -1202,22 +1204,12 @@ int main(int, char**)
                       base ? base : "./");
         if (base) SDL_free(base);
 
-        bool dollsOk = npcDolls.init(dev);
-        if (dollsOk) {
-            // Preload the identities the instances reference: a fresh pool
-            // assigns slots 0..kNpcDollCount-1 in call order, matching the
-            // round-robin slot baked into the instance buffer above.
-            const sm::character::AnimationState idle{};
-            for (std::uint32_t k = 0; k < kNpcDollCount && dollsOk; ++k) {
-                const std::uint32_t slot = npcDolls.slot_for_now(
-                    dev,
-                    npcDolls.descriptor_for_seed(0x9E3779B9u + k * 0x85EBCA6Bu),
-                    idle);
-                dollsOk = (slot == k);
-            }
-        }
+        // The bank fills itself completely at init — there is nothing to
+        // preload and no cold start to arrange, which is most of what the old
+        // pool's harness block existed to do.
+        const bool dollsOk = npcDolls.init(dev) && npcDolls.ready();
         if (!dollsOk) {
-            std::fprintf(stderr, "[gpu_smoke3d] paperdoll atlas FAILED\n");
+            std::fprintf(stderr, "[gpu_smoke3d] sprite bank FAILED\n");
             structShadowPipeline.destroy(dev);
             structPipeline.destroy(dev);
             waterPipeline.destroy(dev);

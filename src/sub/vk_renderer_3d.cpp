@@ -188,18 +188,6 @@ static_assert(Renderer3DVk::kMaxParticleInstances
                   == static_cast<std::uint32_t>(ParticleSystem::kMaxParticles),
               "renderer particle ceiling must match the sim pool size");
 
-character::Direction direction_from_velocity(float vx, float vy) {
-    if (std::fabs(vx) > std::fabs(vy)) {
-        return vx < 0.0f ? character::Direction::Left
-                         : character::Direction::Right;
-    }
-    if (std::fabs(vy) > 0.001f) {
-        return vy > 0.0f ? character::Direction::Back
-                         : character::Direction::Front;
-    }
-    return character::Direction::Front;
-}
-
 vec3 transform_point(const mat4& m, vec3 p) {
     const float x = m.m[0] * p.x + m.m[4] * p.y + m.m[8]  * p.z + m.m[12];
     const float y = m.m[1] * p.x + m.m[5] * p.y + m.m[9]  * p.z + m.m[13];
@@ -362,16 +350,14 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)) {
         std::fprintf(stderr, "[Renderer3DVk] particle buffer FAILED\n");
     }
-    // A4: Paperdoll NPC pool (instanced billboards + UI portraits).
-    // The pool texture (SpriteArray) backs the pipeline layout below.
-    // The pool's staging-ring slicing must match OUR frame ring exactly —
-    // a deeper swapchain ring with an unchanged pool would reopen the
-    // staging WAR race (the 2026-08-10 flickering villagers).
-    static_assert(character::PaperdollAtlas::kPoolFramesInFlight
-                      == kFramesInFlight,
-                  "paperdoll pool staging slices must match frames in flight");
-    if (!paperdoll_.init(dev)) {
-        std::fprintf(stderr, "[Renderer3DVk] paperdoll init FAILED\n");
+    // A4: the drawn-body bank (assets/sprite_bank.h) — one image, one sampler,
+    // one descriptor set, filled completely before the first frame. The pool it
+    // replaced needed its staging ring sliced to match OUR frame ring exactly,
+    // or the CPU memcpy raced the previous frame's copy out of the same staging
+    // slot (the 2026-08-10 flickering villagers). Nothing is uploaded per frame
+    // any more, so that whole class of race has no surface left to happen on.
+    if (!bank_.init(dev)) {
+        std::fprintf(stderr, "[Renderer3DVk] sprite bank init FAILED\n");
     }
 
     // The light field texture, zeroed (no light until the first rebuild —
@@ -779,7 +765,7 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
     spv_path(fpath, sizeof fpath, "npc.frag");
     {
         VkDescriptorSetLayout npcSets[2] = {
-            shadowSetLayout_, paperdoll_.set_layout()
+            shadowSetLayout_, bank_.set_layout()
         };
         if (!npcPipe_.create_mesh(dev, mainPass, vpath, fpath,
                                    sizeof(BbPush), sizeof(gpu::BbInstance),
@@ -871,7 +857,7 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
                                             gpu::kBbInstanceAttrs,
                                             gpu::kBbInstanceAttrCount,
                                             /*instanced=*/true,
-                                            paperdoll_.set_layout())) {
+                                            bank_.set_layout())) {
             std::fprintf(stderr, "[Renderer3DVk] shadow npc pipeline FAILED\n");
         }
     }
@@ -938,8 +924,7 @@ void Renderer3DVk::destroy(const gpu::VulkanDevice& dev) {
     particlePipe_.destroy(dev);
     particleInstBuf_.destroy(dev);
     particleCount_ = 0;
-    paperdoll_.destroy(dev);
-    for (auto& p : descBySeed_) p = nullptr; // pointed into paperdoll_'s cache
+    bank_.destroy(dev);
     shadow_.destroy(dev);
     shadowFar_.destroy(dev);
     heightTex_.destroy(dev);
@@ -1009,83 +994,28 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
                             lightFieldFrame_ % std::uint32_t(kFramesInFlight));
     }
 
+    // ── A7: bodies with DRAWN art. The row decides membership, not the kind of
+    //    thing: whatever the artist has drawn is banked and sampled here, and
+    //    whatever he has not is drawn by the procedural pass below. No cache,
+    //    no clock, no per-frame uploads — the bank is complete at boot.
     npcCount_ = 0;
-    if (ecs && uploaded_) {
+    if (ecs && uploaded_ && bank_.ready()) {
         // Reused scratch: a fresh 512 KiB vector per frame was a measurable
         // slice of the city's `rec` column.
         static thread_local std::vector<gpu::BbInstance> npcs;
         npcs.clear();
         npcs.reserve(kMaxEntityInstances);
-        const auto* const* descBySeed = descBySeed_;
-        const float tMs = elapsed * 1000.0f;
-        // Advance the sprite-pool LRU clock; every slot_for below may record
-        // a slot upload on `cmd`, which is legal only before the render pass.
-        paperdoll_.begin_frame();
         // Exclude the player body: first-person, the camera sits at it, so a
-        // possessed humanoid (Inc 5c — a foreign body carrying PlayerTag now
-        // also has an NpcCharacter) must not be drawn over the lens. The hero
-        // husk carries no NpcCharacter and never matched anyway.
-        auto view = ecs->reg.view<ecs::Position, ecs::NpcCharacter>(
+        // possessed body must not be drawn over the lens. The hero husk carries
+        // no Sprite and never matched anyway.
+        auto view = ecs->reg.view<ecs::Position, ecs::Sprite>(
             entt::exclude<ecs::PlayerTag>);
         for (auto e : view) {
             if (npcs.size() >= kMaxEntityInstances) break;
             const auto& pos = view.get<ecs::Position>(e);
-            const auto& ch = view.get<ecs::NpcCharacter>(e);
-            float vx = 0.0f;
-            float vy = 0.0f;
-            if (const ecs::SubworldAi* ai = ecs->reg.try_get<ecs::SubworldAi>(e)) {
-                vx = ai->vx;
-                vy = ai->vy;
-            }
-            const bool moving = vx * vx + vy * vy > 0.0001f;
-            // Per-body animation phase, rolled from the face it already wears.
-            // Every walker used to animate off the SAME global clock, so a
-            // whole town advanced its frame key on the SAME tick — a burst of
-            // hundreds of pool misses landing in one frame, which is what
-            // starved the staging slice and blinked the overflow bodies out
-            // (2026-08-10). The phase spreads those misses into a trickle,
-            // and a marching crowd stops walking in lockstep for free.
-            const float phaseMs = float(ch.visualSeed & 0x7FFu);
-            const character::AnimationState anim =
-                character::make_animation_state(
-                    moving ? character::AnimationType::Walk
-                           : character::AnimationType::Idle,
-                    direction_from_velocity(vx, vy), tMs + phaseMs);
-
-            // Quantize the visual seed into the 256-seed pool for visual diversity
-            const std::uint32_t quantizedSeed = (ch.visualSeed % 256) + 1;
-
-            if (!descBySeed_[quantizedSeed]) {
-                descBySeed_[quantizedSeed] =
-                    &paperdoll_.descriptor_for_seed(quantizedSeed);
-            }
-            const auto& desc = *descBySeed[quantizedSeed];
-            // The pool cache key, packed BIJECTIVELY from exactly the inputs
-            // the composited pixels derive from — (quantized seed, animation,
-            // direction, frame) — instead of hashing the 70-byte descriptor
-            // per NPC per frame. seed ≤ 256 (9 bits), the rest are bytes:
-            // 33 bits total, collision-free by construction.
-            const std::uint64_t frameKey =
-                (std::uint64_t(quantizedSeed) << 24)
-                | (std::uint64_t(anim.animation) << 16)
-                | (std::uint64_t(anim.direction) << 8)
-                | std::uint64_t(anim.frame);
-            // Resolve the composited frame to its pool slot (composes +
-            // records the upload on a miss). If the pool cannot take THIS
-            // frame right now (staging slice full), fall back to the body's
-            // canonical frame (Idle/Front/0 — resident after its first use):
-            // a starved body shows a one-frame-stale pose instead of
-            // VANISHING for a frame. A body may only disappear if even the
-            // canonical frame cannot be served, which a 256-descriptor pool
-            // cannot make happen in practice.
-            std::uint32_t slot =
-                paperdoll_.slot_for_keyed(cmd, frameKey, desc, anim);
-            if (slot == character::PaperdollAtlas::kNoSlot) {
-                const character::AnimationState canonical{};
-                slot = paperdoll_.slot_for_keyed(
-                    cmd, std::uint64_t(quantizedSeed) << 24, desc, canonical);
-            }
-            if (slot == character::PaperdollAtlas::kNoSlot) continue;
+            const auto& spr = view.get<ecs::Sprite>(e);
+            const std::uint32_t slot = bank_.slot_for(SpriteId(spr.spriteRow));
+            if (slot == SpriteBank::kNoSlot) continue; // no art ⇒ procedural
 
             float wx = 0.0f, wz = 0.0f;
             tile_to_world(pos.x, pos.y, wx, wz);
@@ -1098,11 +1028,10 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
             // literal 2.0f for every humanoid alive — a lord, a child-sized
             // peasant and a possessed goblin all exactly two metres — while the
             // physics beside it read a real width out of the table. A body with
-            // no sprite record (a bare face in a fixture) keeps the old
-            // constant, which is the only place it survives.
-            const auto* spr = ecs->reg.try_get<ecs::Sprite>(e);
-            const float size = (spr && spr->height > 0.0f) ? spr->height : 2.0f;
-            inst.halfW = size * 0.5f; // the doll quad is square
+            // no stated height keeps the old constant, which is the only place
+            // it survives.
+            const float size = spr.height > 0.0f ? spr.height : 2.0f;
+            inst.halfW = size * 0.5f; // a drawn body sheet is square
             inst.height = size;
             inst.kind = slot;
             inst.seed = 0u;
@@ -1123,10 +1052,11 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
         }
     }
 
-    // ── A8: Creatures (procedural fauna billboards) — same per-frame upload
-    //    path as NPCs. Any Sprite with archetype != 0xFF is a procedural
-    //    creature (fauna/monsters); 0xFF (town paper-doll NPCs, spell
-    //    projectiles, engine sprites) is skipped and drawn by its own pass. ──
+    // ── A8: bodies with NO drawn art — the procedural floor of the sprite law
+    //    (sprites.md). Membership is the complement of the pass above and asks
+    //    the same question of the same table: a row the artist has not drawn is
+    //    a silhouette from its body plan. A row that is not a body at all
+    //    (SpriteId::None — spell projectiles, engine sprites) is in neither. ──
     creatureCount_ = 0;
     if (ecs && uploaded_) {
         static thread_local std::vector<gpu::BbInstance> creatures;
@@ -1140,7 +1070,10 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
         for (auto e : cview) {
             if (creatures.size() >= kMaxEntityInstances) break;
             const auto& spr = cview.get<ecs::Sprite>(e);
-            if (spr.archetype == 0xFF) continue; // not a procedural creature
+            const SpriteDef& look = sprite_row(SpriteId(spr.spriteRow));
+            if (look.archetype == kNoBody) continue;   // not a body at all
+            if (bank_.slot_for(SpriteId(spr.spriteRow)) != SpriteBank::kNoSlot)
+                continue;                              // drawn — the pass above
             const auto& pos = cview.get<ecs::Position>(e);
             float wx = 0.0f, wz = 0.0f;
             tile_to_world(pos.x, pos.y, wx, wz);
@@ -1154,10 +1087,10 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
             // live as twin GLSL tables in the lit and shadow vertex stages.
             // (size·w)·0.5 stays bit-exact with the shader's old size·w: a
             // halving and the vert's ·2.0 are exact fp32 inverses.
-            const auto asp = creature_arch_aspect(spr.archetype);
+            const auto asp = creature_arch_aspect(look.archetype);
             ci.halfW = size * asp.w * 0.5f;
             ci.height = size * asp.h;
-            ci.kind = spr.archetype;
+            ci.kind = look.archetype;
             // Use entity id for stable per-instance variation — iteration
             // order in EnTT views is not guaranteed stable across frames.
             const std::uint32_t eid = entt::to_integral(e);
@@ -2572,7 +2505,7 @@ void Renderer3DVk::record_shadow(VkCommandBuffer cmd, const Camera& cam,
         sbb.lightRight[2] = lightRight.z;
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           shadowNpcPipe_.pipeline);
-        const VkDescriptorSet dolls = paperdoll_.descriptor_set();
+        const VkDescriptorSet dolls = bank_.descriptor_set();
         if (dolls != VK_NULL_HANDLE)
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                     shadowNpcPipe_.layout, 0, 1, &dolls,
@@ -2927,7 +2860,7 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                     npcPipe_.layout, 0, 1, &litSet,
                                     0, nullptr);
-        const VkDescriptorSet dolls = paperdoll_.descriptor_set();
+        const VkDescriptorSet dolls = bank_.descriptor_set();
         if (dolls != VK_NULL_HANDLE)
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                     npcPipe_.layout, 1, 1, &dolls,

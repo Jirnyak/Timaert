@@ -266,11 +266,10 @@ if(NOT MSVC)
 endif()
 
 # Phase 5 subworld 3D foundation harness (depth + mesh pipeline + camera).
-# Carries the real PaperdollAtlas (npc.frag set1 contract) — hence the two
-# assets TUs and the stb include dir.
+# Carries the real SpriteBank (npc.frag set1 contract) — hence the assets TU
+# and the stb include dir.
 add_executable(gpu_smoke3d tests/gpu_smoke3d.cpp ${TIMAERT_GPU_SOURCES}
-    src/assets/paperdoll_atlas.cpp
-    src/assets/character_paperdoll.cpp)
+    src/assets/sprite_bank.cpp)
 add_dependencies(gpu_smoke3d timaert_shaders)
 set_target_properties(gpu_smoke3d PROPERTIES
     CXX_STANDARD 23
@@ -521,10 +520,6 @@ timaert_test(pathfinding_parity_test
         src/macro/pathfinding.cpp
         src/macro/zones.cpp
     LINK_SDL)
-
-timaert_test(character_paperdoll_test
-    SOURCES
-        src/assets/character_paperdoll.cpp)
 
 timaert_test(road_river_generation_test
     SOURCES

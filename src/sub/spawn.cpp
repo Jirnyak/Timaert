@@ -197,7 +197,7 @@ entt::entity emplace_body(entt::registry& reg, const HumanoidBody& body,
     // without a second field or a second roll.
     reg.emplace<ecs::Sprite>(e, std::uint16_t(body.type),
         std::uint8_t(255), std::uint8_t(255), std::uint8_t(255),
-        std::uint8_t(255), pc.bodyRadius, std::uint8_t(0xFF),
+        std::uint8_t(255), pc.bodyRadius, std::uint8_t(def.sprite),
         body_height_m(def) * body_shape_height_scale(face.bodyShape));
     maybe_emplace_carried_light(reg, e, def);
     return e;
@@ -319,7 +319,7 @@ void emplace_fauna_entity(entt::registry& reg, const FaunaEntry& f,
     const std::uint8_t cg = std::uint8_t((look.tint >>  8) & 0xFFu);
     const std::uint8_t cb = std::uint8_t( look.tint        & 0xFFu);
     reg.emplace<ecs::Sprite>(e, typeId, cr, cg, cb, std::uint8_t(255), f.radius,
-                             look.archetype, body_height_m(f));
+                             std::uint8_t(f.sprite), body_height_m(f));
     // The receipt, stamped by the birth (the spawn_derived_body doctrine): a
     // wild head is one unit of its cell's fauna_count made visible, and its
     // death thins the cell for good. No loan = a creature from thin air

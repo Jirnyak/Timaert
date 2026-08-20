@@ -4517,9 +4517,12 @@ void draw_debug_panels(App& app) {
                     ImGui::TableNextColumn();
                     ImGui::Text("%.1f, %.1f", double(pos.x), double(pos.y));
                     ImGui::TableNextColumn();
+                    // The body's row in THE sprite table, by name — far more
+                    // use in a debug list than the ordinal it used to print.
                     if (const auto* sp = reg.try_get<sm::ecs::Sprite>(e);
-                        sp && sp->archetype != 0xFF)
-                        ImGui::Text("%u", unsigned(sp->archetype));
+                        sp && sp->spriteRow != 0)
+                        ImGui::TextUnformatted(
+                            sm::sprite_row(sm::SpriteId(sp->spriteRow)).name);
                     else ImGui::TextUnformatted("-");
                     ImGui::TableNextColumn();
                     char tags[8]; int ti = 0;
@@ -9949,15 +9952,24 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             break;
         }
         case SmokeAction::CaptureFrame: {
-            // Opt-in mutations for a bare MACRO capture (modal clear +
-            // TIMAERT_SMOKE_HOUR): STAGE them one frame ahead — the smoke
-            // script runs after this frame was recorded, so a same-tick
+            // Opt-in mutations for a capture: STAGE them one frame ahead — the
+            // smoke script runs after this frame was recorded, so a same-tick
             // capture would photograph the pre-mutation image (the
-            // light_probe_capture stale-frame rule). The subworld_enter path
-            // applies the hour itself, so this only fires on the macro map.
+            // light_probe_capture stale-frame rule).
+            //
+            // Clearing the panels applies in BOTH worlds. It used to be macro-
+            // only, which meant a subworld capture could not be taken cleanly
+            // at all: an overlay left open by the boot story (the codex, five
+            // entries unlocked) covered the middle of every frame, and the rule
+            // that a visual claim needs a viewed frame had nowhere to stand.
+            // The rest below is macro-only on purpose — the subworld_enter path
+            // applies the hour itself, and zoom/macropos mean nothing down
+            // there.
+            if (app.worldLoaded && !app.smoke.captureStaged) {
+                smoke_clear_modal_overlays(app);
+            }
             if (!app.subworld.active() && app.worldLoaded
                 && !app.smoke.captureStaged) {
-                smoke_clear_modal_overlays(app);
                 // Same macro relocate the subworld_enter path honours — lets a
                 // map capture frame any region (e.g. open sea for the glint).
                 if (const char* mp = std::getenv("TIMAERT_SMOKE_MACROPOS")) {
@@ -9997,6 +10009,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 }
                 app.smoke.captureStaged = true;
                 break;  // no cursor advance: capture arms NEXT frame
+            }
+            if (app.worldLoaded && !app.smoke.captureStaged) {
+                app.smoke.captureStaged = true;
+                break;  // subworld: the panel clear also needs its own frame
             }
             std::fprintf(stderr, "[smoke] action=capture_frame\n");
             std::fflush(stderr);
