@@ -13,7 +13,7 @@
 #include "gpu/vk_sprite_array.h"
 #include "gpu/vk_texture.h"
 
-// Paper-doll pool — npc.frag samples one composited sampler2DArray layer at
+// Sprite bank — body.frag samples one drawn sampler2DArray layer at
 // set 1; the smoke mirrors the SHIPPING pool (assets/character/atlas.* through
 // PaperdollAtlas) instead of a stub so the harness enforces the real npc
 // shader contract.
@@ -424,7 +424,7 @@ int main(int, char**)
     // byte-identical to the pre-point-light harness):
     //   GPU_SMOKE_LIGHT=1  inject ONE warm point light at the NPC/tree cluster
     //                      centre so tree/NPC billboards (billboard.frag /
-    //                      npc.frag, point_lights_flat) glow with it.
+    //                      body.frag, point_lights_flat) glow with it.
     //   GPU_SMOKE_NIGHT=1  pin time-of-day to deep night so the ONLY warm light
     //                      in frame is the point light — unmistakable proof.
     //   GPU_SMOKE_SHOT=<p> after GPU_SMOKE_SHOT_FRAME frames (default 90), copy
@@ -450,7 +450,7 @@ int main(int, char**)
     //   GPU_SMOKE_NPC_CLOSE=1  stand the camera among the paper-doll crowd
     //                      instead of orbiting the whole island. At the island
     //                      framing a body is a handful of pixels, so a change to
-    //                      npc.frag (lighting) or to the body's DRAWN HEIGHT is
+    //                      body.frag (lighting) or to the body's DRAWN HEIGHT is
     //                      invisible in a diff of the wide shot — the frame that
     //                      is supposed to prove it proves nothing. Combine with
     //                      GPU_SMOKE_NIGHT / GPU_SMOKE_LIGHT for the before/after
@@ -802,20 +802,37 @@ int main(int, char**)
             int j = clampi(static_cast<int>((wz + S) / cell), 0, N);
             float y = heightAt(i, j);
             if (y < 0.18f) continue;
-            // The doll quad is square: halfW = height/2, like the shipping
-            // prepare_frame fill.
+            // `kind` is packed the shipping way (gpu/bb_instance.h), and every
+            // fourth body of the cluster has NO drawn art. The close framing
+            // exists to prove BODY rendering, so both branches of body.frag
+            // must stand in it side by side: a merge that silently drew only
+            // the drawn half would photograph exactly as green as a correct one.
+            const bool drawn = (k % 4) != 0;
             npcs.push_back({wx, y, wz, 0.06f, 0.12f,
-                            static_cast<std::uint32_t>(k) % kNpcDollCount,
-                            0u, 0xFFFFFFFFu});
+                            gpu::bb_body_kind(
+                                drawn ? static_cast<std::uint32_t>(k)
+                                            % kNpcDollCount
+                                      : gpu::kBbNoSlot,
+                                static_cast<std::uint32_t>(k) % 7u),
+                            gpu::bb_seed_bits(float(k) * 0.61f), 0xFFFFFFFFu});
         }
         for (int k = 0; k < 30; ++k) { // scattered wanderers
             int i = 4 + static_cast<int>(rnd() * (N - 8));
             int j = 4 + static_cast<int>(rnd() * (N - 8));
             float y = heightAt(i, j);
             if (y < 0.20f || y > 0.85f) continue;
+            // Every third wanderer has NO drawn art, so the same buffer and
+            // the same pipeline carry both branches of the sprite law through
+            // the harness — a merge that only ever drew one of them would look
+            // exactly as green as a correct one.
+            const bool drawn = (k % 3) != 0;
             npcs.push_back({-S + i * cell, y, -S + j * cell, 0.055f, 0.11f,
-                            static_cast<std::uint32_t>(k + 3) % kNpcDollCount,
-                            0u, 0xFFFFFFFFu});
+                            gpu::bb_body_kind(
+                                drawn ? static_cast<std::uint32_t>(k + 3)
+                                            % kNpcDollCount
+                                      : gpu::kBbNoSlot,
+                                static_cast<std::uint32_t>(k) % 7u),
+                            gpu::bb_seed_bits(float(k) * 0.37f), 0xFFFFFFFFu});
         }
     }
     const std::uint32_t npcCount = static_cast<std::uint32_t>(npcs.size());
@@ -1186,7 +1203,7 @@ int main(int, char**)
     // depth-only shadow caster (reuses the shared npc sprite coverage).
     gpu::VulkanPipeline npcPipeline, npcShadowPipeline;
     // The REAL sprite bank (assets/sprites/*.png resident as array layers):
-    // npc.frag samples it at set 1 in the lit pass, shadow_npc at set 0 in the
+    // body.frag samples it at set 1 in the lit pass, shadow_body at set 0 in the
     // depth-only pass. Mirroring the shipping bank keeps this harness honest
     // about the npc shader contract — a stub sprite source silently went stale
     // once before and turned the whole smoke red.
@@ -1196,11 +1213,11 @@ int main(int, char**)
         char vp[1024], fp[1024], sv[1024], sf[1024];
         std::snprintf(vp, sizeof vp, "%sshaders/billboard.vert.spv",
                       base ? base : "./");
-        std::snprintf(fp, sizeof fp, "%sshaders/npc.frag.spv",
+        std::snprintf(fp, sizeof fp, "%sshaders/body.frag.spv",
                       base ? base : "./");
         std::snprintf(sv, sizeof sv, "%sshaders/shadow_bb.vert.spv",
                       base ? base : "./");
-        std::snprintf(sf, sizeof sf, "%sshaders/shadow_npc.frag.spv",
+        std::snprintf(sf, sizeof sf, "%sshaders/shadow_body.frag.spv",
                       base ? base : "./");
         if (base) SDL_free(base);
 
@@ -1676,7 +1693,7 @@ int main(int, char**)
                     snp.lightRight[2] = 1.0f; // world z: perp. to the sun (xy)
                     vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                       npcShadowPipeline.pipeline);
-                    // shadow_npc.frag samples the paper-doll atlas at set 0
+                    // shadow_body.frag samples the sprite bank at set 0
                     // (the shadow pass has no shadow-map sampler of its own).
                     const VkDescriptorSet sdolls = npcDolls.descriptor_set();
                     vkCmdBindDescriptorSets(c, VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -1884,7 +1901,7 @@ int main(int, char**)
                 vkCmdBindDescriptorSets(c, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                         npcPipeline.layout, 0, 1, &shadowSet, 0,
                                         nullptr);
-                // npc.frag samples the paper-doll atlas at set 1.
+                // body.frag samples the sprite bank at set 1.
                 const VkDescriptorSet ndolls = npcDolls.descriptor_set();
                 vkCmdBindDescriptorSets(c, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                         npcPipeline.layout, 1, 1, &ndolls, 0,

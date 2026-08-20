@@ -232,7 +232,7 @@ set(_timaert_shader_incs
     ${CMAKE_SOURCE_DIR}/shaders/shadow_common.glsl
     ${CMAKE_SOURCE_DIR}/shaders/lighting.glsl
     ${CMAKE_SOURCE_DIR}/shaders/clouds.glsl)
-foreach(_sh fullscreen.vert macro.frag mesh.vert mesh.frag billboard.vert tree.frag sky.frag shadow_mesh.vert shadow_mesh.frag shadow_bb.vert shadow_tree.frag water.vert water.frag struct.vert struct.frag struct_cyl.vert shadow_cyl.vert shadow_struct.vert shadow_struct.frag npc.frag shadow_npc.frag creature.frag shadow_creature.frag particle.vert particle.frag precip.frag)
+foreach(_sh fullscreen.vert macro.frag mesh.vert mesh.frag billboard.vert tree.frag sky.frag shadow_mesh.vert shadow_mesh.frag shadow_bb.vert shadow_tree.frag water.vert water.frag struct.vert struct.frag struct_cyl.vert shadow_cyl.vert shadow_struct.vert shadow_struct.frag body.frag shadow_body.frag particle.vert particle.frag precip.frag)
     add_custom_command(
         OUTPUT ${_timaert_spv_dir}/${_sh}.spv
         COMMAND ${Vulkan_GLSLC_EXECUTABLE} -O
@@ -266,7 +266,7 @@ if(NOT MSVC)
 endif()
 
 # Phase 5 subworld 3D foundation harness (depth + mesh pipeline + camera).
-# Carries the real SpriteBank (npc.frag set1 contract) — hence the assets TU
+# Carries the real SpriteBank (body.frag set1 contract) — hence the assets TU
 # and the stb include dir.
 add_executable(gpu_smoke3d tests/gpu_smoke3d.cpp ${TIMAERT_GPU_SOURCES}
     src/assets/sprite_bank.cpp)

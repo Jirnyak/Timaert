@@ -263,26 +263,16 @@ private:
     // no staging copy and no queue stall (see VulkanBuffer::create_host_mapped).
     gpu::VulkanBuffer     lightBuf_[kFramesInFlight] = {};
 
-    // The 256 quantized paper-doll descriptors, indexed DIRECTLY by seed —
-    // the per-NPC hash-map lookup was paid thousands of times a frame in a
-    // city (the `rec` column). Pointers into the atlas's node-based cache
-    // are stable for the atlas's lifetime; cleared in destroy().
-
-    // ── A7: NPCs ──
-    gpu::VulkanPipeline npcPipe_{};
-    gpu::VulkanBuffer   npcInstBuf_{};
-    std::uint32_t       npcCount_ = 0;
-    gpu::VulkanPipeline shadowNpcPipe_{};
+    // ── A7: THE bodies — every living thing, drawn or procedural, through ONE
+    //    pipeline and one instance buffer. The split into an "NPC" pass and a
+    //    "creature" pass asked what SORT of thing a body was; the sprite law
+    //    asks what its ROW has, and that question is answered per instance in
+    //    the fragment stage (shaders/body.frag). ──
+    gpu::VulkanPipeline bodyPipe_{};
+    gpu::VulkanBuffer   bodyInstBuf_{};
+    std::uint32_t       bodyCount_ = 0;
+    gpu::VulkanPipeline shadowBodyPipe_{};
     SpriteBank bank_{};
-
-    // ── A8: Creatures (procedural fauna billboards; monsters ≠ NPCs) ──
-    // Any entity with a Sprite whose archetype != 0xFF is drawn here as a
-    // camera-facing procedural silhouette (the universal-resolver default,
-    // overridable by drawn art later). Filled per-frame like NPCs.
-    gpu::VulkanPipeline creaturePipe_{};
-    gpu::VulkanBuffer   creatureInstBuf_{};
-    std::uint32_t       creatureCount_ = 0;
-    gpu::VulkanPipeline shadowCreaturePipe_{};
 
     // ── Deferred GPU writes (the seam path) ──
     // upload() queues here; flush_uploads() records into the frame's command

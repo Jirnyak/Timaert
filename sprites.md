@@ -126,10 +126,26 @@ became `ecs::Sprite::spriteRow` (a raw ordinal, because ECS may not include
 macro/), so a body carries its row and the renderer reads the table like
 everyone else.
 
-The shader merge that stage 3 was *supposed* to be is now the small cleanup it
-should always have been, and is deliberately NOT done yet: `npc.frag` and
-`creature.frag` still differ in one line of intent (sample a slot vs. evaluate a
-silhouette). Merging buys two pipelines and two shadow pipelines back.
+**The merge — SHIPPED.** `npc.frag` + `creature.frag` → `body.frag`,
+`shadow_npc.frag` + `shadow_creature.frag` → `shadow_body.frag`, and on the CPU
+side two pipelines, two shadow pipelines, two instance buffers, two counters,
+two fill loops and four draw blocks became one of each. A peasant and a wolf are
+now the same instance record in the same buffer through the same draw.
+
+The discriminator is the row, carried in `kind`: low 16 bits are the bank slot
+or `kBbNoSlot`, high 16 the procedural body plan (`gpu::bb_body_kind`, twinned
+by `bb_slot`/`bb_archetype` in doll_pool.glsl). No magic bit — two honest fields
+in one lane, with the sentinel the bank already speaks.
+
+The two old pipelines differed in exactly one flag: the doll pass blended, the
+creature pass did not, because its coverage is binary. Binary coverage emits
+alpha 1.0, for which blending is a no-op — so the merged pipeline blends and
+both branches draw exactly as before.
+
+`gpu_smoke3d` now puts BOTH branches in the same crowd, including the
+`GPU_SMOKE_NPC_CLOSE` framing that exists to prove body rendering. It used to
+draw only banked bodies, so a merge that silently lost the procedural half would
+have photographed exactly as green as a correct one.
 
 Cost, accepted knowingly by the owner: a human in the subworld is one static
 picture per kind, camera-facing — the same terms every procedural monster has

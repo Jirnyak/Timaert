@@ -11,9 +11,16 @@
 // it; there is nothing left to keep in sync by hand.
 //
 // What the fields mean is decided PER PASS by `kind`:
-//   trees      kind = sprite row (species / crop), seed = procedural variation
-//   creatures  kind = CreatureArchetype,           seed = procedural variation
-//   NPCs       kind = paper-doll pool slot,        seed = unused (0)
+//   trees   kind = sprite row (species / crop), seed = procedural variation
+//   bodies  kind = bb_body_kind(slot, archetype) — see below
+//
+// A BODY (anything alive: a peasant, a wolf, a goblin) packs BOTH halves of the
+// sprite law into `kind`, because whether a kind is drawn or procedural is a
+// property of its ROW, not of what sort of creature it is, and the draw path
+// must stop asking the second question (sprites.md). The low half is the bank
+// slot or kBbNoSlot; the high half is the procedural body plan used when there
+// is no slot. Two fields in one lane, no magic bit, and the sentinel is the
+// same one sm::SpriteBank::kNoSlot speaks.
 //
 // `seed` carries a FLOAT'S BITS (floatBitsToUint on the CPU side,
 // uintBitsToFloat in the shader): the procedural coverage functions take the
@@ -33,6 +40,16 @@
 #include <vulkan/vulkan.h>
 
 namespace gpu {
+
+// "This body has no drawn art" — the low half of a body's `kind`. Its twin
+// lives in shaders/doll_pool.glsl (BB_NO_SLOT); gpu_smoke3d draws through both
+// branches with the shipping shaders, which is what keeps the pair honest.
+inline constexpr std::uint32_t kBbNoSlot = 0xFFFFu;
+
+inline constexpr std::uint32_t bb_body_kind(std::uint32_t slot,
+                                            std::uint32_t archetype) {
+    return ((archetype & 0xFFFFu) << 16) | (slot & 0xFFFFu);
+}
 
 struct BbInstance {
     float px, py, pz;    // base/feet world position (metres)

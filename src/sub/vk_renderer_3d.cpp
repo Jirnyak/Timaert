@@ -326,20 +326,14 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
 
     char vpath[1024], fpath[1024];
 
-    std::vector<gpu::BbInstance> dummyNpcs(kMaxEntityInstances);
-    if (!npcInstBuf_.create_device_local(dev, dummyNpcs.data(),
-                                         dummyNpcs.size() * sizeof(gpu::BbInstance),
-                                         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
-                                         | VK_BUFFER_USAGE_TRANSFER_DST_BIT)) {
-        std::fprintf(stderr, "[Renderer3DVk] npc buffer FAILED\n");
-    }
-    std::vector<gpu::BbInstance> dummyCreatures(kMaxEntityInstances);
-    if (!creatureInstBuf_.create_device_local(
-            dev, dummyCreatures.data(),
-            dummyCreatures.size() * sizeof(gpu::BbInstance),
-            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
-            | VK_BUFFER_USAGE_TRANSFER_DST_BIT)) {
-        std::fprintf(stderr, "[Renderer3DVk] creature buffer FAILED\n");
+    // ONE instance buffer for every body alive: the drawn and the procedural
+    // ride the same lane, distinguished by their row inside `kind`.
+    std::vector<gpu::BbInstance> dummyBodies(kMaxEntityInstances);
+    if (!bodyInstBuf_.create_device_local(dev, dummyBodies.data(),
+                                          dummyBodies.size() * sizeof(gpu::BbInstance),
+                                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
+                                          | VK_BUFFER_USAGE_TRANSFER_DST_BIT)) {
+        std::fprintf(stderr, "[Renderer3DVk] body buffer FAILED\n");
     }
     // Particle instance buffer: sized once at the pool ceiling (64 KiB), refilled
     // per frame in-place via vkCmdUpdateBuffer + barrier (same path as NPCs).
@@ -759,41 +753,27 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         }
     }
 
-    // A7: NPC billboard pipeline (billboard.vert + npc.frag, instanced). Set 1
-    // is the paper-doll sprite pool (one sampler2DArray of composited frames).
+    // A7: THE body billboard pipeline (billboard.vert + body.frag, instanced).
+    // Set 0 is the shared lighting set, set 1 the drawn-body bank. It replaced
+    // a pair that differed in one flag: the doll pass blended, the creature
+    // pass did not because its coverage is binary. Binary coverage emits alpha
+    // 1.0, for which blending is a no-op — so the merged pipeline blends and
+    // BOTH branches draw exactly as they did.
     spv_path(vpath, sizeof vpath, "billboard.vert");
-    spv_path(fpath, sizeof fpath, "npc.frag");
+    spv_path(fpath, sizeof fpath, "body.frag");
     {
-        VkDescriptorSetLayout npcSets[2] = {
+        VkDescriptorSetLayout bodySets[2] = {
             shadowSetLayout_, bank_.set_layout()
         };
-        if (!npcPipe_.create_mesh(dev, mainPass, vpath, fpath,
+        if (!bodyPipe_.create_mesh(dev, mainPass, vpath, fpath,
                                    sizeof(BbPush), sizeof(gpu::BbInstance),
                                    gpu::kBbInstanceAttrs,
                                    gpu::kBbInstanceAttrCount,
                                    /*instanced=*/true,
                                    /*depthTest=*/true, /*depthWrite=*/true,
                                    /*blend=*/true, /*cullBack=*/false,
-                                   npcSets, 2)) {
-            std::fprintf(stderr, "[Renderer3DVk] npc pipeline FAILED\n");
-        }
-    }
-
-    // A8: Creature billboard pipeline (billboard.vert + creature.frag,
-    // instanced). Shares the shadow-sampler set (0) with trees. Alpha-tested
-    // via discard, so blend=false + depthWrite=true keep the silhouette crisp
-    // and depth-correct.
-    spv_path(fpath, sizeof fpath, "creature.frag");
-    {
-        if (!creaturePipe_.create_mesh(dev, mainPass, vpath, fpath,
-                                       sizeof(BbPush), sizeof(gpu::BbInstance),
-                                       gpu::kBbInstanceAttrs,
-                                       gpu::kBbInstanceAttrCount,
-                                       /*instanced=*/true,
-                                       /*depthTest=*/true, /*depthWrite=*/true,
-                                       /*blend=*/false, /*cullBack=*/false,
-                                       shadowSetLayout_)) {
-            std::fprintf(stderr, "[Renderer3DVk] creature pipeline FAILED\n");
+                                   bodySets, 2)) {
+            std::fprintf(stderr, "[Renderer3DVk] body pipeline FAILED\n");
         }
     }
 
@@ -847,32 +827,19 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         }
     }
 
-    // A9: NPC shadow caster (universal shadow_bb.vert + shadow_npc.frag).
-    // Set 0 is the same sprite pool: the silhouette is the composited alpha.
+    // A9: THE body shadow caster (universal shadow_bb.vert + shadow_body.frag).
+    // It discards by the same two branches the lit pass draws with, from the
+    // same instance extents, so a cast shadow cannot drift from its body.
     spv_path(vpath, sizeof vpath, "shadow_bb.vert");
-    spv_path(fpath, sizeof fpath, "shadow_npc.frag");
+    spv_path(fpath, sizeof fpath, "shadow_body.frag");
     {
-        if (!shadowNpcPipe_.create_shadow(dev, shadow_.renderPass, vpath, fpath,
-                                            sizeof(ShadowBbPush), sizeof(gpu::BbInstance),
-                                            gpu::kBbInstanceAttrs,
-                                            gpu::kBbInstanceAttrCount,
-                                            /*instanced=*/true,
-                                            bank_.set_layout())) {
-            std::fprintf(stderr, "[Renderer3DVk] shadow npc pipeline FAILED\n");
-        }
-    }
-
-    // A8: Creature shadow caster (universal shadow_bb.vert +
-    // shadow_creature.frag): the frag discards the same silhouette as the lit
-    // pass, from the same instance extents, so the cast shadow cannot drift.
-    spv_path(fpath, sizeof fpath, "shadow_creature.frag");
-    {
-        if (!shadowCreaturePipe_.create_shadow(
-                dev, shadow_.renderPass, vpath, fpath,
-                sizeof(ShadowBbPush), sizeof(gpu::BbInstance),
-                gpu::kBbInstanceAttrs, gpu::kBbInstanceAttrCount,
-                /*instanced=*/true)) {
-            std::fprintf(stderr, "[Renderer3DVk] shadow creature pipeline FAILED\n");
+        if (!shadowBodyPipe_.create_shadow(dev, shadow_.renderPass, vpath, fpath,
+                                           sizeof(ShadowBbPush), sizeof(gpu::BbInstance),
+                                           gpu::kBbInstanceAttrs,
+                                           gpu::kBbInstanceAttrCount,
+                                           /*instanced=*/true,
+                                           bank_.set_layout())) {
+            std::fprintf(stderr, "[Renderer3DVk] shadow body pipeline FAILED\n");
         }
     }
 }
@@ -909,18 +876,14 @@ void Renderer3DVk::destroy(const gpu::VulkanDevice& dev) {
     cylInstBuf_.destroy(dev);
     cylInstCap_ = 0;
     cylCount_ = 0;
-    npcPipe_.destroy(dev);
-    npcInstBuf_.destroy(dev);
-    npcCount_ = 0;
+    bodyPipe_.destroy(dev);
+    bodyInstBuf_.destroy(dev);
+    bodyCount_ = 0;
     shadowMeshPipe_.destroy(dev);
     shadowTreePipe_.destroy(dev);
     shadowStructPipe_.destroy(dev);
     shadowCylPipe_.destroy(dev);
-    shadowNpcPipe_.destroy(dev);
-    creaturePipe_.destroy(dev);
-    creatureInstBuf_.destroy(dev);
-    creatureCount_ = 0;
-    shadowCreaturePipe_.destroy(dev);
+    shadowBodyPipe_.destroy(dev);
     particlePipe_.destroy(dev);
     particleInstBuf_.destroy(dev);
     particleCount_ = 0;
@@ -994,115 +957,81 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
                             lightFieldFrame_ % std::uint32_t(kFramesInFlight));
     }
 
-    // ── A7: bodies with DRAWN art. The row decides membership, not the kind of
-    //    thing: whatever the artist has drawn is banked and sampled here, and
-    //    whatever he has not is drawn by the procedural pass below. No cache,
-    //    no clock, no per-frame uploads — the bank is complete at boot.
-    npcCount_ = 0;
-    if (ecs && uploaded_ && bank_.ready()) {
+    // ── A7: THE bodies. One view, one list, one buffer: the sprite law says a
+    //    body is drawn from its ROW, so there is nothing here to split on. A
+    //    row with drawn art carries its bank slot, a row without carries its
+    //    body plan, and `kind` holds both (gpu/bb_instance.h) so the fragment
+    //    stage decides per instance instead of the renderer deciding per pass.
+    //    This used to be two loops, two buffers, two pipelines and two shadow
+    //    pipelines keyed on `archetype == 0xFF` — a question about WHAT SORT OF
+    //    THING a body is, which is exactly the question the law abolishes. ──
+    bodyCount_ = 0;
+    if (ecs && uploaded_) {
         // Reused scratch: a fresh 512 KiB vector per frame was a measurable
         // slice of the city's `rec` column.
-        static thread_local std::vector<gpu::BbInstance> npcs;
-        npcs.clear();
-        npcs.reserve(kMaxEntityInstances);
+        static thread_local std::vector<gpu::BbInstance> bodies;
+        bodies.clear();
+        bodies.reserve(kMaxEntityInstances);
         // Exclude the player body: first-person, the camera sits at it, so a
         // possessed body must not be drawn over the lens. The hero husk carries
         // no Sprite and never matched anyway.
         auto view = ecs->reg.view<ecs::Position, ecs::Sprite>(
             entt::exclude<ecs::PlayerTag>);
         for (auto e : view) {
-            if (npcs.size() >= kMaxEntityInstances) break;
-            const auto& pos = view.get<ecs::Position>(e);
+            if (bodies.size() >= kMaxEntityInstances) break;
             const auto& spr = view.get<ecs::Sprite>(e);
+            const SpriteDef& look = sprite_row(SpriteId(spr.spriteRow));
             const std::uint32_t slot = bank_.slot_for(SpriteId(spr.spriteRow));
-            if (slot == SpriteBank::kNoSlot) continue; // no art ⇒ procedural
+            const bool drawn = slot != SpriteBank::kNoSlot;
+            // Neither art nor a body plan: not a body at all (a projectile
+            // card, an engine sprite). Nobody draws it here.
+            if (!drawn && look.archetype == kNoBody) continue;
 
+            const auto& pos = view.get<ecs::Position>(e);
             float wx = 0.0f, wz = 0.0f;
             tile_to_world(pos.x, pos.y, wx, wz);
             gpu::BbInstance inst{};
-            inst.px = wx;
-            inst.py = pos.z;
-            inst.pz = wz;
+            inst.px = wx; inst.py = pos.z; inst.pz = wz;
             // How tall this body actually is (ecs::Sprite.height, filled at
             // birth from its table row × its own shape). This used to be the
             // literal 2.0f for every humanoid alive — a lord, a child-sized
             // peasant and a possessed goblin all exactly two metres — while the
-            // physics beside it read a real width out of the table. A body with
-            // no stated height keeps the old constant, which is the only place
-            // it survives.
-            const float size = spr.height > 0.0f ? spr.height : 2.0f;
-            inst.halfW = size * 0.5f; // a drawn body sheet is square
-            inst.height = size;
-            inst.kind = slot;
-            inst.seed = 0u;
-            inst.tint = 0xFFFFFFFFu;
-            npcs.push_back(inst);
+            // physics beside it read a real width out of the table.
+            if (drawn) {
+                // A drawn sheet is square; its own transparency is its shape.
+                const float size = spr.height > 0.0f ? spr.height : 2.0f;
+                inst.halfW = size * 0.5f;
+                inst.height = size;
+                inst.seed = 0u;
+                inst.tint = 0xFFFFFFFFu;
+            } else {
+                // Height from the row when it states one; otherwise the very
+                // proportion this line used to hardcode, so a creature that has
+                // not opted in is drawn exactly as before (sub/body.h).
+                const float size =
+                    spr.height > 0.0f ? spr.height : spr.scale * 1.5f;
+                // Body-plan aspect applied HERE, once — it used to live as twin
+                // GLSL tables in the lit and shadow vertex stages. (size·w)·0.5
+                // stays bit-exact with the shader's old size·w: a halving and
+                // the vert's ·2.0 are exact fp32 inverses.
+                const auto asp = creature_arch_aspect(look.archetype);
+                inst.halfW = size * asp.w * 0.5f;
+                inst.height = size * asp.h;
+                // Entity id for stable per-instance variation — iteration order
+                // in EnTT views is not guaranteed stable across frames.
+                const std::uint32_t eid = entt::to_integral(e);
+                inst.seed = gpu::bb_seed_bits(float(spr.atlasId) * 2.17f
+                                              + float(eid & 63u) * 0.5f);
+                inst.tint = gpu::bb_pack_tint(spr.r, spr.g, spr.b);
+            }
+            inst.kind = gpu::bb_body_kind(drawn ? slot : gpu::kBbNoSlot,
+                                          look.archetype);
+            bodies.push_back(inst);
         }
-        npcCount_ = static_cast<std::uint32_t>(npcs.size());
-        if (npcCount_ > 0) {
-            update_instance_buffer(cmd, npcInstBuf_.buffer,
-                                   npcs.data(), npcCount_);
-            VkMemoryBarrier mb{};
-            mb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-            mb.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            mb.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
-            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                 VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
-                                 0, 1, &mb, 0, nullptr, 0, nullptr);
-        }
-    }
-
-    // ── A8: bodies with NO drawn art — the procedural floor of the sprite law
-    //    (sprites.md). Membership is the complement of the pass above and asks
-    //    the same question of the same table: a row the artist has not drawn is
-    //    a silhouette from its body plan. A row that is not a body at all
-    //    (SpriteId::None — spell projectiles, engine sprites) is in neither. ──
-    creatureCount_ = 0;
-    if (ecs && uploaded_) {
-        static thread_local std::vector<gpu::BbInstance> creatures;
-        creatures.clear();
-        creatures.reserve(kMaxEntityInstances);
-        // Exclude the player body (Inc 5c): possessing a monster/creature moves
-        // PlayerTag onto a Sprite-bearing body; in first-person it must not be
-        // billboarded at the camera. Hero husk carries no Sprite and never matched.
-        auto cview = ecs->reg.view<ecs::Position, ecs::Sprite>(
-            entt::exclude<ecs::PlayerTag>);
-        for (auto e : cview) {
-            if (creatures.size() >= kMaxEntityInstances) break;
-            const auto& spr = cview.get<ecs::Sprite>(e);
-            const SpriteDef& look = sprite_row(SpriteId(spr.spriteRow));
-            if (look.archetype == kNoBody) continue;   // not a body at all
-            if (bank_.slot_for(SpriteId(spr.spriteRow)) != SpriteBank::kNoSlot)
-                continue;                              // drawn — the pass above
-            const auto& pos = cview.get<ecs::Position>(e);
-            float wx = 0.0f, wz = 0.0f;
-            tile_to_world(pos.x, pos.y, wx, wz);
-            gpu::BbInstance ci{};
-            ci.px = wx; ci.py = pos.z; ci.pz = wz;
-            // Height from the row when it states one; otherwise the very
-            // proportion this line used to hardcode, so a creature that has not
-            // opted in is drawn exactly as before (sub/body.h).
-            const float size = spr.height > 0.0f ? spr.height : spr.scale * 1.5f;
-            // Body-plan aspect applied HERE, once (macro/fauna.h) — it used to
-            // live as twin GLSL tables in the lit and shadow vertex stages.
-            // (size·w)·0.5 stays bit-exact with the shader's old size·w: a
-            // halving and the vert's ·2.0 are exact fp32 inverses.
-            const auto asp = creature_arch_aspect(look.archetype);
-            ci.halfW = size * asp.w * 0.5f;
-            ci.height = size * asp.h;
-            ci.kind = look.archetype;
-            // Use entity id for stable per-instance variation — iteration
-            // order in EnTT views is not guaranteed stable across frames.
-            const std::uint32_t eid = entt::to_integral(e);
-            ci.seed = gpu::bb_seed_bits(float(spr.atlasId) * 2.17f
-                                        + float(eid & 63u) * 0.5f);
-            ci.tint = gpu::bb_pack_tint(spr.r, spr.g, spr.b);
-            creatures.push_back(ci);
-        }
-        creatureCount_ = static_cast<std::uint32_t>(creatures.size());
-        if (creatureCount_ > 0) {
-            update_instance_buffer(cmd, creatureInstBuf_.buffer,
-                                   creatures.data(), creatureCount_);
+        bodyCount_ = static_cast<std::uint32_t>(bodies.size());
+        if (bodyCount_ > 0) {
+            update_instance_buffer(cmd, bodyInstBuf_.buffer,
+                                   bodies.data(), bodyCount_);
             VkMemoryBarrier mb{};
             mb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
             mb.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -2496,43 +2425,27 @@ void Renderer3DVk::record_shadow(VkCommandBuffer cmd, const Camera& cam,
         }
     }
 
-    // NPCs (instanced billboards).
-    if (npcCount_ > 0) {
+    // THE bodies (instanced billboards) — every living thing in one draw, each
+    // throwing the silhouette its own row gives it.
+    if (bodyCount_ > 0) {
         ShadowBbPush sbb{};
         std::memcpy(sbb.lightMvp, lightMvp_.m, sizeof(sbb.lightMvp));
         sbb.lightRight[0] = lightRight.x;
         sbb.lightRight[1] = lightRight.y;
         sbb.lightRight[2] = lightRight.z;
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          shadowNpcPipe_.pipeline);
+                          shadowBodyPipe_.pipeline);
         const VkDescriptorSet dolls = bank_.descriptor_set();
         if (dolls != VK_NULL_HANDLE)
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    shadowNpcPipe_.layout, 0, 1, &dolls,
+                                    shadowBodyPipe_.layout, 0, 1, &dolls,
                                     0, nullptr);
         VkDeviceSize sio = 0;
-        vkCmdBindVertexBuffers(cmd, 0, 1, &npcInstBuf_.buffer, &sio);
-        vkCmdPushConstants(cmd, shadowNpcPipe_.layout,
+        vkCmdBindVertexBuffers(cmd, 0, 1, &bodyInstBuf_.buffer, &sio);
+        vkCmdPushConstants(cmd, shadowBodyPipe_.layout,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(sbb), &sbb);
-        vkCmdDraw(cmd, 6, npcCount_, 0, 0);
-    }
-
-    // Creatures (instanced billboards) — same silhouette as the lit pass.
-    if (creatureCount_ > 0) {
-        ShadowBbPush sbb{};
-        std::memcpy(sbb.lightMvp, lightMvp_.m, sizeof(sbb.lightMvp));
-        sbb.lightRight[0] = lightRight.x;
-        sbb.lightRight[1] = lightRight.y;
-        sbb.lightRight[2] = lightRight.z;
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          shadowCreaturePipe_.pipeline);
-        VkDeviceSize sio = 0;
-        vkCmdBindVertexBuffers(cmd, 0, 1, &creatureInstBuf_.buffer, &sio);
-        vkCmdPushConstants(cmd, shadowCreaturePipe_.layout,
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(sbb), &sbb);
-        vkCmdDraw(cmd, 6, creatureCount_, 0, 0);
+        vkCmdDraw(cmd, 6, bodyCount_, 0, 0);
     }
 
     shadow_.end(cmd);
@@ -2838,8 +2751,10 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
         }
     }
 
-    // ── A7: NPCs (drawn after structures) ──
-    if (npcCount_ > 0) {
+    // ── A7: THE bodies (drawn after structures, before water). One pipeline,
+    //    one buffer, one draw: a peasant and a wolf are the same instance
+    //    record and the fragment stage reads each one's row (sprites.md). ──
+    if (bodyCount_ > 0) {
         BbPush nb{};
         std::memcpy(nb.mvp, mvp.m, sizeof(nb.mvp));
         nb.camRight[0] = rgt.x;
@@ -2855,51 +2770,22 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
         std::memcpy(nb.lightMvp, lightMvp.m, sizeof(nb.lightMvp));
 
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          npcPipe_.pipeline);
+                          bodyPipe_.pipeline);
         if (litSet != VK_NULL_HANDLE)
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    npcPipe_.layout, 0, 1, &litSet,
+                                    bodyPipe_.layout, 0, 1, &litSet,
                                     0, nullptr);
         const VkDescriptorSet dolls = bank_.descriptor_set();
         if (dolls != VK_NULL_HANDLE)
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    npcPipe_.layout, 1, 1, &dolls,
+                                    bodyPipe_.layout, 1, 1, &dolls,
                                     0, nullptr);
         VkDeviceSize nio = 0;
-        vkCmdBindVertexBuffers(cmd, 0, 1, &npcInstBuf_.buffer, &nio);
-        vkCmdPushConstants(cmd, npcPipe_.layout,
+        vkCmdBindVertexBuffers(cmd, 0, 1, &bodyInstBuf_.buffer, &nio);
+        vkCmdPushConstants(cmd, bodyPipe_.layout,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(nb), &nb);
-        vkCmdDraw(cmd, 6, npcCount_, 0, 0);
-    }
-
-    // ── A8: Creatures (procedural fauna billboards, after NPCs, before water) ──
-    if (creatureCount_ > 0) {
-        BbPush cb{};
-        std::memcpy(cb.mvp, mvp.m, sizeof(cb.mvp));
-        cb.camRight[0] = rgt.x;
-        cb.camRight[1] = rgt.y;
-        cb.camRight[2] = rgt.z;
-        cb.camRight[3] = 0.0f;
-        cb.sunColor[0] = sun.sunColor.x;
-        cb.sunColor[1] = sun.sunColor.y;
-        cb.sunColor[2] = sun.sunColor.z;
-        cb.ambient[0] = sun.ambientColor.x;
-        cb.ambient[1] = sun.ambientColor.y;
-        cb.ambient[2] = sun.ambientColor.z;
-        std::memcpy(cb.lightMvp, lightMvp.m, sizeof(cb.lightMvp));
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          creaturePipe_.pipeline);
-        if (litSet != VK_NULL_HANDLE)
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    creaturePipe_.layout, 0, 1, &litSet,
-                                    0, nullptr);
-        VkDeviceSize cio = 0;
-        vkCmdBindVertexBuffers(cmd, 0, 1, &creatureInstBuf_.buffer, &cio);
-        vkCmdPushConstants(cmd, creaturePipe_.layout,
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(cb), &cb);
-        vkCmdDraw(cmd, 6, creatureCount_, 0, 0);
+        vkCmdDraw(cmd, 6, bodyCount_, 0, 0);
     }
 
     // ── FX: Additive particles (after creatures, before water). Emissive: no
