@@ -305,12 +305,9 @@ void emplace_fauna_entity(entt::registry& reg, const FaunaEntry& f,
     maybe_emplace_missile_attack(reg, e, f.combat);
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(npcLevel));
     reg.emplace<ecs::SubworldTag>(e);
-    // AI mode from FaunaEntry.ai → component dispatched in tick_npc_ai.
-    // Wander pace ≈ 40 % of combat speed (TS uses ~0.4× too).
-    const ecs::SubworldAi::Kind aiKind =
-        f.ai == FaunaAi::Combat ? ecs::SubworldAi::Combat
-      : f.ai == FaunaAi::Flee   ? ecs::SubworldAi::Flee
-                                : ecs::SubworldAi::Wander;
+    // Stance from the row's ONE behaviour column, through the ONE door the
+    // humanoid birth uses (sub/spawn.h). Wander pace ≈ 40 % of combat speed.
+    const ecs::SubworldAi::Kind aiKind = subworld_ai_for(f.ai);
     reg.emplace<ecs::SubworldAi>(e, aiKind, /*aiTimer*/0.0f,
         /*vx*/0.0f, /*vy*/0.0f,
         /*wanderSpeed*/f.combat.speed * 0.40f, f.radius);

@@ -53,10 +53,12 @@ std::uint16_t catalog_type_id(const sm::FaunaEntry* entry) {
     return std::uint16_t(0x100 | (idx < 0 ? 0 : idx));
 }
 
-sm::ecs::SubworldAi::Kind ai_kind(sm::FaunaAi ai) {
-    return ai == sm::FaunaAi::Combat ? sm::ecs::SubworldAi::Combat
-         : ai == sm::FaunaAi::Flee   ? sm::ecs::SubworldAi::Flee
-                                          : sm::ecs::SubworldAi::Wander;
+// The stance a row folds to is not restated here — it is asked of the SAME
+// door the spawner uses (sub/spawn.h), so this cannot drift from it and cannot
+// pass by copying it. What the case still proves is that the body ACTUALLY
+// carries the stance its row implies.
+sm::ecs::SubworldAi::Kind ai_kind(sm::AIBehaviour ai) {
+    return sm::sub::subworld_ai_for(ai);
 }
 
 sm::ecs::Combat::Kind combat_kind(const sm::CombatTemplate& combat) {

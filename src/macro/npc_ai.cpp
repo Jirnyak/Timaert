@@ -1155,6 +1155,12 @@ void dispatch(AIBehaviour b, entt::entity e, ecs::Position& p,
         case AIBehaviour::Patrol:       ai_patrol       (p, rt, ctx); break;
         case AIBehaviour::Teleporter:   ai_teleporter   (p, rt, ctx); break;
         case AIBehaviour::Wanderer:     ai_wanderer     (p, rt, ctx); break;
+        // Prey. Running is not its own errand: the threat step above already
+        // makes ANY row run from what it cannot beat (squad_power), so what
+        // this column says about an untroubled day is "it roams" — the same
+        // walk a wanderer takes. The difference between a fox and a rabbit is
+        // what happens when something appears, and that is decided above.
+        case AIBehaviour::Flee:         ai_wanderer     (p, rt, ctx); break;
         case AIBehaviour::Waypoints:    ai_waypoints (e, p, rt, ctx); break;
         case AIBehaviour::Count:        break;
     }

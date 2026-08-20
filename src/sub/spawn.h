@@ -16,17 +16,15 @@
 
 namespace sm::sub {
 
-// Data-driven subworld combat stance: maps the registry's NpcTypeDef.ai column
-// to the subworld AI kind, so EVERY humanoid spawn path (settlement population
-// and macro→sub projection) resolves hostility from the same data row — one
-// column, no per-site hardcode. Fighters are the overworld-aggressive
-// (bandits) and the armed keepers of order (guards); every other type flees
-// when threatened. Future combat styles (formation archers, kiting casters,
-// hit-and-run beasts) plug in HERE as new SubworldAi kinds + registry rows —
-// the spawn sites never change.
+// The row's behaviour column folded to a subworld stance — ONE door for men
+// and beasts alike (they used to fold through two, one per vanished enum).
+// Fighters fight, prey runs, a roamer roams, and everything whose macro job
+// has no meaning down here (a gatherer inside a battle, a caravan) keeps the
+// civilian's answer: get away.
 inline ecs::SubworldAi::Kind subworld_ai_for(AIBehaviour ai) {
-    return combatant_behaviour(ai) ? ecs::SubworldAi::Combat
-                                   : ecs::SubworldAi::Flee;
+    if (combatant_behaviour(ai))        return ecs::SubworldAi::Combat;
+    if (ai == AIBehaviour::Wanderer)    return ecs::SubworldAi::Wander;
+    return ecs::SubworldAi::Flee;
 }
 
 // Universal per-humanoid component attachers — ONE home for the rules every

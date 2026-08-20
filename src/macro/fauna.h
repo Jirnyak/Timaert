@@ -13,6 +13,7 @@
 #include "macro/biomes.h"
 #include "macro/features.h"
 #include "macro/army.h"
+#include "macro/behaviour.h"
 #include "macro/sprite_rows.h"
 
 namespace sm {
@@ -24,7 +25,8 @@ enum class LandmarkKind : std::uint8_t {
 };
 
 // AI hint for the spawned entity.
-enum class FaunaAi : std::uint8_t { Wander = 0, Flee = 1, Combat = 2 };
+// (`FaunaAi` lived here until 2026-08-20 — a second behaviour vocabulary for
+// beasts. It is `AIBehaviour` now, the one every row speaks: macro/behaviour.h.)
 
 // Creature faction — the registry id string (macro/faction.h), the SAME key
 // every other faction consumer uses. The old FaunaFaction enum was a fourth
@@ -38,7 +40,7 @@ struct FaunaEntry {
     const char*       label;       // display name ("Wolf")
     std::uint16_t     weight;
     const char*       factionId;   // registry id ("wildlife"), nullptr = none
-    FaunaAi           ai;
+    AIBehaviour       ai;
     CombatTemplate    combat;
     std::uint8_t      baseLevel;
     float             radius;

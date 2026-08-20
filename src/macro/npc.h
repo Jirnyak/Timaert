@@ -10,6 +10,7 @@
 #pragma once
 #include <array>
 #include "core/table_guard.h"
+#include "macro/behaviour.h"
 #include "macro/fauna.h"   // the OTHER half of the kind id space (monsters)
 #include <algorithm>
 #include <cctype>
@@ -42,31 +43,6 @@ enum class NPCTrait : std::uint8_t {
     Count,
 };
 
-// AI behaviour selector — each value maps to one function in npc_ai.cpp.
-// Keeping the indirection as an enum (instead of a raw function pointer)
-// keeps the registry POD + constexpr-friendly and lets the AI layer be
-// swapped without touching this header.
-enum class AIBehaviour : std::uint8_t {
-    // ONE loop for every gathering profession (owner: a profession per
-    // resource, rows not code): find the worksite the profession's row
-    // names (forest cell / home field / home deposit), work it through the
-    // resource-field registry, haul the commodity home. The per-profession
-    // nuance is a kGathererDefs row (npc_ai.cpp); with no worksite or no
-    // wired layer the man falls back to the home wander, fail closed.
-    Gatherer = 0, Trader, Nomad,
-    Aggressive, Patrol, Teleporter, Wanderer,
-    // The city's trading agent (W2b): remembers the home market at departure
-    // (AgentMemory MarketSnapshot), carries exports to the city's villages
-    // in its OWN bag and hauls back what the snapshot says the city LACKS.
-    // Falls back to the old nomad wander when the world has no villages.
-    CaravanTrade,
-    // Follows the waypoint route in the squad's SquadOrders (Session 15,
-    // Inc 7). No type row uses it and no label names it: the dispatcher
-    // selects it whenever a squad CARRIES a route — the route's presence is
-    // the order (owner's ruling), not a second behaviour knob.
-    Waypoints,
-    Count,
-};
 
 // Fixed-arity name / dialogue pools — POD-friendly.
 constexpr std::size_t kMaxNpcNames     = 16;
@@ -253,14 +229,6 @@ static_assert(rows_in_enum_order(kNpcTypeDefs, &NpcTypeDef::type),
 
 inline constexpr const NpcTypeDef& npc_def(NPCType t) {
     return kNpcTypeDefs[std::size_t(t)];
-}
-
-// Which rows FIGHT when threatened — the ai column read as a stance. ONE
-// answer for both layers: the subworld combat stance (sub/spawn.h
-// subworld_ai_for) and the macro pursue decision (npc_ai.cpp threat step)
-// both delegate here, so a row that raids on the map raids on the ground.
-inline constexpr bool combatant_behaviour(AIBehaviour ai) {
-    return ai == AIBehaviour::Aggressive || ai == AIBehaviour::Patrol;
 }
 
 // THE id space, both halves of it: below 0x100 a row of this table, at or

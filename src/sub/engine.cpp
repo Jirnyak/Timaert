@@ -1898,10 +1898,7 @@ bool SubworldEngine::spawn_npc_body(const char* npcTypeId,
         maybe_emplace_missile_attack(reg, e, cd->combat);
         reg.emplace<ecs::NpcLevel>(e, std::int16_t(clvl));
         reg.emplace<ecs::SubworldTag>(e);
-        const ecs::SubworldAi::Kind aiKind =
-            cd->ai == FaunaAi::Combat ? ecs::SubworldAi::Combat
-          : cd->ai == FaunaAi::Flee   ? ecs::SubworldAi::Flee
-                                      : ecs::SubworldAi::Wander;
+        const ecs::SubworldAi::Kind aiKind = subworld_ai_for(cd->ai);
         reg.emplace<ecs::SubworldAi>(e, aiKind, /*aiTimer*/0.0f,
             /*vx*/0.0f, /*vy*/0.0f,
             /*wanderSpeed*/cd->combat.speed * 0.40f, cd->radius);
