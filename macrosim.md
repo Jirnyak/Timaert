@@ -120,13 +120,11 @@ be hardcoded to "woodcutter":
    balance knob, solve its persistence cost when it lands (owner is fine
    iterating with tests).
 
-## Backend / GPU (the primary target)
+## Backend — the world is CPU (owner's ruling 2026-08-20)
 
-The second headline compute case: **thousands of macro NPCs/squads.** The mass
-is **GPU-resident** simulation; only the **chunk of cells around the player** is
-CPU-embodied for full-fidelity interaction. Transfers happen at load/transition
-boundaries or amortised across frames — never a per-frame stall, never a freeze.
-See [ARCHITECTURE.md](ARCHITECTURE.md) §GPU-Driven Simulation.
+Thousands of macro squads are a **CPU** workload, held by baked paths and the strict
+O(N) bound; the GPU draws them and nothing more. GPU-resident macro simulation is
+deferred to the far future — see [CANON.md](CANON.md) S5.
 
 ## Squad as THE macro entity (owner's design, 2026-08-06)
 

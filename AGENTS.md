@@ -1,8 +1,7 @@
 # Agent Instructions — Samosbor / Timaert (C++ Port)
 
-> **`timaert_c/` is the final game.** This workspace — not the TS prototype —
-> ships. We keep translating gameplay from `C:\Timaert\src` (TS/Svelte) into
-> it, but the C++ port is the product.
+> **`timaert_c/` is the final game.** The TypeScript prototype is history; the C++
+> port IS the product. Design intent lives in [CANON.md](CANON.md).
 >
 > **💰 Token budget: ECONOMIZE.** (2026-07-30) Tokens are finite. Be concise,
 > avoid redundant research, do not fan out subagents speculatively. But if a
@@ -192,12 +191,20 @@ even if everything compiles and passes.
   input + timing + audio only — never the graphics API.** Do not add new GL
   code; new GPU code lives in `src/gpu/`. See `ARCHITECTURE.md` §Rendering &
   Compute Backend.
-- **GPU-driven simulation, no cheats.** The mass of NPCs is simulated on the GPU
-  (compute shaders); only the few the player can actually interact with are
-  *embodied* onto the CPU/ECS. NPCs are never frozen, faked, or LOD-skipped —
-  only their execution unit changes. Follow the four crowd rules (data packing,
-  lookup buffers, branchless math, cohort sorting) and the no-stall transfer
-  rule. See `ARCHITECTURE.md` §GPU-Driven Simulation.
+- **GPU is graphics; the world is CPU** (owner's ruling 2026-08-20, `CANON.md` S5).
+  The GPU draws — shaders, shadows, lighting, terrain/billboard passes, sky, water,
+  particles, sprite banks — and it may additionally carry **one-way physics**
+  (ragdolls, debris): the world drives them, **they never drive the world**, and
+  nothing the simulation must read may live there. The world itself — macro squads,
+  macro AI, the daily tick, economy, fields — runs on the **CPU**, and it scales by
+  **baked fields + the O(N) bound below**, not by compute. GPU-resident world
+  simulation is **deferred to the far future**: do not build toward it, do not cite
+  it, do not "leave room" for it.
+- **No cheats, on whichever unit runs it.** NPCs are never frozen, faked or
+  LOD-skipped; only the execution unit and the representation width may change,
+  never the behaviour. What the player can touch is a full ECS body; what he cannot
+  is a macro record (a squad). Today's `tick_macro_npc_ai_budgeted` backlog-skip
+  violates this and is a defect to close, not a pattern to copy.
 - **Strict O(N) simulation bound.** During simulation (whether subworld ECS tick
   or macroworld tick), **nothing greater than O(N) is permitted**. Never write
   O(N²) scans for proximity, line-of-sight, or AI targeting. **This is exactly
@@ -206,8 +213,12 @@ even if everything compiles and passes.
 
 ## Source Authority
 
-- `C:\Timaert\src` (TypeScript/Svelte) is the gameplay behavior authority.
-  Before changing a gameplay system, read the matching TS module and callers.
+- **`CANON.md` is the design authority** — the owner's intent, and the yardstick a
+  deviation is judged against. Code that contradicts it is a defect; a canon that
+  contradicts working code is an imprecise canon — say which one you are fixing.
+  *(The old authority on this line — the TypeScript prototype at `C:\Timaert\src` —
+  is retired: the TS migration is over, the C++ IS the game, and that tree is not
+  on this machine.)*
 - Windows/MSVC is a verification target for this workspace, not a gameplay
   authority. A passing Windows build proves compilation only.
 - There is **no separate combat resolver and no battle mode**. Combat is

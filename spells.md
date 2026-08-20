@@ -15,6 +15,14 @@ Modular spell framework: **adding a spell is one file, no engine changes.**
 
 - **`SpellBook`** { learned, activeSpellId, cooldowns, sustainedActive,
   sustainedDrainCarry }; API `learn / set_active / can_cast / cast / tick`.
+  `cooldowns` holds **steps remaining, not seconds left** (core/time.h
+  `kStepsPerSecond`): the registry authors seconds, the world counts the
+  simulation's own integer quantum, and the only conversion back is the string
+  a human reads ("Cooldown 1.4s"). `tick` takes a step COUNT. That is why a
+  spell comes back after the same amount of FIGHT whether the clock above is
+  racing on the map or crawling underground — where a world tick is 0.25 real
+  seconds, so counting ticks instead would have made a one-second cooldown last
+  sixteen. See [time.md](time.md).
 - **Registry** = `kSpellDefs` (macro/spells.h): one constexpr DATA row per
   spell — fireball, ice-shard, magic-bolt, lightning-chain, energy-beam,
   armageddon, haste, flight — with APPEND-ONLY ordinals (the row index rides

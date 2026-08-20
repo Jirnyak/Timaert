@@ -6,7 +6,8 @@ Source of truth for the **Vulkan render path**. Companion to
 
 > **Status (2026-07-12).** The shipping game uses the Vulkan path for macro and
 > subworld rendering. The subworld renderer has terrain, sky, water, structures,
-> tree billboards, paper-doll NPC billboards, and one full-subworld directional
+> tree billboards, BODY billboards (drawn or procedural, one pass), and one
+> full-subworld directional
 > shadow map. The 2D macro view is the macro fragment synth
 > ([shaders/macro.frag](shaders/macro.frag)).
 
@@ -30,14 +31,14 @@ flowchart TD
     B --> C[object casters only]
     C --> D[shadow_bb: tree silhouettes from sun]
     D --> Ds[shadow_struct: wall/house boxes from sun]
-    Ds --> Dn[shadow_npc: paper-doll alpha silhouettes from sun]
+    Ds --> Dn[shadow_body: drawn alpha or procedural coverage, from sun]
     Dn --> E[shadowMap.end -> DEPTH_STENCIL_READ_ONLY]
     E --> F[begin_render_pass: main color+depth]
     F --> G[Sky: fullscreen, depth OFF]
     G --> H[Terrain: mesh + PCF shadow sample]
     H --> I[Trees: instanced billboards]
     I --> Is[Structures: instanced boxes + PCF shadow sample]
-    Is --> In[NPCs: paper-doll atlas billboards]
+    Is --> In[Bodies: one pass, sprite bank or procedural]
     In --> Ic[Creatures: procedural sprite billboards]
     Ic --> Ip[Particles: additive FX billboards, depth read / no write]
     Ip --> J[Water: transparent plane, depth read / no write]
@@ -246,9 +247,9 @@ settings — `boot_world` resets them, so every new game or load starts at the
 universal default with everything on.
 
 Every lit fragment stage — terrain ([mesh.frag](shaders/mesh.frag)), structures
-([struct.frag](shaders/struct.frag)), and the tree / NPC / creature billboards
-([billboard](shaders/billboard.frag), [npc](shaders/npc.frag),
-[creature](shaders/creature.frag)) — does `#include "lighting.glsl"` and calls
+([struct.frag](shaders/struct.frag)), and the tree / body billboards
+([billboard](shaders/billboard.frag), [body](shaders/body.frag)) — does
+`#include "lighting.glsl"` and calls
 `lit_surface()`, so the day/night response lives in **one place** and cannot
 drift or be re-implemented (subtly wrong) per shader. Only the `sunTerm`
 differs: terrain and structures quantise `N·L` to 4 bands for a pixel-retro
@@ -257,7 +258,8 @@ per-pixel normal.
 
 > This paragraph described the NPC pass as lit for a long time while it was
 > not, and named a constant (`0.75`) that existed in no shader. When the
-> paper-doll composition moved to the GPU (7cd71e2), `npc.frag` lost its
+> paper-doll composition moved to the GPU (7cd71e2), `npc.frag` (since merged
+> into `body.frag`, 2026-08-20) lost its
 > `#include "lighting.glsl"` and became the one lit pass that was not lit:
 > people stood at full palette brightness at midnight, took no shadow, and
 > were not touched by the torch they were themselves carrying. Restored
@@ -372,14 +374,14 @@ space.
   full-subworld frustum erases small casters (NPCs/trees) via peter-panning.
 - Push constants `VERTEX | FRAGMENT`.
 - Optional descriptor set layout is supported for alpha-tested casters such as
-  paper-doll NPCs.
+  drawn bodies, which throw the alpha of their own picture.
 
 ### Casters
 
 | Caster | Vertex | Fragment |
 |--------|--------|----------|
 | Trees | [shadow_bb.vert](shaders/shadow_bb.vert) — expand instance quad along sun-derived `lightRight` | [shadow_bb.frag](shaders/shadow_bb.frag) — shared `treeCoverage()` `discard` (real silhouette) |
-| NPCs | [shadow_npc.vert](shaders/shadow_npc.vert) — expand instance quad along sun-derived `lightRight` | [shadow_npc.frag](shaders/shadow_npc.frag) — samples paper-doll `sampler2DArray` alpha and discards transparent pixels |
+| Bodies | [shadow_bb.vert](shaders/shadow_bb.vert) — expand instance quad along sun-derived `lightRight` | [shadow_body.frag](shaders/shadow_body.frag) — asks the body's ROW: a drawn kind discards on its picture's alpha, a bare row on its procedural coverage |
 | Structures | [shadow_struct.vert](shaders/shadow_struct.vert) — expand the per-instance box (cube from `gl_VertexIndex`) by `lightMvp` | [shadow_struct.frag](shaders/shadow_struct.frag) — empty (depth only) |
 
 **Universal billboard shadows (no bespoke silhouettes).** A billboard's shadow is
@@ -525,22 +527,40 @@ verified byte-identical (md5) to a build without it. Harness overrides:
   forest edges/corners. That preserves crisp organic tree shapes, avoids square
   forest fills or one-direction smears, and lets neighbouring biomes/temperatures
   mix their tree colours naturally on forest borders.
-- **NPCs** — **instanced paper-doll billboards**. The micro-world uses the same
-  composited character atlas frames as the macro overlay via
-  `character::PaperdollAtlas` + `gpu::SpriteArray`. The pool holds **8192
-  slots**: four 48×48 frames packed 2×2 into each 96×96 array layer (slot =
-  layer·4 + quadrant), because MoltenVK caps `maxImageArrayLayers` at 2048
-  while a 5k city's active working set measures ~7.2k unique frames — below
-  that capacity the LRU thrashed forever (128 recomposes every warm frame,
-  every fifth body degraded to its canonical pose; Session 28, 2026-08-13).
-  `prepare_frame()` resolves the current `AnimationState` (`Idle`/`Walk` plus
-  direction from `SubworldAi::vx/vy`), uploads any newly composed frames
-  before the render pass, and fills the NPC instance buffer with
-  `{pos, size, slot}`. Both consumers decode the packing through the ONE
-  `doll_sample()` in [shaders/doll_pool.glsl](shaders/doll_pool.glsl): the lit
-  pass [shaders/npc.frag](shaders/npc.frag) and the shadow pass
-  [shaders/shadow_npc.frag](shaders/shadow_npc.frag) sample the same slot, so
-  the silhouette can never disagree with the body.
+- **Bodies** — **one instanced pass for every living thing** (2026-08-20, the
+  sprite track; the law is [sprites.md](sprites.md)). A peasant and a wolf are
+  the same instance record in the same buffer through the same draw, because
+  what decides how a body looks is its ROW, not what sort of thing it is. The
+  renderer used to ask the second question — `archetype == 0xFF` meant "NPC
+  pass" — and paid for it with two pipelines, two shadow pipelines, two
+  instance buffers, two fill loops and four draw blocks.
+
+  `kind` carries both halves of the law (`gpu::bb_body_kind`): the low 16 bits
+  are the bank slot or `kBbNoSlot`, the high 16 the procedural body plan. Both
+  stages unpack through the ONE header
+  [shaders/doll_pool.glsl](shaders/doll_pool.glsl), so the lit pass
+  [shaders/body.frag](shaders/body.frag) and the caster
+  [shaders/shadow_body.frag](shaders/shadow_body.frag) cannot disagree about a
+  silhouette.
+
+  Drawn art is resident in `sm::SpriteBank` (`gpu::SpriteArray`): one 256×256
+  layer per drawn kind, decoded once at boot — **five slots, 1.3 MB**, no LRU,
+  no staging ring, no cold start. What it replaced needed 8192 slots and
+  75.5 MB because the paper-doll composite generated a face per SOUL, so a 5k
+  city's working set measured ~7.2k unique frames (Session 28, 2026-08-13) and
+  the pool below that capacity thrashed forever. A picture per KIND is two
+  orders of magnitude smaller, which is what paid for storing art at the
+  resolution the artist drew it.
+
+  Accepted cost until the artist delivers sheets: a humanoid is one static
+  picture per kind, camera-facing — the terms every procedural creature has
+  always had. Walk cycles and facings return with the art.
+
+  > Scar worth keeping: a PNG arrives head-first (row 0 = the top) and the bank
+  > stores the world convention (v = 0 at the FEET). The pool this replaced
+  > flipped rows at upload; the bank did not, and the entire town stood on its
+  > head through a green build, a green suite and a passing smoke. One capture
+  > found it.
 
 ## Water
 
@@ -1020,5 +1040,4 @@ The **2D view is the map / minimap**, not a separate tile renderer to port — i
 is already the macro synth ([shaders/macro.frag](shaders/macro.frag)); the
 first-person 3D view is the subworld renderer.
 
-See [vulkan.md](vulkan.md) for the backend module map and the GPU-driven
-simulation plan.
+See [vulkan.md](vulkan.md) for the backend module map.

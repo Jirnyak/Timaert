@@ -77,8 +77,13 @@ interaction rule (owner's ruling):
 
 ```
   −127 ....................... 0 ....................... +127
-  saturated MAGIC          neutral            saturated BLACK ENERGY
+  saturated BLACK ENERGY     neutral            saturated MAGIC
 ```
+
+*(Sign fixed 2026-08-20 to the owner's canon — **plus is MAGIC, minus is black
+energy**; earlier revisions of this file had it the other way round. Nothing else
+about the field changes: it is still one signed byte, still diffusing, still
+annihilating by `+=`. See [CANON.md](CANON.md) S15.)*
 
 One `int8` per cell — 1 MiB for the whole 1024² world, and exactly the house
 style for this project (discrete, integer, one byte where a byte will do). It
@@ -114,7 +119,7 @@ the Empire of Light has spent a thousand years arranging (§3.2).
 **Destroying an artifact does not merely remove a source — it makes you one.**
 That is the Sacrilegist's biography, expressed as a field mechanic: he crossed
 the world for a thousand years destroying black artifacts, which means he *was*
-a walking negative source, and the world was brighter for it while he existed.
+a walking POSITIVE source (magic), and the world was brighter for it while he existed.
 A player who takes up that policy is not imitating him thematically (§6) — he is
 running the same subroutine.
 
@@ -131,8 +136,8 @@ exactly the same rule**; sources here, sources there, and diffusion.
 
 | What you do with artifacts | Your sign | Reversible? |
 |---|---|---|
-| **Hold them** | Positive — you are a walking cult source (§3.5) | **Yes.** Destroy them or hand them to Nefesh and it stops |
-| **Destroy them** | Negative — and **each one destroyed makes you a permanently stronger source of magic** | **No. Ever.** |
+| **Hold them** | **Negative** — you are a walking cult source of black energy (§3.5) | **Yes.** Destroy them or hand them to Nefesh and it stops |
+| **Destroy them** | **Positive** — and **each one destroyed makes you a permanently stronger source of magic** | **No. Ever.** |
 
 That asymmetry is the best thing in the whole system, and it is worth saying
 out loud: **hoarding is a state, destruction is a fact.** A hoarder can put the
@@ -352,9 +357,9 @@ The player may do anything with them: clear their sites like dungeons and loot
 army and watch from a hill. — *the growth curve and settlement capture are
 `NOT BUILT`; `cults` exists as a faction row today.*
 
-**The shadow field is the positive half of THE FIELD (§1.1).** The primary
+**The shadow field is the NEGATIVE half of THE FIELD (§1.1).** The primary
 object is not the artifact; it is the field — one signed per-cell world layer,
-black energy on the plus side, magic on the minus. It belongs to the family this
+black energy on the minus side, magic on the plus. It belongs to the family this
 engine already builds: danger zones ([zones.md](zones.md)) and the baked
 night-glow field with occluded spread ([macro-lighting.md](macro-lighting.md)).
 **Black artifacts only feed it, contextually.**
@@ -413,8 +418,8 @@ The smooth ramp is what makes it work: a stepped meter would be a score, and a
 score would be a moral judgement.
 
 **Who can actually hold ground against it: the player, and almost nobody else.**
-A player who has been destroying artifacts *and* is a strong mage is a negative
-source (§1.1) — permanently stronger with every artifact he breaks — and his
+A player who has been destroying artifacts *and* is a strong mage is a POSITIVE
+source of magic (§1.1) — permanently stronger with every artifact he breaks — and his
 mage squads with him. That is the entire list. No kingdom garrisons the dark
 back; no faction policy cleans a province. If a region of this world stays
 bright over ten years, it is because one person and his people stood in it. **That is the game's answer to "can I actually change
@@ -1104,12 +1109,12 @@ the ten years.
    landmarks, through more and stronger squads, to **taking settlements** where
    the field has settled; a captured city keeps trading but plays by new rules.
    Silent throughout; no meter, ever.
-2. **THE FIELD** (§1.1, §3.5) — ONE signed per-cell world layer, −127 magic …
-   +127 black energy, diffusing and saturating, in the family of `zones.h` and
+2. **THE FIELD** (§1.1, §3.5) — ONE signed per-cell world layer, −127 black energy …
+   +127 magic, diffusing and saturating, in the family of `zones.h` and
    the night-glow bake. **Annihilation is the addition operator, not a rule.**
-   Positive sources: artifacts wherever they are kept, plus a carrier's trail.
-   Negative sources: whoever destroys an artifact (player or NPC), very strong
-   mage squads, dragons. **Calibration: unopposed → whole world in ~100 game
+   NEGATIVE sources: cults, cult landmarks, cultist squads, black artifacts wherever
+   they are kept (plus a carrier's trail). POSITIVE sources: strong mages — magical
+   landmarks above all — and dragons; and whoever destroys a black artifact. **Calibration: unopposed → whole world in ~100 game
    years**, i.e. ~10 % of it over a full playthrough. Does not touch the
    ten-year clock.
 3. **The Peasant King as a roaming, respawning, magic-immune elite NPC** (§5),

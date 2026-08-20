@@ -1,13 +1,11 @@
 # Vulkan Backend & GPU-Assisted Computation — Timaert
 
-Source of truth for the **Vulkan backend** (`src/gpu/`) and the **GPU-driven
-simulation** that it exists to enable. Companion to [render.md](render.md) (the
-graphics passes) and [ARCHITECTURE.md](ARCHITECTURE.md) §Rendering & Compute
-Backend / §GPU-Driven Simulation.
+Source of truth for the **Vulkan backend** (`src/gpu/`). Companion to
+[render.md](render.md) (the graphics passes) and [ARCHITECTURE.md](ARCHITECTURE.md)
+§Rendering & Compute Backend / §GPU is graphics; the world is CPU.
 
-> **Why Vulkan, not "faster GL".** The game's core goal — thousands of macro
-> squads and thousands of microworld combatants — is a **compute-shader**
-> problem. OpenGL 3.2 Core has no compute, and Apple caps macOS OpenGL at 4.1, so
+> **Why Vulkan, not "faster GL".** The game draws thousands of lit, shadowed bodies
+> in one subworld frame — a per-draw-overhead and pipeline-control problem. OpenGL 3.2 Core has no compute, and Apple caps macOS OpenGL at 4.1, so
 > GL compute is impossible on Mac. Vulkan gives explicit compute + memory control
 > and far lower per-draw overhead. **SDL2 is demoted to platform only** (window,
 > input, timing, audio) — never the graphics API.
@@ -149,56 +147,22 @@ Toolchain (macOS dev, Homebrew): `molten-vk`, `vulkan-headers`, `vulkan-loader`
 
 ---
 
-## GPU-driven simulation (the payload)
+## What the GPU does NOT do — the world (owner's ruling 2026-08-20)
 
-The rendering backend exists to enable this. The organising principle: **NPCs are
-always real, always simulated — never faked, frozen, or LOD-cheated.** Only their
-*execution unit* changes.
+**GPU = graphics.** Shaders, shadows, lighting, terrain/billboard passes, sky, water,
+particles, sprite banks. It may additionally carry **one-way physics** (ragdolls, debris):
+the world drives them, they never drive the world.
 
-### Residency & embodiment (воплощение)
+**The world runs on the CPU** — macro squads, macro AI, the daily tick, economy, fields —
+and it scales by baked fields plus the strict O(N) bound, not by compute.
+GPU-resident world simulation (compute over SSBOs, residency tiers, the four crowd
+techniques) was this document's headline for a year and is now **deferred to the far
+future**: not a plan of record, nothing to build toward, nothing to leave room for.
+See [CANON.md](CANON.md) S5 and ARCHITECTURE.md §GPU is graphics; the world is CPU.
 
-| Tier | Who | Runs on | Representation |
-|------|-----|---------|----------------|
-| **GPU-resident** | The mass (distant squads; micro combatants outside the engagement set) | Compute over SSBOs | Packed SoA / bit-packed |
-| **CPU-embodied** | The few the player can touch | EnTT/ECS | Full gameplay logic, events, loot, dialogue |
-
-**Embodiment** promotes a GPU-resident NPC to a CPU ECS entity the instant the
-player can act on it; **de-embodiment** returns it to the GPU pool. Identity (id,
-packed stats) is preserved across the transition.
-
-### No-stall transfer rule
-
-GPU↔CPU transfer is the enemy. Every embodiment either happens at a **load /
-transition boundary** or is **amortised** across frames via double-buffered,
-fenced staging — **never** a synchronous per-frame readback. No blocking
-`vkQueueWaitIdle` in the frame loop, no per-frame full-buffer readback. If data
-must return this frame, only the embodied few return, never the mass.
-
-### The four crowd techniques (rules for every compute kernel)
-
-1. **Data packing** — SoA + bit-packing. NPC state in a few 32-bit words
-   (`level(8) | kindOrWeaponId(8) | hp(16)`), positions/velocities in parallel
-   float buffers. No AoS structs, no GPU pointers.
-2. **Lookup buffers** — weapon/armour/faction/kind stats as flat GPU arrays
-   indexed by id. One universal kernel, no per-kind shader. Adding a kind = one
-   row, same as the CPU registries.
-3. **Branchless math** — replace `if (melee) … else …` with one formula
-   (`dmg = meleeDmg·proximity + rangedDmg·visibility`, melee's ranged coef = 0 in
-   the lookup buffer). Divergence-free.
-4. **Cohort sorting** — when behaviour can't collapse to one formula, sort the
-   crowd by behaviour class (CPU or GPU radix) and run one homogeneous dispatch
-   per cohort. Each warp sees identical control flow.
-
-### What stays on the CPU
-
-Only what the player is resolving: embodied entities, their events (loot, XP,
-dialogue, reputation), quest evaluation, save/load, world generation. Latency-
-bound, branchy, low-count — a natural CPU fit. The dividing line is
-**interactivity**, not entity type.
-
-This is **not a cheat**: an off-screen squad and an embodied one run the same
-rules; only the execution unit and representation width differ, and embodiment
-always happens before any interaction is possible.
+The honesty rule survives the move to the CPU unchanged: **nothing is faked, frozen or
+LOD-skipped** — only the execution unit and the representation width may change, never
+the behaviour.
 
 ---
 
@@ -240,7 +204,7 @@ DYLD_LIBRARY_PATH=/opt/homebrew/lib ./build/gpu_smoke3d
 | P2 | Swapchain + render pass + sync (clear loop) | done |
 | P3 | ImGui Vulkan | done |
 | P4 | Macro fragment synth → SPIR-V (data textures) | done |
-| P5 | Subworld passes: terrain, trees, sky/stars, **shadows**, water | in progress (ground atlas, 2D tiles, paper-doll remain) |
+| P5 | Subworld passes: terrain, trees, sky/stars, **shadows**, water, bodies | in progress (ground atlas + 2D tiles remain; bodies landed 2026-08-20 as ONE pass, sprites.md) |
 | P6 | `main.cpp` cutover; **delete** `src/gl/`, `imgui_impl_opengl3`, WASM; push→UBO | pending |
 | P7 | Compute NPC mass sim + CPU↔GPU embodiment seam | pending |
 | P8 | Packaging (bundle MoltenVK for macOS Steam; ICD config) | pending |

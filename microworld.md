@@ -36,7 +36,8 @@ is the macro map / minimap, not a subworld mode.
   rendering use the entity's true `Position.z`. The sea-level water plane is the
   absolute Z = 0 reference.
 - **Renderer:** 3D sky → terrain → water → spell effects → tree
-  billboards → NPC paper-doll billboards → point lights at entity altitude.
+  billboards → BODY billboards (drawn or procedural, one pass) → point lights
+  at entity altitude.
 
 ## Settlements — city street plan
 
@@ -382,7 +383,6 @@ dispatch are written up in **[dungeons.md](dungeons.md)**.
 
 Reads the macroworld as source of truth ([macroworld.md](macroworld.md)).
 Hosts all combat ([microcombat.md](microcombat.md)) and spell visuals
-([spells.md](spells.md)). The combatant crowd is GPU-driven; the player's
-engagement set is CPU-embodied. Overworld NPCs within ±1 cell are projected into
+([spells.md](spells.md)). The combatant crowd is CPU-simulated under the O(N) bound (CANON.md S5). Overworld NPCs within ±1 cell are projected into
 the 3×3 as real combat bodies and can be *possessed*; leaving as a possessed body
 remaps the macro player onto its overworld cell ([possession.md](possession.md)).

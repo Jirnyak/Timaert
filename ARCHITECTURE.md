@@ -10,10 +10,9 @@ four-layer model, same patterns, same rules. The only differences are language
 `std::thread`, `Uint8Array`/`Float32Array` →
 `std::vector<std::uint8_t>`/`std::vector<float>`). Rendering runs on **Vulkan**
 (MoltenVK on macOS): the OpenGL→Vulkan raster migration is **complete in `src/`**
-(0 GL call sites, no `src/gl/`, the backend lives in `src/gpu/`). The GPU
-*compute* half of the backend (mass NPC simulation) is **not yet built** — see
-*Rendering & Compute Backend* and *GPU-Driven Simulation* below for what is
-shipped vs planned.
+(0 GL call sites, no `src/gl/`, the backend lives in `src/gpu/`). The GPU draws; the
+**world simulation runs on the CPU** by owner's ruling — see *GPU is graphics; the world
+is CPU* below.
 
 Four strict layers. Each depends only on layers below it — never sideways,
 never up. Removing any Layer 4 file must leave the game fully functional.
@@ -97,7 +96,8 @@ src/
   sub/          L2 subworld (seamless 9-cell, generators, first-person 3D renderer).
   events/       L3 event bus, logic nodes, effect applicator, quests.
   content/      L4 pure data (spells, plot, encounters, quest generators).
-  assets/       Sprite atlas and paper-doll asset loaders / GPU cache.
+  assets/       Sprite table loaders: the drawn-art atlas (2D) and the
+                GPU sprite bank (3D bodies). See sprites.md.
   ui/           ImGui overlays (Diplomacy, Settlement, Quest, Codex, Map…).
 ```
 
@@ -116,19 +116,16 @@ already `gl`-free): `src/{app,core,gpu,ecs,macro,sub,events,content,ui,assets}`
 > Emscripten-WASM** paths are **removed** — `src/` has 0 GL call sites, no
 > `src/gl/`, and the browser target is dropped. The **raster** backend is fully
 > ported and shipping from `src/gpu/`. The GPU **compute** half (mass NPC sim) is
-> **still unbuilt** — see *GPU-Driven Simulation* (**STATUS: NOT YET
-> IMPLEMENTED**). Sections below that describe GL/GLSL uniform semantics are
+> **not built and not planned** — see *GPU is graphics; the world is CPU*. Sections below that describe GL/GLSL uniform semantics are
 > retained as the *algorithmic reference* the SPIR-V pipelines were ported from,
 > not a description of a live GL path.
 
-**Why the move was required, not cosmetic.** OpenGL is not merely "slower"; the
-old target (**OpenGL 3.2 Core**) has **no compute shaders**, and Apple caps macOS
-OpenGL at **4.1**, so GL compute is impossible on macOS *at all*. The game's core
-goal — simulating **thousands of macro NPCs/squads** and **thousands of
-microworld combatants** — is a compute-shader problem. GL 3.2 could not express
-it; Vulkan can, with explicit control over CPU↔GPU work and far lower per-draw
-driver overhead. (The raster migration that unblocks this is done; the compute
-work itself is still pending — *GPU-Driven Simulation*.)
+**Why the move was required, not cosmetic.** The game draws **thousands of bodies in one
+subworld frame** (16384 is the universal cap), each lit, shadowed and sprite-banked, plus
+a procedurally synthesised world map. That is a per-draw-overhead and pipeline-control
+problem, and Vulkan solves it where GL 3.2 could not. *(The older rationale on this line —
+"simulating thousands of NPCs is a compute-shader problem" — was retired 2026-08-20: the
+world runs on the CPU by owner's ruling; see* GPU is graphics; the world is CPU *below.)*
 
 **SDL2 is demoted to a platform layer, not the graphics API.** SDL owns:
 window creation (`SDL_Vulkan_CreateSurface`), input events, timing, and audio
@@ -146,94 +143,43 @@ Vulkan device/swapchain/frame-graph in `gpu/`, port the macro fragment synth
 and subworld terrain/billboard passes to SPIR-V pipelines, then land the compute
 simulation kernels. Saves are unaffected (rendering is never serialised).
 
-## GPU-Driven Simulation
+## GPU is graphics; the world is CPU
 
-> **⛔ STATUS: NOT YET IMPLEMENTED (planned — `vulkan.md` P7).** This entire
-> section describes the *target design*, not shipped behaviour. As of 2026-07-29
-> the code contains **zero compute shaders, zero `vkCmdDispatch`, zero compute
-> pipelines, and zero SSBOs** (`rg` over `src/` — the only hit is a comment). The
-> "mass of NPCs" today runs on the **CPU** via a time-sliced budgeted tick
-> (`macro/npc_ai.cpp` `tick_macro_npc_ai_budgeted`) that raises a `backlog` flag
-> and skips updates when overloaded, and the subworld renderer is hard-capped at
-> **512** visible NPCs + 512 creatures. Read every present-tense verb below as
-> **"is intended to"**, not "does". This is the project's biggest doc-vs-code gap
-> and the headline of `audit.md` §6.0 / §2.6. Do not cite it on a store page as an
-> existing feature.
+**Owner's ruling 2026-08-20 ([CANON.md](CANON.md) S5, S26).** The division of labour is
+settled, and it is not the one earlier revisions of this file described:
 
-The organising principle (as designed): **NPCs are always real, always
-data-oriented, always simulated — never faked, frozen, or LOD-cheated.** They are
-*intended to* live where their fidelity is indistinguishable to the player: the
-**GPU** for the mass, the **CPU** only for the few the player can actually touch.
-No behaviour is to be skipped; only the *execution unit* changes. *(Caveat: the
-current CPU fallback described in the status banner above **does** LOD-skip under
-load — the one place today's build violates this principle.)*
+- **GPU = the picture.** Shaders, shadows, lighting, terrain and billboard passes, the
+  sky, water, particles, sprite banks — everything that makes a frame.
+- **GPU may also carry ONE-WAY physics** — ragdolls, debris, cloth-like decoration:
+  the world drives them, **they never drive the world**. Nothing the simulation must
+  read may live there.
+- **The world runs on the CPU.** Macro squads, macro AI, the daily tick, economy,
+  fields — all CPU, and they scale by **baked fields + the strict O(N) bound**, not by
+  compute. That is why paths are baked and why proximity goes through grids.
 
-### Residency & Embodiment (воплощение)
+**GPU-resident world simulation is DEFERRED to the far future** — it is not a plan of
+record, not a hard rule, and not something to build toward incidentally. Any code or
+doc that assumes "the mass of NPCs lives in compute shaders" is describing an abandoned
+direction. Evidence of where the project actually stands: `shaders/` holds ~30 files and
+**zero compute shaders**; the mass has always been CPU.
 
-Two residency tiers, one entity identity:
+If that decision is ever revisited, the four crowd techniques worth re-reading then
+(SoA + bit-packing, id-indexed lookup buffers, branchless math, cohort sorting) live in
+the git history of this section — deliberately not kept here, because a design nobody is
+building is a trap for the next reader.
 
-| Tier | Who | Where it runs | Fidelity |
-|------|-----|---------------|----------|
-| **GPU-resident** | The mass (distant macro squads; micro combatants outside the player's engagement set) | Compute shaders over SSBOs | Full simulation, packed representation |
-| **CPU-embodied** | The few the player can meaningfully interact with | EnTT/ECS on CPU | Full-fidelity gameplay logic, events, loot, dialogue |
+**What this does NOT relax.** The honesty rule stands on the CPU exactly as it was
+written for the GPU: **NPCs are never faked, frozen or LOD-cheated** — only the execution
+unit and the representation width may change, never the behaviour. The macro AI's
+budgeted tick (`macro/npc_ai.cpp` `tick_macro_npc_ai_budgeted`), which skips updates
+under load and raises a `backlog` flag, is therefore the one live violation of it and is
+a defect to close, not a design.
 
-**Embodiment** is the promotion of a GPU-resident NPC to a CPU ECS entity the
-instant the player can act on it (aims at it / talks / attacks in the
-microworld; enters its cell chunk in the macroworld). **De-embodiment** returns
-it to the GPU pool when interaction ends. The identity (id, packed stats) is
-preserved across the transition — the same NPC, embodied or not.
-
-- **Macroworld:** the CPU-embodied set = the chunk of cells around the player.
-  Everything beyond the chunk is GPU-resident mass simulation.
-- **Microworld:** the CPU-embodied set = NPCs inside the player's engagement
-  radius / under the reticle. The rest of the crowd is GPU billboards driven by
-  compute, promoted the moment they enter the engagement set.
-
-### No-stall transfer rule
-
-GPU↔CPU transfer is the enemy. Every embodiment/de-embodiment either happens at
-a **load/transition boundary** or is **amortised** across frames via
-double-buffered, fenced staging — **never** a synchronous per-frame readback
-stall. The target is zero micro-freezes: no blocking `vkQueueWaitIdle` in the
-frame loop, no per-frame full-buffer readback. If data must come back this
-frame, only the embodied few come back, never the mass.
-
-### The four GPU-crowd techniques
-
-Adopted as design rules for every compute simulation kernel:
-
-1. **Data packing (SoA + bit-packing).** NPC state is packed into a few 32-bit
-   words in GPU SSBOs, Structure-of-Arrays. E.g. one `uint32`:
-   `level(8) | kindOrWeaponId(8) | hp(16)`; positions/velocities in parallel
-   `float` buffers. The shader reads one word and bit-shifts (nanoseconds) to
-   recover identity. **No AoS structs, no pointers on the GPU.**
-2. **Lookup buffers (data-driven on the GPU).** Weapon / armour / faction / NPC
-   kind stats live as **flat GPU arrays indexed by id**. One universal kernel
-   reads stats by index; there is no per-kind shader. Adding a weapon/kind =
-   one row in a buffer, exactly like the CPU registries — the same
-   data-oriented rule, moved to VRAM.
-3. **Branchless math (no warp divergence).** Replace `if (melee) … else …` with
-   a single formula evaluated for all: e.g.
-   `dmg = meleeDmg * proximityCoef + rangedDmg * visibilityCoef`, where a melee
-   weapon's ranged coefficient is simply `0` in the lookup buffer. The GPU
-   multiplies by zero and gets the right answer for both, divergence-free.
-4. **Cohort sorting.** When behaviour genuinely can't collapse to one formula,
-   the CPU (or a GPU radix sort) **sorts the crowd by behaviour class** before
-   dispatch, then runs one homogeneous compute dispatch per cohort (all melee
-   `[0..N)`, all missile `[N..M)`). Each warp sees identical control flow.
-
-### What stays on the CPU
-
-Only what the player is actually resolving: the embodied entities, their events
-(loot, XP, dialogue, faction reputation), quest evaluation, save/load, and world
-generation. These are latency-bound, branchy, and low-count — a poor GPU fit and
-a natural CPU fit. The dividing line is **interactivity**, not entity type: an
-NPC is CPU-embodied *because the player can touch it*, not because it is special.
-
-This model is **not a cheat**: an off-screen macro squad and an embodied one run
-the same rules; the only difference is the execution unit and the representation
-width. The player never observes a discontinuity because embodiment happens
-before any interaction is possible.
+**Embodiment (воплощение) survives, and it is a CPU↔CPU affair.** What the player can
+touch becomes a full ECS body; what he cannot is a macro record (a squad — CANON S4).
+The bodies of a crowd the world does not store — townsfolk, guards, wildlife, a lair's
+goblins — are born from the cell's context and die with it (CANON S4/S21). The dividing
+line is interactivity, not entity type.
 
 ---
 
@@ -271,7 +217,7 @@ to a C++ TU pair (header + optional `.cpp`).
 | `game/audio.ts`            | [macro/audio.{h,cpp}](src/macro/audio.h)                              | SDL_mixer audio subsystem for native builds: CMake requires SDL2_mixer outside Emscripten and links the discovered mixer target. The C++ no-mixer backend exists only for configurations that do not define `TIMAERT_HAS_SDL_MIXER`; native CMake does not silently enter it. Stable MP3 music registry, one-shot SFX registry, volume/mute controls, fade play/stop, RAII no-copy handle ownership, and app-level state music hooks with same-desired-track failure latch. `audio_contract_test` locks stable IDs, asset filenames, and the control contract; `audio_runtime_test` verifies dummy-driver init/decode/playback with the native mixer backend |
 | `game/renderer.ts`         | [macro/vk_macro_renderer.{h,cpp}](src/macro/vk_macro_renderer.h)      | Single fragment shader: biome + rivers + feature painter overlay + zones + cell-grid + time tint |
 | `game/markers.ts`          | [macro/markers.h](src/macro/markers.h)                                | Universal POI/quest/danger/waypoint marker list |
-| `character/`               | [assets/character_paperdoll.{h,cpp}](src/assets/character_paperdoll.h), [assets/character_paperdoll_gl.{h,cpp}](src/assets/character_paperdoll_gl.h) | Sprite atlas manifest, animation, palette, deterministic character generation, and GL texture cache |
+| `character/`               | *(retired 2026-08-20)* | The 37-layer paper-doll composite and its two delivery paths are gone. A visible kind is a row of THE sprite table ([macro/sprite_rows.h](src/macro/sprite_rows.h)); drawn art is resident in [assets/sprite_bank.{h,cpp}](src/assets/sprite_bank.h), and a row without art is a procedural body plan. See [sprites.md](sprites.md) |
 | `webgl/map-generator.ts`   | [macro/map_generator.{h,cpp}](src/macro/map_generator.h)              | GPU master texture pipeline (heights, moisture, temperature, mask) |
 | `webgl/shaders.ts`         | [shaders/](shaders/) `.vert`/`.frag`/`.glsl` compiled to SPIR-V by `glslc` | GLSL shader sources (compiled offline, not inline strings) |
 | `webgl/webgl-context.ts`   | [gpu/](src/gpu/) `vk_device` / `vk_swapchain` / `vk_pipeline`        | Vulkan device/swapchain/pipeline setup (replaced the removed `src/gl/` GL wrappers) |
@@ -896,7 +842,7 @@ rendering position uses all three:
 | `subworld/spawn.ts`                    | [sub/spawn.{h,cpp}](src/sub/spawn.h)                    | Per-biome ambient spawn from the global monster table; bakes `NPCKind.type = 0x100 \| catalogIndex` |
 | `subworld/ai.ts`                       | [sub/ai.{h,cpp}](src/sub/ai.h)                          | Local NPC AI tick (chase + cooldown attack, missile / melee) |
 | `subworld/fauna.ts`                    | [macro/fauna.{h,cpp}](src/macro/fauna.h)                | **Global monster table** (source of truth; MACRO data since 2026-08-07): per-biome `FaunaEntry` density tables + stable-id registry (`creature_catalog` / `creature_def` / `creature_def_from_kind`) + per-cell capacity for the `fauna_count` macro stock. See [monsters.md](monsters.md) |
-| `subworld/citizen-sprites.ts`          | skipped                                                  | TS Canvas2D walk-strip helper; native NPC visuals use paper-doll billboards in 3D |
+| `subworld/citizen-sprites.ts`          | skipped                                                  | TS Canvas2D walk-strip helper; native NPC visuals are drawn-art billboards out of the one sprite bank (sprites.md) |
 | `subworld/spatial-hash.ts`             | [sub/spatial_hash.h](src/sub/spatial_hash.h)            | Bucketed grid for proximity |
 
 ### Seamless 9-Cell Architecture
@@ -1383,7 +1329,7 @@ detail: [render.md](render.md) §Dynamic lighting.
 
 **Sprite shadows:**
 - Pending. `renderer_3d.cpp` currently draws normal tree billboards and
-  character paper-doll billboards only; there is no projected-shadow pass.
+  body billboards only (shaders/body.frag); there is no projected-shadow pass.
 
 **Point lights (modular — torches, campfires, spells, windows):**
 - `sub/lighting.h` defines the `PointLight` POD and a fixed `kMaxPointLights`, but

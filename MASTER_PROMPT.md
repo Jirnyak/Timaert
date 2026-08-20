@@ -814,7 +814,7 @@ assertion proves the routing; and `microcombat.md`, `rpg.md`, `ARCHITECTURE.md`
 ### Explicitly still the OWNER's call (propose, don't commit) — see §9
 The universal container system (§9.1), gold unification (§9.2), the fauna balance
 pass (§9.3), Route-1 macro monster parties (§9.4), and the GPU-driven-sim arc
-(§9.5). Advance those only if the owner redirects.
+(§9.5 — CLOSED 2026-08-20: deferred to the far future, CANON.md S5). Advance those only if the owner redirects.
 
 ---
 
@@ -938,7 +938,8 @@ Pure data; low risk.
 generic monsters (from the global `FaunaEntry` table, `0x100|idx`) AND humanoid
 NPCs (`NPCType<8`)**, mixed freely. Parties can be **large — thousands of units**,
 and the owner was explicit that **this scale is the whole reason the engine is
-data-oriented and GPU-driven** ("ради этого всё затевалось"). This generalises the
+data-oriented** ("ради этого всё затевалось" — the "and GPU-driven" half of this line
+was retired 2026-08-20: the scale is held by baked fields + O(N) on the CPU, CANON.md S5). This generalises the
 old "roaming monster parties" idea and **unifies it with the M&B pillar "an army =
 a list of NPCs you hired" (§2): the player's army is just one party, and the player
 is the leader NPC of it.** It ties directly into the entity/possession track (§8):
@@ -953,12 +954,13 @@ engagement) before building. See memory `macro-parties-model`.
 > **A concrete draft proposal now exists — `proposals/macro-parties.md`** (2026-07-27,
 > awaiting owner review).
 
-### 9.5 Vulkan / GPU-driven simulation (standing backend mandate)
-The headline compute goal — thousands of GPU-resident combatants, embodied to
-the CPU/ECS only when the player can act on them — remains the long arc. See
-`ARCHITECTURE.md` §Rendering & Compute Backend and §GPU-Driven Simulation, and
-`vulkan.md` / `render.md` / `vulkan_plan.md`. Advance it when the owner points
-you there.
+### 9.5 GPU-driven simulation — CLOSED 2026-08-20 (deferred to the far future)
+Owner's ruling: **GPU = graphics** (plus one-way physics that the world drives and
+that never drives the world); **the world runs on the CPU**, held by baked fields and
+the strict O(N) bound. Thousands of squads and thousands of combatants are a CPU
+workload. Do not build toward compute-resident simulation, do not cite it, do not
+leave room for it. See [CANON.md](CANON.md) S5 and `ARCHITECTURE.md` §GPU is graphics;
+the world is CPU. The Vulkan *raster* backend remains the target and is shipped.
 
 ### 9.6 Codebase hygiene backlog (census follow-ups)
 A read-only census of cold code (2026-07-28) surfaced items **left unapplied on

@@ -16,17 +16,17 @@ what ships.
 
 > **Backend direction.** Rendering + compute target **Vulkan** (MoltenVK on
 > macOS). The legacy **OpenGL 3.2 Core / WebGL2 / Emscripten-WASM** paths are
-> being retired and the browser build is dropped, because the game's core goal —
-> thousands of macro squads and thousands of microworld combatants — is a
-> compute-shader problem GL 3.2 cannot express (and macOS GL is capped at 4.1,
-> so GL compute is impossible on Mac). **SDL2 is demoted to platform/input/audio
+> being retired and the browser build is dropped, because the game DRAWS thousands
+> of bodies in one subworld frame — a per-draw-overhead and pipeline-control problem
+> GL 3.2 cannot express. (The world SIMULATION runs on the CPU by owner's ruling —
+> CANON.md S5; GPU-resident world simulation is deferred to the far future.) **SDL2 is demoted to platform/input/audio
 > only — not the graphics API.** The migration is **complete in `src/`**: 0 GL
 > call sites, 0 `emscripten` references, no `src/gl/` directory; the Vulkan
 > backend lives in `src/gpu/` and the window is created `SDL_WINDOW_VULKAN`. The
 > Build and Dependencies sections below already describe the Vulkan toolchain.
 > (Leftover `EMSCRIPTEN` guards still linger in `CMakeLists.txt` — build-system
 > scaffolding to prune, not live code.) See [ARCHITECTURE.md](ARCHITECTURE.md)
-> §Rendering & Compute Backend and §GPU-Driven Simulation.
+> §Rendering & Compute Backend and §GPU is graphics; the world is CPU.
 
 ## Documentation
 
@@ -66,7 +66,7 @@ focused doc in this directory alongside the README, which orchestrates them.
 | Sprites | [sprites.md](sprites.md) | THE one sprite law: a kind is a row, drawn art wins, procedural archetype is the floor, one coverage = one shadow; the paper-doll composite's retirement and the future голыш+palette+clothes tier |
 | Macro lighting | [macro-lighting.md](macro-lighting.md) | ONE celestial light for the 2D world map: day/night relief hillshade (sun→moon sweep), water sun/moon glint, baked night-glow field with feature- **and elevation-**occluded spread |
 | Map & knowledge | [map.md](map.md) | THE fog-of-war + map doc: knowledge layer (Unknown/Explored/Visible, save v40), sight-as-light over the one optical sweep, the drowned-memory render law, the full-screen chart page (M), marker surfaces, subworld minimap/map |
-| GPU backend | [vulkan.md](vulkan.md) | Vulkan backend modules, MoltenVK, GPU-driven compute simulation |
+| GPU backend | [vulkan.md](vulkan.md) | Vulkan backend modules, MoltenVK, render passes |
 | UI settings | [ui-settings.md](ui-settings.md) | ONE universal show/hide + resize registry for every HUD element & panel, macro + micro; global prefs file |
 
 ## Highlights
@@ -365,8 +365,10 @@ sudo apt install cmake ninja-build libsdl2-dev libsdl2-mixer-dev \
 ## Integration Ledger
 
 Windows/MSVC build evidence dates to 2026-05-15; the logic-test suite was last
-re-verified **43/43 green on macOS 2026-08-05** (`ctest --test-dir build`, from a
-clean reconfigure).
+re-verified **75/75 green on macOS 2026-08-20** through the `check` target
+(`cmake --build build --target check`, which builds the game and every test and
+only THEN runs ctest — bare `ctest` builds nothing and has reported green off
+stale binaries before).
 Windows/MSVC evidence is a build and smoke verification target only. Gameplay
 behavior authority remains the TypeScript/Svelte source under `C:\Timaert\src`.
 
@@ -396,10 +398,10 @@ Launch path:
 | Flow | Status | Evidence |
 |------|--------|----------|
 | Title / New Game / macro walking | VERIFIED | Existing root artifacts were archived under `artifacts/runtime-smoke/`; representative proofs include `runtime_title*.png`, `runtime_boot_final.err`, `runtime_playing_newgame.png`, and `runtime_playing_after_w.png`. |
-| Load screen and GUI save/load | VERIFIED | `save_roundtrip_test` passes on schema **v12** (11→12: faction registry unification) (8→9 for the mountains→biome refactor, then 9→10 for the possessed-identity ordinal `PlayerState::possessedMacroSpawnId`, Inc 5e-2 — no back-compat, old v8/v9 saves hard-rejected by the version gate); native smoke `new_game,wait_boot_done,save_game,open_load,load_game,wait_boot_done,quit` (seed 12345) passed `[smoke] PASS` with a 51733-byte v10 slot. |
+| Load screen and GUI save/load | VERIFIED | `save_roundtrip_test` passes on schema **v41** (40→41: spell cooldowns became integer STEPS, so the field changed type as well as meaning and a v40 slot's floats would read as a book locked for hours). Earlier hops kept for the record: 11→12 faction registry unification, (8→9 for the mountains→biome refactor, then 9→10 for the possessed-identity ordinal `PlayerState::possessedMacroSpawnId`, Inc 5e-2 — no back-compat, old v8/v9 saves hard-rejected by the version gate); native smoke `new_game,wait_boot_done,save_game,open_load,load_game,wait_boot_done,quit` (seed 12345) passed `[smoke] PASS` with a 51733-byte v10 slot. |
 | Settlement trade / quests | VERIFIED | `runtime_settlement_*`, `runtime_settlement_trade_*`, `runtime_quest_accept_*`; procedural quest lifecycle is covered by `quest_lifecycle_test`. |
 | NPC panel / trade / attack | VERIFIED | `smoke_04_ui.png`, `smoke_07_ui.png`, `smoke_10_attack_ui.png`; smoke script routes selected macro NPCs into subworld combat. |
-| Character paper-doll | VERIFIED | `character_paperdoll_test` and boot smoke load `atlas.bin` / `atlas.png` once. |
+| Character paper-doll | **RETIRED 2026-08-20** | The composite and both of its delivery paths are deleted, with `character_paperdoll_test` and `atlas.bin`/`atlas.png`. A visible kind is a row of THE sprite table; drawn art is resident in the sprite bank (5 slots, 1.3 MB, filled at boot) and a row without art is a procedural body plan. `sprite_rows_test` guards the table. See [sprites.md](sprites.md). |
 | Spell book / casting | VERIFIED | `spell_casting_effects_test`; smoke opens Spells tab, casts projectile spell, toggles Haste, and toggles Flight pathing. |
 | Subworld time / combat handoff | VERIFIED | `subworld_time` smoke passes on seed 42; combined `trigger_battle_start,subworld_time` smoke passes and checks death XP flush plus subworld entity cleanup. |
 | NPC-as-soldier / loot / exit gate | VERIFIED | `combat_squad_test` covers concrete NPC-kind soldiers, hire price/upkeep, garrison generation, and squad projection. Seed-42 app smoke `subworld_exit_gate,subworld_loot_xp` proves zone-9 exit blocking, corpse interaction, XP attribution (`0->25`), and inventory loot transfer (`misc_gem 0->2`). |
@@ -422,11 +424,15 @@ Launch path:
 | THE time ladder (one integer tick) | VERIFIED | The world runs on ONE integer quantum. `core/time.h` owns the ladder — 64 ticks = 1 real second (the fixed simulation step), **8192 = a game day** (2^13, 128 real seconds), 32 days = a season, **128 days = a year = 2^20 ticks exactly**. The four old rhythms (frame `dt`, a float minute accumulator, a 0.5 s AI cadence, a per-DRAWN-FRAME daily queue) are gone. The minute is NEVER STORED: `1440/8192 = 45/256` and `24/8192 = 3/1024` make `minute = (t*45)>>8` and `hour = (t*3)>>10` exact integer arithmetic, and `floor(floor(a/b)/c) == floor(a/(b*c))` makes the two derivations unable to disagree. **THE TICK IS PRIMARY:** one turn of the main loop is one tick AND one drawn frame, so the frame rate and the world's rate are the same number — a low frame rate is not a choppier picture of a world moving at its usual pace, it is the world living slower. The wall clock is consulted for a single purpose — if the turn was quicker than a tick is worth, WAIT out the remainder so the world can never run faster than nominal (the swapchain prefers MAILBOX for the same reason: FIFO would let a 60 Hz display cap the world at 60 ticks/s). It is never consulted to decide that ticks are OWED, so there is no accumulator and no debt: a slow turn is one late tick, a machine that cannot sustain the rate runs a slower world rather than a shorter one, and a SUSPENDED process (closed laptop, breakpoint) ran no turns, advanced no ticks, and simply carries on — no gap to detect, no threshold to tune. Real time can only make the game WAIT; it can neither add a tick nor take one away. Subworld physics, AI and projectiles became deterministic without one file under `sub/` changing. Underground `kSubworldTickDivisor = 16` steps buy one tick (a game hour costs 85 real seconds) and the whole macro world, macro AI included (`kAiTicks = 32` world ticks), slows with it: 24186 → 852 NPC thinks per 1000 steps. EVERY rate is game-time denominated (march 32 cells/game hour, recovery 10/game hour in BOTH worlds since 2026-08-20 — a body standing still underground mends at the same rate per game hour, which is sixteen times slower by the wall clock), so day length is FEEL and cannot move the economy. The subworld has its own denominator for the things you LIVE through rather than plan: `kSubworldWalkTilesPerSecond`, and the combat/spell cooldowns and sustained drain, which are counted in integer simulation STEPS (`kStepsPerSecond`) — see [time.md](time.md) for why literal ticks were measured and rejected there. `kSaveVersion` 17→18 — three ints became one `uint64`, a tick number rather than a duration. `time_ladder_test` walks all 8192 ticks of a day; `world_tick_parity_test` proves **no drift** (10000 one-tick advances == one 10000-tick advance: same instant, same elapsed, same daily queue) and the subworld divisor keeping its remainder across a split. Two accepted consequences: the march costs 28% more stamina per game day, and 0 HP now means dead reliably (the coarse pre-tick frame used to let a player at zero round back to 1). ctest 43/43; smokes PASS. See [time.md](time.md). |
 | Seam crossing, second pass | VERIFIED | Crossing frame **~9-11 ms → 6-8 ms**, its `upload3d` half **6.9-8.4 → 3.0-5.0 ms**; owner confirmed in play that the sub-freeze is no longer felt. One law, four consumers: **do not integrate a constant** — a placeholder cell is one height and one tile id, so the height path fills its interior vertex block (3.10 → 0.19 ms) and the material path memsets it, or picks between two bytes inside the treeline dither band (up to 19.7 → 2.60 ms in a mountainous world). A pass has **two radii** — input reach 92 tiles, output reach 1 — and dirty-marking wants the second (road smooth 3.0-3.2 → 2.0-2.5 ms). Instance buffers are **reused, not re-created** (the CPU loop over 10896 trees is 0.08 ms; 87-97% was buffer churn). Plus a BUG fixed: every building in view changed shade at a crossing, because the per-instance hash was keyed to the composite coordinate — now `structure_shade(absX, absY)`, proven by `material_seam_test` invariant 7 **with a negative control**. Verified by `TIMAERT_SEAM_SELFCHECK` on five pinned seeds: height incremental `0/37249`, material incremental `0`, material shift `0` (GPU readback), flat cells `tileMismatch=0/1048576 valMismatch=0`. Deliberately NOT done: batching the per-resource `vkQueueWaitIdle` (0.39-0.60 ms each, size-independent, 4 per upload) — worth ~1.25x, not free. See [seamless-crossing.md](seamless-crossing.md) and problems.md entries 14-15. |
 | Universal rebindable keymap | VERIFIED | One `kActionSpec` registry ([src/ui/keymap.h](src/ui/keymap.h)) drives every game key across both worlds: scancode-based (layout-proof) bindings with `UiScope` Macro/Sub/Both, a **Controls** panel (menu → Controls, press-to-rebind, Esc fixed as menu/cancel), a global `keymap.cfg` (same forgiving text-KV idiom as `ui_prefs.cfg`), and the one-key-one-meaning-per-world steal rule. Consumers: the `handle_event_playing` dispatch and the `poll_movement` held-key polls read `Keymap::get`; toolbar tooltips and the pause badge quote the LIVE binding so no hint can go stale (the hardcoded hint bar died with this). `keymap_test` (CTest) covers defaults / steal / scopes / round-trip / tolerance; seed-12345 smokes green. See [controls.md](controls.md). |
+| THE one sprite law (paper-doll retired) | VERIFIED | A visible kind is a ROW (`macro/sprite_rows.h`, enum-order guarded): drawn art if the artist drew it, a procedural body plan if he did not, and the same table serves the macro map and the subworld. It collapsed FOUR scattered look-registries — an 11-row PNG list, `FaunaEntry`'s colour+archetype, a `switch` over `NPCType` in the map's drawing code, and `NpcTypeDef::portrait`, a path string with **zero readers**. The paper-doll composite and BOTH its delivery paths are deleted (~2.5k lines, `atlas.bin`/`atlas.png`, the last TS-atlas dependency): drawn bodies are resident in `assets/sprite_bank.h` as one 256² layer per kind — **5 slots, 1.3 MB, filled at boot, no LRU** — against the pool's 8192 slots and 75.5 MB, because a picture per KIND is not a face per SOUL. The renderer's NPC/creature split (two pipelines, two shadow pipelines, two buffers, four draw blocks) merged into ONE body pass; `kind` carries slot-or-sentinel and body plan, unpacked by the same header in `body.frag` and `shadow_body.frag`. It also killed problems.md §23.2 at its cause: the ImGui descriptor census fell 4127 → 31, so the OUT_OF_POOL_MEMORY segfault has no surface left. Accepted cost until art sheets arrive: a humanoid is one static picture per kind, camera-facing. Verified by `sprite_rows_test` (with a run negative control), `check` 75/75, and seed-12345 captures of the macro map, a town crowd and a procedural creature, all LOOKED at — one of which caught the whole town standing on its head through a fully green build. See [sprites.md](sprites.md). |
+| A fight is measured in STEPS; both worlds mend | VERIFIED | Spell and melee cooldowns and the sustained mana drain were floats decremented by a `dt` of real seconds while [time.md](time.md) claimed exactly ONE documented exception — three undocumented ones. They are integers now, counted in simulation STEPS (`core/time.h kStepsPerSecond`); tables still author seconds and the only conversion back is the string a human reads. Literal world ticks were measured and REJECTED: a tick underground is 0.25 real seconds, so a one-second cooldown would become sixteen (`kSaveVersion` 40→41). Separately, recovery now runs in BOTH worlds off the same per-minute law: a body standing still underground mends at the macro rate per game HOUR, sixteen times slower by the wall clock. The smoke that covered this asserted the OPPOSITE — that nothing recovers underground — a green guard on a missing feature; it is inverted and now asserts the two worlds agree against the very function the macro branch calls (42 game minutes: hp 5→12, mp 5→12, sp 5→14 both sides), with a run negative control. T.A.R.S. on the audit: **19.26 as written does not reproduce** — it assumed a regeneration that was not running at all. |
+| Every homeland leads to a real country | VERIFIED | 19.19 closed. "Barbarian Kingdoms" stored the value `barbarians`, which is not a row of the faction registry (it has four), so `add_player_reputation` was handed a name nothing answered to: one of the three opening buttons of the game awarded nothing, silently. `resolve_homeland_faction` is the door — a single realm passes through, a GROUP is resolved by the world (seeded from the world seed, so a reload cannot move the player's birthplace), and an unknown name returns nullptr instead of travelling onward. `homeland_choice_test` guards totality over the offered choices plus a two-part negative control, run against the shipped behaviour. |
 | Quest markers (macro "!" pins) | VERIFIED | Active quests project onto the universal `markers.h` layer as gold "!" pins — `rebuild_quest_markers` adds one `MarkerStyle::Quest` pin per incomplete world-anchored objective (cell resolver mirrors `eval_objective`; a `destroy_npc` kill-count has no fixed cell so it gets none), for **all** targets of every active quest. `QuestEngine` stays pure; the allocating rebuild is gated by a per-frame integer `quest_marker_signature` in `process_world_events` (cache reset on new-game/load, which also reconciles stale pins from a save). Rendered by the universal by-style pass in `draw_macro_overlay`, gated + scaled by the new **QuestMarkers** UI element. Validated seed-12345 smoke `new_game,wait_boot_done,console,subworld_time,quit` → `[smoke] PASS`, exit 0, `validation=1`, asserting `quest_markers pin@42,17 style=quest killcount=nopin complete->removed sig_changed=1`; 28/28 CTest targets green (incl. `quest_lifecycle_test`, `ui_settings_test`, `biome_classifier_test`). See [quests.md](quests.md). |
 
-The **43 CTest-registered** logic-test targets (run under `ctest --test-dir
-build --output-on-failure`, verified **43/43 green** on 2026-08-05 from a clean
-reconfigure) are:
+The **75 CTest-registered** logic-test targets (run through
+`cmake --build build --target check`, verified **75/75 green** on 2026-08-20)
+are — the list below is a snapshot and the `enable_testing()` block at the tail
+of `CMakeLists.txt` remains the source of truth:
 
 - `time_ladder_test` — THE time ladder: the calendar derived exactly from one
   integer tick ([time.md](time.md))
@@ -443,7 +449,12 @@ reconfigure) are:
 - `macro_travel_parity_test`
 - `item_use_parity_test`
 - `pathfinding_parity_test`
-- `character_paperdoll_test`
+- `sprite_rows_test` — THE sprite table: totality over the creature catalog and
+  the NPC kinds, every row drawable, the creature↔row name binding (negative
+  control: pointing goblin at troll's row reddens it)
+- `homeland_choice_test` — every homeland the intro offers resolves to a real
+  faction row; a group resolves inside itself and the same world always answers
+  the same way
 - `road_river_generation_test`
 - `river_generation_test` — river-gen invariants + honest subworld descent (verified green under `ctest` from a clean reconfigure, 2026-07-29)
 - `biome_classifier_test` — mountains-as-biome Water/Mountain/climate cascade
@@ -535,7 +546,7 @@ src/
   sub/          L2 — subworld engine, generation, renderers, sky/lighting
   events/       L3 — bus, logic nodes, effect applicator, quest engine
   content/      L4 — pluggable data: spells, procedural quests
-  assets/       sprite atlas and paper-doll asset loaders / GPU cache
+  assets/       sprite table loaders: drawn-art atlas (2D) + GPU sprite bank (3D)
   ui/           ImGui overlays
 ```
 

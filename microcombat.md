@@ -102,13 +102,9 @@ Make a kind hireable/soldier-capable → tag it + set one stat row + one upkeep
 number in the registry. Add loot → one loot-profile row keyed by `lootId`
 ([monsters.md](monsters.md)). Add a monster → one `FaunaEntry` row.
 
-## Backend / GPU (the primary target)
+## Backend — the crowd is CPU (owner's ruling 2026-08-20)
 
-This is the headline compute-simulation case: **thousands of combatants**. The
-crowd is **GPU-resident** (compute shaders over packed SSBOs); an NPC is
-**embodied** to the CPU/ECS the instant the player can act on it (reticle /
-engagement radius), then de-embodied afterward — same entity, no discontinuity.
-Kernels obey the four crowd rules (data packing, lookup buffers, branchless
-damage math, cohort sorting) and the **no-stall** transfer rule (embody the few,
-never read back the mass). See [ARCHITECTURE.md](ARCHITECTURE.md)
-§GPU-Driven Simulation.
+Thousands of combatants are a **CPU** workload: one O(N) steering pass over bucket grids
+sized from the bodies' own data (`sub/battle.{h,cpp}`), inside the universal 16384-body
+cap. The GPU draws them — it does not simulate them. GPU-resident crowd simulation is
+deferred to the far future; see [CANON.md](CANON.md) S5, S13 and ARCHITECTURE.md §GPU is graphics; the world is CPU.
