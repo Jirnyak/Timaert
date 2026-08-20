@@ -1,5 +1,19 @@
 # Seamless Crossing — Timaert
 
+> **A CELL IS A PLACE (2026-08-20).** The crossing is only half the promise; the
+> other half is that the cell you cross INTO is the same cell however you got
+> there. It was not: `CellContext.cx` was the window's running counter and never
+> wrapped, so walking east off the last column named the cell 1024 while it read
+> macro cell 0's biome — and the detail-noise offset, the road anchor seed and
+> the tile hash all keyed off that number. The same place therefore had two
+> subworlds (measured: 100 % of tiles differing, up to 63 m of height, road
+> anchors 146 m apart), and the session cache hid half of it by restoring
+> heights but not tiles. The name is the WRAPPED macro index now, the window
+> keeps its own running coordinate for composite geometry, and every
+> global-coordinate noise octave in `base_generator.cpp` closes on the world's
+> tile span (1024 × 1024) so the wrap costs nothing at the seam. Held by
+> `subworld_cell_identity_test` with a negative control.
+
 Source of truth for **how a subworld cell-boundary crossing stays invisible**:
 no hitch, no texture/lighting pop, no vanishing structures. This is a
 cross-cutting system — it spans the seamless manager ([microworld.md](microworld.md)),

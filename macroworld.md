@@ -24,8 +24,24 @@ time, kingdoms, NPCs, items, army. No GL/Vulkan, no events, no UI.
   runs the daily settlement / village / economy simulation (see
   [macrosim.md](macrosim.md)).
 - **Space:** toroidal — all distance/step math via
-  [core/torus.h](src/core/torus.h). A* over a traversability grid in
-  `pathfinding`.
+  [core/torus.h](src/core/torus.h), which owns the ONE wrap (six private copies
+  of it lived in `macro/` until 2026-08-20) and the ONE signed shortest offset
+  (`torus_delta`, a `std::remainder` fold — the UI's two copies corrected a
+  single period and lost a marker past 1.5 world widths). A* over a
+  traversability grid in `pathfinding`.
+- **THE NOISE LAW (2026-08-20).** A procedural field's lattice must close on the
+  world, and it closes only when the period is a WHOLE number of lattice cells
+  that divides the map. Five auditors measured every field: everything that
+  WALKS the cells was already toroidal (both A*s and their heuristics, the
+  Voronoi and land-component BFSes, waterDist/edgeDist, the river A*, the
+  night-glow Dijkstra, sight, the growth law), and everything that SAMPLED noise
+  was cut. Fixed: the zone field (period 96 → 128), the forest massif FBM (no
+  wrap at all — correlation across the seam was nil), the river meander lattice
+  (integer division dropped the remainder, repeating every 1012 cells), and the
+  mountain-ridge octave, whose period of 5.6 was not a seam problem at all: it
+  cut THREE VERTICAL AND THREE HORIZONTAL CLIFFS THROUGH EVERY WORLD at columns
+  the seed chose, 8.3× the map's median gradient and up to 140 bytes at maximum
+  ridge intensity.
 
 ## Data-driven extension
 

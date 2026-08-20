@@ -1,9 +1,23 @@
-# Monsters & Loot — Таблица монстров и таблица лута
+# Bodies & Loot — ОДНА таблица тел и таблица лута
 
-**ONE global monster table and ONE loot table — both single sources of
-truth.** Every creature from rabbit to dragon is a single row in the monster
-registry; every drop — monster *or* NPC — resolves through the one loot
-registry. Adding content is one data row, never an `if`-chain.
+**ONE table of living things and ONE loot table — both single sources of
+truth.** A peasant, a lord, a wolf and a troll are rows of the SAME registry
+(`macro/npc.h kNpcTypeDefs`, thirty rows: eleven roles and nineteen creatures);
+every drop resolves through the one loot registry. Adding content is one data
+row, never an `if`-chain.
+
+> **The monster catalog is gone (2026-08-20, owner's ruling).** There used to be
+> two tables of bodies addressed by two id spaces spliced into one number — a
+> humanoid was an `NPCType` ordinal, a creature was `0x100 | catalog index` —
+> so every consumer that met a body had to ask which of the two it was holding.
+> The owner's words: *«у нас всё равно все сохраняемые изменяемые NPC только в
+> макромире, а в микромире просто генерик NPC/мобы… лорд может быть не только
+> человеком, но и драконом, демоном и гоблином, так что в этом нет смысла»*.
+> Now a kind is simply an ordinal of the one table, `is_creature_row` is the
+> last vestige and is documented as temporary, and three defects died with the
+> split: the whole bestiary was dropping EMPTY loot, the auto-resolver and the
+> fought battle were costing creatures by two different laws, and a squad led by
+> a beast vanished on projection, roster and all. See CANON.md S16.
 
 - **Code:** [macro/fauna.h](src/macro/fauna.h),
   [macro/fauna.cpp](src/macro/fauna.cpp) (global monster table + accessors +

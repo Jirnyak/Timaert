@@ -57,6 +57,18 @@ spawns, via weight streams composed from every context system (biome, forest,
 landmark, zone, later weather / black-energy field) — CANON.md S6, the one
 context door. Until that lands the zone genuinely has no say in a spawn, and
 that is the honest state, not a regression.
+## The field used to be CUT at the world seam (fixed 2026-08-20)
+
+`NOISE_BASE_CELLS` was 96, and the noise lattice closes only when its period
+DIVIDES the world's width. None of the five octaves did: the base wrapped at
+1056 cells, the next at 1008, and so on. Measured on the shipped field, the
+jump across the seam was **10.9× a normal neighbouring step**, and the quantised
+danger BAND changed on **39.9 % of the seam's rows** against 3.7 % anywhere
+else — a player crossing x = 0 walked out of a safe haven into a war zone for
+no reason in the world. 128 is the nearest power of two; every octave (128, 64,
+32, 16, 8) now divides 1024, and the same measurement puts the seam at 0.17× a
+normal step. Seamlessness is a property of construction (CANON.md S1).
+
 Zones themselves are unfinished (static after boot, never re-baked). The
 session prompt is ready:
 [proposals/session-prompts.md](proposals/session-prompts.md)

@@ -57,7 +57,7 @@ focused doc in this directory alongside the README, which orchestrates them.
 | Zones | [zones.md](zones.md) | Difficulty heightmap 0–9, danger scaling |
 | Microcombat | [microcombat.md](microcombat.md) | Sword-and-magic ARPG combat (unified, in-subworld) |
 | Possession | [possession.md](possession.md) | Player = one `PlayerTag` flag on an ordinary body; вселение moves the flag; body-native stats; macro↔subworld projection; exit *as* the possessed lord (position + identity remap), save-stable via a spawn ordinal |
-| Monsters & Loot | [monsters.md](monsters.md) | ONE global monster table + ONE loot table (source of truth), spawn/XP |
+| Bodies & Loot | [monsters.md](monsters.md) | ONE table of living things (roles + creatures, thirty rows) + ONE loot table, spawn/XP |
 | Macrosim | [macrosim.md](macrosim.md) | Mount-&-Blade / Dwarf-Fortress macro simulation |
 | Resources | [resources.md](resources.md) | THE resource-field registry: fields over macro cells, two storage dialects behind one door, the ONE growth law, the ledger every harvest settles through |
 | Quests | [quests.md](quests.md) | Objective/reward registries, procedural generation, world-map quest markers |
@@ -256,10 +256,26 @@ focused doc in this directory alongside the README, which orchestrates them.
   you on its overworld cell **as that NPC** — an identity that survives save/load
   (a deterministic spawn ordinal, since the ECS is regenerated each boot). No
   player special-case in any universal path. See [possession.md](possession.md).
-- One global monster table + one loot table (single sources of truth): every
-  creature (rabbit → dragon) is one `FaunaEntry` row with a stable id; every
-  drop — monster or NPC — resolves through one `roll_loot_profile(lootId, …)`.
-  Console `spawn <id>` spawns any creature; adding content is one data row.
+- **ONE table of living things** (owner's ruling 2026-08-20): a peasant, a lord,
+  a wolf and a troll are rows of the same registry (`macro/npc.h kNpcTypeDefs`,
+  thirty rows), a "kind" is simply an ordinal of it, and the `0x100 | catalog
+  index` encoding that used to mark a monster is gone with the second table.
+  One birth builds every body (`spawn_derived_body`), one sheet prices every
+  body, one row lookup answers for every body. Three defects died with the
+  split: the whole bestiary dropped EMPTY loot, the auto-resolver and the fought
+  battle costed creatures by two different laws, and a squad led by a beast
+  vanished on projection. Every drop still resolves through one
+  `roll_loot_profile(lootId, …)`; console `spawn <id>` takes any row's id.
+- **The world is a torus, and it is one now.** A five-probe audit measured every
+  field and every graph walk: the walks were already toroidal, the noise was
+  not. The zone field, the forest massif, the river meander and the biome
+  textures all had lattices that did not close on the world (the danger BAND
+  changed on 39.9 % of the seam's rows; the shader jumped up to 11613× a normal
+  step), the mountain-ridge octave cut three cliffs through the middle of every
+  map, the camera followed the player the long way round the world, and a
+  subworld cell named itself by an unwrapped counter so the same place had two
+  different subworlds. All fixed; `torus_wrap_test` and
+  `subworld_cell_identity_test` hold the laws.
 - Event bus + logic nodes + procedural quests (data-driven objective and
   reward registries — adding a verb = one entry). Active quests project onto the
   world map as gold "!" pins — a *derived* overlay on the universal marker layer
@@ -429,8 +445,13 @@ Launch path:
 | Every homeland leads to a real country | VERIFIED | 19.19 closed. "Barbarian Kingdoms" stored the value `barbarians`, which is not a row of the faction registry (it has four), so `add_player_reputation` was handed a name nothing answered to: one of the three opening buttons of the game awarded nothing, silently. `resolve_homeland_faction` is the door — a single realm passes through, a GROUP is resolved by the world (seeded from the world seed, so a reload cannot move the player's birthplace), and an unknown name returns nullptr instead of travelling onward. `homeland_choice_test` guards totality over the offered choices plus a two-part negative control, run against the shipped behaviour. |
 | Quest markers (macro "!" pins) | VERIFIED | Active quests project onto the universal `markers.h` layer as gold "!" pins — `rebuild_quest_markers` adds one `MarkerStyle::Quest` pin per incomplete world-anchored objective (cell resolver mirrors `eval_objective`; a `destroy_npc` kill-count has no fixed cell so it gets none), for **all** targets of every active quest. `QuestEngine` stays pure; the allocating rebuild is gated by a per-frame integer `quest_marker_signature` in `process_world_events` (cache reset on new-game/load, which also reconciles stale pins from a save). Rendered by the universal by-style pass in `draw_macro_overlay`, gated + scaled by the new **QuestMarkers** UI element. Validated seed-12345 smoke `new_game,wait_boot_done,console,subworld_time,quit` → `[smoke] PASS`, exit 0, `validation=1`, asserting `quest_markers pin@42,17 style=quest killcount=nopin complete->removed sig_changed=1`; 28/28 CTest targets green (incl. `quest_lifecycle_test`, `ui_settings_test`, `biome_classifier_test`). See [quests.md](quests.md). |
 
-The **75 CTest-registered** logic-test targets (run through
-`cmake --build build --target check`, verified **75/75 green** on 2026-08-20)
+The **78 CTest-registered** logic-test targets (run through
+`cmake --build build --target check`, verified **78/78 green** on 2026-08-20 —
+the three added that day are `torus_wrap_test` (THE wrap, after six private
+copies of it folded into one), `subworld_cell_identity_test` (a cell is a
+place: the same macro cell is the same subworld however you arrive, and the
+world's seam still joins) and `deserter_bands_test` (the pool pays out — nobody
+minted, nobody lost))
 are — the list below is a snapshot and the `enable_testing()` block at the tail
 of `CMakeLists.txt` remains the source of truth:
 

@@ -23,7 +23,17 @@ is the macro map / minimap, not a subworld mode.
   (roads connect toward road neighbours, forests blend) → Layer 3 landmarks
   (self-contained generators).
 - **`CellContext`** carries macroHeight, biome, feature, landmark, seed — read,
-  never re-derived.
+  never re-derived — and it names the cell by its **wrapped macro index**: one
+  cell of the world is one subworld, whether the player walked into it across
+  the seam or entered it from the map. The window keeps its own running
+  coordinate for composite geometry; the two used to be one number, and that is
+  what made the same place generate two different worlds (see
+  [seamless-crossing.md](seamless-crossing.md)).
+- **Every global-coordinate noise closes on the world.** The detail waves, both
+  ridge octaves, the domain warp, the crag, the massif edge, the dune and the
+  bog all take the world's tile span (1024 × 1024) as their period, snapped to
+  whole lattice cells. A thousand kilometres cannot repeat inside anything a
+  player sees, so the ground is seamless by construction rather than by luck.
 - **Honest 3D simulation.** World *generation* is 2D (terrain heightmap +
   decorations), and the seamless window shifts in 2D, but **all entity simulation
   is full 3D** — X, Y, Z are equal coordinates. Grounded bodies rest on the
