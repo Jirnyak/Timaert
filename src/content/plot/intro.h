@@ -58,5 +58,21 @@ namespace sm
         const StoryDef &intro_story();
         void register_intro_story_nodes(LogicNodeEngine &logic);
 
+        // Resolve a homeland CHOICE to a real row of the faction registry.
+        //
+        // A choice may name a GROUP: "Barbarian Kingdoms" is not a country, it
+        // is four of them (barbarian_north/south/west/east), and the owner's
+        // ruling is that the player is simply born in one of them — they are
+        // procedural, so which one is the world's business, not a fifth button
+        // on the intro screen. `worldSeed` decides, so the answer is fixed for
+        // a given world and a reload cannot re-roll your homeland.
+        //
+        // A choice that already names one realm returns it unchanged. An
+        // UNKNOWN id returns nullptr — the caller must not silently award
+        // reputation to a country that does not exist, which is exactly what
+        // "barbarians" did for as long as that button has been on screen.
+        const char *resolve_homeland_faction(const char *choiceValue,
+                                             std::uint32_t worldSeed);
+
     } // namespace content
 } // namespace sm

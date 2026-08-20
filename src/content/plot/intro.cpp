@@ -4,6 +4,10 @@
 #include "events/logic_nodes.h"
 
 #include <cstdint>
+#include <string_view>
+
+#include "core/rng.h"
+#include "macro/faction.h"
 
 namespace sm::content {
 namespace {
@@ -134,6 +138,46 @@ LogicNode intro_main_node() {
 
 const StoryDef& intro_story() {
     return kIntroStory;
+}
+
+const char* resolve_homeland_faction(const char* choiceValue,
+                                     std::uint32_t worldSeed) {
+    if (!choiceValue || !choiceValue[0]) return nullptr;
+    const std::string_view value{choiceValue};
+
+    // A homeland choice that names several realms. One row per group, beside
+    // the choices it belongs to, so adding "the Free Cities" is a row here and
+    // a row in kRealmChoices — never a branch in the code that awards
+    // reputation.
+    struct HomelandGroup {
+        std::string_view value;              // the choice's stored value
+        const char* const* realms;           // faction registry ids
+        std::size_t count;
+    };
+    static constexpr const char* kBarbarianRealms[] = {
+        "barbarian_north", "barbarian_south", "barbarian_west", "barbarian_east",
+    };
+    static constexpr HomelandGroup kHomelandGroups[] = {
+        {"barbarians", kBarbarianRealms,
+         sizeof(kBarbarianRealms) / sizeof(kBarbarianRealms[0])},
+    };
+
+    for (const HomelandGroup& g : kHomelandGroups) {
+        if (g.value != value) continue;
+        // The world decides which of them raised you, and it decides ONCE:
+        // seeded from the world, so the same world always answers the same way
+        // and a reload cannot move your birthplace.
+        const std::uint32_t pick =
+            hash3(worldSeed, 0x484F4D45u /*'HOME'*/, 0u)
+            % std::uint32_t(g.count);
+        return g.realms[pick];
+    }
+
+    // Not a group — then it must be a realm the registry actually knows. This
+    // is the guard that was missing: "barbarians" fell through to
+    // add_player_reputation and quietly went nowhere, so one of the three
+    // starting buttons did nothing at all.
+    return faction_index(choiceValue) >= 0 ? choiceValue : nullptr;
 }
 
 void register_intro_story_nodes(LogicNodeEngine& logic) {

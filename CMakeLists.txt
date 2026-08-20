@@ -726,6 +726,14 @@ timaert_test(fauna_registry_test
 timaert_test(sprite_rows_test
     SOURCES
         src/macro/fauna.cpp)
+# Every homeland the intro offers must lead to a real country: totality over the
+# offered choices, the group resolution staying inside its own realms, one world
+# always answering the same way, and a negative control proving the resolver can
+# both refuse a name and disagree between worlds.
+timaert_test(homeland_choice_test
+    SOURCES
+        src/content/plot/intro.cpp
+        src/events/logic_nodes.cpp)
 # Universal UI settings registry (ui_settings.cpp): spec-seeded defaults, the
 # forgiving text-KV load/save round-trip, unknown-key / out-of-range tolerance,
 # and reset_defaults(). Pure logic — it never opens a window, so it links only

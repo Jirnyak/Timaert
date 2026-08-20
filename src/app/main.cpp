@@ -3156,12 +3156,23 @@ void apply_intro_story_result(App& app, const sm::StoryResultPayload& result) {
         app.gs.player.sheet.levelData.attributePoints += 1;
     }
 
-    if (realm && !realm->empty()) {
-        sm::add_player_reputation(app.gs, realm->c_str(), 15);
+    // A homeland CHOICE is not always a country: "Barbarian Kingdoms" is four
+    // of them, and the world picks which one raised you (owner, 2026-08-20 —
+    // they are procedural, so it is the world's business). Resolved once,
+    // seeded from the world, so a reload cannot move your birthplace. Until
+    // this door existed the choice value went straight into the registry, found
+    // no row called "barbarians", and one of the three opening buttons awarded
+    // nothing at all.
+    const char* const homeland =
+        realm ? sm::content::resolve_homeland_faction(realm->c_str(),
+                                                      app.gs.worldSeed)
+              : nullptr;
+    if (homeland) {
+        sm::add_player_reputation(app.gs, homeland, 15);
         // The starting money is re-minted into the HOMELAND's own coin
         // (owner: the player begins with his country's currency) — the boot
         // seeded imperial as a placeholder.
-        const char* homeCoin = sm::currency_for_faction_id(realm->c_str());
+        const char* homeCoin = sm::currency_for_faction_id(homeland);
         if (std::string_view(homeCoin) != "coin_empire") {
             const int n = app.gs.player.inventory.count("coin_empire");
             if (n > 0) {
@@ -3177,7 +3188,15 @@ void apply_intro_story_result(App& app, const sm::StoryResultPayload& result) {
     entry.message = "Born ";
     entry.message += sex ? *sex : "unknown";
     entry.message += ", homeland: ";
-    entry.message += realm ? *realm : "unknown";
+    // The RESOLVED realm, by its registry name: a player who picked "Barbarian
+    // Kingdoms" is told which of them he was actually born in, because that is
+    // the fact the world will hold him to.
+    if (homeland) {
+        const int fi = sm::faction_index(homeland);
+        entry.message += fi >= 0 ? sm::kFactionDefs[fi].name : homeland;
+    } else {
+        entry.message += "unknown";
+    }
     entry.message += ".";
     sm::push_event_log(app.gs.player, std::move(entry));
 
