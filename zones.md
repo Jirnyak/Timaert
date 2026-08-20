@@ -35,18 +35,28 @@ is the addition operator, not a routine to write.** Spec: [lore.md](lore.md)
 ## Connections
 
 Spires demand zone ≥ 4 + their spell's tier — tier 1 opens in "Untamed",
-tier 5 in "Hellgate" ([landmarks.md](landmarks.md)); subworld spawns scale
-with zone (+monster level, +18% hp/damage per level above 2,
-[microcombat.md](microcombat.md) — condemned, see below); the danger level
-gates subworld exit (yellow/red → no exit); the map overlay renders the
-green→red field.
+tier 5 in "Hellgate" ([landmarks.md](landmarks.md)); the danger level gates
+subworld exit (yellow/red → no exit); the map overlay renders the green→red
+field. **The zone does not touch a spawned body's numbers** — see below.
 
-## Owner ruling 2026-08-13 — stat scaling is condemned
+## Owner ruling 2026-08-13, EXECUTED 2026-08-20 — stat scaling is dead
 
-The zone stat boost (+level, +18% hp/damage) is a hidden auto-level and will
-be REMOVED: a creature's strength is its table row; the zone must shape the
-COMPOSITION of what spawns, via weight streams composed from every context
-system (biome, forest, landmark, zone, later weather/black-energy field).
+The zone stat boost (+level, +18% hp/damage per level above 2) was a hidden
+auto-level and has been **deleted** — together with a second one nobody had
+named: the settlement's `√(pop/100)` level bonus, which made a capital's guard
+stronger than a hamlet's for no reason but the size of the town. Both are gone
+from `sub/spawn.cpp` and from the dungeon path in `sub/engine.cpp`; the
+`zoneLevel` parameter left the spawn API entirely, so the markup cannot come
+back by accident. A creature's strength is its table row (CANON.md S12); a
+place decides WHO stands there and HOW MANY, never what they are worth.
+`subworld_spawn_parity_test` holds the door with a negative control (re-inject
+the √(pop/100) term and it fails).
+
+What the zone must do INSTEAD is still unbuilt: shape the COMPOSITION of what
+spawns, via weight streams composed from every context system (biome, forest,
+landmark, zone, later weather / black-energy field) — CANON.md S6, the one
+context door. Until that lands the zone genuinely has no say in a spawn, and
+that is the honest state, not a regression.
 Zones themselves are unfinished (static after boot, never re-baked). The
 session prompt is ready:
 [proposals/session-prompts.md](proposals/session-prompts.md)

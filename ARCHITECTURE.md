@@ -596,7 +596,7 @@ landmark.
 | System                              | How it reads zones                                       |
 |-------------------------------------|----------------------------------------------------------|
 | `state.cpp` `generate_spires()`     | `is_allowed` predicate → spires require zone ≥ 5         |
-| [sub/spawn.cpp](src/sub/spawn.cpp) `derive_context_scale()` | Each level above 2 adds +1 monster level + 18% hp/damage |
+| [sub/spawn.cpp](src/sub/spawn.cpp) | **Nothing today.** The +1 level / +18% hp+damage markup was deleted 2026-08-20 (hidden auto-level, CANON.md S12); the zone's future say is the spawn TABLE's weights, not the body's numbers |
 | `ui::draw_map_overlay`              | "Difficulty Zones" map mode with green→red palette + legend |
 | (future) Encounter triggers         | Higher zone → higher ambush probability                  |
 
