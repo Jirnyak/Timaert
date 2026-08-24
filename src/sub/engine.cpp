@@ -622,6 +622,7 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     // Fill all nine window cells from their own macro contexts (per-cell fauna
     // + settlement citizens), so the whole visible 3×3 is populated up front
     // and neighbouring cities are alive before you ever step toward them.
+    refresh_window_step_weights();
     spawn_all_cells();
     // The squad wears its owner's colours — the player's own realm row. The
     // rule lives at the call site because the owner is what the call site knows.
@@ -1127,6 +1128,7 @@ void SubworldEngine::spawn_all_cells() {
 // carried across untouched — no clear-and-respawn, so nobody in the current 3×3
 // vanishes; only the far cells that actually left do.
 void SubworldEngine::repopulate_after_recenter(int dx, int dy) {
+    refresh_window_step_weights();
     if (!ecs_) return;
     rebase_subworld_entities(*ecs_,
         float(-dx * kCellSize), float(-dy * kCellSize));
@@ -1944,16 +1946,38 @@ std::uint16_t SubworldEngine::ground_faction_at(float fx, float fy) const {
 // asked of the terrain: the cell's own biome / feature / forest cover, resolved
 // through the ONE weight table the map layer uses (macro/movement_cost.h). A
 // swamp is a swamp whether you cross it as a dot on the map or on foot.
-float SubworldEngine::ground_travel_weight_at(float fx, float fy) const {
+// The window cache behind the per-tick price: nine weights, resolved once
+// per scene change. Before it, EVERY simulation tick of walking paid a full
+// facts assembly — terrain sample, landmark find, scar read — for two fields
+// (the door's performance contract said never; now it holds).
+void SubworldEngine::refresh_window_step_weights() {
+    winStepWeightValid_ = false;
     if (!gs_ || !terrain_ || terrain_->width <= 0 || terrain_->height <= 0) {
-        return 0.0f;
+        return;
     }
-    const int ox = std::clamp(int(fx) / kCellSize, 0, 2) - 1;
-    const int oy = std::clamp(int(fy) / kCellSize, 0, 2) - 1;
-    const CellContext ctx = resolve_context(mgr_.center_cx() + ox,
-                                            mgr_.center_cy() + oy);
-    return cell_sp_weight(ctx.biome, ctx.feature,
-                          ctx.treeCount >= 0 && is_forest_cell(ctx.treeCount));
+    for (int oy = -1; oy <= 1; ++oy) {
+        for (int ox = -1; ox <= 1; ++ox) {
+            const CellContext ctx = resolve_context(mgr_.center_cx() + ox,
+                                                    mgr_.center_cy() + oy);
+            // Canopy is the continuous density term of the law; the CLIMB
+            // half is deliberately absent down here — below ground level the
+            // slope is not a contribution, it is the honest 3D walk (S17).
+            winStepWeight_[std::size_t((oy + 1) * 3 + (ox + 1))] =
+                cell_sp_weight(ctx.biome, ctx.feature,
+                               ctx.treeCount > 0
+                                   ? float(ctx.treeCount)
+                                         / float(kMaxTreesPerCell)
+                                   : 0.0f);
+        }
+    }
+    winStepWeightValid_ = true;
+}
+
+float SubworldEngine::ground_travel_weight_at(float fx, float fy) const {
+    if (!winStepWeightValid_) return 0.0f;   // no scene, no ground
+    const int ox = std::clamp(int(fx) / kCellSize, 0, 2);
+    const int oy = std::clamp(int(fy) / kCellSize, 0, 2);
+    return winStepWeight_[std::size_t(oy * 3 + ox)];
 }
 
 float SubworldEngine::ground_height_at(float x, float y) const {
@@ -2663,6 +2687,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
         return ctx;
     };
     mgr_.init(ses.doorCx, ses.doorCy, resolver);
+    refresh_window_step_weights();
     const CompositeDirty enterDirty = mgr_.consume_composite_dirty_cells();
     if (dev_) renderer3dVk_.upload(*dev_, mgr_, enterDirty);
     active_ = true;
@@ -2760,7 +2785,6 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
                                      std::int16_t(ses.doorCy)};
         const int budget = macro_stock_read(mw, MacroStock::FaunaCount, faunaKey);
         const DungeonRoom room = dungeon_room(ses.ref);
-        const CellContext doorCtx = resolve_context(ses.doorCx, ses.doorCy);
         // The den's table is its landmark's: a spire storey draws the Spire
         // family (demons), a cellar and a cave the Ruin family — the same
         // ONE law the open cell runs (fauna.h roll_spawns).
@@ -3307,6 +3331,7 @@ void SubworldEngine::respawn_fauna() {
     // absolute macro seed, so this reproduces the current scene exactly rather
     // than rolling a different set — a true re-roll is the future per-cell
     // visitation-age epoch mixed into the seed, not a dev-console dice throw.
+    refresh_window_step_weights();
     spawn_all_cells();
 }
 

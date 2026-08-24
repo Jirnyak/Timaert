@@ -2,6 +2,7 @@
 #pragma once
 
 #include "macro/features.h"
+#include "macro/movement_cost.h" // kClimbSpWeight — the edge half of the law
 #include "macro/map_generator.h" // TerrainData
 
 #include <cstdint>
@@ -26,8 +27,21 @@ namespace sm
     {
         int width = 0;
         int height = 0;
-        std::vector<float> costGrid;
+        std::vector<float> costGrid;       // the CELL half: bed + canopy
         std::vector<std::uint8_t> water;   // 1 = open water cell
+        // The height byte per cell (terrain R), baked beside the weights so
+        // every walker prices the EDGE half of the law — the uphill climb —
+        // without reaching back into the terrain (movement_cost.h).
+        std::vector<std::uint8_t> height8;
+
+        // The edge-climb term between two cells of this grid, by index:
+        // kClimbSpWeight × max(0, Δh01), downhill free. Zero when heights
+        // are not baked (the silent legal contribution).
+        float climb(std::size_t fromIdx, std::size_t toIdx) const {
+            if (height8.size() != costGrid.size()) return 0.0f;
+            const int dh = int(height8[toIdx]) - int(height8[fromIdx]);
+            return dh > 0 ? kClimbSpWeight * (float(dh) / 255.0f) : 0.0f;
+        }
     };
 
     struct PathResult

@@ -68,10 +68,17 @@ int main()
                             sm::cell_sp_weight(sm::Meadow, sm::FT_DirtRoad), 1.0f),
                         1.5f * sm::kStaminaPerCell),
                  "one dirt-road cell costs its weight x kStaminaPerCell");
-    ok &= expect(nearly(sm::cell_sp_weight(sm::Meadow, sm::FT_None, true), 3.0f),
-                 "forest-class cell must carry the old FT_Tree drag");
-    ok &= expect(nearly(sm::cell_sp_weight(sm::Meadow, sm::FT_Road, true), 1.0f),
-                 "a road through a forest must keep its road weight");
+    // The canopy is a CONTINUOUS contribution now (the sum law, 2026-08-24):
+    // meadow ground 2.0 + kCanopySpWeight × density, thickening smoothly —
+    // and an engineered bed is a CUT: the road gates the canopy off.
+    ok &= expect(nearly(sm::cell_sp_weight(sm::Meadow, sm::FT_None, 1.0f),
+                        2.0f + sm::kCanopySpWeight),
+                 "a full thicket adds the whole canopy weight to its ground");
+    ok &= expect(nearly(sm::cell_sp_weight(sm::Meadow, sm::FT_None, 0.5f),
+                        2.0f + 0.5f * sm::kCanopySpWeight),
+                 "half the trees add half the canopy — no boolean cliff");
+    ok &= expect(nearly(sm::cell_sp_weight(sm::Meadow, sm::FT_Road, 1.0f), 1.0f),
+                 "a road through a forest is a cut: the bed gates the canopy");
     ok &= expect(nearly(sm::cell_sp_weight(static_cast<sm::Biome>(255), sm::FT_None), 2.0f),
                  "unknown biome must match TS default movement weight");
     ok &= expect(nearly(sm::cell_sp_weight(static_cast<sm::Biome>(255),

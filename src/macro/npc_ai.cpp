@@ -195,6 +195,25 @@ float cell_weight(const TickContext& ctx, int x, int y) {
                         + std::size_t(wx)];
 }
 
+// The EDGE weight of one greedy step — the cell half from the baked grid
+// plus the uphill climb half (movement_cost.h: the law's two halves; the
+// squad walks the same slopes the player and both A*s pay for).
+float edge_weight(const TickContext& ctx, int fx, int fy, int tx, int ty) {
+    const PathCostData* pc = ctx.mw.pathCost;
+    float w = cell_weight(ctx, tx, ty);
+    if (pc && pc->width > 0 && pc->height > 0
+        && pc->height8.size() == pc->costGrid.size()) {
+        const std::size_t fi =
+            std::size_t(wrapi(fy, pc->height)) * std::size_t(pc->width)
+            + std::size_t(wrapi(fx, pc->width));
+        const std::size_t ti =
+            std::size_t(wrapi(ty, pc->height)) * std::size_t(pc->width)
+            + std::size_t(wrapi(tx, pc->width));
+        w += pc->climb(fi, ti);
+    }
+    return w;
+}
+
 bool cell_is_water(const TickContext& ctx, int x, int y) {
     const PathCostData* pc = ctx.mw.pathCost;
     if (!pc || pc->width <= 0 || pc->height <= 0
@@ -247,7 +266,7 @@ void try_move(ecs::Position& p, ecs::MacroNpcRuntime& rt,
         const Step straight =
             torus_step_toward(ix, iy, itx, ity, ctx.mapW, ctx.mapH);
         int bx = straight.nx, by = straight.ny;
-        float bw = cell_weight(ctx, bx, by);
+        float bw = edge_weight(ctx, ix, iy, bx, by);
         const float dHere =
             torus_dist_sq(float(ix), float(iy), float(itx), float(ity),
                           mapWf, mapHf);
@@ -261,7 +280,7 @@ void try_move(ecs::Position& p, ecs::MacroNpcRuntime& rt,
                     torus_dist_sq(float(nx), float(ny), float(itx), float(ity),
                                   mapWf, mapHf);
                 if (d >= dHere) continue;   // only steps that make progress
-                const float w = cell_weight(ctx, nx, ny);
+                const float w = edge_weight(ctx, ix, iy, nx, ny);
                 if (w < bw) { bx = nx; by = ny; bw = w; }
             }
         }

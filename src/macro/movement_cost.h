@@ -94,12 +94,38 @@ inline float terrain_speed_mult(float weight) {
     return 1.0f / std::sqrt(weight);
 }
 
+// ── THE step-cost law: BED + CONTRIBUTIONS (CANON S6/S7, 2026-08-24) ──────
+//
+// The optics idiom (macro/optics.h — the canon's exemplar table): an
+// engineered FEATURE lays the bed — road 1.0 (the reference: speed =
+// base/√weight, so the road IS the base march), dirt 1.4, ploughed field
+// 1.8 — and where nothing is built the biome's own ground is the bed.
+// CONTINUOUS contributions then ADD on top:
+//
+// · canopy — kCanopySpWeight × tree density (count / kMaxTreesPerCell). The
+//   boolean forest-class cliff is gone: thickening woods slow the march
+//   smoothly, exactly as they dim the light (optics kCanopyOpticalCost). An
+//   engineered bed gates the canopy off — a road through the wood is a CUT
+//   (просека), the trees stand beside it, not on it.
+// · climb — kClimbSpWeight × the UPHILL height difference of the edge being
+//   walked (downhill is free), priced where the step happens because a slope
+//   is a fact of an EDGE, not of a cell. It makes the cost directional —
+//   both A*s and the greedy squad step price it at expansion — and it obeys
+//   every bed: a mountain road is honestly dearer than a valley road.
+//
+// It replaced a PRIORITY ladder (feature OVERRODE forest OVERRODE biome), in
+// which a contribution like weather had no place to stand: under a sum, a
+// new world system is one more term (S6), zero when silent.
 inline float biome_sp_weight(Biome b) {
-    // Indexed by Biome id: Tundra..Water (0..9), Mountain (10). Mountain carries
-    // the traversal cost that used to live on the FT_Mountain feature (5.0 → the
-    // old 50-SP crossing), now that mountains are a biome, not a feature.
+    // The bed of unimproved ground, by biome id (Tundra..Water, Mountain).
+    // Recalibrated 2026-08-24 with the sum law (owner: заново, not parity):
+    // open walking country 2.0, hard country 2.5–3.0, bog 4.0, the mountain
+    // ground itself 5.0 (its WALL is the climb term now, not the byte),
+    // water 10.0 — unpayable on foot, the ocean still drowns a lord.
     static const float kW[11] = {
-        2.5f, 2.5f, 3.0f, 2.0f, 2.0f, 3.5f, 3.0f, 2.0f, 2.5f, 10.0f, 5.0f,
+        /*Tundra*/2.5f, /*Taiga*/2.5f, /*Snow*/3.0f, /*Valley*/2.0f,
+        /*Meadow*/2.0f, /*Swamp*/4.0f, /*Desert*/3.0f, /*Steppe*/2.0f,
+        /*Tropics*/2.5f, /*Water*/10.0f, /*Mountain*/5.0f,
     };
     const int idx = int(b);
     if (idx < 0 || idx >= int(sizeof(kW) / sizeof(kW[0]))) {
@@ -108,25 +134,38 @@ inline float biome_sp_weight(Biome b) {
     return kW[idx];
 }
 
-inline float feature_sp_weight(FeatureType f) {
+// The engineered beds. 0 = nothing built here — the biome ground is the bed
+// (the silent zero of the law, not a sentinel to branch on).
+inline float feature_bed_weight(FeatureType f) {
     switch (f) {
         case FT_Road:     return 1.0f;
-        case FT_DirtRoad: return 1.5f;
-        case FT_Field:    return 2.0f;  // ploughed ground walks like meadow
+        case FT_DirtRoad: return 1.5f;  // half again the paved bed
+        case FT_Field:    return 1.8f;
         default:          return 0.0f;
     }
 }
 
-// Undergrowth drag of a forest-CLASS cell (macro/tree_layer.h
-// is_forest_cell) — the weight FT_Tree used to carry. A road cut through a
-// forest keeps its road weight: man-made features win over natural cover.
-inline constexpr float kForestSpWeight = 3.0f;
+// Full-thicket drag: at density 1.0 (kMaxTreesPerCell) the wood adds 2.5 on
+// top of its ground — a meadow choked to full forest walks at 4.5, the old
+// forest-class 3.0 sits near density ~0.4, which is what a typical massif
+// interior actually carries.
+inline constexpr float kCanopySpWeight = 2.5f;
 
-inline float cell_sp_weight(Biome b, FeatureType f, bool forest = false) {
-    float fw = feature_sp_weight(f);
-    if (fw > 0.0f) return fw;
-    if (forest) return kForestSpWeight;
-    return biome_sp_weight(b);
+// Climbing surcharge per full normalized height (h01 = height byte / 255):
+// an ascent over the WHOLE world relief costs as much again as ten cells of
+// open meadow (20 = 10 × meadow 2.0) — spread over however many cells the
+// approach takes, and refunded by nothing on the way down.
+inline constexpr float kClimbSpWeight = 20.0f;
+
+// The CELL half of the law — bed + canopy. The climb half lives on the edge
+// and is priced by the walker (A*, the greedy step, the player's charge):
+//   edge cost = cell_sp_weight(to) × step + kClimbSpWeight × max(0, Δh01).
+inline float cell_sp_weight(Biome b, FeatureType f, float treeDensity01 = 0.0f) {
+    const float bed = feature_bed_weight(f);
+    if (bed > 0.0f) return bed;             // an engineered bed is a CUT
+    return biome_sp_weight(b) + kCanopySpWeight
+               * (treeDensity01 < 0.0f ? 0.0f
+                  : treeDensity01 > 1.0f ? 1.0f : treeDensity01);
 }
 
 // THE cost formula, for both layers: (difficulty of the ground + the burden you

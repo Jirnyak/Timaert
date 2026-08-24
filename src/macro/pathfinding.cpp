@@ -154,6 +154,7 @@ namespace sm
         out.height = td.height;
         out.costGrid.resize(total);
         out.water.assign(total, 0u);
+        out.height8.assign(total, 0u);
         const std::uint8_t *featureData =
             features && features->covers(td.width, td.height) ? features->data.data() : nullptr;
 
@@ -168,10 +169,14 @@ namespace sm
             const int cy = int(i / std::size_t(td.width));
             const Biome b = biome_at_cell(td, cx, cy);
             const FeatureType f = featureData ? FeatureLayer::decode(featureData[i]) : FT_None;
-            const bool forest = haveTrees
-                && is_forest_cell(int(treeLayer->data[i]));
-            out.costGrid[i] = cell_sp_weight(b, f, forest);
+            // The continuous canopy (the boolean forest-class cliff is gone):
+            // density feeds the sum law exactly as it feeds the optics.
+            const float density = haveTrees
+                ? float(treeLayer->data[i]) / float(kMaxTreesPerCell)
+                : 0.0f;
+            out.costGrid[i] = cell_sp_weight(b, f, density);
             out.water[i] = (b == Water) ? 1u : 0u;
+            out.height8[i] = td.rgba[i * 4u + 0u];
         }
         return out;
     }
@@ -251,7 +256,8 @@ namespace sm
                 if (closed[nidx])
                     continue;
 
-                float cost = data.costGrid[nidx] * STEP_COST[d];
+                float cost = data.costGrid[nidx] * STEP_COST[d]
+                           + data.climb(cidx, std::size_t(nidx));
                 float tentG = cur.g + cost;
                 if (tentG >= gScores[nidx])
                     continue;

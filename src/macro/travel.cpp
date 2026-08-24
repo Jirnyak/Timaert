@@ -17,7 +17,8 @@ bool macro_travel_cost_for_cell(const GameState& gs,
                                 const FeatureLayer* features,
                                 int x, int y,
                                 MacroTravelCost& out,
-                                const TreeLayer* treeLayer) {
+                                const TreeLayer* treeLayer,
+                                int fromX, int fromY) {
     out = MacroTravelCost{};
     if (!terrain.has_rgba_storage() || terrain.width <= 0 || terrain.height <= 0) {
         return false;
@@ -38,9 +39,20 @@ bool macro_travel_cost_for_cell(const GameState& gs,
     out.feature = features && features->covers(terrain.width, terrain.height)
         ? features->at(wx, wy)
         : FT_None;
-    const bool forest = treeLayer && treeLayer->has_complete_storage()
-        && is_forest_cell(int(treeLayer->at(wx, wy)));
-    out.weight = cell_sp_weight(out.biome, out.feature, forest);
+    const float density = treeLayer && treeLayer->has_complete_storage()
+        ? float(treeLayer->at(wx, wy)) / float(kMaxTreesPerCell)
+        : 0.0f;
+    out.weight = cell_sp_weight(out.biome, out.feature, density);
+    // The climb half of the law (movement_cost.h): stepping INTO this cell
+    // from `fromX,fromY` pays the uphill difference; downhill and a first
+    // step with no origin (-1) are free.
+    if (fromX >= 0 && fromY >= 0) {
+        const int fx = FeatureLayer::wrap_coord(fromX, terrain.width);
+        const int fy = FeatureLayer::wrap_coord(fromY, terrain.height);
+        const int dh = int(terrain.height_at(wx, wy))
+                     - int(terrain.height_at(fx, fy));
+        if (dh > 0) out.weight += kClimbSpWeight * (float(dh) / 255.0f);
+    }
     // A trained traveller spends less on the same ground (the `travel` skill's
     // documented -2%/rank, applied here for the first time).
     out.efficiency = travel_skill_efficiency(gs.player.sheet.skills);
@@ -62,10 +74,11 @@ bool drain_player_sp_for_macro_cell(GameState& gs,
                                     int x, int y,
                                     TravelStamina& stamina,
                                     MacroTravelCost* out,
-                                    const TreeLayer* treeLayer) {
+                                    const TreeLayer* treeLayer,
+                                    int fromX, int fromY) {
     MacroTravelCost cost;
     if (!macro_travel_cost_for_cell(gs, terrain, features, x, y, cost,
-                                    treeLayer)) {
+                                    treeLayer, fromX, fromY)) {
         return false;
     }
 

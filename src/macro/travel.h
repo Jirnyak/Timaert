@@ -50,7 +50,11 @@ bool macro_travel_cost_for_cell(const GameState& gs,
                                 const FeatureLayer* features,
                                 int x, int y,
                                 MacroTravelCost& out,
-                                const TreeLayer* treeLayer = nullptr);
+                                const TreeLayer* treeLayer = nullptr,
+                                // The cell being stepped FROM — prices the
+                                // uphill climb half of the law (downhill and
+                                // an originless first step are free).
+                                int fromX = -1, int fromY = -1);
 
 // Cross ONE macro cell: resolve its cost and pay it. `stamina` carries the
 // fractional remainder between steps (runtime state, never serialised) — pass
@@ -63,6 +67,7 @@ bool drain_player_sp_for_macro_cell(GameState& gs,
                                     int x, int y,
                                     TravelStamina& stamina,
                                     MacroTravelCost* out = nullptr,
-                                    const TreeLayer* treeLayer = nullptr);
+                                    const TreeLayer* treeLayer = nullptr,
+                                    int fromX = -1, int fromY = -1);
 
 } // namespace sm

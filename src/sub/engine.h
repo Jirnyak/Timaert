@@ -476,6 +476,13 @@ private:
     // engine reads them by these names; they never diverge from mw_ because
     // nothing else ever writes them.
     MacroWorld          mw_{};
+    // The 3×3 window's SP weights, resolved once per (enter / re-centre /
+    // dungeon scene) — the door's performance contract (macro/cell_facts.h):
+    // the per-tick walk price is an array read, never a facts assembly. A
+    // negative slot = not cached (fail-open to a live resolve).
+    std::array<float, 9> winStepWeight_{};
+    bool winStepWeightValid_ = false;
+    void refresh_window_step_weights();
     GameState*          gs_       = nullptr;
     const TerrainData*  terrain_  = nullptr;
     const FeatureLayer* features_ = nullptr;

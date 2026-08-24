@@ -398,7 +398,10 @@ namespace sm
                     const float ncost = data.costGrid[nidx];
                     if (ncost >= kRoadWaterBlockThreshold)
                         continue;
-                    float ng = cur.g + ncost * kRoadStep[k];
+                    const std::size_t cidx =
+                        std::size_t(cur.y) * std::size_t(W) + std::size_t(cur.x);
+                    float ng = cur.g + ncost * kRoadStep[k]
+                             + data.climb(cidx, nidx);
                     if (ng < scratch.score(nidx))
                     {
                         scratch.set_score(nidx, ng, cur.x, cur.y);
@@ -511,7 +514,8 @@ namespace sm
     // generation-tagged whole-map A* and block rejected water cells.
     std::vector<std::uint8_t> trace_roads(const TerrainData &td, Politik &P,
                                           RoadTraceStats *stats,
-                                          float seaLevel)
+                                          float seaLevel,
+                                          const TreeLayer *treeLayer)
     {
         const int W = td.width, H = td.height;
         RoadTraceStats localStats;
@@ -552,21 +556,25 @@ namespace sm
         // road stays at 1.0 and open ground is surcharged instead. The ratios
         // are the old ones (ground 3.33× a road, mountain 16.7×), the heuristic
         // is admissible again, and reuse is now something the search can see.
-        const float kRoadShare = 1.00f;    // existing road: the cheapest step there is
-        const float kLand = 3.33f;         // open ground, 3.33× a road
-        const float kMountain = 16.70f;    // h > 0.78 → mountain peak, 16.7× a road
-        const float kWaterReject = 167.00f; // water cell: blocked by road A*
-        PathCostData cg;
-        cg.width = W;
-        cg.height = H;
-        cg.costGrid.assign(totalCells, kLand);
+        // The planner walks THE step law (movement_cost.h build_cost_grid):
+        // the road is laid over the same weights the march will pay — biome
+        // bed + continuous canopy (a pine thicket finally costs more than a
+        // meadow, so roads route AROUND deep woods), and the edge climb rides
+        // in find_road_path exactly as it does in every walker. This was the
+        // second, private cost table (its own land 3.33 / mountain 16.7 /
+        // its own raw-byte mountain test — canon-audit H1/§7.9); the mountain
+        // WALL is now the biome bed plus the honest climb. Existing road
+        // cells and city anchors are priced at the paved bed — the cheapest
+        // step there is, so reuse stays visible to an admissible search.
+        // Water is not priced, it is REJECTED: the sentinel below is only the
+        // flag the block-threshold reads, never a weight a path can pay.
+        const float kRoadShare = feature_bed_weight(FT_Road);
+        const float kWaterReject = 167.00f;
+        PathCostData cg = build_cost_grid(td, nullptr, treeLayer);
         for (std::size_t i = 0; i < totalCells; ++i)
         {
-            const float h = float(td.rgba[i * 4u + 0]) / 255.0f;
-            if (h < seaLevel)
+            if (cg.water[i])
                 cg.costGrid[i] = kWaterReject;
-            else if (td.rgba[i * 4u + 0] > 200)
-                cg.costGrid[i] = kMountain;
         }
         const std::vector<int> landComponent = build_land_components(td, seaLevel);
 

@@ -1473,6 +1473,9 @@ struct MacroWalkChargeResult {
 struct MacroWalkChargeContext {
     App* app = nullptr;
     MacroWalkChargeResult result{};
+    // The last crossed cell — the climb edge's origin (-1 = walk start).
+    int fromX = -1;
+    int fromY = -1;
 };
 
 void charge_macro_walk_cell(void* user, int x, int y) {
@@ -1480,15 +1483,20 @@ void charge_macro_walk_cell(void* user, int x, int y) {
     if (!ctx || !ctx->app) return;
 
     sm::MacroTravelCost cost;
+    // The climb half of the law prices the EDGE: the previous crossed cell
+    // is the origin; the walk's first cell has none and climbs free.
     if (!sm::drain_player_sp_for_macro_cell(ctx->app->gs,
                                             ctx->app->terrain,
                                             &ctx->app->features,
                                             x, y,
                                             ctx->app->travelStamina,
                                             &cost,
-                                            &ctx->app->treeLayer)) {
+                                            &ctx->app->treeLayer,
+                                            ctx->fromX, ctx->fromY)) {
         return;
     }
+    ctx->fromX = x;
+    ctx->fromY = y;
     ++ctx->result.cells;
     ctx->result.totalCost += cost.totalCost;
     ctx->result.lastCost = cost;
@@ -2079,7 +2087,8 @@ void boot_world(App& app, std::uint32_t seed,
     }
 
     sm::RoadTraceStats roadStats;
-    auto roads = sm::trace_roads(app.terrain, app.gs.politik, &roadStats, lp.seaLevel);
+    auto roads = sm::trace_roads(app.terrain, app.gs.politik, &roadStats,
+                                 lp.seaLevel, &app.treeLayer);
     if (boot_trace_enabled()) {
         std::fprintf(stderr,
                      "[roads] cities=%d attempted=%d kept=%d pruned=%d "

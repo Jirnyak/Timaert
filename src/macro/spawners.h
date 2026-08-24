@@ -10,6 +10,8 @@
 
 namespace sm {
 
+struct TreeLayer;
+
 struct TreePoint { int x, y; };
 
 struct RoadTraceStats {
@@ -33,7 +35,11 @@ std::vector<TreePoint> spawn_trees(const TerrainData& td, std::uint32_t seed,
 std::vector<std::uint8_t> trace_roads(const TerrainData& td,
                                       Politik& politik,
                                       RoadTraceStats* stats = nullptr,
-                                      float seaLevel = 0.40f);
+                                      float seaLevel = 0.40f,
+                                      // The living forest: the planner walks
+                                      // THE step law, and the law's canopy
+                                      // term routes roads around deep woods.
+                                      const TreeLayer* treeLayer = nullptr);
 
 // Dirt-road BFS from villages to nearest road. Fails closed on invalid map
 // dimensions, short road masks, or mismatched village coordinate arrays.
