@@ -95,7 +95,8 @@ float dist(ecs::World& w, entt::entity a, entt::entity b) {
 void drive(GameState& gs, ecs::World& w, MacroNpcAiRuntime& rt, int thinks,
            bool allowAutoBattle = true) {
     for (int i = 0; i < thinks; ++i) {
-        tick_macro_npc_ai(gs, w, nullptr, rt, kAiTicks, allowAutoBattle);
+        MacroWorld mw{.gs = &gs, .world = &w};
+        tick_macro_npc_ai(mw, rt, kAiTicks, allowAutoBattle);
     }
 }
 

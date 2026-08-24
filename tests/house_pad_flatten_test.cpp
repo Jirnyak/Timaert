@@ -68,7 +68,7 @@ struct PadStat {
 // and measure its internal height range. (A bounding-box scan would bleed into
 // an adjacent pad flattened to a different level and report a false spread.)
 PadStat measure(int cx, int cy, std::uint32_t seed, int population,
-                CellLandmarkKind kind) {
+                LandmarkType kind) {
     CellContext ctx{};
     ctx.cx = cx;
     ctx.cy = cy;
@@ -167,12 +167,12 @@ int main() {
     constexpr float kMaxMeanRange  = 0.10f;
     constexpr float kMaxWorstRange = 4.0f;
 
-    struct Case { int cx, cy; std::uint32_t seed; int pop; CellLandmarkKind kind; };
+    struct Case { int cx, cy; std::uint32_t seed; int pop; LandmarkType kind; };
     const Case cases[] = {
-        { 7, -4, 0xF00DBEEFu, 6000, CellLandmarkKind::City },
-        { -11, 6, 0x0BADF00Du, 2500, CellLandmarkKind::City },
-        { 13, -3, 0x00C0FFEEu, 120,  CellLandmarkKind::Village },
-        { 20, 14, 0x51A7E110u, 9000, CellLandmarkKind::City },
+        { 7, -4, 0xF00DBEEFu, 6000, LandmarkType::City },
+        { -11, 6, 0x0BADF00Du, 2500, LandmarkType::City },
+        { 13, -3, 0x00C0FFEEu, 120,  LandmarkType::Village },
+        { 20, 14, 0x51A7E110u, 9000, LandmarkType::City },
     };
 
     float worstMean = 0.0f;

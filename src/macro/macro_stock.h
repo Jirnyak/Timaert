@@ -39,17 +39,12 @@
 #pragma once
 
 #include "ecs/components.h"
+#include "macro/macro_world.h"
 #include "macro/resource_field.h"
 
 #include <cstdint>
 
 namespace sm {
-
-struct GameState;
-struct TreeLayer;
-struct DepositLayer;
-struct TerrainData;
-namespace ecs { struct World; }
 
 // The borrowable quantities. One row per value in the table (macro_stock.cpp);
 // the enum value IS the row index, and ecs::MacroDebt stores it as a plain byte
@@ -87,16 +82,8 @@ struct MacroStockKey {
     bool subjectIsVillage = false;
 };
 
-// Everything a row may need in order to read or write itself. It grows by a
-// FIELD when a new stock needs one — never by a new argument at a call site.
-struct MacroWorld {
-    GameState*  gs    = nullptr;
-    TreeLayer*  trees = nullptr;
-    ecs::World* world = nullptr;   // the roster row lives on squad entities
-    const TerrainData* terrain = nullptr;   // the fauna row derives its
-                                            //   baseline from the cell's biome
-    DepositLayer* deposits = nullptr;       // the Clay/Iron/Stone carrier
-};
+// THE envelope of world layers lives in macro/macro_world.h (CANON S6) — the
+// rows below read and pay the world through it.
 
 // How much of this stock stands here — what a spawner asks before it embodies.
 int  macro_stock_read(const MacroWorld& w, MacroStock s, MacroStockKey k);

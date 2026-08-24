@@ -86,7 +86,7 @@ sm::sub::CellContext meadow_cell(int cx, int cy) {
     c.feature = sm::FT_None;
     c.landmark.id = -1;
     c.landmark.size = 0;
-    c.landmark.kind = sm::sub::CellLandmarkKind::None;
+    c.landmark.kind = sm::LandmarkType::None;
     c.seed = 0x24680000u
         ^ (std::uint32_t(cx) * 73856093u)
         ^ (std::uint32_t(cy) * 19349663u);
@@ -101,7 +101,7 @@ std::vector<SpawnRecord> expected_cell_fauna(
     const sm::sub::SeamlessSubworldManager& mgr,
     sm::Biome biome,
     sm::FeatureType feature,
-    sm::LandmarkKind landmark,
+    sm::LandmarkType landmark,
     int ox,
     int oy,
     std::uint32_t seed,
@@ -282,7 +282,7 @@ void spawn_cell_at(sm::ecs::World& world,
                    int ox, int oy, int absCx, int absCy) {
     const sm::sub::CellContext c = meadow_cell(absCx, absCy);
     sm::sub::spawn_cell_npcs(world, c.biome, c.feature,
-                             sm::LandmarkKind::None, mgr,
+                             sm::LandmarkType::None, mgr,
                              ox, oy, c.seed,
                              std::uint16_t(sm::faction_index("empire")),
                              0);
@@ -326,7 +326,7 @@ bool run_city_population_projection_case(
     sm::sub::spawn_cell_npcs(world,
                              sm::Biome::Meadow,
                              sm::FT_None,
-                             sm::LandmarkKind::City,
+                             sm::LandmarkType::City,
                              mgr,
                              /*ox*/0, /*oy*/0,
                              0xFACEB00Cu,
@@ -390,7 +390,7 @@ bool run_population_does_not_scale_bodies_case(
         sm::ecs::World world{};
         sm::sub::spawn_cell_npcs(world,
                                  sm::Biome::Meadow, sm::FT_None,
-                                 sm::LandmarkKind::City, mgr,
+                                 sm::LandmarkType::City, mgr,
                                  /*ox*/0, /*oy*/0,
                                  0xFACEB00Cu,
                                  std::uint16_t(sm::faction_index("empire")),
@@ -933,7 +933,7 @@ int main() {
 
     const std::vector<SpawnRecord> expected =
         expected_cell_fauna(mgr, sm::Biome::Meadow, sm::FT_None,
-                            sm::LandmarkKind::None, 0, 0,
+                            sm::LandmarkType::None, 0, 0,
                             centre.seed, 0);
     const std::vector<SpawnRecord> actual = actual_fauna(world);
     const int cmp = compare_records(expected, actual);

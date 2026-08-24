@@ -18,6 +18,7 @@
 #include "sub/battle.h"
 #include "sub/vk_renderer_3d.h"
 #include "events/event_bus.h"
+#include "macro/macro_stock.h"
 
 #include <vulkan/vulkan.h>
 
@@ -127,19 +128,20 @@ public:
     void init(const gpu::VulkanDevice& dev, VkRenderPass mainPass);
     void destroy(const gpu::VulkanDevice& dev);
 
-    // `treeLayer` (optional): the mutable macro tree-count layer
-    // (macro/tree_layer.h). When present it feeds CellContext.treeCount so
-    // generation is count-driven, and felling a tree in here decrements the
-    // owning cell's count (micro → macro writeback via the Trees row).
+    // The subworld reads the world through THE layer envelope (macro_stock.h
+    // MacroWorld, CANON S6). Before the door (2026-08-24) this signature was
+    // its own parallel list of layer arguments, grown one parameter at a time
+    // — and it never grew `deposits`, so the deposit rows refused silently
+    // under every subworld (canon-audit C4). Required layers: gs, terrain,
+    // features, world; everything else is an optional contribution and reads
+    // fail-closed. `mw.trees` feeds CellContext.treeCount so generation is
+    // count-driven, and felling a tree pays the owning cell's count back
+    // (micro → macro writeback via the Trees row).
     // `posOverride` (optional, window tile coords {x, y}): land the player at
     // an exact spot instead of the entry-side placement — the dungeon exit
     // walks back out to the very tile the door was opened from, BEFORE the
     // squad ring / macro projections spawn around the player.
-    void enter(GameState& gs, const TerrainData& terrain,
-               const FeatureLayer& features, ecs::World& ecs,
-               EventBus& bus,
-               const ZoneLayer* zones = nullptr,
-               TreeLayer* treeLayer = nullptr,
+    void enter(const MacroWorld& mw, EventBus& bus,
                const float* posOverride = nullptr);
     void leave(bool force = false);
     bool interact();
@@ -467,6 +469,13 @@ private:
     bool      sunFreeze_ = false;
     WorldTime sunFreezeTime_{};
     const gpu::VulkanDevice* dev_ = nullptr;
+    // THE envelope, captured at enter() — the one copy the whole session reads
+    // and pays through (macro_stock rows want a MacroWorld&, and now every one
+    // of them gets ALL the layers, deposits included). The named pointers
+    // below are VIEWS of it, assigned in enter() only — kept because half the
+    // engine reads them by these names; they never diverge from mw_ because
+    // nothing else ever writes them.
+    MacroWorld          mw_{};
     GameState*          gs_       = nullptr;
     const TerrainData*  terrain_  = nullptr;
     const FeatureLayer* features_ = nullptr;

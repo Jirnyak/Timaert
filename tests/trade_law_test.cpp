@@ -96,7 +96,8 @@ int main() {
 
         MacroNpcAiRuntime ai{};
         reset_macro_npc_ai_runtime(ai, 90u);
-        tick_macro_npc_ai(gs, w, nullptr, ai, kAiTicks);
+        MacroWorld mw{.gs = &gs, .world = &w};
+        tick_macro_npc_ai(mw, ai, kAiTicks);
 
         const auto& out = reg.get<ecs::MacroNpcRuntime>(e);
         if (out.state != std::uint8_t(NPCState::Traveling)) {

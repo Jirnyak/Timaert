@@ -101,7 +101,7 @@ namespace sm::sub
     // Combined mod for a cell: max(damp), max(plateauR) of its landmark class
     // (City/Village/Ruin/Spire) and its feature (roads damp their whole cell —
     // the carved corridor then reads as a pass, not a cliff stair).
-    TerrainMod terrain_mod_for(CellLandmarkKind landmark, FeatureType feature);
+    TerrainMod terrain_mod_for(LandmarkType landmark, FeatureType feature);
 
     // Relief uplift is derived from `nbBiome[9]` directly: mountain cells
     // (Biome::Mountain, elevation-classified) get a per-cell mountainScale of

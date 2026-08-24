@@ -90,17 +90,21 @@ static float smooth_noise_ts(float x, float y, std::uint32_t seed,
 // "for reference"; base_generator.h still owns the real constants.)
 constexpr float kWaterLevel = WATER_LEVEL;
 
-TerrainMod terrain_mod_for(CellLandmarkKind landmark, FeatureType feature) {
+TerrainMod terrain_mod_for(LandmarkType landmark, FeatureType feature) {
     // ONE data table: how strongly each macro content class calms the terrain
     // it stands on. damp scales down ridge/noise for the whole cell; plateauR
     // is the radius (tiles) of the radial pull toward the cell-centre height.
     TerrainMod m{};
     switch (landmark) {
-        case CellLandmarkKind::City:    m = {1.0f, 280.0f}; break;
-        case CellLandmarkKind::Village: m = {0.9f, 200.0f}; break;
-        case CellLandmarkKind::Ruin:    m = {0.6f, 120.0f}; break;
-        case CellLandmarkKind::Spire:   m = {0.6f, 120.0f}; break;
-        case CellLandmarkKind::None:    break;
+        case LandmarkType::City:    m = {1.0f, 280.0f}; break;
+        case LandmarkType::Village: m = {0.9f, 200.0f}; break;
+        case LandmarkType::Ruin:    m = {0.6f, 120.0f}; break;
+        case LandmarkType::Spire:   m = {0.6f, 120.0f}; break;
+        // Registry kinds no world places yet (Lair/Shrine/Mine/Tower): bare
+        // ground until each kind's generator module lands — a landmark calms
+        // the terrain only once something actually stands on it.
+        default:                    break;
+        case LandmarkType::None:    break;
     }
     if (feature == FT_Road || feature == FT_DirtRoad) {
         m.damp = std::max(m.damp, 0.55f);

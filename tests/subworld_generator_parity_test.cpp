@@ -240,7 +240,7 @@ int main() {
     grassTrail.feature = FT_None;
     grassTrail.landmark.id = -1;
     grassTrail.landmark.size = 0;
-    grassTrail.landmark.kind = CellLandmarkKind::None;
+    grassTrail.landmark.kind = LandmarkType::None;
     grassTrail.seed = 0x51525354u;
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
     nbF[3] = std::uint8_t(FT_Road);
@@ -283,7 +283,7 @@ int main() {
     swampTrail.feature = FT_None;
     swampTrail.landmark.id = -1;
     swampTrail.landmark.size = 0;
-    swampTrail.landmark.kind = CellLandmarkKind::None;
+    swampTrail.landmark.kind = LandmarkType::None;
     swampTrail.seed = 0x71727374u;
     fill_flat_neighbors(nbH, nbB, nbF, Swamp, FT_None);
     nbF[5] = std::uint8_t(FT_Road);
@@ -305,7 +305,7 @@ int main() {
     mountainTrail.feature = FT_None;
     mountainTrail.landmark.id = -1;
     mountainTrail.landmark.size = 0;
-    mountainTrail.landmark.kind = CellLandmarkKind::None;
+    mountainTrail.landmark.kind = LandmarkType::None;
     mountainTrail.seed = 0x81828384u;
     fill_flat_neighbors(nbH, nbB, nbF, Mountain, FT_None);
     nbF[1] = std::uint8_t(FT_Road);
@@ -327,7 +327,7 @@ int main() {
     spire.feature = FT_None;
     spire.landmark.id = 77;
     spire.landmark.size = 0;
-    spire.landmark.kind = CellLandmarkKind::Spire;
+    spire.landmark.kind = LandmarkType::Spire;
     spire.seed = 0x2468ACE0u;
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
 
@@ -398,7 +398,7 @@ int main() {
     ruin.feature = FT_None;
     ruin.landmark.id = 88;
     ruin.landmark.size = 4;
-    ruin.landmark.kind = CellLandmarkKind::Ruin;
+    ruin.landmark.kind = LandmarkType::Ruin;
     ruin.seed = 0x13579BDFu;
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
 
@@ -452,7 +452,7 @@ int main() {
     city.feature = FT_None;
     city.landmark.id = 101;
     city.landmark.size = 6000;
-    city.landmark.kind = CellLandmarkKind::City;
+    city.landmark.kind = LandmarkType::City;
     city.seed = 0x0BADF00Du;
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
 
@@ -520,7 +520,7 @@ int main() {
     village.feature = FT_None;
     village.landmark.id = 202;
     village.landmark.size = 120;
-    village.landmark.kind = CellLandmarkKind::Village;
+    village.landmark.kind = LandmarkType::Village;
     village.seed = 0x00C0FFEEu;
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
 
@@ -579,7 +579,7 @@ int main() {
     road.feature = FT_Road;
     road.landmark.id = -1;
     road.landmark.size = 0;
-    road.landmark.kind = CellLandmarkKind::None;
+    road.landmark.kind = LandmarkType::None;
     road.seed = 0x10203040u;
     fill_flat_neighbors(nbH, nbB, nbF, Water, FT_Road);
     nbF[3] = std::uint8_t(FT_Road);
@@ -666,7 +666,7 @@ int main() {
     grass.feature = FT_None;
     grass.landmark.id = -1;
     grass.landmark.size = 0;
-    grass.landmark.kind = CellLandmarkKind::None;
+    grass.landmark.kind = LandmarkType::None;
     grass.seed = 0xAABBCCDDu;
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
 
@@ -743,7 +743,7 @@ int main() {
     water.feature = FT_None;
     water.landmark.id = -1;
     water.landmark.size = 0;
-    water.landmark.kind = CellLandmarkKind::None;
+    water.landmark.kind = LandmarkType::None;
     water.seed = 0x31415926u;
     fill_flat_neighbors(nbH, nbB, nbF, Water, FT_None);
     for (float& h : nbH) h = water.macroHeight;
@@ -814,7 +814,7 @@ int main() {
     swamp.feature = FT_None;
     swamp.landmark.id = -1;
     swamp.landmark.size = 0;
-    swamp.landmark.kind = CellLandmarkKind::None;
+    swamp.landmark.kind = LandmarkType::None;
     swamp.seed = 0x27182818u;
     fill_flat_neighbors(nbH, nbB, nbF, Swamp, FT_None);
 
@@ -838,7 +838,7 @@ int main() {
     mountain.feature = FT_None;
     mountain.landmark.id = -1;
     mountain.landmark.size = 0;
-    mountain.landmark.kind = CellLandmarkKind::None;
+    mountain.landmark.kind = LandmarkType::None;
     mountain.seed = 0x55667788u;
     fill_flat_neighbors(nbH, nbB, nbF, Mountain, FT_None);
 
@@ -871,7 +871,7 @@ int main() {
     field.feature = FT_Field;
     field.landmark.id = -1;
     field.landmark.size = 0;
-    field.landmark.kind = CellLandmarkKind::None;
+    field.landmark.kind = LandmarkType::None;
     field.seed = 0xf1e1d001u;
     field.treeCount = 64;
     field.fertility01 = 0.70f;

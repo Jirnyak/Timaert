@@ -129,37 +129,39 @@ int main()
                      "mountain biome (by height) must apply mountain movement cost");
     }
 
-    sm::TerrainData seaLevelTerrain = make_terrain(2, 1);
-    seaLevelTerrain.rgba[0] = 102u; // cell 0 height 0.40 — the float sea-level probe
-    // Cell 1 stays ordinary mid-elevation land. Its height must remain BELOW the
-    // mountain level (kMountainBiomeLevel) or biome_at reclassifies it as the
-    // Mountain biome and it would no longer carry the default climate biome cost.
-    seaLevelTerrain.rgba[4] = 140u;
+    // Water rides the baked land MASK (map_generator.h biome_at_cell) — the
+    // sea level is baked into the alpha channel by the terrain writers, so
+    // the cost grid asks the mask, never a float threshold of its own. (The
+    // old probes handed build_cost_grid sea levels of 0.401 / -0.1 / 1.1 and
+    // pinned the threshold arithmetic — the exact coastal double-answer the
+    // one cascade was built to end.)
+    sm::TerrainData maskTerrain = make_terrain(2, 1);
     const float defaultLandWeight = sm::cell_sp_weight(
         sm::biome_from_climate(128.0f / 255.0f, 128.0f / 255.0f),
         sm::FT_None);
-    const sm::PathCostData nonByteSeaLevel =
-        sm::build_cost_grid(seaLevelTerrain, nullptr, 0.401f);
-    ok &= expect(nonByteSeaLevel.costGrid.size() == 2u,
-                 "non-byte-aligned sea level grid must be complete");
-    if (nonByteSeaLevel.costGrid.size() == 2u)
+    maskTerrain.rgba[3] = 0u;   // cell 0: mask says water — height untouched
+    const sm::PathCostData maskCosts =
+        sm::build_cost_grid(maskTerrain, nullptr);
+    ok &= expect(maskCosts.costGrid.size() == 2u,
+                 "mask grid must be complete");
+    if (maskCosts.costGrid.size() == 2u)
     {
-        ok &= expect(nearly(nonByteSeaLevel.costGrid[0], 10.0f),
-                     "cost-grid sea-level comparison must match TS float threshold");
-        ok &= expect(nearly(nonByteSeaLevel.costGrid[1], defaultLandWeight),
-                     "land above non-byte sea level must keep biome cost");
+        ok &= expect(nearly(maskCosts.costGrid[0], 10.0f)
+                         && maskCosts.water[0] == 1u,
+                     "a cell the mask calls water must price and flag as water");
+        ok &= expect(nearly(maskCosts.costGrid[1], defaultLandWeight)
+                         && maskCosts.water[1] == 0u,
+                     "a cell the mask calls land must keep its biome cost");
     }
-    const sm::PathCostData negativeSeaLevel =
-        sm::build_cost_grid(seaLevelTerrain, nullptr, -0.1f);
-    ok &= expect(negativeSeaLevel.costGrid.size() == 2u
-                     && nearly(negativeSeaLevel.costGrid[0], defaultLandWeight),
-                 "negative sea level must match TS and produce no water cells");
-    const sm::PathCostData highSeaLevel =
-        sm::build_cost_grid(seaLevelTerrain, nullptr, 1.1f);
-    ok &= expect(highSeaLevel.costGrid.size() == 2u
-                     && nearly(highSeaLevel.costGrid[0], 10.0f)
-                     && nearly(highSeaLevel.costGrid[1], 10.0f),
-                 "sea level above one must match TS and mark all cells water");
+    // Negative control: flip ONLY the mask back to land — same height byte —
+    // and the water pricing must vanish with it (the mask is the authority).
+    maskTerrain.rgba[3] = 255u;
+    const sm::PathCostData maskFlipped =
+        sm::build_cost_grid(maskTerrain, nullptr);
+    ok &= expect(maskFlipped.costGrid.size() == 2u
+                     && nearly(maskFlipped.costGrid[0], defaultLandWeight)
+                     && maskFlipped.water[0] == 0u,
+                 "flipping the mask alone must reclassify the cell");
 
     sm::FeatureLayer shortFeatures;
     shortFeatures.width = 2;

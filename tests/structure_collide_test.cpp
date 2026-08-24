@@ -176,7 +176,7 @@ void part_b_generated_city() {
     city.feature = FT_None;
     city.landmark.id = 101;
     city.landmark.size = 6000;
-    city.landmark.kind = CellLandmarkKind::City;
+    city.landmark.kind = LandmarkType::City;
     city.seed = 0x0BADF00Du;
     city.treeCount = 0;
 

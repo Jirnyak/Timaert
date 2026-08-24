@@ -5,6 +5,8 @@
 //   - Tables stored as null-terminated arrays of `const FaunaEntry*` so
 //     they live in `.rodata` and never allocate.
 #include "macro/fauna.h"
+#include "macro/landmark_grid.h"
+#include "macro/macro_world.h"
 #include "macro/map_generator.h"
 #include "macro/state.h"
 #include "macro/tree_layer.h"
@@ -76,14 +78,14 @@ static constexpr FaunaTable kTblSpire    { kSpire,    5, 4, 9, "demons"  };
 static constexpr FaunaTable kTblEmpty    { nullptr,   0, 0, 0, nullptr };
 
 const FaunaTable& get_fauna_table(Biome biome, int treeCount,
-                                  LandmarkKind landmark) {
+                                  LandmarkType landmark) {
     // Landmark beats everything (cities have no wild fauna; ruins / spires
     // have their own monster tables).
     switch (landmark) {
-        case LandmarkKind::City:    return kTblEmpty;
-        case LandmarkKind::Village: return kTblEmpty;
-        case LandmarkKind::Ruin:    return kTblRuin;
-        case LandmarkKind::Spire:   return kTblSpire;
+        case LandmarkType::City:    return kTblEmpty;
+        case LandmarkType::Village: return kTblEmpty;
+        case LandmarkType::Ruin:    return kTblRuin;
+        case LandmarkType::Spire:   return kTblSpire;
         default: break;
     }
     // Forest override: forest fauna wherever the tree count reaches the
@@ -139,12 +141,13 @@ std::vector<FaunaPick> roll_fauna(const FaunaTable& table,
     return out;
 }
 
-// ── Global monster registry ──────────────────────────────────────────
+// ── Creature catalog — a VIEW over the one body table ────────────────
 //
-// Flat enumeration of every distinct creature, exactly once. The catalog
-// index IS the stable creature id baked into ECS `NPCKind.type` as
-// by the one table's ordinal. Order is append-only: never
-// reorder (would silently re-key live entities); add new creatures at the end.
+// Flat enumeration of every distinct creature, exactly once, in the creature
+// stripe's order. ECS `NPCKind.type` is the ONE table's ordinal (macro/npc.h);
+// this list only serves id-string lookups and the death/loot path. Order is
+// append-only: never reorder (would silently re-key live entities); add new
+// creatures at the end.
 static const FaunaEntry* const kCreatureCatalog[] = {
     &kRabbit, &kDeer, &kFox, &kWolf, &kBear, &kBoar, &kSnake, &kHawk,
     &kFrog, &kGoat, &kEagle, &kCroc,
@@ -185,7 +188,7 @@ const FaunaEntry* creature_def_from_kind(std::uint16_t kindType) {
 
 // ── The honest headcount (Session 16) ────────────────────────────────
 
-int fauna_cell_capacity(Biome biome, int treeCount, LandmarkKind landmark) {
+int fauna_cell_capacity(Biome biome, int treeCount, LandmarkType landmark) {
     // A settled cell's wild heads live UNDER it, not on its square: the
     // street table is deliberately empty (get_fauna_table above), but the
     // cellars behind its doors are the one place vermin still hold (sub/dgn
@@ -194,45 +197,33 @@ int fauna_cell_capacity(Biome biome, int treeCount, LandmarkKind landmark) {
     // by definition. The allowance is the Ruin table's own FLOOR — the least
     // a den of that family ever holds — so a town is the poorest hunting
     // ground that still is one.
-    if (landmark == LandmarkKind::City || landmark == LandmarkKind::Village) {
+    if (landmark == LandmarkType::City || landmark == LandmarkType::Village) {
         return int(kTblRuin.minCount);
     }
     return int(get_fauna_table(biome, treeCount, landmark).maxCount);
 }
 
-namespace {
-// The named place standing on a cell — the same City/Village/Spire scan
-// resolve_context runs (Ruin has no macro registry yet, there as here).
-LandmarkKind landmark_kind_at(const GameState& gs, int wx, int wy) {
-    for (const auto& s : gs.settlements)
-        if (s.x == wx && s.y == wy) return LandmarkKind::City;
-    for (const auto& v : gs.villages)
-        if (v.x == wx && v.y == wy) return LandmarkKind::Village;
-    for (const auto& sp : gs.spires)
-        if (sp.x == wx && sp.y == wy) return LandmarkKind::Spire;
-    return LandmarkKind::None;
-}
-} // namespace
+// (A hand-written City/Village/Spire scan named `landmark_kind_at` lived here
+// until 2026-08-24 — the drifted second implementation of "what stands on
+// this cell". The baked index answers now, in the same priority order.)
 
-int fauna_cell_capacity_at(const GameState* gs, const TerrainData* terrain,
-                           const TreeLayer* trees, int x, int y) {
-    if (!gs || !terrain || !terrain->has_rgba_storage()
+int fauna_cell_capacity_at(const MacroWorld& w, int x, int y) {
+    const TerrainData* terrain = w.terrain;
+    if (!terrain || !terrain->has_rgba_storage()
         || terrain->width <= 0 || terrain->height <= 0) {
         return 0;
     }
     const int wx = FeatureLayer::wrap_coord(x, terrain->width);
     const int wy = FeatureLayer::wrap_coord(y, terrain->height);
-    const std::size_t src =
-        (std::size_t(wy) * std::size_t(terrain->width) + std::size_t(wx)) * 4u;
-    if (src + 3u >= terrain->rgba.size()) return 0;
-    const float height      = float(terrain->rgba[src + 0u]) / 255.0f;
-    const float moisture    = float(terrain->rgba[src + 1u]) / 255.0f;
-    const float temperature = float(terrain->rgba[src + 2u]) / 255.0f;
-    const Biome biome = biome_at(temperature, moisture, height,
-                                 gs->mapParams.seaLevel, kMountainBiomeLevel);
-    const int treeCount = (trees && trees->has_complete_storage())
-        ? int(trees->at(wx, wy)) : 0;
-    return fauna_cell_capacity(biome, treeCount, landmark_kind_at(*gs, wx, wy));
+    // THE cell cascade (map_generator.h biome_at_cell). This function used to
+    // classify by float threshold while the subworld read the mask — the same
+    // coastal cell fed a wolf and refused a boot (canon-audit C5).
+    const Biome biome = biome_at_cell(*terrain, wx, wy);
+    const int treeCount = (w.trees && w.trees->has_complete_storage())
+        ? int(w.trees->at(wx, wy)) : 0;
+    const LandmarkType landmark =
+        w.landmarks ? w.landmarks->at(wx, wy).type : LandmarkType::None;
+    return fauna_cell_capacity(biome, treeCount, landmark);
 }
 
 } // namespace sm

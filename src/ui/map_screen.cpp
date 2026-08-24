@@ -97,22 +97,9 @@ void marker_ink(ImDrawList* dl, ImVec2 c, MarkerStyle style, float r,
 constexpr const char* kMarkerLegendLabel[4] = {"Quest", "Point of interest",
                                                "Danger", "Waypoint"};
 
-// Cell-centre biome via the ONE authority (biomes.h biome_at), from the same
-// master texels the chart shader prints — the tooltip names what is drawn.
-Biome chart_biome(const TerrainData& t, int x, int y, float seaLevel) {
-    if (t.width <= 0 || t.height <= 0) return Biome::Water;
-    const int wx = ((x % t.width) + t.width) % t.width;
-    const int wy = ((y % t.height) + t.height) % t.height;
-    const std::size_t i = (std::size_t(wy) * std::size_t(t.width)
-                           + std::size_t(wx)) * 4u;
-    if (i + 3u >= t.rgba.size()) return Biome::Water;
-    const float h = float(t.rgba[i + 0]) / 255.0f;
-    const float m = float(t.rgba[i + 1]) / 255.0f;
-    const float tt = float(t.rgba[i + 2]) / 255.0f;
-    const bool masked = t.rgba[i + 3] < 128;
-    if (masked) return Biome::Water;
-    return biome_at(tt, m, h, seaLevel, kMountainBiomeLevel);
-}
+// (chart_biome lived here until 2026-08-24 — the twin of macro_overlay's
+// sampler, and the two disagreed at the coast, canon-audit H10. The one
+// cascade is map_generator.h biome_at_cell.)
 
 } // namespace
 
@@ -156,8 +143,7 @@ void draw_map_screen(MapScreenState& st, GameState& gs,
                 ImGui::TextColored(ImVec4(0.55f, 0.55f, 0.60f, 1),
                                    "Uncharted");
             } else {
-                const Biome b = chart_biome(terrain, cx, cy,
-                                            gs.mapParams.seaLevel);
+                const Biome b = biome_at_cell(terrain, cx, cy);
                 ImGui::TextColored(ImVec4(0.55f, 0.95f, 0.55f, 1), "%s",
                                    kBiomes[std::size_t(b)].name);
                 for_each_landmark(gs, [&](const LandmarkView& lm) {

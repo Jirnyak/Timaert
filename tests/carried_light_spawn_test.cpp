@@ -58,7 +58,7 @@ sm::sub::CellContext meadow_cell(int cx, int cy) {
     c.feature = sm::FT_None;
     c.landmark.id = -1;
     c.landmark.size = 0;
-    c.landmark.kind = sm::sub::CellLandmarkKind::None;
+    c.landmark.kind = sm::LandmarkType::None;
     c.seed = 0x24680000u
         ^ (std::uint32_t(cx) * 73856093u)
         ^ (std::uint32_t(cy) * 19349663u);
@@ -99,7 +99,7 @@ bool run_spawn_attach_contract(const sm::sub::SeamlessSubworldManager& mgr) {
     sm::sub::spawn_cell_npcs(world,
                              sm::Biome::Meadow,
                              sm::FT_None,
-                             sm::LandmarkKind::City,
+                             sm::LandmarkType::City,
                              mgr,
                              /*ox*/0, /*oy*/0,
                              0xC0FFEE11u,

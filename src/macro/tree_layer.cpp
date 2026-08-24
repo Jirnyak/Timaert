@@ -27,13 +27,9 @@ TreeLayer build_tree_layer(const TerrainData& terrain,
             const std::size_t i = std::size_t(y) * std::size_t(W) + std::size_t(x);
             const std::uint8_t mask = terrain.rgba[i * 4u + 3u];
             if (!mask) continue; // water cell: 0 trees
-            const float h = float(terrain.rgba[i * 4u + 0u]) / 255.0f;
-            const float m = float(terrain.rgba[i * 4u + 1u]) / 255.0f;
-            const float t = float(terrain.rgba[i * 4u + 2u]) / 255.0f;
-            // Mask decides Water, elevation decides Mountain, climate the rest —
-            // the same cascade as resolve_context / biome_at.
-            const Biome biome = h >= kMountainBiomeLevel
-                ? Biome::Mountain : biome_from_climate(t, m);
+            // THE cell cascade (map_generator.h biome_at_cell) — the private
+            // copy that lived here was canon-audit C5.
+            const Biome biome = biome_at_cell(terrain, x, y);
             int forest = 0;
             if (haveMask) {
                 for (int dy = -1; dy <= 1; ++dy)

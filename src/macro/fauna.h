@@ -14,16 +14,16 @@
 #include "macro/features.h"
 #include "macro/army.h"
 #include "macro/behaviour.h"
+#include "macro/landmark_registry.h"
 #include "macro/npc.h"
 #include "macro/sprite_rows.h"
 
 namespace sm {
 
-// Landmark kind on a macro cell. Drives ruin / spire / settlement-specific
-// fauna routing. None = no landmark on this cell.
-enum class LandmarkKind : std::uint8_t {
-    None = 0, City, Village, Ruin, Spire,
-};
+// The landmark vocabulary is LandmarkType (macro/landmark_registry.h) — the
+// one registry enum. A private five-value "LandmarkKind" lived here until
+// 2026-08-24; it was the third copy of the same idea, and the kinds it could
+// not name (Lair, Shrine, Mine, Tower) could not route fauna at all.
 
 // AI hint for the spawned entity.
 // (`FaunaAi` lived here until 2026-08-20 — a second behaviour vocabulary for
@@ -57,7 +57,7 @@ struct FaunaTable {
 // forest-CLASS cell (is_forest_cell) spawns forest fauna — including on a
 // mountain — regardless of its base biome.
 const FaunaTable& get_fauna_table(Biome biome, int treeCount,
-                                  LandmarkKind landmark);
+                                  LandmarkType landmark);
 
 struct FaunaPick { const FaunaEntry* entry; const char* factionId; };
 
@@ -70,29 +70,29 @@ std::vector<FaunaPick> roll_fauna(const FaunaTable& table,
 // (the winning table's maxCount). This is the derived baseline of the
 // fauna_count macro stock (macro/macro_stock.h): what stands in a cell
 // nobody has hunted yet.
-int fauna_cell_capacity(Biome biome, int treeCount, LandmarkKind landmark);
+int fauna_cell_capacity(Biome biome, int treeCount, LandmarkType landmark);
 
-// The same capacity resolved from the macro cell's own data: biome via the
-// one biome_at cascade (terrain rgba, the travel.cpp pattern), forest class
-// from the tree layer, landmark from the named places standing on the cell
-// (settlements / villages / spires — the same scan resolve_context runs).
-// Null gs/terrain = no context = 0: nothing to embody.
-struct GameState;
-struct TerrainData;
-struct TreeLayer;
-int fauna_cell_capacity_at(const GameState* gs, const TerrainData* terrain,
-                           const TreeLayer* trees, int x, int y);
+// The same capacity resolved from the macro cell's own data, through THE
+// layer envelope (macro_stock.h MacroWorld): biome via the one biome_at
+// cascade, forest class from the tree layer, landmark from the baked
+// cell → landmark index (macro/landmark_grid.h — this function carried its
+// own hand-written scan of the named places until 2026-08-24, the drifted
+// second implementation of "what stands here", canon-audit C2). Missing
+// layers read as no context: nothing to embody, 0.
+struct MacroWorld;
+int fauna_cell_capacity_at(const MacroWorld& w, int x, int y);
 
 // (The breeding step is the ONE growth law — resource_fields_daily_growth,
 // macro/resource_field.h: beasts breed where beasts are, capped by this
 // capacity — and lives with the rows: macro/macro_stock.cpp.)
 
-// ── Global monster registry ──────────────────────────────────────────
-// The single source of truth for every creature (rabbit → dragon), mirroring
-// the item catalog (macro/items.h): a flat enumeration + stable-id lookup.
-// The subworld spawn path bakes the ECS `NPCKind.type` as (0x100 | catalog
-// index); the high 0x100 bit marks "monster" (vs a humanoid NPCType < Count),
-// and `creature_def_from_kind` recovers the row on the death / loot path.
+// ── Creature views over THE one body table ───────────────────────────
+// The source of truth for every creature (rabbit → dragon) is the same
+// `kNpcTypeDefs` row it is for a peasant (macro/npc.h, CANON S16); these are
+// convenience views over its creature stripe (`is_creature_row`). Ids are one
+// contiguous ordinal space — the old `0x100 | catalog index` encoding is DEAD
+// (2026-08-20) — so `creature_def_from_kind` is just "the row, if it is a
+// beast", serving the death / loot path.
 std::span<const FaunaEntry* const> creature_catalog();
 const FaunaEntry* creature_def(std::string_view id);        // nullptr if unknown
 const FaunaEntry* creature_def_from_kind(std::uint16_t kindType); // nullptr if not a monster

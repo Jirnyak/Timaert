@@ -41,7 +41,7 @@ sm::sub::CellContext resolve_water_plane_cell(int cx, int cy) {
     c.feature = sm::FT_None;
     c.landmark.id = -1;
     c.landmark.size = 0;
-    c.landmark.kind = sm::sub::CellLandmarkKind::None;
+    c.landmark.kind = sm::LandmarkType::None;
     c.seed ^= 0x4a71f00du ^ (std::uint32_t(slot) * 0x9e3779b9u);
 
     if (slot == 0 || slot == 4 || slot == 8) {

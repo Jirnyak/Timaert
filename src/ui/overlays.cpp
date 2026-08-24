@@ -845,7 +845,7 @@ namespace sm::ui
             ctx.feature = FT_None;
             ctx.landmark.id = s.id;
             ctx.landmark.size = s.population;
-            ctx.landmark.kind = sub::CellLandmarkKind::City;
+            ctx.landmark.kind = LandmarkType::City;
             ctx.seed = previewSeed;
 
             float nbHeights[9]{};

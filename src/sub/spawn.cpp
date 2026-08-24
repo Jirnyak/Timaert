@@ -210,7 +210,7 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
 }
 
 void spawn_settlement_population(ecs::World& w,
-                                 LandmarkKind landmark,
+                                 LandmarkType landmark,
                                  const SeamlessSubworldManager& mgr,
                                  std::uint32_t seed,
                                  std::uint16_t settlementFaction,
@@ -218,13 +218,13 @@ void spawn_settlement_population(ecs::World& w,
                                  int originX,
                                  int originY,
                                  MacroStockKey populationKey) {
-    if (landmark != LandmarkKind::City && landmark != LandmarkKind::Village) {
+    if (landmark != LandmarkType::City && landmark != LandmarkType::Village) {
         return;
     }
     const int pop = std::max(0, landmarkPop);
     if (pop == 0) return;
 
-    const bool city = landmark == LandmarkKind::City;
+    const bool city = landmark == LandmarkType::City;
     const int target = pop;
     const int guards = std::max(city ? 2 : 1, target / 10);
     Rng rng(seed ^ (city ? 0xC1712E55u : 0xA117A6E5u));
@@ -444,7 +444,7 @@ int spawn_dungeon_residents(ecs::World& w,
 int spawn_dungeon_vermin(ecs::World& w,
                          const SeamlessSubworldManager& mgr,
                          std::uint32_t seed,
-                         LandmarkKind tableKind,
+                         LandmarkType tableKind,
                          Biome biome,
                          int treeCount,
                          int budget,
@@ -527,7 +527,7 @@ void clear_subworld_world_entities(ecs::World& w) {
 void spawn_cell_npcs(ecs::World& w,
                      Biome biome,
                      int treeCount,
-                     LandmarkKind landmark,
+                     LandmarkType landmark,
                      const SeamlessSubworldManager& mgr,
                      int ox,
                      int oy,

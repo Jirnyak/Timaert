@@ -141,7 +141,7 @@ int wheat_baseline(const MacroWorld& w, int x, int y) {
 }
 
 int fauna_baseline(const MacroWorld& w, int x, int y) {
-    return fauna_cell_capacity_at(w.gs, w.terrain, w.trees, x, y);
+    return fauna_cell_capacity_at(w, x, y);
 }
 
 // Trees: the carrier row. The live state is the dense TreeLayer grid the
@@ -200,7 +200,7 @@ int fauna_growth_at(const MacroWorld& w, int x, int y) {
     int alive = 0, cap = 0;
     for (int dy = -1; dy <= 1; ++dy) {
         for (int dx = -1; dx <= 1; ++dx) {
-            cap   += fauna_cell_capacity_at(w.gs, w.terrain, w.trees,
+            cap   += fauna_cell_capacity_at(w,
                                             x + dx, y + dy);
             alive += resource_field_read(w, ResourceFieldId::Fauna,
                                          x + dx, y + dy);
@@ -230,17 +230,9 @@ int trees_growth_at(const MacroWorld& w, int x, int y) {
             sum += int(w.trees->at(x + dx, y + dy));
     int growth = sum * kGrowthEpochDays / (9 * 1024);
     if (growth <= 0) return 0;
-    const int wx = FeatureLayer::wrap_coord(x, w.terrain->width);
-    const int wy = FeatureLayer::wrap_coord(y, w.terrain->height);
-    const std::size_t src =
-        (std::size_t(wy) * std::size_t(w.terrain->width) + std::size_t(wx))
-        * 4u;
-    if (src + 3u >= w.terrain->rgba.size()) return 0;
-    const Biome biome = biome_at(float(w.terrain->rgba[src + 2u]) / 255.0f,
-                                 float(w.terrain->rgba[src + 1u]) / 255.0f,
-                                 float(w.terrain->rgba[src + 0u]) / 255.0f,
-                                 w.gs->mapParams.seaLevel,
-                                 kMountainBiomeLevel);
+    // THE cell cascade (map_generator.h biome_at_cell) — fail-closed to
+    // Water, whose base tree count is 0: no storage, no growth.
+    const Biome biome = biome_at_cell(*w.terrain, x, y);
     const int b = int(biome);
     const int base = (b >= 0 && b < 11) ? int(kBiomeBaseTreeCount[b]) : 0;
     return growth * std::min(base, 1024) / 1024;

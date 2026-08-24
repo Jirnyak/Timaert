@@ -6,6 +6,7 @@
 #include "core/rng.h"
 #include "core/time.h"
 #include "ecs/world.h"
+#include "macro/macro_stock.h"
 #include "macro/pathfinding.h"
 #include "macro/state.h"
 #include "macro/spawners.h"
@@ -88,61 +89,39 @@ struct MacroNpcAiSliceResult {
 
 void reset_macro_npc_ai_runtime(MacroNpcAiRuntime& runtime, std::uint32_t seed);
 
+// The AI think's view of the world: THE layer envelope (macro_stock.h
+// MacroWorld, CANON S6) plus the drive-state that is not a layer — the RNG,
+// the player's position, the transient squad index and the resolution gate.
+// Before the door (2026-08-24) this struct carried its own parallel copy of
+// eight layer pointers, and the two drivers assembled those copies line by
+// line, twice (canon-audit H2) — one of them once forgot `deposits` and every
+// miner in the world stopped digging while the player was underground. The
+// envelope is embedded, not copied: a layer exists here because it exists in
+// the world, and a null layer reads as "no contribution" (fail-closed), so
+// tests without a world stay as they were.
 struct TickContext {
-    int             mapW;
-    int             mapH;
-    GameState*      gs;
-    const TreeGrid* treeGrid;
-    Rng*            rng;
-    float           playerX;
-    float           playerY;
-    // Squad↔squad perception (Session 15). `world` + `squads` let a behaviour
-    // see the OTHER squads (the one thing no behaviour could do before);
-    // `allowAutoBattle` gates the meeting's resolution — the map path fights,
-    // the underground drive only perceives, because squads standing in the
-    // player's 3×3 window may have LIVE projected bodies whose fight belongs
-    // to the ground, not to the resolver (default arguments below encode
-    // exactly that split, so no call site changed).
-    ecs::World*       world = nullptr;
+    MacroWorld      mw{};
+    int             mapW = 0;
+    int             mapH = 0;
+    Rng*            rng = nullptr;
+    float           playerX = 0.0f;
+    float           playerY = 0.0f;
+    // Squad↔squad perception (Session 15). `mw.world` + `squads` let a
+    // behaviour see the OTHER squads; `allowAutoBattle` gates the meeting's
+    // resolution — the map path fights, the underground drive only perceives,
+    // because squads standing in the player's 3×3 window may have LIVE
+    // projected bodies whose fight belongs to the ground, not to the resolver.
     const SquadIndex* squads = nullptr;
     bool              allowAutoBattle = true;
-    // The baked SP-weight grid (Session 21) — the SAME one the player's A*
-    // walks (app.pathCost). try_move prices and paces every squad step from
-    // it and steers around expensive ground; water refuses rest through its
-    // flag. nullptr (tests, headless drivers without a world) reads as a
-    // featureless free-road world: weight 1.0 everywhere, no water — the
-    // greedy step then walks exactly the straight line it always walked.
-    const PathCostData* pathCost = nullptr;
-    // The LIVE tree layer (W2b): a woodcutter's chop goes through the
-    // registry's Trees carrier row (resource_field_apply), so the wood he
-    // hauls home really left the world. nullptr = agents work no honest
-    // gathering (tests without a world stay as they were).
-    TreeLayer* trees = nullptr;
-    // The feature layer (W2b): a farmer works the nearest FT_Field of his
-    // home. nullptr = peasants fall back to the home wander.
-    const FeatureLayer* features = nullptr;
-    // The terrain master (Field Inc F4): the farmer's reap settles against
-    // the crop_count row (macro_stock), whose fertility estimate and scar
-    // map both key off it. nullptr = no honest reaping (same fail-closed
-    // rule as the woodcutter's `trees`).
-    const TerrainData* terrain = nullptr;
-    // The deposit layer (resources.md): a miner/quarryman/clay-digger works
-    // the home's nearest cell of his row's kind. nullptr = no honest
-    // mining, the man wanders home — same fail-closed rule as the rest.
-    DepositLayer* deposits = nullptr;
 };
 
 // Macro-view path: scans all macro NPCs each step and dispatches those whose
-// per-NPC tick accumulator matured. `ticks` is world ticks elapsed.
-void tick_macro_npc_ai(GameState& gs, ecs::World& w,
-                       const TreeGrid* treeGrid,
+// per-NPC tick accumulator matured. `ticks` is world ticks elapsed. The
+// envelope must carry at least `gs` and `world`; every other layer is an
+// optional contribution (see TickContext above).
+void tick_macro_npc_ai(MacroWorld& mw,
                        MacroNpcAiRuntime& runtime, std::uint64_t ticks,
-                       bool allowAutoBattle = true,
-                       const PathCostData* pathCost = nullptr,
-                       TreeLayer* trees = nullptr,
-                       const FeatureLayer* features = nullptr,
-                       const TerrainData* terrain = nullptr,
-                       DepositLayer* deposits = nullptr);
+                       bool allowAutoBattle = true);
 
 // Smooth macro NPC render positions toward their logical cell positions.
 // Mirrors TS `visualX/Y` interpolation and snaps long seam/teleport jumps.
@@ -153,13 +132,8 @@ void tick_macro_npc_visuals(ecs::World& w, int mapW, int mapH, float dt);
 // crawls underground, so do the sweeps — the macro world keeps thinking, at the
 // pace of the day it is actually living through.
 MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
-    GameState& gs, ecs::World& w, const TreeGrid* treeGrid,
+    MacroWorld& mw,
     MacroNpcAiRuntime& runtime, std::uint64_t ticks, int max_npc_ticks,
-    bool allowAutoBattle = false,
-    const PathCostData* pathCost = nullptr,
-    TreeLayer* trees = nullptr,
-    const FeatureLayer* features = nullptr,
-    const TerrainData* terrain = nullptr,
-    DepositLayer* deposits = nullptr);
+    bool allowAutoBattle = false);
 
 } // namespace sm

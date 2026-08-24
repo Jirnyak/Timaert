@@ -39,9 +39,11 @@ namespace sm
     // Build cost grid from terrain master texture + feature layer + the
     // tree-count layer (forest-class cells drag like the old FT_Tree).
     // Mirrors movement-cost.ts buildCostGrid.
+    // Water rides the terrain's baked land mask (map_generator.h
+    // biome_at_cell) — the old float seaLevel parameter re-derived it by
+    // threshold and could disagree with the mask at the coast.
     PathCostData build_cost_grid(const TerrainData &td,
                                  const FeatureLayer *features = nullptr,
-                                 float seaLevel = 0.40f,
                                  const TreeLayer *treeLayer = nullptr);
 
     // 8-direction A* with octile heuristic + edge cost = costGrid[dest] * stepLen.

@@ -85,9 +85,9 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
 
     // Live a while: idle -> travel -> WORK (the chop) -> return (the haul).
     for (int i = 0; i < 400; ++i) {
-        tick_macro_npc_ai(gs, w, &grid, rt, kAiTicks,
-                          /*allowAutoBattle=*/true, /*pathCost=*/nullptr,
-                          &layer);
+        MacroWorld mw{.gs = &gs, .trees = &layer, .world = &w,
+                      .treeGrid = &grid};
+        tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle=*/true);
     }
 
     const int layerLost = 100 - int(layer.at(14, 10));
@@ -160,9 +160,9 @@ void test_the_farmer_works_the_field() {
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 60u);
     for (int i = 0; i < 400; ++i) {
-        tick_macro_npc_ai(gs, w, nullptr, rt, kAiTicks,
-                          /*allowAutoBattle=*/true, nullptr, nullptr,
-                          &features, &terrain);
+        MacroWorld mw{.gs = &gs, .world = &w, .terrain = &terrain,
+                      .features = &features};
+        tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle=*/true);
     }
     const int grain = gs.villages[0].inventory.count("grain");
     CHECK(grain > 0, "the farmer's grain reached the village store");
@@ -222,9 +222,8 @@ void test_farmer_without_terrain_conjures_nothing() {
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 60u);
     for (int i = 0; i < 200; ++i) {
-        tick_macro_npc_ai(gs, w, nullptr, rt, kAiTicks,
-                          /*allowAutoBattle=*/true, nullptr, nullptr,
-                          &features);
+        MacroWorld mw{.gs = &gs, .world = &w, .features = &features};
+        tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle=*/true);
     }
     CHECK(gs.villages[0].inventory.count("grain") == 0,
           "no terrain wired: nothing to reap against, nothing conjured");
@@ -251,7 +250,8 @@ void test_no_layer_no_chop() {
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 50u);
     for (int i = 0; i < 200; ++i) {
-        tick_macro_npc_ai(gs, w, &grid, rt, kAiTicks);
+        MacroWorld mw{.gs = &gs, .world = &w, .treeGrid = &grid};
+        tick_macro_npc_ai(mw, rt, kAiTicks);
     }
     CHECK(gs.villages[0].inventory.count("wood") == 0,
           "no layer => no honest wood, and none minted from nothing");
@@ -314,10 +314,10 @@ void test_the_mine_runs_while_the_player_is_away() {
     MacroNpcAiRuntime art{};
     reset_macro_npc_ai_runtime(art, 70u);
     for (int i = 0; i < 400; ++i) {
-        tick_macro_npc_ai_budgeted(gs, w, nullptr, art, kAiTicks,
+        MacroWorld mw{.gs = &gs, .world = &w, .deposits = &deposits};
+        tick_macro_npc_ai_budgeted(mw, art, kAiTicks,
                                    /*max_npc_ticks=*/64,
-                                   /*allowAutoBattle=*/true, nullptr, nullptr,
-                                   nullptr, nullptr, &deposits);
+                                   /*allowAutoBattle=*/true);
     }
 
     const int veinLeft =
@@ -414,7 +414,8 @@ void test_the_caravan_trades_on_its_memory() {
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 70u);
     for (int i = 0; i < 600; ++i) {
-        tick_macro_npc_ai(gs, w, nullptr, rt, kAiTicks);
+        MacroWorld mw{.gs = &gs, .world = &w};
+        tick_macro_npc_ai(mw, rt, kAiTicks);
     }
 
     const auto& bag = reg.get<ecs::NpcInventory>(e).inv;
@@ -484,9 +485,8 @@ void test_the_miner_works_the_vein() {
     MacroNpcAiRuntime art{};
     reset_macro_npc_ai_runtime(art, 70u);
     for (int i = 0; i < 400; ++i) {
-        tick_macro_npc_ai(gs, w, nullptr, art, kAiTicks,
-                          /*allowAutoBattle=*/true, nullptr, nullptr,
-                          nullptr, nullptr, &deposits);
+        MacroWorld mw{.gs = &gs, .world = &w, .deposits = &deposits};
+        tick_macro_npc_ai(mw, art, kAiTicks, /*allowAutoBattle=*/true);
     }
 
     const int veinLeft =
@@ -529,7 +529,8 @@ void test_the_miner_works_the_vein() {
     MacroNpcAiRuntime art2{};
     reset_macro_npc_ai_runtime(art2, 71u);
     for (int i = 0; i < 200; ++i) {
-        tick_macro_npc_ai(gs2, w2, nullptr, art2, kAiTicks);
+        MacroWorld mw2{.gs = &gs2, .world = &w2};
+        tick_macro_npc_ai(mw2, art2, kAiTicks);
     }
     CHECK(gs2.villages[0].inventory.count("iron") == 0,
           "no deposit layer => no honest ore, and none minted from nothing");

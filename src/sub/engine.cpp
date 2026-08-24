@@ -1,5 +1,7 @@
 #include "sub/engine.h"
 #include "macro/macro_stock.h"
+#include "macro/cell_facts.h"
+#include "macro/landmark_grid.h"
 #include "macro/faction.h"
 #include "macro/politik.h"
 #include "macro/squad.h"
@@ -529,11 +531,7 @@ void SubworldEngine::destroy(const gpu::VulkanDevice& dev) {
     dev_ = nullptr;
 }
 
-void SubworldEngine::enter(GameState& gs, const TerrainData& terrain,
-                           const FeatureLayer& features, ecs::World& ecs,
-                           EventBus& bus,
-                           const ZoneLayer* zones,
-                           TreeLayer* treeLayer,
+void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
                            const float* posOverride) {
     statusLine_.clear();
     statusTimer_ = 0.0f;
@@ -544,7 +542,9 @@ void SubworldEngine::enter(GameState& gs, const TerrainData& terrain,
     // A fresh session starts with no known threat: the exit gate can be asked
     // before the first combat tick runs.
     playerThreatD2_ = kNoThreatDistance2;
-    if (!terrain.has_rgba_storage()) {
+    if (!mw.gs || !mw.terrain || !mw.features || !mw.world
+        || !mw.terrain->has_rgba_storage()) {
+        mw_ = {};
         gs_ = nullptr;
         terrain_ = nullptr;
         features_ = nullptr;
@@ -558,8 +558,13 @@ void SubworldEngine::enter(GameState& gs, const TerrainData& terrain,
         return;
     }
 
-    gs_ = &gs; terrain_ = &terrain; features_ = &features;
-    ecs_ = &ecs; bus_ = &bus; zones_ = zones; treeLayer_ = treeLayer;
+    // The envelope, captured whole; the named pointers are its views (see
+    // engine.h) and are assigned HERE and in the reset paths only.
+    mw_ = mw;
+    gs_ = mw_.gs; terrain_ = mw_.terrain; features_ = mw_.features;
+    ecs_ = mw_.world; bus_ = &bus; zones_ = mw_.zones; treeLayer_ = mw_.trees;
+    GameState& gs = *gs_;
+    ecs::World& ecs = *ecs_;   // shadows the namespace, as the old parameter did
     int cx = int(gs.player.x);
     int cy = int(gs.player.y);
 
@@ -1011,115 +1016,51 @@ void SubworldEngine::reconcile_player_hp_to_macro() {
 
 CellContext SubworldEngine::resolve_context(int x, int y) const {
     CellContext c{};
-    const int W = terrain_->width, H = terrain_->height;
-    const int xi = ((x % W) + W) % W;
-    const int yi = ((y % H) + H) % H;
-    const std::size_t idx = std::size_t(yi) * W + xi;
-    const float h = float(terrain_->rgba[idx * 4 + 0]) / 255.0f;
-    const float m = float(terrain_->rgba[idx * 4 + 1]) / 255.0f;
-    const float t = float(terrain_->rgba[idx * 4 + 2]) / 255.0f;
-    const std::uint8_t mask = terrain_->rgba[idx * 4 + 3];
-    // The WRAPPED index: one cell of the world, one subworld, however the
-    // player reached it.
-    c.cx = xi; c.cy = yi;
-    c.worldCellsX = W; c.worldCellsY = H;
-    c.macroHeight = h;
-    // Season nudges ONLY the temperature that drives tree-species selection
-    // (foliage shifts toward evergreen/autumn in the cold half of the year);
-    // it is applied at this single source so both the CPU tree dispatch
-    // (main.cpp) and the renderer's atlas bake (vk_renderer_3d.cpp) inherit it
-    // for free. Biome CLASSIFICATION below keeps the raw climate `t` so a forest
-    // never reclassifies to tundra in winter — only its trees change.
-    const float seasonOffset = gs_ ? season_temp_offset(gs_->worldTime.day()) : 0.0f;
-    c.macroTemperature = std::clamp(t + seasonOffset, 0.0f, 1.0f);
-    // Mask (land/water) drives Water; elevation drives Mountain; the climate
-    // matrix fills in the land biomes. Mirrors biome_at, but keyed off the
-    // subworld's authoritative land MASK rather than the sea-level threshold.
-    c.biome   = !mask ? Biome::Water
-              : (h >= kMountainBiomeLevel ? Biome::Mountain
-                                          : biome_from_climate(t, m));
-    c.feature = features_->at(xi, yi);
+    // THE macro facts come from the one assembler (macro/cell_facts.h);
+    // this function adds only what GENERATION alone needs — the window
+    // geometry, the seeds and the furrow phase. It used to assemble the
+    // macro half itself, by hand, and it was one of the drifting copies the
+    // door replaced (canon-audit III.12/C2/C5).
+    const CellFacts f = cell_facts(mw_, x, y);
+    c.cx = f.x; c.cy = f.y;
+    c.worldCellsX = terrain_->width; c.worldCellsY = terrain_->height;
+    c.macroHeight = f.height01;
+    // Season shifts ONLY the temperature that drives tree-species selection
+    // (foliage turns evergreen/autumn in the cold half of the year). It rides
+    // its OWN facts column and is applied at this single sink, so the CPU
+    // tree dispatch and the renderer's atlas bake inherit it together while
+    // biome classification keeps the raw climate — a forest never
+    // reclassifies to tundra in winter, only its trees change.
+    c.macroTemperature =
+        std::clamp(f.temperature01 + f.seasonTempOffset, 0.0f, 1.0f);
+    c.biome   = f.biome;
+    c.feature = f.feature;
     // Macro tree count — the density target for the subworld scatter. -1
     // (no layer wired) lets dispatch re-derive from biome/features instead.
-    c.treeCount = (treeLayer_ && treeLayer_->has_complete_storage())
-        ? int(treeLayer_->at(xi, yi)) : -1;
+    c.treeCount = f.treeCount;
     // Furrow orientation must match the map's furrows for THIS cell, so it is
     // resolved here — the one place that knows the wrapped torus coords the
     // map shader hashes (sub/material.h, twin of macro.frag).
-    c.fieldFurrowsVert = field_furrows_vertical(xi, yi);
+    c.fieldFurrowsVert = field_furrows_vertical(f.x, f.y);
     // Crop context: fertility drives stand density, the wheat field's scar
-    // (macro/resource_field.h) subtracts what the sickle already took.
-    c.fertility01 = m;
-    if (gs_) {
-        c.cropHarvested = resource_field_scar(*gs_, ResourceFieldId::Wheat,
-                                              std::uint32_t(idx));
-    }
-    c.landmark.id = -1;
-    c.landmark.size = 0;
-    c.landmark.kind = CellLandmarkKind::None;
-    c.landmark.kingdomIdx = -1;
-    // Linear scan is fine — settlements are a small set (< 100) and resolve is
-    // called O(9) times per enter / re-centre.
-    for (const auto& s : gs_->settlements) {
-        if (s.x == xi && s.y == yi) {
-            c.landmark.id = s.id;
-            c.landmark.size = s.population;
-            c.landmark.kind = CellLandmarkKind::City;
-            c.landmark.kingdomIdx = s.kingdomIdx;
-            break;
-        }
-    }
-    if (c.landmark.id < 0) {
-        for (const auto& v : gs_->villages) {
-            if (v.x == xi && v.y == yi) {
-                c.landmark.id = v.id;
-                c.landmark.size = v.population;
-                c.landmark.kind = CellLandmarkKind::Village;
-                c.landmark.kingdomIdx = v.kingdomIdx;
-                break;
-            }
-        }
-    }
-    if (c.landmark.id < 0) {
-        for (const auto& sp : gs_->spires) {
-            if (sp.x == xi && sp.y == yi) {
-                c.landmark.id = sp.id;
-                // A spire's "size" IS its spell's tier — the strength column
-                // of this landmark, asked from the spell registry by ordinal
-                // (Rule 13; a foreign ordinal degrades to tier 1, the same
-                // legal-tower rule dungeon_spire_tower_floors clamps by).
-                // gen_spire stamps it into the gate's tag, which the tower
-                // reads as its storey count.
-                c.landmark.size = sp.spellId < std::uint32_t(kSpellCount)
-                                     ? kSpellDefs[sp.spellId].tier : 1;
-                c.landmark.kind = CellLandmarkKind::Spire;
-                c.landmark.depleted = sp.depleted;
-                break;
-            }
-        }
-    }
+    // subtracts what the sickle already took.
+    c.fertility01 = f.fertility01;
+    c.cropHarvested = f.cropHarvested;
+    c.landmark.kind       = f.landmark.type;
+    c.landmark.id         = f.landmark.id;
+    c.landmark.size       = f.landmark.size;
+    c.landmark.kingdomIdx = f.landmark.kingdomIdx;
+    c.landmark.depleted   = f.landmark.depleted;
     c.seed = gs_->worldSeed
-           ^ (std::uint32_t(xi) * kCellSeedX)
-           ^ (std::uint32_t(yi) * kCellSeedY);
+           ^ (std::uint32_t(f.x) * kCellSeedX)
+           ^ (std::uint32_t(f.y) * kCellSeedY);
     c.worldSeed = gs_->worldSeed;
     return c;
 }
 
-namespace {
-// Map the macro cell's landmark tag to the spawn table's LandmarkKind. A bare
-// settlement id with no explicit kind is treated as a city (matches the old
-// centre-only path). Kept local — the only consumer is spawn_cell below.
-LandmarkKind to_landmark_kind(const CellContext& c) {
-    switch (c.landmark.kind) {
-        case CellLandmarkKind::City:    return LandmarkKind::City;
-        case CellLandmarkKind::Village: return LandmarkKind::Village;
-        case CellLandmarkKind::Ruin:    return LandmarkKind::Ruin;
-        case CellLandmarkKind::Spire:   return LandmarkKind::Spire;
-        case CellLandmarkKind::None:    break;
-    }
-    return c.landmark.id >= 0 ? LandmarkKind::City : LandmarkKind::None;
-}
-} // namespace
+// (The `to_landmark_kind` bridge lived here until 2026-08-24 — the toll
+// between two five-value copies of the registry enum. One LandmarkType now;
+// the context's kind IS the spawn table's kind.)
 
 // Populate ONE window cell (offset ox,oy ∈ {-1,0,1} from centre) from that
 // cell's ABSOLUTE macro context — biome/feature/landmark/pop/zone/seed all
@@ -1146,17 +1087,18 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
     // creatures embody (macro/macro_stock.h fauna row: spawn-table capacity
     // minus what the hunt has taken). Asked HERE, where the GameState is,
     // exactly like the settlement faction above.
-    MacroWorld faunaWorld{gs_, treeLayer_, ecs_, terrain_};
+    MacroWorld faunaWorld = mw_;  // the envelope, whole (deposits included —
+                                  // the partial re-picks were canon-audit C4)
     const int faunaCount = macro_stock_read(
         faunaWorld, MacroStock::FaunaCount,
         MacroStockKey{-1, std::int16_t(wcx), std::int16_t(wcy)});
-    spawn_cell_npcs(*ecs_, ctx.biome, ctx.treeCount, to_landmark_kind(ctx), mgr_,
+    spawn_cell_npcs(*ecs_, ctx.biome, ctx.treeCount, ctx.landmark.kind, mgr_,
                     ox, oy, ctx.seed, settlementFaction, ctx.landmark.size,
                     // The macro stock these citizens are borrowed from: this
                     // cell's named place. Killing one of them pays the map back
                     // (macro/macro_stock.h) instead of vanishing without trace.
                     ctx.landmark.id,
-                    ctx.landmark.kind == CellLandmarkKind::Village,
+                    ctx.landmark.kind == LandmarkType::Village,
                     wcx, wcy, faunaCount);
 }
 
@@ -1502,7 +1444,7 @@ bool SubworldEngine::harvest_prop_near_player(float maxDist,
     int prev = 0;
     if (victim.kind == Structure::Tree && treeLayer_) {
         prev = int(treeLayer_->at(mcx, mcy));
-        MacroWorld macroWorld{gs_, treeLayer_, ecs_};
+        MacroWorld macroWorld = mw_;
         macro_stock_apply(macroWorld, MacroStock::TreeCount,
                           MacroStockKey{-1, std::int16_t(mcx), std::int16_t(mcy)},
                           -1);
@@ -1510,7 +1452,7 @@ bool SubworldEngine::harvest_prop_near_player(float maxDist,
         // One stand cut = one unit off the cell's crop row (the harvest
         // scar): re-entering the cell replants natural yield minus the scar,
         // and the world clock regrows it (crop_daily_regrow).
-        MacroWorld macroWorld{gs_, treeLayer_, ecs_, terrain_};
+        MacroWorld macroWorld = mw_;
         macro_stock_apply(macroWorld, MacroStock::CropCount,
                           MacroStockKey{-1, std::int16_t(mcx), std::int16_t(mcy)},
                           -1);
@@ -2398,7 +2340,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
             // while the player is still underground. No per-kind counter, no
             // queue to lose on the way out: one receipt, one settler.
             if (const auto* debt = reg.try_get<ecs::MacroDebt>(e)) {
-                MacroWorld macroWorld{gs_, treeLayer_, ecs_, terrain_};
+                MacroWorld macroWorld = mw_;
                 settle_macro_debt(macroWorld, *debt, -1);
             }
             // The other half of the same law, for the other kind of body. A
@@ -2576,6 +2518,7 @@ void SubworldEngine::leave(bool force) {
     pendingUpload3d_ = {};
     sceneKind_ = SceneKind::Overworld;
     dungeon_ = {};
+    mw_ = {};
     gs_ = nullptr;
     terrain_ = nullptr;
     features_ = nullptr;
@@ -2658,7 +2601,7 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
     // numbers the street spawner reads (spawn_cell), captured once here.
     ses.settlementId = doorCtx.landmark.id;
     ses.landmarkPop = doorCtx.landmark.size;
-    ses.landmarkIsVillage = doorCtx.landmark.kind == CellLandmarkKind::Village;
+    ses.landmarkIsVillage = doorCtx.landmark.kind == LandmarkType::Village;
     ses.faction = faction_index_for_kingdom(gs_->politik, doorCtx.landmark.kingdomIdx);
     ses.arrival = DungeonArrival::Door;   // in off the street
 
@@ -2765,7 +2708,7 @@ void SubworldEngine::enter_dungeon_scene(GameState& gs,
     // is the vermin below).
     if (ses.ref.kind == DungeonRef::House && ses.ref.level >= 0
         && ses.settlementId >= 0 && ecs_) {
-        MacroWorld mw{gs_, treeLayer_, ecs_, terrain_};
+        MacroWorld mw = mw_;
         const MacroStockKey popKey{ses.settlementId,
                                    std::int16_t(ses.doorCx),
                                    std::int16_t(ses.doorCy),
@@ -2809,7 +2752,7 @@ void SubworldEngine::enter_dungeon_scene(GameState& gs,
         || ses.ref.kind == DungeonRef::Cave
         || ses.ref.kind == DungeonRef::SpireTower;
     if (denOfBeasts && ecs_) {
-        MacroWorld mw{gs_, treeLayer_, ecs_, terrain_};
+        MacroWorld mw = mw_;
         const MacroStockKey faunaKey{-1, std::int16_t(ses.doorCx),
                                      std::int16_t(ses.doorCy)};
         const int budget = macro_stock_read(mw, MacroStock::FaunaCount, faunaKey);
@@ -2818,9 +2761,9 @@ void SubworldEngine::enter_dungeon_scene(GameState& gs,
         // The den's table is its landmark's: a spire storey draws the Spire
         // family (demons), a cellar and a cave the Ruin family — the same
         // routing the open cell runs (get_fauna_table).
-        const LandmarkKind denKind = ses.ref.kind == DungeonRef::SpireTower
-            ? LandmarkKind::Spire
-            : LandmarkKind::Ruin;
+        const LandmarkType denKind = ses.ref.kind == DungeonRef::SpireTower
+            ? LandmarkType::Spire
+            : LandmarkType::Ruin;
         spawn_dungeon_vermin(*ecs_, mgr_,
             dungeon_scene_seed(worldSeed, ses.doorCx, ses.doorCy,
                                ses.ref.ordinal, ses.ref.level),
@@ -3147,13 +3090,12 @@ bool SubworldEngine::try_exit_dungeon() {
         return false;
     }
 
+    // The envelope and the bus survive the teardown by copy: enter() below
+    // re-captures them exactly as the outside caller would.
+    const MacroWorld mwCopy = mw_;
     GameState& gs = *gs_;
-    const TerrainData& terrain = *terrain_;
-    const FeatureLayer& features = *features_;
     ecs::World& ecs = *ecs_;
     EventBus& bus = *bus_;
-    const ZoneLayer* zones = zones_;
-    TreeLayer* treeLayer = treeLayer_;
     const DungeonSession ses = dungeon_;
 
     // Interior teardown: deaths settle their ledgers (write-backs), then the
@@ -3187,7 +3129,7 @@ bool SubworldEngine::try_exit_dungeon() {
     const float pos[2] = {
         roofExit ? crown : float(kCellSize) + ses.returnLocalX,
         roofExit ? crown : float(kCellSize) + ses.returnLocalY};
-    enter(gs, terrain, features, ecs, bus, zones, treeLayer, pos);
+    enter(mwCopy, bus, pos);
     if (roofExit && active_) {
         // enter() seated the player on the terrain sample; lift to the crown
         // (structure top = seat + height, the one geometry contract). The

@@ -143,7 +143,6 @@ namespace sm
 
     PathCostData build_cost_grid(const TerrainData &td,
                                  const FeatureLayer *features,
-                                 float seaLevel,
                                  const TreeLayer *treeLayer)
     {
         PathCostData out;
@@ -162,12 +161,12 @@ namespace sm
             && treeLayer->width == td.width && treeLayer->height == td.height;
         for (std::size_t i = 0; i < total; ++i)
         {
-            const float h = float(td.rgba[i * 4u + 0]) / 255.0f;
-            const float t01 = td.rgba[i * 4u + 2] / 255.0f;
-            const float m01 = td.rgba[i * 4u + 1] / 255.0f;
-            // Mountains are a biome (elevation-classified), so their traversal
-            // cost now comes from the biome table via biome_at, not a feature.
-            const Biome b = biome_at(t01, m01, h, seaLevel, kMountainBiomeLevel);
+            // THE cell cascade (map_generator.h biome_at_cell): water rides
+            // the baked mask, mountains their elevation class — the decode-
+            // and-classify copy that lived here was canon-audit C5.
+            const int cx = int(i % std::size_t(td.width));
+            const int cy = int(i / std::size_t(td.width));
+            const Biome b = biome_at_cell(td, cx, cy);
             const FeatureType f = featureData ? FeatureLayer::decode(featureData[i]) : FT_None;
             const bool forest = haveTrees
                 && is_forest_cell(int(treeLayer->data[i]));

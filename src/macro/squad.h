@@ -171,7 +171,8 @@ inline void settle_squad_casualties(GameState& gs, ecs::World& w,
     const auto* sid = reg.try_get<ecs::MacroSpawnId>(e);
     const auto* pos = reg.try_get<ecs::Position>(e);
     if (!sid) return;
-    MacroWorld mw{&gs, nullptr, &w};
+    MacroWorld mw{.gs = &gs, .world = &w};  // named, not positional — the
+                                            // envelope grows, positions rot
     MacroStockKey key{};
     key.subject = std::int32_t(sid->index);
     key.cellX = pos ? std::int16_t(int(pos->x)) : std::int16_t(0);

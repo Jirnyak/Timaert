@@ -85,8 +85,8 @@ int drive_until(GameState& gs, ecs::World& w, MacroNpcAiRuntime& rt,
                 NPCState stop, int capThinks) {
     int thinks = 0;
     while (npc.state != std::uint8_t(stop) && thinks < capThinks) {
-        tick_macro_npc_ai(gs, w, nullptr, rt, kAiTicks,
-                          /*allowAutoBattle*/false, grid);
+        MacroWorld mw{.gs = &gs, .world = &w, .pathCost = grid};
+        tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle*/false);
         ++thinks;
     }
     return thinks;
@@ -104,8 +104,8 @@ bool drive_to_arrival(GameState& gs, ecs::World& w, MacroNpcAiRuntime& rt,
                           float(gs.mapW), float(gs.mapH)) < 4.0f) {
             return true;
         }
-        tick_macro_npc_ai(gs, w, nullptr, rt, kAiTicks,
-                          /*allowAutoBattle*/false, grid);
+        MacroWorld mw{.gs = &gs, .world = &w, .pathCost = grid};
+        tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle*/false);
     }
     return torus_dist_sq(p.x, p.y, tx, ty,
                          float(gs.mapW), float(gs.mapH)) < 4.0f;
@@ -183,7 +183,8 @@ void test_ocean_drowns_the_lord_and_settles_his_squad() {
     reset_macro_npc_ai_runtime(rt, 23u);
     int thinks = 0;
     while (!w.reg.all_of<ecs::Dead>(e) && thinks < 400) {
-        tick_macro_npc_ai(gs, w, nullptr, rt, kAiTicks, false, &grid);
+        MacroWorld mw{.gs = &gs, .world = &w, .pathCost = &grid};
+        tick_macro_npc_ai(mw, rt, kAiTicks, false);
         ++thinks;
     }
 

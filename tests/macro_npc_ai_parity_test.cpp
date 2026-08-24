@@ -63,7 +63,8 @@ void tick_once(sm::GameState& gs,
                sm::ecs::World& world,
                sm::MacroNpcAiRuntime& runtime,
                const sm::TreeGrid* treeGrid = nullptr) {
-    sm::tick_macro_npc_ai(gs, world, treeGrid, runtime, sm::kAiTicks);
+    sm::MacroWorld mw{.gs = &gs, .world = &world, .treeGrid = treeGrid};
+    sm::tick_macro_npc_ai(mw, runtime, sm::kAiTicks);
 }
 
 bool close_enough(float a, float b) {

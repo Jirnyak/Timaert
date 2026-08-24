@@ -60,18 +60,9 @@ inline bool on_screen(const ImVec2& p, int viewW, int viewH, float pad) {
 
 
 
-// Sample biome at a macro cell from the master terrain bitmap. Mirrors
-// the GLSL path: water below seaLevel, Mountain above kMountainBiomeLevel,
-// else the 3x3 climate matrix.
-Biome biome_at_cell(const TerrainData& td, int x, int y, float seaLevel) {
-    int wx = ((x % td.width)  + td.width)  % td.width;
-    int wy = ((y % td.height) + td.height) % td.height;
-    std::size_t i = (std::size_t(wy) * td.width + wx) * 4u;
-    float h = td.rgba[i + 0] / 255.0f;
-    float m = td.rgba[i + 1] / 255.0f;
-    float t = td.rgba[i + 2] / 255.0f;
-    return biome_at(t, m, h, seaLevel, kMountainBiomeLevel);
-}
+// (A private biome sampler lived here until 2026-08-24 — no bounds check, no
+// mask, and a hard-coded 0.40 sea level at its call site. The one cascade is
+// map_generator.h biome_at_cell.)
 
 const char* feature_name(FeatureType f) {
     switch (f) {
@@ -291,8 +282,8 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
                 ImGui::TextColored(ImVec4(0.55f, 0.55f, 0.60f, 1),
                                    "Uncharted");
             } else {
-                Biome b = biome_at_cell(terrain, cursor.hoverX, cursor.hoverY,
-                                        0.40f);
+                Biome b = biome_at_cell(terrain, cursor.hoverX,
+                                        cursor.hoverY);
                 FeatureType f = features.at(cursor.hoverX, cursor.hoverY);
                 ImGui::TextColored(ImVec4(0.55f, 0.95f, 0.55f, 1), "%s",
                                    kBiomes[b].name);

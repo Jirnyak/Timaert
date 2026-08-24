@@ -1,40 +1,16 @@
-// Landmark registry — TS-faithful runtime aggregator (mirrors
-// `landmark-registry.ts`). Walks `GameState` and yields a unified list of
-// every macroworld point-of-interest with its kind, name, position, and a
-// short detail line. Consumed by debug overlays / map tooltips. Pure
-// read-only — does not allocate beyond the returned vector.
+// Landmark registry — every macroworld point-of-interest type the game can
+// place lives in this single table. Adding a landmark = one entry (CANON S16).
 //
-// To add a new landmark kind: extend `collect_landmarks` with one extra
-// pass over the new GameState collection. No header changes required by
-// callers — the entry list is uniform.
+// This is also THE landmark vocabulary (2026-08-24): the subworld's
+// "CellLandmarkKind" and the fauna router's "LandmarkKind" were two more
+// five-value copies of this enum, joined by a hand-written bridge — and the
+// four kinds the copies could not name (Lair, Shrine, Mine, Tower) physically
+// could not reach the microworld (canon-audit C1). One enum, everywhere.
+// (The header's former first half — collect_landmarks and its string-typed
+// LandmarkEntry — had no callers and is gone with landmark_registry.cpp.)
 #pragma once
 #include <cstdint>
 #include "core/table_guard.h"
-#include <string>
-#include <vector>
-
-namespace sm {
-
-struct GameState;
-
-struct LandmarkEntry {
-    std::string  kind;    // "City" | "Village" | "Spire" | "Marker"
-    std::string  id;      // unique within kind
-    std::string  name;
-    std::string  detail;  // optional secondary line
-    int          x;
-    int          y;
-    std::uint32_t color;  // ARGB
-};
-
-std::vector<LandmarkEntry> collect_landmarks(const GameState& gs);
-
-} // namespace sm
-// Landmark registry — every macroworld point-of-interest type the game can
-// place lives in this single table. Adding a landmark = one entry. Mirrors
-// landmark-registry.ts. Pure data.
-#pragma once
-#include <cstdint>
 #include <string_view>
 
 namespace sm {

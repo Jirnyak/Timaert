@@ -43,11 +43,16 @@ SubworldMode resolve_mode(const CellContext& ctx) {
     if (ctx.dungeon.kind != DungeonRef::None) return SubworldMode::Dungeon;
     const FeatureType feature = FeatureLayer::decode(std::uint8_t(ctx.feature));
     switch (ctx.landmark.kind) {
-        case CellLandmarkKind::City:    return SubworldMode::City;
-        case CellLandmarkKind::Village: return SubworldMode::Village;
-        case CellLandmarkKind::Ruin:    return SubworldMode::Ruin;
-        case CellLandmarkKind::Spire:   return SubworldMode::Spire;
-        case CellLandmarkKind::None:    break;
+        case LandmarkType::City:    return SubworldMode::City;
+        case LandmarkType::Village: return SubworldMode::Village;
+        case LandmarkType::Ruin:    return SubworldMode::Ruin;
+        case LandmarkType::Spire:   return SubworldMode::Spire;
+        // Registry kinds no world places yet (Lair/Shrine/Mine/Tower): the
+        // cell shows its land until each kind's generator module lands. The
+        // one vocabulary can already NAME them down here — that was
+        // canon-audit C1 — the modules are their own (S9/S16) work.
+        default:                    break;
+        case LandmarkType::None:    break;
     }
     if (ctx.landmark.id >= 0) return SubworldMode::City;
     // Features come before the biome base: what men built on the cell decides
@@ -73,7 +78,7 @@ void dispatch_generate(const CellContext& ctx, const float nbHeights[9],
                        const Biome nbBiome[9],
                        const std::uint8_t nbFeature[9],
                        SubworldMapData& out,
-                       const CellLandmarkKind* nbLandmark,
+                       const LandmarkType* nbLandmark,
                        const int* nbTreeCount,
                        const float* nbFertility) {
     CellContext safeCtx = ctx;
@@ -118,9 +123,9 @@ void dispatch_generate(const CellContext& ctx, const float nbHeights[9],
     // landmark data the centre cell still flattens itself.
     TerrainMod nbMods[9]{};
     for (int i = 0; i < 9; ++i) {
-        const CellLandmarkKind lm = nbLandmark
+        const LandmarkType lm = nbLandmark
             ? nbLandmark[i]
-            : (i == 4 ? effective_landmark(safeCtx) : CellLandmarkKind::None);
+            : (i == 4 ? effective_landmark(safeCtx) : LandmarkType::None);
         nbMods[i] = terrain_mod_for(lm, FeatureType(safeFeature[i]));
     }
 

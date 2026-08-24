@@ -41,7 +41,8 @@ void test_untouched_cell_reads_capacity() {
     const TerrainData terrain = meadow_terrain();
     MacroWorld w{&gs, nullptr, nullptr, &terrain};
 
-    const int cap = fauna_cell_capacity_at(&gs, &terrain, nullptr, 1, 1);
+    MacroWorld capW{.gs = &gs, .terrain = &terrain};
+    const int cap = fauna_cell_capacity_at(capW, 1, 1);
     CHECK(cap > 0, "a meadow carries wildlife - the baseline is real");
     CHECK(macro_stock_read(w, MacroStock::FaunaCount, cell_key(1, 1)) == cap,
           "an untouched cell reads its own table capacity");
@@ -68,7 +69,7 @@ void test_hunt_thins_and_return_does_not_resurrect() {
     CHECK(macro_stock_read(w, MacroStock::FaunaCount, cell_key(2, 2)) == cap - 2,
           "leave and RETURN: the culled stay culled");
     CHECK(macro_stock_read(w, MacroStock::FaunaCount, cell_key(1, 1)) ==
-              fauna_cell_capacity_at(&gs, &terrain, nullptr, 1, 1),
+              fauna_cell_capacity_at(MacroWorld{.gs = &gs, .terrain = &terrain}, 1, 1),
           "the scar is per cell - the neighbour still stands whole");
 
     macro_stock_apply(w, MacroStock::FaunaCount, cell_key(2, 2), -999);
@@ -135,7 +136,7 @@ void test_no_context_fails_closed() {
           "no terrain wired = nothing stands here");
     macro_stock_apply(w, MacroStock::FaunaCount, cell_key(1, 1), -3);
     CHECK(gs.resourceScars[std::size_t(ResourceFieldId::Fauna)].empty(), "and nothing moves");
-    CHECK(fauna_cell_capacity_at(nullptr, nullptr, nullptr, 0, 0) == 0,
+    CHECK(fauna_cell_capacity_at(MacroWorld{}, 0, 0) == 0,
           "null context capacity is zero, not a crash");
 }
 

@@ -9,6 +9,7 @@
 #include "core/table_guard.h"
 #include "macro/biomes.h"
 #include "macro/features.h"
+#include "macro/landmark_registry.h"
 
 namespace sm::sub {
 
@@ -62,9 +63,11 @@ enum class SubworldMode : std::uint8_t {
     Dungeon,
 };
 
-enum class CellLandmarkKind : std::uint8_t {
-    None = 0, City, Village, Ruin, Spire,
-};
+// The landmark vocabulary is LandmarkType (macro/landmark_registry.h) — the
+// one registry enum. A private five-value "CellLandmarkKind" lived here until
+// 2026-08-24 (second copy; the fauna router carried a third), joined by a
+// hand-written bridge in engine.cpp — and Lair/Shrine/Mine/Tower physically
+// could not reach the microworld (canon-audit C1).
 
 // Dungeon door reference. When `kind` is non-None the window cell is an
 // INTERIOR scene entered through a door standing on macro cell (cx, cy) —
@@ -101,7 +104,7 @@ struct DungeonRef {
 // they fold). A new landmark fact is a member here, not another CellContext
 // column.
 struct LandmarkContext {
-    CellLandmarkKind kind = CellLandmarkKind::None;
+    LandmarkType kind = LandmarkType::None;
     int  id   = -1;   // the landmark's id within its kind; -1 = none
     // Strength/size in the landmark's own currency: a settlement's population,
     // a spire's spell tier (asked from the spell registry at resolve).
@@ -170,10 +173,10 @@ struct CellContext {
 // projects as a City cell even when landmark.kind is None (mirrors
 // resolve_mode's `landmark.id >= 0` branch) — one helper so terrain
 // flattening and mode resolution can never disagree.
-inline CellLandmarkKind effective_landmark(const CellContext& ctx) {
-    if (ctx.landmark.kind != CellLandmarkKind::None) return ctx.landmark.kind;
-    if (ctx.landmark.id >= 0) return CellLandmarkKind::City;
-    return CellLandmarkKind::None;
+inline LandmarkType effective_landmark(const CellContext& ctx) {
+    if (ctx.landmark.kind != LandmarkType::None) return ctx.landmark.kind;
+    if (ctx.landmark.id >= 0) return LandmarkType::City;
+    return LandmarkType::None;
 }
 
 // ── What a prop DOES when the player presses E on it ────────────────────────

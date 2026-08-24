@@ -28,9 +28,12 @@ int torus_chebyshev(int ax, int ay, int bx, int by, int w, int h) {
     return std::max(dx, dy);
 }
 
-// A spire may not share a cell with any named place: resolve_context and
-// fauna's landmark_kind_at scan settlements -> villages -> spires in order,
-// so a co-located spire would be silently shadowed by the town on top of it.
+// A spire may not share a cell with any named place: the baked cell→landmark
+// index (macro/landmark_grid.h) awards a shared cell to the FIRST landmark
+// its builder yields (settlements → villages → spires), so a co-located spire
+// would be silently shadowed by the town on top of it. This scan stays
+// hand-written because it runs DURING world-gen, before the grid exists —
+// the one legitimate pre-grid reader.
 bool cell_occupied(const GameState& gs, int x, int y) {
     for (const auto& s : gs.settlements)
         if (s.x == x && s.y == y) return true;

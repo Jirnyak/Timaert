@@ -296,7 +296,7 @@ private:
         float nbHeights[9]{};
         Biome nbBiome[9]{};
         std::uint8_t nbFeature[9]{};
-        CellLandmarkKind nbLandmark[9]{};
+        LandmarkType nbLandmark[9]{};
         // Macro tree counts (CellContext.treeCount); -1 = unknown/derive.
         int nbTreeCount[9] = {-1, -1, -1, -1, -1, -1, -1, -1, -1};
         // Neighbour fertility (CellContext.fertility01) — the field-plot

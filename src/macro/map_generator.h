@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <limits>
 #include <vector>
+#include "core/torus.h"
+#include "macro/biomes.h"
 
 namespace sm {
 
@@ -70,6 +72,37 @@ struct TerrainData {
         return height_at(x, y) < seaLevel;
     }
 };
+
+// ── THE cell biome classifier (CANON S6, 2026-08-24) ─────────────────────
+// One cascade for a WORLD CELL: the baked land mask decides Water, elevation
+// decides Mountain, the climate matrix fills in the rest. `biome_at`
+// (biomes.h) stays the pure-math core for callers that do not hold a cell —
+// the shader mirror and world-gen scratch buffers.
+//
+// The mask, not the threshold: both mask writers (the climate synth and the
+// river carve) derive A from the SAME quantized height the R channel stores,
+// so the mask exists precisely to make "is this water" answer identically
+// everywhere. Before this door the question was answered five ways — the
+// subworld read the mask, travel/pathfinding/fauna re-derived it from float
+// height vs a float sea level, and two UI twins disagreed with each other at
+// the coast (canon-audit C5/H10) — a coastal cell could be Meadow to a boot
+// and Water to a wolf. The sea level itself vanishes from the query: the mask
+// already carries it.
+//
+// Torus-wrapped; fail-closed to Water (a world with no storage has no land to
+// walk, grow or hunt — the zero contribution, never a crash).
+inline Biome biome_at_cell(const TerrainData& td, int x, int y) {
+    if (!td.has_rgba_storage()) return Biome::Water;
+    const int xi = wrapi(x, td.width);
+    const int yi = wrapi(y, td.height);
+    const std::size_t s =
+        (std::size_t(yi) * std::size_t(td.width) + std::size_t(xi)) * 4u;
+    if (td.rgba[s + 3u] == 0u) return Biome::Water;   // the baked land mask
+    const float h = float(td.rgba[s + 0u]) / 255.0f;
+    if (h >= kMountainBiomeLevel) return Biome::Mountain;
+    return biome_from_climate(float(td.rgba[s + 2u]) / 255.0f,
+                              float(td.rgba[s + 1u]) / 255.0f);
+}
 
 // Generate the master texture on GPU and read back to CPU. Allocates `texture`.
 TerrainData generate_terrain(int w, int h, const LayerParameters& params);

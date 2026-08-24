@@ -44,7 +44,7 @@ XY pick_random_nearby(float cx, float cy, int range, const TickContext& ctx) {
 bool home_pos(const ecs::MacroNpcRuntime& rt, const TickContext& ctx, XY& out) {
     if (rt.homeSettlementId < 0) return false;
     if (rt.homeIsVillage) {
-        for (auto& v : ctx.gs->villages) {
+        for (auto& v : ctx.mw.gs->villages) {
             if (v.id == rt.homeSettlementId) {
                 out = {float(v.x), float(v.y)};
                 return true;
@@ -52,7 +52,7 @@ bool home_pos(const ecs::MacroNpcRuntime& rt, const TickContext& ctx, XY& out) {
         }
         return false;
     }
-    for (auto& s : ctx.gs->settlements) {
+    for (auto& s : ctx.mw.gs->settlements) {
         if (s.id == rt.homeSettlementId) {
             out = {float(s.x), float(s.y)};
             return true;
@@ -67,12 +67,12 @@ Inventory* home_inventory(const ecs::MacroNpcRuntime& rt,
                           const TickContext& ctx) {
     if (rt.homeSettlementId < 0) return nullptr;
     if (rt.homeIsVillage) {
-        for (auto& v : ctx.gs->villages) {
+        for (auto& v : ctx.mw.gs->villages) {
             if (v.id == rt.homeSettlementId) return &v.inventory;
         }
         return nullptr;
     }
-    for (auto& s : ctx.gs->settlements) {
+    for (auto& s : ctx.mw.gs->settlements) {
         if (s.id == rt.homeSettlementId) return &s.inventory;
     }
     return nullptr;
@@ -82,8 +82,8 @@ Inventory* home_inventory(const ecs::MacroNpcRuntime& rt,
 // arrival half of every honest work-loop (woodcutter, farmer).
 void deliver_bag_home(entt::entity self, const ecs::MacroNpcRuntime& rt,
                       const TickContext& ctx, const char* id) {
-    if (!ctx.world) return;
-    auto* bag = ctx.world->reg.try_get<ecs::NpcInventory>(self);
+    if (!ctx.mw.world) return;
+    auto* bag = ctx.mw.world->reg.try_get<ecs::NpcInventory>(self);
     if (!bag) return;
     const int n = bag->inv.count(id);
     Inventory* store = home_inventory(rt, ctx);
@@ -97,14 +97,14 @@ void deliver_bag_home(entt::entity self, const ecs::MacroNpcRuntime& rt,
 // cells of a village (spawners.cpp), so a small box around home covers them.
 bool find_home_field(const TickContext& ctx, float px, float py,
                      const XY& home, XY& out) {
-    if (!ctx.features) return false;
+    if (!ctx.mw.features) return false;
     bool found = false;
     float best = 1e30f;
     for (int dy = -3; dy <= 3; ++dy) {
         for (int dx = -3; dx <= 3; ++dx) {
             const int cx = int(home.x) + dx;
             const int cy = int(home.y) + dy;
-            if (ctx.features->at(cx, cy) != FT_Field) continue;
+            if (ctx.mw.features->at(cx, cy) != FT_Field) continue;
             const float d = torus_dist_sq(px, py, float(cx), float(cy),
                                           float(ctx.mapW), float(ctx.mapH));
             if (d < best) {
@@ -181,9 +181,9 @@ void set_visual_speed(ecs::MacroNpcRuntime& rt, float oldX, float oldY,
 }
 
 // Weight of a macro cell from the baked grid the player's A* walks
-// (ctx.pathCost); a missing grid reads as a featureless free-road world.
+// (ctx.mw.pathCost); a missing grid reads as a featureless free-road world.
 float cell_weight(const TickContext& ctx, int x, int y) {
-    const PathCostData* pc = ctx.pathCost;
+    const PathCostData* pc = ctx.mw.pathCost;
     if (!pc || pc->width <= 0 || pc->height <= 0
         || pc->costGrid.size()
                != std::size_t(pc->width) * std::size_t(pc->height)) {
@@ -196,7 +196,7 @@ float cell_weight(const TickContext& ctx, int x, int y) {
 }
 
 bool cell_is_water(const TickContext& ctx, int x, int y) {
-    const PathCostData* pc = ctx.pathCost;
+    const PathCostData* pc = ctx.mw.pathCost;
     if (!pc || pc->width <= 0 || pc->height <= 0
         || pc->water.size()
                != std::size_t(pc->width) * std::size_t(pc->height)) {
@@ -411,10 +411,10 @@ const GathererDef* gatherer_def(NPCType t) {
 // over a handful of cells, not the map.
 bool find_home_deposit(const TickContext& ctx, ResourceFieldId row,
                        const XY& home, XY& out) {
-    if (!ctx.deposits || ctx.mapW <= 0) return false;
+    if (!ctx.mw.deposits || ctx.mapW <= 0) return false;
     const DepositKind kind =
         DepositKind(std::uint8_t(row) - std::uint8_t(ResourceFieldId::Clay));
-    const auto& cells = ctx.deposits->cells[std::size_t(kind)];
+    const auto& cells = ctx.mw.deposits->cells[std::size_t(kind)];
     float bestSq = float(kGathererReach) * float(kGathererReach);
     bool found = false;
     for (const auto& [idx, remaining] : cells) {
@@ -436,8 +436,8 @@ bool find_worksite(const GathererDef& def, const TickContext& ctx,
                    const ecs::Position& p, const XY& home, XY& out) {
     switch (def.worksite) {
         case Worksite::ForestCell:
-            return ctx.treeGrid
-                && find_nearest_tree_grid(*ctx.treeGrid, p.x, p.y,
+            return ctx.mw.treeGrid
+                && find_nearest_tree_grid(*ctx.mw.treeGrid, p.x, p.y,
                                           ctx.mapW, ctx.mapH, out);
         case Worksite::HomeField:
             return find_home_field(ctx, p.x, p.y, home, out);
@@ -493,16 +493,16 @@ void ai_gatherer(entt::entity self, ecs::Position& p,
             // the profession's registry row and rides home in the OWN bag.
             // A row whose layers are not wired reads 0 and takes nothing —
             // the fail-closed rule every gatherer shares.
-            if (ctx.world) {
+            if (ctx.mw.world) {
                 const int tx = int(rt.targetX);
                 const int ty = int(rt.targetY);
-                MacroWorld mw{ctx.gs, ctx.trees, ctx.world, ctx.terrain,
-                              ctx.deposits};
+                MacroWorld mw = ctx.mw;  // the envelope, whole — never a
+                                         // partial re-pick of its layers
                 const int have = resource_field_read(mw, def->row, tx, ty);
                 const int take = std::min(kGatherPerWorkerDay, have);
                 if (take > 0) {
                     resource_field_apply(mw, def->row, tx, ty, -take);
-                    if (auto* bag = ctx.world->reg.try_get<ecs::NpcInventory>(
+                    if (auto* bag = ctx.mw.world->reg.try_get<ecs::NpcInventory>(
                             self)) {
                         bag->inv.add(def->commodity, take);
                     }
@@ -544,14 +544,14 @@ void ai_nomad(ecs::Position& p, ecs::MacroNpcRuntime& rt,
               const TickContext& ctx);
 
 Inventory* village_inventory_by_id(const TickContext& ctx, int id) {
-    for (auto& v : ctx.gs->villages) {
+    for (auto& v : ctx.mw.gs->villages) {
         if (v.id == id) return &v.inventory;
     }
     return nullptr;
 }
 
 Inventory* settlement_inventory_by_id(const TickContext& ctx, int id) {
-    for (auto& s : ctx.gs->settlements) {
+    for (auto& s : ctx.mw.gs->settlements) {
         if (s.id == id) return &s.inventory;
     }
     return nullptr;
@@ -575,12 +575,12 @@ int haul_between(Inventory& from, Inventory& to, const char* id,
 void ai_caravan(entt::entity self, ecs::Position& p,
                 ecs::MacroNpcRuntime& rt, const TickContext& ctx) {
     XY home;
-    if (!home_pos(rt, ctx, home) || rt.homeIsVillage || !ctx.world) {
+    if (!home_pos(rt, ctx, home) || rt.homeIsVillage || !ctx.mw.world) {
         // No honest home city — degrade to the old nomad wander.
         ai_nomad(p, rt, ctx);
         return;
     }
-    auto& reg = ctx.world->reg;
+    auto& reg = ctx.mw.world->reg;
     auto* bag = reg.try_get<ecs::NpcInventory>(self);
     auto* mem = reg.try_get<AgentMemory>(self);
     Inventory* homeStore = settlement_inventory_by_id(ctx, rt.homeSettlementId);
@@ -595,7 +595,7 @@ void ai_caravan(entt::entity self, ecs::Position& p,
         // Pick one of the HOME city's villages — nearest first.
         int villageId = -1;
         float best = 1e30f;
-        for (auto& v : ctx.gs->villages) {
+        for (auto& v : ctx.mw.gs->villages) {
             if (v.nearestCityId != rt.homeSettlementId) continue;
             const float d = torus_dist_sq(p.x, p.y, float(v.x), float(v.y),
                                           float(ctx.mapW), float(ctx.mapH));
@@ -615,7 +615,7 @@ void ai_caravan(entt::entity self, ecs::Position& p,
         remember(*mem, pack_market_snapshot(
                            *homeStore,
                            std::uint16_t(rt.homeSettlementId),
-                           ctx.gs->worldTime.day()));
+                           ctx.mw.gs->worldTime.day()));
         // Load EXPORTS: what home has plenty of and a village lives on —
         // crafted needs first (bread before jewelry), half the hold.
         const MemoryEntry* snap = recall(
@@ -699,7 +699,7 @@ void ai_trader(ecs::Position& p, ecs::MacroNpcRuntime& rt,
                const TickContext& ctx) {
     XY home;
     if (!home_pos(rt, ctx, home)) return;
-    auto& settles = ctx.gs->settlements;
+    auto& settles = ctx.mw.gs->settlements;
 
     if (rt.state == std::uint8_t(NS::Idle)) {
         --rt.stateTimer;
@@ -754,7 +754,7 @@ void ai_trader(ecs::Position& p, ecs::MacroNpcRuntime& rt,
 
 void ai_nomad(ecs::Position& p, ecs::MacroNpcRuntime& rt,
               const TickContext& ctx) {
-    auto& settles = ctx.gs->settlements;
+    auto& settles = ctx.mw.gs->settlements;
     if (rt.state == std::uint8_t(NS::Idle)) {
         --rt.stateTimer;
         if (rt.stateTimer <= 0) {
@@ -949,7 +949,7 @@ entt::entity nearest_hostile_squad(entt::entity self, const ecs::Position& p,
                                    const TickContext& ctx) {
     const SquadIndex& g = *ctx.squads;
     if (g.cols <= 0 || g.rows <= 0) return entt::null;
-    auto& reg = ctx.world->reg;
+    auto& reg = ctx.mw.world->reg;
     const char* myFaction = faction_id_for_index(kind.factionIdx);
     const int cx0 = int(p.x) / g.cellSize;
     const int cy0 = int(p.y) / g.cellSize;
@@ -968,7 +968,7 @@ entt::entity nearest_hostile_squad(entt::entity self, const ecs::Position& p,
                                               float(ctx.mapW),
                                               float(ctx.mapH));
                 if (d >= best) continue;
-                if (faction_relation(ctx.gs, myFaction,
+                if (faction_relation(ctx.mw.gs, myFaction,
                                      faction_id_for_index(ok->factionIdx))
                         >= kHostileThreshold) {
                     continue;
@@ -986,7 +986,7 @@ entt::entity nearest_hostile_squad(entt::entity self, const ecs::Position& p,
 bool squad_threat_step(entt::entity self, ecs::Position& p,
                        const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
                        const TickContext& ctx) {
-    if (!ctx.world || !ctx.squads || !ctx.gs) return false;
+    if (!ctx.mw.world || !ctx.squads || !ctx.mw.gs) return false;
 
     const entt::entity enemy = nearest_hostile_squad(self, p, kind, ctx);
     if (enemy == entt::null) {
@@ -998,11 +998,11 @@ bool squad_threat_step(entt::entity self, ecs::Position& p,
         return false;
     }
 
-    auto& reg = ctx.world->reg;
+    auto& reg = ctx.mw.world->reg;
     const auto& ep = reg.get<ecs::Position>(enemy);
-    const float myPower = squad_power(auto_battle_side_of(*ctx.world, self));
+    const float myPower = squad_power(auto_battle_side_of(*ctx.mw.world, self));
     const float theirPower =
-        squad_power(auto_battle_side_of(*ctx.world, enemy));
+        squad_power(auto_battle_side_of(*ctx.mw.world, enemy));
 
     // The geometric meeting: same macro cell = the fight happens, resolved
     // by the ONE law and settled through the ONE ledger. An ambush is a
@@ -1015,10 +1015,10 @@ bool squad_threat_step(entt::entity self, ecs::Position& p,
             && ert->state != std::uint8_t(NS::Chasing)
             && ert->state != std::uint8_t(NS::Fleeing);
         const AutoBattleOutcome o = resolve_auto_battle(
-            auto_battle_side_of(*ctx.world, self),
-            auto_battle_side_of(*ctx.world, enemy),
+            auto_battle_side_of(*ctx.mw.world, self),
+            auto_battle_side_of(*ctx.mw.world, enemy),
             ambush ? Ambush::SideA : Ambush::None, *ctx.rng);
-        settle_auto_battle(*ctx.gs, *ctx.world, self, enemy, o);
+        settle_auto_battle(*ctx.mw.gs, *ctx.mw.world, self, enemy, o);
         rt.visualSpeed = 0.0f;
         if (!reg.all_of<ecs::Dead>(self)) {
             rt.state = std::uint8_t(NS::Idle);
@@ -1073,8 +1073,8 @@ bool squad_threat_step(entt::entity self, ecs::Position& p,
 // frozen one.
 void ai_waypoints(entt::entity e, ecs::Position& p, ecs::MacroNpcRuntime& rt,
                   const TickContext& ctx) {
-    ecs::SquadOrders* orders = ctx.world
-        ? ctx.world->reg.try_get<ecs::SquadOrders>(e) : nullptr;
+    ecs::SquadOrders* orders = ctx.mw.world
+        ? ctx.mw.world->reg.try_get<ecs::SquadOrders>(e) : nullptr;
     if (!orders || orders->waypointCount == 0) {
         ai_wanderer(p, rt, ctx);
         return;
@@ -1136,9 +1136,9 @@ void settle_exhaustion(entt::entity e, const ecs::Position& p,
         int(std::lround(float(-int(rt.sp)) * kExhaustionBite));
     if (bite <= 0) return;
     hp.hp -= float(bite);
-    if (hp.hp <= 0.0f && ctx.world && ctx.gs) {
-        settle_leader_fraction(*ctx.world, e, 0.0f);
-        drain_dead_leader_squads(*ctx.world, ctx.gs->deserterPool);
+    if (hp.hp <= 0.0f && ctx.mw.world && ctx.mw.gs) {
+        settle_leader_fraction(*ctx.mw.world, e, 0.0f);
+        drain_dead_leader_squads(*ctx.mw.world, ctx.mw.gs->deserterPool);
     }
 }
 
@@ -1211,15 +1211,32 @@ void build_squad_index(SquadIndex& g, ecs::World& w, int mapW, int mapH,
     }
 }
 
-void tick_macro_npc_ai(GameState& gs, ecs::World& w,
-                       const TreeGrid* treeGrid,
+// ONE assembly of the AI think's view (canon-audit H2: this block used to
+// exist twice, line for line, one copy per driver, and the copies drifted —
+// the budgeted twin once shipped without `deposits`, so every miner in the
+// world stopped digging while the player was underground). The layer envelope
+// arrives assembled by its owner; this adds only the drive-state.
+static TickContext make_tick_context(MacroWorld& mw,
+                                     MacroNpcAiRuntime& runtime,
+                                     bool allowAutoBattle) {
+    TickContext ctx{};
+    ctx.mw      = mw;
+    ctx.mapW    = mw.gs->mapW;
+    ctx.mapH    = mw.gs->mapH;
+    ctx.rng     = &runtime.jitter;
+    ctx.playerX = mw.gs->player.x;
+    ctx.playerY = mw.gs->player.y;
+    ctx.squads  = &runtime.squadIndex;
+    ctx.allowAutoBattle = allowAutoBattle;
+    return ctx;
+}
+
+void tick_macro_npc_ai(MacroWorld& mw,
                        MacroNpcAiRuntime& runtime, std::uint64_t ticks,
-                       bool allowAutoBattle,
-                       const PathCostData* pathCost,
-                       TreeLayer* trees,
-                       const FeatureLayer* features,
-                       const TerrainData* terrain,
-                       DepositLayer* deposits) {
+                       bool allowAutoBattle) {
+    if (!mw.gs || !mw.world) return;   // no world, no thinking (fail-closed)
+    GameState& gs = *mw.gs;
+    ecs::World& w = *mw.world;
     auto& reg = w.reg;
     auto view = reg.view<ecs::Position, ecs::NPCKind,
                          ecs::MacroNpcRuntime, ecs::Health>(
@@ -1227,22 +1244,7 @@ void tick_macro_npc_ai(GameState& gs, ecs::World& w,
 
     build_squad_index(runtime.squadIndex, w, gs.mapW, gs.mapH);
 
-    TickContext ctx{};
-    ctx.mapW     = gs.mapW;
-    ctx.mapH     = gs.mapH;
-    ctx.gs       = &gs;
-    ctx.treeGrid = treeGrid;
-    ctx.rng      = &runtime.jitter;
-    ctx.playerX  = gs.player.x;
-    ctx.playerY  = gs.player.y;
-    ctx.world    = &w;
-    ctx.squads   = &runtime.squadIndex;
-    ctx.allowAutoBattle = allowAutoBattle;
-    ctx.pathCost = pathCost;
-    ctx.trees    = trees;
-    ctx.features = features;
-    ctx.terrain  = terrain;
-    ctx.deposits = deposits;
+    TickContext ctx = make_tick_context(mw, runtime, allowAutoBattle);
 
     for (auto e : view) {
         auto& p    = view.get<ecs::Position>(e);
@@ -1316,13 +1318,14 @@ void tick_macro_npc_visuals(ecs::World& w, int mapW, int mapH, float dt) {
 }
 
 MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
-    GameState& gs, ecs::World& w, const TreeGrid* treeGrid,
+    MacroWorld& mw,
     MacroNpcAiRuntime& runtime, std::uint64_t ticks, int max_npc_ticks,
-    bool allowAutoBattle, const PathCostData* pathCost, TreeLayer* trees,
-    const FeatureLayer* features, const TerrainData* terrain,
-    DepositLayer* deposits) {
+    bool allowAutoBattle) {
     MacroNpcAiSliceResult result{};
     if (max_npc_ticks <= 0) return result;
+    if (!mw.gs || !mw.world) return result;  // no world, no thinking
+    GameState& gs = *mw.gs;
+    ecs::World& w = *mw.world;
 
     constexpr int kMaxQueuedSweeps = 4;
     if (ticks > 0) {
@@ -1346,30 +1349,11 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
 
     build_squad_index(runtime.squadIndex, w, gs.mapW, gs.mapH);
 
-    TickContext ctx{};
-    ctx.mapW     = gs.mapW;
-    ctx.mapH     = gs.mapH;
-    ctx.gs       = &gs;
-    ctx.treeGrid = treeGrid;
-    ctx.rng      = &runtime.jitter;
-    ctx.playerX  = gs.player.x;
-    ctx.playerY  = gs.player.y;
-    ctx.world    = &w;
-    ctx.squads   = &runtime.squadIndex;
-    ctx.allowAutoBattle = allowAutoBattle;
-    ctx.pathCost = pathCost;
-    ctx.trees    = trees;
-    ctx.features = features;
-    ctx.terrain  = terrain;
-    // THE line this driver never had. Its twin above assigned it twice — the
-    // same paste that dropped it here — and the two drivers are picked by WHERE
-    // THE PLAYER IS (main.cpp: the budgeted one runs while he is underground).
-    // A gatherer whose row names a deposit fails closed without this pointer
-    // (find_home_deposit), so every miner, quarryman and clay-digger in the
-    // world stopped digging the moment the player stepped through a door and
-    // started again when he came out. The world is supposed to live the same
-    // with him and without him (CANON.md S2).
-    ctx.deposits = deposits;
+    // The same ONE assembly as the map-view driver. This used to be a paste
+    // that had drifted (the deposits epitaph now lives on TickContext itself,
+    // npc_ai.h); the two drivers may differ in HOW they walk the entities —
+    // never in what world the entities think about (CANON.md S2).
+    TickContext ctx = make_tick_context(mw, runtime, allowAutoBattle);
 
     while (runtime.pendingSweeps > 0
            && result.npcsProcessed < max_npc_ticks) {

@@ -53,7 +53,7 @@ constexpr float kTwoPi = 6.28318530718f;
 // A cell resolver that puts ONE settlement of `pop` souls on cell (0,0) and
 // leaves the eight neighbours plain meadow — so the composite the manager hands
 // the spawner carries a real generated town, walls and all.
-sm::sub::CellResolver settlement_resolver(sm::sub::CellLandmarkKind kind,
+sm::sub::CellResolver settlement_resolver(sm::LandmarkType kind,
                                           int pop) {
     return [kind, pop](int cx, int cy) {
         sm::sub::CellContext c{};
@@ -65,7 +65,7 @@ sm::sub::CellResolver settlement_resolver(sm::sub::CellLandmarkKind kind,
         c.feature = sm::FT_None;
         c.landmark.id = -1;
         c.landmark.size = 0;
-        c.landmark.kind = sm::sub::CellLandmarkKind::None;
+        c.landmark.kind = sm::LandmarkType::None;
         c.treeCount = 0;
         if (cx == 0 && cy == 0) {
             c.landmark.id = 7;
@@ -122,7 +122,7 @@ std::array<float, kWallBins> outer_wall_profile(
 }
 
 Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
-               sm::LandmarkKind landmark, int pop, std::uint32_t seed) {
+               sm::LandmarkType landmark, int pop, std::uint32_t seed) {
     Spread s{};
     sm::ecs::World world{};
     sm::sub::spawn_cell_npcs(world,
@@ -135,7 +135,7 @@ Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
                              std::uint16_t(sm::faction_index("empire")),
                              pop);
 
-    const bool city = landmark == sm::LandmarkKind::City;
+    const bool city = landmark == sm::LandmarkType::City;
     const float radius = sm::sub::settlement_population_radius(city, pop);
     // The centre window cell (ox=0) occupies [kCellSize, 2·kCellSize); both
     // generators build on that cell's centre.
@@ -222,9 +222,9 @@ int main() {
     {
         sm::sub::clear_saved_subworlds();
         sm::sub::SeamlessSubworldManager mgr;
-        mgr.init(0, 0, settlement_resolver(sm::sub::CellLandmarkKind::City, 1200));
+        mgr.init(0, 0, settlement_resolver(sm::LandmarkType::City, 1200));
         mgr.consume_composite_dirty();
-        const Spread s = measure(mgr, sm::LandmarkKind::City, 1200,
+        const Spread s = measure(mgr, sm::LandmarkType::City, 1200,
                                  0xC17015Eu);
         sm::sub::clear_saved_subworlds();
 
@@ -252,9 +252,9 @@ int main() {
         sm::sub::clear_saved_subworlds();
         sm::sub::SeamlessSubworldManager mgr;
         mgr.init(0, 0,
-                 settlement_resolver(sm::sub::CellLandmarkKind::Village, 400));
+                 settlement_resolver(sm::LandmarkType::Village, 400));
         mgr.consume_composite_dirty();
-        const Spread s = measure(mgr, sm::LandmarkKind::Village, 400,
+        const Spread s = measure(mgr, sm::LandmarkType::Village, 400,
                                  0x71114Eu);
         sm::sub::clear_saved_subworlds();
 
