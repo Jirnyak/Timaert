@@ -1850,6 +1850,41 @@ void rebake_macro_lights(App& app) {
                                  std::uint32_t(app.gs.mapH));
 }
 
+// ── THE rebaker (CANON S7, 2026-08-24) ────────────────────────────────────
+// Every DERIVED field of the world, rebaked whole, in dependency order, by
+// the same stage functions the genesis uses — no patching by place, no
+// second algorithm. The saved truths (world_fields.h rows + the macro
+// snapshot) are its inputs; nothing here invents state. Stages:
+//   1. danger zones     (read features, settlements/villages, living trees)
+//   2. landmark grid    (reads the landmark registers)
+//   3. night glow       (reads landmarks + the optical world)
+//   4. travel cost grid (reads terrain, features, living trees)
+//   5. GPU zone field   (light uploads inside its own stage; tree/knowledge
+//                        fields ride their revisions)
+// Callers: every LOAD (the derived fields used to describe the seed's virgin
+// world after one — canon-audit G2), the seasonal settle, and — the day
+// places live and die (S9) — every landmark transition. Genesis composes the
+// same stages inline because spire placement must read zones mid-sequence.
+// Roads/fields (FeatureLayer) are still generation-owned: deterministic from
+// the seed today; they move here the day places can change.
+void rebake_world(App& app) {
+    std::vector<sm::ZoneSeed> zsCities, zsVills;
+    zsCities.reserve(app.gs.settlements.size());
+    for (const auto& c : app.gs.settlements) zsCities.push_back({c.x, c.y});
+    zsVills.reserve(app.gs.villages.size());
+    for (const auto& v : app.gs.villages) zsVills.push_back({v.x, v.y});
+    app.zones = sm::generate_zones(app.gs.mapW, app.gs.mapH, app.gs.worldSeed,
+                                   zsCities, zsVills, app.features,
+                                   app.terrain.rgba.data(),
+                                   app.terrain.rgba.size(), &app.treeLayer);
+    app.landmarkGrid = sm::build_landmark_grid(app.gs);
+    rebake_macro_lights(app);
+    app.pathCost = sm::build_cost_grid(app.terrain, &app.features,
+                                       &app.treeLayer);
+    app.gs.lastWorldRebakeDay = app.gs.worldTime.day();
+    if (app.macro.ready()) app.macro.upload_zone_field(app.device, app.zones);
+}
+
 void boot_world(App& app, std::uint32_t seed,
                 int mapW = 1024, int mapH = 1024,
                 const sm::LayerParameters* lpOverride = nullptr,
@@ -2265,10 +2300,6 @@ bool boot_world_from_save(App& app, const std::string& path) {
     // first sight sweep after this load re-opens them from the restored
     // position (destroy_world invalidated the sight anchor).
     app.gs.knowledge         = std::move(fresh.knowledge);
-    // The save replaced the landmark collections wholesale — the baked
-    // cell → landmark index must follow them (the seed-born grid would answer
-    // for a world that no longer exists).
-    app.landmarkGrid         = sm::build_landmark_grid(app.gs);
     app.gs.factions          = std::move(fresh.factions);
     app.gs.subState          = std::move(fresh.subState);
     app.gs.deserterPool      = fresh.deserterPool;
@@ -2303,28 +2334,23 @@ bool boot_world_from_save(App& app, const std::string& path) {
     app.gs.subState.settlementId = settlement_at_player(app.gs);
     app.ui.settlementId = app.gs.subState.settlementId;
 
-    // boot_world() above baked glow from the GENERATED settlements; we then
-    // swapped in the LOADED settlements/villages/spires. Re-bake so night glow
-    // reflects the loaded world (real populations, depleted spires dark), not
-    // the throwaway generated one. Surgical binding-3 update — the world
-    // textures boot_world() uploaded stay valid.
-    rebake_macro_lights(app);
-    // boot_world() derived a VIRGIN tree layer and uploaded it; the save
-    // carries the LIVING grid whole (v36) — restore it and refresh binding 4
-    // the same surgical way the light field just was. A size mismatch is
-    // unreachable past the version gate; if a corrupt file gets here, the
-    // virgin derivation stands and we say so.
+    // boot_world() above derived every field from the SEED's virgin world; we
+    // then swapped in the LOADED truths. Restore the remaining truths FIRST —
+    // the living tree grid (v36) and the mineral deposits (v37) — then rebake
+    // every derived field from them in ONE pass (rebake_world, CANON S7).
+    // Before the one rebaker, a load re-baked only the glow — and even that
+    // from the virgin forest: zones, cost grid and glow-occlusion all
+    // described a world that no longer existed (canon-audit G2).
     if (!sm::restore_tree_counts(app.treeLayer, loadedTrees)) {
         std::fprintf(stderr,
                      "load_game: tree grid size %zu != map cells %zu — "
                      "keeping virgin forest\n",
                      loadedTrees.size(), app.treeLayer.cell_count());
     }
+    sm::restore_deposit_cells(app.deposits, loadedDeposits);
+    rebake_world(app);
     app.macro.upload_tree_field(app.device, &app.treeLayer);
     app.uploadedTreeRev = app.treeLayer.revision;
-    // Same for the mineral deposits: the save carries the living cells
-    // whole (v37) — drained veins stay drained, discovered ones stay found.
-    sm::restore_deposit_cells(app.deposits, loadedDeposits);
     return true;
 }
 
@@ -3689,10 +3715,11 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         {
             const int worldDay = app.gs.worldTime.day();
             if (worldDay - app.gs.lastWorldRebakeDay >= sm::kDaysPerSeason) {
-                app.gs.lastWorldRebakeDay = worldDay;
                 save_game_checked(app, /*autosave=*/true);
-                app.pathCost = sm::build_cost_grid(app.terrain, &app.features,
-                                                   &app.treeLayer);
+                // The WHOLE derived world settles, not just the cost grid:
+                // zones follow the grown/felled forest, glow follows the
+                // drifted populations (rebake_world stamps the day).
+                rebake_world(app);
             }
         }
         // Marching is not resting: while the player is walking a route, his

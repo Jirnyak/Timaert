@@ -58,6 +58,12 @@ public:
     void upload_tree_field(const gpu::VulkanDevice& dev,
                            const TreeLayer* treeLayer);
 
+    // Refresh ONLY the danger-zone field (binding 2), same surgical
+    // discipline. Called by the one rebaker (rebake_world) when the zone
+    // layer is rebaked — load, season, a landmark's death — never per frame.
+    void upload_zone_field(const gpu::VulkanDevice& dev,
+                           const ZoneLayer& zones);
+
     // Refresh ONLY the knowledge field (binding 5). Unlike the doors above
     // this one runs OFTEN — every player cell crossing bumps the revision —
     // so when the grid dims are unchanged it rewrites the R8 image IN PLACE

@@ -337,6 +337,48 @@ void MacroRendererVk::upload_tree_field(const gpu::VulkanDevice& dev,
     vkUpdateDescriptorSets(dev.device, 1, &write, 0, nullptr);
 }
 
+void MacroRendererVk::upload_zone_field(const gpu::VulkanDevice& dev,
+                                        const ZoneLayer& zones) {
+    // Same discipline as upload_tree_field: nothing to patch before the first
+    // full upload(); idle the device before replacing the live image. Zones
+    // were baked once per PROCESS until the one rebaker landed (2026-08-24) —
+    // this surgical path is what lets a load, a season or a living landmark
+    // move the danger the map shows (binding 2, u_zoneMap).
+    if (!uploaded_) return;
+    vkDeviceWaitIdle(dev.device);
+    zone_.destroy(dev);
+
+    std::vector<std::uint8_t> tmp;
+    if (zones.has_complete_storage() && zones.width > 0 && zones.height > 0) {
+        const std::size_t n =
+            std::size_t(zones.width) * std::size_t(zones.height);
+        std::vector<std::uint8_t> zb(n, 0);
+        for (std::size_t i = 0; i < n && i < zones.data.size(); ++i)
+            zb[i] = ZoneLayer::decode(zones.data[i]);
+        expand_r8(zb.data(), zones.width, zones.height, tmp);
+        zone_.create_rgba8(dev, std::uint32_t(zones.width),
+                           std::uint32_t(zones.height), tmp.data(), false,
+                           true);
+    } else {
+        const std::uint8_t blank = 0;
+        expand_r8(&blank, 1, 1, tmp);
+        zone_.create_rgba8(dev, 1, 1, tmp.data(), false, true);
+    }
+
+    VkDescriptorImageInfo dii{};
+    dii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    dii.imageView = zone_.view;
+    dii.sampler = zone_.sampler;
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = set_;
+    write.dstBinding = 2;
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    write.pImageInfo = &dii;
+    vkUpdateDescriptorSets(dev.device, 1, &write, 0, nullptr);
+}
+
 void MacroRendererVk::upload_light_field(const gpu::VulkanDevice& dev,
                                          const std::uint8_t* lightFieldRgba,
                                          std::uint32_t lightFieldW,
