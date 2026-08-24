@@ -26,6 +26,18 @@ time, kingdoms, NPCs, items, army. No GL/Vulkan, no events, no UI.
   are all in [time.md](time.md). `world_tick` moves the clock by whole ticks and
   runs the daily settlement / village / economy simulation (see
   [macrosim.md](macrosim.md)).
+- **ONE biome cascade (2026-08-24):** `biome_at_cell`
+  ([map_generator.h](src/macro/map_generator.h)) is the cell's one classifier,
+  and water is answered by the baked land **MASK** — the sea level vanished
+  from every query, because the mask is its baked form (canon-audit C5/H10:
+  a coastal cell used to be Meadow to a boot and Water to a wolf).
+- **The baked landmark grid + the rebaker (2026-08-24):** "who stands on this
+  cell" is answered by the baked u16 `landmark_grid`
+  ([macro/landmark_grid.h](src/macro/landmark_grid.h),
+  [landmarks.md](landmarks.md)), and every derived field — zones, that grid,
+  the glow, the cost grid, the GPU zone texture — is rebaked whole by
+  `rebake_world` on every load, seasonal settle and macro↔micro transition
+  (CANON S7). The full contract is in [context.md](context.md).
 - **Space:** toroidal — all distance/step math via
   [core/torus.h](src/core/torus.h), which owns the ONE wrap (six private copies
   of it lived in `macro/` until 2026-08-20) and the ONE signed shortest offset
@@ -92,12 +104,24 @@ The road **topology** is built in `generate_politik`
 ([politik.cpp](src/macro/politik.cpp)); the road **cells** are then traced
 between connected cities by `trace_roads`
 ([spawners.cpp](src/macro/spawners.cpp)) with a binary-heap A\* that reuses
-existing road cells and rejects water. Reuse is priced the honest way round:
-`kRoadShare = 1.00` — a road is the price *floor*, and open ground is
-**surcharged** instead (`kLand = 3.33`, `kMountain = 16.7`, water blocked). The
-old sub-floor discount (0.30) broke the heuristic's admissibility and had never
-actually caused a single cell of reuse; the comment block above the constants in
-`spawners.cpp` keeps the measurement.
+existing road cells and rejects water.
+
+**The planner walks THE step law (2026-08-24).** Its private second cost
+table — its own `kLand = 3.33` / `kMountain = 16.7` and a third, raw-byte
+classification of what a mountain is (canon-audit H1/§7.9) — is dead.
+`trace_roads` takes the tree layer and builds its grid through the one
+`build_cost_grid` (`movement_cost.h`): biome bed + the continuous canopy — a
+pine thicket finally costs more than a meadow, so **roads route AROUND deep
+woods** — and the uphill climb is priced on the edge inside `find_road_path`
+exactly as every walker prices it, so roads pay ascents honestly. Roads are
+laid over the very weights the march will pay ([context.md](context.md)).
+Water is not priced, it is **REJECTED** — the sentinel is a block flag, never
+a weight a path can pay. Reuse stays the honest way round: existing road
+cells and city anchors are priced at the paved bed —
+`kRoadShare = feature_bed_weight(FT_Road) = 1.0`, derived, the price
+*floor* — because the old sub-floor discount (0.30) broke the heuristic's
+admissibility and had never actually caused a single cell of reuse; the
+comment block in `spawners.cpp` keeps the measurement.
 
 Topology per kingdom is a **Prim's MST** rooted at the capital (guarantees every
 city is reachable), plus **one redundancy edge per city** — its nearest

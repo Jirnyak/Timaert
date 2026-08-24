@@ -180,6 +180,76 @@ The bodies of a crowd the world does not store — townsfolk, guards, wildlife, 
 goblins — are born from the cell's context and die with it (CANON S4/S21). The dividing
 line is interactivity, not entity type.
 
+## The Context Door (CANON S6)
+
+Built 2026-08-24 (`c9f2bea..37f80a8`); **[context.md](context.md) is THE doc**
+for the track — this is the architectural index. The law: every mechanic asks
+ONE assembler for a cell's facts and receives the contribution of EVERY
+system; a system that does not apply contributes zero **through data** (a null
+envelope layer, an empty mask bit), never through a second code path.
+
+- **THE envelope** — `MacroWorld` ([macro/macro_world.h](src/macro/macro_world.h)):
+  every world layer in one ecs-free POD struct, assembled ONCE per owner
+  (`macro_world(app)`; a test builds its partial fixture). It **grows by a
+  FIELD, never by a call-site argument**; every pointer is optional and
+  fail-closed. `SubworldEngine::enter()`, both macro-AI drivers
+  (`TickContext` embeds the envelope instead of copying its layers) and the
+  dungeon scene take it whole.
+- **THE facts** — `cell_facts(w, x, y)` ([macro/cell_facts.h](src/macro/cell_facts.h)):
+  the one answer to "what is this cell" — biome, feature, the landmark with
+  its live fields, trees, fertility, elevation, danger byte, land owner,
+  deposits in reach, and the season's temperature shift as its OWN column
+  (`seasonTempOffset`; classification never sees it). The subworld's
+  `resolve_context` is a consumer that adds only generation-private extras.
+- **ONE biome cascade** — `biome_at_cell`
+  ([macro/map_generator.h](src/macro/map_generator.h)): the baked land MASK
+  decides water (the sea-level query vanished from every consumer — the mask
+  is its baked form), elevation decides mountain, climate the rest. `biome_at`
+  survives as the pure-math core for the shader mirror and world-gen scratch.
+- **ONE landmark answer** — [macro/landmark_grid.h](src/macro/landmark_grid.h):
+  a baked u16 cell→landmark grid over `LandmarkType` (the registry enum, the
+  one vocabulary), in `for_each_landmark`'s one priority order; live fields
+  (population, tier, depleted) resolve from `GameState` at the moment of
+  asking. Rebaked where the landmark set changes.
+- **Saved world fields** — [macro/world_fields.h](src/macro/world_fields.h):
+  the per-cell world TRUTHS the save carries (trees, knowledge, deposits,
+  scars) are registry rows that write and read their own bytes
+  ([macro/save_stream.h](src/macro/save_stream.h)); save.cpp keeps only the
+  order. Derived fields are deliberately NOT rows — they belong to the
+  rebaker, because a rebake is a dependency CHAIN.
+- **THE rebaker** — `rebake_world` ([app/main.cpp](src/app/main.cpp)): every
+  derived field — zones, the landmark grid, the cost grid, the glow, the GPU
+  zone field — rebaked whole, in dependency order, by the same stage functions
+  the genesis uses. Runs on every LOAD, on the seasonal settle, and on EVERY
+  macro↔micro transition (S7, literal): CPU truth synchronously, the two
+  texture uploads through the macro path's dirty flush — Session 19's
+  no-mid-frame-drain law holds.
+- **THE spawn law** — [macro/fauna.h](src/macro/fauna.h):
+  `weight(row, cell) = row.weight × habitat(row, cell) ×
+  danger_match(strength, danger)`. Danger is a byte CONTINUUM (0..255),
+  strength is DERIVED (log₂ of the row's own combat power, normalized over
+  the one table), habitat is a bitmask column; the town crowd rolls by the
+  SAME law over its `kHabTown` stripe, professions gated by live deposits in
+  reach. The zone changes WHO spawns — never a number on a body after the
+  pick (S12).
+- **THE step law** — [macro/movement_cost.h](src/macro/movement_cost.h):
+  BED + CONTRIBUTIONS, the optics idiom. An engineered feature lays the bed
+  (road 1.0 — the reference march, dirt 1.5, field 1.8; nothing built = the
+  biome ground), the canopy adds continuously with tree density, and the
+  CLIMB is priced on the EDGE where it happens (`PathCostData::climb` over
+  the baked `height8` bytes, uphill only) — by the player's A*, the greedy
+  squad step, the per-cell charge and the road planner alike (the planner's
+  private second cost table is dead; roads are laid over the law they will be
+  marched on). March calibration is pure level-1 data:
+  `kMacroWalkCellsPerHour = 8`, `kStaminaPerCell = 1`; the subworld's 96
+  tiles/s is DERIVED from it (93.75 + 2.4% named allowance — the A8 debt
+  closed by derivation).
+
+**Performance contract:** `cell_facts` is NEVER called from a hot loop — A*
+and the greedy squad step read the baked `PathCostData`; the subworld caches
+its nine window step-weights per scene change
+(`refresh_window_step_weights`).
+
 ---
 
 ## L1 — Macroworld Core
@@ -204,10 +274,15 @@ from, kept as history only.
 | [macro/spawners.{h,cpp}](src/macro/spawners.h) `trace_roads`          | Native terrain-cost A* with component pre-prune and large-map step cap; road topology + rejected-water pruning held by `road_river_generation_test` | `game/road-spawner.ts`, `game/road-network.ts` |
 | [macro/spawners.{h,cpp}](src/macro/spawners.h) `trace_dirt_roads`     | Village → main-road dirt path; invalid dimensions, short road masks, mismatched village arrays, and short supplied land-mask byte counts fail closed | `game/dirt-road-spawner.ts` |
 | [macro/features.h](src/macro/features.h)                              | `FeatureType` enum, `FeatureLayer` byte grid, native land/water guard, builder, and `FeatureLayer::decode()` fail-closed handling for malformed feature bytes | `game/features.ts` |
-| [macro/zones.{h,cpp}](src/macro/zones.h)                              | Difficulty heightmap (BFS civ + mountain interior + fBM) | `game/zones.ts` |
+| [macro/zones.{h,cpp}](src/macro/zones.h)                              | Danger CONTINUUM — one byte 0..255 per cell (BFS civ pull + mountain interior + fBM); the ten old steps survive only as display bands (`zone_band`) | `game/zones.ts` |
+| [macro/macro_world.h](src/macro/macro_world.h)                        | `MacroWorld` — THE layer envelope (CANON S6): every world layer, one ecs-free struct, grows by a field; a null layer = zero contribution, fail-closed | — |
+| [macro/cell_facts.{h,cpp}](src/macro/cell_facts.h)                    | `cell_facts` — THE one cell-facts assembler over the envelope (bake time / cell entry / events; never called from hot loops) | — |
+| [macro/landmark_grid.h](src/macro/landmark_grid.h)                    | Baked u16 cell→landmark index in `for_each_landmark`'s one priority order; live fields resolved from `GameState` at ask time | — |
+| [macro/world_fields.{h,cpp}](src/macro/world_fields.h)                | THE registry of saved per-cell world truth-fields (Trees / Knowledge / Deposits / Scars) — each row serializes its own bytes, save.cpp owns only the order | — |
+| [macro/save_stream.h](src/macro/save_stream.h)                        | Fail-closed POD byte-stream writer/reader the world-field rows serialize through (lifted out of save.cpp) | — |
 | [macro/biomes.h](src/macro/biomes.h)                                  | Biome enum, 3×3 climate matrix, `biome_at` — mountains are the elevation-classified `Biome::Mountain`, not a spawned feature | `game/biomes.ts`, `game/mountain-spawner.ts` |
 | [macro/vk_macro_renderer.{h,cpp}](src/macro/vk_macro_renderer.h) + [shaders/macro.frag](shaders/macro.frag) | Single fragment shader: 11 procedural per-biome grounds `bt_<biome>(wp,sd)` (incl. `bt_mountain`), neighbour-aware shore, climate overlay, rivers, feature painter, zones, cell-grid, time tint | `game/renderer.ts`, `game/biome-textures.ts` + `tundra.ts`…`water-biome.ts` |
-| [macro/movement_cost.h](src/macro/movement_cost.h)                    | Data-driven SP costs per biome / feature | `game/movement-cost.ts` |
+| [macro/movement_cost.h](src/macro/movement_cost.h)                    | THE step law (CANON S6): bed + contributions — feature bed (road 1.0 / dirt 1.5 / field 1.8) or biome ground, continuous canopy by tree density; the climb is priced on the edge (`PathCostData::climb`). March calibration: 8 cells/game hour, 1 SP/cell | `game/movement-cost.ts` |
 | [macro/npc_ai.{h,cpp}](src/macro/npc_ai.h)                            | NPC AI tick: reusable behaviour functions shared by NPC types | `game/npc-ai.ts` |
 | [core/rng.h](src/core/rng.h)                                          | Seeded xorshift32 RNG | `game/rng.ts` |
 | [core/torus.h](src/core/torus.h)                                      | Toroidal map geometry helpers (wraparound, distance, step) | `game/torus.ts` |
@@ -487,7 +562,7 @@ is locked by `feature_layer_parity_test` and `road_river_generation_test`.
 
 | Feature  | Module                                                              | Rendering         | Placement                           |
 |----------|---------------------------------------------------------------------|-------------------|--------------------------------------|
-| Road     | [macro/spawners.cpp](src/macro/spawners.cpp) `trace_roads`         | GLSL overlay      | Current C++ road generation keeps the native terrain-cost A* baseline as a documented intentional divergence from TS corridor-guided Bresenham over `tData.roadData`. `road_river_generation_test` enforces rejected-water pruning and the fixed large-map search cap. Cross-island pairs are component-pruned; same-island pairs use generation-tagged A*, block water during expansion, and prune routes not proven inside budget. No straight-line or water-stamping fallback exists in the current source. |
+| Road     | [macro/spawners.cpp](src/macro/spawners.cpp) `trace_roads`         | GLSL overlay      | Current C++ road generation keeps the native terrain-cost A* baseline as a documented intentional divergence from TS corridor-guided Bresenham over `tData.roadData`. `road_river_generation_test` enforces rejected-water pruning and the fixed large-map search cap. Cross-island pairs are component-pruned; same-island pairs use generation-tagged A*, block water during expansion, and prune routes not proven inside budget. No straight-line or water-stamping fallback exists in the current source. Since 2026-08-24 the planner prices ground through THE step law (`build_cost_grid` + edge climb) instead of a private cost table (canon-audit H1's cost half) — the `RoadIndexedHeap` A* clone itself still stands as generation scratch. |
 | DirtRoad | [macro/spawners.cpp](src/macro/spawners.cpp) `trace_dirt_roads`    | GLSL overlay      | Spiral search up to 60 tiles → torus-aware lerp trace, skips villages already on roads, never overwrites main road, `landMaskA` filters water/ice; malformed dimensions, road masks, village arrays, or supplied land-mask byte counts return an empty mask |
 | Tree     | [macro/spawners.cpp](src/macro/spawners.cpp) `spawn_trees`         | Feature byte + GLSL overlay | Domain-warped multi-scale FBM density (large×0.40 + med×0.35 + fine×0.25), biome-gated, shoreline buffer + high-elevation treeline (`h > 0.80`) + 2-cell river exclusion |
 | Mountain | [macro/biomes.h](src/macro/biomes.h) `biome_at` / GLSL `bt_biome`   | GLSL biome ground | **Not a feature** — the elevation-classified `Biome::Mountain` (land ≥ `kMountainBiomeLevel`); trees/roads compose on top |
@@ -498,15 +573,19 @@ is locked by `feature_layer_parity_test` and `road_river_generation_test`.
    `macroHeight < seaLevel` and `Biome::Mountain` when
    `macroHeight >= kMountainBiomeLevel` (GPU-computed in the `map_generator.cpp`
    fragment shader, mirrored on the CPU by `biome_at()`)
-2. **Feature** — road, tree, dirt road (`FeatureType`, data-driven byte grid;
-   composes *on top* of the biome, so a forested mountain is `Biome::Mountain`
-   + `FT_Tree`)
-3. **Zone** — difficulty level 0-9 (`ZoneLayer`, see below)
-4. **Landmark** — settlement, dungeon, etc. (full entity object)
+2. **Feature** — road, dirt road, ploughed field (`FeatureType`, data-driven
+   byte grid; composes *on top* of the biome. Forests are a COUNT, not a
+   feature — the tree layer)
+3. **Zone** — the danger byte, a 0..255 continuum (`ZoneLayer`, see below)
+4. **Landmark** — who stands on the cell (baked `LandmarkGrid` index; live
+   fields from `GameState`)
 
-Every cell's context (biome + feature + zoneLevel + landmark + macroHeight)
-is passed to the subworld as `CellContext`. The subworld never re-derives
-this data — it reads the macroworld as the single source of truth.
+Every cell's facts — biome, feature, landmark, danger, trees, fertility,
+elevation, owner — are assembled by THE one door, `cell_facts`
+(see *The Context Door* above); the subworld's `CellContext` is that
+assembler's consumer plus generation-private extras. The subworld never
+re-derives macro data — it reads the macroworld as the single source of
+truth.
 
 ### Difficulty Zones
 
@@ -524,24 +603,20 @@ danger(x, y) = clamp01(
 )
 ```
 
-A quantised byte `0..9` is stored alongside the float field for systems
-that prefer integer thresholds:
-
-| Byte | Label       | Typical placement                          |
-|------|-------------|---------------------------------------------|
-| 0    | Safe Haven  | City cores                                  |
-| 1    | Settled     | Around cities, villages                     |
-| 2    | Patrolled   | Roads, near villages                        |
-| 3    | Frontier    | Open countryside, fringes                   |
-| 4    | Wild        | Remote land                                 |
-| 5    | Untamed     | Deep wilderness, foothills                  |
-| 6    | Perilous    | Forest interiors, mountain slopes           |
-| 7    | Forsaken    | Mountain interiors, deep wilds              |
-| 8    | Cursed      | Rare wilderness pockets                     |
-| 9    | Hellgate    | Mountain peaks, deepest wilds               |
+The stored value is **one byte, a 0..255 CONTINUUM** (owner, 2026-08-24: the
+ten quantised steps were a false discreteness). Mechanics read the byte — the
+spawn law's `danger_match`, the spire gate, the exit gate's derived
+`kSafeExitDanger` ceiling. The ten labels (Safe Haven … Hellgate) survive only
+as **display bands** (`zone_band`, UI copy only — no mechanic may branch on a
+band). The parallel continuous float grid that used to ride beside the bytes
+(4 MiB per world, zero readers — canon-audit D) is deleted; the continuous
+value exists only DURING the bake, capturable by tests via
+`generate_zones(..., continuousOut)`.
 
 **Pure data — not stored in saves.** Deterministic from world seed +
-civilization layout. Regenerated on every load (mirrors `Politik`).
+civilization layout. Rebaked by `rebake_world` on every load, on the seasonal
+settle and on every macro↔micro transition (CANON S7 — see *The Context
+Door*).
 
 **Generation pipeline** (`generate_zones()` — three-stage compose):
 
@@ -558,12 +633,14 @@ civilization layout. Regenerated on every load (mirrors `Politik`).
    the natural high-danger ridges of the world.
 
 3. **fBM noise base** — 5-octave value noise (persistence 0.5, lacunarity
-   2, base wavelength 96 cells), bilinear-interpolated and smoothstepped
-   per octave. Toroidally wrapped. Provides the organic `[0,1]` base
-   relief — exactly the same construction used for terrain elevation.
+   2, base wavelength 128 cells — a power of two so every octave closes on
+   the 1024 world; the old 96 left the danger band discontinuous on the
+   torus seam, canon-audit A5). Bilinear-interpolated and smoothstepped per
+   octave. Provides the organic `[0,1]` base relief — exactly the same
+   construction used for terrain elevation.
 
-After composition the field is clamped to `[0, 1]` and quantised to bytes
-`floor(field * 10)`.
+After composition the field is clamped to `[0, 1]` and stored as the byte
+`min(255, floor(field * 256))` — the full continuum, no quantisation.
 
 **Tunables** are top-of-file `constexpr` constants (`kCiv*`, `kMountain*`,
 `kWaterBoost`, `kForestBoost`, `kNoiseBaseCells`, `kNoiseOctaves`).
@@ -592,12 +669,13 @@ landmark.
 
 **Consumers:**
 
-| System                              | How it reads zones                                       |
+| System                              | How it reads the danger byte                             |
 |-------------------------------------|----------------------------------------------------------|
-| `state.cpp` `generate_spires()`     | `is_allowed` predicate → spires require zone ≥ 5         |
-| [sub/spawn.cpp](src/sub/spawn.cpp) | **Nothing today.** The +1 level / +18% hp+damage markup was deleted 2026-08-20 (hidden auto-level, CANON.md S12); the zone's future say is the spawn TABLE's weights, not the body's numbers |
-| `ui::draw_map_overlay`              | "Difficulty Zones" map mode with green→red palette + legend |
-| (future) Encounter triggers         | Higher zone → higher ambush probability                  |
+| `macro/spires.cpp` `generate_spires()` | danger-byte gate — a spire stands only in the wild tail of the field, the tier walking up the continuum |
+| THE spawn law ([macro/fauna.h](src/macro/fauna.h)) | `danger_match(strength, danger)` — the byte shifts spawn COMPOSITION (who you meet), never a number on a body after the pick (the +1 level / +18% markup died 2026-08-20, CANON.md S12) |
+| Subworld exit gate                  | `kSafeExitDanger` — the derived "settled land" ceiling (everything the old quantiser called bands 0..2) |
+| `ui::draw_map_overlay`              | "Difficulty Zones" map mode with green→red palette + legend; labels come from `zone_band` display bands |
+| (future) Encounter triggers         | Higher danger → higher ambush probability                |
 
 ### Procedural Biome Textures (Macroworld Render)
 
@@ -616,7 +694,7 @@ roadOverlay / dirtRoadOverlay          ← FeatureLayer (roads)
    ↓
 decorationOverlay                      ← 3×3 painter order: trees, mountains, landmarks
    ↓
-zoneTint                               ← ZoneLayer (zone > 4)
+zoneTint                               ← ZoneLayer (danger byte ≥ ~166: rare embers)
    ↓
 cellGrid                               ← torus visibility (zoom ≥ 8)
    ↓
@@ -671,7 +749,7 @@ no atlas, no PNG.**
 |--------------------------|-----------------------------------------------------|---------------------------------|
 | `u_master`               | `macro/map_generator.cpp` (RGBA8 FBO readback + GPU texture) | R=height, G=moisture, B=temperature, A=mask |
 | `u_featureMap`           | `macro/features.h` `FeatureLayer` (R8 texture)      | R=`FeatureType` byte            |
-| `u_zoneMap`              | `macro/zones.cpp` (R8 texture)                      | R=zone byte (0..9)              |
+| `u_zoneMap`              | `macro/zones.cpp` (R8 texture)                      | R=danger byte (0..255 continuum) |
 | `u_lightField`           | `macro/macro_lighting.cpp` bake (RGBA8, binding 3)  | RGB=night glow / `kMacroGlowCeil` |
 | `u_treeMap`              | `macro/tree_layer.h` (R8, binding 4)                | R=tree count / 16384            |
 | `u_knowledgeMap`         | `macro/knowledge.h` (R8, binding 5)                 | R=knowledge level / 2 (0 Unknown, ½ Explored, 1 Visible) |
@@ -836,7 +914,7 @@ rendering position uses all three:
 | [sub/lighting.h](src/sub/lighting.h)                    | `compute_sun(WorldTime)` / `compute_light_parameters` → direction, colour, intensity | `subworld/lighting.ts` |
 | [sub/spawn.{h,cpp}](src/sub/spawn.h)                    | Per-biome ambient spawn from THE one table of living things (the old `0x100 \| catalogIndex` monster encoding died with the second table, 2026-08-20) | `subworld/spawn.ts` |
 | [sub/ai.{h,cpp}](src/sub/ai.h)                          | Local NPC AI tick (chase + cooldown attack, missile / melee) | `subworld/ai.ts` |
-| [macro/fauna.{h,cpp}](src/macro/fauna.h)                | Per-biome `FaunaEntry` density tables + stable-id creature registry (`creature_catalog` / `creature_def` / `creature_def_from_kind`) + per-cell capacity for the `fauna_count` macro stock (MACRO data since 2026-08-07). See [monsters.md](monsters.md) | `subworld/fauna.ts` |
+| [macro/fauna.{h,cpp}](src/macro/fauna.h)                | THE spawn law (CANON S6/S12, 2026-08-24): `weight = row.weight × habitat bitmask × danger_match(derived strength, danger byte)` over the ONE body table (`roll_spawns` / `pick_town_row` — the thirteen list-tables, their switch ladder and `pick_civilian_type` are gone) + stable-id creature views + per-cell capacity for the `fauna_count` macro stock. See [monsters.md](monsters.md), [context.md](context.md) | `subworld/fauna.ts` |
 | [sub/battle.h](src/sub/battle.h) `UnitGrid` + [sub/collide.h](src/sub/collide.h) bins | Bucketed grids for proximity — sized from the crowd's own body/weapon data (the standalone `sub/spatial_hash.h` is deleted; battle and collision own their grids) | `subworld/spatial-hash.ts` |
 
 Prototype modules with no C++ heir: `subworld/map-renderer.ts` and
@@ -975,19 +1053,15 @@ write-up — the flag model, the exactly-one invariant, the staged increments, a
 the data-driven "anything is possessable" extension — in
 [possession.md](possession.md).
 
-Each of the 9 cells carries a **`CellContext`** — a snapshot of everything
-the macroworld knows about that cell:
-```cpp
-struct CellContext {
-    int   cx, cy;
-    float macroHeight;            // 0..1
-    Biome biome;                  // resolved climate; Water if h < seaLevel
-    FeatureType feature;
-    int   landmarkSettlementId;   // -1 if none
-    int   landmarkSize;
-    std::uint32_t seed;
-};
-```
+Each of the 9 cells carries a **`CellContext`** ([sub/map_data.h](src/sub/map_data.h))
+— the macro facts of the cell plus generation-private extras. Since the
+context door (2026-08-24) it is no longer hand-assembled:
+`SubworldEngine::resolve_context` calls THE one assembler `cell_facts`
+([macro/cell_facts.h](src/macro/cell_facts.h)) and adds only what generation
+alone needs — the per-cell hash seed and the world seed, the furrow phase,
+the dungeon ref, the wrapped world-cell identity (`cx, cy` + world extent).
+Biome, feature, the landmark payload, tree count, fertility, danger byte and
+deposits-in-reach all arrive from the door.
 
 `SeamlessSubworldManager` owns the composite tile array
 (`std::vector<std::uint8_t>`) and heightmap (`std::vector<float>`).

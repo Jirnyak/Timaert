@@ -97,14 +97,17 @@ each clamped by its row's `read`), the agents' work loops (woodcutter,
 farmer — one law of labour, `kGatherPerWorkerDay`), iron discovery, the map
 sprite (`u_treeMap`).
 
-**Known gap: the subworld never sees the deposits.** Every `MacroWorld`
-aggregate built in `sub/engine.cpp` omits the `deposits` member (canon-audit
-C4), and the deposit rows FAIL SILENTLY on a null carrier —
-`deposit_read` returns 0, writes are refused without a word
-(`macro_stock.cpp`). So a deposit cell embodies nothing underground and a
-sub-level mining act could not pay the ledger even if it existed. Silent
-refusal is against S26 ("overflow speaks out loud"); the plumbing is one
-member per init site.
+**The subworld sees the deposits now (C4 closed, 2026-08-24).** The partial
+`MacroWorld` aggregates in `sub/engine.cpp` — three of which silently omitted
+the `deposits` member while the deposit rows fail closed on a null carrier —
+are gone: THE envelope ([macro/macro_world.h](src/macro/macro_world.h)) is
+assembled once by its owner and handed whole, so a layer can no longer be
+forgotten at a call site ([context.md](context.md)). Its first fruit is on
+the street: `CellFacts.depositsNear` carries the live deposit kinds within
+`kGathererReach`, and the town crowd reads it through the spawn law's
+`depositGate` column (fauna.h `pick_town_row`) — a live vein in reach puts
+the miner / quarryman / clay-digger into the street crowd and into the houses,
+by the SAME radius and the same data that raise the macro profession.
 
 Planned on the same rows, no new dialects (owner's design intent,
 2026-08-13):
@@ -116,7 +119,8 @@ Planned on the same rows, no new dialects (owner's design intent,
   worksite} — woodcutter, farmer, miner, quarryman and clay-digger are five
   rows of it, and a village raises the professions its own ground holds (a
   live vein inside `kGathererReach` spawns its man; specialisation stays
-  context, never a village type).
+  context, never a village type). Since 2026-08-24 the professions also reach
+  the STREET: the subworld's town crowd rolls the same gate (see C4 above).
 * **The player as harvester**: the player takes through the same doors and
   receipts as any agent — his chop already does (the console `chop`, the
   subworld prop harvest).

@@ -147,9 +147,9 @@ else is denominated in game time:
 
 | Rate | Unit | Where |
 |---|---|---|
-| macro march | 32 cells per game **hour** | `macro/movement_cost.h` |
-| bar recovery | 10 points per game **hour**, in BOTH worlds | `macro/player_recovery.cpp` |
-| travel stamina | per **cell**, not per hour | `macro/movement_cost.h` |
+| macro march | 8 cells per game **hour** | `macro/movement_cost.h` |
+| bar recovery | ⅛ of the bar per game **hour**, in BOTH worlds | `macro/player_recovery.cpp` |
+| travel stamina | 1 SP × terrain weight per **cell**, not per hour | `macro/movement_cost.h` |
 | macro NPC thinking | every 32 **ticks** | `macro/npc_ai.h` |
 | player time-in-cell | every 32 **ticks** | `app/main.cpp` |
 | subworld walk | 96 tiles per **real** second | `app/main.cpp` |
@@ -157,17 +157,22 @@ else is denominated in game time:
 | melee cooldown | authored seconds → **steps** | `ecs/systems.cpp` |
 | sustained mana drain | per **step** | `content/spells/spell_book.cpp` |
 
-The last four rows are the subworld's own denominator. For the three
-cooldown/drain rows that is fine — they are quoted in STEPS, below. The walk
-row is **not a "deliberate exception" but a CANON S26 debt** (canon-audit A8):
-`kSubworldWalkTilesPerSecond = 96` (`app/main.cpp`) is a naked constant with
-no derivation next to it, while its macro twin `kMacroWalkCellsPerHour = 32`
-(`macro/movement_cost.h`) has one. They diverge ×4: 96 tiles/real-second works
-out to 8 cells per game hour against the march's 32 — and at the S1 scale
-(1 tile ≈ 1 m) it is 96 m/s ≈ 345 km/h. The "body in real time vs abstraction
-of a journey" story written beside both constants explains why the
-denominators differ; it does not derive the number, and a constant that is not
-derived from a property of the world is a defect, not a style.
+The last four rows are the subworld's own denominator, and all four are now
+honest. The three cooldown/drain rows are quoted in STEPS, below. The walk
+row — once the A8 debt ("two walking speeds diverging ×4") — is **CLOSED BY
+DERIVATION** (2026-08-24): the march was recalibrated to
+`kMacroWalkCellsPerHour = 8` (owner: «степени двойки»; a brisk paved pace at
+the world's own scale — the old 32 was a courier's gallop miscalled walking),
+with `kStaminaPerCell = 1` as the pure level-1 base — every modifier (travel
+skill, overload, terrain √) multiplies ON TOP, a fresh walker drops after
+~10 game hours of open country, and a night's rest (⅛ of the bar per hour)
+buys the whole bar back. With the map no longer galloping,
+`kSubworldWalkTilesPerSecond = 96` carries its derivation beside it
+(`app/main.cpp`): 8 cells/game hour = 8000 tiles per subworld game hour, and
+an hour down there lasts 85⅓ real seconds, so the honest rate is
+8000 / 85.33 = 93.75 tiles/s — rounded up 2.4 % to 96, a **named** fantasy
+allowance, not a tuned number. The 4× disagreement was the map's, not the
+ground floor's.
 
 **The STEP, not the second.** The three cooldown rows above used to be floats
 decremented by a `dt` of real seconds, while this page claimed exactly ONE

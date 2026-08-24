@@ -21,6 +21,19 @@ time at world scale — the strategic layer above microworld combat.
   hour of game time — not on a wall-clock timer. Underground, where the day
   stretches by `kSubworldTickDivisor`, so does their thinking
   ([time.md](time.md)).
+- **The envelope (CANON S6, 2026-08-24):** both AI drivers —
+  `tick_macro_npc_ai` and the budgeted underground twin — take THE `MacroWorld`
+  layer envelope ([macro/macro_world.h](src/macro/macro_world.h), its own
+  light header) whole, and `TickContext` embeds it; the twin per-driver
+  context assemblies (canon-audit H2) are dead. One envelope, assembled once
+  per owner — see [context.md](context.md).
+- **Squad pace & price (2026-08-24):** the greedy step marches at the SAME
+  `kMacroWalkCellsPerHour = 8` the player does (owner: «степени двойки»; the
+  old 32 was a courier's gallop) — one think banks 0.75 cells of budget
+  (8 × kAiTickGameHours) — and prices each step by the SAME law
+  (`edge_weight`, npc_ai.cpp): bed + canopy + the uphill climb of the edge,
+  off the one baked cost grid ([macroworld.md](macroworld.md), context.md THE
+  step law).
 - **NPC-as-soldier:** a squad is a list of concrete NPC records; garrisons
   regenerate by kind; hire price + a single per-kind upkeep number, discounted
   by charisma. No histograms, no RPS. **DEBT (CANON S25):** hiring today is a
@@ -174,7 +187,10 @@ subworld embodies their members. Everything below follows from that one line.
   back (the pool is a conservation law). WHERE is not the pool's question
   (owner, 2026-08-20): the pool is an abstract stock, the placement is uniform
   today and moves to the blood field when that field exists (CANON S5). This is
-  where a good part of the world's danger comes from.
+  where a good part of the world's danger comes from — the other part is the
+  ambient spawn law itself (habitat × danger match over the one body table,
+  [macro/fauna.h](src/macro/fauna.h); a place can force its faction through
+  the registry's `spawnFaction` column — see [context.md](context.md)).
 
 **A hostile squad on the map FORCES an encounter** (owner, 2026-08-06), the way
 Mount & Blade does it: running into it opens a pre-battle interaction — talk,

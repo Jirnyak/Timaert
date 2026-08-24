@@ -12,6 +12,26 @@ spires/dungeons, and runtime markers.
 
 ## Model
 
+- **ONE vocabulary, one baked answer (2026-08-24):** `LandmarkType` — the
+  registry enum ([macro/landmark_registry.h](src/macro/landmark_registry.h))
+  — is the one landmark vocabulary on every layer. The subworld's
+  `CellLandmarkKind` and the fauna router's `LandmarkKind` (two more
+  five-value copies joined by a hand bridge, which physically could not name
+  Lair/Shrine/Mine/Tower — canon-audit C1/C2) are dead. "Who stands on this
+  cell" is answered by the baked u16 **`LandmarkGrid`**
+  ([macro/landmark_grid.h](src/macro/landmark_grid.h)) in the iterator's one
+  priority order; LIVE fields — population, tier, kingdom, depleted — are
+  resolved from `GameState` by the `{type, id}` the grid returns, at the
+  moment of asking. The grid is rebaked by `rebake_world` on every load,
+  seasonal settle and macro↔micro transition ([context.md](context.md)) —
+  the ready support for S9: a landmark that is born, dies or transmutes adds
+  its transition at the rebake points and nowhere else.
+- **The registry's spawn columns:** `minZone`/`maxZone` are now DANGER BYTES
+  on the 0..255 continuum ([zones.md](zones.md); the old 0..9 rows translated
+  as band edges — City 0..76, Spire 128..255, unchanged in meaning, finer in
+  resolution), and the new **`spawnFaction`** column forces a faction onto
+  every creature the place rolls (Ruin/Spire = `"demons"`: a ruin's wolves
+  ARE demons — the spawn law reads it, [monsters.md](monsters.md)).
 - **Placement:** SETTLEMENT IS DOWNSTREAM OF THE GROUND (R2, session 25).
   `settlement_site_score` is the one suitability door: terms 0..16 for
   arable (the wheat row of the resource registry), water, forest and
@@ -32,15 +52,17 @@ spires/dungeons, and runtime markers.
   scatter around the town instead of clumping in its fattest corner.
 - **Spires** ([macro/spires.cpp](src/macro/spires.cpp)): ONE spire per
   registered spell — a new spell registered is a new spire on the next
-  world, no other change. The danger field IS the placement law: the
-  gate is `landmark_def(Spire).minZone + tier − 1` capped at `maxZone`
-  (tier 1 opens in "Untamed", tier 5 demands "Hellgate"), so a doom
-  spell's spire stands where the world is at its worst and its guards
-  are strong because strong things live there — no per-spire scaling.
-  Even spread by best-candidate sampling (max-min distance to placed
-  spires); named places veto their cell (resolve_context scan order
-  would shadow a co-located spire); the gate relaxes zone-by-zone on
-  worlds missing the band; deterministic from `worldSeed`. Placed AFTER
+  world, no other change. The danger field IS the placement law: the tier
+  walks the registry row's own byte band in four DERIVED steps —
+  `gate = minZone + (tier − 1) · (maxZone − minZone) / 4` — so tier 1 opens
+  at the Spire row's minZone (128, the old "Untamed") and tier 5 demands its
+  maxZone (255, "Hellgate"); a doom spell's spire stands where the world is
+  at its worst and its guards are strong because strong things live there —
+  no per-spire scaling ([zones.md](zones.md)). Even spread by best-candidate
+  sampling (max-min distance to placed spires); named places veto their cell
+  (the landmark grid's one priority order would shadow a co-located spire);
+  the gate relaxes step-by-step on worlds missing the band; deterministic
+  from `worldSeed`. Placed AFTER
   `generate_zones` in boot (the one landmark outside
   `populate_landmarks_from_politik`, which only clears the list).
   `Spire.spellId` (the registry ordinal) is the ONE saved key; tier is
@@ -96,11 +118,9 @@ death.
   [economy.md](economy.md)) and hand out no quests
   ([quests.md](quests.md)) — every "which list are you in" branch is a second
   vocabulary against S16.
-- **`landmark_registry.cpp` is entirely dead** — its `collect_landmarks`
-  aggregator has no caller — and `landmark_registry.h` is visibly two files
-  merged into one (two `#pragma once` blocks: the dead TS-era aggregator on
-  top, the live `kLandmarks` table below). The live table stays; the dead half
-  is for the axe.
+- ~~`landmark_registry.cpp` is entirely dead~~ — **axed 2026-08-24** (H7):
+  the caller-less `collect_landmarks` aggregator and its glued-on TS-era half
+  are gone; `landmark_registry.h` is now only the live `kLandmarks` table.
 
 ## Connections
 

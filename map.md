@@ -110,6 +110,12 @@ col     = mix(drowned, col, visible) * explored;
   visibly not-now.
 - **Unknown** — black.
 
+The danger overlay rides its own texture the same way: `u_zoneMap` — R8,
+binding 2 — carries the raw danger **byte** 0..255 of the zone continuum
+([zones.md](zones.md)), not a 0..9 level, refreshed surgically by
+`upload_zone_field` on every world rebake; the rare-ember effect fades in
+from byte 166 (`smoothstep(166, 255)` — the old bands 6.5..9).
+
 Entities are CPU overlays and obey the same door: walkers draw only in
 Visible cells; landmarks hide in Unknown and fade in Explored (alpha only —
 the ONE registry colour stands); marker pins need Explored; the hover

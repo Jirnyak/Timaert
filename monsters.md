@@ -23,10 +23,11 @@ row, never an `if`-chain.
   bodies, roles and creatures alike),
   [macro/behaviour.h](src/macro/behaviour.h) (the one `AIBehaviour` column),
   [macro/fauna.h](src/macro/fauna.h),
-  [macro/fauna.cpp](src/macro/fauna.cpp) (biome/feature/landmark spawn tables,
-  creature accessors, per-cell capacity; MACRO data since 2026-08-07 — the file
-  moved from sub/ when the honest headcount made the macro layer its second
-  reader);
+  [macro/fauna.cpp](src/macro/fauna.cpp) (THE spawn law `roll_spawns` /
+  `pick_town_row`, the `kSpawnHabitats` habitat column, derived
+  `spawn_strength`, creature accessors, per-cell capacity; MACRO data since
+  2026-08-07 — the file moved from sub/ when the honest headcount made the
+  macro layer its second reader);
   [macro/items.h](src/macro/items.h),
   [macro/items.cpp](src/macro/items.cpp) (`roll_loot_profile`, loot registry);
   [sub/engine.cpp](src/sub/engine.cpp) (`resolve_subworld_deaths` death/loot/XP
@@ -188,12 +189,52 @@ noted later refinement, kept separate for now to stay behavior-preserving.
 into every corpse ON TOP of the purse the same body was already minted at
 spawn — a double mint against the conservation law.
 
+## THE spawn law (CANON S6/S12, 2026-08-24)
+
+The thirteen hand-built list-tables and the switch ladder that chose between
+them (`get_fauna_table` / `roll_fauna`) are **dead** (canon-audit F5). One law
+rolls every wild cell ([macro/fauna.h](src/macro/fauna.h) `roll_spawns`):
+
+    weight(row, cell) = row.weight × habitat(row, cell)
+                      × danger_match(spawn_strength(row), danger byte)
+
+- **Habitat is a bitmask COLUMN** — `kSpawnHabitats` (`fauna.cpp`), the
+  sister enum-ordered table beside the law that reads it: which biomes a row
+  lives in, plus the derived classes (forest, ruin, spire, town). A new
+  species states its ground in its own row.
+- **Strength is a DERIVED byte** — `spawn_strength`: log₂ of the row's own
+  combat power (hp × damage/cooldown), normalized over the one table; no
+  hand-set column to drift from the numbers that actually fight. Strengthen a
+  row and it migrates to dangerous ground by itself.
+- **The match is symmetric and never zero** — halving per `256/10` bytes of
+  mismatch against the cell's danger byte ([zones.md](zones.md) continuum),
+  floor 1/1024 of the peak. The zone changes WHO — never a number on a body
+  after the pick. `subworld_spawn_parity_test` pins the real invariants:
+  danger shifts composition, a perfect match pays the peak, full-span
+  mismatch is 1/1024, and **rabbit < wolf < troll by derived strength**.
+- **The demons of ruins and spires are the PLACE's column, not a table
+  override** — the landmark registry's `spawnFaction`
+  (`landmark_registry.h`): a ruin's wolves ARE demons; open land keeps each
+  row's own faction.
+
+### The town crowd rolls by the same law
+
+`pick_civilian_type` — the RNG-only crowd that could not tell an iron town
+from a swamp one (canon-audit F4) — is dead. `pick_town_row` rolls the
+`kHabTown` stripe of the same table: the old 55/21/21/3 mix became the ROW
+WEIGHTS (`npc.h weight`: Peasant 55, Merchant/Woodcutter 21, Witch 3, each
+profession 21), the danger match rides on top, and a profession stands in the
+street only where its ground does — `depositGate` (the `kSpawnHabitats`
+column): a live vein within `kGathererReach` puts the miner / quarryman /
+clay-digger into the crowd, down to the residents of houses — the same radius
+and data that raise the macro profession ([resources.md](resources.md)).
+
 ## Spawn paths (three, one table)
 
-1. **Ambient fauna** — [sub/spawn.cpp](src/sub/spawn.cpp) rolls the cell's
-   `FaunaTable` (`roll_fauna`; landmark > forest class > biome, each of the
-   nine window cells from its OWN macro context) and emplaces each pick. The
-   roll PROPOSES, the macro stock DISPOSES — see The honest headcount below.
+1. **Ambient fauna** — [sub/spawn.cpp](src/sub/spawn.cpp) rolls each of the
+   nine window cells through `roll_spawns` from its OWN macro context (the
+   law above; count from the place's counts row). The roll PROPOSES, the
+   macro stock DISPOSES — see The honest headcount below.
 2. **Directed spawn** — `spawn_npc_body`
    ([sub/engine.cpp](src/sub/engine.cpp)): the token names a row of THE one
    body table and that is the end of the question — `spawn wolf` and
@@ -246,9 +287,11 @@ formula off the same column.) XP goes to the killing blow's owner
 
 - **Add a creature** → append one row to `kNpcTypeDefs` in `npc.h` (one new
   `NPCType` enumerator at the end + one table entry with a stable `id`) and
-  reference it in one or more biome/feature spawn tables (`fauna.cpp`). Spawn,
-  loot (via faction default or a `lootId`), XP, rendering (via the sprite row),
-  and the console `spawn` all pick it up with **no engine change**.
+  state its ground in its `kSpawnHabitats` row (`fauna.cpp` — a habitat
+  bitmask, enum-ordered, the compiler guards the order). Spawn (the law
+  derives its strength by itself), loot (via faction default or a `lootId`),
+  XP, rendering (via the sprite row), and the console `spawn` all pick it up
+  with **no engine change**.
 - **Add a loot profile** → one `kLootProfiles[]` row keyed by a new `lootId`;
   point a creature's `lootId` or an NPC role at it.
 - **Add an item** → one `item_catalog()` row (see [rpg.md](rpg.md)); loot tables
@@ -261,8 +304,8 @@ inventory, and the item catalog → [rpg.md](rpg.md); NPC roles and the
 NPC-as-soldier model → [macrosim.md](macrosim.md); biome spawn density →
 [biomes.md](biomes.md). There is NO danger scaling of spawned bodies — the
 zone markup was demolished 2026-08-20 (CANON S12, [zones.md](zones.md)): a
-creature is exactly its row, and until context weights land the zone has no
-say in a spawn at all.
+creature is exactly its row. What the zone does instead is choose WHO, through
+the matching law above (2026-08-24, the context door — [context.md](context.md)).
 
 ## Deferred (future tracks, built on this foundation)
 

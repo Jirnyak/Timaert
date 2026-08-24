@@ -28,6 +28,28 @@ is the macro map / minimap, not a subworld mode.
   coordinate for composite geometry; the two used to be one number, and that is
   what made the same place generate two different worlds (see
   [seamless-crossing.md](seamless-crossing.md)).
+- **`resolve_context` is a CONSUMER of the one assembler** (2026-08-24):
+  the macro half of the context comes from `cell_facts`
+  ([macro/cell_facts.h](src/macro/cell_facts.h), [context.md](context.md));
+  this function adds only what generation alone needs — window geometry,
+  seeds, the furrow phase. `CellContext` gained `zone` (the danger byte) and
+  `depositsNear` (live deposit kinds within the profession reach), and the
+  season rides its OWN facts column (`seasonTempOffset`), applied at this one
+  sink into the tree-species temperature — biome classification never sees
+  it, so a forest cannot reclassify to tundra in winter. `enter()` and
+  `enter_dungeon_scene` take THE `MacroWorld` envelope whole; the per-call
+  layer lists (with their silently missing `deposits`, canon-audit C4) are
+  gone. It used to assemble the macro half by hand — one of the drifted
+  copies the door replaced.
+- **The nine window step-weights are CACHED**
+  (`refresh_window_step_weights`, per scene change): the per-tick walking
+  price is an array read — the door's performance contract. Canopy rides the
+  same continuous step law as above ground; the climb term is deliberately
+  absent, because down here the slope IS the honest 3D walk (S17).
+- **Walk speed is DERIVED** — `kSubworldWalkTilesPerSecond = 96` carries its
+  derivation from the macro march (8 cells/game hour over the stretched
+  underground hour = 93.75, +2.4 % named allowance): the A8 "two walking
+  speeds" debt is closed — see [time.md](time.md).
 - **Every global-coordinate noise closes on the world.** The detail waves, both
   ridge octaves, the domain warp, the crag, the massif edge, the dune and the
   bog all take the world's tile span (1024 × 1024) as their period, snapped to
@@ -410,8 +432,12 @@ same engine, ECS and renderer, with the 3×3 window pinned and its ring sealed.
 Houses, cellars and caves are its two shipped generators; a dungeon is a
 projection OF the subworld exactly as the subworld is a projection of the map,
 so nothing below the door is saved and every lasting act pays up through a
-macro stock. The whole layer, the prop table it stands on and the one E-verb
-dispatch are written up in **[dungeons.md](dungeons.md)**.
+macro stock. `enter_dungeon_scene` takes the same `MacroWorld` envelope, and
+interiors spawn by the same laws as the street: residents through the door
+cell's `pick_town_row` (deposit-gated professions live in houses too), vermin
+through `roll_spawns` with the door cell's danger byte
+([monsters.md](monsters.md)). The whole layer, the prop table it stands on
+and the one E-verb dispatch are written up in **[dungeons.md](dungeons.md)**.
 
 ## Connections
 
