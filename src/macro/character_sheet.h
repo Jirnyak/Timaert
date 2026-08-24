@@ -19,9 +19,11 @@ namespace sm {
 // DERIVED from this sheet, never stored inside it (the player keeps a
 // `CombatStats`; an NPC gets ECS `Health`/`Combat`).
 //
-// Monsters (NPCKind.type & 0x100) are sheet-less by design and NEVER receive
-// this component — their combat comes straight from the FaunaEntry row. Only
-// humanoid NPCs (NPCType < NPCType::Count) and the player carry a sheet.
+// EVERY body carries one — humanoid, creature and player alike (CANON S14).
+// The one birth door (`emplace_body`, sub/spawn.cpp) builds the sheet from the
+// body's `kNpcTypeDefs` row, applies the leader's aura, then projects combat
+// numbers from it; "monsters are sheet-less" died with the second table
+// (2026-08-20).
 //
 // Field order mirrors the player's save layout so the same struct can later be
 // embedded in `PlayerState` without changing the on-disk save bytes.
@@ -220,8 +222,9 @@ inline CharacterSheet make_character_sheet(NPCType role, int level,
 // (a level-N sheet has more attributes/skills), so callers MUST NOT apply an
 // additional per-level multiplier on top of this — the sheet IS the scaling.
 //
-// Monsters (NPCKind.type & 0x100) are sheet-less and NEVER pass through here;
-// their Combat/Health stays the raw FaunaEntry row (see character_sheet.h top).
+// Every body passes through here — a wolf exactly like a spearman (CANON S14):
+// its row supplies the floor and the attack identity, its sheet supplies the
+// scaling.
 inline CombatTemplate project_combat(const CharacterSheet& sheet,
                                      const CombatTemplate& base) {
     CombatTemplate out = base; // keep attack identity + label + missile params

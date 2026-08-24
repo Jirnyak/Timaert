@@ -9,21 +9,21 @@
 // layer", not "allocate another descriptor set".
 //
 // A "slot" is one resident sprite frame: a tileW×tileH RGBA image at a fixed
-// integer index. A single animated NPC needs MANY slots (direction × frame ×
-// animation); each unique composited (seed, anim, dir, frame) occupies one.
-// slot_count() is therefore the resident working-set size, not a monster
-// count — the LRU cache (in assets/) evicts the oldest slot when full.
+// integer index. The client today is the drawn-sprite bank
+// (assets/sprite_bank.h): one slot per KIND with drawn art, all filled once at
+// boot — no LRU, no eviction, no working-set churn. (The per-soul paper-doll
+// pool this container was built for — thousands of composited (seed, anim,
+// dir, frame) slots — is gone; sprites.md.)
 //
 // Slots and Vulkan array layers are DIFFERENT axes: `subTiles` packs a
 // subTiles×subTiles grid of slots into each layer (slot = layer·subTiles² +
-// quadrant), because MoltenVK caps maxImageArrayLayers at 2048 while a city's
-// active working set of paper-doll frames measures ~4.3k (2026-08-13, 5k
-// settlement) — capacity has to grow INSIDE a layer, not by adding layers.
-// The shader decodes the same packing (shaders/doll_pool.glsl).
+// quadrant), because MoltenVK caps maxImageArrayLayers at 2048 and a pool must
+// be able to grow INSIDE a layer, not by adding layers. The shader decodes the
+// same packing (shaders/doll_pool.glsl).
 //
 // Tile size is per-POOL and matches the source art, not a power-of-two rule:
 // with NEAREST + no mips + no compression, POT buys nothing here.
-//   - paperdolls (people/NPCs/mobs): 48×48, NEAREST  (kLogicalTileSize; art-locked)
+//   - body sheets: 256×256, NEAREST (kSpriteBankTile; art-locked)
 //
 // Slots are filled on demand: a CPU LRU cache (in assets/) maps a
 // sprite-frame hash -> slot index, then calls upload_slot(cmd, slot, rgba),
@@ -46,8 +46,9 @@ namespace gpu
     struct SpriteArray
     {
         // Fixed per-SLOT tile size + array-layer capacity, chosen per size
-        // class (e.g. 48x48 paperdolls). All slots share one sampler and live
-        // in one 2D-array image of (tileW·subTiles)×(tileH·subTiles) layers.
+        // class (e.g. 256×256 body sheets). All slots share one sampler and
+        // live in one 2D-array image of (tileW·subTiles)×(tileH·subTiles)
+        // layers.
         std::uint32_t tileW = 0;
         std::uint32_t tileH = 0;
         std::uint32_t layerCount = 0;

@@ -20,13 +20,14 @@
 // know this body's width":
 //   1. `ecs::BodyRadius` — an explicit per-entity override. The player carries
 //      one; so does anything a spawner sized deliberately.
-//   2. The MONSTER table row (`sub/fauna.h`). A wolf's width is authored data.
-//   3. The NPC table row (`macro/npc.h`). Same, for humanoids.
-//   4. `ecs::SubworldAi.radius` — the mover's own idea of its footprint.
-//   5. `ecs::Sprite.scale` — a billboard's VISUAL size standing in for a
+//   2. The body's `kNpcTypeDefs` row (macro/npc.h) — ONE table for wolf and
+//      spearman alike (CANON S16): its authored `radius` first, then what its
+//      combat line implies for a man-shaped thing (`combat.bodyRadius`).
+//   3. `ecs::SubworldAi.radius` — the mover's own idea of its footprint.
+//   4. `ecs::Sprite.scale` — a billboard's VISUAL size standing in for a
 //      physical one. Kept because bare test and console entities rely on it, but
 //      it is a conflation: see the note at the bottom.
-//   6. `kBodyRadiusFallback` — a bare entity that declares nothing at all.
+//   5. `kBodyRadiusFallback` — a bare entity that declares nothing at all.
 #pragma once
 
 #include "ecs/components.h"
