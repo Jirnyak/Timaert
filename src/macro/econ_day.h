@@ -21,6 +21,7 @@
 #include <array>
 #include <cstdint>
 #include "macro/commodity.h"
+#include "macro/seasons.h"
 #include "macro/items.h"
 
 namespace sm {
@@ -148,13 +149,23 @@ ConsumeOutcome econ_consume_day(Stockpile& store, int population,
 //
 // LOGISTIC growth, not flat heads per day: dP = r·P·(1−P/K)·drive, where
 // drive ∈ [−1, +1] comes from continuous WELLBEING (fed fraction, softened
-// by comfort shortfall). K = 16384 — 2^14, the very cap the subworld holds
-// for NPCs, so no town can outgrow the world that must embody it. The
-// logistic damp applies to GROWTH only: starvation is not softened by being
-// near the cap. Small towns grow slowly because r·P is small — the owner's
-// point that "+1 a day" was absurd for a hamlet.
-inline constexpr int   kPopCarryingCap     = 16384;         // 2^14
-inline constexpr float kPopGrowthRatePerDay = 1.0f / 256.0f; // po2 rate
+// by comfort shortfall).
+//
+// NO CARRYING CAP (CANON S25, the owner's word): «ни константы-потолка, ни
+// ёмкости как крышки быть не должно». The ceiling EMERGES from supply — a
+// town that outgrows its fields and its trade sees wellbeing fall and stops;
+// famine turns it around. A town on a crossroads may outgrow one on black
+// earth with no roads, and that is the right world. (The old kPopCarryingCap
+// = 16384 was one lid for every town on the map — canon-audit III.6.)
+//
+// The rate is quoted PER SEASON (owner 2026-08-24): a month IS a season here
+// — 32 days, the same epoch the forest grows by (kGrowthEpochDays) — and in
+// a fantasy town of a thousand souls a birth is an event, not daily noise.
+// The daily tick only ACCRUES the season rate into the fractional carry;
+// whole people appear when the carry crosses one.
+inline constexpr float kPopGrowthPerSeason = 1.0f / 8.0f;  // po2: +12.5%/season fully fed
+inline constexpr float kPopGrowthRatePerDay =
+    kPopGrowthPerSeason / float(kDaysPerSeason);
 
 // Continuous wellbeing in [0, 1]: the fed fraction, softened by how much of
 // the comfort ladder went unmet. 0.5 is the waterline — above it the town
@@ -171,10 +182,9 @@ inline float settlement_wellbeing(const ConsumeOutcome& o, int population) {
 inline float population_delta_per_day(int population, float wellbeing) {
     if (population <= 0) return 0.0f;
     const float drive = (wellbeing - 0.5f) * 2.0f;   // [-1, +1]
-    const float damp = drive > 0.0f
-        ? 1.0f - float(population) / float(kPopCarryingCap)
-        : 1.0f;
-    return kPopGrowthRatePerDay * float(population) * damp * drive;
+    // Growth and decline ride the same season-quoted rate; nothing damps
+    // starvation and nothing caps plenty — supply is the only ceiling (S25).
+    return kPopGrowthRatePerDay * float(population) * drive;
 }
 
 // Mood is the SAME wellbeing banded for the eye (0 = Prosperous …

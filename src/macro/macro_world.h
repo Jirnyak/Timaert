@@ -37,7 +37,7 @@ struct MacroWorld {
                                             //   baseline from the cell's biome
     DepositLayer* deposits = nullptr;       // the Clay/Iron/Stone carrier
     const FeatureLayer* features = nullptr; // roads / dirt roads / fields
-    const ZoneLayer*    zones    = nullptr; // danger 0-9 (macro/zones.h)
+    const ZoneLayer*    zones    = nullptr; // danger byte 0..255 (zones.h)
     const PathCostData* pathCost = nullptr; // baked SP-weight grid + water flag
     const TreeGrid*     treeGrid = nullptr; // tree-point buckets (npc_ai.h) —
                                             //   the woodcutter's target search

@@ -1,4 +1,6 @@
 #include "macro/economy.h"
+#include "macro/state.h"
+#include "ecs/components.h"
 #include "macro/econ_day.h"
 
 #include <algorithm>
@@ -54,6 +56,35 @@ int daily_demand_for(const char* itemId, int population) {
         }
     }
     return 0;
+}
+
+
+float mood_price_mult(SettlementMood mood) {
+    // A town's temper prices its market: unrest is a seller's risk premium,
+    // prosperity a buyer's discount. Data, one row per band.
+    switch (mood) {
+        case SettlementMood::Prosperous: return 0.9f;
+        case SettlementMood::Unrest:     return 1.2f;
+        case SettlementMood::Revolt:     return 1.4f;
+        default:                         return 1.0f;
+    }
+}
+
+float trait_price_mult(const ecs::NpcTraits* traits, bool buying) {
+    // The merchant's temperament: a greedy one charges more and pays less,
+    // a generous one the reverse.
+    auto has = [&](NPCTrait t) {
+        if (!traits) return false;
+        const auto raw = std::uint8_t(t);
+        for (std::uint8_t i = 0; i < traits->count && i < 2; ++i) {
+            if (traits->traits[i] == raw) return true;
+        }
+        return false;
+    };
+    float mult = 1.0f;
+    if (has(NPCTrait::Greedy))   mult = buying ? 1.2f : 0.8f;
+    if (has(NPCTrait::Generous)) mult = buying ? 0.9f : 1.2f;
+    return mult;
 }
 
 } // namespace sm

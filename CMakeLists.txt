@@ -850,7 +850,8 @@ timaert_test(trade_law_test
 
 timaert_test(rpg_rules_test
     SOURCES
-        src/macro/economy.cpp)
+        src/macro/economy.cpp
+    LINK_ENTT)
 
 timaert_test(econ_v1_test
     SOURCES
@@ -887,7 +888,8 @@ timaert_test(price_law_test
     SOURCES
         src/macro/economy.cpp
         src/macro/econ_day.cpp
-        src/macro/items.cpp)
+        src/macro/items.cpp
+    LINK_ENTT)
 
 timaert_test(barter_test)
 

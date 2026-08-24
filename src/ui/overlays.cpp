@@ -652,25 +652,13 @@ namespace sm::ui
             push_event_log(gs.player, {LogType::Economy, message, gs.worldTime.day()});
         }
 
-        // Context multiplier of the settlement's mood — the ONE column this
-        // overlay contributes to the single price law (economy.h
-        // player_trade_price). The law itself (charisma+bargaining) lives in
-        // macro/, not here.
-        float settlement_mood_price_mult(SettlementMood mood)
-        {
-            switch (mood)
-            {
-            case SettlementMood::Prosperous: return 0.9f;
-            case SettlementMood::Unrest:     return 1.2f;
-            case SettlementMood::Revolt:     return 1.4f;
-            default:                         return 1.0f;
-            }
-        }
+        // (The mood column moved to the law's own home — macro/economy.h
+        // mood_price_mult — beside charisma and the merchant temperament.)
 
         int trade_overlay_buy_price(int baseValue, int charisma, SettlementMood mood)
         {
             return sm::player_trade_price(baseValue, charisma, /*bargaining*/ 0,
-                                          settlement_mood_price_mult(mood),
+                                          sm::mood_price_mult(mood),
                                           /*buying*/ true);
         }
 

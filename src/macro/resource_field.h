@@ -27,6 +27,7 @@
 // through here. Deposits join as carrier rows in Inc B of this track.
 #pragma once
 
+#include "macro/seasons.h"
 #include <cstdint>
 #include <unordered_map>
 
@@ -65,7 +66,11 @@ constexpr int kMaxWheatStandsPerCell = 4096;   // po2 scale of the estimate
 // month the path grid is re-baked on (Session 21), and exactly the old
 // wheat/fauna healing period, so their law (+1 per visit) is preserved by
 // construction.
-constexpr int kGrowthEpochDays = 32;
+// THE season (owner, 2026-08-24: «все росты раз в сезон» — one rhythm for
+// everything that grows: forest, beasts, wheat, iron, and the towns quote
+// their population rate by the same period in econ_day.h). The epoch used
+// to be its own literal 32 that merely HAPPENED to equal the season.
+constexpr int kGrowthEpochDays = kDaysPerSeason;
 
 inline bool growth_cell_due(std::uint32_t cellIdx, int day) {
     return int(cellIdx % std::uint32_t(kGrowthEpochDays))

@@ -14,8 +14,21 @@
 // a settlement's, an NPC's, one day a chest's — priced by this law with the
 // caller's ONE context multiplier (settlement mood / merchant temperament).
 #pragma once
+#include <cstdint>
 
 namespace sm {
+
+// ── Context contributions to the one price law (CANON S6, 2026-08-24) ─────
+// The named multiplier columns live HERE, beside the law they feed — they
+// used to be private helpers of two different screens (the settlement's mood
+// in overlays.cpp, the merchant's temperament in macro_overlay.cpp): the
+// same law with two homes, one of them buy-side only by accident of
+// location. 1.0 is a system with nothing to say. New context (war, season,
+// route danger) joins as another named column, never a screen helper.
+enum class SettlementMood : std::uint8_t;
+namespace ecs { struct NpcTraits; }
+float mood_price_mult(SettlementMood mood);
+float trait_price_mult(const ecs::NpcTraits* traits, bool buying);
 
 // THE player trade price — ONE law (owner ruling 2026-08-05). Base = the
 // canonical charisma+bargaining pricing; context — the settlement's mood or

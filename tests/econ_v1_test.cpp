@@ -351,26 +351,38 @@ int main() {
         }
     }
 
-    // ── 10. The LOGISTIC population law (owner, W2b-4) ──────────────────
+    // ── 10. The SUPPLY-CEILING population law (owner, CANON S25 +
+    //        2026-08-24: «все росты раз в сезон», no carrying cap) ────────
     {
-        // Well-fed towns grow; growth is damped toward the carrying cap and
-        // VANISHES at K — no town outgrows the world that must embody it.
+        // Well-fed towns grow; nothing caps plenty — supply is the only
+        // ceiling (wellbeing already turns growth around when the fields and
+        // the trade fall short), and the rate is QUOTED PER SEASON: a month
+        // is a season here, and in a town of a thousand souls a birth is an
+        // event, not daily noise.
         const float small = population_delta_per_day(100, 1.0f);
-        const float nearCap = population_delta_per_day(kPopCarryingCap - 1, 1.0f);
-        const float atCap = population_delta_per_day(kPopCarryingCap, 1.0f);
         if (!(small > 0.0f)) return fail("a well-fed hamlet must grow");
-        if (!(nearCap < small)) return fail("growth must damp toward the cap");
-        if (!(atCap <= 0.0f)) return fail("no growth at the carrying cap");
-        // A small town grows SLOWLY — r·P scales with heads, the owner's
-        // point that "+1 a day" was absurd for a hamlet.
-        if (!(population_delta_per_day(100, 1.0f) < 1.0f)) {
+        // A hamlet gains less than a head a day — the season quote spread
+        // over kDaysPerSeason keeps daily change fractional.
+        if (!(small < 1.0f)) {
             return fail("a hamlet cannot gain a whole head a day");
         }
-        // Starvation is NOT softened by being near the cap.
-        const float starveNearCap =
-            population_delta_per_day(kPopCarryingCap - 1, 0.0f);
+        // A fully fed town gains its season quote over one season of days.
+        const float aSeason =
+            population_delta_per_day(1000, 1.0f) * float(kDaysPerSeason);
+        const float quote = 1000.0f * kPopGrowthPerSeason;
+        if (!(aSeason > quote * 0.99f && aSeason < quote * 1.01f)) {
+            return fail("a season of full feeding pays the season quote");
+        }
+        // No cap: growth scales with heads all the way up (S25 — the town on
+        // the crossroads may outgrow the black earth without roads).
+        if (!(population_delta_per_day(20000, 1.0f)
+              > population_delta_per_day(1000, 1.0f))) {
+            return fail("no lid: a bigger fed town grows by more heads");
+        }
+        // Starvation bites in proportion to the mouths.
+        const float starveBig = population_delta_per_day(16000, 0.0f);
         const float starveSmallTown = population_delta_per_day(1024, 0.0f);
-        if (!(starveNearCap < starveSmallTown)) {
+        if (!(starveBig < starveSmallTown)) {
             return fail("a big starving town loses more heads than a small one");
         }
         // Wellbeing at the waterline holds steady.

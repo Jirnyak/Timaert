@@ -20,7 +20,7 @@ inline constexpr std::uint8_t zone_band(std::uint8_t z) {
     return std::uint8_t((int(z) * kZoneCount) >> 8);
 }
 // The exit gate's "settled land" ceiling: everything the old quantiser called
-// bands 0..2 — derived, not tuned: ceil(3 * 256 / kZoneCount) - 1.
+// bands 0..2 — derived, not tuned: 3 * 256 / kZoneCount - 1 = 75.
 inline constexpr int kSafeExitDanger = (3 * 256) / kZoneCount - 1;
 inline constexpr const char* kZoneLabels[kZoneCount] = {
     "Safe Haven", "Settled", "Patrolled", "Frontier", "Wild",
@@ -31,7 +31,7 @@ struct ZoneSeed { int x, y; };
 
 struct ZoneLayer {
     int width = 0, height = 0;
-    std::vector<std::uint8_t> data;   // quantised 0..9
+    std::vector<std::uint8_t> data;   // the danger byte, 0..255
     // (A parallel continuous float grid lived here until 2026-08-24 — 4 MiB
     // per world with no reader in the game, canon-audit D. The continuous
     // value exists only DURING the bake; a test that wants its precision

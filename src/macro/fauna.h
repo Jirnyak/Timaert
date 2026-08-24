@@ -2,9 +2,9 @@
 // each entry says what to spawn, how often, with what stats / colour.
 // Faithful port of `src/game/subworld/fauna.ts`.
 //
-// Adding a creature: append a static `FaunaEntry` constant and reference
-// it in one or more tables. Adding a biome: add a table + register it in
-// `get_fauna_table`. No engine code changes ever needed.
+// Adding a creature: one row of THE body table (macro/npc.h) that states its
+// ground in its habitat mask (kSpawnHabitats). Adding a biome: its bit and
+// its counts row. No engine code changes ever needed.
 #pragma once
 #include <cstdint>
 #include <span>

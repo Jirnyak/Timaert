@@ -66,8 +66,13 @@ void settle_landmark_day(Landmark& lm, int minPop) {
     const int whole = int(lm.popGrowthCarry);
     if (whole != 0) {
         lm.popGrowthCarry -= float(whole);
-        lm.population = std::clamp(lm.population + whole,
-                                   minPop, kPopCarryingCap);
+        // No ceiling (CANON S25): supply is the only cap — wellbeing already
+        // turned negative growth on when the fields and the trade fell short.
+        // The FLOOR is a named crutch (canon-audit B6: it mints people from
+        // air): until places can die and leave ruins (S9), a cut-down village
+        // never empties past it, or the world would quietly go dark with no
+        // mechanic to mourn it. It leaves with the living-landmarks track.
+        lm.population = std::max(lm.population + whole, minPop);
     }
 }
 

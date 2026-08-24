@@ -679,37 +679,24 @@ const char* npc_trait_label(std::uint8_t raw) {
     }
 }
 
-bool npc_has_trait(const ecs::NpcTraits* traits, NPCTrait trait) {
-    if (!traits) return false;
-    const auto raw = static_cast<std::uint8_t>(trait);
-    for (std::uint8_t i = 0; i < traits->count && i < 2; ++i) {
-        if (traits->traits[i] == raw) return true;
-    }
-    return false;
-}
+// (npc_has_trait moved with the temperament column into
+// macro/economy.cpp — the law's home owns its own predicate.)
 
-// Context multiplier of the merchant's temperament — this overlay's ONE
-// column into the single price law (economy.h player_trade_price). A greedy
-// merchant charges you more and pays you less; a generous one the reverse.
-static float npc_trait_price_mult(const ecs::NpcTraits* traits, bool buying) {
-    float mult = 1.0f;
-    if (npc_has_trait(traits, NPCTrait::Greedy))   mult = buying ? 1.2f : 0.8f;
-    if (npc_has_trait(traits, NPCTrait::Generous)) mult = buying ? 0.9f : 1.2f;
-    return mult;
-}
+// (The temperament column moved to the law's own home — macro/economy.h
+// trait_price_mult.)
 
 int trade_overlay_buy_price(int baseValue,
                             int charisma,
                             const ecs::NpcTraits* traits) {
     return sm::player_trade_price(baseValue, charisma, /*bargaining*/ 0,
-                                  npc_trait_price_mult(traits, true),
+                                  sm::trait_price_mult(traits, true),
                                   /*buying*/ true);
 }
 
 int trade_overlay_sell_price(int baseValue, int charisma,
                              const ecs::NpcTraits* traits) {
     return sm::player_trade_price(baseValue, charisma, /*bargaining*/ 0,
-                                  npc_trait_price_mult(traits, false),
+                                  sm::trait_price_mult(traits, false),
                                   /*buying*/ false);
 }
 
