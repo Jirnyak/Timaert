@@ -7,16 +7,16 @@
 > dropped in the move. Agents and contributors: treat THIS file as what
 > older docs (MASTER_PROMPT.md, AGENTS.md, memory notes) call "the README".
 
-**`timaert_c/` is the final game.** C++23 + EnTT 3.14 + ImGui native port of the
-Timaert TypeScript prototype: a procedural macro-world simulation with a
-seamless 1024-cell subworld zoom-in, dual 2D / first-person 3D rendering, an
-event/quest engine, and a modular spell system. Gameplay is still being
-translated from the TS/Svelte source (`C:\Timaert\src`), but the C++ port is
-what ships.
+**`timaert_c/` is the final game.** A C++23 + EnTT 3.14 + ImGui native game
+(born as a port of the now-retired Timaert TypeScript prototype): a procedural
+macro-world simulation with a seamless 1024-cell subworld zoom-in, dual 2D /
+first-person 3D rendering, an event/quest engine, and a modular spell system.
+The C++ in this repo IS the game — the TS/Svelte source is retired history, and
+design intent is judged against [CANON.md](CANON.md), the owner's canon.
 
-> **Backend direction.** Rendering + compute target **Vulkan** (MoltenVK on
-> macOS). The legacy **OpenGL 3.2 Core / WebGL2 / Emscripten-WASM** paths are
-> being retired and the browser build is dropped, because the game DRAWS thousands
+> **Backend direction.** Rendering targets **Vulkan** (MoltenVK on macOS). The
+> legacy **OpenGL 3.2 Core / WebGL2 / Emscripten-WASM** paths are
+> **removed** and the browser build is dropped, because the game DRAWS thousands
 > of bodies in one subworld frame — a per-draw-overhead and pipeline-control problem
 > GL 3.2 cannot express. (The world SIMULATION runs on the CPU by owner's ruling —
 > CANON.md S5; GPU-resident world simulation is deferred to the far future.) **SDL2 is demoted to platform/input/audio
@@ -30,20 +30,19 @@ what ships.
 
 ## Documentation
 
-[ARCHITECTURE.md](ARCHITECTURE.md) is the layered design source of truth;
-[AGENTS.md](AGENTS.md) holds contributor / agent rules. Each core system has a
-focused doc in this directory alongside the README, which orchestrates them.
+[CANON.md](CANON.md) is the design canon — the owner's intent, and the yardstick
+every deviation is judged against. [ARCHITECTURE.md](ARCHITECTURE.md) describes
+the layered architecture as built; [AGENTS.md](AGENTS.md) holds contributor /
+agent rules. Each core system has a focused doc in this directory alongside the
+README, which orchestrates them.
 
 | System | Doc | What it covers |
-|---
-<p align="center">
-  <a href="https://twitter.com/intent/tweet?text=Check%20out%20Timaert%20on%20GitHub!&url=https%3A%2F%2FJirnyak.github.io%2FTimaert%2F"><img src="https://img.shields.io/badge/Share-Twitter%2FX-1DA1F2?style=for-the-badge&logo=x" alt="Share on X"/></a> &nbsp;
-  <a href="https://news.ycombinator.com/submitlink?u=https%3A%2F%2FJirnyak.github.io%2FTimaert%2F&t=Check%20out%20Timaert%20on%20GitHub!"><img src="https://img.shields.io/badge/Submit-Hacker%20News-FF6600?style=for-the-badge&logo=y-combinator" alt="Submit to HN"/></a> &nbsp;
-  <a href="https://reddit.com/submit?url=https%3A%2F%2FJirnyak.github.io%2FTimaert%2F&title=Check%20out%20Timaert%20on%20GitHub!"><img src="https://img.shields.io/badge/Post-Reddit-FF4500?style=for-the-badge&logo=reddit" alt="Post on Reddit"/></a>
-</p>
---------|-----|----------------|
+|--------|-----|----------------|
+| **Design canon** | [CANON.md](CANON.md) | ЭТАЛОН ЗАМЫСЛА — the owner's intent per system (S1–S26); describes how the game SHOULD be, not how it is; every other doc and all code are judged against it |
+| Canon audit | [canon-audit.md](canon-audit.md) | The first judgement pass of the codebase against CANON.md (2026-08-20): per-system verdicts, second implementations, debts |
 | Lore | [lore.md](lore.md) | THE canonical fiction: dead gods, magic vs black energy, the powers, the named figures, the ten-year clock, the endings — each tied to the mechanic that produces it |
 | Time | [time.md](time.md) | ONE integer tick ladder: fixed simulation step, derived calendar, slower subworld day, every rate in game time |
+| Seasons | [seasons.md](seasons.md) | Data-driven climate cycle derived purely from world time — a season is a total function of `worldTime.day`, nothing serialized |
 | Macroworld | [macroworld.md](macroworld.md) | World state, terrain gen, time, politik, pathfinding |
 | Microworld | [microworld.md](microworld.md) | Seamless 3×3 subworld, generators, 2D/3D renderers |
 | Seam crossing | [seamless-crossing.md](seamless-crossing.md) | Hitch-free cell-boundary crossing: GPU toroidal shift, O(new content) upload |
@@ -68,6 +67,8 @@ focused doc in this directory alongside the README, which orchestrates them.
 | Map & knowledge | [map.md](map.md) | THE fog-of-war + map doc: knowledge layer (Unknown/Explored/Visible, save v40), sight-as-light over the one optical sweep, the drowned-memory render law, the full-screen chart page (M), marker surfaces, subworld minimap/map |
 | GPU backend | [vulkan.md](vulkan.md) | Vulkan backend modules, MoltenVK, render passes |
 | UI settings | [ui-settings.md](ui-settings.md) | ONE universal show/hide + resize registry for every HUD element & panel, macro + micro; global prefs file |
+| Debugging & profiling | [debug.md](debug.md) | The practical playbook for hunting bottlenecks, crashes and memory bugs (macOS/MoltenVK primary, Linux/Windows notes) |
+| Problems journal | [problems.md](problems.md) | The running journal of problems and their resolutions, from the Vulkan migration crashes onward |
 
 ## Highlights
 
@@ -83,7 +84,7 @@ focused doc in this directory alongside the README, which orchestrates them.
   naturally sub-kilometre river. Invariants locked by `river_generation_test`.
 - Politik: kingdom-driven world generation with capitals, MST + extra
   inter-kingdom roads, Voronoi territory, procedural per-kingdom languages
-  and heraldic flags.
+  (`macro/language.{h,cpp}`).
 - **Fields are a real peasant system, and resources come before settlement**
   (the field track, 2026-08-09). Macro: `FT_Field` farmland stamped on the
   wettest cells around villages renders as per-cell furrow patches whose
@@ -334,11 +335,14 @@ cmake --build build
 ./build/timaert
 ```
 
-> **No browser build.** The WebAssembly / Emscripten target has been dropped
-> (the core goal is a compute-shader workload GL/WebGL2 cannot express). There
-> is no `emcmake` flow; the CMake `project()` name is `timaert`, so there is no
-> `samosbor.*` or `timaert.html` artifact. Stale `EMSCRIPTEN` guards remain in
-> `CMakeLists.txt` and should be pruned.
+> **No browser build.** The WebAssembly / Emscripten target has been dropped:
+> the game is a native Vulkan title (MoltenVK on macOS) — drawing thousands of
+> lit, shadowed bodies in one subworld frame is a per-draw-overhead and
+> pipeline-control problem GL/WebGL2 could not express — and the world
+> simulation itself runs on the CPU by owner's ruling (CANON.md S5; GPU compute
+> is not the goal). There is no `emcmake` flow; the CMake `project()` name is
+> `timaert`, so there is no `samosbor.*` or `timaert.html` artifact. Stale
+> `EMSCRIPTEN` guards remain in `CMakeLists.txt` and should be pruned.
 
 ## Dependencies
 
@@ -381,12 +385,13 @@ sudo apt install cmake ninja-build libsdl2-dev libsdl2-mixer-dev \
 ## Integration Ledger
 
 Windows/MSVC build evidence dates to 2026-05-15; the logic-test suite was last
-re-verified **75/75 green on macOS 2026-08-20** through the `check` target
+re-verified **78/78 green on macOS 2026-08-20** through the `check` target
 (`cmake --build build --target check`, which builds the game and every test and
 only THEN runs ctest — bare `ctest` builds nothing and has reported green off
 stale binaries before).
-Windows/MSVC evidence is a build and smoke verification target only. Gameplay
-behavior authority remains the TypeScript/Svelte source under `C:\Timaert\src`.
+Windows/MSVC evidence is a build and smoke verification target only; it proves
+compilation, not gameplay. Gameplay authority is this repo's C++ judged against
+[CANON.md](CANON.md).
 
 Known-good Windows verification command:
 
@@ -440,7 +445,7 @@ Launch path:
 | THE time ladder (one integer tick) | VERIFIED | The world runs on ONE integer quantum. `core/time.h` owns the ladder — 64 ticks = 1 real second (the fixed simulation step), **8192 = a game day** (2^13, 128 real seconds), 32 days = a season, **128 days = a year = 2^20 ticks exactly**. The four old rhythms (frame `dt`, a float minute accumulator, a 0.5 s AI cadence, a per-DRAWN-FRAME daily queue) are gone. The minute is NEVER STORED: `1440/8192 = 45/256` and `24/8192 = 3/1024` make `minute = (t*45)>>8` and `hour = (t*3)>>10` exact integer arithmetic, and `floor(floor(a/b)/c) == floor(a/(b*c))` makes the two derivations unable to disagree. **THE TICK IS PRIMARY:** one turn of the main loop is one tick AND one drawn frame, so the frame rate and the world's rate are the same number — a low frame rate is not a choppier picture of a world moving at its usual pace, it is the world living slower. The wall clock is consulted for a single purpose — if the turn was quicker than a tick is worth, WAIT out the remainder so the world can never run faster than nominal (the swapchain prefers MAILBOX for the same reason: FIFO would let a 60 Hz display cap the world at 60 ticks/s). It is never consulted to decide that ticks are OWED, so there is no accumulator and no debt: a slow turn is one late tick, a machine that cannot sustain the rate runs a slower world rather than a shorter one, and a SUSPENDED process (closed laptop, breakpoint) ran no turns, advanced no ticks, and simply carries on — no gap to detect, no threshold to tune. Real time can only make the game WAIT; it can neither add a tick nor take one away. Subworld physics, AI and projectiles became deterministic without one file under `sub/` changing. Underground `kSubworldTickDivisor = 16` steps buy one tick (a game hour costs 85 real seconds) and the whole macro world, macro AI included (`kAiTicks = 32` world ticks), slows with it: 24186 → 852 NPC thinks per 1000 steps. EVERY rate is game-time denominated (march 32 cells/game hour, recovery 10/game hour in BOTH worlds since 2026-08-20 — a body standing still underground mends at the same rate per game hour, which is sixteen times slower by the wall clock), so day length is FEEL and cannot move the economy. The subworld has its own denominator for the things you LIVE through rather than plan: `kSubworldWalkTilesPerSecond`, and the combat/spell cooldowns and sustained drain, which are counted in integer simulation STEPS (`kStepsPerSecond`) — see [time.md](time.md) for why literal ticks were measured and rejected there. `kSaveVersion` 17→18 — three ints became one `uint64`, a tick number rather than a duration. `time_ladder_test` walks all 8192 ticks of a day; `world_tick_parity_test` proves **no drift** (10000 one-tick advances == one 10000-tick advance: same instant, same elapsed, same daily queue) and the subworld divisor keeping its remainder across a split. Two accepted consequences: the march costs 28% more stamina per game day, and 0 HP now means dead reliably (the coarse pre-tick frame used to let a player at zero round back to 1). ctest 43/43; smokes PASS. See [time.md](time.md). |
 | Seam crossing, second pass | VERIFIED | Crossing frame **~9-11 ms → 6-8 ms**, its `upload3d` half **6.9-8.4 → 3.0-5.0 ms**; owner confirmed in play that the sub-freeze is no longer felt. One law, four consumers: **do not integrate a constant** — a placeholder cell is one height and one tile id, so the height path fills its interior vertex block (3.10 → 0.19 ms) and the material path memsets it, or picks between two bytes inside the treeline dither band (up to 19.7 → 2.60 ms in a mountainous world). A pass has **two radii** — input reach 92 tiles, output reach 1 — and dirty-marking wants the second (road smooth 3.0-3.2 → 2.0-2.5 ms). Instance buffers are **reused, not re-created** (the CPU loop over 10896 trees is 0.08 ms; 87-97% was buffer churn). Plus a BUG fixed: every building in view changed shade at a crossing, because the per-instance hash was keyed to the composite coordinate — now `structure_shade(absX, absY)`, proven by `material_seam_test` invariant 7 **with a negative control**. Verified by `TIMAERT_SEAM_SELFCHECK` on five pinned seeds: height incremental `0/37249`, material incremental `0`, material shift `0` (GPU readback), flat cells `tileMismatch=0/1048576 valMismatch=0`. Deliberately NOT done: batching the per-resource `vkQueueWaitIdle` (0.39-0.60 ms each, size-independent, 4 per upload) — worth ~1.25x, not free. See [seamless-crossing.md](seamless-crossing.md) and problems.md entries 14-15. |
 | Universal rebindable keymap | VERIFIED | One `kActionSpec` registry ([src/ui/keymap.h](src/ui/keymap.h)) drives every game key across both worlds: scancode-based (layout-proof) bindings with `UiScope` Macro/Sub/Both, a **Controls** panel (menu → Controls, press-to-rebind, Esc fixed as menu/cancel), a global `keymap.cfg` (same forgiving text-KV idiom as `ui_prefs.cfg`), and the one-key-one-meaning-per-world steal rule. Consumers: the `handle_event_playing` dispatch and the `poll_movement` held-key polls read `Keymap::get`; toolbar tooltips and the pause badge quote the LIVE binding so no hint can go stale (the hardcoded hint bar died with this). `keymap_test` (CTest) covers defaults / steal / scopes / round-trip / tolerance; seed-12345 smokes green. See [controls.md](controls.md). |
-| THE one sprite law (paper-doll retired) | VERIFIED | A visible kind is a ROW (`macro/sprite_rows.h`, enum-order guarded): drawn art if the artist drew it, a procedural body plan if he did not, and the same table serves the macro map and the subworld. It collapsed FOUR scattered look-registries — an 11-row PNG list, `FaunaEntry`'s colour+archetype, a `switch` over `NPCType` in the map's drawing code, and `NpcTypeDef::portrait`, a path string with **zero readers**. The paper-doll composite and BOTH its delivery paths are deleted (~2.5k lines, `atlas.bin`/`atlas.png`, the last TS-atlas dependency): drawn bodies are resident in `assets/sprite_bank.h` as one 256² layer per kind — **5 slots, 1.3 MB, filled at boot, no LRU** — against the pool's 8192 slots and 75.5 MB, because a picture per KIND is not a face per SOUL. The renderer's NPC/creature split (two pipelines, two shadow pipelines, two buffers, four draw blocks) merged into ONE body pass; `kind` carries slot-or-sentinel and body plan, unpacked by the same header in `body.frag` and `shadow_body.frag`. It also killed problems.md §23.2 at its cause: the ImGui descriptor census fell 4127 → 31, so the OUT_OF_POOL_MEMORY segfault has no surface left. Accepted cost until art sheets arrive: a humanoid is one static picture per kind, camera-facing. Verified by `sprite_rows_test` (with a run negative control), `check` 75/75, and seed-12345 captures of the macro map, a town crowd and a procedural creature, all LOOKED at — one of which caught the whole town standing on its head through a fully green build. See [sprites.md](sprites.md). |
+| THE one sprite law (paper-doll retired) | VERIFIED | A visible kind is a ROW (`macro/sprite_rows.h`, enum-order guarded): drawn art if the artist drew it, a procedural body plan if he did not, and the same table serves the macro map and the subworld. It collapsed FOUR scattered look-registries — an 11-row PNG list, `FaunaEntry`'s colour+archetype, a `switch` over `NPCType` in the map's drawing code, and `NpcTypeDef::portrait`, a path string with **zero readers**. The paper-doll composite and BOTH its delivery paths are deleted (~2.5k lines, `atlas.bin`/`atlas.png`, the last TS-atlas dependency): drawn bodies are resident in `assets/sprite_bank.h` as one 256² layer per kind — **5 slots, 1.3 MB, filled at boot, no LRU** — against the pool's 8192 slots and 75.5 MB, because a picture per KIND is not a face per SOUL. The renderer's NPC/creature split (two pipelines, two shadow pipelines, two buffers, four draw blocks) merged into ONE body pass; `kind` carries slot-or-sentinel and body plan, unpacked by the same header in `body.frag` and `shadow_body.frag`. It also killed problems.md §23.2 at its cause: the ImGui descriptor census fell 4127 → 31, so the OUT_OF_POOL_MEMORY segfault has no surface left. Accepted cost until art sheets arrive: a humanoid is one static picture per kind, camera-facing. Verified by `sprite_rows_test` (with a run negative control), `check` 78/78, and seed-12345 captures of the macro map, a town crowd and a procedural creature, all LOOKED at — one of which caught the whole town standing on its head through a fully green build. See [sprites.md](sprites.md). |
 | A fight is measured in STEPS; both worlds mend | VERIFIED | Spell and melee cooldowns and the sustained mana drain were floats decremented by a `dt` of real seconds while [time.md](time.md) claimed exactly ONE documented exception — three undocumented ones. They are integers now, counted in simulation STEPS (`core/time.h kStepsPerSecond`); tables still author seconds and the only conversion back is the string a human reads. Literal world ticks were measured and REJECTED: a tick underground is 0.25 real seconds, so a one-second cooldown would become sixteen (`kSaveVersion` 40→41). Separately, recovery now runs in BOTH worlds off the same per-minute law: a body standing still underground mends at the macro rate per game HOUR, sixteen times slower by the wall clock. The smoke that covered this asserted the OPPOSITE — that nothing recovers underground — a green guard on a missing feature; it is inverted and now asserts the two worlds agree against the very function the macro branch calls (42 game minutes: hp 5→12, mp 5→12, sp 5→14 both sides), with a run negative control. T.A.R.S. on the audit: **19.26 as written does not reproduce** — it assumed a regeneration that was not running at all. |
 | Every homeland leads to a real country | VERIFIED | 19.19 closed. "Barbarian Kingdoms" stored the value `barbarians`, which is not a row of the faction registry (it has four), so `add_player_reputation` was handed a name nothing answered to: one of the three opening buttons of the game awarded nothing, silently. `resolve_homeland_faction` is the door — a single realm passes through, a GROUP is resolved by the world (seeded from the world seed, so a reload cannot move the player's birthplace), and an unknown name returns nullptr instead of travelling onward. `homeland_choice_test` guards totality over the offered choices plus a two-part negative control, run against the shipped behaviour. |
 | Quest markers (macro "!" pins) | VERIFIED | Active quests project onto the universal `markers.h` layer as gold "!" pins — `rebuild_quest_markers` adds one `MarkerStyle::Quest` pin per incomplete world-anchored objective (cell resolver mirrors `eval_objective`; a `destroy_npc` kill-count has no fixed cell so it gets none), for **all** targets of every active quest. `QuestEngine` stays pure; the allocating rebuild is gated by a per-frame integer `quest_marker_signature` in `process_world_events` (cache reset on new-game/load, which also reconciles stale pins from a save). Rendered by the universal by-style pass in `draw_macro_overlay`, gated + scaled by the new **QuestMarkers** UI element. Validated seed-12345 smoke `new_game,wait_boot_done,console,subworld_time,quit` → `[smoke] PASS`, exit 0, `validation=1`, asserting `quest_markers pin@42,17 style=quest killcount=nopin complete->removed sig_changed=1`; 28/28 CTest targets green (incl. `quest_lifecycle_test`, `ui_settings_test`, `biome_classifier_test`). See [quests.md](quests.md). |
@@ -510,18 +515,40 @@ snapshot of it). The GPU/display harnesses (`gpu_smoke`, `gpu_smoke3d`) and
 
 ### Current Gaps
 
-- Standalone full-screen `TradeOverlay.svelte` shell is intentionally not
-  duplicated in native UI. Current settlement and NPC trade surfaces execute
-  the real buy/sell path; recreating the TS wrapper would be a UX-shell task,
-  not a gameplay parity gap.
-- Build tab remains an explicit non-action surface because TS does not define
-  build projects, costs, construction time, or persisted building effects.
-- Extended TS event tags `NpcHpChange`, `SettlementMoodChange`,
-  `PlayerStatChange`, `BattleEnd`, `MagicSurge`,
-  `FactionRelationChange`, `DialogStart`, and `CameraMove` are now native
-  `EventTag` values and are covered by `save_roundtrip_test` in save schema
-  v10. Normal gameplay producers/consumers are still partial for several of
-  them; do not treat schema/save proof as full event-loop parity.
+Gaps are measured against [CANON.md](CANON.md) — what the canon prescribes and
+the code does not yet build (each carries a **НЕ ПОСТРОЕНО** mark in its canon
+section):
+
+- **S6 — the ONE context door.** Every mechanic must ask one cell-context
+  assembler that sums the contribution of ALL systems (biome, feature,
+  landmark, danger, season, weather, black energy, time of day, knowledge).
+  Today context is gathered piecemeal (the subworld `CellContext`, spawn
+  weights, step costs, the ledger); the single door is the next major seam.
+- **S9 — landmarks that live and die.** Landmarks as agents with a life
+  cycle: grow, transition kind by data-driven condition (village→city),
+  change owner through squads, die into ruins, arise anew. Today the landmark
+  list is fixed at generation.
+- **S15 — the magic ↔ dark-energy FIELD.** One signed byte per cell (plus =
+  magic, minus = dark energy) sourced by what stands and walks in the world —
+  cults, black artifacts, strong mages, dragons. Not built.
+- **S19 — weather as a field.** Today weather is a function of position and
+  time with zero mechanical contribution; the canon wants climate / weather /
+  precipitation as per-cell fields feeding every mechanic through the S6 door.
+- **S24 — politics as a kingdom-level system.** Faction capital, lord weight,
+  taxes, leader decisions, land changing hands through war. Today: kingdoms,
+  capitals, Voronoi territory and a relations matrix only.
+- **S23 — sound from the world, not from input.** Footsteps because a body
+  touched ground, hits because there was an impact, sound kind as a column of
+  the one registry. Today music/SFX are app-level state hooks.
+- The Build tab remains an explicit non-action surface — build projects,
+  costs, construction time and persisted building effects are not designed
+  yet (no canon section prescribes them; landmark creation by the player is
+  S9's universal mechanism when it lands).
+- Several extended `EventTag` values (`NpcHpChange`, `SettlementMoodChange`,
+  `PlayerStatChange`, `BattleEnd`, `MagicSurge`, `FactionRelationChange`,
+  `DialogStart`, `CameraMove`) exist in the schema and survive saves, but
+  normal gameplay producers/consumers are still partial for several of them;
+  do not treat schema/save proof as full event-loop coverage.
 
 ## Controls
 

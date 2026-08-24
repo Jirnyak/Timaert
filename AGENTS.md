@@ -60,7 +60,7 @@ parallel subagents, broad sweeps, or multi-agent workflows unless the task
   green, verify it yourself first-hand (run the smoke, capture and LOOK at a
   frame), and also offer the human a look. Do not chain many unverified edits.
 - **When you must stop, stop GREEN**, and leave a precise written plan (e.g.
-  [vulkan_plan.md](vulkan_plan.md)) so the next agent — even a cheaper one —
+  [work_vector.md](work_vector.md)) so the next agent — even a cheaper one —
   can continue mechanically.
 
 ## [CTO SUPREMACY & OPERATIONAL MANDATE]
@@ -163,6 +163,18 @@ even if everything compiles and passes.
   dual bucket grids, separation, terrain as data) drives one bandit and 16k
   soldiers through the same code. No special cases per encounter size; the
   player is an ordinary pinned body in it.
+- **THE sprite law (CANON.md S16).** A visible kind is a ROW of the one sprite
+  table (`macro/sprite_rows.h`): drawn art overrides the procedural body plan,
+  a squad draws as ONE sprite, and bodies render in ONE pass (`body.frag`).
+  The paper-doll composite was retired 2026-08-20 (~2.5k lines deleted) and is
+  forbidden to return in any form.
+- **Context SELECTS the creature row; it never scales the body (CANON.md
+  S12).** A zone or settlement decides WHICH rows spawn; the spawned creature
+  is exactly its row. Any markup applied to a body AFTER selection is
+  auto-leveling, however it is named — both hidden auto-levels were deleted
+  2026-08-20 and a negative control in `subworld_spawn_parity_test` reddens if
+  one returns. Goblin and goblin-chief are different rows, not one goblin with
+  a multiplier.
 
 ## Hard Rules
 
@@ -185,12 +197,13 @@ even if everything compiles and passes.
   events,content,ui,assets}` are auto-picked-up. Do **not** edit `CMakeLists.txt`
   for individual files. (There is no `src/gl/` — the OpenGL backend was removed;
   GPU code lives in `src/gpu/`.)
-- **Backend = Vulkan; SDL is platform-only.** Rendering and compute target
-  **Vulkan** (MoltenVK on macOS). The OpenGL 3.2 / WebGL2 / Emscripten-WASM
-  paths are being retired and the browser target is dropped. **SDL2 is window +
-  input + timing + audio only — never the graphics API.** Do not add new GL
-  code; new GPU code lives in `src/gpu/`. See `ARCHITECTURE.md` §Rendering &
-  Compute Backend.
+- **Backend = Vulkan; SDL is platform-only.** Rendering targets **Vulkan**
+  (MoltenVK on macOS). The OpenGL 3.2 / WebGL2 / Emscripten-WASM paths are
+  **removed** — the migration is complete in `src/` (0 GL call sites, no
+  `src/gl/`) and the browser target is dropped. **SDL2 is window + input +
+  timing + audio only — never the graphics API.** Do not add new GL code; new
+  GPU code lives in `src/gpu/`. See `ARCHITECTURE.md` §Rendering & Compute
+  Backend.
 - **GPU is graphics; the world is CPU** (owner's ruling 2026-08-20, `CANON.md` S5).
   The GPU draws — shaders, shadows, lighting, terrain/billboard passes, sky, water,
   particles, sprite banks — and it may additionally carry **one-way physics**
@@ -208,8 +221,9 @@ even if everything compiles and passes.
 - **Strict O(N) simulation bound.** During simulation (whether subworld ECS tick
   or macroworld tick), **nothing greater than O(N) is permitted**. Never write
   O(N²) scans for proximity, line-of-sight, or AI targeting. **This is exactly
-  why we bake paths and use spatial hashes.** Use `sm::SpatialHash` for radius
-  queries and precomputed grids for navigation.
+  why we bake paths and use bucket grids.** For radius queries use the battle
+  bucket grids (`sub/battle.h` `UnitGrid`) or the collision bins
+  (`sub/collide.h`), and precomputed grids for navigation.
 
 ## Source Authority
 
@@ -221,15 +235,17 @@ even if everything compiles and passes.
   on this machine.)*
 - Windows/MSVC is a verification target for this workspace, not a gameplay
   authority. A passing Windows build proves compilation only.
-- There is **no separate combat resolver and no battle mode**. Combat is
-  unified subworld play: every NPC kind carries `CombatTemplate`, any
-  hireable kind can serve as a soldier, and the danger zone level
-  controls subworld exit. Do not introduce a battle screen, RPS damage
-  table, or per-unit-type stats — this is by design (see
-  `ARCHITECTURE.md` §Combat System).
-- Road generation was audited against `C:\Timaert\src\game\road-network.ts`.
-  Future rewrites still require same-seed A/B evidence and must preserve the
-  rejected-water pruning invariant covered by `road_river_generation_test`.
+- There is **no separate battle MODE, and ONE law of combat** (CANON.md S13).
+  Fought combat is unified subworld play: every NPC kind carries
+  `CombatTemplate`, any hireable kind can serve as a soldier, and the danger
+  zone level controls subworld exit. Do not introduce a battle screen, RPS
+  damage table, or per-unit-type stats (see `ARCHITECTURE.md` §Combat System).
+  **Auto-resolve is the world's PRIMARY battle path, and it is built**: the
+  microworld exists only around the player, so every fight without him settles
+  through `macro/auto_battle.h` (`resolve_auto_battle`,
+  `settle_player_auto_battle`) — fed by the same character-sheet numbers the
+  fought version uses; `auto_battle_test` holds the agreement between the two
+  executions. Never add a second resolver or a second damage law.
 
 ## File Organization
 
@@ -434,8 +450,10 @@ but never own game logic.
 ## Workflow Checklist
 
 1. Make the smallest change that solves the problem.
-2. Run the known-good Windows `build-msvc` command. It must compile clean
-   (no warnings).
+2. Build and verify on THIS platform: `cmake --build build` (or the `check`
+   target). After Windows-specific changes, also run the known-good Windows
+   `build-msvc` command (§Build) — there is no `build-msvc` tree on the macOS
+   machine. Either way the build must compile clean (no warnings).
 3. If new shader: verify it links (any GLSL error appears at runtime in
    stderr).
 4. Update [ARCHITECTURE.md](ARCHITECTURE.md) only if you added a real new
