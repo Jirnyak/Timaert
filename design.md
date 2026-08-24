@@ -2,23 +2,18 @@
 
 ## 0. Document Role
 
-This file is the current design target for the native Timaert game in
-`timaert_c/`.
+**This file is a historical design document, not the design authority.**
+The design authority is **[CANON.md](CANON.md)** — the owner's intent,
+recorded 2026-08-20 as 26 systems. Where this file and CANON disagree,
+CANON is right and this file must be corrected.
 
-The legacy documents under `../docs/design/` are historical references. They
-may contain useful ideas, but they are not the active design authority for the
-native build.
+The TypeScript reference and `timaert_c/` are gone: the migration is over,
+the C++ tree in `src/` **is** the whole game, and no TS artifact holds any
+authority. Legacy documents under old paths are historical references only.
 
-The active code authorities are:
-
-- `../src/` for TypeScript/Svelte gameplay behaviour, formulas, content
-  tables, and UI expectations.
-- `timaert_c/` for the shipping native architecture, performance constraints,
-  layer discipline, and corrected final design decisions.
-
-The native game is already playable. All design work must respect the playable
-baseline and deepen it through content, systemic depth, and measured native
-performance. Do not replace working systems with speculative rewrites.
+The game is playable. All design work must respect the playable baseline
+and deepen it through content, systemic depth, and measured performance. Do
+not replace working systems with speculative rewrites.
 
 **Fiction authority is [lore.md](lore.md)** — the dead gods, magic vs black
 energy, the Sacrilegist, the Peasant King, the Empire of Light's forged religion,
@@ -115,7 +110,8 @@ technical basis for this scale.
 The current native game already has these pillars implemented or partially
 implemented:
 
-- SDL2 + OpenGL 3.2 Core + ImGui app shell.
+- SDL2 (platform/input/audio) + Vulkan renderer (MoltenVK on macOS) + ImGui
+  app shell. (`src/gl` does not exist; the OpenGL path is long gone.)
 - C++23 with no exceptions and no RTTI.
 - EnTT world for entity storage and component-driven systems.
 - 1024 x 1024 toroidal macro world.
@@ -143,7 +139,8 @@ implemented:
 - Subworld generators for natural cells, settlements, roads, spires, ruins,
   water, forest, mountain, swamp, and other modes.
 - Universal C++ combat model based on NPC-kind `CombatTemplate` data.
-- Soldier squads as persistent NPC-kind records.
+- Squads as the ONE macro entity: `ecs::SquadRoster` on the leader, squad ==
+  leader (replaced the old "soldier squads as persistent NPC-kind records").
 - Corpse loot and XP attribution in subworld combat.
 - Danger-zone exit blocking for high danger cells.
 - Spell registry, spell book, cooldowns, sustained state, projectiles, beams,
@@ -365,7 +362,10 @@ Zone meaning:
 
 Zone consumers:
 
-- Subworld monster level scaling.
+- Spawn composition through context weights (CANON S6/S12). NOT stat
+  scaling: the hidden autolevel ("subworld monster level scaling") was
+  condemned and DEMOLISHED 2026-08-20 — a zone changes WHO spawns, never
+  silently multiplies HP/damage; a creature's strength is its own table row.
 - Ambush probability.
 - Loot quality.
 - Quest difficulty.
@@ -460,7 +460,8 @@ villages, active trade routes, garrisons, player upkeep, and player age.
 
 Final design target:
 
-- One year is 100 days.
+- One year is 128 days (shipped: `core/time.h`, CANON S3 — one integer
+  tick, 8192 ticks per day, 32-day seasons, 2^20 ticks per year exactly).
 - The main plot can take around ten years.
 - NPCs and player age.
 - Long wars and economy shifts are possible.
@@ -468,8 +469,8 @@ Final design target:
 - Some plot states worsen if ignored.
 - Aging and legacy become real systems.
 
-Older TS comments and legacy docs may contain conflicting year assumptions.
-The final design target is 100 days.
+Legacy docs may contain conflicting year assumptions (an older draft here
+said 100 days). The shipped and canonical year is 128 days.
 
 ## 7. Economy
 
@@ -861,9 +862,6 @@ Do not reintroduce:
 - Modal battle resolver.
 - Per-unit-type histogram as the player's final army representation.
 
-If TS compatibility still needs those fields temporarily, isolate them and
-remove readers as the native model becomes authoritative.
-
 ### 10.3 Hiring
 
 Hiring should be atomic:
@@ -892,7 +890,9 @@ Player army should support:
 - City conquest.
 - Faction service.
 - Desertion if unpaid.
-- Morale and loyalty later.
+
+(Squad morale/loyalty is NOT in the design today — owner ruling, CANON S25
+?30: do not build it and do not reserve space for it.)
 
 ## 11. Subworld
 
@@ -1334,12 +1334,12 @@ eventually become a strategic and narrative pressure.
 
 ### 15.2 Year Length
 
-Final design target:
+Shipped and canonical (`core/time.h`, CANON S3):
 
-- 100 days per year.
+- 128 days per year = 2^20 ticks exactly; 32-day seasons.
 
-Older docs and some TS comments may contradict this. Align future code and
-saves toward 100-day years when the aging system is expanded.
+An older draft of this file said 100 days — that number is dead; the aging
+system builds on the 128-day year.
 
 ### 15.3 Mortality
 
@@ -2023,7 +2023,7 @@ Important divergences:
 - Some TS UI shells are not duplicated exactly in ImGui if the gameplay path is
   already accessible.
 - Save versions differ; no compatibility required.
-- Aging year-length assumptions need final alignment to 100 days.
+- Aging year-length is 128 days per year (`core/time.h`, CANON S3).
 
 ### 27.6 Acceptance Criteria
 

@@ -1,7 +1,8 @@
 # Features — Фичи
 
 Static, persistent per-cell **man-made structures** between the biome and
-landmarks: **road, dirt road** (future: railways, fields, canals). They never
+landmarks: **road, dirt road, field** (`FT_Field` — ploughed farmland, the
+grain deposit; future: railways, canals). They never
 alter the underlying biome. Natural cover is *not* a feature: mountains are
 the elevation-classified Mountain biome ([biomes.md](biomes.md)) and forests
 are the per-cell tree-count field (below) — `FT_Tree` was removed when the
@@ -10,7 +11,6 @@ count field took over (`FT_DirtRoad` byte 3 → 2, save v14).
 - **Code:** [macro/features.h](src/macro/features.h),
   [macro/spawners.cpp](src/macro/spawners.cpp) (`trace_roads`,
   `trace_dirt_roads`, `spawn_trees`)
-- **TS origin:** `game/features.ts`, `game/*-spawner.ts`, `game/road-network.ts`
 - **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) §Feature Layer
 
 ## Model
@@ -65,7 +65,7 @@ swing, console `chop`, the woodcutter agents) removes its `Structure::Tree`
 from the owning cell + composite (`SeamlessSubworldManager::fell_tree_near`)
 and decrements the owning macro cell's count through the registry's Trees
 CARRIER row (`resource_field_apply` — [resources.md](resources.md)). The
-grid is the row's LIVING state: the save carries it whole (**v36**; the old
+grid is the row's LIVING state: the save carries it whole (**since v36**; the old
 sparse `treeOverrides` died with the derive-plus-overlay model, because a
 growing forest outruns its derivation). `TreeLayer.revision` drives a
 surgical binding-4 re-upload (`upload_tree_field`), never per frame. The

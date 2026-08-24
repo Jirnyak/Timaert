@@ -9,7 +9,6 @@ plot/event arc** — driven by the L3 event system.
   [node_registry.h](src/events/node_registry.h),
   [effect_applicator.h](src/events/effect_applicator.h);
   plot in [content/plot/](src/content/plot)
-- **TS origin:** `game/event-bus.ts`, `game/logic-nodes.ts`, `game/plot/*`
 - **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) §L3 — Event System, §L4
 
 ## Model
