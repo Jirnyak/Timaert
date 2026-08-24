@@ -549,10 +549,11 @@ private:
     // ring = sealed Void filler) through the ordinary manager/renderer path.
     // No fauna, no squad, no macro projections — the player enters alone
     // (owner ruling 2026-08-12).
-    void enter_dungeon_scene(GameState& gs, const TerrainData& terrain,
-                             const FeatureLayer& features, ecs::World& ecs,
-                             EventBus& bus, const ZoneLayer* zones,
-                             TreeLayer* treeLayer);
+    // Takes THE envelope (like enter): the interior pays its ledgers through
+    // mw_, so a scene raised with only the named views left the deposit and
+    // population rows fail-closed — a house with no residents and kills that
+    // never thinned the town (found by the dungeon_house smoke, 2026-08-24).
+    void enter_dungeon_scene(const MacroWorld& mw, EventBus& bus);
     // Rebuild what the engine keeps ABOUT props, from the one composite:
     // the lights of lit props (hung as ordinary `LightEmitter` bodies, so a
     // street lantern and a carried torch reach the shader through the same

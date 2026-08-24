@@ -334,6 +334,16 @@ struct App {
     sm::ui::AppState state = sm::ui::AppState::Title;
     sm::ui::AppState loadReturnState = sm::ui::AppState::Title;
     bool worldLoaded = false;
+    // The macro↔micro transition edge (CANON S7, owner 2026-08-24: the world
+    // rebakes on EVERY transition, literally). Set each frame in
+    // tick_playing_runtime; the frame that sees `active` fall pays the exit
+    // rebake — every leave path funnels through this one edge.
+    bool subworldWasActive = false;
+    // The zone field's GPU refresh rides the same dirty-flush discipline as
+    // the night glow (Session 19 law: no mid-frame device drains) — set by
+    // rebake_world when it may not touch the device, flushed on the macro
+    // path beside macroLightsDirty.
+    bool zoneFieldDirty = false;
 
     sm::GameState        gs;
     sm::TerrainData      terrain{};
@@ -539,6 +549,11 @@ sm::MacroWorld macro_world(App& app) {
     mw.landmarks = &app.landmarkGrid;
     return mw;
 }
+
+// Defined below (they compose the bake helpers); declared here because
+// early call sites enter battle through the same one transition.
+void rebake_world(App& app, bool uploadNow = true);
+void enter_subworld(App& app);
 
 // The full-screen macro map page is open: the M toggle, on the macro layer,
 // in play. Everyone who swaps a camera or reroutes an input asks THIS.
@@ -1030,7 +1045,7 @@ bool route_macro_npc_attack(App& app, entt::entity npc) {
     app.cursor.path.clear();
     app.cursor.pathIdx = 0;
     app.ui.settlement = false;
-    app.subworld.enter(macro_world(app), app.bus);
+    enter_subworld(app);
     if (!app.subworld.active()) return false;
 
     // The lord you struck is EMBODIED, not imitated. This used to hand-copy his
@@ -1867,7 +1882,14 @@ void rebake_macro_lights(App& app) {
 // same stages inline because spire placement must read zones mid-sequence.
 // Roads/fields (FeatureLayer) are still generation-owned: deterministic from
 // the seed today; they move here the day places can change.
-void rebake_world(App& app) {
+// `uploadNow`: the GPU half (light + zone textures, each a device-idle
+// replace) may only run at a drain-safe point — the menu-side load and the
+// seasonal settle qualify; a TRANSITION does not (the first wiring drained
+// mid-frame and hung the game — Session 19's law holds). With uploadNow
+// false the CPU truth still rebakes WHOLE right now — which is everything
+// the simulation reads — and the textures follow at the macro path's dirty
+// flush, where the map is next drawn anyway.
+void rebake_world(App& app, bool uploadNow) {
     std::vector<sm::ZoneSeed> zsCities, zsVills;
     zsCities.reserve(app.gs.settlements.size());
     for (const auto& c : app.gs.settlements) zsCities.push_back({c.x, c.y});
@@ -1878,11 +1900,28 @@ void rebake_world(App& app) {
                                    app.terrain.rgba.data(),
                                    app.terrain.rgba.size(), &app.treeLayer);
     app.landmarkGrid = sm::build_landmark_grid(app.gs);
-    rebake_macro_lights(app);
     app.pathCost = sm::build_cost_grid(app.terrain, &app.features,
                                        &app.treeLayer);
     app.gs.lastWorldRebakeDay = app.gs.worldTime.day();
-    if (app.macro.ready()) app.macro.upload_zone_field(app.device, app.zones);
+    if (uploadNow) {
+        rebake_macro_lights(app);
+        app.macroLightsDirty = false;
+        if (app.macro.ready())
+            app.macro.upload_zone_field(app.device, app.zones);
+        app.zoneFieldDirty = false;
+    } else {
+        app.macroLightsDirty = true;
+        app.zoneFieldDirty = true;
+    }
+}
+
+// Enter the subworld through THE transition (CANON S7, literal by the
+// owner's word): the world settles first, so the projection below reads
+// freshly rebaked fields. CPU truth only — the map textures follow at the
+// dirty flush, and below ground the macro map is not drawn at all.
+void enter_subworld(App& app) {
+    rebake_world(app, /*uploadNow=*/false);
+    app.subworld.enter(macro_world(app), app.bus);
 }
 
 void boot_world(App& app, std::uint32_t seed,
@@ -2871,7 +2910,7 @@ void handle_event_playing(App& app, const SDL_Event& e) {
             else if (is(ActionId::Load)) { open_load_screen(app); }
             else if (is(ActionId::EnterLeave)) {
                 if (!app.subworld.active()) {
-                    app.subworld.enter(macro_world(app), app.bus);
+                    enter_subworld(app);
                     boot_trace_time("subworld enter", app.gs.worldTime);
                 } else {
                     app.subworld.leave();
@@ -3332,7 +3371,7 @@ void handle_pending_battle_start_events(App& app) {
         if (ev.tag != sm::EventTag::BattleStart) continue;
 
         if (!app.subworld.active()) {
-            app.subworld.enter(macro_world(app), app.bus);
+            enter_subworld(app);
             boot_trace_time("battle-start subworld enter", app.gs.worldTime);
         }
         const std::uint32_t seed = app.gs.worldSeed
@@ -3588,6 +3627,12 @@ struct RuntimeFrameStats {
 // draws 30 frames a second or 240, which is what makes a journey, a fight and a
 // smoke script reproduce instead of merely resemble each other.
 RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
+    // The S7 exit edge: the frame that finds the subworld gone rebakes the
+    // derived world from the truths the stay below paid up (trees felled,
+    // heads taken, veins drained). CPU truth now; textures at the flush.
+    if (app.subworldWasActive && !app.subworld.active())
+        rebake_world(app, /*uploadNow=*/false);
+    app.subworldWasActive = app.subworld.active();
     constexpr float dt = sm::kStepSeconds;
     RuntimeFrameStats stats{};
     if (app.state != sm::ui::AppState::Playing || !app.worldLoaded) return stats;
@@ -3759,6 +3804,14 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         if (app.macroLightsDirty) {
             rebake_macro_lights(app);
             app.macroLightsDirty = false;
+        }
+        // The danger-zone field rides the same discipline (set by the S7
+        // transition rebakes): one surgical binding-2 re-upload at the same
+        // drain-safe point, never mid-frame.
+        if (app.zoneFieldDirty) {
+            if (app.macro.ready())
+                app.macro.upload_zone_field(app.device, app.zones);
+            app.zoneFieldDirty = false;
         }
         // Same discipline for the tree-count field (binding 4): felled trees
         // bumped TreeLayer.revision (usually while inside the subworld);
@@ -4887,7 +4940,7 @@ bool run_subworld_time_smoke(App& app) {
                  dailyPendingStart, sweepsPendingStart);
     std::fflush(stderr);
 
-    app.subworld.enter(macro_world(app), app.bus);
+    enter_subworld(app);
     if (!app.subworld.active()) {
         smoke_fail(app, "subworld_time enter failed");
         return false;
@@ -5079,7 +5132,7 @@ bool run_subworld_recovery_smoke(App& app) {
     stats.maxSp = 100;
     sm::reset_player_recovery(app.playerRecovery);
 
-    app.subworld.enter(macro_world(app), app.bus);
+    enter_subworld(app);
     if (!app.subworld.active()) {
         smoke_fail(app, "subworld_recovery enter failed");
         return false;
@@ -5189,7 +5242,7 @@ bool run_subworld_sp_drain_smoke(App& app) {
     app.gs.player.combatStats.maxHp = 100;
     app.travelStamina = sm::TravelStamina{};
 
-    app.subworld.enter(macro_world(app), app.bus);
+    enter_subworld(app);
     if (!app.subworld.active()) {
         smoke_fail(app, "subworld_sp_drain enter failed");
         return false;
@@ -5276,7 +5329,7 @@ bool run_subworld_seam_smoke(App& app) {
         return false;
     }
 
-    app.subworld.enter(macro_world(app), app.bus);
+    enter_subworld(app);
     if (!app.subworld.active()) {
         smoke_fail(app, "subworld_seam enter failed");
         return false;
@@ -5395,7 +5448,7 @@ bool run_subworld_audio_smoke(App& app) {
     const bool exploreBefore = app.audio.current_music() == sm::MusicId::Explore
         && app.audio.music_playing();
 
-    app.subworld.enter(macro_world(app), app.bus);
+    enter_subworld(app);
     if (!app.subworld.active()) {
         smoke_fail(app, "subworld_audio enter failed");
         return false;
@@ -6110,7 +6163,7 @@ bool run_subworld_exit_gate_smoke(App& app) {
     app.gs.player.y = float(cellY);
     app.gs.subState.settlementId = -1;
     app.ui.settlementId = -1;
-    app.subworld.enter(macro_world(app), app.bus);
+    enter_subworld(app);
     if (!app.subworld.active()) {
         restore();
         smoke_fail(app, "subworld_exit_gate enter failed");
@@ -6177,7 +6230,7 @@ bool run_subworld_loot_xp_smoke(App& app) {
         app.ui.settlementId = oldUiSettlement;
     };
 
-    app.subworld.enter(macro_world(app), app.bus);
+    enter_subworld(app);
     if (!app.subworld.active()) {
         restore();
         smoke_fail(app, "subworld_loot_xp enter failed");
@@ -6301,7 +6354,7 @@ bool run_dungeon_house_smoke(App& app) {
     app.gs.player.y = float(app.gs.politik.cities[0].y);
     app.gs.subState.settlementId = -1;
     app.ui.settlementId = -1;
-    app.subworld.enter(macro_world(app), app.bus);
+    enter_subworld(app);
     if (!app.subworld.active()) {
         restore();
         smoke_fail(app, "dungeon_house enter failed");
@@ -6764,7 +6817,7 @@ bool run_dungeon_cave_smoke(App& app) {
             app.gs.player.x = float(cx);
             app.gs.player.y = float(cy);
             app.gs.subState.settlementId = -1;
-            app.subworld.enter(macro_world(app), app.bus);
+            enter_subworld(app);
             if (!app.subworld.active()) continue;
             app.subworld.tick(0.016f);
             for (const auto& s : app.subworld.mgr().structures()) {
@@ -6927,7 +6980,7 @@ bool run_spire_climb_smoke(App& app) {
     app.gs.player.x = float(target->x);
     app.gs.player.y = float(target->y);
     app.gs.subState.settlementId = -1;
-    app.subworld.enter(macro_world(app), app.bus);
+    enter_subworld(app);
     if (!app.subworld.active()) {
         restore();
         smoke_fail(app, "spire_climb could not enter the spire cell");
@@ -7145,7 +7198,7 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
             app.gs.subState.settlementId = -1;
             app.ui.settlementId = -1;
         }
-        app.subworld.enter(macro_world(app), app.bus);
+        enter_subworld(app);
     }
     if (!app.subworld.active()) {
         smoke_fail(app, "subworld_enemy_feedback enter failed");
@@ -7255,7 +7308,7 @@ bool run_subworld_missile_feedback_smoke(App& app) {
             app.gs.subState.settlementId = -1;
             app.ui.settlementId = -1;
         }
-        app.subworld.enter(macro_world(app), app.bus);
+        enter_subworld(app);
     }
     if (!app.subworld.active()) {
         smoke_fail(app, "subworld_missile_feedback enter failed");
@@ -7379,7 +7432,7 @@ bool run_subworld_self_fireball_smoke(App& app) {
             app.gs.subState.settlementId = -1;
             app.ui.settlementId = -1;
         }
-        app.subworld.enter(macro_world(app), app.bus);
+        enter_subworld(app);
     }
     if (!app.subworld.active()) {
         smoke_fail(app, "subworld_self_fireball enter failed");
@@ -7478,7 +7531,7 @@ bool run_subworld_player_melee_smoke(App& app) {
             app.gs.subState.settlementId = -1;
             app.ui.settlementId = -1;
         }
-        app.subworld.enter(macro_world(app), app.bus);
+        enter_subworld(app);
     }
     if (!app.subworld.active()) {
         smoke_fail(app, "subworld_player_melee enter failed");
@@ -7590,7 +7643,7 @@ bool run_subworld_reputation_hit_smoke(App& app) {
             app.gs.subState.settlementId = -1;
             app.ui.settlementId = -1;
         }
-        app.subworld.enter(macro_world(app), app.bus);
+        enter_subworld(app);
     }
     if (!app.subworld.active()) {
         smoke_fail(app, "subworld_reputation_hit enter failed");
@@ -7792,7 +7845,7 @@ bool run_subworld_mouse_release_smoke(App& app) {
             app.gs.subState.settlementId = -1;
             app.ui.settlementId = -1;
         }
-        app.subworld.enter(macro_world(app), app.bus);
+        enter_subworld(app);
     }
     if (!app.subworld.active()) {
         smoke_fail(app, "subworld_mouse_release enter failed");
@@ -7872,7 +7925,7 @@ bool run_subworld_tree_anchor_smoke(App& app) {
         app.gs.subState.settlementId = -1;
         app.ui.settlementId = -1;
     }
-    app.subworld.enter(macro_world(app), app.bus);
+    enter_subworld(app);
     if (!app.subworld.active()) {
         smoke_fail(app, "subworld_tree_anchor enter failed");
         return false;
@@ -8020,7 +8073,7 @@ bool run_console_smoke(App& app) {
         }
 
         // (2) Enter a subworld: still exactly one flag, now the SubworldTag actor.
-        app.subworld.enter(macro_world(app), app.bus);
+        enter_subworld(app);
         if (!app.subworld.active()) {
             smoke_fail(app, "macro_player_entity: subworld enter failed");
             return false;
@@ -8243,7 +8296,7 @@ bool run_console_smoke(App& app) {
     }
 
     // ── Spawn / teleport / subworld toggles (subworld context) ───
-    app.subworld.enter(macro_world(app), app.bus);
+    enter_subworld(app);
     if (!app.subworld.active()) {
         restore(); smoke_fail(app, "console subworld enter failed"); return false;
     }
@@ -8626,7 +8679,7 @@ bool run_console_smoke(App& app) {
     {
         const bool wasActive = app.subworld.active();
         if (!wasActive) {
-            app.subworld.enter(macro_world(app), app.bus);
+            enter_subworld(app);
         }
         if (!app.subworld.active()) {
             smoke_fail(app, "chop: subworld enter failed");
@@ -8947,7 +9000,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 }
             }
             if (!app.subworld.active()) {
-                app.subworld.enter(macro_world(app), app.bus);
+                enter_subworld(app);
             }
             if (!app.subworld.active()) {
                 smoke_fail(app, "subworld_enter failed");
@@ -9217,7 +9270,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 app.gs.player.y = float(bestY);
                 app.gs.subState.settlementId = -1;
                 app.ui.settlementId = -1;
-                app.subworld.enter(macro_world(app), app.bus);
+                enter_subworld(app);
             }
             if (!app.subworld.active()) {
                 smoke_fail(app, "exit_remap: enter failed");
@@ -9627,7 +9680,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             app.gs.subState.settlementId = s.id;
             app.ui.settlementId = s.id;
             app.ui.settlement = false;
-            app.subworld.enter(macro_world(app), app.bus);
+            enter_subworld(app);
             if (!app.subworld.active()) {
                 smoke_fail(app, "enter_first_settlement subworld enter failed");
                 break;
@@ -10366,7 +10419,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             if (!app.subworld.active()) {
-                app.subworld.enter(macro_world(app), app.bus);
+                enter_subworld(app);
             }
             // CLEAR THE LINE OF FIRE (same idiom as subworld_self_fireball).
             // This scenario asserts that the player's bolt strikes the target
@@ -10902,7 +10955,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "flight drain tick inactive");
                 break;
             }
-            app.subworld.enter(macro_world(app), app.bus);
+            enter_subworld(app);
             if (!app.subworld.active()) {
                 smoke_fail(app, "flight subworld enter failed");
                 break;
@@ -11005,7 +11058,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             if (!app.subworld.active()) {
-                app.subworld.enter(macro_world(app), app.bus);
+                enter_subworld(app);
             }
             if (!app.subworld.active()) {
                 smoke_fail(app, "prepare_spell_auras enter failed");
@@ -11573,7 +11626,7 @@ void frame(App& app, int simSteps) {
                 }
                 if (tb.toggleSubworld) {
                     if (!app.subworld.active())
-                        app.subworld.enter(macro_world(app), app.bus);
+                        enter_subworld(app);
                     else
                         app.subworld.leave();
                 }

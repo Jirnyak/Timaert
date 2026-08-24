@@ -2606,36 +2606,32 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
     ses.arrival = DungeonArrival::Door;   // in off the street
 
     // Tear the overworld session down through the one ordinary door: leave()
-    // runs the danger gate and every write-back. If the gate refuses (it set
-    // the status line), the world is untouched and so are we.
-    GameState& gs = *gs_;
-    const TerrainData& terrain = *terrain_;
-    const FeatureLayer& features = *features_;
-    ecs::World& ecs = *ecs_;
+    // runs the danger gate and every write-back — and RESETS the envelope, so
+    // it is captured by copy first, exactly as the dungeon-exit re-enter does.
+    const MacroWorld mwCopy = mw_;
     EventBus& bus = *bus_;
-    const ZoneLayer* zones = zones_;
-    TreeLayer* treeLayer = treeLayer_;
     leave();
     if (active_) return false;
 
     dungeon_ = ses;
     sceneKind_ = SceneKind::Dungeon;
-    enter_dungeon_scene(gs, terrain, features, ecs, bus, zones, treeLayer);
+    enter_dungeon_scene(mwCopy, bus);
     return true;
 }
 
-void SubworldEngine::enter_dungeon_scene(GameState& gs,
-                                         const TerrainData& terrain,
-                                         const FeatureLayer& features,
-                                         ecs::World& ecs, EventBus& bus,
-                                         const ZoneLayer* zones,
-                                         TreeLayer* treeLayer) {
+void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
+                                         EventBus& bus) {
+    if (!mw.gs || !mw.terrain || !mw.features || !mw.world) return;
     statusLine_.clear();
     statusTimer_ = 0.0f;
     combatLogCount_ = 0;
     playerThreatD2_ = kNoThreatDistance2;
-    gs_ = &gs; terrain_ = &terrain; features_ = &features;
-    ecs_ = &ecs; bus_ = &bus; zones_ = zones; treeLayer_ = treeLayer;
+    // The envelope, whole — the interior's ledgers (residents borrowed from
+    // the town, vermin from the fauna stock) pay through mw_ like any scene.
+    mw_ = mw;
+    gs_ = mw_.gs; terrain_ = mw_.terrain; features_ = mw_.features;
+    ecs_ = mw_.world; bus_ = &bus; zones_ = mw_.zones; treeLayer_ = mw_.trees;
+    GameState& gs = *gs_;
 
     // Synthetic resolver: the door cell IS the interior, the ring is sealed
     // Void filler. Everything downstream (workers, composite, renderer,
@@ -2995,19 +2991,14 @@ bool SubworldEngine::try_take_dungeon_stairs() {
         return false;
     }
 
-    GameState& gs = *gs_;
-    const TerrainData& terrain = *terrain_;
-    const FeatureLayer& features = *features_;
-    ecs::World& ecs = *ecs_;
+    const MacroWorld mwCopy = mw_;
     EventBus& bus = *bus_;
-    const ZoneLayer* zones = zones_;
-    TreeLayer* treeLayer = treeLayer_;
 
     // Storey teardown: the same reaping as an exit (deaths settle their
     // ledgers, every scene body goes), but we never surface — the next scene
     // is the same interior identity one level along.
     resolve_subworld_deaths(true);
-    clear_subworld_entities(ecs);
+    clear_subworld_entities(*mwCopy.world);
     clear_player_entity();
     structIndex_.clear();
     structIndexDirty_ = true;
@@ -3019,7 +3010,7 @@ bool SubworldEngine::try_take_dungeon_stairs() {
     dungeon_.ref.level = std::int8_t(target);
     dungeon_.arrival = arrival;
     sceneKind_ = SceneKind::Dungeon;
-    enter_dungeon_scene(gs, terrain, features, ecs, bus, zones, treeLayer);
+    enter_dungeon_scene(mwCopy, bus);
     set_status(target > level ? "Up the stairs." : "Down the stairs.");
     return true;
 }
