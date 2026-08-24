@@ -1,7 +1,6 @@
 # The Context Door — CANON S6, built
 
-Track write-up, 2026-08-24. Increments 1–7 shipped (commits `c9f2bea..37f80a8`);
-increment 8 (price / growth / auto-resolve contributions) in flight. This is
+Track write-up, 2026-08-24. Increments 1–8 shipped (commits `c9f2bea..84a0c0a`). This is
 THE doc for the door: what the law is, where each piece lives, and the
 contracts that keep it honest. The intent it implements is
 [CANON.md](CANON.md) S6, with S5/S7/S12 riding along.
@@ -46,8 +45,10 @@ full facts assembly every simulation tick.
 - `world_fields.h` — the blood field (S4), the dark field (S15) and a weather
   field (S19) land as ROWS: saved, loaded and rebake-scheduled the day they
   exist.
-- `AutoBattleSide::terrain`, price contributions, the season's `yieldMul` —
-  increment 8 of this track.
+- `AutoBattleSide::terrain` — DEFERRED by the owner's word: both sides of a
+  meeting stand on one cell, so a common multiplier cancels; the terrain
+  belongs to the future encounter system (flanks, retreats, who holds the
+  ground), never to a hard-coded defender bonus. The slot stays, named.
 
 ## Tests that guard the door
 
@@ -59,6 +60,19 @@ troll by derived strength) plus the autolevel negative controls.
 continuous canopy. The pace mirrors (`macro_travel_parity`, `squad_travel`,
 `squad_war`, `macro_npc_ai_parity`) derive every expectation from the
 constants — retuning the data touches no test.
+
+## One rhythm, one ceiling (increment 8)
+
+Everything that grows, grows BY THE SEASON (owner: «все росты раз в сезон»):
+`kGrowthEpochDays` IS `kDaysPerSeason`, and the towns quote their population
+rate by the same period — a month is a season, a birth in a thousand-soul
+town is an event, not daily noise. `kPopCarryingCap` is dead (CANON S25):
+supply is the only ceiling, wellbeing turns growth around when the fields and
+the trade fall short; the `minPop` floor survives as a NAMED crutch until
+places can die into ruins (S9). The season's `yieldMul` got its first reader
+(wheat regrowth dithers by season, deterministic), and the price law's
+context columns — the settlement's mood, the merchant's temperament — moved
+home to `macro/economy.h` as data rows beside the law they feed.
 
 ## The debts this track closed
 
