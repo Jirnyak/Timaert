@@ -132,9 +132,10 @@ void test_greedy_walks_around_a_wet_cell() {
     reset_macro_npc_ai_runtime(rt, 21u);
     CHECK(drive_to_arrival(gs, w, rt, &grid, e, 20.0f, 10.0f, 8),
           "the walker reaches its destination past the wet cell");
-    // 7 cells of weight-1 ground cost 7 × 7/16 ≈ 3.06 SP; ONE swum cell
-    // would add ~3.9 more. The ledger says it stayed dry, sub-steps included.
-    CHECK(sp_spent(npc, 110) < 4.0f,
+    // Seven-to-eight weight-1 cells cost that many × kStaminaPerCell; ONE
+    // swum cell would add ten more. Derived, never pinned: the ledger says
+    // the trip stayed dry, sub-steps included.
+    CHECK(sp_spent(npc, 110) < 9.0f * kStaminaPerCell,
           "the trip was paid at dry prices: the greedy step went around");
 }
 
@@ -241,15 +242,21 @@ void test_road_bar_lasts_a_days_march() {
     const auto& p = w.reg.get<ecs::Position>(e);
     const float cells = p.x - 10.0f;
     const float hours = float(thinks) * kAiTickGameHours;
-    // 110 SP / (7/16 per road cell) = 251 cells; at 32 cells/game hour that
-    // is 7.9 h — the owner's day-of-marching anchor, for squads exactly as
-    // the parity test pins it for the player.
+    // DERIVED, never pinned: a fresh bar buys maxSp / (roadBed ×
+    // kStaminaPerCell) road cells, and the clock is cells / pace. Under the
+    // 2026-08-24 recalibration (base 1 SP × weight, 8 cells/h) that is ~110
+    // cells over ~13¾ h — the road stretches a walker past the open-country
+    // day, which is why roads are worth building. The bands are ±10% so the
+    // owner can retune the data without touching this file.
+    const float expectCells =
+        110.0f / (feature_bed_weight(FT_Road) * kStaminaPerCell);
+    const float expectHours = expectCells / kMacroWalkCellsPerHour;
     CHECK(npc.state == std::uint8_t(NPCState::Resting),
           "the road march ends in a camp, not in infinity");
-    CHECK(cells > 240.0f && cells < 262.0f,
-          "a fresh bar buys ~251 road cells");
-    CHECK(hours > 7.0f && hours < 9.0f,
-          "which is a day's march: ~8 game hours of road");
+    CHECK(cells > expectCells * 0.9f && cells < expectCells * 1.1f,
+          "a fresh bar buys maxSp/(bed x kStaminaPerCell) road cells");
+    CHECK(hours > expectHours * 0.9f && hours < expectHours * 1.1f,
+          "and the march clock is cells over the derived pace");
 }
 
 } // namespace

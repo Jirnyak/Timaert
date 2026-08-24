@@ -152,10 +152,13 @@ void test_the_weak_flee_and_fighters_pursue() {
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 43u);
     const float before = dist(w, bandit, caravan);
-    // ONE think: at the Session 21 march (3 cells/think) three thinks of
-    // flight carry the caravan clean out of perception range and the state
-    // relaxes — the law under test (flee + open distance) shows in the first.
-    drive(gs, w, rt, 1);
+    // Enough thinks for one whole CELL of flight at the derived budget
+    // (kMacroWalkCellsPerHour × kAiTickGameHours per think — the pace is the
+    // owner's data, the test never pins a literal): flee-the-state shows on
+    // the first think, the opened distance on the first MOVING one.
+    const int thinksPerCell = int(std::ceil(
+        1.0f / (kMacroWalkCellsPerHour * kAiTickGameHours)));
+    drive(gs, w, rt, thinksPerCell);
     CHECK(w.reg.get<ecs::MacroNpcRuntime>(caravan).state
               == std::uint8_t(NPCState::Fleeing),
           "a squad that cannot win runs - the strength law says so");
@@ -180,10 +183,10 @@ void test_the_weak_flee_and_fighters_pursue() {
     MacroNpcAiRuntime rt2{};
     reset_macro_npc_ai_runtime(rt2, 44u);
     const float before2 = dist(w2, hunter, prey);
-    // ONE think, same reason as the flight above: three Session 21 thinks
-    // would close the whole gap and RESOLVE the battle — a different law's
-    // test. Pursuit-the-state lives in the first think.
-    drive(gs2, w2, rt2, 1);
+    // Same derived budget: enough thinks for one cell of pursuit — far too
+    // few to close the whole gap and RESOLVE the battle, which is a
+    // different law's test.
+    drive(gs2, w2, rt2, thinksPerCell);
     CHECK(w2.reg.get<ecs::MacroNpcRuntime>(hunter).state
               == std::uint8_t(NPCState::Chasing),
           "a fighter row pursues prey the law says it beats");

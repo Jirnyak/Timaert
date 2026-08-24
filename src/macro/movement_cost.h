@@ -39,7 +39,14 @@ namespace sm {
 // off-road marching always outruns the rest. Stamina still does not recover
 // while marching (kMarchRecoveryPct), which is what makes this a budget
 // instead of an allowance.
-constexpr float kStaminaPerCell = 0.4375f;   // 7/16
+// ONE — the owner's word (2026-08-24): the base is a pure level-1 number,
+// balanced as data. 1 SP × the cell's weight × cells crossed; every modifier
+// (travel skill, overload, terrain √) is a multiplier ON TOP, never folded
+// in. A fresh level-1 walker (~110 SP) drops after ~55 meadow cells — about
+// ten game hours of open country, a full day's march with an ache — and a
+// night's rest (kSpRegenPctPerHour) buys it all back: the daily rhythm
+// closes itself.
+constexpr float kStaminaPerCell = 1.0f;
 
 // Fraction of the normal stamina recovery that a MARCHING body gets. Zero: legs
 // in motion are not resting. HP and MP are untouched — this is about stamina.
@@ -76,7 +83,13 @@ constexpr float kExhaustionBite = 1.0f;
 // REAL seconds on purpose, and the difference is not an oversight: down there
 // you are a body doing a thing in real time, up here you are an abstraction of
 // a journey. Two different denominators for two different kinds of motion.
-constexpr float kMacroWalkCellsPerHour = 32.0f;
+// EIGHT — the owner's word (2026-08-24, «степени двойки!»): a brisk paved
+// pace at the world's own scale (cell ≈ 1 km, S1): 8 km/h on the road bed,
+// /√weight elsewhere — meadow ~5.7, thicket and mountain ~3. A day's march
+// lands at 30–60 km, which is what a day's march IS. The old 32 was a
+// courier's gallop miscalled walking: the player crossed 125 km before the
+// morning ended, and every distance in the world meant nothing.
+constexpr float kMacroWalkCellsPerHour = 8.0f;
 
 // How much the GROUND slows the march: speed = base / √weight, derived from
 // the SAME weight table that prices stamina (owner ruling, Session 21) —

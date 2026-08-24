@@ -134,11 +134,14 @@ constexpr int kSubworldMacroNpcTicksPerStep = 64;
 // Base on-foot speed in the subworld, in tiles per REAL second, before the
 // character's own pace (DerivedBonuses::moveSpeedMult) and haste.
 //
-// Real seconds, deliberately — the one rate in the game that is not quoted in
-// game time (macro/movement_cost.h kMacroWalkCellsPerHour is). Down here you
-// are a body doing a thing in real time; up on the map you are an abstraction
-// of a journey. Two kinds of motion, two denominators, written down rather
-// than stumbled into (time.md).
+// DERIVED from the macro march (the A8 debt closes by derivation, not by
+// change): the same body walks the same world at both scales. 8 cells/game
+// hour above (kMacroWalkCellsPerHour) = 8000 tiles per subworld game hour;
+// down here an hour lasts kTicksPerDay/24 × kSubworldTickDivisor ticks =
+// 85⅓ real seconds, so the honest rate is 8000 / 85.33 = 93.75 tiles/s —
+// rounded up 2.4% to 96, a named fantasy allowance, not a tuned number.
+// (The old macro 32 made this look like a 4× disagreement — canon-audit A8;
+// the ground floor was right all along, the map was galloping.)
 constexpr float kSubworldWalkTilesPerSecond = 96.0f;
 constexpr float kSubworldHitFlashSeconds = 0.30f;
 // Macro-map zoom: one step factor and one clamp, shared by the mouse wheel

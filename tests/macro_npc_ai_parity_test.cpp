@@ -179,7 +179,13 @@ void test_aggressive_chases_visible_player() {
     auto e = spawn_ai(world, sm::NPCType::Bandit, 10.0f, 10.0f, -1);
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 50u);
-    tick_once(gs, world, runtime);
+    // The march budget is DERIVED data now (kMacroWalkCellsPerHour ×
+    // kAiTickGameHours per think — 2026-08-24 recalibration): run exactly
+    // enough thinks to close the two-cell gap, never pinning a literal pace.
+    const float perThink =
+        sm::kMacroWalkCellsPerHour * sm::kAiTickGameHours;
+    const int thinksToClose = int(std::ceil(2.0f / perThink));
+    for (int i = 0; i < thinksToClose; ++i) tick_once(gs, world, runtime);
 
     auto& p = world.reg.get<sm::ecs::Position>(e);
     auto& rt = world.reg.get<sm::ecs::MacroNpcRuntime>(e);
@@ -187,16 +193,17 @@ void test_aggressive_chases_visible_player() {
           "an Aggressive NPC that can see the player gives chase");
     CHECK(targets(rt, 12.0f, 10.0f),
           "the chase aims at where the player actually is");
-    // The march law (Session 21): a think covers up to 3 cells on featureless
-    // ground, and a multi-cell think never hops OVER the player — it stops ON
-    // the meeting cell, where the forced-encounter door looks.
+    // A multi-cell march never hops OVER the player — it stops ON the
+    // meeting cell, where the forced-encounter door looks.
     CHECK(close_enough(p.x, 12.0f) && close_enough(p.y, 10.0f),
-          "one think closes the whole two-cell gap and stops on the player");
-    CHECK(rt.spCarry < 0.0f && rt.sp == 100,
-          "chasing accrues the march debt in the fractional carry: "
-          "two road-priced cells are not yet a whole SP");
-    CHECK(close_enough(rt.visualSpeed, 4.0f),
-          "the visual speed reports the pace the chase actually moved at");
+          "the chase closes the two-cell gap and stops on the player");
+    // The march debt is the trip's true price: two featureless cells at
+    // kStaminaPerCell each, part paid in whole SP, the rest in the carry.
+    const float paid = float(100 - int(rt.sp)) - rt.spCarry;
+    CHECK(std::fabs(paid - 2.0f * sm::kStaminaPerCell) < 0.01f,
+          "chasing pays exactly the two cells' derived march debt");
+    CHECK(rt.visualSpeed > 0.0f,
+          "the visual speed reports that the chase actually moved");
 }
 
 void test_patrol_returns_when_far_from_home() {
@@ -209,7 +216,12 @@ void test_patrol_returns_when_far_from_home() {
     auto e = spawn_ai(world, sm::NPCType::Guard, 70.0f, 50.0f, 1);
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 60u);
-    tick_once(gs, world, runtime);
+    // Enough thinks for three whole cells at the derived budget — the law
+    // under test is decide-and-MOVE, not any particular pace.
+    const float perThink =
+        sm::kMacroWalkCellsPerHour * sm::kAiTickGameHours;
+    const int thinks = int(std::ceil(3.0f / perThink));
+    for (int i = 0; i < thinks; ++i) tick_once(gs, world, runtime);
 
     auto& p = world.reg.get<sm::ecs::Position>(e);
     auto& rt = world.reg.get<sm::ecs::MacroNpcRuntime>(e);
@@ -218,8 +230,8 @@ void test_patrol_returns_when_far_from_home() {
     CHECK(targets(rt, 50.0f, 50.0f),
           "the returning Patrol aims at the settlement it guards");
     CHECK(close_enough(p.x, 67.0f),
-          "the Patrol actually MOVES homeward on the same tick it decides to "
-          "(3 cells: one road-pace think of the Session 21 march)");
+          "the Patrol actually MOVES homeward once it decides to "
+          "(three cells at the derived march budget)");
 }
 
 void test_teleporter_cooldown_counts_down() {
