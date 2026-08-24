@@ -1,6 +1,8 @@
 #include "macro/cell_facts.h"
 
+#include "macro/deposit_layer.h"
 #include "macro/map_generator.h"
+#include "macro/npc_ai.h"
 #include "macro/resource_field.h"
 #include "macro/seasons.h"
 #include "macro/spells.h"
@@ -31,6 +33,26 @@ CellFacts cell_facts(const MacroWorld& w, int x, int y) {
     f.treeCount = (w.trees && w.trees->has_complete_storage())
         ? int(w.trees->at(f.x, f.y)) : -1;
     f.zone = w.zones ? w.zones->at(f.x, f.y) : std::uint8_t(0);
+    // Live veins within the profession reach — the same ground and the same
+    // radius that raise a macro gatherer (npc_ai.h kGathererReach) put his
+    // trade in this cell's street crowd (spawn law, fauna.h).
+    if (w.deposits) {
+        for (std::size_t k = 0; k < std::size_t(kDepositKindCount); ++k) {
+            for (const auto& [idx, remaining] : w.deposits->cells[k]) {
+                if (remaining <= 0) continue;
+                const int dx = int(idx) % td.width;
+                const int dy = int(idx) / td.width;
+                const float d2 = torus_dist_sq(float(dx), float(dy),
+                                               float(f.x), float(f.y),
+                                               float(td.width),
+                                               float(td.height));
+                if (d2 <= float(kGathererReach) * float(kGathererReach)) {
+                    f.depositsNear |= std::uint8_t(1u << k);
+                    break;
+                }
+            }
+        }
+    }
 
     if (w.gs) {
         f.seasonTempOffset = season_temp_offset(w.gs->worldTime.day());

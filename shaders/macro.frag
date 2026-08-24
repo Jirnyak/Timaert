@@ -8,7 +8,7 @@
 // kFS); pixel-art tree sprites + landmarks + night lights remain a later step.
 layout(set = 0, binding = 0) uniform sampler2D u_master;     // R=h G=moist B=temp A=mask
 layout(set = 0, binding = 1) uniform sampler2D u_featureMap; // R8: FeatureType byte
-layout(set = 0, binding = 2) uniform sampler2D u_zoneMap;    // R8: zone 0..9
+layout(set = 0, binding = 2) uniform sampler2D u_zoneMap;    // R8: danger byte 0..255
 layout(set = 0, binding = 3) uniform sampler2D u_lightField; // RGB night glow (macro_lighting bake)
 layout(set = 0, binding = 4) uniform sampler2D u_treeMap;    // R8: tree count / 16384 (macro/tree_layer.h)
 layout(set = 0, binding = 5) uniform sampler2D u_knowledgeMap; // R8: knowledge level / 2 (macro/knowledge.h)
@@ -614,13 +614,13 @@ vec3 zoneTintOverlay(vec2 mapUV, vec3 baseColor) {
     // Danger reads as RARE EMBERS — the conservative shape (after flat
     // tint, fog, sparks and fissures were all rejected): a handful of tiny
     // slow-breathing orange-red points, ONLY in genuinely deadly country
-    // (zone ≥ ~6.5 — mid-difficulty wilderness carries nothing, because
+    // (danger ≥ ~166 (old band 6.5) — mid wilderness carries nothing, because
     // most of the wild map IS mid-difficulty and any visible effect there
     // becomes screen-wide noise). Sparse by construction: ~one candidate
     // per 1.5-cell lattice cell at a low probability, thinned further as
     // the view pulls back. Each ember mostly smoulders dim and briefly
     // brightens on its own slow phase — quiet, not a light show.
-    float t = smoothstep(6.5, 9.0, zone);
+    float t = smoothstep(166.0, 255.0, zone);  // old bands 6.5..9, in bytes
     if (t <= 0.001) return baseColor;
     // Lattice pitch in world cells. It must DIVIDE the world (1024) or the
     // lattice cannot tile the torus: at 1.5 the world was 682.67 cells of it

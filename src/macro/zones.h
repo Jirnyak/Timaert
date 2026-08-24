@@ -1,4 +1,9 @@
-// Difficulty zones — per-cell danger heightmap (0..9). Mirrors zones.ts.
+// Difficulty zones — the per-cell DANGER CONTINUUM, one byte: 0 = absolutely
+// safe, 255 = where the strongest demons stand (owner, 2026-08-24; the ten
+// quantised steps were a false discreteness — the labels below survive only
+// as display BANDS over the continuum). Spawn composition and loot quality
+// read the byte through the one matching law (macro/spawn law): a row's
+// derived strength against the cell's danger, tails never zero.
 #pragma once
 #include <cstddef>
 #include <cstdint>
@@ -8,7 +13,15 @@
 
 namespace sm {
 
+// Display bands over the continuum (UI copy only — no mechanic may branch
+// on a band; mechanics read the byte).
 constexpr int kZoneCount = 10;
+inline constexpr std::uint8_t zone_band(std::uint8_t z) {
+    return std::uint8_t((int(z) * kZoneCount) >> 8);
+}
+// The exit gate's "settled land" ceiling: everything the old quantiser called
+// bands 0..2 — derived, not tuned: ceil(3 * 256 / kZoneCount) - 1.
+inline constexpr int kSafeExitDanger = (3 * 256) / kZoneCount - 1;
 inline constexpr const char* kZoneLabels[kZoneCount] = {
     "Safe Haven", "Settled", "Patrolled", "Frontier", "Wild",
     "Untamed", "Perilous", "Forsaken", "Cursed", "Hellgate",
@@ -23,10 +36,6 @@ struct ZoneLayer {
     // per world with no reader in the game, canon-audit D. The continuous
     // value exists only DURING the bake; a test that wants its precision
     // asks generate_zones for the optional capture below.)
-
-    static std::uint8_t decode(std::uint8_t value) {
-        return value < std::uint8_t(kZoneCount) ? value : 0u;
-    }
 
     std::size_t cell_count() const {
         std::size_t n = 0;
@@ -43,7 +52,7 @@ struct ZoneLayer {
         const int wx = wrapi(x, width);
         const int wy = wrapi(y, height);
         const std::size_t i = std::size_t(wy) * std::size_t(width) + std::size_t(wx);
-        return i < data.size() ? decode(data[i]) : 0;
+        return i < data.size() ? data[i] : std::uint8_t(0);
     }
 };
 

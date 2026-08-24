@@ -186,7 +186,7 @@ void MacroRendererVk::upload(const gpu::VulkanDevice& dev, const TerrainData& td
         const std::size_t n = std::size_t(zones.width) * std::size_t(zones.height);
         std::vector<std::uint8_t> zb(n, 0);
         for (std::size_t i = 0; i < n && i < zones.data.size(); ++i)
-            zb[i] = ZoneLayer::decode(zones.data[i]);
+            zb[i] = zones.data[i];   // the raw danger byte IS the texel
         expand_r8(zb.data(), zones.width, zones.height, tmp);
         zone_.create_rgba8(dev, std::uint32_t(zones.width),
                            std::uint32_t(zones.height), tmp.data(), false, true);
@@ -354,7 +354,7 @@ void MacroRendererVk::upload_zone_field(const gpu::VulkanDevice& dev,
             std::size_t(zones.width) * std::size_t(zones.height);
         std::vector<std::uint8_t> zb(n, 0);
         for (std::size_t i = 0; i < n && i < zones.data.size(); ++i)
-            zb[i] = ZoneLayer::decode(zones.data[i]);
+            zb[i] = zones.data[i];   // the raw danger byte IS the texel
         expand_r8(zb.data(), zones.width, zones.height, tmp);
         zone_.create_rgba8(dev, std::uint32_t(zones.width),
                            std::uint32_t(zones.height), tmp.data(), false,

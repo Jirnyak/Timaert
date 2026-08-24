@@ -5,6 +5,7 @@
 //   - Tables stored as null-terminated arrays of `const FaunaEntry*` so
 //     they live in `.rodata` and never allocate.
 #include "macro/fauna.h"
+#include "macro/deposit_layer.h"
 #include "macro/landmark_grid.h"
 #include "macro/macro_world.h"
 #include "macro/map_generator.h"
@@ -42,99 +43,212 @@ static const FaunaEntry& kIceWraith = kNpcTypeDefs[std::size_t(NPCType::IceWrait
 static const FaunaEntry& kSandScorpion = kNpcTypeDefs[std::size_t(NPCType::SandScorpion)];
 static const FaunaEntry& kStoneGolem = kNpcTypeDefs[std::size_t(NPCType::StoneGolem)];
 
-// ── Per-table entry arrays (null-terminated) ─────────────────────────
+namespace {
+
+// ── THE spawn law (see fauna.h) ──────────────────────────────────────
 //
-// Using `const FaunaEntry* const[]` lets each entry be referenced from
-// many tables without copying. Order matches TS.
+// The habitat COLUMN of the one body table, enum-ordered beside the law
+// that reads it (the kNpcPurse / kGathererDefs idiom). Membership is the
+// thirteen old list-tables, verbatim, folded into bits — the lists and the
+// switch ladder that chose between them are gone (canon-audit F5).
+struct SpawnHabitatRow {
+    NPCType       type;
+    std::uint16_t mask;
+    // A profession stands in the crowd only where its ground does: the
+    // DepositKind whose live vein within reach opens this row (-1 = no gate).
+    // The same pairing the macro gatherer table works by (kGathererDefs).
+    std::int8_t   depositGate = -1;
+};
+constexpr SpawnHabitatRow kSpawnHabitats[std::size_t(NPCType::Count)] = {
+    {NPCType::Peasant,      kHabTown},
+    {NPCType::Woodcutter,   kHabTown},
+    {NPCType::Merchant,     kHabTown},
+    {NPCType::Caravan,      0},
+    {NPCType::Bandit,       0},
+    {NPCType::Guard,        kHabTown},
+    {NPCType::Witch,        kHabTown},
+    {NPCType::Sorceress,    0},
+    {NPCType::Miner,        kHabTown, std::int8_t(DepositKind::Iron)},
+    {NPCType::Quarryman,    kHabTown, std::int8_t(DepositKind::Stone)},
+    {NPCType::ClayDigger,   kHabTown, std::int8_t(DepositKind::Clay)},
+    {NPCType::Rabbit,       hab(Meadow) | hab(Valley) | hab(Steppe) | hab(Taiga)
+                          | hab(Tundra) | hab(Snow) | kHabForest},
+    {NPCType::Deer,         hab(Meadow) | hab(Valley) | hab(Steppe)
+                          | hab(Tropics) | hab(Taiga) | kHabForest},
+    {NPCType::Fox,          hab(Meadow) | hab(Valley) | hab(Steppe)
+                          | hab(Taiga) | hab(Tundra) | kHabForest},
+    {NPCType::Wolf,         hab(Meadow) | hab(Valley) | hab(Taiga)
+                          | hab(Tundra) | hab(Snow) | hab(Mountain)
+                          | kHabForest},
+    {NPCType::Bear,         hab(Taiga) | kHabForest},
+    {NPCType::Boar,         hab(Meadow) | hab(Valley) | hab(Steppe)
+                          | hab(Tropics) | kHabForest},
+    {NPCType::Snake,        hab(Desert) | hab(Steppe) | hab(Swamp)
+                          | hab(Tropics) | kHabRuin},
+    {NPCType::Hawk,         hab(Meadow) | hab(Valley) | hab(Desert)
+                          | hab(Steppe)},
+    {NPCType::Frog,         hab(Swamp)},
+    {NPCType::Goat,         hab(Mountain)},
+    {NPCType::Eagle,        hab(Mountain)},
+    {NPCType::Croc,         hab(Swamp) | hab(Tropics)},
+    {NPCType::Goblin,       kHabForest | kHabRuin | kHabSpire},
+    {NPCType::Skeleton,     kHabRuin | kHabSpire},
+    {NPCType::Troll,        kHabRuin | kHabSpire},
+    {NPCType::SwampThing,   hab(Swamp)},
+    {NPCType::IceWraith,    hab(Tundra) | hab(Snow) | kHabSpire},
+    {NPCType::SandScorpion, hab(Desert)},
+    {NPCType::StoneGolem,   hab(Mountain) | kHabSpire},
+};
+static_assert(rows_in_enum_order(kSpawnHabitats, &SpawnHabitatRow::type),
+              "every body row states its ground — the table IS the system");
 
-static const FaunaEntry* const kMeadow []  = { &kRabbit, &kDeer, &kFox, &kWolf, &kHawk, &kBoar };
-static const FaunaEntry* const kForest []  = { &kRabbit, &kDeer, &kFox, &kWolf, &kBear, &kBoar, &kGoblin };
-static const FaunaEntry* const kTaiga  []  = { &kRabbit, &kDeer, &kWolf, &kBear, &kFox };
-static const FaunaEntry* const kTundra []  = { &kRabbit, &kWolf, &kFox, &kIceWraith };
-static const FaunaEntry* const kSnow   []  = { &kRabbit, &kWolf, &kIceWraith };
-static const FaunaEntry* const kDesert []  = { &kSnake, &kHawk, &kSandScorpion };
-static const FaunaEntry* const kSteppe []  = { &kRabbit, &kDeer, &kFox, &kHawk, &kSnake, &kBoar };
-static const FaunaEntry* const kSwamp  []  = { &kSnake, &kFrog, &kCroc, &kSwampThing };
-static const FaunaEntry* const kTropics[]  = { &kSnake, &kBoar, &kCroc, &kDeer };
-static const FaunaEntry* const kValley []  = { &kRabbit, &kDeer, &kFox, &kWolf, &kHawk, &kBoar };
-static const FaunaEntry* const kMountain[] = { &kGoat, &kEagle, &kWolf, &kStoneGolem };
-static const FaunaEntry* const kRuin   []  = { &kSkeleton, &kGoblin, &kTroll, &kSnake };
-static const FaunaEntry* const kSpire  []  = { &kSkeleton, &kIceWraith, &kTroll, &kStoneGolem, &kGoblin };
+// How many heads a place rolls — one row per biome plus the derived-class
+// overrides, holding the old thirteen tables' min/max counts verbatim.
+struct SpawnCounts { std::uint8_t minCount, maxCount; };
+constexpr SpawnCounts kBiomeSpawnCounts[std::size_t(Mountain) + 1] = {
+    /*Tundra*/ {1, 4}, /*Taiga*/ {2, 5}, /*Snow*/ {1, 3}, /*Valley*/ {2, 6},
+    /*Meadow*/ {2, 6}, /*Swamp*/ {2, 6}, /*Desert*/ {1, 4}, /*Steppe*/ {2, 5},
+    /*Tropics*/ {2, 6}, /*Water*/ {0, 0}, /*Mountain*/ {1, 4},
+};
+constexpr SpawnCounts kForestSpawnCounts{3, 8};
+constexpr SpawnCounts kRuinSpawnCounts{2, 6};
+constexpr SpawnCounts kSpireSpawnCounts{4, 9};
 
-// Pointer + count + counts + override.
-static constexpr FaunaTable kTblMeadow   { kMeadow,   6, 2, 6, nullptr };
-static constexpr FaunaTable kTblForest   { kForest,   7, 3, 8, nullptr };
-static constexpr FaunaTable kTblTaiga    { kTaiga,    5, 2, 5, nullptr };
-static constexpr FaunaTable kTblTundra   { kTundra,   4, 1, 4, nullptr };
-static constexpr FaunaTable kTblSnow     { kSnow,     3, 1, 3, nullptr };
-static constexpr FaunaTable kTblDesert   { kDesert,   3, 1, 4, nullptr };
-static constexpr FaunaTable kTblSteppe   { kSteppe,   6, 2, 5, nullptr };
-static constexpr FaunaTable kTblSwamp    { kSwamp,    4, 2, 6, nullptr };
-static constexpr FaunaTable kTblTropics  { kTropics,  4, 2, 6, nullptr };
-static constexpr FaunaTable kTblValley   { kValley,   6, 2, 6, nullptr };
-static constexpr FaunaTable kTblMountain { kMountain, 4, 1, 4, nullptr };
-static constexpr FaunaTable kTblRuin     { kRuin,     4, 2, 6, "demons"  };
-static constexpr FaunaTable kTblSpire    { kSpire,    5, 4, 9, "demons"  };
-static constexpr FaunaTable kTblEmpty    { nullptr,   0, 0, 0, nullptr };
-
-const FaunaTable& get_fauna_table(Biome biome, int treeCount,
-                                  LandmarkType landmark) {
-    // Landmark beats everything (cities have no wild fauna; ruins / spires
-    // have their own monster tables).
-    switch (landmark) {
-        case LandmarkType::City:    return kTblEmpty;
-        case LandmarkType::Village: return kTblEmpty;
-        case LandmarkType::Ruin:    return kTblRuin;
-        case LandmarkType::Spire:   return kTblSpire;
+const SpawnCounts& spawn_counts(const SpawnContext& ctx) {
+    switch (ctx.landmark) {
+        case LandmarkType::Ruin:  return kRuinSpawnCounts;
+        case LandmarkType::Spire: return kSpireSpawnCounts;
         default: break;
     }
-    // Forest override: forest fauna wherever the tree count reaches the
-    // forest class (including on a mountain). Mountain fauna otherwise comes
-    // from the Mountain biome below.
-    if (is_forest_cell(treeCount)) return kTblForest;
-    // Biome default.
-    switch (biome) {
-        case Biome::Tundra:   return kTblTundra;
-        case Biome::Taiga:    return kTblTaiga;
-        case Biome::Snow:     return kTblSnow;
-        case Biome::Valley:   return kTblValley;
-        case Biome::Meadow:   return kTblMeadow;
-        case Biome::Swamp:    return kTblSwamp;
-        case Biome::Desert:   return kTblDesert;
-        case Biome::Steppe:   return kTblSteppe;
-        case Biome::Tropics:  return kTblTropics;
-        case Biome::Water:    return kTblEmpty;
-        case Biome::Mountain: return kTblMountain;
-    }
-    return kTblMeadow;
+    if (ctx.forest) return kForestSpawnCounts;
+    const auto b = std::size_t(ctx.biome);
+    static constexpr SpawnCounts kNone{0, 0};
+    return b <= std::size_t(Mountain) ? kBiomeSpawnCounts[b] : kNone;
 }
 
-std::vector<FaunaPick> roll_fauna(const FaunaTable& table,
-                                  std::uint32_t& rngState) {
+// The habitat bit a context asks for. A town rolls no wild fauna at all
+// (its crowd is the kHabTown stripe, rolled by the settlement spawner).
+std::uint16_t context_bit(const SpawnContext& ctx) {
+    switch (ctx.landmark) {
+        case LandmarkType::City:
+        case LandmarkType::Village: return 0;
+        case LandmarkType::Ruin:    return kHabRuin;
+        case LandmarkType::Spire:   return kHabSpire;
+        default: break;
+    }
+    if (ctx.forest) return kHabForest;
+    return hab(ctx.biome);
+}
+
+} // namespace
+
+std::uint8_t spawn_strength(NPCType t) {
+    // Normalized once over the table itself: L = log₂(hp × damage/cooldown),
+    // weakest row → 0, strongest → 255. The derivation is the point — there
+    // is no strength column to drift from the numbers that actually fight.
+    static const std::array<std::uint8_t, std::size_t(NPCType::Count)> table =
+        [] {
+            std::array<double, std::size_t(NPCType::Count)> L{};
+            double lo = 1e30, hi = -1e30;
+            for (std::size_t i = 0; i < L.size(); ++i) {
+                const CombatTemplate& c = kNpcTypeDefs[i].combat;
+                const double dps =
+                    double(c.damage) / std::max(0.25, double(c.cooldown));
+                const double power = std::max(1.0, double(c.hp) * dps);
+                L[i] = std::log2(power);
+                lo = std::min(lo, L[i]);
+                hi = std::max(hi, L[i]);
+            }
+            std::array<std::uint8_t, std::size_t(NPCType::Count)> out{};
+            const double span = std::max(1e-6, hi - lo);
+            for (std::size_t i = 0; i < out.size(); ++i) {
+                out[i] = std::uint8_t(
+                    std::lround(255.0 * (L[i] - lo) / span));
+            }
+            return out;
+        }();
+    const auto i = std::size_t(t);
+    return i < table.size() ? table[i] : 0;
+}
+
+std::uint32_t danger_match_weight(std::uint8_t strength,
+                                  std::uint8_t danger) {
+    const int miss = std::abs(int(strength) - int(danger));
+    const int halvings = std::min(10, miss / kDangerHalfLife);
+    return std::max<std::uint32_t>(1u, 1024u >> halvings);
+}
+
+std::vector<FaunaPick> roll_spawns(const SpawnContext& ctx,
+                                   std::uint32_t& rngState) {
     std::vector<FaunaPick> out;
-    if (table.entryCount == 0 || table.maxCount == 0) return out;
+    const SpawnCounts& counts = spawn_counts(ctx);
+    const std::uint16_t bit = context_bit(ctx);
+    if (counts.maxCount == 0 || bit == 0) return out;
 
     Rng r(rngState);
-    const int span  = int(table.maxCount) - int(table.minCount) + 1;
-    const int count = int(table.minCount)
+    const int span = int(counts.maxCount) - int(counts.minCount) + 1;
+    const int count = int(counts.minCount)
         + int(std::floor(r.next_f01() * float(span)));
 
-    std::uint32_t total = 0;
-    for (int i = 0; i < table.entryCount; ++i) total += table.entries[i]->weight;
+    // The landmark's own creatures wear its colours (spawnFaction column of
+    // the place registry — a ruin's wolves ARE demons); open land keeps each
+    // row's own faction.
+    const char* placeFaction = landmark_def(ctx.landmark).spawnFaction;
+
+    std::uint64_t total = 0;
+    std::uint32_t w[std::size_t(NPCType::Count)] = {};
+    for (std::size_t i = 0; i < std::size_t(NPCType::Count); ++i) {
+        if (!(kSpawnHabitats[i].mask & bit)) continue;
+        const NpcTypeDef& row = kNpcTypeDefs[i];
+        if (row.weight == 0) continue;   // never rolled blind (the row's law)
+        w[i] = std::uint32_t(row.weight)
+             * danger_match_weight(spawn_strength(row.type), ctx.danger);
+        total += w[i];
+    }
     if (total == 0) { rngState = r.state; return out; }
 
     out.reserve(std::size_t(count));
-    for (int i = 0; i < count; ++i) {
-        float roll = r.next_f01() * float(total);
-        for (int e = 0; e < table.entryCount; ++e) {
-            roll -= float(table.entries[e]->weight);
-            if (roll <= 0.0f) {
-                const char* fac = table.factionOverride
-                    ? table.factionOverride
-                    : table.entries[e]->factionId;
-                out.push_back({table.entries[e], fac});
+    for (int n = 0; n < count; ++n) {
+        double roll = double(r.next_f01()) * double(total);
+        for (std::size_t i = 0; i < std::size_t(NPCType::Count); ++i) {
+            if (w[i] == 0) continue;
+            roll -= double(w[i]);
+            if (roll <= 0.0) {
+                const NpcTypeDef& row = kNpcTypeDefs[i];
+                out.push_back({&row, placeFaction ? placeFaction
+                                                  : row.factionId});
                 break;
             }
+        }
+    }
+    rngState = r.state;
+    return out;
+}
+
+NPCType pick_town_row(const SpawnContext& ctx, std::uint32_t& rngState) {
+    Rng r(rngState);
+    std::uint64_t total = 0;
+    std::uint32_t w[std::size_t(NPCType::Count)] = {};
+    for (std::size_t i = 0; i < std::size_t(NPCType::Count); ++i) {
+        const SpawnHabitatRow& habRow = kSpawnHabitats[i];
+        if (!(habRow.mask & kHabTown)) continue;
+        const NpcTypeDef& row = kNpcTypeDefs[i];
+        if (row.weight == 0) continue;
+        if (habRow.depositGate >= 0
+            && !(ctx.depositsNear & (1u << habRow.depositGate))) {
+            continue;   // no vein in reach — this trade has no ground here
+        }
+        w[i] = std::uint32_t(row.weight)
+             * danger_match_weight(spawn_strength(row.type), ctx.danger);
+        total += w[i];
+    }
+    NPCType out = NPCType::Peasant;   // the crowd's fail-closed default
+    if (total > 0) {
+        double roll = double(r.next_f01()) * double(total);
+        for (std::size_t i = 0; i < std::size_t(NPCType::Count); ++i) {
+            if (w[i] == 0) continue;
+            roll -= double(w[i]);
+            if (roll <= 0.0) { out = NPCType(i); break; }
         }
     }
     rngState = r.state;
@@ -188,19 +302,18 @@ const FaunaEntry* creature_def_from_kind(std::uint16_t kindType) {
 
 // ── The honest headcount (Session 16) ────────────────────────────────
 
-int fauna_cell_capacity(Biome biome, int treeCount, LandmarkType landmark) {
-    // A settled cell's wild heads live UNDER it, not on its square: the
-    // street table is deliberately empty (get_fauna_table above), but the
-    // cellars behind its doors are the one place vermin still hold (sub/dgn
-    // reads the Ruin family for them). Without this the stock a cellar
-    // borrows from would be zero and every town cellar would be swept clean
-    // by definition. The allowance is the Ruin table's own FLOOR — the least
-    // a den of that family ever holds — so a town is the poorest hunting
-    // ground that still is one.
+int fauna_cell_capacity(Biome biome, int treeCount,
+                        LandmarkType landmark) {
+    // A town is the poorest hunting ground that still is one (the old ruin
+    // table's minCount); everywhere else the place's counts row caps it.
     if (landmark == LandmarkType::City || landmark == LandmarkType::Village) {
-        return int(kTblRuin.minCount);
+        return int(kRuinSpawnCounts.minCount);
     }
-    return int(get_fauna_table(biome, treeCount, landmark).maxCount);
+    SpawnContext ctx{};
+    ctx.biome = biome;
+    ctx.forest = is_forest_cell(treeCount);
+    ctx.landmark = landmark;
+    return int(spawn_counts(ctx).maxCount);
 }
 
 // (A hand-written City/Village/Spire scan named `landmark_kind_at` lived here

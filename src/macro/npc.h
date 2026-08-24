@@ -145,7 +145,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     {
         NPCType::Peasant, "peasant", "Peasant", SpriteId::Peasant, 25, 1,
         AIBehaviour::Gatherer, kPeasantCombat, 1, true, 10,
-        /*weight*/0, /*faction*/nullptr, /*loot*/nullptr, /*radius*/0.0f,
+        /*weight*/55, /*faction*/nullptr, /*loot*/nullptr, /*radius*/0.0f,
         {{"Ivan","Pyotr","Sergey","Dmitry","Alexei","Nikolai","Vasily","Grigory",
           "Fedor","Andrei","Olga","Natalya","Katya","Masha","Dasha"}}, 15,
         {{"The harvest has been poor this year...",
@@ -158,7 +158,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     {
         NPCType::Woodcutter, "woodcutter", "Woodcutter", SpriteId::Peasant, 30, 1,
         AIBehaviour::Gatherer, kWoodcutterCombat, 1, true, 12,
-        /*weight*/0, /*faction*/nullptr, /*loot*/nullptr, /*radius*/0.0f,
+        /*weight*/21, /*faction*/nullptr, /*loot*/nullptr, /*radius*/0.0f,
         {{"Borislav","Timofey","Yegor","Luka","Matvey"}}, 5,
         {{"These woods hold many secrets.",
           "Good timber is hard to find lately.",
@@ -169,7 +169,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     {
         NPCType::Merchant, "merchant", "Merchant", SpriteId::Caravan, 30, 3,
         AIBehaviour::Trader, kMerchantCombat, kNpcUpkeepNone, false, 30,
-        /*weight*/0, /*faction*/nullptr, /*loot*/nullptr, /*radius*/0.0f,
+        /*weight*/21, /*faction*/nullptr, /*loot*/nullptr, /*radius*/0.0f,
         {{"Kartash","Bazukin","Torgin","Menkov","Skaldin"}}, 5,
         {{"Looking to trade? I have fine wares!",
           "Gold makes the world go round, friend.",
@@ -222,7 +222,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     {
         NPCType::Witch, "witch", "Witch", SpriteId::Witch, 60, 5,
         AIBehaviour::Teleporter, kWitchCombat, kNpcUpkeepNone, false, 50,
-        /*weight*/0, /*faction*/nullptr, /*loot*/nullptr, /*radius*/0.0f,
+        /*weight*/3, /*faction*/nullptr, /*loot*/nullptr, /*radius*/0.0f,
         {{"Yaga","Vedma","Znakharka","Koldunia","Volshebnitsa"}}, 5,
         {{"The spirits whisper of your coming...",
           "I see great trials ahead for you.",
@@ -244,7 +244,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     {
         NPCType::Miner, "miner", "Miner", SpriteId::Peasant, 30, 1,
         AIBehaviour::Gatherer, kWoodcutterCombat, 1, true, 12,
-        /*weight*/0, /*faction*/nullptr, /*loot*/nullptr, /*radius*/0.0f,
+        /*weight*/21, /*faction*/nullptr, /*loot*/nullptr, /*radius*/0.0f,
         {{"Prokhor","Savva","Demyan","Zakhar","Foma"}}, 5,
         {{"The vein runs deep, but so do we.",
           "Iron feeds this village better than grain ever did.",
@@ -255,7 +255,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     {
         NPCType::Quarryman, "quarryman", "Quarryman", SpriteId::Peasant, 30, 1,
         AIBehaviour::Gatherer, kWoodcutterCombat, 1, true, 12,
-        /*weight*/0, /*faction*/nullptr, /*loot*/nullptr, /*radius*/0.0f,
+        /*weight*/21, /*faction*/nullptr, /*loot*/nullptr, /*radius*/0.0f,
         {{"Gavril","Osip","Trofim","Nazar","Kondrat"}}, 5,
         {{"Stone does not grow back. Good thing there is a mountain of it.",
           "Every wall you have ever leaned on came through hands like mine.",
@@ -265,7 +265,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     {
         NPCType::ClayDigger, "clay_digger", "Clay-digger", SpriteId::Peasant, 30, 1,
         AIBehaviour::Gatherer, kWoodcutterCombat, 1, true, 12,
-        /*weight*/0, /*faction*/nullptr, /*loot*/nullptr, /*radius*/0.0f,
+        /*weight*/21, /*faction*/nullptr, /*loot*/nullptr, /*radius*/0.0f,
         {{"Yermolai","Panteley","Averyan","Selivan","Mitrofan"}}, 5,
         {{"Good clay wants a river and patience.",
           "Bricks, pots, ovens - it all starts in my pit.",

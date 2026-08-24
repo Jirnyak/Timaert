@@ -8,6 +8,7 @@
 #include "macro/npc.h"
 #include "macro/character_sheet.h"
 #include "macro/macro_stock.h"
+#include "macro/tree_layer.h"
 #include "sub/body.h"
 #include <algorithm>
 #include <array>
@@ -103,13 +104,9 @@ bool find_city_spawn_spot(const std::vector<std::uint8_t>& tiles,
     return false;
 }
 
-NPCType pick_civilian_type(Rng& rng) {
-    const int roll = int(rng.next_u32() % 100u);
-    if (roll < 55) return NPCType::Peasant;
-    if (roll < 76) return NPCType::Merchant;
-    if (roll < 97) return NPCType::Woodcutter;
-    return NPCType::Witch;
-}
+// (pick_civilian_type lived here until 2026-08-24 — an RNG-only crowd that
+// could not tell an iron town from a swamp one, canon-audit F4. The crowd
+// rolls by THE spawn law now: fauna.h pick_town_row.)
 
 // ── THE birth of a subworld humanoid ───────────────────────────────────────
 //
@@ -210,6 +207,7 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
 }
 
 void spawn_settlement_population(ecs::World& w,
+                                 const SpawnContext& townCtx,
                                  LandmarkType landmark,
                                  const SeamlessSubworldManager& mgr,
                                  std::uint32_t seed,
@@ -253,7 +251,9 @@ void spawn_settlement_population(ecs::World& w,
         } else if (i == guards + 1) {
             type = NPCType::Woodcutter;
         } else {
-            type = pick_civilian_type(rng);
+            std::uint32_t ts = rng.state;
+            type = pick_town_row(townCtx, ts);
+            rng.state = ts;
         }
         // A citizen is DERIVED — he is one unit of this place's population made
         // visible, and nothing about him is remembered above. What is CONTEXT
@@ -392,6 +392,8 @@ int spawn_dungeon_residents(ecs::World& w,
                             const SeamlessSubworldManager& mgr,
                             std::uint32_t seed,
                             std::uint16_t settlementFaction,
+                            std::uint8_t danger,
+                            std::uint8_t depositsNear,
                             int count,
                             float x0, float y0, float x1, float y1,
                             std::uint8_t floorTile,
@@ -423,7 +425,13 @@ int spawn_dungeon_residents(ecs::World& w,
             found = true;
         }
         if (!found) continue;
-        const NPCType type = pick_civilian_type(rng);
+        SpawnContext townCtx{};
+        townCtx.landmark = LandmarkType::City;   // a household is town folk
+        townCtx.danger = danger;
+        townCtx.depositsNear = depositsNear;
+        std::uint32_t ts = rng.state;
+        const NPCType type = pick_town_row(townCtx, ts);
+        rng.state = ts;
         // The same derived-citizen birth as the street (one row of one law):
         // level from his own row, loan from the SAME population stock — a death
         // in here pays the town back exactly like a death on the square.
@@ -445,6 +453,7 @@ int spawn_dungeon_vermin(ecs::World& w,
                          const SeamlessSubworldManager& mgr,
                          std::uint32_t seed,
                          LandmarkType tableKind,
+                         std::uint8_t danger,
                          Biome biome,
                          int treeCount,
                          int budget,
@@ -456,10 +465,15 @@ int spawn_dungeon_vermin(ecs::World& w,
     if (tiles.size() < std::size_t(kFullSize) * std::size_t(kFullSize)) {
         return 0;
     }
-    // One table resolve, the same one the open cell runs.
-    const FaunaTable& table = get_fauna_table(biome, treeCount, tableKind);
+    // The same ONE law the open cell runs (fauna.h roll_spawns): habitat ×
+    // danger-match over the body table; the den kind is the habitat bit.
+    SpawnContext sctx{};
+    sctx.biome = biome;
+    sctx.forest = is_forest_cell(treeCount);
+    sctx.landmark = tableKind;
+    sctx.danger = danger;
     std::uint32_t rngState = seed ^ 0xCE11A5u;
-    auto picks = roll_fauna(table, rngState);
+    auto picks = roll_spawns(sctx, rngState);
     if (picks.empty()) return 0;
 
     Rng pos(rngState);
@@ -528,6 +542,8 @@ void spawn_cell_npcs(ecs::World& w,
                      Biome biome,
                      int treeCount,
                      LandmarkType landmark,
+                     std::uint8_t danger,
+                     std::uint8_t depositsNear,
                      const SeamlessSubworldManager& mgr,
                      int ox,
                      int oy,
@@ -553,7 +569,14 @@ void spawn_cell_npcs(ecs::World& w,
     // same guard stronger for standing in a bigger town and the same wolf tougher
     // for standing in a redder province. Deleted 2026-08-20 (CANON.md S12); when
     // the zone is meant to matter it must weight the TABLE, not the body.
-    spawn_settlement_population(w, landmark, mgr, cellSeed, settlementFaction,
+    SpawnContext townCtx{};
+    townCtx.biome = biome;
+    townCtx.forest = is_forest_cell(treeCount);
+    townCtx.landmark = landmark;
+    townCtx.danger = danger;
+    townCtx.depositsNear = depositsNear;
+    spawn_settlement_population(w, townCtx, landmark, mgr, cellSeed,
+                                settlementFaction,
                                 landmarkPop, originX, originY,
                                 MacroStockKey{landmarkSubjectId,
                                               std::int16_t(macroCellX),
@@ -561,9 +584,16 @@ void spawn_cell_npcs(ecs::World& w,
                                               /*detail*/-1,
                                               landmarkIsVillage});
 
-    const FaunaTable& table = get_fauna_table(biome, treeCount, landmark);
+    // THE spawn law (fauna.h): the danger byte weights the TABLE — who is
+    // rolled — never the body after the pick (S12; the negative control in
+    // subworld_spawn_parity_test keeps the autolevel dead).
+    SpawnContext sctx{};
+    sctx.biome = biome;
+    sctx.forest = is_forest_cell(treeCount);
+    sctx.landmark = landmark;
+    sctx.danger = danger;
     std::uint32_t rngState = cellSeed ^ 0xFAEAu;
-    auto picks = roll_fauna(table, rngState);
+    auto picks = roll_spawns(sctx, rngState);
     if (picks.empty()) return;
 
     // The honest headcount: the roll proposes, the macro stock DISPOSES. A

@@ -51,8 +51,9 @@ TerrainData banded_terrain() {
     return t;
 }
 
-// Zones rise west to east in bands: zone(x) = x * 10 / kW, so every zone
-// 0..9 exists and the wild half (>= 5) is the eastern half of the map.
+// Danger rises west to east across the CONTINUUM: danger(x) = x * 256 / kW,
+// so every byte band exists and the wild half (>= 128, the Spire row's
+// minZone) is the eastern half of the map.
 ZoneLayer banded_zones() {
     ZoneLayer z;
     z.width = kW;
@@ -61,7 +62,7 @@ ZoneLayer banded_zones() {
     for (int y = 0; y < kH; ++y)
         for (int x = 0; x < kW; ++x)
             z.data[std::size_t(y) * kW + std::size_t(x)] =
-                std::uint8_t(x * kZoneCount / kW);
+                std::uint8_t(std::min(255, x * 256 / (kW - 1)));
     return z;
 }
 
@@ -187,7 +188,7 @@ void test_named_places_veto_their_cells() {
     pin.data.assign(std::size_t(kW * kH), 0);
     for (int y = 32; y < 48; ++y)
         for (int x = 32; x < 48; ++x)
-            pin.data[std::size_t(y) * kW + std::size_t(x)] = 9;
+            pin.data[std::size_t(y) * kW + std::size_t(x)] = 255;
 
     {
         GameState gs = world(12345u);

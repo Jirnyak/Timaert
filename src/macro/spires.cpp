@@ -64,11 +64,16 @@ void generate_spires(GameState& gs, const ZoneLayer& zones,
         // spire of a doom spell stands where the world is at its worst, and
         // its garrison strength follows from the site's own spawn context,
         // not from any per-spire scaling.
-        const int tier = std::clamp(kSpellDefs[ord].tier, 1,
-                                    int(def.maxZone) - int(def.minZone) + 1);
+        // Tier 1 opens at the row's minZone, tier 5 demands its maxZone —
+        // the danger is a CONTINUUM now, so the tier walks the row's band in
+        // four derived steps instead of four hand +1s.
+        const int tier = std::clamp(kSpellDefs[ord].tier, 1, 5);
+        const int tierStep = (int(def.maxZone) - int(def.minZone)) / 4;
+        const int relaxStep = std::max(1, 256 / kZoneCount);
         int bestX = -1, bestY = -1, bestScore = -1;
-        int gate = std::min<int>(def.maxZone, int(def.minZone) + tier - 1);
-        for (; gate >= int(def.minZone); --gate) {
+        int gate = std::min<int>(def.maxZone,
+                                 int(def.minZone) + (tier - 1) * tierStep);
+        for (; gate >= int(def.minZone); gate -= relaxStep) {
             // Best-candidate (Mitchell) pick: among admissible draws take the
             // one farthest from every spire already placed — even spread over
             // the wild band without a tuned separation constant.

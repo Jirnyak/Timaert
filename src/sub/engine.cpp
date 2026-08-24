@@ -1045,6 +1045,8 @@ CellContext SubworldEngine::resolve_context(int x, int y) const {
     // Crop context: fertility drives stand density, the wheat field's scar
     // subtracts what the sickle already took.
     c.fertility01 = f.fertility01;
+    c.zone = f.zone;
+    c.depositsNear = f.depositsNear;
     c.cropHarvested = f.cropHarvested;
     c.landmark.kind       = f.landmark.type;
     c.landmark.id         = f.landmark.id;
@@ -1092,7 +1094,8 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
     const int faunaCount = macro_stock_read(
         faunaWorld, MacroStock::FaunaCount,
         MacroStockKey{-1, std::int16_t(wcx), std::int16_t(wcy)});
-    spawn_cell_npcs(*ecs_, ctx.biome, ctx.treeCount, ctx.landmark.kind, mgr_,
+    spawn_cell_npcs(*ecs_, ctx.biome, ctx.treeCount, ctx.landmark.kind,
+                    ctx.zone, ctx.depositsNear, mgr_,
                     ox, oy, ctx.seed, settlementFaction, ctx.landmark.size,
                     // The macro stock these citizens are borrowed from: this
                     // cell's named place. Killing one of them pays the map back
@@ -1612,8 +1615,8 @@ DangerLevel SubworldEngine::danger_level() const {
 
 bool SubworldEngine::exit_blocked_by_danger() const {
     if (!active_ || !zones_ || zones_->data.empty()) return false;
-    const int zoneLevel = int(zones_->at(mgr_.center_cx(), mgr_.center_cy()));
-    if (zoneLevel <= 2) return false;
+    const int danger = int(zones_->at(mgr_.center_cx(), mgr_.center_cy()));
+    if (danger <= kSafeExitDanger) return false;
     return has_hostile_near_player(kDetectionRadius);
 }
 
@@ -2696,6 +2699,10 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     // Alone by law (owner 2026-08-12): no fauna, no squad, no macro
     // projections — the interior populates ITSELF from the door's context.
     spawn_player_entity();
+    // The door cell's LIVE facts — danger byte, deposit gates, biome, trees —
+    // through the one assembler: the household and the vermin below spawn by
+    // the same law as the street above the door.
+    const CellFacts doorFacts = cell_facts(mw_, ses.doorCx, ses.doorCy);
     // The household: a deterministic handful of the settlement's people,
     // borrowed from the SAME population stock as the street crowd — but only
     // while the town still has people to lend. A door in an emptied town
@@ -2720,7 +2727,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
         const DungeonRoom room = dungeon_room(ses.ref);
         spawn_dungeon_residents(*ecs_, mgr_,
             dSeed ^ 0x5EEDD00Du,
-            ses.faction, household,
+            ses.faction, doorFacts.zone, doorFacts.depositsNear, household,
             float(kCellSize) + room.cx - room.hx,
             float(kCellSize) + room.cy - room.hy,
             float(kCellSize) + room.cx + room.hx,
@@ -2756,14 +2763,15 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
         const CellContext doorCtx = resolve_context(ses.doorCx, ses.doorCy);
         // The den's table is its landmark's: a spire storey draws the Spire
         // family (demons), a cellar and a cave the Ruin family — the same
-        // routing the open cell runs (get_fauna_table).
+        // ONE law the open cell runs (fauna.h roll_spawns).
         const LandmarkType denKind = ses.ref.kind == DungeonRef::SpireTower
             ? LandmarkType::Spire
             : LandmarkType::Ruin;
         spawn_dungeon_vermin(*ecs_, mgr_,
             dungeon_scene_seed(worldSeed, ses.doorCx, ses.doorCy,
                                ses.ref.ordinal, ses.ref.level),
-            denKind, doorCtx.biome, doorCtx.treeCount, budget,
+            denKind, doorFacts.zone, doorFacts.biome,
+            std::max(0, doorFacts.treeCount), budget,
             float(kCellSize) + room.cx - room.hx,
             float(kCellSize) + room.cy - room.hy,
             float(kCellSize) + room.cx + room.hx,

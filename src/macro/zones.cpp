@@ -238,8 +238,8 @@ ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
 
             z = clamp01(z);
             if (continuousOut) (*continuousOut)[i] = z;
-            int q = int(std::floor(z * float(kZoneCount)));
-            if (q >= kZoneCount) q = kZoneCount - 1;
+            int q = int(std::floor(z * 256.0f));
+            if (q > 255) q = 255;
             if (q < 0) q = 0;
             zl.data[i] = std::uint8_t(q);
         }

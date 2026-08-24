@@ -42,28 +42,79 @@ namespace sm {
 // tables below read as what they are: lists of rows a place may roll.
 using FaunaEntry = NpcTypeDef;
 
-struct FaunaTable {
-    const FaunaEntry* const* entries;
-    std::uint16_t entryCount;
-    std::uint8_t  minCount;
-    std::uint8_t  maxCount;
-    // Registry faction id forced onto every pick from this table (a ruin spawns
-    // its wolves as demons), nullptr = keep each creature's own row faction.
-    const char*   factionOverride;
-};
+// ── THE spawn law (CANON S6/S12, owner 2026-08-24) ───────────────────
+// Who a cell rolls = habitat × danger-match, over the ONE body table.
+//
+//   weight(row, cell) = row.weight × habitat(row, cell)
+//                     × danger_match(spawn_strength(row), cell danger)
+//
+// · habitat — a bitmask COLUMN of the body table (kSpawnHabitats below,
+//   enum-ordered beside the law that reads it): which biomes the row lives
+//   in, plus the forest class and the den kinds. It replaced thirteen
+//   hand-built list-tables and the switch ladder that chose between them
+//   (canon-audit F5) — a new species states its ground in its own row.
+// · spawn_strength — DERIVED, never hand-set: log₂ of the row's own combat
+//   power (hp × damage/cooldown), normalized over the table — the weakest
+//   row is 0, the strongest demon 255. Strengthen a row and it migrates to
+//   dangerous ground by itself (S26: constants derive from world facts).
+// · danger_match — symmetric around strength == danger (the owner's word:
+//   hell is peopled by demons, not by demons plus rabbits), HALVING per
+//   kDangerHalfLife bytes of mismatch, floor 1 — a doom-tier horror in a
+//   safe meadow is «исчезающе малая вероятность», literally, never zero.
+//   No cutoffs, no bands: composition flows across the map.
+//
+// The zone therefore changes WHAT SPAWNS and nothing else — the negative
+// control that no number is scaled on the body after the pick stands
+// (subworld_spawn_parity_test; the autolevel stays dead).
 
-// Resolve the table for a cell. Priority: landmark > forest > biome.
-// `treeCount` is the cell's macro tree count (macro/tree_layer.h): a
-// forest-CLASS cell (is_forest_cell) spawns forest fauna — including on a
-// mountain — regardless of its base biome.
-const FaunaTable& get_fauna_table(Biome biome, int treeCount,
-                                  LandmarkType landmark);
+// Habitat bits: 0..10 = the Biome ordinals; then the derived classes.
+inline constexpr std::uint16_t kHabForest = 1u << 11; // forest-CLASS cell
+inline constexpr std::uint16_t kHabRuin   = 1u << 12; // ruin denizen
+inline constexpr std::uint16_t kHabSpire  = 1u << 13; // spire denizen
+inline constexpr std::uint16_t kHabTown   = 1u << 14; // settlement crowd
+inline constexpr std::uint16_t hab(Biome b) {
+    return std::uint16_t(1u << std::uint16_t(b));
+}
+
+// Halving distance of the match law. Derived, not tuned: ten halvings span
+// the whole 0..255 continuum (a full-span mismatch lands at 2^-10 of the
+// peak before the floor), so kDangerHalfLife = 256 / 10.
+inline constexpr int kDangerHalfLife = 256 / 10;
+
+// The derived strength byte of a row (see the law above). Computed once
+// from the table itself; every consumer of "how dangerous is this thing" —
+// spawn, and tomorrow loot quality and hire pricing — asks HERE.
+std::uint8_t spawn_strength(NPCType t);
+
+// The symmetric never-zero match term, in 1/1024ths of the peak.
+std::uint32_t danger_match_weight(std::uint8_t strength, std::uint8_t danger);
+
+// Everything the roll wants to know about the place — assembled by the
+// caller from its CellContext / CellFacts. Zero members are legal silence.
+struct SpawnContext {
+    Biome        biome = Biome::Meadow;
+    bool         forest = false;          // is_forest_cell(treeCount)
+    LandmarkType landmark = LandmarkType::None;
+    std::uint8_t danger = 0;              // the cell's danger byte (zones)
+    // Live deposit kinds within the profession reach (bit per DepositKind):
+    // the ground that raises a macro miner also puts him in the street crowd.
+    std::uint8_t depositsNear = 0;
+};
 
 struct FaunaPick { const FaunaEntry* entry; const char* factionId; };
 
-// Sample [minCount, maxCount] then pick by weighted random.
-std::vector<FaunaPick> roll_fauna(const FaunaTable& table,
-                                  std::uint32_t& rngState);
+// Roll a cell's wild population by the law. Count comes from the place's
+// counts row; faction comes from the landmark's spawnFaction column when it
+// names one (a ruin's wolves ARE demons), else the row's own.
+std::vector<FaunaPick> roll_spawns(const SpawnContext& ctx,
+                                   std::uint32_t& rngState);
+
+// One townsperson, by the SAME law over the kHabTown stripe: the row weights
+// carry the old 55/21/21/3 mix as data, a profession row joins the crowd only
+// where its deposit gate is open, and the danger match rides on top. This
+// replaced the RNG-only pick_civilian_type — the crowd that could not tell an
+// iron town from a swamp one (canon-audit F4).
+NPCType pick_town_row(const SpawnContext& ctx, std::uint32_t& rngState);
 
 // ── The honest headcount (Session 16) ────────────────────────────────
 // A cell's fauna CAPACITY — how many heads its own spawn table carries

@@ -51,7 +51,9 @@ struct CellFacts {
                                    //   it used to ride smuggled inside a
                                    //   shifted temperature (foliage wants it,
                                    //   classification must not see it)
-    std::uint8_t zone = 0;    // danger 0..9 (macro/zones.h); 0 if not wired
+    std::uint8_t zone = 0;    // the danger byte (macro/zones.h continuum)
+    std::uint8_t depositsNear = 0; // live DepositKind bits within the
+                                   //   profession reach (kGathererReach)
     std::int8_t  ownerKingdom = -1; // land owner (politik cellOwner); -1 none
     int  cropHarvested = 0;   // the wheat scar: what the sickle already took
     bool water = false;       // biome == Water, pre-answered for one-fact

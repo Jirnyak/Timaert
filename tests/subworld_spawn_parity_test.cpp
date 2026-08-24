@@ -100,8 +100,8 @@ sm::sub::CellContext meadow_cell(int cx, int cy) {
 std::vector<SpawnRecord> expected_cell_fauna(
     const sm::sub::SeamlessSubworldManager& mgr,
     sm::Biome biome,
-    sm::FeatureType feature,
     sm::LandmarkType landmark,
+    std::uint8_t danger,
     int ox,
     int oy,
     std::uint32_t seed,
@@ -110,11 +110,16 @@ std::vector<SpawnRecord> expected_cell_fauna(
     const int originX = (ox + 1) * sm::sub::kCellSize;
     const int originY = (oy + 1) * sm::sub::kCellSize;
 
-    const sm::FaunaTable& table =
-        sm::get_fauna_table(biome, feature, landmark);
+    // The roll comes from THE shipping law (fauna.h roll_spawns), not a
+    // replica of it — what this mirror owns is the placement half: WHERE the
+    // picks stand and in what order the stream hands them out.
+    sm::SpawnContext sctx{};
+    sctx.biome = biome;
+    sctx.forest = false;   // this fixture rolls open meadow
+    sctx.landmark = landmark;
+    sctx.danger = danger;
     std::uint32_t rngState = seed ^ 0xFAEAu;
-    const std::vector<sm::FaunaPick> picks =
-        sm::roll_fauna(table, rngState);
+    const std::vector<sm::FaunaPick> picks = sm::roll_spawns(sctx, rngState);
 
     // No context markup: a creature is its ROW and its own level (CANON.md S12).
     // The settlement's √(pop/100) bonus and the zone's +level / ×1.18 hp+damage
@@ -282,7 +287,7 @@ void spawn_cell_at(sm::ecs::World& world,
                    int ox, int oy, int absCx, int absCy) {
     const sm::sub::CellContext c = meadow_cell(absCx, absCy);
     sm::sub::spawn_cell_npcs(world, c.biome, c.feature,
-                             sm::LandmarkType::None, mgr,
+                             sm::LandmarkType::None, /*danger*/0, /*depositsNear*/0, mgr,
                              ox, oy, c.seed,
                              std::uint16_t(sm::faction_index("empire")),
                              0);
@@ -327,6 +332,8 @@ bool run_city_population_projection_case(
                              sm::Biome::Meadow,
                              sm::FT_None,
                              sm::LandmarkType::City,
+                             /*danger*/0,
+                             /*depositsNear*/0,
                              mgr,
                              /*ox*/0, /*oy*/0,
                              0xFACEB00Cu,
@@ -390,7 +397,7 @@ bool run_population_does_not_scale_bodies_case(
         sm::ecs::World world{};
         sm::sub::spawn_cell_npcs(world,
                                  sm::Biome::Meadow, sm::FT_None,
-                                 sm::LandmarkType::City, mgr,
+                                 sm::LandmarkType::City, /*danger*/0, /*depositsNear*/0, mgr,
                                  /*ox*/0, /*oy*/0,
                                  0xFACEB00Cu,
                                  std::uint16_t(sm::faction_index("empire")),
@@ -932,8 +939,8 @@ int main() {
     spawn_cell_at(world, mgr, /*ox*/0, /*oy*/0, /*absCx*/0, /*absCy*/0);
 
     const std::vector<SpawnRecord> expected =
-        expected_cell_fauna(mgr, sm::Biome::Meadow, sm::FT_None,
-                            sm::LandmarkType::None, 0, 0,
+        expected_cell_fauna(mgr, sm::Biome::Meadow,
+                            sm::LandmarkType::None, /*danger*/0, 0, 0,
                             centre.seed, 0);
     const std::vector<SpawnRecord> actual = actual_fauna(world);
     const int cmp = compare_records(expected, actual);
@@ -1005,6 +1012,53 @@ int main() {
                 "identity_remap=1\n",
                 actual.size(), centre.seed, 1);
     sm::sub::clear_saved_subworlds();
+    // ── THE spawn law's own invariants (fauna.h, owner 2026-08-24) ──
+    {
+        // The danger byte re-weights WHO IS ROLLED — and nothing after the
+        // pick (S12: the autolevel negative controls above stand untouched).
+        auto mean_strength = [](std::uint8_t danger) {
+            sm::SpawnContext c{};
+            c.biome = sm::Biome::Meadow;
+            c.danger = danger;
+            double sum = 0.0;
+            int n = 0;
+            for (std::uint32_t seed = 1; seed <= 64; ++seed) {
+                std::uint32_t rs = seed * 2654435761u;
+                for (const auto& pk : sm::roll_spawns(c, rs)) {
+                    sum += double(sm::spawn_strength(pk.entry->type));
+                    ++n;
+                }
+            }
+            return n > 0 ? sum / double(n) : 0.0;
+        };
+        const double safe = mean_strength(16);
+        const double wild = mean_strength(240);
+        CHECK(wild > safe + 8.0,
+              "the danger byte shifts composition toward the strong rows");
+        CHECK(sm::danger_match_weight(255, 0) == 1u,
+              "a full-span mismatch is vanishingly rare — never zero");
+        CHECK(sm::danger_match_weight(200, 200) == 1024u,
+              "a perfect strength-danger match pays the full peak");
+        // Same seed, same danger => the identical stream (determinism).
+        sm::SpawnContext c{};
+        c.biome = sm::Biome::Meadow;
+        c.danger = 128;
+        std::uint32_t r1 = 0xC0FFEEu, r2 = 0xC0FFEEu;
+        const auto a = sm::roll_spawns(c, r1);
+        const auto b = sm::roll_spawns(c, r2);
+        bool same = a.size() == b.size();
+        for (std::size_t i = 0; same && i < a.size(); ++i) {
+            same = a[i].entry == b[i].entry;
+        }
+        CHECK(same, "the roll is a fact of (seed, context) alone");
+        // The derivation orders the bestiary the way the fiction does.
+        CHECK(sm::spawn_strength(sm::NPCType::Rabbit)
+                  < sm::spawn_strength(sm::NPCType::Wolf)
+              && sm::spawn_strength(sm::NPCType::Wolf)
+                  < sm::spawn_strength(sm::NPCType::Troll),
+              "derived strength orders rabbit < wolf < troll");
+    }
+
     CHECK(true, "every gate above held");
     return sm::test::report("subworld_spawn_parity_test");
 }

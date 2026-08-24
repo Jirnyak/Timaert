@@ -5502,7 +5502,7 @@ bool smoke_find_danger_land_cell(const App& app, int& outX, int& outY) {
     for (int level = sm::kZoneCount - 1; level >= 3; --level) {
         for (int y = 0; y < app.zones.height; ++y) {
             for (int x = 0; x < app.zones.width; ++x) {
-                if (int(app.zones.at(x, y)) != level) continue;
+                if (int(sm::zone_band(app.zones.at(x, y))) != level) continue;
                 if (!smoke_cell_is_land(app.terrain, x, y)) continue;
                 outX = x;
                 outY = y;

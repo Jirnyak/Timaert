@@ -274,8 +274,13 @@ int main()
     malformedZones.data.assign(1u, 255u);
     ok &= expect(!malformedZones.has_complete_storage(),
                  "short zone storage must not report complete storage");
-    ok &= expect(malformedZones.at(0, 0) == 0u,
-                 "invalid zone bytes must decode to safe zone zero");
+    // The danger is a 0..255 CONTINUUM (owner 2026-08-24): every byte is a
+    // legal value — the door returns it raw — and only a cell the short
+    // storage cannot back fails closed to zero.
+    ok &= expect(malformedZones.at(0, 0) == 255u,
+                 "a stored danger byte must come back untouched");
+    ok &= expect(malformedZones.at(1, 1) == 0u,
+                 "a cell past the short storage must fail closed to zero");
     ok &= expect(malformedZones.at(1, 1) == 0u,
                  "out-of-backing zone lookup must fail closed");
 

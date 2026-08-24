@@ -41,6 +41,10 @@ struct LandmarkDef {
     std::uint32_t    lightColor;  // ARGB night-emission tint (0 = does not glow)
     float            lightPop;    // synthetic emitter strength for fixed POIs;
                                   // 0 => inhabited type, scale by live population
+
+    // Faction forced onto every creature this place rolls (spawn law,
+    // fauna.h): a ruin's wolves ARE demons. nullptr = each row keeps its own.
+    const char*      spawnFaction = nullptr;
 };
 
 // Night-light columns (lightColor / lightPop) drive the universal macro
@@ -48,16 +52,20 @@ struct LandmarkDef {
 // the TS warm hearth tint scaled by live population (lightPop = 0). Fixed POIs
 // emit their own tint at a synthetic strength. Set lightColor = 0 to opt a type
 // out of night glow entirely — the single data-driven gate.
+// minZone/maxZone are DANGER BYTES on the 0..255 continuum (owner,
+// 2026-08-24). The old 0..9 rows translate as band edges: min = band*256/10,
+// max = (band+1)*256/10 - 1 — City "0..2" became 0..76, Spire "5..9" became
+// 128..255, unchanged in meaning, finer in resolution.
 inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
-    {LandmarkType::None,    "none",    "",        0, 9, ' ', 0x00000000u, true, 0x00000000u,   0.0f },
-    {LandmarkType::City,    "city",    "City",    0, 2, '#', 0xFFE7D27Au, true, 0xFFFFC76Bu,   0.0f },
-    {LandmarkType::Village, "village", "Village", 0, 3, 'v', 0xFFCCB068u, true, 0xFFFFC76Bu,   0.0f },
-    {LandmarkType::Spire,   "spire",   "Spire",   5, 9, 'I', 0xFFA86CFFu, true, 0xFFA86CFFu, 200.0f },
-    {LandmarkType::Ruin,    "ruin",    "Ruin",    2, 8, 'r', 0xFF8E8576u, true, 0xFF8E8576u,  40.0f },
-    {LandmarkType::Lair,    "lair",    "Lair",    4, 9, 'L', 0xFF883A3Au, true, 0xFF883A3Au,  70.0f },
-    {LandmarkType::Shrine,  "shrine",  "Shrine",  1, 6, '+', 0xFFE2E2E2u, true, 0xFFE2E2E2u,  90.0f },
-    {LandmarkType::Mine,    "mine",    "Mine",    2, 7, 'M', 0xFF8B6332u, true, 0xFF8B6332u,  60.0f },
-    {LandmarkType::Tower,   "tower",   "Tower",   3, 7, 'T', 0xFF6E6E89u, true, 0xFF6E6E89u,  80.0f },
+    {LandmarkType::None,    "none",    "",          0, 255, ' ', 0x00000000u, true, 0x00000000u,   0.0f },
+    {LandmarkType::City,    "city",    "City",      0,  76, '#', 0xFFE7D27Au, true, 0xFFFFC76Bu,   0.0f },
+    {LandmarkType::Village, "village", "Village",   0, 101, 'v', 0xFFCCB068u, true, 0xFFFFC76Bu,   0.0f },
+    {LandmarkType::Spire,   "spire",   "Spire",   128, 255, 'I', 0xFFA86CFFu, true, 0xFFA86CFFu, 200.0f, "demons" },
+    {LandmarkType::Ruin,    "ruin",    "Ruin",     51, 229, 'r', 0xFF8E8576u, true, 0xFF8E8576u,  40.0f, "demons" },
+    {LandmarkType::Lair,    "lair",    "Lair",    102, 255, 'L', 0xFF883A3Au, true, 0xFF883A3Au,  70.0f },
+    {LandmarkType::Shrine,  "shrine",  "Shrine",   25, 178, '+', 0xFFE2E2E2u, true, 0xFFE2E2E2u,  90.0f },
+    {LandmarkType::Mine,    "mine",    "Mine",     51, 203, 'M', 0xFF8B6332u, true, 0xFF8B6332u,  60.0f },
+    {LandmarkType::Tower,   "tower",   "Tower",    76, 203, 'T', 0xFF6E6E89u, true, 0xFF6E6E89u,  80.0f },
 };
 static_assert(rows_in_enum_order(kLandmarks, &LandmarkDef::type),
               "kLandmarks row order must mirror LandmarkType");
