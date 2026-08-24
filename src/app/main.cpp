@@ -5416,7 +5416,7 @@ bool smoke_cell_is_land(const sm::TerrainData& terrain, int x, int y) {
 }
 
 bool smoke_find_danger_land_cell(const App& app, int& outX, int& outY) {
-    if (!app.zones.has_data_storage() || !app.terrain.has_rgba_storage()) {
+    if (!app.zones.has_complete_storage() || !app.terrain.has_rgba_storage()) {
         return false;
     }
     for (int level = sm::kZoneCount - 1; level >= 3; --level) {

@@ -49,7 +49,7 @@ bool cell_occupied(const GameState& gs, int x, int y) {
 void generate_spires(GameState& gs, const ZoneLayer& zones,
                      const TerrainData& terrain, std::uint8_t seaLevel8) {
     if (gs.mapW <= 0 || gs.mapH <= 0 || !terrain.has_rgba_storage()
-        || !zones.has_data_storage()) {
+        || !zones.has_complete_storage()) {
         return;
     }
     const LandmarkDef& def = landmark_def(LandmarkType::Spire);

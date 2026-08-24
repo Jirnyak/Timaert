@@ -211,22 +211,32 @@ int main()
     shortZoneFeatures.height = 4;
     shortZoneFeatures.data.assign(1u, std::uint8_t(sm::FT_DirtRoad));
     const std::vector<sm::ZoneSeed> noSeeds;
+    // The continuous zone value exists only DURING the bake (the stored float
+    // twin was 4 MiB with no game reader — cut 2026-08-24); the test asks for
+    // the optional capture, because the +0.05 water boost is finer than the
+    // 0..9 quantisation.
+    std::vector<float> baselineCont;
     const sm::ZoneLayer baselineZones =
-        sm::generate_zones(4, 4, 123u, noSeeds, noSeeds, zoneFeatures, nullptr);
+        sm::generate_zones(4, 4, 123u, noSeeds, noSeeds, zoneFeatures, nullptr,
+                           0u, nullptr, &baselineCont);
     ok &= expect(baselineZones.has_complete_storage(),
                  "generated zone layer must expose complete storage");
+    std::vector<float> shortFeatCont;
     const sm::ZoneLayer shortFeatureZones =
-        sm::generate_zones(4, 4, 123u, noSeeds, noSeeds, shortZoneFeatures, nullptr);
+        sm::generate_zones(4, 4, 123u, noSeeds, noSeeds, shortZoneFeatures,
+                           nullptr, 0u, nullptr, &shortFeatCont);
     ok &= expect(shortFeatureZones.data == baselineZones.data
-                     && shortFeatureZones.field == baselineZones.field,
+                     && shortFeatCont == baselineCont,
                  "short feature storage must be ignored by zone generator");
     sm::FeatureLayer invalidZoneFeatures;
     invalidZoneFeatures.resize(4, 4);
     invalidZoneFeatures.data[0] = 255u;
+    std::vector<float> invalidFeatCont;
     const sm::ZoneLayer invalidFeatureZones =
-        sm::generate_zones(4, 4, 123u, noSeeds, noSeeds, invalidZoneFeatures, nullptr);
+        sm::generate_zones(4, 4, 123u, noSeeds, noSeeds, invalidZoneFeatures,
+                           nullptr, 0u, nullptr, &invalidFeatCont);
     ok &= expect(invalidFeatureZones.data == baselineZones.data
-                     && invalidFeatureZones.field == baselineZones.field,
+                     && invalidFeatCont == baselineCont,
                  "invalid feature bytes must be ignored by zone generator");
     std::vector<std::uint8_t> waterMask(std::size_t(4 * 4 * 4), 255u);
     // Land cells must be mid-elevation, not peaks: an all-255 mask would make
@@ -236,21 +246,24 @@ int main()
     for (int i = 0; i < 4 * 4; ++i)
         waterMask[std::size_t(i) * 4u + 0u] = 128u;
     waterMask[3] = 0u; // cell 0 alpha -> water
+    std::vector<float> waterCont;
     const sm::ZoneLayer waterZones =
         sm::generate_zones(4, 4, 123u, noSeeds, noSeeds, zoneFeatures,
-                           waterMask.data(), waterMask.size());
+                           waterMask.data(), waterMask.size(), nullptr,
+                           &waterCont);
     ok &= expect(waterZones.has_complete_storage(),
                  "valid water-mask zone generation must expose complete storage");
-    ok &= expect(nearly(waterZones.field[0],
-                        std::min(1.0f, baselineZones.field[0] + 0.05f)),
+    ok &= expect(nearly(waterCont[0],
+                        std::min(1.0f, baselineCont[0] + 0.05f)),
                  "valid water mask must apply TS water boost to matching cells");
-    ok &= expect(nearly(waterZones.field[1], baselineZones.field[1]),
+    ok &= expect(nearly(waterCont[1], baselineCont[1]),
                  "valid water mask must not alter land cells");
+    std::vector<float> shortWaterCont;
     const sm::ZoneLayer shortWaterZones =
         sm::generate_zones(4, 4, 123u, noSeeds, noSeeds, zoneFeatures,
-                           waterMask.data(), 3u);
+                           waterMask.data(), 3u, nullptr, &shortWaterCont);
     ok &= expect(shortWaterZones.data == baselineZones.data
-                     && shortWaterZones.field == baselineZones.field,
+                     && shortWaterCont == baselineCont,
                  "short supplied water mask must be ignored by zone generator");
     ok &= expect(sm::generate_zones(0, 4, 123u, noSeeds, noSeeds,
                                     zoneFeatures, nullptr).data.empty(),

@@ -1,4 +1,6 @@
 #include "macro/save.h"
+#include "macro/save_stream.h"
+#include "macro/world_fields.h"
 #include "macro/deposit_layer.h"
 #include "macro/state.h"
 #include "macro/macro_snapshot.h"
@@ -23,7 +25,6 @@ constexpr std::uint32_t kMagic = 0x534D5341u; // 'SMSA'
 constexpr std::uint32_t kChecksumSeed = 2166136261u;
 constexpr std::uint32_t kChecksumPrime = 16777619u;
 constexpr std::uint64_t kMaxPayloadBytes = 64ull * 1024ull * 1024ull;
-constexpr std::uint32_t kMaxStringBytes = 1u << 20;
 constexpr std::uint32_t kMaxInventoryStacks = 4096u;
 constexpr std::uint32_t kMaxSmallVector = 8192u;
 // The event-log ring (state.h push_event_log) must fit under the write guard,
@@ -36,12 +37,7 @@ constexpr std::uint32_t kMaxMarkers = 16384u;
 constexpr std::uint32_t kMaxFactions = 1024u;
 constexpr std::uint32_t kMaxRelations = 4096u;
 constexpr std::uint32_t kMaxQuests = 4096u;
-// Tree-count overrides are one entry per MUTATED cell; the cap is the whole
-// map (1024×1024) — anything beyond that is a corrupt count, fail closed.
-constexpr std::uint32_t kMaxTreeOverrides = 1u << 20;
-// The whole tree grid rides in the save (v36) — cap = a 1024² map, the same
-// ceiling the sparse maps above already assumed.
-constexpr std::uint32_t kMaxTreeGridCells = 1u << 20;
+// (the field caps live with the rows: macro/world_fields.cpp)
 constexpr std::uint32_t kMaxQuestParts = 4096u;
 constexpr std::uint32_t kMaxSoldiers = 8192u;
 // The macro-ECS snapshot (v23): one record per living macro NPC. The cap is
@@ -56,66 +52,11 @@ struct SaveHeader {
     std::uint32_t checksum = 0;
 };
 
-struct Writer {
-    std::vector<std::uint8_t> bytes;
-    bool ok = true;
-
-    template <class T>
-    void pod(const T& v) {
-        if (!ok) return;
-        const auto* p = reinterpret_cast<const std::uint8_t*>(&v);
-        bytes.insert(bytes.end(), p, p + sizeof(T));
-    }
-
-    void str(const std::string& s) {
-        if (s.size() > kMaxStringBytes) {
-            ok = false;
-            return;
-        }
-        const auto n = static_cast<std::uint32_t>(s.size());
-        pod(n);
-        if (n > 0) bytes.insert(bytes.end(), s.begin(), s.end());
-    }
-
-    bool count(std::size_t n, std::uint32_t cap) {
-        if (n > cap || n > 0xffffffffull) {
-            ok = false;
-            return false;
-        }
-        const auto out = static_cast<std::uint32_t>(n);
-        pod(out);
-        return true;
-    }
-};
-
-struct Reader {
-    const std::uint8_t* data = nullptr;
-    std::size_t size = 0;
-    std::size_t pos = 0;
-    bool ok = true;
-
-    template <class T>
-    void pod(T& v) {
-        if (!ok) return;
-        if (size - pos < sizeof(T)) {
-            ok = false;
-            return;
-        }
-        std::memcpy(&v, data + pos, sizeof(T));
-        pos += sizeof(T);
-    }
-
-    void str(std::string& s) {
-        std::uint32_t n = 0;
-        pod(n);
-        if (!ok || n > kMaxStringBytes || size - pos < n) {
-            ok = false;
-            return;
-        }
-        s.assign(reinterpret_cast<const char*>(data + pos), n);
-        pos += n;
-    }
-};
+// The stream primitives live in macro/save_stream.h so the world-field
+// registry rows can serialize themselves; this file keeps the ORDER.
+using savefmt::Writer;
+using savefmt::Reader;
+using savefmt::read_count;
 
 std::uint32_t checksum32(const std::uint8_t* data, std::size_t n) {
     std::uint32_t h = kChecksumSeed;
@@ -126,14 +67,7 @@ std::uint32_t checksum32(const std::uint8_t* data, std::size_t n) {
     return h;
 }
 
-bool read_count(Reader& r, std::uint32_t& n, std::uint32_t cap) {
-    r.pod(n);
-    if (!r.ok || n > cap) {
-        r.ok = false;
-        return false;
-    }
-    return true;
-}
+
 
 void write_bool(Writer& w, bool v) {
     const std::uint8_t b = v ? 1u : 0u;
@@ -988,54 +922,11 @@ void write_payload(Writer& w, const GameState& s,
     write_squad(w, s.deserterPool);
 
 
-    // v36: the tree grid WHOLE — the forest is a living carrier field
-    // (macro/resource_field.h Trees row): it grows past its virgin
-    // derivation, so "sparse overrides" stopped being sparse and the save
-    // just writes the state down (Persistence ruling). Cell order IS the
-    // byte order — deterministic by construction.
-    if (w.count(treeCounts.size(), kMaxTreeGridCells)) {
-        for (const std::uint16_t c : treeCounts) w.pod(c);
-    }
-
-    // v40: the player's map knowledge WHOLE, one byte per cell. Visible (2)
-    // is a session projection of where the player stands — it decays to
-    // Explored on write, and a load recomputes sight from the restored
-    // position. Cell order IS the byte order — deterministic by construction.
-    if (w.count(s.knowledge.data.size(), kMaxTreeGridCells)) {
-        for (const std::uint8_t v : s.knowledge.data)
-            w.pod(std::uint8_t(v >= kKnowledgeExplored ? kKnowledgeExplored
-                                                       : kKnowledgeUnknown));
-    }
-
-    // v37: the deposit cells WHOLE, one block per kind in DepositKind order
-    // — carrier rows, same ruling as the tree grid. Sorted by cell index:
-    // the map's iteration order is unspecified and the payload is
-    // checksummed, so the byte stream must be deterministic.
-    for (std::size_t k = 0; k < std::size_t(kDepositKindCount); ++k) {
-        const auto& cellsOfKind = deposits.cells[k];
-        if (!w.count(cellsOfKind.size(), kMaxTreeOverrides)) continue;
-        std::vector<std::pair<std::uint32_t, std::int32_t>> cells(
-            cellsOfKind.begin(), cellsOfKind.end());
-        std::sort(cells.begin(), cells.end());
-        for (const auto& [idx, remaining] : cells) {
-            w.pod(idx);
-            w.pod(remaining);
-        }
-    }
-
-    // v35: the resource fields' scars — ONE generic block per field, in
-    // ResourceFieldId order, each sorted for byte-determinism.
-    for (std::size_t f = 0; f < std::size_t(ResourceFieldId::Count); ++f) {
-        const auto& scars = s.resourceScars[f];
-        if (!w.count(scars.size(), kMaxTreeOverrides)) continue;
-        std::vector<std::pair<std::uint32_t, std::uint16_t>> cells(
-            scars.begin(), scars.end());
-        std::sort(cells.begin(), cells.end());
-        for (const auto& [idx, scar] : cells) {
-            w.pod(idx);
-            w.pod(scar);
-        }
-    }
+    // The saved world FIELDS ride as registry rows (macro/world_fields.h):
+    // trees, knowledge, deposits, scars — each row writes its own bytes, in
+    // row order, byte-identical to the four hand blocks that lived here.
+    // Adding a per-cell world truth is one row THERE, no code here.
+    write_world_fields(w, WorldFieldStores{&s, &treeCounts, &deposits});
 
     // v23: the macro-ECS snapshot — the lords, squads, bandits and beasts of
     // the living map, one record each (macro/macro_snapshot.h).
@@ -1129,67 +1020,12 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
     read_sub_state(r, s.subState);
     read_squad(r, s.deserterPool);
 
-    // v36: the whole tree grid (see the write side); the caller validates
-    // it against the loaded map dims (restore_tree_counts).
-    if (!read_count(r, n, kMaxTreeGridCells)) return;
-    treeCounts.clear();
-    treeCounts.resize(n);
-    for (std::uint32_t i = 0; i < n && r.ok; ++i) r.pod(treeCounts[i]);
-
-    // v40: the knowledge grid. Zero cells means the layer was never built (a
-    // partial state some tests save) — the world simply stays dark, because
-    // an absent grid answers Unknown (fail closed). A NON-zero count must
-    // cover the loaded map exactly or the payload is corrupt. Bytes are
-    // clamped into the persistent alphabet {Unknown, Explored}; sight (2) is
-    // recomputed after the load, never trusted from disk.
-    if (!read_count(r, n, kMaxTreeGridCells)) return;
-    if (n > 0) {
-        std::size_t expected = 0;
-        if (!FeatureLayer::cell_count_for(s.mapW, s.mapH, expected)
-            || std::size_t(n) != expected) {
-            r.ok = false;
-            return;
-        }
-        s.knowledge.width = s.mapW;
-        s.knowledge.height = s.mapH;
-        s.knowledge.data.assign(expected, kKnowledgeUnknown);
-        for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-            std::uint8_t v = 0;
-            r.pod(v);
-            s.knowledge.data[i] = v >= kKnowledgeExplored ? kKnowledgeExplored
-                                                          : kKnowledgeUnknown;
-        }
-        ++s.knowledge.revision;
-    }
-
-    // v37: the deposit cells, one block per kind (see the write side).
-    for (std::size_t k = 0; k < std::size_t(kDepositKindCount); ++k) {
-        if (!read_count(r, n, kMaxTreeOverrides)) return;
-        auto& cellsOfKind = deposits.cells[k];
-        cellsOfKind.clear();
-        cellsOfKind.reserve(n);
-        for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-            std::uint32_t idx = 0;
-            std::int32_t remaining = 0;
-            r.pod(idx);
-            r.pod(remaining);
-            if (r.ok) cellsOfKind[idx] = remaining;
-        }
-    }
-
-    // v35: the resource fields' scars, one generic block per field.
-    for (std::size_t f = 0; f < std::size_t(ResourceFieldId::Count); ++f) {
-        if (!read_count(r, n, kMaxTreeOverrides)) return;
-        auto& scars = s.resourceScars[f];
-        scars.clear();
-        scars.reserve(n);
-        for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-            std::uint32_t idx = 0;
-            std::uint16_t scar = 0;
-            r.pod(idx);
-            r.pod(scar);
-            if (r.ok) scars[idx] = scar;
-        }
+    // The saved world FIELDS, by registry row (macro/world_fields.h) — the
+    // mirror of the write side; the caller validates trees against the
+    // loaded map dims (restore_tree_counts).
+    if (!read_world_fields(r, WorldFieldStoresMut{&s, &treeCounts,
+                                                  &deposits})) {
+        return;
     }
 
     if (!read_count(r, n, kMaxMacroNpcs)) return;

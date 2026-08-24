@@ -93,7 +93,8 @@ ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
                          const FeatureLayer& features,
                          const std::uint8_t* waterMaskA,
                          std::size_t waterMaskByteCount,
-                         const TreeLayer* treeLayer) {
+                         const TreeLayer* treeLayer,
+                         std::vector<float>* continuousOut) {
     ZoneLayer zl;
     std::size_t total = 0;
     if (!FeatureLayer::cell_count_for(width, height, total))
@@ -205,7 +206,7 @@ ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
     // ── 3. Compose noise + boosts - civ pull ──────────────────
     zl.width = width; zl.height = height;
     zl.data .assign(total, 0);
-    zl.field.assign(total, 0.0f);
+    if (continuousOut) continuousOut->assign(total, 0.0f);
 
     // Decorrelate fBM seed from generic world seed (matches TS xorshift32).
     Rng nrng{seed ^ 0x5A17E5u};
@@ -236,7 +237,7 @@ ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
             }
 
             z = clamp01(z);
-            zl.field[i] = z;
+            if (continuousOut) (*continuousOut)[i] = z;
             int q = int(std::floor(z * float(kZoneCount)));
             if (q >= kZoneCount) q = kZoneCount - 1;
             if (q < 0) q = 0;

@@ -182,7 +182,7 @@ void MacroRendererVk::upload(const gpu::VulkanDevice& dev, const TerrainData& td
     }
 
     // Zone: decode -> R8 -> RGBA8, nearest.
-    if (zones.has_data_storage() && zones.width > 0 && zones.height > 0) {
+    if (zones.has_complete_storage() && zones.width > 0 && zones.height > 0) {
         const std::size_t n = std::size_t(zones.width) * std::size_t(zones.height);
         std::vector<std::uint8_t> zb(n, 0);
         for (std::size_t i = 0; i < n && i < zones.data.size(); ++i)

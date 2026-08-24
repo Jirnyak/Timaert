@@ -390,6 +390,7 @@ timaert_test(save_roundtrip_test
         src/events/event_bus.cpp
         src/events/quests/quest_engine.cpp
         src/macro/save.cpp
+        src/macro/world_fields.cpp
         # wallet math reads the item catalog (currency.h).
         src/macro/items.cpp
         # the fixture builds a real knowledge grid (v40) via knowledge_reset.
@@ -407,6 +408,7 @@ timaert_test(knowledge_test
 timaert_test(macro_snapshot_test
     SOURCES
         src/macro/save.cpp
+        src/macro/world_fields.cpp
         src/macro/macro_snapshot.cpp
         # spawn_squad goes through make_npc — the one creation door — so the
         # test links the spawner and the loot it rolls.

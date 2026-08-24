@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+#include "core/torus.h"
 #include "macro/features.h"
 
 namespace sm {
@@ -18,7 +19,10 @@ struct ZoneSeed { int x, y; };
 struct ZoneLayer {
     int width = 0, height = 0;
     std::vector<std::uint8_t> data;   // quantised 0..9
-    std::vector<float>        field;  // continuous [0,1]
+    // (A parallel continuous float grid lived here until 2026-08-24 — 4 MiB
+    // per world with no reader in the game, canon-audit D. The continuous
+    // value exists only DURING the bake; a test that wants its precision
+    // asks generate_zones for the optional capture below.)
 
     static std::uint8_t decode(std::uint8_t value) {
         return value < std::uint8_t(kZoneCount) ? value : 0u;
@@ -31,32 +35,15 @@ struct ZoneLayer {
 
     bool has_complete_storage() const {
         const std::size_t n = cell_count();
-        return n > 0u && data.size() >= n && field.size() >= n;
-    }
-
-    bool has_data_storage() const {
-        const std::size_t n = cell_count();
         return n > 0u && data.size() >= n;
-    }
-
-    bool has_field_storage() const {
-        const std::size_t n = cell_count();
-        return n > 0u && field.size() >= n;
     }
 
     std::uint8_t at(int x, int y) const {
         if (width <= 0 || height <= 0 || data.empty()) return 0;
-        int wx = ((x % width) + width) % width;
-        int wy = ((y % height) + height) % height;
+        const int wx = wrapi(x, width);
+        const int wy = wrapi(y, height);
         const std::size_t i = std::size_t(wy) * std::size_t(width) + std::size_t(wx);
         return i < data.size() ? decode(data[i]) : 0;
-    }
-    float field_at(int x, int y) const {
-        if (width <= 0 || height <= 0 || field.empty()) return 0.0f;
-        int wx = ((x % width) + width) % width;
-        int wy = ((y % height) + height) % height;
-        const std::size_t i = std::size_t(wy) * std::size_t(width) + std::size_t(wx);
-        return i < field.size() ? field[i] : 0.0f;
     }
 };
 
@@ -73,6 +60,11 @@ ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
                          const FeatureLayer& features,
                          const std::uint8_t* waterMaskA = nullptr,
                          std::size_t waterMaskByteCount = 0u,
-                         const TreeLayer* treeLayer = nullptr);
+                         const TreeLayer* treeLayer = nullptr,
+                         // Optional bake-time capture of the CONTINUOUS zone
+                         // value per cell — for tests that verify the law at
+                         // a precision the 0..9 quantisation would swallow.
+                         // The game never stores it.
+                         std::vector<float>* continuousOut = nullptr);
 
 } // namespace sm
