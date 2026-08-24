@@ -10,7 +10,6 @@ is the macro map / minimap, not a subworld mode.
   [seamless_manager.h](src/sub/seamless_manager.h),
   [base_generator.h](src/sub/base_generator.h),
   [vk_renderer_3d.h](src/sub/vk_renderer_3d.h)
-- **TS origin:** `subworld/*`
 - **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) §L2 — Microworld (Subworld)
 
 ## Model
@@ -248,25 +247,44 @@ invisible and mesh-scale curvature is exactly what renders. Locked by
 sides (fails if it aliases *and* fails if mountains get pancaked into plains) with
 a negative control that confirms the guard fails on the old ridged fold.
 
-**Slope rebalance (2026-07-30, owner-approved).** Even smooth crests read as
-sheer *walls* in first person: a mountain cell measured a median slope of 43°
-(p90 70°, p99 78°) — ~600 m of ridge amplitude on 110–250-tile waves. The
-rebalance carries the same relief on longer waves (`kFreqs` → 0.0018/0.004,
-~550/250-tile), eases the peak target, halves the mountain detail-noise scale
-and makes the ridge blend a smoothstep (C1 at both ends, so ridge growth no
-longer stacks its full gradient right at the massif edge). A **micro-crag
-octave** (~6 m at ~120 tiles, riding the ridges) restores mesh-scale mountain
-grain — curvature scales with A/λ² but slope only with A/λ, so the grain costs
-~1° of slope. Result: p50 ≈ 31°, p90 ≈ 49°, peaks ≈ 1480 m — massifs, not
-walls. `mountain_mesh_smoothness_test` was re-pinned for the new look (its
+**Slope rebalance — third edition (owner round 3, the one in the code).** The
+history, so no edition is re-built: round 1 diagnosed walls — even smooth
+crests read as sheer faces (median slope 43°, p90 70°, ~600 m of ridge
+amplitude on 110–250-tile waves) — and round 2 answered with long waves
+(`kFreqs` → 0.0018/0.004, ~550/250-tile) and the pure C1 parabola crest. That
+over-corrected: homogeneous hills — no crests, no gullies, no character. Round
+3 (`base_generator.cpp` `apply_mountain_ridges`) settles both axes as a
+COMPROMISE:
+
+- **Wavelengths between the two extremes:** `kFreqs = {0.0026, 0.006}`
+  (~385/167-tile waves) — between the old aliasing 250/110 and the
+  over-smoothed 555/250.
+- **The crest is a BLEND, not a pick:** `fold²·0.45 + para·0.55`, where the
+  classic ridged fold `(1−|2s−1|)²` contributes the sharp V-ridge / ravine
+  STRUCTURE and the C1 parabola `4s(1−s)` rounds the very apex enough to keep
+  mesh-scale curvature under the smoothness-test aliasing ceiling. Either
+  ingredient alone was a failed edition.
+
+Kept from round 2: the **micro-crag octave** (~6 m at ~120 tiles, riding the
+ridges — curvature scales with A/λ² but slope only with A/λ, so the grain
+costs ~1° of slope) and the smoothstep massif edge (C1 at both ends, warped so
+the massif fingers into the plain). The valley floor deepened 0.90 → 0.88 of
+macro height so ravines cut as well as ridges rise.
+`mountain_mesh_smoothness_test` still brackets the crest from both sides (its
 aliasing ceiling is unchanged).
 
 ### Universal terrain flattening under macro content
 
 The heightmap generator receives one `TerrainMod {damp, plateauR}` per 3×3
-neighbour, resolved by the ONE data table `terrain_mod_for(landmark, feature)`
-(`base_generator.h`): City `{1.0, 280}`, Village `{0.9, 200}`, Ruin/Spire
-`{0.6, 120}`, road-feature cells damp ≥ 0.55. `damp` scales down that cell's
+neighbour, resolved by `terrain_mod_for(landmark, feature)`
+(`base_generator.cpp`): City `{1.0, 280}`, Village `{0.9, 200}`, Ruin/Spire
+`{0.6, 120}`, road-feature cells damp ≥ 0.55, and ploughed farmland
+(`FT_Field`) damp ≥ 0.35 — worked ground, calmer than wilderness, but the
+plough follows the land more than a road bed does. **Recognised debt
+(canon-audit F3):** despite its comment calling itself "ONE data table", this
+is a `switch` over landmark kind inside an engine primitive, with numbers that
+carry no derivation (a 280-tile plateau for a city) — a row-table it is not,
+yet. `damp` scales down that cell's
 ridge/noise/gradient columns *before* the bilinear blend (so a calmed city cell
 fades seamlessly into a wild massif next door); `plateauR` pulls the manifold
 toward the settlement cell's centre height (full inside R, smoothstep skirt to
@@ -336,8 +354,10 @@ dirt.
 ### 3×3-contextual tree density (опушка gradients)
 
 Tree density is no longer a per-cell constant with a binary `forestBoost`:
-each ring cell contributes a **tree rate** (trees/tile² from its biome config,
-boosted when it carries the FT_Tree forest feature), and the per-node rate is
+each ring cell contributes a **tree rate** (trees/tile², derived from its
+macro tree COUNT — `macro/tree_layer.h`, the ONE scalar authority; the old
+biome-config-plus-`FT_Tree`-boost source died with the feature byte), and the
+per-node rate is
 the *unsharpened* bilinear blend of the ring over ONE global 2-tile lattice
 (probability `rate·step²` preserves each biome's trees-per-area in cell
 interiors; the old per-biome scan step also made tree spacing jump at cell
@@ -372,8 +392,12 @@ GPU ping-pong, the shift math, the self-checks, and the hard-won gotchas
 
 ## Data-driven extension
 
-Add a biome → one `BiomeConfig` + one ground texture. Add a landmark → one
-self-contained generator TU in [gens/](src/sub/gens). Add an **interior** →
+Add a biome → one `BiomeConfig` + one ground texture. Add a landmark → a
+generator function + one entry in `dispatch_generate`
+([gens/dispatch.{h,cpp}](src/sub/gens/dispatch.h) — honestly: gens/ holds only
+the dispatcher today; the "self-contained module per generator" promise is
+kept in [dgn/](src/sub/dgn) — cave, house, spire_tower — while the surface
+generators live in the shared TUs the dispatcher calls). Add an **interior** →
 one self-contained module in [dgn/](src/sub/dgn) plus its row. Add a **prop**
 (door, lantern, chest, well…) → one row in `kStructureKindRows`, whose columns
 decide which pass draws it, how it looks, what light it casts and what pressing

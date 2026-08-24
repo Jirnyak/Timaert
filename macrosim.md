@@ -8,7 +8,6 @@ time at world scale — the strategic layer above microworld combat.
   [macro/economy.h](src/macro/economy.h),
   [macro/army.h](src/macro/army.h) (`SoldierSquad`),
   [macro/npc_ai.h](src/macro/npc_ai.h)
-- **TS origin:** `game/world-tick.ts`, `game/politik.ts`, `game/npc-ai.ts`
 - **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) §L1, §Combat System
 
 ## Model
@@ -24,7 +23,11 @@ time at world scale — the strategic layer above microworld combat.
   ([time.md](time.md)).
 - **NPC-as-soldier:** a squad is a list of concrete NPC records; garrisons
   regenerate by kind; hire price + a single per-kind upkeep number, discounted
-  by charisma. No histograms, no RPS.
+  by charisma. No histograms, no RPS. **DEBT (CANON S25):** hiring today is a
+  second exchange mechanic with its own price button (`ui/overlays.cpp`, the
+  Hire loop) beside the package barter. Canon says trade and hiring are ONE
+  deal form over different containers (inventory ↔ roster, mixable in one
+  deal); the separate hire flow is a defect to fold in, not the norm.
 - **Politics:** kingdoms, capitals, roads, Voronoi territory, faction relations
   drive the world's shape ([landmarks.md](landmarks.md)).
 - **Player = a flag.** The macro player is a minimal `PlayerTag` entity, not a
@@ -81,11 +84,17 @@ force it:
 
 Both shipped in the living-fields track — see [resources.md](resources.md).
 
-## Resource squads — owner-approved DESIGN (not yet built)
+## Resource squads — BUILT (the gatherer loop, living-fields track)
 
-Woodcutters are the first instance of ONE universal loop, part of the
-economy (`ResourceId` Grain/Wood/Iron/Clay/Silver/Gems) — nothing here may
-be hardcoded to "woodcutter":
+The universal loop is live: **ONE `ai_gatherer` behaviour + `kGathererDefs`
+rows** (`macro/npc_ai.cpp`) — five professions as five data rows (peasant/grain,
+woodcutter/wood, miner/iron, quarryman/stone, claydigger/clay), each
+`{NPCType, ResourceFieldId, good, worksite}`. A village raises the professions
+of its own ground (`kGathererReach = 16`, shared by AI and spawn); harvest goes
+through the one registry door and the take comes home to the settlement's
+inventory. Details in [resources.md](resources.md). The design below is kept as
+the record of what was approved — nothing in it may be hardcoded to
+"woodcutter", and nothing was:
 
 1. **Spawn.** A village spawns worker squads; their number is a function of
    `population` + the village's needs (`EconomyState`). A squad ROLE is a
@@ -133,10 +142,16 @@ subworld embodies their members. Everything below follows from that one line.
 
 * **Meeting is geometric, not scripted.** Run through the subworld onto a cell
   where a squad stands on the map, and you meet exactly those people there.
-* **Members come from the ONE table.** Each roster entry embodies as its
-  NPC/monster row (`kNpcTypeDefs` / the fauna rows) through the single body
-  birth in `sub/spawn.cpp`. A squad is CONTEXT — it decides who stands there and
-  under whose banner, never what a body is made of.
+* **Members come from the ONE table.** Each roster entry embodies as its row of
+  **`kNpcTypeDefs[30]`** (`macro/npc.h` — 11 roles + 19 creatures, one id
+  space; there is no second fauna list, `fauna.h`'s `FaunaEntry` is a `using`
+  alias of `NpcTypeDef`) through the single body birth `emplace_body` in
+  `sub/spawn.cpp`: **everyone gets a character sheet** — peasant, mercenary,
+  wolf — and the leader's aura lands IN the sheet before anything is projected
+  from it. A squad is CONTEXT — it decides who stands there and under whose
+  banner, never what a body is made of. And because the leader is just a row,
+  **a wolf can lead a squad**: `SquadSpec.leaderType` accepts any kind of the
+  table.
 * **Slot 0 is the leader, always.** In the macro world a squad ALWAYS has one,
   because the RPG system hangs off it: the leader's character sheet buffs its
   troops. The player is the same shape — the player's army is a squad and the
@@ -151,9 +166,15 @@ subworld embodies their members. Everything below follows from that one line.
   subworld fight (macro/macro_stock.h — the roster is a stock like population,
   tree count and the wild headcount `fauna_count`, Session 16).
 * **Kill the leader but not the troops → the survivors go to the deserter pool**
-  (`GameState::deserterPool`, which is serialized today and has no gameplay
-  writer yet). The macro sim later raises deserter and bandit squads out of that
-  pool, which is where a good part of the world's danger should come from.
+  (`GameState::deserterPool`, serialized; `drain_dead_leader_squads` in
+  `macro/squad.h` is its writer). The pool now has its READER too —
+  **`raise_deserter_bands`** (`macro/npc_spawn.cpp`, called daily from
+  `world_tick.cpp`): √(pool) men walk off per day, the strongest survivor takes
+  slot 0, the band flies bandit colours, and a refused spawn puts every man
+  back (the pool is a conservation law). WHERE is not the pool's question
+  (owner, 2026-08-20): the pool is an abstract stock, the placement is uniform
+  today and moves to the blood field when that field exists (CANON S5). This is
+  where a good part of the world's danger comes from.
 
 **A hostile squad on the map FORCES an encounter** (owner, 2026-08-06), the way
 Mount & Blade does it: running into it opens a pre-battle interaction — talk,
@@ -239,7 +260,8 @@ Full record: proposals/session-prompts.md «Сессия 21».
 3. **Kill the leader and the squad lives on, leaderless, until the fight ends.**
    That is the "faceless squad of peasants" form. Only when the fight is over
    (or the player leaves) do the survivors fall into the deserter pool, out of
-   which the macro sim later raises deserter and bandit squads.
+   which the macro sim raises deserter and bandit squads — built:
+   `raise_deserter_bands`, see above.
 
 Implementation order these imply — the roster is a macro STOCK
 (macro/macro_stock.h), so members embodied below are borrowed and their deaths

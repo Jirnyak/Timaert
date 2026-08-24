@@ -32,10 +32,12 @@ exceptions + RTTI are disabled.
 | [vk_buffer.h](src/gpu/vk_buffer.h) | `VulkanBuffer` | Device-local vertex/index/instance buffers via staging copy |
 | [vk_texture.h](src/gpu/vk_texture.h) | `VulkanTexture` | Sampled RGBA8 / R8 images via staging + layout barriers; in-place `update_region`, `read_back`, and the `blit_shift_r8` on-GPU relocation |
 | [vk_shadow.h](src/gpu/vk_shadow.h) | `VulkanShadowMap` | Depth-only shadow target + render pass (see [render.md](render.md) §Shadow mapping) |
+| [vk_sprite_array.h](src/gpu/vk_sprite_array.h) | `SpriteArray` | Texture-array of resolved sprite frames: one image, one sampler, ONE descriptor set (the delivery half of the sprite bank, [sprites.md](sprites.md)) |
+| [vk_gpu_timer.h](src/gpu/vk_gpu_timer.h) | `GpuTimer` | Per-frame GPU pass timing via timestamp queries (`TIMAERT_GPU_STATS`): a query-pool ring per frame in flight, read back one frame late — no stalls |
 
-New GPU code goes here (replacing the retired `src/gl/`). `src/gpu/*.cpp` is
-auto-globbed into the build — do not edit [CMakeLists.txt](CMakeLists.txt) for
-individual files.
+New GPU code goes here (`src/gl/` is deleted — the directory no longer exists).
+`src/gpu/*.cpp` is auto-globbed into the build — do not edit
+[CMakeLists.txt](CMakeLists.txt) for individual files.
 
 ---
 
@@ -181,13 +183,14 @@ the behaviour.
 
 ## Harnesses & status
 
-Two throwaway harness targets prove the backend before the P6 game cutover
+Two harness targets prove the backend, and outlived the P6 cutover as the
+dependable headless capture path
 (they are declared explicitly in [CMakeLists.txt](CMakeLists.txt), not globbed):
 
 | Target | File | Exercises |
 |--------|------|-----------|
 | `gpu_smoke` | [tests/gpu_smoke.cpp](tests/gpu_smoke.cpp) | 2D macro fragment synth + ImGui |
-| `gpu_smoke3d` | [tests/gpu_smoke3d.cpp](tests/gpu_smoke3d.cpp) | Subworld 3D: depth, terrain, instanced trees, sky+stars, shadows, water |
+| `gpu_smoke3d` | [tests/gpu_smoke3d.cpp](tests/gpu_smoke3d.cpp) | Subworld 3D: depth, terrain, instanced trees, sky+stars, shadows, water; since 2026-08-20 its crowd exercises BOTH branches of `body.frag` (every fourth body has no drawn art, so a merge that silently lost the procedural half would photograph as green as a correct one) |
 
 ```bash
 cmake --build build --target gpu_smoke3d
@@ -204,9 +207,9 @@ DYLD_LIBRARY_PATH=/opt/homebrew/lib ./build/gpu_smoke3d
 | P2 | Swapchain + render pass + sync (clear loop) | done |
 | P3 | ImGui Vulkan | done |
 | P4 | Macro fragment synth → SPIR-V (data textures) | done |
-| P5 | Subworld passes: terrain, trees, sky/stars, **shadows**, water, bodies | in progress (ground atlas + 2D tiles remain; bodies landed 2026-08-20 as ONE pass, sprites.md) |
-| P6 | `main.cpp` cutover; **delete** `src/gl/`, `imgui_impl_opengl3`, WASM; push→UBO | pending |
-| P7 | Compute NPC mass sim + CPU↔GPU embodiment seam | pending |
+| P5 | Subworld passes: terrain, trees, sky/stars, **shadows**, water, bodies | done as scoped (bodies landed 2026-08-20 as ONE pass, sprites.md; there is no "2D tile view" to port — the 2D view IS the map, i.e. the macro synth, [render.md](render.md); the terrain surface synth polish is tracked there) |
+| P6 | `main.cpp` cutover; **delete** `src/gl/`, `imgui_impl_opengl3`, WASM; push→UBO | cutover + deletions **done** (`src/gl/` no longer exists); push→UBO still pending (see §Portability rules) |
+| P7 | ~~Compute NPC mass sim + CPU↔GPU embodiment seam~~ | **cancelled** (owner's ruling 2026-08-20, CANON.md S5: the world is CPU; see §What the GPU does NOT do above) |
 | P8 | Packaging (bundle MoltenVK for macOS Steam; ICD config) | pending |
 
 See [render.md](render.md) for the implemented graphics passes in detail.

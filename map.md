@@ -24,7 +24,7 @@ except living entities, merely faded. No special cases per layer.
 | Level | Meaning | Persistent? | Live view | Map page |
 |---|---|---|---|---|
 | 0 `Unknown` | terra incognita | — | black | black |
-| 1 `Explored` | memory (charted) | **yes — save v40** | the finished frame, drowned | full chart colours |
+| 1 `Explored` | memory (charted) | **yes — с v40 (сегодня v42)** | the finished frame, drowned | full chart colours |
 | 2 `Visible` | in sight NOW | no — projection | the living picture | same as Explored (a chart shows what is charted) |
 
 Only Explored persists: the save clamps Visible → Explored on write, and a
@@ -77,7 +77,7 @@ spyglass item, a high-ground perk are all one factor applied in one place.
 
 ### Persistence
 
-Save v40 carries the grid whole (cell order = byte order, clamped to
+The save carries the grid whole с v40 (сегодня v42; cell order = byte order, clamped to
 {Unknown, Explored}); a zero-length grid in a payload means "layer never
 built" (partial fixture states) and the world simply stays dark. A non-zero
 grid must cover the map exactly — anything else is a corrupt payload, fail
@@ -231,5 +231,5 @@ presentation rules, not a second system.
 | Marker surfaces (map ink vs world signal) | `src/macro/markers.h` `kMarkerSurface` |
 | World-overlay knowledge gates | `src/ui/macro_overlay.cpp` |
 | Subworld minimap + map page | `src/ui/overlays.cpp` |
-| Save block (v40) | `src/macro/save.cpp` |
+| Save block (с v40) | `src/macro/save.cpp` |
 | Tests | `tests/knowledge_test.cpp`, `tests/save_roundtrip_test.cpp` |

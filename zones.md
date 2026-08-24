@@ -1,10 +1,11 @@
 # Zones — Зоны
 
 A universal per-cell **danger heightmap** (level 0–9) — like a terrain
-heightmap, but for danger. Pure data, regenerated on load (never saved).
+heightmap, but for danger. Pure data, never saved — baked **once at boot**
+(`generate_zones`, `app/main.cpp`) and never re-baked afterwards; see the
+honest note at the bottom.
 
 - **Code:** [macro/zones.h](src/macro/zones.h)
-- **TS origin:** `game/zones.ts`
 - **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) §Difficulty Zones
 
 ## Model
@@ -34,8 +35,9 @@ is the addition operator, not a routine to write.** Spec: [lore.md](lore.md)
 
 ## Connections
 
-Spires demand zone ≥ 4 + their spell's tier — tier 1 opens in "Untamed",
-tier 5 in "Hellgate" ([landmarks.md](landmarks.md)); the danger level gates
+Spires demand zone ≥ `minZone + tier − 1` with `minZone = 5`
+(`landmark_registry.h`, the Spire row) — tier 1 opens in "Untamed" (zone 5),
+tier 5 in "Hellgate" (zone 9) ([landmarks.md](landmarks.md)); the danger level gates
 subworld exit (yellow/red → no exit); the map overlay renders the green→red
 field. **The zone does not touch a spawned body's numbers** — see below.
 
@@ -69,7 +71,16 @@ no reason in the world. 128 is the nearest power of two; every octave (128, 64,
 32, 16, 8) now divides 1024, and the same measurement puts the seam at 0.17× a
 normal step. Seamlessness is a property of construction (CANON.md S1).
 
-Zones themselves are unfinished (static after boot, never re-baked). The
-session prompt is ready:
+Zones themselves are unfinished — and the honest state must be stated plainly:
+the field is baked exactly once, at boot, **before** a save is applied, and is
+never re-baked. That contradicts CANON S7 ("re-bake honestly on every load and
+every micro↔macro transition, background re-baker on top") — a world where
+landmarks ever live and die (S9) would walk over a stale danger field. Debt,
+not design. The session prompt is ready:
 [proposals/session-prompts.md](proposals/session-prompts.md)
 § «Сессия — ЗОНЫ И КОНТЕКСТНЫЙ СПАВН».
+
+**Dead storage:** `ZoneLayer::field` (`zones.h`) — the continuous `[0,1]`
+`std::vector<float>` kept beside the quantised bytes — has no reader:
+`field_at` is called by nobody. On a 1024² world that is 4 MiB of storage
+filled and never consumed; a candidate for the axe (CANON S26).

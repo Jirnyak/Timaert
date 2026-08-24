@@ -19,9 +19,9 @@ death) already respects the flag, so there is no player special-case to maintain
   [ecs/components.h](src/ecs/components.h)
   (`PlayerTag`, `MacroOrigin`, `MacroSpawnId`),
   [macro/state.h](src/macro/state.h) / `save.cpp`
-  (`PlayerState::possessedMacroSpawnId`, `kSaveVersion` 10)
-- **TS origin:** none — the TS prototype had a scalar player; this is a
-  C++/ECS shipping-port design (memory `npc-sheet-possession-plan`).
+  (`PlayerState::possessedMacroSpawnId` — с v10, a historical number;
+  `kSaveVersion` is 42 today, and identity via the `MacroSpawnId` ordinal
+  still survives the save)
 - **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) §Combat System /
   §L2 — Microworld (the subworld player & possession block)
 
@@ -94,7 +94,7 @@ commit (build + validated smoke + `build/*_test` green each stage):
 | 5d | `project_macro_npcs_into_subworld` + `MacroOrigin` backlink (macro NPCs → combat bodies on enter). |
 | 5e-1 | Exit **position** remap — land on the possessed body's macro origin cell. |
 | 5e-2 | Exit **identity** remap — `adopt_possessed_macro_as_player` moves the macro `PlayerTag` onto the origin so you exit *as* the lord, and a deterministic `MacroSpawnId` ordinal (stored in `possessedMacroSpawnId`, **kSaveVersion 9→10**) re-finds the same lord after a save/load regenerates the NPCs (`reattach_player_to_macro_spawn`). Owner decision: identity **survives** save/load. |
-| **5e-3** *(next)* | Re-**enter** a subworld while still possessing a lord preserves possession end-to-end. Today re-entry drops the flag to the hero — `clear_player_entity` strips-not-destroys a `MacroNpcRuntime` flag holder, so the lord survives as an autonomous NPC and nothing leaks, but the hero husk is rebuilt on enter. Full carry-through needs the enter path to stamp the possessed origin onto the new subworld body. |
+| **5e-3** *(open debt — status not re-verified since July 2026)* | Re-**enter** a subworld while still possessing a lord preserves possession end-to-end. As last verified, re-entry drops the flag to the hero — `clear_player_entity` strips-not-destroys a `MacroNpcRuntime` flag holder, so the lord survives as an autonomous NPC and nothing leaks, but the hero husk is rebuilt on enter. Full carry-through needs the enter path to stamp the possessed origin onto the new subworld body. This is the track's standing open item; re-check against the code before building on it. |
 
 ## Data-driven extension
 

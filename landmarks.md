@@ -8,7 +8,6 @@ spires/dungeons, and runtime markers.
   [macro/settlement_score.h](src/macro/settlement_score.h) (site capacity),
   [macro/markers.h](src/macro/markers.h), subworld
   [gens/](src/sub/gens) (interiors)
-- **TS origin:** `game/politik.ts`, `game/markers.ts`, `subworld/city-generator.ts`…
 - **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) §Politics System, §Marker System
 
 ## Model
@@ -73,6 +72,35 @@ Add a kingdom/capital rule → one `kingdom_defs()` row. Add a marker style → 
 `MarkerStyle` enumerator + one `kMarkerGlyph` / `kMarkerColor` entry. Change
 what land a settlement class wants → one `kSettlementScoreRows` row (weights
 only). Teach the score a new resource → one term reading its registry row.
+
+## S9 — the life cycle: NOT BUILT
+
+CANON S9 says a landmark is **an agent with a life cycle**: it grows, can be
+destroyed (leaving a ruin, not an empty cell), can change owner through squads,
+can BECOME another landmark (village → city as a universal contextual
+transition, not a hardcode), and new ones can arise — the player founding his
+own through the same mechanism. **None of that exists.** Landmarks are created
+in exactly two places and never again: world generation (`state.cpp` —
+`settlements.push_back` / `villages.push_back`; `spires.cpp` for spires) and
+save-load (`save.cpp`, which clears and refills the same vectors). There is no
+`erase`, no kind change, no runtime emergence anywhere in the tree. The canon's
+own verdict applies: "a landmark list built at generation and immutable" is a
+defect of the model, and everything that reads landmarks (map, knowledge, glow,
+roads, spawn, paths) must eventually survive their birth, transformation and
+death.
+
+**Known structural debts:**
+
+- **`Settlement` + `Village` are two structs for one canon row.** The split is
+  why villages produce nothing (all `kRecipes` are `site = City`,
+  [economy.md](economy.md)) and hand out no quests
+  ([quests.md](quests.md)) — every "which list are you in" branch is a second
+  vocabulary against S16.
+- **`landmark_registry.cpp` is entirely dead** — its `collect_landmarks`
+  aggregator has no caller — and `landmark_registry.h` is visibly two files
+  merged into one (two `#pragma once` blocks: the dead TS-era aggregator on
+  top, the live `kLandmarks` table below). The live table stays; the dead half
+  is for the axe.
 
 ## Connections
 

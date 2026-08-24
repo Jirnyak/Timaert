@@ -12,7 +12,6 @@ player spell direction.
   [macro/character_sheet.h](src/macro/character_sheet.h) (`project_combat`),
   [sub/ai.cpp](src/sub/ai.cpp), [sub/engine.h](src/sub/engine.h),
   [sub/spawn.h](src/sub/spawn.h)
-- **TS origin:** `subworld/engine.ts`, `subworld/ai.ts`, `game/army.ts`
 - **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) §Combat System
 
 ## Model
@@ -29,7 +28,10 @@ player spell direction.
   is a real ECS entity (`PlayerTag + Health + Combat + BodyRadius + SubworldTag`)
   struck by melee, projectiles, and blasts through the *same* paths as any NPC —
   there is no player special-case in the hit code. Its hit size is an explicit
-  `ecs::BodyRadius` (1.5); `target_radius()` reads that first, then
+  `ecs::BodyRadius` (`kPlayerBodyRadius = 1.5`, engine.cpp — a **recognised
+  defect**, canon-audit A9: every human in the one table is 0.55, and the 1.5's
+  only justification is the dead TS prototype; do not cite it as the norm);
+  `target_radius()` reads that first, then
   `SubworldAi.radius`, then `Sprite.scale`, then a coarse fallback — the player
   needs the explicit one because it is the camera (no `Sprite`) and input-driven
   (no `SubworldAi`). `combatStats.currentHp` stays macro-authoritative: an
@@ -63,8 +65,10 @@ player spell direction.
 - **One body size, one place.** `body_radius()` ([sub/body.h](src/sub/body.h)) is
   THE half-width of a body, and every weapon asks it: melee reach, projectile
   contact, blast, crowd separation, the battle unit descriptor. Order, most
-  specific first: explicit `ecs::BodyRadius` → the MONSTER table row → the NPC
-  table row → `SubworldAi.radius` → `Sprite.scale` → `kBodyRadiusFallback` 0.55.
+  specific first: explicit `ecs::BodyRadius` → the ONE table row (`NpcTypeDef` —
+  there is one table for creatures and humanoids, so there is one lookup,
+  `row_for`; the row's own `radius` first, then its `combat.bodyRadius`) →
+  `SubworldAi.radius` → `Sprite.scale` → `kBodyRadiusFallback` 0.55.
   It used to exist twice — melee read the tables, projectiles did not, and their
   fallbacks were 0.55 and 6.0 — so a body was a different size depending on which
   weapon was pointed at it.
@@ -85,8 +89,13 @@ player spell direction.
 - **The 3×3 window is a closed box.** Four walls in XY, a floor of terrain and
   masonry, and a ceiling — the same one flying bodies are clamped to. A bolt that
   leaves through any face is simply gone; the sky is not a special direction.
-- **Monsters are sheet-less** (`NPCKind.type & 0x100`): their `Combat`/`Health`
-  stay the raw `FaunaEntry` row — a plain `CombatTemplate`, never projected.
+- **Every body has a sheet — monsters included** (owner, 2026-08-20; CANON.md
+  S14/S16). A creature row IS an NPC row (`FaunaEntry` is an alias of
+  `NpcTypeDef`, [macro/fauna.h](src/macro/fauna.h)), and every body enters the
+  world through the ONE door `emplace_body`
+  ([sub/spawn.cpp](src/sub/spawn.cpp)): `make_character_sheet` →
+  `apply_aura` (the leader's buff lands IN the sheet) → `project_combat`. A
+  wolf and a peasant are the same record projected the same way.
 - **Hostility is faction-driven:** derived from `factions[...].relation`;
   `kHitRepPenalty` on attacking neutrals, `kHostileThreshold` flips a faction.
 - **Engine:** `tick_combat_move` for melee + missile; `kCrowdPenalty` spreads
@@ -100,7 +109,8 @@ player spell direction.
 
 Make a kind hireable/soldier-capable → tag it + set one stat row + one upkeep
 number in the registry. Add loot → one loot-profile row keyed by `lootId`
-([monsters.md](monsters.md)). Add a monster → one `FaunaEntry` row.
+([monsters.md](monsters.md)). Add a monster → one row of `kNpcTypeDefs` (the
+ONE table; `FaunaEntry` is an alias of `NpcTypeDef`).
 
 ## Backend — the crowd is CPU (owner's ruling 2026-08-20)
 

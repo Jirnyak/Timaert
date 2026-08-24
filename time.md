@@ -157,10 +157,17 @@ else is denominated in game time:
 | melee cooldown | authored seconds → **steps** | `ecs/systems.cpp` |
 | sustained mana drain | per **step** | `content/spells/spell_book.cpp` |
 
-The last four rows are the subworld's own denominator, and they are the
-deliberate exception. Down there you are a body doing a thing; up on the map you
-are an abstraction of a journey. Two kinds of motion, two denominators, and the
-difference is written down rather than stumbled into.
+The last four rows are the subworld's own denominator. For the three
+cooldown/drain rows that is fine — they are quoted in STEPS, below. The walk
+row is **not a "deliberate exception" but a CANON S26 debt** (canon-audit A8):
+`kSubworldWalkTilesPerSecond = 96` (`app/main.cpp`) is a naked constant with
+no derivation next to it, while its macro twin `kMacroWalkCellsPerHour = 32`
+(`macro/movement_cost.h`) has one. They diverge ×4: 96 tiles/real-second works
+out to 8 cells per game hour against the march's 32 — and at the S1 scale
+(1 tile ≈ 1 m) it is 96 m/s ≈ 345 km/h. The "body in real time vs abstraction
+of a journey" story written beside both constants explains why the
+denominators differ; it does not derive the number, and a constant that is not
+derived from a property of the world is a defect, not a style.
 
 **The STEP, not the second.** The three cooldown rows above used to be floats
 decremented by a `dt` of real seconds, while this page claimed exactly ONE
@@ -210,8 +217,8 @@ removed for being the sort of thing that gets mistaken for simulation later.
 
 ## Consequences worth knowing
 
-- **The save states the instant exactly**, in one `uint64` (`kSaveVersion 18`) —
-  a tick number, not a duration.
+- **The save states the instant exactly**, in one `uint64` (since
+  `kSaveVersion` 18; today the save is v42) — a tick number, not a duration.
 - **A month of resting and a single frame cost the same three lines.** Minutes,
   hours and days are linear in the tick, so what an advance covered is a
   subtraction however large the jump — `world_tick.cpp` no longer walks the

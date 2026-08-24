@@ -19,9 +19,10 @@
    from the same row. A humanoid with no art is a *biped* — it degrades into
    the monster law with no special case anywhere.
 4. **One coverage, one shadow.** Whatever produces the silhouette produces the
-   shadow: `creature_sprite.glsl` is called by both the lit pass
-   (`creature.frag`) and the depth-only caster (`shadow_creature.frag`), so no
-   body can cast a shadow it does not have.
+   shadow: the lit pass (`body.frag`) and the depth-only caster
+   (`shadow_body.frag`) unpack the same row through one header
+   (`doll_pool.glsl`) and draw the same coverage — drawn alpha or
+   `creature_sprite.glsl` — so no body can cast a shadow it does not have.
 
 Consequences that are rules, not preferences:
 
@@ -184,8 +185,9 @@ procedural archetype.
 | Piece | File |
 |---|---|
 | Procedural body plans (the floor) | `shaders/creature_sprite.glsl` |
-| Row → archetype / tint | `macro/fauna.h`, `ecs::Sprite` (`components.h`) |
+| THE table: row → asset / archetype / tint | `macro/sprite_rows.h`; a body carries its row as `ecs::Sprite::spriteRow` (`components.h`) |
 | Drawn art registry (macro) | `assets/sprite_atlas.{h,cpp}` |
+| The bank (row → resident slot, filled at boot) | `src/assets/sprite_bank.{h,cpp}` |
 | Banked frames on GPU | `gpu/vk_sprite_array.{h,cpp}` |
 | Map draw path | `ui/macro_overlay.cpp` |
-| Subworld passes (to be merged) | `shaders/npc.frag`, `shaders/creature.frag` |
+| Subworld passes (merged) | `shaders/body.frag` + `shaders/shadow_body.frag` |

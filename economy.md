@@ -65,9 +65,16 @@ a living edge; a valley emptied whole is extinct) — see
 Once a game day (`world_tick`): the city crafts — today's table first
 (needs-ladder demand), then fair shares — everyone eats down the ladder,
 and ONE continuous wellbeing (fed fraction × comfort) drives both the MOOD
-band and the LOGISTIC population law: dP = r·P·(1−P/K)·drive, K = 16384 =
-2^14 (the subworld's own NPC cap), growth damped toward K, starvation never
-softened. Famine and shortfall land on the landmark as honest readouts.
+band and the LOGISTIC population law: dP = r·P·(1−P/K)·drive, growth damped
+toward K, starvation never softened. Famine and shortfall land on the
+landmark as honest readouts. **The K in that formula is a recognized
+defect** (canon-audit III.6): today it is the constant 16384 — a number
+borrowed from the subworld's body cap, which is a render/sim bound, not a
+fact about land. CANON S25 assigns **no population ceiling at all**: the
+land's capacity decides how big a settlement is BORN
+(`macro/settlement_score.h` already computes exactly that), and after birth
+the only ceiling is supply — wellbeing falling as needs outrun provisioning.
+K must be derived from the site capacity, not assigned.
 
 ## Money and trade
 
@@ -85,7 +92,9 @@ a ware IN the package, always at FACE value on both sides (charisma pricing
 a coin would mint money out of a round trip) — so "buying" is staging coin
 against goods and "selling" is the reverse. `transfer_value` remains the
 settlement half of scripted payments (recruit, rest, penalties): real coin
-stacks travel, nothing is minted in a deal.
+stacks travel, nothing is minted **in a barter deal**. (Outside barter the
+world DOES mint — loot gold, quest rewards, spawn purses; see the honesty
+debts below.)
 
 **Prices come from STOCK** (the starcluster law): scarcity =
 (demand + 1)/(supply + 1) po2-clamped to [1/4, 4], price = base × scarcity,
@@ -108,3 +117,27 @@ miner agent for the deposit layer; econ facts raised to the journal/bus
 (only vein discovery speaks today); exchange rates + the currency bourse;
 coins minted FROM gold/silver; player invest-into-owned-city (waits for
 ownership itself); taxes to the faction treasury.
+
+**Honesty debts** (audit 2026-08-23, canon-audit.md §B — places where the
+"honest economy" headline is not yet true):
+
+- **The population floor mints people.** `settle_landmark_day` is called
+  with `minPop = 10` (cities) / `5` (villages) in `world_tick.cpp`: a
+  settlement cut down below the floor gets souls back from thin air and is
+  effectively immortal. Defect against the conservation law (CANON S5 —
+  a number appearing from nowhere is a defect).
+- **Coin is only ever destroyed.** The one source is the world-birth seed
+  (8/head in cities); the three sinks — hire, rest, quest penalty — pay no
+  counterparty (`wallet_spend_up_to`, `ui/overlays.cpp`). Worse, loot gold
+  is a **double mint**: `generate_loot_gold` (`items.cpp`) coins money into
+  every corpse on top of the purse the same body was already minted at
+  spawn (`npc_spawn.cpp`). Canon-audit B1–B3.
+- **The village produces NOTHING.** All nine `kRecipes` rows carry
+  `site = City` (`econ_day.h`), and `tick_villages_` only settles the day —
+  yet the village eats the full needs ladder, so its norm is perpetual
+  famine. Root cause: the Settlement/Village struct split
+  ([landmarks.md](landmarks.md)).
+- **The caravan confiscates, it does not trade.** `haul_between`
+  (`npc_ai.cpp`) moves cargo both ways with no counter-value crossing the
+  counter; the price law of `macro/economy.h` exists only for the player's
+  two screens — the world itself does not know prices. Canon-audit B4.

@@ -8,7 +8,6 @@ Modular spell framework: **adding a spell is one file, no engine changes.**
   [effects.cpp](src/content/spells/effects.cpp) (spawn fns, `kSpellEffects`),
   [spell_book.h](src/content/spells/spell_book.h);
   projectile ticking in [sub/spell_effects.h](src/sub/spell_effects.h)
-- **TS origin:** `game/spells/*`
 - **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) §Spell System
 
 ## Model
@@ -26,7 +25,15 @@ Modular spell framework: **adding a spell is one file, no engine changes.**
 - **Registry** = `kSpellDefs` (macro/spells.h): one constexpr DATA row per
   spell — fireball, ice-shard, magic-bolt, lightning-chain, energy-beam,
   armageddon, haste, flight — with APPEND-ONLY ordinals (the row index rides
-  saves as `Spire.spellId`; `spell_registry_test` pins the order). Living in
+  saves as `Spire.spellId`; `spell_registry_test` pins the order).
+  **Lightning-chain's chain is UNREACHABLE today (canon-audit H5)** — do not
+  read this row as a working mechanic: `apply_spell_chain`
+  (sub/spell_effects.cpp) returns on its first line always, because the three
+  `ecs::Projectile` chain fields (`chainRemaining/chainDecay/chainRadius`) are
+  read but written nowhere, and `SpellDef::chainCount` is filled in 8 rows and
+  read by nobody. `spell_casting_effects_test.cpp` describes this in prose and
+  deliberately asserts nothing (S26: a test never guards a defect). The spell
+  casts and flies as an ordinary bolt; only the chain hop is dead. Living in
   the world layers per ARCHITECTURE.md Rule 13 (owner 2026-08-14), it is
   askable by worldgen (`generate_spires`), the subworld (tier at resolve)
   and the event applicator alike. BEHAVIOUR binds above: `kSpellEffects`

@@ -96,16 +96,27 @@ Per-light scratch (`dist`/`touched`) is reused and reset only over the cells tha
 light actually touched — never a full `w·h` clear per light.
 
 Each traversed cell spends a **per-feature optical cost** — how much "reach
-budget" one step through that feature burns. This is the one data table; a new
-feature's light behaviour is one row, never a branch in the bake loop. Indexed by
-`FeatureType`, so row order tracks the `features.h` byte contract:
+budget" one step through that feature burns. This is the one data table
+(`kFeatureOpticalCost`, [macro/optics.h](src/macro/optics.h)); a new feature's
+light behaviour is one row, never a branch in the sweep loop. Indexed by
+`FeatureType`, and the row order is pinned to the `features.h` byte contract by
+a `static_assert` (one optical row per `FeatureType` byte):
 
 | Feature | Cost | Behaviour |
 |---|---|---|
 | `FT_None` (open) | 1.00 | baseline |
 | `FT_Road` | 0.65 | clear + reflective — carries light **furthest** |
-| `FT_Tree` (canopy) | 2.50 | dims light: edges transmit, interiors go dark |
 | `FT_DirtRoad` | 0.85 | mostly clear — light runs along it, near-open |
+| `FT_Field` | 1.00 | ploughed open ground — waist-high wheat hides nothing |
+
+**Forest is deliberately NOT a row** — `FT_Tree` died when the tree-count field
+took over forests ([features.h](src/macro/features.h): `FT_DirtRoad` moved
+3 → 2). Canopy occlusion is the CONTINUOUS `kCanopyOpticalCost` term (1.50)
+added per unit of tree density (tree count / 16384, `macro/tree_layer.h`): full
+forest spends 1.0 + 1.5 = 2.5 per cell — the exact budget the old binary
+`FT_Tree` row charged — and a thin stand dims proportionally instead of all-or-
+nothing. Mountains are absent for the same reason: they are a *biome*, occluded
+via the elevation toll (Increment C below).
 
 So light **carries far over open ground and along roads, and is smothered by
 forest,** flowing *around* dense stands rather than through them. (The
@@ -115,7 +126,7 @@ good — preserve it.)
 > **Where the propagation lives now.** The bounded Dijkstra, the cost table
 > and the climb toll moved to `macro/optics.h` (`optical_sweep`) — the SAME
 > physics drives the player's sight in the fog-of-war layer
-> (`macro/knowledge.h`, save v40). This file keeps only the glow-specific
+> (`macro/knowledge.h`, с v40). This file keeps only the glow-specific
 > halves: emitter census, falloff deposit, encode.
 
 ### Increment C — elevation occlusion (`cellHeights != nullptr`)
@@ -217,7 +228,7 @@ towns, lower for a darker night.** This is the one number a director turns.
 
 ---
 
-## 4. GPU upload — surgical binding-4 re-upload
+## 4. GPU upload — surgical binding-3 re-upload
 
 The macro renderer's descriptor **set 0** is a small fixed array of combined
 image samplers (master / feature / zone / river synth inputs + the light field at
@@ -242,7 +253,7 @@ the same `nightDarken` day/night curve that darkens the base map
 ([shaders/macro.frag](shaders/macro.frag)):
 
 ```glsl
-layout(set = 0, binding = 4) uniform sampler2D u_lightField; // RGB night glow
+layout(set = 0, binding = 3) uniform sampler2D u_lightField; // RGB night glow
 
 if (pc.nightDarken > 0.0) {
     col = mix(col, vec3(0.05, 0.05, 0.15), pc.nightDarken * 0.82); // darken to night blue
@@ -279,23 +290,20 @@ is simply rebaked the next time the macro map is shown.
 
 ---
 
-## 7. Mountains are a biome now — occlusion caveat
+## 7. Mountains are a biome — occlusion history (RESOLVED by Increment C)
 
-Mountains used to be a `FeatureType` (`FT_Mountain`) and therefore occluded light
-through the cost table. They have since been refactored into a **biome**
-(`biomes.h` `Biome::Mountain`, classified by elevation ≥ `kMountainBiomeLevel`),
-so they no longer appear in the feature grid this bake reads. Consequences:
+History, kept so the gap is not re-diagnosed. Mountains used to be a
+`FeatureType` (`FT_Mountain`) and occluded light through the cost table; the
+mountains→biome refactor (`biomes.h` `Biome::Mountain`, classified by elevation
+≥ `kMountainBiomeLevel`) removed them from the feature grid, and for a while
+**bare (treeless) massifs were transparent to light** — only forested slopes
+still occluded, via canopy.
 
-- **Forested mountains still occlude** — via their `FT_Tree` feature composed on
-  top of the Mountain biome. This is the common, praised case.
-- **Bare (treeless) rocky massifs are currently transparent to light** — they are
-  no longer in the feature grid, and the bake does not yet sample elevation.
-
-Restoring bare-massif occlusion is a **planned follow-up**: sample the elevation
-(or biome) in the bake and treat `Biome::Mountain` as a high-cost cell, the same
-way `FT_Tree` is treated today. Deliberately deferred until the mountains→biome
-refactor settles. Until then, the occlusion table in §2 is complete and correct
-for the *feature* grid.
+That gap is **closed**: Increment C (§2) made the sweep pay the elevation toll —
+`kClimbOpticalCost` (60, `macro/optics.h`) per unit of uphill rise — so bare
+massifs occlude again, from the heights themselves rather than a feature byte.
+The negative controls (ridge-blocks / valley-spills) live in
+`macro_lighting_test`. Nothing here is planned; it is built.
 
 ---
 
@@ -309,7 +317,8 @@ CTest-registered) locks:
   gain level and stays *well below saturation* (`< 128`), which is the regression
   guard for the "cities blow out to white" bug;
 - **stacked clamp** — many overlapping lights clamp gracefully at the ceiling;
-- **forest solid-block occlusion** — a wall of `FT_Tree` darkens the far side.
+- **forest occlusion** — a solid canopy block (full tree density) darkens the
+  far side, while its edge still transmits some light.
 
 **Eyeball in-game** — enter the macro map, advance the clock to night (watch
 `nightDarken` rise), and confirm: towns are warm pools (not white blowouts),
@@ -319,17 +328,13 @@ macro map and confirm a growing/shrinking town's glow tracks its population.
 
 ---
 
-## 9. Status (2026-07-28) — honest
+## 9. Status (2026-08-24) — honest
 
-- **Bake + brightness knob + cost table** (`macro_lighting.{h,cpp}`): DONE,
-  `macro_lighting_test` green, consistent with the new 4-value `FeatureType`.
-- **GPU upload** (`upload_light_field`): DONE, compiles clean in isolation.
-- **Rebake hooks** (`main.cpp`): written, but share a translation unit with the
-  parallel agent's in-flight mountains→biome refactor, so they cannot compile
-  until that lands. Low risk (straight calls into the unit-tested bake).
-- **Not yet committed** — the tree does not build while the mountains refactor is
-  mid-flight; committing waits for a green tree.
-- **Follow-up:** bare-mountain occlusion (§7).
+- **The whole system is in `main` and works**: bake + brightness knob + cost
+  table, elevation toll (Increment C), GPU upload, rebake hooks —
+  `macro_lighting_test` green. The propagation core lives in `macro/optics.h`
+  (`optical_sweep`), shared with fog-of-war sight.
+- No open follow-ups here; bare-mountain occlusion (§7) is built.
 
 ---
 
@@ -338,7 +343,8 @@ macro map and confirm a growing/shrinking town's glow tracks its population.
 | File | Role |
 |---|---|
 | `src/macro/macro_lighting.h` | `MacroLight`, `kMacroGlowCeil`, **`kMacroGlowGain`**, API + docs |
-| `src/macro/macro_lighting.cpp` | `collect_macro_lights`, `bake_light_field`, cost table, Dijkstra |
+| `src/macro/macro_lighting.cpp` | `collect_macro_lights`, `bake_light_field` (census, falloff deposit, encode) |
+| `src/macro/optics.h` | `optical_sweep` (bounded Dijkstra), `kFeatureOpticalCost`, `kCanopyOpticalCost`, `kClimbOpticalCost` |
 | `src/macro/vk_macro_renderer.{h,cpp}` | `upload()` + surgical `upload_light_field()` (binding 3) |
 | `src/app/main.cpp` | `bake_macro_light_field`, `rebake_macro_lights`, dirty-flag triggers |
 | `shaders/macro.frag` | samples `u_lightField`, decodes `· 1.5`, adds at night |

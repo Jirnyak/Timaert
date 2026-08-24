@@ -68,6 +68,7 @@ This widens the established *spec-table → auto UI* idiom (`kCustomParamSpec` i
 | `SubMinimap` | `sub.minimap` | Sub | yes |
 | `SubCombatLog` | `sub.combatlog` | Sub | yes |
 | `SubDangerGem` | `sub.dangergem` | Sub | yes |
+| `SubCrosshair` | `sub.crosshair` | Sub | yes (scale 0.40–2.50) |
 
 ## Persistence — a tiny, forgiving text file
 

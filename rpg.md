@@ -6,7 +6,6 @@ Character sheet: attributes, XP/levels, items, inventory, equipment, loot.
   [macro/character_sheet.h](src/macro/character_sheet.h) (`CharacterSheet`),
   [macro/items.h](src/macro/items.h),
   [macro/state.h](src/macro/state.h) (`PlayerState`)
-- **TS origin:** `game/attributes.ts`, `game/items.ts`
 - **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) §L1 (attributes / items)
 
 ## Model
@@ -22,7 +21,10 @@ Character sheet: attributes, XP/levels, items, inventory, equipment, loot.
   damage — and the player's own outgoing melee, whose `Combat.damage` is refreshed
   from the sheet each tick — flow through the universal combat paths (int↔float
   bridge — see [microcombat.md](microcombat.md); `CombatStats` stays authoritative
-  across the seam). Monsters are sheet-less by design.
+  across the seam). **Monsters have sheets too** (owner, 2026-08-20; CANON.md
+  S14): a creature row IS an NPC row (`FaunaEntry` = `NpcTypeDef`), and every
+  body — wolf or peasant — enters the world through the one door `emplace_body`
+  (`make_character_sheet` → `apply_aura` → `project_combat`, sub/spawn.cpp).
 - **Possession is body-native:** the player is a movable `PlayerTag` flag, and
   when it moves onto another body (вселение), that body fights on its
   OWN `CharacterSheet` — the flag marks *who you control*, it never copies the
@@ -46,6 +48,15 @@ Character sheet: attributes, XP/levels, items, inventory, equipment, loot.
   100 rather than a power of two: nothing indexes an array by rank, so a po2
   bound buys nothing, while "rank == percent" pays back every time a human reads
   a sheet. (It still fits a byte if ranks are ever packed.)
+
+  **Recognised debt (canon-audit A7): the law is broken in the four core
+  stats.** `maxHp`/`maxMp` (`calculate_combat_stats`) and
+  `rawPhysDamage`/`rawSpellDamage` (`calculate_derived`) are computed inline at
+  `·0.05` per rank **with no clamp** (attributes.h) — bypassing
+  `skill_bonus_mult` and the ×2 ceiling: bodybuilding 100 gives ×6 HP instead
+  of the promised doubling. These are the most expensive numbers in the game;
+  until it is fixed, "rank = percent, ceiling ×2" holds for every skill EXCEPT
+  these four.
 
   **Mastery is meant to be reachable and to mean something.** One skill point
   per level across eight skills makes rank 100 a hundred levels poured into a

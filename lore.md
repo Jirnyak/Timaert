@@ -103,8 +103,8 @@ world:**
 
 | Side | Sources | Character |
 |---|---|---|
-| **Black energy (+)** | **Black artifacts and the ruins that hold them** — wherever they are kept, plus a trail behind a carrier (§3.5) | **Objects.** Inert, patient, everywhere, and they never stop |
-| **Magic (−)** | **Beings, and very few of them:** whoever *destroys* a black artifact — the player, or any NPC who does it; plus **very strong mage squads, and dragons** | **Living, rare, mobile, mortal** |
+| **Black energy (−)** | **Black artifacts and the ruins that hold them** — wherever they are kept, plus a trail behind a carrier (§3.5) | **Objects.** Inert, patient, everywhere, and they never stop |
+| **Magic (+)** | **Beings, and very few of them:** whoever *destroys* a black artifact — the player, or any NPC who does it; plus **very strong mage squads, and dragons** | **Living, rare, mobile, mortal** |
 
 *On dragons: they are sources the way a mountain is tall — a property, not a
 politics. **Dragons are just dragons**: boss monsters, animals. They do not know,
@@ -1102,6 +1102,18 @@ the ten years.
 - Possession — the player is a movable flag on an ordinary body
   ([possession.md](possession.md)) — is the mechanical seed of "kill anyone,
   become anyone".
+- The hidden autolevel is **demolished** (2026-08-20, CANON S12): no zone or
+  settlement markup multiplies HP or damage after the spawn roll. A creature is
+  exactly its row — which is what §1's "the world does not care who is looking"
+  requires mechanically.
+- ONE table of bodies — `kNpcTypeDefs[30]` in `src/macro/npc.h` (11 roles + 19
+  creatures, one id space). "Is this a monster" is no longer a question the
+  engine asks; the fiction's "kill anyone, become anyone" has no second
+  vocabulary to trip over.
+- The deserter pool now has its reader: `raise_deserter_bands`
+  (`src/macro/npc_spawn.cpp`), called daily from the world tick — √(pool) men
+  walk off as an outlaw band under the strongest survivor. The danger of the
+  world coming from broken armies (CANON S4) is live, not planned.
 
 **Fiction with no system yet (`NOT BUILT`), roughly in order of leverage:**
 

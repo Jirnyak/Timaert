@@ -7,7 +7,6 @@ procedural generation from world context. No hardcoded if-chains.
   [quest_types.h](src/events/quests/quest_types.h),
   [quest_engine.h](src/events/quests/quest_engine.h);
   generators in [content/quests/procedural.h](src/content/quests/procedural.h)
-- **TS origin:** `game/quests/*`
 - **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) §Quest System
 
 ## Model
@@ -20,7 +19,11 @@ procedural generation from world context. No hardcoded if-chains.
   mutates quest/player state and the event bus only — never the map overlay.
 - **Quest markers** are a *derived* projection of the active quests onto the
   universal marker layer, not engine state (see below).
-- **Procedural:** cities get 2–4 quests, villages 1–2, from economy/distance/mood.
+- **Procedural:** cities get 2–4 quests from economy/distance/mood. **Villages
+  give none** — `generate_quests_for_village` (`content/quests/procedural.cpp`)
+  exists but is called from nowhere; the only caller path is
+  `generate_quests_for_settlement` (`app/main.cpp`). A debt, and a consequence
+  of the Settlement/Village struct split ([landmarks.md](landmarks.md)).
 
 ## Quest markers — a derived overlay
 
@@ -47,6 +50,20 @@ rendering path — they reuse the universal marker layer ([markers.h](src/macro/
   ([ui/macro_overlay.cpp](src/ui/macro_overlay.cpp)) draws every
   `GameState::markers` entry by style; the **QuestMarkers** UI-settings element
   gates and scales it ([ui-settings.md](ui-settings.md)).
+
+## Known defects
+
+- **The Gold reward is minted from thin air** (`quest_engine.cpp`,
+  `emit_reward` RewardKind::Gold): coin is `add`ed straight into the player's
+  inventory even though the giver settlement is known — the neighbouring
+  penalty branch already knows how to write a debt fact against a counterparty.
+  Against the conservation law (CANON S5; canon-audit B3): the reward should
+  travel from the giver's own treasury.
+- **`Objective::subX/subY`** (`quest_types.h`) are dead micro-world
+  coordinates riding the macro save: their only readers are the two `w.pod`/
+  `r.pod` lines in `save.cpp` — no generator sets them, no `eval_objective`
+  case reads them. The save is a snapshot of the MACRO world (CANON S21);
+  micro coordinates have no business in it. For the axe.
 
 ## Planned generators from the fiction
 

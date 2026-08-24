@@ -72,7 +72,7 @@ month the path grid re-bakes on) and one game day visits 1/32 of a domain.
 | Trees | CarrierGrid | The forest plants the forest: per-visit growth = local 3×3 density × 32 / (9 × 1024), gated by the biome's ambient table. A clear-cut inside a living massif is forest again in ~3.5 game years; brush below the seeding threshold never starts one; untended land thickens into чащобы; the desert almost never, water never. |
 | Fauna | OwnScars | Beasts breed where beasts are: +1 head per visit while at least HALF the 3×3 valley lives. A hole heals from its living side inward; a region emptied whole is EXTINCT — nobody is left to breed. |
 | Wheat | OwnScars | Fertility is the context: a reaped cell replants one stand per visit (the old 32-day law, preserved by construction). |
-| Iron | Geology | Born where SCARCE: chance/day = depletion × 1/8, the lump lands on a stone host that lacks iron. New geology is world news. |
+| Iron | Geology | Born where SCARCE: chance/day = depletion × 1/8, the lump lands on a stone host that lacks iron. New geology is world news. **The law exists TWICE** (CANON S26 debt): the LIVE implementation is inline in the `GrowthDomain::Geology` branch of `macro_stock.cpp`; a DEAD trio — `iron_depletion` / `iron_discovery_chance_per_day` / `discover_iron_vein` (`deposit_layer.h`) — has no caller outside `deposit_layer_test.cpp`, i.e. the test guards a corpse. The trio is for the axe. |
 | Clay, Stone | None | Quasi-static (a row away from changing). |
 
 Determinism is calendar-pure: every roll is a hash of (worldSeed, day) —
@@ -81,7 +81,7 @@ iteration order is not determinism), and a reload replays the same days.
 
 ## Persistence
 
-The save carries the LIVING fields (v36/v37): sparse rows as their scar
+The save carries the LIVING fields (since v36/v37): sparse rows as their scar
 maps, carrier rows WHOLE (the tree grid, the deposit cells) — a field that
 grows is not derivable from seed + scars, and the Persistence ruling says
 write the state down. `save_game`/`load_game` take the carriers as REQUIRED
@@ -96,6 +96,15 @@ Wheat row), subworld embodiment (tree scatter, crop parcels, fauna packs —
 each clamped by its row's `read`), the agents' work loops (woodcutter,
 farmer — one law of labour, `kGatherPerWorkerDay`), iron discovery, the map
 sprite (`u_treeMap`).
+
+**Known gap: the subworld never sees the deposits.** Every `MacroWorld`
+aggregate built in `sub/engine.cpp` omits the `deposits` member (canon-audit
+C4), and the deposit rows FAIL SILENTLY on a null carrier —
+`deposit_read` returns 0, writes are refused without a word
+(`macro_stock.cpp`). So a deposit cell embodies nothing underground and a
+sub-level mining act could not pay the ledger even if it existed. Silent
+refusal is against S26 ("overflow speaks out loud"); the plumbing is one
+member per init site.
 
 Planned on the same rows, no new dialects (owner's design intent,
 2026-08-13):

@@ -8,16 +8,19 @@ time, kingdoms, NPCs, items, army. No GL/Vulkan, no events, no UI.
   [politik.h](src/macro/politik.h),
   [pathfinding.h](src/macro/pathfinding.h),
   [map_generator.h](src/macro/map_generator.h)
-- **TS origin:** `game/state.ts`, `game/world-tick.ts`, `game/politik.ts`, …
 - **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) §L1 — Macroworld Core
 
 ## Model
 
 - **State:** `GameState`, `PlayerState`, `WorldTime`, `Settlement`, `Village`,
   `Spire`, `Politik`. Serialised at `kSaveVersion` (see `state.h`).
-- **Generation order** (`boot_world`): terrain → politik → snap-to-land →
-  finalize (lake-snap + Voronoi) → landmarks → trees → roads → dirt roads →
-  feature layer → zones → spires.
+- **Generation order** (`boot_world`, `src/app/main.cpp`): terrain → trees +
+  tree-count layer → deposit layer → politik (fed a `SettlementSiteContext` over
+  trees/terrain/deposits) → snap-to-land → finalize (lake-snap + Voronoi) →
+  landmarks → roads → dirt roads → feature layer → zones → spires. The order IS
+  the law of causality (CANON S8): resources are derived **before** politics,
+  because settlement placement READS them — the suitability score, not authorial
+  dice, decides where people live.
 - **Time:** one integer tick is the world's quantum and the clock is one
   `uint64` — the ladder, the fixed simulation step and the subworld's slower day
   are all in [time.md](time.md). `world_tick` moves the clock by whole ticks and
@@ -45,7 +48,7 @@ time, kingdoms, NPCs, items, army. No GL/Vulkan, no events, no UI.
 
 ## Data-driven extension
 
-Add a kingdom → one `kingdom_defs()` row. Add an NPC kind → one `kNpcTypes[]`
+Add a kingdom → one `kingdom_defs()` row. Add an NPC kind → one `kNpcTypeDefs[]`
 row. Reshape terrain/zones → edit the top-of-file `constexpr` tunables. No
 engine branches.
 
@@ -61,8 +64,10 @@ Voronoi boundaries — with a gentle downhill bias (`kRiverClimbShift`: an uphil
 step pays `(nH-curH) >> 1`), so channels prefer to descend and stop crossing
 ridges.
 
-Each stamped river cell is then **carved below sea level** (`carveH = 94`, under
-`seaLevel8 = 102`) and re-masked, so the one `biome_at()` / `bt_biome()`
+Each stamped river cell is then **carved below sea level** — `carveH` is
+*derived*, not assigned: `carveH = seaLevel8 − 8` (clamped ≥ 1,
+`map_generator.cpp`), i.e. always one fixed notch under whatever the sea is —
+and re-masked, so the one `biome_at()` / `bt_biome()`
 classifier reads it as `Biome::Water`. Two consequences fall out for free:
 
 - **Render** — a river renders through the *exact* sea-water path (blue water +
@@ -87,7 +92,12 @@ The road **topology** is built in `generate_politik`
 ([politik.cpp](src/macro/politik.cpp)); the road **cells** are then traced
 between connected cities by `trace_roads`
 ([spawners.cpp](src/macro/spawners.cpp)) with a binary-heap A\* that reuses
-existing road cells cheaply (`kRoadShare = 0.30`) and rejects water.
+existing road cells and rejects water. Reuse is priced the honest way round:
+`kRoadShare = 1.00` — a road is the price *floor*, and open ground is
+**surcharged** instead (`kLand = 3.33`, `kMountain = 16.7`, water blocked). The
+old sub-floor discount (0.30) broke the heuristic's admissibility and had never
+actually caused a single cell of reuse; the comment block above the constants in
+`spawners.cpp` keeps the measurement.
 
 Topology per kingdom is a **Prim's MST** rooted at the capital (guarantees every
 city is reachable), plus **one redundancy edge per city** — its nearest
@@ -127,7 +137,8 @@ daily population drift (`WorldTickResult.dailyTicksProcessed > 0`). One knob,
 ## Knowledge (fog of war)
 
 The player does not know the world from turn one: per-cell knowledge
-(Unknown / Explored / Visible, save v40) with sight propagated by the same
+(Unknown / Explored / Visible, saved since v40; the save is v42 today) with
+sight propagated by the same
 terrain-optical sweep as the night glow. The whole system — mechanic, render
 law, the map page, future vision skills and trackers — is written up in
 [map.md](map.md), THE doc.
@@ -136,5 +147,14 @@ law, the map page, future vision skills and trackers — is written up in
 
 Feeds every subworld cell a `CellContext` (single source of truth — the
 subworld never re-derives macro data). Consumed by all UI overlays. The macro
-NPC/squad mass is the target of GPU simulation (see [macrosim.md](macrosim.md));
-only the cell chunk around the player is CPU-embodied.
+NPC/squad mass is simulated on the CPU (see [macrosim.md](macrosim.md));
+only the cell chunk around the player is embodied.
+
+**A cell is a PLACE** (fix 2026-08-20): `CellContext.cx/cy` is the **wrapped
+macro index** `[0, worldCells)` — which cell of the world this is — while the
+3×3 window's running coordinate lives separately in the seamless manager. One
+macro cell therefore builds ONE subworld, however the player arrives: before the
+split, walking east off the last column made the cell call itself 1024 while
+reading macro cell 0's biome, and every derived seed (detail noise, road anchor,
+tile hash) built a different world for the same place (measured: 100 % of tiles
+differed, heights by up to 63 m). See `src/sub/map_data.h`.
