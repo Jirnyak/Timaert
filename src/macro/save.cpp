@@ -34,8 +34,6 @@ static_assert(kMaxEventLogEntries <= kMaxSmallVector,
 constexpr std::uint32_t kMaxSettlements = 4096u;
 constexpr std::uint32_t kMaxVillages = 16384u;
 constexpr std::uint32_t kMaxMarkers = 16384u;
-constexpr std::uint32_t kMaxFactions = 1024u;
-constexpr std::uint32_t kMaxRelations = 4096u;
 constexpr std::uint32_t kMaxQuests = 4096u;
 // (the field caps live with the rows: macro/world_fields.cpp)
 constexpr std::uint32_t kMaxQuestParts = 4096u;
@@ -540,7 +538,7 @@ void write_player(Writer& w, const PlayerState& p) {
         for (const auto& e : p.eventLog) write_log_entry(w, e);
     }
     write_spell_book(w, p.spellBook);
-    write_string_int_map(w, p.factionPeaceUntilDay);
+    w.pod(p.factionPeaceUntilDay);
     write_string_vector(w, p.completedQuestIds);
     write_string_vector(w, p.failedQuestIds);
     w.pod(p.possessedMacroSpawnId);   // Inc 5e-2 (kSaveVersion 10)
@@ -573,7 +571,7 @@ void read_player(Reader& r, PlayerState& p) {
         p.eventLog.push_back(std::move(e));
     }
     read_spell_book(r, p.spellBook);
-    read_string_int_map(r, p.factionPeaceUntilDay);
+    r.pod(p.factionPeaceUntilDay);
     read_string_vector(r, p.completedQuestIds);
     read_string_vector(r, p.failedQuestIds);
     r.pod(p.possessedMacroSpawnId);   // Inc 5e-2 (kSaveVersion 10)
@@ -681,22 +679,36 @@ void read_marker(Reader& r, Marker& m) {
     r.str(m.label);
 }
 
-void write_faction(Writer& w, const Faction& f) {
-    w.str(f.id);
-    w.str(f.name);
-    w.str(f.description);
-    w.pod(f.color);
-    write_string_int_map(w, f.relations, kMaxRelations);
+// THE relation matrix, byte for byte (macro/relations.h). It used to be a
+// string-keyed map of string-keyed maps: every faction wrote its id, name,
+// description and colour — four verbatim copies of the registry row that
+// already declares them — and each PAIR was written twice, once per direction.
+// Now the block is the flat matrix plus the names of whatever runtime slots
+// were claimed, which is the only part a registry cannot answer.
+void write_relations(Writer& w, const RelationMatrix& m) {
+    w.pod(m.rel);
+    w.pod(m.used);
+    for (int i = kFactionCount; i < kMaxWorldFactions; ++i) {
+        w.str(std::string(m.used[i] ? m.runtimeIds[i] : ""));
+    }
 }
 
-void read_faction(Reader& r, Faction& f) {
-    r.str(f.id);
-    r.str(f.name);
-    r.str(f.description);
-    r.pod(f.color);
-    read_string_int_map(r, f.relations, kMaxRelations);
+void read_relations(Reader& r, RelationMatrix& m) {
+    m = RelationMatrix{};
+    r.pod(m.rel);
+    r.pod(m.used);
+    for (int i = kFactionCount; i < kMaxWorldFactions && r.ok; ++i) {
+        std::string id;
+        r.str(id);
+        std::snprintf(m.runtimeIds[i], RelationMatrix::kMaxIdLen, "%s",
+                      id.c_str());
+        // A tail slot with no name was never claimed, whatever the flag said.
+        if (id.empty()) m.used[i] = false;
+    }
+    // The registry's own slots are always claimed — a save cannot un-declare a
+    // faction the game is compiled with.
+    claim_registry_slots(m);
 }
-
 void write_sub_state(Writer& w, const GameSubState& s) {
     write_enum8(w, s.kind);
     w.pod(s.settlementId);
@@ -909,14 +921,7 @@ void write_payload(Writer& w, const GameState& s,
         for (const auto& marker : s.markers) write_marker(w, marker);
     }
 
-    if (w.count(s.factions.size(), kMaxFactions)) {
-        std::vector<std::pair<std::string, const Faction*>> factions;
-        factions.reserve(s.factions.size());
-        for (const auto& [id, faction] : s.factions) factions.emplace_back(id, &faction);
-        std::sort(factions.begin(), factions.end(),
-            [](const auto& a, const auto& b) { return a.first < b.first; });
-        for (const auto& row : factions) write_faction(w, *row.second);
-    }
+    write_relations(w, s.relations);
 
     write_sub_state(w, s.subState);
     write_squad(w, s.deserterPool);
@@ -1008,14 +1013,7 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
         s.markers.push_back(std::move(marker));
     }
 
-    if (!read_count(r, n, kMaxFactions)) return;
-    s.factions.clear();
-    s.factions.reserve(n);
-    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-        Faction faction{};
-        read_faction(r, faction);
-        s.factions.emplace(faction.id, std::move(faction));
-    }
+    read_relations(r, s.relations);
 
     read_sub_state(r, s.subState);
     read_squad(r, s.deserterPool);

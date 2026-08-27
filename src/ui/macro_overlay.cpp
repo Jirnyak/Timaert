@@ -830,13 +830,17 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
 
                     // Resolve faction colour through the macro registry. Falls
                     // back to a neutral grey for unknown ids.
+                    // Colour and name come from THE registry row — they were
+                    // copied into the per-save faction map and read back from
+                    // there, which is how a save could disagree with the game
+                    // it was running in.
                     const char* fid = faction_id_for_index(kind.factionIdx);
                     ImU32 fcol = IM_COL32(160, 160, 160, 255);
                     const char* fname = fid;
-                    auto it = gs.factions.find(fid);
-                    if (it != gs.factions.end()) {
-                        fcol  = it->second.color | 0xFF000000u; // ensure opaque
-                        fname = it->second.name.c_str();
+                    if (const FactionDef* fd =
+                            faction_def_by_index(kind.factionIdx)) {
+                        fcol  = fd->color | 0xFF000000u; // ensure opaque
+                        fname = fd->name;
                     }
 
                     // Per-NPC display name pulled from the type's name pool.

@@ -522,12 +522,24 @@ namespace sm::ui
         if (ImGui::Begin("Diplomacy", open))
         {
             ImGui::SetWindowFontScale(scale);
-            ImGui::Text("Factions: %zu", gs.factions.size());
-            ImGui::Separator();
-            for (const auto &[id, f] : gs.factions)
+            // Every faction the world HAS: the registry's rows plus whatever
+            // runtime slots this world claimed (macro/relations.h). Names come
+            // from the registry, standings from the matrix — one source each.
+            int shown = 0;
+            for (int i = 0; i < sm::kMaxWorldFactions; ++i)
             {
-                ImGui::Text("%-16s  rep:%4d", f.name.c_str(),
-                            player_reputation(&gs, id.c_str()));
+                if (!gs.relations.used[i]) continue;
+                ++shown;
+            }
+            ImGui::Text("Factions: %d", shown);
+            ImGui::Separator();
+            for (int i = 0; i < sm::kMaxWorldFactions; ++i)
+            {
+                if (!gs.relations.used[i]) continue;
+                const char *fid = sm::faction_id_of_slot(gs.relations, i);
+                const sm::FactionDef *fd = sm::faction_def_by_index(std::uint16_t(i));
+                ImGui::Text("%-16s  rep:%4d", fd ? fd->name : fid,
+                            player_reputation(&gs, fid));
             }
             ImGui::Separator();
             ImGui::Text("Kingdoms: %zu", gs.politik.kingdoms.size());

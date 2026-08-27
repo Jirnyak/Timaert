@@ -280,7 +280,8 @@ sm::GameState make_state() {
     gs.player.spellBook.cooldowns["spell.spark"] = sm::steps_from_seconds(2.5f);
     sm::spellbook_learn(gs.player.spellBook, "haste");
     sm::spellbook_toggle_sustained(gs.player.spellBook, "haste");
-    gs.player.factionPeaceUntilDay["guild"] = 55;
+    gs.player.factionPeaceUntilDay[
+        std::size_t(sm::ensure_faction_slot(gs, "guild"))] = 55;
     gs.player.completedQuestIds.push_back("q_done_round");
     gs.player.failedQuestIds.push_back("q_failed_round");
     // Entry-side context (kSaveVersion 15): a non-default direction + tick
@@ -349,15 +350,15 @@ sm::GameState make_state() {
     marker.label = "Round Danger";
     gs.markers.push_back(marker);
 
-    sm::Faction faction{};
-    faction.id = "guild";
-    faction.name = "Guild";
-    faction.description = "Runtime faction";
-    faction.color = 0x00FF00u;
-    faction.relations["other"] = -5;
-    gs.factions.emplace(faction.id, faction);
-    // Standing is a row in the relation matrix now, not a player-side map: this
-    // adds the player pair to the very row above, and must not disturb it.
+    // A faction the REGISTRY has never heard of — a guild that formed in play.
+    // It claims one of the matrix's reserved tail slots (macro/relations.h) and
+    // is an ordinary row from that moment: it can hold a relation with another
+    // runtime faction, and it survives the save because its claimed NAME does.
+    const sm::FactionSlot guild = sm::ensure_faction_slot(gs, "guild");
+    const sm::FactionSlot other = sm::ensure_faction_slot(gs, "other");
+    sm::set_relation(gs.relations, guild, other, -5);
+    // Standing is a pair in the same matrix, not a player-side map: this adds
+    // the player pair to the very row above, and must not disturb it.
     sm::add_player_reputation(gs, "guild", 42);
 
     gs.subState.kind = sm::GameSubStateKind::Trading;
@@ -767,10 +768,8 @@ void run_roundtrip() {
     if (!sm::spellbook_has_sustained(p.spellBook, "haste")) {
         FAIL_BAIL("sustained spell state lost");
     }
-    const auto peaceIt = p.factionPeaceUntilDay.find("guild");
-    if (peaceIt == p.factionPeaceUntilDay.end() || peaceIt->second != 55
-        || p.completedQuestIds.empty() || p.completedQuestIds[0] != "q_done_round") {
-        FAIL_BAIL("quest completion or peace state lost");
+    if (p.completedQuestIds.empty() || p.completedQuestIds[0] != "q_done_round") {
+        FAIL_BAIL("quest completion lost");
     }
     if (p.failedQuestIds.empty() || p.failedQuestIds[0] != "q_failed_round") {
         FAIL_BAIL("failed quest ledger lost");
@@ -805,11 +804,18 @@ void run_roundtrip() {
         || loaded.markers[0].style != sm::MarkerStyle::Danger) {
         FAIL_BAIL("marker lost");
     }
-    const auto factionIt = loaded.factions.find("guild");
-    if (factionIt == loaded.factions.end()) FAIL_BAIL("faction lost");
-    const auto relationIt = factionIt->second.relations.find("other");
-    if (relationIt == factionIt->second.relations.end() || relationIt->second != -5) {
+    const sm::FactionSlot loadedGuild =
+        sm::faction_slot(loaded.relations, "guild");
+    const sm::FactionSlot loadedOther =
+        sm::faction_slot(loaded.relations, "other");
+    if (loadedGuild == sm::kNoFactionSlot || loadedOther == sm::kNoFactionSlot) {
+        FAIL_BAIL("runtime faction lost its claimed slot");
+    }
+    if (sm::relation_of(loaded.relations, loadedGuild, loadedOther) != -5) {
         FAIL_BAIL("faction relation lost");
+    }
+    if (loaded.player.factionPeaceUntilDay[std::size_t(loadedGuild)] != 55) {
+        FAIL_BAIL("truce clock lost");
     }
     if (loaded.subState.kind != sm::GameSubStateKind::Trading
         || loaded.subState.settlementId != 7

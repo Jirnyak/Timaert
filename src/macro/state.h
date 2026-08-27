@@ -16,6 +16,7 @@
 #include "macro/npc.h"
 #include "macro/economy.h"
 #include "macro/politik.h"
+#include "macro/relations.h"
 #include "macro/knowledge.h"
 #include "macro/markers.h"
 #include "macro/spell_book_state.h"
@@ -132,7 +133,7 @@ namespace sm {
 // A beast could not stand in a roster while the field was a byte, so a wolf
 // pack was not expressible as a squad; the macro snapshot refused monster
 // entities for the same reason. Both are now open (CANON.md S4/S16).
-constexpr int kSaveVersion = 42;
+constexpr int kSaveVersion = 43;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
@@ -204,11 +205,12 @@ struct GameSubState {
     int pendingEncounterIdx = -1; // index into kEncounters; -1 = none
 };
 
-struct Faction {
-    std::string id, name, description;
-    std::uint32_t color;
-    std::unordered_map<std::string, int> relations; // -100..100
-};
+// (struct Faction is gone. Its four identity columns — id, name, description,
+// colour — were verbatim copies of the registry row that already declares them
+// (macro/faction.h kFactionDefs), duplicated into every save; its `relations`
+// map became the flat matrix in macro/relations.h. What a faction IS lives in
+// the registry; how factions REGARD each other lives in the matrix; there is
+// nothing a third structure could hold.)
 
 enum class LogType : std::uint8_t { Combat, Economy, Politics, World };
 struct LogEntry { LogType type; std::string message; int day; };
@@ -246,7 +248,12 @@ struct PlayerState {
     std::vector<std::string> codexUnlocked;
     std::vector<LogEntry>    eventLog;
     SpellBook spellBook;
-    std::unordered_map<std::string, int> factionPeaceUntilDay;
+    // Truce clocks, one per faction SLOT (macro/relations.h): the day a
+    // cease-fire with that faction runs out. It was the last string-keyed
+    // faction map in the game — and it has no gameplay reader yet, so the
+    // concept is kept (S24 politics will want truces) in the shape everything
+    // else about factions now has: a flat array indexed by ordinal.
+    std::array<std::int32_t, kMaxWorldFactions> factionPeaceUntilDay{};
     std::vector<std::string> completedQuestIds;
     std::vector<std::string> failedQuestIds;
     // Possession persistence (Inc 5e-2, kSaveVersion 10). If the player left a
@@ -328,7 +335,11 @@ struct GameState {
     // Explored persists; Visible is re-derived from the player's position
     // (update_player_sight) — save.cpp clamps it away on write.
     KnowledgeLayer knowledge;
-    std::unordered_map<std::string, Faction> factions;
+    // THE relation matrix — flat, by ordinal (macro/relations.h). The
+    // string-keyed map of string-keyed maps it replaced cost two temporaries,
+    // two hashes and two strcmps per question, and the battle asks K² of them
+    // per tick.
+    RelationMatrix relations{};
 
     Politik politik;
     PlayerState player;
@@ -394,10 +405,8 @@ struct GameState {
 inline int faction_relation(const GameState* gs, const char* a, const char* b) {
     if (!gs || !a || !b || a[0] == '\0' || b[0] == '\0') return 0;
     if (std::strcmp(a, b) == 0) return 100;
-    const auto itA = gs->factions.find(a);
-    if (itA == gs->factions.end()) return 0;
-    const auto itR = itA->second.relations.find(b);
-    return itR == itA->second.relations.end() ? 0 : itR->second;
+    return relation_of(gs->relations, faction_slot(gs->relations, a),
+                       faction_slot(gs->relations, b));
 }
 
 // The player's standing with `factionId` — a plain relation lookup on his row.
@@ -435,19 +444,13 @@ inline bool player_hostile_to(const GameState* gs, const char* factionId) {
 // mention of it in this world. Never insert a bare row: save.cpp re-keys the
 // whole map by Faction::id on load, so a row written with an empty id comes back
 // under the empty key — and takes every other bare row down with it.
-inline Faction& ensure_faction_row(GameState& gs, const char* id) {
-    Faction& f = gs.factions[id];
-    if (!f.id.empty()) return f;
-    f.id = id;
-    const int fi = faction_index(id);
-    if (fi >= 0) {
-        f.name        = kFactionDefs[fi].name;
-        f.description = kFactionDefs[fi].description;
-        f.color       = kFactionDefs[fi].color;
-    } else {
-        f.name = id;   // an id from data/script with no registry row
-    }
-    return f;
+// A faction's SLOT, claimed if this is the first the world hears of it. The
+// map form created a phantom row keyed by a bare id here, and save.cpp re-keyed
+// the whole map by Faction::id on load — so a row written with an empty id came
+// back under the empty key and took every other bare row with it. A slot cannot
+// be bare: it is a number, and an unknown id claims a reserved one.
+inline FactionSlot ensure_faction_slot(GameState& gs, const char* id) {
+    return claim_faction_slot(gs.relations, id);
 }
 
 // Move that standing by `delta`, writing both directions of the pair.
@@ -455,9 +458,11 @@ inline void add_player_reputation(GameState& gs, const char* factionId,
                                   int delta) {
     if (!factionId || factionId[0] == '\0' || delta == 0) return;
     if (std::strcmp(factionId, kPlayerFactionId) == 0) return;  // no self-standing
-    const int next = player_reputation(&gs, factionId) + delta;
-    ensure_faction_row(gs, kPlayerFactionId).relations[factionId] = next;
-    ensure_faction_row(gs, factionId).relations[kPlayerFactionId] = next;
+    const FactionSlot me = ensure_faction_slot(gs, kPlayerFactionId);
+    const FactionSlot them = ensure_faction_slot(gs, factionId);
+    if (me == kNoFactionSlot || them == kNoFactionSlot) return;
+    set_relation(gs.relations, me, them,
+                 relation_of(gs.relations, me, them) + delta);
 }
 
 // ── Factories ────────────────────────────────────────────────

@@ -37,13 +37,13 @@ int fail(const char* msg) {
     return 1;
 }
 
-// Mirror of engine.cpp::faction_relation — the pure lookup under test.
+// The lookup under test, asked the way the game asks it: by SLOT over the flat
+// matrix (macro/relations.h). An id the world never placed answers neutral,
+// because its slot does not exist — the same fail-closed answer the map form
+// gave for a missing key.
 int relation(const sm::GameState& gs, const char* a, const char* b) {
-    const auto itA = gs.factions.find(a);
-    if (itA == gs.factions.end()) return 0;                 // unknown id -> neutral
-    const auto itR = itA->second.relations.find(b);
-    if (itR == itA->second.relations.end()) return 0;       // no entry  -> neutral
-    return itR->second;
+    return sm::relation_of(gs.relations, sm::faction_slot(gs.relations, a),
+                           sm::faction_slot(gs.relations, b));
 }
 
 bool hostile(const sm::GameState& gs, const char* a, const char* b) {
@@ -108,11 +108,11 @@ int main() {
         GameState gs;
         create_factions(gs, seed);
 
-        // Every registry faction exists as a key — including "magika", the id
-        // that historically was emitted but never registered.
+        // Every registry faction holds its own slot — including "magika", the
+        // id that historically was emitted but never registered.
         for (int i = 0; i < kFactionCount; ++i) {
-            if (gs.factions.find(kFactionDefs[i].id) == gs.factions.end()) {
-                return fail("registry faction missing from gs.factions");
+            if (sm::faction_slot(gs.relations, kFactionDefs[i].id) != i) {
+                return fail("registry faction is not at its own ordinal");
             }
         }
 

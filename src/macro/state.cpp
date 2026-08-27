@@ -29,41 +29,31 @@ static int sample_band(Rng& rng, RelationBand b) {
 
 // ── createFactions ─────────────────────────────────────────────
 void create_factions(GameState& gs, std::uint32_t seed) {
-    gs.factions.clear();
-
-    for (const FactionDef& d : kFactionDefs) {
-        Faction f;
-        f.id = d.id; f.name = d.name; f.description = d.description;
-        f.color = d.color;
-        gs.factions.emplace(f.id, std::move(f));
-    }
+    gs.relations = RelationMatrix{};
+    claim_registry_slots(gs.relations);
 
     // Symmetric relation matrix sampled from `seed`, in REGISTRY order (stable
     // and explicit — the old code iterated a std::map, so inserting a faction
-    // reshuffled every sampled relation after it alphabetically).
+    // reshuffled every sampled relation after it alphabetically). Each pair is
+    // written once now: set_relation owns the symmetry, so no caller can set
+    // one direction and forget the other.
     Rng rng{seed ^ 0x9e3779b9u};
     for (int i = 0; i < kFactionCount; ++i) {
         for (int j = i + 1; j < kFactionCount; ++j) {
-            const int rel = sample_band(rng, faction_band(i, j));
-            gs.factions[kFactionDefs[i].id].relations[kFactionDefs[j].id] = rel;
-            gs.factions[kFactionDefs[j].id].relations[kFactionDefs[i].id] = rel;
+            set_relation(gs.relations, i, j, sample_band(rng, faction_band(i, j)));
         }
-        gs.factions[kFactionDefs[i].id].relations[kFactionDefs[i].id] = 100;
     }
 
     // The player's row is the one pair set NOT sampled from a temperament band:
     // a new game must open with the standing the registry declares (bandits and
     // demons already want him dead, cults are wary, the realms are indifferent),
-    // and play moves it from there. Written after the sampling loop and in both
-    // directions, so the matrix answers the same number whichever way it is
-    // asked. This is also the extension seam: a new faction states its opening
-    // stance toward the player in its own playerReputation column — one column,
-    // no code anywhere.
+    // and play moves it from there. This is also the extension seam: a new
+    // faction states its opening stance toward the player in its own
+    // playerReputation column — one column, no code anywhere.
+    const FactionSlot player = faction_slot(gs.relations, kPlayerFactionId);
     for (int i = 0; i < kFactionCount; ++i) {
-        const FactionDef& d = kFactionDefs[i];
-        if (std::strcmp(d.id, kPlayerFactionId) == 0) continue;
-        gs.factions[kPlayerFactionId].relations[d.id] = d.playerReputation;
-        gs.factions[d.id].relations[kPlayerFactionId] = d.playerReputation;
+        if (i == player) continue;
+        set_relation(gs.relations, player, i, kFactionDefs[i].playerReputation);
     }
 }
 

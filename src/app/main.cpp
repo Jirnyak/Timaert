@@ -2370,7 +2370,7 @@ bool boot_world_from_save(App& app, const std::string& path) {
     // first sight sweep after this load re-opens them from the restored
     // position (destroy_world invalidated the sight anchor).
     app.gs.knowledge         = std::move(fresh.knowledge);
-    app.gs.factions          = std::move(fresh.factions);
+    app.gs.relations         = fresh.relations;
     app.gs.subState          = std::move(fresh.subState);
     app.gs.deserterPool      = fresh.deserterPool;
     app.activeQuests         = std::move(loadedQuests);

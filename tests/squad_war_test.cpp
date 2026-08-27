@@ -39,8 +39,11 @@ GameState make_world(int relation) {
     GameState gs{};
     gs.mapW = kMap;
     gs.mapH = kMap;
-    ensure_faction_row(gs, "bandits").relations["timaert"] = relation;
-    ensure_faction_row(gs, "timaert").relations["bandits"] = relation;
+    // One symmetric write through THE door: the two-line form could set one
+    // direction and forget the other, which is exactly what the matrix's
+    // set_relation makes impossible.
+    set_relation(gs.relations, ensure_faction_slot(gs, "bandits"),
+                 ensure_faction_slot(gs, "timaert"), relation);
     return gs;
 }
 
