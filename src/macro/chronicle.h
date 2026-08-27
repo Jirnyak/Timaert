@@ -87,25 +87,36 @@ struct FactKindDef {
     // asks about this kind. A monster's kill is news for a season; a trade is
     // stale in a week.
     std::uint16_t interestDays;
+    // WHAT DOING THIS MAKES OF YOU. Owner, 2026-08-27: a nameless squad can
+    // BECOME named — like a lord — once it has done enough; then its deeds
+    // start being kept for good, and before that they do not.
+    //
+    // So renown is a column of the same table that already says how long a
+    // deed is news, because both questions are "how much did this matter".
+    // Killing a peasant is 1; taking a city is what a figure does.
+    std::uint16_t renown;
 };
 
 inline constexpr FactKindDef kFactKinds[] = {
-    {FactKind::None,         "none",          "—",              0},
-    {FactKind::Killed,       "killed",        "Killed",        32},
-    {FactKind::Died,         "died",          "Died",          32},
-    {FactKind::Battle,       "battle",        "Battle",        32},
-    {FactKind::Robbed,       "robbed",        "Robbed",        16},
-    {FactKind::Traded,       "traded",        "Traded",         8},
-    {FactKind::Gathered,     "gathered",      "Gathered",       8},
-    {FactKind::Built,        "built",         "Built",         64},
-    {FactKind::Starved,      "starved",       "Starved",       32},
-    {FactKind::Revolted,     "revolted",      "Revolted",      64},
-    {FactKind::OwnerChanged, "owner_changed", "Changed hands", 64},
-    {FactKind::Explored,     "explored",      "Explored",      64},
-    {FactKind::Interacted,   "interacted",    "Used",           4},
-    {FactKind::Spawned,      "spawned",       "Appeared",      16},
-    {FactKind::QuestTaken,   "quest_taken",   "Took contract", 32},
-    {FactKind::QuestDone,    "quest_done",    "Kept contract", 32},
+    //                                                    interest  renown
+    {FactKind::None,         "none",          "—",              0,      0},
+    {FactKind::Killed,       "killed",        "Killed",        32,      1},
+    {FactKind::Died,         "died",          "Died",          32,      0},
+    {FactKind::Battle,       "battle",        "Battle",        32,     10},
+    {FactKind::Robbed,       "robbed",        "Robbed",        16,      2},
+    {FactKind::Traded,       "traded",        "Traded",         8,      0},
+    {FactKind::Gathered,     "gathered",      "Gathered",       8,      0},
+    {FactKind::Built,        "built",         "Built",         64,     50},
+    {FactKind::Starved,      "starved",       "Starved",       32,      0},
+    {FactKind::Revolted,     "revolted",      "Revolted",      64,    100},
+    // The most a single deed can make of anybody: take a place from its
+    // owner, and the world knows your name from that day.
+    {FactKind::OwnerChanged, "owner_changed", "Changed hands", 64,    100},
+    {FactKind::Explored,     "explored",      "Explored",      64,      5},
+    {FactKind::Interacted,   "interacted",    "Used",           4,      0},
+    {FactKind::Spawned,      "spawned",       "Appeared",      16,      0},
+    {FactKind::QuestTaken,   "quest_taken",   "Took contract", 32,      1},
+    {FactKind::QuestDone,    "quest_done",    "Kept contract", 32,      5},
 };
 static_assert(sizeof(kFactKinds) / sizeof(kFactKinds[0])
                   == std::size_t(FactKind::Count),
@@ -116,6 +127,31 @@ static_assert(rows_in_enum_order(kFactKinds, &FactKindDef::id),
 inline constexpr const FactKindDef& fact_kind_def(FactKind k) {
     return kFactKinds[std::size_t(k)];
 }
+
+// WHEN A NOBODY BECOMES SOMEBODY — and the number is DERIVED, not chosen: it
+// is the most any single deed is worth in the table above. So the rule reads
+// as a sentence about the world rather than as a threshold —
+//
+//     you become a figure by doing ONCE what a figure does,
+//     or by doing enough lesser things to add up to it.
+//
+// Retune a row and the bar moves with it, because the bar IS the table.
+inline constexpr int renown_to_be_named() {
+    int most = 0;
+    for (const FactKindDef& d : kFactKinds) {
+        if (int(d.renown) > most) most = int(d.renown);
+    }
+    return most;
+}
+inline constexpr int kRenownToBeNamed = renown_to_be_named();
+
+// Is this band a figure yet? ONE number decides, so nothing can disagree with
+// it — there is no flag beside the counter to fall out of step.
+inline constexpr bool renown_is_named(int renown) {
+    return renown >= kRenownToBeNamed;
+}
+static_assert(kRenownToBeNamed > 0,
+              "if no deed is worth renown, nobody could ever become a figure");
 
 // ── The record ───────────────────────────────────────────────────────────
 //
@@ -178,14 +214,40 @@ inline constexpr std::uint32_t kChronicleFacts = 1u << 16;
 // index cell rather than to a map cell, and a query touches 3×3 of them.
 inline constexpr int kChronicleCellSize = 8;
 
-// Does this fact have a NAMED participant — a lord, a city, a faction, the
-// player? Then it is history. Otherwise it is weather: it happened, the ring
-// will remember it for a while, and then the world will forget, which is what
-// forgetting is for.
-inline constexpr bool subject_is_named(std::uint8_t kind) {
-    return kind == std::uint8_t(FactSubject::Squad)
-        || kind == std::uint8_t(FactSubject::Landmark)
-        || kind == std::uint8_t(FactSubject::Faction);
+// A participant reference is a KIND plus one bit: is this one NAMED?
+//
+// The bit rides in the kind byte because the record is 32 bytes and bit 7 was
+// free (the kinds number five). It is a bit rather than a field for the same
+// reason everything here is packed: a fact is scanned by the thousand.
+inline constexpr std::uint8_t kFactSubjectNamed = 0x80u;
+
+inline constexpr std::uint8_t fact_subject_kind(std::uint8_t packed) {
+    return std::uint8_t(packed & 0x7Fu);
+}
+inline constexpr bool fact_subject_marked_named(std::uint8_t packed) {
+    return (packed & kFactSubjectNamed) != 0u;
+}
+inline constexpr std::uint8_t fact_subject(FactSubject kind, bool named) {
+    return std::uint8_t(std::uint8_t(kind)
+                        | (named ? kFactSubjectNamed : std::uint8_t(0)));
+}
+
+// Does this fact have a NAMED participant? Then it is history. Otherwise it is
+// weather: it happened, the ring will remember it for a while, and then the
+// world will forget, which is what forgetting is for.
+//
+// A LANDMARK and a FACTION are named by construction — a city has a name the
+// day it is founded. A SQUAD is not: it starts as one more band on the map and
+// becomes a figure by its deeds (owner, 2026-08-27), which is why the caller
+// marks the bit — only the world knows how much this band has done.
+inline constexpr bool subject_is_named(std::uint8_t packed) {
+    const std::uint8_t kind = fact_subject_kind(packed);
+    if (kind == std::uint8_t(FactSubject::Landmark)
+        || kind == std::uint8_t(FactSubject::Faction)) {
+        return true;
+    }
+    return kind != std::uint8_t(FactSubject::None)
+        && fact_subject_marked_named(packed);
 }
 
 struct Chronicle {

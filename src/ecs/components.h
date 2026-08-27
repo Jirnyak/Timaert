@@ -332,6 +332,18 @@ struct MacroNpcRuntime {
     // exp_to_next_level curve the player climbs. Runtime-only like the rest
     // of this struct — persistent leader progression is the S17 snapshot's.
     std::int32_t  xp = 0;
+    // WHAT THE WORLD THINKS THIS BAND HAS DONE (macro/chronicle.h). A squad
+    // starts as one more band on the map: its deeds are weather, remembered by
+    // the ring for a season and then forgotten. Do enough, and it becomes a
+    // FIGURE — from that day its deeds go into the annals for good (owner,
+    // 2026-08-27: «безымянный сквад может стать именным, как лорд, если
+    // накопится деяний»).
+    //
+    // ONE number, not a counter plus a flag: "is it named" is DERIVED
+    // (`renown >= kRenownToBeNamed`), so the two can never disagree about the
+    // same band. Persistent — a figure stays a figure across a save, because
+    // the runtime rides the macro snapshot.
+    std::int32_t  renown = 0;
 };
 
 // Deterministic spawn ordinal for a persistent macro NPC (Inc 5e-2). The ECS

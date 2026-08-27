@@ -178,7 +178,13 @@ namespace sm {
 // (owner's ruling: «сейв обязательно нёс историю»). The per-cell chains are
 // NOT written: a link is derived from the facts, and a stored derivative is a
 // second truth waiting to disagree.
-constexpr int kSaveVersion = 51;
+// v52: a squad carries RENOWN (ecs::MacroNpcRuntime). A band starts nameless —
+// its deeds are weather the ring forgets in a season — and BECOMES a figure by
+// doing enough, after which its deeds go into the annals for good (owner,
+// 2026-08-27). One number, not a counter plus a flag: "is it named" is derived
+// from it, so the two can never disagree about the same band. The runtime is a
+// POD block of the macro record, so its layout is the format.
+constexpr int kSaveVersion = 52;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 

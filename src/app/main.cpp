@@ -560,6 +560,27 @@ std::uint32_t macro_identity_of(const App& app, std::uint32_t entityBits) {
     return id ? id->index : 0u;
 }
 
+// Has this band done enough to be somebody? ONE number answers, and it lives
+// on the band (ecs::MacroNpcRuntime::renown), so there is no flag beside it to
+// disagree. A body with no runtime — a roster row, a corpse — is nobody.
+bool squad_is_named(const App& app, entt::entity e) {
+    if (!app.ecs.reg.valid(e)) return false;
+    const auto* rt = app.ecs.reg.try_get<sm::ecs::MacroNpcRuntime>(e);
+    return rt && sm::renown_is_named(int(rt->renown));
+}
+
+// Pay a band for what it did, by the fact kind's own column. Saturating: a
+// legend does not wrap around into a nobody.
+void add_renown(App& app, entt::entity e, sm::FactKind kind) {
+    if (!app.ecs.reg.valid(e)) return;
+    auto* rt = app.ecs.reg.try_get<sm::ecs::MacroNpcRuntime>(e);
+    if (!rt) return;
+    const int gain = int(sm::fact_kind_def(kind).renown);
+    if (gain <= 0) return;
+    const std::int64_t sum = std::int64_t(rt->renown) + gain;
+    rt->renown = std::int32_t(std::min<std::int64_t>(sum, 2147483647));
+}
+
 void raise_macro_fact(void* user, const sm::BattleFact& fact) {
     auto& app = *static_cast<App*>(user);
     if (fact.kind != sm::BattleFact::Kind::Death) return;
@@ -585,11 +606,18 @@ void raise_macro_fact(void* user, const sm::BattleFact& fact) {
     wf.kind = std::uint16_t(sm::FactKind::Killed);
     const std::uint32_t killerId = macro_identity_of(app, fact.killer);
     const std::uint32_t victimId = macro_identity_of(app, fact.victim);
-    wf.subjectKind = killerId != 0u ? std::uint8_t(sm::FactSubject::Squad)
-                                    : std::uint8_t(sm::FactSubject::Cell);
+    // Is this band a FIGURE yet? Only the world knows, so the world marks it:
+    // a squad's deeds are weather until it has done enough, and then they are
+    // history (macro/chronicle.h renown_is_named).
+    wf.subjectKind = killerId != 0u
+        ? sm::fact_subject(sm::FactSubject::Squad,
+                           squad_is_named(app, entt::entity(fact.killer)))
+        : std::uint8_t(sm::FactSubject::Cell);
     wf.subject = killerId;
     if (victimId != 0u) {
-        wf.objectKind = std::uint8_t(sm::FactSubject::Squad);
+        wf.objectKind =
+            sm::fact_subject(sm::FactSubject::Squad,
+                             squad_is_named(app, entt::entity(fact.victim)));
         wf.object = victimId;
     }
     wf.amount = 1;
@@ -605,6 +633,13 @@ void raise_macro_fact(void* user, const sm::BattleFact& fact) {
         }
     }
     app.bus.record(wf);
+
+    // ...and the deed makes something of the doer. This is the whole of the
+    // rule: a nameless band that keeps doing notable things crosses the bar
+    // and becomes a figure, after which its deeds go into the annals. Before
+    // that they are weather — which is exactly why sixteen thousand bands do
+    // not drown the world's memory.
+    add_renown(app, entt::entity(fact.killer), sm::FactKind::Killed);
 }
 
 // THE player's bag, from his squad entity (macro/player_entity.h). A world

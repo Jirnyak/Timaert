@@ -14,6 +14,7 @@
 
 #include "macro/chronicle.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <vector>
 
@@ -308,6 +309,72 @@ void test_the_annals_are_asked_about_a_figure() {
           "the filter above really filtered");
 }
 
+// ── A NOBODY BECOMES SOMEBODY ────────────────────────────────────────────
+// Owner, 2026-08-27: a nameless squad can become named, like a lord, once it
+// has accumulated deeds — and from that day its deeds are kept for good.
+// This is the rule that keeps sixteen thousand bands from drowning the
+// world's memory while still letting any of them earn a place in it.
+void test_a_band_becomes_a_figure_by_its_deeds() {
+    // The bar is DERIVED from the table, not chosen: it is the most any single
+    // deed is worth, so "become a figure by doing once what a figure does, or
+    // by adding up enough lesser things".
+    int most = 0;
+    for (const FactKindDef& d : kFactKinds) most = std::max(most, int(d.renown));
+    CHECK(kRenownToBeNamed == most,
+          "the bar IS the table: retune a row and it moves with it");
+    CHECK(fact_kind_def(FactKind::OwnerChanged).renown == std::uint16_t(most),
+          "and taking a place from its owner is what a figure does");
+    CHECK(fact_kind_def(FactKind::Traded).renown == 0,
+          "negative control: selling bread makes nobody anybody");
+
+    CHECK(!renown_is_named(0), "a fresh band is nobody");
+    CHECK(!renown_is_named(kRenownToBeNamed - 1), "and almost is not enough");
+    CHECK(renown_is_named(kRenownToBeNamed), "one great deed is enough");
+
+    // ...and the chronicle keeps the SAME fact differently depending on it.
+    Chronicle c;
+    chronicle_init(c, 64, 64);
+
+    WorldFact nobody{};
+    nobody.day = 1;
+    nobody.kind = std::uint16_t(FactKind::Killed);
+    nobody.subjectKind = fact_subject(FactSubject::Squad, /*named*/false);
+    nobody.subject = 5u;
+    nobody.x = 8; nobody.y = 8;
+    nobody.amount = 1;
+    chronicle_record(c, nobody);
+    CHECK(c.annals.empty(),
+          "a nameless band's killing is weather: the ring holds it, the world "
+          "does not remember it");
+
+    WorldFact somebody = nobody;
+    somebody.subjectKind = fact_subject(FactSubject::Squad, /*named*/true);
+    chronicle_record(c, somebody);
+    CHECK(c.annals.size() == 1u,
+          "the SAME deed by a figure is history — the difference is one bit "
+          "about the doer, not the deed");
+
+    // The bit rides in the kind byte, and reading the kind must not see it.
+    CHECK(fact_subject_kind(somebody.subjectKind)
+              == std::uint8_t(FactSubject::Squad),
+          "the packed reference still reads as a squad");
+    CHECK(fact_subject_marked_named(somebody.subjectKind)
+          && !fact_subject_marked_named(nobody.subjectKind),
+          "and the bit is the only thing that differs");
+
+    // A city is named by construction: it had a name the day it was founded,
+    // so nobody has to mark it.
+    WorldFact city{};
+    city.day = 1;
+    city.kind = std::uint16_t(FactKind::Starved);
+    city.subjectKind = std::uint8_t(FactSubject::Landmark);
+    city.subject = 2u;
+    city.x = 8; city.y = 8;
+    chronicle_record(c, city);
+    CHECK(c.annals.size() == 2u,
+          "a landmark needs no bit: a city has a name by construction");
+}
+
 } // namespace
 
 int main() {
@@ -319,5 +386,6 @@ int main() {
     test_the_world_counts_its_own_facts();
     test_the_annals_keep_figures_and_forget_weather();
     test_the_annals_are_asked_about_a_figure();
+    test_a_band_becomes_a_figure_by_its_deeds();
     return sm::test::report("chronicle_test");
 }
