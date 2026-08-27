@@ -275,6 +275,45 @@ void test_the_head_is_on_the_entity() {
     CHECK(debt && memory_amount(*debt) == 15, "with the amount intact");
 }
 
+// ── 7. Одна дверь сборки стороны боя ─────────────────────────────────────
+// The app used to build the player's AutoBattleSide by hand beside the door
+// every other squad went through — two answers to one question, reading two
+// different stores. They can no longer disagree because there is one of them;
+// what this pins is that the one door still says the PLAYER's numbers, not a
+// generic adventurer's, when it is handed his authored sheet.
+void test_one_door_assembles_every_battle_side() {
+    GameState gs{};
+    gs.mapW = gs.mapH = 64;
+    gs.player.sheet.attributes.str = 18;
+    gs.player.sheet.attributes.vit = 18;
+    gs.player.sheet.attributes.end = 14;
+    gs.player.sheet.levelData.level = 5;
+    recompute_combat_maxima(gs.player.combatStats,
+                            gs.player.sheet.attributes,
+                            gs.player.sheet.skills);
+    gs.player.combatStats.currentHp = gs.player.combatStats.maxHp / 2;
+    gs.player.combatStats.currentSp = gs.player.combatStats.maxSp / 4;
+    ecs::World w;
+    ensure_macro_player_entity(gs, w);
+    const entt::entity e = player_squad_entity(w);
+
+    const AutoBattleSide mine = auto_battle_side_of(w, e, &gs.player.sheet);
+    const AutoBattleSide generic = auto_battle_side_of(w, e);
+
+    CHECK(mine.leaderHpOverride == float(gs.player.combatStats.maxHp),
+          "handed his sheet, the door states HIS ceiling");
+    CHECK(generic.leaderHpOverride < 0.0f,
+          "negative control: handed none, the same door derives from the row "
+          "— the sheet is what makes the difference, not the entity");
+    CHECK(mine.leaderHealthFraction > 0.45f && mine.leaderHealthFraction < 0.55f,
+          "his wound walks in with him, read off the entity the merge made "
+          "honest");
+    CHECK(mine.fatigue > 0.2f && mine.fatigue < 0.3f,
+          "and so does his tiredness");
+    CHECK(mine.roster == player_roster(w),
+          "his men are his roster — the same lookup, not a second one");
+}
+
 } // namespace
 
 int main() {
@@ -284,5 +323,6 @@ int main() {
     test_the_players_men_never_desert();
     test_the_entity_numbers_are_not_stale();
     test_the_head_is_on_the_entity();
+    test_one_door_assembles_every_battle_side();
     return sm::test::report("player_is_a_squad_test");
 }

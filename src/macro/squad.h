@@ -102,7 +102,22 @@ inline entt::entity macro_entity_by_spawn_id(ecs::World& w,
 // ordinal: the macro layer never stored his birth sheet seed, and both body
 // births already re-derive sheets from their own context seeds, so the
 // fraction-based wound law is what keeps the layers agreeing (sub/spawn.h).
-inline AutoBattleSide auto_battle_side_of(ecs::World& w, entt::entity e) {
+// `storedSheet`: a leader whose sheet was AUTHORED rather than rolled — today
+// that is the player and only the player, tomorrow it is every named lord.
+// Pass it and his own build fights the battle; pass nothing and the row is
+// derived from (type, level, seed) as a generic leader's always was.
+//
+// This parameter is what killed the twin. The app used to assemble the
+// player's side by hand in `player_auto_battle_side` — twenty lines restating
+// health-as-a-fraction, fatigue-as-sp-over-max and roster lookup, beside the
+// twenty lines here that said the same things about everyone else. Two
+// answers to one question about the world, which CANON S26 forbids by name:
+// they had already drifted (the hand-built one read PlayerState while this one
+// read the entity), and the merge that made the player an ordinary squad is
+// exactly what made one function able to answer for both.
+inline AutoBattleSide auto_battle_side_of(ecs::World& w, entt::entity e,
+                                          const CharacterSheet* storedSheet
+                                              = nullptr) {
     AutoBattleSide s{};
     auto& reg = w.reg;
     if (const auto* kind = reg.try_get<ecs::NPCKind>(e)) {
@@ -130,8 +145,17 @@ inline AutoBattleSide auto_battle_side_of(ecs::World& w, entt::entity e) {
     if (const auto* roster = reg.try_get<ecs::SquadRoster>(e)) {
         s.roster = &roster->squad;
     }
-    // A generic macro leader has no persistent sheet yet, so no aura sources;
-    // the day leaders carry sheets (S17 snapshot / plot lords), collect here.
+    if (storedSheet) {
+        // His hp ceiling is his OWN sheet's, not a roll of his row — and his
+        // aura is what his perks and skills actually say. `leaderDpsOverride`
+        // is deliberately NOT set here: a swing is priced by the subworld's
+        // melee identity (sub/engine.h), and macro is L1 — it may not reach
+        // up. The caller that knows both worlds states that one number.
+        const CombatStats cs = calculate_combat_stats(storedSheet->attributes,
+                                                      storedSheet->skills);
+        s.leaderHpOverride = float(std::max(1, cs.maxHp));
+        s.aura = collect_leader_aura(*storedSheet);
+    }
     return s;
 }
 

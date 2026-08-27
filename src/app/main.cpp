@@ -1114,28 +1114,24 @@ bool route_macro_npc_attack(App& app, entt::entity npc) {
 
 bool modal_overlay_active(const App& app);   // defined with the pause block
 
-// The player's side of the resolver — from the very numbers his subworld
-// body fights with (sub/engine.h player melee identity + combatStats), his
-// army as his roster, his sheet's aura, his stamina as fatigue.
+// The player's side of the resolver — assembled by THE one door every other
+// squad's side goes through (macro/squad.h auto_battle_side_of), because his
+// squad is an ordinary squad. This function used to be that door's hand-built
+// twin: it restated health-as-a-fraction, fatigue-as-sp-over-max and the
+// roster lookup in its own words, reading PlayerState where the door read the
+// entity — two answers about one squad, free to disagree the moment either
+// moved. All that is left of it is the ONE number macro is not allowed to
+// know: what a swing of his is worth, which is the subworld's melee identity
+// (sub/engine.h) and belongs to the layer that can see both worlds.
 sm::AutoBattleSide player_auto_battle_side(App& app) {
-    sm::AutoBattleSide s{};
     const sm::PlayerState& p = app.gs.player;
-    s.leaderHpOverride = float(std::max(1, p.combatStats.maxHp));
-    s.leaderHealthFraction = p.combatStats.maxHp > 0
-        ? float(std::clamp(p.combatStats.currentHp, 0, p.combatStats.maxHp))
-              / float(p.combatStats.maxHp)
-        : 1.0f;
+    sm::AutoBattleSide s = sm::auto_battle_side_of(
+        app.ecs, sm::player_squad_entity(app.ecs), &p.sheet);
     const float swing = std::floor(
         sm::sub::kPlayerBaseMeleeDamage
         + sm::calculate_derived(p.sheet.attributes, p.sheet.skills)
               .rawPhysDamage);
     s.leaderDpsOverride = swing / sm::sub::kPlayerMeleeCooldown;
-    s.roster = sm::player_roster(app.ecs);
-    s.aura = sm::collect_leader_aura(p.sheet);
-    s.fatigue = p.combatStats.maxSp > 0
-        ? std::clamp(float(p.combatStats.currentSp)
-                         / float(p.combatStats.maxSp), 0.1f, 1.0f)
-        : 1.0f;
     return s;
 }
 
