@@ -112,18 +112,6 @@ void queue_reap(std::array<entt::entity, kMaxSpellReaps>& reaps,
     reaps[std::size_t(reapCount++)] = e;
 }
 
-void emit_npc_death(EventBus* bus, entt::entity e,
-                    const ecs::Projectile& p,
-                    const ecs::NPCKind* kind) {
-    if (!bus || !kind) return;
-    GameEvent ev{EventTag::NpcDeath};
-    ev.a = std::uint32_t(entt::to_integral(e));
-    ev.b = p.ownerId;
-    ev.ix = int(kind->type);
-    ev.iy = int(p.spellId & kSpellEventIdMask);
-    bus->emit(ev);
-}
-
 void apply_spell_damage(ecs::World& w,
                         std::array<entt::entity, kMaxSpellReaps>& reaps,
                         int& reapCount,
@@ -139,28 +127,16 @@ void apply_spell_damage(ecs::World& w,
     (void)reapCount;
     if (damage <= 0.0f || !w.reg.valid(target)) return;
     if (!is_spell_target(w.reg, target, p, canHitFn, canHitUser)) return;
-    auto* hp = w.reg.try_get<ecs::Health>(target);
-    if (!hp) return;
     const bool playerOwned = projectile_owner_is_player_side(w.reg, p);
-    const bool lethal = hp->hp > 0.0f && hp->hp - damage <= 0.0f;
-    w.reg.emplace_or_replace<ecs::LastHit>(target, p.ownerId, playerOwned);
-    w.reg.emplace_or_replace<ecs::HitFlash>(
-        target, ecs::HitFlash{kHitFlashDuration});
-    // Universal impact-VFX marker (Inc C): a pure-ECS tag, so this renderer-free
-    // TU stays free of particle types (mirrors HitFlash). The engine's
-    // tick_damage_fx drains it into a blood/dust burst the same tick. A spell
-    // that lands on flesh bleeds exactly like a melee hit — one path, no per-
-    // spell code.
-    w.reg.emplace_or_replace<ecs::DamageFx>(target, ecs::DamageFx{lethal});
-    hp->hp -= damage;
+    const DamageSource src{p.ownerId, playerOwned,
+                           p.spellId & kSpellEventIdMask};
+    const DamageResult hit =
+        apply_damage(w.reg, target, src, damage, DamageKind::Spell, bus);
+    if (hit.applied <= 0.0f) return;
     if (playerOwned && logFn
         && !w.reg.any_of<ecs::PlayerTag, ecs::PlayerSoldierTag>(target)) {
         logFn(logUser, std::uint32_t(entt::to_integral(target)),
-              damage, lethal);
-    }
-    if (hp->hp <= 0.0f && !w.reg.any_of<ecs::Dead>(target)) {
-        w.reg.emplace<ecs::Dead>(target);
-        emit_npc_death(bus, target, p, w.reg.try_get<ecs::NPCKind>(target));
+              hit.applied, hit.lethal);
     }
 }
 

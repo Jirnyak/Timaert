@@ -67,6 +67,7 @@
 #include "content/plot/intro.h"
 #include "content/quests/procedural.h"
 #include "sub/engine.h"
+#include "sub/damage.h"
 #include "sub/dgn/dispatch.h"
 #include "sub/height.h"
 #include "sub/map_data.h"
@@ -6284,11 +6285,8 @@ bool run_subworld_loot_xp_smoke(App& app) {
         vp->vx = lootX;
         vp->vy = lootY;
     }
-    if (auto* hp = reg.try_get<sm::ecs::Health>(target)) hp->hp = 0.0f;
-    reg.emplace_or_replace<sm::ecs::LastHit>(target, 0u, true);
-    if (!reg.any_of<sm::ecs::Dead>(target)) {
-        reg.emplace<sm::ecs::Dead>(target);
-    }
+    sm::sub::apply_lethal_damage(reg, target, sm::sub::DamageSource{0u, true},
+                                 sm::sub::DamageKind::Dev, &app.bus);
 
     app.subworld.tick(0.016f);
     bool corpseFound = false;
@@ -6556,8 +6554,10 @@ bool run_dungeon_house_smoke(App& app) {
             const sm::MacroStockKey key{-1, beastDebt.cellX, beastDebt.cellY};
             faunaBefore = sm::macro_stock_read(mw, sm::MacroStock::FaunaCount,
                                                key);
-            app.ecs.reg.get<sm::ecs::Health>(beast).hp = 0.0f;
-            app.ecs.reg.emplace_or_replace<sm::ecs::Dead>(beast);
+            sm::sub::apply_lethal_damage(app.ecs.reg, beast,
+                                         sm::sub::DamageSource{},
+                                         sm::sub::DamageKind::Script,
+                                         &app.bus);
             app.subworld.tick(0.016f);
             faunaAfter = sm::macro_stock_read(mw, sm::MacroStock::FaunaCount,
                                               key);
@@ -6681,9 +6681,9 @@ bool run_dungeon_house_smoke(App& app) {
         const sm::MacroStockKey key{victimDebt.subject, victimDebt.cellX,
                                     victimDebt.cellY};
         popBefore = sm::macro_stock_read(mw, sm::MacroStock::Population, key);
-        auto& h = app.ecs.reg.get<sm::ecs::Health>(victim);
-        h.hp = 0.0f;
-        app.ecs.reg.emplace_or_replace<sm::ecs::Dead>(victim);
+        sm::sub::apply_lethal_damage(app.ecs.reg, victim,
+                                     sm::sub::DamageSource{},
+                                     sm::sub::DamageKind::Script, &app.bus);
         app.subworld.tick(0.016f);
         popAfter = sm::macro_stock_read(mw, sm::MacroStock::Population, key);
     }
@@ -8553,9 +8553,9 @@ bool run_console_smoke(App& app) {
             return false;
         }
         const int expBefore = app.gs.player.sheet.levelData.exp;
-        if (auto* hp = reg.try_get<sm::ecs::Health>(wolfE)) hp->hp = 0.0f;
-        reg.emplace_or_replace<sm::ecs::LastHit>(wolfE, 0u, true);
-        if (!reg.any_of<sm::ecs::Dead>(wolfE)) reg.emplace<sm::ecs::Dead>(wolfE);
+        sm::sub::apply_lethal_damage(reg, wolfE,
+                                     sm::sub::DamageSource{0u, true},
+                                     sm::sub::DamageKind::Dev, &app.bus);
         app.subworld.tick(0.016f);
         if (app.gs.player.sheet.levelData.exp <= expBefore) {
             restore(); smoke_fail(app, "console wolf kill granted no XP"); return false;
@@ -9520,12 +9520,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "battle_start hostile lost health");
                 break;
             }
-            smokeHp->hp = 0.0f;
-            app.ecs.reg.emplace_or_replace<sm::ecs::LastHit>(
-                smokeHostile, 0u, true);
-            if (!app.ecs.reg.any_of<sm::ecs::Dead>(smokeHostile)) {
-                app.ecs.reg.emplace<sm::ecs::Dead>(smokeHostile);
-            }
+            sm::sub::apply_lethal_damage(app.ecs.reg, smokeHostile,
+                                         sm::sub::DamageSource{0u, true},
+                                         sm::sub::DamageKind::Dev, &app.bus);
             app.subworld.leave(true);
             const sm::LevelData afterDeathXp = app.gs.player.sheet.levelData;
             if (afterDeathXp.level <= beforeDeathXp.level
@@ -10021,9 +10018,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                                "a stamped creature stands on an empty cell");
                     break;
                 }
-                auto& h = reg.get<sm::ecs::Health>(body);
-                h.hp = 0.0f;
-                reg.emplace_or_replace<sm::ecs::Dead>(body);
+                sm::sub::apply_lethal_damage(reg, body,
+                                             sm::sub::DamageSource{},
+                                             sm::sub::DamageKind::Script,
+                                             &app.bus);
                 std::fprintf(stderr,
                              "[smoke] wild body culled at cell %d,%d "
                              "(count %d)\n",
@@ -10113,9 +10111,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     smoke_fail(app, "a wound underground did not reach the map");
                     break;
                 }
-                auto& h = reg.get<sm::ecs::Health>(app.smoke.trackedBody);
-                h.hp = 0.0f;
-                reg.emplace_or_replace<sm::ecs::Dead>(app.smoke.trackedBody);
+                sm::sub::apply_lethal_damage(reg, app.smoke.trackedBody,
+                                             sm::sub::DamageSource{},
+                                             sm::sub::DamageKind::Script,
+                                             &app.bus);
                 app.smoke.trackedPhase = 2;
                 break;      // let the reaper run
             }

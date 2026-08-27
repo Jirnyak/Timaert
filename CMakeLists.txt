@@ -422,6 +422,15 @@ timaert_test(macro_snapshot_test
 # constexpr table with no TU — the test guards its append-only ordinals.
 timaert_test(spell_registry_test)
 
+# THE damage door: one protocol for every weapon (work_vector §4). Links the
+# door TU and the bus it reports deaths to — nothing else, because the door
+# strikes and the reaper (engine.cpp, exercised by the smokes) settles.
+timaert_test(damage_door_test
+    SOURCES
+        src/sub/damage.cpp
+        src/events/event_bus.cpp
+    LINK_ENTT)
+
 timaert_test(spell_casting_effects_test
     SOURCES
         src/events/event_bus.cpp
@@ -432,6 +441,8 @@ timaert_test(spell_casting_effects_test
         # test links the table rather than a second opinion about how wide a wolf is.
         src/macro/fauna.cpp
         src/sub/spell_effects.cpp
+        # spell_effects strikes through THE damage door now.
+        src/sub/damage.cpp
     LINK_ENTT)
 
 timaert_test(combat_squad_test
@@ -1058,6 +1069,8 @@ timaert_test(battle_ai_test
 timaert_test(spell_broadphase_parity_test
     SOURCES
         src/sub/spell_effects.cpp
+        # spell_effects strikes through THE damage door now.
+        src/sub/damage.cpp
         src/sub/battle.cpp
         src/macro/fauna.cpp
         src/events/event_bus.cpp

@@ -5,12 +5,9 @@
 #include <limits>
 #include "ecs/world.h"
 #include "events/event_bus.h"
+#include "sub/damage.h"
 
 namespace sm::sub {
-
-// One duration for the on-hit flash, whatever weapon landed it (melee in
-// engine.cpp, projectile/blast/beam/chain here). Was two file-local copies.
-inline constexpr float kHitFlashDuration = 0.15f;
 
 using SpellDamageLogFn = void (*)(void* user,
                                   std::uint32_t targetEntityId,

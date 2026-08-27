@@ -13,6 +13,7 @@
 #include "sub/ai.h"
 #include "sub/battle.h"
 #include "sub/spell_effects.h"
+#include "sub/damage.h"
 #include "sub/base_generator.h"
 #include "sub/dgn/dispatch.h"
 #include "sub/body.h"
@@ -165,31 +166,16 @@ float dist3sq(float ax, float ay, float az, float bx, float by, float bz) {
 }
 
 // One fall-damage path for EVERY body, player included: honest kinetics
-// (height.h fall_damage), body radius as the mass proxy, routed through the
-// same Health / DamageFx / Dead / NpcDeath chain as combat damage. No LastHit
-// — nobody gets XP for gravity; a lethal fall is a neutral death with a dust
-// burst. Returns the damage applied (0 when below the 0.5 threshold or the
-// body is already dead) so the player path can log it.
+// (height.h fall_damage), body radius as the mass proxy, the blow itself
+// through THE damage door. "No XP for gravity" is the Fall kind's row, not a
+// skipped component here. Returns the damage applied (0 when below the 0.5
+// threshold or the body is already dead) so the player path can log it.
 float apply_fall_damage(entt::registry& reg, entt::entity e, float impactVz,
                         float radius, EventBus* bus) {
     const float dmg = fall_damage(impactVz, radius);
     if (dmg < 0.5f) return 0.0f;
-    auto* hp = reg.try_get<ecs::Health>(e);
-    if (hp == nullptr || hp->hp <= 0.0f) return 0.0f;
-    hp->hp -= dmg;
-    reg.emplace_or_replace<ecs::DamageFx>(e, ecs::DamageFx{hp->hp <= 0.0f});
-    if (hp->hp <= 0.0f && !reg.any_of<ecs::Dead>(e)) {
-        reg.emplace<ecs::Dead>(e);
-        if (bus != nullptr && !reg.any_of<ecs::PlayerTag>(e)) {
-            GameEvent ev{EventTag::NpcDeath};
-            ev.a = std::uint32_t(entt::to_integral(e));
-            ev.b = 0u;
-            const auto* kind = reg.try_get<ecs::NPCKind>(e);
-            ev.ix = kind ? int(kind->type) : kNoNpcType;
-            bus->emit(ev);
-        }
-    }
-    return dmg;
+    return apply_damage(reg, e, DamageSource{}, dmg, DamageKind::Fall, bus)
+        .applied;
 }
 
 // ONE index space: NPCKind.factionIdx is an index into the faction registry
@@ -1391,41 +1377,20 @@ void SubworldEngine::tick_player_melee(float dt) {
         return;
     }
 
-    auto* hp = reg.try_get<ecs::Health>(target);
-    if (!hp || hp->hp <= 0.0f) return;
-    const float damage = meleeDamage;
-    const bool lethal = hp->hp > 0.0f && hp->hp - damage <= 0.0f;
-    hp->hp -= damage;
-    reg.emplace_or_replace<ecs::LastHit>(
-        target, std::uint32_t{0}, true);
-    reg.emplace_or_replace<ecs::HitFlash>(
-        target, ecs::HitFlash{kHitFlashDuration});
-    // Universal impact-VFX marker (Inc C): drained by tick_damage_fx into a
-    // blood/dust burst this same tick. One line per damage site; no particle
-    // types here.
-    reg.emplace_or_replace<ecs::DamageFx>(target, ecs::DamageFx{lethal});
+    const DamageResult hit = apply_damage(
+        reg, target, DamageSource{std::uint32_t{0}, true}, meleeDamage,
+        DamageKind::Melee, bus_);
+    if (hit.applied <= 0.0f) return;
     push_player_hit_log(std::uint32_t(entt::to_integral(target)),
-                        damage, lethal);
+                        hit.applied, hit.lethal);
     const char* label = subworld_attacker_label(reg, target);
     char status[96]{};
     std::snprintf(status, sizeof(status), "You %s %s for %d",
-                  lethal ? "killed" : "hit",
+                  hit.lethal ? "killed" : "hit",
                   label,
-                  std::max(0, int(std::round(damage))));
+                  std::max(0, int(std::round(hit.applied))));
     set_status(status);
     playerAttackTimer_ = meleeCooldown;
-
-    if (hp->hp <= 0.0f && !reg.any_of<ecs::Dead>(target)) {
-        reg.emplace<ecs::Dead>(target);
-        if (bus_) {
-            GameEvent ev{EventTag::NpcDeath};
-            ev.a = std::uint32_t(entt::to_integral(target));
-            ev.b = 0u;
-            const auto* kind = reg.try_get<ecs::NPCKind>(target);
-            ev.ix = kind ? int(kind->type) : kNoNpcType;
-            bus_->emit(ev);
-        }
-    }
 }
 
 bool SubworldEngine::harvest_prop_near_player(float maxDist,
@@ -2270,32 +2235,13 @@ void SubworldEngine::tick_subworld_combat(float dt) {
 
     auto strike = [&](entt::entity attacker, entt::entity target,
                       ecs::Combat& c, bool playerOwned) {
-        if (!reg.valid(target)) return;
-        auto* hp = reg.try_get<ecs::Health>(target);
-        if (!hp || hp->hp <= 0.0f) return;
-        hp->hp -= c.damage;
-        reg.emplace_or_replace<ecs::LastHit>(
-            target, std::uint32_t(entt::to_integral(attacker)), playerOwned);
-        reg.emplace_or_replace<ecs::HitFlash>(
-            target, ecs::HitFlash{kHitFlashDuration});
-        // Universal impact-VFX marker (Inc C): blood/dust for every combatant,
-        // not just player-dealt hits — an NPC-vs-NPC skirmish sprays too.
-        reg.emplace_or_replace<ecs::DamageFx>(
-            target, ecs::DamageFx{hp->hp <= 0.0f});
+        const DamageResult hit = apply_damage(
+            reg, target,
+            DamageSource{std::uint32_t(entt::to_integral(attacker)),
+                         playerOwned},
+            c.damage, DamageKind::Melee, bus_);
+        if (hit.applied <= 0.0f) return;
         c.cooldownSteps = steps_from_seconds(c.cooldown);
-        if (hp->hp <= 0.0f && !reg.any_of<ecs::Dead>(target)) {
-            reg.emplace<ecs::Dead>(target);
-            // A dead player is a game-over, not an NPC kill: skip the NpcDeath
-            // event so it never counts toward quest kill-tallies or XP.
-            if (bus_ && !reg.any_of<ecs::PlayerTag>(target)) {
-                GameEvent ev{EventTag::NpcDeath};
-                ev.a = std::uint32_t(entt::to_integral(target));
-                ev.b = std::uint32_t(entt::to_integral(attacker));
-                const auto* dk = reg.try_get<ecs::NPCKind>(target);
-                ev.ix = dk ? int(dk->type) : kNoNpcType;
-                bus_->emit(ev);
-            }
-        }
     };
 
     // ── Resolve blows ──────────────────────────────────────────────────────
@@ -3355,22 +3301,10 @@ int SubworldEngine::dev_kill_all_hostiles() {
         }
         for (int i = 0; i < batch; ++i) {
             const entt::entity e = victims[std::size_t(i)];
-            if (!reg.valid(e)) continue;
-            if (auto* hp = reg.try_get<ecs::Health>(e)) hp->hp = 0.0f;
-            reg.emplace_or_replace<ecs::LastHit>(e, std::uint32_t{0}, true);
-            // Impact-VFX marker (Inc C): the dev cheat sprays too, so this is a
-            // free in-game test of the whole blood/dust path.
-            reg.emplace_or_replace<ecs::DamageFx>(e, ecs::DamageFx{true});
-            reg.emplace<ecs::Dead>(e);
-            if (bus_) {
-                GameEvent ev{EventTag::NpcDeath};
-                ev.a = std::uint32_t(entt::to_integral(e));
-                ev.b = 0u;
-                const auto* kind = reg.try_get<ecs::NPCKind>(e);
-                ev.ix = kind ? int(kind->type) : kNoNpcType;
-                bus_->emit(ev);
-            }
-            ++killed;
+            const DamageResult hit = apply_lethal_damage(
+                reg, e, DamageSource{std::uint32_t{0}, true}, DamageKind::Dev,
+                bus_);
+            if (hit.lethal) ++killed;
         }
     } while (batch > 0);
     return killed;
