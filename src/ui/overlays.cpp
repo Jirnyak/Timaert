@@ -742,24 +742,23 @@ namespace sm::ui
             return def.type == ItemType::Weapon || def.type == ItemType::Armor;
         }
 
-        void draw_item_effect(const ItemEffect &e)
+        // What a row does, read off the ONE registry. It used to print six
+        // named fields, three of which no code anywhere applied — so the panel
+        // cheerfully advertised "+2 STR" on a dagger that granted nothing, and
+        // an "AGI" the sheet does not have.
+        void draw_item_bonuses(const Bonus (&bonuses)[kMaxItemBonuses])
         {
             bool any = false;
-            auto part = [&any](const char *label, int v)
+            for (const Bonus &b : bonuses)
             {
-                if (v == 0)
-                    return;
+                if (b.row == 0 || b.value == 0)
+                    continue;
                 if (any)
                     ImGui::SameLine();
-                ImGui::Text("%+d %s", v, label);
+                ImGui::Text("%+d %s", int(b.value),
+                            bonus_def(BonusId(b.row)).label);
                 any = true;
-            };
-            part("HP", e.hp);
-            part("MP", e.mp);
-            part("SP", e.sp);
-            part("STR", e.str);
-            part("END", e.end);
-            part("AGI", e.agi);
+            }
             if (!any)
                 ImGui::TextDisabled("-");
         }
@@ -1377,7 +1376,7 @@ namespace sm::ui
                             ImGui::TableNextColumn();
                             ImGui::Text("x%d", st.count);
                             ImGui::TableNextColumn();
-                            draw_item_effect(def->effect);
+                            draw_item_bonuses(def->bonus);
                             ImGui::TableNextColumn();
                             ImGui::TextDisabled("carried only");
                         }

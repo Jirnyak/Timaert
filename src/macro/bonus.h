@@ -125,9 +125,13 @@ inline constexpr BonusDef kBonusDefs[] = {
 
     // The instant half. Signed, so one row says both "heals 30" and "costs
     // 30" — a poison is a potion with the other sign, not another row.
-    {BonusId::HealHp, "heal_hp", "Health", BonusTarget::Pool, std::uint8_t(PoolId::Hp)},
-    {BonusId::HealMp, "heal_mp", "Mana",   BonusTarget::Pool, std::uint8_t(PoolId::Mp)},
-    {BonusId::HealSp, "heal_sp", "Vigour", BonusTarget::Pool, std::uint8_t(PoolId::Sp)},
+    // Labelled the way every BAR in the game is labelled, not with the pool's
+    // full name: "Used Health Potion: +5 HP" is what a player reads. The
+    // attribute rows above keep their full words for the opposite reason — an
+    // item that says "+2 Strength" reads better than one that says "+2 STR".
+    {BonusId::HealHp, "heal_hp", "HP", BonusTarget::Pool, std::uint8_t(PoolId::Hp)},
+    {BonusId::HealMp, "heal_mp", "MP", BonusTarget::Pool, std::uint8_t(PoolId::Mp)},
+    {BonusId::HealSp, "heal_sp", "SP", BonusTarget::Pool, std::uint8_t(PoolId::Sp)},
 };
 static_assert(sizeof(kBonusDefs) / sizeof(kBonusDefs[0])
                   == std::size_t(BonusId::Count),

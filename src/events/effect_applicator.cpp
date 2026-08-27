@@ -1,3 +1,4 @@
+#include "macro/bonus.h"
 #include "events/effect_applicator.h"
 #include "macro/currency.h"
 #include "macro/spells.h"
@@ -9,29 +10,58 @@ namespace sm {
 
 namespace {
 
+// A scripted effect is a ROW of the one bonus registry, named by the plot in
+// the registry's own authoring key. This was the fifth half-door: six string
+// verbs restating, in their own vocabulary, arithmetic that `ItemEffect`
+// already restated in a third — three clamp-adds to the same three pools,
+// spelled out three times in three files.
+//
+// The verbs the plot files already speak are kept as ALIASES onto rows rather
+// than renamed, because a plot file is content and content does not get
+// broken by an engine tidy-up. `restore_hp` and `heal_hp` were always the same
+// verb; the DRAINING ones are the same row with the other sign, which is the
+// whole reason the registry's value is signed.
+struct EffectVerb {
+    const char* verb;
+    BonusId     row;
+    int         sign;   // -1: the verb SPENDS what its row restores
+};
+
+constexpr EffectVerb kEffectVerbs[] = {
+    {"heal_hp",    BonusId::HealHp, +1},
+    {"restore_hp", BonusId::HealHp, +1},   // always was the same verb
+    {"damage_hp",  BonusId::HealHp, -1},
+    {"restore_mp", BonusId::HealMp, +1},
+    {"restore_sp", BonusId::HealSp, +1},
+    {"drain_sp",   BonusId::HealSp, -1},
+};
+
 void apply_effect(PlayerState& p, const GameEvent& ev) {
     const std::string& type = ev.s1;
     const int value = ev.ix;
     auto& cs = p.combatStats;
-    // heal_hp == restore_hp (both clamp-add by value, NOT a full restore), and
-    // there is no drain_mp verb. grant_xp goes through the ONE grant path
-    // (award_exp), so a scripted reward levels the player like any other
-    // experience — it used to add to the pool and leave it unspendable.
-    if (type == "heal_hp" || type == "restore_hp") {
-        cs.currentHp = std::min(cs.currentHp + value, cs.maxHp);
-    } else if (type == "damage_hp") {
-        cs.currentHp -= value;
-    } else if (type == "restore_mp") {
-        cs.currentMp = std::min(cs.currentMp + value, cs.maxMp);
-    } else if (type == "restore_sp") {
-        cs.currentSp = std::min(cs.currentSp + value, cs.maxSp);
-    } else if (type == "drain_sp") {
-        cs.currentSp = std::max(0, cs.currentSp - value);
-    } else if (type == "grant_xp") {
+
+    if (type == "grant_xp") {
         // wis dividend: scripted XP scales by the recipient's expMult too —
-        // one law for every grant path (owner ruling 2026-08-05).
+        // one law for every grant path (owner ruling 2026-08-05). XP is not a
+        // pool and not a sheet address; it has its own door and keeps it.
         award_exp(p.sheet.levelData, value,
                   calculate_derived(p.sheet.attributes, p.sheet.skills).expMult);
+        return;
+    }
+
+    for (const EffectVerb& v : kEffectVerbs) {
+        if (type != v.verb) continue;
+        PoolSlice pools{};
+        pools.current[int(PoolId::Hp)] = &cs.currentHp;
+        pools.maximum[int(PoolId::Hp)] = cs.maxHp;
+        pools.current[int(PoolId::Mp)] = &cs.currentMp;
+        pools.maximum[int(PoolId::Mp)] = cs.maxMp;
+        pools.current[int(PoolId::Sp)] = &cs.currentSp;
+        pools.maximum[int(PoolId::Sp)] = cs.maxSp;
+        apply_instant(pools, {std::uint8_t(v.row),
+                              std::int16_t(v.sign * value)});
+        return;
     }
 }
 

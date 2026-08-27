@@ -13,6 +13,7 @@
 // (link law in econ_v1_test).
 
 #pragma once
+#include "macro/bonus.h"
 #include <array>
 #include <cstdint>
 #include <span>
@@ -31,15 +32,18 @@ enum class ItemType : std::uint8_t {
     Misc     = 5,
 };
 
-// Optional stat bonus (zero = absent — mirrors TS `effect?: {...}`).
-struct ItemEffect {
-    int hp  = 0;
-    int mp  = 0;
-    int sp  = 0;
-    int str = 0;
-    int end = 0;
-    int agi = 0;
-};
+inline constexpr int kMaxItemAffixes = 4;
+
+// What a row DOES, as rows of the one bonus registry (macro/bonus.h).
+//
+// It was a struct of six named ints — `hp, mp, sp, str, end, agi` — and half
+// of it was fiction: nothing anywhere read `str`, `end` or `agi`, so the
+// dagger's authored "+2 STR when equipped" and the leather's "+2 END" did
+// nothing at all, and `agi` named an attribute the sheet does not even have
+// (it is `spd`). Four cells because that is what an item INSTANCE already
+// carries (kMaxItemAffixes): a catalog row and a rolled affix say the same
+// kind of thing, so they say it in the same words.
+inline constexpr int kMaxItemBonuses = kMaxItemAffixes;
 
 // Static blueprint — `ItemDef` mirrors `ItemDef = Omit<Item, 'quantity'>`.
 struct ItemDef {
@@ -50,7 +54,9 @@ struct ItemDef {
     float       weight      = 0.0f;  // kg per single
     const char* icon        = "?";   // unicode glyph
     const char* description = "";
-    ItemEffect  effect      = {};
+    // Zeroed cells are empty: BonusId::None is row 0, so a row that grants
+    // nothing writes nothing.
+    Bonus       bonus[kMaxItemBonuses] = {};
 };
 
 // ── THE item instance, and THE container ───────────────────────────────────
@@ -78,12 +84,13 @@ struct ItemDef {
 // `count` is equal. Bread merges with bread; two procedurally rolled swords
 // never merge, because their seeds differ. No second rule, no second table.
 inline constexpr int kMaxInventorySlots = 256;   // 16×16, the player's grid
-inline constexpr int kMaxItemAffixes = 4;
 
-struct ItemAffix {
-    std::uint8_t bonus = 0;    // row of the coming bonus registry; 0 = none
-    std::int16_t value = 0;
-};
+// An affix IS a bonus (macro/bonus.h `Bonus`): a row of the one registry and
+// how much of it. The name stays because "affix" is what a rolled modifier on
+// an item is CALLED, but the type is the same one a perk and an aura carry —
+// byte-identical to the `{uint8 row, int16 value}` this format already wrote,
+// so naming it did not move a single saved item.
+using ItemAffix = Bonus;
 
 struct ItemRef {
     std::uint16_t def = 0;         // catalog ordinal
@@ -101,7 +108,7 @@ struct ItemRef {
             return false;
         }
         for (int i = 0; i < kMaxItemAffixes; ++i) {
-            if (affix[i].bonus != o.affix[i].bonus
+            if (affix[i].row != o.affix[i].row
                 || affix[i].value != o.affix[i].value) {
                 return false;
             }

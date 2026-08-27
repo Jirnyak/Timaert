@@ -37,17 +37,17 @@ constexpr ItemDef kCatalog[] = {
 
     // Consumables
     {"potion_hp",   "Health Potion",   ItemType::Potion,     50, 0.30f, "\xE2\x9D\xA4",
-        "Restores 30 HP", {30, 0, 0, 0, 0, 0}},
+        "Restores 30 HP", {{std::uint8_t(BonusId::HealHp), 30}}},
     {"potion_mp",   "Mana Potion",     ItemType::Potion,     75, 0.30f, "\xE2\x9C\xA8",
-        "Restores 15 MP", { 0,15, 0, 0, 0, 0}},
+        "Restores 15 MP", {{std::uint8_t(BonusId::HealMp), 15}}},
     // The economy's NOUNS live in THIS catalog too (owner's one-dictionary
     // ruling): the bread a city bakes and the bread in the player's bag are
     // one row. Ids and weights match macro/commodity.h verbatim — the link
     // law in econ_v1_test holds the two tables together.
     {"bread",  "Bread",           ItemType::Food,       10, 1.00f, "\xF0\x9F\x8D\x9E",
-        "Restores 10 HP", {10, 0, 0, 0, 0, 0}},
+        "Restores 10 HP", {{std::uint8_t(BonusId::HealHp), 10}}},
     {"food_meat",   "Raw Meat",        ItemType::Food,       15, 0.50f, "\xF0\x9F\x8D\x96",
-        "Restores 15 HP", {15, 0, 0, 0, 0, 0}},
+        "Restores 15 HP", {{std::uint8_t(BonusId::HealHp), 15}}},
 
     // Materials
     {"wood",    "Wood",            ItemType::Material,    5, 2.00f, "\xF0\x9F\xAA\xB5",
@@ -85,9 +85,9 @@ constexpr ItemDef kCatalog[] = {
 
     // Equipment
     {"wpn_dagger",  "Rusty Dagger",    ItemType::Weapon,     30, 1.00f, "\xF0\x9F\x97\xA1",
-        "+2 STR when equipped", {0, 0, 0, 2, 0, 0}},
+        "+2 STR when equipped", {{std::uint8_t(BonusId::Str), 2}}},
     {"arm_leather", "Leather Armor",   ItemType::Armor,      60, 5.00f, "\xF0\x9F\x9B\xA1",
-        "+2 END when equipped", {0, 0, 0, 0, 2, 0}},
+        "+2 END when equipped", {{std::uint8_t(BonusId::End), 2}}},
 
     // Valuables
     {"misc_gem",    "Gemstone",        ItemType::Misc,      100, 0.05f, "\xF0\x9F\x92\x8E",
@@ -404,20 +404,30 @@ std::string use_item(Inventory& inv, const std::string& itemId, PlayerCombatSlic
         msg += part;
     };
 
-    if (def->effect.hp != 0) {
-        const int healed = std::min(def->effect.hp, pc.maxHp - pc.currentHp);
-        pc.currentHp += healed;
-        append("+" + std::to_string(healed) + " HP");
-    }
-    if (def->effect.mp != 0) {
-        const int restored = std::min(def->effect.mp, pc.maxMp - pc.currentMp);
-        pc.currentMp += restored;
-        append("+" + std::to_string(restored) + " MP");
-    }
-    if (def->effect.sp != 0) {
-        const int restored = std::min(def->effect.sp, pc.maxSp - pc.currentSp);
-        pc.currentSp += restored;
-        append("+" + std::to_string(restored) + " SP");
+    // Every cell of the row goes through the ONE instant door (macro/bonus.h),
+    // which reports what actually MOVED rather than what was asked for — so
+    // the line the player reads says 5 when only 5 fitted. The three
+    // hand-written clamp-and-append blocks that stood here were the same
+    // arithmetic three times, and they could only ever speak about the three
+    // pools they happened to name.
+    PoolSlice pools{};
+    pools.current[int(PoolId::Hp)] = &pc.currentHp;
+    pools.maximum[int(PoolId::Hp)] = pc.maxHp;
+    pools.current[int(PoolId::Mp)] = &pc.currentMp;
+    pools.maximum[int(PoolId::Mp)] = pc.maxMp;
+    pools.current[int(PoolId::Sp)] = &pc.currentSp;
+    pools.maximum[int(PoolId::Sp)] = pc.maxSp;
+
+    for (const Bonus& b : def->bonus) {
+        if (b.row == 0) continue;
+        const int moved = apply_instant(pools, b);
+        // A zero move is REPORTED, not swallowed: "+0 HP" is how the player
+        // learns the potion he just drank on a full bar was wasted.
+        std::string part = moved >= 0 ? "+" : "";
+        part += std::to_string(moved);
+        part += " ";
+        part += bonus_def(BonusId(b.row)).label;
+        append(part);
     }
 
     inv.remove(itemId, 1);

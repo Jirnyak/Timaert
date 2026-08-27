@@ -153,7 +153,13 @@ namespace sm {
 // kAttributeDefs), 16 slots for the 9 the game names — so naming the tenth is
 // a row, not a format. The block shrank from nine ints to sixteen bytes, and a
 // v46 slot would be read at the wrong length entirely.
-constexpr int kSaveVersion = 47;
+// v48: an item's effect is rows of the ONE bonus registry (macro/bonus.h).
+// `ItemEffect`'s six named ints are gone — three of them were fiction nothing
+// read, and one named an attribute the sheet does not have — and `ItemAffix`
+// is now literally the registry's `Bonus`. That last one is byte-identical, so
+// no saved item moved; the version follows the catalog's meaning changing
+// under the same bytes.
+constexpr int kSaveVersion = 48;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 

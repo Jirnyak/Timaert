@@ -499,8 +499,13 @@ bool test_effect_applicator_ts_verbs() {
     sm::GameState lethalState{};
     lethalState.player = negativeHp;
     sm::apply_events(std::span<const sm::GameEvent>(&lethal, 1), lethalState, &bag);
-    if (lethalState.player.combatStats.currentHp != -3) {
-        return fail("damage_hp clamped HP unlike TS applyEffect_");
+    // A pool FLOORS at zero. It used to run to -3 because the verb subtracted
+    // with no clamp at all — and the death check reads `currentHp <= 0`
+    // (main.cpp), so both numbers kill; the difference is only whether the
+    // pool tells the truth about itself afterwards. Through the one instant
+    // door it does.
+    if (lethalState.player.combatStats.currentHp != 0) {
+        return fail("damage_hp should floor the pool at zero, not run past it");
     }
 
     return true;
