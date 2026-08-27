@@ -38,4 +38,14 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world);
 // boot, so a husk already exists to hand the flag over from.
 bool reattach_player_to_macro_spawn(ecs::World& world, int id, float px, float py);
 
+// THE player's squad entity, by its reserved ordinal — and his ROSTER, which
+// is an ordinary ecs::SquadRoster on it (owner, 2026-08-27). It used to be
+// `PlayerState::army`, a squad of its own kind sitting beside the entity, and
+// every consumer of it was a player-specific path. Returns null / nullptr
+// before the world exists; callers treat that as "no men", which is what an
+// absent squad means.
+entt::entity player_squad_entity(ecs::World& world);
+SoldierSquad* player_roster(ecs::World& world);
+const SoldierSquad* player_roster(const ecs::World& world);
+
 } // namespace sm

@@ -2,6 +2,7 @@
 // a free function that draws into the current ImGui frame and is toggled by
 // a boolean owned by the application. Mirrors svelte overlays in TS.
 #pragma once
+#include "ecs/world.h"
 #include "macro/state.h"
 #include "events/quests/quest_engine.h"
 #include <array>
@@ -76,8 +77,13 @@ struct DialogOverlayState {
 };
 
 void draw_diplomacy(GameState& gs, bool* open, float scale = 1.0f);
-void draw_character_panel(GameState& gs, bool* open, CharacterPanelTab* tab, float scale = 1.0f);
+// `world` is here because the player's ROSTER is an ordinary squad on his
+// macro entity now (macro/player_entity.h), not a field of PlayerState. The UI
+// sits above every layer and may read from them; it still owns no game logic.
+void draw_character_panel(GameState& gs, ecs::World& world, bool* open,
+                          CharacterPanelTab* tab, float scale = 1.0f);
 void draw_settlement(GameState& gs,
+                     ecs::World& world,
                      int settlementId,
                      const std::vector<Quest>& availableQuests,
                      std::vector<Quest>& activeQuests,

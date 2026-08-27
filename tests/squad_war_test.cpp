@@ -19,6 +19,7 @@
 #include "macro/npc_ai.h"
 #include "macro/npc_spawn.h"
 #include "macro/squad.h"
+#include "macro/player_entity.h"
 #include "macro/faction.h"
 #include "macro/npc.h"
 #include "core/torus.h"
@@ -271,16 +272,17 @@ void test_a_victorious_leader_levels() {
 // the resolver's dice (those have their own tests).
 void test_player_auto_resolve_settles_through_the_same_doors() {
     GameState gs = make_world(-80);
-    gs.player.army.push(
-        make_soldier(std::uint8_t(NPCType::Guard), 3, 501u));
-    gs.player.army.push(
-        make_soldier(std::uint8_t(NPCType::Guard), 3, 502u));
+    ecs::World w;
+    // The player's men are a roster on his own SQUAD ENTITY now — the same
+    // shape the enemy lord below has, settled through the same doors.
+    ensure_macro_player_entity(gs, w);
+    SoldierSquad* army = player_roster(w);
+    army->push(make_soldier(std::uint8_t(NPCType::Guard), 3, 501u));
+    army->push(make_soldier(std::uint8_t(NPCType::Guard), 3, 502u));
     gs.player.combatStats.maxHp = 100;
     gs.player.combatStats.currentHp = 100;
     const int level0 = gs.player.sheet.levelData.level;
     const int exp0 = gs.player.sheet.levelData.exp;
-
-    ecs::World w;
     const auto enemy = make_squad_at(w, NPCType::Bandit, "bandits", 3,
                                      10.0f, 10.0f, 9u, {31u, 32u},
                                      NPCType::Bandit, 2);
@@ -301,8 +303,7 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     MacroWorld mw{}; mw.gs = &gs; mw.world = &w;
     const int xp = settle_player_auto_battle(mw, enemy, win,
                                              /*playerIsA*/true);
-    CHECK(total_soldiers(gs.player.army) == 1
-              && gs.player.army[0].entityId == 502u,
+    CHECK(total_soldiers(*army) == 1 && (*army)[0].entityId == 502u,
           "the player's fallen soldier left the army by name");
     CHECK(gs.player.combatStats.currentHp == 60,
           "the player's wound landed as the fraction, on the macro scalar");
@@ -318,13 +319,13 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     // The player LOSES with a man still standing: wounded, never dead — the
     // leader rule holds for the player exactly as for any lord.
     GameState gs2 = make_world(-80);
-    gs2.player.army.push(
-        make_soldier(std::uint8_t(NPCType::Guard), 3, 601u));
-    gs2.player.army.push(
-        make_soldier(std::uint8_t(NPCType::Guard), 3, 602u));
+    ecs::World w2;
+    ensure_macro_player_entity(gs2, w2);
+    SoldierSquad* army2 = player_roster(w2);
+    army2->push(make_soldier(std::uint8_t(NPCType::Guard), 3, 601u));
+    army2->push(make_soldier(std::uint8_t(NPCType::Guard), 3, 602u));
     gs2.player.combatStats.maxHp = 100;
     gs2.player.combatStats.currentHp = 100;
-    ecs::World w2;
     const auto victor = make_squad_at(w2, NPCType::Bandit, "bandits", 6,
                                       10.0f, 10.0f, 9u, {41u},
                                       NPCType::Bandit, 5);
@@ -335,7 +336,7 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     loss.leaderFractionB = 0.9f;
     MacroWorld mw2{}; mw2.gs = &gs2; mw2.world = &w2;
     settle_player_auto_battle(mw2, victor, loss, /*playerIsA*/true);
-    CHECK(total_soldiers(gs2.player.army) == 1,
+    CHECK(total_soldiers(*army2) == 1,
           "defeat took the fallen and left the survivor");
     CHECK(gs2.player.combatStats.currentHp >= 1,
           "while one of his men stands, defeat wounds the player - "

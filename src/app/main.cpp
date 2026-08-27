@@ -1120,7 +1120,7 @@ sm::AutoBattleSide player_auto_battle_side(App& app) {
         + sm::calculate_derived(p.sheet.attributes, p.sheet.skills)
               .rawPhysDamage);
     s.leaderDpsOverride = swing / sm::sub::kPlayerMeleeCooldown;
-    s.roster = &p.army;
+    s.roster = sm::player_roster(app.ecs);
     s.aura = sm::collect_leader_aura(p.sheet);
     s.fatigue = p.combatStats.maxSp > 0
         ? std::clamp(float(p.combatStats.currentSp)
@@ -9993,7 +9993,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "hostile squad did not force the encounter");
                 break;
             }
-            const int armyBefore = sm::total_soldiers(app.gs.player.army);
+            const sm::SoldierSquad* pArmy = sm::player_roster(app.ecs);
+            const int armyBefore = pArmy ? sm::total_soldiers(*pArmy) : 0;
             const int hpBefore = app.gs.player.combatStats.currentHp;
             perform_encounter_auto(app, hostile, sm::Ambush::None);
             if (app.gs.subState.kind != sm::GameSubStateKind::Exploring) {
@@ -10007,7 +10008,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 && reg.get<sm::ecs::Health>(hostile).hp
                        < reg.get<sm::ecs::Health>(hostile).maxHp;
             const bool playerPaid =
-                sm::total_soldiers(app.gs.player.army) < armyBefore
+                (sm::player_roster(app.ecs)
+                     ? sm::total_soldiers(*sm::player_roster(app.ecs)) : 0)
+                    < armyBefore
                 || app.gs.player.combatStats.currentHp < hpBefore;
             if (!enemyGone && !enemyHurt && !playerPaid) {
                 smoke_fail(app, "auto-resolve settled nothing on either side");
@@ -11694,10 +11697,11 @@ void frame(App& app, int simSteps) {
             if (app.uiSettings.visible(sm::ui::UiElementId::PanelDiplomacy))
                 sm::ui::draw_diplomacy(app.gs, &app.ui.diplomacy, app.uiSettings.scale(sm::ui::UiElementId::PanelDiplomacy));
             if (app.uiSettings.visible(sm::ui::UiElementId::PanelCharacter))
-                sm::ui::draw_character_panel(app.gs, &app.ui.character, &app.ui.characterTab, app.uiSettings.scale(sm::ui::UiElementId::PanelCharacter));
+                sm::ui::draw_character_panel(app.gs, app.ecs, &app.ui.character, &app.ui.characterTab, app.uiSettings.scale(sm::ui::UiElementId::PanelCharacter));
             if (app.ui.settlement) refresh_available_settlement_quests(app);
             if (app.uiSettings.visible(sm::ui::UiElementId::PanelSettlement))
                 sm::ui::draw_settlement(app.gs,
+                                        app.ecs,
                                         app.ui.settlementId,
                                         app.availableSettlementQuests,
                                         app.activeQuests,

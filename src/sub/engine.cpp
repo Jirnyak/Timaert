@@ -5,6 +5,7 @@
 #include "macro/faction.h"
 #include "macro/politik.h"
 #include "macro/squad.h"
+#include "macro/player_entity.h"
 #include "sub/vk_camera_math.h"
 #include "sub/lighting.h"
 #include "gpu/vk_device.h"
@@ -618,7 +619,9 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     // The owner's AURA rides the same way (macro/aura.h): the player leads this
     // squad, so the player's sheet buffs every soldier born here.
     const AuraMods playerAura = collect_leader_aura(gs.player.sheet);
-    spawn_player_squad(ecs, gs.player.army, mgr_, playerX_, playerY_,
+    spawn_player_squad(ecs, player_roster(ecs) ? *player_roster(ecs)
+                                              : SoldierSquad{},
+                       mgr_, playerX_, playerY_,
         gs.worldSeed ^ kSquadSpawnSalt ^ (std::uint32_t(cx) << 8) ^ std::uint32_t(cy),
         std::uint16_t(faction_index(kPlayerFactionId)), &playerAura);
     // Project the persistent macro NPCs standing in this 3×3 window into the
@@ -2355,7 +2358,9 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
 
             if (reg.any_of<ecs::PlayerSoldierTag>(e)) {
                 if (const auto* link = reg.try_get<ecs::SoldierLink>(e)) {
-                    remove_one_soldier_by_entity_id(gs_->player.army, link->entityId);
+                    if (SoldierSquad* army = player_roster(*ecs_)) {
+                        remove_one_soldier_by_entity_id(*army, link->entityId);
+                    }
                 }
                 reg.destroy(e);
                 continue;

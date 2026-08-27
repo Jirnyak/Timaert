@@ -70,7 +70,6 @@ PlayerState default_player() {
     p.sheet.perks      = default_perks();
     p.sheet.levelData  = default_level_data();
     p.combatStats = calculate_combat_stats(p.sheet.attributes, p.sheet.skills);
-    p.army        = default_squad();
 
     // Starter inventory: 2 healing potions + 5 bread.
     p.inventory.add("potion_hp",  2);

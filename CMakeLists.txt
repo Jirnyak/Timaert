@@ -369,6 +369,8 @@ timaert_test(quest_lifecycle_test
 timaert_test(world_tick_parity_test
     SOURCES
         src/macro/world_tick.cpp
+        # The player's upkeep reads his roster off his squad entity now.
+        src/macro/player_entity.cpp
         src/macro/deposit_layer.cpp
         src/macro/econ_day.cpp
         src/macro/items.cpp
@@ -535,6 +537,8 @@ timaert_test(deserter_bands_test
 timaert_test(squad_war_test
     SOURCES
         src/macro/npc_ai.cpp
+        # The player's squad is an ordinary squad entity (2026-08-27).
+        src/macro/player_entity.cpp
         src/macro/macro_stock.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
@@ -932,6 +936,7 @@ timaert_test(spire_generation_test
 
 timaert_test(fauna_stock_test
     SOURCES
+        src/macro/player_entity.cpp
         src/macro/macro_stock.cpp
         src/macro/fauna.cpp
         src/macro/tree_layer.cpp
@@ -1097,6 +1102,9 @@ timaert_test(auto_battle_test
 # three things the fought version always paid and the button never did.
 timaert_test(auto_resolve_speaks_test
     SOURCES
+        # The player's squad is an ordinary squad entity: the settle finds it
+        # by ordinal (macro/player_entity.h).
+        src/macro/player_entity.cpp
         src/macro/items.cpp
         src/macro/macro_stock.cpp
         src/macro/deposit_layer.cpp

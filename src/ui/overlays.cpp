@@ -1,4 +1,5 @@
 #include "ui/overlays.h"
+#include "macro/player_entity.h"
 #include "ui/trade_widgets.h"
 #include "ui/screens.h"   // kTopStatusBarHeight — keep the minimap below the top bar
 #include "macro/map_generator.h"
@@ -1132,7 +1133,8 @@ namespace sm::ui
         }
     } // namespace
 
-    void draw_character_panel(GameState &gs, bool *open, CharacterPanelTab *tab, float scale)
+    void draw_character_panel(GameState &gs, ecs::World &world, bool *open,
+                              CharacterPanelTab *tab, float scale)
     {
         if (!open || !*open)
             return;
@@ -1142,8 +1144,10 @@ namespace sm::ui
         DerivedBonuses derived = calculate_derived(p.sheet.attributes, p.sheet.skills);
         const float carryWeight = inventory_weight(p.inventory);
         const float carryCap = get_carry_capacity(p.sheet.attributes, p.sheet.skills);
-        const int armyTotal = total_soldiers(p.army);
-        const int armyUpkeep = calculate_squad_upkeep(p.army, p.sheet.attributes.cha);
+        const SoldierSquad* army = player_roster(world);
+        const int armyTotal = army ? total_soldiers(*army) : 0;
+        const int armyUpkeep = army
+            ? calculate_squad_upkeep(*army, p.sheet.attributes.cha) : 0;
 
         ImGui::SetNextWindowSize(ImVec2(760 * scale, 560 * scale), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("Character", open))
@@ -1343,8 +1347,8 @@ namespace sm::ui
                         for (int ti = 0; ti < npc_type_count(); ++ti)
                         {
                             const NPCType t = npc_type_at(ti);
-                            const int count = count_soldiers_of_kind(
-                                p.army, static_cast<std::uint8_t>(t));
+                            const int count = army ? count_soldiers_of_kind(
+                                *army, static_cast<std::uint8_t>(t)) : 0;
                             if (count <= 0 && !npc_hireable(t))
                                 continue;
                             ImGui::TableNextRow();
@@ -1632,6 +1636,7 @@ namespace sm::ui
     }
 
     void draw_settlement(GameState &gs,
+                         ecs::World &world,
                          int settlementId,
                          const std::vector<Quest> &availableQuests,
                          std::vector<Quest> &activeQuests,
@@ -1905,8 +1910,9 @@ namespace sm::ui
                         int cost = offer ? hire_price_for(*offer) : npc_hire_price_base(t);
                         int avail = count_soldiers_of_kind(
                             s->garrison, static_cast<std::uint8_t>(t));
-                        int owned = count_soldiers_of_kind(
-                            gs.player.army, static_cast<std::uint8_t>(t));
+                        SoldierSquad* playerArmy = player_roster(world);
+                        int owned = playerArmy ? count_soldiers_of_kind(
+                            *playerArmy, static_cast<std::uint8_t>(t)) : 0;
                         ImGui::PushID(static_cast<int>(t));
                         bool can = avail > 0
                                    && wallet_value(gs.player.inventory) >= cost;
@@ -1915,8 +1921,9 @@ namespace sm::ui
                         if (ImGui::Button("Hire"))
                         {
                             int purse = wallet_value(gs.player.inventory);
-                            const int paid = hire_npc(gs.player.army,
-                                                      s->garrison, t, purse);
+                            const int paid = playerArmy
+                                ? hire_npc(*playerArmy, s->garrison, t, purse)
+                                : 0;
                             if (paid > 0)
                                 wallet_spend_up_to(gs.player.inventory, paid);
                         }
@@ -1928,9 +1935,12 @@ namespace sm::ui
                         ImGui::PopID();
                     }
                     ImGui::Spacing();
-                    ImGui::TextDisabled("Daily upkeep: %d g",
-                                        calculate_squad_upkeep(gs.player.army,
-                                                               gs.player.sheet.attributes.cha));
+                    if (const SoldierSquad* army = player_roster(world)) {
+                        ImGui::TextDisabled(
+                            "Daily upkeep: %d g",
+                            calculate_squad_upkeep(
+                                *army, gs.player.sheet.attributes.cha));
+                    }
                     ImGui::EndTabItem();
                 }
                 // Map

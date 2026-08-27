@@ -244,7 +244,11 @@ struct PlayerState {
     // (gs.factions["player"].relations) — see player_reputation /
     // add_player_reputation below. Two stores for one number meant the battle
     // pass and the macro matrix could disagree about the same pair.
-    SoldierSquad army;
+    // (No `army` field. The player's squad is an ORDINARY squad — the roster
+    // is ecs::SquadRoster on his macro entity, reached through
+    // macro/player_entity.h player_roster(). It sat here as a SoldierSquad of
+    // its own until 2026-08-27, and every consumer of it was a
+    // player-specific path CANON S4 forbids by name.)
     std::vector<std::string> codexUnlocked;
     std::vector<LogEntry>    eventLog;
     SpellBook spellBook;

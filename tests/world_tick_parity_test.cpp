@@ -10,6 +10,8 @@
 
 #include "macro/npc.h"
 #include "macro/world_tick.h"
+#include "macro/player_entity.h"
+#include "macro/macro_world.h"
 #include "macro/currency.h"
 
 #include <cstdint>
@@ -70,8 +72,17 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     gs.player.inventory.add("coin_empire", 5);
     gs.player.ageDays = 1000;
     gs.player.sheet.attributes.cha = 0;
-    gs.player.army.push(sm::make_soldier(
+    // The player's men live on his SQUAD ENTITY now (owner, 2026-08-27), so
+    // the fixture raises one — the same shape a lord's warband has — and the
+    // daily tick reads his wages from it through the envelope.
+    sm::ecs::World world;
+    sm::ensure_macro_player_entity(gs, world);
+    sm::SoldierSquad* army = sm::player_roster(world);
+    army->push(sm::make_soldier(
         static_cast<std::uint8_t>(sm::NPCType::Guard), 1, 77u));
+    sm::MacroWorld mw{};
+    mw.gs = &gs;
+    mw.world = &world;
 
     sm::WorldTickRuntime runtime{};
     sm::reset_world_tick_runtime(runtime, 789u);
@@ -81,10 +92,10 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     // The expectation is DERIVED from the same law the tick pays by, so the
     // upkeep table can be retuned without touching this file.
     const int expectedUpkeep =
-        sm::calculate_squad_upkeep(gs.player.army, gs.player.sheet.attributes.cha);
+        sm::calculate_squad_upkeep(*army, gs.player.sheet.attributes.cha);
     const int expectedGold = (5 - expectedUpkeep) > 0 ? (5 - expectedUpkeep) : 0;
 
-    const int processed = sm::process_world_daily_ticks(gs, runtime, 1);
+    const int processed = sm::process_world_daily_ticks(gs, runtime, 1, &mw);
 
     CHECK(processed == 1 && runtime.pendingDailyTicks == 0
               && runtime.nextDailyTickDay == 0,

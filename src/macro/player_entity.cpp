@@ -58,6 +58,11 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
                 squad, ecs::roll_npc_character(faceRng, 160));
         }
         reg.emplace<AgentMemory>(squad);
+        // The snapshot's view names every component make_npc emplaces, and the
+        // player's squad is saved BY IT now — his roster is not a field of
+        // PlayerState any more. The bag is empty until the inventory merge
+        // lands; what matters here is that his squad is a whole squad.
+        reg.emplace<ecs::NpcInventory>(squad, ecs::NpcInventory{});
         // A squad of one, its own leader — the same empty roster every macro
         // squad is born with (macro/npc_spawn.cpp make_npc).
         reg.emplace<ecs::SquadRoster>(squad);
@@ -94,6 +99,21 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
     if (flagHolder == entt::null) {
         reg.emplace<ecs::PlayerTag>(squad);
     }
+}
+
+entt::entity player_squad_entity(ecs::World& world) {
+    return find_player_squad(world);
+}
+
+SoldierSquad* player_roster(ecs::World& world) {
+    const entt::entity e = find_player_squad(world);
+    if (e == entt::null) return nullptr;
+    auto* roster = world.reg.try_get<ecs::SquadRoster>(e);
+    return roster ? &roster->squad : nullptr;
+}
+
+const SoldierSquad* player_roster(const ecs::World& world) {
+    return player_roster(const_cast<ecs::World&>(world));
 }
 
 bool reattach_player_to_macro_spawn(ecs::World& world, int id, float px, float py) {

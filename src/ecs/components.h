@@ -323,7 +323,12 @@ struct MacroSpawnId { std::uint32_t index = 0; };
 // ordinary macro squad (owner, 2026-08-27) and therefore needs an ordinal like
 // any other: it is what the roster ledger keys casualties by, and what finds
 // him again after a load regenerates the world.
-inline constexpr std::uint32_t kPlayerSquadOrdinal = 0xFFFFFFFFu;
+// NOT 0xFFFFFFFF: the stock ledger carries a subject as a SIGNED int32, where
+// -1 already means "the cell itself" (MacroDebt above) — the all-ones ordinal
+// would have collided with that meaning and silently lost the player's
+// casualties. INT32_MAX is as far from the spawner's 0,1,2… as an ordinal can
+// be while staying a positive number.
+inline constexpr std::uint32_t kPlayerSquadOrdinal = 0x7FFFFFFFu;
 
 // THE macro entity is a SQUAD, not a person (owner's design, macrosim.md
 // "Squad as THE macro entity"). This component is that ruling made structural:

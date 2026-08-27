@@ -123,6 +123,7 @@ void remove_slot_files(const std::string& path) {
 // whole point of the snapshot is that a killed lord STAYS dead across a load.
 std::vector<sm::MacroNpcRecord> make_macro_records() {
     std::vector<sm::MacroNpcRecord> out;
+
     sm::MacroNpcRecord a{};
     a.spawnId.index = 7;
     a.pos = {33.5f, 44.25f, 0.0f};
@@ -185,6 +186,25 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     d.level = {3};
     d.dead = 1;
     out.push_back(std::move(d));
+    // THE PLAYER's own squad — an ordinary record of the same snapshot, told
+    // apart only by its reserved ordinal (owner, 2026-08-27: «игрок = обычный
+    // сквад просто с флажком»). His men used to be a field of PlayerState;
+    // that they now ride here, by the same law as any lord's warband, is
+    // exactly what this record proves.
+    sm::MacroNpcRecord player{};
+    player.spawnId.index = sm::ecs::kPlayerSquadOrdinal;
+    player.pos = {12.0f, 13.0f, 0.0f};
+    player.visual = {12.0f, 13.0f, 0.0f};
+    player.kind = {std::uint16_t(sm::NPCType::Adventurer),
+                   std::uint16_t(sm::faction_index(sm::kPlayerFactionId))};
+    player.health = {40.0f, 40.0f};
+    player.level = {3};
+    add_soldiers(player.roster, sm::NPCType::Peasant, 4, 1000u);
+    add_soldiers(player.roster, sm::NPCType::Woodcutter, 3, 1100u);
+    add_soldiers(player.roster, sm::NPCType::Guard, 2, 1200u);
+    player.roster.push(sm::SoldierRecord{
+        9999u, static_cast<std::uint8_t>(sm::NPCType::Guard), -12});
+    out.push_back(player);
     return out;
 }
 
@@ -289,11 +309,9 @@ sm::GameState make_state() {
     // subworld on the same side.
     gs.player.entryDir = sm::pack_entry_dir(0, 1);   // walked in from the south
     gs.player.entryTicks = 7;
-    add_soldiers(gs.player.army, sm::NPCType::Peasant, 4, 1000u);
-    add_soldiers(gs.player.army, sm::NPCType::Woodcutter, 3, 1100u);
-    add_soldiers(gs.player.army, sm::NPCType::Guard, 2, 1200u);
-    gs.player.army.push(sm::SoldierRecord{
-        9999u, static_cast<std::uint8_t>(sm::NPCType::Guard), -12});
+    // (The player's MEN are not a field of PlayerState any more: his squad is
+    // an ordinary squad entity, so his roster rides the macro snapshot with
+    // every other squad's — see the player record in make_macro_records.)
     add_soldiers(gs.deserterPool, sm::NPCType::Woodcutter, 2, 1300u);
 
     sm::Settlement settlement{};
@@ -733,20 +751,7 @@ void run_roundtrip() {
     if (p.entryDir != sm::pack_entry_dir(0, 1) || p.entryTicks != 7) {
         FAIL_BAIL("entry-side context lost");
     }
-    if (sm::count_soldiers_of_kind(
-            p.army, static_cast<std::uint8_t>(sm::NPCType::Peasant)) != 4
-        || sm::count_soldiers_of_kind(
-            p.army, static_cast<std::uint8_t>(sm::NPCType::Guard)) != 3) {
-        FAIL_BAIL("player army lost");
-    }
-    bool foundNormalizedSoldier = false;
-    for (const auto& soldier : p.army) {
-        if (soldier.entityId == 9999u) {
-            if (soldier.level != 1) FAIL_BAIL("soldier level not normalized on save");
-            foundNormalizedSoldier = true;
-        }
-    }
-    if (!foundNormalizedSoldier) FAIL_BAIL("normalized soldier lost");
+
     if (!has_string(p.codexUnlocked, "codex.alpha")
         || p.eventLog.empty() || p.eventLog[0].message != "saved event") {
         FAIL_BAIL("codex or event log lost");
@@ -969,8 +974,11 @@ void run_roundtrip() {
         FAIL_BAIL("bad version inspect status wrong");
     }
 
+    // A roster row naming a kind the tables do not know must REFUSE the save,
+    // whichever roster carries it — the deserter pool is one of the four the
+    // shared writer serves.
     sm::GameState invalidSquadState = gs;
-    invalidSquadState.player.army.push(sm::SoldierRecord{
+    invalidSquadState.deserterPool.push(sm::SoldierRecord{
         10001u, static_cast<std::uint8_t>(sm::NPCType::Count), 1});
     if (sm::save_game(invalidSquadState, quests, macroFixture, treeCounts,
                       deposits,

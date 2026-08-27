@@ -15,6 +15,7 @@
 #include "macro/landmark_grid.h"
 #include "macro/landmark_registry.h"
 #include "macro/macro_stock.h"
+#include "macro/player_entity.h"
 #include "macro/state.h"
 #include "macro/zones.h"
 
@@ -428,8 +429,14 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
         ? xp_for_fallen(w, enemy, enemyCas, enemyFraction <= 0.0f)
         : 0;
 
-    for (std::uint32_t id : playerCas) {
-        remove_one_soldier_by_entity_id(gs.player.army, id);
+    // The player's fallen leave his roster by the SAME door every squad's do
+    // — his squad is an ordinary squad entity now, so this is
+    // settle_squad_casualties over his own entity, ledger and all. The
+    // hand-written removal that used to stand here was one of the four
+    // player-specific paths.
+    if (const entt::entity playerSquad = player_squad_entity(w);
+        playerSquad != entt::null) {
+        settle_squad_casualties(gs, w, playerSquad, playerCas);
     }
     {
         auto& cs = gs.player.combatStats;
