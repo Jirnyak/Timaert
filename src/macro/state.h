@@ -164,11 +164,54 @@ namespace sm {
 // the crowd — which wears nothing — costs a zero count. A two-hander's blocked
 // cells are DERIVED on load rather than stored: a second copy of what the
 // catalog already says could disagree with it after a retune.
-constexpr int kSaveVersion = 49;
+// v50: a settlement's history is a fixed RING of a season (32 days), written
+// oldest-first so the file carries a past rather than a ring's seam. It was
+// two heap vectors per settlement capped by `erase(begin())` — an O(n) shift
+// per town per game day — and the window was 30, a month from another
+// calendar; it is kDaysPerSeason now, the span the whole world already grows
+// by. The block's LENGTH changed, so the version had to move.
+constexpr int kSaveVersion = 50;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
-struct SettlementHistory { std::vector<int> days, population; };
+// A settlement's recent past, as a fixed RING of a season (owner's decision,
+// 2026-08-27). It was two heap vectors per settlement with a cap enforced by
+// `erase(begin())` — an O(n) shift, per settlement, every single game day, on
+// a container that had a heap header for every town on the map.
+//
+// 32 is not a chosen number: it is `kDaysPerSeason`, the epoch the forest
+// grows by and the population's own carry accrues over, so "the recent past"
+// means the same span here as everywhere else. The old 30 was a month from
+// another calendar.
+inline constexpr int kSettlementHistoryDays = 32;
+
+struct SettlementHistory {
+    std::array<std::int32_t, kSettlementHistoryDays> day{};
+    std::array<std::int32_t, kSettlementHistoryDays> population{};
+    std::uint8_t count = 0;   // entries that are real; < kSettlementHistoryDays
+    std::uint8_t head  = 0;   // where the NEXT day is written
+
+    int size() const { return int(count); }
+    bool empty() const { return count == 0; }
+    // Oldest first, so a caller reads the past in the order it happened
+    // without knowing where the ring's seam is.
+    int day_at(int i) const {
+        const int first = int(count) < kSettlementHistoryDays
+                              ? 0 : int(head);
+        return day[std::size_t((first + i) % kSettlementHistoryDays)];
+    }
+    int population_at(int i) const {
+        const int first = int(count) < kSettlementHistoryDays
+                              ? 0 : int(head);
+        return population[std::size_t((first + i) % kSettlementHistoryDays)];
+    }
+    void push(int d, int pop) {
+        day[std::size_t(head)] = d;
+        population[std::size_t(head)] = pop;
+        head = std::uint8_t((int(head) + 1) % kSettlementHistoryDays);
+        if (int(count) < kSettlementHistoryDays) ++count;
+    }
+};
 
 struct Settlement {
     int id;

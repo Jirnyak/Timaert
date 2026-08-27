@@ -26,7 +26,6 @@ namespace sm {
 
 namespace {
 
-constexpr int   kHistoryWindow     = 30;
 // One worker at the benches per this many heads (po2) — the город's
 // production labour for econ_produce_day.
 constexpr int   kHeadsPerCityWorker = 8;
@@ -36,12 +35,9 @@ inline float rand01_(WorldTickRuntime& runtime) {
 }
 
 void push_history_(SettlementHistory& hist, int day, int population) {
-    hist.days.push_back(day);
-    hist.population.push_back(population);
-    if (int(hist.days.size()) > kHistoryWindow) {
-        hist.days.erase(hist.days.begin());
-        hist.population.erase(hist.population.begin());
-    }
+    // One write and a wrap. The cap lives in the CONTAINER now, so nothing
+    // here can forget it and nothing shifts an array to enforce it.
+    hist.push(day, population);
 }
 
 // The shared tail of every landmark's day (W2b-4): consume off the

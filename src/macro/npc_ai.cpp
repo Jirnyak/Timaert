@@ -384,17 +384,19 @@ bool find_nearest_tree_grid(const TreeGrid& g, float px, float py,
     if (!g.trees || g.trees->empty()) return false;
     float halfW = float(mw) * 0.5f;
     float halfH = float(mh) * 0.5f;
-    int cx0 = int(std::floor(px / float(g.cellSize)));
-    int cy0 = int(std::floor(py / float(g.cellSize)));
+    const CellBuckets& b = g.grid;
+    int cx0 = int(std::floor(px / float(b.cellSize)));
+    int cy0 = int(std::floor(py / float(b.cellSize)));
     float best = 901.0f;        // 30² + 1
     bool found = false;
     for (int oy = -1; oy <= 1; ++oy) {
         for (int ox = -1; ox <= 1; ++ox) {
-            int gx = wrapi(cx0 + ox, g.cols);
-            int gy = wrapi(cy0 + oy, g.rows);
-            const auto& bucket = g.buckets[std::size_t(gy * g.cols + gx)];
-            for (std::uint32_t idx : bucket) {
-                const auto& t = (*g.trees)[idx];
+            int gx = wrapi(cx0 + ox, b.cols);
+            int gy = wrapi(cy0 + oy, b.rows);
+            for (const std::uint32_t* it = b.cell_begin(gx, gy),
+                                    * end = b.cell_end(gx, gy);
+                 it != end; ++it) {
+                const auto& t = (*g.trees)[*it];
                 float dx = std::fabs(px - float(t.x));
                 float dy = std::fabs(py - float(t.y));
                 if (dx > halfW) dx = float(mw) - dx;
@@ -1034,18 +1036,22 @@ entt::entity nearest_hostile_squad(entt::entity self, const ecs::Position& p,
                                    const ecs::NPCKind& kind,
                                    const TickContext& ctx) {
     const SquadIndex& g = *ctx.squads;
-    if (g.cols <= 0 || g.rows <= 0) return entt::null;
+    const CellBuckets& b = g.grid;
+    if (b.cols <= 0 || b.rows <= 0) return entt::null;
     auto& reg = ctx.mw.world->reg;
     const char* myFaction = faction_id_for_index(kind.factionIdx);
-    const int cx0 = int(p.x) / g.cellSize;
-    const int cy0 = int(p.y) / g.cellSize;
+    const int cx0 = int(p.x) / b.cellSize;
+    const int cy0 = int(p.y) / b.cellSize;
     float best = kSquadSightCells * kSquadSightCells + 1.0f;
     entt::entity found = entt::null;
     for (int oy = -1; oy <= 1; ++oy) {
         for (int ox = -1; ox <= 1; ++ox) {
-            const int gx = wrapi(cx0 + ox, g.cols);
-            const int gy = wrapi(cy0 + oy, g.rows);
-            for (entt::entity e : g.buckets[std::size_t(gy * g.cols + gx)]) {
+            const int gx = wrapi(cx0 + ox, b.cols);
+            const int gy = wrapi(cy0 + oy, b.rows);
+            for (const std::uint32_t* it = b.cell_begin(gx, gy),
+                                    * end = b.cell_end(gx, gy);
+                 it != end; ++it) {
+                const entt::entity e = entt::entity(*it);
                 if (e == self || !reg.valid(e)) continue;
                 const auto* op = reg.try_get<ecs::Position>(e);
                 const auto* ok = reg.try_get<ecs::NPCKind>(e);
@@ -1284,17 +1290,46 @@ void dispatch(AIBehaviour b, entt::entity e, ecs::Position& p,
 
 } // namespace
 
+void bucket_reset(CellBuckets& g, int mapW, int mapH, int cellSize) {
+    g.cellSize = std::max(1, cellSize);
+    g.cols = std::max(1, (mapW + g.cellSize - 1) / g.cellSize);
+    g.rows = std::max(1, (mapH + g.cellSize - 1) / g.cellSize);
+    const std::size_t n = std::size_t(g.cols) * std::size_t(g.rows);
+    // assign() over the SAME size keeps the capacity, so a grid that is not
+    // resized never allocates again after its first build.
+    g.begin.assign(n + 1, 0u);
+    g.cursor.assign(n, 0u);
+}
+
+void bucket_count(CellBuckets& g, int gx, int gy) {
+    // Counts land at begin[cell + 1] so the prefix pass can sum in place.
+    ++g.begin[g.cell_of(gx, gy) + 1];
+}
+
+void bucket_prefix(CellBuckets& g, std::size_t itemCount) {
+    for (std::size_t i = 1; i < g.begin.size(); ++i) g.begin[i] += g.begin[i - 1];
+    g.items.resize(itemCount);
+    for (std::size_t i = 0; i < g.cursor.size(); ++i) g.cursor[i] = g.begin[i];
+}
+
+void bucket_scatter(CellBuckets& g, int gx, int gy, std::uint32_t item) {
+    const std::size_t c = g.cell_of(gx, gy);
+    g.items[g.cursor[c]++] = item;
+}
+
 void build_tree_grid(TreeGrid& g, const std::vector<TreePoint>& trees,
                      int mapW, int mapH, int cellSize) {
-    g.cellSize = cellSize;
-    g.cols     = (mapW + cellSize - 1) / cellSize;
-    g.rows     = (mapH + cellSize - 1) / cellSize;
-    g.buckets.assign(std::size_t(g.cols) * g.rows, {});
-    g.trees    = &trees;
+    g.trees = &trees;
+    CellBuckets& b = g.grid;
+    bucket_reset(b, mapW, mapH, cellSize);
+    for (const TreePoint& t : trees) {
+        bucket_count(b, wrapi(t.x / b.cellSize, b.cols),
+                     wrapi(t.y / b.cellSize, b.rows));
+    }
+    bucket_prefix(b, trees.size());
     for (std::uint32_t i = 0; i < trees.size(); ++i) {
-        int gx = wrapi(trees[i].x / cellSize, g.cols);
-        int gy = wrapi(trees[i].y / cellSize, g.rows);
-        g.buckets[std::size_t(gy * g.cols + gx)].push_back(i);
+        bucket_scatter(b, wrapi(trees[i].x / b.cellSize, b.cols),
+                       wrapi(trees[i].y / b.cellSize, b.rows), i);
     }
 }
 
@@ -1306,12 +1341,8 @@ void reset_macro_npc_ai_runtime(MacroNpcAiRuntime& runtime,
 
 void build_squad_index(SquadIndex& g, ecs::World& w, int mapW, int mapH,
                        int cellSize) {
-    g.cellSize = std::max(1, cellSize);
-    g.cols = std::max(1, (mapW + g.cellSize - 1) / g.cellSize);
-    g.rows = std::max(1, (mapH + g.cellSize - 1) / g.cellSize);
-    const std::size_t n = std::size_t(g.cols) * std::size_t(g.rows);
-    if (g.buckets.size() != n) g.buckets.assign(n, {});
-    else for (auto& b : g.buckets) b.clear();   // reuse capacity every drive
+    CellBuckets& b = g.grid;
+    bucket_reset(b, mapW, mapH, cellSize);
 
     // Every live macro squad, and nothing else: the player's flagged body is
     // not prey for the threat step (meeting the player is Inc 6's forced
@@ -1320,11 +1351,22 @@ void build_squad_index(SquadIndex& g, ecs::World& w, int mapW, int mapH,
                            ecs::MacroNpcRuntime>(
         entt::exclude<ecs::Dead, ecs::PlayerTag, ecs::PlayerSquadTag,
                       ecs::SubworldTag>);
+    // Two passes over the view — count, then scatter — which is what buys the
+    // allocation-free rebuild. The view is cheap to walk twice; sixteen
+    // thousand vector headers were not cheap to rebuild once.
+    std::size_t total = 0;
     for (auto e : view) {
         const auto& p = view.get<ecs::Position>(e);
-        const int gx = wrapi(int(p.x) / g.cellSize, g.cols);
-        const int gy = wrapi(int(p.y) / g.cellSize, g.rows);
-        g.buckets[std::size_t(gy * g.cols + gx)].push_back(e);
+        bucket_count(b, wrapi(int(p.x) / b.cellSize, b.cols),
+                     wrapi(int(p.y) / b.cellSize, b.rows));
+        ++total;
+    }
+    bucket_prefix(b, total);
+    for (auto e : view) {
+        const auto& p = view.get<ecs::Position>(e);
+        bucket_scatter(b, wrapi(int(p.x) / b.cellSize, b.cols),
+                       wrapi(int(p.y) / b.cellSize, b.rows),
+                       std::uint32_t(entt::to_integral(e)));
     }
 }
 

@@ -1813,7 +1813,7 @@ namespace sm::ui
                         draw_info_overview_row("Inventory stacks", s->inventory.used_slots());
                         draw_info_overview_row("Inventory items", s->inventory.total());
                         draw_info_overview_row("History samples",
-                                               int(s->history.population.size()));
+                                               s->history.size());
                         ImGui::EndTable();
                     }
 
@@ -2115,21 +2115,25 @@ namespace sm::ui
                     *tab = SettlementPanelTab::History;
                 if (historyOpen)
                 {
-                    if (s->history.population.empty())
+                    if (s->history.empty())
                     {
                         ImGui::TextDisabled("(no history yet)");
                     }
                     else
                     {
-                        std::vector<float> v;
-                        v.reserve(s->history.population.size());
-                        for (int p : s->history.population)
-                            v.push_back(float(p));
-                        ImGui::PlotLines("Population", v.data(), int(v.size()),
+                        // Oldest first, off the ring's own accessor — the seam
+                        // is the container's business, not the plot's. A fixed
+                        // buffer, so a panel drawn every frame allocates
+                        // nothing to draw a season.
+                        float v[kSettlementHistoryDays];
+                        const int n = s->history.size();
+                        for (int i = 0; i < n; ++i)
+                            v[i] = float(s->history.population_at(i));
+                        ImGui::PlotLines("Population", v, n,
                                          0, nullptr, FLT_MAX, FLT_MAX, ImVec2(0, 100));
                         ImGui::Text("Earliest: %d   Latest: %d",
-                                    s->history.population.front(),
-                                    s->history.population.back());
+                                    s->history.population_at(0),
+                                    s->history.population_at(n - 1));
                     }
                     ImGui::EndTabItem();
                 }

@@ -495,29 +495,29 @@ void read_macro_npc(Reader& r, MacroNpcRecord& m) {
     read_squad(r, m.roster);
 }
 
+// Written OLDEST FIRST, so the file carries a past and not a ring's seam: a
+// reader never has to know where the head was when the game was saved.
 void write_history(Writer& w, const SettlementHistory& h) {
-    const std::size_t n = std::min(h.days.size(), h.population.size());
-    if (!w.count(n, kMaxSmallVector)) return;
-    for (std::size_t i = 0; i < n; ++i) {
-        w.pod(h.days[i]);
-        w.pod(h.population[i]);
+    if (!w.count(std::size_t(h.size()),
+                 std::uint32_t(kSettlementHistoryDays))) {
+        return;
+    }
+    for (int i = 0; i < h.size(); ++i) {
+        w.pod(h.day_at(i));
+        w.pod(h.population_at(i));
     }
 }
 
 void read_history(Reader& r, SettlementHistory& h) {
+    h = SettlementHistory{};
     std::uint32_t n = 0;
-    if (!read_count(r, n, kMaxSmallVector)) return;
-    h.days.clear();
-    h.population.clear();
-    h.days.reserve(n);
-    h.population.reserve(n);
+    if (!read_count(r, n, std::uint32_t(kSettlementHistoryDays))) return;
     for (std::uint32_t i = 0; i < n && r.ok; ++i) {
         int day = 0;
         int pop = 0;
         r.pod(day);
         r.pod(pop);
-        h.days.push_back(day);
-        h.population.push_back(pop);
+        h.push(day, pop);   // oldest first, so the ring rebuilds in order
     }
 }
 

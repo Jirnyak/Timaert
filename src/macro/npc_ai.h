@@ -47,11 +47,49 @@ inline constexpr float kAiTickGameHours =
 // profession, and the man it raises can actually walk to the ore.
 inline constexpr int kGathererReach = 16;
 
-struct TreeGrid {
-    int cellSize = 32;
+// ── THE flat bucket grid ─────────────────────────────────────────────────
+//
+// Prefix sums plus one sorted item array — a counting sort, the shape
+// `sub::UnitGrid` already uses for the same job in the battle. It replaces a
+// `vector<vector<T>>`, which is the DOD defect CANON S26 names: a heap
+// container PER CELL, so a 128×128 grid was sixteen thousand vector headers
+// with sixteen thousand possible allocations, rebuilt from scratch at the top
+// of every AI sweep.
+//
+// Items are u32 because both users address by one: a tree grid stores indices
+// into the tree array, a squad grid stores entity bits. Two passes and, after
+// the first build, ZERO allocations — the scatter cursors are a member for
+// exactly that reason.
+struct CellBuckets {
+    int cellSize = 8;
     int cols = 0;
     int rows = 0;
-    std::vector<std::vector<std::uint32_t>> buckets;
+    std::vector<std::uint32_t> begin;    // cols*rows + 1 prefix sums
+    std::vector<std::uint32_t> items;    // bucket-sorted payload
+    std::vector<std::uint32_t> cursor;   // scatter cursors; members = no churn
+
+    std::size_t cell_of(int gx, int gy) const {
+        return std::size_t(gy) * std::size_t(cols) + std::size_t(gx);
+    }
+    const std::uint32_t* cell_begin(int gx, int gy) const {
+        return items.data() + begin[cell_of(gx, gy)];
+    }
+    const std::uint32_t* cell_end(int gx, int gy) const {
+        return items.data() + begin[cell_of(gx, gy) + 1];
+    }
+};
+
+// Size the grid and clear the counts. Call, then `bucket_count` once per item,
+// then `bucket_prefix`, then `bucket_scatter` once per item — the counting
+// sort's three steps, spelled out so a caller cannot do them out of order
+// without noticing.
+void bucket_reset(CellBuckets& g, int mapW, int mapH, int cellSize);
+void bucket_count(CellBuckets& g, int gx, int gy);
+void bucket_prefix(CellBuckets& g, std::size_t itemCount);
+void bucket_scatter(CellBuckets& g, int gx, int gy, std::uint32_t item);
+
+struct TreeGrid {
+    CellBuckets grid;
     const std::vector<TreePoint>* trees = nullptr;
 };
 
@@ -64,10 +102,7 @@ void build_tree_grid(TreeGrid& g, const std::vector<TreePoint>& trees,
 // no per-cell NPC arrays). It is what lets a squad SEE another squad: the
 // threat step scans the neighbouring buckets instead of every entity.
 struct SquadIndex {
-    int cellSize = 8;
-    int cols = 0;
-    int rows = 0;
-    std::vector<std::vector<entt::entity>> buckets;
+    CellBuckets grid;
 };
 
 void build_squad_index(SquadIndex& g, ecs::World& w, int mapW, int mapH,

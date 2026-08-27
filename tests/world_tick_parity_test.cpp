@@ -108,8 +108,10 @@ void test_daily_processing_applies_player_upkeep_and_age() {
 }
 
 void test_settlement_history_keeps_a_rolling_window() {
-    constexpr int kDaysRun = 35;    // more days than the window holds
-    constexpr int kWindow  = 30;    // world_tick.cpp kHistoryWindow
+    // More days than the ring holds — the cap is the CONTAINER's now
+    // (kSettlementHistoryDays), so the test names it instead of restating a
+    // number that used to live in world_tick.cpp and could drift from it.
+    constexpr int kDaysRun = sm::kSettlementHistoryDays + 5;
 
     sm::GameState gs{};
     sm::Settlement s{};
@@ -130,13 +132,16 @@ void test_settlement_history_keeps_a_rolling_window() {
           "a budget larger than the queue drains the whole queue");
 
     const sm::SettlementHistory& history = gs.settlements[0].history;
-    CHECK(int(history.days.size()) == kWindow
-              && int(history.population.size()) == kWindow,
-          "history caps at the rolling window and both columns stay in step");
-    // Which days survive is a consequence of the window, not a magic pair.
-    CHECK(!history.days.empty() && history.days.back() == kDaysRun
-              && history.days.front() == kDaysRun - kWindow + 1,
-          "the window keeps the NEWEST days, ending on the last day simulated");
+    // The window is the RING's own size now — a season (kDaysPerSeason), the
+    // same span the forest grows by — and the cap lives in the container, so
+    // no caller can forget it and nothing shifts an array to enforce it.
+    CHECK(history.size() == sm::kSettlementHistoryDays,
+          "history fills its ring and stops there");
+    // Which days survive is a consequence of the ring, not a magic pair.
+    CHECK(!history.empty()
+              && history.day_at(history.size() - 1) == kDaysRun
+              && history.day_at(0) == kDaysRun - sm::kSettlementHistoryDays + 1,
+          "the ring keeps the NEWEST days, ending on the last day simulated");
 }
 
 // THE drift test the whole integer clock exists for: a thousand small advances
