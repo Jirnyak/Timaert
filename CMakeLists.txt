@@ -1153,6 +1153,12 @@ timaert_test(anatomy_equipment_test
         src/macro/anatomy.cpp
         src/macro/items.cpp)
 
+# THE WORLD'S CHRONICLE: the owner's witcher must be able to ask what happened
+# near this village in the last thirty days, and get an answer.
+timaert_test(chronicle_test
+    SOURCES
+        src/macro/chronicle.cpp)
+
 # ONE table every modifier is a row of: a bonus names an address the sheet
 # already has, and a STANDING one is removable because it is read through a
 # copy instead of being written into the sheet.
