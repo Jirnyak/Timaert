@@ -430,6 +430,10 @@ timaert_test(spell_registry_test)
 timaert_test(damage_door_test
     SOURCES
         src/sub/damage.cpp
+        # the door asks what a body WEARS (macro/anatomy.h worn_armor), and
+        # that asks the catalog what each worn row is worth (macro/items.cpp)
+        src/macro/anatomy.cpp
+        src/macro/items.cpp
         src/events/event_bus.cpp
     LINK_ENTT)
 
@@ -445,6 +449,10 @@ timaert_test(spell_casting_effects_test
         src/sub/spell_effects.cpp
         # spell_effects strikes through THE damage door now.
         src/sub/damage.cpp
+        # the door asks what a body WEARS (macro/anatomy.h worn_armor), and
+        # that asks the catalog what each worn row is worth (macro/items.cpp)
+        src/macro/anatomy.cpp
+        src/macro/items.cpp
     LINK_ENTT)
 
 timaert_test(combat_squad_test
@@ -1088,6 +1096,10 @@ timaert_test(spell_broadphase_parity_test
         src/sub/spell_effects.cpp
         # spell_effects strikes through THE damage door now.
         src/sub/damage.cpp
+        # the door asks what a body WEARS (macro/anatomy.h worn_armor), and
+        # that asks the catalog what each worn row is worth (macro/items.cpp)
+        src/macro/anatomy.cpp
+        src/macro/items.cpp
         src/sub/battle.cpp
         src/macro/fauna.cpp
         src/events/event_bus.cpp
@@ -1128,6 +1140,14 @@ timaert_test(player_is_a_squad_test
         src/macro/tree_layer.cpp
         src/macro/items.cpp
     LINK_ENTT)
+
+# Anatomy is a ROW and equipment is a flat array over it: a slot mask names
+# part TYPES, so a body with twenty fingers wears twenty rings without the ring
+# row, the mask, or one line of code knowing such a body exists.
+timaert_test(anatomy_equipment_test
+    SOURCES
+        src/macro/anatomy.cpp
+        src/macro/items.cpp)
 
 # ONE table every modifier is a row of: a bonus names an address the sheet
 # already has, and a STANDING one is removable because it is read through a

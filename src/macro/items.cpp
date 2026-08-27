@@ -5,6 +5,7 @@
 // must mirror the TS file 1:1.
 
 #include "macro/items.h"
+#include "macro/anatomy.h"
 #include "macro/npc.h"
 
 #include <algorithm>
@@ -84,10 +85,19 @@ constexpr ItemDef kCatalog[] = {
         "Alchemy ingredient", {}},
 
     // Equipment
+    // The two rows that finally MEAN what they have always said. `slotMask`
+    // names TYPES, so a dagger fits any body with a grip and the leather fits
+    // any body with a torso — an octopus included, without either row knowing
+    // an octopus exists.
     {"wpn_dagger",  "Rusty Dagger",    ItemType::Weapon,     30, 1.00f, "\xF0\x9F\x97\xA1",
-        "+2 STR when equipped", {{std::uint8_t(BonusId::Str), 2}}},
+        "+2 STR when equipped", {{std::uint8_t(BonusId::Str), 2}},
+        /*slot*/part_bit(BodyPartId::Grip) | part_bit(BodyPartId::OffGrip),
+        /*blocks*/0, /*armor*/0},
     {"arm_leather", "Leather Armor",   ItemType::Armor,      60, 5.00f, "\xF0\x9F\x9B\xA1",
-        "+2 END when equipped", {{std::uint8_t(BonusId::End), 2}}},
+        "+2 END when equipped", {{std::uint8_t(BonusId::End), 2}},
+        /*slot*/part_bit(BodyPartId::Torso), /*blocks*/0,
+        // A leather coat is worth a third of a plain blow (kArmorHalving).
+        /*armor*/3},
 
     // Valuables
     {"misc_gem",    "Gemstone",        ItemType::Misc,      100, 0.05f, "\xF0\x9F\x92\x8E",

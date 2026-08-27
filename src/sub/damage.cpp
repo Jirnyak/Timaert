@@ -2,6 +2,7 @@
 
 #include "ecs/components.h"
 #include "macro/npc.h"
+#include "macro/anatomy.h"
 #include <algorithm>
 #include "events/event_bus.h"
 #include "events/event_types.h"
@@ -21,9 +22,20 @@ namespace {
 // one line here when the equipment component lands, and no damage site
 // changes to gain it.
 int defense_of(entt::registry& reg, entt::entity target) {
-    const auto* kind = reg.try_get<ecs::NPCKind>(target);
-    if (!kind || kind->type >= std::uint16_t(NPCType::Count)) return 0;
-    return std::max(0, npc_def(NPCType(std::uint8_t(kind->type))).armor);
+    int armour = 0;
+    if (const auto* kind = reg.try_get<ecs::NPCKind>(target)) {
+        if (kind->type < std::uint16_t(NPCType::Count)) {
+            armour = npc_def(NPCType(std::uint8_t(kind->type))).armor;
+        }
+    }
+    // ...and what it WEARS, for the few bodies that wear anything. This is the
+    // one line the socket was waiting for: no damage site changed to gain it,
+    // and a body with no BodyEquipment is the limiting case rather than a
+    // branch — which is the same sentence armour 0 already was.
+    if (const auto* eq = reg.try_get<ecs::BodyEquipment>(target)) {
+        armour += worn_armor(eq->gear);
+    }
+    return std::max(0, armour);
 }
 
 // Mitigation, second step inside the door.

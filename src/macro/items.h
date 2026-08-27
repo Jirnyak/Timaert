@@ -57,6 +57,21 @@ struct ItemDef {
     // Zeroed cells are empty: BonusId::None is row 0, so a row that grants
     // nothing writes nothing.
     Bonus       bonus[kMaxItemBonuses] = {};
+
+    // ── Where it goes, and what it costs to wear ──────────────────────────
+    // `slotMask` is an OR of `part_bit(BodyPartId::X)` (macro/anatomy.h): the
+    // TYPES of body part this can sit on. A ring says "Finger" ONCE and fits
+    // an octopus with twenty of them; that is the whole reason the mask names
+    // types and not indices. 0 = cannot be worn at all, which is every potion
+    // and every sack of grain.
+    std::uint64_t slotMask   = 0;
+    // ...and what wearing it ALSO occupies. A two-hander is the case this
+    // exists for: it sits in the main grip and takes the off hand with it.
+    // 0 = takes only its own cell.
+    std::uint64_t blocksMask = 0;
+    // What it stops. Same units as damage and as a creature row's own armour,
+    // because all three meet in one formula (sub/damage.cpp).
+    int           armor      = 0;
 };
 
 // ── THE item instance, and THE container ───────────────────────────────────

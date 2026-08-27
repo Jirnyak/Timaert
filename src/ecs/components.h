@@ -2,6 +2,7 @@
 #pragma once
 #include "macro/army.h"
 #include "macro/items.h"
+#include "macro/anatomy.h"
 #include <array>
 #include <cstdint>
 #include <string>
@@ -121,6 +122,14 @@ struct NpcLevel { std::int16_t value; };
 // the moment it dies (macro/items.h roll_loot_profile), so a city of five
 // thousand people costs five thousand integers and no bags.
 struct NpcInventory { Inventory inv; };
+
+// What this body is WEARING — opt-in, and deliberately rare. A creature's own
+// defence is a number on its row (macro/npc.h `NpcTypeDef::armor`, the owner's
+// «броня массовки = число из строки»), because a troll's hide is what a troll
+// IS; only a body that actually owns things — the player, a named lord —
+// carries this. So the sixteen thousand macro squads pay nothing for a system
+// they do not use, and the ones that do use it get the whole of it.
+struct BodyEquipment { Equipment gear; };
 
 // Per-NPC personality traits. TS assigns 1-2 unique traits from the
 // `NPCTrait` registry; store raw enum ids here to keep ECS free of a
