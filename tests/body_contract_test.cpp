@@ -279,18 +279,16 @@ void test_a_leaders_aura_reaches_his_men() {
     add_perk(leader.perks, PerkID::Leader);
     const AuraMods aura = collect_leader_aura(leader);
     CHECK(aura.count == 1
-              && aura.mods[0].target == AuraMod::Attribute
-              && aura.mods[0].id == std::uint8_t(AttributeId::Vit)
-              && aura.mods[0].delta == 1,
+              && aura.mods[0].row == std::uint8_t(BonusId::Vit)
+              && aura.mods[0].value == 1,
           "the Leader perk row collects as +1 vit: the '+10 HP to every "
-          "soldier' the owner named, said through the sheet");
+          "soldier' the owner named, said through the ONE bonus registry");
 
     // The applier clamps at the same doors a legitimate point spend does.
     CharacterSheet clamped{};
     AuraMods curse{};
-    aura_add(curse, {AuraMod::Attribute, std::uint8_t(AttributeId::Vit), -50});
-    aura_add(curse, {AuraMod::Skill, std::uint8_t(SkillId::Bodybuilding),
-                     std::int16_t(500)});
+    aura_add(curse, {std::uint8_t(BonusId::Vit), -50});
+    aura_add(curse, {std::uint8_t(BonusId::Bodybuilding), std::int16_t(500)});
     apply_aura(clamped, curse);
     CHECK(clamped.attributes.of(sm::AttributeId::Vit) == 1,
           "an aura cannot curse an attribute below its base of 1");

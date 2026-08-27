@@ -3,6 +3,7 @@
 #include "core/table_guard.h"
 #include "macro/army.h"      // CombatTemplate (per-role authored base)
 #include "macro/attributes.h"
+#include "macro/bonus.h"
 #include "macro/npc.h"
 
 #include <cstddef>
@@ -213,6 +214,35 @@ inline CharacterSheet make_character_sheet(NPCType role, int level,
             break;
     }
     return cs;
+}
+
+// THE application: the base sheet plus everything standing, as a COPY.
+//
+// Non-destructive on purpose, and it is the whole reason this file exists. The
+// old `apply_aura` wrote deltas into the member's stored sheet at birth — no
+// source, no removal, no recompute — so a buff outlived every reason for it.
+// Here the stored sheet stays the character the player built, and what fights
+// is the sum of that character and what he is currently wearing, standing in
+// and blessed by. Take the item off and the next call simply does not add it.
+inline CharacterSheet effective_sheet(const CharacterSheet& base,
+                                      const BonusTotals& t) {
+    CharacterSheet out = base;
+    for (int i = 0; i < kMaxAttributes; ++i) {
+        const int v = int(out.attributes.score[std::size_t(i)])
+                    + int(t.attr[std::size_t(i)]);
+        // A score floors at 1, never 0: the asymptotic formulas divide by
+        // (score + 50) and a character reduced to nothing is a design
+        // question, not an arithmetic one.
+        out.attributes.score[std::size_t(i)] =
+            std::uint8_t(std::clamp(v, 1, kMaxAttributeScore));
+    }
+    for (int i = 0; i < kMaxSkills; ++i) {
+        const int v = int(out.skills.rank[std::size_t(i)])
+                    + int(t.skill[std::size_t(i)]);
+        out.skills.rank[std::size_t(i)] =
+            std::uint8_t(std::clamp(v, 0, kMaxSkillRank));
+    }
+    return out;
 }
 
 // Derive combat numbers for a humanoid from its CharacterSheet, layered on top

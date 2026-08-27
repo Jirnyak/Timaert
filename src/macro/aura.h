@@ -17,30 +17,30 @@
 
 #include "macro/character_sheet.h"
 
+#include "macro/bonus.h"
 #include <algorithm>
 #include <array>
 #include <cstdint>
 
 namespace sm {
 
-// One modifier: "+delta to this attribute/skill of every member".
-struct AuraMod {
-    enum Target : std::uint8_t { Attribute = 0, Skill = 1 };
-    Target       target;
-    std::uint8_t id;      // AttributeId / SkillId, matching `target`
-    std::int16_t delta;   // signed: a curse is the same row as a blessing
-};
-
-// Small and flat on purpose (po2): an aura is a handful of modifiers, and a
-// body birth must not allocate to receive one.
+// An aura is a handful of BONUSES — rows of the one registry (macro/bonus.h),
+// not a private encoding of the same idea. It used to carry its own
+// `AuraMod{target, id, delta}`, which was the honest half of the five
+// half-doors: it named an address in the sheet and it was already ordinal. Its
+// vocabulary is now everyone's, so the same row that reads "+1 Vitality" on a
+// leader's perk reads "+1 Vitality" on a sword.
+//
+// Small and flat on purpose (po2): a body birth must not allocate to receive
+// one.
 inline constexpr std::size_t kMaxAuraMods = 8;
 
 struct AuraMods {
-    std::array<AuraMod, kMaxAuraMods> mods{};
+    std::array<Bonus, kMaxAuraMods> mods{};
     std::uint8_t count = 0;
 };
 
-inline void aura_add(AuraMods& a, AuraMod m) {
+inline void aura_add(AuraMods& a, Bonus m) {
     if (a.count >= kMaxAuraMods) return;   // full aura drops the tail, loudly
                                            // bounded rather than quietly UB
     a.mods[a.count++] = m;
@@ -52,13 +52,12 @@ inline void aura_add(AuraMods& a, AuraMod m) {
 // every soldier" is +1 vit through the one formula (attributes.h: a vit point
 // is 10 max HP), so the buff lands in the member's sheet and nowhere else.
 struct PerkAuraRow {
-    PerkID  perk;
-    AuraMod mod;
+    PerkID perk;
+    Bonus  mod;
 };
 
 inline constexpr PerkAuraRow kPerkAuras[] = {
-    {PerkID::Leader,
-     {AuraMod::Attribute, std::uint8_t(AttributeId::Vit), +1}},
+    {PerkID::Leader, {std::uint8_t(BonusId::Vit), +1}},
 };
 
 inline void aura_from_perks(const Perks& perks, AuraMods& out) {
@@ -78,29 +77,25 @@ inline AuraMods collect_leader_aura(const CharacterSheet& leader) {
 }
 
 // ── The one applier ────────────────────────────────────────────────────────
-// Deltas land in the member's OWN sheet, before combat is projected from it,
-// clamped at the same doors every legitimate point spend already respects:
-// an attribute never drops below its base of 1, a skill rank stays within
-// [0, kMaxSkillRank]. The member's sheet then IS its strength — the aura
-// leaves no residue a second formula could disagree about.
+// Summed into BonusTotals and read back through `effective_sheet` — the ONE
+// application every standing modifier in the game goes through, whatever put
+// it there.
+//
+// It still WRITES the member's sheet, and that is a deliberate, bounded
+// exception with its own reason: a projected body is born, fights and dies
+// inside one subworld session, its sheet is derived on the spot from
+// (type, level, seed) and thrown away, and nothing ever needs to take the
+// aura off it. What matters is that the SUM is no longer computed here —
+// `effective_sheet` owns the clamps (a score floors at 1, a rank stays inside
+// [0, kMaxSkillRank]) and owns them for items and perks too. When a body
+// wants a modifier it can LOSE, the answer is to keep the totals beside the
+// sheet and call effective_sheet at the moment of reading, which is precisely
+// what this function no longer prevents.
 inline void apply_aura(CharacterSheet& sheet, const AuraMods& aura) {
-    for (std::uint8_t i = 0; i < aura.count; ++i) {
-        const AuraMod& m = aura.mods[i];
-        if (m.target == AuraMod::Attribute) {
-            if (m.id < std::uint8_t(AttributeId::Count)) {
-                std::uint8_t& score = sheet.attributes[AttributeId(m.id)];
-                score = std::uint8_t(
-                    std::clamp(int(score) + int(m.delta), 1, kMaxAttributeScore));
-            }
-        } else if (m.id < std::uint8_t(SkillId::Count)) {
-            // Ranks are a flat array under the envelope, so the target is an
-            // index and the only question left is whether it names a skill
-            // the game actually has.
-            std::uint8_t& rank = sheet.skills[SkillId(m.id)];
-            rank = std::uint8_t(
-                std::clamp(int(rank) + int(m.delta), 0, kMaxSkillRank));
-        }
-    }
+    if (aura.count == 0) return;
+    BonusTotals totals{};
+    accumulate(totals, aura.mods.data(), int(aura.count));
+    sheet = effective_sheet(sheet, totals);
 }
 
 } // namespace sm

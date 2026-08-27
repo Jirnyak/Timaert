@@ -1129,6 +1129,11 @@ timaert_test(player_is_a_squad_test
         src/macro/items.cpp
     LINK_ENTT)
 
+# ONE table every modifier is a row of: a bonus names an address the sheet
+# already has, and a STANDING one is removable because it is read through a
+# copy instead of being written into the sheet.
+timaert_test(bonus_registry_test)
+
 # THE sheet's two id spaces are registries: an attribute and a skill are ROWS
 # under a fixed envelope, and every number they govern asks one door.
 timaert_test(sheet_registry_test)
