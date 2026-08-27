@@ -1,6 +1,81 @@
 #include "macro/audio.h"
 #include "core/math.h"
 
+#include "core/table_guard.h"
+#include <array>
+
+// ── THE asset tables, ONE copy, ABOVE the backend split ────────────────────
+// This module used to be implemented TWICE in one file: a table under
+// `#if TIMAERT_HAS_SDL_MIXER` and, under `#else`, four switch ladders spelling
+// the very same keys and filenames — the same content answered by two
+// vocabularies, with nothing to keep them equal. Which backend is compiled in
+// says nothing about WHAT the game's music is called, so the data lives here
+// and both branches read it. The stub keeps only what is genuinely different:
+// no device, no playback.
+namespace sm {
+namespace {
+
+constexpr std::size_t kMusicCount = static_cast<std::size_t>(MusicId::Count);
+constexpr std::size_t kSfxCount = static_cast<std::size_t>(SfxId::Count);
+
+struct MusicAsset {
+    MusicId id;
+    const char* key;
+    const char* file;
+};
+
+struct SfxAsset {
+    SfxId id;
+    const char* key;
+    const char* file;
+};
+
+// Row order mirrors the enum, and the guard proves it — the switch twin could
+// not have said that about itself.
+constexpr MusicAsset kMusicAssets[kMusicCount] = {
+    {MusicId::Explore,     "explore",      "15-dungeon-suno.mp3"},
+    {MusicId::EmpireTheme, "empire_theme", "empire-theme.mp3"},
+    {MusicId::Subworld,    "subworld",     "subworld.mp3"},
+};
+static_assert(rows_in_enum_order(kMusicAssets, &MusicAsset::id),
+              "kMusicAssets row order must mirror MusicId");
+
+constexpr SfxAsset kSfxAssets[kSfxCount] = {
+    {SfxId::Witch, "witch", "witch.mp3"},
+};
+static_assert(rows_in_enum_order(kSfxAssets, &SfxAsset::id),
+              "kSfxAssets row order must mirror SfxId");
+
+const MusicAsset* find_music_asset(MusicId id) {
+    const std::size_t i = std::size_t(id);
+    return i < kMusicCount ? &kMusicAssets[i] : nullptr;
+}
+const SfxAsset* find_sfx_asset(SfxId id) {
+    const std::size_t i = std::size_t(id);
+    return i < kSfxCount ? &kSfxAssets[i] : nullptr;
+}
+
+} // namespace
+
+const char* music_key(MusicId id) {
+    const MusicAsset* a = find_music_asset(id);
+    return a ? a->key : nullptr;
+}
+const char* music_file(MusicId id) {
+    const MusicAsset* a = find_music_asset(id);
+    return a ? a->file : nullptr;
+}
+const char* sfx_key(SfxId id) {
+    const SfxAsset* a = find_sfx_asset(id);
+    return a ? a->key : nullptr;
+}
+const char* sfx_file(SfxId id) {
+    const SfxAsset* a = find_sfx_asset(id);
+    return a ? a->file : nullptr;
+}
+
+} // namespace sm
+
 #if defined(TIMAERT_HAS_SDL_MIXER)
 
 #include <SDL.h>
@@ -18,32 +93,10 @@ constexpr int kSampleRate = 44100;
 constexpr int kOutputChannels = 2;
 constexpr int kChunkSize = 1024;
 constexpr int kSfxChannels = 16;
-constexpr std::size_t kMusicCount = static_cast<std::size_t>(MusicId::Count);
-constexpr std::size_t kSfxCount = static_cast<std::size_t>(SfxId::Count);
-static_assert(kMusicCount == 3, "update kMusicAssets for new MusicId values");
-static_assert(kSfxCount == 1, "update kSfxAssets for new SfxId values");
-
-struct MusicAsset {
-    MusicId id;
-    const char* key;
-    const char* file;
-};
-
-struct SfxAsset {
-    SfxId id;
-    const char* key;
-    const char* file;
-};
-
-constexpr std::array<MusicAsset, kMusicCount> kMusicAssets = {{
-    {MusicId::Explore,     "explore",      "15-dungeon-suno.mp3"},
-    {MusicId::EmpireTheme, "empire_theme", "empire-theme.mp3"},
-    {MusicId::Subworld,    "subworld",     "subworld.mp3"},
-}};
-
-constexpr std::array<SfxAsset, kSfxCount> kSfxAssets = {{
-    {SfxId::Witch, "witch", "witch.mp3"},
-}};
+// The ordinal IS the index — both tables are enum-ordered and the guards above
+// prove it, so "which slot" needs no lookup.
+std::size_t music_index(MusicId id) { return static_cast<std::size_t>(id); }
+std::size_t sfx_index(SfxId id) { return static_cast<std::size_t>(id); }
 
 constexpr const char* kSoundPrefixes[] = {
     "assets/sound/",
@@ -52,26 +105,6 @@ constexpr const char* kSoundPrefixes[] = {
     "../../public/assets/sound/",
     "public/assets/sound/",
 };
-
-std::size_t music_index(MusicId id) {
-    return static_cast<std::size_t>(id);
-}
-
-std::size_t sfx_index(SfxId id) {
-    return static_cast<std::size_t>(id);
-}
-
-const MusicAsset* find_music_asset(MusicId id) {
-    const std::size_t idx = music_index(id);
-    if (idx >= kMusicAssets.size()) return nullptr;
-    return &kMusicAssets[idx];
-}
-
-const SfxAsset* find_sfx_asset(SfxId id) {
-    const std::size_t idx = sfx_index(id);
-    if (idx >= kSfxAssets.size()) return nullptr;
-    return &kSfxAssets[idx];
-}
 
 using sm::clamp01;   // THE one curve (core/math.h), not a third copy of it.
 
@@ -188,26 +221,6 @@ Mix_Chunk* load_sfx_file(const char* file, const char* assetRoot,
 }
 
 } // namespace
-
-const char* music_key(MusicId id) {
-    const MusicAsset* asset = find_music_asset(id);
-    return asset ? asset->key : nullptr;
-}
-
-const char* music_file(MusicId id) {
-    const MusicAsset* asset = find_music_asset(id);
-    return asset ? asset->file : nullptr;
-}
-
-const char* sfx_key(SfxId id) {
-    const SfxAsset* asset = find_sfx_asset(id);
-    return asset ? asset->key : nullptr;
-}
-
-const char* sfx_file(SfxId id) {
-    const SfxAsset* asset = find_sfx_asset(id);
-    return asset ? asset->file : nullptr;
-}
 
 AudioSystem::~AudioSystem() {
     shutdown();
@@ -454,42 +467,6 @@ bool AudioSystem::play_sfx(SfxId id, int channel) {
 #include <cstdio>
 
 namespace sm {
-
-const char* music_key(MusicId id) {
-    switch (id) {
-        case MusicId::Explore: return "explore";
-        case MusicId::EmpireTheme: return "empire_theme";
-        case MusicId::Subworld: return "subworld";
-        case MusicId::Count: break;
-    }
-    return nullptr;
-}
-
-const char* music_file(MusicId id) {
-    switch (id) {
-        case MusicId::Explore: return "15-dungeon-suno.mp3";
-        case MusicId::EmpireTheme: return "empire-theme.mp3";
-        case MusicId::Subworld: return "subworld.mp3";
-        case MusicId::Count: break;
-    }
-    return nullptr;
-}
-
-const char* sfx_key(SfxId id) {
-    switch (id) {
-        case SfxId::Witch: return "witch";
-        case SfxId::Count: break;
-    }
-    return nullptr;
-}
-
-const char* sfx_file(SfxId id) {
-    switch (id) {
-        case SfxId::Witch: return "witch.mp3";
-        case SfxId::Count: break;
-    }
-    return nullptr;
-}
 
 AudioSystem::~AudioSystem() {
     shutdown();
