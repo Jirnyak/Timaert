@@ -58,6 +58,17 @@ struct SpawnHabitatRow {
     // DepositKind whose live vein within reach opens this row (-1 = no gate).
     // The same pairing the macro gatherer table works by (kGathererDefs).
     std::int8_t   depositGate = -1;
+    // Under whose banner this row stands when the SPAWNER is the open land
+    // (owner ruling 2026-08-27: a creature row carries NO faction — faction is
+    // an instance property the spawner assigns). The banner is the spawn
+    // law's own data: the wild raises beasts as "wildlife" and monsters as
+    // "demons"; a PLACE overrides it (landmark spawnFaction — a ruin's wolves
+    // ARE demons), a squad embodies under its leader's, a town under its
+    // kingdom's. nullptr = this row is never raised by the open land (the
+    // humanoid stripe: towns and macro spawns name their own). When the dark
+    // field lands (CANON S15), the wild banner becomes the field's answer and
+    // this column dies.
+    const char*   wildFaction = nullptr;
 };
 constexpr SpawnHabitatRow kSpawnHabitats[std::size_t(NPCType::Count)] = {
     {NPCType::Peasant,      kHabTown},
@@ -72,32 +83,32 @@ constexpr SpawnHabitatRow kSpawnHabitats[std::size_t(NPCType::Count)] = {
     {NPCType::Quarryman,    kHabTown, std::int8_t(DepositKind::Stone)},
     {NPCType::ClayDigger,   kHabTown, std::int8_t(DepositKind::Clay)},
     {NPCType::Rabbit,       hab(Meadow) | hab(Valley) | hab(Steppe) | hab(Taiga)
-                          | hab(Tundra) | hab(Snow) | kHabForest},
+                          | hab(Tundra) | hab(Snow) | kHabForest, -1, "wildlife"},
     {NPCType::Deer,         hab(Meadow) | hab(Valley) | hab(Steppe)
-                          | hab(Tropics) | hab(Taiga) | kHabForest},
+                          | hab(Tropics) | hab(Taiga) | kHabForest, -1, "wildlife"},
     {NPCType::Fox,          hab(Meadow) | hab(Valley) | hab(Steppe)
-                          | hab(Taiga) | hab(Tundra) | kHabForest},
+                          | hab(Taiga) | hab(Tundra) | kHabForest, -1, "wildlife"},
     {NPCType::Wolf,         hab(Meadow) | hab(Valley) | hab(Taiga)
                           | hab(Tundra) | hab(Snow) | hab(Mountain)
-                          | kHabForest},
-    {NPCType::Bear,         hab(Taiga) | kHabForest},
+                          | kHabForest, -1, "wildlife"},
+    {NPCType::Bear,         hab(Taiga) | kHabForest, -1, "wildlife"},
     {NPCType::Boar,         hab(Meadow) | hab(Valley) | hab(Steppe)
-                          | hab(Tropics) | kHabForest},
+                          | hab(Tropics) | kHabForest, -1, "wildlife"},
     {NPCType::Snake,        hab(Desert) | hab(Steppe) | hab(Swamp)
-                          | hab(Tropics) | kHabRuin},
+                          | hab(Tropics) | kHabRuin, -1, "wildlife"},
     {NPCType::Hawk,         hab(Meadow) | hab(Valley) | hab(Desert)
-                          | hab(Steppe)},
-    {NPCType::Frog,         hab(Swamp)},
-    {NPCType::Goat,         hab(Mountain)},
-    {NPCType::Eagle,        hab(Mountain)},
-    {NPCType::Croc,         hab(Swamp) | hab(Tropics)},
-    {NPCType::Goblin,       kHabForest | kHabRuin | kHabSpire},
-    {NPCType::Skeleton,     kHabRuin | kHabSpire},
-    {NPCType::Troll,        kHabRuin | kHabSpire},
-    {NPCType::SwampThing,   hab(Swamp)},
-    {NPCType::IceWraith,    hab(Tundra) | hab(Snow) | kHabSpire},
-    {NPCType::SandScorpion, hab(Desert)},
-    {NPCType::StoneGolem,   hab(Mountain) | kHabSpire},
+                          | hab(Steppe), -1, "wildlife"},
+    {NPCType::Frog,         hab(Swamp), -1, "wildlife"},
+    {NPCType::Goat,         hab(Mountain), -1, "wildlife"},
+    {NPCType::Eagle,        hab(Mountain), -1, "wildlife"},
+    {NPCType::Croc,         hab(Swamp) | hab(Tropics), -1, "wildlife"},
+    {NPCType::Goblin,       kHabForest | kHabRuin | kHabSpire, -1, "demons"},
+    {NPCType::Skeleton,     kHabRuin | kHabSpire, -1, "demons"},
+    {NPCType::Troll,        kHabRuin | kHabSpire, -1, "demons"},
+    {NPCType::SwampThing,   hab(Swamp), -1, "demons"},
+    {NPCType::IceWraith,    hab(Tundra) | hab(Snow) | kHabSpire, -1, "demons"},
+    {NPCType::SandScorpion, hab(Desert), -1, "demons"},
+    {NPCType::StoneGolem,   hab(Mountain) | kHabSpire, -1, "demons"},
 };
 static_assert(rows_in_enum_order(kSpawnHabitats, &SpawnHabitatRow::type),
               "every body row states its ground — the table IS the system");
@@ -191,8 +202,9 @@ std::vector<FaunaPick> roll_spawns(const SpawnContext& ctx,
         + int(std::floor(r.next_f01() * float(span)));
 
     // The landmark's own creatures wear its colours (spawnFaction column of
-    // the place registry — a ruin's wolves ARE demons); open land keeps each
-    // row's own faction.
+    // the place registry — a ruin's wolves ARE demons); open land raises the
+    // spawn law's OWN banner (wildFaction column above). The species row says
+    // nothing about faction — a mob is a clean NPC, the spawner dresses it.
     const char* placeFaction = landmark_def(ctx.landmark).spawnFaction;
 
     std::uint64_t total = 0;
@@ -215,8 +227,9 @@ std::vector<FaunaPick> roll_spawns(const SpawnContext& ctx,
             roll -= double(w[i]);
             if (roll <= 0.0) {
                 const NpcTypeDef& row = kNpcTypeDefs[i];
-                out.push_back({&row, placeFaction ? placeFaction
-                                                  : row.factionId});
+                out.push_back({&row, placeFaction
+                                         ? placeFaction
+                                         : kSpawnHabitats[i].wildFaction});
                 break;
             }
         }
