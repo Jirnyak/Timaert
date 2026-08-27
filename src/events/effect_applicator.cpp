@@ -19,8 +19,17 @@ namespace {
 // The verbs the plot files already speak are kept as ALIASES onto rows rather
 // than renamed, because a plot file is content and content does not get
 // broken by an engine tidy-up. `restore_hp` and `heal_hp` were always the same
-// verb; the DRAINING ones are the same row with the other sign, which is the
-// whole reason the registry's value is signed.
+// verb; `drain_sp` is the same row with the other sign, which is the whole
+// reason the registry's value is signed.
+//
+// THERE IS NO `damage_hp`, and its absence is a ruling (owner, 2026-08-27:
+// «лучше единая система урона и НЕЗАВИСИМАЯ ОТ ИГРОКА — ИГРОК = НПЦ, значит
+// это тоже нарушение»). A verb that subtracts the player's health from a plot
+// file was a second damage system that only one body in the world could be
+// hurt by: no mitigation, no death protocol, no attacker, and reachable by
+// nobody except him. Draining STAMINA is not that — exertion has no door and
+// no armour argues with it — which is why `drain_sp` stays and its twin does
+// not.
 struct EffectVerb {
     const char* verb;
     BonusId     row;
@@ -30,7 +39,6 @@ struct EffectVerb {
 constexpr EffectVerb kEffectVerbs[] = {
     {"heal_hp",    BonusId::HealHp, +1},
     {"restore_hp", BonusId::HealHp, +1},   // always was the same verb
-    {"damage_hp",  BonusId::HealHp, -1},
     {"restore_mp", BonusId::HealMp, +1},
     {"restore_sp", BonusId::HealSp, +1},
     {"drain_sp",   BonusId::HealSp, -1},

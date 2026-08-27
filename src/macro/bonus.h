@@ -123,8 +123,18 @@ inline constexpr BonusDef kBonusDefs[] = {
     {BonusId::Weightlifting, "weightlifting", "Weightlifting",
      BonusTarget::SkillRank, std::uint8_t(SkillId::Weightlifting)},
 
-    // The instant half. Signed, so one row says both "heals 30" and "costs
-    // 30" — a poison is a potion with the other sign, not another row.
+    // The instant half. Signed, so one row says both "restores 30" and
+    // "spends 30" — a draught that costs vigour is a potion with the other
+    // sign, not another row.
+    //
+    // WITH ONE EXCEPTION, and it is a ruling rather than a quirk (owner,
+    // 2026-08-27): HP does not go DOWN through this door. A wound is a blow,
+    // blows have exactly one door (sub/damage.cpp apply_damage) and that door
+    // owns mitigation, the already-dead guard and the death protocol. A
+    // negative HP here would be a second damage system — and one that only the
+    // player could ever be hurt by, which is the ИГРОК = НПЦ violation twice
+    // over. `apply_instant` refuses it below. Mana and vigour have no such
+    // door and no armour argues with them, so their rows stay two-way.
     // Labelled the way every BAR in the game is labelled, not with the pool's
     // full name: "Used Health Potion: +5 HP" is what a player reads. The
     // attribute rows above keep their full words for the opposite reason — an
@@ -224,6 +234,8 @@ inline int apply_instant(const PoolSlice& pools, Bonus b) {
     if (d.index >= std::uint8_t(PoolId::Count)) return 0;
     int* cur = pools.current[d.index];
     if (!cur) return 0;
+    // A wound is a blow, and blows have one door (see the rows above).
+    if (d.index == std::uint8_t(PoolId::Hp) && b.value < 0) return 0;
     const int max = pools.maximum[d.index];
     const int before = *cur;
     *cur = std::clamp(before + int(b.value), 0, std::max(0, max));

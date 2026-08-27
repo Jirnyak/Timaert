@@ -113,7 +113,12 @@ std::vector<EncounterDef> build_table() {
     t.push_back({"Trap!",
         "You step into a snare trap!",
         {
-            {"Break free (-15 HP)", {effect("damage_hp", 15)}},
+            // Costs EXERTION, not health: a plot file may not wound anybody
+            // (owner's ruling — one damage system, and no player-specific
+            // door into it). Tearing yourself out of a snare is exactly the
+            // kind of thing stamina is for, and the exhaustion law already
+            // says what happens to a body that spends what it has not got.
+            {"Break free (-30 SP)", {effect("drain_sp", 30)}},
             {"Wait for help",       {battle("Trapper", "bandit", 3)}},
         }});
 

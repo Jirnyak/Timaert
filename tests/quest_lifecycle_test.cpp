@@ -405,10 +405,14 @@ bool test_effect_applicator_ts_verbs() {
     restoreHp.ix = 99;
     events.push_back(restoreHp);
 
-    sm::GameEvent damage{sm::EventTag::ApplyEffect};
-    damage.s1 = "damage_hp";
-    damage.ix = 17;
-    events.push_back(damage);
+    // `damage_hp` is GONE, by ruling: a verb that subtracted the player's
+    // health from a plot file was a second damage system reachable by exactly
+    // one body in the world. It is fired here anyway, as an unknown verb, to
+    // prove the applicator ignores what it does not know instead of guessing.
+    sm::GameEvent razed{sm::EventTag::ApplyEffect};
+    razed.s1 = "damage_hp";
+    razed.ix = 17;
+    events.push_back(razed);
 
     sm::GameEvent restoreMp{sm::EventTag::ApplyEffect};
     restoreMp.s1 = "restore_mp";
@@ -463,10 +467,12 @@ bool test_effect_applicator_ts_verbs() {
     if (sm::wallet_value(bag) != 0) {
         return fail("PlayerGoldChange did not drain the wallet");
     }
-    if (player.combatStats.currentHp != 33
+    // HP is 50 rather than 33: the razed verb took nothing, which is the
+    // point of razing it.
+    if (player.combatStats.currentHp != 50
         || player.combatStats.currentMp != 25
         || player.combatStats.currentSp != 26) {
-        return fail("ApplyEffect TS hp/mp/sp verbs produced wrong combat stats");
+        return fail("ApplyEffect hp/mp/sp verbs produced wrong combat stats");
     }
     if (player.sheet.levelData.exp != 42 || player.sheet.levelData.level != 1) {
         return fail("grant_xp did not apply XP without direct level mutation");
@@ -490,22 +496,36 @@ bool test_effect_applicator_ts_verbs() {
         return fail("quest failed ledger duplicated native classification");
     }
 
-    sm::PlayerState negativeHp{};
-    negativeHp.combatStats.currentHp = 7;
-    negativeHp.combatStats.maxHp = 50;
+    // NO PLOT FILE CAN WOUND ANYBODY (owner, 2026-08-27). The verb is gone,
+    // and the road it used is closed too: an instant bonus may not drive HP
+    // down, because a wound is a blow and blows have exactly one door.
+    sm::PlayerState hurtMe{};
+    hurtMe.combatStats.currentHp = 7;
+    hurtMe.combatStats.maxHp = 50;
     sm::GameEvent lethal{sm::EventTag::ApplyEffect};
     lethal.s1 = "damage_hp";
     lethal.ix = 10;
     sm::GameState lethalState{};
-    lethalState.player = negativeHp;
+    lethalState.player = hurtMe;
     sm::apply_events(std::span<const sm::GameEvent>(&lethal, 1), lethalState, &bag);
-    // A pool FLOORS at zero. It used to run to -3 because the verb subtracted
-    // with no clamp at all — and the death check reads `currentHp <= 0`
-    // (main.cpp), so both numbers kill; the difference is only whether the
-    // pool tells the truth about itself afterwards. Through the one instant
-    // door it does.
-    if (lethalState.player.combatStats.currentHp != 0) {
-        return fail("damage_hp should floor the pool at zero, not run past it");
+    if (lethalState.player.combatStats.currentHp != 7) {
+        return fail("a razed verb must do NOTHING, not something smaller");
+    }
+    // ...and the registry itself refuses the same thing by the other road,
+    // so restoring the verb would not restore the hole.
+    int hp = 7;
+    sm::PoolSlice pools{};
+    pools.current[int(sm::PoolId::Hp)] = &hp;
+    pools.maximum[int(sm::PoolId::Hp)] = 50;
+    if (sm::apply_instant(pools, {std::uint8_t(sm::BonusId::HealHp), -10}) != 0
+        || hp != 7) {
+        return fail("an instant bonus must not wound: blows have one door");
+    }
+    // Negative control: the SAME row still heals, so the refusal above is a
+    // direction and not a dead door.
+    if (sm::apply_instant(pools, {std::uint8_t(sm::BonusId::HealHp), 10}) != 10
+        || hp != 17) {
+        return fail("the healing direction of the row must still work");
     }
 
     return true;
