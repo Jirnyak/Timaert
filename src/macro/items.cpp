@@ -250,6 +250,8 @@ constexpr const char* kNpcLootId[] = {
     nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
     nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
     nullptr, nullptr, nullptr,
+    // The player: his loot is the bag he carries, not a profile.
+    nullptr,
 };
 
 // Every humanoid row names a profile, and every profile it names exists. A new

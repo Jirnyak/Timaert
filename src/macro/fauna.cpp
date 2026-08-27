@@ -109,6 +109,10 @@ constexpr SpawnHabitatRow kSpawnHabitats[std::size_t(NPCType::Count)] = {
     {NPCType::IceWraith,    hab(Tundra) | hab(Snow) | kHabSpire, -1, "demons"},
     {NPCType::SandScorpion, hab(Desert), -1, "demons"},
     {NPCType::StoneGolem,   hab(Mountain) | kHabSpire, -1, "demons"},
+    // The player's row stands on no ground of its own: the world never raises
+    // an adventurer out of a habitat, it raises exactly one and he wears the
+    // flag. Mask 0, no wild banner.
+    {NPCType::Adventurer,   0},
 };
 static_assert(rows_in_enum_order(kSpawnHabitats, &SpawnHabitatRow::type),
               "every body row states its ground — the table IS the system");

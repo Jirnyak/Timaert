@@ -318,6 +318,13 @@ struct MacroNpcRuntime {
 // kSaveVersion bump of its own.
 struct MacroSpawnId { std::uint32_t index = 0; };
 
+// The PLAYER's squad ordinal — reserved at the top of the space so it can
+// never collide with the 0,1,2… the world spawner hands out. His squad is an
+// ordinary macro squad (owner, 2026-08-27) and therefore needs an ordinal like
+// any other: it is what the roster ledger keys casualties by, and what finds
+// him again after a load regenerates the world.
+inline constexpr std::uint32_t kPlayerSquadOrdinal = 0xFFFFFFFFu;
+
 // THE macro entity is a SQUAD, not a person (owner's design, macrosim.md
 // "Squad as THE macro entity"). This component is that ruling made structural:
 // every macro NPC carries one, and `members` holds everyone EXCEPT the leader

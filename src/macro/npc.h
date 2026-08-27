@@ -34,6 +34,11 @@ enum class NPCType : std::uint8_t {
     // stay stable.
     Rabbit, Deer, Fox, Wolf, Bear, Boar, Snake, Hawk, Frog, Goat, Eagle, Croc,
     Goblin, Skeleton, Troll, SwampThing, IceWraith, SandScorpion, StoneGolem,
+    // The PLAYER's own row (owner's ruling 2026-08-27: «игрок = обычный сквад,
+    // просто с флажком»). His macro squad is an ordinary squad entity, and an
+    // ordinary squad entity names a row of THIS table — so the player needed
+    // one. Appended, so every saved ordinal stays where it was.
+    Adventurer,
     Count,
 };
 
@@ -409,6 +414,18 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         /*weight*/1, /*loot*/nullptr, /*radius*/1.3f,
         {{}}, 0, {{}}, 0,
     },
+    // The player. An ordinary row of the ordinary table (owner, 2026-08-27),
+    // because his macro squad is an ordinary squad and a squad names a row
+    // here. `weight` 0: the world never rolls an adventurer out of thin air —
+    // this row is reached BY NAME, by the one entity that wears the flag. Not
+    // hireable, worth no XP (his death is a game-over, not a kill), and his
+    // loot is the bag he actually carries rather than a rolled profile.
+    {
+        NPCType::Adventurer, "adventurer", "Adventurer", SpriteId::Peasant, 40, 1,
+        AIBehaviour::Wanderer, kGuardCombat, kNpcUpkeepNone, false, 0,
+        /*weight*/0, /*loot*/nullptr, /*radius*/0.0f,
+        {{}}, 0, {{}}, 0,
+    },
 };
 static_assert(rows_in_enum_order(kNpcTypeDefs, &NpcTypeDef::type),
               "kNpcTypeDefs row order must mirror NPCType");
@@ -486,6 +503,9 @@ inline constexpr NpcPurseRow kNpcPurse[std::size_t(NPCType::Count)] = {
     {NPCType::IceWraith,    0, 0},
     {NPCType::SandScorpion, 0, 0},
     {NPCType::StoneGolem,   0, 0},
+    // The player's purse is his INVENTORY — what he actually carries — never a
+    // rolled amount, so his row asks for nothing.
+    {NPCType::Adventurer,   0, 0},
 };
 static_assert(rows_in_enum_order(kNpcPurse, &NpcPurseRow::type),
               "kNpcPurse row order must mirror NPCType");

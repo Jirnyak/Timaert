@@ -104,6 +104,11 @@ inline constexpr RoleWeights kRoleWeights[int(NPCType::Count)] = {
     {NPCType::IceWraith,    {3, 2, 3, 4, 3, 2, 2, 1, 3}, {1, 3, 3, 1, 2, 1, 3, 0}},
     {NPCType::SandScorpion, {3, 2, 3, 1, 1, 1, 2, 1, 3}, {2, 0, 3, 2, 3, 1, 0, 0}},
     {NPCType::StoneGolem,   {5, 5, 5, 1, 1, 1, 1, 1, 1}, {5, 0, 1, 1, 3, 1, 0, 0}},
+    // Adventurer — the player's row. Even weights on purpose: a generated
+    // adventurer is a blank slate, and the player's OWN points are spent by
+    // him, not rolled by this table (it answers only when something asks the
+    // world for "an adventurer", e.g. a projected body of his squad).
+    {NPCType::Adventurer,   {2, 2, 2, 2, 2, 2, 2, 2, 2}, {1, 1, 1, 1, 1, 1, 1, 1}},
 };
 
 static_assert(rows_in_enum_order(kRoleWeights, &RoleWeights::type),

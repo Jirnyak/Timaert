@@ -8119,9 +8119,15 @@ bool run_console_smoke(App& app) {
             smoke_fail(app, "macro_player_entity: macro flag Position off scalar");
             return false;
         }
-        if (reg.any_of<sm::ecs::SubworldTag, sm::ecs::NPCKind>(mpe)) {
+        // The flag rides an ORDINARY SQUAD now (owner, 2026-08-27) — it is
+        // supposed to carry NPCKind, a roster and a runtime, exactly like every
+        // other squad on the map. What it must NOT carry on the macro side is
+        // SubworldTag: that would put the player's own squad into the
+        // subworld reapers' set. This check used to demand the opposite,
+        // because the flag used to be a husk with nothing on it.
+        if (reg.any_of<sm::ecs::SubworldTag>(mpe)) {
             smoke_fail(app,
-                "macro_player_entity: macro flag wrongly carries SubworldTag/NPCKind");
+                "macro_player_entity: macro flag wrongly carries SubworldTag");
             return false;
         }
 
