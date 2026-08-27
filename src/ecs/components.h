@@ -343,7 +343,16 @@ struct MacroNpcRuntime {
     // (`renown >= kRenownToBeNamed`), so the two can never disagree about the
     // same band. Persistent — a figure stays a figure across a save, because
     // the runtime rides the macro snapshot.
-    std::int32_t  renown = 0;
+    //
+    // UNSIGNED, and the reason is the value and not a habit: renown is a
+    // COUNT of what a band has done, it is never negative, and it is not an
+    // index nor a term of a subtraction — so the real hazards of unsigned
+    // arithmetic (a reverse loop that never ends, `a - b` wrapping) do not
+    // touch it. Where a field CAN go below zero the type says so, and the
+    // fact record next door proves the rule is applied and not recited:
+    // `WorldFact::amount` is signed because reputation and coin move both
+    // ways, and `day` is signed because -1 means "no day yet".
+    std::uint32_t renown = 0;
 };
 
 // Deterministic spawn ordinal for a persistent macro NPC (Inc 5e-2). The ECS

@@ -566,7 +566,7 @@ std::uint32_t macro_identity_of(const App& app, std::uint32_t entityBits) {
 bool squad_is_named(const App& app, entt::entity e) {
     if (!app.ecs.reg.valid(e)) return false;
     const auto* rt = app.ecs.reg.try_get<sm::ecs::MacroNpcRuntime>(e);
-    return rt && sm::renown_is_named(int(rt->renown));
+    return rt && sm::renown_is_named(rt->renown);
 }
 
 // Pay a band for what it did, by the fact kind's own column. Saturating: a
@@ -575,10 +575,14 @@ void add_renown(App& app, entt::entity e, sm::FactKind kind) {
     if (!app.ecs.reg.valid(e)) return;
     auto* rt = app.ecs.reg.try_get<sm::ecs::MacroNpcRuntime>(e);
     if (!rt) return;
-    const int gain = int(sm::fact_kind_def(kind).renown);
-    if (gain <= 0) return;
-    const std::int64_t sum = std::int64_t(rt->renown) + gain;
-    rt->renown = std::int32_t(std::min<std::int64_t>(sum, 2147483647));
+    const std::uint32_t gain = std::uint32_t(sm::fact_kind_def(kind).renown);
+    if (gain == 0u) return;
+    // Saturating, though the ceiling is a formality: the greatest single deed
+    // is worth 100, so reaching it takes forty million of them — a ten-year
+    // world would need one band taking thirty thousand cities a day. What the
+    // clamp really buys is that ADDITION can never be the thing that wraps.
+    const std::uint64_t sum = std::uint64_t(rt->renown) + gain;
+    rt->renown = std::uint32_t(std::min<std::uint64_t>(sum, 0xFFFFFFFFull));
 }
 
 void raise_macro_fact(void* user, const sm::BattleFact& fact) {

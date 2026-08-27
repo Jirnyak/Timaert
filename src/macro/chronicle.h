@@ -147,8 +147,8 @@ inline constexpr int kRenownToBeNamed = renown_to_be_named();
 
 // Is this band a figure yet? ONE number decides, so nothing can disagree with
 // it — there is no flag beside the counter to fall out of step.
-inline constexpr bool renown_is_named(int renown) {
-    return renown >= kRenownToBeNamed;
+inline constexpr bool renown_is_named(std::uint32_t renown) {
+    return renown >= std::uint32_t(kRenownToBeNamed);
 }
 static_assert(kRenownToBeNamed > 0,
               "if no deed is worth renown, nobody could ever become a figure");
