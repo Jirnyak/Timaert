@@ -806,11 +806,18 @@ void ai_nomad(ecs::Position& p, ecs::MacroNpcRuntime& rt,
     }
 }
 
-void ai_aggressive(ecs::Position& p, ecs::MacroNpcRuntime& rt,
-                   const TickContext& ctx) {
+void ai_aggressive(ecs::Position& p, const ecs::NPCKind& kind,
+                   ecs::MacroNpcRuntime& rt, const TickContext& ctx) {
     float dsq = torus_dist_sq(p.x, p.y, ctx.playerX, ctx.playerY,
                               float(ctx.mapW), float(ctx.mapH));
-    if (dsq < 100.0f) {
+    // Pursuit asks THE hostility rule like everyone else. An aggressive row
+    // used to chase the player on sight regardless of standing — the last
+    // resolver with its own private answer: a befriended band would follow
+    // forever yet never force the encounter the map's own rule kept vetoing.
+    // Now the same relation that arms the battle masks arms the chase.
+    if (dsq < 100.0f
+        && factions_hostile(ctx.mw.gs, faction_id_for_index(kind.factionIdx),
+                            kPlayerFactionId)) {
         rt.state = std::uint8_t(NS::Chasing);
         rt.targetX = ctx.playerX;
         rt.targetY = ctx.playerY;
@@ -987,9 +994,8 @@ entt::entity nearest_hostile_squad(entt::entity self, const ecs::Position& p,
                                               float(ctx.mapW),
                                               float(ctx.mapH));
                 if (d >= best) continue;
-                if (faction_relation(ctx.mw.gs, myFaction,
-                                     faction_id_for_index(ok->factionIdx))
-                        >= kHostileThreshold) {
+                if (!factions_hostile(ctx.mw.gs, myFaction,
+                                      faction_id_for_index(ok->factionIdx))) {
                     continue;
                 }
                 best = d;
@@ -1170,7 +1176,7 @@ void dispatch(AIBehaviour b, entt::entity e, ecs::Position& p,
         case AIBehaviour::CaravanTrade: ai_caravan   (e, p, rt, ctx); break;
         case AIBehaviour::Trader:       ai_trader       (p, rt, ctx); break;
         case AIBehaviour::Nomad:        ai_nomad        (p, rt, ctx); break;
-        case AIBehaviour::Aggressive:   ai_aggressive   (p, rt, ctx); break;
+        case AIBehaviour::Aggressive:   ai_aggressive(p, kind, rt, ctx); break;
         case AIBehaviour::Patrol:       ai_patrol       (p, rt, ctx); break;
         case AIBehaviour::Teleporter:   ai_teleporter   (p, rt, ctx); break;
         case AIBehaviour::Wanderer:     ai_wanderer     (p, rt, ctx); break;

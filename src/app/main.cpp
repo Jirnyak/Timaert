@@ -1353,11 +1353,10 @@ void detect_forced_encounter(App& app) {
             continue;
         }
         const auto& kind = view.get<sm::ecs::NPCKind>(e);
-        // Hostile to the PLAYER by the one relation law — the same line the
-        // battle masks and the AI wars draw.
-        if (sm::player_reputation(&app.gs,
-                                  sm::faction_id_for_index(kind.factionIdx))
-                >= sm::kHostileThreshold) {
+        // Hostile to the PLAYER by the one relation law — the same predicate
+        // the battle masks bake and the AI wars ask.
+        if (!sm::player_hostile_to(&app.gs,
+                                   sm::faction_id_for_index(kind.factionIdx))) {
             continue;
         }
         app.preBattleNpc = e;
@@ -6062,19 +6061,36 @@ bool run_macro_npc_trace_smoke(App& app) {
     rt.visualSpeed = 0.0f;
 
     // No cost grid on purpose: the trace checks the march MECHANICS (budget,
-    // glide) on a featureless world — one think covers the full 3 road-cells
-    // to the target (Session 21 march; was 1 cell per think). Terrain pricing
-    // has its own ctest coverage (squad_travel_test).
+    // glide) on a featureless world. Terrain pricing has its own ctest
+    // coverage (squad_travel_test). The number of thinks is DERIVED from the
+    // march constants, exactly like the pace-mirror tests re-derive theirs:
+    // the door-track recalibration (2026-08-24) made the march 8 cells/hour ×
+    // kAiTickGameHours per think — 0.75 cells banked per think, four thinks
+    // to close three cells. The old single-think form assumed "3 cells per
+    // think" and went red the day the constants became honest; +2 margin
+    // thinks are harmless — an arrived caravan parks on its idle timer.
+    const float cellsPerThink =
+        sm::kMacroWalkCellsPerHour * sm::kAiTickGameHours;
+    const int marchThinks = int(std::ceil(3.0f / cellsPerThink)) + 2;
     sm::MacroWorld traceMw2{.gs = &app.gs, .world = &app.ecs,
                             .treeGrid = &app.treeGrid};
-    sm::tick_macro_npc_ai(traceMw2, app.npcAi, sm::kAiTicks);
+    for (int i = 0; i < marchThinks; ++i) {
+        sm::tick_macro_npc_ai(traceMw2, app.npcAi, sm::kAiTicks);
+    }
     const float logicalX = pos.x;
     const float logicalY = pos.y;
     const float visualBefore = visual.vx;
     sm::tick_macro_npc_visuals(app.ecs, app.gs.mapW, app.gs.mapH, 0.25f);
     const float visualMid = visual.vx;
-    sm::tick_macro_npc_visuals(app.ecs, app.gs.mapW, app.gs.mapH, 0.25f);
-    const float visualEnd = visual.vx;
+    // Convergence is a property, not a stopwatch: glide until the visual
+    // catches the logical cell (bounded — 16 quarter-seconds covers any sane
+    // glide speed for a two-cell gap). The old fixed two ticks were tuned to
+    // the pre-recalibration three-cells-per-think visualSpeed.
+    float visualEnd = visual.vx;
+    for (int i = 0; i < 16 && std::fabs(visualEnd - logicalX) >= 0.001f; ++i) {
+        sm::tick_macro_npc_visuals(app.ecs, app.gs.mapW, app.gs.mapH, 0.25f);
+        visualEnd = visual.vx;
+    }
 
     // The march is checked as a PROPERTY, never as a compass bearing: this
     // NPC's brain may legitimately re-target (a caravan with no honest home
@@ -6102,7 +6118,12 @@ bool run_macro_npc_trace_smoke(App& app) {
     const int stepsY = std::abs(int(std::lround(logicalY)) - baseY);
     const int steps = std::max(std::min(stepsX, app.gs.mapW - stepsX),
                                std::min(stepsY, app.gs.mapH - stepsY));
-    const bool logicalMoved = steps == 3;
+    // A traveler HALTS inside the arrival ring (npc_ai.cpp at_target,
+    // dist² < 4 — a two-cell ring), so a three-cell leg is walked to the
+    // last whole cell OUTSIDE it: exactly 3 − 1 steps. The old `steps == 3`
+    // was true only while one think spent the whole leg before the ring was
+    // ever re-asked.
+    const bool logicalMoved = steps == 3 - 1;
     const bool visualSmoothed =
         visualBefore == float(baseX)
         && glidedMid > 0.0f
@@ -9925,9 +9946,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             for (auto e : view) {
                 if (view.get<sm::ecs::Health>(e).hp <= 0.0f) continue;
                 const auto& kind = view.get<sm::ecs::NPCKind>(e);
-                if (sm::player_reputation(
-                        &app.gs, sm::faction_id_for_index(kind.factionIdx))
-                        < sm::kHostileThreshold) {
+                if (sm::player_hostile_to(
+                        &app.gs, sm::faction_id_for_index(kind.factionIdx))) {
                     hostile = e;
                     break;
                 }

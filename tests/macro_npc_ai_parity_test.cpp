@@ -177,6 +177,12 @@ void test_aggressive_chases_visible_player() {
 
     sm::ecs::World world;
     auto e = spawn_ai(world, sm::NPCType::Bandit, 10.0f, 10.0f, -1);
+    // Pursuit asks THE hostility rule now (damage-door Inc 3), so the fixture
+    // must say WHO this bandit is and WHERE the pair stands — an aggressive
+    // row chases nobody it is not at war with.
+    world.reg.get<sm::ecs::NPCKind>(e).factionIdx =
+        std::uint16_t(sm::faction_index("bandits"));
+    sm::add_player_reputation(gs, "bandits", -100);
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 50u);
     // The march budget is DERIVED data now (kMacroWalkCellsPerHour ×
@@ -204,6 +210,35 @@ void test_aggressive_chases_visible_player() {
           "chasing pays exactly the two cells' derived march debt");
     CHECK(rt.visualSpeed > 0.0f,
           "the visual speed reports that the chase actually moved");
+}
+
+// The negative twin: the SAME aggressive row, the SAME two-cell distance —
+// but the pair stands above the hostility line, so the one rule vetoes the
+// chase. This is the law that killed the last private resolver (a befriended
+// band used to follow the player forever while the forced-encounter door,
+// reading the real rule, kept vetoing the meeting).
+void test_aggressive_spares_a_friend() {
+    sm::GameState gs{};
+    gs.mapW = 128;
+    gs.mapH = 128;
+    gs.player.x = 12.0f;
+    gs.player.y = 10.0f;
+
+    sm::ecs::World world;
+    auto e = spawn_ai(world, sm::NPCType::Bandit, 10.0f, 10.0f, -1);
+    world.reg.get<sm::ecs::NPCKind>(e).factionIdx =
+        std::uint16_t(sm::faction_index("bandits"));
+    sm::add_player_reputation(gs, "bandits", 60);   // above kHostileThreshold
+    sm::MacroNpcAiRuntime runtime;
+    sm::reset_macro_npc_ai_runtime(runtime, 50u);
+    const float perThink =
+        sm::kMacroWalkCellsPerHour * sm::kAiTickGameHours;
+    const int thinks = int(std::ceil(2.0f / perThink));
+    for (int i = 0; i < thinks; ++i) tick_once(gs, world, runtime);
+
+    auto& rt = world.reg.get<sm::ecs::MacroNpcRuntime>(e);
+    CHECK(!in_state(rt, sm::NPCState::Chasing),
+          "an aggressive row does not chase a faction it is not at war with");
 }
 
 void test_patrol_returns_when_far_from_home() {
@@ -330,6 +365,7 @@ int main() {
     test_trader_targets_other_settlement();
     test_nomad_excludes_current_target();
     test_aggressive_chases_visible_player();
+    test_aggressive_spares_a_friend();
     test_patrol_returns_when_far_from_home();
     test_teleporter_cooldown_counts_down();
     test_wanderer_enters_wandering_state();

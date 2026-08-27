@@ -405,6 +405,32 @@ inline int player_reputation(const GameState* gs, const char* factionId) {
     return faction_relation(gs, kPlayerFactionId, factionId);
 }
 
+// ── THE binary hostility rule (damage-door track Inc 3) ────────────────────
+// ONE threshold over the ONE matrix, spelled ONCE. Everything else is a form
+// of this answer, never a second formula:
+//   • the battle masks are its BAKED form — build_faction_masks applies the
+//     same threshold over the same matrix once per tick and hostility becomes
+//     a shift-and-AND (sub/battle.h);
+//   • the per-entity subworld door (hostile_to_player_entity) adds only
+//     SESSION state on top: the player's own side is never hostile, and a
+//     TempHostileToPlayer grudge overrides the matrix until the body dies or
+//     the scene ends;
+//   • the stance colours (player_stance) are its continuous projection for
+//     the eye — they may soften the answer, never contradict it.
+// Six hand-spelled `relation < threshold` comparisons converged here; the
+// macro side (squad threat, aggressive pursuit, the forced encounter) asks
+// these functions, so the map and the ground read one law.
+inline bool factions_hostile(const GameState* gs, const char* a,
+                             const char* b) {
+    return faction_relation(gs, a, b) < kHostileThreshold;
+}
+
+// Is this faction the PLAYER's enemy — the pair every player-facing consumer
+// asks about (melee oracle, flee brain, dev cheat, forced encounters).
+inline bool player_hostile_to(const GameState* gs, const char* factionId) {
+    return factions_hostile(gs, kPlayerFactionId, factionId);
+}
+
 // Fetch a faction's row, creating it WITH ITS IDENTITY if this is the first
 // mention of it in this world. Never insert a bare row: save.cpp re-keys the
 // whole map by Faction::id on load, so a row written with an empty id comes back

@@ -46,7 +46,16 @@ namespace sm {
 // callback), the subworld aggro checks (sub/ai.h re-exports it), and the macro
 // squad threat step (npc_ai.cpp) — so the map and the ground can never
 // disagree about who is at war. It lives HERE because relations live here.
+// The predicate that applies it is factions_hostile (macro/state.h) — apply
+// the threshold through it, not by hand.
 inline constexpr int kHostileThreshold = -50;
+
+// THE friendship line, the other end of the same scale: at or above this a
+// faction is an ALLY — it cannot be provoked into a private grudge by a stray
+// hit (maybe_flip_temp_hostile), and the stance colours saturate to full
+// friend here. Lived as a private constant in engine.cpp while the hostile
+// line lived here; the two ends of one scale belong on one shelf.
+inline constexpr int kAllyRepThreshold = 50;
 
 // ── Temperament — how a faction behaves toward strangers ───────────────────
 // The relation between two factions with no authored override is a pure

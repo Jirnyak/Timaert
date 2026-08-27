@@ -104,7 +104,8 @@ constexpr float kPlayerLightIntensity = 1.35f;
 constexpr float kPlayerLightR = 1.00f; // warm orange-white lantern
 constexpr float kPlayerLightG = 0.72f;
 constexpr float kPlayerLightB = 0.42f;
-constexpr int kAllyRepThreshold = 50;
+// kAllyRepThreshold moved to macro/faction.h — both ends of the one relation
+// scale live beside the matrix they cut.
 constexpr int kKillRepPenalty = -1;
 // Flight ceiling margin is sub::kFlightMaxAboveTerrainM (height.h): the
 // ceiling itself is renderer3dVk_.max_height_m() + that margin — absolute for
@@ -252,7 +253,7 @@ bool hostile_to_player_entity(entt::registry& reg,
     }
     if (reg.any_of<ecs::TempHostileToPlayer>(e)) return true;
     const char* factionId = faction_id_for_kind(reg.try_get<ecs::NPCKind>(e));
-    return player_reputation(gs, factionId) < kHostileThreshold;
+    return player_hostile_to(gs, factionId);
 }
 
 // NOTE. The old per-pair `entities_hostile(reg, a, b, gs)` is GONE. It was the
