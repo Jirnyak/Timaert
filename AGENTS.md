@@ -269,10 +269,48 @@ even if everything compiles and passes.
 - Math: use the `vec2/vec3/vec4/mat4` POD helpers in `core/math.h`. Do not
   pull in GLM or Eigen.
 
+## Data-oriented law — owner's ruling 2026-08-27
+
+**This is a DOD game.** World state is FLAT FIXED ARRAYS, not trees of
+pointers: a cell is addressed by index, its size comes from a cap, its memory
+lies contiguous, and the save writes it byte-for-byte in one piece. The canon
+is CANON.md S26; these are the working rules that follow from it.
+
+1. **No heap container ON AN ENTITY.** A `std::vector` / `map` / `string`
+   inside an ECS component (or inside anything that multiplies by the 16384
+   entity cap) is a defect: it allocates during a tick, scatters the cache,
+   and cannot be snapshotted as bytes. Use a fixed array with a named po2 cap
+   and an explicit count.
+2. **Size is not an argument against a flat array.** Owner, verbatim: «48 МБ —
+   это ни о чём, это DOD-подход». A 256-slot inventory on EVERY entity is
+   RIGHT. You may shrink a structure by lowering a DERIVED cap; you may not
+   shrink it by introducing pointers or variable-size containers.
+3. **Strings are an AUTHORING key, never a runtime one.** Tables may name a
+   row `"bread"`; the runtime record carries the resolved ordinal (the
+   `faction_index` / `npc_def` idiom). A `std::string` compared per tick is a
+   defect.
+4. **Allocate at build time, not in the tick.** Reserve once (world gen, scene
+   enter, snapshot load); a hot loop that `push_back`s is a defect. The
+   battle SoA (`sub/battle.h`) is the reference: counting sort into
+   pre-reserved storage, `cursor` kept as a member so the pass is zero-alloc.
+5. **Modularity beats dryness.** Content splits into UNIFORM MODULES, and
+   similar-looking code in two modules is FINE — it is not a debt. The defect
+   is CROSS-ENTANGLEMENT: a module reaching into a neighbour's internals, a
+   dependency cycle, a god-file that knows about everyone. When torn between
+   "duplicate it" and "couple them": couple ONLY through a door (a registry,
+   the context assembler, the ledger) — otherwise duplicate and move on.
+6. **What "second implementation" means** (the thing CANON S16/S26 forbids):
+   a second answer to ONE question about the world — two "what stands on this
+   cell", two faction dictionaries, two damage laws. Two content modules with
+   structurally similar code answer DIFFERENT questions and are not that.
+
 ## ECS Conventions (EnTT)
 
 - Components are POD structs in [src/ecs/components.h](src/ecs/components.h).
-  Keep them under ~64 bytes; split larger blobs into separate components.
+  Flat and trivially copyable — a component must survive `memcpy` and land in
+  a save without a serializer of its own. There is NO byte budget: an
+  inventory of 256 fixed slots on every entity is the intended shape (rule 2
+  above). What is forbidden is not size, it is indirection.
 - Systems are free functions in `src/ecs/systems.{h,cpp}` operating on
   views (`reg.view<A, B>()`). They take `World&` and `dt`.
 - Spawning: free factory functions per subsystem (e.g. `respawn_subworld_npcs`
@@ -446,6 +484,14 @@ see ARCHITECTURE.md *Backend isolation*.)
 
 `ui/` (ImGui overlays) sits above everything and may read from any layer
 but never own game logic.
+
+**Modules, not a web** (owner, 2026-08-27). Inside a layer, content lives in
+UNIFORM MODULES — one per kind of thing, each answering for itself. A module
+may call DOWN through a door and may be called from ABOVE; it must not reach
+sideways into a sibling's internals, and nothing may include upward. Two
+sibling modules with similar-looking code are correct; a sibling that knows
+its neighbour's fields is a defect, and a cycle (A includes B, B includes A,
+directly or transitively) is a defect no matter how convenient.
 
 ## Workflow Checklist
 
