@@ -483,11 +483,23 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
         playerSquad != entt::null) {
         settle_squad_casualties(gs, w, playerSquad, playerCas);
     }
-    {
-        auto& cs = gs.player.combatStats;
-        const float frac = std::clamp(playerFraction, 0.0f, 1.0f);
-        cs.currentHp = int(std::floor(float(cs.maxHp) * frac));
-        if (frac > 0.0f && cs.currentHp < 1) cs.currentHp = 1;
+    // His wound settles through THE door every leader's does
+    // (settle_leader_fraction), not through a second copy of the same three
+    // lines of arithmetic. That copy was the last of the four player-specific
+    // battle paths: it read PlayerState's ceiling while the door read the
+    // entity's, so the two could round differently about one man.
+    //
+    // PlayerState still OWNS his hp (the store moves onto the entity when the
+    // rest of stage 4 lands), so the pool follows the entity the door just
+    // wrote — one writer, one direction, and the projection in
+    // ensure_macro_player_entity has nothing to fight with.
+    if (const entt::entity playerSquad = player_squad_entity(w);
+        playerSquad != entt::null) {
+        settle_leader_fraction(w, playerSquad,
+                               std::clamp(playerFraction, 0.0f, 1.0f));
+        if (const auto* hp = w.reg.try_get<ecs::Health>(playerSquad)) {
+            gs.player.combatStats.currentHp = int(hp->hp);
+        }
     }
 
     // The enemy's dead are FACTS, and killing them has a PRICE — the same two

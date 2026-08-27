@@ -23,6 +23,7 @@
 #include "macro/macro_snapshot.h"
 #include "ecs/components.h"
 
+#include <cmath>
 #include <cstdio>
 
 namespace {
@@ -314,6 +315,51 @@ void test_one_door_assembles_every_battle_side() {
           "his men are his roster — the same lookup, not a second one");
 }
 
+// ── 8. Его рана оседает через ту же дверь ────────────────────────────────
+// The last of the four player-specific battle paths: `settle_player_auto_battle`
+// used to do the leader-wound arithmetic itself, in three lines that read
+// PlayerState's ceiling while `settle_leader_fraction` read the entity's — two
+// copies of one sum, free to round differently about one man.
+void test_the_players_wound_settles_through_the_one_door() {
+    GameState gs{};
+    gs.mapW = gs.mapH = 64;
+    gs.player.sheet.attributes.vit = 10;
+    recompute_combat_maxima(gs.player.combatStats,
+                            gs.player.sheet.attributes,
+                            gs.player.sheet.skills);
+    gs.player.combatStats.currentHp = gs.player.combatStats.maxHp;
+    ecs::World w;
+    ensure_macro_player_entity(gs, w);
+    const entt::entity mine = player_squad_entity(w);
+    const int maxHp = gs.player.combatStats.maxHp;
+
+    MacroWorld mw{};
+    mw.gs = &gs;
+    mw.world = &w;
+    const entt::entity foe = npc_squad(w, 10.0f, 10.0f, 7u, 2);
+
+    AutoBattleOutcome o{};
+    o.winner = 0;                 // the player's side takes it
+    o.leaderFractionA = 0.5f;     // ...limping
+    o.leaderFractionB = 0.0f;
+    for (const SoldierRecord& r : w.reg.get<ecs::SquadRoster>(foe).squad) {
+        o.casualtiesB.push_back(r.entityId);
+    }
+    settle_player_auto_battle(mw, foe, o, /*playerIsA*/true);
+
+    const auto& hp = w.reg.get<ecs::Health>(mine);
+    CHECK(hp.hp == std::floor(hp.maxHp * 0.5f),
+          "the door wrote his wound onto the entity, by the entity's ceiling");
+    CHECK(gs.player.combatStats.currentHp == int(hp.hp),
+          "and his pool followed the entity — one writer, one direction");
+    CHECK(gs.player.combatStats.currentHp > 0
+          && gs.player.combatStats.currentHp < maxHp,
+          "negative control: he is HURT, not untouched and not dead — the "
+          "fraction actually travelled");
+    CHECK(!w.reg.all_of<ecs::Dead>(mine),
+          "a survivor is not marked dead by the shared door");
+}
+
 } // namespace
 
 int main() {
@@ -324,5 +370,6 @@ int main() {
     test_the_entity_numbers_are_not_stale();
     test_the_head_is_on_the_entity();
     test_one_door_assembles_every_battle_side();
+    test_the_players_wound_settles_through_the_one_door();
     return sm::test::report("player_is_a_squad_test");
 }
