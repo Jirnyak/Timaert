@@ -227,23 +227,39 @@ inline int apply_stamina_cost(CombatStats& cs, int cost) {
     return bite;
 }
 
-// The fractional carry between steps. Runtime only (never serialised): one per
-// travelling body, shared by both layers because a body has one pair of legs.
-struct TravelStamina {
-    float pending = 0.0f;   // SP earned by the terrain but not yet whole
-};
-
-// Spend one step's worth (travel_stamina_cost above): accumulate it, charge
-// whatever whole points have built up, and apply the exhaustion curve to them.
-// Returns the SP charged.
-inline int spend_travel_stamina(CombatStats& cs, TravelStamina& acc,
-                                float cost) {
-    if (cost > 0.0f) acc.pending += cost;
-    if (acc.pending < 1.0f) return 0;
-    const int whole = int(acc.pending);
-    acc.pending -= float(whole);
-    apply_stamina_cost(cs, whole);
+// THE fractional stamina carry, settled — one shape for every body on the map.
+// SIGNED and BIDIRECTIONAL: a march pushes it down, a rest pushes it up, and
+// whole points move to the bar in whichever direction they accumulated.
+// Truncation is toward zero, so a part-point never rounds into existence.
+//
+// The player used to carry TWO of these, both unsigned and each blind to the
+// other: a spend-only `TravelStamina::pending` that refused to act below 1.0,
+// and a separate regen-only accumulator in PlayerRecoveryAccumulator that
+// zeroed itself at a full bar. A macro squad carried one signed `spCarry` and
+// did the same job with half the parts. Same idea, three implementations, and
+// the player's pair could not even represent the state his own bar was in —
+// an exhaustion debt with a fractional part owed.
+//
+// The bar clamps at `maxSp` going up and NOT at zero going down: the debt is
+// the state the exhaustion law bills (exhaustion_bite above), so it has to be
+// expressible. Returns the whole points moved — negative when spent.
+inline int settle_sp_carry(int& sp, int maxSp, float& carry) {
+    const int whole = int(carry);
+    if (whole == 0) return 0;
+    carry -= float(whole);
+    sp = std::min(std::max(1, maxSp), sp + whole);
     return whole;
+}
+
+// Spend one step's worth (travel_stamina_cost above) through that carry, and
+// let the exhaustion curve bill the body for the step it could not pay for.
+// Returns the SP actually charged (0 while the cost is still fractional).
+inline int spend_travel_stamina(CombatStats& cs, float& carry, float cost) {
+    if (cost > 0.0f) carry -= cost;
+    const int moved = settle_sp_carry(cs.currentSp, cs.maxSp, carry);
+    if (moved >= 0) return 0;
+    cs.currentHp -= exhaustion_bite(cs.currentSp);
+    return -moved;
 }
 
 } // namespace sm

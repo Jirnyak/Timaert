@@ -1,4 +1,5 @@
 #include "macro/player_recovery.h"
+#include "macro/movement_cost.h"
 
 #include <algorithm>
 
@@ -47,6 +48,7 @@ void reset_player_recovery(PlayerRecoveryAccumulator& accumulator) {
 void apply_minute_recovery(PlayerState& player,
                                  int minutes,
                                  PlayerRecoveryAccumulator& accumulator,
+                                 float& spCarry,
                                  float staminaRate) {
     if (minutes <= 0) {
         return;
@@ -61,10 +63,26 @@ void apply_minute_recovery(PlayerState& player,
     // and a THIRD one for SP; now it only converts per-hour to per-minute.
     // SP: maxSp × kSpRegenPctPerHour × marathon — percent of the bar, so a
     // full rest is 8 game hours for every sheet in the world (Session 21).
-    apply_fractional_recovery(cs.spRegen * minutesScale * staminaRate,
-                              accumulator.sp,
-                              cs.currentSp,
-                              cs.maxSp);
+    // Stamina goes through THE signed carry (movement_cost.h) — the same
+    // remainder the march spends out of, so a rest that pays off half a point
+    // of an exhaustion debt is expressible instead of being rounded away by an
+    // accumulator that only knew how to count upward.
+    const float regen = cs.spRegen * minutesScale * staminaRate;
+    if (regen > 0.0f && cs.currentSp < cs.maxSp) {
+        spCarry += regen;
+        settle_sp_carry(cs.currentSp, cs.maxSp, spCarry);
+    }
+    // A full bar cannot BANK rest, so a positive remainder on it is nothing —
+    // and dropping it is what stops an hour spent at full health from paying
+    // out the moment the first step is taken. A NEGATIVE remainder is the
+    // opposite thing entirely: a fraction of a march already owed, and
+    // forgiving it here would leak cost every time a journey began from full.
+    // The old unsigned accumulator could not tell the two apart, because it
+    // could not represent the second one at all.
+    if (cs.currentSp >= cs.maxSp) {
+        cs.currentSp = cs.maxSp;
+        if (spCarry > 0.0f) spCarry = 0.0f;
+    }
     apply_fractional_recovery(cs.hpRegen * minutesScale,
                               accumulator.hp,
                               cs.currentHp,

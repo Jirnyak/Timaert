@@ -129,11 +129,11 @@ bool at_target(const ecs::Position& p, const ecs::MacroNpcRuntime& rt,
 // idiom. The bar clamps at maxSp above and keeps its DEBT below zero, exactly
 // like the player's (movement_cost.h apply_stamina_cost).
 void settle_sp_carry(ecs::MacroNpcRuntime& rt) {
-    const int whole = int(rt.spCarry);
-    if (whole == 0) return;
-    rt.spCarry -= float(whole);
-    const int maxSp = std::max<int>(1, rt.maxSp);
-    rt.sp = std::int16_t(std::min(maxSp, int(rt.sp) + whole));
+    // The runtime keeps its bar in an int16, so the shared law works on an int
+    // and the narrowing lives here, at the one place that owns the field.
+    int sp = int(rt.sp);
+    sm::settle_sp_carry(sp, int(rt.maxSp), rt.spCarry);
+    rt.sp = std::int16_t(std::clamp(sp, -32768, 32767));
 }
 
 // Why a think is or is not dispatched. A corpse is skipped WHOLE; a camping

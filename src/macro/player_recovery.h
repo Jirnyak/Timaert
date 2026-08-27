@@ -16,7 +16,11 @@ namespace sm {
 struct PlayerRecoveryAccumulator {
     float hp = 0.0f;
     float mp = 0.0f;
-    float sp = 0.0f;
+    // (No `sp`. Stamina has ONE carry and it is signed, because a march spends
+    // through the same remainder a rest fills — movement_cost.h
+    // settle_sp_carry, kept on the player's squad entity like every lord's.
+    // A separate regen-only slot here made a third implementation of one idea
+    // and quietly zeroed itself at a full bar.)
 };
 
 void reset_player_recovery(PlayerRecoveryAccumulator& accumulator);
@@ -29,6 +33,7 @@ void reset_player_recovery(PlayerRecoveryAccumulator& accumulator);
 void apply_minute_recovery(PlayerState& player,
                                  int minutes,
                                  PlayerRecoveryAccumulator& accumulator,
+                                 float& spCarry,
                                  float staminaRate = 1.0f);
 
 } // namespace sm

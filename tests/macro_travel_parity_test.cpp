@@ -135,11 +135,13 @@ void test_overload_and_drain_charge_per_cell() {
     drainGs.mapParams.seaLevel = 0.40f;
     drainGs.player.combatStats.currentSp = 100;
     drainGs.player.combatStats.currentHp = 100;
-    sm::TravelStamina stamina{};
+    // ONE signed carry, the shape every body on the map keeps: a march drives
+    // it DOWN, so the fraction still owed reads as a negative remainder.
+    float spCarry = 0.0f;
     for (int i = 0; i < 5; ++i) {
         expect(sm::drain_player_sp_for_macro_cell(drainGs, &drainBag, terrain,
                                                   &features,
-                                                  -1, -1, stamina, &cost),
+                                                  -1, -1, spCarry, &cost),
                "drain query succeeds");
     }
     // Expectations derived from the constants, never restated as numbers: a
@@ -150,7 +152,7 @@ void test_overload_and_drain_charge_per_cell() {
     expect(nearf(cost.cellCost, perCell), "the dirt-road cell costs its weight");
     expect(drainGs.player.combatStats.currentSp == 100 - charged,
            "whole SP are charged, and only whole ones");
-    expect(nearf(stamina.pending, owed - float(charged)),
+    expect(nearf(spCarry, -(owed - float(charged))),
            "the fraction is carried to the next step, not lost or rounded up");
     expect(drainGs.player.combatStats.currentHp == 100,
            "a rested body pays travel in stamina alone");
@@ -340,7 +342,8 @@ void test_travel_balance_holds_its_intent() {
     resting.combatStats = fresh;
     resting.combatStats.currentSp = 0;
     sm::PlayerRecoveryAccumulator acc{};
-    sm::apply_minute_recovery(resting, 8 * 60, acc);
+    float restCarry = 0.0f;
+    sm::apply_minute_recovery(resting, 8 * 60, acc, restCarry);
     expect(resting.combatStats.currentSp >= fresh.maxSp - 1,
            "eight hours of rest refill the whole bar (the 1/8-per-hour law)");
 
@@ -348,7 +351,8 @@ void test_travel_balance_holds_its_intent() {
     marching.combatStats = fresh;
     marching.combatStats.currentSp = 0;
     sm::PlayerRecoveryAccumulator marchAcc{};
-    sm::apply_minute_recovery(marching, 8 * 60, marchAcc,
+    float marchCarry = 0.0f;
+    sm::apply_minute_recovery(marching, 8 * 60, marchAcc, marchCarry,
                                     sm::kMarchRecoveryPct);
     expect(marching.combatStats.currentSp == 0,
            "marching returns no stamina — a journey is paid for, not subsidised");

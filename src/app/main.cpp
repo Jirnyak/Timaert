@@ -433,7 +433,9 @@ struct App {
     // ONE fractional stamina carry for the whole body: the map walk and the
     // subworld walk charge the same purse through the same law, so they share
     // the remainder instead of each rounding on its own. Runtime only.
-    sm::TravelStamina    travelStamina;
+    // (No travel-stamina field. The player's ONE signed fractional carry is
+    // `MacroNpcRuntime::spCarry` on his squad entity — the same field every
+    // lord keeps — reached through player_sp_carry(app).)
 
     // Macro tree list (used for biome features and woodcutter NPC AI).
     std::vector<sm::TreePoint> trees;
@@ -1498,6 +1500,8 @@ struct MacroWalkChargeResult {
     sm::MacroTravelCost lastCost{};
 };
 
+float& player_sp_carry(App& app);   // defined with the world-query helpers
+
 struct MacroWalkChargeContext {
     App* app = nullptr;
     MacroWalkChargeResult result{};
@@ -1518,7 +1522,7 @@ void charge_macro_walk_cell(void* user, int x, int y) {
                                             ctx->app->terrain,
                                             &ctx->app->features,
                                             x, y,
-                                            ctx->app->travelStamina,
+                                            player_sp_carry(*ctx->app),
                                             &cost,
                                             &ctx->app->treeLayer,
                                             ctx->fromX, ctx->fromY)) {
@@ -1596,6 +1600,15 @@ bool player_can_make_camp(const App& app) {
     const int cy = sm::wrapi(int(std::floor(app.gs.player.y)), pc.height);
     return pc.water[std::size_t(cy) * std::size_t(pc.width)
                     + std::size_t(cx)] == 0u;
+}
+
+// His carry, through the one door. The scratch fallback is the same shape
+// player_bag uses: a frame before the world exists must not crash, and a
+// carry with nowhere to live is a carry nobody reads.
+float& player_sp_carry(App& app) {
+    static float scratch = 0.0f;
+    float* carry = sm::player_sp_carry(app.ecs);
+    return carry ? *carry : scratch;
 }
 
 bool boot_window(App& app) {
@@ -1745,7 +1758,7 @@ void destroy_world(App& app) {
     app.appliedCombatEventCount = 0;
     app.appliedSpawnEventCount = 0;
     sm::reset_player_recovery(app.playerRecovery);
-    app.travelStamina = sm::TravelStamina{};
+    player_sp_carry(app) = 0.0f;
     app.showDialogOpen = false;
     app.showDialogEvent = sm::GameEvent{};
     app.showDialogUi = sm::ui::DialogOverlayState{};
@@ -2007,7 +2020,7 @@ void boot_world(App& app, std::uint32_t seed,
     sm::knowledge_reset(app.gs.knowledge, app.gs.mapW, app.gs.mapH);
     sm::reset_world_tick_runtime(app.gs.worldTickRt, seed);
     sm::reset_player_recovery(app.playerRecovery);
-    app.travelStamina = sm::TravelStamina{};
+    player_sp_carry(app) = 0.0f;
     sm::reset_macro_npc_ai_runtime(app.npcAi, seed);
     app.appliedEventCount = 0;
     app.ui.settlementId = -1;
@@ -2667,7 +2680,7 @@ int charge_subworld_sp_for_distance(App& app, float distance) {
         app.subworld.player_ground_travel_weight(), cells, overloadCost,
         sm::travel_skill_efficiency(app.gs.player.sheet.skills));
     return sm::spend_travel_stamina(app.gs.player.combatStats,
-                                    app.travelStamina, cost);
+                                    player_sp_carry(app), cost);
 }
 
 float subworld_spell_rng01(void* user) {
@@ -3792,6 +3805,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         sm::apply_minute_recovery(app.gs.player,
                                   stats.timeTick.minutesAdvanced,
                                   app.playerRecovery,
+                                  player_sp_carry(app),
                                   movedThisStep > 0.0f ? sm::kMarchRecoveryPct
                                                        : 1.0f);
         app.subworld.tick(dt);
@@ -3850,6 +3864,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         sm::apply_minute_recovery(app.gs.player,
                                         stats.timeTick.minutesAdvanced,
                                         app.playerRecovery,
+                                        player_sp_carry(app),
                                         resting ? 1.0f : sm::kMarchRecoveryPct);
         sm::tick_macro_npc_ai(macroTickWorld, app.npcAi,
                               std::uint64_t(stats.timeTick.ticksAdvanced),
@@ -5260,7 +5275,11 @@ bool run_subworld_recovery_smoke(App& app) {
     reference.combatStats.currentMp = 5;
     reference.combatStats.currentSp = 5;
     sm::PlayerRecoveryAccumulator referenceAcc{};
-    sm::apply_minute_recovery(reference, minutesAdvanced, referenceAcc);
+    // A hypothetical body gets a hypothetical carry: this reference is not the
+    // player, and must not spend out of his.
+    float referenceCarry = 0.0f;
+    sm::apply_minute_recovery(reference, minutesAdvanced, referenceAcc,
+                              referenceCarry);
 
     std::fprintf(stderr,
                  "[smoke] subworld_recovery steps=%d minutes=%d "
@@ -5315,7 +5334,15 @@ bool run_subworld_sp_drain_smoke(App& app) {
     app.gs.player.combatStats.currentHp = 100;
     app.gs.player.combatStats.maxSp = 100;
     app.gs.player.combatStats.maxHp = 100;
-    app.travelStamina = sm::TravelStamina{};
+    player_sp_carry(app) = 0.0f;
+    // Stamina has ONE signed carry now, and rest fills the very remainder a
+    // march spends out of — which is the point of it, and which means a single
+    // frame of recovery lands inside the number this smoke is measuring. It
+    // used to land in a separate regen-only accumulator nobody counted, so the
+    // leak was invisible rather than absent. The ruler measures what the
+    // GROUND charged, so the body does not mend while it is being read.
+    const float spRegenWas = app.gs.player.combatStats.spRegen;
+    app.gs.player.combatStats.spRegen = 0.0f;
 
     enter_subworld(app);
     if (!app.subworld.active()) {
@@ -5336,7 +5363,7 @@ bool run_subworld_sp_drain_smoke(App& app) {
     // expected total stays exact even when the route crosses terrain types —
     // which it now does, because the walk is long enough to leave the cell it
     // started in.
-    const float carryBefore = app.travelStamina.pending;
+    const float carryBefore = player_sp_carry(app);
     float distance = 0.0f;
     float expected = 0.0f;
     float weight = 0.0f;
@@ -5362,7 +5389,7 @@ bool run_subworld_sp_drain_smoke(App& app) {
     }
     const int afterSp = app.gs.player.combatStats.currentSp;
     const int afterHp = app.gs.player.combatStats.currentHp;
-    const float carryAfter = app.travelStamina.pending;
+    const float carryAfter = player_sp_carry(app);
     app.subworld.leave(true);
 
     // THE law, not a magic number: distance in macro cells × the weight of the
@@ -5371,7 +5398,11 @@ bool run_subworld_sp_drain_smoke(App& app) {
     // one price, whichever layer you walk it on. `expected` was summed leg by
     // leg above; `weight` is the last leg's ground, printed as a witness that
     // the walk was on real terrain.
-    const float accounted = float(charged) + carryAfter - carryBefore;
+    // The carry is SIGNED and a march drives it DOWN, so what is still owed
+    // reads as a negative remainder: the ground asked for everything the bar
+    // gave up plus everything the carry sank by.
+    const float accounted = float(charged) + (carryBefore - carryAfter);
+    app.gs.player.combatStats.spRegen = spRegenWas;   // the body may mend again
 
     std::fprintf(stderr,
                  "[smoke] subworld_sp_drain distance=%.1f weight=%.2f "
@@ -5740,11 +5771,15 @@ bool run_macro_travel_sp_smoke(App& app) {
     app.cursor.path.assign(path.path.begin(),
                            path.path.begin() + kSmokeMacroTravelSteps + 1);
     app.cursor.pathIdx = 1;
+    // Same reason as subworld_sp_drain: one signed carry means a frame of rest
+    // lands inside the number being measured. The ruler measures the ground.
+    const float spRegenWas = app.gs.player.combatStats.spRegen;
+    app.gs.player.combatStats.spRegen = 0.0f;
     const int beforeSp = app.gs.player.combatStats.currentSp;
     const int beforeHp = app.gs.player.combatStats.currentHp;
     const float beforeX = app.gs.player.x;
     const float beforeY = app.gs.player.y;
-    const float carryBefore = app.travelStamina.pending;
+    const float carryBefore = player_sp_carry(app);
 
     // Walk it through REAL FRAMES, not by calling the step directly. The whole
     // frame participates — input, the walk, world time, recovery, the hit-flash
@@ -5766,7 +5801,8 @@ bool run_macro_travel_sp_smoke(App& app) {
     // with a whole number: every point the terrain asked for is either taken
     // from stamina or still carried, and stamina fell by exactly what was taken.
     const float accounted =
-        float(spentSp) + app.travelStamina.pending - carryBefore;
+        float(spentSp) + (carryBefore - player_sp_carry(app));
+    app.gs.player.combatStats.spRegen = spRegenWas;
 
     // Print BEFORE judging. A harness that reports its numbers only when it
     // passes is useless exactly when it matters; this line is the first thing
@@ -5783,7 +5819,7 @@ bool run_macro_travel_sp_smoke(App& app) {
                  beforeSp, afterSp, spentSp,
                  beforeHp, afterHp,
                  double(expectedCost), double(accounted),
-                 double(carryBefore), double(app.travelStamina.pending),
+                 double(carryBefore), double(player_sp_carry(app)),
                  int(lastExpected.biome),
                  int(lastExpected.feature),
                  double(lastExpected.cellCost));

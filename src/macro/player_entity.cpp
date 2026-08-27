@@ -162,6 +162,13 @@ const Inventory* player_inventory(const ecs::World& world) {
     return player_inventory(const_cast<ecs::World&>(world));
 }
 
+float* player_sp_carry(ecs::World& world) {
+    const entt::entity e = find_player_squad(world);
+    if (e == entt::null) return nullptr;
+    auto* rt = world.reg.try_get<ecs::MacroNpcRuntime>(e);
+    return rt ? &rt->spCarry : nullptr;
+}
+
 AgentMemory* player_head(ecs::World& world) {
     const entt::entity e = find_player_squad(world);
     if (e == entt::null) return nullptr;

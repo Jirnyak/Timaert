@@ -296,7 +296,9 @@ struct MacroNpcRuntime {
     float         carryCap = 0.0f;
     std::int16_t  overloadCost = 0;
     // Fractional SP carry (both directions: march costs and rest regen), the
-    // same fractional-carry idiom the player's TravelStamina/recovery uses.
+    // THE fractional carry (movement_cost.h settle_sp_carry), signed and
+    // bidirectional, and the player keeps his HERE too — this is his squad's
+    // runtime like any lord's.
     // Runtime-only like the rest of this struct.
     float         spCarry = 0.0f;
     // Fractional CELLS banked toward the next whole step: the march is quoted

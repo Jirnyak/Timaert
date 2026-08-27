@@ -52,7 +52,7 @@ struct MacroTravelCost {
     FeatureType feature = FT_None;
     // Terrain difficulty of the cell, and the stamina one crossing of it costs
     // (weight × kStaminaPerCell). FRACTIONAL: a meadow is 2 SP but tundra is
-    // 2.5, and the carry between steps lives in the caller's TravelStamina.
+    // 2.5, and the carry between steps is the body's one signed spCarry.
     float weight = 0.0f;
     // The traveller's own discount on that ground (travel_skill_efficiency):
     // 1.0 for a novice, lower for a veteran. Reported so the UI can show WHY a
@@ -82,7 +82,10 @@ bool macro_travel_cost_for_cell(const GameState& gs,
                                 // an originless first step are free).
                                 int fromX = -1, int fromY = -1);
 
-// Cross ONE macro cell: resolve its cost and pay it. `stamina` carries the
+// Cross ONE macro cell: resolve its cost and pay it. `spCarry` is the body's
+// ONE signed fractional carry (movement_cost.h settle_sp_carry) — the same
+// field a macro squad keeps on its runtime, because the player is one. It
+// carries the
 // fractional remainder between steps (runtime state, never serialised) — pass
 // the SAME accumulator the subworld path uses, since it is one body walking.
 // Returns false only when the terrain query fails; `out` receives the resolved
@@ -92,7 +95,7 @@ bool drain_player_sp_for_macro_cell(GameState& gs,
                                     const TerrainData& terrain,
                                     const FeatureLayer* features,
                                     int x, int y,
-                                    TravelStamina& stamina,
+                                    float& spCarry,
                                     MacroTravelCost* out = nullptr,
                                     const TreeLayer* treeLayer = nullptr,
                                     int fromX = -1, int fromY = -1);

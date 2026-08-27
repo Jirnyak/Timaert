@@ -29,13 +29,16 @@ void test_default_fractional_recovery_matches_ts_rate() {
     player.combatStats.mpRegen = 10.1f;
 
     sm::PlayerRecoveryAccumulator accumulator{};
-    sm::apply_minute_recovery(player, 5, accumulator);
+    // Stamina rides THE signed carry now (movement_cost.h settle_sp_carry) —
+    // the same remainder a march spends out of, because a body has one.
+    float spCarry = 0.0f;
+    sm::apply_minute_recovery(player, 5, accumulator, spCarry);
     expect(player.combatStats.currentSp == 0
            && player.combatStats.currentHp == 0
            && player.combatStats.currentMp == 0,
            "sub-integer TS recovery is accumulated, not truncated into stats");
 
-    sm::apply_minute_recovery(player, 1, accumulator);
+    sm::apply_minute_recovery(player, 1, accumulator, spCarry);
     expect(player.combatStats.currentSp == 1
            && player.combatStats.currentHp == 1
            && player.combatStats.currentMp == 1,
@@ -61,23 +64,36 @@ void test_attribute_rate_and_max_clamp() {
     // 5 minutes: SP earns 300 × 1/8 / 12 ≈ 3.1 points, HP/MP one each — all
     // clamp to their maxima instead of overshooting.
     sm::PlayerRecoveryAccumulator accumulator{};
-    sm::apply_minute_recovery(player, 5, accumulator);
+    float spCarry = 0.0f;
+    sm::apply_minute_recovery(player, 5, accumulator, spCarry);
     expect(player.combatStats.currentSp == maxSp
            && player.combatStats.currentHp == player.combatStats.maxHp
            && player.combatStats.currentMp == player.combatStats.maxMp,
            "derived sheet rates recover the pools and clamp to max");
 
     player.combatStats.currentSp = maxSp;
-    accumulator.sp = 0.9f;
-    sm::apply_minute_recovery(player, 1, accumulator);
-    expect(accumulator.sp == 0.0f, "full stat clears stale fractional accumulator");
+    spCarry = 0.9f;
+    sm::apply_minute_recovery(player, 1, accumulator, spCarry);
+    expect(spCarry == 0.0f, "a full bar cannot bank rest: a POSITIVE remainder "
+                            "on it is dropped");
+
+    // ...and the other sign is not the same thing. A march that begins from a
+    // full bar owes a fraction the instant it takes its first step; clearing
+    // that as "stale" would leak cost at the start of every journey, which is
+    // exactly what an unsigned accumulator could not even express.
+    player.combatStats.currentSp = maxSp;
+    spCarry = -0.4f;
+    sm::apply_minute_recovery(player, 1, accumulator, spCarry);
+    expect(spCarry == -0.4f,
+           "a NEGATIVE remainder on a full bar is march debt, and it is kept");
 }
 
 void test_zero_minutes_are_noop() {
     sm::PlayerState player{};
     player.combatStats.currentSp = 10;
     sm::PlayerRecoveryAccumulator accumulator{};
-    sm::apply_minute_recovery(player, 0, accumulator);
+    float spCarry = 0.0f;
+    sm::apply_minute_recovery(player, 0, accumulator, spCarry);
     expect(player.combatStats.currentSp == 10, "zero minutes are a no-op");
 }
 

@@ -67,6 +67,13 @@ const Inventory* player_inventory(const ecs::World& world);
 // same component every squad leader carries. It sat on PlayerState as a second
 // store until 2026-08-27; the macro record already saved the entity's copy, so
 // the field was a duplicate the save wrote twice and nothing read back.
+// The player's ONE signed fractional stamina carry — `MacroNpcRuntime::spCarry`
+// on his squad entity, the very field every lord on the map keeps. It used to
+// be two unsigned accumulators on App (a spend-only TravelStamina and a
+// regen-only slot in PlayerRecoveryAccumulator), which between them could not
+// even express the state his own bar was in: a debt with a fraction owed.
+float* player_sp_carry(ecs::World& world);
+
 AgentMemory* player_head(ecs::World& world);
 const AgentMemory* player_head(const ecs::World& world);
 
