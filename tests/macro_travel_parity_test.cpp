@@ -281,7 +281,7 @@ void test_travel_balance_holds_its_intent() {
     sm::Attributes vetAttrs = attrs;
     vetAttrs.end = 20;
     sm::Skills vetSkills = skills;
-    vetSkills.travel = 10;
+    vetSkills[sm::SkillId::Travel] = 10;
     const sm::CombatStats veteran = sm::calculate_combat_stats(vetAttrs, vetSkills);
     const float vetMeadow = march_hours(veteran, vetSkills,
                                         sm::cell_sp_weight(sm::Meadow, sm::FT_None));
@@ -293,7 +293,7 @@ void test_travel_balance_holds_its_intent() {
     // bar. Full rest is therefore the same 8 hours for every sheet in the
     // world (regen is a PERCENT of the bar), and only marathon shortens it.
     sm::Skills marathoner = skills;
-    marathoner.marathon = 20;
+    marathoner[sm::SkillId::Marathon] = 20;
     expect(sm::calculate_combat_stats(attrs, marathoner).maxSp == fresh.maxSp,
            "marathon does not grow the bar");
     expect(sm::calculate_combat_stats(attrs, marathoner).spRegen
@@ -315,14 +315,14 @@ void test_travel_balance_holds_its_intent() {
     // FURTHER on the same bar. Neither may quietly become the other, or the
     // sheet stops telling the player what his choices buy.
     sm::Skills sprinter = skills;
-    sprinter.athletics = 20;
+    sprinter[sm::SkillId::Athletics] = 20;
     expect(nearf(sm::travel_skill_efficiency(sprinter), 1.0f),
            "athletics does not make ground cheaper");
     expect(sm::calculate_derived(attrs, sprinter).moveSpeedMult
                > sm::calculate_derived(attrs, skills).moveSpeedMult,
            "athletics does make the traveller faster");
     sm::Skills pathfinder = skills;
-    pathfinder.travel = 20;
+    pathfinder[sm::SkillId::Travel] = 20;
     expect(nearf(sm::calculate_derived(attrs, pathfinder).moveSpeedMult,
                  sm::calculate_derived(attrs, skills).moveSpeedMult),
            "the travel skill does not make the traveller faster");
@@ -374,7 +374,7 @@ void test_travel_balance_holds_its_intent() {
     // Mastery earns free ground — but only the GROUND. An overloaded master
     // still pays for what he carries, and the exhaustion curve is untouched.
     sm::Skills master = skills;
-    master.travel = sm::kMaxSkillRank;
+    master[sm::SkillId::Travel] = sm::kMaxSkillRank;
     expect(nearf(sm::travel_stamina_cost(10.0f, 1.0f, 0,
                                          sm::travel_skill_efficiency(master)),
                  0.0f),
@@ -389,7 +389,7 @@ void test_travel_balance_holds_its_intent() {
     ld.skillPoints = sm::kMaxSkillRank + 10;
     int spent = 0;
     while (sm::spend_skill_point(ld, capped, sm::SkillId::Travel)) ++spent;
-    expect(spent == sm::kMaxSkillRank && capped.travel == sm::kMaxSkillRank,
+    expect(spent == sm::kMaxSkillRank && capped.of(sm::SkillId::Travel) == sm::kMaxSkillRank,
            "a rank stops at mastery");
     expect(ld.skillPoints == 10,
            "and a refused spend keeps the point for another skill");

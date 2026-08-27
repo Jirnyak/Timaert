@@ -8,12 +8,26 @@
 // Naming: TS `int` is reserved in C+ +; field is renamed `intl` (kept short
 // since this struct is hot data).
 #pragma once
+#include "core/table_guard.h"
 #include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
 
 namespace sm {
+
+// ── The id spaces ──────────────────────────────────────────────
+// Declared FIRST because the blocks below are addressed BY them: a sheet's
+// ranks are a flat array and its meanings are rows, and both index by these.
+enum class AttributeId : std::uint8_t {
+    Str, Vit, End, Wil, Intl, Wis, Lck, Cha, Spd,
+};
+
+enum class SkillId : std::uint8_t {
+    Bodybuilding, Meditation, Athletics, Travel, Fighter,
+    Marathon, Spellcraft, Weightlifting,
+    Count
+};
 
 // ── Attributes ─────────────────────────────────────────────────
 
@@ -56,7 +70,11 @@ struct Attributes {
 // not an exploit.
 constexpr int kMaxSkillRank = 100;
 
-// Multiplier a rank-based skill contributes: 1 + rank/100 for a bonus.
+// The generic 1 %/rank forms, kept for the two macro callers that hold a
+// CACHED rank and not a sheet (ecs::MacroNpcRuntime travelRank/marathonRank —
+// both 1 %/rank rows, so the answer is the same one skill_mult would give).
+// New code names its skill and asks skill_mult; these do not know which skill
+// they are speaking for, which is exactly why they are not THE law.
 inline float skill_bonus_mult(int rank) {
     if (rank < 0) rank = 0;
     if (rank > kMaxSkillRank) rank = kMaxSkillRank;
@@ -70,25 +88,112 @@ inline float skill_cost_mult(int rank) {
     return 1.0f - float(rank) * 0.01f;
 }
 
+// ── Skills: a fixed envelope of ranks, and a TABLE of what they mean ──
+//
+// The ranks are a flat array under a po2 cap and the MEANINGS are rows beneath
+// it — the same shape factions, biomes and creatures already have, and the
+// shape work_vector §5 asks for by name. Adding a skill used to touch five
+// places (a named field here, the SkillId enum, two `skill_value` switches,
+// the UI row table in ui/overlays.cpp and the per-role weight table in
+// character_sheet.h); it is one row and one weight per role now, and the save
+// format does not move at all because the envelope is fixed.
+//
+// 32 slots for 8 skills: the envelope is the thing the save promises, so it is
+// sized once, generously, in a power of two. A byte per rank because the rank
+// cap is 100 and rank READS as a percent (kMaxSkillRank below).
+inline constexpr int kMaxSkills = 32;
+
 struct Skills {
-    int bodybuilding  = 0; // +5% max HP per rank
-    int meditation    = 0; // +5% max MP per rank
-    int athletics     = 0; // +1% move speed per rank — the multiplier on the
-                           //   speed the `spd` attribute grants directly.
-    int travel        = 0; // -1% terrain stamina cost per rank: how FAR you get
-                           //   on one bar, never how fast (movement_cost.h).
-    int fighter       = 0; // +5% physical damage per rank
-    int marathon      = 0; // +1% SP recovery RATE per rank (owner ruling,
-                           //   Session 21): the bar itself is the END
-                           //   attribute's business alone — this skill is the
-                           //   only thing in the game that shortens the rest.
-                           //   Passive, like every skill; the name says a
-                           //   marathoner recovers between efforts, not that
-                           //   he sprints. (Was `endurance`, +5% max SP — that
-                           //   multiplier double-counted the attribute.)
-    int spellcraft    = 0; // +5% spell damage per rank
-    int weightlifting = 0; // +10% carry capacity per rank
+    std::array<std::uint8_t, kMaxSkills> rank{};
+
+    std::uint8_t& operator[](SkillId id) {
+        return rank[std::size_t(id)];
+    }
+    std::uint8_t operator[](SkillId id) const {
+        return rank[std::size_t(id)];
+    }
+    int of(SkillId id) const { return int(rank[std::size_t(id)]); }
 };
+
+// What ONE RANK of a skill is worth, and which way it pushes.
+//
+// `pctPerRank` is the column that made the law honest. rpg.md and the canon
+// audit (A7) both record the debt it settles: the law said "one rank is one
+// percent, ceiling ×2", and four of the most expensive numbers in the game —
+// maxHp, maxMp, and both raw damages — were computed inline at 0.05 per rank
+// with no clamp, so bodybuilding 100 gave ×6 HP while the doc promised ×2.
+// The owner's ruling (2026-08-27) was to LEGITIMISE the per-skill multiplier
+// as a column rather than flatten every skill to 1 %. So the ceiling is now a
+// DERIVED number and differs per row — bodybuilding tops out at ×6 because its
+// row says 5 — and there is exactly one place that turns a rank into a
+// multiplier, which is what the law was always about.
+struct SkillDef {
+    // MUST equal the row's index in kSkillDefs (guard below the table).
+    SkillId      id;
+    const char*  key;          // authoring id; runtime addresses by ordinal
+    const char*  label;        // what a human reads on the sheet
+    const char*  effect;       // what it does, in the sheet's own words
+    std::uint8_t pctPerRank;
+    // A COST skill buys a price DOWN (1 - rank·pct/100, never past free); every
+    // other skill multiplies a bonus UP (1 + rank·pct/100). One flag rather
+    // than two helpers, because "which direction" is a property of the skill
+    // and belongs in its row.
+    bool         buysCostDown = false;
+};
+
+inline constexpr SkillDef kSkillDefs[] = {
+    {SkillId::Bodybuilding,  "bodybuilding",  "Bodybuilding",
+     "max HP per rank",                  5},
+    {SkillId::Meditation,    "meditation",    "Meditation",
+     "max MP per rank",                  5},
+    {SkillId::Athletics,     "athletics",     "Athletics",
+     "move speed per rank",              1},
+    // How FAR you get on one bar, never how fast (movement_cost.h): the only
+    // cost skill, and the reason the flag exists.
+    {SkillId::Travel,        "travel",        "Travel",
+     "terrain stamina cost per rank",    1, /*buysCostDown*/true},
+    {SkillId::Fighter,       "fighter",       "Fighter",
+     "physical damage per rank",         5},
+    // Owner ruling, Session 21: the BAR is the END attribute's business alone,
+    // so this skill shortens the REST instead. (Was `endurance`, +5 % max SP —
+    // a multiplier that double-counted the attribute.)
+    {SkillId::Marathon,      "marathon",      "Marathon",
+     "SP recovery rate per rank",        1},
+    {SkillId::Spellcraft,    "spellcraft",    "Spellcraft",
+     "spell damage per rank",            5},
+    {SkillId::Weightlifting, "weightlifting", "Weightlifting",
+     "carry capacity per rank",         10},
+};
+static_assert(sizeof(kSkillDefs) / sizeof(kSkillDefs[0])
+                  == std::size_t(SkillId::Count),
+              "kSkillDefs must carry one row per SkillId");
+// The table CARRIES its enum as a column, so a drifted row refuses to compile
+// — the same guard biomes, moons and creature roles already stand behind.
+static_assert(rows_in_enum_order(kSkillDefs, &SkillDef::id),
+              "kSkillDefs rows must stand in SkillId order");
+static_assert(int(SkillId::Count) <= kMaxSkills,
+              "the skill envelope must hold every skill the game names");
+
+inline constexpr const SkillDef& skill_def(SkillId id) {
+    return kSkillDefs[std::size_t(id)];
+}
+
+// THE skill law, and the ONE place a rank becomes a multiplier. Everything
+// that a skill governs asks this and nothing else — no formula keeps a private
+// curve, and no formula spells a percent inline. The direction and the percent
+// are the row's; the CAP is the law's.
+inline float skill_mult_of(SkillId id, int rank) {
+    if (rank < 0) rank = 0;
+    if (rank > kMaxSkillRank) rank = kMaxSkillRank;
+    const SkillDef& d = skill_def(id);
+    const float step = float(rank) * float(d.pctPerRank) * 0.01f;
+    if (!d.buysCostDown) return 1.0f + step;
+    return step >= 1.0f ? 0.0f : 1.0f - step;   // a cost never goes past free
+}
+
+inline float skill_mult(const Skills& s, SkillId id) {
+    return skill_mult_of(id, s.of(id));
+}
 
 // ── Perks ──────────────────────────────────────────────────────
 
@@ -181,15 +286,6 @@ struct LevelData {
     int perkPoints        = 1;
 };
 
-enum class AttributeId : std::uint8_t {
-    Str, Vit, End, Wil, Intl, Wis, Lck, Cha, Spd,
-};
-
-enum class SkillId : std::uint8_t {
-    Bodybuilding, Meditation, Athletics, Travel, Fighter,
-    Marathon, Spellcraft, Weightlifting,
-};
-
 inline int* attribute_value(Attributes& a, AttributeId id) {
     switch (id) {
         case AttributeId::Str:  return &a.str;
@@ -220,33 +316,9 @@ inline const int* attribute_value(const Attributes& a, AttributeId id) {
     return nullptr;
 }
 
-inline int* skill_value(Skills& s, SkillId id) {
-    switch (id) {
-        case SkillId::Bodybuilding:  return &s.bodybuilding;
-        case SkillId::Meditation:    return &s.meditation;
-        case SkillId::Athletics:     return &s.athletics;
-        case SkillId::Travel:        return &s.travel;
-        case SkillId::Fighter:       return &s.fighter;
-        case SkillId::Marathon:      return &s.marathon;
-        case SkillId::Spellcraft:    return &s.spellcraft;
-        case SkillId::Weightlifting: return &s.weightlifting;
-    }
-    return nullptr;
-}
-
-inline const int* skill_value(const Skills& s, SkillId id) {
-    switch (id) {
-        case SkillId::Bodybuilding:  return &s.bodybuilding;
-        case SkillId::Meditation:    return &s.meditation;
-        case SkillId::Athletics:     return &s.athletics;
-        case SkillId::Travel:        return &s.travel;
-        case SkillId::Fighter:       return &s.fighter;
-        case SkillId::Marathon:      return &s.marathon;
-        case SkillId::Spellcraft:    return &s.spellcraft;
-        case SkillId::Weightlifting: return &s.weightlifting;
-    }
-    return nullptr;
-}
+// (No `skill_value` switches. A rank is `skills[SkillId::X]` — an index into
+// a flat array — so there is nothing left to switch on, and adding a skill
+// cannot forget to update a case.)
 
 inline bool spend_attribute_point(LevelData& ld, Attributes& a, AttributeId id) {
     int* value = attribute_value(a, id);
@@ -260,10 +332,10 @@ inline bool spend_attribute_point(LevelData& ld, Attributes& a, AttributeId id) 
 // can push one past mastery and no formula has to defend itself against a rank
 // nobody could legitimately have. A refused spend keeps the point.
 inline bool spend_skill_point(LevelData& ld, Skills& s, SkillId id) {
-    int* value = skill_value(s, id);
-    if (!value || ld.skillPoints <= 0) return false;
-    if (*value >= kMaxSkillRank) return false;
-    ++(*value);
+    if (id >= SkillId::Count || ld.skillPoints <= 0) return false;
+    std::uint8_t& rank = s[id];
+    if (int(rank) >= kMaxSkillRank) return false;
+    ++rank;
     --ld.skillPoints;
     return true;
 }
@@ -313,8 +385,8 @@ inline CombatStats calculate_combat_stats(const Attributes& a, const Skills& s,
     // (kSpRegenPctPerHour above), so bar and rest are two separate levers.
     const float rawSp = float(baseSp + a.end * 10);
     CombatStats c;
-    c.maxHp = int(rawHp * (1.0f + float(s.bodybuilding) * 0.05f));
-    c.maxMp = int(rawMp * (1.0f + float(s.meditation)   * 0.05f));
+    c.maxHp = int(rawHp * skill_mult(s, SkillId::Bodybuilding));
+    c.maxMp = int(rawMp * skill_mult(s, SkillId::Meditation));
     c.maxSp = int(rawSp);
     c.currentHp = c.maxHp;
     c.currentMp = c.maxMp;
@@ -324,7 +396,7 @@ inline CombatStats calculate_combat_stats(const Attributes& a, const Skills& s,
     // SP per game hour at rest, THE one regen law for the player and every
     // macro leader (npc_ai reads the same formula through the leader's sheet).
     c.spRegen = float(c.maxSp) * kSpRegenPctPerHour
-                * skill_bonus_mult(s.marathon);
+                * skill_mult(s, SkillId::Marathon);
     return c;
 }
 
@@ -351,15 +423,15 @@ inline DerivedBonuses calculate_derived(const Attributes& a, const Skills& s) {
     DerivedBonuses d;
     const float rawPhys  = float(a.str);
     const float rawSpell = float(a.intl);
-    d.rawPhysDamage  = rawPhys  * (1.0f + float(s.fighter)    * 0.05f);
-    d.rawSpellDamage = rawSpell * (1.0f + float(s.spellcraft) * 0.05f);
+    d.rawPhysDamage  = rawPhys  * skill_mult(s, SkillId::Fighter);
+    d.rawSpellDamage = rawSpell * skill_mult(s, SkillId::Spellcraft);
     d.expMult        = 1.0f + float(a.wis) * 0.01f;
     // Attributes add, skills multiply. `spd` is the body's own quickness
     // (asymptotic, so a monstrous score cannot run away with the game);
     // `athletics` is training on top of it. `travel` has no business here — it
     // buys DISTANCE per bar of stamina, not speed (macro/movement_cost.h).
     d.moveSpeedMult  = (1.0f + float(a.spd) / float(a.spd + 50))
-                       * skill_bonus_mult(s.athletics);
+                       * skill_mult(s, SkillId::Athletics);
     d.tradeDiscount  = float(a.cha) * 0.01f;
     d.relationBonus  = float(a.cha);
     d.critBase       = float(a.lck) / float(a.lck + 50);
@@ -372,7 +444,7 @@ constexpr float kBaseCarryKg = 100.0f;
 
 inline float get_carry_capacity(const Attributes& a, const Skills& s) {
     return (kBaseCarryKg + float(a.str) * 10.0f)
-           * (1.0f + float(s.weightlifting) * 0.1f);
+           * skill_mult(s, SkillId::Weightlifting);
 }
 inline float get_overload_penalty(float weightKg, float capacityKg) {
     return weightKg > capacityKg ? (weightKg - capacityKg) : 0.0f;

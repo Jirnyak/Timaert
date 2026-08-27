@@ -277,13 +277,13 @@ sm::GameState make_state() {
     gs.player.sheet.attributes.lck = 13;
     gs.player.sheet.attributes.cha = 14;
     gs.player.sheet.attributes.spd = 15;
-    gs.player.sheet.skills.bodybuilding = 1;
-    gs.player.sheet.skills.meditation = 2;
-    gs.player.sheet.skills.travel = 3;
-    gs.player.sheet.skills.fighter = 4;
-    gs.player.sheet.skills.marathon = 5;
-    gs.player.sheet.skills.spellcraft = 6;
-    gs.player.sheet.skills.weightlifting = 7;
+    gs.player.sheet.skills[sm::SkillId::Bodybuilding] = 1;
+    gs.player.sheet.skills[sm::SkillId::Meditation] = 2;
+    gs.player.sheet.skills[sm::SkillId::Travel] = 3;
+    gs.player.sheet.skills[sm::SkillId::Fighter] = 4;
+    gs.player.sheet.skills[sm::SkillId::Marathon] = 5;
+    gs.player.sheet.skills[sm::SkillId::Spellcraft] = 6;
+    gs.player.sheet.skills[sm::SkillId::Weightlifting] = 7;
     gs.player.sheet.levelData.level = 6;
     gs.player.sheet.levelData.exp = 321;
     gs.player.sheet.levelData.expToNext = 6543;
@@ -721,8 +721,8 @@ void run_roundtrip() {
     if (p.sheet.attributes.str != 7 || p.sheet.attributes.intl != 11 || p.sheet.attributes.spd != 15) {
         FAIL_BAIL("player attributes lost");
     }
-    if (p.sheet.skills.bodybuilding != 1 || p.sheet.skills.spellcraft != 6
-        || p.sheet.skills.weightlifting != 7) {
+    if (p.sheet.skills.of(sm::SkillId::Bodybuilding) != 1 || p.sheet.skills.of(sm::SkillId::Spellcraft) != 6
+        || p.sheet.skills.of(sm::SkillId::Weightlifting) != 7) {
         FAIL_BAIL("player skills lost");
     }
     if (p.sheet.levelData.level != 6 || p.sheet.levelData.exp != 321

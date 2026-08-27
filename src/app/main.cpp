@@ -8655,7 +8655,8 @@ bool run_console_smoke(App& app) {
                      "fighter=%d bodybuilding=%d hp=%.0f(base=%.0f) "
                      "dmg=%.1f(base=%.1f) derived_from_sheet=1\n",
                      sheet->levelData.level, aSum,
-                     sheet->skills.fighter, sheet->skills.bodybuilding,
+                     sheet->skills.of(sm::SkillId::Fighter),
+                     sheet->skills.of(sm::SkillId::Bodybuilding),
                      hlt->maxHp, base.hp, cmb->damage, base.damage);
         std::fflush(stderr);
     }
@@ -10402,7 +10403,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          app.gs.player.sheet.levelData.skillPoints,
                          app.gs.player.sheet.levelData.perkPoints,
                          app.gs.player.sheet.attributes.vit,
-                         app.gs.player.sheet.skills.bodybuilding,
+                         app.gs.player.sheet.skills.of(sm::SkillId::Bodybuilding),
                          app.gs.player.combatStats.maxHp);
             std::fflush(stderr);
             ++app.smoke.cursor;
@@ -10457,7 +10458,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             const int beforePoints = app.gs.player.sheet.levelData.skillPoints;
-            const int beforeRank = app.gs.player.sheet.skills.bodybuilding;
+            const int beforeRank = app.gs.player.sheet.skills.of(sm::SkillId::Bodybuilding);
             const int beforeHp = app.gs.player.combatStats.maxHp;
             if (!sm::spend_skill_point(app.gs.player.sheet.levelData,
                                        app.gs.player.sheet.skills,
@@ -10470,7 +10471,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                                         app.gs.player.sheet.attributes,
                                         app.gs.player.sheet.skills);
             if (app.gs.player.sheet.levelData.skillPoints != beforePoints - 1
-                || app.gs.player.sheet.skills.bodybuilding != beforeRank + 1
+                || app.gs.player.sheet.skills.of(sm::SkillId::Bodybuilding) != beforeRank + 1
                 || app.gs.player.combatStats.maxHp <= beforeHp
                 || app.gs.player.combatStats.currentHp != curHpBefore) {
                 smoke_fail(app, "spend_skill_bodybuilding invariant");
@@ -10481,7 +10482,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          beforePoints,
                          app.gs.player.sheet.levelData.skillPoints,
                          beforeRank,
-                         app.gs.player.sheet.skills.bodybuilding,
+                         app.gs.player.sheet.skills.of(sm::SkillId::Bodybuilding),
                          beforeHp,
                          app.gs.player.combatStats.maxHp);
             std::fflush(stderr);

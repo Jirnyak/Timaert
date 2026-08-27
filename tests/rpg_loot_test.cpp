@@ -76,9 +76,9 @@ static void test_project_combat_melee() {
     cs.attributes.str  = 12;
     cs.attributes.intl = 7;
     cs.attributes.vit  = 9;
-    cs.skills.fighter    = 4;
-    cs.skills.spellcraft = 3;
-    cs.skills.bodybuilding = 2;
+    cs.skills[sm::SkillId::Fighter] = 4;
+    cs.skills[sm::SkillId::Spellcraft] = 3;
+    cs.skills[sm::SkillId::Bodybuilding] = 2;
 
     CombatTemplate base{};
     base.hp = 50; base.damage = 6; base.speed = 33; base.attackRange = 3.5f;
@@ -111,8 +111,8 @@ static void test_project_combat_missile() {
     CharacterSheet cs;
     cs.attributes.str  = 12;
     cs.attributes.intl = 7;
-    cs.skills.fighter    = 4;
-    cs.skills.spellcraft = 3;
+    cs.skills[sm::SkillId::Fighter] = 4;
+    cs.skills[sm::SkillId::Spellcraft] = 3;
 
     CombatTemplate base{};
     base.hp = 60; base.damage = 8; base.attackKind = CombatTemplate::Missile;
@@ -135,8 +135,12 @@ static int attr_sum(const Attributes& a) {
     return a.str + a.vit + a.end + a.wil + a.intl + a.wis + a.lck + a.cha + a.spd;
 }
 static int skill_sum(const Skills& s) {
-    return s.bodybuilding + s.meditation + s.athletics + s.travel + s.fighter
-         + s.marathon + s.spellcraft + s.weightlifting;
+    // Walk the envelope, not a hand-listed eight: a skill added to the
+    // registry joins this sum by existing, which is the whole point of the
+    // ranks being a flat array.
+    int sum = 0;
+    for (std::uint8_t r : s.rank) sum += int(r);
+    return sum;
 }
 
 static void test_sheet_budget_identity() {
@@ -187,7 +191,7 @@ static void test_sheet_determinism() {
     expect(a.attributes.str == b.attributes.str
            && a.attributes.intl == b.attributes.intl
            && a.attributes.wil == b.attributes.wil
-           && a.skills.spellcraft == b.skills.spellcraft,
+           && a.skills.of(sm::SkillId::Spellcraft) == b.skills.of(sm::SkillId::Spellcraft),
            "determinism: same seed -> identical field allocation");
     expect(attr_sum(a.attributes) == attr_sum(c.attributes)
            && skill_sum(a.skills) == skill_sum(c.skills),

@@ -44,9 +44,9 @@ inline void refresh_leader_travel_stats(ecs::MacroNpcRuntime& rt,
         calculate_combat_stats(sheet.attributes, sheet.skills);
     rt.maxSp = std::int16_t(std::clamp(cs.maxSp, 1, 32767));
     rt.travelRank = std::uint8_t(
-        std::clamp(sheet.skills.travel, 0, kMaxSkillRank));
+        std::clamp(sheet.skills.of(SkillId::Travel), 0, kMaxSkillRank));
     rt.marathonRank = std::uint8_t(
-        std::clamp(sheet.skills.marathon, 0, kMaxSkillRank));
+        std::clamp(sheet.skills.of(SkillId::Marathon), 0, kMaxSkillRank));
     rt.moveMult =
         calculate_derived(sheet.attributes, sheet.skills).moveSpeedMult;
     const float haul = npc_def(type).haulMult;

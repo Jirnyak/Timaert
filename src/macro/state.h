@@ -144,7 +144,12 @@ namespace sm {
 // law was the player's alone, so a caravan hauling a ton marched like an
 // empty scout; it is universal now (owner ruling), and MacroNpcRuntime rides
 // the macro snapshot as a POD block, so its layout IS the format.
-constexpr int kSaveVersion = 45;
+// v46: skill RANKS are a flat envelope of bytes and the meanings are rows
+// (macro/attributes.h kSkillDefs). The block is the same 32 bytes it was as
+// eight ints, which is exactly why the version had to move: a v45 slot would
+// load with the same LENGTH and none of the same meaning — four ranks read out
+// of one, and no reader the wiser.
+constexpr int kSaveVersion = 46;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 

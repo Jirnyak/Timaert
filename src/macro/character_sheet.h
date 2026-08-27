@@ -49,9 +49,11 @@ struct RoleWeights {
     NPCType type;
     // str, vit, end, wil, intl, wis, lck, cha, spd
     std::uint8_t attr[9];
-    // bodybuilding, meditation, athletics, travel, fighter, marathon,
-    // spellcraft, weightlifting — SkillId order; the pick indexes this directly.
-    std::uint8_t skill[8];
+    // SkillId order; the weighted pick indexes this directly. Sized by the
+    // enum, not by a literal 8, so adding a skill to the registry makes every
+    // role state what it thinks of it — a compile error is the right way to
+    // ask that question, and a silent zero is the wrong one.
+    std::uint8_t skill[std::size_t(SkillId::Count)];
 };
 
 inline constexpr RoleWeights kRoleWeights[int(NPCType::Count)] = {

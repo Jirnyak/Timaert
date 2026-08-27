@@ -91,10 +91,13 @@ inline void apply_aura(CharacterSheet& sheet, const AuraMods& aura) {
                                          AttributeId(m.id))) {
                 *v = std::max(1, *v + int(m.delta));
             }
-        } else {
-            if (int* v = skill_value(sheet.skills, SkillId(m.id))) {
-                *v = std::clamp(*v + int(m.delta), 0, kMaxSkillRank);
-            }
+        } else if (m.id < std::uint8_t(SkillId::Count)) {
+            // Ranks are a flat array under the envelope, so the target is an
+            // index and the only question left is whether it names a skill
+            // the game actually has.
+            std::uint8_t& rank = sheet.skills[SkillId(m.id)];
+            rank = std::uint8_t(
+                std::clamp(int(rank) + int(m.delta), 0, kMaxSkillRank));
         }
     }
 }

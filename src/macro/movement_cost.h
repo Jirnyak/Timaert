@@ -64,7 +64,7 @@ constexpr float kMarchRecoveryPct = 0.0f;
 // not by time: walking faster covers the same ground for the same stamina, it
 // simply takes fewer hours.
 inline float travel_skill_efficiency(const Skills& s) {
-    return skill_cost_mult(s.travel);
+    return skill_mult(s, SkillId::Travel);
 }
 
 // Death by exhaustion, and it is DESIGN, not an accident: past zero, every

@@ -1054,13 +1054,6 @@ namespace sm::ui
             AttributeId id;
         };
 
-        struct SkillUiRow
-        {
-            const char *label;
-            const char *desc;
-            SkillId id;
-        };
-
         constexpr AttributeUiRow kAttributeUiRows[] = {
             {"STR", "+1 physical damage per point", AttributeId::Str},
             {"VIT", "+10 max HP per point", AttributeId::Vit},
@@ -1073,16 +1066,11 @@ namespace sm::ui
             {"SPD", "Asymptotic movement speed", AttributeId::Spd},
         };
 
-        constexpr SkillUiRow kSkillUiRows[] = {
-            {"Bodybuilding", "+5% max HP per rank", SkillId::Bodybuilding},
-            {"Meditation", "+5% max MP per rank", SkillId::Meditation},
-            {"Athletics", "+1% move speed per rank", SkillId::Athletics},
-            {"Travel", "-1% terrain stamina cost per rank", SkillId::Travel},
-            {"Fighter", "+5% physical damage per rank", SkillId::Fighter},
-            {"Marathon", "+1% SP recovery rate per rank", SkillId::Marathon},
-            {"Spellcraft", "+5% spell damage per rank", SkillId::Spellcraft},
-            {"Weightlifting", "+10% carry capacity per rank", SkillId::Weightlifting},
-        };
+        // (No skill row table here. It was a FIFTH copy of the same eight
+        // facts — the label and the percent already stand in kSkillDefs
+        // (macro/attributes.h), and a table that restates another table drifts
+        // from it the first time a number is tuned. The panel walks the
+        // registry now, so a new skill appears in this list by existing.)
 
         // FULL restore — reserved for the moments that SAY they heal: the
         // level-up itself (M&M tradition) and the Talented perk's bonus level.
@@ -1247,19 +1235,23 @@ namespace sm::ui
                         ImGui::TableSetupColumn("Rank", ImGuiTableColumnFlags_WidthFixed,
                                                 spend_column_width());
                         ImGui::TableHeadersRow();
-                        for (const SkillUiRow &row : kSkillUiRows)
+                        for (const SkillDef &row : kSkillDefs)
                         {
-                            const int *value = skill_value(p.sheet.skills, row.id);
-                            if (!value)
-                                continue;
                             ImGui::TableNextRow();
                             ImGui::TableNextColumn();
                             ImGui::Text("%s", row.label);
                             if (ImGui::IsItemHovered())
-                                ImGui::SetTooltip("%s", row.desc);
+                            {
+                                // The tooltip is ARITHMETIC off the row, not
+                                // prose beside it: a retuned percent cannot
+                                // leave a stale sentence behind.
+                                ImGui::SetTooltip("%c%d%% %s",
+                                                  row.buysCostDown ? '-' : '+',
+                                                  int(row.pctPerRank), row.effect);
+                            }
                             ImGui::TableNextColumn();
                             ImGui::PushID(row.label);
-                            ImGui::Text("%d", *value);
+                            ImGui::Text("%d", p.sheet.skills.of(row.id));
                             // Same rule as the attribute rows: the [+] sits at
                             // a fixed number-field width, not right after the
                             // digits, so rank 10 does not push it sideways.

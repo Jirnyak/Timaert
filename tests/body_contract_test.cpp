@@ -294,7 +294,7 @@ void test_a_leaders_aura_reaches_his_men() {
     apply_aura(clamped, curse);
     CHECK(clamped.attributes.vit == 1,
           "an aura cannot curse an attribute below its base of 1");
-    CHECK(clamped.skills.bodybuilding == kMaxSkillRank,
+    CHECK(clamped.skills.of(sm::SkillId::Bodybuilding) == kMaxSkillRank,
           "an aura cannot push a skill past mastery");
 
     // End to end through the ONE birth: the same squad born twice from the
