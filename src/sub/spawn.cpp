@@ -805,11 +805,16 @@ int project_macro_npcs_into_subworld(ecs::World& w,
     // excluding SubworldTag/Dead keeps the source set to live overworld NPCs.
     // PlayerTag skips a macro NPC the player is currently possessing (Inc 5e-2) —
     // you don't meet a foreign projection of your own former body on enter.
+    // PlayerSquadTag skips the player's OWN squad, which since the merge looks
+    // exactly like any other party on the map. It is not a stranger to meet
+    // underground, and projecting it would open a second writeback path into
+    // the same numbers PlayerState already owns.
     std::vector<entt::entity> sources;
     {
         auto view = reg.view<ecs::MacroNpcRuntime, ecs::Position, ecs::NPCKind,
                              ecs::Health, ecs::NpcLevel, ecs::NpcCharacter>(
-            entt::exclude<ecs::SubworldTag, ecs::Dead, ecs::PlayerTag>);
+            entt::exclude<ecs::SubworldTag, ecs::Dead, ecs::PlayerTag,
+                          ecs::PlayerSquadTag>);
         for (auto macro : view) sources.push_back(macro);
     }
 

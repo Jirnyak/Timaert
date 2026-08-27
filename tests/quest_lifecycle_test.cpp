@@ -32,6 +32,10 @@ namespace {
 // bag is an ordinary NpcInventory on his squad entity), so a headless test
 // simply owns one. It is reset per scenario where a scenario cares.
 sm::Inventory bag{};
+// The player's head: an unpayable fine is written down as a debt fact, and the
+// engine is handed the container instead of reaching into PlayerState — the
+// same reason it is handed `bag`.
+sm::AgentMemory head{};
 
 bool fail(const char* msg) {
     std::fprintf(stderr, "FAIL quest_lifecycle_test: %s\n", msg);
@@ -142,6 +146,7 @@ int count_tag(const sm::EventBus& bus, sm::EventTag tag) {
 
 bool test_event_bus_contract_surface() {
     bag.clear();
+    head = sm::AgentMemory{};
     sm::EventBus bus;
     if (bus.tick() != 0
         || bus.subscription_count() != 0
@@ -310,6 +315,7 @@ bool test_event_bus_contract_surface() {
 
 bool test_ts_quest_tag_aliases() {
     bag.clear();
+    head = sm::AgentMemory{};
     if (sm::EventTag::QuestAccepted != sm::EventTag::QuestStart
         || sm::EventTag::QuestObjectiveProgress != sm::EventTag::QuestUpdate
         || sm::EventTag::QuestCompleted != sm::EventTag::QuestComplete
@@ -358,6 +364,7 @@ bool test_ts_quest_tag_aliases() {
 
 bool test_effect_applicator_ts_verbs() {
     bag.clear();
+    head = sm::AgentMemory{};
     // The player's standing lives in the relation matrix now, so the verb test
     // drives a whole GameState; `player` stays a reference for readability.
     sm::GameState verbState{};
@@ -511,6 +518,7 @@ bool test_effect_applicator_ts_verbs() {
 // now the type system's, not an assertion's).
 bool test_grant_xp_levels_through_the_one_path() {
     bag.clear();
+    head = sm::AgentMemory{};
     sm::GameState xpState{};
     sm::PlayerState& player = xpState.player;
     player.sheet.levelData = sm::default_level_data();
@@ -553,6 +561,7 @@ bool test_grant_xp_levels_through_the_one_path() {
 // dead attribute — computed, displayed, consumed by nothing.
 bool test_grant_xp_pays_the_wis_dividend() {
     bag.clear();
+    head = sm::AgentMemory{};
     sm::GameState wisState{};
     sm::PlayerState& player = wisState.player;
     player.sheet.levelData = sm::default_level_data();
@@ -576,6 +585,7 @@ bool test_grant_xp_pays_the_wis_dividend() {
 // piled up unspendable, and a quest-only playthrough never levelled at all.
 bool test_quest_xp_reward_levels_the_player() {
     bag.clear();
+    head = sm::AgentMemory{};
     sm::GameState gs{};
     gs.mapW = 64;
     gs.mapH = 64;
@@ -605,7 +615,7 @@ bool test_quest_xp_reward_levels_the_player() {
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
     active.push_back(q);
-    engine.tick(active, bus, gs, &bag);
+    engine.tick(active, bus, gs, &bag, &head);
 
     if (!active.empty()) return fail("the reward quest did not complete");
     if (gs.player.sheet.levelData.level != 4) {
@@ -627,6 +637,7 @@ bool test_quest_xp_reward_levels_the_player() {
 // which nothing has ever emitted, so it could not fire (removed 2026-08-05).
 bool test_builtin_nodes_are_registered_and_active() {
     bag.clear();
+    head = sm::AgentMemory{};
     sm::LogicNodeEngine logic;
     sm::register_builtin_nodes(logic);
     const char* kBuiltinIds[] = {"sys_settlement"};
@@ -648,6 +659,7 @@ bool test_builtin_nodes_are_registered_and_active() {
 // mutating the player. Custom is the permanent such tag.
 bool test_unhandled_tag_is_inert_in_applicator() {
     bag.clear();
+    head = sm::AgentMemory{};
     sm::GameState levelState{};
     sm::PlayerState& player = levelState.player;
     player.sheet.levelData = sm::default_level_data();
@@ -690,6 +702,7 @@ bool test_unhandled_tag_is_inert_in_applicator() {
 
 bool test_settlement_show_dialog_node() {
     bag.clear();
+    head = sm::AgentMemory{};
     const auto run_case = [](sm::EventTag tag, const char* name) -> bool {
         sm::PlayerState player{};
         sm::EventBus bus;
@@ -741,6 +754,7 @@ bool test_settlement_show_dialog_node() {
 
 bool test_logic_node_add_registers_inactive() {
     bag.clear();
+    head = sm::AgentMemory{};
     sm::PlayerState player{};
     sm::EventBus bus;
     sm::LogicNodeEngine logic;
@@ -774,6 +788,7 @@ bool test_logic_node_add_registers_inactive() {
 
 bool test_logic_node_pending_ids_survive_node_add() {
     bag.clear();
+    head = sm::AgentMemory{};
     sm::PlayerState player{};
     sm::EventBus bus;
     sm::LogicNodeEngine logic;
@@ -829,6 +844,7 @@ bool test_logic_node_pending_ids_survive_node_add() {
 
 bool test_logic_node_tick_order_matches_ts_set() {
     bag.clear();
+    head = sm::AgentMemory{};
     sm::PlayerState player{};
     sm::EventBus bus;
     sm::LogicNodeEngine logic;
@@ -877,6 +893,7 @@ bool test_logic_node_tick_order_matches_ts_set() {
 
 bool test_logic_node_effect_can_remove_self() {
     bag.clear();
+    head = sm::AgentMemory{};
     sm::PlayerState player{};
     sm::EventBus bus;
     sm::LogicNodeEngine logic;
@@ -910,6 +927,7 @@ bool test_logic_node_effect_can_remove_self() {
 
 bool test_logic_node_self_reactivation_safe_cases() {
     bag.clear();
+    head = sm::AgentMemory{};
     {
         sm::PlayerState player{};
         sm::EventBus bus;
@@ -972,6 +990,7 @@ bool test_logic_node_self_reactivation_safe_cases() {
 
 bool test_intro_show_story_node() {
     bag.clear();
+    head = sm::AgentMemory{};
     const sm::content::StoryDef& story = sm::content::intro_story();
     if (std::string(story.id) != "intro"
         || std::string(story.sourceNodeId) != "intro_main"
@@ -1051,6 +1070,7 @@ bool test_intro_show_story_node() {
 
 bool test_encounter_table_shape() {
     bag.clear();
+    head = sm::AgentMemory{};
     const auto& table = sm::content::encounters();
     if (table.size() != 15) {
         return fail("encounter table count does not match TS buildEncounterTable");
@@ -1141,6 +1161,7 @@ bool test_encounter_table_shape() {
 
 bool test_quest_failed_uses_failed_ledger() {
     bag.clear();
+    head = sm::AgentMemory{};
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
@@ -1165,7 +1186,7 @@ bool test_quest_failed_uses_failed_ledger() {
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
     active.push_back(q);
-    engine.tick(active, bus, gs, &bag);
+    engine.tick(active, bus, gs, &bag, &head);
     if (!active.empty()) {
         return fail("expired quest was not removed");
     }
@@ -1202,6 +1223,7 @@ bool test_quest_failed_uses_failed_ledger() {
 
 bool test_item_delivery_direct_path() {
     bag.clear();
+    head = sm::AgentMemory{};
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
@@ -1241,7 +1263,7 @@ bool test_item_delivery_direct_path() {
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
     active.push_back(q);
-    engine.tick(active, bus, gs, &bag);
+    engine.tick(active, bus, gs, &bag, &head);
 
     if (!active.empty()) {
         return fail("delivery quest did not complete from inventory condition");
@@ -1267,6 +1289,7 @@ bool test_item_delivery_direct_path() {
 
 bool test_quest_reward_dispatch_order_and_application() {
     bag.clear();
+    head = sm::AgentMemory{};
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
@@ -1330,7 +1353,7 @@ bool test_quest_reward_dispatch_order_and_application() {
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
     active.push_back(q);
-    engine.tick(active, bus, gs, &bag);
+    engine.tick(active, bus, gs, &bag, &head);
 
     const auto& events = bus.tick_events();
     if (!active.empty() || events.size() != 4) {
@@ -1388,6 +1411,7 @@ bool test_quest_reward_dispatch_order_and_application() {
 
 bool test_find_location_player_move_objective() {
     bag.clear();
+    head = sm::AgentMemory{};
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
@@ -1413,7 +1437,7 @@ bool test_find_location_player_move_objective() {
     move.iy = 33;
     bus.emit(move);
     bus.flush(gs.worldTime.day(), gs.worldTime.hour());
-    engine.tick(active, bus, gs, &bag);
+    engine.tick(active, bus, gs, &bag, &head);
     if (!active.empty()) {
         return fail("PlayerMove did not complete FindLocation");
     }
@@ -1422,6 +1446,7 @@ bool test_find_location_player_move_objective() {
 
 bool test_visit_cell_objective() {
     bag.clear();
+    head = sm::AgentMemory{};
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
@@ -1446,7 +1471,7 @@ bool test_visit_cell_objective() {
     std::vector<sm::Quest> active;
     active.push_back(q);
     bus.flush(gs.worldTime.day(), gs.worldTime.hour());
-    engine.tick(active, bus, gs, &bag);
+    engine.tick(active, bus, gs, &bag, &head);
     if (!active.empty() || !has_tag(bus, sm::EventTag::QuestCompleted)) {
         return fail("VisitCell did not complete from player radius");
     }
@@ -1455,6 +1480,7 @@ bool test_visit_cell_objective() {
 
 bool test_quest_completion_order_matches_ts_reverse_scan() {
     bag.clear();
+    head = sm::AgentMemory{};
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
@@ -1484,7 +1510,7 @@ bool test_quest_completion_order_matches_ts_reverse_scan() {
     active.push_back(make_visit("q_high"));
 
     bus.flush(gs.worldTime.day(), gs.worldTime.hour());
-    engine.tick(active, bus, gs, &bag);
+    engine.tick(active, bus, gs, &bag, &head);
 
     std::vector<std::string> completed;
     for (const auto& ev : bus.tick_events()) {
@@ -1503,6 +1529,7 @@ bool test_quest_completion_order_matches_ts_reverse_scan() {
 
 bool test_wait_at_timeadvance_objective() {
     bag.clear();
+    head = sm::AgentMemory{};
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
@@ -1532,7 +1559,7 @@ bool test_wait_at_timeadvance_objective() {
     compressedLegacy.ix = 2;
     bus.emit(compressedLegacy);
     bus.flush(gs.worldTime.day(), gs.worldTime.hour() + 2);
-    engine.tick(active, bus, gs, &bag);
+    engine.tick(active, bus, gs, &bag, &head);
     if (active.empty() || has_tag(bus, sm::EventTag::QuestCompleted)
         || active[0].objectives[0].hoursWaited != 1) {
         return fail("WaitAt treated one TimeAdvance event as more than one TS hour");
@@ -1545,7 +1572,7 @@ bool test_wait_at_timeadvance_objective() {
     anotherHour.ix = 1;
     bus.emit(anotherHour);
     bus.flush(gs.worldTime.day(), gs.worldTime.hour() + 3);
-    engine.tick(active, bus, gs, &bag);
+    engine.tick(active, bus, gs, &bag, &head);
     if (!active.empty() || !has_tag(bus, sm::EventTag::QuestCompleted)) {
         return fail("WaitAt did not complete after required TimeAdvance");
     }
@@ -1554,6 +1581,7 @@ bool test_wait_at_timeadvance_objective() {
 
 bool test_destroy_npc_objective() {
     bag.clear();
+    head = sm::AgentMemory{};
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
@@ -1594,7 +1622,7 @@ bool test_destroy_npc_objective() {
     bus.emit(impostor);
     bus.emit(kindless);
     bus.flush(gs.worldTime.day(), gs.worldTime.hour());
-    engine.tick(active, bus, gs, &bag);
+    engine.tick(active, bus, gs, &bag, &head);
     if (active.size() != 1) {
         return fail("DestroyNpc counted an entity handle / a kindless body as a kill");
     }
@@ -1608,7 +1636,7 @@ bool test_destroy_npc_objective() {
     secondReal.ix = 2;
     bus.emit(secondReal);
     bus.flush(gs.worldTime.day(), gs.worldTime.hour());
-    engine.tick(active, bus, gs, &bag);
+    engine.tick(active, bus, gs, &bag, &head);
     if (!active.empty() || !has_tag(bus, sm::EventTag::QuestCompleted)) {
         return fail("DestroyNpc did not complete on kills of the wanted type");
     }
@@ -1617,6 +1645,7 @@ bool test_destroy_npc_objective() {
 
 bool test_interact_cell_objective() {
     bag.clear();
+    head = sm::AgentMemory{};
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
@@ -1645,7 +1674,7 @@ bool test_interact_cell_objective() {
     elsewhere.iy = 12;
     bus.emit(elsewhere);
     bus.flush(gs.worldTime.day(), gs.worldTime.hour());
-    engine.tick(active, bus, gs, &bag);
+    engine.tick(active, bus, gs, &bag, &head);
     if (active.size() != 1) {
         return fail("InteractCell completed on an event from a different cell");
     }
@@ -1655,7 +1684,7 @@ bool test_interact_cell_objective() {
     edit.iy = 11;
     bus.emit(edit);
     bus.flush(gs.worldTime.day(), gs.worldTime.hour());
-    engine.tick(active, bus, gs, &bag);
+    engine.tick(active, bus, gs, &bag, &head);
     if (!active.empty() || !has_tag(bus, sm::EventTag::QuestCompleted)) {
         return fail("InteractCell did not consume WorldCellChange payload");
     }
@@ -1664,6 +1693,7 @@ bool test_interact_cell_objective() {
 
 bool test_abandon_emits_and_removes() {
     bag.clear();
+    head = sm::AgentMemory{};
     sm::Quest q{};
     q.id = "q_abandon_test";
     q.title = "Abandon Test";
@@ -1703,6 +1733,7 @@ bool test_abandon_emits_and_removes() {
 
 bool test_village_protect_generator_spawn_event() {
     bag.clear();
+    head = sm::AgentMemory{};
     sm::GameState gs{};
     gs.worldSeed = 0x51515151u;
     gs.mapW = 128;
@@ -1753,6 +1784,7 @@ bool test_village_protect_generator_spawn_event() {
 
 bool test_village_quest_ids_are_collision_safe() {
     bag.clear();
+    head = sm::AgentMemory{};
     sm::GameState gs{};
     gs.worldSeed = 0x71477147u;
     gs.mapW = 128;
@@ -1822,6 +1854,7 @@ bool test_village_quest_ids_are_collision_safe() {
 // on these; otherwise the corrupted order[6] fails the permutation check.
 bool test_shuffled_order_guards_rng_upper_bound() {
     bag.clear();
+    head = sm::AgentMemory{};
     auto is_permutation_0_6 = [](const std::vector<int>& order) -> bool {
         if (order.size() != 7) return false;
         bool seen[7] = {false, false, false, false, false, false, false};
@@ -1922,7 +1955,7 @@ int main() {
     }
 
     bus.flush(gs.worldTime.day(), gs.worldTime.hour());
-    engine.tick(active, bus, gs, &bag);
+    engine.tick(active, bus, gs, &bag, &head);
     if (!active.empty()) {
         return fail("delivery items did not complete generated quest") ? 0 : 1;
     }

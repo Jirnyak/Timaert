@@ -1,17 +1,26 @@
-// Macro player entity (macro-4a) — the player's movable PlayerTag "flag" as a
-// persistent macro-side ECS entity.
+// THE player's squad on the macro map — an ordinary squad entity carrying an
+// ordinary squad's components, told from every other squad by two things and
+// two things only: a reserved ordinal (`ecs::kPlayerSquadOrdinal`) and a mark
+// (`ecs::PlayerSquadTag`).
 //
-// The player is "an NPC with a flag": the flag is `ecs::PlayerTag`, and for the
-// possession command (§8 Increment 5) to MOVE it between entities it must live
-// on a real entity on BOTH sides of the macro<->subworld seam. In a subworld the
-// flag rides a full combat actor built by `SubworldEngine::spawn_player_entity`;
-// on the macro map this projection is its home.
+// «ИГРОК = НПЦ» (CANON S4). The flag `ecs::PlayerTag` answers a DIFFERENT
+// question — «кем я управляю сейчас» — and moves: onto a possessed lord, onto
+// a body underground. That is why it cannot be the thing that identifies his
+// party, and why the two tags are two components.
 //
-// The macro flag is deliberately MINIMAL — `Position` + `PlayerTag` only — so it
-// stays invisible to render / proximity / AI (which key off `NPCKind` +
-// `MacroNpcRuntime`) and to the subworld reapers (which key off `SubworldTag`).
-// `gs.player` remains the authoritative scalar; the entity's `Position` is a
-// one-way projection of it, so nothing here changes the save format.
+// This entity used to be a HUSK: `Position` + `PlayerTag`, recreated every
+// macro tick, deliberately invisible to render / proximity / AI, while the
+// real party lived beside it in PlayerState as a roster, a bag and a head of
+// its own. Every consumer of those was a player-specific path — a second kind
+// of squad with its own projection, its own battle side and its own casualty
+// bookkeeping. The merge of 2026-08-27 collapsed them: the roster is
+// `ecs::SquadRoster`, the bag `ecs::NpcInventory`, the head `AgentMemory`, and
+// all three ride the same macro-snapshot record every lord's do.
+//
+// What has NOT moved yet: where he stands, how hurt he is, how tired, and his
+// sheet. PlayerState still owns those; `ensure_macro_player_entity` projects
+// them onto the entity on EVERY walk, so the copies cannot drift by more than
+// a tick until they collapse too.
 #pragma once
 #include "ecs/world.h"
 #include "macro/state.h"
@@ -53,5 +62,12 @@ const SoldierSquad* player_roster(const ecs::World& world);
 // player a different kind of thing from the squads around him.
 Inventory* player_inventory(ecs::World& world);
 const Inventory* player_inventory(const ecs::World& world);
+
+// What the player REMEMBERS: the ordinary AgentMemory on the same entity, the
+// same component every squad leader carries. It sat on PlayerState as a second
+// store until 2026-08-27; the macro record already saved the entity's copy, so
+// the field was a duplicate the save wrote twice and nothing read back.
+AgentMemory* player_head(ecs::World& world);
+const AgentMemory* player_head(const ecs::World& world);
 
 } // namespace sm

@@ -205,6 +205,10 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     player.inventory.add("coin_empire", 999);
     player.inventory.add("misc_gem", 3);
     player.inventory.add("bread", 11);
+    // The player's HEAD rides his record like any leader's (v28 column): a
+    // debt fact, summed by the fact arithmetic.
+    sm::remember(player.memory,
+                 sm::make_debt_fact(sm::kDebtToSettlement, 7, 15, 3));
     add_soldiers(player.roster, sm::NPCType::Peasant, 4, 1000u);
     add_soldiers(player.roster, sm::NPCType::Woodcutter, 3, 1100u);
     add_soldiers(player.roster, sm::NPCType::Guard, 2, 1200u);
@@ -262,9 +266,8 @@ sm::GameState make_state() {
     // (His coin and goods ride his SQUAD's snapshot record — see the player
     // record in make_macro_records — because his bag is an ordinary
     // NpcInventory on his squad entity.)
-    // The player's HEAD (v32): a debt fact, summed by the fact arithmetic.
-    sm::remember(gs.player.memory,
-                 sm::make_debt_fact(sm::kDebtToSettlement, 7, 15, 3));
+    // (His HEAD rides the same record: AgentMemory is a column of every
+    // leader's macro record, and the player is a leader.)
     gs.player.sheet.attributes.str = 7;
     gs.player.sheet.attributes.vit = 8;
     gs.player.sheet.attributes.end = 9;
@@ -715,13 +718,6 @@ void run_roundtrip() {
         FAIL_BAIL("player position or age lost");
     }
 
-    {
-        const sm::MemoryEntry* debt = sm::recall(
-            p.memory, sm::AgentMemoryKind::Debt, 7, sm::kDebtToSettlement);
-        if (!debt || sm::memory_amount(*debt) != 15) {
-            FAIL_BAIL("the player's debt fact lost");
-        }
-    }
     if (p.sheet.attributes.str != 7 || p.sheet.attributes.intl != 11 || p.sheet.attributes.spd != 15) {
         FAIL_BAIL("player attributes lost");
     }

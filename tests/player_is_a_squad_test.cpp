@@ -199,6 +199,82 @@ void test_the_players_men_never_desert() {
           "negative control: the NPC's roster WAS emptied by the same call");
 }
 
+// ── 5. Его числа на сущности не врут ─────────────────────────────────────
+void test_the_entity_numbers_are_not_stale() {
+    GameState gs{};
+    gs.mapW = gs.mapH = 64;
+    gs.player.x = 20.0f;
+    gs.player.y = 20.0f;
+    gs.player.sheet.attributes.end = 5;
+    gs.player.sheet.levelData.level = 1;
+    recompute_combat_maxima(gs.player.combatStats,
+                            gs.player.sheet.attributes,
+                            gs.player.sheet.skills);
+    ecs::World w;
+    ensure_macro_player_entity(gs, w);
+    const entt::entity e = player_squad_entity(w);
+
+    const int bornMaxSp = w.reg.get<ecs::MacroNpcRuntime>(e).maxSp;
+    CHECK(bornMaxSp == gs.player.combatStats.maxSp,
+          "his squad is born with his own stamina bar");
+
+    // He is wounded, he grows tired, he trains END and he levels — every one
+    // of these used to leave the entity behind FOREVER, because Health and the
+    // march caches were written once at creation. The save then persisted a
+    // hale, rested, level-1 player over a dying, exhausted, level-4 one.
+    gs.player.combatStats.currentHp = 17;
+    gs.player.combatStats.currentSp = -6;   // an honest exhaustion debt
+    gs.player.sheet.attributes.end = 12;
+    gs.player.sheet.levelData.level = 4;
+    recompute_combat_maxima(gs.player.combatStats,
+                            gs.player.sheet.attributes,
+                            gs.player.sheet.skills);
+    gs.player.x = 33.0f;
+    gs.player.y = 44.0f;
+    ensure_macro_player_entity(gs, w);
+
+    const auto& hp = w.reg.get<ecs::Health>(e);
+    CHECK(hp.hp == 17.0f, "the wound reached the entity");
+    CHECK(hp.maxHp == float(gs.player.combatStats.maxHp),
+          "and so did the bigger bar the new VIT bought");
+    const auto& rt = w.reg.get<ecs::MacroNpcRuntime>(e);
+    CHECK(rt.maxSp == gs.player.combatStats.maxSp,
+          "the stamina ceiling followed the END he trained");
+    CHECK(rt.maxSp > bornMaxSp,
+          "negative control: that ceiling did MOVE — the check above is not "
+          "comparing two copies of the same stale number");
+    CHECK(rt.sp == -6, "the exhaustion DEBT survives the projection, unclamped");
+    CHECK(w.reg.get<ecs::NpcLevel>(e).value == 4, "and he is level 4 to the map");
+    const auto& pos = w.reg.get<ecs::Position>(e);
+    CHECK(pos.x == 33.0f && pos.y == 44.0f, "the entity stands where he stands");
+}
+
+// ── 6. Его голова — компонент, а не поле ─────────────────────────────────
+void test_the_head_is_on_the_entity() {
+    GameState gs{};
+    gs.mapW = gs.mapH = 64;
+    ecs::World w;
+    ensure_macro_player_entity(gs, w);
+
+    AgentMemory* head = player_head(w);
+    CHECK(head != nullptr, "the player's head is reachable through one door");
+    remember(*head, make_debt_fact(kDebtToSettlement, 7, 15, 3));
+
+    // It rides the SAME record every leader's memory rides — proving it is not
+    // saved twice and not saved never.
+    const std::vector<MacroNpcRecord> snap = snapshot_macro_ecs(w);
+    const MacroNpcRecord* mine = nullptr;
+    for (const MacroNpcRecord& r : snap) {
+        if (r.spawnId.index == ecs::kPlayerSquadOrdinal) mine = &r;
+    }
+    CHECK(mine != nullptr, "his record is in the snapshot");
+    const MemoryEntry* debt = mine
+        ? recall(mine->memory, AgentMemoryKind::Debt, 7, kDebtToSettlement)
+        : nullptr;
+    CHECK(debt != nullptr, "and it carries what he remembers");
+    CHECK(debt && memory_amount(*debt) == 15, "with the amount intact");
+}
+
 } // namespace
 
 int main() {
@@ -206,5 +282,7 @@ int main() {
     test_the_mark_survives_losing_the_flag();
     test_ai_leaves_the_player_squad_standing();
     test_the_players_men_never_desert();
+    test_the_entity_numbers_are_not_stale();
+    test_the_head_is_on_the_entity();
     return sm::test::report("player_is_a_squad_test");
 }

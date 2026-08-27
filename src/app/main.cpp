@@ -3641,7 +3641,8 @@ void process_world_events(App& app) {
     app.appliedSpawnEventCount = 0;
     app.logic.tick(app.bus, app.gs.player);
     app.quests.tick(app.activeQuests, app.bus, app.gs,
-                    sm::player_inventory(app.ecs));
+                    sm::player_inventory(app.ecs),
+                    sm::player_head(app.ecs));
     // Refresh the derived quest-marker pins only when the active-quest set
     // actually changed. tick() runs every render frame; the rebuild allocates,
     // so the signature guard keeps steady-state frames allocation-free.

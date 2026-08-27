@@ -59,7 +59,8 @@ static bool objective_target_cell(const GameState& gs, const Objective& o,
 // Takes the GameState because a Reputation reward moves the player's row in the
 // ONE relation matrix — his standing is not a map of his own any more.
 static void emit_reward(const Reward& r, GameState& gs, Inventory* bag,
-                        EventBus& bus, int giverSettlementId) {
+                        AgentMemory* head, EventBus& bus,
+                        int giverSettlementId) {
     if (!bag) return;   // no world, nowhere to pay
     PlayerState& p = gs.player;
     switch (r.kind) {
@@ -75,8 +76,8 @@ static void emit_reward(const Reward& r, GameState& gs, Inventory* bag,
                 // arithmetic. When macro relations arrive, this bites.
                 const int paid = wallet_spend_up_to((*bag), -r.amount);
                 const int short_ = -r.amount - paid;
-                if (short_ > 0 && giverSettlementId >= 0) {
-                    remember(p.memory,
+                if (short_ > 0 && giverSettlementId >= 0 && head) {
+                    remember(*head,
                              make_debt_fact(kDebtToSettlement,
                                             std::uint16_t(giverSettlementId),
                                             short_,
@@ -185,7 +186,7 @@ static bool eval_objective(Objective& o, const std::vector<GameEvent>& events,
 } // namespace
 
 void QuestEngine::tick(std::vector<Quest>& active, EventBus& bus,
-                       GameState& gs, Inventory* bag) {
+                       GameState& gs, Inventory* bag, AgentMemory* head) {
     auto& events = bus.last_tick_events();
     std::vector<Quest> completed;
     completed.reserve(active.size());
@@ -226,7 +227,7 @@ void QuestEngine::tick(std::vector<Quest>& active, EventBus& bus,
 
     for (auto& q : completed) {
         push_string(gs.player.completedQuestIds, q.id);
-        for (auto& r : q.rewards) emit_reward(r, gs, bag, bus, q.giverSettlementId);
+        for (auto& r : q.rewards) emit_reward(r, gs, bag, head, bus, q.giverSettlementId);
         GameEvent ev; ev.tag = EventTag::QuestComplete; ev.s1 = q.id;
         ev.a = std::uint32_t(quest_id_key(q.id));
         ev.b = kEventEffectAlreadyApplied;

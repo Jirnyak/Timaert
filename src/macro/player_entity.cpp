@@ -6,6 +6,7 @@
 #include "macro/faction.h"
 #include "macro/npc.h"
 #include "macro/squad.h"
+#include <algorithm>
 #include <array>
 
 namespace sm {
@@ -59,9 +60,8 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
         }
         reg.emplace<AgentMemory>(squad);
         // The snapshot's view names every component make_npc emplaces, and the
-        // player's squad is saved BY IT now — his roster is not a field of
-        // PlayerState any more. The bag is empty until the inventory merge
-        // lands; what matters here is that his squad is a whole squad.
+        // player's squad is saved BY IT now — neither his roster nor his bag
+        // nor his head is a field of PlayerState any more.
         reg.emplace<ecs::NpcInventory>(squad, ecs::NpcInventory{});
         // A squad of one, its own leader — the same empty roster every macro
         // squad is born with (macro/npc_spawn.cpp make_npc).
@@ -84,10 +84,38 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
     // so the mark has to be re-stamped every time this door is walked through.
     reg.emplace_or_replace<ecs::PlayerSquadTag>(squad);
 
-    // The authoritative scalar still says WHERE he is (position moves onto the
-    // entity in a later step of this merge); project it. No +0.5 — Position is
-    // the raw cell coordinate, and the overlay applies the render centring.
+    // ── The numbers, projected EVERY walk ─────────────────────────────────
+    // PlayerState is still the authoritative store for where he stands, how
+    // hurt he is and how tired (those collapse onto the entity in the next
+    // step of this merge). Until they do, the entity's copies are projections
+    // — and a projection written ONCE at birth is not a projection, it is a
+    // lie with a long fuse. All three used to be exactly that: `Health` was
+    // stamped from maxHp at creation and never touched again, so the save
+    // persisted a full-health player who was dying, and the subworld projector
+    // would have raised his squad as an unwounded body; `maxSp` and the march
+    // caches were stamped from the sheet at creation, so spending a single END
+    // point left them behind forever.
+    //
+    // This door is walked on EVERY macro tick, and it is the only place these
+    // numbers are written, so the projection cannot drift by more than the
+    // tick it is refreshed on.
+    //
+    // No +0.5 on the position — Position is the raw cell coordinate, and the
+    // overlay applies the render centring.
     reg.emplace_or_replace<ecs::Position>(squad, gs.player.x, gs.player.y, 0.0f);
+    reg.emplace_or_replace<ecs::Health>(
+        squad,
+        float(std::max(0, gs.player.combatStats.currentHp)),
+        float(std::max(1, gs.player.combatStats.maxHp)));
+    reg.emplace_or_replace<ecs::NpcLevel>(
+        squad, std::int16_t(std::max(1, gs.player.sheet.levelData.level)));
+    if (auto* rt = reg.try_get<ecs::MacroNpcRuntime>(squad)) {
+        // The SAME door every lord's caches go through (squad.h) — the sheet
+        // is the law, these four are its cache, and there is one refresh.
+        refresh_leader_travel_stats(*rt, gs.player.sheet);
+        rt->sp = std::int16_t(std::clamp(gs.player.combatStats.currentSp,
+                                         -32768, 32767));
+    }
 
     // ── The flag ──────────────────────────────────────────────────────────
     // Exactly one PlayerTag exists at a time. It rides the player's own squad
@@ -130,6 +158,16 @@ Inventory* player_inventory(ecs::World& world) {
 
 const Inventory* player_inventory(const ecs::World& world) {
     return player_inventory(const_cast<ecs::World&>(world));
+}
+
+AgentMemory* player_head(ecs::World& world) {
+    const entt::entity e = find_player_squad(world);
+    if (e == entt::null) return nullptr;
+    return world.reg.try_get<AgentMemory>(e);
+}
+
+const AgentMemory* player_head(const ecs::World& world) {
+    return player_head(const_cast<ecs::World&>(world));
 }
 
 bool reattach_player_to_macro_spawn(ecs::World& world, int id, float px, float py) {

@@ -16,10 +16,15 @@ public:
     // squad entity now (macro/player_entity.h), so the engine is handed the
     // container instead of reaching into PlayerState for one. Null = no world
     // yet: nothing is paid and no delivery can complete.
+    // `head` is what the player REMEMBERS — the ordinary AgentMemory on the
+    // same squad entity, where an unpayable fine is written down as a debt
+    // fact. Handed in for the same reason `bag` is: this layer may not reach
+    // into the ECS, and PlayerState is not a second store for either.
     void tick(std::vector<Quest>& active,
               EventBus& bus,
               GameState& gs,
-              Inventory* bag);
+              Inventory* bag,
+              AgentMemory* head);
 
     void accept(std::vector<Quest>& active,
                 Quest q,

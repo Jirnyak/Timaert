@@ -133,7 +133,12 @@ namespace sm {
 // A beast could not stand in a roster while the field was a byte, so a wolf
 // pack was not expressible as a squad; the macro snapshot refused monster
 // entities for the same reason. Both are now open (CANON.md S4/S16).
-constexpr int kSaveVersion = 43;
+// v44: the player is an ordinary squad, so his goods and his head stopped
+// being fields of PlayerState. His bag is the NpcInventory and his memory the
+// AgentMemory on his squad entity, both written by the macro-snapshot record
+// that already carries every other leader's — two blocks left the player
+// section of the file and no block replaced them.
+constexpr int kSaveVersion = 44;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
@@ -278,10 +283,11 @@ struct PlayerState {
     // to place the player near the edge it actually walked in from.
     std::uint8_t entryDir = 0xFF;
     std::uint8_t entryTicks = 0;
-    // The player's head (v32): the same bounded AgentMemory every squad
-    // leader carries — the player IS a squad. First tenant: DEBT facts
-    // («кто-то должен кому-то», fact arithmetic sums them).
-    AgentMemory memory;
+    // (No `memory` field. The player's head is the ordinary AgentMemory on
+    // his squad entity — the same component every squad leader carries, saved
+    // by the same macro record. It sat here as a second store with ZERO
+    // readers in src/: everything that remembers anything about the player
+    // was already going through the entity.)
     // Transient accumulator toward the next entryTicks increment; NOT
     // serialized (worst case a load loses < kAiTicks of band depth).
     std::uint32_t entryTickAccum = 0;   // world ticks toward the next entry tick
