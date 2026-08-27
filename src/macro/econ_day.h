@@ -30,9 +30,19 @@ namespace sm {
 
 // Integer units per commodity — discrete by house style; signed so a
 // bookkeeping bug shows up as a negative number, not a silent wrap.
-struct Stockpile {
-    std::array<int, kCommodityCount> qty{};
-};
+// THE store of a place is its INVENTORY — there is no second container and no
+// second index space (owner's ruling, 2026-08-27: полное слияние). A flat
+// `Stockpile` of 14 commodity counts used to live here and be converted to and
+// from the landmark's inventory TWICE PER GAME DAY per landmark, through a
+// string lookup each way, because the same noun was addressed by two different
+// ordinals. `bread` is one row of one catalog now.
+//
+// The day's steps stay PURE (owner: «шаги остаются ЧИСТЫМИ»): they take data
+// and tables, never the world.
+//
+// A commodity's CATALOG ordinal, resolved once and cached — the day loop asks
+// this instead of carrying a second numbering of the same things.
+int commodity_item_index(int commodityIdx);
 
 // A source of raw units in the world: a grain field, a clay pit, a stand of
 // timber. Finite — gathering DRAINS it (regrowth is the tree-layer-style
@@ -119,7 +129,7 @@ using EconFactSink = void (*)(void* user, const EconFact& fact);
 // Workers pull raw units out of deposits (in deposit order) into the store.
 // Returns total gathered. Conservation: Σdeposits shrinks by exactly the
 // amount the stockpile grows.
-int econ_gather_day(Stockpile& store, Deposit* deposits, int depositCount,
+int econ_gather_day(Inventory& store, Deposit* deposits, int depositCount,
                     int workers, EconFactSink sink, void* user);
 
 // Workers run the site's recipes in three passes: today's TABLE first (each
@@ -128,7 +138,7 @@ int econ_gather_day(Stockpile& store, Deposit* deposits, int depositCount,
 // workers across recipes with inputs (the surplus), then leftovers in table
 // order. Returns total units produced. Conservation: inputs leave the store
 // as outputs enter.
-int econ_produce_day(Stockpile& store, EconSite site, int workers,
+int econ_produce_day(Inventory& store, EconSite site, int workers,
                      int population, EconFactSink sink, void* user);
 
 struct ConsumeOutcome {
@@ -141,7 +151,7 @@ struct ConsumeOutcome {
 
 // Population eats down the needs ladder. `famineWasActive` carries yesterday's
 // state so FamineStarted/FamineEnded fire exactly on the transitions.
-ConsumeOutcome econ_consume_day(Stockpile& store, int population,
+ConsumeOutcome econ_consume_day(Inventory& store, int population,
                                 bool famineWasActive,
                                 EconFactSink sink, void* user);
 
@@ -197,12 +207,6 @@ inline int mood_band_from_wellbeing(float wellbeing) {
     return 4;
 }
 
-// ── Inventory adapter ────────────────────────────────────────────────────
-// The landmark's persistent truth is its universal Inventory (owner's
-// ruling); the day-loop works a flat Stockpile. Convert at the day boundary
-// — non-commodity stacks (potions, weapons the player sold) ride untouched.
-Stockpile stockpile_from_inventory(const Inventory& inv);
-void apply_stockpile_to_inventory(const Stockpile& s, Inventory& inv);
 
 // ── Birth stocks ─────────────────────────────────────────────────────────
 

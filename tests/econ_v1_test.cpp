@@ -131,8 +131,9 @@ int main() {
     const int breadIdx = commodity_index("bread");
 
     Ledger led{};
-    Stockpile village{};
-    Stockpile city{};
+    // The store IS the inventory now (one dictionary, one container).
+    Inventory village{};
+    Inventory city{};
     std::array<long, kCommodityCount> consumed{};
 
     Deposit fields[]{{grainIdx, 1 << 20}};
@@ -153,8 +154,8 @@ int main() {
 
         // Caravan abstraction v1: all raw moves to the city for crafting.
         for (int c = 0; c < kRawCommodityCount; ++c) {
-            city.qty[std::size_t(c)] += village.qty[std::size_t(c)];
-            village.qty[std::size_t(c)] = 0;
+            city.add_of(commodity_item_index(c), village.count_of(commodity_item_index(c)));
+            village.remove_of(commodity_item_index(c), village.count_of(commodity_item_index(c)));
         }
 
         // The city bakes for the PAIR — its own table plus the village's
@@ -164,23 +165,23 @@ int main() {
 
         // The return leg: the village's daily bread comes back.
         const int breadBack =
-            std::min(villagePop, city.qty[std::size_t(breadIdx)]);
-        city.qty[std::size_t(breadIdx)] -= breadBack;
-        village.qty[std::size_t(breadIdx)] += breadBack;
+            std::min(villagePop, city.count_of(commodity_item_index(breadIdx)));
+        city.remove_of(commodity_item_index(breadIdx), breadBack);
+        village.add_of(commodity_item_index(breadIdx), breadBack);
 
         // Consumption, ledgered by store diffs.
-        Stockpile beforeV = village;
+        Inventory beforeV = village;
         const ConsumeOutcome ov =
             econ_consume_day(village, villagePop, villageFamine, &sink, &led);
         villageFamine = ov.famineActive;
-        Stockpile beforeC = city;
+        Inventory beforeC = city;
         const ConsumeOutcome oc =
             econ_consume_day(city, cityPop, cityFamine, &sink, &led);
         cityFamine = oc.famineActive;
         for (int c = 0; c < kCommodityCount; ++c) {
             consumed[std::size_t(c)] +=
-                (beforeV.qty[std::size_t(c)] - village.qty[std::size_t(c)])
-                + (beforeC.qty[std::size_t(c)] - city.qty[std::size_t(c)]);
+                (beforeV.count_of(commodity_item_index(c)) - village.count_of(commodity_item_index(c)))
+                + (beforeC.count_of(commodity_item_index(c)) - city.count_of(commodity_item_index(c)));
         }
 
         // Law 3: after a two-day warm-up the pair feeds everyone, every day.
@@ -190,7 +191,7 @@ int main() {
             return fail("balanced scenario starved after warm-up");
         }
         for (int c = 0; c < kCommodityCount; ++c) {
-            if (village.qty[std::size_t(c)] < 0 || city.qty[std::size_t(c)] < 0) {
+            if (village.count_of(commodity_item_index(c)) < 0 || city.count_of(commodity_item_index(c)) < 0) {
                 return fail("negative stock — bookkeeping bug");
             }
         }
@@ -204,7 +205,7 @@ int main() {
     for (int c = 0; c < kCommodityCount; ++c) {
         const long lhs = led.gathered[std::size_t(c)] + led.produced[std::size_t(c)];
         const long rhs = usedAsInputs[std::size_t(c)] + consumed[std::size_t(c)]
-            + village.qty[std::size_t(c)] + city.qty[std::size_t(c)];
+            + village.count_of(commodity_item_index(c)) + city.count_of(commodity_item_index(c));
         if (lhs != rhs) {
             std::fprintf(stderr, "commodity=%s lhs=%ld rhs=%ld\n",
                          kCommodities[c].id, lhs, rhs);
@@ -221,7 +222,7 @@ int main() {
 
     // ── Famine transitions fire once, not daily ─────────────────────────
     Ledger fled{};
-    Stockpile poor{};
+    Inventory poor{};
     bool famine = false;
     for (int day = 0; day < 4; ++day) {
         const ConsumeOutcome o = econ_consume_day(poor, 8, famine, &sink, &fled);
@@ -230,7 +231,9 @@ int main() {
     }
     if (fled.famineStarted != 1) return fail("FamineStarted must fire ONCE");
     if (fled.starvedEvents != 4) return fail("Starved must report daily");
-    poor.qty[std::size_t(breadIdx)] = 64;
+    poor.remove_of(commodity_item_index(breadIdx),
+                  poor.count_of(commodity_item_index(breadIdx)));
+    poor.add_of(commodity_item_index(breadIdx), 64);
     const ConsumeOutcome relief = econ_consume_day(poor, 8, famine, &sink, &fled);
     if (relief.starvedPop != 0 || relief.famineActive) {
         return fail("bread must end the famine");
@@ -243,9 +246,11 @@ int main() {
     // non-daily Vital rows (cloth, bricks) matched neither branch and fell
     // into the void.
     {
-        Stockpile s{};
+        Inventory s{};
         const int pop = 256;
-        s.qty[std::size_t(commodity_index("bread"))] = pop;
+        s.remove_of(commodity_item_index(commodity_index("bread")),
+                s.count_of(commodity_item_index(commodity_index("bread"))));
+        s.add_of(commodity_item_index(commodity_index("bread")), pop);
         const ConsumeOutcome o = econ_consume_day(s, pop, false, nullptr, nullptr);
         if (o.fedPop != pop || o.starvedPop != 0) {
             return fail("bread-only pop must be fed in full");
@@ -262,9 +267,11 @@ int main() {
 
     // ── 5. Half bread: fed + starved PARTITION the town ─────────────────
     {
-        Stockpile s{};
+        Inventory s{};
         const int pop = 128;
-        s.qty[std::size_t(commodity_index("bread"))] = pop / 2;
+        s.remove_of(commodity_item_index(commodity_index("bread")),
+                s.count_of(commodity_item_index(commodity_index("bread"))));
+        s.add_of(commodity_item_index(commodity_index("bread")), pop / 2);
         const ConsumeOutcome o = econ_consume_day(s, pop, false, nullptr, nullptr);
         if (o.fedPop != pop / 2 || o.starvedPop != pop - pop / 2
             || o.fedPop + o.starvedPop != pop || !o.famineActive) {
@@ -278,18 +285,22 @@ int main() {
     // single worker-day. Output DIVERSITY is the law: with inputs for both,
     // both are made.
     {
-        Stockpile s{};
-        s.qty[std::size_t(commodity_index("grain"))] = 1024;
-        s.qty[std::size_t(commodity_index("clay"))]  = 64;
+        Inventory s{};
+        s.remove_of(commodity_item_index(commodity_index("grain")),
+                s.count_of(commodity_item_index(commodity_index("grain"))));
+        s.add_of(commodity_item_index(commodity_index("grain")), 1024);
+        s.remove_of(commodity_item_index(commodity_index("clay")),
+                      s.count_of(commodity_item_index(commodity_index("clay"))));
+        s.add_of(commodity_item_index(commodity_index("clay")), 64);
         // population 0: no demand pass — pure fair shares, the exact surface
         // the old hog bug lived on.
         const int made =
             econ_produce_day(s, EconSite::City, 8, 0, nullptr, nullptr);
         if (made <= 0) return fail("city with inputs and workers made nothing");
-        if (s.qty[std::size_t(commodity_index("bricks"))] <= 0) {
+        if (s.count_of(commodity_item_index(commodity_index("bricks"))) <= 0) {
             return fail("first recipe hogged every worker - no output diversity");
         }
-        if (s.qty[std::size_t(commodity_index("bread"))] <= 0) {
+        if (s.count_of(commodity_item_index(commodity_index("bread"))) <= 0) {
             return fail("fair shares must not starve the FIRST recipe either");
         }
     }
@@ -340,7 +351,7 @@ int main() {
         Inventory again;
         seed_landmark_inventory(again, pop, EconSite::City, "coin_empire");
         if (again.count("bread") != city.count("bread")
-            || again.stacks.size() != city.stacks.size()) {
+            || again.used_slots() != city.used_slots()) {
             return fail("birth stocks must be deterministic from population");
         }
         // The treasury (W2d): money is the kingdom's COIN, living in the
@@ -397,28 +408,31 @@ int main() {
         }
     }
 
-    // ── 11. The Inventory adapter preserves what is not the economy's ───
+    // ── 11. The economy works the ONE store, and only its own rows ─────
+    // There is no adapter any more: the second container (a flat Stockpile of
+    // 14 commodity counts) and the twice-a-day conversion to and from it died
+    // with the second index space they bridged. What the law still owes is
+    // the same promise the adapter used to make — a day of economy must not
+    // disturb what is not the economy's.
     {
         Inventory inv;
         inv.add("grain", 100);
         inv.add("potion_hp", 3);   // NOT a commodity — must ride untouched
-        Stockpile s = stockpile_from_inventory(inv);
-        if (s.qty[std::size_t(commodity_index("grain"))] != 100) {
-            return fail("adapter must read commodity counts");
+        econ_produce_day(inv, EconSite::Village, /*workers*/4,
+                         /*population*/40, nullptr, nullptr);
+        econ_consume_day(inv, /*population*/40, false, nullptr, nullptr);
+        if (inv.count("potion_hp") != 3) {
+            return fail("a day of economy disturbed what is not a commodity");
         }
-        s.qty[std::size_t(commodity_index("grain"))] = 40;
-        s.qty[std::size_t(commodity_index("bread"))] = 7;
-        apply_stockpile_to_inventory(s, inv);
-        if (inv.count("grain") != 40 || inv.count("bread") != 7
-            || inv.count("potion_hp") != 3) {
-            return fail("adapter must write deltas and spare non-commodities");
+        if (inv.count("grain") > 100) {
+            return fail("consumption cannot create grain");
         }
     }
 
     std::printf("econ_v1_test: dictionary=ok conservation=ok deposits=ok "
                 "no_starvation=ok famine_transitions=ok consume_laws=ok "
                 "produce_fair=ok birth_stocks=ok population_law=ok "
-                "adapter=ok days=%d\n", kDays);
+                "one_store=ok days=%d\n", kDays);
     CHECK(true, "every gate above held");
     return sm::test::report("econ_v1_test");
 }

@@ -247,9 +247,9 @@ inline void roll_fallen_spoils(const MacroWorld& mw, std::uint16_t kind,
     const char* lootId = npc_def(type).lootId;
     if (!lootId || !lootId[0]) lootId = npc_loot_id(int(type));
     if (!lootId || !lootId[0]) lootId = factionId;
-    for (const ItemStack& s :
+    for (const ItemRef& s :
          roll_loot_profile(lootId, level, &squad_loot_rng_f01)) {
-        into.add(s.id, s.count);
+        into.add_ref(s);
     }
     const int coins =
         generate_loot_gold(int(type), level, ctx, &squad_loot_rng_f01);
@@ -359,8 +359,10 @@ inline void loot_fallen_owner(ecs::World& w, entt::entity fallen,
                               Inventory& into) {
     auto* bag = w.reg.try_get<ecs::NpcInventory>(fallen);
     if (!bag) return;
-    for (const auto& stack : bag->inv.stacks) into.add(stack.id, stack.count);
-    bag->inv.stacks.clear();
+    for (const ItemRef& stack : bag->inv.slots) {
+        if (!stack.empty()) into.add_ref(stack);
+    }
+    bag->inv.clear();
 }
 
 // Settle a resolved AI↔AI auto-battle — the composition of the halves

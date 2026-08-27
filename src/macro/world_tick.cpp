@@ -51,10 +51,11 @@ void push_history_(SettlementHistory& hist, int day, int population) {
 // wellbeing for callers that want it.
 template <typename Landmark>
 void settle_landmark_day(Landmark& lm, int minPop) {
-    Stockpile store = stockpile_from_inventory(lm.inventory);
+    // Straight onto the ONE store — the twice-a-day conversion to a second
+    // container (and back, through a string lookup each way) is gone with the
+    // second index space it existed to bridge.
     const ConsumeOutcome o = econ_consume_day(
-        store, lm.population, lm.famineActive != 0, nullptr, nullptr);
-    apply_stockpile_to_inventory(store, lm.inventory);
+        lm.inventory, lm.population, lm.famineActive != 0, nullptr, nullptr);
 
     lm.starvedYesterday = std::uint16_t(std::min(o.starvedPop, 0xFFFF));
     lm.unmetYesterday   = std::uint16_t(std::min(o.unmetComfort, 0xFFFF));
@@ -84,11 +85,9 @@ void tick_settlements_(std::vector<Settlement>& settlements, int day,
         // The city CRAFTS before it eats: today's table first, then fair
         // shares (econ_day's three passes), off the same one inventory the
         // caravans stock and the market sells from.
-        Stockpile store = stockpile_from_inventory(s.inventory);
-        econ_produce_day(store, EconSite::City,
+        econ_produce_day(s.inventory, EconSite::City,
                          std::max(1, s.population / kHeadsPerCityWorker),
                          s.population, nullptr, nullptr);
-        apply_stockpile_to_inventory(store, s.inventory);
 
         settle_landmark_day(s, /*minPop=*/10);
 

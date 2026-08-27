@@ -25,7 +25,8 @@ constexpr std::uint32_t kMagic = 0x534D5341u; // 'SMSA'
 constexpr std::uint32_t kChecksumSeed = 2166136261u;
 constexpr std::uint32_t kChecksumPrime = 16777619u;
 constexpr std::uint64_t kMaxPayloadBytes = 64ull * 1024ull * 1024ull;
-constexpr std::uint32_t kMaxInventoryStacks = 4096u;
+constexpr std::uint32_t kMaxInventoryStacks =
+    std::uint32_t(kMaxInventorySlots);
 constexpr std::uint32_t kMaxSmallVector = 8192u;
 // The event-log ring (state.h push_event_log) must fit under the write guard,
 // or a full-but-legal log would fail every save. A mechanism, not a hope.
@@ -330,24 +331,49 @@ void read_string_u32_map(Reader& r,
     }
 }
 
+// The inventory on disk: the OCCUPIED slots, count-prefixed. The flat form is
+// 256 slots wide and mostly empty, and writing its empty tail would put
+// megabytes of zeroes in every save; the record itself rides as bytes, so an
+// item's seed / material / quality / affixes travel from day one.
+//
+// The id is an ORDINAL now, not a string — which means the catalog's row order
+// is append-only from here, exactly as NPCType's is. A save from a world with
+// a different catalog would otherwise silently rename everything the player
+// owns.
 void write_inventory(Writer& w, const Inventory& inv) {
-    if (!w.count(inv.stacks.size(), kMaxInventoryStacks)) return;
-    for (const auto& s : inv.stacks) {
-        w.str(s.id);
+    if (!w.count(std::size_t(inv.used_slots()), kMaxInventoryStacks)) return;
+    for (const ItemRef& s : inv.slots) {
+        if (s.empty()) continue;
+        w.pod(s.def);
+        w.pod(s.material);
+        w.pod(s.quality);
         w.pod(s.count);
+        w.pod(s.seed);
+        w.pod(s.affix);
     }
 }
 
 void read_inventory(Reader& r, Inventory& inv) {
     std::uint32_t n = 0;
     if (!read_count(r, n, kMaxInventoryStacks)) return;
-    inv.stacks.clear();
-    inv.stacks.reserve(n);
+    inv.clear();
     for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-        ItemStack s;
-        r.str(s.id);
+        ItemRef s{};
+        r.pod(s.def);
+        r.pod(s.material);
+        r.pod(s.quality);
         r.pod(s.count);
-        inv.stacks.push_back(std::move(s));
+        r.pod(s.seed);
+        r.pod(s.affix);
+        if (!r.ok) break;
+        // A row the catalog does not know, or a stack of nothing, is a save
+        // from a different game — refuse it out loud rather than carry a
+        // phantom item nobody can name.
+        if (item_def_at(int(s.def)) == nullptr || s.count <= 0) {
+            r.ok = false;
+            return;
+        }
+        if (!inv.add_ref(s)) { r.ok = false; return; }
     }
 }
 

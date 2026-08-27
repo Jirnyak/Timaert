@@ -6686,7 +6686,7 @@ bool run_dungeon_house_smoke(App& app) {
         for (const auto& s : app.subworld.mgr().structures()) {
             if (s.kind == sm::sub::Structure::Chest) { chest = &s; break; }
         }
-        if (town != nullptr && chest != nullptr && !town->inventory.stacks.empty()) {
+        if (town != nullptr && chest != nullptr && !town->inventory.used_slots() == 0) {
             const char* fid = sm::faction_id_for_index(
                 sm::faction_index_for_kingdom(app.gs.politik, town->kingdomIdx));
             storeBefore = town->inventory.total();
@@ -9674,7 +9674,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          s.id,
                          s.name.c_str(),
                          int(s.mood),
-                         s.inventory.stacks.size(),
+                         s.inventory.used_slots(),
                          app.gs.player.inventory.total(),
                          sm::wallet_value(app.gs.player.inventory));
             std::fflush(stderr);

@@ -129,7 +129,7 @@ void test_hostiles_on_one_cell_fight_and_the_ledger_pays() {
     CHECK(!w.reg.all_of<ecs::Dead>(bandit),
           "the crushing winner survives");
     CHECK(w.reg.get<ecs::NpcInventory>(bandit).inv.count("wood") == 5
-              && w.reg.get<ecs::NpcInventory>(caravan).inv.stacks.empty(),
+              && w.reg.get<ecs::NpcInventory>(caravan).inv.used_slots() == 0,
           "the raid PAYS: the fallen owner's goods pass to the victor");
     CHECK(w.reg.get<ecs::MacroNpcRuntime>(bandit).xp > 0
               || w.reg.get<ecs::NpcLevel>(bandit).value > 5,

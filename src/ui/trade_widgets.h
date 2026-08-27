@@ -114,15 +114,21 @@ inline int draw_barter_column(const char* childId, const Inventory& shelf,
     barter_clamp(pkg, shelf);
     int total = 0;
     ImGui::BeginChild(childId, ImVec2(0, 260), true);
-    if (shelf.stacks.empty()) ImGui::TextDisabled("(empty)");
-    for (std::size_t i = 0; i < shelf.stacks.size(); ++i) {
-        const std::string& id = shelf.stacks[i].id;
-        const int count = shelf.stacks[i].count;
-        const ItemDef* def = item_def(id);
+    if (shelf.used_slots() == 0) ImGui::TextDisabled("(empty)");
+    // Walk the OCCUPIED slots of the flat store. `i` is the slot index, so a
+    // row's ImGui identity follows its slot rather than its position in a
+    // shifting list — a stack that empties no longer renames the widget under
+    // the one after it.
+    for (int i = 0; i < kMaxInventorySlots; ++i) {
+        const ItemRef& ref = shelf.slots[std::size_t(i)];
+        if (ref.empty()) continue;
+        const ItemDef* def = item_def_at(int(ref.def));
+        const std::string id = def ? def->id : std::string();
+        const int count = ref.count;
         const bool coin = def && is_currency_item(id.c_str());
         const int staged = barter_staged(pkg, id);
         const int next = staged + step > count ? count : staged + step;
-        ImGui::PushID(int(i));
+        ImGui::PushID(i);
         const bool canAdd = def && staged < count;
         if (!canAdd) ImGui::BeginDisabled();
         if (ImGui::Button("+", ImVec2(24, 0))) barter_stage(pkg, id, next);

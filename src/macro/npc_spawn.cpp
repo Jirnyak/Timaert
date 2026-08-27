@@ -144,7 +144,7 @@ entt::entity make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
     tl_rng = &rng;
     auto stacks = roll_loot_profile(npc_loot_id(int(type)), lvl, &tl_rng_f01);
     tl_rng = nullptr;
-    for (auto& s : stacks) bag.inv.add(s.id, s.count);
+    for (const ItemRef& s : stacks) bag.inv.add_ref(s);
     // The PURSE (owner, W2d): money is the agent's FACTION coin, carried in
     // the same bag as everything else — a trader can pay, and killing him
     // drops his purse like any other loot. Amounts are the data row below;

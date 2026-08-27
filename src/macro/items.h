@@ -13,6 +13,7 @@
 // (link law in econ_v1_test).
 
 #pragma once
+#include <array>
 #include <cstdint>
 #include <span>
 #include <string>
@@ -52,41 +53,167 @@ struct ItemDef {
     ItemEffect  effect      = {};
 };
 
-// Inventory entry. TS `Item` carries the def fields too — in C++ we
-// keep just (id, count) and look up the def from the catalog. The
-// public API matches TS (`addItem`, `removeItem`, `hasItem`, etc.).
-struct ItemStack {
-    std::string id;
-    int         count = 0;
+// ── THE item instance, and THE container ───────────────────────────────────
+//
+// One record shape for every container in the world (owner, 2026-08-27): the
+// player's bag, a landmark's stock, a chest, a corpse's spoils, a caravan's
+// load. It was `std::vector<ItemStack>` where a stack was `{std::string id;
+// int count;}` — 32 bytes and a heap block per entry, a linear scan by STRING
+// for every question, and a vector header on every entity that carries goods.
+//
+// The record is flat and carries what an instance IS:
+//   * `def`      — the catalog row, resolved ONCE (strings stay the AUTHORING
+//                  key in tables; the runtime carries the ordinal, the
+//                  faction_index idiom);
+//   * `count`    — signed on purpose (owner: «стака с нулём не бывает, так что
+//                  int можно») — a negative count is a visible accounting bug,
+//                  where an unsigned one would wrap into billions;
+//   * `seed`/`material`/`quality`/`affix[]` — what makes a PROCEDURAL item
+//                  itself (owner's Diablo-but-simpler design). No producer
+//                  fills them yet — the bonus registry is the RPG core's work
+//                  — but they ride the format from day one so the save is
+//                  bumped once, not twice.
+//
+// STACKING is one sentence: two records merge only when everything except
+// `count` is equal. Bread merges with bread; two procedurally rolled swords
+// never merge, because their seeds differ. No second rule, no second table.
+inline constexpr int kMaxInventorySlots = 256;   // 16×16, the player's grid
+inline constexpr int kMaxItemAffixes = 4;
+
+struct ItemAffix {
+    std::uint8_t bonus = 0;    // row of the coming bonus registry; 0 = none
+    std::int16_t value = 0;
 };
 
-struct Inventory {
-    std::vector<ItemStack> stacks;
+struct ItemRef {
+    std::uint16_t def = 0;         // catalog ordinal
+    std::uint8_t  material = 0;    // a row of the raw tier; 0 = the row's own
+    std::uint8_t  quality = 0;     // 0 = ordinary
+    std::int32_t  count = 0;       // 0 = THIS SLOT IS EMPTY
+    std::uint32_t seed = 0;        // 0 = plain, not procedurally rolled
+    ItemAffix     affix[kMaxItemAffixes]{};
 
+    bool empty() const { return count == 0; }
+    // Everything except the count — the whole stacking rule.
+    bool same_kind_as(const ItemRef& o) const {
+        if (def != o.def || material != o.material || quality != o.quality
+            || seed != o.seed) {
+            return false;
+        }
+        for (int i = 0; i < kMaxItemAffixes; ++i) {
+            if (affix[i].bonus != o.affix[i].bonus
+                || affix[i].value != o.affix[i].value) {
+                return false;
+            }
+        }
+        return true;
+    }
+};
+
+// The catalog ordinal of an authoring id, or -1. Strings name rows in tables;
+// nothing compares them per tick.
+int item_index(const char* id) noexcept;
+int item_index(const std::string& id) noexcept;
+// The row an ordinal names; nullptr when the ordinal is out of the catalog.
+const ItemDef* item_def_at(int idx) noexcept;
+
+struct Inventory {
+    std::array<ItemRef, kMaxInventorySlots> slots{};
+
+    // ── Reading ───────────────────────────────────────────────────────────
+    int count_of(int defIdx) const noexcept {
+        if (defIdx < 0) return 0;
+        int n = 0;
+        for (const ItemRef& s : slots) {
+            if (!s.empty() && s.def == std::uint16_t(defIdx)) n += s.count;
+        }
+        return n;
+    }
     int count(const std::string& id) const noexcept {
-        for (const auto& s : stacks) if (s.id == id) return s.count;
-        return 0;
+        return count_of(item_index(id));
     }
     bool has(const std::string& id) const noexcept { return count(id) > 0; }
-    int  total() const noexcept {
-        int n = 0; for (const auto& s : stacks) n += s.count; return n;
+    int total() const noexcept {
+        int n = 0;
+        for (const ItemRef& s : slots) n += s.count;
+        return n;
     }
-    void add(const std::string& id, int n) {
-        if (n <= 0) return;
-        for (auto& s : stacks) if (s.id == id) { s.count += n; return; }
-        stacks.push_back({id, n});
+    int used_slots() const noexcept {
+        int n = 0;
+        for (const ItemRef& s : slots) if (!s.empty()) ++n;
+        return n;
     }
-    bool remove(const std::string& id, int n = 1) {
-        for (auto it = stacks.begin(); it != stacks.end(); ++it) {
-            if (it->id == id) {
-                if (it->count < n) return false;
-                it->count -= n;
-                if (it->count == 0) stacks.erase(it);
+    bool full() const noexcept { return used_slots() >= kMaxInventorySlots; }
+
+    // ── Writing ───────────────────────────────────────────────────────────
+    // Returns FALSE when the container has no room (owner's ruling: the thing
+    // stays where it was — a refused pickup leaves the corpse holding it, a
+    // refused trade rolls back whole, a town whose store is full stops
+    // producing. Goods never evaporate; that is the economy's conservation
+    // law).
+    bool add_ref(const ItemRef& what) {
+        if (what.count <= 0) return true;          // nothing to add
+        for (ItemRef& s : slots) {
+            if (!s.empty() && s.same_kind_as(what)) {
+                s.count += what.count;
                 return true;
             }
         }
+        for (ItemRef& s : slots) {
+            if (s.empty()) { s = what; return true; }
+        }
         return false;
     }
+    // By ORDINAL — what a system that already knows the row uses (the economy
+    // day, the loot roll). The string forms below are the authoring-facing
+    // convenience over exactly these.
+    bool add_of(int defIdx, int n) {
+        if (defIdx < 0 || n <= 0) return true;
+        ItemRef r{};
+        r.def = std::uint16_t(defIdx);
+        r.count = n;
+        return add_ref(r);
+    }
+    bool remove_of(int defIdx, int n) {
+        if (defIdx < 0 || n <= 0 || count_of(defIdx) < n) return false;
+        int left = n;
+        for (ItemRef& s : slots) {
+            if (s.empty() || s.def != std::uint16_t(defIdx)) continue;
+            const int take = s.count < left ? s.count : left;
+            s.count -= take;
+            left -= take;
+            if (s.empty()) s = ItemRef{};
+            if (left == 0) return true;
+        }
+        return left == 0;
+    }
+    bool add(const std::string& id, int n) {
+        const int idx = item_index(id);
+        if (n <= 0) return true;
+        // An id the catalog does not know is a FAILURE, not a silent no-op:
+        // with string ids a fabricated name used to land in the bag and only
+        // reveal itself as "Unknown item" in the UI much later.
+        if (idx < 0) return false;
+        ItemRef r{};
+        r.def = std::uint16_t(idx);
+        r.count = n;
+        return add_ref(r);
+    }
+    bool remove(const std::string& id, int n = 1) {
+        const int idx = item_index(id);
+        if (idx < 0 || n <= 0 || count_of(idx) < n) return false;
+        int left = n;
+        for (ItemRef& s : slots) {
+            if (s.empty() || s.def != std::uint16_t(idx)) continue;
+            const int take = s.count < left ? s.count : left;
+            s.count -= take;
+            left -= take;
+            if (s.empty()) s = ItemRef{};
+            if (left == 0) return true;
+        }
+        return left == 0;
+    }
+    void clear() { slots.fill(ItemRef{}); }
 };
 
 // Player combat slice consumed by `useItem` (mirrors TS inline type).
@@ -166,7 +293,7 @@ int                    generate_loot_gold(int npcType, int level,
 // (NPCType-int vs faction-string) with a single keyed path. Registered ids:
 // the 8 NPC roles (peasant..sorceress), plus faction defaults wildlife /
 // demons / bandits. Unknown / empty id => no items.
-std::vector<ItemStack> roll_loot_profile(const char* lootId, int level, RngFn rng);
+std::vector<ItemRef> roll_loot_profile(const char* lootId, int level, RngFn rng);
 
 // NPCType integer -> its loot-profile id (npc.h enum order). "" if out of range.
 const char* npc_loot_id(int npcType) noexcept;

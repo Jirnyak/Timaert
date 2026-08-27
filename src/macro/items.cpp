@@ -285,9 +285,9 @@ const LootProfile* loot_profile(const char* lootId) noexcept {
     return nullptr;
 }
 
-inline std::vector<ItemStack> roll_loot(const LootEntry* table, std::size_t n,
+inline std::vector<ItemRef> roll_loot(const LootEntry* table, std::size_t n,
                                         int level, RngFn rng) {
-    std::vector<ItemStack> out;
+    std::vector<ItemRef> out;
     out.reserve(n);
     for (std::size_t i = 0; i < n; ++i) {
         const LootEntry& e = table[i];
@@ -295,7 +295,12 @@ inline std::vector<ItemStack> roll_loot(const LootEntry* table, std::size_t n,
         if (rng() < e.chance) {
             const int qty = e.min + static_cast<int>(rng() *
                 static_cast<float>(e.max - e.min + 1));
-            out.push_back({std::string(e.item), qty});
+            ItemRef r{};
+            const int idx = item_index(e.item);
+            if (idx < 0) continue;      // a profile naming an unknown row drops
+            r.def = std::uint16_t(idx);
+            r.count = qty;
+            out.push_back(r);
         }
     }
     return out;
@@ -304,6 +309,23 @@ inline std::vector<ItemStack> roll_loot(const LootEntry* table, std::size_t n,
 } // namespace
 
 // ── Public API ────────────────────────────────────────────────
+
+// THE ordinal of an authoring id. Resolved through the same map the def
+// lookup uses, and cached by the caller — the runtime record carries the
+// number, never the string.
+int item_index(const char* id) noexcept {
+    if (!id || id[0] == '\0') return -1;
+    const auto& m = catalog_map();
+    const auto it = m.find(id);
+    return it == m.end() ? -1 : int(it->second - kCatalog);
+}
+
+int item_index(const std::string& id) noexcept { return item_index(id.c_str()); }
+
+const ItemDef* item_def_at(int idx) noexcept {
+    return (idx >= 0 && idx < int(std::size(kCatalog))) ? &kCatalog[idx]
+                                                        : nullptr;
+}
 
 const ItemDef* item_def(const std::string& id) noexcept {
     const auto& m = catalog_map();
@@ -317,15 +339,16 @@ std::span<const ItemDef> item_catalog() noexcept {
 
 float inventory_weight(const Inventory& inv) noexcept {
     float total = 0.0f;
-    for (const auto& s : inv.stacks) {
-        if (const ItemDef* d = item_def(s.id)) {
+    for (const ItemRef& s : inv.slots) {
+        if (s.empty()) continue;
+        if (const ItemDef* d = item_def_at(int(s.def))) {
             total += d->weight * static_cast<float>(s.count);
         }
     }
     return total;
 }
 
-std::vector<ItemStack> roll_loot_profile(const char* lootId, int level, RngFn rng) {
+std::vector<ItemRef> roll_loot_profile(const char* lootId, int level, RngFn rng) {
     const LootProfile* p = loot_profile(lootId);
     if (!p) return {};
     return roll_loot(p->data, p->n, level, rng);
@@ -364,8 +387,11 @@ int generate_loot_gold(int npcType, int level, const CorpseLootContext& ctx,
 
 std::string use_item(Inventory& inv, const std::string& itemId, PlayerCombatSlice& pc) {
     // Find stack
-    ItemStack* stack = nullptr;
-    for (auto& s : inv.stacks) if (s.id == itemId) { stack = &s; break; }
+    ItemRef* stack = nullptr;
+    const int idx = item_index(itemId);
+    for (ItemRef& s : inv.slots) {
+        if (!s.empty() && s.def == std::uint16_t(idx)) { stack = &s; break; }
+    }
     if (!stack || stack->count <= 0) return {};
 
     const ItemDef* def = item_def(itemId);

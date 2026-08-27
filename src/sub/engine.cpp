@@ -1481,13 +1481,17 @@ std::string SubworldEngine::grant_prop_loot(const Structure& prop) {
     const float sizeScale = (prop.height > 0.0f && refH > 0.0f)
         ? prop.height / refH : 1.0f;
     std::string picked;
-    for (ItemStack& s : stacks) {
+    for (ItemRef& s : stacks) {
         s.count = std::max(1, int(std::lround(float(s.count) * sizeScale)));
-        gs_->player.inventory.add(s.id, s.count);
-        const ItemDef* def = item_def(s.id);
+        const ItemDef* def = item_def_at(int(s.def));
+        // A full bag REFUSES (owner's ruling): the harvest stays in the world
+        // rather than evaporating into a container with no room for it.
+        if (!gs_->player.inventory.add_ref(s)) {
+            return picked.empty() ? std::string("Your pack is full.") : picked;
+        }
         if (!picked.empty()) picked += ", ";
         picked += "+" + std::to_string(s.count) + " "
-                + (def ? def->name : s.id.c_str());
+                + (def ? def->name : "?");
     }
     return picked;
 }
@@ -1737,8 +1741,8 @@ bool SubworldEngine::interact() {
     // coins already ride CorpseLoot as items; this int is the derived-body
     // roll — faction mint when the death path learns it).
     gs_->player.inventory.add("coin_empire", loot.gold);
-    for (const ItemStack& s : loot.inv.stacks) {
-        gs_->player.inventory.add(s.id, s.count);
+    for (const ItemRef& s : loot.inv.slots) {
+        if (!s.empty()) gs_->player.inventory.add_ref(s);
     }
     reg.destroy(best);
     set_status("Loot recovered.");
@@ -2425,7 +2429,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 ^ std::uint32_t(lvl * 7919);
             Rng rng(seed);
             gLootRng = &rng;
-            if (inv.stacks.empty() && kind) {
+            if (inv.used_slots() == 0 && kind) {
                 // Single keyed loot path (macro/items.h roll_loot_profile): a
                 // humanoid NPC resolves by role, a monster by its creature-table
                 // lootId (null => faction default). Both share one resolver, so a
@@ -2440,7 +2444,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                     : npc_loot_id(int(kind->type));
                 if (!lootId || !lootId[0]) lootId = faction_id_for_kind(kind);
                 auto stacks = roll_loot_profile(lootId, lvl, &loot_rng_f01);
-                for (const ItemStack& s : stacks) inv.add(s.id, s.count);
+                for (const ItemRef& s : stacks) inv.add_ref(s);
             }
             // Coin: the row's purse, modulated by the WEALTH OF THE PLACE
             // this body fell in (owner ruling 2026-08-27). The place is the
@@ -2476,7 +2480,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 : 0;
             gLootRng = nullptr;
 
-            if (pos && (gold > 0 || !inv.stacks.empty())) {
+            if (pos && (gold > 0 || inv.used_slots() > 0)) {
                 auto corpse = reg.create();
                 reg.emplace<ecs::Position>(corpse, pos->x, pos->y, pos->z);
                 reg.emplace<ecs::SubworldTag>(corpse);
@@ -2959,7 +2963,7 @@ bool SubworldEngine::search_chest(const Structure& chest) {
             }
         }
     }
-    if (!store || store->stacks.empty()) {
+    if (!store || store->used_slots() == 0) {
         set_status("The chest is empty.");
         return false;
     }
@@ -2971,15 +2975,32 @@ bool SubworldEngine::search_chest(const Structure& chest) {
                                 dungeon_.doorCy, dungeon_.ref.ordinal,
                                 dungeon_.ref.level)
              ^ (std::uint32_t(chest.x) << 16) ^ std::uint32_t(chest.y));
-    const std::size_t slot =
-        std::size_t(pick.next_u32() % std::uint32_t(store->stacks.size()));
-    const std::string id = store->stacks[slot].id;
+    // Pick among the OCCUPIED slots, not among all 256: the flat store has
+    // holes, and rolling over the raw array would mostly hit emptiness and
+    // would make the odds depend on where in the grid a good happens to sit.
+    const int occupied = store->used_slots();
+    int wanted = int(pick.next_u32() % std::uint32_t(occupied));
+    ItemRef* chosen = nullptr;
+    for (ItemRef& s : store->slots) {
+        if (s.empty()) continue;
+        if (wanted-- == 0) { chosen = &s; break; }
+    }
+    if (!chosen) {
+        set_status("The chest is empty.");
+        return false;
+    }
+    const ItemDef* def = item_def_at(int(chosen->def));
     // A householder's chest holds a householder's portion — one to three of
     // whatever the town has, never the granary in one armful.
-    const int take = std::min(store->stacks[slot].count,
-                              1 + int(pick.next_u32() % 3u));
-    store->remove(id, take);
-    gs_->player.inventory.add(id, take);
+    const int take = std::min(chosen->count, 1 + int(pick.next_u32() % 3u));
+    ItemRef taken = *chosen;
+    taken.count = take;
+    if (!gs_->player.inventory.add_ref(taken)) {
+        set_status("Your pack is full.");
+        return false;
+    }
+    chosen->count -= take;
+    if (chosen->empty()) *chosen = ItemRef{};
 
     // Theft is theft: the same standing the world already tracks, moved by
     // the same door a struck bystander moves it (add_player_reputation), so
@@ -2989,7 +3010,8 @@ bool SubworldEngine::search_chest(const Structure& chest) {
         add_player_reputation(*gs_, factionId, kHitRepPenalty);
     }
     char msg[96];
-    std::snprintf(msg, sizeof(msg), "Taken: %s x%d", id.c_str(), take);
+    std::snprintf(msg, sizeof(msg), "Taken: %s x%d",
+                  def ? def->name : "goods", take);
     set_status(msg);
     return true;
 }

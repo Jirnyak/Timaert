@@ -62,7 +62,7 @@ void report(EconFactSink sink, void* user, EconFact::Kind kind,
 
 } // namespace
 
-int econ_gather_day(Stockpile& store, Deposit* deposits, int depositCount,
+int econ_gather_day(Inventory& store, Deposit* deposits, int depositCount,
                     int workers, EconFactSink sink, void* user) {
     if (workers <= 0 || depositCount <= 0 || !deposits) return 0;
     int capacity = workers * kGatherPerWorkerDay;
@@ -73,7 +73,7 @@ int econ_gather_day(Stockpile& store, Deposit* deposits, int depositCount,
         if (dep.commodity < 0 || dep.commodity >= kRawCommodityCount) continue;
         const int take = std::min(dep.remaining, capacity);
         dep.remaining -= take;
-        store.qty[std::size_t(dep.commodity)] += take;
+        store.add_of(commodity_item_index(dep.commodity), take);
         capacity -= take;
         total += take;
         report(sink, user, EconFact::Kind::Gathered, dep.commodity, take);
@@ -81,7 +81,7 @@ int econ_gather_day(Stockpile& store, Deposit* deposits, int depositCount,
     return total;
 }
 
-int econ_produce_day(Stockpile& store, EconSite site, int workers,
+int econ_produce_day(Inventory& store, EconSite site, int workers,
                      int population, EconFactSink sink, void* user) {
     if (workers <= 0) return 0;
     const ResolvedTables& t = resolved();
@@ -108,7 +108,8 @@ int econ_produce_day(Stockpile& store, EconSite site, int workers,
             if (rr.inputIdx[k] < 0) continue;
             byInputs = std::min(
                 byInputs,
-                store.qty[std::size_t(rr.inputIdx[k])] / rr.inputQty[k]);
+                store.count_of(commodity_item_index(rr.inputIdx[k]))
+                    / rr.inputQty[k]);
         }
         if (byInputs <= 0) return;
         const int perDay = kRecipes[i].outputPerWorkerDay;
@@ -119,9 +120,10 @@ int econ_produce_day(Stockpile& store, EconSite site, int workers,
         if (made <= 0) return;
         for (int k = 0; k < 2; ++k) {
             if (rr.inputIdx[k] < 0) continue;
-            store.qty[std::size_t(rr.inputIdx[k])] -= made * rr.inputQty[k];
+            store.remove_of(commodity_item_index(rr.inputIdx[k]),
+                            made * rr.inputQty[k]);
         }
-        store.qty[std::size_t(rr.output)] += made;
+        store.add_of(commodity_item_index(rr.output), made);
         workersLeft -= staffed;
         total += made;
         report(sink, user, EconFact::Kind::Produced, rr.output, made);
@@ -133,7 +135,7 @@ int econ_produce_day(Stockpile& store, EconSite site, int workers,
         const ResolvedRecipe& rr = t.recipes[i];
         if (rr.output < 0 || rr.demandDivisor <= 0) continue;
         const int demand = population / rr.demandDivisor;
-        const int have = store.qty[std::size_t(rr.output)];
+        const int have = store.count_of(commodity_item_index(rr.output));
         if (demand <= have) continue;   // yesterday's surplus covers today
         run_recipe(i, demand - have, workersLeft);
     }
@@ -149,7 +151,8 @@ int econ_produce_day(Stockpile& store, EconSite site, int workers,
         for (int k = 0; k < 2; ++k) {
             if (rr.inputIdx[k] < 0) continue;
             feedable = feedable
-                && store.qty[std::size_t(rr.inputIdx[k])] >= rr.inputQty[k];
+                && store.count_of(commodity_item_index(rr.inputIdx[k]))
+                       >= rr.inputQty[k];
         }
         if (feedable) ++liveRecipes;
     }
@@ -167,7 +170,7 @@ int econ_produce_day(Stockpile& store, EconSite site, int workers,
     return total;
 }
 
-ConsumeOutcome econ_consume_day(Stockpile& store, int population,
+ConsumeOutcome econ_consume_day(Inventory& store, int population,
                                 bool famineWasActive,
                                 EconFactSink sink, void* user) {
     ConsumeOutcome out{};
@@ -188,8 +191,9 @@ ConsumeOutcome econ_consume_day(Stockpile& store, int population,
         if (idx < 0) continue;
         const int demand = population / kNeeds[i].popPerUnitDay;
         if (demand <= 0) continue;
-        const int got = std::min(demand, store.qty[std::size_t(idx)]);
-        store.qty[std::size_t(idx)] -= got;
+        const int got = std::min(demand,
+                                 store.count_of(commodity_item_index(idx)));
+        store.remove_of(commodity_item_index(idx), got);
         const bool vital = kCommodities[idx].tier == CommodityTier::Vital;
         if (kNeeds[i].popPerUnitDay == 1 && vital) {
             // The hunger row: shortfall is people unfed today.
@@ -216,21 +220,19 @@ ConsumeOutcome econ_consume_day(Stockpile& store, int population,
     return out;
 }
 
-Stockpile stockpile_from_inventory(const Inventory& inv) {
-    Stockpile s{};
-    for (int i = 0; i < kCommodityCount; ++i) {
-        s.qty[std::size_t(i)] = inv.count(kCommodities[i].id);
-    }
-    return s;
-}
-
-void apply_stockpile_to_inventory(const Stockpile& s, Inventory& inv) {
-    for (int i = 0; i < kCommodityCount; ++i) {
-        const int have = inv.count(kCommodities[i].id);
-        const int want = s.qty[std::size_t(i)];
-        if (want > have) inv.add(kCommodities[i].id, want - have);
-        else if (want < have) inv.remove(kCommodities[i].id, have - want);
-    }
+// A commodity's CATALOG ordinal. The two id spaces are one now; this is the
+// bridge between the economy's own row order and the catalog's, resolved once
+// per process instead of a string lookup per access.
+int commodity_item_index(int commodityIdx) {
+    static const std::array<int, std::size_t(kCommodityCount)> kMap = [] {
+        std::array<int, std::size_t(kCommodityCount)> m{};
+        for (int i = 0; i < kCommodityCount; ++i) {
+            m[std::size_t(i)] = item_index(kCommodities[i].id);
+        }
+        return m;
+    }();
+    return (commodityIdx >= 0 && commodityIdx < kCommodityCount)
+        ? kMap[std::size_t(commodityIdx)] : -1;
 }
 
 void seed_landmark_inventory(Inventory& inv, int population, EconSite site,

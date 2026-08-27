@@ -157,8 +157,9 @@ inline int wallet_spend_up_to(Inventory& inv, int value) {
 // (owner: «внутри всё равно учитывается стоимость»).
 inline int inventory_value(const Inventory& inv) {
     int total = 0;
-    for (const auto& s : inv.stacks) {
-        const ItemDef* def = item_def(s.id);
+    for (const ItemRef& s : inv.slots) {
+        if (s.empty()) continue;
+        const ItemDef* def = item_def_at(int(s.def));
         total += (def ? def->value : 0) * s.count;
     }
     return total;

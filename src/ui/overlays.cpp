@@ -1011,7 +1011,7 @@ namespace sm::ui
 
         void draw_inventory_table(const Inventory &inv, bool showValue)
         {
-            if (inv.stacks.empty())
+            if (inv.used_slots() == 0)
             {
                 ImGui::TextDisabled("(empty)");
                 return;
@@ -1026,14 +1026,15 @@ namespace sm::ui
                 if (showValue)
                     ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthFixed, 64.0f);
                 ImGui::TableHeadersRow();
-                for (const auto &st : inv.stacks)
+                for (const ItemRef &st : inv.slots)
                 {
-                    const ItemDef *def = item_def(st.id);
+                    if (st.empty()) continue;
+                    const ItemDef *def = item_def_at(int(st.def));
                     ImGui::TableNextRow();
                     ImGui::TableNextColumn();
-                    ImGui::Text("%s", def ? def->name : st.id.c_str());
+                    ImGui::Text("%s", def ? def->name : "?");
                     ImGui::TableNextColumn();
-                    ImGui::TextDisabled("%s", st.id.c_str());
+                    ImGui::TextDisabled("%s", def ? def->id : "?");
                     ImGui::TableNextColumn();
                     ImGui::Text("x%d", st.count);
                     if (showValue)
@@ -1325,7 +1326,7 @@ namespace sm::ui
                 if (inventoryOpen)
                 {
                     ImGui::Text("Stacks: %zu  Items: %d  Weight: %.1f / %.0f kg",
-                                p.inventory.stacks.size(), p.inventory.total(), carryWeight, carryCap);
+                                p.inventory.used_slots(), p.inventory.total(), carryWeight, carryCap);
                     draw_inventory_table(p.inventory, true);
                     ImGui::EndTabItem();
                 }
@@ -1386,9 +1387,10 @@ namespace sm::ui
                         ImGui::TableSetupColumn("Effect");
                         ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, 120.0f);
                         ImGui::TableHeadersRow();
-                        for (const auto &st : p.inventory.stacks)
+                        for (const ItemRef &st : p.inventory.slots)
                         {
-                            const ItemDef *def = item_def(st.id);
+                            if (st.empty()) continue;
+                            const ItemDef *def = item_def_at(int(st.def));
                             if (!def || !is_equipment_item(*def))
                                 continue;
                             ++equipStacks;
@@ -1717,7 +1719,7 @@ namespace sm::ui
                         draw_info_overview_row("Starved yesterday", int(s->starvedYesterday));
                         draw_info_overview_row("Comfort unmet", int(s->unmetYesterday));
                         draw_info_overview_row("Garrison units", total_soldiers(s->garrison));
-                        draw_info_overview_row("Inventory stacks", int(s->inventory.stacks.size()));
+                        draw_info_overview_row("Inventory stacks", s->inventory.used_slots());
                         draw_info_overview_row("Inventory items", s->inventory.total());
                         draw_info_overview_row("History samples",
                                                int(s->history.population.size()));
@@ -1991,7 +1993,7 @@ namespace sm::ui
                     *tab = SettlementPanelTab::Inventory;
                 if (inventoryOpen)
                 {
-                    if (s->inventory.stacks.empty())
+                    if (s->inventory.used_slots() == 0)
                     {
                         ImGui::TextDisabled("(empty)");
                     }
@@ -2000,11 +2002,13 @@ namespace sm::ui
                         if (ImGui::BeginTable("inv", 2,
                                               ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg))
                         {
-                            for (const auto &st : s->inventory.stacks)
+                            for (const ItemRef &st : s->inventory.slots)
                             {
+                                if (st.empty()) continue;
+                                const ItemDef *row = item_def_at(int(st.def));
                                 ImGui::TableNextRow();
                                 ImGui::TableNextColumn();
-                                ImGui::Text("%s", st.id.c_str());
+                                ImGui::Text("%s", row ? row->id : "?");
                                 ImGui::TableNextColumn();
                                 ImGui::Text("x%d", st.count);
                             }

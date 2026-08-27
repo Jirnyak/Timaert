@@ -166,7 +166,10 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     a.orders.waypoints[1] = 6;
     a.orders.waypoints[2] = 7;
     a.orders.waypoints[3] = 8;
-    a.inventory.add("itm_bread", 3);
+    // A REAL catalog row: the runtime carries ordinals now, so a fabricated
+    // id is refused at the door instead of riding to disk and surfacing as
+    // "Unknown item" in a panel three systems later.
+    a.inventory.add("bread", 3);
     a.roster.push(sm::make_soldier(std::uint16_t(sm::NPCType::Guard), 4, 900u));
     a.roster.push(sm::make_soldier(std::uint16_t(sm::NPCType::Peasant), 2, 901u));
     // v42: a BEAST in the roster. A squad is a squad whatever it is made of
@@ -677,9 +680,8 @@ void run_roundtrip() {
             FAIL_BAIL("macro squad orders lost");
         }
         if (a.dead != 0) FAIL_BAIL("living macro NPC loaded dead");
-        if (a.inventory.stacks.size() != 1
-            || a.inventory.stacks[0].id != "itm_bread"
-            || a.inventory.stacks[0].count != 3) {
+        if (a.inventory.used_slots() != 1
+            || a.inventory.count("bread") != 3) {
             FAIL_BAIL("macro inventory lost");
         }
         if (a.roster.size() != 3

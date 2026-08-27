@@ -59,8 +59,11 @@ static void seq_set(std::initializer_list<float> vals) {
     g_seqPos = 0;
 }
 
-static int count_of(const std::vector<ItemStack>& v, const char* id) {
-    for (const auto& s : v) if (s.id == id) return s.count;
+static int count_of(const std::vector<ItemRef>& v, const char* id) {
+    const int idx = item_index(id);
+    for (const ItemRef& s : v) {
+        if (idx >= 0 && s.def == std::uint16_t(idx)) return s.count;
+    }
     return -1; // absent
 }
 

@@ -914,7 +914,11 @@ timaert_test(price_law_test
         src/macro/items.cpp
     LINK_ENTT)
 
-timaert_test(barter_test)
+# The barter law works over the ONE item catalog: the container resolves an
+# authoring id to its ordinal, so the test links the catalog TU.
+timaert_test(barter_test
+    SOURCES
+        src/macro/items.cpp)
 
 timaert_test(crop_stock_test
     SOURCES
