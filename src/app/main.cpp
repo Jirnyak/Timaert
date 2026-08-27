@@ -2666,8 +2666,7 @@ int charge_subworld_sp_for_distance(App& app, float distance) {
     if (distance <= 0.01f) return 0;
     const float cells = distance / float(sm::sub::kCellSize);
     const int overloadCost =
-        sm::player_overload_charge(app.gs.player.sheet,
-                                   player_bag(app)).cost;
+        sm::overload_charge(app.gs.player.sheet, player_bag(app)).cost;
     const float cost = sm::travel_stamina_cost(
         app.subworld.player_ground_travel_weight(), cells, overloadCost,
         sm::travel_skill_efficiency(app.gs.player.sheet.skills));

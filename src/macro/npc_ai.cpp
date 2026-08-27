@@ -9,6 +9,7 @@
 #include "macro/movement_cost.h"
 #include "macro/npc.h"
 #include "macro/squad.h"
+#include "macro/travel.h"
 #include "ecs/components.h"
 #include "core/torus.h"
 #include "core/rng.h"
@@ -146,6 +147,16 @@ void settle_exhaustion(entt::entity e, const ecs::Position& p,
                        ecs::MacroNpcRuntime& rt, ecs::Health& hp,
                        bool canCamp, const TickContext& ctx);
 bool cell_is_water(const TickContext& ctx, int x, int y);
+
+// What this leader's load is costing him per cell, asked once per think: a
+// bag changes at every market, so unlike the rest of the sheet cache this one
+// cannot be refreshed at birth and left alone.
+void refresh_overload_cost(ecs::MacroNpcRuntime& rt,
+                           const ecs::NpcInventory* bag) {
+    if (!bag) { rt.overloadCost = 0; return; }
+    const int cost = overload_charge_from_capacity(rt.carryCap, bag->inv).cost;
+    rt.overloadCost = std::int16_t(std::clamp(cost, 0, 32767));
+}
 
 ThinkGate prepare_macro_npc_tick(ecs::MacroNpcRuntime& rt,
                                  const ecs::Health& hp) {
@@ -344,7 +355,12 @@ void try_move(ecs::Position& p, ecs::MacroNpcRuntime& rt,
         // The step pays THE cell price — the same rows and formula the
         // player's march is charged (travel_stamina_cost), through the
         // fractional carry. The flat `sp -= 10` dialect dies here.
-        rt.spCarry -= travel_stamina_cost(bw, 1.0f, 0, efficiency);
+        // The step pays the load too (owner: перегруз универсальный) —
+        // `overloadCost` is this think's surcharge, refreshed from the bag by
+        // the sweep before the behaviour ran, so a caravan hauling more than
+        // its leader's back can hold buys the trip at the honest price.
+        rt.spCarry -= travel_stamina_cost(bw, 1.0f, int(rt.overloadCost),
+                                          efficiency);
         settle_sp_carry(rt);
         if (int(rt.sp) < 0) break;   // spent: the think's march ends
 
@@ -1365,6 +1381,7 @@ void tick_macro_npc_ai(MacroWorld& mw,
         if (reg.all_of<ecs::Dead>(e)) continue;
         const ThinkGate gate = prepare_macro_npc_tick(rt, hp);
         if (gate == ThinkGate::Dead) continue;
+        refresh_overload_cost(rt, reg.try_get<ecs::NpcInventory>(e));
         const float x0 = p.x, y0 = p.y;
         if (gate == ThinkGate::Think)
             dispatch(effective_behaviour(reg, e, kind), e, p, kind, rt, ctx);
@@ -1478,6 +1495,8 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
                 && !reg.all_of<ecs::Dead>(e)) {   // may have died this sweep
                 const ThinkGate gate = prepare_macro_npc_tick(rt, hp);
                 if (gate != ThinkGate::Dead) {
+                    refresh_overload_cost(rt,
+                                          reg.try_get<ecs::NpcInventory>(e));
                     const float x0 = p.x, y0 = p.y;
                     if (gate == ThinkGate::Think) {
                         dispatch(effective_behaviour(reg, e, kind), e, p, kind,

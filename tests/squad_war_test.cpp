@@ -66,7 +66,7 @@ entt::entity make_squad_at(ecs::World& w, NPCType type, const char* faction,
     rt.state = std::uint8_t(NPCState::Idle);
     const CharacterSheet sheet = make_character_sheet(
         type, level, leader_sheet_seed(ordinal));
-    refresh_leader_travel_stats(rt, sheet);   // same door make_npc uses
+    refresh_leader_travel_stats(rt, sheet, type);  // same door make_npc uses
     rt.sp = rt.maxSp;                         // rested: fatigue 1.0, as before
     reg.emplace<ecs::MacroNpcRuntime>(e, rt);
     reg.emplace<ecs::MacroSpawnId>(e, ordinal);

@@ -286,6 +286,15 @@ struct MacroNpcRuntime {
     std::uint8_t  travelRank = 0;
     std::uint8_t  marathonRank = 0;
     float         moveMult = 1.0f;
+    // What this leader's back can hold (attributes.h get_carry_capacity), the
+    // fifth scalar of the same sheet cache — and the SP surcharge his current
+    // load is costing him, recomputed each think from his bag because a bag
+    // changes at every market while a sheet does not. Owner's ruling
+    // 2026-08-27: «перегруз универсальный всем» — a laden squad marches like a
+    // laden man, and the pack a caravan carries is finally part of the price
+    // of carrying it.
+    float         carryCap = 0.0f;
+    std::int16_t  overloadCost = 0;
     // Fractional SP carry (both directions: march costs and rest regen), the
     // same fractional-carry idiom the player's TravelStamina/recovery uses.
     // Runtime-only like the rest of this struct.

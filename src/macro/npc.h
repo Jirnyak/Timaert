@@ -139,6 +139,22 @@ struct NpcTypeDef {
     float lightIntensity = 0.0f;   // scalar gain
     float lightR = 0.0f, lightG = 0.0f, lightB = 0.0f;   // linear RGB radiance
     float lightHeight    = 0.0f;   // metres up from the feet the light is seated
+
+    // How many BACKS this row hauls with. The overload law is UNIVERSAL now
+    // (owner ruling, 2026-08-27: «перегруз универсальный всем»), and it was
+    // written for a man and his pack — capacity is STR and athletics. A
+    // caravan is not a man with a big rucksack, it is wagons and mules, and
+    // charging its cargo against one merchant's shoulders priced commerce out
+    // of the world the hour the law went universal: the first honest run of it
+    // stranded every caravan on the map, and the trade test said so.
+    //
+    // So the answer is a COLUMN, not an exemption — the same law, applied to
+    // the back the row actually has. 1 = a person, and every row that omits
+    // this is a person. The number is DATA and the owner's to retune; nothing
+    // reads it but the one capacity call (squad.h refresh_leader_travel_stats).
+    // Last field on purpose, beside the light block: an opt-in column at the
+    // end costs no other row a comma.
+    float haulMult = 1.0f;
 };
 
 inline constexpr CombatTemplate kPeasantCombat   {25, 3,  20, 2.0f, 1.5f, "Psr", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
@@ -196,6 +212,14 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "I have seen many lands. Each stranger than the last.",
           "The roads between settlements grow more perilous.",
           "My oxen grow weary. We rest here briefly."}}, 4,
+        // No carried light — the four zeroes are the dark default, spelled
+        // out here only because the wagons that follow them are not.
+        /*lightRadius=*/0.0f, /*lightIntensity=*/0.0f,
+        /*lightR=*/0.0f, /*lightG=*/0.0f, /*lightB=*/0.0f,
+        /*lightHeight=*/0.0f,
+        // "My oxen grow weary" — this row says it in its own talk line. Wagons
+        // and a team, not a rucksack.
+        /*haulMult=*/32.0f,
     },
     // Bandit
     {

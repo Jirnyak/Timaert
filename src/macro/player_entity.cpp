@@ -74,7 +74,8 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
         rt.targetX = gs.player.x;
         rt.targetY = gs.player.y;
         rt.state = std::uint8_t(NPCState::Idle);
-        refresh_leader_travel_stats(rt, gs.player.sheet);
+        refresh_leader_travel_stats(rt, gs.player.sheet,
+                                    NPCType::Adventurer);
         rt.sp = rt.maxSp;
         reg.emplace<ecs::MacroNpcRuntime>(squad, rt);
     }
@@ -112,7 +113,8 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
     if (auto* rt = reg.try_get<ecs::MacroNpcRuntime>(squad)) {
         // The SAME door every lord's caches go through (squad.h) — the sheet
         // is the law, these four are its cache, and there is one refresh.
-        refresh_leader_travel_stats(*rt, gs.player.sheet);
+        refresh_leader_travel_stats(*rt, gs.player.sheet,
+                                    NPCType::Adventurer);
         rt->sp = std::int16_t(std::clamp(gs.player.combatStats.currentSp,
                                          -32768, 32767));
     }

@@ -138,7 +138,13 @@ namespace sm {
 // AgentMemory on his squad entity, both written by the macro-snapshot record
 // that already carries every other leader's — two blocks left the player
 // section of the file and no block replaced them.
-constexpr int kSaveVersion = 44;
+// v45: a macro leader's runtime carries his back — `carryCap` (the sheet's
+// carry capacity, cached beside maxSp/travelRank/marathonRank/moveMult) and
+// `overloadCost`, the SP surcharge his current load is costing. The overload
+// law was the player's alone, so a caravan hauling a ton marched like an
+// empty scout; it is universal now (owner ruling), and MacroNpcRuntime rides
+// the macro snapshot as a POD block, so its layout IS the format.
+constexpr int kSaveVersion = 45;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 

@@ -97,7 +97,8 @@ entt::entity make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
     // stream and every world stays byte-identical, and cross-layer state
     // travels as FRACTIONS (wound law, fatigue) so the seams never notice.
     refresh_leader_travel_stats(
-        rt, make_character_sheet(type, lvl, leader_sheet_seed(ordinal)));
+        rt, make_character_sheet(type, lvl, leader_sheet_seed(ordinal)),
+        type);
     rt.sp = rt.maxSp;   // born rested
     w.reg.emplace<ecs::MacroNpcRuntime>(e, rt);
 

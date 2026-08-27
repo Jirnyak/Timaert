@@ -7,6 +7,8 @@
 #include "macro/biomes.h"
 #include "macro/features.h"
 #include "macro/movement_cost.h"
+#include "macro/items.h"
+#include <cmath>
 
 namespace sm {
 
@@ -23,8 +25,27 @@ struct OverloadCharge {
     float overload = 0.0f;  // kg carried over capacity
     int   cost = 0;         // its integer SP surcharge
 };
-OverloadCharge player_overload_charge(const CharacterSheet& sheet,
-                                      const Inventory& inventory);
+// THE overload law, for any back on the map. It was called
+// `player_overload_charge` and only the player was ever charged by it, so a
+// caravan hauling a ton of iron marched as briskly as an empty scout — the
+// weight was a number in a panel, not a cost. Owner's ruling, 2026-08-27:
+// «да, перегруз универсальный всем».
+OverloadCharge overload_charge(const CharacterSheet& sheet,
+                               const Inventory& inventory);
+
+// The same law from the CACHED capacity a macro leader carries on his runtime
+// (ecs::MacroNpcRuntime::carryCap), so a think prices its load without
+// rebuilding a derived sheet it does not store. Inline: the macro AI is the
+// caller, and it must not have to link the travel translation unit (and its
+// terrain/feature world) to ask what a pack weighs.
+inline OverloadCharge overload_charge_from_capacity(float capacityKg,
+                                                    const Inventory& inventory) {
+    const float carried = inventory_weight(inventory);
+    const float overload = get_overload_penalty(carried, capacityKg);
+    // Native CombatStats are integer POD. Preserve the "any overload hurts"
+    // behaviour instead of silently truncating sub-1kg overload to zero.
+    return {overload, overload > 0.0f ? int(std::ceil(overload)) : 0};
+}
 
 struct MacroTravelCost {
     Biome biome = Meadow;

@@ -84,7 +84,7 @@ int main() {
         rt.state = std::uint8_t(NPCState::Idle);
         rt.stateTimer = 0;
         refresh_leader_travel_stats(rt, make_character_sheet(
-            NPCType::Caravan, 3, leader_sheet_seed(21u)));
+            NPCType::Caravan, 3, leader_sheet_seed(21u)), NPCType::Caravan);
         rt.sp = rt.maxSp;
         reg.emplace<ecs::MacroNpcRuntime>(e, rt);
         reg.emplace<ecs::MacroSpawnId>(e, 21u);

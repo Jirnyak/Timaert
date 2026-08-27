@@ -389,6 +389,58 @@ void test_banking_a_part_cell_is_not_resting() {
           "the gate is «остановился», and it is open");
 }
 
+// ── Перегруз универсальный всем: the pack is part of the price ────────────
+// Owner's ruling, 2026-08-27. The overload surcharge was the PLAYER's alone —
+// a squad hauling a ton of iron marched exactly as briskly as an empty scout,
+// so the weight in its bag was a number in a panel and not a cost. Pinned
+// here with the control that makes it a claim: the SAME body, the SAME road,
+// the SAME distance, one of them laden.
+void test_a_laden_squad_pays_for_its_load() {
+    GameState gs{};
+    gs.mapW = 256;
+    gs.mapH = 8;
+    ecs::World w;
+    PathCostData grid = make_grid(256, 8, 1.0f);   // one long road
+
+    auto light = make_walker(w, 10.0f, 4.0f, 60.0f, 4.0f, /*maxSp*/110);
+    auto heavy = make_walker(w, 10.0f, 6.0f, 60.0f, 6.0f, /*maxSp*/110);
+    w.reg.replace<ecs::MacroSpawnId>(heavy, 8u);
+    w.reg.get<ecs::MacroNpcRuntime>(light).targetY = 4.0f;
+    w.reg.get<ecs::MacroNpcRuntime>(heavy).targetY = 6.0f;
+
+    // A back a person actually has, and a load well past it.
+    const float cap = 40.0f;
+    w.reg.get<ecs::MacroNpcRuntime>(light).carryCap = cap;
+    w.reg.get<ecs::MacroNpcRuntime>(heavy).carryCap = cap;
+    w.reg.emplace<ecs::NpcInventory>(light);
+    auto& load = w.reg.emplace<ecs::NpcInventory>(heavy).inv;
+    load.add("iron", 400);
+    CHECK(inventory_weight(load) > cap,
+          "the fixture is honest: this load IS over the back carrying it");
+
+    MacroNpcAiRuntime rt{};
+    reset_macro_npc_ai_runtime(rt, 93u);
+    for (int i = 0; i < 30; ++i) {
+        MacroWorld mw{.gs = &gs, .world = &w, .pathCost = &grid};
+        tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle*/false);
+    }
+
+    const auto& lrt = w.reg.get<ecs::MacroNpcRuntime>(light);
+    const auto& hrt = w.reg.get<ecs::MacroNpcRuntime>(heavy);
+    const float lightSpent = 110.0f - (float(lrt.sp) + lrt.spCarry);
+    const float heavySpent = 110.0f - (float(hrt.sp) + hrt.spCarry);
+    const float lightCells = w.reg.get<ecs::Position>(light).x - 10.0f;
+    const float heavyCells = w.reg.get<ecs::Position>(heavy).x - 10.0f;
+
+    CHECK(heavySpent > lightSpent,
+          "the laden squad paid more for the same road — the pack is a cost");
+    CHECK(hrt.overloadCost > 0 && lrt.overloadCost == 0,
+          "and the surcharge is on the laden one alone");
+    CHECK(lightCells > 0.0f && heavyCells > 0.0f,
+          "negative control: BOTH of them actually walked, so the gap above "
+          "is a price and not a body standing still");
+}
+
 } // namespace
 
 int main() {
@@ -397,6 +449,7 @@ int main() {
     test_ocean_drowns_the_lord_and_settles_his_squad();
     test_land_exhaustion_makes_camp_without_blood();
     test_banking_a_part_cell_is_not_resting();
+    test_a_laden_squad_pays_for_its_load();
     test_a_map_of_marchers_survives_the_new_law();
     test_road_bar_lasts_a_days_march();
     return sm::test::report("squad_travel_test");

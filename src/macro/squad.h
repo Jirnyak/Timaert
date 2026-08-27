@@ -32,8 +32,14 @@ namespace sm {
 // the player's bar comes from — so "battle of lords" is literal: the lord's
 // END is his squad's endurance, his travel skill its road discount, his
 // marathon its recovery (owner ruling, Session 21).
+// The KIND is required, not defaulted: the back this leader hauls with is a
+// column of his row (npc.h NpcTypeDef::haulMult), and a default of "a person"
+// would be silently wrong for exactly the rows that matter — a caravan given a
+// man's shoulders is a caravan that can no longer afford to travel. A missing
+// argument should be a compile error, not a stranded trade route.
 inline void refresh_leader_travel_stats(ecs::MacroNpcRuntime& rt,
-                                        const CharacterSheet& sheet) {
+                                        const CharacterSheet& sheet,
+                                        NPCType type) {
     const CombatStats cs =
         calculate_combat_stats(sheet.attributes, sheet.skills);
     rt.maxSp = std::int16_t(std::clamp(cs.maxSp, 1, 32767));
@@ -43,6 +49,9 @@ inline void refresh_leader_travel_stats(ecs::MacroNpcRuntime& rt,
         std::clamp(sheet.skills.marathon, 0, kMaxSkillRank));
     rt.moveMult =
         calculate_derived(sheet.attributes, sheet.skills).moveSpeedMult;
+    const float haul = npc_def(type).haulMult;
+    rt.carryCap = get_carry_capacity(sheet.attributes, sheet.skills)
+                  * (haul > 0.0f ? haul : 1.0f);
 }
 
 // Owner ruling 3 (macrosim.md): kill the leader and the squad lives on,
@@ -169,7 +178,7 @@ inline int award_leader_xp(ecs::World& w, entt::entity e, int xp) {
                 // as-is: levelling mid-collapse does not forgive it.
                 const float spFrac = float(rt->sp)
                     / float(std::max<int>(1, rt->maxSp));
-                refresh_leader_travel_stats(*rt, sheet);
+                refresh_leader_travel_stats(*rt, sheet, type);
                 if (rt->sp > 0) {
                     rt->sp = std::int16_t(std::clamp(
                         int(std::lround(spFrac * float(rt->maxSp))),

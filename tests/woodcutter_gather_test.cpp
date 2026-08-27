@@ -45,7 +45,7 @@ entt::entity make_woodcutter(ecs::World& w, float x, float y,
     rt.stateTimer = 0;
     const CharacterSheet sheet = make_character_sheet(
         NPCType::Woodcutter, 3, leader_sheet_seed(11u));
-    refresh_leader_travel_stats(rt, sheet);
+    refresh_leader_travel_stats(rt, sheet, NPCType::Woodcutter);
     rt.sp = rt.maxSp;
     reg.emplace<ecs::MacroNpcRuntime>(e, rt);
     reg.emplace<ecs::MacroSpawnId>(e, 11u);
@@ -148,7 +148,8 @@ void test_the_farmer_works_the_field() {
     prt.state = std::uint8_t(NPCState::Idle);
     prt.stateTimer = 0;
     refresh_leader_travel_stats(
-        prt, make_character_sheet(NPCType::Peasant, 2, leader_sheet_seed(12u)));
+        prt, make_character_sheet(NPCType::Peasant, 2, leader_sheet_seed(12u)),
+        NPCType::Peasant);
     prt.sp = prt.maxSp;
     reg.emplace<ecs::MacroNpcRuntime>(e, prt);
     reg.emplace<ecs::MacroSpawnId>(e, 12u);
@@ -210,7 +211,8 @@ void test_farmer_without_terrain_conjures_nothing() {
     prt.state = std::uint8_t(NPCState::Idle);
     prt.stateTimer = 0;
     refresh_leader_travel_stats(
-        prt, make_character_sheet(NPCType::Peasant, 2, leader_sheet_seed(12u)));
+        prt, make_character_sheet(NPCType::Peasant, 2, leader_sheet_seed(12u)),
+        NPCType::Peasant);
     prt.sp = prt.maxSp;
     reg.emplace<ecs::MacroNpcRuntime>(e, prt);
     reg.emplace<ecs::MacroSpawnId>(e, 12u);
@@ -302,7 +304,8 @@ void test_the_mine_runs_while_the_player_is_away() {
     rt.state = std::uint8_t(NPCState::Idle);
     rt.stateTimer = 0;
     refresh_leader_travel_stats(
-        rt, make_character_sheet(NPCType::Miner, 3, leader_sheet_seed(13u)));
+        rt, make_character_sheet(NPCType::Miner, 3, leader_sheet_seed(13u)),
+        NPCType::Miner);
     rt.sp = rt.maxSp;
     reg.emplace<ecs::MacroNpcRuntime>(e, rt);
     reg.emplace<ecs::MacroSpawnId>(e, 13u);
@@ -401,7 +404,8 @@ void test_the_caravan_trades_on_its_memory() {
     crt.state = std::uint8_t(NPCState::Idle);
     crt.stateTimer = 0;
     refresh_leader_travel_stats(
-        crt, make_character_sheet(NPCType::Caravan, 3, leader_sheet_seed(13u)));
+        crt, make_character_sheet(NPCType::Caravan, 3, leader_sheet_seed(13u)),
+        NPCType::Caravan);
     crt.sp = crt.maxSp;
     reg.emplace<ecs::MacroNpcRuntime>(e, crt);
     reg.emplace<ecs::MacroSpawnId>(e, 13u);
@@ -473,7 +477,8 @@ void test_the_miner_works_the_vein() {
     rt.state = std::uint8_t(NPCState::Idle);
     rt.stateTimer = 0;
     refresh_leader_travel_stats(
-        rt, make_character_sheet(NPCType::Miner, 3, leader_sheet_seed(13u)));
+        rt, make_character_sheet(NPCType::Miner, 3, leader_sheet_seed(13u)),
+        NPCType::Miner);
     rt.sp = rt.maxSp;
     reg.emplace<ecs::MacroNpcRuntime>(e, rt);
     reg.emplace<ecs::MacroSpawnId>(e, 13u);
