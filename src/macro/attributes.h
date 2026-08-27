@@ -21,6 +21,7 @@ namespace sm {
 // ranks are a flat array and its meanings are rows, and both index by these.
 enum class AttributeId : std::uint8_t {
     Str, Vit, End, Wil, Intl, Wis, Lck, Cha, Spd,
+    Count
 };
 
 enum class SkillId : std::uint8_t {
@@ -31,17 +32,69 @@ enum class SkillId : std::uint8_t {
 
 // ── Attributes ─────────────────────────────────────────────────
 
+// The same shape the ranks have: a fixed envelope of scores, and a TABLE of
+// what they mean. 16 slots for the 9 the game names today — work_vector §5
+// asks for exactly this, and the reason is the save: a new attribute is a row
+// under a fixed cap, so naming one does not move the format.
+//
+// A byte per score. The cap that makes a byte honest is stated, not assumed
+// (kMaxAttributeScore below) and enforced at the one door into a score, the
+// same way the rank cap is.
+inline constexpr int kMaxAttributes = 16;
+
+// Every slot starts at 1 — INCLUDING the reserved tail, so a score that gets
+// named later begins where every other score began, rather than at a zero that
+// would divide differently in the asymptotic formulas.
+constexpr std::array<std::uint8_t, kMaxAttributes> attribute_bases() {
+    std::array<std::uint8_t, kMaxAttributes> a{};
+    for (std::uint8_t& v : a) v = 1;
+    return a;
+}
+
 struct Attributes {
-    int str = 1; // +1 physical damage per point
-    int vit = 1; // +10 max HP per point
-    int end = 1; // +10 max SP per point
-    int wil = 1; // +10 max MP per point
-    int intl = 1; // +1 spell damage per point  (TS: int)
-    int wis = 1; // +1% EXP bonus per point
-    int lck = 1; // crit scaling, better loot
-    int cha = 1; // trade discount, relation bonus
-    int spd = 1; // movement speed (asymptotic)
+    std::array<std::uint8_t, kMaxAttributes> score = attribute_bases();
+
+    std::uint8_t& operator[](AttributeId id) {
+        return score[std::size_t(id)];
+    }
+    std::uint8_t operator[](AttributeId id) const {
+        return score[std::size_t(id)];
+    }
+    int of(AttributeId id) const { return int(score[std::size_t(id)]); }
 };
+
+// What an attribute IS, in the sheet's own words. The character panel walks
+// these rows instead of keeping a sixth copy of the same nine facts.
+struct AttributeDef {
+    // MUST equal the row's index in kAttributeDefs (guard below the table).
+    AttributeId id;
+    const char* key;      // authoring id; runtime addresses by ordinal
+    const char* label;    // the three letters a player reads
+    const char* effect;   // what one point buys
+};
+
+inline constexpr AttributeDef kAttributeDefs[] = {
+    {AttributeId::Str,  "str",  "STR", "+1 physical damage per point"},
+    {AttributeId::Vit,  "vit",  "VIT", "+10 max HP per point"},
+    {AttributeId::End,  "end",  "END", "+10 max SP per point"},
+    {AttributeId::Wil,  "wil",  "WIL", "+10 max MP per point"},
+    {AttributeId::Intl, "intl", "INT", "+1 spell damage per point"},
+    {AttributeId::Wis,  "wis",  "WIS", "+1% EXP bonus per point"},
+    {AttributeId::Lck,  "lck",  "LCK", "Crit scaling and loot luck"},
+    {AttributeId::Cha,  "cha",  "CHA", "Trade discount and relation bonus"},
+    {AttributeId::Spd,  "spd",  "SPD", "Asymptotic movement speed"},
+};
+static_assert(sizeof(kAttributeDefs) / sizeof(kAttributeDefs[0])
+                  == std::size_t(AttributeId::Count),
+              "kAttributeDefs must carry one row per AttributeId");
+static_assert(rows_in_enum_order(kAttributeDefs, &AttributeDef::id),
+              "kAttributeDefs rows must stand in AttributeId order");
+static_assert(int(AttributeId::Count) <= kMaxAttributes,
+              "the attribute envelope must hold every score the game names");
+
+inline constexpr const AttributeDef& attribute_def(AttributeId id) {
+    return kAttributeDefs[std::size_t(id)];
+}
 
 // ── Skills ─────────────────────────────────────────────────────
 
@@ -286,44 +339,25 @@ struct LevelData {
     int perkPoints        = 1;
 };
 
-inline int* attribute_value(Attributes& a, AttributeId id) {
-    switch (id) {
-        case AttributeId::Str:  return &a.str;
-        case AttributeId::Vit:  return &a.vit;
-        case AttributeId::End:  return &a.end;
-        case AttributeId::Wil:  return &a.wil;
-        case AttributeId::Intl: return &a.intl;
-        case AttributeId::Wis:  return &a.wis;
-        case AttributeId::Lck:  return &a.lck;
-        case AttributeId::Cha:  return &a.cha;
-        case AttributeId::Spd:  return &a.spd;
-    }
-    return nullptr;
-}
-
-inline const int* attribute_value(const Attributes& a, AttributeId id) {
-    switch (id) {
-        case AttributeId::Str:  return &a.str;
-        case AttributeId::Vit:  return &a.vit;
-        case AttributeId::End:  return &a.end;
-        case AttributeId::Wil:  return &a.wil;
-        case AttributeId::Intl: return &a.intl;
-        case AttributeId::Wis:  return &a.wis;
-        case AttributeId::Lck:  return &a.lck;
-        case AttributeId::Cha:  return &a.cha;
-        case AttributeId::Spd:  return &a.spd;
-    }
-    return nullptr;
-}
+// (No `attribute_value` switches either. A score is `attributes[AttributeId::X]`
+// — an index into a flat array — so there is nothing to switch on, and naming
+// a new attribute cannot forget a case.)
 
 // (No `skill_value` switches. A rank is `skills[SkillId::X]` — an index into
 // a flat array — so there is nothing left to switch on, and adding a skill
 // cannot forget to update a case.)
 
+// A score is a BYTE, so the ceiling is the byte's — stated here rather than
+// discovered by a wrap. It is enormous by design (a hundred levels of nothing
+// but one stat lands nowhere near it); what matters is that the one door into
+// a score refuses rather than rolls over.
+constexpr int kMaxAttributeScore = 255;
+
 inline bool spend_attribute_point(LevelData& ld, Attributes& a, AttributeId id) {
-    int* value = attribute_value(a, id);
-    if (!value || ld.attributePoints <= 0) return false;
-    ++(*value);
+    if (id >= AttributeId::Count || ld.attributePoints <= 0) return false;
+    std::uint8_t& score = a[id];
+    if (int(score) >= kMaxAttributeScore) return false;
+    ++score;
     --ld.attributePoints;
     return true;
 }
@@ -377,13 +411,13 @@ inline CombatStats calculate_combat_stats(const Attributes& a, const Skills& s,
                                           int baseHp = 100,
                                           int baseMp = 100,
                                           int baseSp = 100) {
-    const float rawHp = float(baseHp + a.vit * 10);
-    const float rawMp = float(baseMp + a.wil * 10);
+    const float rawHp = float(baseHp + a.of(AttributeId::Vit) * 10);
+    const float rawMp = float(baseMp + a.of(AttributeId::Wil) * 10);
     // The SP bar is the END attribute's alone — no skill multiplier. The old
     // `endurance` skill (+5% max SP) double-counted the attribute; its points
     // now live in `marathon`, which multiplies the RECOVERY RATE instead
     // (kSpRegenPctPerHour above), so bar and rest are two separate levers.
-    const float rawSp = float(baseSp + a.end * 10);
+    const float rawSp = float(baseSp + a.of(AttributeId::End) * 10);
     CombatStats c;
     c.maxHp = int(rawHp * skill_mult(s, SkillId::Bodybuilding));
     c.maxMp = int(rawMp * skill_mult(s, SkillId::Meditation));
@@ -391,8 +425,8 @@ inline CombatStats calculate_combat_stats(const Attributes& a, const Skills& s,
     c.currentHp = c.maxHp;
     c.currentMp = c.maxMp;
     c.currentSp = c.maxSp;
-    c.hpRegen = 10.0f * (1.0f + float(a.vit) * 0.01f);
-    c.mpRegen = 10.0f * (1.0f + float(a.wil) * 0.01f);
+    c.hpRegen = 10.0f * (1.0f + float(a.of(AttributeId::Vit)) * 0.01f);
+    c.mpRegen = 10.0f * (1.0f + float(a.of(AttributeId::Wil)) * 0.01f);
     // SP per game hour at rest, THE one regen law for the player and every
     // macro leader (npc_ai reads the same formula through the leader's sheet).
     c.spRegen = float(c.maxSp) * kSpRegenPctPerHour
@@ -421,20 +455,20 @@ inline void recompute_combat_maxima(CombatStats& c, const Attributes& a,
 
 inline DerivedBonuses calculate_derived(const Attributes& a, const Skills& s) {
     DerivedBonuses d;
-    const float rawPhys  = float(a.str);
-    const float rawSpell = float(a.intl);
+    const float rawPhys  = float(a.of(AttributeId::Str));
+    const float rawSpell = float(a.of(AttributeId::Intl));
     d.rawPhysDamage  = rawPhys  * skill_mult(s, SkillId::Fighter);
     d.rawSpellDamage = rawSpell * skill_mult(s, SkillId::Spellcraft);
-    d.expMult        = 1.0f + float(a.wis) * 0.01f;
+    d.expMult        = 1.0f + float(a.of(AttributeId::Wis)) * 0.01f;
     // Attributes add, skills multiply. `spd` is the body's own quickness
     // (asymptotic, so a monstrous score cannot run away with the game);
     // `athletics` is training on top of it. `travel` has no business here — it
     // buys DISTANCE per bar of stamina, not speed (macro/movement_cost.h).
-    d.moveSpeedMult  = (1.0f + float(a.spd) / float(a.spd + 50))
+    d.moveSpeedMult  = (1.0f + float(a.of(AttributeId::Spd)) / float(a.of(AttributeId::Spd) + 50))
                        * skill_mult(s, SkillId::Athletics);
-    d.tradeDiscount  = float(a.cha) * 0.01f;
-    d.relationBonus  = float(a.cha);
-    d.critBase       = float(a.lck) / float(a.lck + 50);
+    d.tradeDiscount  = float(a.of(AttributeId::Cha)) * 0.01f;
+    d.relationBonus  = float(a.of(AttributeId::Cha));
+    d.critBase       = float(a.of(AttributeId::Lck)) / float(a.of(AttributeId::Lck) + 50);
     return d;
 }
 
@@ -443,7 +477,7 @@ inline DerivedBonuses calculate_derived(const Attributes& a, const Skills& s) {
 constexpr float kBaseCarryKg = 100.0f;
 
 inline float get_carry_capacity(const Attributes& a, const Skills& s) {
-    return (kBaseCarryKg + float(a.str) * 10.0f)
+    return (kBaseCarryKg + float(a.of(AttributeId::Str)) * 10.0f)
            * skill_mult(s, SkillId::Weightlifting);
 }
 inline float get_overload_penalty(float weightKg, float capacityKg) {

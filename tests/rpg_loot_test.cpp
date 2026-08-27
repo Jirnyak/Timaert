@@ -73,9 +73,9 @@ static void test_project_combat_melee() {
     // A melee body: known sheet, distinctive authored base with missile params
     // that MUST be preserved verbatim even though attackKind is Melee.
     CharacterSheet cs;
-    cs.attributes.str  = 12;
-    cs.attributes.intl = 7;
-    cs.attributes.vit  = 9;
+    cs.attributes[sm::AttributeId::Str] = 12;
+    cs.attributes[sm::AttributeId::Intl] = 7;
+    cs.attributes[sm::AttributeId::Vit] = 9;
     cs.skills[sm::SkillId::Fighter] = 4;
     cs.skills[sm::SkillId::Spellcraft] = 3;
     cs.skills[sm::SkillId::Bodybuilding] = 2;
@@ -109,8 +109,8 @@ static void test_project_combat_melee() {
 static void test_project_combat_missile() {
     // Identical sheet, missile base: damage bonus must come from SPELL stats.
     CharacterSheet cs;
-    cs.attributes.str  = 12;
-    cs.attributes.intl = 7;
+    cs.attributes[sm::AttributeId::Str] = 12;
+    cs.attributes[sm::AttributeId::Intl] = 7;
     cs.skills[sm::SkillId::Fighter] = 4;
     cs.skills[sm::SkillId::Spellcraft] = 3;
 
@@ -132,7 +132,11 @@ static void test_project_combat_missile() {
 // ── make_character_sheet: the level point-budget identity ────────────────────
 
 static int attr_sum(const Attributes& a) {
-    return a.str + a.vit + a.end + a.wil + a.intl + a.wis + a.lck + a.cha + a.spd;
+    // Walk the NAMED scores: an attribute the game names later joins this sum
+    // by existing, and the reserved tail is not a score anybody spent.
+    int sum = 0;
+    for (int i = 0; i < int(AttributeId::Count); ++i) sum += a.of(AttributeId(i));
+    return sum;
 }
 static int skill_sum(const Skills& s) {
     // Walk the envelope, not a hand-listed eight: a skill added to the
@@ -188,9 +192,9 @@ static void test_sheet_determinism() {
     expect(attr_sum(a.attributes) == attr_sum(b.attributes)
            && skill_sum(a.skills) == skill_sum(b.skills),
            "determinism: same seed -> same totals");
-    expect(a.attributes.str == b.attributes.str
-           && a.attributes.intl == b.attributes.intl
-           && a.attributes.wil == b.attributes.wil
+    expect(a.attributes.of(sm::AttributeId::Str) == b.attributes.of(sm::AttributeId::Str)
+           && a.attributes.of(sm::AttributeId::Intl) == b.attributes.of(sm::AttributeId::Intl)
+           && a.attributes.of(sm::AttributeId::Wil) == b.attributes.of(sm::AttributeId::Wil)
            && a.skills.of(sm::SkillId::Spellcraft) == b.skills.of(sm::SkillId::Spellcraft),
            "determinism: same seed -> identical field allocation");
     expect(attr_sum(a.attributes) == attr_sum(c.attributes)

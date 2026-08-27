@@ -29,6 +29,45 @@ namespace {
 
 using namespace sm;
 
+// ── Attributes are the SAME shape: an envelope and a table ───────────────
+void test_attributes_are_an_envelope_and_a_table() {
+    CHECK(int(AttributeId::Count) == 9,
+          "nine scores stand in the registry today");
+    for (int i = 0; i < int(AttributeId::Count); ++i) {
+        const AttributeDef& d = attribute_def(AttributeId(i));
+        CHECK(int(d.id) == i, "every row stands at its own ordinal");
+        CHECK(d.key != nullptr && d.key[0] != '\0', "every row names itself");
+        CHECK(d.label != nullptr && d.label[0] != '\0', "and labels itself");
+        CHECK(d.effect != nullptr && d.effect[0] != '\0',
+              "and says what a point buys, so the panel need not");
+    }
+
+    Attributes a{};
+    for (int i = 0; i < kMaxAttributes; ++i) {
+        CHECK(a.score[std::size_t(i)] == 1,
+              "every slot starts at 1 — the reserved tail included, so a score "
+              "named later begins where the others began");
+    }
+    a[AttributeId::Str] = 7;
+    CHECK(a.of(AttributeId::Str) == 7, "a score writes and reads by ordinal");
+    CHECK(a.of(AttributeId::Vit) == 1,
+          "negative control: writing one score moved no other");
+    CHECK(int(a.score.size()) == kMaxAttributes,
+          "the envelope is the size the save promises");
+
+    // The one door into a score refuses rather than rolls the byte over.
+    LevelData ld{};
+    ld.attributePoints = kMaxAttributeScore + 10;
+    Attributes cap{};
+    int spent = 0;
+    while (spend_attribute_point(ld, cap, AttributeId::Lck)) ++spent;
+    CHECK(cap.of(AttributeId::Lck) == kMaxAttributeScore,
+          "a score stops at the byte's ceiling");
+    CHECK(spent == kMaxAttributeScore - 1, "having started at its base of 1");
+    CHECK(!spend_attribute_point(ld, cap, AttributeId::Count),
+          "a score that names no row is refused, not written past the end");
+}
+
 // ── The table is a table ─────────────────────────────────────────────────
 void test_the_registry_is_addressable_by_ordinal() {
     CHECK(int(SkillId::Count) == 8, "eight skills stand in the registry today");
@@ -113,7 +152,9 @@ void test_the_cap_belongs_to_the_law() {
 // spell 0.05 inline and bypass the law entirely.
 void test_the_governed_numbers_follow_the_row() {
     Attributes a{};
-    a.vit = 10; a.wil = 10; a.str = 10; a.intl = 10; a.end = 10; a.spd = 10;
+    a[AttributeId::Vit] = 10;  a[AttributeId::Wil]  = 10;
+    a[AttributeId::Str] = 10;  a[AttributeId::Intl] = 10;
+    a[AttributeId::End] = 10;  a[AttributeId::Spd]  = 10;
     Skills none{};
     const CombatStats bare = calculate_combat_stats(a, none);
     const DerivedBonuses bareD = calculate_derived(a, none);
@@ -171,11 +212,12 @@ void test_every_role_rates_every_skill() {
 } // namespace
 
 int main() {
+    test_attributes_are_an_envelope_and_a_table();
     test_the_registry_is_addressable_by_ordinal();
     test_ranks_are_a_flat_envelope();
     test_one_door_and_the_row_decides();
     test_the_cap_belongs_to_the_law();
     test_the_governed_numbers_follow_the_row();
     test_every_role_rates_every_skill();
-    return sm::test::report("skill_registry_test");
+    return sm::test::report("sheet_registry_test");
 }

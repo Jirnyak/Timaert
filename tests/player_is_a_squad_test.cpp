@@ -206,7 +206,7 @@ void test_the_entity_numbers_are_not_stale() {
     gs.mapW = gs.mapH = 64;
     gs.player.x = 20.0f;
     gs.player.y = 20.0f;
-    gs.player.sheet.attributes.end = 5;
+    gs.player.sheet.attributes[sm::AttributeId::End] = 5;
     gs.player.sheet.levelData.level = 1;
     recompute_combat_maxima(gs.player.combatStats,
                             gs.player.sheet.attributes,
@@ -225,7 +225,7 @@ void test_the_entity_numbers_are_not_stale() {
     // hale, rested, level-1 player over a dying, exhausted, level-4 one.
     gs.player.combatStats.currentHp = 17;
     gs.player.combatStats.currentSp = -6;   // an honest exhaustion debt
-    gs.player.sheet.attributes.end = 12;
+    gs.player.sheet.attributes[sm::AttributeId::End] = 12;
     gs.player.sheet.levelData.level = 4;
     recompute_combat_maxima(gs.player.combatStats,
                             gs.player.sheet.attributes,
@@ -285,9 +285,9 @@ void test_the_head_is_on_the_entity() {
 void test_one_door_assembles_every_battle_side() {
     GameState gs{};
     gs.mapW = gs.mapH = 64;
-    gs.player.sheet.attributes.str = 18;
-    gs.player.sheet.attributes.vit = 18;
-    gs.player.sheet.attributes.end = 14;
+    gs.player.sheet.attributes[sm::AttributeId::Str] = 18;
+    gs.player.sheet.attributes[sm::AttributeId::Vit] = 18;
+    gs.player.sheet.attributes[sm::AttributeId::End] = 14;
     gs.player.sheet.levelData.level = 5;
     recompute_combat_maxima(gs.player.combatStats,
                             gs.player.sheet.attributes,
@@ -323,7 +323,7 @@ void test_one_door_assembles_every_battle_side() {
 void test_the_players_wound_settles_through_the_one_door() {
     GameState gs{};
     gs.mapW = gs.mapH = 64;
-    gs.player.sheet.attributes.vit = 10;
+    gs.player.sheet.attributes[sm::AttributeId::Vit] = 10;
     recompute_combat_maxima(gs.player.combatStats,
                             gs.player.sheet.attributes,
                             gs.player.sheet.skills);

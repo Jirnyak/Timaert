@@ -711,7 +711,7 @@ int main() {
     sm::spellbook_learn(armBook, "armageddon");
     if (!armDef) return fail("armageddon definition missing");
     sm::Attributes armAttributes{};
-    armAttributes.intl = 1000;
+    armAttributes[sm::AttributeId::Intl] = 200;
     if (sm::spell_radius(*armDef, armAttributes, skills)
         <= int(armDef->baseRadius)) {
         return fail("armageddon high-radius test does not exceed base radius");

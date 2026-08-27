@@ -292,7 +292,7 @@ void test_a_leaders_aura_reaches_his_men() {
     aura_add(curse, {AuraMod::Skill, std::uint8_t(SkillId::Bodybuilding),
                      std::int16_t(500)});
     apply_aura(clamped, curse);
-    CHECK(clamped.attributes.vit == 1,
+    CHECK(clamped.attributes.of(sm::AttributeId::Vit) == 1,
           "an aura cannot curse an attribute below its base of 1");
     CHECK(clamped.skills.of(sm::SkillId::Bodybuilding) == kMaxSkillRank,
           "an aura cannot push a skill past mastery");

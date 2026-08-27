@@ -5869,9 +5869,9 @@ bool run_macro_recovery_smoke(App& app) {
     smoke_clear_modal_overlays(app);
 
     auto& player = app.gs.player;
-    player.sheet.attributes.end = 1;
-    player.sheet.attributes.vit = 1;
-    player.sheet.attributes.wil = 1;
+    player.sheet.attributes[sm::AttributeId::End] = 1;
+    player.sheet.attributes[sm::AttributeId::Vit] = 1;
+    player.sheet.attributes[sm::AttributeId::Wil] = 1;
     player.combatStats.currentSp = 0;
     // ONE hit point, not zero: at zero the player is dead by the game's own
     // rule (checked at the end of every simulation step), and a corpse does not
@@ -8585,8 +8585,13 @@ bool run_console_smoke(App& app) {
     {
         auto& reg = app.ecs.reg;
         auto attr_sum = [](const sm::Attributes& a) {
-            return a.str + a.vit + a.end + a.wil + a.intl
-                 + a.wis + a.lck + a.cha + a.spd;
+            // Walk the NAMED scores, not a hand-listed nine: an attribute the
+            // game names later joins this sum by existing, and the reserved
+            // tail of the envelope is not a score anybody spent.
+            int sum = 0;
+            for (int i = 0; i < int(sm::AttributeId::Count); ++i)
+                sum += a.of(sm::AttributeId(i));
+            return sum;
         };
         entt::entity be = entt::null;
         auto view = reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
@@ -10402,7 +10407,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          app.gs.player.sheet.levelData.attributePoints,
                          app.gs.player.sheet.levelData.skillPoints,
                          app.gs.player.sheet.levelData.perkPoints,
-                         app.gs.player.sheet.attributes.vit,
+                         app.gs.player.sheet.attributes.of(sm::AttributeId::Vit),
                          app.gs.player.sheet.skills.of(sm::SkillId::Bodybuilding),
                          app.gs.player.combatStats.maxHp);
             std::fflush(stderr);
@@ -10417,7 +10422,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             const int beforePoints = app.gs.player.sheet.levelData.attributePoints;
-            const int beforeVit = app.gs.player.sheet.attributes.vit;
+            const int beforeVit = app.gs.player.sheet.attributes.of(sm::AttributeId::Vit);
             const int beforeHp = app.gs.player.combatStats.maxHp;
             if (!sm::spend_attribute_point(app.gs.player.sheet.levelData,
                                            app.gs.player.sheet.attributes,
@@ -10432,7 +10437,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                                         app.gs.player.sheet.attributes,
                                         app.gs.player.sheet.skills);
             if (app.gs.player.sheet.levelData.attributePoints != beforePoints - 1
-                || app.gs.player.sheet.attributes.vit != beforeVit + 1
+                || app.gs.player.sheet.attributes.of(sm::AttributeId::Vit) != beforeVit + 1
                 || app.gs.player.combatStats.maxHp <= beforeHp
                 || app.gs.player.combatStats.currentHp != curHpBefore) {
                 smoke_fail(app, "spend_attribute_vit invariant");
@@ -10443,7 +10448,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          beforePoints,
                          app.gs.player.sheet.levelData.attributePoints,
                          beforeVit,
-                         app.gs.player.sheet.attributes.vit,
+                         app.gs.player.sheet.attributes.of(sm::AttributeId::Vit),
                          beforeHp,
                          app.gs.player.combatStats.maxHp);
             std::fflush(stderr);

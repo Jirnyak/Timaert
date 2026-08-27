@@ -87,9 +87,10 @@ inline void apply_aura(CharacterSheet& sheet, const AuraMods& aura) {
     for (std::uint8_t i = 0; i < aura.count; ++i) {
         const AuraMod& m = aura.mods[i];
         if (m.target == AuraMod::Attribute) {
-            if (int* v = attribute_value(sheet.attributes,
-                                         AttributeId(m.id))) {
-                *v = std::max(1, *v + int(m.delta));
+            if (m.id < std::uint8_t(AttributeId::Count)) {
+                std::uint8_t& score = sheet.attributes[AttributeId(m.id)];
+                score = std::uint8_t(
+                    std::clamp(int(score) + int(m.delta), 1, kMaxAttributeScore));
             }
         } else if (m.id < std::uint8_t(SkillId::Count)) {
             // Ranks are a flat array under the envelope, so the target is an

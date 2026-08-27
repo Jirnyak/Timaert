@@ -149,7 +149,11 @@ namespace sm {
 // eight ints, which is exactly why the version had to move: a v45 slot would
 // load with the same LENGTH and none of the same meaning — four ranks read out
 // of one, and no reader the wiser.
-constexpr int kSaveVersion = 46;
+// v47: attribute SCORES are a flat envelope of bytes too (macro/attributes.h
+// kAttributeDefs), 16 slots for the 9 the game names — so naming the tenth is
+// a row, not a format. The block shrank from nine ints to sixteen bytes, and a
+// v46 slot would be read at the wrong length entirely.
+constexpr int kSaveVersion = 47;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 

@@ -522,7 +522,7 @@ bool test_grant_xp_levels_through_the_one_path() {
     sm::GameState xpState{};
     sm::PlayerState& player = xpState.player;
     player.sheet.levelData = sm::default_level_data();
-    player.sheet.attributes.wis = 0;  // isolate from the wis dividend (own test)
+    player.sheet.attributes[sm::AttributeId::Wis] = 0;  // isolate from the wis dividend (own test)
     player.combatStats = sm::calculate_combat_stats(player.sheet.attributes, player.sheet.skills);
     const int firstThreshold = player.sheet.levelData.expToNext;
 
@@ -565,7 +565,7 @@ bool test_grant_xp_pays_the_wis_dividend() {
     sm::GameState wisState{};
     sm::PlayerState& player = wisState.player;
     player.sheet.levelData = sm::default_level_data();
-    player.sheet.attributes.wis = 10;  // expMult = 1.10
+    player.sheet.attributes[sm::AttributeId::Wis] = 10;  // expMult = 1.10
 
     sm::GameEvent grant{sm::EventTag::ApplyEffect};
     grant.s1 = "grant_xp";
@@ -590,7 +590,7 @@ bool test_quest_xp_reward_levels_the_player() {
     gs.mapW = 64;
     gs.mapH = 64;
     gs.player.sheet.levelData = sm::default_level_data();
-    gs.player.sheet.attributes.wis = 0;  // isolate from the wis dividend
+    gs.player.sheet.attributes[sm::AttributeId::Wis] = 0;  // isolate from the wis dividend
 
     // Worth three thresholds at once — a chapter reward at low level does this,
     // and one level-up per grant would silently swallow the rest.

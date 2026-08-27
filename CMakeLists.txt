@@ -1129,9 +1129,9 @@ timaert_test(player_is_a_squad_test
         src/macro/items.cpp
     LINK_ENTT)
 
-# THE skill law in one place: a skill is a row, its percent is a column, and
-# every number it governs asks the one door that turns a rank into a multiplier.
-timaert_test(skill_registry_test)
+# THE sheet's two id spaces are registries: an attribute and a skill are ROWS
+# under a fixed envelope, and every number they govern asks one door.
+timaert_test(sheet_registry_test)
 
 # ── CTest registration ─────────────────────────────────────────────────────
 # There is nothing here any more, and that is the point: timaert_test() calls

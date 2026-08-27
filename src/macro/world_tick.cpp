@@ -139,7 +139,7 @@ void tick_player_daily_(PlayerState& p, const SoldierSquad* roster,
     // The player's men are a roster on his squad entity now, exactly like any
     // lord's — no roster (no world yet) simply means no wages.
     const int upkeep = roster
-        ? calculate_squad_upkeep(*roster, p.sheet.attributes.cha) : 0;
+        ? calculate_squad_upkeep(*roster, p.sheet.attributes.of(AttributeId::Cha)) : 0;
     // Pay what the wallet holds; an unpaid remainder is simply unpaid today
     // (wage-debt desertion is the №3 pipeline's future rule).
     if (purse) wallet_spend_up_to(*purse, upkeep);

@@ -51,9 +51,9 @@ void test_attribute_rate_and_max_clamp() {
     // per hour because its DERIVED rates say so — HP/MP via the attribute
     // rate, SP as a percent of the bar (kSpRegenPctPerHour, Session 21).
     sm::PlayerState player{};
-    player.sheet.attributes.end = 20;
-    player.sheet.attributes.vit = 20;
-    player.sheet.attributes.wil = 20;
+    player.sheet.attributes[sm::AttributeId::End] = 20;
+    player.sheet.attributes[sm::AttributeId::Vit] = 20;
+    player.sheet.attributes[sm::AttributeId::Wil] = 20;
     player.combatStats = sm::calculate_combat_stats(player.sheet.attributes,
                                                     player.sheet.skills);
     const int maxSp = player.combatStats.maxSp;   // 300: the END bar

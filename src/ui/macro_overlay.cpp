@@ -1062,13 +1062,13 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                                              const ItemDef& def, int n) {
                         return trade_overlay_buy_price(
                             stock_price(def.value, bag.inv.count(id) - n, 0),
-                            gs.player.sheet.attributes.cha, traits);
+                            gs.player.sheet.attributes.of(AttributeId::Cha), traits);
                     };
                     const auto sellUnit = [&](const std::string& id,
                                               const ItemDef& def, int n) {
                         return trade_overlay_sell_price(
                             stock_price(def.value, bag.inv.count(id) + n, 0),
-                            gs.player.sheet.attributes.cha, traits);
+                            gs.player.sheet.attributes.of(AttributeId::Cha), traits);
                     };
 
                     ImGui::Columns(2, "npc_trade_cols", true);

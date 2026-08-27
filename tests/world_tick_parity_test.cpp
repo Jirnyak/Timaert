@@ -74,7 +74,7 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     sm::ensure_macro_player_entity(gs, world);
     sm::player_inventory(world)->add("coin_empire", 5);
     gs.player.ageDays = 1000;
-    gs.player.sheet.attributes.cha = 0;
+    gs.player.sheet.attributes[sm::AttributeId::Cha] = 0;
     // The player's men live on his SQUAD ENTITY now (owner, 2026-08-27), so
     // the fixture raises one — the same shape a lord's warband has — and the
     // daily tick reads his wages from it through the envelope.
@@ -93,7 +93,7 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     // The expectation is DERIVED from the same law the tick pays by, so the
     // upkeep table can be retuned without touching this file.
     const int expectedUpkeep =
-        sm::calculate_squad_upkeep(*army, gs.player.sheet.attributes.cha);
+        sm::calculate_squad_upkeep(*army, gs.player.sheet.attributes.of(sm::AttributeId::Cha));
     const int expectedGold = (5 - expectedUpkeep) > 0 ? (5 - expectedUpkeep) : 0;
 
     const int processed = sm::process_world_daily_ticks(gs, runtime, 1, &mw);

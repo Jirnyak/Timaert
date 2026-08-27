@@ -40,7 +40,7 @@ int main() {
         c.currentHp = 7;
         c.currentMp = 3;
         c.currentSp = 5;
-        a.vit += 1;  // the spend
+        ++a[AttributeId::Vit];  // the spend
         recompute_combat_maxima(c, a, s);
         if (c.maxHp != calculate_combat_stats(a, s).maxHp) {
             return fail("maxima must recompute from the new attributes");
@@ -67,7 +67,7 @@ int main() {
     // ── 2. The wis dividend ─────────────────────────────────────────────
     {
         Attributes a{};
-        a.wis = 10;
+        a[AttributeId::Wis] = 10;
         const float mult = calculate_derived(a, Skills{}).expMult;
         LevelData ld = default_level_data();
         award_exp(ld, 100, mult);

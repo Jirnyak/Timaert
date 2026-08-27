@@ -47,8 +47,10 @@ namespace csheet_detail {
 struct RoleWeights {
     // MUST equal the row's index in kRoleWeights (guard below the table).
     NPCType type;
-    // str, vit, end, wil, intl, wis, lck, cha, spd
-    std::uint8_t attr[9];
+    // AttributeId order; sized by the enum for the same reason the skill
+    // weights are: naming a new attribute must ASK every role what it thinks,
+    // and a compile error asks better than a silent zero.
+    std::uint8_t attr[std::size_t(AttributeId::Count)];
     // SkillId order; the weighted pick indexes this directly. Sized by the
     // enum, not by a literal 8, so adding a skill to the registry makes every
     // role state what it thinks of it — a compile error is the right way to

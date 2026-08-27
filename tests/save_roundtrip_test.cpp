@@ -268,15 +268,15 @@ sm::GameState make_state() {
     // NpcInventory on his squad entity.)
     // (His HEAD rides the same record: AgentMemory is a column of every
     // leader's macro record, and the player is a leader.)
-    gs.player.sheet.attributes.str = 7;
-    gs.player.sheet.attributes.vit = 8;
-    gs.player.sheet.attributes.end = 9;
-    gs.player.sheet.attributes.wil = 10;
-    gs.player.sheet.attributes.intl = 11;
-    gs.player.sheet.attributes.wis = 12;
-    gs.player.sheet.attributes.lck = 13;
-    gs.player.sheet.attributes.cha = 14;
-    gs.player.sheet.attributes.spd = 15;
+    gs.player.sheet.attributes[sm::AttributeId::Str] = 7;
+    gs.player.sheet.attributes[sm::AttributeId::Vit] = 8;
+    gs.player.sheet.attributes[sm::AttributeId::End] = 9;
+    gs.player.sheet.attributes[sm::AttributeId::Wil] = 10;
+    gs.player.sheet.attributes[sm::AttributeId::Intl] = 11;
+    gs.player.sheet.attributes[sm::AttributeId::Wis] = 12;
+    gs.player.sheet.attributes[sm::AttributeId::Lck] = 13;
+    gs.player.sheet.attributes[sm::AttributeId::Cha] = 14;
+    gs.player.sheet.attributes[sm::AttributeId::Spd] = 15;
     gs.player.sheet.skills[sm::SkillId::Bodybuilding] = 1;
     gs.player.sheet.skills[sm::SkillId::Meditation] = 2;
     gs.player.sheet.skills[sm::SkillId::Travel] = 3;
@@ -718,7 +718,7 @@ void run_roundtrip() {
         FAIL_BAIL("player position or age lost");
     }
 
-    if (p.sheet.attributes.str != 7 || p.sheet.attributes.intl != 11 || p.sheet.attributes.spd != 15) {
+    if (p.sheet.attributes.of(sm::AttributeId::Str) != 7 || p.sheet.attributes.of(sm::AttributeId::Intl) != 11 || p.sheet.attributes.of(sm::AttributeId::Spd) != 15) {
         FAIL_BAIL("player attributes lost");
     }
     if (p.sheet.skills.of(sm::SkillId::Bodybuilding) != 1 || p.sheet.skills.of(sm::SkillId::Spellcraft) != 6

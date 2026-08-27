@@ -279,7 +279,7 @@ void test_travel_balance_holds_its_intent() {
     // spends less on the same ground (travel), so his day of marching becomes
     // several.
     sm::Attributes vetAttrs = attrs;
-    vetAttrs.end = 20;
+    vetAttrs[sm::AttributeId::End] = 20;
     sm::Skills vetSkills = skills;
     vetSkills[sm::SkillId::Travel] = 10;
     const sm::CombatStats veteran = sm::calculate_combat_stats(vetAttrs, vetSkills);

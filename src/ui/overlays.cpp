@@ -1047,30 +1047,9 @@ namespace sm::ui
             }
         }
 
-        struct AttributeUiRow
-        {
-            const char *label;
-            const char *desc;
-            AttributeId id;
-        };
-
-        constexpr AttributeUiRow kAttributeUiRows[] = {
-            {"STR", "+1 physical damage per point", AttributeId::Str},
-            {"VIT", "+10 max HP per point", AttributeId::Vit},
-            {"END", "+10 max SP per point", AttributeId::End},
-            {"WIL", "+10 max MP per point", AttributeId::Wil},
-            {"INT", "+1 spell damage per point", AttributeId::Intl},
-            {"WIS", "+1% EXP bonus per point", AttributeId::Wis},
-            {"LCK", "Crit scaling and loot luck", AttributeId::Lck},
-            {"CHA", "Trade discount and relation bonus", AttributeId::Cha},
-            {"SPD", "Asymptotic movement speed", AttributeId::Spd},
-        };
-
-        // (No skill row table here. It was a FIFTH copy of the same eight
-        // facts — the label and the percent already stand in kSkillDefs
-        // (macro/attributes.h), and a table that restates another table drifts
-        // from it the first time a number is tuned. The panel walks the
-        // registry now, so a new skill appears in this list by existing.)
+        // (No attribute row table here either. The label and what a point buys
+        // already stand in kAttributeDefs (macro/attributes.h); a panel that
+        // restates a registry drifts from it the first time a number is tuned.)
 
         // FULL restore — reserved for the moments that SAY they heal: the
         // level-up itself (M&M tradition) and the Talented perk's bonus level.
@@ -1141,7 +1120,7 @@ namespace sm::ui
         const float carryCap = get_carry_capacity(p.sheet.attributes, p.sheet.skills);
         const int armyTotal = army ? total_soldiers(*army) : 0;
         const int armyUpkeep = army
-            ? calculate_squad_upkeep(*army, p.sheet.attributes.cha) : 0;
+            ? calculate_squad_upkeep(*army, p.sheet.attributes.of(AttributeId::Cha)) : 0;
 
         ImGui::SetNextWindowSize(ImVec2(760 * scale, 560 * scale), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("Character", open))
@@ -1193,17 +1172,15 @@ namespace sm::ui
                         // digit (9 -> 10) or a row has a longer label. Measured
                         // per frame, so it follows the UI font scale for free.
                         const float attrPlusX = widest_label_x(
-                            kAttributeUiRows,
-                            sizeof(kAttributeUiRows) / sizeof(kAttributeUiRows[0]));
-                        for (const AttributeUiRow &row : kAttributeUiRows)
+                            kAttributeDefs,
+                            sizeof(kAttributeDefs) / sizeof(kAttributeDefs[0]));
+                        for (const AttributeDef &row : kAttributeDefs)
                         {
-                            const int *value = attribute_value(p.sheet.attributes, row.id);
-                            if (!value)
-                                continue;
                             ImGui::PushID(row.label);
-                            ImGui::Text("%s %d", row.label, *value);
+                            ImGui::Text("%s %d", row.label,
+                                        p.sheet.attributes.of(row.id));
                             if (ImGui::IsItemHovered())
-                                ImGui::SetTooltip("%s", row.desc);
+                                ImGui::SetTooltip("%s", row.effect);
                             ImGui::SameLine(attrPlusX);
                             ImGui::BeginDisabled(p.sheet.levelData.attributePoints <= 0);
                             if (ImGui::SmallButton("+"))
@@ -1827,7 +1804,7 @@ namespace sm::ui
                             stock_price(def.value, s->inventory.count(id) - n,
                                         daily_demand_for(id.c_str(),
                                                          s->population)),
-                            gs.player.sheet.attributes.cha, s->mood);
+                            gs.player.sheet.attributes.of(AttributeId::Cha), s->mood);
                     };
                     const auto sellUnit = [&](const std::string &id,
                                               const ItemDef &def, int n) {
@@ -1835,7 +1812,7 @@ namespace sm::ui
                             stock_price(def.value, s->inventory.count(id) + n,
                                         daily_demand_for(id.c_str(),
                                                          s->population)),
-                            gs.player.sheet.attributes.cha, s->mood);
+                            gs.player.sheet.attributes.of(AttributeId::Cha), s->mood);
                     };
 
                     ImGui::Columns(2, "trade_cols", true);
@@ -1942,7 +1919,7 @@ namespace sm::ui
                         ImGui::TextDisabled(
                             "Daily upkeep: %d g",
                             calculate_squad_upkeep(
-                                *army, gs.player.sheet.attributes.cha));
+                                *army, gs.player.sheet.attributes.of(AttributeId::Cha)));
                     }
                     ImGui::EndTabItem();
                 }
