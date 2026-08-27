@@ -37,6 +37,7 @@
 #include "macro/seasons.h"
 #include "macro/zones.h"
 #include "core/rng.h"
+#include "core/torus.h"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -1067,8 +1068,8 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
     const int ccy = mgr_.center_cy() + oy;
     const CellContext ctx = resolve_context(ccx, ccy);
     const int W = terrain_->width, H = terrain_->height;
-    const int wcx = ((ccx % W) + W) % W;
-    const int wcy = ((ccy % H) + H) % H;
+    const int wcx = wrapi(ccx, W);
+    const int wcy = wrapi(ccy, H);
     // Citizens belong to the kingdom that owns this cell's settlement — resolved
     // HERE, where the GameState is, and handed to the spawner as a plain index
     // so sub/spawn.cpp stays free of macro state (macro/politik.h owns the rule).

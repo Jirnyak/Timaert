@@ -59,13 +59,16 @@ int daily_demand_for(const char* itemId, int population) {
 }
 
 
-float mood_price_mult(SettlementMood mood) {
-    // A town's temper prices its market: unrest is a seller's risk premium,
-    // prosperity a buyer's discount. Data, one row per band.
+float mood_price_mult(SettlementMood mood, bool buying) {
+    // A town's temper prices its market, and it prices BOTH sides of the deal
+    // (the merchant-temperament column beside this one always did): a
+    // prosperous town sells cheap and pays well because it has coin; a town in
+    // revolt charges a risk premium and haggles the traveller down. Data, one
+    // row per band, mirroring trait_price_mult's shape.
     switch (mood) {
-        case SettlementMood::Prosperous: return 0.9f;
-        case SettlementMood::Unrest:     return 1.2f;
-        case SettlementMood::Revolt:     return 1.4f;
+        case SettlementMood::Prosperous: return buying ? 0.9f : 1.1f;
+        case SettlementMood::Unrest:     return buying ? 1.2f : 0.85f;
+        case SettlementMood::Revolt:     return buying ? 1.4f : 0.7f;
         default:                         return 1.0f;
     }
 }

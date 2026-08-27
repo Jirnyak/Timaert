@@ -1,4 +1,5 @@
 #include "macro/audio.h"
+#include "core/math.h"
 
 #if defined(TIMAERT_HAS_SDL_MIXER)
 
@@ -72,11 +73,7 @@ const SfxAsset* find_sfx_asset(SfxId id) {
     return &kSfxAssets[idx];
 }
 
-float clamp01(float value) {
-    if (value < 0.0f) return 0.0f;
-    if (value > 1.0f) return 1.0f;
-    return value;
-}
+using sm::clamp01;   // THE one curve (core/math.h), not a third copy of it.
 
 int to_mixer_volume(float value) {
     const float clamped = clamp01(value);

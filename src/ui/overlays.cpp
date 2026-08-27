@@ -658,14 +658,15 @@ namespace sm::ui
         int trade_overlay_buy_price(int baseValue, int charisma, SettlementMood mood)
         {
             return sm::player_trade_price(baseValue, charisma, /*bargaining*/ 0,
-                                          sm::mood_price_mult(mood),
+                                          sm::mood_price_mult(mood, true),
                                           /*buying*/ true);
         }
 
-        int trade_overlay_sell_price(int baseValue, int charisma)
+        int trade_overlay_sell_price(int baseValue, int charisma,
+                                     SettlementMood mood)
         {
             return sm::player_trade_price(baseValue, charisma, /*bargaining*/ 0,
-                                          /*contextMult*/ 1.0f,
+                                          sm::mood_price_mult(mood, false),
                                           /*buying*/ false);
         }
 
@@ -1814,7 +1815,7 @@ namespace sm::ui
                             stock_price(def.value, s->inventory.count(id) + n,
                                         daily_demand_for(id.c_str(),
                                                          s->population)),
-                            gs.player.sheet.attributes.cha);
+                            gs.player.sheet.attributes.cha, s->mood);
                     };
 
                     ImGui::Columns(2, "trade_cols", true);

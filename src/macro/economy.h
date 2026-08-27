@@ -27,7 +27,13 @@ namespace sm {
 // route danger) joins as another named column, never a screen helper.
 enum class SettlementMood : std::uint8_t;
 namespace ecs { struct NpcTraits; }
-float mood_price_mult(SettlementMood mood);
+// Both context columns answer the same shape — WHICH SIDE of the deal is being
+// priced — because a context that only knows how to make things dearer prices
+// one direction and forgets the other. The settlement's mood used to take no
+// `buying` flag, so a town in revolt charged the player a premium and then
+// paid him the ordinary price for his goods: the context applied to half the
+// trade by accident of its signature.
+float mood_price_mult(SettlementMood mood, bool buying);
 float trait_price_mult(const ecs::NpcTraits* traits, bool buying);
 
 // THE player trade price — ONE law (owner ruling 2026-08-05). Base = the

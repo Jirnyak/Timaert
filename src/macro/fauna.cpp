@@ -116,11 +116,16 @@ static_assert(rows_in_enum_order(kSpawnHabitats, &SpawnHabitatRow::type),
 // How many heads a place rolls — one row per biome plus the derived-class
 // overrides, holding the old thirteen tables' min/max counts verbatim.
 struct SpawnCounts { std::uint8_t minCount, maxCount; };
-constexpr SpawnCounts kBiomeSpawnCounts[std::size_t(Mountain) + 1] = {
-    /*Tundra*/ {1, 4}, /*Taiga*/ {2, 5}, /*Snow*/ {1, 3}, /*Valley*/ {2, 6},
-    /*Meadow*/ {2, 6}, /*Swamp*/ {2, 6}, /*Desert*/ {1, 4}, /*Steppe*/ {2, 5},
-    /*Tropics*/ {2, 6}, /*Water*/ {0, 0}, /*Mountain*/ {1, 4},
+// Row-per-biome with the enum as a COLUMN — the guard below is what makes a
+// grown Biome a compile error rather than a silently empty meadow.
+struct BiomeSpawnCountRow { Biome biome; SpawnCounts counts; };
+constexpr BiomeSpawnCountRow kBiomeSpawnCounts[std::size_t(Mountain) + 1] = {
+    {Tundra,  {1, 4}}, {Taiga,   {2, 5}}, {Snow,     {1, 3}}, {Valley, {2, 6}},
+    {Meadow,  {2, 6}}, {Swamp,   {2, 6}}, {Desert,   {1, 4}}, {Steppe, {2, 5}},
+    {Tropics, {2, 6}}, {Water,   {0, 0}}, {Mountain, {1, 4}},
 };
+static_assert(rows_in_enum_order(kBiomeSpawnCounts, &BiomeSpawnCountRow::biome),
+              "kBiomeSpawnCounts row order must mirror Biome");
 constexpr SpawnCounts kForestSpawnCounts{3, 8};
 constexpr SpawnCounts kRuinSpawnCounts{2, 6};
 constexpr SpawnCounts kSpireSpawnCounts{4, 9};
@@ -134,7 +139,7 @@ const SpawnCounts& spawn_counts(const SpawnContext& ctx) {
     if (ctx.forest) return kForestSpawnCounts;
     const auto b = std::size_t(ctx.biome);
     static constexpr SpawnCounts kNone{0, 0};
-    return b <= std::size_t(Mountain) ? kBiomeSpawnCounts[b] : kNone;
+    return b <= std::size_t(Mountain) ? kBiomeSpawnCounts[b].counts : kNone;
 }
 
 // The habitat bit a context asks for. A town rolls no wild fauna at all

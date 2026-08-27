@@ -168,15 +168,14 @@ struct LightParameters {
 using SunInfo = LightParameters;
 
 namespace detail {
+// THE two curves live in core/math.h; these are the edge-taking form of the
+// same smoothstep (a → b remapped to 0 → 1) written in terms of it, and a
+// plain re-export of clamp01. They used to be private copies — the same
+// polynomial spelled twice, which is how one of them silently drifts.
 inline float smoothstep01(float a, float b, float x) {
-    float t = (x - a) / (b - a);
-    if (t < 0.0f) t = 0.0f;
-    if (t > 1.0f) t = 1.0f;
-    return t * t * (3.0f - 2.0f * t);
+    return b != a ? sm::smoothstep01((x - a) / (b - a)) : sm::clamp01(x);
 }
-inline float clamp01(float x) {
-    return x < 0.0f ? 0.0f : (x > 1.0f ? 1.0f : x);
-}
+using sm::clamp01;
 }
 
 // Peak moon directional radiance as a fraction of full sun (whose sunColor peaks

@@ -240,4 +240,13 @@ inline CombatTemplate project_combat(const CharacterSheet& sheet,
     return out;
 }
 
+// THE whole-number bar a body of this sheet carries — one question, one
+// answer. It was written twice, once per birth (sub/spawn.cpp's derived body
+// and macro/npc_spawn.cpp's tracked one), and a wound crosses between those
+// two layers as a FRACTION of exactly this number: the day the two floors
+// disagreed by one point, the crossing would have leaked hp in one direction.
+inline int body_max_hp(const CharacterSheet& sheet, const CombatTemplate& base) {
+    return std::max(1, int(std::floor(project_combat(sheet, base).hp)));
+}
+
 } // namespace sm

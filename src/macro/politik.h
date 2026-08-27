@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include "core/torus.h"
 #include "macro/language.h"
 #include "macro/faction.h"
 
@@ -105,8 +106,8 @@ inline std::uint16_t faction_index_for_cell(const Politik& politik,
         || politik.cellOwner.size() != std::size_t(w) * std::size_t(h)) {
         return faction_index_for_kingdom(politik, -1);
     }
-    const int wx = ((cx % w) + w) % w;
-    const int wy = ((cy % h) + h) % h;
+    const int wx = wrapi(cx, w);
+    const int wy = wrapi(cy, h);
     const std::uint8_t owner =
         politik.cellOwner[std::size_t(wy) * std::size_t(w) + std::size_t(wx)];
     return faction_index_for_kingdom(politik, owner == 0xffu ? -1 : int(owner));

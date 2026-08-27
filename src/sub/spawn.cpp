@@ -153,7 +153,7 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
     // Integers, not fractions: a body that hits for 17.85 accumulates a
     // different wound than one that hits for 17, and the two spawners used to
     // disagree about which it was.
-    const float maxHp  = std::max(1.0f, std::floor(pc.hp));
+    const float maxHp  = float(body_max_hp(sheet, def.combat));
     const float damage = std::floor(pc.damage);
     // Wounds travel as a FRACTION, not as a number of points, so the two layers
     // never have to agree on how big a lord's bar is. A tracked entity at two

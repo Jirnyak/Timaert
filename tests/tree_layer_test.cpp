@@ -55,18 +55,18 @@ void test_derivation_formula() {
     CHECK(derived_tree_count(Biome::Meadow, 1.0f) == kMaxTreesPerCell,
           "a full 3x3 massif hits the golden max exactly");
     CHECK(derived_tree_count(Biome::Meadow, 0.0f)
-              == kBiomeBaseTreeCount[int(Biome::Meadow)],
+              == biome_base_tree_count(int(Biome::Meadow)),
           "no massif = the biome's ambient base (meadow)");
     CHECK(derived_tree_count(Biome::Desert, 0.0f)
-              == kBiomeBaseTreeCount[int(Biome::Desert)],
+              == biome_base_tree_count(int(Biome::Desert)),
           "no massif = the biome's ambient base (desert)");
     // Biome ambience must NEVER draw as forest on the map: every base sits
     // under the sprite coverage threshold (0.09 × 16384 ≈ 1475) AND under
     // the forest-class threshold — only massifs make forests.
-    for (int b = 0; b < 11; ++b) {
-        CHECK(int(kBiomeBaseTreeCount[b]) < 1475,
+    for (int b = 0; b < int(std::size(kBiomeBaseTreeCount)); ++b) {
+        CHECK(biome_base_tree_count(b) < 1475,
               "biome ambience stays under the map-sprite threshold");
-        CHECK(!is_forest_cell(int(kBiomeBaseTreeCount[b])),
+        CHECK(!is_forest_cell(biome_base_tree_count(b)),
               "biome ambience never classifies as forest");
     }
     CHECK(is_forest_cell(kForestClassTreeCount),
@@ -83,7 +83,7 @@ void test_derivation_formula() {
     }
     // A lone forest cell (frac 1/9) adds exactly 16384/9 over its base.
     CHECK(derived_tree_count(Biome::Meadow, 1.0f / 9.0f)
-              == kBiomeBaseTreeCount[int(Biome::Meadow)]
+              == biome_base_tree_count(int(Biome::Meadow))
                   + int(float(kMaxTreesPerCell) / 9.0f + 0.5f),
           "a lone massif cell adds exactly one ninth of the max");
 }

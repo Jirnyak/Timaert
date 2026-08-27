@@ -135,16 +135,18 @@ inline float biome_sp_weight(Biome b) {
     // open walking country 2.0, hard country 2.5–3.0, bog 4.0, the mountain
     // ground itself 5.0 (its WALL is the climb term now, not the byte),
     // water 10.0 — unpayable on foot, the ocean still drowns a lord.
-    static const float kW[11] = {
-        /*Tundra*/2.5f, /*Taiga*/2.5f, /*Snow*/3.0f, /*Valley*/2.0f,
-        /*Meadow*/2.0f, /*Swamp*/4.0f, /*Desert*/3.0f, /*Steppe*/2.0f,
-        /*Tropics*/2.5f, /*Water*/10.0f, /*Mountain*/5.0f,
+    // Each row carries its own enum as a COLUMN, so a grown Biome refuses to
+    // compile instead of quietly walking on a neighbour's ground.
+    struct BiomeBedRow { Biome biome; float weight; };
+    static constexpr BiomeBedRow kW[std::size_t(Mountain) + 1] = {
+        {Tundra,  2.5f}, {Taiga,   2.5f}, {Snow,     3.0f}, {Valley, 2.0f},
+        {Meadow,  2.0f}, {Swamp,   4.0f}, {Desert,   3.0f}, {Steppe, 2.0f},
+        {Tropics, 2.5f}, {Water,  10.0f}, {Mountain, 5.0f},
     };
-    const int idx = int(b);
-    if (idx < 0 || idx >= int(sizeof(kW) / sizeof(kW[0]))) {
-        return 2.0f;
-    }
-    return kW[idx];
+    static_assert(rows_in_enum_order(kW, &BiomeBedRow::biome),
+                  "the biome bed table must mirror Biome");
+    const std::size_t idx = std::size_t(b);
+    return idx < std::size(kW) ? kW[idx].weight : 2.0f;
 }
 
 // The engineered beds. 0 = nothing built here — the biome ground is the bed

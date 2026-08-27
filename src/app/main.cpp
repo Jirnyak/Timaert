@@ -2537,12 +2537,13 @@ void sync_relative_mouse_mode(App& app) {
 
 std::vector<sm::PathPoint> build_flight_path(int sx, int sy, int gx, int gy,
                                              int mapW, int mapH) {
-    int dx = gx - sx;
-    int dy = gy - sy;
-    if (dx >  mapW / 2) dx -= mapW;
-    if (dx < -mapW / 2) dx += mapW;
-    if (dy >  mapH / 2) dy -= mapH;
-    if (dy < -mapH / 2) dy += mapH;
+    // THE fold, not a hand-written one: `torus_delta` (core/torus.h) folds ANY
+    // difference into (−period/2, +period/2], however many worlds apart the two
+    // numbers drifted. The four conditional subtractions that lived here
+    // corrected exactly ONE period — the very defect torus.h documents, and the
+    // flight path was the last copy of it in the tree.
+    const int dx = int(std::lround(sm::torus_delta(float(gx - sx), float(mapW))));
+    const int dy = int(std::lround(sm::torus_delta(float(gy - sy), float(mapH))));
     const int steps = std::max(std::abs(dx), std::abs(dy));
     std::vector<sm::PathPoint> path;
     path.reserve(std::size_t(std::max(1, steps) + 1));

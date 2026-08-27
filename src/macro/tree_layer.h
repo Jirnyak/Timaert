@@ -56,19 +56,32 @@ inline bool is_forest_cell(int treeCount) {
 // shows the organic massifs, the ambience only thickens the subworld ground
 // scatter. Relative order preserves biome character (taiga > swamp >
 // meadow > … > desert).
-inline constexpr std::uint16_t kBiomeBaseTreeCount[11] = {
-    200,    // Tundra
-    1400,   // Taiga
-    300,    // Snow
-    800,    // Valley
-    600,    // Meadow
-    1300,   // Swamp
-    40,     // Desert
-    250,    // Steppe
-    1450,   // Tropics
-    0,      // Water
-    250,    // Mountain
+// One row per biome, each carrying its own enum as a COLUMN so the guard can
+// prove the order. A bare parallel array is the kNpcPurse scar waiting to
+// happen: the day the enum grows, it silently zero-fills the tail or reads a
+// neighbour's number, and nothing fails to compile.
+struct BiomeTreeCountRow { Biome biome; std::uint16_t count; };
+inline constexpr BiomeTreeCountRow kBiomeBaseTreeCount[std::size_t(Mountain) + 1] = {
+    {Tundra,    200},
+    {Taiga,    1400},
+    {Snow,      300},
+    {Valley,    800},
+    {Meadow,    600},
+    {Swamp,    1300},
+    {Desert,     40},
+    {Steppe,    250},
+    {Tropics,  1450},
+    {Water,       0},
+    {Mountain,  250},
 };
+static_assert(rows_in_enum_order(kBiomeBaseTreeCount, &BiomeTreeCountRow::biome),
+              "kBiomeBaseTreeCount row order must mirror Biome");
+
+// THE ambience of a biome, fail-closed for a biome the table has not met.
+inline constexpr int biome_base_tree_count(int b) {
+    return (b >= 0 && b < int(std::size(kBiomeBaseTreeCount)))
+        ? int(kBiomeBaseTreeCount[std::size_t(b)].count) : 0;
+}
 
 // The derivation formula: biome ambient base + the massif term,
 // 16384 × (massif cells in the 3×3 / 9), clamped to the golden max.
@@ -76,7 +89,7 @@ inline constexpr std::uint16_t kBiomeBaseTreeCount[11] = {
 inline std::uint16_t derived_tree_count(Biome biome, float forestFrac9) {
     if (biome == Biome::Water) return 0;
     const int b = int(biome);
-    const int base = (b >= 0 && b < 11) ? int(kBiomeBaseTreeCount[b]) : 0;
+    const int base = biome_base_tree_count(b);
     int c = base + int(float(kMaxTreesPerCell) * forestFrac9 + 0.5f);
     if (c > kMaxTreesPerCell) c = kMaxTreesPerCell;
     if (c < 0) c = 0;

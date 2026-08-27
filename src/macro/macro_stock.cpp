@@ -234,7 +234,7 @@ int trees_growth_at(const MacroWorld& w, int x, int y) {
     // Water, whose base tree count is 0: no storage, no growth.
     const Biome biome = biome_at_cell(*w.terrain, x, y);
     const int b = int(biome);
-    const int base = (b >= 0 && b < 11) ? int(kBiomeBaseTreeCount[b]) : 0;
+    const int base = biome_base_tree_count(b);
     return growth * std::min(base, 1024) / 1024;
 }
 

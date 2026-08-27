@@ -70,7 +70,7 @@ entt::entity make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
     int lvl = def.baseLevel + int(rng.next_u32() % 4u);
     if (levelOverride > 0) lvl = levelOverride;
     const CharacterSheet sheet = make_character_sheet(type, lvl, sheetSeed);
-    const int hp = std::max(1, int(std::floor(project_combat(sheet, def.combat).hp)));
+    const int hp = body_max_hp(sheet, def.combat);
 
     // Stable identity for possession persistence (Inc 5e-2): the Nth macro NPC
     // created gets ordinal N. Deterministic because spawn_macro_npcs walks a

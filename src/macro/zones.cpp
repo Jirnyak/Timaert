@@ -16,6 +16,7 @@
 #include "macro/biomes.h"
 #include "macro/tree_layer.h"
 #include "core/rng.h"
+#include "core/torus.h"
 #include "core/math.h"
 #include <cmath>
 #include <limits>
@@ -123,8 +124,8 @@ ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
     };
 
     auto idx = [&](int x, int y) -> std::size_t {
-        const int wx = ((x % width) + width) % width;
-        const int wy = ((y % height) + height) % height;
+        const int wx = wrapi(x, width);
+        const int wy = wrapi(y, height);
         return std::size_t(wy) * std::size_t(width) + std::size_t(wx);
     };
 
