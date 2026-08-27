@@ -299,13 +299,6 @@ inline std::vector<ItemStack> roll_loot(const LootEntry* table, std::size_t n,
     return out;
 }
 
-inline float gold_faction_mult(const char* factionId) {
-    if (std::strcmp(factionId, "wildlife") == 0) return 0.1f;
-    if (std::strcmp(factionId, "demons")   == 0) return 0.6f;
-    if (std::strcmp(factionId, "bandits")  == 0) return 0.8f;
-    return 1.0f;
-}
-
 } // namespace
 
 // ── Public API ────────────────────────────────────────────────
@@ -345,11 +338,25 @@ const char* npc_loot_id(int npcType) noexcept {
     return id ? id : "";
 }
 
-int generate_loot_gold(int level, const char* factionId, RngFn rng) {
-    const float mult   = gold_faction_mult(factionId);
-    const float base   = (3.0f + static_cast<float>(level) * 2.0f) * mult;
-    const float jitter = rng() * base;
-    const int v = static_cast<int>(std::floor(base + jitter));
+int generate_loot_gold(int npcType, int level, const CorpseLootContext& ctx,
+                       RngFn rng) {
+    if (npcType < 0 || npcType >= int(NPCType::Count)) return 0;
+    const NpcPurseRow& purse = npc_purse(NPCType(std::uint8_t(npcType)));
+    if (purse.max <= 0) return 0;          // no pockets: a beast, honestly
+    // 1. The BODY: its row's span, rolled, grown by its own level (a veteran
+    //    bandit has robbed more than a fresh recruit; level 1 is the row's
+    //    authored number, unscaled).
+    const float span = float(purse.max - purse.min);
+    const float rolled = float(purse.min) + rng() * span;
+    const float body = rolled
+        * (1.0f + kLootLevelGain * float(level > 0 ? level - 1 : 0));
+    // 2. The WORLD: one factor per system, each 1.0 when its system is silent.
+    //    A new system is a new line here and a new field there — no caller
+    //    learns about it.
+    const float danger =
+        1.0f + kDangerLootGain * (float(ctx.danger) / 255.0f);
+    const float place = ctx.wealthMul > 0.0f ? ctx.wealthMul : 1.0f;
+    const int v = int(std::floor(body * danger * place));
     return v < 0 ? 0 : v;
 }
 

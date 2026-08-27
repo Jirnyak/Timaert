@@ -150,49 +150,11 @@ entt::entity make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
     // drops his purse like any other loot. Amounts are the data row below;
     // the extra RNG draw re-rolls worlds (v31 — old saves are void anyway).
     {
-        struct PurseRow { NPCType type; int min, max; };
-        // (Scar: this table silently zero-filled when NPCType grew the three
-        // gatherer professions — a miner spawned with an empty purse. The
-        // row-order guard makes a short table refuse to compile instead.)
-        static constexpr PurseRow kNpcPurse[std::size_t(NPCType::Count)] = {
-            {NPCType::Peasant,    1, 10},
-            {NPCType::Woodcutter, 1, 10},
-            {NPCType::Merchant,   50, 200},
-            {NPCType::Caravan,    50, 200},
-            {NPCType::Bandit,     5, 30},
-            {NPCType::Guard,      5, 20},
-            {NPCType::Witch,      10, 40},
-            {NPCType::Sorceress,  10, 40},
-            // The gatherer professions carry a labourer's pocket, like the
-            // peasant/woodcutter class they share their build with.
-            {NPCType::Miner,      1, 10},
-            {NPCType::Quarryman,  1, 10},
-            {NPCType::ClayDigger, 1, 10},
-            // A beast carries no purse — it has no pockets and no use for coin.
-            // The one exception is the goblin, who robs what he kills.
-            {NPCType::Rabbit,       0, 0},
-            {NPCType::Deer,         0, 0},
-            {NPCType::Fox,          0, 0},
-            {NPCType::Wolf,         0, 0},
-            {NPCType::Bear,         0, 0},
-            {NPCType::Boar,         0, 0},
-            {NPCType::Snake,        0, 0},
-            {NPCType::Hawk,         0, 0},
-            {NPCType::Frog,         0, 0},
-            {NPCType::Goat,         0, 0},
-            {NPCType::Eagle,        0, 0},
-            {NPCType::Croc,         0, 0},
-            {NPCType::Goblin,       1, 12},
-            {NPCType::Skeleton,     0, 0},
-            {NPCType::Troll,        0, 0},
-            {NPCType::SwampThing,   0, 0},
-            {NPCType::IceWraith,    0, 0},
-            {NPCType::SandScorpion,  0, 0},
-            {NPCType::StoneGolem,   0, 0},
-        };
-        static_assert(rows_in_enum_order(kNpcPurse, &PurseRow::type),
-                      "kNpcPurse row order must mirror NPCType");
-        const PurseRow& purse = kNpcPurse[std::size_t(type)];
+        // THE purse table now lives beside the row it describes
+        // (macro/npc.h kNpcPurse), because the subworld's derived bodies pay
+        // out of it too (damage-door Inc 5) — a macro merchant and the corpse
+        // of a merchant below are one creature and answer with one number.
+        const NpcPurseRow& purse = npc_purse(type);
         const int coins = purse.min
             + int(rng.next_u32() % std::uint32_t(purse.max - purse.min + 1));
         bag.inv.add(currency_for_faction_id(faction_id_for_index(factionIdx)),

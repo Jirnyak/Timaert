@@ -111,7 +111,51 @@ float inventory_weight(const Inventory& inv) noexcept;
 // Loot generation. `rng()` returns float in [0, 1).
 using RngFn = float (*)();
 
-int                    generate_loot_gold(int level, const char* factionId, RngFn rng);
+// ── THE corpse-loot context (owner's design, 2026-08-27) ──────────────────
+// «контекст от таблицы мобов × зоны сложности (0..255) × богатство ландмарка
+// /экономика, и расширяемо — в принципе может быть ещё что-то».
+//
+// So loot is the door's own idiom (CANON S6): a PRODUCT of contributions, one
+// per world system, each of them 1.0 and silent when its system has nothing
+// to say. This struct grows by a FIELD — the weather, the dark field, a
+// place's live stockpile — and no caller signature changes, exactly as
+// MacroWorld grows (macro/macro_world.h). That is why it is a struct and not
+// three arguments.
+struct CorpseLootContext {
+    // The danger byte of the cell the body fell in (macro/zones.h, the 0..255
+    // continuum). Deep country pays better — and this is NOT the buried
+    // autolevel CANON S12 killed: that one multiplied HP and damage on a body
+    // AFTER it was picked. This multiplies what it CARRIES, which is economy,
+    // and it is visible in the loot rather than hidden in a fight.
+    std::uint8_t danger = 0;
+    // The wealth of the place standing on that cell (landmark_registry
+    // wealthMul; 1.0 = open land). When the honest-loan track lands (CANON
+    // S5), this is where the landmark's live stockpile answers instead.
+    float wealthMul = 1.0f;
+};
+
+// How much this contributes at full danger: the deepest ground doubles a
+// purse. Named because it is a knob, and quoted here so the two ends of the
+// continuum (0 → ×1, 255 → ×2) are readable without running the game.
+inline constexpr float kDangerLootGain = 1.0f;
+
+// And what a LEVEL adds: a tenth of the row's purse per level above the
+// first, so a level-10 bandit carries roughly double a fresh one — the same
+// shape as the danger term, on the body's own honest, visible property
+// (CANON S12: a creature's level is a fact about the creature).
+inline constexpr float kLootLevelGain = 0.1f;
+
+// THE coin a dead body carries (damage-door Inc 5). The ROW says what this
+// creature is worth to rob — a beast has no pockets, a merchant is rich
+// because he is a merchant (macro/npc.h kNpcPurse), and its own level says
+// how long it has been at it — then the WORLD modulates through the context
+// above. The faction-keyed multiplier this replaced was a second wealth
+// vocabulary, and the 2026-08-27 faction ruling made it wrong outright: the
+// same wolf carried six times more coin under a ruin's banner than in a
+// meadow. What the banner still decides is which realm's COIN it is.
+int                    generate_loot_gold(int npcType, int level,
+                                          const CorpseLootContext& ctx,
+                                          RngFn rng);
 // (generate_settlement_inventory is gone: the unified-container moment it was
 // kept for arrived — landmark stocks are seeded by the ECONOMY's own law,
 // econ_day.h seed_landmark_inventory, from the one commodity dictionary.)

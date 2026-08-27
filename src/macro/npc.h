@@ -431,6 +431,69 @@ inline constexpr float npc_body_radius(const NpcTypeDef& def) {
     return def.radius > 0.0f ? def.radius : kNpcBodyRadiusDefault;
 }
 
+// ── THE purse: how much coin a body of this row carries ───────────────────
+// One table, enum-ordered beside the row it describes (the kSpawnHabitats /
+// kGathererDefs idiom). It lived inside macro/npc_spawn.cpp's make_npc, so
+// only PERSISTENT macro bodies had a purse; the derived bodies of the
+// subworld paid out through a second, faction-keyed multiplier in
+// items.cpp (wildlife 0.1× / demons 0.6× / bandits 0.8×) — a second wealth
+// vocabulary that the faction ruling of 2026-08-27 made outright wrong: with
+// faction an INSTANCE property, the very same wolf carried six times more
+// coin under a ruin's banner than in a meadow.
+//
+// The row answers now, for both worlds: a beast has no pockets whatever
+// banner it fights under, a merchant is rich because he is a merchant. What
+// the world modulates on top is the WEALTH OF THE PLACE (landmark_registry
+// wealthMul, through the one context door), and what the banner still decides
+// is which realm's COIN it is — S10's «база из таблицы, мир — модуляция».
+//
+// (Scar: this table silently zero-filled when NPCType grew the three gatherer
+// professions — a miner spawned with an empty purse. The row-order guard
+// makes a short table refuse to compile instead.)
+struct NpcPurseRow { NPCType type; int min, max; };
+inline constexpr NpcPurseRow kNpcPurse[std::size_t(NPCType::Count)] = {
+    {NPCType::Peasant,    1, 10},
+    {NPCType::Woodcutter, 1, 10},
+    {NPCType::Merchant,   50, 200},
+    {NPCType::Caravan,    50, 200},
+    {NPCType::Bandit,     5, 30},
+    {NPCType::Guard,      5, 20},
+    {NPCType::Witch,      10, 40},
+    {NPCType::Sorceress,  10, 40},
+    // The gatherer professions carry a labourer's pocket, like the
+    // peasant/woodcutter class they share their build with.
+    {NPCType::Miner,      1, 10},
+    {NPCType::Quarryman,  1, 10},
+    {NPCType::ClayDigger, 1, 10},
+    // A beast carries no purse — it has no pockets and no use for coin.
+    // The one exception is the goblin, who robs what he kills.
+    {NPCType::Rabbit,       0, 0},
+    {NPCType::Deer,         0, 0},
+    {NPCType::Fox,          0, 0},
+    {NPCType::Wolf,         0, 0},
+    {NPCType::Bear,         0, 0},
+    {NPCType::Boar,         0, 0},
+    {NPCType::Snake,        0, 0},
+    {NPCType::Hawk,         0, 0},
+    {NPCType::Frog,         0, 0},
+    {NPCType::Goat,         0, 0},
+    {NPCType::Eagle,        0, 0},
+    {NPCType::Croc,         0, 0},
+    {NPCType::Goblin,       1, 12},
+    {NPCType::Skeleton,     0, 0},
+    {NPCType::Troll,        0, 0},
+    {NPCType::SwampThing,   0, 0},
+    {NPCType::IceWraith,    0, 0},
+    {NPCType::SandScorpion, 0, 0},
+    {NPCType::StoneGolem,   0, 0},
+};
+static_assert(rows_in_enum_order(kNpcPurse, &NpcPurseRow::type),
+              "kNpcPurse row order must mirror NPCType");
+
+inline constexpr const NpcPurseRow& npc_purse(NPCType t) {
+    return kNpcPurse[std::size_t(t)];
+}
+
 // THE id space, and it has one half now. Any "kind" that travels — a roster
 // record, an ECS NPCKind, a save — is an ordinal of the one table above, and a
 // wolf is as legal as a spearman (CANON.md S16). The `0x100 | catalog row`

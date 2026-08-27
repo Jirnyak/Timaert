@@ -94,6 +94,13 @@ struct FactionDef {
     std::uint32_t color;            // 0xRRGGBB
     Temperament   temperament;
     int           playerReputation; // new-game seed for gs.player.reputation
+    // Killing a member of this faction is NOT a crime — no reputation is lost
+    // for it (damage-door track Inc 5). Beasts, outlaws and the abyss: nobody
+    // mourns them, nobody avenges them by law. It was a strcmp if-chain over
+    // three ids inside the subworld reaper — a fourth such faction had to be
+    // added in CODE, in a file that has no business knowing who the outlaws
+    // are. Now it is this column, and the reaper asks the registry.
+    bool          killIsNoCrime = false;
 };
 
 // Sentinel for "no faction" in ecs::NPCKind.factionIdx: resolves to the empty
@@ -110,13 +117,13 @@ inline constexpr FactionDef kFactionDefs[] = {
     // ── Universal factions ────────────────────────────────────────────────
     {"wildlife", "Wildlife",
      "Beasts and roaming creatures. Indifferent to mortal politics.",
-     0x6b8e23, Temperament::Feral,   0},
+     0x6b8e23, Temperament::Feral,   0, /*killIsNoCrime*/true},
     {"bandits",  "Bandit Clans",
      "Outlaws and raiders. Hostile to all civilised folk.",
-     0x7a3a1a, Temperament::Outlaw,  -100},
+     0x7a3a1a, Temperament::Outlaw,  -100, /*killIsNoCrime*/true},
     {"demons",   "Demonic Hordes",
      "Forces of the abyss. War against everything.",
-     0x8b0000, Temperament::Abyssal, -100},
+     0x8b0000, Temperament::Abyssal, -100, /*killIsNoCrime*/true},
     {"cults",    "Demonic Cults",
      "Worshippers of the Old Ones. Hunted everywhere.",
      0x581c87, Temperament::Cultist, -10},
@@ -211,6 +218,14 @@ inline const char* faction_id_for_index(std::uint16_t idx) {
 
 inline const FactionDef* faction_def_by_index(std::uint16_t idx) {
     return idx < std::uint16_t(kFactionCount) ? &kFactionDefs[idx] : nullptr;
+}
+
+// Is killing a member of this faction a crime the world holds against you?
+// Fail-open for an unknown/empty id: a body whose faction the registry does
+// not know is a nobody, and nobody's death is nobody's business.
+inline bool kill_is_no_crime(const char* factionId) {
+    const int i = faction_index(factionId);
+    return i < 0 ? true : kFactionDefs[i].killIsNoCrime;
 }
 
 // ── Relations ──────────────────────────────────────────────────────────────

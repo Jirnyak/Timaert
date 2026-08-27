@@ -281,21 +281,53 @@ static void test_roll_loot_profile() {
 }
 
 static void test_generate_loot_gold() {
-    // base = (3 + level*2) * factionMult; v = floor(base + rng()*base).
-    // rng_zero -> v = floor(base).
-    expect(generate_loot_gold(10, "empire", rng_zero) == 23,
-           "gold L10 empire rng0 = floor(23)");
-    expect(generate_loot_gold(10, "wildlife", rng_zero) == 2,
-           "gold L10 wildlife(0.1) rng0 = floor(2.3)");
-    expect(generate_loot_gold(10, "demons", rng_zero) == 13,
-           "gold L10 demons(0.6) rng0 = floor(13.8)");
-    expect(generate_loot_gold(10, "bandits", rng_zero) == 18,
-           "gold L10 bandits(0.8) rng0 = floor(18.4)");
-    // rng_high -> jitter ~= base, v ~= floor(2*base).
-    expect(generate_loot_gold(10, "empire", rng_high) == 45,
-           "gold L10 empire rng_high = floor(23 + 22.9977)");
-    // Never negative, even at level 0.
-    expect(generate_loot_gold(0, "wildlife", rng_zero) >= 0, "gold never negative");
+    // THE purse law (damage-door Inc 5): the ROW says what this creature is
+    // worth to rob, the PLACE modulates it. Every expectation below is
+    // derived from the row, never a copied literal — retuning kNpcPurse
+    // touches no test.
+    const auto bandit = [](RngFn r, float wealth, std::uint8_t danger = 0) {
+        return generate_loot_gold(int(NPCType::Bandit), 1,
+                                  CorpseLootContext{danger, wealth}, r);
+    };
+    const NpcPurseRow& row = npc_purse(NPCType::Bandit);
+    expect(bandit(rng_zero, 1.0f) == row.min,
+           "a level-1 body on open land carries its row's floor");
+    expect(bandit(rng_high, 1.0f) == row.max - 1,
+           "the roll spans the row's own range");
+    // The place is the modulation — a city (1.5×) pays more for the same
+    // creature, a ruin (0.5×) less. The direction is the law; the exact
+    // numbers are the landmark rows'.
+    expect(bandit(rng_zero, 1.5f) > bandit(rng_zero, 1.0f),
+           "a rich place multiplies the same row's purse");
+    expect(bandit(rng_zero, 0.5f) < bandit(rng_zero, 1.0f),
+           "a poor place divides it");
+    // Level grows the purse: a veteran has robbed more than a fresh recruit.
+    expect(generate_loot_gold(int(NPCType::Bandit), 10,
+                              CorpseLootContext{}, rng_zero)
+               > bandit(rng_zero, 1.0f),
+           "a higher-level body of the same row carries more");
+    // The danger continuum is the third contribution (owner's design): the
+    // deepest ground doubles the purse, safe ground says nothing at all.
+    expect(bandit(rng_zero, 1.0f, 255) > bandit(rng_zero, 1.0f, 0),
+           "dangerous country pays better for the same body");
+    expect(bandit(rng_zero, 1.0f, 0) == bandit(rng_zero, 1.0f),
+           "danger 0 is a SILENT contribution, not a discount");
+    // A beast has no pockets — whatever banner it fights under and however
+    // rich the ground it dies on. This is the check that the faction-keyed
+    // multiplier could not make: under it, a ruin's wolf was six times richer
+    // than a meadow's.
+    expect(generate_loot_gold(int(NPCType::Wolf), 10,
+                              CorpseLootContext{255, 1.5f}, rng_high) == 0,
+           "a beast carries no coin, in a ruin or in a capital");
+    expect(generate_loot_gold(int(NPCType::Goblin), 5,
+                              CorpseLootContext{}, rng_high) > 0,
+           "the goblin, who robs what he kills, does carry coin");
+    // Fail-closed on a kind the table does not know.
+    expect(generate_loot_gold(-1, 10, CorpseLootContext{}, rng_high) == 0,
+           "an unknown kind carries nothing rather than a plausible number");
+    expect(generate_loot_gold(int(NPCType::Peasant), 0,
+                              CorpseLootContext{}, rng_zero) >= 0,
+           "gold never negative");
 }
 
 int main() {

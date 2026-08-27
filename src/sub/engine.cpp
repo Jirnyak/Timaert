@@ -312,11 +312,11 @@ void apply_player_kill_reputation(GameState* gs, const ecs::NPCKind* kind) {
     if (!gs) return;
     const char* factionId = faction_id_for_kind(kind);
     if (!factionId || factionId[0] == '\0') return;
-    if (std::strcmp(factionId, "wildlife") == 0
-        || std::strcmp(factionId, "demons") == 0
-        || std::strcmp(factionId, "bandits") == 0) {
-        return;
-    }
+    // Whose death the world holds against you is a COLUMN of the faction
+    // registry (killIsNoCrime), not three ids spelled into the reaper: a new
+    // lawless faction is a row, and this file never learns who the outlaws
+    // are.
+    if (kill_is_no_crime(factionId)) return;
     add_player_reputation(*gs, factionId, kKillRepPenalty);
 }
 
@@ -2396,8 +2396,38 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 auto stacks = roll_loot_profile(lootId, lvl, &loot_rng_f01);
                 for (const ItemStack& s : stacks) inv.add(s.id, s.count);
             }
-            const char* factionId = faction_id_for_kind(kind);
-            const int gold = generate_loot_gold(lvl, factionId, &loot_rng_f01);
+            // Coin: the row's purse, modulated by the WEALTH OF THE PLACE
+            // this body fell in (owner ruling 2026-08-27). The place is the
+            // landmark standing on the body's own macro cell, read from the
+            // baked grid — one array lookup, never a facts assembly (the door
+            // track's performance contract). Open land is 1.0 and silent.
+            // Coin: the row's purse, modulated by the WORLD the body fell in
+            // — the danger of its cell and the wealth of the place standing
+            // on it (owner's design 2026-08-27). Both read from BAKED grids,
+            // one array lookup each, never a facts assembly (the door track's
+            // performance contract); a new contribution is a new field of
+            // CorpseLootContext and one more line here.
+            CorpseLootContext lootCtx{};
+            if (pos) {
+                // Window tile → macro cell: the 3×3 window's centre cell is
+                // mgr_.center_cx/cy, its origin one cell back on each axis.
+                const int cellX =
+                    mgr_.center_cx() - 1 + int(pos->x) / int(kCellSize);
+                const int cellY =
+                    mgr_.center_cy() - 1 + int(pos->y) / int(kCellSize);
+                if (mw_.landmarks) {
+                    lootCtx.wealthMul =
+                        landmark_def(mw_.landmarks->at(cellX, cellY).type)
+                            .wealthMul;
+                }
+                if (zones_ && !zones_->data.empty()) {
+                    lootCtx.danger = zones_->at(cellX, cellY);
+                }
+            }
+            const int gold = kind
+                ? generate_loot_gold(int(kind->type), lvl, lootCtx,
+                                     &loot_rng_f01)
+                : 0;
             gLootRng = nullptr;
 
             if (pos && (gold > 0 || !inv.stacks.empty())) {
