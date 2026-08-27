@@ -89,16 +89,17 @@ void test_every_squad_body_is_a_whole_body() {
         if (health && !(health->hp > 0.0f && health->hp == health->maxHp))
             ++deadOnArrival;
 
-        // Body width comes from the TABLE (CombatTemplate::bodyRadius), so what
-        // blocks, what is hit and what is drawn are one number. A spawner that
+        // Body width comes from the TABLE's one column (NpcTypeDef::radius,
+        // man-shaped default resolved by npc_body_radius), so what blocks,
+        // what is hit and what is drawn are one number. A spawner that
         // hardcodes its own width shows up right here.
         if (kind && ai && kind->type < std::uint16_t(NPCType::Count)) {
             const NpcTypeDef& def = npc_def(NPCType(std::uint8_t(kind->type)));
             const auto* sheet = reg.try_get<CharacterSheet>(e);
             if (sheet) {
-                const CombatTemplate pc = project_combat(*sheet, def.combat);
-                if (ai->radius != pc.bodyRadius) ++offTableRadius;
-                if (sprite && sprite->scale != pc.bodyRadius) ++offTableRadius;
+                if (ai->radius != npc_body_radius(def)) ++offTableRadius;
+                if (sprite && sprite->scale != npc_body_radius(def))
+                    ++offTableRadius;
             }
             // …and so does its HEIGHT, which the renderer used to invent as a
             // flat 2 metres for everyone. Derived from the same row, varied by

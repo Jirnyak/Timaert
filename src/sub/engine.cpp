@@ -1353,22 +1353,23 @@ void SubworldEngine::tick_player_melee(float dt) {
     if (!pc) return;
     const float meleeDamage = std::floor(pc->damage);
     const float meleeCooldown = pc->cooldown;
-    const float range2 = pc->attackRange * pc->attackRange;
     // HOSTILES FIRST (owner ruling 2026-08-05, targeting.cpp
     // melee_pick_target): the nearest hostile in reach wins; only with no
     // hostile around does the swing fall back to the nearest body of any
     // stripe — a bystander no longer catches the blow meant for the bandit
     // behind him, while deliberately striking a neutral (and paying its
-    // reputation price) stays possible.
+    // reputation price) stays possible. Reach is surface-honest (Inc 4):
+    // range + body_radius(target), through the battle pick grid.
     struct HostileCtx { entt::registry* reg; const GameState* gs; };
     HostileCtx hostileCtx{&reg, gs_};
     const entt::entity target = melee_pick_target(
-        reg, playerX_, playerY_, playerZ_, range2,
+        reg, playerX_, playerY_, playerZ_, pc->attackRange,
         [](void* user, entt::entity e) {
             auto* c = static_cast<HostileCtx*>(user);
             return hostile_to_player_entity(*c->reg, e, c->gs);
         },
-        &hostileCtx);
+        &hostileCtx,
+        &SubworldEngine::spell_neighbors_callback, this);
     if (target == entt::null) {
         // No creature in reach — the same swing harvests the nearest lootable
         // prop instead (tree, crop — whatever the kind table pays for; the
@@ -3475,10 +3476,14 @@ void SubworldEngine::tick(float dt) {
         // onto the authoritative entity so hostiles target the true altitude.
         sync_player_vertical(dt);
         push_scalars_to_player_entity();
-        tick_player_melee(dt);
         tick_npc_ai(*ecs_, playerX_, playerY_, std::uint32_t{0}, dt,
                     &SubworldEngine::player_threat_callback, this);
         tick_subworld_combat(dt);
+        // The player's swing AFTER the combat gather: it asks the battle pick
+        // grid the same way the spell contact does, and the grid it asks must
+        // be THIS tick's (it used to run before the build and could only full-
+        // scan the registry on every swing).
+        tick_player_melee(dt);
         ecs::sys::tick_visual_interp(*ecs_, dt);
         ecs::sys::tick_combat_cooldowns(*ecs_, /*steps=*/1u);
         tick_spell_projectiles(*ecs_, bus_, dt,

@@ -173,11 +173,11 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
     maybe_emplace_missile_attack(reg, e, pc);
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(body.level));
     reg.emplace<ecs::SubworldTag>(e);
-    // How much room this body takes. The row speaks first — a rabbit is not a
-    // man-sized thing and says so — and the sheet's projection answers for
-    // every row that stays silent. This is the ONE line where the creature
-    // birth and the humanoid birth used to differ about a number.
-    const float bodyRadius = def.radius > 0.0f ? def.radius : pc.bodyRadius;
+    // How much room this body takes: the row's ONE width column, man-shaped
+    // default resolved (npc.h npc_body_radius). This is the ONE line where
+    // the creature birth and the humanoid birth used to differ about a
+    // number — and where a template shadow copy of the width used to answer.
+    const float bodyRadius = npc_body_radius(def);
     reg.emplace<ecs::SubworldAi>(e,
         body.combatant ? ecs::SubworldAi::Combat : subworld_ai_for(def.ai),
         /*aiTimer*/0.0f, /*vx*/0.0f, /*vy*/0.0f,

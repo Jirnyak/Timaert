@@ -102,9 +102,11 @@ struct NpcTypeDef {
     // Loot profile override; nullptr = the faction default of the one loot
     // registry (macro/items.h).
     const char*     lootId     = nullptr;
-    // Body radius in metres. 0 = derive it from the sheet like a humanoid
-    // does (sub/body.h) — the creature rows author it because a rabbit is not
-    // a man-sized thing.
+    // Body radius in metres — THE one width column of the one body table
+    // (damage-door Inc 4: CombatTemplate's shadow copy is gone). 0 = the
+    // man-shaped default (npc_body_radius below); the creature rows author it
+    // because a rabbit is not a man-sized thing. The same number scales the
+    // creature's sprite, so visual size and hit size cannot drift.
     float           radius     = 0.0f;
 
     // Pools — first `nameCount` / `talkCount` entries are valid.
@@ -413,6 +415,20 @@ static_assert(rows_in_enum_order(kNpcTypeDefs, &NpcTypeDef::type),
 
 inline constexpr const NpcTypeDef& npc_def(NPCType t) {
     return kNpcTypeDefs[std::size_t(t)];
+}
+
+// THE man-shaped half-width (world units ≈ metres): what a row that authors
+// no radius IS — a person. This default lived twice (here as the humanoid
+// rows' silence, and as CombatTemplate::bodyRadius's 0.55 that no row ever
+// authored); the template copy is dead, the number lives beside the column
+// it defaults.
+inline constexpr float kNpcBodyRadiusDefault = 0.55f;
+
+// A row's body radius, default resolved — the ONE answer every consumer
+// derives from (sub/body.h body_radius for live entities, the spawners for
+// the footprint they stamp, the auto-battle fixture for its bodies).
+inline constexpr float npc_body_radius(const NpcTypeDef& def) {
+    return def.radius > 0.0f ? def.radius : kNpcBodyRadiusDefault;
 }
 
 // THE id space, and it has one half now. Any "kind" that travels — a roster

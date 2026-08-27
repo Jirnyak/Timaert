@@ -34,10 +34,28 @@ namespace sm::sub {
 // `isHostile` is a callback because hostility needs GameState (reputation),
 // which this pure module deliberately does not know.
 using HostileFn = bool (*)(void* user, entt::entity e);
+
+// Broad phase for the swing — the battle pick grid, reached exactly like the
+// spell contact reaches it (same shape as SpellNeighborsFn, same promises: a
+// SUPERSET of everything within `r` of (x, y), -1 when completeness cannot be
+// promised this tick, null = no grid at all — both mean the full scan).
+using MeleeNeighborsFn = int (*)(void* user, float x, float y, float r,
+                                 std::uint32_t* out, int maxOut);
+inline constexpr int kMaxMeleeNeighbors = 16384; // the battle snapshot ceiling
+
+// `range` is the attacker's reach — ONE number (owner ruling 2026-08-27: a
+// mob's row states its own attack radius; a man's will come from his spear
+// through the equipment increment — but it is always just this number). The
+// blow lands on a target's SURFACE: a candidate is in reach when
+// dist − body_radius(target) ≤ range, the same law the NPC strike walks
+// (sub/battle.cpp reach + radius[target]) — a troll is struck from farther
+// away than a frog because a troll is wider, not because anyone branched.
 entt::entity melee_pick_target(entt::registry& reg,
                                float px, float py, float pz,
-                               float range2,
-                               HostileFn isHostile, void* user);
+                               float range,
+                               HostileFn isHostile, void* user,
+                               MeleeNeighborsFn neighborsFn = nullptr,
+                               void* neighborsUser = nullptr);
 
 entt::entity aim_target(entt::registry& reg,
                         float px, float py, float yaw,

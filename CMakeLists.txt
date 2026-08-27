@@ -452,6 +452,14 @@ timaert_test(combat_squad_test
         src/macro/fauna.cpp
     LINK_ENTT)
 
+# The melee reach law: range + body_radius(target), hostiles-first by surface
+# gap, grid-arm/full-scan parity. Pure targeting TU — the body table it reads
+# is header data.
+timaert_test(melee_reach_test
+    SOURCES
+        src/sub/targeting.cpp
+    LINK_ENTT)
+
 timaert_test(audio_contract_test
     SOURCES
         src/macro/audio.cpp

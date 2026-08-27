@@ -26,22 +26,21 @@ struct CombatTemplate {
     float       missileBlast = 0.0f;
     std::uint32_t missileColorRGBA = 0xFFFFFFFFu;
     // ── Spatial / perception, shared by every fighter table ────────────────
-    // Both authoring tables embed a CombatTemplate (NpcTypeDef::combat and
-    // FaunaEntry::combat), so these two columns make body size and eyesight
-    // DATA for humanoids and monsters alike: a dragon is wide and sees far
-    // because of its row, not because of a branch in the engine.
+    // NO bodyRadius here — deliberately (damage-door track Inc 4, owner's
+    // «единая система: просто число»). A body's WIDTH is one column of the
+    // one body table, NpcTypeDef::radius (npc_body_radius resolves its
+    // man-shaped default); this template's copy defaulted to the same 0.55,
+    // was authored by zero rows and answered only when the real column was
+    // silent — a second opinion waiting to drift. The ATTACK reach stays
+    // `attackRange` above: one number per row, and when equipment lands
+    // (work_vector §5) a spear modifies that number through the door.
     //
-    // bodyRadius — physical half-width in world units (1 unit ≈ 1 m). Drives
-    // separation, the engagement ring and hit reach. A creature row may leave
-    // this at 0 and let FaunaEntry::radius (which also scales its sprite, so
-    // visual size and body size cannot drift) speak instead.
-    float       bodyRadius = 0.55f;
-    // bodyHeight — how tall this thing is, in metres, for the eye. Shared by
-    // both authoring tables exactly like bodyRadius above (owner's ruling,
-    // 2026-08-06: ONE column for humanoids and monsters alike), so a dragon
-    // towers because of its row and not because of a branch in the renderer.
-    // 0 = not stated; sub/body.h then derives it — a humanoid is a person, a
-    // creature is as tall as the proportion the renderer used to hardcode.
+    // bodyHeight — how tall this thing is, in metres, for the eye (owner's
+    // ruling, 2026-08-06: ONE column for humanoids and monsters alike), so a
+    // dragon towers because of its row and not because of a branch in the
+    // renderer. 0 = not stated; sub/body.h then derives it — a humanoid is a
+    // person, a creature is as tall as the proportion the renderer used to
+    // hardcode.
     float       bodyHeight = 0.0f;
     // sight — how far this fighter notices an enemy on its own. It is NOT an
     // aggro leash: awareness relays through a formation (see the alert chain in

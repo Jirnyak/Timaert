@@ -37,9 +37,9 @@
 namespace sm::sub {
 
 // Last-resort body radius for a body carrying neither an explicit
-// ecs::BodyRadius nor a table row (a bare test/console entity). Roughly a
-// human's half-width: 1 world unit ≈ 1 metre.
-inline constexpr float kBodyRadiusFallback = 0.55f;
+// ecs::BodyRadius nor a table row (a bare test/console entity): the same
+// man-shaped width the table defaults to — one number, one home (npc.h).
+inline constexpr float kBodyRadiusFallback = kNpcBodyRadiusDefault;
 
 // THE row behind a body, whatever it is. There were two of these — one that
 // looked a kind up in the monster catalog and one that looked it up in the NPC
@@ -56,10 +56,10 @@ inline float body_radius(const entt::registry& reg, entt::entity e) {
     if (const auto* br = reg.try_get<ecs::BodyRadius>(e)) return br->radius;
     const auto* kind = reg.try_get<ecs::NPCKind>(e);
     if (const NpcTypeDef* row = row_for(kind)) {
-        // The row's own authored width first (a rabbit says how wide a rabbit
-        // is), then what its combat line implies for a man-shaped thing.
-        if (row->radius > 0.0f) return row->radius;
-        if (row->combat.bodyRadius > 0.0f) return row->combat.bodyRadius;
+        // The row's ONE width column, man-shaped default resolved (npc.h).
+        // The template shadow copy this used to fall through to is dead
+        // (damage-door Inc 4).
+        return npc_body_radius(*row);
     }
     if (const auto* ai = reg.try_get<ecs::SubworldAi>(e)) return ai->radius;
     if (const auto* sp = reg.try_get<ecs::Sprite>(e)) return sp->scale;

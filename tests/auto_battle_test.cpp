@@ -96,7 +96,7 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
         f.cdMax = std::max(0.1f, pc.cooldown);
         f.reach = pc.attackRange;
         f.speed = pc.speed;
-        f.radius = pc.bodyRadius;
+        f.radius = npc_body_radius(npc_def(type));
         f.side = side;
         f.alive = true;
         bodies.push_back(f);
