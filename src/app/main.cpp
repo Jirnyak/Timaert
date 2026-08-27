@@ -1585,6 +1585,23 @@ float macro_cell_cost_weight(const App& app) {
     return pc.costGrid[std::size_t(cy) * std::size_t(pc.width) + std::size_t(cx)];
 }
 
+// Can the player make camp where he stands? The same DECISION the macro AI
+// asks before it lets a spent squad rest (macro/npc_ai.cpp settle_exhaustion),
+// read from the same `water` column of the same cost grid. Open water offers
+// no camp to anyone: the exhaustion mechanic is one law for both scales, and
+// so is the one thing that can stop you paying it.
+bool player_can_make_camp(const App& app) {
+    const sm::PathCostData& pc = app.pathCost;
+    if (pc.width <= 0 || pc.height <= 0
+        || pc.water.size() != std::size_t(pc.width) * std::size_t(pc.height)) {
+        return true;   // no grid yet: nothing says he cannot
+    }
+    const int cx = sm::wrapi(int(std::floor(app.gs.player.x)), pc.width);
+    const int cy = sm::wrapi(int(std::floor(app.gs.player.y)), pc.height);
+    return pc.water[std::size_t(cy) * std::size_t(pc.width)
+                    + std::size_t(cx)] == 0u;
+}
+
 bool boot_window(App& app) {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
         std::fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
@@ -2864,6 +2881,7 @@ void aim_rest_until_rested(App& app) {
     app.cursor.pathIdx = 0;
     const auto& cs = app.gs.player.combatStats;
     if (cs.currentSp >= cs.maxSp) return;
+    if (!player_can_make_camp(app)) return;   // no camp in open water
     app.restUntilTick = app.gs.worldTime.tick + 2 * sm::kTicksPerDay;
 }
 
@@ -2884,6 +2902,7 @@ int apply_rest_promotion(App& app, int ticks) {
         || app.gs.subState.kind != sm::GameSubStateKind::Exploring
         || !app.cursor.path.empty()
         || cs.currentSp >= cs.maxSp
+        || !player_can_make_camp(app)
         || app.gs.worldTime.tick >= app.restUntilTick;
     if (cancelled) {
         app.restUntilTick = 0;

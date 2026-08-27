@@ -198,6 +198,14 @@ float cell_weight(const TickContext& ctx, int x, int y) {
 // The EDGE weight of one greedy step — the cell half from the baked grid
 // plus the uphill climb half (movement_cost.h: the law's two halves; the
 // squad walks the same slopes the player and both A*s pay for).
+// Can a body make camp on this cell? A DECISION the exhaustion mechanic asks,
+// not a branch inside it (owner, 2026-08-27: механика одна, «до скольки и где
+// отдыхать» — решение автомата). Open water is the one ground that offers no
+// camp: a squad in the middle of the sea cannot stop, so it must keep paying
+// the march price with its flesh until it reaches a shore or drowns. Same
+// sentence for the player — the aim to rest refuses over water too.
+bool cell_is_water(const TickContext& ctx, int x, int y);
+
 float edge_weight(const TickContext& ctx, int fx, int fy, int tx, int ty) {
     const PathCostData* pc = ctx.mw.pathCost;
     float w = cell_weight(ctx, tx, ty);
@@ -212,19 +220,6 @@ float edge_weight(const TickContext& ctx, int fx, int fy, int tx, int ty) {
         w += pc->climb(fi, ti);
     }
     return w;
-}
-
-bool cell_is_water(const TickContext& ctx, int x, int y) {
-    const PathCostData* pc = ctx.mw.pathCost;
-    if (!pc || pc->width <= 0 || pc->height <= 0
-        || pc->water.size()
-               != std::size_t(pc->width) * std::size_t(pc->height)) {
-        return false;
-    }
-    const int wx = wrapi(x, pc->width);
-    const int wy = wrapi(y, pc->height);
-    return pc->water[std::size_t(wy) * std::size_t(pc->width)
-                     + std::size_t(wx)] != 0u;
 }
 
 void try_move(ecs::Position& p, ecs::MacroNpcRuntime& rt,
@@ -1137,28 +1132,60 @@ AIBehaviour effective_behaviour(entt::registry& reg, entt::entity e,
 
 // Exhaustion, settled once per think AFTER the behaviour marched — the one
 // door for every behaviour, where the dispatcher holds the entity and its
-// Health (try_move deliberately sees neither). On LAND a spent squad makes
-// camp: Resting, debt kept (regen pays it off — the deeper the hole, the
-// longer the rest, the player's own shape). On WATER there is no camp
-// (owner ruling, Session 21): the outstanding debt bites the LORD's HP by
-// the player's exhaustion law (kExhaustionBite), because the lord IS the
-// squad — the roster is a row inside him, macro damage lands on the avatar.
-// An ocean crossing the bar cannot pay therefore kills, through the same
-// tracked-death door an auto-battle uses; the drowned lord's men settle by
-// the standing dead-leader rule.
+// Health (try_move deliberately sees neither).
+//
+// ONE LAW, both scales (owner's ruling, 2026-08-27): «истощение — это когда
+// SP кончилось, и тогда отнимается HP от ДВИЖЕНИЯ по миру; остановился —
+// отдыхаешь». So the bite is owed by a body that MOVED this think with its
+// bar already spent, wherever it stands — the same `exhaustion_bite` the
+// player's every step pays (movement_cost.h). It used to be gated on WATER:
+// a squad that marched itself into the ground on dry meadow simply made camp
+// and paid nothing, while the player bled for the identical step. That gate
+// is gone; drowning is no longer a special case, it is the general case
+// happening on the most expensive ground there is.
+//
+// The bite lands on the LORD's HP because the lord IS the squad — the roster
+// is a row inside him, macro damage lands on the avatar. A march the bar
+// cannot pay therefore kills, through the same tracked-death door an
+// auto-battle uses; the dead lord's men settle by the standing rule.
+//
+// MAKING CAMP is a DECISION, not a mechanic (owner: «до скольки отдыхать —
+// решение конечного автомата, а не механики»), so it stays here as what the
+// AI chooses when its legs are gone, and the player keeps his own aim. What
+// is one law is the PRICE; what is two is who decides to stop paying it.
+bool cell_is_water(const TickContext& ctx, int x, int y) {
+    const PathCostData* pc = ctx.mw.pathCost;
+    if (!pc || pc->width <= 0 || pc->height <= 0
+        || pc->water.size()
+               != std::size_t(pc->width) * std::size_t(pc->height)) {
+        return false;
+    }
+    const int wx = wrapi(x, pc->width);
+    const int wy = wrapi(y, pc->height);
+    return pc->water[std::size_t(wy) * std::size_t(pc->width)
+                     + std::size_t(wx)] != 0u;
+}
+
 void settle_exhaustion(entt::entity e, const ecs::Position& p,
                        ecs::MacroNpcRuntime& rt, ecs::Health& hp,
-                       const TickContext& ctx) {
+                       bool moved, const TickContext& ctx) {
     if (int(rt.sp) >= 0) return;
-    if (!cell_is_water(ctx, int(p.x), int(p.y))) {
-        if (rt.state != std::uint8_t(NPCState::Resting)) {
-            rt.state = std::uint8_t(NPCState::Resting);
-            rt.stateTimer = 0;
-        }
-        return;
+
+    // The AI's DECISION: legs gone, make camp — wherever a camp is possible.
+    // Standing still costs nothing; that is the same sentence as «остановился
+    // — отдыхаешь». Open water offers no camp, so a squad caught mid-ocean
+    // does not get to stop, and the one mechanic below bills it for every
+    // further step until it makes a shore or drowns. That is the SAME outcome
+    // the old water-only bite produced, arrived at by the right layer: the
+    // price is a law, the choice of where to stop is a decision.
+    const bool canCamp = !cell_is_water(ctx, int(p.x), int(p.y));
+    if (canCamp && rt.state != std::uint8_t(NPCState::Resting)) {
+        rt.state = std::uint8_t(NPCState::Resting);
+        rt.stateTimer = 0;
     }
-    const int bite =
-        int(std::lround(float(-int(rt.sp)) * kExhaustionBite));
+    if (!moved) return;
+
+    const int bite = exhaustion_bite(int(rt.sp));
     if (bite <= 0) return;
     hp.hp -= float(bite);
     if (hp.hp <= 0.0f && ctx.mw.world && ctx.mw.gs) {
@@ -1289,8 +1316,9 @@ void tick_macro_npc_ai(MacroWorld& mw,
         // the view's Dead exclusion was evaluated at entry, so re-check.
         if (reg.all_of<ecs::Dead>(e)) continue;
         if (!prepare_macro_npc_tick(rt, hp)) continue;
+        const float x0 = p.x, y0 = p.y;
         dispatch(effective_behaviour(reg, e, kind), e, p, kind, rt, ctx);
-        settle_exhaustion(e, p, rt, hp, ctx);
+        settle_exhaustion(e, p, rt, hp, p.x != x0 || p.y != y0, ctx);
     }
 }
 
@@ -1399,9 +1427,11 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
             if (kind.type < std::uint16_t(NPCType::Count)
                 && !reg.all_of<ecs::Dead>(e)) {   // may have died this sweep
                 if (prepare_macro_npc_tick(rt, hp)) {
+                    const float x0 = p.x, y0 = p.y;
                     dispatch(effective_behaviour(reg, e, kind), e, p, kind,
                              rt, ctx);
-                    settle_exhaustion(e, p, rt, hp, ctx);
+                    settle_exhaustion(e, p, rt, hp,
+                                      p.x != x0 || p.y != y0, ctx);
                 }
                 ++result.npcsProcessed;
             }

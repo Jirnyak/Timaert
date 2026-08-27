@@ -17,6 +17,7 @@
 //   · the calibration anchor: a fresh 110-SP bar buys ~8 game hours of road
 //     for a squad exactly as it does for the player — one law, two walkers.
 #include "check.h"
+#include <vector>
 
 #include "macro/npc_ai.h"
 #include "macro/movement_cost.h"
@@ -198,7 +199,13 @@ void test_ocean_drowns_the_lord_and_settles_his_squad() {
           "the drowned lord's men settle by the standing dead-leader rule");
 }
 
-// ── On land a spent squad camps: Resting, debt kept, no blood ──────────────
+// ── One exhaustion law: the step in debt bleeds, the camp does not ────────
+// Owner, 2026-08-27: «истощение — это когда SP кончилось, и тогда отнимается
+// HP от ДВИЖЕНИЯ по миру; остановился — отдыхаешь». On land a spent squad
+// still makes camp — that is the AI's DECISION — but the step that emptied
+// the bar is paid for in flesh, exactly as the player's identical step is.
+// The old shape had the bite belong to water alone, so a squad could march
+// itself into the ground on dry meadow for free while the player bled.
 void test_land_exhaustion_makes_camp_without_blood() {
     GameState gs{};
     gs.mapW = 64;
@@ -217,8 +224,84 @@ void test_land_exhaustion_makes_camp_without_blood() {
           "a bar spent on land is a camp, not a catastrophe");
     CHECK(int(npc.sp) <= 0,
           "the debt is kept on the bar, the player's own shape");
-    CHECK(w.reg.get<ecs::Health>(e).hp == 100.0f,
-          "no blood: the exhaustion bite belongs to water alone");
+    const float bled = 100.0f - w.reg.get<ecs::Health>(e).hp;
+    CHECK(bled > 0.0f,
+          "the step that emptied the bar cost flesh, on meadow as at sea");
+    CHECK(bled < 100.0f,
+          "and it is a bite, not a death: a spent squad camps, it does not "
+          "march itself to pieces");
+
+    // The camp itself is free — «остановился, значит отдыхаешь». Thinks spent
+    // Resting must cost nothing, or a tired squad would bleed out standing
+    // still. This is the control that separates "moving in debt" from
+    // "being in debt".
+    const float campedAt = w.reg.get<ecs::Health>(e).hp;
+    // The LEDGER, not the bar: regen is fractional (kSpRegenPctPerHour of a
+    // 4-point bar per game hour), so eight thinks may not add a WHOLE point.
+    // The file's own convention — sp + carry — is what actually moved.
+    const float ledgerAt = float(npc.sp) + npc.spCarry;
+    for (int i = 0; i < 8; ++i) {
+        MacroWorld mw{.gs = &gs, .world = &w, .pathCost = &grid};
+        tick_macro_npc_ai(mw, rt, kAiTicks, false);
+    }
+    CHECK(w.reg.get<ecs::Health>(e).hp == campedAt,
+          "eight thinks in camp cost no blood at all");
+    CHECK(float(npc.sp) + npc.spCarry > ledgerAt,
+          "negative control: those thinks DID pass — the bar was refilling");
+}
+
+// ── The world does not bleed out (the new law's blast radius) ─────────────
+// Making the exhaustion bite universal means every squad on the map now pays
+// flesh for marching in debt, where before only a drowning one did. That is a
+// change to a law thousands of bodies live under, so it is not enough to
+// prove one walker behaves — the question is whether a MAP of them survives
+// an ordinary long haul. A hundred caravans, a season of thinks, ordinary
+// ground: they may bleed, they must not die.
+void test_a_map_of_marchers_survives_the_new_law() {
+    GameState gs{};
+    gs.mapW = 128;
+    gs.mapH = 128;
+    ecs::World w;
+    PathCostData grid = make_grid(128, 128, 2.0f);   // ordinary land
+
+    // A bar deliberately far too small for the haul (20 points against ~230
+    // of ground): every one of these WILL run out, camp, refill and run out
+    // again, over and over. That is the worst honest case the new law can be
+    // put to, and it is the case the old water-only bite never charged at all.
+    constexpr int kWalkers = 100;
+    std::vector<entt::entity> walkers;
+    walkers.reserve(kWalkers);
+    for (int i = 0; i < kWalkers; ++i) {
+        const float y = float(i % 100) + 8.0f;
+        entt::entity e = make_walker(w, 4.0f, y, 120.0f, y, /*maxSp*/20);
+        // Each one hauls right across the map on its own line.
+        w.reg.replace<ecs::MacroSpawnId>(e, std::uint32_t(100 + i));
+        walkers.push_back(e);
+    }
+
+    MacroNpcAiRuntime rt{};
+    reset_macro_npc_ai_runtime(rt, 77u);
+    for (int think = 0; think < 600; ++think) {
+        MacroWorld mw{.gs = &gs, .world = &w, .pathCost = &grid};
+        tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle*/false);
+    }
+
+    int alive = 0, bled = 0, moved = 0;
+    for (entt::entity e : walkers) {
+        if (!w.reg.all_of<ecs::Dead>(e)
+            && w.reg.get<ecs::Health>(e).hp > 0.0f) ++alive;
+        if (w.reg.get<ecs::Health>(e).hp < 100.0f) ++bled;
+        if (w.reg.get<ecs::Position>(e).x != 4.0f) ++moved;
+    }
+    CHECK(alive == kWalkers,
+          "a season of honest marching kills nobody: the bite is a cost, "
+          "not a cull");
+    CHECK(moved == kWalkers,
+          "negative control: they all actually WALKED — the survival above "
+          "is not the survival of a hundred bodies standing still");
+    CHECK(bled == kWalkers,
+          "and the new law is in force for ALL of them: emptying the bar on "
+          "dry land draws blood, which the water-only bite never did");
 }
 
 // ── THE anchor: a fresh bar buys ~8 game hours of road, squad or player ────
@@ -266,6 +349,7 @@ int main() {
     test_forced_ford_pays_the_water_price();
     test_ocean_drowns_the_lord_and_settles_his_squad();
     test_land_exhaustion_makes_camp_without_blood();
+    test_a_map_of_marchers_survives_the_new_law();
     test_road_bar_lasts_a_days_march();
     return sm::test::report("squad_travel_test");
 }

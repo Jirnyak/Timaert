@@ -199,6 +199,20 @@ inline float travel_stamina_cost(float weight, float cells,
     return (weight * kStaminaPerCell * efficiency + float(overloadCost)) * cells;
 }
 
+// THE bite, for a body of either scale (owner's ruling, 2026-08-27:
+// «истощение — это когда SP кончилось, и тогда отнимается HP от ДВИЖЕНИЯ по
+// миру; остановился — отдыхаешь»). What it takes for one step in debt, given
+// the debt. Zero while stamina lasts, so it can be asked unconditionally.
+//
+// This used to be inlined in the player's charge and hand-copied in the macro
+// AI's per-think settle, where it was also gated on WATER: a squad marching
+// itself into the ground on dry meadow just made camp and paid nothing, while
+// the player bled for the same step. One law, one line, both scales.
+inline int exhaustion_bite(int sp) {
+    if (sp >= 0) return 0;
+    return int(std::lround(float(-sp) * kExhaustionBite));
+}
+
 // Charge whole SP, and let the exhaustion curve take the rest out of HP.
 // Returns the HP lost (0 while stamina lasts).
 //
@@ -208,8 +222,7 @@ inline float travel_stamina_cost(float weight, float cells,
 inline int apply_stamina_cost(CombatStats& cs, int cost) {
     if (cost <= 0) return 0;
     cs.currentSp -= cost;
-    if (cs.currentSp >= 0) return 0;
-    const int bite = int(std::lround(float(-cs.currentSp) * kExhaustionBite));
+    const int bite = exhaustion_bite(cs.currentSp);
     cs.currentHp -= bite;
     return bite;
 }
