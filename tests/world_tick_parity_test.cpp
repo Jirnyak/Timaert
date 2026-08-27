@@ -270,6 +270,60 @@ void test_subworld_steps_lose_nothing_when_split() {
           "the leftover steps are kept whole in the runtime, not dropped");
 }
 
+// ── A town's TRANSITIONS become facts of the world ───────────────────────
+// The chronicle records the day a famine BEGAN, not the thirty-two days it
+// lasted: a town hungry for a season is one famine, and a chronicle that filed
+// the state every day would bury the day it started under the days it
+// continued.
+void test_a_famine_is_recorded_once_when_it_begins() {
+    sm::GameState gs{};
+    gs.mapW = 64;
+    gs.mapH = 64;
+    sm::chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
+
+    // A town with mouths and no bread: it starves from the first day and keeps
+    // starving, which is exactly the shape that would flood a naive recorder.
+    sm::Settlement s{};
+    s.id = 1;
+    s.name = "Hungry";
+    s.population = 100;
+    s.x = 8; s.y = 8;
+    s.mood = sm::SettlementMood::Stable;
+    gs.settlements.push_back(s);
+
+    sm::WorldTickRuntime runtime{};
+    sm::reset_world_tick_runtime(runtime, 7u);
+    constexpr int kDays = 20;
+    runtime.pendingDailyTicks = kDays;
+    runtime.nextDailyTickDay = 1;
+    sm::process_world_daily_ticks(gs, runtime, 64);
+
+    struct Count { int famines = 0; int revolts = 0; int total = 0; };
+    Count c;
+    sm::chronicle_near(gs.chronicle, 8, 8, /*radiusCells*/1, /*sinceDay*/0,
+                       [](void* u, const sm::WorldFact& f) {
+                           Count& n = *static_cast<Count*>(u);
+                           ++n.total;
+                           if (f.kind == std::uint16_t(sm::FactKind::Starved))
+                               ++n.famines;
+                           if (f.kind == std::uint16_t(sm::FactKind::Revolted))
+                               ++n.revolts;
+                       }, &c);
+
+    CHECK(gs.settlements[0].famineActive != 0,
+          "the fixture is honest: this town IS starving");
+    CHECK(c.famines == 1,
+          "twenty hungry days are ONE famine — the transition is the story");
+    CHECK(c.revolts <= 1,
+          "and a town falls into revolt once, not once a day");
+    CHECK(c.total >= 1, "the world remembered something about this place");
+
+    // The town is a LANDMARK, and a landmark is named the day it is founded —
+    // so its famine is history, not weather.
+    CHECK(!gs.chronicle.annals.empty(),
+          "a named place's misfortune belongs to the annals");
+}
+
 } // namespace
 
 int main() {
@@ -280,5 +334,6 @@ int main() {
     test_day_rollover_queues_budgeted_daily_tick();
     test_daily_processing_applies_player_upkeep_and_age();
     test_settlement_history_keeps_a_rolling_window();
+    test_a_famine_is_recorded_once_when_it_begins();
     return sm::test::report("world_tick_parity_test");
 }

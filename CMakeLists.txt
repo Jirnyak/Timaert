@@ -369,6 +369,8 @@ timaert_test(quest_lifecycle_test
 timaert_test(world_tick_parity_test
     SOURCES
         src/macro/world_tick.cpp
+        # a landmark's famine and revolt are facts of the world
+        src/macro/chronicle.cpp
         # The player's upkeep reads his roster off his squad entity now.
         src/macro/player_entity.cpp
         src/macro/deposit_layer.cpp
@@ -884,6 +886,8 @@ timaert_test(trade_law_test
         src/macro/items.cpp
         src/macro/econ_day.cpp
         src/macro/world_tick.cpp
+        # a landmark's famine and revolt are facts of the world
+        src/macro/chronicle.cpp
         src/macro/deposit_layer.cpp
     LINK_SDL LINK_ENTT)
 
@@ -942,6 +946,8 @@ timaert_test(crop_stock_test
         src/macro/fauna.cpp
         src/macro/tree_layer.cpp
         src/macro/world_tick.cpp
+        # a landmark's famine and revolt are facts of the world
+        src/macro/chronicle.cpp
         src/macro/deposit_layer.cpp
         src/macro/econ_day.cpp
         src/macro/items.cpp
@@ -961,6 +967,8 @@ timaert_test(fauna_stock_test
         src/macro/fauna.cpp
         src/macro/tree_layer.cpp
         src/macro/world_tick.cpp
+        # a landmark's famine and revolt are facts of the world
+        src/macro/chronicle.cpp
         src/macro/deposit_layer.cpp
         src/macro/econ_day.cpp
         src/macro/items.cpp

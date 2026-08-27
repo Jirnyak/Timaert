@@ -45,8 +45,30 @@ void push_history_(SettlementHistory& hist, int day, int population) {
 // mood and the LOGISTIC population law (owner's ruling — no flat heads per
 // day; K = kPopCarryingCap = the subworld's own NPC cap). Returns the
 // wellbeing for callers that want it.
+// One landmark fact, filed straight into the world's memory.
+//
+// `chronicle_record` is THE door; the app-side `record_deed` is a wrapper over
+// it that additionally resolves an ENTITY and pays it renown. A landmark has
+// no entity and no renown to earn — it is named the day it is founded — so it
+// files directly, and there is still one door.
+void record_landmark_fact(GameState& gs, FactKind kind, int landmarkId,
+                          int x, int y, int amount) {
+    WorldFact f{};
+    f.day = gs.worldTime.day();
+    f.kind = std::uint16_t(kind);
+    f.subjectKind = std::uint8_t(FactSubject::Landmark);
+    f.subject = std::uint32_t(landmarkId < 0 ? 0 : landmarkId);
+    f.x = std::int16_t(x);
+    f.y = std::int16_t(y);
+    f.amount = amount;
+    chronicle_record(gs.chronicle, f);
+}
+
 template <typename Landmark>
-void settle_landmark_day(Landmark& lm, int minPop) {
+void settle_landmark_day(Landmark& lm, int minPop,
+                         bool& startedFamine, bool& startedRevolt) {
+    startedFamine = false;
+    startedRevolt = false;
     // Straight onto the ONE store — the twice-a-day conversion to a second
     // container (and back, through a string lookup each way) is gone with the
     // second index space it existed to bridge.
@@ -55,10 +77,17 @@ void settle_landmark_day(Landmark& lm, int minPop) {
 
     lm.starvedYesterday = std::uint16_t(std::min(o.starvedPop, 0xFFFF));
     lm.unmetYesterday   = std::uint16_t(std::min(o.unmetComfort, 0xFFFF));
-    lm.famineActive     = o.famineActive ? 1 : 0;
+    // The TRANSITIONS are the story, not the states. A town that has been
+    // hungry for a season is one famine, not thirty-two of them, and a
+    // chronicle that filed the state every day would bury the day it began.
+    startedFamine = o.famineActive && lm.famineActive == 0;
+    lm.famineActive = o.famineActive ? 1 : 0;
 
     const float wellbeing = settlement_wellbeing(o, lm.population);
+    const SettlementMood was = lm.mood;
     lm.mood = SettlementMood(mood_band_from_wellbeing(wellbeing));
+    startedRevolt = lm.mood == SettlementMood::Revolt
+                    && was != SettlementMood::Revolt;
 
     lm.popGrowthCarry += population_delta_per_day(lm.population, wellbeing);
     const int whole = int(lm.popGrowthCarry);
@@ -75,8 +104,8 @@ void settle_landmark_day(Landmark& lm, int minPop) {
 }
 
 // ── Settlement daily tick ─────────────────────────────────────
-void tick_settlements_(std::vector<Settlement>& settlements, int day,
-                       WorldTickRuntime& runtime) {
+void tick_settlements_(GameState& gs, std::vector<Settlement>& settlements,
+                       int day, WorldTickRuntime& runtime) {
     for (auto& s : settlements) {
         // The city CRAFTS before it eats: today's table first, then fair
         // shares (econ_day's three passes), off the same one inventory the
@@ -85,7 +114,16 @@ void tick_settlements_(std::vector<Settlement>& settlements, int day,
                          std::max(1, s.population / kHeadsPerCityWorker),
                          s.population, nullptr, nullptr);
 
-        settle_landmark_day(s, /*minPop=*/10);
+        bool famine = false, revolt = false;
+        settle_landmark_day(s, /*minPop=*/10, famine, revolt);
+        if (famine) {
+            record_landmark_fact(gs, FactKind::Starved, s.id, s.x, s.y,
+                                 int(s.starvedYesterday));
+        }
+        if (revolt) {
+            record_landmark_fact(gs, FactKind::Revolted, s.id, s.x, s.y,
+                                 s.population);
+        }
 
         if (s.population >= 20
             && garrison_wants_recruits(total_soldiers(s.garrison))) {
@@ -116,11 +154,20 @@ void tick_settlements_(std::vector<Settlement>& settlements, int day,
 // ── Village daily tick ────────────────────────────────────────
 // No gather here any more: gathering is AGENTS now — woodcutters and
 // farmers hauling real units into this same inventory (npc_ai.cpp).
-void tick_villages_(std::vector<Village>& villages, int day,
+void tick_villages_(GameState& gs, std::vector<Village>& villages, int day,
                     WorldTickRuntime& runtime) {
     (void)runtime;
     for (auto& v : villages) {
-        settle_landmark_day(v, /*minPop=*/5);
+        bool famine = false, revolt = false;
+        settle_landmark_day(v, /*minPop=*/5, famine, revolt);
+        if (famine) {
+            record_landmark_fact(gs, FactKind::Starved, v.id, v.x, v.y,
+                                 int(v.starvedYesterday));
+        }
+        if (revolt) {
+            record_landmark_fact(gs, FactKind::Revolted, v.id, v.x, v.y,
+                                 v.population);
+        }
         push_history_(v.history, day, v.population);
     }
 }
@@ -187,8 +234,8 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
     int processed = 0;
     while (runtime.pendingDailyTicks > 0 && processed < max_daily_ticks) {
         const int day = runtime.nextDailyTickDay;
-        tick_settlements_(gs.settlements, day, runtime);
-        tick_villages_   (gs.villages,    day, runtime);
+        tick_settlements_(gs, gs.settlements, day, runtime);
+        tick_villages_   (gs, gs.villages,    day, runtime);
         tick_player_daily_(
             gs.player,
             macro && macro->world ? player_roster(*macro->world) : nullptr,
