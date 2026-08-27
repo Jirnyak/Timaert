@@ -238,7 +238,10 @@ struct PlayerState {
     // NOT inside the sheet — it is projected FROM the sheet, not persisted as
     // part of it (mirrors an NPC's ECS Health/Combat living outside its sheet).
     CombatStats combatStats;
-    Inventory   inventory;
+    // (No `inventory` field. The player's bag is the ordinary
+    // ecs::NpcInventory on his squad entity — macro/player_entity.h
+    // player_inventory(). It was the last large field that made him a
+    // different kind of thing from the squads around him.)
     // NOTE. There is no `reputation` map here any more. The player's standing
     // with every faction IS his row in the one relation matrix
     // (gs.factions["player"].relations) — see player_reputation /

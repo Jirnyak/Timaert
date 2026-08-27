@@ -1115,6 +1115,20 @@ timaert_test(auto_resolve_speaks_test
         src/macro/fauna.cpp
     LINK_ENTT)
 
+# The player is an ordinary squad — and the one party no "another party" scan
+# may ever choose. PlayerSquadTag vs PlayerTag, each guard with its control.
+timaert_test(player_is_a_squad_test
+    SOURCES
+        src/macro/player_entity.cpp
+        src/macro/npc_ai.cpp
+        src/macro/macro_snapshot.cpp
+        src/macro/macro_stock.cpp
+        src/macro/deposit_layer.cpp
+        src/macro/fauna.cpp
+        src/macro/tree_layer.cpp
+        src/macro/items.cpp
+    LINK_ENTT)
+
 # ── CTest registration ─────────────────────────────────────────────────────
 # There is nothing here any more, and that is the point: timaert_test() calls
 # add_test() for every target it creates, so "built" and "registered" cannot

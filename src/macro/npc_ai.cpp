@@ -1227,7 +1227,8 @@ void build_squad_index(SquadIndex& g, ecs::World& w, int mapW, int mapH,
     // encounter, a different door), and the Dead are no squads at all.
     auto view = w.reg.view<ecs::Position, ecs::NPCKind,
                            ecs::MacroNpcRuntime>(
-        entt::exclude<ecs::Dead, ecs::PlayerTag, ecs::SubworldTag>);
+        entt::exclude<ecs::Dead, ecs::PlayerTag, ecs::PlayerSquadTag,
+                      ecs::SubworldTag>);
     for (auto e : view) {
         const auto& p = view.get<ecs::Position>(e);
         const int gx = wrapi(int(p.x) / g.cellSize, g.cols);
@@ -1265,7 +1266,7 @@ void tick_macro_npc_ai(MacroWorld& mw,
     auto& reg = w.reg;
     auto view = reg.view<ecs::Position, ecs::NPCKind,
                          ecs::MacroNpcRuntime, ecs::Health>(
-        entt::exclude<ecs::Dead, ecs::PlayerTag>);  // never AI-drive a possessed body (Inc 5e-2)
+        entt::exclude<ecs::Dead, ecs::PlayerTag, ecs::PlayerSquadTag>);  // never AI-drive the player: the flag OR his own squad
 
     build_squad_index(runtime.squadIndex, w, gs.mapW, gs.mapH);
 
@@ -1298,7 +1299,8 @@ void tick_macro_npc_visuals(ecs::World& w, int mapW, int mapH, float dt) {
 
     auto view = w.reg.view<ecs::Position, ecs::VisualPos,
                            ecs::MacroNpcRuntime, ecs::Health>(
-        entt::exclude<ecs::Dead, ecs::SubworldTag, ecs::PlayerTag>);  // player drawn by its own marker (Inc 5e-2)
+        entt::exclude<ecs::Dead, ecs::SubworldTag, ecs::PlayerTag,
+                      ecs::PlayerSquadTag>);  // player drawn by its own marker (Inc 5e-2)
     for (auto e : view) {
         const auto& p = view.get<ecs::Position>(e);
         auto& v = view.get<ecs::VisualPos>(e);
@@ -1370,7 +1372,7 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     auto& reg = w.reg;
     auto view = reg.view<ecs::Position, ecs::NPCKind,
                          ecs::MacroNpcRuntime, ecs::Health>(
-        entt::exclude<ecs::Dead, ecs::PlayerTag>);  // never AI-drive a possessed body (Inc 5e-2)
+        entt::exclude<ecs::Dead, ecs::PlayerTag, ecs::PlayerSquadTag>);  // never AI-drive the player: the flag OR his own squad
 
     build_squad_index(runtime.squadIndex, w, gs.mapW, gs.mapH);
 

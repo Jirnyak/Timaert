@@ -11,9 +11,15 @@ class QuestEngine {
 public:
     // Evaluate every active quest objective against last-tick events + player.
     // Marks objectives complete, completes quests, dispatches rewards.
+    // `bag` is the container rewards are paid into and delivery objectives are
+    // checked against — the player's bag is an ordinary NpcInventory on his
+    // squad entity now (macro/player_entity.h), so the engine is handed the
+    // container instead of reaching into PlayerState for one. Null = no world
+    // yet: nothing is paid and no delivery can complete.
     void tick(std::vector<Quest>& active,
               EventBus& bus,
-              GameState& gs);
+              GameState& gs,
+              Inventory* bag);
 
     void accept(std::vector<Quest>& active,
                 Quest q,

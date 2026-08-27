@@ -134,14 +134,15 @@ void tick_villages_(std::vector<Village>& villages, int day,
 namespace {
 
 // ── Daily player tick (upkeep + age) ──────────────────────────
-void tick_player_daily_(PlayerState& p, const SoldierSquad* roster) {
+void tick_player_daily_(PlayerState& p, const SoldierSquad* roster,
+                        Inventory* purse) {
     // The player's men are a roster on his squad entity now, exactly like any
     // lord's — no roster (no world yet) simply means no wages.
     const int upkeep = roster
         ? calculate_squad_upkeep(*roster, p.sheet.attributes.cha) : 0;
     // Pay what the wallet holds; an unpaid remainder is simply unpaid today
     // (wage-debt desertion is the №3 pipeline's future rule).
-    wallet_spend_up_to(p.inventory, upkeep);
+    if (purse) wallet_spend_up_to(*purse, upkeep);
     p.ageDays += 1;
 }
 
@@ -192,9 +193,10 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
         const int day = runtime.nextDailyTickDay;
         tick_settlements_(gs.settlements, day, runtime);
         tick_villages_   (gs.villages,    day, runtime);
-        tick_player_daily_(gs.player,
-                           macro && macro->world ? player_roster(*macro->world)
-                                                : nullptr);
+        tick_player_daily_(
+            gs.player,
+            macro && macro->world ? player_roster(*macro->world) : nullptr,
+            macro && macro->world ? player_inventory(*macro->world) : nullptr);
 
         // The ONE growth/diffusion law (R2 track): every resource field is
         // born from time and context through the same walker — the forest

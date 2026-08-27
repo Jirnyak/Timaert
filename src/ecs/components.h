@@ -59,6 +59,14 @@ struct MissileAttack {
 // a tag nobody reads is not a state, it is noise every spawn site paid for.)
 struct Dead {};
 struct PlayerTag {};
+// The flag above answers «кем я управляю СЕЙЧАС» and MOVES: possession puts it
+// on a lord, a subworld session puts it on a body. This one answers a
+// different question — «чей это отряд» — and never moves off the player's own
+// macro squad. Two questions, two tags: a loop that means "another party"
+// excludes THIS one, because excluding PlayerTag stops working the moment the
+// player possesses someone or steps into a subworld, and his own squad becomes
+// prey / a trade partner / an AI walker to every scan on the map.
+struct PlayerSquadTag {};
 struct PlayerSoldierTag {};
 struct TempHostileToPlayer {};
 // Marks an entity that lives only in the current subworld scene; cleared

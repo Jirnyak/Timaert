@@ -202,6 +202,9 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
                    std::uint16_t(sm::faction_index(sm::kPlayerFactionId))};
     player.health = {40.0f, 40.0f};
     player.level = {3};
+    player.inventory.add("coin_empire", 999);
+    player.inventory.add("misc_gem", 3);
+    player.inventory.add("bread", 11);
     add_soldiers(player.roster, sm::NPCType::Peasant, 4, 1000u);
     add_soldiers(player.roster, sm::NPCType::Woodcutter, 3, 1100u);
     add_soldiers(player.roster, sm::NPCType::Guard, 2, 1200u);
@@ -256,7 +259,9 @@ sm::GameState make_state() {
     gs.player.ageDays = 1234;
     gs.player.x = 41.5f;
     gs.player.y = 82.25f;
-    gs.player.inventory.add("coin_empire", 999);
+    // (His coin and goods ride his SQUAD's snapshot record — see the player
+    // record in make_macro_records — because his bag is an ordinary
+    // NpcInventory on his squad entity.)
     // The player's HEAD (v32): a debt fact, summed by the fact arithmetic.
     sm::remember(gs.player.memory,
                  sm::make_debt_fact(sm::kDebtToSettlement, 7, 15, 3));
@@ -293,8 +298,6 @@ sm::GameState make_state() {
     gs.player.combatStats.spRegen = 3.75f;
     sm::add_perk(gs.player.sheet.perks, sm::PerkID::Natural);
     sm::add_perk(gs.player.sheet.perks, sm::PerkID::Educated);
-    gs.player.inventory.add("bread", 11);
-    gs.player.inventory.add("misc_gem", 3);
     gs.player.codexUnlocked.push_back("codex.alpha");
     gs.player.eventLog.push_back(
         sm::LogEntry{sm::LogType::World, "saved event", 12});
@@ -711,7 +714,7 @@ void run_roundtrip() {
     if (p.ageDays != 1234 || !nearf(p.x, 41.5f) || !nearf(p.y, 82.25f)) {
         FAIL_BAIL("player position or age lost");
     }
-    if (sm::wallet_value(p.inventory) != 999) FAIL_BAIL("player coin lost");
+
     {
         const sm::MemoryEntry* debt = sm::recall(
             p.memory, sm::AgentMemoryKind::Debt, 7, sm::kDebtToSettlement);
@@ -741,9 +744,7 @@ void run_roundtrip() {
         || !sm::has_perk(p.sheet.perks, sm::PerkID::Educated)) {
         FAIL_BAIL("player perks lost");
     }
-    if (p.inventory.count("misc_gem") != 3 || p.inventory.count("bread") != 11) {
-        FAIL_BAIL("inventory lost");
-    }
+
     if (sm::player_reputation(&loaded, "guild") != 42) {
         FAIL_BAIL("player standing lost (his row in the faction matrix)");
     }

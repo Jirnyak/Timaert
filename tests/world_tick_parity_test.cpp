@@ -69,14 +69,15 @@ void test_day_rollover_queues_budgeted_daily_tick() {
 
 void test_daily_processing_applies_player_upkeep_and_age() {
     sm::GameState gs{};
-    gs.player.inventory.add("coin_empire", 5);
+    // The purse rides his squad entity now; the daily tick is handed it.
+    sm::ecs::World world;
+    sm::ensure_macro_player_entity(gs, world);
+    sm::player_inventory(world)->add("coin_empire", 5);
     gs.player.ageDays = 1000;
     gs.player.sheet.attributes.cha = 0;
     // The player's men live on his SQUAD ENTITY now (owner, 2026-08-27), so
     // the fixture raises one — the same shape a lord's warband has — and the
     // daily tick reads his wages from it through the envelope.
-    sm::ecs::World world;
-    sm::ensure_macro_player_entity(gs, world);
     sm::SoldierSquad* army = sm::player_roster(world);
     army->push(sm::make_soldier(
         static_cast<std::uint8_t>(sm::NPCType::Guard), 1, 77u));
@@ -100,7 +101,7 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     CHECK(processed == 1 && runtime.pendingDailyTicks == 0
               && runtime.nextDailyTickDay == 0,
           "the daily processor drains exactly the one tick that was queued");
-    CHECK(sm::wallet_value(gs.player.inventory) == expectedGold,
+    CHECK(sm::wallet_value((*sm::player_inventory(world))) == expectedGold,
           "one daily tick charges exactly one day of squad upkeep");
     CHECK(gs.player.ageDays == 1001,
           "one daily tick ages the player exactly one day");

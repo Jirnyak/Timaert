@@ -64,16 +64,16 @@ PlayerState default_player() {
     p.ageDays   = 1000;             // ~3 years; matches TS
     // Start money: imperial coin until the chargen names a homeland — then
     // apply_intro_story_result re-mints it into the realm's own currency.
-    p.inventory.add("coin_empire", 1000);
+    // (The starter kit is dealt into his BAG — an ordinary NpcInventory on
+    // his squad entity — by the world boot, once that entity exists. A
+    // PlayerState cannot carry goods any more; it is not a container.)
     p.sheet.attributes = default_attributes();
     p.sheet.skills     = default_skills();
     p.sheet.perks      = default_perks();
     p.sheet.levelData  = default_level_data();
     p.combatStats = calculate_combat_stats(p.sheet.attributes, p.sheet.skills);
 
-    // Starter inventory: 2 healing potions + 5 bread.
-    p.inventory.add("potion_hp",  2);
-    p.inventory.add("bread", 5);
+
 
     // Starter spellbook: magic_bolt.
     spellbook_learn(p.spellBook, "magic_bolt");

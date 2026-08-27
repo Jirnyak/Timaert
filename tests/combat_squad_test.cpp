@@ -112,9 +112,9 @@ int main() {
     }
 
     sm::SoldierSquad selfAppend = generated.garrison;
-    const std::size_t selfAppendBase = selfAppend.size();
+    const int selfAppendBase = selfAppend.size();
     sm::add_squad(selfAppend, selfAppend);
-    if (selfAppend.size() != selfAppendBase * 2u
+    if (selfAppend.size() != selfAppendBase * 2
         || selfAppend[selfAppendBase].entityId
             != selfAppend[0].entityId) {
         return fail("self squad append is not stable");
@@ -236,7 +236,7 @@ int main() {
         return fail("a standing mind stopped deciding (seq missing from seed)");
     }
 
-    std::printf("OK combat_squad_test hired=%zu garrison=%zu upkeep=%d discounted=%d generated=%zu projected=%d malformed_tiles=%d ai_owner=1 unique_ids=1\n",
+    std::printf("OK combat_squad_test hired=%d garrison=%d upkeep=%d discounted=%d generated=%d projected=%d malformed_tiles=%d ai_owner=1 unique_ids=1\n",
                 player.size(), garrison.size(),
                 baseUpkeep, charismaUpkeep, generated.garrison.size(),
                 projected, malformedProjected);

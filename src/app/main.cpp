@@ -556,6 +556,16 @@ void raise_macro_fact(void* user, const sm::BattleFact& fact) {
     app.bus.emit(ev);
 }
 
+// THE player's bag, from his squad entity (macro/player_entity.h). A world
+// that has not been built yet answers with a scratch pack rather than a null:
+// every caller here is UI or harness, and neither should learn to null-check
+// a container.
+sm::Inventory& player_bag(App& app) {
+    static sm::Inventory scratch{};
+    sm::Inventory* bag = sm::player_inventory(app.ecs);
+    return bag ? *bag : scratch;
+}
+
 sm::MacroWorld macro_world(App& app) {
     sm::MacroWorld mw{};
     mw.facts     = &raise_macro_fact;
@@ -1229,7 +1239,7 @@ const PreBattleAction kPreBattleActions[] = {
                        encounter_payoff_cost(app, npc));
      },
      [](App& app, entt::entity npc) {
-         return sm::wallet_value(app.gs.player.inventory)
+         return sm::wallet_value(player_bag(app))
                     >= encounter_payoff_cost(app, npc);
      },
      [](App& app, entt::entity npc) {
@@ -1238,9 +1248,9 @@ const PreBattleAction kPreBattleActions[] = {
          // later and it is there.
          if (auto* bag =
                  app.ecs.reg.try_get<sm::ecs::NpcInventory>(npc)) {
-             sm::transfer_value(app.gs.player.inventory, bag->inv, cost);
+             sm::transfer_value(player_bag(app), bag->inv, cost);
          } else {
-             sm::wallet_spend_up_to(app.gs.player.inventory, cost);
+             sm::wallet_spend_up_to(player_bag(app), cost);
          }
          char line[96];
          std::snprintf(line, sizeof(line),
@@ -1361,7 +1371,7 @@ void detect_forced_encounter(App& app) {
     auto view = reg.view<sm::ecs::Position, sm::ecs::NPCKind,
                          sm::ecs::MacroNpcRuntime, sm::ecs::Health>(
         entt::exclude<sm::ecs::Dead, sm::ecs::PlayerTag,
-                      sm::ecs::SubworldTag>);
+                      sm::ecs::PlayerSquadTag, sm::ecs::SubworldTag>);
     for (auto e : view) {
         if (e == app.encounterGraceNpc) continue;
         const auto& hp = view.get<sm::ecs::Health>(e);
@@ -1508,6 +1518,7 @@ void charge_macro_walk_cell(void* user, int x, int y) {
     // The climb half of the law prices the EDGE: the previous crossed cell
     // is the origin; the walk's first cell has none and climbs free.
     if (!sm::drain_player_sp_for_macro_cell(ctx->app->gs,
+                                            &player_bag(*ctx->app),
                                             ctx->app->terrain,
                                             &ctx->app->features,
                                             x, y,
@@ -2288,6 +2299,15 @@ void boot_world(App& app, std::uint32_t seed,
     // map (Position + PlayerTag). The macro tick re-heals it thereafter; doing it
     // here makes the invariant hold immediately after boot, before the first tick.
     sm::ensure_macro_player_entity(app.gs, app.ecs);
+    // The starter kit is DEALT INTO HIS BAG, which is a container on his squad
+    // entity — a PlayerState cannot carry goods any more, because it is not a
+    // container. Coin of his own realm follows at chargen (the homeland pick
+    // re-mints it), so the opening purse is imperial exactly as it always was.
+    if (sm::Inventory* bag = sm::player_inventory(app.ecs)) {
+        bag->add("coin_empire", 1000);
+        bag->add("potion_hp", 2);
+        bag->add("bread", 5);
+    }
     boot_trace("macro player flag ensured");
     if (app.gs.subState.kind == sm::GameSubStateKind::Exploring
         && app.gs.subState.settlementId < 0) {
@@ -2630,7 +2650,7 @@ int charge_subworld_sp_for_distance(App& app, float distance) {
     const float cells = distance / float(sm::sub::kCellSize);
     const int overloadCost =
         sm::player_overload_charge(app.gs.player.sheet,
-                                   app.gs.player.inventory).cost;
+                                   player_bag(app)).cost;
     const float cost = sm::travel_stamina_cost(
         app.subworld.player_ground_travel_weight(), cells, overloadCost,
         sm::travel_skill_efficiency(app.gs.player.sheet.skills));
@@ -3259,7 +3279,8 @@ void apply_pending_event_effects(App& app) {
         // are emitted AFTER the span walk (emit grows the very vector the
         // span points into) — the while loop picks them up as the next batch.
         std::vector<sm::GameEvent> followups;
-        sm::apply_events(pending, app.gs, &followups);
+        sm::apply_events(pending, app.gs, sm::player_inventory(app.ecs),
+                         &followups);
         bool spireDied = false;
         for (const sm::GameEvent& ev : pending) {
             if (ev.tag == sm::EventTag::SpireDepleted) spireDied = true;
@@ -3324,10 +3345,10 @@ void apply_intro_story_result(App& app, const sm::StoryResultPayload& result) {
         // seeded imperial as a placeholder.
         const char* homeCoin = sm::currency_for_faction_id(homeland);
         if (std::string_view(homeCoin) != "coin_empire") {
-            const int n = app.gs.player.inventory.count("coin_empire");
+            const int n = player_bag(app).count("coin_empire");
             if (n > 0) {
-                app.gs.player.inventory.remove("coin_empire", n);
-                app.gs.player.inventory.add(homeCoin, n);
+                player_bag(app).remove("coin_empire", n);
+                player_bag(app).add(homeCoin, n);
             }
         }
     }
@@ -3619,7 +3640,8 @@ void process_world_events(App& app) {
     app.appliedCombatEventCount = 0;
     app.appliedSpawnEventCount = 0;
     app.logic.tick(app.bus, app.gs.player);
-    app.quests.tick(app.activeQuests, app.bus, app.gs);
+    app.quests.tick(app.activeQuests, app.bus, app.gs,
+                    sm::player_inventory(app.ecs));
     // Refresh the derived quest-marker pins only when the active-quest set
     // actually changed. tick() runs every render frame; the rebuild allocates,
     // so the signature guard keeps steady-state frames allocation-free.
@@ -4352,18 +4374,18 @@ void register_console_commands(App& app) {
             if (n <= 0) { c.error("count must be positive"); return true; }
             const std::string& id = a[0];
             if (id == "gold") {
-                app.gs.player.inventory.add("coin_empire", n);
+                player_bag(app).add("coin_empire", n);
                 c.printfln(Lvl::Ok, "coin += %d  (now %d)", n,
-                           sm::wallet_value(app.gs.player.inventory));
+                           sm::wallet_value(player_bag(app)));
                 return true;
             }
             if (!sm::item_def(id)) {
                 c.error("unknown item '" + id + "' - type 'items' for the list");
                 return true;
             }
-            app.gs.player.inventory.add(id, n);
+            player_bag(app).add(id, n);
             c.printfln(Lvl::Ok, "gave %d x %s  (have %d)", n, id.c_str(),
-                       app.gs.player.inventory.count(id));
+                       player_bag(app).count(id));
             return true;
         });
 
@@ -4376,17 +4398,17 @@ void register_console_commands(App& app) {
             const std::string& id = a[0];
             if (id == "gold") {
                 const int taken =
-                    sm::wallet_spend_up_to(app.gs.player.inventory, n);
+                    sm::wallet_spend_up_to(player_bag(app), n);
                 c.printfln(Lvl::Ok, "coin -= %d  (now %d)", taken,
-                           sm::wallet_value(app.gs.player.inventory));
+                           sm::wallet_value(player_bag(app)));
                 return true;
             }
-            if (app.gs.player.inventory.remove(id, n))
+            if (player_bag(app).remove(id, n))
                 c.printfln(Lvl::Ok, "took %d x %s  (have %d)", n, id.c_str(),
-                           app.gs.player.inventory.count(id));
+                           player_bag(app).count(id));
             else
                 c.printfln(Lvl::Warn, "not enough '%s' (have %d)", id.c_str(),
-                           app.gs.player.inventory.count(id));
+                           player_bag(app).count(id));
             return true;
         });
 
@@ -4395,10 +4417,10 @@ void register_console_commands(App& app) {
         [&app](Con& c, const std::vector<std::string>& a) {
             int delta = 0;
             if (!sm::dev::arg_int(a, 0, delta)) return false;
-            if (delta >= 0) app.gs.player.inventory.add("coin_empire", delta);
-            else sm::wallet_spend_up_to(app.gs.player.inventory, -delta);
+            if (delta >= 0) player_bag(app).add("coin_empire", delta);
+            else sm::wallet_spend_up_to(player_bag(app), -delta);
             c.printfln(Lvl::Ok, "coin = %d",
-                       sm::wallet_value(app.gs.player.inventory));
+                       sm::wallet_value(player_bag(app)));
             return true;
         });
 
@@ -4788,7 +4810,7 @@ void draw_debug_panels(App& app) {
             const auto& p = app.gs.player;
             ImGui::SeparatorText("Player");
             ImGui::Text("pos     %.1f, %.1f", double(p.x), double(p.y));
-            ImGui::Text("coin    %d", wallet_value(p.inventory));
+            ImGui::Text("coin    %d", wallet_value(player_bag(app)));
             ImGui::Text("level   %d   (exp %d / %d)",
                         p.sheet.levelData.level, p.sheet.levelData.exp, p.sheet.levelData.expToNext);
             ImGui::Text("hp      %d / %d", p.combatStats.currentHp, p.combatStats.maxHp);
@@ -5682,7 +5704,7 @@ bool run_macro_travel_sp_smoke(App& app) {
     sm::MacroTravelCost lastExpected{};
     for (int i = 1; i <= kSmokeMacroTravelSteps; ++i) {
         sm::MacroTravelCost cost;
-        if (!sm::macro_travel_cost_for_cell(app.gs, app.terrain,
+        if (!sm::macro_travel_cost_for_cell(app.gs, &player_bag(app), app.terrain,
                                             &app.features,
                                             path.path[std::size_t(i)].x,
                                             path.path[std::size_t(i)].y,
@@ -5996,7 +6018,8 @@ entt::entity smoke_find_macro_npc_trace_target(App& app) {
     auto view = app.ecs.reg.view<sm::ecs::Position, sm::ecs::NPCKind,
                                  sm::ecs::MacroNpcRuntime,
                                  sm::ecs::Health, sm::ecs::VisualPos>(
-        entt::exclude<sm::ecs::Dead, sm::ecs::SubworldTag>);
+        entt::exclude<sm::ecs::Dead, sm::ecs::SubworldTag,
+                      sm::ecs::PlayerSquadTag>);
     for (auto e : view) {
         const auto& hp = view.get<sm::ecs::Health>(e);
         if (hp.hp <= 0.0f) continue;
@@ -6310,7 +6333,7 @@ bool run_subworld_loot_xp_smoke(App& app) {
     }
 
     const int expBefore = app.gs.player.sheet.levelData.exp;
-    const int gemBefore = app.gs.player.inventory.count("misc_gem");
+    const int gemBefore = player_bag(app).count("misc_gem");
     // Park the victim right next to the PLAYER, wherever they actually stand.
     // The old window-centre teleport assumed enter() always lands at the
     // centre; entry-side context (armies enter from the side they walked in)
@@ -6349,7 +6372,7 @@ bool run_subworld_loot_xp_smoke(App& app) {
     const float playerZAtInteract = app.subworld.player_z();
     const bool interacted = app.subworld.interact();
     const int expAfter = app.gs.player.sheet.levelData.exp;
-    const int gemAfter = app.gs.player.inventory.count("misc_gem");
+    const int gemAfter = player_bag(app).count("misc_gem");
     restore();
 
     std::fprintf(stderr,
@@ -6686,15 +6709,15 @@ bool run_dungeon_house_smoke(App& app) {
         for (const auto& s : app.subworld.mgr().structures()) {
             if (s.kind == sm::sub::Structure::Chest) { chest = &s; break; }
         }
-        if (town != nullptr && chest != nullptr && !town->inventory.used_slots() == 0) {
+        if (town != nullptr && chest != nullptr && town->inventory.used_slots() != 0) {
             const char* fid = sm::faction_id_for_index(
                 sm::faction_index_for_kingdom(app.gs.politik, town->kingdomIdx));
             storeBefore = town->inventory.total();
-            bagBefore = app.gs.player.inventory.total();
+            bagBefore = player_bag(app).total();
             repBefore = sm::player_reputation(&app.gs, fid);
             searched = app.subworld.search_chest(*chest);
             storeAfter = town->inventory.total();
-            bagAfter = app.gs.player.inventory.total();
+            bagAfter = player_bag(app).total();
             repAfter = sm::player_reputation(&app.gs, fid);
         }
     }
@@ -7499,7 +7522,9 @@ bool run_subworld_self_fireball_smoke(App& app) {
     {
         std::vector<entt::entity> doomed;
         for (auto e : reg.view<sm::ecs::Health>()) {
-            if (!reg.any_of<sm::ecs::PlayerTag>(e)) doomed.push_back(e);
+            if (!reg.any_of<sm::ecs::PlayerTag, sm::ecs::PlayerSquadTag>(e)) {
+                doomed.push_back(e);
+            }
         }
         for (const entt::entity e : doomed) {
             if (reg.valid(e)) reg.destroy(e);
@@ -8182,8 +8207,8 @@ bool run_console_smoke(App& app) {
     }
 
     // Snapshot everything the commands below touch, so we can fully restore.
-    const int    oldGold         = sm::wallet_value(app.gs.player.inventory);
-    const auto   oldInv          = app.gs.player.inventory;
+    const int    oldGold         = sm::wallet_value(player_bag(app));
+    const auto   oldInv          = player_bag(app);
     const auto   oldLevel        = app.gs.player.sheet.levelData;
     const auto   oldCombat       = app.gs.player.combatStats;
     const auto   oldSpellBook    = app.gs.player.spellBook;
@@ -8200,13 +8225,13 @@ bool run_console_smoke(App& app) {
             app.subworld.leave(true);
         }
         {   // restore the wallet to its recorded value
-            const int now = sm::wallet_value(app.gs.player.inventory);
+            const int now = sm::wallet_value(player_bag(app));
             if (now > oldGold)
-                sm::wallet_spend_up_to(app.gs.player.inventory, now - oldGold);
+                sm::wallet_spend_up_to(player_bag(app), now - oldGold);
             else if (now < oldGold)
-                app.gs.player.inventory.add("coin_empire", oldGold - now);
+                player_bag(app).add("coin_empire", oldGold - now);
         }
-        app.gs.player.inventory   = oldInv;
+        player_bag(app)   = oldInv;
         app.gs.player.sheet.levelData   = oldLevel;
         app.gs.player.combatStats = oldCombat;
         app.gs.player.spellBook   = oldSpellBook;
@@ -8228,21 +8253,21 @@ bool run_console_smoke(App& app) {
     }
 
     con.execute("gold 500");
-    if (sm::wallet_value(app.gs.player.inventory) != oldGold + 500) {
+    if (sm::wallet_value(player_bag(app)) != oldGold + 500) {
         restore(); smoke_fail(app, "console gold add"); return false;
     }
 
-    const int potBefore = app.gs.player.inventory.count("potion_hp");
+    const int potBefore = player_bag(app).count("potion_hp");
     con.execute("give potion_hp 3");
-    if (app.gs.player.inventory.count("potion_hp") != potBefore + 3) {
+    if (player_bag(app).count("potion_hp") != potBefore + 3) {
         restore(); smoke_fail(app, "console give item"); return false;
     }
     con.execute("take potion_hp 1");
-    if (app.gs.player.inventory.count("potion_hp") != potBefore + 2) {
+    if (player_bag(app).count("potion_hp") != potBefore + 2) {
         restore(); smoke_fail(app, "console take item"); return false;
     }
     con.execute("give gold 250");
-    if (sm::wallet_value(app.gs.player.inventory) != oldGold + 750) {
+    if (sm::wallet_value(player_bag(app)) != oldGold + 750) {
         restore(); smoke_fail(app, "console give gold"); return false;
     }
 
@@ -8273,9 +8298,9 @@ bool run_console_smoke(App& app) {
     }
 
     // A usage error (missing arg) must print but never mutate state.
-    const int goldPreUsage = sm::wallet_value(app.gs.player.inventory);
+    const int goldPreUsage = sm::wallet_value(player_bag(app));
     con.execute("gold");
-    if (sm::wallet_value(app.gs.player.inventory) != goldPreUsage) {
+    if (sm::wallet_value(player_bag(app)) != goldPreUsage) {
         restore(); smoke_fail(app, "console usage-error mutated state"); return false;
     }
     // An unknown command must be handled gracefully (output, no crash).
@@ -8745,7 +8770,7 @@ bool run_console_smoke(App& app) {
             return false;
         }
         const std::uint32_t revBefore = app.treeLayer.revision;
-        const int woodBefore = app.gs.player.inventory.count("wood");
+        const int woodBefore = player_bag(app).count("wood");
         int cx = 0, cy = 0, prev = 0;
         // The whole 3×3 composite is in reach: any tree in the window works.
         // Kind-filtered — the smoke asserts the TREE ledger, and the nearest
@@ -8772,7 +8797,7 @@ bool run_console_smoke(App& app) {
         // the shared loot registry. Asserting the INTENT ("the axe is paid"),
         // not a magic count — the row in macro/items.cpp is free to change.
         const int woodGained =
-            app.gs.player.inventory.count("wood") - woodBefore;
+            player_bag(app).count("wood") - woodBefore;
         if (woodGained <= 0) {
             if (!wasActive) app.subworld.leave(true);
             smoke_fail(app, "chop: felled tree paid no wood");
@@ -8787,7 +8812,7 @@ bool run_console_smoke(App& app) {
     }
 
     // Capture reporting values before restoring the world.
-    const int         rGold   = sm::wallet_value(app.gs.player.inventory);
+    const int         rGold   = sm::wallet_value(player_bag(app));
     const int         rLevel  = app.gs.player.sheet.levelData.level;
     const std::size_t rSpells = app.gs.player.spellBook.learned.size();
     restore();
@@ -9016,7 +9041,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 int bestX = -1, bestY = -1;
                 long bestD = 1L << 60;
                 for (auto e : app.ecs.reg.view<sm::ecs::MacroNpcRuntime,
-                                               sm::ecs::Position>()) {
+                                               sm::ecs::Position>(
+                         entt::exclude<sm::ecs::PlayerSquadTag>)) {
                     const auto& p = app.ecs.reg.get<sm::ecs::Position>(e);
                     const int nx = int(p.x), ny = int(p.y);
                     const long dx = nx - pcx, dy = ny - pcy;
@@ -9314,7 +9340,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 int bestX = -1, bestY = -1;
                 long bestD = 1L << 60;
                 for (auto e : app.ecs.reg.view<sm::ecs::MacroNpcRuntime,
-                                               sm::ecs::Position>()) {
+                                               sm::ecs::Position>(
+                         entt::exclude<sm::ecs::PlayerSquadTag>)) {
                     const auto& p = app.ecs.reg.get<sm::ecs::Position>(e);
                     const int nx = int(p.x), ny = int(p.y);
                     const long dx = nx - pcx, dy = ny - pcy;
@@ -9670,13 +9697,13 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             app.ui.quest = false;
             refresh_available_settlement_quests(app);
             std::fprintf(stderr,
-                         "[smoke] settlement_trade open id=%d name=\"%s\" mood=%d stock=%zu playerItems=%d gold=%d\n",
+                         "[smoke] settlement_trade open id=%d name=\"%s\" mood=%d stock=%d playerItems=%d gold=%d\n",
                          s.id,
                          s.name.c_str(),
                          int(s.mood),
                          s.inventory.used_slots(),
-                         app.gs.player.inventory.total(),
-                         sm::wallet_value(app.gs.player.inventory));
+                         player_bag(app).total(),
+                         sm::wallet_value(player_bag(app)));
             std::fflush(stderr);
             ++app.smoke.cursor;
             break;
@@ -9790,7 +9817,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                                          sm::ecs::Health,
                                          sm::ecs::NpcLevel,
                                          sm::ecs::NpcCharacter,
-                                         sm::ecs::NpcInventory>();
+                                         sm::ecs::NpcInventory>(
+                entt::exclude<sm::ecs::PlayerSquadTag>);
             bool found = false;
             for (auto e : view) {
                 const auto& hp = view.get<sm::ecs::Health>(e);
@@ -9833,7 +9861,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                                          sm::ecs::Health,
                                          sm::ecs::NpcLevel,
                                          sm::ecs::NpcCharacter,
-                                         sm::ecs::NpcInventory>();
+                                         sm::ecs::NpcInventory>(
+                entt::exclude<sm::ecs::PlayerSquadTag>);
             entt::entity target = entt::null;
             int stock = 0;
             int type = -1;
@@ -9862,8 +9891,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          static_cast<unsigned>(entt::to_integral(target)),
                          type,
                          stock,
-                         app.gs.player.inventory.total(),
-                         sm::wallet_value(app.gs.player.inventory));
+                         player_bag(app).total(),
+                         sm::wallet_value(player_bag(app)));
             std::fflush(stderr);
             ++app.smoke.cursor;
             break;
@@ -9880,7 +9909,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                                          sm::ecs::NPCKind,
                                          sm::ecs::Health,
                                          sm::ecs::NpcLevel,
-                                         sm::ecs::NpcCharacter>();
+                                         sm::ecs::NpcCharacter>(
+                entt::exclude<sm::ecs::PlayerSquadTag>);
             entt::entity target = entt::null;
             for (auto e : view) {
                 const auto& hp = view.get<sm::ecs::Health>(e);
@@ -9968,7 +9998,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             auto view = reg.view<sm::ecs::Position, sm::ecs::NPCKind,
                                  sm::ecs::MacroNpcRuntime, sm::ecs::Health>(
                 entt::exclude<sm::ecs::Dead, sm::ecs::PlayerTag,
-                              sm::ecs::SubworldTag>);
+                              sm::ecs::PlayerSquadTag, sm::ecs::SubworldTag>);
             for (auto e : view) {
                 if (view.get<sm::ecs::Health>(e).hp <= 0.0f) continue;
                 const auto& kind = view.get<sm::ecs::NPCKind>(e);
@@ -10492,7 +10522,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             {
                 std::vector<entt::entity> doomed;
                 for (auto e : app.ecs.reg.view<sm::ecs::Health>()) {
-                    if (!app.ecs.reg.any_of<sm::ecs::PlayerTag>(e)) {
+                    if (!app.ecs.reg.any_of<sm::ecs::PlayerTag,
+                                            sm::ecs::PlayerSquadTag>(e)) {
                         doomed.push_back(e);
                     }
                 }
@@ -11918,7 +11949,7 @@ void frame(App& app, int simSteps) {
                     (void)route_macro_npc_attack(app, npcResult.attackNpc);
                 }
             }
-            sm::ui::draw_show_dialog(app.gs, app.showDialogEvent, app.bus,
+            sm::ui::draw_show_dialog(app.gs, sm::player_inventory(app.ecs), app.showDialogEvent, app.bus,
                                      app.showDialogUi, &app.showDialogOpen);
             handle_dialog_node_activation(app);
             sm::ui::draw_story_overlay(app.storyOverlay, app.bus);

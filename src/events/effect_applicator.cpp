@@ -38,6 +38,7 @@ void apply_effect(PlayerState& p, const GameEvent& ev) {
 } // namespace
 
 void apply_events(std::span<const GameEvent> events, GameState& gs,
+                  Inventory* bag,
                   std::vector<GameEvent>* followups) {
     PlayerState& p = gs.player;
     for (auto& ev : events) {
@@ -86,8 +87,9 @@ void apply_events(std::span<const GameEvent> events, GameState& gs,
                 break;
             case EventTag::PlayerGoldChange:
                 if (ev.b != kEventEffectAlreadyApplied) {
-                    if (ev.ix >= 0) p.inventory.add("coin_empire", ev.ix);
-                    else wallet_spend_up_to(p.inventory, -ev.ix);
+                    if (!bag) break;
+                    if (ev.ix >= 0) bag->add("coin_empire", ev.ix);
+                    else wallet_spend_up_to(*bag, -ev.ix);
                 }
                 break;
             case EventTag::ApplyEffect:
@@ -119,8 +121,10 @@ void apply_events(std::span<const GameEvent> events, GameState& gs,
 }
 
 void apply_events(const std::vector<GameEvent>& events, GameState& gs,
+                  Inventory* bag,
                   std::vector<GameEvent>* followups) {
     apply_events(std::span<const GameEvent>(events.data(), events.size()), gs,
+                 bag,
                  followups);
 }
 

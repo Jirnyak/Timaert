@@ -13,6 +13,11 @@
 
 namespace {
 
+// The march prices the player's CARRIED weight, and his bag is an ordinary
+// NpcInventory on his squad entity now — so a headless fixture owns one and
+// hands it to the law.
+sm::Inventory bag{};
+
 int g_failures = 0;
 
 bool nearf(float a, float b, float eps = 0.001f) {
@@ -61,13 +66,14 @@ sm::FeatureLayer make_features() {
 }
 
 void test_cell_costs_follow_the_weight_table() {
+    bag.clear();
     sm::GameState gs;
     gs.mapParams.seaLevel = 0.40f;
     const sm::TerrainData terrain = make_terrain();
     const sm::FeatureLayer features = make_features();
 
     sm::MacroTravelCost cost;
-    expect(sm::macro_travel_cost_for_cell(gs, terrain, nullptr, 0, 0, cost),
+    expect(sm::macro_travel_cost_for_cell(gs, &bag, terrain, nullptr, 0, 0, cost),
            "water cost query succeeds");
     expect(cost.biome == sm::Water, "height below seaLevel becomes Water");
     expect(cost.feature == sm::FT_None, "missing feature layer means no feature");
@@ -77,14 +83,14 @@ void test_cell_costs_follow_the_weight_table() {
            "one cell of open water costs weight x kStaminaPerCell");
     expect(cost.totalCost == cost.cellCost, "no inventory means no overload");
 
-    expect(sm::macro_travel_cost_for_cell(gs, terrain, &features, 0, 0, cost),
+    expect(sm::macro_travel_cost_for_cell(gs, &bag, terrain, &features, 0, 0, cost),
            "road-over-water query succeeds");
     expect(cost.biome == sm::Water, "feature does not rewrite biome");
     expect(cost.feature == sm::FT_Road, "feature layer returns road");
     expect(nearf(cost.cellCost, 1.0f * sm::kStaminaPerCell),
            "a road over water is paid at the road weight, not the water one");
 
-    expect(sm::macro_travel_cost_for_cell(gs, terrain, &features, 0, 1, cost),
+    expect(sm::macro_travel_cost_for_cell(gs, &bag, terrain, &features, 0, 1, cost),
            "mountain biome query succeeds");
     expect(cost.biome == sm::Mountain,
            "height above mountain level becomes the Mountain biome");
@@ -92,7 +98,7 @@ void test_cell_costs_follow_the_weight_table() {
     expect(nearf(cost.cellCost, 5.0f * sm::kStaminaPerCell),
            "a mountain cell costs the mountain weight");
 
-    expect(sm::macro_travel_cost_for_cell(gs, terrain, &features, -1, -1, cost),
+    expect(sm::macro_travel_cost_for_cell(gs, &bag, terrain, &features, -1, -1, cost),
            "negative coordinates wrap");
     expect(cost.feature == sm::FT_DirtRoad, "wrapped cell reads dirt road");
     expect(nearf(cost.cellCost, 1.5f * sm::kStaminaPerCell),
@@ -100,14 +106,15 @@ void test_cell_costs_follow_the_weight_table() {
 }
 
 void test_overload_and_drain_charge_per_cell() {
+    bag.clear();
     sm::GameState gs;
     gs.mapParams.seaLevel = 0.40f;
-    gs.player.inventory.add("wood", 56); // 112 kg, default capacity is 110 kg.
+    bag.add("wood", 56);   // 112 kg, default capacity is 110 kg.
     const sm::TerrainData terrain = make_terrain();
     const sm::FeatureLayer features = make_features();
 
     sm::MacroTravelCost cost;
-    expect(sm::macro_travel_cost_for_cell(gs, terrain, &features, 0, 0, cost),
+    expect(sm::macro_travel_cost_for_cell(gs, &bag, terrain, &features, 0, 0, cost),
            "overload road query succeeds");
     expect(nearf(cost.cellCost, 1.0f * sm::kStaminaPerCell),
            "overload case walks a road");
@@ -120,13 +127,18 @@ void test_overload_and_drain_charge_per_cell() {
     // Crossing cells drains stamina, and the fractional remainder is CARRIED
     // rather than rounded away at each step: five 1.5-SP dirt-road cells cost
     // exactly 7 whole SP with 0.5 left pending, not 5 or 10.
+    // The drain half walks a DIFFERENT walker — its own state, and therefore
+    // its own (empty) pack. Sharing the overloaded bag above would fold the
+    // burden surcharge into an accounting check about whole SP.
+    sm::Inventory drainBag{};
     sm::GameState drainGs;
     drainGs.mapParams.seaLevel = 0.40f;
     drainGs.player.combatStats.currentSp = 100;
     drainGs.player.combatStats.currentHp = 100;
     sm::TravelStamina stamina{};
     for (int i = 0; i < 5; ++i) {
-        expect(sm::drain_player_sp_for_macro_cell(drainGs, terrain, &features,
+        expect(sm::drain_player_sp_for_macro_cell(drainGs, &drainBag, terrain,
+                                                  &features,
                                                   -1, -1, stamina, &cost),
                "drain query succeeds");
     }
@@ -149,6 +161,7 @@ void test_overload_and_drain_charge_per_cell() {
 // pins the curve at the boundary — the step that empties the bar, and the steps
 // after it — so it can never again become an accident of the accounting.
 void test_exhaustion_curve_bites_deeper_each_step() {
+    bag.clear();
     sm::CombatStats cs{};
     cs.currentSp = 3;
     cs.currentHp = 100;
@@ -175,6 +188,7 @@ void test_exhaustion_curve_bites_deeper_each_step() {
 // The two layers walk the same world, so the same journey costs the same:
 // one macro cell on the map == kCellSize tiles on foot.
 void test_both_layers_price_one_journey_alike() {
+    bag.clear();
     const float weight = sm::cell_sp_weight(sm::Meadow, sm::FT_None);
     const float wholeCell = sm::travel_stamina_cost(weight, 1.0f);
     const float onFoot = sm::travel_stamina_cost(weight, 1024.0f / 1024.0f);
@@ -224,6 +238,7 @@ float march_hours(const sm::CombatStats& cs, const sm::Skills& skills,
 }
 
 void test_travel_balance_holds_its_intent() {
+    bag.clear();
     const sm::Attributes attrs = sm::default_attributes();
     const sm::Skills skills = sm::default_skills();
     const sm::CombatStats fresh = sm::calculate_combat_stats(attrs, skills);
@@ -386,6 +401,7 @@ void test_travel_balance_holds_its_intent() {
 }
 
 void test_invalid_terrain_fails_closed() {
+    bag.clear();
     sm::GameState gs;
     sm::TerrainData terrain;
     terrain.width = 2;
@@ -394,7 +410,7 @@ void test_invalid_terrain_fails_closed() {
 
     sm::MacroTravelCost cost;
     cost.cellCost = 777.0f;
-    expect(!sm::macro_travel_cost_for_cell(gs, terrain, nullptr, 0, 0, cost),
+    expect(!sm::macro_travel_cost_for_cell(gs, &bag, terrain, nullptr, 0, 0, cost),
            "invalid terrain storage is rejected");
     expect(nearf(cost.cellCost, 0.0f) && nearf(cost.totalCost, 0.0f),
            "failed query clears stale cost output");

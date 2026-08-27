@@ -79,6 +79,11 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
         reg.emplace<ecs::MacroNpcRuntime>(squad, rt);
     }
 
+    // «Чей это отряд» — emplaced OUTSIDE the creation branch on purpose: a
+    // loaded game restores the squad from the snapshot (which carries no tags),
+    // so the mark has to be re-stamped every time this door is walked through.
+    reg.emplace_or_replace<ecs::PlayerSquadTag>(squad);
+
     // The authoritative scalar still says WHERE he is (position moves onto the
     // entity in a later step of this merge); project it. No +0.5 — Position is
     // the raw cell coordinate, and the overlay applies the render centring.
@@ -114,6 +119,17 @@ SoldierSquad* player_roster(ecs::World& world) {
 
 const SoldierSquad* player_roster(const ecs::World& world) {
     return player_roster(const_cast<ecs::World&>(world));
+}
+
+Inventory* player_inventory(ecs::World& world) {
+    const entt::entity e = find_player_squad(world);
+    if (e == entt::null) return nullptr;
+    auto* bag = world.reg.try_get<ecs::NpcInventory>(e);
+    return bag ? &bag->inv : nullptr;
+}
+
+const Inventory* player_inventory(const ecs::World& world) {
+    return player_inventory(const_cast<ecs::World&>(world));
 }
 
 bool reattach_player_to_macro_spawn(ecs::World& world, int id, float px, float py) {

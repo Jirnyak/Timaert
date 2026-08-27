@@ -309,7 +309,7 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
           "the player's wound landed as the fraction, on the macro scalar");
     CHECK(roster_count(w, gs, 9u) == 0 && w.reg.all_of<ecs::Dead>(enemy),
           "the enemy died through the ledger and the tracked-death shape");
-    CHECK(gs.player.inventory.count("wood") == 4,
+    CHECK(player_inventory(w)->count("wood") == 4,
           "the fallen owner's goods landed in the player's own bag");
     CHECK(xp > 0
               && (gs.player.sheet.levelData.exp > exp0

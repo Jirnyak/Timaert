@@ -13,6 +13,7 @@
 namespace sm {
 
 bool macro_travel_cost_for_cell(const GameState& gs,
+                                const Inventory* bag,
                                 const TerrainData& terrain,
                                 const FeatureLayer* features,
                                 int x, int y,
@@ -60,7 +61,7 @@ bool macro_travel_cost_for_cell(const GameState& gs,
                                        out.efficiency);
 
     const OverloadCharge oc =
-        player_overload_charge(gs.player.sheet, gs.player.inventory);
+        player_overload_charge(gs.player.sheet, bag ? *bag : Inventory{});
     out.overload = oc.overload;
     out.overloadCost = oc.cost;
     out.totalCost = travel_stamina_cost(out.weight, 1.0f, out.overloadCost,
@@ -69,6 +70,7 @@ bool macro_travel_cost_for_cell(const GameState& gs,
 }
 
 bool drain_player_sp_for_macro_cell(GameState& gs,
+                                    const Inventory* bag,
                                     const TerrainData& terrain,
                                     const FeatureLayer* features,
                                     int x, int y,
@@ -77,7 +79,7 @@ bool drain_player_sp_for_macro_cell(GameState& gs,
                                     const TreeLayer* treeLayer,
                                     int fromX, int fromY) {
     MacroTravelCost cost;
-    if (!macro_travel_cost_for_cell(gs, terrain, features, x, y, cost,
+    if (!macro_travel_cost_for_cell(gs, bag, terrain, features, x, y, cost,
                                     treeLayer, fromX, fromY)) {
         return false;
     }

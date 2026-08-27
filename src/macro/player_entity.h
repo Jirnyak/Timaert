@@ -48,4 +48,10 @@ entt::entity player_squad_entity(ecs::World& world);
 SoldierSquad* player_roster(ecs::World& world);
 const SoldierSquad* player_roster(const ecs::World& world);
 
+// …and his BAG, which is the ordinary ecs::NpcInventory every macro body
+// carries. It was `PlayerState::inventory`: the last large field that made the
+// player a different kind of thing from the squads around him.
+Inventory* player_inventory(ecs::World& world);
+const Inventory* player_inventory(const ecs::World& world);
+
 } // namespace sm

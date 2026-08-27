@@ -25,10 +25,10 @@
 
 namespace sm::ui {
 
-inline void draw_trade_carry_line(const GameState& gs) {
+inline void draw_trade_carry_line(const GameState& gs, const Inventory& bag) {
     ImGui::SameLine();
     ImGui::TextDisabled("Carry %.1f / %.0f kg",
-                        double(inventory_weight(gs.player.inventory)),
+                        double(inventory_weight(bag)),
                         double(get_carry_capacity(gs.player.sheet.attributes,
                                                   gs.player.sheet.skills)));
 }

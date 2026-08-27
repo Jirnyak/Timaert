@@ -56,8 +56,12 @@ inline void refresh_leader_travel_stats(ecs::MacroNpcRuntime& rt,
 // Returns how many soldiers walked away.
 inline int drain_dead_leader_squads(ecs::World& w, SoldierSquad& deserterPool) {
     int moved = 0;
+    // The player's own squad never deserts wholesale: he is not a leader whose
+    // men wander off when he falls, and losing his roster into the pool would
+    // be silent — the tag is the guard the ordinal check would be, for free.
     for (auto [e, roster] :
-         w.reg.view<ecs::SquadRoster, ecs::Dead>().each()) {
+         w.reg.view<ecs::SquadRoster, ecs::Dead>(
+             entt::exclude<ecs::PlayerSquadTag>).each()) {
         (void)e;
         if (roster.squad.empty()) continue;
         add_squad(deserterPool, roster.squad);
@@ -426,6 +430,12 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
     const float enemyFraction =
         playerIsA ? o.leaderFractionB : o.leaderFractionA;
     const bool playerWon = (o.winner == 0) == playerIsA;
+    // The player's spoils land in HIS bag — the ordinary NpcInventory on his
+    // squad entity (macro/player_entity.h), the same container an enemy
+    // lord's goods came out of.
+    Inventory* playerBag = player_inventory(w);
+    Inventory scratch{};
+    if (!playerBag) playerBag = &scratch;   // headless fixture: nowhere to put
 
     int xp = playerWon
         ? xp_for_fallen(w, enemy, enemyCas, enemyFraction <= 0.0f)
@@ -482,7 +492,7 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
                     roll_fallen_spoils(mw, r.kind,
                                        normalize_soldier_level(r.level),
                                        cx, cy, enemyFaction, lootRng,
-                                       gs.player.inventory);
+                                       *playerBag);
                     break;
                 }
             }
@@ -493,14 +503,14 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
             roll_fallen_spoils(mw, kind ? kind->type : std::uint16_t(0),
                                normalize_soldier_level(lvl ? lvl->value : 1),
                                cx, cy, enemyFaction, lootRng,
-                               gs.player.inventory);
+                               *playerBag);
         }
     }
 
     settle_squad_casualties(gs, w, enemy, enemyCas);
     settle_leader_fraction(w, enemy, enemyFraction);
     if (playerWon && w.reg.all_of<ecs::Dead>(enemy)) {
-        loot_fallen_owner(w, enemy, gs.player.inventory);
+        loot_fallen_owner(w, enemy, *playerBag);
     }
     drain_dead_leader_squads(w, gs.deserterPool);
 

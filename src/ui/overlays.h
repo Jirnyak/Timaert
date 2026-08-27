@@ -101,6 +101,7 @@ void draw_quest_log(GameState& gs,
                     float scale = 1.0f);
 void draw_codex(GameState& gs, bool* open, float scale = 1.0f);
 void draw_show_dialog(GameState& gs,
+                      const Inventory* bag,
                       const GameEvent& dialog,
                       EventBus& bus,
                       DialogOverlayState& state,

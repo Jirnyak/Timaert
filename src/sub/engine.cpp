@@ -142,6 +142,15 @@ constexpr std::uint32_t kNpcMissileSpellId = 0x4E50434Du; // "NPCM"
 // away from it unnoticed. The row lookup went with it, as `row_for`, and SIGHT
 // below reads the same row.
 
+// THE player's bag — his squad entity's ordinary NpcInventory. The engine
+// reaches it through the same door the macro layer does; a scene without a
+// macro world (a bare harness) gets a scratch pack rather than a null.
+Inventory& player_bag_of(ecs::World* ecs) {
+    static Inventory scratch{};
+    Inventory* bag = ecs ? player_inventory(*ecs) : nullptr;
+    return bag ? *bag : scratch;
+}
+
 float body_sight(const entt::registry& reg, entt::entity e) {
     const auto* kind = reg.try_get<ecs::NPCKind>(e);
     if (const NpcTypeDef* row = row_for(kind)) {
@@ -1486,7 +1495,7 @@ std::string SubworldEngine::grant_prop_loot(const Structure& prop) {
         const ItemDef* def = item_def_at(int(s.def));
         // A full bag REFUSES (owner's ruling): the harvest stays in the world
         // rather than evaporating into a container with no room for it.
-        if (!gs_->player.inventory.add_ref(s)) {
+        if (!player_bag_of(ecs_).add_ref(s)) {
             return picked.empty() ? std::string("Your pack is full.") : picked;
         }
         if (!picked.empty()) picked += ", ";
@@ -1740,9 +1749,9 @@ bool SubworldEngine::interact() {
     // Coin loot lands as imperial coin in the bag (the victim's own purse
     // coins already ride CorpseLoot as items; this int is the derived-body
     // roll — faction mint when the death path learns it).
-    gs_->player.inventory.add("coin_empire", loot.gold);
+    player_bag_of(ecs_).add("coin_empire", loot.gold);
     for (const ItemRef& s : loot.inv.slots) {
-        if (!s.empty()) gs_->player.inventory.add_ref(s);
+        if (!s.empty()) player_bag_of(ecs_).add_ref(s);
     }
     reg.destroy(best);
     set_status("Loot recovered.");
@@ -2995,7 +3004,7 @@ bool SubworldEngine::search_chest(const Structure& chest) {
     const int take = std::min(chosen->count, 1 + int(pick.next_u32() % 3u));
     ItemRef taken = *chosen;
     taken.count = take;
-    if (!gs_->player.inventory.add_ref(taken)) {
+    if (!player_bag_of(ecs_).add_ref(taken)) {
         set_status("Your pack is full.");
         return false;
     }

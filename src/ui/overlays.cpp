@@ -1141,11 +1141,16 @@ namespace sm::ui
             return;
 
         PlayerState &p = gs.player;
+        // His bag and his men both live on his squad entity now; a world that
+        // has none yet reads as an empty pack rather than a crash.
+        Inventory *bagPtr = player_inventory(world);
+        Inventory bagFallback{};
+        Inventory &playerBag = bagPtr ? *bagPtr : bagFallback;
+        const SoldierSquad *army = player_roster(world);
         const CharacterPanelTab current = tab ? *tab : CharacterPanelTab::Stats;
         DerivedBonuses derived = calculate_derived(p.sheet.attributes, p.sheet.skills);
-        const float carryWeight = inventory_weight(p.inventory);
+        const float carryWeight = inventory_weight(playerBag);
         const float carryCap = get_carry_capacity(p.sheet.attributes, p.sheet.skills);
-        const SoldierSquad* army = player_roster(world);
         const int armyTotal = army ? total_soldiers(*army) : 0;
         const int armyUpkeep = army
             ? calculate_squad_upkeep(*army, p.sheet.attributes.cha) : 0;
@@ -1181,7 +1186,7 @@ namespace sm::ui
                         ImGui::Text("HP %d / %d", p.combatStats.currentHp, p.combatStats.maxHp);
                         ImGui::Text("MP %d / %d", p.combatStats.currentMp, p.combatStats.maxMp);
                         ImGui::Text("SP %d / %d", p.combatStats.currentSp, p.combatStats.maxSp);
-                        ImGui::Text("Coin %d", wallet_value(p.inventory));
+                        ImGui::Text("Coin %d", wallet_value(playerBag));
                         ImGui::Text("Attr pts %d", p.sheet.levelData.attributePoints);
                         ImGui::Text("Skill pts %d", p.sheet.levelData.skillPoints);
                         ImGui::Text("Perk pts %d", p.sheet.levelData.perkPoints);
@@ -1325,9 +1330,9 @@ namespace sm::ui
                     *tab = CharacterPanelTab::Inventory;
                 if (inventoryOpen)
                 {
-                    ImGui::Text("Stacks: %zu  Items: %d  Weight: %.1f / %.0f kg",
-                                p.inventory.used_slots(), p.inventory.total(), carryWeight, carryCap);
-                    draw_inventory_table(p.inventory, true);
+                    ImGui::Text("Stacks: %d  Items: %d  Weight: %.1f / %.0f kg",
+                                playerBag.used_slots(), playerBag.total(), carryWeight, carryCap);
+                    draw_inventory_table(playerBag, true);
                     ImGui::EndTabItem();
                 }
 
@@ -1387,7 +1392,7 @@ namespace sm::ui
                         ImGui::TableSetupColumn("Effect");
                         ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, 120.0f);
                         ImGui::TableHeadersRow();
-                        for (const ItemRef &st : p.inventory.slots)
+                        for (const ItemRef &st : playerBag.slots)
                         {
                             if (st.empty()) continue;
                             const ItemDef *def = item_def_at(int(st.def));
@@ -1650,6 +1655,10 @@ namespace sm::ui
     {
         if (!open || !*open)
             return;
+        // The player's bag rides his squad entity (macro/player_entity.h).
+        Inventory *bagPtr = player_inventory(world);
+        Inventory bagFallback{};
+        Inventory &playerBag = bagPtr ? *bagPtr : bagFallback;
         Settlement *s = nullptr;
         for (auto &c : gs.settlements)
             if (c.id == settlementId)
@@ -1803,10 +1812,10 @@ namespace sm::ui
                     // (No DerivedBonuses here any more: prices go through the
                     // ONE law in macro/economy.h, which takes the raw charisma
                     // — the derived tradeDiscount is the canon's own business.)
-                    ImGui::Text("Player coin: %d", wallet_value(gs.player.inventory));
+                    ImGui::Text("Player coin: %d", wallet_value(playerBag));
                     ImGui::SameLine();
                     ImGui::TextDisabled("Mood: %s", mood_label(s->mood));
-                    draw_trade_carry_line(gs);
+                    draw_trade_carry_line(gs, playerBag);
                     draw_counterparty_gold(s->inventory);
                     draw_trade_amount_input(&g_settlement_trade_amount);
                     if (g_settlement_trade_message[0] != '\0')
@@ -1846,13 +1855,13 @@ namespace sm::ui
                     ImGui::NextColumn();
                     ImGui::TextUnformatted("Your inventory");
                     const int giveValue = draw_barter_column(
-                        "##player_stock", gs.player.inventory,
+                        "##player_stock", playerBag,
                         g_settlement_barter.give, g_settlement_trade_amount,
                         sellUnit);
                     ImGui::Columns(1);
 
                     if (draw_barter_deal_button(g_settlement_barter,
-                                                gs.player.inventory,
+                                                playerBag,
                                                 s->inventory,
                                                 giveValue, takeValue))
                     {
@@ -1901,7 +1910,7 @@ namespace sm::ui
                     *tab = SettlementPanelTab::Recruit;
                 if (recruitOpen)
                 {
-                    ImGui::Text("Player coin: %d", wallet_value(gs.player.inventory));
+                    ImGui::Text("Player coin: %d", wallet_value(playerBag));
                     ImGui::Spacing();
                     for (int ti = 0; ti < npc_type_count(); ++ti)
                     {
@@ -1917,17 +1926,17 @@ namespace sm::ui
                             *playerArmy, static_cast<std::uint8_t>(t)) : 0;
                         ImGui::PushID(static_cast<int>(t));
                         bool can = avail > 0
-                                   && wallet_value(gs.player.inventory) >= cost;
+                                   && wallet_value(playerBag) >= cost;
                         if (!can)
                             ImGui::BeginDisabled();
                         if (ImGui::Button("Hire"))
                         {
-                            int purse = wallet_value(gs.player.inventory);
+                            int purse = wallet_value(playerBag);
                             const int paid = playerArmy
                                 ? hire_npc(*playerArmy, s->garrison, t, purse)
                                 : 0;
                             if (paid > 0)
-                                wallet_spend_up_to(gs.player.inventory, paid);
+                                wallet_spend_up_to(playerBag, paid);
                         }
                         if (!can)
                             ImGui::EndDisabled();
@@ -2053,12 +2062,12 @@ namespace sm::ui
                     ImGui::Text("Inn rest: %d g (mood-priced)", cost);
                     ImGui::Text("Restores HP / MP / SP to full.");
                     ImGui::Spacing();
-                    bool can = wallet_value(gs.player.inventory) >= cost;
+                    bool can = wallet_value(playerBag) >= cost;
                     if (!can)
                         ImGui::BeginDisabled();
                     if (ImGui::Button("Rest at Inn"))
                     {
-                        wallet_spend_up_to(gs.player.inventory, cost);
+                        wallet_spend_up_to(playerBag, cost);
                         gs.player.combatStats.currentHp = gs.player.combatStats.maxHp;
                         gs.player.combatStats.currentMp = gs.player.combatStats.maxMp;
                         gs.player.combatStats.currentSp = gs.player.combatStats.maxSp;
@@ -2321,6 +2330,7 @@ namespace sm::ui
     }
 
     void draw_show_dialog(GameState &gs,
+                          const Inventory *bag,
                           const GameEvent &dialog,
                           EventBus &bus,
                           DialogOverlayState &state,
@@ -2382,7 +2392,7 @@ namespace sm::ui
                                       ImVec2(-FLT_MIN, 0.0f)))
                     {
                         const int goldCost = dialog_choice_gold_cost(choice);
-                        if (goldCost > wallet_value(gs.player.inventory))
+                        if (goldCost > (bag ? wallet_value(*bag) : 0))
                         {
                             set_dialog_result(state, "Not enough gold!");
                         }

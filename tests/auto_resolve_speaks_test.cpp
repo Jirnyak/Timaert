@@ -19,6 +19,7 @@
 
 #include "check.h"
 #include "macro/squad.h"
+#include "macro/player_entity.h"
 #include "macro/npc_spawn.h"
 #include "macro/currency.h"
 
@@ -26,6 +27,14 @@
 #include <vector>
 
 namespace {
+
+// The player's bag is an ordinary NpcInventory on his squad entity now; a
+// fixture raises that entity and reads the spoils from it.
+sm::Inventory& player_bag_of(sm::ecs::World& w) {
+    static sm::Inventory scratch{};
+    sm::Inventory* bag = sm::player_inventory(w);
+    return bag ? *bag : scratch;
+}
 
 using namespace sm;
 
@@ -81,6 +90,7 @@ void test_every_death_is_reported_once() {
     MacroWorld mw{};
     mw.gs = &gs;
     mw.world = &w;
+    ensure_macro_player_entity(gs, w);
     mw.facts = &collect;
     mw.factsUser = &log;
 
@@ -166,6 +176,7 @@ void test_spoils_are_rolled_not_scavenged() {
     MacroWorld mw{};
     mw.gs = &gs;
     mw.world = &w;
+    ensure_macro_player_entity(gs, w);
     // A merchant band: rich rows, and NOT ONE of them carries a bag — roster
     // members are records, not entities. Before the roll they dropped nothing.
     const entt::entity enemy = squad(w, NPCType::Merchant, "empire", 4, 3, 7u);
@@ -174,7 +185,7 @@ void test_spoils_are_rolled_not_scavenged() {
     settle_player_auto_battle(mw, enemy, wipe_of(w, enemy, true), true);
 
     const char* coin = currency_for_faction_id("empire");
-    CHECK(gs.player.inventory.count(coin) > 0,
+    CHECK(player_bag_of(w).count(coin) > 0,
           "the fallen merchants pay coin of their own realm");
 
     // The negative control: a DEFEAT pays nothing. Loot is the victor's.
@@ -185,6 +196,7 @@ void test_spoils_are_rolled_not_scavenged() {
     MacroWorld mw2{};
     mw2.gs = &gs2;
     mw2.world = &w2;
+    ensure_macro_player_entity(gs2, w2);
     const entt::entity enemy2 =
         squad(w2, NPCType::Merchant, "empire", 4, 3, 8u);
     AutoBattleOutcome loss{};
@@ -192,7 +204,7 @@ void test_spoils_are_rolled_not_scavenged() {
     loss.leaderFractionA = 0.0f;        // the player fell
     loss.leaderFractionB = 0.8f;
     settle_player_auto_battle(mw2, enemy2, loss, /*playerIsA*/true);
-    CHECK(gs2.player.inventory.count(coin) == 0,
+    CHECK(player_bag_of(w2).count(coin) == 0,
           "a defeat pays the player nothing");
 }
 
@@ -206,9 +218,10 @@ void test_beasts_pay_no_coin() {
     MacroWorld mw{};
     mw.gs = &gs;
     mw.world = &w;
+    ensure_macro_player_entity(gs, w);
     const entt::entity pack = squad(w, NPCType::Wolf, "wildlife", 3, 0, 9u);
     settle_player_auto_battle(mw, pack, wipe_of(w, pack, true), true);
-    CHECK(gs.player.inventory.count(currency_for_faction_id("wildlife")) == 0,
+    CHECK(player_bag_of(w).count(currency_for_faction_id("wildlife")) == 0,
           "a wolf pack pays no coin — the row has no pockets, on the map as "
           "underfoot");
 }

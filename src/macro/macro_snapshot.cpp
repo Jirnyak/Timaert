@@ -10,8 +10,11 @@ std::vector<MacroNpcRecord> snapshot_macro_ecs(ecs::World& w) {
     std::vector<MacroNpcRecord> out;
     auto& reg = w.reg;
     // The view names every component make_npc — the ONE creation door —
-    // emplaces, so a full macro NPC matches and a partial entity (the hero
-    // husk: Position + PlayerTag only) does not.
+    // emplaces. The player's own squad matches it and is saved BY it: since
+    // the merge (2026-08-27) he is an ordinary squad carrying an ordinary
+    // roster and bag, told apart only by his reserved ordinal and his tag.
+    // Tags are not snapshot state — ensure_macro_player_entity re-stamps
+    // PlayerSquadTag every time it is walked through, load included.
     auto view = reg.view<ecs::MacroSpawnId, ecs::Position, ecs::VisualPos,
                          ecs::NPCKind, ecs::Health, ecs::NpcLevel,
                          ecs::MacroNpcRuntime, ecs::NpcTraits,

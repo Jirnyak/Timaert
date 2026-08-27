@@ -45,7 +45,12 @@ struct MacroTravelCost {
 
 // `treeLayer` (optional): forest-class cells (macro/tree_layer.h) drain like
 // the old FT_Tree undergrowth; null = no forest drag (bare/test contexts).
+// `bag` prices the OVERLOAD half of the march — the player's carried weight.
+// It is passed in because his bag is an ordinary NpcInventory on his squad
+// entity now (macro/player_entity.h); null = an unburdened walker, which is
+// exactly what a bare test fixture is.
 bool macro_travel_cost_for_cell(const GameState& gs,
+                                const Inventory* bag,
                                 const TerrainData& terrain,
                                 const FeatureLayer* features,
                                 int x, int y,
@@ -62,6 +67,7 @@ bool macro_travel_cost_for_cell(const GameState& gs,
 // Returns false only when the terrain query fails; `out` receives the resolved
 // cost either way.
 bool drain_player_sp_for_macro_cell(GameState& gs,
+                                    const Inventory* bag,
                                     const TerrainData& terrain,
                                     const FeatureLayer* features,
                                     int x, int y,

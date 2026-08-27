@@ -267,36 +267,6 @@ void read_string_vector(Reader& r, std::vector<std::string>& v,
     }
 }
 
-void write_string_int_map(Writer& w,
-                          const std::unordered_map<std::string, int>& m,
-                          std::uint32_t cap = kMaxSmallVector) {
-    if (!w.count(m.size(), cap)) return;
-    std::vector<std::pair<std::string, int>> rows;
-    rows.reserve(m.size());
-    for (const auto& [k, v] : m) rows.emplace_back(k, v);
-    std::sort(rows.begin(), rows.end(),
-        [](const auto& a, const auto& b) { return a.first < b.first; });
-    for (const auto& [k, v] : rows) {
-        w.str(k);
-        w.pod(v);
-    }
-}
-
-void read_string_int_map(Reader& r, std::unordered_map<std::string, int>& m,
-                         std::uint32_t cap = kMaxSmallVector) {
-    std::uint32_t n = 0;
-    if (!read_count(r, n, cap)) return;
-    m.clear();
-    m.reserve(n);
-    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-        std::string k;
-        int v = 0;
-        r.str(k);
-        r.pod(v);
-        m.emplace(std::move(k), v);
-    }
-}
-
 // The spellbook's cooldowns are STEPS now (core/time.h), so the map they ride
 // in is integer. Kept beside its float twin rather than templated: two callers,
 // two plain functions, and a reader can see exactly what lands on disk.
@@ -554,7 +524,8 @@ void write_player(Writer& w, const PlayerState& p) {
     w.pod(p.sheet.levelData);
     w.pod(p.sheet.skills);
     write_perks(w, p.sheet.perks);
-    write_inventory(w, p.inventory);
+    // (No inventory block: his bag is an ordinary NpcInventory on his squad
+    // entity, and rides the macro snapshot with every other squad's.)
     // No reputation map: the player's standing is his row in gs.factions, which
     // the faction matrix below already persists (kSaveVersion 16).
     write_string_vector(w, p.codexUnlocked);
@@ -582,7 +553,6 @@ void read_player(Reader& r, PlayerState& p) {
     r.pod(p.sheet.levelData);
     r.pod(p.sheet.skills);
     read_perks(r, p.sheet.perks);
-    read_inventory(r, p.inventory);
     read_string_vector(r, p.codexUnlocked);
 
     std::uint32_t n = 0;

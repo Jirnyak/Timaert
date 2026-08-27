@@ -10,6 +10,7 @@
 // is minimal so off-screen markers don't smear across the seam.
 
 #include "ui/macro_overlay.h"
+#include "macro/player_entity.h"
 #include "ui/trade_widgets.h"
 #include "ecs/world.h"
 #include "ecs/components.h"
@@ -364,7 +365,8 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
     // monochromatic blob that visually competes with the GLSL features.
     if (zoom >= 10.0f) {
         auto view = w.reg.view<ecs::Position, ecs::NPCKind, ecs::Health>(
-            entt::exclude<ecs::Dead, ecs::PlayerTag>);  // possessed macro NPC = player, not a figure (Inc 5e-2)
+            entt::exclude<ecs::Dead, ecs::PlayerTag,
+                          ecs::PlayerSquadTag>);  // the player is his own marker, under possession too
         for (auto e : view) {
             const auto& pos  = view.get<ecs::Position>(e);
             const auto& kind = view.get<ecs::NPCKind>(e);
@@ -624,7 +626,11 @@ bool live_npc_entity(const ecs::World& w, entt::entity e) {
 }
 
 bool valid_trade_npc_entity(const ecs::World& w, entt::entity e) {
+    // You cannot trade with yourself: the player's squad carries the same
+    // components every trading NPC does (owner's merge, 2026-08-27), so the
+    // panel has to name the one party that is not a counterparty.
     return live_npc_entity(w, e) &&
+           !w.reg.all_of<ecs::PlayerSquadTag>(e) &&
            w.reg.all_of<ecs::NPCKind, ecs::NpcInventory, ecs::NpcCharacter>(e);
 }
 
@@ -734,7 +740,8 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
 
         auto view = w.reg.view<ecs::Position, ecs::NPCKind, ecs::Health,
                                ecs::NpcLevel, ecs::NpcCharacter>(
-            entt::exclude<ecs::PlayerTag>);  // don't list the player in its own proximity panel (Inc 5e-2)
+            entt::exclude<ecs::PlayerTag,
+                          ecs::PlayerSquadTag>);  // never list the player as a party standing next to himself
 
         // Fixed row buffer: this render hot path must not grow heap storage
         // when multiple NPCs share adjacent cells.
@@ -1022,11 +1029,15 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                 ImGui::SetNextWindowPos(ImVec2(float(viewW) * 0.5f, 190.0f),
                                         ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.0f));
                 ImGui::SetNextWindowSize(ImVec2(560, 420), ImGuiCond_FirstUseEver);
+                Inventory* playerBagPtr = player_inventory(w);
+                Inventory playerBagFallback{};
+                Inventory& playerBag =
+                    playerBagPtr ? *playerBagPtr : playerBagFallback;
                 if (ImGui::Begin("NPC Trade", nullptr,
                                  ImGuiWindowFlags_NoCollapse)) {
                     ImGui::Text("%s  Coin %d", npcName,
-                                wallet_value(gs.player.inventory));
-                    draw_trade_carry_line(gs);
+                                wallet_value(playerBag));
+                    draw_trade_carry_line(gs, playerBag);
                     draw_counterparty_gold(bag.inv);
                     draw_trade_amount_input(&g_trade_amount);
                     if (traits && traits->count > 0) {
@@ -1068,12 +1079,12 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                     ImGui::NextColumn();
                     ImGui::TextUnformatted("Your inventory");
                     const int giveValue = draw_barter_column(
-                        "##npc_player_stock", gs.player.inventory,
+                        "##npc_player_stock", playerBag,
                         g_npc_barter.give, g_trade_amount, sellUnit);
                     ImGui::Columns(1);
 
                     if (draw_barter_deal_button(g_npc_barter,
-                                                gs.player.inventory, bag.inv,
+                                                playerBag, bag.inv,
                                                 giveValue, takeValue)) {
                         set_deal_message(giveValue, takeValue);
                         push_deal_log(gs, npcName, giveValue, takeValue);
