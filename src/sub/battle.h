@@ -265,6 +265,11 @@ struct InfluenceField {
     // Alert chain: 1 => bodies of this faction in this cell know where the enemy
     // is, either by their own eyes or relayed through comrades.
     std::vector<std::uint8_t> alert;      // [plane*cells + cell]
+    // The alert flood's work queue, kept as a MEMBER for the same reason every
+    // buffer above it is: this whole struct exists so a per-frame pass
+    // allocates nothing, and a local vector here was the one that fell out —
+    // reserved to the cell count and rebuilt once per faction, per frame.
+    std::vector<std::uint32_t> alertQueue;
 
     inline std::size_t cell_count() const noexcept {
         return std::size_t(cols) * std::size_t(rows);

@@ -373,7 +373,7 @@ void build_influence_field(InfluenceField& f, const BattleUnits& u,
     // is the chain of comrades — a rank charges because the rank in front of it
     // saw the enemy, however deep the formation, while a body with no friends
     // between it and the fighting is simply not connected and stays home.
-    std::vector<std::uint32_t> queue;
+    std::vector<std::uint32_t>& queue = f.alertQueue;
     queue.reserve(cells);
     for (int s = 0; s < kMaxBattleFactions; ++s) {
         if (!f.has_faction(s)) continue;
