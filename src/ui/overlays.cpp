@@ -1467,13 +1467,22 @@ namespace sm::ui
                                     ImGui::TextUnformatted(def->description);
                                     ImGui::PopTextWrapPos();
                                 }
-                                if (def->macroType != MacroEffectType::None)
+                                // What it DOES, read off the rows rather than
+                                // off a vocabulary nobody consumed: stat
+                                // effects from the one bonus registry, and the
+                                // rule it switches, if any.
+                                if (def->rule != SpellRuleId::None)
                                 {
                                     ImGui::Separator();
-                                    ImGui::TextDisabled("World: %s power %.1f duration %.0f",
-                                                        spell_macro_label(def->macroType),
-                                                        def->macroPower,
-                                                        def->macroDuration);
+                                    ImGui::TextDisabled("World: %s",
+                                                        spell_rule_label(def->rule));
+                                }
+                                for (const Bonus &b : def->effects)
+                                {
+                                    if (b.row == 0 || b.value == 0) continue;
+                                    ImGui::Separator();
+                                    ImGui::TextDisabled("%+d %s", int(b.value),
+                                                        bonus_def(BonusId(b.row)).label);
                                 }
                                 if (spell_flavor_count(def->pros) > 0)
                                 {

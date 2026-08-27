@@ -70,10 +70,12 @@ CastCheck spellbook_can_cast_ex(const SpellBook& sb,
     }
 
     if (inMicro && !d->hasMicro) return {false, "Cannot use here", 0.0f};
-    if (!inMicro) {
-        if (d->macroType == MacroEffectType::None) {
-            return {false, "Cannot use on world map", 0.0f};
-        }
+    if (!inMicro && !d->hasMacro) {
+        // What a spell can do on the world map is now stated by the row that
+        // was always meant to state it (`hasMacro`), not inferred from whether
+        // it happened to carry a macro-effect enum. The two used to disagree
+        // silently, and the enum was the one nobody read.
+        return {false, "Cannot use on world map", 0.0f};
     }
     return {true, "", 0.0f};
 }

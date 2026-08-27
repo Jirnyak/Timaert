@@ -236,35 +236,66 @@ int main() {
         || !std::strstr(flightDef->description, "fall is unforgiving")) {
         return fail("spell description metadata wrong");
     }
-    if (!magicDef || magicDef->macroType != sm::MacroEffectType::None
+    if (!magicDef || magicDef->rule != sm::SpellRuleId::None
         || sm::spell_flavor_count(magicDef->pros) != 3
         || std::strcmp(magicDef->pros[0], "No cooldown") != 0
         || std::strcmp(magicDef->cons[2], "No utility") != 0) {
         return fail("magic_bolt flavor metadata wrong");
     }
-    if (fireDef->macroType != sm::MacroEffectType::DamageRegion
-        || !nearf(fireDef->macroPower, 10.0f)
+    // A DAMAGING spell carries no stat row and no rule: damage is a BLOW, and
+    // blows have exactly one door. `baseDamage` is what it strikes for, and
+    // that is the whole of it — the old `macroType = DamageRegion, macroPower
+    // = 10` was the same fact told a second time, in a vocabulary nobody read.
+    if (fireDef->rule != sm::SpellRuleId::None
+        || fireDef->effects[0].row != 0
+        || !nearf(fireDef->baseDamage, 30.0f)
         || sm::spell_flavor_count(fireDef->pros) != 3
         || std::strcmp(fireDef->pros[1], "Burning DOT") != 0) {
-        return fail("fireball macro/flavor metadata wrong");
+        return fail("fireball effect/flavor metadata wrong");
     }
-    if (!armDef || armDef->macroType != sm::MacroEffectType::DamageRegion
-        || !nearf(armDef->macroPower, 50.0f)
+    if (!armDef || armDef->rule != sm::SpellRuleId::None
+        || armDef->effects[0].row != 0
         || sm::spell_flavor_count(armDef->cons) != 5
         || std::strcmp(armDef->cons[4], "2 min cooldown") != 0) {
-        return fail("armageddon macro/flavor metadata wrong");
+        return fail("armageddon effect/flavor metadata wrong");
     }
-    if (hasteDef->macroType != sm::MacroEffectType::TravelSpeed
-        || !nearf(hasteDef->macroPower, 1.5f)
-        || !nearf(hasteDef->macroDuration, 8.0f)
+
+    // ...and the two SUSTAINED spells say what they do in the two halves of
+    // the hybrid: haste moves a NUMBER the body already has, flight changes a
+    // RULE. Neither is a literal at a call site any more.
+    if (!hasteDef || hasteDef->rule != sm::SpellRuleId::None
+        || hasteDef->effects[0].row != std::uint8_t(sm::BonusId::Spd)
+        || hasteDef->effects[0].value <= 0) {
+        return fail("haste must be a STAT row: speed is a number a body has");
+    }
+    if (!flightDef || flightDef->rule != sm::SpellRuleId::Flight
+        || flightDef->effects[0].row != 0) {
+        return fail("flight must be a RULE: leaving the ground is not a "
+                    "bigger number");
+    }
+    // The magnitude follows the CASTER, through the one door that turns a
+    // rank into a multiplier — with its own negative control.
+    sm::Skills novice{}, adept{};
+    adept[sm::SkillId::Spellcraft] = 10;   // 5 %/rank -> x1.5
+    const sm::Bonus weak = sm::spell_bonus(hasteDef->effects[0], novice);
+    const sm::Bonus strong = sm::spell_bonus(hasteDef->effects[0], adept);
+    if (weak.row != strong.row || strong.value <= weak.value) {
+        return fail("a trained caster's haste must be worth more than a "
+                    "novice's, and land in the same place");
+    }
+    if (weak.value != hasteDef->effects[0].value) {
+        return fail("an untrained caster gets exactly what the row says");
+    }
+    // Both are castable on the map because their ROW says so — the old test
+    // read a macro-effect enum instead, which is the field that had to agree
+    // with `hasMacro` and had no mechanism to.
+    if (!hasteDef->hasMacro || !hasteDef->sustained
         || std::strcmp(hasteDef->pros[2], "Works on world map") != 0) {
-        return fail("haste macro/flavor metadata wrong");
+        return fail("haste world-map metadata wrong");
     }
-    if (flightDef->macroType != sm::MacroEffectType::IgnoreTerrain
-        || !nearf(flightDef->macroPower, 1.0f)
-        || !nearf(flightDef->macroDuration, 12.0f)
+    if (!flightDef->hasMacro || !flightDef->sustained
         || std::strcmp(flightDef->cons[2], "Blocked indoors") != 0) {
-        return fail("flight macro/flavor metadata wrong");
+        return fail("flight world-map metadata wrong");
     }
 
     sm::spellbook_learn(book, "magic_bolt");

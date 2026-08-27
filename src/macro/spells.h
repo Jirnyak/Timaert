@@ -15,6 +15,10 @@
 // Adding a spell = one row here + one effect row in content/spells (the
 // static_assert there refuses a mismatch).
 #pragma once
+#include "core/table_guard.h"
+#include "macro/attributes.h"
+#include "macro/bonus.h"
+#include <algorithm>
 #include <cstdint>
 #include <string_view>
 
@@ -32,15 +36,48 @@ enum class DeliveryShape : std::uint8_t {
     Projectile, Beam, Nova, Self, Aura, Chain, Summon, Targeted,
 };
 
-enum class MacroEffectType : std::uint8_t {
-    None,
-    TravelSpeed,
-    IgnoreTerrain,
-    HealParty,
-    DamageRegion,
-    RevealMap,
-    BuffArmy,
+// THE HYBRID (owner's ruling, 2026-08-27). A spell effect is one of two
+// things, and which one is not a matter of taste:
+//
+//   · anything that moves a NUMBER a body already has — strength, speed,
+//     health — is a row of the ONE bonus registry (macro/bonus.h). A haste
+//     spell and a swift ring say the same thing in the same words, and the
+//     magnitude scales with the caster the way every other number does.
+//   · anything that changes a RULE OF THE WORLD — walking on air, seeing a
+//     map you have not walked, ignoring what the ground costs — has no number
+//     to move, so it is a switch. These are the rows below.
+//
+// `MacroEffectType` was the ancestor of both halves and consumed by NOBODY:
+// a fully-authored vocabulary (TravelSpeed, BuffArmy, HealParty…) with power
+// and duration columns that no code ever read, while the same facts were
+// re-spelled as literals at the call sites. Its stat half is the registry
+// now; its rule half is this.
+enum class SpellRuleId : std::uint8_t {
+    None = 0,
+    Flight,         // the body leaves the ground: sub/height.h flight window
+    IgnoreTerrain,  // the macro march stops paying what the ground asks
+    RevealMap,      // the knowledge layer is written, not walked
+    Count
 };
+
+struct SpellRuleDef {
+    // MUST equal the row's index in kSpellRuleDefs (guard below the table).
+    SpellRuleId id;
+    const char* key;
+    const char* label;
+};
+
+inline constexpr SpellRuleDef kSpellRuleDefs[] = {
+    {SpellRuleId::None,          "none",           "—"},
+    {SpellRuleId::Flight,        "flight",         "Flight"},
+    {SpellRuleId::IgnoreTerrain, "ignore_terrain", "Unhindered"},
+    {SpellRuleId::RevealMap,     "reveal_map",     "Farsight"},
+};
+static_assert(sizeof(kSpellRuleDefs) / sizeof(kSpellRuleDefs[0])
+                  == std::size_t(SpellRuleId::Count),
+              "kSpellRuleDefs must carry one row per SpellRuleId");
+static_assert(rows_in_enum_order(kSpellRuleDefs, &SpellRuleDef::id),
+              "kSpellRuleDefs rows must stand in SpellRuleId order");
 
 inline constexpr int kMaxSpellFlavorItems = 5;
 
@@ -92,15 +129,48 @@ struct SpellDef {
     float projectileRadius;
     float projectileLife;
     float beamLength;
-    // ── macro-map effect ──
-    MacroEffectType macroType = MacroEffectType::None;
-    float macroPower    = 0.0f;
-    float macroDuration = 0.0f;
+    // ── what it DOES, in the one vocabulary ──
+    // Stat effects as rows of the bonus registry, with their BASE magnitude:
+    // what a novice's casting is worth. The caster scales it — `spell_bonus`
+    // below applies the school law, so a master's haste is a master's haste
+    // without a second number anywhere.
+    //
+    // A standing effect (`sustained`) contributes these while it burns and
+    // stops contributing the moment it does not; an instant one applies them
+    // once. That difference is the registry's own column, not a second field
+    // here.
+    static constexpr int kMaxSpellBonuses = 3;
+    Bonus effects[kMaxSpellBonuses] = {};
+
+    // ...and the RULE it switches on, if any. Two halves, because a rule has
+    // no magnitude to scale and a stat has no need of a switch.
+    SpellRuleId rule = SpellRuleId::None;
     // ── flavor ──
     const char* description = "";
     const char* pros[kMaxSpellFlavorItems] = {};
     const char* cons[kMaxSpellFlavorItems] = {};
 };
+
+// What ONE effect cell of a spell is worth in the caster's hands.
+//
+// THE LAW is the project's own, said about magic: attributes ADD, skills
+// MULTIPLY. The row states what a novice's casting does; `spellcraft` is the
+// training that multiplies it, through the one door that turns a rank into a
+// multiplier (`skill_mult`, macro/attributes.h) — so magic's mastery curve is
+// not a private formula and cannot drift from the rest of the sheet.
+//
+// (When schools become skills of their own — `SpellTag` is already the M&M
+// school list — this reads the SCHOOL's rank instead of `spellcraft`, and
+// nothing else here changes. That is the one line this shape was chosen for.)
+inline Bonus spell_bonus(const Bonus& base, const Skills& caster) {
+    if (base.row == 0) return {};
+    const float scaled =
+        float(base.value) * skill_mult(caster, SkillId::Spellcraft);
+    const int rounded = int(scaled < 0.0f ? scaled - 0.5f : scaled + 0.5f);
+    Bonus out = base;
+    out.value = std::int16_t(std::clamp(rounded, -32768, 32767));
+    return out;
+}
 
 inline constexpr SpellDef kSpellDefs[] = {
     {
@@ -119,8 +189,8 @@ inline constexpr SpellDef kSpellDefs[] = {
         .scalingPower = 1.2f, .scalingDuration = 0.0f, .scalingRadius = 0.5f,
         .projectileRadius = 2.5f, .projectileLife = kDefaultProjectileLifeS,
         .beamLength = 0.0f,
-        .macroType = MacroEffectType::DamageRegion,
-        .macroPower = 10.0f, .macroDuration = 0.0f,
+        // Damage is a BLOW and blows have one door; `baseDamage` above is
+        // what this spell strikes for. No stat row and no rule switch.
         .description = "Hurls a ball of fire that explodes on impact, burning "
                        "everything in the blast radius - allies included. The "
                        "classic.",
@@ -143,8 +213,9 @@ inline constexpr SpellDef kSpellDefs[] = {
         .scalingPower = 1.4f, .scalingDuration = 0.3f, .scalingRadius = 0.0f,
         .projectileRadius = 1.5f, .projectileLife = kDefaultProjectileLifeS,
         .beamLength = 0.0f,
-        .macroType = MacroEffectType::BuffArmy,
-        .macroPower = -5.0f, .macroDuration = 1.0f,
+        // A chill that slows what it touches — a STAT, so a row of the one
+        // registry, with the sign the curse deserves.
+        .effects = {{std::uint8_t(BonusId::Spd), -5}},
         .description = "A razor-sharp shard of magical ice that pierces flesh "
                        "and numbs the soul. Excellent against bosses and "
                        "elites - useless against a horde.",
@@ -191,8 +262,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .scalingPower = 1.0f, .scalingDuration = 0.0f, .scalingRadius = 0.4f,
         .projectileRadius = 1.5f, .projectileLife = kDefaultProjectileLifeS,
         .beamLength = 0.0f,
-        .macroType = MacroEffectType::DamageRegion,
-        .macroPower = 5.0f, .macroDuration = 0.0f,
+
         .description = "Lightning arcs from the first target to nearby "
                        "enemies, losing force with each jump. Brilliant "
                        "against scattered groups - unreliable when you need "
@@ -239,8 +309,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .scalingPower = 2.0f, .scalingDuration = 0.5f, .scalingRadius = 1.0f,
         .projectileRadius = 2.5f, .projectileLife = 2.0f,
         .beamLength = 0.0f,
-        .macroType = MacroEffectType::DamageRegion,
-        .macroPower = 50.0f, .macroDuration = 0.0f,
+
         .description = "Rain fire and ruin upon the world. Everything burns - "
                        "enemies, allies, buildings, reputation. The ultimate "
                        "expression of magical supremacy and moral bankruptcy.",
@@ -264,8 +333,11 @@ inline constexpr SpellDef kSpellDefs[] = {
         .scalingPower = 0.5f, .scalingDuration = 1.2f, .scalingRadius = 0.0f,
         .projectileRadius = 0.0f, .projectileLife = 0.0f,
         .beamLength = 0.0f,
-        .macroType = MacroEffectType::TravelSpeed,
-        .macroPower = 1.5f, .macroDuration = 8.0f,
+        // Speed is a STAT the body already has, so haste is a row: +20 SPD
+        // at a novice's hand, scaled by the caster (spell_bonus). The ×1.5
+        // literal that used to live in main.cpp was this row's own number
+        // told a second time, in a second place, in different units.
+        .effects = {{std::uint8_t(BonusId::Spd), 20}},
         .description = "Accelerates body and mind. In combat, you move and "
                        "strike faster. On the world map, your party covers "
                        "ground at supernatural speed.",
@@ -290,8 +362,8 @@ inline constexpr SpellDef kSpellDefs[] = {
         .scalingPower = 0.0f, .scalingDuration = 1.0f, .scalingRadius = 0.0f,
         .projectileRadius = 0.0f, .projectileLife = 0.0f,
         .beamLength = 0.0f,
-        .macroType = MacroEffectType::IgnoreTerrain,
-        .macroPower = 1.0f, .macroDuration = 12.0f,
+        // Leaving the ground is not a bigger number, it is a different rule.
+        .rule = SpellRuleId::Flight,
         .description = "Rise above the ground and soar. Walls, rivers, "
                        "mountains - none of it matters while you fly. But the "
                        "magic fades fast, and the fall is unforgiving.",
@@ -382,17 +454,13 @@ constexpr const char* spell_shape_label(DeliveryShape shape) {
     return "";
 }
 
-constexpr const char* spell_macro_label(MacroEffectType macro) {
-    switch (macro) {
-        case MacroEffectType::None: return "None";
-        case MacroEffectType::TravelSpeed: return "Travel Speed";
-        case MacroEffectType::IgnoreTerrain: return "Ignore Terrain";
-        case MacroEffectType::HealParty: return "Heal Party";
-        case MacroEffectType::DamageRegion: return "Damage Region";
-        case MacroEffectType::RevealMap: return "Reveal Map";
-        case MacroEffectType::BuffArmy: return "Buff Army";
-    }
-    return "";
+// (No `spell_macro_label` switch. A rule LABELS ITSELF in its row
+// (kSpellRuleDefs) and a stat effect labels itself in the bonus registry, so
+// there is nothing left to switch on — and a label added to a table cannot
+// forget to appear here.)
+constexpr const char* spell_rule_label(SpellRuleId rule) {
+    return kSpellRuleDefs[std::size_t(rule) < std::size_t(SpellRuleId::Count)
+                              ? std::size_t(rule) : 0].label;
 }
 
 } // namespace sm

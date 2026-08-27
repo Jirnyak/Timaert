@@ -1611,6 +1611,65 @@ float& player_sp_carry(App& app) {
     return carry ? *carry : scratch;
 }
 
+// EVERYTHING STANDING ON THE PLAYER, summed once.
+//
+// His sheet is the character he built; what fights is that character PLUS what
+// he is wearing and what is currently burning on him. Both are rows of the one
+// bonus registry, so both are the same sum — and because the sum is read
+// through a modified COPY (`effective_sheet`), taking the coat off or letting
+// the spell lapse is simply not adding it next time.
+//
+// This door is why haste stopped being a literal. It used to be `×1.5` spelled
+// at two call sites, keyed by a string compare on "haste", duplicating the
+// number the spell's own row already carried — a fourth place the same fact
+// lived. Now the row says "+20 SPD at a novice's hand", the caster's training
+// scales it (spell_bonus), and the pace formula simply reads a sheet.
+sm::BonusTotals player_standing_bonuses(const App& app) {
+    sm::BonusTotals t{};
+    // What he wears. Opt-in: a player who has equipped nothing has no
+    // component, and the limiting case costs a lookup.
+    if (const entt::entity e = sm::player_squad_entity(
+            const_cast<sm::ecs::World&>(app.ecs));
+        e != entt::null) {
+        if (const auto* eq =
+                app.ecs.reg.try_get<sm::ecs::BodyEquipment>(e)) {
+            const sm::BonusTotals worn = sm::worn_bonuses(eq->gear);
+            for (int i = 0; i < sm::kMaxAttributes; ++i)
+                t.attr[std::size_t(i)] += worn.attr[std::size_t(i)];
+            for (int i = 0; i < sm::kMaxSkills; ++i)
+                t.skill[std::size_t(i)] += worn.skill[std::size_t(i)];
+        }
+    }
+    // ...and what is burning on him. A sustained spell contributes while it
+    // burns and stops the moment it does not — no bookkeeping, because nothing
+    // was ever written down.
+    for (const std::string& id : app.gs.player.spellBook.sustainedActive) {
+        const sm::SpellDef* def = sm::spell_find(id);
+        if (!def) continue;
+        for (const sm::Bonus& b : def->effects) {
+            sm::accumulate(t, sm::spell_bonus(b, app.gs.player.sheet.skills));
+        }
+    }
+    return t;
+}
+
+// The sheet the world should actually ask about him.
+sm::CharacterSheet player_effective_sheet(const App& app) {
+    return sm::effective_sheet(app.gs.player.sheet,
+                               player_standing_bonuses(app));
+}
+
+// Is a RULE of the world switched on for him right now? A rule has no
+// magnitude to scale, so this is a row lookup and a boolean, not a number.
+bool player_rule_active(const App& app, sm::SpellRuleId rule) {
+    if (rule == sm::SpellRuleId::None) return false;
+    for (const std::string& id : app.gs.player.spellBook.sustainedActive) {
+        const sm::SpellDef* def = sm::spell_find(id);
+        if (def && def->rule == rule) return true;
+    }
+    return false;
+}
+
 bool boot_window(App& app) {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
         std::fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
@@ -2819,7 +2878,13 @@ bool cast_active_spell(App& app) {
     }
 
     if (!inMicro) {
-        if (!def->sustained || def->macroType == sm::MacroEffectType::None) {
+        // A world-map cast needs something the world map can DO with it: a
+        // standing stat effect, or a rule to switch. Both are rows now.
+        bool saysSomething = def->rule != sm::SpellRuleId::None;
+        for (const sm::Bonus& b : def->effects) {
+            if (b.row != 0 && b.value != 0) saysSomething = true;
+        }
+        if (!def->sustained || !saysSomething) {
             emit_spell_cast(app, id, false, "World-map spell effect not implemented");
             return false;
         }
@@ -3179,13 +3244,14 @@ void poll_movement(App& app, float dt) {
         if (keys[app.keymap.get(ActionId::MoveBack)])    dy -= 1;
         if (keys[app.keymap.get(ActionId::MoveLeft)])    dx -= 1;
         if (keys[app.keymap.get(ActionId::MoveRight)])   dx += 1;
-        const float haste = sustained_spell_active(app.gs.player.spellBook, "haste")
-            ? 1.5f : 1.0f;
         // Same pace as on the map — one character, one speed, both layers.
-        const float pace = sm::calculate_derived(app.gs.player.sheet.attributes,
-                                                 app.gs.player.sheet.skills)
+        // And haste is IN that character now: it is +SPD on his effective
+        // sheet, not a multiplier bolted on beside the formula, so a swift
+        // ring and a swiftness spell are the same kind of fast.
+        const sm::CharacterSheet eff = player_effective_sheet(app);
+        const float pace = sm::calculate_derived(eff.attributes, eff.skills)
                                .moveSpeedMult;
-        bool spellFlight = sustained_spell_active(app.gs.player.spellBook, "flight");
+        bool spellFlight = player_rule_active(app, sm::SpellRuleId::Flight);
         if (spellFlight != app.lastSpellFlight) {
             app.subworld.set_flying(spellFlight);
             app.lastSpellFlight = spellFlight;
@@ -3195,8 +3261,8 @@ void poll_movement(App& app, float dt) {
         const bool jumpHeld = keys[app.keymap.get(ActionId::Jump)] != 0;
         if (jumpHeld && !app.lastJumpHeld) app.subworld.jump();
         app.lastJumpHeld = jumpHeld;
-        app.subworld.move_player(dx * kSubworldWalkTilesPerSecond * pace * haste * dt,
-                                 dy * kSubworldWalkTilesPerSecond * pace * haste * dt);
+        app.subworld.move_player(dx * kSubworldWalkTilesPerSecond * pace * dt,
+                                 dy * kSubworldWalkTilesPerSecond * pace * dt);
         return;
     }
 
@@ -3214,11 +3280,10 @@ void poll_movement(App& app, float dt) {
     // is priced per cell — so a fast traveller and a tough one are different
     // characters, not the same one twice.
     if (!app.cursor.path.empty() && !paused) {
-        const float haste = sustained_spell_active(app.gs.player.spellBook, "haste")
-            ? 1.5f : 1.0f;
-        const float pace = sm::calculate_derived(app.gs.player.sheet.attributes,
-                                                 app.gs.player.sheet.skills)
-                               .moveSpeedMult;
+        const sm::CharacterSheet effSheet = player_effective_sheet(app);
+        const float pace =
+            sm::calculate_derived(effSheet.attributes, effSheet.skills)
+                .moveSpeedMult;
         // The march is quoted in cells per GAME hour (macro/movement_cost.h).
         // This file is the one place that knows what a game hour costs in real
         // seconds, so the conversion lives here and nowhere else.
@@ -3231,7 +3296,7 @@ void poll_movement(App& app, float dt) {
         const float ground =
             sm::terrain_speed_mult(macro_cell_cost_weight(app));
         step_macro_walk_with_travel_cost(
-            app, dt, kMarchCellsPerRealSecond * pace * haste * ground);
+            app, dt, kMarchCellsPerRealSecond * pace * ground);
         // A hostile squad's cell stops the march right here (Inc 6): the
         // meeting is geometric, and the map is not silent about it.
         detect_forced_encounter(app);
@@ -11057,16 +11122,31 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             const bool active = sm::spellbook_has_sustained(
                 app.gs.player.spellBook, "haste");
             const int afterMp = app.gs.player.combatStats.currentMp;
-            if (!active || afterMp >= beforeMp) {
-                smoke_fail(app, "haste sustained drain invariant");
+            // ...and it MAKES HIM FASTER. The smoke used to prove only that
+            // mana drained, so the whole reason to cast it went unmeasured —
+            // and the ×1.5 that delivered it lived as a literal beside the
+            // pace formula, where no test could see it either. The pace is
+            // read the way the game reads it: off his effective sheet.
+            const sm::CharacterSheet hasted = player_effective_sheet(app);
+            const float hastePace =
+                sm::calculate_derived(hasted.attributes, hasted.skills)
+                    .moveSpeedMult;
+            const float basePace =
+                sm::calculate_derived(app.gs.player.sheet.attributes,
+                                      app.gs.player.sheet.skills)
+                    .moveSpeedMult;
+            if (!active || afterMp >= beforeMp || !(hastePace > basePace)) {
+                smoke_fail(app, "haste sustained drain/speed invariant");
                 break;
             }
             std::fprintf(stderr,
-                         "[smoke] sustained_haste active=%d mp=%d->%d carry=%.3f\n",
+                         "[smoke] sustained_haste active=%d mp=%d->%d carry=%.3f "
+                         "pace=%.4f->%.4f\n",
                          active ? 1 : 0,
                          beforeMp,
                          afterMp,
-                         app.gs.player.spellBook.sustainedDrainCarry);
+                         app.gs.player.spellBook.sustainedDrainCarry,
+                         double(basePace), double(hastePace));
             std::fflush(stderr);
             ++app.smoke.cursor;
             break;
