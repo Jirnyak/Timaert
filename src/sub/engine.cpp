@@ -106,7 +106,8 @@ constexpr float kPlayerLightG = 0.72f;
 constexpr float kPlayerLightB = 0.42f;
 // kAllyRepThreshold moved to macro/faction.h — both ends of the one relation
 // scale live beside the matrix they cut.
-constexpr int kKillRepPenalty = -1;
+// kKillRepPenalty moved to macro/faction.h — the auto-resolve pays the same
+// price for the same crime.
 // Flight ceiling margin is sub::kFlightMaxAboveTerrainM (height.h): the
 // ceiling itself is renderer3dVk_.max_height_m() + that margin — absolute for
 // the loaded window, never below any terrain the window can show.
@@ -2335,6 +2336,14 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                         mh->hp = 0.0f;
                     }
                     reg.emplace_or_replace<ecs::Dead>(origin->macro);
+                    // …and his men stop being a squad THE MOMENT he falls,
+                    // exactly as they do when the auto-resolve kills him
+                    // (CANON S4: a leaderless squad's survivors fall into the
+                    // deserter pool). This used to wait for leave(), so a
+                    // beheaded warband stayed a live squad on the map for as
+                    // long as the player kept exploring — and the pool that
+                    // raises bandit bands was paid late by exactly that long.
+                    drain_dead_leader_squads(*ecs_, gs_->deserterPool);
                 }
             }
             const auto* pos = reg.try_get<ecs::Position>(e);
@@ -2367,6 +2376,37 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                           calculate_derived(gs_->player.sheet.attributes,
                                             gs_->player.sheet.skills).expMult);
                 apply_player_kill_reputation(gs_, kind);
+            } else if (lastHit && mw_.world) {
+                // CANON S14: «сквад == лидер, и только NPC-лидеры растут — и
+                // от дел в макромире, и от боя внизу». The macro half was
+                // built (award_leader_xp pays auto-battle victories); the
+                // GROUND half was missing, so a lord who won a real fight
+                // underfoot learned nothing from it while the same lord
+                // winning it on the map levelled. The killer's own body names
+                // its squad: a projected leader carries MacroOrigin, a
+                // roster member's receipt names its leader's spawn ordinal.
+                const entt::entity killerBody =
+                    entt::entity(lastHit->attackerId);
+                entt::entity leader = entt::null;
+                if (reg.valid(killerBody)) {
+                    if (const auto* origin =
+                            reg.try_get<ecs::MacroOrigin>(killerBody)) {
+                        leader = origin->macro;
+                    } else if (const auto* debt =
+                                   reg.try_get<ecs::MacroDebt>(killerBody);
+                               debt && debt->stock
+                                   == std::uint8_t(MacroStock::Roster)) {
+                        leader = macro_entity_by_spawn_id(
+                            *mw_.world, std::uint32_t(debt->subject));
+                    }
+                }
+                if (leader != entt::null && mw_.world->reg.valid(leader)
+                    && !mw_.world->reg.any_of<ecs::Dead>(leader)) {
+                    award_leader_xp(*mw_.world, leader,
+                                    npc_xp_reward(NPCType(std::uint8_t(
+                                                      kind ? kind->type : 0)),
+                                                  lvl));
+                }
             }
 
             Inventory inv{};

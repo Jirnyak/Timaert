@@ -1093,6 +1093,16 @@ timaert_test(auto_battle_test
         # npc.h answers for both halves of the kind id space (monsters too).
         src/macro/fauna.cpp)
 
+# The auto-resolve is not mute: facts, the kill price, rolled spoils — the
+# three things the fought version always paid and the button never did.
+timaert_test(auto_resolve_speaks_test
+    SOURCES
+        src/macro/items.cpp
+        src/macro/macro_stock.cpp
+        src/macro/deposit_layer.cpp
+        src/macro/fauna.cpp
+    LINK_ENTT)
+
 # ── CTest registration ─────────────────────────────────────────────────────
 # There is nothing here any more, and that is the point: timaert_test() calls
 # add_test() for every target it creates, so "built" and "registered" cannot

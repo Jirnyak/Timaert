@@ -1043,7 +1043,7 @@ bool squad_threat_step(entt::entity self, ecs::Position& p,
             auto_battle_side_of(*ctx.mw.world, self),
             auto_battle_side_of(*ctx.mw.world, enemy),
             ambush ? Ambush::SideA : Ambush::None, *ctx.rng);
-        settle_auto_battle(*ctx.mw.gs, *ctx.mw.world, self, enemy, o);
+        settle_auto_battle(ctx.mw, self, enemy, o);
         rt.visualSpeed = 0.0f;
         if (!reg.all_of<ecs::Dead>(self)) {
             rt.state = std::uint8_t(NS::Idle);

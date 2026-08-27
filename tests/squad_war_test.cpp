@@ -291,7 +291,12 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     win.casualtiesB = {31u, 32u};
     win.leaderFractionA = 0.6f;
     win.leaderFractionB = 0.0f;
-    const int xp = settle_player_auto_battle(gs, w, enemy, win,
+    // The settle takes THE envelope now (damage-door Inc 6): it needs the
+    // world's own layers to price the spoils, and its facts leave through
+    // the envelope's channel. A fixture that plugs in no channel is the
+    // honest headless case.
+    MacroWorld mw{}; mw.gs = &gs; mw.world = &w;
+    const int xp = settle_player_auto_battle(mw, enemy, win,
                                              /*playerIsA*/true);
     CHECK(total_soldiers(gs.player.army) == 1
               && gs.player.army.members[0].entityId == 502u,
@@ -325,7 +330,8 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     loss.casualtiesA = {601u};            // one of two fell — not a wipe
     loss.leaderFractionA = 0.15f;
     loss.leaderFractionB = 0.9f;
-    settle_player_auto_battle(gs2, w2, victor, loss, /*playerIsA*/true);
+    MacroWorld mw2{}; mw2.gs = &gs2; mw2.world = &w2;
+    settle_player_auto_battle(mw2, victor, loss, /*playerIsA*/true);
     CHECK(total_soldiers(gs2.player.army) == 1,
           "defeat took the fallen and left the survivor");
     CHECK(gs2.player.combatStats.currentHp >= 1,

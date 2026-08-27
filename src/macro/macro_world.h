@@ -15,8 +15,28 @@
 // executables, pure-data routers like fauna) take the envelope without
 // dragging entt or GameState into their translation units.
 #pragma once
+#include <cstdint>
 
 namespace sm {
+
+// A fact the macro layer produces about a fight it resolved. One kind so far;
+// it grows like every other row-shaped thing here. `victim` and `killer` are
+// entity bits (0 = a roster row, which has no entity of its own — it is named
+// by its record id in `detail`), so the app can raise this as the ordinary
+// NpcDeath the whole story layer already listens to: an auto-resolved death
+// and a fought death are the SAME fact, which is exactly the point (CANON
+// S13: one law of battle at both scales).
+struct BattleFact {
+    enum class Kind : std::uint8_t { Death = 0 };
+    Kind          kind    = Kind::Death;
+    std::uint16_t npcType = 0;       // the fallen body's row (NpcDeath.ix)
+    std::uint32_t victim  = 0;       // entity bits, 0 for a roster member
+    std::uint32_t killer  = 0;       // entity bits of the victorious leader
+    std::int32_t  detail  = -1;      // the roster record id, -1 for a leader
+    int           level   = 1;
+    const char*   factionId = "";    // whose colours the fallen wore
+};
+using BattleFactSink = void (*)(void* user, const BattleFact& fact);
 
 struct GameState;
 struct TreeLayer;
@@ -43,6 +63,18 @@ struct MacroWorld {
                                             //   the woodcutter's target search
     const LandmarkGrid* landmarks = nullptr; // baked cell → landmark index
                                              //   (macro/landmark_grid.h)
+
+    // ── The way OUT: facts the macro layer produces ───────────────────────
+    // The macro layer must not see the event bus (that is L3; econ_day
+    // already reports through a POD sink for the same reason), but a system
+    // that stays SILENT is invisible to the story layer — «система обязана
+    // объявить, какие факты она эмитит» (work_vector §1). So the envelope
+    // carries the channel: the app plugs the bus in once, and every macro
+    // system that has something to report finds it here rather than growing
+    // an out-parameter. Null = nobody is listening, which is the honest
+    // state of a headless fixture and costs a null check.
+    BattleFactSink facts     = nullptr;
+    void*          factsUser = nullptr;
 };
 
 } // namespace sm

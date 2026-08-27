@@ -9,8 +9,14 @@
 #include "ecs/world.h"
 #include "macro/army.h"
 #include "macro/auto_battle.h"
+#include "core/rng.h"
+#include "macro/currency.h"
+#include "macro/items.h"
+#include "macro/landmark_grid.h"
+#include "macro/landmark_registry.h"
 #include "macro/macro_stock.h"
 #include "macro/state.h"
+#include "macro/zones.h"
 
 #include <algorithm>
 #include <cmath>
@@ -58,6 +64,19 @@ inline int drain_dead_leader_squads(ecs::World& w, SoldierSquad& deserterPool) {
         roster.members.clear();
     }
     return moved;
+}
+
+// THE lookup by save-stable ordinal (ecs::MacroSpawnId): the one identity a
+// macro entity keeps across a regeneration, so it is what a receipt names
+// (ecs::MacroDebt.subject for a roster row) and what possession stores. The
+// registry is never serialized, so this is a scan — of thousands, not of a
+// hot loop: a death, a possession, a load.
+inline entt::entity macro_entity_by_spawn_id(ecs::World& w,
+                                             std::uint32_t index) {
+    for (auto e : w.reg.view<ecs::MacroSpawnId>()) {
+        if (w.reg.get<ecs::MacroSpawnId>(e).index == index) return e;
+    }
+    return entt::null;
 }
 
 // ── Auto-battle glue: entity ⇄ the pure resolver ──────────────────────────
@@ -163,6 +182,109 @@ inline int award_leader_xp(ecs::World& w, entt::entity e, int xp) {
 // the player's own auto-resolve button (Inc 6). No consumer edits a roster
 // vector or a health bar directly.
 
+// ── The fallen SPEAK (damage-door track Inc 6) ────────────────────────────
+// An auto-resolved fight used to be MUTE: no facts, so quest kill-tallies
+// never counted it; no kill reputation, so a massacre by auto-resolve cost
+// nothing; and the spoils were whatever bag the loser happened to carry —
+// the loot registry was never rolled. Below ground the same death paid all
+// three. CANON S13 says there is ONE law of battle at both scales, and
+// «система обязана объявить, какие факты она эмитит» (work_vector §1); these
+// three helpers are that law, spelled once and shared by the AI↔AI settle and
+// the player's own auto-resolve.
+
+// Report one death through the envelope's channel (null = nobody listening).
+inline void report_death(const MacroWorld& mw, std::uint16_t npcType,
+                         entt::entity victim, entt::entity killer,
+                         std::int32_t detail, int level,
+                         const char* factionId) {
+    if (!mw.facts) return;
+    BattleFact f{};
+    f.kind = BattleFact::Kind::Death;
+    f.npcType = npcType;
+    f.victim = victim == entt::null
+        ? 0u : std::uint32_t(entt::to_integral(victim));
+    f.killer = killer == entt::null
+        ? 0u : std::uint32_t(entt::to_integral(killer));
+    f.detail = detail;
+    f.level = level;
+    f.factionId = factionId ? factionId : "";
+    mw.facts(mw.factsUser, f);
+}
+
+// The faction a macro body wears — its INSTANCE colours (Inc 2), not its row.
+inline const char* squad_faction_id(ecs::World& w, entt::entity e) {
+    const auto* kind = w.reg.try_get<ecs::NPCKind>(e);
+    return kind ? faction_id_for_index(kind->factionIdx) : "";
+}
+
+// The RNG adapter THE loot registry asks for (RngFn is a bare float(*)()).
+// Same shape the macro spawner and the subworld reaper each keep privately.
+inline thread_local Rng* gSquadLootRng = nullptr;
+inline float squad_loot_rng_f01() {
+    return gSquadLootRng ? gSquadLootRng->next_f01() : 0.0f;
+}
+
+// What a fallen body of `kind` at `level` was carrying, rolled through THE
+// loot registry with the SAME context the subworld reaper builds (the row's
+// purse × the cell's danger × the wealth of the place, damage-door Inc 5) —
+// so a merchant robbed on the map and a merchant robbed underfoot pay out by
+// one law. Coin is minted in the fallen's own realm (W2d: an NPC's purse is
+// his faction's currency).
+inline void roll_fallen_spoils(const MacroWorld& mw, std::uint16_t kind,
+                               int level, int cellX, int cellY,
+                               const char* factionId, Rng& rng,
+                               Inventory& into) {
+    if (!valid_npc_kind(kind)) return;
+    const NPCType type = NPCType(std::uint8_t(kind));
+    CorpseLootContext ctx{};
+    if (mw.zones) ctx.danger = mw.zones->at(cellX, cellY);
+    if (mw.landmarks) {
+        ctx.wealthMul =
+            landmark_def(mw.landmarks->at(cellX, cellY).type).wealthMul;
+    }
+    gSquadLootRng = &rng;
+    const char* lootId = npc_def(type).lootId;
+    if (!lootId || !lootId[0]) lootId = npc_loot_id(int(type));
+    if (!lootId || !lootId[0]) lootId = factionId;
+    for (const ItemStack& s :
+         roll_loot_profile(lootId, level, &squad_loot_rng_f01)) {
+        into.add(s.id, s.count);
+    }
+    const int coins =
+        generate_loot_gold(int(type), level, ctx, &squad_loot_rng_f01);
+    gSquadLootRng = nullptr;
+    if (coins > 0) into.add(currency_for_faction_id(factionId), coins);
+}
+
+// Every death this side suffered, told once: the roster rows by their record
+// ids and the leader by his entity. Read BEFORE the settle removes the rows.
+inline void report_battle_deaths(const MacroWorld& mw, entt::entity side,
+                                 const std::vector<std::uint32_t>& casualties,
+                                 bool leaderFell, entt::entity killer) {
+    if (!mw.facts || !mw.world) return;
+    ecs::World& w = *mw.world;
+    auto& reg = w.reg;
+    const char* factionId = squad_faction_id(w, side);
+    if (const auto* roster = reg.try_get<ecs::SquadRoster>(side)) {
+        for (const SoldierRecord& r : roster->members) {
+            for (std::uint32_t id : casualties) {
+                if (id != r.entityId) continue;
+                report_death(mw, r.kind, entt::null, killer,
+                             std::int32_t(id),
+                             normalize_soldier_level(r.level), factionId);
+                break;
+            }
+        }
+    }
+    if (leaderFell) {
+        const auto* kind = reg.try_get<ecs::NPCKind>(side);
+        const auto* lvl = reg.try_get<ecs::NpcLevel>(side);
+        report_death(mw, kind ? kind->type : std::uint16_t(0), side, killer,
+                     -1, normalize_soldier_level(lvl ? lvl->value : 1),
+                     factionId);
+    }
+}
+
 // Roster deaths, by name, through the ledger row.
 inline void settle_squad_casualties(GameState& gs, ecs::World& w,
                                     entt::entity e,
@@ -245,9 +367,11 @@ inline void loot_fallen_owner(ecs::World& w, entt::entity fallen,
 // owner fell (a caravan raid PAYS), survivors of a dead leader into the
 // deserter pool (the auto-battle IS the whole fight, so its end is here),
 // and the winner's leader paid XP through the one reward law.
-inline void settle_auto_battle(GameState& gs, ecs::World& w,
+inline void settle_auto_battle(const MacroWorld& mw,
                                entt::entity ea, entt::entity eb,
                                const AutoBattleOutcome& o) {
+    GameState& gs = *mw.gs;
+    ecs::World& w = *mw.world;
     auto& reg = w.reg;
     const entt::entity winner = o.winner == 0 ? ea : eb;
     const entt::entity loser  = o.winner == 0 ? eb : ea;
@@ -257,6 +381,10 @@ inline void settle_auto_battle(GameState& gs, ecs::World& w,
                                               : o.leaderFractionA;
 
     int xp = xp_for_fallen(w, loser, loserCasualties, loserFraction <= 0.0f);
+    report_battle_deaths(mw, ea, o.casualtiesA,
+                         o.leaderFractionA <= 0.0f, eb);
+    report_battle_deaths(mw, eb, o.casualtiesB,
+                         o.leaderFractionB <= 0.0f, ea);
 
     settle_squad_casualties(gs, w, ea, o.casualtiesA);
     settle_squad_casualties(gs, w, eb, o.casualtiesB);
@@ -282,10 +410,12 @@ inline void settle_auto_battle(GameState& gs, ecs::World& w,
 // the wis dividend. By the resolver's own law his head is never diced: he
 // reaches 0 only when his whole army died with him — and 0 currentHp is the
 // same game-over the fought version ends in. Returns the XP awarded.
-inline int settle_player_auto_battle(GameState& gs, ecs::World& w,
+inline int settle_player_auto_battle(const MacroWorld& mw,
                                      entt::entity enemy,
                                      const AutoBattleOutcome& o,
                                      bool playerIsA) {
+    GameState& gs = *mw.gs;
+    ecs::World& w = *mw.world;
     const auto& playerCas = playerIsA ? o.casualtiesA : o.casualtiesB;
     const auto& enemyCas  = playerIsA ? o.casualtiesB : o.casualtiesA;
     const float playerFraction =
@@ -306,6 +436,56 @@ inline int settle_player_auto_battle(GameState& gs, ecs::World& w,
         const float frac = std::clamp(playerFraction, 0.0f, 1.0f);
         cs.currentHp = int(std::floor(float(cs.maxHp) * frac));
         if (frac > 0.0f && cs.currentHp < 1) cs.currentHp = 1;
+    }
+
+    // The enemy's dead are FACTS, and killing them has a PRICE — the same two
+    // the fought version pays through the reaper (damage-door Inc 6). The
+    // crime is the registry's column, so a bandit costs nothing and a
+    // peasant costs the same here as underfoot.
+    report_battle_deaths(mw, enemy, enemyCas, enemyFraction <= 0.0f,
+                         entt::null);
+    const char* enemyFaction = squad_faction_id(w, enemy);
+    if (!kill_is_no_crime(enemyFaction)) {
+        const int fallen = int(enemyCas.size())
+            + (enemyFraction <= 0.0f ? 1 : 0);
+        for (int i = 0; i < fallen; ++i) {
+            add_player_reputation(gs, enemyFaction, kKillRepPenalty);
+        }
+    }
+
+    // Spoils: what the fallen CARRIED (their bags) plus what the loot
+    // registry says a body of that row is worth where it fell — the same
+    // roll the subworld reaper makes, so auto-resolving a caravan and
+    // butchering it underfoot pay out by one law. The roster's dead have no
+    // bags of their own (they are records, not entities), and this is where
+    // they stop dropping nothing at all.
+    if (playerWon) {
+        const auto* epos = w.reg.try_get<ecs::Position>(enemy);
+        const int cx = epos ? int(epos->x) : 0;
+        const int cy = epos ? int(epos->y) : 0;
+        Rng lootRng(hash3(std::uint32_t(entt::to_integral(enemy)),
+                          std::uint32_t(enemyCas.size()),
+                          gs.worldSeed));
+        if (const auto* roster = w.reg.try_get<ecs::SquadRoster>(enemy)) {
+            for (const SoldierRecord& r : roster->members) {
+                for (std::uint32_t id : enemyCas) {
+                    if (id != r.entityId) continue;
+                    roll_fallen_spoils(mw, r.kind,
+                                       normalize_soldier_level(r.level),
+                                       cx, cy, enemyFaction, lootRng,
+                                       gs.player.inventory);
+                    break;
+                }
+            }
+        }
+        if (enemyFraction <= 0.0f) {
+            const auto* kind = w.reg.try_get<ecs::NPCKind>(enemy);
+            const auto* lvl = w.reg.try_get<ecs::NpcLevel>(enemy);
+            roll_fallen_spoils(mw, kind ? kind->type : std::uint16_t(0),
+                               normalize_soldier_level(lvl ? lvl->value : 1),
+                               cx, cy, enemyFaction, lootRng,
+                               gs.player.inventory);
+        }
     }
 
     settle_squad_casualties(gs, w, enemy, enemyCas);

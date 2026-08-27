@@ -539,8 +539,27 @@ bool modal_overlay_active(const App& app);
 // this and only this; a call site that re-picks layers by hand is the defect
 // this function exists to end (canon-audit C4: a dozen partial re-picks, three
 // of them missing `deposits`, and the deposit rows refusing silently).
+// The macro layer's facts, raised onto the ONE bus (work_vector §1: a system
+// that emits nothing is invisible to the story layer). The macro layer itself
+// never sees the bus — it reports through the envelope's POD channel, exactly
+// as econ_day does, and this is where a macro fact becomes the same GameEvent
+// a subworld death produces. An auto-resolved kill now counts toward a
+// kill-N quest, because it is literally the same fact.
+void raise_macro_fact(void* user, const sm::BattleFact& fact) {
+    auto& app = *static_cast<App*>(user);
+    if (fact.kind != sm::BattleFact::Kind::Death) return;
+    sm::GameEvent ev{sm::EventTag::NpcDeath};
+    ev.a = fact.victim;
+    ev.b = fact.killer;
+    ev.ix = fact.npcType < std::uint16_t(sm::NPCType::Count)
+        ? int(fact.npcType) : sm::kNoNpcType;
+    app.bus.emit(ev);
+}
+
 sm::MacroWorld macro_world(App& app) {
     sm::MacroWorld mw{};
+    mw.facts     = &raise_macro_fact;
+    mw.factsUser = &app;
     mw.gs       = &app.gs;
     mw.trees    = &app.treeLayer;
     mw.world    = &app.ecs;
@@ -1162,8 +1181,8 @@ void perform_encounter_auto(App& app, entt::entity npc, sm::Ambush ambush) {
         player_auto_battle_side(app),
         sm::auto_battle_side_of(app.ecs, npc),
         ambush, app.npcAi.jitter);
-    const int xp =
-        sm::settle_player_auto_battle(app.gs, app.ecs, npc, o, true);
+    sm::MacroWorld mw = macro_world(app);
+    const int xp = sm::settle_player_auto_battle(mw, npc, o, true);
     const bool won = o.winner == 0;
     char line[160];
     std::snprintf(line, sizeof(line),

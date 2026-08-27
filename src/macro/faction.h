@@ -57,6 +57,12 @@ inline constexpr int kHostileThreshold = -50;
 // line lived here; the two ends of one scale belong on one shelf.
 inline constexpr int kAllyRepThreshold = 50;
 
+// THE price of a kill the world holds against you (a life is a life, whoever
+// swung). It lived privately in sub/engine.cpp while only the subworld reaper
+// charged it; the auto-resolve charges it now too (damage-door Inc 6), and
+// two copies of one price is exactly how the two layers drift apart.
+inline constexpr int kKillRepPenalty = -1;
+
 // ── Temperament — how a faction behaves toward strangers ───────────────────
 // The relation between two factions with no authored override is a pure
 // function of their temperaments (kTemperamentBands below).
