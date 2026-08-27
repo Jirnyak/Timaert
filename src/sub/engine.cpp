@@ -1145,6 +1145,36 @@ void SubworldEngine::repopulate_after_recenter(int dx, int dy) {
     }
 }
 
+// THE MICRO→MACRO DOOR (CANON S20.1).
+//
+// A subworld act with lasting meaning writes UP — the same pattern the chest
+// and the felled tree already follow — and here that means into the world's
+// one memory. The translation is a single sentence: what happened DOWN HERE
+// happened, as far as the world is concerned, in the MACRO CELL that contains
+// this subworld.
+//
+// That is what keeps «истина мира — макро» from being a slogan. The two layers
+// do not keep two memories that someone must reconcile; they keep one, and the
+// place is the seam between them. A ruin explored below is a fact ON the map,
+// and the witcher who walks past next week can read it without ever going
+// underground.
+void SubworldEngine::record_world_fact(FactKind kind, int cellX, int cellY,
+                                       int amount) {
+    if (!gs_) return;
+    WorldFact f{};
+    f.day = gs_->worldTime.day();
+    f.kind = std::uint16_t(kind);
+    // The PLAYER is the only one who acts down here (interactions are his
+    // alone), and he is a squad like any other — so the deed is his, by his
+    // save-stable ordinal, and the annals will keep it if he has earned that.
+    f.subjectKind = fact_subject(FactSubject::Squad, /*named*/true);
+    f.subject = ecs::kPlayerSquadOrdinal;
+    f.x = std::int16_t(cellX);
+    f.y = std::int16_t(cellY);
+    f.amount = amount;
+    chronicle_record(gs_->chronicle, f);
+}
+
 void SubworldEngine::set_status(const char* msg) {
     statusLine_ = msg ? msg : "";
     statusTimer_ = statusLine_.empty() ? 0.0f : 2.5f;
@@ -2911,6 +2941,14 @@ bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
     ev.ix = cx;
     ev.iy = cy;
     bus_->emit(ev);
+
+    // ...AND THE WORLD REMEMBERS IT (CANON S20.1). This is the micro→macro
+    // door, and the whole of it is one line of translation: a fact that
+    // happened DOWN HERE happened, as far as the world is concerned, in the
+    // MACRO CELL that contains this subworld. That is "истина мира — макро"
+    // stopping being a slogan — the two layers do not have two memories that
+    // someone has to keep agreeing, they have one, and the place is the seam.
+    record_world_fact(FactKind::Explored, cx, cy, int(spire->spellId) + 1);
     set_status("The orb's light passes into you.");
     return true;
 }

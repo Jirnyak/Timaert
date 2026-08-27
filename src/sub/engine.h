@@ -10,6 +10,7 @@
 #include "core/rng.h"
 #include "core/time.h"
 #include "ecs/world.h"
+#include "macro/chronicle.h"
 #include "sub/seamless_manager.h"
 #include "sub/camera.h"
 #include "sub/collide.h"
@@ -624,6 +625,11 @@ private:
                                         int a, int b);
     void resolve_subworld_deaths(bool drainAll = false);
     void set_status(const char* msg);
+
+    // THE micro→macro door (CANON S20.1): a subworld act with lasting meaning
+    // is filed in the world's ONE memory, at the macro cell that contains this
+    // subworld. One memory, and the place is the seam between the layers.
+    void record_world_fact(FactKind kind, int cellX, int cellY, int amount);
     void push_combat_log(const char* msg);
     void push_player_hit_log(std::uint32_t targetEntityId,
                              float damage,

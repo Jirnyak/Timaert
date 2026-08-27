@@ -7489,17 +7489,29 @@ bool run_spire_climb_smoke(App& app) {
     }
     restore();
 
+    // THE MICRO→MACRO DOOR, proved end to end (CANON S20.1): a deed done
+    // underground is a fact ON THE MAP, filed at the macro cell that contained
+    // the subworld. If the two layers kept two memories, this count would be
+    // zero and nobody walking past next week would ever know a spire was
+    // drained here.
+    int remembered = 0;
+    sm::chronicle_recent(app.gs.chronicle, /*sinceDay*/0, /*limit*/64,
+                         [](void* u, const sm::WorldFact& f) {
+                             if (f.kind == std::uint16_t(sm::FactKind::Explored))
+                                 ++*static_cast<int*>(u);
+                         }, &remembered);
+
     std::fprintf(stderr,
                  "[smoke] spire_climb spell=%s tier=%d gateTier=%d entered=%d "
                  "inTower=%d climbs=%d top=%d yard=%d guards=%d stuck=%d "
                  "onRoof=%d dz=%.1f learned=%d depleted=%d orbsAfter=%d "
-                 "logged=%d\n",
+                 "logged=%d remembered=%d\n",
                  def.id, tier, gateTier, entered ? 1 : 0,
                  inTower ? 1 : 0,
                  climbs, topLevel, yardGuards, guardsSeen,
                  climbStuck ? 1 : 0,
                  onRoof ? 1 : 0, roofZ - groundZ, learned ? 1 : 0,
-                 depletedFlag ? 1 : 0, orbsAfter, logged ? 1 : 0);
+                 depletedFlag ? 1 : 0, orbsAfter, logged ? 1 : 0, remembered);
     std::fflush(stderr);
 
     if (!entered || !inTower || gateTier != tier || climbStuck
@@ -7511,7 +7523,9 @@ bool run_spire_climb_smoke(App& app) {
         // guards borrow from the same FaunaCount, so between them a fresh
         // spire must have fielded somebody.
         || yardGuards + guardsSeen < 1 || !learned || !depletedFlag
-        || orbsAfter != 0 || !logged) {
+        || orbsAfter != 0 || !logged
+        // The world above must remember what was done below.
+        || remembered < 1) {
         smoke_fail(app, "spire_climb invariant");
         return false;
     }
