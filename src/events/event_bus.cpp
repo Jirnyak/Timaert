@@ -68,6 +68,11 @@ const WorldHistoryEntry& EventBus::history_at(std::size_t i) const {
     return history_[(first + i) % kMaxHistoryEntries];
 }
 
+std::uint32_t EventBus::record(const WorldFact& fact) {
+    if (!chronicle_) return 0u;
+    return chronicle_record(*chronicle_, fact);
+}
+
 void EventBus::flush(int day, int hour) {
     if (!tick_.empty()) {
         if (history_.size() != kMaxHistoryEntries) {
@@ -93,6 +98,11 @@ void EventBus::flush(int day, int hour) {
     }
     last_.swap(tick_);
     tick_.clear();
+    // The frame's facts are a RANGE, not a buffer: where this frame started
+    // becomes where the last one did, and the new frame starts at whatever
+    // the chronicle has reached.
+    lastFrameFirstSeq_ = frameFirstSeq_;
+    frameFirstSeq_ = chronicle_ ? chronicle_->nextSeq : frameFirstSeq_;
     tickCounter_++;
 }
 
@@ -114,6 +124,10 @@ void EventBus::reset() {
     history_.clear();
     historyHead_ = 0;
     historyCount_ = 0;
+    // The chronicle is the WORLD's and is not the bus's to clear; the
+    // bookmarks are the bus's and are.
+    frameFirstSeq_ = chronicle_ ? chronicle_->nextSeq : 1u;
+    lastFrameFirstSeq_ = frameFirstSeq_;
     tickCounter_ = 0;
     nextSubId_ = 1;
     for (auto& subs : subsByTag_) subs.clear();

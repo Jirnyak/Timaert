@@ -547,6 +547,19 @@ bool modal_overlay_active(const App& app);
 // as econ_day does, and this is where a macro fact becomes the same GameEvent
 // a subworld death produces. An auto-resolved kill now counts toward a
 // kill-N quest, because it is literally the same fact.
+// An ECS entity's SAVE-STABLE identity, which is what a fact must carry: the
+// registry is never serialised, so entity bits mean nothing tomorrow while a
+// MacroSpawnId means the same body for the life of the world. 0 = this body
+// has no identity — a roster row, a body below — and the chronicle will say
+// so by naming the place instead of a figure.
+std::uint32_t macro_identity_of(const App& app, std::uint32_t entityBits) {
+    if (entityBits == 0u) return 0u;
+    const entt::entity e = entt::entity(entityBits);
+    if (!app.ecs.reg.valid(e)) return 0u;
+    const auto* id = app.ecs.reg.try_get<sm::ecs::MacroSpawnId>(e);
+    return id ? id->index : 0u;
+}
+
 void raise_macro_fact(void* user, const sm::BattleFact& fact) {
     auto& app = *static_cast<App*>(user);
     if (fact.kind != sm::BattleFact::Kind::Death) return;
@@ -556,6 +569,42 @@ void raise_macro_fact(void* user, const sm::BattleFact& fact) {
     ev.ix = fact.npcType < std::uint16_t(sm::NPCType::Count)
         ? int(fact.npcType) : sm::kNoNpcType;
     app.bus.emit(ev);
+
+    // ...AND THE WORLD REMEMBERS IT. This is the first real writer into the
+    // chronicle (CANON S20.1), and it is the one that matters most for the
+    // owner's test case: a monster squad that keeps killing near a village
+    // leaves exactly these traces, and the witcher finds it by them.
+    //
+    // The killer is the SUBJECT because a chronicle records deeds, not
+    // misfortunes; a killer with no identity (a roster row settling its own
+    // side's losses) leaves the place itself as the subject, which is how a
+    // nameless slaughter still shows up on the trail without pretending
+    // somebody famous did it.
+    sm::WorldFact wf{};
+    wf.day = app.gs.worldTime.day();
+    wf.kind = std::uint16_t(sm::FactKind::Killed);
+    const std::uint32_t killerId = macro_identity_of(app, fact.killer);
+    const std::uint32_t victimId = macro_identity_of(app, fact.victim);
+    wf.subjectKind = killerId != 0u ? std::uint8_t(sm::FactSubject::Squad)
+                                    : std::uint8_t(sm::FactSubject::Cell);
+    wf.subject = killerId;
+    if (victimId != 0u) {
+        wf.objectKind = std::uint8_t(sm::FactSubject::Squad);
+        wf.object = victimId;
+    }
+    wf.amount = 1;
+    // WHERE it happened: the killer's cell if he has one, else the victim's.
+    // A fact with no place would be invisible to the only question the
+    // chronicle exists to answer.
+    const entt::entity where = fact.killer != 0u
+        ? entt::entity(fact.killer) : entt::entity(fact.victim);
+    if (app.ecs.reg.valid(where)) {
+        if (const auto* p = app.ecs.reg.try_get<sm::ecs::Position>(where)) {
+            wf.x = std::int16_t(sm::wrapi(int(p->x), app.gs.mapW));
+            wf.y = std::int16_t(sm::wrapi(int(p->y), app.gs.mapH));
+        }
+    }
+    app.bus.record(wf);
 }
 
 // THE player's bag, from his squad entity (macro/player_entity.h). A world
@@ -2080,6 +2129,9 @@ void boot_world(App& app, std::uint32_t seed,
     // A new world has no past. Sized here, beside the knowledge layer, because
     // both are per-cell memories of the same map (macro/chronicle.h).
     sm::chronicle_init(app.gs.chronicle, app.gs.mapW, app.gs.mapH);
+    // The bus is the DOOR into the world's memory; the memory itself is the
+    // world's. Attached here so a fresh world and a loaded one both have one.
+    app.bus.attach_chronicle(&app.gs.chronicle);
     sm::reset_world_tick_runtime(app.gs.worldTickRt, seed);
     sm::reset_player_recovery(app.playerRecovery);
     player_sp_carry(app) = 0.0f;
@@ -2478,6 +2530,11 @@ bool boot_world_from_save(App& app, const std::string& path) {
     // first sight sweep after this load re-opens them from the restored
     // position (destroy_world invalidated the sight anchor).
     app.gs.knowledge         = std::move(fresh.knowledge);
+    // The world's own memory comes back with it. `boot_world` above sized a
+    // FRESH chronicle for this map; the saved one replaces it, and the bus's
+    // door still points at the same member — the world owns the past, the bus
+    // only writes to it.
+    app.gs.chronicle         = std::move(fresh.chronicle);
     app.gs.relations         = fresh.relations;
     app.gs.subState          = std::move(fresh.subState);
     app.gs.deserterPool      = fresh.deserterPool;
@@ -10197,9 +10254,40 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "auto-resolve settled nothing on either side");
                 break;
             }
+            // ...AND THE WORLD REMEMBERED IT. This is the chronicle's first
+            // end-to-end proof (CANON S20.1): a fight happened on a cell, and
+            // the question the whole system exists to answer — "what happened
+            // near here recently" — must now come back with it. A chronicle
+            // that files facts nobody can find is a chronicle in name only.
+            struct Traces { int n = 0; int bodies = 0; };
+            Traces traces;
+            sm::chronicle_near(
+                app.gs.chronicle,
+                sm::wrapi(int(app.gs.player.x), app.gs.mapW),
+                sm::wrapi(int(app.gs.player.y), app.gs.mapH),
+                /*radiusCells*/1, /*sinceDay*/0,
+                [](void* u, const sm::WorldFact& f) {
+                    if (f.kind != std::uint16_t(sm::FactKind::Killed)) return;
+                    Traces& t = *static_cast<Traces*>(u);
+                    ++t.n;
+                    t.bodies += f.amount;
+                }, &traces);
             std::printf("[smoke] force_encounter resolved enemyGone=%d "
-                        "enemyHurt=%d playerPaid=%d\n",
-                        int(enemyGone), int(enemyHurt), int(playerPaid));
+                        "enemyHurt=%d playerPaid=%d traces=%d bodies=%d "
+                        "chronicle_today=%u\n",
+                        int(enemyGone), int(enemyHurt), int(playerPaid),
+                        traces.n, traces.bodies,
+                        unsigned(app.gs.chronicle.factsToday));
+            std::fflush(stdout);
+            // A battle that killed somebody MUST have left a trace. If nothing
+            // died, there is nothing to remember, and demanding a trace would
+            // be demanding the world lie.
+            const bool somethingDied = enemyGone || enemyHurt || playerPaid;
+            if (somethingDied && traces.n == 0) {
+                smoke_fail(app, "the world fought and remembered nothing: the "
+                                "witcher would find no trail");
+                break;
+            }
             ++app.smoke.cursor;
             break;
         }
