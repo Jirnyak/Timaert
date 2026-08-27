@@ -305,6 +305,48 @@ int chronicle_recent(const Chronicle& c, std::int32_t sinceDay, int limit,
 // and a stored derivative is a second truth waiting to disagree.
 void chronicle_rebuild_links(Chronicle& c);
 
+// ── ASKING IN THE TABLE'S OWN WORDS ──────────────────────────────────────
+//
+// "Recent" is not one number for the whole game: a killing is news for a
+// season and a sale is stale in a week, and the kind's row already says so
+// (`interestDays`). This asks the question the way the world means it —
+// "what of THIS sort happened near here while it was still news" — so a
+// reader never restates a window the table already owns.
+int chronicle_near_kind(const Chronicle& c, int x, int y, int radiusCells,
+                        FactKind kind, std::int32_t today,
+                        FactVisitor visit, void* user);
+
+// ── SAYING IT IN WORDS ───────────────────────────────────────────────────
+//
+// THE law (CANON S20.1): a fact is numbers, and the words are DERIVED at the
+// moment of display. That is what makes the player's journal a VIEW on the
+// world's memory rather than eight thousand sentences in the save file, and
+// it is what makes localisation possible for free — the same fact says itself
+// in another language by changing the tables, not the past.
+//
+// The chronicle does not know how the world NAMES things (a squad's name
+// lives on an ECS component, a settlement's in GameState), and it must not
+// learn: it is a macro-layer record of ordinals. So the caller lends it three
+// resolvers. This is the whole of the "readers of facts need to see the
+// world" problem, in its smallest honest form — and it is the same lending
+// the witcher will do when he goes looking for the village.
+struct FactNaming {
+    // Each returns a display name for an ordinal, or nullptr if it cannot say
+    // — in which case the sentence falls back to what it does know.
+    const char* (*squad)(void* user, std::uint32_t ordinal) = nullptr;
+    const char* (*landmark)(void* user, std::uint32_t id) = nullptr;
+    const char* (*faction)(void* user, std::uint32_t index) = nullptr;
+    void* user = nullptr;
+};
+
+// Write the fact as one line into `out` (always NUL-terminated). Returns the
+// length written. A naming that resolves nothing still produces a true
+// sentence — "a band killed someone here" — because a chronicle that could
+// only speak about things it has names for would be silent about most of the
+// world.
+int fact_sentence(const WorldFact& f, const FactNaming& naming,
+                  char* out, int cap);
+
 // The ANNALS, newest first: what the world remembers about a figure, however
 // long ago. `subjectKind`/`subject` of 0 means "anyone" — the whole legend.
 int chronicle_annals_of(const Chronicle& c, std::uint8_t subjectKind,

@@ -146,6 +146,100 @@ int chronicle_recent(const Chronicle& c, std::int32_t sinceDay, int limit,
     return offered;
 }
 
+int chronicle_near_kind(const Chronicle& c, int x, int y, int radiusCells,
+                        FactKind kind, std::int32_t today,
+                        FactVisitor visit, void* user) {
+    if (kind >= FactKind::Count || !visit) return 0;
+    const int days = int(fact_kind_def(kind).interestDays);
+    // The window is the ROW's, so retuning what "recent" means for a kind
+    // moves every reader at once and none of them restates it.
+    struct Filter { FactKind kind; FactVisitor visit; void* user; int n; };
+    Filter fl{kind, visit, user, 0};
+    chronicle_near(c, x, y, radiusCells, today - days + 1,
+                   [](void* u, const WorldFact& f) {
+                       Filter& s = *static_cast<Filter*>(u);
+                       if (f.kind != std::uint16_t(s.kind)) return;
+                       s.visit(s.user, f);
+                       ++s.n;
+                   }, &fl);
+    return fl.n;
+}
+
+namespace {
+
+// Append into a fixed buffer, never past it. Returns the new length.
+int append(char* out, int cap, int len, const char* text) {
+    if (!text) return len;
+    while (*text && len < cap - 1) out[len++] = *text++;
+    out[len] = '\0';
+    return len;
+}
+
+int append_num(char* out, int cap, int len, long v) {
+    char tmp[24];
+    int n = 0;
+    if (v == 0) { tmp[n++] = '0'; }
+    bool neg = v < 0;
+    unsigned long u = neg ? (unsigned long)(-v) : (unsigned long)v;
+    while (u && n < 20) { tmp[n++] = char('0' + (u % 10)); u /= 10; }
+    if (neg && n < 21) tmp[n++] = '-';
+    while (n-- > 0 && len < cap - 1) out[len++] = tmp[n];
+    out[len] = '\0';
+    return len;
+}
+
+// One participant, said as well as the naming allows. A chronicle that could
+// only speak about things it has names for would be silent about most of the
+// world, so an unresolvable ordinal still gets an honest noun.
+int append_who(char* out, int cap, int len, std::uint8_t packed,
+               std::uint32_t id, const FactNaming& naming) {
+    const std::uint8_t kind = fact_subject_kind(packed);
+    const char* name = nullptr;
+    switch (kind) {
+        case std::uint8_t(FactSubject::Squad):
+            if (naming.squad) name = naming.squad(naming.user, id);
+            return append(out, cap, len, name ? name : "a band");
+        case std::uint8_t(FactSubject::Landmark):
+            if (naming.landmark) name = naming.landmark(naming.user, id);
+            return append(out, cap, len, name ? name : "a place");
+        case std::uint8_t(FactSubject::Faction):
+            if (naming.faction) name = naming.faction(naming.user, id);
+            return append(out, cap, len, name ? name : "a people");
+        case std::uint8_t(FactSubject::Cell):
+            return append(out, cap, len, "this place");
+        default:
+            return append(out, cap, len, "someone");
+    }
+}
+
+} // namespace
+
+int fact_sentence(const WorldFact& f, const FactNaming& naming,
+                  char* out, int cap) {
+    if (!out || cap <= 0) return 0;
+    out[0] = '\0';
+    if (f.kind == 0u || f.kind >= std::uint16_t(FactKind::Count)) return 0;
+
+    int len = 0;
+    len = append_who(out, cap, len, f.subjectKind, f.subject, naming);
+    len = append(out, cap, len, " ");
+    // The VERB comes from the kind's own row, so a new kind speaks by being
+    // added to the table and nothing here changes.
+    len = append(out, cap, len, fact_kind_def(FactKind(f.kind)).label);
+    if (fact_subject_kind(f.objectKind) != std::uint8_t(FactSubject::None)) {
+        len = append(out, cap, len, " ");
+        len = append_who(out, cap, len, f.objectKind, f.object, naming);
+    }
+    if (f.amount != 0) {
+        len = append(out, cap, len, " (");
+        len = append_num(out, cap, len, long(f.amount));
+        len = append(out, cap, len, ")");
+    }
+    len = append(out, cap, len, ", day ");
+    len = append_num(out, cap, len, long(f.day));
+    return len;
+}
+
 int chronicle_annals_of(const Chronicle& c, std::uint8_t subjectKind,
                         std::uint32_t subject, int limit,
                         FactVisitor visit, void* user) {

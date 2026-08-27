@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 #include <vector>
 
 namespace {
@@ -375,6 +376,100 @@ void test_a_band_becomes_a_figure_by_its_deeds() {
           "a landmark needs no bit: a city has a name by construction");
 }
 
+// ── THE WORDS ARE DERIVED, NOT STORED ────────────────────────────────────
+// CANON S20.1: a fact is numbers and the sentence is made at the moment of
+// display. This is what turns the player's journal into a VIEW on the world's
+// memory instead of eight thousand sentences in the save — and what makes
+// localisation free, because the same past says itself differently by
+// changing tables rather than history.
+const char* name_squad(void*, std::uint32_t o) {
+    return o == 42u ? "Bloody Karl" : nullptr;
+}
+const char* name_landmark(void*, std::uint32_t id) {
+    return id == 3u ? "Ryazan" : nullptr;
+}
+
+void test_a_fact_says_itself() {
+    WorldFact f{};
+    f.day = 77;
+    f.kind = std::uint16_t(FactKind::OwnerChanged);
+    f.subjectKind = fact_subject(FactSubject::Squad, true);
+    f.subject = 42u;
+    f.objectKind = std::uint8_t(FactSubject::Landmark);
+    f.object = 3u;
+
+    FactNaming naming{};
+    naming.squad = name_squad;
+    naming.landmark = name_landmark;
+
+    char line[128];
+    const int n = fact_sentence(f, naming, line, int(sizeof(line)));
+    CHECK(n > 0 && line[n] == '\0', "a sentence is written and terminated");
+    CHECK(std::strstr(line, "Bloody Karl") != nullptr, "it names the doer");
+    CHECK(std::strstr(line, "Ryazan") != nullptr, "and what he did it to");
+    CHECK(std::strstr(line, "Changed hands") != nullptr,
+          "and the VERB is the kind's own label — a new kind speaks by being "
+          "added to the table, with no code here");
+    CHECK(std::strstr(line, "77") != nullptr, "and when");
+
+    // A chronicle that could only speak about what it has names for would be
+    // silent about most of the world. An unresolvable ordinal still gets an
+    // honest noun.
+    FactNaming mute{};
+    char bare[128];
+    fact_sentence(f, mute, bare, int(sizeof(bare)));
+    CHECK(std::strstr(bare, "a band") != nullptr
+          && std::strstr(bare, "a place") != nullptr,
+          "with no names at all the fact is still a true sentence");
+    CHECK(std::strstr(bare, "Bloody Karl") == nullptr,
+          "negative control: the name came from the NAMING, not from the fact "
+          "— which is the whole point of not storing it");
+
+    // A tiny buffer truncates instead of running past its end.
+    char tiny[8];
+    const int t = fact_sentence(f, naming, tiny, int(sizeof(tiny)));
+    CHECK(t < int(sizeof(tiny)) && tiny[t] == '\0',
+          "a short buffer is filled and terminated, never overrun");
+
+    // A fact of no kind says nothing rather than something wrong.
+    WorldFact none{};
+    char empty[16];
+    CHECK(fact_sentence(none, naming, empty, int(sizeof(empty))) == 0
+          && empty[0] == '\0',
+          "a fact of no kind is not a sentence");
+}
+
+// ── "RECENT" IS THE ROW'S WORD, NOT THE READER'S ─────────────────────────
+void test_the_kind_owns_its_own_window() {
+    Chronicle c;
+    chronicle_init(c, 64, 64);
+
+    // A sale and a killing on the same day, in the same place.
+    WorldFact sale{};
+    sale.day = 1;
+    sale.kind = std::uint16_t(FactKind::Traded);
+    sale.subjectKind = std::uint8_t(FactSubject::Cell);
+    sale.x = 8; sale.y = 8;
+    chronicle_record(c, sale);
+
+    WorldFact kill = sale;
+    kill.kind = std::uint16_t(FactKind::Killed);
+    chronicle_record(c, kill);
+
+    // Ten days later the sale is stale (its row says 8 days) and the killing
+    // is still news (its row says 32).
+    Collected trades, kills;
+    const std::int32_t today = 11;
+    chronicle_near_kind(c, 8, 8, 1, FactKind::Traded, today, collect, &trades);
+    chronicle_near_kind(c, 8, 8, 1, FactKind::Killed, today, collect, &kills);
+
+    CHECK(trades.facts.empty(),
+          "a sale is stale in a week, because ITS ROW says so");
+    CHECK(kills.facts.size() == 1u,
+          "and a killing on the same day is still news, because its row says "
+          "something else — one reader, two windows, no restated numbers");
+}
+
 } // namespace
 
 int main() {
@@ -387,5 +482,7 @@ int main() {
     test_the_annals_keep_figures_and_forget_weather();
     test_the_annals_are_asked_about_a_figure();
     test_a_band_becomes_a_figure_by_its_deeds();
+    test_a_fact_says_itself();
+    test_the_kind_owns_its_own_window();
     return sm::test::report("chronicle_test");
 }
