@@ -18,6 +18,7 @@
 #include "macro/politik.h"
 #include "macro/relations.h"
 #include "macro/knowledge.h"
+#include "macro/chronicle.h"
 #include "macro/markers.h"
 #include "macro/spell_book_state.h"
 #include "macro/map_generator.h"
@@ -170,7 +171,14 @@ namespace sm {
 // per town per game day — and the window was 30, a month from another
 // calendar; it is kDaysPerSeason now, the span the whole world already grows
 // by. The block's LENGTH changed, so the version had to move.
-constexpr int kSaveVersion = 50;
+// v51: the world's own memory rides the save (macro/chronicle.h, CANON S20.1).
+// Both tiers whole — the ring's LIVE facts (a fresh world costs four bytes,
+// not two megabytes of zeroes) and the annals entire, because the annals are
+// not a cache but part of the world and a legends mode will read exactly them
+// (owner's ruling: «сейв обязательно нёс историю»). The per-cell chains are
+// NOT written: a link is derived from the facts, and a stored derivative is a
+// second truth waiting to disagree.
+constexpr int kSaveVersion = 51;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
@@ -417,6 +425,13 @@ struct GameState {
     // Explored persists; Visible is re-derived from the player's position
     // (update_player_sight) — save.cpp clamps it away on write.
     KnowledgeLayer knowledge;
+    // WHAT HAPPENED (macro/chronicle.h, CANON S20.1). The world's own memory,
+    // in two tiers: a ring the world is ASKED (indexed by cell — this is what
+    // lets a witcher find a monster by the traces it left) and annals the
+    // world REMEMBERS. Both ride the save whole: the annals are not a cache,
+    // they are part of the world, and a legends mode will read exactly them
+    // (owner, 2026-08-27).
+    Chronicle chronicle;
     // THE relation matrix — flat, by ordinal (macro/relations.h). The
     // string-keyed map of string-keyed maps it replaced cost two temporaries,
     // two hashes and two strcmps per question, and the battle asks K² of them

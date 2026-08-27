@@ -497,6 +497,92 @@ void read_macro_npc(Reader& r, MacroNpcRecord& m) {
 
 // Written OLDEST FIRST, so the file carries a past and not a ring's seam: a
 // reader never has to know where the head was when the game was saved.
+void write_fact(Writer& w, const WorldFact& f) {
+    w.pod(f.day);
+    w.pod(f.seq);
+    w.pod(f.kind);
+    w.pod(f.subjectKind);
+    w.pod(f.objectKind);
+    w.pod(f.subject);
+    w.pod(f.object);
+    w.pod(f.x);
+    w.pod(f.y);
+    w.pod(f.amount);
+    // `nextInCell` is deliberately absent: it is derived, and the load
+    // rebuilds every chain from the facts themselves.
+}
+
+void read_fact(Reader& r, WorldFact& f) {
+    f = WorldFact{};
+    r.pod(f.day);
+    r.pod(f.seq);
+    r.pod(f.kind);
+    r.pod(f.subjectKind);
+    r.pod(f.objectKind);
+    r.pod(f.subject);
+    r.pod(f.object);
+    r.pod(f.x);
+    r.pod(f.y);
+    r.pod(f.amount);
+}
+
+void write_chronicle(Writer& w, const Chronicle& c) {
+    w.pod(c.nextSeq);
+    w.pod(c.countingDay);
+    w.pod(c.factsToday);
+    const std::uint8_t full = c.annalsFull ? 1u : 0u;
+    w.pod(full);
+
+    // The ring's LIVE facts, oldest first, so the load can replay them in the
+    // order they were written.
+    std::uint32_t live = 0;
+    if (c.ready()) {
+        for (std::uint32_t seq = c.oldest_seq(); seq < c.nextSeq; ++seq) {
+            if (c.ring[(seq - 1u) % kChronicleFacts].seq == seq) ++live;
+        }
+    }
+    if (w.count(std::size_t(live), kChronicleFacts)) {
+        for (std::uint32_t seq = c.oldest_seq(); seq < c.nextSeq; ++seq) {
+            const WorldFact& f = c.ring[(seq - 1u) % kChronicleFacts];
+            if (f.seq == seq) write_fact(w, f);
+        }
+    }
+    if (w.count(c.annals.size(), kChronicleAnnals)) {
+        for (const WorldFact& f : c.annals) write_fact(w, f);
+    }
+}
+
+void read_chronicle(Reader& r, Chronicle& c) {
+    r.pod(c.nextSeq);
+    r.pod(c.countingDay);
+    r.pod(c.factsToday);
+    std::uint8_t full = 0;
+    r.pod(full);
+    if (full > 1u) { r.ok = false; return; }
+    c.annalsFull = full != 0u;
+
+    std::uint32_t n = 0;
+    if (!read_count(r, n, kChronicleFacts)) return;
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        WorldFact f{};
+        read_fact(r, f);
+        if (f.seq == 0u || f.seq >= c.nextSeq) { r.ok = false; return; }
+        if (c.ready()) c.ring[(f.seq - 1u) % kChronicleFacts] = f;
+    }
+    // The chains are DERIVED, so they are rebuilt rather than restored.
+    chronicle_rebuild_links(c);
+
+    std::uint32_t an = 0;
+    if (!read_count(r, an, kChronicleAnnals)) return;
+    c.annals.clear();
+    c.annals.reserve(an);
+    for (std::uint32_t i = 0; i < an && r.ok; ++i) {
+        WorldFact f{};
+        read_fact(r, f);
+        c.annals.push_back(f);
+    }
+}
+
 void write_history(Writer& w, const SettlementHistory& h) {
     if (!w.count(std::size_t(h.size()),
                  std::uint32_t(kSettlementHistoryDays))) {
@@ -994,6 +1080,16 @@ void write_payload(Writer& w, const GameState& s,
     w.pod(s.macroAiRhythm.pendingSweeps);
     w.pod(s.macroAiRhythm.sweepCursor);
 
+    // The world's own memory (macro/chronicle.h, CANON S20.1). Both tiers ride
+    // whole: the annals are not a cache, they are part of the world, and the
+    // legends mode will read exactly them (owner's ruling).
+    //
+    // The RING writes only its LIVE facts, not its capacity: a fresh world
+    // costs four bytes here, not two megabytes of zeroes. The per-cell CHAINS
+    // are not written at all — a link is derived from the facts, and a stored
+    // derivative is a second truth waiting to disagree with the first.
+    write_chronicle(w, s.chronicle);
+
     // v25: story progress — which logic nodes still exist / are active.
     write_string_vector(w, s.logicNodesRegistered);
     write_string_vector(w, s.logicNodesActive);
@@ -1087,6 +1183,12 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
     r.pod(s.macroAiRhythm.sweepAccum);
     r.pod(s.macroAiRhythm.pendingSweeps);
     r.pod(s.macroAiRhythm.sweepCursor);
+
+    // The world's own memory. Read in the SAME order it was written — the ring
+    // sizes itself from the map first, because a fact's slot is its sequence
+    // modulo the capacity and a chronicle with no world has nowhere to put it.
+    chronicle_init(s.chronicle, s.mapW, s.mapH);
+    read_chronicle(r, s.chronicle);
 
     read_string_vector(r, s.logicNodesRegistered);   // v25
     read_string_vector(r, s.logicNodesActive);

@@ -85,6 +85,21 @@ std::uint32_t chronicle_record(Chronicle& c, const WorldFact& fact) {
     return seq;
 }
 
+void chronicle_rebuild_links(Chronicle& c) {
+    if (!c.ready()) return;
+    std::fill(c.cellHead.begin(), c.cellHead.end(), 0u);
+    // Oldest to newest, linking each at the head — which is exactly the order
+    // and the operation `chronicle_record` performed, so the chains come back
+    // identical rather than merely equivalent.
+    for (std::uint32_t seq = c.oldest_seq(); seq < c.nextSeq; ++seq) {
+        WorldFact& f = c.ring[(seq - 1u) % kChronicleFacts];
+        if (f.seq != seq) continue;   // never written, or already overwritten
+        const std::size_t cell = index_cell(c, int(f.x), int(f.y));
+        f.nextInCell = c.cellHead[cell];
+        c.cellHead[cell] = seq;
+    }
+}
+
 int chronicle_near(const Chronicle& c, int x, int y, int radiusCells,
                    std::int32_t sinceDay, FactVisitor visit, void* user) {
     if (!c.ready() || !visit) return 0;

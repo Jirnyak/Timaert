@@ -238,6 +238,11 @@ int chronicle_near(const Chronicle& c, int x, int y, int radiusCells,
 int chronicle_recent(const Chronicle& c, std::int32_t sinceDay, int limit,
                      FactVisitor visit, void* user);
 
+// Rebuild the per-cell chains from the facts already in the ring. Used by the
+// LOAD: the file carries the facts, not the links, because a link is derived
+// and a stored derivative is a second truth waiting to disagree.
+void chronicle_rebuild_links(Chronicle& c);
+
 // The ANNALS, newest first: what the world remembers about a figure, however
 // long ago. `subjectKind`/`subject` of 0 means "anyone" — the whole legend.
 int chronicle_annals_of(const Chronicle& c, std::uint8_t subjectKind,

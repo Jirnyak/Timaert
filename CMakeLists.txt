@@ -392,6 +392,8 @@ timaert_test(save_roundtrip_test
         src/events/event_bus.cpp
         src/events/quests/quest_engine.cpp
         src/macro/save.cpp
+        # the save carries the world's own memory (macro/chronicle.h)
+        src/macro/chronicle.cpp
         # the save carries what a body WEARS (macro/anatomy.h)
         src/macro/anatomy.cpp
         src/macro/world_fields.cpp
@@ -412,6 +414,8 @@ timaert_test(knowledge_test
 timaert_test(macro_snapshot_test
     SOURCES
         src/macro/save.cpp
+        # the save carries the world's own memory (macro/chronicle.h)
+        src/macro/chronicle.cpp
         # the save carries what a body WEARS (macro/anatomy.h)
         src/macro/anatomy.cpp
         src/macro/world_fields.cpp

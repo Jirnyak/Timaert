@@ -243,6 +243,31 @@ sm::GameState make_state() {
     gs.mapParams.heightScale = 1.25f;
     gs.mapParams.moistureScale = 0.75f;
     gs.cityCountTarget = 77;
+
+    // THE WORLD'S OWN MEMORY (CANON S20.1). Both tiers get something to lose:
+    // a nameless killing that only the RING should keep, and a lord taking a
+    // city that the ANNALS must remember for good. A chronicle that came back
+    // empty would cost the witcher his trail and the legends mode its legend.
+    sm::chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
+    {
+        sm::WorldFact anonymous{};
+        anonymous.day = 11;
+        anonymous.kind = std::uint16_t(sm::FactKind::Killed);
+        anonymous.subjectKind = std::uint8_t(sm::FactSubject::Cell);
+        anonymous.x = 40; anonymous.y = 40;
+        anonymous.amount = 3;
+        sm::chronicle_record(gs.chronicle, anonymous);
+
+        sm::WorldFact conquest{};
+        conquest.day = 12;
+        conquest.kind = std::uint16_t(sm::FactKind::OwnerChanged);
+        conquest.subjectKind = std::uint8_t(sm::FactSubject::Squad);
+        conquest.subject = 4242u;
+        conquest.objectKind = std::uint8_t(sm::FactSubject::Landmark);
+        conquest.object = 9u;
+        conquest.x = 41; conquest.y = 41;
+        sm::chronicle_record(gs.chronicle, conquest);
+    }
     // The knowledge grid (v40): a real world always covers the map (the
     // reader rejects any other non-zero size). Explored cells prove the
     // memory persists; the Visible one proves the write-side clamp — sight
@@ -657,6 +682,42 @@ void run_roundtrip() {
     }
     if (loaded.knowledge.data[42] != sm::kKnowledgeUnknown) {
         FAIL_BAIL("an unvisited cell invented knowledge across the save");
+    }
+
+    // ── The world's own memory comes back, both tiers ────────────────────
+    {
+        const sm::Chronicle& ch = loaded.chronicle;
+        if (ch.nextSeq != gs.chronicle.nextSeq) {
+            FAIL_BAIL("the chronicle's sequence lost — every fact's identity "
+                      "and every chain link is that number");
+        }
+        if (ch.annals.size() != 1u
+            || ch.annals[0].subject != 4242u
+            || ch.annals[0].object != 9u
+            || ch.annals[0].kind != std::uint16_t(sm::FactKind::OwnerChanged)) {
+            FAIL_BAIL("the annals lost the lord who took the city");
+        }
+        // The RING must come back ASKABLE, not merely present: the chains are
+        // derived on load, and a chronicle whose links did not rebuild would
+        // answer nothing while looking perfectly full.
+        struct Seen { int n = 0; bool anonymous = false; bool conquest = false; };
+        Seen seen;
+        sm::chronicle_near(ch, 40, 40, /*radiusCells*/1, /*sinceDay*/0,
+                           [](void* u, const sm::WorldFact& f) {
+                               Seen& s2 = *static_cast<Seen*>(u);
+                               ++s2.n;
+                               if (f.kind == std::uint16_t(sm::FactKind::Killed))
+                                   s2.anonymous = true;
+                               if (f.kind == std::uint16_t(sm::FactKind::OwnerChanged))
+                                   s2.conquest = true;
+                           }, &seen);
+        if (!seen.anonymous) {
+            FAIL_BAIL("the ring came back unaskable: the witcher lost the "
+                      "trail across a save");
+        }
+        if (!seen.conquest || seen.n != 2) {
+            FAIL_BAIL("the rebuilt chains did not return every nearby fact");
+        }
     }
 
     // ── The macro-ECS snapshot (v23) round-trips record-for-record ────────

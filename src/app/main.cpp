@@ -2077,6 +2077,9 @@ void boot_world(App& app, std::uint32_t seed,
     // surroundings open by the ordinary sight law — the first frame's sweep
     // from the player's cell — not by a special starting reveal.
     sm::knowledge_reset(app.gs.knowledge, app.gs.mapW, app.gs.mapH);
+    // A new world has no past. Sized here, beside the knowledge layer, because
+    // both are per-cell memories of the same map (macro/chronicle.h).
+    sm::chronicle_init(app.gs.chronicle, app.gs.mapW, app.gs.mapH);
     sm::reset_world_tick_runtime(app.gs.worldTickRt, seed);
     sm::reset_player_recovery(app.playerRecovery);
     player_sp_carry(app) = 0.0f;
