@@ -142,6 +142,60 @@ void test_settlement_history_keeps_a_rolling_window() {
 // and one big one must land on the same instant, report the same elapsed time,
 // and queue the same daily work. Under the old float minute accumulator this
 // could only ever be approximately true; now it is an equality.
+// The garrison's own ceiling, kept by the DAY — not merely asked about before
+// the day begins. The check `wants_recruits(n) = n < 64` sat before a packet
+// of up to ten was drawn, so a garrison at 63 stood at 73 by nightfall: its
+// own cap overshot by nine, by the placement of the question. A town that
+// cannot take a recruit must also not pay a head for him.
+void test_garrison_never_exceeds_its_cap() {
+    sm::GameState gs{};
+    sm::Settlement s{};
+    s.id = 1;
+    s.population = 5000;                 // deep enough to want the full packet
+    // Fill to one below the ceiling: the state the old check waved through.
+    for (int i = 0; i < sm::kMaxGarrisonPerSettlement - 1; ++i) {
+        s.garrison.push(sm::make_soldier(
+            std::uint8_t(sm::NPCType::Guard), 1, std::uint32_t(1000 + i)));
+    }
+    gs.settlements.push_back(s);
+    const int popBefore = gs.settlements[0].population;
+
+    sm::WorldTickRuntime runtime{};
+    sm::reset_world_tick_runtime(runtime, 4242u);
+    runtime.pendingDailyTicks = 1;
+    runtime.nextDailyTickDay = 3;
+    sm::process_world_daily_ticks(gs, runtime, 1);
+
+    const int after = sm::total_soldiers(gs.settlements[0].garrison);
+    CHECK(after <= sm::kMaxGarrisonPerSettlement,
+          "a day of recruiting never carries a garrison past its own cap");
+    CHECK(after == sm::kMaxGarrisonPerSettlement,
+          "…and it does fill the last free slot — the cap is a ceiling, not a "
+          "veto on recruiting at all");
+    // Population also moves for economic reasons on the same day, so the head
+    // price is measured against a CONTROL: the same town, the same day, with a
+    // garrison already full — where recruiting cannot happen at all. The gap
+    // between the two populations is exactly the men taken.
+    const int taken = after - (sm::kMaxGarrisonPerSettlement - 1);
+    sm::GameState control{};
+    sm::Settlement full = s;
+    full.garrison.push(sm::make_soldier(
+        std::uint8_t(sm::NPCType::Guard), 1, 9999u));   // now at the ceiling
+    control.settlements.push_back(full);
+    sm::WorldTickRuntime controlRuntime{};
+    sm::reset_world_tick_runtime(controlRuntime, 4242u);
+    controlRuntime.pendingDailyTicks = 1;
+    controlRuntime.nextDailyTickDay = 3;
+    sm::process_world_daily_ticks(control, controlRuntime, 1);
+    CHECK(total_soldiers(control.settlements[0].garrison)
+              == sm::kMaxGarrisonPerSettlement,
+          "the control's full garrison recruits nobody");
+    CHECK(control.settlements[0].population
+              - gs.settlements[0].population == taken,
+          "the town pays a head only for the men it actually took");
+    (void)popBefore;
+}
+
 void test_many_small_advances_equal_one_big_one() {
     constexpr std::uint64_t kTotal = 10000;   // ~2.5 hours of world time
 
@@ -213,6 +267,7 @@ void test_subworld_steps_lose_nothing_when_split() {
 } // namespace
 
 int main() {
+    test_garrison_never_exceeds_its_cap();
     test_hour_rollover();
     test_many_small_advances_equal_one_big_one();
     test_subworld_steps_lose_nothing_when_split();

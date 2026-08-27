@@ -98,8 +98,19 @@ void tick_settlements_(std::vector<Settlement>& settlements, int day,
                 [&runtime] { return rand01_(runtime); },
                 garrison_soldier_id_base(s.id, day));
             if (gr.popCost > 0) {
-                add_squad(s.garrison, gr.garrison);
-                s.population = std::max(0, s.population - gr.popCost);
+                // The cap is checked BEFORE the packet is drawn, so a garrison
+                // at 63 could take a batch of ten and stand at 73 — its own
+                // ceiling overshot by design of the check's placement. Take
+                // only what fits, and pay POPULATION only for the men actually
+                // taken: the town keeps the heads it did not give up.
+                const int room = std::max(
+                    0, kMaxGarrisonPerSettlement - total_soldiers(s.garrison));
+                int taken = 0;
+                for (const SoldierRecord& rec : gr.garrison) {
+                    if (taken >= room || !s.garrison.push(rec)) break;
+                    ++taken;
+                }
+                s.population = std::max(0, s.population - taken);
             }
         }
 
