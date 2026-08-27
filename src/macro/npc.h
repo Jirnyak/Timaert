@@ -155,6 +155,19 @@ struct NpcTypeDef {
     // Last field on purpose, beside the light block: an opt-in column at the
     // end costs no other row a comma.
     float haulMult = 1.0f;
+
+    // ARMOUR THE ROW IS WEARING — the crowd's defence, as a NUMBER rather than
+    // as instances (owner ruling, 2026-08-27: «броня массовки = ЧИСЛО ИЗ
+    // СТРОКИ»). A troll's hide and a guard's plate are what those rows ARE;
+    // giving sixteen thousand bodies an equipment container each to say so
+    // would be one fact stored ten thousand times. A body that also WEARS
+    // things adds them on top of this — the same shape the authored body
+    // radius has, where a creature's own number and the default meet at one
+    // reader. Zero (every row that omits it) is a body in its own skin.
+    //
+    // Units are the damage's own, because the two meet in one formula
+    // (sub/damage.cpp).
+    int armor = 0;
 };
 
 inline constexpr CombatTemplate kPeasantCombat   {25, 3,  20, 2.0f, 1.5f, "Psr", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
@@ -251,6 +264,12 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         /*lightRadius=*/11.0f, /*lightIntensity=*/1.15f,
         /*lightR=*/1.00f, /*lightG=*/0.66f, /*lightB=*/0.34f,
         /*lightHeight=*/1.1f,
+        // The disciplined tank of the table wears what his row already
+        // describes. `haulMult` is spelled out only because the plate after it
+        // is not the default; kArmorHalving is what makes 10 legible — it
+        // HALVES a plain blow.
+        /*haulMult=*/1.0f,
+        /*armor=*/10,
     },
     // Witch
     {

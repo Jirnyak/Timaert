@@ -1,6 +1,8 @@
 #include "sub/damage.h"
 
 #include "ecs/components.h"
+#include "macro/npc.h"
+#include <algorithm>
 #include "events/event_bus.h"
 #include "events/event_types.h"
 
@@ -8,16 +10,41 @@ namespace sm::sub {
 
 namespace {
 
-// Mitigation, second step inside the door. amount' = f(amount, target, kind);
-// for a creature with no defences f is the identity — the limiting case of the
-// law, not a branch. When equipment lands (work_vector §5), armour becomes
-// columns this function reads; no damage site changes.
+// WHAT STANDS BETWEEN THIS BODY AND A BLOW.
+//
+// The idiom is the body radius's: an INSTANCE answers if it can, otherwise the
+// ROW does, and there is one reader either way. The crowd's armour is a number
+// on its creature row (owner's ruling: «броня массовки = ЧИСЛО ИЗ СТРОКИ») —
+// a troll's hide and a guard's plate are what those rows ARE, and sixteen
+// thousand equipment containers saying so would be one fact stored ten
+// thousand times. A body that also WEARS things adds them on top; that sum is
+// one line here when the equipment component lands, and no damage site
+// changes to gain it.
+int defense_of(entt::registry& reg, entt::entity target) {
+    const auto* kind = reg.try_get<ecs::NPCKind>(target);
+    if (!kind || kind->type >= std::uint16_t(NPCType::Count)) return 0;
+    return std::max(0, npc_def(NPCType(std::uint8_t(kind->type))).armor);
+}
+
+// Mitigation, second step inside the door.
+//
+// THE LAW: a blow keeps the fraction kArmorHalving / (kArmorHalving + armour).
+// Asymptotic on purpose — armour SOFTENS, it never makes a body immune, so no
+// amount of plate turns a fight into an impossibility and there is no
+// threshold anywhere for a designer to fall off. A creature with no defences
+// is the limiting case (armour 0 keeps everything), not a branch around the
+// law.
+//
+// Whether armour is even in the way is the damage KIND's column, not an `if`
+// here: plate does not soften a fall, and a scripted settlement must not be
+// argued with by a breastplate.
 float mitigate(entt::registry& reg, entt::entity target, float amount,
                DamageKind kind) {
-    (void)reg;
-    (void)target;
-    (void)kind;
-    return amount;
+    const DamageKindRow& row = kDamageKinds[std::size_t(kind)];
+    if (!row.armourApplies) return amount;
+    const int armour = defense_of(reg, target);
+    if (armour <= 0) return amount;
+    return amount * (kArmorHalving / (kArmorHalving + float(armour)));
 }
 
 } // namespace

@@ -14,11 +14,15 @@
 //     stay silent for it while every other weapon spoke;
 //   * the ONE already-dead guard: a corpse takes no second blow, no matter the
 //     weapon — the spell path used to have none;
-//   * mitigation is the identity today: applied == asked, to the bit. When
-//     armour lands this check is the one that gets rewritten, deliberately.
+//   * MITIGATION, now that armour has landed: a body in its own skin keeps the
+//     identity (armour 0 is the limiting case of the law, not a branch around
+//     it), an armoured row softens the blow by its row's number, and whether
+//     armour is in the way at all is the damage KIND's column — plate does not
+//     soften a fall.
 
 #include "check.h"
 #include "sub/damage.h"
+#include "macro/npc.h"
 #include "ecs/components.h"
 #include "events/event_bus.h"
 #include "events/event_types.h"
@@ -100,14 +104,64 @@ void test_death_is_indistinguishable() {
     }
 }
 
+// ── ARMOUR ───────────────────────────────────────────────────────────────
+// The socket the damage-door track deliberately left open (work_vector §5).
+// Pinned as three separate claims, because they can each be broken alone.
+void test_armour_softens_by_the_row_and_the_kind() {
+    entt::registry reg;
+    sm::EventBus bus;
+
+    // The Guard row wears plate; the test's own kind (7) wears nothing. Same
+    // door, same blow, two rows — this is the negative control that says the
+    // number is READ and not assumed.
+    const entt::entity bare = make_body(reg, 100.0f);
+    const entt::entity plated = reg.create();
+    reg.emplace<sm::ecs::Health>(plated, 100.0f, 100.0f);
+    reg.emplace<sm::ecs::NPCKind>(
+        plated, std::uint16_t(sm::NPCType::Guard), std::uint16_t{0});
+
+    const float blow = 20.0f;
+    const DamageResult onBare =
+        apply_damage(reg, bare, DamageSource{}, blow, DamageKind::Melee, &bus);
+    const DamageResult onPlate =
+        apply_damage(reg, plated, DamageSource{}, blow, DamageKind::Melee, &bus);
+
+    CHECK(onBare.applied == blow, "an unarmoured row takes the whole blow");
+    CHECK(onPlate.applied < onBare.applied,
+          "and an armoured one takes less of the SAME blow");
+
+    // THE law, stated as arithmetic rather than as a pinned number: the blow
+    // keeps kArmorHalving / (kArmorHalving + armour).
+    const float armour = float(sm::npc_def(sm::NPCType::Guard).armor);
+    const float expect =
+        blow * (sm::sub::kArmorHalving / (sm::sub::kArmorHalving + armour));
+    CHECK(onPlate.applied > expect - 0.01f && onPlate.applied < expect + 0.01f,
+          "the fraction kept is the row's armour against the halving point");
+    CHECK(onPlate.applied > 0.0f,
+          "armour SOFTENS and never makes a body immune — the law is "
+          "asymptotic, so there is no threshold to fall off");
+
+    // ...and whether armour is in the way at all is the KIND's column.
+    const entt::entity falling = reg.create();
+    reg.emplace<sm::ecs::Health>(falling, 100.0f, 100.0f);
+    reg.emplace<sm::ecs::NPCKind>(
+        falling, std::uint16_t(sm::NPCType::Guard), std::uint16_t{0});
+    const DamageResult fell =
+        apply_damage(reg, falling, DamageSource{}, blow, DamageKind::Fall, &bus);
+    CHECK(fell.applied == blow,
+          "plate does not soften the ground: the fall row says armour is not "
+          "in the way, and that is DATA, not an `if` in the door");
+}
+
 void test_survivor_protocol() {
     entt::registry reg;
     sm::EventBus bus;
     const entt::entity e = make_body(reg, 30.0f);
     const DamageResult hit = apply_damage(reg, e, DamageSource{7u, true},
                                           10.0f, DamageKind::Melee, &bus);
-    CHECK(hit.applied == 10.0f, "mitigation is the identity today: applied "
-                                "== asked, to the bit");
+    CHECK(hit.applied == 10.0f,
+          "a body in its own skin keeps the whole blow: armour 0 is the "
+          "limiting case of the law, applied == asked to the bit");
     CHECK(!hit.lethal, "a survivable blow is not lethal");
     CHECK(reg.get<sm::ecs::Health>(e).hp == 20.0f,
           "hp drops by exactly the applied amount");
@@ -211,6 +265,7 @@ void test_zero_and_missing_target() {
 
 int main() {
     test_death_is_indistinguishable();
+    test_armour_softens_by_the_row_and_the_kind();
     test_survivor_protocol();
     test_player_death_is_not_an_npc_kill();
     test_kindless_body_still_reports();

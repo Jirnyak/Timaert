@@ -41,10 +41,20 @@ namespace sm::sub {
 // the stamp now, so it owns the number.
 inline constexpr float kHitFlashDuration = 0.15f;
 
+// The armour at which a blow is HALVED — and therefore the whole scale on
+// which every armour number in the game reads. It is not picked, it is the
+// game's own plain blow: `kPlayerBaseMeleeDamage` (sub/engine.h), what an
+// untrained man does with his bare hands. So "armour 10" is not a number
+// needing a table to interpret — it says «this body halves a plain blow», and
+// twice that quarters it. Armour and damage share units because they meet in
+// one formula, and the halving point is where they meet.
+inline constexpr float kArmorHalving = 10.0f;
+
 // A damage KIND is a row, and the row is the whole difference between weapons.
-// The one column so far: whether the blow names a killer (LastHit is what the
-// reaper pays XP and reputation by). "No XP for gravity" is DATA here, not a
-// skipped component at one call site.
+// Two columns: whether the blow names a killer (LastHit is what the reaper
+// pays XP and reputation by), and whether ARMOUR stands between it and the
+// flesh. "No XP for gravity" and "plate does not soften a fall" are both DATA
+// here, not a skipped component or an `if` at one call site.
 enum class DamageKind : std::uint8_t {
     Melee = 0,
     Spell,   // spells, player missiles and NPC missiles — one projectile law
@@ -56,14 +66,21 @@ enum class DamageKind : std::uint8_t {
 struct DamageKindRow {
     const char* label;
     bool attributesKiller;
+    // Does what the body WEARS stand between this blow and its flesh?
+    //   · a sword and a spell: yes — that is what armour is for;
+    //   · a FALL: no. Plate does not soften the ground; it is the one blow
+    //     that arrives from inside the armour rather than at it;
+    //   · script and dev: no. Both are settlement, not a weapon — a harness
+    //     that says "this body dies" must not be argued with by a breastplate.
+    bool armourApplies;
 };
 
 inline constexpr DamageKindRow kDamageKinds[] = {
-    {"melee", true},
-    {"spell", true},
-    {"fall", false},
-    {"script", false},
-    {"dev", true},
+    {"melee",  true,  true},
+    {"spell",  true,  true},
+    {"fall",   false, false},
+    {"script", false, false},
+    {"dev",    true,  false},
 };
 
 // Who struck. attackerId is the entity bits (or a projectile's ownerId); 0 is
