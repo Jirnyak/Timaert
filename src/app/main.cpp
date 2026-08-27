@@ -2667,7 +2667,10 @@ void emit_spell_cast(App& app, const std::string& id,
                      bool ok, const char* reason, float cooldown = 0.0f) {
     sm::GameEvent ev{sm::EventTag::SpellCast};
     ev.s1 = id;
-    ev.s2 = reason ? reason : "";
+    // (No `s2 = reason`. Six call sites filled it and NOBODY has ever read it
+    // — not production, not a test, not the harness. A string built and
+    // deep-copied into the tick buffer and the history for no reader at all.)
+    (void)reason;
     ev.ix = ok ? 1 : 0;
     ev.fx = app.subworld.active() ? app.subworld.player_x() : app.gs.player.x;
     ev.fy = app.subworld.active() ? app.subworld.player_y() : app.gs.player.y;

@@ -152,7 +152,7 @@ bool test_event_bus_contract_surface() {
         || bus.subscription_count() != 0
         || !bus.tick_events().empty()
         || !bus.last_tick_events().empty()
-        || !bus.history().empty()) {
+        || bus.history_size() != 0) {
         return fail("EventBus did not start empty");
     }
 
@@ -199,7 +199,7 @@ bool test_event_bus_contract_surface() {
     if (bus.tick() != 1
         || !bus.tick_events().empty()
         || bus.last_tick_events().size() != 3
-        || bus.history().size() != 3) {
+        || bus.history_size() != 3) {
         return fail("EventBus flush did not promote tick events to last/history");
     }
     const auto customHistory = bus.query_history(sm::EventTag::Custom, 10);
@@ -298,7 +298,7 @@ bool test_event_bus_contract_surface() {
         || resetBus.subscription_count() != 0
         || !resetBus.tick_events().empty()
         || !resetBus.last_tick_events().empty()
-        || !resetBus.history().empty()) {
+        || resetBus.history_size() != 0) {
         return fail("EventBus reset during listener dispatch did not leave clean state");
     }
 
@@ -307,7 +307,7 @@ bool test_event_bus_contract_surface() {
         || bus.subscription_count() != 0
         || !bus.tick_events().empty()
         || !bus.last_tick_events().empty()
-        || !bus.history().empty()) {
+        || bus.history_size() != 0) {
         return fail("EventBus reset did not clear public state");
     }
     return true;

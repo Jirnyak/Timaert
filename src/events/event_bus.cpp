@@ -60,25 +60,35 @@ void EventBus::unsubscribe(std::uint32_t id) {
     }
 }
 
+const WorldHistoryEntry& EventBus::history_at(std::size_t i) const {
+    // Oldest first. Once the ring has wrapped, the oldest entry is the one the
+    // head is about to overwrite.
+    const std::size_t first =
+        historyCount_ < kMaxHistoryEntries ? 0u : historyHead_;
+    return history_[(first + i) % kMaxHistoryEntries];
+}
+
 void EventBus::flush(int day, int hour) {
     if (!tick_.empty()) {
-        if (history_.capacity() < kMaxHistoryEntries) {
-            history_.reserve(kMaxHistoryEntries);
+        if (history_.size() != kMaxHistoryEntries) {
+            history_.assign(kMaxHistoryEntries, WorldHistoryEntry{});
+            historyHead_ = 0;
+            historyCount_ = 0;
         }
-        const std::size_t incoming = tick_.size();
-        if (incoming >= kMaxHistoryEntries) {
-            history_.clear();
-            const std::size_t start = incoming - kMaxHistoryEntries;
-            for (std::size_t i = start; i < incoming; ++i) {
-                history_.push_back({tickCounter_, day, hour, tick_[i]});
-            }
-        } else {
-            const std::size_t total = history_.size() + incoming;
-            if (total > kMaxHistoryEntries) {
-                const std::size_t drop = total - kMaxHistoryEntries;
-                history_.erase(history_.begin(), history_.begin() + static_cast<std::ptrdiff_t>(drop));
-            }
-            for (auto& e : tick_) history_.push_back({tickCounter_, day, hour, e});
+        for (const GameEvent& e : tick_) {
+            WorldHistoryEntry& slot = history_[historyHead_];
+            slot.tick = tickCounter_;
+            slot.day = day;
+            slot.hour = hour;
+            slot.event = e;
+            // The frame's presentation is not the record: nothing has ever
+            // read a dialog's buttons or a story's result out of history, and
+            // carrying them here cost two atomic refcount bumps per event per
+            // tick and kept a frame's payload alive for four thousand ticks.
+            slot.event.dialogChoices.reset();
+            slot.event.storyResult.reset();
+            historyHead_ = (historyHead_ + 1) % kMaxHistoryEntries;
+            if (historyCount_ < kMaxHistoryEntries) ++historyCount_;
         }
     }
     last_.swap(tick_);
@@ -88,10 +98,12 @@ void EventBus::flush(int day, int hour) {
 
 std::vector<WorldHistoryEntry> EventBus::query_history(EventTag tag, std::size_t limit) const {
     std::vector<WorldHistoryEntry> out;
-    out.reserve(std::min(limit, history_.size()));
-    // Newest-first scan, like TS.
-    for (auto it = history_.rbegin(); it != history_.rend() && out.size() < limit; ++it) {
-        if (it->event.tag == tag) out.push_back(*it);
+    out.reserve(std::min(limit, historyCount_));
+    // Newest-first scan, walking the ring backwards through its own accessor
+    // so the seam stays the container's business.
+    for (std::size_t k = historyCount_; k-- > 0 && out.size() < limit; ) {
+        const WorldHistoryEntry& e = history_at(k);
+        if (e.event.tag == tag) out.push_back(e);
     }
     return out;
 }
@@ -100,6 +112,8 @@ void EventBus::reset() {
     tick_.clear();
     last_.clear();
     history_.clear();
+    historyHead_ = 0;
+    historyCount_ = 0;
     tickCounter_ = 0;
     nextSubId_ = 1;
     for (auto& subs : subsByTag_) subs.clear();

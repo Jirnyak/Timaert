@@ -105,11 +105,18 @@ namespace sm
         std::vector<std::pair<std::string, std::string>> values{};
     };
 
+    // WHAT HAPPENED, kept for the record — and deliberately LESS than the live
+    // event. History is purely runtime (it is never serialised) and nothing
+    // has ever read a dialog's buttons or a story's result out of it: those
+    // are this FRAME's presentation, copied into App-owned storage the moment
+    // they arrive. The bus used to deep-copy both `shared_ptr`s into every
+    // history entry anyway — two atomic refcount bumps per event per tick, for
+    // a payload no reader could reach from here.
     struct WorldHistoryEntry
     {
         std::uint32_t tick = 0;
         int day = 0, hour = 0;
-        GameEvent event{};
+        GameEvent event{};   // payload pointers deliberately left null
     };
 
 } // namespace sm
