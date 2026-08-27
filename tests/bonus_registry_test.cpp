@@ -23,7 +23,7 @@
 
 #include "macro/bonus.h"
 #include "macro/character_sheet.h"
-#include "macro/aura.h"
+#include "macro/character_sheet.h"
 
 #include <cstdio>
 
@@ -175,20 +175,35 @@ void test_instant_bonuses_move_pools_and_tell_the_truth() {
     CHECK(mp == 5, "negative control: and it did not quietly hit another pool");
 }
 
-// ── The aura is a tenant, not a second vocabulary ────────────────────────
-void test_the_aura_speaks_the_registry() {
+// ── A leader's gift is not a second system ───────────────────────────────
+// It was one: its own header, its own `AuraMods` type, its own add/collect/
+// apply verbs — all of it saying what these three lines say. Owner, 2026-08-27:
+// «хватит контекста макросквада (минимум систем)... просто скиллы и перки
+// СКВАДА (это и есть лидер) модифицируют юнитов в бою». Squad == leader is
+// CANON S4, so the leader's sheet was always the only source, and the second
+// container was pure weight.
+void test_a_leaders_gift_is_the_same_totals_as_everything_else() {
     CharacterSheet leader{};
-    add_perk(leader.perks, PerkID::Leader);
-    const AuraMods aura = collect_leader_aura(leader);
-    CHECK(aura.count == 1, "the Leader perk row collects one modifier");
-    CHECK(aura.mods[0].row == std::uint8_t(BonusId::Vit),
-          "and it is a ROW of the one registry, not a private encoding");
+    CHECK(squad_bonuses(leader).attr[std::size_t(AttributeId::Vit)] == 0,
+          "a sheet with no sources buffs nobody");
 
-    // The same row, summed by the same accumulator, through the same copy.
-    BonusTotals t{};
-    accumulate(t, aura.mods.data(), int(aura.count));
-    CHECK(t.attr[std::size_t(AttributeId::Vit)] == 1,
-          "a leader's aura and a sword's affix reach the sheet by one road");
+    add_perk(leader.perks, PerkID::Leader);
+    const BonusTotals gift = squad_bonuses(leader);
+    CHECK(gift.attr[std::size_t(AttributeId::Vit)] == 1,
+          "the Leader perk row lands as +1 vit, in the same BonusTotals a "
+          "sword's affix lands in — one road to the sheet, not two");
+
+    // ...and it reaches a trooper through the ONE application.
+    CharacterSheet trooper{};
+    const int alone =
+        calculate_combat_stats(trooper.attributes, trooper.skills).maxHp;
+    const CharacterSheet ledSheet = effective_sheet(trooper, gift);
+    CHECK(calculate_combat_stats(ledSheet.attributes, ledSheet.skills).maxHp
+              > alone,
+          "a led soldier is tougher, by the vit point's worth");
+    CHECK(trooper.attributes.of(AttributeId::Vit) == 1,
+          "negative control: and his OWN sheet was not rewritten to say so — "
+          "which is exactly what the old aura could not claim");
 }
 
 } // namespace
@@ -200,6 +215,6 @@ int main() {
     test_a_standing_bonus_can_be_taken_off();
     test_effective_sheet_owns_the_clamps();
     test_instant_bonuses_move_pools_and_tell_the_truth();
-    test_the_aura_speaks_the_registry();
+    test_a_leaders_gift_is_the_same_totals_as_everything_else();
     return sm::test::report("bonus_registry_test");
 }

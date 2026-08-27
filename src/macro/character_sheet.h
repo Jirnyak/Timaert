@@ -245,6 +245,46 @@ inline CharacterSheet effective_sheet(const CharacterSheet& base,
     return out;
 }
 
+// ── What a LEADER's sheet gives his squad ────────────────────────────────
+//
+// Owner, 2026-08-27: «хватит контекста макросквада (минимум систем) — при
+// загрузке отряда в субмире они всё равно берутся из сквада/ландмарка/зон/
+// таблиц, так что просто скиллы и перки СКВАДА (это и есть лидер) модифицируют
+// юнитов в бою, и всё универсально».
+//
+// So there is no aura SYSTEM. There was one — its own header, its own
+// `AuraMods` type, its own add/collect/apply verbs — and every bit of it said
+// the same thing this one function says: the leader's sheet contributes
+// bonuses, and bonuses are rows of the one registry. A second container for a
+// number that already had one is exactly what CANON S26 forbids; killing it
+// costs the game nothing because squad == leader (S4) and the leader's sheet
+// was always the only source.
+//
+// SOURCES are the extension axis: perk rows today, and the leader's skills,
+// charisma and carried gear when the perk epic lands. Each is a few lines
+// appending into the same totals, and no consumer ever learns where a
+// modifier came from.
+struct SquadBonusRow {
+    PerkID perk;
+    Bonus  bonus;
+};
+
+// A perk that buffs the carrier's squad is a ROW, never a branch in a spawner.
+// The Leader perk is the owner's own example made real: "+10 HP to every
+// soldier" is +1 vit through the one formula (a vit point is 10 max HP), so
+// the buff lands in the member's sheet and nowhere else.
+inline constexpr SquadBonusRow kSquadPerkBonuses[] = {
+    {PerkID::Leader, {std::uint8_t(BonusId::Vit), +1}},
+};
+
+inline BonusTotals squad_bonuses(const CharacterSheet& leader) {
+    BonusTotals out{};
+    for (const SquadBonusRow& row : kSquadPerkBonuses) {
+        if (has_perk(leader.perks, row.perk)) accumulate(out, row.bonus);
+    }
+    return out;
+}
+
 // Derive combat numbers for a humanoid from its CharacterSheet, layered on top
 // of an authored per-role `base` (the NPC registry's CombatTemplate). Returns a
 // CombatTemplate so spawn code stays a one-line swap (base → projected) before

@@ -154,7 +154,7 @@ inline AutoBattleSide auto_battle_side_of(ecs::World& w, entt::entity e,
         const CombatStats cs = calculate_combat_stats(storedSheet->attributes,
                                                       storedSheet->skills);
         s.leaderHpOverride = float(std::max(1, cs.maxHp));
-        s.aura = collect_leader_aura(*storedSheet);
+        s.bonuses = squad_bonuses(*storedSheet);
     }
     return s;
 }

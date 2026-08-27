@@ -265,35 +265,38 @@ void test_a_body_that_is_not_an_entity_is_refused() {
 }
 
 // A leader's buff reaches a trooper THROUGH THE SHEET, and it is not one
-// number (Session 15, owner ruling №2): the aura is a SET of modifiers
-// collected from the leader's own sheet (macro/aura.h — perk rows today;
-// charisma, skills and items are future source functions at the same door),
-// applied into the member's sheet before combat is projected from it.
+// number (Session 15, owner ruling №2). It is not a SYSTEM either any more
+// (owner, 2026-08-27: «хватит контекста макросквада — просто скиллы и перки
+// сквада, это и есть лидер, модифицируют юнитов в бою»): the aura's own type,
+// header and add/collect/apply verbs are gone, and what is left is one
+// function producing the same BonusTotals every other modifier in the game
+// produces. Perk rows today; charisma, skills and carried gear are a few
+// lines at the same door when the perk epic lands.
 void test_a_leaders_aura_reaches_his_men() {
     using namespace sm;
 
-    // The collector: aura sources are data rows, not branches.
+    // The collector: sources are data rows, not branches.
     CharacterSheet leader{};
-    CHECK(collect_leader_aura(leader).count == 0,
-          "a sheet with no aura sources buffs nobody");
+    const BonusTotals none = squad_bonuses(leader);
+    CHECK(none.attr[std::size_t(AttributeId::Vit)] == 0,
+          "a sheet with no sources buffs nobody");
     add_perk(leader.perks, PerkID::Leader);
-    const AuraMods aura = collect_leader_aura(leader);
-    CHECK(aura.count == 1
-              && aura.mods[0].row == std::uint8_t(BonusId::Vit)
-              && aura.mods[0].value == 1,
+    const BonusTotals gift = squad_bonuses(leader);
+    CHECK(gift.attr[std::size_t(AttributeId::Vit)] == 1,
           "the Leader perk row collects as +1 vit: the '+10 HP to every "
           "soldier' the owner named, said through the ONE bonus registry");
 
-    // The applier clamps at the same doors a legitimate point spend does.
+    // The clamps are the registry's, and they are the same ones a legitimate
+    // point spend respects — one door for a leader's gift and a sword's affix.
     CharacterSheet clamped{};
-    AuraMods curse{};
-    aura_add(curse, {std::uint8_t(BonusId::Vit), -50});
-    aura_add(curse, {std::uint8_t(BonusId::Bodybuilding), std::int16_t(500)});
-    apply_aura(clamped, curse);
+    BonusTotals curse{};
+    accumulate(curse, {std::uint8_t(BonusId::Vit), -50});
+    accumulate(curse, {std::uint8_t(BonusId::Bodybuilding), std::int16_t(500)});
+    clamped = effective_sheet(clamped, curse);
     CHECK(clamped.attributes.of(sm::AttributeId::Vit) == 1,
-          "an aura cannot curse an attribute below its base of 1");
+          "no gift can curse an attribute below its base of 1");
     CHECK(clamped.skills.of(sm::SkillId::Bodybuilding) == kMaxSkillRank,
-          "an aura cannot push a skill past mastery");
+          "and none can push a skill past mastery");
 
     // End to end through the ONE birth: the same squad born twice from the
     // same seed — once led, once alone. Every soldier must be tougher led,
@@ -305,7 +308,7 @@ void test_a_leaders_aura_reaches_his_men() {
         std::size_t(sub::kFullSize) * sub::kFullSize, sub::TILE_GRASS);
     ecs::World led{}, alone{};
     sub::spawn_player_squad(led, mixed_squad(), ground, 512.0f, 512.0f, 123u,
-                            f, &aura);
+                            f, &gift);
     sub::spawn_player_squad(alone, mixed_squad(), ground, 512.0f, 512.0f, 123u,
                             f);
 

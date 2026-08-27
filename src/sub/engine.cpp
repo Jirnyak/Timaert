@@ -625,14 +625,14 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     spawn_all_cells();
     // The squad wears its owner's colours — the player's own realm row. The
     // rule lives at the call site because the owner is what the call site knows.
-    // The owner's AURA rides the same way (macro/aura.h): the player leads this
+    // The owner's AURA rides the same way (character_sheet.h squad_bonuses): the player leads this
     // squad, so the player's sheet buffs every soldier born here.
-    const AuraMods playerAura = collect_leader_aura(gs.player.sheet);
+    const BonusTotals playerBonuses = squad_bonuses(gs.player.sheet);
     spawn_player_squad(ecs, player_roster(ecs) ? *player_roster(ecs)
                                               : SoldierSquad{},
                        mgr_, playerX_, playerY_,
         gs.worldSeed ^ kSquadSpawnSalt ^ (std::uint32_t(cx) << 8) ^ std::uint32_t(cy),
-        std::uint16_t(faction_index(kPlayerFactionId)), &playerAura);
+        std::uint16_t(faction_index(kPlayerFactionId)), &playerBonuses);
     // Project the persistent macro NPCs standing in this 3×3 window into the
     // scene as real combat bodies (Inc 5d) — the overworld lords / bandits /
     // peasants are physically MET where they roam, and each projection carries a

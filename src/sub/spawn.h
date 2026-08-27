@@ -7,7 +7,7 @@
 #include "ecs/world.h"
 #include "sub/seamless_manager.h"
 #include "macro/fauna.h"
-#include "macro/aura.h"
+#include "macro/character_sheet.h"
 #include "macro/biomes.h"
 #include "macro/features.h"
 #include "macro/army.h"
@@ -93,14 +93,16 @@ struct BodyLoan {
 
 // Form 1 — DERIVED. `faceSalt` separates two bodies drawn from the same seed
 // (slot index, ordinal in the crowd). Stamps the loan's receipt, if any.
-// `aura` is the squad leader's buff (macro/aura.h): a set of sheet modifiers
-// applied INTO this body's own sheet before combat is projected from it —
-// ruling №2, never a second multiplier beside the sheet. nullptr (every
-// non-squad body) applies nothing.
+// `squadBonuses` is what this body's LEADER gives it (character_sheet.h
+// squad_bonuses) — the ordinary BonusTotals every modifier in the game
+// produces, applied into this body's own sheet before combat is projected
+// from it. Ruling №2, never a second multiplier beside the sheet; and since
+// 2026-08-27 not a second SYSTEM either. nullptr (every non-squad body)
+// applies nothing.
 entt::entity spawn_derived_body(entt::registry& reg, const BodySpec& body,
                                 std::uint32_t faceSalt,
                                 const BodyLoan& loan = BodyLoan::none(),
-                                const AuraMods* aura = nullptr);
+                                const BonusTotals* squadBonuses = nullptr);
 
 // Form 2 — TRACKED. Reads WHAT this body is (type, faction, rank), WHO it is
 // (face) and HOW HURT it is straight from the macro entity, and hands the body
@@ -258,10 +260,10 @@ void despawn_subworld_entities_outside_window(ecs::World& w);
 // a garrison → its settlement's kingdom), so no new persisted field is needed and
 // a party — which is its leader NPC — simply passes its leader's faction.
 //
-// `aura` follows the same logic as the faction (macro/aura.h): the LEADER's
-// buff, collected once at the call site from whoever leads the squad (the
-// player → collect_leader_aura(gs.player.sheet)) and applied into every
-// member's sheet at birth. nullptr = a leaderless context, nothing applied.
+// `squadBonuses` follows the same logic as the faction: the LEADER's gift,
+// collected once at the call site from whoever leads the squad (the player →
+// squad_bonuses(gs.player.sheet)) and applied into every member's sheet at
+// birth. nullptr = a leaderless context, nothing applied.
 void spawn_player_squad(ecs::World& w,
                         const SoldierSquad& squad,
                         const SeamlessSubworldManager& mgr,
@@ -269,7 +271,7 @@ void spawn_player_squad(ecs::World& w,
                         float playerY,
                         std::uint32_t seed,
                         std::uint16_t faction,
-                        const AuraMods* aura = nullptr);
+                        const BonusTotals* squadBonuses = nullptr);
 
 void spawn_player_squad(ecs::World& w,
                         const SoldierSquad& squad,
@@ -278,7 +280,7 @@ void spawn_player_squad(ecs::World& w,
                         float playerY,
                         std::uint32_t seed,
                         std::uint16_t faction,
-                        const AuraMods* aura = nullptr);
+                        const BonusTotals* squadBonuses = nullptr);
 
 // ── Macro→subworld projection (Inc 5d) ───────────────────────────────────
 //

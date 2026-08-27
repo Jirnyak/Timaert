@@ -139,15 +139,15 @@ bool find_city_spawn_spot(const std::vector<std::uint8_t>& tiles,
 entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
                           const ecs::NpcCharacter& face,
                           float healthFraction,
-                          const AuraMods* aura = nullptr) {
+                          const BonusTotals* squadBonuses = nullptr) {
     const NpcTypeDef& def = npc_def(body.type);
     CharacterSheet sheet =
         make_character_sheet(body.type, body.level, body.seed);
     // The leader's buff lands IN the sheet, before anything is projected from
-    // it (macro/aura.h, ruling №2): from here down a buffed soldier is simply
+    // it (character_sheet.h, ruling №2): from here down a buffed soldier is simply
     // a soldier whose sheet says more, and no formula ever meets a second
     // source of strength standing beside it.
-    if (aura) apply_aura(sheet, *aura);
+    if (squadBonuses) sheet = effective_sheet(sheet, *squadBonuses);
     const CombatTemplate pc = project_combat(sheet, def.combat);
 
     // Integers, not fractions: a body that hits for 17.85 accumulates a
@@ -284,10 +284,10 @@ void spawn_settlement_population(ecs::World& w,
 
 entt::entity spawn_derived_body(entt::registry& reg, const BodySpec& body,
                                 std::uint32_t faceSalt, const BodyLoan& loan,
-                                const AuraMods* aura) {
+                                const BonusTotals* squadBonuses) {
     const entt::entity e =
         emplace_body(reg, body, derive_face(body.seed, body.type, faceSalt),
-                     /*healthFraction*/1.0f, aura);
+                     /*healthFraction*/1.0f, squadBonuses);
     // The receipt, stamped by the birth rather than by the caller: borrowing is
     // part of coming into being, not a line a spawner might remember to add.
     // Nothing lent means nothing to stamp — a body drawn from thin air is honest
@@ -693,9 +693,9 @@ void spawn_player_squad(ecs::World& w,
                         float playerY,
                         std::uint32_t seed,
                         std::uint16_t faction,
-                        const AuraMods* aura) {
+                        const BonusTotals* squadBonuses) {
     spawn_player_squad(w, squad, mgr.tiles(), playerX, playerY, seed, faction,
-                       aura);
+                       squadBonuses);
 }
 
 void spawn_player_squad(ecs::World& w,
@@ -705,7 +705,7 @@ void spawn_player_squad(ecs::World& w,
                         float playerY,
                         std::uint32_t seed,
                         std::uint16_t faction,
-                        const AuraMods* aura) {
+                        const BonusTotals* squadBonuses) {
     if (squad.empty()) return;
 
     auto& reg = w.reg;
@@ -770,7 +770,7 @@ void spawn_player_squad(ecs::World& w,
                     ^ std::uint32_t(level),
                 /*combatant*/true},
             /*faceSalt*/std::uint32_t(i) * 2654435761u,
-            BodyLoan::none(), aura);
+            BodyLoan::none(), squadBonuses);
         reg.emplace<ecs::PlayerSoldierTag>(e);
         reg.emplace<ecs::SoldierLink>(e, soldier.entityId, soldier.kind,
                                       std::int16_t(level));
@@ -886,15 +886,15 @@ int project_macro_npcs_into_subworld(ecs::World& w,
         }
         ++projected;
 
-        // The leader's buff, read from the leader's OWN sheet (macro/aura.h)
+        // The leader's buff, read from the leader's OWN sheet (character_sheet.h squad_bonuses)
         // — collected once per squad and applied into every member's sheet at
-        // birth. A generic leader's derived sheet carries no aura sources
+        // birth. A generic leader's derived sheet carries no bonus sources
         // today (no perks), so this collects empty and changes nothing; a
         // hand-authored or persistent leader with a Leader-class perk buffs
         // its troops through this same line with no further change anywhere.
-        AuraMods leaderAura{};
+        BonusTotals leaderBonuses{};
         if (const auto* leaderSheet = reg.try_get<CharacterSheet>(leaderBody)) {
-            leaderAura = collect_leader_aura(*leaderSheet);
+            leaderBonuses = squad_bonuses(*leaderSheet);
         }
 
         // The leader's troops. Each roster row is one unit of the squad's
@@ -948,7 +948,7 @@ int project_macro_npcs_into_subworld(ecs::World& w,
                 // The member's row decides which birth he gets, and that is the
                 // whole difference between a man and a beast in a squad: a
                 // humanoid ordinal builds a sheet-bearing body (and takes the
-                // leader's aura), a monster row builds a sheet-less one off its
+                // leader's bonuses), a monster row builds a sheet-less one off its
                 // own catalog line. Both carry the same roster receipt, so a
                 // wolf's death pays the pack back exactly like a spearman's.
                 spawn_derived_body(reg,
@@ -960,7 +960,7 @@ int project_macro_npcs_into_subworld(ecs::World& w,
                             ^ (rec.entityId << 7),
                         /*combatant*/true},
                     /*faceSalt*/std::uint32_t(m) * 2654435761u ^ 0x9E3779B9u,
-                    loan, &leaderAura);
+                    loan, &leaderBonuses);
                 ++projected;
             }
         }

@@ -83,10 +83,10 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
 
     const auto add_fighter = [&bodies](NPCType type, int level,
                                        std::uint32_t seed,
-                                       const AuraMods* aura, float frac,
+                                       const BonusTotals* squadBonuses, float frac,
                                        int side) {
         CharacterSheet sheet = make_character_sheet(type, level, seed);
-        if (aura) apply_aura(sheet, *aura);
+        if (squadBonuses) sheet = effective_sheet(sheet, *squadBonuses);
         const CombatTemplate pc = project_combat(sheet, npc_def(type).combat);
         Body f{};
         f.hp = std::max(1.0f, std::floor(pc.hp)) *
@@ -111,7 +111,7 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
             for (const SoldierRecord& r : *s.roster) {
                 if (!valid_npc_kind(r.kind)) continue;
                 add_fighter(NPCType(r.kind), normalize_soldier_level(r.level),
-                            auto_battle_detail::member_seed(r), &s.aura,
+                            auto_battle_detail::member_seed(r), &s.bonuses,
                             1.0f, side);
             }
         }
@@ -209,7 +209,7 @@ void test_power_grows_with_the_sheet() {
     AutoBattleSide led = side_of(NPCType::Guard, 3, &few);
     CharacterSheet leaderSheet{};
     add_perk(leaderSheet.perks, PerkID::Leader);
-    led.aura = collect_leader_aura(leaderSheet);
+    led.bonuses = squad_bonuses(leaderSheet);
     CHECK(squad_power(led) > pFew,
           "a Leader-perk lord commands a stronger squad by the same aura law");
 

@@ -23,7 +23,7 @@
 
 #include "core/rng.h"
 #include "macro/army.h"
-#include "macro/aura.h"
+#include "macro/character_sheet.h"
 #include "macro/character_sheet.h"
 #include "macro/npc.h"
 
@@ -36,7 +36,7 @@ namespace sm {
 
 // One side of an auto-battle: the squad as the macro layer holds it — the
 // leader (the entity itself) plus the roster rows. The aura is COLLECTED BY
-// THE CALLER from the leader's sheet (macro/aura.h), exactly as the body
+// THE CALLER from the leader's sheet (character_sheet.h squad_bonuses), exactly as the body
 // births do, so a Leader-perk lord is stronger here and below by the same
 // modifiers. Context multipliers are per-side because terrain and fatigue
 // are: a squad on its hill fights the value of its hill.
@@ -54,7 +54,7 @@ struct AutoBattleSide {
     float         leaderHpOverride  = -1.0f;
     float         leaderDpsOverride = -1.0f;
     const SoldierSquad* roster = nullptr;   // may be empty/null
-    AuraMods      aura{};
+    BonusTotals   bonuses{};
     // Context, composed by the caller from what the cell and the squad say:
     // terrain advantage (defender's hill, forest cover — data rows when the
     // encounter system lands) and fatigue (sp / maxSp). 1 = neutral/fresh.
@@ -84,9 +84,9 @@ namespace auto_battle_detail {
 // level fights with: hp × damage-per-second of the sheet-projected template.
 // The floor() mirrors emplace_body — both layers fight with integers.
 inline float fighter_power(NPCType type, int level, std::uint32_t seed,
-                           const AuraMods* aura, float healthFraction) {
+                           const BonusTotals* squadBonuses, float healthFraction) {
     CharacterSheet sheet = make_character_sheet(type, level, seed);
-    if (aura) apply_aura(sheet, *aura);
+    if (squadBonuses) sheet = effective_sheet(sheet, *squadBonuses);
     const CombatTemplate pc = project_combat(sheet, npc_def(type).combat);
     const float hp  = std::max(1.0f, std::floor(pc.hp)) *
                       std::clamp(healthFraction, 0.0f, 1.0f);
@@ -127,7 +127,7 @@ inline float squad_power(const AutoBattleSide& s) {
             if (!valid_npc_kind(r.kind)) continue;
             power += fighter_power(NPCType(r.kind),
                                    normalize_soldier_level(r.level),
-                                   member_seed(r), &s.aura, 1.0f);
+                                   member_seed(r), &s.bonuses, 1.0f);
         }
     }
     return power * std::max(0.1f, s.terrain) * std::clamp(s.fatigue, 0.1f, 1.0f);
