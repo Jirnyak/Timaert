@@ -104,6 +104,25 @@ row (id, key, label, effect text, `pctPerRank`, and whether it buys a cost
 DOWN) plus one weight per role. Express its effect through `skill_mult` — never
 a private curve, and never a percent spelled inline.
 
+## Renown — what the world thinks a band has done
+
+A squad accumulates **renown** (`ecs::MacroNpcRuntime::renown`) by its deeds:
+every fact it files pays it the fact kind's own `renown` column
+(`macro/chronicle.h`). It is cumulative in the Mount & Blade sense — a great
+deed or enough grind — and it is a **world quantity**, not a bookkeeping
+counter for the chronicle.
+
+Its first consumer is the chronicle itself: a band starts nameless and its
+deeds are weather the ring forgets in a season; cross the bar and it is a
+FIGURE, whose deeds enter the annals for good (CANON S20.1). The bar is
+DERIVED — the most any single deed is worth in the table — so it reads as a
+sentence: *become a figure by doing once what a figure does, or by adding up
+enough lesser things.*
+
+Other mechanics are meant to hang off the same number rather than grow
+counters of their own (who follows you, how you are spoken to, who is worth a
+contract). Adding one is a reader, not a system.
+
 ## Connections
 
 XP is awarded to the killing blow's owner ([microcombat.md](microcombat.md));

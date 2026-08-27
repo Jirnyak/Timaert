@@ -585,6 +585,33 @@ void add_renown(App& app, entt::entity e, sm::FactKind kind) {
     rt->renown = std::uint32_t(std::min<std::uint64_t>(sum, 0xFFFFFFFFull));
 }
 
+// THE door into the world's memory, app-side: file the fact AND pay the doer.
+//
+// One door because the two halves must never come apart. A writer that filed a
+// deed and forgot the renown would be a world where nobody ever becomes
+// somebody; a writer that paid renown without filing would be a legend nobody
+// can read. Here neither is expressible: you hand over the sentence and the
+// doer, and both happen.
+//
+// `subject` is the ENTITY that did it, which is what lets this fill the named
+// bit — only the world knows whether this band has done enough yet.
+std::uint32_t record_deed(App& app, sm::WorldFact fact, entt::entity subject) {
+    if (subject != entt::null && app.ecs.reg.valid(subject)) {
+        const std::uint32_t id = macro_identity_of(
+            app, std::uint32_t(entt::to_integral(subject)));
+        if (id != 0u) {
+            fact.subjectKind = sm::fact_subject(sm::FactSubject::Squad,
+                                                squad_is_named(app, subject));
+            fact.subject = id;
+        }
+    }
+    const std::uint32_t seq = app.bus.record(fact);
+    if (seq != 0u) {
+        add_renown(app, subject, sm::FactKind(fact.kind));
+    }
+    return seq;
+}
+
 void raise_macro_fact(void* user, const sm::BattleFact& fact) {
     auto& app = *static_cast<App*>(user);
     if (fact.kind != sm::BattleFact::Kind::Death) return;
@@ -608,16 +635,10 @@ void raise_macro_fact(void* user, const sm::BattleFact& fact) {
     sm::WorldFact wf{};
     wf.day = app.gs.worldTime.day();
     wf.kind = std::uint16_t(sm::FactKind::Killed);
-    const std::uint32_t killerId = macro_identity_of(app, fact.killer);
     const std::uint32_t victimId = macro_identity_of(app, fact.victim);
-    // Is this band a FIGURE yet? Only the world knows, so the world marks it:
-    // a squad's deeds are weather until it has done enough, and then they are
-    // history (macro/chronicle.h renown_is_named).
-    wf.subjectKind = killerId != 0u
-        ? sm::fact_subject(sm::FactSubject::Squad,
-                           squad_is_named(app, entt::entity(fact.killer)))
-        : std::uint8_t(sm::FactSubject::Cell);
-    wf.subject = killerId;
+    // A killer with no identity leaves the PLACE as the subject; `record_deed`
+    // below overwrites this when the killer turns out to be somebody.
+    wf.subjectKind = std::uint8_t(sm::FactSubject::Cell);
     if (victimId != 0u) {
         wf.objectKind =
             sm::fact_subject(sm::FactSubject::Squad,
@@ -636,14 +657,13 @@ void raise_macro_fact(void* user, const sm::BattleFact& fact) {
             wf.y = std::int16_t(sm::wrapi(int(p->y), app.gs.mapH));
         }
     }
-    app.bus.record(wf);
-
-    // ...and the deed makes something of the doer. This is the whole of the
-    // rule: a nameless band that keeps doing notable things crosses the bar
+    // Filed AND paid, through the one door: the deed makes something of the
+    // doer. A nameless band that keeps doing notable things crosses the bar
     // and becomes a figure, after which its deeds go into the annals. Before
     // that they are weather — which is exactly why sixteen thousand bands do
     // not drown the world's memory.
-    add_renown(app, entt::entity(fact.killer), sm::FactKind::Killed);
+    record_deed(app, wf, fact.killer != 0u ? entt::entity(fact.killer)
+                                           : entt::null);
 }
 
 // THE player's bag, from his squad entity (macro/player_entity.h). A world
