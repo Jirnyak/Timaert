@@ -114,6 +114,32 @@ BonusTotals worn_bonuses(const Equipment& eq) {
     return t;
 }
 
+void remark_equipment_blocks(Equipment& eq) {
+    const int n = eq.cells();
+    // Clear whatever markers are there, then re-mark from the rows: a load
+    // restored only the ITEMS, and the blocks follow from them.
+    for (int i = 0; i < n; ++i) {
+        if (cell_blocked(eq.worn[std::size_t(i)])) eq.worn[std::size_t(i)] = ItemRef{};
+    }
+    for (int i = 0; i < n; ++i) {
+        const ItemRef& r = eq.worn[std::size_t(i)];
+        if (r.empty() || cell_blocked(r)) continue;
+        if (const ItemDef* def = item_def_at(int(r.def))) {
+            mark_blocks(eq, i, def->blocksMask);
+        }
+    }
+}
+
+int worn_cells(const Equipment& eq) {
+    int n = 0;
+    const int cells = eq.cells();
+    for (int i = 0; i < cells; ++i) {
+        const ItemRef& r = eq.worn[std::size_t(i)];
+        if (!r.empty() && !cell_blocked(r)) ++n;
+    }
+    return n;
+}
+
 int worn_armor(const Equipment& eq) {
     int sum = 0;
     const int n = eq.cells();

@@ -717,30 +717,10 @@ namespace sm::ui
             return "?";
         }
 
-        const char *item_type_label(ItemType t)
-        {
-            switch (t)
-            {
-            case ItemType::Weapon:
-                return "Weapon";
-            case ItemType::Armor:
-                return "Armor";
-            case ItemType::Potion:
-                return "Potion";
-            case ItemType::Food:
-                return "Food";
-            case ItemType::Material:
-                return "Material";
-            case ItemType::Misc:
-                return "Misc";
-            }
-            return "?";
-        }
-
-        bool is_equipment_item(const ItemDef &def)
-        {
-            return def.type == ItemType::Weapon || def.type == ItemType::Armor;
-        }
+        // (No `item_type_label` and no `is_equipment_item`. Whether a row can
+        // be WORN is the row's own `slotMask` — an item that names no body
+        // part cannot be worn, whatever its type says — and the equipment tab
+        // asks that instead of guessing from a category.)
 
         // What a row does, read off the ONE registry. It used to print six
         // named fields, three of which no code anywhere applied — so the panel
@@ -1008,43 +988,9 @@ namespace sm::ui
             return current == tab ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
         }
 
-        void draw_inventory_table(const Inventory &inv, bool showValue)
-        {
-            if (inv.used_slots() == 0)
-            {
-                ImGui::TextDisabled("(empty)");
-                return;
-            }
-            const int cols = showValue ? 4 : 3;
-            if (ImGui::BeginTable("inventory_table", cols,
-                                  ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg))
-            {
-                ImGui::TableSetupColumn("Item");
-                ImGui::TableSetupColumn("Id");
-                ImGui::TableSetupColumn("Qty", ImGuiTableColumnFlags_WidthFixed, 48.0f);
-                if (showValue)
-                    ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthFixed, 64.0f);
-                ImGui::TableHeadersRow();
-                for (const ItemRef &st : inv.slots)
-                {
-                    if (st.empty()) continue;
-                    const ItemDef *def = item_def_at(int(st.def));
-                    ImGui::TableNextRow();
-                    ImGui::TableNextColumn();
-                    ImGui::Text("%s", def ? def->name : "?");
-                    ImGui::TableNextColumn();
-                    ImGui::TextDisabled("%s", def ? def->id : "?");
-                    ImGui::TableNextColumn();
-                    ImGui::Text("x%d", st.count);
-                    if (showValue)
-                    {
-                        ImGui::TableNextColumn();
-                        ImGui::Text("%d g", def ? def->value * st.count : 0);
-                    }
-                }
-                ImGui::EndTable();
-            }
-        }
+        // (No `draw_inventory_table`. The bag's table is written where the
+        // tab is, because it now carries a BUTTON per row — a read-only
+        // printer of the same rows beside it would be the second one to drift.)
 
         // (No attribute row table here either. The label and what a point buys
         // already stand in kAttributeDefs (macro/attributes.h); a panel that
@@ -1103,6 +1049,9 @@ namespace sm::ui
     void draw_character_panel(GameState &gs, ecs::World &world, bool *open,
                               CharacterPanelTab *tab, float scale)
     {
+        // What the last swallow did, kept between frames so the player can
+        // read "+5 HP" instead of watching it flash past in one.
+        static std::string lastUseMessage;
         if (!open || !*open)
             return;
 
@@ -1300,7 +1249,67 @@ namespace sm::ui
                 {
                     ImGui::Text("Stacks: %d  Items: %d  Weight: %.1f / %.0f kg",
                                 playerBag.used_slots(), playerBag.total(), carryWeight, carryCap);
-                    draw_inventory_table(playerBag, true);
+                    // USE. `use_item` has existed and been tested since the
+                    // port, with no way for a player to reach it: work_vector
+                    // §5 lists "use_item наконец получает кнопку в UI" as part
+                    // of the RPG layer, and a potion nobody can drink is a
+                    // system that only the test suite plays.
+                    //
+                    // The row itself says whether it is drinkable — the door
+                    // takes potions and food and refuses everything else — so
+                    // the button appears exactly where the catalog says it
+                    // should, and no category is restated here.
+                    if (!lastUseMessage.empty())
+                        ImGui::TextDisabled("%s", lastUseMessage.c_str());
+                    if (ImGui::BeginTable("bag", 5,
+                                          ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg))
+                    {
+                        ImGui::TableSetupColumn("Item");
+                        ImGui::TableSetupColumn("Qty", ImGuiTableColumnFlags_WidthFixed, 48.0f);
+                        ImGui::TableSetupColumn("Effect");
+                        ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthFixed, 64.0f);
+                        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 64.0f);
+                        ImGui::TableHeadersRow();
+                        for (int slot = 0; slot < kMaxInventorySlots; ++slot)
+                        {
+                            const ItemRef &st = playerBag.slots[std::size_t(slot)];
+                            if (st.empty()) continue;
+                            const ItemDef *def = item_def_at(int(st.def));
+                            if (!def) continue;
+                            ImGui::TableNextRow();
+                            ImGui::TableNextColumn();
+                            ImGui::Text("%s", def->name);
+                            ImGui::TextDisabled("%s", def->id);
+                            ImGui::TableNextColumn();
+                            ImGui::Text("x%d", st.count);
+                            ImGui::TableNextColumn();
+                            draw_item_bonuses(def->bonus);
+                            ImGui::TableNextColumn();
+                            ImGui::Text("%d", def->value);
+                            ImGui::TableNextColumn();
+                            const bool drinkable = def->type == ItemType::Potion
+                                                   || def->type == ItemType::Food;
+                            if (drinkable)
+                            {
+                                ImGui::PushID(slot);
+                                if (ImGui::SmallButton("Use"))
+                                {
+                                    PlayerCombatSlice pc{
+                                        p.combatStats.currentHp, p.combatStats.maxHp,
+                                        p.combatStats.currentMp, p.combatStats.maxMp,
+                                        p.combatStats.currentSp, p.combatStats.maxSp};
+                                    lastUseMessage = use_item(playerBag, def->id, pc);
+                                    p.combatStats.currentHp = pc.currentHp;
+                                    p.combatStats.currentMp = pc.currentMp;
+                                    p.combatStats.currentSp = pc.currentSp;
+                                }
+                                ImGui::PopID();
+                            }
+                        }
+                        ImGui::EndTable();
+                    }
+                    if (playerBag.used_slots() == 0)
+                        ImGui::TextDisabled("(empty)");
                     ImGui::EndTabItem();
                 }
 
@@ -1344,52 +1353,148 @@ namespace sm::ui
                     *tab = CharacterPanelTab::Equipment;
                 if (equipmentOpen)
                 {
-                    ImGui::Text("Equipment data model missing");
-                    ImGui::TextDisabled("PlayerState has inventory, attributes, skills, army, and spells.");
-                    ImGui::TextDisabled("No equipped weapon/armor slots are serialized in save version %d.",
-                                        gs.version);
-                    ImGui::Separator();
-                    ImGui::TextUnformatted("Equip-capable inventory items");
-                    int equipStacks = 0;
-                    if (ImGui::BeginTable("equipment_candidates", 5,
-                                          ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg))
+                    // THE equipment tab, and it is real now. The stub it
+                    // replaces said "Equip/unequip needs PlayerEquipment
+                    // slots, compatibility rules, stat recomputation, and save
+                    // serialization" — all four exist (macro/anatomy.h), so
+                    // what was missing was only the hands to use them.
+                    ecs::BodyEquipment *eqc = nullptr;
+                    if (const entt::entity pe = player_squad_entity(world);
+                        pe != entt::null)
                     {
-                        ImGui::TableSetupColumn("Item");
-                        ImGui::TableSetupColumn("Slot", ImGuiTableColumnFlags_WidthFixed, 80.0f);
-                        ImGui::TableSetupColumn("Qty", ImGuiTableColumnFlags_WidthFixed, 48.0f);
-                        ImGui::TableSetupColumn("Effect");
-                        ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, 120.0f);
-                        ImGui::TableHeadersRow();
-                        for (const ItemRef &st : playerBag.slots)
+                        // A body that has never worn anything has no
+                        // container — the opt-in that keeps sixteen thousand
+                        // squads free of one. Wanting to wear something is
+                        // when it starts existing.
+                        eqc = &world.reg.get_or_emplace<ecs::BodyEquipment>(pe);
+                    }
+
+                    if (!eqc)
+                    {
+                        ImGui::TextDisabled("No body to dress (no world yet).");
+                    }
+                    else
+                    {
+                        Equipment &gear = eqc->gear;
+                        const BonusTotals worn = worn_bonuses(gear);
+                        ImGui::Text("%s — armour %d",
+                                    gear.shape().label, worn_armor(gear));
+                        if (ImGui::IsItemHovered())
                         {
-                            if (st.empty()) continue;
-                            const ItemDef *def = item_def_at(int(st.def));
-                            if (!def || !is_equipment_item(*def))
-                                continue;
-                            ++equipStacks;
-                            ImGui::TableNextRow();
-                            ImGui::TableNextColumn();
-                            ImGui::Text("%s", def->name);
-                            ImGui::TextDisabled("%s", def->id);
-                            ImGui::TableNextColumn();
-                            ImGui::Text("%s", item_type_label(def->type));
-                            ImGui::TableNextColumn();
-                            ImGui::Text("x%d", st.count);
-                            ImGui::TableNextColumn();
-                            draw_item_bonuses(def->bonus);
-                            ImGui::TableNextColumn();
-                            ImGui::TextDisabled("carried only");
+                            ImGui::SetTooltip(
+                                "A blow keeps %.0f/(%.0f+armour) of itself — "
+                                "armour softens, it never makes you immune.",
+                                double(sub::kArmorHalving),
+                                double(sub::kArmorHalving));
                         }
-                        ImGui::EndTable();
+                        ImGui::SameLine();
+                        ImGui::TextDisabled("(%d of %d cells filled)",
+                                            worn_cells(gear), gear.cells());
+
+                        // What it is worth, in the one currency: the same
+                        // BonusTotals a perk and a spell speak.
+                        bool anyBonus = false;
+                        for (int i = 0; i < int(AttributeId::Count); ++i)
+                        {
+                            if (worn.attr[std::size_t(i)] == 0) continue;
+                            if (!anyBonus) { ImGui::SameLine(); anyBonus = true; }
+                            else ImGui::SameLine();
+                            ImGui::TextDisabled("%+d %s",
+                                                int(worn.attr[std::size_t(i)]),
+                                                attribute_def(AttributeId(i)).label);
+                        }
+
+                        ImGui::Separator();
+                        ImGui::TextUnformatted("Worn");
+                        int wornRows = 0;
+                        if (ImGui::BeginTable("worn", 4,
+                                              ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg))
+                        {
+                            ImGui::TableSetupColumn("Part", ImGuiTableColumnFlags_WidthFixed, 110.0f);
+                            ImGui::TableSetupColumn("Item");
+                            ImGui::TableSetupColumn("Effect");
+                            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+                            ImGui::TableHeadersRow();
+                            for (int cell = 0; cell < gear.cells(); ++cell)
+                            {
+                                const ItemRef &r = gear.worn[std::size_t(cell)];
+                                if (r.empty()) continue;
+                                const ItemDef *def = item_def_at(int(r.def));
+                                if (!def) continue;   // a blocked cell, not an item
+                                ++wornRows;
+                                ImGui::TableNextRow();
+                                ImGui::TableNextColumn();
+                                ImGui::TextDisabled("%s",
+                                                    body_part_def(gear.part_at(cell)).label);
+                                ImGui::TableNextColumn();
+                                ImGui::Text("%s", def->name);
+                                ImGui::TableNextColumn();
+                                draw_item_bonuses(def->bonus);
+                                ImGui::TableNextColumn();
+                                ImGui::PushID(cell);
+                                if (ImGui::SmallButton("Take off"))
+                                {
+                                    // Conservation: it goes back to the bag,
+                                    // and only leaves the body if the bag has
+                                    // room to receive it.
+                                    const ItemRef taken = unequip(gear, cell);
+                                    if (!taken.empty() && !playerBag.add_ref(taken))
+                                        equip(gear, taken);   // no room: put it back on
+                                }
+                                ImGui::PopID();
+                            }
+                            ImGui::EndTable();
+                        }
+                        if (wornRows == 0)
+                            ImGui::TextDisabled("(nothing worn)");
+
+                        ImGui::Separator();
+                        ImGui::TextUnformatted("In the bag");
+                        int equipStacks = 0;
+                        if (ImGui::BeginTable("equipment_candidates", 4,
+                                              ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg))
+                        {
+                            ImGui::TableSetupColumn("Item");
+                            ImGui::TableSetupColumn("Qty", ImGuiTableColumnFlags_WidthFixed, 48.0f);
+                            ImGui::TableSetupColumn("Effect");
+                            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+                            ImGui::TableHeadersRow();
+                            for (int slot = 0; slot < kMaxInventorySlots; ++slot)
+                            {
+                                const ItemRef &st = playerBag.slots[std::size_t(slot)];
+                                if (st.empty()) continue;
+                                const ItemDef *def = item_def_at(int(st.def));
+                                if (!def || def->slotMask == 0)
+                                    continue;   // the row itself says it is not worn
+                                ++equipStacks;
+                                ImGui::TableNextRow();
+                                ImGui::TableNextColumn();
+                                ImGui::Text("%s", def->name);
+                                ImGui::TextDisabled("%s", def->id);
+                                ImGui::TableNextColumn();
+                                ImGui::Text("x%d", st.count);
+                                ImGui::TableNextColumn();
+                                draw_item_bonuses(def->bonus);
+                                ImGui::TableNextColumn();
+                                ImGui::PushID(slot);
+                                if (ImGui::SmallButton("Wear"))
+                                {
+                                    ItemRef one = st;
+                                    one.count = 1;
+                                    // The body REFUSES when nothing fits, and
+                                    // the item stays where it was: an item
+                                    // that vanished on equip would be one the
+                                    // conservation law lost.
+                                    if (equip(gear, one) >= 0)
+                                        playerBag.remove_of(int(st.def), 1);
+                                }
+                                ImGui::PopID();
+                            }
+                            ImGui::EndTable();
+                        }
+                        if (equipStacks == 0)
+                            ImGui::TextDisabled("(nothing wearable in the bag)");
                     }
-                    if (equipStacks == 0)
-                    {
-                        ImGui::TextDisabled("No weapon or armor stacks are currently in inventory.");
-                    }
-                    ImGui::Separator();
-                    ImGui::TextDisabled(
-                        "Equip/unequip needs PlayerEquipment slots, compatibility rules, "
-                        "stat recomputation, and save serialization.");
                     ImGui::EndTabItem();
                 }
 

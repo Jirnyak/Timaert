@@ -39,6 +39,11 @@ struct MacroNpcRecord {
     std::uint8_t         hasOrders = 0;
     std::uint8_t         dead = 0;
     Inventory            inventory;         // NpcInventory.inv
+    // What this body WEARS (ecs::BodyEquipment). Opt-in on the entity, so a
+    // record whose `anatomy` cells are all empty simply writes a zero count —
+    // the crowd costs four bytes each and the gear rides whole for the few
+    // bodies that have any.
+    Equipment            gear;
     SoldierSquad roster;                    // SquadRoster.squad (no leader)
 };
 

@@ -323,6 +323,53 @@ void write_inventory(Writer& w, const Inventory& inv) {
     }
 }
 
+// The worn cells, by CELL INDEX — a flat array with holes, exactly like the
+// bag, so the file carries what is there and not 128 slots of nothing.
+void write_equipment(Writer& w, const Equipment& eq) {
+    w.pod(eq.anatomy);
+    if (!w.count(std::size_t(worn_cells(eq)), std::uint32_t(kMaxBodyParts))) {
+        return;
+    }
+    for (int i = 0; i < eq.cells(); ++i) {
+        const ItemRef& s = eq.worn[std::size_t(i)];
+        if (s.empty()) continue;
+        if (item_def_at(int(s.def)) == nullptr) continue;   // a blocked cell
+        const std::uint8_t cell = std::uint8_t(i);
+        w.pod(cell);
+        w.pod(s.def);
+        w.pod(s.material);
+        w.pod(s.quality);
+        w.pod(s.count);
+        w.pod(s.seed);
+        w.pod(s.affix);
+    }
+}
+
+void read_equipment(Reader& r, Equipment& eq) {
+    eq = Equipment{};
+    r.pod(eq.anatomy);
+    if (eq.anatomy >= std::uint8_t(AnatomyId::Count)) { r.ok = false; return; }
+    std::uint32_t n = 0;
+    if (!read_count(r, n, std::uint32_t(kMaxBodyParts))) return;
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        std::uint8_t cell = 0;
+        ItemRef s{};
+        r.pod(cell);
+        r.pod(s.def);
+        r.pod(s.material);
+        r.pod(s.quality);
+        r.pod(s.count);
+        r.pod(s.seed);
+        r.pod(s.affix);
+        if (cell >= std::uint8_t(eq.cells())) { r.ok = false; return; }
+        eq.worn[std::size_t(cell)] = s;
+    }
+    // The blocks a two-hander occupies are DERIVED, not stored: re-marking
+    // them from the rows is one pass and cannot disagree with the rows the
+    // way a second stored copy could.
+    remark_equipment_blocks(eq);
+}
+
 void read_inventory(Reader& r, Inventory& inv) {
     std::uint32_t n = 0;
     if (!read_count(r, n, kMaxInventoryStacks)) return;
@@ -416,6 +463,7 @@ void write_macro_npc(Writer& w, const MacroNpcRecord& m) {
     w.pod(m.hasOrders);
     w.pod(m.dead);
     write_inventory(w, m.inventory);
+    write_equipment(w, m.gear);
     write_squad(w, m.roster);
 }
 
@@ -439,7 +487,11 @@ void read_macro_npc(Reader& r, MacroNpcRecord& m) {
         r.ok = false;
         return;
     }
+    // The READ order is the WRITE order, field for field. It has to be said
+    // out loud because these two functions are a hundred lines apart and a
+    // block inserted into one of them reads the next block's bytes.
     read_inventory(r, m.inventory);
+    read_equipment(r, m.gear);
     read_squad(r, m.roster);
 }
 

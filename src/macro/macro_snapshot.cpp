@@ -38,6 +38,7 @@ std::vector<MacroNpcRecord> snapshot_macro_ecs(ecs::World& w) {
             m.hasOrders = 1;
         }
         if (const auto* mem = reg.try_get<AgentMemory>(e)) m.memory = *mem;
+        if (const auto* eq = reg.try_get<ecs::BodyEquipment>(e)) m.gear = eq->gear;
         m.dead = reg.all_of<ecs::Dead>(e) ? 1 : 0;
         out.push_back(std::move(m));
     }
@@ -70,6 +71,11 @@ void restore_macro_ecs(const std::vector<MacroNpcRecord>& records,
         reg.emplace<ecs::SquadRoster>(e, ecs::SquadRoster{m.roster});
         if (m.hasOrders) reg.emplace<ecs::SquadOrders>(e, m.orders);
         reg.emplace<AgentMemory>(e, m.memory);
+        // Only a body that WORE something gets the container back: the opt-in
+        // is part of the contract, not an accident of the load order.
+        if (worn_cells(m.gear) > 0) {
+            reg.emplace<ecs::BodyEquipment>(e, ecs::BodyEquipment{m.gear});
+        }
         if (m.dead) reg.emplace<ecs::Dead>(e);
         if (!any || m.spawnId.index > maxOrdinal) maxOrdinal = m.spawnId.index;
         any = true;

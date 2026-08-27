@@ -254,6 +254,15 @@ ItemRef unequip(Equipment& eq, int cell);
 // item, in the one currency the sheet already reads.
 BonusTotals worn_bonuses(const Equipment& eq);
 
+// Re-derive the cells a worn item BLOCKS from the rows it is wearing. The
+// blocks are not stored — a second copy of what the catalog already says
+// could disagree with it after a retune — so a load re-marks them.
+void remark_equipment_blocks(Equipment& eq);
+
+// How many cells actually hold something — for a panel that wants to say
+// "3 of 24 filled" without walking the array itself.
+int worn_cells(const Equipment& eq);
+
 // Armour worn, summed — the addend `sub/damage.cpp defense_of` was waiting
 // for. A creature's row number and what it wears meet in one number.
 int worn_armor(const Equipment& eq);

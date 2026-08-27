@@ -159,7 +159,12 @@ namespace sm {
 // is now literally the registry's `Bonus`. That last one is byte-identical, so
 // no saved item moved; the version follows the catalog's meaning changing
 // under the same bytes.
-constexpr int kSaveVersion = 48;
+// v49: a body's WORN gear rides the macro record (macro/anatomy.h Equipment).
+// The cells are a flat array with holes, so the file carries cell INDICES and
+// the crowd — which wears nothing — costs a zero count. A two-hander's blocked
+// cells are DERIVED on load rather than stored: a second copy of what the
+// catalog already says could disagree with it after a retune.
+constexpr int kSaveVersion = 49;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 

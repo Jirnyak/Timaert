@@ -202,6 +202,19 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
                    std::uint16_t(sm::faction_index(sm::kPlayerFactionId))};
     player.health = {40.0f, 40.0f};
     player.level = {3};
+    // ...and what he WEARS. Equipment is opt-in on the entity, so the record
+    // must carry the shape AND the occupied cells: a saved coat that comes
+    // back on a naked body is the same class of loss as a saved bag that comes
+    // back empty.
+    {
+        sm::ItemRef coat{};
+        coat.def = std::uint16_t(sm::item_index("arm_leather"));
+        coat.count = 1;
+        coat.affix[0] = {std::uint8_t(sm::BonusId::Vit), 4};
+        if (sm::equip(player.gear, coat) < 0) {
+            std::fprintf(stderr, "fixture: the coat did not go on\n");
+        }
+    }
     player.inventory.add("coin_empire", 999);
     player.inventory.add("misc_gem", 3);
     player.inventory.add("bread", 11);
@@ -649,6 +662,39 @@ void run_roundtrip() {
     // ── The macro-ECS snapshot (v23) round-trips record-for-record ────────
     if (loadedMacro.size() != macroFixture.size()) {
         FAIL_BAIL("macro snapshot record count lost");
+    }
+    // What the PLAYER wears comes back on him. Equipment is opt-in on the
+    // entity and its cells are a flat array with holes, so the file carries
+    // cell indices — and a saved coat that returned on a naked body would be
+    // the same class of loss as a saved bag that returned empty.
+    {
+        const sm::MacroNpcRecord* worn = nullptr;
+        for (const sm::MacroNpcRecord& r : loadedMacro) {
+            if (r.spawnId.index == sm::ecs::kPlayerSquadOrdinal) worn = &r;
+        }
+        if (!worn) FAIL_BAIL("the player's own record did not come back");
+        if (sm::worn_cells(worn->gear) != 1) FAIL_BAIL("worn gear lost");
+        int cell = -1;
+        for (int i = 0; i < worn->gear.cells(); ++i) {
+            if (!worn->gear.worn[std::size_t(i)].empty()) cell = i;
+        }
+        if (cell < 0 || worn->gear.part_at(cell) != sm::BodyPartId::Torso) {
+            FAIL_BAIL("the coat came back on the wrong part of him");
+        }
+        const sm::ItemRef& coat = worn->gear.worn[std::size_t(cell)];
+        if (coat.def != std::uint16_t(sm::item_index("arm_leather"))
+            || coat.count != 1) {
+            FAIL_BAIL("the coat came back as another item");
+        }
+        // The rolled affix rides with it: a procedural item that lost its
+        // roll would be a different item wearing the same name.
+        if (coat.affix[0].row != std::uint8_t(sm::BonusId::Vit)
+            || coat.affix[0].value != 4) {
+            FAIL_BAIL("the coat's rolled affix lost");
+        }
+        if (sm::worn_armor(worn->gear) <= 0) {
+            FAIL_BAIL("and it stops nothing, so the row did not come back");
+        }
     }
     {
         const sm::MacroNpcRecord& a = loadedMacro[0];
