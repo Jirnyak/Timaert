@@ -200,6 +200,114 @@ void test_the_world_counts_its_own_facts() {
           "from evidence instead of from feel");
 }
 
+// ── TWO TIERS: the world forgets weather and remembers figures ───────────
+// Owner's ruling: «вечно помнятся дела ИМЕНОВАННЫХ — лордов, игрока, городов;
+// безымянная массовка растворяется». In this world that is not a heuristic
+// but a consequence — a squad IS a lord and carries an ordinal, a landmark and
+// a faction likewise, while the crowd below has no ordinal at all and can only
+// appear as `amount`.
+void test_the_annals_keep_figures_and_forget_weather() {
+    Chronicle c;
+    chronicle_init(c, 128, 128);
+
+    // Weather: the land itself yielded wood. Nobody named took part.
+    WorldFact harvest{};
+    harvest.day = 5;
+    harvest.kind = std::uint16_t(FactKind::Gathered);
+    harvest.subjectKind = std::uint8_t(FactSubject::Cell);
+    harvest.x = 10; harvest.y = 10;
+    harvest.amount = 8;
+    for (int i = 0; i < 50; ++i) chronicle_record(c, harvest);
+
+    CHECK(c.annals.empty(),
+          "fifty harvests by nobody are weather: the world does not remember "
+          "them");
+
+    // History: a lord took a city.
+    WorldFact conquest{};
+    conquest.day = 6;
+    conquest.kind = std::uint16_t(FactKind::OwnerChanged);
+    conquest.subjectKind = std::uint8_t(FactSubject::Squad);
+    conquest.subject = 42u;
+    conquest.objectKind = std::uint8_t(FactSubject::Landmark);
+    conquest.object = 3u;
+    conquest.x = 10; conquest.y = 10;
+    chronicle_record(c, conquest);
+
+    CHECK(c.annals.size() == 1u,
+          "a deed between named figures is history, and one is enough");
+    CHECK(c.annals[0].subject == 42u && c.annals[0].object == 3u,
+          "and it remembers WHO, which is the whole of the rule");
+
+    // A nameless death still reaches the RING — the witcher must find it —
+    // and still does not reach the annals. That is the two tiers in one line.
+    WorldFact anonymous{};
+    anonymous.day = 6;
+    anonymous.kind = std::uint16_t(FactKind::Killed);
+    anonymous.subjectKind = std::uint8_t(FactSubject::Cell);
+    anonymous.x = 10; anonymous.y = 10;
+    anonymous.amount = 3;
+    chronicle_record(c, anonymous);
+
+    Collected near;
+    chronicle_near(c, 10, 10, 0, /*sinceDay*/0, collect, &near);
+    bool sawAnonymous = false;
+    for (const WorldFact& f : near.facts) {
+        if (f.kind == std::uint16_t(FactKind::Killed)
+            && f.subjectKind == std::uint8_t(FactSubject::Cell)) {
+            sawAnonymous = true;
+        }
+    }
+    CHECK(sawAnonymous,
+          "the nameless killing IS in the ring — otherwise the witcher could "
+          "never pick up the trail");
+    CHECK(c.annals.size() == 1u,
+          "negative control: and it is STILL not in the annals — the two tiers "
+          "answer two different questions about the same fact");
+}
+
+// ── The annals answer "what is known about this figure" ──────────────────
+void test_the_annals_are_asked_about_a_figure() {
+    Chronicle c;
+    chronicle_init(c, 128, 128);
+
+    auto deed = [&](int day, std::uint32_t lord, std::uint32_t city) {
+        WorldFact f{};
+        f.day = day;
+        f.kind = std::uint16_t(FactKind::OwnerChanged);
+        f.subjectKind = std::uint8_t(FactSubject::Squad);
+        f.subject = lord;
+        f.objectKind = std::uint8_t(FactSubject::Landmark);
+        f.object = city;
+        f.x = 20; f.y = 20;
+        chronicle_record(c, f);
+    };
+    deed(1, 7u, 1u);
+    deed(2, 8u, 2u);
+    deed(3, 7u, 3u);
+
+    Collected his;
+    chronicle_annals_of(c, std::uint8_t(FactSubject::Squad), 7u, 100,
+                        collect, &his);
+    CHECK(his.facts.size() == 2u, "two of the three deeds are his");
+    CHECK(his.facts.front().day == 3, "newest first, like every view here");
+
+    // He is also findable as the OBJECT of someone else's deed — a grudge is
+    // a fact about both parties, and history does not care which side of the
+    // verb you were on.
+    Collected city;
+    chronicle_annals_of(c, std::uint8_t(FactSubject::Landmark), 3u, 100,
+                        collect, &city);
+    CHECK(city.facts.size() == 1u,
+          "the city remembers being taken, though it did nothing");
+
+    Collected all;
+    chronicle_annals_of(c, 0u, 0u, 100, collect, &all);
+    CHECK(all.facts.size() == 3u,
+          "negative control: asking about nobody returns the whole legend, so "
+          "the filter above really filtered");
+}
+
 } // namespace
 
 int main() {
@@ -209,5 +317,7 @@ int main() {
     test_recent_walks_time_without_an_index();
     test_the_chronicle_refuses_what_it_cannot_record();
     test_the_world_counts_its_own_facts();
+    test_the_annals_keep_figures_and_forget_weather();
+    test_the_annals_are_asked_about_a_figure();
     return sm::test::report("chronicle_test");
 }

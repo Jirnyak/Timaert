@@ -138,24 +138,64 @@ struct WorldFact {
 static_assert(sizeof(WorldFact) == 32,
               "a fact is 32 bytes: it is scanned by the thousand and saved whole");
 
-// How many facts the world remembers. A window on the recent past, and its
-// size decides how far back "recent" reaches.
+// ── TWO TIERS, ONE RECORD (owner, 2026-08-27) ────────────────────────────
 //
-// HONESTLY PROVISIONAL: the right value is the world's own fact rate times the
-// longest interest span above (a season), and nothing measures that rate yet —
-// so `Chronicle::facts_today` exists to make it measurable rather than felt.
-// 2^14 records at 32 bytes is half a megabyte, which by house rule is not an
-// argument (CANON S26).
-inline constexpr std::uint32_t kChronicleFacts = 16384;
+// Dwarf Fortress keeps every historical event of every year in memory, and
+// that is its known illness: a long world generates into gigabytes and then
+// crawls on its own past — late versions had to add historical pruning
+// because unbounded did not work. The half DF gets right is the DISTINCTION
+// it draws between an event and a legend, and that is the half taken here.
+//
+// So: ONE record type, two places it lives.
+//   · the RING — what the world is ASKED. Indexed by cell, sized to the
+//     longest `interestDays` above, and it forgets. This is the witcher's
+//     tier.
+//   · the ANNALS — what the world REMEMBERS. Append-only, no spatial index,
+//     rides the save. This is "the village was razed in year three".
+//
+// WHAT REACHES THE ANNALS is decided by WHO took part (owner's ruling: «вечно
+// помнятся дела ИМЕНОВАННЫХ — лордов, игрока, городов; безымянная массовка
+// растворяется; как в DF, история — это история ФИГУР»). In this world that
+// rule is not a heuristic but a consequence: a squad IS a lord and carries an
+// ordinal identity (MacroSpawnId); a landmark and a faction likewise. The
+// nameless crowd — roster rows, bodies below, the peasants of a city — has no
+// ordinal at all and can only appear as `amount`. So the test is simply
+// whether a fact has a named participant, and the volume follows: deeds
+// between figures are hundreds a day, not thousands.
+inline constexpr std::uint32_t kChronicleAnnals = 1u << 20;   // 1M x 32 B = 32 MB
+
+// The ring's size is a FORMULA with one unmeasured term, and it is written
+// down rather than hidden: it must hold `longest interestDays × the world's
+// facts per day`. The longest span is 64 days (the Built/Revolted/Explored
+// rows); the world's daily rate has never been measured, which is exactly why
+// `Chronicle::factsToday` ships as part of the contract. 2^16 records is 2 MB
+// — by house rule not an argument (CANON S26) — and covers 64 days at a
+// thousand facts a day. Retune it from the counter, not from feel.
+inline constexpr std::uint32_t kChronicleFacts = 1u << 16;
 
 // The index is COARSE, like the squad index it borrows its shape from: "what
 // happened near here" is a neighbourhood question, so a fact belongs to an
 // index cell rather than to a map cell, and a query touches 3×3 of them.
 inline constexpr int kChronicleCellSize = 8;
 
+// Does this fact have a NAMED participant — a lord, a city, a faction, the
+// player? Then it is history. Otherwise it is weather: it happened, the ring
+// will remember it for a while, and then the world will forget, which is what
+// forgetting is for.
+inline constexpr bool subject_is_named(std::uint8_t kind) {
+    return kind == std::uint8_t(FactSubject::Squad)
+        || kind == std::uint8_t(FactSubject::Landmark)
+        || kind == std::uint8_t(FactSubject::Faction);
+}
+
 struct Chronicle {
     std::vector<WorldFact>     ring;      // kChronicleFacts, written round
     std::vector<std::uint32_t> cellHead;  // newest fact of each index cell
+    // What the world remembers for good. Append-only; capped only so a
+    // runaway cannot eat the machine, and the cap is loud when it is reached
+    // (annalsFull) rather than silently dropping the past.
+    std::vector<WorldFact>     annals;
+    bool annalsFull = false;
     std::uint32_t nextSeq = 1;            // 0 is "no fact", so counting starts at 1
     int cols = 0, rows = 0;
     // Facts written on the current day, and the day it is counting — the
@@ -193,10 +233,15 @@ using FactVisitor = void (*)(void* user, const WorldFact& fact);
 int chronicle_near(const Chronicle& c, int x, int y, int radiusCells,
                    std::int32_t sinceDay, FactVisitor visit, void* user);
 
-// The same walk over the WHOLE chronicle, newest first — for the player's
-// journal, which is a view on the past rather than a place with a past of
-// its own.
+// The same walk over the RING, newest first — for the player's journal, which
+// is a view on the past rather than a place with a past of its own.
 int chronicle_recent(const Chronicle& c, std::int32_t sinceDay, int limit,
                      FactVisitor visit, void* user);
+
+// The ANNALS, newest first: what the world remembers about a figure, however
+// long ago. `subjectKind`/`subject` of 0 means "anyone" — the whole legend.
+int chronicle_annals_of(const Chronicle& c, std::uint8_t subjectKind,
+                        std::uint32_t subject, int limit,
+                        FactVisitor visit, void* user);
 
 } // namespace sm

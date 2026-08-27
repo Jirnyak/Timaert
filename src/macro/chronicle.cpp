@@ -40,6 +40,8 @@ void chronicle_init(Chronicle& c, int mapW, int mapH) {
     c.rows = std::max(1, (mapH + kChronicleCellSize - 1) / kChronicleCellSize);
     c.ring.assign(kChronicleFacts, WorldFact{});
     c.cellHead.assign(std::size_t(c.cols) * std::size_t(c.rows), 0u);
+    c.annals.clear();
+    c.annalsFull = false;
     c.nextSeq = 1u;
     c.countingDay = -1;
     c.factsToday = 0u;
@@ -67,6 +69,19 @@ std::uint32_t chronicle_record(Chronicle& c, const WorldFact& fact) {
         c.factsToday = 0u;
     }
     ++c.factsToday;
+
+    // ...and if a NAMED participant took part, the world keeps it for good.
+    // The ring will forget this same fact in a season; the annals will not.
+    if (subject_is_named(fact.subjectKind) || subject_is_named(fact.objectKind)) {
+        if (c.annals.size() < std::size_t(kChronicleAnnals)) {
+            c.annals.push_back(slot);
+        } else {
+            // Loud rather than silent: a world whose legend outgrew its cap
+            // has a tuning problem, and dropping history quietly is how you
+            // never find out.
+            c.annalsFull = true;
+        }
+    }
     return seq;
 }
 
@@ -111,6 +126,30 @@ int chronicle_recent(const Chronicle& c, std::int32_t sinceDay, int limit,
         if (!f) continue;
         if (f->day < sinceDay) break;   // in time order, so the rest is older
         visit(user, *f);
+        ++offered;
+    }
+    return offered;
+}
+
+int chronicle_annals_of(const Chronicle& c, std::uint8_t subjectKind,
+                        std::uint32_t subject, int limit,
+                        FactVisitor visit, void* user) {
+    if (!visit || limit <= 0) return 0;
+    int offered = 0;
+    // Newest first, like every other view on the past. A linear walk on
+    // purpose: the annals are asked rarely (a chronicle screen, a bard, a
+    // quest that wants a grudge), and a second index would be a second thing
+    // to keep true.
+    for (std::size_t i = c.annals.size(); i-- > 0 && offered < limit; ) {
+        const WorldFact& f = c.annals[i];
+        if (subjectKind != 0u) {
+            const bool asSubject =
+                f.subjectKind == subjectKind && f.subject == subject;
+            const bool asObject =
+                f.objectKind == subjectKind && f.object == subject;
+            if (!asSubject && !asObject) continue;
+        }
+        visit(user, f);
         ++offered;
     }
     return offered;
