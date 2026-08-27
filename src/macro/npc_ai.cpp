@@ -135,11 +135,23 @@ void settle_sp_carry(ecs::MacroNpcRuntime& rt) {
     rt.sp = std::int16_t(std::min(maxSp, int(rt.sp) + whole));
 }
 
-bool prepare_macro_npc_tick(ecs::MacroNpcRuntime& rt,
-                            const ecs::Health& hp) {
+// Why a think is or is not dispatched. A corpse is skipped WHOLE; a camping
+// body skips only the behaviour — it still lives through the think, and the
+// rhythm below still pays it. Telling the two apart is the whole reason this
+// is an enum and not a bool: as one, a resting squad "failed to prepare" and
+// was `continue`d past its own recovery.
+enum class ThinkGate : std::uint8_t { Dead, Rest, Think };
+
+void settle_exhaustion(entt::entity e, const ecs::Position& p,
+                       ecs::MacroNpcRuntime& rt, ecs::Health& hp,
+                       bool canCamp, const TickContext& ctx);
+bool cell_is_water(const TickContext& ctx, int x, int y);
+
+ThinkGate prepare_macro_npc_tick(ecs::MacroNpcRuntime& rt,
+                                 const ecs::Health& hp) {
     if (hp.hp <= 0.0f) {
         rt.visualSpeed = 0.0f;
-        return false;
+        return ThinkGate::Dead;
     }
 
     // Time-in-cell advances every AI tick (both sweep drivers pass through
@@ -148,29 +160,74 @@ bool prepare_macro_npc_tick(ecs::MacroNpcRuntime& rt,
 
     const auto state = static_cast<NPCState>(rt.state);
     const int maxSp = std::max<int>(1, rt.maxSp);
-    if ((state == NPCState::Idle || state == NPCState::Resting)
-        && int(rt.sp) < maxSp) {
-        // THE regen law (attributes.h kSpRegenPctPerHour): a percent of the
-        // bar per game hour, the leader's marathon skill speeding the rate,
-        // paid out in this think's slice of the day. The old 5%-per-think was
-        // the squads' own dialect — ~53% of the bar per game HOUR, a rest
-        // that cost nothing. Fractional carry, same idiom as the player's.
-        rt.spCarry += float(maxSp) * kSpRegenPctPerHour
-                      * skill_bonus_mult(int(rt.marathonRank))
-                      * kAiTickGameHours;
-        settle_sp_carry(rt);
-    }
 
+    // Getting up is a DECISION (owner: «до скольки отдыхать — решение
+    // конечного автомата»), and half a bar is this AI's answer to it. The
+    // player's answer is his own (aim_rest_until_rested runs to a full bar);
+    // both drink from the one regen law below, which is where the mechanic
+    // ends and the decider begins.
     if (state == NPCState::Resting) {
         if (int(rt.sp) >= maxSp / 2) {
             rt.state = std::uint8_t(NPCState::Idle);
             rt.stateTimer = 0;
         }
         rt.visualSpeed = 0.0f;
-        return false;
+        return ThinkGate::Rest;
     }
 
-    return true;
+    return ThinkGate::Think;
+}
+
+// THE rhythm of a think, settled after it, for every behaviour: a body that
+// MOVED pays (and, on an empty bar, pays in flesh); a body that STOOD rests.
+// One sentence, «остановился — отдыхаешь», and its exact negation.
+//
+// The regen used to live before the think and be gated on a STATE WHITELIST
+// (Idle or Resting), which is the squads' own dialect of the same idea: a
+// body doing anything else — standing at a market, waiting out a siege —
+// recovered nothing, while the player recovered whenever his route was empty.
+// Now both ask the one question the law actually asks: did you move?
+//
+// Standing where no camp is possible is not rest either — the same decision
+// the bite below consults, so an ocean stays lethal without the mechanic ever
+// naming water.
+//
+// STOPPED is not the same question as "did not change cell this think", and
+// getting that wrong is how the first cut of this law paid marchers to march:
+// the pace is fractional (kMacroWalkCellsPerHour against a think's slice of
+// the day), so a body on the road banks part-cells and stands still on maybe a
+// quarter of its thinks. Reading those as rest handed a walking squad free
+// stamina and no squad ever ran out again. A body has stopped when it is where
+// it meant to be, or when it has DECIDED to stop — which is exactly the
+// player's own gate, «маршрут пуст», said in the squads' words.
+void settle_march_rhythm(entt::entity e, const ecs::Position& p,
+                         ecs::MacroNpcRuntime& rt, ecs::Health& hp,
+                         bool moved, const TickContext& ctx) {
+    const int maxSp = std::max<int>(1, rt.maxSp);
+    const bool canCamp = !cell_is_water(ctx, int(p.x), int(p.y));
+    const bool stopped = rt.state == std::uint8_t(NPCState::Resting)
+                         || at_target(p, rt, ctx);
+
+    // ...and `!moved` on top, because a think that arrived still MARCHED: you
+    // do not walk two cells and take a slice of rest in the same breath. Rest
+    // begins on the first think after the legs stop.
+    if (stopped && !moved) {
+        if (canCamp && int(rt.sp) < maxSp) {
+            // THE regen law (attributes.h kSpRegenPctPerHour): a percent of
+            // the bar per game hour, the leader's marathon skill speeding the
+            // rate, paid out in this think's slice of the day. The old
+            // 5%-per-think was ~53% of the bar per game HOUR — a rest that
+            // cost nothing. Fractional carry, the player's own idiom.
+            rt.spCarry += float(maxSp) * kSpRegenPctPerHour
+                          * skill_bonus_mult(int(rt.marathonRank))
+                          * kAiTickGameHours;
+            settle_sp_carry(rt);
+        }
+    }
+
+    // A body that took a step with its bar already spent pays for it, whether
+    // or not it also counts as stopped — the two halves answer two questions.
+    if (moved) settle_exhaustion(e, p, rt, hp, canCamp, ctx);
 }
 
 void set_visual_speed(ecs::MacroNpcRuntime& rt, float oldX, float oldY,
@@ -198,14 +255,6 @@ float cell_weight(const TickContext& ctx, int x, int y) {
 // The EDGE weight of one greedy step — the cell half from the baked grid
 // plus the uphill climb half (movement_cost.h: the law's two halves; the
 // squad walks the same slopes the player and both A*s pay for).
-// Can a body make camp on this cell? A DECISION the exhaustion mechanic asks,
-// not a branch inside it (owner, 2026-08-27: механика одна, «до скольки и где
-// отдыхать» — решение автомата). Open water is the one ground that offers no
-// camp: a squad in the middle of the sea cannot stop, so it must keep paying
-// the march price with its flesh until it reaches a shore or drowns. Same
-// sentence for the player — the aim to rest refuses over water too.
-bool cell_is_water(const TickContext& ctx, int x, int y);
-
 float edge_weight(const TickContext& ctx, int fx, int fy, int tx, int ty) {
     const PathCostData* pc = ctx.mw.pathCost;
     float w = cell_weight(ctx, tx, ty);
@@ -1168,7 +1217,8 @@ bool cell_is_water(const TickContext& ctx, int x, int y) {
 
 void settle_exhaustion(entt::entity e, const ecs::Position& p,
                        ecs::MacroNpcRuntime& rt, ecs::Health& hp,
-                       bool moved, const TickContext& ctx) {
+                       bool canCamp, const TickContext& ctx) {
+    (void)p;
     if (int(rt.sp) >= 0) return;
 
     // The AI's DECISION: legs gone, make camp — wherever a camp is possible.
@@ -1178,12 +1228,10 @@ void settle_exhaustion(entt::entity e, const ecs::Position& p,
     // further step until it makes a shore or drowns. That is the SAME outcome
     // the old water-only bite produced, arrived at by the right layer: the
     // price is a law, the choice of where to stop is a decision.
-    const bool canCamp = !cell_is_water(ctx, int(p.x), int(p.y));
     if (canCamp && rt.state != std::uint8_t(NPCState::Resting)) {
         rt.state = std::uint8_t(NPCState::Resting);
         rt.stateTimer = 0;
     }
-    if (!moved) return;
 
     const int bite = exhaustion_bite(int(rt.sp));
     if (bite <= 0) return;
@@ -1315,10 +1363,12 @@ void tick_macro_npc_ai(MacroWorld& mw,
         // A battle earlier in this very sweep may have killed this squad —
         // the view's Dead exclusion was evaluated at entry, so re-check.
         if (reg.all_of<ecs::Dead>(e)) continue;
-        if (!prepare_macro_npc_tick(rt, hp)) continue;
+        const ThinkGate gate = prepare_macro_npc_tick(rt, hp);
+        if (gate == ThinkGate::Dead) continue;
         const float x0 = p.x, y0 = p.y;
-        dispatch(effective_behaviour(reg, e, kind), e, p, kind, rt, ctx);
-        settle_exhaustion(e, p, rt, hp, p.x != x0 || p.y != y0, ctx);
+        if (gate == ThinkGate::Think)
+            dispatch(effective_behaviour(reg, e, kind), e, p, kind, rt, ctx);
+        settle_march_rhythm(e, p, rt, hp, p.x != x0 || p.y != y0, ctx);
     }
 }
 
@@ -1426,12 +1476,15 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
             auto& hp   = view.get<ecs::Health>(e);
             if (kind.type < std::uint16_t(NPCType::Count)
                 && !reg.all_of<ecs::Dead>(e)) {   // may have died this sweep
-                if (prepare_macro_npc_tick(rt, hp)) {
+                const ThinkGate gate = prepare_macro_npc_tick(rt, hp);
+                if (gate != ThinkGate::Dead) {
                     const float x0 = p.x, y0 = p.y;
-                    dispatch(effective_behaviour(reg, e, kind), e, p, kind,
-                             rt, ctx);
-                    settle_exhaustion(e, p, rt, hp,
-                                      p.x != x0 || p.y != y0, ctx);
+                    if (gate == ThinkGate::Think) {
+                        dispatch(effective_behaviour(reg, e, kind), e, p, kind,
+                                 rt, ctx);
+                    }
+                    settle_march_rhythm(e, p, rt, hp,
+                                        p.x != x0 || p.y != y0, ctx);
                 }
                 ++result.npcsProcessed;
             }

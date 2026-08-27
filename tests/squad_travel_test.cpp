@@ -342,6 +342,53 @@ void test_road_bar_lasts_a_days_march() {
           "and the march clock is cells over the derived pace");
 }
 
+// ── The regen gate is «остановился», not «не сдвинулся в этот раз» ────────
+// The pace is fractional, so a marching squad banks part-cells and stands on
+// a quarter of its thinks. If those counted as rest, the road would pay for
+// itself and no squad would ever run out of legs — which is exactly what the
+// first cut of this law did. Pinned here with its negative control.
+void test_banking_a_part_cell_is_not_resting() {
+    GameState gs{};
+    // Wide enough that the target is far inside the torus half-width: at 512
+    // the greedy straight step found the SEAM a shorter way and walked west,
+    // which is correct behaviour and a useless fixture.
+    gs.mapW = 1024;
+    gs.mapH = 8;
+    ecs::World w;
+    PathCostData grid = make_grid(1024, 8, 1.0f);   // one long road
+
+    auto e = make_walker(w, 10.0f, 4.0f, 400.0f, 4.0f, /*maxSp*/110);
+    auto& npc = w.reg.get<ecs::MacroNpcRuntime>(e);
+    MacroNpcAiRuntime rt{};
+    reset_macro_npc_ai_runtime(rt, 91u);
+
+    // Forty thinks of unbroken marching, far short of the ~110 cells the bar
+    // can pay, so nothing here is confused by exhaustion or camp.
+    for (int i = 0; i < 40; ++i) {
+        MacroWorld mw{.gs = &gs, .world = &w, .pathCost = &grid};
+        tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle*/false);
+    }
+    const float cells = w.reg.get<ecs::Position>(e).x - 10.0f;
+    const float ledgerSpent = 110.0f - (float(npc.sp) + npc.spCarry);
+
+    CHECK(cells > 0.0f, "the walker is on the road");
+    CHECK(std::fabs(ledgerSpent - cells * kStaminaPerCell) < 0.01f,
+          "forty thinks of marching cost exactly the cells walked — not one "
+          "point less, so no think on the road was quietly paid as rest");
+
+    // The control: the SAME body, standing at its target, DOES recover.
+    npc.targetX = w.reg.get<ecs::Position>(e).x;
+    npc.targetY = 4.0f;
+    const float restingFrom = float(npc.sp) + npc.spCarry;
+    for (int i = 0; i < 8; ++i) {
+        MacroWorld mw{.gs = &gs, .world = &w, .pathCost = &grid};
+        tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle*/false);
+    }
+    CHECK(float(npc.sp) + npc.spCarry > restingFrom,
+          "negative control: standing where it meant to be, it recovers — "
+          "the gate is «остановился», and it is open");
+}
+
 } // namespace
 
 int main() {
@@ -349,6 +396,7 @@ int main() {
     test_forced_ford_pays_the_water_price();
     test_ocean_drowns_the_lord_and_settles_his_squad();
     test_land_exhaustion_makes_camp_without_blood();
+    test_banking_a_part_cell_is_not_resting();
     test_a_map_of_marchers_survives_the_new_law();
     test_road_bar_lasts_a_days_march();
     return sm::test::report("squad_travel_test");

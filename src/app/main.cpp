@@ -3845,11 +3845,17 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // stamina does not come back (health and mana still do). This is what
         // turns a journey into a budget he has to plan instead of an allowance
         // that pays for itself — see macro/movement_cost.h kMarchRecoveryPct.
+        // ...and standing in the open sea is not resting either: a body that
+        // cannot make camp cannot recover, which is the same sentence a macro
+        // squad's think obeys (npc_ai.cpp settle_march_rhythm). It is what
+        // keeps an ocean lethal now that the exhaustion bite is a law rather
+        // than a water special case — stopping mid-crossing buys nothing.
         const bool marching = !app.cursor.path.empty();
+        const bool resting = !marching && player_can_make_camp(app);
         sm::apply_minute_recovery(app.gs.player,
                                         stats.timeTick.minutesAdvanced,
                                         app.playerRecovery,
-                                        marching ? sm::kMarchRecoveryPct : 1.0f);
+                                        resting ? 1.0f : sm::kMarchRecoveryPct);
         sm::tick_macro_npc_ai(macroTickWorld, app.npcAi,
                               std::uint64_t(stats.timeTick.ticksAdvanced),
                               /*allowAutoBattle*/true);
