@@ -5900,7 +5900,19 @@ bool run_rest_sp_smoke(App& app) {
     // One iteration = one main-loop turn. The guard is generous: a full rest
     // is ~day of promoted time = ~64 turns; the cap itself is 2 days = 128.
     int turns = 0;
+    // A day's simulation can raise a window over a sleeping party — an event,
+    // a story slide — and a window stops the world (pause_reasons). When that
+    // happened this smoke span its full 4096 turns with the clock frozen and
+    // reported `turns=4096 slept_ticks=0 sp=0/100`, which names nothing: the
+    // rest law looked broken when the world was merely holding still. The
+    // interruption is cleared and the measurement continues; whatever CANNOT
+    // be cleared is carried out of the loop as a mask and named in the report.
+    std::uint8_t stuckPaused = kPauseNone;
     while (app.restUntilTick != 0 && turns < 4096) {
+        if (world_paused(app)) {
+            smoke_clear_modal_overlays(app);
+            if (world_paused(app)) { stuckPaused = pause_reasons(app); break; }
+        }
         const int ticks = apply_rest_promotion(app, 0);
         advance_sim_steps(app, ticks, false);
         ++turns;
@@ -5915,15 +5927,20 @@ bool run_rest_sp_smoke(App& app) {
     std::fprintf(stderr,
                  "[smoke] rest_sp rest_is_stop=%d click_cancels=%d armed=%d "
                  "turns=%d slept_ticks=%llu (%.2f h) sp=%d/%d under_cap=%d "
-                 "full_bar_noop=%d\n",
+                 "full_bar_noop=%d stuck_paused=0x%02X\n",
                  restIsStop ? 1 : 0, clickCancels ? 1 : 0, armed ? 1 : 0,
                  turns,
                  (unsigned long long)slept,
                  double(slept) * 24.0 / double(sm::kTicksPerDay),
                  cs.currentSp, cs.maxSp,
-                 underCap ? 1 : 0, noNap ? 1 : 0);
+                 underCap ? 1 : 0, noNap ? 1 : 0,
+                 unsigned(stuckPaused));
     std::fflush(stderr);
 
+    if (stuckPaused != kPauseNone) {
+        smoke_fail(app, "rest_sp could not measure: the world stayed paused");
+        return false;
+    }
     if (!restIsStop || !clickCancels || !armed || !full || !underCap || !noNap) {
         smoke_fail(app, "rest_sp invariant");
         return false;
