@@ -560,7 +560,7 @@ inline int soldier_upkeep(const SoldierRecord& s) {
 
 inline int calculate_squad_upkeep(const SoldierSquad& squad, int charisma = 0) {
     int base = 0;
-    for (const auto& s : squad.members) base += soldier_upkeep(s);
+    for (const auto& s : squad) base += soldier_upkeep(s);
     const float discount = std::clamp(float(charisma) * 0.01f, 0.0f, 0.90f);
     return int(float(base) * (1.0f - discount));
 }
@@ -598,8 +598,6 @@ inline GarrisonResult generate_garrison(int population, Rng01&& rng,
     int budget = int(std::sqrt(float(population)) * 0.3f);
     if (budget > 10) budget = 10;
     if (budget <= 0) return r;
-    r.garrison.members.reserve(std::size_t(budget));
-
     for (int i = 0; i < budget; ++i) {
         const float roll = rng();
         NPCType kind = NPCType::Peasant;
@@ -607,8 +605,11 @@ inline GarrisonResult generate_garrison(int population, Rng01&& rng,
         else if (roll < 0.85f) kind = NPCType::Woodcutter;
         else                   kind = NPCType::Guard;
         const int level = npc_def(kind).baseLevel;
-        r.garrison.members.push_back(make_soldier(
-            static_cast<std::uint8_t>(kind), level, idBase + std::uint32_t(i)));
+        if (!r.garrison.push(make_soldier(
+                static_cast<std::uint8_t>(kind), level,
+                idBase + std::uint32_t(i)))) {
+            break;   // a full roster refuses out loud; the town keeps the head
+        }
         r.popCost += 1;
     }
     return r;
@@ -617,14 +618,19 @@ inline GarrisonResult generate_garrison(int population, Rng01&& rng,
 inline int hire_npc(SoldierSquad& playerSquad, SoldierSquad& garrison,
                     NPCType kind, int& playerGold) {
     if (!npc_hireable(kind)) return 0;
-    for (auto it = garrison.members.begin(); it != garrison.members.end(); ++it) {
-        if (it->kind != static_cast<std::uint8_t>(kind)) continue;
-        const int cost = hire_price_for(*it);
+    // A recruit MOVES between two rosters — and the move can be refused at
+    // either end: an empty garrison has nobody, a full squad has no room. The
+    // ceiling is the same one every squad has (kMaxSquadMembers): the player's
+    // army used to have none at all, which walked straight into the save's
+    // 8192-record wall and made the whole file refuse to write.
+    for (int i = 0; i < garrison.size(); ++i) {
+        if (garrison[i].kind != static_cast<std::uint8_t>(kind)) continue;
+        const int cost = hire_price_for(garrison[i]);
         if (playerGold < cost) return 0;
+        if (playerSquad.full()) return 0;
         playerGold -= cost;
-        reserve_soldiers_for_append(playerSquad, 1u);
-        playerSquad.members.push_back(*it);
-        garrison.members.erase(it);
+        playerSquad.push(garrison[i]);
+        garrison.remove_at(i);
         return cost;
     }
     return 0;

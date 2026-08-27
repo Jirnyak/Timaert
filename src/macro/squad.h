@@ -58,10 +58,10 @@ inline int drain_dead_leader_squads(ecs::World& w, SoldierSquad& deserterPool) {
     for (auto [e, roster] :
          w.reg.view<ecs::SquadRoster, ecs::Dead>().each()) {
         (void)e;
-        if (roster.members.empty()) continue;
-        add_soldiers(deserterPool, roster.members);
-        moved += int(roster.members.size());
-        roster.members.clear();
+        if (roster.squad.empty()) continue;
+        add_squad(deserterPool, roster.squad);
+        moved += roster.squad.size();
+        roster.squad.clear();
     }
     return moved;
 }
@@ -114,7 +114,7 @@ inline AutoBattleSide auto_battle_side_of(ecs::World& w, entt::entity e) {
         }
     }
     if (const auto* roster = reg.try_get<ecs::SquadRoster>(e)) {
-        s.roster = &roster->members;
+        s.roster = &roster->squad;
     }
     // A generic macro leader has no persistent sheet yet, so no aura sources;
     // the day leaders carry sheets (S17 snapshot / plot lords), collect here.
@@ -266,7 +266,7 @@ inline void report_battle_deaths(const MacroWorld& mw, entt::entity side,
     auto& reg = w.reg;
     const char* factionId = squad_faction_id(w, side);
     if (const auto* roster = reg.try_get<ecs::SquadRoster>(side)) {
-        for (const SoldierRecord& r : roster->members) {
+        for (const SoldierRecord& r : roster->squad) {
             for (std::uint32_t id : casualties) {
                 if (id != r.entityId) continue;
                 report_death(mw, r.kind, entt::null, killer,
@@ -330,7 +330,7 @@ inline int xp_for_fallen(ecs::World& w, entt::entity loser,
     auto& reg = w.reg;
     int xp = 0;
     if (const auto* roster = reg.try_get<ecs::SquadRoster>(loser)) {
-        for (const SoldierRecord& r : roster->members) {
+        for (const SoldierRecord& r : roster->squad) {
             if (!valid_npc_kind(r.kind)) continue;
             for (std::uint32_t id : casualties) {
                 if (id == r.entityId) {
@@ -467,7 +467,7 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
                           std::uint32_t(enemyCas.size()),
                           gs.worldSeed));
         if (const auto* roster = w.reg.try_get<ecs::SquadRoster>(enemy)) {
-            for (const SoldierRecord& r : roster->members) {
+            for (const SoldierRecord& r : roster->squad) {
                 for (std::uint32_t id : enemyCas) {
                     if (id != r.entityId) continue;
                     roll_fallen_spoils(mw, r.kind,

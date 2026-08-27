@@ -388,8 +388,9 @@ entt::entity spawn_squad(GameState& gs, ecs::World& w,
     auto& roster = w.reg.get<ecs::SquadRoster>(leader);
     for (const SoldierRecord& r : spec.members) {
         if (!valid_npc_kind(r.kind)) continue;
-        roster.members.push_back(
-            make_soldier(r.kind, r.level, r.entityId));
+        if (!roster.squad.push(make_soldier(r.kind, r.level, r.entityId))) {
+            break;   // the ceiling refuses out loud (macro/army.h)
+        }
     }
 
     // A route, only if the spec actually gives one (opt-in like the
@@ -406,30 +407,31 @@ entt::entity spawn_squad(GameState& gs, ecs::World& w,
 
 int raise_deserter_bands(GameState& gs, ecs::World& w,
                          const TerrainData& terrain, int day) {
-    auto& pool = gs.deserterPool.members;
+    SoldierSquad& pool = gs.deserterPool;
     if (pool.empty() || gs.mapW <= 0 || gs.mapH <= 0) return 0;
 
     // √(pool) men walk off today — the garrison's own law, applied to the pile
     // (see the header for why this needs no rate constant). At least one, never
     // more than the pool holds: the pool is the only bound.
-    const int poolSize = int(pool.size());
+    const int poolSize = pool.size();
     const int take = std::min(poolSize,
                               std::max(1, int(std::sqrt(float(poolSize)))));
 
     // The freshest arrivals leave first — the men of the last rout, still
     // together, walk off before the old hands who have been drifting for weeks.
-    std::vector<SoldierRecord> band(pool.end() - take, pool.end());
-    pool.erase(pool.end() - take, pool.end());
+    SoldierSquad band{};
+    for (int i = poolSize - take; i < poolSize; ++i) band.push(pool[i]);
+    pool.count = std::int32_t(poolSize - take);
 
     // Slot 0 is the leader, always (CANON.md S4): the strongest man of the
     // group is the one the rest follow. Ties break on the earlier record so the
     // choice is deterministic.
-    std::size_t best = 0;
-    for (std::size_t i = 1; i < band.size(); ++i) {
+    int best = 0;
+    for (int i = 1; i < band.size(); ++i) {
         if (band[i].level > band[best].level) best = i;
     }
     const SoldierRecord captain = band[best];
-    band.erase(band.begin() + std::ptrdiff_t(best));
+    band.remove_at(best);
 
     // WHERE is not the pool's question (header): uniform land today, the blood
     // field tomorrow — this is the single line that changes then.
@@ -451,8 +453,8 @@ int raise_deserter_bands(GameState& gs, ecs::World& w,
     if (spawn_squad(gs, w, terrain, spec) == entt::null) {
         // The map refused the spawn: the men go back, because the pool is a
         // conservation law and a failed roll may not eat anybody.
-        pool.push_back(captain);
-        for (const SoldierRecord& r : spec.members) pool.push_back(r);
+        pool.push(captain);
+        add_squad(pool, spec.members);
         return 0;
     }
     return take;

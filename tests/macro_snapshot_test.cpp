@@ -64,8 +64,8 @@ void test_snapshot_round_trips_the_living_map() {
     specA.x = 20;
     specA.y = 20;
     specA.factionIndex = faction_index("bandits");
-    specA.members.push_back(make_soldier(std::uint8_t(NPCType::Guard), 3, 1001u));
-    specA.members.push_back(make_soldier(std::uint8_t(NPCType::Guard), 4, 1002u));
+    specA.members.push(make_soldier(std::uint8_t(NPCType::Guard), 3, 1001u));
+    specA.members.push(make_soldier(std::uint8_t(NPCType::Guard), 4, 1002u));
     specA.waypointCount = 2;
     specA.waypoints[0] = 24; specA.waypoints[1] = 20;
     specA.waypoints[2] = 20; specA.waypoints[3] = 20;
@@ -130,7 +130,7 @@ void test_snapshot_round_trips_the_living_map() {
               && w2.reg.get<ecs::Position>(a2).y == 21.0f,
           "the march stands - position is the saved one, not the spawn one");
     CHECK(w2.reg.get<ecs::NpcLevel>(a2).value == 5, "the level survives");
-    CHECK(w2.reg.get<ecs::SquadRoster>(a2).members.size() == 2,
+    CHECK(w2.reg.get<ecs::SquadRoster>(a2).squad.size() == 2,
           "the roster rows survive");
     const auto* orders2 = w2.reg.try_get<ecs::SquadOrders>(a2);
     CHECK(orders2 != nullptr && orders2->waypointCount == 2,

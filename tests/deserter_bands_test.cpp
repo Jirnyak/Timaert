@@ -39,7 +39,7 @@ sm::GameState make_world(int men) {
     gs.mapH = 64;
     gs.worldSeed = 12345u;
     for (int i = 0; i < men; ++i) {
-        gs.deserterPool.members.push_back(sm::make_soldier(
+        gs.deserterPool.push(sm::make_soldier(
             std::uint8_t(sm::NPCType::Peasant),
             /*level*/1 + (i % 4), std::uint32_t(i + 1)));
     }
@@ -51,7 +51,7 @@ int men_on_map(sm::ecs::World& w) {
     int n = 0;
     for (auto [e, roster] : w.reg.view<sm::ecs::SquadRoster>().each()) {
         (void)e;
-        n += 1 + int(roster.members.size());
+        n += 1 + int(roster.squad.size());
     }
     return n;
 }
@@ -76,7 +76,7 @@ int main() {
 
         const int left = raise_deserter_bands(gs, w, terrain, /*day*/1);
         CHECK(left > 0, "a non-empty pool must raise a band");
-        CHECK(int(gs.deserterPool.members.size()) == kMen - left,
+        CHECK(int(gs.deserterPool.size()) == kMen - left,
                         "the pool shrinks by exactly the men who left");
         CHECK(men_on_map(w) == left,
                         "every man who left the pool stands on the map");
@@ -112,11 +112,11 @@ int main() {
 
         int day = 1;
         int raisedTotal = 0;
-        while (!gs.deserterPool.members.empty() && day < 200) {
+        while (!gs.deserterPool.empty() && day < 200) {
             raisedTotal += raise_deserter_bands(gs, w, terrain, day);
             ++day;
         }
-        CHECK(gs.deserterPool.members.empty(),
+        CHECK(gs.deserterPool.empty(),
                         "the pool drains in finite time");
         CHECK(raisedTotal == 64,
                         "exactly the men who fell in walked out — none minted");
@@ -144,7 +144,7 @@ int main() {
         auto dead = w.reg.create();
         ecs::SquadRoster roster{};
         for (int i = 0; i < 9; ++i) {
-            roster.members.push_back(make_soldier(
+            roster.squad.push(make_soldier(
                 std::uint8_t(NPCType::Guard), 2, std::uint32_t(100 + i)));
         }
         w.reg.emplace<ecs::SquadRoster>(dead, roster);
@@ -152,7 +152,7 @@ int main() {
 
         const int drained = drain_dead_leader_squads(w, gs.deserterPool);
         CHECK(drained == 9, "the fallen squad pays its survivors in");
-        CHECK(int(gs.deserterPool.members.size()) == 9,
+        CHECK(int(gs.deserterPool.size()) == 9,
                         "and the pool is exactly that many men deep");
 
         // The dead leader's own (now empty) roster must not be counted as a

@@ -87,7 +87,7 @@ ecs::SquadRoster* find_roster(const MacroWorld& w, std::int32_t subject) {
 
 int read_roster(const MacroWorld& w, MacroStockKey k) {
     const ecs::SquadRoster* r = find_roster(w, k.subject);
-    return r ? int(r->members.size()) : 0;
+    return r ? int(r->squad.size()) : 0;
 }
 
 void write_roster(MacroWorld& w, MacroStockKey k, int delta) {
@@ -104,7 +104,7 @@ void write_roster(MacroWorld& w, MacroStockKey k, int delta) {
                                         // them" — refuse; the receipt names
                                         // its member or it pays nothing
     for (int i = 0; i < -delta; ++i) {
-        if (!remove_one_soldier_by_entity_id(r->members,
+        if (!remove_one_soldier_by_entity_id(r->squad,
                                              std::uint32_t(k.detail))) {
             break;
         }

@@ -54,7 +54,7 @@ struct SquadSpec {
     int     x = 0, y = 0;              // macro cell (wrapped, nudged to land)
     int     factionIndex = -1;         // -1 = the land decides (politik)
     int     homeSettlementId = -1;
-    std::vector<SoldierRecord> members;   // roster rows, caller-authored
+    SoldierSquad members;                 // roster rows, caller-authored
     std::uint8_t waypointCount = 0;
     std::array<std::int16_t, 16> waypoints{};   // 8 × (x, y)
 };

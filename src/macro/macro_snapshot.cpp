@@ -29,7 +29,7 @@ std::vector<MacroNpcRecord> snapshot_macro_ecs(ecs::World& w) {
         m.traits    = view.get<ecs::NpcTraits>(e);
         m.character = view.get<ecs::NpcCharacter>(e);
         m.inventory = view.get<ecs::NpcInventory>(e).inv;
-        m.roster    = view.get<ecs::SquadRoster>(e).members;
+        m.roster    = view.get<ecs::SquadRoster>(e).squad;
         if (const auto* orders = reg.try_get<ecs::SquadOrders>(e)) {
             m.orders = *orders;
             m.hasOrders = 1;

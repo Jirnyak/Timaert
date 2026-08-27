@@ -304,7 +304,7 @@ void spawn_all_cells(sm::ecs::World& world,
 
 bool run_water_blocked_squad_case() {
     sm::SoldierSquad squad{};
-    squad.members.push_back(sm::make_soldier(
+    squad.push(sm::make_soldier(
         std::uint8_t(sm::NPCType::Guard), 4, 77u));
 
     sm::ecs::World world{};
@@ -563,8 +563,8 @@ bool run_beast_member_projection_case(
     reg.emplace<sm::ecs::NpcCharacter>(leader, sm::ecs::NpcCharacter{});
 
     sm::ecs::SquadRoster roster{};
-    roster.members.push_back(sm::make_soldier(kBeast, 2, 5001u));
-    roster.members.push_back(sm::make_soldier(
+    roster.squad.push(sm::make_soldier(kBeast, 2, 5001u));
+    roster.squad.push(sm::make_soldier(
         std::uint16_t(sm::NPCType::Guard), 2, 5002u));
     reg.emplace<sm::ecs::SquadRoster>(leader, roster);
 

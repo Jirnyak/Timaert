@@ -42,18 +42,18 @@ BattleTerrain flat_terrain() {
 
 constexpr std::uint64_t mask_of(int faction) { return 1ull << faction; }
 
-std::vector<SoldierRecord> roster_of(NPCType kind, int level, int n,
-                                     std::uint32_t idBase) {
-    std::vector<SoldierRecord> r;
+SoldierSquad roster_of(NPCType kind, int level, int n,
+                       std::uint32_t idBase) {
+    SoldierSquad r{};
     for (int i = 0; i < n; ++i) {
-        r.push_back(make_soldier(std::uint8_t(kind), level,
-                                 idBase + std::uint32_t(i)));
+        r.push(make_soldier(std::uint8_t(kind), level,
+                            idBase + std::uint32_t(i)));
     }
     return r;
 }
 
 AutoBattleSide side_of(NPCType leader, int leaderLevel,
-                       const std::vector<SoldierRecord>* roster) {
+                       const SoldierSquad* roster) {
     AutoBattleSide s{};
     s.leaderType = leader;
     s.leaderLevel = leaderLevel;
@@ -272,7 +272,7 @@ void test_a_leaders_head_is_never_given_to_chance() {
         const AutoBattleOutcome o =
             resolve_auto_battle(strong, weak, Ambush::None, rng);
         CHECK_OR_RETURN(o.winner == 0, "the fixture's strong side must win");
-        const bool wiped = o.casualtiesB.size() >= weakR.size();
+        const bool wiped = int(o.casualtiesB.size()) >= weakR.size();
         if (wiped) {
             CHECK(o.leaderFractionB == 0.0f,
                   "a loser with no men left falls with the last of them");

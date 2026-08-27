@@ -75,7 +75,7 @@ entt::entity make_squad_at(ecs::World& w, NPCType type, const char* faction,
     reg.emplace<ecs::Health>(e, hp, hp);
     auto& roster = reg.emplace<ecs::SquadRoster>(e);
     for (std::uint32_t id : memberIds) {
-        roster.members.push_back(
+        roster.squad.push(
             make_soldier(std::uint8_t(memberKind), memberLevel, id));
     }
     reg.emplace<ecs::NpcInventory>(e);
@@ -271,9 +271,9 @@ void test_a_victorious_leader_levels() {
 // the resolver's dice (those have their own tests).
 void test_player_auto_resolve_settles_through_the_same_doors() {
     GameState gs = make_world(-80);
-    gs.player.army.members.push_back(
+    gs.player.army.push(
         make_soldier(std::uint8_t(NPCType::Guard), 3, 501u));
-    gs.player.army.members.push_back(
+    gs.player.army.push(
         make_soldier(std::uint8_t(NPCType::Guard), 3, 502u));
     gs.player.combatStats.maxHp = 100;
     gs.player.combatStats.currentHp = 100;
@@ -302,7 +302,7 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     const int xp = settle_player_auto_battle(mw, enemy, win,
                                              /*playerIsA*/true);
     CHECK(total_soldiers(gs.player.army) == 1
-              && gs.player.army.members[0].entityId == 502u,
+              && gs.player.army[0].entityId == 502u,
           "the player's fallen soldier left the army by name");
     CHECK(gs.player.combatStats.currentHp == 60,
           "the player's wound landed as the fraction, on the macro scalar");
@@ -318,9 +318,9 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     // The player LOSES with a man still standing: wounded, never dead — the
     // leader rule holds for the player exactly as for any lord.
     GameState gs2 = make_world(-80);
-    gs2.player.army.members.push_back(
+    gs2.player.army.push(
         make_soldier(std::uint8_t(NPCType::Guard), 3, 601u));
-    gs2.player.army.members.push_back(
+    gs2.player.army.push(
         make_soldier(std::uint8_t(NPCType::Guard), 3, 602u));
     gs2.player.combatStats.maxHp = 100;
     gs2.player.combatStats.currentHp = 100;
@@ -365,9 +365,9 @@ void test_spawn_squad_is_one_spec_one_door() {
     spec.x = 20;
     spec.y = 20;
     spec.factionIndex = faction_index("timaert");
-    spec.members.push_back(make_soldier(
+    spec.members.push(make_soldier(
         std::uint8_t(NPCType::Guard), 3, 0x40000001u));
-    spec.members.push_back(make_soldier(
+    spec.members.push(make_soldier(
         std::uint8_t(NPCType::Guard), 3, 0x40000002u));
     spec.waypointCount = 2;
     spec.waypoints[0] = 24; spec.waypoints[1] = 20;   // 4 cells east
@@ -382,7 +382,7 @@ void test_spawn_squad_is_one_spec_one_door() {
           "the leader came out of the ONE creation door, whole");
     CHECK(w.reg.get<ecs::NpcLevel>(leader).value == 4,
           "the spec's level pinned the leader's level");
-    CHECK(w.reg.get<ecs::SquadRoster>(leader).members.size() == 2,
+    CHECK(w.reg.get<ecs::SquadRoster>(leader).squad.size() == 2,
           "the roster rows are the spec's rows");
     const auto* orders = w.reg.try_get<ecs::SquadOrders>(leader);
     CHECK(orders != nullptr && orders->waypointCount == 2,

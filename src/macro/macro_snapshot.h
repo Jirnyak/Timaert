@@ -39,7 +39,7 @@ struct MacroNpcRecord {
     std::uint8_t         hasOrders = 0;
     std::uint8_t         dead = 0;
     Inventory            inventory;         // NpcInventory.inv
-    std::vector<SoldierRecord> roster;      // SquadRoster.members (no leader)
+    SoldierSquad roster;                    // SquadRoster.squad (no leader)
 };
 
 // Flatten every persistent macro NPC (the view is keyed by MacroSpawnId — the

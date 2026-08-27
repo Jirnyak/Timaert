@@ -343,7 +343,11 @@ inline constexpr std::uint32_t kPlayerSquadOrdinal = 0xFFFFFFFFu;
 // Runtime-only until the macro snapshot save (Session 17) — the ECS is never
 // serialized, so no kSaveVersion cost today.
 struct SquadRoster {
-    std::vector<SoldierRecord> members;   // without the leader; "slot 0" = the entity
+    // Flat and capped (macro/army.h SoldierSquad, 1024 members): a memcpy-able
+    // component with no heap header on every one of the 16384 macro entities,
+    // and the SAME type the player's own squad, a garrison and the deserter
+    // pool are — one roster shape for the whole world.
+    SoldierSquad squad{};
 };
 
 // A waypoint route a squad was ORDERED onto (Session 15, Inc 7) — OPT-IN,

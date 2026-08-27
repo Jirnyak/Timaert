@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <array>
 #include <vector>
 
 namespace sm {
@@ -61,8 +62,53 @@ struct SoldierRecord {
     std::int16_t  level    = 1;
 };
 
+// ── THE roster: flat, fixed, capped ────────────────────────────────────────
+// Owner's number, 2026-08-27: a squad holds up to 1024 members. It is a plain
+// array with a count, not a vector — one squad component was 24 bytes of
+// heap-pointing header on EVERY macro entity (all 16384 of them, and the
+// common case is EMPTY), with a non-trivial destructor in the ECS pools and a
+// deep copy on every snapshot. A member is 8 bytes; the flat form costs
+// 8 KiB per squad and buys zero allocations, a memcpy-able component and a
+// save block that is a straight byte run.
+//
+// Overflow is LOUD, never silent (CANON S26): `push` returns false and the
+// caller decides. Nothing truncates behind anyone's back.
+inline constexpr int kMaxSquadMembers = 1024;
+
 struct SoldierSquad {
-    std::vector<SoldierRecord> members;
+    std::array<SoldierRecord, kMaxSquadMembers> members{};
+    std::int32_t count = 0;
+
+    int size() const { return int(count); }
+    bool empty() const { return count == 0; }
+    bool full() const { return count >= kMaxSquadMembers; }
+    SoldierRecord* begin() { return members.data(); }
+    SoldierRecord* end() { return members.data() + count; }
+    const SoldierRecord* begin() const { return members.data(); }
+    const SoldierRecord* end() const { return members.data() + count; }
+    SoldierRecord& operator[](int i) { return members[std::size_t(i)]; }
+    const SoldierRecord& operator[](int i) const {
+        return members[std::size_t(i)];
+    }
+
+    // Returns false when the squad is full — the caller must decide what a
+    // refused recruit means; it is never dropped quietly.
+    bool push(const SoldierRecord& s) {
+        if (full()) return false;
+        members[std::size_t(count++)] = s;
+        return true;
+    }
+
+    void clear() { count = 0; }
+
+    // Order is not meaningful in a roster, so removal is a swap with the last
+    // live slot — O(1) instead of the vector's O(n) shift.
+    bool remove_at(int i) {
+        if (i < 0 || i >= count) return false;
+        members[std::size_t(i)] = members[std::size_t(count - 1)];
+        --count;
+        return true;
+    }
 };
 
 inline SoldierSquad default_squad() { return {}; }
@@ -82,13 +128,11 @@ inline SoldierRecord make_soldier(std::uint16_t kind, int level,
     return s;
 }
 
-inline int total_soldiers(const SoldierSquad& squad) {
-    return static_cast<int>(squad.members.size());
-}
+inline int total_soldiers(const SoldierSquad& squad) { return squad.size(); }
 
 inline int count_soldiers_of_kind(const SoldierSquad& squad, std::uint16_t kind) {
     int n = 0;
-    for (const auto& s : squad.members) {
+    for (const auto& s : squad) {
         if (s.kind == kind) ++n;
     }
     return n;
@@ -97,29 +141,18 @@ inline int count_soldiers_of_kind(const SoldierSquad& squad, std::uint16_t kind)
 inline int count_soldiers_with_entity_id(const SoldierSquad& squad,
                                          std::uint32_t entityId) {
     int n = 0;
-    for (const auto& s : squad.members) {
+    for (const auto& s : squad) {
         if (s.entityId == entityId) ++n;
     }
     return n;
 }
 
-// The record-list form exists because a roster does not always wear the
-// SoldierSquad wrapper (ecs::SquadRoster holds the bare vector); the wrapper
-// form delegates so there is ONE removal, not a dialect per holder.
-inline bool remove_one_soldier_by_entity_id(std::vector<SoldierRecord>& members,
-                                            std::uint32_t entityId) {
-    auto it = std::find_if(members.begin(), members.end(),
-        [entityId](const SoldierRecord& s) {
-            return s.entityId == entityId;
-        });
-    if (it == members.end()) return false;
-    members.erase(it);
-    return true;
-}
-
 inline bool remove_one_soldier_by_entity_id(SoldierSquad& squad,
                                             std::uint32_t entityId) {
-    return remove_one_soldier_by_entity_id(squad.members, entityId);
+    for (int i = 0; i < squad.size(); ++i) {
+        if (squad[i].entityId == entityId) return squad.remove_at(i);
+    }
+    return false;
 }
 
 inline int soldier_level_factor(int level) {
@@ -127,43 +160,16 @@ inline int soldier_level_factor(int level) {
     return 1 + (safeLevel - 1) / 3;
 }
 
-inline void reserve_soldiers_for_append(SoldierSquad& squad, std::size_t addCount) {
-    if (addCount == 0u) return;
-    const std::size_t required = squad.members.size() + addCount;
-    if (squad.members.capacity() >= required) return;
-
-    std::size_t next = squad.members.capacity();
-    if (next < 4u) next = 4u;
-    while (next < required) {
-        const std::size_t grown = next * 2u;
-        if (grown <= next) {
-            next = required;
-            break;
-        }
-        next = grown;
+// Append one roster onto another, stopping at the ceiling. Returns how many
+// were actually taken, so a caller that must not lose men can see it did.
+inline int add_squad(SoldierSquad& target, const SoldierSquad& src) {
+    const int n = src.size();          // read first: src may BE target
+    int taken = 0;
+    for (int i = 0; i < n; ++i) {
+        if (!target.push(src[i])) break;
+        ++taken;
     }
-    squad.members.reserve(next);
-}
-
-// Record-list form for the same reason as removal above: one append, whoever
-// holds the vector (SoldierSquad, ecs::SquadRoster, a battle outcome list).
-inline void add_soldiers(SoldierSquad& target,
-                         const std::vector<SoldierRecord>& src) {
-    if (src.empty()) return;
-    if (&target.members == &src) {
-        const std::size_t n = target.members.size();
-        reserve_soldiers_for_append(target, n);
-        for (std::size_t i = 0; i < n; ++i) {
-            target.members.push_back(target.members[i]);
-        }
-        return;
-    }
-    reserve_soldiers_for_append(target, src.size());
-    target.members.insert(target.members.end(), src.begin(), src.end());
-}
-
-inline void add_squad(SoldierSquad& target, const SoldierSquad& src) {
-    add_soldiers(target, src.members);
+    return taken;
 }
 
 } // namespace sm

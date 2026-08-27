@@ -44,36 +44,36 @@ int main() {
 
     sm::SoldierSquad player{};
     sm::SoldierSquad garrison{};
-    garrison.members.push_back(sm::make_soldier(
+    garrison.push(sm::make_soldier(
         static_cast<std::uint8_t>(sm::NPCType::Guard), 3, 42u));
-    garrison.members.push_back(sm::make_soldier(
+    garrison.push(sm::make_soldier(
         static_cast<std::uint8_t>(sm::NPCType::Peasant), 1, 43u));
 
     int gold = 1000;
-    const int expectedPrice = sm::hire_price_for(garrison.members.front());
+    const int expectedPrice = sm::hire_price_for(garrison[0]);
     const int paid = sm::hire_npc(player, garrison, sm::NPCType::Guard, gold);
     if (paid != expectedPrice || gold != 1000 - expectedPrice) {
         return fail("hire_npc did not charge exact NPC-kind price");
     }
-    if (player.members.size() != 1 || player.members[0].kind != std::uint8_t(sm::NPCType::Guard)
-        || player.members[0].entityId != 42u || garrison.members.size() != 1) {
+    if (player.size() != 1 || player[0].kind != std::uint8_t(sm::NPCType::Guard)
+        || player[0].entityId != 42u || garrison.size() != 1) {
         return fail("hire_npc did not move the concrete soldier record");
     }
 
     const int denied = sm::hire_npc(player, garrison, sm::NPCType::Merchant, gold);
-    if (denied != 0 || player.members.size() != 1 || garrison.members.size() != 1) {
+    if (denied != 0 || player.size() != 1 || garrison.size() != 1) {
         return fail("non-hireable NPC kind was recruitable");
     }
 
     sm::SoldierSquad duplicateIds{};
-    duplicateIds.members.push_back(sm::make_soldier(
+    duplicateIds.push(sm::make_soldier(
         static_cast<std::uint8_t>(sm::NPCType::Guard), 3, 77u));
-    duplicateIds.members.push_back(sm::make_soldier(
+    duplicateIds.push(sm::make_soldier(
         static_cast<std::uint8_t>(sm::NPCType::Guard), 4, 77u));
-    duplicateIds.members.push_back(sm::make_soldier(
+    duplicateIds.push(sm::make_soldier(
         static_cast<std::uint8_t>(sm::NPCType::Peasant), 1, 78u));
     if (!sm::remove_one_soldier_by_entity_id(duplicateIds, 77u)
-        || duplicateIds.members.size() != 2
+        || duplicateIds.size() != 2
         || sm::count_soldiers_with_entity_id(duplicateIds, 77u) != 1
         || sm::remove_one_soldier_by_entity_id(duplicateIds, 999u)) {
         return fail("soldier death removal did not remove exactly one record");
@@ -95,10 +95,10 @@ int main() {
 
     FixedRng rng{};
     const sm::GarrisonResult generated = sm::generate_garrison(900, rng, 5000u);
-    if (generated.garrison.members.empty()) {
+    if (generated.garrison.empty()) {
         return fail("population garrison generator returned empty squad");
     }
-    for (const sm::SoldierRecord& s : generated.garrison.members) {
+    for (const sm::SoldierRecord& s : generated.garrison) {
         if (!sm::valid_npc_kind(s.kind)
             || !sm::npc_hireable(static_cast<sm::NPCType>(s.kind))
             || s.entityId < 5000u) {
@@ -112,11 +112,11 @@ int main() {
     }
 
     sm::SoldierSquad selfAppend = generated.garrison;
-    const std::size_t selfAppendBase = selfAppend.members.size();
+    const std::size_t selfAppendBase = selfAppend.size();
     sm::add_squad(selfAppend, selfAppend);
-    if (selfAppend.members.size() != selfAppendBase * 2u
-        || selfAppend.members[selfAppendBase].entityId
-            != selfAppend.members[0].entityId) {
+    if (selfAppend.size() != selfAppendBase * 2u
+        || selfAppend[selfAppendBase].entityId
+            != selfAppend[0].entityId) {
         return fail("self squad append is not stable");
     }
 
@@ -237,8 +237,8 @@ int main() {
     }
 
     std::printf("OK combat_squad_test hired=%zu garrison=%zu upkeep=%d discounted=%d generated=%zu projected=%d malformed_tiles=%d ai_owner=1 unique_ids=1\n",
-                player.members.size(), garrison.members.size(),
-                baseUpkeep, charismaUpkeep, generated.garrison.members.size(),
+                player.size(), garrison.size(),
+                baseUpkeep, charismaUpkeep, generated.garrison.size(),
                 projected, malformedProjected);
     CHECK(true, "every gate above held");
     return sm::test::report("combat_squad_test");

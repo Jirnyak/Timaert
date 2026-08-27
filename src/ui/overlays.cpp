@@ -567,7 +567,7 @@ namespace sm::ui
                                                    NPCType kind)
         {
             const std::uint8_t raw = static_cast<std::uint8_t>(kind);
-            for (const SoldierRecord& soldier : squad.members)
+            for (const SoldierRecord& soldier : squad)
             {
                 if (soldier.kind == raw)
                     return &soldier;

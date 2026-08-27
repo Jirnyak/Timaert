@@ -1120,7 +1120,7 @@ sm::AutoBattleSide player_auto_battle_side(App& app) {
         + sm::calculate_derived(p.sheet.attributes, p.sheet.skills)
               .rawPhysDamage);
     s.leaderDpsOverride = swing / sm::sub::kPlayerMeleeCooldown;
-    s.roster = &p.army.members;
+    s.roster = &p.army;
     s.aura = sm::collect_leader_aura(p.sheet);
     s.fatigue = p.combatStats.maxSp > 0
         ? std::clamp(float(p.combatStats.currentSp)
@@ -1422,9 +1422,9 @@ void draw_pre_battle_modal(App& app) {
     ImGui::Text("%s the %s (level %d) blocks your way!",
                 name, def.label, level);
     if (const auto* roster = reg.try_get<sm::ecs::SquadRoster>(npc);
-        roster && !roster->members.empty()) {
+        roster && !roster->squad.empty()) {
         int byKind[int(sm::NPCType::Count)] = {};
-        for (const sm::SoldierRecord& r : roster->members) {
+        for (const sm::SoldierRecord& r : roster->squad) {
             if (sm::valid_npc_kind(r.kind)) ++byKind[r.kind];
         }
         ImGui::TextUnformatted("At their back:");
@@ -4204,7 +4204,7 @@ void register_console_commands(App& app) {
             const int mlvl = level > 0 ? level
                                        : sm::npc_def(memberKind).baseLevel;
             for (int i = 0; i < members; ++i) {
-                spec.members.push_back(sm::make_soldier(
+                spec.members.push(sm::make_soldier(
                     std::uint8_t(memberKind), mlvl,
                     0x40000000u | (seq << 8) | std::uint32_t(i)));
             }
@@ -9923,7 +9923,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             spec.x = int(app.gs.player.x);
             spec.y = int(app.gs.player.y);
             spec.factionIndex = -1;                   // the land decides
-            spec.members.push_back(sm::make_soldier(
+            spec.members.push(sm::make_soldier(
                 std::uint8_t(sm::NPCType::Peasant), 2, 0x50000001u));
             const entt::entity leader =
                 sm::spawn_squad(app.gs, app.ecs, app.terrain, spec);

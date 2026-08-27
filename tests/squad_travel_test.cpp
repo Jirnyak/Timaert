@@ -175,9 +175,9 @@ void test_ocean_drowns_the_lord_and_settles_his_squad() {
     auto e = make_walker(w, 10.0f, 10.0f, 60.0f, 10.0f, /*maxSp*/8,
                          /*hp*/30.0f);
     auto& roster = w.reg.get<ecs::SquadRoster>(e);
-    roster.members.push_back(make_soldier(
+    roster.squad.push(make_soldier(
         std::uint8_t(NPCType::Peasant), 1, 101u));
-    roster.members.push_back(make_soldier(
+    roster.squad.push(make_soldier(
         std::uint8_t(NPCType::Peasant), 1, 102u));
 
     MacroNpcAiRuntime rt{};
@@ -193,7 +193,7 @@ void test_ocean_drowns_the_lord_and_settles_his_squad() {
           "an ocean the bar cannot pay kills: there is no Resting at sea");
     CHECK(w.reg.get<ecs::Health>(e).hp <= 0.0f,
           "the death is the tracked shape every other death has (hp=0+Dead)");
-    CHECK(w.reg.get<ecs::SquadRoster>(e).members.empty()
+    CHECK(w.reg.get<ecs::SquadRoster>(e).squad.empty()
               && total_soldiers(gs.deserterPool) == 2,
           "the drowned lord's men settle by the standing dead-leader rule");
 }

@@ -36,10 +36,10 @@ namespace {
 // for every kind alike, not just for the one the fixture happened to pick.
 sm::SoldierSquad mixed_squad() {
     sm::SoldierSquad squad{};
-    squad.members.push_back(sm::make_soldier(std::uint8_t(sm::NPCType::Guard),    4, 11u));
-    squad.members.push_back(sm::make_soldier(std::uint8_t(sm::NPCType::Peasant),  1, 22u));
-    squad.members.push_back(sm::make_soldier(std::uint8_t(sm::NPCType::Bandit),   3, 33u));
-    squad.members.push_back(sm::make_soldier(std::uint8_t(sm::NPCType::Sorceress),5, 44u));
+    squad.push(sm::make_soldier(std::uint8_t(sm::NPCType::Guard),    4, 11u));
+    squad.push(sm::make_soldier(std::uint8_t(sm::NPCType::Peasant),  1, 22u));
+    squad.push(sm::make_soldier(std::uint8_t(sm::NPCType::Bandit),   3, 33u));
+    squad.push(sm::make_soldier(std::uint8_t(sm::NPCType::Sorceress),5, 44u));
     return squad;
 }
 
@@ -347,9 +347,9 @@ void test_a_squad_on_the_map_projects_its_roster() {
     reg.emplace<ecs::MacroSpawnId>(macro, std::uint32_t(9));
     {
         auto& roster = reg.emplace<ecs::SquadRoster>(macro);
-        roster.members.push_back(make_soldier(
+        roster.squad.push(make_soldier(
             std::uint8_t(NPCType::Guard), 4, 77u));
-        roster.members.push_back(make_soldier(
+        roster.squad.push(make_soldier(
             std::uint8_t(NPCType::Bandit), 2, 88u));
     }
 
@@ -400,7 +400,7 @@ void test_a_squad_on_the_map_projects_its_roster() {
     for (auto e : reg.view<ecs::MacroDebt, ecs::SubworldTag>()) {
         settle_macro_debt(w, reg.get<ecs::MacroDebt>(e), -1);
     }
-    CHECK(reg.get<ecs::SquadRoster>(macro).members.empty(),
+    CHECK(reg.get<ecs::SquadRoster>(macro).squad.empty(),
           "both deaths below emptied the roster above, by name");
     CHECK(!reg.all_of<ecs::Dead>(macro),
           "the leader outlives his men: an empty roster is a squad of one");

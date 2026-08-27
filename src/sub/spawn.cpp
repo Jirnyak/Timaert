@@ -706,18 +706,18 @@ void spawn_player_squad(ecs::World& w,
                         std::uint32_t seed,
                         std::uint16_t faction,
                         const AuraMods* aura) {
-    if (squad.members.empty()) return;
+    if (squad.empty()) return;
 
     auto& reg = w.reg;
     Rng rng(seed ^ 0x51AD5A11u);
     constexpr float kPi = 3.1415926535f;
     constexpr float kTau = kPi * 2.0f;
-    const int count = std::max(1, int(squad.members.size()));
+    const int count = std::max(1, squad.size());
     const bool tilesUsable =
         tiles.size() >= std::size_t(kFullSize) * std::size_t(kFullSize);
 
     for (int i = 0; i < count; ++i) {
-        const SoldierRecord& soldier = squad.members[std::size_t(i)];
+        const SoldierRecord& soldier = squad[i];
         if (!valid_npc_kind(soldier.kind)) continue;
 
         const NPCType type = static_cast<NPCType>(soldier.kind);
@@ -905,10 +905,10 @@ int project_macro_npcs_into_subworld(ecs::World& w,
         if (const auto* roster = reg.try_get<ecs::SquadRoster>(macro)) {
             const auto* sid = reg.try_get<ecs::MacroSpawnId>(macro);
             constexpr float kTau = 6.2831853f;
-            const int memberCount = int(roster->members.size());
+            const int memberCount = int(roster->squad.size());
             for (int m = 0; m < memberCount; ++m) {
                 if (projected >= kMaxProjectedMacroNpcs) break;
-                const SoldierRecord& rec = roster->members[std::size_t(m)];
+                const SoldierRecord& rec = roster->squad[std::size_t(m)];
                 if (!valid_npc_kind(rec.kind)) continue;
 
                 float mfx = fx, mfy = fy;

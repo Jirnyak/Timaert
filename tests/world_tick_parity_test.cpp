@@ -70,7 +70,7 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     gs.player.inventory.add("coin_empire", 5);
     gs.player.ageDays = 1000;
     gs.player.sheet.attributes.cha = 0;
-    gs.player.army.members.push_back(sm::make_soldier(
+    gs.player.army.push(sm::make_soldier(
         static_cast<std::uint8_t>(sm::NPCType::Guard), 1, 77u));
 
     sm::WorldTickRuntime runtime{};

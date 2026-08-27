@@ -52,7 +52,7 @@ entt::entity squad(ecs::World& w, NPCType leaderType, const char* factionId,
     reg.emplace<ecs::MacroNpcRuntime>(e, ecs::MacroNpcRuntime{});
     auto& roster = reg.emplace<ecs::SquadRoster>(e);
     for (int i = 0; i < members; ++i) {
-        roster.members.push_back(
+        roster.squad.push(
             make_soldier(std::uint16_t(NPCType::Merchant), level,
                          std::uint32_t(spawnIndex * 100u + std::uint32_t(i))));
     }
@@ -65,7 +65,7 @@ AutoBattleOutcome wipe_of(ecs::World& w, entt::entity loser, bool loserIsB) {
     AutoBattleOutcome o{};
     o.winner = loserIsB ? 0 : 1;
     auto& cas = loserIsB ? o.casualtiesB : o.casualtiesA;
-    for (const SoldierRecord& r : w.reg.get<ecs::SquadRoster>(loser).members) {
+    for (const SoldierRecord& r : w.reg.get<ecs::SquadRoster>(loser).squad) {
         cas.push_back(r.entityId);
     }
     (loserIsB ? o.leaderFractionB : o.leaderFractionA) = 0.0f;

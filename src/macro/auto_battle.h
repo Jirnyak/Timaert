@@ -53,7 +53,7 @@ struct AutoBattleSide {
     // (the default) means "derive from the row" as every NPC leader does.
     float         leaderHpOverride  = -1.0f;
     float         leaderDpsOverride = -1.0f;
-    const std::vector<SoldierRecord>* roster = nullptr;   // may be empty/null
+    const SoldierSquad* roster = nullptr;   // may be empty/null
     AuraMods      aura{};
     // Context, composed by the caller from what the cell and the squad say:
     // terrain advantage (defender's hill, forest cover — data rows when the

@@ -239,7 +239,7 @@ entt::entity make_squad(sm::ecs::World& w, std::uint32_t ordinal,
     w.reg.emplace<sm::ecs::MacroSpawnId>(e, ordinal);
     auto& roster = w.reg.emplace<sm::ecs::SquadRoster>(e);
     for (std::uint32_t id : memberIds) {
-        roster.members.push_back(sm::make_soldier(
+        roster.squad.push(sm::make_soldier(
             std::uint8_t(sm::NPCType::Guard), 2, id));
     }
     return e;

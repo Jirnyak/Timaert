@@ -77,7 +77,7 @@ bool read_all(const std::string& path, std::vector<std::uint8_t>& out) {
 void add_soldiers(sm::SoldierSquad& squad, sm::NPCType kind, int count,
                   std::uint32_t idBase) {
     for (int i = 0; i < count; ++i) {
-        squad.members.push_back(sm::make_soldier(
+        squad.push(sm::make_soldier(
             static_cast<std::uint8_t>(kind), sm::npc_def(kind).baseLevel,
             idBase + static_cast<std::uint32_t>(i)));
     }
@@ -166,13 +166,13 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     a.orders.waypoints[2] = 7;
     a.orders.waypoints[3] = 8;
     a.inventory.add("itm_bread", 3);
-    a.roster.push_back(sm::make_soldier(std::uint16_t(sm::NPCType::Guard), 4, 900u));
-    a.roster.push_back(sm::make_soldier(std::uint16_t(sm::NPCType::Peasant), 2, 901u));
+    a.roster.push(sm::make_soldier(std::uint16_t(sm::NPCType::Guard), 4, 900u));
+    a.roster.push(sm::make_soldier(std::uint16_t(sm::NPCType::Peasant), 2, 901u));
     // v42: a BEAST in the roster. A squad is a squad whatever it is made of
     // (CANON.md S4/S16), and while `kind` was a byte the monster half of the id
     // space (0x100 | catalog row) could not be written down at all — the record
     // was silently dropped by the validity gate on the way out.
-    a.roster.push_back(sm::make_soldier(
+    a.roster.push(sm::make_soldier(
         std::uint16_t(sm::NPCType::Wolf), 3, 902u));
     out.push_back(std::move(a));
 
@@ -292,7 +292,7 @@ sm::GameState make_state() {
     add_soldiers(gs.player.army, sm::NPCType::Peasant, 4, 1000u);
     add_soldiers(gs.player.army, sm::NPCType::Woodcutter, 3, 1100u);
     add_soldiers(gs.player.army, sm::NPCType::Guard, 2, 1200u);
-    gs.player.army.members.push_back(sm::SoldierRecord{
+    gs.player.army.push(sm::SoldierRecord{
         9999u, static_cast<std::uint8_t>(sm::NPCType::Guard), -12});
     add_soldiers(gs.deserterPool, sm::NPCType::Woodcutter, 2, 1300u);
 
@@ -740,7 +740,7 @@ void run_roundtrip() {
         FAIL_BAIL("player army lost");
     }
     bool foundNormalizedSoldier = false;
-    for (const auto& soldier : p.army.members) {
+    for (const auto& soldier : p.army) {
         if (soldier.entityId == 9999u) {
             if (soldier.level != 1) FAIL_BAIL("soldier level not normalized on save");
             foundNormalizedSoldier = true;
@@ -970,7 +970,7 @@ void run_roundtrip() {
     }
 
     sm::GameState invalidSquadState = gs;
-    invalidSquadState.player.army.members.push_back(sm::SoldierRecord{
+    invalidSquadState.player.army.push(sm::SoldierRecord{
         10001u, static_cast<std::uint8_t>(sm::NPCType::Count), 1});
     if (sm::save_game(invalidSquadState, quests, macroFixture, treeCounts,
                       deposits,

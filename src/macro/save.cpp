@@ -353,9 +353,13 @@ void read_inventory(Reader& r, Inventory& inv) {
 
 // The soldier-row loop, shared by every roster the save carries: the player's
 // army, the deserter pool, garrisons, and the macro snapshot's squad rosters.
-void write_soldier_records(Writer& w, const std::vector<SoldierRecord>& members) {
-    if (!w.count(members.size(), kMaxSoldiers)) return;
-    for (const auto& s : members) {
+// The roster on DISK stays count-prefixed and only as long as the squad
+// actually is: the in-memory form is a flat 1024-slot array (macro/army.h), and
+// writing its empty tail would put megabytes of zeroes in every save for
+// nothing.
+void write_squad(Writer& w, const SoldierSquad& squad) {
+    if (!w.count(std::size_t(squad.size()), kMaxSoldiers)) return;
+    for (const auto& s : squad) {
         if (!valid_npc_kind(s.kind)) {
             w.ok = false;
             return;
@@ -367,15 +371,10 @@ void write_soldier_records(Writer& w, const std::vector<SoldierRecord>& members)
     }
 }
 
-void write_squad(Writer& w, const SoldierSquad& squad) {
-    write_soldier_records(w, squad.members);
-}
-
-void read_soldier_records(Reader& r, std::vector<SoldierRecord>& members) {
+void read_squad(Reader& r, SoldierSquad& squad) {
     std::uint32_t n = 0;
     if (!read_count(r, n, kMaxSoldiers)) return;
-    members.clear();
-    members.reserve(n);
+    squad.clear();
     for (std::uint32_t i = 0; i < n && r.ok; ++i) {
         SoldierRecord s{};
         r.pod(s.entityId);
@@ -386,12 +385,13 @@ void read_soldier_records(Reader& r, std::vector<SoldierRecord>& members) {
             r.ok = false;
             return;
         }
-        members.push_back(make_soldier(s.kind, s.level, s.entityId));
+        // A save that names more men than a squad can hold is a save from a
+        // different game: refuse it loudly rather than keep the first 1024.
+        if (!squad.push(make_soldier(s.kind, s.level, s.entityId))) {
+            r.ok = false;
+            return;
+        }
     }
-}
-
-void read_squad(Reader& r, SoldierSquad& squad) {
-    read_soldier_records(r, squad.members);
 }
 
 // One macro NPC of the ECS snapshot (v23, macro/macro_snapshot.h). The POD
@@ -420,7 +420,7 @@ void write_macro_npc(Writer& w, const MacroNpcRecord& m) {
     w.pod(m.hasOrders);
     w.pod(m.dead);
     write_inventory(w, m.inventory);
-    write_soldier_records(w, m.roster);
+    write_squad(w, m.roster);
 }
 
 void read_macro_npc(Reader& r, MacroNpcRecord& m) {
@@ -444,7 +444,7 @@ void read_macro_npc(Reader& r, MacroNpcRecord& m) {
         return;
     }
     read_inventory(r, m.inventory);
-    read_soldier_records(r, m.roster);
+    read_squad(r, m.roster);
 }
 
 void write_history(Writer& w, const SettlementHistory& h) {
