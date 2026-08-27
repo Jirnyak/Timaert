@@ -49,14 +49,17 @@ Character sheet: attributes, XP/levels, items, inventory, equipment, loot.
   bound buys nothing, while "rank == percent" pays back every time a human reads
   a sheet. (It still fits a byte if ranks are ever packed.)
 
-  **Recognised debt (canon-audit A7): the law is broken in the four core
-  stats.** `maxHp`/`maxMp` (`calculate_combat_stats`) and
-  `rawPhysDamage`/`rawSpellDamage` (`calculate_derived`) are computed inline at
-  `·0.05` per rank **with no clamp** (attributes.h) — bypassing
-  `skill_bonus_mult` and the ×2 ceiling: bodybuilding 100 gives ×6 HP instead
-  of the promised doubling. These are the most expensive numbers in the game;
-  until it is fixed, "rank = percent, ceiling ×2" holds for every skill EXCEPT
-  these four.
+  **The percent is a COLUMN (settled 2026-08-27, canon-audit A7 closed).** The
+  law used to say "one rank is one percent, ceiling ×2" while four of the most
+  expensive numbers in the game — `maxHp`, `maxMp`, `rawPhysDamage`,
+  `rawSpellDamage` — were computed inline at `·0.05` per rank with no clamp,
+  bypassing the helper and the ceiling. The owner's ruling was to legitimise
+  the per-skill multiplier rather than flatten every skill to 1 %: each row of
+  `kSkillDefs` states its own `pctPerRank`, so the ceiling is DERIVED and
+  differs by skill (bodybuilding tops out at ×6 because its row says 5). One
+  function — `skill_mult(skills, id)` — turns a rank into a multiplier, and
+  every formula a skill governs asks it. The RANK cap (100) is still the law's,
+  enforced at the one door into a rank.
 
   **Mastery is meant to be reachable and to mean something.** One skill point
   per level across eight skills makes rank 100 a hundred levels poured into a
@@ -74,13 +77,17 @@ Character sheet: attributes, XP/levels, items, inventory, equipment, loot.
   quoted in cells per GAME hour, so the length of a real-time day can be tuned
   as a matter of feel without moving the travel economy ([time.md](time.md)).
 
-- **Adding a skill today** touches five places — the `Skills` fields, the
-  `SkillId` enum, the two `skill_value` switches, the UI row table
-  (`ui/overlays.cpp`) and the per-role weight table
-  (`macro/character_sheet.h`). That is four too many for a game that will grow
-  many more skills: the intended next step is ONE skill registry (flat table,
-  ranks as a flat array indexed by `SkillId`) so a new skill is one row plus one
-  weight column, exactly as factions and biomes already work.
+- **Adding a skill is ONE ROW plus one weight per role** (2026-08-27). It used
+  to touch five places — a named field in `Skills`, a `SkillId` value, a case in
+  each of two `skill_value` switches, a row in the UI table and a weight column
+  — and that was four too many. Ranks are now a flat `std::array<uint8_t, 32>`
+  addressed by `SkillId`, the meanings are `kSkillDefs` rows carrying their own
+  enum as a column (`rows_in_enum_order`, so a drifted table refuses to
+  compile), and the character panel WALKS that registry instead of restating
+  it. The envelope is fixed at 32 slots for 8 skills on purpose: a new skill
+  does not move the save format. The per-role weight array is sized by
+  `SkillId::Count`, so adding a skill is a compile error until every role says
+  what it thinks of it — a silent zero would be a role that never trains it.
 
 - **Items & inventory:** `Item`, `Inventory` (count/add/remove); one unified
   loot registry in `items.cpp` keyed by `lootId` (`roll_loot_profile`) — see
@@ -92,10 +99,10 @@ Character sheet: attributes, XP/levels, items, inventory, equipment, loot.
 
 Add an item → one `item_catalog()` row. Add a loot drop → one loot-profile row
 keyed by a stable `lootId` in `items.cpp`; point an NPC role or a monster's
-`lootId` at it ([monsters.md](monsters.md)). Add a skill → give it a rank field
-and a `SkillId`, then express its effect through `skill_bonus_mult` /
-`skill_cost_mult` — never a private curve — and give every NPC role a weight for
-it so procedural sheets can spend on it.
+`lootId` at it ([monsters.md](monsters.md)). Add a skill → one `kSkillDefs`
+row (id, key, label, effect text, `pctPerRank`, and whether it buys a cost
+DOWN) plus one weight per role. Express its effect through `skill_mult` — never
+a private curve, and never a percent spelled inline.
 
 ## Connections
 
