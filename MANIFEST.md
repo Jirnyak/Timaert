@@ -60,6 +60,7 @@ README, which orchestrates them.
 | Bodies & Loot | [monsters.md](monsters.md) | ONE table of living things (roles + creatures, thirty rows) + ONE loot table, spawn/XP |
 | Macrosim | [macrosim.md](macrosim.md) | Mount-&-Blade / Dwarf-Fortress macro simulation |
 | Resources | [resources.md](resources.md) | THE resource-field registry: fields over macro cells, two storage dialects behind one door, the ONE growth law, the ledger every harvest settles through |
+| Chronicle | [chronicle.md](chronicle.md) | THE world's memory: a fact is a 32-byte POD of ordinals, two tiers (a ring the world is ASKED, annals the world REMEMBERS), renown that every macro entity earns and that the VICTIM prices, words derived at display, one memory across both layers |
 | Quests | [quests.md](quests.md) | Objective/reward registries, procedural generation, world-map quest markers |
 | Progression | [progression.md](progression.md) | Levels, spell unlocks, plot/events, game arc |
 | Rendering | [render.md](render.md) | Vulkan render passes, dynamic lighting, shadow mapping, sky/stars, water |

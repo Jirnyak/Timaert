@@ -119,6 +119,16 @@ DERIVED — the most any single deed is worth in the table — so it reads as a
 sentence: *become a figure by doing once what a figure does, or by adding up
 enough lesser things.*
 
+**The victim prices the deed.** Nothing had to be invented to make killing a
+legend worth more than killing a peasant: every macro entity already carries
+what it is worth — its own renown — so a deed pays its row's base plus a tenth
+of what the victim was worth. Fame is made of fame, by construction. See
+[chronicle.md](chronicle.md).
+
+**Every macro entity earns it**, not squads alone: a band, a city, a people.
+The microworld has none — a mob, a projectile, a house have no standing to win
+or lose.
+
 Other mechanics are meant to hang off the same number rather than grow
 counters of their own (who follows you, how you are spoken to, who is worth a
 contract). Adding one is a reader, not a system.
