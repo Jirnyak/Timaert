@@ -245,6 +245,7 @@ enum class SmokeAction : std::uint8_t {
     MacroRecovery,
     RestSp,
     TimeAdvanceBurst,
+    ChronicleRate,
     MacroNpcTrace,
     OpenQuests,
     OpenCodex,
@@ -810,6 +811,7 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"macro_recovery", SmokeAction::MacroRecovery},
     {"rest_sp", SmokeAction::RestSp},
     {"timeadvance_burst", SmokeAction::TimeAdvanceBurst},
+    {"chronicle_rate", SmokeAction::ChronicleRate},
     {"macro_npc_trace", SmokeAction::MacroNpcTrace},
     {"open_quests", SmokeAction::OpenQuests},
     {"open_codex", SmokeAction::OpenCodex},
@@ -8424,6 +8426,72 @@ bool run_subworld_tree_anchor_smoke(App& app) {
 // window is never opened headlessly), so it guards the whole feature against
 // regressions. All player/world mutations are captured up front and restored
 // before returning, leaving the world exactly as found.
+// The ring's size is a formula with one unmeasured term — the world's facts
+// per day (chronicle.h, kChronicleFacts: "retune it from the counter, not
+// from feel"). This smoke IS that counter's instrument: a full game day of
+// the LIVE loop (world_tick's daily step, the AI's caravans and gatherers,
+// auto-battles — every writer there is), measured by the one number the
+// contract ships, and printed so the cap can be tuned from evidence.
+bool run_chronicle_rate_smoke(App& app) {
+    if (!smoke_boot_invariants_hold(app)) {
+        smoke_print_counts(app, "chronicle_rate_boot_failed");
+        smoke_fail(app, "chronicle_rate boot invariants");
+        return false;
+    }
+    if (app.subworld.active()) {
+        smoke_fail(app, "chronicle_rate while subworld active");
+        return false;
+    }
+    smoke_clear_modal_overlays(app);
+
+    const std::uint32_t seqBefore = app.gs.chronicle.nextSeq;
+    const int dayBefore = app.gs.worldTime.day();
+    // One whole game day of honest ticks (S3: day = 8192).
+    const RuntimeFrameStats stats = advance_sim_steps(
+        app,
+        int(sm::ticks_to_advance_minutes(app.gs.worldTime.tick, 24 * 60)),
+        false);
+    const std::uint32_t factsInDay = app.gs.chronicle.nextSeq - seqBefore;
+    std::printf("[smoke] chronicle_rate day=%d->%d factsInDay=%u "
+                "factsToday=%u annals=%zu ringCap=%u\n",
+                dayBefore, app.gs.worldTime.day(), unsigned(factsInDay),
+                unsigned(app.gs.chronicle.factsToday),
+                app.gs.chronicle.annals.size(),
+                unsigned(sm::kChronicleFacts));
+    // The tuning information itself: WHICH kinds carry the volume. Walk the
+    // ring for the window's records (they are the newest; eviction cannot
+    // have touched them unless the day overflowed the whole ring).
+    {
+        std::array<unsigned, std::size_t(sm::FactKind::Count)> byKind{};
+        for (const sm::WorldFact& f : app.gs.chronicle.ring) {
+            if (f.seq < seqBefore || f.seq >= app.gs.chronicle.nextSeq)
+                continue;
+            if (f.kind < std::uint16_t(sm::FactKind::Count)) ++byKind[f.kind];
+        }
+        std::printf("[smoke] chronicle_rate kinds:");
+        for (std::size_t k = 0; k < byKind.size(); ++k) {
+            if (byKind[k] == 0u) continue;
+            std::printf(" %s=%u",
+                        sm::fact_kind_def(sm::FactKind(k)).key, byKind[k]);
+        }
+        std::printf("\n");
+    }
+    std::fflush(stdout);
+    if (!stats.ticked) {
+        smoke_fail(app, "chronicle_rate advanced nothing");
+        return false;
+    }
+    // A living world writes SOMETHING in a day (deaths, deals, hunger). A
+    // silent day means every writer came unplugged — the exact regression
+    // this instrument exists to catch.
+    if (factsInDay == 0) {
+        smoke_fail(app, "a whole world day passed and the chronicle heard "
+                        "nothing: the writers are unplugged");
+        return false;
+    }
+    return true;
+}
+
 bool run_console_smoke(App& app) {
     if (!smoke_boot_invariants_hold(app)) {
         smoke_print_counts(app, "console_boot_failed");
@@ -10795,6 +10863,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr, "[smoke] action=timeadvance_burst\n");
             std::fflush(stderr);
             if (run_timeadvance_burst_smoke(app)) ++app.smoke.cursor;
+            break;
+        case SmokeAction::ChronicleRate:
+            std::fprintf(stderr, "[smoke] action=chronicle_rate\n");
+            std::fflush(stderr);
+            if (run_chronicle_rate_smoke(app)) ++app.smoke.cursor;
             break;
         case SmokeAction::MacroNpcTrace:
             std::fprintf(stderr, "[smoke] action=macro_npc_trace\n");

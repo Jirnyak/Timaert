@@ -343,6 +343,33 @@ void chronicle_init(Chronicle& c, int mapW, int mapH);
 // world yet). Every field is a number, so this is a store and two links.
 std::uint32_t chronicle_record(Chronicle& c, const WorldFact& fact);
 
+// One LANDMARK fact, filed straight through the door above. `chronicle_record`
+// is THE door; the app-side `record_deed` is a wrapper over it that
+// additionally resolves an ENTITY and pays it renown. A landmark has no entity
+// — it is named the day it is founded — so its writers (world_tick's famine
+// and revolt, the gatherer's worked-out vein, the caravan's deal) file here,
+// and there is still one door and ONE builder of the record's shape.
+// `objectLandmarkId` names the other party when the fact has one (a caravan
+// trades WITH a village); 0 = no object, matching the reserved "no landmark".
+inline std::uint32_t record_landmark_fact(Chronicle& c, std::int32_t day,
+                                          FactKind kind, int landmarkId,
+                                          int x, int y, int amount,
+                                          int objectLandmarkId = 0) {
+    WorldFact f{};
+    f.day = day;
+    f.kind = std::uint16_t(kind);
+    f.subjectKind = std::uint8_t(FactSubject::Landmark);
+    f.subject = std::uint32_t(landmarkId < 0 ? 0 : landmarkId);
+    if (objectLandmarkId > 0) {
+        f.objectKind = std::uint8_t(FactSubject::Landmark);
+        f.object = std::uint32_t(objectLandmarkId);
+    }
+    f.x = std::int16_t(x);
+    f.y = std::int16_t(y);
+    f.amount = amount;
+    return chronicle_record(c, f);
+}
+
 // ── The question the witcher asks ────────────────────────────────────────
 //
 // Walks the index cells around (x, y), newest first, and hands every fact no

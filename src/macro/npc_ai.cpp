@@ -1,6 +1,7 @@
 // Macroworld NPC AI — full behaviour set, faithful port of `npc-ai.ts`.
 #include "macro/npc_ai.h"
 #include "macro/agent_memory.h"
+#include "macro/chronicle.h"
 #include "macro/deposit_layer.h"
 #include "macro/econ_day.h"
 #include "macro/macro_stock.h"
@@ -584,6 +585,22 @@ void ai_gatherer(entt::entity self, ecs::Position& p,
                             self)) {
                         bag->inv.add(def->commodity, take);
                     }
+                    // A DEPOSIT worked down to nothing is a fact of the world
+                    // (FactKind::Drained: "a vein worked out") — the vein
+                    // never comes back, and "why did the town grow poor" is
+                    // answered by this record. The daily haul itself is
+                    // weather, not history (S20.1: the TRANSITION is the
+                    // story); forest and wheat regrow by their own law, so
+                    // their emptied cells write nothing. amount carries the
+                    // resource registry row +1 — the "what" of the record,
+                    // the same shape the spire's drain gives its spell.
+                    if (def->worksite == Worksite::Deposit && take == have) {
+                        record_landmark_fact(ctx.mw.gs->chronicle,
+                                             ctx.mw.gs->worldTime.day(),
+                                             FactKind::Drained,
+                                             rt.homeSettlementId, tx, ty,
+                                             int(def->row) + 1);
+                    }
                 }
             }
             rt.targetX = home.x; rt.targetY = home.y;
@@ -730,10 +747,19 @@ void ai_caravan(entt::entity self, ecs::Position& p,
         if (rt.stateTimer > 0) return;
         if (Inventory* vs = village_inventory_by_id(ctx,
                                                     rt.targetSettlementId)) {
+            // What one unit of a commodity is worth — the ONE price table
+            // (ItemDef.value); the deal's worth is counted in it, never in a
+            // second price vocabulary.
+            const auto unit_value = [](const char* id) {
+                const ItemDef* d = item_def(id);
+                return d ? d->value : 0;
+            };
+            int dealValue = 0;
             // Unload the exports…
             for (int i = 0; i < kCommodityCount; ++i) {
-                haul_between(bag->inv, *vs, kCommodities[i].id, 1 << 30,
-                             1e9f);
+                dealValue += unit_value(kCommodities[i].id)
+                             * haul_between(bag->inv, *vs, kCommodities[i].id,
+                                            1 << 30, 1e9f);
             }
             // …and load what the SNAPSHOT says the city lacks, scarcest
             // class first, raw before crafted within a class (a city's
@@ -745,12 +771,26 @@ void ai_caravan(entt::entity self, ecs::Position& p,
                 for (int cls = 0; cls <= 1; ++cls) {
                     for (int i = 0; i < kCommodityCount; ++i) {
                         if (market_stock_class(*snap, i) != cls) continue;
-                        haul_between(*vs, bag->inv, kCommodities[i].id,
-                                     1 << 30,
-                                     kCaravanCapacityKg
-                                         - inventory_weight(bag->inv));
+                        dealValue +=
+                            unit_value(kCommodities[i].id)
+                            * haul_between(*vs, bag->inv, kCommodities[i].id,
+                                           1 << 30,
+                                           kCaravanCapacityKg
+                                               - inventory_weight(bag->inv));
                     }
                 }
+            }
+            // The exchange is DONE — that one moment is the fact (S20.1: a
+            // deal is a transition by nature; the ride home is the same
+            // cargo, not a second deal). Subject = the home city whose
+            // caravan this is, object = the village it traded WITH, amount =
+            // the table value of everything that changed hands either way.
+            if (dealValue > 0) {
+                record_landmark_fact(ctx.mw.gs->chronicle,
+                                     ctx.mw.gs->worldTime.day(),
+                                     FactKind::Traded, rt.homeSettlementId,
+                                     int(rt.targetX), int(rt.targetY),
+                                     dealValue, rt.targetSettlementId);
             }
         }
         rt.targetX = home.x;

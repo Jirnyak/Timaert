@@ -12,9 +12,11 @@
 
 #include "macro/npc_ai.h"
 #include "macro/agent_memory.h"
+#include "macro/chronicle.h"
 #include "macro/econ_day.h"
 #include "macro/faction.h"
 #include "macro/npc.h"
+#include "macro/resource_field.h"
 #include "macro/squad.h"
 #include "macro/deposit_layer.h"
 #include "macro/tree_layer.h"
@@ -26,6 +28,25 @@ namespace {
 using namespace sm;
 
 constexpr int kMap = 32;
+
+// Count the chronicle's facts of one kind around a cell — the witcher's own
+// question, asked by the tests that pin what the work-loops write (and, by
+// the negative controls, what they must NOT write).
+struct FactTally {
+    int n = 0;
+    WorldFact last{};
+};
+FactTally tally_facts(const Chronicle& c, FactKind kind, int x, int y) {
+    struct Ctx { FactKind kind; FactTally out; } ctx{kind, {}};
+    chronicle_near(c, x, y, /*radiusCells*/1, /*sinceDay*/0,
+                   [](void* u, const WorldFact& f) {
+                       Ctx& t = *static_cast<Ctx*>(u);
+                       if (f.kind != std::uint16_t(t.kind)) return;
+                       ++t.out.n;
+                       if (t.out.n == 1) t.out.last = f;
+                   }, &ctx);
+    return ctx.out;
+}
 
 entt::entity make_woodcutter(ecs::World& w, float x, float y,
                              int homeVillageId) {
@@ -59,6 +80,7 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
     GameState gs{};
     gs.mapW = kMap;
     gs.mapH = kMap;
+    chronicle_init(gs.chronicle, kMap, kMap);
     Village vil{};
     vil.id = 3;
     vil.x = 10;
@@ -66,12 +88,14 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
     vil.population = 40;
     gs.villages.push_back(vil);
 
-    // A little forest cell four cells east of the village.
+    // A little forest cell four cells east of the village — small enough to
+    // be felled to BARE within the run, so the chronicle negative control
+    // below is a real condition and not a vacuous one.
     TreeLayer layer;
     layer.width = kMap;
     layer.height = kMap;
     layer.data.assign(std::size_t(kMap) * kMap, 0);
-    layer.data[10 * kMap + 14] = 100;
+    layer.data[10 * kMap + 14] = 16;
     const std::vector<TreePoint> trees{{14, 10}};
     TreeGrid grid;
     build_tree_grid(grid, trees, kMap, kMap);
@@ -89,7 +113,7 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
         tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle=*/true);
     }
 
-    const int layerLost = 100 - int(layer.at(14, 10));
+    const int layerLost = 16 - int(layer.at(14, 10));
     const int storeGained = gs.villages[0].inventory.count("wood");
     const int inBag =
         w.reg.get<ecs::NpcInventory>(wc).inv.count("wood");
@@ -104,6 +128,14 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
     CHECK(gs.villages[0].inventory.count("wood") > 0
               && gs.settlements.empty(),
           "the village man hauls for the VILLAGE (no city even exists here)");
+
+    // NEGATIVE CONTROL for the vein writer: the forest cell was felled to
+    // bare ground, and the chronicle stays SILENT — the forest regrows by its
+    // own law (resource_fields_daily_growth), so an emptied cell is weather,
+    // not the irreversible loss FactKind::Drained records.
+    CHECK(layer.at(14, 10) == 0, "the control condition fired: bare cell");
+    CHECK(tally_facts(gs.chronicle, FactKind::Drained, 14, 10).n == 0,
+          "a felled forest writes NO Drained fact - a forest is not a vein");
 }
 
 void test_the_farmer_works_the_field() {
@@ -370,8 +402,9 @@ void test_the_caravan_trades_on_its_memory() {
     GameState gs{};
     gs.mapW = kMap;
     gs.mapH = kMap;
+    chronicle_init(gs.chronicle, kMap, kMap);
     Settlement city{};
-    city.id = 0;
+    city.id = 1;   // landmark ids are ordinals from 1 (v54): 0 = "no place"
     city.x = 10;
     city.y = 10;
     city.population = 100;
@@ -381,7 +414,7 @@ void test_the_caravan_trades_on_its_memory() {
     vil.id = 3;
     vil.x = 16;
     vil.y = 10;
-    vil.nearestCityId = 0;
+    vil.nearestCityId = 1;
     vil.inventory.add("grain", 500);
     gs.villages.push_back(vil);
 
@@ -393,7 +426,7 @@ void test_the_caravan_trades_on_its_memory() {
     reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Caravan),
                               std::uint16_t(faction_index("timaert")));
     ecs::MacroNpcRuntime crt{};
-    crt.homeSettlementId = 0;
+    crt.homeSettlementId = 1;
     crt.targetSettlementId = -1;
     crt.targetX = 10.0f;
     crt.targetY = 10.0f;
@@ -425,7 +458,7 @@ void test_the_caravan_trades_on_its_memory() {
           "the caravan hauled the city what its snapshot said it LACKED");
     CHECK(vilBread > 0, "the caravan delivered the city's surplus bread");
     CHECK(recall(reg.get<AgentMemory>(e),
-                 AgentMemoryKind::MarketSnapshot, 0) != nullptr,
+                 AgentMemoryKind::MarketSnapshot, 1) != nullptr,
           "the departure snapshot lives in the caravan's memory");
     const int grainTotal = cityGrain + bag.count("grain")
                            + gs.villages[0].inventory.count("grain");
@@ -433,6 +466,24 @@ void test_the_caravan_trades_on_its_memory() {
                            + gs.settlements[0].inventory.count("bread");
     CHECK(grainTotal == 500 && breadTotal == 2000,
           "CONSERVATION: cargo moves, it is never minted or dropped");
+
+    // The DEAL is a fact of the world (S20.1): filed at the village the
+    // moment the exchange happened — a transition by nature, so every visit
+    // may file one — naming both parties and what the goods were worth on
+    // the ONE price table.
+    const FactTally traded = tally_facts(gs.chronicle, FactKind::Traded,
+                                         16, 10);
+    CHECK(traded.n >= 1, "a completed exchange left a Traded fact");
+    CHECK(traded.last.subject == 1u
+              && traded.last.subjectKind
+                     == std::uint8_t(FactSubject::Landmark),
+          "the fact's subject is the home city whose caravan dealt");
+    CHECK(traded.last.object == 3u
+              && traded.last.objectKind
+                     == std::uint8_t(FactSubject::Landmark),
+          "the fact's object is the village it traded WITH");
+    CHECK(traded.last.amount > 0,
+          "the deal's worth is real: table value of what changed hands");
 }
 
 // The miner: the SAME gatherer row-loop as the chop above, pointed at a
@@ -445,6 +496,7 @@ void test_the_miner_works_the_vein() {
     GameState gs{};
     gs.mapW = kMap;
     gs.mapH = kMap;
+    chronicle_init(gs.chronicle, kMap, kMap);
     Village vil{};
     vil.id = 3;
     vil.x = 10;
@@ -508,6 +560,22 @@ void test_the_miner_works_the_vein() {
     CHECK(veinLeft == 0, "the little vein was mined OUT within the run");
     CHECK(storeGained + inBag == 20,
           "everything the vein ever held is accounted for");
+
+    // The worked-out vein is a FACT of the world (S20.1): filed ONCE — the
+    // transition is the story, thirty daily hauls are weather — by the home
+    // village, at the vein's cell, naming WHAT ran dry by its registry row.
+    const FactTally drained = tally_facts(gs.chronicle, FactKind::Drained,
+                                          14, 10);
+    CHECK(drained.n == 1,
+          "one dead vein = ONE Drained fact, not one per haul");
+    CHECK(drained.last.subject == 3u
+              && drained.last.subjectKind
+                     == std::uint8_t(FactSubject::Landmark),
+          "the fact names the village whose man worked the vein out");
+    CHECK(drained.last.x == 14 && drained.last.y == 10,
+          "the fact stands on the vein's own cell");
+    CHECK(drained.last.amount == int(ResourceFieldId::Iron) + 1,
+          "the fact says WHAT ran dry: the resource registry row, +1");
 
     // No deposit layer wired = no ore conjured (the shared fail-closed rule).
     GameState gs2{};

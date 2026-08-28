@@ -514,6 +514,8 @@ timaert_test(squad_roster_test
 timaert_test(macro_npc_ai_parity_test
     SOURCES
         src/macro/npc_ai.cpp
+        # the gatherer and the caravan file world facts (chronicle door)
+        src/macro/chronicle.cpp
         # The squad threat step settles auto-battles through THE ledger
         # (macro/squad.h → macro_stock), so the AI now links the rows too.
         src/macro/macro_stock.cpp
@@ -555,6 +557,8 @@ timaert_test(deserter_bands_test
 timaert_test(squad_war_test
     SOURCES
         src/macro/npc_ai.cpp
+        # the gatherer and the caravan file world facts (chronicle door)
+        src/macro/chronicle.cpp
         # The player's squad is an ordinary squad entity (2026-08-27).
         src/macro/player_entity.cpp
         src/macro/macro_stock.cpp
@@ -579,6 +583,8 @@ timaert_test(macro_travel_parity_test
 timaert_test(squad_travel_test
     SOURCES
         src/macro/npc_ai.cpp
+        # the gatherer and the caravan file world facts (chronicle door)
+        src/macro/chronicle.cpp
         src/macro/macro_stock.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
@@ -979,6 +985,8 @@ timaert_test(fauna_stock_test
 timaert_test(woodcutter_gather_test
     SOURCES
         src/macro/npc_ai.cpp
+        # the gatherer and the caravan file world facts (chronicle door)
+        src/macro/chronicle.cpp
         src/macro/macro_stock.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
@@ -1149,6 +1157,8 @@ timaert_test(player_is_a_squad_test
     SOURCES
         src/macro/player_entity.cpp
         src/macro/npc_ai.cpp
+        # the gatherer and the caravan file world facts (chronicle door)
+        src/macro/chronicle.cpp
         src/macro/macro_snapshot.cpp
         src/macro/macro_stock.cpp
         src/macro/deposit_layer.cpp

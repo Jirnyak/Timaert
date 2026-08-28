@@ -45,23 +45,13 @@ void push_history_(SettlementHistory& hist, int day, int population) {
 // mood and the LOGISTIC population law (owner's ruling — no flat heads per
 // day; K = kPopCarryingCap = the subworld's own NPC cap). Returns the
 // wellbeing for callers that want it.
-// One landmark fact, filed straight into the world's memory.
-//
-// `chronicle_record` is THE door; the app-side `record_deed` is a wrapper over
-// it that additionally resolves an ENTITY and pays it renown. A landmark has
-// no entity and no renown to earn — it is named the day it is founded — so it
-// files directly, and there is still one door.
+// Landmark facts go through THE one builder (chronicle.h
+// record_landmark_fact) — this forwarder only spares each call site the
+// day/chronicle plumbing.
 void record_landmark_fact(GameState& gs, FactKind kind, int landmarkId,
                           int x, int y, int amount) {
-    WorldFact f{};
-    f.day = gs.worldTime.day();
-    f.kind = std::uint16_t(kind);
-    f.subjectKind = std::uint8_t(FactSubject::Landmark);
-    f.subject = std::uint32_t(landmarkId < 0 ? 0 : landmarkId);
-    f.x = std::int16_t(x);
-    f.y = std::int16_t(y);
-    f.amount = amount;
-    chronicle_record(gs.chronicle, f);
+    record_landmark_fact(gs.chronicle, gs.worldTime.day(), kind, landmarkId,
+                         x, y, amount);
 }
 
 template <typename Landmark>
