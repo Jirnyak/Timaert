@@ -5119,7 +5119,8 @@ void draw_debug_panels(App& app) {
             if (ImGui::BeginChild("jlog")) {
                 const std::size_t start = log.size() > 200 ? log.size() - 200 : 0;
                 for (std::size_t i = start; i < log.size(); ++i)
-                    ImGui::TextWrapped("[day %d] %s", log[i].day, log[i].message.c_str());
+                    ImGui::TextWrapped("[day %d] %s", log.at(i).day,
+                                       log.at(i).message.c_str());
                 if (log.empty()) ImGui::TextDisabled("(no entries yet)");
             }
             ImGui::EndChild();
@@ -7529,8 +7530,9 @@ bool run_spire_climb_smoke(App& app) {
         for (const auto& s : app.subworld.mgr().structures()) {
             if (s.kind == sm::sub::Structure::SpireOrb) ++orbsAfter;
         }
-        for (const auto& e : app.gs.player.eventLog) {
-            if (e.message.find("You have learned") != std::string::npos) {
+        for (std::size_t i = 0; i < app.gs.player.eventLog.size(); ++i) {
+            if (app.gs.player.eventLog.at(i).message.find("You have learned")
+                != std::string::npos) {
                 logged = true;
             }
         }

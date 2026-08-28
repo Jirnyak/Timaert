@@ -340,7 +340,7 @@ sm::GameState make_state() {
     sm::add_perk(gs.player.sheet.perks, sm::PerkID::Natural);
     sm::add_perk(gs.player.sheet.perks, sm::PerkID::Educated);
     gs.player.codexUnlocked.push_back("codex.alpha");
-    gs.player.eventLog.push_back(
+    gs.player.eventLog.push(
         sm::LogEntry{sm::LogType::World, "saved event", 12});
     sm::spellbook_learn(gs.player.spellBook, "spell.spark");
     sm::spellbook_set_active(gs.player.spellBook, "spell.spark");
@@ -859,7 +859,7 @@ void run_roundtrip() {
     }
 
     if (!has_string(p.codexUnlocked, "codex.alpha")
-        || p.eventLog.empty() || p.eventLog[0].message != "saved event") {
+        || p.eventLog.empty() || p.eventLog.at(0).message != "saved event") {
         FAIL_BAIL("codex or event log lost");
     }
     if (!sm::spellbook_has_learned(p.spellBook, "spell.spark")
@@ -1117,10 +1117,10 @@ void run_roundtrip() {
     if (ringState.player.eventLog.size() != sm::kMaxEventLogEntries) {
         FAIL_BAIL("event-log ring did not cap at kMaxEventLogEntries");
     }
-    if (ringState.player.eventLog.front().message != "entry 100") {
+    if (ringState.player.eventLog.at(0).message != "entry 100") {
         FAIL_BAIL("event-log ring did not drop the OLDEST entries");
     }
-    if (ringState.player.eventLog.back().message
+    if (ringState.player.eventLog.at(ringState.player.eventLog.size() - 1).message
         != "entry " + std::to_string(sm::kMaxEventLogEntries + 99u)) {
         FAIL_BAIL("event-log ring lost the newest entry");
     }
@@ -1139,18 +1139,27 @@ void run_roundtrip() {
                        ringDeposits, ringPath)) {
         FAIL_BAIL("full-log save did not load back");
     }
-    if (ringLoaded.player.eventLog.size() != sm::kMaxEventLogEntries
-        || ringLoaded.player.eventLog.front().message != "entry 100"
-        || ringLoaded.player.eventLog.back().message
+    const std::size_t loadedN = ringLoaded.player.eventLog.size();
+    if (loadedN != sm::kMaxEventLogEntries
+        || ringLoaded.player.eventLog.at(0).message != "entry 100"
+        || ringLoaded.player.eventLog.at(loadedN - 1).message
            != "entry " + std::to_string(sm::kMaxEventLogEntries + 99u)) {
         FAIL_BAIL("full event log did not round-trip entry-for-entry");
     }
-    // NEGATIVE CONTROL: bypass the door and overflow — the writer must refuse,
-    // proving the cap that used to silently kill saves is still enforced.
-    ringState.player.eventLog.push_back({sm::LogType::World, "overflow", 0});
-    if (sm::save_game(ringState, quests, macroFixture, treeCounts,
-                      deposits, ringPath)) {
-        FAIL_BAIL("an over-cap event log saved — write guard disarmed");
+    // The cap lives in the CONTAINER now, so there is no door left to bypass:
+    // one more line rolls the ring instead of overflowing it, and the save
+    // that used to be refused (and, before that, silently killed) is simply
+    // never in danger. The old negative control tested a guard around a
+    // container that could exceed its own cap; this one tests that it cannot.
+    ringState.player.eventLog.push({sm::LogType::World, "overflow", 0});
+    if (ringState.player.eventLog.size() != sm::kMaxEventLogEntries
+        || ringState.player.eventLog.at(sm::kMaxEventLogEntries - 1).message
+               != "overflow") {
+        FAIL_BAIL("the ring must roll, not grow, and keep the NEWEST line");
+    }
+    if (!sm::save_game(ringState, quests, macroFixture, treeCounts,
+                       deposits, ringPath)) {
+        FAIL_BAIL("a full log must still save: the cap is not an error");
     }
     remove_slot_files(ringPath);
 

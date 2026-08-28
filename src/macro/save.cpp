@@ -668,7 +668,10 @@ void write_player(Writer& w, const PlayerState& p) {
     write_string_vector(w, p.codexUnlocked);
 
     if (w.count(p.eventLog.size(), kMaxSmallVector)) {
-        for (const auto& e : p.eventLog) write_log_entry(w, e);
+        // Oldest first, so the file carries a log and not a ring's seam.
+        for (std::size_t i = 0; i < p.eventLog.size(); ++i) {
+            write_log_entry(w, p.eventLog.at(i));
+        }
     }
     write_spell_book(w, p.spellBook);
     w.pod(p.factionPeaceUntilDay);
@@ -694,11 +697,10 @@ void read_player(Reader& r, PlayerState& p) {
     std::uint32_t n = 0;
     if (!read_count(r, n, kMaxSmallVector)) return;
     p.eventLog.clear();
-    p.eventLog.reserve(n);
     for (std::uint32_t i = 0; i < n && r.ok; ++i) {
         LogEntry e{};
         read_log_entry(r, e);
-        p.eventLog.push_back(std::move(e));
+        p.eventLog.push(std::move(e));   // oldest first: the ring rebuilds in order
     }
     read_spell_book(r, p.spellBook);
     r.pod(p.factionPeaceUntilDay);

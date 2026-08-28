@@ -335,6 +335,35 @@ struct LogEntry { LogType type; std::string message; int day; };
 // door every gameplay writer goes through.
 inline constexpr std::size_t kMaxEventLogEntries = 8192;
 
+// A ring of the last kMaxEventLogEntries lines. Oldest first when read, so a
+// reader sees the log as a past and never has to know where the seam is —
+// the same shape SettlementHistory and the event bus's history now have.
+struct EventLogRing {
+    std::vector<LogEntry> slots;   // grown to the cap, then written round
+    std::size_t head = 0;          // where the NEXT line goes
+    std::size_t count = 0;         // lines that are real
+
+    std::size_t size() const { return count; }
+    bool empty() const { return count == 0; }
+    const LogEntry& at(std::size_t i) const {
+        const std::size_t first =
+            count < kMaxEventLogEntries ? 0u : head;
+        return slots[(first + i) % kMaxEventLogEntries];
+    }
+    void clear() { slots.clear(); head = 0; count = 0; }
+    void push(LogEntry e) {
+        if (slots.size() < kMaxEventLogEntries) {
+            slots.push_back(std::move(e));
+            head = slots.size() % kMaxEventLogEntries;
+            ++count;
+            return;
+        }
+        slots[head] = std::move(e);
+        head = (head + 1) % kMaxEventLogEntries;
+        if (count < kMaxEventLogEntries) ++count;
+    }
+};
+
 struct PlayerState {
     std::string name;
     int ageDays = 1000;
@@ -366,7 +395,17 @@ struct PlayerState {
     // its own until 2026-08-27, and every consumer of it was a
     // player-specific path CANON S4 forbids by name.)
     std::vector<std::string> codexUnlocked;
-    std::vector<LogEntry>    eventLog;
+    // The player's log — a RING, not a vector that shifts. It was capped by
+    // `erase(begin())`, which memmoves up to eight thousand std::strings on
+    // every entry past the cap: the same defect the settlement history and the
+    // event bus both had, and the same fix. The cap lives in the container, so
+    // no caller can forget it and nothing shifts to enforce it.
+    //
+    // (This log is NOT the world's memory — that is the chronicle, and its
+    // entries are facts. This one carries what was SAID to the player, which
+    // includes things that changed nothing in the world. Where those words
+    // should ultimately live is the open ?27.)
+    EventLogRing             eventLog;
     SpellBook spellBook;
     // Truce clocks, one per faction SLOT (macro/relations.h): the day a
     // cease-fire with that faction runs out. It was the last string-keyed
@@ -401,14 +440,10 @@ struct PlayerState {
     std::uint32_t entryTickAccum = 0;   // world ticks toward the next entry tick
 };
 
-// The ONE door into the player's event log: past kMaxEventLogEntries the
-// OLDEST entry is dropped, so the log can grow for a ten-year campaign and a
-// save can always count it. Direct eventLog.push_back is reserved for the
-// save loader restoring an already-counted payload.
+// The ONE door into the player's event log. The ring below owns the cap, so
+// this is now a forwarder — kept because callers name the player, not his log.
 inline void push_event_log(PlayerState& p, LogEntry e) {
-    if (p.eventLog.size() >= kMaxEventLogEntries)
-        p.eventLog.erase(p.eventLog.begin());
-    p.eventLog.push_back(std::move(e));
+    p.eventLog.push(std::move(e));
 }
 
 // World-tick runtime (moved here from world_tick.h in v24, because it is
