@@ -312,7 +312,7 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
                 bool near = false;
                 for (const auto& [idx, remaining]
                      : deposits->cells[std::size_t(role.kind)]) {
-                    if (remaining <= 0) continue;
+                    (void)remaining;   // alive by the annihilation law
                     const float dsq = torus_dist_sq(
                         float(int(idx % std::uint32_t(mw))),
                         float(int(idx / std::uint32_t(mw))),

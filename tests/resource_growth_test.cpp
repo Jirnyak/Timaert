@@ -211,11 +211,19 @@ void test_iron_is_born_where_scarce() {
     }
     const std::size_t stoneBefore = stoneCells();
 
+    // Annihilation (v55): the worked-out veins LEFT the map, and only the
+    // drained counter still says the world ever knew iron — which is what
+    // keeps the scarcity law prospecting.
+    CHECK(ironCells() == 0
+              && deposits.drainedCells[std::size_t(DepositKind::Iron)]
+                     == std::uint32_t(virginIron),
+          "mined-out veins are annihilated and counted");
+
     // A mined-out world prospects at depletion/8 = 12.5 %/day: over 256
     // days the horizon is generous, and the roll is a PURE function of the
     // calendar, so this is exact, not flaky.
     run_days(w, 256);
-    CHECK(ironCells() > virginIron,
+    CHECK(ironCells() > 0,
           "a mined-out world struck new iron within the horizon");
     CHECK(stoneCells() == stoneBefore,
           "every strike landed IN a quarry and deleted no stone");

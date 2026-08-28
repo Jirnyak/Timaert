@@ -497,7 +497,7 @@ bool find_home_deposit(const TickContext& ctx, ResourceFieldId row,
     float bestSq = float(kGathererReach) * float(kGathererReach);
     bool found = false;
     for (const auto& [idx, remaining] : cells) {
-        if (remaining <= 0) continue;   // a dry vein is a fact, not a job
+        (void)remaining;   // every entry is ALIVE (annihilation law, v55)
         const float x = float(int(idx % std::uint32_t(ctx.mapW)));
         const float y = float(int(idx / std::uint32_t(ctx.mapW)));
         const float dsq = torus_dist_sq(home.x, home.y, x, y,
@@ -586,14 +586,17 @@ void ai_gatherer(entt::entity self, ecs::Position& p,
                         bag->inv.add(def->commodity, take);
                     }
                     // A DEPOSIT worked down to nothing is a fact of the world
-                    // (FactKind::Drained: "a vein worked out") — the vein
-                    // never comes back, and "why did the town grow poor" is
-                    // answered by this record. The daily haul itself is
-                    // weather, not history (S20.1: the TRANSITION is the
-                    // story); forest and wheat regrow by their own law, so
-                    // their emptied cells write nothing. amount carries the
-                    // resource registry row +1 — the "what" of the record,
-                    // the same shape the spire's drain gives its spell.
+                    // (FactKind::Drained: "a vein worked out") — and by the
+                    // annihilation law the cell itself leaves the map, so
+                    // "why did the town grow poor" is answered by THIS record
+                    // and nothing else. The daily haul is weather, not
+                    // history (S20.1: the TRANSITION is the story); forest
+                    // and wheat regrow by their own law, so their emptied
+                    // cells write nothing. amount = resource registry row +1:
+                    // the land has no ordinal to ride as the object (a spire
+                    // does, and its drain points at the place instead), and
+                    // after annihilation the world no longer holds the
+                    // "what" — the fact is its only carrier.
                     if (def->worksite == Worksite::Deposit && take == have) {
                         record_landmark_fact(ctx.mw.gs->chronicle,
                                              ctx.mw.gs->worldTime.day(),

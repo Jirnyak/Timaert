@@ -40,10 +40,19 @@ const char* deposit_commodity_id(DepositKind kind);
 struct DepositLayer {
     int width = 0;
     int height = 0;
-    // kind → (cell index → remaining units). Presence IS the deposit: a dry
-    // vein stays in its map at 0. Mutate through the registry only.
+    // kind → (cell index → remaining units), every entry ALIVE (> 0).
+    // ANNIHILATION LAW (owner, 2026-08-28): a worked-out vein is a vein that
+    // no longer exists — the cell leaves the map the moment it runs dry, the
+    // chronicle keeps the deed, and only the counter below remembers the
+    // count. The old law ("a dry vein stays at 0") kept dead geology around
+    // solely to derive scarcity; the counter carries that baseline instead.
+    // Mutate through the registry only.
     std::unordered_map<std::uint32_t, std::int32_t>
         cells[kDepositKindCount];
+    // How many of this kind's cells the world has worked out and annihilated
+    // — the stored half of the scarcity baseline (virgin = live + drained),
+    // which dry cells used to carry implicitly. Rides the save (v55).
+    std::uint32_t drainedCells[kDepositKindCount] = {};
     // Runtime dirty counter for future consumers; never serialized.
     std::uint32_t revision = 0;
 
@@ -53,8 +62,8 @@ struct DepositLayer {
         return std::uint32_t(wrapi(y, height)) * std::uint32_t(width)
              + std::uint32_t(wrapi(x, width));
     }
-    // The kind's units standing at a WRAPPED cell; null = no such deposit
-    // here (distinct from a dry one, which returns a pointer to 0).
+    // The kind's units standing at a WRAPPED cell; null = no deposit here
+    // (a worked-out one is annihilated, so "dry" is not a state a cell has).
     const std::int32_t* remaining_at(DepositKind kind, int x, int y) const {
         if (width <= 0 || height <= 0) return nullptr;
         const auto& m = cells[std::size_t(kind)];
@@ -78,10 +87,11 @@ struct DepositLayer {
 DepositLayer build_deposit_layer(const TerrainData& terrain,
                                  std::uint32_t seed, float seaLevel);
 
-// THE quantity door (the registry's carrier hook lands here): clamps at zero
-// (a dry vein stays a visible cell), bumps the revision. A cell that was
-// never a deposit of this kind is refused — MINING cannot invent geology;
-// creation goes through create_deposit below, deliberately.
+// THE quantity door (the registry's carrier hook lands here): a write down
+// to zero ANNIHILATES the cell (and counts it in drainedCells), bumps the
+// revision. A cell that was never a deposit of this kind is refused —
+// MINING cannot invent geology; creation goes through create_deposit below,
+// deliberately.
 bool set_deposit_remaining(DepositLayer& layer, DepositKind kind,
                            int x, int y, std::int32_t remaining);
 
@@ -103,8 +113,8 @@ void restore_deposit_cells(DepositLayer& layer, const DepositLayer& loaded);
 // construction — turns out to ALSO hold iron; the quarry stays.
 
 // How much of the world's iron has been mined away, in [0, 1]. The virgin
-// amount is ironCells × kIronBase — dry cells keep their cells, so the
-// baseline needs no stored state.
+// amount is (live + drained) ironCells × kIronBase — annihilated veins are
+// remembered by the drainedCells counter, which is exactly what it is FOR.
 float iron_depletion(const DepositLayer& layer);
 
 inline float iron_discovery_chance_per_day(float depletion) {

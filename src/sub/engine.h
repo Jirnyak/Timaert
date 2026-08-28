@@ -663,7 +663,8 @@ private:
     // THE micro→macro door (CANON S20.1): a subworld act with lasting meaning
     // is filed in the world's ONE memory, at the macro cell that contains this
     // subworld. One memory, and the place is the seam between the layers.
-    void record_world_fact(FactKind kind, int cellX, int cellY, int amount);
+    void record_world_fact(FactKind kind, int cellX, int cellY, int amount,
+                           int objectLandmarkId = 0);
 
     // Watch for the player crossing INTO a zone. Called from tick().
     void tick_zones();

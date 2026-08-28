@@ -412,8 +412,9 @@ void test_deposits_are_carrier_rows() {
     resource_field_apply(w, ResourceFieldId::Iron, 9, 9, -100);
     CHECK(resource_field_read(w, ResourceFieldId::Iron, 9, 9) == 0
               && deposits.cells[std::size_t(DepositKind::Iron)].count(
-                     deposits.wrap_index(9, 9)),
-          "an over-drained vein clamps to zero and stays a visible cell");
+                     deposits.wrap_index(9, 9)) == 0
+              && deposits.drainedCells[std::size_t(DepositKind::Iron)] == 1u,
+          "an over-drained vein is ANNIHILATED and counted (v55)");
 
     for (std::size_t f : {std::size_t(ResourceFieldId::Clay),
                           std::size_t(ResourceFieldId::Iron),

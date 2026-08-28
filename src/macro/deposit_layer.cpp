@@ -101,7 +101,15 @@ bool set_deposit_remaining(DepositLayer& layer, DepositKind kind,
     auto& m = layer.cells[std::size_t(kind)];
     auto it = m.find(layer.wrap_index(x, y));
     if (it == m.end()) return false;   // mining invents no geology
-    it->second = remaining < 0 ? 0 : remaining;
+    if (remaining <= 0) {
+        // ANNIHILATION (owner, 2026-08-28): a worked-out vein is a vein that
+        // no longer exists. The counter keeps the scarcity baseline the dead
+        // cell used to carry.
+        m.erase(it);
+        ++layer.drainedCells[std::size_t(kind)];
+    } else {
+        it->second = remaining;
+    }
     ++layer.revision;
     return true;
 }
@@ -109,8 +117,10 @@ bool set_deposit_remaining(DepositLayer& layer, DepositKind kind,
 void create_deposit(DepositLayer& layer, DepositKind kind,
                     int x, int y, std::int32_t amount) {
     if (layer.width <= 0 || layer.height <= 0) return;
-    layer.cells[std::size_t(kind)][layer.wrap_index(x, y)] =
-        amount < 0 ? 0 : amount;
+    // Every entry is ALIVE (annihilation law): genesis of an empty vein
+    // would mint the "dry cell" state back into existence.
+    if (amount <= 0) return;
+    layer.cells[std::size_t(kind)][layer.wrap_index(x, y)] = amount;
     ++layer.revision;
 }
 
@@ -122,8 +132,11 @@ void restore_deposit_cells(DepositLayer& layer, const DepositLayer& loaded) {
         layer.cells[k].clear();
         for (const auto& [idx, remaining] : loaded.cells[k]) {
             if (idx >= n) continue;   // stale index vs a corrupt file: drop
+            if (remaining <= 0) continue;   // pre-annihilation dry cell: gone
             layer.cells[k].emplace(idx, remaining);
         }
+        // The scarcity baseline travels with the cells it stands in for.
+        layer.drainedCells[k] = loaded.drainedCells[k];
     }
     ++layer.revision;
 }
@@ -132,12 +145,15 @@ int iron_vein_lump() { return kIronBase; }
 
 float iron_depletion(const DepositLayer& layer) {
     std::int64_t remaining = 0;
-    std::int64_t cells = 0;
+    std::int64_t cells =
+        std::int64_t(layer.drainedCells[std::size_t(DepositKind::Iron)]);
     for (const auto& [idx, rem] : layer.cells[std::size_t(DepositKind::Iron)]) {
         (void)idx;
         ++cells;
         remaining += rem;
     }
+    // cells counts live AND annihilated veins: a fully worked-out world has
+    // an empty map but a full counter, and must read depleted, not virgin.
     if (cells == 0) return 0.0f;
     const std::int64_t virgin = cells * std::int64_t(kIronBase);
     const float d = 1.0f - float(remaining) / float(virgin);

@@ -81,7 +81,13 @@ bool knowledge_read(savefmt::Reader& r, const WorldFieldStoresMut& st) {
 // payload is checksummed, so the byte stream must be deterministic.
 void deposits_write(savefmt::Writer& w, const WorldFieldStores& st) {
     for (std::size_t k = 0; k < std::size_t(kDepositKindCount); ++k) {
-        if (!st.deposits) { w.count(0, kMaxFieldCells); continue; }
+        if (!st.deposits) {
+            w.pod(std::uint32_t(0));   // v55: the annihilation counter
+            w.count(0, kMaxFieldCells);
+            continue;
+        }
+        // v55: the scarcity baseline the dry cells used to carry implicitly.
+        w.pod(st.deposits->drainedCells[k]);
         const auto& cellsOfKind = st.deposits->cells[k];
         if (!w.count(cellsOfKind.size(), kMaxFieldCells)) continue;
         std::vector<std::pair<std::uint32_t, std::int32_t>> cells(
@@ -95,9 +101,12 @@ void deposits_write(savefmt::Writer& w, const WorldFieldStores& st) {
 }
 bool deposits_read(savefmt::Reader& r, const WorldFieldStoresMut& st) {
     for (std::size_t k = 0; k < std::size_t(kDepositKindCount); ++k) {
+        std::uint32_t drained = 0;   // v55
+        r.pod(drained);
         std::uint32_t n = 0;
         if (!savefmt::read_count(r, n, kMaxFieldCells)) return false;
         if (!st.deposits) { r.ok = false; return false; }
+        st.deposits->drainedCells[k] = drained;
         auto& cellsOfKind = st.deposits->cells[k];
         cellsOfKind.clear();
         cellsOfKind.reserve(n);

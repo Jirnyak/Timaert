@@ -1240,7 +1240,7 @@ void SubworldEngine::tick_zones() {
 }
 
 void SubworldEngine::record_world_fact(FactKind kind, int cellX, int cellY,
-                                       int amount) {
+                                       int amount, int objectLandmarkId) {
     if (!gs_) return;
     WorldFact f{};
     f.day = gs_->worldTime.day();
@@ -1250,6 +1250,12 @@ void SubworldEngine::record_world_fact(FactKind kind, int cellX, int cellY,
     // save-stable ordinal, and the annals will keep it if he has earned that.
     f.subjectKind = fact_subject(FactSubject::Squad, /*named*/true);
     f.subject = ecs::kPlayerSquadOrdinal;
+    // When the deed was done TO a named place, the place rides as the object
+    // by its landmark ordinal (v54: one id space names it alone).
+    if (objectLandmarkId > 0) {
+        f.objectKind = std::uint8_t(FactSubject::Landmark);
+        f.object = std::uint32_t(objectLandmarkId);
+    }
     f.x = std::int16_t(cellX);
     f.y = std::int16_t(cellY);
     f.amount = amount;
@@ -3036,7 +3042,12 @@ bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
     // MECHANISM the subworld hangs on anything, while what the world remembers
     // is that a spire went out of it forever. The context chooses the deed;
     // the deed carries the weight (macro/chronicle.h, the note above the enum).
-    record_world_fact(FactKind::Drained, cx, cy, int(spire->spellId) + 1);
+    // The spire itself is the OBJECT, by its landmark ordinal (v54) — WHAT
+    // went out of the world is resolved from the spire, not smuggled through
+    // `amount` in a vocabulary of its own (owner, 2026-08-28: unify through
+    // annihilation — a drained thing is the place itself changed, and the
+    // fact points at the place).
+    record_world_fact(FactKind::Drained, cx, cy, /*amount*/0, spire->id);
     set_status("The orb's light passes into you.");
     return true;
 }

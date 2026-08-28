@@ -377,16 +377,20 @@ void resource_fields_daily_growth(MacroWorld& w, int day) {
             // pure hash of (worldSeed, day) — no RNG stream consumed, a
             // reload replays the same calendar.
             if (!w.deposits) break;
-            const auto& own =
-                w.deposits->cells[std::size_t(deposit_kind_of(
-                    ResourceFieldId(f)))];
+            const std::size_t ownKind =
+                std::size_t(deposit_kind_of(ResourceFieldId(f)));
+            const auto& own = w.deposits->cells[ownKind];
+            // Annihilated veins left the map (v55) but not the baseline:
+            // the drained counter is the other half of "how much this world
+            // ever held". A world where BOTH are zero never knew the metal.
+            const std::int64_t drained =
+                std::int64_t(w.deposits->drainedCells[ownKind]);
             const int lump = def.growthAt(w, 0, 0);
-            if (lump <= 0 || own.empty()) break;   // an ownless world never
-                                                   // knew this metal at all
+            if (lump <= 0 || (own.empty() && drained == 0)) break;
             std::int64_t remaining = 0;
             for (const auto& [idx, rem] : own) { (void)idx; remaining += rem; }
             const std::int64_t virgin =
-                std::int64_t(own.size()) * std::int64_t(lump);
+                (std::int64_t(own.size()) + drained) * std::int64_t(lump);
             // depletion ∈ [0,1] in 1/8 steps of the day roll below: the
             // comparison runs in integers — hash24 < depletion × 2^24 / 8.
             const std::uint64_t hash24 =

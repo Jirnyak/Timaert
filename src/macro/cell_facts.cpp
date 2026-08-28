@@ -39,7 +39,7 @@ CellFacts cell_facts(const MacroWorld& w, int x, int y) {
     if (w.deposits) {
         for (std::size_t k = 0; k < std::size_t(kDepositKindCount); ++k) {
             for (const auto& [idx, remaining] : w.deposits->cells[k]) {
-                if (remaining <= 0) continue;
+                (void)remaining;   // every entry is ALIVE (annihilation law)
                 const int dx = int(idx) % td.width;
                 const int dy = int(idx) / td.width;
                 const float d2 = torus_dist_sq(float(dx), float(dy),

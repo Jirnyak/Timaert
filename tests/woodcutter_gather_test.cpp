@@ -351,8 +351,11 @@ void test_the_mine_runs_while_the_player_is_away() {
                                    /*allowAutoBattle=*/true);
     }
 
+    // Annihilation (v55): a vein worked all the way out within the run has
+    // LEFT the map — absent reads as 0, exactly what "worked" means here.
+    const auto& mineIron = deposits.cells[std::size_t(DepositKind::Iron)];
     const int veinLeft =
-        deposits.cells[std::size_t(DepositKind::Iron)].at(veinIdx);
+        mineIron.count(veinIdx) ? int(mineIron.at(veinIdx)) : 0;
     CHECK(20 - veinLeft > 0,
           "the mine is worked while the player is underground, exactly as it "
           "is worked while he is on the map");
@@ -541,8 +544,9 @@ void test_the_miner_works_the_vein() {
         tick_macro_npc_ai(mw, art, kAiTicks, /*allowAutoBattle=*/true);
     }
 
+    const auto& ironCells = deposits.cells[std::size_t(DepositKind::Iron)];
     const int veinLeft =
-        deposits.cells[std::size_t(DepositKind::Iron)].at(veinIdx);
+        ironCells.count(veinIdx) ? int(ironCells.at(veinIdx)) : 0;
     const int veinLost = 20 - veinLeft;
     const int storeGained = gs.villages[0].inventory.count("iron");
     const int inBag = w.reg.get<ecs::NpcInventory>(e).inv.count("iron");
@@ -551,13 +555,15 @@ void test_the_miner_works_the_vein() {
     CHECK(storeGained > 0, "the haul reached the village store");
     CHECK(veinLost == storeGained + inBag,
           "CONSERVATION: vein loss == store gain + what still rides the bag");
-    CHECK(deposits.cells[std::size_t(DepositKind::Iron)].count(veinIdx) == 1,
-          "a drained vein stays a VISIBLE cell - geology never disappears");
-    CHECK(veinLeft >= 0, "the vein bottoms out at dry, never negative");
     // The world ran dry: 20 units at kGatherPerWorkerDay per trip is gone
-    // within the 400 thinks — a dry vein is no worksite, so the miner
-    // gathers nothing further and the totals stay conserved.
-    CHECK(veinLeft == 0, "the little vein was mined OUT within the run");
+    // within the 400 thinks — and by the ANNIHILATION law (owner,
+    // 2026-08-28) the worked-out vein is a vein that no longer exists: the
+    // cell leaves the map, the counter keeps the scarcity baseline, and the
+    // chronicle (below) is the only record of what stood here.
+    CHECK(ironCells.count(veinIdx) == 0,
+          "the worked-out vein is ANNIHILATED - no dead cell lingers");
+    CHECK(deposits.drainedCells[std::size_t(DepositKind::Iron)] == 1u,
+          "the annihilation is counted once");
     CHECK(storeGained + inBag == 20,
           "everything the vein ever held is accounted for");
 
