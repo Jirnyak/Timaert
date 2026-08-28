@@ -657,6 +657,24 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     if (gs_) {
         set_flying(spellbook_has_sustained(gs_->player.spellBook, "flight"));
     }
+
+    // ── PLACES IN THIS SCENE THAT MEAN SOMETHING ────────────────────────
+    // The owner's own example: a circle of a certain radius, and standing in
+    // it means «посетил круг силы». A spire IS such a circle, so it gets one —
+    // and a generator that wants another writes `add_sub_zone`, not a
+    // mechanism.
+    //
+    // The zone sits at the CENTRE cell of the window, which is the macro cell
+    // the player entered: the spire stands on its own square of the map.
+    subZoneCount_ = 0;
+    subZonesEntered_ = 0;
+    for (const auto& sp : gs.spires) {
+        if (sp.x != cx || sp.y != cy) continue;
+        const float mid = float(kCellSize) * 1.5f;   // centre of the 3x3 window
+        add_sub_zone(mid, mid, float(kCellSize) * 0.5f, FactKind::Explored,
+                     int(sp.spellId) + 1);
+        break;
+    }
 }
 
 void SubworldEngine::sync_macro_player_to_center() {
@@ -1158,6 +1176,70 @@ void SubworldEngine::repopulate_after_recenter(int dx, int dy) {
 // place is the seam between them. A ruin explored below is a fact ON the map,
 // and the witcher who walks past next week can read it without ever going
 // underground.
+void SubworldEngine::player_macro_cell(int& cx, int& cy) const {
+    // THE seam, said once. The window is 3x3 macro cells around the centre, so
+    // where the player stands inside it decides which one he is in.
+    const int mapW = gs_ ? gs_->mapW : 1;
+    const int mapH = gs_ ? gs_->mapH : 1;
+    const int winCellX = int(playerX_) / kCellSize;
+    const int winCellY = int(playerY_) / kCellSize;
+    cx = (mgr_.center_cx() + winCellX - 1) % (mapW > 0 ? mapW : 1);
+    cy = (mgr_.center_cy() + winCellY - 1) % (mapH > 0 ? mapH : 1);
+    if (cx < 0) cx += mapW;
+    if (cy < 0) cy += mapH;
+}
+
+void SubworldEngine::add_sub_zone(float x, float y, float radius,
+                                  FactKind kind, std::int32_t amount,
+                                  bool onceEver) {
+    if (subZoneCount_ >= kMaxSubZones || radius <= 0.0f
+        || kind == FactKind::None || kind >= FactKind::Count) {
+        return;   // a scene holds a handful of meanings; refuse, never drop
+    }
+    SubZone& z = subZones_[std::size_t(subZoneCount_++)];
+    z.x = x; z.y = y; z.radius = radius;
+    z.kind = kind; z.amount = amount; z.onceEver = onceEver;
+}
+
+// Watch for the player CROSSING INTO a place that means something.
+//
+// Crossing, not standing: a circle files its fact on the step that enters it,
+// the same law the famine follows above (a town hungry for a season is one
+// famine). The session bitmask keeps a pacing player from filing it twice on
+// the same visit; the WORLD'S OWN MEMORY keeps him from filing it again on the
+// next visit, because a place that somebody has already stood in remembers
+// that — and a second "visited" flag would be a second truth about one past,
+// with a save field to keep true.
+void SubworldEngine::tick_zones() {
+    if (!gs_ || subZoneCount_ == 0) return;
+    int cx = 0, cy = 0;
+    player_macro_cell(cx, cy);
+    const std::int32_t today = gs_->worldTime.day();
+
+    for (int i = 0; i < subZoneCount_; ++i) {
+        const SubZone& z = subZones_[std::size_t(i)];
+        if (z.radius <= 0.0f) continue;
+        const std::uint32_t bit = 1u << std::uint32_t(i);
+        const float dx = playerX_ - z.x;
+        const float dy = playerY_ - z.y;
+        const bool inside = (dx * dx + dy * dy) <= (z.radius * z.radius);
+        if (!inside) { subZonesEntered_ &= ~bit; continue; }
+        if (subZonesEntered_ & bit) continue;   // already inside since last step
+        subZonesEntered_ |= bit;
+
+        if (z.onceEver) {
+            int seen = 0;
+            chronicle_near_kind(gs_->chronicle, cx, cy, /*radiusCells*/0,
+                                z.kind, today,
+                                [](void* u, const WorldFact&) {
+                                    ++*static_cast<int*>(u);
+                                }, &seen);
+            if (seen > 0) continue;   // the world already remembers this
+        }
+        record_world_fact(z.kind, cx, cy, z.amount);
+    }
+}
+
 void SubworldEngine::record_world_fact(FactKind kind, int cellX, int cellY,
                                        int amount) {
     if (!gs_) return;
@@ -2948,7 +3030,16 @@ bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
     // MACRO CELL that contains this subworld. That is "истина мира — макро"
     // stopping being a slogan — the two layers do not have two memories that
     // someone has to keep agreeing, they have one, and the place is the seam.
-    record_world_fact(FactKind::Explored, cx, cy, int(spire->spellId) + 1);
+    // INTERACTED, not Explored — and the difference is not pedantry. Standing
+    // in the spire's circle and DRAINING its orb are two different deeds about
+    // one place: you can do the first without the second. While both wore the
+    // same kind, the zone's "have I been here" check could not tell them apart
+    // and the world filed one visit twice.
+    //
+    // (What a drained spire is WORTH — its interest span and its renown — is
+    // data, and this row's numbers were written for door-opening. Worth the
+    // owner's eye: a spire consumed is a thing the world lost forever.)
+    record_world_fact(FactKind::Interacted, cx, cy, int(spire->spellId) + 1);
     set_status("The orb's light passes into you.");
     return true;
 }
@@ -3477,6 +3568,8 @@ void SubworldEngine::tick(float dt) {
     // so the seam (check_boundary) re-centres against the player's true position
     // (e.g. right after a possession snapped the flag onto a body elsewhere).
     pull_player_entity_to_scalars();
+    // A place that means something notices him crossing into it.
+    tick_zones();
     int prevCx = mgr_.center_cx(), prevCy = mgr_.center_cy();
     const auto seamStart = Clock::now();
     // A dungeon window is STATIC: no seam, no re-centre — the interior is

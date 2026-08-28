@@ -275,6 +275,12 @@ public:
                      std::uint32_t frameIndex);
 
     bool active() const { return active_; }
+    // Give this scene a place that means something. Generators call it; the
+    // engine watches for the player crossing in.
+    void add_sub_zone(float x, float y, float radius, FactKind kind,
+                      std::int32_t amount = 0, bool onceEver = true);
+    int sub_zone_count() const { return subZoneCount_; }
+
     float player_x() const { return playerX_; }
     float player_y() const { return playerY_; }
     // Terrain difficulty (macro/movement_cost.h cell_sp_weight) of the ground
@@ -491,6 +497,35 @@ private:
     EventBus*           bus_      = nullptr;
     const ZoneLayer*    zones_    = nullptr;
     TreeLayer*          treeLayer_ = nullptr;
+    // ── PLACES THAT MEAN SOMETHING (owner, 2026-08-27) ──────────────────
+    // «В субмире есть локальные интеракции и ЗОНЫ — например войти в круг
+    // определённого радиуса, по смыслу это что посетил круг силы».
+    //
+    // A zone is a place with a MEANING: a circle of power, a cursed grove, a
+    // threshold. Crossing into it is a fact of the world, filed at the macro
+    // cell that contains this subworld — so a thing done in one square metre
+    // underground is readable from the map above.
+    //
+    // Flat and capped, like everything the world is made of: a scene holds a
+    // handful of meanings, and a generator that wants one adds a row rather
+    // than a mechanism.
+    struct SubZone {
+        float x = 0.0f, y = 0.0f;   // subworld tiles
+        float radius = 0.0f;        // 0 = this slot is empty
+        FactKind kind = FactKind::None;
+        std::int32_t amount = 0;
+        // ONCE PER WORLD, not once per visit: the dedup is the world's own
+        // memory (chronicle_near_kind), because a place already remembers that
+        // somebody stood here. A separate "visited" flag would be a second
+        // truth about the same past, and it would have to be saved.
+        bool onceEver = true;
+    };
+    static constexpr int kMaxSubZones = 32;
+    // `subZones_`, not `zones_`: this codebase already uses ZoneLayer for the
+    // MACRO danger field, and two different meanings must not share a name.
+    std::array<SubZone, kMaxSubZones> subZones_{};
+    int subZoneCount_ = 0;
+
     float playerX_ = float(kFullSize / 2);
     float playerY_ = float(kFullSize / 2);
     float playerZ_ = 0.0f;
@@ -630,6 +665,17 @@ private:
     // is filed in the world's ONE memory, at the macro cell that contains this
     // subworld. One memory, and the place is the seam between the layers.
     void record_world_fact(FactKind kind, int cellX, int cellY, int amount);
+
+    // Watch for the player crossing INTO a zone. Called from tick().
+    void tick_zones();
+
+    // Where the player is standing, in MACRO cells — the seam's own
+    // coordinate, and the only translation the layers need between them.
+    void player_macro_cell(int& cx, int& cy) const;
+
+    // Zones the player has entered THIS session, so a circle files its fact on
+    // the step that crosses into it and not on every step inside it.
+    std::uint32_t subZonesEntered_ = 0;   // bitmask over kMaxSubZones
     void push_combat_log(const char* msg);
     void push_player_hit_log(std::uint32_t targetEntityId,
                              float damage,
