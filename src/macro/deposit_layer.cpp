@@ -74,12 +74,16 @@ DepositLayer build_deposit_layer(const TerrainData& terrain,
                            seed ^ kIronSalt) & kIronChanceMask) == 0) {
                     layer.cells[std::size_t(DepositKind::Iron)]
                         .emplace(idx, kIronBase);
+                    layer.virginUnits[std::size_t(DepositKind::Iron)]
+                        += kIronBase;
                     continue;
                 }
                 if ((hash3(std::uint32_t(x), std::uint32_t(y),
                            seed ^ kStoneSalt) & kStoneChanceMask) == 0) {
                     layer.cells[std::size_t(DepositKind::Stone)]
                         .emplace(idx, kStoneBase);
+                    layer.virginUnits[std::size_t(DepositKind::Stone)]
+                        += kStoneBase;
                 }
                 continue;
             }
@@ -89,6 +93,8 @@ DepositLayer build_deposit_layer(const TerrainData& terrain,
                 && river_adjacent(terrain, x, y)) {
                 layer.cells[std::size_t(DepositKind::Clay)]
                     .emplace(idx, kClayBase);
+                layer.virginUnits[std::size_t(DepositKind::Clay)]
+                    += kClayBase;
             }
         }
     }
@@ -103,10 +109,9 @@ bool set_deposit_remaining(DepositLayer& layer, DepositKind kind,
     if (it == m.end()) return false;   // mining invents no geology
     if (remaining <= 0) {
         // ANNIHILATION (owner, 2026-08-28): a worked-out vein is a vein that
-        // no longer exists. The counter keeps the scarcity baseline the dead
-        // cell used to carry.
+        // no longer exists. Scarcity needs no memorial — the derived
+        // virginUnits baseline is what the world misses it against.
         m.erase(it);
-        ++layer.drainedCells[std::size_t(kind)];
     } else {
         it->second = remaining;
     }
@@ -135,8 +140,9 @@ void restore_deposit_cells(DepositLayer& layer, const DepositLayer& loaded) {
             if (remaining <= 0) continue;   // pre-annihilation dry cell: gone
             layer.cells[k].emplace(idx, remaining);
         }
-        // The scarcity baseline travels with the cells it stands in for.
-        layer.drainedCells[k] = loaded.drainedCells[k];
+        // virginUnits stays the LAYER's own: it was derived when this layer
+        // was built from terrain + seed, which is exactly the baseline the
+        // loaded world was born with.
     }
     ++layer.revision;
 }
@@ -144,18 +150,14 @@ void restore_deposit_cells(DepositLayer& layer, const DepositLayer& loaded) {
 int iron_vein_lump() { return kIronBase; }
 
 float iron_depletion(const DepositLayer& layer) {
+    const std::int64_t virgin =
+        layer.virginUnits[std::size_t(DepositKind::Iron)];
+    if (virgin <= 0) return 0.0f;   // a world born without iron misses none
     std::int64_t remaining = 0;
-    std::int64_t cells =
-        std::int64_t(layer.drainedCells[std::size_t(DepositKind::Iron)]);
     for (const auto& [idx, rem] : layer.cells[std::size_t(DepositKind::Iron)]) {
         (void)idx;
-        ++cells;
         remaining += rem;
     }
-    // cells counts live AND annihilated veins: a fully worked-out world has
-    // an empty map but a full counter, and must read depleted, not virgin.
-    if (cells == 0) return 0.0f;
-    const std::int64_t virgin = cells * std::int64_t(kIronBase);
     const float d = 1.0f - float(remaining) / float(virgin);
     return d < 0.0f ? 0.0f : (d > 1.0f ? 1.0f : d);
 }

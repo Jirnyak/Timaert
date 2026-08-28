@@ -380,25 +380,26 @@ void resource_fields_daily_growth(MacroWorld& w, int day) {
             const std::size_t ownKind =
                 std::size_t(deposit_kind_of(ResourceFieldId(f)));
             const auto& own = w.deposits->cells[ownKind];
-            // Annihilated veins left the map (v55) but not the baseline:
-            // the drained counter is the other half of "how much this world
-            // ever held". A world where BOTH are zero never knew the metal.
-            const std::int64_t drained =
-                std::int64_t(w.deposits->drainedCells[ownKind]);
+            // Scarcity is world level vs BORN level (owner, 2026-08-28):
+            // virginUnits is derived from terrain + seed at layer build, so
+            // annihilated veins need no memorial and a world born without
+            // the metal never prospects for it.
+            const std::int64_t virgin = w.deposits->virginUnits[ownKind];
             const int lump = def.growthAt(w, 0, 0);
-            if (lump <= 0 || (own.empty() && drained == 0)) break;
+            if (lump <= 0 || virgin <= 0) break;
             std::int64_t remaining = 0;
             for (const auto& [idx, rem] : own) { (void)idx; remaining += rem; }
-            const std::int64_t virgin =
-                (std::int64_t(own.size()) + drained) * std::int64_t(lump);
+            // Discovery can push the live stock ABOVE the born level; a
+            // richer-than-born world simply misses nothing (a negative
+            // deficit cast to unsigned would prospect every day, forever).
+            const std::int64_t deficit =
+                remaining < virgin ? virgin - remaining : 0;
             // depletion ∈ [0,1] in 1/8 steps of the day roll below: the
             // comparison runs in integers — hash24 < depletion × 2^24 / 8.
             const std::uint64_t hash24 =
                 hash3(std::uint32_t(day), 0x6E0Cu, w.gs->worldSeed) >> 8;
-            const std::uint64_t bar = virgin > 0
-                ? std::uint64_t((virgin - remaining) * (1 << 24)
-                                / (virgin * 8))
-                : 0u;
+            const std::uint64_t bar =
+                std::uint64_t(deficit * (1 << 24) / (virgin * 8));
             if (hash24 >= bar) break;
             // Candidates: host cells not yet holding this row, in SORTED
             // order (the map's iteration order is unspecified — the pick

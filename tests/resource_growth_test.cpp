@@ -211,13 +211,14 @@ void test_iron_is_born_where_scarce() {
     }
     const std::size_t stoneBefore = stoneCells();
 
-    // Annihilation (v55): the worked-out veins LEFT the map, and only the
-    // drained counter still says the world ever knew iron — which is what
-    // keeps the scarcity law prospecting.
+    // Annihilation (v55/v56): the worked-out veins LEFT the map, and only
+    // the DERIVED born-with baseline still says the world ever knew iron —
+    // which is what keeps the scarcity law prospecting.
     CHECK(ironCells() == 0
-              && deposits.drainedCells[std::size_t(DepositKind::Iron)]
-                     == std::uint32_t(virginIron),
-          "mined-out veins are annihilated and counted");
+              && deposits.virginUnits[std::size_t(DepositKind::Iron)]
+                     == std::int64_t(virginIron)
+                            * std::int64_t(iron_vein_lump()),
+          "mined-out veins are annihilated; the baseline is derived");
 
     // A mined-out world prospects at depletion/8 = 12.5 %/day: over 256
     // days the horizon is generous, and the roll is a PURE function of the

@@ -562,8 +562,6 @@ void test_the_miner_works_the_vein() {
     // chronicle (below) is the only record of what stood here.
     CHECK(ironCells.count(veinIdx) == 0,
           "the worked-out vein is ANNIHILATED - no dead cell lingers");
-    CHECK(deposits.drainedCells[std::size_t(DepositKind::Iron)] == 1u,
-          "the annihilation is counted once");
     CHECK(storeGained + inBag == 20,
           "everything the vein ever held is accounted for");
 

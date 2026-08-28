@@ -199,9 +199,12 @@ namespace sm {
 // crutches are dead, which changes the NPC runtime POD's layout.
 // v55: ANNIHILATION of worked-out veins (owner, 2026-08-28: «истощённая жила
 // — это не существующая жила»). A deposit cell leaves the map when it runs
-// dry; DepositLayer::drainedCells (now in the deposit save block) carries the
-// scarcity baseline the dead cells used to hold implicitly.
-constexpr int kSaveVersion = 55;
+// dry.
+// v56: the scarcity baseline is DERIVED, not stored (owner: world level vs
+// «суммарно железа в мире»). DepositLayer::virginUnits is recomputed from
+// terrain + seed every boot — the v55 drainedCells counter left the format
+// the day it arrived.
+constexpr int kSaveVersion = 56;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 

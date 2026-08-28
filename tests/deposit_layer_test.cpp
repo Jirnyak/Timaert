@@ -129,16 +129,18 @@ void test_the_quantity_door_and_the_load_path() {
     CHECK(layer.revision > rev0, "the mutation moved the revision");
 
     // Draining to (or below) zero ANNIHILATES: a worked-out vein is a vein
-    // that no longer exists (owner, 2026-08-28), and the counter keeps the
-    // scarcity baseline the dead cell used to carry.
-    const std::uint32_t drained0 =
-        layer.drainedCells[std::size_t(DepositKind::Stone)];
+    // that no longer exists (owner, 2026-08-28). The scarcity baseline is
+    // the DERIVED virginUnits, so the death moves no stored state.
+    const std::int64_t virgin0 =
+        layer.virginUnits[std::size_t(DepositKind::Stone)];
     CHECK(set_deposit_remaining(layer, DepositKind::Stone, x, y, -3),
           "over-draining annihilates, not refuses");
     rem = layer.remaining_at(DepositKind::Stone, x, y);
     CHECK(rem == nullptr, "a worked-out vein leaves the map entirely");
-    CHECK(layer.drainedCells[std::size_t(DepositKind::Stone)] == drained0 + 1,
-          "the annihilation is counted - the baseline survives the cell");
+    CHECK(layer.virginUnits[std::size_t(DepositKind::Stone)] == virgin0
+              && virgin0 > 0,
+          "the born-with baseline is untouched by the death - it is derived, "
+          "not kept");
 
     // Mining cannot invent geology: a water cell never hosts a deposit, and
     // a stone write cannot touch another kind's map either.
@@ -156,9 +158,8 @@ void test_the_quantity_door_and_the_load_path() {
     restore_deposit_cells(loaded, layer);
     rem = loaded.remaining_at(DepositKind::Stone, x, y);
     CHECK(rem == nullptr, "the annihilated vein stays gone through a load");
-    CHECK(loaded.drainedCells[std::size_t(DepositKind::Stone)]
-              == layer.drainedCells[std::size_t(DepositKind::Stone)],
-          "the annihilation counter survives the load");
+    CHECK(loaded.virginUnits[std::size_t(DepositKind::Stone)] == virgin0,
+          "the re-derived layer carries the same born-with baseline");
     CHECK(total_cells(loaded) == total_cells(layer),
           "the restore reproduces every live cell, adds none");
 }
@@ -191,13 +192,14 @@ void test_iron_discovery() {
         }
     }
     CHECK_OR_RETURN(ironBefore > 0, "the fixture holds iron to exhaust");
-    // Annihilation emptied the MAP — the counter alone must carry the
-    // baseline, or a worked-out world would read virgin and never prospect.
+    // Annihilation emptied the MAP — the derived baseline alone must say the
+    // world once held iron, or a worked-out world would read virgin and
+    // never prospect.
     CHECK(layer.cells[std::size_t(DepositKind::Iron)].empty(),
           "every worked-out vein left the map");
-    CHECK(layer.drainedCells[std::size_t(DepositKind::Iron)]
-              == std::uint32_t(ironBefore),
-          "the counter remembers every annihilated vein");
+    CHECK(layer.virginUnits[std::size_t(DepositKind::Iron)]
+              == std::int64_t(ironBefore) * std::int64_t(iron_vein_lump()),
+          "the born-with baseline still says what the world once held");
     CHECK(iron_depletion(layer) == 1.0f,
           "a mined-out world reads fully depleted");
     CHECK(iron_discovery_chance_per_day(1.0f) > 0.0f,
