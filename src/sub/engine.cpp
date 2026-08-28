@@ -1121,7 +1121,6 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
                     // cell's named place. Killing one of them pays the map back
                     // (macro/macro_stock.h) instead of vanishing without trace.
                     ctx.landmark.id,
-                    ctx.landmark.kind == LandmarkType::Village,
                     wcx, wcy, faunaCount);
 }
 
@@ -2775,9 +2774,8 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
     ses.floorHeight = doorCtx.macroHeight;
     // Settlement context for the interior's own population — the same
     // numbers the street spawner reads (spawn_cell), captured once here.
-    ses.settlementId = doorCtx.landmark.id;
+    ses.settlementId = doorCtx.landmark.id;   // ONE landmark id space (v54)
     ses.landmarkPop = doorCtx.landmark.size;
-    ses.landmarkIsVillage = doorCtx.landmark.kind == LandmarkType::Village;
     ses.faction = faction_index_for_kingdom(gs_->politik, doorCtx.landmark.kingdomIdx);
     ses.arrival = DungeonArrival::Door;   // in off the street
 
@@ -2888,9 +2886,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
         MacroWorld mw = mw_;
         const MacroStockKey popKey{ses.settlementId,
                                    std::int16_t(ses.doorCx),
-                                   std::int16_t(ses.doorCy),
-                                   /*detail*/-1,
-                                   ses.landmarkIsVillage};
+                                   std::int16_t(ses.doorCy)};
         const int popNow = macro_stock_read(mw, MacroStock::Population, popKey);
         // Household size: 1–3 souls per hearth, one more in a crowded town
         // (≥128 — a full city, not a hamlet), never more than the town has.

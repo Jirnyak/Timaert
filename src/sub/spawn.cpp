@@ -551,7 +551,6 @@ void spawn_cell_npcs(ecs::World& w,
                      std::uint16_t settlementFaction,
                      int landmarkPop,
                      int landmarkSubjectId,
-                     bool landmarkIsVillage,
                      int macroCellX,
                      int macroCellY,
                      int faunaCount) {
@@ -580,9 +579,7 @@ void spawn_cell_npcs(ecs::World& w,
                                 landmarkPop, originX, originY,
                                 MacroStockKey{landmarkSubjectId,
                                               std::int16_t(macroCellX),
-                                              std::int16_t(macroCellY),
-                                              /*detail*/-1,
-                                              landmarkIsVillage});
+                                              std::int16_t(macroCellY)});
 
     // THE spawn law (fauna.h): the danger byte weights the TABLE — who is
     // rolled — never the body after the pick (S12; the negative control in

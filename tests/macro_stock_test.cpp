@@ -43,13 +43,13 @@ sm::GameState make_world() {
     other.y = 30;
     other.population = 300;
     gs.settlements.push_back(other);
-    // THE COLLISION THE REAL WORLD HAS. Cities and villages are numbered from
-    // zero in two independent registers (state.cpp), so id 7 names BOTH
-    // Testholm and this hamlet. The fixture used to pick 7 / 8 / 42 — three
-    // numbers that could not collide — and so could not see that the lookup
-    // searched the cities first and billed a city for a village's dead.
+    // ONE landmark id space (v54): every place draws on the one issuer, so a
+    // fixture with two places wearing one number would no longer be a world
+    // this game can generate. The collision fixture (village 7 beside city 7)
+    // guarded the register-bit crutch; the invariant now is that the id ALONE
+    // bills the right place.
     sm::Village twin{};
-    twin.id = 7;
+    twin.id = 9;
     twin.name = "Twinvale";
     twin.x = 40;
     twin.y = 40;
@@ -65,8 +65,8 @@ sm::GameState make_world() {
     return gs;
 }
 
-// Reads ONE register on purpose: with colliding ids, "search both" is exactly
-// the bug under test.
+// Read each list on its own so an assertion can say WHICH kind of place paid —
+// the ids are unique (v54), but the bill must still land on the right struct.
 int city_population_of(const sm::GameState& gs, int id) {
     for (const auto& s : gs.settlements) if (s.id == id) return s.population;
     return -1;
@@ -172,28 +172,26 @@ void test_debts_bill_their_own_subject() {
     CHECK(population_of(gs, 8) == 300, "the town next door is untouched");
     CHECK(population_of(gs, 42) == 40, "and so is the village");
 
-    // A village is a named place with people too — and its OWN register. The
-    // receipt says which one, so a hamlet numbered like a city bills the hamlet.
+    // A village is a named place with people too, on the SAME id space (v54):
+    // the id alone names it, no register bit rides the receipt.
     const auto villager = reg.create();
     stamp_macro_debt(reg, villager, MacroStock::Population,
-                     MacroStockKey{42, 20, 20, /*detail*/-1,
-                                   /*subjectIsVillage*/true}, 3);
+                     MacroStockKey{42, 20, 20}, 3);
     settle_macro_debt(w, *reg.try_get<ecs::MacroDebt>(villager), -1);
     CHECK(population_of(gs, 42) == 37,
           "a village pays from its own people, by the amount the receipt says");
 
-    // THE NEGATIVE CONTROL for the collision: village 7 and city 7 exist side
-    // by side. Killing two villagers must take them off Twinvale and leave
-    // Testholm exactly where the earlier check left it (299).
+    // THE NEGATIVE CONTROL for the one-space law: killing two villagers of
+    // Twinvale (id 9) must leave every CITY exactly where the earlier checks
+    // left them — the id alone finds the village, never a city.
     const auto twinVillager = reg.create();
     stamp_macro_debt(reg, twinVillager, MacroStock::Population,
-                     MacroStockKey{7, 40, 40, /*detail*/-1,
-                                   /*subjectIsVillage*/true}, 2);
+                     MacroStockKey{9, 40, 40}, 2);
     settle_macro_debt(w, *reg.try_get<ecs::MacroDebt>(twinVillager), -1);
-    CHECK(village_population_of(gs, 7) == 78,
-          "a village pays its own dead even when a city shares its number");
-    CHECK(city_population_of(gs, 7) == 299,
-          "and the city of the same number is not billed for them");
+    CHECK(village_population_of(gs, 9) == 78,
+          "a village pays its own dead through the one id space");
+    CHECK(city_population_of(gs, 7) == 299 && city_population_of(gs, 8) == 300,
+          "and no city is billed for them");
 
     // Signed both ways (owner's ruling): the same row settles creation.
     settle_macro_debt(w, *reg.try_get<ecs::MacroDebt>(villager), +1);

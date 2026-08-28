@@ -241,9 +241,11 @@ void test_villages_scatter_around_their_town() {
     }
 
     // Every city whose hinterland holds ANY admissible ground keeps at
-    // least one village.
-    for (const auto& s : w.gs.settlements) {
-        const City& c = w.gs.politik.cities[std::size_t(s.id)];
+    // least one village. Settlements are built from politik.cities in order,
+    // so POSITION pairs them; the id is an ordinal, not an index (v54).
+    for (std::size_t si = 0; si < w.gs.settlements.size(); ++si) {
+        const auto& s = w.gs.settlements[si];
+        const City& c = w.gs.politik.cities[si];
         if (hinterland_scores(w, c).empty()) continue;
         int mine = 0;
         for (const auto& v : w.gs.villages) if (v.nearestCityId == s.id) ++mine;
@@ -255,8 +257,12 @@ void test_count_derives_from_capacity() {
     World w;
     make_settled_world(w);
     int lush = 0, dry = 0;
+    // The first-generated city is the river-belt one; its id is whatever the
+    // ONE issuer handed it (v54), so ask the settlement, not the number 0.
+    const int lushCityId = w.gs.settlements.empty() ? -1
+                                                    : w.gs.settlements[0].id;
     for (const auto& v : w.gs.villages) {
-        if (v.nearestCityId == 0) ++lush;
+        if (v.nearestCityId == lushCityId) ++lush;
         else ++dry;
     }
     CHECK(lush >= 1, "the river belt hinterland feeds at least one village");

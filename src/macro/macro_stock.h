@@ -72,14 +72,11 @@ struct MacroStockKey {
     // pattern — ids may use the high bit); -1 = no name, the stock is a plain
     // number. Anonymous rows ignore it, so every existing key stays valid.
     std::int32_t detail = -1;
-    // WHICH REGISTER the subject id is drawn on. Cities and villages are
-    // numbered from zero INDEPENDENTLY (state.cpp: `s.id = int(i)` and
-    // `vil.id = villageId++`), so an id alone does not name a place — and the
-    // lookup searched the cities first. Killing ten peasants in village 3 took
-    // ten souls off CITY 3 on the other side of the map; past the last city's
-    // id the deaths vanished with no payer at all. Trailing and defaulted, so
-    // every key that means a CELL (subject = -1) is unaffected.
-    bool subjectIsVillage = false;
+    // (v54) The register bit is gone: every landmark draws its id from the ONE
+    // issuer (GameState::nextLandmarkOrdinal), so the id alone names the place.
+    // The bit existed because cities and villages were numbered from zero
+    // independently — killing ten peasants in village 3 took ten souls off
+    // CITY 3 on the other side of the map.
 };
 
 // THE envelope of world layers lives in macro/macro_world.h (CANON S6) — the
@@ -103,7 +100,7 @@ inline void stamp_macro_debt(entt::registry& reg, entt::entity e,
                              std::uint16_t amount = 1) {
     reg.emplace_or_replace<ecs::MacroDebt>(
         e, std::uint8_t(stock), key.subject, key.cellX, key.cellY, amount,
-        key.detail, std::uint8_t(key.subjectIsVillage ? 1 : 0));
+        key.detail);
 }
 
 // Settle one debt. `sign` is -1 when the borrowed thing is consumed (a citizen

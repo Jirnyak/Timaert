@@ -106,7 +106,9 @@ void generate_spires(GameState& gs, const ZoneLayer& zones,
             continue;
         }
         Spire sp{};
-        sp.id       = int(gs.spires.size());
+        // v54: a spire is a landmark like any other — its id comes from THE
+        // one issuer, not from its position in this vector.
+        sp.id       = int(gs.nextLandmarkOrdinal++);
         sp.x        = bestX;
         sp.y        = bestY;
         sp.spellId  = std::uint32_t(ord);

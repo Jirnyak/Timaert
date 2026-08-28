@@ -37,7 +37,6 @@ entt::entity make_woodcutter(ecs::World& w, float x, float y,
                               std::uint16_t(faction_index("timaert")));
     ecs::MacroNpcRuntime rt{};
     rt.homeSettlementId = homeVillageId;
-    rt.homeIsVillage = 1;
     rt.targetSettlementId = -1;
     rt.targetX = x;
     rt.targetY = y;
@@ -141,7 +140,6 @@ void test_the_farmer_works_the_field() {
                               std::uint16_t(faction_index("timaert")));
     ecs::MacroNpcRuntime prt{};
     prt.homeSettlementId = vil.id;
-    prt.homeIsVillage = 1;
     prt.targetSettlementId = -1;
     prt.targetX = 10.0f;
     prt.targetY = 10.0f;
@@ -204,7 +202,6 @@ void test_farmer_without_terrain_conjures_nothing() {
                               std::uint16_t(faction_index("timaert")));
     ecs::MacroNpcRuntime prt{};
     prt.homeSettlementId = vil.id;
-    prt.homeIsVillage = 1;
     prt.targetSettlementId = -1;
     prt.targetX = 10.0f;
     prt.targetY = 10.0f;
@@ -297,7 +294,6 @@ void test_the_mine_runs_while_the_player_is_away() {
                               std::uint16_t(faction_index("timaert")));
     ecs::MacroNpcRuntime rt{};
     rt.homeSettlementId = vil.id;
-    rt.homeIsVillage = 1;
     rt.targetSettlementId = -1;
     rt.targetX = 10.0f;
     rt.targetY = 10.0f;
@@ -470,7 +466,6 @@ void test_the_miner_works_the_vein() {
                               std::uint16_t(faction_index("timaert")));
     ecs::MacroNpcRuntime rt{};
     rt.homeSettlementId = vil.id;
-    rt.homeIsVillage = 1;
     rt.targetSettlementId = -1;
     rt.targetX = 10.0f;
     rt.targetY = 10.0f;

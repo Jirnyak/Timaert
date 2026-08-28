@@ -164,7 +164,7 @@ struct SoldierLink {
 // not learn the enum. The row it indexes lives in macro/macro_stock.h.
 struct MacroDebt {
     std::uint8_t  stock;          // MacroStock row index
-    std::int32_t  subject;        // settlement/village id, -1 = the cell itself
+    std::int32_t  subject;        // landmark id (ONE space, v54), -1 = the cell
     std::int16_t  cellX;
     std::int16_t  cellY;
     std::uint16_t amount;         // how much of the stock this one thing is
@@ -174,11 +174,6 @@ struct MacroDebt {
     // bit), so a death removes the very soldier who fell, not "one of them".
     // -1 = the stock is anonymous (population, trees) and needs no name.
     std::int32_t  detail = -1;
-    // Which register `subject` is drawn on: cities and villages are numbered
-    // from zero independently, so the id alone does not name a place
-    // (macro/macro_stock.h). Trailing and defaulted — a cell-subject receipt
-    // never sets it.
-    std::uint8_t  subjectIsVillage = 0;
 };
 
 // Backlink from a PROJECTED subworld body to the persistent macro NPC entity it
@@ -266,16 +261,13 @@ struct LightEmitter {
 
 // Macroworld NPC runtime — per-NPC mutable state for the AI tick
 // (mirrors fields on TS `NPC` not already covered by Position / NPCKind).
-// Pure POD, ~36 bytes. The home/target settlement ids index into
-// GameState::settlements (-1 = none).
+// Pure POD, ~36 bytes. The home/target landmark ids draw on the ONE landmark
+// id space (GameState::nextLandmarkOrdinal, v54) — a home may be a city or a
+// village, and the id alone says which place it is (-1 = none). The v27
+// homeIsVillage register bit died with the second id space it existed to
+// disambiguate.
 struct MacroNpcRuntime {
     std::int32_t  homeSettlementId;
-    // Which id space homeSettlementId names (v27): 0 = gs.settlements,
-    // 1 = gs.villages. The two lists both number from zero — a village
-    // woodcutter used to carry his nearest CITY's id as "home" and hauled
-    // nothing anywhere honest (the same two-id-space disease the v21 trade
-    // KIND bits cured).
-    std::uint8_t  homeIsVillage = 0;
     std::int32_t  targetSettlementId;
     float         targetX, targetY;
     std::int16_t  stateTimer;

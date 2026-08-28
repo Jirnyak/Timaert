@@ -1040,6 +1040,7 @@ void write_payload(Writer& w, const GameState& s,
     w.pod(s.worldTime);
     w.pod(s.lastWorldRebakeDay);   // v22: autosave/re-bake phase survives a load
     w.pod(s.nextMacroSpawnOrdinal); // v23: the ONE MacroSpawnId issuer
+    w.pod(s.nextLandmarkOrdinal);   // v54: the ONE landmark-id issuer
     w.str(s.saveName);
     w.str(savedAt);
     write_player(w, s.player);
@@ -1118,6 +1119,7 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
     r.pod(s.worldTime);
     r.pod(s.lastWorldRebakeDay);   // v22
     r.pod(s.nextMacroSpawnOrdinal); // v23
+    r.pod(s.nextLandmarkOrdinal);   // v54
     r.str(s.saveName);
     r.str(s.savedAt);
     read_player(r, s.player);
@@ -1324,6 +1326,8 @@ SaveSummary inspect_save(const std::string& path) {
     r.pod(lastWorldRebakeDay);
     std::uint32_t nextMacroSpawnOrdinal = 0;   // v23 — same
     r.pod(nextMacroSpawnOrdinal);
+    std::uint32_t nextLandmarkOrdinal = 0;     // v54 — same
+    r.pod(nextLandmarkOrdinal);
     r.str(out.saveName);
     r.str(out.savedAt);
     if (!r.ok) {

@@ -44,14 +44,13 @@ XY pick_random_nearby(float cx, float cy, int range, const TickContext& ctx) {
 
 bool home_pos(const ecs::MacroNpcRuntime& rt, const TickContext& ctx, XY& out) {
     if (rt.homeSettlementId < 0) return false;
-    if (rt.homeIsVillage) {
-        for (auto& v : ctx.mw.gs->villages) {
-            if (v.id == rt.homeSettlementId) {
-                out = {float(v.x), float(v.y)};
-                return true;
-            }
+    // ONE landmark id space (v54): the id alone names the place, so walk both
+    // lists knowing at most one can answer.
+    for (auto& v : ctx.mw.gs->villages) {
+        if (v.id == rt.homeSettlementId) {
+            out = {float(v.x), float(v.y)};
+            return true;
         }
-        return false;
     }
     for (auto& s : ctx.mw.gs->settlements) {
         if (s.id == rt.homeSettlementId) {
@@ -67,11 +66,9 @@ bool home_pos(const ecs::MacroNpcRuntime& rt, const TickContext& ctx, XY& out) {
 Inventory* home_inventory(const ecs::MacroNpcRuntime& rt,
                           const TickContext& ctx) {
     if (rt.homeSettlementId < 0) return nullptr;
-    if (rt.homeIsVillage) {
-        for (auto& v : ctx.mw.gs->villages) {
-            if (v.id == rt.homeSettlementId) return &v.inventory;
-        }
-        return nullptr;
+    // ONE landmark id space (v54): at most one list answers.
+    for (auto& v : ctx.mw.gs->villages) {
+        if (v.id == rt.homeSettlementId) return &v.inventory;
     }
     for (auto& s : ctx.mw.gs->settlements) {
         if (s.id == rt.homeSettlementId) return &s.inventory;
@@ -656,14 +653,17 @@ int haul_between(Inventory& from, Inventory& to, const char* id,
 void ai_caravan(entt::entity self, ecs::Position& p,
                 ecs::MacroNpcRuntime& rt, const TickContext& ctx) {
     XY home;
-    if (!home_pos(rt, ctx, home) || rt.homeIsVillage || !ctx.mw.world) {
-        // No honest home city — degrade to the old nomad wander.
+    if (!home_pos(rt, ctx, home) || !ctx.mw.world) {
+        // No honest home — degrade to the old nomad wander.
         ai_nomad(p, rt, ctx);
         return;
     }
     auto& reg = ctx.mw.world->reg;
     auto* bag = reg.try_get<ecs::NpcInventory>(self);
     auto* mem = reg.try_get<AgentMemory>(self);
+    // A caravan's home must be a CITY: the settlement lookup itself is the
+    // check now (v54 — one id space, so a village home simply finds nothing
+    // here and the caravan degrades below).
     Inventory* homeStore = settlement_inventory_by_id(ctx, rt.homeSettlementId);
     if (!bag || !mem || !homeStore) {
         ai_nomad(p, rt, ctx);

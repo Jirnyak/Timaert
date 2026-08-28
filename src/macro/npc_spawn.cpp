@@ -50,8 +50,7 @@ XY find_valid_spawn(int cx, int cy, int radius, Rng& rng,
 // Returns the created entity (spawn_squad decorates it with roster/orders).
 entt::entity make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
                       int x, int y, int homeId, Rng& rng,
-                      std::uint32_t& spawnIndex, int levelOverride = -1,
-                      bool homeIsVillage = false) {
+                      std::uint32_t& spawnIndex, int levelOverride = -1) {
     auto e = w.reg.create();
     w.reg.emplace<ecs::Position>(e, float(x), float(y), 0.0f);
     w.reg.emplace<ecs::VisualPos>(e, float(x), float(y), 0.0f);
@@ -79,8 +78,7 @@ entt::entity make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
     const std::uint32_t ordinal = spawnIndex++;
 
     ecs::MacroNpcRuntime rt{};
-    rt.homeSettlementId   = homeId;
-    rt.homeIsVillage      = homeIsVillage ? 1 : 0;
+    rt.homeSettlementId   = homeId;   // ONE landmark id space (v54)
     rt.targetSettlementId = -1;
     rt.targetX            = float(x);
     rt.targetY            = float(y);
@@ -291,14 +289,14 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
         for (int i = 0; i < vPeas; ++i) {
             auto p = find_valid_spawn(v.x, v.y, 8, rng, mw, mh, terrain);
             make_npc(w, NPCType::Peasant, fIdx, p.x, p.y, v.id, rng,
-                     spawnIndex, -1, /*homeIsVillage=*/true);
+                     spawnIndex);
         }
         if (rng.next_f01() > 0.4f) {
             auto p = find_valid_spawn(v.x, v.y, 10, rng, mw, mh, terrain);
             // The home-link fix (W2b): a village woodcutter is the VILLAGE's
             // man — his haul lands in the village store, not a city's.
             make_npc(w, NPCType::Woodcutter, fIdx, p.x, p.y, v.id, rng,
-                     spawnIndex, -1, /*homeIsVillage=*/true);
+                     spawnIndex);
         }
         // Village-context professions (resources.md): a live vein inside the
         // gatherer reach raises ITS profession — the same table row the AI
@@ -327,7 +325,7 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
                 if (!near) continue;
                 auto p = find_valid_spawn(v.x, v.y, 10, rng, mw, mh, terrain);
                 make_npc(w, role.type, fIdx, p.x, p.y, v.id, rng,
-                         spawnIndex, -1, /*homeIsVillage=*/true);
+                         spawnIndex);
             }
         }
     }

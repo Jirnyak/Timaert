@@ -189,7 +189,15 @@ namespace sm {
 // villages carry theirs, so the landmark blocks grew a field. And what a deed
 // is worth became CONTEXTUAL: the base its row gives plus a share of what the
 // victim was worth, which is a number the world already kept about them.
-constexpr int kSaveVersion = 53;
+// v54: ONE landmark identity (owner, 2026-08-28). Cities, villages and spires
+// used to be numbered from zero in three independent registers, so an id
+// alone never named a place — the chronicle paid a village's renown to the
+// city wearing the same number, and two crutch bits (MacroNpcRuntime
+// homeIsVillage, MacroStockKey subjectIsVillage) existed only to disambiguate.
+// Now every landmark draws its id from GameState::nextLandmarkOrdinal — the
+// same monotonic-ordinal law MacroSpawnId already lives by — and both
+// crutches are dead, which changes the NPC runtime POD's layout.
+constexpr int kSaveVersion = 54;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
@@ -517,6 +525,13 @@ struct GameState {
     // NPC's ordinal, and a load could wake the player in a stranger's body
     // (problems.md 19.24).
     std::uint32_t nextMacroSpawnOrdinal = 0;
+    // The ONE issuer of LANDMARK ids (v54): cities, villages, spires — every
+    // named place draws from this counter at generation, so an id names ONE
+    // place across all landmark kinds. 0 is reserved for "no landmark" (the
+    // chronicle already files unknown subjects as 0), so issuance starts at 1.
+    // Same monotonic-ordinal law as nextMacroSpawnOrdinal above: a hash or a
+    // per-kind register is not an identity (CANON S20.1).
+    std::uint32_t nextLandmarkOrdinal = 1;
     // The world's runtime rhythms (v24). worldTickRt is the LIVE runtime —
     // world_tick.cpp mutates it in place; macroAiRhythm is the staged image
     // of App::npcAi's persistent half (see the two sync doors in main.cpp).

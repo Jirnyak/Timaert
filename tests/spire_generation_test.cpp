@@ -1,7 +1,7 @@
 // Spire placement (macro/spires.cpp). Pinned promises:
 //   · one spire per kSpellDefs row (the generator asks the spell registry
-//     itself — Rule 13), id = list index, spellId = the row's append-only
-//     ordinal, born un-depleted;
+//     itself — Rule 13), id drawn from the ONE landmark issuer (v54),
+//     spellId = the row's append-only ordinal, born un-depleted;
 //   · a spire stands on land, inside the landmark table's own zone band
 //     (landmark_def(Spire).minZone), and the top-tier spell's spire stands at
 //     the band's CAP — the doom spell lives where the world is at its worst;
@@ -23,6 +23,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <set>
 #include <cstdlib>
 
 namespace {
@@ -100,9 +101,19 @@ void test_one_spire_per_spell_in_the_band() {
     const LandmarkDef& def = landmark_def(LandmarkType::Spire);
     CHECK_OR_RETURN(gs.spires.size() == std::size_t(kSpellCount),
                     "every learnable spell got its spire");
+    // Ids come from the ONE landmark issuer (v54): unique across every kind
+    // of place, monotonic in creation order — never the list index.
+    std::set<int> seenIds;
+    for (const auto& s : gs.settlements) seenIds.insert(s.id);
+    for (const auto& v : gs.villages) seenIds.insert(v.id);
     for (std::size_t i = 0; i < gs.spires.size(); ++i) {
         const Spire& sp = gs.spires[i];
-        CHECK(sp.id == int(i), "spire id is its list index");
+        CHECK(sp.id > 0 && seenIds.insert(sp.id).second,
+              "a spire's id is unique across all landmarks (one issuer)");
+        if (i > 0) {
+            CHECK(sp.id > gs.spires[i - 1].id,
+                  "the issuer is monotonic: later spire, later ordinal");
+        }
         CHECK(sp.spellId == std::uint32_t(i),
               "the spire carries its spell's registry ordinal");
         CHECK(!sp.depleted, "a fresh spire holds its spell");

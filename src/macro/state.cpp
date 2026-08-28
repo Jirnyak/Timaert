@@ -141,7 +141,8 @@ void populate_landmarks_from_politik(GameState& gs,
     for (std::size_t i = 0; i < cities.size(); ++i) {
         const City& c = cities[i];
         Settlement s{};
-        s.id          = int(i);
+        // v54: ONE landmark id space — the ordinal issuer, never the loop index.
+        s.id          = int(gs.nextLandmarkOrdinal++);
         s.x           = c.x;
         s.y           = c.y;
         s.kingdomIdx  = c.kingdomIdx;
@@ -194,7 +195,6 @@ void populate_landmarks_from_politik(GameState& gs,
     std::vector<Candidate> cands;
     cands.reserve(std::size_t(2 * reach + 1) * std::size_t(2 * reach + 1));
 
-    int villageId = 0;
     for (const auto& s : gs.settlements) {
         cands.clear();
         long long hinterlandCapacity = 0;
@@ -251,7 +251,7 @@ void populate_landmarks_from_politik(GameState& gs,
             }
             if (crowded) continue;
             Village vil{};
-            vil.id            = villageId++;
+            vil.id            = int(gs.nextLandmarkOrdinal++);   // v54: same issuer
             vil.x             = c.x;
             vil.y             = c.y;
             vil.kingdomIdx    = s.kingdomIdx;
