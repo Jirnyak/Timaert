@@ -1,0 +1,56 @@
+// The player's journal CAPTURE — the reader that turns the world's chronicle
+// into the player's knowledge (CANON S20.1 + owner rulings 2026-08-28).
+//
+// S11 applied to history: the world does not TELL what the player never
+// learned. The chronicle stays one and whole (legends mode reads it raw);
+// what the player's journal shows is the slice he LEARNED — and this file is
+// the one place that decides what "learned" means:
+//   · he TOOK PART — the fact names his squad ordinal as subject or object;
+//   · it happened HERE — on the macro cell he is standing on the tick it was
+//     filed (the subworld files into that same cell, so everything he sees
+//     below is his by construction).
+// Rumours will come through this same door later: a rumour is a chronicle
+// record read to him, and hearing it appends it here like witnessing does.
+//
+// Deliberately a READER, not a writer hook: chronicle_record stays pure and
+// none of the fact writers knows the journal exists. Once per tick the player
+// asks "what happened since seq N" — the chronicle is globally ordered by
+// seq, so the scan touches only the tick's few new records (usually none).
+#pragma once
+
+#include "core/torus.h"
+#include "ecs/components.h"
+#include "macro/state.h"
+
+namespace sm {
+
+inline void player_journal_capture(GameState& gs) {
+    const Chronicle& c = gs.chronicle;
+    if (!c.ready() || gs.mapW <= 0 || gs.mapH <= 0) return;
+    PlayerState& p = gs.player;
+    const int px = wrapi(int(p.x), gs.mapW);
+    const int py = wrapi(int(p.y), gs.mapH);
+    for (std::uint32_t s = p.journalSeenSeq + 1u; s < c.nextSeq; ++s) {
+        const WorldFact& f = c.ring[std::size_t((s - 1u) % kChronicleFacts)];
+        // A slot that no longer holds its seq was evicted before this reader
+        // ever ran (a scan that fell a whole ring behind) — nothing to learn.
+        if (f.seq != s) continue;
+        const bool tookPart =
+            (fact_subject_kind(f.subjectKind)
+                 == std::uint8_t(FactSubject::Squad)
+             && f.subject == ecs::kPlayerSquadOrdinal)
+            || (fact_subject_kind(f.objectKind)
+                    == std::uint8_t(FactSubject::Squad)
+                && f.object == ecs::kPlayerSquadOrdinal);
+        const bool happenedHere = int(f.x) == px && int(f.y) == py;
+        if (!tookPart && !happenedHere) continue;
+        if (p.journal.size() >= std::size_t(PlayerState::kJournalFactsCap)) {
+            p.journalFull = 1;   // loud, never a silent drop of his past
+            break;
+        }
+        p.journal.push_back(f);
+    }
+    p.journalSeenSeq = c.nextSeq - 1u;
+}
+
+} // namespace sm

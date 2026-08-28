@@ -55,6 +55,7 @@
 #include "macro/currency.h"
 #include "macro/squad.h"
 #include "macro/player_entity.h"
+#include "macro/journal.h"
 #include "macro/pathfinding.h"
 #include "macro/items.h"
 #include "macro/player_recovery.h"
@@ -580,6 +581,37 @@ bool squad_is_named(const App& app, entt::entity e) {
 // These two are the whole of it, and the rest of the system asks them.
 // `renown_of` is what makes a deed contextual — killing a legend is worth a
 // share of the legend — and `grant_renown` is what makes fame spread.
+// The app-side lending of NAMES to the chronicle (sm::FactNaming): the
+// chronicle speaks ordinals and must not learn how the world names things,
+// so the app lends it three resolvers (chronicle.h, "SAYING IT IN WORDS").
+// Returned pointers are c_str() of live GameState strings — valid for the
+// frame the sentence is rendered in, which is the only life a sentence has.
+sm::FactNaming app_fact_naming(App& app) {
+    sm::FactNaming n{};
+    n.user = &app.gs;
+    n.squad = [](void* u, std::uint32_t ordinal) -> const char* {
+        (void)u;
+        // Squads have no display names yet (a lord's name is a future
+        // column); the one the journal's reader IS gets the honest pronoun.
+        return ordinal == sm::ecs::kPlayerSquadOrdinal ? "You" : nullptr;
+    };
+    n.landmark = [](void* u, std::uint32_t id) -> const char* {
+        auto& gs = *static_cast<sm::GameState*>(u);
+        for (const auto& s : gs.settlements)
+            if (std::uint32_t(s.id) == id) return s.name.c_str();
+        for (const auto& v : gs.villages)
+            if (std::uint32_t(v.id) == id) return v.name.c_str();
+        return nullptr;   // a spire has no name of its own — "a place"
+    };
+    n.faction = [](void* u, std::uint32_t index) -> const char* {
+        (void)u;
+        return index < std::uint32_t(sm::kFactionCount)
+                   ? sm::kFactionDefs[index].name
+                   : nullptr;
+    };
+    return n;
+}
+
 std::uint32_t* renown_slot(App& app, std::uint8_t subjectKind,
                            std::uint32_t ordinal) {
     switch (sm::fact_subject_kind(subjectKind)) {
@@ -4149,6 +4181,10 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
             app.uploadedTreeRev = app.treeLayer.revision;
         }
     }
+    // The player LEARNS this tick's facts — participation and his own cell
+    // (macro/journal.h). Runs on both sides of the seam: underground the
+    // engine files into the very macro cell he stands in.
+    sm::player_journal_capture(app.gs);
     tick_subworld_hit_flash(app, dt);
     if (app.gs.player.combatStats.currentHp <= 0) {
         app.state = sm::ui::AppState::Dead;
@@ -5111,19 +5147,31 @@ void draw_debug_panels(App& app) {
         ImGui::End();
     }
 
-    // ── Journal (player event log) ────────────────────────────
+    // ── Journal: a VIEW on the chronicle (CANON S20.1) ─────────
+    // What the player LEARNED — copies captured by macro/journal.h — said in
+    // words derived at this very moment (fact_sentence + the app's naming
+    // resolvers). No sentence is stored anywhere; change the tables and the
+    // same past says itself differently.
     if (app.panels.journal) {
         ImGui::SetNextWindowSize(ImVec2(440, 300), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("Journal", &app.panels.journal)) {
-            const auto& log = app.gs.player.eventLog;
-            ImGui::Text("%zu entries (showing last 200)", log.size());
+            const auto& j = app.gs.player.journal;
+            ImGui::Text("%zu facts learned (showing last 200)", j.size());
+            if (app.gs.player.journalFull) {
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(1.f, 0.4f, 0.3f, 1.f),
+                                   "[journal full]");
+            }
             ImGui::Separator();
             if (ImGui::BeginChild("jlog")) {
-                const std::size_t start = log.size() > 200 ? log.size() - 200 : 0;
-                for (std::size_t i = start; i < log.size(); ++i)
-                    ImGui::TextWrapped("[day %d] %s", log.at(i).day,
-                                       log.at(i).message.c_str());
-                if (log.empty()) ImGui::TextDisabled("(no entries yet)");
+                const sm::FactNaming naming = app_fact_naming(app);
+                const std::size_t start = j.size() > 200 ? j.size() - 200 : 0;
+                char line[192];
+                for (std::size_t i = start; i < j.size(); ++i) {
+                    sm::fact_sentence(j[i], naming, line, int(sizeof line));
+                    ImGui::TextWrapped("[day %d] %s", j[i].day, line);
+                }
+                if (j.empty()) ImGui::TextDisabled("(nothing learned yet)");
             }
             ImGui::EndChild();
         }

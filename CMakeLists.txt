@@ -1181,6 +1181,14 @@ timaert_test(chronicle_test
     SOURCES
         src/macro/chronicle.cpp)
 
+# The player's journal is his KNOWLEDGE of the chronicle: capture is a pure
+# reader over the ring (macro/journal.h), so the world's memory is the only
+# TU it needs.
+timaert_test(journal_test
+    SOURCES
+        src/macro/chronicle.cpp
+    LINK_ENTT)
+
 # ONE table every modifier is a row of: a bonus names an address the sheet
 # already has, and a STANDING one is removable because it is read through a
 # copy instead of being written into the sheet.

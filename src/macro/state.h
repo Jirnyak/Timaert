@@ -204,7 +204,12 @@ namespace sm {
 // «суммарно железа в мире»). DepositLayer::virginUnits is recomputed from
 // terrain + seed every boot — the v55 drainedCells counter left the format
 // the day it arrived.
-constexpr int kSaveVersion = 56;
+// v57: the player's JOURNAL — his knowledge of the world's facts (owner,
+// 2026-08-28: the player knows only what he took part in, what happened on
+// his cell while he stood there, and — later — rumours; and his journal is
+// the log of his WHOLE game, it never forgets). Copies of chronicle records,
+// append-only, loud cap; rides in write_player.
+constexpr int kSaveVersion = 57;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
@@ -421,6 +426,29 @@ struct PlayerState {
     // includes things that changed nothing in the world. Where those words
     // should ultimately live is the open ?27.)
     EventLogRing             eventLog;
+    // Loud cap of the journal below. Derived from the measured fact rate
+    // (chronicle_rate smoke): the WORLD writes ~100–340 facts a day, and the
+    // player's slice — his own deeds plus one cell of a million — is single
+    // digits a day in practice. 2^16 copies × 32 B = 2 MB (size is no
+    // argument, CANON S26) covers decades of play at 10× that rate; hitting
+    // it flips journalFull rather than silently dropping his past.
+    static constexpr std::uint32_t kJournalFactsCap = 1u << 16;
+    // The player's JOURNAL: his KNOWLEDGE of the world's facts (?27 half-
+    // ruling, owner 2026-08-28). The chronicle is the world's one memory; the
+    // journal is what of it the player LEARNED — by taking part, by standing
+    // on the cell where it happened, and (later, through the same door) by
+    // buying rumours. Two owner laws shape the container:
+    //   · the journal NEVER forgets — it is the log of his whole game — so it
+    //     is append-only with a LOUD cap, not a ring;
+    //   · the world's ring DOES forget, so the journal holds COPIES of the
+    //     32-byte records, not seq references that would dangle. A fact is
+    //     immutable from the moment it is filed, so a copy of it is not a
+    //     second truth — there is nothing for the two to disagree about.
+    // Words are still derived at display time (fact_sentence): the journal
+    // stays a VIEW on the chronicle; what it stores is WHOSE the knowledge is.
+    std::vector<WorldFact>   journal;
+    std::uint32_t            journalSeenSeq = 0;  // last chronicle seq scanned
+    std::uint8_t             journalFull = 0;     // the loud cap flag
     SpellBook spellBook;
     // Truce clocks, one per faction SLOT (macro/relations.h): the day a
     // cease-fire with that faction runs out. It was the last string-keyed

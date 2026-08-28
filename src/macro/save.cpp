@@ -680,6 +680,13 @@ void write_player(Writer& w, const PlayerState& p) {
     w.pod(p.possessedMacroSpawnId);   // Inc 5e-2 (kSaveVersion 10)
     w.pod(p.entryDir);                // entry-side context (kSaveVersion 15)
     w.pod(p.entryTicks);
+    // v57: the player's journal — copies of the chronicle records he learned
+    // (his whole game, never forgotten), plus the reader's own cursor.
+    if (w.count(p.journal.size(), PlayerState::kJournalFactsCap)) {
+        for (const WorldFact& f : p.journal) w.pod(f);
+    }
+    w.pod(p.journalSeenSeq);
+    w.pod(p.journalFull);
 }
 
 void read_player(Reader& r, PlayerState& p) {
@@ -709,6 +716,17 @@ void read_player(Reader& r, PlayerState& p) {
     r.pod(p.possessedMacroSpawnId);   // Inc 5e-2 (kSaveVersion 10)
     r.pod(p.entryDir);                // entry-side context (kSaveVersion 15)
     r.pod(p.entryTicks);
+    std::uint32_t jn = 0;             // v57: the journal rides whole
+    if (!read_count(r, jn, PlayerState::kJournalFactsCap)) return;
+    p.journal.clear();
+    p.journal.reserve(jn);
+    for (std::uint32_t i = 0; i < jn && r.ok; ++i) {
+        WorldFact f{};
+        r.pod(f);
+        if (r.ok) p.journal.push_back(f);
+    }
+    r.pod(p.journalSeenSeq);
+    r.pod(p.journalFull);
 }
 
 void write_settlement(Writer& w, const Settlement& s) {
