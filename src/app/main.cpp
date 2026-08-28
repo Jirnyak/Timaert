@@ -1362,11 +1362,9 @@ void close_pre_battle(App& app, bool grace) {
 }
 
 void push_combat_log(App& app, std::string msg) {
-    sm::LogEntry entry{};
-    entry.type = sm::LogType::Combat;
-    entry.day = app.gs.worldTime.day();
-    entry.message = std::move(msg);
-    sm::push_event_log(app.gs.player, std::move(entry));
+    // Session words die with the moment (v58): the fading HUD feed, never
+    // the save. What the world remembers went through the chronicle already.
+    sm::session_feed_push(app.gs.sessionFeed, msg.c_str());
 }
 
 // The M&B auto-resolve button: the ONE resolver, the player as one side,
@@ -2071,10 +2069,8 @@ bool save_game_checked(App& app, bool autosave = false) {
     // it, never saved — leaving IS the macro-return every underground action
     // must have.
     if (app.subworld.active()) {
-        sm::push_event_log(app.gs.player,
-                           {sm::LogType::World,
-                            "You cannot save underground - return to the map.",
-                            app.gs.worldTime.day()});
+        sm::session_feed_push(app.gs.sessionFeed,
+                              "You cannot save underground - return to the map.");
         return false;
     }
     const std::string& path = autosave ? app.autosavePath : app.savePath;
@@ -2087,8 +2083,7 @@ bool save_game_checked(App& app, bool autosave = false) {
     const char* msg = ok ? (autosave ? "Autosaved." : "Game saved.")
                          : (autosave ? "AUTOSAVE FAILED - progress is NOT on disk!"
                                      : "SAVE FAILED - progress is NOT on disk!");
-    sm::push_event_log(app.gs.player,
-                       {sm::LogType::World, msg, app.gs.worldTime.day()});
+    sm::session_feed_push(app.gs.sessionFeed, msg);
     return ok;
 }
 
@@ -2997,6 +2992,34 @@ void draw_subworld_danger_gem(const sm::sub::SubworldEngine& subworld, float sca
 // lifted with the same key, a pause your inventory is holding is lifted by
 // closing it. A story slide or an event window gets no badge at all — it is
 // already the loudest thing on screen and does not need a second banner.
+// The SESSION FEED (state.h SessionFeed): the M&M message strip — the last
+// few session words fading out near the bottom of the screen, newest lowest.
+// Presentation only, and this draw is also where a line's ttl burns down:
+// screen time is the only time a session word has (owner, 2026-08-28).
+void draw_session_feed(App& app) {
+    sm::SessionFeed& feed = app.gs.sessionFeed;
+    const ImGuiIO& io = ImGui::GetIO();
+    ImDrawList* fg = ImGui::GetForegroundDrawList();
+    const float lineH = ImGui::GetTextLineHeightWithSpacing();
+    int shown = 0;
+    for (int i = 0; i < sm::SessionFeed::kLines; ++i) {
+        const int idx = (int(feed.head) - 1 - i + 2 * sm::SessionFeed::kLines)
+                        % sm::SessionFeed::kLines;
+        sm::SessionFeed::Line& l = feed.lines[idx];
+        if (l.ttl <= 0.0f || l.text[0] == '\0') continue;
+        l.ttl -= io.DeltaTime;
+        const float a = l.ttl < 1.0f ? (l.ttl < 0.0f ? 0.0f : l.ttl) : 1.0f;
+        const ImVec2 size = ImGui::CalcTextSize(l.text);
+        const float x = (io.DisplaySize.x - size.x) * 0.5f;
+        const float y = io.DisplaySize.y - 172.0f - float(shown) * lineH;
+        fg->AddText(ImVec2(x + 1.0f, y + 1.0f),
+                    IM_COL32(0, 0, 0, int(150 * a)), l.text);
+        fg->AddText(ImVec2(x, y),
+                    IM_COL32(235, 226, 195, int(235 * a)), l.text);
+        ++shown;
+    }
+}
+
 void draw_pause_badge(int logicalW, const char* label) {
     ImDrawList* fg = ImGui::GetForegroundDrawList();
     ImFont* font = ImGui::GetFont();
@@ -3649,23 +3672,20 @@ void apply_intro_story_result(App& app, const sm::StoryResultPayload& result) {
         }
     }
 
-    sm::LogEntry entry{};
-    entry.type = sm::LogType::World;
-    entry.day = app.gs.worldTime.day();
-    entry.message = "Born ";
-    entry.message += sex ? *sex : "unknown";
-    entry.message += ", homeland: ";
+    std::string born = "Born ";
+    born += sex ? *sex : "unknown";
+    born += ", homeland: ";
     // The RESOLVED realm, by its registry name: a player who picked "Barbarian
     // Kingdoms" is told which of them he was actually born in, because that is
     // the fact the world will hold him to.
     if (homeland) {
         const int fi = sm::faction_index(homeland);
-        entry.message += fi >= 0 ? sm::kFactionDefs[fi].name : homeland;
+        born += fi >= 0 ? sm::kFactionDefs[fi].name : homeland;
     } else {
-        entry.message += "unknown";
+        born += "unknown";
     }
-    entry.message += ".";
-    sm::push_event_log(app.gs.player, std::move(entry));
+    born += ".";
+    sm::session_feed_push(app.gs.sessionFeed, born.c_str());
 
     app.logic.activate("plot_chapter_1");
 
@@ -3729,12 +3749,9 @@ void handle_pending_battle_start_events(App& app) {
         if (app.subworld.spawn_npc_body(ev.s2.c_str(), ev.s1.c_str(),
                                         ev.ix, seed, "bandits",
                                         nullptr)) {
-            sm::LogEntry entry{};
-            entry.type = sm::LogType::Combat;
-            entry.day = app.gs.worldTime.day();
-            entry.message = "Encounter spawned in subworld: ";
-            entry.message += ev.s1.empty() ? ev.s2 : ev.s1;
-            sm::push_event_log(app.gs.player, std::move(entry));
+            std::string line = "Encounter spawned in subworld: ";
+            line += ev.s1.empty() ? ev.s2 : ev.s1;
+            sm::session_feed_push(app.gs.sessionFeed, line.c_str());
         }
     }
     app.appliedCombatEventCount = end;
@@ -3757,12 +3774,9 @@ void handle_pending_spawn_entity_events(App& app) {
         if (ev.tag != sm::EventTag::SpawnEntity) continue;
         if (sm::spawn_npc_at(app.gs, app.ecs, app.terrain,
                              ev.s1.c_str(), ev.ix, ev.iy, int(ev.a))) {
-            sm::LogEntry entry{};
-            entry.type = sm::LogType::Combat;
-            entry.day = app.gs.worldTime.day();
-            entry.message = "Word spreads of trouble near the marked area: ";
-            entry.message += ev.s1;
-            sm::push_event_log(app.gs.player, std::move(entry));
+            std::string line = "Word spreads of trouble near the marked area: ";
+            line += ev.s1;
+            sm::session_feed_push(app.gs.sessionFeed, line.c_str());
         }
     }
     app.appliedSpawnEventCount = end;
@@ -7580,9 +7594,8 @@ bool run_spire_climb_smoke(App& app) {
         for (const auto& s : app.subworld.mgr().structures()) {
             if (s.kind == sm::sub::Structure::SpireOrb) ++orbsAfter;
         }
-        for (std::size_t i = 0; i < app.gs.player.eventLog.size(); ++i) {
-            if (app.gs.player.eventLog.at(i).message.find("You have learned")
-                != std::string::npos) {
+        for (const auto& line : app.gs.sessionFeed.lines) {
+            if (std::strstr(line.text, "You have learned") != nullptr) {
                 logged = true;
             }
         }
@@ -12223,6 +12236,7 @@ void frame(App& app, int simSteps) {
             draw_debug_ui(app);
             sm::dev::draw_debug_console(app.console);
             draw_debug_panels(app);
+            draw_session_feed(app);
             if (app.uiSettings.visible(sm::ui::UiElementId::PanelDiplomacy))
                 sm::ui::draw_diplomacy(app.gs, &app.ui.diplomacy, app.uiSettings.scale(sm::ui::UiElementId::PanelDiplomacy));
             if (app.uiSettings.visible(sm::ui::UiElementId::PanelCharacter))

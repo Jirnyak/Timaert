@@ -662,13 +662,23 @@ void set_deal_message(int gave, int took) {
                   "Deal: gave %d g, received %d g.", gave, took);
 }
 
-void push_deal_log(GameState& gs, const char* traderName,
-                   int gave, int took) {
-    char message[192];
-    std::snprintf(message, sizeof(message),
-                  "Deal with %s: gave %d g, received %d g",
-                  traderName ? traderName : "trader", gave, took);
-    push_event_log(gs.player, {LogType::Economy, message, gs.worldTime.day()});
+// A completed deal with a squad is a FACT of the world (S20.1) — the same
+// Traded the caravans file: subject = the player, object = the trader's
+// squad by its save-stable ordinal, worth what changed hands either way.
+// His journal learns it by participation; no log line is kept anywhere.
+void record_npc_deal_fact(GameState& gs, std::uint32_t traderOrdinal,
+                          int gave, int took) {
+    WorldFact f{};
+    f.day = gs.worldTime.day();
+    f.kind = std::uint16_t(FactKind::Traded);
+    f.subjectKind = fact_subject(FactSubject::Squad, /*named*/true);
+    f.subject = ecs::kPlayerSquadOrdinal;
+    f.objectKind = std::uint8_t(FactSubject::Squad);
+    f.object = traderOrdinal;
+    f.x = std::int16_t(wrapi(int(gs.player.x), gs.mapW));
+    f.y = std::int16_t(wrapi(int(gs.player.y), gs.mapH));
+    f.amount = gave + took;
+    chronicle_record(gs.chronicle, f);
 }
 
 const char* npc_trait_label(std::uint8_t raw) {
@@ -1087,7 +1097,11 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                                                 playerBag, bag.inv,
                                                 giveValue, takeValue)) {
                         set_deal_message(giveValue, takeValue);
-                        push_deal_log(gs, npcName, giveValue, takeValue);
+                        if (const auto* sid =
+                                w.reg.try_get<ecs::MacroSpawnId>(g_trade_npc)) {
+                            record_npc_deal_fact(gs, sid->index,
+                                                 giveValue, takeValue);
+                        }
                     }
 
                     ImGui::TextDisabled("Stage lines with +/- on both sides; one Deal settles the package.");

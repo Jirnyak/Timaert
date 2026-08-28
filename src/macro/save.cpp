@@ -28,10 +28,6 @@ constexpr std::uint64_t kMaxPayloadBytes = 64ull * 1024ull * 1024ull;
 constexpr std::uint32_t kMaxInventoryStacks =
     std::uint32_t(kMaxInventorySlots);
 constexpr std::uint32_t kMaxSmallVector = 8192u;
-// The event-log ring (state.h push_event_log) must fit under the write guard,
-// or a full-but-legal log would fail every save. A mechanism, not a hope.
-static_assert(kMaxEventLogEntries <= kMaxSmallVector,
-              "event-log ring cap exceeds the save-side vector cap");
 constexpr std::uint32_t kMaxSettlements = 4096u;
 constexpr std::uint32_t kMaxVillages = 16384u;
 constexpr std::uint32_t kMaxMarkers = 16384u;
@@ -607,18 +603,6 @@ void read_history(Reader& r, SettlementHistory& h) {
     }
 }
 
-void write_log_entry(Writer& w, const LogEntry& e) {
-    write_enum8(w, e.type);
-    w.str(e.message);
-    w.pod(e.day);
-}
-
-void read_log_entry(Reader& r, LogEntry& e) {
-    read_enum8(r, e.type, static_cast<std::uint8_t>(LogType::World));
-    r.str(e.message);
-    r.pod(e.day);
-}
-
 void write_perks(Writer& w, const Perks& perks) {
     if (!w.count(perks.ids.size(), kMaxSmallVector)) return;
     for (PerkID id : perks.ids) write_enum8(w, id);
@@ -666,13 +650,8 @@ void write_player(Writer& w, const PlayerState& p) {
     // No reputation map: the player's standing is his row in gs.factions, which
     // the faction matrix below already persists (kSaveVersion 16).
     write_string_vector(w, p.codexUnlocked);
-
-    if (w.count(p.eventLog.size(), kMaxSmallVector)) {
-        // Oldest first, so the file carries a log and not a ring's seam.
-        for (std::size_t i = 0; i < p.eventLog.size(); ++i) {
-            write_log_entry(w, p.eventLog.at(i));
-        }
-    }
+    // (No event log block since v58: session messages die with the session,
+    // the player's past rides below as his journal of chronicle records.)
     write_spell_book(w, p.spellBook);
     w.pod(p.factionPeaceUntilDay);
     write_string_vector(w, p.completedQuestIds);
@@ -700,15 +679,6 @@ void read_player(Reader& r, PlayerState& p) {
     r.pod(p.sheet.skills);
     read_perks(r, p.sheet.perks);
     read_string_vector(r, p.codexUnlocked);
-
-    std::uint32_t n = 0;
-    if (!read_count(r, n, kMaxSmallVector)) return;
-    p.eventLog.clear();
-    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-        LogEntry e{};
-        read_log_entry(r, e);
-        p.eventLog.push(std::move(e));   // oldest first: the ring rebuilds in order
-    }
     read_spell_book(r, p.spellBook);
     r.pod(p.factionPeaceUntilDay);
     read_string_vector(r, p.completedQuestIds);

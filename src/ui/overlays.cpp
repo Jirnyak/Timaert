@@ -242,14 +242,11 @@ namespace sm::ui
                                const GameEvent &dialog,
                                const DialogChoicePayload &choice)
         {
-            LogEntry entry{};
-            entry.type = LogType::World;
-            entry.day = gs.worldTime.day();
-            entry.message = "Event: ";
-            entry.message += dialog.s1.empty() ? "Event" : dialog.s1;
-            entry.message += " - ";
-            entry.message += choice.label.empty() ? "Continue" : choice.label;
-            push_event_log(gs.player, std::move(entry));
+            std::string line = "Event: ";
+            line += dialog.s1.empty() ? "Event" : dialog.s1;
+            line += " - ";
+            line += choice.label.empty() ? "Continue" : choice.label;
+            session_feed_push(gs.sessionFeed, line.c_str());
         }
 
         void complete_story(StoryOverlayState &state, EventBus &bus)
@@ -653,16 +650,25 @@ namespace sm::ui
                           "Deal: gave %d g, received %d g.", gave, took);
         }
 
-        void push_settlement_deal_log(GameState &gs,
-                                      const char *settlementName,
-                                      int gave, int took)
+        // A completed deal is a FACT of the world (S20.1: a deal is a
+        // transition by nature) — the same Traded the caravans file, with
+        // the player as the subject and the settlement as the object, worth
+        // what changed hands either way on the one price table. His journal
+        // learns it by participation; no log line needs to be kept.
+        void record_settlement_deal_fact(GameState &gs, int landmarkId,
+                                         int x, int y, int gave, int took)
         {
-            char message[192];
-            std::snprintf(message, sizeof(message),
-                          "Deal with %s: gave %d g, received %d g",
-                          settlementName ? settlementName : "settlement",
-                          gave, took);
-            push_event_log(gs.player, {LogType::Economy, message, gs.worldTime.day()});
+            WorldFact f{};
+            f.day = gs.worldTime.day();
+            f.kind = std::uint16_t(FactKind::Traded);
+            f.subjectKind = fact_subject(FactSubject::Squad, /*named*/true);
+            f.subject = ecs::kPlayerSquadOrdinal;
+            f.objectKind = std::uint8_t(FactSubject::Landmark);
+            f.object = std::uint32_t(landmarkId < 0 ? 0 : landmarkId);
+            f.x = std::int16_t(x);
+            f.y = std::int16_t(y);
+            f.amount = gave + took;
+            chronicle_record(gs.chronicle, f);
         }
 
         // (The mood column moved to the law's own home — macro/economy.h
@@ -1948,8 +1954,8 @@ namespace sm::ui
                                                 giveValue, takeValue))
                     {
                         set_settlement_deal_message(giveValue, takeValue);
-                        push_settlement_deal_log(gs, s->name.c_str(),
-                                                 giveValue, takeValue);
+                        record_settlement_deal_fact(gs, s->id, s->x, s->y,
+                                                    giveValue, takeValue);
                     }
 
                     ImGui::EndTabItem();

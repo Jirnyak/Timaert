@@ -28,6 +28,15 @@ inline void player_journal_capture(GameState& gs) {
     const Chronicle& c = gs.chronicle;
     if (!c.ready() || gs.mapW <= 0 || gs.mapH <= 0) return;
     PlayerState& p = gs.player;
+    // DOD discipline (owner): the WHOLE cap is reserved once, here at the
+    // first capture of a session — 32 MB flat POD by the house's own "size
+    // is no argument" — so the game loop never allocates for the journal
+    // again and the array stays one contiguous block for the save to write
+    // byte-in-byte. (Not in a constructor: a fixture GameState that never
+    // captures pays nothing.)
+    if (p.journal.capacity() < std::size_t(PlayerState::kJournalFactsCap)) {
+        p.journal.reserve(std::size_t(PlayerState::kJournalFactsCap));
+    }
     const int px = wrapi(int(p.x), gs.mapW);
     const int py = wrapi(int(p.y), gs.mapH);
     for (std::uint32_t s = p.journalSeenSeq + 1u; s < c.nextSeq; ++s) {

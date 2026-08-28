@@ -93,8 +93,7 @@ void apply_events(std::span<const GameEvent> events, GameState& gs,
                         char msg[96];
                         std::snprintf(msg, sizeof(msg),
                                       "You have learned %s!", def.name);
-                        push_event_log(p, {LogType::World, msg,
-                                           gs.worldTime.day()});
+                        session_feed_push(gs.sessionFeed, msg);
                         if (followups) {
                             GameEvent learned{EventTag::SpellLearned};
                             learned.s1 = def.id;
@@ -148,10 +147,10 @@ void apply_events(std::span<const GameEvent> events, GameState& gs,
                 }
                 break;
             case EventTag::BattleStart:
-                // App runtime routes this into subworld NPC combat; keep a
-                // player-facing breadcrumb in the persistent log.
-                push_event_log(p, {LogType::Combat,
-                    "Encounter: " + ev.s1, 0});
+                // App runtime routes this into subworld NPC combat; the
+                // breadcrumb is a session word and dies with the moment.
+                session_feed_push(gs.sessionFeed,
+                                  ("Encounter: " + ev.s1).c_str());
                 break;
             default: break;
         }

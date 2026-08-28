@@ -423,11 +423,23 @@ void resource_fields_daily_growth(MacroWorld& w, int day) {
             const int y = int(idx / std::uint32_t(w.deposits->width));
             create_deposit(*w.deposits,
                            deposit_kind_of(ResourceFieldId(f)), x, y, lump);
-            // New geology is world news (W2c kept its voice).
-            char line[64];
-            std::snprintf(line, sizeof(line),
-                          "Prospectors struck a new %s vein.", def.id);
-            push_event_log(w.gs->player, {LogType::World, line, day});
+            // New geology is a FACT of the world (FactKind::Discovered:
+            // "found what the world did not know it had"), not a UI line:
+            // the legends will be asked where the late-age iron came from,
+            // and whoever stands nearby learns it through his journal. The
+            // land itself struck it — no ordinal takes the credit — so the
+            // subject is the PLACE, and amount names the row, +1, the same
+            // deed-against-the-land shape the gatherer's Drained writes.
+            {
+                WorldFact df{};
+                df.day = day;
+                df.kind = std::uint16_t(FactKind::Discovered);
+                df.subjectKind = std::uint8_t(FactSubject::Cell);
+                df.x = std::int16_t(x);
+                df.y = std::int16_t(y);
+                df.amount = int(f) + 1;
+                chronicle_record(w.gs->chronicle, df);
+            }
             break;
         }
         }

@@ -613,6 +613,8 @@ timaert_test(road_river_generation_test
         # macro_stock context envelope) even where the test passes no site.
         src/macro/settlement_score.cpp
         src/macro/macro_stock.cpp
+        # a struck vein is a chronicle fact now (v58)
+        src/macro/chronicle.cpp
         src/macro/tree_layer.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
@@ -634,6 +636,8 @@ timaert_test(feature_layer_parity_test
     SOURCES
         src/macro/spawners.cpp
         src/macro/macro_stock.cpp
+        # a struck vein is a chronicle fact now (v58)
+        src/macro/chronicle.cpp
         src/macro/tree_layer.cpp
         src/macro/fauna.cpp
     LINK_SDL LINK_ENTT)
@@ -923,6 +927,8 @@ timaert_test(settlement_placement_test
         src/macro/politik.cpp
         src/macro/settlement_score.cpp
         src/macro/macro_stock.cpp
+        # a struck vein is a chronicle fact now (v58)
+        src/macro/chronicle.cpp
         src/macro/tree_layer.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
@@ -1074,6 +1080,8 @@ timaert_test(body_contract_test
         src/sub/material.cpp
         src/macro/fauna.cpp
         src/macro/macro_stock.cpp
+        # a struck vein is a chronicle fact now (v58)
+        src/macro/chronicle.cpp
         src/macro/deposit_layer.cpp
         src/macro/tree_layer.cpp
         src/macro/items.cpp
@@ -1089,6 +1097,8 @@ timaert_test(body_contract_test
 timaert_test(resource_growth_test
     SOURCES
         src/macro/macro_stock.cpp
+        # a struck vein is a chronicle fact now (v58)
+        src/macro/chronicle.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
         src/macro/tree_layer.cpp
@@ -1097,6 +1107,8 @@ timaert_test(resource_growth_test
 timaert_test(macro_stock_test
     SOURCES
         src/macro/macro_stock.cpp
+        # a struck vein is a chronicle fact now (v58)
+        src/macro/chronicle.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
         src/macro/tree_layer.cpp
@@ -1147,6 +1159,8 @@ timaert_test(auto_resolve_speaks_test
         src/macro/player_entity.cpp
         src/macro/items.cpp
         src/macro/macro_stock.cpp
+        # a struck vein is a chronicle fact now (v58)
+        src/macro/chronicle.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
     LINK_ENTT)

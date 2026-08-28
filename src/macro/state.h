@@ -1,6 +1,7 @@
 // Macro-world game state. Mirrors state.ts (compact form).
 #pragma once
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -209,7 +210,12 @@ namespace sm {
 // his cell while he stood there, and — later — rumours; and his journal is
 // the log of his WHOLE game, it never forgets). Copies of chronicle records,
 // append-only, loud cap; rides in write_player.
-constexpr int kSaveVersion = 57;
+// v58: the event log is GONE (owner, 2026-08-28: «чисти ивент лог»). Session
+// messages are a fading HUD feed that dies with the moment (SessionFeed,
+// never serialized); the player's past is his JOURNAL of chronicle records;
+// two of its lines became honest facts instead (a struck vein = Discovered,
+// a player's deal = Traded). 8192 saved std::strings leave the format.
+constexpr int kSaveVersion = 58;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
@@ -345,43 +351,23 @@ struct GameSubState {
 // the registry; how factions REGARD each other lives in the matrix; there is
 // nothing a third structure could hold.)
 
-enum class LogType : std::uint8_t { Combat, Economy, Politics, World };
-struct LogEntry { LogType type; std::string message; int day; };
-// The player's log is a RING capped at this many entries (po2). save.cpp
-// counts every vector against a hard cap and refuses to write past it, so an
-// unbounded log would not crash — it would make EVERY future save fail while
-// the UI keeps showing the stale file on disk as Ready (the garrison day-820
-// lesson, world_tick.h). The cap is enforced at push_event_log below, the one
-// door every gameplay writer goes through.
-inline constexpr std::size_t kMaxEventLogEntries = 8192;
-
-// A ring of the last kMaxEventLogEntries lines. Oldest first when read, so a
-// reader sees the log as a past and never has to know where the seam is —
-// the same shape SettlementHistory and the event bus's history now have.
-struct EventLogRing {
-    std::vector<LogEntry> slots;   // grown to the cap, then written round
-    std::size_t head = 0;          // where the NEXT line goes
-    std::size_t count = 0;         // lines that are real
-
-    std::size_t size() const { return count; }
-    bool empty() const { return count == 0; }
-    const LogEntry& at(std::size_t i) const {
-        const std::size_t first =
-            count < kMaxEventLogEntries ? 0u : head;
-        return slots[(first + i) % kMaxEventLogEntries];
-    }
-    void clear() { slots.clear(); head = 0; count = 0; }
-    void push(LogEntry e) {
-        if (slots.size() < kMaxEventLogEntries) {
-            slots.push_back(std::move(e));
-            head = slots.size() % kMaxEventLogEntries;
-            ++count;
-            return;
-        }
-        slots[head] = std::move(e);
-        head = (head + 1) % kMaxEventLogEntries;
-        if (count < kMaxEventLogEntries) ++count;
-    }
+// ── THE SESSION FEED: words that die with the moment ─────────────────────
+// (owner, 2026-08-28: «это вообще не нужно хранить даже в сессии — пишется
+// в UI как в Might & Magic и сразу забывается»). The old EventLogRing kept
+// 8192 std::strings in the SAVE; but a session message ("Game saved.",
+// "You have learned Fireball!") is not a fact of the world and not the
+// player's journal — it is presentation. So the channel is a tiny POD ring
+// the HUD fades out, NEVER serialized. What the world remembers is the
+// chronicle; what the player learned is his journal; this is neither.
+struct SessionFeed {
+    static constexpr int kLines = 8;     // more than fits on screen anyway
+    static constexpr int kTextCap = 112; // one HUD line, NUL included
+    struct Line {
+        char  text[kTextCap];
+        float ttl = 0.0f;                // seconds of screen life left
+    };
+    Line lines[kLines]{};
+    std::uint8_t head = 0;               // where the NEXT line goes
 };
 
 struct PlayerState {
@@ -421,18 +407,17 @@ struct PlayerState {
     // event bus both had, and the same fix. The cap lives in the container, so
     // no caller can forget it and nothing shifts to enforce it.
     //
-    // (This log is NOT the world's memory — that is the chronicle, and its
-    // entries are facts. This one carries what was SAID to the player, which
-    // includes things that changed nothing in the world. Where those words
-    // should ultimately live is the open ?27.)
-    EventLogRing             eventLog;
-    // Loud cap of the journal below. Derived from the measured fact rate
-    // (chronicle_rate smoke): the WORLD writes ~100–340 facts a day, and the
-    // player's slice — his own deeds plus one cell of a million — is single
-    // digits a day in practice. 2^16 copies × 32 B = 2 MB (size is no
-    // argument, CANON S26) covers decades of play at 10× that rate; hitting
-    // it flips journalFull rather than silently dropping his past.
-    static constexpr std::uint32_t kJournalFactsCap = 1u << 16;
+    // (No event log. Session messages die with the moment — GameState's
+    // sessionFeed below; what the player LEARNED is the journal right here;
+    // what the world remembers is the chronicle. Three questions, three
+    // answers, no fourth store.)
+    // Loud cap of the journal below — kChronicleAnnals' own size (owner,
+    // 2026-08-28: «на века, не жалко»): the player's whole-game log gets no
+    // less room than the world's eternal memory. 2^20 copies × 32 B = 32 MB
+    // at the END of a long life (the vector grows as it fills — size is no
+    // argument either way, CANON S26); at even 100 learned facts a day that
+    // is 80+ game years. Hitting it flips journalFull, never a silent drop.
+    static constexpr std::uint32_t kJournalFactsCap = 1u << 20;
     // The player's JOURNAL: his KNOWLEDGE of the world's facts (?27 half-
     // ruling, owner 2026-08-28). The chronicle is the world's one memory; the
     // journal is what of it the player LEARNED — by taking part, by standing
@@ -483,10 +468,15 @@ struct PlayerState {
     std::uint32_t entryTickAccum = 0;   // world ticks toward the next entry tick
 };
 
-// The ONE door into the player's event log. The ring below owns the cap, so
-// this is now a forwarder — kept because callers name the player, not his log.
-inline void push_event_log(PlayerState& p, LogEntry e) {
-    p.eventLog.push(std::move(e));
+// The ONE door into the session feed (drawn and faded by the HUD, never
+// saved). Overlong lines are cut at the HUD's own width — a feed line is a
+// glance, not a document.
+inline void session_feed_push(SessionFeed& f, const char* text) {
+    if (!text || text[0] == '\0') return;
+    SessionFeed::Line& l = f.lines[f.head % SessionFeed::kLines];
+    std::snprintf(l.text, sizeof l.text, "%s", text);
+    l.ttl = 6.0f;   // seconds on screen — M&M's own unhurried fade
+    f.head = std::uint8_t((f.head + 1) % SessionFeed::kLines);
 }
 
 // World-tick runtime (moved here from world_tick.h in v24, because it is
@@ -541,6 +531,8 @@ struct GameState {
     // they are part of the world, and a legends mode will read exactly them
     // (owner, 2026-08-27).
     Chronicle chronicle;
+    // The session feed (see SessionFeed above): presentation, NEVER saved.
+    SessionFeed sessionFeed;
     // THE relation matrix — flat, by ordinal (macro/relations.h). The
     // string-keyed map of string-keyed maps it replaced cost two temporaries,
     // two hashes and two strcmps per question, and the battle asks K² of them

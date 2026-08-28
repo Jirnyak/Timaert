@@ -340,8 +340,19 @@ sm::GameState make_state() {
     sm::add_perk(gs.player.sheet.perks, sm::PerkID::Natural);
     sm::add_perk(gs.player.sheet.perks, sm::PerkID::Educated);
     gs.player.codexUnlocked.push_back("codex.alpha");
-    gs.player.eventLog.push(
-        sm::LogEntry{sm::LogType::World, "saved event", 12});
+    {   // the JOURNAL (v58): two learned facts ride the save entry-for-entry
+        sm::WorldFact jf{};
+        jf.day = 12;
+        jf.kind = std::uint16_t(sm::FactKind::Killed);
+        jf.subjectKind = sm::fact_subject(sm::FactSubject::Squad, true);
+        jf.subject = sm::ecs::kPlayerSquadOrdinal;
+        jf.x = 3; jf.y = 4; jf.amount = 2;
+        gs.player.journal.push_back(jf);
+        jf.kind = std::uint16_t(sm::FactKind::Traded);
+        jf.amount = 55;
+        gs.player.journal.push_back(jf);
+        gs.player.journalSeenSeq = 77u;
+    }
     sm::spellbook_learn(gs.player.spellBook, "spell.spark");
     sm::spellbook_set_active(gs.player.spellBook, "spell.spark");
     gs.player.spellBook.cooldowns["spell.spark"] = sm::steps_from_seconds(2.5f);
@@ -858,9 +869,14 @@ void run_roundtrip() {
         FAIL_BAIL("entry-side context lost");
     }
 
-    if (!has_string(p.codexUnlocked, "codex.alpha")
-        || p.eventLog.empty() || p.eventLog.at(0).message != "saved event") {
-        FAIL_BAIL("codex or event log lost");
+    if (!has_string(p.codexUnlocked, "codex.alpha")) {
+        FAIL_BAIL("codex lost");
+    }
+    if (p.journal.size() != 2
+        || p.journal[0].kind != std::uint16_t(sm::FactKind::Killed)
+        || p.journal[1].amount != 55
+        || p.journalSeenSeq != 77u) {
+        FAIL_BAIL("the player's journal did not round-trip entry-for-entry");
     }
     if (!sm::spellbook_has_learned(p.spellBook, "spell.spark")
         || !sm::spellbook_has_learned(p.spellBook, "haste")) {
@@ -1104,64 +1120,9 @@ void run_roundtrip() {
         }
     }
 
-    // ── Event-log ring (state.h push_event_log). The door drops the OLDEST
-    // entry past the cap so a ten-year campaign's log stays saveable; the
-    // save-side guard stays armed against anything that bypasses the door.
-    sm::GameState ringState = gs;
-    ringState.player.eventLog.clear();
-    for (std::size_t i = 0; i < sm::kMaxEventLogEntries + 100u; ++i) {
-        sm::push_event_log(ringState.player,
-                           {sm::LogType::World,
-                            "entry " + std::to_string(i), int(i)});
-    }
-    if (ringState.player.eventLog.size() != sm::kMaxEventLogEntries) {
-        FAIL_BAIL("event-log ring did not cap at kMaxEventLogEntries");
-    }
-    if (ringState.player.eventLog.at(0).message != "entry 100") {
-        FAIL_BAIL("event-log ring did not drop the OLDEST entries");
-    }
-    if (ringState.player.eventLog.at(ringState.player.eventLog.size() - 1).message
-        != "entry " + std::to_string(sm::kMaxEventLogEntries + 99u)) {
-        FAIL_BAIL("event-log ring lost the newest entry");
-    }
-    const std::string ringPath = temp_save_path("timaert_ring_log_save.bin");
-    remove_slot_files(ringPath);
-    if (!sm::save_game(ringState, quests, macroFixture, treeCounts,
-                       deposits, ringPath)) {
-        FAIL_BAIL("a ring-capped (full) event log must still save");
-    }
-    sm::GameState ringLoaded{};
-    std::vector<sm::Quest> ringQuests;
-    std::vector<sm::MacroNpcRecord> ringMacro;
-    std::vector<std::uint16_t> ringTrees;
-    sm::DepositLayer ringDeposits;
-    if (!sm::load_game(ringLoaded, ringQuests, ringMacro, ringTrees,
-                       ringDeposits, ringPath)) {
-        FAIL_BAIL("full-log save did not load back");
-    }
-    const std::size_t loadedN = ringLoaded.player.eventLog.size();
-    if (loadedN != sm::kMaxEventLogEntries
-        || ringLoaded.player.eventLog.at(0).message != "entry 100"
-        || ringLoaded.player.eventLog.at(loadedN - 1).message
-           != "entry " + std::to_string(sm::kMaxEventLogEntries + 99u)) {
-        FAIL_BAIL("full event log did not round-trip entry-for-entry");
-    }
-    // The cap lives in the CONTAINER now, so there is no door left to bypass:
-    // one more line rolls the ring instead of overflowing it, and the save
-    // that used to be refused (and, before that, silently killed) is simply
-    // never in danger. The old negative control tested a guard around a
-    // container that could exceed its own cap; this one tests that it cannot.
-    ringState.player.eventLog.push({sm::LogType::World, "overflow", 0});
-    if (ringState.player.eventLog.size() != sm::kMaxEventLogEntries
-        || ringState.player.eventLog.at(sm::kMaxEventLogEntries - 1).message
-               != "overflow") {
-        FAIL_BAIL("the ring must roll, not grow, and keep the NEWEST line");
-    }
-    if (!sm::save_game(ringState, quests, macroFixture, treeCounts,
-                       deposits, ringPath)) {
-        FAIL_BAIL("a full log must still save: the cap is not an error");
-    }
-    remove_slot_files(ringPath);
+    // (The event-log ring died in v58: session words are a fading HUD feed
+    // that never touches the save; the player's past is his journal of
+    // chronicle records, round-tripped above.)
 
     std::printf("OK save_roundtrip_test path=%s bytes=%zu map=%dx%d quest=%s\n",
                 path.c_str(), bytes.size(), loaded.mapW, loaded.mapH,
