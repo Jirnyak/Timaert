@@ -1247,8 +1247,21 @@ void SubworldEngine::record_world_fact(FactKind kind, int cellX, int cellY,
     f.kind = std::uint16_t(kind);
     // The PLAYER is the only one who acts down here (interactions are his
     // alone), and he is a squad like any other — so the deed is his, by his
-    // save-stable ordinal, and the annals will keep it if he has earned that.
-    f.subjectKind = fact_subject(FactSubject::Squad, /*named*/true);
+    // save-stable ordinal, and figure-ness is DERIVED from his own renown
+    // like everyone's (owner, 2026-08-28): the world starts remembering you
+    // for good when you are somebody, not because you are the player.
+    bool named = false;
+    if (mw_.world) {
+        const entt::entity pe =
+            macro_entity_by_spawn_id(*mw_.world, ecs::kPlayerSquadOrdinal);
+        if (pe != entt::null) {
+            if (const auto* rt =
+                    mw_.world->reg.try_get<ecs::MacroNpcRuntime>(pe)) {
+                named = rt->renown >= std::uint32_t(renown_to_be_named());
+            }
+        }
+    }
+    f.subjectKind = fact_subject(FactSubject::Squad, named);
     f.subject = ecs::kPlayerSquadOrdinal;
     // When the deed was done TO a named place, the place rides as the object
     // by its landmark ordinal (v54: one id space names it alone).

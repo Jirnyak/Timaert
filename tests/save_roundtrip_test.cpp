@@ -261,9 +261,12 @@ sm::GameState make_state() {
         sm::WorldFact conquest{};
         conquest.day = 12;
         conquest.kind = std::uint16_t(sm::FactKind::OwnerChanged);
-        conquest.subjectKind = std::uint8_t(sm::FactSubject::Squad);
+        // Figure-ness is a marked bit for EVERYONE now (2026-08-28): the
+        // fixture says outright that this lord and this city are somebodies.
+        conquest.subjectKind = sm::fact_subject(sm::FactSubject::Squad, true);
         conquest.subject = 4242u;
-        conquest.objectKind = std::uint8_t(sm::FactSubject::Landmark);
+        conquest.objectKind =
+            sm::fact_subject(sm::FactSubject::Landmark, true);
         conquest.object = 9u;
         conquest.x = 41; conquest.y = 41;
         sm::chronicle_record(gs.chronicle, conquest);

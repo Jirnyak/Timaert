@@ -45,15 +45,6 @@ void push_history_(SettlementHistory& hist, int day, int population) {
 // mood and the LOGISTIC population law (owner's ruling — no flat heads per
 // day; K = kPopCarryingCap = the subworld's own NPC cap). Returns the
 // wellbeing for callers that want it.
-// Landmark facts go through THE one builder (chronicle.h
-// record_landmark_fact) — this forwarder only spares each call site the
-// day/chronicle plumbing.
-void record_landmark_fact(GameState& gs, FactKind kind, int landmarkId,
-                          int x, int y, int amount) {
-    record_landmark_fact(gs.chronicle, gs.worldTime.day(), kind, landmarkId,
-                         x, y, amount);
-}
-
 template <typename Landmark>
 void settle_landmark_day(Landmark& lm, int minPop,
                          bool& startedFamine, bool& startedRevolt) {

@@ -318,10 +318,13 @@ void test_a_famine_is_recorded_once_when_it_begins() {
           "and a town falls into revolt once, not once a day");
     CHECK(c.total >= 1, "the world remembered something about this place");
 
-    // The town is a LANDMARK, and a landmark is named the day it is founded —
-    // so its famine is history, not weather.
-    CHECK(!gs.chronicle.annals.empty(),
-          "a named place's misfortune belongs to the annals");
+    // A landmark has a NAME the day it is founded, but figure-ness is
+    // RENOWN (owner, 2026-08-28): this fresh fixture town has done and
+    // suffered nothing the world was told of before, so its misfortune is
+    // weather — the ring holds it (asserted above), the annals do not.
+    // History begins when the place is somebody.
+    CHECK(gs.chronicle.annals.empty(),
+          "a weightless town's misfortune is weather, not history");
 }
 
 } // namespace

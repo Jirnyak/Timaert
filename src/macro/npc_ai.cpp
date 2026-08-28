@@ -598,9 +598,7 @@ void ai_gatherer(entt::entity self, ecs::Position& p,
                     // after annihilation the world no longer holds the
                     // "what" — the fact is its only carrier.
                     if (def->worksite == Worksite::Deposit && take == have) {
-                        record_landmark_fact(ctx.mw.gs->chronicle,
-                                             ctx.mw.gs->worldTime.day(),
-                                             FactKind::Drained,
+                        record_landmark_fact(*ctx.mw.gs, FactKind::Drained,
                                              rt.homeSettlementId, tx, ty,
                                              int(def->row) + 1);
                     }
@@ -789,9 +787,8 @@ void ai_caravan(entt::entity self, ecs::Position& p,
             // caravan this is, object = the village it traded WITH, amount =
             // the table value of everything that changed hands either way.
             if (dealValue > 0) {
-                record_landmark_fact(ctx.mw.gs->chronicle,
-                                     ctx.mw.gs->worldTime.day(),
-                                     FactKind::Traded, rt.homeSettlementId,
+                record_landmark_fact(*ctx.mw.gs, FactKind::Traded,
+                                     rt.homeSettlementId,
                                      int(rt.targetX), int(rt.targetY),
                                      dealValue, rt.targetSettlementId);
             }

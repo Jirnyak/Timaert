@@ -294,23 +294,27 @@ inline constexpr std::uint8_t fact_subject(FactSubject kind, bool named) {
                         | (named ? kFactSubjectNamed : std::uint8_t(0)));
 }
 
-// Does this fact have a NAMED participant? Then it is history. Otherwise it is
-// weather: it happened, the ring will remember it for a while, and then the
-// world will forget, which is what forgetting is for.
+// Does this fact have a participant who IS somebody? Then it is history.
+// Otherwise it is weather: it happened, the ring will remember it for a
+// while, and then the world will forget, which is what forgetting is for.
 //
-// A LANDMARK and a FACTION are named by construction — a city has a name the
-// day it is founded. A SQUAD is not: it starts as one more band on the map and
-// becomes a figure by its deeds (owner, 2026-08-27), which is why the caller
-// marks the bit — only the world knows how much this band has done.
+// FIGURE-NESS IS DERIVED FROM RENOWN FOR EVERYONE (owner, 2026-08-28) — a
+// band, a city, a people. A landmark HAS a name the day it is founded, but a
+// name is a word, not historical weight: a fresh hamlet's hunger is weather,
+// a renowned city's is legend. The caller marks the bit from the subject's
+// own renown (record_deed for squads, record_landmark_fact for places) —
+// only the world knows how much this one has done and suffered.
 inline constexpr bool subject_is_named(std::uint8_t packed) {
-    const std::uint8_t kind = fact_subject_kind(packed);
-    if (kind == std::uint8_t(FactSubject::Landmark)
-        || kind == std::uint8_t(FactSubject::Faction)) {
-        return true;
-    }
-    return kind != std::uint8_t(FactSubject::None)
+    return fact_subject_kind(packed) != std::uint8_t(FactSubject::None)
         && fact_subject_marked_named(packed);
 }
+
+// News that stales within a week never claims eternity (owner, 2026-08-28:
+// «приём хлеба в город — не событие»). The table's own shortest interest
+// tier IS the line: a kind the world stops asking about in days (Traded,
+// Gathered — interestDays of 8) stays out of the annals no matter how famous
+// the parties, and no second "smallness" column had to be invented.
+inline constexpr std::uint16_t kChronicleWeatherDays = 8;
 
 struct Chronicle {
     std::vector<WorldFact>     ring;      // kChronicleFacts, written round
@@ -343,32 +347,9 @@ void chronicle_init(Chronicle& c, int mapW, int mapH);
 // world yet). Every field is a number, so this is a store and two links.
 std::uint32_t chronicle_record(Chronicle& c, const WorldFact& fact);
 
-// One LANDMARK fact, filed straight through the door above. `chronicle_record`
-// is THE door; the app-side `record_deed` is a wrapper over it that
-// additionally resolves an ENTITY and pays it renown. A landmark has no entity
-// — it is named the day it is founded — so its writers (world_tick's famine
-// and revolt, the gatherer's worked-out vein, the caravan's deal) file here,
-// and there is still one door and ONE builder of the record's shape.
-// `objectLandmarkId` names the other party when the fact has one (a caravan
-// trades WITH a village); 0 = no object, matching the reserved "no landmark".
-inline std::uint32_t record_landmark_fact(Chronicle& c, std::int32_t day,
-                                          FactKind kind, int landmarkId,
-                                          int x, int y, int amount,
-                                          int objectLandmarkId = 0) {
-    WorldFact f{};
-    f.day = day;
-    f.kind = std::uint16_t(kind);
-    f.subjectKind = std::uint8_t(FactSubject::Landmark);
-    f.subject = std::uint32_t(landmarkId < 0 ? 0 : landmarkId);
-    if (objectLandmarkId > 0) {
-        f.objectKind = std::uint8_t(FactSubject::Landmark);
-        f.object = std::uint32_t(objectLandmarkId);
-    }
-    f.x = std::int16_t(x);
-    f.y = std::int16_t(y);
-    f.amount = amount;
-    return chronicle_record(c, f);
-}
+// (The landmark-fact door lives in state.h `record_landmark_fact` — it must
+// resolve the place's RENOWN to mark figure-ness and to pay the deed, and a
+// chronicle of ordinals must not learn where renown lives.)
 
 // ── The question the witcher asks ────────────────────────────────────────
 //

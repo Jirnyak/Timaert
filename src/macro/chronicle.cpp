@@ -70,9 +70,13 @@ std::uint32_t chronicle_record(Chronicle& c, const WorldFact& fact) {
     }
     ++c.factsToday;
 
-    // ...and if a NAMED participant took part, the world keeps it for good.
-    // The ring will forget this same fact in a season; the annals will not.
-    if (subject_is_named(fact.subjectKind) || subject_is_named(fact.objectKind)) {
+    // ...and if a FIGURE took part — and the kind itself is more than a
+    // week's news (kChronicleWeatherDays: a famous city's grain deliveries
+    // are still deliveries) — the world keeps it for good. The ring will
+    // forget this same fact in a season; the annals will not.
+    if (fact_kind_def(FactKind(fact.kind)).interestDays > kChronicleWeatherDays
+        && (subject_is_named(fact.subjectKind)
+            || subject_is_named(fact.objectKind))) {
         if (c.annals.size() < std::size_t(kChronicleAnnals)) {
             c.annals.push_back(slot);
         } else {
@@ -252,10 +256,17 @@ int chronicle_annals_of(const Chronicle& c, std::uint8_t subjectKind,
     for (std::size_t i = c.annals.size(); i-- > 0 && offered < limit; ) {
         const WorldFact& f = c.annals[i];
         if (subjectKind != 0u) {
+            // Compare KINDS, not packed bytes: the named bit is the doer's
+            // standing at the moment of the deed, not part of who he is — a
+            // figure's early nameless deeds and his famous ones are one
+            // legend, asked by one ordinal.
+            const std::uint8_t want = fact_subject_kind(subjectKind);
             const bool asSubject =
-                f.subjectKind == subjectKind && f.subject == subject;
+                fact_subject_kind(f.subjectKind) == want
+                && f.subject == subject;
             const bool asObject =
-                f.objectKind == subjectKind && f.object == subject;
+                fact_subject_kind(f.objectKind) == want
+                && f.object == subject;
             if (!asSubject && !asObject) continue;
         }
         visit(user, f);

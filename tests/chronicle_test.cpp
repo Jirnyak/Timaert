@@ -229,9 +229,9 @@ void test_the_annals_keep_figures_and_forget_weather() {
     WorldFact conquest{};
     conquest.day = 6;
     conquest.kind = std::uint16_t(FactKind::OwnerChanged);
-    conquest.subjectKind = std::uint8_t(FactSubject::Squad);
+    conquest.subjectKind = fact_subject(FactSubject::Squad, /*named*/true);
     conquest.subject = 42u;
-    conquest.objectKind = std::uint8_t(FactSubject::Landmark);
+    conquest.objectKind = fact_subject(FactSubject::Landmark, /*named*/true);
     conquest.object = 3u;
     conquest.x = 10; conquest.y = 10;
     chronicle_record(c, conquest);
@@ -277,9 +277,10 @@ void test_the_annals_are_asked_about_a_figure() {
         WorldFact f{};
         f.day = day;
         f.kind = std::uint16_t(FactKind::OwnerChanged);
-        f.subjectKind = std::uint8_t(FactSubject::Squad);
+        // Figures both, said outright: the bit is marked for everyone now.
+        f.subjectKind = fact_subject(FactSubject::Squad, /*named*/true);
         f.subject = lord;
-        f.objectKind = std::uint8_t(FactSubject::Landmark);
+        f.objectKind = fact_subject(FactSubject::Landmark, /*named*/true);
         f.object = city;
         f.x = 20; f.y = 20;
         chronicle_record(c, f);
@@ -381,17 +382,46 @@ void test_a_band_becomes_a_figure_by_its_deeds() {
           && !fact_subject_marked_named(nobody.subjectKind),
           "and the bit is the only thing that differs");
 
-    // A city is named by construction: it had a name the day it was founded,
-    // so nobody has to mark it.
-    WorldFact city{};
-    city.day = 1;
-    city.kind = std::uint16_t(FactKind::Starved);
-    city.subjectKind = std::uint8_t(FactSubject::Landmark);
-    city.subject = 2u;
-    city.x = 8; city.y = 8;
+    // FIGURE-NESS IS DERIVED FROM RENOWN FOR EVERYONE (owner, 2026-08-28):
+    // a landmark has a NAME by construction, but a name is a word, not
+    // historical weight. A fresh hamlet's hunger is weather; the same hunger
+    // of a renowned city is legend — and the caller marks the bit from the
+    // place's own renown, exactly like a band's.
+    WorldFact hamlet{};
+    hamlet.day = 1;
+    hamlet.kind = std::uint16_t(FactKind::Starved);
+    hamlet.subjectKind = fact_subject(FactSubject::Landmark, /*named*/false);
+    hamlet.subject = 2u;
+    hamlet.x = 8; hamlet.y = 8;
+    chronicle_record(c, hamlet);
+    CHECK(c.annals.size() == 1u,
+          "a weightless place's hunger is weather, name or no name");
+
+    WorldFact city = hamlet;
+    city.subjectKind = fact_subject(FactSubject::Landmark, /*named*/true);
     chronicle_record(c, city);
     CHECK(c.annals.size() == 2u,
-          "a landmark needs no bit: a city has a name by construction");
+          "the SAME hunger of a renowned city is history");
+
+    // ...and NO fame makes a week's news eternal (kChronicleWeatherDays —
+    // owner: «приём хлеба в город — не событие»): a Traded row's interest
+    // dies in days, so even a figure's deal stays out of the annals.
+    WorldFact deal{};
+    deal.day = 1;
+    deal.kind = std::uint16_t(FactKind::Traded);
+    deal.subjectKind = fact_subject(FactSubject::Landmark, /*named*/true);
+    deal.subject = 2u;
+    deal.objectKind = fact_subject(FactSubject::Landmark, /*named*/true);
+    deal.object = 3u;
+    deal.x = 8; deal.y = 8;
+    deal.amount = 999;
+    chronicle_record(c, deal);
+    CHECK(c.annals.size() == 2u,
+          "a famous city's grain deliveries are still deliveries: weather "
+          "kinds never claim eternity");
+    CHECK(fact_kind_def(FactKind::Traded).interestDays
+              <= kChronicleWeatherDays,
+          "the control is real: Traded IS a weather kind by its own row");
 }
 
 // ── THE WORDS ARE DERIVED, NOT STORED ────────────────────────────────────

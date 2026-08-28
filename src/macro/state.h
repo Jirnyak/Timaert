@@ -591,6 +591,55 @@ struct GameState {
         resourceScars[std::size_t(ResourceFieldId::Count)];
 };
 
+// ── The landmark-fact door: file the deed AND pay the fame ───────────────
+//
+// Where a place's standing lives, by the ONE landmark id space (v54). A
+// spire has no standing (yet) and answers nullptr — its deeds are recorded,
+// nothing is paid.
+inline std::uint32_t* landmark_renown_slot(GameState& gs, int id) {
+    if (id <= 0) return nullptr;
+    for (auto& s : gs.settlements) if (s.id == id) return &s.renown;
+    for (auto& v : gs.villages) if (v.id == id) return &v.renown;
+    return nullptr;
+}
+
+// ONE action (S20.1: a writer that filed without paying would give a world
+// where no place ever becomes somewhere; paying without filing, a legend
+// nobody can read). The landmark twin of the app-side `record_deed`, and the
+// same order: figure-ness is marked from the PRE-deed renown — «с этого дня
+// её дела идут в анналы» — then the fact is filed, then the deed is paid
+// (base + a tenth of what the OBJECT was worth: fame is made of fame for
+// places exactly as for bands). Figure-ness itself is DERIVED, never stored
+// (owner, 2026-08-28): a name is a word; historical weight is renown.
+inline std::uint32_t record_landmark_fact(GameState& gs, FactKind kind,
+                                          int landmarkId, int x, int y,
+                                          int amount,
+                                          int objectLandmarkId = 0) {
+    std::uint32_t* subjSlot = landmark_renown_slot(gs, landmarkId);
+    const std::uint32_t* objSlot =
+        landmark_renown_slot(gs, objectLandmarkId);
+    const std::uint32_t bar = std::uint32_t(renown_to_be_named());
+    WorldFact f{};
+    f.day = gs.worldTime.day();
+    f.kind = std::uint16_t(kind);
+    f.subjectKind = fact_subject(FactSubject::Landmark,
+                                 subjSlot && *subjSlot >= bar);
+    f.subject = std::uint32_t(landmarkId < 0 ? 0 : landmarkId);
+    if (objectLandmarkId > 0) {
+        f.objectKind = fact_subject(FactSubject::Landmark,
+                                    objSlot && *objSlot >= bar);
+        f.object = std::uint32_t(objectLandmarkId);
+    }
+    f.x = std::int16_t(x);
+    f.y = std::int16_t(y);
+    f.amount = amount;
+    const std::uint32_t seq = chronicle_record(gs.chronicle, f);
+    if (seq != 0u && subjSlot) {
+        *subjSlot += renown_for_deed(kind, objSlot ? *objSlot : 0u);
+    }
+    return seq;
+}
+
 // ── Relations, including the player's ────────────────────────
 //
 // ONE storage for "how does A regard B": gs.factions[A].relations[B]. The player
