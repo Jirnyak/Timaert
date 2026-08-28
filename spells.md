@@ -12,9 +12,14 @@ Modular spell framework: **adding a spell is one file, no engine changes.**
 
 ## Model
 
-- **`SpellBook`** { learned, activeSpellId, cooldowns, sustainedActive,
-  sustainedDrainCarry }; API `learn / set_active / can_cast / cast / tick`.
-  `cooldowns` holds **steps remaining, not seconds left** (core/time.h
+- **`SpellBook`** — FLAT ordinal-indexed rows over the append-only registry
+  (v59): `learned[kSpellCount]`, `activeSpell` (ordinal, −1 = none),
+  `cooldownSteps[kSpellCount]`, `sustained[kSpellCount]`,
+  `sustainedDrainCarry`. The three string-keyed heap containers died (S26:
+  flat data; S20.1: the ordinal IS the identity — strings resolve at the
+  edges via `spell_ordinal`). API `learn / set_active / can_cast / cast /
+  tick`, all by ordinal.
+  `cooldownSteps` holds **steps remaining, not seconds left** (core/time.h
   `kStepsPerSecond`): the registry authors seconds, the world counts the
   simulation's own integer quantum, and the only conversion back is the string
   a human reads ("Cooldown 1.4s"). `tick` takes a step COUNT. That is why a

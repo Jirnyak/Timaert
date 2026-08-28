@@ -318,8 +318,9 @@ changes.
 their content became `kSpellDefs` rows + `kSpellEffects` bindings.)
 
 ```
-SpellBook { learned, activeSpellId, cooldowns, sustainedActive, sustainedDrainCarry }
-spellbook_learn / set_active / can_cast / cast / tick
+SpellBook { learned[kSpellCount], activeSpell, cooldownSteps[kSpellCount],
+            sustained[kSpellCount], sustainedDrainCarry }   // flat, by ordinal (v59)
+spellbook_learn / set_active / can_cast / cast / tick       // ordinals; strings at edges
 ```
 
 ### Politics System ([macro/politik.{h,cpp}](src/macro/politik.h))

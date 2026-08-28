@@ -54,10 +54,15 @@ a hunted head decrements its pack, through signed deltas and stamped
 receipts (`ecs::MacroDebt`). Ruin and creation are the same row.
 
 Guard rails, each with a test: reads floor at zero; scars clamp to the
-baseline; a dry vein stays a VISIBLE cell at 0; mining refuses a cell that
+baseline; **a worked-out vein is ANNIHILATED** (owner, 2026-08-28: «истощённая
+жила — это не существующая жила») — the cell leaves the map, the chronicle's
+`Drained` fact is its only memorial, and scarcity is measured against the
+DERIVED born-with baseline (`DepositLayer::virginUnits`, a pure function of
+terrain + seed, recomputed free at every load); mining refuses a cell that
 holds no vein (**mining invents no geology** — creation goes through the
-genesis door, deliberately); carrier writes move the carrier's revision so
-the renderer and the save can never see a different forest than the ledger.
+genesis door, deliberately, and genesis of an EMPTY vein is refused too);
+carrier writes move the carrier's revision so the renderer and the save can
+never see a different forest than the ledger.
 
 ## The growth law
 
