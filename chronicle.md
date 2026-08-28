@@ -89,14 +89,26 @@ its own past, so late versions added historical pruning. The half DF gets right
 is the distinction between an EVENT and a LEGEND, and that is the half taken.
 
 - **the RING** — what the world is ASKED. Indexed by cell, forgets by age. Its
-  size is a FORMULA with one unmeasured term: `longest interestDays × the
-  world's facts per day`. The rate has never been measured, which is why
-  `Chronicle::factsToday` ships as part of the contract — retune from the
-  counter, not from feel.
+  size is a FORMULA: `longest interestDays × the world's facts per day`. The
+  rate is MEASURED now (`chronicle_rate` smoke, 2026-08-28): ~80–100 facts a
+  day of background (caravan deals, kills), 240–340 at the famine wave — worst
+  day × 64 interest days ≈ 21.6k, so `kChronicleFacts = 2^16` stands confirmed.
+  `factsToday` remains the instrument; retune from it, never from feel.
 - **the ANNALS** — what the world REMEMBERS. Append-only, no spatial index,
   rides the save WHOLE. They are not a cache: a legends mode (owner's plan)
   will read exactly them. The cap is LOUD (`annalsFull`) rather than silently
   dropping the past.
+
+**What reaches the annals** (owner, 2026-08-28): *a fact a FIGURE took part
+in, if its kind is more than a week's news.* Both halves come from columns
+that already existed. Figure-ness is derived from renown for EVERYONE — a
+landmark has a NAME the day it is founded, but a name is a word, not
+historical weight: a fresh hamlet's hunger is weather, a renowned city's is
+legend. And no fame makes a weather kind eternal
+(`kChronicleWeatherDays = 8`, the table's own shortest interest tier: Traded,
+Gathered) — «приём хлеба в город — не событие», however famous the city. The
+effect on the measured world: a young world's annals hold ~0 instead of ~150
+a day — eternity is earned.
 
 **The chains self-truncate.** Eviction is strictly oldest-first, so the first
 dead link in a cell's chain is the end of its live part. No unlinking, no
@@ -110,10 +122,16 @@ still holds what it linked to.
 microworld has none — a mob, a projectile, a house have no standing to win or
 lose, and that is a different layer and a different question.
 
-**A band is not named by birth.** It starts as one more band whose deeds are
-weather the ring forgets in a season; do enough and it is a FIGURE, whose deeds
-enter the annals for good. ONE number is stored — "is it named" is DERIVED
-(`renown_is_named`), so a counter and a flag can never disagree.
+**Nobody is named by birth — bands and PLACES alike** (owner, 2026-08-28).
+A band starts as one more band whose deeds are weather the ring forgets in a
+season; do enough and it is a FIGURE, whose deeds enter the annals for good.
+The same law now holds for landmarks: a city earns its historical weight by
+what it does and suffers (`record_landmark_fact` pays the subject its deed's
+worth — a town that lived through a revolt is KNOWN). ONE number is stored —
+"is it named" is DERIVED (`renown_is_named`), so a counter and a flag can
+never disagree. The named bit in a fact is the participant's standing AT THE
+MOMENT of the deed, marked from PRE-deed renown («с этого дня её дела идут в
+анналы») — queries compare kinds, never the packed byte.
 
 **What a deed is worth: the VICTIM answers.** Nothing had to be invented,
 because every macro entity already carries what it is worth — its own renown:
@@ -145,7 +163,8 @@ bar IS the table.
 | `EventBus::record(fact)` | the bus IS the chronicle's door (owner's ruling); the frame's facts are a RANGE of sequence numbers, not a second buffer |
 | `record_deed(app, fact, subjectEntity)` | app-side wrapper: resolves the entity to its save-stable ordinal, marks the named bit, files the fact AND pays the renown. The two halves cannot come apart — a writer that filed and forgot would be a world where nobody becomes somebody. |
 | `SubworldEngine::record_world_fact` | micro→macro: stamps the containing macro cell |
-| `record_landmark_fact` (world_tick) | a place has no entity and earns no renown — it is named the day it is founded — so it files directly |
+| `record_landmark_fact` (state.h) | the landmark twin of `record_deed`: marks figure-ness from the place's own renown, files the fact AND pays the deed (base + a tenth of the object's renown). The old "a place earns no renown" was a hole in the one-door law, closed 2026-08-28 |
+| `player_journal_capture` (macro/journal.h) | a READER, not a writer: once a tick the player asks "what happened since seq N" and copies what is HIS — participation (subject/object = his squad) and locality (his cell, while he stood there). No fact writer knows the journal exists |
 
 ## Zones — places that mean something
 
@@ -158,6 +177,52 @@ mechanism.
 chronicle, because a place already remembers that somebody stood in it. A
 separate `visited` flag would be a second truth about one past — and it would
 have to be saved, loaded and kept in step.
+
+## The player's journal — knowledge, not a second memory
+
+S11 applied to history (owner, 2026-08-28): the world does not TELL what the
+player never learned. The chronicle stays one and whole — legends mode reads
+it raw — and what changes is only the VIEW.
+
+- **What he learns**: what he TOOK PART in (his squad ordinal as subject or
+  object, wherever it happened) and what happened ON HIS CELL while he stood
+  there. Rumours will enter through this same door: a rumour is a chronicle
+  record read to him, and hearing appends like witnessing does.
+- **The container** (`PlayerState::journal`): COPIES of the 32-byte records —
+  the ring forgets and the journal must not («это лог игрока всей его игры»),
+  and a copy of an immutable record is not a second truth, because there is
+  nothing for the two to disagree about. Append-only, LOUD cap
+  (`kJournalFactsCap = 2^20` — the annals' own size: his whole-game log gets
+  no less room than the world's eternal memory), the whole cap reserved in
+  one block at first capture so the game loop never allocates for it.
+- **Words at display time**, as everywhere: the journal panel renders
+  `fact_sentence` through the app's naming resolvers (`app_fact_naming`); no
+  sentence is stored anywhere.
+- **The session feed is neither** («не хранится даже в сессии»): "Game
+  saved.", "You have learned X!" go to `SessionFeed` — a POD ring the HUD
+  draws and fades, never serialized. Three questions, three answers: the
+  world remembers by the chronicle, the player knows by his journal, the
+  moment speaks through the feed — and there is no fourth store.
+
+## Annihilation — a drained thing no longer exists
+
+Owner, 2026-08-28: «истощённая жила — это не существующая жила; истощённый
+шпиль — это смена ландмарка».
+
+- **A worked-out vein LEAVES the deposit map** the moment it runs dry; the
+  chronicle's `Drained` fact is the only record of what stood there (amount =
+  the resource registry row + 1 — the land has no ordinal to ride as the
+  object). Scarcity needs no memorial: `DepositLayer::virginUnits` — what the
+  world was BORN with — is derived from terrain + seed at layer build (the
+  load path rebuilds the layer anyway, so it recomputes for free), and the
+  «железо родится от скудности» law prospects against it. Discovery can push
+  the live stock above the born level; a richer-than-born world simply misses
+  nothing.
+- **A drained spire's fact points at the PLACE**: object = the spire's
+  landmark ordinal (possible only because of the one landmark id space, v54);
+  the spell it held resolves from the spire itself. The full form — a spent
+  spire BECOMES another landmark kind — waits for the S9 transition
+  machinery.
 
 ## Asking
 
@@ -182,15 +247,24 @@ have to be saved, loaded and kept in step.
 ## Open
 
 - **Writers.** Wired: auto-resolved death, famine and revolt transitions, a
-  drained spire, a zone crossing. Missing because the MECHANIC does not exist
-  yet: capturing a settlement (`LandmarkChangeOwner` has a tag and no emitter).
-- **The fact rate** is still unmeasured, so `kChronicleFacts` is provisional by
-  construction. `factsToday` is the instrument.
-- **A faction has no renown store** — one field, when the politics track lands;
-  it reads through the same door.
+  drained spire, a zone crossing, a worked-out vein, every caravan deal, the
+  player's own deals (settlement and NPC), a struck vein (`Discovered`,
+  subject = the CELL — the land found it). Missing because the MECHANIC does
+  not exist yet: capturing a settlement (`LandmarkChangeOwner` has a tag and
+  no emitter).
+- **A faction has no renown store** — one field, when the politics track
+  lands; it reads through the same door.
 - **`GameEvent` is still a struct with strings**, not yet a slice of the
-  chronicle. Most of its strings duplicate an ordinal already in the same
-  event; the tails are persistent string lists and a logic layer that cannot
-  see the world.
-- **?27 — the text system** (authored and procedural dialogue) is a separate
-  track. "Words from facts" answers the journal, not the conversation.
+  chronicle. The spellbook's own strings died first (flat ordinal rows, v59);
+  next are the quest identities (`completedQuestIds`/`failedQuestIds` string
+  lists → the monotonic-ordinal law) and `codexUnlocked`, then the slice
+  itself. `NodeContext` still cannot see the world — it needs a reading door
+  in the `FactNaming` shape.
+- **Rumours** — the journal door is built; the ACQUISITION mechanic (tavern?
+  an encounter's word of mouth?) is the owner's gameplay call.
+- **?27 — the text system**: authored text will run through encapsulated
+  LOCALIZATION from the start (want Russian — you know exactly which strings
+  to fill); procedural lines are DEFERRED to a Markov-context core with
+  designed skeletons («банда бандитов числом ~50 нападает на деревню <имя>»
+  — an M&B/DF/Qud hybrid). "Words from facts" answers the journal, not the
+  conversation.
