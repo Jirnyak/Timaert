@@ -356,11 +356,16 @@ sm::GameState make_state() {
         gs.player.journal.push_back(jf);
         gs.player.journalSeenSeq = 77u;
     }
-    sm::spellbook_learn(gs.player.spellBook, "spell.spark");
-    sm::spellbook_set_active(gs.player.spellBook, "spell.spark");
-    gs.player.spellBook.cooldowns["spell.spark"] = sm::steps_from_seconds(2.5f);
-    sm::spellbook_learn(gs.player.spellBook, "haste");
-    sm::spellbook_toggle_sustained(gs.player.spellBook, "haste");
+    // The book speaks ORDINALS of the real registry now (v59) — a fixture
+    // can no longer invent a spell the table does not hold, which is the law
+    // working, not a test limitation.
+    const int sparkOrd = sm::spell_ordinal("fireball");
+    const int hasteOrd = sm::spell_ordinal("haste");
+    sm::spellbook_learn(gs.player.spellBook, sparkOrd);
+    sm::spellbook_set_active(gs.player.spellBook, sparkOrd);
+    gs.player.spellBook.cooldownSteps[sparkOrd] = sm::steps_from_seconds(2.5f);
+    sm::spellbook_learn(gs.player.spellBook, hasteOrd);
+    sm::spellbook_toggle_sustained(gs.player.spellBook, hasteOrd);
     gs.player.factionPeaceUntilDay[
         std::size_t(sm::ensure_faction_slot(gs, "guild"))] = 55;
     gs.player.completedQuestIds.push_back("q_done_round");
@@ -881,21 +886,22 @@ void run_roundtrip() {
         || p.journalSeenSeq != 77u) {
         FAIL_BAIL("the player's journal did not round-trip entry-for-entry");
     }
-    if (!sm::spellbook_has_learned(p.spellBook, "spell.spark")
-        || !sm::spellbook_has_learned(p.spellBook, "haste")) {
+    if (!sm::spellbook_has_learned(p.spellBook, sm::spell_ordinal("fireball"))
+        || !sm::spellbook_has_learned(p.spellBook,
+                                      sm::spell_ordinal("haste"))) {
         FAIL_BAIL("spell learned state lost");
     }
-    if (p.spellBook.activeSpellId != "spell.spark") {
+    if (p.spellBook.activeSpell != sm::spell_ordinal("fireball")) {
         FAIL_BAIL("active spell lost");
     }
     // Steps are integers: an exact compare, not a float tolerance. The old
     // nearf() here was tolerance for a quantity that never needed any.
-    const auto cdIt = p.spellBook.cooldowns.find("spell.spark");
-    if (cdIt == p.spellBook.cooldowns.end()
-        || cdIt->second != sm::steps_from_seconds(2.5f)) {
+    if (p.spellBook.cooldownSteps[sm::spell_ordinal("fireball")]
+        != sm::steps_from_seconds(2.5f)) {
         FAIL_BAIL("spell cooldown lost");
     }
-    if (!sm::spellbook_has_sustained(p.spellBook, "haste")) {
+    if (!sm::spellbook_has_sustained(p.spellBook,
+                                     sm::spell_ordinal("haste"))) {
         FAIL_BAIL("sustained spell state lost");
     }
     if (p.completedQuestIds.empty() || p.completedQuestIds[0] != "q_done_round") {

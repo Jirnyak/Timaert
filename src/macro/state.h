@@ -215,7 +215,10 @@ namespace sm {
 // never serialized); the player's past is his JOURNAL of chronicle records;
 // two of its lines became honest facts instead (a struck vein = Discovered,
 // a player's deal = Traded). 8192 saved std::strings leave the format.
-constexpr int kSaveVersion = 58;
+// v59: the spellbook is FLAT (macro/spell_book_state.h) — ordinal-indexed
+// rows over the append-only spell registry; the string ids and the three
+// heap containers left the format.
+constexpr int kSaveVersion = 59;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 

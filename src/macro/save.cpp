@@ -266,46 +266,6 @@ void read_string_vector(Reader& r, std::vector<std::string>& v,
 // The spellbook's cooldowns are STEPS now (core/time.h), so the map they ride
 // in is integer. Kept beside its float twin rather than templated: two callers,
 // two plain functions, and a reader can see exactly what lands on disk.
-void write_string_u32_map(Writer& w,
-                          const std::unordered_map<std::string, std::uint32_t>& m,
-                          std::uint32_t cap = kMaxSmallVector) {
-    if (!w.count(m.size(), cap)) return;
-    std::vector<std::pair<std::string, std::uint32_t>> rows;
-    rows.reserve(m.size());
-    for (const auto& [k, v] : m) rows.emplace_back(k, v);
-    std::sort(rows.begin(), rows.end(),
-        [](const auto& a, const auto& b) { return a.first < b.first; });
-    for (const auto& [k, v] : rows) {
-        w.str(k);
-        w.pod(v);
-    }
-}
-
-void read_string_u32_map(Reader& r,
-                         std::unordered_map<std::string, std::uint32_t>& m,
-                         std::uint32_t cap = kMaxSmallVector) {
-    std::uint32_t n = 0;
-    if (!read_count(r, n, cap)) return;
-    m.clear();
-    m.reserve(n);
-    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-        std::string k;
-        std::uint32_t v = 0;
-        r.str(k);
-        r.pod(v);
-        m.emplace(std::move(k), v);
-    }
-}
-
-// The inventory on disk: the OCCUPIED slots, count-prefixed. The flat form is
-// 256 slots wide and mostly empty, and writing its empty tail would put
-// megabytes of zeroes in every save; the record itself rides as bytes, so an
-// item's seed / material / quality / affixes travel from day one.
-//
-// The id is an ORDINAL now, not a string — which means the catalog's row order
-// is append-only from here, exactly as NPCType's is. A save from a world with
-// a different catalog would otherwise silently rename everything the player
-// owns.
 void write_inventory(Writer& w, const Inventory& inv) {
     if (!w.count(std::size_t(inv.used_slots()), kMaxInventoryStacks)) return;
     for (const ItemRef& s : inv.slots) {
@@ -622,17 +582,30 @@ void read_perks(Reader& r, Perks& perks) {
 }
 
 void write_spell_book(Writer& w, const SpellBook& spellBook) {
-    write_string_vector(w, spellBook.learned);
-    w.str(spellBook.activeSpellId);
-    write_string_u32_map(w, spellBook.cooldowns);
-    write_string_vector(w, spellBook.sustainedActive);
+    // v59: ordinal-for-ordinal over the append-only registry — the row count
+    // is written first so a book saved against a DIFFERENT registry length
+    // is refused loudly instead of sliding rows onto wrong spells.
+    w.pod(std::int32_t(kSpellCount));
+    for (int i = 0; i < kSpellCount; ++i) {
+        w.pod(spellBook.learned[i]);
+        w.pod(spellBook.cooldownSteps[i]);
+        w.pod(spellBook.sustained[i]);
+    }
+    w.pod(spellBook.activeSpell);
+    w.pod(spellBook.sustainedDrainCarry);
 }
 
 void read_spell_book(Reader& r, SpellBook& spellBook) {
-    read_string_vector(r, spellBook.learned);
-    r.str(spellBook.activeSpellId);
-    read_string_u32_map(r, spellBook.cooldowns);
-    read_string_vector(r, spellBook.sustainedActive);
+    std::int32_t rows = 0;
+    r.pod(rows);
+    if (!r.ok || rows != kSpellCount) { r.ok = false; return; }
+    for (int i = 0; i < kSpellCount; ++i) {
+        r.pod(spellBook.learned[i]);
+        r.pod(spellBook.cooldownSteps[i]);
+        r.pod(spellBook.sustained[i]);
+    }
+    r.pod(spellBook.activeSpell);
+    r.pod(spellBook.sustainedDrainCarry);
 }
 
 void write_player(Writer& w, const PlayerState& p) {

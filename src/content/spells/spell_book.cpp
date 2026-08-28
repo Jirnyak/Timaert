@@ -55,18 +55,18 @@ int spell_radius(const SpellDef& spell,
 
 CastCheck spellbook_can_cast_ex(const SpellBook& sb,
                                 const CombatStats& combat,
-                                const std::string& id,
+                                int spellOrd,
                                 bool inMicro) {
-    const SpellDef* d = spell_find(id);
-    if (!d) return {false, "Unknown spell", 0.0f};
-    if (!spellbook_has_learned(sb, id)) return {false, "Spell not learned", 0.0f};
-    if (d->sustained && spellbook_has_sustained(sb, id)) return {true, "", 0.0f};
+    if (!spell_ordinal_ok(spellOrd)) return {false, "Unknown spell", 0.0f};
+    const SpellDef* d = &kSpellDefs[spellOrd];
+    if (!spellbook_has_learned(sb, spellOrd))
+        return {false, "Spell not learned", 0.0f};
+    if (d->sustained && spellbook_has_sustained(sb, spellOrd))
+        return {true, "", 0.0f};
     if (combat.currentMp < d->manaCost) return {false, "Not enough mana", 0.0f};
 
-    const auto it = sb.cooldowns.find(id);
-    if (it != sb.cooldowns.end() && it->second > 0u) {
-        return {false, cooldown_reason(it->second),
-                seconds_from_steps(it->second)};
+    if (const std::uint32_t cd = sb.cooldownSteps[spellOrd]; cd > 0u) {
+        return {false, cooldown_reason(cd), seconds_from_steps(cd)};
     }
 
     if (inMicro && !d->hasMicro) return {false, "Cannot use here", 0.0f};
@@ -80,35 +80,33 @@ CastCheck spellbook_can_cast_ex(const SpellBook& sb,
     return {true, "", 0.0f};
 }
 
-int spellbook_start_cast(SpellBook& sb, CombatStats& combat,
-                         const std::string& id) {
-    const SpellDef* d = spell_find(id);
-    if (!d) return 0;
+int spellbook_start_cast(SpellBook& sb, CombatStats& combat, int spellOrd) {
+    if (!spell_ordinal_ok(spellOrd)) return 0;
+    const SpellDef* d = &kSpellDefs[spellOrd];
     if (d->sustained) {
-        spellbook_toggle_sustained(sb, id);
+        spellbook_toggle_sustained(sb, spellOrd);
         return 0;
     }
     combat.currentMp -= d->manaCost;
     if (combat.currentMp < 0) combat.currentMp = 0;
     // The table authors seconds; the world counts steps.
     if (d->cooldown > 0.0f) {
-        sb.cooldowns[id] = steps_from_seconds(d->cooldown);
+        sb.cooldownSteps[spellOrd] = steps_from_seconds(d->cooldown);
     }
     return d->manaCost;
 }
 
 bool spellbook_cast(ecs::World& w, SpellBook& sb, CombatStats& combat,
                     const Attributes& attributes, const Skills& skills,
-                    const std::string& id,
+                    int spellOrd,
                     std::uint32_t pid, float px, float py, float pz,
                     float nx, float ny, float nz, bool inMicro,
                     SpellRngFn rng01,
                     void* rngUser) {
-    if (!spellbook_can_cast_ex(sb, combat, id, inMicro).ok) return false;
-    const SpellDef* d = spell_find(id);
-    if (!d) return false;
+    if (!spellbook_can_cast_ex(sb, combat, spellOrd, inMicro).ok) return false;
+    const SpellDef* d = &kSpellDefs[spellOrd];
     if (d->sustained || d->shape == DeliveryShape::Self) {
-        spellbook_start_cast(sb, combat, id);
+        spellbook_start_cast(sb, combat, spellOrd);
         return true;
     }
     if (!inMicro) {
@@ -133,50 +131,37 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, CombatStats& combat,
     };
 
     if (!cast_spell(w, *d, ctx)) return false;
-    spellbook_start_cast(sb, combat, id);
+    spellbook_start_cast(sb, combat, spellOrd);
     return true;
 }
 
 void spellbook_tick(SpellBook& sb, CombatStats& combat, std::uint32_t steps) {
     if (steps == 0u) return;
     const float dt = float(steps) * kStepSeconds;   // for the per-second rates
-    for (auto it = sb.cooldowns.begin(); it != sb.cooldowns.end(); ) {
-        if (it->second <= steps) {
-            it = sb.cooldowns.erase(it);
-        } else {
-            it->second -= steps;
-            ++it;
-        }
+    for (int i = 0; i < kSpellCount; ++i) {
+        sb.cooldownSteps[i] = sb.cooldownSteps[i] <= steps
+                                  ? 0u
+                                  : sb.cooldownSteps[i] - steps;
     }
 
-    if (sb.sustainedActive.empty()) {
-        sb.sustainedDrainCarry = 0.0f;
-        return;
-    }
-
+    // Sustained drains: flat flags over the registry — a set flag is valid
+    // by construction (toggle guards the ordinal), so the row's own
+    // `sustained` column is the only sanity the old string list re-checked.
     float drainPerSecond = 0.0f;
-    for (auto it = sb.sustainedActive.begin(); it != sb.sustainedActive.end(); ) {
-        const SpellDef* d = spell_find(*it);
-        if (!d || !d->sustained) {
-            it = sb.sustainedActive.erase(it);
-            continue;
-        }
-        drainPerSecond += d->manaDrain;
-        ++it;
+    for (int i = 0; i < kSpellCount; ++i) {
+        if (!sb.sustained[i]) continue;
+        drainPerSecond += kSpellDefs[i].manaDrain;
     }
-
-    if (sb.sustainedActive.empty() || drainPerSecond <= 0.0f) {
+    if (drainPerSecond <= 0.0f) {
         sb.sustainedDrainCarry = 0.0f;
         return;
     }
 
     if (combat.currentMp <= 0) {
-        for (std::size_t i = sb.sustainedActive.size(); i > 0; --i) {
-            const std::size_t idx = i - 1;
-            const SpellDef* d = spell_find(sb.sustainedActive[idx]);
-            if (!d || !d->sustained || d->manaDrain * dt > 0.0f) {
-                sb.sustainedActive.erase(sb.sustainedActive.begin()
-                                         + std::ptrdiff_t(idx));
+        // No mana left: every paying drain collapses at once.
+        for (int i = 0; i < kSpellCount; ++i) {
+            if (sb.sustained[i] && kSpellDefs[i].manaDrain > 0.0f) {
+                sb.sustained[i] = 0;
             }
         }
         sb.sustainedDrainCarry = 0.0f;
@@ -193,24 +178,18 @@ void spellbook_tick(SpellBook& sb, CombatStats& combat, std::uint32_t steps) {
         return;
     }
 
+    // Not enough for the full bill: newest-numbered drains pay first and the
+    // ones the pool cannot cover switch off (the old list's newest-first
+    // walk, said in ordinals).
     int remainingMp = combat.currentMp;
     int remainingDrain = drain;
     sb.sustainedDrainCarry = 0.0f;
 
-    for (std::size_t i = sb.sustainedActive.size();
-         i > 0 && remainingDrain > 0; --i) {
-        const std::size_t idx = i - 1;
-        const SpellDef* d = spell_find(sb.sustainedActive[idx]);
-        if (!d || !d->sustained) {
-            sb.sustainedActive.erase(sb.sustainedActive.begin()
-                                     + std::ptrdiff_t(idx));
-            continue;
-        }
-
-        int spellDrain = int(std::floor(d->manaDrain * dt));
-        if (spellDrain <= 0 && d->manaDrain > 0.0f) {
-            spellDrain = 1;
-        }
+    for (int i = kSpellCount; i-- > 0 && remainingDrain > 0; ) {
+        if (!sb.sustained[i]) continue;
+        const SpellDef& d = kSpellDefs[i];
+        int spellDrain = int(std::floor(d.manaDrain * dt));
+        if (spellDrain <= 0 && d.manaDrain > 0.0f) spellDrain = 1;
         if (spellDrain > remainingDrain) spellDrain = remainingDrain;
         if (spellDrain <= 0) continue;
 
@@ -219,10 +198,10 @@ void spellbook_tick(SpellBook& sb, CombatStats& combat, std::uint32_t steps) {
             remainingMp -= spellDrain;
         } else {
             remainingMp = 0;
-            sb.sustainedActive.erase(sb.sustainedActive.begin()
-                                     + std::ptrdiff_t(idx));
+            sb.sustained[i] = 0;
         }
     }
+    if (!spellbook_any_sustained(sb)) sb.sustainedDrainCarry = 0.0f;
 
     combat.currentMp = remainingMp;
 }

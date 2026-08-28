@@ -1831,9 +1831,9 @@ sm::BonusTotals player_standing_bonuses(const App& app) {
     // ...and what is burning on him. A sustained spell contributes while it
     // burns and stops the moment it does not — no bookkeeping, because nothing
     // was ever written down.
-    for (const std::string& id : app.gs.player.spellBook.sustainedActive) {
-        const sm::SpellDef* def = sm::spell_find(id);
-        if (!def) continue;
+    for (int ord = 0; ord < sm::kSpellCount; ++ord) {
+        if (!app.gs.player.spellBook.sustained[ord]) continue;
+        const sm::SpellDef* def = &sm::kSpellDefs[ord];
         for (const sm::Bonus& b : def->effects) {
             sm::accumulate(t, sm::spell_bonus(b, app.gs.player.sheet.skills));
         }
@@ -1851,9 +1851,9 @@ sm::CharacterSheet player_effective_sheet(const App& app) {
 // magnitude to scale, so this is a row lookup and a boolean, not a number.
 bool player_rule_active(const App& app, sm::SpellRuleId rule) {
     if (rule == sm::SpellRuleId::None) return false;
-    for (const std::string& id : app.gs.player.spellBook.sustainedActive) {
-        const sm::SpellDef* def = sm::spell_find(id);
-        if (def && def->rule == rule) return true;
+    for (int ord = 0; ord < sm::kSpellCount; ++ord) {
+        if (!app.gs.player.spellBook.sustained[ord]) continue;
+        if (sm::kSpellDefs[ord].rule == rule) return true;
     }
     return false;
 }
@@ -2728,7 +2728,7 @@ bool boot_world_from_save(App& app, const std::string& path) {
 // ── Input ─────────────────────────────────────────────────────
 
 bool sustained_spell_active(const sm::SpellBook& book, const char* id) {
-    return sm::spellbook_has_sustained(book, id);
+    return sm::spellbook_has_sustained(book, sm::spell_ordinal(id));
 }
 
 // Panels that stand between the player and the world. While one of these is up
@@ -3083,21 +3083,17 @@ void draw_subworld_combat_log(const sm::sub::SubworldEngine& subworld,
 
 bool cast_active_spell(App& app) {
     if (!app.worldLoaded) return false;
-    const std::string& id = app.gs.player.spellBook.activeSpellId;
-    if (id.empty()) {
-        emit_spell_cast(app, id, false, "No active spell");
+    const int ord = app.gs.player.spellBook.activeSpell;
+    if (!sm::spell_ordinal_ok(ord)) {
+        emit_spell_cast(app, "", false, "No active spell");
         return false;
     }
-
-    const sm::SpellDef* def = sm::spell_find(id);
-    if (!def) {
-        emit_spell_cast(app, id, false, "Unknown spell");
-        return false;
-    }
+    const sm::SpellDef* def = &sm::kSpellDefs[ord];
+    const std::string id = def->id;   // the EVENT still speaks the string id
 
     const bool inMicro = app.subworld.active();
     const sm::CastCheck check = sm::spellbook_can_cast_ex(
-        app.gs.player.spellBook, app.gs.player.combatStats, id, inMicro);
+        app.gs.player.spellBook, app.gs.player.combatStats, ord, inMicro);
     if (!check.ok) {
         emit_spell_cast(app, id, false, check.reason.c_str(),
                         check.cooldownRemaining);
@@ -3116,7 +3112,7 @@ bool cast_active_spell(App& app) {
             return false;
         }
         sm::spellbook_start_cast(app.gs.player.spellBook,
-                                 app.gs.player.combatStats, id);
+                                 app.gs.player.combatStats, ord);
         emit_spell_cast(app, id, true, "");
         return true;
     }
@@ -3130,7 +3126,7 @@ bool cast_active_spell(App& app) {
         app.gs.player.combatStats,
         app.gs.player.sheet.attributes,
         app.gs.player.sheet.skills,
-        id,
+        ord,
         app.subworld.player_entity_id(),
         app.subworld.player_x(),
         app.subworld.player_y(),
@@ -4792,7 +4788,8 @@ void register_console_commands(App& app) {
                 c.error("unknown spell '" + id + "' - type 'spells' for the list");
                 return true;
             }
-            if (sm::spellbook_learn(app.gs.player.spellBook, id))
+            if (sm::spellbook_learn(app.gs.player.spellBook,
+                                    sm::spell_ordinal(id)))
                 c.printfln(Lvl::Ok, "learned %s", id.c_str());
             else
                 c.printfln(Lvl::Warn, "already knew %s", id.c_str());
@@ -4803,10 +4800,10 @@ void register_console_commands(App& app) {
         "learn every spell in the registry",
         [&app](Con& c, const std::vector<std::string>&) {
             int learned = 0;
-            for (const auto& s : sm::kSpellDefs)
-                if (sm::spellbook_learn(app.gs.player.spellBook, s.id)) ++learned;
-            c.printfln(Lvl::Ok, "learned %d new spell(s); know %zu total", learned,
-                       app.gs.player.spellBook.learned.size());
+            for (int ord = 0; ord < sm::kSpellCount; ++ord)
+                if (sm::spellbook_learn(app.gs.player.spellBook, ord)) ++learned;
+            c.printfln(Lvl::Ok, "learned %d new spell(s); know %d total", learned,
+                       sm::spellbook_learned_count(app.gs.player.spellBook));
             return true;
         });
 
@@ -5142,7 +5139,8 @@ void draw_debug_panels(App& app) {
             ImGui::Text("points  attr %d  skill %d  perk %d",
                         p.sheet.levelData.attributePoints, p.sheet.levelData.skillPoints,
                         p.sheet.levelData.perkPoints);
-            ImGui::Text("spells  %zu learned", p.spellBook.learned.size());
+            ImGui::Text("spells  %d learned",
+                        sm::spellbook_learned_count(p.spellBook));
             ImGui::SeparatorText("World");
             ImGui::Text("clock   day %d, %02d:%02d",
                         app.gs.worldTime.day(), app.gs.worldTime.hour(),
@@ -7410,7 +7408,7 @@ bool run_spire_climb_smoke(App& app) {
         if (sp.depleted || sp.spellId >= std::uint32_t(sm::kSpellCount))
             continue;
         if (sm::spellbook_has_learned(app.gs.player.spellBook,
-                                      sm::kSpellDefs[sp.spellId].id)) {
+                                      int(sp.spellId))) {
             continue;
         }
         if (!target || sm::kSpellDefs[sp.spellId].tier
@@ -7586,7 +7584,8 @@ bool run_spire_climb_smoke(App& app) {
         // the buffer stops growing, so the follow-up SpellLearned is
         // delivered in the same pass.
         apply_pending_event_effects(app);
-        learned = sm::spellbook_has_learned(app.gs.player.spellBook, def.id);
+        learned = sm::spellbook_has_learned(app.gs.player.spellBook,
+                                            sm::spell_ordinal(def.id));
         for (const auto& sp : app.gs.spires) {
             if (sp.id == spireId) depletedFlag = sp.depleted;
         }
@@ -7921,8 +7920,10 @@ bool run_subworld_self_fireball_smoke(App& app) {
 
     // Guarantee the cast is affordable regardless of the player's current mana.
     app.gs.player.combatStats.currentMp = 999;
-    sm::spellbook_learn(app.gs.player.spellBook, "fireball");
-    sm::spellbook_set_active(app.gs.player.spellBook, "fireball");
+    sm::spellbook_learn(app.gs.player.spellBook,
+                        sm::spell_ordinal("fireball"));
+    sm::spellbook_set_active(app.gs.player.spellBook,
+                             sm::spell_ordinal("fireball"));
 
     // AIM AT THE SKY. Clearing the other actors leaves only one thing the bolt
     // can still strike — the ground — and a fireball that detonates on a rise a
@@ -8732,7 +8733,8 @@ bool run_console_smoke(App& app) {
     }
 
     con.execute("learnall");
-    if (app.gs.player.spellBook.learned.size() != std::size_t(sm::kSpellCount)) {
+    if (sm::spellbook_learned_count(app.gs.player.spellBook)
+        != sm::kSpellCount) {
         restore(); smoke_fail(app, "console learnall count mismatch"); return false;
     }
 
@@ -9274,7 +9276,8 @@ bool run_console_smoke(App& app) {
     // Capture reporting values before restoring the world.
     const int         rGold   = sm::wallet_value(player_bag(app));
     const int         rLevel  = app.gs.player.sheet.levelData.level;
-    const std::size_t rSpells = app.gs.player.spellBook.learned.size();
+    const std::size_t rSpells =
+        std::size_t(sm::spellbook_learned_count(app.gs.player.spellBook));
     restore();
 
     std::fprintf(stderr,
@@ -10979,20 +10982,22 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             app.ui.character = true;
             app.ui.characterTab = sm::ui::CharacterPanelTab::Spells;
             const auto& book = app.gs.player.spellBook;
-            const auto cdIt = book.activeSpellId.empty()
-                ? book.cooldowns.end()
-                : book.cooldowns.find(book.activeSpellId);
-            const float cd = cdIt == book.cooldowns.end()
-                                 ? 0.0f
-                                 : sm::seconds_from_steps(cdIt->second);
+            const int activeOrd = book.activeSpell;
+            const float cd = sm::spell_ordinal_ok(activeOrd)
+                ? sm::seconds_from_steps(book.cooldownSteps[activeOrd])
+                : 0.0f;
+            int sustainedCount = 0;
+            for (int i = 0; i < sm::kSpellCount; ++i)
+                sustainedCount += book.sustained[i] ? 1 : 0;
             std::fprintf(stderr,
-                         "[smoke] spell_overlay learned=%zu active=%s mp=%d/%d cd=%.2f sustained=%zu\n",
-                         book.learned.size(),
-                         book.activeSpellId.empty() ? "(none)" : book.activeSpellId.c_str(),
+                         "[smoke] spell_overlay learned=%d active=%s mp=%d/%d cd=%.2f sustained=%d\n",
+                         sm::spellbook_learned_count(book),
+                         sm::spell_ordinal_ok(activeOrd)
+                             ? sm::kSpellDefs[activeOrd].id : "(none)",
                          app.gs.player.combatStats.currentMp,
                          app.gs.player.combatStats.maxMp,
                          cd,
-                         book.sustainedActive.size());
+                         sustainedCount);
             std::fflush(stderr);
             ++app.smoke.cursor;
             break;
@@ -11027,8 +11032,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     if (app.ecs.reg.valid(e)) app.ecs.reg.destroy(e);
                 }
             }
-            sm::spellbook_learn(app.gs.player.spellBook, "magic_bolt");
-            sm::spellbook_set_active(app.gs.player.spellBook, "magic_bolt");
+            sm::spellbook_learn(app.gs.player.spellBook, sm::spell_ordinal("magic_bolt"));
+            sm::spellbook_set_active(app.gs.player.spellBook, sm::spell_ordinal("magic_bolt"));
             const float spellTargetX = std::min(
                 app.subworld.player_x() + 43.5f,
                 float(sm::sub::kFullSize - 2));
@@ -11083,9 +11088,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             if (afterSpellCastEvents <= beforeSpellCastEvents
                 || !spellEvent
                 || spellEvent->ix != 1
-                || spellEvent->s1 != app.gs.player.spellBook.activeSpellId
+                || spellEvent->s1
+                       != sm::kSpellDefs[app.gs.player.spellBook.activeSpell].id
                 || spellEvent->a != sm::stable_spell_id(
-                    app.gs.player.spellBook.activeSpellId)) {
+                    sm::kSpellDefs[app.gs.player.spellBook.activeSpell].id)) {
                 smoke_fail(app, "SpellCast event was not emitted honestly");
                 break;
             }
@@ -11135,13 +11141,16 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr,
                          "[smoke] spell_projectile active=%s projectiles=%d->%d alive=%d "
                          "targetHp=%.1f mp=%d cd=%zu event=%d flash=%.3f log=\"%s\"\n",
-                         book.activeSpellId.c_str(),
+                         sm::spell_ordinal_ok(book.activeSpell)
+                             ? sm::kSpellDefs[book.activeSpell].id : "(none)",
                          beforeProjectiles,
                          afterProjectiles,
                          liveProjectiles,
                          targetHp ? double(targetHp->hp) : -1.0,
                          app.gs.player.combatStats.currentMp,
-                         book.cooldowns.size(),
+                         std::size_t(sm::spell_ordinal_ok(book.activeSpell)
+                                         ? book.cooldownSteps[book.activeSpell]
+                                         : 0u),
                          afterSpellCastEvents - beforeSpellCastEvents,
                          hitFlash ? double(hitFlash->timer) : -1.0,
                          combatLog ? combatLog->text : "");
@@ -11181,8 +11190,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // warm lantern and the blue moon).
             const char* boltSpell = std::getenv("TIMAERT_SMOKE_SPELL");
             if (!boltSpell || boltSpell[0] == '\0') boltSpell = "fireball";
-            sm::spellbook_learn(app.gs.player.spellBook, boltSpell);
-            sm::spellbook_set_active(app.gs.player.spellBook, boltSpell);
+            sm::spellbook_learn(app.gs.player.spellBook, sm::spell_ordinal(boltSpell));
+            sm::spellbook_set_active(app.gs.player.spellBook, sm::spell_ordinal(boltSpell));
             // Refill mana so the cast cannot fail on cost in a fresh smoke run.
             app.gs.player.combatStats.currentMp =
                 app.gs.player.combatStats.maxMp;
@@ -11457,8 +11466,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "toggle_haste without world");
                 break;
             }
-            sm::spellbook_learn(app.gs.player.spellBook, "haste");
-            sm::spellbook_set_active(app.gs.player.spellBook, "haste");
+            sm::spellbook_learn(app.gs.player.spellBook, sm::spell_ordinal("haste"));
+            sm::spellbook_set_active(app.gs.player.spellBook, sm::spell_ordinal("haste"));
             const int beforeMp = app.gs.player.combatStats.currentMp;
             if (!cast_active_spell(app)) {
                 smoke_fail(app, "haste toggle failed");
@@ -11471,7 +11480,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             const bool active = sm::spellbook_has_sustained(
-                app.gs.player.spellBook, "haste");
+                app.gs.player.spellBook, sm::spell_ordinal("haste"));
             const int afterMp = app.gs.player.combatStats.currentMp;
             // ...and it MAKES HIM FASTER. The smoke used to prove only that
             // mana drained, so the whole reason to cast it went unmeasured —
@@ -11512,8 +11521,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             if (app.subworld.active()) {
                 app.subworld.leave();
             }
-            sm::spellbook_learn(app.gs.player.spellBook, "flight");
-            sm::spellbook_set_active(app.gs.player.spellBook, "flight");
+            sm::spellbook_learn(app.gs.player.spellBook, sm::spell_ordinal("flight"));
+            sm::spellbook_set_active(app.gs.player.spellBook, sm::spell_ordinal("flight"));
             int beforeProjectiles = 0;
             for (auto e : app.ecs.reg.view<sm::ecs::Projectile>()) {
                 (void)e;
@@ -11534,7 +11543,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             const bool active = sm::spellbook_has_sustained(
-                app.gs.player.spellBook, "flight");
+                app.gs.player.spellBook, sm::spell_ordinal("flight"));
             if (!active || app.gs.player.combatStats.currentMp != beforeMp) {
                 smoke_fail(app, "flight toggle invariant");
                 break;
@@ -11667,19 +11676,19 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
 
-            sm::spellbook_learn(app.gs.player.spellBook, "haste");
-            sm::spellbook_learn(app.gs.player.spellBook, "flight");
+            sm::spellbook_learn(app.gs.player.spellBook, sm::spell_ordinal("haste"));
+            sm::spellbook_learn(app.gs.player.spellBook, sm::spell_ordinal("flight"));
             if (!sm::spellbook_has_sustained(
-                    app.gs.player.spellBook, "haste")) {
-                sm::spellbook_set_active(app.gs.player.spellBook, "haste");
+                    app.gs.player.spellBook, sm::spell_ordinal("haste"))) {
+                sm::spellbook_set_active(app.gs.player.spellBook, sm::spell_ordinal("haste"));
                 if (!cast_active_spell(app)) {
                     smoke_fail(app, "prepare_spell_auras haste failed");
                     break;
                 }
             }
             if (!sm::spellbook_has_sustained(
-                    app.gs.player.spellBook, "flight")) {
-                sm::spellbook_set_active(app.gs.player.spellBook, "flight");
+                    app.gs.player.spellBook, sm::spell_ordinal("flight"))) {
+                sm::spellbook_set_active(app.gs.player.spellBook, sm::spell_ordinal("flight"));
                 if (!cast_active_spell(app)) {
                     smoke_fail(app, "prepare_spell_auras flight failed");
                     break;
@@ -11690,9 +11699,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             RuntimeFrameStats frameStats =
                 advance_sim_seconds(app, 0.05f, false);
             const bool haste = sm::spellbook_has_sustained(
-                app.gs.player.spellBook, "haste");
+                app.gs.player.spellBook, sm::spell_ordinal("haste"));
             const bool flight = sm::spellbook_has_sustained(
-                app.gs.player.spellBook, "flight");
+                app.gs.player.spellBook, sm::spell_ordinal("flight"));
             if (!frameStats.ticked || !frameStats.subworldActive
                 || !haste || !flight || !app.subworld.flying()) {
                 smoke_fail(app, "prepare_spell_auras invariant");

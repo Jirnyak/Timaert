@@ -76,7 +76,7 @@ PlayerState default_player() {
 
 
     // Starter spellbook: magic_bolt.
-    spellbook_learn(p.spellBook, "magic_bolt");
+    spellbook_learn(p.spellBook, spell_ordinal("magic_bolt"));
 
     p.codexUnlocked = {"cosmology", "attributes", "perks_skills", "market", "settlements"};
 

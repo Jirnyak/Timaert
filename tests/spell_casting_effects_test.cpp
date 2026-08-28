@@ -298,9 +298,9 @@ int main() {
         return fail("flight world-map metadata wrong");
     }
 
-    sm::spellbook_learn(book, "magic_bolt");
+    sm::spellbook_learn(book, sm::spell_ordinal("magic_bolt"));
     if (!sm::spellbook_cast(world, book, combat, attributes, skills,
-                            "magic_bolt", std::uint32_t{0}, 100.0f, 100.0f, 0.0f,
+                            sm::spell_ordinal("magic_bolt"), std::uint32_t{0}, 100.0f, 100.0f, 0.0f,
                             1.0f, 0.0f, 0.0f, true)) {
         return fail("magic_bolt cast rejected");
     }
@@ -324,23 +324,24 @@ int main() {
         return fail("magic_bolt descriptor wrong");
     }
     const sm::CastCheck macroBolt =
-        sm::spellbook_can_cast_ex(book, combat, "magic_bolt", false);
+        sm::spellbook_can_cast_ex(book, combat, sm::spell_ordinal("magic_bolt"), false);
     if (macroBolt.ok || macroBolt.reason != "Cannot use on world map") {
         return fail("magic_bolt macro gate failed");
     }
 
-    sm::spellbook_learn(book, "fireball");
+    sm::spellbook_learn(book, sm::spell_ordinal("fireball"));
     if (!sm::spellbook_cast(world, book, combat, attributes, skills,
-                            "fireball", std::uint32_t{0}, 100.0f, 100.0f, 0.0f,
+                            sm::spell_ordinal("fireball"), std::uint32_t{0}, 100.0f, 100.0f, 0.0f,
                             1.0f, 0.0f, 0.0f, true)) {
         return fail("fireball cast rejected");
     }
-    const auto fireCd = book.cooldowns.find("fireball");
-    if (fireCd == book.cooldowns.end() || fireCd->second <= 0.0f) {
+    const std::uint32_t fireCd =
+        book.cooldownSteps[sm::spell_ordinal("fireball")];
+    if (fireCd == 0u) {
         return fail("fireball cooldown not started");
     }
     const sm::CastCheck fireBlocked =
-        sm::spellbook_can_cast_ex(book, combat, "fireball", true);
+        sm::spellbook_can_cast_ex(book, combat, sm::spell_ordinal("fireball"), true);
     if (fireBlocked.ok || fireBlocked.cooldownRemaining <= 0.0f
         || fireBlocked.reason != "Cooldown 2.0s") {
         return fail("fireball cooldown gate failed");
@@ -363,12 +364,12 @@ int main() {
     sm::CombatStats fireExpiryCombat{};
     fireExpiryCombat.currentMp = 1000;
     fireExpiryCombat.maxMp = 1000;
-    sm::spellbook_learn(fireExpiryBook, "fireball");
+    sm::spellbook_learn(fireExpiryBook, sm::spell_ordinal("fireball"));
     const auto fireExpiryVictim =
         add_target(fireExpiryWorld, 120.0f, 100.0f, 100.0f, false);
     if (!sm::spellbook_cast(fireExpiryWorld, fireExpiryBook,
                             fireExpiryCombat, attributes, skills,
-                            "fireball", std::uint32_t{0}, 100.0f, 100.0f, 0.0f,
+                            sm::spell_ordinal("fireball"), std::uint32_t{0}, 100.0f, 100.0f, 0.0f,
                             1.0f, 0.0f, 0.0f, true)) {
         return fail("fireball expiry setup cast rejected");
     }
@@ -403,9 +404,9 @@ int main() {
     sm::CombatStats iceCombat{};
     iceCombat.currentMp = 1000;
     iceCombat.maxMp = 1000;
-    sm::spellbook_learn(iceBook, "ice_shard");
+    sm::spellbook_learn(iceBook, sm::spell_ordinal("ice_shard"));
     if (!sm::spellbook_cast(iceWorld, iceBook, iceCombat, attributes, skills,
-                            "ice_shard", std::uint32_t{0}, 10.0f, 10.0f, 0.0f,
+                            sm::spell_ordinal("ice_shard"), std::uint32_t{0}, 10.0f, 10.0f, 0.0f,
                             1.0f, 0.0f, 0.0f, true)) {
         return fail("ice_shard cast rejected");
     }
@@ -419,12 +420,12 @@ int main() {
     }
 
     sm::SpellBook lowBook;
-    sm::spellbook_learn(lowBook, "fireball");
+    sm::spellbook_learn(lowBook, sm::spell_ordinal("fireball"));
     sm::CombatStats lowCombat{};
     lowCombat.currentMp = 0;
     lowCombat.maxMp = 10;
     const sm::CastCheck lowMana =
-        sm::spellbook_can_cast_ex(lowBook, lowCombat, "fireball", true);
+        sm::spellbook_can_cast_ex(lowBook, lowCombat, sm::spell_ordinal("fireball"), true);
     if (lowMana.ok || lowMana.reason != "Not enough mana") {
         return fail("low mana gate failed");
     }
@@ -435,21 +436,21 @@ int main() {
         "armageddon", "haste", "flight",
     };
     for (const char* id : macroSpellIds) {
-        sm::spellbook_learn(macroBook, id);
+        sm::spellbook_learn(macroBook, sm::spell_ordinal(id));
     }
     sm::CombatStats macroCombat{};
     macroCombat.currentMp = 2000;
     macroCombat.maxMp = 2000;
     for (const char* id : macroSpellIds) {
         const sm::CastCheck macroCheck =
-            sm::spellbook_can_cast_ex(macroBook, macroCombat, id, false);
+            sm::spellbook_can_cast_ex(macroBook, macroCombat, sm::spell_ordinal(id), false);
         if (!macroCheck.ok) {
             return fail("world-map macro canCast drifted from TS");
         }
     }
     const int beforeMacroProjectiles = projectile_count(world);
     if (sm::spellbook_cast(world, macroBook, macroCombat, attributes, skills,
-                           "fireball", std::uint32_t{0}, 100.0f, 100.0f, 0.0f,
+                           sm::spell_ordinal("fireball"), std::uint32_t{0}, 100.0f, 100.0f, 0.0f,
                            1.0f, 0.0f, 0.0f, false)) {
         return fail("world-map fireball spawned micro projectile");
     }
@@ -459,13 +460,13 @@ int main() {
     }
 
     sm::spellbook_tick(book, combat, sm::steps_from_seconds(10.0f));
-    if (book.cooldowns.find("fireball") != book.cooldowns.end()) {
+    if (book.cooldownSteps[sm::spell_ordinal("fireball")] != 0u) {
         return fail("fireball cooldown did not expire");
     }
 
-    sm::spellbook_learn(book, "energy_beam");
+    sm::spellbook_learn(book, sm::spell_ordinal("energy_beam"));
     if (!sm::spellbook_cast(world, book, combat, attributes, skills,
-                            "energy_beam", std::uint32_t{0}, 100.0f, 100.0f, 0.0f,
+                            sm::spell_ordinal("energy_beam"), std::uint32_t{0}, 100.0f, 100.0f, 0.0f,
                             1.0f, 0.0f, 0.0f, true)) {
         return fail("energy_beam cast rejected");
     }
@@ -489,9 +490,9 @@ int main() {
         return fail("energy_beam radius drifted from TS spawn radius");
     }
 
-    sm::spellbook_learn(book, "lightning_chain");
+    sm::spellbook_learn(book, sm::spell_ordinal("lightning_chain"));
     if (!sm::spellbook_cast(world, book, combat, attributes, skills,
-                            "lightning_chain", std::uint32_t{0}, 100.0f, 100.0f, 0.0f,
+                            sm::spell_ordinal("lightning_chain"), std::uint32_t{0}, 100.0f, 100.0f, 0.0f,
                             1.0f, 0.0f, 0.0f, true)) {
         return fail("lightning_chain cast rejected");
     }
@@ -532,13 +533,13 @@ int main() {
         return fail("the bolt must fly along the direction it was aimed");
     }
 
-    sm::spellbook_learn(book, "haste");
+    sm::spellbook_learn(book, sm::spell_ordinal("haste"));
     if (!sm::spellbook_cast(world, book, combat, attributes, skills,
-                            "haste", std::uint32_t{0}, 0.0f, 0.0f, 0.0f,
+                            sm::spell_ordinal("haste"), std::uint32_t{0}, 0.0f, 0.0f, 0.0f,
                             1.0f, 0.0f, 0.0f, true)) {
         return fail("haste toggle rejected");
     }
-    if (!sm::spellbook_has_sustained(book, "haste")) {
+    if (!sm::spellbook_has_sustained(book, sm::spell_ordinal("haste"))) {
         return fail("haste not sustained");
     }
     const int beforeDrain = combat.currentMp;
@@ -546,22 +547,22 @@ int main() {
     if (beforeDrain - combat.currentMp != 12) {
         return fail("haste fractional drain wrong");
     }
-    if (!sm::spellbook_has_sustained(book, "haste")) {
+    if (!sm::spellbook_has_sustained(book, sm::spell_ordinal("haste"))) {
         return fail("haste dropped while mana remained");
     }
     combat.currentMp = 1;
     sm::spellbook_tick(book, combat, sm::steps_from_seconds(1.0f));
-    if (combat.currentMp != 0 || sm::spellbook_has_sustained(book, "haste")) {
+    if (combat.currentMp != 0 || sm::spellbook_has_sustained(book, sm::spell_ordinal("haste"))) {
         return fail("haste did not stop on mana depletion");
     }
 
     sm::SpellBook zeroTickBook;
-    sm::spellbook_learn(zeroTickBook, "haste");
+    sm::spellbook_learn(zeroTickBook, sm::spell_ordinal("haste"));
     sm::CombatStats zeroTickCombat{};
     zeroTickCombat.currentMp = 1;
     zeroTickCombat.maxMp = 1;
     if (!sm::spellbook_cast(world, zeroTickBook, zeroTickCombat,
-                            attributes, skills, "haste", std::uint32_t{0},
+                            attributes, skills, sm::spell_ordinal("haste"), std::uint32_t{0},
                             0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, true)) {
         return fail("zero-mp sustained setup rejected");
     }
@@ -582,25 +583,25 @@ int main() {
     if (stepsToEmpty <= 0) {
         return fail("the pool emptied without a single step being taken");
     }
-    if (!sm::spellbook_has_sustained(zeroTickBook, "haste")) {
+    if (!sm::spellbook_has_sustained(zeroTickBook, sm::spell_ordinal("haste"))) {
         return fail("sustained spell dropped while it was still being paid for");
     }
     sm::spellbook_tick(zeroTickBook, zeroTickCombat, 1u);
-    if (sm::spellbook_has_sustained(zeroTickBook, "haste")) {
+    if (sm::spellbook_has_sustained(zeroTickBook, sm::spell_ordinal("haste"))) {
         return fail("zero-mp sustained spell survived positive drain tick");
     }
 
     sm::SpellBook flightBook;
-    sm::spellbook_learn(flightBook, "flight");
+    sm::spellbook_learn(flightBook, sm::spell_ordinal("flight"));
     sm::CombatStats flightCombat{};
     flightCombat.currentMp = 50;
     flightCombat.maxMp = 50;
     if (!sm::spellbook_cast(world, flightBook, flightCombat, attributes, skills,
-                            "flight", std::uint32_t{0}, 0.0f, 0.0f, 0.0f,
+                            sm::spell_ordinal("flight"), std::uint32_t{0}, 0.0f, 0.0f, 0.0f,
                             0.0f, 1.0f, 0.0f, false)) {
         return fail("flight macro toggle rejected");
     }
-    if (!sm::spellbook_has_sustained(flightBook, "flight")) {
+    if (!sm::spellbook_has_sustained(flightBook, sm::spell_ordinal("flight"))) {
         return fail("flight not sustained");
     }
     sm::spellbook_tick(flightBook, flightCombat, sm::steps_from_seconds(0.5f));
@@ -612,22 +613,25 @@ int main() {
     sm::CombatStats multiSustainCombat{};
     multiSustainCombat.currentMp = 25;
     multiSustainCombat.maxMp = 25;
-    sm::spellbook_learn(multiSustainBook, "haste");
-    sm::spellbook_learn(multiSustainBook, "flight");
+    sm::spellbook_learn(multiSustainBook, sm::spell_ordinal("haste"));
+    sm::spellbook_learn(multiSustainBook, sm::spell_ordinal("flight"));
     if (!sm::spellbook_cast(world, multiSustainBook, multiSustainCombat,
-                            attributes, skills, "haste", std::uint32_t{0},
+                            attributes, skills, sm::spell_ordinal("haste"), std::uint32_t{0},
                             0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, true)
         || !sm::spellbook_cast(world, multiSustainBook, multiSustainCombat,
-                               attributes, skills, "flight", std::uint32_t{0},
+                               attributes, skills, sm::spell_ordinal("flight"), std::uint32_t{0},
                                0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, true)) {
         return fail("multi sustained setup cast rejected");
     }
     sm::spellbook_tick(multiSustainBook, multiSustainCombat,
                        sm::steps_from_seconds(1.0f));
     if (multiSustainCombat.currentMp != 0
-        || sm::spellbook_has_sustained(multiSustainBook, "haste")
-        || !sm::spellbook_has_sustained(multiSustainBook, "flight")
-        || multiSustainBook.sustainedActive.size() != 1) {
+        || sm::spellbook_has_sustained(multiSustainBook, sm::spell_ordinal("haste"))
+        || !sm::spellbook_has_sustained(multiSustainBook, sm::spell_ordinal("flight"))
+        || [&]{ int n = 0;
+                for (int i = 0; i < sm::kSpellCount; ++i)
+                    n += multiSustainBook.sustained[i] ? 1 : 0;
+                return n; }() != 1) {
         return fail("multi sustained partial depletion wrong");
     }
 
@@ -636,14 +640,14 @@ int main() {
     sm::CombatStats hitCombat{};
     hitCombat.currentMp = 1000;
     hitCombat.maxMp = 1000;
-    sm::spellbook_learn(hitBook, "magic_bolt");
+    sm::spellbook_learn(hitBook, sm::spell_ordinal("magic_bolt"));
     // Agnostic projectiles (owner design decision 2026-07-30): there is NO
     // friendly filter — a player bolt flying through the player's own soldier
     // CONNECTS. Friendly fire is real; watch where you aim.
     const auto hitPlayer = add_player(hitWorld, -1000.0f, -1000.0f);
     const auto friendly = add_target(hitWorld, 104.0f, 100.0f, 100.0f, true);
     if (!sm::spellbook_cast(hitWorld, hitBook, hitCombat, attributes, skills,
-                            "magic_bolt", hitPlayer, 0.0f, 100.0f, 0.0f,
+                            sm::spell_ordinal("magic_bolt"), hitPlayer, 0.0f, 100.0f, 0.0f,
                             1.0f, 0.0f, 0.0f, true)) {
         return fail("magic_bolt agnostic-hit setup cast rejected");
     }
@@ -660,11 +664,11 @@ int main() {
     sm::CombatStats hostCombat{};
     hostCombat.currentMp = 1000;
     hostCombat.maxMp = 1000;
-    sm::spellbook_learn(hostBook, "magic_bolt");
+    sm::spellbook_learn(hostBook, sm::spell_ordinal("magic_bolt"));
     const auto hostPlayer = add_player(hostWorld, -1000.0f, -1000.0f);
     const auto hostile = add_target(hostWorld, 204.0f, 100.0f, 100.0f, false);
     if (!sm::spellbook_cast(hostWorld, hostBook, hostCombat, attributes, skills,
-                            "magic_bolt", hostPlayer, 0.0f, 100.0f, 0.0f,
+                            sm::spell_ordinal("magic_bolt"), hostPlayer, 0.0f, 100.0f, 0.0f,
                             1.0f, 0.0f, 0.0f, true)) {
         return fail("magic_bolt hostile-hit setup cast rejected");
     }
@@ -681,13 +685,13 @@ int main() {
     sm::CombatStats beamCombat{};
     beamCombat.currentMp = 1000;
     beamCombat.maxMp = 1000;
-    sm::spellbook_learn(beamBook, "energy_beam");
+    sm::spellbook_learn(beamBook, sm::spell_ordinal("energy_beam"));
     const auto beamPlayer = add_player(beamWorld, -1000.0f, -1000.0f);
     const auto beamHit = add_target(beamWorld, 160.0f, 10.0f, 100.0f, false);
     const auto beamNearMiss = add_target(beamWorld, 160.0f, 21.0f, 100.0f, false);
     const auto beamMiss = add_target(beamWorld, 160.0f, 40.0f, 100.0f, false);
     if (!sm::spellbook_cast(beamWorld, beamBook, beamCombat, attributes, skills,
-                            "energy_beam", beamPlayer, 0.0f, 10.0f, 0.0f,
+                            sm::spell_ordinal("energy_beam"), beamPlayer, 0.0f, 10.0f, 0.0f,
                             1.0f, 0.0f, 0.0f, true)) {
         return fail("energy_beam effect setup cast rejected");
     }
@@ -705,7 +709,7 @@ int main() {
     sm::CombatStats chainCombat{};
     chainCombat.currentMp = 1000;
     chainCombat.maxMp = 1000;
-    sm::spellbook_learn(chainBook, "lightning_chain");
+    sm::spellbook_learn(chainBook, sm::spell_ordinal("lightning_chain"));
     const auto chainPlayer = add_player(chainWorld, -1000.0f, -1000.0f);
     // The FRIENDLY stands nearest the caster, the hostile behind him. That
     // ordering is the point: the bolt reaches the ally first, so striking him
@@ -717,7 +721,7 @@ int main() {
     const auto chainFirst = add_target(chainWorld, 113.0f, 50.0f, 100.0f, false);
     const auto chainSecond = add_target(chainWorld, 120.0f, 50.0f, 100.0f, false);
     if (!sm::spellbook_cast(chainWorld, chainBook, chainCombat, attributes, skills,
-                            "lightning_chain", chainPlayer, 0.0f, 50.0f, 0.0f,
+                            sm::spell_ordinal("lightning_chain"), chainPlayer, 0.0f, 50.0f, 0.0f,
                             1.0f, 0.0f, 0.0f, true)) {
         return fail("lightning_chain effect setup cast rejected");
     }
@@ -739,7 +743,7 @@ int main() {
     sm::CombatStats armCombat{};
     armCombat.currentMp = 2000;
     armCombat.maxMp = 2000;
-    sm::spellbook_learn(armBook, "armageddon");
+    sm::spellbook_learn(armBook, sm::spell_ordinal("armageddon"));
     if (!armDef) return fail("armageddon definition missing");
     sm::Attributes armAttributes{};
     armAttributes[sm::AttributeId::Intl] = 200;
@@ -756,7 +760,7 @@ int main() {
     SeqRng armRng{armRngValues, 3, 0};
     const auto armPlayer = add_player(armWorld, -1000.0f, -1000.0f);
     if (!sm::spellbook_cast(armWorld, armBook, armCombat, armAttributes, skills,
-                            "armageddon", armPlayer, 100.0f, 100.0f, 0.0f,
+                            sm::spell_ordinal("armageddon"), armPlayer, 100.0f, 100.0f, 0.0f,
                             1.0f, 0.0f, 0.0f, true,
                             &seq_rng01, &armRng)) {
         return fail("armageddon cast rejected");
@@ -923,7 +927,7 @@ int main() {
             sm::CombatStats sweepCombat{};
             sweepCombat.currentMp = 1000;
             sweepCombat.maxMp = 1000;
-            sm::spellbook_learn(sweepBook, "magic_bolt");
+            sm::spellbook_learn(sweepBook, sm::spell_ordinal("magic_bolt"));
             // Caster at the origin, so the muzzle geometry is production's —
             // including his BODY RADIUS. add_player leaves it off, and without
             // it target_radius falls back to 6.0, wrapping the caster in a shell
@@ -943,7 +947,7 @@ int main() {
             sweepWorld.reg.emplace<sm::ecs::BodyRadius>(
                 sweepTarget, sm::ecs::BodyRadius{1.2f});
             if (!sm::spellbook_cast(sweepWorld, sweepBook, sweepCombat,
-                                    attributes, skills, "magic_bolt",
+                                    attributes, skills, sm::spell_ordinal("magic_bolt"),
                                     sweepCaster, 0.0f, 0.0f, 0.0f,
                                     1.0f, 0.0f, 0.0f, true)) {
                 return fail("sweep: magic_bolt cast rejected");
@@ -966,10 +970,15 @@ int main() {
         }
     }
 
+    int cdActive = 0, susActive = 0;
+    for (int i = 0; i < sm::kSpellCount; ++i) {
+        cdActive += book.cooldownSteps[i] > 0u ? 1 : 0;
+        susActive += book.sustained[i] ? 1 : 0;
+    }
     std::fprintf(stderr,
-                 "PASS: projectiles=%d mp=%d cooldowns=%zu sustained=%zu\n",
+                 "PASS: projectiles=%d mp=%d cooldowns=%d sustained=%d\n",
                  projectile_count(world), combat.currentMp,
-                 book.cooldowns.size(), book.sustainedActive.size());
+                 cdActive, susActive);
     CHECK(true, "every gate above held");
     return sm::test::report("spell_casting_effects_test");
 }

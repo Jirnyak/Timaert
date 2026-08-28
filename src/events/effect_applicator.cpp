@@ -89,7 +89,7 @@ void apply_events(std::span<const GameEvent> events, GameState& gs,
                 // re-applied idempotently by this same switch.
                 if (ev.b < std::uint32_t(kSpellCount)) {
                     const SpellDef& def = kSpellDefs[ev.b];
-                    if (spellbook_learn(p.spellBook, def.id)) {
+                    if (spellbook_learn(p.spellBook, int(ev.b))) {
                         char msg[96];
                         std::snprintf(msg, sizeof(msg),
                                       "You have learned %s!", def.name);
@@ -120,7 +120,9 @@ void apply_events(std::span<const GameEvent> events, GameState& gs,
                 push_unique_string(p.failedQuestIds, ev.s1);
                 break;
             case EventTag::SpellLearned:
-                spellbook_learn(p.spellBook, ev.s1);
+                // The event still speaks the string id (the bus->chronicle
+                // merge will retire it); the book itself is ordinals only.
+                spellbook_learn(p.spellBook, spell_ordinal(ev.s1));
                 break;
             case EventTag::PlayerGoldChange:
                 if (ev.b != kEventEffectAlreadyApplied) {

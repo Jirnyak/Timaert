@@ -29,15 +29,17 @@ int spell_heal(const SpellDef& spell,
 int spell_radius(const SpellDef& spell,
                  const Attributes& attributes,
                  const Skills& skills);
+// Spells are addressed by their registry ORDINAL (macro/spells.h) — the one
+// identity the book itself is indexed by. Strings resolve at the edges
+// (console tokens, event payloads) via spell_ordinal(), never in here.
 CastCheck spellbook_can_cast_ex(const SpellBook& sb,
                                 const CombatStats& combat,
-                                const std::string& id,
+                                int spellOrd,
                                 bool inMicro);
-int spellbook_start_cast(SpellBook& sb, CombatStats& combat,
-                         const std::string& id);
+int spellbook_start_cast(SpellBook& sb, CombatStats& combat, int spellOrd);
 bool spellbook_cast(ecs::World& w, SpellBook& sb, CombatStats& combat,
                     const Attributes& attributes, const Skills& skills,
-                    const std::string& id,
+                    int spellOrd,
                     std::uint32_t playerId, float px, float py, float pz,
                     float nx, float ny, float nz, bool inMicro,
                     SpellRngFn rng01 = nullptr,

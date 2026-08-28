@@ -1511,18 +1511,16 @@ namespace sm::ui
                 if (spellsOpen)
                 {
                     ImGui::Text("MP %d / %d", p.combatStats.currentMp, p.combatStats.maxMp);
-                    if (!p.spellBook.activeSpellId.empty())
+                    if (spell_ordinal_ok(p.spellBook.activeSpell))
                     {
-                        const SpellDef *active = spell_find(p.spellBook.activeSpellId);
                         ImGui::SameLine();
-                        ImGui::TextDisabled("Active: %s",
-                                            active ? active->name
-                                                   : p.spellBook.activeSpellId.c_str());
+                        ImGui::TextDisabled(
+                            "Active: %s",
+                            kSpellDefs[p.spellBook.activeSpell].name);
                     }
                     ImGui::Separator();
 
-                    const auto &learned = p.spellBook.learned;
-                    if (learned.empty())
+                    if (spellbook_learned_count(p.spellBook) == 0)
                     {
                         ImGui::TextDisabled("(none)");
                     }
@@ -1539,9 +1537,10 @@ namespace sm::ui
                         ImGui::TableSetupColumn("State");
                         ImGui::TableSetupColumn("Active");
                         ImGui::TableHeadersRow();
-                        for (const auto &id : learned)
+                        for (int ord = 0; ord < kSpellCount; ++ord)
                         {
-                            const SpellDef *def = spell_find(id);
+                            if (!p.spellBook.learned[ord]) continue;
+                            const SpellDef *def = &kSpellDefs[ord];
                             ImGui::TableNextRow();
                             ImGui::TableNextColumn();
                             if (def)
@@ -1549,10 +1548,6 @@ namespace sm::ui
                                 const char *icon =
                                     (def->icon && def->icon[0] != '\0') ? def->icon : "?";
                                 ImGui::Text("%s %s", icon, def->name);
-                            }
-                            else
-                            {
-                                ImGui::Text("%s", id.c_str());
                             }
                             if (def && ImGui::IsItemHovered())
                             {
@@ -1649,10 +1644,11 @@ namespace sm::ui
                             else
                                 ImGui::TextDisabled("-");
                             ImGui::TableNextColumn();
-                            const auto cdIt = p.spellBook.cooldowns.find(id);
-                            if (cdIt != p.spellBook.cooldowns.end() && cdIt->second > 0u)
+                            const std::uint32_t cdSteps =
+                                p.spellBook.cooldownSteps[ord];
+                            if (cdSteps > 0u)
                                 ImGui::Text("%.1fs",
-                                            double(sm::seconds_from_steps(cdIt->second)));
+                                            double(sm::seconds_from_steps(cdSteps)));
                             else if (def && def->cooldown > 0.0f)
                                 ImGui::Text("%.1fs", def->cooldown);
                             else
@@ -1686,14 +1682,14 @@ namespace sm::ui
                                 ImGui::TextDisabled("-");
                             }
                             ImGui::TableNextColumn();
-                            if (def && def->sustained && spellbook_has_sustained(p.spellBook, id))
+                            if (def && def->sustained && spellbook_has_sustained(p.spellBook, ord))
                             {
                                 ImGui::TextColored(ImVec4(0.45f, 0.75f, 1.0f, 1.0f), "Sustained");
                             }
                             else
                             {
                                 const CastCheck check = spellbook_can_cast_ex(
-                                    p.spellBook, p.combatStats, id, true);
+                                    p.spellBook, p.combatStats, ord, true);
                                 if (check.ok)
                                 {
                                     ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.45f, 1.0f), "Ready");
@@ -1709,14 +1705,14 @@ namespace sm::ui
                                 }
                             }
                             ImGui::TableNextColumn();
-                            ImGui::PushID(id.c_str());
-                            if (p.spellBook.activeSpellId == id)
+                            ImGui::PushID(ord);
+                            if (p.spellBook.activeSpell == ord)
                             {
                                 ImGui::TextDisabled("Selected");
                             }
                             else if (ImGui::SmallButton("Set"))
                             {
-                                spellbook_set_active(p.spellBook, id);
+                                spellbook_set_active(p.spellBook, ord);
                             }
                             ImGui::PopID();
                         }
