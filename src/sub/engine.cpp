@@ -3030,16 +3030,17 @@ bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
     // MACRO CELL that contains this subworld. That is "истина мира — макро"
     // stopping being a slogan — the two layers do not have two memories that
     // someone has to keep agreeing, they have one, and the place is the seam.
-    // INTERACTED, not Explored — and the difference is not pedantry. Standing
-    // in the spire's circle and DRAINING its orb are two different deeds about
-    // one place: you can do the first without the second. While both wore the
-    // same kind, the zone's "have I been here" check could not tell them apart
-    // and the world filed one visit twice.
+    // DRAINED, not Explored — and the difference is not pedantry. Standing in
+    // the spire's circle and taking its orb are two different DEEDS about one
+    // place: you can do the first without the second. While both wore the same
+    // kind, the zone's "have I been here" check could not tell them apart and
+    // the world filed one visit twice.
     //
-    // (What a drained spire is WORTH — its interest span and its renown — is
-    // data, and this row's numbers were written for door-opening. Worth the
-    // owner's eye: a spire consumed is a thing the world lost forever.)
-    record_world_fact(FactKind::Interacted, cx, cy, int(spire->spellId) + 1);
+    // And `Drained` rather than a generic "interacted": pressing E is a
+    // MECHANISM the subworld hangs on anything, while what the world remembers
+    // is that a spire went out of it forever. The context chooses the deed;
+    // the deed carries the weight (macro/chronicle.h, the note above the enum).
+    record_world_fact(FactKind::Drained, cx, cy, int(spire->spellId) + 1);
     set_status("The orb's light passes into you.");
     return true;
 }

@@ -52,11 +52,26 @@ enum class FactSubject : std::uint8_t {
     Count
 };
 
-// ── What happened ────────────────────────────────────────────────────────
-// A row, so a new kind of happening is one line and no code. The columns are
-// what a READER needs to decide whether this fact interests it without
-// understanding the kind: whether it is worth remembering long, and what the
-// `amount` column means.
+// ── THE TABLE OF DEEDS ───────────────────────────────────────────────────
+//
+// What the WORLD decided to remember — not what a mechanism happened to do.
+// The distinction is the owner's (2026-08-27) and it is load-bearing:
+//
+//     «интеракшн это просто факт, и он КОНТЕКСТНЫЙ, и уже контекст даёт славу»
+//
+// The subworld hangs an INTERACTION on any place or object, and what an
+// interaction means can be anything — opening a door, drinking from a well,
+// draining a spire. So "Interacted" is not a deed; it is a mechanism, and a
+// generic row for it could carry no honest weight: whatever number it held
+// would be wrong for a door or wrong for a spire.
+//
+// Therefore the CONTEXT chooses the deed, and the deed carries the weight. Most
+// interactions choose none at all — a door opened is not something the world
+// remembers, and a chronicle that filed it would be a chronicle of doors.
+//
+// A row, so a new deed is one line and no code. The columns are what a READER
+// needs in order to judge a fact without understanding its kind: how long it
+// stays news, and what it makes of the doer.
 enum class FactKind : std::uint16_t {
     None = 0,
     Killed,          // subject killed object            (amount = bodies)
@@ -70,7 +85,10 @@ enum class FactKind : std::uint16_t {
     Revolted,        // subject rose against object      (amount = heads)
     OwnerChanged,    // object now belongs to subject
     Explored,        // subject learned a place          (amount = depth)
-    Interacted,      // subject used something below     (amount = kind-specific)
+    // Took from the world something that does not come back — a spire's orb,
+    // a vein worked out. NOT "used a thing": that is a mechanism, and this is
+    // a deed (see the note above the enum).
+    Drained,
     Spawned,         // subject appeared in the world
     QuestTaken,      // subject took object's contract
     QuestDone,       // subject finished it
@@ -113,7 +131,9 @@ inline constexpr FactKindDef kFactKinds[] = {
     // owner, and the world knows your name from that day.
     {FactKind::OwnerChanged, "owner_changed", "Changed hands", 64,    100},
     {FactKind::Explored,     "explored",      "Explored",      64,      5},
-    {FactKind::Interacted,   "interacted",    "Used",           4,      0},
+    // Two of these and the world knows your name: the bar is 100, and taking
+    // a thing out of the world for good is half of what taking a city is.
+    {FactKind::Drained,      "drained",       "Drained",       64,     50},
     {FactKind::Spawned,      "spawned",       "Appeared",      16,      0},
     {FactKind::QuestTaken,   "quest_taken",   "Took contract", 32,      1},
     {FactKind::QuestDone,    "quest_done",    "Kept contract", 32,      5},
