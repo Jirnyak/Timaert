@@ -184,7 +184,12 @@ namespace sm {
 // 2026-08-27). One number, not a counter plus a flag: "is it named" is derived
 // from it, so the two can never disagree about the same band. The runtime is a
 // POD block of the macro record, so its layout is the format.
-constexpr int kSaveVersion = 52;
+// v53: RENOWN belongs to every MACRO entity with an identity, not to squads
+// alone (owner, 2026-08-27) — a band, a city, a people. Settlements and
+// villages carry theirs, so the landmark blocks grew a field. And what a deed
+// is worth became CONTEXTUAL: the base its row gives plus a share of what the
+// victim was worth, which is a number the world already kept about them.
+constexpr int kSaveVersion = 53;
 
 enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
 
@@ -247,6 +252,16 @@ struct Settlement {
     std::uint16_t unmetYesterday = 0;
     std::uint8_t  famineActive = 0;
     float         popGrowthCarry = 0.0f;
+    // WHAT THE WORLD THINKS OF THIS PLACE (macro/chronicle.h). Renown is not
+    // a squad's private counter — it belongs to every MACRO entity that has an
+    // identity (owner, 2026-08-27): a band, a city, a people. A famous city is
+    // a harder prize and a louder loss, and beating it is worth more precisely
+    // because it was famous.
+    //
+    // The microworld has none of this: a mob, a projectile, a house have no
+    // standing to win or lose. That is a different layer and a different
+    // question.
+    std::uint32_t renown = 0;
 };
 
 struct Village {
@@ -263,6 +278,16 @@ struct Village {
     std::uint16_t unmetYesterday = 0;
     std::uint8_t  famineActive = 0;
     float         popGrowthCarry = 0.0f;
+    // WHAT THE WORLD THINKS OF THIS PLACE (macro/chronicle.h). Renown is not
+    // a squad's private counter — it belongs to every MACRO entity that has an
+    // identity (owner, 2026-08-27): a band, a city, a people. A famous city is
+    // a harder prize and a louder loss, and beating it is worth more precisely
+    // because it was famous.
+    //
+    // The microworld has none of this: a mob, a projectile, a house have no
+    // standing to win or lose. That is a different layer and a different
+    // question.
+    std::uint32_t renown = 0;
 };
 
 struct Spire {

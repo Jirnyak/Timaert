@@ -569,20 +569,60 @@ bool squad_is_named(const App& app, entt::entity e) {
     return rt && sm::renown_is_named(rt->renown);
 }
 
-// Pay a band for what it did, by the fact kind's own column. Saturating: a
-// legend does not wrap around into a nobody.
-void add_renown(App& app, entt::entity e, sm::FactKind kind) {
-    if (!app.ecs.reg.valid(e)) return;
-    auto* rt = app.ecs.reg.try_get<sm::ecs::MacroNpcRuntime>(e);
-    if (!rt) return;
-    const std::uint32_t gain = std::uint32_t(sm::fact_kind_def(kind).renown);
+// ── STANDING, FOR ANY MACRO ENTITY ──────────────────────────────────────
+//
+// Owner's ruling, 2026-08-27: renown is not a squad's private counter — every
+// MACRO entity with an identity carries one. A band, a city, a people. The
+// microworld has none: a mob, a projectile, a house have no standing to win or
+// lose, and that is a different layer and a different question.
+//
+// These two are the whole of it, and the rest of the system asks them.
+// `renown_of` is what makes a deed contextual — killing a legend is worth a
+// share of the legend — and `grant_renown` is what makes fame spread.
+std::uint32_t* renown_slot(App& app, std::uint8_t subjectKind,
+                           std::uint32_t ordinal) {
+    switch (sm::fact_subject_kind(subjectKind)) {
+        case std::uint8_t(sm::FactSubject::Squad): {
+            const entt::entity e =
+                sm::macro_entity_by_spawn_id(app.ecs, ordinal);
+            if (e == entt::null) return nullptr;
+            auto* rt = app.ecs.reg.try_get<sm::ecs::MacroNpcRuntime>(e);
+            return rt ? &rt->renown : nullptr;
+        }
+        case std::uint8_t(sm::FactSubject::Landmark): {
+            for (auto& st : app.gs.settlements) {
+                if (std::uint32_t(st.id) == ordinal) return &st.renown;
+            }
+            for (auto& v : app.gs.villages) {
+                if (std::uint32_t(v.id) == ordinal) return &v.renown;
+            }
+            return nullptr;
+        }
+        default:
+            // A CELL and a FACTION have no store yet. A cell never will — the
+            // land has no standing — and a faction's is the politics track's
+            // to add: one field, read through this same door.
+            return nullptr;
+    }
+}
+
+std::uint32_t renown_of(App& app, std::uint8_t subjectKind,
+                        std::uint32_t ordinal) {
+    const std::uint32_t* slot = renown_slot(app, subjectKind, ordinal);
+    return slot ? *slot : 0u;
+}
+
+// Saturating, though the ceiling is a formality: the greatest single deed
+// against a nobody is worth twenty, so reaching it takes two hundred million
+// of them. What the clamp really buys is that ADDITION can never be the thing
+// that wraps a legend into a nobody.
+void grant_renown(App& app, std::uint8_t subjectKind, std::uint32_t ordinal,
+                  std::uint32_t gain) {
     if (gain == 0u) return;
-    // Saturating, though the ceiling is a formality: the greatest single deed
-    // is worth 100, so reaching it takes forty million of them — a ten-year
-    // world would need one band taking thirty thousand cities a day. What the
-    // clamp really buys is that ADDITION can never be the thing that wraps.
-    const std::uint64_t sum = std::uint64_t(rt->renown) + gain;
-    rt->renown = std::uint32_t(std::min<std::uint64_t>(sum, 0xFFFFFFFFull));
+    std::uint32_t* slot = renown_slot(app, subjectKind, ordinal);
+    if (!slot) return;
+    const std::uint64_t sum = std::uint64_t(*slot) + gain;
+    *slot = std::uint32_t(std::min<std::uint64_t>(sum, 0xFFFFFFFFull));
 }
 
 // THE door into the world's memory, app-side: file the fact AND pay the doer.
@@ -607,7 +647,15 @@ std::uint32_t record_deed(App& app, sm::WorldFact fact, entt::entity subject) {
     }
     const std::uint32_t seq = app.bus.record(fact);
     if (seq != 0u) {
-        add_renown(app, subject, sm::FactKind(fact.kind));
+        // WHAT THE DEED WAS WORTH, asked of the world: the base its row gives
+        // for a deed against nobody, plus a share of whatever the OBJECT was
+        // worth. That is the whole of "fame is made of fame" — no second rule
+        // for famous victims, because their fame is already a number the world
+        // keeps about them.
+        const std::uint32_t gain = sm::renown_for_deed(
+            sm::FactKind(fact.kind),
+            renown_of(app, fact.objectKind, fact.object));
+        grant_renown(app, fact.subjectKind, fact.subject, gain);
     }
     return seq;
 }

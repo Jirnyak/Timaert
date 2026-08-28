@@ -317,16 +317,34 @@ void test_the_annals_are_asked_about_a_figure() {
 // world's memory while still letting any of them earn a place in it.
 void test_a_band_becomes_a_figure_by_its_deeds() {
     // The bar is DERIVED from the table, not chosen: it is the most any single
-    // deed is worth, so "become a figure by doing once what a figure does, or
-    // by adding up enough lesser things".
+    // deed is worth AGAINST A NOBODY, so "become a figure by doing once what a
+    // figure does, or by adding up enough lesser things, or by beating
+    // somebody who already was one".
     int most = 0;
-    for (const FactKindDef& d : kFactKinds) most = std::max(most, int(d.renown));
+    for (const FactKindDef& d : kFactKinds)
+        most = std::max(most, int(d.baseRenown));
     CHECK(kRenownToBeNamed == most,
           "the bar IS the table: retune a row and it moves with it");
-    CHECK(fact_kind_def(FactKind::OwnerChanged).renown == std::uint16_t(most),
-          "and taking a place from its owner is what a figure does");
-    CHECK(fact_kind_def(FactKind::Traded).renown == 0,
+    CHECK(fact_kind_def(FactKind::Traded).baseRenown == 0,
           "negative control: selling bread makes nobody anybody");
+
+    // ── THE VICTIM ANSWERS WHAT A DEED IS WORTH ──────────────────────────
+    // Owner's ruling: renown is contextual, and the context is WHOM it was
+    // done to. Every macro entity already carries what it is worth — its own
+    // renown — so nothing had to be invented to say "killing a legend is
+    // worth more than killing a peasant".
+    const std::uint32_t vsNobody = renown_for_deed(FactKind::Killed, 0u);
+    const std::uint32_t vsLegend = renown_for_deed(FactKind::Killed, 1000u);
+    CHECK(vsNobody == fact_kind_def(FactKind::Killed).baseRenown,
+          "killing a nobody is worth the deed's base and nothing more");
+    CHECK(vsLegend > vsNobody,
+          "and killing a legend is worth more — fame is made of fame, by "
+          "construction rather than by a second rule");
+    CHECK(vsLegend - vsNobody == 1000u / std::uint32_t(kRenownShareDivisor),
+          "the share is a TENTH: ten victories over a man's equals make you "
+          "his equal");
+    CHECK(renown_for_deed(FactKind::Count, 500u) == 0u,
+          "a deed of no kind is worth nothing, however famous the victim");
 
     CHECK(!renown_is_named(0), "a fresh band is nobody");
     CHECK(!renown_is_named(kRenownToBeNamed - 1), "and almost is not enough");

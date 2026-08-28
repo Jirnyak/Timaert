@@ -89,6 +89,9 @@ enum class FactKind : std::uint16_t {
     // a vein worked out. NOT "used a thing": that is a mechanism, and this is
     // a deed (see the note above the enum).
     Drained,
+    // Found what the world did not know it had: a vein under a hill, a black
+    // artifact in a ruin.
+    Discovered,
     Spawned,         // subject appeared in the world
     QuestTaken,      // subject took object's contract
     QuestDone,       // subject finished it
@@ -105,35 +108,44 @@ struct FactKindDef {
     // asks about this kind. A monster's kill is news for a season; a trade is
     // stale in a week.
     std::uint16_t interestDays;
-    // WHAT DOING THIS MAKES OF YOU. Owner, 2026-08-27: a nameless squad can
-    // BECOME named — like a lord — once it has done enough; then its deeds
-    // start being kept for good, and before that they do not.
+    // WHAT DOING THIS IS WORTH BY ITSELF — the deed's BASE, for a deed done
+    // to nobody in particular. Felling a forest is 1; making a field is a
+    // little more; finding a thing the world did not know is more again.
     //
-    // So renown is a column of the same table that already says how long a
-    // deed is news, because both questions are "how much did this matter".
-    // Killing a peasant is 1; taking a city is what a figure does.
-    std::uint16_t renown;
+    // It is a BASE and not the answer, because the answer is contextual
+    // (owner, 2026-08-27): what a deed is worth depends on WHAT IT WAS DONE
+    // TO. See `renown_for_deed` below — this column is the half that does not
+    // need a victim.
+    std::uint16_t baseRenown;
 };
 
 inline constexpr FactKindDef kFactKinds[] = {
-    //                                                    interest  renown
+    // Rows stand in ENUM ORDER — the guard below enforces it, and it caught a
+    // reshuffle-for-readability the moment it was tried. Grouping lives in the
+    // comments; the order belongs to the enum.
+    //                                                    interest   base
     {FactKind::None,         "none",          "—",              0,      0},
+    // Deeds against SOMEBODY. Their base is small on purpose: what these are
+    // really worth comes from WHOM they were done to (renown_for_deed).
     {FactKind::Killed,       "killed",        "Killed",        32,      1},
     {FactKind::Died,         "died",          "Died",          32,      0},
-    {FactKind::Battle,       "battle",        "Battle",        32,     10},
+    {FactKind::Battle,       "battle",        "Battle",        32,      5},
     {FactKind::Robbed,       "robbed",        "Robbed",        16,      2},
+    // What a place suffers or does. It earns the PLACE its standing.
     {FactKind::Traded,       "traded",        "Traded",         8,      0},
-    {FactKind::Gathered,     "gathered",      "Gathered",       8,      0},
-    {FactKind::Built,        "built",         "Built",         64,     50},
+    // Deeds against the LAND, which has no standing of its own — so their base
+    // IS the answer, and it is small. Felling a forest is a day's work the
+    // world notices a little (owner's own example).
+    {FactKind::Gathered,     "gathered",      "Gathered",       8,      1},
+    {FactKind::Built,        "built",         "Built",         64,     10},
     {FactKind::Starved,      "starved",       "Starved",       32,      0},
-    {FactKind::Revolted,     "revolted",      "Revolted",      64,    100},
-    // The most a single deed can make of anybody: take a place from its
-    // owner, and the world knows your name from that day.
-    {FactKind::OwnerChanged, "owner_changed", "Changed hands", 64,    100},
-    {FactKind::Explored,     "explored",      "Explored",      64,      5},
-    // Two of these and the world knows your name: the bar is 100, and taking
-    // a thing out of the world for good is half of what taking a city is.
-    {FactKind::Drained,      "drained",       "Drained",       64,     50},
+    {FactKind::Revolted,     "revolted",      "Revolted",      64,     20},
+    {FactKind::OwnerChanged, "owner_changed", "Changed hands", 64,     20},
+    {FactKind::Explored,     "explored",      "Explored",      64,      2},
+    {FactKind::Drained,      "drained",       "Drained",       64,     10},
+    // Finding what the world did not know it had: a vein under a hill, a
+    // black artifact in a ruin (owner's examples).
+    {FactKind::Discovered,   "discovered",    "Discovered",    64,     15},
     {FactKind::Spawned,      "spawned",       "Appeared",      16,      0},
     {FactKind::QuestTaken,   "quest_taken",   "Took contract", 32,      1},
     {FactKind::QuestDone,    "quest_done",    "Kept contract", 32,      5},
@@ -148,18 +160,47 @@ inline constexpr const FactKindDef& fact_kind_def(FactKind k) {
     return kFactKinds[std::size_t(k)];
 }
 
+// ── WHAT A DEED IS WORTH: THE VICTIM ANSWERS ─────────────────────────────
+//
+// Owner's ruling, 2026-08-27: renown is CONTEXTUAL, and the context is what
+// the deed was done TO. «Уже у нас есть стоимость/уровень, и если это сквад —
+// ЕГО СЛАВА; естественно, убийство славного делает славным.»
+//
+// So there was no "importance" number to invent and balance: every macro
+// entity already carries what it is worth, and that number is its own renown.
+// Killing a nobody is worth the deed's base; killing a legend is worth a share
+// of the legend. The rule is recursive BY CONSTRUCTION — fame is made of fame
+// — and nothing had to be added to say so.
+//
+// THE SHARE is a tenth, and the number is the sentence rather than a dial:
+//
+//     ten victories over a man's equals make you his equal.
+//
+// Less, and a lifetime of war never makes a name; more, and one lucky ambush
+// crowns a nobody.
+inline constexpr int kRenownShareDivisor = 10;
+
+inline constexpr std::uint32_t renown_for_deed(FactKind kind,
+                                               std::uint32_t victimRenown) {
+    if (kind >= FactKind::Count) return 0u;
+    return std::uint32_t(fact_kind_def(kind).baseRenown)
+         + victimRenown / std::uint32_t(kRenownShareDivisor);
+}
+
 // WHEN A NOBODY BECOMES SOMEBODY — and the number is DERIVED, not chosen: it
-// is the most any single deed is worth in the table above. So the rule reads
-// as a sentence about the world rather than as a threshold —
+// is the most any single deed is worth AGAINST A NOBODY. So the rule reads as
+// a sentence about the world rather than as a threshold —
 //
 //     you become a figure by doing ONCE what a figure does,
-//     or by doing enough lesser things to add up to it.
+//     or by adding up enough lesser things,
+//     or by beating somebody who already was one.
 //
-// Retune a row and the bar moves with it, because the bar IS the table.
+// That third road is the recursion paying off. Retune a row and the bar moves
+// with it, because the bar IS the table.
 inline constexpr int renown_to_be_named() {
     int most = 0;
     for (const FactKindDef& d : kFactKinds) {
-        if (int(d.renown) > most) most = int(d.renown);
+        if (int(d.baseRenown) > most) most = int(d.baseRenown);
     }
     return most;
 }

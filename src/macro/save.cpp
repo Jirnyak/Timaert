@@ -724,6 +724,7 @@ void write_settlement(Writer& w, const Settlement& s) {
     w.pod(s.unmetYesterday);
     w.pod(s.famineActive);
     w.pod(s.popGrowthCarry);
+    w.pod(s.renown);   // v53: a place's standing is the world's memory of it
 }
 
 void read_settlement(Reader& r, Settlement& s) {
@@ -741,6 +742,7 @@ void read_settlement(Reader& r, Settlement& s) {
     r.pod(s.unmetYesterday);
     r.pod(s.famineActive);
     r.pod(s.popGrowthCarry);
+    r.pod(s.renown);   // v53
 }
 
 void write_village(Writer& w, const Village& v) {
@@ -758,6 +760,7 @@ void write_village(Writer& w, const Village& v) {
     w.pod(v.unmetYesterday);
     w.pod(v.famineActive);
     w.pod(v.popGrowthCarry);
+    w.pod(v.renown);   // v53
 }
 
 void read_village(Reader& r, Village& v) {
@@ -775,6 +778,7 @@ void read_village(Reader& r, Village& v) {
     r.pod(v.unmetYesterday);
     r.pod(v.famineActive);
     r.pod(v.popGrowthCarry);
+    r.pod(v.renown);   // v53
 }
 
 void write_spire(Writer& w, const Spire& s) {
