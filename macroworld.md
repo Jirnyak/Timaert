@@ -12,8 +12,11 @@ time, kingdoms, NPCs, items, army. No GL/Vulkan, no events, no UI.
 
 ## Model
 
-- **State:** `GameState`, `PlayerState`, `WorldTime`, `Settlement`, `Village`,
-  `Spire`, `Politik`. Serialised at `kSaveVersion` (see `state.h`).
+- **State:** `GameState`, `PlayerState`, `WorldTime`, `Landmark` (ONE record
+  with a `type` column — the structs `Settlement`/`Village`/`Spire` died with
+  v62, [landmarks.md](landmarks.md)), `Politik`. Serialised at `kSaveVersion`
+  (62 today, `state.h`). The world seed is an honest `uint32` since v61
+  (`LayerParameters::seed` carried it as a float).
 - **Generation order** (`boot_world`, `src/app/main.cpp`): terrain → trees +
   tree-count layer → deposit layer → politik (fed a `SettlementSiteContext` over
   trees/terrain/deposits) → snap-to-land → finalize (lake-snap + Voronoi) →
@@ -21,6 +24,14 @@ time, kingdoms, NPCs, items, army. No GL/Vulkan, no events, no UI.
   the law of causality (CANON S8): resources are derived **before** politics,
   because settlement placement READS them — the suitability score, not authorial
   dice, decides where people live.
+- **Climate is COSINE latitude (CANON S19, owner 2026-08-29):** the map's
+  Y-centre is the hot equator, top and bottom the cold poles — the one
+  sanctioned anisotropy of the macro world (a latitude belt is a property of
+  the WORLD, not of the coordinate grid). The profile is
+  `0.5 − 0.5·cos(2π·uy)` blended with fBM noise by `temperatureVariation`
+  (`map_generator.cpp`): the old triangle profile `1 − |uy−0.5|·2` had the
+  right belts but a KINKED derivative at the y=0 seam — a seam defect like
+  any other (S1); the cosine is smooth through the wrap by construction.
 - **Time:** one integer tick is the world's quantum and the clock is one
   `uint64` — the ladder, the fixed simulation step and the subworld's slower day
   are all in [time.md](time.md). `world_tick` moves the clock by whole ticks and
@@ -106,6 +117,25 @@ between connected cities by `trace_roads`
 ([spawners.cpp](src/macro/spawners.cpp)) with a binary-heap A\* that reuses
 existing road cells and rejects water.
 
+**ONE A\* (2026-08-29).** `sm::find_path` ([pathfinding.cpp](src/macro/pathfinding.cpp))
+is the macro world's one pathfinder — the road tracer's byte-for-byte private
+twin is dead, and the algorithm's working set is an explicit **`PathScratch`**
+(generation-tagged indexed heap + parent arrays) the caller owns and reuses
+(`AppState::pathScratch` serves map-click travel and the smoke probe). New
+knobs are parameters, not forks: `maxSteps`, `blockAtOrAbove`
+(`kPathNoBlock` default), `stepsOut`.
+
+**A road is a ROW of `kRoadClasses`** ([spawners.h](src/macro/spawners.h)):
+`{surface, link}` — stone `FT_Road` for city connections, dirt `FT_DirtRoad`
+for village→home-city and village→nearest-landmark. **Dirt roads walk the
+same honest A\*** since 2026-08-29 (`trace_dirt_roads`): the old spiral-scan +
+straight-line lerp, whose only worldly knowledge was "not water", is dead —
+a footpath now pays the same bed/canopy/climb the march will pay. The
+stone→dirt HIERARCHY is emergent, not coded: stone is traced first, and the
+dirt pass prices laid stone at the paved bed
+(`feature_def(FT_Road).bedWeight = 1.0`), so footpaths JOIN the highway
+instead of duplicating it.
+
 **The planner walks THE step law (2026-08-24).** Its private second cost
 table — its own `kLand = 3.33` / `kMountain = 16.7` and a third, raw-byte
 classification of what a mountain is (canon-audit H1/§7.9) — is dead.
@@ -161,7 +191,7 @@ daily population drift (`WorldTickResult.dailyTicksProcessed > 0`). One knob,
 ## Knowledge (fog of war)
 
 The player does not know the world from turn one: per-cell knowledge
-(Unknown / Explored / Visible, saved since v40; the save is v42 today) with
+(Unknown / Explored / Visible, saved since v40) with
 sight propagated by the same
 terrain-optical sweep as the night glow. The whole system — mechanic, render
 law, the map page, future vision skills and trackers — is written up in

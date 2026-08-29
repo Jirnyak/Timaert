@@ -46,7 +46,10 @@ the ONE `resource_field_read` / `resource_field_apply` door:
   field's INITIAL CONDITION, not an attractor: the forest grows past its
   virgin state, so "sparse overrides" would stop being sparse. A deposit
   cell may hold SEVERAL kinds — a discovered iron vein lives IN a stone
-  mountain and the quarry does not vanish.
+  mountain and the quarry does not vanish. What a deposit KIND means is a
+  row too since 2026-08-29: `kDepositDefs` (`deposit_layer.h`) —
+  `{kind, commodityId, siteWorth}` — feeds the settlement score's deposit
+  term and the commodity mapping from one table.
 
 Above the registry sits the **macro_stock ledger** (`macro/macro_stock.h`):
 what the subworld borrows it pays back — a felled tree decrements its cell,
@@ -77,7 +80,7 @@ month the path grid re-bakes on) and one game day visits 1/32 of a domain.
 | Trees | CarrierGrid | The forest plants the forest: per-visit growth = local 3×3 density × 32 / (9 × 1024), gated by the biome's ambient table. A clear-cut inside a living massif is forest again in ~3.5 game years; brush below the seeding threshold never starts one; untended land thickens into чащобы; the desert almost never, water never. |
 | Fauna | OwnScars | Beasts breed where beasts are: +1 head per visit while at least HALF the 3×3 valley lives. A hole heals from its living side inward; a region emptied whole is EXTINCT — nobody is left to breed. |
 | Wheat | OwnScars | Fertility is the context: a reaped cell replants one stand per visit (the old 32-day law, preserved by construction). |
-| Iron | Geology | Born where SCARCE: chance/day = depletion × 1/8, the lump lands on a stone host that lacks iron. New geology is world news. **The law exists TWICE** (CANON S26 debt): the LIVE implementation is inline in the `GrowthDomain::Geology` branch of `macro_stock.cpp`; a DEAD trio — `iron_depletion` / `iron_discovery_chance_per_day` / `discover_iron_vein` (`deposit_layer.h`) — has no caller outside `deposit_layer_test.cpp`, i.e. the test guards a corpse. The trio is for the axe. |
+| Iron | Geology | Born where SCARCE: chance/day = depletion × 1/8, the lump lands on a stone host that lacks iron. New geology is world news. The law lives ONCE (the CANON S26 debt closed 2026-08-29): the `GrowthDomain::Geology` branch of `macro_stock.cpp` is the one implementation — the dead W2c trio `iron_depletion` / `iron_discovery_chance_per_day` / `discover_iron_vein` went to the axe with the test that guarded the corpse; an epitaph in `deposit_layer.h` points here. |
 | Clay, Stone | None | Quasi-static (a row away from changing). |
 
 Determinism is calendar-pure: every roll is a hash of (worldSeed, day) —

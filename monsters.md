@@ -52,12 +52,12 @@ spawn sites.
 | `id` | Stable machine id (`"wolf"`, `"peasant"`) — **the source of truth**, distinct from `label` |
 | `label` | Display name (`"Wolf"`) |
 | `sprite` | `SpriteId` — a row of THE sprite table ([sprites.md](sprites.md)); kinds share rows on purpose |
-| `baseHp` | The row's base hit points |
+| ~~`baseHp`~~ | Axed 2026-08-29 — never read; the ONE hp floor a body fights with is its `CombatTemplate`'s `hp` |
 | `baseLevel` | Level floor; spawn adds `floor(rng()*2)` |
 | `ai` | `AIBehaviour` ([macro/behaviour.h](src/macro/behaviour.h)) — ONE vocabulary for every row (Gatherer, Trader, Aggressive, Patrol, Flee, …); folds to a subworld stance through `subworld_ai_for` |
 | `combat` | `CombatTemplate` (the universal combat spine, one for all rows) |
 | `upkeepGoldPerDay` / `hireable` | The soldier half of the row |
-| `xpReward` | Per-kind XP base; `0` ⇒ generic level-scaled |
+| `xpReward` | Per-kind XP base — authored on EVERY row since 2026-08-29 (creatures as `5·(baseLevel+1)`); the `0 ⇒ generic` fallback is dead |
 | `weight` | Spawn weight when the world rolls blind (0 = never rolled blind; a place must name the row) |
 | `factionId` | Faction registry id string (`"wildlife"` / `"demons"` / …, macro/faction.h); `nullptr` = the LAND decides |
 | `lootId` | Loot-profile override; `nullptr` ⇒ faction default |
@@ -275,13 +275,14 @@ head thinner next frame; reddens if the row write is muted).
 
 ## Per-kind XP
 
-ONE law for every row: the death path awards `xpReward + (level-1)*5` when the
-row sets a non-zero `xpReward`; `xpReward = 0` keeps the generic
-`exp_from_fight(level)` (=10·level) fallback. (There used to be two of these —
-the humanoid one via `npc_xp_reward`, the creature one written out again; the
-macro squad ledger still calls `npc_xp_reward`, which computes the same
-formula off the same column.) XP goes to the killing blow's owner
-([microcombat.md](microcombat.md)).
+ONE law for every row (closed 2026-08-29): every kill pays
+`npc_xp_reward(t, level) = xpReward + (level−1)·5`, in the subworld and the
+auto-resolve alike. The `exp_from_fight(level) = 10·level` fallback for rows
+that named 0 is DELETED — instead every creature row authors its column as
+`5·(baseLevel+1)`, derived so the old feel survives at the row's own level:
+`5·(L₀+1) + (L₀−1)·5 = 10·L₀`, exactly what the fallback used to pay. XP goes
+to the killing blow's owner ([microcombat.md](microcombat.md)),
+[combat.md](combat.md) carries the two-scales table.
 
 ## Data-driven extension
 
@@ -317,7 +318,9 @@ the matching law above (2026-08-24, the context door — [context.md](context.md
    the residue behind `is_creature_row`: procedural names/portraits and the
    raw combat line still differ per half, and the predicate dies when they
    merge.
-3. **Populate `xpReward` / `lootId` per creature** (data/balance pass — defaults
-   are behavior-preserving today).
+3. ~~**Populate `xpReward` / `lootId` per creature**~~ — `xpReward` DONE
+   2026-08-29 (every row authored, fallback dead); `lootId` still rides
+   faction defaults, and `kNpcLootId` is a typed, enum-order-guarded table
+   since the same day.
 4. **Gold unification** — fold `generate_loot_gold` into the profile so gold is
    one more loot-table column rather than a separate faction path.

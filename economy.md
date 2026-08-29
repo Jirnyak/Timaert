@@ -21,7 +21,25 @@ bag, crafted from inputs, eaten by a need, or paid across a counter.
 The economy's nouns are rows of the ONE item catalog: the bread a city bakes
 and the bread in the player's bag are the same row (`items.cpp`), with one
 truth of MASS (weights match `commodity.h` verbatim — link law in
-econ_v1_test). Commodities tier as Raw / Vital / Instrument / Luxury.
+econ_v1_test) and ONE truth of PRICE — `ItemDef::value` is the single anchor
+(`CommodityDef::baseValue`, a second price column with drift potential, was
+axed 2026-08-29). Commodities tier as Raw / Vital / Instrument / Luxury.
+
+## The conservation law — credit BEFORE debit (2026-08-29)
+
+CANON S5 made mechanical: **no door destroys value on a full container**.
+Every mover credits the receiving side first and debits only what was
+accepted — `transfer_value` moves coin stack-by-stack and returns what
+actually crossed; `barter_swap` settles the whole package on COPIES and
+commits all-or-nothing; `econ_gather_day` books the take into the store
+before scarring the deposit; `econ_produce_day` puts the INPUTS BACK if the
+output finds no room; the gatherer's take (`ai_gatherer`) scars the field
+only after his bag accepted the load; `haul_between` (the caravan) refuses
+the leg the far side cannot take; loot and quest rewards report the DELTA
+that landed, not the promise (an unpayable gold reward becomes a debt fact,
+not minted coin). The one known stray: `deliver_bag_home` (npc_ai.cpp) still
+debits the bag before asking the store — a full home store burns the haul; a
+one-line fix awaiting its turn.
 
 ## The store is the inventory
 
@@ -57,8 +75,11 @@ a living edge; a valley emptied whole is extinct) — see
 - **Caravan** (the CITY's agent): snapshots the home market at departure
   (AgentMemory MarketSnapshot — stock classes, a trader's memory, not a
   ledger), carries the city's plenty out to its villages and hauls back
-  what the snapshot says the city LACKS, in a 256 kg hold of real cargo.
-  Rob him and the cargo is yours.
+  what the snapshot says the city LACKS. His hold is his OWN back since
+  2026-08-29: capacity = `rt.carryCap` = the leader's sheet
+  (`get_carry_capacity`) × the row's `haulMult` (Caravan ×32 — the mules) —
+  the flat `kCaravanCapacityKg = 256` constant is dead, and the overload law
+  prices the same number. Rob him and the cargo is yours.
 
 ## The day
 
@@ -80,7 +101,12 @@ K must be derived from the site capacity, not assigned.
 
 Money is a COMMODITY: every realm mints its own light coin (imperial crown,
 magika sigil, republic mark, northern ring — value 1 each until exchange
-rates arrive). There is no gold field anywhere: the player's wallet is coin
+rates arrive). WHICH coin is a registry column since 2026-08-29:
+`FactionDef::mint` names the row's currency and
+`currency_for_faction_id` is its one reader — the old `strcmp` if-chain had a
+"barbarians" branch that matched no faction row, so all four barbarian realms
+silently minted imperial crowns; now they mint `coin_barbar`. There is no
+gold field anywhere: the player's wallet is coin
 in his inventory like every other squad's, re-minted to his homeland at
 chargen. Trade is universal BARTER by PACKAGE (owner ruling 2026-08-07):
 both trade screens stage lines from BOTH shelves (+/− by the shared Amount
@@ -113,10 +139,12 @@ It bites when macro relations arrive.
 ## Deferred (known debts)
 
 Deposit rendering on the map; seasonal harvest pulse + field exhaustion; a
-miner agent for the deposit layer; econ facts raised to the journal/bus
-(only vein discovery speaks today); exchange rates + the currency bourse;
-coins minted FROM gold/silver; player invest-into-owned-city (waits for
-ownership itself); taxes to the faction treasury.
+miner agent for the deposit layer; ~~econ facts raised to the journal/bus~~
+(CLOSED 2026-08-28: caravan deals, player deals, a drained vein and a struck
+vein are chronicle facts — [chronicle.md](chronicle.md)); exchange rates +
+the currency bourse; coins minted FROM gold/silver; player
+invest-into-owned-city (waits for ownership itself); taxes to the faction
+treasury.
 
 **Honesty debts** (audit 2026-08-23, canon-audit.md §B — places where the
 "honest economy" headline is not yet true):
@@ -126,17 +154,23 @@ ownership itself); taxes to the faction treasury.
   settlement cut down below the floor gets souls back from thin air and is
   effectively immortal. Defect against the conservation law (CANON S5 —
   a number appearing from nowhere is a defect).
-- **Coin is only ever destroyed.** The one source is the world-birth seed
-  (8/head in cities); the three sinks — hire, rest, quest penalty — pay no
-  counterparty (`wallet_spend_up_to`, `ui/overlays.cpp`). Worse, loot gold
-  is a **double mint**: `generate_loot_gold` (`items.cpp`) coins money into
-  every corpse on top of the purse the same body was already minted at
-  spawn (`npc_spawn.cpp`). Canon-audit B1–B3.
-- **The village produces NOTHING.** All nine `kRecipes` rows carry
-  `site = City` (`econ_day.h`), and `tick_villages_` only settles the day —
-  yet the village eats the full needs ladder, so its norm is perpetual
-  famine. Root cause: the Settlement/Village struct split
-  ([landmarks.md](landmarks.md)).
+- **Coin sinks, partly honest now.** HIRE pays its counterparty since
+  2026-08-29: the recruit's price — the `NpcTypeDef::hireGold` column
+  (derived: 30 × the row's daily upkeep) × the one level law
+  `soldier_level_factor` (`1 + (L−1)/3`, the same factor upkeep pays) — is
+  moved by `transfer_value` into the settlement's own inventory-treasury
+  (`ui/overlays.cpp`; a partial transfer refunds and puts the recruit back).
+  Rest and quest penalties still burn through `wallet_spend_up_to` with no
+  counterparty, and an unpayable penalty becomes a Debt fact rather than
+  silence. Loot-gold **double mint** (`generate_loot_gold` on top of the
+  spawn purse) remains open. Canon-audit B1–B3.
+- **The village production DOOR is open, its recipes are not written.**
+  Since v62 killed the Settlement/Village struct split
+  ([landmarks.md](landmarks.md)), `tick_villages_` calls the same
+  `econ_produce_day(…, EconSite::Village, …)` the city calls — but all nine
+  `kRecipes` rows still carry `site = City`, so a village crafts nothing
+  until the balance pass writes its rows. What was a structural wall is now
+  one data row per village craft.
 - **The caravan confiscates, it does not trade.** `haul_between`
   (`npc_ai.cpp`) moves cargo both ways with no counter-value crossing the
   counter; the price law of `macro/economy.h` exists only for the player's

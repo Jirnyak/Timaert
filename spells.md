@@ -18,7 +18,10 @@ Modular spell framework: **adding a spell is one file, no engine changes.**
   `sustainedDrainCarry`. The three string-keyed heap containers died (S26:
   flat data; S20.1: the ordinal IS the identity — strings resolve at the
   edges via `spell_ordinal`). API `learn / set_active / can_cast / cast /
-  tick`, all by ordinal.
+  tick`, all by ordinal. Behavioural rules resolve by ROW too since
+  2026-08-29: `spellbook_rule_active(book, SpellRuleId::Flight)` scans the
+  sustained rows against the registry's own `rule` column — the last
+  name-based check (a `"flight"` string compare) is dead.
   `cooldownSteps` holds **steps remaining, not seconds left** (core/time.h
   `kStepsPerSecond`): the registry authors seconds, the world counts the
   simulation's own integer quantum, and the only conversion back is the string

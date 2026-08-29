@@ -12,7 +12,11 @@ laws that keep one memory from becoming two. The intent it implements is
   [macro/state.h](src/macro/state.h) (`GameState::chronicle`, landmark renown),
   [ecs/components.h](src/ecs/components.h) (`MacroNpcRuntime::renown`).
 - **Tests:** `chronicle_test` (the record, both tiers, renown, the words, the
-  windows), `world_tick_parity_test` (a famine is one fact), `save_roundtrip`
+  windows, the `victimShare` column with its `Robbed` control),
+  `journal_test` (the deed door files AND pays as one action — with the
+  negative control that a raw `chronicle_record` grants nothing; a possessed
+  lord's deeds are the player's participation; a captured copy carries no ring
+  link), `world_tick_parity_test` (a famine is one fact), `save_roundtrip`
   (the ring comes back ASKABLE), smokes `force_encounter` and `spire_climb`.
 
 ## The question this system exists to answer
@@ -97,7 +101,11 @@ is the distinction between an EVENT and a LEGEND, and that is the half taken.
 - **the ANNALS** — what the world REMEMBERS. Append-only, no spatial index,
   rides the save WHOLE. They are not a cache: a legends mode (owner's plan)
   will read exactly them. The cap is LOUD (`annalsFull`) rather than silently
-  dropping the past.
+  dropping the past — and HEARD since 2026-08-29: the Journal panel shows a
+  red `[world annals full]` badge (the flag used to have no listener). The
+  load path VALIDATES what it reads (`read_chronicle`, save.cpp): an annals
+  fact with an impossible `seq` or an out-of-table `kind` fails the load
+  instead of poisoning the eternal memory.
 
 **What reaches the annals** (owner, 2026-08-28): *a fact a FIGURE took part
 in, if its kind is more than a week's news.* Both halves come from columns
@@ -118,8 +126,10 @@ still holds what it linked to.
 ## Renown — what the world thinks of you
 
 **Every MACRO entity with an identity carries one**: a band
-(`MacroNpcRuntime::renown`), a city and a village (`Settlement`/`Village`). The
-microworld has none — a mob, a projectile, a house have no standing to win or
+(`MacroNpcRuntime::renown`) and every landmark (`Landmark::renown` — one
+column of the ONE roster since v62, [landmarks.md](landmarks.md)). The
+standing doors — `renown_slot` / `renown_of` / `grant_renown` — live beside
+the deed door in `macro/squad.h`. The microworld has none — a mob, a projectile, a house have no standing to win or
 lose, and that is a different layer and a different question.
 
 **Nobody is named by birth — bands and PLACES alike** (owner, 2026-08-28).
@@ -144,6 +154,11 @@ Recursive by construction — fame is made of fame — with no second rule for
 famous victims. The share is a tenth, and the number is the sentence: *ten
 victories over a man's equals make you his equal.*
 
+The share is paid for deeds AGAINST somebody; a mutual deal pays none — the
+kind row's `victimShare` column says so, and `Traded` is the row that says
+false (owner, 2026-08-29: «торговля — маленькое дело», a caravan run must not
+tithe the partner city's fame).
+
 So the deed row carries a BASE, not an answer, and the table splits by itself:
 deeds against SOMEBODY have small bases (what they are really worth, the victim
 says), and deeds against the LAND — which has no standing — are their base
@@ -160,11 +175,11 @@ bar IS the table.
 | door | who uses it |
 |---|---|
 | `chronicle_record(c, fact)` | THE door. Everything else is a wrapper. |
-| `EventBus::record(fact)` | the bus IS the chronicle's door (owner's ruling); the frame's facts are a RANGE of sequence numbers, not a second buffer |
-| `record_deed(app, fact, subjectEntity)` | app-side wrapper: resolves the entity to its save-stable ordinal, marks the named bit, files the fact AND pays the renown. The two halves cannot come apart — a writer that filed and forgot would be a world where nobody becomes somebody. |
-| `SubworldEngine::record_world_fact` | micro→macro: stamps the containing macro cell |
+| `EventBus::record(fact)` | the bus IS the chronicle's door (owner's ruling); the frame's facts are a RANGE of sequence numbers, not a second buffer. The bus's own `WorldHistoryEntry` ring — a FOURTH store of the past beside ring/annals/journal — died 2026-08-29 (`history_at` / `query_history` gone, `flush()` lost its date arguments); the deed door below files straight through `chronicle_record` |
+| `record_deed(world, gs, fact, subjectEntity)` (macro/squad.h) | THE deed wrapper, macro-side beside its landmark twin: resolves the entity to its save-stable ordinal, marks the named bits from each participant's PRE-deed renown, files the fact AND pays the renown. The two halves cannot come apart — a writer that filed and forgot would be a world where nobody becomes somebody. It lived on the app layer at first; the UI's and the subworld's writers could not reach it there and filed for free, which is why the door moved down to macro. |
+| `SubworldEngine::record_world_fact` | micro→macro: stamps the containing macro cell, then files through `record_deed` — a drained orb or a crossed circle pays the doer like a kill above ground |
 | `record_landmark_fact` (state.h) | the landmark twin of `record_deed`: marks figure-ness from the place's own renown, files the fact AND pays the deed (base + a tenth of the object's renown). The old "a place earns no renown" was a hole in the one-door law, closed 2026-08-28 |
-| `player_journal_capture` (macro/journal.h) | a READER, not a writer: once a tick the player asks "what happened since seq N" and copies what is HIS — participation (subject/object = his squad) and locality (his cell, while he stood there). No fact writer knows the journal exists |
+| `player_journal_capture` (macro/journal.h) | a READER, not a writer: once a tick the player asks "what happened since seq N" and copies what is HIS — participation (subject/object = his squad, or the lord he currently possesses) and locality (his cell, while he stood there). The copy drops `nextInCell` — the chain link is the ring index's wiring, not the fact's. No fact writer knows the journal exists |
 
 ## Zones — places that mean something
 

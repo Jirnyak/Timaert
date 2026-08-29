@@ -20,10 +20,12 @@ procedural generation from world context. No hardcoded if-chains.
 - **Quest markers** are a *derived* projection of the active quests onto the
   universal marker layer, not engine state (see below).
 - **Procedural:** cities get 2–4 quests from economy/distance/mood. **Villages
-  give none** — `generate_quests_for_village` (`content/quests/procedural.cpp`)
-  exists but is called from nowhere; the only caller path is
-  `generate_quests_for_settlement` (`app/main.cpp`). A debt, and a consequence
-  of the Settlement/Village struct split ([landmarks.md](landmarks.md)).
+  still give none** — `generate_quests_for_village` (`content/quests/procedural.cpp`,
+  taking the unified `Landmark` since v62) exists but is called from nowhere;
+  the only caller path is `generate_quests_for_settlement` (`app/main.cpp`).
+  The Settlement/Village struct split that caused this is DEAD (2026-08-29,
+  [landmarks.md](landmarks.md)) — wiring the call is all that remains of the
+  debt.
 
 ## Quest markers — a derived overlay
 

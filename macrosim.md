@@ -35,12 +35,17 @@ time at world scale — the strategic layer above microworld combat.
   off the one baked cost grid ([macroworld.md](macroworld.md), context.md THE
   step law).
 - **NPC-as-soldier:** a squad is a list of concrete NPC records; garrisons
-  regenerate by kind; hire price + a single per-kind upkeep number, discounted
-  by charisma. No histograms, no RPS. **DEBT (CANON S25):** hiring today is a
-  second exchange mechanic with its own price button (`ui/overlays.cpp`, the
-  Hire loop) beside the package barter. Canon says trade and hiring are ONE
-  deal form over different containers (inventory ↔ roster, mixable in one
-  deal); the separate hire flow is a defect to fold in, not the norm.
+  regenerate by kind. The hire price is a COLUMN × the one level law
+  (2026-08-29): `NpcTypeDef::hireGold` (derived as 30 × the row's daily
+  upkeep) × `soldier_level_factor` (`1 + (L−1)/3` — the same factor upkeep
+  pays), and the coin lands in the settlement's inventory-treasury through
+  `transfer_value` — hiring stopped burning money
+  ([economy.md](economy.md)). No histograms, no RPS. **DEBT (CANON S25):**
+  hiring is still a second exchange FORM with its own price button
+  (`ui/overlays.cpp`, the Hire loop) beside the package barter. Canon says
+  trade and hiring are ONE deal form over different containers
+  (inventory ↔ roster, mixable in one deal); the separate hire flow is a
+  defect to fold in, not the norm.
 - **Politics:** kingdoms, capitals, roads, Voronoi territory, faction relations
   drive the world's shape ([landmarks.md](landmarks.md)).
 - **Player = a flag.** The macro player is a minimal `PlayerTag` entity, not a
@@ -239,6 +244,22 @@ the code stands now:
   through the ledger; victors rob and level by the player's own XP curve).
   The underground drive perceives but does not resolve
   (`allowAutoBattle=false`) — projected bodies own their own fight.
+  **ONE law of sight (2026-08-29):** the player's squad sits in the common
+  `SquadIndex` like every other — the private player-perception channel
+  (`ai_aggressive` used to see the player at 10 cells against everyone
+  else's 6) is DEAD, «игрок ничем не особенен»; `TickContext::playerX/Y`
+  survives only as `try_move`'s stop-on-the-meeting-cell rule, explicitly
+  not a perception channel. And the threat step NEVER dices the player:
+  a same-cell meeting with `PlayerTag`/`PlayerSquadTag` (both, because
+  possession moves the flag) stops the mover dead and hands the encounter
+  to the forced pre-battle screen — the auto-resolve settles AI↔AI wars,
+  never the player's fights behind his back.
+  **Corpse rows are swept (2026-08-29):** `destroy_dead_macro_squads`
+  (macro/squad.h) runs at the end of BOTH AI drivers, after
+  `drain_dead_leader_squads` has settled the deserter pool — a Dead squad
+  whose roster emptied leaves the registry instead of haunting every view
+  (deferred out of the settle itself because the settle's callers still
+  hold the entities).
 * **The map stops you** — the forced pre-battle screen (main.cpp,
   `GameSubStateKind::PreBattle`): a TABLE of actions — talk / pay off /
   flee / fight (the old `route_macro_npc_attack`, rebuilt as promised) /

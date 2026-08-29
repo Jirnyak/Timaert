@@ -151,7 +151,7 @@ binding.
 | `Door` | house leaf, cave mouth | raises the interior its row declares | the dungeon session |
 | `Stairs` | shaft block | same identity, one storey along | the dungeon session |
 | `Loot` | corpse | the kill's own drop | the one loot registry |
-| `Search` | chest | a stack of the owning landmark's store, at a price in standing | `Settlement::inventory` + `add_player_reputation` |
+| `Search` | chest | a stack of the owning landmark's store, at a price in standing | `Landmark::inventory` + `add_player_reputation` |
 | `Drink` | well | an hour of rest, standing | `kSpRegenPctPerHour` |
 | `Read` | signboard | names the place | the settlement roster |
 | `Learn` | spire orb | flips the spire depleted, burns the orb out of the scene, teaches the spell | `EventTag::SpireDepleted` → the effect applicator's ordinal resolve ([spells.md](spells.md) §Learning) |
@@ -177,6 +177,28 @@ This is also why the larder is **not** a resource field: a field's baseline is
 a pure function of terrain and climate, and settlement is downstream of
 resources (`macro/resource_field.h`). A larder is the opposite — it exists
 because people do — so it belongs to the settlement.
+
+### The bridge is honest masonry (2026-08-29)
+
+Where a road's subworld ribbon crosses water, `gen_road`
+(`sub/gens/dispatch.cpp`, `add_bridge_segment`) raises a REAL bridge instead
+of painting a ford: the owner's word — «как городские ворота: над водой,
+арки снизу, не дамба». Deck chords are `Structure::Bridge` rows (stone, one
+more row of `kStructureKindRows`), lifted by `zBase` so the walking surface
+clears the water by a freeboard; **piers** (`Structure::Cylinder`) stand in
+the river at the chord joints; the **arches are the absence of solids**
+between the piers — water and boats-to-be pass under because nothing is
+there, not because something is flagged passable. Solidity is the one law:
+`structure_solid_span` feeds `support_at` / `blocked_at` (`sub/collide.h`),
+so a body walks ON the deck and falls OFF its edge by the same physics as
+any roof. The generator culls by span top against the terrain seat — no deck
+over ground the bank already carries, no pier where the deck sits on the
+bed — so a bridge is exactly as long as the wet gap.
+
+**Standing open:** the LOOK awaits the owner's in-game verdict (built and
+smoke-proven, not yet judged by eye); and two CELL laws are unwritten — the
+macro SP price of a step across a bridged water cell, and what battle tile
+the ground UNDER the deck reports ([problems.md](problems.md)).
 
 ### Light
 

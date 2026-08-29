@@ -29,7 +29,7 @@ resolved it on the map.
 | THE door | [sub/damage.h](src/sub/damage.h) | `apply_damage(reg, target, src, amount, kind, bus)` — the only code that subtracts subworld hp, in one fixed order: the already-dead guard, mitigation, subtract-then-judge, the protocol stamp, `Dead` once, `NpcDeath` under the ONE `PlayerTag` guard. `apply_lethal_damage` is the execution form (dev cheat, harness kills). |
 | The kinds | same file | `kDamageKinds` — melee / spell / fall / script / dev, two columns: `attributesKiller` and `armourApplies`. "No XP for gravity" and "plate does not soften a fall" are both the Fall row's DATA, not a skipped component or an `if` at one call site. |
 | The world remembers | [chronicle.md](chronicle.md) | A death that the auto-resolve settles is filed as a FACT at the cell it happened on, and pays the killer renown priced by what the victim was worth. The trail a monster leaves is made of these. |
-| Mitigation | `mitigate()` / `defense_of()` in [sub/damage.cpp](src/sub/damage.cpp) | The second step INSIDE the door, and the socket is filled (2026-08-27). A blow keeps `kArmorHalving / (kArmorHalving + armour)` — asymptotic, so armour SOFTENS and never makes a body immune, and a creature in its own skin (armour 0) is the limiting case of the law rather than a branch around it. `kArmorHalving` is not picked: it IS `kPlayerBaseMeleeDamage`, the game's own plain blow, which is what makes "armour 10" readable without a table — it halves a plain blow. Armour comes from the creature ROW (`NpcTypeDef::armor`, the owner's «броня массовки = число из строки»); a body that also WEARS things adds them at one line in `defense_of`, and **no damage site changes** to gain it. |
+| Mitigation | `mitigate()` / `defense_of()` in [sub/damage.cpp](src/sub/damage.cpp) | The second step INSIDE the door, and the socket is filled (2026-08-27). A blow keeps `kArmorHalving / (kArmorHalving + armour)` — asymptotic, so armour SOFTENS and never makes a body immune, and a creature in its own skin (armour 0) is the limiting case of the law rather than a branch around it. `kArmorHalving` is not picked: it IS `kPlayerBaseMeleeDamage`, the game's own plain blow, which is what makes "armour 10" readable without a table — it halves a plain blow. Armour comes from the creature ROW (`NpcTypeDef::armor`, the owner's «броня массовки = число из строки»); a body that also WEARS things adds them at one line in `defense_of`, and **no damage site changes** to gain it. Since 2026-08-29 the constant's HOME is [macro/npc.h](src/macro/npc.h), beside the `armor` column it prices — the macro layer (auto-resolve) may not include the ECS-facing `damage.h`, and the law must live where both scales can read it. |
 | THE hostility rule | [macro/state.h](src/macro/state.h) `factions_hostile` / `player_hostile_to` | One threshold over the one matrix. Six hand-spelled comparisons converged here, and the last private resolver (the macro Aggressive pursuit, which chased regardless of standing) now asks it. Both ends of the scale — `kHostileThreshold`, `kAllyRepThreshold` — and the price of a kill, `kKillRepPenalty`, live in [macro/faction.h](src/macro/faction.h) beside the matrix they cut. |
 | Faction as an INSTANCE | [ecs/components.h](src/ecs/components.h) `NPCKind.factionIdx` | Owner's ruling, 2026-08-27: «в записи существа вообще не должно быть фракции — моб/нпц это чистый нпц». `NpcTypeDef.factionId` is gone; the SPAWNER dresses the body — a town in its kingdom's colours, a landmark in its `spawnFaction`, a squad in its leader's, the open land in the spawn law's own `wildFaction` column. The same wolf is wildlife in a meadow and a demon in a ruin. |
 | THE reach | [sub/targeting.cpp](src/sub/targeting.cpp) `melee_pick_target` | In reach ⇔ `dist − body_radius(target) ≤ range`, ranked by the surface GAP — the same law the NPC strike always walked (`reach + radius[target]`). Attack reach is ONE number per row (`attackRange`); a spear will modify that number, never introduce a second system. Body WIDTH is one column ([macro/npc.h](src/macro/npc.h) `radius` + `npc_body_radius`); `CombatTemplate::bodyRadius` — a shadow copy authored by zero rows — is dead. |
@@ -62,11 +62,23 @@ Protocol divergences, each now impossible by construction and pinned by
 | Loot | `roll_loot_profile` + the purse law | `roll_fallen_spoils` — the same doors |
 | Player XP | `award_exp` with the wis dividend | `award_exp` with the wis dividend |
 | NPC leader XP | `award_leader_xp` (increment 6) | `award_leader_xp` |
+| **Armour** (2026-08-29) | `mitigate()`: a blow keeps `kArmorHalving / (kArmorHalving + armour)` | `fighter_power` (auto_battle.h) scales effective HP by `(kArmorHalving + armour) / kArmorHalving` — the algebraic INVERSE of the door's multiplier, so an armoured body is worth on the map exactly what it soaks underfoot. The agreement test (`auto_battle_test`) softens its hand-fought hits by the same identity — the resolver is pinned to the door, not to a second armour law. |
+| **XP price of a body** (2026-08-29) | `npc_xp_reward(type, level)` | the same `npc_xp_reward` (`xp_for_fallen`, macro/squad.h) |
 
-The last row is CANON S14 made literal: a lord grows from a fight underfoot
+CANON S14 made literal: a lord grows from a fight underfoot
 exactly as he grows from one on the map. The killer's body names its squad —
 `MacroOrigin` for a projected leader, the roster receipt's spawn ordinal for a
 member.
+
+**One XP law (2026-08-29).** What a body is WORTH is a column of its own row:
+`NpcTypeDef::xpReward`, authored as `5 × (baseLevel + 1)` per row, and the one
+reader `npc_xp_reward(t, level)` adds `(level − 1) × 5` for a levelled
+instance — the identity reproduces the old `10 × level` payout at the row's
+own level, but the number now lives with the creature instead of inside a
+formula. `exp_from_fight` is DELETED (a tombstone comment in `attributes.h` is
+all that remains); the three award sites — the player's kill, the NPC
+leader's kill underfoot, and the auto-resolve's `xp_for_fallen` — all ask the
+same function.
 
 ## Tests that guard the door
 
@@ -82,8 +94,9 @@ touches no test.
 
 ## Left standing, deliberately
 
-- **Mitigation is the identity** until equipment exists. The socket is the
-  point: armour is columns in one function, not a change at five sites.
+- **Worn equipment still adds nothing** — the row's `armor` is live at both
+  scales (2026-08-29), but a body that WEARS things waits for the equipment
+  track; the socket is one line in `defense_of`, not a change at five sites.
 - **`sight` stays unauthored** — every row answers 200 and only the alert chain
   reads it. Owner's ruling: it waits for the vision track (CANON S11), where
   it becomes a real column instead of a number invented here.

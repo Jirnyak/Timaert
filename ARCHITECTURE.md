@@ -87,7 +87,9 @@ This is a **cellular game**: the world is cells, and the house style is
 
 ```
 src/
-  app/          SDL2 (Vulkan window) + ImGui boot, main loop, input dispatch.
+  app/          SDL2 (Vulkan window) + ImGui boot, main loop, input dispatch
+                (main.cpp); the smoke harness TU (smoke.cpp/.h) and the shared
+                App state (app_state.h) since 2026-08-29.
   core/         Math (mat4/vec3 PODs), seeded RNG, torus helpers.
   gpu/          Vulkan backend (device/swapchain/pipelines/buffers/textures/shadow).
   ecs/          EnTT World, components, systems.
@@ -260,7 +262,7 @@ from, kept as history only.
 
 | C++ module                 | Responsibility                                                        | TS prototype (historical) |
 |----------------------------|------------------------------------------------------------------------|---------------------------|
-| [macro/state.{h,cpp}](src/macro/state.h)                              | `GameState`, `PlayerState`, `WorldTime`, `Settlement`, `Village`, `Spire`, save version | `game/state.ts` |
+| [macro/state.{h,cpp}](src/macro/state.h)                              | `GameState`, `PlayerState`, `WorldTime`, `Landmark` (ONE record + `type` column since v62 — `Settlement`/`Village`/`Spire` are dead, [landmarks.md](landmarks.md)), save version | `game/state.ts` |
 | [macro/economy.{h,cpp}](src/macro/economy.h)                          | Per-settlement inventory, prices, daily trade tick | `game/economy.ts` |
 | [macro/attributes.h](src/macro/attributes.h)                          | Stat block, level data, XP curves | `game/attributes.ts` |
 | [macro/items.{h,cpp}](src/macro/items.h)                              | `Item`, `Inventory` (count/add/remove), unified loot registry (`roll_loot_profile` keyed by `lootId`) | `game/items.ts` |
@@ -1247,7 +1249,7 @@ pays through a system that was already there rather than inventing its own:
 | `Door` | house leaf, cave mouth | raises the interior it declares | the dungeon session |
 | `Stairs` | shaft block | same identity, one storey along | the dungeon session |
 | `Loot` | corpse | the kill's own drop | the one loot registry |
-| `Search` | chest | hands over a stack of the OWNING landmark's store, at a price in standing | `Settlement::inventory` + `add_player_reputation` |
+| `Search` | chest | hands over a stack of the OWNING landmark's store, at a price in standing | `Landmark::inventory` + `add_player_reputation` |
 | `Drink` | well | an hour of rest, standing | `kSpRegenPctPerHour` |
 | `Read` | signboard | names the place | the settlement roster |
 
@@ -1554,13 +1556,19 @@ layers above.
 | — (native)                          | [ui/ui_settings.cpp](src/ui/ui_settings.cpp) `draw_ui_settings_panel` | Universal UI settings: show/hide + resize registry for every HUD element & panel, macro + micro; global `ui_prefs.cfg`. See [ui-settings.md](ui-settings.md) |
 | `ui/theme.ts`                       | inline ImGui styling in `ui/*.cpp`                       | No native `ui/theme.h` exists yet |
 
-`app/main.cpp` is the **controller** — it owns the SDL2 + GL + ImGui boot,
-the main loop, the camera, and input dispatch, then delegates to extracted
-modules (`world_tick`, `spawn_trees`, `effect_applicator`) for actual
-computation. This is acceptable because:
+`app/main.cpp` is the **controller** — it owns the SDL2 + Vulkan + ImGui
+boot, the main loop, the camera, and input dispatch, then delegates to
+extracted modules (`world_tick`, `spawn_trees`, `effect_applicator`) for
+actual computation. Since 2026-08-29 the **smoke harness lives in its own
+TU**: `src/app/smoke.cpp` (+ `smoke.h`) carries every scripted scenario, and
+`src/app/app_state.h` carries the `App` state struct both TUs share —
+`main.cpp` fell 12.7k → 5.4k lines without a single behaviour change (a
+split, not a deletion: the app dir totals the same code). This is acceptable
+because:
 - It does one thing (orchestrate the main loop).
 - All pure logic lives in includable modules.
-- Splitting it into sub-files would create tight bi-directional coupling.
+- The one extraction that carried no coupling cost — the smoke harness — is
+  done; further splits would create tight bi-directional coupling.
 
 The top status bar (`Day | HH:MM | HP/MP/SP bars | Gold | Items | Pos |
 Name + Lv + EXP`) and bottom command toolbar (`II  >  >>  Z | Inv Map Bld
