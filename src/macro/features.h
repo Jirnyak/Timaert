@@ -7,6 +7,7 @@
 // tree-count field (macro/tree_layer.h) — a forested mountain is the
 // Mountain biome with a high tree count, no feature byte involved.
 #pragma once
+#include "core/table_guard.h"
 #include "core/torus.h"
 #include <cstddef>
 #include <cstdint>
@@ -17,6 +18,7 @@ namespace sm {
 
 enum FeatureType : std::uint8_t {
     FT_None = 0, FT_Road = 1, FT_DirtRoad = 2, FT_Field = 3,
+    FT_Count,
 };
 
 // Internal byte-layout invariants for the feature grid. (The legacy TS port is
@@ -28,6 +30,51 @@ static_assert(FT_None == 0, "FeatureType byte layout");
 static_assert(FT_Road == 1, "FeatureType byte layout");
 static_assert(FT_DirtRoad == 2, "FeatureType byte layout");
 static_assert(FT_Field == 3, "FeatureType byte layout");
+
+// ── THE feature registry (CANON S16, 2026-08-29) ─────────────────────────
+// Everything the world says ABOUT a feature is a column of ONE row. These
+// numbers lived as three private dialects — a switch of bed weights with a
+// silent 0.0 default in movement_cost.h, a bare float array in optics.h, an
+// if-chain of civ strengths in zones.cpp — three tables about one byte, each
+// free to forget a feature on its own. The values are EXACTLY those homes'
+// (the sweep moved the numbers, it did not retune them), and the guard below
+// makes a grown FeatureType refuse to compile instead of defaulting quietly.
+struct FeatureDef {
+    FeatureType type;   // MUST equal the row's index (guard below)
+    // SP bed the engineered surface lays (movement_cost.h step-cost law).
+    // 0 = nothing built here — the biome's own ground is the bed, the law's
+    // silent zero, never a sentinel to branch on. Road 1.0 is the reference
+    // march (speed = base/√weight); dirt is half again the paved bed.
+    float bedWeight;
+    // Optical budget one cell of this feature spends (optics.h
+    // optical_sweep) — open land is the 1.0 baseline; a road is a clear,
+    // reflective corridor that carries light and sight furthest; ploughed
+    // waist-high wheat hides nothing. Mountains and forests are deliberately
+    // NOT rows: mountains are a biome (elevation term), forests the
+    // tree-count field (kCanopyOpticalCost per unit of density).
+    float opticalCost;
+    // Civilization pull this feature seeds into the danger field
+    // (zones.cpp): how strongly a built thing pushes the wilderness back.
+    // 0 = builds no safety of its own (a field is tended, not garrisoned).
+    float civStrength;
+};
+
+inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
+    //                     bed   optics  civ
+    {FT_None,     0.0f, 1.00f, 0.0f },
+    {FT_Road,     1.0f, 0.65f, 0.35f},
+    {FT_DirtRoad, 1.5f, 0.85f, 0.22f},
+    {FT_Field,    1.8f, 1.00f, 0.0f },
+};
+static_assert(rows_in_enum_order(kFeatureDefs, &FeatureDef::type),
+              "kFeatureDefs row order must mirror FeatureType — a new "
+              "feature IS its row here");
+
+inline constexpr const FeatureDef& feature_def(FeatureType t) {
+    return std::size_t(t) < std::size_t(FT_Count)
+               ? kFeatureDefs[std::size_t(t)]
+               : kFeatureDefs[std::size_t(FT_None)];   // fail-open ground
+}
 
 struct FeatureLayer {
     int width = 0, height = 0;

@@ -1,3 +1,5 @@
+#include "check.h"
+
 #include "sub/seamless_manager.h"
 #include "sub/base_generator.h"
 #include <algorithm>
@@ -57,11 +59,6 @@ sm::sub::CellContext resolve_water_plane_cell(int cx, int cy) {
     return c;
 }
 
-bool fail(const char* reason) {
-    std::fprintf(stderr, "subworld_async_seam_test: FAIL %s\n", reason);
-    return false;
-}
-
 float expected_placeholder_height(const sm::sub::CellContext& c) {
     if (c.biome == sm::Biome::Water) {
         const float t = std::clamp(c.macroHeight / sm::sub::kMacroSeaLevel, 0.0f, 1.0f);
@@ -83,6 +80,8 @@ std::uint8_t expected_placeholder_tile(const sm::sub::CellContext& c, float heig
     return sm::sub::TILE_GRASS;
 }
 
+// Records ONE check under `reason`, and hands the verdict back so a caller can
+// keep the original early-exit on a broken placeholder.
 bool expect_placeholder(const sm::sub::SeamlessSubworldManager& mgr,
                         sm::sub::CellContext (*resolver)(int, int),
                         int x,
@@ -90,7 +89,8 @@ bool expect_placeholder(const sm::sub::SeamlessSubworldManager& mgr,
                         const char* reason) {
     const std::size_t idx = sm::sub::tile_index(x, y);
     if (idx >= mgr.tiles().size() || idx >= mgr.heightmap().size()) {
-        return fail(reason);
+        CHECK(false, reason);
+        return false;
     }
     const int cellX = x / sm::sub::kCellSize;
     const int cellY = y / sm::sub::kCellSize;
@@ -100,11 +100,14 @@ bool expect_placeholder(const sm::sub::SeamlessSubworldManager& mgr,
     const float expectedHeight = expected_placeholder_height(ctx);
     const std::uint8_t expectedTile = expected_placeholder_tile(ctx, expectedHeight);
     if (mgr.tiles()[idx] != expectedTile) {
-        return fail(reason);
+        CHECK(false, reason);
+        return false;
     }
     if (std::fabs(mgr.heightmap()[idx] - expectedHeight) > 0.0001f) {
-        return fail(reason);
+        CHECK(false, reason);
+        return false;
     }
+    CHECK(true, reason);
     return true;
 }
 
@@ -125,7 +128,7 @@ bool has_structure(const sm::sub::SeamlessSubworldManager& mgr,
     return false;
 }
 
-bool run_case(sm::sub::CellContext (*resolver)(int, int),
+void run_case(sm::sub::CellContext (*resolver)(int, int),
               bool expectSmoothPublish,
               const char* label,
               int& outDirty,
@@ -138,24 +141,20 @@ bool run_case(sm::sub::CellContext (*resolver)(int, int),
     float playerY = float(sm::sub::kCellSize + 128);
     mgr.check_boundary(playerX, playerY);
 
-    if (mgr.center_cx() != 1 || mgr.center_cy() != 0) {
-        return fail("center did not shift east");
-    }
-    if (std::fabs(playerX - float(sm::sub::kCellSize + 8)) > 0.01f) {
-        return fail("player frame was not recentered");
-    }
-    if (!mgr.consume_composite_dirty()) {
-        return fail("boundary did not mark composite dirty");
-    }
+    CHECK_OR_RETURN(mgr.center_cx() == 1 && mgr.center_cy() == 0,
+                    "center did not shift east");
+    CHECK_OR_RETURN(std::fabs(playerX - float(sm::sub::kCellSize + 8)) <= 0.01f,
+                    "player frame was not recentered");
+    CHECK_OR_RETURN(mgr.consume_composite_dirty(),
+                    "boundary did not mark composite dirty");
     outTiming = mgr.last_seam_timing();
-    if (!outTiming.crossed || outTiming.smoothMs != 0.0) {
-        return fail("boundary timing missing or smoothing stayed on seam path");
-    }
+    CHECK_OR_RETURN(outTiming.crossed && outTiming.smoothMs == 0.0,
+                    "boundary timing missing or smoothing stayed on seam path");
     if (!expect_placeholder(mgr, resolver,
             sm::sub::kCellSize * 2 + 8,
             sm::sub::kCellSize + 128,
             "east exposed slot was not macro placeholder")) {
-        return false;
+        return;
     }
 
     const int targetDirty = expectSmoothPublish ? 4 : 3;
@@ -168,49 +167,49 @@ bool run_case(sm::sub::CellContext (*resolver)(int, int),
         }
     }
 
-    if (outDirty < 3) {
-        return fail("worker jobs did not stitch back into composite");
-    }
-    if (expectSmoothPublish && outDirty < 4) {
-        return fail("async composite smoothing did not publish");
-    }
+    CHECK_OR_RETURN(outDirty >= 3,
+                    "worker jobs did not stitch back into composite");
+    CHECK_OR_RETURN(!(expectSmoothPublish && outDirty < 4),
+                    "async composite smoothing did not publish");
 
     if (!expectSmoothPublish) {
-        for (int i = 0; i < 30; ++i) {
+        bool spurious = false;
+        for (int i = 0; i < 30 && !spurious; ++i) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
             mgr.check_boundary(playerX, playerY);
             if (mgr.consume_composite_dirty()) {
-                return fail("no-road composite published unexpected smoothing");
+                spurious = true;
             }
         }
+        CHECK_OR_RETURN(!spurious,
+                        "no-road composite published unexpected smoothing");
     }
 
     const int roadMaskTiles = mgr.composite_road_mask_tiles();
-    if (expectSmoothPublish && roadMaskTiles <= 0) {
-        return fail("road case did not expose road-mask indices");
-    }
-    if (!expectSmoothPublish && roadMaskTiles != 0) {
-        return fail("plain case exposed unexpected road-mask indices");
-    }
+    CHECK_OR_RETURN(!(expectSmoothPublish && roadMaskTiles <= 0),
+                    "road case did not expose road-mask indices");
+    CHECK_OR_RETURN(!(!expectSmoothPublish && roadMaskTiles != 0),
+                    "plain case exposed unexpected road-mask indices");
     std::vector<std::int32_t> roadMaskIndices;
     mgr.append_composite_road_mask_indices(roadMaskIndices);
-    if (int(roadMaskIndices.size()) != roadMaskTiles) {
-        return fail("road-mask index count mismatch");
-    }
+    CHECK_OR_RETURN(int(roadMaskIndices.size()) == roadMaskTiles,
+                    "road-mask index count mismatch");
+    bool allRoad = true;
     for (std::int32_t idx : roadMaskIndices) {
         if (idx < 0 || std::size_t(idx) >= mgr.tiles().size()
             || mgr.tiles()[std::size_t(idx)] != sm::sub::TILE_ROAD) {
-            return fail("road-mask index points outside TILE_ROAD");
+            allRoad = false;
+            break;
         }
     }
+    CHECK_OR_RETURN(allRoad, "road-mask index points outside TILE_ROAD");
 
     std::fprintf(stderr,
         "subworld_async_seam_test: %s dirty=%d gen=%.3fms smooth=%.3fms total=%.3fms\n",
         label, outDirty, outTiming.genMs, outTiming.smoothMs, outTiming.totalMs);
-    return true;
 }
 
-bool run_diagonal_plain_case(int& outDirty, sm::sub::SeamTiming& outTiming) {
+void run_diagonal_plain_case(int& outDirty, sm::sub::SeamTiming& outTiming) {
     sm::sub::SeamlessSubworldManager mgr;
     mgr.init(0, 0, resolve_plain_cell);
     mgr.consume_composite_dirty();
@@ -219,25 +218,21 @@ bool run_diagonal_plain_case(int& outDirty, sm::sub::SeamTiming& outTiming) {
     float playerY = float(sm::sub::kCellSize * 2 + 24);
     mgr.check_boundary(playerX, playerY);
 
-    if (mgr.center_cx() != 1 || mgr.center_cy() != 1) {
-        return fail("center did not shift diagonally");
-    }
-    if (std::fabs(playerX - float(sm::sub::kCellSize + 16)) > 0.01f ||
-        std::fabs(playerY - float(sm::sub::kCellSize + 24)) > 0.01f) {
-        return fail("diagonal player frame was not recentered");
-    }
-    if (!mgr.consume_composite_dirty()) {
-        return fail("diagonal boundary did not mark composite dirty");
-    }
+    CHECK_OR_RETURN(mgr.center_cx() == 1 && mgr.center_cy() == 1,
+                    "center did not shift diagonally");
+    CHECK_OR_RETURN(std::fabs(playerX - float(sm::sub::kCellSize + 16)) <= 0.01f
+                        && std::fabs(playerY - float(sm::sub::kCellSize + 24)) <= 0.01f,
+                    "diagonal player frame was not recentered");
+    CHECK_OR_RETURN(mgr.consume_composite_dirty(),
+                    "diagonal boundary did not mark composite dirty");
     outTiming = mgr.last_seam_timing();
-    if (!outTiming.crossed || outTiming.smoothMs != 0.0) {
-        return fail("diagonal timing missing or smoothing stayed on seam path");
-    }
+    CHECK_OR_RETURN(outTiming.crossed && outTiming.smoothMs == 0.0,
+                    "diagonal timing missing or smoothing stayed on seam path");
     if (!expect_placeholder(mgr, resolve_plain_cell,
             sm::sub::kCellSize * 2 + 16,
             sm::sub::kCellSize * 2 + 24,
             "diagonal exposed slot was not macro placeholder")) {
-        return false;
+        return;
     }
 
     outDirty = 0;
@@ -248,25 +243,26 @@ bool run_diagonal_plain_case(int& outDirty, sm::sub::SeamTiming& outTiming) {
             ++outDirty;
         }
     }
-    if (outDirty != 5) {
-        return fail("diagonal crossing did not stitch exactly five cells");
-    }
+    CHECK_OR_RETURN(outDirty == 5,
+                    "diagonal crossing did not stitch exactly five cells");
 
-    for (int i = 0; i < 30; ++i) {
+    bool spurious = false;
+    for (int i = 0; i < 30 && !spurious; ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         mgr.check_boundary(playerX, playerY);
         if (mgr.consume_composite_dirty()) {
-            return fail("diagonal no-road composite published unexpected smoothing");
+            spurious = true;
         }
     }
+    CHECK_OR_RETURN(!spurious,
+                    "diagonal no-road composite published unexpected smoothing");
 
     std::fprintf(stderr,
         "subworld_async_seam_test: diagonal dirty=%d gen=%.3fms smooth=%.3fms total=%.3fms\n",
         outDirty, outTiming.genMs, outTiming.smoothMs, outTiming.totalMs);
-    return true;
 }
 
-bool run_snapshot_during_pending_case() {
+void run_snapshot_during_pending_case() {
     sm::sub::clear_saved_subworlds();
 
     {
@@ -283,20 +279,19 @@ bool run_snapshot_during_pending_case() {
         const sm::sub::CellContext surviving = resolve_plain_cell(0, 0);
         mgr.snapshot_all_to_cache();
 
-        if (!sm::sub::find_saved_subworld(leaving.seed, sm::sub::SubworldMode::Grassland)) {
-            return fail("leaving real cell was not saved during pending generation");
-        }
-        if (!sm::sub::find_saved_subworld(surviving.seed, sm::sub::SubworldMode::Grassland)) {
-            return fail("surviving real cell was not saved during pending generation");
-        }
+        CHECK_OR_RETURN(
+            sm::sub::find_saved_subworld(leaving.seed, sm::sub::SubworldMode::Grassland),
+            "leaving real cell was not saved during pending generation");
+        CHECK_OR_RETURN(
+            sm::sub::find_saved_subworld(surviving.seed, sm::sub::SubworldMode::Grassland),
+            "surviving real cell was not saved during pending generation");
     }
 
     sm::sub::clear_saved_subworlds();
     std::fprintf(stderr, "subworld_async_seam_test: snapshot_pending ok\n");
-    return true;
 }
 
-bool run_worker_restore_saved_case() {
+void run_worker_restore_saved_case() {
     sm::sub::clear_saved_subworlds();
 
     constexpr float kSavedHeight = 0.73f;
@@ -325,14 +320,13 @@ bool run_worker_restore_saved_case() {
         float playerX = float(sm::sub::kCellSize * 2 + 32);
         float playerY = float(sm::sub::kCellSize + 52);
         mgr.check_boundary(playerX, playerY);
-        if (!mgr.consume_composite_dirty()) {
-            return fail("restore saved boundary did not mark composite dirty");
-        }
+        CHECK_OR_RETURN(mgr.consume_composite_dirty(),
+                        "restore saved boundary did not mark composite dirty");
         const int sampleX = sm::sub::kCellSize * 2 + 37;
         const int sampleY = sm::sub::kCellSize + 53;
         if (!expect_placeholder(mgr, resolve_plain_cell, sampleX, sampleY,
                 "restore saved slot was not placeholder before stitch")) {
-            return false;
+            return;
         }
 
         const float expected = float(std::lround((kSavedHeight / 2.5f) * 65535.0f))
@@ -360,28 +354,23 @@ bool run_worker_restore_saved_case() {
                 break;
             }
         }
-        if (!restored) {
-            return fail("worker generation did not restore saved heightmap");
-        }
-        if (!restoredStructure) {
-            return fail("worker generation did not restore saved structure");
-        }
+        CHECK_OR_RETURN(restored,
+                        "worker generation did not restore saved heightmap");
+        CHECK_OR_RETURN(restoredStructure,
+                        "worker generation did not restore saved structure");
 
         mgr.snapshot_all_to_cache();
     }
 
     sm::sub::clear_saved_subworlds();
     std::fprintf(stderr, "subworld_async_seam_test: worker_restore_saved ok\n");
-    return true;
 }
 
-bool run_water_plane_invariant_case() {
-    if (std::fabs(sm::sub::WATER_LEVEL - 0.40f) > 0.0001f) {
-        return fail("WATER_LEVEL drifted from TS 0.40");
-    }
-    if (std::fabs(sm::sub::kLandMargin - 0.02f) > 0.0001f) {
-        return fail("kLandMargin drifted from TS port margin 0.02");
-    }
+void run_water_plane_invariant_case() {
+    CHECK_OR_RETURN(std::fabs(sm::sub::WATER_LEVEL - 0.40f) <= 0.0001f,
+                    "WATER_LEVEL drifted from TS 0.40");
+    CHECK_OR_RETURN(std::fabs(sm::sub::kLandMargin - 0.02f) <= 0.0001f,
+                    "kLandMargin drifted from TS port margin 0.02");
 
     sm::sub::clear_saved_subworlds();
     sm::sub::SeamlessSubworldManager mgr;
@@ -392,9 +381,8 @@ bool run_water_plane_invariant_case() {
     const auto& heights = mgr.heightmap();
     const std::size_t expected =
         std::size_t(sm::sub::kFullSize) * sm::sub::kFullSize;
-    if (tiles.size() != expected || heights.size() != expected) {
-        return fail("water-plane composite buffers have wrong size");
-    }
+    CHECK_OR_RETURN(tiles.size() == expected && heights.size() == expected,
+                    "water-plane composite buffers have wrong size");
 
     int waterTiles = 0;
     int landTiles = 0;
@@ -427,25 +415,21 @@ bool run_water_plane_invariant_case() {
         }
     }
 
-    if (waterTiles <= 0 || landTiles <= 0) {
-        return fail("water-plane test did not cover both water and land");
-    }
+    CHECK_OR_RETURN(waterTiles > 0 && landTiles > 0,
+                    "water-plane test did not cover both water and land");
     for (bool seen : cellSeen) {
-        if (!seen) return fail("water-plane test did not scan all nine cells");
+        CHECK_OR_RETURN(seen, "water-plane test did not scan all nine cells");
     }
     std::fprintf(stderr,
         "subworld_async_seam_test: water_plane water=%d land=%d "
         "badWater=%d badLand=%d maxWater=%.5f minLand=%.5f\n",
         waterTiles, landTiles, badWater, badLand, maxWater, minLand);
-    if (badWater != 0 || badLand != 0) {
-        sm::sub::clear_saved_subworlds();
-        return fail("water-plane height invariant violated");
-    }
     sm::sub::clear_saved_subworlds();
-    return true;
+    CHECK(badWater == 0 && badLand == 0,
+          "water-plane height invariant violated");
 }
 
-bool run_water_placeholder_case() {
+void run_water_placeholder_case() {
     sm::sub::clear_saved_subworlds();
     sm::sub::SeamlessSubworldManager mgr;
     mgr.init(1, 0, resolve_water_plane_cell);
@@ -454,28 +438,25 @@ bool run_water_placeholder_case() {
     float playerX = float(sm::sub::kCellSize * 2 + 8);
     float playerY = float(sm::sub::kCellSize + 128);
     mgr.check_boundary(playerX, playerY);
-    if (mgr.center_cx() != 2 || !mgr.consume_composite_dirty()) {
-        return fail("water placeholder boundary crossing failed");
-    }
+    CHECK_OR_RETURN(mgr.center_cx() == 2 && mgr.consume_composite_dirty(),
+                    "water placeholder boundary crossing failed");
 
     const int sampleX = sm::sub::kCellSize * 2 + 8;
     const int sampleY = sm::sub::kCellSize + 128;
     if (!expect_placeholder(mgr, resolve_water_plane_cell, sampleX, sampleY,
             "water exposed slot was not water-aware placeholder")) {
-        return false;
+        return;
     }
 
     const std::size_t idx = sm::sub::tile_index(sampleX, sampleY);
-    if (mgr.tiles()[idx] != sm::sub::TILE_WATER
-        || mgr.heightmap()[idx] >= sm::sub::WATER_LEVEL) {
-        return fail("water placeholder did not stay below water plane");
-    }
+    CHECK_OR_RETURN(mgr.tiles()[idx] == sm::sub::TILE_WATER
+                        && mgr.heightmap()[idx] < sm::sub::WATER_LEVEL,
+                    "water placeholder did not stay below water plane");
 
     sm::sub::clear_saved_subworlds();
-    return true;
 }
 
-bool run_rapid_reversal_case(int& outDirty, sm::sub::SeamTiming& outTiming) {
+void run_rapid_reversal_case(int& outDirty, sm::sub::SeamTiming& outTiming) {
     sm::sub::SeamlessSubworldManager mgr;
     mgr.init(0, 0, resolve_plain_cell);
     mgr.consume_composite_dirty();
@@ -483,19 +464,16 @@ bool run_rapid_reversal_case(int& outDirty, sm::sub::SeamTiming& outTiming) {
     float playerX = float(sm::sub::kCellSize * 2 + 20);
     float playerY = float(sm::sub::kCellSize + 64);
     mgr.check_boundary(playerX, playerY);
-    if (mgr.center_cx() != 1 || !mgr.consume_composite_dirty()) {
-        return fail("rapid reversal initial east crossing failed");
-    }
+    CHECK_OR_RETURN(mgr.center_cx() == 1 && mgr.consume_composite_dirty(),
+                    "rapid reversal initial east crossing failed");
 
     playerX = float(sm::sub::kCellSize - 20);
     mgr.check_boundary(playerX, playerY);
-    if (mgr.center_cx() != 0 || !mgr.consume_composite_dirty()) {
-        return fail("rapid reversal west crossing failed");
-    }
+    CHECK_OR_RETURN(mgr.center_cx() == 0 && mgr.consume_composite_dirty(),
+                    "rapid reversal west crossing failed");
     outTiming = mgr.last_seam_timing();
-    if (!outTiming.crossed || outTiming.smoothMs != 0.0) {
-        return fail("rapid reversal timing missing or smoothing stayed on seam path");
-    }
+    CHECK_OR_RETURN(outTiming.crossed && outTiming.smoothMs == 0.0,
+                    "rapid reversal timing missing or smoothing stayed on seam path");
 
     outDirty = 0;
     for (int i = 0; i < 500 && outDirty < 3; ++i) {
@@ -505,22 +483,23 @@ bool run_rapid_reversal_case(int& outDirty, sm::sub::SeamTiming& outTiming) {
             ++outDirty;
         }
     }
-    if (outDirty != 3) {
-        return fail("rapid reversal did not stitch exactly current three cells");
-    }
+    CHECK_OR_RETURN(outDirty == 3,
+                    "rapid reversal did not stitch exactly current three cells");
 
-    for (int i = 0; i < 30; ++i) {
+    bool spurious = false;
+    for (int i = 0; i < 30 && !spurious; ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         mgr.check_boundary(playerX, playerY);
         if (mgr.consume_composite_dirty()) {
-            return fail("rapid reversal published stale or smoothing dirty event");
+            spurious = true;
         }
     }
+    CHECK_OR_RETURN(!spurious,
+                    "rapid reversal published stale or smoothing dirty event");
 
     std::fprintf(stderr,
         "subworld_async_seam_test: rapid_reversal dirty=%d gen=%.3fms smooth=%.3fms total=%.3fms\n",
         outDirty, outTiming.genMs, outTiming.smoothMs, outTiming.totalMs);
-    return true;
 }
 
 } // namespace
@@ -536,39 +515,59 @@ int main() {
     sm::sub::SeamTiming diagonalTiming{};
     sm::sub::SeamTiming reversalTiming{};
     if (only && std::strcmp(only, "road") == 0) {
-        return run_case(resolve_cell, true, "road", roadDirty, roadTiming) ? 0 : 1;
+        run_case(resolve_cell, true, "road", roadDirty, roadTiming);
+        return sm::test::report("subworld_async_seam_test");
     }
     if (only && std::strcmp(only, "plain") == 0) {
-        return run_case(resolve_plain_cell, false, "plain", plainDirty, plainTiming) ? 0 : 1;
+        run_case(resolve_plain_cell, false, "plain", plainDirty, plainTiming);
+        return sm::test::report("subworld_async_seam_test");
     }
     if (only && std::strcmp(only, "diagonal") == 0) {
-        return run_diagonal_plain_case(diagonalDirty, diagonalTiming) ? 0 : 1;
+        run_diagonal_plain_case(diagonalDirty, diagonalTiming);
+        return sm::test::report("subworld_async_seam_test");
     }
     if (only && std::strcmp(only, "reversal") == 0) {
-        return run_rapid_reversal_case(reversalDirty, reversalTiming) ? 0 : 1;
+        run_rapid_reversal_case(reversalDirty, reversalTiming);
+        return sm::test::report("subworld_async_seam_test");
     }
     if (only && std::strcmp(only, "snapshot_pending") == 0) {
-        return run_snapshot_during_pending_case() ? 0 : 1;
+        run_snapshot_during_pending_case();
+        return sm::test::report("subworld_async_seam_test");
     }
     if (only && std::strcmp(only, "worker_restore") == 0) {
-        return run_worker_restore_saved_case() ? 0 : 1;
+        run_worker_restore_saved_case();
+        return sm::test::report("subworld_async_seam_test");
     }
     if (only && std::strcmp(only, "water_placeholder") == 0) {
-        return run_water_placeholder_case() ? 0 : 1;
+        run_water_placeholder_case();
+        return sm::test::report("subworld_async_seam_test");
     }
-    if (!run_case(resolve_cell, true, "road", roadDirty, roadTiming)) return 1;
-    if (!run_case(resolve_plain_cell, false, "plain", plainDirty, plainTiming)) return 1;
-    if (!run_diagonal_plain_case(diagonalDirty, diagonalTiming)) return 1;
-    if (!run_rapid_reversal_case(reversalDirty, reversalTiming)) return 1;
-    if (!run_snapshot_during_pending_case()) return 1;
-    if (!run_worker_restore_saved_case()) return 1;
-    if (!run_water_placeholder_case()) return 1;
-    if (!run_water_plane_invariant_case()) return 1;
+    // The full sweep stops at the first failing case, exactly like the old
+    // `if (!run_case(...)) return 1;` chain did — a failed seam case leaves
+    // worker threads mid-flight, and the later cases' timeouts would just
+    // burn seconds repeating the news.
+    run_case(resolve_cell, true, "road", roadDirty, roadTiming);
+    if (sm::test::failures() != 0) return sm::test::report("subworld_async_seam_test");
+    run_case(resolve_plain_cell, false, "plain", plainDirty, plainTiming);
+    if (sm::test::failures() != 0) return sm::test::report("subworld_async_seam_test");
+    run_diagonal_plain_case(diagonalDirty, diagonalTiming);
+    if (sm::test::failures() != 0) return sm::test::report("subworld_async_seam_test");
+    run_rapid_reversal_case(reversalDirty, reversalTiming);
+    if (sm::test::failures() != 0) return sm::test::report("subworld_async_seam_test");
+    run_snapshot_during_pending_case();
+    if (sm::test::failures() != 0) return sm::test::report("subworld_async_seam_test");
+    run_worker_restore_saved_case();
+    if (sm::test::failures() != 0) return sm::test::report("subworld_async_seam_test");
+    run_water_placeholder_case();
+    if (sm::test::failures() != 0) return sm::test::report("subworld_async_seam_test");
+    run_water_plane_invariant_case();
 
-    std::fprintf(stderr,
-        "subworld_async_seam_test: ok roadDirty=%d plainDirty=%d diagonalDirty=%d "
-        "reversalDirty=%d roadGen=%.3fms plainGen=%.3fms diagonalGen=%.3fms reversalGen=%.3fms\n",
-        roadDirty, plainDirty, diagonalDirty, reversalDirty,
-        roadTiming.genMs, plainTiming.genMs, diagonalTiming.genMs, reversalTiming.genMs);
-    return 0;
+    if (sm::test::failures() == 0) {
+        std::fprintf(stderr,
+            "subworld_async_seam_test: ok roadDirty=%d plainDirty=%d diagonalDirty=%d "
+            "reversalDirty=%d roadGen=%.3fms plainGen=%.3fms diagonalGen=%.3fms reversalGen=%.3fms\n",
+            roadDirty, plainDirty, diagonalDirty, reversalDirty,
+            roadTiming.genMs, plainTiming.genMs, diagonalTiming.genMs, reversalTiming.genMs);
+    }
+    return sm::test::report("subworld_async_seam_test");
 }

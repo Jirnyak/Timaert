@@ -481,8 +481,15 @@ ToolbarResult draw_bottom_toolbar(const GameState& /*gs*/, bool subworldActive,
     // the subworld runs in real time.
     if (tbtn(">>",  subworldActive ? "Fast — world map only"
                                    : "Fast (4x)"))      r.speed4 = true; ImGui::SameLine();
-    if (tbtn("Z",   subworldActive ? "Rest — world map only"
-                                   : tip("Rest until stamina is full", ActionId::Rest)))
+    // The Rest glyph IS the key that performs it — quoted from the live
+    // keymap like every tooltip here, never a literal (CANON S22). An unbound
+    // action shows a sleep mark that names no key.
+    const SDL_Scancode restSc = km.get(ActionId::Rest);
+    const char* restName = restSc != SDL_SCANCODE_UNKNOWN
+                             ? SDL_GetScancodeName(restSc) : "";
+    if (tbtn(restName[0] ? restName : "Zz",
+             subworldActive ? "Rest — world map only"
+                            : tip("Rest until stamina is full", ActionId::Rest)))
         r.rest = true; ImGui::SameLine();
     if (subworldActive) ImGui::EndDisabled();
     ImGui::TextDisabled("|"); ImGui::SameLine();

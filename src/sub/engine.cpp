@@ -1,4 +1,5 @@
 #include "sub/engine.h"
+#include "content/spells/casting.h"   // kSpellCasterRadius — the player body radius's one home
 #include "macro/macro_stock.h"
 #include "macro/cell_facts.h"
 #include "macro/landmark_grid.h"
@@ -87,10 +88,12 @@ constexpr float kSubworldFirstPersonMoveScale = 0.4f;
 // kPlayerMeleeRange / kPlayerMeleeCooldown / kPlayerBaseMeleeDamage moved to
 // sub/engine.h (Session 15): the macro encounter's auto-resolve must price
 // the player with the same numbers this file arms his body with.
-// Player combat body radius (BodyRadius component). Matches the TS authority's
-// player entity radius and kSpellCasterRadius (1.5) so the player is struck at
-// the same range through every universal path (melee, projectile, blast).
-constexpr float kPlayerBodyRadius = 1.5f;
+// Player combat body radius (BodyRadius component) — READ from its one home,
+// kSpellCasterRadius (content/spells/casting.h), not a twin literal "kept in
+// lockstep" by a comment: the player is struck at the same range through
+// every universal path (melee, projectile, blast) and his own bolts clear
+// the same shell they strike.
+constexpr float kPlayerBodyRadius = kSpellCasterRadius;
 // Player carried-light (LightEmitter component). The player is the first honest
 // point-light emitter: a warm lantern/torch glow gathered through the SAME
 // universal path (view<Position, LightEmitter, SubworldTag>) that every future
@@ -640,14 +643,16 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     // cell. The macro entities stay authoritative and untouched (the macro tick
     // is frozen while a subworld is active). Runs AFTER the world fill and BEFORE
     // the player entity so projections are part of the scene the player enters.
+    bool projectionTruncated = false;
     const int projected = project_macro_npcs_into_subworld(ecs, mgr_, cx, cy,
         gs.mapW, gs.mapH,
         gs.worldSeed ^ kMacroProjectionSalt ^ (std::uint32_t(cx) << 8)
-            ^ std::uint32_t(cy));
+            ^ std::uint32_t(cy), &projectionTruncated);
     if (projected > 0) {
-        char msg[64];
-        std::snprintf(msg, sizeof(msg), "%d overworld figure%s nearby",
-                      projected, projected == 1 ? "" : "s");
+        char msg[80];
+        std::snprintf(msg, sizeof(msg), "%d overworld figure%s nearby%s",
+                      projected, projected == 1 ? "" : "s",
+                      projectionTruncated ? " (and more beyond the cap)" : "");
         set_status(msg);
     }
     // Materialise the player as a real ECS entity (the movable PlayerTag flag /
@@ -655,7 +660,7 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     // SubworldTag) that hostiles target through the universal paths (Inc 4b).
     spawn_player_entity();
     if (gs_) {
-        set_flying(spellbook_has_sustained(gs_->player.spellBook, spell_ordinal("flight")));
+        set_flying(spellbook_rule_active(gs_->player.spellBook, SpellRuleId::Flight));
     }
 
     // ── PLACES IN THIS SCENE THAT MEAN SOMETHING ────────────────────────
@@ -664,13 +669,16 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     // and a generator that wants another writes `add_sub_zone`, not a
     // mechanism.
     //
-    // The zone sits at the CENTRE cell of the window, which is the macro cell
-    // the player entered: the spire stands on its own square of the map.
+    // The zone sits in the CENTRE cell of the window, which is the macro cell
+    // the player entered: the spire stands on its own square of the map, and
+    // WHERE on that square is the generator's exported placement
+    // (dgn/dispatch.h kSpireTowerLocalCenter) — window offset + tower axis.
     subZoneCount_ = 0;
     subZonesEntered_ = 0;
-    for (const auto& sp : gs.spires) {
+    for (const auto& sp : gs.landmarks) {
+        if (sp.type != LandmarkType::Spire) continue;
         if (sp.x != cx || sp.y != cy) continue;
-        const float mid = float(kCellSize) * 1.5f;   // centre of the 3x3 window
+        const float mid = float(kCellSize) + kSpireTowerLocalCenter;
         add_sub_zone(mid, mid, float(kCellSize) * 0.5f, FactKind::Explored,
                      int(sp.spellId) + 1);
         break;
@@ -1247,21 +1255,8 @@ void SubworldEngine::record_world_fact(FactKind kind, int cellX, int cellY,
     f.kind = std::uint16_t(kind);
     // The PLAYER is the only one who acts down here (interactions are his
     // alone), and he is a squad like any other — so the deed is his, by his
-    // save-stable ordinal, and figure-ness is DERIVED from his own renown
-    // like everyone's (owner, 2026-08-28): the world starts remembering you
-    // for good when you are somebody, not because you are the player.
-    bool named = false;
-    if (mw_.world) {
-        const entt::entity pe =
-            macro_entity_by_spawn_id(*mw_.world, ecs::kPlayerSquadOrdinal);
-        if (pe != entt::null) {
-            if (const auto* rt =
-                    mw_.world->reg.try_get<ecs::MacroNpcRuntime>(pe)) {
-                named = rt->renown >= std::uint32_t(renown_to_be_named());
-            }
-        }
-    }
-    f.subjectKind = fact_subject(FactSubject::Squad, named);
+    // save-stable ordinal.
+    f.subjectKind = std::uint8_t(FactSubject::Squad);
     f.subject = ecs::kPlayerSquadOrdinal;
     // When the deed was done TO a named place, the place rides as the object
     // by its landmark ordinal (v54: one id space names it alone).
@@ -1272,7 +1267,18 @@ void SubworldEngine::record_world_fact(FactKind kind, int cellX, int cellY,
     f.x = std::int16_t(cellX);
     f.y = std::int16_t(cellY);
     f.amount = amount;
-    chronicle_record(gs_->chronicle, f);
+    if (mw_.world) {
+        // Filed AND paid through THE one macro door (macro/squad.h
+        // record_deed): the named bit and the renown come with the filing —
+        // the engine never learns where renown lives, and a drained orb or a
+        // crossed circle now makes something of the one who did it, exactly
+        // like a kill above ground. This writer used to file for free.
+        record_deed(*mw_.world, *gs_, f);
+    } else {
+        // No macro world under this session (a bare harness): there is
+        // nobody to pay, and the fact alone is still the truth.
+        chronicle_record(gs_->chronicle, f);
+    }
 }
 
 void SubworldEngine::set_status(const char* msg) {
@@ -1722,12 +1728,19 @@ bool SubworldEngine::has_hostile_near_player(float radius) const {
 
 DangerLevel SubworldEngine::danger_level() const {
     if (!active_ || !ecs_) return DangerLevel::Green;
-    constexpr float kMeleeRange = 40.0f;
-    constexpr float kMeleeRange2 = kMeleeRange * kMeleeRange;
+    // What this measures is PROXIMITY OF THE NEAREST HOSTILE for the HUD gem
+    // (and the exit gate below) — not any weapon's reach. The old name here
+    // was kMeleeRange, a liar 8× the real melee identity (kPlayerMeleeRange
+    // is 5 m, sub/engine.h). Red means "it is on you before you can walk
+    // away": 40 m is about a second of closing at a fast chaser's pace (the
+    // 35–50 speed band of the guard/bandit/wolf combat rows). Yellow is
+    // "noticed" — inside the one detection radius; Green is nothing near.
+    constexpr float kDangerProximityM = 40.0f;
+    constexpr float kDangerProximity2 = kDangerProximityM * kDangerProximityM;
     const float detection2 = kDetectionRadius * kDetectionRadius;
     if (playerThreatD2_ > detection2) return DangerLevel::Green;
-    return playerThreatD2_ <= kMeleeRange2 ? DangerLevel::Red
-                                           : DangerLevel::Yellow;
+    return playerThreatD2_ <= kDangerProximity2 ? DangerLevel::Red
+                                                : DangerLevel::Yellow;
 }
 
 bool SubworldEngine::exit_blocked_by_danger() const {
@@ -1857,7 +1870,7 @@ bool SubworldEngine::interact() {
             case InteractId::Drink:
                 return drink_from_well();
             case InteractId::Read:
-                return read_sign();
+                return read_sign(*prop);
             case InteractId::Door:
                 return sceneKind_ == SceneKind::Dungeon
                     ? try_exit_dungeon()
@@ -1876,16 +1889,57 @@ bool SubworldEngine::interact() {
     }
 
     auto& loot = reg.get<ecs::CorpseLoot>(best);
+    // Credit FIRST, corpse second (the grant_prop_loot rule above): a full
+    // bag REFUSES, and what it refuses stays ON the body — the corpse is
+    // only destroyed once it holds nothing, never over evaporated spoils.
     // Coin loot lands as imperial coin in the bag (the victim's own purse
     // coins already ride CorpseLoot as items; this int is the derived-body
     // roll — faction mint when the death path learns it).
-    player_bag_of(ecs_).add("coin_empire", loot.gold);
-    for (const ItemRef& s : loot.inv.slots) {
-        if (!s.empty()) player_bag_of(ecs_).add_ref(s);
+    if (loot.gold > 0 && player_bag_of(ecs_).add("coin_empire", loot.gold)) {
+        loot.gold = 0;
+    }
+    bool leftBehind = loot.gold > 0;
+    for (ItemRef& s : loot.inv.slots) {
+        if (s.empty()) continue;
+        if (player_bag_of(ecs_).add_ref(s)) s = ItemRef{};
+        else leftBehind = true;
+    }
+    if (leftBehind) {
+        set_status("Your pack is full.");
+        return true;
     }
     reg.destroy(best);
     set_status("Loot recovered.");
     return true;
+}
+
+// THE placement rule for fiat-spawned bodies (see engine.h). The ring floor
+// keeps the arrival out of arm's reach of the player, the spread keeps
+// co-spawned bodies from landing on one tile; a water tile rerolls, and a
+// scene too wet to place in falls back to a fixed step east.
+void SubworldEngine::place_body_ring(Rng& rng, float& fx, float& fy) const {
+    constexpr int   kRingAttempts     = 24;    // rerolls before giving up
+    constexpr float kRingRadiusMin    = 18.0f; // tiles: outside melee reach
+    constexpr float kRingRadiusSpread = 16.0f; // tiles: scatter co-spawns
+    constexpr float kRingFallbackEast = 12.0f; // tiles: the give-up spot
+    const auto& tiles = mgr_.tiles();
+    const bool tilesUsable =
+        tiles.size() >= std::size_t(kFullSize) * std::size_t(kFullSize);
+    for (int attempt = 0; attempt < kRingAttempts; ++attempt) {
+        const float angle = rng.next_f01() * 6.2831853f;
+        const float radius = kRingRadiusMin + rng.next_f01() * kRingRadiusSpread;
+        fx = std::clamp(playerX_ + std::cos(angle) * radius,
+                        1.0f, float(kFullSize - 2));
+        fy = std::clamp(playerY_ + std::sin(angle) * radius,
+                        1.0f, float(kFullSize - 2));
+        if (tilesUsable &&
+            tiles[std::size_t(int(fy)) * kFullSize + int(fx)] == TILE_WATER) {
+            continue;
+        }
+        return;
+    }
+    fx = std::clamp(playerX_ + kRingFallbackEast, 1.0f, float(kFullSize - 2));
+    fy = playerY_;
 }
 
 bool SubworldEngine::spawn_npc_body(const char* npcTypeId,
@@ -1903,34 +1957,13 @@ bool SubworldEngine::spawn_npc_body(const char* npcTypeId,
     const int lvl = normalize_soldier_level(std::max(level, def.baseLevel));
 
     Rng rng(seed ^ string_hash(npcTypeId) ^ string_hash(displayName));
-    const auto& tiles = mgr_.tiles();
-    const bool tilesUsable =
-        tiles.size() >= std::size_t(kFullSize) * std::size_t(kFullSize);
     float fx = playerX_;
     float fy = playerY_;
-    bool placed = positionOverride != nullptr;
-    if (placed) {
+    if (positionOverride) {
         fx = std::clamp(positionOverride[0], 1.0f, float(kFullSize - 2));
         fy = std::clamp(positionOverride[1], 1.0f, float(kFullSize - 2));
-    }
-    for (int attempt = 0; attempt < 24 && !placed; ++attempt) {
-        const float angle = rng.next_f01() * 6.2831853f;
-        const float radius = 18.0f + rng.next_f01() * 16.0f;
-        fx = std::clamp(playerX_ + std::cos(angle) * radius,
-                        1.0f, float(kFullSize - 2));
-        fy = std::clamp(playerY_ + std::sin(angle) * radius,
-                        1.0f, float(kFullSize - 2));
-        const int ix = int(fx);
-        const int iy = int(fy);
-        if (tilesUsable && tiles[std::size_t(iy) * kFullSize + ix] == TILE_WATER) {
-            continue;
-        }
-        placed = true;
-        break;
-    }
-    if (!placed) {
-        fx = std::clamp(playerX_ + 12.0f, 1.0f, float(kFullSize - 2));
-        fy = playerY_;
+    } else {
+        place_body_ring(rng, fx, fy);
     }
 
     // The token names a row of THE one body table, and that is the end of the
@@ -1999,9 +2032,8 @@ bool SubworldEngine::spawn_tracked_npc_body(entt::entity macro) {
         if (reg.get<ecs::MacroOrigin>(e).macro == macro) return true;
     }
 
-    // Same placement rule as a spawned encounter: a ring around the player,
-    // dodging water, so the two paths cannot disagree about where a body may
-    // stand.
+    // Same placement rule as a spawned encounter — the shared ring, so the
+    // two paths cannot disagree about where a body may stand.
     const auto* mpos = reg.try_get<ecs::Position>(macro);
     const std::uint32_t seed =
         (gs_ ? gs_->worldSeed : 0u)
@@ -2010,27 +2042,7 @@ bool SubworldEngine::spawn_tracked_npc_body(entt::entity macro) {
     Rng rng(seed);
     float fx = playerX_;
     float fy = playerY_;
-    const auto& tiles = mgr_.tiles();
-    const bool tilesUsable =
-        tiles.size() >= std::size_t(kFullSize) * std::size_t(kFullSize);
-    bool placed = false;
-    for (int attempt = 0; attempt < 24 && !placed; ++attempt) {
-        const float angle = rng.next_f01() * 6.2831853f;
-        const float radius = 18.0f + rng.next_f01() * 16.0f;
-        fx = std::clamp(playerX_ + std::cos(angle) * radius,
-                        1.0f, float(kFullSize - 2));
-        fy = std::clamp(playerY_ + std::sin(angle) * radius,
-                        1.0f, float(kFullSize - 2));
-        if (tilesUsable &&
-            tiles[std::size_t(int(fy)) * kFullSize + int(fx)] == TILE_WATER) {
-            continue;
-        }
-        placed = true;
-    }
-    if (!placed) {
-        fx = std::clamp(playerX_ + 12.0f, 1.0f, float(kFullSize - 2));
-        fy = playerY_;
-    }
+    place_body_ring(rng, fx, fy);
 
     const entt::entity body =
         spawn_tracked_body(reg, macro, fx, fy, seed, /*combatant*/true);
@@ -2510,15 +2522,14 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
             }
 
             if (lastHit && lastHit->playerOwned) {
-                int xp = exp_from_fight(lvl);
-                // One row, one formula. What a kill is worth is the row's own
-                // xpReward stepped by level; a row that names none (0) keeps the
-                // generic exp_from_fight(lvl) above. There used to be two of
-                // these — the humanoid one via npc_xp_reward, the creature one
-                // written out again — computing the same thing.
-                if (const NpcTypeDef* row = row_for(kind); row && row->xpReward > 0) {
-                    xp = row->xpReward + (lvl - 1) * 5;
-                }
+                // One row, one formula (owner, 2026-08-29): what a kill is
+                // worth is npc_xp_reward (macro/npc.h) — the row's own
+                // xpReward stepped by level, for EVERY row. The old
+                // exp_from_fight(lvl) fallback for rows that named 0 was a
+                // second XP law; the creature rows author 5·(baseLevel+1)
+                // now, which pays the same 10·L₀ at the row's own level.
+                const int xp = npc_xp_reward(
+                    NPCType(std::uint8_t(kind ? kind->type : 0)), lvl);
                 // The wis dividend: kill XP scales by the sheet's expMult
                 // (owner ruling 2026-08-05 — the attribute is live now).
                 award_exp(gs_->player.sheet.levelData, xp,
@@ -2967,7 +2978,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
             std::uint8_t(dungeon_floor_tile(ses.ref)), faunaKey);
     }
     if (gs_) {
-        set_flying(spellbook_has_sustained(gs_->player.spellBook, spell_ordinal("flight")));
+        set_flying(spellbook_rule_active(gs_->player.spellBook, SpellRuleId::Flight));
     }
 }
 
@@ -3005,8 +3016,9 @@ bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
     int cy = (mgr_.center_cy() + winCellY - 1) % mapH;
     if (cx < 0) cx += mapW;
     if (cy < 0) cy += mapH;
-    Spire* spire = nullptr;
-    for (auto& sp : gs_->spires) {
+    Landmark* spire = nullptr;
+    for (auto& sp : gs_->landmarks) {
+        if (sp.type != LandmarkType::Spire) continue;
         if (sp.x == cx && sp.y == cy) {
             spire = &sp;
             break;
@@ -3065,22 +3077,28 @@ bool SubworldEngine::learn_from_spire_orb(const Structure& orb) {
     return true;
 }
 
-bool SubworldEngine::read_sign() {
-    if (!active_ || !gs_) return false;
-    // A sign says where you are, in the world's own words: the settlement
-    // standing on this cell, else the land itself.
-    const CellContext ctx = resolve_context(mgr_.center_cx(), mgr_.center_cy());
+bool SubworldEngine::read_sign(const Structure& sign) {
+    if (!active_ || !gs_ || !terrain_) return false;
+    // A sign says where IT stands, in the world's own words: the settlement
+    // on the sign's own macro cell, else the land itself — resolved from the
+    // prop's tile the way the orb and the door resolve theirs (window offset
+    // from the composite centre), so a board near a cell border names its
+    // cell, not the window's centre.
+    const int winCellX = std::clamp(int(sign.x) / kCellSize, 0, 2);
+    const int winCellY = std::clamp(int(sign.y) / kCellSize, 0, 2);
+    const int mapW = terrain_->width;
+    const int mapH = terrain_->height;
+    if (mapW <= 0 || mapH <= 0) return false;
+    int cx = (mgr_.center_cx() + winCellX - 1) % mapW;
+    int cy = (mgr_.center_cy() + winCellY - 1) % mapH;
+    if (cx < 0) cx += mapW;
+    if (cy < 0) cy += mapH;
+    const CellContext ctx = resolve_context(cx, cy);
     const char* place = nullptr;
-    for (const auto& s : gs_->settlements) {
-        if (s.id == ctx.landmark.id) { place = s.name.c_str(); break; }
-    }
-    if (!place) {
-        for (const auto& v : gs_->villages) {
-            if (v.id == ctx.landmark.id) {
-                place = v.name.c_str();
-                break;
-            }
-        }
+    if (const Landmark* lm = landmark_by_id(*gs_, ctx.landmark.id);
+        lm && (lm->type == LandmarkType::City
+               || lm->type == LandmarkType::Village)) {
+        place = lm->name.c_str();
     }
     char msg[96];
     if (place) {
@@ -3101,25 +3119,11 @@ bool SubworldEngine::search_chest(const Structure& chest) {
     Inventory* store = nullptr;
     const char* factionId = nullptr;
     if (dungeon_.settlementId >= 0) {
-        for (auto& s : gs_->settlements) {
-            if (s.id == dungeon_.settlementId
-                && s.x == dungeon_.doorCx && s.y == dungeon_.doorCy) {
-                store = &s.inventory;
-                factionId = faction_id_for_index(
-                    faction_index_for_kingdom(gs_->politik, s.kingdomIdx));
-                break;
-            }
-        }
-        if (!store) {
-            for (auto& v : gs_->villages) {
-                if (v.id == dungeon_.settlementId
-                    && v.x == dungeon_.doorCx && v.y == dungeon_.doorCy) {
-                    store = &v.inventory;
-                    factionId = faction_id_for_index(
-                        faction_index_for_kingdom(gs_->politik, v.kingdomIdx));
-                    break;
-                }
-            }
+        if (Landmark* lm = landmark_by_id(*gs_, dungeon_.settlementId);
+            lm && lm->x == dungeon_.doorCx && lm->y == dungeon_.doorCy) {
+            store = &lm->inventory;
+            factionId = faction_id_for_index(
+                faction_index_for_kingdom(gs_->politik, lm->kingdomIdx));
         }
     }
     if (!store || store->used_slots() == 0) {
@@ -3351,9 +3355,9 @@ bool SubworldEngine::try_exit_dungeon() {
     gs.player.entryDir = kEntryDirNone;
     gs.player.entryTicks = 0;
     gs.player.entryTickAccum = 0;
-    // gen_spire stamps the tower at its cell's midpoint, and the re-entered
-    // window is centred on that cell.
-    const float crown = float(kCellSize) + float(kCellSize) / 2.0f;
+    // The tower stands where its generator says it does (dgn/dispatch.h
+    // kSpireTowerLocalCenter), and the re-entered window is centred on its cell.
+    const float crown = float(kCellSize) + kSpireTowerLocalCenter;
     const float pos[2] = {
         roofExit ? crown : float(kCellSize) + ses.returnLocalX,
         roofExit ? crown : float(kCellSize) + ses.returnLocalY};

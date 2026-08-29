@@ -114,7 +114,10 @@ inline std::uint8_t to_unorm8(float v) {
 // temperature (B) and land mask (A). Faithful CPU port of the former GL synth.
 void synth_master(TerrainData& td, const LayerParameters& p) {
     const int w = td.width, h = td.height;
-    const float seed      = p.seed;
+    // The one seed→float cast, at the noise's own door: every UI seed is
+    // decimated below 100000 (main.cpp), so the float is exact and the synth
+    // is bit-identical to what the old float-typed seed produced.
+    const float seed      = float(p.seed);
     const int   heightOct = int(p.heightOctaves);
     const int   moistOct  = int(p.moistureOctaves);
     const float cScale    = std::max(0.001f, p.continentScale);
@@ -164,7 +167,20 @@ void synth_master(TerrainData& td, const LayerParameters& p) {
             noiseMoist = std::pow(noiseMoist, p.moistureScale);
 
             // Temperature: latitude-driven with a noise contribution.
-            const float latitude  = 1.0f - std::fabs(uy - 0.5f) * 2.0f;
+            //
+            // Latitude zoning is the owner's DESIGN (CANON S19, 2026-08-29):
+            // the map's Y-centre (uy=0.5) is the hot equator, top and bottom
+            // are the cold poles — the one sanctioned anisotropy of the
+            // torus. The PROFILE, however, must be smooth through the y=0
+            // wrap like every other field (S1). The old triangle
+            // 1−|uy−0.5|·2 had the same endpoints but a derivative kink at
+            // the seam — a visible climate crease on a world with no edges.
+            // The cosine below is the smallest periodic function with the
+            // same anchors: 0 at uy∈{0,1} (poles), 1 at uy=0.5 (equator),
+            // and d/duy = π·sin(2π·uy) = 0 at both, so the profile closes
+            // C¹-smooth across the wrap.
+            const float latitude =
+                0.5f - 0.5f * std::cos(2.0f * 3.14159265358979f * uy);
             const float noiseTemp = terrain_fbm(posX, posY, 3, 0.5f, 4.0f, seed + 300.0f) * 0.5f + 0.5f;
             float temp01 = latitude * (1.0f - p.temperatureVariation) + noiseTemp * p.temperatureVariation;
             temp01 = std::clamp(temp01, 0.0f, 1.0f);
@@ -730,8 +746,7 @@ void generate_river_data(TerrainData& td, const LayerParameters& params) {
 
     std::vector<std::uint8_t> meander(std::size_t(n), 0);
     {
-        const std::uint32_t mseed =
-            static_cast<std::uint32_t>(params.seed) * 2654435761u + 1u;
+        const std::uint32_t mseed = params.seed * 2654435761u + 1u;
         for (int y = 0; y < h; ++y) {
             for (int x = 0; x < w; ++x) {
                 const float lo = river_meander_noise(x, y, w, h, kRiverMeanderCoarse, mseed);

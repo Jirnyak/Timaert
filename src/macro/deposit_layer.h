@@ -15,14 +15,16 @@
 // not one kind per cell: the old single-kind DepositCell could only express
 // discovery as a kind-SWAP, which silently deleted the stone.
 //
-// An exhausted deposit KEEPS its cell with remaining == 0: "the vein ran
-// dry" is a visible fact of the world (and the input of the iron-discovery
-// rule), not a silent disappearance.
+// An exhausted deposit LEAVES the map (annihilation law, 2026-08-28 — see
+// DepositLayer::cells below); what the world misses is measured against the
+// derived virginUnits baseline, and new iron is born by the Iron row's
+// GrowthDomain::Geology walk (macro_stock.cpp), not by a bespoke rule here.
 //
 // Grain is deliberately NOT here (the Wheat row prices fertility), nor wood
 // (the Trees row): each commodity lives through the carrier that already
 // owns its kind of renewal.
 #pragma once
+#include "core/table_guard.h"
 #include "core/torus.h"
 #include <cstdint>
 #include <unordered_map>
@@ -33,6 +35,27 @@ namespace sm {
 
 enum class DepositKind : std::uint8_t { Clay = 0, Iron = 1, Stone = 2 };
 inline constexpr int kDepositKindCount = 3;
+
+// ── THE deposit-kind registry (CANON S16) ────────────────────────────────
+// One row per kind: the commodity it yields into the ONE dictionary, and how
+// a settlement site prices a vein of it (settlement_score.cpp deposit_term —
+// iron is the prize, stone and clay are common wealth). Two switch-shaped
+// dictionaries carried these columns until 2026-08-29.
+struct DepositDef {
+    DepositKind kind;         // MUST equal the row's index (guard below)
+    const char* commodityId;
+    int         siteWorth;    // settlement-score base of a vein in reach
+};
+inline constexpr DepositDef kDepositDefs[kDepositKindCount] = {
+    {DepositKind::Clay,  "clay",   8},
+    {DepositKind::Iron,  "iron",  16},
+    {DepositKind::Stone, "stone",  8},
+};
+static_assert(rows_in_enum_order(kDepositDefs, &DepositDef::kind),
+              "kDepositDefs row order must mirror DepositKind");
+inline constexpr const DepositDef& deposit_def(DepositKind kind) {
+    return kDepositDefs[std::size_t(kind)];
+}
 
 // The commodity id each kind yields — the ONE dictionary's noun.
 const char* deposit_commodity_id(DepositKind kind);
@@ -108,26 +131,10 @@ void create_deposit(DepositLayer& layer, DepositKind kind,
 // makes a foreign-map save unreachable; stale indices are dropped.
 void restore_deposit_cells(DepositLayer& layer, const DepositLayer& loaded);
 
-// ── Iron discovery (owner's rule, W2c) ───────────────────────────────────
-// As the world's iron runs OUT, the chance of striking a new vein rises:
-// chance/day = depletion × 1/8 (a fully mined-out world prospects at
-// 12.5 %/day; an untouched world never strikes anything). The vein opens in
-// mountain context without new plumbing: a random STONE cell — mountain by
-// construction — turns out to ALSO hold iron; the quarry stays.
-
-// How much of the world's iron has been mined away, in [0, 1]: one minus
-// live units over virginUnits — the born-with baseline the layer derives at
-// build time (annihilated veins need no memorial to be missed).
-float iron_depletion(const DepositLayer& layer);
-
-inline float iron_discovery_chance_per_day(float depletion) {
-    return depletion * (1.0f / 8.0f);
-}
-
-// Strike a new vein: an rng-chosen Stone cell that does not yet hold iron
-// gains an Iron cell at kIronBase (through the genesis door). Returns false
-// when no such stone cell exists.
-bool discover_iron_vein(DepositLayer& layer, std::uint32_t roll);
+// (The bespoke W2c iron-discovery trio — discover_iron_vein, iron_depletion,
+// iron_discovery_chance_per_day — died 2026-08-29: the LIVE law is the Iron
+// row's GrowthDomain::Geology walk in macro_stock.cpp, «железо родится где
+// мир оскудел», and the dead path guarded a second copy of it.)
 
 // The lump a fresh vein opens with (kIronBase) — the Iron row's growth
 // number, living at the deposit table's own door.

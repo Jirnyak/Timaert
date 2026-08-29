@@ -28,8 +28,9 @@ constexpr std::uint64_t kMaxPayloadBytes = 64ull * 1024ull * 1024ull;
 constexpr std::uint32_t kMaxInventoryStacks =
     std::uint32_t(kMaxInventorySlots);
 constexpr std::uint32_t kMaxSmallVector = 8192u;
-constexpr std::uint32_t kMaxSettlements = 4096u;
-constexpr std::uint32_t kMaxVillages = 16384u;
+// v62: one roster, one cap — the old kMaxSettlements 4096 + kMaxVillages
+// 16384 + spires, summed and rounded to the next power of two (S26).
+constexpr std::uint32_t kMaxLandmarks = 32768u;
 constexpr std::uint32_t kMaxMarkers = 16384u;
 constexpr std::uint32_t kMaxQuests = 4096u;
 // (the field caps live with the rows: macro/world_fields.cpp)
@@ -535,6 +536,15 @@ void read_chronicle(Reader& r, Chronicle& c) {
     for (std::uint32_t i = 0; i < an && r.ok; ++i) {
         WorldFact f{};
         read_fact(r, f);
+        // The annals get the RING's own refusal, loudly: a fact from nowhere
+        // (seq 0), from the future (>= nextSeq) or of a kind the table does
+        // not know is a broken file, and the world's eternal memory must not
+        // inherit it silently.
+        if (f.seq == 0u || f.seq >= c.nextSeq
+            || f.kind == 0u || f.kind >= std::uint16_t(FactKind::Count)) {
+            r.ok = false;
+            return;
+        }
         c.annals.push_back(f);
     }
 }
@@ -672,92 +682,51 @@ void read_player(Reader& r, PlayerState& p) {
     r.pod(p.journalFull);
 }
 
-void write_settlement(Writer& w, const Settlement& s) {
-    w.pod(s.id);
-    w.str(s.name);
-    w.pod(s.x);
-    w.pod(s.y);
-    w.pod(s.population);
-    write_enum8(w, s.mood);
-    write_inventory(w, s.inventory);
-    write_history(w, s.history);
-    write_squad(w, s.garrison);
-    w.pod(s.kingdomIdx);
-    w.pod(s.starvedYesterday);   // v29: the honest day's readouts
-    w.pod(s.unmetYesterday);
-    w.pod(s.famineActive);
-    w.pod(s.popGrowthCarry);
-    w.pod(s.renown);   // v53: a place's standing is the world's memory of it
+// v62: ONE landmark serializer for the one roster (CANON S9) — the kind is
+// the record's `type` column, so every kind writes every column; unused ones
+// ride at their zero defaults (an empty garrison is a zero count).
+void write_landmark(Writer& w, const Landmark& lm) {
+    w.pod(lm.id);
+    write_enum8(w, lm.type);
+    w.str(lm.name);
+    w.pod(lm.x);
+    w.pod(lm.y);
+    w.pod(lm.population);
+    write_enum8(w, lm.mood);
+    write_inventory(w, lm.inventory);
+    write_history(w, lm.history);
+    write_squad(w, lm.garrison);
+    w.pod(lm.kingdomIdx);
+    w.pod(lm.nearestCityId);
+    w.pod(lm.starvedYesterday);  // v29: the honest day's readouts
+    w.pod(lm.unmetYesterday);
+    w.pod(lm.famineActive);
+    w.pod(lm.popGrowthCarry);
+    w.pod(lm.renown);            // v53: a place's standing is world memory
+    w.pod(lm.spellId);
+    write_bool(w, lm.depleted);
 }
 
-void read_settlement(Reader& r, Settlement& s) {
-    r.pod(s.id);
-    r.str(s.name);
-    r.pod(s.x);
-    r.pod(s.y);
-    r.pod(s.population);
-    read_enum8(r, s.mood, static_cast<std::uint8_t>(SettlementMood::Revolt));
-    read_inventory(r, s.inventory);
-    read_history(r, s.history);
-    read_squad(r, s.garrison);
-    r.pod(s.kingdomIdx);
-    r.pod(s.starvedYesterday);   // v29
-    r.pod(s.unmetYesterday);
-    r.pod(s.famineActive);
-    r.pod(s.popGrowthCarry);
-    r.pod(s.renown);   // v53
-}
-
-void write_village(Writer& w, const Village& v) {
-    w.pod(v.id);
-    w.str(v.name);
-    w.pod(v.x);
-    w.pod(v.y);
-    w.pod(v.population);
-    write_enum8(w, v.mood);
-    write_inventory(w, v.inventory);
-    w.pod(v.nearestCityId);
-    w.pod(v.kingdomIdx);
-    write_history(w, v.history);
-    w.pod(v.starvedYesterday);   // v29
-    w.pod(v.unmetYesterday);
-    w.pod(v.famineActive);
-    w.pod(v.popGrowthCarry);
-    w.pod(v.renown);   // v53
-}
-
-void read_village(Reader& r, Village& v) {
-    r.pod(v.id);
-    r.str(v.name);
-    r.pod(v.x);
-    r.pod(v.y);
-    r.pod(v.population);
-    read_enum8(r, v.mood, static_cast<std::uint8_t>(SettlementMood::Revolt));
-    read_inventory(r, v.inventory);
-    r.pod(v.nearestCityId);
-    r.pod(v.kingdomIdx);
-    read_history(r, v.history);
-    r.pod(v.starvedYesterday);   // v29
-    r.pod(v.unmetYesterday);
-    r.pod(v.famineActive);
-    r.pod(v.popGrowthCarry);
-    r.pod(v.renown);   // v53
-}
-
-void write_spire(Writer& w, const Spire& s) {
-    w.pod(s.id);
-    w.pod(s.x);
-    w.pod(s.y);
-    w.pod(s.spellId);
-    write_bool(w, s.depleted);
-}
-
-void read_spire(Reader& r, Spire& s) {
-    r.pod(s.id);
-    r.pod(s.x);
-    r.pod(s.y);
-    r.pod(s.spellId);
-    read_bool(r, s.depleted);
+void read_landmark(Reader& r, Landmark& lm) {
+    r.pod(lm.id);
+    read_enum8(r, lm.type, static_cast<std::uint8_t>(LandmarkType::Tower));
+    r.str(lm.name);
+    r.pod(lm.x);
+    r.pod(lm.y);
+    r.pod(lm.population);
+    read_enum8(r, lm.mood, static_cast<std::uint8_t>(SettlementMood::Revolt));
+    read_inventory(r, lm.inventory);
+    read_history(r, lm.history);
+    read_squad(r, lm.garrison);
+    r.pod(lm.kingdomIdx);
+    r.pod(lm.nearestCityId);
+    r.pod(lm.starvedYesterday);  // v29
+    r.pod(lm.unmetYesterday);
+    r.pod(lm.famineActive);
+    r.pod(lm.popGrowthCarry);
+    r.pod(lm.renown);            // v53
+    r.pod(lm.spellId);
+    read_bool(r, lm.depleted);
 }
 
 void write_marker(Writer& w, const Marker& m) {
@@ -819,16 +788,14 @@ void read_sub_state(Reader& r, GameSubState& s) {
     r.pod(raw);
     constexpr std::uint8_t kMaxLiveSubState =
         static_cast<std::uint8_t>(GameSubStateKind::Event);
-    constexpr std::uint8_t kLegacyBattleSubState = 5u;
     if (!r.ok) return;
-    if (raw <= kMaxLiveSubState) {
-        s.kind = static_cast<GameSubStateKind>(raw);
-    } else if (raw == kLegacyBattleSubState) {
-        s.kind = GameSubStateKind::Exploring;
-    } else {
+    // An unknown kind is a loud refusal, not a silent remap: an old save is
+    // worth nothing (CANON S21).
+    if (raw > kMaxLiveSubState) {
         r.ok = false;
         return;
     }
+    s.kind = static_cast<GameSubStateKind>(raw);
     r.pod(s.settlementId);
     r.str(s.eventId);
     r.str(s.enemyId);
@@ -1006,14 +973,8 @@ void write_payload(Writer& w, const GameState& s,
     w.str(savedAt);
     write_player(w, s.player);
 
-    if (w.count(s.settlements.size(), kMaxSettlements)) {
-        for (const auto& settlement : s.settlements) write_settlement(w, settlement);
-    }
-    if (w.count(s.villages.size(), kMaxVillages)) {
-        for (const auto& village : s.villages) write_village(w, village);
-    }
-    if (w.count(s.spires.size(), kMaxSmallVector)) {
-        for (const auto& spire : s.spires) write_spire(w, spire);
+    if (w.count(s.landmarks.size(), kMaxLandmarks)) {
+        for (const auto& lm : s.landmarks) write_landmark(w, lm);
     }
     if (w.count(s.markers.size(), kMaxMarkers)) {
         for (const auto& marker : s.markers) write_marker(w, marker);
@@ -1086,31 +1047,13 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
     read_player(r, s.player);
 
     std::uint32_t n = 0;
-    if (!read_count(r, n, kMaxSettlements)) return;
-    s.settlements.clear();
-    s.settlements.reserve(n);
+    if (!read_count(r, n, kMaxLandmarks)) return;
+    s.landmarks.clear();
+    s.landmarks.reserve(n);
     for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-        Settlement settlement{};
-        read_settlement(r, settlement);
-        s.settlements.push_back(std::move(settlement));
-    }
-
-    if (!read_count(r, n, kMaxVillages)) return;
-    s.villages.clear();
-    s.villages.reserve(n);
-    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-        Village village{};
-        read_village(r, village);
-        s.villages.push_back(std::move(village));
-    }
-
-    if (!read_count(r, n, kMaxSmallVector)) return;
-    s.spires.clear();
-    s.spires.reserve(n);
-    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-        Spire spire{};
-        read_spire(r, spire);
-        s.spires.push_back(spire);
+        Landmark lm{};
+        read_landmark(r, lm);
+        s.landmarks.push_back(std::move(lm));
     }
 
     if (!read_count(r, n, kMaxMarkers)) return;

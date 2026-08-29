@@ -1,6 +1,7 @@
-// Items & inventory. Faithful port of `src/game/items.ts`.
+// Items & inventory. This file is the source of truth (the TS original is
+// dead — the migration is closed).
 //
-// TS authoritative order:
+// ItemType order is save-relevant and fixed:
 //   ItemType { Weapon=0, Armor=1, Potion=2, Food=3, Material=4, Misc=5 }
 // Stacking semantics: at most one entry per id (addItem stacks quantity).
 //
@@ -31,6 +32,13 @@ enum class ItemType : std::uint8_t {
     Material = 4,
     Misc     = 5,
 };
+
+// Can this kind be swallowed for its bonuses (use_item's gate, the UI's
+// "Use" button)? ONE answer — it used to be written out twice, in items.cpp
+// and in the inventory overlay.
+inline constexpr bool item_type_consumable(ItemType t) {
+    return t == ItemType::Potion || t == ItemType::Food;
+}
 
 inline constexpr int kMaxItemAffixes = 4;
 

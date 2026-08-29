@@ -75,40 +75,18 @@ CellFacts cell_facts(const MacroWorld& w, int x, int y) {
     const LandmarkRef lm = w.landmarks ? w.landmarks->at(f.x, f.y)
                                        : LandmarkRef{};
     if (w.gs && lm.type != LandmarkType::None) {
-        switch (lm.type) {
-            case LandmarkType::City:
-                for (const auto& s : w.gs->settlements) {
-                    if (s.id != lm.id) continue;
-                    f.landmark = {lm.type, s.id, s.population, s.kingdomIdx,
-                                  false};
-                    break;
-                }
-                break;
-            case LandmarkType::Village:
-                for (const auto& v : w.gs->villages) {
-                    if (v.id != lm.id) continue;
-                    f.landmark = {lm.type, v.id, v.population, v.kingdomIdx,
-                                  false};
-                    break;
-                }
-                break;
-            case LandmarkType::Spire:
-                for (const auto& sp : w.gs->spires) {
-                    if (sp.id != lm.id) continue;
-                    // A spire's "size" IS its spell's tier — the strength
-                    // column of this landmark, asked from the spell registry
-                    // by ordinal (a foreign ordinal degrades to tier 1).
-                    const int tier = sp.spellId < std::uint32_t(kSpellCount)
-                        ? kSpellDefs[sp.spellId].tier : 1;
-                    f.landmark = {lm.type, sp.id, tier, -1, sp.depleted};
-                    break;
-                }
-                break;
-            default:
-                // Ruin / Lair / Shrine / Mine / Tower have no live registers
-                // yet; the grid can already name them, and when their
-                // registers arrive (CANON S9) this switch gains their rows.
-                break;
+        // One roster, one find (CANON S9, 2026-08-29): the by-kind switch
+        // over three vectors died with the vectors. A spire's "size" IS its
+        // spell's tier — the strength column of this landmark, asked from
+        // the spell registry by ordinal (a foreign ordinal degrades to 1).
+        if (const Landmark* rec = landmark_by_id(*w.gs, lm.id)) {
+            const bool spire = rec->type == LandmarkType::Spire;
+            const int size = spire
+                ? (rec->spellId < std::uint32_t(kSpellCount)
+                       ? kSpellDefs[rec->spellId].tier : 1)
+                : rec->population;
+            f.landmark = {rec->type, rec->id, size, rec->kingdomIdx,
+                          rec->depleted};
         }
     }
     return f;

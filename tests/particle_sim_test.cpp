@@ -21,6 +21,8 @@
 //   6. Determinism: two systems seeded alike produce byte-identical packs.
 //
 // Pure — links only particles.cpp + core. No Vulkan, no ECS.
+#include "check.h"
+
 #include "sub/particles.h"
 
 #include <algorithm>
@@ -34,14 +36,6 @@ using namespace sm::sub;
 
 namespace {
 
-int fails = 0;
-void check(bool ok, const char* msg) {
-    if (!ok) {
-        std::fprintf(stderr, "FAIL particle_sim_test: %s\n", msg);
-        ++fails;
-    }
-}
-
 // Count how many packed instances a fresh single-burst system holds.
 std::uint32_t pack_count(const ParticleSystem& ps) {
     static ParticleInstance buf[ParticleSystem::kMaxParticles];
@@ -52,19 +46,19 @@ std::uint32_t pack_count(const ParticleSystem& ps) {
 void test_table() {
     for (int i = 0; i < static_cast<int>(FxKind::Count); ++i) {
         const FxPreset& fx = fx_preset(static_cast<FxKind>(i));
-        check(fx.countMin >= 1, "countMin >= 1");
-        check(fx.countMax >= fx.countMin, "countMax >= countMin");
-        check(fx.speedMax >= fx.speedMin && fx.speedMin >= 0.0f, "speed range");
-        check(fx.lifeMin > 0.0f && fx.lifeMax >= fx.lifeMin, "life range");
-        check(fx.sizeStart > 0.0f && fx.sizeEnd > 0.0f, "sizes positive");
-        check(fx.r >= 0.0f && fx.r <= 1.0f, "r in [0,1]");
-        check(fx.g >= 0.0f && fx.g <= 1.0f, "g in [0,1]");
-        check(fx.b >= 0.0f && fx.b <= 1.0f, "b in [0,1]");
-        check(fx.spread >= 0.0f && fx.spread <= 1.0f, "spread in [0,1]");
+        CHECK(fx.countMin >= 1, "countMin >= 1");
+        CHECK(fx.countMax >= fx.countMin, "countMax >= countMin");
+        CHECK(fx.speedMax >= fx.speedMin && fx.speedMin >= 0.0f, "speed range");
+        CHECK(fx.lifeMin > 0.0f && fx.lifeMax >= fx.lifeMin, "life range");
+        CHECK(fx.sizeStart > 0.0f && fx.sizeEnd > 0.0f, "sizes positive");
+        CHECK(fx.r >= 0.0f && fx.r <= 1.0f, "r in [0,1]");
+        CHECK(fx.g >= 0.0f && fx.g <= 1.0f, "g in [0,1]");
+        CHECK(fx.b >= 0.0f && fx.b <= 1.0f, "b in [0,1]");
+        CHECK(fx.spread >= 0.0f && fx.spread <= 1.0f, "spread in [0,1]");
     }
     // Out-of-range kind must clamp to a valid row, never OOB.
     const FxPreset& oob = fx_preset(static_cast<FxKind>(200));
-    check(oob.countMin >= 1, "OOB kind clamps to a valid row");
+    CHECK(oob.countMin >= 1, "OOB kind clamps to a valid row");
 }
 
 // ── 2. emit() count + ceiling + tint ──
@@ -74,15 +68,15 @@ void test_emit() {
         const FxPreset& fx = fx_preset(FxKind::FireBurst);
         ps.emit(FxKind::FireBurst, {0, 0, 0});
         const int n = ps.alive();
-        check(n >= fx.countMin && n <= fx.countMax,
+        CHECK(n >= fx.countMin && n <= fx.countMax,
               "burst count within preset range");
     }
     {
         // Pool ceiling: many big bursts must clamp at kMaxParticles, never over.
         ParticleSystem ps(7u);
         for (int i = 0; i < 500; ++i) ps.emit(FxKind::FireBurst, {0, 0, 0});
-        check(ps.alive() <= ParticleSystem::kMaxParticles, "pool never overflows");
-        check(ps.alive() == ParticleSystem::kMaxParticles, "big fill saturates pool");
+        CHECK(ps.alive() <= ParticleSystem::kMaxParticles, "pool never overflows");
+        CHECK(ps.alive() == ParticleSystem::kMaxParticles, "big fill saturates pool");
     }
     {
         // Tint override: a bright green tint must appear verbatim in the pack.
@@ -91,12 +85,12 @@ void test_emit() {
         ps.emit(FxKind::Spark, {0, 0, 0}, &tint);
         static ParticleInstance buf[64];
         std::uint32_t n = ps.pack(buf, 64);
-        check(n >= 1, "tinted burst produced particles");
+        CHECK(n >= 1, "tinted burst produced particles");
         bool allGreen = true;
         for (std::uint32_t i = 0; i < n; ++i)
             if (buf[i].r != 0.0f || buf[i].g != 1.0f || buf[i].b != 0.0f)
                 allGreen = false;
-        check(allGreen, "tint override applied verbatim to every particle");
+        CHECK(allGreen, "tint override applied verbatim to every particle");
     }
 }
 
@@ -105,19 +99,19 @@ void test_lifecycle() {
     ParticleSystem ps(2024u);
     ps.emit(FxKind::Spark, {0, 0, 0});
     const int spawned = ps.alive();
-    check(spawned > 0, "spark burst spawned");
+    CHECK(spawned > 0, "spark burst spawned");
     // Spark lifeMax is 0.6s; after 5s of ticking the pool must be empty and the
     // count exactly zero (no negative, no leak).
     for (int i = 0; i < 300; ++i) ps.tick(1.0f / 60.0f);
-    check(ps.alive() == 0, "all sparks reaped after their lifetime");
-    check(pack_count(ps) == 0, "empty pool packs zero instances");
+    CHECK(ps.alive() == 0, "all sparks reaped after their lifetime");
+    CHECK(pack_count(ps) == 0, "empty pool packs zero instances");
 
     // A zero/negative dt must be a no-op (no aging, no crash).
     ps.emit(FxKind::Spark, {0, 0, 0});
     const int before = ps.alive();
     ps.tick(0.0f);
     ps.tick(-1.0f);
-    check(ps.alive() == before, "non-positive dt is a no-op");
+    CHECK(ps.alive() == before, "non-positive dt is a no-op");
 }
 
 // ── 4. Physics: gravity + drag ──
@@ -140,8 +134,8 @@ void test_physics() {
     ParticleSystem ps(555u);
     const float bloodY = avg_y(ps, FxKind::Blood, 0.25f);
     const float emberY = avg_y(ps, FxKind::Ember, 0.5f);
-    check(bloodY < 10.0f, "blood falls below spawn under gravity");
-    check(emberY > 10.0f, "ember rises above spawn");
+    CHECK(bloodY < 10.0f, "blood falls below spawn under gravity");
+    CHECK(emberY > 10.0f, "ember rises above spawn");
 }
 
 // ── 5. pack() invariants ──
@@ -151,17 +145,17 @@ void test_pack() {
     ps.tick(0.05f);
     static ParticleInstance buf[ParticleSystem::kMaxParticles];
     std::uint32_t n = ps.pack(buf, ParticleSystem::kMaxParticles);
-    check(static_cast<int>(n) == ps.alive(), "pack count == alive");
+    CHECK(static_cast<int>(n) == ps.alive(), "pack count == alive");
     for (std::uint32_t i = 0; i < n; ++i) {
-        check(buf[i].alpha >= 0.0f && buf[i].alpha <= 1.0f, "alpha in [0,1]");
-        check(buf[i].size > 0.0f, "size positive");
-        check(std::isfinite(buf[i].px) && std::isfinite(buf[i].py)
+        CHECK(buf[i].alpha >= 0.0f && buf[i].alpha <= 1.0f, "alpha in [0,1]");
+        CHECK(buf[i].size > 0.0f, "size positive");
+        CHECK(std::isfinite(buf[i].px) && std::isfinite(buf[i].py)
                   && std::isfinite(buf[i].pz), "finite position");
     }
     // Capacity clamp: a tiny output buffer must never be overrun.
     ParticleInstance small[4];
     std::uint32_t m = ps.pack(small, 4);
-    check(m <= 4, "pack respects capacity");
+    CHECK(m <= 4, "pack respects capacity");
 }
 
 // ── 6. Determinism ──
@@ -173,13 +167,13 @@ void test_determinism() {
         a.tick(0.016f);
         b.tick(0.016f);
     }
-    check(a.alive() == b.alive(), "same seed → same alive count");
+    CHECK(a.alive() == b.alive(), "same seed → same alive count");
     static ParticleInstance ba[ParticleSystem::kMaxParticles];
     static ParticleInstance bb[ParticleSystem::kMaxParticles];
     std::uint32_t na = a.pack(ba, ParticleSystem::kMaxParticles);
     std::uint32_t nb = b.pack(bb, ParticleSystem::kMaxParticles);
-    check(na == nb, "same seed → same pack count");
-    check(na > 0 && std::memcmp(ba, bb, na * sizeof(ParticleInstance)) == 0,
+    CHECK(na == nb, "same seed → same pack count");
+    CHECK(na > 0 && std::memcmp(ba, bb, na * sizeof(ParticleInstance)) == 0,
           "same seed → byte-identical packs");
 }
 
@@ -201,8 +195,8 @@ void test_streak() {
             prev = cur;
         }
         // 10 m at 2 m spacing == 5 motes; 10 hops of 1 m (< spacing) == 1 each.
-        check(nOne == 5, "one 10m hop at 2m spacing lays 5 motes");
-        check(manyHops.alive() == 10, "ten 1m hops each lay a head mote");
+        CHECK(nOne == 5, "one 10m hop at 2m spacing lays 5 motes");
+        CHECK(manyHops.alive() == 10, "ten 1m hops each lay a head mote");
         // The key invariant: total density scales with distance, and a segment
         // shorter than the spacing still lays exactly one (never zero) — a slow
         // bolt keeps a continuous trail.
@@ -211,8 +205,8 @@ void test_streak() {
     {
         ParticleSystem ps(2u);
         ps.emit_streak(FxKind::SpellTrail, {0, 0, 0}, {10000.0f, 0, 0}, 0.5f);
-        check(ps.alive() <= 64, "streak caps a huge segment at 64 motes");
-        check(ps.alive() == 64, "huge segment saturates the cap");
+        CHECK(ps.alive() <= 64, "streak caps a huge segment at 64 motes");
+        CHECK(ps.alive() == 64, "huge segment saturates the cap");
     }
     // (c) Motes are seeded ALONG the segment (interpolated), not clumped at the
     // head — a fast bolt streaks rather than dotting. Check the packed X spread.
@@ -221,7 +215,7 @@ void test_streak() {
         ps.emit_streak(FxKind::SpellTrail, {0, 0, 0}, {8.0f, 0, 0}, 2.0f);
         static ParticleInstance buf[64];
         std::uint32_t n = ps.pack(buf, 64);
-        check(n == 4, "8m at 2m spacing lays 4 motes");
+        CHECK(n == 4, "8m at 2m spacing lays 4 motes");
         float minX = 1e9f, maxX = -1e9f;
         for (std::uint32_t i = 0; i < n; ++i) {
             minX = std::min(minX, buf[i].px);
@@ -229,17 +223,17 @@ void test_streak() {
         }
         // SpellTrail speed is tiny (<=1 m/s) and we pack pre-tick, so the spread
         // reflects the seed positions: first mote near 2, last at the head (8).
-        check(maxX - minX >= 4.0f, "motes spread along the segment, not clumped");
-        check(maxX <= 8.01f && minX >= 1.99f, "motes lie on the segment");
+        CHECK(maxX - minX >= 4.0f, "motes spread along the segment, not clumped");
+        CHECK(maxX <= 8.01f && minX >= 1.99f, "motes lie on the segment");
     }
     // (d) spacing<=0 or a degenerate segment lays exactly one mote at the head.
     {
         ParticleSystem ps(4u);
         ps.emit_streak(FxKind::SpellTrail, {5, 5, 5}, {5, 5, 5}, 2.0f); // zero-len
-        check(ps.alive() == 1, "degenerate segment lays one head mote");
+        CHECK(ps.alive() == 1, "degenerate segment lays one head mote");
         ParticleSystem ps2(5u);
         ps2.emit_streak(FxKind::SpellTrail, {0, 0, 0}, {9, 0, 0}, 0.0f); // no spc
-        check(ps2.alive() == 1, "spacing<=0 lays one head mote");
+        CHECK(ps2.alive() == 1, "spacing<=0 lays one head mote");
     }
     // (e) Tint override is honoured verbatim, exactly like emit().
     {
@@ -248,12 +242,12 @@ void test_streak() {
         ps.emit_streak(FxKind::SpellTrail, {0, 0, 0}, {6.0f, 0, 0}, 2.0f, &tint);
         static ParticleInstance buf[64];
         std::uint32_t n = ps.pack(buf, 64);
-        check(n >= 1, "tinted streak produced motes");
+        CHECK(n >= 1, "tinted streak produced motes");
         bool allMagenta = true;
         for (std::uint32_t i = 0; i < n; ++i)
             if (buf[i].r != 1.0f || buf[i].g != 0.0f || buf[i].b != 1.0f)
                 allMagenta = false;
-        check(allMagenta, "streak tint applied verbatim");
+        CHECK(allMagenta, "streak tint applied verbatim");
     }
 }
 
@@ -267,6 +261,5 @@ int main() {
     test_pack();
     test_determinism();
     test_streak();
-    if (fails == 0) std::fprintf(stderr, "particle_sim_test: PASS\n");
-    return fails == 0 ? 0 : 1;
+    return sm::test::report("particle_sim_test");
 }

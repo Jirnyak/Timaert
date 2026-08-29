@@ -227,7 +227,7 @@ constexpr LootProfile kLootProfiles[] = {
     SM_LOOT_PROFILE("woodcutter", kWoodcutterLoot),
     SM_LOOT_PROFILE("miner", kMinerLoot),
     SM_LOOT_PROFILE("quarryman", kQuarrymanLoot),
-    SM_LOOT_PROFILE("claydigger", kClayDiggerLoot),
+    SM_LOOT_PROFILE("clay_digger", kClayDiggerLoot),
     SM_LOOT_PROFILE("merchant",   kMerchantLoot),
     SM_LOOT_PROFILE("caravan",    kCaravanLoot),
     SM_LOOT_PROFILE("bandit",     kBanditLoot),
@@ -242,43 +242,66 @@ constexpr LootProfile kLootProfiles[] = {
 };
 #undef SM_LOOT_PROFILE
 
-// NPCType integer -> loot-profile id, in npc.h enum order. There used to be a
-// SECOND door beside this one — a kNpcLoot[] indexed by the same enum, with a
-// comment asking that the two be kept in sync. A comment is not a mechanism
-// (problems.md 18): the project has already lost two pairs kept that way. The
-// second table is gone, and what is left is checked by the compiler.
+// NPCType -> loot-profile id, one row per enum value with the enum as a
+// COLUMN under the rows_in_enum_order guard (the kNpcPurse idiom): the old
+// positional list was checked for COUNT only, so an insertion in the middle
+// of NPCType would silently re-key every profile after it. There used to be
+// a SECOND door beside this one — a kNpcLoot[] indexed by the same enum,
+// with a comment asking that the two be kept in sync. A comment is not a
+// mechanism (problems.md 18).
 //
 // The creature rows name their profile in their own `lootId` column and fall
-// back to their faction's default, which is why this list carries a nullptr
-// for each of them rather than a made-up name: one row, one answer, and the
-// column that already existed wins over a second list.
-constexpr const char* kNpcLootId[] = {
-    "peasant", "woodcutter", "merchant", "caravan",
-    "bandit", "guard", "witch", "sorceress",
-    "miner", "quarryman", "claydigger",
+// back to their faction's default, which is why they carry a nullptr rather
+// than a made-up name: one row, one answer, and the column that already
+// existed wins over a second list.
+struct NpcLootRow { NPCType type; const char* id; };
+constexpr NpcLootRow kNpcLootId[std::size_t(NPCType::Count)] = {
+    {NPCType::Peasant,      "peasant"},
+    {NPCType::Woodcutter,   "woodcutter"},
+    {NPCType::Merchant,     "merchant"},
+    {NPCType::Caravan,      "caravan"},
+    {NPCType::Bandit,       "bandit"},
+    {NPCType::Guard,        "guard"},
+    {NPCType::Witch,        "witch"},
+    {NPCType::Sorceress,    "sorceress"},
+    {NPCType::Miner,        "miner"},
+    {NPCType::Quarryman,    "quarryman"},
+    {NPCType::ClayDigger,   "clay_digger"},
     // creatures — see npc.h `lootId` / `factionId`
-    nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-    nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-    nullptr, nullptr, nullptr,
+    {NPCType::Rabbit,       nullptr},
+    {NPCType::Deer,         nullptr},
+    {NPCType::Fox,          nullptr},
+    {NPCType::Wolf,         nullptr},
+    {NPCType::Bear,         nullptr},
+    {NPCType::Boar,         nullptr},
+    {NPCType::Snake,        nullptr},
+    {NPCType::Hawk,         nullptr},
+    {NPCType::Frog,         nullptr},
+    {NPCType::Goat,         nullptr},
+    {NPCType::Eagle,        nullptr},
+    {NPCType::Croc,         nullptr},
+    {NPCType::Goblin,       nullptr},
+    {NPCType::Skeleton,     nullptr},
+    {NPCType::Troll,        nullptr},
+    {NPCType::SwampThing,   nullptr},
+    {NPCType::IceWraith,    nullptr},
+    {NPCType::SandScorpion, nullptr},
+    {NPCType::StoneGolem,   nullptr},
     // The player: his loot is the bag he carries, not a profile.
-    nullptr,
+    {NPCType::Adventurer,   nullptr},
 };
-
-// Every humanoid row names a profile, and every profile it names exists. A new
-// NPCType that forgets its loot does not silently drop nothing — it does not
-// build.
-static_assert(std::size(kNpcLootId) == std::size_t(NPCType::Count),
-              "every humanoid row must name a loot profile");
+static_assert(rows_in_enum_order(kNpcLootId, &NpcLootRow::type),
+              "kNpcLootId row order must mirror NPCType");
 
 constexpr bool every_npc_loot_id_resolves() {
-    for (const char* id : kNpcLootId) {
+    for (const NpcLootRow& row : kNpcLootId) {
         // nullptr is an ANSWER, not a gap: this row defers to its own column
         // and its faction's default (the creature rows). What must not happen
         // is a row naming a profile the registry does not have.
-        if (!id) continue;
+        if (!row.id) continue;
         bool found = false;
         for (const LootProfile& p : kLootProfiles) {
-            found = found || std::string_view(id) == std::string_view(p.id);
+            found = found || std::string_view(row.id) == std::string_view(p.id);
         }
         if (!found) return false;
     }
@@ -369,7 +392,7 @@ const char* npc_loot_id(int npcType) noexcept {
     // A row that names no profile of its own answers with the empty string, not
     // with a null the caller has to remember to check. The creature rows are
     // that case: they defer to their own column and their faction's default.
-    const char* id = kNpcLootId[npcType];
+    const char* id = kNpcLootId[npcType].id;
     return id ? id : "";
 }
 
@@ -406,7 +429,7 @@ std::string use_item(Inventory& inv, const std::string& itemId, PlayerCombatSlic
 
     const ItemDef* def = item_def(itemId);
     if (!def) return {};
-    if (def->type != ItemType::Potion && def->type != ItemType::Food) return {};
+    if (!item_type_consumable(def->type)) return {};
 
     std::string msg;
     auto append = [&](const std::string& part) {

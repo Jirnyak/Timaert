@@ -54,18 +54,8 @@ namespace sm
                           // after resolving the ordinal (only content/ knows
                           // the registry).
         LastSerializable = SpireDepleted,
-
-        // Compatibility aliases retained for existing native call sites.
-        QuestAccepted = QuestStart,
-        QuestObjectiveProgress = QuestUpdate,
-        QuestCompleted = QuestComplete,
-        QuestFailed = QuestFail,
     };
 
-    static_assert(EventTag::QuestAccepted == EventTag::QuestStart);
-    static_assert(EventTag::QuestObjectiveProgress == EventTag::QuestUpdate);
-    static_assert(EventTag::QuestCompleted == EventTag::QuestComplete);
-    static_assert(EventTag::QuestFailed == EventTag::QuestFail);
     static_assert(EventTag::LastSerializable == EventTag::SpireDepleted);
 
     // Native-only guard: event is still observable/history-visible, but the
@@ -103,20 +93,6 @@ namespace sm
         std::string sourceNodeId{};
         std::string storyId{};
         std::vector<std::pair<std::string, std::string>> values{};
-    };
-
-    // WHAT HAPPENED, kept for the record — and deliberately LESS than the live
-    // event. History is purely runtime (it is never serialised) and nothing
-    // has ever read a dialog's buttons or a story's result out of it: those
-    // are this FRAME's presentation, copied into App-owned storage the moment
-    // they arrive. The bus used to deep-copy both `shared_ptr`s into every
-    // history entry anyway — two atomic refcount bumps per event per tick, for
-    // a payload no reader could reach from here.
-    struct WorldHistoryEntry
-    {
-        std::uint32_t tick = 0;
-        int day = 0, hour = 0;
-        GameEvent event{};   // payload pointers deliberately left null
     };
 
 } // namespace sm

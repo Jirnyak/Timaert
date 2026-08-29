@@ -104,7 +104,7 @@ void test_canopy_shortens_reach() {
 }
 
 void test_road_carries_sight_farther() {
-    const float roadCost = sm::kFeatureOpticalCost[sm::FT_Road];
+    const float roadCost = sm::feature_def(sm::FT_Road).opticalCost;
     // The farthest cell a road reaches but open ground does not:
     // steps * roadCost < budget while steps >= budget.
     const int steps = int((kBudget - 0.05f) / roadCost);

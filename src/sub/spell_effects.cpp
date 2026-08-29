@@ -7,13 +7,18 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 
 namespace sm::sub {
 
 namespace {
 
 constexpr int kMaxSpellReaps = 512;
-constexpr std::uint32_t kSpellEventIdMask = std::uint32_t{2147483647};
+// DamageSource::spellId rides into a SIGNED event field (damage.cpp writes it
+// as `int(src.spellId)`), so the top bit is masked off to keep that cast in
+// range — the mask is INT32_MAX by derivation, not a magic number.
+constexpr std::uint32_t kSpellEventIdMask =
+    std::uint32_t{std::numeric_limits<std::int32_t>::max()};
 
 // Combat hit radius: THE one in sub/body.h, the same call melee makes. This file
 // used to keep a private copy that promised in a comment to stay in lockstep
@@ -334,8 +339,9 @@ void apply_spell_chain(ecs::World& w,
 
         entt::entity best = entt::null;
         float bestD2 = p.chainRadius * p.chainRadius;
-        // Broad phase per hop: the chain's next victim is judged by 2D
-        // distance from the current one, so the query IS the exact radius.
+        // Broad phase per hop: the XY grid query pre-filters at chainRadius;
+        // the victim itself is judged by honest 3D distance (S13 — all
+        // distances are 3D), exactly like the blast sphere above.
         for_each_spell_candidate(w, neighborsFn, neighborsUser,
                                  cp->x, cp->y, p.chainRadius,
             [&](entt::entity e, const ecs::Position& tp) {
@@ -343,7 +349,8 @@ void apply_spell_chain(ecs::World& w,
                 if (already_chained(chainHits, hitCount, e)) return;
                 const float dx = tp.x - cp->x;
                 const float dy = tp.y - cp->y;
-                const float d2 = dx * dx + dy * dy;
+                const float dz = tp.z - cp->z;
+                const float d2 = dx * dx + dy * dy + dz * dz;
                 if (d2 <= bestD2) {
                     bestD2 = d2;
                     best = e;

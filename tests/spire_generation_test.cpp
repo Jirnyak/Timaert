@@ -84,6 +84,14 @@ int top_tier_ordinal() {
     return best;
 }
 
+// The spire rows of the ONE roster, in creation order (v62).
+std::vector<const Landmark*> spires_of(const GameState& gs) {
+    std::vector<const Landmark*> out;
+    for (const auto& lm : gs.landmarks)
+        if (lm.type == LandmarkType::Spire) out.push_back(&lm);
+    return out;
+}
+
 int torus_cheb(int ax, int ay, int bx, int by) {
     int dx = std::abs(ax - bx);
     dx = std::min(dx, kW - dx);
@@ -99,19 +107,20 @@ void test_one_spire_per_spell_in_the_band() {
     generate_spires(gs, zones, terrain, kSea8);
 
     const LandmarkDef& def = landmark_def(LandmarkType::Spire);
-    CHECK_OR_RETURN(gs.spires.size() == std::size_t(kSpellCount),
+    const std::vector<const Landmark*> spires = spires_of(gs);
+    CHECK_OR_RETURN(spires.size() == std::size_t(kSpellCount),
                     "every learnable spell got its spire");
     // Ids come from the ONE landmark issuer (v54): unique across every kind
     // of place, monotonic in creation order — never the list index.
     std::set<int> seenIds;
-    for (const auto& s : gs.settlements) seenIds.insert(s.id);
-    for (const auto& v : gs.villages) seenIds.insert(v.id);
-    for (std::size_t i = 0; i < gs.spires.size(); ++i) {
-        const Spire& sp = gs.spires[i];
+    for (const auto& lm : gs.landmarks)
+        if (lm.type != LandmarkType::Spire) seenIds.insert(lm.id);
+    for (std::size_t i = 0; i < spires.size(); ++i) {
+        const Landmark& sp = *spires[i];
         CHECK(sp.id > 0 && seenIds.insert(sp.id).second,
               "a spire's id is unique across all landmarks (one issuer)");
         if (i > 0) {
-            CHECK(sp.id > gs.spires[i - 1].id,
+            CHECK(sp.id > spires[i - 1]->id,
                   "the issuer is monotonic: later spire, later ordinal");
         }
         CHECK(sp.spellId == std::uint32_t(i),
@@ -123,17 +132,17 @@ void test_one_spire_per_spell_in_the_band() {
     }
     // The top-tier spell demands the band's cap (the table's maxZone), and
     // this world has free zone-9 ground, so no relaxation may kick in.
-    const Spire& doom = gs.spires[std::size_t(top_tier_ordinal())];
+    const Landmark& doom = *spires[std::size_t(top_tier_ordinal())];
     CHECK(int(zones.at(doom.x, doom.y)) == int(def.maxZone),
           "the top-tier spire stands at the band's cap");
     // Best-candidate spread: with the whole wild half free, spires never end
     // up stacked or adjacent (the veto alone only forbids the same cell).
     int minPair = kW + kH;
-    for (std::size_t a = 0; a < gs.spires.size(); ++a)
-        for (std::size_t b = a + 1; b < gs.spires.size(); ++b)
+    for (std::size_t a = 0; a < spires.size(); ++a)
+        for (std::size_t b = a + 1; b < spires.size(); ++b)
             minPair = std::min(minPair,
-                               torus_cheb(gs.spires[a].x, gs.spires[a].y,
-                                          gs.spires[b].x, gs.spires[b].y));
+                               torus_cheb(spires[a]->x, spires[a]->y,
+                                          spires[b]->x, spires[b]->y));
     CHECK(minPair >= 2, "spires spread - no two side by side");
 }
 
@@ -145,19 +154,22 @@ void test_placement_is_a_fact_of_the_seed() {
     generate_spires(b, zones, terrain, kSea8);
     generate_spires(c, zones, terrain, kSea8);
 
-    CHECK_OR_RETURN(a.spires.size() == b.spires.size()
-                        && a.spires.size() == std::size_t(kSpellCount),
+    const std::vector<const Landmark*> sa = spires_of(a);
+    const std::vector<const Landmark*> sb = spires_of(b);
+    const std::vector<const Landmark*> sc = spires_of(c);
+    CHECK_OR_RETURN(sa.size() == sb.size()
+                        && sa.size() == std::size_t(kSpellCount),
                     "both same-seed runs placed the full registry");
     bool identical = true;
-    for (std::size_t i = 0; i < a.spires.size(); ++i)
-        identical = identical && a.spires[i].x == b.spires[i].x
-                              && a.spires[i].y == b.spires[i].y;
+    for (std::size_t i = 0; i < sa.size(); ++i)
+        identical = identical && sa[i]->x == sb[i]->x
+                              && sa[i]->y == sb[i]->y;
     CHECK(identical, "same seed reproduces the same sites");
 
-    bool moved = c.spires.size() != a.spires.size();
-    for (std::size_t i = 0; !moved && i < a.spires.size(); ++i)
-        moved = a.spires[i].x != c.spires[i].x
-             || a.spires[i].y != c.spires[i].y;
+    bool moved = sc.size() != sa.size();
+    for (std::size_t i = 0; !moved && i < sa.size(); ++i)
+        moved = sa[i]->x != sc[i]->x
+             || sa[i]->y != sc[i]->y;
     CHECK(moved, "another seed is another world - some spire moved");
 }
 
@@ -171,7 +183,7 @@ void test_no_admissible_ground_places_nothing() {
         tame.height = kH;
         tame.data.assign(std::size_t(kW * kH), 0);
         generate_spires(gs, tame, terrain, kSea8);
-        CHECK(gs.spires.empty(), "no wild land = no spires");
+        CHECK(spires_of(gs).empty(), "no wild land = no spires");
     }
     // Negative control 2: an all-ocean world offers no site either.
     {
@@ -181,7 +193,7 @@ void test_no_admissible_ground_places_nothing() {
         ocean.height = kH;
         ocean.rgba.assign(std::size_t(kW * kH) * 4u, 0);
         generate_spires(gs, banded_zones(), ocean, kSea8);
-        CHECK(gs.spires.empty(), "no land = no spires");
+        CHECK(spires_of(gs).empty(), "no land = no spires");
     }
 }
 
@@ -204,11 +216,13 @@ void test_named_places_veto_their_cells() {
     {
         GameState gs = world(12345u);
         generate_spires(gs, pin, terrain, kSea8);
-        CHECK_OR_RETURN(gs.spires.size() == std::size_t(kSpellCount),
+        const std::vector<const Landmark*> spires = spires_of(gs);
+        CHECK_OR_RETURN(spires.size() == std::size_t(kSpellCount),
                         "the wild block hosts every spire");
         int inside = 0;
-        for (const auto& sp : gs.spires)
-            if (sp.x >= 32 && sp.x < 48 && sp.y >= 32 && sp.y < 48) ++inside;
+        for (const Landmark* sp : spires)
+            if (sp->x >= 32 && sp->x < 48 && sp->y >= 32 && sp->y < 48)
+                ++inside;
         CHECK(inside == kSpellCount,
               "every spire stands inside the only admissible ground");
     }
@@ -216,13 +230,14 @@ void test_named_places_veto_their_cells() {
         GameState gs = world(12345u);
         for (int y = 32; y < 48; ++y)
             for (int x = 32; x < 48; ++x) {
-                Village v{};
+                Landmark v{};
+                v.type = LandmarkType::Village;
                 v.x = x;
                 v.y = y;
-                gs.villages.push_back(v);
+                gs.landmarks.push_back(v);
             }
         generate_spires(gs, pin, terrain, kSea8);
-        CHECK(gs.spires.empty(),
+        CHECK(spires_of(gs).empty(),
               "named places on every admissible cell veto the spire");
     }
 }

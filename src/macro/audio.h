@@ -8,14 +8,17 @@ namespace sm {
 
 enum class MusicId : std::uint8_t {
     Explore = 0,
-    EmpireTheme,
     Subworld,
     Count,
 };
 
+// EMPTY today (canon audit 2026-08-29): the one row this enum ever had,
+// Witch, was loaded on every boot and played by nothing in the game — dead
+// content whose only reader was the test guarding it. The machinery stays (an
+// empty registry is a registry, and S23 will want honest world sounds); the
+// first live sound is one enum value + one kSfxAssets row (audio.cpp) again.
 enum class SfxId : std::uint8_t {
-    Witch = 0,
-    Count,
+    Count = 0,
 };
 
 const char* music_key(MusicId id);

@@ -15,6 +15,7 @@
 #include "ecs/world.h"
 #include "ecs/components.h"
 #include "macro/state.h"
+#include "macro/squad.h"   // record_deed — THE deed door (S20.1)
 #include "macro/landmark_iter.h"
 #include "ui/landmark_draw.h"
 #include "macro/markers.h"
@@ -73,18 +74,11 @@ const char* feature_name(FeatureType f) {
     }
 }
 
+// The dot's colour is the row's own column (macro/npc.h kNpcMapColor) — the
+// switch that lived here was an if-chain over the registry (CANON S16).
 ImU32 npc_color(NPCType t) {
-    switch (t) {
-        case NPCType::Peasant:    return IM_COL32(220, 200, 160, 255);
-        case NPCType::Woodcutter: return IM_COL32( 90, 150,  70, 255);
-        case NPCType::Merchant:   return IM_COL32(240, 200,  80, 255);
-        case NPCType::Caravan:    return IM_COL32(180, 140,  80, 255);
-        case NPCType::Bandit:     return IM_COL32(220,  60,  60, 255);
-        case NPCType::Guard:      return IM_COL32( 80, 140, 220, 255);
-        case NPCType::Witch:      return IM_COL32(180, 100, 200, 255);
-        case NPCType::Sorceress:  return IM_COL32(120, 200, 230, 255);
-        default:                  return IM_COL32(200, 200, 200, 255);
-    }
+    const std::uint32_t c = npc_map_color(t);
+    return IM_COL32((c >> 16) & 0xFFu, (c >> 8) & 0xFFu, c & 0xFFu, 255);
 }
 
 // NPC type → its picture. The kind's own row says which; this used to be a
@@ -666,19 +660,23 @@ void set_deal_message(int gave, int took) {
 // Traded the caravans file: subject = the player, object = the trader's
 // squad by its save-stable ordinal, worth what changed hands either way.
 // His journal learns it by participation; no log line is kept anywhere.
-void record_npc_deal_fact(GameState& gs, std::uint32_t traderOrdinal,
-                          int gave, int took) {
+// Filed through THE one deed door (macro/squad.h record_deed), like the
+// caravans' own record_landmark_fact: the named bits are DERIVED from each
+// party's renown — a hand-written `true` filed the player as a figure he had
+// not yet become — and the deal pays the doer like every other deed.
+void record_npc_deal_fact(GameState& gs, ecs::World& w,
+                          std::uint32_t traderOrdinal, int gave, int took) {
     WorldFact f{};
     f.day = gs.worldTime.day();
     f.kind = std::uint16_t(FactKind::Traded);
-    f.subjectKind = fact_subject(FactSubject::Squad, /*named*/true);
+    f.subjectKind = std::uint8_t(FactSubject::Squad);
     f.subject = ecs::kPlayerSquadOrdinal;
     f.objectKind = std::uint8_t(FactSubject::Squad);
     f.object = traderOrdinal;
     f.x = std::int16_t(wrapi(int(gs.player.x), gs.mapW));
     f.y = std::int16_t(wrapi(int(gs.player.y), gs.mapH));
     f.amount = gave + took;
-    chronicle_record(gs.chronicle, f);
+    record_deed(w, gs, f);
 }
 
 const char* npc_trait_label(std::uint8_t raw) {
@@ -1099,7 +1097,7 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                         set_deal_message(giveValue, takeValue);
                         if (const auto* sid =
                                 w.reg.try_get<ecs::MacroSpawnId>(g_trade_npc)) {
-                            record_npc_deal_fact(gs, sid->index,
+                            record_npc_deal_fact(gs, w, sid->index,
                                                  giveValue, takeValue);
                         }
                     }

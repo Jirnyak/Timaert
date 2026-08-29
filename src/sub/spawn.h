@@ -310,17 +310,24 @@ void spawn_player_squad(ecs::World& w,
 // should be the world seed mixed with the window centre so a re-entry
 // reproduces the same scene. The raw-tiles form exists for tests, like the
 // squad spawn above; the mgr form delegates to it.
+//
+// `truncated` (optional): set to true when the projection CAP refused bodies
+// that stand in this window — the ceiling may not cut the crowd silently
+// (CANON S26, the battleGatherTruncated_ pattern); the caller says it out
+// loud. Never set to false: the caller owns the reset.
 int project_macro_npcs_into_subworld(ecs::World& w,
                                      const SeamlessSubworldManager& mgr,
                                      int centerCx, int centerCy,
                                      int mapW, int mapH,
-                                     std::uint32_t seed);
+                                     std::uint32_t seed,
+                                     bool* truncated = nullptr);
 
 int project_macro_npcs_into_subworld(ecs::World& w,
                                      const std::vector<std::uint8_t>& tiles,
                                      int centerCx, int centerCy,
                                      int mapW, int mapH,
-                                     std::uint32_t seed);
+                                     std::uint32_t seed,
+                                     bool* truncated = nullptr);
 
 // ── Exit remap query (Inc 5e-1) ──────────────────────────────────────────
 //

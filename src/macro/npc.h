@@ -61,6 +61,22 @@ constexpr std::size_t kMaxNpcNames     = 16;
 constexpr std::size_t kMaxNpcTalkLines = 6;
 constexpr int kNpcUpkeepNone = -1;
 
+// The armour at which a blow is HALVED — and therefore the whole scale on
+// which every armour number in the game reads. It is not picked, it is the
+// game's own plain blow: `kPlayerBaseMeleeDamage` (sub/engine.h), what an
+// untrained man does with his bare hands. So "armour 10" is not a number
+// needing a table to interpret — it says «this body halves a plain blow», and
+// twice that quarters it. Armour and damage share units because they meet in
+// one formula, and the halving point is where they meet.
+//
+// ONE home, next to the `armor` column below, because BOTH laws of battle
+// read it: the damage door mitigates every blow by
+// kArmorHalving / (kArmorHalving + armor) (sub/damage.cpp), and the
+// auto-resolve credits the identical protection as EFFECTIVE HP — a body of
+// hp H dies to exactly H * (kArmorHalving + armor) / kArmorHalving worth of
+// raw blows, which is the same law read from the other side.
+inline constexpr float kArmorHalving = 10.0f;
+
 struct NpcTypeDef {
     // MUST equal the row's index in kNpcTypeDefs (guard below the table).
     NPCType         type;
@@ -76,12 +92,20 @@ struct NpcTypeDef {
     // `portrait` path string that no code ever read — a fourth asset vocabulary
     // nobody was speaking.
     SpriteId        sprite;
-    int             baseHp;
+    // NO baseHp column — the ONE hp floor a body fights with is its
+    // CombatTemplate's `hp` (the sheet projection's own floor); a second
+    // number here was never read.
     int             baseLevel;
     AIBehaviour     ai;
     CombatTemplate  combat;
     int             upkeepGoldPerDay;
     bool            hireable;
+    // ONE XP law (owner, 2026-08-29): every kill pays npc_xp_reward =
+    // xpReward + (level−1)·5, in the subworld and the auto-resolve alike —
+    // the old exp_from_fight(lvl) = 10·lvl fallback for rows that named 0 is
+    // dead. Creature rows author xpReward = 5·(baseLevel+1), DERIVED to keep
+    // the old subworld feel at the row's own level:
+    //     5·(L₀+1) + (L₀−1)·5 = 10·L₀  — exactly what 10·lvl used to pay.
     int             xpReward;
 
     // ── The wild half of the row ──────────────────────────────────────────
@@ -168,6 +192,17 @@ struct NpcTypeDef {
     // Units are the damage's own, because the two meet in one formula
     // (sub/damage.cpp).
     int armor = 0;
+
+    // WHAT A BODY OF THIS ROW COSTS to take into a roster, in gold at its
+    // level-1 worth (CANON S25: a creature's price is a column of its row,
+    // exactly like a sword's — not a formula living beside the item prices).
+    // DERIVATION: the row's own upkeepGoldPerDay × 30 days — a recruit is
+    // bought for a month of his pay, which is byte-for-byte the price
+    // `hire_price_for` computed inline until 2026-08-29 (Peasant 1×30 = 30,
+    // Guard 3×30 = 90). Level scales it through THE one level law
+    // (army.h soldier_level_factor), applied by the reader; 0 — every row
+    // that omits it, i.e. everything with no upkeep — is not for sale.
+    int hireGold = 0;
 };
 
 inline constexpr CombatTemplate kPeasantCombat   {25, 3,  20, 2.0f, 1.5f, "Psr", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
@@ -182,7 +217,7 @@ inline constexpr CombatTemplate kSorceressCombat {70, 22, 25, 25.0f,1.8f, "Src",
 inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // Peasant
     {
-        NPCType::Peasant, "peasant", "Peasant", SpriteId::Peasant, 25, 1,
+        NPCType::Peasant, "peasant", "Peasant", SpriteId::Peasant, 1,
         AIBehaviour::Gatherer, kPeasantCombat, 1, true, 10,
         /*weight*/55, /*loot*/nullptr, /*radius*/0.0f,
         {{"Ivan","Pyotr","Sergey","Dmitry","Alexei","Nikolai","Vasily","Grigory",
@@ -192,10 +227,16 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "Blessings upon you, traveler.",
           "I sell nothing of interest, but the merchant might.",
           "Stay safe out there. The wilderness is harsh."}}, 5,
+        // Dark, one back, own skin — the defaults, spelled out only to reach
+        // the price column at the row's end: upkeep 1 × 30 days.
+        /*lightRadius=*/0.0f, /*lightIntensity=*/0.0f,
+        /*lightR=*/0.0f, /*lightG=*/0.0f, /*lightB=*/0.0f,
+        /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/0,
+        /*hireGold=*/30,
     },
     // Woodcutter
     {
-        NPCType::Woodcutter, "woodcutter", "Woodcutter", SpriteId::Peasant, 30, 1,
+        NPCType::Woodcutter, "woodcutter", "Woodcutter", SpriteId::Peasant, 1,
         AIBehaviour::Gatherer, kWoodcutterCombat, 1, true, 12,
         /*weight*/21, /*loot*/nullptr, /*radius*/0.0f,
         {{"Borislav","Timofey","Yegor","Luka","Matvey"}}, 5,
@@ -203,10 +244,15 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "Good timber is hard to find lately.",
           "Watch for wolves near the tree line.",
           "I chop from dawn to dusk. Honest work."}}, 4,
+        // Defaults to reach the price column: upkeep 1 × 30 days.
+        /*lightRadius=*/0.0f, /*lightIntensity=*/0.0f,
+        /*lightR=*/0.0f, /*lightG=*/0.0f, /*lightB=*/0.0f,
+        /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/0,
+        /*hireGold=*/30,
     },
     // Merchant
     {
-        NPCType::Merchant, "merchant", "Merchant", SpriteId::Caravan, 30, 3,
+        NPCType::Merchant, "merchant", "Merchant", SpriteId::Caravan, 3,
         AIBehaviour::Trader, kMerchantCombat, kNpcUpkeepNone, false, 30,
         /*weight*/21, /*loot*/nullptr, /*radius*/0.0f,
         {{"Kartash","Bazukin","Torgin","Menkov","Skaldin"}}, 5,
@@ -217,7 +263,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     },
     // Caravan
     {
-        NPCType::Caravan, "caravan", "Caravan", SpriteId::Caravan, 25, 2,
+        NPCType::Caravan, "caravan", "Caravan", SpriteId::Caravan, 2,
         AIBehaviour::CaravanTrade, kCaravanCombat, kNpcUpkeepNone, false, 20,
         /*weight*/0, /*loot*/nullptr, /*radius*/0.0f,
         {{"Putnik","Dorozhkin","Obozov","Strannik","Koleso"}}, 5,
@@ -236,7 +282,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     },
     // Bandit
     {
-        NPCType::Bandit, "bandit", "Bandit", SpriteId::Bandit, 50, 2,
+        NPCType::Bandit, "bandit", "Bandit", SpriteId::Bandit, 2,
         AIBehaviour::Aggressive, kBanditCombat, kNpcUpkeepNone, false, 20,
         /*weight*/0, /*loot*/nullptr, /*radius*/0.0f,
         {{"Razboy","Diki","Grozny","Slyak","Khvat"}}, 5,
@@ -247,7 +293,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     },
     // Guard
     {
-        NPCType::Guard, "guard", "Guard", SpriteId::Peasant, 55, 3,
+        NPCType::Guard, "guard", "Guard", SpriteId::Peasant, 3,
         AIBehaviour::Patrol, kGuardCombat, 3, true, 30,
         /*weight*/0, /*loot*/nullptr, /*radius*/0.0f,
         {{"Strazhnik","Boyar","Vityaz","Desyatnik","Druzhina"}}, 5,
@@ -270,10 +316,12 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         // HALVES a plain blow.
         /*haulMult=*/1.0f,
         /*armor=*/10,
+        // The price column: upkeep 3 × 30 days.
+        /*hireGold=*/90,
     },
     // Witch
     {
-        NPCType::Witch, "witch", "Witch", SpriteId::Witch, 60, 5,
+        NPCType::Witch, "witch", "Witch", SpriteId::Witch, 5,
         AIBehaviour::Teleporter, kWitchCombat, kNpcUpkeepNone, false, 50,
         /*weight*/3, /*loot*/nullptr, /*radius*/0.0f,
         {{"Yaga","Vedma","Znakharka","Koldunia","Volshebnitsa"}}, 5,
@@ -284,7 +332,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     },
     // Sorceress
     {
-        NPCType::Sorceress, "sorceress", "Sorceress", SpriteId::Sorceress, 70, 6,
+        NPCType::Sorceress, "sorceress", "Sorceress", SpriteId::Sorceress, 6,
         AIBehaviour::Wanderer, kSorceressCombat, kNpcUpkeepNone, false, 60,
         /*weight*/0, /*loot*/nullptr, /*radius*/0.0f,
         {{"Charodejka","Zaklinatelnitsa","Mistika","Runara","Svetozara"}}, 5,
@@ -295,7 +343,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     },
     // Miner — the iron villages' man (spawned where a vein anchors the home)
     {
-        NPCType::Miner, "miner", "Miner", SpriteId::Peasant, 30, 1,
+        NPCType::Miner, "miner", "Miner", SpriteId::Peasant, 1,
         AIBehaviour::Gatherer, kWoodcutterCombat, 1, true, 12,
         /*weight*/21, /*loot*/nullptr, /*radius*/0.0f,
         {{"Prokhor","Savva","Demyan","Zakhar","Foma"}}, 5,
@@ -303,157 +351,172 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "Iron feeds this village better than grain ever did.",
           "Mind the shafts after rain.",
           "Every ingot you buy began as my day's sweat."}}, 4,
+        // Defaults to reach the price column: upkeep 1 × 30 days.
+        /*lightRadius=*/0.0f, /*lightIntensity=*/0.0f,
+        /*lightR=*/0.0f, /*lightG=*/0.0f, /*lightB=*/0.0f,
+        /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/0,
+        /*hireGold=*/30,
     },
     // Quarryman — stone out of the mountain, the same law of labour
     {
-        NPCType::Quarryman, "quarryman", "Quarryman", SpriteId::Peasant, 30, 1,
+        NPCType::Quarryman, "quarryman", "Quarryman", SpriteId::Peasant, 1,
         AIBehaviour::Gatherer, kWoodcutterCombat, 1, true, 12,
         /*weight*/21, /*loot*/nullptr, /*radius*/0.0f,
         {{"Gavril","Osip","Trofim","Nazar","Kondrat"}}, 5,
         {{"Stone does not grow back. Good thing there is a mountain of it.",
           "Every wall you have ever leaned on came through hands like mine.",
           "The quarry sings if you strike it right."}}, 3,
+        // Defaults to reach the price column: upkeep 1 × 30 days.
+        /*lightRadius=*/0.0f, /*lightIntensity=*/0.0f,
+        /*lightR=*/0.0f, /*lightG=*/0.0f, /*lightB=*/0.0f,
+        /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/0,
+        /*hireGold=*/30,
     },
     // Clay-digger — the riverbank's man
     {
-        NPCType::ClayDigger, "clay_digger", "Clay-digger", SpriteId::Peasant, 30, 1,
+        NPCType::ClayDigger, "clay_digger", "Clay-digger", SpriteId::Peasant, 1,
         AIBehaviour::Gatherer, kWoodcutterCombat, 1, true, 12,
         /*weight*/21, /*loot*/nullptr, /*radius*/0.0f,
         {{"Yermolai","Panteley","Averyan","Selivan","Mitrofan"}}, 5,
         {{"Good clay wants a river and patience.",
           "Bricks, pots, ovens - it all starts in my pit.",
           "Cold work, wet work, honest work."}}, 3,
+        // Defaults to reach the price column: upkeep 1 × 30 days.
+        /*lightRadius=*/0.0f, /*lightIntensity=*/0.0f,
+        /*lightR=*/0.0f, /*lightG=*/0.0f, /*lightB=*/0.0f,
+        /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/0,
+        /*hireGold=*/30,
     },
     // Rabbit
     {
-        NPCType::Rabbit, "rabbit", "Rabbit", SpriteId::Rabbit, 5, 1,
-        AIBehaviour::Flee, {5, 0, 55, 0, 9.0f, "Rbt"}, kNpcUpkeepNone, false, 0,
+        NPCType::Rabbit, "rabbit", "Rabbit", SpriteId::Rabbit, 1,
+        AIBehaviour::Flee, {5, 0, 55, 0, 9.0f, "Rbt"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
         /*weight*/15, /*loot*/nullptr, /*radius*/0.4f,
         {{}}, 0, {{}}, 0,
     },
     // Deer
     {
-        NPCType::Deer, "deer", "Deer", SpriteId::Deer, 15, 1,
-        AIBehaviour::Flee, {15, 2, 50, 2, 2.0f, "Der"}, kNpcUpkeepNone, false, 0,
+        NPCType::Deer, "deer", "Deer", SpriteId::Deer, 1,
+        AIBehaviour::Flee, {15, 2, 50, 2, 2.0f, "Der"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
         /*weight*/12, /*loot*/nullptr, /*radius*/0.6f,
         {{}}, 0, {{}}, 0,
     },
     // Fox
     {
-        NPCType::Fox, "fox", "Fox", SpriteId::Fox, 12, 1,
-        AIBehaviour::Wanderer, {12, 4, 45, 2, 1.2f, "Fox"}, kNpcUpkeepNone, false, 0,
+        NPCType::Fox, "fox", "Fox", SpriteId::Fox, 1,
+        AIBehaviour::Wanderer, {12, 4, 45, 2, 1.2f, "Fox"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
         /*weight*/8, /*loot*/nullptr, /*radius*/0.5f,
         {{}}, 0, {{}}, 0,
     },
     // Wolf
     {
-        NPCType::Wolf, "wolf", "Wolf", SpriteId::Wolf, 30, 2,
-        AIBehaviour::Aggressive, {30, 10, 50, 3, 1.0f, "Wlf"}, kNpcUpkeepNone, false, 0,
+        NPCType::Wolf, "wolf", "Wolf", SpriteId::Wolf, 2,
+        AIBehaviour::Aggressive, {30, 10, 50, 3, 1.0f, "Wlf"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/15,
         /*weight*/6, /*loot*/nullptr, /*radius*/0.7f,
         {{}}, 0, {{}}, 0,
     },
     // Bear
     {
-        NPCType::Bear, "bear", "Bear", SpriteId::Bear, 80, 3,
-        AIBehaviour::Aggressive, {80, 18, 35, 3, 1.5f, "Ber"}, kNpcUpkeepNone, false, 0,
+        NPCType::Bear, "bear", "Bear", SpriteId::Bear, 3,
+        AIBehaviour::Aggressive, {80, 18, 35, 3, 1.5f, "Ber"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/20,
         /*weight*/3, /*loot*/nullptr, /*radius*/1.0f,
         {{}}, 0, {{}}, 0,
     },
     // Boar
     {
-        NPCType::Boar, "boar", "Boar", SpriteId::Boar, 40, 2,
-        AIBehaviour::Aggressive, {40, 12, 40, 3, 1.2f, "Bor"}, kNpcUpkeepNone, false, 0,
+        NPCType::Boar, "boar", "Boar", SpriteId::Boar, 2,
+        AIBehaviour::Aggressive, {40, 12, 40, 3, 1.2f, "Bor"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/15,
         /*weight*/5, /*loot*/nullptr, /*radius*/0.7f,
         {{}}, 0, {{}}, 0,
     },
     // Snake
     {
-        NPCType::Snake, "snake", "Snake", SpriteId::Snake, 10, 1,
-        AIBehaviour::Aggressive, {10, 8, 30, 2, 0.8f, "Snk"}, kNpcUpkeepNone, false, 0,
+        NPCType::Snake, "snake", "Snake", SpriteId::Snake, 1,
+        AIBehaviour::Aggressive, {10, 8, 30, 2, 0.8f, "Snk"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
         /*weight*/4, /*loot*/nullptr, /*radius*/0.3f,
         {{}}, 0, {{}}, 0,
     },
     // Hawk
     {
-        NPCType::Hawk, "hawk", "Hawk", SpriteId::Hawk, 8, 1,
-        AIBehaviour::Wanderer, {8, 5, 60, 3, 1.0f, "Hwk"}, kNpcUpkeepNone, false, 0,
+        NPCType::Hawk, "hawk", "Hawk", SpriteId::Hawk, 1,
+        AIBehaviour::Wanderer, {8, 5, 60, 3, 1.0f, "Hwk"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
         /*weight*/3, /*loot*/nullptr, /*radius*/0.4f,
         {{}}, 0, {{}}, 0,
     },
     // Frog
     {
-        NPCType::Frog, "frog", "Frog", SpriteId::Frog, 3, 1,
-        AIBehaviour::Flee, {3, 0, 30, 0, 9.0f, "Frg"}, kNpcUpkeepNone, false, 0,
+        NPCType::Frog, "frog", "Frog", SpriteId::Frog, 1,
+        AIBehaviour::Flee, {3, 0, 30, 0, 9.0f, "Frg"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
         /*weight*/10, /*loot*/nullptr, /*radius*/0.3f,
         {{}}, 0, {{}}, 0,
     },
     // Mountain Goat
     {
-        NPCType::Goat, "goat", "Mountain Goat", SpriteId::Goat, 20, 1,
-        AIBehaviour::Flee, {20, 5, 40, 2, 1.5f, "Mgt"}, kNpcUpkeepNone, false, 0,
+        NPCType::Goat, "goat", "Mountain Goat", SpriteId::Goat, 1,
+        AIBehaviour::Flee, {20, 5, 40, 2, 1.5f, "Mgt"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
         /*weight*/8, /*loot*/nullptr, /*radius*/0.6f,
         {{}}, 0, {{}}, 0,
     },
     // Eagle
     {
-        NPCType::Eagle, "eagle", "Eagle", SpriteId::Eagle, 12, 2,
-        AIBehaviour::Wanderer, {12, 7, 65, 3, 1.0f, "Egl"}, kNpcUpkeepNone, false, 0,
+        NPCType::Eagle, "eagle", "Eagle", SpriteId::Eagle, 2,
+        AIBehaviour::Wanderer, {12, 7, 65, 3, 1.0f, "Egl"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/15,
         /*weight*/4, /*loot*/nullptr, /*radius*/0.5f,
         {{}}, 0, {{}}, 0,
     },
     // Crocodile
     {
-        NPCType::Croc, "crocodile", "Crocodile", SpriteId::Crocodile, 50, 3,
-        AIBehaviour::Aggressive, {50, 15, 25, 3, 1.5f, "Crc"}, kNpcUpkeepNone, false, 0,
+        NPCType::Croc, "crocodile", "Crocodile", SpriteId::Crocodile, 3,
+        AIBehaviour::Aggressive, {50, 15, 25, 3, 1.5f, "Crc"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/20,
         /*weight*/4, /*loot*/nullptr, /*radius*/0.8f,
         {{}}, 0, {{}}, 0,
     },
     // Goblin
     {
-        NPCType::Goblin, "goblin", "Goblin", SpriteId::Goblin, 25, 2,
-        AIBehaviour::Aggressive, {25, 8, 40, 3, 1.0f, "Gbl"}, kNpcUpkeepNone, false, 0,
+        NPCType::Goblin, "goblin", "Goblin", SpriteId::Goblin, 2,
+        AIBehaviour::Aggressive, {25, 8, 40, 3, 1.0f, "Gbl"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/15,
         /*weight*/4, /*loot*/nullptr, /*radius*/0.6f,
         {{}}, 0, {{}}, 0,
     },
     // Skeleton
     {
-        NPCType::Skeleton, "skeleton", "Skeleton", SpriteId::Skeleton, 35, 3,
-        AIBehaviour::Aggressive, {35, 10, 30, 3, 1.2f, "Skl"}, kNpcUpkeepNone, false, 0,
+        NPCType::Skeleton, "skeleton", "Skeleton", SpriteId::Skeleton, 3,
+        AIBehaviour::Aggressive, {35, 10, 30, 3, 1.2f, "Skl"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/20,
         /*weight*/3, /*loot*/nullptr, /*radius*/0.6f,
         {{}}, 0, {{}}, 0,
     },
     // Troll
     {
-        NPCType::Troll, "troll", "Troll", SpriteId::Troll, 120, 5,
-        AIBehaviour::Aggressive, {120, 25, 25, 4, 2.0f, "Trl"}, kNpcUpkeepNone, false, 0,
+        NPCType::Troll, "troll", "Troll", SpriteId::Troll, 5,
+        AIBehaviour::Aggressive, {120, 25, 25, 4, 2.0f, "Trl"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/30,
         /*weight*/1, /*loot*/nullptr, /*radius*/1.2f,
         {{}}, 0, {{}}, 0,
     },
     // Swamp Thing
     {
-        NPCType::SwampThing, "swamp_thing", "Swamp Thing", SpriteId::SwampThing, 60, 3,
-        AIBehaviour::Aggressive, {60, 14, 20, 4, 1.5f, "Swt"}, kNpcUpkeepNone, false, 0,
+        NPCType::SwampThing, "swamp_thing", "Swamp Thing", SpriteId::SwampThing, 3,
+        AIBehaviour::Aggressive, {60, 14, 20, 4, 1.5f, "Swt"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/20,
         /*weight*/3, /*loot*/nullptr, /*radius*/0.9f,
         {{}}, 0, {{}}, 0,
     },
     // Ice Wraith
     {
-        NPCType::IceWraith, "ice_wraith", "Ice Wraith", SpriteId::IceWraith, 45, 4,
-        AIBehaviour::Aggressive, {45, 16, 35, 5, 1.3f, "Iwr"}, kNpcUpkeepNone, false, 0,
+        NPCType::IceWraith, "ice_wraith", "Ice Wraith", SpriteId::IceWraith, 4,
+        AIBehaviour::Aggressive, {45, 16, 35, 5, 1.3f, "Iwr"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/25,
         /*weight*/2, /*loot*/nullptr, /*radius*/0.7f,
         {{}}, 0, {{}}, 0,
     },
     // Sand Scorpion
     {
-        NPCType::SandScorpion, "sand_scorpion", "Sand Scorpion", SpriteId::SandScorpion, 35, 2,
-        AIBehaviour::Aggressive, {35, 12, 35, 3, 1.0f, "Ssc"}, kNpcUpkeepNone, false, 0,
+        NPCType::SandScorpion, "sand_scorpion", "Sand Scorpion", SpriteId::SandScorpion, 2,
+        AIBehaviour::Aggressive, {35, 12, 35, 3, 1.0f, "Ssc"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/15,
         /*weight*/5, /*loot*/nullptr, /*radius*/0.6f,
         {{}}, 0, {{}}, 0,
     },
     // Stone Golem
     {
-        NPCType::StoneGolem, "stone_golem", "Stone Golem", SpriteId::StoneGolem, 150, 5,
-        AIBehaviour::Aggressive, {150, 20, 15, 4, 2.5f, "Glm"}, kNpcUpkeepNone, false, 0,
+        NPCType::StoneGolem, "stone_golem", "Stone Golem", SpriteId::StoneGolem, 5,
+        AIBehaviour::Aggressive, {150, 20, 15, 4, 2.5f, "Glm"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/30,
         /*weight*/1, /*loot*/nullptr, /*radius*/1.3f,
         {{}}, 0, {{}}, 0,
     },
@@ -464,7 +527,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // hireable, worth no XP (his death is a game-over, not a kill), and his
     // loot is the bag he actually carries rather than a rolled profile.
     {
-        NPCType::Adventurer, "adventurer", "Adventurer", SpriteId::Peasant, 40, 1,
+        NPCType::Adventurer, "adventurer", "Adventurer", SpriteId::Peasant, 1,
         AIBehaviour::Wanderer, kGuardCombat, kNpcUpkeepNone, false, 0,
         /*weight*/0, /*loot*/nullptr, /*radius*/0.0f,
         {{}}, 0, {{}}, 0,
@@ -557,6 +620,54 @@ inline constexpr const NpcPurseRow& npc_purse(NPCType t) {
     return kNpcPurse[std::size_t(t)];
 }
 
+// ── The map dot's colour: one row per kind ────────────────────────────────
+// What the MACRO map paints a walker of this row (ui/macro_overlay.cpp),
+// enum-ordered beside the row like kNpcPurse. These are the overlay's own
+// historical colours, deliberately NOT the sprite tints: kSpriteRows[].tint
+// colours the procedural BODY, and three town kinds share one sprite row
+// while wearing three different dots. 0xRRGGBB.
+struct NpcMapColorRow { NPCType type; std::uint32_t rgb; };
+inline constexpr NpcMapColorRow kNpcMapColor[std::size_t(NPCType::Count)] = {
+    {NPCType::Peasant,      0xDCC8A0u},
+    {NPCType::Woodcutter,   0x5A9646u},
+    {NPCType::Merchant,     0xF0C850u},
+    {NPCType::Caravan,      0xB48C50u},
+    {NPCType::Bandit,       0xDC3C3Cu},
+    {NPCType::Guard,        0x508CDCu},
+    {NPCType::Witch,        0xB464C8u},
+    {NPCType::Sorceress,    0x78C8E6u},
+    // Every other row wears the neutral crowd grey the old default painted.
+    {NPCType::Miner,        0xC8C8C8u},
+    {NPCType::Quarryman,    0xC8C8C8u},
+    {NPCType::ClayDigger,   0xC8C8C8u},
+    {NPCType::Rabbit,       0xC8C8C8u},
+    {NPCType::Deer,         0xC8C8C8u},
+    {NPCType::Fox,          0xC8C8C8u},
+    {NPCType::Wolf,         0xC8C8C8u},
+    {NPCType::Bear,         0xC8C8C8u},
+    {NPCType::Boar,         0xC8C8C8u},
+    {NPCType::Snake,        0xC8C8C8u},
+    {NPCType::Hawk,         0xC8C8C8u},
+    {NPCType::Frog,         0xC8C8C8u},
+    {NPCType::Goat,         0xC8C8C8u},
+    {NPCType::Eagle,        0xC8C8C8u},
+    {NPCType::Croc,         0xC8C8C8u},
+    {NPCType::Goblin,       0xC8C8C8u},
+    {NPCType::Skeleton,     0xC8C8C8u},
+    {NPCType::Troll,        0xC8C8C8u},
+    {NPCType::SwampThing,   0xC8C8C8u},
+    {NPCType::IceWraith,    0xC8C8C8u},
+    {NPCType::SandScorpion, 0xC8C8C8u},
+    {NPCType::StoneGolem,   0xC8C8C8u},
+    {NPCType::Adventurer,   0xC8C8C8u},
+};
+static_assert(rows_in_enum_order(kNpcMapColor, &NpcMapColorRow::type),
+              "kNpcMapColor row order must mirror NPCType");
+
+inline constexpr std::uint32_t npc_map_color(NPCType t) {
+    return kNpcMapColor[std::size_t(t)].rgb;
+}
+
 // THE id space, and it has one half now. Any "kind" that travels — a roster
 // record, an ECS NPCKind, a save — is an ordinal of the one table above, and a
 // wolf is as legal as a spearman (CANON.md S16). The `0x100 | catalog row`
@@ -601,16 +712,25 @@ inline int soldier_upkeep(const SoldierRecord& s) {
     return npc_upkeep_base(soldier_npc_type(s)) * soldier_level_factor(s.level);
 }
 
-inline int calculate_squad_upkeep(const SoldierSquad& squad, int charisma = 0) {
+// `tradeDiscount` is the ONE derived sheet's column (attributes.h
+// calculate_derived — cha × 1 %), not a private copy of that formula; the
+// derived column is uncapped, so the 90 % ceiling stays HERE, at the site
+// that applies it to a payroll.
+inline int calculate_squad_upkeep(const SoldierSquad& squad,
+                                  float tradeDiscount = 0.0f) {
     int base = 0;
     for (const auto& s : squad) base += soldier_upkeep(s);
-    const float discount = std::clamp(float(charisma) * 0.01f, 0.0f, 0.90f);
+    const float discount = std::clamp(tradeDiscount, 0.0f, 0.90f);
     return int(float(base) * (1.0f - discount));
 }
 
+// The row's price column × THE one level law (soldier_level_factor) — the
+// same product the old inline `upkeep × 30` computed, read from data
+// (CANON S25). An unpriced row (hireGold 0) costs nothing and npc_hireable
+// already refuses it.
 inline int hire_price_for(const SoldierRecord& s) {
-    const int upkeep = soldier_upkeep(s);
-    return upkeep > 0 ? upkeep * 30 : 0;
+    return npc_def(soldier_npc_type(s)).hireGold
+           * soldier_level_factor(s.level);
 }
 
 inline int npc_hire_price_base(NPCType t) {
@@ -679,23 +799,35 @@ inline int hire_npc(SoldierSquad& playerSquad, SoldierSquad& garrison,
     return 0;
 }
 
-// Case-insensitive token → registry row ("bandit" → NPCType::Bandit). Purely
-// data-driven off kNpcTypeDefs labels: a new type is matchable the moment its
-// row exists, no per-type branch. Returns false on no match — the CALLER
-// decides its own fallback (the subworld console spawner keeps its historical
-// silent-Bandit default; the SpawnEntity consumer refuses to spawn).
+// Case-insensitive token → registry row, matched against the row's stable
+// machine `id` FIRST ("clay_digger" → NPCType::ClayDigger) — that column
+// exists precisely to be what content names a row by — with the display
+// `label` kept as a convenience fallback ("Clay-digger" still works at the
+// console). Purely data-driven off kNpcTypeDefs: a new type is matchable the
+// moment its row exists, no per-type branch. Returns false on no match — the
+// CALLER decides its own fallback (the subworld console spawner keeps its
+// historical silent-Bandit default; the SpawnEntity consumer refuses to
+// spawn).
 inline bool npc_type_from_label(const char* token, NPCType& out) {
     if (!token || token[0] == '\0') return false;
-    for (int i = 0; i < int(NPCType::Count); ++i) {
-        const char* label = npc_def(NPCType(i)).label;
+    const auto matches = [](const char* t, const char* name) {
         std::size_t k = 0;
-        while (token[k] != '\0' && label[k] != '\0') {
-            const int a = std::tolower(static_cast<unsigned char>(token[k]));
-            const int b = std::tolower(static_cast<unsigned char>(label[k]));
-            if (a != b) break;
+        while (t[k] != '\0' && name[k] != '\0') {
+            const int a = std::tolower(static_cast<unsigned char>(t[k]));
+            const int b = std::tolower(static_cast<unsigned char>(name[k]));
+            if (a != b) return false;
             ++k;
         }
-        if (token[k] == '\0' && label[k] == '\0') {
+        return t[k] == '\0' && name[k] == '\0';
+    };
+    for (int i = 0; i < int(NPCType::Count); ++i) {
+        if (matches(token, npc_def(NPCType(i)).id)) {
+            out = NPCType(i);
+            return true;
+        }
+    }
+    for (int i = 0; i < int(NPCType::Count); ++i) {
+        if (matches(token, npc_def(NPCType(i)).label)) {
             out = NPCType(i);
             return true;
         }

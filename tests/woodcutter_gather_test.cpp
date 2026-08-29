@@ -81,12 +81,13 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
     gs.mapW = kMap;
     gs.mapH = kMap;
     chronicle_init(gs.chronicle, kMap, kMap);
-    Village vil{};
+    Landmark vil{};
+    vil.type = LandmarkType::Village;
     vil.id = 3;
     vil.x = 10;
     vil.y = 10;
     vil.population = 40;
-    gs.villages.push_back(vil);
+    gs.landmarks.push_back(vil);
 
     // A little forest cell four cells east of the village — small enough to
     // be felled to BARE within the run, so the chronicle negative control
@@ -114,7 +115,7 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
     }
 
     const int layerLost = 16 - int(layer.at(14, 10));
-    const int storeGained = gs.villages[0].inventory.count("wood");
+    const int storeGained = gs.landmarks[0].inventory.count("wood");
     const int inBag =
         w.reg.get<ecs::NpcInventory>(wc).inv.count("wood");
 
@@ -125,8 +126,8 @@ void test_the_chop_is_real_and_the_haul_comes_home() {
     CHECK(layer.revision > 0,
           "the chop moved the grid revision - the map sprite and the save "
           "(which carries the grid whole) both see the stump");
-    CHECK(gs.villages[0].inventory.count("wood") > 0
-              && gs.settlements.empty(),
+    CHECK(gs.landmarks[0].inventory.count("wood") > 0
+              && gs.landmarks.size() == 1,
           "the village man hauls for the VILLAGE (no city even exists here)");
 
     // NEGATIVE CONTROL for the vein writer: the forest cell was felled to
@@ -142,11 +143,12 @@ void test_the_farmer_works_the_field() {
     GameState gs{};
     gs.mapW = kMap;
     gs.mapH = kMap;
-    Village vil{};
+    Landmark vil{};
+    vil.type = LandmarkType::Village;
     vil.id = 3;
     vil.x = 10;
     vil.y = 10;
-    gs.villages.push_back(vil);
+    gs.landmarks.push_back(vil);
 
     // A field two cells east — where stamp_field_features would put one.
     FeatureLayer features;
@@ -195,7 +197,7 @@ void test_the_farmer_works_the_field() {
                       .features = &features};
         tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle=*/true);
     }
-    const int grain = gs.villages[0].inventory.count("grain");
+    const int grain = gs.landmarks[0].inventory.count("grain");
     CHECK(grain > 0, "the farmer's grain reached the village store");
     CHECK(grain % kGatherPerWorkerDay == 0,
           "grain arrives in whole trip-yields - one law of labour");
@@ -216,11 +218,12 @@ void test_farmer_without_terrain_conjures_nothing() {
     GameState gs{};
     gs.mapW = kMap;
     gs.mapH = kMap;
-    Village vil{};
+    Landmark vil{};
+    vil.type = LandmarkType::Village;
     vil.id = 3;
     vil.x = 10;
     vil.y = 10;
-    gs.villages.push_back(vil);
+    gs.landmarks.push_back(vil);
     FeatureLayer features;
     features.resize(kMap, kMap);
     features.set(12, 10, FT_Field);
@@ -256,7 +259,7 @@ void test_farmer_without_terrain_conjures_nothing() {
         MacroWorld mw{.gs = &gs, .world = &w, .features = &features};
         tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle=*/true);
     }
-    CHECK(gs.villages[0].inventory.count("grain") == 0,
+    CHECK(gs.landmarks[0].inventory.count("grain") == 0,
           "no terrain wired: nothing to reap against, nothing conjured");
     CHECK(gs.resourceScars[std::size_t(sm::ResourceFieldId::Wheat)].empty(),
           "no terrain wired: no scar appears either");
@@ -268,11 +271,12 @@ void test_no_layer_no_chop() {
     GameState gs{};
     gs.mapW = kMap;
     gs.mapH = kMap;
-    Village vil{};
+    Landmark vil{};
+    vil.type = LandmarkType::Village;
     vil.id = 3;
     vil.x = 10;
     vil.y = 10;
-    gs.villages.push_back(vil);
+    gs.landmarks.push_back(vil);
     const std::vector<TreePoint> trees{{14, 10}};
     TreeGrid grid;
     build_tree_grid(grid, trees, kMap, kMap);
@@ -284,7 +288,7 @@ void test_no_layer_no_chop() {
         MacroWorld mw{.gs = &gs, .world = &w, .treeGrid = &grid};
         tick_macro_npc_ai(mw, rt, kAiTicks);
     }
-    CHECK(gs.villages[0].inventory.count("wood") == 0,
+    CHECK(gs.landmarks[0].inventory.count("wood") == 0,
           "no layer => no honest wood, and none minted from nothing");
 }
 
@@ -305,11 +309,12 @@ void test_the_mine_runs_while_the_player_is_away() {
     GameState gs{};
     gs.mapW = kMap;
     gs.mapH = kMap;
-    Village vil{};
+    Landmark vil{};
+    vil.type = LandmarkType::Village;
     vil.id = 3;
     vil.x = 10;
     vil.y = 10;
-    gs.villages.push_back(vil);
+    gs.landmarks.push_back(vil);
 
     DepositLayer deposits;
     deposits.width = kMap;
@@ -406,20 +411,22 @@ void test_the_caravan_trades_on_its_memory() {
     gs.mapW = kMap;
     gs.mapH = kMap;
     chronicle_init(gs.chronicle, kMap, kMap);
-    Settlement city{};
+    Landmark city{};
+    city.type = LandmarkType::City;
     city.id = 1;   // landmark ids are ordinals from 1 (v54): 0 = "no place"
     city.x = 10;
     city.y = 10;
     city.population = 100;
     city.inventory.add("bread", 2000);   // plenty: the export
-    gs.settlements.push_back(city);      // grain: NONE — the import
-    Village vil{};
+    gs.landmarks.push_back(city);      // grain: NONE — the import
+    Landmark vil{};
+    vil.type = LandmarkType::Village;
     vil.id = 3;
     vil.x = 16;
     vil.y = 10;
     vil.nearestCityId = 1;
     vil.inventory.add("grain", 500);
-    gs.villages.push_back(vil);
+    gs.landmarks.push_back(vil);
 
     ecs::World w;
     auto& reg = w.reg;
@@ -455,8 +462,8 @@ void test_the_caravan_trades_on_its_memory() {
     }
 
     const auto& bag = reg.get<ecs::NpcInventory>(e).inv;
-    const int cityGrain = gs.settlements[0].inventory.count("grain");
-    const int vilBread = gs.villages[0].inventory.count("bread");
+    const int cityGrain = gs.landmarks[0].inventory.count("grain");
+    const int vilBread = gs.landmarks[1].inventory.count("bread");
     CHECK(cityGrain > 0,
           "the caravan hauled the city what its snapshot said it LACKED");
     CHECK(vilBread > 0, "the caravan delivered the city's surplus bread");
@@ -464,9 +471,9 @@ void test_the_caravan_trades_on_its_memory() {
                  AgentMemoryKind::MarketSnapshot, 1) != nullptr,
           "the departure snapshot lives in the caravan's memory");
     const int grainTotal = cityGrain + bag.count("grain")
-                           + gs.villages[0].inventory.count("grain");
+                           + gs.landmarks[1].inventory.count("grain");
     const int breadTotal = vilBread + bag.count("bread")
-                           + gs.settlements[0].inventory.count("bread");
+                           + gs.landmarks[0].inventory.count("bread");
     CHECK(grainTotal == 500 && breadTotal == 2000,
           "CONSERVATION: cargo moves, it is never minted or dropped");
 
@@ -500,11 +507,12 @@ void test_the_miner_works_the_vein() {
     gs.mapW = kMap;
     gs.mapH = kMap;
     chronicle_init(gs.chronicle, kMap, kMap);
-    Village vil{};
+    Landmark vil{};
+    vil.type = LandmarkType::Village;
     vil.id = 3;
     vil.x = 10;
     vil.y = 10;
-    gs.villages.push_back(vil);
+    gs.landmarks.push_back(vil);
 
     DepositLayer deposits;
     deposits.width = kMap;
@@ -548,7 +556,7 @@ void test_the_miner_works_the_vein() {
     const int veinLeft =
         ironCells.count(veinIdx) ? int(ironCells.at(veinIdx)) : 0;
     const int veinLost = 20 - veinLeft;
-    const int storeGained = gs.villages[0].inventory.count("iron");
+    const int storeGained = gs.landmarks[0].inventory.count("iron");
     const int inBag = w.reg.get<ecs::NpcInventory>(e).inv.count("iron");
 
     CHECK(veinLost > 0, "the dig really drained the vein");
@@ -585,7 +593,7 @@ void test_the_miner_works_the_vein() {
     GameState gs2{};
     gs2.mapW = kMap;
     gs2.mapH = kMap;
-    gs2.villages.push_back(vil);
+    gs2.landmarks.push_back(vil);
     ecs::World w2;
     const auto e2 = w2.reg.create();
     w2.reg.emplace<ecs::Position>(e2, 10.0f, 10.0f, 0.0f);
@@ -604,7 +612,7 @@ void test_the_miner_works_the_vein() {
         MacroWorld mw2{.gs = &gs2, .world = &w2};
         tick_macro_npc_ai(mw2, art2, kAiTicks);
     }
-    CHECK(gs2.villages[0].inventory.count("iron") == 0,
+    CHECK(gs2.landmarks[0].inventory.count("iron") == 0,
           "no deposit layer => no honest ore, and none minted from nothing");
 }
 

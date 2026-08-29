@@ -175,7 +175,6 @@ static void sync_water_tiles_from_heightmap(SubworldMapData& out) {
     if (out.tiles.size() != out.heightmap.size()) return;
     if (out.heightmap.size() != std::size_t(kCellSize) * kCellSize) return;
 
-    constexpr float kShoreTop = WATER_LEVEL + 0.022f;
     constexpr int kShoreRadius = 6;
     const int w = kCellSize;
     const int hgt = kCellSize;
@@ -224,7 +223,7 @@ static void sync_water_tiles_from_heightmap(SubworldMapData& out) {
         const float h = out.heightmap[i];
         if (water[i]) {
             out.tiles[i] = TILE_WATER;
-        } else if (h < kShoreTop && nearWater[i]) {
+        } else if (h < kWetEdgeTop && nearWater[i]) {
             out.tiles[i] = TILE_SHORE;
         } else if (tile == TILE_WATER || tile == TILE_SHORE) {
             out.tiles[i] = TILE_GRASS;
@@ -1431,8 +1430,10 @@ static void gen_spire(const CellContext& ctx, const Biome nbBiome[9],
     fill_base_tiles(out.tiles, kCellSize, ctx.biome, ctx.seed);
     out.structures.clear();
 
-    const int cx = kCellSize / 2;
-    const int cy = kCellSize / 2;
+    // The tower axis — the exported placement (dgn/dispatch.h
+    // kSpireTowerLocalCenter), so the engine reads where it stands.
+    const int cx = int(kSpireTowerLocalCenter);
+    const int cy = int(kSpireTowerLocalCenter);
     const int scorch2 = kScorchRadius * kScorchRadius;
     for (int y = cy - kScorchRadius; y <= cy + kScorchRadius; ++y) {
         if (y < 0 || y >= kCellSize) continue;
@@ -1839,17 +1840,106 @@ static bool is_road_feature(std::uint8_t f) {
     return f == FT_Road || f == FT_DirtRoad;
 }
 
+// An honest bridge — the gate-lintel mechanism writ long (owner, 2026-08-29:
+// "like the walls' gates: over the water, arches beneath, not a solid dam").
+// The span is a chain of level stone DECK chords lifted on zBase — the same
+// lift a gate lintel uses, so sub/collide.h support_at carries a walker on
+// the deck top and blocked_at stops a flyer rising through it — plus round
+// PIERS descending to the bed at the chord joints. Between piers nothing is
+// solid: those gaps ARE the arches; the water plane and anyone wading it
+// pass under the deck freely. The deck grades from bank height to bank
+// height (each chord level, the chain stepping less than a kerb), never
+// dipping below the water plane + freeboard. All placement policy lives
+// HERE, in the generator (CANON S17), not in the engine.
 static void add_bridge_segment(SubworldMapData& out, int ax, int ay, int bx, int by) {
-    constexpr float kBridgeDeckHeight = 3.0f;
+    constexpr float kDeckChordTiles = 16.0f; // level piece length (walls: 8)
+    constexpr float kDeckHalfWidth  = 2.0f;  // roadway, kerb to kerb 4 tiles
+    constexpr float kDeckThickM     = 1.0f;  // the stone slab underfoot
+    constexpr float kFreeboardM     = 2.0f;  // min deck TOP above the water
+    constexpr float kPierRadius     = 1.5f;  // round pier half-width, tiles
+    constexpr float kMaxChordStepM  = 0.75f; // deck step ≤ a kerb (< kStepUpM)
+    constexpr float kWetScanStep    = 4.0f;  // wet-interval sampling pitch
+    constexpr float kApproachTiles  = 8.0f;  // deck runs onto the local bank
     const float dx = float(bx - ax);
     const float dy = float(by - ay);
     const float length = std::sqrt(dx * dx + dy * dy);
-    out.structures.push_back(
-        Structure{Structure::Bridge,
-                  (float(ax) + float(bx)) * 0.5f,
-                  (float(ay) + float(by)) * 0.5f,
-                  length * 0.5f,
-                  kBridgeDeckHeight});
+    if (length < 2.0f) return;
+    const float yaw = std::atan2(dy, dx);
+    const auto& hm = out.heightmap;
+    if (hm.size() != std::size_t(kCellSize) * kCellSize) return;
+    // Ground in metres at distance d along the road line.
+    const auto ground_m = [&](float d) -> float {
+        const float t = std::clamp(d / length, 0.0f, 1.0f);
+        const int tx = std::clamp(int(float(ax) + dx * t), 0, kCellSize - 1);
+        const int ty = std::clamp(int(float(ay) + dy * t), 0, kCellSize - 1);
+        return hm[std::size_t(ty) * kCellSize + tx] * kHeightScaleM;
+    };
+    const float minTopM = kSeaLevelM + kFreeboardM;
+    // One bridge per WET interval of the line — dry ground carries the road
+    // itself and gets no deck. Each bridge grades between its own LOCAL banks
+    // (plus a short approach run), so a walker steps on and off at bank
+    // height; a bank that is itself under the freeboard floor (open water at
+    // a hub or a water-to-water seam) grades to that floor, and the
+    // neighbouring cell's chain meets it there.
+    float scan = 0.0f;
+    while (scan <= length) {
+        while (scan <= length && ground_m(scan) >= kSeaLevelM) {
+            scan += kWetScanStep;
+        }
+        if (scan > length) break;
+        const float wet0 = scan;
+        while (scan <= length && ground_m(scan) < kSeaLevelM) {
+            scan += kWetScanStep;
+        }
+        const float wet1 = std::min(scan, length);
+        const float d0 = std::max(0.0f, wet0 - kApproachTiles);
+        const float d1 = std::min(length, wet1 + kApproachTiles);
+        const float segLen = d1 - d0;
+        if (segLen < 2.0f) continue;
+        const float topA = std::max(ground_m(d0), minTopM);
+        const float topB = std::max(ground_m(d1), minTopM);
+        const int chords = std::max(
+            std::max(1, int(std::ceil(segLen / kDeckChordTiles))),
+            int(std::ceil(std::fabs(topB - topA) / kMaxChordStepM)));
+        for (int i = 0; i < chords; ++i) {
+            const float t0 = float(i) / float(chords);
+            const float t1 = float(i + 1) / float(chords);
+            const float tm = (t0 + t1) * 0.5f;
+            const float dm = d0 + segLen * tm;
+            const float topM = topA + (topB - topA) * tm;
+            const float seatM = ground_m(dm);
+            // The bank already carries a walker here — no deck over ground.
+            if (topM <= seatM + 0.5f) continue;
+            Structure deck{};
+            deck.kind = Structure::Bridge;
+            deck.x = float(ax) + dx * (dm / length);
+            deck.y = float(ay) + dy * (dm / length);
+            deck.yaw = yaw;
+            deck.hx = segLen * 0.5f * (t1 - t0) + 0.45f; // overlap, as walls do
+            deck.hy = kDeckHalfWidth;
+            deck.radius = deck.hx;
+            deck.zBase = std::max(0.1f, topM - kDeckThickM - seatM);
+            deck.height = kDeckThickM;
+            out.structures.push_back(deck);
+            // Pier under the chord joint behind this chord; its head hides
+            // inside the slab so span and support never show a seam. The
+            // first joint is the bank itself — no pier there.
+            if (i == 0) continue;
+            const float dj = d0 + segLen * t0;
+            const float jSeatM = ground_m(dj);
+            const float pierTopM =
+                topA + (topB - topA) * t0 - kDeckThickM * 0.5f;
+            if (pierTopM <= jSeatM + 0.5f) continue;
+            Structure pier{};
+            pier.kind = Structure::Bridge;
+            pier.x = float(ax) + dx * (dj / length);
+            pier.y = float(ay) + dy * (dj / length);
+            pier.radius = kPierRadius;
+            pier.height = pierTopM - jSeatM;
+            pier.shape = Structure::Cylinder;
+            out.structures.push_back(pier);
+        }
+    }
 }
 
 static void gen_road(const CellContext& ctx, const Biome nbBiome[9],
@@ -2148,8 +2238,8 @@ static void gen_field(const CellContext& ctx, const Biome nbBiome[9],
     // gap kept clear at balk crossings and district lanes.
     constexpr float kWallShare    = 0.55f;
     constexpr float kWallCrossGap = 7.0f;
-    // Per-tile plough gates — same idioms as everywhere.
-    constexpr float kFieldWetTop   = WATER_LEVEL + 0.022f;
+    // Per-tile plough gates — same idioms as everywhere; the wet gate is THE
+    // shared kWetEdgeTop (base_generator.h), the shore law's own line.
     constexpr float kFieldMaxSlope = 0.36f;
 
     const int gox = ctx.cx * kCellSize;
@@ -2208,7 +2298,7 @@ static void gen_field(const CellContext& ctx, const Biome nbBiome[9],
                            || fr.lane < kDistrictLaneHalf;
 
             const std::size_t idx = std::size_t(y) * kCellSize + x;
-            if (out.heightmap[idx] < kFieldWetTop) continue;
+            if (out.heightmap[idx] < kWetEdgeTop) continue;
             const int xm = std::max(0, x - 2);
             const int xp = std::min(kCellSize - 1, x + 2);
             const int ym = std::max(0, y - 2);

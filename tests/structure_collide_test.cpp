@@ -7,13 +7,14 @@
 // proves the functional promises end-to-end: the carved road enters the city
 // through the gates without ever being blocked (lintels bridge overhead), and
 // the wall itself blocks at street level.
+#include "check.h"
+
 #include "sub/collide.h"
 #include "sub/gens/dispatch.h"
 #include "sub/height.h"
 
 #include <cmath>
 #include <cstdint>
-#include <cstdio>
 #include <queue>
 #include <vector>
 
@@ -21,15 +22,6 @@ using namespace sm;
 using namespace sm::sub;
 
 namespace {
-
-int failures = 0;
-
-void check(bool ok, const char* what) {
-    if (!ok) {
-        std::fprintf(stderr, "FAIL: %s\n", what);
-        ++failures;
-    }
-}
 
 float flat_height(void*, float, float) { return 0.0f; }
 
@@ -64,13 +56,13 @@ void part_a_index_semantics() {
     StructureIndex idx;
 
     // Empty index: transparent world, resolve_step is a no-op.
-    check(!idx.blocked_at(100.0f, 100.0f, 0.5f, 0.0f), "empty index blocks nothing");
-    check(idx.support_at(100.0f, 100.0f, 0.5f, 10.0f) < -1.0e20f,
+    CHECK(!idx.blocked_at(100.0f, 100.0f, 0.5f, 0.0f), "empty index blocks nothing");
+    CHECK(idx.support_at(100.0f, 100.0f, 0.5f, 10.0f) < -1.0e20f,
           "empty index offers no support");
     {
         float tx = 50.0f, ty = 50.0f;
         idx.resolve_step(40.0f, 40.0f, tx, ty, 0.5f, 0.0f);
-        check(tx == 50.0f && ty == 50.0f, "empty index resolve_step is a no-op");
+        CHECK(tx == 50.0f && ty == 50.0f, "empty index resolve_step is a no-op");
     }
 
     std::vector<Structure> solids;
@@ -83,54 +75,54 @@ void part_a_index_semantics() {
     // Round tower r=3 at (50, 50).
     solids.push_back(make_cylinder(50.0f, 50.0f, 3.0f, 10.0f));
     idx.rebuild(solids, &flat_height, nullptr);
-    check(idx.solid_count() == 4, "index keeps all four solids");
+    CHECK(idx.solid_count() == 4, "index keeps all four solids");
 
     // ── Blocking vs standing on the plain box ──
-    check(idx.blocked_at(100.0f, 100.0f, 0.5f, 0.0f),
+    CHECK(idx.blocked_at(100.0f, 100.0f, 0.5f, 0.0f),
           "street-level body inside the box footprint is blocked");
-    check(!idx.blocked_at(110.0f, 100.0f, 0.5f, 0.0f),
+    CHECK(!idx.blocked_at(110.0f, 100.0f, 0.5f, 0.0f),
           "body beside the box is free");
-    check(!idx.blocked_at(100.0f, 100.0f, 0.5f, 5.0f),
+    CHECK(!idx.blocked_at(100.0f, 100.0f, 0.5f, 5.0f),
           "feet ON the box top: it is a floor, not a wall");
-    check(std::fabs(idx.support_at(100.0f, 100.0f, 0.5f, 5.0f) - 5.0f) < 1e-4f,
+    CHECK(std::fabs(idx.support_at(100.0f, 100.0f, 0.5f, 5.0f) - 5.0f) < 1e-4f,
           "box top supports a body standing on it");
-    check(idx.support_at(100.0f, 100.0f, 0.5f, 0.0f) < -1.0e20f,
+    CHECK(idx.support_at(100.0f, 100.0f, 0.5f, 0.0f) < -1.0e20f,
           "box top far above the feet is NOT a support (no teleport up)");
     // Radius participates (Minkowski): centre 3.0+r inside, beyond it free.
-    check(idx.blocked_at(103.8f, 100.0f, 1.0f, 0.0f),
+    CHECK(idx.blocked_at(103.8f, 100.0f, 1.0f, 0.0f),
           "fat body clips the box edge");
-    check(!idx.blocked_at(104.3f, 100.0f, 1.0f, 0.0f),
+    CHECK(!idx.blocked_at(104.3f, 100.0f, 1.0f, 0.0f),
           "fat body past the expanded edge is free");
 
     // ── Lintel layering: under / on top / head bump ──
-    check(!idx.blocked_at(200.0f, 100.0f, 0.5f, 0.0f),
+    CHECK(!idx.blocked_at(200.0f, 100.0f, 0.5f, 0.0f),
           "street-level body walks UNDER the lintel");
-    check(idx.blocked_at(200.0f, 100.0f, 0.5f, 4.0f),
+    CHECK(idx.blocked_at(200.0f, 100.0f, 0.5f, 4.0f),
           "flyer at 4 m bumps its head on the lintel (crown crosses z0=5)");
-    check(!idx.blocked_at(200.0f, 100.0f, 0.5f, 8.0f),
+    CHECK(!idx.blocked_at(200.0f, 100.0f, 0.5f, 8.0f),
           "feet on the lintel top: floor, not wall");
-    check(std::fabs(idx.support_at(200.0f, 100.0f, 0.5f, 8.0f) - 8.0f) < 1e-4f,
+    CHECK(std::fabs(idx.support_at(200.0f, 100.0f, 0.5f, 8.0f) - 8.0f) < 1e-4f,
           "lintel top supports a defender standing on it");
-    check(idx.support_at(200.0f, 100.0f, 0.5f, 0.0f) < -1.0e20f,
+    CHECK(idx.support_at(200.0f, 100.0f, 0.5f, 0.0f) < -1.0e20f,
           "lintel is no support for a street-level body");
-    check(idx.solid_at(200.0f, 100.0f, 6.5f),
+    CHECK(idx.solid_at(200.0f, 100.0f, 6.5f),
           "projectile point inside the lintel span hits");
-    check(!idx.solid_at(200.0f, 100.0f, 2.0f),
+    CHECK(!idx.solid_at(200.0f, 100.0f, 2.0f),
           "projectile point under the lintel flies through");
 
     // ── Oriented box: the yaw is honest ──
     // Along the plank's local X (45°): 6 units out is inside (hx 8).
     const float c45 = std::cos(0.785398f);
-    check(idx.blocked_at(300.0f + 6.0f * c45, 300.0f + 6.0f * c45, 0.3f, 0.0f),
+    CHECK(idx.blocked_at(300.0f + 6.0f * c45, 300.0f + 6.0f * c45, 0.3f, 0.0f),
           "point along the rotated plank axis is inside");
     // Along world X the same 6 units is ~4.2 off-axis in local Y (hy 1.1): free.
-    check(!idx.blocked_at(306.0f, 300.0f, 0.3f, 0.0f),
+    CHECK(!idx.blocked_at(306.0f, 300.0f, 0.3f, 0.0f),
           "point along world X misses the rotated plank");
 
     // ── Cylinder: round, not square ──
-    check(idx.blocked_at(52.5f, 50.0f, 0.0f, 0.0f), "inside cylinder radius");
-    check(!idx.blocked_at(53.5f, 50.0f, 0.0f, 0.0f), "outside cylinder radius");
-    check(!idx.blocked_at(52.4f, 52.4f, 0.0f, 0.0f),
+    CHECK(idx.blocked_at(52.5f, 50.0f, 0.0f, 0.0f), "inside cylinder radius");
+    CHECK(!idx.blocked_at(53.5f, 50.0f, 0.0f, 0.0f), "outside cylinder radius");
+    CHECK(!idx.blocked_at(52.4f, 52.4f, 0.0f, 0.0f),
           "square corner of the bounding box is OUTSIDE the round tower");
 
     // ── Slide & stop ──
@@ -138,28 +130,28 @@ void part_a_index_semantics() {
         // Diagonal into the box side: the free axis survives.
         float tx = 97.2f, ty = 97.2f;
         idx.resolve_step(95.0f, 96.0f, tx, ty, 0.5f, 0.0f);
-        check(tx == 97.2f && ty == 96.0f, "diagonal step slides along the wall");
+        CHECK(tx == 97.2f && ty == 96.0f, "diagonal step slides along the wall");
     }
     {
         // Head-on: full stop.
         float tx = 98.0f, ty = 100.0f;
         idx.resolve_step(95.0f, 100.0f, tx, ty, 0.5f, 0.0f);
-        check(tx == 95.0f && ty == 100.0f, "head-on step is refused");
+        CHECK(tx == 95.0f && ty == 100.0f, "head-on step is refused");
     }
     {
         // Escape rule: a body already inside may move anywhere (out).
         float tx = 101.0f, ty = 100.0f;
         idx.resolve_step(100.0f, 100.0f, tx, ty, 0.5f, 0.0f);
-        check(tx == 101.0f && ty == 100.0f,
+        CHECK(tx == 101.0f && ty == 100.0f,
               "body inside a solid is never trapped");
     }
 
     // ── Seating uses the height function ──
     struct Lift { static float h(void*, float, float) { return 100.0f; } };
     idx.rebuild(solids, &Lift::h, nullptr);
-    check(std::fabs(idx.support_at(100.0f, 100.0f, 0.5f, 105.0f) - 105.0f) < 1e-4f,
+    CHECK(std::fabs(idx.support_at(100.0f, 100.0f, 0.5f, 105.0f) - 105.0f) < 1e-4f,
           "solid spans are absolute: seat 100 + height 5 supports at 105");
-    check(!idx.blocked_at(100.0f, 100.0f, 0.5f, 105.0f),
+    CHECK(!idx.blocked_at(100.0f, 100.0f, 0.5f, 105.0f),
           "standing on the lifted box top is legal");
 }
 
@@ -218,11 +210,11 @@ void part_b_generated_city() {
             }
         }
     }
-    check(lintels >= 2, "each road gate carries a lintel (>= 2 for two axes)");
-    check(cylinders >= 8, "wall towers and gate jambs are round");
-    check(orientedWalls >= 40, "wall runs are yawed chords following the ring");
-    check(rotatedHouses >= 10, "houses draw a random orientation");
-    check(oblongHouses >= 10, "houses keep independent width/length");
+    CHECK(lintels >= 2, "each road gate carries a lintel (>= 2 for two axes)");
+    CHECK(cylinders >= 8, "wall towers and gate jambs are round");
+    CHECK(orientedWalls >= 40, "wall runs are yawed chords following the ring");
+    CHECK(rotatedHouses >= 10, "houses draw a random orientation");
+    CHECK(oblongHouses >= 10, "houses keep independent width/length");
 
     // Solidity over the generated cell (cell-local coords; the index spans
     // whatever the records span). Seat solids on the actual generated relief.
@@ -237,7 +229,7 @@ void part_b_generated_city() {
     } h{&out};
     StructureIndex idx;
     idx.rebuild(out.structures, &H::at, &h);
-    check(!idx.empty(), "generated city produces solids");
+    CHECK(!idx.empty(), "generated city produces solids");
 
     // The road network must stay TRAVERSABLE at street level: this is the
     // "gates are real gates" guarantee — the roads cross every wall ring only
@@ -262,8 +254,8 @@ void part_b_generated_city() {
             }
         }
     }
-    check(roadTiles > 0, "city carved roads");
-    check(blockedRoadTiles * 100 < roadTiles * 3,
+    CHECK(roadTiles > 0, "city carved roads");
+    CHECK(blockedRoadTiles * 100 < roadTiles * 3,
           "wall bodies clip less than 3% of road tiles (verges only)");
 
     // BFS from a road tile near the plaza across unblocked road tiles; it
@@ -287,7 +279,7 @@ void part_b_generated_city() {
                 }
             }
         }
-        check(sx >= 0, "found a passable road tile near the plaza");
+        CHECK(sx >= 0, "found a passable road tile near the plaza");
         bool reachedEdge = false;
         if (sx >= 0) {
             std::vector<std::uint8_t> seen(passable.size(), 0);
@@ -315,7 +307,7 @@ void part_b_generated_city() {
                 }
             }
         }
-        check(reachedEdge,
+        CHECK(reachedEdge,
               "the road network is walkable from the plaza out through the gates");
     }
 
@@ -330,7 +322,7 @@ void part_b_generated_city() {
             ++blockingWallBodies;
         }
     }
-    check(wallBodies > 0 && blockingWallBodies == wallBodies,
+    CHECK(wallBodies > 0 && blockingWallBodies == wallBodies,
           "every grounded wall body blocks at street level");
 
     // And the wall top is standable: support at feet == top exists.
@@ -344,7 +336,7 @@ void part_b_generated_city() {
         }
         break;  // one is proof enough; the semantics are uniform
     }
-    check(standable == 1, "a wall top supports a body standing on it");
+    CHECK(standable == 1, "a wall top supports a body standing on it");
 }
 
 // Part C — the ONE vertical integrator (height.h vertical_step): resting,
@@ -355,15 +347,15 @@ void part_c_vertical_physics() {
     float z, vz;
 
     z = 100.0f; vz = 0.0f;
-    check(vertical_step(100.0f, dt, z, vz, true) && z == 100.0f && vz == 0.0f,
+    CHECK(vertical_step(100.0f, dt, z, vz, true) && z == 100.0f && vz == 0.0f,
           "resting body stays grounded");
 
     z = 100.9f; vz = 0.0f;
-    check(vertical_step(100.0f, dt, z, vz, true) && z == 100.0f,
+    CHECK(vertical_step(100.0f, dt, z, vz, true) && z == 100.0f,
           "a drop inside kGroundStickM sticks to the support (slope walk)");
 
     z = 0.0f; vz = 0.0f;
-    check(vertical_step(900.0f, dt, z, vz, true) && z == 900.0f,
+    CHECK(vertical_step(900.0f, dt, z, vz, true) && z == 900.0f,
           "a body below its support snaps up (arriving is not falling)");
 
     // 10 m ledge drop: ballistic fall, landing exactly on the support in the
@@ -378,15 +370,15 @@ void part_c_vertical_physics() {
         ++ticks;
     }
     const float fallS = float(ticks + 1) * dt;
-    check(z == 100.0f && vz == 0.0f, "fall lands exactly on the support");
-    check(monotonic, "fall is monotonic (no bounce)");
-    check(std::fabs(fallS - std::sqrt(2.0f * 10.0f / kGravityMps2)) < 2.5f * dt,
+    CHECK(z == 100.0f && vz == 0.0f, "fall lands exactly on the support");
+    CHECK(monotonic, "fall is monotonic (no bounce)");
+    CHECK(std::fabs(fallS - std::sqrt(2.0f * 10.0f / kGravityMps2)) < 2.5f * dt,
           "10 m fall takes the honest free-fall time");
 
     // Terminal velocity cap.
     z = 10000.0f; vz = 0.0f;
     for (int i = 0; i < 600; ++i) vertical_step(0.0f, dt, z, vz, false);
-    check(vz >= -kTerminalFallMps - 1e-3f,
+    CHECK(vz >= -kTerminalFallMps - 1e-3f,
           "long fall is capped at terminal speed");
 
     // Jump-ready: an upward vz leaves the ground, arcs, and lands back.
@@ -399,7 +391,7 @@ void part_c_vertical_physics() {
     // measured the top of the jump and never the way down.
     const float jdt = 1.0f / 64.0f;
     z = 100.0f; vz = kJumpSpeedMps;
-    check(!vertical_step(100.0f, jdt, z, vz, false) && z > 100.0f,
+    CHECK(!vertical_step(100.0f, jdt, z, vz, false) && z > 100.0f,
           "upward velocity lifts off (gravity still applies)");
     ticks = 0;
     float apex = z;
@@ -408,36 +400,36 @@ void part_c_vertical_physics() {
         ++ticks;
         if (z > apex) { apex = z; apexTick = ticks; }
     }
-    check(z == 100.0f && vz == 0.0f, "jump arc returns to the ground");
+    CHECK(z == 100.0f && vz == 0.0f, "jump arc returns to the ground");
     // Apex ≈ v²/2g (one-tick integration slack), and safely under the wall.
-    check(std::fabs((apex - 100.0f)
+    CHECK(std::fabs((apex - 100.0f)
                     - kJumpSpeedMps * kJumpSpeedMps / (2.0f * kGravityMps2))
               < 0.15f,
           "jump apex matches v^2/2g");
     // THE regression: a jump has two halves. Rise and fall are symmetric, so
     // the descent must take as many ticks as the climb (± one tick of
     // integration slack). The apex teleport made this number 0.
-    check(ticks - apexTick >= apexTick - 1,
+    CHECK(ticks - apexTick >= apexTick - 1,
           "the jump FALLS back down instead of snapping (no apex teleport)");
-    check(apexTick > 8, "the climb lasts a real arc, not a couple of ticks");
+    CHECK(apexTick > 8, "the climb lasts a real arc, not a couple of ticks");
     // A rising body inside stick range is NOT resting: the same snap, asked
     // for directly. This is the one-liner the bug was made of.
     z = 100.9f; vz = 1.0f;
-    check(!vertical_step(100.0f, jdt, z, vz, false) && z > 100.9f,
+    CHECK(!vertical_step(100.0f, jdt, z, vz, false) && z > 100.9f,
           "a body climbing through stick range keeps climbing");
 
     // Fall damage: kinetic energy above the safe speed, radius as mass.
-    check(fall_damage(kFallSafeSpeedMps - 1.0f, 1.5f) == 0.0f,
+    CHECK(fall_damage(kFallSafeSpeedMps - 1.0f, 1.5f) == 0.0f,
           "landing under the safe speed is free");
     const float v10 = std::sqrt(2.0f * kGravityMps2 * 10.0f); // 10 m drop
     const float expect = kFallDamagePerEnergy * 0.5f * 1.5f
         * (v10 * v10 - kFallSafeSpeedMps * kFallSafeSpeedMps);
-    check(std::fabs(fall_damage(v10, 1.5f) - expect) < 1e-3f,
+    CHECK(std::fabs(fall_damage(v10, 1.5f) - expect) < 1e-3f,
           "10 m fall damage = excess kinetic energy");
-    check(fall_damage(v10, 3.0f) > fall_damage(v10, 0.5f),
+    CHECK(fall_damage(v10, 3.0f) > fall_damage(v10, 0.5f),
           "heavier bodies fall harder");
     // A jump can never hurt: its landing speed is its take-off speed.
-    check(fall_damage(kJumpSpeedMps, 3.0f) == 0.0f,
+    CHECK(fall_damage(kJumpSpeedMps, 3.0f) == 0.0f,
           "a jump landing is always under the safe speed");
 }
 
@@ -447,10 +439,5 @@ int main() {
     part_a_index_semantics();
     part_b_generated_city();
     part_c_vertical_physics();
-    if (failures != 0) {
-        std::fprintf(stderr, "structure_collide_test: %d failure(s)\n", failures);
-        return 1;
-    }
-    std::printf("structure_collide_test: OK\n");
-    return 0;
+    return sm::test::report("structure_collide_test");
 }

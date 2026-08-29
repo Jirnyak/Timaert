@@ -1,5 +1,5 @@
-// Faithful port of `src/game/subworld/fauna.ts`.
-//   - 1:1 stat lines / weights / colours / counts.
+// THE ambient-fauna spawn tables. This file is the source of truth (the TS
+// original is dead — the migration is closed).
 //   - factionId is the registry id string (macro/faction.h) verbatim.
 //   - String AI       → the ONE `AIBehaviour` column (macro/behaviour.h).
 //   - Tables stored as null-terminated arrays of `const FaunaEntry*` so
@@ -131,31 +131,26 @@ constexpr BiomeSpawnCountRow kBiomeSpawnCounts[std::size_t(Mountain) + 1] = {
 static_assert(rows_in_enum_order(kBiomeSpawnCounts, &BiomeSpawnCountRow::biome),
               "kBiomeSpawnCounts row order must mirror Biome");
 constexpr SpawnCounts kForestSpawnCounts{3, 8};
-constexpr SpawnCounts kRuinSpawnCounts{2, 6};
-constexpr SpawnCounts kSpireSpawnCounts{4, 9};
 
-const SpawnCounts& spawn_counts(const SpawnContext& ctx) {
-    switch (ctx.landmark) {
-        case LandmarkType::Ruin:  return kRuinSpawnCounts;
-        case LandmarkType::Spire: return kSpireSpawnCounts;
-        default: break;
-    }
+// The place's own counts COLUMN wins (landmark registry faunaMin/faunaMax —
+// the ruin's 2..6 and the spire's 4..9 live there now); faunaMax 0 = the
+// ground answers. The LandmarkType switch that stood here was an if-chain
+// over the registry (CANON S16).
+SpawnCounts spawn_counts(const SpawnContext& ctx) {
+    const LandmarkDef& def = landmark_def(ctx.landmark);
+    if (def.faunaMax != 0) return {def.faunaMin, def.faunaMax};
     if (ctx.forest) return kForestSpawnCounts;
     const auto b = std::size_t(ctx.biome);
-    static constexpr SpawnCounts kNone{0, 0};
-    return b <= std::size_t(Mountain) ? kBiomeSpawnCounts[b].counts : kNone;
+    return b <= std::size_t(Mountain) ? kBiomeSpawnCounts[b].counts
+                                      : SpawnCounts{0, 0};
 }
 
-// The habitat bit a context asks for. A town rolls no wild fauna at all
-// (its crowd is the kHabTown stripe, rolled by the settlement spawner).
+// The habitat bit a context asks for — the place's faunaHabitat column when
+// it states one (a town's 0 rolls no wild fauna at all: its crowd is the
+// kHabTown stripe, rolled by the settlement spawner), else the ground's.
 std::uint16_t context_bit(const SpawnContext& ctx) {
-    switch (ctx.landmark) {
-        case LandmarkType::City:
-        case LandmarkType::Village: return 0;
-        case LandmarkType::Ruin:    return kHabRuin;
-        case LandmarkType::Spire:   return kHabSpire;
-        default: break;
-    }
+    const LandmarkDef& def = landmark_def(ctx.landmark);
+    if (def.faunaHabitat != kLandmarkFaunaGround) return def.faunaHabitat;
     if (ctx.forest) return kHabForest;
     return hab(ctx.biome);
 }
@@ -201,7 +196,7 @@ std::uint32_t danger_match_weight(std::uint8_t strength,
 std::vector<FaunaPick> roll_spawns(const SpawnContext& ctx,
                                    std::uint32_t& rngState) {
     std::vector<FaunaPick> out;
-    const SpawnCounts& counts = spawn_counts(ctx);
+    const SpawnCounts counts = spawn_counts(ctx);
     const std::uint16_t bit = context_bit(ctx);
     if (counts.maxCount == 0 || bit == 0) return out;
 
@@ -326,11 +321,11 @@ const FaunaEntry* creature_def_from_kind(std::uint16_t kindType) {
 
 int fauna_cell_capacity(Biome biome, int treeCount,
                         LandmarkType landmark) {
-    // A town is the poorest hunting ground that still is one (the old ruin
-    // table's minCount); everywhere else the place's counts row caps it.
-    if (landmark == LandmarkType::City || landmark == LandmarkType::Village) {
-        return int(kRuinSpawnCounts.minCount);
-    }
+    // The place's own cap COLUMN wins (landmark registry faunaCap — a town is
+    // the poorest hunting ground that still is one); everywhere else the
+    // winning counts row caps it.
+    const LandmarkDef& def = landmark_def(landmark);
+    if (def.faunaCap != kLandmarkFaunaCapGround) return int(def.faunaCap);
     SpawnContext ctx{};
     ctx.biome = biome;
     ctx.forest = is_forest_cell(treeCount);

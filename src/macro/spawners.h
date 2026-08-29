@@ -24,14 +24,43 @@ struct RoadTraceStats {
 };
 
 std::vector<TreePoint> spawn_trees(const TerrainData& td, std::uint32_t seed,
-                                   float density,
                                    float seaLevel = 0.40f);
 
-// One-time road tracing between connected cities. Deliberately keeps the
-// native terrain-cost A* baseline instead of TS corridor snapping. Cross-island
-// pairs are component-pruned; same-island pairs use generation-tagged native A*
-// with the last-known-good large-map budget and treat rejected water cells as
-// blocked road terrain.
+// ── THE road-class registry (owner approved, 2026-08-29) ────────────────
+// A road is a ROW: the surface it lays (whose bed weight is already a column
+// of kFeatureDefs, macro/features.h) and WHO it connects — data, not code.
+// Both classes are traced by the ONE A* (pathfinding.h find_path) over THE
+// step-cost law with water rejected; the hierarchy is free because stone is
+// traced FIRST and the dirt pass prices laid stone at its 1.0 bed, so lanes
+// merge into the highways on their own. The old dirt tracer (spiral scan +
+// straight lerp whose only worldly knowledge was "not water") is dead.
+enum class RoadLink : std::uint8_t {
+    // The politik connections graph (MST + inter-kingdom links): city↔city
+    // and city↔capital edges both live there — trace_roads walks it.
+    CityConnections,
+    // Village → its own city (Village::nearestCityId).
+    VillageHomeCity,
+    // Village → the closest landmark of its province within reach (spires
+    // today; ruins etc. join by being appended to the landmark list, not by
+    // code). The nearest-TARGET choice is the old spiral's surviving job;
+    // the LAYING is A* only.
+    VillageNearestLandmark,
+};
+struct RoadClassDef {
+    FeatureType surface;   // the bed it lays (feature_def(surface).bedWeight)
+    RoadLink    link;      // who it connects
+};
+inline constexpr RoadClassDef kRoadClasses[] = {
+    {FT_Road,     RoadLink::CityConnections},
+    {FT_DirtRoad, RoadLink::VillageHomeCity},
+    {FT_DirtRoad, RoadLink::VillageNearestLandmark},
+};
+
+// One-time road tracing between connected cities (the FT_Road rows above).
+// Deliberately keeps the native terrain-cost A* baseline instead of TS
+// corridor snapping. Cross-island pairs are component-pruned; same-island
+// pairs use THE find_path (pathfinding.h) with the last-known-good large-map
+// budget and treat rejected water cells as blocked road terrain.
 std::vector<std::uint8_t> trace_roads(const TerrainData& td,
                                       Politik& politik,
                                       RoadTraceStats* stats = nullptr,
@@ -41,16 +70,34 @@ std::vector<std::uint8_t> trace_roads(const TerrainData& td,
                                       // term routes roads around deep woods.
                                       const TreeLayer* treeLayer = nullptr);
 
-// Dirt-road BFS from villages to nearest road. Fails closed on invalid map
-// dimensions, short road masks, or mismatched village coordinate arrays.
-// `landMaskA` is an optional terrain RGBA pointer; when a non-zero byte count
-// is supplied it must cover width * height * 4. The alpha channel acts as the
-// land/water test.
-std::vector<std::uint8_t> trace_dirt_roads(int mapW, int mapH,
-    const std::vector<std::uint8_t>& roadMask,
-    const std::vector<int>& villageX, const std::vector<int>& villageY,
-    const std::uint8_t* landMaskA = nullptr,
-    std::size_t landMaskByteCount = 0u);
+// A village as the dirt tracer sees it: where it stands and where its home
+// city stands (hasCity=false for an orphan — it then honestly gets no lane,
+// never a lerp). Any point a dirt lane may target is a RoadSite.
+struct RoadSite { int x = 0; int y = 0; };
+struct VillageRoadSite {
+    int x = 0; int y = 0;
+    int cityX = 0; int cityY = 0;
+    bool hasCity = false;
+};
+
+// Dirt lanes (the FT_DirtRoad rows of kRoadClasses): for every village, a
+// lane to its home city and one to the nearest landmark within
+// `landmarkReach` cells (derive it from the world's own distance law —
+// derive_city_spacing — not from a constant). Runs AFTER stone is already in
+// `features`, over the same cost grid the stone pass used (water rejected,
+// canopy priced), so lanes climb around ridges and bogs at honest cost and
+// merge into stone the moment it is cheaper. Stamps FT_DirtRoad only on
+// FT_None cells (stone wins; fields are stamped later and never overwrite
+// roads) and stamps every village's own cell (the settlement-on-a-road
+// invariant the subworld's road stitching reads). Returns the number of
+// cells stamped; fails closed to 0 on malformed terrain or a feature layer
+// that does not cover it.
+int trace_dirt_roads(FeatureLayer& features, const TerrainData& td,
+                     const std::vector<VillageRoadSite>& villages,
+                     const std::vector<RoadSite>& landmarks,
+                     int landmarkReach,
+                     float seaLevel = 0.40f,
+                     const TreeLayer* treeLayer = nullptr);
 
 // Build the FeatureLayer from terrain + roads. Features are the MAN-MADE
 // structures composed ON TOP of the biome ground (dirt roads, then roads,

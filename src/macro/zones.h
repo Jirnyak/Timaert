@@ -1,7 +1,7 @@
 // Difficulty zones — the per-cell DANGER CONTINUUM, one byte: 0 = absolutely
 // safe, 255 = where the strongest demons stand (owner, 2026-08-24; the ten
-// quantised steps were a false discreteness — the labels below survive only
-// as display BANDS over the continuum). Spawn composition and loot quality
+// quantised steps were a false discreteness — only the display BANDS over
+// the continuum survive). Spawn composition and loot quality
 // read the byte through the one matching law (macro/spawn law): a row's
 // derived strength against the cell's danger, tails never zero.
 #pragma once
@@ -22,10 +22,6 @@ inline constexpr std::uint8_t zone_band(std::uint8_t z) {
 // The exit gate's "settled land" ceiling: everything the old quantiser called
 // bands 0..2 — derived, not tuned: 3 * 256 / kZoneCount - 1 = 75.
 inline constexpr int kSafeExitDanger = (3 * 256) / kZoneCount - 1;
-inline constexpr const char* kZoneLabels[kZoneCount] = {
-    "Safe Haven", "Settled", "Patrolled", "Frontier", "Wild",
-    "Untamed", "Perilous", "Forsaken", "Cursed", "Hellgate",
-};
 
 struct ZoneSeed { int x, y; };
 

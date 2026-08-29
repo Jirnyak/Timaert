@@ -1,3 +1,5 @@
+#include "check.h"
+
 #include "macro/biomes.h"
 #include "macro/features.h"
 #include "macro/movement_cost.h"
@@ -16,16 +18,6 @@ namespace
     bool nearly(float a, float b)
     {
         return std::fabs(a - b) < 0.0001f;
-    }
-
-    bool expect(bool ok, const char *msg)
-    {
-        if (!ok)
-        {
-            std::fprintf(stderr, "FAIL: %s\n", msg);
-            return false;
-        }
-        return true;
     }
 
     sm::PathCostData flat_grid(int w, int h, float cost)
@@ -58,60 +50,58 @@ namespace
 
 int main()
 {
-    bool ok = true;
-
-    ok &= expect(nearly(sm::biome_sp_weight(sm::Water), 10.0f),
+    CHECK(nearly(sm::biome_sp_weight(sm::Water), 10.0f),
                  "water biome weight must be 10");
-    ok &= expect(nearly(sm::cell_sp_weight(sm::Water, sm::FT_Road), 1.0f),
+    CHECK(nearly(sm::cell_sp_weight(sm::Water, sm::FT_Road), 1.0f),
                  "road feature must override water biome cost");
-    ok &= expect(nearly(sm::travel_stamina_cost(
+    CHECK(nearly(sm::travel_stamina_cost(
                             sm::cell_sp_weight(sm::Meadow, sm::FT_DirtRoad), 1.0f),
                         1.5f * sm::kStaminaPerCell),
                  "one dirt-road cell costs its weight x kStaminaPerCell");
     // The canopy is a CONTINUOUS contribution now (the sum law, 2026-08-24):
     // meadow ground 2.0 + kCanopySpWeight × density, thickening smoothly —
     // and an engineered bed is a CUT: the road gates the canopy off.
-    ok &= expect(nearly(sm::cell_sp_weight(sm::Meadow, sm::FT_None, 1.0f),
+    CHECK(nearly(sm::cell_sp_weight(sm::Meadow, sm::FT_None, 1.0f),
                         2.0f + sm::kCanopySpWeight),
                  "a full thicket adds the whole canopy weight to its ground");
-    ok &= expect(nearly(sm::cell_sp_weight(sm::Meadow, sm::FT_None, 0.5f),
+    CHECK(nearly(sm::cell_sp_weight(sm::Meadow, sm::FT_None, 0.5f),
                         2.0f + 0.5f * sm::kCanopySpWeight),
                  "half the trees add half the canopy — no boolean cliff");
-    ok &= expect(nearly(sm::cell_sp_weight(sm::Meadow, sm::FT_Road, 1.0f), 1.0f),
+    CHECK(nearly(sm::cell_sp_weight(sm::Meadow, sm::FT_Road, 1.0f), 1.0f),
                  "a road through a forest is a cut: the bed gates the canopy");
-    ok &= expect(nearly(sm::cell_sp_weight(static_cast<sm::Biome>(255), sm::FT_None), 2.0f),
+    CHECK(nearly(sm::cell_sp_weight(static_cast<sm::Biome>(255), sm::FT_None), 2.0f),
                  "unknown biome must match TS default movement weight");
-    ok &= expect(nearly(sm::cell_sp_weight(static_cast<sm::Biome>(255),
+    CHECK(nearly(sm::cell_sp_weight(static_cast<sm::Biome>(255),
                                            static_cast<sm::FeatureType>(255)), 2.0f),
                  "unknown feature and biome must fail closed to TS default movement weight");
-    ok &= expect(nearly(sm::cell_sp_weight(sm::Meadow,
+    CHECK(nearly(sm::cell_sp_weight(sm::Meadow,
                                            static_cast<sm::FeatureType>(255)), 2.0f),
                  "unknown feature must fall through to biome movement weight");
 
     sm::PathCostData grid = flat_grid(5, 5, 1.0f);
     sm::PathResult wrapped = sm::find_path(grid, 0, 0, 4, 0, 8);
-    ok &= expect(wrapped.found, "torus neighbor path should be found");
-    ok &= expect(wrapped.path.size() == 2, "torus neighbor path should be one edge");
+    CHECK(wrapped.found, "torus neighbor path should be found");
+    CHECK(wrapped.path.size() == 2, "torus neighbor path should be one edge");
     if (wrapped.path.size() == 2)
     {
-        ok &= expect(wrapped.path[0].x == 0 && wrapped.path[0].y == 0,
+        CHECK(wrapped.path[0].x == 0 && wrapped.path[0].y == 0,
                      "path should start at wrapped start");
-        ok &= expect(wrapped.path[1].x == 4 && wrapped.path[1].y == 0,
+        CHECK(wrapped.path[1].x == 4 && wrapped.path[1].y == 0,
                      "path should end at wrapped goal");
     }
 
     sm::PathResult capped = sm::find_path(grid, 0, 0, 4, 0, 1);
-    ok &= expect(!capped.found && capped.path.empty(),
+    CHECK(!capped.found && capped.path.empty(),
                  "maxSteps cap should stop search before second pop");
 
     sm::PathResult enoughBudget = sm::find_path(grid, 0, 0, 4, 0, 2);
-    ok &= expect(enoughBudget.found,
+    CHECK(enoughBudget.found,
                  "same path should succeed when cap allows target pop");
 
     sm::TerrainData td = make_terrain(2, 1);
-    ok &= expect(td.cell_count() == 2u && td.has_rgba_storage(),
+    CHECK(td.cell_count() == 2u && td.has_rgba_storage(),
                  "terrain storage helpers must accept valid RGBA backing data");
-    ok &= expect(!td.has_river_storage(),
+    CHECK(!td.has_river_storage(),
                  "terrain river helper must reject missing river backing data");
     sm::FeatureLayer fullFeatures;
     fullFeatures.resize(2, 1);
@@ -124,15 +114,15 @@ int main()
     mtnTerrain.rgba[4] = 220u; // height 0.863 >= kMountainBiomeLevel (0.75)
 
     const sm::PathCostData withFeatures = sm::build_cost_grid(mtnTerrain, &fullFeatures);
-    ok &= expect(withFeatures.width == 2 && withFeatures.height == 1,
+    CHECK(withFeatures.width == 2 && withFeatures.height == 1,
                  "valid cost grid must preserve terrain dimensions");
-    ok &= expect(withFeatures.costGrid.size() == 2u,
+    CHECK(withFeatures.costGrid.size() == 2u,
                  "valid cost grid must have one cost per cell");
     if (withFeatures.costGrid.size() == 2u)
     {
-        ok &= expect(nearly(withFeatures.costGrid[0], 1.0f),
+        CHECK(nearly(withFeatures.costGrid[0], 1.0f),
                      "road feature must apply road movement cost");
-        ok &= expect(nearly(withFeatures.costGrid[1], 5.0f),
+        CHECK(nearly(withFeatures.costGrid[1], 5.0f),
                      "mountain biome (by height) must apply mountain movement cost");
     }
 
@@ -149,14 +139,14 @@ int main()
     maskTerrain.rgba[3] = 0u;   // cell 0: mask says water — height untouched
     const sm::PathCostData maskCosts =
         sm::build_cost_grid(maskTerrain, nullptr);
-    ok &= expect(maskCosts.costGrid.size() == 2u,
+    CHECK(maskCosts.costGrid.size() == 2u,
                  "mask grid must be complete");
     if (maskCosts.costGrid.size() == 2u)
     {
-        ok &= expect(nearly(maskCosts.costGrid[0], 10.0f)
+        CHECK(nearly(maskCosts.costGrid[0], 10.0f)
                          && maskCosts.water[0] == 1u,
                      "a cell the mask calls water must price and flag as water");
-        ok &= expect(nearly(maskCosts.costGrid[1], defaultLandWeight)
+        CHECK(nearly(maskCosts.costGrid[1], defaultLandWeight)
                          && maskCosts.water[1] == 0u,
                      "a cell the mask calls land must keep its biome cost");
     }
@@ -165,7 +155,7 @@ int main()
     maskTerrain.rgba[3] = 255u;
     const sm::PathCostData maskFlipped =
         sm::build_cost_grid(maskTerrain, nullptr);
-    ok &= expect(maskFlipped.costGrid.size() == 2u
+    CHECK(maskFlipped.costGrid.size() == 2u
                      && nearly(maskFlipped.costGrid[0], defaultLandWeight)
                      && maskFlipped.water[0] == 0u,
                  "flipping the mask alone must reclassify the cell");
@@ -176,14 +166,14 @@ int main()
     shortFeatures.data.assign(1u, std::uint8_t(sm::FT_Road));
     const sm::PathCostData noFeatures = sm::build_cost_grid(td, nullptr);
     const sm::PathCostData shortFeatureCosts = sm::build_cost_grid(td, &shortFeatures);
-    ok &= expect(shortFeatureCosts.costGrid == noFeatures.costGrid,
+    CHECK(shortFeatureCosts.costGrid == noFeatures.costGrid,
                  "short feature storage must be ignored by cost-grid builder");
 
     sm::FeatureLayer mismatchedFeatures;
     mismatchedFeatures.resize(1, 2);
     mismatchedFeatures.set(0, 0, sm::FT_Road);
     const sm::PathCostData mismatchCosts = sm::build_cost_grid(td, &mismatchedFeatures);
-    ok &= expect(mismatchCosts.costGrid == noFeatures.costGrid,
+    CHECK(mismatchCosts.costGrid == noFeatures.costGrid,
                  "dimension-mismatched feature storage must be ignored");
 
     sm::FeatureLayer invalidFeatures;
@@ -191,23 +181,23 @@ int main()
     invalidFeatures.data[0] = 255u;
     invalidFeatures.set(1, 0, sm::FT_Road);
     const sm::PathCostData invalidFeatureCosts = sm::build_cost_grid(td, &invalidFeatures);
-    ok &= expect(invalidFeatureCosts.costGrid.size() == 2u,
+    CHECK(invalidFeatureCosts.costGrid.size() == 2u,
                  "invalid-byte feature grid must still build a complete cost grid");
     if (invalidFeatureCosts.costGrid.size() == 2u && noFeatures.costGrid.size() == 2u)
     {
-        ok &= expect(nearly(invalidFeatureCosts.costGrid[0], noFeatures.costGrid[0]),
+        CHECK(nearly(invalidFeatureCosts.costGrid[0], noFeatures.costGrid[0]),
                      "invalid feature byte must fail closed to biome movement cost");
-        ok &= expect(nearly(invalidFeatureCosts.costGrid[1], 1.0f),
+        CHECK(nearly(invalidFeatureCosts.costGrid[1], 1.0f),
                      "valid feature byte after invalid byte must still apply");
     }
 
     sm::TerrainData malformedTerrain = td;
     malformedTerrain.rgba.resize(1u);
-    ok &= expect(!malformedTerrain.has_rgba_storage(),
+    CHECK(!malformedTerrain.has_rgba_storage(),
                  "terrain storage helper must reject short RGBA backing data");
     const sm::PathCostData malformedCosts =
         sm::build_cost_grid(malformedTerrain, &fullFeatures);
-    ok &= expect(malformedCosts.width == 0 && malformedCosts.height == 0
+    CHECK(malformedCosts.width == 0 && malformedCosts.height == 0
                      && malformedCosts.costGrid.empty(),
                  "malformed terrain storage must fail closed");
 
@@ -226,13 +216,13 @@ int main()
     const sm::ZoneLayer baselineZones =
         sm::generate_zones(4, 4, 123u, noSeeds, noSeeds, zoneFeatures, nullptr,
                            0u, nullptr, &baselineCont);
-    ok &= expect(baselineZones.has_complete_storage(),
+    CHECK(baselineZones.has_complete_storage(),
                  "generated zone layer must expose complete storage");
     std::vector<float> shortFeatCont;
     const sm::ZoneLayer shortFeatureZones =
         sm::generate_zones(4, 4, 123u, noSeeds, noSeeds, shortZoneFeatures,
                            nullptr, 0u, nullptr, &shortFeatCont);
-    ok &= expect(shortFeatureZones.data == baselineZones.data
+    CHECK(shortFeatureZones.data == baselineZones.data
                      && shortFeatCont == baselineCont,
                  "short feature storage must be ignored by zone generator");
     sm::FeatureLayer invalidZoneFeatures;
@@ -242,7 +232,7 @@ int main()
     const sm::ZoneLayer invalidFeatureZones =
         sm::generate_zones(4, 4, 123u, noSeeds, noSeeds, invalidZoneFeatures,
                            nullptr, 0u, nullptr, &invalidFeatCont);
-    ok &= expect(invalidFeatureZones.data == baselineZones.data
+    CHECK(invalidFeatureZones.data == baselineZones.data
                      && invalidFeatCont == baselineCont,
                  "invalid feature bytes must be ignored by zone generator");
     std::vector<std::uint8_t> waterMask(std::size_t(4 * 4 * 4), 255u);
@@ -258,41 +248,38 @@ int main()
         sm::generate_zones(4, 4, 123u, noSeeds, noSeeds, zoneFeatures,
                            waterMask.data(), waterMask.size(), nullptr,
                            &waterCont);
-    ok &= expect(waterZones.has_complete_storage(),
+    CHECK(waterZones.has_complete_storage(),
                  "valid water-mask zone generation must expose complete storage");
-    ok &= expect(nearly(waterCont[0],
+    CHECK(nearly(waterCont[0],
                         std::min(1.0f, baselineCont[0] + 0.05f)),
                  "valid water mask must apply TS water boost to matching cells");
-    ok &= expect(nearly(waterCont[1], baselineCont[1]),
+    CHECK(nearly(waterCont[1], baselineCont[1]),
                  "valid water mask must not alter land cells");
     std::vector<float> shortWaterCont;
     const sm::ZoneLayer shortWaterZones =
         sm::generate_zones(4, 4, 123u, noSeeds, noSeeds, zoneFeatures,
                            waterMask.data(), 3u, nullptr, &shortWaterCont);
-    ok &= expect(shortWaterZones.data == baselineZones.data
+    CHECK(shortWaterZones.data == baselineZones.data
                      && shortWaterCont == baselineCont,
                  "short supplied water mask must be ignored by zone generator");
-    ok &= expect(sm::generate_zones(0, 4, 123u, noSeeds, noSeeds,
+    CHECK(sm::generate_zones(0, 4, 123u, noSeeds, noSeeds,
                                     zoneFeatures, nullptr).data.empty(),
                  "invalid zone dimensions must return an empty layer");
     sm::ZoneLayer malformedZones;
     malformedZones.width = 2;
     malformedZones.height = 2;
     malformedZones.data.assign(1u, 255u);
-    ok &= expect(!malformedZones.has_complete_storage(),
+    CHECK(!malformedZones.has_complete_storage(),
                  "short zone storage must not report complete storage");
     // The danger is a 0..255 CONTINUUM (owner 2026-08-24): every byte is a
     // legal value — the door returns it raw — and only a cell the short
     // storage cannot back fails closed to zero.
-    ok &= expect(malformedZones.at(0, 0) == 255u,
+    CHECK(malformedZones.at(0, 0) == 255u,
                  "a stored danger byte must come back untouched");
-    ok &= expect(malformedZones.at(1, 1) == 0u,
+    CHECK(malformedZones.at(1, 1) == 0u,
                  "a cell past the short storage must fail closed to zero");
-    ok &= expect(malformedZones.at(1, 1) == 0u,
+    CHECK(malformedZones.at(1, 1) == 0u,
                  "out-of-backing zone lookup must fail closed");
 
-    if (!ok)
-        return 1;
-    std::printf("pathfinding_parity_test: ok\n");
-    return 0;
+    return sm::test::report("pathfinding_parity_test");
 }

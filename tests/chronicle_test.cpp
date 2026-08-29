@@ -328,6 +328,13 @@ void test_a_band_becomes_a_figure_by_its_deeds() {
           "the bar IS the table: retune a row and it moves with it");
     CHECK(fact_kind_def(FactKind::Traded).baseRenown == 0,
           "negative control: selling bread makes nobody anybody");
+    // …and the partner's fame does not rub off either (owner, 2026-08-29:
+    // «торговля — маленькое дело»): the victim's share is for deeds AGAINST
+    // somebody, a mutual deal pays none — the kind row says so by column.
+    CHECK(renown_for_deed(FactKind::Traded, 1000u) == 0u,
+          "a deal with a famous city tithes none of its renown");
+    CHECK(fact_kind_def(FactKind::Robbed).victimShare,
+          "the control is real: robbing the same city still pays the share");
 
     // ── THE VICTIM ANSWERS WHAT A DEED IS WORTH ──────────────────────────
     // Owner's ruling: renown is contextual, and the context is WHOM it was

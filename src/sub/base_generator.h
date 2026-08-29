@@ -36,6 +36,14 @@ namespace sm::sub
     constexpr float kMacroSeaLevel = 0.40f;
     constexpr float kLandMargin    = 0.02f;
 
+    // `kWetEdgeTop`  Top of the WET EDGE above the waterline: ground below it
+    //   is soaked — shore tiles get painted, fields refuse the plough. One
+    //   value for both, or the beach and the ploughland disagree about where
+    //   the water's reach ends. NOT kLandMargin: that one lifts a land cell's
+    //   REMAP so seam blends cannot sink it; this one classifies final ground
+    //   height, and the two move for different reasons.
+    constexpr float kWetEdgeTop    = WATER_LEVEL + 0.022f;
+
     // THE cell-skeleton height law (normalised 0..1): the deterministic
     // per-cell column the generator bilinears into its macro manifold BEFORE
     // any noise or ridges (base_generator.cpp remapped[] / peakHeight[]).

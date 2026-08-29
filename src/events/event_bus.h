@@ -1,4 +1,7 @@
-// Tick-buffered event bus + history. Mirrors event-bus.ts.
+// Tick-buffered event bus. The old 4096-entry history ring is gone: the
+// world's past lives in the chronicle and the player's journal (CANON S20.1),
+// and a frame's events live in tick_/last_ — a fourth store had no reader
+// that those could not serve.
 #pragma once
 
 #include "core/small_function.h"
@@ -56,20 +59,15 @@ public:
     std::uint32_t on(EventTag tag, Handler h);
     void unsubscribe(std::uint32_t id);
 
-    // Move tick buffer to history; promote to lastTickEvents.
-    void flush(int day, int hour);
+    // Promote the tick buffer to lastTickEvents.
+    void flush();
 
-    std::vector<WorldHistoryEntry> query_history(EventTag tag, std::size_t limit = 50) const;
     void reset();
     std::uint32_t tick() const { return tickCounter_; }
     std::size_t subscription_count() const { return subscriptionCount_; }
 
     const std::vector<GameEvent>& tick_events() const { return tick_; }
     const std::vector<GameEvent>& last_tick_events() const { return last_; }
-    // Oldest first, so a reader sees a PAST and not a ring's seam. The ring
-    // is an implementation detail of the cap, not of the record.
-    std::size_t history_size() const { return historyCount_; }
-    const WorldHistoryEntry& history_at(std::size_t i) const;
 
 private:
     struct Sub {
@@ -80,14 +78,6 @@ private:
 
     std::vector<GameEvent> tick_;
     std::vector<GameEvent> last_;
-    // A RING, not a growing vector with a shift. It used to be capped by
-    // `erase(begin(), begin()+drop)` once saturated — a memmove of up to 4096
-    // entries EVERY TICK, each move carrying two std::strings and two
-    // refcounted pointers. Same defect the settlement history had, same fix:
-    // the cap lives in the container and nothing shifts to enforce it.
-    std::vector<WorldHistoryEntry> history_;
-    std::size_t historyHead_ = 0;    // where the next entry is written
-    std::size_t historyCount_ = 0;   // entries that are real
 
     // Not owned: the chronicle is the WORLD's (GameState), and the bus is the
     // door into it. A bus that owned the world's memory would be a second

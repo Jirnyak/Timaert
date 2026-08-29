@@ -381,10 +381,8 @@ inline bool spend_skill_point(LevelData& ld, Skills& s, SkillId id) {
 inline int exp_to_next_level(int level) {
     return int(1000.0 * level * (0.1 * level + 1.0));
 }
-// EXP_fight(lvl_m, k) = floor(10 * lvl_m * k)
-inline int exp_from_fight(int enemyLevel, float modifier = 1.0f) {
-    return int(10.0f * float(enemyLevel) * modifier);
-}
+// (exp_from_fight — the flat 10·lvl kill payout — died 2026-08-29: every
+// kill pays through the ONE npc_xp_reward law in macro/npc.h now.)
 inline Attributes default_attributes() { return {}; }
 inline Skills     default_skills()     { return {}; }
 inline Perks      default_perks()      { return {}; }

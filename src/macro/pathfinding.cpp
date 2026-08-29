@@ -1,8 +1,9 @@
-// A* pathfinding over a torus cost grid. Port of pathfinding.ts.
+// A* pathfinding over a torus cost grid. This file is the source of truth
+// (the TS original is dead — the migration is closed).
 //
 // Edge cost = costGrid[dest] * stepLen (1.0 cardinal, sqrt(2) diagonal).
 // Octile heuristic with torus wrap (consistent for 8-directional A*).
-// Indexed binary min-heap collapses duplicates, matching TS MinHeap.
+// Indexed binary min-heap collapses duplicates.
 
 #include "core/torus.h"
 #include "macro/pathfinding.h"
@@ -40,104 +41,6 @@ namespace sm
                        ? float(dx) + 0.4142136f * float(dy)
                        : float(dy) + 0.4142136f * float(dx);
         }
-
-        struct NodeRec
-        {
-            int x, y;
-            float g, f;
-        };
-
-        struct IndexedHeap
-        {
-            std::vector<NodeRec> items;
-            std::vector<std::int32_t> indexOf;
-            int width = 0;
-
-            void init(int w, int h)
-            {
-                width = w;
-                indexOf.assign(std::size_t(w) * h, -1);
-                items.clear();
-            }
-
-            inline std::size_t key(int x, int y) const
-            {
-                return std::size_t(y) * width + x;
-            }
-
-            inline bool empty() const { return items.empty(); }
-
-            void push(const NodeRec &n)
-            {
-                std::size_t k = key(n.x, n.y);
-                std::int32_t at = indexOf[k];
-                if (at >= 0)
-                {
-                    if (n.f < items[std::size_t(at)].f)
-                    {
-                        items[std::size_t(at)] = n;
-                        bubble_up(at);
-                    }
-                    return;
-                }
-
-                items.push_back(n);
-                std::int32_t idx = std::int32_t(items.size() - 1);
-                indexOf[k] = idx;
-                bubble_up(idx);
-            }
-
-            NodeRec pop()
-            {
-                NodeRec top = items.front();
-                indexOf[key(top.x, top.y)] = -1;
-                NodeRec last = items.back();
-                items.pop_back();
-                if (!items.empty())
-                {
-                    items.front() = last;
-                    indexOf[key(last.x, last.y)] = 0;
-                    sink_down(0);
-                }
-                return top;
-            }
-
-            void bubble_up(std::int32_t i)
-            {
-                while (i > 0)
-                {
-                    std::int32_t p = (i - 1) >> 1;
-                    if (items[std::size_t(i)].f >= items[std::size_t(p)].f)
-                        return;
-                    swap_at(i, p);
-                    i = p;
-                }
-            }
-
-            void sink_down(std::int32_t i)
-            {
-                std::int32_t n = std::int32_t(items.size());
-                for (;;)
-                {
-                    std::int32_t l = 2 * i + 1, r = 2 * i + 2, s = i;
-                    if (l < n && items[std::size_t(l)].f < items[std::size_t(s)].f)
-                        s = l;
-                    if (r < n && items[std::size_t(r)].f < items[std::size_t(s)].f)
-                        s = r;
-                    if (s == i)
-                        return;
-                    swap_at(i, s);
-                    i = s;
-                }
-            }
-
-            void swap_at(std::int32_t a, std::int32_t b)
-            {
-                std::swap(items[std::size_t(a)], items[std::size_t(b)]);
-                indexOf[key(items[std::size_t(a)].x, items[std::size_t(a)].y)] = a;
-                indexOf[key(items[std::size_t(b)].x, items[std::size_t(b)].y)] = b;
-            }
-        };
 
     } // namespace
 
@@ -184,15 +87,20 @@ namespace sm
     PathResult find_path(const PathCostData &data,
                          int startX, int startY,
                          int endX, int endY,
-                         int maxSteps)
+                         PathScratch &scratch,
+                         int maxSteps,
+                         float blockAtOrAbove,
+                         int *stepsOut)
     {
+        if (stepsOut)
+            *stepsOut = 0;
         PathResult out;
         const int W = data.width, H = data.height;
         if (W <= 0 || H <= 0)
             return out;
 
-        int sx = pf_wrap(startX, W), sy = pf_wrap(startY, H);
-        int ex = pf_wrap(endX, W), ey = pf_wrap(endY, H);
+        const int sx = pf_wrap(startX, W), sy = pf_wrap(startY, H);
+        const int ex = pf_wrap(endX, W), ey = pf_wrap(endY, H);
 
         if (sx == ex && sy == ey)
         {
@@ -207,24 +115,18 @@ namespace sm
         // grid size while letting paths be found anywhere on the torus.
         if (maxSteps <= 0)
             maxSteps = int(cells);
-        std::vector<std::uint8_t> closed(cells, 0);
-        std::vector<float> gScores(cells, std::numeric_limits<float>::infinity());
-        std::vector<std::int32_t> parentX(cells, -1);
-        std::vector<std::int32_t> parentY(cells, -1);
+        scratch.init(W, H);
 
-        IndexedHeap open;
-        open.init(W, H);
-
-        NodeRec start{sx, sy, 0.0f, octile_torus(sx, sy, ex, ey, W, H)};
-        gScores[std::size_t(sy) * W + sx] = 0.0f;
-        open.push(start);
+        PathScratch::Node start{sx, sy, 0.0f, octile_torus(sx, sy, ex, ey, W, H)};
+        scratch.set_score(std::size_t(sy) * W + sx, 0.0f, -1, -1);
+        scratch.open.push(start);
 
         int steps = 0;
-        while (!open.empty() && steps < maxSteps)
+        while (!scratch.open.empty() && steps < maxSteps)
         {
             ++steps;
-            NodeRec cur = open.pop();
-            std::size_t cidx = std::size_t(cur.y) * W + cur.x;
+            PathScratch::Node cur = scratch.open.pop();
+            const std::size_t cidx = std::size_t(cur.y) * W + cur.x;
 
             if (cur.x == ex && cur.y == ey)
             {
@@ -233,7 +135,7 @@ namespace sm
                 {
                     out.path.push_back({cx, cy});
                     std::size_t k = std::size_t(cy) * W + cx;
-                    std::int32_t px = parentX[k], py = parentY[k];
+                    std::int32_t px = scratch.parentX[k], py = scratch.parentY[k];
                     if (px < 0)
                         break;
                     cx = px;
@@ -241,36 +143,50 @@ namespace sm
                 }
                 std::reverse(out.path.begin(), out.path.end());
                 out.found = true;
+                if (stepsOut)
+                    *stepsOut = steps;
                 return out;
             }
 
-            if (closed[cidx])
+            if (scratch.closed_at(cidx))
                 continue;
-            closed[cidx] = 1;
+            scratch.close(cidx);
 
             for (int d = 0; d < 8; ++d)
             {
                 int nx = pf_wrap(cur.x + DX[d], W);
                 int ny = pf_wrap(cur.y + DY[d], H);
                 std::size_t nidx = std::size_t(ny) * W + nx;
-                if (closed[nidx])
+                if (scratch.closed_at(nidx))
                     continue;
+                const float ncost = data.costGrid[nidx];
+                if (ncost >= blockAtOrAbove)
+                    continue; // gated ground is refused, never paid
 
-                float cost = data.costGrid[nidx] * STEP_COST[d]
-                           + data.climb(cidx, std::size_t(nidx));
+                float cost = ncost * STEP_COST[d]
+                           + data.climb(cidx, nidx);
                 float tentG = cur.g + cost;
-                if (tentG >= gScores[nidx])
+                if (tentG >= scratch.score(nidx))
                     continue;
 
-                gScores[nidx] = tentG;
-                parentX[nidx] = std::int32_t(cur.x);
-                parentY[nidx] = std::int32_t(cur.y);
+                scratch.set_score(nidx, tentG, cur.x, cur.y);
 
                 float hh = octile_torus(nx, ny, ex, ey, W, H);
-                open.push({nx, ny, tentG, tentG + hh});
+                scratch.open.push({nx, ny, tentG, tentG + hh});
             }
         }
+        if (stepsOut)
+            *stepsOut = steps;
         return out;
+    }
+
+    PathResult find_path(const PathCostData &data,
+                         int startX, int startY,
+                         int endX, int endY,
+                         int maxSteps)
+    {
+        PathScratch scratch;
+        return find_path(data, startX, startY, endX, endY, scratch, maxSteps);
     }
 
 } // namespace sm

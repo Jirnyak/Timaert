@@ -462,14 +462,17 @@ void finalize_politik(Politik& p, const TerrainData& td, std::uint8_t seaLevel8)
     };
 
     // Lake-snap: nudge lake-required capitals to a coastal cell with ≥4
-    // water neighbours in radius 8.
+    // water neighbours in radius kLakeScanRadius. ONE radius for the "is the
+    // capital already at a lake" test and the search below — they once drifted
+    // (6 vs 8), so a capital could be moved to a cell it would then fail.
+    constexpr int kLakeScanRadius = 8;
     const auto& defs = kingdom_defs();
     for (std::size_t k = 0; k < defs.size() && k < p.kingdoms.size(); ++k) {
         if (!defs[k].capital_requires_lake) continue;
         Kingdom& kg = p.kingdoms[k];
         if (kg.capitalCityIdx < 0) continue;
         City& cap = p.cities[std::size_t(kg.capitalCityIdx)];
-        if (count_local_water(cap.x, cap.y, 6) >= 4) continue;
+        if (count_local_water(cap.x, cap.y, kLakeScanRadius) >= 4) continue;
         bool placed = false;
         for (int r = 1; r < 80 && !placed; ++r) {
             for (int dy = -r; dy <= r && !placed; ++dy) {
@@ -477,7 +480,7 @@ void finalize_politik(Politik& p, const TerrainData& td, std::uint8_t seaLevel8)
                     if (std::max(std::abs(dx), std::abs(dy)) != r) continue;
                     int x = wrapi(cap.x + dx, W), y = wrapi(cap.y + dy, H);
                     if (!is_land(x, y)) continue;
-                    if (count_local_water(x, y, 8) >= 4) {
+                    if (count_local_water(x, y, kLakeScanRadius) >= 4) {
                         cap.x = x; cap.y = y; placed = true;
                     }
                 }

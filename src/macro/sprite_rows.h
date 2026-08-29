@@ -44,6 +44,7 @@ enum class CreatureArchetype : std::uint8_t {
     Undead    = 4, // thin bony / ghostly upright (skeleton / ice wraith)
     Hulk      = 5, // massive blocky (stone golem)
     Critter   = 6, // tiny squat blob (frog)
+    Count,
 };
 
 // A row that is not a body at all — a town, a spire, a coin icon. It has no
@@ -60,17 +61,32 @@ inline constexpr std::uint8_t kNoBody = 0xFF;
 struct CreatureAspect {
     float w, h;
 };
-inline constexpr CreatureAspect kCreatureAspects[7] = {
-    {1.70f, 1.15f}, // Quadruped (wide, low)
-    {1.50f, 1.05f}, // Avian
-    {1.15f, 1.50f}, // Serpent (tall)
-    {1.25f, 1.80f}, // Biped
-    {1.10f, 1.80f}, // Undead
-    {1.80f, 2.05f}, // Hulk
-    {0.95f, 0.80f}, // Critter
+// Rows carry their own enum and the guard makes drift a compile error — the
+// old bare 7-array with a `< 7 ? : 6` clamp turned an eighth archetype into
+// a silent Critter.
+struct CreatureAspectRow {
+    CreatureArchetype arch;   // MUST equal the row's index (guard below)
+    CreatureAspect    aspect;
 };
+inline constexpr CreatureAspectRow
+kCreatureAspects[std::size_t(CreatureArchetype::Count)] = {
+    {CreatureArchetype::Quadruped, {1.70f, 1.15f}},   // wide, low
+    {CreatureArchetype::Avian,     {1.50f, 1.05f}},
+    {CreatureArchetype::Serpent,   {1.15f, 1.50f}},   // tall
+    {CreatureArchetype::Biped,     {1.25f, 1.80f}},
+    {CreatureArchetype::Undead,    {1.10f, 1.80f}},
+    {CreatureArchetype::Hulk,      {1.80f, 2.05f}},
+    {CreatureArchetype::Critter,   {0.95f, 0.80f}},
+};
+static_assert(rows_in_enum_order(kCreatureAspects, &CreatureAspectRow::arch),
+              "kCreatureAspects row order must mirror CreatureArchetype");
 inline CreatureAspect creature_arch_aspect(std::uint8_t archetype) {
-    return kCreatureAspects[archetype < 7 ? archetype : 6];
+    if (archetype < std::uint8_t(CreatureArchetype::Count))
+        return kCreatureAspects[archetype].aspect;
+    // Only a row with NO body plan (kNoBody) lands here and keeps the old
+    // smallest-silhouette answer. A real new archetype cannot: growing the
+    // enum forces its row through the guard above, never this branch.
+    return kCreatureAspects[std::size_t(CreatureArchetype::Critter)].aspect;
 }
 
 // ── The vocabulary of pictures ──────────────────────────────────────

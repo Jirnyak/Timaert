@@ -10,6 +10,8 @@
 // Increment A covers the isotropic radial bake. When increment B lands
 // (terrain-occluded propagation: open land carries light far, forest attenuates,
 // mountain blocks) this file gains the occlusion cases.
+#include "check.h"
+
 #include "macro/macro_lighting.h"
 #include "macro/features.h"
 #include "macro/landmark_registry.h"
@@ -21,14 +23,6 @@
 #include <vector>
 
 namespace {
-
-int g_fail = 0;
-void check(bool ok, const char* msg) {
-    if (!ok) {
-        std::fprintf(stderr, "FAIL macro_lighting_test: %s\n", msg);
-        ++g_fail;
-    }
-}
 
 // One RGBA8 channel of the baked field at cell (x, y).
 int chan(const std::vector<std::uint8_t>& f, int w, int x, int y, int c) {
@@ -45,14 +39,14 @@ int main() {
     {
         std::vector<std::uint8_t> f;
         bake_light_field(8, 8, {}, f);
-        check(f.size() == 8u * 8u * 4u, "empty bake sizes to w*h*4");
+        CHECK(f.size() == 8u * 8u * 4u, "empty bake sizes to w*h*4");
         bool zeroRGB = true, opaque = true;
         for (int i = 0; i < 8 * 8; ++i) {
             if (f[i * 4 + 0] || f[i * 4 + 1] || f[i * 4 + 2]) zeroRGB = false;
             if (f[i * 4 + 3] != 255) opaque = false;
         }
-        check(zeroRGB, "empty bake has zero glow");
-        check(opaque, "empty bake alpha is 255");
+        CHECK(zeroRGB, "empty bake has zero glow");
+        CHECK(opaque, "empty bake alpha is 255");
     }
 
     // ---- bake_light_field: single central light, monotonic radial falloff ----
@@ -70,13 +64,13 @@ int main() {
         const int near2  = chan(f, W, 18, 16, 0);  // 2 cells away
         const int far5   = chan(f, W, 21, 16, 0);  // 5 cells away (< radius 6)
         const int beyond = chan(f, W, 24, 16, 0);  // 8 cells away (> radius)
-        check(core > 0, "central light glows at core");
-        check(core > near2, "glow decreases with distance (core > near)");
-        check(near2 > far5, "glow decreases with distance (near > far)");
-        check(beyond == 0, "glow is zero beyond radius");
-        check(chan(f, W, 14, 16, 0) == chan(f, W, 18, 16, 0),
+        CHECK(core > 0, "central light glows at core");
+        CHECK(core > near2, "glow decreases with distance (core > near)");
+        CHECK(near2 > far5, "glow decreases with distance (near > far)");
+        CHECK(beyond == 0, "glow is zero beyond radius");
+        CHECK(chan(f, W, 14, 16, 0) == chan(f, W, 18, 16, 0),
               "radial symmetry left/right");
-        check(chan(f, W, 16, 14, 0) == chan(f, W, 16, 18, 0),
+        CHECK(chan(f, W, 16, 14, 0) == chan(f, W, 16, 18, 0),
               "radial symmetry up/down");
     }
 
@@ -91,9 +85,9 @@ int main() {
         L.r = L.g = L.b = 1.0f;
         std::vector<std::uint8_t> f;
         bake_light_field(W, H, {L}, f);
-        check(chan(f, W, 0, 0, 0) > 0, "wrap: core glows");
-        check(chan(f, W, W - 1, 0, 0) > 0, "wrap: x=0 light reaches x=W-1");
-        check(chan(f, W, 0, H - 1, 0) > 0, "wrap: y=0 light reaches y=H-1");
+        CHECK(chan(f, W, 0, 0, 0) > 0, "wrap: core glows");
+        CHECK(chan(f, W, W - 1, 0, 0) > 0, "wrap: x=0 light reaches x=W-1");
+        CHECK(chan(f, W, 0, H - 1, 0) > 0, "wrap: y=0 light reaches y=H-1");
     }
 
     // ---- bake_light_field: colour fidelity + per-channel clamp/encode ----
@@ -107,9 +101,9 @@ int main() {
         red.r = 1.0f; red.g = 0.0f; red.b = 0.0f;
         std::vector<std::uint8_t> f;
         bake_light_field(W, H, {red}, f);
-        check(chan(f, W, 4, 4, 0) > 0, "red light: R core > 0");
-        check(chan(f, W, 4, 4, 1) == 0, "red light: G core == 0");
-        check(chan(f, W, 4, 4, 2) == 0, "red light: B core == 0");
+        CHECK(chan(f, W, 4, 4, 0) > 0, "red light: R core > 0");
+        CHECK(chan(f, W, 4, 4, 1) == 0, "red light: G core == 0");
+        CHECK(chan(f, W, 4, 4, 2) == 0, "red light: B core == 0");
 
         // Master gain tames base brightness: a single max-intensity light has
         // core acc == 1.0, so its encoded byte is exactly the gain mapped onto
@@ -119,9 +113,9 @@ int main() {
             const float gClamped =
                 kMacroGlowGain < kMacroGlowCeil ? kMacroGlowGain : kMacroGlowCeil;
             const int expected = int(gClamped * (255.0f / kMacroGlowCeil) + 0.5f);
-            check(chan(f, W, 4, 4, 0) == expected,
+            CHECK(chan(f, W, 4, 4, 0) == expected,
                   "gain: single max light core encodes to the gain level");
-            check(expected < 128,
+            CHECK(expected < 128,
                   "gain: a lone city core stays well below saturation");
         }
 
@@ -134,8 +128,8 @@ int main() {
             many.push_back(m);
         }
         bake_light_field(W, H, many, f);
-        check(chan(f, W, 4, 4, 0) == 255, "clamp: saturated channel encodes to 255");
-        check(chan(f, W, 4, 4, 3) == 255, "alpha stays 255 under saturation");
+        CHECK(chan(f, W, 4, 4, 0) == 255, "clamp: saturated channel encodes to 255");
+        CHECK(chan(f, W, 4, 4, 3) == 255, "alpha stays 255 under saturation");
     }
 
     // ---- collect_macro_lights: census, opt-out, tint, population scaling ----
@@ -144,27 +138,32 @@ int main() {
         gs.mapW = 256;
         gs.mapH = 256;
 
-        Settlement big{};
+        Landmark big{};
+        big.type = LandmarkType::City;
         big.id = 1; big.x = 10; big.y = 10; big.population = 5000;
-        Settlement small{};
+        Landmark small{};
+        small.type = LandmarkType::City;
         small.id = 2; small.x = 20; small.y = 20; small.population = 20;
-        gs.settlements.push_back(big);
-        gs.settlements.push_back(small);
+        gs.landmarks.push_back(big);
+        gs.landmarks.push_back(small);
 
-        Village v{};
-        v.id = 1; v.x = 30; v.y = 30; v.population = 100;
-        gs.villages.push_back(v);
+        Landmark v{};
+        v.type = LandmarkType::Village;
+        v.id = 3; v.x = 30; v.y = 30; v.population = 100;
+        gs.landmarks.push_back(v);
 
-        Spire active{};
-        active.id = 1; active.x = 40; active.y = 40; active.depleted = false;
-        Spire spent{};
-        spent.id = 2; spent.x = 50; spent.y = 50; spent.depleted = true;
-        gs.spires.push_back(active);
-        gs.spires.push_back(spent);
+        Landmark active{};
+        active.type = LandmarkType::Spire;
+        active.id = 4; active.x = 40; active.y = 40; active.depleted = false;
+        Landmark spent{};
+        spent.type = LandmarkType::Spire;
+        spent.id = 5; spent.x = 50; spent.y = 50; spent.depleted = true;
+        gs.landmarks.push_back(active);
+        gs.landmarks.push_back(spent);
 
         std::vector<MacroLight> lights = collect_macro_lights(gs);
         // 2 settlements + 1 village + 1 active spire; the depleted spire emits none.
-        check(lights.size() == 4u, "census: 4 emitters (depleted spire excluded)");
+        CHECK(lights.size() == 4u, "census: 4 emitters (depleted spire excluded)");
 
         auto by_cell = [&](int cx, int cy) -> const MacroLight* {
             const float ex = (float(cx) + 0.5f) / 256.0f;
@@ -178,24 +177,24 @@ int main() {
         const MacroLight* ls = by_cell(20, 20);      // small settlement
         const MacroLight* lp = by_cell(40, 40);      // active spire
         const MacroLight* ldep = by_cell(50, 50);    // depleted spire (absent)
-        check(lb && ls && lp, "settlement/spire lights present at their cells");
-        check(ldep == nullptr, "depleted spire produced no light");
+        CHECK(lb && ls && lp, "settlement/spire lights present at their cells");
+        CHECK(ldep == nullptr, "depleted spire produced no light");
 
         if (lb && ls) {
-            check(lb->radius > ls->radius, "bigger population -> bigger radius");
-            check(lb->intensity >= ls->intensity,
+            CHECK(lb->radius > ls->radius, "bigger population -> bigger radius");
+            CHECK(lb->intensity >= ls->intensity,
                   "bigger population -> >= intensity");
         }
         // City warm hearth tint 0xFFFFC76B.
         if (lb) {
-            check(std::fabs(lb->r - 1.0f) < 0.01f, "city tint R == 1.0");
-            check(std::fabs(lb->g - float(0xC7) / 255.0f) < 0.01f, "city tint G");
-            check(std::fabs(lb->b - float(0x6B) / 255.0f) < 0.01f, "city tint B");
+            CHECK(std::fabs(lb->r - 1.0f) < 0.01f, "city tint R == 1.0");
+            CHECK(std::fabs(lb->g - float(0xC7) / 255.0f) < 0.01f, "city tint G");
+            CHECK(std::fabs(lb->b - float(0x6B) / 255.0f) < 0.01f, "city tint B");
         }
         // Spire arcane tint 0xFFA86CFF (bluish: B == 1.0, R < B).
         if (lp) {
-            check(std::fabs(lp->b - 1.0f) < 0.01f, "spire tint B == 1.0");
-            check(lp->r < lp->b, "spire tint is bluish (R < B)");
+            CHECK(std::fabs(lp->b - 1.0f) < 0.01f, "spire tint B == 1.0");
+            CHECK(lp->r < lp->b, "spire tint is bluish (R < B)");
         }
     }
 
@@ -218,12 +217,12 @@ int main() {
         std::vector<std::uint8_t> f;
         bake_light_field(W, H, {L}, f, &feat);
         // Probe on-axis, where octile optical distance equals Euclidean exactly.
-        check(chan(f, W, 12, 12, 0) > 0, "occluded/open: core glows");
-        check(chan(f, W, 12, 12, 0) > chan(f, W, 12, 14, 0),
+        CHECK(chan(f, W, 12, 12, 0) > 0, "occluded/open: core glows");
+        CHECK(chan(f, W, 12, 12, 0) > chan(f, W, 12, 14, 0),
               "occluded/open: falls off (core > near)");
-        check(chan(f, W, 12, 14, 0) > chan(f, W, 12, 17, 0),
+        CHECK(chan(f, W, 12, 14, 0) > chan(f, W, 12, 17, 0),
               "occluded/open: falls off (near > far)");
-        check(chan(f, W, 12, 20, 0) == 0, "occluded/open: zero beyond radius");
+        CHECK(chan(f, W, 12, 20, 0) == 0, "occluded/open: zero beyond radius");
     }
 
     // ---- forest dims light: edge transmits, interior darkens ----
@@ -253,10 +252,10 @@ int main() {
         const int openNear = chan(fo, W, 23, 20, 0);  // 3 east, open
         const int treeNear = chan(ft, W, 23, 20, 0);  // 3 east, forest edge
         const int treeDeep = chan(ft, W, 25, 20, 0);  // 5 east, forest interior
-        check(openNear > 0, "forest: probe lit over open ground");
-        check(treeNear > 0, "forest: canopy edge still transmits some light");
-        check(treeNear < openNear, "forest: canopy dims the same probe");
-        check(treeDeep == 0, "forest: deep interior goes dark");
+        CHECK(openNear > 0, "forest: probe lit over open ground");
+        CHECK(treeNear > 0, "forest: canopy edge still transmits some light");
+        CHECK(treeNear < openNear, "forest: canopy dims the same probe");
+        CHECK(treeDeep == 0, "forest: deep interior goes dark");
     }
 
     // (Mountains were tested here as a hard FT_Mountain wall. They are now a
@@ -283,8 +282,8 @@ int main() {
         bake_light_field(W, H, {L}, f, &feat);
         const int roadProbe = chan(f, W, 27, 20, 0);  // 7 east along the road
         const int openProbe = chan(f, W, 20, 27, 0);  // 7 south over open ground
-        check(roadProbe > 0 && openProbe > 0, "road: both probes lit");
-        check(roadProbe > openProbe,
+        CHECK(roadProbe > 0 && openProbe > 0, "road: both probes lit");
+        CHECK(roadProbe > openProbe,
               "road: light travels further along a road than over open ground");
     }
 
@@ -319,8 +318,8 @@ int main() {
         bake_light_field(W, H, {L}, fr, &open, &ridge);
         const int flatProbe  = chan(ff, W, 25, 20, 0);  // 5 east, flat world
         const int ridgeProbe = chan(fr, W, 25, 20, 0);  // 5 east, behind ridge
-        check(flatProbe > 0, "elevation: probe lit on flat ground");
-        check(ridgeProbe == 0, "elevation: ridge walls the glow off");
+        CHECK(flatProbe > 0, "elevation: probe lit on flat ground");
+        CHECK(ridgeProbe == 0, "elevation: ridge walls the glow off");
         // Downhill is free: a probe BELOW the emitter keeps its glow.
         std::vector<float> valley = flat;
         for (int y = 0; y < H; ++y)
@@ -328,16 +327,14 @@ int main() {
                 valley[std::size_t(y) * W + x] = 0.30f;  // land drops east
         std::vector<std::uint8_t> fv;
         bake_light_field(W, H, {L}, fv, &open, &valley);
-        check(chan(fv, W, 25, 20, 0) == flatProbe,
+        CHECK(chan(fv, W, 25, 20, 0) == flatProbe,
               "elevation: downhill spill is free (valley probe == flat probe)");
 
         // ---- INVARIANCE: uniform heights == heights-free bake, byte-for-byte.
         std::vector<std::uint8_t> f0;
         bake_light_field(W, H, {L}, f0, &open);
-        check(ff == f0, "elevation: flat heights are byte-identical to no heights");
+        CHECK(ff == f0, "elevation: flat heights are byte-identical to no heights");
     }
 
-    if (g_fail == 0)
-        std::fprintf(stderr, "macro_lighting_test: ALL PASS\n");
-    return g_fail == 0 ? 0 : 1;
+    return sm::test::report("macro_lighting_test");
 }

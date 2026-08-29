@@ -44,8 +44,7 @@ void write_tree_count(MacroWorld& w, MacroStockKey k, int delta) {
 // disambiguate two zero-based numberings is dead.
 int* find_population(const MacroWorld& w, std::int32_t subject) {
     if (!w.gs || subject < 0) return nullptr;
-    for (auto& v : w.gs->villages) if (v.id == subject) return &v.population;
-    for (auto& s : w.gs->settlements) if (s.id == subject) return &s.population;
+    if (Landmark* lm = landmark_by_id(*w.gs, subject)) return &lm->population;
     return nullptr;
 }
 
@@ -330,8 +329,8 @@ void resource_fields_daily_growth(MacroWorld& w, int day) {
             break;
 
         case GrowthDomain::CarrierGrid: {
-            // The due 1/32 slice of the dense carrier (8192 cells of a
-            // 512² map): each cell is visited once per epoch and gets an
+            // The due 1/32 slice of the dense carrier (32768 cells of the
+            // 1024² map): each cell is visited once per epoch and gets an
             // epoch's worth of growth — smooth long-term dynamics, no
             // full-map day.
             if (!w.trees || !w.trees->has_complete_storage()) break;

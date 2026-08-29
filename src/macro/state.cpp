@@ -96,7 +96,9 @@ GameState default_game_state(std::uint32_t seed, int mapW, int mapH,
     gs.mapW         = mapW;
     gs.mapH         = mapH;
     gs.mapParams    = mapParams;
-    gs.mapParams.seed = float(seed % 100000u);
+    // Same % 100000 decimation as the boot path (main.cpp): UI heritage —
+    // five on-screen digits keep naming the same worlds they always did.
+    gs.mapParams.seed = seed % 100000u;
     gs.cityCountTarget = cityCountTarget;
     gs.worldTime    = world_time_at(1, 8, 0);   // day 1, 08:00
     gs.subState     = GameSubState{};       // Exploring
@@ -126,9 +128,7 @@ void populate_landmarks_from_politik(GameState& gs,
                                      std::uint8_t seaLevel8,
                                      TreeLayer& trees,
                                      DepositLayer& deposits) {
-    gs.settlements.clear();
-    gs.villages.clear();
-    gs.spires.clear();
+    gs.landmarks.clear();
     if (!terrain.has_rgba_storage()) {
         return;
     }
@@ -136,11 +136,12 @@ void populate_landmarks_from_politik(GameState& gs,
     Rng rng(gs.worldSeed ^ 0xC1A05E1Du);
 
     const auto& cities = gs.politik.cities;
-    gs.settlements.reserve(cities.size());
+    gs.landmarks.reserve(cities.size());
 
     for (std::size_t i = 0; i < cities.size(); ++i) {
         const City& c = cities[i];
-        Settlement s{};
+        Landmark s{};
+        s.type        = LandmarkType::City;
         // v54: ONE landmark id space — the ordinal issuer, never the loop index.
         s.id          = int(gs.nextLandmarkOrdinal++);
         s.x           = c.x;
@@ -168,7 +169,7 @@ void populate_landmarks_from_politik(GameState& gs,
         } else {
             s.name = !c.name.empty() ? c.name : "Outpost";
         }
-        gs.settlements.push_back(std::move(s));
+        gs.landmarks.push_back(std::move(s));
     }
 
     // ── Villages: resources decide (R2). Politics placed the cities;
@@ -195,7 +196,19 @@ void populate_landmarks_from_politik(GameState& gs,
     std::vector<Candidate> cands;
     cands.reserve(std::size_t(2 * reach + 1) * std::size_t(2 * reach + 1));
 
-    for (const auto& s : gs.settlements) {
+    // Snapshot the cities before appending villages: the loop below pushes
+    // into the SAME gs.landmarks vector, and a live iterator would not
+    // survive the growth.
+    struct CityRef { int id, x, y, kingdomIdx; };
+    std::vector<CityRef> cityRefs;
+    cityRefs.reserve(cities.size());
+    for (const auto& lm : gs.landmarks) {
+        if (lm.type == LandmarkType::City) {
+            cityRefs.push_back(CityRef{lm.id, lm.x, lm.y, lm.kingdomIdx});
+        }
+    }
+
+    for (const auto& s : cityRefs) {
         cands.clear();
         long long hinterlandCapacity = 0;
         for (int dy = -reach; dy <= reach; ++dy) {
@@ -239,7 +252,8 @@ void populate_landmarks_from_politik(GameState& gs,
             // Torus distance against every village so far — neighbouring
             // hinterlands may touch at the rim.
             bool crowded = false;
-            for (const auto& other : gs.villages) {
+            for (const auto& other : gs.landmarks) {
+                if (other.type != LandmarkType::Village) continue;
                 const int ddx = std::min(std::abs(c.x - other.x),
                                          gs.mapW - std::abs(c.x - other.x));
                 const int ddy = std::min(std::abs(c.y - other.y),
@@ -250,7 +264,8 @@ void populate_landmarks_from_politik(GameState& gs,
                 }
             }
             if (crowded) continue;
-            Village vil{};
+            Landmark vil{};
+            vil.type          = LandmarkType::Village;
             vil.id            = int(gs.nextLandmarkOrdinal++);   // v54: same issuer
             vil.x             = c.x;
             vil.y             = c.y;
@@ -270,7 +285,7 @@ void populate_landmarks_from_politik(GameState& gs,
             } else {
                 vil.name = "Hamlet";
             }
-            gs.villages.push_back(std::move(vil));
+            gs.landmarks.push_back(std::move(vil));
             ++placed;
         }
     }

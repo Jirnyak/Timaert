@@ -15,20 +15,23 @@
 #include <utility>
 #include <vector>
 
+#include "macro/faction.h"
 #include "macro/items.h"
 
 namespace sm {
 
+// The coins themselves — the currency rows of the one item catalog. WHO
+// trades in which coin is the faction registry's own column (FactionDef::
+// mint), not a second mapping here to drift against it.
 struct CurrencyDef {
     const char* itemId;
-    const char* factionId;   // the minting realm (macro/faction.h row id)
 };
 
 inline constexpr CurrencyDef kCurrencyDefs[] = {
-    {"coin_empire",  "empire"},
-    {"coin_magika",  "magika"},
-    {"coin_timaert", "timaert"},
-    {"coin_barbar",  "barbarian_north"},
+    {"coin_empire"},
+    {"coin_magika"},
+    {"coin_timaert"},
+    {"coin_barbar"},
 };
 inline constexpr int kCurrencyCount =
     int(sizeof(kCurrencyDefs) / sizeof(kCurrencyDefs[0]));
@@ -40,24 +43,17 @@ inline bool is_currency_item(const char* id) {
     return false;
 }
 
-// The mint that serves a faction. Culture groups fold onto their realm's
-// coin (the Magica splinters and the Lake Duchy strike the Magika sigil;
-// the chargen's "barbarians" is the northern kingdoms' ring), and everyone
-// without a mint of their own — bandits, cults, the free folk — trades in
-// imperial coin, the de-facto reserve currency of v1.
+// The mint that serves a faction: its registry row's own `mint` column
+// (macro/faction.h). Everyone without a mint of their own — beasts, bandits,
+// the free folk, an id the registry does not know — trades in imperial coin,
+// the de-facto reserve currency of v1. The strcmp chain that lived here was
+// an if-by-kind in general code (CANON S16); its "barbarians" branch named a
+// row that does not exist, so three of the four barbarian realms quietly
+// traded imperial.
 inline const char* currency_for_faction_id(const char* factionId) {
-    if (factionId) {
-        for (const CurrencyDef& c : kCurrencyDefs) {
-            if (std::strcmp(c.factionId, factionId) == 0) return c.itemId;
-        }
-        if (std::strcmp(factionId, "old_magica") == 0
-            || std::strcmp(factionId, "northern_magica") == 0
-            || std::strcmp(factionId, "lower_magica") == 0
-            || std::strcmp(factionId, "lake_duchy") == 0
-            || std::strcmp(factionId, "cults") == 0) {
-            return "coin_magika";
-        }
-        if (std::strcmp(factionId, "barbarians") == 0) return "coin_barbar";
+    const int fi = faction_index(factionId);
+    if (fi >= 0 && kFactionDefs[fi].mint && kFactionDefs[fi].mint[0] != '\0') {
+        return kFactionDefs[fi].mint;
     }
     return "coin_empire";
 }
@@ -74,13 +70,18 @@ inline int wallet_value(const Inventory& inv) {
     return total;
 }
 
-// Move coin stacks worth exactly `value` between bags — the SETTLEMENT half
-// of a barter: real coins travel, nothing is minted in a deal. Greedy over
-// the currency rows; all-or-nothing (a short wallet moves nothing).
-inline bool transfer_value(Inventory& from, Inventory& to, int value) {
-    if (value <= 0) return true;
-    if (wallet_value(from) < value) return false;
+// Move coin stacks worth `value` between bags — the SETTLEMENT half of a
+// barter: real coins travel, nothing is minted in a deal — and nothing is
+// BURNED either: the credit lands before the debit, so a stack the receiver
+// refuses (a full bag) simply STAYS with the payer (CANON S5). Greedy over
+// the currency rows; a short wallet moves nothing. Returns the value
+// actually moved — callers compare it against `value` to know the deal
+// settled whole.
+inline int transfer_value(Inventory& from, Inventory& to, int value) {
+    if (value <= 0) return 0;
+    if (wallet_value(from) < value) return 0;
     int left = value;
+    int moved = 0;
     for (const CurrencyDef& c : kCurrencyDefs) {
         if (left <= 0) break;
         const ItemDef* def = item_def(c.itemId);
@@ -89,11 +90,12 @@ inline bool transfer_value(Inventory& from, Inventory& to, int value) {
         const int take = have < (left + unit - 1) / unit
             ? have : (left + unit - 1) / unit;
         if (take <= 0) continue;
+        if (!to.add(c.itemId, take)) continue;   // refused: stack stays put
         from.remove(c.itemId, take);
-        to.add(c.itemId, take);
         left -= take * unit;
+        moved += take * unit;
     }
-    return left <= 0;
+    return moved;
 }
 
 // ── The package deal: two bundles swap whole or not at all ───────────────
@@ -122,14 +124,21 @@ inline bool barter_swap(Inventory& a, Inventory& b,
         return true;
     };
     if (!covered(a, fromA) || !covered(b, fromB)) return false;
+    // Settle on COPIES and commit whole: `add` can refuse a full bag
+    // mid-deal, and a half-settled swap would burn the goods already
+    // removed. All-or-nothing stays literal — a refused deal leaves both
+    // pre-deal bags untouched (CANON S5: nothing evaporates).
+    Inventory na = a, nb = b;
     for (const auto& line : fromA) {
-        a.remove(line.first, line.second);
-        b.add(line.first, line.second);
+        na.remove(line.first, line.second);
+        if (!nb.add(line.first, line.second)) return false;
     }
     for (const auto& line : fromB) {
-        b.remove(line.first, line.second);
-        a.add(line.first, line.second);
+        nb.remove(line.first, line.second);
+        if (!na.add(line.first, line.second)) return false;
     }
+    a = na;
+    b = nb;
     return true;
 }
 

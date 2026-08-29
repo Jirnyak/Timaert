@@ -75,6 +75,11 @@ inline constexpr std::uint16_t kHabTown   = 1u << 14; // settlement crowd
 inline constexpr std::uint16_t hab(Biome b) {
     return std::uint16_t(1u << std::uint16_t(b));
 }
+// The landmark registry's faunaHabitat column quotes these bits as data
+// (its header cannot include this one) — a drifted quote refuses to compile.
+static_assert(landmark_def(LandmarkType::Ruin).faunaHabitat == kHabRuin
+           && landmark_def(LandmarkType::Spire).faunaHabitat == kHabSpire,
+              "kLandmarks fauna columns must quote fauna.h's habitat bits");
 
 // Halving distance of the match law. Derived, not tuned: ten halvings span
 // the whole 0..255 continuum (a full-span mismatch lands at 2^-10 of the

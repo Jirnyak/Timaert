@@ -118,6 +118,15 @@ struct FactKindDef {
     // TO. See `renown_for_deed` below — this column is the half that does not
     // need a victim.
     std::uint16_t baseRenown;
+    // DOES THE OBJECT'S FAME RUB OFF? The victim's share (a tenth, below) is
+    // paid for deeds done AGAINST somebody — killing, robbing, beating a
+    // renowned one makes a name. A MUTUAL exchange pays no share (owner,
+    // 2026-08-29: «не надо чтобы за торговлю давалась слава партнёра,
+    // торговля — маленькое дело»): before this column, the daily caravan
+    // Traded fact tithed the partner city's renown to the home city, and
+    // commerce out-famed war. Default true, because every other kind with an
+    // object IS a deed against it.
+    bool victimShare = true;
 };
 
 inline constexpr FactKindDef kFactKinds[] = {
@@ -133,7 +142,8 @@ inline constexpr FactKindDef kFactKinds[] = {
     {FactKind::Battle,       "battle",        "Battle",        32,      5},
     {FactKind::Robbed,       "robbed",        "Robbed",        16,      2},
     // What a place suffers or does. It earns the PLACE its standing.
-    {FactKind::Traded,       "traded",        "Traded",         8,      0},
+    // victimShare false: a deal is mutual, not a deed against the partner.
+    {FactKind::Traded,       "traded",        "Traded",         8,      0, false},
     // Deeds against the LAND, which has no standing of its own — so their base
     // IS the answer, and it is small. Felling a forest is a day's work the
     // world notices a little (owner's own example).
@@ -184,8 +194,12 @@ inline constexpr int kRenownShareDivisor = 10;
 inline constexpr std::uint32_t renown_for_deed(FactKind kind,
                                                std::uint32_t victimRenown) {
     if (kind >= FactKind::Count) return 0u;
-    return std::uint32_t(fact_kind_def(kind).baseRenown)
-         + victimRenown / std::uint32_t(kRenownShareDivisor);
+    const FactKindDef& d = fact_kind_def(kind);
+    // The share is paid for deeds AGAINST somebody; a mutual deal pays no
+    // share (`victimShare` — owner, 2026-08-29).
+    return std::uint32_t(d.baseRenown)
+         + (d.victimShare
+                ? victimRenown / std::uint32_t(kRenownShareDivisor) : 0u);
 }
 
 // WHEN A NOBODY BECOMES SOMEBODY — and the number is DERIVED, not chosen: it

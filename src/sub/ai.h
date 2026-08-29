@@ -7,11 +7,15 @@
 #pragma once
 #include <cstdint>
 #include "ecs/world.h"
+#include "macro/army.h"
 #include "macro/faction.h"
 
 namespace sm::sub {
 
-constexpr float kDetectionRadius  = 200.0f;
+// The ambient "did anything notice me" radius — the SAME quantity as a
+// fighter's default sight, read from its one home (macro/army.h
+// kNpcSightDefaultM) instead of a second 200 kept here by hand.
+constexpr float kDetectionRadius  = kNpcSightDefaultM;
 // kHostileThreshold moved to macro/faction.h (Session 15): the macro squad
 // threat step needs the same line the battle masks draw, and one number
 // cannot live in two headers. Unqualified uses in sm::sub still resolve.

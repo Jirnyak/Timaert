@@ -23,6 +23,8 @@
 //   submerged-land / coastline defect), and the land->water descent inside the
 //   cell is smooth and cliff-free. There is no width knob — the descent falls
 //   out of the height remap + bilinear blend, exactly as intended.
+#include "check.h"
+
 #include "macro/biomes.h"
 #include "macro/map_generator.h"
 #include "sub/base_generator.h"
@@ -37,16 +39,6 @@
 
 namespace
 {
-
-bool expect(bool ok, const char* msg)
-{
-    if (!ok)
-    {
-        std::fprintf(stderr, "FAIL river_generation_test: %s\n", msg);
-        return false;
-    }
-    return true;
-}
 
 // The sea-level byte exactly as map_generator.cpp derives it internally
 // (floor(clamp(seaLevel) * 255)); seaLevel 0.40 -> 102.
@@ -183,33 +175,28 @@ long river_cell_count(const sm::TerrainData& td)
 // assorted layouts. 1024^2 is the real macro map size and the size at which the
 // anomaly was measured.
 constexpr int kMapSize = 1024;
-const float kSeeds[] = {1.0f, 2.0f, 3.0f, 7.0f, 42.0f};
+const std::uint32_t kSeeds[] = {1u, 2u, 3u, 7u, 42u};
 
-bool test_river_generation_is_deterministic()
+void test_river_generation_is_deterministic()
 {
     sm::LayerParameters params;
-    params.seed = 42.0f;
+    params.seed = 42u;
     const sm::TerrainData a = sm::generate_terrain(kMapSize, kMapSize, params);
     const sm::TerrainData b = sm::generate_terrain(kMapSize, kMapSize, params);
 
-    bool ok = true;
-    ok &= expect(a.riverData.size() == b.riverData.size()
-                     && a.rgba.size() == b.rgba.size(),
-                 "repeated generation must produce identically sized buffers");
-    if (ok)
-    {
-        ok &= expect(a.riverData == b.riverData,
-                     "river mask must be bit-identical across runs (determinism)");
-        ok &= expect(a.rgba == b.rgba,
-                     "carved terrain must be bit-identical across runs (determinism)");
-    }
-    return ok;
+    CHECK_OR_RETURN(a.riverData.size() == b.riverData.size()
+                        && a.rgba.size() == b.rgba.size(),
+                    "repeated generation must produce identically sized buffers");
+    CHECK(a.riverData == b.riverData,
+          "river mask must be bit-identical across runs (determinism)");
+    CHECK(a.rgba == b.rgba,
+          "carved terrain must be bit-identical across runs (determinism)");
 }
 
 // Every macro-generation invariant runs against ONE generated map per seed
 // (generation dominates runtime, so we generate each map once and check all
 // aspects on it). Each aspect keeps its own message so a failure is specific.
-bool check_map_invariants(float seed)
+void check_map_invariants(std::uint32_t seed)
 {
     sm::LayerParameters params;
     params.seed = seed;
@@ -237,38 +224,36 @@ bool check_map_invariants(float seed)
     const long cells = long(td.riverData.size());
     constexpr long kMaxRunBound = 120; // heap A* measures 47-62; DFS gave 239-494
 
-    bool ok = true;
-    ok &= expect(aboveSea == 0, "every river cell must be carved below sea level");
-    ok &= expect(notMasked == 0, "every river cell must be masked as water (Biome::Water)");
-    ok &= expect(unreached == 0,
-                 "every river cell must drain to the sea through the water network");
-    ok &= expect(run < kMaxRunBound,
-                 "longest straight river run must stay below the DFS-anomaly bound");
-    ok &= expect(rivers > cells / 1000,
-                 "a normal map must grow a non-trivial river network");
-    ok &= expect(rivers < cells / 8,
-                 "rivers must not blanket the map (coverage runaway)");
-    if (!ok)
+    const int failsBefore = sm::test::failures();
+    CHECK(aboveSea == 0, "every river cell must be carved below sea level");
+    CHECK(notMasked == 0, "every river cell must be masked as water (Biome::Water)");
+    CHECK(unreached == 0,
+          "every river cell must drain to the sea through the water network");
+    CHECK(run < kMaxRunBound,
+          "longest straight river run must stay below the DFS-anomaly bound");
+    CHECK(rivers > cells / 1000,
+          "a normal map must grow a non-trivial river network");
+    CHECK(rivers < cells / 8,
+          "rivers must not blanket the map (coverage runaway)");
+    if (sm::test::failures() != failsBefore)
     {
         std::fprintf(stderr,
-            "  seed %.0f: rivers=%ld/%ld aboveSea=%ld notMasked=%ld unreached=%ld maxrun=%ld\n",
+            "  seed %u: rivers=%ld/%ld aboveSea=%ld notMasked=%ld unreached=%ld maxrun=%ld\n",
             seed, rivers, cells, aboveSea, notMasked, unreached, run);
     }
-    return ok;
 }
 
-bool test_macro_river_invariants()
+void test_macro_river_invariants()
 {
-    bool ok = true;
-    for (float seed : kSeeds)
+    const int failsBefore = sm::test::failures();
+    for (std::uint32_t seed : kSeeds)
     {
-        ok &= check_map_invariants(seed);
-        if (!ok) break;
+        check_map_invariants(seed);
+        if (sm::test::failures() != failsBefore) break;
     }
-    return ok;
 }
 
-bool test_river_generation_fails_closed()
+void test_river_generation_fails_closed()
 {
     sm::LayerParameters params;
 
@@ -287,15 +272,13 @@ bool test_river_generation_fails_closed()
     zeroDims.rgba.assign(64u, 0u);
     sm::generate_river_data(zeroDims, params);
 
-    bool ok = true;
-    ok &= expect(shortStore.riverData.size() == 256u,
-                 "malformed river gen must still size the mask to the grid");
-    ok &= expect(std::all_of(shortStore.riverData.begin(), shortStore.riverData.end(),
-                             [](std::uint8_t v) { return v == 0u; }),
-                 "malformed river gen must stamp no rivers (fail closed)");
-    ok &= expect(zeroDims.riverData.empty(),
-                 "non-positive dimensions must yield an empty river mask");
-    return ok;
+    CHECK(shortStore.riverData.size() == 256u,
+          "malformed river gen must still size the mask to the grid");
+    CHECK(std::all_of(shortStore.riverData.begin(), shortStore.riverData.end(),
+                      [](std::uint8_t v) { return v == 0u; }),
+          "malformed river gen must stamp no rivers (fail closed)");
+    CHECK(zeroDims.riverData.empty(),
+          "non-positive dimensions must yield an empty river mask");
 }
 
 // ── Stage 2: subworld realization of a river cell ────────────────────────
@@ -373,7 +356,7 @@ DescentSample sample_river_descent(float landMH, sm::Biome landBiome)
     return s;
 }
 
-bool test_subworld_river_is_honest_submerged_water()
+void test_subworld_river_is_honest_submerged_water()
 {
     using namespace sm::sub;
     // Three land contexts: barely above sea, a common bank, and elevated land
@@ -386,19 +369,19 @@ bool test_subworld_river_is_honest_submerged_water()
         {"elevated land",    150.0f / 255.0f, sm::Biome::Steppe},
     };
 
-    bool ok = true;
+    const int failsBefore = sm::test::failures();
     for (const Case& c : cases)
     {
         const DescentSample s = sample_river_descent(c.landMH, c.biome);
-        ok &= expect(s.riverCentre < WATER_LEVEL,
-                     "river bed must submerge below the water plane (honest water)");
-        ok &= expect(s.landCentre > WATER_LEVEL,
-                     "adjacent land cell must stay dry (no submerged-land defect)");
-        ok &= expect(s.maxStep < 0.03f,
-                     "land->water descent must be cliff-free (no coastline step)");
-        ok &= expect(s.violations <= 2,
-                     "land->water descent must be smoothly monotone");
-        if (!ok)
+        CHECK(s.riverCentre < WATER_LEVEL,
+              "river bed must submerge below the water plane (honest water)");
+        CHECK(s.landCentre > WATER_LEVEL,
+              "adjacent land cell must stay dry (no submerged-land defect)");
+        CHECK(s.maxStep < 0.03f,
+              "land->water descent must be cliff-free (no coastline step)");
+        CHECK(s.violations <= 2,
+              "land->water descent must be smoothly monotone");
+        if (sm::test::failures() != failsBefore)
         {
             std::fprintf(stderr,
                 "  case %s: bed=%.3f land=%.3f maxStep=%.4f viol=%d (WATER_LEVEL=%.2f)\n",
@@ -406,25 +389,17 @@ bool test_subworld_river_is_honest_submerged_water()
             break;
         }
     }
-    return ok;
 }
 
 } // namespace
 
 int main()
 {
-    bool ok = true;
     // Stage 1 — macroworld generation.
-    ok &= test_river_generation_is_deterministic();
-    ok &= test_macro_river_invariants();
-    ok &= test_river_generation_fails_closed();
+    test_river_generation_is_deterministic();
+    test_macro_river_invariants();
+    test_river_generation_fails_closed();
     // Stage 2 — subworld realization.
-    ok &= test_subworld_river_is_honest_submerged_water();
-
-    if (!ok)
-    {
-        return 1;
-    }
-    std::printf("river_generation_test: ok\n");
-    return 0;
+    test_subworld_river_is_honest_submerged_water();
+    return sm::test::report("river_generation_test");
 }

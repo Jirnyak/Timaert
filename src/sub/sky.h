@@ -279,6 +279,11 @@ inline SkyContext build_sky_context(const WorldTime& t) {
         const float cloud = 0.5f + 0.45f * precip;
         c.cloudiness01 = cloud > 1.0f ? 1.0f : cloud;
     }
+    // Constant cloud drift (the macro wind field would land here), in cloud
+    // FIELD units/second — clouds.glsl applies wind*time to the field point.
+    // Through the ground-shadow mapping (1 field unit = 700 m,
+    // TIMAERT_CLOUD_WORLD_SCALE) this reads ≈5.6 m/s easterly with a
+    // ≈2.2 m/s cross-drift: a believable breeze for the shadows it crawls.
     c.windX = 0.008f;
     c.windZ = 0.0032f;
     return c;

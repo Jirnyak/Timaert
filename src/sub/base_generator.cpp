@@ -1,6 +1,7 @@
 #include "sub/base_generator.h"
 #include "macro/tree_layer.h"
 #include "sub/height.h"
+#include "sub/material.h"   // kMtnGrassTopH / kMtnRockBaseH — THE treeline band
 #include "sub/tree_atlas.h"
 #include "core/rng.h"
 #include "core/math.h"
@@ -587,15 +588,19 @@ void scatter_universal_trees(SubworldMapData& out,
             // Smooth alpine treeline + slope rule (owner: a massif's base may
             // be fully forested, its peaks carry nothing — like real
             // mountains). Heightmap is normalised against the 1500 m
-            // kHeightScaleM (sub/height.h); trees thin out from h=0.72
-            // (1080 m) and stop at h=0.92 (1380 m) — sized to the rebalanced
-            // massifs (floor ~0.60, peaks ~0.98) so the upper slopes go bare
-            // while plains/forest cells (~0.45-0.70) are untouched. Sampled
-            // from the cell heightmap so the cap follows the actual relief.
+            // kHeightScaleM (sub/height.h); trees thin out from
+            // kMtnGrassTopH=0.72 (1080 m) and stop at kMtnRockBaseH=0.92
+            // (1380 m) — the ONE treeline band, owned by sub/material.h so
+            // the ground's grass→rock dither and the trees agree by sharing
+            // the constants. Sized to the rebalanced massifs (floor ~0.60,
+            // peaks ~0.98) so the upper slopes go bare while plains/forest
+            // cells (~0.45-0.70) are untouched. Sampled from the cell
+            // heightmap so the cap follows the actual relief.
             if (!out.heightmap.empty()) {
                 const float hNorm = out.heightmap[idx];
-                const float t = std::clamp((hNorm - 0.72f) / (0.92f - 0.72f),
-                                           0.0f, 1.0f);
+                const float t = std::clamp(
+                    (hNorm - kMtnGrassTopH) / (kMtnRockBaseH - kMtnGrassTopH),
+                    0.0f, 1.0f);
                 const float treelineSurvive = 1.0f - t * t * (3.0f - 2.0f * t);
                 if (treelineSurvive < 1e-3f) continue;
                 // Per-tile reroll against the smoothstep survival prob.

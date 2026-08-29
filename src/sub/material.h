@@ -96,8 +96,8 @@ namespace sm::sub
     // treeline band the massif is alive (grass, trees), so its ground reads
     // as meadow; through the band grass and stone dither out exactly as the
     // trees thin; above it the bare rock owns the summit. One band, three
-    // consumers (tree scatter, 3D material, 2D map) — the same constants as
-    // scatter_universal_trees' treeline.
+    // consumers (tree scatter, 3D material, 2D map) — this is THE one home:
+    // scatter_universal_trees (base_generator.cpp) reads these constants.
     constexpr float kMtnGrassTopH = 0.72f;  // full grass below (treeline start)
     constexpr float kMtnRockBaseH = 0.92f;  // full rock above (treeline end)
 

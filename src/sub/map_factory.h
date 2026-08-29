@@ -36,9 +36,9 @@ SavedSubworld snapshot_subworld(std::uint32_t seed, SubworldMode mode,
 // restored verbatim; structures are diffed by Kind as documented above.
 void restore_into(const SavedSubworld& saved, SubworldMapData& fresh);
 
-// Per-session in-memory cache. Save v4 does not serialize this cache:
-// one full snapshot is roughly an 18 MiB quantized heightmap before
-// structures, so persistent subworld diffs need a smaller format first.
+// Per-session in-memory cache — never serialized: the subworld is a
+// PROJECTION of the macro truth (CANON S21), and what must outlive a scene
+// is written back up to the macro layer, not snapshotted down here.
 void store_saved_subworld(const SavedSubworld& s);
 void store_saved_subworld(SavedSubworld&& s);
 std::shared_ptr<const SavedSubworld> find_saved_subworld_ref(std::uint32_t seed,

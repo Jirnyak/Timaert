@@ -134,7 +134,7 @@ void test_armour_softens_by_the_row_and_the_kind() {
     // keeps kArmorHalving / (kArmorHalving + armour).
     const float armour = float(sm::npc_def(sm::NPCType::Guard).armor);
     const float expect =
-        blow * (sm::sub::kArmorHalving / (sm::sub::kArmorHalving + armour));
+        blow * (sm::kArmorHalving / (sm::kArmorHalving + armour));
     CHECK(onPlate.applied > expect - 0.01f && onPlate.applied < expect + 0.01f,
           "the fraction kept is the row's armour against the halving point");
     CHECK(onPlate.applied > 0.0f,

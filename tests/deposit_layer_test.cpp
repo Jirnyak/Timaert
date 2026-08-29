@@ -3,13 +3,14 @@
 //   · CONTEXT LAW — clay only on river-adjacent lowland, iron/stone only in
 //     the mountains, nothing in the water;
 //   · determinism — one seed, one geology;
-//   · the quantity door refuses to invent geology on a non-deposit cell,
-//     clamps at zero, and a dry vein stays a VISIBLE cell (the
-//     iron-discovery rule needs the fact);
-//   · discovery ADDS iron INTO a stone cell — the quarry survives (owner:
-//     у каждого ресурса своё поле, никто не исчезает);
+//   · the quantity door refuses to invent geology on a non-deposit cell, and
+//     a write down to zero ANNIHILATES the cell (owner, 2026-08-28) while the
+//     derived virginUnits baseline keeps what the world was born with;
 //   · load path (v37) — restoring the saved cells reproduces the mutated
-//     world, drained and discovered alike.
+//     world, the dead vein staying dead.
+// (The bespoke iron-discovery section died with the dead path 2026-08-29:
+// new iron is the Iron row's GrowthDomain::Geology walk, guarded by
+// resource_growth_test.)
 #include "check.h"
 
 #include "macro/deposit_layer.h"
@@ -164,84 +165,10 @@ void test_the_quantity_door_and_the_load_path() {
           "the restore reproduces every live cell, adds none");
 }
 
-void test_iron_discovery() {
-    const TerrainData td = make_world();
-    DepositLayer layer = build_deposit_layer(td, 777u, 0.4f);
-
-    // An untouched world never strikes anything.
-    CHECK(iron_depletion(layer) == 0.0f
-              && iron_discovery_chance_per_day(0.0f) == 0.0f,
-          "full veins = zero discovery chance");
-
-    // Mine the world's iron OUT through the door.
-    int ironBefore = 0;
-    {
-        // Collect first: the door mutates the map we would be walking.
-        std::vector<std::uint32_t> veins;
-        for (const auto& [idx, rem] :
-             layer.cells[std::size_t(DepositKind::Iron)]) {
-            (void)rem;
-            veins.push_back(idx);
-        }
-        for (const std::uint32_t idx : veins) {
-            ++ironBefore;
-            const int x = int(idx % std::uint32_t(layer.width));
-            const int y = int(idx / std::uint32_t(layer.width));
-            CHECK(set_deposit_remaining(layer, DepositKind::Iron, x, y, 0),
-                  "the vein drains through the one door");
-        }
-    }
-    CHECK_OR_RETURN(ironBefore > 0, "the fixture holds iron to exhaust");
-    // Annihilation emptied the MAP — the derived baseline alone must say the
-    // world once held iron, or a worked-out world would read virgin and
-    // never prospect.
-    CHECK(layer.cells[std::size_t(DepositKind::Iron)].empty(),
-          "every worked-out vein left the map");
-    CHECK(layer.virginUnits[std::size_t(DepositKind::Iron)]
-              == std::int64_t(ironBefore) * std::int64_t(iron_vein_lump()),
-          "the born-with baseline still says what the world once held");
-    CHECK(iron_depletion(layer) == 1.0f,
-          "a mined-out world reads fully depleted");
-    CHECK(iron_discovery_chance_per_day(1.0f) > 0.0f,
-          "an empty world prospects hopefully");
-
-    // The strike: a stone quarry turns out to ALSO hold iron.
-    const int stoneBefore =
-        int(layer.cells[std::size_t(DepositKind::Stone)].size());
-    CHECK_OR_RETURN(discover_iron_vein(layer, 5u),
-                    "the strike lands on a stone cell");
-    int ironFresh = 0;
-    std::uint32_t freshIdx = 0;
-    for (const auto& [idx, rem] :
-         layer.cells[std::size_t(DepositKind::Iron)]) {
-        if (rem > 0) { ++ironFresh; freshIdx = idx; }
-    }
-    CHECK(ironFresh == 1, "exactly one fresh vein opened");
-    CHECK(iron_depletion(layer) < 1.0f, "the strike relieves the depletion");
-    // NOTHING VANISHES: the host quarry keeps its stone cell — the vein was
-    // found IN the mountain, and the old kind-swap that deleted it is dead.
-    CHECK(layer.cells[std::size_t(DepositKind::Stone)].count(freshIdx) == 1,
-          "the host quarry survives the discovery");
-    CHECK(int(layer.cells[std::size_t(DepositKind::Stone)].size())
-              == stoneBefore,
-          "discovery adds iron, it deletes no stone");
-
-    // The discovered vein SURVIVES a load (v37: cells ride the save whole).
-    DepositLayer loaded = build_deposit_layer(td, 777u, 0.4f);
-    restore_deposit_cells(loaded, layer);
-    const std::int32_t* rem = loaded.remaining_at(
-        DepositKind::Iron, int(freshIdx % std::uint32_t(loaded.width)),
-        int(freshIdx / std::uint32_t(loaded.width)));
-    CHECK(rem != nullptr && *rem > 0, "the discovered vein is reborn on load");
-    CHECK(total_cells(loaded) == total_cells(layer),
-          "the restore carries the discovery, invents nothing further");
-}
-
 } // namespace
 
 int main() {
     test_deposits_obey_the_world();
     test_the_quantity_door_and_the_load_path();
-    test_iron_discovery();
     return sm::test::report("deposit_layer_test");
 }

@@ -107,6 +107,20 @@ void make_settled_world(World& w) {
                                     w.trees, w.deposits);
 }
 
+// The village/city rows of the ONE roster, in creation order (v62).
+std::vector<const Landmark*> villages_of(const GameState& gs) {
+    std::vector<const Landmark*> out;
+    for (const auto& lm : gs.landmarks)
+        if (lm.type == LandmarkType::Village) out.push_back(&lm);
+    return out;
+}
+std::vector<const Landmark*> cities_of(const GameState& gs) {
+    std::vector<const Landmark*> out;
+    for (const auto& lm : gs.landmarks)
+        if (lm.type == LandmarkType::City) out.push_back(&lm);
+    return out;
+}
+
 SettlementSiteContext site_ctx(World& w) {
     SettlementSiteContext ctx{};
     ctx.w.gs       = &w.gs;
@@ -149,8 +163,10 @@ int percentile(const std::vector<int>& sorted, int p) {
 void test_vetoes_hold() {
     World w;
     make_settled_world(w);
-    CHECK_OR_RETURN(!w.gs.villages.empty(), "the lush world settles villages");
-    for (const auto& v : w.gs.villages) {
+    const auto villages = villages_of(w.gs);
+    CHECK_OR_RETURN(!villages.empty(), "the lush world settles villages");
+    for (const auto* vp : villages) {
+        const auto& v = *vp;
         CHECK(!w.td.is_water(v.x, v.y, kSeaLevel8), "no village on water");
         CHECK(float(w.td.height_at(v.x, v.y)) / 255.0f < 0.75f,
               "no village on mountain rock");
@@ -162,9 +178,11 @@ void test_vetoes_hold() {
 void test_villages_take_the_best_land() {
     World w;
     make_settled_world(w);
-    CHECK_OR_RETURN(!w.gs.villages.empty(), "the lush world settles villages");
+    const auto villages = villages_of(w.gs);
+    CHECK_OR_RETURN(!villages.empty(), "the lush world settles villages");
     SettlementSiteContext ctx = site_ctx(w);
-    for (const auto& v : w.gs.villages) {
+    for (const auto* vp : villages) {
+        const auto& v = *vp;
         const City& c = w.gs.politik.cities[std::size_t(v.nearestCityId)];
         const std::vector<int> scores = hinterland_scores(w, c);
         const int p75 = percentile(scores, 75);
@@ -214,7 +232,8 @@ void test_roulette_is_red() {
 void test_villages_scatter_around_their_town() {
     World w;
     make_settled_world(w);
-    CHECK_OR_RETURN(!w.gs.villages.empty(), "the lush world settles villages");
+    const auto villages = villages_of(w.gs);
+    CHECK_OR_RETURN(!villages.empty(), "the lush world settles villages");
     const int spacing = derive_city_spacing(&w.td, kSeaLevel8, kW, kH,
                                             int(w.gs.politik.cities.size()));
     const int reach = std::max(4, spacing / 2);
@@ -226,9 +245,11 @@ void test_villages_scatter_around_their_town() {
           "the fixture's hinterland is big enough for the floor not to be "
           "the operative law");
     int closest = 1 << 20;
-    for (const auto& a : w.gs.villages) {
-        for (const auto& b : w.gs.villages) {
-            if (&a == &b || a.nearestCityId != b.nearestCityId) continue;
+    for (const auto* ap : villages) {
+        const auto& a = *ap;
+        for (const auto* bp : villages) {
+            const auto& b = *bp;
+            if (ap == bp || a.nearestCityId != b.nearestCityId) continue;
             const int ddx = std::min(std::abs(a.x - b.x), kW - std::abs(a.x - b.x));
             const int ddy = std::min(std::abs(a.y - b.y), kH - std::abs(a.y - b.y));
             closest = std::min(closest, std::max(ddx, ddy));
@@ -243,12 +264,14 @@ void test_villages_scatter_around_their_town() {
     // Every city whose hinterland holds ANY admissible ground keeps at
     // least one village. Settlements are built from politik.cities in order,
     // so POSITION pairs them; the id is an ordinal, not an index (v54).
-    for (std::size_t si = 0; si < w.gs.settlements.size(); ++si) {
-        const auto& s = w.gs.settlements[si];
+    const auto cities = cities_of(w.gs);
+    for (std::size_t si = 0; si < cities.size(); ++si) {
+        const auto& s = *cities[si];
         const City& c = w.gs.politik.cities[si];
         if (hinterland_scores(w, c).empty()) continue;
         int mine = 0;
-        for (const auto& v : w.gs.villages) if (v.nearestCityId == s.id) ++mine;
+        for (const auto* vp : villages)
+            if (vp->nearestCityId == s.id) ++mine;
         CHECK(mine >= 1, "a city with admissible ground is never hamlet-less");
     }
 }
@@ -259,10 +282,11 @@ void test_count_derives_from_capacity() {
     int lush = 0, dry = 0;
     // The first-generated city is the river-belt one; its id is whatever the
     // ONE issuer handed it (v54), so ask the settlement, not the number 0.
-    const int lushCityId = w.gs.settlements.empty() ? -1
-                                                    : w.gs.settlements[0].id;
-    for (const auto& v : w.gs.villages) {
-        if (v.nearestCityId == lushCityId) ++lush;
+    const auto cities = cities_of(w.gs);
+    const auto villages = villages_of(w.gs);
+    const int lushCityId = cities.empty() ? -1 : cities[0]->id;
+    for (const auto* vp : villages) {
+        if (vp->nearestCityId == lushCityId) ++lush;
         else ++dry;
     }
     CHECK(lush >= 1, "the river belt hinterland feeds at least one village");
@@ -270,7 +294,8 @@ void test_count_derives_from_capacity() {
                       "steppe");
     // Population is the site's own score, never the old 30+rng%90 dice.
     SettlementSiteContext ctx = site_ctx(w);
-    for (const auto& v : w.gs.villages) {
+    for (const auto* vp : villages) {
+        const auto& v = *vp;
         const int score = settlement_site_score(
             ctx, SettlementScoreRow::Village, v.x, v.y);
         CHECK(v.population == std::max(kVillagePopFloor, score),
@@ -281,9 +306,11 @@ void test_count_derives_from_capacity() {
 void test_villages_stand_next_to_something() {
     World w;
     make_settled_world(w);
-    CHECK_OR_RETURN(!w.gs.villages.empty(), "the lush world settles villages");
+    const auto villages = villages_of(w.gs);
+    CHECK_OR_RETURN(!villages.empty(), "the lush world settles villages");
     int withContext = 0;
-    for (const auto& v : w.gs.villages) {
+    for (const auto* vp : villages) {
+        const auto& v = *vp;
         bool found = false;
         for (int dy = -kSettlementReach; dy <= kSettlementReach && !found; ++dy) {
             for (int dx = -kSettlementReach; dx <= kSettlementReach && !found;
@@ -300,7 +327,7 @@ void test_villages_stand_next_to_something() {
         }
         if (found) ++withContext;
     }
-    CHECK(withContext * 2 >= int(w.gs.villages.size()),
+    CHECK(withContext * 2 >= int(villages.size()),
           "at least half the villages stand next to something gatherable");
 }
 
@@ -375,12 +402,14 @@ void test_determinism() {
     World a, b;
     make_settled_world(a);
     make_settled_world(b);
-    CHECK_OR_RETURN(a.gs.villages.size() == b.gs.villages.size(),
+    const auto villagesA = villages_of(a.gs);
+    const auto villagesB = villages_of(b.gs);
+    CHECK_OR_RETURN(villagesA.size() == villagesB.size(),
                     "two runs settle the same number of villages");
     bool same = true;
-    for (std::size_t i = 0; i < a.gs.villages.size(); ++i) {
-        const auto& va = a.gs.villages[i];
-        const auto& vb = b.gs.villages[i];
+    for (std::size_t i = 0; i < villagesA.size(); ++i) {
+        const auto& va = *villagesA[i];
+        const auto& vb = *villagesB[i];
         same = same && va.x == vb.x && va.y == vb.y
                     && va.population == vb.population;
     }

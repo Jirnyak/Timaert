@@ -107,6 +107,15 @@ struct FactionDef {
     // added in CODE, in a file that has no business knowing who the outlaws
     // are. Now it is this column, and the reaper asks the registry.
     bool          killIsNoCrime = false;
+    // The COIN this faction trades in — an item id of the one catalog
+    // (macro/currency.h kCurrencyDefs). Realms with a mint of their own name
+    // it; culture groups name the realm's coin they fold onto (the Magica
+    // splinters and the Lake Duchy strike the Magika sigil). Empty = no mint
+    // → imperial coin, the de-facto reserve currency of v1. It was a strcmp
+    // if-chain inside currency_for_faction_id — an if-by-kind in general code
+    // (CANON S16) whose "barbarians" branch matched no registry row at all,
+    // so three of the four barbarian realms quietly traded imperial.
+    const char*   mint = "";
 };
 
 // Sentinel for "no faction" in ecs::NPCKind.factionIdx: resolves to the empty
@@ -132,44 +141,44 @@ inline constexpr FactionDef kFactionDefs[] = {
      0x8b0000, Temperament::Abyssal, -100, /*killIsNoCrime*/true},
     {"cults",    "Demonic Cults",
      "Worshippers of the Old Ones. Hunted everywhere.",
-     0x581c87, Temperament::Cultist, -10},
+     0x581c87, Temperament::Cultist, -10, false, "coin_magika"},
     // The wandering mage orders — previously emitted by the spawn vocabulary
     // but never registered, so every relation involving them silently read
     // neutral. A real faction now, closing that gap by construction.
     {"magika",   "Magika Orders",
      "Itinerant mages sworn to no single realm.",
-     0x8b5cf6, Temperament::Magical, 0},
+     0x8b5cf6, Temperament::Magical, 0, false, "coin_magika"},
     // ── Kingdoms — ordinary rows; politik references them by id ───────────
     {"old_magica",      "Old Magica",
      "Ruled by powerful mages. High magic economy.",
-     0xa78bfa, Temperament::Magical,    0},
+     0xa78bfa, Temperament::Magical,    0, false, "coin_magika"},
     {"northern_magica", "Northern Magica",
      "Ruled by powerful mages. High magic economy.",
-     0x7c3aed, Temperament::Magical,    0},
+     0x7c3aed, Temperament::Magical,    0, false, "coin_magika"},
     {"lower_magica",    "Lower Magica",
      "Ruled by powerful mages. High magic economy.",
-     0xc4b5fd, Temperament::Magical,    0},
+     0xc4b5fd, Temperament::Magical,    0, false, "coin_magika"},
     {"lake_duchy",      "Lake Duchy",
      "Ruled by powerful mages. High magic economy.",
-     0x60a5fa, Temperament::Magical,    0},
+     0x60a5fa, Temperament::Magical,    0, false, "coin_magika"},
     {"empire",          "Empire of Light",
      "Theocratic empire. Magic is forbidden.",
-     0xf59e0b, Temperament::Lawful,     0},
+     0xf59e0b, Temperament::Lawful,     0, false, "coin_empire"},
     {"timaert",         "Republic of Timaert",
      "Maritime trade republic. Neutral and wealthy.",
-     0x10b981, Temperament::Mercantile, 0},
+     0x10b981, Temperament::Mercantile, 0, false, "coin_timaert"},
     {"barbarian_north", "North Barbarians",
      "Feudal lords ruling by might and steel.",
-     0x991b1b, Temperament::Savage,     0},
+     0x991b1b, Temperament::Savage,     0, false, "coin_barbar"},
     {"barbarian_south", "South Barbarians",
      "Feudal lords ruling by might and steel.",
-     0xb91c1c, Temperament::Savage,     0},
+     0xb91c1c, Temperament::Savage,     0, false, "coin_barbar"},
     {"barbarian_west",  "West Barbarians",
      "Feudal lords ruling by might and steel.",
-     0xdc2626, Temperament::Savage,     0},
+     0xdc2626, Temperament::Savage,     0, false, "coin_barbar"},
     {"barbarian_east",  "East Barbarians",
      "Feudal lords ruling by might and steel.",
-     0xef4444, Temperament::Savage,     0},
+     0xef4444, Temperament::Savage,     0, false, "coin_barbar"},
     // ── The unruled ───────────────────────────────────────────────────────
     // Everyone who answers to no crown: a settlement no kingdom owns, a town
     // that has thrown its lord out, a landmark held by whoever lives in it.

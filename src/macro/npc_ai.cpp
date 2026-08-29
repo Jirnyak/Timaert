@@ -44,37 +44,19 @@ XY pick_random_nearby(float cx, float cy, int range, const TickContext& ctx) {
 }
 
 bool home_pos(const ecs::MacroNpcRuntime& rt, const TickContext& ctx, XY& out) {
-    if (rt.homeSettlementId < 0) return false;
-    // ONE landmark id space (v54): the id alone names the place, so walk both
-    // lists knowing at most one can answer.
-    for (auto& v : ctx.mw.gs->villages) {
-        if (v.id == rt.homeSettlementId) {
-            out = {float(v.x), float(v.y)};
-            return true;
-        }
-    }
-    for (auto& s : ctx.mw.gs->settlements) {
-        if (s.id == rt.homeSettlementId) {
-            out = {float(s.x), float(s.y)};
-            return true;
-        }
-    }
-    return false;
+    // ONE landmark roster (v62): the id alone names the place.
+    const Landmark* lm = landmark_by_id(*ctx.mw.gs, rt.homeSettlementId);
+    if (!lm) return false;
+    out = {float(lm->x), float(lm->y)};
+    return true;
 }
 
 // The agent's HOME STORE — where a gatherer's haul lands. The same universal
-// Inventory the market sells from, resolved by the honest {id-space, id} pair.
+// Inventory the market sells from, resolved by the honest id.
 Inventory* home_inventory(const ecs::MacroNpcRuntime& rt,
                           const TickContext& ctx) {
-    if (rt.homeSettlementId < 0) return nullptr;
-    // ONE landmark id space (v54): at most one list answers.
-    for (auto& v : ctx.mw.gs->villages) {
-        if (v.id == rt.homeSettlementId) return &v.inventory;
-    }
-    for (auto& s : ctx.mw.gs->settlements) {
-        if (s.id == rt.homeSettlementId) return &s.inventory;
-    }
-    return nullptr;
+    Landmark* lm = landmark_by_id(*ctx.mw.gs, rt.homeSettlementId);
+    return lm ? &lm->inventory : nullptr;
 }
 
 // Empty the gatherer's own bag of `id` into his home store — the shared
@@ -579,12 +561,12 @@ void ai_gatherer(entt::entity self, ecs::Position& p,
                                          // partial re-pick of its layers
                 const int have = resource_field_read(mw, def->row, tx, ty);
                 const int take = std::min(kGatherPerWorkerDay, have);
-                if (take > 0) {
+                auto* bag = ctx.mw.world->reg.try_get<ecs::NpcInventory>(self);
+                // Credit BEFORE debit (CANON S5): the field pays only what
+                // the OWN bag actually took — a bagless walker, or a bag
+                // with no room, drains nothing and writes no Drained fact.
+                if (take > 0 && bag && bag->inv.add(def->commodity, take)) {
                     resource_field_apply(mw, def->row, tx, ty, -take);
-                    if (auto* bag = ctx.mw.world->reg.try_get<ecs::NpcInventory>(
-                            self)) {
-                        bag->inv.add(def->commodity, take);
-                    }
                     // A DEPOSIT worked down to nothing is a fact of the world
                     // (FactKind::Drained: "a vein worked out") — and by the
                     // annihilation law the cell itself leaves the map, so
@@ -633,24 +615,24 @@ void ai_gatherer(entt::entity self, ecs::Position& p,
 // (AgentMemory MarketSnapshot, the owner's design) and at the village loads
 // what that snapshot says the city LACKS — it can be wrong by the time it
 // returns, and that is a trader's life.
-
-constexpr float kCaravanCapacityKg = 256.0f;   // po2 cargo hold
+//
+// How much it hauls is its OWN carry law and nothing else: rt.carryCap =
+// get_carry_capacity(sheet) × the row's haulMult (squad.h
+// refresh_leader_travel_stats — a caravan is wagons and mules, ×32). A flat
+// `kCaravanCapacityKg = 256` lived here until 2026-08-29: a SECOND capacity
+// beside the legal one, so the hold neither grew with the leader's back nor
+// answered to the overload law that priced the very same cargo's march.
 
 void ai_nomad(ecs::Position& p, ecs::MacroNpcRuntime& rt,
               const TickContext& ctx);
 
-Inventory* village_inventory_by_id(const TickContext& ctx, int id) {
-    for (auto& v : ctx.mw.gs->villages) {
-        if (v.id == id) return &v.inventory;
-    }
-    return nullptr;
-}
-
-Inventory* settlement_inventory_by_id(const TickContext& ctx, int id) {
-    for (auto& s : ctx.mw.gs->settlements) {
-        if (s.id == id) return &s.inventory;
-    }
-    return nullptr;
+// One roster (v62): the KIND check is explicit where a caller means "only a
+// village" / "only a city", instead of being implied by which vector it
+// searched.
+Inventory* landmark_inventory_of_kind(const TickContext& ctx, int id,
+                                      LandmarkType kind) {
+    Landmark* lm = landmark_by_id(*ctx.mw.gs, id);
+    return lm && lm->type == kind ? &lm->inventory : nullptr;
 }
 
 // Move up to `maxUnits` of `id` between inventories, bounded by the cargo
@@ -663,8 +645,11 @@ int haul_between(Inventory& from, Inventory& to, const char* id,
     const int byWeight = int(capacityLeftKg / unitKg);
     const int n = std::min({maxUnits, byWeight, from.count(id)});
     if (n <= 0) return 0;
+    // Credit before debit (CANON S5): a hold with no free slot refuses, the
+    // cargo stays where it was, and "units moved" is never said of goods
+    // that evaporated between two bags.
+    if (!to.add(id, n)) return 0;
     from.remove(id, n);
-    to.add(id, n);
     return n;
 }
 
@@ -679,10 +664,11 @@ void ai_caravan(entt::entity self, ecs::Position& p,
     auto& reg = ctx.mw.world->reg;
     auto* bag = reg.try_get<ecs::NpcInventory>(self);
     auto* mem = reg.try_get<AgentMemory>(self);
-    // A caravan's home must be a CITY: the settlement lookup itself is the
-    // check now (v54 — one id space, so a village home simply finds nothing
-    // here and the caravan degrades below).
-    Inventory* homeStore = settlement_inventory_by_id(ctx, rt.homeSettlementId);
+    // A caravan's home must be a CITY: the kind check is the gate (v62 —
+    // one roster, so a village home simply resolves to the wrong kind here
+    // and the caravan degrades below).
+    Inventory* homeStore = landmark_inventory_of_kind(
+        ctx, rt.homeSettlementId, LandmarkType::City);
     if (!bag || !mem || !homeStore) {
         ai_nomad(p, rt, ctx);
         return;
@@ -694,7 +680,8 @@ void ai_caravan(entt::entity self, ecs::Position& p,
         // Pick one of the HOME city's villages — nearest first.
         int villageId = -1;
         float best = 1e30f;
-        for (auto& v : ctx.mw.gs->villages) {
+        for (auto& v : ctx.mw.gs->landmarks) {
+            if (v.type != LandmarkType::Village) continue;
             if (v.nearestCityId != rt.homeSettlementId) continue;
             const float d = torus_dist_sq(p.x, p.y, float(v.x), float(v.y),
                                           float(ctx.mapW), float(ctx.mapH));
@@ -721,14 +708,14 @@ void ai_caravan(entt::entity self, ecs::Position& p,
             *mem, AgentMemoryKind::MarketSnapshot,
             std::uint16_t(rt.homeSettlementId));
         for (int i = 0; i < kNeedCount
-                        && inventory_weight(bag->inv) < kCaravanCapacityKg / 2;
+                        && inventory_weight(bag->inv) < rt.carryCap / 2;
              ++i) {
             const int idx = commodity_index(kNeeds[i].commodity);
             if (idx < 0) continue;
             if (snap && market_stock_class(*snap, idx) < 3) continue;
             haul_between(*homeStore, bag->inv, kNeeds[i].commodity,
                          1 << 30,
-                         kCaravanCapacityKg / 2 - inventory_weight(bag->inv));
+                         rt.carryCap / 2 - inventory_weight(bag->inv));
         }
         rt.targetSettlementId = villageId;
         rt.state = std::uint8_t(NS::Traveling);
@@ -746,8 +733,8 @@ void ai_caravan(entt::entity self, ecs::Position& p,
     if (rt.state == std::uint8_t(NS::Working)) {
         --rt.stateTimer;
         if (rt.stateTimer > 0) return;
-        if (Inventory* vs = village_inventory_by_id(ctx,
-                                                    rt.targetSettlementId)) {
+        if (Inventory* vs = landmark_inventory_of_kind(
+                ctx, rt.targetSettlementId, LandmarkType::Village)) {
             // What one unit of a commodity is worth — the ONE price table
             // (ItemDef.value); the deal's worth is counted in it, never in a
             // second price vocabulary.
@@ -776,7 +763,7 @@ void ai_caravan(entt::entity self, ecs::Position& p,
                             unit_value(kCommodities[i].id)
                             * haul_between(*vs, bag->inv, kCommodities[i].id,
                                            1 << 30,
-                                           kCaravanCapacityKg
+                                           rt.carryCap
                                                - inventory_weight(bag->inv));
                     }
                 }
@@ -820,17 +807,21 @@ void ai_trader(ecs::Position& p, ecs::MacroNpcRuntime& rt,
                const TickContext& ctx) {
     XY home;
     if (!home_pos(rt, ctx, home)) return;
-    auto& settles = ctx.mw.gs->settlements;
+    auto& settles = ctx.mw.gs->landmarks;
 
     if (rt.state == std::uint8_t(NS::Idle)) {
         --rt.stateTimer;
         if (rt.stateTimer <= 0) {
-            // Pick another settlement (id != home).
+            // Pick another city (id != home).
             int candidates = 0;
-            for (auto& s : settles) if (s.id != rt.homeSettlementId) ++candidates;
+            for (auto& s : settles) {
+                if (s.type != LandmarkType::City) continue;
+                if (s.id != rt.homeSettlementId) ++candidates;
+            }
             if (candidates > 0) {
                 int pick = rand_int(ctx, candidates);
                 for (auto& s : settles) {
+                    if (s.type != LandmarkType::City) continue;
                     if (s.id == rt.homeSettlementId) continue;
                     if (pick-- == 0) {
                         rt.targetSettlementId = s.id;
@@ -875,15 +866,19 @@ void ai_trader(ecs::Position& p, ecs::MacroNpcRuntime& rt,
 
 void ai_nomad(ecs::Position& p, ecs::MacroNpcRuntime& rt,
               const TickContext& ctx) {
-    auto& settles = ctx.mw.gs->settlements;
+    auto& settles = ctx.mw.gs->landmarks;
     if (rt.state == std::uint8_t(NS::Idle)) {
         --rt.stateTimer;
         if (rt.stateTimer <= 0) {
             int candidates = 0;
-            for (auto& s : settles) if (s.id != rt.targetSettlementId) ++candidates;
+            for (auto& s : settles) {
+                if (s.type != LandmarkType::City) continue;
+                if (s.id != rt.targetSettlementId) ++candidates;
+            }
             if (candidates > 0) {
                 int pick = rand_int(ctx, candidates);
                 for (auto& s : settles) {
+                    if (s.type != LandmarkType::City) continue;
                     if (s.id == rt.targetSettlementId) continue;
                     if (pick-- == 0) {
                         rt.targetSettlementId = s.id;
@@ -908,24 +903,15 @@ void ai_nomad(ecs::Position& p, ecs::MacroNpcRuntime& rt,
     }
 }
 
-void ai_aggressive(ecs::Position& p, const ecs::NPCKind& kind,
-                   ecs::MacroNpcRuntime& rt, const TickContext& ctx) {
-    float dsq = torus_dist_sq(p.x, p.y, ctx.playerX, ctx.playerY,
-                              float(ctx.mapW), float(ctx.mapH));
-    // Pursuit asks THE hostility rule like everyone else. An aggressive row
-    // used to chase the player on sight regardless of standing — the last
-    // resolver with its own private answer: a befriended band would follow
-    // forever yet never force the encounter the map's own rule kept vetoing.
-    // Now the same relation that arms the battle masks arms the chase.
-    if (dsq < 100.0f
-        && factions_hostile(ctx.mw.gs, faction_id_for_index(kind.factionIdx),
-                            kPlayerFactionId)) {
-        rt.state = std::uint8_t(NS::Chasing);
-        rt.targetX = ctx.playerX;
-        rt.targetY = ctx.playerY;
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
-        return;
-    }
+void ai_aggressive(ecs::Position& p, ecs::MacroNpcRuntime& rt,
+                   const TickContext& ctx) {
+    // No private player-channel here any more (owner, 2026-08-29: «игрок
+    // ничем не особенен»). Perception and pursuit are squad_threat_step's —
+    // the player's squad sits in the SAME SquadIndex at the SAME
+    // kSquadSightCells as every other squad, so an aggressive row that can
+    // see the player chases him through the one law it chases anyone by.
+    // The old channel saw the player at 10 cells against everyone else's 6.
+    // What is left below is the row's untroubled day: wander.
     if (rt.state == std::uint8_t(NS::Chasing)) {
         rt.state = std::uint8_t(NS::Idle);
         rt.stateTimer = std::int16_t(5 + rand_int(ctx, 10));
@@ -1139,6 +1125,15 @@ bool squad_threat_step(entt::entity self, ecs::Position& p,
     // by the ONE law and settled through the ONE ledger. An ambush is a
     // pursuer catching a squad that never saw it coming.
     if (int(p.x) == int(ep.x) && int(p.y) == int(ep.y)) {
+        // A player-controlled squad's meetings belong to the forced-encounter
+        // door (Inc 6, main.cpp detect_forced_encounter): the squad stands ON
+        // the meeting cell and the door opens the pre-battle screen — never
+        // the silent auto-resolve. Both flags, because possession moves
+        // PlayerTag while PlayerSquadTag stays home (components.h).
+        if (reg.any_of<ecs::PlayerTag, ecs::PlayerSquadTag>(enemy)) {
+            rt.visualSpeed = 0.0f;
+            return true;
+        }
         if (!ctx.allowAutoBattle) return false;
         auto* ert = reg.try_get<ecs::MacroNpcRuntime>(enemy);
         const bool ambush =
@@ -1313,7 +1308,7 @@ void dispatch(AIBehaviour b, entt::entity e, ecs::Position& p,
         case AIBehaviour::CaravanTrade: ai_caravan   (e, p, rt, ctx); break;
         case AIBehaviour::Trader:       ai_trader       (p, rt, ctx); break;
         case AIBehaviour::Nomad:        ai_nomad        (p, rt, ctx); break;
-        case AIBehaviour::Aggressive:   ai_aggressive(p, kind, rt, ctx); break;
+        case AIBehaviour::Aggressive:   ai_aggressive   (p, rt, ctx); break;
         case AIBehaviour::Patrol:       ai_patrol       (p, rt, ctx); break;
         case AIBehaviour::Teleporter:   ai_teleporter   (p, rt, ctx); break;
         case AIBehaviour::Wanderer:     ai_wanderer     (p, rt, ctx); break;
@@ -1384,13 +1379,15 @@ void build_squad_index(SquadIndex& g, ecs::World& w, int mapW, int mapH,
     CellBuckets& b = g.grid;
     bucket_reset(b, mapW, mapH, cellSize);
 
-    // Every live macro squad, and nothing else: the player's flagged body is
-    // not prey for the threat step (meeting the player is Inc 6's forced
-    // encounter, a different door), and the Dead are no squads at all.
+    // Every live macro squad — INCLUDING the player's (owner, 2026-08-29:
+    // «игрок ничем не особенен», one law of sight for all). His squad is
+    // perceived through this index at the same kSquadSightCells as anyone;
+    // what stays special is only the MEETING, which belongs to Inc 6's
+    // forced-encounter door (squad_threat_step stops short of auto-battling
+    // a player-controlled squad). The Dead are no squads at all.
     auto view = w.reg.view<ecs::Position, ecs::NPCKind,
                            ecs::MacroNpcRuntime>(
-        entt::exclude<ecs::Dead, ecs::PlayerTag, ecs::PlayerSquadTag,
-                      ecs::SubworldTag>);
+        entt::exclude<ecs::Dead, ecs::SubworldTag>);
     // Two passes over the view — count, then scatter — which is what buys the
     // allocation-free rebuild. The view is cheap to walk twice; sixteen
     // thousand vector headers were not cheap to rebuild once.
@@ -1469,6 +1466,14 @@ void tick_macro_npc_ai(MacroWorld& mw,
             dispatch(effective_behaviour(reg, e, kind), e, p, kind, rt, ctx);
         settle_march_rhythm(e, p, rt, hp, p.x != x0 || p.y != y0, ctx);
     }
+
+    // The END of every dead squad's story, once per tick (CANON S4): any
+    // stragglers' survivors to the pool (idempotent for the already-drained;
+    // it also catches a dead=1 roster a save carried across the sweep
+    // window), then the drained corpse-rows leave the map. Deferred to HERE
+    // because the settle doors' callers still hold the entities mid-tick.
+    drain_dead_leader_squads(w, gs.deserterPool);
+    destroy_dead_macro_squads(w);
 }
 
 void tick_macro_npc_visuals(ecs::World& w, int mapW, int mapH, float dt) {
@@ -1608,6 +1613,12 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
         ++result.sweepsCompleted;
         runtime.sweepCursor = 0;
     }
+    // Same end-of-tick settlement as the map-view driver above (S4): the
+    // macro clock ticks underground too, and a lord felled down there must
+    // leave the map by the same law. (The positional sweep cursor already
+    // tolerates the view shrinking — every death mid-sweep shrinks it.)
+    drain_dead_leader_squads(w, gs.deserterPool);
+    destroy_dead_macro_squads(w);
     result.backlog = result.backlog || runtime.pendingSweeps > 0;
     return result;
 }

@@ -39,25 +39,38 @@ inline void player_journal_capture(GameState& gs) {
     }
     const int px = wrapi(int(p.x), gs.mapW);
     const int py = wrapi(int(p.y), gs.mapH);
+    // Participation is by the ordinal his deeds FILE UNDER — and while he
+    // wears a possessed lord (possession.md, PlayerState::possessedMacroSpawnId)
+    // that is the LORD's ordinal, wherever the deed happened: «узнаётся
+    // УЧАСТИЕ, где бы ни случилось». A capture keyed to his own squad alone
+    // learned a possessed reign only by standing on its cell.
+    const int possessed = p.possessedMacroSpawnId;
+    const auto isHis = [possessed](std::uint8_t kind, std::uint32_t ordinal) {
+        if (fact_subject_kind(kind) != std::uint8_t(FactSubject::Squad))
+            return false;
+        return ordinal == ecs::kPlayerSquadOrdinal
+            || (possessed >= 0 && ordinal == std::uint32_t(possessed));
+    };
     for (std::uint32_t s = p.journalSeenSeq + 1u; s < c.nextSeq; ++s) {
         const WorldFact& f = c.ring[std::size_t((s - 1u) % kChronicleFacts)];
         // A slot that no longer holds its seq was evicted before this reader
         // ever ran (a scan that fell a whole ring behind) — nothing to learn.
         if (f.seq != s) continue;
-        const bool tookPart =
-            (fact_subject_kind(f.subjectKind)
-                 == std::uint8_t(FactSubject::Squad)
-             && f.subject == ecs::kPlayerSquadOrdinal)
-            || (fact_subject_kind(f.objectKind)
-                    == std::uint8_t(FactSubject::Squad)
-                && f.object == ecs::kPlayerSquadOrdinal);
+        const bool tookPart = isHis(f.subjectKind, f.subject)
+                           || isHis(f.objectKind, f.object);
         const bool happenedHere = int(f.x) == px && int(f.y) == py;
         if (!tookPart && !happenedHere) continue;
         if (p.journal.size() >= std::size_t(PlayerState::kJournalFactsCap)) {
             p.journalFull = 1;   // loud, never a silent drop of his past
             break;
         }
-        p.journal.push_back(f);
+        WorldFact learned = f;
+        // The copy is of the immutable RECORD; the chain link belongs to the
+        // ring's index, not to the fact — save.cpp write_fact refuses to
+        // store the derived link for the same reason (a stored derivative is
+        // a second truth). A live link here rode into the save as garbage.
+        learned.nextInCell = 0u;
+        p.journal.push_back(learned);
     }
     p.journalSeenSeq = c.nextSeq - 1u;
 }

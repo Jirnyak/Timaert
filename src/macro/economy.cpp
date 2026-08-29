@@ -61,16 +61,11 @@ int daily_demand_for(const char* itemId, int population) {
 
 float mood_price_mult(SettlementMood mood, bool buying) {
     // A town's temper prices its market, and it prices BOTH sides of the deal
-    // (the merchant-temperament column beside this one always did): a
-    // prosperous town sells cheap and pays well because it has coin; a town in
-    // revolt charges a risk premium and haggles the traveller down. Data, one
-    // row per band, mirroring trait_price_mult's shape.
-    switch (mood) {
-        case SettlementMood::Prosperous: return buying ? 0.9f : 1.1f;
-        case SettlementMood::Unrest:     return buying ? 1.2f : 0.85f;
-        case SettlementMood::Revolt:     return buying ? 1.4f : 0.7f;
-        default:                         return 1.0f;
-    }
+    // (the merchant-temperament column beside this one always did). The
+    // numbers are columns of THE mood registry (state.h kMoodRows), beside
+    // the band's label and everything else said about it.
+    const MoodRow& r = mood_row(mood);
+    return buying ? r.buyMul : r.sellMul;
 }
 
 float trait_price_mult(const ecs::NpcTraits* traits, bool buying) {

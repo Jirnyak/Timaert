@@ -347,16 +347,18 @@ struct MacroNpcRuntime {
     std::uint32_t renown = 0;
 };
 
-// Deterministic spawn ordinal for a persistent macro NPC (Inc 5e-2). The ECS
-// registry is never serialized — macro NPCs regenerate from `worldSeed` via
-// spawn_macro_npcs on every boot, in a fixed creation order. This ordinal is
-// exactly that order (0,1,2,…), assigned by the SOLE creation path (make_npc),
-// so it is the one identity that survives save/load. Possession persistence
-// stores the possessed body's ordinal (PlayerState::possessedMacroSpawnId) and
-// re-finds the same NPC after regeneration (reattach_player_to_macro_spawn).
-// It is never written to the save blob itself — only the chosen ordinal is —
-// so it does not participate in the ECS-serialization ban and needs no
-// kSaveVersion bump of its own.
+// Deterministic spawn ordinal for a persistent macro NPC (Inc 5e-2), assigned
+// in creation order (0,1,2,…) by the SOLE creation path (make_npc) — the one
+// identity that survives save/load. Possession persistence stores the
+// possessed body's ordinal (PlayerState::possessedMacroSpawnId) and re-finds
+// the same NPC after a load (reattach_player_to_macro_spawn).
+//
+// AND IT IS SAVE FORMAT. Since v23 the macro-ECS snapshot serializes every
+// persistent macro NPC whole (macro/macro_snapshot.h → save.cpp
+// write_macro_npc): this ordinal rides the blob, and the POD components
+// around it — MacroNpcRuntime included — are written verbatim, so their
+// LAYOUT is the format. A "runtime-only" field added to any of them is not
+// free: it changes the blob and pays a kSaveVersion bump like Skills does.
 struct MacroSpawnId { std::uint32_t index = 0; };
 
 // The PLAYER's squad ordinal — reserved at the top of the space so it can

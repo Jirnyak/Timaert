@@ -380,7 +380,8 @@ sm::GameState make_state() {
     // every other squad's — see the player record in make_macro_records.)
     add_soldiers(gs.deserterPool, sm::NPCType::Woodcutter, 2, 1300u);
 
-    sm::Settlement settlement{};
+    sm::Landmark settlement{};
+    settlement.type = sm::LandmarkType::City;
     settlement.id = 7;
     settlement.name = "Round City";
     settlement.x = 40;
@@ -398,9 +399,10 @@ sm::GameState make_state() {
     settlement.unmetYesterday = 34;
     settlement.famineActive = 1;
     settlement.popGrowthCarry = 0.375f;
-    gs.settlements.push_back(settlement);
+    gs.landmarks.push_back(settlement);
 
-    sm::Village village{};
+    sm::Landmark village{};
+    village.type = sm::LandmarkType::Village;
     village.id = 70;
     village.name = "Round Hamlet";
     village.x = 45;
@@ -416,15 +418,16 @@ sm::GameState make_state() {
     village.unmetYesterday = 7;
     village.famineActive = 1;
     village.popGrowthCarry = -0.25f;
-    gs.villages.push_back(village);
+    gs.landmarks.push_back(village);
 
-    sm::Spire spire{};
+    sm::Landmark spire{};
+    spire.type = sm::LandmarkType::Spire;
     spire.id = 3;
     spire.x = 12;
     spire.y = 34;
     spire.spellId = 99;
     spire.depleted = true;
-    gs.spires.push_back(spire);
+    gs.landmarks.push_back(spire);
 
     sm::Marker marker{};
     marker.id = "marker.round";
@@ -910,10 +913,12 @@ void run_roundtrip() {
     if (p.failedQuestIds.empty() || p.failedQuestIds[0] != "q_failed_round") {
         FAIL_BAIL("failed quest ledger lost");
     }
-    if (loaded.settlements.empty() || loaded.settlements[0].population != 777) {
+    const sm::Landmark* cityLm = sm::landmark_by_id(loaded, 7);
+    if (!cityLm || cityLm->type != sm::LandmarkType::City
+        || cityLm->population != 777) {
         FAIL_BAIL("settlement lost");
     }
-    const sm::Settlement& city = loaded.settlements[0];
+    const sm::Landmark& city = *cityLm;
     if (city.name != "Round City" || city.mood != sm::SettlementMood::Tense
         || city.inventory.count("wood") != 19
         || city.history.size() != 2 || city.history.population_at(1) != 777
@@ -926,15 +931,17 @@ void run_roundtrip() {
         || city.famineActive != 1 || !nearf(city.popGrowthCarry, 0.375f)) {
         FAIL_BAIL("settlement honest-day readouts (v29) lost");
     }
-    if (loaded.villages.empty()
-        || loaded.villages[0].starvedYesterday != 5
-        || loaded.villages[0].unmetYesterday != 7
-        || loaded.villages[0].famineActive != 1
-        || !nearf(loaded.villages[0].popGrowthCarry, -0.25f)) {
+    const sm::Landmark* vilLm = sm::landmark_by_id(loaded, 70);
+    if (!vilLm || vilLm->type != sm::LandmarkType::Village
+        || vilLm->starvedYesterday != 5
+        || vilLm->unmetYesterday != 7
+        || vilLm->famineActive != 1
+        || !nearf(vilLm->popGrowthCarry, -0.25f)) {
         FAIL_BAIL("village honest-day readouts (v29) lost");
     }
-    if (loaded.spires.empty() || !loaded.spires[0].depleted
-        || loaded.spires[0].spellId != 99) {
+    const sm::Landmark* spireLm = sm::landmark_by_id(loaded, 3);
+    if (!spireLm || spireLm->type != sm::LandmarkType::Spire
+        || !spireLm->depleted || spireLm->spellId != 99) {
         FAIL_BAIL("spire lost");
     }
     if (loaded.markers.empty() || loaded.markers[0].id != "marker.round"

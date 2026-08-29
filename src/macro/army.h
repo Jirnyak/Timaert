@@ -14,6 +14,14 @@ namespace sm {
 
 inline constexpr int kMaxSoldierLevel = 32767;
 
+// THE default perception radius, in subworld metres: how far a body notices
+// an enemy on its own when its row says nothing more specific. ONE home for
+// one quantity (canon audit 2026-08-29): it also lived as sub/ai.h's
+// kDetectionRadius = 200.0f — two houses for the same 200, free to drift —
+// and that constant now reads this one. 200 m ≈ the far edge of the drawn
+// scene: a body notices what the player could see.
+inline constexpr float kNpcSightDefaultM = 200.0f;
+
 struct CombatTemplate {
     enum AttackKind : std::uint8_t { Melee = 0, Missile = 1 };
     float       hp;
@@ -47,17 +55,17 @@ struct CombatTemplate {
     // aggro leash: awareness relays through a formation (see the alert chain in
     // sub/battle.h), so a rear rank charges because its front rank saw, while a
     // lone animal that noticed nothing stays put.
-    float       sight = 200.0f;
+    float       sight = kNpcSightDefaultM;
 };
 
 struct SoldierRecord {
     std::uint32_t entityId = 0; // stable save id, not an EnTT handle
     // WHAT this member is, in the ONE id space every body already shares with
-    // the ECS (`ecs::NPCKind.type`): a humanoid is its `NPCType` ordinal, a
-    // monster is `0x100 | catalog index` (macro/fauna.h). Sixteen bits, because
-    // a beast must be able to stand in a roster exactly like a man — a wolf
-    // pack IS a squad, and the byte this used to be could not say so
-    // (CANON.md S4/S16). Validated by npc.h `valid_npc_kind`.
+    // the ECS (`ecs::NPCKind.type`): an ordinal of the one npc table — a wolf
+    // is as legal a row as a spearman, so a wolf pack IS a squad, and the byte
+    // this used to be could not say so (CANON.md S4/S16). The old
+    // `0x100 | catalog index` monster encoding is dead with the second table
+    // (npc.h). Sixteen bits, validated by npc.h `valid_npc_kind`.
     std::uint16_t kind     = 0;
     std::int16_t  level    = 1;
 };

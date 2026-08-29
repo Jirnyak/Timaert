@@ -92,8 +92,10 @@ void test_daily_processing_applies_player_upkeep_and_age() {
 
     // The expectation is DERIVED from the same law the tick pays by, so the
     // upkeep table can be retuned without touching this file.
-    const int expectedUpkeep =
-        sm::calculate_squad_upkeep(*army, gs.player.sheet.attributes.of(sm::AttributeId::Cha));
+    const int expectedUpkeep = sm::calculate_squad_upkeep(
+        *army, sm::calculate_derived(gs.player.sheet.attributes,
+                                     gs.player.sheet.skills)
+                   .tradeDiscount);
     const int expectedGold = (5 - expectedUpkeep) > 0 ? (5 - expectedUpkeep) : 0;
 
     const int processed = sm::process_world_daily_ticks(gs, runtime, 1, &mw);
@@ -114,12 +116,13 @@ void test_settlement_history_keeps_a_rolling_window() {
     constexpr int kDaysRun = sm::kSettlementHistoryDays + 5;
 
     sm::GameState gs{};
-    sm::Settlement s{};
+    sm::Landmark s{};
+    s.type = sm::LandmarkType::City;
     s.id = 1;
     s.name = "Test City";
     s.population = 10;
     s.mood = sm::SettlementMood::Stable;
-    gs.settlements.push_back(s);
+    gs.landmarks.push_back(s);
 
     sm::WorldTickRuntime runtime{};
     sm::reset_world_tick_runtime(runtime, 321u);
@@ -131,7 +134,7 @@ void test_settlement_history_keeps_a_rolling_window() {
               && runtime.nextDailyTickDay == 0,
           "a budget larger than the queue drains the whole queue");
 
-    const sm::SettlementHistory& history = gs.settlements[0].history;
+    const sm::SettlementHistory& history = gs.landmarks[0].history;
     // The window is the RING's own size now — a season (kDaysPerSeason), the
     // same span the forest grows by — and the cap lives in the container, so
     // no caller can forget it and nothing shifts an array to enforce it.
@@ -155,7 +158,8 @@ void test_settlement_history_keeps_a_rolling_window() {
 // cannot take a recruit must also not pay a head for him.
 void test_garrison_never_exceeds_its_cap() {
     sm::GameState gs{};
-    sm::Settlement s{};
+    sm::Landmark s{};
+    s.type = sm::LandmarkType::City;
     s.id = 1;
     s.population = 5000;                 // deep enough to want the full packet
     // Fill to one below the ceiling: the state the old check waved through.
@@ -163,8 +167,8 @@ void test_garrison_never_exceeds_its_cap() {
         s.garrison.push(sm::make_soldier(
             std::uint8_t(sm::NPCType::Guard), 1, std::uint32_t(1000 + i)));
     }
-    gs.settlements.push_back(s);
-    const int popBefore = gs.settlements[0].population;
+    gs.landmarks.push_back(s);
+    const int popBefore = gs.landmarks[0].population;
 
     sm::WorldTickRuntime runtime{};
     sm::reset_world_tick_runtime(runtime, 4242u);
@@ -172,7 +176,7 @@ void test_garrison_never_exceeds_its_cap() {
     runtime.nextDailyTickDay = 3;
     sm::process_world_daily_ticks(gs, runtime, 1);
 
-    const int after = sm::total_soldiers(gs.settlements[0].garrison);
+    const int after = sm::total_soldiers(gs.landmarks[0].garrison);
     CHECK(after <= sm::kMaxGarrisonPerSettlement,
           "a day of recruiting never carries a garrison past its own cap");
     CHECK(after == sm::kMaxGarrisonPerSettlement,
@@ -184,20 +188,20 @@ void test_garrison_never_exceeds_its_cap() {
     // between the two populations is exactly the men taken.
     const int taken = after - (sm::kMaxGarrisonPerSettlement - 1);
     sm::GameState control{};
-    sm::Settlement full = s;
+    sm::Landmark full = s;
     full.garrison.push(sm::make_soldier(
         std::uint8_t(sm::NPCType::Guard), 1, 9999u));   // now at the ceiling
-    control.settlements.push_back(full);
+    control.landmarks.push_back(full);
     sm::WorldTickRuntime controlRuntime{};
     sm::reset_world_tick_runtime(controlRuntime, 4242u);
     controlRuntime.pendingDailyTicks = 1;
     controlRuntime.nextDailyTickDay = 3;
     sm::process_world_daily_ticks(control, controlRuntime, 1);
-    CHECK(total_soldiers(control.settlements[0].garrison)
+    CHECK(total_soldiers(control.landmarks[0].garrison)
               == sm::kMaxGarrisonPerSettlement,
           "the control's full garrison recruits nobody");
-    CHECK(control.settlements[0].population
-              - gs.settlements[0].population == taken,
+    CHECK(control.landmarks[0].population
+              - gs.landmarks[0].population == taken,
           "the town pays a head only for the men it actually took");
     (void)popBefore;
 }
@@ -283,13 +287,14 @@ void test_a_famine_is_recorded_once_when_it_begins() {
 
     // A town with mouths and no bread: it starves from the first day and keeps
     // starving, which is exactly the shape that would flood a naive recorder.
-    sm::Settlement s{};
+    sm::Landmark s{};
+    s.type = sm::LandmarkType::City;
     s.id = 1;
     s.name = "Hungry";
     s.population = 100;
     s.x = 8; s.y = 8;
     s.mood = sm::SettlementMood::Stable;
-    gs.settlements.push_back(s);
+    gs.landmarks.push_back(s);
 
     sm::WorldTickRuntime runtime{};
     sm::reset_world_tick_runtime(runtime, 7u);
@@ -310,7 +315,7 @@ void test_a_famine_is_recorded_once_when_it_begins() {
                                ++n.revolts;
                        }, &c);
 
-    CHECK(gs.settlements[0].famineActive != 0,
+    CHECK(gs.landmarks[0].famineActive != 0,
           "the fixture is honest: this town IS starving");
     CHECK(c.famines == 1,
           "twenty hungry days are ONE famine — the transition is the story");

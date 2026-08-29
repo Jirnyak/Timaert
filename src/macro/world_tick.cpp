@@ -26,8 +26,8 @@ namespace sm {
 
 namespace {
 
-// One worker at the benches per this many heads (po2) — the город's
-// production labour for econ_produce_day.
+// One worker at the benches per this many heads (po2) — a landmark's
+// production labour for econ_produce_day, city and village alike.
 constexpr int   kHeadsPerCityWorker = 8;
 
 inline float rand01_(WorldTickRuntime& runtime) {
@@ -45,7 +45,6 @@ void push_history_(SettlementHistory& hist, int day, int population) {
 // mood and the LOGISTIC population law (owner's ruling — no flat heads per
 // day; K = kPopCarryingCap = the subworld's own NPC cap). Returns the
 // wellbeing for callers that want it.
-template <typename Landmark>
 void settle_landmark_day(Landmark& lm, int minPop,
                          bool& startedFamine, bool& startedRevolt) {
     startedFamine = false;
@@ -85,9 +84,9 @@ void settle_landmark_day(Landmark& lm, int minPop,
 }
 
 // ── Settlement daily tick ─────────────────────────────────────
-void tick_settlements_(GameState& gs, std::vector<Settlement>& settlements,
-                       int day, WorldTickRuntime& runtime) {
-    for (auto& s : settlements) {
+void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime) {
+    for (auto& s : gs.landmarks) {
+        if (s.type != LandmarkType::City) continue;
         // The city CRAFTS before it eats: today's table first, then fair
         // shares (econ_day's three passes), off the same one inventory the
         // caravans stock and the market sells from.
@@ -135,10 +134,19 @@ void tick_settlements_(GameState& gs, std::vector<Settlement>& settlements,
 // ── Village daily tick ────────────────────────────────────────
 // No gather here any more: gathering is AGENTS now — woodcutters and
 // farmers hauling real units into this same inventory (npc_ai.cpp).
-void tick_villages_(GameState& gs, std::vector<Village>& villages, int day,
-                    WorldTickRuntime& runtime) {
+void tick_villages_(GameState& gs, int day, WorldTickRuntime& runtime) {
     (void)runtime;
-    for (auto& v : villages) {
+    for (auto& v : gs.landmarks) {
+        if (v.type != LandmarkType::Village) continue;
+        // The village-side half of the craft door. econ_day.h promises «a
+        // village-side craft later is one row with site=Village, no code» —
+        // which is only true if this call exists: today no recipe carries
+        // that site, so this makes nothing, and the day the row lands it
+        // works with no code here either.
+        econ_produce_day(v.inventory, EconSite::Village,
+                         std::max(1, v.population / kHeadsPerCityWorker),
+                         v.population, nullptr, nullptr);
+
         bool famine = false, revolt = false;
         settle_landmark_day(v, /*minPop=*/5, famine, revolt);
         if (famine) {
@@ -163,7 +171,10 @@ void tick_player_daily_(PlayerState& p, const SoldierSquad* roster,
     // The player's men are a roster on his squad entity now, exactly like any
     // lord's — no roster (no world yet) simply means no wages.
     const int upkeep = roster
-        ? calculate_squad_upkeep(*roster, p.sheet.attributes.of(AttributeId::Cha)) : 0;
+        ? calculate_squad_upkeep(
+              *roster, calculate_derived(p.sheet.attributes, p.sheet.skills)
+                           .tradeDiscount)
+        : 0;
     // Pay what the wallet holds; an unpaid remainder is simply unpaid today
     // (wage-debt desertion is the №3 pipeline's future rule).
     if (purse) wallet_spend_up_to(*purse, upkeep);
@@ -215,8 +226,8 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
     int processed = 0;
     while (runtime.pendingDailyTicks > 0 && processed < max_daily_ticks) {
         const int day = runtime.nextDailyTickDay;
-        tick_settlements_(gs, gs.settlements, day, runtime);
-        tick_villages_   (gs, gs.villages,    day, runtime);
+        tick_settlements_(gs, day, runtime);
+        tick_villages_   (gs, day, runtime);
         tick_player_daily_(
             gs.player,
             macro && macro->world ? player_roster(*macro->world) : nullptr,

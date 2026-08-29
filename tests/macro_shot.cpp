@@ -12,7 +12,7 @@
 //
 // PPM (binary P6) keeps the tool dependency-free; convert with ffmpeg if a PNG
 // is wanted. Usage: macro_shot [out_dir]   (default out dir: /tmp/macro_shots)
-// Env: MACRO_SHOT_SEED (float, default 1), MACRO_SHOT_MAP (cells, default 1024),
+// Env: MACRO_SHOT_SEED (int, default 1), MACRO_SHOT_MAP (cells, default 1024),
 //      MACRO_SHOT_RESW / MACRO_SHOT_RESH (pixels, default 1600x1000).
 
 #include "gpu/vk_device.h"
@@ -47,11 +47,6 @@ std::uint32_t find_memory_type(VkPhysicalDevice pd, std::uint32_t bits,
     return UINT32_MAX;
 }
 
-float env_float(const char* name, float fallback) {
-    const char* v = std::getenv(name);
-    if (!v || !*v) return fallback;
-    return float(std::atof(v));
-}
 int env_int(const char* name, int fallback) {
     const char* v = std::getenv(name);
     if (!v || !*v) return fallback;
@@ -423,7 +418,8 @@ struct Shot {
 
 int main(int argc, char** argv) {
     const char* outDir = (argc > 1) ? argv[1] : "/tmp/macro_shots";
-    const float seed = env_float("MACRO_SHOT_SEED", 1.0f);
+    const std::uint32_t seed =
+        std::uint32_t(env_int("MACRO_SHOT_SEED", 1));   // seed is an int (S26)
     const int mapN = env_int("MACRO_SHOT_MAP", 1024);
     const std::uint32_t resW = std::uint32_t(env_int("MACRO_SHOT_RESW", 1600));
     const std::uint32_t resH = std::uint32_t(env_int("MACRO_SHOT_RESH", 1000));
@@ -481,8 +477,8 @@ int main(int argc, char** argv) {
                 ++mtn;
             }
         }
-        std::fprintf(stderr, "[macro_shot] map %dx%d seed %.1f -> %ld mountain cells\n",
-                     td.width, td.height, double(seed), mtn);
+        std::fprintf(stderr, "[macro_shot] map %dx%d seed %u -> %ld mountain cells\n",
+                     td.width, td.height, seed, mtn);
     }
     sm::ZoneLayer zones; // empty -> renderer binds a 1x1 blank zone map
 

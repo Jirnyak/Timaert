@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 
 namespace sm {
 
@@ -198,7 +199,11 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
         return;
 
     // Per-settlement spawns.
-    for (auto& s : gs.settlements) {
+    std::vector<Landmark*> cities;
+    for (auto& lm : gs.landmarks)
+        if (lm.type == LandmarkType::City) cities.push_back(&lm);
+    for (Landmark* cp : cities) {
+        auto& s = *cp;
         const std::uint16_t fIdx = settlement_faction_index(gs, s.kingdomIdx);
 
         int peasantCount = 2 + int(rng.next_u32() % 3u);
@@ -226,14 +231,14 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
         }
     }
 
-    if (gs.settlements.empty()) return;
-    const std::size_t nSet = gs.settlements.size();
+    if (cities.empty()) return;
+    const std::size_t nSet = cities.size();
 
     // Caravans: max(1, 0.3 * settlements)
     int caravanCount = int(nSet * 3 / 10);
     if (caravanCount < 1) caravanCount = 1;
     for (int i = 0; i < caravanCount; ++i) {
-        auto& home = gs.settlements[rng.next_u32() % nSet];
+        auto& home = *cities[rng.next_u32() % nSet];
         auto p = find_valid_spawn(home.x, home.y, 8, rng, mw, mh, terrain);
         // A caravan flies the flag of the town it sets out FROM (the same home
         // id it already carries), not of a guild — same rule as its merchant.
@@ -245,7 +250,7 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
     // Bandits: 0.3 * settlements + 2
     int banditCount = int(nSet * 3 / 10) + 2;
     for (int i = 0; i < banditCount; ++i) {
-        auto& ref = gs.settlements[rng.next_u32() % nSet];
+        auto& ref = *cities[rng.next_u32() % nSet];
         float angle = rng.next_f01() * 6.2831853f;
         int dist  = 20 + int(rng.next_u32() % 30u);
         int cx = wrapi(ref.x + int(std::lround(std::cos(angle) * dist)), mw);
@@ -257,7 +262,7 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
     // Witches: max(1, 0.1 * settlements)
     int witchCount = int(nSet / 10); if (witchCount < 1) witchCount = 1;
     for (int i = 0; i < witchCount; ++i) {
-        auto& ref = gs.settlements[rng.next_u32() % nSet];
+        auto& ref = *cities[rng.next_u32() % nSet];
         float angle = rng.next_f01() * 6.2831853f;
         int dist  = 25 + int(rng.next_u32() % 35u);
         int cx = wrapi(ref.x + int(std::lround(std::cos(angle) * dist)), mw);
@@ -271,7 +276,7 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
     // Sorceresses: max(1, 0.05 * settlements)
     int sorcCount = int(nSet / 20); if (sorcCount < 1) sorcCount = 1;
     for (int i = 0; i < sorcCount; ++i) {
-        auto& ref = gs.settlements[rng.next_u32() % nSet];
+        auto& ref = *cities[rng.next_u32() % nSet];
         float angle = rng.next_f01() * 6.2831853f;
         int dist  = 30 + int(rng.next_u32() % 40u);
         int cx = wrapi(ref.x + int(std::lround(std::cos(angle) * dist)), mw);
@@ -283,7 +288,8 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
     }
 
     // Per-village gatherers.
-    for (auto& v : gs.villages) {
+    for (auto& v : gs.landmarks) {
+        if (v.type != LandmarkType::Village) continue;
         const std::uint16_t fIdx = settlement_faction_index(gs, v.kingdomIdx);
         int vPeas = 1 + int(rng.next_u32() % 3u);
         for (int i = 0; i < vPeas; ++i) {
@@ -451,9 +457,18 @@ int raise_deserter_bands(GameState& gs, ecs::World& w,
 
     if (spawn_squad(gs, w, terrain, spec) == entt::null) {
         // The map refused the spawn: the men go back, because the pool is a
-        // conservation law and a failed roll may not eat anybody.
-        pool.push(captain);
-        add_squad(pool, spec.members);
+        // conservation law and a failed roll may not eat anybody. The room
+        // MUST be there — exactly `take` records just left — so a refused
+        // return is a bookkeeping bug, and it says so out loud rather than
+        // dissolving people in silence.
+        const bool captainBack = pool.push(captain);
+        const int menBack = add_squad(pool, spec.members);
+        if (!captainBack || menBack != spec.members.size()) {
+            std::fprintf(stderr,
+                         "[deserters] pool refused the rollback of a failed "
+                         "spawn (captain %d, men %d/%d) — men lost\n",
+                         int(captainBack), menBack, spec.members.size());
+        }
         return 0;
     }
     return take;

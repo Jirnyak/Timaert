@@ -25,24 +25,16 @@
 
 namespace sm {
 
-// Per-feature optical cost: the budget one cell of that feature spends.
-// Data-driven: a new feature's optical behaviour is one row here, never a
-// branch in the sweep. Indexed by FeatureType, so the row order MUST track
-// features.h's byte contract.
+// Per-feature optical cost: the budget one cell of that feature spends — THE
+// feature registry's column (macro/features.h kFeatureDefs; this held a
+// private float array until 2026-08-29). A new feature's optical behaviour is
+// its row's column, never a branch in the sweep.
 //
-// Mountains and forests are deliberately absent: mountains are a *biome*
-// (biomes.h Biome::Mountain, occluded via the elevation term below) and
-// forests are the tree-count field (macro/tree_layer.h) — canopy occlusion is
-// the CONTINUOUS kCanopyOpticalCost term added per unit of tree density.
-inline constexpr float kFeatureOpticalCost[] = {
-    1.00f,  // FT_None     open baseline
-    0.65f,  // FT_Road     clear + reflective — carries light and sight furthest
-    0.85f,  // FT_DirtRoad mostly clear — near open
-    1.00f,  // FT_Field    ploughed open ground — waist-high wheat hides nothing
-};
-static_assert(sizeof(kFeatureOpticalCost) / sizeof(kFeatureOpticalCost[0])
-                  == std::size_t(FT_Field) + 1u,
-              "one optical row per FeatureType byte");
+// Mountains and forests are deliberately absent from the registry: mountains
+// are a *biome* (biomes.h Biome::Mountain, occluded via the elevation term
+// below) and forests are the tree-count field (macro/tree_layer.h) — canopy
+// occlusion is the CONTINUOUS kCanopyOpticalCost term added per unit of tree
+// density.
 
 // Full forest (density 1.0) spends 1.0 + 1.5 = 2.5 per cell — the exact
 // budget the old binary FT_Tree feature row charged.
@@ -56,9 +48,7 @@ inline constexpr float kCanopyOpticalCost = 1.50f;
 inline constexpr float kClimbOpticalCost = 60.0f;
 
 inline float feature_optical_cost(FeatureType t) {
-    const std::size_t i = std::size_t(t);
-    const std::size_t n = sizeof(kFeatureOpticalCost) / sizeof(kFeatureOpticalCost[0]);
-    const float c = (i < n) ? kFeatureOpticalCost[i] : 1.0f;
+    const float c = feature_def(t).opticalCost;
     return c < 0.05f ? 0.05f : c;  // floor keeps the Dijkstra frontier finite
 }
 

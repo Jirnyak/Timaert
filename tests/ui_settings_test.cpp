@@ -6,7 +6,9 @@
 // context is created — draw_ui_settings_panel is compiled (its symbols link via
 // the ImGui core TUs) but never called.
 //
-// Style mirrors tests/targeting_test.cpp: no framework, plain main().
+// Assertions go through tests/check.h — CHECK + sm::test::report.
+
+#include "check.h"
 
 #include "ui/ui_settings.h"
 
@@ -16,11 +18,6 @@
 
 using namespace sm::ui;
 
-static int g_fails = 0;
-static bool expect(bool ok, const char* msg) {
-    if (!ok) { std::printf("FAIL: %s\n", msg); ++g_fails; }
-    return ok;
-}
 static bool approx(float a, float b) { return std::fabs(a - b) < 1e-3f; }
 
 // Overwrite `path` with raw bytes (for the forgiving-parser cases).
@@ -49,10 +46,10 @@ int main() {
         for (std::size_t i = 0; i < kUiElementCount; ++i) {
             const auto id = static_cast<UiElementId>(i);
             const UiElementSpec& sp = ui_spec(id);
-            expect(s.visible(id) == sp.defaultVisible,
-                   "fresh instance: visible == spec default");
-            expect(approx(s.scale(id), sp.scaleDefault),
-                   "fresh instance: scale == spec default");
+            CHECK(s.visible(id) == sp.defaultVisible,
+                  "fresh instance: visible == spec default");
+            CHECK(approx(s.scale(id), sp.scaleDefault),
+                  "fresh instance: scale == spec default");
         }
     }
 
@@ -64,8 +61,8 @@ int main() {
         s.mut(UiElementId::PlayerHud).visible  = false;
         s.reset_defaults();
         UiSettings fresh;
-        expect(same_state(s, fresh),
-               "reset_defaults() restores every element to spec defaults");
+        CHECK(same_state(s, fresh),
+              "reset_defaults() restores every element to spec defaults");
     }
 
     // ── a missing file is non-fatal: load returns false, state untouched ─────
@@ -74,9 +71,9 @@ int main() {
         UiSettings s;
         s.mut(UiElementId::SubMinimap).visible = false;  // pre-set, non-default
         const bool ok = load_ui_settings(s, tmp);
-        expect(!ok, "load returns false when the file is absent");
-        expect(s.visible(UiElementId::SubMinimap) == false,
-               "absent file leaves the caller's state untouched");
+        CHECK(!ok, "load returns false when the file is absent");
+        CHECK(s.visible(UiElementId::SubMinimap) == false,
+              "absent file leaves the caller's state untouched");
     }
 
     // ── save → load round-trips every element exactly ───────────────────────
@@ -86,11 +83,11 @@ int main() {
         src.mut(UiElementId::SubMinimap).scale   = 1.50f;  // within [0.60, 2.00]
         src.mut(UiElementId::PlayerHud).scale    = 0.75f;  // within [0.60, 1.80]
         src.mut(UiElementId::PanelCodex).visible = false;
-        expect(save_ui_settings(src, tmp), "save returns true on success");
+        CHECK(save_ui_settings(src, tmp), "save returns true on success");
 
         UiSettings dst;  // starts at defaults; load must overwrite from file
-        expect(load_ui_settings(dst, tmp), "load returns true when the file exists");
-        expect(same_state(src, dst), "save/load round-trips every element");
+        CHECK(load_ui_settings(dst, tmp), "load returns true when the file exists");
+        CHECK(same_state(src, dst), "save/load round-trips every element");
     }
 
     // ── forgiving parser: comments, blanks, unknown keys, partial lines ──────
@@ -104,19 +101,19 @@ int main() {
             "hud.player 0\n"                 // vis only -> scale keeps default
             "loose-token-no-fields\n");      // key-only unknown -> ignored
         UiSettings s;
-        expect(load_ui_settings(s, tmp), "load reads a hand-authored file");
-        expect(s.visible(UiElementId::SubMinimap) == false,
-               "known key applies visibility");
-        expect(approx(s.scale(UiElementId::SubMinimap), 1.25f),
-               "known key applies scale");
-        expect(s.visible(UiElementId::PlayerHud) == false,
-               "vis-only line applies visibility");
-        expect(approx(s.scale(UiElementId::PlayerHud), 1.0f),
-               "vis-only line leaves scale at default");
-        expect(s.visible(UiElementId::BottomToolbar) == true,
-               "an unmentioned element keeps its default visibility");
-        expect(approx(s.scale(UiElementId::BottomToolbar), 1.0f),
-               "an unmentioned element keeps its default scale");
+        CHECK(load_ui_settings(s, tmp), "load reads a hand-authored file");
+        CHECK(s.visible(UiElementId::SubMinimap) == false,
+              "known key applies visibility");
+        CHECK(approx(s.scale(UiElementId::SubMinimap), 1.25f),
+              "known key applies scale");
+        CHECK(s.visible(UiElementId::PlayerHud) == false,
+              "vis-only line applies visibility");
+        CHECK(approx(s.scale(UiElementId::PlayerHud), 1.0f),
+              "vis-only line leaves scale at default");
+        CHECK(s.visible(UiElementId::BottomToolbar) == true,
+              "an unmentioned element keeps its default visibility");
+        CHECK(approx(s.scale(UiElementId::BottomToolbar), 1.0f),
+              "an unmentioned element keeps its default scale");
     }
 
     // ── out-of-range scales clamp into [scaleMin, scaleMax] ──────────────────
@@ -126,10 +123,10 @@ int main() {
             "hud.player 1 0.01\n");  // below min 0.60 -> clamps up
         UiSettings s;
         load_ui_settings(s, tmp);
-        expect(approx(s.scale(UiElementId::SubMinimap), 2.00f),
-               "over-max scale clamps to scaleMax");
-        expect(approx(s.scale(UiElementId::PlayerHud), 0.60f),
-               "under-min scale clamps to scaleMin");
+        CHECK(approx(s.scale(UiElementId::SubMinimap), 2.00f),
+              "over-max scale clamps to scaleMax");
+        CHECK(approx(s.scale(UiElementId::PlayerHud), 0.60f),
+              "under-min scale clamps to scaleMin");
     }
 
     // ── a non-scalable element toggles, but ignores any scale in the file ────
@@ -137,15 +134,13 @@ int main() {
         write_file(tmp, "macro.overlay 0 1.75\n");  // MacroOverlay: scalable=false
         UiSettings s;
         load_ui_settings(s, tmp);
-        expect(s.visible(UiElementId::MacroOverlay) == false,
-               "non-scalable element still toggles visibility");
-        expect(approx(s.scale(UiElementId::MacroOverlay),
-                      ui_spec(UiElementId::MacroOverlay).scaleDefault),
-               "non-scalable element ignores a file scale (stays at default)");
+        CHECK(s.visible(UiElementId::MacroOverlay) == false,
+              "non-scalable element still toggles visibility");
+        CHECK(approx(s.scale(UiElementId::MacroOverlay),
+                     ui_spec(UiElementId::MacroOverlay).scaleDefault),
+              "non-scalable element ignores a file scale (stays at default)");
     }
 
     std::remove(tmp.c_str());
-    if (g_fails == 0) std::printf("ui_settings_test: all checks passed\n");
-    else              std::printf("ui_settings_test: %d check(s) FAILED\n", g_fails);
-    return g_fails == 0 ? 0 : 1;
+    return sm::test::report("ui_settings_test");
 }

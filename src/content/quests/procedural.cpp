@@ -160,15 +160,16 @@ bool gen_delivery(const QuestGenCtx& ctx, Quest& q) {
 
 bool gen_visit(const QuestGenCtx& ctx, Quest& q) {
     const GameState& gs = *ctx.gs;
-    std::vector<const Settlement*> candidates;
-    candidates.reserve(gs.settlements.size());
-    for (const auto& settlement : gs.settlements) {
+    std::vector<const Landmark*> candidates;
+    candidates.reserve(gs.landmarks.size());
+    for (const auto& settlement : gs.landmarks) {
+        if (settlement.type != LandmarkType::City) continue;
         if (settlement.id != ctx.id) candidates.push_back(&settlement);
     }
     if (candidates.empty()) return false;
 
     std::sort(candidates.begin(), candidates.end(),
-        [&](const Settlement* a, const Settlement* b) {
+        [&](const Landmark* a, const Landmark* b) {
             const float da = torus_dist(float(ctx.x), float(ctx.y),
                                         float(a->x), float(a->y),
                                         float(gs.mapW), float(gs.mapH));
@@ -179,7 +180,7 @@ bool gen_visit(const QuestGenCtx& ctx, Quest& q) {
         });
 
     const int pickCount = int((candidates.size() + 1u) / 2u);
-    const Settlement& target = *candidates[std::size_t(ctx.rng->next_int(0, pickCount))];
+    const Landmark& target = *candidates[std::size_t(ctx.rng->next_int(0, pickCount))];
     const float dist = torus_dist(float(ctx.x), float(ctx.y),
                                   float(target.x), float(target.y),
                                   float(gs.mapW), float(gs.mapH));
@@ -436,7 +437,7 @@ std::vector<Quest> generate_for_context(QuestGenCtx& ctx) {
 
 } // namespace
 
-std::vector<Quest> generate_quests_for_settlement(const Settlement& s,
+std::vector<Quest> generate_quests_for_settlement(const Landmark& s,
                                                   const GameState& gs,
                                                   std::uint32_t worldSeed) {
     Rng rng(worldSeed ^ std::uint32_t(s.id) ^ std::uint32_t(gs.worldTime.day()));
@@ -455,7 +456,7 @@ std::vector<Quest> generate_quests_for_settlement(const Settlement& s,
     return generate_for_context(ctx);
 }
 
-std::vector<Quest> generate_quests_for_village(const Village& v,
+std::vector<Quest> generate_quests_for_village(const Landmark& v,
                                                const GameState& gs,
                                                std::uint32_t worldSeed) {
     Rng rng(worldSeed ^ std::uint32_t(v.id + 0x6000) ^ std::uint32_t(gs.worldTime.day()));

@@ -17,21 +17,11 @@ static bool obj_in_radius(const GameState& gs, float px, float py, float cx, flo
 }
 
 static bool settlement_position(const GameState& gs, int id, float& x, float& y) {
-    for (const auto& s : gs.settlements) {
-        if (s.id == id) {
-            x = float(s.x);
-            y = float(s.y);
-            return true;
-        }
-    }
-    for (const auto& v : gs.villages) {
-        if (v.id == id) {
-            x = float(v.x);
-            y = float(v.y);
-            return true;
-        }
-    }
-    return false;
+    const Landmark* lm = landmark_by_id(gs, id);
+    if (!lm) return false;
+    x = float(lm->x);
+    y = float(lm->y);
+    return true;
 }
 
 // Resolve the world cell an objective points at, mirroring exactly the fields
@@ -65,16 +55,27 @@ static void emit_reward(const Reward& r, GameState& gs, Inventory* bag,
     PlayerState& p = gs.player;
     switch (r.kind) {
         case RewardKind::Gold: {
+            // What ACTUALLY moved — the event below reports this, not the
+            // promised amount: a full bag refuses (items.h conservation),
+            // and a short wallet pays what it holds.
+            int delta = 0;
             if (r.amount >= 0) {
                 // v1 pays imperial; the giver's own mint when the engine
                 // learns factions.
-                (*bag).add("coin_empire", r.amount);
+                if ((*bag).add("coin_empire", r.amount)) {
+                    delta = r.amount;
+                } else {
+                    session_feed_push(gs.sessionFeed,
+                                      "Your pack is full — the reward "
+                                      "could not be taken.");
+                }
             } else {
                 // A penalty takes what the wallet holds; the SHORTFALL is a
                 // DEBT FACT — «кто-то должен кому-то столько-то» (owner) —
                 // remembered entity-about-entity and summed by the fact
                 // arithmetic. When macro relations arrive, this bites.
                 const int paid = wallet_spend_up_to((*bag), -r.amount);
+                delta = -paid;
                 const int short_ = -r.amount - paid;
                 if (short_ > 0 && giverSettlementId >= 0 && head) {
                     remember(*head,
@@ -85,7 +86,7 @@ static void emit_reward(const Reward& r, GameState& gs, Inventory* bag,
                 }
             }
             GameEvent ev{EventTag::PlayerGoldChange};
-            ev.ix = r.amount;
+            ev.ix = delta;
             ev.iy = wallet_value((*bag));
             ev.b = kEventEffectAlreadyApplied;
             bus.emit(ev);
@@ -99,7 +100,13 @@ static void emit_reward(const Reward& r, GameState& gs, Inventory* bag,
                                         p.sheet.skills).expMult);
             break;
         case RewardKind::Item:
-            (*bag).add(r.itemId, r.amount);
+            // A full bag refuses; the loss is said out loud instead of the
+            // reward silently never arriving.
+            if (!(*bag).add(r.itemId, r.amount)) {
+                session_feed_push(gs.sessionFeed,
+                                  "Your pack is full — the reward "
+                                  "could not be taken.");
+            }
             break;
         case RewardKind::Reputation: {
             add_player_reputation(gs, r.faction.c_str(), r.delta);

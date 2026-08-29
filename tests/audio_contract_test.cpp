@@ -83,20 +83,17 @@ int main() {
     static_assert(!std::is_copy_assignable_v<sm::AudioSystem>);
     static_assert(!std::is_move_constructible_v<sm::AudioSystem>);
     static_assert(!std::is_move_assignable_v<sm::AudioSystem>);
-    static_assert(static_cast<int>(sm::MusicId::Count) == 3);
-    static_assert(static_cast<int>(sm::SfxId::Count) == 1);
+    // The LIVE set (canon audit 2026-08-29): two music rows, zero sfx rows.
+    // EmpireTheme and Witch were loaded-but-never-played dead content this
+    // test used to guard; the laws below are what it guards now.
+    static_assert(static_cast<int>(sm::MusicId::Count) == 2);
+    static_assert(static_cast<int>(sm::SfxId::Count) == 0);
 
     if (!same_text(sm::music_key(sm::MusicId::Explore), "explore")) {
         return fail("explore music key changed");
     }
-    if (!same_text(sm::music_key(sm::MusicId::EmpireTheme), "empire_theme")) {
-        return fail("empire music key changed");
-    }
     if (!same_text(sm::music_key(sm::MusicId::Subworld), "subworld")) {
         return fail("subworld music key changed");
-    }
-    if (!same_text(sm::sfx_key(sm::SfxId::Witch), "witch")) {
-        return fail("witch sfx key changed");
     }
     if (sm::music_key(sm::MusicId::Count) || sm::music_file(sm::MusicId::Count)) {
         return fail("invalid music id returned metadata");
@@ -112,23 +109,11 @@ int main() {
                                 kMinAudioAssetBytes)) {
         return fail("explore music asset missing");
     }
-    if (!same_text(sm::music_file(sm::MusicId::EmpireTheme), "empire-theme.mp3")
-        || !asset_exists(sm::music_file(sm::MusicId::EmpireTheme))
-        || !asset_has_min_bytes(sm::music_file(sm::MusicId::EmpireTheme),
-                                kMinAudioAssetBytes)) {
-        return fail("empire music asset missing");
-    }
     if (!same_text(sm::music_file(sm::MusicId::Subworld), "subworld.mp3")
         || !asset_exists(sm::music_file(sm::MusicId::Subworld))
         || !asset_has_min_bytes(sm::music_file(sm::MusicId::Subworld),
                                 kMinAudioAssetBytes)) {
         return fail("subworld music asset missing");
-    }
-    if (!same_text(sm::sfx_file(sm::SfxId::Witch), "witch.mp3")
-        || !asset_exists(sm::sfx_file(sm::SfxId::Witch))
-        || !asset_has_min_bytes(sm::sfx_file(sm::SfxId::Witch),
-                                kMinAudioAssetBytes)) {
-        return fail("witch sfx asset missing");
     }
 
     sm::AudioSystem audio;
@@ -144,12 +129,8 @@ int main() {
     if (!contains_text(audio.last_error(), "audio not initialized")) {
         return fail("play_music did not explain preinit failure");
     }
-    if (audio.play_sfx(sm::SfxId::Witch, -1)) {
-        return fail("play_sfx succeeds before init");
-    }
-    if (!contains_text(audio.last_error(), "audio not initialized")) {
-        return fail("play_sfx did not explain preinit failure");
-    }
+    // (No preinit play_sfx probe: with zero sfx rows there is no valid id to
+    // ask with — the invalid-id law below is the whole surviving contract.)
     if (audio.play_music(sm::MusicId::Count, 0)) {
         return fail("invalid music id succeeded");
     }

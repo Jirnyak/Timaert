@@ -1,3 +1,5 @@
+#include "check.h"
+
 #include "macro/features.h"
 #include "macro/items.h"
 #include "macro/map_generator.h"
@@ -18,17 +20,8 @@ namespace {
 // hands it to the law.
 sm::Inventory bag{};
 
-int g_failures = 0;
-
 bool nearf(float a, float b, float eps = 0.001f) {
     return std::fabs(a - b) <= eps;
-}
-
-void expect(bool condition, const char* label) {
-    if (!condition) {
-        std::fprintf(stderr, "FAIL macro_travel_parity_test: %s\n", label);
-        ++g_failures;
-    }
 }
 
 sm::TerrainData make_terrain() {
@@ -73,35 +66,35 @@ void test_cell_costs_follow_the_weight_table() {
     const sm::FeatureLayer features = make_features();
 
     sm::MacroTravelCost cost;
-    expect(sm::macro_travel_cost_for_cell(gs, &bag, terrain, nullptr, 0, 0, cost),
+    CHECK(sm::macro_travel_cost_for_cell(gs, &bag, terrain, nullptr, 0, 0, cost),
            "water cost query succeeds");
-    expect(cost.biome == sm::Water, "height below seaLevel becomes Water");
-    expect(cost.feature == sm::FT_None, "missing feature layer means no feature");
+    CHECK(cost.biome == sm::Water, "height below seaLevel becomes Water");
+    CHECK(cost.feature == sm::FT_None, "missing feature layer means no feature");
     // Cost is the terrain weight per macro cell: open water is the 10.0 row.
-    expect(nearf(cost.weight, 10.0f), "bare water carries the water weight");
-    expect(nearf(cost.cellCost, 10.0f * sm::kStaminaPerCell),
+    CHECK(nearf(cost.weight, 10.0f), "bare water carries the water weight");
+    CHECK(nearf(cost.cellCost, 10.0f * sm::kStaminaPerCell),
            "one cell of open water costs weight x kStaminaPerCell");
-    expect(cost.totalCost == cost.cellCost, "no inventory means no overload");
+    CHECK(cost.totalCost == cost.cellCost, "no inventory means no overload");
 
-    expect(sm::macro_travel_cost_for_cell(gs, &bag, terrain, &features, 0, 0, cost),
+    CHECK(sm::macro_travel_cost_for_cell(gs, &bag, terrain, &features, 0, 0, cost),
            "road-over-water query succeeds");
-    expect(cost.biome == sm::Water, "feature does not rewrite biome");
-    expect(cost.feature == sm::FT_Road, "feature layer returns road");
-    expect(nearf(cost.cellCost, 1.0f * sm::kStaminaPerCell),
+    CHECK(cost.biome == sm::Water, "feature does not rewrite biome");
+    CHECK(cost.feature == sm::FT_Road, "feature layer returns road");
+    CHECK(nearf(cost.cellCost, 1.0f * sm::kStaminaPerCell),
            "a road over water is paid at the road weight, not the water one");
 
-    expect(sm::macro_travel_cost_for_cell(gs, &bag, terrain, &features, 0, 1, cost),
+    CHECK(sm::macro_travel_cost_for_cell(gs, &bag, terrain, &features, 0, 1, cost),
            "mountain biome query succeeds");
-    expect(cost.biome == sm::Mountain,
+    CHECK(cost.biome == sm::Mountain,
            "height above mountain level becomes the Mountain biome");
-    expect(cost.feature == sm::FT_None, "mountain biome carries no feature");
-    expect(nearf(cost.cellCost, 5.0f * sm::kStaminaPerCell),
+    CHECK(cost.feature == sm::FT_None, "mountain biome carries no feature");
+    CHECK(nearf(cost.cellCost, 5.0f * sm::kStaminaPerCell),
            "a mountain cell costs the mountain weight");
 
-    expect(sm::macro_travel_cost_for_cell(gs, &bag, terrain, &features, -1, -1, cost),
+    CHECK(sm::macro_travel_cost_for_cell(gs, &bag, terrain, &features, -1, -1, cost),
            "negative coordinates wrap");
-    expect(cost.feature == sm::FT_DirtRoad, "wrapped cell reads dirt road");
-    expect(nearf(cost.cellCost, 1.5f * sm::kStaminaPerCell),
+    CHECK(cost.feature == sm::FT_DirtRoad, "wrapped cell reads dirt road");
+    CHECK(nearf(cost.cellCost, 1.5f * sm::kStaminaPerCell),
            "a dirt road costs half again what a paved one does");
 }
 
@@ -114,14 +107,14 @@ void test_overload_and_drain_charge_per_cell() {
     const sm::FeatureLayer features = make_features();
 
     sm::MacroTravelCost cost;
-    expect(sm::macro_travel_cost_for_cell(gs, &bag, terrain, &features, 0, 0, cost),
+    CHECK(sm::macro_travel_cost_for_cell(gs, &bag, terrain, &features, 0, 0, cost),
            "overload road query succeeds");
-    expect(nearf(cost.cellCost, 1.0f * sm::kStaminaPerCell),
+    CHECK(nearf(cost.cellCost, 1.0f * sm::kStaminaPerCell),
            "overload case walks a road");
-    expect(std::fabs(cost.overload - 2.0f) < 0.001f,
+    CHECK(std::fabs(cost.overload - 2.0f) < 0.001f,
            "overload is weight minus carry capacity");
-    expect(cost.overloadCost == 2, "any overload hurts: kilos over, rounded up");
-    expect(nearf(cost.totalCost, 1.0f * sm::kStaminaPerCell + 2.0f),
+    CHECK(cost.overloadCost == 2, "any overload hurts: kilos over, rounded up");
+    CHECK(nearf(cost.totalCost, 1.0f * sm::kStaminaPerCell + 2.0f),
            "one cell costs the ground plus the burden carried over it");
 
     // Crossing cells drains stamina, and the fractional remainder is CARRIED
@@ -139,7 +132,7 @@ void test_overload_and_drain_charge_per_cell() {
     // it DOWN, so the fraction still owed reads as a negative remainder.
     float spCarry = 0.0f;
     for (int i = 0; i < 5; ++i) {
-        expect(sm::drain_player_sp_for_macro_cell(drainGs, &drainBag, terrain,
+        CHECK(sm::drain_player_sp_for_macro_cell(drainGs, &drainBag, terrain,
                                                   &features,
                                                   -1, -1, spCarry, &cost),
                "drain query succeeds");
@@ -149,12 +142,12 @@ void test_overload_and_drain_charge_per_cell() {
     const float perCell = sm::travel_stamina_cost(1.5f, 1.0f);   // dirt road
     const float owed = 5.0f * perCell;
     const int charged = int(owed);
-    expect(nearf(cost.cellCost, perCell), "the dirt-road cell costs its weight");
-    expect(drainGs.player.combatStats.currentSp == 100 - charged,
+    CHECK(nearf(cost.cellCost, perCell), "the dirt-road cell costs its weight");
+    CHECK(drainGs.player.combatStats.currentSp == 100 - charged,
            "whole SP are charged, and only whole ones");
-    expect(nearf(spCarry, -(owed - float(charged))),
+    CHECK(nearf(spCarry, -(owed - float(charged))),
            "the fraction is carried to the next step, not lost or rounded up");
-    expect(drainGs.player.combatStats.currentHp == 100,
+    CHECK(drainGs.player.combatStats.currentHp == 100,
            "a rested body pays travel in stamina alone");
 }
 
@@ -169,22 +162,22 @@ void test_exhaustion_curve_bites_deeper_each_step() {
     cs.currentHp = 100;
 
     // Still solvent: stamina pays, the body does not.
-    expect(sm::apply_stamina_cost(cs, 3) == 0, "stamina pays while it lasts");
-    expect(cs.currentSp == 0 && cs.currentHp == 100,
+    CHECK(sm::apply_stamina_cost(cs, 3) == 0, "stamina pays while it lasts");
+    CHECK(cs.currentSp == 0 && cs.currentHp == 100,
            "reaching exactly zero costs no health");
 
     // Past zero: each step charges the WHOLE outstanding debt.
-    expect(sm::apply_stamina_cost(cs, 2) == 2, "the first step over costs its deficit");
-    expect(cs.currentSp == -2 && cs.currentHp == 98, "debt is kept, health paid");
-    expect(sm::apply_stamina_cost(cs, 2) == 4, "the next step costs the whole debt");
-    expect(cs.currentSp == -4 && cs.currentHp == 94, "the bite grows with the debt");
-    expect(sm::apply_stamina_cost(cs, 2) == 6, "and keeps growing");
-    expect(cs.currentSp == -6 && cs.currentHp == 88,
+    CHECK(sm::apply_stamina_cost(cs, 2) == 2, "the first step over costs its deficit");
+    CHECK(cs.currentSp == -2 && cs.currentHp == 98, "debt is kept, health paid");
+    CHECK(sm::apply_stamina_cost(cs, 2) == 4, "the next step costs the whole debt");
+    CHECK(cs.currentSp == -4 && cs.currentHp == 94, "the bite grows with the debt");
+    CHECK(sm::apply_stamina_cost(cs, 2) == 6, "and keeps growing");
+    CHECK(cs.currentSp == -6 && cs.currentHp == 88,
            "pressing on exhausted is a gamble, by design");
 
     // A zero/negative charge is not a free heal or a free step.
-    expect(sm::apply_stamina_cost(cs, 0) == 0, "a zero cost changes nothing");
-    expect(cs.currentSp == -6 && cs.currentHp == 88, "and touches neither pool");
+    CHECK(sm::apply_stamina_cost(cs, 0) == 0, "a zero cost changes nothing");
+    CHECK(cs.currentSp == -6 && cs.currentHp == 88, "and touches neither pool");
 }
 
 // The two layers walk the same world, so the same journey costs the same:
@@ -194,13 +187,13 @@ void test_both_layers_price_one_journey_alike() {
     const float weight = sm::cell_sp_weight(sm::Meadow, sm::FT_None);
     const float wholeCell = sm::travel_stamina_cost(weight, 1.0f);
     const float onFoot = sm::travel_stamina_cost(weight, 1024.0f / 1024.0f);
-    expect(nearf(wholeCell, onFoot),
+    CHECK(nearf(wholeCell, onFoot),
            "a cell crossed on foot costs what it costs on the map");
-    expect(nearf(sm::travel_stamina_cost(weight, 0.5f), wholeCell * 0.5f),
+    CHECK(nearf(sm::travel_stamina_cost(weight, 0.5f), wholeCell * 0.5f),
            "half a cell costs half as much");
-    expect(nearf(sm::travel_stamina_cost(weight, 0.0f), 0.0f),
+    CHECK(nearf(sm::travel_stamina_cost(weight, 0.0f), 0.0f),
            "standing still is free");
-    expect(nearf(sm::travel_stamina_cost(weight, 1.0f, 3), wholeCell + 3.0f),
+    CHECK(nearf(sm::travel_stamina_cost(weight, 1.0f, 3), wholeCell + 3.0f),
            "the burden carried is paid per cell, alongside the ground");
 }
 
@@ -253,14 +246,14 @@ void test_travel_balance_holds_its_intent() {
     // of road, and any pause repaid the walk).
     const float meadow = march_hours(fresh, skills,
                                       sm::cell_sp_weight(sm::Meadow, sm::FT_None));
-    expect(meadow > 8.0f && meadow < 12.0f,
+    CHECK(meadow > 8.0f && meadow < 12.0f,
            "a day's march over open country spends the fresh bar");
     // The road stretches the same bar further than open country by exactly
     // the law's own ratio — weight halves, pace gains √2, endurance gains
     // weight × 1/√weight = √2 (that is WHY roads are worth building).
     const float road = march_hours(fresh, skills,
                                    sm::cell_sp_weight(sm::Meadow, sm::FT_Road));
-    expect(road > meadow * 1.35f && road < meadow * 1.5f,
+    CHECK(road > meadow * 1.35f && road < meadow * 1.5f,
            "the road stretches the bar by the law's own sqrt-2");
 
     // Terrain has to MATTER, in the order the weight table declares. The gaps
@@ -270,9 +263,9 @@ void test_travel_balance_holds_its_intent() {
                                        sm::cell_sp_weight(sm::Mountain, sm::FT_None));
     const float water = march_hours(fresh, skills,
                                     sm::cell_sp_weight(sm::Water, sm::FT_None));
-    expect(road > meadow * 1.3f, "a road is worth walking to");
-    expect(mountain < meadow * 0.7f, "mountains are a real obstacle");
-    expect(water < mountain * 0.8f, "swimming is the most expensive way to travel");
+    CHECK(road > meadow * 1.3f, "a road is worth walking to");
+    CHECK(mountain < meadow * 0.7f, "mountains are a real obstacle");
+    CHECK(water < mountain * 0.8f, "swimming is the most expensive way to travel");
 
     // Progression: an RPG must reward the character sheet. A veteran carries a
     // bigger pool (the END attribute ALONE — Session 21 split the levers) AND
@@ -285,7 +278,7 @@ void test_travel_balance_holds_its_intent() {
     const sm::CombatStats veteran = sm::calculate_combat_stats(vetAttrs, vetSkills);
     const float vetMeadow = march_hours(veteran, vetSkills,
                                         sm::cell_sp_weight(sm::Meadow, sm::FT_None));
-    expect(vetMeadow > meadow * 3.0f,
+    CHECK(vetMeadow > meadow * 3.0f,
            "training triples the distance a traveller covers");
 
     // The Session 21 lever split, pinned. The bar belongs to the END attribute
@@ -294,21 +287,21 @@ void test_travel_balance_holds_its_intent() {
     // world (regen is a PERCENT of the bar), and only marathon shortens it.
     sm::Skills marathoner = skills;
     marathoner[sm::SkillId::Marathon] = 20;
-    expect(sm::calculate_combat_stats(attrs, marathoner).maxSp == fresh.maxSp,
+    CHECK(sm::calculate_combat_stats(attrs, marathoner).maxSp == fresh.maxSp,
            "marathon does not grow the bar");
-    expect(sm::calculate_combat_stats(attrs, marathoner).spRegen
+    CHECK(sm::calculate_combat_stats(attrs, marathoner).spRegen
                > fresh.spRegen,
            "marathon does speed the recovery");
     const float freshRestH = float(fresh.maxSp) / fresh.spRegen;
     const float vetRestH = float(veteran.maxSp) / veteran.spRegen;
-    expect(nearf(freshRestH, 1.0f / sm::kSpRegenPctPerHour),
+    CHECK(nearf(freshRestH, 1.0f / sm::kSpRegenPctPerHour),
            "a full rest is the designed 8 hours");
-    expect(nearf(vetRestH, freshRestH),
+    CHECK(nearf(vetRestH, freshRestH),
            "a bigger bar rests no longer — regen is a percent of it");
-    expect(sm::travel_skill_efficiency(vetSkills) < 1.0f
+    CHECK(sm::travel_skill_efficiency(vetSkills) < 1.0f
                && sm::travel_skill_efficiency(vetSkills) > 0.0f,
            "the travel skill discounts terrain without ever making it free");
-    expect(nearf(sm::travel_skill_efficiency(skills), 1.0f),
+    CHECK(nearf(sm::travel_skill_efficiency(skills), 1.0f),
            "an untrained traveller gets no discount");
 
     // One skill, one meaning. `athletics` moves you FASTER; `travel` moves you
@@ -316,22 +309,22 @@ void test_travel_balance_holds_its_intent() {
     // sheet stops telling the player what his choices buy.
     sm::Skills sprinter = skills;
     sprinter[sm::SkillId::Athletics] = 20;
-    expect(nearf(sm::travel_skill_efficiency(sprinter), 1.0f),
+    CHECK(nearf(sm::travel_skill_efficiency(sprinter), 1.0f),
            "athletics does not make ground cheaper");
-    expect(sm::calculate_derived(attrs, sprinter).moveSpeedMult
+    CHECK(sm::calculate_derived(attrs, sprinter).moveSpeedMult
                > sm::calculate_derived(attrs, skills).moveSpeedMult,
            "athletics does make the traveller faster");
     sm::Skills pathfinder = skills;
     pathfinder[sm::SkillId::Travel] = 20;
-    expect(nearf(sm::calculate_derived(attrs, pathfinder).moveSpeedMult,
+    CHECK(nearf(sm::calculate_derived(attrs, pathfinder).moveSpeedMult,
                  sm::calculate_derived(attrs, skills).moveSpeedMult),
            "the travel skill does not make the traveller faster");
-    expect(sm::travel_skill_efficiency(pathfinder) < 1.0f,
+    CHECK(sm::travel_skill_efficiency(pathfinder) < 1.0f,
            "the travel skill does make ground cheaper");
     // And speed costs no stamina: pricing per CELL means a sprinter and a
     // plodder pay the same for the same road, they just arrive at different
     // hours. That orthogonality is why both stats are worth having.
-    expect(nearf(march_hours(fresh, sprinter,
+    CHECK(nearf(march_hours(fresh, sprinter,
                              sm::cell_sp_weight(sm::Meadow, sm::FT_None)),
                  meadow),
            "running does not burn a bigger share of the bar per cell");
@@ -344,7 +337,7 @@ void test_travel_balance_holds_its_intent() {
     sm::PlayerRecoveryAccumulator acc{};
     float restCarry = 0.0f;
     sm::apply_minute_recovery(resting, 8 * 60, acc, restCarry);
-    expect(resting.combatStats.currentSp >= fresh.maxSp - 1,
+    CHECK(resting.combatStats.currentSp >= fresh.maxSp - 1,
            "eight hours of rest refill the whole bar (the 1/8-per-hour law)");
 
     sm::PlayerState marching{};
@@ -354,32 +347,32 @@ void test_travel_balance_holds_its_intent() {
     float marchCarry = 0.0f;
     sm::apply_minute_recovery(marching, 8 * 60, marchAcc, marchCarry,
                                     sm::kMarchRecoveryPct);
-    expect(marching.combatStats.currentSp == 0,
+    CHECK(marching.combatStats.currentSp == 0,
            "marching returns no stamina — a journey is paid for, not subsidised");
-    expect(marching.combatStats.currentHp >= fresh.currentHp,
+    CHECK(marching.combatStats.currentHp >= fresh.currentHp,
            "and suppressing stamina recovery does not stop the body healing");
 
     // THE SKILL LAW, pinned: one rank is one percent, and the cap is the
     // ceiling. A future skill that invents its own curve should trip this.
-    expect(nearf(sm::skill_bonus_mult(0), 1.0f), "rank 0 grants nothing");
-    expect(nearf(sm::skill_bonus_mult(37), 1.37f), "rank reads as percent");
-    expect(nearf(sm::skill_cost_mult(37), 0.63f), "and as percent off a cost");
-    expect(nearf(sm::skill_cost_mult(sm::kMaxSkillRank), 0.0f),
+    CHECK(nearf(sm::skill_bonus_mult(0), 1.0f), "rank 0 grants nothing");
+    CHECK(nearf(sm::skill_bonus_mult(37), 1.37f), "rank reads as percent");
+    CHECK(nearf(sm::skill_cost_mult(37), 0.63f), "and as percent off a cost");
+    CHECK(nearf(sm::skill_cost_mult(sm::kMaxSkillRank), 0.0f),
            "mastery of a cost skill removes that cost entirely");
-    expect(nearf(sm::skill_bonus_mult(sm::kMaxSkillRank + 500),
+    CHECK(nearf(sm::skill_bonus_mult(sm::kMaxSkillRank + 500),
                  sm::skill_bonus_mult(sm::kMaxSkillRank)),
            "nothing above the cap counts, however it got there");
-    expect(nearf(sm::skill_cost_mult(-5), 1.0f), "and nothing below zero does");
+    CHECK(nearf(sm::skill_cost_mult(-5), 1.0f), "and nothing below zero does");
 
     // Mastery earns free ground — but only the GROUND. An overloaded master
     // still pays for what he carries, and the exhaustion curve is untouched.
     sm::Skills master = skills;
     master[sm::SkillId::Travel] = sm::kMaxSkillRank;
-    expect(nearf(sm::travel_stamina_cost(10.0f, 1.0f, 0,
+    CHECK(nearf(sm::travel_stamina_cost(10.0f, 1.0f, 0,
                                          sm::travel_skill_efficiency(master)),
                  0.0f),
            "at mastery the world stops resisting the traveller");
-    expect(sm::travel_stamina_cost(10.0f, 1.0f, 3,
+    CHECK(sm::travel_stamina_cost(10.0f, 1.0f, 3,
                                    sm::travel_skill_efficiency(master)) > 2.9f,
            "but the pack on his back still weighs what it weighs");
 
@@ -389,9 +382,9 @@ void test_travel_balance_holds_its_intent() {
     ld.skillPoints = sm::kMaxSkillRank + 10;
     int spent = 0;
     while (sm::spend_skill_point(ld, capped, sm::SkillId::Travel)) ++spent;
-    expect(spent == sm::kMaxSkillRank && capped.of(sm::SkillId::Travel) == sm::kMaxSkillRank,
+    CHECK(spent == sm::kMaxSkillRank && capped.of(sm::SkillId::Travel) == sm::kMaxSkillRank,
            "a rank stops at mastery");
-    expect(ld.skillPoints == 10,
+    CHECK(ld.skillPoints == 10,
            "and a refused spend keeps the point for another skill");
 
     // The balance, printed on every run: a number you can read is a number you
@@ -414,9 +407,9 @@ void test_invalid_terrain_fails_closed() {
 
     sm::MacroTravelCost cost;
     cost.cellCost = 777.0f;
-    expect(!sm::macro_travel_cost_for_cell(gs, &bag, terrain, nullptr, 0, 0, cost),
+    CHECK(!sm::macro_travel_cost_for_cell(gs, &bag, terrain, nullptr, 0, 0, cost),
            "invalid terrain storage is rejected");
-    expect(nearf(cost.cellCost, 0.0f) && nearf(cost.totalCost, 0.0f),
+    CHECK(nearf(cost.cellCost, 0.0f) && nearf(cost.totalCost, 0.0f),
            "failed query clears stale cost output");
 }
 
@@ -429,12 +422,5 @@ int main() {
     test_both_layers_price_one_journey_alike();
     test_travel_balance_holds_its_intent();
     test_invalid_terrain_fails_closed();
-
-    if (g_failures != 0) {
-        return 1;
-    }
-
-    std::puts("OK macro_travel_parity_test costs=ok overload=ok drain=ok "
-              "exhaustion=ok one-law=ok balance=ok invalid=ok");
-    return 0;
+    return sm::test::report("macro_travel_parity_test");
 }

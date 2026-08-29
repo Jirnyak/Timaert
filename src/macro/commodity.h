@@ -37,7 +37,9 @@ struct CommodityDef {
     const char*   name;          // display
     CommodityTier tier;
     float         weightKg;      // carried weight (caravans, inventories)
-    int           baseValue;     // anchor price in gold
+    // NO price column — deliberately. The one price anchor is the same row's
+    // ItemDef.value (macro/items.h, one-dictionary ruling): a second table of
+    // gold numbers here had already drifted from the one the game reads.
     // Allowed-materials groundwork: bit i = raw row i of THIS table may be the
     // instance's material. 0 = the commodity has no material variants (all of
     // v1). A future sword archetype sets e.g. bit(iron)|bit(wood).
@@ -47,25 +49,25 @@ struct CommodityDef {
 // Raw rows FIRST and contiguous — the material mask bit space is their index.
 inline constexpr CommodityDef kCommodities[] = {
     // ── Raw (материалы) ──────────────────────────────────────────────────
-    {"wood",      "Дерево",      CommodityTier::Raw,        2.0f,  1, 0},
-    {"stone",     "Камень",      CommodityTier::Raw,        4.0f,  1, 0},
-    {"iron",      "Железо",      CommodityTier::Raw,        4.0f,  2, 0},
-    {"clay",      "Глина",       CommodityTier::Raw,        2.0f,  1, 0},
-    {"grain",     "Зерно",       CommodityTier::Raw,        1.0f,  1, 0},
+    {"wood",      "Дерево",      CommodityTier::Raw,        2.0f,  0},
+    {"stone",     "Камень",      CommodityTier::Raw,        4.0f,  0},
+    {"iron",      "Железо",      CommodityTier::Raw,        4.0f,  0},
+    {"clay",      "Глина",       CommodityTier::Raw,        2.0f,  0},
+    {"grain",     "Зерно",       CommodityTier::Raw,        1.0f,  0},
     // ── Vital (жизненно необходимое) ─────────────────────────────────────
-    {"bread",     "Хлеб",        CommodityTier::Vital,      1.0f,  2, 0},
-    {"bricks",    "Кирпичи",     CommodityTier::Vital,      4.0f,  2, 0},
+    {"bread",     "Хлеб",        CommodityTier::Vital,      1.0f,  0},
+    {"bricks",    "Кирпичи",     CommodityTier::Vital,      4.0f,  0},
     // Одежда варится из зерна как из льна-заглушки: отдельная культура волокна
     // (лён/шерсть) — будущая строка сырья, рецепт тогда меняет один вход.
-    {"cloth",     "Одежда",      CommodityTier::Vital,      1.0f,  4, 0},
+    {"cloth",     "Одежда",      CommodityTier::Vital,      1.0f,  0},
     // ── Instrument (инструментально-развитие) ───────────────────────────
-    {"tools",     "Инструменты", CommodityTier::Instrument, 2.0f,  8, 0},
-    {"furniture", "Мебель",      CommodityTier::Instrument, 8.0f,  8, 0},
-    {"wagon",     "Повозка",     CommodityTier::Instrument, 32.0f, 16, 0},
+    {"tools",     "Инструменты", CommodityTier::Instrument, 2.0f,  0},
+    {"furniture", "Мебель",      CommodityTier::Instrument, 8.0f,  0},
+    {"wagon",     "Повозка",     CommodityTier::Instrument, 32.0f, 0},
     // ── Luxury (роскошь) ─────────────────────────────────────────────────
-    {"jewelry",   "Украшения",   CommodityTier::Luxury,     1.0f,  32, 0},
-    {"carving",   "Резьба",      CommodityTier::Luxury,     2.0f,  16, 0},
-    {"statue",    "Статуя",      CommodityTier::Luxury,     64.0f, 64, 0},
+    {"jewelry",   "Украшения",   CommodityTier::Luxury,     1.0f,  0},
+    {"carving",   "Резьба",      CommodityTier::Luxury,     2.0f,  0},
+    {"statue",    "Статуя",      CommodityTier::Luxury,     64.0f, 0},
 };
 
 inline constexpr int kCommodityCount =

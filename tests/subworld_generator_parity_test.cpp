@@ -2,6 +2,7 @@
 #include "sub/gens/dispatch.h"
 #include "macro/tree_layer.h"
 #include "sub/base_generator.h"
+#include "sub/height.h"
 #include "sub/material.h"
 #include "core/rng.h"
 #include <algorithm>
@@ -141,6 +142,92 @@ void expected_edge_anchor(const sm::sub::CellContext& ctx, int dx, int dy,
         ox = dx > 0 ? sm::sub::kCellSize - 2 : 1;
         oy = dy > 0 ? sm::sub::kCellSize - 2 : 1;
     }
+}
+
+// The honest-bridge law (owner, 2026-08-29): a bridge over water is the city
+// gate's mechanism writ long — zBase-lifted stone DECK chords a walker stands
+// on (sub/collide.h support_at), round PIERS down to the bed, and the gaps
+// between piers — the arches — leaving the water and the way under the deck
+// free. Checks one generated cell's Bridge records against that law along an
+// expected span. Returns non-zero after recording the failure via fail().
+int check_bridge_chain(const sm::sub::SubworldMapData& map,
+                       float ax, float ay, float bx, float by) {
+    using namespace sm::sub;
+    static_assert(structure_is_solid(Structure::Bridge),
+                  "a bridge that does not collide cannot carry a walker");
+    static_assert(structure_draw(Structure::Bridge)
+                      == StructureKindRow::Draw::Solid,
+                  "a solid bridge must be drawn by the solid pass");
+    static_assert(structure_material(Structure::Bridge)
+                      == StructureKindRow::Material::Stone,
+                  "the owner asked for masonry");
+    const float sx = bx - ax;
+    const float sy = by - ay;
+    const float spanLen = std::sqrt(sx * sx + sy * sy);
+    if (spanLen <= 1.0f) return fail("bridge check needs a real span");
+    int decks = 0;
+    int piers = 0;
+    float pierWidthSum = 0.0f;
+    std::vector<std::pair<float, float>> deckSpans;
+    for (const Structure& s : map.structures) {
+        if (s.kind != Structure::Bridge) continue;
+        const int tx = std::clamp(int(s.x), 0, kCellSize - 1);
+        const int ty = std::clamp(int(s.y), 0, kCellSize - 1);
+        const float seatM =
+            map.heightmap[std::size_t(ty) * kCellSize + tx] * kHeightScaleM;
+        const float topM = seatM + s.zBase + s.height;
+        if (s.shape == Structure::Cylinder) {
+            ++piers;
+            pierWidthSum += 2.0f * s.radius;
+            if (s.zBase != 0.0f) {
+                return fail("a pier grows from the bed, not from a lift");
+            }
+            continue;
+        }
+        ++decks;
+        if (s.zBase <= 0.0f) {
+            return fail("a deck must be zBase-lifted (the gate-lintel mechanism)");
+        }
+        if (topM < kSeaLevelM) {
+            return fail("a deck top below the water plane is not a bridge");
+        }
+        const float proj = ((s.x - ax) * sx + (s.y - ay) * sy) / spanLen;
+        deckSpans.emplace_back(proj - structure_half_x(s),
+                               proj + structure_half_x(s));
+    }
+    if (decks < 2) return fail("a water span must carry a chain of deck chords");
+    if (piers < 1) return fail("a deck chain needs piers to stand on");
+    // Every WET stretch of the road line must be decked; a dry stretch is the
+    // bank's own business (no deck over ground that already carries a walker).
+    int wetSamples = 0;
+    for (float d = 0.0f; d <= spanLen; d += 4.0f) {
+        const float t = d / spanLen;
+        const int tx = std::clamp(int(ax + sx * t), 0, kCellSize - 1);
+        const int ty = std::clamp(int(ay + sy * t), 0, kCellSize - 1);
+        const float g =
+            map.heightmap[std::size_t(ty) * kCellSize + tx] * kHeightScaleM;
+        if (g >= kSeaLevelM - 0.5f) continue;
+        ++wetSamples;
+        bool covered = false;
+        for (const auto& iv : deckSpans) {
+            if (d >= iv.first - 1.0f && d <= iv.second + 1.0f) {
+                covered = true;
+                break;
+            }
+        }
+        if (!covered) {
+            return fail("open water on the road line with no deck overhead");
+        }
+    }
+    if (wetSamples == 0) {
+        return fail("bridge fixture has no wet stretch to bridge");
+    }
+    // The arches themselves: piers must not dam the crossing — most of the
+    // wet stretch stays open water under the deck.
+    if (pierWidthSum > 0.5f * float(wetSamples) * 4.0f) {
+        return fail("piers dam the river: no arches left");
+    }
+    return 0;
 }
 
 bool anchor_is_road(const sm::sub::SubworldMapData& map,
@@ -582,6 +669,10 @@ int main() {
     road.landmark.kind = LandmarkType::None;
     road.seed = 0x10203040u;
     fill_flat_neighbors(nbH, nbB, nbF, Water, FT_Road);
+    // Honest water: a Water-biome cell's macro height sits BELOW the macro
+    // sea level (0.40). The old 0.62 filler put this "water" cell on a
+    // ~1400 m dome — and the phantom single-slab bridge never noticed.
+    for (int i = 0; i < 9; ++i) nbH[i] = 0.30f;
     nbF[3] = std::uint8_t(FT_Road);
     nbF[5] = std::uint8_t(FT_Road);
 
@@ -591,58 +682,44 @@ int main() {
         return fail("water road feature did not resolve to Road mode");
     }
 
-    int bridgeCount = 0;
     int roadTiles = 0;
     int roadWestX, roadWestY, roadEastX, roadEastY;
     expected_edge_anchor(road, -1, 0, roadWestX, roadWestY);
     expected_edge_anchor(road, 1, 0, roadEastX, roadEastY);
-    const float expectedBridgeX = (float(roadWestX) + float(roadEastX)) * 0.5f;
-    const float expectedBridgeY = (float(roadWestY) + float(roadEastY)) * 0.5f;
-    for (const Structure& s : roadOut.structures) {
-        if (s.kind != Structure::Bridge) continue;
-        ++bridgeCount;
-        if (std::fabs(s.x - expectedBridgeX) > 0.001f
-            || std::fabs(s.y - expectedBridgeY) > 0.001f
-            || std::fabs(s.height - 3.0f) > 0.001f
-            || s.radius < 500.0f) {
-            return fail("water road bridge dimensions do not match TS constants");
-        }
+    // The through-road water cell bridges its two anchors with an honest
+    // deck-and-piers chain along the same anchor→anchor span the old single
+    // phantom slab claimed.
+    if (check_bridge_chain(roadOut, float(roadWestX), float(roadWestY),
+                           float(roadEastX), float(roadEastY)) != 0) {
+        return 1;
     }
     for (const std::uint8_t tile : roadOut.tiles) {
         if (tile == TILE_ROAD) ++roadTiles;
     }
-    if (bridgeCount != 1 || roadTiles <= 0
+    if (roadTiles <= 0
         || roadOut.tiles[std::size_t(roadWestY) * kCellSize + roadWestX] != TILE_ROAD
         || roadOut.tiles[std::size_t(roadEastY) * kCellSize + roadEastX] != TILE_ROAD) {
         return fail("water road bridge/tile invariants failed");
     }
 
     fill_flat_neighbors(nbH, nbB, nbF, Water, FT_Road);
+    for (int i = 0; i < 9; ++i) nbH[i] = 0.30f;   // honest water, as above
     nbF[5] = std::uint8_t(FT_Road);
     SubworldMapData roadSingleOut{};
     dispatch_generate(road, nbH, nbB, nbF, roadSingleOut);
-    int roadSingleBridgeCount = 0;
     int roadSingleEastX, roadSingleEastY;
     expected_edge_anchor(road, 1, 0, roadSingleEastX, roadSingleEastY);
     // TS road-generator: a single-connection cell carves from the edge anchor
-    // to the cell CENTRE (a natural terminus), and the bridge spans that same
-    // anchor→centre segment.
+    // to the cell CENTRE (a natural terminus), and the bridge chain spans that
+    // same anchor→centre segment.
     const int roadSingleCenter = kCellSize / 2;
-    const float expectedSingleBridgeX =
-        (float(roadSingleEastX) + float(roadSingleCenter)) * 0.5f;
-    const float expectedSingleBridgeY =
-        (float(roadSingleEastY) + float(roadSingleCenter)) * 0.5f;
-    for (const Structure& s : roadSingleOut.structures) {
-        if (s.kind != Structure::Bridge) continue;
-        ++roadSingleBridgeCount;
-        if (std::fabs(s.x - expectedSingleBridgeX) > 0.001f
-            || std::fabs(s.y - expectedSingleBridgeY) > 0.001f
-            || std::fabs(s.height - 3.0f) > 0.001f) {
-            return fail("single-neighbour water bridge did not match anchored road");
-        }
+    if (check_bridge_chain(roadSingleOut,
+                           float(roadSingleEastX), float(roadSingleEastY),
+                           float(roadSingleCenter),
+                           float(roadSingleCenter)) != 0) {
+        return 1;
     }
-    if (roadSingleBridgeCount != 1
-        || roadSingleOut.tiles[std::size_t(roadSingleEastY) * kCellSize
+    if (roadSingleOut.tiles[std::size_t(roadSingleEastY) * kCellSize
                               + roadSingleEastX] != TILE_ROAD
         || roadSingleOut.tiles[std::size_t(roadSingleCenter) * kCellSize
                               + roadSingleCenter] != TILE_ROAD) {
@@ -1214,7 +1291,7 @@ int main() {
               << " ruin_wall_tiles=" << wallTiles
               << " city_houses=" << cityHouses
               << " village_houses=" << villageHouses
-              << " road_bridge_count=" << bridgeCount
+              << " road_tiles=" << roadTiles
               << " grassland_trees=" << grassTrees
               << " swamp_trees=" << swampTrees
               << " field_tiles=" << fieldTiles << "\n";

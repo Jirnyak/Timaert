@@ -111,7 +111,7 @@ inline float terrain_speed_mult(float weight) {
 //
 // The optics idiom (macro/optics.h — the canon's exemplar table): an
 // engineered FEATURE lays the bed — road 1.0 (the reference: speed =
-// base/√weight, so the road IS the base march), dirt 1.4, ploughed field
+// base/√weight, so the road IS the base march), dirt 1.5, ploughed field
 // 1.8 — and where nothing is built the biome's own ground is the bed.
 // CONTINUOUS contributions then ADD on top:
 //
@@ -149,15 +149,12 @@ inline float biome_sp_weight(Biome b) {
     return idx < std::size(kW) ? kW[idx].weight : 2.0f;
 }
 
-// The engineered beds. 0 = nothing built here — the biome ground is the bed
-// (the silent zero of the law, not a sentinel to branch on).
+// The engineered beds — THE registry's column (macro/features.h kFeatureDefs;
+// this was a switch with a silent 0.0 default until 2026-08-29). 0 = nothing
+// built here — the biome ground is the bed (the silent zero of the law, not a
+// sentinel to branch on).
 inline float feature_bed_weight(FeatureType f) {
-    switch (f) {
-        case FT_Road:     return 1.0f;
-        case FT_DirtRoad: return 1.5f;  // half again the paved bed
-        case FT_Field:    return 1.8f;
-        default:          return 0.0f;
-    }
+    return feature_def(f).bedWeight;
 }
 
 // Full-thicket drag: at density 1.0 (kMaxTreesPerCell) the wood adds 2.5 on

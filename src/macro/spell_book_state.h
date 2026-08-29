@@ -53,6 +53,20 @@ inline bool spellbook_has_sustained(const SpellBook& book, int ord) noexcept {
     return spell_ordinal_ok(ord) && book.sustained[ord] != 0;
 }
 
+// Is a RULE of the world switched on in this book? A rule has no magnitude,
+// so this is a scan of the sustained rows against the registry's rule column
+// — a SECOND spell that grants Flight is one registry row away (CANON S16),
+// and every consumer of the rule sees it without naming a spell.
+inline bool spellbook_rule_active(const SpellBook& book,
+                                  SpellRuleId rule) noexcept {
+    if (rule == SpellRuleId::None) return false;
+    for (int ord = 0; ord < kSpellCount; ++ord) {
+        if (!book.sustained[ord]) continue;
+        if (kSpellDefs[ord].rule == rule) return true;
+    }
+    return false;
+}
+
 inline bool spellbook_any_sustained(const SpellBook& book) noexcept {
     for (int i = 0; i < kSpellCount; ++i) {
         if (book.sustained[i]) return true;

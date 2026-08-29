@@ -72,8 +72,11 @@ int econ_gather_day(Inventory& store, Deposit* deposits, int depositCount,
         if (dep.remaining <= 0) continue;
         if (dep.commodity < 0 || dep.commodity >= kRawCommodityCount) continue;
         const int take = std::min(dep.remaining, capacity);
+        // Credit BEFORE debit (CANON S5): a store with no room refuses, and
+        // the ore stays in the vein — nothing is gathered into the void and
+        // no Gathered fact lies about it.
+        if (!store.add_of(commodity_item_index(dep.commodity), take)) continue;
         dep.remaining -= take;
-        store.add_of(commodity_item_index(dep.commodity), take);
         capacity -= take;
         total += take;
         report(sink, user, EconFact::Kind::Gathered, dep.commodity, take);
@@ -123,7 +126,18 @@ int econ_produce_day(Inventory& store, EconSite site, int workers,
             store.remove_of(commodity_item_index(rr.inputIdx[k]),
                             made * rr.inputQty[k]);
         }
-        store.add_of(commodity_item_index(rr.output), made);
+        if (!store.add_of(commodity_item_index(rr.output), made)) {
+            // The shelf refused the output: put the inputs back (the slots
+            // they just left are still free, so this cannot fail) — the day
+            // makes nothing here, and no Produced fact lies about goods that
+            // do not exist.
+            for (int k = 0; k < 2; ++k) {
+                if (rr.inputIdx[k] < 0) continue;
+                store.add_of(commodity_item_index(rr.inputIdx[k]),
+                             made * rr.inputQty[k]);
+            }
+            return;
+        }
         workersLeft -= staffed;
         total += made;
         report(sink, user, EconFact::Kind::Produced, rr.output, made);

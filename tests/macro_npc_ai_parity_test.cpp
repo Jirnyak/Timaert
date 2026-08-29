@@ -18,8 +18,9 @@
 
 namespace {
 
-sm::Settlement settlement(int id, int x, int y) {
-    sm::Settlement s{};
+sm::Landmark settlement(int id, int x, int y) {
+    sm::Landmark s{};
+    s.type = sm::LandmarkType::City;
     s.id = id;
     s.name = "Test";
     s.x = x;
@@ -83,7 +84,7 @@ void test_home_wanderer_returns_when_far() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
-    gs.settlements.push_back(settlement(1, 50, 50));
+    gs.landmarks.push_back(settlement(1, 50, 50));
 
     sm::ecs::World world;
     auto e = spawn_ai(world, sm::NPCType::Peasant, 80.0f, 50.0f, 1);
@@ -102,7 +103,7 @@ void test_woodcutter_targets_nearest_tree() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
-    gs.settlements.push_back(settlement(1, 20, 20));
+    gs.landmarks.push_back(settlement(1, 20, 20));
     // Two trees: one within reach, one across the map. The near one must win —
     // "nearest", not "first in the grid".
     std::vector<sm::TreePoint> trees{{23, 20}, {80, 80}};
@@ -126,8 +127,8 @@ void test_trader_targets_other_settlement() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
-    gs.settlements.push_back(settlement(1, 10, 10));
-    gs.settlements.push_back(settlement(2, 40, 10));
+    gs.landmarks.push_back(settlement(1, 10, 10));
+    gs.landmarks.push_back(settlement(2, 40, 10));
 
     sm::ecs::World world;
     auto e = spawn_ai(world, sm::NPCType::Merchant, 10.0f, 10.0f, 1);
@@ -148,8 +149,8 @@ void test_nomad_excludes_current_target() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
-    gs.settlements.push_back(settlement(1, 10, 10));
-    gs.settlements.push_back(settlement(2, 40, 10));
+    gs.landmarks.push_back(settlement(1, 10, 10));
+    gs.landmarks.push_back(settlement(2, 40, 10));
 
     sm::ecs::World world;
     auto e = spawn_ai(world, sm::NPCType::Caravan, 40.0f, 10.0f, -1);
@@ -183,6 +184,18 @@ void test_aggressive_chases_visible_player() {
     world.reg.get<sm::ecs::NPCKind>(e).factionIdx =
         std::uint16_t(sm::faction_index("bandits"));
     sm::add_player_reputation(gs, "bandits", -100);
+    // ONE law of sight (owner, 2026-08-29): the private player channel is
+    // dead — the bandit perceives the player's SQUAD through the same
+    // SquadIndex as any other squad, at the same kSquadSightCells. So the
+    // fixture spawns that squad; a bare gs.player position is invisible now.
+    auto player = spawn_ai(world, sm::NPCType::Adventurer, 12.0f, 10.0f, -1);
+    world.reg.get<sm::ecs::NPCKind>(player).factionIdx =
+        std::uint16_t(sm::faction_index(sm::kPlayerFactionId));
+    world.reg.emplace<sm::ecs::PlayerSquadTag>(player);
+    // And pursuit is the one STRENGTH law (squad_threat_step): a fighter
+    // closes only fights it wins with margin. The player is wounded to 10%
+    // so the chase is the law's own verdict, not a leftover reflex.
+    world.reg.get<sm::ecs::Health>(player).hp = 5.0f;
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 50u);
     // The march budget is DERIVED data now (kMacroWalkCellsPerHour ×
@@ -229,6 +242,14 @@ void test_aggressive_spares_a_friend() {
     world.reg.get<sm::ecs::NPCKind>(e).factionIdx =
         std::uint16_t(sm::faction_index("bandits"));
     sm::add_player_reputation(gs, "bandits", 60);   // above kHostileThreshold
+    // The same visible, beatable player squad as the positive twin — the
+    // ONLY difference between the tests is the standing, so a broken
+    // hostility check (not a broken perception) is what would turn this red.
+    auto player = spawn_ai(world, sm::NPCType::Adventurer, 12.0f, 10.0f, -1);
+    world.reg.get<sm::ecs::NPCKind>(player).factionIdx =
+        std::uint16_t(sm::faction_index(sm::kPlayerFactionId));
+    world.reg.emplace<sm::ecs::PlayerSquadTag>(player);
+    world.reg.get<sm::ecs::Health>(player).hp = 5.0f;
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 50u);
     const float perThink =
@@ -245,7 +266,7 @@ void test_patrol_returns_when_far_from_home() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
-    gs.settlements.push_back(settlement(1, 50, 50));
+    gs.landmarks.push_back(settlement(1, 50, 50));
 
     sm::ecs::World world;
     auto e = spawn_ai(world, sm::NPCType::Guard, 70.0f, 50.0f, 1);

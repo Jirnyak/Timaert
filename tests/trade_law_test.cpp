@@ -47,27 +47,30 @@ int main() {
         GameState gs{};
         gs.mapW = 64;
         gs.mapH = 64;
-        Settlement city{};
+        Landmark city{};
+        city.type = LandmarkType::City;
         city.id = 0;
         city.x = 60;                     // near the east seam
         city.y = 32;
         city.population = 100;
         city.inventory.add("bread", 2048);
-        gs.settlements.push_back(city);
+        gs.landmarks.push_back(city);
 
-        Village sameSide{};              // 10 cells west, same side
+        Landmark sameSide{};             // 10 cells west, same side
+        sameSide.type = LandmarkType::Village;
         sameSide.id = 1;
         sameSide.x = 50;
         sameSide.y = 32;
         sameSide.nearestCityId = 0;
-        gs.villages.push_back(sameSide);
+        gs.landmarks.push_back(sameSide);
 
-        Village acrossSeam{};            // 6 cells east THROUGH the seam
+        Landmark acrossSeam{};           // 6 cells east THROUGH the seam
+        acrossSeam.type = LandmarkType::Village;
         acrossSeam.id = 2;
         acrossSeam.x = 2;                // 60 -> 63|0 -> 2 = 6 cells by torus
         acrossSeam.y = 32;
         acrossSeam.nearestCityId = 0;
-        gs.villages.push_back(acrossSeam);
+        gs.landmarks.push_back(acrossSeam);
 
         ecs::World w;
         auto& reg = w.reg;

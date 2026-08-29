@@ -13,8 +13,9 @@ int fail(const char* msg) {
     return 1;
 }
 
-sm::Settlement make_settlement(int id, int x, int y) {
-    sm::Settlement s{};
+sm::Landmark make_settlement(int id, int x, int y) {
+    sm::Landmark s{};
+    s.type = sm::LandmarkType::City;
     s.id = id;
     s.name = "Test Settlement";
     s.x = x;
@@ -51,7 +52,7 @@ int main() {
     sm::GameState gs{};
     gs.mapW = 16;
     gs.mapH = 16;
-    gs.settlements.push_back(make_settlement(7, 8, 8));
+    gs.landmarks.push_back(make_settlement(7, 8, 8));
 
     sm::TerrainData invalidTerrain;
     invalidTerrain.width = 0;
@@ -82,7 +83,7 @@ int main() {
     sm::GameState invalidMap;
     invalidMap.mapW = 0;
     invalidMap.mapH = 0;
-    invalidMap.settlements.push_back(make_settlement(8, 0, 0));
+    invalidMap.landmarks.push_back(make_settlement(8, 0, 0));
 
     sm::ecs::World invalidMapWorld;
     sm::spawn_macro_npcs(invalidMap, invalidMapWorld, invalidTerrain, 125u);

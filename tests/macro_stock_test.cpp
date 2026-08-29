@@ -29,50 +29,58 @@ sm::GameState make_world() {
     sm::GameState gs{};
     gs.mapW = 64;
     gs.mapH = 64;
-    sm::Settlement city{};
+    sm::Landmark city{};
+    city.type = sm::LandmarkType::City;
     city.id = 7;
     city.name = "Testholm";
     city.x = 10;
     city.y = 10;
     city.population = 300;
-    gs.settlements.push_back(city);
-    sm::Settlement other{};
+    gs.landmarks.push_back(city);
+    sm::Landmark other{};
+    other.type = sm::LandmarkType::City;
     other.id = 8;
     other.name = "Neighbour";
     other.x = 30;
     other.y = 30;
     other.population = 300;
-    gs.settlements.push_back(other);
+    gs.landmarks.push_back(other);
     // ONE landmark id space (v54): every place draws on the one issuer, so a
     // fixture with two places wearing one number would no longer be a world
     // this game can generate. The collision fixture (village 7 beside city 7)
     // guarded the register-bit crutch; the invariant now is that the id ALONE
     // bills the right place.
-    sm::Village twin{};
+    sm::Landmark twin{};
+    twin.type = sm::LandmarkType::Village;
     twin.id = 9;
     twin.name = "Twinvale";
     twin.x = 40;
     twin.y = 40;
     twin.population = 80;
-    gs.villages.push_back(twin);
-    sm::Village hamlet{};
+    gs.landmarks.push_back(twin);
+    sm::Landmark hamlet{};
+    hamlet.type = sm::LandmarkType::Village;
     hamlet.id = 42;
     hamlet.name = "Hamlet";
     hamlet.x = 20;
     hamlet.y = 20;
     hamlet.population = 40;
-    gs.villages.push_back(hamlet);
+    gs.landmarks.push_back(hamlet);
     return gs;
 }
 
-// Read each list on its own so an assertion can say WHICH kind of place paid —
-// the ids are unique (v54), but the bill must still land on the right struct.
+// Read each kind on its own so an assertion can say WHICH kind of place paid —
+// the ids are unique (v54), but the bill must still land on the right row.
 int city_population_of(const sm::GameState& gs, int id) {
-    for (const auto& s : gs.settlements) if (s.id == id) return s.population;
+    for (const auto& s : gs.landmarks)
+        if (s.type == sm::LandmarkType::City && s.id == id)
+            return s.population;
     return -1;
 }
 int village_population_of(const sm::GameState& gs, int id) {
-    for (const auto& v : gs.villages) if (v.id == id) return v.population;
+    for (const auto& v : gs.landmarks)
+        if (v.type == sm::LandmarkType::Village && v.id == id)
+            return v.population;
     return -1;
 }
 int population_of(const sm::GameState& gs, int id) {

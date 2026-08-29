@@ -326,8 +326,8 @@ struct StructureKindRow {
     float yieldRefHeightM;
     // Enters the collision index (sub/collide.h). Trees are deliberately
     // non-solid — undergrowth is a battle speed cost, not a wall — and a
-    // stand of wheat is walked through; Rock/Bridge are not part of the 3D
-    // structure pass yet and stay transparent with it.
+    // stand of wheat is walked through; Rock is not part of the 3D
+    // structure pass yet and stays transparent with it.
     bool solid;
     // Status line the harvest door prints ("" = not harvestable).
     const char* harvestMsg;
@@ -336,7 +336,7 @@ struct StructureKindRow {
     // somebody remembered to edit both — the door bug that started this
     // system. Now the row says it.
     enum class Draw : std::uint8_t {
-        None = 0,   // not drawn yet (Rock, Bridge)
+        None = 0,   // not drawn yet (Rock)
         Billboard,  // camera-facing quad from the tree atlas
         Solid,      // the oriented box / cylinder structure pass
     };
@@ -395,9 +395,16 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Stone,
                   InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f},
-    { Structure::Bridge, "",     1.6f, 3.5f,  0.0f, false, "",
-                  StructureKindRow::Draw::None,
-                  StructureKindRow::Material::Wood,
+    // Bridge: honest masonry (owner, 2026-08-29 — "like the city gates: over
+    // the water, arches beneath, not a dam"). The generator emits it as
+    // zBase-lifted deck chords plus round piers (sub/gens/dispatch.cpp
+    // add_bridge_segment) — the SAME lintel mechanism a gate uses — so it is
+    // solid (you stand ON the deck top via support_at, walk around a pier)
+    // and drawn stone by the ordinary box/cylinder pass. Low floors: every
+    // record states its true size, and a pier must never be inflated.
+    { Structure::Bridge, "",     0.4f, 0.5f,  0.0f, true,  "",
+                  StructureKindRow::Draw::Solid,
+                  StructureKindRow::Material::Stone,
                   InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f},
     { Structure::Crop, "crop", 0.4f, 0.5f,  1.2f, false, "You harvest the crop",
                   StructureKindRow::Draw::Billboard,

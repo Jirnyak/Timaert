@@ -123,13 +123,14 @@ void test_hostiles_on_one_cell_fight_and_the_ledger_pays() {
 
     CHECK(roster_count(w, gs, 2u) == 0,
           "the caravan's roster died by name through the roster row");
-    CHECK(w.reg.all_of<ecs::Dead>(caravan)
-              && w.reg.get<ecs::Health>(caravan).hp == 0.0f,
-          "a loser whose whole roster fell falls with it - the tracked-death shape");
+    // The loser fell (hp=0 + Dead inside the settle) — and by CANON S4
+    // («убили всех — сквада на карте нет», 2026-08-29) the end-of-tick sweep
+    // then destroyed the drained corpse-row: a dead squad LEAVES the map.
+    CHECK(!w.reg.valid(caravan),
+          "a loser whose whole roster fell falls with it and leaves the map");
     CHECK(!w.reg.all_of<ecs::Dead>(bandit),
           "the crushing winner survives");
-    CHECK(w.reg.get<ecs::NpcInventory>(bandit).inv.count("wood") == 5
-              && w.reg.get<ecs::NpcInventory>(caravan).inv.used_slots() == 0,
+    CHECK(w.reg.get<ecs::NpcInventory>(bandit).inv.count("wood") == 5,
           "the raid PAYS: the fallen owner's goods pass to the victor");
     CHECK(w.reg.get<ecs::MacroNpcRuntime>(bandit).xp > 0
               || w.reg.get<ecs::NpcLevel>(bandit).value > 5,

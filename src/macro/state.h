@@ -13,6 +13,7 @@
 #include "macro/items.h"
 #include "macro/agent_memory.h"
 #include "macro/army.h"
+#include "macro/landmark_registry.h"
 #include "macro/resource_field.h"
 #include "macro/npc.h"
 #include "macro/economy.h"
@@ -218,9 +219,56 @@ namespace sm {
 // v59: the spellbook is FLAT (macro/spell_book_state.h) — ordinal-indexed
 // rows over the append-only spell registry; the string ids and the three
 // heap containers left the format.
-constexpr int kSaveVersion = 59;
+// v60: dead-code sweep. LayerParameters (a save-prefix POD) dropped its
+// never-read tempMin/tempMax columns.
+// v61: the world seed is an INTEGER (S26 «всё дискретно»). LayerParameters
+// (a save-prefix POD) carries `seed` as uint32_t where a float sat — same
+// four bytes, different meaning, so the version moves. Every seed the game
+// ever wrote was < 100000 (the UI decimation), exactly representable in
+// both types: the worlds themselves are bit-identical.
+// v62: ONE landmark roster (CANON S9, owner 2026-08-29). The three vectors
+// (settlements / villages / spires) and their three serializers became one
+// `std::vector<Landmark>` with a kind column and one serializer; every kind
+// writes every column, unused ones ride at zero defaults. A S9 transition
+// (village→city, spire→ruin) is now a column flip, not a record move.
+constexpr int kSaveVersion = 62;
 
-enum class SettlementMood : std::uint8_t { Prosperous, Stable, Tense, Unrest, Revolt };
+enum class SettlementMood : std::uint8_t {
+    Prosperous, Stable, Tense, Unrest, Revolt, Count
+};
+
+// ── THE mood registry (CANON S16) ────────────────────────────────────────
+// Everything the game says ABOUT a temper band is a column of ONE row: the
+// label and colour the UI prints, the market multipliers the economy prices
+// with (economy.cpp mood_price_mult — a prosperous town sells cheap and pays
+// well; one in revolt charges a risk premium and haggles the traveller down),
+// and the inn bed's cost. These lived as four switch-shaped dictionaries
+// across ui/overlays.cpp and macro/economy.cpp until 2026-08-29.
+struct MoodRow {
+    SettlementMood mood;      // MUST equal the row's index (guard below)
+    const char*    label;
+    std::uint32_t  color;     // 0xRRGGBB — the UI's tint for this band
+    float          buyMul;    // what the town charges the traveller
+    float          sellMul;   // what it pays him
+    int            restCost;  // inn bed, gold
+};
+inline constexpr MoodRow kMoodRows[std::size_t(SettlementMood::Count)] = {
+    {SettlementMood::Prosperous, "Prosperous", 0x5ADC78u, 0.9f, 1.1f,   5},
+    {SettlementMood::Stable,     "Stable",     0xDCDCDCu, 1.0f, 1.0f,  10},
+    {SettlementMood::Tense,      "Tense",      0xF0C850u, 1.0f, 1.0f,  15},
+    {SettlementMood::Unrest,     "Unrest",     0xDC8250u, 1.2f, 0.85f, 20},
+    {SettlementMood::Revolt,     "Revolt",     0xE64646u, 1.4f, 0.7f,  30},
+};
+static_assert(rows_in_enum_order(kMoodRows, &MoodRow::mood),
+              "kMoodRows row order must mirror SettlementMood");
+
+inline constexpr const MoodRow& mood_row(SettlementMood m) {
+    // A byte from outside the band table answers as Stable — the neutral row
+    // the old switch defaults painted (colour, multiplier and cost match).
+    return std::size_t(m) < std::size_t(SettlementMood::Count)
+               ? kMoodRows[std::size_t(m)]
+               : kMoodRows[std::size_t(SettlementMood::Stable)];
+}
 
 // A settlement's recent past, as a fixed RING of a season (owner's decision,
 // 2026-08-27). It was two heap vectors per settlement with a cap enforced by
@@ -261,19 +309,31 @@ struct SettlementHistory {
     }
 };
 
-struct Settlement {
-    int id;
-    std::string name;
-    int x, y;
-    int population;
-    SettlementMood mood;
+// ── THE landmark record (CANON S9, owner verdict 2026-08-29) ─────────────
+// One struct, one vector, a KIND COLUMN. City, village and spire used to be
+// three structs in three GameState vectors — which made "what stands on a
+// cell" a switch, made a S9 transition (village→city, spire→ruin) a record
+// MOVE between types, and made every new landmark kind a new vector plus
+// save code. Now the kind is data: a transition flips `type` (plus a grid
+// rebake), and a new kind is its registry row plus the columns it reads.
+// Fields a kind does not use sit at their zero defaults — the zero
+// contribution, CANON S6 — and cost nothing but bytes (S26: size is not an
+// argument).
+struct Landmark {
+    int id = -1;             // world-unique ordinal (nextLandmarkOrdinal, v54)
+    LandmarkType type = LandmarkType::None;  // THE kind column (registry row)
+    std::string name;        // "" where the kind carries none (spires derive)
+    int x = 0, y = 0;
+    int population = 0;
+    SettlementMood mood = SettlementMood::Stable;
     // THE store (owner's ruling, W2): the landmark's universal Inventory is
     // its market, its granary and its warehouse in one — agents deliver into
     // it, the day-loop eats from it, the trade panel sells out of it.
     Inventory inventory;
     SettlementHistory history;
-    SoldierSquad garrison;
-    int kingdomIdx;
+    SoldierSquad garrison;       // empty unless the kind keeps one (cities)
+    int kingdomIdx = -1;
+    int nearestCityId = -1;      // a village's market city; -1 elsewhere
     // The honest economy's daily readouts (v29): yesterday's hunger and
     // comfort shortfall (for the eye and the mood), the famine edge flag,
     // and the fractional carry of the LOGISTIC population law.
@@ -285,48 +345,14 @@ struct Settlement {
     // a squad's private counter — it belongs to every MACRO entity that has an
     // identity (owner, 2026-08-27): a band, a city, a people. A famous city is
     // a harder prize and a louder loss, and beating it is worth more precisely
-    // because it was famous.
-    //
-    // The microworld has none of this: a mob, a projectile, a house have no
-    // standing to win or lose. That is a different layer and a different
-    // question.
+    // because it was famous. The microworld has none of this.
     std::uint32_t renown = 0;
-};
-
-struct Village {
-    int id;
-    std::string name;
-    int x, y;
-    int population;
-    SettlementMood mood;
-    Inventory inventory;
-    int nearestCityId;
-    int kingdomIdx;
-    SettlementHistory history;
-    std::uint16_t starvedYesterday = 0;
-    std::uint16_t unmetYesterday = 0;
-    std::uint8_t  famineActive = 0;
-    float         popGrowthCarry = 0.0f;
-    // WHAT THE WORLD THINKS OF THIS PLACE (macro/chronicle.h). Renown is not
-    // a squad's private counter — it belongs to every MACRO entity that has an
-    // identity (owner, 2026-08-27): a band, a city, a people. A famous city is
-    // a harder prize and a louder loss, and beating it is worth more precisely
-    // because it was famous.
-    //
-    // The microworld has none of this: a mob, a projectile, a house have no
-    // standing to win or lose. That is a different layer and a different
-    // question.
-    std::uint32_t renown = 0;
-};
-
-struct Spire {
-    int id;
-    int x, y;
-    // kSpellDefs row ordinal (macro/spells.h, append-only). The spire's whole
-    // difficulty context — placement gate, tower storeys, guard site — is the
-    // spell's tier, derived from this ordinal at the moment of reading.
-    std::uint32_t spellId;
-    bool depleted;
+    // Spire columns: kSpellDefs row ordinal (macro/spells.h, append-only) —
+    // the spire's whole difficulty context (placement gate, tower storeys,
+    // guard site) is the spell's tier, derived at the moment of reading —
+    // and whether its orb has been drained.
+    std::uint32_t spellId = 0;
+    bool depleted = false;
 };
 
 enum class GameSubStateKind : std::uint8_t {
@@ -519,9 +545,11 @@ struct GameState {
     LayerParameters mapParams{};
     int cityCountTarget = 0;
 
-    std::vector<Settlement> settlements;
-    std::vector<Village>    villages;
-    std::vector<Spire>      spires;
+    // THE landmark roster (CANON S9, 2026-08-29): every placed landmark of
+    // every kind, one vector, kind = the record's `type` column. Ownership
+    // priority for a contested cell is for_each_landmark's yield order
+    // (landmark_iter.h), not storage order.
+    std::vector<Landmark>   landmarks;
     std::vector<Marker>     markers;
     // The player's map knowledge (v40): Unknown / Explored / Visible per cell.
     // Explored persists; Visible is re-derived from the player's position
@@ -601,8 +629,20 @@ struct GameState {
 // nothing is paid.
 inline std::uint32_t* landmark_renown_slot(GameState& gs, int id) {
     if (id <= 0) return nullptr;
-    for (auto& s : gs.settlements) if (s.id == id) return &s.renown;
-    for (auto& v : gs.villages) if (v.id == id) return &v.renown;
+    for (auto& lm : gs.landmarks) if (lm.id == id) return &lm.renown;
+    return nullptr;
+}
+
+// THE by-id find over the one landmark roster. Ids are world-unique (v54's
+// single ordinal issuer), so no kind is needed to resolve one.
+inline Landmark* landmark_by_id(GameState& gs, int id) {
+    if (id < 0) return nullptr;
+    for (auto& lm : gs.landmarks) if (lm.id == id) return &lm;
+    return nullptr;
+}
+inline const Landmark* landmark_by_id(const GameState& gs, int id) {
+    if (id < 0) return nullptr;
+    for (const auto& lm : gs.landmarks) if (lm.id == id) return &lm;
     return nullptr;
 }
 

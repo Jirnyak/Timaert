@@ -10,13 +10,18 @@
 namespace sm {
 
 struct LayerParameters {
-    float seed = 1.0f;
-    // Match TS `defaultParameters` in src/webgl/shaders.ts.
+    // The world's seed IS an integer (CANON S26 «всё дискретно»); it was a
+    // float here, so every consumer round-tripped through casts and any seed
+    // above 2^24 would have silently lost bits. Where the synthesis feeds it
+    // into float noise, the cast happens AT the use site (map_generator.cpp)
+    // — every UI-facing seed is < 100000 (see main.cpp), exactly
+    // representable, so the generated world is bit-identical.
+    std::uint32_t seed = 1u;
+    // THE macroworld synthesis defaults — this struct is the source of truth.
     float seaLevel = 0.40f;
     float heightScale = 1.0f;
     float moistureScale = 1.0f;
     float temperatureVariation = 0.30f;
-    float tempMin = 0.0f, tempMax = 1.0f;          // unused now (TS packs to 0..1)
     float continentScale = 0.50f;
     float continentIntensity = 0.40f;
     float ridgeIntensity = 0.15f;

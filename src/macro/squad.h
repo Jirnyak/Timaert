@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 namespace sm {
 
@@ -73,11 +74,56 @@ inline int drain_dead_leader_squads(ecs::World& w, SoldierSquad& deserterPool) {
              entt::exclude<ecs::PlayerSquadTag>).each()) {
         (void)e;
         if (roster.squad.empty()) continue;
-        add_squad(deserterPool, roster.squad);
-        moved += roster.squad.size();
-        roster.squad.clear();
+        // The pool CAN refuse (its own kMaxSquadMembers ceiling): only the
+        // men it actually took leave the roster; the rest STAY as the dead
+        // lord's band and the next sweep tries again — nobody is destroyed
+        // for standing past a cap (CANON S26).
+        const int taken = add_squad(deserterPool, roster.squad);
+        moved += taken;
+        if (taken >= roster.squad.size()) {
+            roster.squad.clear();
+        } else {
+            for (int i = taken; i < roster.squad.size(); ++i) {
+                roster.squad[i - taken] = roster.squad[i];
+            }
+            roster.squad.count -= taken;
+        }
     }
     return moved;
+}
+
+// ── The END of a dead squad's story (CANON S4, canon audit 2026-08-29) ────
+// «Убили всех — сквада на карте нет». A tracked death marks the leader
+// entity Dead (the subworld reaper, the auto-resolve, the exhaustion bite)
+// and the drain above moves his men to the deserter pool — but nothing ever
+// DESTROYED the entity: the corpse-row lived in the ECS and rode every save
+// (macro_snapshot dead=1) forever. The squad's identity and deeds are already
+// the chronicle's, by save-stable ordinal, so the entity itself has nothing
+// left to carry.
+//
+// DEFERRED on purpose — called once per macro tick, at its end (npc_ai.cpp
+// tick drivers), never inside a settle: the settle callers still hold the
+// entities (the threat step re-reads `self` after settle_auto_battle, the
+// pre-battle modal re-checks its foe), and every LONG-lived reference is
+// ordinal-based or validity-guarded by construction (MacroOrigin backlinks
+// check reg.valid; MacroDebt receipts and possession resolve spawn ordinals
+// through scans that simply find nothing; find_roster fails to a no-op).
+//
+// A roster the pool REFUSED keeps its entity — the dead lord's band stands
+// until the drain takes the men (its own contract: nobody is destroyed for
+// standing past a cap, CANON S26). The player's squad is never swept: his
+// death is a game-over screen, not a disappearance. Returns how many left
+// the map.
+inline int destroy_dead_macro_squads(ecs::World& w) {
+    std::vector<entt::entity> doomed;
+    auto view = w.reg.view<ecs::MacroSpawnId, ecs::SquadRoster, ecs::Dead>(
+        entt::exclude<ecs::PlayerTag, ecs::PlayerSquadTag, ecs::SubworldTag>);
+    for (auto e : view) {
+        if (!view.get<ecs::SquadRoster>(e).squad.empty()) continue;
+        doomed.push_back(e);
+    }
+    for (entt::entity e : doomed) w.reg.destroy(e);
+    return int(doomed.size());
 }
 
 // THE lookup by save-stable ordinal (ecs::MacroSpawnId): the one identity a
@@ -91,6 +137,106 @@ inline entt::entity macro_entity_by_spawn_id(ecs::World& w,
         if (w.reg.get<ecs::MacroSpawnId>(e).index == index) return e;
     }
     return entt::null;
+}
+
+// ── STANDING, FOR ANY MACRO PARTICIPANT (CANON S20.1) ─────────────────────
+//
+// Owner's ruling, 2026-08-27: renown is not a squad's private counter — every
+// MACRO entity with an identity carries one. A band, a city, a people. Where
+// it lives, by participant kind: a squad's rides its runtime component, a
+// landmark's answers through the one landmark door (landmark_renown_slot,
+// state.h). A CELL has none and never will — the land has no standing — and
+// a FACTION's is the politics track's to add: one field, read through this
+// same door. `renown_of` is what makes a deed contextual — killing a legend
+// is worth a share of the legend — and `grant_renown` is what makes fame
+// spread.
+inline std::uint32_t* renown_slot(ecs::World& w, GameState& gs,
+                                  std::uint8_t participantKind,
+                                  std::uint32_t ordinal) {
+    switch (fact_subject_kind(participantKind)) {
+        case std::uint8_t(FactSubject::Squad): {
+            const entt::entity e = macro_entity_by_spawn_id(w, ordinal);
+            if (e == entt::null) return nullptr;
+            auto* rt = w.reg.try_get<ecs::MacroNpcRuntime>(e);
+            return rt ? &rt->renown : nullptr;
+        }
+        case std::uint8_t(FactSubject::Landmark):
+            return landmark_renown_slot(gs, int(ordinal));
+        default:
+            return nullptr;
+    }
+}
+
+inline std::uint32_t renown_of(ecs::World& w, GameState& gs,
+                               std::uint8_t participantKind,
+                               std::uint32_t ordinal) {
+    const std::uint32_t* slot = renown_slot(w, gs, participantKind, ordinal);
+    return slot ? *slot : 0u;
+}
+
+// Saturating, though the ceiling is a formality: the greatest single deed
+// against a nobody is worth twenty, so reaching it takes two hundred million
+// of them. What the clamp really buys is that ADDITION can never be the thing
+// that wraps a legend into a nobody.
+inline void grant_renown(ecs::World& w, GameState& gs,
+                         std::uint8_t participantKind, std::uint32_t ordinal,
+                         std::uint32_t gain) {
+    if (gain == 0u) return;
+    std::uint32_t* slot = renown_slot(w, gs, participantKind, ordinal);
+    if (!slot) return;
+    const std::uint64_t sum = std::uint64_t(*slot) + gain;
+    *slot = std::uint32_t(std::min<std::uint64_t>(sum, 0xFFFFFFFFull));
+}
+
+// ── THE door into the world's memory: file the fact AND pay the doer ──────
+//
+// ONE door because the two halves must never come apart (S20.1). A writer
+// that filed a deed and forgot the renown would be a world where nobody ever
+// becomes somebody; a writer that paid renown without filing would be a
+// legend nobody can read. Here neither is expressible: you hand over the
+// sentence and the doer, and both happen. It lives on the MACRO layer beside
+// its landmark twin (record_landmark_fact, state.h) so the app, the UI and
+// the subworld engine all knock on the same door — the one-door law had
+// drifted across two layers, and the drift was writers that filed for free.
+//
+// `subject` is the ENTITY that did it, when the caller holds one: the door
+// resolves it to its save-stable ordinal (MacroSpawnId). Figure-ness is
+// DERIVED from renown for EVERYONE, and the bit is the participant's standing
+// AT THE MOMENT of the deed — marked from PRE-deed renown («с этого дня её
+// дела идут в анналы»), subject and object alike. No writer hand-marks it: a
+// hand-written `true` was how the player's deals filed him as a figure he had
+// not yet become.
+inline std::uint32_t record_deed(ecs::World& w, GameState& gs, WorldFact fact,
+                                 entt::entity subject = entt::null) {
+    if (subject != entt::null && w.reg.valid(subject)) {
+        const auto* id = w.reg.try_get<ecs::MacroSpawnId>(subject);
+        if (id && id->index != 0u) {
+            fact.subjectKind = std::uint8_t(FactSubject::Squad);
+            fact.subject = id->index;
+        }
+    }
+    fact.subjectKind = fact_subject(
+        FactSubject(fact_subject_kind(fact.subjectKind)),
+        renown_is_named(renown_of(w, gs, fact.subjectKind, fact.subject)));
+    if (fact_subject_kind(fact.objectKind)
+        != std::uint8_t(FactSubject::None)) {
+        fact.objectKind = fact_subject(
+            FactSubject(fact_subject_kind(fact.objectKind)),
+            renown_is_named(renown_of(w, gs, fact.objectKind, fact.object)));
+    }
+    const std::uint32_t seq = chronicle_record(gs.chronicle, fact);
+    if (seq != 0u) {
+        // WHAT THE DEED WAS WORTH, asked of the world: the base its row gives
+        // for a deed against nobody, plus a share of whatever the OBJECT was
+        // worth. That is the whole of "fame is made of fame" — no second rule
+        // for famous victims, because their fame is already a number the
+        // world keeps about them.
+        const std::uint32_t gain = renown_for_deed(
+            FactKind(fact.kind),
+            renown_of(w, gs, fact.objectKind, fact.object));
+        grant_renown(w, gs, fact.subjectKind, fact.subject, gain);
+    }
+    return seq;
 }
 
 // ── Auto-battle glue: entity ⇄ the pure resolver ──────────────────────────
@@ -396,10 +542,13 @@ inline void loot_fallen_owner(ecs::World& w, entt::entity fallen,
                               Inventory& into) {
     auto* bag = w.reg.try_get<ecs::NpcInventory>(fallen);
     if (!bag) return;
-    for (const ItemRef& stack : bag->inv.slots) {
-        if (!stack.empty()) into.add_ref(stack);
+    for (ItemRef& stack : bag->inv.slots) {
+        if (stack.empty()) continue;
+        // Credit first: a stack the victor's bag refuses (full) STAYS on the
+        // fallen — a refused pickup leaves the corpse holding it (items.h's
+        // conservation ruling), never a cleared slot over an evaporated good.
+        if (into.add_ref(stack)) stack = ItemRef{};
     }
-    bag->inv.clear();
 }
 
 // Settle a resolved AI↔AI auto-battle — the composition of the halves

@@ -14,8 +14,9 @@
 
 namespace {
 
-sm::Settlement make_settlement(int id, int x, int y) {
-    sm::Settlement s{};
+sm::Landmark make_settlement(int id, int x, int y) {
+    sm::Landmark s{};
+    s.type = sm::LandmarkType::City;
     s.id = id;
     s.name = "Test Settlement";
     s.x = x;
@@ -38,7 +39,7 @@ void test_every_macro_npc_is_a_squad_of_one() {
     sm::GameState gs{};
     gs.mapW = 16;
     gs.mapH = 16;
-    gs.settlements.push_back(make_settlement(7, 8, 8));
+    gs.landmarks.push_back(make_settlement(7, 8, 8));
 
     const sm::TerrainData terrain = absent_terrain();
     sm::ecs::World world;

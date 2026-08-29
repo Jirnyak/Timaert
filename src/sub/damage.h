@@ -41,14 +41,9 @@ namespace sm::sub {
 // the stamp now, so it owns the number.
 inline constexpr float kHitFlashDuration = 0.15f;
 
-// The armour at which a blow is HALVED — and therefore the whole scale on
-// which every armour number in the game reads. It is not picked, it is the
-// game's own plain blow: `kPlayerBaseMeleeDamage` (sub/engine.h), what an
-// untrained man does with his bare hands. So "armour 10" is not a number
-// needing a table to interpret — it says «this body halves a plain blow», and
-// twice that quarters it. Armour and damage share units because they meet in
-// one formula, and the halving point is where they meet.
-inline constexpr float kArmorHalving = 10.0f;
+// The halving point of the mitigation law, kArmorHalving, lives beside the
+// armour column it scales (macro/npc.h) — the auto-resolve reads it there
+// too, and the macro data layer cannot include this ECS-facing header.
 
 // A damage KIND is a row, and the row is the whole difference between weapons.
 // Two columns: whether the blow names a killer (LastHit is what the reaper

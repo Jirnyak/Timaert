@@ -39,12 +39,7 @@ bool river_adjacent(const TerrainData& t, int x, int y) {
 } // namespace
 
 const char* deposit_commodity_id(DepositKind kind) {
-    switch (kind) {
-        case DepositKind::Clay:  return "clay";
-        case DepositKind::Iron:  return "iron";
-        case DepositKind::Stone: return "stone";
-    }
-    return "";
+    return deposit_def(kind).commodityId;
 }
 
 DepositLayer build_deposit_layer(const TerrainData& terrain,
@@ -148,44 +143,5 @@ void restore_deposit_cells(DepositLayer& layer, const DepositLayer& loaded) {
 }
 
 int iron_vein_lump() { return kIronBase; }
-
-float iron_depletion(const DepositLayer& layer) {
-    const std::int64_t virgin =
-        layer.virginUnits[std::size_t(DepositKind::Iron)];
-    if (virgin <= 0) return 0.0f;   // a world born without iron misses none
-    std::int64_t remaining = 0;
-    for (const auto& [idx, rem] : layer.cells[std::size_t(DepositKind::Iron)]) {
-        (void)idx;
-        remaining += rem;
-    }
-    const float d = 1.0f - float(remaining) / float(virgin);
-    return d < 0.0f ? 0.0f : (d > 1.0f ? 1.0f : d);
-}
-
-bool discover_iron_vein(DepositLayer& layer, std::uint32_t roll) {
-    // Candidates: stone cells NOT yet holding iron (striking the same cell
-    // twice would just refill it — that is a refill, not a discovery). Two
-    // passes over a sparse map, once a day at most.
-    const auto& stone = layer.cells[std::size_t(DepositKind::Stone)];
-    const auto& iron  = layer.cells[std::size_t(DepositKind::Iron)];
-    std::uint32_t candidates = 0;
-    for (const auto& [idx, rem] : stone) {
-        (void)rem;
-        if (!iron.count(idx)) ++candidates;
-    }
-    if (candidates == 0) return false;
-    std::uint32_t target = roll % candidates;
-    for (const auto& [idx, rem] : stone) {
-        (void)rem;
-        if (iron.count(idx)) continue;
-        if (target-- != 0) continue;
-        // The quarry STAYS — iron is found IN the mountain, nothing vanishes.
-        const int x = int(idx % std::uint32_t(layer.width));
-        const int y = int(idx / std::uint32_t(layer.width));
-        create_deposit(layer, DepositKind::Iron, x, y, kIronBase);
-        return true;
-    }
-    return false;
-}
 
 } // namespace sm

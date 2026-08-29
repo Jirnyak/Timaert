@@ -1,22 +1,13 @@
+#include "check.h"
+
 #include "macro/spawners.h"
 
 #include <cstdint>
 #include <cstddef>
-#include <cstdio>
 #include <vector>
 
 namespace
 {
-
-bool expect(bool ok, const char* msg)
-{
-    if (!ok)
-    {
-        std::fprintf(stderr, "FAIL road_river_generation_test: %s\n", msg);
-        return false;
-    }
-    return true;
-}
 
 sm::TerrainData make_terrain(int w, int h, std::uint8_t height)
 {
@@ -70,7 +61,7 @@ bool has_connection(const sm::City& c, int target)
     return false;
 }
 
-bool test_road_prunes_water_only_connection()
+void test_road_prunes_water_only_connection()
 {
     sm::TerrainData td = make_terrain(5, 5, 0);
     set_cell(td, 1, 1, 160);
@@ -85,26 +76,25 @@ bool test_road_prunes_water_only_connection()
     sm::RoadTraceStats stats;
     const std::vector<std::uint8_t> roads = sm::trace_roads(td, p, &stats);
 
-    bool ok = true;
-    ok &= expect(stats.attemptedEdges == 1, "water-only edge should be attempted once");
-    ok &= expect(stats.keptEdges == 0, "water-only edge must not survive");
-    ok &= expect(stats.prunedEdges == 1, "water-only edge must be pruned");
-    ok &= expect(stats.componentPrunedEdges == 1,
-                 "water-only edge should be rejected before expensive A*");
-    ok &= expect(!has_connection(p.cities[0], 1) && !has_connection(p.cities[1], 0),
-                 "pruned Politik edge must be removed from both cities");
+    const int failsBefore = sm::test::failures();
+    CHECK(stats.attemptedEdges == 1, "water-only edge should be attempted once");
+    CHECK(stats.keptEdges == 0, "water-only edge must not survive");
+    CHECK(stats.prunedEdges == 1, "water-only edge must be pruned");
+    CHECK(stats.componentPrunedEdges == 1,
+          "water-only edge should be rejected before expensive A*");
+    CHECK(!has_connection(p.cities[0], 1) && !has_connection(p.cities[1], 0),
+          "pruned Politik edge must be removed from both cities");
     for (std::size_t i = 0; i < roads.size(); ++i)
     {
-        ok &= expect(roads[i] == 0, "pruned road mask must stay empty");
-        if (!ok)
+        CHECK(roads[i] == 0, "pruned road mask must stay empty");
+        if (sm::test::failures() != failsBefore)
         {
             break;
         }
     }
-    return ok;
 }
 
-bool test_road_survives_land_detour_without_water_cells()
+void test_road_survives_land_detour_without_water_cells()
 {
     sm::TerrainData td = make_terrain(5, 3, 160);
     for (int y = 0; y < td.height; ++y)
@@ -121,28 +111,27 @@ bool test_road_survives_land_detour_without_water_cells()
     sm::RoadTraceStats stats;
     const std::vector<std::uint8_t> roads = sm::trace_roads(td, p, &stats);
 
-    bool ok = true;
-    ok &= expect(stats.attemptedEdges == 1, "detour edge should be attempted once");
-    ok &= expect(stats.keptEdges == 1, "land detour edge should survive");
-    ok &= expect(stats.prunedEdges == 0, "land detour edge should not be pruned");
-    ok &= expect(stats.componentPrunedEdges == 0,
-                 "land detour edge must still run through road A*");
-    ok &= expect(has_connection(p.cities[0], 1) && has_connection(p.cities[1], 0),
-                 "surviving Politik edge must remain connected");
+    const int failsBefore = sm::test::failures();
+    CHECK(stats.attemptedEdges == 1, "detour edge should be attempted once");
+    CHECK(stats.keptEdges == 1, "land detour edge should survive");
+    CHECK(stats.prunedEdges == 0, "land detour edge should not be pruned");
+    CHECK(stats.componentPrunedEdges == 0,
+          "land detour edge must still run through road A*");
+    CHECK(has_connection(p.cities[0], 1) && has_connection(p.cities[1], 0),
+          "surviving Politik edge must remain connected");
     for (int y = 0; y < td.height; ++y)
     {
         const int idx = y * td.width + 2;
-        ok &= expect(roads[std::size_t(idx)] == 0,
-                     "surviving road mask must not stamp rejected water cells");
-        if (!ok)
+        CHECK(roads[std::size_t(idx)] == 0,
+              "surviving road mask must not stamp rejected water cells");
+        if (sm::test::failures() != failsBefore)
         {
             break;
         }
     }
-    return ok;
 }
 
-bool test_road_uses_a_star_on_open_land_connection()
+void test_road_uses_a_star_on_open_land_connection()
 {
     sm::TerrainData td = make_terrain(8, 8, 160);
 
@@ -155,17 +144,15 @@ bool test_road_uses_a_star_on_open_land_connection()
     sm::RoadTraceStats stats;
     const std::vector<std::uint8_t> roads = sm::trace_roads(td, p, &stats);
 
-    bool ok = true;
-    ok &= expect(stats.attemptedEdges == 1, "open-land edge should be attempted once");
-    ok &= expect(stats.keptEdges == 1, "open-land edge should survive");
-    ok &= expect(stats.prunedEdges == 0, "open-land edge should not be pruned");
-    ok &= expect(stats.expansions > 0,
-                 "road tracing must use A* for terrain-cost validation");
-    ok &= expect(!roads.empty(), "open-land road mask should be allocated");
-    return ok;
+    CHECK(stats.attemptedEdges == 1, "open-land edge should be attempted once");
+    CHECK(stats.keptEdges == 1, "open-land edge should survive");
+    CHECK(stats.prunedEdges == 0, "open-land edge should not be pruned");
+    CHECK(stats.expansions > 0,
+          "road tracing must use A* for terrain-cost validation");
+    CHECK(!roads.empty(), "open-land road mask should be allocated");
 }
 
-bool test_road_tracing_uses_map_sea_level()
+void test_road_tracing_uses_map_sea_level()
 {
     sm::TerrainData td = make_terrain(5, 1, 90);
     for (std::size_t i = 0; i < td.cell_count(); ++i)
@@ -191,22 +178,20 @@ bool test_road_tracing_uses_map_sea_level()
     const std::vector<std::uint8_t> defaultSeaRoads =
         sm::trace_roads(td, defaultSeaPolitik, &defaultSeaStats, 0.40f);
 
-    bool ok = true;
-    ok &= expect(lowSeaStats.keptEdges == 1 && lowSeaStats.prunedEdges == 0,
-                 "road tracing must use active low sea level for land connectivity");
-    ok &= expect(!lowSeaRoads.empty() && lowSeaRoads[0] == 255u,
-                 "active low sea road trace must stamp reachable land");
-    ok &= expect(defaultSeaStats.keptEdges == 0 && defaultSeaStats.componentPrunedEdges == 1,
-                 "road tracing must reject the same cells below active default sea level");
-    ok &= expect(!has_connection(defaultSeaPolitik.cities[0], 1)
-                     && !has_connection(defaultSeaPolitik.cities[1], 0),
-                 "default-sea rejected road must prune Politik edges");
-    ok &= expect(!defaultSeaRoads.empty() && defaultSeaRoads[0] == 0u,
-                 "default-sea rejected road must not stamp water cells");
-    return ok;
+    CHECK(lowSeaStats.keptEdges == 1 && lowSeaStats.prunedEdges == 0,
+          "road tracing must use active low sea level for land connectivity");
+    CHECK(!lowSeaRoads.empty() && lowSeaRoads[0] == 255u,
+          "active low sea road trace must stamp reachable land");
+    CHECK(defaultSeaStats.keptEdges == 0 && defaultSeaStats.componentPrunedEdges == 1,
+          "road tracing must reject the same cells below active default sea level");
+    CHECK(!has_connection(defaultSeaPolitik.cities[0], 1)
+              && !has_connection(defaultSeaPolitik.cities[1], 0),
+          "default-sea rejected road must prune Politik edges");
+    CHECK(!defaultSeaRoads.empty() && defaultSeaRoads[0] == 0u,
+          "default-sea rejected road must not stamp water cells");
 }
 
-bool test_large_road_search_restores_same_land_detour()
+void test_large_road_search_restores_same_land_detour()
 {
     sm::TerrainData td = make_terrain(300, 300, 160);
     for (int y = 0; y < td.height; ++y)
@@ -225,29 +210,28 @@ bool test_large_road_search_restores_same_land_detour()
     sm::RoadTraceStats stats;
     const std::vector<std::uint8_t> roads = sm::trace_roads(td, p, &stats);
 
-    bool ok = true;
-    ok &= expect(stats.attemptedEdges == 1, "over-budget detour edge should be attempted once");
-    ok &= expect(stats.componentPrunedEdges == 0,
-                 "over-budget detour is same land component and must not component-prune");
-    ok &= expect(stats.keptEdges == 1,
-                 "same-land detour must survive the restored native road baseline");
-    ok &= expect(stats.prunedEdges == 0,
-                 "same-land detour must not be pruned by the large-map cap");
-    ok &= expect(stats.expansions > 4096,
-                 "test detour must cover the previous too-small large-map cap");
+    const int failsBefore = sm::test::failures();
+    CHECK(stats.attemptedEdges == 1, "over-budget detour edge should be attempted once");
+    CHECK(stats.componentPrunedEdges == 0,
+          "over-budget detour is same land component and must not component-prune");
+    CHECK(stats.keptEdges == 1,
+          "same-land detour must survive the restored native road baseline");
+    CHECK(stats.prunedEdges == 0,
+          "same-land detour must not be pruned by the large-map cap");
+    CHECK(stats.expansions > 4096,
+          "test detour must cover the previous too-small large-map cap");
     for (int y = 1; y < td.height - 1; ++y)
     {
-        ok &= expect(roads[std::size_t(y) * td.width + 150] == 0,
-                     "restored road search must not stamp rejected water wall cells");
-        if (!ok)
+        CHECK(roads[std::size_t(y) * td.width + 150] == 0,
+              "restored road search must not stamp rejected water wall cells");
+        if (sm::test::failures() != failsBefore)
         {
             break;
         }
     }
-    return ok;
 }
 
-bool test_tree_spawner_respects_river_buffer()
+void test_tree_spawner_respects_river_buffer()
 {
     sm::TerrainData dry = make_terrain(64, 64, 150);
     sm::TerrainData river = dry;
@@ -256,14 +240,14 @@ bool test_tree_spawner_respects_river_buffer()
         river.riverData[std::size_t(y) * river.width + 32] = 255;
     }
 
-    const std::vector<sm::TreePoint> dryTrees = sm::spawn_trees(dry, std::uint32_t{42}, 0.18f);
-    const std::vector<sm::TreePoint> riverTrees = sm::spawn_trees(river, std::uint32_t{42}, 0.18f);
+    const std::vector<sm::TreePoint> dryTrees = sm::spawn_trees(dry, std::uint32_t{42});
+    const std::vector<sm::TreePoint> riverTrees = sm::spawn_trees(river, std::uint32_t{42});
 
-    bool ok = true;
-    ok &= expect(!dryTrees.empty(), "control terrain should spawn at least one tree");
-    ok &= expect(!riverTrees.empty(), "river terrain should still spawn trees away from rivers");
-    ok &= expect(riverTrees.size() < dryTrees.size(),
-                 "river exclusion should remove some otherwise valid tree cells");
+    const int failsBefore = sm::test::failures();
+    CHECK(!dryTrees.empty(), "control terrain should spawn at least one tree");
+    CHECK(!riverTrees.empty(), "river terrain should still spawn trees away from rivers");
+    CHECK(riverTrees.size() < dryTrees.size(),
+          "river exclusion should remove some otherwise valid tree cells");
 
     for (const sm::TreePoint& t : riverTrees)
     {
@@ -276,17 +260,16 @@ bool test_tree_spawner_respects_river_buffer()
         {
             dx += river.width;
         }
-        ok &= expect(dx < -2 || dx > 2,
-                     "trees must respect TS two-cell river exclusion buffer");
-        if (!ok)
+        CHECK(dx < -2 || dx > 2,
+              "trees must respect TS two-cell river exclusion buffer");
+        if (sm::test::failures() != failsBefore)
         {
             break;
         }
     }
-    return ok;
 }
 
-bool test_tree_spawner_uses_map_sea_level()
+void test_tree_spawner_uses_map_sea_level()
 {
     sm::TerrainData td = make_terrain(64, 64, 90);
     for (std::size_t i = 0; i < td.cell_count(); ++i)
@@ -295,19 +278,17 @@ bool test_tree_spawner_uses_map_sea_level()
     }
 
     const std::vector<sm::TreePoint> lowSeaTrees =
-        sm::spawn_trees(td, std::uint32_t{42}, 0.18f, 0.30f);
+        sm::spawn_trees(td, std::uint32_t{42}, 0.30f);
     const std::vector<sm::TreePoint> defaultSeaTrees =
-        sm::spawn_trees(td, std::uint32_t{42}, 0.18f, 0.40f);
+        sm::spawn_trees(td, std::uint32_t{42}, 0.40f);
 
-    bool ok = true;
-    ok &= expect(!lowSeaTrees.empty(),
-                 "tree spawner must allow active low-sea shoreline land cells");
-    ok &= expect(defaultSeaTrees.empty(),
-                 "tree spawner must reject cells below active default sea level");
-    return ok;
+    CHECK(!lowSeaTrees.empty(),
+          "tree spawner must allow active low-sea shoreline land cells");
+    CHECK(defaultSeaTrees.empty(),
+          "tree spawner must reject cells below active default sea level");
 }
 
-bool test_malformed_terrain_fails_closed()
+void test_malformed_terrain_fails_closed()
 {
     sm::TerrainData td;
     td.width = 4;
@@ -322,22 +303,20 @@ bool test_malformed_terrain_fails_closed()
 
     sm::RoadTraceStats stats;
     const std::vector<std::uint8_t> roads = sm::trace_roads(td, p, &stats);
-    const std::vector<sm::TreePoint> trees = sm::spawn_trees(td, std::uint32_t{7}, 0.18f);
+    const std::vector<sm::TreePoint> trees = sm::spawn_trees(td, std::uint32_t{7});
 
-    bool ok = true;
-    ok &= expect(!td.has_rgba_storage(),
-                 "malformed terrain helper must reject short RGBA storage");
-    ok &= expect(roads.empty(),
-                 "road tracing must fail closed on malformed terrain storage");
-    ok &= expect(trees.empty(),
-                 "tree spawning must fail closed on malformed terrain storage");
-    ok &= expect(stats.cityCount == 2 && stats.attemptedEdges == 0
-                     && stats.keptEdges == 0 && stats.prunedEdges == 0,
-                 "malformed road tracing must not mutate road stats beyond city count");
-    return ok;
+    CHECK(!td.has_rgba_storage(),
+          "malformed terrain helper must reject short RGBA storage");
+    CHECK(roads.empty(),
+          "road tracing must fail closed on malformed terrain storage");
+    CHECK(trees.empty(),
+          "tree spawning must fail closed on malformed terrain storage");
+    CHECK(stats.cityCount == 2 && stats.attemptedEdges == 0
+              && stats.keptEdges == 0 && stats.prunedEdges == 0,
+          "malformed road tracing must not mutate road stats beyond city count");
 }
 
-bool test_politik_malformed_terrain_fails_closed()
+void test_politik_malformed_terrain_fails_closed()
 {
     sm::TerrainData td;
     td.width = 4;
@@ -346,108 +325,170 @@ bool test_politik_malformed_terrain_fails_closed()
 
     sm::Politik p = sm::generate_politik(123u, 8, 8, &td, 102u, 12);
 
-    bool ok = true;
-    ok &= expect(!td.has_rgba_storage(),
-                 "malformed Politik input must be rejected by terrain helper");
-    ok &= expect(p.mapW == 8 && p.mapH == 8,
-                 "Politik generation should keep requested valid map dimensions");
-    ok &= expect(p.cellOwner.size() == 64u,
-                 "Politik generation should allocate ownership for valid map dimensions");
-    ok &= expect(!p.cities.empty(),
-                 "Politik generation should fall back to no-terrain placement instead of failing open");
+    CHECK(!td.has_rgba_storage(),
+          "malformed Politik input must be rejected by terrain helper");
+    CHECK(p.mapW == 8 && p.mapH == 8,
+          "Politik generation should keep requested valid map dimensions");
+    CHECK(p.cellOwner.size() == 64u,
+          "Politik generation should allocate ownership for valid map dimensions");
+    CHECK(!p.cities.empty(),
+          "Politik generation should fall back to no-terrain placement instead of failing open");
     for (const sm::City& c : p.cities)
     {
-        ok &= expect(c.x >= 0 && c.x < p.mapW && c.y >= 0 && c.y < p.mapH,
-                     "Politik fallback cities must stay inside map bounds");
+        CHECK(c.x >= 0 && c.x < p.mapW && c.y >= 0 && c.y < p.mapH,
+              "Politik fallback cities must stay inside map bounds");
     }
 
     sm::snap_cities_to_land(p, td, 102u, 8);
     sm::finalize_politik(p, td, 102u);
-    ok &= expect(p.cellOwner.size() == 64u,
-                 "malformed terrain finalization must not corrupt ownership storage");
+    CHECK(p.cellOwner.size() == 64u,
+          "malformed terrain finalization must not corrupt ownership storage");
 
     const sm::Politik invalidMap = sm::generate_politik(123u, 0, 8, &td, 102u, 12);
-    ok &= expect(invalidMap.mapW == 0 && invalidMap.mapH == 0
-                     && invalidMap.cellOwner.empty() && invalidMap.cities.empty(),
-                 "invalid Politik map dimensions must fail closed");
-    return ok;
+    CHECK(invalidMap.mapW == 0 && invalidMap.mapH == 0
+              && invalidMap.cellOwner.empty() && invalidMap.cities.empty(),
+          "invalid Politik map dimensions must fail closed");
 }
 
-bool test_dirt_roads_fail_closed_on_malformed_inputs()
+// The dirt law (road-class registry, 2026-08-29): lanes are laid by THE A*
+// over the step-cost law — a village reaches its home city and the nearest
+// landmark in reach, never overwrites stone, never touches water, and a
+// village with no reachable target honestly gets NO lane (the old lerp
+// stamped one across anything that was not water).
+void test_dirt_roads_lay_a_star_lanes()
 {
-    const std::vector<int> oneVillageX{1};
-    const std::vector<int> oneVillageY{1};
-    const std::vector<std::uint8_t> shortRoadMask{255u};
+    sm::TerrainData td = make_terrain(16, 8, 160);
+    sm::FeatureLayer features;
+    features.resize(td.width, td.height);
+    features.set(12, 4, sm::FT_Road); // the city stands on stone already
 
-    const std::vector<std::uint8_t> badDims =
-        sm::trace_dirt_roads(0, 4, shortRoadMask, oneVillageX, oneVillageY, nullptr);
-    const std::vector<std::uint8_t> shortMask =
-        sm::trace_dirt_roads(4, 4, shortRoadMask, oneVillageX, oneVillageY, nullptr);
+    std::vector<sm::VillageRoadSite> villages(1);
+    villages[0].x = 2 - 16; // out-of-range on purpose: must wrap, not index
+    villages[0].y = 4;
+    villages[0].cityX = 12;
+    villages[0].cityY = 4;
+    villages[0].hasCity = true;
 
-    std::vector<std::uint8_t> fullRoadMask(25u, 0u);
-    fullRoadMask[std::size_t(2) * 5u + 0u] = 255u;
-    const std::vector<int> mismatchedY;
-    const std::vector<std::uint8_t> mismatchedVillages =
-        sm::trace_dirt_roads(5, 5, fullRoadMask, oneVillageX, mismatchedY, nullptr);
+    const int laid = sm::trace_dirt_roads(features, td, villages, {}, 4);
 
-    const std::vector<int> wrappedVillageX{-1};
-    const std::vector<int> wrappedVillageY{2};
-    const std::vector<std::uint8_t> wrapped =
-        sm::trace_dirt_roads(5, 5, fullRoadMask, wrappedVillageX, wrappedVillageY, nullptr);
+    CHECK(laid > 0, "a reachable home city must get a dirt lane");
+    CHECK(features.at(2, 4) == sm::FT_DirtRoad,
+          "the village cell must carry its road class (wrapped coordinates)");
+    CHECK(features.at(12, 4) == sm::FT_Road,
+          "a dirt lane must never overwrite stone at its target");
+    // The lane is CONTINUOUS ground the A* walked: the torus-shortest route
+    // 2 -> 12 is westward (6 steps), so at least that many cells landed.
+    CHECK(laid >= 6, "the lane must cover the torus-shortest cell distance");
+}
 
-    const std::vector<std::uint8_t> shortLandMask(3u, 255u);
-    const std::vector<std::uint8_t> shortLand =
-        sm::trace_dirt_roads(5, 5, fullRoadMask, wrappedVillageX, wrappedVillageY,
-                             shortLandMask.data(), shortLandMask.size());
+void test_dirt_roads_refuse_unreachable_targets()
+{
+    // Two islands: land x in [0..5] and [10..13], ocean elsewhere. The old
+    // lerp would have stamped a causeway; the law says no road at all.
+    sm::TerrainData td = make_terrain(16, 8, 0);
+    for (int y = 0; y < td.height; ++y)
+    {
+        for (int x = 0; x <= 5; ++x) set_cell(td, x, y, 160);
+        for (int x = 10; x <= 13; ++x) set_cell(td, x, y, 160);
+    }
+    sm::FeatureLayer features;
+    features.resize(td.width, td.height);
 
-    std::vector<std::uint8_t> landMask(25u * 4u, 255u);
-    landMask[(std::size_t(2) * 5u + 4u) * 4u + 3u] = 0u;
-    const std::vector<std::uint8_t> waterFiltered =
-        sm::trace_dirt_roads(5, 5, fullRoadMask, wrappedVillageX, wrappedVillageY,
-                             landMask.data(), landMask.size());
+    std::vector<sm::VillageRoadSite> villages(1);
+    villages[0].x = 2;
+    villages[0].y = 4;
+    villages[0].cityX = 12;
+    villages[0].cityY = 4;
+    villages[0].hasCity = true;
 
-    bool ok = true;
-    ok &= expect(badDims.empty(),
-                 "dirt-road tracing must fail closed on invalid map dimensions");
-    ok &= expect(shortMask.empty(),
-                 "dirt-road tracing must fail closed on short road masks");
-    ok &= expect(mismatchedVillages.empty(),
-                 "dirt-road tracing must fail closed on mismatched village arrays");
-    ok &= expect(shortLand.empty(),
-                 "dirt-road tracing must fail closed on short terrain land masks");
-    ok &= expect(wrapped.size() == 25u,
-                 "valid dirt-road trace should allocate a full-size mask");
-    ok &= expect(wrapped[std::size_t(2) * 5u + 4u] == 255u,
-                 "out-of-range village coordinates should wrap before indexing");
-    ok &= expect(wrapped[std::size_t(2) * 5u + 0u] == 0u,
-                 "dirt roads must not overwrite the main road target cell");
-    ok &= expect(waterFiltered.size() == 25u
-                     && waterFiltered[std::size_t(2) * 5u + 4u] == 0u,
-                 "dirt-road land mask alpha must filter water cells");
-    return ok;
+    const int laid = sm::trace_dirt_roads(features, td, villages, {}, 4);
+
+    CHECK(laid == 1,
+          "a cross-island city gets no lane — only the village cell stamps");
+    CHECK(features.at(2, 4) == sm::FT_DirtRoad,
+          "the orphan village still sits on its road class");
+    CHECK(features.at(12, 4) == sm::FT_None,
+          "no causeway: the far shore must stay untouched");
+    int wetDirt = 0;
+    for (int y = 0; y < td.height; ++y)
+        for (int x = 0; x < td.width; ++x)
+            if (td.is_water(x, y, 102) && features.at(x, y) != sm::FT_None)
+                ++wetDirt;
+    CHECK(wetDirt == 0, "dirt lanes must never stamp water cells");
+}
+
+void test_dirt_roads_reach_gates_landmark_lane()
+{
+    sm::TerrainData td = make_terrain(16, 16, 160);
+
+    std::vector<sm::VillageRoadSite> villages(1);
+    villages[0].x = 2;
+    villages[0].y = 2;
+    villages[0].hasCity = false; // orphan of a city; the landmark row alone
+    const std::vector<sm::RoadSite> landmarks{{10, 2}}; // torus distance 8
+
+    sm::FeatureLayer nearFeatures;
+    nearFeatures.resize(td.width, td.height);
+    const int laidNear =
+        sm::trace_dirt_roads(nearFeatures, td, villages, landmarks, 9);
+    CHECK(laidNear > 1 && nearFeatures.at(10, 2) == sm::FT_DirtRoad,
+          "a landmark within reach must get a lane ending at the landmark");
+
+    sm::FeatureLayer farFeatures;
+    farFeatures.resize(td.width, td.height);
+    const int laidFar =
+        sm::trace_dirt_roads(farFeatures, td, villages, landmarks, 4);
+    CHECK(laidFar == 1 && farFeatures.at(10, 2) == sm::FT_None,
+          "a landmark beyond reach gets no lane — only the village cell");
+}
+
+void test_dirt_roads_fail_closed_on_malformed_inputs()
+{
+    std::vector<sm::VillageRoadSite> villages(1);
+    villages[0].x = 1;
+    villages[0].y = 1;
+    villages[0].cityX = 3;
+    villages[0].cityY = 3;
+    villages[0].hasCity = true;
+
+    // Short terrain RGBA storage.
+    sm::TerrainData shortTd;
+    shortTd.width = 4;
+    shortTd.height = 4;
+    shortTd.rgba.assign(3u, 255u);
+    sm::FeatureLayer features;
+    features.resize(4, 4);
+    CHECK(sm::trace_dirt_roads(features, shortTd, villages, {}, 4) == 0,
+          "dirt-road tracing must fail closed on malformed terrain storage");
+
+    // Feature layer that does not cover the terrain.
+    sm::TerrainData td = make_terrain(5, 5, 160);
+    sm::FeatureLayer mismatched;
+    mismatched.resize(4, 4);
+    CHECK(sm::trace_dirt_roads(mismatched, td, villages, {}, 4) == 0,
+          "dirt-road tracing must fail closed on a non-covering feature layer");
+    for (int y = 0; y < 4; ++y)
+        for (int x = 0; x < 4; ++x)
+            CHECK(mismatched.at(x, y) == sm::FT_None,
+                  "failed-closed tracing must leave the feature layer untouched");
 }
 
 } // namespace
 
 int main()
 {
-    bool ok = true;
-    ok &= test_road_prunes_water_only_connection();
-    ok &= test_road_survives_land_detour_without_water_cells();
-    ok &= test_road_uses_a_star_on_open_land_connection();
-    ok &= test_road_tracing_uses_map_sea_level();
-    ok &= test_large_road_search_restores_same_land_detour();
-    ok &= test_tree_spawner_respects_river_buffer();
-    ok &= test_tree_spawner_uses_map_sea_level();
-    ok &= test_malformed_terrain_fails_closed();
-    ok &= test_politik_malformed_terrain_fails_closed();
-    ok &= test_dirt_roads_fail_closed_on_malformed_inputs();
-
-    if (!ok)
-    {
-        return 1;
-    }
-
-    std::printf("road_river_generation_test: ok\n");
-    return 0;
+    test_road_prunes_water_only_connection();
+    test_road_survives_land_detour_without_water_cells();
+    test_road_uses_a_star_on_open_land_connection();
+    test_road_tracing_uses_map_sea_level();
+    test_large_road_search_restores_same_land_detour();
+    test_tree_spawner_respects_river_buffer();
+    test_tree_spawner_uses_map_sea_level();
+    test_malformed_terrain_fails_closed();
+    test_politik_malformed_terrain_fails_closed();
+    test_dirt_roads_lay_a_star_lanes();
+    test_dirt_roads_refuse_unreachable_targets();
+    test_dirt_roads_reach_gates_landmark_lane();
+    test_dirt_roads_fail_closed_on_malformed_inputs();
+    return sm::test::report("road_river_generation_test");
 }

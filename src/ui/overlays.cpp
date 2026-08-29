@@ -1,5 +1,6 @@
 #include "ui/overlays.h"
 #include "macro/player_entity.h"
+#include "macro/squad.h"   // record_deed — THE deed door (S20.1)
 #include "ui/trade_widgets.h"
 #include "ui/screens.h"   // kTopStatusBarHeight — keep the minimap below the top bar
 #include "macro/map_generator.h"
@@ -573,58 +574,24 @@ namespace sm::ui
             return nullptr;
         }
 
+        // Thin readers of THE mood registry (macro/state.h kMoodRows) — the
+        // three switch dictionaries that lived here (label / colour / an inn
+        // PRICE in UI code) are its columns now (CANON S16).
         const char *mood_label(SettlementMood m)
         {
-            switch (m)
-            {
-            case SettlementMood::Prosperous:
-                return "Prosperous";
-            case SettlementMood::Stable:
-                return "Stable";
-            case SettlementMood::Tense:
-                return "Tense";
-            case SettlementMood::Unrest:
-                return "Unrest";
-            case SettlementMood::Revolt:
-                return "Revolt";
-            }
-            return "?";
+            return mood_row(m).label;
         }
 
         ImU32 mood_color(SettlementMood m)
         {
-            switch (m)
-            {
-            case SettlementMood::Prosperous:
-                return IM_COL32(90, 220, 120, 255);
-            case SettlementMood::Stable:
-                return IM_COL32(220, 220, 220, 255);
-            case SettlementMood::Tense:
-                return IM_COL32(240, 200, 80, 255);
-            case SettlementMood::Unrest:
-                return IM_COL32(220, 130, 80, 255);
-            case SettlementMood::Revolt:
-                return IM_COL32(230, 70, 70, 255);
-            }
-            return IM_COL32(220, 220, 220, 255);
+            const std::uint32_t c = mood_row(m).color;
+            return IM_COL32((c >> 16) & 0xFFu, (c >> 8) & 0xFFu, c & 0xFFu,
+                            255);
         }
 
         int rest_cost(SettlementMood m)
         {
-            switch (m)
-            {
-            case SettlementMood::Prosperous:
-                return 5;
-            case SettlementMood::Stable:
-                return 10;
-            case SettlementMood::Tense:
-                return 15;
-            case SettlementMood::Unrest:
-                return 20;
-            case SettlementMood::Revolt:
-                return 30;
-            }
-            return 10;
+            return mood_row(m).restCost;
         }
 
         int g_settlement_trade_message_id = -1;
@@ -655,20 +622,26 @@ namespace sm::ui
         // the player as the subject and the settlement as the object, worth
         // what changed hands either way on the one price table. His journal
         // learns it by participation; no log line needs to be kept.
-        void record_settlement_deal_fact(GameState &gs, int landmarkId,
+        // Filed through THE one deed door (macro/squad.h record_deed), like
+        // the caravans' record_landmark_fact: the named bits are DERIVED
+        // from each party's renown — a hand-written `true` filed the player
+        // as a figure he had not yet become — and the deal pays the doer
+        // like every other deed.
+        void record_settlement_deal_fact(GameState &gs, ecs::World &world,
+                                         int landmarkId,
                                          int x, int y, int gave, int took)
         {
             WorldFact f{};
             f.day = gs.worldTime.day();
             f.kind = std::uint16_t(FactKind::Traded);
-            f.subjectKind = fact_subject(FactSubject::Squad, /*named*/true);
+            f.subjectKind = std::uint8_t(FactSubject::Squad);
             f.subject = ecs::kPlayerSquadOrdinal;
             f.objectKind = std::uint8_t(FactSubject::Landmark);
             f.object = std::uint32_t(landmarkId < 0 ? 0 : landmarkId);
             f.x = std::int16_t(x);
             f.y = std::int16_t(y);
             f.amount = gave + took;
-            chronicle_record(gs.chronicle, f);
+            record_deed(world, gs, f);
         }
 
         // (The mood column moved to the law's own home — macro/economy.h
@@ -776,7 +749,10 @@ namespace sm::ui
             return worldSeed + id * 123u;
         }
 
-        ImU32 settlement_preview_tile_color(std::uint8_t t)
+        // THE tile → colour dictionary of every 2D subworld rendering in this
+        // file (the settlement preview AND the subworld minimap — it lived as
+        // two identical copies until 2026-08-29).
+        ImU32 subworld_tile_color(std::uint8_t t)
         {
             using namespace sub;
             switch (t)
@@ -809,7 +785,7 @@ namespace sm::ui
         }
 
         bool ensure_settlement_preview(SettlementPreviewCache &cache,
-                                       const Settlement &s,
+                                       const Landmark &s,
                                        std::uint32_t worldSeed)
         {
             const std::uint32_t previewSeed =
@@ -877,7 +853,7 @@ namespace sm::ui
                     const int sx = kCropX + x;
                     const std::size_t src =
                         std::size_t(sy) * sub::kCellSize + sx;
-                    const ImU32 base = settlement_preview_tile_color(map.tiles[src]);
+                    const ImU32 base = subworld_tile_color(map.tiles[src]);
                     const float h = map.heightmap[src];
                     const float waterLevel = map.waterLevel;
                     const float shade =
@@ -1074,7 +1050,7 @@ namespace sm::ui
         const float carryCap = get_carry_capacity(p.sheet.attributes, p.sheet.skills);
         const int armyTotal = army ? total_soldiers(*army) : 0;
         const int armyUpkeep = army
-            ? calculate_squad_upkeep(*army, p.sheet.attributes.of(AttributeId::Cha)) : 0;
+            ? calculate_squad_upkeep(*army, derived.tradeDiscount) : 0;
 
         ImGui::SetNextWindowSize(ImVec2(760 * scale, 560 * scale), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("Character", open))
@@ -1293,8 +1269,8 @@ namespace sm::ui
                             ImGui::TableNextColumn();
                             ImGui::Text("%d", def->value);
                             ImGui::TableNextColumn();
-                            const bool drinkable = def->type == ItemType::Potion
-                                                   || def->type == ItemType::Food;
+                            const bool drinkable =
+                                item_type_consumable(def->type);
                             if (drinkable)
                             {
                                 ImGui::PushID(slot);
@@ -1390,8 +1366,8 @@ namespace sm::ui
                             ImGui::SetTooltip(
                                 "A blow keeps %.0f/(%.0f+armour) of itself — "
                                 "armour softens, it never makes you immune.",
-                                double(sub::kArmorHalving),
-                                double(sub::kArmorHalving));
+                                double(sm::kArmorHalving),
+                                double(sm::kArmorHalving));
                         }
                         ImGui::SameLine();
                         ImGui::TextDisabled("(%d of %d cells filled)",
@@ -1743,13 +1719,9 @@ namespace sm::ui
         Inventory *bagPtr = player_inventory(world);
         Inventory bagFallback{};
         Inventory &playerBag = bagPtr ? *bagPtr : bagFallback;
-        Settlement *s = nullptr;
-        for (auto &c : gs.settlements)
-            if (c.id == settlementId)
-            {
-                s = &c;
-                break;
-            }
+        Landmark *s = landmark_by_id(gs, settlementId);
+        if (s && s->type != LandmarkType::City)
+            s = nullptr;
         const SettlementPanelTab current = tab ? *tab : SettlementPanelTab::Info;
 
         ImGui::SetNextWindowSize(ImVec2(760 * scale, 620 * scale), ImGuiCond_FirstUseEver);
@@ -1950,7 +1922,8 @@ namespace sm::ui
                                                 giveValue, takeValue))
                     {
                         set_settlement_deal_message(giveValue, takeValue);
-                        record_settlement_deal_fact(gs, s->id, s->x, s->y,
+                        record_settlement_deal_fact(gs, world, s->id,
+                                                    s->x, s->y,
                                                     giveValue, takeValue);
                     }
 
@@ -2020,7 +1993,27 @@ namespace sm::ui
                                 ? hire_npc(*playerArmy, s->garrison, t, purse)
                                 : 0;
                             if (paid > 0)
-                                wallet_spend_up_to(playerBag, paid);
+                            {
+                                // The fee is REAL coin into the town's own
+                                // store — the treasury IS the landmark's
+                                // inventory (CANON S10), not a sink. A store
+                                // that cannot take the whole fee refuses the
+                                // deal: coin back, recruit back.
+                                const int moved =
+                                    transfer_value(playerBag, s->inventory, paid);
+                                if (moved != paid)
+                                {
+                                    if (moved > 0)
+                                        transfer_value(s->inventory, playerBag,
+                                                       moved);
+                                    const int last = playerArmy->size() - 1;
+                                    if (last >= 0)
+                                    {
+                                        s->garrison.push((*playerArmy)[last]);
+                                        playerArmy->remove_at(last);
+                                    }
+                                }
+                            }
                         }
                         if (!can)
                             ImGui::EndDisabled();
@@ -2034,7 +2027,10 @@ namespace sm::ui
                         ImGui::TextDisabled(
                             "Daily upkeep: %d g",
                             calculate_squad_upkeep(
-                                *army, gs.player.sheet.attributes.of(AttributeId::Cha)));
+                                *army,
+                                calculate_derived(gs.player.sheet.attributes,
+                                                  gs.player.sheet.skills)
+                                    .tradeDiscount));
                     }
                     ImGui::EndTabItem();
                 }
@@ -2219,7 +2215,8 @@ namespace sm::ui
                         EventBus &bus,
                         int *selectedQuestIndex,
                         bool *open,
-                        float scale)
+                        float scale,
+                        const char *closeKeyName)
     {
         if (!open || !*open)
             return;
@@ -2239,7 +2236,13 @@ namespace sm::ui
         if (ImGui::Begin("Quest Journal", open))
         {
             ImGui::SetWindowFontScale(scale);
-            if (ImGui::Button("Close [Q]"))
+            // The button quotes the LIVE Quests binding, never a literal —
+            // the same honesty rule as the toolbar tooltips (CANON S22).
+            char closeLabel[32] = "Close";
+            if (closeKeyName && closeKeyName[0])
+                std::snprintf(closeLabel, sizeof(closeLabel), "Close [%s]",
+                              closeKeyName);
+            if (ImGui::Button(closeLabel))
             {
                 *open = false;
             }
@@ -2839,37 +2842,8 @@ namespace sm::ui
             }
         }
 
-        ImU32 subworld_tile_color(std::uint8_t t)
-        {
-            using namespace sub;
-            switch (t)
-            {
-            case TILE_WATER:
-                return IM_COL32(60, 110, 180, 255);
-            case TILE_SHORE:
-                return IM_COL32(210, 195, 150, 255);
-            case TILE_GRASS:
-                return IM_COL32(90, 140, 70, 255);
-            case TILE_FIELD:
-                return IM_COL32(180, 170, 90, 255);
-            case TILE_TREE_DECOR:
-                return IM_COL32(40, 85, 45, 255);
-            case TILE_ROAD:
-                return IM_COL32(165, 135, 95, 255);
-            case TILE_HOUSE:
-                return IM_COL32(150, 110, 80, 255);
-            case TILE_WALL:
-                return IM_COL32(120, 120, 125, 255);
-            case TILE_SQUARE:
-                return IM_COL32(190, 190, 180, 255);
-            case TILE_ROCK:
-                return IM_COL32(95, 95, 100, 255);
-            case TILE_EMPTY:
-                [[fallthrough]];
-            default:
-                return IM_COL32(70, 90, 60, 255);
-            }
-        }
+        // (subworld_tile_color — THE tile → colour dictionary — is defined
+        // once, beside the settlement preview above.)
 
         std::uint8_t choose_detail_tile(const int *counts,
                                         int countTotal,
@@ -3142,9 +3116,12 @@ namespace sm::ui
                                   0.60f);
                     break;
                 case sub::Structure::Bridge:
+                    // Stone masonry now (deck chords + piers), so the map
+                    // paints it in the Wall's grey family, a shade lighter —
+                    // a bridge should read as a crossing, not a rampart.
                     draw_map_rect(rgba, side, px, py,
                                   std::max(1, r), 1,
-                                  IM_COL32(170, 132, 82, 255), 0.92f);
+                                  IM_COL32(148, 148, 154, 255), 0.92f);
                     break;
                 case sub::Structure::Rock:
                     draw_map_disc(rgba, side, px, py,

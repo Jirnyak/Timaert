@@ -172,10 +172,11 @@ public:
     // by exactly as much as sitting down for an hour would, and no law is
     // invented to say it. False when the bar is already full.
     bool drink_from_well();
-    // Read a signpost: names the place it stands in. Costs nothing, changes
+    // Read a signpost: names the place THE SIGN stands in (its own macro
+    // cell, resolved from the prop like the orb's). Costs nothing, changes
     // nothing, and proves the interaction table carries flavour as cheaply as
     // it carries force.
-    bool read_sign();
+    bool read_sign(const Structure& sign);
     // The spire orb: flips the spire's depleted flag (the macro fact), burns
     // the orb out of the scene, and emits SpireDepleted — the app layer
     // resolves the spell ordinal and teaches the book (layering: only
@@ -274,8 +275,10 @@ public:
                      std::uint32_t frameIndex);
 
     bool active() const { return active_; }
-    // Give this scene a place that means something. Generators call it; the
-    // engine watches for the player crossing in.
+    // Give this scene a place that means something; the engine watches for
+    // the player crossing in. Today enter() seeds the one zone (the spire's
+    // power circle, at the generator's exported tower placement) — a scene
+    // that wants another calls this, not a mechanism.
     void add_sub_zone(float x, float y, float radius, FactKind kind,
                       std::int32_t amount = 0, bool onceEver = true);
     int sub_zone_count() const { return subZoneCount_; }
@@ -659,6 +662,12 @@ private:
                                         int a, int b);
     void resolve_subworld_deaths(bool drainAll = false);
     void set_status(const char* msg);
+
+    // THE one placement rule for a body spawned into the scene by fiat: a
+    // ring around the player, dodging water. One function, so the two spawn
+    // paths (fiat encounter, tracked macro NPC) cannot disagree about where a
+    // body may stand. Writes the chosen spot into fx/fy.
+    void place_body_ring(Rng& rng, float& fx, float& fy) const;
 
     // THE micro→macro door (CANON S20.1): a subworld act with lasting meaning
     // is filed in the world's ONE memory, at the macro cell that contains this

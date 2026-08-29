@@ -780,16 +780,16 @@ int project_macro_npcs_into_subworld(ecs::World& w,
                                      const SeamlessSubworldManager& mgr,
                                      int centerCx, int centerCy,
                                      int mapW, int mapH,
-                                     std::uint32_t seed) {
+                                     std::uint32_t seed, bool* truncated) {
     return project_macro_npcs_into_subworld(w, mgr.tiles(), centerCx, centerCy,
-                                            mapW, mapH, seed);
+                                            mapW, mapH, seed, truncated);
 }
 
 int project_macro_npcs_into_subworld(ecs::World& w,
                                      const std::vector<std::uint8_t>& tiles,
                                      int centerCx, int centerCy,
                                      int mapW, int mapH,
-                                     std::uint32_t seed) {
+                                     std::uint32_t seed, bool* truncated) {
     auto& reg = w.reg;
     const bool tilesUsable =
         tiles.size() >= std::size_t(kFullSize) * std::size_t(kFullSize);
@@ -817,13 +817,20 @@ int project_macro_npcs_into_subworld(ecs::World& w,
 
     int projected = 0;
     for (const entt::entity macro : sources) {
-        if (projected >= kMaxProjectedMacroNpcs) break;
-
         const auto& mpos = reg.get<ecs::Position>(macro);
         // Which of the 3×3 window cells does this macro NPC occupy (if any)?
         const int ox = toroidal_cell_offset(int(mpos.x), centerCx, mapW);
         const int oy = toroidal_cell_offset(int(mpos.y), centerCy, mapH);
         if (ox < -1 || ox > 1 || oy < -1 || oy > 1) continue;
+
+        // The cap, checked AFTER the window filter so it only fires for a
+        // body that WOULD stand here — and it fires out loud (CANON S26):
+        // the macro entity persists untouched, but the scene is blind to it
+        // and the caller must be able to say so.
+        if (projected >= kMaxProjectedMacroNpcs) {
+            if (truncated) *truncated = true;
+            break;
+        }
 
         const auto& kind = reg.get<ecs::NPCKind>(macro);
 
@@ -909,7 +916,12 @@ int project_macro_npcs_into_subworld(ecs::World& w,
             constexpr float kTau = 6.2831853f;
             const int memberCount = int(roster->squad.size());
             for (int m = 0; m < memberCount; ++m) {
-                if (projected >= kMaxProjectedMacroNpcs) break;
+                if (projected >= kMaxProjectedMacroNpcs) {
+                    // Roster rows past the ceiling stay safe in the macro
+                    // roster — but never disappear from the scene silently.
+                    if (truncated) *truncated = true;
+                    break;
+                }
                 const SoldierRecord& rec = roster->squad[std::size_t(m)];
                 if (!valid_npc_kind(rec.kind)) continue;
 
@@ -942,12 +954,11 @@ int project_macro_npcs_into_subworld(ecs::World& w,
                                         std::int16_t(int(mpos.y)),
                                         std::int32_t(rec.entityId)})
                     : BodyLoan::none();
-                // The member's row decides which birth he gets, and that is the
-                // whole difference between a man and a beast in a squad: a
-                // humanoid ordinal builds a sheet-bearing body (and takes the
-                // leader's bonuses), a monster row builds a sheet-less one off its
-                // own catalog line. Both carry the same roster receipt, so a
-                // wolf's death pays the pack back exactly like a spearman's.
+                // ONE birth for every member — the sheet-less second birth is
+                // dead: man or beast, the row and level project a sheet through
+                // spawn_derived_body (leader's bonuses applied in it), and every
+                // body carries the same roster receipt, so a wolf's death pays
+                // the pack back exactly like a spearman's.
                 spawn_derived_body(reg,
                     BodySpec{
                         static_cast<NPCType>(rec.kind), mfx, mfy,

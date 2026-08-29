@@ -24,7 +24,10 @@
 // instance builder uses verbatim — what you see is exactly what collides.
 // Trees stay non-solid by design (undergrowth is a battle speed cost, and
 // pinning a charging army against every trunk would read worse than brushing
-// through); Bridge/Rock are not rendered in 3D and are skipped the same way.
+// through); Rock is not rendered in 3D and is skipped the same way. A Bridge
+// is solid masonry: its zBase-lifted deck carries walkers over the water and
+// its piers stand in it — the arches between them are simply the absence of
+// solids, which is why nothing under a bridge is ever blocked.
 //
 // The index is rebuilt from the seamless composite whenever its structure set
 // changes (the same CompositeDirty.structs signal that re-uploads the GPU

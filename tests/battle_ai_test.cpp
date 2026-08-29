@@ -44,6 +44,8 @@
 //  10. Determinism: two identical runs are bitwise identical.
 //
 // Pure — links only battle.cpp. No Vulkan, no ECS, no window.
+#include "check.h"
+
 #include "sub/battle.h"
 
 #include <algorithm>
@@ -57,14 +59,6 @@ using namespace sm;
 using namespace sm::sub;
 
 namespace {
-
-int fails = 0;
-void check(bool ok, const char* msg) {
-    if (!ok) {
-        std::fprintf(stderr, "FAIL battle_ai_test: %s\n", msg);
-        ++fails;
-    }
-}
 
 constexpr float kWorld = 3072.0f;
 // Real shipping numbers: 1 world unit ≈ 1 metre, a humanoid is 0.55 wide, a
@@ -211,18 +205,18 @@ void test_factions() {
     FactionSet fs{};
     const int a = fs.intern(kEmpire);
     const int b = fs.intern(kBandits);
-    check(a == 0 && b == 1, "interning assigns dense indices in order");
-    check(fs.intern(kEmpire) == a, "same pointer dedups");
+    CHECK(a == 0 && b == 1, "interning assigns dense indices in order");
+    CHECK(fs.intern(kEmpire) == a, "same pointer dedups");
     char copy[16];
     std::strcpy(copy, "empire");
-    check(fs.intern(copy) == a, "same text dedups even from a different pointer");
-    check(fs.count == 2, "no duplicate slots created");
-    check(fs.intern(nullptr) < 0 && fs.intern("") < 0,
+    CHECK(fs.intern(copy) == a, "same text dedups even from a different pointer");
+    CHECK(fs.count == 2, "no duplicate slots created");
+    CHECK(fs.intern(nullptr) < 0 && fs.intern("") < 0,
           "null / empty faction id is refused, not interned");
 
     // A faction the battle code has never heard of is just another string: this
     // is the whole point — new factions cost zero code.
-    check(fs.intern("some_brand_new_kingdom") == 2, "unknown faction interns fine");
+    CHECK(fs.intern("some_brand_new_kingdom") == 2, "unknown faction interns fine");
 
     // NOTE ON THE CONTRACT: FactionSet stores the POINTER, not a copy, so every
     // interned id must outlive the tick. The shipping caller only ever passes
@@ -237,27 +231,27 @@ void test_factions() {
         std::snprintf(ids[std::size_t(i)].data(), 16, "f%d", i);
         full.intern(ids[std::size_t(i)].data());
     }
-    check(full.count == kMaxBattleFactions, "table fills to its capacity");
-    check(full.intern("one_too_many") < 0,
+    CHECK(full.count == kMaxBattleFactions, "table fills to its capacity");
+    CHECK(full.intern("one_too_many") < 0,
           "beyond capacity degrades to factionless, never overruns");
 
     FactionSet cleared{};
     cleared.intern(kEmpire);
     cleared.clear();
-    check(cleared.count == 0 && cleared.find(kEmpire) < 0, "clear resets fully");
+    CHECK(cleared.count == 0 && cleared.find(kEmpire) < 0, "clear resets fully");
 
     // Hostility is per-unit and may be asymmetric: that is how a private grudge
     // (TempHostileToPlayer) rides along without a branch in the hot loop.
     BattleUnits u{};
     u.add(soldier(0, 0, 2, mask_of(3)));    // wildlife with a grudge on the player
     u.add(soldier(0, 0, 3, 0));             // player side, no standing quarrel
-    check(u.hostile(0, 1), "grudge-bearing beast sees the player as an enemy");
-    check(!u.hostile(1, 0), "hostility is not implicitly reciprocal");
+    CHECK(u.hostile(0, 1), "grudge-bearing beast sees the player as an enemy");
+    CHECK(!u.hostile(1, 0), "hostility is not implicitly reciprocal");
     // A factionless body (-1) fights nobody and is nobody's enemy.
     BattleUnits none{};
     none.add(soldier(0, 0, -1, ~0ull));
     none.add(soldier(0, 0, 0, ~0ull));
-    check(!none.hostile(1, 0), "a factionless body is never a valid enemy");
+    CHECK(!none.hostile(1, 0), "a factionless body is never a valid enemy");
 }
 
 // ── 1b. Mask freshness — the staleness bug, pinned ─────────────────────────
@@ -301,17 +295,17 @@ void test_relation_callback_identifies_by_index() {
     Ctx ctx{emp};
     build_faction_masks(fs, [](void* u, const FactionSet& set, int a, int b) {
         const int side = static_cast<Ctx*>(u)->side;
-        check(a >= 0 && a < set.count && b >= 0 && b < set.count,
+        CHECK(a >= 0 && a < set.count && b >= 0 && b < set.count,
               "the callback is handed valid indices into the live set");
         return (a == side || b == side) ? -80 : 0;   // integer identity
     }, &ctx, -50);
 
-    check((fs.enemyMask[emp] >> ban) & 1ull,
+    CHECK((fs.enemyMask[emp] >> ban) & 1ull,
           "a runtime-built id is recognised by index, not by address");
-    check((fs.enemyMask[ban] >> emp) & 1ull, "and the pair resolves both ways");
+    CHECK((fs.enemyMask[ban] >> emp) & 1ull, "and the pair resolves both ways");
     // The literal spelling is the SAME faction, so it carries the same mask —
     // no second row, no divergent allegiance.
-    check(fs.find(kEmpire) == emp, "literal and runtime spelling are one row");
+    CHECK(fs.find(kEmpire) == emp, "literal and runtime spelling are one row");
 }
 
 void test_faction_mask_freshness() {
@@ -321,13 +315,13 @@ void test_faction_mask_freshness() {
 
     // Interning ALONE leaves every mask empty. This is the trap: a caller that
     // interns and forgets to rebuild gets a silent ceasefire.
-    check(fs.enemyMask[emp] == 0ull && fs.enemyMask[ban] == 0ull,
+    CHECK(fs.enemyMask[emp] == 0ull && fs.enemyMask[ban] == 0ull,
           "a freshly interned set has no hostility yet (the trap)");
 
     build_faction_masks(fs, &fake_relation, nullptr, -50);
-    check((fs.enemyMask[emp] >> ban) & 1ull, "war resolves into the mask");
-    check((fs.enemyMask[ban] >> emp) & 1ull, "and it resolves both ways");
-    check(((fs.enemyMask[emp] >> emp) & 1ull) == 0ull,
+    CHECK((fs.enemyMask[emp] >> ban) & 1ull, "war resolves into the mask");
+    CHECK((fs.enemyMask[ban] >> emp) & 1ull, "and it resolves both ways");
+    CHECK(((fs.enemyMask[emp] >> emp) & 1ull) == 0ull,
           "a faction is never hostile to itself");
 
     // The lifecycle the engine actually performs, twice: clear -> intern ->
@@ -336,9 +330,9 @@ void test_faction_mask_freshness() {
         fs.clear();
         const int e2 = fs.intern(kEmpire);
         const int b2 = fs.intern(kBandits);
-        check(fs.enemyMask[e2] == 0ull, "clear() wipes the masks (documented)");
+        CHECK(fs.enemyMask[e2] == 0ull, "clear() wipes the masks (documented)");
         build_faction_masks(fs, &fake_relation, nullptr, -50);
-        check(((fs.enemyMask[e2] >> b2) & 1ull) != 0ull,
+        CHECK(((fs.enemyMask[e2] >> b2) & 1ull) != 0ull,
               "masks are live again after every clear+intern+rebuild cycle");
     }
 
@@ -346,7 +340,7 @@ void test_faction_mask_freshness() {
     fs.clear();
     fs.intern(kEmpire);
     build_faction_masks(fs, nullptr, nullptr, -50);
-    check(fs.enemyMask[0] == 0ull, "no relation source => no hostility invented");
+    CHECK(fs.enemyMask[0] == 0ull, "no relation source => no hostility invented");
 }
 
 // ── 2–3. Grid correctness and data-derived cell sizes ──────────────────────
@@ -360,7 +354,7 @@ void test_grid() {
     UnitGrid g{};
     build_unit_grid(g, u, fine_cell_for(u, prm), 256);
 
-    check(g.items.size() == std::size_t(u.count), "grid holds every unit once");
+    CHECK(g.items.size() == std::size_t(u.count), "grid holds every unit once");
     std::vector<int> seen(std::size_t(u.count), 0);
     bool cellOk = true;
     for (int cy = 0; cy < g.rows; ++cy) {
@@ -375,8 +369,8 @@ void test_grid() {
             }
         }
     }
-    check(cellOk, "every unit sits in its own bucket");
-    check(std::count(seen.begin(), seen.end(), 1) == u.count,
+    CHECK(cellOk, "every unit sits in its own bucket");
+    CHECK(std::count(seen.begin(), seen.end(), 1) == u.count,
           "no unit duplicated or dropped");
 
     // Cell sizes are DATA-derived: bodies set the fine cell, weapons the pick
@@ -388,11 +382,11 @@ void test_grid() {
     dragon.radius = 8.0f;
     dragon.reach = 20.0f;
     big.add(dragon);
-    check(fine_cell_for(big, prm) > fineSmall * 3.0f,
+    CHECK(fine_cell_for(big, prm) > fineSmall * 3.0f,
           "a wider body grows the separation grid");
-    check(pick_cell_for(big, prm) > pick_cell_for(u, prm),
+    CHECK(pick_cell_for(big, prm) > pick_cell_for(u, prm),
           "a longer weapon grows the contact grid");
-    check(pick_cell_for(u, prm) >= fine_cell_for(u, prm),
+    CHECK(pick_cell_for(u, prm) >= fine_cell_for(u, prm),
           "contact grid is never finer than the separation grid");
 
     BattleUnits wide{};
@@ -400,13 +394,13 @@ void test_grid() {
     wide.add(soldier(3000.0f, 3000.0f, 0, 0));
     UnitGrid gw{};
     build_unit_grid(gw, wide, 4.0f, 16);
-    check(gw.cols <= 16 && gw.rows <= 16, "maxDim respected");
-    check(gw.cell > 4.0f, "cell grew instead of the allocation");
+    CHECK(gw.cols <= 16 && gw.rows <= 16, "maxDim respected");
+    CHECK(gw.cell > 4.0f, "cell grew instead of the allocation");
 
     UnitGrid ge{};
     BattleUnits empty{};
     build_unit_grid(ge, empty, 4.0f, 256);
-    check(ge.begin.size() == 2u && ge.items.empty(), "empty crowd degrades safely");
+    CHECK(ge.begin.size() == 2u && ge.items.empty(), "empty crowd degrades safely");
 }
 
 // ── 4. Influence field ─────────────────────────────────────────────────────
@@ -418,16 +412,16 @@ void test_influence_field() {
 
     InfluenceField f{};
     build_influence_field(f, u, 32.0f, kWorld);
-    check(f.has_faction(0) && f.has_faction(1), "both factions get a plane");
-    check(f.planeCount == 2, "only present factions are allocated");
+    CHECK(f.has_faction(0) && f.has_faction(1), "both factions get a plane");
+    CHECK(f.planeCount == 2, "only present factions are allocated");
 
     // The lone body must find a site pointing at the enemy mass 800 units away,
     // with nothing but empty cells between. No neighbour query is involved.
     const std::size_t fi = f.plane(0)
         + std::size_t(f.row_of(1000.0f)) * std::size_t(f.cols)
         + std::size_t(f.col_of(200.0f));
-    check(f.hasSite[fi] != 0u, "site propagated across empty space");
-    check(f.siteX[fi] > 950.0f && f.siteX[fi] < 1050.0f, "site is the enemy mass");
+    CHECK(f.hasSite[fi] != 0u, "site propagated across empty space");
+    CHECK(f.siteX[fi] > 950.0f && f.siteX[fi] < 1050.0f, "site is the enemy mass");
 
     // A faction with no enemies anywhere gets no site: nothing to charge.
     BattleUnits lonely{};
@@ -437,7 +431,7 @@ void test_influence_field() {
     const std::size_t li = f2.plane(0)
         + std::size_t(f2.row_of(500.0f)) * std::size_t(f2.cols)
         + std::size_t(f2.col_of(500.0f));
-    check(f2.hasSite[li] == 0u, "no enemies => no site");
+    CHECK(f2.hasSite[li] == 0u, "no enemies => no site");
 }
 
 // ── 5. The alert chain: the reported "far ranks just clump" bug ────────────
@@ -465,7 +459,7 @@ void test_alert_chain() {
         }
     }
     // Sanity: the body we picked really is out of its own sight range.
-    check(rearmost >= 0 && (cx - rearmostX) > kSight * 0.9f,
+    CHECK(rearmost >= 0 && (cx - rearmostX) > kSight * 0.9f,
           "test setup: rearmost body is beyond its own sight");
 
     UnitGrid fine{}, pick{};
@@ -479,16 +473,16 @@ void test_alert_chain() {
     std::fprintf(stderr, "[battle_ai] rear rank at %.0f from centre advanced %.1f, "
                          "advancing=%u/%d\n",
                  cx - rearmostX, moved, st.advancing, u.count);
-    check(moved > 20.0f, "a rear rank that cannot see the enemy still charges");
-    check(st.advancing > std::uint32_t(u.count / 4),
+    CHECK(moved > 20.0f, "a rear rank that cannot see the enemy still charges");
+    CHECK(st.advancing > std::uint32_t(u.count / 4),
           "most of a deep army is advancing, not standing in a clump");
 
     // NEGATIVE CONTROL for the gate itself: blind everyone (sight 1) and nothing
     // seeds the chain, so the army must NOT advance. If it moved anyway, the
     // assertion above would be proving nothing about the alert chain.
     RunResult blind = run_battle(400, 120, prm, flat, 1.0f / 60.0f, false, 1.0f);
-    check(blind.peakAdvancing == 0u, "with nobody able to see, nobody advances");
-    check(centroid_gap(blind.units) > 100.0f, "a blind army holds its ground");
+    CHECK(blind.peakAdvancing == 0u, "with nobody able to see, nobody advances");
+    CHECK(centroid_gap(blind.units) > 100.0f, "a blind army holds its ground");
 
     // DISCONNECTED GROUP: exactly the wolves case. One wolf close enough to see
     // the player charges; a second wolf far away, with no comrade between, must
@@ -502,8 +496,8 @@ void test_alert_chain() {
     for (int t = 0; t < 300; ++t) {
         advance(wolves, fine, pick, f, flat, prm, 1.0f / 60.0f, &st);
     }
-    check(std::fabs(wolves.x[1] - nearStart) > 20.0f, "the near wolf charges");
-    check(std::fabs(wolves.x[2] - farStart) < 1.0f,
+    CHECK(std::fabs(wolves.x[1] - nearStart) > 20.0f, "the near wolf charges");
+    CHECK(std::fabs(wolves.x[2] - farStart) < 1.0f,
           "an unconnected far wolf does not swarm");
 
     // RELAY: put a chain of comrades between the far body and the fighting. Now
@@ -519,7 +513,7 @@ void test_alert_chain() {
     for (int t = 0; t < 300; ++t) {
         advance(chain, fine, pick, f, flat, prm, 1.0f / 60.0f, &st);
     }
-    check(chain.x[std::size_t(last)] < linkStart - 20.0f,
+    CHECK(chain.x[std::size_t(last)] < linkStart - 20.0f,
           "a blind body advances when comrades relay the alert to it");
 }
 
@@ -541,15 +535,15 @@ void test_no_collapse_and_convergence() {
                  "[battle_ai] mnn=%.2f gap=%.1f engaged=%u spread %.1f -> %.1f\n",
                  mnn, centroid_gap(r.units), r.peakEngaged, spread0, spread1);
     // Bodies of radius 0.55 must not interpenetrate.
-    check(mnn > kBodyRadius, "bodies stay apart (no collapse into a point)");
+    CHECK(mnn > kBodyRadius, "bodies stay apart (no collapse into a point)");
     // ...and the ARMY must not implode. This is the assertion the first version of
     // this test lacked, which let a point-attractor bug ship: bodies were 1.44
     // apart (pass) while the whole thousand-strong deployment had balled up into a
     // few metres (the reported "сгрудились в кучки").
-    check(spread1 > spread0 * 0.6f,
+    CHECK(spread1 > spread0 * 0.6f,
           "the formation keeps its extent (no implosion into clumps)");
-    check(centroid_gap(r.units) < 200.0f, "armies converged");
-    check(r.peakEngaged > std::uint32_t(perSide / 4),
+    CHECK(centroid_gap(r.units) < 200.0f, "armies converged");
+    CHECK(r.peakEngaged > std::uint32_t(perSide / 4),
           "a real front line formed (bodies reached strike contact)");
 
     // Kill separation and the engagement ring — i.e. steer every body at the
@@ -561,7 +555,7 @@ void test_no_collapse_and_convergence() {
     naive.ringFactor = 0.0f;
     naive.arriveEpsilon = 0.0f;
     RunResult bad = run_battle(perSide, 1200, naive, flat);
-    check(mean_nearest_neighbour(bad.units) < mnn * 0.5f,
+    CHECK(mean_nearest_neighbour(bad.units) < mnn * 0.5f,
           "negative control reproduces the collapse (control is meaningful)");
 }
 
@@ -627,9 +621,9 @@ void test_thousand_per_side_keeps_formation() {
     std::fprintf(stderr,
                  "[battle_ai] 1000/side approach spread %.1f -> %.1f (flow) "
                  "vs %.1f (per-body homing)\n", spread0, flow, point);
-    check(flow > spread0 * 0.7f,
+    CHECK(flow > spread0 * 0.7f,
           "1000-per-side formation survives a long approach");
-    check(point > spread0 * 0.7f,
+    CHECK(point > spread0 * 0.7f,
           "the rejected hypothesis stays rejected: homing alone does not implode");
 }
 
@@ -817,18 +811,18 @@ void test_line_holds_through_attrition() {
                  "(ship) vs crowd=%.2f (naive pile)\n",
                  ship.peakCrowd, ship.minCover, ship.survivors1,
                  pile.peakCrowd);
-    check(ship.survivors1 == 0, "the fight runs to completion (no deadlock)");
+    CHECK(ship.survivors1 == 0, "the fight runs to completion (no deadlock)");
     // The control has to actually PILE, or the metric below proves nothing:
     // a funnel packs bodies past the point where they could physically stand.
-    check(pile.peakCrowd > kPackedLimit,
+    CHECK(pile.peakCrowd > kPackedLimit,
           "the negative control reproduces a pile the crowding metric can see");
-    check(ship.peakCrowd < kPackedLimit,
+    CHECK(ship.peakCrowd < kPackedLimit,
           "victors form a crowd, never a stack (no всасывание в точки)");
-    check(ship.peakCrowd < pile.peakCrowd * 0.1f,
+    CHECK(ship.peakCrowd < pile.peakCrowd * 0.1f,
           "the shipping steering stays an order of magnitude off the funnel");
-    check(ship.minCover > 0.9f,
+    CHECK(ship.minCover > 0.9f,
           "the winning line keeps its frontage while both lines stand");
-    check(pile.peakCrowd > ship.peakCrowd * 1.4f,
+    CHECK(pile.peakCrowd > ship.peakCrowd * 1.4f,
           "negative control reproduces a pile (the metric can see one)");
 }
 
@@ -950,7 +944,7 @@ void test_wide_front_meets_as_one_wall() {
     }
     std::fprintf(stderr, "[battle_ai] 8192/side wide-front worst gap=%d bins\n",
                  worstGap);
-    check(worstGap < 3,
+    CHECK(worstGap < 3,
           "a wide front fights as one wall (no lane/blob segmentation)");
 }
 
@@ -995,10 +989,10 @@ void test_terrain_does_not_outvote_the_advance() {
                  "[battle_ai] hills spread %.1f -> %.1f  |v|=%.1f engaged=%u\n",
                  spread0, spread1, v1, r.lastStats.engaged);
 
-    check(spread1 < spread0 * 2.0f, "hills do not tear the formation apart");
-    check(r.lastStats.engaged > std::uint32_t(perSide / 2),
+    CHECK(spread1 < spread0 * 2.0f, "hills do not tear the formation apart");
+    CHECK(r.lastStats.engaged > std::uint32_t(perSide / 2),
           "the battle still joins on broken ground");
-    check(v1 < kSpeed * 0.25f,
+    CHECK(v1 < kSpeed * 0.25f,
           "bodies settle into the melee instead of sliding forever");
 
     // AUTHORITY PROBE. One body ordered straight across a steep hill towards a
@@ -1027,7 +1021,7 @@ void test_terrain_does_not_outvote_the_advance() {
     // defect is structurally gone, so what is asserted is the OUTCOME.
     const float shipErr = crossing_error(prm);
     std::fprintf(stderr, "[battle_ai] hill crossing miss: %.1f\n", shipErr);
-    check(shipErr < kReach + 2.0f * kBodyRadius + 2.0f,
+    CHECK(shipErr < kReach + 2.0f * kBodyRadius + 2.0f,
           "a body crosses a steep hill and reaches its enemy");
 
     // AFTER the battle: bodies with no enemy left must STAND. Terrain steers a
@@ -1049,8 +1043,8 @@ void test_terrain_does_not_outvote_the_advance() {
     const float drift = std::sqrt((idle.x[0] - ix0) * (idle.x[0] - ix0)
                                 + (idle.y[0] - iy0) * (idle.y[0] - iy0));
     std::fprintf(stderr, "[battle_ai] idle-on-slope drift after 10 s: %.2f\n", drift);
-    check(drift < 2.0f, "idle bodies do not slide downhill into a pit");
-    check(mean_speed(idle) < 0.5f, "idle bodies come to rest");
+    CHECK(drift < 2.0f, "idle bodies do not slide downhill into a pit");
+    CHECK(mean_speed(idle) < 0.5f, "idle bodies come to rest");
 }
 
 // ── 7. The O(N) bound, measured ────────────────────────────────────────────
@@ -1065,13 +1059,13 @@ void test_linear_scaling() {
     const std::uint64_t perUnitB = b.lastStats.neighborVisits / 800u;
     const std::uint64_t ceiling =
         std::uint64_t(prm.maxPickVisits + prm.maxSepVisits) + 8u;
-    check(perUnitA <= ceiling, "visits per unit respect the ceiling (N=400)");
-    check(perUnitB <= ceiling, "visits per unit respect the ceiling (N=800)");
+    CHECK(perUnitA <= ceiling, "visits per unit respect the ceiling (N=400)");
+    CHECK(perUnitB <= ceiling, "visits per unit respect the ceiling (N=800)");
 
     const double ratio = double(b.lastStats.neighborVisits)
                        / double(std::max<std::uint64_t>(1u,
                                 a.lastStats.neighborVisits));
-    check(ratio < 2.6, "work scales linearly with army size");
+    CHECK(ratio < 2.6, "work scales linearly with army size");
     std::fprintf(stderr,
                  "[battle_ai] visits/unit N=400:%llu N=800:%llu ratio=%.2f "
                  "ceiling=%llu\n",
@@ -1082,10 +1076,10 @@ void test_linear_scaling() {
     // ceilings the first frames would be quadratic; with them the bound holds
     // even here, and separation still unpacks the pile.
     RunResult stacked = run_battle(300, 1, prm, flat, 1.0f / 60.0f, true);
-    check(stacked.lastStats.neighborVisits / 600u <= ceiling,
+    CHECK(stacked.lastStats.neighborVisits / 600u <= ceiling,
           "degenerate all-stacked start still respects the ceiling");
     RunResult unpacked = run_battle(300, 600, prm, flat, 1.0f / 60.0f, true);
-    check(mean_nearest_neighbour(unpacked.units) > kBodyRadius * 0.5f,
+    CHECK(mean_nearest_neighbour(unpacked.units) > kBodyRadius * 0.5f,
           "separation unpacks a degenerate stack");
 }
 
@@ -1123,11 +1117,11 @@ void test_terrain_table() {
     const float fast = chase(ground.data(), &flat_height);
     const float slowed = chase(slow.data(), &flat_height);
     const float uphill = chase(ground.data(), &ramp_height);
-    check(fast > 0.0f, "the chase advances on fast ground");
-    check(slowed < fast * 0.5f, "a slow ground row slows the advance");
-    check(uphill < fast * 0.95f, "uphill slows and deflects the advance");
+    CHECK(fast > 0.0f, "the chase advances on fast ground");
+    CHECK(slowed < fast * 0.5f, "a slow ground row slows the advance");
+    CHECK(uphill < fast * 0.95f, "uphill slows and deflects the advance");
     // No tile grid at all must degrade to "no ground effect", not to a crash.
-    check(chase(nullptr, &flat_height) > 0.0f, "absent ground grid is harmless");
+    CHECK(chase(nullptr, &flat_height) > 0.0f, "absent ground grid is harmless");
 }
 
 // ── 9. One bandit, one player: same code, no special case ──────────────────
@@ -1147,12 +1141,12 @@ void test_single_bandit() {
     for (int i = 0; i < 900; ++i)
         advance(u, fine, pick, f, flat, prm, 1.0f / 60.0f, &st);
 
-    check(u.x[0] == px0 && u.y[0] == py0, "pinned player body never moved");
+    CHECK(u.x[0] == px0 && u.y[0] == py0, "pinned player body never moved");
     const float dx = u.x[1] - u.x[0], dy = u.y[1] - u.y[0];
     const float d = std::sqrt(dx * dx + dy * dy);
-    check(d < kReach + 2.0f * kBodyRadius + 1.0f,
+    CHECK(d < kReach + 2.0f * kBodyRadius + 1.0f,
           "lone bandit closed to contact through the same path");
-    check(st.engaged == 1u && u.inReach[1] != 0u && u.target[1] == 0,
+    CHECK(st.engaged == 1u && u.inReach[1] != 0u && u.target[1] == 0,
           "lone bandit is strikeable on the player");
 }
 
@@ -1169,8 +1163,8 @@ void test_determinism_and_capacity() {
             && a.units.vx[std::size_t(i)] == b.units.vx[std::size_t(i)]
             && a.units.vy[std::size_t(i)] == b.units.vy[std::size_t(i)];
     }
-    check(same, "two identical runs are bitwise identical");
-    check(a.lastStats.neighborVisits == b.lastStats.neighborVisits,
+    CHECK(same, "two identical runs are bitwise identical");
+    CHECK(a.lastStats.neighborVisits == b.lastStats.neighborVisits,
           "visit counts match exactly");
 
     BattleUnits u{};
@@ -1179,8 +1173,8 @@ void test_determinism_and_capacity() {
     for (int i = 0; i < kMaxBattleUnits + 16; ++i) {
         if (u.add(soldier(float(i % 3000) + 1.0f, 1.0f, 0, 0)) < 0) ++refused;
     }
-    check(u.count == kMaxBattleUnits, "capacity is exactly 2^14");
-    check(refused == 16, "overflow refused, never grown");
+    CHECK(u.count == kMaxBattleUnits, "capacity is exactly 2^14");
+    CHECK(refused == 16, "overflow refused, never grown");
 }
 
 } // namespace
@@ -1207,8 +1201,8 @@ void test_intent_and_passive() {
             advance(u, fine, pick, f, flat, prm, dt, nullptr);
         const float walked = u.x[0] - 1000.0f;
         const float wantWalk = 3.0f * 300.0f * dt;
-        check(std::fabs(u.y[0] - 1000.0f) < 0.01f, "intent walk holds its line");
-        check(std::fabs(walked - wantWalk) < 1.0f,
+        CHECK(std::fabs(u.y[0] - 1000.0f) < 0.01f, "intent walk holds its line");
+        CHECK(std::fabs(walked - wantWalk) < 1.0f,
               "intent executes at the mind's pace, not the sheet's sprint");
     }
 
@@ -1227,10 +1221,10 @@ void test_intent_and_passive() {
         InfluenceField f{};
         for (int i = 0; i < 240; ++i)
             advance(u, fine, pick, f, flat, prm, dt, nullptr);
-        check(u.target[deer] < 0, "a passive body never picks a target");
-        check(std::fabs(u.x[deer] - 1000.0f) < 5.0f,
+        CHECK(u.target[deer] < 0, "a passive body never picks a target");
+        CHECK(std::fabs(u.x[deer] - 1000.0f) < 5.0f,
               "a passive body is not conscripted by its faction's war");
-        check(u.x[levy] > 1030.0f,
+        CHECK(u.x[levy] > 1030.0f,
               "the armed twin marched (the war drive was live)");
     }
 
@@ -1245,7 +1239,7 @@ void test_intent_and_passive() {
         InfluenceField f{};
         for (int i = 0; i < 240; ++i)
             advance(u, fine, pick, f, flat, prm, dt, nullptr);
-        check(u.target[0] == 1 && u.inReach[0] != 0u,
+        CHECK(u.target[0] == 1 && u.inReach[0] != 0u,
               "the war drive overrides intent outright");
     }
 }
@@ -1268,6 +1262,5 @@ int main() {
     test_intent_and_passive();
     test_determinism_and_capacity();
 
-    if (fails == 0) std::fprintf(stderr, "battle_ai_test: OK\n");
-    return fails == 0 ? 0 : 1;
+    return sm::test::report("battle_ai_test");
 }

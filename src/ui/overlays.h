@@ -92,13 +92,18 @@ void draw_settlement(GameState& gs,
                      SettlementPanelTab* tab,
                      bool* open,
                      float scale = 1.0f);
+// `closeKeyName` is the LIVE name of the key that toggles this panel
+// (SDL_GetScancodeName of the Quests binding) — the Close button quotes it,
+// never a literal, so a rebind can't strand a stale hint (CANON S22).
+// nullptr/empty = the action is unbound, the button says just "Close".
 void draw_quest_log(GameState& gs,
                     std::vector<Quest>& quests,
                     QuestEngine& questEngine,
                     EventBus& bus,
                     int* selectedQuestIndex,
                     bool* open,
-                    float scale = 1.0f);
+                    float scale = 1.0f,
+                    const char* closeKeyName = nullptr);
 void draw_codex(GameState& gs, bool* open, float scale = 1.0f);
 void draw_show_dialog(GameState& gs,
                       const Inventory* bag,

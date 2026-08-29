@@ -34,8 +34,14 @@ struct SpellSpawnContext {
 
 using SpellSpawnFn = void (*)(ecs::World&, const SpellSpawnContext&);
 
-// The player entity's body radius; spell visuals spawn offset past it so a
-// bolt never detonates on its own caster at the muzzle.
+// The player entity's body radius (metres) — and its ONE home (canon audit
+// 2026-08-29). The subworld arms the player's ecs::BodyRadius with exactly
+// this number (sub/engine.cpp kPlayerBodyRadius reads it — the two used to
+// be twin literals whose comments promised they "matched"), and spell
+// visuals spawn offset past it so a bolt never detonates on its own caster
+// at the muzzle. It lives in THIS deliberately light header rather than
+// sub/body.h because the spell binding layer may not drag the body tables
+// in, while the engine already includes everything.
 static constexpr float kSpellCasterRadius = 1.5f;
 
 bool cast_spell(ecs::World& w, std::string_view id,

@@ -83,7 +83,8 @@ int deposit_term(const SettlementSiteContext& ctx, int x, int y) {
     for (int dy = -kSettlementReach; dy <= kSettlementReach; ++dy) {
         for (int dx = -kSettlementReach; dx <= kSettlementReach; ++dx) {
             const int d = std::max(std::abs(dx), std::abs(dy));
-            // Iron is the prize; stone and clay are common wealth. A cell
+            // The kind's own worth column prices the site (kDepositDefs —
+            // iron is the prize, stone and clay are common wealth). A cell
             // may carry several kinds (a vein IN a quarry) — the richest
             // prize prices the site. Presence is what settles people; a
             // temporarily dry vein still anchors a mining village.
@@ -91,8 +92,7 @@ int deposit_term(const SettlementSiteContext& ctx, int x, int y) {
                 const DepositKind kind = DepositKind(k);
                 if (!ctx.w.deposits->remaining_at(kind, x + dx, y + dy))
                     continue;
-                const int base = kind == DepositKind::Iron ? 16 : 8;
-                best = std::max(best, base >> d);
+                best = std::max(best, deposit_def(kind).siteWorth >> d);
             }
         }
     }

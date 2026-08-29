@@ -1,17 +1,8 @@
+#include "check.h"
+
 #include "macro/player_recovery.h"
 
-#include <cstdio>
-
 namespace {
-
-int g_failures = 0;
-
-void expect(bool condition, const char* label) {
-    if (!condition) {
-        std::fprintf(stderr, "FAIL player_recovery_parity_test: %s\n", label);
-        ++g_failures;
-    }
-}
 
 void test_default_fractional_recovery_matches_ts_rate() {
     // Rates are INPUTS here (recovery reads CombatStats.*Regen, per game
@@ -33,16 +24,16 @@ void test_default_fractional_recovery_matches_ts_rate() {
     // the same remainder a march spends out of, because a body has one.
     float spCarry = 0.0f;
     sm::apply_minute_recovery(player, 5, accumulator, spCarry);
-    expect(player.combatStats.currentSp == 0
-           && player.combatStats.currentHp == 0
-           && player.combatStats.currentMp == 0,
-           "sub-integer TS recovery is accumulated, not truncated into stats");
+    CHECK(player.combatStats.currentSp == 0
+          && player.combatStats.currentHp == 0
+          && player.combatStats.currentMp == 0,
+          "sub-integer TS recovery is accumulated, not truncated into stats");
 
     sm::apply_minute_recovery(player, 1, accumulator, spCarry);
-    expect(player.combatStats.currentSp == 1
-           && player.combatStats.currentHp == 1
-           && player.combatStats.currentMp == 1,
-           "six default minutes recover one visible point");
+    CHECK(player.combatStats.currentSp == 1
+          && player.combatStats.currentHp == 1
+          && player.combatStats.currentMp == 1,
+          "six default minutes recover one visible point");
 }
 
 void test_attribute_rate_and_max_clamp() {
@@ -66,16 +57,16 @@ void test_attribute_rate_and_max_clamp() {
     sm::PlayerRecoveryAccumulator accumulator{};
     float spCarry = 0.0f;
     sm::apply_minute_recovery(player, 5, accumulator, spCarry);
-    expect(player.combatStats.currentSp == maxSp
-           && player.combatStats.currentHp == player.combatStats.maxHp
-           && player.combatStats.currentMp == player.combatStats.maxMp,
-           "derived sheet rates recover the pools and clamp to max");
+    CHECK(player.combatStats.currentSp == maxSp
+          && player.combatStats.currentHp == player.combatStats.maxHp
+          && player.combatStats.currentMp == player.combatStats.maxMp,
+          "derived sheet rates recover the pools and clamp to max");
 
     player.combatStats.currentSp = maxSp;
     spCarry = 0.9f;
     sm::apply_minute_recovery(player, 1, accumulator, spCarry);
-    expect(spCarry == 0.0f, "a full bar cannot bank rest: a POSITIVE remainder "
-                            "on it is dropped");
+    CHECK(spCarry == 0.0f, "a full bar cannot bank rest: a POSITIVE remainder "
+                           "on it is dropped");
 
     // ...and the other sign is not the same thing. A march that begins from a
     // full bar owes a fraction the instant it takes its first step; clearing
@@ -84,8 +75,8 @@ void test_attribute_rate_and_max_clamp() {
     player.combatStats.currentSp = maxSp;
     spCarry = -0.4f;
     sm::apply_minute_recovery(player, 1, accumulator, spCarry);
-    expect(spCarry == -0.4f,
-           "a NEGATIVE remainder on a full bar is march debt, and it is kept");
+    CHECK(spCarry == -0.4f,
+          "a NEGATIVE remainder on a full bar is march debt, and it is kept");
 }
 
 void test_zero_minutes_are_noop() {
@@ -94,7 +85,7 @@ void test_zero_minutes_are_noop() {
     sm::PlayerRecoveryAccumulator accumulator{};
     float spCarry = 0.0f;
     sm::apply_minute_recovery(player, 0, accumulator, spCarry);
-    expect(player.combatStats.currentSp == 10, "zero minutes are a no-op");
+    CHECK(player.combatStats.currentSp == 10, "zero minutes are a no-op");
 }
 
 } // namespace
@@ -103,11 +94,5 @@ int main() {
     test_default_fractional_recovery_matches_ts_rate();
     test_attribute_rate_and_max_clamp();
     test_zero_minutes_are_noop();
-
-    if (g_failures != 0) {
-        return 1;
-    }
-
-    std::puts("OK player_recovery_parity_test rate=ok clamp=ok zero=ok");
-    return 0;
+    return sm::test::report("player_recovery_parity_test");
 }

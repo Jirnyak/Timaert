@@ -1,6 +1,7 @@
 #include "sub/map_factory.h"
 #include <algorithm>
 #include <array>
+#include <cstdio>
 #include <mutex>
 #include <unordered_map>
 #include <utility>
@@ -54,12 +55,21 @@ SavedSubworld snapshot_subworld(std::uint32_t seed, SubworldMode mode,
 }
 
 void restore_into(const SavedSubworld& saved, SubworldMapData& fresh) {
-    // Restore heightmap if sizes match.
+    // Restore heightmap if sizes match. A mismatch means the saved relief
+    // CANNOT be applied — the fresh generation stands — and that refusal is
+    // said out loud (CANON S26): a save that quietly loses the player's
+    // remembered ground is a save nobody can debug.
     if (saved.heightmap.size() == fresh.heightmap.size()) {
         constexpr float kHmaxQuant = 2.5f;
         for (std::size_t i = 0; i < saved.heightmap.size(); ++i) {
             fresh.heightmap[i] = float(saved.heightmap[i]) / 65535.0f * kHmaxQuant;
         }
+    } else {
+        std::fprintf(stderr,
+                     "[map_factory] saved heightmap size %zu != fresh %zu "
+                     "(seed 0x%08X) — saved relief NOT restored\n",
+                     saved.heightmap.size(), fresh.heightmap.size(),
+                     saved.seed);
     }
 
     // Group structures by kind on both sides — EVERY kind the prop table
@@ -72,7 +82,17 @@ void restore_into(const SavedSubworld& saved, SubworldMapData& fresh) {
     std::array<std::vector<const Structure*>, kKinds> savedByKind{};
     std::array<std::vector<const Structure*>, kKinds> freshByKind{};
     for (const auto& s : saved.structures) {
-        if (s.kind < kKinds) savedByKind[s.kind].push_back(&s);
+        if (s.kind < kKinds) {
+            savedByKind[s.kind].push_back(&s);
+        } else {
+            // A kind past the table is data the merge cannot place — refuse
+            // OUT LOUD (CANON S26), never let a saved structure vanish
+            // without a word.
+            std::fprintf(stderr,
+                         "[map_factory] saved structure kind %d out of range "
+                         "(%d kinds, seed 0x%08X) — dropped from restore\n",
+                         int(s.kind), kKinds, saved.seed);
+        }
     }
     for (const auto& s : fresh.structures) {
         if (s.kind < kKinds) freshByKind[s.kind].push_back(&s);

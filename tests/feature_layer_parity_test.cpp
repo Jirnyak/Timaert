@@ -1,3 +1,5 @@
+#include "check.h"
+
 #include "macro/spawners.h"
 
 #include <cstddef>
@@ -8,16 +10,6 @@
 
 namespace
 {
-
-bool expect(bool ok, const char *msg)
-{
-    if (!ok)
-    {
-        std::fprintf(stderr, "FAIL feature_layer_parity_test: %s\n", msg);
-        return false;
-    }
-    return true;
-}
 
 sm::TerrainData make_terrain(int w, int h, std::uint8_t height)
 {
@@ -95,7 +87,7 @@ sm::FeatureLayer build_reference_feature_layer(
     return fl;
 }
 
-bool test_feature_priority_and_water_filter()
+void test_feature_priority_and_water_filter()
 {
     sm::TerrainData td = make_terrain(4, 4, 140);
     set_height(td, 2, 2, 0);   // below sea level -> water-filter divergence
@@ -115,25 +107,23 @@ bool test_feature_priority_and_water_filter()
     const sm::FeatureLayer fl =
         sm::build_feature_layer(td, road, &dirt);
 
-    bool ok = true;
-    ok &= expect(fl.width == 4 && fl.height == 4,
+    CHECK(fl.width == 4 && fl.height == 4,
                  "feature layer dimensions must match terrain");
-    ok &= expect(fl.at(0, 1) == sm::FT_DirtRoad,
+    CHECK(fl.at(0, 1) == sm::FT_DirtRoad,
                  "dirt-road pass must stamp connector cells");
-    ok &= expect(fl.at(1, 0) == sm::FT_Road,
+    CHECK(fl.at(1, 0) == sm::FT_Road,
                  "road pass must stamp main road cells");
-    ok &= expect(fl.at(1, 1) == sm::FT_Road,
+    CHECK(fl.at(1, 1) == sm::FT_Road,
                  "road pass must have highest feature priority");
-    ok &= expect(fl.at(2, 2) == sm::FT_None,
+    CHECK(fl.at(2, 2) == sm::FT_None,
                  "native feature layer must keep water cells empty");
-    ok &= expect(fl.at(-1, 0) == sm::FT_DirtRoad,
+    CHECK(fl.at(-1, 0) == sm::FT_DirtRoad,
                  "feature lookup must wrap negative x toroidally");
-    ok &= expect(fl.at(5, 1) == sm::FT_Road,
+    CHECK(fl.at(5, 1) == sm::FT_Road,
                  "feature lookup must wrap positive x toroidally");
-    return ok;
 }
 
-bool test_empty_and_malformed_inputs_are_safe()
+void test_empty_and_malformed_inputs_are_safe()
 {
     sm::FeatureLayer empty;
     empty.resize(0, 4);
@@ -173,51 +163,50 @@ bool test_empty_and_malformed_inputs_are_safe()
     const sm::FeatureLayer fl =
         sm::build_feature_layer(td, shortRoad, &shortDirt);
 
-    bool ok = true;
-    ok &= expect(empty.width == 0 && empty.height == 0 && empty.data.empty(),
+    CHECK(empty.width == 0 && empty.height == 0 && empty.data.empty(),
                  "empty feature resize must clear storage");
-    ok &= expect(empty.at(0, 0) == sm::FT_None,
+    CHECK(empty.at(0, 0) == sm::FT_None,
                  "empty feature lookup must be safe");
-    ok &= expect(sm::FeatureLayer::wrap_coord(std::numeric_limits<int>::min(), 3) == 1,
+    CHECK(sm::FeatureLayer::wrap_coord(std::numeric_limits<int>::min(), 3) == 1,
                  "feature coordinate wrap must handle INT_MIN without overflow");
-    ok &= expect(shortStorage.at(0, 0) == sm::FT_DirtRoad,
+    CHECK(shortStorage.at(0, 0) == sm::FT_DirtRoad,
                  "short feature storage must allow valid prefix lookup");
-    ok &= expect(shortStorage.at(3, 3) == sm::FT_None,
+    CHECK(shortStorage.at(3, 3) == sm::FT_None,
                  "short feature storage must fail closed outside backing data");
-    ok &= expect(invalidStorage.at(0, 0) == sm::FT_None,
+    CHECK(invalidStorage.at(0, 0) == sm::FT_None,
                  "invalid feature bytes must decode to None");
-    ok &= expect(invalidStorage.at(1, 0) == sm::FT_DirtRoad,
+    CHECK(invalidStorage.at(1, 0) == sm::FT_DirtRoad,
                  "valid feature bytes must decode unchanged");
-    ok &= expect(sm::FeatureLayer::is_valid_byte(std::uint8_t(sm::FT_Field))
+    CHECK(sm::FeatureLayer::is_valid_byte(std::uint8_t(sm::FT_Field))
                      && fieldStorage.at(0, 0) == sm::FT_Field
                      && sm::FeatureLayer::decode(std::uint8_t(sm::FT_Field))
                             == sm::FT_Field,
                  "FT_Field must be a first-class feature byte");
-    ok &= expect(invalidStorage.has_invalid_cell_bytes(),
+    CHECK(invalidStorage.has_invalid_cell_bytes(),
                  "complete feature storage must report invalid cell bytes");
-    ok &= expect(invalidStorage.copy_sanitized_cells(sanitized)
+    CHECK(invalidStorage.copy_sanitized_cells(sanitized)
                      && sanitized.size() == 2u
                      && sanitized[0] == std::uint8_t(sm::FT_None)
                      && sanitized[1] == std::uint8_t(sm::FT_DirtRoad),
                  "feature sanitized copy must normalize invalid bytes only");
     const std::uint8_t *invalidUpload =
         invalidStorage.complete_cells_or_sanitized(sanitized);
-    ok &= expect(invalidUpload == sanitized.data()
+    CHECK(invalidUpload == sanitized.data()
                      && sanitized[0] == std::uint8_t(sm::FT_None)
                      && sanitized[1] == std::uint8_t(sm::FT_DirtRoad),
                  "feature upload view must use sanitized scratch for invalid cells");
     const std::uint8_t *validUpload =
         validStorage.complete_cells_or_sanitized(sanitized);
-    ok &= expect(validUpload == validStorage.data.data() && sanitized.empty(),
+    CHECK(validUpload == validStorage.data.data() && sanitized.empty(),
                  "feature upload view must keep direct storage for valid cells");
-    ok &= expect(!shortStorage.has_invalid_cell_bytes(),
+    CHECK(!shortStorage.has_invalid_cell_bytes(),
                  "short feature storage must not scan outside valid cell backing");
-    ok &= expect(!shortStorage.copy_sanitized_cells(sanitized) && sanitized.empty(),
+    CHECK(!shortStorage.copy_sanitized_cells(sanitized) && sanitized.empty(),
                  "short feature storage must not produce a complete sanitized copy");
-    ok &= expect(shortStorage.complete_cells_or_sanitized(sanitized) == nullptr
+    CHECK(shortStorage.complete_cells_or_sanitized(sanitized) == nullptr
                      && sanitized.empty(),
                  "short feature storage must not expose an upload view");
-    ok &= expect(invalidSet.data[0] == std::uint8_t(sm::FT_None)
+    CHECK(invalidSet.data[0] == std::uint8_t(sm::FT_None)
                      && invalidSet.at(0, 0) == sm::FT_None,
                  "feature setter must sanitize invalid enum casts");
 
@@ -226,10 +215,10 @@ bool test_empty_and_malformed_inputs_are_safe()
     hugeExtent.height = 1;
     hugeExtent.data.assign(1u, std::uint8_t(sm::FT_Road));
     hugeExtent.set(std::numeric_limits<int>::max() - 1, 0, sm::FT_DirtRoad);
-    ok &= expect(hugeExtent.at(0, 0) == sm::FT_Road
+    CHECK(hugeExtent.at(0, 0) == sm::FT_Road
                      && hugeExtent.at(std::numeric_limits<int>::max() - 1, 0) == sm::FT_None,
                  "malformed huge feature extents must wrap safely and fail closed");
-    ok &= expect(!sm::FeatureLayer::is_valid_byte(255u)
+    CHECK(!sm::FeatureLayer::is_valid_byte(255u)
                      && sm::FeatureLayer::is_valid_byte(std::uint8_t(sm::FT_DirtRoad)),
                  "feature byte validation must reject unknown values only");
     // Byte 3 history: it was FT_DirtRoad before the forest renumber, then a
@@ -237,21 +226,19 @@ bool test_empty_and_malformed_inputs_are_safe()
     // feature grid is regenerated at every boot and never serialized, so a
     // stale pre-renumber 3 has no path into a live layer. The fail-closed
     // frontier moves to the first unassigned byte.
-    ok &= expect(sm::FeatureLayer::decode(3u) == sm::FT_Field,
+    CHECK(sm::FeatureLayer::decode(3u) == sm::FT_Field,
                  "byte 3 is FT_Field now (grid is never serialized)");
-    ok &= expect(!sm::FeatureLayer::is_valid_byte(4u)
+    CHECK(!sm::FeatureLayer::is_valid_byte(4u)
                      && sm::FeatureLayer::decode(4u) == sm::FT_None,
                  "first unassigned feature byte must fail closed to None");
-    ok &= expect(fl.at(0, 0) == sm::FT_Road,
+    CHECK(fl.at(0, 0) == sm::FT_Road,
                  "short road masks must apply prefix bytes");
-    ok &= expect(fl.at(1, 0) == sm::FT_DirtRoad,
+    CHECK(fl.at(1, 0) == sm::FT_DirtRoad,
                  "short dirt masks must apply prefix bytes");
-    return ok;
 }
 
-bool test_feature_layer_reference_matrix()
+void test_feature_layer_reference_matrix()
 {
-    bool ok = true;
     std::uint32_t seed = 0x5eed1234u;
     auto next_u8 = [&]()
     {
@@ -286,16 +273,15 @@ bool test_feature_layer_reference_matrix()
             const sm::FeatureLayer expected =
                 build_reference_feature_layer(td, road, &dirt);
 
-            ok &= expect(actual.width == expected.width && actual.height == expected.height,
+            CHECK(actual.width == expected.width && actual.height == expected.height,
                          "reference matrix dimensions must match");
-            ok &= expect(actual.data == expected.data,
+            CHECK(actual.data == expected.data,
                          "reference matrix must match feature pass contract");
         }
     }
-    return ok;
 }
 
-bool test_feature_land_mask_trusts_alpha()
+void test_feature_land_mask_trusts_alpha()
 {
     // The feature layer's only height-adjacent responsibility is honouring
     // the land/water mask: roads never stamp a cell whose alpha marks it as
@@ -310,15 +296,13 @@ bool test_feature_land_mask_trusts_alpha()
     const sm::FeatureLayer fl =
         sm::build_feature_layer(td, empty, &dirt);
 
-    bool ok = true;
-    ok &= expect(fl.at(0, 0) == sm::FT_DirtRoad,
+    CHECK(fl.at(0, 0) == sm::FT_DirtRoad,
                  "dirt pass must stamp features on land cells");
-    ok &= expect(fl.at(2, 0) == sm::FT_None,
+    CHECK(fl.at(2, 0) == sm::FT_None,
                  "native feature layer must trust alpha-zero land mask");
-    return ok;
 }
 
-bool test_feature_water_filter_uses_map_sea_level()
+void test_feature_water_filter_uses_map_sea_level()
 {
     sm::TerrainData td = make_terrain(3, 1, 120);
     set_height(td, 0, 0, 80);
@@ -338,31 +322,24 @@ bool test_feature_water_filter_uses_map_sea_level()
     const sm::FeatureLayer defaultSea =
         sm::build_feature_layer(td, road, &dirt, 0.40f);
 
-    bool ok = true;
-    ok &= expect(lowSea.at(0, 0) == sm::FT_Road,
+    CHECK(lowSea.at(0, 0) == sm::FT_Road,
                  "feature water filter must use active low sea level for roads");
-    ok &= expect(lowSea.at(1, 0) == sm::FT_DirtRoad,
+    CHECK(lowSea.at(1, 0) == sm::FT_DirtRoad,
                  "feature water filter must use active low sea level for dirt roads");
-    ok &= expect(defaultSea.at(0, 0) == sm::FT_None,
+    CHECK(defaultSea.at(0, 0) == sm::FT_None,
                  "feature water filter must reject cells below active default sea level");
-    ok &= expect(defaultSea.at(1, 0) == sm::FT_None,
+    CHECK(defaultSea.at(1, 0) == sm::FT_None,
                  "feature water filter must reject dirt cells below active default sea level");
-    return ok;
 }
 
 } // namespace
 
 int main()
 {
-    bool ok = true;
-    ok &= test_feature_priority_and_water_filter();
-    ok &= test_empty_and_malformed_inputs_are_safe();
-    ok &= test_feature_layer_reference_matrix();
-    ok &= test_feature_land_mask_trusts_alpha();
-    ok &= test_feature_water_filter_uses_map_sea_level();
-
-    if (!ok)
-        return 1;
-    std::printf("feature_layer_parity_test: ok\n");
-    return 0;
+    test_feature_priority_and_water_filter();
+    test_empty_and_malformed_inputs_are_safe();
+    test_feature_layer_reference_matrix();
+    test_feature_land_mask_trusts_alpha();
+    test_feature_water_filter_uses_map_sea_level();
+    return sm::test::report("feature_layer_parity_test");
 }

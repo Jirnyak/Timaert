@@ -139,6 +139,11 @@ struct TickContext {
     int             mapW = 0;
     int             mapH = 0;
     Rng*            rng = nullptr;
+    // NOT a perception channel (owner, 2026-08-29: «игрок ничем не особенен»
+    // — the player's squad sits in the SquadIndex like anyone's). The one
+    // consumer left is try_move's stop-ON-the-meeting-cell law: a multi-cell
+    // march must not hop OVER the player, because the forced-encounter door
+    // (Inc 6) is geometric and looks at his cell.
     float           playerX = 0.0f;
     float           playerY = 0.0f;
     // Squad↔squad perception (Session 15). `mw.world` + `squads` let a

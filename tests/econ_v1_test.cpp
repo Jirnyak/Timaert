@@ -89,9 +89,11 @@ int main() {
         if (kCommodities[i].materialMask >> kRawCommodityCount) {
             return fail("materialMask addresses a non-raw row");
         }
-        if (kCommodities[i].baseValue <= 0 || kCommodities[i].weightKg <= 0.0f) {
-            return fail("commodity value/weight must be positive");
+        if (kCommodities[i].weightKg <= 0.0f) {
+            return fail("commodity weight must be positive");
         }
+        // The PRICE is not a column here: the one anchor is the same row's
+        // ItemDef.value, pinned positive by the link law of section 8 below.
     }
     for (int r = 0; r < kRecipeCount; ++r) {
         const int out = commodity_index(kRecipes[r].output);

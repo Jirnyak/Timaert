@@ -76,8 +76,14 @@ struct ManualOutcome {
 ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
     struct Body {
         float x, y, vx, vy, hp, dmg, cd, cdMax, reach, speed, radius;
+        // The fraction of an incoming blow this body keeps — THE door's own
+        // mitigation, kArmorHalving / (kArmorHalving + armor)
+        // (sub/damage.cpp), so the fought harness softens every strike by
+        // the same law the shipping door does.
+        float mitigate;
         int side;
         bool alive;
+        bool missile;
     };
     std::vector<Body> bodies;
 
@@ -87,7 +93,8 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
                                        int side) {
         CharacterSheet sheet = make_character_sheet(type, level, seed);
         if (squadBonuses) sheet = effective_sheet(sheet, *squadBonuses);
-        const CombatTemplate pc = project_combat(sheet, npc_def(type).combat);
+        const NpcTypeDef& def = npc_def(type);
+        const CombatTemplate pc = project_combat(sheet, def.combat);
         Body f{};
         f.hp = std::max(1.0f, std::floor(pc.hp)) *
                std::clamp(frac, 0.0f, 1.0f);
@@ -96,9 +103,12 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
         f.cdMax = std::max(0.1f, pc.cooldown);
         f.reach = pc.attackRange;
         f.speed = pc.speed;
-        f.radius = npc_body_radius(npc_def(type));
+        f.radius = npc_body_radius(def);
+        f.mitigate = kArmorHalving
+                   / (kArmorHalving + float(std::max(0, def.armor)));
         f.side = side;
         f.alive = true;
+        f.missile = pc.attackKind == CombatTemplate::Missile;
         bodies.push_back(f);
     };
 
@@ -158,6 +168,9 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
             d.sight = 4000.0f;   // the meeting already happened on the map
             d.faction = std::int16_t(f.side);
             d.enemyMask = mask_of(1 - f.side);
+            // The row's ranged kind steers as ranged, like the engine feed
+            // (sub/engine.cpp: Combat::Missile ⇒ BU_Missile).
+            if (f.missile) d.flags |= BU_Missile;
             u.add(d);
             slot.push_back(int(i));
         }
@@ -182,7 +195,7 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
                 && f.cd <= 0.0f) {
                 Body& v = bodies[std::size_t(
                     slot[std::size_t(u.target[std::size_t(i)])])];
-                v.hp -= f.dmg;
+                v.hp -= f.dmg * v.mitigate;
                 if (v.hp <= 0.0f) v.alive = false;
                 f.cd = f.cdMax;
             }
@@ -377,13 +390,28 @@ void test_auto_and_fought_agree() {
         side_of(NPCType::Guard, 4, &guardsR),
         side_of(NPCType::Peasant, 1, &peasantsR));
 
-    // Numbers over a thin line: twelve bandits break four guards.
-    const auto banditsR = roster_of(NPCType::Bandit, 3, 12, 300u);
+    // Numbers over a thin line: twenty bandits break four guards. (Twelve
+    // used to be enough — until the resolver learned to credit the guards'
+    // plate as the door does; a clear mass verdict now has to out-mass the
+    // armour too.)
+    const auto banditsR = roster_of(NPCType::Bandit, 3, 20, 300u);
     const auto thinR    = roster_of(NPCType::Guard, 3, 4, 400u);
     agreement_case(
         "mass: the resolver names the same winner the fought battle does",
         side_of(NPCType::Bandit, 3, &banditsR),
         side_of(NPCType::Guard, 3, &thinR));
+
+    // ARMOUR decides: the bandit mob out-numbers the guards past their raw
+    // hp × dps — only the guards' plate (npc_def armor 10, worth ×2
+    // effective HP at kArmorHalving) turns the fight. A resolver that does
+    // not read armour names the mob here; the door-mitigated fought battle
+    // names the guards.
+    const auto mobR   = roster_of(NPCType::Bandit, 3, 8, 500u);
+    const auto plateR = roster_of(NPCType::Guard, 3, 6, 600u);
+    agreement_case(
+        "armour: the resolver credits plate exactly as the door mitigates it",
+        side_of(NPCType::Bandit, 3, &mobR),
+        side_of(NPCType::Guard, 3, &plateR));
 }
 
 } // namespace

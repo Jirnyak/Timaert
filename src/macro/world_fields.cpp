@@ -23,7 +23,14 @@ constexpr std::uint32_t kMaxFieldCells = 1u << 20;
 void trees_write(savefmt::Writer& w, const WorldFieldStores& st) {
     if (!st.treeCounts) { w.count(0, kMaxFieldCells); return; }
     if (w.count(st.treeCounts->size(), kMaxFieldCells)) {
-        for (const std::uint16_t c : *st.treeCounts) w.pod(c);
+        // ONE insert of the whole contiguous u16 run — byte-for-byte the
+        // stream the old per-element pod() loop produced (pod() is a plain
+        // memcpy of the value), minus a million vector inserts per save.
+        if (!w.ok) return;
+        const auto* bytes =
+            reinterpret_cast<const std::uint8_t*>(st.treeCounts->data());
+        w.bytes.insert(w.bytes.end(), bytes,
+                       bytes + st.treeCounts->size() * sizeof(std::uint16_t));
     }
 }
 bool trees_read(savefmt::Reader& r, const WorldFieldStoresMut& st) {

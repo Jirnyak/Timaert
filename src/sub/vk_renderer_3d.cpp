@@ -1848,7 +1848,16 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                     continue;
                 }
                 const float baseM = sample_height_m(s.x, s.y);
-                if (baseM < kSeaLevelM - 0.5f) continue;
+                // Drowned-prop cull by the TOP of the solid span, not the
+                // seat: a bridge deck/pier is SEATED on the river bed and
+                // rises past the water plane — and it already collides
+                // (sub/collide.h never had a water cull), so what carries a
+                // body must also be drawn. A fully submerged solid still
+                // skips.
+                if (baseM + s.zBase + structure_visible_height(s)
+                    < kSeaLevelM - 0.5f) {
+                    continue;
+                }
                 float wx, wz;
                 tile_to_world(s.x, s.y, wx, wz);
                 const float minR = structure_min_half_xy(s.kind);

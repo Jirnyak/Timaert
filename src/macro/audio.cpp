@@ -24,35 +24,28 @@ struct MusicAsset {
     const char* file;
 };
 
-struct SfxAsset {
-    SfxId id;
-    const char* key;
-    const char* file;
-};
-
 // Row order mirrors the enum, and the guard proves it — the switch twin could
 // not have said that about itself.
+// (EmpireTheme died in the 2026-08-29 canon audit: loaded on every boot,
+// played by nothing — the tests were the only reader of the row.)
 constexpr MusicAsset kMusicAssets[kMusicCount] = {
-    {MusicId::Explore,     "explore",      "15-dungeon-suno.mp3"},
-    {MusicId::EmpireTheme, "empire_theme", "empire-theme.mp3"},
-    {MusicId::Subworld,    "subworld",     "subworld.mp3"},
+    {MusicId::Explore,  "explore",  "15-dungeon-suno.mp3"},
+    {MusicId::Subworld, "subworld", "subworld.mp3"},
 };
 static_assert(rows_in_enum_order(kMusicAssets, &MusicAsset::id),
               "kMusicAssets row order must mirror MusicId");
 
-constexpr SfxAsset kSfxAssets[kSfxCount] = {
-    {SfxId::Witch, "witch", "witch.mp3"},
-};
-static_assert(rows_in_enum_order(kSfxAssets, &SfxAsset::id),
-              "kSfxAssets row order must mirror SfxId");
+// The SFX table has ZERO rows while SfxId is empty (see audio.h) — and a
+// zero-length C array is ill-formed, so the table itself is absent and the
+// lookups answer "no row" directly. When SfxId gains its first live value,
+// restore `constexpr SfxAsset kSfxAssets[kSfxCount]` with the
+// rows_in_enum_order guard, exactly like the music table above.
+static_assert(kSfxCount == 0,
+              "SfxId grew a row: bring back the kSfxAssets table + guard");
 
 const MusicAsset* find_music_asset(MusicId id) {
     const std::size_t i = std::size_t(id);
     return i < kMusicCount ? &kMusicAssets[i] : nullptr;
-}
-const SfxAsset* find_sfx_asset(SfxId id) {
-    const std::size_t i = std::size_t(id);
-    return i < kSfxCount ? &kSfxAssets[i] : nullptr;
 }
 
 } // namespace
@@ -65,13 +58,11 @@ const char* music_file(MusicId id) {
     const MusicAsset* a = find_music_asset(id);
     return a ? a->file : nullptr;
 }
-const char* sfx_key(SfxId id) {
-    const SfxAsset* a = find_sfx_asset(id);
-    return a ? a->key : nullptr;
+const char* sfx_key(SfxId) {
+    return nullptr;   // no rows — see the kSfxAssets note above
 }
-const char* sfx_file(SfxId id) {
-    const SfxAsset* a = find_sfx_asset(id);
-    return a ? a->file : nullptr;
+const char* sfx_file(SfxId) {
+    return nullptr;   // no rows — see the kSfxAssets note above
 }
 
 } // namespace sm
@@ -185,40 +176,8 @@ Mix_Music* load_music_file(const char* file, const char* assetRoot,
     return nullptr;
 }
 
-Mix_Chunk* load_sfx_file(const char* file, const char* assetRoot,
-                         char* loadedPath, std::size_t loadedPathSize,
-                         char* error, std::size_t errorSize) {
-    char path[512];
-    if (build_asset_root_path(path, sizeof(path), assetRoot, file)
-        && file_exists(path)) {
-        copy_text(loadedPath, loadedPathSize, path);
-        Mix_Chunk* chunk = Mix_LoadWAV(path);
-        if (!chunk) copy_text(error, errorSize, Mix_GetError());
-        return chunk;
-    }
-
-    if (build_base_path(path, sizeof(path), file) && file_exists(path)) {
-        copy_text(loadedPath, loadedPathSize, path);
-        Mix_Chunk* chunk = Mix_LoadWAV(path);
-        if (!chunk) copy_text(error, errorSize, Mix_GetError());
-        return chunk;
-    }
-
-    for (const char* prefix : kSoundPrefixes) {
-        if (!build_path(path, sizeof(path), prefix, file)) continue;
-        if (!file_exists(path)) continue;
-        copy_text(loadedPath, loadedPathSize, path);
-        Mix_Chunk* chunk = Mix_LoadWAV(path);
-        if (!chunk) copy_text(error, errorSize, Mix_GetError());
-        return chunk;
-    }
-
-    if (build_path(path, sizeof(path), kSoundPrefixes[0], file)) {
-        copy_text(loadedPath, loadedPathSize, path);
-    }
-    copy_text(error, errorSize, "file not found");
-    return nullptr;
-}
+// (load_sfx_file left with the last SFX row — restore it beside kSfxAssets
+// when the table gains one; load_music_file above is the shape to copy.)
 
 } // namespace
 
@@ -285,21 +244,8 @@ bool AudioSystem::init(const char* assetRoot) {
         }
     }
 
-    for (const SfxAsset& asset : kSfxAssets) {
-        path[0] = '\0';
-        error[0] = '\0';
-        Mix_Chunk* loaded = load_sfx_file(asset.file, assetRoot,
-                                          path, sizeof(path),
-                                          error, sizeof(error));
-        sfx_[sfx_index(asset.id)] = loaded;
-        if (loaded) {
-            std::fprintf(stderr, "[audio] loaded sfx %s path=%s\n",
-                         asset.key, path);
-        } else {
-            std::fprintf(stderr, "[audio] missing sfx %s path=%s error=%s\n",
-                         asset.key, path, error);
-        }
-    }
+    // No SFX rows to load today (see the kSfxAssets note above); the loader
+    // loop returns with the table's first live row.
     std::fflush(stderr);
 
     apply_volumes();

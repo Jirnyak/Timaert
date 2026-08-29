@@ -183,20 +183,22 @@ void test_ocean_drowns_the_lord_and_settles_his_squad() {
 
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 23u);
+    // The tick that kills the lord also ENDS him (CANON S4, 2026-08-29): the
+    // exhaustion bite marks hp=0 + Dead, the same tick's end drains his men
+    // into the pool and destroys the corpse-row — a dead squad leaves the
+    // map, so "he died" is observed as the entity being gone.
     int thinks = 0;
-    while (!w.reg.all_of<ecs::Dead>(e) && thinks < 400) {
+    while (w.reg.valid(e) && !w.reg.all_of<ecs::Dead>(e) && thinks < 400) {
         MacroWorld mw{.gs = &gs, .world = &w, .pathCost = &grid};
         tick_macro_npc_ai(mw, rt, kAiTicks, false);
         ++thinks;
     }
 
-    CHECK(w.reg.all_of<ecs::Dead>(e),
-          "an ocean the bar cannot pay kills: there is no Resting at sea");
-    CHECK(w.reg.get<ecs::Health>(e).hp <= 0.0f,
-          "the death is the tracked shape every other death has (hp=0+Dead)");
-    CHECK(w.reg.get<ecs::SquadRoster>(e).squad.empty()
-              && total_soldiers(gs.deserterPool) == 2,
-          "the drowned lord's men settle by the standing dead-leader rule");
+    CHECK(!w.reg.valid(e),
+          "an ocean the bar cannot pay kills, and the dead squad leaves the "
+          "map: there is no Resting at sea and no corpse-row after");
+    CHECK(total_soldiers(gs.deserterPool) == 2,
+          "the drowned lord's men settled by the standing dead-leader rule");
 }
 
 // ── One exhaustion law: the step in debt bleeds, the camp does not ────────
@@ -288,6 +290,10 @@ void test_a_map_of_marchers_survives_the_new_law() {
 
     int alive = 0, bled = 0, moved = 0;
     for (entt::entity e : walkers) {
+        // A dead squad LEAVES the map (S4): a destroyed walker counts as
+        // neither alive nor moved, so a regression fails the checks below
+        // loudly instead of dereferencing a gone entity.
+        if (!w.reg.valid(e)) continue;
         if (!w.reg.all_of<ecs::Dead>(e)
             && w.reg.get<ecs::Health>(e).hp > 0.0f) ++alive;
         if (w.reg.get<ecs::Health>(e).hp < 100.0f) ++bled;
@@ -402,8 +408,16 @@ void test_a_laden_squad_pays_for_its_load() {
     ecs::World w;
     PathCostData grid = make_grid(256, 8, 1.0f);   // one long road
 
-    auto light = make_walker(w, 10.0f, 4.0f, 60.0f, 4.0f, /*maxSp*/110);
-    auto heavy = make_walker(w, 10.0f, 6.0f, 60.0f, 6.0f, /*maxSp*/110);
+    // Bodies that SURVIVE the measurement: an overloaded march in debt bites
+    // HP every moving think, and this fixture used to let the laden walker
+    // march itself to death and then read the corpse-row's ledger. A dead
+    // squad LEAVES the map at tick end now (CANON S4, 2026-08-29), so the
+    // fixture gives both walkers the health to outlive the 30 thinks — what
+    // is measured here is the PRICE of the load, not the death it can buy.
+    auto light = make_walker(w, 10.0f, 4.0f, 60.0f, 4.0f, /*maxSp*/110,
+                             /*hp*/1e6f);
+    auto heavy = make_walker(w, 10.0f, 6.0f, 60.0f, 6.0f, /*maxSp*/110,
+                             /*hp*/1e6f);
     w.reg.replace<ecs::MacroSpawnId>(heavy, 8u);
     w.reg.get<ecs::MacroNpcRuntime>(light).targetY = 4.0f;
     w.reg.get<ecs::MacroNpcRuntime>(heavy).targetY = 6.0f;

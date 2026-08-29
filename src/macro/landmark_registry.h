@@ -28,6 +28,11 @@ enum class LandmarkType : std::uint8_t {
     Count,
 };
 
+// Sentinels of the fauna columns below: "the GROUND answers" — the cell's own
+// forest/biome row decides, the place states no override of its own.
+inline constexpr std::uint16_t kLandmarkFaunaGround    = 0xFFFFu;
+inline constexpr std::uint8_t  kLandmarkFaunaCapGround = 0xFFu;
+
 struct LandmarkDef {
     // MUST equal the row's index in kLandmarks (guard below the table).
     LandmarkType     type;
@@ -56,6 +61,27 @@ struct LandmarkDef {
     // LOAN from its home landmark's stock), this coefficient is what the
     // actual stockpile query replaces — the socket is deliberate.
     float            wealthMul = 1.0f;
+
+    // ── Fauna spawn columns (read by THE spawn law, macro/fauna.cpp) ──────
+    // What this place's ground rolls, as data — the three switch ladders over
+    // LandmarkType that answered these questions in the spawn code are dead
+    // (CANON S16, 2026-08-29).
+    //
+    // faunaHabitat — the habitat bit the place asks the body table for.
+    //   kLandmarkFaunaGround = no override (forest/biome answer); 0 = no wild
+    //   fauna at all (a town's crowd is the settlement spawner's kHabTown
+    //   stripe). The Ruin/Spire values are cross-checked against fauna.h's
+    //   kHabRuin/kHabSpire right beside those bits' definitions.
+    std::uint16_t    faunaHabitat = kLandmarkFaunaGround;
+    // The place's own head-count roll, min/max; faunaMax 0 = no override
+    // (the forest/biome counts row rolls).
+    std::uint8_t     faunaMin = 0;
+    std::uint8_t     faunaMax = 0;
+    // The honest-headcount capacity (fauna_cell_capacity, macro_stock
+    // baseline). kLandmarkFaunaCapGround = the winning counts row's max; a
+    // number is the place's own cap — a town is the poorest hunting ground
+    // that still is one (the old ruin row's minCount, 2).
+    std::uint8_t     faunaCap = kLandmarkFaunaCapGround;
 };
 
 // Night-light columns (lightColor / lightPop) drive the universal macro
@@ -69,10 +95,10 @@ struct LandmarkDef {
 // 128..255, unchanged in meaning, finer in resolution.
 inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
     {LandmarkType::None,    "none",    "",          0, 255, ' ', 0x00000000u, true, 0x00000000u,   0.0f },
-    {LandmarkType::City,    "city",    "City",      0,  76, '#', 0xFFE7D27Au, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.5f },
-    {LandmarkType::Village, "village", "Village",   0, 101, 'v', 0xFFCCB068u, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.0f },
-    {LandmarkType::Spire,   "spire",   "Spire",   128, 255, 'I', 0xFFA86CFFu, true, 0xFFA86CFFu, 200.0f, "demons", /*wealth*/1.25f },
-    {LandmarkType::Ruin,    "ruin",    "Ruin",     51, 229, 'r', 0xFF8E8576u, true, 0xFF8E8576u,  40.0f, "demons", /*wealth*/0.5f },
+    {LandmarkType::City,    "city",    "City",      0,  76, '#', 0xFFE7D27Au, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.5f,  /*hab*/0u,       0, 0, /*cap*/2 },
+    {LandmarkType::Village, "village", "Village",   0, 101, 'v', 0xFFCCB068u, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.0f,  /*hab*/0u,       0, 0, /*cap*/2 },
+    {LandmarkType::Spire,   "spire",   "Spire",   128, 255, 'I', 0xFFA86CFFu, true, 0xFFA86CFFu, 200.0f, "demons", /*wealth*/1.25f, /*hab*/1u << 13, 4, 9, kLandmarkFaunaCapGround },
+    {LandmarkType::Ruin,    "ruin",    "Ruin",     51, 229, 'r', 0xFF8E8576u, true, 0xFF8E8576u,  40.0f, "demons", /*wealth*/0.5f,  /*hab*/1u << 12, 2, 6, kLandmarkFaunaCapGround },
     {LandmarkType::Lair,    "lair",    "Lair",    102, 255, 'L', 0xFF883A3Au, true, 0xFF883A3Au,  70.0f, nullptr, /*wealth*/1.25f },
     {LandmarkType::Shrine,  "shrine",  "Shrine",   25, 178, '+', 0xFFE2E2E2u, true, 0xFFE2E2E2u,  90.0f },
     {LandmarkType::Mine,    "mine",    "Mine",     51, 203, 'M', 0xFF8B6332u, true, 0xFF8B6332u,  60.0f, nullptr, /*wealth*/1.25f },

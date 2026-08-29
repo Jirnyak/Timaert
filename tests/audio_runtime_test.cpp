@@ -33,10 +33,11 @@ int main() {
 
     if (!audio.init()) return fail("init failed", audio);
     if (!audio.is_initialized()) return fail("init did not mark initialized", audio);
+    // The live set only (canon audit 2026-08-29): EmpireTheme and the Witch
+    // sfx were loaded-but-never-played dead rows; the playback laws below are
+    // what this test exists for.
     if (!audio.music_loaded(sm::MusicId::Explore)) return fail("explore not loaded", audio);
-    if (!audio.music_loaded(sm::MusicId::EmpireTheme)) return fail("empire not loaded", audio);
     if (!audio.music_loaded(sm::MusicId::Subworld)) return fail("subworld not loaded", audio);
-    if (!audio.sfx_loaded(sm::SfxId::Witch)) return fail("witch sfx not loaded", audio);
 
     if (!audio.play_music(sm::MusicId::Explore, 0)) {
         return fail("explore play failed", audio);
@@ -51,8 +52,10 @@ int main() {
     if (audio.current_music() != sm::MusicId::Subworld) {
         return fail("subworld current music not tracked", audio);
     }
-    if (!audio.play_sfx(sm::SfxId::Witch, -1)) {
-        return fail("witch sfx play failed", audio);
+    // play_sfx with an out-of-range id must refuse loudly even initialized —
+    // the invalid-id half of the sfx contract survives the empty table.
+    if (audio.play_sfx(sm::SfxId::Count, -1)) {
+        return fail("invalid sfx id played after init", audio);
     }
 
     audio.stop_music(0);
@@ -65,9 +68,6 @@ int main() {
     if (audio.is_initialized()) return fail("shutdown left initialized", audio);
     if (audio.music_loaded(sm::MusicId::Explore)) {
         return fail("shutdown left music loaded", audio);
-    }
-    if (audio.sfx_loaded(sm::SfxId::Witch)) {
-        return fail("shutdown left sfx loaded", audio);
     }
 
     {

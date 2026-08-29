@@ -27,6 +27,11 @@ inline constexpr float kSpireTowerHeightM = 96.0f;
 // interior scale below yields a hall a battle fits in, narrow enough to
 // read as a spire, not a keep.
 inline constexpr float kSpireTowerRadiusTiles = 7.0f;
+// WHERE in its cell the tower stands (cell-local tile coord of the axis,
+// same on both axes): gen_spire stamps it at the cell's midpoint. Placement
+// is the generator module's policy (CANON S17) — the engine (roof exit,
+// power-circle zone) reads this instead of re-deriving it.
+inline constexpr float kSpireTowerLocalCenter = float(kCellSize / 2);
 
 // ── Storeys ─────────────────────────────────────────────────────────────────
 // A house is up to three levels: cellar (-1) ↔ ground (0) ↔ upper (+1),

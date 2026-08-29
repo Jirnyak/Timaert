@@ -3,21 +3,16 @@
 // candidates, and pins the selection contract: nearest live enemy within the
 // range AND the forward cone, excluding the player's own side and the shooter.
 //
-// Style mirrors tests/item_use_parity_test.cpp: no framework, plain main().
+// Assertions go through tests/check.h — CHECK + sm::test::report.
+
+#include "check.h"
 
 #include "ecs/world.h"
 #include "sub/targeting.h"
 
 #include <cmath>
-#include <cstdio>
 
 using namespace sm;
-
-static int g_fails = 0;
-static bool expect(bool ok, const char* msg) {
-    if (!ok) { std::printf("FAIL: %s\n", msg); ++g_fails; }
-    return ok;
-}
 
 // A live, targetable subworld enemy at (x,y).
 static entt::entity make_enemy(entt::registry& reg, float x, float y) {
@@ -49,7 +44,7 @@ int main() {
         make_enemy(reg, 110, 100);                  // ahead, dist 10 (farther)
         make_enemy(reg, 95, 100);                   // behind, dist 5 (out of cone)
         entt::entity picked = sub::aim_target(reg, 100, 100, kFaceX, 50.0f, cone30);
-        expect(picked == a, "picks nearest enemy inside the forward cone");
+        CHECK(picked == a, "picks nearest enemy inside the forward cone");
     }
 
     // ── range gate ────────────────────────────────────────────────────────
@@ -57,20 +52,20 @@ int main() {
         entt::registry reg;
         entt::entity a = make_enemy(reg, 105, 100); // dist 5
         make_enemy(reg, 110, 100);                  // dist 10
-        expect(sub::aim_target(reg, 100, 100, kFaceX, 8.0f, cone30) == a,
-               "range 8: near (5) selected, far (10) excluded");
-        expect(sub::aim_target(reg, 100, 100, kFaceX, 3.0f, cone30) == entt::null,
-               "range 3: everything out of range -> null");
+        CHECK(sub::aim_target(reg, 100, 100, kFaceX, 8.0f, cone30) == a,
+              "range 8: near (5) selected, far (10) excluded");
+        CHECK(sub::aim_target(reg, 100, 100, kFaceX, 3.0f, cone30) == entt::null,
+              "range 3: everything out of range -> null");
     }
 
     // ── cone gate: a target directly behind ───────────────────────────────
     {
         entt::registry reg;
         entt::entity behind = make_enemy(reg, 95, 100); // dist 5, bearing 180°
-        expect(sub::aim_target(reg, 100, 100, kFaceX, 50.0f, cone30) == entt::null,
-               "narrow cone: target behind the shooter is not selected");
-        expect(sub::aim_target(reg, 100, 100, kFaceX, 50.0f, kFull) == behind,
-               "full circle: behind target IS selected (reduces to melee)");
+        CHECK(sub::aim_target(reg, 100, 100, kFaceX, 50.0f, cone30) == entt::null,
+              "narrow cone: target behind the shooter is not selected");
+        CHECK(sub::aim_target(reg, 100, 100, kFaceX, 50.0f, kFull) == behind,
+              "full circle: behind target IS selected (reduces to melee)");
     }
 
     // ── full circle picks global nearest regardless of bearing ────────────
@@ -78,8 +73,8 @@ int main() {
         entt::registry reg;
         make_enemy(reg, 105, 100);                  // ahead, dist 5
         entt::entity near = make_enemy(reg, 100, 103); // side, dist 3 (nearest)
-        expect(sub::aim_target(reg, 100, 100, kFaceX, 50.0f, kFull) == near,
-               "full circle: nearest overall selected irrespective of facing");
+        CHECK(sub::aim_target(reg, 100, 100, kFaceX, 50.0f, kFull) == near,
+              "full circle: nearest overall selected irrespective of facing");
     }
 
     // ── player-side exclusion ─────────────────────────────────────────────
@@ -90,8 +85,8 @@ int main() {
         reg.emplace<ecs::PlayerSoldierTag>(soldier);  // player's own -> skip
         entt::entity ptag = make_enemy(reg, 102, 100); // ahead, dist 2
         reg.emplace<ecs::PlayerTag>(ptag);            // the player -> skip
-        expect(sub::aim_target(reg, 100, 100, kFaceX, 50.0f, cone30) == a,
-               "player-side entities excluded even when nearer");
+        CHECK(sub::aim_target(reg, 100, 100, kFaceX, 50.0f, cone30) == a,
+              "player-side entities excluded even when nearer");
     }
 
     // ── dead exclusion ────────────────────────────────────────────────────
@@ -100,13 +95,13 @@ int main() {
         entt::entity a = make_enemy(reg, 106, 100); // ahead, dist 6
         entt::entity corpse = make_enemy(reg, 101, 100); // ahead, dist 1
         reg.emplace<ecs::Dead>(corpse);
-        expect(sub::aim_target(reg, 100, 100, kFaceX, 50.0f, cone30) == a,
-               "Dead entities excluded even when nearer");
+        CHECK(sub::aim_target(reg, 100, 100, kFaceX, 50.0f, cone30) == a,
+              "Dead entities excluded even when nearer");
         // Zero-HP but not yet tagged Dead is also excluded.
         entt::entity downed = make_enemy(reg, 102, 100);
         reg.get<ecs::Health>(downed).hp = 0.0f;
-        expect(sub::aim_target(reg, 100, 100, kFaceX, 50.0f, cone30) == a,
-               "zero-HP entities excluded even when nearer");
+        CHECK(sub::aim_target(reg, 100, 100, kFaceX, 50.0f, cone30) == a,
+              "zero-HP entities excluded even when nearer");
     }
 
     // ── shooter self-exclusion ────────────────────────────────────────────
@@ -114,23 +109,23 @@ int main() {
         entt::registry reg;
         entt::entity self = make_enemy(reg, 100, 100); // co-located "body"
         entt::entity a = make_enemy(reg, 105, 100);
-        expect(sub::aim_target(reg, 100, 100, kFaceX, 50.0f, kFull, self) == a,
-               "shooter entity is never its own target");
+        CHECK(sub::aim_target(reg, 100, 100, kFaceX, 50.0f, kFull, self) == a,
+              "shooter entity is never its own target");
     }
 
     // ── co-located enemy is reachable (no NaN bearing) ────────────────────
     {
         entt::registry reg;
         entt::entity onTop = make_enemy(reg, 100, 100); // exactly at shooter
-        expect(sub::aim_target(reg, 100, 100, kFaceX, 50.0f, cone30) == onTop,
-               "co-located enemy is selected (treated as in-front)");
+        CHECK(sub::aim_target(reg, 100, 100, kFaceX, 50.0f, cone30) == onTop,
+              "co-located enemy is selected (treated as in-front)");
     }
 
     // ── empty world ───────────────────────────────────────────────────────
     {
         entt::registry reg;
-        expect(sub::aim_target(reg, 100, 100, kFaceX, 50.0f, kFull) == entt::null,
-               "no candidates -> null");
+        CHECK(sub::aim_target(reg, 100, 100, kFaceX, 50.0f, kFull) == entt::null,
+              "no candidates -> null");
     }
 
     // ── melee_pick_target: hostiles first, nearest-any as fallback ────────
@@ -146,31 +141,26 @@ int main() {
         // documented fallback when nothing hostile is in reach.
         entt::entity oldPick = sub::melee_pick_target(
             reg, 100, 100, 0, 25.0f, nullptr, nullptr);
-        expect(oldPick == peasant,
-               "fallback (no hostile oracle) is nearest-any — the old rule");
+        CHECK(oldPick == peasant,
+              "fallback (no hostile oracle) is nearest-any — the old rule");
         // The NEW rule: the hostile wins even though it stands farther.
         entt::entity pick = sub::melee_pick_target(
             reg, 100, 100, 0, 25.0f, hostileIsBandit, &bandit);
-        expect(pick == bandit,
-               "a hostile in reach beats a nearer neutral");
+        CHECK(pick == bandit,
+              "a hostile in reach beats a nearer neutral");
         // No hostile in reach -> nearest-any fallback (striking a neutral
         // deliberately stays possible; the reputation price handles it).
         entt::entity far = make_enemy(reg, 200, 200);
         entt::entity pick2 = sub::melee_pick_target(
             reg, 100, 100, 0, 25.0f, hostileIsBandit, &far);
-        expect(pick2 == peasant,
-               "with no hostile in reach the swing falls back to nearest-any");
+        CHECK(pick2 == peasant,
+              "with no hostile in reach the swing falls back to nearest-any");
         // Range gate still absolute: nothing in reach -> null.
         entt::entity pick3 = sub::melee_pick_target(
             reg, 0, 0, 0, 25.0f, nullptr, nullptr);
-        expect(pick3 == entt::null, "outside reach nothing is picked");
+        CHECK(pick3 == entt::null, "outside reach nothing is picked");
     }
 
     (void)kCone30;
-    if (g_fails == 0) {
-        std::printf("OK targeting_test: all assertions passed\n");
-        return 0;
-    }
-    std::printf("targeting_test: %d assertion(s) FAILED\n", g_fails);
-    return 1;
+    return sm::test::report("targeting_test");
 }

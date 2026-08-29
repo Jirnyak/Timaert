@@ -35,12 +35,8 @@ int torus_chebyshev(int ax, int ay, int bx, int by, int w, int h) {
 // hand-written because it runs DURING world-gen, before the grid exists —
 // the one legitimate pre-grid reader.
 bool cell_occupied(const GameState& gs, int x, int y) {
-    for (const auto& s : gs.settlements)
-        if (s.x == x && s.y == y) return true;
-    for (const auto& v : gs.villages)
-        if (v.x == x && v.y == y) return true;
-    for (const auto& sp : gs.spires)
-        if (sp.x == x && sp.y == y) return true;
+    for (const auto& lm : gs.landmarks)
+        if (lm.x == x && lm.y == y) return true;
     return false;
 }
 
@@ -56,7 +52,7 @@ void generate_spires(GameState& gs, const ZoneLayer& zones,
     // Own deterministic stream, distinct from the landmark-naming salt in
     // populate_landmarks_from_politik (0xC1A05E1D).
     Rng rng(gs.worldSeed ^ 0x59B12E50u);
-    gs.spires.reserve(gs.spires.size() + std::size_t(kSpellCount));
+    gs.landmarks.reserve(gs.landmarks.size() + std::size_t(kSpellCount));
 
     for (int ord = 0; ord < kSpellCount; ++ord) {
         // The tier walks the gate through the table's own band: tier 1 opens
@@ -84,7 +80,8 @@ void generate_spires(GameState& gs, const ZoneLayer& zones,
                 if (int(zones.at(x, y)) < gate) continue;
                 if (cell_occupied(gs, x, y)) continue;
                 int score = gs.mapW + gs.mapH;   // no spires yet: any site wins
-                for (const auto& sp : gs.spires) {
+                for (const auto& sp : gs.landmarks) {
+                    if (sp.type != LandmarkType::Spire) continue;
                     score = std::min(score, torus_chebyshev(x, y, sp.x, sp.y,
                                                             gs.mapW, gs.mapH));
                 }
@@ -105,7 +102,8 @@ void generate_spires(GameState& gs, const ZoneLayer& zones,
                          ord, int(def.minZone));
             continue;
         }
-        Spire sp{};
+        Landmark sp{};
+        sp.type     = LandmarkType::Spire;
         // v54: a spire is a landmark like any other — its id comes from THE
         // one issuer, not from its position in this vector.
         sp.id       = int(gs.nextLandmarkOrdinal++);
@@ -113,7 +111,7 @@ void generate_spires(GameState& gs, const ZoneLayer& zones,
         sp.y        = bestY;
         sp.spellId  = std::uint32_t(ord);
         sp.depleted = false;
-        gs.spires.push_back(sp);
+        gs.landmarks.push_back(std::move(sp));
     }
 }
 

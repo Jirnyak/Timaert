@@ -26,8 +26,9 @@ namespace sm {
 static constexpr float CIV_DECAY_PER_STEP    = 0.06f;
 static constexpr float CIV_CITY_STRENGTH     = 1.10f;
 static constexpr float CIV_VILLAGE_STRENGTH  = 0.55f;
-static constexpr float CIV_ROAD_STRENGTH     = 0.35f;
-static constexpr float CIV_DIRT_ROAD_STRENGTH= 0.22f;
+// Feature civ strengths (roads) are the registry's column now —
+// macro/features.h kFeatureDefs.civStrength. City/village strengths stay
+// here: those are LANDMARKS, not feature bytes.
 static constexpr float MOUNTAIN_BASE_BOOST   = 0.08f;
 static constexpr float MOUNTAIN_DEPTH_SCALE  = 0.04f;
 static constexpr float MOUNTAIN_DEPTH_CAP    = 0.45f;
@@ -65,11 +66,10 @@ inline float value_noise_wrap(float x, float y, float period,
     const float fy = smoothstep01(sy - float(y0));
     const int px = std::max(1, int(std::lround(float(width)  / period)));
     const int py = std::max(1, int(std::lround(float(height) / period)));
-    auto wrap = [](int k, int m) { return ((k % m) + m) % m; };
-    const float a = vhash(wrap(x0,     px), wrap(y0,     py), salt);
-    const float b = vhash(wrap(x0 + 1, px), wrap(y0,     py), salt);
-    const float c = vhash(wrap(x0,     px), wrap(y0 + 1, py), salt);
-    const float d = vhash(wrap(x0 + 1, px), wrap(y0 + 1, py), salt);
+    const float a = vhash(wrapi(x0,     px), wrapi(y0,     py), salt);
+    const float b = vhash(wrapi(x0 + 1, px), wrapi(y0,     py), salt);
+    const float c = vhash(wrapi(x0,     px), wrapi(y0 + 1, py), salt);
+    const float d = vhash(wrapi(x0 + 1, px), wrapi(y0 + 1, py), salt);
     return lerp(lerp(a, b, fx), lerp(c, d, fx), fy);
 }
 
@@ -141,10 +141,9 @@ ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
     for (const auto& c : cities)   seed_civ(c.x, c.y, CIV_CITY_STRENGTH);
     for (const auto& v : villages) seed_civ(v.x, v.y, CIV_VILLAGE_STRENGTH);
     for (std::size_t i = 0; i < total; ++i) {
-        const auto f = feature_at(i);
-        const float s = (f == FT_Road)     ? CIV_ROAD_STRENGTH
-                      : (f == FT_DirtRoad) ? CIV_DIRT_ROAD_STRENGTH
-                                           : 0.0f;
+        // The row's own column (features.h) — this was an if-chain over the
+        // registry (CANON S16); 0 (a field, open ground) seeds nothing.
+        const float s = feature_def(feature_at(i)).civStrength;
         if (s > civPull[i]) {
             civPull[i] = s;
             queue.push_back(i);
@@ -172,6 +171,17 @@ ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
             }
         }
     }
+
+    // MEASURED, NOT MERGED (canon audit 2026-08-29, fix «civ через единый
+    // запекатель»): re-expressing this BFS as multi-source optical_sweep runs
+    // with uniform step cost and budget = strength/decay reproduces the FIELD
+    // but not the BYTES — on seed 12345, 103,464 of 1,048,576 cells differ by
+    // up to 2.46e-07 (the sweep accumulates octile DISTANCE and multiplies by
+    // the decay once; this BFS subtracts pre-scaled decays sequentially, and
+    // its 1e-4 epsilon swallows near-tie improvements — float arithmetic is
+    // not associative). The quantized danger bytes happened to match 100 % on
+    // that seed, but exact parity was the bar, so the BFS stays until the
+    // owner accepts a measured re-tie of the field.
 
     // ── 2. Mountain depth BFS (only into mountain cells) ──────
     constexpr float kInf = 1e9f;

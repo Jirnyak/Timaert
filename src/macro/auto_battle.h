@@ -24,7 +24,6 @@
 #include "core/rng.h"
 #include "macro/army.h"
 #include "macro/character_sheet.h"
-#include "macro/character_sheet.h"
 #include "macro/npc.h"
 
 #include <algorithm>
@@ -83,13 +82,22 @@ namespace auto_battle_detail {
 // One fighter's worth, from the SAME numbers a subworld body of this row and
 // level fights with: hp × damage-per-second of the sheet-projected template.
 // The floor() mirrors emplace_body — both layers fight with integers.
+// Armour enters as EFFECTIVE HP, the exact identity of the damage door's
+// mitigation (sub/damage.cpp): every blow keeps
+// kArmorHalving / (kArmorHalving + armor) of itself, so a body of hp H
+// absorbs H * (kArmorHalving + armor) / kArmorHalving worth of raw blows —
+// the same law, read as a multiplier. The armour source is the door's own
+// for this row: npc_def().armor (macro fighters wear no equipment today).
 inline float fighter_power(NPCType type, int level, std::uint32_t seed,
                            const BonusTotals* squadBonuses, float healthFraction) {
     CharacterSheet sheet = make_character_sheet(type, level, seed);
     if (squadBonuses) sheet = effective_sheet(sheet, *squadBonuses);
-    const CombatTemplate pc = project_combat(sheet, npc_def(type).combat);
+    const NpcTypeDef& def = npc_def(type);
+    const CombatTemplate pc = project_combat(sheet, def.combat);
     const float hp  = std::max(1.0f, std::floor(pc.hp)) *
-                      std::clamp(healthFraction, 0.0f, 1.0f);
+                      std::clamp(healthFraction, 0.0f, 1.0f) *
+                      ((kArmorHalving + float(std::max(0, def.armor)))
+                       / kArmorHalving);
     const float dps = std::floor(pc.damage) /
                       std::max(0.1f, pc.cooldown);
     return hp * dps;
