@@ -332,6 +332,42 @@ void test_a_famine_is_recorded_once_when_it_begins() {
           "a weightless town's misfortune is weather, not history");
 }
 
+// Population falls honestly to ZERO — the floor is dead (owner, 2026-08-29).
+// minPop = 10/5 minted people from air and made every settlement immortal
+// (canon-audit B6). The honest law: starvation drives the logistic decline
+// all the way down; zero is absorbing (population_delta_per_day(0) = 0); the
+// death fires ONCE through the diedOut transition — the Died fact the daily
+// tick files. NEGATIVE CONTROL against reintroduction: under the old law
+// population < 5 was unreachable, so the sawBelowOldFloor gate reddens the
+// moment any floor returns.
+void test_population_dies_honestly_to_zero() {
+    sm::Landmark lm{};
+    lm.type = sm::LandmarkType::Village;
+    lm.population = 3;      // a cut-down hamlet with an empty larder
+    int deaths = 0;
+    int dayOfDeath = -1;
+    bool sawBelowOldFloor = false;
+    for (int day = 0; day < 2048 && dayOfDeath < 0; ++day) {
+        bool famine = false, revolt = false, died = false;
+        sm::settle_landmark_day(lm, famine, revolt, died);
+        if (lm.population < 5) sawBelowOldFloor = true;
+        if (died) { ++deaths; dayOfDeath = day; }
+    }
+    CHECK(dayOfDeath >= 0 && lm.population == 0,
+          "a starving settlement dies honestly to zero");
+    CHECK(sawBelowOldFloor,
+          "population passed the old floor: no crutch is back");
+    for (int day = 0; day < 100; ++day) {
+        bool famine = false, revolt = false, died = false;
+        sm::settle_landmark_day(lm, famine, revolt, died);
+        if (died) ++deaths;
+    }
+    CHECK(lm.population == 0,
+          "zero population is absorbing: nobody is minted from air");
+    CHECK(deaths == 1,
+          "the death transition fires exactly once");
+}
+
 } // namespace
 
 int main() {
@@ -343,5 +379,6 @@ int main() {
     test_daily_processing_applies_player_upkeep_and_age();
     test_settlement_history_keeps_a_rolling_window();
     test_a_famine_is_recorded_once_when_it_begins();
+    test_population_dies_honestly_to_zero();
     return sm::test::report("world_tick_parity_test");
 }

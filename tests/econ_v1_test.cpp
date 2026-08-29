@@ -431,10 +431,22 @@ int main() {
         }
     }
 
+    // ── 12. Zero workers craft nothing — the ghost-bench half of the
+    // honest-death law (owner, 2026-08-29; the population side lives in
+    // world_tick_parity_test, which links settle_landmark_day).
+    {
+        Inventory ghost;
+        ghost.add("grain", 100);
+        if (econ_produce_day(ghost, EconSite::City, /*workers*/0,
+                             /*population*/0, nullptr, nullptr) != 0) {
+            return fail("zero workers produced something");
+        }
+    }
+
     std::printf("econ_v1_test: dictionary=ok conservation=ok deposits=ok "
                 "no_starvation=ok famine_transitions=ok consume_laws=ok "
                 "produce_fair=ok birth_stocks=ok population_law=ok "
-                "one_store=ok days=%d\n", kDays);
+                "one_store=ok ghost_bench=ok days=%d\n", kDays);
     CHECK(true, "every gate above held");
     return sm::test::report("econ_v1_test");
 }

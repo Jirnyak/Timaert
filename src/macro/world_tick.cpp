@@ -40,15 +40,19 @@ void push_history_(SettlementHistory& hist, int day, int population) {
     hist.push(day, population);
 }
 
+} // namespace
+
 // The shared tail of every landmark's day (W2b-4): consume off the
 // UNIVERSAL inventory, then let ONE continuous wellbeing drive both the
 // mood and the LOGISTIC population law (owner's ruling — no flat heads per
-// day; K = kPopCarryingCap = the subworld's own NPC cap). Returns the
-// wellbeing for callers that want it.
-void settle_landmark_day(Landmark& lm, int minPop,
-                         bool& startedFamine, bool& startedRevolt) {
+// day). At namespace scope (external linkage, the shuffled_order pattern)
+// so econ_v1_test can drive a landmark to its honest death directly.
+void settle_landmark_day(Landmark& lm,
+                         bool& startedFamine, bool& startedRevolt,
+                         bool& diedOut) {
     startedFamine = false;
     startedRevolt = false;
+    diedOut = false;
     // Straight onto the ONE store — the twice-a-day conversion to a second
     // container (and back, through a string lookup each way) is gone with the
     // second index space it existed to bridge.
@@ -75,13 +79,20 @@ void settle_landmark_day(Landmark& lm, int minPop,
         lm.popGrowthCarry -= float(whole);
         // No ceiling (CANON S25): supply is the only cap — wellbeing already
         // turned negative growth on when the fields and the trade fell short.
-        // The FLOOR is a named crutch (canon-audit B6: it mints people from
-        // air): until places can die and leave ruins (S9), a cut-down village
-        // never empties past it, or the world would quietly go dark with no
-        // mechanic to mourn it. It leaves with the living-landmarks track.
-        lm.population = std::max(lm.population + whole, minPop);
+        // And NO FLOOR either (owner, 2026-08-29): the old minPop = 10/5
+        // minted people from air and made every settlement immortal
+        // (canon-audit B6). Population falls honestly to zero; zero is
+        // absorbing by the law itself (population_delta_per_day(0) = 0),
+        // and the DEATH is the story — the transition below files a Died
+        // fact, so the chronicle mourns the place the crutch used to hide.
+        // Turning the empty record into a Ruin is the S9-transition track.
+        const int before = lm.population;
+        lm.population = std::max(lm.population + whole, 0);
+        diedOut = before > 0 && lm.population == 0;
     }
 }
+
+namespace {
 
 // ── Settlement daily tick ─────────────────────────────────────
 void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime) {
@@ -90,12 +101,17 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime) {
         // The city CRAFTS before it eats: today's table first, then fair
         // shares (econ_day's three passes), off the same one inventory the
         // caravans stock and the market sells from.
+        // Zero souls staff zero benches: max(1, …) alone minted a ghost
+        // worker for an empty town — the same air-minting the pop floor did.
         econ_produce_day(s.inventory, EconSite::City,
-                         std::max(1, s.population / kHeadsPerCityWorker),
+                         s.population > 0
+                             ? std::max(1, s.population / kHeadsPerCityWorker)
+                             : 0,
                          s.population, nullptr, nullptr);
 
-        bool famine = false, revolt = false;
-        settle_landmark_day(s, /*minPop=*/10, famine, revolt);
+        bool famine = false, revolt = false, died = false;
+        const int headsBefore = s.population;
+        settle_landmark_day(s, famine, revolt, died);
         if (famine) {
             record_landmark_fact(gs, FactKind::Starved, s.id, s.x, s.y,
                                  int(s.starvedYesterday));
@@ -103,6 +119,10 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime) {
         if (revolt) {
             record_landmark_fact(gs, FactKind::Revolted, s.id, s.x, s.y,
                                  s.population);
+        }
+        if (died) {
+            record_landmark_fact(gs, FactKind::Died, s.id, s.x, s.y,
+                                 headsBefore);
         }
 
         if (s.population >= 20
@@ -144,11 +164,14 @@ void tick_villages_(GameState& gs, int day, WorldTickRuntime& runtime) {
         // that site, so this makes nothing, and the day the row lands it
         // works with no code here either.
         econ_produce_day(v.inventory, EconSite::Village,
-                         std::max(1, v.population / kHeadsPerCityWorker),
+                         v.population > 0
+                             ? std::max(1, v.population / kHeadsPerCityWorker)
+                             : 0,
                          v.population, nullptr, nullptr);
 
-        bool famine = false, revolt = false;
-        settle_landmark_day(v, /*minPop=*/5, famine, revolt);
+        bool famine = false, revolt = false, died = false;
+        const int headsBefore = v.population;
+        settle_landmark_day(v, famine, revolt, died);
         if (famine) {
             record_landmark_fact(gs, FactKind::Starved, v.id, v.x, v.y,
                                  int(v.starvedYesterday));
@@ -156,6 +179,10 @@ void tick_villages_(GameState& gs, int day, WorldTickRuntime& runtime) {
         if (revolt) {
             record_landmark_fact(gs, FactKind::Revolted, v.id, v.x, v.y,
                                  v.population);
+        }
+        if (died) {
+            record_landmark_fact(gs, FactKind::Died, v.id, v.x, v.y,
+                                 headsBefore);
         }
         push_history_(v.history, day, v.population);
     }

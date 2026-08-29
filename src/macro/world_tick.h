@@ -35,6 +35,16 @@ inline bool garrison_wants_recruits(int currentSoldiers) {
 }
 
 
+// One landmark's daily tail: consume off the universal inventory, band the
+// mood, run the LOGISTIC population law. No floor and no ceiling (CANON S25
+// + owner 2026-08-29): supply is the only cap, and population falls honestly
+// to an absorbing zero — the out-flags fire exactly on the transitions
+// (famine began / revolt began / the place died out), which is what the
+// chronicle files. Public so econ_v1_test can drive a landmark to its death.
+void settle_landmark_day(Landmark& lm,
+                         bool& startedFamine, bool& startedRevolt,
+                         bool& diedOut);
+
 void reset_world_tick_runtime(WorldTickRuntime& runtime, std::uint32_t seed);
 
 // Advance the clock by whole world ticks and queue one daily simulation tick
