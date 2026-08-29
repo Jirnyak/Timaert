@@ -271,10 +271,16 @@ Owner, 2026-08-28: «истощённая жила — это не сущест�
   lands; it reads through the same door.
 - **`GameEvent` is still a struct with strings**, not yet a slice of the
   chronicle. The spellbook's own strings died first (flat ordinal rows, v59);
-  next are the quest identities (`completedQuestIds`/`failedQuestIds` string
-  lists → the monotonic-ordinal law) and `codexUnlocked`, then the slice
-  itself. `NodeContext` still cannot see the world — it needs a reading door
-  in the `FactNaming` shape.
+  the quest identities followed (v63, 2026-08-29): `Quest.ordinal` from the
+  one issuer `nextQuestOrdinal` (issued at ACCEPT — an offer is a seed-
+  regenerated projection until taken; its pre-accept identity is the POD
+  provenance triple {giver, generator slot, bornDay}, which is also the
+  same-day re-offer dedup that the eternal `completedQuestIds`/
+  `failedQuestIds` string lists actually were), the codex became a registry
+  (`macro/codex.h`, unlock = a bit per ordinal), and the Quest*/CodexUnlock
+  events carry ordinals in `a` with no `s1`. Next is the slice itself.
+  `NodeContext` still cannot see the world — it needs a reading door in the
+  `FactNaming` shape.
 - **Rumours** — the journal door is built; the ACQUISITION mechanic (tavern?
   an encounter's word of mouth?) is the owner's gameplay call.
 - **?27 — the text system**: authored text will run through encapsulated

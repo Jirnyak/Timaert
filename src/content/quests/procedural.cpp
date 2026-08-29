@@ -36,7 +36,6 @@ namespace {
 
 struct QuestGenCtx {
     int id = -1;
-    std::string idSegment;
     std::string name;
     int x = 0;
     int y = 0;
@@ -83,10 +82,11 @@ std::string describe_destination(const QuestGenCtx& ctx, int targetX, int target
         + direction_name(angle) + ".";
 }
 
-void add_common(Quest& q, const QuestGenCtx& ctx, const char* prefix,
+// Identity is NOT set here: the offer's provenance triple (giver, slot,
+// bornDay) is stamped once in generate_for_context, and the ordinal is
+// issued at accept (quest_types.h Quest).
+void add_common(Quest& q, const QuestGenCtx& ctx,
                 QuestCategory category, int difficulty, int expireDelta) {
-    q.id = std::string(prefix) + "_" + ctx.idSegment + "_"
-        + std::to_string(ctx.gs->worldTime.day());
     q.category = category;
     q.giverSettlementId = ctx.id;
     q.expireDay = ctx.gs->worldTime.day() + expireDelta;
@@ -139,7 +139,7 @@ bool gen_delivery(const QuestGenCtx& ctx, Quest& q) {
     int difficulty = int(std::ceil(float(baseQty) / 2.0f));
     if (difficulty > 10) difficulty = 10;
 
-    add_common(q, ctx, "q_proc_deliver", QuestCategory::Procedural,
+    add_common(q, ctx, QuestCategory::Procedural,
                difficulty, 30);
     q.title = std::string("Supply ") + item->name;
     q.description = ctx.name + " urgently needs " + std::to_string(baseQty)
@@ -192,12 +192,7 @@ bool gen_visit(const QuestGenCtx& ctx, Quest& q) {
     int expire = int(std::round(dist / 10.0f));
     if (expire < 14) expire = 14;
 
-    q.id = "q_proc_visit_" + ctx.idSegment + "_"
-        + std::to_string(target.id) + "_" + std::to_string(gs.worldTime.day());
-    q.category = QuestCategory::Procedural;
-    q.giverSettlementId = ctx.id;
-    q.expireDay = gs.worldTime.day() + expire;
-    q.difficulty = difficulty;
+    add_common(q, ctx, QuestCategory::Procedural, difficulty, expire);
     q.title = "Envoy to " + target.name;
     q.description = "Deliver a sealed letter to the magistrate of "
         + target.name + ". " + describe_destination(ctx, target.x, target.y);
@@ -226,7 +221,7 @@ bool gen_destroy(const QuestGenCtx& ctx, Quest& q) {
     const int zoneX = int(std::round(float(ctx.x) + std::cos(angle) * dist));
     const int zoneY = int(std::round(float(ctx.y) + std::sin(angle) * dist));
 
-    add_common(q, ctx, "q_proc_destroy", QuestCategory::Procedural,
+    add_common(q, ctx, QuestCategory::Procedural,
                difficulty, 20);
     q.title = "Clear the Road";
     q.description = "Bandits have been terrorising travellers near "
@@ -272,7 +267,7 @@ bool gen_protect(const QuestGenCtx& ctx, Quest& q) {
     int difficulty = int(std::ceil(float(hours) / 2.0f));
     if (difficulty > 10) difficulty = 10;
 
-    add_common(q, ctx, "q_proc_protect", QuestCategory::Procedural,
+    add_common(q, ctx, QuestCategory::Procedural,
                difficulty, 7);
     q.title = "Defend " + ctx.name;
     q.description = "Raiders threaten " + ctx.name + ". Stay and protect the villagers for "
@@ -309,7 +304,7 @@ bool gen_fetch(const QuestGenCtx& ctx, Quest& q) {
     int difficulty = int(std::ceil(float(quantity) / 2.0f));
     if (difficulty > 10) difficulty = 10;
 
-    add_common(q, ctx, "q_proc_fetch", QuestCategory::Procedural,
+    add_common(q, ctx, QuestCategory::Procedural,
                difficulty, 14);
     q.title = "Gather Materials";
     q.description = ctx.name + " needs " + std::to_string(quantity) + " "
@@ -339,7 +334,7 @@ bool gen_scout(const QuestGenCtx& ctx, Quest& q) {
     int difficulty = int(std::ceil(distFactor * 1.5f));
     if (difficulty > 10) difficulty = 10;
 
-    add_common(q, ctx, "q_proc_scout", QuestCategory::Procedural,
+    add_common(q, ctx, QuestCategory::Procedural,
                difficulty, 21);
     q.title = "Scout the Wilds";
     q.description = "Survey the area to the " + direction_name(angle)
@@ -383,7 +378,7 @@ bool gen_sanctuary(const QuestGenCtx& ctx, Quest& q) {
     int expire = int(std::round(dist / 8.0f));
     if (expire < 21) expire = 21;
 
-    add_common(q, ctx, "q_proc_sanctuary", QuestCategory::Side,
+    add_common(q, ctx, QuestCategory::Side,
                difficulty, expire);
     q.title = "Find the Sanctuary";
     q.description = "An elder speaks of an ancient sanctuary lost to time. "
@@ -410,6 +405,13 @@ std::vector<Quest> generate_for_context(QuestGenCtx& ctx) {
         gen_scout,
         gen_sanctuary,
     };
+    // gen_visit's slot, for the empty-day fallback below — looked up from the
+    // table so a reorder cannot silently desynchronise the provenance.
+    constexpr auto slot_of = [](GeneratorFn fn) {
+        for (std::size_t i = 0; i < std::size(kGenerators); ++i)
+            if (kGenerators[i] == fn) return i;
+        return std::size_t(0);
+    };
 
     const int maxQuests = ctx.isCity
         ? 2 + int(ctx.rng->next_f01() * 3.0f)
@@ -417,11 +419,22 @@ std::vector<Quest> generate_for_context(QuestGenCtx& ctx) {
     std::vector<Quest> out;
     out.reserve(std::size_t(maxQuests));
 
+    // The offer's provenance triple, stamped in ONE place: each generator
+    // fires at most once per settlement per day, so {giver, slot, bornDay}
+    // names the offer uniquely (quest_types.h Quest) — it is what is_known
+    // dedups by, and what the old id string used to encode.
+    const auto stamp = [&](Quest& q, std::size_t slot) {
+        q.giverSettlementId = ctx.id;
+        q.offerSlot = std::uint8_t(slot);
+        q.bornDay = ctx.gs->worldTime.day();
+    };
+
     std::vector<int> order = shuffled_order(*ctx.rng);
     for (int idx : order) {
         if (int(out.size()) >= maxQuests) break;
         Quest q{};
         if (kGenerators[std::size_t(idx)](ctx, q)) {
+            stamp(q, std::size_t(idx));
             out.push_back(std::move(q));
         }
     }
@@ -429,6 +442,7 @@ std::vector<Quest> generate_for_context(QuestGenCtx& ctx) {
     if (out.empty()) {
         Quest fallback{};
         if (gen_visit(ctx, fallback)) {
+            stamp(fallback, slot_of(gen_visit));
             out.push_back(std::move(fallback));
         }
     }
@@ -443,7 +457,6 @@ std::vector<Quest> generate_quests_for_settlement(const Landmark& s,
     Rng rng(worldSeed ^ std::uint32_t(s.id) ^ std::uint32_t(gs.worldTime.day()));
     QuestGenCtx ctx{};
     ctx.id = s.id;
-    ctx.idSegment = std::to_string(s.id);
     ctx.name = s.name;
     ctx.x = s.x;
     ctx.y = s.y;
@@ -462,7 +475,6 @@ std::vector<Quest> generate_quests_for_village(const Landmark& v,
     Rng rng(worldSeed ^ std::uint32_t(v.id + 0x6000) ^ std::uint32_t(gs.worldTime.day()));
     QuestGenCtx ctx{};
     ctx.id = v.id;
-    ctx.idSegment = "v" + std::to_string(v.id);
     ctx.name = v.name;
     ctx.x = v.x;
     ctx.y = v.y;

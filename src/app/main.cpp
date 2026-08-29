@@ -1938,6 +1938,7 @@ bool boot_world_from_save(App& app, const std::string& path) {
     app.gs.worldTime         = fresh.worldTime;
     app.gs.lastWorldRebakeDay = fresh.lastWorldRebakeDay;   // autosave phase (v22)
     app.gs.nextMacroSpawnOrdinal = fresh.nextMacroSpawnOrdinal;   // identity issuer (v23)
+    app.gs.nextQuestOrdinal      = fresh.nextQuestOrdinal;        // quest issuer (v63)
     app.gs.worldTickRt       = fresh.worldTickRt;           // world rhythm (v24)
     app.gs.macroAiRhythm     = fresh.macroAiRhythm;
     // The second sync door (v24): boot_world reset App::npcAi from the seed;
@@ -2984,29 +2985,9 @@ void apply_intro_story_result(App& app, const sm::StoryResultPayload& result) {
 
     app.logic.activate("plot_chapter_1");
 
-    for (const sm::Quest& quest : app.activeQuests) {
-        if (quest.id.rfind("q_travel_", 0) != 0 || quest.objectives.empty())
-            continue;
-        const sm::Objective& obj = quest.objectives.front();
-        if (obj.kind != sm::ObjectiveKind::VisitCell)
-            continue;
-        for (const sm::Landmark& settlement : app.gs.landmarks) {
-            if (settlement.type != sm::LandmarkType::City) continue;
-            if (settlement.x == obj.ix && settlement.y == obj.iy) {
-                const float dist = sm::torus_dist(app.gs.player.x, app.gs.player.y,
-                                                  float(obj.ix), float(obj.iy),
-                                                  float(app.gs.mapW), float(app.gs.mapH));
-                const int days = std::max(1, int(std::ceil(dist / 120.0f)));
-                std::string body = "Now I should go to ";
-                body += settlement.name;
-                body += ". ~";
-                body += std::to_string(days);
-                body += days > 1 ? " days travel." : " day travel.";
-                emit_simple_dialog(app, "First Steps", body, "On my way");
-                return;
-            }
-        }
-    }
+    // (A "q_travel_*" first-steps dialog loop stood here for months — a TS
+    // relic scanning for quests NOTHING in this codebase ever creates. Dead
+    // code, removed with the quest id strings, 2026-08-29.)
 }
 
 void apply_pending_story_results(App& app) {
@@ -3224,7 +3205,7 @@ std::uint64_t quest_marker_signature(const std::vector<sm::Quest>& active) {
     std::uint64_t h = 1469598103934665603ull;            // FNV-1a offset basis
     auto mix = [&](std::uint64_t v) { h ^= v; h *= 1099511628211ull; };
     for (const sm::Quest& q : active) {
-        for (unsigned char c : q.id) mix(std::uint64_t(c));
+        mix(std::uint64_t(q.ordinal) + 1u);
         mix(q.objectives.size() + 1u);
         std::uint64_t doneMask = 0;
         for (std::size_t i = 0; i < q.objectives.size(); ++i)

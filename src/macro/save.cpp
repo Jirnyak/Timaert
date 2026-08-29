@@ -632,13 +632,18 @@ void write_player(Writer& w, const PlayerState& p) {
     // entity, and rides the macro snapshot with every other squad's.)
     // No reputation map: the player's standing is his row in gs.factions, which
     // the faction matrix below already persists (kSaveVersion 16).
-    write_string_vector(w, p.codexUnlocked);
+    w.pod(p.codexUnlockedBits);   // v63: a bit per article ordinal
     // (No event log block since v58: session messages die with the session,
     // the player's past rides below as his journal of chronicle records.)
     write_spell_book(w, p.spellBook);
     w.pod(p.factionPeaceUntilDay);
-    write_string_vector(w, p.completedQuestIds);
-    write_string_vector(w, p.failedQuestIds);
+    // v63: settled quest OFFERS (same-day dedup PODs) + lifetime tallies —
+    // the two eternal id-string vectors left the format.
+    if (w.count(p.settledQuestOffers.size(), kMaxQuests)) {
+        for (const SettledQuestOffer& so : p.settledQuestOffers) w.pod(so);
+    }
+    w.pod(p.completedQuestCount);
+    w.pod(p.failedQuestCount);
     w.pod(p.possessedMacroSpawnId);   // Inc 5e-2 (kSaveVersion 10)
     w.pod(p.entryDir);                // entry-side context (kSaveVersion 15)
     w.pod(p.entryTicks);
@@ -661,11 +666,20 @@ void read_player(Reader& r, PlayerState& p) {
     r.pod(p.sheet.levelData);
     r.pod(p.sheet.skills);
     read_perks(r, p.sheet.perks);
-    read_string_vector(r, p.codexUnlocked);
+    r.pod(p.codexUnlockedBits);   // v63
     read_spell_book(r, p.spellBook);
     r.pod(p.factionPeaceUntilDay);
-    read_string_vector(r, p.completedQuestIds);
-    read_string_vector(r, p.failedQuestIds);
+    std::uint32_t sn = 0;         // v63: settled offers ride as PODs
+    if (!read_count(r, sn, kMaxQuests)) return;
+    p.settledQuestOffers.clear();
+    p.settledQuestOffers.reserve(sn);
+    for (std::uint32_t i = 0; i < sn && r.ok; ++i) {
+        SettledQuestOffer so{};
+        r.pod(so);
+        p.settledQuestOffers.push_back(so);
+    }
+    r.pod(p.completedQuestCount);
+    r.pod(p.failedQuestCount);
     r.pod(p.possessedMacroSpawnId);   // Inc 5e-2 (kSaveVersion 10)
     r.pod(p.entryDir);                // entry-side context (kSaveVersion 15)
     r.pod(p.entryTicks);
@@ -896,7 +910,9 @@ void read_reward(Reader& r, Reward& reward) {
 }
 
 void write_quest(Writer& w, const Quest& q) {
-    w.str(q.id);
+    w.pod(q.ordinal);      // v63: identity is the ordinal
+    w.pod(q.offerSlot);    // v63: offer provenance (dedup triple)
+    w.pod(q.bornDay);
     w.str(q.title);
     w.str(q.description);
     write_enum8(w, q.category);
@@ -916,7 +932,9 @@ void write_quest(Writer& w, const Quest& q) {
 }
 
 void read_quest(Reader& r, Quest& q) {
-    r.str(q.id);
+    r.pod(q.ordinal);      // v63
+    r.pod(q.offerSlot);
+    r.pod(q.bornDay);
     r.str(q.title);
     r.str(q.description);
     read_enum8(r, q.category, static_cast<std::uint8_t>(QuestCategory::Procedural));
@@ -969,6 +987,7 @@ void write_payload(Writer& w, const GameState& s,
     w.pod(s.lastWorldRebakeDay);   // v22: autosave/re-bake phase survives a load
     w.pod(s.nextMacroSpawnOrdinal); // v23: the ONE MacroSpawnId issuer
     w.pod(s.nextLandmarkOrdinal);   // v54: the ONE landmark-id issuer
+    w.pod(s.nextQuestOrdinal);      // v63: the ONE quest-identity issuer
     w.str(s.saveName);
     w.str(savedAt);
     write_player(w, s.player);
@@ -1042,6 +1061,7 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
     r.pod(s.lastWorldRebakeDay);   // v22
     r.pod(s.nextMacroSpawnOrdinal); // v23
     r.pod(s.nextLandmarkOrdinal);   // v54
+    r.pod(s.nextQuestOrdinal);      // v63
     r.str(s.saveName);
     r.str(s.savedAt);
     read_player(r, s.player);
@@ -1111,6 +1131,10 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
     for (std::uint32_t i = 0; i < n && r.ok; ++i) {
         Quest q{};
         read_quest(r, q);
+        // Self-heal the issuer ABOVE every restored quest — the same law
+        // macro_snapshot applies to nextMacroSpawnOrdinal: an issuer behind
+        // a living ordinal would hand a new quest a used identity.
+        if (q.ordinal >= s.nextQuestOrdinal) s.nextQuestOrdinal = q.ordinal + 1u;
         activeQuests.push_back(std::move(q));
     }
 }
@@ -1232,6 +1256,8 @@ SaveSummary inspect_save(const std::string& path) {
     r.pod(nextMacroSpawnOrdinal);
     std::uint32_t nextLandmarkOrdinal = 0;     // v54 — same
     r.pod(nextLandmarkOrdinal);
+    std::uint32_t nextQuestOrdinal = 0;        // v63 — same
+    r.pod(nextQuestOrdinal);
     r.str(out.saveName);
     r.str(out.savedAt);
     if (!r.ok) {

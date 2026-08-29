@@ -1,7 +1,6 @@
 #include "events/quests/quest_engine.h"
 #include "macro/agent_memory.h"
 #include "macro/currency.h"
-#include "events/event_log_util.h"
 #include "core/torus.h"
 #include "macro/markers.h"
 #include <algorithm>
@@ -190,11 +189,27 @@ static bool eval_objective(Objective& o, const std::vector<GameEvent>& events,
     return o.completed;
 }
 
+// A settled offer enters the same-day dedup memory. Entries whose day has
+// passed can never be generated again (the day is part of the provenance),
+// so prune_settled_offers below keeps the list a handful of records.
+static void settle_offer(PlayerState& p, const Quest& q) {
+    p.settledQuestOffers.push_back(
+        {q.giverSettlementId, q.bornDay, q.offerSlot});
+}
+
+static void prune_settled_offers(PlayerState& p, int today) {
+    std::erase_if(p.settledQuestOffers,
+                  [today](const SettledQuestOffer& s) {
+                      return s.bornDay != today;
+                  });
+}
+
 } // namespace
 
 void QuestEngine::tick(std::vector<Quest>& active, EventBus& bus,
                        GameState& gs, Inventory* bag, AgentMemory* head) {
     auto& events = bus.last_tick_events();
+    prune_settled_offers(gs.player, gs.worldTime.day());
     std::vector<Quest> completed;
     completed.reserve(active.size());
 
@@ -202,11 +217,11 @@ void QuestEngine::tick(std::vector<Quest>& active, EventBus& bus,
         --qi;
         Quest& q = active[qi];
         if (q.expireDay >= 0 && gs.worldTime.day() > q.expireDay) {
-            push_string(gs.player.completedQuestIds, q.id);
-            push_unique_string(gs.player.failedQuestIds, q.id);
-            GameEvent ev; ev.tag = EventTag::QuestFail; ev.s1 = q.id;
+            settle_offer(gs.player, q);
+            ++gs.player.failedQuestCount;
+            GameEvent ev; ev.tag = EventTag::QuestFail;
             ev.s2 = "expired";
-            ev.a = std::uint32_t(quest_id_key(q.id));
+            ev.a = q.ordinal;
             ev.b = kEventEffectAlreadyApplied;
             bus.emit(ev);
             active.erase(active.begin() + static_cast<std::ptrdiff_t>(qi));
@@ -222,8 +237,7 @@ void QuestEngine::tick(std::vector<Quest>& active, EventBus& bus,
         }
         if (anyUpdated && !allDone) {
             GameEvent ev{EventTag::QuestUpdate};
-            ev.s1 = q.id;
-            ev.a = std::uint32_t(quest_id_key(q.id));
+            ev.a = q.ordinal;
             bus.emit(ev);
         }
         if (allDone) {
@@ -233,10 +247,11 @@ void QuestEngine::tick(std::vector<Quest>& active, EventBus& bus,
     }
 
     for (auto& q : completed) {
-        push_string(gs.player.completedQuestIds, q.id);
+        settle_offer(gs.player, q);
+        ++gs.player.completedQuestCount;
         for (auto& r : q.rewards) emit_reward(r, gs, bag, head, bus, q.giverSettlementId);
-        GameEvent ev; ev.tag = EventTag::QuestComplete; ev.s1 = q.id;
-        ev.a = std::uint32_t(quest_id_key(q.id));
+        GameEvent ev; ev.tag = EventTag::QuestComplete;
+        ev.a = q.ordinal;
         ev.b = kEventEffectAlreadyApplied;
         bus.emit(ev);
     }
@@ -244,24 +259,30 @@ void QuestEngine::tick(std::vector<Quest>& active, EventBus& bus,
 
 void QuestEngine::accept(std::vector<Quest>& active,
                          Quest q,
-                         const PlayerState& player,
+                         GameState& gs,
                          EventBus& bus) {
-    (void)player;
+    // The one place a quest is named: the offer stops being a seed-
+    // regenerated projection and draws its persistent ordinal (state.h
+    // nextQuestOrdinal — 0 stays reserved for "not accepted").
+    q.ordinal = gs.nextQuestOrdinal++;
     active.push_back(std::move(q));
     const Quest& accepted = active.back();
     bus.emit_all(accepted.onAccept);
-    GameEvent ev; ev.tag = EventTag::QuestStart; ev.s1 = accepted.id;
+    GameEvent ev; ev.tag = EventTag::QuestStart;
     ev.s2 = accepted.title;
-    ev.a = std::uint32_t(quest_id_key(accepted.id));
+    ev.a = accepted.ordinal;
     bus.emit(ev);
 }
 
-void QuestEngine::abandon(std::vector<Quest>& active, const std::string& id, EventBus& bus) {
+void QuestEngine::abandon(std::vector<Quest>& active, std::uint32_t ordinal,
+                          EventBus& bus) {
     for (auto it = active.begin(); it != active.end(); ++it) {
-        if (it->id == id) {
-            GameEvent ev; ev.tag = EventTag::QuestFail; ev.s1 = id;
+        if (it->ordinal == ordinal) {
+            // Abandoning does NOT settle the offer: the settlement may
+            // re-offer it the same day, exactly as before.
+            GameEvent ev; ev.tag = EventTag::QuestFail;
             ev.s2 = "abandoned";
-            ev.a = std::uint32_t(quest_id_key(id));
+            ev.a = ordinal;
             bus.emit(ev);
             active.erase(it);
             return;
@@ -271,16 +292,16 @@ void QuestEngine::abandon(std::vector<Quest>& active, const std::string& id, Eve
 
 bool QuestEngine::is_known(const std::vector<Quest>& active,
                            const PlayerState& player,
-                           const std::string& id) const {
+                           const Quest& offer) const {
     for (const auto& q : active) {
-        if (q.id == id) return true;
+        if (same_offer(q, offer)) return true;
     }
-    return std::find(player.completedQuestIds.begin(),
-                     player.completedQuestIds.end(),
-                     id) != player.completedQuestIds.end()
-        || std::find(player.failedQuestIds.begin(),
-                     player.failedQuestIds.end(),
-                     id) != player.failedQuestIds.end();
+    for (const auto& s : player.settledQuestOffers) {
+        if (s.giverSettlementId == offer.giverSettlementId
+            && s.offerSlot == offer.offerSlot
+            && s.bornDay == offer.bornDay) return true;
+    }
+    return false;
 }
 
 void rebuild_quest_markers(GameState& gs, const std::vector<Quest>& active) {
@@ -291,7 +312,8 @@ void rebuild_quest_markers(GameState& gs, const std::vector<Quest>& active) {
             if (o.completed) continue;
             float x = 0.0f, y = 0.0f;
             if (!objective_target_cell(gs, o, x, y)) continue;
-            std::string id = "quest_" + q.id + "_" + std::to_string(oi);
+            std::string id = "quest_" + std::to_string(q.ordinal) + "_"
+                + std::to_string(oi);
             add_marker(gs.markers, std::move(id), MarkerStyle::Quest, x, y, q.title);
         }
     }

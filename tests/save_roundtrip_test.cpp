@@ -3,6 +3,7 @@
 #include "macro/macro_snapshot.h"
 #include "macro/deposit_layer.h"
 #include "macro/agent_memory.h"
+#include "macro/codex.h"
 #include "macro/currency.h"
 #include "macro/npc.h"
 #include "macro/entry_context.h"
@@ -96,14 +97,6 @@ bool write_all(const std::string& path, const std::vector<std::uint8_t>& bytes,
 bool nearf(float a, float b) {
     return std::fabs(a - b) < 0.0001f;
 }
-
-bool has_string(const std::vector<std::string>& values, const char* needle) {
-    for (const auto& value : values) {
-        if (value == needle) return true;
-    }
-    return false;
-}
-
 
 bool valid_saved_at(const std::string& s) {
     return s.size() == 24
@@ -342,7 +335,8 @@ sm::GameState make_state() {
     gs.player.combatStats.spRegen = 3.75f;
     sm::add_perk(gs.player.sheet.perks, sm::PerkID::Natural);
     sm::add_perk(gs.player.sheet.perks, sm::PerkID::Educated);
-    gs.player.codexUnlocked.push_back("codex.alpha");
+    gs.player.codexUnlockedBits = sm::codex_bit(sm::CodexArticleId::Witches)
+                                | sm::codex_bit(sm::CodexArticleId::Market);
     {   // the JOURNAL (v58): two learned facts ride the save entry-for-entry
         sm::WorldFact jf{};
         jf.day = 12;
@@ -368,8 +362,10 @@ sm::GameState make_state() {
     sm::spellbook_toggle_sustained(gs.player.spellBook, hasteOrd);
     gs.player.factionPeaceUntilDay[
         std::size_t(sm::ensure_faction_slot(gs, "guild"))] = 55;
-    gs.player.completedQuestIds.push_back("q_done_round");
-    gs.player.failedQuestIds.push_back("q_failed_round");
+    gs.player.settledQuestOffers.push_back(
+        {/*giverSettlementId*/ 7, /*bornDay*/ 3, /*offerSlot*/ 2});
+    gs.player.completedQuestCount = 5u;
+    gs.player.failedQuestCount = 2u;
     // Entry-side context (kSaveVersion 15): a non-default direction + tick
     // count must survive the trip — a save made mid-march re-enters the
     // subworld on the same side.
@@ -490,9 +486,12 @@ sm::DepositLayer make_deposits() {
     return d;
 }
 
-sm::Quest make_quest(const char* id) {
+sm::Quest make_quest() {
     sm::Quest q{};
-    q.id = id;
+    // Identity/provenance (v63): the ordinal is issued by accept (left 0
+    // here); the offer triple must survive the trip.
+    q.offerSlot = 4;
+    q.bornDay = 3;
     q.title = "Active Quest";
     q.description = "Roundtrip active quest";
     q.category = sm::QuestCategory::Procedural;
@@ -526,7 +525,6 @@ sm::Quest make_quest(const char* id) {
     q.rewards.push_back(reward);
 
     sm::GameEvent ev{sm::EventTag::QuestStart};
-    ev.s1 = q.id;
     q.onAccept.push_back(ev);
     sm::GameEvent spawn{sm::EventTag::SpawnEntity};
     spawn.s1 = "bandit";
@@ -612,7 +610,7 @@ void run_roundtrip() {
     sm::EventBus bus;
     sm::QuestEngine questEngine;
     std::vector<sm::Quest> quests;
-    questEngine.accept(quests, make_quest("q_active"), gs.player, bus);
+    questEngine.accept(quests, make_quest(), gs, bus);
     if (quests.size() != 1) FAIL_BAIL("QuestEngine::accept did not activate quest");
     bool sawQuestStart = false;
     for (const auto& ev : bus.tick_events())
@@ -880,9 +878,7 @@ void run_roundtrip() {
         FAIL_BAIL("entry-side context lost");
     }
 
-    if (!has_string(p.codexUnlocked, "codex.alpha")) {
-        FAIL_BAIL("codex lost");
-    }
+
     if (p.journal.size() != 2
         || p.journal[0].kind != std::uint16_t(sm::FactKind::Killed)
         || p.journal[1].amount != 55
@@ -907,11 +903,14 @@ void run_roundtrip() {
                                      sm::spell_ordinal("haste"))) {
         FAIL_BAIL("sustained spell state lost");
     }
-    if (p.completedQuestIds.empty() || p.completedQuestIds[0] != "q_done_round") {
-        FAIL_BAIL("quest completion lost");
+    if (p.completedQuestCount != 5u || p.failedQuestCount != 2u) {
+        FAIL_BAIL("quest completion tallies lost");
     }
-    if (p.failedQuestIds.empty() || p.failedQuestIds[0] != "q_failed_round") {
-        FAIL_BAIL("failed quest ledger lost");
+    if (p.settledQuestOffers.size() != 1u
+        || p.settledQuestOffers[0].giverSettlementId != 7
+        || p.settledQuestOffers[0].bornDay != 3
+        || p.settledQuestOffers[0].offerSlot != 2) {
+        FAIL_BAIL("settled quest offers lost");
     }
     const sm::Landmark* cityLm = sm::landmark_by_id(loaded, 7);
     if (!cityLm || cityLm->type != sm::LandmarkType::City
@@ -993,7 +992,10 @@ void run_roundtrip() {
         || loaded.resourceScars[std::size_t(sm::ResourceFieldId::Wheat)].at(23u * 1024u + 5u) != 12u) {
         FAIL_BAIL("crop harvest scars lost");
     }
-    if (loadedQuests.size() != 1 || loadedQuests[0].id != "q_active") {
+    if (loadedQuests.size() != 1 || loadedQuests[0].ordinal != 1u
+        || loadedQuests[0].offerSlot != 4
+        || loadedQuests[0].bornDay != 3
+        || loaded.nextQuestOrdinal < 2u) {
         FAIL_BAIL("active quest lost");
     }
     if (!loadedQuests[0].objectives.empty()) {
@@ -1011,7 +1013,7 @@ void run_roundtrip() {
         || loadedQuests[0].rewards.empty()
         || loadedQuests[0].rewards[0].amount != 170
         || loadedQuests[0].onAccept.size() != 12
-        || loadedQuests[0].onAccept[0].s1 != "q_active"
+        || loadedQuests[0].onAccept[0].tag != sm::EventTag::QuestStart
         || loadedQuests[0].onAccept[1].tag != sm::EventTag::SpawnEntity
         || loadedQuests[0].onAccept[1].s1 != "bandit"
         || loadedQuests[0].onAccept[1].a != 3u
@@ -1064,12 +1066,13 @@ void run_roundtrip() {
     std::vector<sm::MacroNpcRecord> sentinelMacro;
     std::vector<std::uint16_t> sentinelTrees(3, 42u);
     sm::DepositLayer sentinelDeposits;
-    sentinelQuests.push_back(make_quest("sentinel"));
+    sentinelQuests.push_back(make_quest());
+    sentinelQuests[0].ordinal = 777u;
     if (sm::load_game(sentinel, sentinelQuests, sentinelMacro, sentinelTrees,
                       sentinelDeposits, truncatedPath)) {
         FAIL_BAIL("truncated payload accepted");
     }
-    if (sentinel.mapW != 11 || sentinelQuests[0].id != "sentinel"
+    if (sentinel.mapW != 11 || sentinelQuests[0].ordinal != 777u
         || sentinelTrees.size() != 3) {
         FAIL_BAIL("failed truncated load mutated state");
     }
@@ -1081,12 +1084,12 @@ void run_roundtrip() {
         FAIL_BAIL("could not write corrupt file");
     }
     sentinel.mapW = 22;
-    sentinelQuests[0].id = "sentinel_corrupt";
+    sentinelQuests[0].ordinal = 778u;
     if (sm::load_game(sentinel, sentinelQuests, sentinelMacro, sentinelTrees,
                       sentinelDeposits, corruptPath)) {
         FAIL_BAIL("corrupt payload accepted");
     }
-    if (sentinel.mapW != 22 || sentinelQuests[0].id != "sentinel_corrupt") {
+    if (sentinel.mapW != 22 || sentinelQuests[0].ordinal != 778u) {
         FAIL_BAIL("failed corrupt load mutated state");
     }
 
@@ -1140,9 +1143,9 @@ void run_roundtrip() {
     // that never touches the save; the player's past is his journal of
     // chronicle records, round-tripped above.)
 
-    std::printf("OK save_roundtrip_test path=%s bytes=%zu map=%dx%d quest=%s\n",
+    std::printf("OK save_roundtrip_test path=%s bytes=%zu map=%dx%d quest=%u\n",
                 path.c_str(), bytes.size(), loaded.mapW, loaded.mapH,
-                loadedQuests[0].id.c_str());
+                unsigned(loadedQuests[0].ordinal));
 
     remove_slot_files(truncatedPath);
     remove_slot_files(corruptPath);

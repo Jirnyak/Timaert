@@ -26,14 +26,23 @@ public:
               Inventory* bag,
               AgentMemory* head);
 
+    // Accepting is the moment an offer becomes an object of the world, so
+    // this is where its ordinal is issued (gs.nextQuestOrdinal — the one
+    // quest-identity door, CANON S20.1). Takes GameState for that issuer.
     void accept(std::vector<Quest>& active,
                 Quest q,
-                const PlayerState& player,
+                GameState& gs,
                 EventBus& bus);
-    void abandon(std::vector<Quest>& active, const std::string& id, EventBus& bus);
+    void abandon(std::vector<Quest>& active, std::uint32_t ordinal,
+                 EventBus& bus);
+    // Has the player already taken or settled THIS OFFER? Compared by the
+    // offer's provenance triple (quest_types.h same_offer) against the
+    // active list and the settled-offer memory — an offer regenerates from
+    // the seed every day, so its identity is its provenance, never an
+    // ordinal it does not have yet.
     bool is_known(const std::vector<Quest>& active,
                   const PlayerState& player,
-                  const std::string& id) const;
+                  const Quest& offer) const;
 };
 
 // Project active quests onto gs.markers as gold "!" quest pins — one per

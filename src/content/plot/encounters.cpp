@@ -3,6 +3,7 @@
 // Mirrors plot/encounters.ts. We use plain payload helpers to keep the
 // table dense and readable.
 #include "content/plot/encounters.h"
+#include "macro/codex.h"
 
 namespace sm::content {
 
@@ -29,9 +30,9 @@ GameEvent battle(const char* name, const char* type, int level) {
     return e;
 }
 
-GameEvent codex(const char* id) {
+GameEvent codex(CodexArticleId id) {
     GameEvent e{EventTag::CodexUnlock};
-    e.s1 = id;
+    e.a = std::uint32_t(id);
     return e;
 }
 
@@ -139,7 +140,7 @@ std::vector<EncounterDef> build_table() {
     t.push_back({"Black Monolith",
         "A jagged shard of obsidian rises from the earth, consuming the light around it.",
         {
-            {"Study the runes", {codex("cosmology"), effect("grant_xp", 50)}},
+            {"Study the runes", {codex(CodexArticleId::Cosmology), effect("grant_xp", 50)}},
             {"Smash the shard", {rep("empire", 5), rep("cults", -10)}},
         }});
 

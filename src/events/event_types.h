@@ -26,10 +26,10 @@ namespace sm
         PlayerMove = 0,
         NpcDeath,         // a = entity id, b = killer, ix = NPCKind.type
         SettlementVisit,
-        QuestStart,       // s1 = quest id, a = stable quest key
-        QuestUpdate,      // s1 = quest id, a = stable quest key
-        QuestComplete,    // s1 = quest id, a = stable quest key
-        QuestFail,        // s1 = quest id, a = stable quest key
+        QuestStart,       // a = quest ordinal, s2 = title (feed display)
+        QuestUpdate,      // a = quest ordinal
+        QuestComplete,    // a = quest ordinal
+        QuestFail,        // a = quest ordinal, s2 = "expired"/"abandoned"
         SpellCast,
         SpellLearned,
         LandmarkChangeOwner,
@@ -38,7 +38,7 @@ namespace sm
         PlayerGoldChange, // ix = delta, iy = optional new total
         ApplyEffect,      // s1 = effectType, ix = value
         BattleStart,      // s1 = enemyName, s2 = enemyType, ix = enemyLevel
-        CodexUnlock,      // s1 = entryId
+        CodexUnlock,      // a = article ordinal (macro/codex.h CodexArticleId)
         ReputationChange, // s1 = factionId, ix = delta, iy = optional new value
         ShowDialog,       // s1 = title, s2 = description, ix = choice count
         ShowStory,        // s1 = source node, s2 = story id, ix/iy/a/b = counts

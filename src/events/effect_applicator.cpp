@@ -1,8 +1,8 @@
 #include "macro/bonus.h"
 #include "events/effect_applicator.h"
+#include "macro/codex.h"
 #include "macro/currency.h"
 #include "macro/spells.h"
-#include "events/event_log_util.h"
 #include <algorithm>
 #include <cstdio>
 
@@ -103,8 +103,14 @@ void apply_events(std::span<const GameEvent> events, GameState& gs,
                 }
                 break;
             case EventTag::QuestComplete:
+                // The engine settles its own quests (b marks that); this arm
+                // serves quest events raised by OTHER emitters — an authored
+                // chain completing a quest still counts in the tally. The
+                // event names the quest by ordinal only, so there is no
+                // offer provenance to settle here — and an authored quest
+                // has none (bornDay -1).
                 if (ev.b != kEventEffectAlreadyApplied) {
-                    push_string(p.completedQuestIds, ev.s1);
+                    ++p.completedQuestCount;
                 }
                 break;
             case EventTag::QuestFail:
@@ -114,10 +120,7 @@ void apply_events(std::span<const GameEvent> events, GameState& gs,
                 if (ev.b == kEventEffectAlreadyApplied) {
                     break;
                 }
-                // TS quest-engine.ts stores failed quests in completedQuestIds
-                // as "done (failed)". Keep the native failed ledger too.
-                push_string(p.completedQuestIds, ev.s1);
-                push_unique_string(p.failedQuestIds, ev.s1);
+                ++p.failedQuestCount;
                 break;
             case EventTag::SpellLearned:
                 // The event still speaks the string id (the bus->chronicle
@@ -137,10 +140,10 @@ void apply_events(std::span<const GameEvent> events, GameState& gs,
                 }
                 break;
             case EventTag::CodexUnlock:
-                // TS dedups codex entries — match.
-                if (std::find(p.codexUnlocked.begin(), p.codexUnlocked.end(),
-                              ev.s1) == p.codexUnlocked.end()) {
-                    p.codexUnlocked.push_back(ev.s1);
+                // ev.a = article ordinal (macro/codex.h). Setting a bit is
+                // idempotent — the old find-then-push dedup is the OR.
+                if (ev.a < kCodexArticleCount) {
+                    p.codexUnlockedBits |= 1ull << ev.a;
                 }
                 break;
             case EventTag::ReputationChange:

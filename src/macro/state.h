@@ -231,7 +231,14 @@ namespace sm {
 // `std::vector<Landmark>` with a kind column and one serializer; every kind
 // writes every column, unused ones ride at zero defaults. A S9 transition
 // (village→city, spire→ruin) is now a column flip, not a record move.
-constexpr int kSaveVersion = 62;
+// v63: quest identity is an ORDINAL (CANON S20.1, owner 2026-08-29). Quests
+// carry nextQuestOrdinal numbers + a POD offer-provenance triple; the id
+// string and its FNV event key are dead. The eternal completedQuestIds /
+// failedQuestIds string vectors became settledQuestOffers (same-day dedup —
+// their only living semantic) + two lifetime counters. The codex unlock
+// state is a bit per article ordinal (macro/codex.h registry, was UI-owned
+// string tables + a string vector).
+constexpr int kSaveVersion = 63;
 
 enum class SettlementMood : std::uint8_t {
     Prosperous, Stable, Tense, Unrest, Revolt, Count
@@ -399,6 +406,17 @@ struct SessionFeed {
     std::uint8_t head = 0;               // where the NEXT line goes
 };
 
+// A settled quest OFFER's provenance — the POD triple that names an offer
+// uniquely (events/quests/quest_types.h Quest: each generator fires at most
+// once per settlement per day). Defined here, not there, because the layer
+// order runs macro → events: player state stores it, the quest engine reads
+// it through this door.
+struct SettledQuestOffer {
+    std::int32_t giverSettlementId = -1;
+    std::int32_t bornDay = -1;
+    std::uint8_t offerSlot = 0;
+};
+
 struct PlayerState {
     std::string name;
     int ageDays = 1000;
@@ -429,7 +447,10 @@ struct PlayerState {
     // macro/player_entity.h player_roster(). It sat here as a SoldierSquad of
     // its own until 2026-08-27, and every consumer of it was a
     // player-specific path CANON S4 forbids by name.)
-    std::vector<std::string> codexUnlocked;
+    // Codex unlock state: one bit per article ordinal (macro/codex.h
+    // CodexArticleId; the static_assert there is the loud cap). Replaced a
+    // vector of id STRINGS (v63) — a string was doing an ordinal's job.
+    std::uint64_t codexUnlockedBits = 0;
     // The player's log — a RING, not a vector that shifts. It was capped by
     // `erase(begin())`, which memmoves up to eight thousand std::strings on
     // every entry past the cap: the same defect the settlement history and the
@@ -470,8 +491,23 @@ struct PlayerState {
     // concept is kept (S24 politics will want truces) in the shape everything
     // else about factions now has: a flat array indexed by ordinal.
     std::array<std::int32_t, kMaxWorldFactions> factionPeaceUntilDay{};
-    std::vector<std::string> completedQuestIds;
-    std::vector<std::string> failedQuestIds;
+    // Quest OFFERS the player has settled (completed or failed) — the POD
+    // provenance triples the quest engine's is_known compares against, so a
+    // settlement does not re-offer what was already done TODAY. An offer's
+    // identity includes its bornDay (quest_types.h), so an entry whose day
+    // has passed can never be generated again — the engine prunes stale
+    // entries each tick, and the list stays a handful of records.
+    //
+    // v63: this replaced completedQuestIds/failedQuestIds — two ETERNAL
+    // string vectors whose only living semantic was exactly this same-day
+    // dedup (the day was baked into the id string, so an old entry never
+    // matched anything again — dead weight growing in the save forever).
+    std::vector<SettledQuestOffer> settledQuestOffers;
+    // Lifetime tallies (the honest split: the old string lists filed a
+    // failure into BOTH, a TS relic). Display/stats only — dedup is the
+    // provenance list above; history will be the chronicle's job.
+    std::uint32_t completedQuestCount = 0;
+    std::uint32_t failedQuestCount = 0;
     // Possession persistence (Inc 5e-2, kSaveVersion 10). If the player left a
     // subworld while possessing a projected macro NPC, this holds that NPC's
     // deterministic spawn ordinal (ecs::MacroSpawnId) so the PlayerTag flag can
@@ -590,6 +626,12 @@ struct GameState {
     // Same monotonic-ordinal law as nextMacroSpawnOrdinal above: a hash or a
     // per-kind register is not an identity (CANON S20.1).
     std::uint32_t nextLandmarkOrdinal = 1;
+    // The ONE issuer of QUEST ordinals (v63), same law again. Issued at
+    // ACCEPT (QuestEngine::accept) — the moment an offer stops being a
+    // seed-regenerated projection and becomes an object the world stores;
+    // 0 is reserved for "an offer not yet accepted". The FNV hash of the
+    // quest id string that used to ride events (quest_id_key) is dead.
+    std::uint32_t nextQuestOrdinal = 1;
     // The world's runtime rhythms (v24). worldTickRt is the LIVE runtime —
     // world_tick.cpp mutates it in place; macroAiRhythm is the staged image
     // of App::npcAi's persistent half (see the two sync doors in main.cpp).

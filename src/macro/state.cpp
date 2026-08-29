@@ -2,6 +2,7 @@
 // createFactions.  Faction relations sampled deterministically from `seed`
 // via the band system in state.ts (ALLY / WAR / HOSTILE_LIGHT / NEUTRAL).
 #include "macro/state.h"
+#include "macro/codex.h"
 #include "macro/econ_day.h"
 #include "macro/currency.h"
 #include "macro/faction.h"
@@ -78,7 +79,7 @@ PlayerState default_player() {
     // Starter spellbook: magic_bolt.
     spellbook_learn(p.spellBook, spell_ordinal("magic_bolt"));
 
-    p.codexUnlocked = {"cosmology", "attributes", "perks_skills", "market", "settlements"};
+    p.codexUnlockedBits = kCodexInitialUnlockBits;
 
     // No reputation seeding here any more: the player's standing IS his row in
     // the relation matrix, so it is seeded where that matrix is built

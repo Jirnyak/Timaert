@@ -24,6 +24,9 @@
 #pragma clang diagnostic pop
 #endif
 
+#include "macro/codex.h"
+#include <bit>
+
 namespace sm::app {
 
 constexpr int kSubworldSmokeFrames = 1000;
@@ -3868,7 +3871,7 @@ bool run_console_smoke(App& app) {
         const std::size_t base = app.gs.markers.size();
 
         sm::Quest q;
-        q.id = "smoke_qm";
+        q.ordinal = 999001u;   // any nonzero identity; markers key off it
         q.title = "Smoke Marker Target";
         sm::Objective vis;
         vis.kind = sm::ObjectiveKind::VisitCell;
@@ -3887,7 +3890,7 @@ bool run_console_smoke(App& app) {
         }
         const sm::Marker* pin = nullptr;
         for (const auto& m : app.gs.markers)
-            if (m.id == "quest_smoke_qm_0") pin = &m;
+            if (m.id == "quest_999001_0") pin = &m;
         if (!pin || pin->style != sm::MarkerStyle::Quest ||
             pin->x != 42.0f || pin->y != 17.0f) {
             bail("quest_markers: pin id/style/cell wrong"); return false;
@@ -6035,11 +6038,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             app.ui.quest = true;
             app.ui.questSelection = 0;
             std::fprintf(stderr,
-                         "[smoke] quest_journal open active=%zu done=%zu first=%s\n",
+                         "[smoke] quest_journal open active=%zu done=%u first=%s\n",
                          app.activeQuests.size(),
-                         app.gs.player.completedQuestIds.size(),
+                         app.gs.player.completedQuestCount,
                          app.activeQuests.empty()
-                             ? "(none)" : app.activeQuests.front().id.c_str());
+                             ? "(none)" : app.activeQuests.front().title.c_str());
             std::fflush(stderr);
             ++app.smoke.cursor;
             break;
@@ -6052,10 +6055,12 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             app.ui.codex = true;
             std::fprintf(stderr,
-                         "[smoke] codex open unlocked=%zu first=%s\n",
-                         app.gs.player.codexUnlocked.size(),
-                         app.gs.player.codexUnlocked.empty()
-                             ? "(none)" : app.gs.player.codexUnlocked.front().c_str());
+                         "[smoke] codex open unlocked=%d first=%s\n",
+                         std::popcount(app.gs.player.codexUnlockedBits),
+                         app.gs.player.codexUnlockedBits
+                             ? sm::kCodexArticles[std::size_t(std::countr_zero(
+                                   app.gs.player.codexUnlockedBits))].title
+                             : "(none)");
             std::fflush(stderr);
             ++app.smoke.cursor;
             break;

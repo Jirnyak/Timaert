@@ -10,6 +10,7 @@
 #include "events/node_registry.h"
 #include "events/quests/quest_engine.h"
 #include "macro/agent_memory.h"
+#include "macro/codex.h"
 #include "macro/currency.h"
 
 #include "core/rng.h"
@@ -42,7 +43,6 @@ sm::AgentMemory head{};
 const sm::Quest* find_delivery_quest(const std::vector<sm::Quest>& quests,
                                      const char* itemId) {
     for (const auto& q : quests) {
-        if (q.id.rfind("q_proc_deliver_", 0) != 0) continue;
         for (const auto& obj : q.objectives) {
             if (obj.kind == sm::ObjectiveKind::DeliverItems
                 && obj.itemId == itemId) {
@@ -72,38 +72,15 @@ int gold_reward(const sm::Quest& q) {
     return total;
 }
 
-bool contains_completed_id(const sm::PlayerState& p, const std::string& id) {
-    for (const auto& completed : p.completedQuestIds) {
-        if (completed == id) {
-            return true;
-        }
+// Is this offer's provenance triple in the settled memory? (The engine's
+// is_known checks active ∪ settled; this looks at the settled half alone.)
+bool offer_settled(const sm::PlayerState& p, const sm::Quest& q) {
+    for (const auto& so : p.settledQuestOffers) {
+        if (so.giverSettlementId == q.giverSettlementId
+            && so.offerSlot == q.offerSlot
+            && so.bornDay == q.bornDay) return true;
     }
     return false;
-}
-
-bool contains_failed_id(const sm::PlayerState& p, const std::string& id) {
-    for (const auto& failed : p.failedQuestIds) {
-        if (failed == id) {
-            return true;
-        }
-    }
-    return false;
-}
-
-int count_completed_id(const sm::PlayerState& p, const std::string& id) {
-    int count = 0;
-    for (const auto& completed : p.completedQuestIds) {
-        if (completed == id) ++count;
-    }
-    return count;
-}
-
-int count_failed_id(const sm::PlayerState& p, const std::string& id) {
-    int count = 0;
-    for (const auto& failed : p.failedQuestIds) {
-        if (failed == id) ++count;
-    }
-    return count;
 }
 
 void apply_pending(sm::EventBus& bus, sm::GameState& gs, std::size_t& applied) {
@@ -288,14 +265,13 @@ void test_quest_accept_event_order() {
     bag.clear();
     head = sm::AgentMemory{};
     sm::Quest q{};
-    q.id = "q_alias";
     q.title = "Alias";
     sm::GameEvent onAccept{sm::EventTag::SpawnEntity};
     onAccept.s1 = "bandit";
     q.onAccept.push_back(onAccept);
     sm::EventBus bus;
     sm::QuestEngine engine;
-    sm::PlayerState player{};
+    sm::GameState gs{};
     std::vector<sm::Quest> active;
     std::size_t activeDuringOnAccept = 0;
     std::size_t activeDuringQuestStart = 0;
@@ -305,7 +281,7 @@ void test_quest_accept_event_order() {
     bus.on(sm::EventTag::QuestStart, [&](const sm::GameEvent&) {
         activeDuringQuestStart = active.size();
     });
-    engine.accept(active, q, player, bus);
+    engine.accept(active, q, gs, bus);
     CHECK_OR_RETURN(!(count_tag(bus, sm::EventTag::QuestStart) == 0),
         "QuestEngine::accept did not emit QuestStart");
     CHECK_OR_RETURN(!(activeDuringOnAccept != 1 || activeDuringQuestStart != 1),
@@ -313,12 +289,19 @@ void test_quest_accept_event_order() {
     CHECK_OR_RETURN(!(bus.tick_events().size() != 2
         || bus.tick_events()[0].tag != sm::EventTag::SpawnEntity
         || bus.tick_events()[1].tag != sm::EventTag::QuestStart
-        || bus.tick_events()[1].s1 != q.id
+        || bus.tick_events()[1].a != active[0].ordinal
         || bus.tick_events()[1].s2 != q.title),
         "QuestEngine::accept did not emit onAccept before QuestStart");
-    engine.accept(active, q, player, bus);
+    // Accepting issues the identity: monotonic ordinals from the ONE issuer,
+    // starting at 1 (0 stays reserved for "an offer not yet accepted").
+    CHECK_OR_RETURN(!(active[0].ordinal != 1u),
+        "the first accepted quest did not draw ordinal 1");
+    engine.accept(active, q, gs, bus);
     CHECK_OR_RETURN(!(active.size() != 2 || count_tag(bus, sm::EventTag::QuestStart) != 2),
         "QuestEngine::accept deduped a quest unlike TS accept()");
+    CHECK_OR_RETURN(!(active[1].ordinal != 2u
+        || gs.nextQuestOrdinal != 3u),
+        "quest ordinals are not monotonic from the one issuer");
 }
 
 void test_effect_applicator_ts_verbs() {
@@ -404,17 +387,21 @@ void test_effect_applicator_ts_verbs() {
     events.push_back(reputation);
 
     sm::GameEvent codex{sm::EventTag::CodexUnlock};
-    codex.s1 = "entry.alpha";
+    codex.a = std::uint32_t(sm::CodexArticleId::Witches);
     events.push_back(codex);
     events.push_back(codex);
+    // An out-of-range article ordinal is ignored, not a stray bit.
+    sm::GameEvent codexBad{sm::EventTag::CodexUnlock};
+    codexBad.a = 63u;
+    events.push_back(codexBad);
 
     sm::GameEvent complete{sm::EventTag::QuestComplete};
-    complete.s1 = "q_complete";
+    complete.a = 101u;
     events.push_back(complete);
     events.push_back(complete);
 
     sm::GameEvent failQuest{sm::EventTag::QuestFail};
-    failQuest.s1 = "q_fail";
+    failQuest.a = 102u;
     events.push_back(failQuest);
     events.push_back(failQuest);
 
@@ -435,17 +422,16 @@ void test_effect_applicator_ts_verbs() {
         "grant_xp did not apply XP without direct level mutation");
     CHECK_OR_RETURN(!(sm::player_reputation(&verbState, "guild") != 3),
         "ReputationChange did not move the player's row in the matrix");
-    CHECK_OR_RETURN(!(player.codexUnlocked.size() != 1 || player.codexUnlocked[0] != "entry.alpha"),
-        "CodexUnlock did not deduplicate entry like TS");
-    CHECK_OR_RETURN(!(!contains_completed_id(player, "q_complete")
-        || !contains_failed_id(player, "q_fail")
-        || !contains_completed_id(player, "q_fail")),
-        "quest completion/failure ledgers do not match TS done semantics");
-    CHECK_OR_RETURN(!(count_completed_id(player, "q_complete") != 2
-        || count_completed_id(player, "q_fail") != 2),
-        "quest completed ledger deduped ids unlike TS push semantics");
-    CHECK_OR_RETURN(!(count_failed_id(player, "q_fail") != 1),
-        "quest failed ledger duplicated native classification");
+    // The unlock is a bit per ordinal: emitting twice sets it once, and the
+    // out-of-range ordinal above set nothing.
+    CHECK_OR_RETURN(!(player.codexUnlockedBits
+            != sm::codex_bit(sm::CodexArticleId::Witches)),
+        "CodexUnlock bits are not exactly the one emitted article");
+    // Lifetime tallies: two external completions, two external failures —
+    // the honest split (the old string ledgers filed a failure into BOTH).
+    CHECK_OR_RETURN(!(player.completedQuestCount != 2u
+        || player.failedQuestCount != 2u),
+        "quest completion/failure tallies did not count external events");
 
     // NO PLOT FILE CAN WOUND ANYBODY (owner, 2026-08-27). The verb is gone,
     // and the road it used is closed too: an instant bonus may not drive HP
@@ -566,7 +552,6 @@ void test_quest_xp_reward_levels_the_player() {
     const int l3 = sm::exp_to_next_level(3);
 
     sm::Quest q{};
-    q.id = "q_xp_reward";
     q.title = "Paid in experience";
     q.category = sm::QuestCategory::Procedural;
     sm::Objective done{};
@@ -1045,7 +1030,8 @@ void test_encounter_table_shape() {
     CHECK_OR_RETURN(!(monolith.choices.size() != 2
         || monolith.choices[0].effects.size() != 2
         || monolith.choices[0].effects[0].tag != sm::EventTag::CodexUnlock
-        || monolith.choices[0].effects[0].s1 != "cosmology"
+        || monolith.choices[0].effects[0].a
+            != std::uint32_t(sm::CodexArticleId::Cosmology)
         || monolith.choices[1].effects.size() != 2
         || monolith.choices[1].effects[0].tag != sm::EventTag::ReputationChange
         || monolith.choices[1].effects[0].s1 != "empire"
@@ -1068,7 +1054,7 @@ void test_encounter_table_shape() {
 // Removed with the node (owner ruling 2026-08-05: events come from game
 // context and state, never an unconditional random roll over a list).
 
-void test_quest_failed_uses_failed_ledger() {
+void test_quest_failed_settles_its_offer() {
     bag.clear();
     head = sm::AgentMemory{};
     sm::GameState gs{};
@@ -1079,7 +1065,10 @@ void test_quest_failed_uses_failed_ledger() {
     gs.player.y = 1.0f;
 
     sm::Quest q{};
-    q.id = "q_expired";
+    q.ordinal = 42u;
+    q.giverSettlementId = 5;
+    q.offerSlot = 2;
+    q.bornDay = 10;          // offered TODAY, expired yesterday
     q.title = "Expired";
     q.description = "Expired quest";
     q.category = sm::QuestCategory::Procedural;
@@ -1104,21 +1093,33 @@ void test_quest_failed_uses_failed_ledger() {
         "expired quest completed instead of failing first");
     const sm::GameEvent* failed = find_tag(bus, sm::EventTag::QuestFail);
     CHECK_OR_RETURN(!(!failed
-        || failed->s1 != q.id
+        || failed->a != q.ordinal
         || failed->s2 != "expired"
         || failed->b != sm::kEventEffectAlreadyApplied),
-        "expired quest did not carry TS QuestFail reason");
-    CHECK_OR_RETURN(!(count_completed_id(gs.player, q.id) != 1
-        || count_failed_id(gs.player, q.id) != 1),
-        "expired quest did not mutate done/failed ledgers directly like TS");
+        "expired quest did not carry ordinal + reason");
+    CHECK_OR_RETURN(!(gs.player.failedQuestCount != 1u
+        || gs.player.completedQuestCount != 0u
+        || !offer_settled(gs.player, q)),
+        "expiry did not settle the offer / count the failure honestly");
 
     sm::apply_events(bus.tick_events(), gs, &bag);
-    CHECK_OR_RETURN(!(count_completed_id(gs.player, q.id) != 1),
-        "QuestFail duplicated TS completedQuestIds done ledger");
-    CHECK_OR_RETURN(!(count_failed_id(gs.player, q.id) != 1),
-        "QuestFail duplicated failedQuestIds");
-    CHECK_OR_RETURN(!(!engine.is_known(active, gs.player, q.id)),
-        "failed quest is not treated as known");
+    CHECK_OR_RETURN(!(gs.player.failedQuestCount != 1u),
+        "an already-applied QuestFail was double-counted");
+    CHECK_OR_RETURN(!(!engine.is_known(active, gs.player, q)),
+        "the settled offer is not treated as known");
+    // NEGATIVE CONTROL: a different provenance is NOT known — the dedup
+    // really compares the triple, not "anything settled today".
+    sm::Quest other = q;
+    other.offerSlot = 3;
+    CHECK_OR_RETURN(!(engine.is_known(active, gs.player, other)),
+        "a different offer slot reads as known: dedup is not by provenance");
+
+    // The day turns: this offer can never be generated again (its bornDay is
+    // part of its identity), so the settled memory prunes itself.
+    gs.worldTime = sm::world_time_at(11, 6, 0);
+    engine.tick(active, bus, gs, &bag, &head);
+    CHECK_OR_RETURN(!(!gs.player.settledQuestOffers.empty()),
+        "yesterday's settled offer was not pruned with its day");
 }
 
 void test_item_delivery_direct_path() {
@@ -1144,7 +1145,7 @@ void test_item_delivery_direct_path() {
     gs.landmarks.push_back(settlement);
 
     sm::Quest q{};
-    q.id = "q_delivery_item";
+    q.ordinal = 7u;
     q.title = "Deliver Materials";
     q.description = "Test delivery";
     q.category = sm::QuestCategory::Procedural;
@@ -1178,7 +1179,7 @@ void test_item_delivery_direct_path() {
     CHECK_OR_RETURN(!(bag.count("wood") != 1
         || bag.count("misc_gem") != 2),
         "event application duplicated direct inventory mutation");
-    CHECK_OR_RETURN(!(!contains_completed_id(gs.player, q.id)),
+    CHECK_OR_RETURN(!(gs.player.completedQuestCount != 1u),
         "delivery completion was not applied");
 }
 
@@ -1196,7 +1197,7 @@ void test_quest_reward_dispatch_order_and_application() {
     gs.player.sheet.levelData.exp = 0;
 
     sm::Quest q{};
-    q.id = "q_reward_order";
+    q.ordinal = 9u;
     q.title = "Reward Order";
     q.description = "Reward parity test";
     sm::Objective objective{};
@@ -1240,7 +1241,7 @@ void test_quest_reward_dispatch_order_and_application() {
     int reputationSeenByListener = -1;
     bus.on(sm::EventTag::PlayerGoldChange, [&](const sm::GameEvent&) {
         goldSeenByListener = sm::wallet_value(bag);
-        completedDuringGold = count_completed_id(gs.player, q.id);
+        completedDuringGold = int(gs.player.completedQuestCount);
     });
     bus.on(sm::EventTag::ReputationChange, [&](const sm::GameEvent&) {
         reputationSeenByListener = sm::player_reputation(&gs, "guild");
@@ -1265,7 +1266,7 @@ void test_quest_reward_dispatch_order_and_application() {
         || events[2].tag != sm::EventTag::Custom
         || events[2].s1 != "reward_event"
         || events[3].tag != sm::EventTag::QuestComplete
-        || events[3].s1 != q.id
+        || events[3].a != q.ordinal
         || events[3].b != sm::kEventEffectAlreadyApplied),
         "quest reward dispatch order does not match TS reward-before-complete flow");
     CHECK_OR_RETURN(!(goldSeenByListener != 27
@@ -1276,7 +1277,7 @@ void test_quest_reward_dispatch_order_and_application() {
         || gs.player.sheet.levelData.exp != 11
         || sm::player_reputation(&gs, "guild") != 3
         || bag.count("misc_gem") != 2
-        || count_completed_id(gs.player, q.id) != 1),
+        || gs.player.completedQuestCount != 1u),
         "quest rewards did not mutate state directly like TS");
 
     std::size_t applied = 0;
@@ -1285,7 +1286,7 @@ void test_quest_reward_dispatch_order_and_application() {
         || gs.player.sheet.levelData.exp != 11
         || sm::player_reputation(&gs, "guild") != 3
         || bag.count("misc_gem") != 2
-        || count_completed_id(gs.player, q.id) != 1),
+        || gs.player.completedQuestCount != 1u),
         "quest reward events duplicated direct TS state");
 
     apply_pending(bus, gs, applied);
@@ -1293,7 +1294,7 @@ void test_quest_reward_dispatch_order_and_application() {
         || gs.player.sheet.levelData.exp != 11
         || sm::player_reputation(&gs, "guild") != 3
         || bag.count("misc_gem") != 2
-        || count_completed_id(gs.player, q.id) != 1),
+        || gs.player.completedQuestCount != 1u),
         "quest reward events reapplied after pending cursor advanced");
 }
 
@@ -1306,7 +1307,6 @@ void test_find_location_player_move_objective() {
     gs.worldTime = sm::world_time_at(0, 6, 0);
 
     sm::Quest q{};
-    q.id = "q_find_location";
     q.title = "Find Location";
     q.description = "Test PlayerMove objective payload";
     q.category = sm::QuestCategory::Procedural;
@@ -1341,7 +1341,6 @@ void test_visit_cell_objective() {
     gs.player.y = 50.0f;
 
     sm::Quest q{};
-    q.id = "q_visit_cell";
     q.title = "Visit Cell";
     q.description = "Test VisitCell objective";
     q.category = sm::QuestCategory::Procedural;
@@ -1372,10 +1371,10 @@ void test_quest_completion_order_matches_ts_reverse_scan() {
     gs.player.x = 10.0f;
     gs.player.y = 10.0f;
 
-    auto make_visit = [](const char* id) {
+    auto make_visit = [](std::uint32_t ordinal, const char* title) {
         sm::Quest q{};
-        q.id = id;
-        q.title = id;
+        q.ordinal = ordinal;
+        q.title = title;
         q.description = "Reverse scan order test";
         q.category = sm::QuestCategory::Procedural;
         sm::Objective objective{};
@@ -1390,22 +1389,22 @@ void test_quest_completion_order_matches_ts_reverse_scan() {
     sm::EventBus bus;
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
-    active.push_back(make_visit("q_low"));
-    active.push_back(make_visit("q_high"));
+    active.push_back(make_visit(1u, "q_low"));
+    active.push_back(make_visit(2u, "q_high"));
 
     bus.flush();
     engine.tick(active, bus, gs, &bag, &head);
 
-    std::vector<std::string> completed;
+    std::vector<std::uint32_t> completed;
     for (const auto& ev : bus.tick_events()) {
         if (ev.tag == sm::EventTag::QuestComplete) {
-            completed.push_back(ev.s1);
+            completed.push_back(ev.a);
         }
     }
     CHECK_OR_RETURN(!(!active.empty()
         || completed.size() != 2
-        || completed[0] != "q_high"
-        || completed[1] != "q_low"),
+        || completed[0] != 2u
+        || completed[1] != 1u),
         "QuestEngine completion order does not match TS reverse scan");
 }
 
@@ -1420,7 +1419,6 @@ void test_wait_at_timeadvance_objective() {
     gs.player.y = 18.0f;
 
     sm::Quest q{};
-    q.id = "q_wait_at";
     q.title = "Wait At";
     q.description = "Test WaitAt objective";
     q.category = sm::QuestCategory::Procedural;
@@ -1467,7 +1465,6 @@ void test_destroy_npc_objective() {
     gs.worldTime = sm::world_time_at(0, 6, 0);
 
     sm::Quest q{};
-    q.id = "q_destroy_npc";
     q.title = "Destroy Npc";
     q.description = "Test DestroyNpc objective";
     q.category = sm::QuestCategory::Procedural;
@@ -1527,7 +1524,6 @@ void test_interact_cell_objective() {
     gs.worldTime = sm::world_time_at(0, 6, 0);
 
     sm::Quest q{};
-    q.id = "q_interact_cell";
     q.title = "Interact Cell";
     q.description = "Test InteractCell objective";
     q.category = sm::QuestCategory::Procedural;
@@ -1567,7 +1563,10 @@ void test_abandon_emits_and_removes() {
     bag.clear();
     head = sm::AgentMemory{};
     sm::Quest q{};
-    q.id = "q_abandon_test";
+    q.ordinal = 13u;
+    q.giverSettlementId = 4;
+    q.offerSlot = 1;
+    q.bornDay = 3;
     q.title = "Abandon Test";
     q.description = "Test QuestEngine::abandon";
     q.category = sm::QuestCategory::Procedural;
@@ -1577,23 +1576,24 @@ void test_abandon_emits_and_removes() {
     std::vector<sm::Quest> active;
     active.push_back(q);
 
-    engine.abandon(active, q.id, bus);
+    engine.abandon(active, q.ordinal, bus);
     CHECK_OR_RETURN(!(!active.empty()),
         "abandon did not remove quest from active list");
     const sm::GameEvent* ev = find_tag(bus, sm::EventTag::QuestFail);
-    CHECK_OR_RETURN(!(!ev || ev->s1 != q.id || ev->s2 != "abandoned"
-        || ev->a != std::uint32_t(sm::quest_id_key(q.id))),
-        "abandon did not emit TS QuestFail(abandoned) payload");
+    CHECK_OR_RETURN(!(!ev || ev->a != q.ordinal || ev->s2 != "abandoned"),
+        "abandon did not emit QuestFail(abandoned) with the ordinal");
 
+    // Abandoning neither settles the offer nor counts a failure: the
+    // settlement may re-offer it the same day, exactly as before.
     sm::GameState abandonState{};
     sm::PlayerState& player = abandonState.player;
     sm::apply_events(bus.tick_events(), abandonState, &bag);
-    CHECK_OR_RETURN(!(!player.completedQuestIds.empty()
-        || !player.failedQuestIds.empty()
-        || engine.is_known(active, player, q.id)),
+    CHECK_OR_RETURN(!(player.completedQuestCount != 0u
+        || player.failedQuestCount != 0u
+        || engine.is_known(active, player, q)),
         "abandoned quest was recorded as done unlike TS screen abandon");
 
-    engine.abandon(active, q.id, bus);
+    engine.abandon(active, q.ordinal, bus);
     CHECK_OR_RETURN(!(count_tag(bus, sm::EventTag::QuestFail) != 1),
         "abandon emitted duplicate event for missing quest");
 }
@@ -1648,7 +1648,11 @@ void test_village_protect_generator_spawn_event() {
         "protect quest did not carry SpawnEntity onAccept payload");
 }
 
-void test_village_quest_ids_are_collision_safe() {
+// (Was test_village_quest_ids_are_collision_safe, guarding the "_v7_" id
+// segment: two landmark kinds could share a numeric id then, and only the id
+// STRING kept their quests apart. One landmark ordinal issuer (v54) ended
+// same-id landmarks; what offers need now is the provenance contract below.)
+void test_offer_provenance_is_unique_per_slot_and_day() {
     bag.clear();
     head = sm::AgentMemory{};
     sm::GameState gs{};
@@ -1689,18 +1693,32 @@ void test_village_quest_ids_are_collision_safe() {
 
     const auto cityQuests =
         sm::generate_quests_for_settlement(city, gs, gs.worldSeed);
-    const auto villageQuests =
-        sm::generate_quests_for_village(village, gs, gs.worldSeed);
-    CHECK_OR_RETURN(!(cityQuests.empty() || villageQuests.empty()),
-        "collision-safe quest id test did not generate quests");
-    for (const auto& vq : villageQuests) {
-        CHECK_OR_RETURN(!(vq.giverSettlementId != village.id),
-            "village quest changed gameplay giver id");
-        CHECK_OR_RETURN(!(vq.id.find("_v7_") == std::string::npos),
-            "village quest id does not include village-safe segment");
+    CHECK_OR_RETURN(!(cityQuests.empty()),
+        "offer provenance test did not generate quests");
+    // The dedup triple {giver, slot, bornDay} names an offer uniquely: every
+    // generator fires at most once per settlement per day, so no two offers
+    // of one day share a slot, and all carry the giver and the day.
+    for (std::size_t i = 0; i < cityQuests.size(); ++i) {
+        const sm::Quest& a = cityQuests[i];
+        CHECK_OR_RETURN(!(a.giverSettlementId != city.id
+            || a.bornDay != gs.worldTime.day()
+            || a.ordinal != 0u),
+            "an offer's provenance is not {giver, slot, TODAY} + no ordinal");
+        for (std::size_t j = i + 1; j < cityQuests.size(); ++j) {
+            CHECK_OR_RETURN(!(sm::same_offer(a, cityQuests[j])),
+                "two offers of one settlement-day share a provenance triple");
+        }
+    }
+    // Tomorrow's offers are new identities by construction.
+    gs.worldTime = sm::world_time_at(6, 0, 0);
+    const auto tomorrow =
+        sm::generate_quests_for_settlement(city, gs, gs.worldSeed);
+    CHECK_OR_RETURN(!(tomorrow.empty()),
+        "offer provenance test did not generate tomorrow's quests");
+    for (const auto& tq : tomorrow) {
         for (const auto& cq : cityQuests) {
-            CHECK_OR_RETURN(!(cq.id == vq.id),
-                "city and village quests collided by id");
+            CHECK_OR_RETURN(!(sm::same_offer(tq, cq)),
+                "a new day's offer collided with yesterday's provenance");
         }
     }
 }
@@ -1802,7 +1820,7 @@ void test_generated_delivery_quest_flow() {
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
 
-    engine.accept(active, selected, gs.player, bus);
+    engine.accept(active, selected, gs, bus);
     CHECK_OR_RETURN(!(active.size() != 1),
         "accept did not add quest to active list");
     CHECK_OR_RETURN(!(!has_tag(bus, sm::EventTag::QuestStart)),
@@ -1818,8 +1836,10 @@ void test_generated_delivery_quest_flow() {
         "completion did not emit QuestComplete");
 
     sm::apply_events(bus.tick_events(), gs, &bag);
-    CHECK_OR_RETURN(!(!contains_completed_id(gs.player, selected.id)),
+    CHECK_OR_RETURN(!(gs.player.completedQuestCount != 1u),
         "QuestComplete was not applied to player completion state");
+    CHECK_OR_RETURN(!(active.empty() && gs.nextQuestOrdinal != 2u),
+        "accepting the generated quest did not draw from the one issuer");
     CHECK_OR_RETURN(!(sm::wallet_value(bag) != startGold + rewardGold),
         "gold reward was not applied exactly once");
 
@@ -1849,7 +1869,7 @@ int main() {
     test_logic_node_self_reactivation_safe_cases();
     test_intro_show_story_node();
     test_encounter_table_shape();
-    test_quest_failed_uses_failed_ledger();
+    test_quest_failed_settles_its_offer();
     test_item_delivery_direct_path();
     test_quest_reward_dispatch_order_and_application();
     test_find_location_player_move_objective();
@@ -1860,7 +1880,7 @@ int main() {
     test_interact_cell_objective();
     test_abandon_emits_and_removes();
     test_village_protect_generator_spawn_event();
-    test_village_quest_ids_are_collision_safe();
+    test_offer_provenance_is_unique_per_slot_and_day();
     test_shuffled_order_guards_rng_upper_bound();
     return sm::test::report("quest_lifecycle_test");
 }

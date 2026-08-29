@@ -5,6 +5,7 @@
 #include "ui/screens.h"   // kTopStatusBarHeight — keep the minimap below the top bar
 #include "macro/map_generator.h"
 #include "macro/biomes.h"
+#include "macro/codex.h"
 #include "macro/landmark_registry.h"
 #include "macro/landmark_iter.h"
 #include "ui/landmark_draw.h"
@@ -27,6 +28,7 @@
 #include "sub/map_data.h"
 #include <stb_image.h>
 #include <algorithm>
+#include <bit>
 #include <cstdlib>
 #include <cfloat>
 #include <cmath>
@@ -291,124 +293,22 @@ namespace sm::ui
             }
         }
 
-        struct CodexArticle
+        // The codex catalogue is a REGISTRY now (macro/codex.h): articles by
+        // ordinal, categories a column, unlock state one bit per ordinal.
+        // The tables that lived here moved there — the UI draws content, it
+        // does not own it. `article` selection is the GLOBAL article index.
+        bool codex_unlocked(const PlayerState &player, CodexArticleId id)
         {
-            const char *id;
-            const char *title;
-            const char *content;
-        };
-
-        struct CodexCategory
-        {
-            const char *id;
-            const char *title;
-            const CodexArticle *articles;
-            std::size_t count;
-        };
-
-        constexpr CodexArticle kCodexLore[] = {
-            {
-                "cosmology",
-                "Cosmology",
-                "Torus world created by dead gods.\n\n"
-                "Two opposing forces:\n"
-                "- Pure Magic: natural, impersonal, knowable energy.\n"
-                "- Black Force: void/negation of people's desires and dead gods' whispers.\n\n"
-                "When they meet, they annihilate each other. Black artifacts of dead gods exist and destabilize magic.\n\n"
-                "Central Prophecy: A \"Black Child\" will be born, marking the end of the Pure Magic era.",
-            },
-            {
-                "mage_rulers",
-                "Mage-Rulers",
-                "The Magocracy of the Remnants of Magika.\n\n"
-                "Arrogant and powerful mages - dukes, lords, archmages - rule the remnants of the Magika kingdoms. "
-                "They exploit common people, considering them unworthy of true Pure Magic. In the kingdoms of Magika, "
-                "magic is widespread and the primary measure of power. Even simple peasants possess basic spells. "
-                "For elite mages, a peasant is a tool, a resource, expendable material.",
-            },
-            {
-                "empire_of_light",
-                "Empire of Light",
-                "Theocratic empire. Magic is strictly forbidden under death penalty. Public religion; private corruption. "
-                "Uses elite anti-mage warriors.\n\n"
-                "Great Eunuchs (Shadow Rulers): 13 secret rulers. Publicly religious leaders; secretly serve black cults. "
-                "They manipulate prophecy to prepare the world's transition toward the Black Child.",
-            },
-            {
-                "witches",
-                "The Witches",
-                "Immortal System Entities. Cannot be permanently killed; they reincarnate. Represent metaphysical principles:\n\n"
-                "- Nefesh (Life): birth, transformation, cycle. Assigns arbitrary tasks.\n"
-                "- Ain (Void): entropy and dissolution. Appears near ruined areas.\n"
-                "- Tiferet (Present): \"now\". Focused on immediate action.\n"
-                "- Hokma (Memory): recorded past. Knows everything that was written or marked.",
-            },
-        };
-
-        constexpr CodexArticle kCodexMechanics[] = {
-            {
-                "attributes",
-                "Attributes",
-                "Eight primary attributes shape your character:\n\n"
-                "- STR (Strength): +1 physical damage per point.\n"
-                "- VIT (Vitality): +10 max HP per point.\n"
-                "- END (Endurance): +10 max SP per point.\n"
-                "- WIL (Willpower): +10 max MP per point.\n"
-                "- INT (Intelligence): +1 spell damage per point.\n"
-                "- WIS (Wisdom): +1% EXP bonus per point.\n"
-                "- LCK (Luck): crit scaling and better loot.\n"
-                "- CHA (Charisma): trade discount and relation bonus.\n"
-                "- SPD (Speed): movement speed with asymptotic scaling.",
-            },
-            {
-                "perks_skills",
-                "Skills & Perks",
-                "Skills provide flat base stat increases applied before attribute-based multipliers. They do not modify "
-                "attributes directly. Examples include Bodybuilding and martial disciplines.\n\n"
-                "Perks are powerful, build-defining choices that provide both significant advantages and disadvantages. "
-                "They are gained at level 1 and every 10 levels. Example: \"Immortal\" prevents death from old age, "
-                "but requires much more experience to level up.",
-            },
-        };
-
-        constexpr CodexArticle kCodexEconomy[] = {
-            {
-                "market",
-                "Market System",
-                "No global market. All trade is local and emergent. Prices fluctuate based on local supply and demand.\n\n"
-                "Demand factor rises when demand outpaces supply, raising the target price. Charisma reduces the commission "
-                "when buying from NPCs.",
-            },
-            {
-                "settlements",
-                "Settlements & Caravans",
-                "Villages gather resources via peasant squads. They store inventory locally and sell to caravans and cities.\n\n"
-                "Cities buy resources, produce goods through production chains, spawn caravans for trade, and collect taxes "
-                "based on population and trade volume.\n\n"
-                "Caravans spawn at cities, load surplus goods, and travel using pathfinding toward destinations with strong "
-                "profit estimates.",
-            },
-        };
-
-        constexpr CodexCategory kCodexCategories[] = {
-            {"lore", "Lore & World", kCodexLore, std::size(kCodexLore)},
-            {"mechanics", "RPG Mechanics", kCodexMechanics, std::size(kCodexMechanics)},
-            {"economy", "Economics", kCodexEconomy, std::size(kCodexEconomy)},
-        };
-
-        bool codex_unlocked(const PlayerState &player, const char *id)
-        {
-            return std::find(player.codexUnlocked.begin(),
-                             player.codexUnlocked.end(),
-                             id) != player.codexUnlocked.end();
+            return (player.codexUnlockedBits & codex_bit(id)) != 0u;
         }
 
-        int first_unlocked_article_index(const PlayerState &player,
-                                         const CodexCategory &cat)
+        int first_unlocked_article_in(const PlayerState &player,
+                                      CodexCategoryId cat)
         {
-            for (std::size_t i = 0; i < cat.count; ++i)
+            for (std::size_t i = 0; i < kCodexArticleCount; ++i)
             {
-                if (codex_unlocked(player, cat.articles[i].id))
+                if (kCodexArticles[i].category == cat &&
+                    codex_unlocked(player, kCodexArticles[i].id))
                     return int(i);
             }
             return -1;
@@ -418,21 +318,18 @@ namespace sm::ui
                                     int &category,
                                     int &article)
         {
-            const int catCount = int(std::size(kCodexCategories));
-            if (category >= 0 && category < catCount)
+            if (category >= 0 && category < int(CodexCategoryId::Count) &&
+                article >= 0 && article < int(kCodexArticleCount) &&
+                int(kCodexArticles[std::size_t(article)].category) == category &&
+                codex_unlocked(player, kCodexArticles[std::size_t(article)].id))
             {
-                const CodexCategory &cat = kCodexCategories[std::size_t(category)];
-                if (article >= 0 && article < int(cat.count) &&
-                    codex_unlocked(player, cat.articles[std::size_t(article)].id))
-                {
-                    return;
-                }
+                return;
             }
 
-            for (int ci = 0; ci < catCount; ++ci)
+            for (int ci = 0; ci < int(CodexCategoryId::Count); ++ci)
             {
-                const int ai = first_unlocked_article_index(
-                    player, kCodexCategories[std::size_t(ci)]);
+                const int ai =
+                    first_unlocked_article_in(player, CodexCategoryId(ci));
                 if (ai >= 0)
                 {
                     category = ci;
@@ -2176,8 +2073,10 @@ namespace sm::ui
                     ImGui::Separator();
                     for (const auto &q : availableQuests)
                     {
-                        const bool known = questEngine.is_known(activeQuests, gs.player, q.id);
-                        ImGui::PushID(q.id.c_str());
+                        const bool known = questEngine.is_known(activeQuests, gs.player, q);
+                        // Offers carry no ordinal yet — their provenance slot
+                        // is the unique per-row key (one offer per slot/day).
+                        ImGui::PushID(int(q.offerSlot));
                         if (ImGui::TreeNode("quest", "%s%s", q.title.c_str(),
                                             known ? " (known)" : ""))
                         {
@@ -2193,7 +2092,7 @@ namespace sm::ui
                                 ImGui::BeginDisabled();
                             if (ImGui::Button("Accept"))
                             {
-                                questEngine.accept(activeQuests, q, gs.player, bus);
+                                questEngine.accept(activeQuests, q, gs, bus);
                             }
                             if (known)
                                 ImGui::EndDisabled();
@@ -2247,8 +2146,9 @@ namespace sm::ui
                 *open = false;
             }
             ImGui::SameLine();
-            ImGui::TextDisabled("Active: %zu  Done: %zu",
-                                quests.size(), gs.player.completedQuestIds.size());
+            ImGui::TextDisabled("Active: %zu  Done: %u  Failed: %u",
+                                quests.size(), gs.player.completedQuestCount,
+                                gs.player.failedQuestCount);
             ImGui::Separator();
 
             if (quests.empty())
@@ -2263,7 +2163,7 @@ namespace sm::ui
                 for (int i = 0; i < int(quests.size()); ++i)
                 {
                     const Quest &q = quests[std::size_t(i)];
-                    ImGui::PushID(q.id.c_str());
+                    ImGui::PushID(int(q.ordinal));
                     if (ImGui::Selectable(q.title.c_str(), selected == i))
                     {
                         selected = i;
@@ -2333,8 +2233,8 @@ namespace sm::ui
 
         if (abandonIndex >= 0 && abandonIndex < int(quests.size()))
         {
-            const std::string id = quests[std::size_t(abandonIndex)].id;
-            questEngine.abandon(quests, id, bus);
+            questEngine.abandon(
+                quests, quests[std::size_t(abandonIndex)].ordinal, bus);
             if (selected >= int(quests.size()))
             {
                 selected = quests.empty() ? 0 : int(quests.size()) - 1;
@@ -2356,14 +2256,17 @@ namespace sm::ui
             ImGui::SetWindowFontScale(scale);
             ImGui::Text("Codex");
             ImGui::SameLine();
-            ImGui::TextDisabled("Unlocked entries: %zu", gs.player.codexUnlocked.size());
+            ImGui::TextDisabled("Unlocked entries: %d",
+                                std::popcount(gs.player.codexUnlockedBits));
             ImGui::Separator();
 
             ImGui::BeginChild("##codex_sidebar", ImVec2(250.0f, 0.0f), true);
-            for (int ci = 0; ci < int(std::size(kCodexCategories)); ++ci)
+            for (int ci = 0; ci < int(CodexCategoryId::Count); ++ci)
             {
-                const CodexCategory &cat = kCodexCategories[std::size_t(ci)];
-                const int firstArticle = first_unlocked_article_index(gs.player, cat);
+                const CodexCategoryRow &cat =
+                    kCodexCategories[std::size_t(ci)];
+                const int firstArticle =
+                    first_unlocked_article_in(gs.player, cat.id);
                 if (firstArticle < 0)
                     continue;
 
@@ -2377,9 +2280,12 @@ namespace sm::ui
                 if (selectedCategory == ci)
                 {
                     ImGui::Indent(12.0f);
-                    for (int ai = 0; ai < int(cat.count); ++ai)
+                    for (int ai = 0; ai < int(kCodexArticleCount); ++ai)
                     {
-                        const CodexArticle &entry = cat.articles[std::size_t(ai)];
+                        const CodexArticleRow &entry =
+                            kCodexArticles[std::size_t(ai)];
+                        if (entry.category != cat.id)
+                            continue;
                         if (!codex_unlocked(gs.player, entry.id))
                             continue;
                         if (ImGui::Selectable(entry.title, selectedArticle == ai))
@@ -2392,23 +2298,19 @@ namespace sm::ui
 
             ImGui::SameLine();
             ImGui::BeginChild("##codex_article", ImVec2(0.0f, 0.0f), true);
-            if (selectedCategory >= 0 &&
-                selectedCategory < int(std::size(kCodexCategories)))
+            if (selectedArticle >= 0 &&
+                selectedArticle < int(kCodexArticleCount))
             {
-                const CodexCategory &cat =
-                    kCodexCategories[std::size_t(selectedCategory)];
-                if (selectedArticle >= 0 && selectedArticle < int(cat.count))
-                {
-                    const CodexArticle &entry =
-                        cat.articles[std::size_t(selectedArticle)];
-                    ImGui::TextColored(ImVec4(0.95f, 0.36f, 0.24f, 1.0f),
-                                       "%s", entry.title);
-                    ImGui::TextDisabled("%s / %s", cat.title, entry.id);
-                    ImGui::Separator();
-                    ImGui::PushTextWrapPos(0.0f);
-                    ImGui::TextUnformatted(entry.content);
-                    ImGui::PopTextWrapPos();
-                }
+                const CodexArticleRow &entry =
+                    kCodexArticles[std::size_t(selectedArticle)];
+                ImGui::TextColored(ImVec4(0.95f, 0.36f, 0.24f, 1.0f),
+                                   "%s", entry.title);
+                ImGui::TextDisabled(
+                    "%s", kCodexCategories[std::size_t(entry.category)].title);
+                ImGui::Separator();
+                ImGui::PushTextWrapPos(0.0f);
+                ImGui::TextUnformatted(entry.body);
+                ImGui::PopTextWrapPos();
             }
             else
             {
