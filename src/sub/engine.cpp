@@ -1062,6 +1062,12 @@ CellContext SubworldEngine::resolve_context(int x, int y) const {
     c.macroTemperature =
         std::clamp(f.temperature01 + f.seasonTempOffset, 0.0f, 1.0f);
     c.biome   = f.biome;
+    // The unflooded ground of a Water cell (CellContext.groundBiome) — from
+    // the RAW climate channels, deliberately not the seasoned temperature
+    // above: ground classification follows biome_at_cell's law, and a river
+    // bank never turns tundra in winter. fertility01 IS the moisture channel
+    // (cell_facts.h), so no second moisture column is invented here.
+    c.groundBiome = biome_from_climate(f.temperature01, f.fertility01);
     c.feature = f.feature;
     // Macro tree count — the density target for the subworld scatter. -1
     // (no layer wired) lets dispatch re-derive from biome/features instead.

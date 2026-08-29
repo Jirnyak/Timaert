@@ -1466,7 +1466,9 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                                     std::size_t dstStride,
                                     int dstX0, int dstY0) {
             const int ox = idx % 3, oy = idx / 3;
-            const Biome* ring = mgr.cell_biome_ring(idx);
+            // The GROUND ring (never Water): a flooded cell's banks paint as
+            // their unflooded climate ground — see material.h RING CONTRACT.
+            const Biome* ring = mgr.cell_ground_ring(idx);
             std::uint8_t lut[256];
             for (int t = 0; t < 256; ++t)
                 lut[t] = static_cast<std::uint8_t>(terrain_material_for(
@@ -1503,8 +1505,7 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
             // because a uniform ring pins the biome pick to ring[4] and the
             // material lookup to two precomputable bytes.
             const bool flatInDitherBand =
-                cellIsFlat && ring[4] != Biome::Water
-                && !material_is_authored(flatTile)
+                cellIsFlat && !material_is_authored(flatTile)
                 && flatH > kMtnGrassTopH && flatH < kMtnRockBaseH;
             // Both fast paths below rest on claims the whole-image self-check
             // cannot test, because it recomputes through THIS function and would

@@ -139,6 +139,18 @@ struct CellContext {
     float macroHeight;   // 0..1
     float macroTemperature = 0.5f; // 0..1, used for TS tree species bands
     Biome biome;
+    // The unflooded ground of a Water cell: what its RAW climate would grow
+    // here had the river/lake not covered it (biome_from_climate of the raw
+    // temperature/moisture channels — NOT the seasoned macroTemperature
+    // above: a bank never reclassifies in winter, exactly as biome_at_cell
+    // never does). The macro resolver fills it; read it ONLY through
+    // ground_biome() below, which consults it for Water cells alone — land
+    // answers with its biome, so a hand-built context cannot drift the two
+    // apart. This is what paints a water cell's DRY margin (its banks): the
+    // ground-material dither blends ground aliases, never "water bed", so
+    // the old scan-order fallback that walled the grass mid-cell is gone
+    // (owner report 2026-08-29). Meadow default keeps bare fixtures green.
+    Biome groundBiome = Biome::Meadow;
     FeatureType feature;
     LandmarkContext landmark{};
     std::uint32_t seed;
@@ -183,6 +195,15 @@ inline LandmarkType effective_landmark(const CellContext& ctx) {
     if (ctx.landmark.kind != LandmarkType::None) return ctx.landmark.kind;
     if (ctx.landmark.id >= 0) return LandmarkType::City;
     return LandmarkType::None;
+}
+
+// The GROUND a cell shows where it is dry — the effective_landmark pattern
+// for the material dither. Land is its biome (groundBiome is never consulted,
+// so it cannot drift); a flooded cell answers with its unflooded climate
+// ground. Never Water: the ring built from this is what lets the dither drop
+// its water special-casing entirely (sub/material.h).
+inline Biome ground_biome(const CellContext& ctx) {
+    return ctx.biome == Biome::Water ? ctx.groundBiome : ctx.biome;
 }
 
 // ── What a prop DOES when the player presses E on it ────────────────────────

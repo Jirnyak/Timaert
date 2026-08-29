@@ -24,12 +24,21 @@ struct LoadedCell {
     std::uint32_t seed = 0;
     SubworldMode mode = SubworldMode::Open;
     Biome biome = Biome::Meadow;
-    // 3×3 macro biome ring captured at generation (owner at index 4). The
-    // ground-material dither (sub/material.h pick_ground_biome) reads it, so
-    // a cell's material bytes are a window-independent property of the cell.
+    // 3×3 macro biome ring captured at generation (owner at index 4) — the
+    // TRUE biomes, water included: generation (height remap, tree scatter)
+    // reads this one.
     Biome nbBiome[9] = {Biome::Meadow, Biome::Meadow, Biome::Meadow,
                         Biome::Meadow, Biome::Meadow, Biome::Meadow,
                         Biome::Meadow, Biome::Meadow, Biome::Meadow};
+    // The same ring through ground_biome(): every Water entry replaced by
+    // that cell's unflooded climate ground. The ground-material dither
+    // (sub/material.h pick_ground_biome) reads THIS one — ground never
+    // blends water, so the ring it consumes carries none, and a water
+    // cell's dry banks paint as the land their climate says they are.
+    // Captured with nbBiome, so material bytes stay window-independent.
+    Biome nbGround[9] = {Biome::Meadow, Biome::Meadow, Biome::Meadow,
+                         Biome::Meadow, Biome::Meadow, Biome::Meadow,
+                         Biome::Meadow, Biome::Meadow, Biome::Meadow};
     float macroTemperature = 0.5f;
     // Furrow orientation of this cell's ploughed-field material (see
     // CellContext.fieldFurrowsVert) — travels with the cell like the
@@ -185,10 +194,16 @@ public:
 
     // Per-cell biome of the 3×3 grid (idx = (oy+1)*3 + (ox+1), ox/oy in -1..1).
     Biome cell_biome(int idx) const { return cells_[std::size_t(idx)].biome; }
-    // The cell's captured 3×3 macro biome ring (owner at index 4) — feeds the
-    // ground-material dither. Placeholders hold a uniform ring (their biome).
+    // The cell's captured 3×3 macro biome ring (owner at index 4) — the true
+    // biomes, water included. Placeholders hold a uniform ring (their biome).
     const Biome* cell_biome_ring(int idx) const {
         return cells_[std::size_t(idx)].nbBiome;
+    }
+    // The cell's captured 3×3 GROUND ring (LoadedCell::nbGround) — what the
+    // ground-material dither consumes: never a Water entry, a flooded cell
+    // answers with its unflooded climate ground (map_data.h ground_biome).
+    const Biome* cell_ground_ring(int idx) const {
+        return cells_[std::size_t(idx)].nbGround;
     }
     float cell_temperature(int idx) const {
         return cells_[std::size_t(idx)].macroTemperature;
@@ -295,6 +310,9 @@ private:
         CellContext ctx{};
         float nbHeights[9]{};
         Biome nbBiome[9]{};
+        // Ground aliases of nbBiome (map_data.h ground_biome) — the material
+        // ring the finished cell will hand the dither.
+        Biome nbGround[9]{};
         std::uint8_t nbFeature[9]{};
         LandmarkType nbLandmark[9]{};
         // Macro tree counts (CellContext.treeCount); -1 = unknown/derive.
@@ -314,6 +332,9 @@ private:
         Biome nbBiome[9] = {Biome::Meadow, Biome::Meadow, Biome::Meadow,
                             Biome::Meadow, Biome::Meadow, Biome::Meadow,
                             Biome::Meadow, Biome::Meadow, Biome::Meadow};
+        Biome nbGround[9] = {Biome::Meadow, Biome::Meadow, Biome::Meadow,
+                             Biome::Meadow, Biome::Meadow, Biome::Meadow,
+                             Biome::Meadow, Biome::Meadow, Biome::Meadow};
         float macroTemperature = 0.5f;
         bool fieldFurrowsVert = false;
         std::uint32_t seed = 0;

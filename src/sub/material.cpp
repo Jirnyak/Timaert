@@ -79,54 +79,37 @@ void ground_axis_table(int cellSize, GroundAxis* out) {
 Biome pick_ground_biome_axis(const Biome nbBiome[9],
                              const GroundAxis& ax, const GroundAxis& ay,
                              long long absX, long long absY) {
-    const Biome owner = nbBiome[4];
-
     // Deep inside the cell both ramps saturate → the single corner is the
-    // owner; skip the hash entirely (the common case). A WATER owner falls
-    // through: its submerged tiles are authored TILE_WATER, so the ground
-    // fallback is only ever consulted for its DRY margin — which must read
-    // as the adjacent LAND, not as brown "water bed" (the straight
-    // green|brown wall on coastal cell borders).
+    // owner; skip the hash entirely (the common case).
+    //
+    // The ring is a GROUND ring (never Water — see the header contract), so
+    // there is no water special-casing here. There used to be: water corners
+    // were zeroed and re-normalised (which flat-painted the neighbour across
+    // the whole band, no gradient), and when all four corners were water the
+    // pick fell back to the FIRST land biome in row-major ring scan — an
+    // NW-biased answer that drew razor-straight walls INSIDE a water cell
+    // exactly where the band saturates, and at seams between two water cells
+    // whose scan winners differed (owner report 2026-08-29, screenshots).
+    // The ground alias killed the whole branch: a flooded cell's banks are
+    // simply the land its climate says, blended like any land↔land pair.
     const Biome b00 = nbBiome[ay.i0 * 3 + ax.i0];
     const Biome b10 = nbBiome[ay.i0 * 3 + ax.i1];
     const Biome b01 = nbBiome[ay.i1 * 3 + ax.i0];
     const Biome b11 = nbBiome[ay.i1 * 3 + ax.i1];
-    if (b00 == b10 && b00 == b01 && b00 == b11
-        && b00 != Biome::Water) return b00;
+    if (b00 == b10 && b00 == b01 && b00 == b11) return b00;
 
     const float fx = ax.f, fy = ay.f;
-    Biome cand[4] = {b00, b10, b01, b11};
-    float w[4] = {(1.0f - fx) * (1.0f - fy), fx * (1.0f - fy),
-                  (1.0f - fx) * fy,          fx * fy};
-    // Water never contributes ground — the shoreline is authored by height
-    // (TILE_WATER / TILE_SHORE), not by ground speckle. This both keeps
-    // water from bleeding onto land AND makes a water cell's dry margin
-    // inherit the nearest land biome.
-    float total = 0.0f;
-    for (int i = 0; i < 4; ++i) {
-        if (cand[i] == Biome::Water) w[i] = 0.0f;
-        total += w[i];
-    }
-    if (total <= 0.0f) {
-        // No land in the blend corners (deep inside a water cell, or a
-        // rare dry hump mid-ocean): fall back to the first land biome
-        // anywhere in the ring, else stay Water.
-        if (owner != Biome::Water) return owner;
-        for (int i = 0; i < 9; ++i)
-            if (nbBiome[i] != Biome::Water) return nbBiome[i];
-        return Biome::Water;
-    }
-
-    const float r = tile_hash01(absX, absY) * total;
+    const Biome cand[4] = {b00, b10, b01, b11};
+    const float w[4] = {(1.0f - fx) * (1.0f - fy), fx * (1.0f - fy),
+                        (1.0f - fx) * fy,          fx * fy};
+    const float r = tile_hash01(absX, absY);
     float acc = 0.0f;
     for (int i = 0; i < 4; ++i) {
         acc += w[i];
         if (r < acc) return cand[i];
     }
-    // FP tail (r ≈ total): last candidate that actually held weight.
-    for (int i = 3; i >= 0; --i)
-        if (w[i] > 0.0f) return cand[i];
-    return owner;
+    // FP tail (the weights sum to ~1, r can graze it): the last corner.
+    return b11;
 }
 
 Biome pick_ground_biome(const Biome nbBiome[9],
@@ -146,7 +129,7 @@ Biome apply_mountain_treeline(Biome picked, float hNorm,
     // straight wall wherever the pick's ~256-tile dither band ended —
     // the owner's peak-texture seam). Any LAND ground above the band is
     // bare rock — a high foothill of a meadow cell earns its stone too.
-    if (picked == Biome::Water) return picked;
+    // `picked` comes from the ground ring, so it is never Water.
     const float t = treeline_t(hNorm);
     if (t >= 1.0f) return Biome::Mountain;
     const Biome below = (picked == Biome::Mountain) ? Biome::Meadow : picked;

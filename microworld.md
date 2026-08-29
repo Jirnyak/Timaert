@@ -323,27 +323,36 @@ the biome constant per 1024-tile cell — so while the *height* manifold blends
 across the 3×3 ring, the ground *colour* flipped along a perfectly straight
 line at every cell border (the "texture wall" on mountain river banks).
 `sub/material.{h,cpp}` now picks the biome **per tile**: bilinear weights over
-the owning cell's captured 3×3 biome ring (same 0.5-centre convention as the
-heightmap, sharpened to a ~256-tile mixing band) and a **dither** keyed to
+the owning cell's captured 3×3 **ground ring** (same 0.5-centre convention as
+the heightmap, sharpened to a ~256-tile mixing band) and a **dither** keyed to
 absolute tile coordinates — taiga speckles into meadow the way foothills fade
-into plains. Authored tiles (roads, fields, rock, shore, water) never dither;
-Water neighbours never bleed onto land. Each `LoadedCell` carries its ring
-(`cell_biome_ring`), so a cell's material bytes are a window-independent
-property of the cell: the GPU toroidal seam shift relocates them unchanged and
-the from-scratch selfcheck still matches byte-for-byte (`material shift
+into plains. Authored tiles (roads, fields, rock, shore, water) never dither.
+The ground ring is the biome ring through `ground_biome()` (map_data.h): a
+**flooded cell enters it as its unflooded climate ground** —
+`biome_from_climate` of its RAW temperature/moisture channels, resolved once
+in `resolve_context` — so the ring carries no Water entry at all, and a river
+cell's DRY margin (its tiles are reclassified to grass by
+`sync_water_tiles_from_heightmap`) blends like any land↔land pair. Before the
+alias (2026-08-29) the dither zeroed+renormalised water corners and, where the
+band saturated, fell back to the ring's **first land in scan order** — which
+painted a water cell's banks by its NW-most neighbour and drew razor-straight
+ground walls mid-cell and between adjacent water cells (owner screenshots);
+before *that*, the margin painted as brown "water bed". Each `LoadedCell`
+carries both rings (`cell_biome_ring` for generation, `cell_ground_ring` for
+material), so a cell's material bytes are a window-independent property of the
+cell: the GPU toroidal seam shift relocates them unchanged and the
+from-scratch selfcheck still matches byte-for-byte (`material shift
 mismatch=0`). One `fillCellMaterial` helper replaced the renderer's five
 duplicated LUT loops; separable axis tables keep a full-cell fill ~2-3 ms, and a
 PLACEHOLDER cell — one tile id repeated across its whole 1024² — short-circuits
 to a memset (or, inside the treeline dither band, to a two-value select), which
 is what took a mountainous world's crossing from 19.7 ms to 2.6.
 Locked by `material_seam_test` (determinism, pure core, seam-continuity of the
-mix fraction with the old per-cell rule as negative control, water
-containment, axis≡reference, and **structure shade surviving a window re-centre**
+mix fraction with the old per-cell rule as negative control, the ground-alias
+law with the removed water fallback reimplemented as negative control,
+axis≡reference, and **structure shade surviving a window re-centre**
 — also with a negative control, because keying a structure's shade to its
-composite coordinate made every building jump brightness at a crossing). A water cell's DRY margin (its tiles are
-reclassified to grass by `sync_water_tiles_from_heightmap`) inherits the
-adjacent land biome — it used to paint as brown "water bed", a straight
-green|brown wall on coastal cell borders.
+composite coordinate made every building jump brightness at a crossing).
 
 ### Alpine treeline + tree slope rule
 

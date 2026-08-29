@@ -275,6 +275,7 @@ void SeamlessSubworldManager::worker_loop(std::stop_token stop) {
             done.mode = resolve_mode(job.ctx);
             done.biome = job.ctx.biome;
             for (int i = 0; i < 9; ++i) done.nbBiome[i] = job.nbBiome[i];
+            for (int i = 0; i < 9; ++i) done.nbGround[i] = job.nbGround[i];
             done.macroTemperature = job.ctx.macroTemperature;
             done.fieldFurrowsVert = job.ctx.fieldFurrowsVert;
             dispatch_generate(job.ctx, job.nbHeights, job.nbBiome,
@@ -306,6 +307,7 @@ void SeamlessSubworldManager::generate_one(int idx, int acx, int acy) {
     CellContext ctx = resolver_(acx, acy);
     float nb[9];
     Biome nbBiome[9];
+    Biome nbGround[9];
     std::uint8_t nbFeature[9];
     LandmarkType nbLandmark[9];
     int nbTreeCount[9];
@@ -315,6 +317,7 @@ void SeamlessSubworldManager::generate_one(int idx, int acx, int acy) {
             CellContext nctx = resolver_(acx + xx - 1, acy + yy - 1);
             nb        [yy * 3 + xx] = nctx.macroHeight;
             nbBiome   [yy * 3 + xx] = nctx.biome;
+            nbGround  [yy * 3 + xx] = ground_biome(nctx);
             nbFeature [yy * 3 + xx] = std::uint8_t(nctx.feature);
             nbLandmark[yy * 3 + xx] = effective_landmark(nctx);
             nbTreeCount[yy * 3 + xx] = nctx.treeCount;
@@ -328,6 +331,7 @@ void SeamlessSubworldManager::generate_one(int idx, int acx, int acy) {
     cell.mode = resolve_mode(ctx);
     cell.biome = ctx.biome;
     for (int i = 0; i < 9; ++i) cell.nbBiome[i] = nbBiome[i];
+    for (int i = 0; i < 9; ++i) cell.nbGround[i] = nbGround[i];
     cell.macroTemperature = ctx.macroTemperature;
     cell.fieldFurrowsVert = ctx.fieldFurrowsVert;
     cell.placeholder = false;
@@ -524,6 +528,7 @@ void SeamlessSubworldManager::place_placeholder(int idx, const CellContext& ctx,
     // Placeholder: uniform ring — flat placeholder material until the real
     // cell (with its captured macro ring) drains in.
     for (int i = 0; i < 9; ++i) cell.nbBiome[i] = ctx.biome;
+    for (int i = 0; i < 9; ++i) cell.nbGround[i] = ground_biome(ctx);
     cell.macroTemperature = ctx.macroTemperature;
     cell.fieldFurrowsVert = ctx.fieldFurrowsVert;
     cell.placeholder = true;
@@ -568,6 +573,7 @@ void SeamlessSubworldManager::queue_generation(const CellContext& ctx,
             const int ni = yy * 3 + xx;
             job.nbHeights[ni] = nctx.macroHeight;
             job.nbBiome[ni] = nctx.biome;
+            job.nbGround[ni] = ground_biome(nctx);
             job.nbFeature[ni] = std::uint8_t(nctx.feature);
             job.nbLandmark[ni] = effective_landmark(nctx);
             job.nbTreeCount[ni] = nctx.treeCount;
@@ -628,6 +634,7 @@ bool SeamlessSubworldManager::drain_completed_jobs(int maxJobs) {
         cell.mode = done.mode;
         cell.biome = done.biome;
         for (int i = 0; i < 9; ++i) cell.nbBiome[i] = done.nbBiome[i];
+        for (int i = 0; i < 9; ++i) cell.nbGround[i] = done.nbGround[i];
         cell.macroTemperature = done.macroTemperature;
         cell.fieldFurrowsVert = done.fieldFurrowsVert;
         cell.seed = done.seed;

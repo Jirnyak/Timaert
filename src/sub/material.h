@@ -6,14 +6,25 @@
 // BIOME GROUND fallback. The biome used for that fallback is NOT the flat
 // per-cell biome: like the height manifold, it blends across the 3×3
 // macro neighbourhood — `pick_ground_biome` bilinearly weights the owning
-// cell's biome ring and DITHERS between the candidates with a hash keyed
+// cell's GROUND ring and DITHERS between the candidates with a hash keyed
 // to ABSOLUTE tile coordinates. Near a cell border the two grounds
 // interleave in a ~250-tile band whose mix follows the bilinear weight,
 // so taiga fades into meadow the way foothills fade into plains — the
 // straight "texture wall" at every subworld seam is gone.
 //
+// RING CONTRACT: the 9 entries are GROUND aliases, never Water — a flooded
+// cell (river/lake/coast) enters the ring as its unflooded climate ground
+// (map_data.h ground_biome; the manager's nbGround capture). Water TILES
+// stay authored TILE_WATER, so real water never consults the dither; what
+// the alias buys is the flooded cell's DRY margin: its banks paint as the
+// land their climate says, blended like any land↔land pair. The old
+// Water-entry handling (zero + renormalise + first-land-in-scan-order
+// fallback) painted the banks with the ring's NW-most land and drew
+// razor-straight walls mid-cell and between water cells — the ground-band
+// defect of 2026-08-29.
+//
 // Determinism / seam contract: the pick is a pure function of
-// (owning cell's biome ring, local tile coords, absolute tile coords).
+// (owning cell's ground ring, local tile coords, absolute tile coords).
 // All three are window-independent — the ring is captured from the macro
 // resolver when the cell is generated and travels with it — so the GPU
 // toroidal shift can relocate baked material bytes across a re-centre and
@@ -66,12 +77,10 @@ namespace sm::sub
     // of terrain_material_for) — such tiles never dither.
     bool material_is_authored(std::uint8_t tile);
 
-    // The biome ground under tile (lx, ly) of the cell whose 3×3 biome
-    // ring is `nbBiome` (row-major, owner at index 4) and whose top-left
-    // tile sits at absolute tile coords (absX0, absY0). Water neighbours
-    // never bleed onto land (a grass bank must not speckle into "water
-    // bed"); a Water OWNER returns Water untouched (its tiles are authored
-    // TILE_WATER anyway).
+    // The biome ground under tile (lx, ly) of the cell whose 3×3 GROUND
+    // ring is `nbBiome` (row-major, owner at index 4; see the RING CONTRACT
+    // above — entries are ground aliases, never Water) and whose top-left
+    // tile sits at absolute tile coords (absX0, absY0).
     Biome pick_ground_biome(const Biome nbBiome[9],
                             int lx, int ly, int cellSize,
                             long long absX0, long long absY0);

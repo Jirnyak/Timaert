@@ -395,11 +395,13 @@ happened while measuring Inc 4.
 **Inc 5, material.** `fillCellMaterial` walked all 1024² tiles of a placeholder —
 every one of them the same id — through a per-tile biome pick, treeline and LUT.
 A flat cell's material varies with the coordinate in exactly ONE place, the
-treeline dither band, which gives three cases: an authored tile, a water ring or
-a height outside the band resolve to **one value** (a memset); a height *inside*
-the band resolves to **exactly two**, chosen per tile by the dither, because a
+treeline dither band, which gives three cases: an authored tile or a height
+outside the band resolve to **one value** (a memset); a height *inside* the
+band resolves to **exactly two**, chosen per tile by the dither, because a
 uniform ring pins the biome pick to `ring[4]` and the material lookup to two
-bytes precomputed once.
+bytes precomputed once. (The ring here is the GROUND ring — since 2026-08-29
+a flooded cell enters it as its unflooded climate ground, so a "water ring"
+case no longer exists; see microworld.md, cross-seam ground materials.)
 
 | matFill on the crossing frame | before | after |
 |---|---|---|
