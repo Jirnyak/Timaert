@@ -82,6 +82,14 @@ struct LandmarkDef {
     // number is the place's own cap — a town is the poorest hunting ground
     // that still is one (the old ruin row's minCount, 2).
     std::uint8_t     faunaCap = kLandmarkFaunaCapGround;
+    // Which production TABLE this place works its benches as — the ordinal
+    // of EconSite (macro/econ_day.h; world_tick.cpp cross-checks the pairing
+    // where both vocabularies are visible). -1 = no benches: a spire or a
+    // ruin crafts nothing, silently (CANON S6's legal zero). A column, not a
+    // caller branch (owner, 2026-08-29): the produce door's callers used to
+    // hardcode City/Village per loop, so an S9 transition (village→city)
+    // will re-profile production by flipping `type` alone.
+    std::int8_t      econSite = -1;
 };
 
 // Night-light columns (lightColor / lightPop) drive the universal macro
@@ -95,8 +103,8 @@ struct LandmarkDef {
 // 128..255, unchanged in meaning, finer in resolution.
 inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
     {LandmarkType::None,    "none",    "",          0, 255, ' ', 0x00000000u, true, 0x00000000u,   0.0f },
-    {LandmarkType::City,    "city",    "City",      0,  76, '#', 0xFFE7D27Au, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.5f,  /*hab*/0u,       0, 0, /*cap*/2 },
-    {LandmarkType::Village, "village", "Village",   0, 101, 'v', 0xFFCCB068u, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.0f,  /*hab*/0u,       0, 0, /*cap*/2 },
+    {LandmarkType::City,    "city",    "City",      0,  76, '#', 0xFFE7D27Au, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.5f,  /*hab*/0u,       0, 0, /*cap*/2, /*econ*/1 },
+    {LandmarkType::Village, "village", "Village",   0, 101, 'v', 0xFFCCB068u, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.0f,  /*hab*/0u,       0, 0, /*cap*/2, /*econ*/0 },
     {LandmarkType::Spire,   "spire",   "Spire",   128, 255, 'I', 0xFFA86CFFu, true, 0xFFA86CFFu, 200.0f, "demons", /*wealth*/1.25f, /*hab*/1u << 13, 4, 9, kLandmarkFaunaCapGround },
     {LandmarkType::Ruin,    "ruin",    "Ruin",     51, 229, 'r', 0xFF8E8576u, true, 0xFF8E8576u,  40.0f, "demons", /*wealth*/0.5f,  /*hab*/1u << 12, 2, 6, kLandmarkFaunaCapGround },
     {LandmarkType::Lair,    "lair",    "Lair",    102, 255, 'L', 0xFF883A3Au, true, 0xFF883A3Au,  70.0f, nullptr, /*wealth*/1.25f },

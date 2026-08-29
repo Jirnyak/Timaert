@@ -14,6 +14,7 @@
 
 #include "macro/zones.h"
 #include "macro/biomes.h"
+#include "macro/optics.h"
 #include "macro/tree_layer.h"
 #include "core/rng.h"
 #include "core/torus.h"
@@ -129,59 +130,41 @@ ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
         return std::size_t(wy) * std::size_t(width) + std::size_t(wx);
     };
 
-    // ── 1. Civilization pull (BFS, max-strength-wins) ─────────
+    // ── 1. Civilization pull — through the ONE baker (CANON S7) ─────────
+    // Re-tied to optical_sweep by the owner's ruling (2026-08-29), on the
+    // measurement the twin BFS carried in its epitaph: uniform optical world
+    // (civ pull decays by plain distance, not line of sight — no features,
+    // heights or canopy in the payload), one bounded sweep per source with
+    // budget = strength/decay, max-strength-wins across overlaps. The field
+    // matches the old BFS to float ulps (≤2.5e-07 on seed 12345; the danger
+    // BYTES matched 100%): Dijkstra settles the cheapest octile distance and
+    // pays the decay once, where the BFS subtracted pre-scaled decays
+    // sequentially — same law, one associativity apart. Cost stays bake-
+    // sized: a road cell's sweep reaches ~6 steps (0.35/0.06), a city's ~18.
     std::vector<float> civPull(std::size_t(total), 0.0f);
-    std::vector<std::size_t> queue;
-    queue.reserve(std::size_t(total));
-
-    auto seed_civ = [&](int x, int y, float strength) {
-        const std::size_t i = idx(x, y);
-        if (strength > civPull[i]) { civPull[i] = strength; queue.push_back(i); }
-    };
-    for (const auto& c : cities)   seed_civ(c.x, c.y, CIV_CITY_STRENGTH);
-    for (const auto& v : villages) seed_civ(v.x, v.y, CIV_VILLAGE_STRENGTH);
-    for (std::size_t i = 0; i < total; ++i) {
-        // The row's own column (features.h) — this was an if-chain over the
-        // registry (CANON S16); 0 (a field, open ground) seeds nothing.
-        const float s = feature_def(feature_at(i)).civStrength;
-        if (s > civPull[i]) {
-            civPull[i] = s;
-            queue.push_back(i);
+    {
+        const OpticalWorld uniform{};   // all-null views = open ground, 1.0/step
+        OpticalScratch civScratch;
+        auto pull_from = [&](int x, int y, float strength) {
+            if (strength <= 0.0f) return;
+            optical_sweep(width, height, x, y,
+                          strength / CIV_DECAY_PER_STEP, uniform, civScratch,
+                          [&](std::size_t i, float d) {
+                              const float v =
+                                  strength - d * CIV_DECAY_PER_STEP;
+                              if (v > civPull[i]) civPull[i] = v;
+                          });
+        };
+        for (const auto& c : cities)   pull_from(c.x, c.y, CIV_CITY_STRENGTH);
+        for (const auto& v : villages) pull_from(v.x, v.y, CIV_VILLAGE_STRENGTH);
+        for (std::size_t i = 0; i < total; ++i) {
+            // The row's own column (features.h) — this was an if-chain over
+            // the registry (CANON S16); 0 (a field, open ground) pulls nothing.
+            const float s = feature_def(feature_at(i)).civStrength;
+            pull_from(int(i % std::size_t(width)),
+                      int(i / std::size_t(width)), s);
         }
     }
-
-    const float diagDecay = CIV_DECAY_PER_STEP * 1.41421356f;
-    std::size_t head = 0;
-    while (head < queue.size()) {
-        const std::size_t i = queue[head++];
-        const int x = int(i % std::size_t(width));
-        const int y = int(i / std::size_t(width));
-        const float v = civPull[i];
-        for (int dy = -1; dy <= 1; ++dy) {
-            for (int dx = -1; dx <= 1; ++dx) {
-                if (!dx && !dy) continue;
-                const float decay = (dx == 0 || dy == 0) ? CIV_DECAY_PER_STEP : diagDecay;
-                const float nv = v - decay;
-                if (nv <= 0.0f) continue;
-                const std::size_t j = idx(x + dx, y + dy);
-                if (nv > civPull[j] + 1e-4f) {
-                    civPull[j] = nv;
-                    queue.push_back(j);
-                }
-            }
-        }
-    }
-
-    // MEASURED, NOT MERGED (canon audit 2026-08-29, fix «civ через единый
-    // запекатель»): re-expressing this BFS as multi-source optical_sweep runs
-    // with uniform step cost and budget = strength/decay reproduces the FIELD
-    // but not the BYTES — on seed 12345, 103,464 of 1,048,576 cells differ by
-    // up to 2.46e-07 (the sweep accumulates octile DISTANCE and multiplies by
-    // the decay once; this BFS subtracts pre-scaled decays sequentially, and
-    // its 1e-4 epsilon swallows near-tie improvements — float arithmetic is
-    // not associative). The quantized danger bytes happened to match 100 % on
-    // that seed, but exact parity was the bar, so the BFS stays until the
-    // owner accepts a measured re-tie of the field.
 
     // ── 2. Mountain depth BFS (only into mountain cells) ──────
     constexpr float kInf = 1e9f;
@@ -194,7 +177,7 @@ ZoneLayer generate_zones(int width, int height, std::uint32_t seed,
             mq.push_back(i);
         }
     }
-    head = 0;
+    std::size_t head = 0;
     while (head < mq.size()) {
         const std::size_t i = mq[head++];
         const int x = int(i % std::size_t(width));

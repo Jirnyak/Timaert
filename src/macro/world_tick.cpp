@@ -30,6 +30,15 @@ namespace {
 // production labour for econ_produce_day, city and village alike.
 constexpr int   kHeadsPerCityWorker = 8;
 
+// The registry column speaks EconSite ordinals (landmark_registry.h econSite
+// documents this pairing); assert it where both vocabularies are visible, so
+// a reordered enum cannot silently swap the towns' and the villages' tables.
+static_assert(landmark_def(LandmarkType::City).econSite
+                  == std::int8_t(EconSite::City)
+              && landmark_def(LandmarkType::Village).econSite
+                  == std::int8_t(EconSite::Village),
+              "LandmarkDef::econSite must carry EconSite ordinals");
+
 inline float rand01_(WorldTickRuntime& runtime) {
     return runtime.jitter.next_f01();
 }
@@ -103,7 +112,9 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime) {
         // caravans stock and the market sells from.
         // Zero souls staff zero benches: max(1, …) alone minted a ghost
         // worker for an empty town — the same air-minting the pop floor did.
-        econ_produce_day(s.inventory, EconSite::City,
+        // The production TABLE comes off the place's own registry row
+        // (econSite column), not a hardcoded per-loop literal.
+        econ_produce_day(s.inventory, EconSite(landmark_def(s.type).econSite),
                          s.population > 0
                              ? std::max(1, s.population / kHeadsPerCityWorker)
                              : 0,
@@ -163,7 +174,7 @@ void tick_villages_(GameState& gs, int day, WorldTickRuntime& runtime) {
         // which is only true if this call exists: today no recipe carries
         // that site, so this makes nothing, and the day the row lands it
         // works with no code here either.
-        econ_produce_day(v.inventory, EconSite::Village,
+        econ_produce_day(v.inventory, EconSite(landmark_def(v.type).econSite),
                          v.population > 0
                              ? std::max(1, v.population / kHeadsPerCityWorker)
                              : 0,

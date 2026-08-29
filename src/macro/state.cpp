@@ -158,7 +158,7 @@ void populate_landmarks_from_politik(GameState& gs,
         // (The old EconomyState "archetype" strings died with it, W2b-4 —
         // what a town actually HAS now lives in this one inventory.)
         seed_landmark_inventory(
-            s.inventory, s.population, EconSite::City,
+            s.inventory, s.population, EconSite(landmark_def(s.type).econSite),
             currency_for_faction_id(faction_id_for_index(std::uint16_t(
                 faction_index_for_kingdom(gs.politik, s.kingdomIdx)))));
         // Naming via the owning kingdom's procedural language.
@@ -276,7 +276,8 @@ void populate_landmarks_from_politik(GameState& gs,
             vil.mood          = SettlementMood::Stable;
             vil.nearestCityId = s.id;
             seed_landmark_inventory(
-                vil.inventory, vil.population, EconSite::Village,
+                vil.inventory, vil.population,
+                EconSite(landmark_def(vil.type).econSite),
                 currency_for_faction_id(faction_id_for_index(std::uint16_t(
                     faction_index_for_kingdom(gs.politik, vil.kingdomIdx)))));
             if (s.kingdomIdx >= 0
