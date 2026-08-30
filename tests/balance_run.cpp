@@ -187,11 +187,12 @@ int main(int argc, char** argv) {
             return 1;
         }
         std::fprintf(fw, "day\tpop\tcoinLandmarks\tcoinSquads\tfamineStarts"
-                         "\tstarvedPops");
+                         "\tstarvedPops\ttrades\ttradedValue\tgrainHolds");
         for (int c = 0; c < sm::kCommodityCount; ++c) {
             const char* id = sm::kCommodities[c].id;
             std::fprintf(fw, "\t%s_stock\t%s_gathered\t%s_produced"
-                             "\t%s_consumed", id, id, id, id);
+                             "\t%s_consumed\t%s_city\t%s_vil",
+                         id, id, id, id, id, id);
         }
         std::fprintf(fw, "\n");
         std::fprintf(fl, "day\tid\ttype\tpop\tmood\tstarved\tunmet\tbread"
@@ -199,6 +200,7 @@ int main(int argc, char** argv) {
 
         const int breadIdx = sm::item_index("bread");
         const int grainIdx = sm::item_index("grain");
+        std::uint32_t ringCursor = gs.chronicle.nextSeq;
 
         // ── The days: the live loop's cadence without its frames ─────────
         // One game day = kTicksPerDay/kAiTicks = 256 iterations of
@@ -217,12 +219,19 @@ int main(int argc, char** argv) {
             // Day-end sampling: stocks from the landmarks, flows from facts.
             long long popTotal = 0, coinLm = 0;
             long long stock[sm::kCommodityCount] = {};
+            long long stockCity[sm::kCommodityCount] = {};
+            long long stockVil[sm::kCommodityCount] = {};
             for (const auto& lm : gs.landmarks) {
                 popTotal += lm.population;
                 coinLm += coins_in(lm.inventory, coinIdx);
-                for (int c = 0; c < sm::kCommodityCount; ++c)
-                    stock[c] += lm.inventory.count_of(
+                for (int c = 0; c < sm::kCommodityCount; ++c) {
+                    const long long n = lm.inventory.count_of(
                         sm::commodity_item_index(c));
+                    stock[c] += n;
+                    if (lm.type == sm::LandmarkType::City) stockCity[c] += n;
+                    else if (lm.type == sm::LandmarkType::Village)
+                        stockVil[c] += n;
+                }
                 const bool settled = lm.type == sm::LandmarkType::City
                                   || lm.type == sm::LandmarkType::Village;
                 if (settled) {
@@ -237,22 +246,59 @@ int main(int argc, char** argv) {
                                  coins_in(lm.inventory, coinIdx));
                 }
             }
-            long long coinSquads = 0;
+            long long coinSquads = 0, grainHolds = 0;
             for (auto [e, bag]
                  : ecs.reg.view<sm::ecs::NpcInventory>().each()) {
                 (void)e;
                 coinSquads += coins_in(bag.inv, coinIdx);
+                grainHolds += bag.inv.count(grainIdx >= 0 ? "grain" : "");
             }
+            // The day's DEALS, read off the chronicle ring by sequence — the
+            // same shop window the witcher asks (S20.1): every Traded fact
+            // since yesterday's cursor.
+            long long trades = 0, tradedValue = 0;
+            for (const sm::WorldFact& f : gs.chronicle.ring) {
+                if (f.seq < ringCursor || f.seq == 0) continue;
+                if (f.kind != std::uint16_t(sm::FactKind::Traded)) continue;
+                trades += 1;
+                tradedValue += f.amount;
+            }
+            ringCursor = gs.chronicle.nextSeq;
 
-            std::fprintf(fw, "%d\t%lld\t%lld\t%lld\t%d\t%d",
+            std::fprintf(fw, "%d\t%lld\t%lld\t%lld\t%d\t%d\t%lld\t%lld\t%lld",
                          gs.worldTime.day(), popTotal, coinLm, coinSquads,
-                         accum.famineStarts, accum.starvedPops);
+                         accum.famineStarts, accum.starvedPops,
+                         trades, tradedValue, grainHolds);
             for (int c = 0; c < sm::kCommodityCount; ++c) {
-                std::fprintf(fw, "\t%lld\t%lld\t%lld\t%lld", stock[c],
-                             accum.gathered[c], accum.produced[c],
-                             accum.consumed[c]);
+                std::fprintf(fw, "\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld",
+                             stock[c], accum.gathered[c], accum.produced[c],
+                             accum.consumed[c], stockCity[c], stockVil[c]);
             }
             std::fprintf(fw, "\n");
+        }
+
+        // Closing muster: the trade fleet is this track's working part, and
+        // its health must be readable without a debugger.
+        {
+            int caravans = 0;
+            for (auto [e, kind, crt, bag]
+                 : ecs.reg.view<sm::ecs::NPCKind, sm::ecs::MacroNpcRuntime,
+                                sm::ecs::NpcInventory>().each()) {
+                (void)e;
+                if (kind.type != std::uint16_t(sm::NPCType::Caravan))
+                    continue;
+                ++caravans;
+                std::fprintf(stderr,
+                             "[caravan] home=%d state=%d sp=%d/%d cap=%.0f "
+                             "load=%.0f coin=%lld grain=%d wood=%d clay=%d\n",
+                             crt.homeSettlementId, int(crt.state),
+                             int(crt.sp), int(crt.maxSp), crt.carryCap,
+                             sm::inventory_weight(bag.inv),
+                             coins_in(bag.inv, coinIdx),
+                             bag.inv.count("grain"), bag.inv.count("wood"),
+                             bag.inv.count("clay"));
+            }
+            std::fprintf(stderr, "[balance] caravans=%d\n", caravans);
         }
 
         // ── Laws (the invariants of work_vector §1, v0 set) ──────────────

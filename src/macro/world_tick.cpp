@@ -319,6 +319,10 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
         // stock's (macro/npc_spawn.h).
         if (macro && macro->world && macro->terrain) {
             raise_deserter_bands(gs, *macro->world, *macro->terrain, day);
+            // The fleet law (npc_spawn.h): a city without a caravan outfits
+            // one from its population — losses stay permanent, the trade
+            // arm regrows through the world (CANON S4).
+            replenish_caravans(gs, *macro->world, *macro->terrain);
         }
 
         --runtime.pendingDailyTicks;

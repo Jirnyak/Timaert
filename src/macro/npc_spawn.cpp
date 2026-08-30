@@ -474,4 +474,47 @@ int raise_deserter_bands(GameState& gs, ecs::World& w,
     return take;
 }
 
+int replenish_caravans(GameState& gs, ecs::World& w,
+                       const TerrainData& terrain) {
+    // The living fleet per home landmark — one O(NPC) sweep into rows.
+    std::vector<int> fleet(gs.landmarks.size(), 0);
+    const auto row_of = [&](int id) -> int {
+        for (std::size_t i = 0; i < gs.landmarks.size(); ++i)
+            if (gs.landmarks[i].id == id) return int(i);
+        return -1;
+    };
+    for (auto [e, kind, rt]
+         : w.reg.view<ecs::NPCKind, ecs::MacroNpcRuntime>().each()) {
+        (void)e;
+        if (kind.type != std::uint16_t(NPCType::Caravan)) continue;
+        const int row = row_of(rt.homeSettlementId);
+        if (row >= 0) fleet[std::size_t(row)] += 1;
+    }
+    int raised = 0;
+    for (std::size_t i = 0; i < gs.landmarks.size(); ++i) {
+        Landmark& s = gs.landmarks[i];
+        if (s.type != LandmarkType::City) continue;
+        if (fleet[i] > 0) continue;
+        // The same population bar the garrison recruiter uses
+        // (world_tick.cpp): a town too small to spare men raises neither
+        // soldiers nor traders. One caravan per city is the v1 fleet norm —
+        // the genesis 0.3/city left most towns with no trade arm at all,
+        // and a dead caravan starved its city forever (measured,
+        // balance_run 2026-08-30). One raise per day is the call cadence.
+        if (s.population < 20) continue;
+        SquadSpec spec{};
+        spec.leaderType = NPCType::Caravan;
+        spec.x = s.x;
+        spec.y = s.y;
+        spec.homeSettlementId = s.id;
+        if (spawn_squad(gs, w, terrain, spec) != entt::null) {
+            // The soul walks out of the town — population is the stock every
+            // recruitment draws from (CANON S25).
+            s.population -= 1;
+            ++raised;
+        }
+    }
+    return raised;
+}
+
 } // namespace sm

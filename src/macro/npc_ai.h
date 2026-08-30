@@ -155,6 +155,26 @@ struct TickContext {
     bool              allowAutoBattle = true;
 };
 
+// ── The caravan↔village PACKAGE DEAL (owner, 2026-08-30; CANON S10/S25) ──
+// The caravan is its city's agent: hold and purse are the city's property on
+// wheels. The deal is two half-swaps through the ONE price law (economy.h
+// stock_price — base × scarcity at post-trade supply, so every lot pays its
+// own slippage), coin travelling by transfer_value: nothing is minted and
+// nothing is confiscated any more. BUY runs before SELL on purpose — the
+// city's coin reaches the village first, and the village pays for its bread
+// with the money its raw just earned. At namespace scope (the
+// settle_landmark_day pattern) so caravan_deal_test can drive one deal.
+struct MemoryEntry;
+struct CaravanDeal {
+    int boughtValue = 0;      // coin the caravan paid the village for raw
+    int soldValue   = 0;      // coin the village paid for delivered goods
+    int movedTableValue = 0;  // TABLE value of all goods that changed hands
+                              //   (the chronicle's dealValue, as before)
+};
+CaravanDeal trade_caravan_at_village(Inventory& hold, float capacityKg,
+                                     Landmark& village,
+                                     const MemoryEntry* homeSnapshot);
+
 // Macro-view path: scans all macro NPCs each step and dispatches those whose
 // per-NPC tick accumulator matured. `ticks` is world ticks elapsed. The
 // envelope must carry at least `gs` and `world`; every other layer is an

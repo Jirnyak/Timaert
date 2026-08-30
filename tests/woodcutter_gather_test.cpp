@@ -418,6 +418,11 @@ void test_the_caravan_trades_on_its_memory() {
     city.y = 10;
     city.population = 100;
     city.inventory.add("bread", 2000);   // plenty: the export
+    // The deal PAYS now (owner 2026-08-30): a coinless fixture is the
+    // deadlock the payment law exists to refuse. Purses follow the genesis
+    // seeding law (econ_day.cpp seed_landmark_inventory): pop × 8 for a
+    // city, pop × 2 for a village.
+    city.inventory.add("coin_timaert", 100 * 8);
     gs.landmarks.push_back(city);      // grain: NONE — the import
     Landmark vil{};
     vil.type = LandmarkType::Village;
@@ -425,7 +430,9 @@ void test_the_caravan_trades_on_its_memory() {
     vil.x = 16;
     vil.y = 10;
     vil.nearestCityId = 1;
+    vil.population = 50;
     vil.inventory.add("grain", 500);
+    vil.inventory.add("coin_timaert", 50 * 2);
     gs.landmarks.push_back(vil);
 
     ecs::World w;
@@ -476,6 +483,15 @@ void test_the_caravan_trades_on_its_memory() {
                            + gs.landmarks[0].inventory.count("bread");
     CHECK(grainTotal == 500 && breadTotal == 2000,
           "CONSERVATION: cargo moves, it is never minted or dropped");
+    // ...and the deal's other half obeys the same law: coin travels between
+    // the three purses (city, village, hold) and is never minted or burned.
+    const int coinTotal = gs.landmarks[0].inventory.count("coin_timaert")
+                          + gs.landmarks[1].inventory.count("coin_timaert")
+                          + bag.count("coin_timaert");
+    CHECK(coinTotal == 100 * 8 + 50 * 2,
+          "CONSERVATION: coin moves through the deal, never minted");
+    CHECK(gs.landmarks[1].inventory.count("coin_timaert") > 0,
+          "the village EARNED coin for its raw — the payment is real");
 
     // The DEAL is a fact of the world (S20.1): filed at the village the
     // moment the exchange happened — a transition by nature, so every visit

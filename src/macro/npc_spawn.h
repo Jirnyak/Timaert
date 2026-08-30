@@ -65,6 +65,16 @@ struct SquadSpec {
 entt::entity spawn_squad(GameState& gs, ecs::World& w,
                          const TerrainData& terrain, const SquadSpec& spec);
 
+// ── The fleet law (owner track 2026-08-30; CANON S4) ─────────────────────
+// Losses are permanent and replenishment comes ONLY through the world: a
+// caravan cut down on the road drops its cargo and is gone, and its home
+// CITY outfits a new one out of its population — exactly the way the
+// garrison already recruits souls. Called once per game day; returns how
+// many caravans were raised. The purse is NOT minted here: the caravan
+// takes its trip loan from the town store at departure (npc_ai.cpp).
+int replenish_caravans(GameState& gs, ecs::World& w,
+                       const TerrainData& terrain);
+
 // ── The deserter pool's OUTFLOW ───────────────────────────────────────────
 //
 // `GameState::deserterPool` is the world's conservation law for beaten armies:

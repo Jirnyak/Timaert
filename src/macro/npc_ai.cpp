@@ -2,6 +2,8 @@
 #include "macro/npc_ai.h"
 #include "macro/agent_memory.h"
 #include "macro/chronicle.h"
+#include "macro/currency.h"
+#include "macro/economy.h"
 #include "macro/deposit_layer.h"
 #include "macro/econ_day.h"
 #include "macro/macro_stock.h"
@@ -15,8 +17,10 @@
 #include "core/torus.h"
 #include "core/rng.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 
 namespace sm {
 
@@ -637,6 +641,46 @@ Inventory* landmark_inventory_of_kind(const TickContext& ctx, int id,
 
 // Move up to `maxUnits` of `id` between inventories, bounded by the cargo
 // hold's remaining weight. Returns units moved.
+// The city's purchase PRIORITY: the needs ladder unrolled to its recipe
+// INPUTS (bread ← grain first, then cloth's, bricks'…), then every other
+// commodity in table order. Derived once from kNeeds × kRecipes — no
+// commodity is named in code. Shared by the deal (what to buy first) and
+// the route choice (which village is worth the ride): without the shared
+// weight the caravans twice ran for whatever was merely PLENTIFUL — wood —
+// while the granary held one unit (measured, balance_run 2026-08-30).
+const std::array<int, std::size_t(kCommodityCount)>& caravan_buy_order() {
+    static const auto kOrder = [] {
+        std::array<int, std::size_t(kCommodityCount)> order{};
+        bool seen[std::size_t(kCommodityCount)] = {};
+        int n = 0;
+        const auto push = [&](int idx) {
+            if (idx >= 0 && idx < kCommodityCount && !seen[idx]) {
+                seen[idx] = true;
+                order[std::size_t(n++)] = idx;
+            }
+        };
+        for (int i = 0; i < kNeedCount; ++i) {
+            for (const RecipeDef& r : kRecipes) {
+                if (std::strcmp(r.output, kNeeds[i].commodity) != 0) continue;
+                for (const RecipeInput& in : r.inputs) {
+                    if (in.id) push(commodity_index(in.id));
+                }
+            }
+        }
+        for (int i = 0; i < kCommodityCount; ++i) push(i);
+        return order;
+    }();
+    return kOrder;
+}
+
+// Position of a commodity in that priority (0 = wanted most).
+int caravan_buy_rank(int commodityIdx) {
+    const auto& order = caravan_buy_order();
+    for (int i = 0; i < kCommodityCount; ++i)
+        if (order[std::size_t(i)] == commodityIdx) return i;
+    return kCommodityCount;
+}
+
 int haul_between(Inventory& from, Inventory& to, const char* id,
                  int maxUnits, float capacityLeftKg) {
     if (maxUnits <= 0 || capacityLeftKg <= 0.0f) return 0;
@@ -677,31 +721,70 @@ void ai_caravan(entt::entity self, ecs::Position& p,
     if (rt.state == std::uint8_t(NS::Idle)) {
         --rt.stateTimer;
         if (rt.stateTimer > 0) return;
-        // Pick one of the HOME city's villages — nearest first.
+        // DEPARTURE: remember the home market as it stands — the belief the
+        // whole trip trades on. Packed BEFORE the destination is chosen,
+        // because the choice reads it.
+        remember(*mem, pack_market_snapshot(
+                           *homeStore,
+                           std::uint16_t(rt.homeSettlementId),
+                           ctx.mw.gs->worldTime.day()));
+        const MemoryEntry* depSnap = recall(
+            *mem, AgentMemoryKind::MarketSnapshot,
+            std::uint16_t(rt.homeSettlementId));
+        // Pick one of the HOME city's villages by EXPECTED WORTH: the table
+        // value of the stocks the home market lacks (snapshot class ≤ 1),
+        // discounted by distance. A caravan is the city's agent with a goal
+        // (M&B), not a shuttle: «nearest first» drained one village dry in
+        // days and then starved the city on her trickle while the sister
+        // villages sat on the world's grain (measured, balance_run
+        // 2026-08-30). A drained village scores low and the rotation is
+        // emergent; a world with nothing worth hauling falls back to
+        // nearest, which keeps the deal (and its coin loop) alive.
         int villageId = -1;
-        float best = 1e30f;
+        float bestScore = 0.0f;
+        int nearestId = -1;
+        float nearestD = 1e30f;
         for (auto& v : ctx.mw.gs->landmarks) {
             if (v.type != LandmarkType::Village) continue;
             if (v.nearestCityId != rt.homeSettlementId) continue;
-            const float d = torus_dist_sq(p.x, p.y, float(v.x), float(v.y),
-                                          float(ctx.mapW), float(ctx.mapH));
-            if (d < best) {
-                best = d;
+            const float d = std::sqrt(
+                torus_dist_sq(p.x, p.y, float(v.x), float(v.y),
+                              float(ctx.mapW), float(ctx.mapH)));
+            if (d < nearestD) {
+                nearestD = d;
+                nearestId = v.id;
+            }
+            // Worth is weighted by the purchase priority (1/(1+rank)):
+            // a granary outranks a woodpile of equal table value, because
+            // the ladder's first need eats grain — raw plenty alone must
+            // not steer the route.
+            float worth = 0.0f;
+            for (int i = 0; i < kCommodityCount; ++i) {
+                if (depSnap && market_stock_class(*depSnap, i) > 1) continue;
+                const ItemDef* def = item_def(kCommodities[i].id);
+                worth += float(v.inventory.count(kCommodities[i].id))
+                         * float(def ? def->value : 0)
+                         / float(1 + caravan_buy_rank(i));
+            }
+            const float score = worth / (1.0f + d);
+            if (score > bestScore) {
+                bestScore = score;
                 villageId = v.id;
                 rt.targetX = float(v.x);
                 rt.targetY = float(v.y);
+            }
+        }
+        if (villageId < 0 && nearestId >= 0) {
+            villageId = nearestId;
+            if (const Landmark* nv = landmark_by_id(*ctx.mw.gs, nearestId)) {
+                rt.targetX = float(nv->x);
+                rt.targetY = float(nv->y);
             }
         }
         if (villageId < 0) {
             ai_nomad(p, rt, ctx);   // a world without villages: wander on
             return;
         }
-        // DEPARTURE: remember the home market as it stands — the belief the
-        // whole trip trades on.
-        remember(*mem, pack_market_snapshot(
-                           *homeStore,
-                           std::uint16_t(rt.homeSettlementId),
-                           ctx.mw.gs->worldTime.day()));
         // Load EXPORTS: what home has plenty of and a village lives on —
         // crafted needs first (bread before jewelry), half the hold.
         const MemoryEntry* snap = recall(
@@ -716,6 +799,22 @@ void ai_caravan(entt::entity self, ecs::Position& p,
             haul_between(*homeStore, bag->inv, kNeeds[i].commodity,
                          1 << 30,
                          rt.carryCap / 2 - inventory_weight(bag->inv));
+        }
+        // The LOAN (CANON S5: имущество NPC — заём со склада родного
+        // ландмарка, не минт): purchasing power for the trip — enough coin
+        // to fill the hold's free half with grain at BASE price (grain is
+        // what a city starves without), capped at HALF the town's wallet so
+        // k simultaneous departures shrink the treasury geometrically and
+        // never to zero. Repaid whole, with proceeds, at Returning.
+        {
+            const ItemDef* grain = item_def("grain");
+            const float kg =
+                grain && grain->weight > 0.0f ? grain->weight : 1.0f;
+            const int unitsFit =
+                int((rt.carryCap - inventory_weight(bag->inv)) / kg);
+            const int need = unitsFit * (grain ? grain->value : 0);
+            const int cap = wallet_value(*homeStore) / 2;
+            transfer_value(*homeStore, bag->inv, std::min(need, cap));
         }
         rt.targetSettlementId = villageId;
         rt.state = std::uint8_t(NS::Traveling);
@@ -733,51 +832,29 @@ void ai_caravan(entt::entity self, ecs::Position& p,
     if (rt.state == std::uint8_t(NS::Working)) {
         --rt.stateTimer;
         if (rt.stateTimer > 0) return;
-        if (Inventory* vs = landmark_inventory_of_kind(
-                ctx, rt.targetSettlementId, LandmarkType::Village)) {
-            // What one unit of a commodity is worth — the ONE price table
-            // (ItemDef.value); the deal's worth is counted in it, never in a
-            // second price vocabulary.
-            const auto unit_value = [](const char* id) {
-                const ItemDef* d = item_def(id);
-                return d ? d->value : 0;
-            };
-            int dealValue = 0;
-            // Unload the exports…
-            for (int i = 0; i < kCommodityCount; ++i) {
-                dealValue += unit_value(kCommodities[i].id)
-                             * haul_between(bag->inv, *vs, kCommodities[i].id,
-                                            1 << 30, 1e9f);
-            }
-            // …and load what the SNAPSHOT says the city lacks, scarcest
-            // class first, raw before crafted within a class (a city's
-            // business is to make things from them).
+        if (Landmark* village = landmark_by_id(*ctx.mw.gs,
+                                               rt.targetSettlementId);
+            village && village->type == LandmarkType::Village) {
+            // THE package deal (npc_ai.h trade_caravan_at_village, owner
+            // 2026-08-30): buy the city's lacks for coin, sell the exports
+            // for coin — one price law, conservation by construction. The
+            // confiscating haul loops died here.
             const MemoryEntry* snap = recall(
                 *mem, AgentMemoryKind::MarketSnapshot,
                 std::uint16_t(rt.homeSettlementId));
-            if (snap) {
-                for (int cls = 0; cls <= 1; ++cls) {
-                    for (int i = 0; i < kCommodityCount; ++i) {
-                        if (market_stock_class(*snap, i) != cls) continue;
-                        dealValue +=
-                            unit_value(kCommodities[i].id)
-                            * haul_between(*vs, bag->inv, kCommodities[i].id,
-                                           1 << 30,
-                                           rt.carryCap
-                                               - inventory_weight(bag->inv));
-                    }
-                }
-            }
+            const CaravanDeal deal = trade_caravan_at_village(
+                bag->inv, rt.carryCap, *village, snap);
             // The exchange is DONE — that one moment is the fact (S20.1: a
             // deal is a transition by nature; the ride home is the same
             // cargo, not a second deal). Subject = the home city whose
             // caravan this is, object = the village it traded WITH, amount =
             // the table value of everything that changed hands either way.
-            if (dealValue > 0) {
+            if (deal.movedTableValue > 0) {
                 record_landmark_fact(*ctx.mw.gs, FactKind::Traded,
                                      rt.homeSettlementId,
                                      int(rt.targetX), int(rt.targetY),
-                                     dealValue, rt.targetSettlementId);
+                                     deal.movedTableValue,
+                                     rt.targetSettlementId);
             }
         }
         rt.targetX = home.x;
@@ -789,11 +866,17 @@ void ai_caravan(entt::entity self, ecs::Position& p,
         || rt.state == std::uint8_t(NS::Returning)) {
         if (at_target(p, rt, ctx)) {
             if (rt.state == std::uint8_t(NS::Returning)) {
-                // Home: the whole hold lands on the market.
+                // Home: the whole hold lands on the market — and the whole
+                // purse repays the loan plus proceeds (the caravan is the
+                // city's agent; its wealth IS the city's). A caravan killed
+                // mid-trip drops the coin with its cargo instead — the loan
+                // law's honest downside.
                 for (int i = 0; i < kCommodityCount; ++i) {
                     haul_between(bag->inv, *homeStore, kCommodities[i].id,
                                  1 << 30, 1e9f);
                 }
+                transfer_value(bag->inv, *homeStore,
+                               wallet_value(bag->inv));
             }
             rt.state = std::uint8_t(NS::Idle);
             rt.stateTimer = std::int16_t(10 + rand_int(ctx, 15));
@@ -1324,6 +1407,89 @@ void dispatch(AIBehaviour b, entt::entity e, ecs::Position& p,
 }
 
 } // namespace
+
+// ── The caravan↔village package deal (owner, 2026-08-30) ─────────────────
+// Contract in npc_ai.h. Both halves price through economy.h stock_price at
+// POST-TRADE supply (every lot pays its own slippage — the same convention
+// the player screens obey), and coin travels by transfer_value: conservation
+// is by construction, not by audit. Context columns (mood, traits, war) join
+// later through the same door; scarcity alone is the v1 modulation.
+CaravanDeal trade_caravan_at_village(Inventory& hold, float capacityKg,
+                                     Landmark& village,
+                                     const MemoryEntry* homeSnapshot) {
+    CaravanDeal out{};
+    Inventory& vs = village.inventory;
+    const auto base_value = [](const char* id) {
+        const ItemDef* d = item_def(id);
+        return d ? d->value : 0;
+    };
+    // BUY first: what the home snapshot says the city LACKS — scarcest class
+    // first, needs-ladder inputs first within a class (caravan_buy_order:
+    // bread ← grain before everything, no commodity named in code). Buying
+    // first is what primes the circulation: the village pays for its bread
+    // below with the coin its raw just earned.
+    if (homeSnapshot) {
+        for (int cls = 0; cls <= 1; ++cls) {
+            for (int oi = 0; oi < kCommodityCount; ++oi) {
+                const int i = caravan_buy_order()[std::size_t(oi)];
+                if (market_stock_class(*homeSnapshot, i) != cls) continue;
+                const char* id = kCommodities[i].id;
+                const int base = base_value(id);
+                if (base <= 0) continue;
+                const int demand = daily_demand_for(id, village.population);
+                const int have = vs.count(id);
+                const ItemDef* def = item_def(id);
+                const float kg =
+                    def && def->weight > 0.0f ? def->weight : 1.0f;
+                int n = std::min(
+                    have, int((capacityKg - inventory_weight(hold)) / kg));
+                if (n <= 0) continue;
+                // A short purse shrinks the lot ONCE: shrinking n leaves
+                // more supply behind, which only CHEAPENS the unit, so the
+                // shrunk lot is affordable by monotonicity.
+                int price = stock_price(base, have - n, demand);
+                const int purse = wallet_value(hold);
+                if (n * price > purse) {
+                    n = purse / std::max(1, price);
+                    price = stock_price(base, have - n, demand);
+                }
+                if (n <= 0) continue;
+                const int moved =
+                    haul_between(vs, hold, id, n,
+                                 capacityKg - inventory_weight(hold));
+                if (moved <= 0) continue;
+                const int cost =
+                    moved * stock_price(base, have - moved, demand);
+                // transfer_value credits before it debits; a village store
+                // with no free coin slot refuses and the paid value reads
+                // short — the outcome reports what was actually paid.
+                out.boughtValue += transfer_value(hold, vs, cost);
+                out.movedTableValue += base * moved;
+            }
+        }
+    }
+    // SELL second: the exports, needs-ladder order (bread before jewelry).
+    // The lot is bounded by the DEAREST unit price (post-trade supply of the
+    // smallest lot), so the actual cheaper lot price always fits the wallet.
+    for (int i = 0; i < kNeedCount; ++i) {
+        const char* id = kNeeds[i].commodity;
+        const int base = base_value(id);
+        if (base <= 0) continue;
+        int n = hold.count(id);
+        if (n <= 0) continue;
+        const int demand = daily_demand_for(id, village.population);
+        const int have = vs.count(id);
+        const int priceCeil = stock_price(base, have, demand);
+        n = std::min(n, wallet_value(vs) / std::max(1, priceCeil));
+        if (n <= 0) continue;
+        const int moved = haul_between(hold, vs, id, n, 1e9f);
+        if (moved <= 0) continue;
+        const int price = stock_price(base, have + moved, demand);
+        out.soldValue += transfer_value(vs, hold, moved * price);
+        out.movedTableValue += base * moved;
+    }
+    return out;
+}
 
 void bucket_reset(CellBuckets& g, int mapW, int mapH, int cellSize) {
     g.cellSize = std::max(1, cellSize);

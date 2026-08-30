@@ -557,9 +557,26 @@ timaert_test(squad_roster_test
         src/macro/items.cpp
     LINK_SDL LINK_ENTT)
 
+# The caravan↔village package deal (owner 2026-08-30): conservation, the
+# price-law clamp corridor, and the no-coin-no-confiscation negative control.
+timaert_test(caravan_deal_test
+    SOURCES
+        src/macro/npc_ai.cpp
+        src/macro/economy.cpp
+        src/macro/chronicle.cpp
+        src/macro/macro_stock.cpp
+        src/macro/deposit_layer.cpp
+        src/macro/fauna.cpp
+        src/macro/tree_layer.cpp
+        src/macro/items.cpp
+        src/macro/econ_day.cpp
+    LINK_ENTT)
+
 timaert_test(macro_npc_ai_parity_test
     SOURCES
         src/macro/npc_ai.cpp
+        # the caravan deal prices through the one law (stock_price)
+        src/macro/economy.cpp
         # the gatherer and the caravan file world facts (chronicle door)
         src/macro/chronicle.cpp
         # The squad threat step settles auto-battles through THE ledger
@@ -603,6 +620,8 @@ timaert_test(deserter_bands_test
 timaert_test(squad_war_test
     SOURCES
         src/macro/npc_ai.cpp
+        # the caravan deal prices through the one law (stock_price)
+        src/macro/economy.cpp
         # the gatherer and the caravan file world facts (chronicle door)
         src/macro/chronicle.cpp
         # The player's squad is an ordinary squad entity (2026-08-27).
@@ -629,6 +648,8 @@ timaert_test(macro_travel_parity_test
 timaert_test(squad_travel_test
     SOURCES
         src/macro/npc_ai.cpp
+        # the caravan deal prices through the one law (stock_price)
+        src/macro/economy.cpp
         # the gatherer and the caravan file world facts (chronicle door)
         src/macro/chronicle.cpp
         src/macro/macro_stock.cpp
@@ -941,6 +962,8 @@ timaert_test(seasons_test)
 timaert_test(trade_law_test
     SOURCES
         src/macro/npc_ai.cpp
+        # the caravan deal prices through the one law (stock_price)
+        src/macro/economy.cpp
         src/macro/macro_stock.cpp
         src/macro/fauna.cpp
         src/macro/tree_layer.cpp
@@ -1042,6 +1065,8 @@ timaert_test(fauna_stock_test
 timaert_test(woodcutter_gather_test
     SOURCES
         src/macro/npc_ai.cpp
+        # the caravan deal prices through the one law (stock_price)
+        src/macro/economy.cpp
         # the gatherer and the caravan file world facts (chronicle door)
         src/macro/chronicle.cpp
         src/macro/macro_stock.cpp
@@ -1242,6 +1267,8 @@ timaert_test(player_is_a_squad_test
     SOURCES
         src/macro/player_entity.cpp
         src/macro/npc_ai.cpp
+        # the caravan deal prices through the one law (stock_price)
+        src/macro/economy.cpp
         # the gatherer and the caravan file world facts (chronicle door)
         src/macro/chronicle.cpp
         src/macro/macro_snapshot.cpp
