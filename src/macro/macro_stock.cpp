@@ -193,7 +193,7 @@ void deposit_apply(MacroWorld& w, int x, int y, int delta) {
 // day and starved every farmer within a week of genesis (measured,
 // balance_run 2026-08-30).
 int wheat_growth_at(const MacroWorld& w, int x, int y) {
-    return std::max(1, wheat_baseline(w, x, y) / 4);
+    return std::max(1, wheat_baseline(w, x, y) / kWheatSeasonsToRegrow);
 }
 
 // Fauna: beasts breed where beasts are. One head per visit while at least

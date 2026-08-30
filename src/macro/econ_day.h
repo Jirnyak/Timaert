@@ -114,7 +114,7 @@ inline constexpr NeedDef kNeeds[] = {
 };
 inline constexpr int kNeedCount = int(sizeof(kNeeds) / sizeof(kNeeds[0]));
 
-inline constexpr int kGatherPerWorkerDay = 8;
+inline constexpr int kGatherPerWorkerDay = 32;
 
 // One worker per this many heads (po2) — THE labour quota: the same share
 // of hands staffs the benches (econ_produce_day) and walks out with the

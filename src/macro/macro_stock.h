@@ -46,6 +46,14 @@
 
 namespace sm {
 
+// A reaped parcel regrows its WHOLE potential in this many seasons — the
+// seasonal harvest rhythm (smooth stand-in for the deferred autumn pulse).
+// Swept 2026-08-30: /4 starved the world at ~2.6k bread/day; /1 feeds
+// ~12k/day and villages amass real surpluses — «деревня среди полей ломится
+// от зерна» (owner's anchor, CANON S10). Public so crop_stock_test derives
+// its expectation from the SAME number the law reads.
+inline constexpr int kWheatSeasonsToRegrow = 1;
+
 // The borrowable quantities. One row per value in the table (macro_stock.cpp);
 // the enum value IS the row index, and ecs::MacroDebt stores it as a plain byte
 // so the ECS layer never has to learn this header exists.

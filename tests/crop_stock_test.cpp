@@ -122,14 +122,13 @@ void test_regrow_self_cleans_when_whole() {
     resource_fields_daily_growth(w, dueDay + 1);
     CHECK(macro_stock_read(w, MacroStock::CropCount, cell_key(3, 1)) == 0,
           "a day that is not this cell's slice grows nothing here");
-    // The field turns over its own POTENTIAL, a quarter per due visit
-    // (macro_stock.cpp wheat_growth_at, owner track 2026-08-30) — a bare
-    // parcel regrows whole in a year of seasons.
-    const int perVisit = std::max(1, full / 4);
+    // The field turns over its own POTENTIAL in kWheatSeasonsToRegrow due
+    // visits (macro_stock.h — the same number the law reads).
+    const int perVisit = std::max(1, full / kWheatSeasonsToRegrow);
     resource_fields_daily_growth(w, dueDay + kGrowthEpochDays);
     CHECK(macro_stock_read(w, MacroStock::CropCount, cell_key(3, 1))
               == std::min(full, perVisit),
-          "a due visit regrows a quarter of the parcel's own potential");
+          "a due visit regrows the parcel's own seasonal share");
     for (int e = 2; e <= 5; ++e) {
         resource_fields_daily_growth(w, dueDay + e * kGrowthEpochDays);
     }
