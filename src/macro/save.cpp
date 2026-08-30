@@ -990,6 +990,9 @@ void write_payload(Writer& w, const GameState& s,
     w.pod(s.nextQuestOrdinal);      // v63: the ONE quest-identity issuer
     w.str(s.saveName);
     w.str(savedAt);
+    // v66: the world's loot pool — the victorless dead's belongings
+    // (CANON S5, the deserter pool's sibling for things).
+    write_inventory(w, s.lootPool);
     write_player(w, s.player);
 
     if (w.count(s.landmarks.size(), kMaxLandmarks)) {
@@ -1064,6 +1067,7 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
     r.pod(s.nextQuestOrdinal);      // v63
     r.str(s.saveName);
     r.str(s.savedAt);
+    read_inventory(r, s.lootPool);   // v66
     read_player(r, s.player);
 
     std::uint32_t n = 0;

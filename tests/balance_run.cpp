@@ -186,7 +186,7 @@ int main(int argc, char** argv) {
                          outDir.c_str());
             return 1;
         }
-        std::fprintf(fw, "day\tpop\tcoinLandmarks\tcoinSquads\tfamineStarts"
+        std::fprintf(fw, "day\tpop\tcoinLandmarks\tcoinSquads\tcoinLootPool\tfamineStarts"
                          "\tstarvedPops\ttrades\ttradedValue\tgrainHolds");
         for (int c = 0; c < sm::kCommodityCount; ++c) {
             const char* id = sm::kCommodities[c].id;
@@ -265,8 +265,11 @@ int main(int argc, char** argv) {
             }
             ringCursor = gs.chronicle.nextSeq;
 
-            std::fprintf(fw, "%d\t%lld\t%lld\t%lld\t%d\t%d\t%lld\t%lld\t%lld",
+            std::fprintf(fw,
+                         "%d\t%lld\t%lld\t%lld\t%lld\t%d\t%d\t%lld\t%lld"
+                         "\t%lld",
                          gs.worldTime.day(), popTotal, coinLm, coinSquads,
+                         coins_in(gs.lootPool, coinIdx),
                          accum.famineStarts, accum.starvedPops,
                          trades, tradedValue, grainHolds);
             for (int c = 0; c < sm::kCommodityCount; ++c) {

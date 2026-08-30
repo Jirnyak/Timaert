@@ -115,7 +115,8 @@ inline int drain_dead_leader_squads(ecs::World& w, SoldierSquad& deserterPool) {
 // standing past a cap, CANON S26). The player's squad is never swept: his
 // death is a game-over screen, not a disappearance. Returns how many left
 // the map.
-inline int destroy_dead_macro_squads(ecs::World& w) {
+inline int destroy_dead_macro_squads(ecs::World& w,
+                                     Inventory* lootPool = nullptr) {
     std::vector<entt::entity> doomed;
     auto view = w.reg.view<ecs::MacroSpawnId, ecs::SquadRoster, ecs::Dead>(
         entt::exclude<ecs::PlayerTag, ecs::PlayerSquadTag, ecs::SubworldTag>);
@@ -123,7 +124,24 @@ inline int destroy_dead_macro_squads(ecs::World& w) {
         if (!view.get<ecs::SquadRoster>(e).squad.empty()) continue;
         doomed.push_back(e);
     }
-    for (entt::entity e : doomed) w.reg.destroy(e);
+    for (entt::entity e : doomed) {
+        // THE loot pool (owner 2026-08-30, CANON S5): a squad that died with
+        // no victor — exhaustion, drowning — pays its belongings into the
+        // world's loot pool instead of evaporating with the corpse (the
+        // deserter pool's sibling for THINGS; a battle's loser was already
+        // emptied by loot_fallen_owner, so whatever is left here is exactly
+        // the victorless remainder). Ruins, dungeons and mob drops are the
+        // pool's future contextual outflow.
+        if (lootPool) {
+            if (auto* bag = w.reg.try_get<ecs::NpcInventory>(e)) {
+                for (ItemRef& stack : bag->inv.slots) {
+                    if (stack.empty()) continue;
+                    if (lootPool->add_ref(stack)) stack = ItemRef{};
+                }
+            }
+        }
+        w.reg.destroy(e);
+    }
     return int(doomed.size());
 }
 

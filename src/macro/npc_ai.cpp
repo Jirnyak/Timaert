@@ -2119,7 +2119,7 @@ void tick_macro_npc_ai(MacroWorld& mw,
     // window), then the drained corpse-rows leave the map. Deferred to HERE
     // because the settle doors' callers still hold the entities mid-tick.
     drain_dead_leader_squads(w, gs.deserterPool);
-    destroy_dead_macro_squads(w);
+    destroy_dead_macro_squads(w, &gs.lootPool);
 }
 
 void tick_macro_npc_visuals(ecs::World& w, int mapW, int mapH, float dt) {
@@ -2264,7 +2264,7 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     // leave the map by the same law. (The positional sweep cursor already
     // tolerates the view shrinking — every death mid-sweep shrinks it.)
     drain_dead_leader_squads(w, gs.deserterPool);
-    destroy_dead_macro_squads(w);
+    destroy_dead_macro_squads(w, &gs.lootPool);
     result.backlog = result.backlog || runtime.pendingSweeps > 0;
     return result;
 }
