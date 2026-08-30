@@ -13,7 +13,7 @@
 #include "sub/spawn.h"
 #include "sub/targeting.h"
 #include "sub/ai.h"
-#include "sub/battle.h"
+#include "sub/movement.h"
 #include "sub/spell_effects.h"
 #include "sub/damage.h"
 #include "sub/base_generator.h"
@@ -82,7 +82,6 @@ constexpr int kBattleGridMaxDim = 256;
 // carry several steps or none.
 constexpr int kMaxSubworldDeathsPerStep = 512;
 constexpr int kMaxSubworldEntityReaps = 2048;
-constexpr float kSubworldFirstPersonMoveScale = 0.4f;
 // kHitFlashDuration now lives in sub/spell_effects.h — one constant for every
 // weapon's on-hit flash.
 // kPlayerMeleeRange / kPlayerMeleeCooldown / kPlayerBaseMeleeDamage moved to
@@ -276,7 +275,7 @@ bool hostile_to_player_entity(entt::registry& reg,
 // candidate pair, and the target scan produced ~N² pairs per frame in a real
 // battle. The same rules now live in one relation callback
 // (SubworldEngine::battle_relation_callback) that build_faction_masks() applies
-// once per tick over the factions PRESENT, yielding a 64-bit enemy mask each; "is j my enemy" is a shift and an AND (BattleUnits::hostile).
+// once per tick over the factions PRESENT, yielding a 64-bit enemy mask each; "is j my enemy" is a shift and an AND (BodyCrowd::hostile).
 // Player-vs-NPC still reads reputation, NPC-vs-NPC still reads the macro faction
 // matrix, and the per-entity TempHostileToPlayer exception rides in the unit's
 // own mask — same semantics, integer cost.
@@ -580,6 +579,15 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     if (dev_) renderer3dVk_.upload(*dev_, mgr_, enterDirty);
     active_  = true;
     pendingUpload3d_ = {};
+    // The scene's solids, indexed BEFORE anybody is placed in it. This used
+    // to wait for the first frame, so everything that arrived on entry — the
+    // player, his squad, the projected macro figures — was placed against
+    // bare terrain and only learned about walls and decks a tick later. The
+    // heights are uploaded just above, which is the only thing the rebuild
+    // needs.
+    structIndex_.rebuild(mgr_.structures(),
+                         &SubworldEngine::ground_height_callback, this);
+    structIndexDirty_ = false;
     // Entry-side placement (macro/entry_context.h): the player lands in the
     // CENTRE cell on the side they actually walked in from, at a depth that
     // grows with time spent in the macro cell — walked in from the south just
@@ -595,6 +603,30 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
             + entry_axis_pos(sdx, gs.player.entryTicks, float(kCellSize), 0.5f);
         playerY_ = float(kCellSize)
             + entry_axis_pos(sdy, gs.player.entryTicks, float(kCellSize), 0.5f);
+        // DRY FOOTING (sub/height.h): a body arrives where something would
+        // carry it above the water — the ground, or a solid standing on it.
+        // Same law the projected macro figures follow, and it is about the
+        // WATER, not about bridges: a walled quay or a future jetty answers
+        // it identically. Deterministic re-tries within the same entry band,
+        // so a re-entry lands in the same place; if the whole band is water
+        // (mid-sea cell) the mid-band point stands, as it always did.
+        if (!is_dry_footing(footing_height_m(playerX_, playerY_))) {
+            Rng landing{gs.worldSeed ^ (std::uint32_t(cx) << 8)
+                        ^ std::uint32_t(cy) ^ 0xB21D6Eu};
+            for (int attempt = 0; attempt < 20; ++attempt) {
+                const float tx = float(kCellSize) + entry_axis_pos(
+                    sdx, gs.player.entryTicks, float(kCellSize),
+                    landing.next_f01());
+                const float ty = float(kCellSize) + entry_axis_pos(
+                    sdy, gs.player.entryTicks, float(kCellSize),
+                    landing.next_f01());
+                if (is_dry_footing(footing_height_m(tx, ty))) {
+                    playerX_ = tx;
+                    playerY_ = ty;
+                    break;
+                }
+            }
+        }
     }
     // Exact landing spot (dungeon exit: back out of the very door you opened).
     // Applied BEFORE the squad / projection spawns below, so the entourage
@@ -605,17 +637,17 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     }
     playerAttackHeld_ = false;
     playerAttackTimer_ = 0.0f;
-    playerVz_ = 0.0f;
+    reset_player_motion();
     // ...and PUT HIM ON THE GROUND. playerZ_ is persistent engine state: without
     // this it still held the height of wherever the last subworld session ended,
     // so leaving a mountain and entering a lowland cell hours of travel later
     // spawned the player in mid-air, falling — with fall damage waiting at the
     // bottom. Entering is not moving: there is no arc to preserve, and the only
-    // honest z for a body that has just arrived is the surface under its feet.
-    // Structures are not consulted because none are indexed yet at this point in
-    // enter(); the ground is what the renderer's heightfield says, which is the
-    // same authority sync_player_vertical uses every tick afterwards.
-    playerZ_ = renderer3dVk_.sample_height_m(playerX_, playerY_);
+    // honest z for a body that has just arrived is the surface under its feet —
+    // the SUPPORT surface (footing_height_m), the same max(terrain, solid top)
+    // sync_player_vertical rides every tick afterwards, so arriving on a deck
+    // or a wall walk seats you on it instead of inside the water below.
+    playerZ_ = footing_height_m(playerX_, playerY_);
     playerGrounded_ = true;
     spellRng_ = Rng{gs.worldSeed
         + std::uint32_t(cx) * std::uint32_t{1000}
@@ -647,7 +679,7 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     const int projected = project_macro_npcs_into_subworld(ecs, mgr_, cx, cy,
         gs.mapW, gs.mapH,
         gs.worldSeed ^ kMacroProjectionSalt ^ (std::uint32_t(cx) << 8)
-            ^ std::uint32_t(cy), &projectionTruncated);
+            ^ std::uint32_t(cy), &projectionTruncated, &structIndex_);
     if (projected > 0) {
         char msg[80];
         std::snprintf(msg, sizeof(msg), "%d overworld figure%s nearby%s",
@@ -811,8 +843,15 @@ void SubworldEngine::spawn_player_entity() {
               + calculate_derived(gs_->player.sheet.attributes,
                                   gs_->player.sheet.skills).rawPhysDamage
         : kPlayerBaseMeleeDamage;
+    // Speed: a walking man's, from the ONE scale every body is stated on
+    // (macro/movement_cost.h). Refreshed each tick beside the damage, so a
+    // hasted or burdened player's body says what it can actually do.
+    const float playerPace = march_speed(kHumanMarchMult)
+        * (gs_ ? calculate_derived(gs_->player.sheet.attributes,
+                                   gs_->player.sheet.skills).moveSpeedMult
+               : 1.0f);
     reg.emplace<ecs::Combat>(
-        e, ecs::Combat{meleeDamage, 0.0f, kPlayerMeleeRange,
+        e, ecs::Combat{meleeDamage, playerPace, kPlayerMeleeRange,
                        kPlayerMeleeCooldown, 0u, ecs::Combat::Melee});
     reg.emplace<ecs::SubworldTag>(e);
     // First honest point-light emitter (Inc 4): a warm carried lantern. Gathered
@@ -926,9 +965,16 @@ void SubworldEngine::sync_player_entity_position() {
                     gs_->player.combatStats.currentHp, 0, maxHp));
             }
             if (auto* c = reg.try_get<ecs::Combat>(e)) {
-                c->damage = kPlayerBaseMeleeDamage + calculate_derived(
-                    gs_->player.sheet.attributes,
-                    gs_->player.sheet.skills).rawPhysDamage;
+                const DerivedBonuses d = calculate_derived(
+                    gs_->player.sheet.attributes, gs_->player.sheet.skills);
+                c->damage = kPlayerBaseMeleeDamage + d.rawPhysDamage;
+                // HIS PACE, on his body, like every other body carries it.
+                // It was zero — the player was the one thing in the world
+                // with no speed of its own, because his legs used to live in
+                // the input path. The mover reads it for what a body can do
+                // (its acceleration and its brake are scaled by it), so a
+                // speedless body could start but never quite finish stopping.
+                c->speed = march_speed(kHumanMarchMult) * d.moveSpeedMult;
             }
         }
         break;
@@ -1787,15 +1833,15 @@ const Structure* SubworldEngine::aimed_prop() const {
         const InteractRow& row = interact_row(structure_interact(s.kind));
         const float reach = row.reachTiles;
         float d2 = structure_surface_dist2(s, playerX_, playerY_);
-        if (s.zBase > 0.0f) {
+        if (s.zBase > 0.0f || s.zWorld) {
             // A LIFTED prop (the roof orb) is reachable from its own deck,
             // not from the ground a tower-height beneath it: the vertical
             // gap to the prop's solid span joins the reach test. Ground
             // props (zBase 0) keep the plain 2D math — a doorstep and a
             // doorstep's doorstep never differ by storeys.
             const float seat = renderer3dVk_.sample_height_m(s.x, s.y);
-            const float zLow = seat + s.zBase;
-            const float zHigh = zLow + structure_visible_height(s);
+            float zLow, zHigh;
+            structure_solid_span(s, seat, zLow, zHigh);
             const float dz = playerZ_ < zLow ? zLow - playerZ_
                            : playerZ_ > zHigh ? playerZ_ - zHigh
                                               : 0.0f;
@@ -2122,8 +2168,8 @@ float SubworldEngine::player_ground_travel_weight() const {
 }
 
 // Terrain hook for the battle pass: forwards to the renderer's CPU heightfield.
-// A free function + void* user, not a virtual — sub/battle.h stays Vulkan-free.
-float SubworldEngine::battle_height_callback(void* user, float x, float y) {
+// A free function + void* user, not a virtual — sub/movement.h stays Vulkan-free.
+float SubworldEngine::ground_height_callback(void* user, float x, float y) {
     auto* self = static_cast<SubworldEngine*>(user);
     return self->renderer3dVk_.sample_height_m(x, y);
 }
@@ -2137,32 +2183,40 @@ bool SubworldEngine::solid_can_stand_callback(void* user, float x, float y,
     return !self->structIndex_.blocked_at(x, y, r, z);
 }
 
+std::uint8_t SubworldEngine::solid_walk_tile_callback(void* user, float x,
+                                                      float y, float r,
+                                                      float z,
+                                                      std::uint8_t tile) {
+    auto* self = static_cast<SubworldEngine*>(user);
+    return self->structIndex_.walk_tile_at(x, y, r, z, tile);
+}
+
 bool SubworldEngine::spell_solid_callback(void* user, float x, float y,
                                           float z) {
     auto* self = static_cast<SubworldEngine*>(user);
     return self->structIndex_.solid_at(x, y, z);
 }
 
-// The spell tick's broad phase, answered from battlePick_ — the contact grid
-// tick_subworld_combat already built and paid for this very tick (it runs
+// The spell tick's broad phase, answered from crowdPick_ — the contact grid
+// tick_subworld_bodies already built and paid for this very tick (it runs
 // right before tick_spell_projectiles). Semantics are the SpellNeighborsFn
 // contract: a superset of every body whose centre may lie within `r`, or -1
 // when that promise cannot be kept. Unlike contact_scan this walk has NO
 // visit budget — the AI may legitimately stop looking, a projectile may not.
 //
 // The padding is the two things the asker cannot know: the grid holds
-// positions from BEFORE steering moved bodies (≤ battleMaxStepM_ of drift),
+// positions from BEFORE steering moved bodies (≤ crowdMaxStepM_ of drift),
 // and "centre within r" must survive the fattest body in the crowd when the
-// asker measures surface contact (battle_.maxRadius).
+// asker measures surface contact (crowd_.maxRadius).
 int SubworldEngine::spell_neighbors_callback(void* user, float x, float y,
                                              float r, std::uint32_t* out,
                                              int maxOut) {
     auto* self = static_cast<SubworldEngine*>(user);
-    if (self->battleGatherTruncated_) return -1;
-    const BattleUnits& u = self->battle_;
+    if (self->crowdGatherTruncated_) return -1;
+    const BodyCrowd& u = self->crowd_;
     if (u.count <= 0) return 0;             // an honestly empty world
-    const UnitGrid& g = self->battlePick_;
-    const float rr = r + self->battleMaxStepM_ + u.maxRadius;
+    const UnitGrid& g = self->crowdPick_;
+    const float rr = r + self->crowdMaxStepM_ + u.maxRadius;
     const float rr2 = rr * rr;
     const int c0 = g.col_of(x - rr), c1 = g.col_of(x + rr);
     const int r0 = g.row_of(y - rr), r1 = g.row_of(y + rr);
@@ -2179,7 +2233,7 @@ int SubworldEngine::spell_neighbors_callback(void* user, float x, float y,
                 if (dx * dx + dy * dy > rr2) continue;
                 if (n >= maxOut) return -1; // cannot promise completeness
                 out[n++] = std::uint32_t(
-                    entt::to_integral(self->battleEnts_[sj]));
+                    entt::to_integral(self->crowdEnts_[sj]));
             }
         }
     }
@@ -2208,7 +2262,7 @@ int SubworldEngine::battle_relation_callback(void* user, const FactionSet& set,
     return faction_relation(self->gs_, set.ids[a], set.ids[b]);
 }
 
-void SubworldEngine::tick_subworld_combat(float dt) {
+void SubworldEngine::tick_subworld_bodies(float dt) {
     if (!ecs_ || dt <= 0.0f) return;
     auto& reg = ecs_->reg;
 
@@ -2219,9 +2273,11 @@ void SubworldEngine::tick_subworld_combat(float dt) {
     // for it. Combat is read per-body, not demanded by the view: a weaponless
     // body rides with honest zeros for speed/reach (owner ruling 2026-08-05 —
     // no special cases, a peasant is targetable by his real faction and flees
-    // rather than fights). Bodies this pass must not move are pinned
-    // (BU_Pinned) so they still block and can still be targeted. No actor is
-    // special-cased out of existence — only its execution unit differs.
+    // rather than fights). EVERY body here is moved by this one pass — the player
+    // included since 2026-08-30 — and the flags only say what may claim its
+    // legs, never whether it has any: B_Passive means no war conscripts it
+    // (a fleeing deer, the player at his own keys), and it still blocks, is
+    // still targeted, still separates.
     //
     // Faction identity is the id STRING, interned here into a dense index. The
     // set is rebuilt every tick, so a faction that walks into the window (or a
@@ -2229,17 +2285,17 @@ void SubworldEngine::tick_subworld_combat(float dt) {
     // extend and no vocabulary in the battle code. The relation matrix over the
     // interned set is recomputed only when that set CHANGES or the refresh timer
     // fires, which is what keeps the string lookups off the per-frame path.
-    battle_.clear();
-    battleEnts_.clear();
-    battle_.reserve(kMaxBattleUnits);
-    battleEnts_.reserve(std::size_t(kMaxBattleUnits));
-    battleFactions_.clear();
+    crowd_.clear();
+    crowdEnts_.clear();
+    crowd_.reserve(kMaxBodyCrowd);
+    crowdEnts_.reserve(std::size_t(kMaxBodyCrowd));
+    crowdFactions_.clear();
     // The player side is interned FIRST so it owns a stable index for the tick;
     // it is an ordinary faction with an ordinary id, not a special case.
-    battlePlayerFaction_ = battleFactions_.intern(kPlayerFactionId);
+    crowdPlayerFaction_ = crowdFactions_.intern(kPlayerFactionId);
     std::uint64_t playerExtraMask = 0ull;
     float threat2 = kNoThreatDistance2;
-    battleGatherTruncated_ = false;
+    crowdGatherTruncated_ = false;
     // The fastest DRIVE in the crowd — combat sprint or brain intent,
     // whichever is larger — bounds how far any body can move per tick, which
     // is exactly the staleness the spell broad phase must pad its queries by.
@@ -2253,14 +2309,14 @@ void SubworldEngine::tick_subworld_combat(float dt) {
         if (hp.hp <= 0.0f) continue;
         const auto* c = reg.try_get<ecs::Combat>(e);
 
-        BattleUnitDesc d{};
+        BodyDesc d{};
         d.x = p.x; d.y = p.y; d.z = p.z;
         d.radius = body_radius(reg, e);
         d.speed = c ? c->speed : 0.0f;
         d.reach = c ? c->attackRange : 0.0f;
         d.sight = body_sight(reg, e);
-        if (c && c->kind == ecs::Combat::Missile) d.flags |= BU_Missile;
-        if (reg.any_of<ecs::Flying>(e)) d.flags |= BU_Flying;
+        if (c && c->kind == ecs::Combat::Missile) d.flags |= B_Missile;
+        if (reg.any_of<ecs::Flying>(e)) d.flags |= B_Flying;
 
         const bool owned = reg.any_of<ecs::PlayerSoldierTag>(e);
         const bool isPlayer = reg.any_of<ecs::PlayerTag>(e);
@@ -2272,17 +2328,33 @@ void SubworldEngine::tick_subworld_combat(float dt) {
         // here. Only the hero husk keeps an override: it carries no NPCKind at
         // all (spawn_player_entity), so there is nothing to read.
         d.faction = std::int16_t(
-            isPlayer ? battlePlayerFaction_
-                     : battleFactions_.intern(
+            isPlayer ? crowdPlayerFaction_
+                     : crowdFactions_.intern(
                            faction_id_for_kind(reg.try_get<ecs::NPCKind>(e))));
 
-        // ONE mover. The only pinned body is the player's, whose mover is the
-        // input. Everyone else — fighter, wanderer, fleeing deer, weaponless
-        // husk — is steered here, from the intent its brain wrote this tick
-        // (sub/ai.cpp) when no combat drive claims it. vx/vy seed the steering
-        // pass's persistent velocity, scattered back below.
-        if (isPlayer) d.flags |= BU_Pinned;
-        if (auto* ai = reg.try_get<ecs::SubworldAi>(e)) {
+        // ONE MOVER, and since 2026-08-30 it means ONE (owner: «БОЙ В ИГРЕ
+        // НИЧЕМ НЕ ОСОБЕННЫЙ… нет никакого боя, просто если НПЦ видят врага,
+        // они бегут на него»). This pass is not a battle mode, it is how a
+        // body moves in the subworld: fighter, wanderer, fleeing deer,
+        // weaponless husk — and the PLAYER, whose keys are an intent exactly
+        // like a brain's. He used to be pinned here and moved by the input
+        // itself, which is why he alone paid nothing for ground or slope
+        // while every peasant did (CANON S4: player-specific code does not
+        // exist). vx/vy seed this pass's persistent velocity, scattered back
+        // below.
+        if (isPlayer) {
+            d.intentVx = playerIntentVx_;
+            d.intentVy = playerIntentVy_;
+            d.vx = playerVx_;
+            d.vy = playerVy_;
+            // PASSIVE, not pinned: his legs are his own (the keys are the
+            // intent, and no influence field may drag him), and no war
+            // conscripts him — he strikes through tick_player_melee. What he
+            // gains by no longer being pinned is everything a body gets from
+            // the mover: ground under the feet, slope, separation, solids.
+            d.flags |= B_Passive;
+        }
+        else if (auto* ai = reg.try_get<ecs::SubworldAi>(e)) {
             d.vx = ai->vx;
             d.vy = ai->vy;
             d.intentVx = ai->wantVx;
@@ -2290,32 +2362,32 @@ void SubworldEngine::tick_subworld_combat(float dt) {
             // A Flee mind never answers its faction's war — its answer to
             // danger IS the running. Passive: a target and an obstacle, but
             // the combat drive may not conscript it.
-            if (ai->kind == ecs::SubworldAi::Flee) d.flags |= BU_Passive;
+            if (ai->kind == ecs::SubworldAi::Flee) d.flags |= B_Passive;
         }
         // A body flagged individually hostile to the player records that as a
         // private grudge, and hands the player side the reciprocal bit — the one
         // per-entity exception survives as data, never as a branch in the loop.
         if (!isPlayer && !owned && d.faction >= 0
             && reg.any_of<ecs::TempHostileToPlayer>(e)
-            && battlePlayerFaction_ >= 0) {
+            && crowdPlayerFaction_ >= 0) {
             playerExtraMask |= (1ull << d.faction);
         }
 
         maxDrive = std::max(maxDrive, std::max(d.speed,
             std::sqrt(d.intentVx * d.intentVx + d.intentVy * d.intentVy)));
 
-        const int idx = battle_.add(d);
+        const int idx = crowd_.add(d);
         if (idx < 0) {                      // 16k ceiling: shared with the renderer
             // Bodies past the ceiling exist in the world but not in the grids.
             // The spell broad phase must know it is blind to them — it answers
             // -1 and the spell tick falls back to the full scan.
-            battleGatherTruncated_ = true;
+            crowdGatherTruncated_ = true;
             break;
         }
-        battleEnts_.push_back(e);
+        crowdEnts_.push_back(e);
     }
-    battleMaxStepM_ = maxDrive * dt;
-    if (battle_.count <= 0) {
+    crowdMaxStepM_ = maxDrive * dt;
+    if (crowd_.count <= 0) {
         playerThreatD2_ = kNoThreatDistance2;
         return;
     }
@@ -2325,28 +2397,28 @@ void SubworldEngine::tick_subworld_combat(float dt) {
     // scratch, so its masks are empty until filled. K² over the factions present
     // (a couple of dozen lookups) — see the warning on build_faction_masks for
     // the bug that "amortising" this caused.
-    build_faction_masks(battleFactions_,
+    build_faction_masks(crowdFactions_,
                         &SubworldEngine::battle_relation_callback, this,
                         kHostileThreshold);
 
     // Stamp each body's enemy mask from its faction, plus any private grudge, and
     // fold in the nearest-threat-to-the-player distance while the data is hot —
     // the HUD gem and the exit gate read that every frame and must never scan.
-    for (int i = 0; i < battle_.count; ++i) {
+    for (int i = 0; i < crowd_.count; ++i) {
         const std::size_t si = std::size_t(i);
-        const std::int16_t f = battle_.faction[si];
-        std::uint64_t mask = f >= 0 ? battleFactions_.enemyMask[f] : 0ull;
-        if (f >= 0 && f == std::int16_t(battlePlayerFaction_)) {
+        const std::int16_t f = crowd_.faction[si];
+        std::uint64_t mask = f >= 0 ? crowdFactions_.enemyMask[f] : 0ull;
+        if (f >= 0 && f == std::int16_t(crowdPlayerFaction_)) {
             mask |= playerExtraMask;
-        } else if (playerExtraMask != 0ull && f >= 0 && battlePlayerFaction_ >= 0
+        } else if (playerExtraMask != 0ull && f >= 0 && crowdPlayerFaction_ >= 0
                    && ((playerExtraMask >> f) & 1ull) != 0ull) {
-            mask |= (1ull << battlePlayerFaction_);
+            mask |= (1ull << crowdPlayerFaction_);
         }
-        battle_.enemyMask[si] = mask;
-        if (battlePlayerFaction_ >= 0
-            && ((mask >> battlePlayerFaction_) & 1ull) != 0ull) {
-            threat2 = std::min(threat2, dist3sq(battle_.x[si], battle_.y[si],
-                                                battle_.z[si],
+        crowd_.enemyMask[si] = mask;
+        if (crowdPlayerFaction_ >= 0
+            && ((mask >> crowdPlayerFaction_) & 1ull) != 0ull) {
+            threat2 = std::min(threat2, dist3sq(crowd_.x[si], crowd_.y[si],
+                                                crowd_.z[si],
                                                 playerX_, playerY_, playerZ_));
         }
     }
@@ -2356,14 +2428,14 @@ void SubworldEngine::tick_subworld_combat(float dt) {
     // Two bucket grids at two scales — bodies are ~1 unit wide while weapons
     // reach up to 25, and one cell size cannot serve both without becoming
     // either quadratic or blind. Both cell sizes come from the crowd's own data.
-    build_unit_grid(battleFine_, battle_, fine_cell_for(battle_, battleParams_),
+    build_unit_grid(crowdFine_, crowd_, fine_cell_for(crowd_, moveParams_),
                     kBattleGridMaxDim);
-    build_unit_grid(battlePick_, battle_, pick_cell_for(battle_, battleParams_),
+    build_unit_grid(crowdPick_, crowd_, pick_cell_for(crowd_, moveParams_),
                     kBattleGridMaxDim);
-    build_influence_field(battleField_, battle_, battleParams_.influenceCell,
+    build_influence_field(crowdField_, crowd_, moveParams_.influenceCell,
                           float(kFullSize));
-    BattleTerrain terrain{};
-    terrain.heightAt = &SubworldEngine::battle_height_callback;
+    MoveGround terrain{};
+    terrain.heightAt = &SubworldEngine::ground_height_callback;
     terrain.user = this;
     // Ground cost is DATA: the tile grid the generator already produced, plus the
     // one movement table in sub/map_data.h. The battle pass does not know what
@@ -2372,8 +2444,9 @@ void SubworldEngine::tick_subworld_combat(float dt) {
     if (tiles.size() >= std::size_t(kFullSize) * std::size_t(kFullSize)) {
         terrain.tiles = tiles.data();
         terrain.tileDim = kFullSize;
-        terrain.tileSpeed = kTileMovementSpeed;
+        terrain.tileSpeed = kTileMovementSpeed.data();
         terrain.tileSpeedCount = int(TILE_COUNT);
+        terrain.tileGrip = kTileGroundGrip;
     }
     terrain.worldMax = float(kFullSize);
     // Solid structures (walls, houses, gate jambs) are real obstacles: the
@@ -2381,23 +2454,36 @@ void SubworldEngine::tick_subworld_combat(float dt) {
     // index the ground-follow support and the player mover use.
     terrain.canStand = &SubworldEngine::solid_can_stand_callback;
     terrain.solidUser = this;
-    BattleStats stats{};
-    steer_battle(battle_, battleFine_, battlePick_, battleField_, terrain,
-                 battleParams_, dt, &stats);
+    // ...and the same index answers what the ground under the feet IS, so a
+    // body on a bridge deck is priced as walking road rather than wading the
+    // river beneath it (the owner's support law, 2026-08-30).
+    terrain.standTile = &SubworldEngine::solid_walk_tile_callback;
+    MoveStats stats{};
+    steer_bodies(crowd_, crowdFine_, crowdPick_, crowdField_, terrain,
+                 moveParams_, dt, &stats);
 
     // ── Scatter: SoA → ECS ─────────────────────────────────────────────────
     // Z is deliberately untouched: the ground-follow pass in tick() owns it.
-    for (int i = 0; i < battle_.count; ++i) {
+    for (int i = 0; i < crowd_.count; ++i) {
         const std::size_t si = std::size_t(i);
-        if ((battle_.flags[si] & BU_Pinned) != 0u) continue;
-        const entt::entity e = battleEnts_[si];
+        if ((crowd_.flags[si] & B_Pinned) != 0u) continue;
+        const entt::entity e = crowdEnts_[si];
         if (!reg.valid(e)) continue;
         auto& p = reg.get<ecs::Position>(e);
-        p.x = battle_.x[si];
-        p.y = battle_.y[si];
+        p.x = crowd_.x[si];
+        p.y = crowd_.y[si];
+        if (reg.any_of<ecs::PlayerTag>(e)) {
+            // The engine's player scalars are a VIEW of his body now, not a
+            // second truth beside it: the mover moved him with everyone else,
+            // and this is where the camera learns where he ended up.
+            playerX_ = crowd_.x[si];
+            playerY_ = crowd_.y[si];
+            playerVx_ = crowd_.vx[si];
+            playerVy_ = crowd_.vy[si];
+        }
         if (auto* ai = reg.try_get<ecs::SubworldAi>(e)) {
-            ai->vx = battle_.vx[si];
-            ai->vy = battle_.vy[si];
+            ai->vx = crowd_.vx[si];
+            ai->vy = crowd_.vy[si];
         }
     }
 
@@ -2417,19 +2503,22 @@ void SubworldEngine::tick_subworld_combat(float dt) {
     // strikeable this tick (3D reach), so this pass is pure gameplay authority:
     // one bounded loop, no distance search, no hostility re-test. Damage,
     // death, loot, XP and events stay exactly where they were — in the ECS.
-    for (int i = 0; i < battle_.count; ++i) {
+    for (int i = 0; i < crowd_.count; ++i) {
         const std::size_t si = std::size_t(i);
-        if (!battle_.inReach[si]) continue;
+        if (!crowd_.inReach[si]) continue;
         // The player body — including a possessed NPC wearing PlayerTag — is
         // driven by input + tick_player_melee, never by auto-combat. Fleeing
-        // bodies do not fight either. Both are pinned, so this one test covers
-        // them without naming either case.
-        if ((battle_.flags[si] & BU_Pinned) != 0u) continue;
-        const entt::entity e = battleEnts_[si];
+        // bodies do not fight either. Both are PASSIVE, which is the flag that
+        // says "no war claims this body", so one test still covers them
+        // without naming either case. (It said "pinned" until the movers
+        // merged, 2026-08-30: the player was pinned OUT of the mover then, and
+        // nothing wears that flag in the shipping engine any more.)
+        if ((crowd_.flags[si] & (B_Passive | B_Pinned)) != 0u) continue;
+        const entt::entity e = crowdEnts_[si];
         if (!reg.valid(e) || !alive_subworld_entity(reg, e)) continue;
-        const std::int32_t t = battle_.target[si];
+        const std::int32_t t = crowd_.target[si];
         if (t < 0) continue;
-        const entt::entity targetEnt = battleEnts_[std::size_t(t)];
+        const entt::entity targetEnt = crowdEnts_[std::size_t(t)];
         if (!reg.valid(targetEnt) || !alive_subworld_entity(reg, targetEnt))
             continue;
 
@@ -2742,7 +2831,7 @@ void SubworldEngine::leave(bool force) {
     propLights_.clear();   // reaped with the scene above
     interactProps_.clear();
     playerAttackHeld_ = false;
-    playerVz_ = 0.0f;
+    reset_player_motion();
     playerAttackTimer_ = 0.0f;
     statusLine_.clear();
     statusTimer_ = 0.0f;
@@ -2899,7 +2988,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     playerY_ = float(kCellSize) + ey;
     playerAttackHeld_ = false;
     playerAttackTimer_ = 0.0f;
-    playerVz_ = 0.0f;
+    reset_player_motion();
     playerZ_ = renderer3dVk_.sample_height_m(playerX_, playerY_);
     playerGrounded_ = true;
     spellRng_ = Rng{dungeon_scene_seed(worldSeed, ses.doorCx, ses.doorCy,
@@ -3426,10 +3515,39 @@ void SubworldEngine::set_flying(bool enabled) {
 // and the highest structure top within a step of the feet) — resting sticks,
 // a support that drops away starts an honest fall with playerVz_ carrying the
 // inertia, and losing flight mid-air is just that fall from the current z.
-// Flying: gravity-free 3D movement (move_player edits playerZ_ directly),
+// Flying: gravity-free 3D movement (sync_player_vertical applies the
+    // pitched dive from playerIntentVz_),
 // clamped to [support, window ceiling] — the floor is the support surface, so
 // descending onto a wall top lands and STANDS there.
+// What would carry a body at (x, y), from above: the terrain, or the highest
+// solid it could stand on. THE placement question — used when a body ARRIVES
+// (enter, projection) rather than when it walks, so the probe looks down from
+// the dry-footing ceiling instead of from a pair of feet that has no height
+// yet (sub/height.h).
+float SubworldEngine::footing_height_m(float x, float y) const {
+    float z = renderer3dVk_.sample_height_m(x, y);
+    if (!structIndex_.empty()) {
+        z = std::max(z, structIndex_.support_at(
+            x, y, kPlayerBodyRadius, kSeaLevelM + kDryFootingProbeM,
+            /*stepUp*/0.0f));
+    }
+    return z;
+}
+
 void SubworldEngine::sync_player_vertical(float dt) {
+    // The vertical half of flight — the one part of his movement the mover
+    // cannot own, because the mover is 2D and a pitched dive is not a step.
+    // Refuses to rise or sink INTO a solid, the honest head bump.
+    if (flying() && playerIntentVz_ != 0.0f) {
+        const float dz = playerIntentVz_ * dt;
+        const bool intoSolid =
+            !structIndex_.empty()
+            && structIndex_.blocked_at(playerX_, playerY_, kPlayerBodyRadius,
+                                       playerZ_ + dz)
+            && !structIndex_.blocked_at(playerX_, playerY_, kPlayerBodyRadius,
+                                        playerZ_);
+        if (!intoSolid) playerZ_ += dz;
+    }
     float supportZ = renderer3dVk_.sample_height_m(playerX_, playerY_);
     if (!structIndex_.empty()) {
         supportZ = std::max(supportZ, structIndex_.support_at(
@@ -3471,6 +3589,40 @@ void SubworldEngine::jump() {
     playerGrounded_ = false;
 }
 
+void SubworldEngine::reset_player_motion() {
+    playerIntentVx_ = playerIntentVy_ = playerIntentVz_ = 0.0f;
+    playerVx_ = playerVy_ = 0.0f;
+    playerVz_ = 0.0f;
+    debugIntentSteps_ = 0;
+}
+
+void SubworldEngine::set_move_intent(float dx, float dy) {
+    if (!active_) {
+        playerIntentVx_ = playerIntentVy_ = playerIntentVz_ = 0.0f;
+        debugIntentSteps_ = 0;
+        return;
+    }
+    // A harness hold outranks the input path for its few steps; the counter
+    // is spent in tick(), so a held intent can never outlive its run.
+    if (debugIntentSteps_ > 0) return;
+    // First-person basis: camera-forward in the tile plane is (cos yaw, sin
+    // yaw), right is its 90° rotation. Composed HERE and nowhere else — this
+    // is the whole of what makes the player's legs his own; from the intent
+    // onward he is a body like any other.
+    const float cy = std::cos(cam_.yaw), sy = std::sin(cam_.yaw);
+    if (flying()) {
+        const float cp = std::cos(cam_.pitch);
+        const float sp = std::sin(cam_.pitch);
+        playerIntentVx_ = dy * cy * cp - dx * sy;
+        playerIntentVy_ = dy * sy * cp + dx * cy;
+        playerIntentVz_ = dy * sp;
+    } else {
+        playerIntentVx_ = dy * cy - dx * sy;
+        playerIntentVy_ = dy * sy + dx * cy;
+        playerIntentVz_ = 0.0f;
+    }
+}
+
 void SubworldEngine::move_player(float dx, float dy) {
     if (!active_) return;
     // First-person walk: dy = forward (UP arrow / W), dx = strafe right.
@@ -3488,14 +3640,14 @@ void SubworldEngine::move_player(float dx, float dy) {
         const float sp = std::sin(cam_.pitch);
         const float wx = dy * cy * cp - dx * sy;
         const float wy = dy * sy * cp + dx * cy;
-        playerX_ += wx * kSubworldFirstPersonMoveScale;
-        playerY_ += wy * kSubworldFirstPersonMoveScale;
-        dz = dy * sp * kSubworldFirstPersonMoveScale;
+        playerX_ += wx;
+        playerY_ += wy;
+        dz = dy * sp;
     } else {
         const float wx = dy * cy - dx * sy;
         const float wy = dy * sy + dx * cy;
-        playerX_ += wx * kSubworldFirstPersonMoveScale;
-        playerY_ += wy * kSubworldFirstPersonMoveScale;
+        playerX_ += wx;
+        playerY_ += wy;
     }
     if (playerX_ < 0) playerX_ = 0;
     if (playerY_ < 0) playerY_ = 0;
@@ -3530,6 +3682,8 @@ void SubworldEngine::set_player_pos(float x, float y) {
     if (!active_) return;
     playerX_ = std::clamp(x, 1.0f, float(kFullSize - 2));
     playerY_ = std::clamp(y, 1.0f, float(kFullSize - 2));
+    // A teleport is an arrival, not a journey: nothing carries over.
+    reset_player_motion();
     // Inc 5a: the entity Position is authoritative — commit the teleport onto it.
     push_scalars_to_player_entity();
     // The next tick()'s check_boundary() re-centres the seamless window and
@@ -3587,6 +3741,7 @@ void SubworldEngine::rotate_camera(float dyaw, float dpitch) {
 
 void SubworldEngine::tick(float dt) {
     if (!active_) return;
+    if (debugIntentSteps_ > 0) --debugIntentSteps_;
     elapsed_ += dt;
     if (statusTimer_ > 0.0f) {
         statusTimer_ -= dt;
@@ -3648,7 +3803,7 @@ void SubworldEngine::tick(float dt) {
     if (dirtyNow.structs || dirtyNow.fullHeight) structIndexDirty_ = true;
     if (structIndexDirty_) {
         structIndex_.rebuild(mgr_.structures(),
-                             &SubworldEngine::battle_height_callback, this);
+                             &SubworldEngine::ground_height_callback, this);
         // Props follow the same signal: the set of props just changed, so
         // the flames and the interactive shortlist changed with it.
         rebuild_prop_cache();
@@ -3747,7 +3902,7 @@ void SubworldEngine::tick(float dt) {
         push_scalars_to_player_entity();
         tick_npc_ai(*ecs_, playerX_, playerY_, std::uint32_t{0}, dt,
                     &SubworldEngine::player_threat_callback, this);
-        tick_subworld_combat(dt);
+        tick_subworld_bodies(dt);
         // The player's swing AFTER the combat gather: it asks the battle pick
         // grid the same way the spell contact does, and the grid it asks must
         // be THIS tick's (it used to run before the build and could only full-
@@ -3767,7 +3922,7 @@ void SubworldEngine::tick(float dt) {
                                &SubworldEngine::spell_solid_callback,
                                this,
                                // Broad phase: the battle contact grid, built
-                               // by tick_subworld_combat moments ago. This is
+                               // by tick_subworld_bodies moments ago. This is
                                // what retires the O(N·M) full scans — see
                                // SpellNeighborsFn for the honesty contract.
                                &SubworldEngine::spell_neighbors_callback,

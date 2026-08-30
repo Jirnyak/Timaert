@@ -49,6 +49,7 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"load_game", SmokeAction::LoadGame},
     {"wait_boot_done", SmokeAction::WaitBootDone},
     {"subworld_time", SmokeAction::SubworldTime},
+    {"subworld_walk", SmokeAction::SubworldWalk},
     {"subworld_seam", SmokeAction::SubworldSeam},
     {"subworld_audio", SmokeAction::SubworldAudio},
     {"subworld_exit_gate", SmokeAction::SubworldExitGate},
@@ -297,6 +298,160 @@ int smoke_total_minutes(const sm::WorldTime& t) {
 }
 
 bool smoke_find_open_subworld_cell(const App& app, int& outX, int& outY);
+
+// THE WALK (2026-08-30). Until the movers merged, nothing anywhere exercised
+// the player's legs in the subworld — the one path a player uses every second
+// of play had no smoke at all, which is why moving him onto the shared mover
+// could not be verified except by hand. It asserts what the merge is FOR:
+//
+//   · he moves at all, from an INTENT rather than a displacement;
+//   · the ground prices him — walking road covers measurably more than
+//     walking grass over the same number of steps, by the ONE law both
+//     scales now share (kTileGroundWeight, speed = base/√weight);
+//   · his speed is bounded by that law, so no step can outrun the mover.
+//
+// Deliberately measured as a RATIO of two runs from the same spot: absolute
+// tile counts would pin the calibration constants (which are meant to move),
+// while the ratio pins the LAW (which is not).
+bool run_subworld_walk_smoke(App& app) {
+    if (!app.subworld.active()) {
+        smoke_fail(app, "subworld_walk without a subworld");
+        return false;
+    }
+    // Long enough to reach the pace (the mover limits acceleration, as it does
+    // for everyone), short enough that a scene feature cannot end the run:
+    // what is measured is the SETTLED SPEED, not the distance — a distance
+    // measures the map as much as the law (the first draft of this smoke ran
+    // both grounds into the same obstacle and read the two as equal).
+    constexpr int kWalkSteps = 24;
+    const float startX = app.subworld.player_x();
+    const float startY = app.subworld.player_y();
+    const float startZ = app.subworld.player_z();
+
+    // Walk the two grounds from the SAME spot: the tile under his feet is
+    // repainted between runs, so the only difference is the law.
+    std::vector<std::uint8_t> groundWas;
+    auto pace_on = [&](std::uint8_t tile) {
+        std::vector<std::uint8_t> was = app.subworld.debug_paint_ground(tile);
+        if (groundWas.empty()) groundWas = std::move(was);   // the real world
+        app.subworld.set_player_pos(startX, startY);
+        // Straight ahead at full pace, held down for the whole run the way a
+        // key is held (the input path restates the intent every step).
+        app.subworld.debug_hold_intent(0.0f, sm::kSubworldWalkTilesPerSecond,
+                                       kWalkSteps);
+        // The PEAK pace this ground allows, not the pace at an arbitrary
+        // final step: a scene is a real place, and a body that meets a wall
+        // (or a tree, or a wall of its own town) mid-run ends the stretch at
+        // zero through no fault of the ground law. Sampling the maximum reads
+        // what the surface permitted while the way was clear.
+        float speed = 0.0f;
+        for (int i = 0; i < kWalkSteps; ++i) {
+            advance_sim_steps(app, 1, /*allowInput*/false);
+            const float vx = app.subworld.debug_player_vx();
+            const float vy = app.subworld.debug_player_vy();
+            speed = std::max(speed, std::sqrt(vx * vx + vy * vy));
+        }
+        app.subworld.set_move_intent(0.0f, 0.0f);
+        std::fprintf(stderr,
+                     "[smoke] subworld_walk ground asked=%u underfoot=%u "
+                     "speed=%.2f at=%.1f,%.1f from=%.1f,%.1f z=%.1f\n",
+                     unsigned(tile),
+                     unsigned(app.subworld.debug_tile_at(
+                         app.subworld.player_x(), app.subworld.player_y())),
+                     double(speed),
+                     double(app.subworld.player_x()),
+                     double(app.subworld.player_y()),
+                     double(startX), double(startY),
+                     double(app.subworld.player_z()));
+        std::fflush(stderr);
+        return speed;
+    };
+    const float grassPace = pace_on(std::uint8_t(sm::sub::TILE_GRASS));
+    const float roadPace = pace_on(std::uint8_t(sm::sub::TILE_ROAD));
+
+    const float expectedRatio =
+        sm::sub::kTileMovementSpeed[sm::sub::TILE_ROAD]
+        / sm::sub::kTileMovementSpeed[sm::sub::TILE_GRASS];
+    const float ratio = grassPace > 0.01f ? roadPace / grassPace : 0.0f;
+    std::fprintf(stderr,
+                 "[smoke] subworld_walk steps=%d grass=%.2f road=%.2f "
+                 "ratio=%.3f expected=%.3f z=%.2f\n",
+                 kWalkSteps, double(grassPace), double(roadPace),
+                 double(ratio), double(expectedRatio),
+                 double(app.subworld.player_z() - startZ));
+    std::fflush(stderr);
+
+    if (grassPace < 1.0f) {
+        app.subworld.debug_restore_ground(groundWas);
+        smoke_fail(app, "subworld_walk: the player did not move at all");
+        return false;
+    }
+
+    // ── THE SKID: legs are a brake, not only an engine ──────────────────
+    // Let go of the keys at pace and measure how far he coasts. The law says
+    // a body pulls up inside a couple of its own lengths (a = v²/2d, scaled
+    // by the ground's grip), so the number is metres, not the quarter second
+    // of ice a symmetric limit gives.
+    //
+    // Measured AWAY FROM HIS ESCORT, deliberately: he enters inside a ring of
+    // his own squad, bodies push each other apart (that is the mover doing
+    // its job), and standing in a crowd he is never exactly still. The law
+    // under test is the brake, so the crowd is stepped out of first — the
+    // separation itself is pinned by movement_steering_test.
+    app.subworld.set_player_pos(startX + 400.0f, startY + 400.0f);
+    app.subworld.debug_hold_intent(0.0f, sm::kSubworldWalkTilesPerSecond,
+                                   kWalkSteps);
+    advance_sim_steps(app, kWalkSteps, /*allowInput*/false);
+    const float skidFromX = app.subworld.player_x();
+    const float skidFromY = app.subworld.player_y();
+    app.subworld.debug_hold_intent(0.0f, 0.0f, kWalkSteps);
+    advance_sim_steps(app, kWalkSteps, /*allowInput*/false);
+    const float skidX = app.subworld.player_x() - skidFromX;
+    const float skidY = app.subworld.player_y() - skidFromY;
+    const float skid = std::sqrt(skidX * skidX + skidY * skidY);
+    const float residual = std::sqrt(
+        app.subworld.debug_player_vx() * app.subworld.debug_player_vx()
+        + app.subworld.debug_player_vy() * app.subworld.debug_player_vy());
+    int near = 0;
+    for (auto e : app.ecs.reg.view<sm::ecs::Position, sm::ecs::SubworldTag>()) {
+        const auto& p = app.ecs.reg.get<sm::ecs::Position>(e);
+        const float ddx = p.x - app.subworld.player_x();
+        const float ddy = p.y - app.subworld.player_y();
+        if (ddx * ddx + ddy * ddy < 400.0f) ++near;
+    }
+    std::fprintf(stderr,
+                 "[smoke] subworld_walk skid=%.2f residual=%.3f bodies_near=%d\n",
+                 double(skid), double(residual), near);
+    std::fflush(stderr);
+    if (residual > 0.5f) {
+        app.subworld.debug_restore_ground(groundWas);
+        smoke_fail(app, "subworld_walk: released keys and he keeps moving");
+        return false;
+    }
+    // Generous ceiling on purpose: what is being refused is ICE (the old
+    // symmetric limit coasted a quarter second — tens of tiles at march
+    // pace), not a particular distance.
+    if (skid > 12.0f) {
+        smoke_fail(app, "subworld_walk: the stop is a skid, not a stop");
+        return false;
+    }
+    // The ground must be PAID, and paid by the shared law: a road carries him
+    // 41 % further than grass because a paved bed is 1.0 against a meadow's
+    // 2.0 and speed is base/√weight.
+    // Tolerance, and what it is for: the SLOPE also prices a step (the same
+    // law, the same pass), and two runs at different speeds cover different
+    // ground, so they meet slightly different hills. The ratio is pinned
+    // loosely enough to survive that and tightly enough that "the ground is
+    // free" (ratio 1.0) can never pass.
+    if (std::fabs(ratio - expectedRatio) > 0.12f) {
+        app.subworld.debug_restore_ground(groundWas);
+        smoke_fail(app, "subworld_walk: ground does not price the player");
+        return false;
+    }
+    std::fprintf(stderr, "[smoke] subworld_walk OK\n");
+    std::fflush(stderr);
+    return true;
+}
 
 bool run_subworld_time_smoke(App& app) {
     if (!smoke_boot_invariants_hold(app)) {
@@ -681,7 +836,7 @@ bool run_subworld_sp_drain_smoke(App& app) {
     for (int leg = 0; leg < 24; ++leg) {
         const float legX = app.subworld.player_x();
         const float legY = app.subworld.player_y();
-        app.subworld.move_player(0.0f, 250.0f);
+        app.subworld.move_player(0.0f, 100.0f);
         const float dx = app.subworld.player_x() - legX;
         const float dy = app.subworld.player_y() - legY;
         const float legDist = std::sqrt(dx * dx + dy * dy);
@@ -761,7 +916,7 @@ bool run_subworld_seam_smoke(App& app) {
     const int beforeCy = app.subworld.mgr().center_cy();
     const float beforeX = app.subworld.player_x();
     const float beforeY = app.subworld.player_y();
-    app.subworld.move_player(0.0f, 3000.0f);
+    app.subworld.move_player(0.0f, 1200.0f);
     std::fprintf(stderr, "[smoke] subworld_seam moved player=%.1f,%.1f\n",
                  app.subworld.player_x(), app.subworld.player_y());
     std::fflush(stderr);
@@ -3528,7 +3683,7 @@ bool run_subworld_tree_anchor_smoke(App& app) {
         float yaw = std::atan2(dy, dx);
         app.subworld.rotate_camera(yaw - app.subworld.cam_yaw(), -0.10f);
         if (dist > 22.0f) {
-            app.subworld.move_player(0.0f, (dist - 18.0f) / 0.4f);
+            app.subworld.move_player(0.0f, dist - 18.0f);
             dx = focus->x - app.subworld.player_x();
             dy = focus->y - app.subworld.player_y();
             yaw = std::atan2(dy, dx);
@@ -4467,6 +4622,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fflush(stderr);
             if (run_subworld_time_smoke(app)) ++app.smoke.cursor;
             break;
+        case SmokeAction::SubworldWalk:
+            std::fprintf(stderr, "[smoke] action=subworld_walk\n");
+            std::fflush(stderr);
+            if (run_subworld_walk_smoke(app)) ++app.smoke.cursor;
+            break;
         case SmokeAction::SubworldSeam:
             std::fprintf(stderr, "[smoke] action=subworld_seam\n");
             std::fflush(stderr);
@@ -4667,11 +4827,19 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 const float groundZ =
                     app.subworld.ground_height_at(app.subworld.player_x(),
                                                   app.subworld.player_y());
-                std::fprintf(stderr, "[smoke] enter_ground z=%.2f ground=%.2f\n",
-                             double(footZ), double(groundZ));
+                // What he stands ON is the SUPPORT, not the ground: arriving
+                // on a bridge deck or a wall walk is standing, and comparing
+                // against bare terrain would call it flying. The invariant is
+                // the one that matters — nobody enters in mid-air.
+                const float footingZ =
+                    app.subworld.footing_height_at(app.subworld.player_x(),
+                                                   app.subworld.player_y());
+                std::fprintf(stderr,
+                             "[smoke] enter_ground z=%.2f ground=%.2f footing=%.2f\n",
+                             double(footZ), double(groundZ), double(footingZ));
                 std::fflush(stderr);
-                if (std::fabs(footZ - groundZ) > 0.5f) {
-                    smoke_fail(app, "player did not enter standing on the ground");
+                if (std::fabs(footZ - footingZ) > 0.5f) {
+                    smoke_fail(app, "player did not enter standing on its support");
                     break;
                 }
             }
@@ -4700,7 +4868,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             if (const char* bc = std::getenv("TIMAERT_SMOKE_BATTLE")) {
                 int bcount = 500;
                 if (std::sscanf(bc, "%d", &bcount) == 1) {
-                    bcount = std::clamp(bcount, 1, sm::sub::kMaxBattleUnits / 2);
+                    bcount = std::clamp(bcount, 1, sm::sub::kMaxBodyCrowd / 2);
                     int deployed = 0;
                     for (int side = 0; side < 2; ++side) {
                         for (int i = 0; i < bcount; ++i) {
@@ -6666,7 +6834,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             app.subworld.set_flying(true);
             const float flightH0 = app.subworld.flight_height_m();
             app.subworld.rotate_camera(0.0f, 0.55f);
-            app.subworld.move_player(0.0f, 32.0f);
+            app.subworld.move_player(0.0f, 12.8f);
             const float flightH1 = app.subworld.flight_height_m();
             if (!app.subworld.flying() || !(flightH1 > flightH0 + 1.0f)) {
                 smoke_fail(app, "flight subworld height invariant");
@@ -6682,7 +6850,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // back at the support it took off from.
             app.subworld.tick(0.016f);
             const float flightBase = app.subworld.flight_height_m();
-            app.subworld.move_player(0.0f, 32.0f);
+            app.subworld.move_player(0.0f, 12.8f);
             const float flightApex = app.subworld.flight_height_m();
             app.subworld.set_flying(false);
             app.subworld.tick(0.25f);

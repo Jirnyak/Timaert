@@ -180,7 +180,7 @@ std::vector<SpawnRecord> expected_cell_fauna(
         r.hp = hp;
         r.maxHp = hp;
         r.damage = damage;
-        r.speed = f.combat.speed;
+        r.speed = sm::march_speed(f.combat.speedMarchMult);
         r.range = f.combat.attackRange;
         r.cooldown = f.combat.cooldown;
         r.radius = f.radius;

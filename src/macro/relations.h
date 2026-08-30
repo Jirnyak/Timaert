@@ -12,7 +12,7 @@
 // byte-for-byte. A relation is -100..100, which is what an int8 is for.
 //
 // WHY 64, and why that is not a new number: the battle masks are capped at 64
-// factions by construction (`kMaxBattleFactions`, an enemy mask is a u64), so
+// factions by construction (`kMaxCrowdFactions`, an enemy mask is a u64), so
 // 64 is the ceiling the world already had. One ceiling, not two.
 //
 // The registry fills the first `kFactionCount` slots; the rest are RESERVED
@@ -32,7 +32,7 @@
 namespace sm {
 
 // The world's ceiling on distinct factions — the same one the battle masks
-// were already built to (sub/battle.h kMaxBattleFactions). Registry rows take
+// were already built to (sub/movement.h kMaxCrowdFactions). Registry rows take
 // the first slots; the tail is claimable at runtime.
 inline constexpr int kMaxWorldFactions = 64;
 static_assert(kFactionCount <= kMaxWorldFactions,

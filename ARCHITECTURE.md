@@ -49,7 +49,7 @@ orchestrates layers via thin wrappers — it never owns game logic.
 > **Strict O(N) simulation bound.** During any active simulation tick (subworld ECS or macroworld), **nothing greater than O(N) is permitted**.
 > Never write O(N²) scans for proximity, line-of-sight, or AI targeting.
 > **This is exactly why we bake paths and use bucket grids.** For radius
-> queries use the battle grids (`sub/battle.h` `UnitGrid` — the AI's budgeted
+> queries use the battle grids (`sub/movement.h` `UnitGrid` — the AI's budgeted
 > `contact_scan`, the spell broad phase `SpellNeighborsFn`) or the collision
 > bins (`sub/collide.h`), and precomputed grids for navigation. The last
 > violator — four full-registry scans per projectile per tick in
@@ -918,7 +918,7 @@ rendering position uses all three:
 | [sub/spawn.{h,cpp}](src/sub/spawn.h)                    | Per-biome ambient spawn from THE one table of living things (the old `0x100 \| catalogIndex` monster encoding died with the second table, 2026-08-20) | `subworld/spawn.ts` |
 | [sub/ai.{h,cpp}](src/sub/ai.h)                          | Local NPC AI tick (chase + cooldown attack, missile / melee) | `subworld/ai.ts` |
 | [macro/fauna.{h,cpp}](src/macro/fauna.h)                | THE spawn law (CANON S6/S12, 2026-08-24): `weight = row.weight × habitat bitmask × danger_match(derived strength, danger byte)` over the ONE body table (`roll_spawns` / `pick_town_row` — the thirteen list-tables, their switch ladder and `pick_civilian_type` are gone) + stable-id creature views + per-cell capacity for the `fauna_count` macro stock. See [monsters.md](monsters.md), [context.md](context.md) | `subworld/fauna.ts` |
-| [sub/battle.h](src/sub/battle.h) `UnitGrid` + [sub/collide.h](src/sub/collide.h) bins | Bucketed grids for proximity — sized from the crowd's own body/weapon data (the standalone `sub/spatial_hash.h` is deleted; battle and collision own their grids) | `subworld/spatial-hash.ts` |
+| [sub/movement.h](src/sub/movement.h) `UnitGrid` + [sub/collide.h](src/sub/collide.h) bins | Bucketed grids for proximity — sized from the crowd's own body/weapon data (the standalone `sub/spatial_hash.h` is deleted; battle and collision own their grids) | `subworld/spatial-hash.ts` |
 
 Prototype modules with no C++ heir: `subworld/map-renderer.ts` and
 `subworld/renderer.ts` (TS-only 2D tile/entity renderers — the subworld is

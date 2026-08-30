@@ -66,7 +66,7 @@ bool is_spell_target(const entt::registry& reg, entt::entity e,
 
 // ── Broad phase ────────────────────────────────────────────────────────────
 // The candidate buffer matches the battle snapshot's own ceiling
-// (kMaxBattleUnits = 16384): the grid can never hold more bodies than that,
+// (kMaxBodyCrowd = 16384): the grid can never hold more bodies than that,
 // so overflow is impossible by construction and the -1 arm below is reserved
 // for a broad phase that KNOWS it is incomplete (a truncated gather).
 constexpr int kMaxSpellNeighbors = 16384;

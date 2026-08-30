@@ -182,7 +182,7 @@ int main() {
     const auto& combatAi = world.reg.get<sm::ecs::SubworldAi>(hostile);
     // Ownership contract, TIGHTENED. tick_npc_ai must not touch a combat body at
     // ALL — neither its position nor its velocity. The mass-battle pass
-    // (sub/battle.h) owns both, and it READS the stored velocity as the body's
+    // (sub/movement.h) owns both, and it READS the stored velocity as the body's
     // current momentum to apply an acceleration limit. The previous expectation
     // here was that tick_npc_ai zeroed vx/vy; that is incompatible with carrying
     // momentum across frames (a body restarted from rest every tick is capped at

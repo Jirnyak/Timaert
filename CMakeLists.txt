@@ -469,6 +469,11 @@ timaert_test(combat_squad_test
     SOURCES
         src/sub/ai.cpp
         src/sub/spawn.cpp
+        # The projection asks what would CARRY a body where it lands
+        # (sub/height.h is_dry_footing over the solidity index), so a
+        # bridge deck is a legal place to stand — spawn.cpp needs the
+        # one solidity authority linked, exactly as the game does.
+        src/sub/collide.cpp
         src/macro/fauna.cpp
     LINK_ENTT)
 
@@ -771,6 +776,11 @@ timaert_test(subworld_async_seam_test
 timaert_test(subworld_spawn_parity_test
     SOURCES
         src/sub/spawn.cpp
+        # The projection asks what would CARRY a body where it lands
+        # (sub/height.h is_dry_footing over the solidity index), so a
+        # bridge deck is a legal place to stand — spawn.cpp needs the
+        # one solidity authority linked, exactly as the game does.
+        src/sub/collide.cpp
         src/macro/fauna.cpp
         src/sub/seamless_manager.cpp
         src/sub/base_generator.cpp
@@ -1019,6 +1029,11 @@ timaert_test(point_light_cull_test)
 timaert_test(settlement_faction_test
     SOURCES
         src/sub/spawn.cpp
+        # The projection asks what would CARRY a body where it lands
+        # (sub/height.h is_dry_footing over the solidity index), so a
+        # bridge deck is a legal place to stand — spawn.cpp needs the
+        # one solidity authority linked, exactly as the game does.
+        src/sub/collide.cpp
         src/macro/fauna.cpp
         src/sub/seamless_manager.cpp
         src/sub/base_generator.cpp
@@ -1034,6 +1049,11 @@ timaert_test(settlement_faction_test
 timaert_test(carried_light_spawn_test
     SOURCES
         src/sub/spawn.cpp
+        # The projection asks what would CARRY a body where it lands
+        # (sub/height.h is_dry_footing over the solidity index), so a
+        # bridge deck is a legal place to stand — spawn.cpp needs the
+        # one solidity authority linked, exactly as the game does.
+        src/sub/collide.cpp
         src/macro/fauna.cpp
         src/sub/seamless_manager.cpp
         src/sub/base_generator.cpp
@@ -1053,6 +1073,11 @@ timaert_test(carried_light_spawn_test
 timaert_test(city_population_inside_walls_test
     SOURCES
         src/sub/spawn.cpp
+        # The projection asks what would CARRY a body where it lands
+        # (sub/height.h is_dry_footing over the solidity index), so a
+        # bridge deck is a legal place to stand — spawn.cpp needs the
+        # one solidity authority linked, exactly as the game does.
+        src/sub/collide.cpp
         src/macro/fauna.cpp
         src/sub/seamless_manager.cpp
         src/sub/base_generator.cpp
@@ -1077,6 +1102,11 @@ timaert_test(particle_sim_test
 timaert_test(body_contract_test
     SOURCES
         src/sub/spawn.cpp
+        # The projection asks what would CARRY a body where it lands
+        # (sub/height.h is_dry_footing over the solidity index), so a
+        # bridge deck is a legal place to stand — spawn.cpp needs the
+        # one solidity authority linked, exactly as the game does.
+        src/sub/collide.cpp
         src/sub/material.cpp
         src/macro/fauna.cpp
         src/macro/macro_stock.cpp
@@ -1116,11 +1146,11 @@ timaert_test(macro_stock_test
 
 # Mass-battle AI contract: the steering module is Vulkan-free and ECS-free by
 # design (that is what makes 16k-body combat testable headless), so it links
-# only battle.cpp. Pins the no-collapse invariant with a negative control and
+# only movement.cpp. Pins the no-collapse invariant with a negative control and
 # MEASURES the O(N) bound instead of asserting it in a comment.
-timaert_test(battle_ai_test
+timaert_test(movement_steering_test
     SOURCES
-        src/sub/battle.cpp)
+        src/sub/movement.cpp)
 
 # The spell broad phase is a structural swap and this is its proof: for the
 # same scene, the grid-backed candidate enumeration produces EXACTLY the hits
@@ -1136,17 +1166,17 @@ timaert_test(spell_broadphase_parity_test
         # that asks the catalog what each worn row is worth (macro/items.cpp)
         src/macro/anatomy.cpp
         src/macro/items.cpp
-        src/sub/battle.cpp
+        src/sub/movement.cpp
         src/macro/fauna.cpp
         src/events/event_bus.cpp
     LINK_ENTT)
 
 # The agreement between the two laws of battle (macro/auto_battle.h): the
-# resolver is header-only sheet math; battle.cpp is linked so the fought
+# resolver is header-only sheet math; movement.cpp is linked so the fought
 # version can be simulated headless with the shipping steering.
 timaert_test(auto_battle_test
     SOURCES
-        src/sub/battle.cpp
+        src/sub/movement.cpp
         # npc.h answers for both halves of the kind id space (monsters too).
         src/macro/fauna.cpp)
 

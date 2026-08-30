@@ -79,7 +79,7 @@ constexpr float kExhaustionBite = 1.0f;
 // it in game time means the length of a day can be tuned as a matter of feel
 // without moving the travel economy a single point.
 //
-// The subworld's own walk (kSubworldWalkTilesPerSecond in main.cpp) stays in
+// The subworld's own walk (kSubworldWalkTilesPerSecond, below) stays in
 // REAL seconds on purpose, and the difference is not an oversight: down there
 // you are a body doing a thing in real time, up here you are an abstraction of
 // a journey. Two different denominators for two different kinds of motion.
@@ -90,6 +90,35 @@ constexpr float kExhaustionBite = 1.0f;
 // courier's gallop miscalled walking: the player crossed 125 km before the
 // morning ended, and every distance in the world meant nothing.
 constexpr float kMacroWalkCellsPerHour = 8.0f;
+
+// Base on-foot speed in the SUBWORLD, in tiles per REAL second, before the
+// character's own pace (DerivedBonuses::moveSpeedMult) and haste.
+//
+// It lives HERE, beside the march it is derived from, because that is what it
+// is: the same body walking the same world at the other scale. 8 cells/game
+// hour above (kMacroWalkCellsPerHour) = 8000 tiles per subworld game hour;
+// down there an hour lasts kTicksPerDay/24 × kSubworldTickDivisor ticks =
+// 85⅓ real seconds, so the honest rate is 8000 / 85.33 = 93.75 tiles/s —
+// rounded up 2.4 % to 96, a named fantasy allowance, not a tuned number.
+// (The old macro 32 made this look like a 4× disagreement — canon-audit A8;
+// the ground floor was right all along, the map was galloping.)
+//
+// It is the speed on the REFERENCE bed — the road (bed 1.0) — because the
+// march it derives from is; every other ground divides it by √weight through
+// terrain_speed_mult, which is the one law both scales walk by.
+constexpr float kSubworldWalkTilesPerSecond = 96.0f;
+
+// THE pace of a body, from what its row says it is against a walking man
+// (army.h CombatTemplate::speedMarchMult). One scale for everything that
+// moves in the subworld — man, beast and player alike.
+inline constexpr float march_speed(float marchMult) {
+    return kSubworldWalkTilesPerSecond * marchMult;
+}
+
+// A WALKING MAN — the row every human body is stated against, and the one the
+// player wears (his own sheet's moveSpeedMult rides on top, exactly as a
+// hasted guard's would). 1.0 by construction: the march IS a man walking.
+inline constexpr float kHumanMarchMult = 1.0f;
 
 // How much the GROUND slows the march: speed = base / √weight, derived from
 // the SAME weight table that prices stamina (owner ruling, Session 21) —
@@ -129,7 +158,7 @@ inline float terrain_speed_mult(float weight) {
 // It replaced a PRIORITY ladder (feature OVERRODE forest OVERRODE biome), in
 // which a contribution like weather had no place to stand: under a sum, a
 // new world system is one more term (S6), zero when silent.
-inline float biome_sp_weight(Biome b) {
+inline constexpr float biome_sp_weight(Biome b) {
     // The bed of unimproved ground, by biome id (Tundra..Water, Mountain).
     // Recalibrated 2026-08-24 with the sum law (owner: заново, not parity):
     // open walking country 2.0, hard country 2.5–3.0, bog 4.0, the mountain
@@ -138,7 +167,7 @@ inline float biome_sp_weight(Biome b) {
     // Each row carries its own enum as a COLUMN, so a grown Biome refuses to
     // compile instead of quietly walking on a neighbour's ground.
     struct BiomeBedRow { Biome biome; float weight; };
-    static constexpr BiomeBedRow kW[std::size_t(Mountain) + 1] = {
+    constexpr BiomeBedRow kW[std::size_t(Mountain) + 1] = {
         {Tundra,  2.5f}, {Taiga,   2.5f}, {Snow,     3.0f}, {Valley, 2.0f},
         {Meadow,  2.0f}, {Swamp,   4.0f}, {Desert,   3.0f}, {Steppe, 2.0f},
         {Tropics, 2.5f}, {Water,  10.0f}, {Mountain, 5.0f},
@@ -153,7 +182,7 @@ inline float biome_sp_weight(Biome b) {
 // this was a switch with a silent 0.0 default until 2026-08-29). 0 = nothing
 // built here — the biome ground is the bed (the silent zero of the law, not a
 // sentinel to branch on).
-inline float feature_bed_weight(FeatureType f) {
+inline constexpr float feature_bed_weight(FeatureType f) {
     return feature_def(f).bedWeight;
 }
 

@@ -1,5 +1,5 @@
 // Mass-battle AI contract — the ONE steering algorithm for every subworld
-// fight (src/sub/battle.{h,cpp}).
+// fight (src/sub/movement.{h,cpp}).
 //
 // This test exists because every bug it pins was shipped and VISIBLE:
 //   • battles lagged — a per-agent "nearest hostile within 200 units" scan
@@ -46,7 +46,7 @@
 // Pure — links only battle.cpp. No Vulkan, no ECS, no window.
 #include "check.h"
 
-#include "sub/battle.h"
+#include "sub/movement.h"
 
 #include <algorithm>
 #include <cmath>
@@ -72,9 +72,9 @@ constexpr float kSight = 200.0f;
 const char* const kEmpire = "empire";
 const char* const kBandits = "bandits";
 
-BattleUnitDesc soldier(float x, float y, int faction, std::uint64_t enemyMask,
+BodyDesc soldier(float x, float y, int faction, std::uint64_t enemyMask,
                        float sight = kSight) {
-    BattleUnitDesc d{};
+    BodyDesc d{};
     d.x = x; d.y = y; d.z = 0.0f;
     d.radius = kBodyRadius;
     d.speed = kSpeed;
@@ -91,24 +91,24 @@ constexpr std::uint64_t mask_of(int faction) {
 
 // One tick of the real shipping sequence: two grids at two scales, the field,
 // then the steering pass.
-void advance(BattleUnits& u, UnitGrid& fine, UnitGrid& pick, InfluenceField& f,
-             const BattleTerrain& t, const BattleParams& prm, float dt,
-             BattleStats* st) {
+void advance(BodyCrowd& u, UnitGrid& fine, UnitGrid& pick, InfluenceField& f,
+             const MoveGround& t, const MoveParams& prm, float dt,
+             MoveStats* st) {
     build_unit_grid(fine, u, fine_cell_for(u, prm), 256);
     build_unit_grid(pick, u, pick_cell_for(u, prm), 256);
     build_influence_field(f, u, prm.influenceCell, kWorld);
-    steer_battle(u, fine, pick, f, t, prm, dt, st);
+    steer_bodies(u, fine, pick, f, t, prm, dt, st);
 }
 
 struct RunResult {
-    BattleUnits units;
-    BattleStats lastStats;
+    BodyCrowd units;
+    MoveStats lastStats;
     std::uint32_t peakEngaged = 0;
     std::uint32_t peakAdvancing = 0;
 };
 
-RunResult run_battle(int perSide, int ticks, const BattleParams& prm,
-                     const BattleTerrain& terrain, float dt = 1.0f / 60.0f,
+RunResult run_battle(int perSide, int ticks, const MoveParams& prm,
+                     const MoveGround& terrain, float dt = 1.0f / 60.0f,
                      bool stackAll = false, float sight = kSight) {
     RunResult r{};
     r.units.reserve(perSide * 2);
@@ -134,7 +134,7 @@ RunResult run_battle(int perSide, int ticks, const BattleParams& prm,
 
 // Mean distance to the nearest OTHER body. O(N²) — fine in a test, and it is
 // exactly the number the "collapse into a point" bug destroys.
-float mean_nearest_neighbour(const BattleUnits& u) {
+float mean_nearest_neighbour(const BodyCrowd& u) {
     if (u.count < 2) return 0.0f;
     double acc = 0.0;
     for (int i = 0; i < u.count; ++i) {
@@ -155,7 +155,7 @@ float mean_nearest_neighbour(const BattleUnits& u) {
 // first version of this test failed to measure — a thousand bodies squeezed into
 // a ball still pass a nearest-neighbour check, because the ball's internal
 // spacing is exactly the separation distance. Extent is what must survive.
-float spread_of(const BattleUnits& u, int faction) {
+float spread_of(const BodyCrowd& u, int faction) {
     double cx = 0, cy = 0;
     int n = 0;
     for (int i = 0; i < u.count; ++i) {
@@ -174,7 +174,7 @@ float spread_of(const BattleUnits& u, int faction) {
     return float(std::sqrt(acc / double(n)));
 }
 
-float centroid_gap(const BattleUnits& u) {
+float centroid_gap(const BodyCrowd& u) {
     double ax = 0, ay = 0, bx = 0, by = 0;
     int an = 0, bn = 0;
     for (int i = 0; i < u.count; ++i) {
@@ -193,8 +193,8 @@ float centroid_gap(const BattleUnits& u) {
 float flat_height(void*, float, float) { return 100.0f; }
 float ramp_height(void*, float x, float) { return x; }   // 45° climb in +x
 
-BattleTerrain flat_terrain() {
-    BattleTerrain t{};
+MoveGround flat_terrain() {
+    MoveGround t{};
     t.heightAt = &flat_height;
     t.worldMax = kWorld;
     return t;
@@ -225,13 +225,13 @@ void test_factions() {
     // id the same pointer and silently dedup to a single faction.
     FactionSet full{};
     std::vector<std::vector<char>> ids;
-    ids.resize(std::size_t(kMaxBattleFactions));
-    for (int i = 0; i < kMaxBattleFactions; ++i) {
+    ids.resize(std::size_t(kMaxCrowdFactions));
+    for (int i = 0; i < kMaxCrowdFactions; ++i) {
         ids[std::size_t(i)].resize(16);
         std::snprintf(ids[std::size_t(i)].data(), 16, "f%d", i);
         full.intern(ids[std::size_t(i)].data());
     }
-    CHECK(full.count == kMaxBattleFactions, "table fills to its capacity");
+    CHECK(full.count == kMaxCrowdFactions, "table fills to its capacity");
     CHECK(full.intern("one_too_many") < 0,
           "beyond capacity degrades to factionless, never overruns");
 
@@ -242,13 +242,13 @@ void test_factions() {
 
     // Hostility is per-unit and may be asymmetric: that is how a private grudge
     // (TempHostileToPlayer) rides along without a branch in the hot loop.
-    BattleUnits u{};
+    BodyCrowd u{};
     u.add(soldier(0, 0, 2, mask_of(3)));    // wildlife with a grudge on the player
     u.add(soldier(0, 0, 3, 0));             // player side, no standing quarrel
     CHECK(u.hostile(0, 1), "grudge-bearing beast sees the player as an enemy");
     CHECK(!u.hostile(1, 0), "hostility is not implicitly reciprocal");
     // A factionless body (-1) fights nobody and is nobody's enemy.
-    BattleUnits none{};
+    BodyCrowd none{};
     none.add(soldier(0, 0, -1, ~0ull));
     none.add(soldier(0, 0, 0, ~0ull));
     CHECK(!none.hostile(1, 0), "a factionless body is never a valid enemy");
@@ -345,12 +345,12 @@ void test_faction_mask_freshness() {
 
 // ── 2–3. Grid correctness and data-derived cell sizes ──────────────────────
 void test_grid() {
-    BattleUnits u{};
+    BodyCrowd u{};
     for (int i = 0; i < 97; ++i) {
         u.add(soldier(1000.0f + float(i % 10) * 2.0f,
                       1000.0f + float(i / 10) * 2.0f, 0, 0));
     }
-    const BattleParams prm{};
+    const MoveParams prm{};
     UnitGrid g{};
     build_unit_grid(g, u, fine_cell_for(u, prm), 256);
 
@@ -377,8 +377,8 @@ void test_grid() {
     // cell. A dragon-sized crowd must get proportionally larger cells with no
     // code change — that is the whole "радиус из контекста" requirement.
     const float fineSmall = fine_cell_for(u, prm);
-    BattleUnits big{};
-    BattleUnitDesc dragon = soldier(1000.0f, 1000.0f, 0, 0);
+    BodyCrowd big{};
+    BodyDesc dragon = soldier(1000.0f, 1000.0f, 0, 0);
     dragon.radius = 8.0f;
     dragon.reach = 20.0f;
     big.add(dragon);
@@ -389,7 +389,7 @@ void test_grid() {
     CHECK(pick_cell_for(u, prm) >= fine_cell_for(u, prm),
           "contact grid is never finer than the separation grid");
 
-    BattleUnits wide{};
+    BodyCrowd wide{};
     wide.add(soldier(1.0f, 1.0f, 0, 0));
     wide.add(soldier(3000.0f, 3000.0f, 0, 0));
     UnitGrid gw{};
@@ -398,14 +398,14 @@ void test_grid() {
     CHECK(gw.cell > 4.0f, "cell grew instead of the allocation");
 
     UnitGrid ge{};
-    BattleUnits empty{};
+    BodyCrowd empty{};
     build_unit_grid(ge, empty, 4.0f, 256);
     CHECK(ge.begin.size() == 2u && ge.items.empty(), "empty crowd degrades safely");
 }
 
 // ── 4. Influence field ─────────────────────────────────────────────────────
 void test_influence_field() {
-    BattleUnits u{};
+    BodyCrowd u{};
     u.add(soldier(200.0f, 1000.0f, 0, mask_of(1)));
     for (int i = 0; i < 5; ++i)
         u.add(soldier(1000.0f + float(i) * 2.0f, 1000.0f, 1, mask_of(0)));
@@ -424,7 +424,7 @@ void test_influence_field() {
     CHECK(f.siteX[fi] > 950.0f && f.siteX[fi] < 1050.0f, "site is the enemy mass");
 
     // A faction with no enemies anywhere gets no site: nothing to charge.
-    BattleUnits lonely{};
+    BodyCrowd lonely{};
     lonely.add(soldier(500.0f, 500.0f, 0, 0));
     InfluenceField f2{};
     build_influence_field(f2, lonely, 32.0f, kWorld);
@@ -436,15 +436,15 @@ void test_influence_field() {
 
 // ── 5. The alert chain: the reported "far ranks just clump" bug ────────────
 void test_alert_chain() {
-    const BattleParams prm{};
-    const BattleTerrain flat = flat_terrain();
+    const MoveParams prm{};
+    const MoveGround flat = flat_terrain();
 
     // A DEEP army: 2000 per side, deployed as a block ~45 ranks deep. The rear
     // ranks are ~430 units from the enemy front — far beyond their own 200-unit
     // sight. Before the alert chain they stood still and piled up; they must now
     // charge because their front ranks saw the enemy.
     const int perSide = 2000;
-    BattleUnits u{};
+    BodyCrowd u{};
     u.reserve(perSide * 2);
     const float cx = kWorld * 0.5f, cy = kWorld * 0.5f;
     int rearmost = -1;
@@ -464,7 +464,7 @@ void test_alert_chain() {
 
     UnitGrid fine{}, pick{};
     InfluenceField f{};
-    BattleStats st{};
+    MoveStats st{};
     const float startX = u.x[std::size_t(rearmost)];
     for (int t = 0; t < 240; ++t) {
         advance(u, fine, pick, f, flat, prm, 1.0f / 60.0f, &st);
@@ -487,9 +487,9 @@ void test_alert_chain() {
     // DISCONNECTED GROUP: exactly the wolves case. One wolf close enough to see
     // the player charges; a second wolf far away, with no comrade between, must
     // stay home — awareness relays through a formation, not by telepathy.
-    BattleUnits wolves{};
+    BodyCrowd wolves{};
     wolves.add(soldier(1000.0f, 1000.0f, 0, 0));           // the quarry
-    wolves.flags[0] |= BU_Pinned;
+    wolves.flags[0] |= B_Pinned;
     wolves.add(soldier(1080.0f, 1000.0f, 1, mask_of(0)));  // near wolf: sees it
     wolves.add(soldier(2200.0f, 1000.0f, 1, mask_of(0)));  // far wolf: blind, alone
     const float nearStart = wolves.x[1], farStart = wolves.x[2];
@@ -502,9 +502,9 @@ void test_alert_chain() {
 
     // RELAY: put a chain of comrades between the far body and the fighting. Now
     // the far body advances although it never saw anything itself.
-    BattleUnits chain{};
+    BodyCrowd chain{};
     chain.add(soldier(1000.0f, 1000.0f, 0, 0));
-    chain.flags[0] |= BU_Pinned;
+    chain.flags[0] |= B_Pinned;
     chain.add(soldier(1080.0f, 1000.0f, 1, mask_of(0)));
     for (float x = 1100.0f; x <= 2200.0f; x += 25.0f)   // link spacing < field cell
         chain.add(soldier(x, 1000.0f, 1, mask_of(0), 1.0f));   // all blind
@@ -519,8 +519,8 @@ void test_alert_chain() {
 
 // ── 6. No collapse, with a negative control ────────────────────────────────
 void test_no_collapse_and_convergence() {
-    const BattleParams prm{};
-    const BattleTerrain flat = flat_terrain();
+    const MoveParams prm{};
+    const MoveGround flat = flat_terrain();
     const int perSide = 200;
 
     // Measure the deployed extent BEFORE the fight, then again after: a formation
@@ -549,7 +549,7 @@ void test_no_collapse_and_convergence() {
     // Kill separation and the engagement ring — i.e. steer every body at the
     // exact centre of its nearest enemy, which is what the shipped code did —
     // and the pile must come back.
-    BattleParams naive = prm;
+    MoveParams naive = prm;
     naive.sepWeight = 0.0f;
     naive.maxSepNeighbors = 0;
     naive.ringFactor = 0.0f;
@@ -567,7 +567,7 @@ void test_no_collapse_and_convergence() {
 // width degenerates the flow read into per-body homing on the enemy centroid,
 // which IS the defect.
 void test_thousand_per_side_keeps_formation() {
-    const BattleTerrain flat = flat_terrain();
+    const MoveGround flat = flat_terrain();
     const int perSide = 1000;
     // The approach phase is what the flow read governs, so it must be LONG
     // enough to matter: deploy the blocks 600 units apart and give the fighters
@@ -575,7 +575,7 @@ void test_thousand_per_side_keeps_formation() {
     // build). At the default 120-unit staging the armies contact almost at once
     // and the approach regime barely runs, which is why the first attempt at this
     // test could not tell flow from point-homing at all.
-    auto deploy = [&](BattleUnits& u, float gap) {
+    auto deploy = [&](BodyCrowd& u, float gap) {
         const float cx = kWorld * 0.5f, cy = kWorld * 0.5f;
         const int cols = int(std::sqrt(float(perSide)) + 0.5f);
         for (int side = 0; side < 2; ++side) {
@@ -588,20 +588,20 @@ void test_thousand_per_side_keeps_formation() {
             }
         }
     };
-    auto approach = [&](const BattleParams& prm, int ticks, float* outSpread0) {
-        BattleUnits u{};
+    auto approach = [&](const MoveParams& prm, int ticks, float* outSpread0) {
+        BodyCrowd u{};
         u.reserve(perSide * 2);
         deploy(u, 600.0f);
         if (outSpread0) *outSpread0 = spread_of(u, 0);
         UnitGrid fine{}, pick{};
         InfluenceField f{};
-        BattleStats st{};
+        MoveStats st{};
         for (int t = 0; t < ticks; ++t)
             advance(u, fine, pick, f, flat, prm, 1.0f / 60.0f, &st);
         return spread_of(u, 0);
     };
 
-    const BattleParams prm{};
+    const MoveParams prm{};
     float spread0 = 0.0f;
     const float flow = approach(prm, 420, &spread0);      // ~7 s of closing
     // HYPOTHESIS TESTED AND REJECTED, recorded so nobody re-derives it: the first
@@ -614,7 +614,7 @@ void test_thousand_per_side_keeps_formation() {
     // terrain slope term, pinned in test_terrain_does_not_outvote_the_advance.
     // The cell-quantised flow read is kept because it is the principled way to
     // read a field and costs nothing measurable, NOT because it fixed this bug.
-    BattleParams pointy = prm;
+    MoveParams pointy = prm;
     pointy.influenceCell = 1.0f;
     const float point = approach(pointy, 420, nullptr);
 
@@ -646,11 +646,11 @@ void test_thousand_per_side_keeps_formation() {
 // after: crowding stays ~3.6 (deployment-order density), coverage 1.00.
 //
 // The kill model here mirrors the engine strike loop (engine.cpp
-// tick_subworld_combat): inReach + 1 s cooldown, then hp -= dmg; the rows are
+// tick_subworld_bodies): inReach + 1 s cooldown, then hp -= dmg; the rows are
 // kGuardCombat vs kBanditCombat (macro/npc.h). The SoA is regathered from the
 // survivors every tick exactly like the ECS gather does.
 void test_line_holds_through_attrition() {
-    const BattleTerrain flat = flat_terrain();
+    const MoveGround flat = flat_terrain();
     const int perSide = 500;
     const float kHp[2] = {55.0f, 50.0f};
     const float kDmg[2] = {14.0f, 12.0f};
@@ -690,7 +690,7 @@ void test_line_holds_through_attrition() {
     //     RIGHTLY concentrate on them and coverage rightly drops.
     // The clash transient (two full blocks slamming, loser > 50%) is its own,
     // separate compression and is not what this test pins.
-    auto fight = [&](const BattleParams& prm) {
+    auto fight = [&](const MoveParams& prm) {
         struct Body { float x, y, vx, vy, hp, cd; int side; bool alive; };
         std::vector<Body> bodies;
         const float cx = kWorld * 0.5f, cy = kWorld * 0.5f;
@@ -713,7 +713,7 @@ void test_line_holds_through_attrition() {
         const int bins = std::max(1, int((y1 - y0) / binW));
 
         Attrition out{};
-        BattleUnits u{};
+        BodyCrowd u{};
         UnitGrid fine{}, pick{};
         InfluenceField f{};
         std::vector<int> slot;
@@ -727,7 +727,7 @@ void test_line_holds_through_attrition() {
             for (std::size_t b = 0; b < bodies.size(); ++b) {
                 if (!bodies[b].alive) continue;
                 ++alive[bodies[b].side];
-                BattleUnitDesc d = soldier(bodies[b].x, bodies[b].y,
+                BodyDesc d = soldier(bodies[b].x, bodies[b].y,
                                            bodies[b].side,
                                            mask_of(1 - bodies[b].side));
                 d.speed = kSpd[bodies[b].side];
@@ -789,7 +789,7 @@ void test_line_holds_through_attrition() {
         return out;
     };
 
-    const BattleParams prm{};
+    const MoveParams prm{};
     const Attrition ship = fight(prm);
     // Negative control: kill the engagement ring and separation (the same
     // control test 6 uses) — every attacker steers into its target's centre
@@ -799,7 +799,7 @@ void test_line_holds_through_attrition() {
     // REGION, so no setting recreates a shared point attractor — like the
     // slope-authority fix in 6d, the defect is structurally gone and the
     // OUTCOME is what is asserted.
-    BattleParams naive = prm;
+    MoveParams naive = prm;
     naive.ringFactor = 0.0f;
     naive.arriveEpsilon = 0.0f;
     naive.sepWeight = 0.0f;
@@ -846,7 +846,7 @@ void test_line_holds_through_attrition() {
 // is structurally gone), so the outcome is what is asserted — the 6d
 // precedent.
 void test_wide_front_meets_as_one_wall() {
-    const BattleTerrain flat = flat_terrain();
+    const MoveGround flat = flat_terrain();
     const int perSide = 8192;
     const float kHp[2] = {55.0f, 50.0f};
     const float kDmg[2] = {14.0f, 12.0f};
@@ -865,13 +865,13 @@ void test_wide_front_meets_as_one_wall() {
         }
     }
 
-    BattleUnits u{};
+    BodyCrowd u{};
     UnitGrid fine{}, pick{};
     InfluenceField f{};
     std::vector<int> slot;
     std::vector<int> hist;
     int worstGap = 0;
-    const BattleParams prm{};
+    const MoveParams prm{};
     for (int t = 0; t < 1400; ++t) {
         u.clear();
         u.reserve(perSide * 2);
@@ -880,7 +880,7 @@ void test_wide_front_meets_as_one_wall() {
         for (std::size_t b = 0; b < bodies.size(); ++b) {
             if (!bodies[b].alive) continue;
             ++alive[bodies[b].side];
-            BattleUnitDesc d = soldier(bodies[b].x, bodies[b].y,
+            BodyDesc d = soldier(bodies[b].x, bodies[b].y,
                                        bodies[b].side,
                                        mask_of(1 - bodies[b].side));
             d.speed = kSpd[bodies[b].side];
@@ -963,7 +963,7 @@ float rolling_hills(void*, float x, float y) {
     return 600.0f + 120.0f * std::sin(x / 200.0f) * std::sin(y / 200.0f);
 }
 
-float mean_speed(const BattleUnits& u) {
+float mean_speed(const BodyCrowd& u) {
     if (u.count <= 0) return 0.0f;
     double acc = 0.0;
     for (int i = 0; i < u.count; ++i) {
@@ -974,11 +974,11 @@ float mean_speed(const BattleUnits& u) {
 }
 
 void test_terrain_does_not_outvote_the_advance() {
-    BattleTerrain hills{};
+    MoveGround hills{};
     hills.heightAt = &rolling_hills;
     hills.worldMax = kWorld;
 
-    const BattleParams prm{};
+    const MoveParams prm{};
     const int perSide = 500;
     const float spread0 = spread_of(run_battle(perSide, 1, prm, hills).units, 0);
     RunResult r = run_battle(perSide, 600, prm, hills);
@@ -1000,11 +1000,11 @@ void test_terrain_does_not_outvote_the_advance() {
     // little; with the old saturating authority (push on any grade, weight above
     // the advance) it is deflected off course entirely. This is the mechanism that
     // dissolved armies, measured in isolation instead of by proxy.
-    auto crossing_error = [&](const BattleParams& p) {
-        BattleUnits u{};
+    auto crossing_error = [&](const MoveParams& p) {
+        BodyCrowd u{};
         u.add(soldier(kWorld * 0.5f - 150.0f, kWorld * 0.5f, 0, mask_of(1), 400.0f));
         u.add(soldier(kWorld * 0.5f + 150.0f, kWorld * 0.5f, 1, 0, 400.0f));
-        u.flags[1] |= BU_Pinned;
+        u.flags[1] |= B_Pinned;
         UnitGrid fine{}, pick{};
         InfluenceField f{};
         for (int t = 0; t < 900; ++t)
@@ -1029,7 +1029,7 @@ void test_terrain_does_not_outvote_the_advance() {
     // Ungated, victorious troops slide downhill and collect in the nearest
     // depression — reported in-game as guards gathering in a pit once the bandits
     // were dead.
-    BattleUnits idle{};
+    BodyCrowd idle{};
     for (int i = 0; i < 60; ++i) {
         // On a slope (sin' is steepest near x/200 = 0), no enemies at all.
         idle.add(soldier(kWorld * 0.5f + float(i % 10) * 3.0f,
@@ -1049,8 +1049,8 @@ void test_terrain_does_not_outvote_the_advance() {
 
 // ── 7. The O(N) bound, measured ────────────────────────────────────────────
 void test_linear_scaling() {
-    const BattleParams prm{};
-    const BattleTerrain flat = flat_terrain();
+    const MoveParams prm{};
+    const MoveGround flat = flat_terrain();
 
     RunResult a = run_battle(200, 600, prm, flat);
     RunResult b = run_battle(400, 600, prm, flat);
@@ -1085,7 +1085,7 @@ void test_linear_scaling() {
 
 // ── 8. Terrain is a data table ─────────────────────────────────────────────
 void test_terrain_table() {
-    const BattleParams prm{};
+    const MoveParams prm{};
     constexpr int kDim = 256;
     // Two ground types, id 0 fast and id 1 slow — the module never learns which
     // one is "water"; sub/map_data.h owns that meaning.
@@ -1095,11 +1095,11 @@ void test_terrain_table() {
 
     auto chase = [&](const std::uint8_t* tiles,
                      float (*height)(void*, float, float)) {
-        BattleUnits u{};
+        BodyCrowd u{};
         u.add(soldier(20.0f, 128.0f, 0, mask_of(1)));
         u.add(soldier(200.0f, 128.0f, 1, 0));
-        u.flags[1] |= BU_Pinned;                 // the quarry stands still
-        BattleTerrain t{};
+        u.flags[1] |= B_Pinned;                 // the quarry stands still
+        MoveGround t{};
         t.heightAt = height;
         t.tiles = tiles;
         t.tileDim = tiles ? kDim : 0;
@@ -1126,17 +1126,17 @@ void test_terrain_table() {
 
 // ── 9. One bandit, one player: same code, no special case ──────────────────
 void test_single_bandit() {
-    const BattleParams prm{};
-    const BattleTerrain flat = flat_terrain();
+    const MoveParams prm{};
+    const MoveGround flat = flat_terrain();
 
-    BattleUnits u{};
+    BodyCrowd u{};
     u.add(soldier(1000.0f, 1000.0f, 0, 0));      // player body: pinned, no enemies
-    u.flags[0] |= BU_Pinned;
+    u.flags[0] |= B_Pinned;
     u.add(soldier(1150.0f, 1000.0f, 1, mask_of(0)));
 
     UnitGrid fine{}, pick{};
     InfluenceField f{};
-    BattleStats st{};
+    MoveStats st{};
     const float px0 = u.x[0], py0 = u.y[0];
     for (int i = 0; i < 900; ++i)
         advance(u, fine, pick, f, flat, prm, 1.0f / 60.0f, &st);
@@ -1152,8 +1152,8 @@ void test_single_bandit() {
 
 // ── 10. Determinism + the universal capacity ceiling ───────────────────────
 void test_determinism_and_capacity() {
-    const BattleParams prm{};
-    const BattleTerrain flat = flat_terrain();
+    const MoveParams prm{};
+    const MoveGround flat = flat_terrain();
     RunResult a = run_battle(120, 400, prm, flat);
     RunResult b = run_battle(120, 400, prm, flat);
     bool same = a.units.count == b.units.count;
@@ -1167,13 +1167,13 @@ void test_determinism_and_capacity() {
     CHECK(a.lastStats.neighborVisits == b.lastStats.neighborVisits,
           "visit counts match exactly");
 
-    BattleUnits u{};
-    u.reserve(kMaxBattleUnits);
+    BodyCrowd u{};
+    u.reserve(kMaxBodyCrowd);
     int refused = 0;
-    for (int i = 0; i < kMaxBattleUnits + 16; ++i) {
+    for (int i = 0; i < kMaxBodyCrowd + 16; ++i) {
         if (u.add(soldier(float(i % 3000) + 1.0f, 1.0f, 0, 0)) < 0) ++refused;
     }
-    CHECK(u.count == kMaxBattleUnits, "capacity is exactly 2^14");
+    CHECK(u.count == kMaxBodyCrowd, "capacity is exactly 2^14");
     CHECK(refused == 16, "overflow refused, never grown");
 }
 
@@ -1181,18 +1181,18 @@ void test_determinism_and_capacity() {
 
 // ── 11. One owner of legs ──────────────────────────────────────────────────
 // A body nobody's war claims follows its brain's intent (SubworldAi.wantVx/Vy,
-// gathered into BattleUnits.intentVx/Vy) at the INTENT'S own pace; a BU_Passive
+// gathered into BodyCrowd.intentVx/Vy) at the INTENT'S own pace; a B_Passive
 // body — a Flee mind — is never conscripted by its faction's war; and the war
 // drive overrides intent outright the moment it claims a body.
 void test_intent_and_passive() {
-    const BattleParams prm{};
-    const BattleTerrain flat = flat_terrain();
+    const MoveParams prm{};
+    const MoveGround flat = flat_terrain();
     const float dt = 1.0f / 60.0f;
 
     // Intent executes at the mind's pace — the amble it chose, not the combat
     // sprint on the body's sheet.
     {
-        BattleUnits u{};
+        BodyCrowd u{};
         u.add(soldier(1000.0f, 1000.0f, 0, 0ull));
         u.intentVx[0] = 3.0f;                    // the sheet says kSpeed = 35
         UnitGrid fine{}, pick{};
@@ -1210,10 +1210,10 @@ void test_intent_and_passive() {
     // fearful one stands. The twin IS the negative control here — it proves
     // the war drive this deer refused was live.
     {
-        BattleUnits u{};
+        BodyCrowd u{};
         const std::size_t deer = std::size_t(u.add(soldier(
             1000.0f, 1000.0f, 0, mask_of(1))));
-        u.flags[deer] |= BU_Passive;
+        u.flags[deer] |= B_Passive;
         const std::size_t levy = std::size_t(u.add(soldier(
             1000.0f, 1040.0f, 0, mask_of(1))));
         u.add(soldier(1150.0f, 1020.0f, 1, mask_of(0)));
@@ -1231,7 +1231,7 @@ void test_intent_and_passive() {
     // War is not a suggestion: a body with an enemy to fight ignores its
     // stroll entirely — no blend, no averaging.
     {
-        BattleUnits u{};
+        BodyCrowd u{};
         u.add(soldier(1000.0f, 1000.0f, 0, mask_of(1)));
         u.intentVx[0] = -3.0f;                   // the mind wants to walk away…
         u.add(soldier(1100.0f, 1000.0f, 1, mask_of(0)));
@@ -1242,6 +1242,67 @@ void test_intent_and_passive() {
         CHECK(u.target[0] == 1 && u.inReach[0] != 0u,
               "the war drive overrides intent outright");
     }
+}
+
+// ── Inertia and its DISSIPATION (owner in play, 2026-08-30) ───────────────
+// The acceleration limit is what makes a charge read as mass — and applied
+// symmetrically it is ICE: the moment the player joined this pass he coasted
+// for a quarter second after letting go («как по льду скользит, невозможно
+// играть»). Legs are a brake as well as an engine, and the brake is priced by
+// DISTANCE (a = v²/2d, inside a couple of body lengths), scaled by the
+// ground's grip. One body, empty world: no crowd pressure, no slope, so what
+// is measured is only the law.
+void test_stop_is_a_stop_not_a_skid() {
+    const MoveParams prm{};
+    const MoveGround flat = flat_terrain();
+    const float dt = 1.0f / 60.0f;
+
+    // Run a body up to pace on its intent, then let the intent go and measure
+    // how far it travels before it is still. `grip` scales the ground under
+    // it — 1.0 is honest footing, low is ice.
+    auto skid_on = [&](float grip, float& outResidual) {
+        const float grips[1] = {grip};
+        const std::uint8_t ground[1] = {0u};
+        BodyCrowd u{};
+        u.add(soldier(1000.0f, 1000.0f, 0, 0ull));
+        u.intentVx[0] = 96.0f;                  // the world's march, straight on
+        MoveGround t = flat;
+        t.tiles = ground;
+        t.tileDim = 1;                          // one tile covering everything
+        t.tileSpeed = nullptr;                  // ground SPEED is not this test
+        t.tileSpeedCount = 1;
+        t.tileGrip = grips;
+        UnitGrid fine{}, pick{};
+        InfluenceField f{};
+        for (int i = 0; i < 240; ++i)
+            advance(u, fine, pick, f, t, prm, dt, nullptr);
+        const float atSpeed = std::sqrt(u.vx[0] * u.vx[0] + u.vy[0] * u.vy[0]);
+        const float x0 = u.x[0];
+        u.intentVx[0] = 0.0f;                   // keys released
+        for (int i = 0; i < 240; ++i)
+            advance(u, fine, pick, f, t, prm, dt, nullptr);
+        outResidual = std::sqrt(u.vx[0] * u.vx[0] + u.vy[0] * u.vy[0]);
+        CHECK(atSpeed > 90.0f, "the body reached its intent's pace");
+        return u.x[0] - x0;
+    };
+
+    float residual = 0.0f;
+    const float skid = skid_on(1.0f, residual);
+    CHECK(residual < 0.01f, "released, the body comes to a full stop");
+    // The law: pull up inside `stopBodies` of its own radius (0.55 here), so
+    // a couple of metres — NOT the tens of tiles a quarter-second coast at
+    // march pace would cover. The number below is deliberately loose: what is
+    // being refused is ice, not a particular distance.
+    CHECK(skid > 0.0f && skid < 6.0f,
+          "the stop is a stop: a body halts within a few of its own lengths");
+
+    // NEGATIVE CONTROL, and the feature the owner asked for in the same
+    // breath: ground that gives the feet nothing IS ice, with no code here
+    // knowing what ice is — a low grip row and everything slides on it.
+    float iceResidual = 0.0f;
+    const float iceSkid = skid_on(0.06f, iceResidual);
+    CHECK(iceSkid > skid * 3.0f,
+          "on slick ground the same body slides much further");
 }
 
 int main() {
@@ -1260,7 +1321,8 @@ int main() {
     test_terrain_table();
     test_single_bandit();
     test_intent_and_passive();
+    test_stop_is_a_stop_not_a_skid();
     test_determinism_and_capacity();
 
-    return sm::test::report("battle_ai_test");
+    return sm::test::report("movement_steering_test");
 }

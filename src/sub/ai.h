@@ -1,5 +1,5 @@
 // Subworld AI tick — the BRAIN pass. Wander/Flee decide what a body wants
-// and write SubworldAi.wantVx/Vy; the battle steering pass (driven from
+// and write SubworldAi.wantVx/Vy; the ONE mover (driven from
 // SubworldEngine) is the ONE owner of every body's position and executes
 // that intent with the same separation, solids and terrain as any fighter.
 // Nothing here ever writes Position, so nothing can integrate twice in one

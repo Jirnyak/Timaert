@@ -120,18 +120,6 @@ constexpr int kSubworldDailyTicksPerStep = 1;
 // for the step, not the frame: since the world runs on a fixed tick a frame may
 // carry several steps or none.
 constexpr int kSubworldMacroNpcTicksPerStep = 64;
-// Base on-foot speed in the subworld, in tiles per REAL second, before the
-// character's own pace (DerivedBonuses::moveSpeedMult) and haste.
-//
-// DERIVED from the macro march (the A8 debt closes by derivation, not by
-// change): the same body walks the same world at both scales. 8 cells/game
-// hour above (kMacroWalkCellsPerHour) = 8000 tiles per subworld game hour;
-// down here an hour lasts kTicksPerDay/24 × kSubworldTickDivisor ticks =
-// 85⅓ real seconds, so the honest rate is 8000 / 85.33 = 93.75 tiles/s —
-// rounded up 2.4% to 96, a named fantasy allowance, not a tuned number.
-// (The old macro 32 made this look like a 4× disagreement — canon-audit A8;
-// the ground floor was right all along, the map was galloping.)
-constexpr float kSubworldWalkTilesPerSecond = 96.0f;
 constexpr float kSubworldHitFlashSeconds = 0.30f;
 // Macro-map zoom: one step factor and one clamp, shared by the mouse wheel
 // and the toolbar buttons (the four literals used to be written out at both).
@@ -1786,15 +1774,44 @@ void boot_world(App& app, std::uint32_t seed,
             app.features, app.terrain, villageSites, landmarkSites,
             landmarkReach, lp.seaLevel, &app.treeLayer);
         if (boot_trace_enabled()) {
-            std::size_t stoneCells = 0, dirtCells = 0;
-            for (std::uint8_t b : app.features.data) {
+            std::size_t stoneCells = 0, dirtCells = 0, bridgeCells = 0;
+            int bridgeX = -1, bridgeY = -1; // first span, for MACROPOS repros
+            // ...and the first span with a road passing BESIDE it (more than
+            // the two ends of its own crossing): the case where the subworld
+            // has to put the fork on the bank, and the one worth looking at.
+            int forkX = -1, forkY = -1;
+            for (std::size_t i = 0; i < app.features.data.size(); ++i) {
+                const std::uint8_t b = app.features.data[i];
                 stoneCells += b == std::uint8_t(sm::FT_Road) ? 1u : 0u;
                 dirtCells += b == std::uint8_t(sm::FT_DirtRoad) ? 1u : 0u;
+                if (b == std::uint8_t(sm::FT_Bridge)) {
+                    const int bx = int(i % std::size_t(app.features.width));
+                    const int by = int(i / std::size_t(app.features.width));
+                    if (bridgeCells == 0u) { bridgeX = bx; bridgeY = by; }
+                    if (forkX < 0) {
+                        int roadNeighbours = 0;
+                        for (int dy = -1; dy <= 1; ++dy) {
+                            for (int dx = -1; dx <= 1; ++dx) {
+                                if (dx == 0 && dy == 0) continue;
+                                const sm::FeatureType f =
+                                    app.features.at(bx + dx, by + dy);
+                                if (f == sm::FT_Road || f == sm::FT_DirtRoad
+                                    || f == sm::FT_Bridge) {
+                                    ++roadNeighbours;
+                                }
+                            }
+                        }
+                        if (roadNeighbours > 2) { forkX = bx; forkY = by; }
+                    }
+                    ++bridgeCells;
+                }
             }
             std::fprintf(stderr,
                          "[roads] stone cells=%zu dirt cells=%zu "
-                         "stamped=%d reach=%d\n",
-                         stoneCells, dirtCells, dirtStamped, landmarkReach);
+                         "bridge cells=%zu first_bridge=%d,%d "
+                         "fork_bridge=%d,%d stamped=%d reach=%d\n",
+                         stoneCells, dirtCells, bridgeCells, bridgeX, bridgeY,
+                         forkX, forkY, dirtStamped, landmarkReach);
             std::fflush(stderr);
         }
         boot_trace("dirt roads traced");
@@ -2749,6 +2766,14 @@ void poll_movement(App& app, float dt) {
         if (paused || gameplay_panel_open(app) || io.WantCaptureKeyboard
             || io.WantCaptureMouse) {
             app.subworld.set_player_attack_held(false);
+            // HANDS OFF THE KEYS — and that now means SAYING SO. While the
+            // legs were a displacement applied per call, not calling was
+            // enough: no call, no step. An intent PERSISTS, and several of
+            // these conditions do not pause the world (the debug overlay and
+            // a focused console are not pause reasons), so a silent return
+            // would leave him marching at full pace with nobody at the keys —
+            // burning stamina and refusing to rest while you type.
+            app.subworld.set_move_intent(0.0f, 0.0f);
             return;
         }
         // Held keys come from the keymap like every other action (an unbound
@@ -2784,8 +2809,18 @@ void poll_movement(App& app, float dt) {
         const bool jumpHeld = keys[app.keymap.get(ActionId::Jump)] != 0;
         if (jumpHeld && !app.lastJumpHeld) app.subworld.jump();
         app.lastJumpHeld = jumpHeld;
-        app.subworld.move_player(dx * kSubworldWalkTilesPerSecond * pace * dt,
-                                 dy * kSubworldWalkTilesPerSecond * pace * dt);
+        // His legs state an INTENT (tiles/s), exactly like every brain in the
+        // subworld writes one; the ONE mover turns it into a position, so he
+        // pays the ground, the slope and the solids a peasant pays. No `dt`
+        // here on purpose: an intent is a speed, not a displacement.
+        //
+        // A MAN'S pace, from the same scale every body is stated on: the
+        // world's march (1.0 = what the map says a man walks) times his own
+        // sheet. The private ×0.4 that used to sit here died with it — it was
+        // a second speed law for one body, and the body it was for is an NPC
+        // like any other (CANON S4).
+        const float walk = sm::march_speed(sm::kHumanMarchMult) * pace;
+        app.subworld.set_move_intent(dx * walk, dy * walk);
         return;
     }
 
@@ -3320,15 +3355,18 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
                        /*steps=*/1u);
     if (app.subworld.active()) {
         stats.subworldActive = true;
+        // Where he stands BEFORE the world steps. The input below only states
+        // an intent now — the ONE mover moves him inside subworld.tick, with
+        // every other body — so the distance he actually covered is only
+        // known after that tick, and the stamina for it is charged there
+        // (see `movedThisStep` below).
+        const float prevX = app.subworld.player_x();
+        const float prevY = app.subworld.player_y();
         float movedThisStep = 0.0f;
         if (allowInput) {
-            const float prevX = app.subworld.player_x();
-            const float prevY = app.subworld.player_y();
             poll_movement(app, dt);
-            const float movedX = app.subworld.player_x() - prevX;
-            const float movedY = app.subworld.player_y() - prevY;
-            movedThisStep = std::sqrt(movedX * movedX + movedY * movedY);
-            (void)charge_subworld_sp_for_distance(app, movedThisStep);
+        } else {
+            app.subworld.set_move_intent(0.0f, 0.0f);  // hands off the keys
         }
         stats.timeTick =
             sm::tick_world_subworld_steps(app.gs, app.gs.worldTickRt, 1);
@@ -3361,9 +3399,18 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
                                   stats.timeTick.minutesAdvanced,
                                   app.playerRecovery,
                                   player_sp_carry(app),
-                                  movedThisStep > 0.0f ? sm::kMarchRecoveryPct
-                                                       : 1.0f);
+                                  app.subworld.player_marching()
+                                      ? sm::kMarchRecoveryPct : 1.0f);
         app.subworld.tick(dt);
+        // He has now been moved — by the same pass that moved every other
+        // body — so this is where the ground he actually covered is known,
+        // and where his legs pay for it.
+        {
+            const float movedX = app.subworld.player_x() - prevX;
+            const float movedY = app.subworld.player_y() - prevY;
+            movedThisStep = std::sqrt(movedX * movedX + movedY * movedY);
+            (void)charge_subworld_sp_for_distance(app, movedThisStep);
+        }
         // The macro world thinks on WORLD time, so underground it thinks as
         // slowly as the day passes: kSubworldTickDivisor steps buy one tick,
         // and a step that bought none queues no sweep.
@@ -3905,7 +3952,7 @@ void register_console_commands(App& app) {
             }
             int count = 500;
             if (!a.empty()) sm::dev::arg_int(a, 0, count);
-            count = std::clamp(count, 1, sm::sub::kMaxBattleUnits / 2);
+            count = std::clamp(count, 1, sm::sub::kMaxBodyCrowd / 2);
 
             // Side A defaults to the defenders of this very ground, side B to
             // raiders — a fight you can rely on without naming anyone, and any

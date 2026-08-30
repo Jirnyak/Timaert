@@ -115,6 +115,6 @@ ONE table; `FaunaEntry` is an alias of `NpcTypeDef`).
 ## Backend — the crowd is CPU (owner's ruling 2026-08-20)
 
 Thousands of combatants are a **CPU** workload: one O(N) steering pass over bucket grids
-sized from the bodies' own data (`sub/battle.{h,cpp}`), inside the universal 16384-body
+sized from the bodies' own data (`sub/movement.{h,cpp}`), inside the universal 16384-body
 cap. The GPU draws them — it does not simulate them. GPU-resident crowd simulation is
 deferred to the far future; see [CANON.md](CANON.md) S5, S13 and ARCHITECTURE.md §GPU is graphics; the world is CPU.

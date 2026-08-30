@@ -181,6 +181,10 @@ public:
 
     // Composited 3kx3k fields.
     const std::vector<std::uint8_t>& tiles() const { return composite_tiles_; }
+    // HARNESS ONLY: repaint the composite's ground so a smoke can measure a
+    // law against a known surface. Never called by generation or gameplay —
+    // the ground is the generator's word everywhere else.
+    std::vector<std::uint8_t>& debug_mutable_tiles() { return composite_tiles_; }
     const std::vector<float>&        heightmap() const { return composite_height_; }
     const std::vector<Structure>&    structures() const { return composite_struct_; }
     // A window cell whose composite content is one constant (LoadedCell::

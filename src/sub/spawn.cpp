@@ -32,6 +32,21 @@ constexpr float kBodyWanderSpeedFraction = 0.35f;
 // expected to bind. The projection's return count reflects what was projected.
 constexpr int kMaxProjectedMacroNpcs = 128;
 
+// Does something CARRY a body above the water plane here? The universal half
+// of the wet-tile question (sub/height.h): the tile says what the ground is,
+// this says what would hold a body up regardless of it — a bridge deck, a
+// jetty, a wall walk. Without an index the answer is honestly "no", which is
+// the old tile-only behaviour, unchanged.
+bool carried_above_water(const StructureIndex* solids, float x, float y) {
+    if (!solids || solids->empty()) return false;
+    // Probe from above with no step allowance: the highest solid top under
+    // the probe ceiling, whatever it belongs to.
+    const float top = solids->support_at(x, y, kNpcBodyRadiusDefault,
+                                         kSeaLevelM + kDryFootingProbeM,
+                                         /*stepUp*/0.0f);
+    return is_dry_footing(top);
+}
+
 // Signed toroidal offset of macro cell `a` from window centre `c` on a torus of
 // circumference `n`, folded to (-n/2, n/2]. A result in {-1,0,1} means `a` is in
 // the 3×3 window at that cell offset; anything else is outside it. Matches the
@@ -166,8 +181,13 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
     reg.emplace<ecs::VisualPos>(e, body.x, body.y, kBodyVisualCatchUp);
     reg.emplace<ecs::NPCKind>(e, std::uint16_t(body.type), body.faction);
     reg.emplace<ecs::Health>(e, hp, maxHp);
+    // Its pace: the world's march (macro/movement_cost.h) times what this row
+    // is against a walking man. ONE scale for every body, the player's
+    // included — a peasant walks at exactly the speed the map says a man
+    // walks, and a bandit's 2.25 means he runs.
+    const float bodySpeed = march_speed(pc.speedMarchMult);
     reg.emplace<ecs::Combat>(e,
-        damage, pc.speed, pc.attackRange, pc.cooldown, 0u,
+        damage, bodySpeed, pc.attackRange, pc.cooldown, 0u,
         pc.attackKind == CombatTemplate::Missile ? ecs::Combat::Missile
                                                  : ecs::Combat::Melee);
     maybe_emplace_missile_attack(reg, e, pc);
@@ -181,7 +201,7 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
     reg.emplace<ecs::SubworldAi>(e,
         body.combatant ? ecs::SubworldAi::Combat : subworld_ai_for(def.ai),
         /*aiTimer*/0.0f, /*vx*/0.0f, /*vy*/0.0f,
-        /*wanderSpeed*/pc.speed * kBodyWanderSpeedFraction,
+        /*wanderSpeed*/bodySpeed * kBodyWanderSpeedFraction,
         /*radius*/bodyRadius);
     reg.emplace<CharacterSheet>(e, sheet);
     // A face for every body. This is the line the squad never had.
@@ -780,16 +800,19 @@ int project_macro_npcs_into_subworld(ecs::World& w,
                                      const SeamlessSubworldManager& mgr,
                                      int centerCx, int centerCy,
                                      int mapW, int mapH,
-                                     std::uint32_t seed, bool* truncated) {
+                                     std::uint32_t seed, bool* truncated,
+                                     const StructureIndex* solids) {
     return project_macro_npcs_into_subworld(w, mgr.tiles(), centerCx, centerCy,
-                                            mapW, mapH, seed, truncated);
+                                            mapW, mapH, seed, truncated,
+                                            solids);
 }
 
 int project_macro_npcs_into_subworld(ecs::World& w,
                                      const std::vector<std::uint8_t>& tiles,
                                      int centerCx, int centerCy,
                                      int mapW, int mapH,
-                                     std::uint32_t seed, bool* truncated) {
+                                     std::uint32_t seed, bool* truncated,
+                                     const StructureIndex* solids) {
     auto& reg = w.reg;
     const bool tilesUsable =
         tiles.size() >= std::size_t(kFullSize) * std::size_t(kFullSize);
@@ -850,9 +873,12 @@ int project_macro_npcs_into_subworld(ecs::World& w,
         // just chased somebody across the border materialises AT that border,
         // behind them — while a local that has been here forever gets the full
         // uniform cell (the band formula degrades to exactly the old scatter).
-        // Water is dodged per attempt like the fauna path (spawn_cell_npcs);
-        // falls back to the cell centre if 20 tries all hit water (never lose
-        // the NPC).
+        // Water is dodged per attempt like the fauna path (spawn_cell_npcs) —
+        // but what is dodged is WET FOOTING, not a wet tile: a body may
+        // stand on whatever would carry it above the water plane, so the
+        // deck of a bridge is a perfectly good place to meet a caravan
+        // (sub/height.h is_dry_footing). Falls back to the cell centre if 20
+        // tries all land in water (never lose the NPC).
         const auto& mrt = reg.get<ecs::MacroNpcRuntime>(macro);
         int sdx = 0, sdy = 0;
         (void)unpack_entry_dir(mrt.entryDir, sdx, sdy);
@@ -868,7 +894,8 @@ int project_macro_npcs_into_subworld(ecs::World& w,
             const int ix = int(tx), iy = int(ty);
             if (ix < 0 || ix >= kFullSize || iy < 0 || iy >= kFullSize) continue;
             if (tilesUsable &&
-                tiles[std::size_t(iy) * kFullSize + ix] == TILE_WATER) {
+                tiles[std::size_t(iy) * kFullSize + ix] == TILE_WATER
+                && !carried_above_water(solids, tx, ty)) {
                 continue;
             }
             fx = tx; fy = ty;

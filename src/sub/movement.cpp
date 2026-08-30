@@ -1,4 +1,4 @@
-#include "sub/battle.h"
+#include "sub/movement.h"
 #include <bit>
 #include <cmath>
 #include <cstring>
@@ -66,7 +66,7 @@ int FactionSet::find(const char* id) const {
 int FactionSet::intern(const char* id) {
     const int found = find(id);
     if (found >= 0) return found;
-    if (!id || id[0] == '\0' || count >= kMaxBattleFactions) return -1;
+    if (!id || id[0] == '\0' || count >= kMaxCrowdFactions) return -1;
     ids[count] = id;
     enemyMask[count] = 0ull;
     return count++;
@@ -88,9 +88,9 @@ void build_faction_masks(FactionSet& fs,
     }
 }
 
-// ── BattleUnits ────────────────────────────────────────────────────────────
+// ── BodyCrowd ────────────────────────────────────────────────────────────
 
-void BattleUnits::reserve(int n) {
+void BodyCrowd::reserve(int n) {
     const std::size_t c = std::size_t(n);
     x.reserve(c); y.reserve(c); z.reserve(c);
     vx.reserve(c); vy.reserve(c);
@@ -100,7 +100,7 @@ void BattleUnits::reserve(int n) {
     target.reserve(c); inReach.reserve(c);
 }
 
-void BattleUnits::clear() {
+void BodyCrowd::clear() {
     count = 0;
     maxRadius = 0.0f;
     maxReach = 0.0f;
@@ -112,8 +112,8 @@ void BattleUnits::clear() {
     target.clear(); inReach.clear();
 }
 
-int BattleUnits::add(const BattleUnitDesc& d) {
-    if (count >= kMaxBattleUnits) return -1;
+int BodyCrowd::add(const BodyDesc& d) {
+    if (count >= kMaxBodyCrowd) return -1;
     const int idx = count++;
     x.push_back(d.x); y.push_back(d.y); z.push_back(d.z);
     vx.push_back(d.vx); vy.push_back(d.vy);
@@ -132,18 +132,18 @@ int BattleUnits::add(const BattleUnitDesc& d) {
 
 // ── Grid sizing, from the crowd's own geometry ─────────────────────────────
 
-float fine_cell_for(const BattleUnits& u, const BattleParams& prm) {
+float fine_cell_for(const BodyCrowd& u, const MoveParams& prm) {
     return std::max(prm.fineCellMin, u.maxRadius * prm.fineCellPerRadius);
 }
 
-float pick_cell_for(const BattleUnits& u, const BattleParams& prm) {
+float pick_cell_for(const BodyCrowd& u, const MoveParams& prm) {
     const float want = (u.maxReach + 2.0f * u.maxRadius) * prm.pickCellPerReach;
     return std::max(std::max(prm.pickCellMin, want), fine_cell_for(u, prm));
 }
 
 // ── Bucket grid ────────────────────────────────────────────────────────────
 
-void build_unit_grid(UnitGrid& g, const BattleUnits& u, float cell, int maxDim) {
+void build_unit_grid(UnitGrid& g, const BodyCrowd& u, float cell, int maxDim) {
     const int n = u.count;
     g.items.clear();
     if (n <= 0 || cell <= 0.0f || maxDim < 1) {
@@ -205,7 +205,7 @@ void build_unit_grid(UnitGrid& g, const BattleUnits& u, float cell, int maxDim) 
 
 // ── Influence field + alert chain ──────────────────────────────────────────
 
-void build_influence_field(InfluenceField& f, const BattleUnits& u,
+void build_influence_field(InfluenceField& f, const BodyCrowd& u,
                            float cell, float worldSize) {
     f.cell = cell > 0.0f ? cell : 1.0f;
     // Bbox of the crowd, snapped to cell boundaries and capped at the window.
@@ -228,7 +228,7 @@ void build_influence_field(InfluenceField& f, const BattleUnits& u,
     }
     f.presentMask = 0ull;
     f.planeCount = 0;
-    for (int i = 0; i < kMaxBattleFactions; ++i) {
+    for (int i = 0; i < kMaxCrowdFactions; ++i) {
         f.factionEnemyMask[i] = 0ull;
         f.planeIdx[i] = -1;
     }
@@ -245,10 +245,10 @@ void build_influence_field(InfluenceField& f, const BattleUnits& u,
     // per-frame clear below is proportional to the factions on the field.
     for (int i = 0; i < u.count; ++i) {
         const std::int16_t fi = u.faction[std::size_t(i)];
-        if (fi < 0 || fi >= kMaxBattleFactions) continue;
+        if (fi < 0 || fi >= kMaxCrowdFactions) continue;
         f.presentMask |= (1ull << fi);
     }
-    for (int s = 0; s < kMaxBattleFactions; ++s) {
+    for (int s = 0; s < kMaxCrowdFactions; ++s) {
         if (((f.presentMask >> s) & 1ull) != 0ull)
             f.planeIdx[s] = std::int16_t(f.planeCount++);
     }
@@ -284,7 +284,7 @@ void build_influence_field(InfluenceField& f, const BattleUnits& u,
     // that cell's HOSTILE centroid, then propagate the nearest site with two
     // sweeps (Danielsson-style vector distance transform — approximate in the
     // corners, exact along the sweeps, and far finer than steering needs).
-    for (int s = 0; s < kMaxBattleFactions; ++s) {
+    for (int s = 0; s < kMaxCrowdFactions; ++s) {
         if (!f.has_faction(s)) continue;
         const std::uint64_t enemies = f.factionEnemyMask[s];
         if (enemies == 0ull) continue;
@@ -375,7 +375,7 @@ void build_influence_field(InfluenceField& f, const BattleUnits& u,
     // between it and the fighting is simply not connected and stays home.
     std::vector<std::uint32_t>& queue = f.alertQueue;
     queue.reserve(cells);
-    for (int s = 0; s < kMaxBattleFactions; ++s) {
+    for (int s = 0; s < kMaxCrowdFactions; ++s) {
         if (!f.has_faction(s)) continue;
         const std::size_t base = f.plane(s);
         queue.clear();
@@ -431,10 +431,10 @@ bool deploy_army_slot(float centreX, float centreY, int side, int i, int count,
 
 // ── The steering pass ──────────────────────────────────────────────────────
 
-void steer_battle(BattleUnits& u, const UnitGrid& fine, const UnitGrid& pick,
-                  const InfluenceField& field, const BattleTerrain& terrain,
-                  const BattleParams& prm, float dt, BattleStats* stats) {
-    if (stats) *stats = BattleStats{};
+void steer_bodies(BodyCrowd& u, const UnitGrid& fine, const UnitGrid& pick,
+                  const InfluenceField& field, const MoveGround& terrain,
+                  const MoveParams& prm, float dt, MoveStats* stats) {
+    if (stats) *stats = MoveStats{};
     if (u.count <= 0 || dt <= 0.0f) return;
 
     const float bound = terrain.worldMax > 2.0f ? terrain.worldMax - 2.0f : 2.0f;
@@ -448,12 +448,12 @@ void steer_battle(BattleUnits& u, const UnitGrid& fine, const UnitGrid& pick,
 
         const float px = u.x[si], py = u.y[si], pz = u.z[si];
         const float ri = u.radius[si];
-        const bool pinned = (u.flags[si] & BU_Pinned) != 0u;
+        const bool pinned = (u.flags[si] & B_Pinned) != 0u;
         // A passive body is one whose MIND refuses the war (a Flee brain): the
         // combat drive below never claims it, so a village at war does not
         // conscript its deer. Its legs follow its intent, and the intent of a
         // frightened thing near danger is to run.
-        const bool passive = (u.flags[si] & BU_Passive) != 0u;
+        const bool passive = (u.flags[si] & B_Passive) != 0u;
 
         // ── 1. Contact scan ────────────────────────────────────────────────
         // On the PICK grid, whose cell is the crowd's longest reach: a query of
@@ -682,14 +682,32 @@ void steer_battle(BattleUnits& u, const UnitGrid& fine, const UnitGrid& pick,
         // would multiply it by sepWeight and let terrain outvote the advance.
         float terrX = 0.0f, terrY = 0.0f;
         float speedMul = 1.0f;
-        if ((u.flags[si] & BU_Flying) == 0u) {
-            if (terrain.tiles && terrain.tileSpeed && terrain.tileDim > 0) {
+        // What the feet have to push and brake against here (map_data.h
+        // kTileGroundGrip). 1.0 = honest footing, and a flyer touches nothing
+        // — its "grip" is the air, which is why it neither pays the ground
+        // nor slides on it.
+        float grip = 1.0f;
+        if ((u.flags[si] & B_Flying) == 0u) {
+            // ONE lookup of the ground, two independent answers about it: how
+            // fast it is walked, and what it gives the feet to push and brake
+            // against. Independent on purpose — a fixture may supply either
+            // table alone, and tying grip to the presence of the speed table
+            // silently disabled it (the ice control caught exactly that).
+            if (terrain.tiles && terrain.tileDim > 0) {
                 const int tx = std::clamp(int(px), 0, terrain.tileDim - 1);
                 const int ty = std::clamp(int(py), 0, terrain.tileDim - 1);
-                const std::uint8_t id = terrain.tiles[std::size_t(ty)
+                std::uint8_t id = terrain.tiles[std::size_t(ty)
                     * std::size_t(terrain.tileDim) + std::size_t(tx)];
-                if (int(id) < terrain.tileSpeedCount)
-                    speedMul *= terrain.tileSpeed[id];
+                // What CARRIES the body prices the step, not what lies at the
+                // bottom of the column: crossing a bridge is walking on road.
+                if (terrain.standTile) {
+                    id = terrain.standTile(terrain.solidUser, px, py,
+                                           u.radius[si], u.z[si], id);
+                }
+                if (int(id) < terrain.tileSpeedCount) {
+                    if (terrain.tileSpeed) speedMul *= terrain.tileSpeed[id];
+                    if (terrain.tileGrip)  grip = terrain.tileGrip[id];
+                }
             }
             if (terrain.heightAt) {
                 const float a = prm.slopeProbe;
@@ -742,11 +760,40 @@ void steer_battle(BattleUnits& u, const UnitGrid& fine, const UnitGrid& pick,
             wantVy = dirY / dirLen * sp;
         }
 
-        // Acceleration limit is what makes a charge read as MASS: no unit flips
-        // its velocity in one frame, so lines bend instead of snapping. The
-        // intent pace joins the max so a weaponless body (speed 0) can still
-        // reach the pace its mind asked for.
-        const float amax = std::max(u.speed[si], pace) * prm.accelPerSpeed * dt;
+        // ── Inertia, and its DISSIPATION ───────────────────────────────────
+        // Getting up to speed is limited: no body flips its velocity in one
+        // frame, so a charge reads as MASS and lines bend instead of
+        // snapping. That limit alone, applied symmetrically, is ICE — a body
+        // that stops asking to move coasts for a quarter second, which the
+        // owner met the moment the player joined this pass (2026-08-30:
+        // «сейчас теперь игрок как по льду скользит, невозможно играть»).
+        //
+        // Legs are not only an engine, they are a BRAKE, and the two are not
+        // the same strength: muscle builds speed over time, friction kills it
+        // over DISTANCE. So slowing down is priced by how far a body needs to
+        // pull up — its own body length — which makes stopping crisp at any
+        // pace without ever being instantaneous.
+        //
+        // Both halves are scaled by the ground's GRIP, and that is the whole
+        // of what ice would need: a surface that gives the feet nothing lets
+        // a body neither accelerate nor stop, and it slides — with no code
+        // anywhere knowing what ice is (owner: «скольжение по льду
+        // бесплатное»).
+        //
+        // Turning is deliberately NOT braking: |want| ≈ |v| through a turn,
+        // so a body still swings wide under the acceleration limit and the
+        // mass of a charge survives.
+        const float paceRef = std::max(u.speed[si], pace);
+        const float vNow = length2d(u.vx[si], u.vy[si]);
+        const float vWant = length2d(wantVx, wantVy);
+        float amax = paceRef * prm.accelPerSpeed * grip * dt;
+        if (vWant < vNow - 1.0e-4f) {
+            // a = v² / 2d — the deceleration that halts THIS speed inside one
+            // body length of ground (kBodyStopBodies × its own radius).
+            const float stopDist =
+                std::max(0.25f, prm.stopBodies * u.radius[si]) / std::max(0.05f, grip);
+            amax = std::max(amax, vNow * vNow / (2.0f * stopDist) * dt);
+        }
         float dvx = wantVx - u.vx[si], dvy = wantVy - u.vy[si];
         const float dvLen = length2d(dvx, dvy);
         if (dvLen > amax && dvLen > 1.0e-6f) {
@@ -761,7 +808,7 @@ void steer_battle(BattleUnits& u, const UnitGrid& fine, const UnitGrid& pick,
         // the free axis, zero the blocked velocity component so the body
         // doesn't grind. A body already inside a solid may always move — the
         // escape rule — so nothing can be trapped. Flyers pass above.
-        if (terrain.canStand && (u.flags[si] & BU_Flying) == 0u
+        if (terrain.canStand && (u.flags[si] & B_Flying) == 0u
             && !terrain.canStand(terrain.solidUser, nx, ny, ri, u.z[si])
             && terrain.canStand(terrain.solidUser, px, py, ri, u.z[si])) {
             if (terrain.canStand(terrain.solidUser, nx, py, ri, u.z[si])) {

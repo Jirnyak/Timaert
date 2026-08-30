@@ -72,7 +72,7 @@ static void test_project_combat_melee() {
     cs.skills[sm::SkillId::Bodybuilding] = 2;
 
     CombatTemplate base{};
-    base.hp = 50; base.damage = 6; base.speed = 33; base.attackRange = 3.5f;
+    base.hp = 50; base.damage = 6; base.speedMarchMult = 1.65f; base.attackRange = 3.5f;
     base.cooldown = 1.25f; base.label = "TST"; base.attackKind = CombatTemplate::Melee;
     base.missileSpeed = 12.5f; base.missileBlast = 4.0f; base.missileColorRGBA = 0xAABBCCDDu;
 
@@ -87,7 +87,8 @@ static void test_project_combat_melee() {
     CHECK(approx(out.damage, base.damage + expD.rawPhysDamage),
           "melee: damage == base.damage + rawPhysDamage");
     // Attack identity preserved verbatim.
-    CHECK(approx(out.speed, base.speed), "melee: speed preserved");
+    CHECK(approx(out.speedMarchMult, base.speedMarchMult),
+          "melee: pace (as a fraction of the march) preserved");
     CHECK(approx(out.attackRange, base.attackRange), "melee: range preserved");
     CHECK(approx(out.cooldown, base.cooldown), "melee: cooldown preserved");
     CHECK(out.attackKind == CombatTemplate::Melee, "melee: kind preserved");

@@ -26,6 +26,7 @@ enum class SmokeAction : std::uint8_t {
     LoadGame,
     WaitBootDone,
     SubworldTime,
+    SubworldWalk,
     SubworldSeam,
     SubworldAudio,
     SubworldExitGate,

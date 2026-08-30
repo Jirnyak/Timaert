@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <vector>
 #include "ecs/world.h"
+#include "sub/collide.h"
+#include "sub/height.h"
 #include "sub/seamless_manager.h"
 #include "macro/fauna.h"
 #include "macro/character_sheet.h"
@@ -313,21 +315,27 @@ void spawn_player_squad(ecs::World& w,
 //
 // `truncated` (optional): set to true when the projection CAP refused bodies
 // that stand in this window — the ceiling may not cut the crowd silently
-// (CANON S26, the battleGatherTruncated_ pattern); the caller says it out
+// (CANON S26, the crowdGatherTruncated_ pattern); the caller says it out
 // loud. Never set to false: the caller owns the reset.
+// `solids` (optional): the scene's solidity index. A water tile that carries
+// a solid above the water plane (a bridge deck, a jetty, a wall walk) is DRY
+// FOOTING (sub/height.h is_dry_footing) and a body may materialise on it —
+// the placement asks what would hold it up, not what the ground is.
 int project_macro_npcs_into_subworld(ecs::World& w,
                                      const SeamlessSubworldManager& mgr,
                                      int centerCx, int centerCy,
                                      int mapW, int mapH,
                                      std::uint32_t seed,
-                                     bool* truncated = nullptr);
+                                     bool* truncated = nullptr,
+                                     const StructureIndex* solids = nullptr);
 
 int project_macro_npcs_into_subworld(ecs::World& w,
                                      const std::vector<std::uint8_t>& tiles,
                                      int centerCx, int centerCy,
                                      int mapW, int mapH,
                                      std::uint32_t seed,
-                                     bool* truncated = nullptr);
+                                     bool* truncated = nullptr,
+                                     const StructureIndex* solids = nullptr);
 
 // ── Exit remap query (Inc 5e-1) ──────────────────────────────────────────
 //

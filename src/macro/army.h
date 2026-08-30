@@ -26,7 +26,21 @@ struct CombatTemplate {
     enum AttackKind : std::uint8_t { Melee = 0, Missile = 1 };
     float       hp;
     float       damage;
-    float       speed;
+    // How fast this row moves, as a FRACTION OF THE MARCH (owner's ruling,
+    // 2026-08-30: «привести всех к маршу»). 1.0 is the world's own walking
+    // pace — kSubworldWalkTilesPerSecond, itself derived from the 8 cells per
+    // game hour the map marches at — so a peasant walks at exactly the speed
+    // the map says a man walks, and everything else is stated against him:
+    // a bandit runs, a rabbit bolts, a troll lumbers.
+    //
+    // It was an ABSOLUTE tiles/second until that ruling, on a scale nobody
+    // had derived (peasant 20 against a march of 96), and the player was
+    // fitted to it by a private ×0.4 in the engine — a second speed law for
+    // one body, which is exactly what CANON S4 says cannot exist. The numbers
+    // below are the old ones divided by the peasant's, so every relative
+    // speed the fights were tuned around is preserved verbatim; what changed
+    // is that they now mean something.
+    float       speedMarchMult;
     float       attackRange;
     float       cooldown;
     const char* label;
@@ -53,7 +67,7 @@ struct CombatTemplate {
     float       bodyHeight = 0.0f;
     // sight — how far this fighter notices an enemy on its own. It is NOT an
     // aggro leash: awareness relays through a formation (see the alert chain in
-    // sub/battle.h), so a rear rank charges because its front rank saw, while a
+    // sub/movement.h), so a rear rank charges because its front rank saw, while a
     // lone animal that noticed nothing stays put.
     float       sight = kNpcSightDefaultM;
 };

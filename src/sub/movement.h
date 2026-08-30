@@ -1,5 +1,17 @@
-// Mass battle steering — ONE algorithm for every subworld fight, from a single
-// bandit to 16384 combatants.
+// THE MOVER — how a body moves in the subworld. One algorithm for every living
+// thing down here, from a browsing deer to 16384 bodies in a battle line, and
+// for the player among them.
+//
+// It was called "mass battle steering" until 2026-08-30, and the name was a
+// lie the owner caught: «БОЙ В ИГРЕ НИЧЕМ НЕ ОСОБЕННЫЙ, ЭТО ПРОСТО РЯДОМ
+// ОКАЗАЛИСЬ ВРАГИ… нет никакого боя, просто если НПЦ видят врага, они бегут
+// на него». There is no battle MODE (CANON S13): this pass moves townsfolk on
+// errands, wildlife, fleeing prey, projected macro figures and the player, and
+// war is merely one of the things that can claim a body's legs — the influence
+// field below is an input to movement, not a mode of it. The lie had a cost
+// worth remembering: because "battle" sounded optional, the player was pinned
+// OUT of this pass and moved by his own input path, and so he alone paid
+// nothing for ground or slope while every peasant did.
 //
 // WHY THIS EXISTS
 // ---------------
@@ -33,15 +45,18 @@
 //   5. Bodies push each other apart (separation, capped at `maxSepNeighbors`),
 //      attackers stand on a ring around their target instead of inside it, and
 //      velocity is acceleration-limited — mass, not teleport.
-//   6. Terrain is a TABLE (sub/map_data.h kTileMovementSpeed) plus a height
+//   6. Ground is a TABLE (sub/map_data.h kTileGroundWeight — the macro step
+//      law's own weights, converted by its own 1/√weight) plus a height
 //      gradient. This module has no idea what "water" is; adding a ground type
-//      is one enum value and one data row.
+//      is one enum value and one data row. What the ground IS under a body is
+//      asked of its SUPPORT (`standTile`), so a bridge deck is walked as road
+//      while the river runs three metres below.
 //
-// Every pass is O(N) (+ O(cells), independent of N). `BattleStats.neighborVisits`
+// Every pass is O(N) (+ O(cells), independent of N). `MoveStats.neighborVisits`
 // is instrumented so a test can PROVE the bound instead of trusting a comment.
 //
 // Vulkan-free and entt-free by design: this is a plain struct-of-arrays over
-// PODs, so `battle_ai_test` exercises the real shipping code headless. The ECS
+// PODs, so `movement_steering_test` exercises the real shipping code headless. The ECS
 // gather/scatter and all gameplay authority (damage, deaths, loot, XP, events)
 // stay in sub/engine.cpp — this module only decides where bodies want to be.
 #pragma once
@@ -53,7 +68,7 @@ namespace sm::sub {
 // ── Universal capacity ─────────────────────────────────────────────────────
 // One 2^14 ceiling for subworld actors, deliberately equal to the renderer's
 // kMaxEntityInstances: a body that cannot be drawn must not be simulated.
-constexpr int kMaxBattleUnits = 16384;
+constexpr int kMaxBodyCrowd = 16384;
 
 // Sentinel for a squared-distance cache meaning "no such body anywhere".
 // Comfortably past the squared diagonal of the 3×3 window and deliberately
@@ -68,22 +83,22 @@ constexpr float kNoThreatDistance2 = 1.0e18f;
 //
 // Per tick the engine INTERNS the faction id of every body present into a dense
 // index, and asks the macro relation matrix once per interned pair. Hostility is
-// then one shift and one AND (`BattleUnits::hostile`), while the world may hold
+// then one shift and one AND (`BodyCrowd::hostile`), while the world may hold
 // any number of factions: only the ones actually standing in this 3×3 window
 // occupy a slot.
 //
 // The cap is on SIMULTANEOUSLY PRESENT factions, not on the world's roster; 64
 // lets one enemy mask stay a single std::uint64_t. A 65th distinct faction in
 // one window degrades to neutral (it fights nobody) rather than misbehaving.
-constexpr int kMaxBattleFactions = 64;
+constexpr int kMaxCrowdFactions = 64;
 
 struct FactionSet {
-    const char* ids[kMaxBattleFactions]{};
+    const char* ids[kMaxCrowdFactions]{};
     // enemyMask[f] has bit g set iff faction f treats faction g as an enemy.
     // Asymmetry is allowed and used: the macro matrix is not required to be
     // symmetric, and a body may carry a private grudge on top (see
-    // BattleUnitDesc::enemyMask).
-    std::uint64_t enemyMask[kMaxBattleFactions]{};
+    // BodyDesc::enemyMask).
+    std::uint64_t enemyMask[kMaxCrowdFactions]{};
     int count = 0;
 
     void clear();
@@ -120,21 +135,21 @@ void build_faction_masks(FactionSet& fs,
                                          int a, int b),
                          void* user, int hostileBelow);
 
-enum BattleUnitFlags : std::uint8_t {
-    BU_None    = 0,
-    BU_Missile = 1u << 0,   // fights at range: holds stand-off, never closes
-    BU_Pinned  = 1u << 1,   // a real target and a real obstacle, but NOT steered
+enum BodyFlags : std::uint8_t {
+    B_None    = 0,
+    B_Missile = 1u << 0,   // fights at range: holds stand-off, never closes
+    B_Pinned  = 1u << 1,   // a real target and a real obstacle, but NOT steered
                             // here (the player body — its mover is the input).
                             // Its position is never written back.
-    BU_Flying  = 1u << 2,   // owns its Z: terrain water/slope must not touch it
-    BU_Passive = 1u << 3,   // the mind refuses the war drive (a Flee brain):
+    B_Flying  = 1u << 2,   // owns its Z: terrain water/slope must not touch it
+    B_Passive = 1u << 3,   // the mind refuses the war drive (a Flee brain):
                             // never contact-scans, never answers the field,
                             // never strikes — its intent rules its legs. Still
                             // a real target, still separates, still blocks.
 };
 
 // One unit as handed to the battle pass. POD; the caller fills it from the ECS.
-struct BattleUnitDesc {
+struct BodyDesc {
     float x = 0.0f, y = 0.0f, z = 0.0f;
     float vx = 0.0f, vy = 0.0f;
     float radius = 0.55f;       // body radius, world units (1 unit ≈ 1 m)
@@ -149,13 +164,13 @@ struct BattleUnitDesc {
     float intentVx = 0.0f, intentVy = 0.0f;
     std::uint64_t enemyMask = 0;
     std::int16_t  faction = -1; // interned index, -1 = factionless (fights none)
-    std::uint8_t  flags = BU_None;
+    std::uint8_t  flags = B_None;
 };
 
 // ── Struct of arrays ───────────────────────────────────────────────────────
 // One array per attribute. Storage is reserved once and reused every frame, so
 // the hot path never allocates.
-struct BattleUnits {
+struct BodyCrowd {
     int count = 0;
     std::vector<float> x, y, z;
     std::vector<float> vx, vy;
@@ -175,8 +190,8 @@ struct BattleUnits {
 
     void reserve(int n);
     void clear();
-    // Appends a unit; returns its index, or -1 once kMaxBattleUnits is hit.
-    int add(const BattleUnitDesc& d);
+    // Appends a unit; returns its index, or -1 once kMaxBodyCrowd is hit.
+    int add(const BodyDesc& d);
 
     inline bool hostile(int i, int j) const noexcept {
         const std::int16_t fj = faction[std::size_t(j)];
@@ -214,7 +229,7 @@ struct UnitGrid {
 // `cell` is the intended query radius (queries then touch 2×2 cells). `maxDim`
 // caps the grid resolution: if the units are spread so wide that the bbox needs
 // more cells, the cell size grows instead of the allocation.
-void build_unit_grid(UnitGrid& g, const BattleUnits& u, float cell, int maxDim);
+void build_unit_grid(UnitGrid& g, const BodyCrowd& u, float cell, int maxDim);
 
 // ── Coarse influence field: navigation without neighbour queries ───────────
 // Per faction slot, per cell: how many units of that slot are here and where
@@ -250,11 +265,11 @@ struct InfluenceField {
     float originX = 0.0f, originY = 0.0f;
     int cols = 1, rows = 1;
     std::uint64_t presentMask = 0;                        // factions with a body
-    std::uint64_t factionEnemyMask[kMaxBattleFactions]{};  // OR of member masks
+    std::uint64_t factionEnemyMask[kMaxCrowdFactions]{};  // OR of member masks
     // Planes are allocated ONLY for factions actually standing in the window. A
     // two-army battle pays for two planes — the per-frame clear was the whole
     // fixed cost of this pass, and a lone bandit must not pay a roster price.
-    std::int16_t planeIdx[kMaxBattleFactions]{};          // -1 = faction absent
+    std::int16_t planeIdx[kMaxCrowdFactions]{};          // -1 = faction absent
     int planeCount = 0;
     std::vector<std::uint64_t> occMask;   // [cell] factions present in the cell
     std::vector<std::uint32_t> count;     // [plane*cells + cell]
@@ -290,7 +305,7 @@ struct InfluenceField {
         return originY + (float(cy) + 0.5f) * cell;
     }
     inline bool has_faction(int f) const noexcept {
-        return f >= 0 && f < kMaxBattleFactions && planeIdx[f] >= 0;
+        return f >= 0 && f < kMaxCrowdFactions && planeIdx[f] >= 0;
     }
     // Valid only when has_faction(f).
     inline std::size_t plane(int f) const noexcept {
@@ -298,7 +313,7 @@ struct InfluenceField {
     }
 };
 
-void build_influence_field(InfluenceField& f, const BattleUnits& u,
+void build_influence_field(InfluenceField& f, const BodyCrowd& u,
                            float cell, float worldSize);
 
 // ── Terrain ────────────────────────────────────────────────────────────────
@@ -310,13 +325,19 @@ void build_influence_field(InfluenceField& f, const BattleUnits& u,
 //     this translation unit stays free of the renderer and of Vulkan.
 // Every field is optional: all-null is a flat featureless plain, which is
 // exactly what a headless test wants as its control.
-struct BattleTerrain {
+struct MoveGround {
     float (*heightAt)(void* user, float x, float y) = nullptr;
     void* user = nullptr;
     const std::uint8_t* tiles = nullptr;   // tileDim² ground-type ids
     int tileDim = 0;
     const float* tileSpeed = nullptr;      // movement multiplier per tile id
     int tileSpeedCount = 0;
+    // What the feet get to push and brake against, per tile id (map_data.h
+    // kTileGroundGrip). Null = perfect footing everywhere, which is what a
+    // headless fixture wants. Indexed by the SAME id `tileSpeed` is, and that
+    // id is the SUPPORT's (standTile below): a bridge deck grips like the
+    // stone it is, not like the river under it.
+    const float* tileGrip = nullptr;
     float worldMax = 0.0f;                 // movement clamp bound (kFullSize)
     // Solid-structure gate (sub/collide.h, wired by the engine; optional like
     // everything here): may a body of radius r with feet at z occupy (x, y)?
@@ -325,14 +346,22 @@ struct BattleTerrain {
     // that is already inside a solid (it may always move — the escape rule).
     bool (*canStand)(void* user, float x, float y, float r, float z) = nullptr;
     void* solidUser = nullptr;
+    // THE GROUND UNDER THE FEET (sub/collide.h walk_tile_at): given the tile
+    // the terrain paints at (x, y), what is the body at feet-height `z`
+    // ACTUALLY standing on? A bridge deck answers "road" while the river
+    // runs below it. Null → the terrain tile stands, which is what a
+    // headless fixture with no solids wants. Shares `solidUser`: it is the
+    // same index answering both questions about the same solids.
+    std::uint8_t (*standTile)(void* user, float x, float y, float r, float z,
+                              std::uint8_t terrainTile) = nullptr;
 };
 
 // ── Tunables ───────────────────────────────────────────────────────────────
 // Every knob of the fight lives here; nothing is hardcoded in the loop.
-struct BattleParams {
+struct MoveParams {
     // ── Grids ──────────────────────────────────────────────────────────────
     // The fine cell is NOT a constant: it is derived from the crowd's own body
-    // size (BattleUnits::maxRadius), because that is what bounds occupancy. A
+    // size (BodyCrowd::maxRadius), because that is what bounds occupancy. A
     // cell of side S holds at most ~(S / 2r)² bodies of radius r, so sizing the
     // cell to the bodies makes the neighbour count per query a GEOMETRIC bound
     // rather than a hope. 0.55-unit peasants get a ~2.5-unit cell; a dragon-sized
@@ -362,6 +391,11 @@ struct BattleParams {
     // No aggro leash. A body advances iff its cell is ALERTED — its own sight or
     // a comrade's, relayed through the formation (see InfluenceField::alert).
     float accelPerSpeed = 4.0f;     // full speed in 1/4 s ⇒ mass, not teleport
+    // Stopping distance in BODY RADII: a body pulls up inside its own length.
+    // Not a feel knob — the shape of the number is the physics (a = v²/2d), so
+    // it holds at any pace, and a wide body needs more room than a small one.
+    // Divided by the ground's grip, so slick footing lengthens the skid.
+    float stopBodies    = 2.0f;
     float arriveEpsilon = 0.5f;     // inside this, stop and swing
     // ── Terrain ────────────────────────────────────────────────────────────
     // Ground cost itself is data (kTileMovementSpeed); these only shape slopes.
@@ -395,7 +429,7 @@ struct BattleParams {
 bool deploy_army_slot(float centreX, float centreY, int side, int i, int count,
                       float* outXY);
 
-struct BattleStats {
+struct MoveStats {
     std::uint64_t neighborVisits = 0;   // O(N) proof: bounded by c·N
     std::uint32_t engaged = 0;          // units with a strikeable target
     std::uint32_t steered = 0;          // units the pass actually moved
@@ -403,17 +437,17 @@ struct BattleStats {
 };
 
 // Grid cell sizes for this crowd, derived from its own body/weapon extremes.
-float fine_cell_for(const BattleUnits& u, const BattleParams& prm);
-float pick_cell_for(const BattleUnits& u, const BattleParams& prm);
+float fine_cell_for(const BodyCrowd& u, const MoveParams& prm);
+float pick_cell_for(const BodyCrowd& u, const MoveParams& prm);
 
 // One pass over the SoA: pick contact, read the field, separate, apply terrain,
-// accelerate, integrate. Writes x/y/vx/vy (except BU_Pinned) plus target and
+// accelerate, integrate. Writes x/y/vx/vy (except B_Pinned) plus target and
 // inReach for the caller's damage pass. `fine` bounds body separation, `pick`
 // bounds the contact search — two structures at two scales, as the geometry
 // demands (a 1-unit separation query and a 25-unit weapon reach cannot share one
 // cell size without one of them becoming quadratic or blind).
-void steer_battle(BattleUnits& u, const UnitGrid& fine, const UnitGrid& pick,
-                  const InfluenceField& field, const BattleTerrain& terrain,
-                  const BattleParams& prm, float dt, BattleStats* stats);
+void steer_bodies(BodyCrowd& u, const UnitGrid& fine, const UnitGrid& pick,
+                  const InfluenceField& field, const MoveGround& terrain,
+                  const MoveParams& prm, float dt, MoveStats* stats);
 
 } // namespace sm::sub

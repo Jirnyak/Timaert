@@ -31,7 +31,7 @@ entt::entity melee_pick_target(entt::registry& reg,
 
     // A blow reaches a body's SURFACE, not its centre: the target's own
     // radius extends the reach (the same `reach + radius[target]` law the NPC
-    // strike walks in sub/battle.cpp). Candidates are ranked by the surface
+    // strike walks in sub/movement.cpp). Candidates are ranked by the surface
     // GAP, so "nearest" means nearest to being hit, not nearest centre — a
     // troll's flank two metres out loses to a frog an arm's length away.
     entt::entity hostileBest = entt::null;

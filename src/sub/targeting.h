@@ -48,7 +48,7 @@ inline constexpr int kMaxMeleeNeighbors = 16384; // the battle snapshot ceiling
 // through the equipment increment — but it is always just this number). The
 // blow lands on a target's SURFACE: a candidate is in reach when
 // dist − body_radius(target) ≤ range, the same law the NPC strike walks
-// (sub/battle.cpp reach + radius[target]) — a troll is struck from farther
+// (sub/movement.cpp reach + radius[target]) — a troll is struck from farther
 // away than a frog because a troll is wider, not because anyone branched.
 entt::entity melee_pick_target(entt::registry& reg,
                                float px, float py, float pz,

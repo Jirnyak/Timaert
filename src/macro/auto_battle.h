@@ -10,7 +10,7 @@
 // winner and compatible loss magnitude — so a player who fights by hand is
 // not playing a different game from the one the world plays around him.
 //
-// Like sub/battle.h this is a PURE law: it computes who won and who fell and
+// Like sub/movement.h this is a PURE law: it computes who won and who fell and
 // touches nothing. The CALLER settles the world — roster rows through the
 // macro-stock roster row, the leader through the tracked-death path, the
 // survivors of a dead leader through drain_dead_leader_squads, loot and XP

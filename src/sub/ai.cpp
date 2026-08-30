@@ -12,7 +12,7 @@ static constexpr float kFleeSpeedMult = 2.2f;
 
 // This file is a BRAIN, not a body. It decides what a mind wants — a wander
 // bearing, a flee vector — and writes that intent into SubworldAi.wantVx/Vy.
-// It never touches Position: the battle steering pass (sub/battle.cpp) is the
+// It never touches Position: the ONE mover (sub/movement.cpp) is the
 // one owner of every body's legs, and it executes intent with the same
 // separation, solid-slide, terrain cost and world bounds every other mover
 // gets. The private 30-line integrator that used to live here was a second

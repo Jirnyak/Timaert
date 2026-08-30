@@ -205,14 +205,14 @@ struct NpcTypeDef {
     int hireGold = 0;
 };
 
-inline constexpr CombatTemplate kPeasantCombat   {25, 3,  20, 2.0f, 1.5f, "Psr", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
-inline constexpr CombatTemplate kWoodcutterCombat{30, 8,  20, 2.0f, 1.2f, "Wdc", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
-inline constexpr CombatTemplate kMerchantCombat  {30, 5,  25, 2.0f, 1.5f, "Mrc", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
-inline constexpr CombatTemplate kCaravanCombat   {25, 4,  30, 2.0f, 1.5f, "Cvn", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
-inline constexpr CombatTemplate kBanditCombat    {50, 12, 45, 3.0f, 1.0f, "Bnd", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
-inline constexpr CombatTemplate kGuardCombat     {55, 14, 35, 3.0f, 1.0f, "Grd", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
-inline constexpr CombatTemplate kWitchCombat     {60, 18, 30, 20.0f,2.0f, "Wtc", CombatTemplate::Missile, 180, 0, 0xFFA070D0u};
-inline constexpr CombatTemplate kSorceressCombat {70, 22, 25, 25.0f,1.8f, "Src", CombatTemplate::Missile, 200, 6, 0xFF70C0E0u};
+inline constexpr CombatTemplate kPeasantCombat   {25,3, 1.0f, 2.0f, 1.5f, "Psr", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
+inline constexpr CombatTemplate kWoodcutterCombat{30,8, 1.0f, 2.0f, 1.2f, "Wdc", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
+inline constexpr CombatTemplate kMerchantCombat  {30,5, 1.25f, 2.0f, 1.5f, "Mrc", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
+inline constexpr CombatTemplate kCaravanCombat   {25,4, 1.5f, 2.0f, 1.5f, "Cvn", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
+inline constexpr CombatTemplate kBanditCombat    {50,12, 2.25f, 3.0f, 1.0f, "Bnd", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
+inline constexpr CombatTemplate kGuardCombat     {55,14, 1.75f, 3.0f, 1.0f, "Grd", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
+inline constexpr CombatTemplate kWitchCombat     {60,18, 1.5f, 20.0f,2.0f, "Wtc", CombatTemplate::Missile, 180, 0, 0xFFA070D0u};
+inline constexpr CombatTemplate kSorceressCombat {70,22, 1.25f, 25.0f,1.8f, "Src", CombatTemplate::Missile, 200, 6, 0xFF70C0E0u};
 
 inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // Peasant
@@ -390,133 +390,133 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // Rabbit
     {
         NPCType::Rabbit, "rabbit", "Rabbit", SpriteId::Rabbit, 1,
-        AIBehaviour::Flee, {5, 0, 55, 0, 9.0f, "Rbt"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
+        AIBehaviour::Flee, {5, 0, 2.75f, 0, 9.0f, "Rbt"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
         /*weight*/15, /*loot*/nullptr, /*radius*/0.4f,
         {{}}, 0, {{}}, 0,
     },
     // Deer
     {
         NPCType::Deer, "deer", "Deer", SpriteId::Deer, 1,
-        AIBehaviour::Flee, {15, 2, 50, 2, 2.0f, "Der"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
+        AIBehaviour::Flee, {15, 2, 2.5f, 2, 2.0f, "Der"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
         /*weight*/12, /*loot*/nullptr, /*radius*/0.6f,
         {{}}, 0, {{}}, 0,
     },
     // Fox
     {
         NPCType::Fox, "fox", "Fox", SpriteId::Fox, 1,
-        AIBehaviour::Wanderer, {12, 4, 45, 2, 1.2f, "Fox"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
+        AIBehaviour::Wanderer, {12, 4, 2.25f, 2, 1.2f, "Fox"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
         /*weight*/8, /*loot*/nullptr, /*radius*/0.5f,
         {{}}, 0, {{}}, 0,
     },
     // Wolf
     {
         NPCType::Wolf, "wolf", "Wolf", SpriteId::Wolf, 2,
-        AIBehaviour::Aggressive, {30, 10, 50, 3, 1.0f, "Wlf"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/15,
+        AIBehaviour::Aggressive, {30, 10, 2.5f, 3, 1.0f, "Wlf"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/15,
         /*weight*/6, /*loot*/nullptr, /*radius*/0.7f,
         {{}}, 0, {{}}, 0,
     },
     // Bear
     {
         NPCType::Bear, "bear", "Bear", SpriteId::Bear, 3,
-        AIBehaviour::Aggressive, {80, 18, 35, 3, 1.5f, "Ber"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/20,
+        AIBehaviour::Aggressive, {80, 18, 1.75f, 3, 1.5f, "Ber"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/20,
         /*weight*/3, /*loot*/nullptr, /*radius*/1.0f,
         {{}}, 0, {{}}, 0,
     },
     // Boar
     {
         NPCType::Boar, "boar", "Boar", SpriteId::Boar, 2,
-        AIBehaviour::Aggressive, {40, 12, 40, 3, 1.2f, "Bor"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/15,
+        AIBehaviour::Aggressive, {40, 12, 2.0f, 3, 1.2f, "Bor"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/15,
         /*weight*/5, /*loot*/nullptr, /*radius*/0.7f,
         {{}}, 0, {{}}, 0,
     },
     // Snake
     {
         NPCType::Snake, "snake", "Snake", SpriteId::Snake, 1,
-        AIBehaviour::Aggressive, {10, 8, 30, 2, 0.8f, "Snk"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
+        AIBehaviour::Aggressive, {10, 8, 1.5f, 2, 0.8f, "Snk"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
         /*weight*/4, /*loot*/nullptr, /*radius*/0.3f,
         {{}}, 0, {{}}, 0,
     },
     // Hawk
     {
         NPCType::Hawk, "hawk", "Hawk", SpriteId::Hawk, 1,
-        AIBehaviour::Wanderer, {8, 5, 60, 3, 1.0f, "Hwk"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
+        AIBehaviour::Wanderer, {8, 5, 3.0f, 3, 1.0f, "Hwk"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
         /*weight*/3, /*loot*/nullptr, /*radius*/0.4f,
         {{}}, 0, {{}}, 0,
     },
     // Frog
     {
         NPCType::Frog, "frog", "Frog", SpriteId::Frog, 1,
-        AIBehaviour::Flee, {3, 0, 30, 0, 9.0f, "Frg"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
+        AIBehaviour::Flee, {3, 0, 1.5f, 0, 9.0f, "Frg"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
         /*weight*/10, /*loot*/nullptr, /*radius*/0.3f,
         {{}}, 0, {{}}, 0,
     },
     // Mountain Goat
     {
         NPCType::Goat, "goat", "Mountain Goat", SpriteId::Goat, 1,
-        AIBehaviour::Flee, {20, 5, 40, 2, 1.5f, "Mgt"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
+        AIBehaviour::Flee, {20, 5, 2.0f, 2, 1.5f, "Mgt"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
         /*weight*/8, /*loot*/nullptr, /*radius*/0.6f,
         {{}}, 0, {{}}, 0,
     },
     // Eagle
     {
         NPCType::Eagle, "eagle", "Eagle", SpriteId::Eagle, 2,
-        AIBehaviour::Wanderer, {12, 7, 65, 3, 1.0f, "Egl"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/15,
+        AIBehaviour::Wanderer, {12, 7, 3.25f, 3, 1.0f, "Egl"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/15,
         /*weight*/4, /*loot*/nullptr, /*radius*/0.5f,
         {{}}, 0, {{}}, 0,
     },
     // Crocodile
     {
         NPCType::Croc, "crocodile", "Crocodile", SpriteId::Crocodile, 3,
-        AIBehaviour::Aggressive, {50, 15, 25, 3, 1.5f, "Crc"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/20,
+        AIBehaviour::Aggressive, {50, 15, 1.25f, 3, 1.5f, "Crc"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/20,
         /*weight*/4, /*loot*/nullptr, /*radius*/0.8f,
         {{}}, 0, {{}}, 0,
     },
     // Goblin
     {
         NPCType::Goblin, "goblin", "Goblin", SpriteId::Goblin, 2,
-        AIBehaviour::Aggressive, {25, 8, 40, 3, 1.0f, "Gbl"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/15,
+        AIBehaviour::Aggressive, {25, 8, 2.0f, 3, 1.0f, "Gbl"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/15,
         /*weight*/4, /*loot*/nullptr, /*radius*/0.6f,
         {{}}, 0, {{}}, 0,
     },
     // Skeleton
     {
         NPCType::Skeleton, "skeleton", "Skeleton", SpriteId::Skeleton, 3,
-        AIBehaviour::Aggressive, {35, 10, 30, 3, 1.2f, "Skl"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/20,
+        AIBehaviour::Aggressive, {35, 10, 1.5f, 3, 1.2f, "Skl"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/20,
         /*weight*/3, /*loot*/nullptr, /*radius*/0.6f,
         {{}}, 0, {{}}, 0,
     },
     // Troll
     {
         NPCType::Troll, "troll", "Troll", SpriteId::Troll, 5,
-        AIBehaviour::Aggressive, {120, 25, 25, 4, 2.0f, "Trl"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/30,
+        AIBehaviour::Aggressive, {120, 25, 1.25f, 4, 2.0f, "Trl"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/30,
         /*weight*/1, /*loot*/nullptr, /*radius*/1.2f,
         {{}}, 0, {{}}, 0,
     },
     // Swamp Thing
     {
         NPCType::SwampThing, "swamp_thing", "Swamp Thing", SpriteId::SwampThing, 3,
-        AIBehaviour::Aggressive, {60, 14, 20, 4, 1.5f, "Swt"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/20,
+        AIBehaviour::Aggressive, {60, 14, 1.0f, 4, 1.5f, "Swt"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/20,
         /*weight*/3, /*loot*/nullptr, /*radius*/0.9f,
         {{}}, 0, {{}}, 0,
     },
     // Ice Wraith
     {
         NPCType::IceWraith, "ice_wraith", "Ice Wraith", SpriteId::IceWraith, 4,
-        AIBehaviour::Aggressive, {45, 16, 35, 5, 1.3f, "Iwr"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/25,
+        AIBehaviour::Aggressive, {45, 16, 1.75f, 5, 1.3f, "Iwr"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/25,
         /*weight*/2, /*loot*/nullptr, /*radius*/0.7f,
         {{}}, 0, {{}}, 0,
     },
     // Sand Scorpion
     {
         NPCType::SandScorpion, "sand_scorpion", "Sand Scorpion", SpriteId::SandScorpion, 2,
-        AIBehaviour::Aggressive, {35, 12, 35, 3, 1.0f, "Ssc"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/15,
+        AIBehaviour::Aggressive, {35, 12, 1.75f, 3, 1.0f, "Ssc"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/15,
         /*weight*/5, /*loot*/nullptr, /*radius*/0.6f,
         {{}}, 0, {{}}, 0,
     },
     // Stone Golem
     {
         NPCType::StoneGolem, "stone_golem", "Stone Golem", SpriteId::StoneGolem, 5,
-        AIBehaviour::Aggressive, {150, 20, 15, 4, 2.5f, "Glm"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/30,
+        AIBehaviour::Aggressive, {150, 20, 0.75f, 4, 2.5f, "Glm"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/30,
         /*weight*/1, /*loot*/nullptr, /*radius*/1.3f,
         {{}}, 0, {{}}, 0,
     },

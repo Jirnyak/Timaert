@@ -16,7 +16,7 @@
 #include "sub/collide.h"
 #include "sub/particles.h"
 #include "sub/spell_effects.h"
-#include "sub/battle.h"
+#include "sub/movement.h"
 #include "sub/vk_renderer_3d.h"
 #include "events/event_bus.h"
 #include "macro/macro_stock.h"
@@ -292,6 +292,33 @@ public:
     // 0 when there is no world to ask.
     float player_ground_travel_weight() const;
     float player_z() const { return playerZ_; }
+    // HARNESS ONLY: his persistent velocity, as the mover left it.
+    float debug_player_vx() const { return playerVx_; }
+    float debug_player_vy() const { return playerVy_; }
+    // HARNESS ONLY: the ground id the world says is at a composite tile.
+    std::uint8_t debug_tile_at(float x, float y) const {
+        const auto& t = mgr_.tiles();
+        const int ix = std::clamp(int(x), 0, kFullSize - 1);
+        const int iy = std::clamp(int(y), 0, kFullSize - 1);
+        const std::size_t i = std::size_t(iy) * kFullSize + std::size_t(ix);
+        return i < t.size() ? t[i] : std::uint8_t(0);
+    }
+    // HARNESS ONLY (smoke `subworld_walk`): repaint every tile of the loaded
+    // window with one ground id, so a measurement can isolate the ground law
+    // from whatever the generator happened to lay here.
+    // Returns the ground it replaced, so a harness can put the world back:
+    // a smoke that repaints the scene and walks away leaves every later
+    // action in the same run standing on a lie.
+    std::vector<std::uint8_t> debug_paint_ground(std::uint8_t tile) {
+        auto& t = mgr_.debug_mutable_tiles();
+        std::vector<std::uint8_t> was = t;
+        std::fill(t.begin(), t.end(), tile);
+        return was;
+    }
+    void debug_restore_ground(const std::vector<std::uint8_t>& was) {
+        auto& t = mgr_.debug_mutable_tiles();
+        if (was.size() == t.size()) t = was;
+    }
     // Where the player's shots LEAVE FROM — feet plus height.h kBodyEyeM, which
     // is the very point the camera looks from. Ask for this, never player_z(),
     // when spawning anything the player aimed: a projectile born at the feet
@@ -299,10 +326,14 @@ public:
     // rise of ground. Kept out of line so the header owes height.h nothing.
     float player_muzzle_z() const;
     // Height of the terrain surface under a composite-window tile, in metres —
-    // the same authority the vertical rule uses every tick. Exposed so a
-    // harness can assert the obvious: a body that just arrived is standing ON
-    // the ground, not above it.
+    // the same authority the vertical rule uses every tick.
     float ground_height_at(float x, float y) const;
+    // What would CARRY a body there: max(terrain, the solid top it can stand
+    // on). Exposed so a harness can assert the obvious — a body that just
+    // arrived is standing ON something, not above it — without calling the
+    // ground the only thing there is to stand on (a bridge deck and a wall
+    // walk are floors too).
+    float footing_height_at(float x, float y) const { return footing_height_m(x, y); }
     // Integral id (index+version) of the subworld player entity carrying
     // PlayerTag — stamps player-cast spell projectiles with a real owner
     // (Inc 4d), exactly as NPC missiles carry their firer's id. Returns the
@@ -375,6 +406,41 @@ public:
     // crosshair to tint by faction relation colour.
     float crosshair_stance() const;
     const SeamlessSubworldManager& mgr() const { return mgr_; }
+    // THE player's legs: his INTENT, in tiles per second, exactly like every
+    // other body's (ecs::SubworldAi::wantVx/Vy). What turns an intent into a
+    // position is the ONE mover — the steering pass — so the player pays the
+    // same ground, the same slope and the same solids as a peasant. `dx` is
+    // strafe, `dy` forward; the camera's yaw resolves them into world axes
+    // here, because that is the only thing about the player's legs that is
+    // his own. Zero when no key is held: standing still IS an intent.
+    void  set_move_intent(float dx, float dy);
+    // Wipe his MOTION — intent and the velocity the mover carries between
+    // ticks — without touching where he is. Called wherever a body ARRIVES
+    // rather than walks (entering a scene, a dungeon threshold, a teleport):
+    // momentum belongs to a journey, and stepping through a door is not one.
+    // The vertical twin (playerVz_) was already zeroed at each of these; the
+    // horizontal half only came into existence when his legs joined the one
+    // mover, and inheriting it meant arriving in a new scene at a run, in the
+    // old scene's direction.
+    void  reset_player_motion();
+    // Are the legs in motion? Asked by the recovery law, which runs BEFORE
+    // the mover has moved anybody — so it asks the INTENT, which is the
+    // honest question anyway: legs that are trying to walk are not resting,
+    // whether or not a wall happened to stop them this step.
+    bool  player_marching() const {
+        return playerIntentVx_ != 0.0f || playerIntentVy_ != 0.0f;
+    }
+    // HARNESS ONLY: hold an intent for `steps` simulation steps, as a held
+    // key would. Needed because the input path restates the intent EVERY step
+    // (and zeroes it when the keys are not the player's), so a headless run
+    // has nothing to hold it down with.
+    void  debug_hold_intent(float dx, float dy, int steps) {
+        set_move_intent(dx, dy);
+        debugIntentSteps_ = steps;
+    }
+    // Direct displacement — the HARNESS door: a smoke script stepping a body
+    // across a scene to reach what it wants to test. Not a second mover for
+    // gameplay; nothing outside src/app/smoke.cpp calls it.
     void  move_player(float dx, float dy);
     // Dev console: absolute teleport inside the current subworld window. The
     // next tick re-centres the seamless manager and repopulates if we crossed
@@ -438,20 +504,20 @@ private:
     // Scratch buffer for packing live particles → GPU instances each frame.
     // Sized once to the pool ceiling; reused (no per-frame allocation).
     std::vector<ParticleInstance> particleScratch_;
-    // Mass-battle state (sub/battle.h). One SoA snapshot plus its two grids,
+    // Mass-battle state (sub/movement.h). One SoA snapshot plus its two grids,
     // allocated once and reused every tick — the combat pass never allocates.
     // The ECS stays the authority for damage/death/loot; this is only "where do
     // bodies want to be", so the same code runs one bandit and 16384 soldiers.
-    BattleUnits             battle_;
+    BodyCrowd             crowd_;
     // Two bucket grids at two scales: bodies are ~1 unit wide, weapons reach up
     // to 25, and one cell size cannot serve both queries without going quadratic
     // or blind. Cell sizes are derived from the crowd's own data, not constants.
-    UnitGrid                battleFine_;   // body separation
-    UnitGrid                battlePick_;   // contact / target search
-    InfluenceField          battleField_;
-    BattleParams            battleParams_{};
+    UnitGrid                crowdFine_;   // body separation
+    UnitGrid                crowdPick_;   // contact / target search
+    InfluenceField          crowdField_;
+    MoveParams            moveParams_{};
     // Parallel to battle_: the entity each SoA index came from.
-    std::vector<entt::entity> battleEnts_;
+    std::vector<entt::entity> crowdEnts_;
     // The spell broad phase's honesty bits (spell_neighbors_callback). The
     // gather sets truncated when the 16k ceiling cut bodies out of the grids —
     // the callback then answers -1 and the spell tick falls back to its full
@@ -459,14 +525,14 @@ private:
     // world. maxStep is the farthest any body can move between the grid build
     // and the spell tick (steering runs in between): the callback pads every
     // query with it plus the fattest body radius.
-    bool  battleGatherTruncated_ = false;
-    float battleMaxStepM_ = 0.0f;
+    bool  crowdGatherTruncated_ = false;
+    float crowdMaxStepM_ = 0.0f;
     // Faction identity is the id STRING (the universal key gs->factions,
     // reputation and loot profiles already use), interned per tick into dense
     // indices. There is no faction roster in the engine and no limit on the
     // world's factions — only on how many stand in one window at once.
-    FactionSet              battleFactions_;
-    int                     battlePlayerFaction_ = -1;
+    FactionSet              crowdFactions_;
+    int                     crowdPlayerFaction_ = -1;
     // Squared 3D distance to the nearest body hostile to the player, folded out
     // of the battle gather (which already resolves that exact rule). The HUD
     // danger gem and the subworld exit gate read it every frame, so it must be a
@@ -531,6 +597,18 @@ private:
     float playerX_ = float(kFullSize / 2);
     float playerY_ = float(kFullSize / 2);
     float playerZ_ = 0.0f;
+    // The player's walking INTENT in world tiles/s (set_move_intent) — read by
+    // the body gather exactly where a peasant's wantVx/Vy is read, so the one
+    // mover moves him too. The vertical part of flight is his alone: the
+    // steering pass is 2D and a pitched dive is not a step.
+    float playerIntentVx_ = 0.0f;
+    float playerIntentVy_ = 0.0f;
+    float playerIntentVz_ = 0.0f;
+    // His persistent horizontal velocity, the same state every other body
+    // keeps in SubworldAi::vx/vy — it is what the mover accelerates.
+    float playerVx_ = 0.0f;
+    float playerVy_ = 0.0f;
+    int   debugIntentSteps_ = 0;   // harness hold (debug_hold_intent)
 
     bool  godMode_ = false;   // dev console: suppress incoming player damage
     bool  playerAttackHeld_ = false;
@@ -640,6 +718,8 @@ private:
     // gravity when it drops away (losing flight mid-air simply starts a
     // fall). Flying: gravity-free, clamped to [support, window ceiling].
     void sync_player_vertical(float dt);
+    // What would carry a body arriving at (x, y): max(terrain, solid top).
+    float footing_height_m(float x, float y) const;
     bool exit_blocked_by_danger() const;
     bool has_hostile_near_player(float radius) const;
     void tick_player_melee(float dt);
@@ -654,7 +734,7 @@ private:
     // body's live Position. Skips the player body (its feedback is the HUD flash;
     // a burst at the camera would clip the near plane).
     void tick_damage_fx();
-    void tick_subworld_combat(float dt);
+    void tick_subworld_bodies(float dt);
     // THE faction relation rule: one lookup in the macro matrix for ANY pair,
     // the player included (he is an ordinary row). A function pointer so the
     // pair loop lives in the pure, Vulkan-free module.
@@ -697,17 +777,22 @@ private:
                                        const ecs::Projectile& projectile,
                                        std::uint32_t targetEntityId);
     static float spell_height_callback(void* user, float x, float y);
-    // Spell broad phase over battlePick_ (the contact grid): full-radius walk,
+    // Spell broad phase over crowdPick_ (the contact grid): full-radius walk,
     // NO visit budget — a projectile miss from an exhausted budget would be a
     // bug, not an approximation, unlike the AI's budgeted contact scan.
     static int spell_neighbors_callback(void* user, float x, float y, float r,
                                         std::uint32_t* out, int maxOut);
-    // Terrain hook for the battle pass (sub/battle.h stays Vulkan-free, so it
+    // Terrain hook for the battle pass (sub/movement.h stays Vulkan-free, so it
     // reaches the CPU heightfield through a function pointer, not an include).
-    static float battle_height_callback(void* user, float x, float y);
+    static float ground_height_callback(void* user, float x, float y);
     // Solidity hooks (sub/collide.h through the same fn-pointer idiom): the
     // battle pass and wander/flee AI ask "may a body stand here", spell bolts
     // ask "is this point inside masonry".
+    // The ground under a body's feet: the tile its SUPPORT lays, or the
+    // terrain's own tile (sub/collide.h walk_tile_at).
+    static std::uint8_t solid_walk_tile_callback(void* user, float x, float y,
+                                                 float r, float z,
+                                                 std::uint8_t tile);
     static bool solid_can_stand_callback(void* user, float x, float y,
                                          float r, float z);
     static bool spell_solid_callback(void* user, float x, float y, float z);

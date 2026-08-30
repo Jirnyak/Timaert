@@ -4,7 +4,7 @@
 // game from the one the world plays around him. So the core of this file is
 // a PROPERTY, not an equality of numbers: the same lineup, run through the
 // resolver AND through a hand-fought simulation — the shipping steering
-// (sub/battle.cpp) navigating bodies whose stats come from the very same
+// (sub/movement.cpp) navigating bodies whose stats come from the very same
 // sheet law (make_character_sheet → project_combat, aura applied) with the
 // engine's own strike model — must name the same winner and a compatible
 // magnitude of losses.
@@ -17,7 +17,8 @@
 #include "check.h"
 
 #include "macro/auto_battle.h"
-#include "sub/battle.h"
+#include "macro/movement_cost.h"
+#include "sub/movement.h"
 
 #include <algorithm>
 #include <cmath>
@@ -33,8 +34,8 @@ constexpr float kWorld = 3072.0f;
 
 float flat_height(void*, float, float) { return 100.0f; }
 
-BattleTerrain flat_terrain() {
-    BattleTerrain t{};
+MoveGround flat_terrain() {
+    MoveGround t{};
     t.heightAt = &flat_height;
     t.worldMax = kWorld;
     return t;
@@ -66,7 +67,7 @@ AutoBattleSide side_of(NPCType leader, int leaderLevel,
 // Navigation is the SHIPPING battle module; per-body stats are the SAME
 // sheet-projected numbers the resolver and the subworld births read; the
 // strike model mirrors the engine loop (inReach + cooldown → hp -= damage),
-// like tests/battle_ai_test.cpp's attrition harness does.
+// like tests/movement_steering_test.cpp's attrition harness does.
 struct ManualOutcome {
     int winner = -1;             // -1 = did not conclude
     int start[2] = {0, 0};
@@ -102,7 +103,7 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
         f.cd = 0.0f;
         f.cdMax = std::max(0.1f, pc.cooldown);
         f.reach = pc.attackRange;
-        f.speed = pc.speed;
+        f.speed = sm::march_speed(pc.speedMarchMult);
         f.radius = npc_body_radius(def);
         f.mitigate = kArmorHalving
                    / (kArmorHalving + float(std::max(0, def.armor)));
@@ -143,9 +144,9 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
         }
     }
 
-    const BattleTerrain terrain = flat_terrain();
-    const BattleParams prm{};
-    BattleUnits u{};
+    const MoveGround terrain = flat_terrain();
+    const MoveParams prm{};
+    BodyCrowd u{};
     UnitGrid fine{}, pick{};
     InfluenceField field{};
     std::vector<int> slot;
@@ -159,7 +160,7 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
             const Body& f = bodies[i];
             if (!f.alive) continue;
             ++alive[f.side];
-            BattleUnitDesc d{};
+            BodyDesc d{};
             d.x = f.x; d.y = f.y;
             d.vx = f.vx; d.vy = f.vy;
             d.radius = f.radius;
@@ -169,8 +170,8 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
             d.faction = std::int16_t(f.side);
             d.enemyMask = mask_of(1 - f.side);
             // The row's ranged kind steers as ranged, like the engine feed
-            // (sub/engine.cpp: Combat::Missile ⇒ BU_Missile).
-            if (f.missile) d.flags |= BU_Missile;
+            // (sub/engine.cpp: Combat::Missile ⇒ B_Missile).
+            if (f.missile) d.flags |= B_Missile;
             u.add(d);
             slot.push_back(int(i));
         }
@@ -184,7 +185,7 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
         build_unit_grid(fine, u, fine_cell_for(u, prm), 256);
         build_unit_grid(pick, u, pick_cell_for(u, prm), 256);
         build_influence_field(field, u, prm.influenceCell, kWorld);
-        steer_battle(u, fine, pick, field, terrain, prm, dt, nullptr);
+        steer_bodies(u, fine, pick, field, terrain, prm, dt, nullptr);
 
         for (int i = 0; i < u.count; ++i) {
             Body& f = bodies[std::size_t(slot[std::size_t(i)])];

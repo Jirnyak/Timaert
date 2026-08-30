@@ -10,7 +10,7 @@
 // four identical worlds:
 //   • Full      — no broad phase (the reference),
 //   • Grid      — the bucket-grid callback, mirroring the engine's
-//                 spell_neighbors_callback over battlePick_,
+//                 spell_neighbors_callback over crowdPick_,
 //   • Fallback  — a callback that always answers -1 (must equal Full: the
 //                 "cannot promise completeness" arm is a fallback, not a loss),
 //   • Lossy     — a callback that returns zero candidates. This one MUST
@@ -19,7 +19,7 @@
 #include "check.h"
 
 #include "sub/spell_effects.h"
-#include "sub/battle.h"
+#include "sub/movement.h"
 #include "sub/body.h"
 #include "ecs/components.h"
 
@@ -101,7 +101,7 @@ std::vector<entt::entity> bodies_in_creation_order(entt::registry& reg) {
 // Same walk, same padding law (fattest body radius; the scene is static so
 // the per-tick-drift term is zero), same -1 overflow honesty.
 struct GridBroadPhase {
-    sm::sub::BattleUnits units;
+    sm::sub::BodyCrowd units;
     sm::sub::UnitGrid pick;
     std::vector<entt::entity> ents;
     float pad = 0.0f;
@@ -112,13 +112,13 @@ struct GridBroadPhase {
         auto view = reg.view<Position, Health>(entt::exclude<sm::ecs::Dead>);
         for (auto e : view) {
             const auto& p = view.get<Position>(e);
-            sm::sub::BattleUnitDesc d{};
+            sm::sub::BodyDesc d{};
             d.x = p.x; d.y = p.y; d.z = p.z;
             d.radius = sm::sub::body_radius(reg, e);
             units.add(d);
             ents.push_back(e);
         }
-        const sm::sub::BattleParams prm{};
+        const sm::sub::MoveParams prm{};
         build_unit_grid(pick, units, pick_cell_for(units, prm), 256);
         pad = units.maxRadius;
     }
