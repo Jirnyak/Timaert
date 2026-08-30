@@ -64,7 +64,10 @@ float stock_scarcity(int supply, int demandPerDay);
 int stock_price(int baseValue, int supply, int demandPerDay);
 
 // A settlement's daily demand for an item — the needs ladder over its
-// population; 0 for anything the table does not consume.
-int daily_demand_for(const char* itemId, int population);
+// population PLUS the derived demand of every recipe its SITE can run
+// (a city that eats bread demands grain; a village that bakes nothing
+// does not — owner track 2026-08-30). 0 for anything nobody here consumes.
+enum class EconSite : std::uint8_t;
+int daily_demand_for(const char* itemId, int population, EconSite site);
 
 } // namespace sm

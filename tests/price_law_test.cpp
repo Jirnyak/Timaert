@@ -26,9 +26,9 @@ void test_scarcity_shape() {
     CHECK(stock_scarcity(1 << 20, 0) == 0.25f, "glut clamps at 1/4 (po2)");
     CHECK(stock_price(10, 0, 100) == 40, "price = base x scarcity");
     CHECK(stock_price(10, 1 << 20, 0) >= 1, "a price never reaches zero");
-    CHECK(daily_demand_for("bread", 128) == 128
-              && daily_demand_for("cloth", 128) == 4
-              && daily_demand_for("wpn_dagger", 128) == 0,
+    CHECK(daily_demand_for("bread", 128, EconSite::City) == 128
+              && daily_demand_for("cloth", 128, EconSite::City) == 4
+              && daily_demand_for("wpn_dagger", 128, EconSite::City) == 0,
           "demand reads the ONE needs ladder");
 }
 

@@ -199,8 +199,11 @@ void test_the_farmer_works_the_field() {
     }
     const int grain = gs.landmarks[0].inventory.count("grain");
     CHECK(grain > 0, "the farmer's grain reached the village store");
-    CHECK(grain % kGatherPerWorkerDay == 0,
-          "grain arrives in whole trip-yields - one law of labour");
+    // One law of labour (owner 2026-08-30): a cycle takes kGatherPerCycle ×
+    // headcount and costs the squad a quarter of its bar — the person-day is
+    // DERIVED (econ_day.h kWorkCyclesPerBar), so the haul is whole cycles.
+    CHECK(grain % kGatherPerCycle == 0,
+          "grain arrives in whole cycle-yields - one law of labour");
     // CONSERVATION (Field Inc F4): every grain in the store left the world —
     // the field cell carries a harvest scar exactly as deep as the haul.
     const std::uint32_t fieldIdx = 10u * std::uint32_t(kMap) + 12u;

@@ -48,14 +48,50 @@ int stock_price(int baseValue, int supply, int demandPerDay) {
     return v < 1 ? 1 : v;
 }
 
-int daily_demand_for(const char* itemId, int population) {
+namespace {
+
+// Demand is DIRECT (the needs ladder) plus DERIVED (owner track 2026-08-30):
+// a town that eats bread demands grain, because bread is MADE of it — the
+// demand of every recipe output flows down to its inputs × qty. Without
+// this a starving city priced grain at base (nobody "eats" grain), its
+// caravans saw no profit in hauling it, and stone outbid food (measured,
+// balance_run). Recursive over the recipe table with a small depth cap:
+// chains are data and may grow (ore → metal → tool), cycles must not hang.
+int demand_for_(const char* itemId, int population, EconSite site,
+                int depth) {
     if (!itemId || population <= 0) return 0;
+    int demand = 0;
     for (int i = 0; i < kNeedCount; ++i) {
         if (std::strcmp(kNeeds[i].commodity, itemId) == 0) {
-            return population / kNeeds[i].popPerUnitDay;
+            demand += population / kNeeds[i].popPerUnitDay;
+            break;
         }
     }
-    return 0;
+    if (depth > 0) {
+        for (const RecipeDef& r : kRecipes) {
+            // Derived demand exists only where the recipe CAN run: a
+            // village that bakes nothing wants no grain beyond its own
+            // needs, however hungry its future bakery would be — without
+            // this gate the growers' own granaries priced at the scarcity
+            // ceiling and the caravans' loans bought a quarter of the lot
+            // (measured, balance_run 2026-08-30).
+            if (!recipe_runs_at(r.site, site)) continue;
+            for (const RecipeInput& in : r.inputs) {
+                if (!in.id || std::strcmp(in.id, itemId) != 0) continue;
+                demand += demand_for_(r.output, population, site, depth - 1)
+                          * in.qty;
+            }
+        }
+    }
+    return demand;
+}
+
+}  // namespace
+
+int daily_demand_for(const char* itemId, int population, EconSite site) {
+    // Depth 4 covers chains far past today's one-step recipes (ore → metal
+    // → part → tool) and caps any future accidental cycle.
+    return demand_for_(itemId, population, site, 4);
 }
 
 

@@ -106,9 +106,13 @@ void test_regrow_self_cleans_when_whole() {
     const TerrainData terrain = flat_terrain(160);
     MacroWorld w{&gs, nullptr, nullptr, &terrain};
 
-    macro_stock_apply(w, MacroStock::CropCount, cell_key(3, 1), -2);
+    // Reap the parcel BARE, so the regrowth law is measured against the
+    // field's own potential (the same number the code reads), never a
+    // pinned literal.
+    const int full = macro_stock_read(w, MacroStock::CropCount, cell_key(3, 1));
+    CHECK(full > 4, "fixture: the parcel holds a measurable potential");
+    macro_stock_apply(w, MacroStock::CropCount, cell_key(3, 1), -full);
     CHECK(gs.resourceScars[std::size_t(ResourceFieldId::Wheat)].size() == 1, "the cut leaves a scar");
-    const int cut = macro_stock_read(w, MacroStock::CropCount, cell_key(3, 1));
 
     // The ONE growth law visits a cell once per epoch, on the cell's own
     // slice day (idx % kGrowthEpochDays) — the slice discipline is part of
@@ -116,15 +120,24 @@ void test_regrow_self_cleans_when_whole() {
     const std::uint32_t idx = 1u * 4u + 3u;   // cell (3,1) of the 4×4 world
     const int dueDay = int(idx % std::uint32_t(kGrowthEpochDays));
     resource_fields_daily_growth(w, dueDay + 1);
-    CHECK(macro_stock_read(w, MacroStock::CropCount, cell_key(3, 1)) == cut,
+    CHECK(macro_stock_read(w, MacroStock::CropCount, cell_key(3, 1)) == 0,
           "a day that is not this cell's slice grows nothing here");
+    // The field turns over its own POTENTIAL, a quarter per due visit
+    // (macro_stock.cpp wheat_growth_at, owner track 2026-08-30) — a bare
+    // parcel regrows whole in a year of seasons.
+    const int perVisit = std::max(1, full / 4);
     resource_fields_daily_growth(w, dueDay + kGrowthEpochDays);
-    CHECK(macro_stock_read(w, MacroStock::CropCount, cell_key(3, 1)) == cut + 1,
-          "one due visit returns one stand");
-    resource_fields_daily_growth(w, dueDay + 2 * kGrowthEpochDays);
+    CHECK(macro_stock_read(w, MacroStock::CropCount, cell_key(3, 1))
+              == std::min(full, perVisit),
+          "a due visit regrows a quarter of the parcel's own potential");
+    for (int e = 2; e <= 5; ++e) {
+        resource_fields_daily_growth(w, dueDay + e * kGrowthEpochDays);
+    }
+    CHECK(macro_stock_read(w, MacroStock::CropCount, cell_key(3, 1)) == full,
+          "a year of seasons turns the bare parcel back over whole");
     CHECK(gs.resourceScars[std::size_t(ResourceFieldId::Wheat)].empty(),
           "a cell healed back to whole erases its own override");
-    resource_fields_daily_growth(w, dueDay + 3 * kGrowthEpochDays);
+    resource_fields_daily_growth(w, dueDay + 6 * kGrowthEpochDays);
     CHECK(gs.resourceScars[std::size_t(ResourceFieldId::Wheat)].empty(),
           "growing an unscarred wheat field is a no-op, not a creation engine");
 }

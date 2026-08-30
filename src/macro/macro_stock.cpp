@@ -184,9 +184,17 @@ void deposit_apply(MacroWorld& w, int x, int y, int delta) {
 // ── The growth laws — the per-row CONTEXT of the one birth mechanism ──────
 
 // Wheat: fertility is the whole context (the baseline already prices it),
-// so a reaped cell replants one stand per visit — one per kGrowthEpochDays,
-// the exact rate of the old 32-day healing period.
-int wheat_growth_at(const MacroWorld&, int, int) { return 1; }
+// and the field turns over its own POTENTIAL — a quarter per visit (one
+// visit per kGrowthEpochDays = a season), so a reaped parcel regrows its
+// full baseline in a year. The seasonal-pulse harvest (autumn × moisture,
+// W2 design) is deferred with field seasonality (field track); this is its
+// smooth stand-in, and the divisor is a balance-run tunable. The old law —
+// one stand per season regardless of fertility — fed the world ~7 grain a
+// day and starved every farmer within a week of genesis (measured,
+// balance_run 2026-08-30).
+int wheat_growth_at(const MacroWorld& w, int x, int y) {
+    return std::max(1, wheat_baseline(w, x, y) / 4);
+}
 
 // Fauna: beasts breed where beasts are. One head per visit while at least
 // HALF the 3×3 valley is alive (the old 1/32-days rate at a living edge);

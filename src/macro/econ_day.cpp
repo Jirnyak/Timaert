@@ -1,6 +1,7 @@
 #include "macro/econ_day.h"
 
 #include <algorithm>
+#include <bit>
 #include <cstring>
 
 namespace sm {
@@ -115,7 +116,17 @@ int econ_produce_day(Inventory& store, EconSite site, int workers,
                     / rr.inputQty[k]);
         }
         if (byInputs <= 0) return;
-        const int perDay = kRecipes[i].outputPerWorkerDay;
+        // THE population-efficiency law (owner 2026-08-30, CANON S10, ?31
+        // closed): КПД = log2(популяции)/4 — «город вдвое больше работает
+        // на четверть лучше». Integer log2 (bit width); the village floor
+        // (16 souls, settlement_score kVillagePopFloor) lands exactly at
+        // ×1, a 512-soul city at ×2¼. One law prices why the city bakes
+        // better — never a second recipe row, never a site wall. The
+        // quarter is a balance-run tunable.
+        const int popLog =
+            population > 1 ? (std::bit_width(unsigned(population)) - 1) : 0;
+        const int perDay =
+            std::max(1, kRecipes[i].outputPerWorkerDay * popLog / 4);
         int wanted = (byInputs + perDay - 1) / perDay;
         wanted = std::min(wanted, workerCap);
         const int staffed = std::min(wanted, workersLeft);
@@ -145,7 +156,7 @@ int econ_produce_day(Inventory& store, EconSite site, int workers,
 
     // Pass 0 — today's table, by demand.
     for (int i = 0; i < kRecipeCount && workersLeft > 0; ++i) {
-        if (kRecipes[i].site != site) continue;
+        if (!recipe_runs_at(kRecipes[i].site, site)) continue;
         const ResolvedRecipe& rr = t.recipes[i];
         if (rr.output < 0 || rr.demandDivisor <= 0) continue;
         const int demand = population / rr.demandDivisor;
@@ -158,7 +169,7 @@ int econ_produce_day(Inventory& store, EconSite site, int workers,
     // that still have inputs.
     int liveRecipes = 0;
     for (int i = 0; i < kRecipeCount; ++i) {
-        if (kRecipes[i].site != site) continue;
+        if (!recipe_runs_at(kRecipes[i].site, site)) continue;
         const ResolvedRecipe& rr = t.recipes[i];
         if (rr.output < 0) continue;
         bool feedable = true;
@@ -176,7 +187,7 @@ int econ_produce_day(Inventory& store, EconSite site, int workers,
     // Pass 1 — fair shares; pass 2 — leftovers in table order.
     for (int pass = 1; pass <= 2 && workersLeft > 0; ++pass) {
         for (int i = 0; i < kRecipeCount && workersLeft > 0; ++i) {
-            if (kRecipes[i].site != site) continue;
+            if (!recipe_runs_at(kRecipes[i].site, site)) continue;
             if (t.recipes[i].output < 0) continue;
             run_recipe(i, 1 << 30, pass == 1 ? fairShare : workersLeft);
         }

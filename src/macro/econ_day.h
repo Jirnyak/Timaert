@@ -57,7 +57,15 @@ struct Deposit {
 
 // v1: buildings are ABSTRACT (owner ruling) — a recipe names the KIND of
 // place it runs in, not a building.
-enum class EconSite : std::uint8_t { Village = 0, City = 1 };
+// Any (owner 2026-08-30, CANON S10): a recipe every settled place can run —
+// the bread row moved here, because «деревня печёт хуже уже потому, что её
+// меньше»: the population-efficiency law below prices the difference, not a
+// second recipe and not a site wall.
+enum class EconSite : std::uint8_t { Village = 0, City = 1, Any = 2 };
+
+inline bool recipe_runs_at(EconSite recipeSite, EconSite here) {
+    return recipeSite == EconSite::Any || recipeSite == here;
+}
 
 struct RecipeInput {
     const char* id;
@@ -74,7 +82,7 @@ struct RecipeDef {
 // Производство «обычно в городе» (owner) — v1 keeps every craft in the City;
 // a village-side craft later is one row with site=Village, no code.
 inline constexpr RecipeDef kRecipes[] = {
-    {"bread",     {{"grain", 1}, {nullptr, 0}}, 8, EconSite::City},
+    {"bread",     {{"grain", 1}, {nullptr, 0}}, 8, EconSite::Any},
     {"bricks",    {{"clay", 1},  {nullptr, 0}}, 8, EconSite::City},
     {"cloth",     {{"grain", 2}, {nullptr, 0}}, 4, EconSite::City},
     {"tools",     {{"iron", 1},  {"wood", 1}},  2, EconSite::City},
@@ -107,6 +115,18 @@ inline constexpr NeedDef kNeeds[] = {
 inline constexpr int kNeedCount = int(sizeof(kNeeds) / sizeof(kNeeds[0]));
 
 inline constexpr int kGatherPerWorkerDay = 8;
+
+// The working rhythm (owner 2026-08-30, CANON S10/S14: work burns the SAME
+// SP the march does — no second labour law). One work cycle costs a quarter
+// of the squad's full bar, so a rested worker BESIDE his parcel makes four
+// hauls a day: kGatherPerWorkerDay is now the DERIVED day of such a worker
+// (4 cycles × the per-cycle take below), and a far vein pays part of the
+// bar to the road and honestly loses hauls. Headcount multiplies the yield,
+// never the price — the bar belongs to the squad.
+inline constexpr int kWorkCyclesPerBar = 4;
+static_assert(kGatherPerWorkerDay % kWorkCyclesPerBar == 0,
+              "the person-day must divide into whole cycle takes");
+inline constexpr int kGatherPerCycle = kGatherPerWorkerDay / kWorkCyclesPerBar;
 
 // ── Facts ────────────────────────────────────────────────────────────────
 

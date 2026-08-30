@@ -1786,16 +1786,20 @@ namespace sm::ui
                                              const ItemDef &def, int n) {
                         return trade_overlay_buy_price(
                             stock_price(def.value, s->inventory.count(id) - n,
-                                        daily_demand_for(id.c_str(),
-                                                         s->population)),
+                                        daily_demand_for(
+                                            id.c_str(), s->population,
+                                            EconSite(landmark_def(
+                                                s->type).econSite))),
                             gs.player.sheet.attributes.of(AttributeId::Cha), s->mood);
                     };
                     const auto sellUnit = [&](const std::string &id,
                                               const ItemDef &def, int n) {
                         return trade_overlay_sell_price(
                             stock_price(def.value, s->inventory.count(id) + n,
-                                        daily_demand_for(id.c_str(),
-                                                         s->population)),
+                                        daily_demand_for(
+                                            id.c_str(), s->population,
+                                            EconSite(landmark_def(
+                                                s->type).econSite))),
                             gs.player.sheet.attributes.of(AttributeId::Cha), s->mood);
                     };
 

@@ -554,6 +554,18 @@ void ai_gatherer(entt::entity self, ecs::Position& p,
     if (rt.state == std::uint8_t(NS::Working)) {
         --rt.stateTimer;
         if (rt.stateTimer <= 0) {
+            // WORK COSTS SP through the one stamina law (owner 2026-08-30;
+            // econ_day.h kWorkCyclesPerBar carries the derivation). A squad
+            // too spent for a cycle goes home to rest instead of working on
+            // an empty bar — the same sentence the march pays.
+            const int cycleCost =
+                std::max(1, int(rt.maxSp) / kWorkCyclesPerBar);
+            if (int(rt.sp) < cycleCost) {
+                rt.targetX = home.x;
+                rt.targetY = home.y;
+                rt.state = std::uint8_t(NS::Returning);
+                return;
+            }
             // The take is REAL: the trip's yield leaves the world through
             // the profession's registry row and rides home in the OWN bag.
             // A row whose layers are not wired reads 0 and takes nothing —
@@ -564,13 +576,27 @@ void ai_gatherer(entt::entity self, ecs::Position& p,
                 MacroWorld mw = ctx.mw;  // the envelope, whole — never a
                                          // partial re-pick of its layers
                 const int have = resource_field_read(mw, def->row, tx, ty);
-                const int take = std::min(kGatherPerWorkerDay, have);
+                // Every soul in the squad works: headcount multiplies the
+                // cycle's yield at the squad's one fixed SP price (owner:
+                // «SP тратится столько же, добывают кратно больше»).
+                const auto* roster =
+                    ctx.mw.world->reg.try_get<ecs::SquadRoster>(self);
+                const int workers =
+                    1 + (roster ? roster->squad.size() : 0);
+                const int take =
+                    std::min(kGatherPerCycle * workers, have);
                 auto* bag = ctx.mw.world->reg.try_get<ecs::NpcInventory>(self);
                 // Credit BEFORE debit (CANON S5): the field pays only what
                 // the OWN bag actually took — a bagless walker, or a bag
                 // with no room, drains nothing and writes no Drained fact.
                 if (take > 0 && bag && bag->inv.add(def->commodity, take)) {
                     resource_field_apply(mw, def->row, tx, ty, -take);
+                    // The cycle is PAID the moment it produced — through
+                    // the same fractional carry the march charges
+                    // (settle_sp_carry above): work and walking drain one
+                    // purse, which is the whole law.
+                    rt.spCarry -= float(cycleCost);
+                    settle_sp_carry(rt);
                     // A DEPOSIT worked down to nothing is a fact of the world
                     // (FactKind::Drained: "a vein worked out") — and by the
                     // annihilation law the cell itself leaves the map, so
@@ -673,14 +699,6 @@ const std::array<int, std::size_t(kCommodityCount)>& caravan_buy_order() {
     return kOrder;
 }
 
-// Position of a commodity in that priority (0 = wanted most).
-int caravan_buy_rank(int commodityIdx) {
-    const auto& order = caravan_buy_order();
-    for (int i = 0; i < kCommodityCount; ++i)
-        if (order[std::size_t(i)] == commodityIdx) return i;
-    return kCommodityCount;
-}
-
 int haul_between(Inventory& from, Inventory& to, const char* id,
                  int maxUnits, float capacityLeftKg) {
     if (maxUnits <= 0 || capacityLeftKg <= 0.0f) return 0;
@@ -754,19 +772,44 @@ void ai_caravan(entt::entity self, ecs::Position& p,
                 nearestD = d;
                 nearestId = v.id;
             }
-            // Worth is weighted by the purchase priority (1/(1+rank)):
-            // a granary outranks a woodpile of equal table value, because
-            // the ladder's first need eats grain — raw plenty alone must
-            // not steer the route.
-            float worth = 0.0f;
+            // The route is priced as a TRADER prices it: expected PROFIT of
+            // the ride — units the hold can carry × (what they fetch at
+            // home − what the village asks), discounted by distance. Both
+            // ends go through the ONE stock-price law with the DERIVED
+            // demand (economy.cpp): a breadless city values grain at the
+            // scarcity ceiling because bread is made of it, so food outbids
+            // stone by price, not by a hand weight — two hand weights died
+            // here after the balance run caught each hauling wood and
+            // stone to a starving town. (Reading the village stores when
+            // choosing is v1 omniscience — the memory/rumour door replaces
+            // it later.)
+            const Landmark* homeLm =
+                landmark_by_id(*ctx.mw.gs, rt.homeSettlementId);
+            const int homePop = homeLm ? homeLm->population : 0;
+            float profit = 0.0f;
             for (int i = 0; i < kCommodityCount; ++i) {
                 if (depSnap && market_stock_class(*depSnap, i) > 1) continue;
-                const ItemDef* def = item_def(kCommodities[i].id);
-                worth += float(v.inventory.count(kCommodities[i].id))
-                         * float(def ? def->value : 0)
-                         / float(1 + caravan_buy_rank(i));
+                const char* id = kCommodities[i].id;
+                const ItemDef* def = item_def(id);
+                if (!def || def->value <= 0) continue;
+                const float kg = def->weight > 0.0f ? def->weight : 1.0f;
+                const int have = v.inventory.count(id);
+                const int units =
+                    std::min(have, int(rt.carryCap / (2.0f * kg)));
+                if (units <= 0) continue;
+                const int buyAt = stock_price(
+                    def->value, have - units,
+                    daily_demand_for(id, v.population,
+                                     EconSite(landmark_def(v.type).econSite)));
+                const int sellAt = stock_price(
+                    def->value, homeStore->count(id) + units,
+                    daily_demand_for(id, homePop,
+                                     homeLm ? EconSite(landmark_def(
+                                                  homeLm->type).econSite)
+                                            : EconSite::City));
+                if (sellAt > buyAt) profit += float(units * (sellAt - buyAt));
             }
-            const float score = worth / (1.0f + d);
+            const float score = profit / (1.0f + d);
             if (score > bestScore) {
                 bestScore = score;
                 villageId = v.id;
@@ -1436,7 +1479,9 @@ CaravanDeal trade_caravan_at_village(Inventory& hold, float capacityKg,
                 const char* id = kCommodities[i].id;
                 const int base = base_value(id);
                 if (base <= 0) continue;
-                const int demand = daily_demand_for(id, village.population);
+                const int demand = daily_demand_for(
+                    id, village.population,
+                    EconSite(landmark_def(village.type).econSite));
                 const int have = vs.count(id);
                 const ItemDef* def = item_def(id);
                 const float kg =
@@ -1477,7 +1522,9 @@ CaravanDeal trade_caravan_at_village(Inventory& hold, float capacityKg,
         if (base <= 0) continue;
         int n = hold.count(id);
         if (n <= 0) continue;
-        const int demand = daily_demand_for(id, village.population);
+        const int demand = daily_demand_for(
+            id, village.population,
+            EconSite(landmark_def(village.type).econSite));
         const int have = vs.count(id);
         const int priceCeil = stock_price(base, have, demand);
         n = std::min(n, wallet_value(vs) / std::max(1, priceCeil));
