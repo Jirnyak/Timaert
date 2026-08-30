@@ -47,6 +47,15 @@ inline constexpr float kAiTickGameHours =
 // profession, and the man it raises can actually walk to the ore.
 inline constexpr int kGathererReach = 16;
 
+// The automaton's CAMP threshold: legs below this fraction of the bar on
+// campable ground pitch camp NOW, before any debt — an eighth is the margin
+// a crew keeps to make camp at all. The BITE stays a law for whoever still
+// chooses to march (the open sea, the player); without this decision the
+// fleet lived camp-to-camp on chronic exhaustion and bled to death on the
+// road — 447 caravans in 24 days, measured by the balance run 2026-08-30.
+// Public so squad_travel_test derives its march anchor from the same number.
+inline constexpr int kCampBarDivisor = 8;
+
 // ── THE flat bucket grid ─────────────────────────────────────────────────
 //
 // Prefix sums plus one sorted item array — a counting sort, the shape
@@ -171,8 +180,12 @@ struct CaravanDeal {
 // The caravan's STATION stop: sell into the market's shortage (up to its
 // daily demand), buy its surplus (above its daily demand) — the bounds ARE
 // the price law's own break-even, so no threshold constants exist.
+// charisma/bargaining are the trader's SHEET (the one trade-price law of
+// economy.h modulates both halves): a caravan out-trades a peasant because
+// its row rolls better numbers — never a hardcode (owner 2026-08-30).
 CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
-                                     Landmark& market);
+                                     Landmark& market,
+                                     int charisma, int bargaining);
 // The village crew selling at its nearest city: unload everything, then
 // spend the WHOLE purse down the home's needs ladder («деревня не копит
 // капитал», owner 2026-08-30) — each line up to a season's stock at home;
@@ -180,7 +193,8 @@ CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
 CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
                                    Landmark& market,
                                    const MemoryEntry* homeSnapshot,
-                                   int homePopulation, EconSite homeSite);
+                                   int homePopulation, EconSite homeSite,
+                                   int charisma, int bargaining);
 
 // ── The daily labour rotation (owner 2026-08-30; CANON S10) ──────────────
 // «Поселение поднимает рабочий сквад → сквад идёт к полю → возвращается,

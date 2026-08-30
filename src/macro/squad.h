@@ -10,6 +10,7 @@
 #include "macro/army.h"
 #include "macro/auto_battle.h"
 #include "core/rng.h"
+#include <cstdio>
 #include "macro/currency.h"
 #include "macro/items.h"
 #include "macro/landmark_grid.h"

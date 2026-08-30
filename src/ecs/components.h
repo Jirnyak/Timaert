@@ -275,6 +275,9 @@ struct MacroNpcRuntime {
     // keeps the leg from ping-ponging between two neighbours. Runtime-only.
     std::uint8_t  stationsLeft = 0;
     std::int32_t  prevStationId = -1;
+    // The tithe riding in the bag toward the suzerain (the feudal tax graph,
+    // CANON S24): set at departure, paid out at the market. Runtime-only.
+    std::int32_t  taxCarried = 0;
     float         targetX, targetY;
     std::int16_t  stateTimer;
     std::int16_t  teleportCooldown;

@@ -56,8 +56,10 @@ int main() {
     const int woodDemand = sm::daily_demand_for("wood", city.population,
                                                 EconSite::City);
 
+    // Charisma 0 here: the corridor checks below stay the raw price law's;
+    // the sheet edge is asserted separately at the end.
     const sm::CaravanDeal st = sm::trade_caravan_at_station(
-        hold, /*capacityKg=*/1e6f, city);
+        hold, /*capacityKg=*/1e6f, city, /*charisma=*/0, /*bargaining=*/0);
 
     CHECK(sm::wallet_value(hold) + sm::wallet_value(city.inventory)
               == coinBefore,
@@ -107,7 +109,7 @@ int main() {
         sm::wallet_value(bag) + sm::wallet_value(town.inventory);
     const sm::CaravanDeal vd = sm::trade_vendor_at_market(
         bag, 1e6f, town, &snap, /*homePopulation=*/50,
-        EconSite::Village);
+        EconSite::Village, /*charisma=*/0, /*bargaining=*/0);
 
     CHECK(sm::wallet_value(bag) + sm::wallet_value(town.inventory)
               == vCoinBefore,
@@ -128,9 +130,35 @@ int main() {
     sm::Inventory bag2;
     CHECK(bag2.add("bread", 50), "fixture: control bread");
     const sm::CaravanDeal none = sm::trade_caravan_at_station(
-        bag2, 1e6f, broke);
+        bag2, 1e6f, broke, 0, 0);
     CHECK(none.soldValue == 0 && bag2.count("bread") == 50,
           "no coin, no sale, no confiscation");
+
+    // ── The sheet edge: a charismatic trader closes the same deal better ──
+    // (owner 2026-08-30: «караван торгует выгоднее, потому что у него в
+    // таблице выше уровень и харизма» — the deal reads the sheet, so two
+    // identical fixtures differing ONLY in charisma must settle differently,
+    // in the trader's favour on both halves.)
+    const auto run_fixture = [](int cha) {
+        sm::Landmark m{};
+        m.type = sm::LandmarkType::City;
+        m.population = 64;
+        m.inventory.add("wood", 2000);
+        m.inventory.add("coin_empire", 600);
+        sm::Inventory h;
+        h.add("bread", 200);
+        h.add("coin_empire", 4000);
+        return sm::trade_caravan_at_station(h, 1e6f, m, cha, 0);
+    };
+    const sm::CaravanDeal plain = run_fixture(0);
+    const sm::CaravanDeal silver = run_fixture(10);
+    CHECK(silver.soldValue >= plain.soldValue,
+          "charisma never sells for less");
+    CHECK(silver.boughtValue <= plain.boughtValue,
+          "charisma never buys for more");
+    CHECK(silver.soldValue > plain.soldValue
+              || silver.boughtValue < plain.boughtValue,
+          "the sheet edge is real: the same deal settles in the trader's favour");
 
     return sm::test::report("caravan_deal_test");
 }

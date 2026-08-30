@@ -201,6 +201,18 @@ void settle_march_rhythm(entt::entity e, const ecs::Position& p,
                          bool moved, const TickContext& ctx) {
     const int maxSp = std::max<int>(1, rt.maxSp);
     const bool canCamp = !cell_is_water(ctx, int(p.x), int(p.y));
+
+    // The automaton's CAMP decision, BEFORE debt (npc_ai.h kCampBarDivisor):
+    // legs below an eighth of the bar on campable ground pitch camp now; the
+    // half-bar wake-up (prepare_) resumes the leg. The regen gate below
+    // stays strict — banking a part-cell on the road is NOT rest (the first
+    // cut of this law let the road pay for itself; its test still stands).
+    if (canCamp && int(rt.sp) <= maxSp / kCampBarDivisor
+        && rt.state != std::uint8_t(NPCState::Resting)) {
+        rt.state = std::uint8_t(NPCState::Resting);
+        rt.stateTimer = 0;
+    }
+
     const bool stopped = rt.state == std::uint8_t(NPCState::Resting)
                          || at_target(p, rt, ctx);
 
@@ -331,6 +343,17 @@ void try_move(ecs::Position& p, ecs::MacroNpcRuntime& rt,
         if (dx > 1) dx = -1; else if (dx < -1) dx = 1;
         int dy = by - iy;
         if (dy > 1) dy = -1; else if (dy < -1) dy = 1;
+        // An EMPTY bar takes no step WHERE CAMP IS POSSIBLE (the debt
+        // check used to run only AFTER the step, so an exhausted squad
+        // ground out one deficit step per think, paid the bite each time
+        // and died on a long haul — 447 caravans in 24 days, 855k coins
+        // burned with their corpses, measured 2026-08-30). On land the
+        // legs simply stop and the march rhythm rests the body where it
+        // stands; on WATER there is no stopping — the deficit step goes
+        // through and pays the bite, which is exactly the canon sentence
+        // «неоплатный океан топит лорда» (S7).
+        if (int(rt.sp) <= 0 && !cell_is_water(ctx, ix, iy)) break;
+
         rt.entryDir = pack_entry_dir(dx, dy);
         rt.entryTicks = 0;
 
@@ -750,6 +773,18 @@ int pick_next_station_(const TickContext& ctx, const ecs::Position& p,
     return bestId;
 }
 
+// The trader's OWN sheet, derived the ordinal way (leader_sheet_seed) —
+// the deal reads charisma (and one day the trade skill) off it: the row's
+// weights and level are the entire advantage (owner 2026-08-30).
+int leader_charisma_(entt::registry& reg, entt::entity self, NPCType type) {
+    const auto* sid = reg.try_get<ecs::MacroSpawnId>(self);
+    const auto* lvl = reg.try_get<ecs::NpcLevel>(self);
+    if (!sid) return 0;
+    const CharacterSheet sheet = make_character_sheet(
+        type, lvl ? int(lvl->value) : 1, leader_sheet_seed(sid->index));
+    return int(sheet.attributes.of(AttributeId::Cha));
+}
+
 void ai_caravan(entt::entity self, ecs::Position& p,
                 ecs::MacroNpcRuntime& rt, const TickContext& ctx) {
     XY home;
@@ -844,7 +879,9 @@ void ai_caravan(entt::entity self, ecs::Position& p,
             // read off the market the caravan STANDS ON. Arbitrage with no
             // knowledge of anywhere else.
             const CaravanDeal deal = trade_caravan_at_station(
-                bag->inv, rt.carryCap, *market);
+                bag->inv, rt.carryCap, *market,
+                leader_charisma_(reg, self, NPCType::Caravan),
+                /*bargaining=*/0);
             // The exchange is DONE — that one moment is the fact (S20.1: a
             // deal is a transition by nature; the ride on is the same
             // cargo, not a second deal). Subject = the home city whose
@@ -952,8 +989,15 @@ void ai_vendor(entt::entity self, ecs::Position& p,
             haul_between(homeLm->inventory, bag->inv, id, surplus,
                          rt.carryCap - inventory_weight(bag->inv));
         }
-        if (inventory_weight(bag->inv) <= 0.0f) {
-            // Nothing to sell today: wait out the morning at home.
+        // The TITHE rides with the crew (owner 2026-08-30, CANON S24: the
+        // feudal tax graph — the village pays its own city, and the coin
+        // travels by CARRIER, never by decree). One eighth of the home
+        // purse: the po2 tithe, and the sink that stops the village
+        // hoarding the world's coin (measured, balance_run).
+        rt.taxCarried = transfer_value(homeLm->inventory, bag->inv,
+                                       wallet_value(homeLm->inventory) / 8);
+        if (inventory_weight(bag->inv) <= 0.0f && rt.taxCarried <= 0) {
+            // Nothing to sell and nothing owed: wait out the morning.
             rt.stateTimer = std::int16_t(40 + rand_int(ctx, 40));
             return;
         }
@@ -981,10 +1025,27 @@ void ai_vendor(entt::entity self, ecs::Position& p,
             const MemoryEntry* snap = recall(
                 *mem, AgentMemoryKind::MarketSnapshot,
                 std::uint16_t(rt.homeSettlementId));
+            // The tithe lands FIRST — it is owed, not traded, and a crew
+            // cut down on the road drops it with the cargo (the carrier
+            // law's honest downside).
+            if (rt.taxCarried > 0) {
+                const int paid = transfer_value(
+                    bag->inv, market->inventory,
+                    std::min(rt.taxCarried, wallet_value(bag->inv)));
+                if (paid > 0) {
+                    record_landmark_fact(*ctx.mw.gs, FactKind::Taxed,
+                                         rt.homeSettlementId,
+                                         int(rt.targetX), int(rt.targetY),
+                                         paid, rt.targetSettlementId);
+                }
+                rt.taxCarried = 0;
+            }
             const CaravanDeal deal = trade_vendor_at_market(
                 bag->inv, rt.carryCap, *market, snap,
                 homeLm->population,
-                EconSite(landmark_def(homeLm->type).econSite));
+                EconSite(landmark_def(homeLm->type).econSite),
+                leader_charisma_(reg, self, NPCType::Vendor),
+                /*bargaining=*/0);
             if (deal.movedTableValue > 0) {
                 record_landmark_fact(*ctx.mw.gs, FactKind::Traded,
                                      rt.homeSettlementId,
@@ -1559,7 +1620,8 @@ void dispatch(AIBehaviour b, entt::entity e, ecs::Position& p,
 // emergent: the surplus bought cheap here is exactly what the next hungry
 // station pays above base for.
 CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
-                                     Landmark& market) {
+                                     Landmark& market,
+                                     int charisma, int bargaining) {
     CaravanDeal out{};
     Inventory& ms = market.inventory;
     const EconSite site = EconSite(landmark_def(market.type).econSite);
@@ -1589,7 +1651,14 @@ CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
             if (n <= 0) continue;
             const int moved = haul_between(hold, ms, id, n, 1e9f);
             if (moved <= 0) continue;
-            const int price = stock_price(base, have + moved, demand);
+            // The ONE trade-price law (economy.h): the seller's charisma
+            // and trade skill claw back part of the house margin — a
+            // caravan out-trades a peasant because its ROW rolls a better
+            // sheet, never because the code knows who it is (owner,
+            // 2026-08-30).
+            const int price = player_sell_price(
+                stock_price(base, have + moved, demand),
+                charisma, bargaining);
             out.soldValue += transfer_value(ms, hold, moved * price);
             out.movedTableValue += base * moved;
         } else if (have > demand) {
@@ -1613,7 +1682,10 @@ CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
                 haul_between(ms, hold, id, n,
                              capacityKg - inventory_weight(hold));
             if (moved <= 0) continue;
-            const int cost = moved * stock_price(base, have - moved, demand);
+            const int cost =
+                moved * player_buy_price(
+                            stock_price(base, have - moved, demand),
+                            charisma, bargaining);
             out.boughtValue += transfer_value(hold, ms, cost);
             out.movedTableValue += base * moved;
         }
@@ -1631,7 +1703,8 @@ CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
 CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
                                    Landmark& market,
                                    const MemoryEntry* homeSnapshot,
-                                   int homePopulation, EconSite homeSite) {
+                                   int homePopulation, EconSite homeSite,
+                                   int charisma, int bargaining) {
     CaravanDeal out{};
     Inventory& ms = market.inventory;
     const EconSite site = EconSite(landmark_def(market.type).econSite);
@@ -1661,7 +1734,11 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
         if (n <= 0) continue;
         const int moved = haul_between(bag, ms, id, n, 1e9f);
         if (moved <= 0) continue;
-        const int price = stock_price(base, have + moved, demand);
+        // Same ONE trade-price law as the station: a village hand haggles
+        // with a peasant's charisma, a caravan with a trader's — the sheet
+        // is the whole difference.
+        const int price = player_sell_price(
+            stock_price(base, have + moved, demand), charisma, bargaining);
         out.soldValue += transfer_value(ms, bag, moved * price);
         out.movedTableValue += base * moved;
     }
@@ -1706,7 +1783,9 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
                              capacityKg - inventory_weight(bag));
             if (moved <= 0) continue;
             const int cost =
-                moved * stock_price(base, have - moved, demand);
+                moved * player_buy_price(
+                            stock_price(base, have - moved, demand),
+                            charisma, bargaining);
             out.boughtValue += transfer_value(bag, ms, cost);
             out.movedTableValue += base * moved;
         }

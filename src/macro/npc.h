@@ -266,7 +266,10 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     },
     // Caravan
     {
-        NPCType::Caravan, "caravan", "Caravan", SpriteId::Caravan, 2,
+        // baseLevel 3 (vendor rolls 1): the row's level, with Cha weight 5
+        // (character_sheet.h), IS the caravan's market edge — the deal
+        // reads the sheet, never the type (owner 2026-08-30).
+        NPCType::Caravan, "caravan", "Caravan", SpriteId::Caravan, 3,
         AIBehaviour::CaravanTrade, kCaravanCombat, kNpcUpkeepNone, false, 20,
         /*weight*/0, /*loot*/nullptr, /*radius*/0.0f,
         {{"Putnik","Dorozhkin","Obozov","Strannik","Koleso"}}, 5,

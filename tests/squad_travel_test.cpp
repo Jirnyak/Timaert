@@ -224,14 +224,15 @@ void test_land_exhaustion_makes_camp_without_blood() {
 
     CHECK(thinks < 32 && npc.state == std::uint8_t(NPCState::Resting),
           "a bar spent on land is a camp, not a catastrophe");
-    CHECK(int(npc.sp) <= 0,
-          "the debt is kept on the bar, the player's own shape");
+    CHECK(int(npc.sp) <= int(npc.maxSp) / kCampBarDivisor,
+          "the legs stopped at the camp margin, the automaton's own answer");
     const float bled = 100.0f - w.reg.get<ecs::Health>(e).hp;
-    CHECK(bled > 0.0f,
-          "the step that emptied the bar cost flesh, on meadow as at sea");
-    CHECK(bled < 100.0f,
-          "and it is a bite, not a death: a spent squad camps, it does not "
-          "march itself to pieces");
+    // The camp decision lands BEFORE debt (npc_ai.h kCampBarDivisor): on
+    // campable ground nobody bleeds — the bite stays a LAW for whoever
+    // cannot stop (the ocean section above drowns a lord through it) or
+    // chooses to keep walking (the player).
+    CHECK(bled == 0.0f,
+          "camp is pitched before the debt: no blood on campable ground");
 
     // The camp itself is free — «остановился, значит отдыхаешь». Thinks spent
     // Resting must cost nothing, or a tired squad would bleed out standing
@@ -305,9 +306,14 @@ void test_a_map_of_marchers_survives_the_new_law() {
     CHECK(moved == kWalkers,
           "negative control: they all actually WALKED — the survival above "
           "is not the survival of a hundred bodies standing still");
-    CHECK(bled == kWalkers,
-          "and the new law is in force for ALL of them: emptying the bar on "
-          "dry land draws blood, which the water-only bite never did");
+    // The camp decision (kCampBarDivisor) spares every one of them: camp
+    // is pitched before the debt, so dry-land marching draws no blood at
+    // all — 447 caravans died of the chronic-exhaustion shape this pins
+    // against (measured 2026-08-30). The bite's own negative control is
+    // the ocean section above, where stopping is impossible.
+    CHECK(bled == 0,
+          "the camp decision spares them all: no blood where camp is "
+          "possible");
 }
 
 // ── THE anchor: a fresh bar buys ~8 game hours of road, squad or player ────
@@ -337,8 +343,11 @@ void test_road_bar_lasts_a_days_march() {
     // cells over ~13¾ h — the road stretches a walker past the open-country
     // day, which is why roads are worth building. The bands are ±10% so the
     // owner can retune the data without touching this file.
+    // The leg ends at the CAMP MARGIN, not at zero (npc_ai.h
+    // kCampBarDivisor — the same number the automaton reads).
     const float expectCells =
-        110.0f / (feature_bed_weight(FT_Road) * kStaminaPerCell);
+        (110.0f - 110.0f / float(kCampBarDivisor))
+        / (feature_bed_weight(FT_Road) * kStaminaPerCell);
     const float expectHours = expectCells / kMacroWalkCellsPerHour;
     CHECK(npc.state == std::uint8_t(NPCState::Resting),
           "the road march ends in a camp, not in infinity");

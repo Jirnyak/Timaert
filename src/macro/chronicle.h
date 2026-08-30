@@ -96,6 +96,10 @@ enum class FactKind : std::uint16_t {
     Spawned,         // subject appeared in the world
     QuestTaken,      // subject took object's contract
     QuestDone,       // subject finished it
+    // Subject paid its suzerain the tithe (amount = coin) — the feudal tax
+    // graph's own record (owner 2026-08-30, CANON S24). Appended, so saved
+    // ordinals stay.
+    Taxed,
     Count
 };
 
@@ -160,6 +164,9 @@ inline constexpr FactKindDef kFactKinds[] = {
     {FactKind::Spawned,      "spawned",       "Appeared",      16,      0},
     {FactKind::QuestTaken,   "quest_taken",   "Took contract", 32,      1},
     {FactKind::QuestDone,    "quest_done",    "Kept contract", 32,      5},
+    // Weekly-interest weather like Traded: the tithe is mutual order, not a
+    // deed against the partner.
+    {FactKind::Taxed,        "taxed",         "Paid tithe",     8,      0, false},
 };
 static_assert(sizeof(kFactKinds) / sizeof(kFactKinds[0])
                   == std::size_t(FactKind::Count),

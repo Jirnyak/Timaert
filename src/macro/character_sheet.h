@@ -67,7 +67,9 @@ inline constexpr RoleWeights kRoleWeights[int(NPCType::Count)] = {
     // Merchant    — social, lucky, sedentary
     {NPCType::Merchant, {1, 2, 2, 1, 2, 3, 3, 4, 1}, {1, 1, 1, 2, 0, 1, 0, 2}},
     // Caravan     — mobile trader: lives on the road, hence both movement skills
-    {NPCType::Caravan, {2, 2, 3, 1, 1, 2, 2, 3, 3}, {1, 1, 3, 4, 0, 2, 0, 2}},
+    // Cha 5: the trade house on wheels — its whole market edge is this row
+    // (owner 2026-08-30: «у каравана в таблице выше уровень и харизма»).
+    {NPCType::Caravan, {2, 2, 3, 1, 1, 2, 2, 5, 3}, {1, 1, 3, 4, 0, 2, 0, 2}},
     // Bandit      — aggressive melee raider, fast on his feet
     {NPCType::Bandit, {4, 3, 2, 1, 1, 1, 2, 1, 3}, {2, 0, 3, 2, 4, 1, 0, 1}},
     // Guard       — disciplined tank
