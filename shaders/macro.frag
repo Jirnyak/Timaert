@@ -402,9 +402,10 @@ float roadLineDist(vec2 p, vec2 a, vec2 b) {
 bool roadAt(vec2 cell) {
     vec2 uv = mod(cell + 0.5, pc.mapSize) / pc.mapSize;
     float fid = texture(u_featureMap, uv).r * 255.0;
-    // A road is a road for connectivity: cobble (FT_Road=1) and dirt (FT_DirtRoad=2)
-    // link into one network; the current cell's byte picks the surface style.
-    return fid > 0.5 && fid < 2.5;
+    // A road is a road for connectivity: cobble (FT_Road=1), dirt (FT_DirtRoad=2)
+    // and the bridge (FT_Bridge=4) link into one network; the current cell's
+    // byte picks the surface style.
+    return (fid > 0.5 && fid < 2.5) || (fid > 3.5 && fid < 4.5);
 }
 // Forest sprite density — BINARY at the forest-class line, procedural above
 // it. 0.0 below u_treeMap 0.5 (kForestClassTreeCount = 8192, the same
@@ -457,6 +458,10 @@ vec3 roadOverlay(vec2 mapUV, vec3 baseColor) {
     bool isCobble = (featureId > 0.5 && featureId < 1.5);   // FT_Road
     bool isDirt   = (featureId > 1.5 && featureId < 2.5);   // FT_DirtRoad
     bool isField  = (featureId > 2.5 && featureId < 3.5);   // FT_Field
+    // FT_Bridge (4): the road carried over a water cell. Every bridge is
+    // stone (owner), so it draws through the cobble branch — over the river
+    // the sea-water ground shows between the span's frayed edges.
+    bool isBridge = (featureId > 3.5 && featureId < 4.5);
 
     // -- Ploughed field (FT_Field): full-cell furrow rows, orientation from
     // the cell hash, a faint crop tinge in the raised rows. Fields do NOT
@@ -484,7 +489,7 @@ vec3 roadOverlay(vec2 mapUV, vec3 baseColor) {
         return mix(baseColor, fieldColor, 0.30 + 0.55 * edge);
     }
 
-    if (!isCobble && !isDirt) return baseColor;
+    if (!isCobble && !isDirt && !isBridge) return baseColor;
 
     vec2 p = floor(fract(pixelCoord) * 16.0) + 0.5;
     vec2 ctr = vec2(8.0);
@@ -519,7 +524,7 @@ vec3 roadOverlay(vec2 mapUV, vec3 baseColor) {
         return mix(baseColor, roadColor, opacity);
     }
 
-    // -- Cobblestone highway (FT_Road). --
+    // -- Cobblestone highway (FT_Road; FT_Bridge lays the same stone). --
     float ph = roadHash(cs + p.x * 17.31 + p.y * 43.77);
     float edge = smoothstep(hw - 1.2, hw, md);
     vec3 stone1 = vec3(0.50, 0.48, 0.44);
@@ -996,10 +1001,14 @@ vec3 chartCompose(vec2 worldPx, vec2 mapUV) {
         col *= clamp(0.65 + 0.45 * dot(N, normalize(vec3(-0.5, 0.5, 0.8))),
                      0.65, 1.15);
         // Roads are ink strokes: the feature byte darkens its cell —
-        // readable at every zoom, no cobble texture on a document.
+        // readable at every zoom, no cobble texture on a document. A bridge
+        // (FT_Bridge=4) inks at the highway's strength: on a chart the
+        // crossing is the road, drawn straight over the river.
         float fb = texture(u_featureMap, mapUV).r * 255.0;
         if (fb > 0.5 && fb < 2.5)
             col = mix(col, vec3(0.24, 0.16, 0.10), fb < 1.5 ? 0.75 : 0.55);
+        else if (fb > 3.5 && fb < 4.5)
+            col = mix(col, vec3(0.24, 0.16, 0.10), 0.75);
     }
     // Charted or dark — the whole knowledge law of a document.
     col *= clamp(texture(u_knowledgeMap, mapUV).r * 2.0, 0.0, 1.0);

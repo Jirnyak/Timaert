@@ -237,6 +237,14 @@ namespace sm
     // while the road tracer passes its water-reject sentinel here.
     inline constexpr float kPathNoBlock = std::numeric_limits<float>::infinity();
 
+    // Axis bits of `waterCrossAxes` (find_path below): the cardinal axes a
+    // water cell may be bridged along — set where BOTH of that axis'
+    // orthogonal neighbours are land, i.e. where the water is exactly one
+    // cell thick in the crossing direction (owner, 2026-08-29: roads may
+    // cross water «через 1 клетку», square-on, and that crossing is a bridge).
+    inline constexpr std::uint8_t kWaterCrossEW = 1u; // land east AND west
+    inline constexpr std::uint8_t kWaterCrossNS = 2u; // land north AND south
+
     // Build cost grid from terrain master texture + feature layer + the
     // tree-count layer (forest-class cells drag like the old FT_Tree).
     // Mirrors movement-cost.ts buildCostGrid.
@@ -259,13 +267,25 @@ namespace sm
     //                      default silently failed on large maps);
     //   `blockAtOrAbove` — cells priced at or above this are REFUSED, not paid
     //                      (the road water gate); default gates nothing;
-    //   `stepsOut`       — heap pops spent, for the tracer's stats.
+    //   `stepsOut`       — heap pops spent, for the tracer's stats;
+    //   `waterCrossAxes` — the road tracer's BRIDGE geometry, as per-cell data
+    //                      (null for every ordinary walker: water is then just
+    //                      priced ground). When set, a step touching water is
+    //                      legal only as a single-cell cardinal hop: never
+    //                      water→water (a causeway is not a bridge), never
+    //                      diagonal, and only along an axis the cell's mask
+    //                      allows (kWaterCrossEW/NS — the axes on which BOTH
+    //                      orthogonal neighbours are land, so a span always
+    //                      meets its banks square-on). A water cell whose mask
+    //                      is 0 is wider than one cell in every direction and
+    //                      cannot be bridged (the price gate refuses it too).
     PathResult find_path(const PathCostData &data,
                          int sx, int sy, int gx, int gy,
                          PathScratch &scratch,
                          int maxSteps = 0,
                          float blockAtOrAbove = kPathNoBlock,
-                         int *stepsOut = nullptr);
+                         int *stepsOut = nullptr,
+                         const std::uint8_t *waterCrossAxes = nullptr);
 
     // One-shot convenience: a private scratch per call (tests, tools). Hot
     // callers hold a PathScratch and use the overload above.

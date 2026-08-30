@@ -38,6 +38,7 @@ void StructureIndex::rebuild(const std::vector<Structure>& structs,
         e.hx = std::max(minR, structure_half_x(s));
         e.hy = std::max(minR, structure_half_y(s));
         e.shape = std::uint8_t(s.shape);
+        e.kind = std::uint8_t(s.kind);
         const float seatM = heightFn ? heightFn(heightUser, s.x, s.y) : 0.0f;
         structure_solid_span(s, seatM, e.z0, e.z1);
         e.boundR = (s.shape == Structure::Cylinder)
@@ -136,6 +137,29 @@ bool StructureIndex::blocked_at(float x, float y, float r, float zFeet,
         if (e.z1 > zFeet + stepUp && e.z0 < zFeet + bodyH) hit = true;
     });
     return hit;
+}
+
+std::uint8_t StructureIndex::walk_tile_at(float x, float y, float r,
+                                          float zFeet,
+                                          std::uint8_t terrainTile,
+                                          float stand) const {
+    // The HIGHEST floor within a step of the feet decides — the same rule
+    // support_at uses to seat a body, so what holds you up and what you walk
+    // on can never be two different things. A solid that lays no ground of
+    // its own (kWalkTileTransparent) is skipped, not treated as bare earth:
+    // standing on a lantern's head does not turn the road below into grass.
+    float best = kNoSupport;
+    std::uint8_t tile = terrainTile;
+    for_candidates(x, y, r, [&](const Entry& e) {
+        if (e.z1 > zFeet + stand || e.z1 < zFeet - stand) return;
+        if (e.z1 <= best) return;
+        const std::uint8_t lays =
+            structure_walk_tile(Structure::Kind(e.kind));
+        if (lays == kWalkTileTransparent) return;
+        best = e.z1;
+        tile = lays;
+    });
+    return tile;
 }
 
 bool StructureIndex::solid_at(float x, float y, float z) const {

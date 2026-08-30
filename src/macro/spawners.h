@@ -30,9 +30,12 @@ std::vector<TreePoint> spawn_trees(const TerrainData& td, std::uint32_t seed,
 // A road is a ROW: the surface it lays (whose bed weight is already a column
 // of kFeatureDefs, macro/features.h) and WHO it connects — data, not code.
 // Both classes are traced by the ONE A* (pathfinding.h find_path) over THE
-// step-cost law with water rejected; the hierarchy is free because stone is
-// traced FIRST and the dirt pass prices laid stone at its 1.0 bed, so lanes
-// merge into the highways on their own. The old dirt tracer (spiral scan +
+// step-cost law: wide water rejected, ONE-CELL water payable at its honest
+// water bed as a cardinal, square-on hop (find_path waterCrossAxes) — the
+// crossing lands as FT_Bridge, and every bridge is stone regardless of which
+// class paid for it (owner, 2026-08-29). The hierarchy is free because stone
+// is traced FIRST and the dirt pass prices laid stone (bridges included) at
+// its 1.0 bed, so lanes merge into the highways on their own. The old dirt tracer (spiral scan +
 // straight lerp whose only worldly knowledge was "not water") is dead.
 enum class RoadLink : std::uint8_t {
     // The politik connections graph (MST + inter-kingdom links): city↔city

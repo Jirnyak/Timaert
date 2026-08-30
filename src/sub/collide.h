@@ -81,6 +81,22 @@ public:
     // detonate on terrain).
     bool solid_at(float x, float y, float z) const;
 
+    // ── THE GROUND UNDER THE FEET (owner's law, 2026-08-30) ──────────────
+    // What a body at (x, y) with feet at `zFeet` is actually standing on: the
+    // tile laid by the solid CARRYING it (map_data.h walkTile), or
+    // `terrainTile` when the ground itself carries it. Every mover asks this
+    // instead of the tile grid, so a bridge deck is walked as road while the
+    // river runs underneath, and a rampart walk is walked as pavement
+    // whatever lies at its foot. A tile is one value per column of the map
+    // and can never say "water below, masonry above"; the support can.
+    //
+    // "Carried BY it" is the floor test the whole module already uses — a top
+    // within `stand` of the feet. A body wading past a pier is not standing
+    // on the pier, and a body under a deck is not standing on the deck.
+    std::uint8_t walk_tile_at(float x, float y, float r, float zFeet,
+                              std::uint8_t terrainTile,
+                              float stand = kStepUpM) const;
+
     // Resolve one horizontal step universally: refuse entry into a solid,
     // slide along whichever axis stays free, and always allow a body already
     // inside a solid to move (escape rule). Mutates to* to the reached point.
@@ -97,6 +113,10 @@ private:
         float z0, z1;      // absolute solid span, metres
         float boundR;      // XZ bounding radius for binning
         std::uint8_t shape;
+        // What this solid IS — carried so a support query can answer not only
+        // how high the floor is but what the floor is MADE of (walk_tile_at
+        // below). One byte per solid; the record is already in cache.
+        std::uint8_t kind;
     };
 
     bool entry_overlaps(const Entry& e, float x, float y, float r) const;

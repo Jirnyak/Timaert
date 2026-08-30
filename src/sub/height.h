@@ -53,6 +53,24 @@ namespace sm::sub
     // (`Renderer3DVk::max_height_m()`).
     constexpr float kFlightMaxAboveTerrainM = 120.0f;
 
+    // ── DRY FOOTING — where a body may be MATERIALISED ───────────────────
+    // A place is dry when what would carry a body there stands above the
+    // water plane — and "what carries" is the support surface, max(terrain,
+    // the solid top under the feet), not the ground alone. So a bridge deck
+    // is dry footing over a drowned bed, and so is a jetty, a wall walk or
+    // any future platform: none of them needed naming here, which is the
+    // point (owner, 2026-08-29: «лучше не хардкодить на будущее, а сделать
+    // универсально — мост тут ни при чём»).
+    //
+    // The probe is how high above the plane a spawn query looks for a solid
+    // to stand on: a deck clears the water by its freeboard, a wall walk by
+    // storeys, and beyond this a body would be materialising onto a roof it
+    // has no business on.
+    constexpr float kDryFootingProbeM = 40.0f;
+    inline bool is_dry_footing(float supportM) {
+        return supportM > kSeaLevelM + 0.05f;
+    }
+
     // THE height a humanoid looks and shoots from, above its feet — one number
     // serving both, on purpose. `Position.z` is the SOLE surface a body stands
     // on, so everything else about a body is measured up from it.

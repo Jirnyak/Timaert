@@ -90,7 +90,8 @@ namespace sm
                          PathScratch &scratch,
                          int maxSteps,
                          float blockAtOrAbove,
-                         int *stepsOut)
+                         int *stepsOut,
+                         const std::uint8_t *waterCrossAxes)
     {
         if (stepsOut)
             *stepsOut = 0;
@@ -162,6 +163,21 @@ namespace sm
                 const float ncost = data.costGrid[nidx];
                 if (ncost >= blockAtOrAbove)
                     continue; // gated ground is refused, never paid
+                // Bridge geometry (waterCrossAxes, pathfinding.h): water is
+                // crossed as a single cardinal hop along a bridgeable axis —
+                // never water→water, never diagonal, never against the banks.
+                if (waterCrossAxes && (data.water[cidx] || data.water[nidx]))
+                {
+                    if (data.water[cidx] && data.water[nidx])
+                        continue; // a causeway is not a bridge
+                    if (DX[d] != 0 && DY[d] != 0)
+                        continue; // a span meets its banks square-on
+                    const std::size_t wk = data.water[cidx] ? cidx : nidx;
+                    const std::uint8_t axis =
+                        DY[d] == 0 ? kWaterCrossEW : kWaterCrossNS;
+                    if (!(waterCrossAxes[wk] & axis))
+                        continue; // wider than one cell on this axis
+                }
 
                 float cost = ncost * STEP_COST[d]
                            + data.climb(cidx, nidx);

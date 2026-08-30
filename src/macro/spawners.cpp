@@ -78,8 +78,51 @@ namespace sm
             return value / maxAmp;
         }
 
+        // The bridgeable-water mask for the road planner (pathfinding.h
+        // kWaterCrossEW/NS): a water cell earns an axis bit where BOTH of
+        // that axis' orthogonal neighbours are land — i.e. the water is
+        // exactly one cell thick in the crossing direction. Derived from THE
+        // water pre-answer of the cost grid (biome_at_cell, one cascade), so
+        // the mask can never disagree with the ground A* actually walks.
+        std::vector<std::uint8_t> build_water_cross_axes(const PathCostData &cg)
+        {
+            const int W = cg.width;
+            const int H = cg.height;
+            std::vector<std::uint8_t> axes(std::size_t(W) * std::size_t(H), 0);
+            for (int y = 0; y < H; ++y)
+            {
+                for (int x = 0; x < W; ++x)
+                {
+                    const std::size_t i = std::size_t(y) * W + x;
+                    if (!cg.water[i])
+                        continue;
+                    const auto land = [&](int lx, int ly)
+                    {
+                        return cg.water[std::size_t(wrapi(ly, H)) * W
+                                        + wrapi(lx, W)] == 0u;
+                    };
+                    std::uint8_t a = 0;
+                    if (land(x - 1, y) && land(x + 1, y))
+                        a |= kWaterCrossEW;
+                    if (land(x, y - 1) && land(x, y + 1))
+                        a |= kWaterCrossNS;
+                    axes[i] = a;
+                }
+            }
+            return axes;
+        }
+
+        // `waterCrossAxes` (optional): bridgeable water joins the banks it
+        // touches — two shores of a one-cell river are ONE road component,
+        // because the planner can span it. Deliberately permissive (any
+        // 8-neighbour through the wet cell): the component test is a cheap
+        // pre-prune, and A* with the strict axis law stays the final judge —
+        // a falsely joined pair just fails its search and is stripped, while
+        // a falsely SPLIT pair would lose its road with no appeal.
         std::vector<int> build_land_components(const TerrainData &td,
-                                               float seaLevel)
+                                               float seaLevel,
+                                               const std::vector<std::uint8_t>
+                                                   *waterCrossAxes = nullptr)
         {
             const int W = td.width;
             const int H = td.height;
@@ -90,9 +133,18 @@ namespace sm
             constexpr int dx[8] = {0, 1, 1, 1, 0, -1, -1, -1};
             constexpr int dy[8] = {-1, -1, 0, 1, 1, 1, 0, -1};
 
+            const auto enterable = [&](std::size_t k)
+            {
+                if (float(td.rgba[k * 4 + 0]) / 255.0f >= seaLevel)
+                    return true; // land walks
+                return waterCrossAxes && (*waterCrossAxes)[k] != 0u; // spans join
+            };
+
             int componentId = 0;
             for (int start = 0; start < total; ++start)
             {
+                // Components SEED on land only: a bridgeable cell joins
+                // shores, it is not a shore.
                 if (component[std::size_t(start)] >= 0 ||
                     float(td.rgba[std::size_t(start) * 4 + 0]) / 255.0f < seaLevel)
                     continue;
@@ -111,8 +163,7 @@ namespace sm
                         const int ny = wrapi(y + dy[dir], H);
                         const int ni = ny * W + nx;
                         const std::size_t k = std::size_t(ni);
-                        if (component[k] >= 0 ||
-                            float(td.rgba[k * 4 + 0]) / 255.0f < seaLevel)
+                        if (component[k] >= 0 || !enterable(k))
                             continue;
                         component[k] = componentId;
                         queue.push_back(ni);
@@ -132,8 +183,14 @@ namespace sm
         // move together: the threshold is not a second number about water, it
         // is the same number read as a gate.
         constexpr float kRoadWaterBlockThreshold = 166.99f;
-        // Water is not priced, it is REJECTED: this sentinel is only the flag
-        // the block-threshold reads, never a weight a path can pay.
+        // UNBRIDGEABLE water is not priced, it is REJECTED: this sentinel is
+        // only the flag the block-threshold reads, never a weight a path can
+        // pay. BRIDGEABLE water (build_water_cross_axes above — one cell
+        // thick on a cardinal axis) keeps the honest water bed THE step law
+        // already priced it at (biome_sp_weight Water = 10.0): the planner's
+        // willingness to build a span is exactly what the march law says the
+        // wet cell costs, so a bridge pays off where the detour is longer
+        // than the crossing is dear — no new constant (CANON S26).
         constexpr float kRoadWaterReject = 167.00f;
 
         // The step budget of one road search. Small maps get the honest
@@ -243,8 +300,10 @@ namespace sm
     }
 
     // Road tracing between connected city pairs over a road-aware cost grid.
-    // Cross-island pairs are component-pruned. Same-island pairs use
-    // generation-tagged whole-map A* and block rejected water cells.
+    // Cross-island pairs are component-pruned (one-cell water counts as a
+    // join — a span can cross it). Same-island pairs use generation-tagged
+    // whole-map A* that refuses wide water and PAYS for one-cell crossings,
+    // which land as FT_Bridge (build_feature_layer).
     std::vector<std::uint8_t> trace_roads(const TerrainData &td, Politik &P,
                                           RoadTraceStats *stats,
                                           float seaLevel,
@@ -299,16 +358,20 @@ namespace sm
         // WALL is now the biome bed plus the honest climb. Existing road
         // cells and city anchors are priced at the paved bed — the cheapest
         // step there is, so reuse stays visible to an admissible search.
-        // Water is not priced, it is REJECTED: kRoadWaterReject is only the
-        // flag the block-threshold reads, never a weight a path can pay.
+        // Water wider than one cell is not priced, it is REJECTED:
+        // kRoadWaterReject is only the flag the block-threshold reads, never
+        // a weight a path can pay. One-cell water (waterAxes) stays at the
+        // step law's own water bed — payable, and paying it lays a BRIDGE.
         const float kRoadShare = feature_bed_weight(FT_Road);
         PathCostData cg = build_cost_grid(td, nullptr, treeLayer);
+        const std::vector<std::uint8_t> waterAxes = build_water_cross_axes(cg);
         for (std::size_t i = 0; i < totalCells; ++i)
         {
-            if (cg.water[i])
+            if (cg.water[i] && waterAxes[i] == 0u)
                 cg.costGrid[i] = kRoadWaterReject;
         }
-        const std::vector<int> landComponent = build_land_components(td, seaLevel);
+        const std::vector<int> landComponent =
+            build_land_components(td, seaLevel, &waterAxes);
 
         for (const City &c : P.cities)
             cg.costGrid[std::size_t(wrapi(c.y, H)) * W + wrapi(c.x, W)] = kRoadShare;
@@ -355,7 +418,7 @@ namespace sm
                 int edgeSteps = 0;
                 PathResult pr = find_path(cg, ax, ay, bx, by, pathScratch,
                                           maxSteps, kRoadWaterBlockThreshold,
-                                          &edgeSteps);
+                                          &edgeSteps, waterAxes.data());
                 localStats.expansions += edgeSteps;
                 const bool crossesWater = path_crosses_rejected_water(pr);
 
@@ -430,17 +493,25 @@ namespace sm
         const int W = td.width, H = td.height;
 
         // The same planner economics as trace_roads: THE step-cost grid —
-        // which now already carries the stone at its bed — with water
-        // rejected, never priced. Laid dirt is priced at ITS bed as it lands,
-        // so later villages reuse earlier lanes.
+        // which now already carries the stone (and its bridges) at their
+        // beds — with unbridgeable water rejected, never priced, and
+        // one-cell water payable at the step law's water bed. Laid dirt is
+        // priced at ITS bed as it lands, so later villages reuse earlier
+        // lanes — and reuse the highways' bridges, which sit at the paved
+        // bed already.
         const float kDirtShare = feature_bed_weight(FT_DirtRoad);
+        const float kBridgeShare = feature_bed_weight(FT_Bridge);
         PathCostData cg = build_cost_grid(td, &features, treeLayer);
+        const std::vector<std::uint8_t> waterAxes = build_water_cross_axes(cg);
         for (std::size_t i = 0; i < totalCells; ++i)
         {
-            if (cg.water[i])
+            // An existing bridge is bridgeable BY CONSTRUCTION (same water
+            // mask, same axis test), so this can never wall off laid stone.
+            if (cg.water[i] && waterAxes[i] == 0u)
                 cg.costGrid[i] = kRoadWaterReject;
         }
-        const std::vector<int> landComponent = build_land_components(td, seaLevel);
+        const std::vector<int> landComponent =
+            build_land_components(td, seaLevel, &waterAxes);
         const int maxSteps = road_search_max_steps(totalCells);
         PathScratch scratch;
 
@@ -448,14 +519,17 @@ namespace sm
         auto stamp = [&](int x, int y)
         {
             const std::size_t idx = std::size_t(y) * W + x;
-            if (FeatureLayer::decode(features.data[idx]) == FT_None
-                && !cg.water[idx])
+            if (FeatureLayer::decode(features.data[idx]) == FT_None)
             {
-                features.data[idx] = FT_DirtRoad;
+                // Every bridge is stone (owner, 2026-08-29): a dirt lane that
+                // crosses water lays the same span the highway does — a dirt
+                // bridge would be a second bridge kind for no world reason.
+                features.data[idx] = cg.water[idx] ? FT_Bridge : FT_DirtRoad;
                 ++laid;
             }
-            if (!cg.water[idx] && cg.costGrid[idx] > kDirtShare)
-                cg.costGrid[idx] = kDirtShare;
+            const float share = cg.water[idx] ? kBridgeShare : kDirtShare;
+            if (cg.costGrid[idx] > share)
+                cg.costGrid[idx] = share;
         };
         // The settlement-on-a-road invariant (subworld road stitching is
         // feature-driven): every village cell carries its road class, and the
@@ -471,7 +545,8 @@ namespace sm
             if (ac < 0 || ac != bc)
                 return; // different island: honestly no road, never a lerp
             PathResult pr = find_path(cg, ax, ay, bx, by, scratch, maxSteps,
-                                      kRoadWaterBlockThreshold, nullptr);
+                                      kRoadWaterBlockThreshold, nullptr,
+                                      waterAxes.data());
             if (!pr.found)
                 return;
             for (const PathPoint &p : pr.path)
@@ -552,19 +627,40 @@ namespace sm
             return td.rgba[idx * 4u + 3] == 0
                 || float(td.rgba[idx * 4u + 0]) / 255.0f < seaLevel;
         };
+        // Biome water — THE baked land mask (biome_at_cell's own answer, the
+        // exact cells the planner priced as water). A road path only ever
+        // stands on such a cell by PAYING the bridgeable-water price, so a
+        // wet masked cell IS a span: it stamps FT_Bridge. The broader
+        // is_water above (mask OR raw height) keeps its old job — the
+        // coast's height/mask disagreement strip still gets no feature.
+        auto is_biome_water = [&](std::size_t idx)
+        {
+            return td.rgba[idx * 4u + 3] == 0;
+        };
         // The feature layer carries only MAN-MADE structures: dirt roads,
-        // then roads (last-writer-wins). Mountains are the Mountain biome
-        // (elevation-classified) and forests are the tree-count field
-        // (macro/tree_layer.h, seeded by the spawn_trees massif mask).
+        // then roads (last-writer-wins), bridges where either crossed water.
+        // Mountains are the Mountain biome (elevation-classified) and
+        // forests are the tree-count field (macro/tree_layer.h, seeded by
+        // the spawn_trees massif mask).
         if (dirtMask)
         {
             for (std::size_t i = 0; i < dirtMaskLimit; ++i)
-                if ((*dirtMask)[i] && !is_water(i))
+            {
+                if (!(*dirtMask)[i])
+                    continue;
+                if (is_biome_water(i))
+                    fl.data[i] = FT_Bridge; // every bridge is stone (owner)
+                else if (!is_water(i))
                     fl.data[i] = FT_DirtRoad;
+            }
         }
         for (std::size_t i = 0; i < roadMaskLimit; ++i)
         {
-            if (roadMask[i] && !is_water(i))
+            if (!roadMask[i])
+                continue;
+            if (is_biome_water(i))
+                fl.data[i] = FT_Bridge;
+            else if (!is_water(i))
                 fl.data[i] = FT_Road;
         }
         return fl;

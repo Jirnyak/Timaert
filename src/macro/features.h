@@ -17,7 +17,7 @@
 namespace sm {
 
 enum FeatureType : std::uint8_t {
-    FT_None = 0, FT_Road = 1, FT_DirtRoad = 2, FT_Field = 3,
+    FT_None = 0, FT_Road = 1, FT_DirtRoad = 2, FT_Field = 3, FT_Bridge = 4,
     FT_Count,
 };
 
@@ -25,11 +25,20 @@ enum FeatureType : std::uint8_t {
 // reference-only; C++ owns this contract. FT_Tree was byte 2 until the
 // tree-count field took over forests; FT_DirtRoad moved 3 → 2. FT_Field is
 // the ploughed farmland stamped around villages on fertile ground — the
-// grain DEPOSIT of the economy loop, owner-requested man-made feature.)
+// grain DEPOSIT of the economy loop, owner-requested man-made feature.
+// FT_Bridge is the road's water crossing — the ONLY feature that stands on a
+// water cell, and it stands ONLY there (owner, 2026-08-29): a road byte on
+// land, a bridge byte on water, never mixed. Every bridge is stone — a dirt
+// lane that crosses a river lays the same stone span the highway does — and
+// its own byte (rather than "road on water", which the subworld generator
+// could already read) is DELIBERATE: the special status is the hook future
+// mechanics hang on (tolls, the troll under the bridge, destruction) as
+// data against this row, not as a new system.)
 static_assert(FT_None == 0, "FeatureType byte layout");
 static_assert(FT_Road == 1, "FeatureType byte layout");
 static_assert(FT_DirtRoad == 2, "FeatureType byte layout");
 static_assert(FT_Field == 3, "FeatureType byte layout");
+static_assert(FT_Bridge == 4, "FeatureType byte layout");
 
 // ── THE feature registry (CANON S16, 2026-08-29) ─────────────────────────
 // Everything the world says ABOUT a feature is a column of ONE row. These
@@ -65,6 +74,10 @@ inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
     {FT_Road,     1.0f, 0.65f, 0.35f},
     {FT_DirtRoad, 1.5f, 0.85f, 0.22f},
     {FT_Field,    1.8f, 1.00f, 0.0f },
+    // The bridge carries the stone road's own columns: its deck IS the paved
+    // bed (the march never notices the river under it), it is the same open
+    // corridor to light and sight, and it seeds the same civilization pull.
+    {FT_Bridge,   1.0f, 0.65f, 0.35f},
 };
 static_assert(rows_in_enum_order(kFeatureDefs, &FeatureDef::type),
               "kFeatureDefs row order must mirror FeatureType — a new "
@@ -81,7 +94,7 @@ struct FeatureLayer {
     std::vector<std::uint8_t> data;
 
     static bool is_valid_byte(std::uint8_t value) {
-        return value <= FT_Field;
+        return value <= FT_Bridge;
     }
 
     static FeatureType decode(std::uint8_t value) {
@@ -90,6 +103,7 @@ struct FeatureLayer {
             case FT_Road:
             case FT_DirtRoad:
             case FT_Field:
+            case FT_Bridge:
                 return FeatureType(value);
             default:
                 return FT_None;

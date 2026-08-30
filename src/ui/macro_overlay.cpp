@@ -70,6 +70,7 @@ const char* feature_name(FeatureType f) {
     switch (f) {
         case FT_Road:     return "Road";
         case FT_DirtRoad: return "Dirt Road";
+        case FT_Bridge:   return "Bridge";
         default:          return "";
     }
 }

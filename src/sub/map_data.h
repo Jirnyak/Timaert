@@ -5,11 +5,15 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <array>
 #include <vector>
 #include "core/table_guard.h"
 #include "macro/biomes.h"
 #include "macro/features.h"
 #include "macro/landmark_registry.h"
+// THE step law: the subworld prices ground in the same units the macro march
+// does (biome beds, feature beds, the canopy term, speed = base/√weight).
+#include "macro/movement_cost.h"
 
 namespace sm::sub {
 
@@ -24,34 +28,89 @@ enum Tile : std::uint8_t {
     TILE_COUNT,
 };
 
-// ── Ground movement table ──────────────────────────────────────────────────
-// How fast a body crosses each ground type, as a multiplier on its own speed.
-// ONE data row per tile id: this is the single source of truth for terrain cost,
-// read by the mass-battle steering pass (sub/battle.h) through a plain pointer —
-// no branch chain, no hardcoded "is it water" test anywhere in the engine.
-// Adding a ground type = adding an enum value and a row here; the static_assert
-// below refuses to build if the two ever drift apart.
+// ── Ground movement: ONE law, both scales (owner's ruling, 2026-08-30) ─────
+// How hard each ground type is to cross — and it is the SAME question the
+// macro march answers, so it may not have a second answer. Until now it had
+// one: the map priced a cell by bed + canopy (macro/movement_cost.h) and the
+// subworld priced a tile by a hand-written multiplier table, two laws about
+// one world differing by up to 40 %.
+//
+// So the tile carries a WEIGHT in the macro law's own units, and its speed is
+// that law's own conversion, `terrain_speed_mult` = 1/√weight. Nothing here
+// is authored twice: grass IS the meadow bed, a road IS the paved bed, a
+// wooded tile IS meadow plus the full canopy term, water IS the unpayable
+// water bed. The numbers this produces are the ones the old table already
+// had — water 0.447 against its 0.45, scree 0.632 against 0.65, shore 0.707
+// against 0.75 — because the table was always this law, written down once
+// with its normalisation lost: it read "grass = 1", while the world's base
+// (kSubworldWalkTilesPerSecond, derived from the 8 cells/hour macro march at
+// bed 1.0) is the ROAD. Restoring that is the one visible change: a road
+// finally beats open grass by 41 % instead of 15 %, and grass costs what a
+// meadow costs on the map above.
 //
 // Hard blocking is NOT this table's job: solid structures (walls, houses)
 // physically stop and carry bodies through sub/collide.h, which indexes the
 // oriented Structure volumes below. The HOUSE/WALL rows here only price the
 // unpainted verge tiles hugging a footprint — the solid itself refuses entry.
-inline constexpr float kTileMovementSpeed[TILE_COUNT] = {
-    1.00f,   // TILE_EMPTY      — untouched ground, treat as open
-    1.00f,   // TILE_GRASS      — reference surface
-    0.95f    // TILE_FIELD      — crops underfoot
-    ,
-    0.80f,   // TILE_TREE_DECOR — undergrowth
-    1.15f,   // TILE_ROAD       — the reason roads exist
-    0.35f,   // TILE_HOUSE      — squeezing through a building footprint
-    0.30f,   // TILE_WALL       — same, worse
-    0.45f,   // TILE_WATER      — wading (rivers are honest water cells)
-    0.75f,   // TILE_SHORE      — wet sand / shallows
-    1.10f,   // TILE_SQUARE     — paved settlement square
-    0.65f,   // TILE_ROCK       — scree
+inline constexpr float kTileGroundWeight[TILE_COUNT] = {
+    biome_sp_weight(Meadow),                    // TILE_EMPTY — open ground
+    biome_sp_weight(Meadow),                    // TILE_GRASS
+    feature_bed_weight(FT_Field),               // TILE_FIELD — ploughed bed
+    biome_sp_weight(Meadow) + kCanopySpWeight,  // TILE_TREE_DECOR — full canopy
+    feature_bed_weight(FT_Road),                // TILE_ROAD — the paved bed
+    // A footprint's verge is not a ground of the world and has no macro bed:
+    // squeezing along a wall is the WORST going there is, dearer than the
+    // mountain (5.0) that is the roughest ground a cell can hold. The solid
+    // itself refuses entry — these price the tiles hugging it.
+    8.0f,                                       // TILE_HOUSE
+    11.0f,                                      // TILE_WALL
+    biome_sp_weight(Water),                     // TILE_WATER — wading
+    biome_sp_weight(Swamp),                     // TILE_SHORE — wet sand
+    feature_bed_weight(FT_Road),                // TILE_SQUARE — paved square
+    biome_sp_weight(Mountain),                  // TILE_ROCK — scree
 };
-static_assert(sizeof(kTileMovementSpeed) / sizeof(float) == std::size_t(TILE_COUNT),
-              "every Tile id needs exactly one movement row");
+static_assert(sizeof(kTileGroundWeight) / sizeof(float) == std::size_t(TILE_COUNT),
+              "every Tile id needs exactly one ground weight");
+
+// ── GRIP: what the ground gives the feet to push and brake against ────────
+// The second thing a surface says about walking on it, and the reason the
+// player stopped feeling like he was on ice: a body cannot change its
+// velocity faster than the ground lets it. 1.0 is honest footing (paved
+// stone, packed earth); soft or wet ground gives less. Both halves of the
+// change are scaled by it — you neither sprint away nor pull up short on a
+// slick surface — which is what makes the ice the owner asked about
+// (2026-08-30: «если потом в игре добавим лёд, то скольжение по льду
+// бесплатное») exactly one row: TILE_ICE with grip near zero, and every body
+// in the world slides on it, with no code anywhere knowing what ice is.
+inline constexpr float kTileGroundGrip[TILE_COUNT] = {
+    1.00f,   // TILE_EMPTY      — bare ground
+    0.90f,   // TILE_GRASS      — turf gives a little
+    0.80f,   // TILE_FIELD      — broken soil underfoot
+    0.80f,   // TILE_TREE_DECOR — roots and litter
+    1.00f,   // TILE_ROAD       — what a road IS for
+    1.00f,   // TILE_HOUSE      — a floor is a floor
+    1.00f,   // TILE_WALL
+    0.55f,   // TILE_WATER      — nothing to push against but water
+    0.70f,   // TILE_SHORE      — wet sand
+    1.00f,   // TILE_SQUARE     — paving
+    0.85f,   // TILE_ROCK       — scree shifts underfoot
+};
+static_assert(sizeof(kTileGroundGrip) / sizeof(float) == std::size_t(TILE_COUNT),
+              "every Tile id needs exactly one grip row");
+
+// The speeds themselves — the macro law's own conversion applied to the WEIGHT
+// row, built once. Not `constexpr`: it needs a square root, and this toolchain's
+// std::sqrt is not usable in a constant expression (measured, not assumed). So
+// it is one static initialisation rather than per-query arithmetic in the
+// mover — and every reader is inside a function body, so nothing can read it
+// before it exists.
+inline const std::array<float, std::size_t(TILE_COUNT)> kTileMovementSpeed = [] {
+    std::array<float, std::size_t(TILE_COUNT)> out{};
+    for (std::size_t i = 0; i < std::size_t(TILE_COUNT); ++i) {
+        out[i] = terrain_speed_mult(kTileGroundWeight[i]);
+    }
+    return out;
+}();
 
 enum class SubworldMode : std::uint8_t {
     Open, City, Village, Forest, Mountain, Swamp, Ruin, Water, Grassland, Road, Spire,
@@ -275,8 +334,8 @@ struct Structure {
     enum Kind : std::uint8_t { Tree = 0, Rock, House, Wall, Bridge, Crop,
                                Fence, Furnish, Door, Lantern, Stairs,
                                Chest, CaveMouth, Well, Sign, SpireGate,
-                               SpireOrb } kind;
-    static constexpr int kKindCount = int(SpireOrb) + 1;
+                               SpireOrb, Kerb } kind;
+    static constexpr int kKindCount = int(Kerb) + 1;
     // Footprint silhouette. Box is the default; Cylinder renders (and collides)
     // as a round prism — wall towers, gate jambs, the spire. One byte, not a
     // new Kind: shape is orthogonal to what the thing IS.
@@ -288,9 +347,22 @@ struct Structure {
     float yaw   = 0.0f;  // rotation about vertical, radians, tile-space CCW
     float hx    = 0.0f;  // half-extent along local X, tiles (0 ⇒ radius)
     float hy    = 0.0f;  // half-extent along local Y, tiles (0 ⇒ radius)
-    float zBase = 0.0f;  // bottom lift above the terrain seat, metres — gate
-                         // lintels / decks: bodies pass beneath, stand on top
+    float zBase = 0.0f;  // bottom of the solid, metres. By default a lift
+                         // ABOVE the terrain seat (gate lintels: bodies pass
+                         // beneath, stand on top); with `zWorld` it is an
+                         // absolute world height instead — see below.
     Shape shape = Box;
+    // Does this thing sit on the GROUND, or stand at a level of the WORLD?
+    // Almost everything sits: a house follows the hill under it. But a
+    // structure over water answers to the water, not to the bed — the sea
+    // plane is one height everywhere (sub/height.h kSeaLevelM), so a bridge
+    // deck is level by the same law that makes the water level. Seating such
+    // a deck on the bed made its top wobble by the DIFFERENCE between two
+    // samplers — the generator reads the exact tile heightmap, the renderer
+    // the 16-tile mesh — which is what turned an honest span into a flight
+    // of steps a walker had to jump. An absolute span cannot drift, because
+    // nothing under it is consulted at all.
+    bool zWorld = false;
     // Per-INSTANCE payload for the prop's interaction (the kind decides the
     // verb, this decides which one of them this is): a door carries its
     // building's ordinal, a stair carries its direction. Meaningless — and
@@ -398,24 +470,46 @@ struct StructureKindRow {
     // Metres above the prop's seat the light hangs — a lantern burns at its
     // crown, not at the foot of its post.
     float lightHeightM;
+    // ── THE GROUND THIS THING LAYS UNDER A BODY STANDING ON IT ───────────
+    // The tile id whoever stands on top walks over, so that WHAT CARRIES YOU
+    // decides how fast you move — not the terrain metres below it. A tile is
+    // one per column of the map and cannot say "water down there, masonry
+    // three metres up", which is why a body crossing a bridge deck waded at
+    // a river's speed while walking on stone (owner, 2026-08-30).
+    //
+    // Deliberately a TILE and not a second speed table: the world already has
+    // exactly one answer to "how fast is this ground" (kTileMovementSpeed),
+    // and a parallel per-material one would be a second law about the same
+    // question (CANON S26). A bridge lays road, because a bridge IS road.
+    //
+    // `kWalkTileTransparent` = this thing lays nothing and the terrain's own
+    // tile stands — the silent zero of the law, not a case to branch on.
+    std::uint8_t walkTile;
 };
+// "I lay no ground of my own": TILE_COUNT is not a tile, so it can never be
+// confused with one (TILE_EMPTY is a real, walkable id).
+inline constexpr std::uint8_t kWalkTileTransparent = std::uint8_t(TILE_COUNT);
 inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     { Structure::Tree, "tree", 1.6f, 3.5f, 14.0f, false, "You fell a tree",
                   StructureKindRow::Draw::Billboard,
                   StructureKindRow::Material::Wood,
-                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f},
+                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f,
+                  kWalkTileTransparent},
     { Structure::Rock, "",     1.6f, 3.5f,  0.0f, false, "",
                   StructureKindRow::Draw::None,
                   StructureKindRow::Material::Stone,
-                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f},
+                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f,
+                  kWalkTileTransparent},
     { Structure::House, "",     1.6f, 3.5f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::House,
-                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f},
+                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f,
+                  std::uint8_t(TILE_SQUARE)},
     { Structure::Wall, "",     1.2f, 4.0f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Stone,
-                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f},
+                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f,
+                  std::uint8_t(TILE_SQUARE)},
     // Bridge: honest masonry (owner, 2026-08-29 — "like the city gates: over
     // the water, arches beneath, not a dam"). The generator emits it as
     // zBase-lifted deck chords plus round piers (sub/gens/dispatch.cpp
@@ -426,17 +520,20 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     { Structure::Bridge, "",     0.4f, 0.5f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Stone,
-                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f},
+                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f,
+                  std::uint8_t(TILE_ROAD)},
     { Structure::Crop, "crop", 0.4f, 0.5f,  1.2f, false, "You harvest the crop",
                   StructureKindRow::Draw::Billboard,
                   StructureKindRow::Material::Wood,
-                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f},
+                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f,
+                  kWalkTileTransparent},
     // Fence: the field balks' boulder walls — knee-high, honest to walk
     // around (solid), drawn by the same box pass as walls in stone flavour.
     { Structure::Fence, "",     0.3f, 0.4f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Stone,
-                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f},
+                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f,
+                  kWalkTileTransparent},
     // Furnish: interior furniture (beds, tables, chests — sub/dgn/). Solid so
     // a room fights around its furniture; waist-high floor (0.4 m) so a chest
     // is never inflated to a pillar by the legacy stub rule. Drawn wood-
@@ -445,7 +542,8 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     { Structure::Furnish, "",     0.5f, 0.4f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Wood,
-                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f},
+                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f,
+                  kWalkTileTransparent},
     // Door: the way in. Not solid — it hangs flush on a wall that already
     // blocks, and a door you bump into instead of opening is a door that
     // fights the player. A leaf is 2 m tall (a body plus its hat) and half a
@@ -453,7 +551,8 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     { Structure::Door, "",     0.5f, 2.0f,  0.0f, false, "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Door,
-                  InteractId::Door, DungeonRef::House, 0u, 0.0f, 0.0f},
+                  InteractId::Door, DungeonRef::House, 0u, 0.0f, 0.0f,
+                  kWalkTileTransparent},
     // Lantern: a post with a flame on top. Solid so it is a real obstacle you
     // walk around, knee-thin. Warm 0xFFB060 at 24 tiles — the carried-torch
     // family (sub/lighting.h), hung at 3 m: above a body's head, so it lights
@@ -461,14 +560,16 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     { Structure::Lantern, "",     0.3f, 3.0f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Lantern,
-                  InteractId::None, DungeonRef::None, 0xFFB060u, 24.0f, 3.0f},
+                  InteractId::None, DungeonRef::None, 0xFFB060u, 24.0f, 3.0f,
+                  kWalkTileTransparent},
     // Stairs: the shaft between storeys, drawn as a low block you step onto.
     // Not solid (you stand ON its tile and press E), knee-high so it reads as
     // a flight of steps and not a table.
     { Structure::Stairs, "",     1.5f, 0.5f,  0.0f, false, "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Wood,
-                  InteractId::Stairs, DungeonRef::None, 0u, 0.0f, 0.0f},
+                  InteractId::Stairs, DungeonRef::None, 0u, 0.0f, 0.0f,
+                  kWalkTileTransparent},
     // Chest: the household's store, waist-high and solid like the furniture
     // it is. It has no loot ROW of its own on purpose — a chest does not
     // conjure goods, it hands over what the place that owns it actually has
@@ -477,7 +578,8 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     { Structure::Chest, "",     0.8f, 0.9f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Chest,
-                  InteractId::Search, DungeonRef::None, 0u, 0.0f, 0.0f},
+                  InteractId::Search, DungeonRef::None, 0u, 0.0f, 0.0f,
+                  kWalkTileTransparent},
     // CaveMouth: a dark opening in rock. The SAME door verb as a house's
     // leaf — the column below is what makes it open a cavern instead of a
     // parlour — so the player learns one key and the engine keeps one path.
@@ -486,20 +588,23 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     { Structure::CaveMouth, "",     2.0f, 3.0f,  0.0f, false, "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::CaveMouth,
-                  InteractId::Door, DungeonRef::Cave, 0u, 0.0f, 0.0f},
+                  InteractId::Door, DungeonRef::Cave, 0u, 0.0f, 0.0f,
+                  kWalkTileTransparent},
     // Well: waist-high stonework you walk around (solid), drawn as a round
     // curb because that is what a well IS — the cylinder pass already has
     // the shape, so this costs no geometry.
     { Structure::Well, "",     1.6f, 1.2f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Well,
-                  InteractId::Drink, DungeonRef::None, 0u, 0.0f, 0.0f},
+                  InteractId::Drink, DungeonRef::None, 0u, 0.0f, 0.0f,
+                  kWalkTileTransparent},
     // Sign: a board at head height on a thin post. Not solid — you read it,
     // you do not walk into it.
     { Structure::Sign, "",     0.9f, 2.2f,  0.0f, false, "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Sign,
-                  InteractId::Read, DungeonRef::None, 0u, 0.0f, 0.0f},
+                  InteractId::Read, DungeonRef::None, 0u, 0.0f, 0.0f,
+                  kWalkTileTransparent},
     // SpireGate: the tower's own doorway — the CaveMouth pattern (a Door verb
     // whose `opens` column names its OWN interior), sized like the house leaf
     // it visually is (the Door material draws it). One kind serves both ends
@@ -508,7 +613,8 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     { Structure::SpireGate, "",     0.5f, 2.0f,  0.0f, false, "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Door,
-                  InteractId::Door, DungeonRef::SpireTower, 0u, 0.0f, 0.0f},
+                  InteractId::Door, DungeonRef::SpireTower, 0u, 0.0f, 0.0f,
+                  kWalkTileTransparent},
     // SpireOrb: the spell on the crown — a waist-high plinth (solid: you walk
     // around a shrine, not through it) burning the spire's cold blue, the
     // same tint the macro map glows at night (landmark_registry.h spire row,
@@ -517,7 +623,20 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     { Structure::SpireOrb, "",     0.8f, 1.6f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::SpireOrb,
-                  InteractId::Learn, DungeonRef::None, 0xA86CFFu, 24.0f, 1.4f},
+                  InteractId::Learn, DungeonRef::None, 0xA86CFFu, 24.0f, 1.4f,
+                  kWalkTileTransparent},
+    // Kerb: the parapet rail along a bridge's roadway — its own KIND, not a
+    // thin Bridge, because a bridge is what carries you and a kerb is what
+    // edges it: one is the road, the other its trim, and everything that
+    // asks about either (a chain check, a future toll gate, the day rails
+    // get their own material) would otherwise have to guess by measuring.
+    // Deliberately knee-high — under kStepUpM, so it is scenery a body steps
+    // over rather than a wall that can pin anyone against the water.
+    { Structure::Kerb, "",     0.2f, 0.3f,  0.0f, true,  "",
+                  StructureKindRow::Draw::Solid,
+                  StructureKindRow::Material::Stone,
+                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f,
+                  std::uint8_t(TILE_ROAD)},
 };
 static_assert(rows_in_enum_order(kStructureKindRows, &StructureKindRow::kind),
               "kStructureKindRows row order must mirror Structure::Kind");
@@ -527,6 +646,11 @@ inline constexpr const StructureKindRow& structure_kind_row(Structure::Kind k) {
 }
 inline constexpr float structure_min_half_xy(Structure::Kind k) {
     return structure_kind_row(k).minHalfXy;
+}
+// The ground this kind lays under whoever stands ON it, or
+// kWalkTileTransparent when it lays none and the terrain answers.
+inline constexpr std::uint8_t structure_walk_tile(Structure::Kind k) {
+    return structure_kind_row(k).walkTile;
 }
 inline constexpr float structure_min_height(Structure::Kind k) {
     return structure_kind_row(k).minHeight;
@@ -567,16 +691,17 @@ inline constexpr bool structure_is_lit(Structure::Kind k) {
 inline float structure_visible_height(const Structure& s) {
     const float minH = structure_min_height(s.kind);
     if (s.height < 0.0f) return minH;
-    if (s.zBase > 0.0f) return s.height;
+    if (s.zBase > 0.0f || s.zWorld) return s.height;
     return std::max(s.height, minH);
 }
 
 // Vertical solid span in absolute metres given the terrain sample at the
 // structure's centre (`seatM`). Grounded bodies rest on the seat; zBase lifts
-// the bottom clear of it (gate lintels, decks).
+// the bottom clear of it (gate lintels); a `zWorld` body ignores the seat and
+// stands at its stated world height (a deck over the one sea plane).
 inline void structure_solid_span(const Structure& s, float seatM,
                                  float& z0, float& z1) {
-    z0 = seatM + s.zBase;
+    z0 = s.zWorld ? s.zBase : seatM + s.zBase;
     z1 = z0 + structure_visible_height(s);
 }
 

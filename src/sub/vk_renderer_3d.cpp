@@ -1849,14 +1849,16 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                     continue;
                 }
                 const float baseM = sample_height_m(s.x, s.y);
-                // Drowned-prop cull by the TOP of the solid span, not the
-                // seat: a bridge deck/pier is SEATED on the river bed and
-                // rises past the water plane — and it already collides
-                // (sub/collide.h never had a water cull), so what carries a
-                // body must also be drawn. A fully submerged solid still
-                // skips.
-                if (baseM + s.zBase + structure_visible_height(s)
-                    < kSeaLevelM - 0.5f) {
+                // THE span, from the shared contract (map_data.h
+                // structure_solid_span) — the very function the collision
+                // index reads, so the picture and the solid can no longer be
+                // computed two ways. Drowned-prop cull by the TOP of that
+                // span, not the seat: a bridge deck rises past the water
+                // plane and already collides, so what carries a body must
+                // also be drawn. A fully submerged solid still skips.
+                float spanZ0, spanZ1;
+                structure_solid_span(s, baseM, spanZ0, spanZ1);
+                if (spanZ1 < kSeaLevelM - 0.5f) {
                     continue;
                 }
                 float wx, wz;
@@ -1865,14 +1867,14 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 const float halfX = std::max(minR, structure_half_x(s));
                 const float halfZ = std::max(minR, structure_half_y(s));
                 const float height = structure_visible_height(s);
-                // Grounded bodies keep the legacy seat (centre AT ground,
-                // half-height = full height, lower half buried — hides the
-                // downhill gap on slopes). A zBase-lifted body (gate lintel,
-                // deck) floats honestly: bottom at seat + zBase.
+                // A lifted or world-levelled body (gate lintel, bridge deck)
+                // draws its honest span. GROUNDED bodies keep the legacy seat
+                // — centre AT ground, half-height = full height, lower half
+                // buried — which hides the downhill gap on slopes.
                 float py, halfY;
-                if (s.zBase > 0.0f) {
-                    halfY = height * 0.5f;
-                    py = baseM + s.zBase + halfY;
+                if (s.zWorld || s.zBase > 0.0f) {
+                    halfY = (spanZ1 - spanZ0) * 0.5f;
+                    py = spanZ0 + halfY;
                 } else {
                     halfY = height;
                     py = baseM - 0.05f;

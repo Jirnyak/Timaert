@@ -238,7 +238,13 @@ namespace sm {
 // their only living semantic) + two lifetime counters. The codex unlock
 // state is a bit per article ordinal (macro/codex.h registry, was UI-owned
 // string tables + a string vector).
-constexpr int kSaveVersion = 63;
+// v64: bridges (FT_Bridge, owner 2026-08-29) — the DERIVED world changed.
+// The road planner may now pay for a one-cell water crossing (square-on,
+// stamped FT_Bridge, always stone), so road networks route differently and
+// city pairs that used to component-prune connect. Nothing new is
+// serialized — the feature grid is regenerated at boot — but an old slot's
+// squads and knowledge would sit in a subtly different world.
+constexpr int kSaveVersion = 64;
 
 enum class SettlementMood : std::uint8_t {
     Prosperous, Stable, Tense, Unrest, Revolt, Count
@@ -758,7 +764,7 @@ inline int player_reputation(const GameState* gs, const char* factionId) {
 // of this answer, never a second formula:
 //   • the battle masks are its BAKED form — build_faction_masks applies the
 //     same threshold over the same matrix once per tick and hostility becomes
-//     a shift-and-AND (sub/battle.h);
+//     a shift-and-AND (sub/movement.h);
 //   • the per-entity subworld door (hostile_to_player_entity) adds only
 //     SESSION state on top: the player's own side is never hostile, and a
 //     TempHostileToPlayer grudge overrides the matrix until the body dies or

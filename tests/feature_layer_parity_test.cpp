@@ -72,18 +72,38 @@ sm::FeatureLayer build_reference_feature_layer(
     {
         return td.rgba[i * 4u + 3] == 0 || td.rgba[i * 4u + 0] < kSeaLvl8;
     };
+    // Biome water (the baked alpha mask): a masked road cell here is a paid
+    // one-cell crossing and stamps FT_Bridge — always stone, whichever pass
+    // paid for it. The broader is_water keeps the coast's height/mask
+    // disagreement strip feature-free, exactly as before.
+    auto biome_water = [&](std::size_t i)
+    {
+        return td.rgba[i * 4u + 3] == 0;
+    };
 
     if (dirtMask)
     {
         const std::size_t limit = dirtMask->size() < total ? dirtMask->size() : total;
         for (std::size_t i = 0; i < limit; ++i)
-            if ((*dirtMask)[i] > 0 && !is_water(i))
+        {
+            if ((*dirtMask)[i] == 0)
+                continue;
+            if (biome_water(i))
+                fl.data[i] = sm::FT_Bridge;
+            else if (!is_water(i))
                 fl.data[i] = sm::FT_DirtRoad;
+        }
     }
     const std::size_t roadLimit = roadMask.size() < total ? roadMask.size() : total;
     for (std::size_t i = 0; i < roadLimit; ++i)
-        if (roadMask[i] > 0 && !is_water(i))
+    {
+        if (roadMask[i] == 0)
+            continue;
+        if (biome_water(i))
+            fl.data[i] = sm::FT_Bridge;
+        else if (!is_water(i))
             fl.data[i] = sm::FT_Road;
+    }
     return fl;
 }
 
@@ -115,8 +135,8 @@ void test_feature_priority_and_water_filter()
                  "road pass must stamp main road cells");
     CHECK(fl.at(1, 1) == sm::FT_Road,
                  "road pass must have highest feature priority");
-    CHECK(fl.at(2, 2) == sm::FT_None,
-                 "native feature layer must keep water cells empty");
+    CHECK(fl.at(2, 2) == sm::FT_Bridge,
+                 "a masked biome-water cell is a paid crossing: FT_Bridge");
     CHECK(fl.at(-1, 0) == sm::FT_DirtRoad,
                  "feature lookup must wrap negative x toroidally");
     CHECK(fl.at(5, 1) == sm::FT_Road,
@@ -228,8 +248,15 @@ void test_empty_and_malformed_inputs_are_safe()
     // frontier moves to the first unassigned byte.
     CHECK(sm::FeatureLayer::decode(3u) == sm::FT_Field,
                  "byte 3 is FT_Field now (grid is never serialized)");
-    CHECK(!sm::FeatureLayer::is_valid_byte(4u)
-                     && sm::FeatureLayer::decode(4u) == sm::FT_None,
+    // Byte 4 is FT_Bridge (2026-08-29): the road carried over a one-cell
+    // water crossing, first-class exactly like every other feature. The
+    // fail-closed frontier moves to byte 5.
+    CHECK(sm::FeatureLayer::is_valid_byte(std::uint8_t(sm::FT_Bridge))
+                     && sm::FeatureLayer::decode(std::uint8_t(sm::FT_Bridge))
+                            == sm::FT_Bridge,
+                 "FT_Bridge must be a first-class feature byte");
+    CHECK(!sm::FeatureLayer::is_valid_byte(5u)
+                     && sm::FeatureLayer::decode(5u) == sm::FT_None,
                  "first unassigned feature byte must fail closed to None");
     CHECK(fl.at(0, 0) == sm::FT_Road,
                  "short road masks must apply prefix bytes");
@@ -284,8 +311,10 @@ void test_feature_layer_reference_matrix()
 void test_feature_land_mask_trusts_alpha()
 {
     // The feature layer's only height-adjacent responsibility is honouring
-    // the land/water mask: roads never stamp a cell whose alpha marks it as
-    // water, regardless of its stored height.
+    // the land/water mask: an alpha-zero cell is biome water regardless of
+    // its stored height, and a masked lane there is a paid crossing — it
+    // stamps FT_Bridge (stone, whichever pass paid), never the lane's own
+    // ground class.
     sm::TerrainData td = make_terrain(3, 1, 240);
     set_alpha(td, 2, 0, 0);   // force cell (2,0) to water via the land mask
 
@@ -298,8 +327,8 @@ void test_feature_land_mask_trusts_alpha()
 
     CHECK(fl.at(0, 0) == sm::FT_DirtRoad,
                  "dirt pass must stamp features on land cells");
-    CHECK(fl.at(2, 0) == sm::FT_None,
-                 "native feature layer must trust alpha-zero land mask");
+    CHECK(fl.at(2, 0) == sm::FT_Bridge,
+                 "alpha-zero water under a paid lane must stamp FT_Bridge");
 }
 
 void test_feature_water_filter_uses_map_sea_level()

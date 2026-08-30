@@ -194,12 +194,18 @@ void test_road_tracing_uses_map_sea_level()
 void test_large_road_search_restores_same_land_detour()
 {
     sm::TerrainData td = make_terrain(300, 300, 160);
+    // TWO water columns: a one-cell wall would be bridgeable now (every wall
+    // cell has land on both E/W sides), and this test is about the search
+    // BUDGET — the wall must force the long detour, not invite a span.
     for (int y = 0; y < td.height; ++y)
     {
         set_cell(td, 150, y, 0);
+        set_cell(td, 151, y, 0);
     }
     set_cell(td, 150, 0, 160);
+    set_cell(td, 151, 0, 160);
     set_cell(td, 150, td.height - 1, 160);
+    set_cell(td, 151, td.height - 1, 160);
 
     sm::Politik p;
     p.mapW = td.width;
@@ -222,8 +228,169 @@ void test_large_road_search_restores_same_land_detour()
           "test detour must cover the previous too-small large-map cap");
     for (int y = 1; y < td.height - 1; ++y)
     {
-        CHECK(roads[std::size_t(y) * td.width + 150] == 0,
+        CHECK(roads[std::size_t(y) * td.width + 150] == 0
+                  && roads[std::size_t(y) * td.width + 151] == 0,
               "restored road search must not stamp rejected water wall cells");
+        if (sm::test::failures() != failsBefore)
+        {
+            break;
+        }
+    }
+}
+
+// ── Bridges (FT_Bridge, owner 2026-08-29): a road may cross water exactly
+// one cell thick, square-on, and that crossing is a stone span. ──────────
+
+// The forced-crossing fixture: on a torus ONE water ring never separates the
+// land (the wrap walks around it), so the map carries TWO barriers — a
+// one-cell river at x=5 (bridgeable: land on both E/W sides) and a two-cell
+// strait at x=13..14 (unbridgeable). The only way between the shores is a
+// span at x=5.
+sm::TerrainData make_two_barrier_terrain()
+{
+    sm::TerrainData td = make_terrain(20, 9, 160);
+    for (int y = 0; y < td.height; ++y)
+    {
+        set_cell(td, 5, y, 90);   // one-cell river (water: 90 < 102)
+        set_cell(td, 13, y, 90);  // two-cell strait
+        set_cell(td, 14, y, 90);
+    }
+    return td;
+}
+
+void test_road_bridges_one_cell_river()
+{
+    sm::TerrainData td = make_two_barrier_terrain();
+
+    sm::Politik p;
+    p.mapW = td.width;
+    p.mapH = td.height;
+    p.cities.push_back(make_city(2, 4, 1));
+    p.cities.push_back(make_city(8, 4, 0));
+
+    sm::RoadTraceStats stats;
+    const std::vector<std::uint8_t> roads = sm::trace_roads(td, p, &stats);
+
+    CHECK(stats.componentPrunedEdges == 0,
+          "one-cell water joins its shores into ONE road component");
+    CHECK(stats.keptEdges == 1 && stats.prunedEdges == 0,
+          "the cross-river edge must survive over a bridge");
+    CHECK(has_connection(p.cities[0], 1) && has_connection(p.cities[1], 0),
+          "the bridged edge must keep its Politik connection");
+
+    int wet = 0, wetY = -1;
+    for (int y = 0; y < td.height; ++y)
+    {
+        if (roads[std::size_t(y) * td.width + 5] != 0)
+        {
+            ++wet;
+            wetY = y;
+        }
+    }
+    CHECK(wet == 1, "the road crosses the river ONCE — one span, no causeway");
+    CHECK(wetY >= 0
+              && roads[std::size_t(wetY) * td.width + 4] == 255u
+              && roads[std::size_t(wetY) * td.width + 6] == 255u,
+          "the span meets both banks square-on (cardinal entry and exit)");
+    const int failsBefore = sm::test::failures();
+    for (int y = 0; y < td.height; ++y)
+    {
+        CHECK(roads[std::size_t(y) * td.width + 13] == 0
+                  && roads[std::size_t(y) * td.width + 14] == 0,
+              "the two-cell strait must stay road-free (wide water refused)");
+        if (sm::test::failures() != failsBefore)
+        {
+            break;
+        }
+    }
+
+    // The stamp law (build_feature_layer): the paid water cell IS a bridge,
+    // its banks are stone road.
+    const sm::FeatureLayer fl = sm::build_feature_layer(td, roads, nullptr);
+    CHECK(fl.at(5, wetY) == sm::FT_Bridge,
+          "a road cell on biome water must stamp FT_Bridge");
+    CHECK(fl.at(4, wetY) == sm::FT_Road && fl.at(6, wetY) == sm::FT_Road,
+          "the bridge's banks must stamp FT_Road");
+    int wetFeatures = 0;
+    for (int y = 0; y < td.height; ++y)
+        if (fl.at(5, y) != sm::FT_None)
+            ++wetFeatures;
+    CHECK(wetFeatures == 1,
+          "exactly the paid crossing carries a feature on the river");
+}
+
+void test_two_separating_straits_stay_unbridged()
+{
+    // The negative control of the bridge law: BOTH barriers two cells wide —
+    // nothing is bridgeable, the shores are honest separate components and
+    // the edge dies exactly as it always did.
+    sm::TerrainData td = make_terrain(20, 9, 160);
+    for (int y = 0; y < td.height; ++y)
+    {
+        set_cell(td, 5, y, 90);
+        set_cell(td, 6, y, 90);
+        set_cell(td, 13, y, 90);
+        set_cell(td, 14, y, 90);
+    }
+
+    sm::Politik p;
+    p.mapW = td.width;
+    p.mapH = td.height;
+    p.cities.push_back(make_city(2, 4, 1));
+    p.cities.push_back(make_city(9, 4, 0));
+
+    sm::RoadTraceStats stats;
+    const std::vector<std::uint8_t> roads = sm::trace_roads(td, p, &stats);
+
+    CHECK(stats.keptEdges == 0 && stats.componentPrunedEdges == 1,
+          "two-cell water has no one-cell crossing — the edge is pruned");
+    CHECK(!has_connection(p.cities[0], 1) && !has_connection(p.cities[1], 0),
+          "the unbridgeable edge must lose its Politik connection");
+    int wetRoads = 0;
+    for (std::size_t i = 0; i < roads.size(); ++i)
+        if (roads[i] != 0 && td.rgba[i * 4u + 3] == 0)
+            ++wetRoads;
+    CHECK(wetRoads == 0, "no water cell may carry road without a span");
+}
+
+void test_dirt_lane_lays_a_stone_bridge()
+{
+    // Every bridge is stone (owner): a dirt lane forced over the one-cell
+    // river lands FT_Bridge on the water cell, dirt on the banks.
+    sm::TerrainData td = make_two_barrier_terrain();
+    sm::FeatureLayer features;
+    features.resize(td.width, td.height);
+
+    std::vector<sm::VillageRoadSite> villages(1);
+    villages[0].x = 2;
+    villages[0].y = 4;
+    villages[0].cityX = 8;
+    villages[0].cityY = 4;
+    villages[0].hasCity = true;
+
+    const int laid = sm::trace_dirt_roads(features, td, villages, {}, 4);
+
+    CHECK(laid > 0, "the cross-river home city must get a lane over a span");
+    int wet = 0, wetY = -1;
+    for (int y = 0; y < td.height; ++y)
+    {
+        if (features.at(5, y) != sm::FT_None)
+        {
+            ++wet;
+            wetY = y;
+        }
+    }
+    CHECK(wet == 1 && features.at(5, wetY) == sm::FT_Bridge,
+          "the dirt lane's crossing must land FT_Bridge — stone, never dirt");
+    CHECK(features.at(4, wetY) == sm::FT_DirtRoad
+              && features.at(6, wetY) == sm::FT_DirtRoad,
+          "the span's banks carry the lane's own dirt class, square-on");
+    const int failsBefore = sm::test::failures();
+    for (int y = 0; y < td.height; ++y)
+    {
+        CHECK(features.at(13, y) == sm::FT_None
+                  && features.at(14, y) == sm::FT_None,
+              "the two-cell strait must stay lane-free (wide water refused)");
         if (sm::test::failures() != failsBefore)
         {
             break;
@@ -482,6 +649,9 @@ int main()
     test_road_uses_a_star_on_open_land_connection();
     test_road_tracing_uses_map_sea_level();
     test_large_road_search_restores_same_land_detour();
+    test_road_bridges_one_cell_river();
+    test_two_separating_straits_stay_unbridged();
+    test_dirt_lane_lays_a_stone_bridge();
     test_tree_spawner_respects_river_buffer();
     test_tree_spawner_uses_map_sea_level();
     test_malformed_terrain_fails_closed();

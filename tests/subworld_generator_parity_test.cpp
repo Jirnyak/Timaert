@@ -2,6 +2,7 @@
 #include "sub/gens/dispatch.h"
 #include "macro/tree_layer.h"
 #include "sub/base_generator.h"
+#include "sub/collide.h"   // kStepUpM — the arch must be WALKED
 #include "sub/height.h"
 #include "sub/material.h"
 #include "core/rng.h"
@@ -144,12 +145,21 @@ void expected_edge_anchor(const sm::sub::CellContext& ctx, int dx, int dy,
     }
 }
 
-// The honest-bridge law (owner, 2026-08-29): a bridge over water is the city
-// gate's mechanism writ long — zBase-lifted stone DECK chords a walker stands
-// on (sub/collide.h support_at), round PIERS down to the bed, and the gaps
-// between piers — the arches — leaving the water and the way under the deck
-// free. Checks one generated cell's Bridge records against that law along an
-// expected span. Returns non-zero after recording the failure via fail().
+// The honest-bridge law (owner, 2026-08-29): stone DECK chords a walker
+// stands on (sub/collide.h support_at), round PIERS down to the bed, and the
+// gaps between them — the arches — leaving the water and the way under the
+// deck free.
+//
+// The DECK IS LEVEL, at one world height for every span everywhere
+// (kSeaLevelM + freeboard), because the water it clears is one height —
+// owner, 2026-08-30, on the stepped deck he had to jump up: «у нас вода
+// одной высоты, почему тогда высота моста скачет». So a deck states its
+// span in WORLD metres (Structure::zWorld) instead of lifting off the bed:
+// a bed-relative deck wobbled by the difference between the generator's
+// exact tile heights and the renderer's 16-tile mesh. Over LAND the same
+// chain becomes a ramp falling at a gentle grade until it meets the ground,
+// which is why a deck below the water plane is legal on the approach and
+// only the WET stretch must be level.
 int check_bridge_chain(const sm::sub::SubworldMapData& map,
                        float ax, float ay, float bx, float by) {
     using namespace sm::sub;
@@ -169,36 +179,95 @@ int check_bridge_chain(const sm::sub::SubworldMapData& map,
     int piers = 0;
     float pierWidthSum = 0.0f;
     std::vector<std::pair<float, float>> deckSpans;
+    // Every deck top over water, in span order, to prove the ARCH is walked
+    // and not jumped: (distance along the span, top).
+    std::vector<std::pair<float, float>> wetDeckTops;
     for (const Structure& s : map.structures) {
         if (s.kind != Structure::Bridge) continue;
         const int tx = std::clamp(int(s.x), 0, kCellSize - 1);
         const int ty = std::clamp(int(s.y), 0, kCellSize - 1);
         const float seatM =
             map.heightmap[std::size_t(ty) * kCellSize + tx] * kHeightScaleM;
-        const float topM = seatM + s.zBase + s.height;
+        // THE span, from the shared contract — the same call the renderer and
+        // the collision index make, so the test cannot pin a fourth opinion.
+        float z0, z1;
+        structure_solid_span(s, seatM, z0, z1);
         if (s.shape == Structure::Cylinder) {
             ++piers;
             pierWidthSum += 2.0f * s.radius;
-            if (s.zBase != 0.0f) {
-                return fail("a pier grows from the bed, not from a lift");
+            if (!s.zWorld) {
+                return fail("a pier stands at a world level, like its deck");
+            }
+            if (z0 > seatM) {
+                return fail("a pier's footing must reach into the bed");
+            }
+            if (z1 <= seatM) {
+                return fail("a pier must rise out of the bed to meet the deck");
             }
             continue;
         }
         ++decks;
-        if (s.zBase <= 0.0f) {
-            return fail("a deck must be zBase-lifted (the gate-lintel mechanism)");
+        if (!s.zWorld) {
+            return fail("a deck stands at a world level, not on the bed");
         }
-        if (topM < kSeaLevelM) {
-            return fail("a deck top below the water plane is not a bridge");
+        const float projD = ((s.x - ax) * sx + (s.y - ay) * sy) / spanLen;
+        if (seatM < kSeaLevelM) {
+            if (z1 < kSeaLevelM) {
+                return fail("a deck top below the water plane is not a bridge");
+            }
+            wetDeckTops.emplace_back(projD, z1);
         }
-        const float proj = ((s.x - ax) * sx + (s.y - ay) * sy) / spanLen;
+        const float proj = projD;
         deckSpans.emplace_back(proj - structure_half_x(s),
                                proj + structure_half_x(s));
     }
     if (decks < 2) return fail("a water span must carry a chain of deck chords");
     if (piers < 1) return fail("a deck chain needs piers to stand on");
+    if (wetDeckTops.size() < 2) {
+        return fail("a wet crossing must carry a chain of level chords");
+    }
+    // THE ARCH, walked and not jumped. Neighbouring chords may differ only by
+    // less than a kerb (kStepUpM) — the invariant the flat deck was built to
+    // win, and the one the camber may not spend.
+    std::sort(wetDeckTops.begin(), wetDeckTops.end());
+    float lowest = wetDeckTops.front().second;
+    float highest = wetDeckTops.front().second;
+    for (std::size_t i = 1; i < wetDeckTops.size(); ++i) {
+        const float step =
+            std::fabs(wetDeckTops[i].second - wetDeckTops[i - 1].second);
+        if (step >= kStepUpM) {
+            return fail("a step in the deck: the arch must be walked, not jumped");
+        }
+        lowest = std::min(lowest, wetDeckTops[i].second);
+        highest = std::max(highest, wetDeckTops[i].second);
+    }
+    // The rise itself is only owed where the span HAS two banks — an arch is
+    // a shape between shores. A line that runs off into open water (a stub, a
+    // fixture with no dry end) has no midpoint to crown, and demanding one
+    // would be demanding a ramp call itself an arch.
+    const auto dry_at = [&](float d) {
+        const float t = d / spanLen;
+        const int tx = std::clamp(int(ax + sx * t), 0, kCellSize - 1);
+        const int ty = std::clamp(int(ay + sy * t), 0, kCellSize - 1);
+        return map.heightmap[std::size_t(ty) * kCellSize + tx] >= WATER_LEVEL;
+    };
+    if (dry_at(0.0f) && dry_at(spanLen)) {
+        if (highest - lowest <= 0.01f) {
+            return fail("a span between two banks must carry an arch");
+        }
+        float crownAt = wetDeckTops.front().first;
+        for (const auto& d : wetDeckTops) {
+            if (d.second >= highest - 0.001f) { crownAt = d.first; break; }
+        }
+        const float wetFirst = wetDeckTops.front().first;
+        const float wetLast = wetDeckTops.back().first;
+        const float wetMid = (wetFirst + wetLast) * 0.5f;
+        if (std::fabs(crownAt - wetMid) > 0.25f * (wetLast - wetFirst) + 1.0f) {
+            return fail("the arch crowns off-centre: that is a ramp, not an arch");
+        }
+    }
     // Every WET stretch of the road line must be decked; a dry stretch is the
-    // bank's own business (no deck over ground that already carries a walker).
+    // bank's own business (the ramp lands and the ground carries the walker).
     int wetSamples = 0;
     for (float d = 0.0f; d <= spanLen; d += 4.0f) {
         const float t = d / spanLen;
@@ -672,7 +741,16 @@ int main() {
     // Honest water: a Water-biome cell's macro height sits BELOW the macro
     // sea level (0.40). The old 0.62 filler put this "water" cell on a
     // ~1400 m dome — and the phantom single-slab bridge never noticed.
+    //
+    // And honest BANKS, which the shipping world always has and this fixture
+    // never did: a bridgeable crossing is one cell of water with LAND on both
+    // sides of its axis (macro/pathfinding.h waterCrossAxes), so the west and
+    // east neighbours stand above the sea and the terrain descends into the
+    // river inside the cell. That is what gives the span two shores to arch
+    // between and two ramps to land on.
     for (int i = 0; i < 9; ++i) nbH[i] = 0.30f;
+    nbH[3] = 0.62f;   // west bank
+    nbH[5] = 0.62f;   // east bank
     nbF[3] = std::uint8_t(FT_Road);
     nbF[5] = std::uint8_t(FT_Road);
 
@@ -682,24 +760,30 @@ int main() {
         return fail("water road feature did not resolve to Road mode");
     }
 
-    int roadTiles = 0;
     int roadWestX, roadWestY, roadEastX, roadEastY;
     expected_edge_anchor(road, -1, 0, roadWestX, roadWestY);
     expected_edge_anchor(road, 1, 0, roadEastX, roadEastY);
     // The through-road water cell bridges its two anchors with an honest
     // deck-and-piers chain along the same anchor→anchor span the old single
-    // phantom slab claimed.
+    // phantom slab claimed. The chain covers every wet sample of the line,
+    // the anchors included, which is what carries a walker across the seam.
     if (check_bridge_chain(roadOut, float(roadWestX), float(roadWestY),
                            float(roadEastX), float(roadEastY)) != 0) {
         return 1;
     }
-    for (const std::uint8_t tile : roadOut.tiles) {
-        if (tile == TILE_ROAD) ++roadTiles;
-    }
-    if (roadTiles <= 0
-        || roadOut.tiles[std::size_t(roadWestY) * kCellSize + roadWestX] != TILE_ROAD
-        || roadOut.tiles[std::size_t(roadEastY) * kCellSize + roadEastX] != TILE_ROAD) {
-        return fail("water road bridge/tile invariants failed");
+    // UNDER THE ARCHES THE RIVER IS THE RIVER (owner, 2026-08-30: the road
+    // drawn beside its own bridge). The carved line laid road tiles across
+    // the whole crossing and the submerged half of them read as a second
+    // road lying on the bed; the DECK is the road over water, so no road
+    // tile may sit below the plane. In this all-water fixture that means
+    // none at all.
+    int roadTiles = 0;
+    for (std::size_t i = 0; i < roadOut.tiles.size(); ++i) {
+        if (roadOut.tiles[i] != TILE_ROAD) continue;
+        if (roadOut.heightmap[i] < WATER_LEVEL) {
+            return fail("a road tile on the river bed: the bridge is the road");
+        }
+        ++roadTiles;   // dry ramp footing only — nil in an all-water cell
     }
 
     fill_flat_neighbors(nbH, nbB, nbF, Water, FT_Road);
@@ -719,11 +803,75 @@ int main() {
                            float(roadSingleCenter)) != 0) {
         return 1;
     }
+    // Same law as the through-road above: over water the DECK is the road,
+    // so the anchor and the terminus carry stone overhead, not road tiles on
+    // the bed. check_bridge_chain has just proven the chain covers both ends.
     if (roadSingleOut.tiles[std::size_t(roadSingleEastY) * kCellSize
-                              + roadSingleEastX] != TILE_ROAD
+                              + roadSingleEastX] == TILE_ROAD
         || roadSingleOut.tiles[std::size_t(roadSingleCenter) * kCellSize
-                              + roadSingleCenter] != TILE_ROAD) {
+                              + roadSingleCenter] == TILE_ROAD) {
         return fail("single-neighbour road anchor invariants failed");
+    }
+
+    // ── THE FORK BELONGS ON THE BANK (owner in play, 2026-08-30) ─────────
+    // A road running along the far shore is a neighbour that CARRIES a road
+    // byte without any path joining it to the crossing, and the old hub-at-
+    // centre rule dragged an arm from it out over the river: the bridge
+    // forked mid-water. The crossing is the AXIS whose two cardinal
+    // neighbours both carry road (macro lays a span square-on and never
+    // diagonally, macro/pathfinding.h waterCrossAxes); everything else meets
+    // that span at its nearest DRY point.
+    fill_flat_neighbors(nbH, nbB, nbF, Water, FT_Road);
+    for (int i = 0; i < 9; ++i) nbH[i] = 0.30f;
+    nbH[3] = 0.62f;                        // west bank
+    nbH[5] = 0.62f;                        // east bank
+    nbH[7] = 0.62f;                        // south shore, carrying a road past
+    nbF[3] = std::uint8_t(FT_Road);
+    nbF[5] = std::uint8_t(FT_Road);
+    nbF[7] = std::uint8_t(FT_Road);        // the passer-by
+    SubworldMapData forkOut{};
+    dispatch_generate(road, nbH, nbB, nbF, forkOut);
+    {
+        int spanChords = 0;
+        for (const Structure& s : forkOut.structures) {
+            if (s.kind != Structure::Bridge || s.shape == Structure::Cylinder) {
+                continue;
+            }
+            ++spanChords;
+            // Every deck chord lies along the crossing AXIS (east-west here).
+            // A chord aimed at the southern neighbour is the old fork.
+            if (std::fabs(std::sin(s.yaw)) > 0.35f) {
+                return fail("a deck chord aimed off the crossing axis: forked span");
+            }
+        }
+        if (spanChords < 2) return fail("the fork fixture built no span at all");
+        // The passing road still ARRIVES — it just arrives on land.
+        int southRoadTiles = 0;
+        int joinY = kCellSize;          // northmost tile of the passing lane
+        for (int y = kCellSize / 2; y < kCellSize; ++y) {
+            for (int x = 0; x < kCellSize; ++x) {
+                const std::size_t i = std::size_t(y) * kCellSize + x;
+                if (forkOut.tiles[i] != TILE_ROAD) continue;
+                ++southRoadTiles;
+                joinY = std::min(joinY, y);
+                if (forkOut.heightmap[i] < WATER_LEVEL) {
+                    return fail("the passing road walked into the water");
+                }
+            }
+        }
+        if (southRoadTiles <= 0) {
+            return fail("the passing road never reached the crossing");
+        }
+        (void)joinY;
+        // NOT asserted here: WHERE along the span the lane joins (the owner's
+        // «не прилеплять вплотную к границе субмира»). The obvious probe —
+        // the x of the lane's northmost tiles — cannot tell the two rules
+        // apart in this fixture, because the span's own anchors already sit
+        // in the southern half, so the measurement reads the SPAN and passes
+        // either way. It was written, run against a forced-nearest-point
+        // negative control, seen to stay green, and removed: a check that
+        // cannot fail is worse than no check, and the bank rule is verified
+        // by eye until a fixture exists that separates them.
     }
 
     if (std::fabs(biome_config(Meadow).treeDensity - 0.035f) > 0.0001f

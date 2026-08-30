@@ -433,11 +433,54 @@ void part_c_vertical_physics() {
           "a jump landing is always under the safe speed");
 }
 
+// ── PART D: the ground under the feet is the SUPPORT's, not the column's ──
+// The owner's law (2026-08-30), found on a bridge: a tile is one value per
+// column of the map and cannot say "water below, masonry three metres up", so
+// a body crossing a deck was priced as wading the river it was walking over.
+// What CARRIES a body lays the ground it walks (map_data.h walkTile).
+void part_d_support_lays_the_ground() {
+    StructureIndex idx;
+    std::vector<Structure> solids;
+    // A deck 3 m up over water, and a lantern beside it that lays nothing.
+    Structure deck = make_box(100.0f, 100.0f, 8.0f, 2.0f, 0.0f,
+                              /*height*/1.0f, /*zBase*/3.0f, Structure::Bridge);
+    solids.push_back(deck);
+    Structure lamp = make_box(140.0f, 100.0f, 0.4f, 0.4f, 0.0f,
+                              /*height*/2.0f, /*zBase*/0.0f, Structure::Lantern);
+    solids.push_back(lamp);
+    idx.rebuild(solids, &flat_height, nullptr);
+
+    // ON the deck (feet at its top): the river underneath is not what you
+    // walk on — the deck is, and a deck lays road.
+    CHECK(idx.walk_tile_at(100.0f, 100.0f, 0.5f, 4.0f,
+                           std::uint8_t(TILE_WATER)) == std::uint8_t(TILE_ROAD),
+          "a body on the deck walks on road, not on the river below it");
+    // UNDER the deck, wading: the deck carries somebody else, not you.
+    CHECK(idx.walk_tile_at(100.0f, 100.0f, 0.5f, 0.0f,
+                           std::uint8_t(TILE_WATER)) == std::uint8_t(TILE_WATER),
+          "a body under the deck is still in the water");
+    // BESIDE it: no solid, the terrain answers.
+    CHECK(idx.walk_tile_at(160.0f, 100.0f, 0.5f, 0.0f,
+                           std::uint8_t(TILE_GRASS)) == std::uint8_t(TILE_GRASS),
+          "away from solids the terrain's own tile stands");
+    // A solid that lays no ground of its own is TRANSPARENT to the law: it
+    // must not overwrite the road under it with "nothing" (the reason
+    // kWalkTileTransparent is a sentinel and not just TILE_EMPTY).
+    CHECK(idx.walk_tile_at(140.0f, 100.0f, 0.5f, 2.0f,
+                           std::uint8_t(TILE_ROAD)) == std::uint8_t(TILE_ROAD),
+          "standing on a lantern does not turn the road below into nothing");
+    // And the law is worth something only if the two answers DIFFER: the
+    // negative control of the whole part — deck ground beats column ground.
+    CHECK(kTileMovementSpeed[TILE_ROAD] > kTileMovementSpeed[TILE_WATER],
+          "the law is only visible because road and water differ in speed");
+}
+
 } // namespace
 
 int main() {
     part_a_index_semantics();
     part_b_generated_city();
     part_c_vertical_physics();
+    part_d_support_lays_the_ground();
     return sm::test::report("structure_collide_test");
 }
