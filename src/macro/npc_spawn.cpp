@@ -206,16 +206,11 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
         auto& s = *cp;
         const std::uint16_t fIdx = settlement_faction_index(gs, s.kingdomIdx);
 
-        int peasantCount = 2 + int(rng.next_u32() % 3u);
-        for (int i = 0; i < peasantCount; ++i) {
-            auto p = find_valid_spawn(s.x, s.y, 10, rng, mw, mh, terrain);
-            make_npc(w, NPCType::Peasant, fIdx, p.x, p.y, s.id, rng, spawnIndex);
-        }
-        int woodcutterCount = 1 + int(rng.next_u32() % 2u);
-        for (int i = 0; i < woodcutterCount; ++i) {
-            auto p = find_valid_spawn(s.x, s.y, 12, rng, mw, mh, terrain);
-            make_npc(w, NPCType::Woodcutter, fIdx, p.x, p.y, s.id, rng, spawnIndex);
-        }
+        // No eternal gatherers here any more (owner 2026-08-30, CANON S10):
+        // working crews are TRANSIENT — raised from the population by the
+        // daily labour rotation (npc_ai.h rotate_worker_squads), returned
+        // to it at dusk. The genesis town wakes on day one and raises its
+        // own hands.
         if (rng.next_f01() > 0.4f) {
             auto p = find_valid_spawn(s.x, s.y, 4, rng, mw, mh, terrain);
             // A merchant is a RESIDENT, so he wears his town's colours like
@@ -287,54 +282,11 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
         make_npc(w, NPCType::Sorceress, f, p.x, p.y, -1, rng, spawnIndex);
     }
 
-    // Per-village gatherers.
-    for (auto& v : gs.landmarks) {
-        if (v.type != LandmarkType::Village) continue;
-        const std::uint16_t fIdx = settlement_faction_index(gs, v.kingdomIdx);
-        int vPeas = 1 + int(rng.next_u32() % 3u);
-        for (int i = 0; i < vPeas; ++i) {
-            auto p = find_valid_spawn(v.x, v.y, 8, rng, mw, mh, terrain);
-            make_npc(w, NPCType::Peasant, fIdx, p.x, p.y, v.id, rng,
-                     spawnIndex);
-        }
-        if (rng.next_f01() > 0.4f) {
-            auto p = find_valid_spawn(v.x, v.y, 10, rng, mw, mh, terrain);
-            // The home-link fix (W2b): a village woodcutter is the VILLAGE's
-            // man — his haul lands in the village store, not a city's.
-            make_npc(w, NPCType::Woodcutter, fIdx, p.x, p.y, v.id, rng,
-                     spawnIndex);
-        }
-        // Village-context professions (resources.md): a live vein inside the
-        // gatherer reach raises ITS profession — the same table row the AI
-        // works by, so presence of ore IS the presence of miners. One man
-        // per kind present; specialisation stays context, never a type.
-        if (deposits) {
-            constexpr struct { DepositKind kind; NPCType type; } kMineRoles[] = {
-                {DepositKind::Iron,  NPCType::Miner},
-                {DepositKind::Stone, NPCType::Quarryman},
-                {DepositKind::Clay,  NPCType::ClayDigger},
-            };
-            for (const auto& role : kMineRoles) {
-                bool near = false;
-                for (const auto& [idx, remaining]
-                     : deposits->cells[std::size_t(role.kind)]) {
-                    (void)remaining;   // alive by the annihilation law
-                    const float dsq = torus_dist_sq(
-                        float(int(idx % std::uint32_t(mw))),
-                        float(int(idx / std::uint32_t(mw))),
-                        float(v.x), float(v.y), float(mw), float(mh));
-                    if (dsq <= float(kGathererReach) * float(kGathererReach)) {
-                        near = true;
-                        break;
-                    }
-                }
-                if (!near) continue;
-                auto p = find_valid_spawn(v.x, v.y, 10, rng, mw, mh, terrain);
-                make_npc(w, role.type, fIdx, p.x, p.y, v.id, rng,
-                         spawnIndex);
-            }
-        }
-    }
+    // Villages seed no eternal gatherers either (owner 2026-08-30): the
+    // daily labour rotation raises every profession whose worksite is live
+    // — the same find_worksite the working AI walks by, so presence of ore
+    // IS still the presence of miners, just souls-deep and mortal.
+    (void)deposits;
 }
 
 bool spawn_npc_at(GameState& gs, ecs::World& w, const TerrainData& terrain,

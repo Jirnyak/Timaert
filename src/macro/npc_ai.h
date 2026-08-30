@@ -175,6 +175,19 @@ CaravanDeal trade_caravan_at_village(Inventory& hold, float capacityKg,
                                      Landmark& village,
                                      const MemoryEntry* homeSnapshot);
 
+// ── The daily labour rotation (owner 2026-08-30; CANON S10) ──────────────
+// «Поселение поднимает рабочий сквад → сквад идёт к полю → возвращается,
+// кладёт на склад, растворяется в населении.» Souls are the stock every
+// working crew draws from and returns to; the roster multiplies the take at
+// the squad's one SP price (ai_gatherer). Called once per game day:
+// yesterday's crews standing home in Idle DISSOLVE first (souls + leftovers
+// back to the landmark), then every settled landmark raises a fresh crew for
+// each profession with a live worksite and no crew already out — sized to
+// TODAY'S population. Genesis seeds no eternal gatherers any more: a crew
+// cut down on the road stays dead, and the town raises fewer souls
+// tomorrow. Returns crews raised.
+int rotate_worker_squads(MacroWorld& mw, int day);
+
 // Macro-view path: scans all macro NPCs each step and dispatches those whose
 // per-NPC tick accumulator matured. `ticks` is world ticks elapsed. The
 // envelope must carry at least `gs` and `world`; every other layer is an

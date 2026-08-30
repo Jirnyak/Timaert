@@ -11,6 +11,7 @@
 #include "macro/faction.h"
 #include "macro/movement_cost.h"
 #include "macro/npc.h"
+#include "macro/npc_spawn.h"
 #include "macro/squad.h"
 #include "macro/travel.h"
 #include "ecs/components.h"
@@ -1536,6 +1537,128 @@ CaravanDeal trade_caravan_at_village(Inventory& hold, float capacityKg,
         out.movedTableValue += base * moved;
     }
     return out;
+}
+
+// ── The daily labour rotation (contract in npc_ai.h) ─────────────────────
+int rotate_worker_squads(MacroWorld& mw, int day) {
+    (void)day;
+    if (!mw.gs || !mw.world || !mw.terrain) return 0;
+    GameState& gs = *mw.gs;
+    auto& reg = mw.world->reg;
+    TickContext ctx{};
+    ctx.mw = mw;
+    ctx.mapW = gs.mapW;
+    ctx.mapH = gs.mapH;
+
+    const auto row_of = [&](int id) -> int {
+        for (std::size_t i = 0; i < gs.landmarks.size(); ++i)
+            if (gs.landmarks[i].id == id) return int(i);
+        return -1;
+    };
+    const auto def_index = [&](std::uint16_t type) -> int {
+        for (int gi = 0; gi < int(std::size(kGathererDefs)); ++gi)
+            if (std::uint16_t(kGathererDefs[gi].type) == type) return gi;
+        return -1;
+    };
+
+    // 1) DISSOLVE yesterday's crews that made it home: souls and leftovers
+    //    return to the landmark. Collect first, destroy after — the
+    //    registry is never mutated under its own view.
+    std::vector<entt::entity> done;
+    for (auto [e, kind, rt, p]
+         : reg.view<ecs::NPCKind, ecs::MacroNpcRuntime,
+                    ecs::Position>().each()) {
+        if (def_index(kind.type) < 0) continue;
+        if (rt.state != std::uint8_t(NS::Idle)) continue;
+        const int row = row_of(rt.homeSettlementId);
+        if (row < 0) continue;
+        const Landmark& lm = gs.landmarks[std::size_t(row)];
+        if (int(std::lround(p.x)) != lm.x || int(std::lround(p.y)) != lm.y)
+            continue;
+        done.push_back(e);
+    }
+    for (const entt::entity e : done) {
+        const auto& rt = reg.get<ecs::MacroNpcRuntime>(e);
+        const int row = row_of(rt.homeSettlementId);
+        if (row < 0) continue;
+        Landmark& lm = gs.landmarks[std::size_t(row)];
+        int souls = 1;
+        if (const auto* roster = reg.try_get<ecs::SquadRoster>(e))
+            souls += roster->squad.size();
+        if (auto* bag = reg.try_get<ecs::NpcInventory>(e)) {
+            // Leftovers home: cargo by the haul door, coin by the wallet
+            // door — a dissolved crew owns nothing (CANON S5, the loan law).
+            for (int c = 0; c < kCommodityCount; ++c)
+                haul_between(bag->inv, lm.inventory, kCommodities[c].id,
+                             1 << 30, 1e9f);
+            transfer_value(bag->inv, lm.inventory,
+                           wallet_value(bag->inv));
+        }
+        lm.population += souls;
+        reg.destroy(e);
+    }
+
+    // Which professions still have a crew OUT (on the road, at the field —
+    // anyone not dissolved above): those are not re-raised today.
+    std::vector<std::uint8_t> outMask(gs.landmarks.size(), 0);
+    for (auto [e, kind, rt]
+         : reg.view<ecs::NPCKind, ecs::MacroNpcRuntime>().each()) {
+        (void)e;
+        const int gi = def_index(kind.type);
+        if (gi < 0) continue;
+        const int row = row_of(rt.homeSettlementId);
+        if (row >= 0) outMask[std::size_t(row)] |= std::uint8_t(1u << gi);
+    }
+
+    // 2) RAISE today's crews: pop/kHeadsPerCityWorker souls across the
+    //    professions whose worksite is LIVE (the same find_worksite the
+    //    working AI walks by — ore near home IS the presence of miners).
+    int raised = 0;
+    for (std::size_t row = 0; row < gs.landmarks.size(); ++row) {
+        Landmark& s = gs.landmarks[row];
+        if (s.type != LandmarkType::City && s.type != LandmarkType::Village)
+            continue;
+        if (s.population < kHeadsPerCityWorker) continue;
+        const XY home{float(s.x), float(s.y)};
+        const ecs::Position homePos{home.x, home.y, 0.0f};
+        int live[int(std::size(kGathererDefs))];
+        int liveCount = 0;
+        for (int gi = 0; gi < int(std::size(kGathererDefs)); ++gi) {
+            if (outMask[row] & (1u << gi)) continue;
+            XY site;
+            if (find_worksite(kGathererDefs[gi], ctx, homePos, home, site))
+                live[liveCount++] = gi;
+        }
+        if (liveCount <= 0) continue;
+        // The same share of hands the city's benches already draw
+        // (kHeadsPerCityWorker) — ONE labour quota, split across today's
+        // live professions.
+        const int workers = s.population / kHeadsPerCityWorker;
+        const int perCrew = std::max(1, workers / liveCount);
+        for (int li = 0; li < liveCount; ++li) {
+            if (s.population < perCrew) break;
+            SquadSpec spec{};
+            spec.leaderType = kGathererDefs[live[li]].type;
+            spec.x = s.x;
+            spec.y = s.y;
+            spec.homeSettlementId = s.id;
+            for (int m = 1; m < perCrew; ++m) {
+                SoldierRecord rec{};
+                // Identity through the ONE persistent ordinal stream
+                // (CANON S20.1) — never a hash, never a second counter.
+                rec.entityId = ++gs.nextMacroSpawnOrdinal;
+                rec.kind = std::uint16_t(spec.leaderType);
+                rec.level = 1;
+                if (!spec.members.push(rec)) break;
+            }
+            if (spawn_squad(gs, *mw.world, *mw.terrain, spec)
+                != entt::null) {
+                s.population -= 1 + spec.members.size();
+                ++raised;
+            }
+        }
+    }
+    return raised;
 }
 
 void bucket_reset(CellBuckets& g, int mapW, int mapH, int cellSize) {

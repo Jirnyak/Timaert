@@ -17,6 +17,7 @@
 #include "macro/fauna.h"
 #include "macro/macro_stock.h"
 #include "macro/npc.h"
+#include "macro/npc_ai.h"
 #include "macro/npc_spawn.h"
 #include "core/rng.h"
 #include <algorithm>
@@ -25,10 +26,6 @@
 namespace sm {
 
 namespace {
-
-// One worker at the benches per this many heads (po2) — a landmark's
-// production labour for econ_produce_day, city and village alike.
-constexpr int   kHeadsPerCityWorker = 8;
 
 // The registry column speaks EconSite ordinals (landmark_registry.h econSite
 // documents this pairing); assert it where both vocabularies are visible, so
@@ -323,6 +320,9 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
             // one from its population — losses stay permanent, the trade
             // arm regrows through the world (CANON S4).
             replenish_caravans(gs, *macro->world, *macro->terrain);
+            // The labour rotation (npc_ai.h): yesterday's crews dissolve
+            // into the population, today's are raised to its size.
+            rotate_worker_squads(*macro, day);
         }
 
         --runtime.pendingDailyTicks;

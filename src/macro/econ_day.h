@@ -116,6 +116,13 @@ inline constexpr int kNeedCount = int(sizeof(kNeeds) / sizeof(kNeeds[0]));
 
 inline constexpr int kGatherPerWorkerDay = 8;
 
+// One worker per this many heads (po2) — THE labour quota: the same share
+// of hands staffs the benches (econ_produce_day) and walks out with the
+// daily crews (npc_ai.h rotate_worker_squads). One number, one law of who
+// works; it moved here from world_tick.cpp when the crews were born
+// (2026-08-30) so the two consumers cannot drift.
+inline constexpr int kHeadsPerCityWorker = 8;
+
 // The working rhythm (owner 2026-08-30, CANON S10/S14: work burns the SAME
 // SP the march does — no second labour law). One work cycle costs a quarter
 // of the squad's full bar, so a rested worker BESIDE his parcel makes four
