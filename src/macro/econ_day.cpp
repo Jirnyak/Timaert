@@ -208,6 +208,9 @@ ConsumeOutcome econ_consume_day(Inventory& store, int population,
         const int got = std::min(demand,
                                  store.count_of(commodity_item_index(idx)));
         store.remove_of(commodity_item_index(idx), got);
+        if (got > 0) {
+            report(sink, user, EconFact::Kind::Consumed, idx, got);
+        }
         const bool vital = kCommodities[idx].tier == CommodityTier::Vital;
         if (kNeeds[i].popPerUnitDay == 1 && vital) {
             // The hunger row: shortfall is people unfed today.

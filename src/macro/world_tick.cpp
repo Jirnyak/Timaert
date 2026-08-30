@@ -58,7 +58,8 @@ void push_history_(SettlementHistory& hist, int day, int population) {
 // so econ_v1_test can drive a landmark to its honest death directly.
 void settle_landmark_day(Landmark& lm,
                          bool& startedFamine, bool& startedRevolt,
-                         bool& diedOut) {
+                         bool& diedOut,
+                         EconFactSink sink, void* user) {
     startedFamine = false;
     startedRevolt = false;
     diedOut = false;
@@ -66,7 +67,7 @@ void settle_landmark_day(Landmark& lm,
     // container (and back, through a string lookup each way) is gone with the
     // second index space it existed to bridge.
     const ConsumeOutcome o = econ_consume_day(
-        lm.inventory, lm.population, lm.famineActive != 0, nullptr, nullptr);
+        lm.inventory, lm.population, lm.famineActive != 0, sink, user);
 
     lm.starvedYesterday = std::uint16_t(std::min(o.starvedPop, 0xFFFF));
     lm.unmetYesterday   = std::uint16_t(std::min(o.unmetComfort, 0xFFFF));
@@ -103,10 +104,30 @@ void settle_landmark_day(Landmark& lm,
 
 namespace {
 
+// The pure econ steps are landmark-blind (they see one Inventory); this relay
+// stamps the landmark id onto every fact on its way to the listener — the
+// daily tick is the ONE caller that knows whose store it handed in.
+struct EconFactRelay {
+    EconFactSink sink = nullptr;
+    void* user = nullptr;
+    int landmarkId = -1;
+};
+
+void relay_econ_fact_(void* user, const EconFact& fact) {
+    const auto* r = static_cast<const EconFactRelay*>(user);
+    EconFact stamped = fact;
+    stamped.landmarkId = r->landmarkId;
+    r->sink(r->user, stamped);
+}
+
 // ── Settlement daily tick ─────────────────────────────────────
-void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime) {
+void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
+                       EconFactSink sink, void* user) {
     for (auto& s : gs.landmarks) {
         if (s.type != LandmarkType::City) continue;
+        EconFactRelay relay{sink, user, s.id};
+        const EconFactSink rs = sink ? &relay_econ_fact_ : nullptr;
+        void* ru = sink ? static_cast<void*>(&relay) : nullptr;
         // The city CRAFTS before it eats: today's table first, then fair
         // shares (econ_day's three passes), off the same one inventory the
         // caravans stock and the market sells from.
@@ -118,11 +139,11 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime) {
                          s.population > 0
                              ? std::max(1, s.population / kHeadsPerCityWorker)
                              : 0,
-                         s.population, nullptr, nullptr);
+                         s.population, rs, ru);
 
         bool famine = false, revolt = false, died = false;
         const int headsBefore = s.population;
-        settle_landmark_day(s, famine, revolt, died);
+        settle_landmark_day(s, famine, revolt, died, rs, ru);
         if (famine) {
             record_landmark_fact(gs, FactKind::Starved, s.id, s.x, s.y,
                                  int(s.starvedYesterday));
@@ -165,10 +186,14 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime) {
 // ── Village daily tick ────────────────────────────────────────
 // No gather here any more: gathering is AGENTS now — woodcutters and
 // farmers hauling real units into this same inventory (npc_ai.cpp).
-void tick_villages_(GameState& gs, int day, WorldTickRuntime& runtime) {
+void tick_villages_(GameState& gs, int day, WorldTickRuntime& runtime,
+                    EconFactSink sink, void* user) {
     (void)runtime;
     for (auto& v : gs.landmarks) {
         if (v.type != LandmarkType::Village) continue;
+        EconFactRelay relay{sink, user, v.id};
+        const EconFactSink rs = sink ? &relay_econ_fact_ : nullptr;
+        void* ru = sink ? static_cast<void*>(&relay) : nullptr;
         // The village-side half of the craft door. econ_day.h promises «a
         // village-side craft later is one row with site=Village, no code» —
         // which is only true if this call exists: today no recipe carries
@@ -178,11 +203,11 @@ void tick_villages_(GameState& gs, int day, WorldTickRuntime& runtime) {
                          v.population > 0
                              ? std::max(1, v.population / kHeadsPerCityWorker)
                              : 0,
-                         v.population, nullptr, nullptr);
+                         v.population, rs, ru);
 
         bool famine = false, revolt = false, died = false;
         const int headsBefore = v.population;
-        settle_landmark_day(v, famine, revolt, died);
+        settle_landmark_day(v, famine, revolt, died, rs, ru);
         if (famine) {
             record_landmark_fact(gs, FactKind::Starved, v.id, v.x, v.y,
                                  int(v.starvedYesterday));
@@ -262,10 +287,15 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
     if (max_daily_ticks <= 0) return 0;
 
     int processed = 0;
+    // The economy's listener rides the envelope (macro_world.h): null macro
+    // or null sink both read as "nobody is listening" — the honest state of
+    // the live game today; the balance harness is the first subscriber.
+    const EconFactSink esink = macro ? macro->econFacts : nullptr;
+    void* euser = macro ? macro->econFactsUser : nullptr;
     while (runtime.pendingDailyTicks > 0 && processed < max_daily_ticks) {
         const int day = runtime.nextDailyTickDay;
-        tick_settlements_(gs, day, runtime);
-        tick_villages_   (gs, day, runtime);
+        tick_settlements_(gs, day, runtime, esink, euser);
+        tick_villages_   (gs, day, runtime, esink, euser);
         tick_player_daily_(
             gs.player,
             macro && macro->world ? player_roster(*macro->world) : nullptr,

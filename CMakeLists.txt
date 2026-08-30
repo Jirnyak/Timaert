@@ -302,6 +302,47 @@ if(NOT MSVC)
     target_compile_options(macro_shot PRIVATE -fno-rtti -fno-exceptions)
 endif()
 
+# Balance harness (owner track 2026-08-30, CANON S10 «дубль-прогон»): the
+# world plays itself for N game days, fully headless — no SDL window, no
+# Vulkan — through THE one baker (macro/world_gen.cpp) and the live loop's
+# own tick cadence. Writes per-day TSV metrics; exits 1 if a world law broke.
+# Deliberately NOT a ctest: a balance run is a measurement, not a verdict —
+# the regression-guard law test lands separately once the laws are earned.
+add_executable(balance_run tests/balance_run.cpp
+    src/macro/world_gen.cpp
+    src/macro/state.cpp
+    src/macro/politik.cpp
+    src/macro/settlement_score.cpp
+    src/macro/macro_stock.cpp
+    src/macro/chronicle.cpp
+    src/macro/cell_facts.cpp
+    src/macro/tree_layer.cpp
+    src/macro/deposit_layer.cpp
+    src/macro/fauna.cpp
+    src/macro/map_generator.cpp
+    src/macro/language.cpp
+    src/macro/items.cpp
+    src/macro/economy.cpp
+    src/macro/econ_day.cpp
+    src/macro/spawners.cpp
+    src/macro/zones.cpp
+    src/macro/spires.cpp
+    src/macro/pathfinding.cpp
+    src/macro/knowledge.cpp
+    src/macro/npc_spawn.cpp
+    src/macro/npc_ai.cpp
+    src/macro/world_tick.cpp
+    src/macro/world_fields.cpp
+    src/macro/player_entity.cpp
+    src/sub/base_generator.cpp)
+set_target_properties(balance_run PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(balance_run PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(balance_run PRIVATE ENTT_NOEXCEPTION)
+target_link_libraries(balance_run PRIVATE timaert_build_flags EnTT::EnTT)
+
 # ── ONE way to declare a test ──────────────────────────────────────────────
 # Every logic test used to be the same 20-24 lines with a different name: 1160
 # of this file's lines were that block, copied 49 times. Two things follow from

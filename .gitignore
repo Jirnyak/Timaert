@@ -41,3 +41,6 @@ imgui.ini
 /Docs/AgentLogs/Imported_Hecton8/
 /Docs/Reports/Imported_Hecton8/
 /Docs/Tasks/Imported_Hecton8/
+
+# balance harness TSV output (tests/balance_run.cpp)
+balance_out/

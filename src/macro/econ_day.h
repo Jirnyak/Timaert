@@ -117,10 +117,16 @@ struct EconFact {
         FamineStarted = 2,  // amount = starved pops today
         FamineEnded = 3,
         Starved = 4,        // amount = pops that went unfed today
+        Consumed = 5,       // commodity, amount — the needs ladder's take
     };
     Kind kind{};
     int commodity = -1;
     int amount = 0;
+    // Which landmark's day this was. The pure steps are landmark-BLIND (they
+    // see one Inventory); the id is stamped by the relay in world_tick.cpp —
+    // the one caller that knows whose store it handed in. -1 = unattributed
+    // (a direct pure-step call, e.g. econ_v1_test).
+    int landmarkId = -1;
 };
 using EconFactSink = void (*)(void* user, const EconFact& fact);
 

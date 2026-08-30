@@ -38,6 +38,11 @@ struct BattleFact {
 };
 using BattleFactSink = void (*)(void* user, const BattleFact& fact);
 
+// The economy's fact record lives in econ_day.h (its writer); the envelope
+// only carries the pointer, so a forward declaration keeps this header POD.
+struct EconFact;
+using EconFactSink = void (*)(void* user, const EconFact& fact);
+
 struct GameState;
 struct TreeLayer;
 struct DepositLayer;
@@ -75,6 +80,12 @@ struct MacroWorld {
     // state of a headless fixture and costs a null check.
     BattleFactSink facts     = nullptr;
     void*          factsUser = nullptr;
+    // The economy's fact channel (econ_day.h EconFact): gathered / produced /
+    // consumed / famine, stamped with the landmark id by the world_tick relay.
+    // Same law as `facts` above — null means nobody is listening. The balance
+    // harness is the first listener; the app may plug the bus in later.
+    EconFactSink   econFacts     = nullptr;
+    void*          econFactsUser = nullptr;
 };
 
 } // namespace sm

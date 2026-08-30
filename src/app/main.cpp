@@ -46,6 +46,7 @@
 #include "macro/vk_macro_renderer.h"
 #include "macro/macro_lighting.h"
 #include "macro/biomes.h"
+#include "macro/world_gen.h"
 #include "macro/world_tick.h"
 #include "macro/npc_ai.h"
 #include "macro/entry_context.h"
@@ -1488,26 +1489,6 @@ void boot_world(App& app, std::uint32_t seed,
     // game or a load through the surviving engine object.
     app.subworld.reset_render_diagnostics();
 
-    sm::LayerParameters lp = lpOverride ? *lpOverride : sm::LayerParameters{};
-    // The % 100000 decimation is UI heritage: the seed box and the boot log
-    // print five digits, and it is ALSO what once kept the value exact in the
-    // float-typed seed this field used to be. The field is an integer now
-    // (S26); the decimation stays so on-screen seeds keep naming the same
-    // worlds they always did.
-    lp.seed = seed % 100000u;
-    app.gs = sm::default_game_state(seed, mapW, mapH, lp, targetTotalCities);
-    boot_trace("default game state");
-    // A new world starts DARK (v40): all-Unknown knowledge. The spawn's
-    // surroundings open by the ordinary sight law — the first frame's sweep
-    // from the player's cell — not by a special starting reveal.
-    sm::knowledge_reset(app.gs.knowledge, app.gs.mapW, app.gs.mapH);
-    // A new world has no past. Sized here, beside the knowledge layer, because
-    // both are per-cell memories of the same map (macro/chronicle.h).
-    sm::chronicle_init(app.gs.chronicle, app.gs.mapW, app.gs.mapH);
-    // The bus is the DOOR into the world's memory; the memory itself is the
-    // world's. Attached here so a fresh world and a loaded one both have one.
-    app.bus.attach_chronicle(&app.gs.chronicle);
-    sm::reset_world_tick_runtime(app.gs.worldTickRt, seed);
     sm::reset_player_recovery(app.playerRecovery);
     player_sp_carry(app) = 0.0f;
     sm::reset_macro_npc_ai_runtime(app.npcAi, seed);
@@ -1527,307 +1508,36 @@ void boot_world(App& app, std::uint32_t seed,
     assert(app.logic.active_count() <= app.logic.node_count());
 #endif
 
-    app.terrain = sm::generate_terrain(app.gs.mapW, app.gs.mapH, lp);
-    boot_trace("terrain generated");
-
-    // The owner's causality IS the boot order: terrain → climate → RESOURCES →
-    // and only then settlement. Trees and deposits are pure functions of
-    // terrain + seed (neither reads politik), so they are derived before the
-    // political layer — settlement placement reads them (R2).
-    app.trees = sm::spawn_trees(app.terrain, app.gs.worldSeed, lp.seaLevel);
-    boot_trace("trees spawned");
-    // The per-cell tree-count layer: the spawn_trees massif mask (the organic
-    // FBM лесные массивы) carries the forest term, biomes add a small
-    // ambience (16384 = the golden densest massif interior). This derivation
-    // is the field's INITIAL CONDITION; the load path restores the saved
-    // living grid after the swap.
-    {
-        std::vector<std::uint8_t> forestMask(
-            std::size_t(app.gs.mapW) * std::size_t(app.gs.mapH), 0);
-        for (const auto& t : app.trees) {
-            const std::size_t i = std::size_t(sm::wrapi(t.y, app.gs.mapH))
-                                * std::size_t(app.gs.mapW)
-                                + std::size_t(sm::wrapi(t.x, app.gs.mapW));
-            if (i < forestMask.size()) forestMask[i] = 1;
-        }
-        app.treeLayer = sm::build_tree_layer(app.terrain, forestMask.data(),
-                                             forestMask.size());
-    }
-    app.deposits = sm::build_deposit_layer(app.terrain, app.gs.worldSeed,
-                                           lp.seaLevel);
-    boot_trace("resource layers built");
-
-    // The score context politics reads (R2): the crown decides how many
-    // and whose, the ground decides where and how large.
-    sm::SettlementSiteContext siteCtx{};
-    siteCtx.w.gs       = &app.gs;
-    siteCtx.w.trees    = &app.treeLayer;
-    siteCtx.w.terrain  = &app.terrain;
-    siteCtx.w.deposits = &app.deposits;
-    siteCtx.seaLevel8  = std::uint8_t(lp.seaLevel * 255.0f);
-    app.gs.politik = sm::generate_politik(app.gs.worldSeed, app.gs.mapW, app.gs.mapH,
-                                          &app.terrain, std::uint8_t(lp.seaLevel * 255.0f),
-                                          targetTotalCities, &siteCtx);
-    boot_trace("politik generated");
-    sm::snap_cities_to_land(app.gs.politik, app.terrain, std::uint8_t(lp.seaLevel * 255.0f));
-    sm::finalize_politik(app.gs.politik, app.terrain, std::uint8_t(lp.seaLevel * 255.0f));
-    sm::populate_landmarks_from_politik(app.gs, app.terrain,
-                                        std::uint8_t(lp.seaLevel * 255.0f),
-                                        app.treeLayer, app.deposits);
-    boot_trace("landmarks populated");
-    if (boot_trace_enabled()) {
-        // The R2 report card: how many villages actually stand next to the
-        // resources the score placed them by. The old roulette scored ~25%
-        // on water; the causality law should hold most of the world.
-        int nearWater = 0, nearPlough = 0, nearDeposit = 0;
-        const std::uint8_t sea8 = std::uint8_t(lp.seaLevel * 255.0f);
-        std::vector<const sm::Landmark*> cityRows, villageRows;
-        for (const auto& lm : app.gs.landmarks) {
-            if (lm.type == sm::LandmarkType::City) cityRows.push_back(&lm);
-            else if (lm.type == sm::LandmarkType::Village)
-                villageRows.push_back(&lm);
-        }
-        for (const sm::Landmark* vp : villageRows) {
-            const auto& v = *vp;
-            bool water = false, plough = false, deposit = false;
-            for (int dy = -sm::kSettlementReach; dy <= sm::kSettlementReach; ++dy)
-                for (int dx = -sm::kSettlementReach; dx <= sm::kSettlementReach;
-                     ++dx) {
-                    const int x = sm::wrapi(v.x + dx, app.gs.mapW);
-                    const int y = sm::wrapi(v.y + dy, app.gs.mapH);
-                    if (app.terrain.is_water(x, y, sea8)) water = true;
-                    else if (app.terrain.moisture_at(x, y)
-                             >= sm::kFieldMoistureMin) plough = true;
-                    if (app.deposits.any_at(x, y)) deposit = true;
-                }
-            nearWater   += water   ? 1 : 0;
-            nearPlough  += plough  ? 1 : 0;
-            nearDeposit += deposit ? 1 : 0;
-        }
-        const int n = std::max(1, int(villageRows.size()));
-        // A town with no hamlet at all reads as a bug; count them out loud.
-        int villageless = 0;
-        for (const sm::Landmark* cp : cityRows) {
-            bool has = false;
-            for (const sm::Landmark* vp : villageRows)
-                if (vp->nearestCityId == cp->id) { has = true; break; }
-            if (!has) ++villageless;
-        }
-        // And how far apart they actually stand: the mean nearest-neighbour
-        // distance among villages of the SAME city — the number that reads
-        // "scattered around the town" versus "clumped a block apart".
-        long long nnSum = 0;
-        int nnCount = 0;
-        for (const sm::Landmark* vp : villageRows) {
-            const auto& v = *vp;
-            int nearest = 1 << 20;
-            for (const sm::Landmark* op : villageRows) {
-                const auto& o = *op;
-                if (op == vp || o.nearestCityId != v.nearestCityId) continue;
-                const int ddx = std::min(std::abs(v.x - o.x),
-                                         app.gs.mapW - std::abs(v.x - o.x));
-                const int ddy = std::min(std::abs(v.y - o.y),
-                                         app.gs.mapH - std::abs(v.y - o.y));
-                nearest = std::min(nearest, std::max(ddx, ddy));
-            }
-            if (nearest < (1 << 20)) { nnSum += nearest; ++nnCount; }
-        }
-        std::fprintf(stderr,
-                     "[worldgen] cities=%zu villages=%zu villageless=%d "
-                     "vilSpacing=%lld nearWater=%d%% nearPlough=%d%% "
-                     "nearDeposit=%d%%\n",
-                     cityRows.size(), villageRows.size(),
-                     villageless, nnCount ? nnSum / nnCount : 0,
-                     100 * nearWater / n, 100 * nearPlough / n,
-                     100 * nearDeposit / n);
-        std::fflush(stderr);
-    }
-
-    sm::RoadTraceStats roadStats;
-    auto roads = sm::trace_roads(app.terrain, app.gs.politik, &roadStats,
-                                 lp.seaLevel, &app.treeLayer);
-    if (boot_trace_enabled()) {
-        std::fprintf(stderr,
-                     "[roads] cities=%d attempted=%d kept=%d pruned=%d "
-                     "componentPruned=%d expansions=%d\n",
-                     roadStats.cityCount,
-                     roadStats.attemptedEdges,
-                     roadStats.keptEdges,
-                     roadStats.prunedEdges,
-                     roadStats.componentPrunedEdges,
-                     roadStats.expansions);
-        std::fflush(stderr);
-    }
-    boot_trace("roads traced");
-    const auto& citiesFlat = app.gs.politik.cities;
-    // Macro invariant, city half: every city sits on a main road. Neighbour
-    // road-stitching in the seamless subworld is feature-driven, so stamping
-    // the road cell is what makes roads reach every settlement and adjacent
-    // settlements merge with no seam. `build_feature_layer` still fails
-    // settlement cells closed on water. (The village half of the invariant
-    // now lives in trace_dirt_roads, which runs AFTER spires exist below.)
-    {
-        const int mw = app.gs.mapW, mh = app.gs.mapH;
-        for (const auto& c : citiesFlat) {
-            if (c.x < 0 || c.y < 0 || c.x >= mw || c.y >= mh) continue;
-            const std::size_t idx =
-                std::size_t(c.y) * std::size_t(mw) + std::size_t(c.x);
-            if (idx < roads.size()) roads[idx] = 255;
-        }
-    }
-    // Stone first (kRoadClasses hierarchy): the feature layer carries only
-    // the main roads here; dirt lanes land in it AFTER zones and spires, so
-    // their A* can both target the spires and price the stone at its bed.
-    app.features = sm::build_feature_layer(app.terrain,
-                                           roads, nullptr, lp.seaLevel);
-    sm::build_tree_grid(app.treeGrid, app.trees, app.gs.mapW, app.gs.mapH);
-    boot_trace("features and tree grid built");
-
-    std::vector<sm::ZoneSeed> zsCities, zsVills;
-    for (auto& c : citiesFlat) zsCities.push_back({c.x, c.y});
-    for (auto& v : app.gs.landmarks)
-        if (v.type == sm::LandmarkType::Village) zsVills.push_back({v.x, v.y});
-    app.zones = sm::generate_zones(app.gs.mapW, app.gs.mapH, app.gs.worldSeed,
-                                   zsCities, zsVills, app.features,
-                                   app.terrain.rgba.data(),
-                                   app.terrain.rgba.size(),
-                                   &app.treeLayer);
-    boot_trace("zones generated");
-
-    // Spires need the zone field (their placement law), so they are the one
-    // landmark placed after generate_zones rather than in
-    // populate_landmarks_from_politik (which cleared the list). One spire per
-    // registered spell; a load overwrites gs.spires from the save afterwards
-    // (boot_world_from_save), exactly like settlements.
-    {
-        sm::generate_spires(app.gs, app.zones, app.terrain,
-                            std::uint8_t(lp.seaLevel * 255.0f));
-        // The landmark set is complete — bake the cell → landmark index the
-        // whole game asks (macro/landmark_grid.h).
-        app.landmarkGrid = sm::build_landmark_grid(app.gs);
-        boot_trace("spires placed");
-        if (boot_trace_enabled()) {
-            // The placement report card: every spell offered, every spire in
-            // the wild band, and a spread that reads "scattered", not "heap".
-            int zoneMin = 9, zoneMax = 0, minPair = app.gs.mapW + app.gs.mapH;
-            std::vector<const sm::Landmark*> spireRows;
-            for (const auto& lm : app.gs.landmarks)
-                if (lm.type == sm::LandmarkType::Spire)
-                    spireRows.push_back(&lm);
-            for (const sm::Landmark* spp : spireRows) {
-                const auto& sp = *spp;
-                const int z = int(app.zones.at(sp.x, sp.y));
-                zoneMin = std::min(zoneMin, z);
-                zoneMax = std::max(zoneMax, z);
-                for (const sm::Landmark* op : spireRows) {
-                    const auto& o = *op;
-                    if (op == spp) continue;
-                    const int ddx = std::min(std::abs(sp.x - o.x),
-                                             app.gs.mapW - std::abs(sp.x - o.x));
-                    const int ddy = std::min(std::abs(sp.y - o.y),
-                                             app.gs.mapH - std::abs(sp.y - o.y));
-                    minPair = std::min(minPair, std::max(ddx, ddy));
-                }
-            }
-            std::fprintf(stderr,
-                         "[worldgen] spires=%zu/%d zones=[%d..%d] "
-                         "minPairDist=%d\n",
-                         spireRows.size(), sm::kSpellCount,
-                         spireRows.empty() ? 0 : zoneMin,
-                         spireRows.empty() ? 0 : zoneMax, minPair);
-            std::fflush(stderr);
-        }
-    }
-
-    // Dirt lanes — the FT_DirtRoad rows of the road-class registry
-    // (spawners.h kRoadClasses): village → its home city, village → the
-    // nearest landmark within reach. Laid by THE find_path over the cost grid
-    // that already prices the stone above at its bed, so lanes merge into the
-    // highways; a village with no reachable target honestly gets no lane.
-    {
-        std::vector<sm::VillageRoadSite> villageSites;
-        for (const auto& v : app.gs.landmarks) {
-            if (v.type != sm::LandmarkType::Village) continue;
-            sm::VillageRoadSite site{};
-            site.x = v.x;
-            site.y = v.y;
-            if (const sm::Landmark* s =
-                    sm::landmark_by_id(app.gs, v.nearestCityId);
-                s && s->type == sm::LandmarkType::City) {
-                site.cityX = s->x;
-                site.cityY = s->y;
-                site.hasCity = true;
-            }
-            villageSites.push_back(site);
-        }
-        std::vector<sm::RoadSite> landmarkSites;
-        for (const auto& sp : app.gs.landmarks)
-            if (sp.type == sm::LandmarkType::Spire)
-                landmarkSites.push_back({sp.x, sp.y});
-        // Reach comes from THE distance law of the settled world
-        // (politik.h derive_city_spacing) — one city spacing, not a magic
-        // radius: a village's world ends about where the next town's begins.
-        const int landmarkReach = sm::derive_city_spacing(
-            &app.terrain, std::uint8_t(lp.seaLevel * 255.0f),
-            app.gs.mapW, app.gs.mapH, int(citiesFlat.size()));
-        const int dirtStamped = sm::trace_dirt_roads(
-            app.features, app.terrain, villageSites, landmarkSites,
-            landmarkReach, lp.seaLevel, &app.treeLayer);
-        if (boot_trace_enabled()) {
-            std::size_t stoneCells = 0, dirtCells = 0, bridgeCells = 0;
-            int bridgeX = -1, bridgeY = -1; // first span, for MACROPOS repros
-            // ...and the first span with a road passing BESIDE it (more than
-            // the two ends of its own crossing): the case where the subworld
-            // has to put the fork on the bank, and the one worth looking at.
-            int forkX = -1, forkY = -1;
-            for (std::size_t i = 0; i < app.features.data.size(); ++i) {
-                const std::uint8_t b = app.features.data[i];
-                stoneCells += b == std::uint8_t(sm::FT_Road) ? 1u : 0u;
-                dirtCells += b == std::uint8_t(sm::FT_DirtRoad) ? 1u : 0u;
-                if (b == std::uint8_t(sm::FT_Bridge)) {
-                    const int bx = int(i % std::size_t(app.features.width));
-                    const int by = int(i / std::size_t(app.features.width));
-                    if (bridgeCells == 0u) { bridgeX = bx; bridgeY = by; }
-                    if (forkX < 0) {
-                        int roadNeighbours = 0;
-                        for (int dy = -1; dy <= 1; ++dy) {
-                            for (int dx = -1; dx <= 1; ++dx) {
-                                if (dx == 0 && dy == 0) continue;
-                                const sm::FeatureType f =
-                                    app.features.at(bx + dx, by + dy);
-                                if (f == sm::FT_Road || f == sm::FT_DirtRoad
-                                    || f == sm::FT_Bridge) {
-                                    ++roadNeighbours;
-                                }
-                            }
-                        }
-                        if (roadNeighbours > 2) { forkX = bx; forkY = by; }
-                    }
-                    ++bridgeCells;
-                }
-            }
-            std::fprintf(stderr,
-                         "[roads] stone cells=%zu dirt cells=%zu "
-                         "bridge cells=%zu first_bridge=%d,%d "
-                         "fork_bridge=%d,%d stamped=%d reach=%d\n",
-                         stoneCells, dirtCells, bridgeCells, bridgeX, bridgeY,
-                         forkX, forkY, dirtStamped, landmarkReach);
-            std::fflush(stderr);
-        }
-        boot_trace("dirt roads traced");
-    }
-    // Farmland after every road (fields never overwrite a road of either
-    // class): FT_Field stamped on the wettest land cells around each village
-    // — contextual (moisture channel), deterministic. These cells are the
-    // villages' grain deposit for the economy loop.
-    {
-        std::vector<sm::FieldSite> fieldSites;
-        for (const auto& v : app.gs.landmarks)
-            if (v.type == sm::LandmarkType::Village)
-                fieldSites.push_back(sm::FieldSite{v.x, v.y});
-        sm::stamp_field_features(app.features, siteCtx.w, fieldSites,
-                                 lp.seaLevel);
-    }
+    // THE one macro-world baker (macro/world_gen.h, CANON S8/S26): bodily the
+    // old boot sequence, extracted 2026-08-30 so the headless balance harness
+    // raises the SAME world through the SAME function. App-side below stays
+    // only what a pure world cannot own: the bus, renderers, camera, chargen.
+    sm::WorldGenParams gp{};
+    gp.seed = seed;
+    gp.mapW = mapW;
+    gp.mapH = mapH;
+    gp.lpOverride = lpOverride;
+    gp.targetTotalCities = targetTotalCities;
+    gp.spawnMacroNpcs = spawnMacroNpcs;
+    gp.trace = boot_trace_enabled();
+    sm::WorldGenOut go{};
+    go.gs           = &app.gs;
+    go.terrain      = &app.terrain;
+    go.trees        = &app.trees;
+    go.treeLayer    = &app.treeLayer;
+    go.deposits     = &app.deposits;
+    go.features     = &app.features;
+    go.zones        = &app.zones;
+    go.treeGrid     = &app.treeGrid;
+    go.landmarkGrid = &app.landmarkGrid;
+    go.pathCost     = &app.pathCost;
+    go.world        = &app.ecs;
+    sm::generate_macro_world(go, gp);
+    boot_trace("macro world generated");
+    // The bus is the DOOR into the world's memory; the memory itself is the
+    // world's. Attached after genesis so a fresh world and a loaded one both
+    // have one, pointing at the chronicle that lives the whole session.
+    app.bus.attach_chronicle(&app.gs.chronicle);
 
     if (!app.macro.init(app.device, app.renderer.renderPass)) {
         boot_trace("macro renderer init failed");
@@ -1850,69 +1560,28 @@ void boot_world(App& app, std::uint32_t seed,
     app.uploadedTreeRev = app.treeLayer.revision;
     app.uploadedKnowledgeRev = app.gs.knowledge.revision;
     boot_trace("world data uploaded");
-    // TODO: rebuild_landmarks (PHASE C — landmark glyphs/lights).
-
-    app.pathCost = sm::build_cost_grid(app.terrain, &app.features,
-                                       &app.treeLayer);
-    app.gs.lastWorldRebakeDay = app.gs.worldTime.day();
     app.cursor = sm::ui::MacroCursor{};
-    boot_trace("path cost built");
-
-    // A loaded world does NOT respawn its people from the seed — the macro
-    // snapshot restores them (Session 17); only a NEW world gets a genesis.
-    if (spawnMacroNpcs) {
-        sm::spawn_macro_npcs(app.gs, app.ecs, app.terrain, app.gs.worldSeed,
-                             &app.deposits);
-        if (boot_trace_enabled()) {
-            // The causality report's second half: ore inside a village's
-            // reach raises its profession — count the men the ground raised.
-            int miners = 0, quarrymen = 0, clayDiggers = 0;
-            for (auto [e, kind] : app.ecs.reg.view<sm::ecs::NPCKind>().each()) {
-                (void)e;
-                if (kind.type == std::uint16_t(sm::NPCType::Miner)) ++miners;
-                else if (kind.type == std::uint16_t(sm::NPCType::Quarryman)) ++quarrymen;
-                else if (kind.type == std::uint16_t(sm::NPCType::ClayDigger)) ++clayDiggers;
-            }
-            std::fprintf(stderr,
-                         "[worldgen] professions miners=%d quarrymen=%d "
-                         "clayDiggers=%d\n",
-                         miners, quarrymen, clayDiggers);
-            std::fflush(stderr);
-        }
-        boot_trace("macro npcs spawned");
-    }
-
-    if (!citiesFlat.empty()) {
-        app.gs.player.x = float(citiesFlat[0].x);
-        app.gs.player.y = float(citiesFlat[0].y);
-    } else {
-        app.gs.player.x = float(app.gs.mapW / 2);
-        app.gs.player.y = float(app.gs.mapH / 2);
-    }
-    boot_trace("player anchored");
     // Anchor camera at the player's CELL CENTRE (cell N spans [N..N+1]
     // in world units, so its centre sits at N+0.5). The per-sprite
     // +0.5 in macro_overlay.cpp lines up with this so the player +
     // every NPC render at their cell centre, never at the cell
-    // crossing.
+    // crossing. (The player himself is anchored by generate_macro_world.)
     app.camX = app.camTargetX = app.gs.player.x + 0.5f;
     app.camY = app.camTargetY = app.gs.player.y + 0.5f;
     app.camPanX = app.camPanY = 0;
     boot_trace("camera anchored");
-    // macro-4a: materialise the player's persistent PlayerTag flag on the macro
-    // map (Position + PlayerTag). The macro tick re-heals it thereafter; doing it
-    // here makes the invariant hold immediately after boot, before the first tick.
-    sm::ensure_macro_player_entity(app.gs, app.ecs);
     // The starter kit is DEALT INTO HIS BAG, which is a container on his squad
     // entity — a PlayerState cannot carry goods any more, because it is not a
     // container. Coin of his own realm follows at chargen (the homeland pick
     // re-mints it), so the opening purse is imperial exactly as it always was.
+    // Chargen content, so it stays app-side — a balance-harness world gets a
+    // player squad but no gift.
     if (sm::Inventory* bag = sm::player_inventory(app.ecs)) {
         bag->add("coin_empire", 1000);
         bag->add("potion_hp", 2);
         bag->add("bread", 5);
     }
-    boot_trace("macro player flag ensured");
+    boot_trace("starter kit dealt");
     if (app.gs.subState.kind == sm::GameSubStateKind::Exploring
         && app.gs.subState.settlementId < 0) {
         boot_trace("settlement lookup start");
