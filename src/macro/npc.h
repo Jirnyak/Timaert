@@ -39,6 +39,9 @@ enum class NPCType : std::uint8_t {
     // ordinary squad entity names a row of THIS table — so the player needed
     // one. Appended, so every saved ordinal stays where it was.
     Adventurer,
+    // The village vendor (owner 2026-08-30): the crew that walks the home
+    // surplus to the nearest city market. Appended, so saved ordinals stay.
+    Vendor,
     Count,
 };
 
@@ -532,6 +535,22 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         /*weight*/0, /*loot*/nullptr, /*radius*/0.0f,
         {{}}, 0, {{}}, 0,
     },
+    // Vendor — the village surplus on the road to town (owner 2026-08-30).
+    // haulMult 1: no wagon train — the crew's carry is the sum of its backs
+    // (spawn_squad), and the rotation sizes the crew to the village.
+    {
+        NPCType::Vendor, "vendor", "Vendor", SpriteId::Peasant, 1,
+        AIBehaviour::VendorTrade, kWoodcutterCombat, 1, true, 12,
+        /*weight*/21, /*loot*/nullptr, /*radius*/0.0f,
+        {{"Matvey","Luka","Yefim","Silanty","Avdey"}}, 5,
+        {{"Fresh from the village, best prices before noon.",
+          "The road eats a share of every sack, but town coin is real.",
+          "Buy now - by evening the good grain is gone."}}, 3,
+        /*lightRadius=*/0.0f, /*lightIntensity=*/0.0f,
+        /*lightR=*/0.0f, /*lightG=*/0.0f, /*lightB=*/0.0f,
+        /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/0,
+        /*hireGold=*/30,
+    },
 };
 static_assert(rows_in_enum_order(kNpcTypeDefs, &NpcTypeDef::type),
               "kNpcTypeDefs row order must mirror NPCType");
@@ -612,6 +631,7 @@ inline constexpr NpcPurseRow kNpcPurse[std::size_t(NPCType::Count)] = {
     // The player's purse is his INVENTORY — what he actually carries — never a
     // rolled amount, so his row asks for nothing.
     {NPCType::Adventurer,   0, 0},
+    {NPCType::Vendor,       1, 10},
 };
 static_assert(rows_in_enum_order(kNpcPurse, &NpcPurseRow::type),
               "kNpcPurse row order must mirror NPCType");
@@ -660,6 +680,7 @@ inline constexpr NpcMapColorRow kNpcMapColor[std::size_t(NPCType::Count)] = {
     {NPCType::SandScorpion, 0xC8C8C8u},
     {NPCType::StoneGolem,   0xC8C8C8u},
     {NPCType::Adventurer,   0xC8C8C8u},
+    {NPCType::Vendor,       0xC8C8C8u},
 };
 static_assert(rows_in_enum_order(kNpcMapColor, &NpcMapColorRow::type),
               "kNpcMapColor row order must mirror NPCType");

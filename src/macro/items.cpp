@@ -289,6 +289,7 @@ constexpr NpcLootRow kNpcLootId[std::size_t(NPCType::Count)] = {
     {NPCType::StoneGolem,   nullptr},
     // The player: his loot is the bag he carries, not a profile.
     {NPCType::Adventurer,   nullptr},
+    {NPCType::Vendor,       nullptr},
 };
 static_assert(rows_in_enum_order(kNpcLootId, &NpcLootRow::type),
               "kNpcLootId row order must mirror NPCType");

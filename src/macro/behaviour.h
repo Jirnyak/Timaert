@@ -38,6 +38,12 @@ enum class AIBehaviour : std::uint8_t {
     // `FaunaAi::Flee`): a rabbit's whole behaviour, and the honest column for
     // any row that is prey rather than a fighter.
     Flee,
+    // The village crew at market (owner 2026-08-30: «крестьяне просто всегда
+    // идут продавать на рынок ближайшего города»): carries the home surplus
+    // to the nearest city, sells it all, buys the home's lacks, walks back —
+    // then the daily labour rotation dissolves it into the population like
+    // every working crew.
+    VendorTrade,
     Count,
 };
 

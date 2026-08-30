@@ -42,7 +42,9 @@ int fail(const char* msg) {
 int main() {
     using namespace sm;
 
-    // ── 1. Torus law: the caravan's village choice wraps ────────────────
+    // ── 1. Torus law: the caravan's STATION choice wraps ────────────────
+    // (owner 2026-08-30: caravans walk city to city; the next station is the
+    // nearest OTHER city — and "nearest" is torus-metric like everything.)
     {
         GameState gs{};
         gs.mapW = 64;
@@ -56,20 +58,20 @@ int main() {
         city.inventory.add("bread", 2048);
         gs.landmarks.push_back(city);
 
-        Landmark sameSide{};             // 10 cells west, same side
-        sameSide.type = LandmarkType::Village;
-        sameSide.id = 1;
-        sameSide.x = 50;
+        Landmark sameSide{};             // 30 cells west, same side — far
+        sameSide.type = LandmarkType::City;   // enough that the comparable-
+        sameSide.id = 1;                      // distance coin flip stays out
+        sameSide.x = 30;
         sameSide.y = 32;
-        sameSide.nearestCityId = 0;
+        sameSide.population = 50;
         gs.landmarks.push_back(sameSide);
 
         Landmark acrossSeam{};           // 6 cells east THROUGH the seam
-        acrossSeam.type = LandmarkType::Village;
+        acrossSeam.type = LandmarkType::City;
         acrossSeam.id = 2;
         acrossSeam.x = 2;                // 60 -> 63|0 -> 2 = 6 cells by torus
         acrossSeam.y = 32;
-        acrossSeam.nearestCityId = 0;
+        acrossSeam.population = 50;
         gs.landmarks.push_back(acrossSeam);
 
         ecs::World w;
@@ -107,7 +109,7 @@ int main() {
             return fail("the caravan did not set out");
         }
         if (out.targetSettlementId != acrossSeam.id) {
-            return fail("TORUS LAW: the seam-side village is nearer and must win");
+            return fail("TORUS LAW: the seam-side CITY is nearer and must win");
         }
     }
 

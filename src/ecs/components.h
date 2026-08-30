@@ -269,6 +269,12 @@ struct LightEmitter {
 struct MacroNpcRuntime {
     std::int32_t  homeSettlementId;
     std::int32_t  targetSettlementId;
+    // The trading run (owner 2026-08-30: caravans walk CITY to CITY, station
+    // by station, deciding from the market they stand in — no omniscience).
+    // stationsLeft counts the stops before the run turns home; prevStationId
+    // keeps the leg from ping-ponging between two neighbours. Runtime-only.
+    std::uint8_t  stationsLeft = 0;
+    std::int32_t  prevStationId = -1;
     float         targetX, targetY;
     std::int16_t  stateTimer;
     std::int16_t  teleportCooldown;

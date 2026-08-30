@@ -155,25 +155,29 @@ struct TickContext {
     bool              allowAutoBattle = true;
 };
 
-// ── The caravan↔village PACKAGE DEAL (owner, 2026-08-30; CANON S10/S25) ──
-// The caravan is its city's agent: hold and purse are the city's property on
-// wheels. The deal is two half-swaps through the ONE price law (economy.h
-// stock_price — base × scarcity at post-trade supply, so every lot pays its
-// own slippage), coin travelling by transfer_value: nothing is minted and
-// nothing is confiscated any more. BUY runs before SELL on purpose — the
-// city's coin reaches the village first, and the village pays for its bread
-// with the money its raw just earned. At namespace scope (the
+// ── Trading at a market (owner, 2026-08-30; CANON S10/S25) ───────────────
+// Locality is the law: every decision reads the market the squad STANDS ON
+// — no omniscience, no rumours. Two strategies over the ONE price law
+// (economy.h stock_price at post-trade supply; transfer_value moves coin —
+// nothing minted, nothing confiscated). At namespace scope (the
 // settle_landmark_day pattern) so caravan_deal_test can drive one deal.
 struct MemoryEntry;
 struct CaravanDeal {
-    int boughtValue = 0;      // coin the caravan paid the village for raw
-    int soldValue   = 0;      // coin the village paid for delivered goods
+    int boughtValue = 0;      // coin paid INTO the market for goods taken
+    int soldValue   = 0;      // coin the market paid for goods delivered
     int movedTableValue = 0;  // TABLE value of all goods that changed hands
                               //   (the chronicle's dealValue, as before)
 };
-CaravanDeal trade_caravan_at_village(Inventory& hold, float capacityKg,
-                                     Landmark& village,
-                                     const MemoryEntry* homeSnapshot);
+// The caravan's STATION stop: sell into the market's shortage (up to its
+// daily demand), buy its surplus (above its daily demand) — the bounds ARE
+// the price law's own break-even, so no threshold constants exist.
+CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
+                                     Landmark& market);
+// The village crew selling at its nearest city: unload everything, then buy
+// the home's lacks (its own departure snapshot, needs-ladder inputs first).
+CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
+                                   Landmark& market,
+                                   const MemoryEntry* homeSnapshot);
 
 // ── The daily labour rotation (owner 2026-08-30; CANON S10) ──────────────
 // «Поселение поднимает рабочий сквад → сквад идёт к полю → возвращается,

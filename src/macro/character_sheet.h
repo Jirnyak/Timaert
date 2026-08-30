@@ -114,6 +114,9 @@ inline constexpr RoleWeights kRoleWeights[int(NPCType::Count)] = {
     // him, not rolled by this table (it answers only when something asks the
     // world for "an adventurer", e.g. a projected body of his squad).
     {NPCType::Adventurer,   {2, 2, 2, 2, 2, 2, 2, 2, 2}, {1, 1, 1, 1, 1, 1, 1, 1}},
+    // Vendor — the village hauler on the town road: a labourer's back with a
+    // seller's tongue (the Woodcutter body, a pinch of the Merchant charm).
+    {NPCType::Vendor,       {3, 3, 3, 1, 1, 2, 1, 1, 1}, {2, 0, 1, 1, 1, 2, 0, 3}},
 };
 
 static_assert(rows_in_enum_order(kRoleWeights, &RoleWeights::type),

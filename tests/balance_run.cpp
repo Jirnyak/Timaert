@@ -280,11 +280,18 @@ int main(int argc, char** argv) {
         // Closing muster: the trade fleet is this track's working part, and
         // its health must be readable without a debugger.
         {
-            int caravans = 0;
+            int caravans = 0, vendors = 0, vIdle = 0, vAway = 0;
+            long long vendorLoad = 0;
             for (auto [e, kind, crt, bag]
                  : ecs.reg.view<sm::ecs::NPCKind, sm::ecs::MacroNpcRuntime,
                                 sm::ecs::NpcInventory>().each()) {
                 (void)e;
+                if (kind.type == std::uint16_t(sm::NPCType::Vendor)) {
+                    ++vendors;
+                    if (crt.state == 0) ++vIdle; else ++vAway;
+                    vendorLoad += (long long)sm::inventory_weight(bag.inv);
+                    continue;
+                }
                 if (kind.type != std::uint16_t(sm::NPCType::Caravan))
                     continue;
                 ++caravans;
@@ -298,7 +305,10 @@ int main(int argc, char** argv) {
                              bag.inv.count("grain"), bag.inv.count("wood"),
                              bag.inv.count("clay"));
             }
-            std::fprintf(stderr, "[balance] caravans=%d\n", caravans);
+            std::fprintf(stderr,
+                         "[balance] caravans=%d vendors=%d (idle=%d away=%d "
+                         "load=%lldkg)\n",
+                         caravans, vendors, vIdle, vAway, vendorLoad);
         }
 
         // ── Laws (the invariants of work_vector §1, v0 set) ──────────────

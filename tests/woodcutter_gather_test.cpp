@@ -409,7 +409,7 @@ void test_agent_memory_is_bounded_and_current() {
           "the snapshot packs stock classes per commodity");
 }
 
-void test_the_caravan_trades_on_its_memory() {
+void test_the_vendor_sells_at_the_nearest_city() {
     GameState gs{};
     gs.mapW = kMap;
     gs.mapH = kMap;
@@ -441,20 +441,20 @@ void test_the_caravan_trades_on_its_memory() {
     ecs::World w;
     auto& reg = w.reg;
     const auto e = reg.create();
-    reg.emplace<ecs::Position>(e, 10.0f, 10.0f, 0.0f);
-    reg.emplace<ecs::VisualPos>(e, 10.0f, 10.0f, 0.0f);
-    reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Caravan),
+    reg.emplace<ecs::Position>(e, 16.0f, 10.0f, 0.0f);
+    reg.emplace<ecs::VisualPos>(e, 16.0f, 10.0f, 0.0f);
+    reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Vendor),
                               std::uint16_t(faction_index("timaert")));
     ecs::MacroNpcRuntime crt{};
-    crt.homeSettlementId = 1;
+    crt.homeSettlementId = 3;   // the VILLAGE: vendors are the village's arm
     crt.targetSettlementId = -1;
     crt.targetX = 10.0f;
     crt.targetY = 10.0f;
     crt.state = std::uint8_t(NPCState::Idle);
     crt.stateTimer = 0;
     refresh_leader_travel_stats(
-        crt, make_character_sheet(NPCType::Caravan, 3, leader_sheet_seed(13u)),
-        NPCType::Caravan);
+        crt, make_character_sheet(NPCType::Vendor, 3, leader_sheet_seed(13u)),
+        NPCType::Vendor);
     crt.sp = crt.maxSp;
     reg.emplace<ecs::MacroNpcRuntime>(e, crt);
     reg.emplace<ecs::MacroSpawnId>(e, 13u);
@@ -475,11 +475,12 @@ void test_the_caravan_trades_on_its_memory() {
     const int cityGrain = gs.landmarks[0].inventory.count("grain");
     const int vilBread = gs.landmarks[1].inventory.count("bread");
     CHECK(cityGrain > 0,
-          "the caravan hauled the city what its snapshot said it LACKED");
-    CHECK(vilBread > 0, "the caravan delivered the city's surplus bread");
+          "the vendor sold the village surplus at the nearest city");
+    CHECK(vilBread > 0,
+          "the earnings bought the home's lack (bread) back to the village");
     CHECK(recall(reg.get<AgentMemory>(e),
-                 AgentMemoryKind::MarketSnapshot, 1) != nullptr,
-          "the departure snapshot lives in the caravan's memory");
+                 AgentMemoryKind::MarketSnapshot, 3) != nullptr,
+          "the departure snapshot of the vendor's OWN home lives in memory");
     const int grainTotal = cityGrain + bag.count("grain")
                            + gs.landmarks[1].inventory.count("grain");
     const int breadTotal = vilBread + bag.count("bread")
@@ -503,14 +504,14 @@ void test_the_caravan_trades_on_its_memory() {
     const FactTally traded = tally_facts(gs.chronicle, FactKind::Traded,
                                          16, 10);
     CHECK(traded.n >= 1, "a completed exchange left a Traded fact");
-    CHECK(traded.last.subject == 1u
+    CHECK(traded.last.subject == 3u
               && traded.last.subjectKind
                      == std::uint8_t(FactSubject::Landmark),
-          "the fact's subject is the home city whose caravan dealt");
-    CHECK(traded.last.object == 3u
+          "the fact's subject is the home village whose vendor dealt");
+    CHECK(traded.last.object == 1u
               && traded.last.objectKind
                      == std::uint8_t(FactSubject::Landmark),
-          "the fact's object is the village it traded WITH");
+          "the fact's object is the city it traded AT");
     CHECK(traded.last.amount > 0,
           "the deal's worth is real: table value of what changed hands");
 }
@@ -646,6 +647,6 @@ int main() {
     test_the_miner_works_the_vein();
     test_the_mine_runs_while_the_player_is_away();
     test_agent_memory_is_bounded_and_current();
-    test_the_caravan_trades_on_its_memory();
+    test_the_vendor_sells_at_the_nearest_city();
     return sm::test::report("woodcutter_gather_test");
 }
