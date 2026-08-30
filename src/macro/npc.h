@@ -42,6 +42,9 @@ enum class NPCType : std::uint8_t {
     // The village vendor (owner 2026-08-30): the crew that walks the home
     // surplus to the nearest city market. Appended, so saved ordinals stay.
     Vendor,
+    // The silver villages' man (CANON S10 чеканка): the same gatherer loop
+    // as every profession — a row, never a branch. Appended.
+    SilverMiner,
     Count,
 };
 
@@ -554,6 +557,21 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/0,
         /*hireGold=*/30,
     },
+    // Silver-miner — the mint's first hand (owner 2026-08-30)
+    {
+        NPCType::SilverMiner, "silver_miner", "Silver-miner",
+        SpriteId::Peasant, 1,
+        AIBehaviour::Gatherer, kWoodcutterCombat, 1, true, 12,
+        /*weight*/21, /*loot*/nullptr, /*radius*/0.0f,
+        {{"Yakov","Naum","Tikhon","Arkhip","Kuzma"}}, 5,
+        {{"The white metal pays better than iron, and weighs on the soul.",
+          "Every coin in your purse was a rock in somebody's barrow.",
+          "The vein glitters, the lungs pay."}}, 3,
+        /*lightRadius=*/0.0f, /*lightIntensity=*/0.0f,
+        /*lightR=*/0.0f, /*lightG=*/0.0f, /*lightB=*/0.0f,
+        /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/0,
+        /*hireGold=*/30,
+    },
 };
 static_assert(rows_in_enum_order(kNpcTypeDefs, &NpcTypeDef::type),
               "kNpcTypeDefs row order must mirror NPCType");
@@ -635,6 +653,7 @@ inline constexpr NpcPurseRow kNpcPurse[std::size_t(NPCType::Count)] = {
     // rolled amount, so his row asks for nothing.
     {NPCType::Adventurer,   0, 0},
     {NPCType::Vendor,       1, 10},
+    {NPCType::SilverMiner,  1, 10},
 };
 static_assert(rows_in_enum_order(kNpcPurse, &NpcPurseRow::type),
               "kNpcPurse row order must mirror NPCType");
@@ -684,6 +703,7 @@ inline constexpr NpcMapColorRow kNpcMapColor[std::size_t(NPCType::Count)] = {
     {NPCType::StoneGolem,   0xC8C8C8u},
     {NPCType::Adventurer,   0xC8C8C8u},
     {NPCType::Vendor,       0xC8C8C8u},
+    {NPCType::SilverMiner,  0xC8C8C8u},
 };
 static_assert(rows_in_enum_order(kNpcMapColor, &NpcMapColorRow::type),
               "kNpcMapColor row order must mirror NPCType");

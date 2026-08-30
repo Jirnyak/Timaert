@@ -81,8 +81,18 @@ struct RecipeDef {
 
 // Производство «обычно в городе» (owner) — v1 keeps every craft in the City;
 // a village-side craft later is one row with site=Village, no code.
+// The MINT output marker: not a commodity row — the produce scheduler
+// resolves it into the town's own faction coin (CANON S10: чеканка = рецепт;
+// выход монет из единицы металла = стоимость металла по единой таблице цен,
+// «таблица цен и есть монетный двор»; сеньораж эмерджентен из рыночного
+// спреда серебра).
+inline constexpr const char* kMintOutput = "coin";
+
 inline constexpr RecipeDef kRecipes[] = {
     {"bread",     {{"grain", 1}, {nullptr, 0}}, 8, EconSite::Any},
+    // ЧЕКАНКА: все города (site City = право v1); 4 металла на рабочий-день
+    // — балансовая крутилка темпа эмиссии.
+    {kMintOutput, {{"silver", 1}, {nullptr, 0}}, 4, EconSite::City},
     {"bricks",    {{"clay", 1},  {nullptr, 0}}, 8, EconSite::City},
     {"cloth",     {{"grain", 2}, {nullptr, 0}}, 4, EconSite::City},
     {"tools",     {{"iron", 1},  {"wood", 1}},  2, EconSite::City},
@@ -145,6 +155,7 @@ struct EconFact {
         FamineEnded = 3,
         Starved = 4,        // amount = pops that went unfed today
         Consumed = 5,       // commodity, amount — the needs ladder's take
+        Minted = 6,         // amount = coins struck (commodity = silver row)
     };
     Kind kind{};
     int commodity = -1;
@@ -171,8 +182,11 @@ int econ_gather_day(Inventory& store, Deposit* deposits, int depositCount,
 // workers across recipes with inputs (the surplus), then leftovers in table
 // order. Returns total units produced. Conservation: inputs leave the store
 // as outputs enter.
+// `mintCurrencyId`: the faction coin the kMintOutput recipe strikes —
+// null = this place has no mint right and the row simply does not run.
 int econ_produce_day(Inventory& store, EconSite site, int workers,
-                     int population, EconFactSink sink, void* user);
+                     int population, EconFactSink sink, void* user,
+                     const char* mintCurrencyId = nullptr);
 
 struct ConsumeOutcome {
     int fedPop = 0;         // pops whose vital need was met today

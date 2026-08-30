@@ -160,7 +160,8 @@ DepositKind deposit_kind_of(ResourceFieldId f) {
     return DepositKind(std::uint8_t(f) - std::uint8_t(ResourceFieldId::Clay));
 }
 static_assert(int(ResourceFieldId::Iron) == int(ResourceFieldId::Clay) + 1
-                  && int(ResourceFieldId::Stone) == int(ResourceFieldId::Clay) + 2,
+                  && int(ResourceFieldId::Stone) == int(ResourceFieldId::Clay) + 2
+                  && int(ResourceFieldId::Silver) == int(ResourceFieldId::Clay) + 3,
               "deposit rows must mirror DepositKind order");
 
 // Clay/Iron/Stone: carrier rows over the deposit layer — one sparse map per
@@ -247,6 +248,11 @@ int trees_growth_at(const MacroWorld& w, int x, int y) {
 // scarcity roll and the host-cell pick (the W2c rule as a table row).
 int iron_growth_at(const MacroWorld&, int, int) { return iron_vein_lump(); }
 
+// Silver: the same born-where-scarce geology as iron, with the small lump a
+// precious vein opens with — the world's money supply regrows as slowly as
+// its metal (CANON S10).
+int silver_growth_at(const MacroWorld&, int, int) { return silver_vein_lump(); }
+
 constexpr ResourceFieldDef kResourceFields[] = {
     /* Wheat */ {"wheat", &wheat_baseline,
                  GrowthDomain::OwnScars, &wheat_growth_at,
@@ -270,6 +276,11 @@ constexpr ResourceFieldDef kResourceFields[] = {
                  GrowthDomain::None, nullptr, ResourceFieldId::Stone,
                  &deposit_read<DepositKind::Stone>,
                  &deposit_apply<DepositKind::Stone>},
+    /* Silver */ {"silver", nullptr,
+                 GrowthDomain::Geology, &silver_growth_at,
+                 ResourceFieldId::Stone,
+                 &deposit_read<DepositKind::Silver>,
+                 &deposit_apply<DepositKind::Silver>},
 };
 static_assert(sizeof(kResourceFields) / sizeof(kResourceFields[0])
                   == std::size_t(ResourceFieldId::Count),

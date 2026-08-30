@@ -13,12 +13,18 @@ namespace {
 constexpr std::uint32_t kClayChanceMask  = 63;    // 1 in 64 river-adjacent cells
 constexpr std::uint32_t kStoneChanceMask = 63;    // 1 in 64 mountain cells
 constexpr std::uint32_t kIronChanceMask  = 255;   // 1 in 256 mountain cells
+// The mint metal is 4× rarer than iron and its veins are small: the world's
+// whole money supply = veins × kSilverBase × value(silver)=32 coins/unit
+// (items.cpp) — geology sets the money of the WORLD (CANON S10).
+constexpr std::uint32_t kSilverChanceMask = 1023; // 1 in 1024 mountain cells
 constexpr std::int32_t  kClayBase  = 4096;
 constexpr std::int32_t  kIronBase  = 2048;
+constexpr std::int32_t  kSilverBase = 512;
 constexpr std::int32_t  kStoneBase = 65536;
 
 constexpr std::uint32_t kClaySalt  = 0xC1A70000u;
 constexpr std::uint32_t kIronSalt  = 0x1F0E0000u;
+constexpr std::uint32_t kSilverSalt = 0x517E0000u;
 constexpr std::uint32_t kStoneSalt = 0x570E0000u;
 
 bool river_adjacent(const TerrainData& t, int x, int y) {
@@ -65,6 +71,16 @@ DepositLayer build_deposit_layer(const TerrainData& terrain,
             // (discovery may later add iron INTO a stone cell — that is the
             // one way a cell comes to carry two kinds).
             if (mountain) {
+                // The SCARCEST kind takes the cell: silver before iron
+                // before stone (the derivation rule this loop always had).
+                if ((hash3(std::uint32_t(x), std::uint32_t(y),
+                           seed ^ kSilverSalt) & kSilverChanceMask) == 0) {
+                    layer.cells[std::size_t(DepositKind::Silver)]
+                        .emplace(idx, kSilverBase);
+                    layer.virginUnits[std::size_t(DepositKind::Silver)]
+                        += kSilverBase;
+                    continue;
+                }
                 if ((hash3(std::uint32_t(x), std::uint32_t(y),
                            seed ^ kIronSalt) & kIronChanceMask) == 0) {
                     layer.cells[std::size_t(DepositKind::Iron)]
@@ -143,5 +159,6 @@ void restore_deposit_cells(DepositLayer& layer, const DepositLayer& loaded) {
 }
 
 int iron_vein_lump() { return kIronBase; }
+int silver_vein_lump() { return kSilverBase; }
 
 } // namespace sm

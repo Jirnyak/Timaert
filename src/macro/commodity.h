@@ -54,6 +54,8 @@ inline constexpr CommodityDef kCommodities[] = {
     {"iron",      "Железо",      CommodityTier::Raw,        4.0f,  0},
     {"clay",      "Глина",       CommodityTier::Raw,        2.0f,  0},
     {"grain",     "Зерно",       CommodityTier::Raw,        1.0f,  0},
+    // Монетный металл (CANON S10 чеканка): жила → слиток → монета фракции.
+    {"silver",    "Серебро",     CommodityTier::Raw,        4.0f,  0},
     // ── Vital (жизненно необходимое) ─────────────────────────────────────
     {"bread",     "Хлеб",        CommodityTier::Vital,      1.0f,  0},
     {"bricks",    "Кирпичи",     CommodityTier::Vital,      4.0f,  0},
@@ -72,9 +74,9 @@ inline constexpr CommodityDef kCommodities[] = {
 
 inline constexpr int kCommodityCount =
     int(sizeof(kCommodities) / sizeof(kCommodities[0]));
-inline constexpr int kRawCommodityCount = 5;
+inline constexpr int kRawCommodityCount = 6;
 
-static_assert(kCommodityCount == 14, "v1 scope: 5 raw + 3 goods per tier");
+static_assert(kCommodityCount == 15, "v1 scope: 6 raw + 3 goods per tier");
 static_assert(kCommodities[kRawCommodityCount - 1].tier == CommodityTier::Raw
                   && kCommodities[kRawCommodityCount].tier != CommodityTier::Raw,
               "raw rows must be first and contiguous (material mask bit space)");

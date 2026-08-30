@@ -33,8 +33,12 @@
 
 namespace sm {
 
-enum class DepositKind : std::uint8_t { Clay = 0, Iron = 1, Stone = 2 };
-inline constexpr int kDepositKindCount = 3;
+enum class DepositKind : std::uint8_t {
+    Clay = 0, Iron = 1, Stone = 2,
+    // The mint metal (CANON S10). Appended — saved kind blocks stay ordered.
+    Silver = 3,
+};
+inline constexpr int kDepositKindCount = 4;
 
 // ── THE deposit-kind registry (CANON S16) ────────────────────────────────
 // One row per kind: the commodity it yields into the ONE dictionary, and how
@@ -50,6 +54,9 @@ inline constexpr DepositDef kDepositDefs[kDepositKindCount] = {
     {DepositKind::Clay,  "clay",   8},
     {DepositKind::Iron,  "iron",  16},
     {DepositKind::Stone, "stone",  8},
+    // A silver vein prices like iron for a settlement site: the mint is
+    // wealth, but the town still eats bread, not coins.
+    {DepositKind::Silver, "silver", 16},
 };
 static_assert(rows_in_enum_order(kDepositDefs, &DepositDef::kind),
               "kDepositDefs row order must mirror DepositKind");
@@ -139,5 +146,6 @@ void restore_deposit_cells(DepositLayer& layer, const DepositLayer& loaded);
 // The lump a fresh vein opens with (kIronBase) — the Iron row's growth
 // number, living at the deposit table's own door.
 int iron_vein_lump();
+int silver_vein_lump();
 
 } // namespace sm

@@ -45,6 +45,7 @@ enum class ResourceFieldId : std::uint8_t {
     Clay,        // alluvial pits — carrier row (macro/deposit_layer.h)
     Iron,        // finite mountain veins — carrier row (deposit_layer.h)
     Stone,       // quasi-infinite quarries — carrier row (deposit_layer.h)
+    Silver,      // the mint metal — finite veins (deposit_layer.h)
     Count,
 };
 

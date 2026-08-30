@@ -132,11 +132,17 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
         // worker for an empty town — the same air-minting the pop floor did.
         // The production TABLE comes off the place's own registry row
         // (econSite column), not a hardcoded per-loop literal.
+        // The mint right, v1: every CITY strikes its own faction's coin
+        // (owner 2026-08-30; the right becomes a landmark column when a
+        // place ever differs from its kind).
         econ_produce_day(s.inventory, EconSite(landmark_def(s.type).econSite),
                          s.population > 0
                              ? std::max(1, s.population / kHeadsPerCityWorker)
                              : 0,
-                         s.population, rs, ru);
+                         s.population, rs, ru,
+                         currency_for_faction_id(faction_id_for_index(
+                             faction_index_for_kingdom(gs.politik,
+                                                       s.kingdomIdx))));
 
         bool famine = false, revolt = false, died = false;
         const int headsBefore = s.population;

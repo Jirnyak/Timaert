@@ -114,6 +114,7 @@ constexpr SpawnHabitatRow kSpawnHabitats[std::size_t(NPCType::Count)] = {
     // flag. Mask 0, no wild banner.
     {NPCType::Adventurer,   0},
     {NPCType::Vendor,       0},
+    {NPCType::SilverMiner,  0},
 };
 static_assert(rows_in_enum_order(kSpawnHabitats, &SpawnHabitatRow::type),
               "every body row states its ground — the table IS the system");

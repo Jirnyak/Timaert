@@ -12,6 +12,11 @@ namespace {
 // touch integers only (the faction-registry pattern).
 struct ResolvedRecipe {
     int output = -1;
+    // The mint row (econ_day.h kMintOutput): output resolves to the town's
+    // faction coin at run time; yield per metal unit = the metal's own
+    // catalog value (the price table IS the mint).
+    bool isMint = false;
+    int mintYield = 0;
     int inputIdx[2] = {-1, -1};
     int inputQty[2] = {0, 0};
     // popPerUnitDay of the need row this output serves, 0 = not a need —
@@ -29,6 +34,8 @@ const ResolvedTables& resolved() {
         ResolvedTables r{};
         for (int i = 0; i < kRecipeCount; ++i) {
             r.recipes[i].output = commodity_index(kRecipes[i].output);
+            r.recipes[i].isMint =
+                std::strcmp(kRecipes[i].output, kMintOutput) == 0;
             for (int k = 0; k < 2; ++k) {
                 if (kRecipes[i].inputs[k].id) {
                     r.recipes[i].inputIdx[k] =
@@ -86,7 +93,8 @@ int econ_gather_day(Inventory& store, Deposit* deposits, int depositCount,
 }
 
 int econ_produce_day(Inventory& store, EconSite site, int workers,
-                     int population, EconFactSink sink, void* user) {
+                     int population, EconFactSink sink, void* user,
+                     const char* mintCurrencyId) {
     if (workers <= 0) return 0;
     const ResolvedTables& t = resolved();
     int total = 0;
@@ -106,6 +114,9 @@ int econ_produce_day(Inventory& store, EconSite site, int workers,
 
     auto run_recipe = [&](int i, int unitCap, int workerCap) {
         const ResolvedRecipe& rr = t.recipes[i];
+        // The mint runs only where a coin is named (the right, v1: the
+        // caller's faction) — fail closed like every unwired layer.
+        if (rr.isMint && !mintCurrencyId) return;
         // Units this recipe could make from the store alone.
         int byInputs = unitCap;
         for (int k = 0; k < 2; ++k) {
@@ -136,6 +147,26 @@ int econ_produce_day(Inventory& store, EconSite site, int workers,
             if (rr.inputIdx[k] < 0) continue;
             store.remove_of(commodity_item_index(rr.inputIdx[k]),
                             made * rr.inputQty[k]);
+        }
+        if (rr.isMint) {
+            // Yield per metal unit = the metal's OWN catalog value — the one
+            // price table is the mint (CANON S10); nothing else names the
+            // number. Credit before debit like every add.
+            const ItemDef* metal = item_def_at(
+                commodity_item_index(rr.inputIdx[0]));
+            const int yield = metal ? metal->value : 0;
+            if (yield <= 0) return;
+            if (!store.add(mintCurrencyId, made * yield)) return;
+            for (int k = 0; k < 2; ++k) {
+                if (rr.inputIdx[k] < 0) continue;
+                store.remove_of(commodity_item_index(rr.inputIdx[k]),
+                                made * rr.inputQty[k]);
+            }
+            workersLeft -= staffed;
+            total += made;
+            report(sink, user, EconFact::Kind::Minted, rr.inputIdx[0],
+                   made * yield);
+            return;
         }
         if (!store.add_of(commodity_item_index(rr.output), made)) {
             // The shelf refused the output: put the inputs back (the slots
@@ -171,7 +202,7 @@ int econ_produce_day(Inventory& store, EconSite site, int workers,
     for (int i = 0; i < kRecipeCount; ++i) {
         if (!recipe_runs_at(kRecipes[i].site, site)) continue;
         const ResolvedRecipe& rr = t.recipes[i];
-        if (rr.output < 0) continue;
+        if (rr.output < 0 && !(rr.isMint && mintCurrencyId)) continue;
         bool feedable = true;
         for (int k = 0; k < 2; ++k) {
             if (rr.inputIdx[k] < 0) continue;
@@ -188,7 +219,7 @@ int econ_produce_day(Inventory& store, EconSite site, int workers,
     for (int pass = 1; pass <= 2 && workersLeft > 0; ++pass) {
         for (int i = 0; i < kRecipeCount && workersLeft > 0; ++i) {
             if (!recipe_runs_at(kRecipes[i].site, site)) continue;
-            if (t.recipes[i].output < 0) continue;
+            if (t.recipes[i].output < 0 && !t.recipes[i].isMint) continue;
             run_recipe(i, 1 << 30, pass == 1 ? fairShare : workersLeft);
         }
     }

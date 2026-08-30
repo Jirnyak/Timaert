@@ -97,7 +97,10 @@ int main() {
     }
     for (int r = 0; r < kRecipeCount; ++r) {
         const int out = commodity_index(kRecipes[r].output);
-        if (out < 0) return fail("recipe output id unknown");
+        // The mint row's output is the caller's faction COIN, not a
+        // commodity (econ_day.h kMintOutput) — the one sanctioned exception.
+        if (out < 0 && std::strcmp(kRecipes[r].output, kMintOutput) != 0)
+            return fail("recipe output id unknown");
         if (kCommodities[out].tier == CommodityTier::Raw) {
             return fail("recipe may not output raw (only deposits create raw)");
         }

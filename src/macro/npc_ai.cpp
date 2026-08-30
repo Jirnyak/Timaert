@@ -483,6 +483,7 @@ struct GathererDef {
 
 constexpr GathererDef kGathererDefs[] = {
     {NPCType::Peasant,    ResourceFieldId::Wheat, "grain", Worksite::HomeField},
+    {NPCType::SilverMiner, ResourceFieldId::Silver, "silver", Worksite::Deposit},
     {NPCType::Woodcutter, ResourceFieldId::Trees, "wood",  Worksite::ForestCell},
     {NPCType::Miner,      ResourceFieldId::Iron,  "iron",  Worksite::Deposit},
     {NPCType::Quarryman,  ResourceFieldId::Stone, "stone", Worksite::Deposit},
@@ -698,6 +699,27 @@ Inventory* landmark_inventory_of_kind(const TickContext& ctx, int id,
 // the route choice (which village is worth the ride): without the shared
 // weight the caravans twice ran for whatever was merely PLENTIFUL — wood —
 // while the granary held one unit (measured, balance_run 2026-08-30).
+// Load order by VALUE DENSITY (value per kg, dearest first): what a trader
+// packs when the cart is smaller than the warehouse. Universal — silver
+// rides before timber because the table prices it so, never because code
+// names a metal (the wood-first table order left the mint's ore stranded in
+// the villages while the carts hauled logs; measured 2026-08-30).
+const std::array<int, std::size_t(kCommodityCount)>& value_dense_order() {
+    static const auto kOrder = [] {
+        std::array<int, std::size_t(kCommodityCount)> order{};
+        for (int i = 0; i < kCommodityCount; ++i) order[std::size_t(i)] = i;
+        const auto density = [](int i) {
+            const ItemDef* d = item_def(kCommodities[i].id);
+            if (!d || d->value <= 0) return 0.0f;
+            return float(d->value) / (d->weight > 0.0f ? d->weight : 1.0f);
+        };
+        std::sort(order.begin(), order.end(),
+                  [&](int a, int b) { return density(a) > density(b); });
+        return order;
+    }();
+    return kOrder;
+}
+
 const std::array<int, std::size_t(kCommodityCount)>& caravan_buy_order() {
     static const auto kOrder = [] {
         std::array<int, std::size_t(kCommodityCount)> order{};
@@ -814,9 +836,10 @@ void ai_caravan(entt::entity self, ecs::Position& p,
         // property (the loan law), and a town does not sell to itself.
         const EconSite homeSite =
             EconSite(landmark_def(homeLm->type).econSite);
-        for (int i = 0; i < kCommodityCount
+        for (int oi = 0; oi < kCommodityCount
                         && inventory_weight(bag->inv) < rt.carryCap / 2;
-             ++i) {
+             ++oi) {
+            const int i = value_dense_order()[std::size_t(oi)];
             const char* id = kCommodities[i].id;
             const int surplus =
                 homeStore->count(id)
@@ -978,9 +1001,10 @@ void ai_vendor(entt::entity self, ecs::Position& p,
         // living stock.
         const EconSite homeSite =
             EconSite(landmark_def(homeLm->type).econSite);
-        for (int i = 0; i < kCommodityCount
+        for (int oi = 0; oi < kCommodityCount
                         && inventory_weight(bag->inv) < rt.carryCap;
-             ++i) {
+             ++oi) {
+            const int i = value_dense_order()[std::size_t(oi)];
             const char* id = kCommodities[i].id;
             const int surplus =
                 homeLm->inventory.count(id)

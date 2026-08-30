@@ -55,6 +55,11 @@ constexpr ItemDef kCatalog[] = {
         "Building material", {}},
     {"iron",    "Iron Ore",        ItemType::Material,   15, 4.00f, "\xE2\x9B\x8F",
         "Smithing material", {}},
+    // Value 32 IS the mint yield (CANON S10: «таблица цен = монетный двор»
+    // — one unit of silver coins into 32 nominal-1 coins, po2): the whole
+    // money supply of the world derives from this one number × geology.
+    {"silver",  "Silver Ore",      ItemType::Material,   32, 4.00f, "\xE2\x9A\xAA",
+        "Mint metal", {}},
     {"grain",   "Grain",           ItemType::Material,    5, 1.00f, "\xF0\x9F\x8C\xBE",
         "Raw grain, milled and baked into bread", {}},
     {"stone",   "Stone",           ItemType::Material,    5, 4.00f, "\xF0\x9F\xAA\xA8",
@@ -290,6 +295,7 @@ constexpr NpcLootRow kNpcLootId[std::size_t(NPCType::Count)] = {
     // The player: his loot is the bag he carries, not a profile.
     {NPCType::Adventurer,   nullptr},
     {NPCType::Vendor,       nullptr},
+    {NPCType::SilverMiner,  nullptr},
 };
 static_assert(rows_in_enum_order(kNpcLootId, &NpcLootRow::type),
               "kNpcLootId row order must mirror NPCType");

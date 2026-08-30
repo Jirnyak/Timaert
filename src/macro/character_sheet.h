@@ -119,6 +119,8 @@ inline constexpr RoleWeights kRoleWeights[int(NPCType::Count)] = {
     // Vendor — the village hauler on the town road: a labourer's back with a
     // seller's tongue (the Woodcutter body, a pinch of the Merchant charm).
     {NPCType::Vendor,       {3, 3, 3, 1, 1, 2, 1, 1, 1}, {2, 0, 1, 1, 1, 2, 0, 3}},
+    // Silver-miner — the miner's body, row for row.
+    {NPCType::SilverMiner,  {4, 3, 3, 1, 1, 1, 1, 1, 1}, {3, 0, 1, 1, 1, 2, 0, 4}},
 };
 
 static_assert(rows_in_enum_order(kRoleWeights, &RoleWeights::type),
