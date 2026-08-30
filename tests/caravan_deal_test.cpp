@@ -106,7 +106,8 @@ int main() {
     const long long vCoinBefore =
         sm::wallet_value(bag) + sm::wallet_value(town.inventory);
     const sm::CaravanDeal vd = sm::trade_vendor_at_market(
-        bag, 1e6f, town, &snap);
+        bag, 1e6f, town, &snap, /*homePopulation=*/50,
+        EconSite::Village);
 
     CHECK(sm::wallet_value(bag) + sm::wallet_value(town.inventory)
               == vCoinBefore,

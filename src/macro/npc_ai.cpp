@@ -982,7 +982,9 @@ void ai_vendor(entt::entity self, ecs::Position& p,
                 *mem, AgentMemoryKind::MarketSnapshot,
                 std::uint16_t(rt.homeSettlementId));
             const CaravanDeal deal = trade_vendor_at_market(
-                bag->inv, rt.carryCap, *market, snap);
+                bag->inv, rt.carryCap, *market, snap,
+                homeLm->population,
+                EconSite(landmark_def(homeLm->type).econSite));
             if (deal.movedTableValue > 0) {
                 record_landmark_fact(*ctx.mw.gs, FactKind::Traded,
                                      rt.homeSettlementId,
@@ -1628,7 +1630,8 @@ CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
 // departure, never a rumour.
 CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
                                    Landmark& market,
-                                   const MemoryEntry* homeSnapshot) {
+                                   const MemoryEntry* homeSnapshot,
+                                   int homePopulation, EconSite homeSite) {
     CaravanDeal out{};
     Inventory& ms = market.inventory;
     const EconSite site = EconSite(landmark_def(market.type).econSite);
@@ -1662,39 +1665,50 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
         out.soldValue += transfer_value(ms, bag, moved * price);
         out.movedTableValue += base * moved;
     }
-    // BUY the home's lacks, needs-ladder inputs first (caravan_buy_order).
+    // BUY with the WHOLE purse (owner 2026-08-30: «деревня не копит
+    // капитал» — the earnings leave with the goods, and scarce town wares
+    // are exactly what drains the village's coin back into the city). The
+    // shopping list is the home's needs ladder unrolled to recipe inputs
+    // (caravan_buy_order), each line topped up to a SEASON's stock at home
+    // — the one stint of foresight a place is allowed; whatever the market
+    // cannot supply leaves the rest of the purse to ride home, where the
+    // tax graph will claim it (CANON S24).
     if (homeSnapshot) {
-        for (int cls = 0; cls <= 1; ++cls) {
-            for (int oi = 0; oi < kCommodityCount; ++oi) {
-                const int i = caravan_buy_order()[std::size_t(oi)];
-                if (market_stock_class(*homeSnapshot, i) != cls) continue;
-                const char* id = kCommodities[i].id;
-                const ItemDef* def = item_def(id);
-                const int base = def ? def->value : 0;
-                if (base <= 0) continue;
-                const int demand =
-                    daily_demand_for(id, market.population, site);
-                const int have = ms.count(id);
-                const float kg = def->weight > 0.0f ? def->weight : 1.0f;
-                int n = std::min(
-                    have, int((capacityKg - inventory_weight(bag)) / kg));
-                if (n <= 0) continue;
-                int price = stock_price(base, have - n, demand);
-                const int purse = wallet_value(bag);
-                if (n * price > purse) {
-                    n = purse / std::max(1, price);
-                    price = stock_price(base, have - n, demand);
-                }
-                if (n <= 0) continue;
-                const int moved =
-                    haul_between(ms, bag, id, n,
-                                 capacityKg - inventory_weight(bag));
-                if (moved <= 0) continue;
-                const int cost =
-                    moved * stock_price(base, have - moved, demand);
-                out.boughtValue += transfer_value(bag, ms, cost);
-                out.movedTableValue += base * moved;
+        for (int oi = 0; oi < kCommodityCount; ++oi) {
+            const int i = caravan_buy_order()[std::size_t(oi)];
+            const char* id = kCommodities[i].id;
+            const ItemDef* def = item_def(id);
+            const int base = def ? def->value : 0;
+            if (base <= 0) continue;
+            // Season-stock cap: home demand × a season, minus what the
+            // snapshot says already sits there (class → its band's floor is
+            // unknown, so the CLASS gates only "already plentiful": 3).
+            if (market_stock_class(*homeSnapshot, i) >= 3) continue;
+            const int homeNeed =
+                daily_demand_for(id, homePopulation, homeSite)
+                * kDaysPerSeason;
+            if (homeNeed <= 0) continue;
+            const int demand = daily_demand_for(id, market.population, site);
+            const int have = ms.count(id);
+            const float kg = def->weight > 0.0f ? def->weight : 1.0f;
+            int n = std::min({have, homeNeed,
+                              int((capacityKg - inventory_weight(bag)) / kg)});
+            if (n <= 0) continue;
+            int price = stock_price(base, have - n, demand);
+            const int purse = wallet_value(bag);
+            if (n * price > purse) {
+                n = purse / std::max(1, price);
+                price = stock_price(base, have - n, demand);
             }
+            if (n <= 0) continue;
+            const int moved =
+                haul_between(ms, bag, id, n,
+                             capacityKg - inventory_weight(bag));
+            if (moved <= 0) continue;
+            const int cost =
+                moved * stock_price(base, have - moved, demand);
+            out.boughtValue += transfer_value(bag, ms, cost);
+            out.movedTableValue += base * moved;
         }
     }
     return out;

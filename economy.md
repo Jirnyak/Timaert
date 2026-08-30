@@ -146,6 +146,41 @@ the currency bourse; coins minted FROM gold/silver; player
 invest-into-owned-city (waits for ownership itself); taxes to the faction
 treasury.
 
+## 2026-08-30 — the balance track (五 commits, see CANON S10 for the laws)
+
+The economy went from a dead ledger to a measured, living circuit in one
+owner session, every step driven by the headless balance run
+(`balance_run`, tests/balance_run.cpp — the «дубль-прогон» of CANON S10):
+
+- **The one world baker** (`macro/world_gen.h`) + `balance_run` (TSV per
+  day, 2 game years ≈ 20 s/seed) + `EconFactSink` wired with landmarkId.
+- **Deals are real**: `trade_caravan_at_station` (city↔city, station by
+  station, locality — sell into a shortage up to the market's daily demand,
+  buy the surplus above it; the bounds ARE the price law) and
+  `trade_vendor_at_market` (the village crew at its nearest city: sell all,
+  spend the WHOLE purse down the home needs ladder to a season's stock —
+  «деревня не копит капитал»). Fleet law: a city without a caravan outfits
+  one from its population; vendors rotate with the labour crews.
+- **Labour is SP** (kWorkCyclesPerBar; the person-day is derived), crews
+  are transient (rotate_worker_squads), a squad's carry is the SUM of its
+  backs, and one gatherer covers TENS of souls (kGatherPerWorkerDay = 32,
+  the owner's productivity anchor).
+- **Fields live**: a parcel regrows its whole potential in one season
+  (kWheatSeasonsToRegrow, macro_stock.h) — world bread went 7/day → ~12k/day.
+- **Demand is derived**: daily_demand_for flows recipe-output demand down
+  to inputs, gated by the SITE that can run the recipe.
+
+**The measured blocker (2026-08-30): the MONEY deadlock.** Cities spend
+their genesis purses on famine-months grain and never earn coin back
+(day 190: 64 cities hold ~100 coins, villages ~230k — a ×4 genesis purse
+only delays it): villages have no coin SINK and cities no coin SOURCE, so
+city production starves (no coin → no raw → no wares → nothing for the
+village to buy). The cure is increment 4, now proven necessary, and its
+shape is canon: the FEUDAL TAX GRAPH (village → its city/castle → lord →
+capital; each node knows only its direct vassals and its suzerain — CANON
+S24) as the villages' sink, MINTING (silver → the city's recipe) as the
+cities' source, wages as the spread.
+
 **Honesty debts** (audit 2026-08-23, canon-audit.md §B — places where the
 "honest economy" headline is not yet true):
 
@@ -164,14 +199,11 @@ treasury.
   counterparty, and an unpayable penalty becomes a Debt fact rather than
   silence. Loot-gold **double mint** (`generate_loot_gold` on top of the
   spawn purse) remains open. Canon-audit B1–B3.
-- **The village production DOOR is open, its recipes are not written.**
-  Since v62 killed the Settlement/Village struct split
-  ([landmarks.md](landmarks.md)), `tick_villages_` calls the same
-  `econ_produce_day(…, EconSite::Village, …)` the city calls — but all nine
-  `kRecipes` rows still carry `site = City`, so a village crafts nothing
-  until the balance pass writes its rows. What was a structural wall is now
-  one data row per village craft.
-- **The caravan confiscates, it does not trade.** `haul_between`
-  (`npc_ai.cpp`) moves cargo both ways with no counter-value crossing the
-  counter; the price law of `macro/economy.h` exists only for the player's
-  two screens — the world itself does not know prices. Canon-audit B4.
+- ~~The village production DOOR is open, its recipes are not written~~
+  (HALF-CLOSED 2026-08-30: bread is `EconSite::Any` — a village bakes, worse
+  only by the population-efficiency law log2(pop)/4; the other eight rows
+  stay City until the balance pass says otherwise).
+- ~~The caravan confiscates, it does not trade~~ (CLOSED 2026-08-30: the
+  station and vendor deals above pay through `transfer_value` with
+  conservation by construction; `caravan_deal_test` holds the corridor and
+  the no-coin-no-confiscation control).

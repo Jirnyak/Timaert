@@ -173,11 +173,14 @@ struct CaravanDeal {
 // the price law's own break-even, so no threshold constants exist.
 CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
                                      Landmark& market);
-// The village crew selling at its nearest city: unload everything, then buy
-// the home's lacks (its own departure snapshot, needs-ladder inputs first).
+// The village crew selling at its nearest city: unload everything, then
+// spend the WHOLE purse down the home's needs ladder («деревня не копит
+// капитал», owner 2026-08-30) — each line up to a season's stock at home;
+// what the market cannot supply leaves coin to ride home for the tax graph.
 CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
                                    Landmark& market,
-                                   const MemoryEntry* homeSnapshot);
+                                   const MemoryEntry* homeSnapshot,
+                                   int homePopulation, EconSite homeSite);
 
 // ── The daily labour rotation (owner 2026-08-30; CANON S10) ──────────────
 // «Поселение поднимает рабочий сквад → сквад идёт к полю → возвращается,
