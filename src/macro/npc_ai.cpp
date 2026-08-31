@@ -1987,6 +1987,42 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
     return out;
 }
 
+// ── Squads eat (contract in npc_ai.h) ────────────────────────────────────
+int feed_squads_daily(MacroWorld& mw) {
+    if (!mw.gs || !mw.world) return 0;
+    GameState& gs = *mw.gs;
+    auto& reg = mw.world->reg;
+    int deserted = 0;
+    for (auto [e, kind, rt, bag, roster]
+         : reg.view<ecs::NPCKind, ecs::MacroNpcRuntime, ecs::NpcInventory,
+                    ecs::SquadRoster>().each()) {
+        (void)e; (void)kind;
+        // A beast pays no upkeep and eats no bread here — its row already
+        // says so (kNpcUpkeepNone), the same column the payroll reads.
+        if (npc_upkeep_base(NPCType(kind.type)) <= 0) continue;
+        const int need = 1 + roster.squad.size();
+        const int have = bag.inv.count("bread");
+        const int ate = std::min(need, have);
+        if (ate > 0) bag.inv.remove("bread", ate);
+        if (ate >= need) {
+            rt.hungerDays = 0;
+            continue;
+        }
+        if (rt.hungerDays < 255) ++rt.hungerDays;
+        // Past a week of short rations (po2) one soul a day walks — the
+        // same gradual desertion the unpaid garrison bleeds by (?34).
+        if (rt.hungerDays > 8 && roster.squad.size() > 0) {
+            const int last = roster.squad.size() - 1;
+            const SoldierRecord walker = roster.squad[last];
+            if (gs.deserterPool.push(walker)) {
+                roster.squad.remove_at(last);
+                ++deserted;
+            }
+        }
+    }
+    return deserted;
+}
+
 // ── The daily labour rotation (contract in npc_ai.h) ─────────────────────
 int rotate_worker_squads(MacroWorld& mw, int day) {
     (void)day;

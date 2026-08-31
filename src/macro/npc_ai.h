@@ -209,6 +209,13 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
 // tomorrow. Returns crews raised.
 int rotate_worker_squads(MacroWorld& mw, int day);
 
+// Squads EAT (owner 2026-08-30; CANON S10, реф M&B): every soul aboard eats
+// one bread a day out of the squad's OWN bag — food rides with the march.
+// A short day raises the ONE maintenance counter (?34); past its patience
+// one roster soul a day walks into the deserter pool. Called once per game
+// day beside the labour rotation. Returns souls that deserted.
+int feed_squads_daily(MacroWorld& mw);
+
 // Macro-view path: scans all macro NPCs each step and dispatches those whose
 // per-NPC tick accumulator matured. `ticks` is world ticks elapsed. The
 // envelope must carry at least `gs` and `world`; every other layer is an

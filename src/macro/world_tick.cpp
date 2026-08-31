@@ -144,6 +144,51 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
                              faction_index_for_kingdom(gs.politik,
                                                        s.kingdomIdx))));
 
+        // ── The garrison's MAINTENANCE (owner 2026-08-30; CANON S10) ──
+        // «В ком гарнизон, тот и платит»: the town pays the ONE upkeep law
+        // (calculate_squad_upkeep — the same product the player's payroll
+        // reads) into the garrison purse; the soldiers buy their bread back
+        // off the town store at nominal, so the coin circulates and the
+        // loaf is consumed. Pay short OR bread short — either half raises
+        // the ONE maintenance counter (?34: no second mechanic), and past
+        // its patience (8 days, po2 — a week of unpaid hunger) one soul a
+        // day walks into the deserter pool.
+        if (total_soldiers(s.garrison) > 0) {
+            const int wage = calculate_squad_upkeep(s.garrison);
+            const int paid = wallet_spend_up_to(s.inventory, wage);
+            s.garrisonPurse += paid;
+            const int breadIdx =
+                commodity_item_index(commodity_index("bread"));
+            const ItemDef* breadDef = item_def("bread");
+            const int loaf = breadDef ? breadDef->value : 10;
+            const int need = total_soldiers(s.garrison);
+            const int can = std::min({need, s.garrisonPurse / loaf,
+                                      s.inventory.count_of(breadIdx)});
+            if (can > 0) {
+                s.inventory.remove_of(breadIdx, can);
+                s.garrisonPurse -= can * loaf;
+                // The purse pays in the town's own coin — the same nominal
+                // it was paid in (the purse is a value stock, S5).
+                s.inventory.add(
+                    currency_for_faction_id(faction_id_for_index(
+                        faction_index_for_kingdom(gs.politik,
+                                                  s.kingdomIdx))),
+                    can * loaf);
+            }
+            if (paid < wage || can < need) {
+                if (s.upkeepUnpaidDays < 255) ++s.upkeepUnpaidDays;
+            } else {
+                s.upkeepUnpaidDays = 0;
+            }
+            if (s.upkeepUnpaidDays > 8 && total_soldiers(s.garrison) > 0) {
+                const int last = s.garrison.size() - 1;
+                const SoldierRecord walker = s.garrison[last];
+                if (gs.deserterPool.push(walker)) {
+                    s.garrison.remove_at(last);
+                }
+            }
+        }
+
         bool famine = false, revolt = false, died = false;
         const int headsBefore = s.population;
         settle_landmark_day(s, famine, revolt, died, rs, ru);
@@ -329,6 +374,9 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
             // The labour rotation (npc_ai.h): yesterday's crews dissolve
             // into the population, today's are raised to its size.
             rotate_worker_squads(*macro, day);
+            // Squads eat (npc_ai.h): bread out of the marching bag, the
+            // maintenance counter past it.
+            feed_squads_daily(*macro);
         }
 
         --runtime.pendingDailyTicks;
