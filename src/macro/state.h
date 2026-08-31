@@ -244,7 +244,7 @@ namespace sm {
 // city pairs that used to component-prune connect. Nothing new is
 // serialized — the feature grid is regenerated at boot — but an old slot's
 // squads and knowledge would sit in a subtly different world.
-constexpr int kSaveVersion = 66;   // v66: the world loot pool (v65: silver deposits)
+constexpr int kSaveVersion = 67;   // v67: loot pool is a VALUE (v66 stored an Inventory)
 
 enum class SettlementMood : std::uint8_t {
     Prosperous, Stable, Tense, Unrest, Revolt, Count
@@ -651,12 +651,16 @@ struct GameState {
     std::vector<std::string> logicNodesActive;
     GameSubState subState;
     SoldierSquad deserterPool;             // Fired/deserted NPC soldiers.
-    // THE WORLD'S LOOT POOL (owner 2026-08-30, CANON S5/S10): the belongings
-    // of every squad that died with NO victor (exhaustion, drowning) fall in
-    // here instead of evaporating — the deserter pool's sibling for THINGS.
-    // The stock answers «сколько»; future consumers (ruin & dungeon loot,
-    // mob drops) draw from it contextually and answer «где». Rides the save.
-    Inventory lootPool;
+    // THE WORLD'S LOOT POOL — one VALUE, not a warehouse (owner 2026-08-30,
+    // CANON S5/S10): the belongings of every squad that died with NO victor
+    // (exhaustion, drowning) fold into their catalog worth and add here.
+    // Future consumers (ruin & dungeon loot, mob drops) ROLL loot from
+    // their own tables with a budget drawn off this number — many dead
+    // caravans = richer, MORE VARIED loot, O(1) memory; storing the actual
+    // items would have given a warehouse of identical sacks (rejected by
+    // the owner). Signed: the ledger must show a bookkeeping bug as a
+    // negative, not a wrap. Rides the save (v67).
+    std::int64_t lootPoolValue = 0;
     // (The abstract TradeRoute system is GONE (v29): trade is caravan
     // AGENTS carrying real cargo between real inventories — macro/npc_ai.cpp
     // ai_caravan.)

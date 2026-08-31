@@ -140,8 +140,10 @@ void test_greedy_walks_around_a_wet_cell() {
           "the trip was paid at dry prices: the greedy step went around");
 }
 
-// ── Negative control: no dry way → the ford is paid at the water price ─────
-void test_forced_ford_pays_the_water_price() {
+// ── No dry way: the river is a WALL for a walker; a bridge is the door ────
+// (owner 2026-08-30, CANON S7: ground where no camp can stand is ground a
+// walking NPC does not enter — the Session-21 ford died with that ruling.)
+void test_river_is_a_wall_and_a_bridge_is_the_door() {
     GameState gs{};
     gs.mapW = 32;
     gs.mapH = 32;
@@ -149,56 +151,94 @@ void test_forced_ford_pays_the_water_price() {
     PathCostData grid = make_grid(32, 32, 1.0f);
     for (int y = 0; y < 32; ++y) paint_water(grid, 16, y);   // a full river
 
-    auto e = make_walker(w, 13.0f, 10.0f, 20.0f, 10.0f, 110);
-    auto& npc = w.reg.get<ecs::MacroNpcRuntime>(e);
-    MacroNpcAiRuntime rt{};
-    reset_macro_npc_ai_runtime(rt, 22u);
-    CHECK(drive_to_arrival(gs, w, rt, &grid, e, 20.0f, 10.0f, 12),
-          "a one-cell river is forded, not a wall");
-    // Same 7-cell trip, but one cell now costs 10 × 7/16: the detector the
-    // avoidance test trusts FIRES when the crossing is real.
-    CHECK(sp_spent(npc, 110) > 6.0f,
-          "the ford was charged at the water weight, by data");
+    {   // The wall: the walker halts at the bank, alive and unbled.
+        auto e = make_walker(w, 13.0f, 10.0f, 20.0f, 10.0f, 110);
+        MacroNpcAiRuntime rt{};
+        reset_macro_npc_ai_runtime(rt, 22u);
+        CHECK(!drive_to_arrival(gs, w, rt, &grid, e, 20.0f, 10.0f, 12),
+              "a river with no bridge is a WALL, not a ford");
+        CHECK(w.reg.get<ecs::Position>(e).x <= 15.0f,
+              "the walker halted at the bank — never a cell of water under "
+              "his feet");
+        CHECK(w.reg.get<ecs::Health>(e).hp >= 30.0f,
+              "and the bank cost no blood: he stopped, he did not swim");
+    }
+    {   // The door: the SAME river with a bridge cell carries the march.
+        FeatureLayer features;
+        features.resize(32, 32);
+        features.set(16, 10, FT_Bridge);
+        auto e = make_walker(w, 13.0f, 10.0f, 20.0f, 10.0f, 110);
+        w.reg.replace<ecs::MacroSpawnId>(e, 44u);
+        MacroNpcAiRuntime rt{};
+        reset_macro_npc_ai_runtime(rt, 45u);
+        bool crossed = false;
+        for (int i = 0; i < 96 && !crossed; ++i) {
+            MacroWorld mw{.gs = &gs, .world = &w, .features = &features,
+                          .pathCost = &grid};
+            tick_macro_npc_ai(mw, rt, kAiTicks, false);
+            // CROSSED is the claim (the arrival radius is at_target's own
+            // law): the walker stands east of the river it could not ford.
+            crossed = w.reg.get<ecs::Position>(e).x >= 18.0f;
+        }
+        CHECK(crossed, "the bridge carries the same march the river walled");
+    }
 }
 
-// ── The ocean kills the lord: no camp at sea, the debt bites HP ────────────
-void test_ocean_drowns_the_lord_and_settles_his_squad() {
+// ── A body already IN the water: no camp, the way out is paid in blood ────
+// A walker never ENTERS water any more (the wall test above), so the sea
+// bite's jurisdiction is whoever is already floating — a genesis accident
+// today, a shipwreck tomorrow. Near shore he wades out bleeding; a shore
+// his flesh cannot reach kills him, and the dead squad leaves the map.
+void test_ocean_drowns_who_cannot_reach_the_shore() {
     GameState gs{};
     gs.mapW = 64;
     gs.mapH = 64;
     ecs::World w;
-    // Open ocean shore to shore — the torus offers no dry detour anywhere.
     PathCostData grid = make_grid(64, 64, 1.0f);
+    // A wide strait: land only at x ≥ 26.
     for (int y = 0; y < 64; ++y)
-        for (int x = 0; x < 64; ++x) paint_water(grid, x, y);
+        for (int x = 0; x < 26; ++x) paint_water(grid, x, y);
 
-    // A tiny bar and a mortal body: the crossing is unpayable by design.
-    auto e = make_walker(w, 10.0f, 10.0f, 60.0f, 10.0f, /*maxSp*/8,
-                         /*hp*/30.0f);
-    auto& roster = w.reg.get<ecs::SquadRoster>(e);
-    roster.squad.push(make_soldier(
-        std::uint8_t(NPCType::Peasant), 1, 101u));
-    roster.squad.push(make_soldier(
-        std::uint8_t(NPCType::Peasant), 1, 102u));
-
-    MacroNpcAiRuntime rt{};
-    reset_macro_npc_ai_runtime(rt, 23u);
-    // The tick that kills the lord also ENDS him (CANON S4, 2026-08-29): the
-    // exhaustion bite marks hp=0 + Dead, the same tick's end drains his men
-    // into the pool and destroys the corpse-row — a dead squad leaves the
-    // map, so "he died" is observed as the entity being gone.
-    int thinks = 0;
-    while (w.reg.valid(e) && !w.reg.all_of<ecs::Dead>(e) && thinks < 400) {
-        MacroWorld mw{.gs = &gs, .world = &w, .pathCost = &grid};
-        tick_macro_npc_ai(mw, rt, kAiTicks, false);
-        ++thinks;
+    {   // Near the shore: out in debt, bled but alive.
+        auto e = make_walker(w, 23.0f, 10.0f, 30.0f, 10.0f, /*maxSp*/8,
+                             /*hp*/30.0f);
+        MacroNpcAiRuntime rt{};
+        reset_macro_npc_ai_runtime(rt, 23u);
+        for (int i = 0; i < 60 && w.reg.valid(e); ++i) {
+            MacroWorld mw{.gs = &gs, .world = &w, .pathCost = &grid};
+            tick_macro_npc_ai(mw, rt, kAiTicks, false);
+        }
+        CHECK(w.reg.valid(e) && w.reg.get<ecs::Position>(e).x >= 26.0f,
+              "a floating body wades OUT: water is exited, never entered");
+        CHECK(w.reg.get<ecs::Health>(e).hp < 30.0f,
+              "and the unpayable steps out were paid in blood — the sea "
+              "bite lives");
     }
-
-    CHECK(!w.reg.valid(e),
-          "an ocean the bar cannot pay kills, and the dead squad leaves the "
-          "map: there is no Resting at sea and no corpse-row after");
-    CHECK(total_soldiers(gs.deserterPool) == 2,
-          "the drowned lord's men settled by the standing dead-leader rule");
+    {   // Far from shore: the crossing is unpayable by design and kills.
+        auto e = make_walker(w, 2.0f, 40.0f, 30.0f, 40.0f, /*maxSp*/8,
+                             /*hp*/30.0f);
+        w.reg.replace<ecs::MacroSpawnId>(e, 55u);
+        auto& roster = w.reg.get<ecs::SquadRoster>(e);
+        roster.squad.push(make_soldier(
+            std::uint8_t(NPCType::Peasant), 1, 101u));
+        roster.squad.push(make_soldier(
+            std::uint8_t(NPCType::Peasant), 1, 102u));
+        MacroNpcAiRuntime rt{};
+        reset_macro_npc_ai_runtime(rt, 24u);
+        int thinks = 0;
+        while (w.reg.valid(e) && !w.reg.all_of<ecs::Dead>(e)
+               && thinks < 400) {
+            MacroWorld mw{.gs = &gs, .world = &w, .pathCost = &grid};
+            tick_macro_npc_ai(mw, rt, kAiTicks, false);
+            ++thinks;
+        }
+        CHECK(!w.reg.valid(e),
+              "an ocean the bar cannot pay kills, and the dead squad leaves "
+              "the map: there is no Resting at sea and no corpse-row after");
+        CHECK(total_soldiers(gs.deserterPool) == 2,
+              "the drowned lord's men settled by the standing dead-leader "
+              "rule");
+    }
 }
 
 // ── One exhaustion law: the step in debt bleeds, the camp does not ────────
@@ -437,7 +477,10 @@ void test_a_laden_squad_pays_for_its_load() {
     w.reg.get<ecs::MacroNpcRuntime>(heavy).carryCap = cap;
     w.reg.emplace<ecs::NpcInventory>(light);
     auto& load = w.reg.emplace<ecs::NpcInventory>(heavy).inv;
-    load.add("iron", 400);
+    // A BEARABLE overload: past the back, but a price the bar can pay per
+    // step. (An unbearable pack now honestly refuses to march at all — the
+    // legs decline a step they cannot pay for, by the same pre-priced law.)
+    load.add("iron", 15);
     CHECK(inventory_weight(load) > cap,
           "the fixture is honest: this load IS over the back carrying it");
 
@@ -468,8 +511,8 @@ void test_a_laden_squad_pays_for_its_load() {
 
 int main() {
     test_greedy_walks_around_a_wet_cell();
-    test_forced_ford_pays_the_water_price();
-    test_ocean_drowns_the_lord_and_settles_his_squad();
+    test_river_is_a_wall_and_a_bridge_is_the_door();
+    test_ocean_drowns_who_cannot_reach_the_shore();
     test_land_exhaustion_makes_camp_without_blood();
     test_banking_a_part_cell_is_not_resting();
     test_a_laden_squad_pays_for_its_load();

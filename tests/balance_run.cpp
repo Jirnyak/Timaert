@@ -155,6 +155,22 @@ int main(int argc, char** argv) {
         go.world = &ecs;
         sm::generate_macro_world(go, gp);
 
+        // Muster law: nobody is BORN at sea.
+        {
+            int atSea = 0;
+            for (auto [e, kind, p]
+                 : ecs.reg.view<sm::ecs::NPCKind, sm::ecs::Position>()
+                       .each()) {
+                (void)e; (void)kind;
+                const int wx = ((int(p.x) % gs.mapW) + gs.mapW) % gs.mapW;
+                const int wy = ((int(p.y) % gs.mapH) + gs.mapH) % gs.mapH;
+                if (!pathCost.water.empty()
+                    && pathCost.water[std::size_t(wy) * gs.mapW + wx])
+                    ++atSea;
+            }
+            std::fprintf(stderr, "[muster] spawned at sea: %d\n", atSea);
+        }
+
         sm::MacroNpcAiRuntime ai;
         sm::reset_macro_npc_ai_runtime(ai, seed);
 
@@ -269,7 +285,7 @@ int main(int argc, char** argv) {
                          "%d\t%lld\t%lld\t%lld\t%lld\t%d\t%d\t%lld\t%lld"
                          "\t%lld",
                          gs.worldTime.day(), popTotal, coinLm, coinSquads,
-                         coins_in(gs.lootPool, coinIdx),
+                         (long long)gs.lootPoolValue,
                          accum.famineStarts, accum.starvedPops,
                          trades, tradedValue, grainHolds);
             for (int c = 0; c < sm::kCommodityCount; ++c) {
@@ -280,6 +296,20 @@ int main(int argc, char** argv) {
             std::fprintf(fw, "\n");
         }
 
+        {
+            int atSea = 0;
+            for (auto [e, kind, p]
+                 : ecs.reg.view<sm::ecs::NPCKind, sm::ecs::Position>()
+                       .each()) {
+                (void)e; (void)kind;
+                const int wx = ((int(p.x) % gs.mapW) + gs.mapW) % gs.mapW;
+                const int wy = ((int(p.y) % gs.mapH) + gs.mapH) % gs.mapH;
+                if (!pathCost.water.empty()
+                    && pathCost.water[std::size_t(wy) * gs.mapW + wx])
+                    ++atSea;
+            }
+            std::fprintf(stderr, "[muster] AT SEA at run end: %d\n", atSea);
+        }
         // Closing muster: the trade fleet is this track's working part, and
         // its health must be readable without a debugger.
         {

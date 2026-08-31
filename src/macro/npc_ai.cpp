@@ -133,6 +133,14 @@ void settle_exhaustion(entt::entity e, const ecs::Position& p,
                        bool canCamp, const TickContext& ctx);
 bool cell_is_water(const TickContext& ctx, int x, int y);
 
+// THE standing predicate (owner 2026-08-30; CANON S7): the cell types a
+// walking NPC almost never enters are exactly the cells where NO CAMP CAN
+// STAND — water today, lava tomorrow, one data-driven answer. A BRIDGE is
+// dry masonry over water, so it both carries a march and holds a camp. The
+// player is not gated here: stepping into the sea stays his own decision,
+// and the ocean drowns him by the same bar law as ever.
+bool can_stand_at(const TickContext& ctx, int x, int y);
+
 // What this leader's load is costing him per cell, asked once per think: a
 // bag changes at every market, so unlike the rest of the sheet cache this one
 // cannot be refreshed at birth and left alone.
@@ -200,7 +208,7 @@ void settle_march_rhythm(entt::entity e, const ecs::Position& p,
                          ecs::MacroNpcRuntime& rt, ecs::Health& hp,
                          bool moved, const TickContext& ctx) {
     const int maxSp = std::max<int>(1, rt.maxSp);
-    const bool canCamp = !cell_is_water(ctx, int(p.x), int(p.y));
+    const bool canCamp = can_stand_at(ctx, int(p.x), int(p.y));
 
     // The automaton's CAMP decision, BEFORE debt (npc_ai.h kCampBarDivisor):
     // legs below an eighth of the bar on campable ground pitch camp now; the
@@ -317,8 +325,23 @@ void try_move(ecs::Position& p, ecs::MacroNpcRuntime& rt,
         // the frame.
         const Step straight =
             torus_step_toward(ix, iy, itx, ity, ctx.mapW, ctx.mapH);
-        int bx = straight.nx, by = straight.ny;
-        float bw = edge_weight(ctx, ix, iy, bx, by);
+        // The straight step is a CANDIDATE, not a right: it obeys the same
+        // standing predicate as every neighbour. The old shape let it
+        // through unfiltered — «a river is forded at its honest price» was
+        // Session 21's design, and the owner's 2026-08-30 ruling ended it:
+        // ground a walker cannot stop on is ground it does not enter, so a
+        // squad with no standable step simply halts at the bank.
+        // …and the gate binds only DRY feet: a body already floating (a
+        // genesis accident, a shipwreck) may step wherever gets it out —
+        // its unpayable steps bleed by the sea-bite law below.
+        const bool standingDry = can_stand_at(ctx, ix, iy);
+        int bx = -1, by = -1;
+        float bw = 1e30f;
+        if (!standingDry || can_stand_at(ctx, straight.nx, straight.ny)) {
+            bx = straight.nx;
+            by = straight.ny;
+            bw = edge_weight(ctx, ix, iy, bx, by);
+        }
         const float dHere =
             torus_dist_sq(float(ix), float(iy), float(itx), float(ity),
                           mapWf, mapHf);
@@ -332,10 +355,16 @@ void try_move(ecs::Position& p, ecs::MacroNpcRuntime& rt,
                     torus_dist_sq(float(nx), float(ny), float(itx), float(ity),
                                   mapWf, mapHf);
                 if (d >= dHere) continue;   // only steps that make progress
+                // The standing predicate: a walking NPC does not consider
+                // ground it could not stop on (water without a bridge) —
+                // the drowned-trader flood this closes fed 70% of the
+                // world's money into the loot pool (measured 2026-08-30).
+                if (standingDry && !can_stand_at(ctx, nx, ny)) continue;
                 const float w = edge_weight(ctx, ix, iy, nx, ny);
                 if (w < bw) { bx = nx; by = ny; bw = w; }
             }
         }
+        if (bx < 0) break;   // nowhere to stand: the leg ends at the bank
 
         // Entry-side stamp: the signed step of THIS cell change, torus-folded
         // (stepping east off the map's edge is still +1, not -(w-1)).
@@ -343,16 +372,19 @@ void try_move(ecs::Position& p, ecs::MacroNpcRuntime& rt,
         if (dx > 1) dx = -1; else if (dx < -1) dx = 1;
         int dy = by - iy;
         if (dy > 1) dy = -1; else if (dy < -1) dy = 1;
-        // An EMPTY bar takes no step WHERE CAMP IS POSSIBLE (the debt
-        // check used to run only AFTER the step, so an exhausted squad
-        // ground out one deficit step per think, paid the bite each time
-        // and died on a long haul — 447 caravans in 24 days, 855k coins
-        // burned with their corpses, measured 2026-08-30). On land the
-        // legs simply stop and the march rhythm rests the body where it
-        // stands; on WATER there is no stopping — the deficit step goes
-        // through and pays the bite, which is exactly the canon sentence
-        // «неоплатный океан топит лорда» (S7).
-        if (int(rt.sp) <= 0 && !cell_is_water(ctx, ix, iy)) break;
+        // The legs REFUSE a step they cannot pay for, wherever a camp can
+        // stand: the step's price is known BEFORE it is taken, so dry-land
+        // debt is impossible by construction — the bar used to walk into
+        // minus in per-step slices INSIDE one think (693 bites in 3 days,
+        // measured), past every after-the-fact camp check. On WATER there
+        // is no stopping: the unpayable step goes through and pays the
+        // bite — «неоплатный океан топит лорда» (S7), verbatim.
+        const float stepCost = travel_stamina_cost(
+            bw, 1.0f, int(rt.overloadCost), efficiency);
+        if (float(rt.sp) + rt.spCarry < stepCost
+            && can_stand_at(ctx, ix, iy)) {
+            break;
+        }
 
         rt.entryDir = pack_entry_dir(dx, dy);
         rt.entryTicks = 0;
@@ -367,8 +399,7 @@ void try_move(ecs::Position& p, ecs::MacroNpcRuntime& rt,
         // `overloadCost` is this think's surcharge, refreshed from the bag by
         // the sweep before the behaviour ran, so a caravan hauling more than
         // its leader's back can hold buys the trip at the honest price.
-        rt.spCarry -= travel_stamina_cost(bw, 1.0f, int(rt.overloadCost),
-                                          efficiency);
+        rt.spCarry -= stepCost;
         settle_sp_carry(rt);
         if (int(rt.sp) < 0) break;   // spent: the think's march ends
 
@@ -761,6 +792,16 @@ int haul_between(Inventory& from, Inventory& to, const char* id,
     return n;
 }
 
+// A leg that cannot advance (every candidate step refused — the target is
+// beyond water with no bridge) reads as: position pinned while the move
+// budget stands whole and the bar is fresh. The rider gives the run up
+// instead of pacing the surf forever.
+bool march_is_stuck_(const ecs::Position& p, float oldX, float oldY,
+                     const ecs::MacroNpcRuntime& rt) {
+    return p.x == oldX && p.y == oldY && rt.moveBudget >= 1.0f
+           && int(rt.sp) > int(rt.maxSp) / 2;
+}
+
 // Pick the caravan's next STATION: the nearest other city, never the one it
 // just left; a coin-flip between the two nearest keeps one pair of towns
 // from monopolising the leg. Pure geometry over the landmark list — the
@@ -888,7 +929,14 @@ void ai_caravan(entt::entity self, ecs::Position& p,
             rt.stateTimer = std::int16_t(4 + rand_int(ctx, 4));
             return;
         }
+        const float ox = p.x, oy = p.y;
         try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        if (march_is_stuck_(p, ox, oy, rt)) {
+            // The station is beyond water: give the run up, ride home.
+            rt.targetX = home.x;
+            rt.targetY = home.y;
+            rt.state = std::uint8_t(NS::Returning);
+        }
         return;
     }
     if (rt.state == std::uint8_t(NS::Working)) {
@@ -1037,7 +1085,13 @@ void ai_vendor(entt::entity self, ecs::Position& p,
             rt.stateTimer = std::int16_t(4 + rand_int(ctx, 4));
             return;
         }
+        const float ox = p.x, oy = p.y;
         try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        if (march_is_stuck_(p, ox, oy, rt)) {
+            rt.targetX = home.x;
+            rt.targetY = home.y;
+            rt.state = std::uint8_t(NS::Returning);
+        }
         return;
     }
     if (rt.state == std::uint8_t(NS::Working)) {
@@ -1560,6 +1614,11 @@ AIBehaviour effective_behaviour(entt::registry& reg, entt::entity e,
 // решение конечного автомата, а не механики»), so it stays here as what the
 // AI chooses when its legs are gone, and the player keeps his own aim. What
 // is one law is the PRICE; what is two is who decides to stop paying it.
+bool can_stand_at(const TickContext& ctx, int x, int y) {
+    if (!cell_is_water(ctx, x, y)) return true;
+    return ctx.mw.features && ctx.mw.features->at(x, y) == FT_Bridge;
+}
+
 bool cell_is_water(const TickContext& ctx, int x, int y) {
     const PathCostData* pc = ctx.mw.pathCost;
     if (!pc || pc->width <= 0 || pc->height <= 0
@@ -1576,7 +1635,6 @@ bool cell_is_water(const TickContext& ctx, int x, int y) {
 void settle_exhaustion(entt::entity e, const ecs::Position& p,
                        ecs::MacroNpcRuntime& rt, ecs::Health& hp,
                        bool canCamp, const TickContext& ctx) {
-    (void)p;
     if (int(rt.sp) >= 0) return;
 
     // The AI's DECISION: legs gone, make camp — wherever a camp is possible.
@@ -2119,7 +2177,7 @@ void tick_macro_npc_ai(MacroWorld& mw,
     // window), then the drained corpse-rows leave the map. Deferred to HERE
     // because the settle doors' callers still hold the entities mid-tick.
     drain_dead_leader_squads(w, gs.deserterPool);
-    destroy_dead_macro_squads(w, &gs.lootPool);
+    destroy_dead_macro_squads(w, &gs.lootPoolValue);
 }
 
 void tick_macro_npc_visuals(ecs::World& w, int mapW, int mapH, float dt) {
@@ -2264,7 +2322,7 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     // leave the map by the same law. (The positional sweep cursor already
     // tolerates the view shrinking — every death mid-sweep shrinks it.)
     drain_dead_leader_squads(w, gs.deserterPool);
-    destroy_dead_macro_squads(w, &gs.lootPool);
+    destroy_dead_macro_squads(w, &gs.lootPoolValue);
     result.backlog = result.backlog || runtime.pendingSweeps > 0;
     return result;
 }

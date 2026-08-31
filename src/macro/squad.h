@@ -116,7 +116,7 @@ inline int drain_dead_leader_squads(ecs::World& w, SoldierSquad& deserterPool) {
 // death is a game-over screen, not a disappearance. Returns how many left
 // the map.
 inline int destroy_dead_macro_squads(ecs::World& w,
-                                     Inventory* lootPool = nullptr) {
+                                     std::int64_t* lootPoolValue = nullptr) {
     std::vector<entt::entity> doomed;
     auto view = w.reg.view<ecs::MacroSpawnId, ecs::SquadRoster, ecs::Dead>(
         entt::exclude<ecs::PlayerTag, ecs::PlayerSquadTag, ecs::SubworldTag>);
@@ -125,19 +125,17 @@ inline int destroy_dead_macro_squads(ecs::World& w,
         doomed.push_back(e);
     }
     for (entt::entity e : doomed) {
-        // THE loot pool (owner 2026-08-30, CANON S5): a squad that died with
-        // no victor — exhaustion, drowning — pays its belongings into the
-        // world's loot pool instead of evaporating with the corpse (the
-        // deserter pool's sibling for THINGS; a battle's loser was already
-        // emptied by loot_fallen_owner, so whatever is left here is exactly
-        // the victorless remainder). Ruins, dungeons and mob drops are the
-        // pool's future contextual outflow.
-        if (lootPool) {
-            if (auto* bag = w.reg.try_get<ecs::NpcInventory>(e)) {
-                for (ItemRef& stack : bag->inv.slots) {
-                    if (stack.empty()) continue;
-                    if (lootPool->add_ref(stack)) stack = ItemRef{};
-                }
+        // THE loot pool (owner 2026-08-30, CANON S5): a squad that died
+        // with no victor — exhaustion, drowning — FOLDS its belongings
+        // into their catalog worth and pays the world's loot pool (one
+        // number; a battle's loser was already emptied by
+        // loot_fallen_owner, so what folds here is exactly the victorless
+        // remainder). Ruins, dungeons and mob drops are the pool's future
+        // contextual outflow: loot is ROLLED from tables with a budget
+        // drawn off this value — variety by law, O(1) memory.
+        if (lootPoolValue) {
+            if (const auto* bag = w.reg.try_get<ecs::NpcInventory>(e)) {
+                *lootPoolValue += inventory_value(bag->inv);
             }
         }
         w.reg.destroy(e);

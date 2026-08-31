@@ -2,6 +2,7 @@
 #include "macro/agent_memory.h"
 #include "macro/currency.h"
 #include "macro/faction.h"
+#include "macro/biomes.h"
 #include "macro/npc.h"
 #include "macro/deposit_layer.h"
 #include "macro/npc_ai.h"
@@ -31,7 +32,14 @@ inline bool is_land(const TerrainData& t, int mapW, int mapH, int x, int y) {
     const int xx = wrapi(x, t.width);
     const int yy = wrapi(y, t.height);
     std::size_t idx = (std::size_t(yy) * std::size_t(t.width) + std::size_t(xx)) * 4u + 3u;
-    return idx < t.rgba.size() && t.rgba[idx] >= 128;
+    if (idx >= t.rgba.size() || t.rgba[idx] < 128) return false;
+    // The BIOME is the water authority, not the alpha channel: a river cell
+    // is land by alpha and water by biome, and the daily crew rotation was
+    // born INTO the rivers of its own riverside villages — ~11 souls a day
+    // straight onto ground where no camp can stand, ground to death by the
+    // exhaustion law (measured 2026-08-31: 46 at sea by day 4, thousands of
+    // bite ticks). One standing predicate for spawn and step alike.
+    return biome_at_cell(t, xx, yy) != Biome::Water;
 }
 
 struct XY { int x, y; };
