@@ -57,6 +57,10 @@ enum class NPCState : std::uint8_t {
     // threat step in npc_ai.cpp, cleared by it when the threat is gone.
     // Runtime-only like every state here — the ECS is never serialized.
     Fleeing,
+    // Walking to (and working) a NEW field parcel (owner 2026-08-31, CANON
+    // S10 «фичи создаются сквадами»): the crew that found its field eaten
+    // bare spends the rest of its bar ploughing the best cell near home.
+    Plowing,
 };
 
 enum class NPCTrait : std::uint8_t {

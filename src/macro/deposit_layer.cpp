@@ -161,4 +161,48 @@ void restore_deposit_cells(DepositLayer& layer, const DepositLayer& loaded) {
 int iron_vein_lump() { return kIronBase; }
 int silver_vein_lump() { return kSilverBase; }
 
+int consolidate_deposit_cluster(DepositLayer& layer, DepositKind kind,
+                                int x, int y) {
+    if (layer.width <= 0 || layer.height <= 0) return 0;
+    auto& m = layer.cells[std::size_t(kind)];
+    const std::uint32_t mineIdx = layer.wrap_index(x, y);
+    const auto seat = m.find(mineIdx);
+    if (seat == m.end()) return 0;   // no vein under the mine — nothing owns
+    // BFS over live same-kind cells, 8-adjacent, torus-wrapped. The frontier
+    // is coordinates (a flat index cannot step to its neighbours across the
+    // wrap without re-deriving x/y anyway).
+    std::vector<std::pair<int, int>> frontier{{x, y}};
+    std::vector<std::uint32_t> seen{mineIdx};
+    std::int64_t sum = seat->second;
+    int absorbed = 0;
+    while (!frontier.empty()) {
+        const auto [cx, cy] = frontier.back();
+        frontier.pop_back();
+        for (int dy = -1; dy <= 1; ++dy) {
+            for (int dx = -1; dx <= 1; ++dx) {
+                if (dx == 0 && dy == 0) continue;
+                const int nx = cx + dx, ny = cy + dy;
+                const std::uint32_t idx = layer.wrap_index(nx, ny);
+                if (std::find(seen.begin(), seen.end(), idx) != seen.end())
+                    continue;
+                const auto it = m.find(idx);
+                if (it == m.end()) continue;
+                seen.push_back(idx);
+                sum += it->second;
+                m.erase(it);           // the absorbed vein leaves the map
+                ++absorbed;
+                frontier.emplace_back(nx, ny);
+            }
+        }
+    }
+    if (absorbed > 0) {
+        // Clamped into the cell's own width — a cluster that somehow beats
+        // int32 keeps the ceiling rather than wrapping (says so out loud).
+        m[mineIdx] = std::int32_t(
+            std::min<std::int64_t>(sum, 0x7FFFFFFF));
+        ++layer.revision;
+    }
+    return absorbed;
+}
+
 } // namespace sm

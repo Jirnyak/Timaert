@@ -51,6 +51,7 @@ struct DayAccum {
     long long consumed[sm::kCommodityCount] = {};
     int famineStarts = 0;
     int starvedPops = 0;
+    long long mintedCoins = 0;
 
     void reset() { *this = DayAccum{}; }
 };
@@ -72,6 +73,9 @@ void econ_fact_sink(void* user, const sm::EconFact& f) {
         case sm::EconFact::Kind::FamineStarted: a->famineStarts += 1; break;
         case sm::EconFact::Kind::Starved: a->starvedPops += f.amount; break;
         case sm::EconFact::Kind::FamineEnded: break;
+        // amount = coins struck (commodity carries the INPUT silver row, so
+        // this is its own counter, not a produced[] line).
+        case sm::EconFact::Kind::Minted: a->mintedCoins += f.amount; break;
     }
 }
 
@@ -203,7 +207,7 @@ int main(int argc, char** argv) {
             return 1;
         }
         std::fprintf(fw, "day\tpop\tcoinLandmarks\tcoinSquads\tcoinLootPool\tfamineStarts"
-                         "\tstarvedPops\ttrades\ttradedValue\tgrainHolds");
+                         "\tstarvedPops\tminted\ttrades\ttradedValue\tgrainHolds");
         for (int c = 0; c < sm::kCommodityCount; ++c) {
             const char* id = sm::kCommodities[c].id;
             std::fprintf(fw, "\t%s_stock\t%s_gathered\t%s_produced"
@@ -283,11 +287,11 @@ int main(int argc, char** argv) {
 
             std::fprintf(fw,
                          "%d\t%lld\t%lld\t%lld\t%lld\t%d\t%d\t%lld\t%lld"
-                         "\t%lld",
+                         "\t%lld\t%lld",
                          gs.worldTime.day(), popTotal, coinLm, coinSquads,
                          (long long)gs.lootPoolValue,
                          accum.famineStarts, accum.starvedPops,
-                         trades, tradedValue, grainHolds);
+                         accum.mintedCoins, trades, tradedValue, grainHolds);
             for (int c = 0; c < sm::kCommodityCount; ++c) {
                 std::fprintf(fw, "\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld",
                              stock[c], accum.gathered[c], accum.produced[c],

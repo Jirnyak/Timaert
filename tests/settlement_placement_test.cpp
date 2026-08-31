@@ -1,14 +1,20 @@
-// R2 — settlement is DERIVED from resources (the owner's causality law).
-// Pinned here:
+// R2 — settlement is DERIVED from resources (the owner's causality law),
+// and since 2026-08-31 villages are born by the settlement FIELD (owner:
+// «полевой подход» — candidates priced by the one score, occupied
+// best-first, every placed village PRESSES the field around itself;
+// separation rules and count quotas died into the field). Pinned here:
 //   · vetoes — no village on water, mountain rock or inside a forest massif;
-//   · the PERCENTILE PROPERTY — every village stands at least at the 75th
-//     percentile of its city's admissible hinterland scores (the k-best scan
-//     guarantees better; 75 keeps the assertion robust, not brittle);
+//   · the PERCENTILE PROPERTY — every village stands at least at the median
+//     of its city's admissible hinterland scores (the field legally trades
+//     some raw quality for spacing, so the bar is 50, not 75);
 //   · the NEGATIVE CONTROL — the old roulette (blind darts whose only
 //     criterion was "land") violates that property on the same world, so a
 //     regression back to dice turns this file red, not stale;
-//   · count derives from capacity — a lush river hinterland feeds villages,
-//     a dry steppe feeds none;
+//   · the FIELD spreads: villages never stand inside each other's
+//     home-field box (the press claims it whole), and a lush hinterland
+//     feeds more villages than a dry steppe — with no quota constant;
+//   · souls are the OWNER'S SCALE (kVillageBornBase + seed roll), never
+//     the site score (CANON S25, 2026-08-31);
 //   · villages actually stand NEXT TO something gatherable (ploughable
 //     moisture, a deposit, or a real stand of trees) — the context the
 //     score exists to buy;
@@ -18,6 +24,7 @@
 #include "core/rng.h"
 #include "core/torus.h"
 #include "macro/deposit_layer.h"
+#include "macro/npc_ai.h"          // kGathererReach — the crews' working box
 #include "macro/politik.h"
 #include "macro/settlement_score.h"
 #include "macro/spawners.h"
@@ -73,6 +80,9 @@ struct World {
     TreeLayer    trees;
     DepositLayer deposits;
     GameState    gs;
+    // The deposit-reach field (v71): the score sees what the crews mine.
+    // Owned here so site_ctx can hand out a stable pointer.
+    std::vector<std::uint16_t> depositReach;
 };
 
 // Cities: A in the lush river belt, B out in the dry steppe. Unowned
@@ -128,6 +138,10 @@ SettlementSiteContext site_ctx(World& w) {
     ctx.w.terrain  = &w.td;
     ctx.w.deposits = &w.deposits;
     ctx.seaLevel8  = kSeaLevel8;
+    if (w.depositReach.empty())
+        w.depositReach = build_deposit_reach_field(w.deposits, kW, kH);
+    ctx.depositReach = w.depositReach.empty() ? nullptr
+                                              : w.depositReach.data();
     return ctx;
 }
 
@@ -154,11 +168,6 @@ std::vector<int> hinterland_scores(World& w, const City& c) {
     return scores;
 }
 
-int percentile(const std::vector<int>& sorted, int p) {
-    if (sorted.empty()) return 0;
-    return sorted[std::min(sorted.size() - 1,
-                           sorted.size() * std::size_t(p) / 100u)];
-}
 
 void test_vetoes_hold() {
     World w;
@@ -175,90 +184,99 @@ void test_vetoes_hold() {
     }
 }
 
-void test_villages_take_the_best_land() {
+// The FIELD's quality law: souls are the owner's scale, so the land must
+// carry them — every village beyond each city's forced first hamlet passes
+// the SELF-FEEDING GATE (arable enough to plough its hundred, or a prize
+// vein within the crews' reach). The old percentile property died with the
+// quota: a saturated field honestly settles mid-grade ground too.
+void test_villages_feed_themselves() {
     World w;
     make_settled_world(w);
     const auto villages = villages_of(w.gs);
     CHECK_OR_RETURN(!villages.empty(), "the lush world settles villages");
     SettlementSiteContext ctx = site_ctx(w);
+    // Per city, at most ONE village may fail the gate (the forced hamlet).
+    std::vector<int> failedOf(w.gs.politik.cities.size(), 0);
     for (const auto* vp : villages) {
         const auto& v = *vp;
-        const City& c = w.gs.politik.cities[std::size_t(v.nearestCityId)];
-        const std::vector<int> scores = hinterland_scores(w, c);
-        const int p75 = percentile(scores, 75);
-        const int mine = settlement_site_score(
-            ctx, SettlementScoreRow::Village, v.x, v.y);
-        CHECK(mine >= p75,
-              "a village stands no worse than the 75th percentile of its "
-              "hinterland");
+        const SettlementSiteTerms t = settlement_site_terms(ctx, v.x, v.y);
+        const bool feeds = t.arable >= kVillageArableGate
+                        || t.deposit >= kVillageDepositGate;
+        if (!feeds && v.nearestCityId >= 0
+            && std::size_t(v.nearestCityId) < failedOf.size())
+            ++failedOf[std::size_t(v.nearestCityId)];
+    }
+    for (const int n : failedOf) {
+        CHECK(n <= 1, "beyond the forced first hamlet, every village can "
+                      "feed itself (arable gate or deposit gate)");
     }
 }
 
 // The negative control, in-process (never via git checkout): the old
-// roulette on the same world violates the percentile property. Eight darts
-// so that "all of them landed lucky" cannot happen by accident.
+// roulette on the same world violates the FIELD's laws — blind darts land
+// pairs inside one another's home-field box, or on ground that cannot
+// feed a village. Eight darts so that "all of them landed lucky" cannot
+// happen by accident; the rng is seeded, so the verdict is deterministic.
 void test_roulette_is_red() {
     World w;
     make_settled_world(w);
     const City& c = w.gs.politik.cities[0];
-    const std::vector<int> scores = hinterland_scores(w, c);
-    CHECK_OR_RETURN(!scores.empty(), "city A has an admissible hinterland");
-    const int p75 = percentile(scores, 75);
     SettlementSiteContext ctx = site_ctx(w);
     Rng rng(w.gs.worldSeed ^ 0xC1A05E1Du);
-    int placed = 0, belowP75 = 0;
-    while (placed < 8) {
+    struct Dart { int x, y; };
+    std::vector<Dart> darts;
+    int violations = 0;
+    while (darts.size() < 8) {
         // The old law, verbatim: a random angle, 4..14 cells, "is it land".
         const float ang = rng.next_f01() * 6.2831853f;
         const int   dist = 4 + int(rng.next_u32() % 11u);
         const int   x = wrapi(c.x + int(std::cos(ang) * float(dist)), kW);
         const int   y = wrapi(c.y + int(std::sin(ang) * float(dist)), kH);
         if (w.td.is_water(x, y, kSeaLevel8)) continue;
-        ++placed;
-        const int score = settlement_site_score(
-            ctx, SettlementScoreRow::Village, x, y);
-        if (score < 0 || score < p75) ++belowP75;
+        const SettlementSiteTerms t = settlement_site_terms(ctx, x, y);
+        if (t.arable < kVillageArableGate
+            && t.deposit < kVillageDepositGate)
+            ++violations;   // a dart on ground that cannot feed a village
+        for (const Dart& d : darts) {
+            const int ddx = std::min(std::abs(d.x - x), kW - std::abs(d.x - x));
+            const int ddy = std::min(std::abs(d.y - y), kH - std::abs(d.y - y));
+            if (std::max(ddx, ddy) <= kSettlementReach)
+                ++violations;   // a pair clumped inside one home-field box
+        }
+        darts.push_back(Dart{x, y});
     }
-    CHECK(belowP75 > 0,
-          "the blind roulette violates the percentile property the score "
-          "placement holds — the negative control is red");
+    CHECK(violations > 0,
+          "the blind roulette violates the field's laws (self-feeding or "
+          "spread) the placement holds — the negative control is red");
 }
 
 // Villages SCATTER around their town — they do not clump (owner's report
 // from the live map: "деревни кластерами через блок вплотную"). The law
-// that spreads them is separation = half the hinterland, so two villages
-// of one city can never sit a block apart, and no city with admissible
-// ground is left hamlet-less.
+// that spreads them is the FIELD's own press: a placed village claims its
+// whole home-field box (village_pressure at d ≤ kSettlementReach subtracts
+// the full score), so on this deterministic fixture no two villages stand
+// inside one another's farmland — pinned as a regression, exactly the
+// clumping the owner reported.
 void test_villages_scatter_around_their_town() {
     World w;
     make_settled_world(w);
     const auto villages = villages_of(w.gs);
     CHECK_OR_RETURN(!villages.empty(), "the lush world settles villages");
-    const int spacing = derive_city_spacing(&w.td, kSeaLevel8, kW, kH,
-                                            int(w.gs.politik.cities.size()));
-    const int reach = std::max(4, spacing / 2);
-    // Stated in WORLD terms — half the hinterland — deliberately NOT via
-    // village_separation(): a property asserted through the function under
-    // test is a tautology, and the flat-4 law would slip through it.
-    const int mustBeApart = reach / 2;
-    CHECK(mustBeApart > kVillageSeparationFloor,
-          "the fixture's hinterland is big enough for the floor not to be "
-          "the operative law");
     int closest = 1 << 20;
     for (const auto* ap : villages) {
         const auto& a = *ap;
         for (const auto* bp : villages) {
             const auto& b = *bp;
-            if (ap == bp || a.nearestCityId != b.nearestCityId) continue;
+            if (ap == bp) continue;
             const int ddx = std::min(std::abs(a.x - b.x), kW - std::abs(a.x - b.x));
             const int ddy = std::min(std::abs(a.y - b.y), kH - std::abs(a.y - b.y));
             closest = std::min(closest, std::max(ddx, ddy));
         }
     }
     if (closest < (1 << 20)) {
-        CHECK(closest >= mustBeApart,
-              "two villages of one city never stand closer than half their "
-              "hinterland — they scatter around the town, never clump");
+        CHECK(closest > kSettlementReach,
+              "no two villages stand inside one another's home-field box — "
+              "the field's press spreads them, never clumps");
     }
 
     // Every city whose hinterland holds ANY admissible ground keeps at
@@ -292,14 +310,14 @@ void test_count_derives_from_capacity() {
     CHECK(lush >= 1, "the river belt hinterland feeds at least one village");
     CHECK(lush > dry, "the lush hinterland feeds more villages than the dry "
                       "steppe");
-    // Population is the site's own score, never the old 30+rng%90 dice.
-    SettlementSiteContext ctx = site_ctx(w);
+    // Souls are the OWNER'S SCALE (CANON S25, 2026-08-31): a hundred-odd
+    // per village, base + a seed roll of the spread — never the score and
+    // never the old 30+rng%90 dice.
     for (const auto* vp : villages) {
         const auto& v = *vp;
-        const int score = settlement_site_score(
-            ctx, SettlementScoreRow::Village, v.x, v.y);
-        CHECK(v.population == std::max(kVillagePopFloor, score),
-              "a village's souls ARE its site score");
+        CHECK(v.population >= kVillageBornBase
+                  && v.population < kVillageBornBase + kVillageBornSpread,
+              "a village is born at the owner's scale: base + seed spread");
     }
 }
 
@@ -312,6 +330,10 @@ void test_villages_stand_next_to_something() {
     for (const auto* vp : villages) {
         const auto& v = *vp;
         bool found = false;
+        // Ploughable ground and timber count within the home-field box; a
+        // DEPOSIT counts within the crews' working reach — a mining village
+        // legally sits up to kGathererReach from its vein (owner
+        // 2026-08-31: it lives on bought bread).
         for (int dy = -kSettlementReach; dy <= kSettlementReach && !found; ++dy) {
             for (int dx = -kSettlementReach; dx <= kSettlementReach && !found;
                  ++dx) {
@@ -321,8 +343,15 @@ void test_villages_stand_next_to_something() {
                 if (!w.td.is_water(x, y, kSeaLevel8)
                     && int(w.td.moisture_at(x, y)) >= int(kFieldMoistureMin))
                     found = true;
-                if (w.deposits.any_at(x, y)) found = true;
                 if (int(w.trees.at(x, y)) >= 4096) found = true;
+            }
+        }
+        for (int dy = -kGathererReach; dy <= kGathererReach && !found; ++dy) {
+            for (int dx = -kGathererReach; dx <= kGathererReach && !found;
+                 ++dx) {
+                if (w.deposits.any_at(wrapi(v.x + dx, kW),
+                                      wrapi(v.y + dy, kH)))
+                    found = true;
             }
         }
         if (found) ++withContext;
@@ -420,7 +449,7 @@ void test_determinism() {
 
 int main() {
     test_vetoes_hold();
-    test_villages_take_the_best_land();
+    test_villages_feed_themselves();
     test_roulette_is_red();
     test_villages_scatter_around_their_town();
     test_count_derives_from_capacity();

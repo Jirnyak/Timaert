@@ -244,7 +244,11 @@ namespace sm {
 // city pairs that used to component-prune connect. Nothing new is
 // serialized — the feature grid is regenerated at boot — but an old slot's
 // squads and knowledge would sit in a subtly different world.
-constexpr int kSaveVersion = 70;   // v70: purse dead — wages leave into the loot pool; seasonal pay-day
+// v71: built features (owner 2026-08-31, CANON S10 «фичи создаются
+// сквадами») — the cells squads ploughed/built ride the save as their own
+// world-field row and are re-stamped onto the seed-baked feature grid at
+// load, BEFORE the rebaker reads it. The grid itself stays derived.
+constexpr int kSaveVersion = 71;
 
 enum class SettlementMood : std::uint8_t {
     Prosperous, Stable, Tense, Unrest, Revolt, Count
@@ -366,6 +370,15 @@ struct Landmark {
     // and whether its orb has been drained.
     std::uint32_t spellId = 0;
     bool depleted = false;
+    // ── The UNIVERSAL tribute (owner 2026-08-31, CANON S24/S10; v71) ─────
+    // «Дань универсальна СТОИМОСТЬЮ»: on the place's own seasonal pay-day
+    // an eighth of the WHOLE store's value (inventory_value — coin is just
+    // a ware in it, «забудь о казне») is ASSESSED into this debt; carriers
+    // (the vendor, the tax courier) pay it down with whatever the place is
+    // rich in. Missed seasons accumulate honestly. int64 by the loot-pool
+    // precedent: a value accumulator over years of hoards outruns int32.
+    std::int64_t titheOwed = 0;
+    std::int32_t titheSeasonAssessed = -1;   // last season charged (-1 never)
 };
 
 enum class GameSubStateKind : std::uint8_t {
@@ -578,6 +591,16 @@ struct MacroAiRhythm {
     std::uint64_t sweepCursor = 0;
 };
 
+// One work of a squad's hands on the world's feature grid (v71; CANON S10
+// «фичи создаются сквадами»): the cell and what now stands there. POD,
+// append-only — the save row (world_fields.h Built) writes it verbatim and
+// the load re-stamps it onto the seed-baked grid.
+struct BuiltFeature {
+    std::int32_t x = 0;
+    std::int32_t y = 0;
+    std::uint8_t ft = 0;   // FeatureType byte (macro/features.h)
+};
+
 struct GameState {
     int version = kSaveVersion;
     std::string saveName;
@@ -678,6 +701,13 @@ struct GameState {
     // slot EMPTY: their live state is their carrier, saved whole.
     std::unordered_map<std::uint32_t, std::uint16_t>
         resourceScars[std::size_t(ResourceFieldId::Count)];
+
+    // Features BUILT BY SQUADS (v71; owner 2026-08-31, CANON S10 «фичи
+    // создаются сквадами»): the ploughed field today, the crew-laid road or
+    // bridge tomorrow — appended when a squad's work stamps the feature
+    // grid, re-stamped onto the seed-baked grid at load (world_fields.h row
+    // Built). The grid itself stays DERIVED; this list is the truth.
+    std::vector<BuiltFeature> builtFeatures;
 };
 
 // ── The landmark-fact door: file the deed AND pay the fame ───────────────

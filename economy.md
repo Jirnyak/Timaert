@@ -86,16 +86,15 @@ a living edge; a valley emptied whole is extinct) — see
 Once a game day (`world_tick`): the city crafts — today's table first
 (needs-ladder demand), then fair shares — everyone eats down the ladder,
 and ONE continuous wellbeing (fed fraction × comfort) drives both the MOOD
-band and the LOGISTIC population law: dP = r·P·(1−P/K)·drive, growth damped
-toward K, starvation never softened. Famine and shortfall land on the
-landmark as honest readouts. **The K in that formula is a recognized
-defect** (canon-audit III.6): today it is the constant 16384 — a number
-borrowed from the subworld's body cap, which is a render/sim bound, not a
-fact about land. CANON S25 assigns **no population ceiling at all**: the
-land's capacity decides how big a settlement is BORN
-(`macro/settlement_score.h` already computes exactly that), and after birth
-the only ceiling is supply — wellbeing falling as needs outrun provisioning.
-K must be derived from the site capacity, not assigned.
+band and the population law: dP = r·P·drive, r quoted per season. There is
+**no K and no floor** (both crutches are dead): CANON S25 assigns no
+population ceiling — supply is the only cap (the old kPopCarryingCap =
+16384 died with canon-audit III.6) — and no minimum either: the old
+minPop = 10/5 floor minted souls from air and made every settlement
+immortal (canon-audit B6, removed 2026-08-29, bc9a1c4). Population falls
+honestly to zero, the death files a Died fact, and the S9 transition turns
+the empty record into a ruin when that track lands. Famine and shortfall
+land on the landmark as honest readouts.
 
 ## Money and trade
 
@@ -181,6 +180,51 @@ capital; each node knows only its direct vassals and its suzerain — CANON
 S24) as the villages' sink, MINTING (silver → the city's recipe) as the
 cities' source, wages as the spread.
 
+## 2026-08-31 — the guided balance session (owner-driven; CANON S10/S25)
+
+Five increments in one guided session, each measured by the дубль-прогон
+before and after; the world's population curve turned UPWARD for the first
+time in the track's history (seed 1: 220.7k born → 192.8k at day 384 →
+204.8k at day 512 and climbing; hunger 9%; trade 1229–1406 deals/day;
+1398 villages).
+
+- **The chain-wide productivity anchor**: bread = kGatherPerWorkerDay (32)
+  per baker-day — «рабочий любого звена кормит ~32 душ»; the old 8/day ×
+  the 1/8 quota was a knife-edge that starved villages atop grain hoards.
+- **The roster law** (landmark_registry): a landmark's own registry row
+  carries its crews (`crews` + `labourShift`; village ½, city = couriers
+  only — the M&B doctrine «деревня добывает, город производит»). Five
+  spawn hardcodes became rows; fold-targets left: caravan fleet law,
+  garrison recruiting.
+- **Provisioning + the M&B maintenance law**: bread and pay are for the
+  ROSTER only (a lone leader needs nothing); every squad a landmark raises
+  is loaded with bread = soldiers × (roundtrip days + the work day)
+  (provision_squad). Unprovisioned crews were bleeding an eighth a day
+  into the deserter pool → bandits.
+- **The living plough + the ripest field**: a crew whose parcel gave out
+  spends its remaining cycle stamping a NEW field (plough_cell_ok — the
+  worldgen stamp's own gates); find_home_field picks the RIPEST parcel,
+  not the nearest (the nearest-pick pinned village grain to one cell's
+  regrowth). Grain flow ×4–5.
+- **The universal value-tribute** (дань стоимостью): on the pay-day an
+  eighth of the WHOLE store's value is assessed into Landmark.titheOwed;
+  carriers pay it down in kind — coin exact, then the fattest stacks
+  (transfer_worth). The in-kind tribute is the non-monetary food channel
+  that finally feeds the cities.
+- **Mines + field birth**: a mine is a FEATURE per deposit kind
+  (kDepositDefs.mineFeature; the crew's first day builds it and
+  consolidates the connected vein cluster into the cell — stock stays in
+  the deposit layer, every worksite law reads on unchanged); villages are
+  born by the settlement FIELD (terms at the crews' working radii, placed
+  villages press the field — village_pressure; separation/quota/cap died;
+  the self-feeding gate; souls = the owner's scale 64..191).
+
+Open after the session: ore gathering is dead and was dead BEFORE the
+mines (iron/silver_gathered = 0 on every run; clay 27/day — the geometry
+of mining villages or the march into the mountains, needs the fprintf
+methodology); squads/bandits hold 1.26M coin (the military-political
+layer's cue); the dense world costs ~10 min/seed in the balance run.
+
 ### Increment 4 complete (2026-08-31, commits 7a2a4f1..d9ba96d)
 
 The FEUDAL MONEY CIRCUIT is built and measured end to end: village tithe
@@ -204,11 +248,9 @@ pool down from 26M to ~1.5k.
 **Honesty debts** (audit 2026-08-23, canon-audit.md §B — places where the
 "honest economy" headline is not yet true):
 
-- **The population floor mints people.** `settle_landmark_day` is called
-  with `minPop = 10` (cities) / `5` (villages) in `world_tick.cpp`: a
-  settlement cut down below the floor gets souls back from thin air and is
-  effectively immortal. Defect against the conservation law (CANON S5 —
-  a number appearing from nowhere is a defect).
+- ~~The population floor mints people~~ (CLOSED 2026-08-29, bc9a1c4: the
+  minPop = 10/5 floor is gone from `settle_landmark_day` — population dies
+  honestly to zero and the transition files a Died fact).
 - **Coin sinks, partly honest now.** HIRE pays its counterparty since
   2026-08-29: the recruit's price — the `NpcTypeDef::hireGold` column
   (derived: 30 × the row's daily upkeep) × the one level law

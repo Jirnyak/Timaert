@@ -209,12 +209,27 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
 // tomorrow. Returns crews raised.
 int rotate_worker_squads(MacroWorld& mw, int day);
 
-// Squads EAT (owner 2026-08-30; CANON S10, реф M&B): every soul aboard eats
-// one bread a day out of the squad's OWN bag — food rides with the march.
-// A short day raises the ONE maintenance counter (?34); past its patience
-// one roster soul a day walks into the deserter pool. Called once per game
-// day beside the labour rotation. Returns souls that deserted.
+// Squads EAT (owner 2026-08-30/31; CANON S10, реф M&B): bread is for the
+// ROSTER only — the leader is a SUBJECT and needs nothing by himself («0
+// бойцов = 0 хлеба и жалования», owner 2026-08-31 — the M&B law, and why a
+// lone caravan is honestly immune to hunger). Each roster soul eats one
+// bread a day out of the squad's OWN bag; a short day bleeds an eighth of
+// the roster into the deserter pool AT ONCE (?34, one mechanic). Called
+// once per game day beside the labour rotation. Returns souls deserted.
 int feed_squads_daily(MacroWorld& mw);
+
+// ── THE provisioning law of squad creation (owner 2026-08-31, CANON S10):
+// «универсальная механика создания сквада — он должен быть загружен
+// хлебом». The raising landmark loads the new squad's bag with bread for
+// its ROSTER (the leader eats nothing — the M&B law above):
+//   portion = soldiers × (roundtrip days to the destination + the work day)
+// Days derive from the squad's own errand — the same march that will walk
+// it — so a far vein honestly demands a bigger loaf. A store that cannot
+// fill the portion loads what it has (credit-before-debit): a starving
+// village cannot outfit a far expedition, and that is the truth of it.
+// Returns bread actually loaded.
+int provision_squad(Inventory& store, Inventory& bag, int soldiers,
+                    float roundtripCells, float freeCarryKg);
 
 // Macro-view path: scans all macro NPCs each step and dispatches those whose
 // per-NPC tick accumulator matured. `ticks` is world ticks elapsed. The

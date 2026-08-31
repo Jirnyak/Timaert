@@ -9,9 +9,12 @@
 #include "macro/macro_stock.h"
 #include "macro/entry_context.h"
 #include "macro/faction.h"
+#include "macro/landmark_registry.h"
 #include "macro/movement_cost.h"
 #include "macro/npc.h"
 #include "macro/npc_spawn.h"
+#include "macro/settlement_score.h" // kSettlementReach — the home-field box
+#include "macro/spawners.h"
 #include "macro/squad.h"
 #include "macro/travel.h"
 #include "ecs/components.h"
@@ -73,27 +76,53 @@ void deliver_bag_home(entt::entity self, const ecs::MacroNpcRuntime& rt,
     if (!bag) return;
     const int n = bag->inv.count(id);
     Inventory* store = home_inventory(rt, ctx);
-    if (n > 0 && store) {
+    // Credit BEFORE debit (economy.md's conservation law): the store accepts
+    // first, the bag pays only what was accepted — a full store leaves the
+    // haul ON THE GATHERER'S BACK instead of burning it. (Near-unreachable
+    // with 256 slots and stack-merging, but the law is the law.)
+    if (n > 0 && store && store->add(id, n)) {
         bag->inv.remove(id, n);
-        store->add(id, n);
+        // The arrival IS the gather flow: the pure econ steps announce their
+        // own facts, but the agent work-loop lands its haul here — without
+        // this fact every *_gathered column of the дубль-прогон reads zero
+        // (measured: 4 years × 4 seeds of zeros, 2026-08-31).
+        if (ctx.mw.econFacts) {
+            EconFact f{};
+            f.kind = EconFact::Kind::Gathered;
+            f.commodity = commodity_index(id);
+            f.amount = n;
+            f.landmarkId = rt.homeSettlementId;
+            ctx.mw.econFacts(ctx.mw.econFactsUser, f);
+        }
     }
 }
 
-// The nearest FT_Field of the agent's HOME — fields are stamped within two
-// cells of a village (spawners.cpp), so a small box around home covers them.
+// The RIPEST home field, not the nearest (owner increment 2026-08-31) —
+// fields live within the home's ±3 box (the worldgen stamp and the plough
+// both land there). The old nearest-pick was measured to waste the whole
+// ring: crews hammered the one closest parcel bare while every other field
+// stood ripe and unvisited, so the village's grain flow was pinned to a
+// single cell's regrowth however much land it ploughed. Standing stock
+// picks the parcel now; distance only breaks ties. A box with nothing
+// standing offers no work — the crew is honestly not raised that day.
 bool find_home_field(const TickContext& ctx, float px, float py,
                      const XY& home, XY& out) {
     if (!ctx.mw.features) return false;
     bool found = false;
+    int bestStock = 0;
     float best = 1e30f;
-    for (int dy = -3; dy <= 3; ++dy) {
-        for (int dx = -3; dx <= 3; ++dx) {
+    for (int dy = -kSettlementReach; dy <= kSettlementReach; ++dy) {
+        for (int dx = -kSettlementReach; dx <= kSettlementReach; ++dx) {
             const int cx = int(home.x) + dx;
             const int cy = int(home.y) + dy;
             if (ctx.mw.features->at(cx, cy) != FT_Field) continue;
+            const int stock =
+                resource_field_read(ctx.mw, ResourceFieldId::Wheat, cx, cy);
+            if (stock <= 0) continue;   // eaten bare — nothing to reap here
             const float d = torus_dist_sq(px, py, float(cx), float(cy),
                                           float(ctx.mapW), float(ctx.mapH));
-            if (d < best) {
+            if (stock > bestStock || (stock == bestStock && d < best)) {
+                bestStock = stock;
                 best = d;
                 out = {float(cx), float(cy)};
                 found = true;
@@ -629,6 +658,46 @@ void ai_gatherer(entt::entity self, ecs::Position& p,
             if (ctx.mw.world) {
                 const int tx = int(rt.targetX);
                 const int ty = int(rt.targetY);
+                // The MINE opens before the vein is worked (owner
+                // 2026-08-31, CANON S10 «шахта — фича, как поле»): a
+                // mining crew at a BARE vein spends this cycle BUILDING
+                // the kind's own mine — the stamp consolidates the locally
+                // connected cluster of veins into this cell (absorbed
+                // cells leave the map, the mine holds their sum) and rides
+                // the save as a Built work (v71). The next cycle digs.
+                // A cell already carrying a feature (a road) digs bare —
+                // no shaft, no consolidation, exactly as before.
+                if (def->worksite == Worksite::Deposit && ctx.mw.features
+                    && ctx.mw.deposits && ctx.mw.gs
+                    && ctx.mw.features->at(tx, ty) == FT_None) {
+                    const DepositKind dk = DepositKind(
+                        std::uint8_t(def->row)
+                        - std::uint8_t(ResourceFieldId::Clay));
+                    const FeatureType mineFt = deposit_def(dk).mineFeature;
+                    FeatureLayer& fl = *ctx.mw.features;
+                    std::size_t total = 0;
+                    if (FeatureLayer::cell_count_for(fl.width, fl.height,
+                                                     total)
+                        && fl.data.size() >= total) {
+                        consolidate_deposit_cluster(*ctx.mw.deposits, dk,
+                                                    tx, ty);
+                        const int wx =
+                            FeatureLayer::wrap_coord(tx, fl.width);
+                        const int wy =
+                            FeatureLayer::wrap_coord(ty, fl.height);
+                        fl.data[std::size_t(wy) * std::size_t(fl.width)
+                                + std::size_t(wx)] = mineFt;
+                        ctx.mw.gs->builtFeatures.push_back(
+                            BuiltFeature{tx, ty, std::uint8_t(mineFt)});
+                        // The day of MAKING pays the working cycle (S14).
+                        rt.spCarry -= float(cycleCost);
+                        settle_sp_carry(rt);
+                        rt.targetX = home.x;
+                        rt.targetY = home.y;
+                        rt.state = std::uint8_t(NS::Returning);
+                        return;
+                    }
+                }
                 MacroWorld mw = ctx.mw;  // the envelope, whole — never a
                                          // partial re-pick of its layers
                 const int have = resource_field_read(mw, def->row, tx, ty);
@@ -671,10 +740,71 @@ void ai_gatherer(entt::entity self, ecs::Position& p,
                                              int(def->row) + 1);
                     }
                 }
+                // The plough decision (owner 2026-08-31, CANON S10 «фичи
+                // создаются сквадами»): the parcel could not fill the cycle
+                // — eaten bare — and the bar still holds another cycle, so
+                // the crew spends it MAKING land instead of walking home
+                // light: prospect the best ploughable cell by the home (the
+                // same ±3 box find_home_field harvests) and walk there;
+                // arrival works the day's second cycle into a new field.
+                if (def->row == ResourceFieldId::Wheat
+                    && have < kGatherPerCycle * workers
+                    && int(rt.sp) >= cycleCost && ctx.mw.features) {
+                    int bestWheat = 0;
+                    XY plot{};
+                    for (int dy = -kSettlementReach; dy <= kSettlementReach;
+                         ++dy) {
+                        for (int dx = -kSettlementReach;
+                             dx <= kSettlementReach; ++dx) {
+                            if (dx == 0 && dy == 0) continue;  // the town
+                            const int cx = int(home.x) + dx;
+                            const int cy = int(home.y) + dy;
+                            int wheat = 0;
+                            if (!plough_cell_ok(*ctx.mw.features, ctx.mw,
+                                                cx, cy, wheat))
+                                continue;
+                            if (wheat > bestWheat) {
+                                bestWheat = wheat;
+                                plot = XY{float(cx), float(cy)};
+                            }
+                        }
+                    }
+                    if (bestWheat > 0) {
+                        rt.targetX = plot.x;
+                        rt.targetY = plot.y;
+                        rt.state = std::uint8_t(NS::Plowing);
+                        return;
+                    }
+                }
             }
             rt.targetX = home.x; rt.targetY = home.y;
             rt.state = std::uint8_t(NS::Returning);
         }
+        return;
+    }
+    if (rt.state == std::uint8_t(NS::Plowing)) {
+        if (at_target(p, rt, ctx)) {
+            const int cycleCost =
+                std::max(1, int(rt.maxSp) / kWorkCyclesPerBar);
+            if (int(rt.sp) >= cycleCost && ctx.mw.features && ctx.mw.gs
+                && plough_field_cell(*ctx.mw.features, ctx.mw,
+                                     int(rt.targetX), int(rt.targetY))) {
+                // The day of MAKING pays the same cycle the day of taking
+                // pays — one labour law (S14).
+                rt.spCarry -= float(cycleCost);
+                settle_sp_carry(rt);
+                // The work is WORLD TRUTH: it rides the save as the Built
+                // row and the load re-stamps it (state.h v71).
+                ctx.mw.gs->builtFeatures.push_back(BuiltFeature{
+                    int(rt.targetX), int(rt.targetY),
+                    std::uint8_t(FT_Field)});
+            }
+            rt.targetX = home.x;
+            rt.targetY = home.y;
+            rt.state = std::uint8_t(NS::Returning);
+            return;
+        }
+        try_move(p, rt, rt.targetX, rt.targetY, ctx);
         return;
     }
     if (rt.state == std::uint8_t(NS::Wandering)
@@ -711,15 +841,6 @@ void ai_gatherer(entt::entity self, ecs::Position& p,
 
 void ai_nomad(ecs::Position& p, ecs::MacroNpcRuntime& rt,
               const TickContext& ctx);
-
-// One roster (v62): the KIND check is explicit where a caller means "only a
-// village" / "only a city", instead of being implied by which vector it
-// searched.
-Inventory* landmark_inventory_of_kind(const TickContext& ctx, int id,
-                                      LandmarkType kind) {
-    Landmark* lm = landmark_by_id(*ctx.mw.gs, id);
-    return lm && lm->type == kind ? &lm->inventory : nullptr;
-}
 
 // Move up to `maxUnits` of `id` between inventories, bounded by the cargo
 // hold's remaining weight. Returns units moved.
@@ -790,6 +911,46 @@ int haul_between(Inventory& from, Inventory& to, const char* id,
     if (!to.add(id, n)) return 0;
     from.remove(id, n);
     return n;
+}
+
+// Move `worth` of VALUE between inventories (owner 2026-08-31: «дань
+// универсальна СТОИМОСТЬЮ — можно деньгами, можно ресурсами, каждый решает
+// сам»). Coin goes first — exact change to the unit — then wares by the
+// payer's own PLENTY (fattest stack-value first: «деревня, в которой много
+// какого-то ресурса, естественным образом относит данью этот ресурс»),
+// floor units so a lumpy ware never overpays; the shortfall below the
+// smallest ware stays owed. Weight-capped: a courier pays what his back
+// carries, the rest waits for the next season's run. Returns value moved.
+int transfer_worth(Inventory& from, Inventory& to, int worth, float maxKg) {
+    if (worth <= 0) return 0;
+    int moved = transfer_value(from, to,
+                               std::min(worth, wallet_value(from)));
+    // Fattest holdings first — computed on the spot over the 14 nouns.
+    int order[kCommodityCount];
+    long long stackValue[kCommodityCount];
+    for (int i = 0; i < kCommodityCount; ++i) {
+        order[i] = i;
+        const ItemDef* def = item_def(kCommodities[i].id);
+        stackValue[i] = def
+            ? (long long)from.count(kCommodities[i].id) * def->value
+            : 0;
+    }
+    std::sort(order, order + kCommodityCount,
+              [&](int a, int b) { return stackValue[a] > stackValue[b]; });
+    float kgLeft = maxKg;
+    for (int oi = 0; oi < kCommodityCount && moved < worth && kgLeft > 0.0f;
+         ++oi) {
+        const int i = order[oi];
+        const ItemDef* def = item_def(kCommodities[i].id);
+        if (!def || def->value <= 0 || stackValue[i] <= 0) continue;
+        const int units = (worth - moved) / def->value;
+        if (units <= 0) continue;
+        const int sent =
+            haul_between(from, to, kCommodities[i].id, units, kgLeft);
+        moved += sent * def->value;
+        kgLeft -= float(sent) * (def->weight > 0.0f ? def->weight : 1.0f);
+    }
+    return moved;
 }
 
 // A leg that cannot advance (every candidate step refused — the target is
@@ -1061,18 +1222,21 @@ void ai_vendor(entt::entity self, ecs::Position& p,
             haul_between(homeLm->inventory, bag->inv, id, surplus,
                          rt.carryCap - inventory_weight(bag->inv));
         }
-        // The TITHE rides with the crew (owner 2026-08-30, CANON S24: the
-        // feudal tax graph — the village pays its own city, and the coin
-        // travels by CARRIER, never by decree). One eighth of the home
-        // purse, and SEASONAL (owner 2026-08-31: taxes ride the world's one
-        // slow cycle, on the home's own pay-day so the season is smooth).
-        rt.taxCarried =
-            ctx.mw.gs->worldTime.day() % kDaysPerSeason
-                        == homeLm->id % kDaysPerSeason
-                ? transfer_value(homeLm->inventory, bag->inv,
-                                 wallet_value(homeLm->inventory) / 8)
-                : 0;
-        if (inventory_weight(bag->inv) <= 0.0f && rt.taxCarried <= 0) {
+        // The TRIBUTE is a VALUE debt now (owner 2026-08-31: «дань
+        // универсальна стоимостью»), assessed by the world's own pay-day
+        // law (world_tick assess_tithe_) into homeLm->titheOwed. The WARES
+        // toward it are already aboard — the sale load above IS the
+        // village's plenty, and the city takes the debt off the top of it —
+        // so here the crew only adds COIN toward the debt (the sale load
+        // moves commodities, never the purse).
+        if (homeLm->titheOwed > 0) {
+            transfer_value(homeLm->inventory, bag->inv,
+                           int(std::min<std::int64_t>(
+                               homeLm->titheOwed,
+                               wallet_value(homeLm->inventory))));
+        }
+        if (inventory_weight(bag->inv) <= 0.0f
+            && wallet_value(bag->inv) <= 0) {
             // Nothing to sell and nothing owed: wait out the morning.
             rt.stateTimer = std::int16_t(40 + rand_int(ctx, 40));
             return;
@@ -1107,20 +1271,24 @@ void ai_vendor(entt::entity self, ecs::Position& p,
             const MemoryEntry* snap = recall(
                 *mem, AgentMemoryKind::MarketSnapshot,
                 std::uint16_t(rt.homeSettlementId));
-            // The tithe lands FIRST — it is owed, not traded, and a crew
-            // cut down on the road drops it with the cargo (the carrier
-            // law's honest downside).
-            if (rt.taxCarried > 0) {
-                const int paid = transfer_value(
+            // The tribute lands FIRST — it is owed, not traded (a crew cut
+            // down on the road drops it with the cargo, and the debt
+            // honestly stands). Paid as VALUE out of the WHOLE hold — coin
+            // exact, then the fattest wares — through the one worth door.
+            if (homeLm->titheOwed > 0) {
+                const int paid = transfer_worth(
                     bag->inv, market->inventory,
-                    std::min(rt.taxCarried, wallet_value(bag->inv)));
+                    int(std::min<std::int64_t>(homeLm->titheOwed,
+                                               1 << 30)),
+                    1e9f);
                 if (paid > 0) {
+                    homeLm->titheOwed =
+                        std::max<std::int64_t>(0, homeLm->titheOwed - paid);
                     record_landmark_fact(*ctx.mw.gs, FactKind::Taxed,
                                          rt.homeSettlementId,
                                          int(rt.targetX), int(rt.targetY),
                                          paid, rt.targetSettlementId);
                 }
-                rt.taxCarried = 0;
             }
             const CaravanDeal deal = trade_vendor_at_market(
                 bag->inv, rt.carryCap, *market, snap,
@@ -1207,16 +1375,21 @@ void ai_taxrun(entt::entity self, ecs::Position& p,
             rt.stateTimer = std::int16_t(200);
             return;
         }
-        // Seasonal, on the town's own pay-day (owner 2026-08-31).
-        if (ctx.mw.gs->worldTime.day() % kDaysPerSeason
-            != homeLm->id % kDaysPerSeason) {
-            rt.stateTimer = std::int16_t(64);
+        // DEBT-driven (owner 2026-08-31): the assessment is the world's
+        // pay-day law (world_tick assess_tithe_); the courier rides
+        // whenever the town owes, paying as VALUE — coin exact, then the
+        // town's fattest wares — as much as his back carries; the rest
+        // waits for the next run.
+        if (homeLm->titheOwed <= 0) {
+            rt.stateTimer = std::int16_t(64);   // nothing owed today
             return;
         }
-        rt.taxCarried = transfer_value(homeLm->inventory, bag->inv,
-                                       wallet_value(homeLm->inventory) / 8);
+        rt.taxCarried = transfer_worth(
+            homeLm->inventory, bag->inv,
+            int(std::min<std::int64_t>(homeLm->titheOwed, 1 << 30)),
+            rt.carryCap - inventory_weight(bag->inv));
         if (rt.taxCarried <= 0) {
-            rt.stateTimer = std::int16_t(200);   // nothing owed today
+            rt.stateTimer = std::int16_t(200);   // owed, but the store is bare
             return;
         }
         rt.targetSettlementId = cap->id;
@@ -1246,10 +1419,11 @@ void ai_taxrun(entt::entity self, ecs::Position& p,
         if (Landmark* cap = landmark_by_id(*ctx.mw.gs,
                                            rt.targetSettlementId);
             cap && cap->type == LandmarkType::City && rt.taxCarried > 0) {
-            const int paid = transfer_value(
-                bag->inv, cap->inventory,
-                std::min(rt.taxCarried, wallet_value(bag->inv)));
+            const int paid = transfer_worth(bag->inv, cap->inventory,
+                                            rt.taxCarried, 1e9f);
             if (paid > 0) {
+                homeLm->titheOwed =
+                    std::max<std::int64_t>(0, homeLm->titheOwed - paid);
                 record_landmark_fact(*ctx.mw.gs, FactKind::Taxed,
                                      rt.homeSettlementId,
                                      int(rt.targetX), int(rt.targetY),
@@ -1266,7 +1440,12 @@ void ai_taxrun(entt::entity self, ecs::Position& p,
         || rt.state == std::uint8_t(NS::Returning)) {
         if (at_target(p, rt, ctx)) {
             if (rt.state == std::uint8_t(NS::Returning)) {
-                // Anything undelivered rides back into the town store.
+                // Anything undelivered rides back into the town store —
+                // wares now too, since the tribute is paid in kind (v71).
+                for (int i = 0; i < kCommodityCount; ++i) {
+                    haul_between(bag->inv, homeLm->inventory,
+                                 kCommodities[i].id, 1 << 30, 1e9f);
+                }
                 transfer_value(bag->inv, homeLm->inventory,
                                wallet_value(bag->inv));
             }
@@ -1997,6 +2176,23 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
 }
 
 // ── Squads eat (contract in npc_ai.h) ────────────────────────────────────
+// The sustained march pace provisioning plans by: kMacroWalkCellsPerHour ×
+// 24 game hours, halved because the automaton rests to half a bar between
+// marches (think_gate) — half the calendar walks, half sleeps.
+constexpr float kSustainedMarchCellsPerDay =
+    kMacroWalkCellsPerHour * 24.0f / 2.0f;
+
+int provision_squad(Inventory& store, Inventory& bag, int soldiers,
+                    float roundtripCells, float freeCarryKg) {
+    if (soldiers <= 0) return 0;   // the leader is a subject — he needs nothing
+    const int days =
+        1 + int(std::ceil(roundtripCells / kSustainedMarchCellsPerDay));
+    const int portion = soldiers * days;
+    // The haul door already speaks credit-before-debit and respects the
+    // carry the loaf must ride on.
+    return haul_between(store, bag, "bread", portion, freeCarryKg);
+}
+
 int feed_squads_daily(MacroWorld& mw) {
     if (!mw.gs || !mw.world) return 0;
     GameState& gs = *mw.gs;
@@ -2009,7 +2205,11 @@ int feed_squads_daily(MacroWorld& mw) {
         // A beast pays no upkeep and eats no bread here — its row already
         // says so (kNpcUpkeepNone), the same column the payroll reads.
         if (npc_upkeep_base(NPCType(kind.type)) <= 0) continue;
-        const int need = 1 + roster.squad.size();
+        // Bread is for the ROSTER only (owner 2026-08-31, the M&B law): the
+        // leader is a SUBJECT — «0 бойцов = 0 хлеба и жалования». A lone
+        // rider is honestly immune to hunger; there is nobody to feed.
+        const int need = roster.squad.size();
+        if (need <= 0) continue;
         const int have = bag.inv.count("bread");
         const int ate = std::min(need, have);
         if (ate > 0) bag.inv.remove("bread", ate);
@@ -2045,16 +2245,22 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             if (gs.landmarks[i].id == id) return int(i);
         return -1;
     };
-    const auto def_index = [&](std::uint16_t type) -> int {
-        for (int gi = 0; gi < int(std::size(kGathererDefs)); ++gi)
-            if (std::uint16_t(kGathererDefs[gi].type) == type) return gi;
-        return -1;
+    // A type is a CREW exactly when some landmark's registry row raises it —
+    // the old hand-kept list (professions + Vendor + TaxCollector) is now a
+    // question to the same table that raises them (owner 2026-08-31, CANON
+    // S10: «какие сквады кто спавнит — таблично по видам ландмарков»).
+    const auto is_crew = [](std::uint16_t type) {
+        for (const LandmarkDef& ld : kLandmarks)
+            for (int i = 0; i < int(ld.crewCount); ++i)
+                if (std::uint16_t(ld.crews[i].npc) == type) return true;
+        return false;
     };
-    // The vendor crew rotates with the working crews — one law of labour.
-    const auto is_crew = [&](std::uint16_t type) {
-        return def_index(type) >= 0
-               || type == std::uint16_t(NPCType::Vendor)
-               || type == std::uint16_t(NPCType::TaxCollector);
+    // Which crew row of a place's registry list this type fills — the bit
+    // index of the out-mask below; -1 = not one of that landmark's crews.
+    const auto crew_row_at = [](const LandmarkDef& ld, std::uint16_t type) {
+        for (int i = 0; i < int(ld.crewCount); ++i)
+            if (std::uint16_t(ld.crews[i].npc) == type) return i;
+        return -1;
     };
 
     // 1) DISSOLVE yesterday's crews that made it home: souls and leftovers
@@ -2094,51 +2300,87 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         reg.destroy(e);
     }
 
-    // Which professions still have a crew OUT (on the road, at the field —
-    // anyone not dissolved above): those are not re-raised today.
+    // Which crew rows still have a squad OUT (on the road, at the field —
+    // anyone not dissolved above): those are not re-raised today. Bit i =
+    // row i of the HOME's own registry crew list (≤8 rows, guarded below).
     std::vector<std::uint8_t> outMask(gs.landmarks.size(), 0);
     for (auto [e, kind, rt]
          : reg.view<ecs::NPCKind, ecs::MacroNpcRuntime>().each()) {
         (void)e;
-        int gi = def_index(kind.type);
-        if (gi < 0 && kind.type == std::uint16_t(NPCType::Vendor))
-            gi = 7;   // the vendor's own bit, above the profession bits
-        if (gi < 0 && kind.type == std::uint16_t(NPCType::TaxCollector))
-            gi = 6;   // the courier's bit
-        if (gi < 0) continue;
         const int row = row_of(rt.homeSettlementId);
-        if (row >= 0) outMask[std::size_t(row)] |= std::uint8_t(1u << gi);
+        if (row < 0) continue;
+        const int bit = crew_row_at(
+            landmark_def(gs.landmarks[std::size_t(row)].type), kind.type);
+        if (bit >= 0) outMask[std::size_t(row)] |= std::uint8_t(1u << bit);
     }
 
-    // 2) RAISE today's crews: pop/kHeadsPerCityWorker souls across the
-    //    professions whose worksite is LIVE (the same find_worksite the
-    //    working AI walks by — ore near home IS the presence of miners).
+    // 2) RAISE today's crews off the place's OWN registry row (owner
+    //    2026-08-31, CANON S10): the crew pool is pop >> labourShift, split
+    //    EVENLY across the rows whose gates are open today — a worksite gate
+    //    walks the same find_worksite the working AI walks by (ore near home
+    //    IS the presence of miners); solo rows ride alone (the tax courier).
     int raised = 0;
     for (std::size_t row = 0; row < gs.landmarks.size(); ++row) {
         Landmark& s = gs.landmarks[row];
-        if (s.type != LandmarkType::City && s.type != LandmarkType::Village)
-            continue;
-        if (s.population < kHeadsPerCityWorker) continue;
+        const LandmarkDef& ld = landmark_def(s.type);
+        if (ld.crewCount == 0 || s.population <= 0) continue;
+        static_assert(sizeof(LandmarkDef::crews) / sizeof(LandmarkCrewRow)
+                          <= 8,
+                      "outMask is one byte: one bit per crew row");
         const XY home{float(s.x), float(s.y)};
         const ecs::Position homePos{home.x, home.y, 0.0f};
-        int live[int(std::size(kGathererDefs))];
+        int live[8];
         int liveCount = 0;
-        for (int gi = 0; gi < int(std::size(kGathererDefs)); ++gi) {
-            if (outMask[row] & (1u << gi)) continue;
-            XY site;
-            if (find_worksite(kGathererDefs[gi], ctx, homePos, home, site))
-                live[liveCount++] = gi;
+        int solo[8];
+        int soloCount = 0;
+        // The errand's destination, per crew row — what the gate already
+        // resolved, kept so provisioning can size the loaf by the SAME
+        // march the crew is about to walk (npc_ai.h provision_squad).
+        XY dest[8];
+        for (int i = 0; i < 8; ++i) dest[i] = home;
+        for (int i = 0; i < int(ld.crewCount); ++i) {
+            if (outMask[row] & (1u << i)) continue;
+            const LandmarkCrewRow& cr = ld.crews[i];
+            bool open = false;
+            switch (cr.gate) {
+                case CrewGate::Worksite: {
+                    const GathererDef* gd = gatherer_def(cr.npc);
+                    XY site;
+                    open = gd && find_worksite(*gd, ctx, homePos, home, site);
+                    if (open) dest[i] = site;
+                    break;
+                }
+                case CrewGate::HomeCity: {
+                    const Landmark* c = landmark_by_id(gs, s.nearestCityId);
+                    open = c != nullptr;
+                    if (c) dest[i] = XY{float(c->x), float(c->y)};
+                    break;
+                }
+                case CrewGate::Suzerain: {
+                    // The capital pays nobody above itself — the old
+                    // hardcode raised a courier in EVERY city, and the
+                    // capital's one walked to its own gate.
+                    if (s.kingdomIdx < 0
+                        || s.kingdomIdx >= int(gs.politik.kingdoms.size()))
+                        break;
+                    const int cap =
+                        gs.politik.kingdoms[std::size_t(s.kingdomIdx)]
+                            .capitalLandmarkId;
+                    open = cap >= 0 && cap != s.id;
+                    break;
+                }
+            }
+            if (!open) continue;
+            if (cr.solo) solo[soloCount++] = i;
+            else        live[liveCount++] = i;
         }
-        if (liveCount <= 0) continue;
-        // The same share of hands the city's benches already draw
-        // (kHeadsPerCityWorker) — ONE labour quota, split across today's
-        // live professions.
-        const int workers = s.population / kHeadsPerCityWorker;
-        const int perCrew = std::max(1, workers / liveCount);
+        const int pool = s.population >> ld.labourShift;
+        const int perCrew =
+            liveCount > 0 ? std::max(1, pool / liveCount) : 0;
         for (int li = 0; li < liveCount; ++li) {
-            if (s.population < perCrew) break;
+            if (perCrew <= 0 || s.population < perCrew) break;
             SquadSpec spec{};
-            spec.leaderType = kGathererDefs[live[li]].type;
+            spec.leaderType = ld.crews[live[li]].npc;
             spec.x = s.x;
             spec.y = s.y;
             spec.homeSettlementId = s.id;
@@ -2151,49 +2393,39 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 rec.level = 1;
                 if (!spec.members.push(rec)) break;
             }
-            if (spawn_squad(gs, *mw.world, *mw.terrain, spec)
-                != entt::null) {
+            const entt::entity ent =
+                spawn_squad(gs, *mw.world, *mw.terrain, spec);
+            if (ent != entt::null) {
                 s.population -= 1 + spec.members.size();
                 ++raised;
+                // THE provisioning law of squad creation (owner 2026-08-31;
+                // npc_ai.h provision_squad): bread for the roster, sized by
+                // the errand's own roundtrip — the gate resolved the
+                // destination, the loaf rides the crew's free carry.
+                if (auto* bag = reg.try_get<ecs::NpcInventory>(ent)) {
+                    const auto& prt =
+                        reg.get<ecs::MacroNpcRuntime>(ent);
+                    const XY d = dest[live[li]];
+                    const float dist = std::sqrt(torus_dist_sq(
+                        home.x, home.y, d.x, d.y,
+                        float(ctx.mapW), float(ctx.mapH)));
+                    provision_squad(
+                        s.inventory, bag->inv, spec.members.size(),
+                        2.0f * dist,
+                        prt.carryCap - inventory_weight(bag->inv));
+                }
             }
         }
-        // The tax run (CANON S24): a CITY with a suzerain capital sends its
-        // eighth up the feudal graph — one courier, one soul.
-        if (s.type == LandmarkType::City && !(outMask[row] & 0x40u)
-            && s.population > 0) {
+        for (int si = 0; si < soloCount; ++si) {
+            if (s.population <= 0) break;
             SquadSpec spec{};
-            spec.leaderType = NPCType::TaxCollector;
+            spec.leaderType = ld.crews[solo[si]].npc;
             spec.x = s.x;
             spec.y = s.y;
             spec.homeSettlementId = s.id;
             if (spawn_squad(gs, *mw.world, *mw.terrain, spec)
                 != entt::null) {
                 s.population -= 1;
-                ++raised;
-            }
-        }
-        // The vendor run (owner 2026-08-30): a village with a home city
-        // sends its surplus to market — a crew of the same labour quota as
-        // any profession, because the surplus scales with the same
-        // population that made it.
-        if (s.type == LandmarkType::Village && !(outMask[row] & 0x80u)
-            && s.population >= perCrew
-            && landmark_by_id(gs, s.nearestCityId)) {
-            SquadSpec spec{};
-            spec.leaderType = NPCType::Vendor;
-            spec.x = s.x;
-            spec.y = s.y;
-            spec.homeSettlementId = s.id;
-            for (int m = 1; m < perCrew; ++m) {
-                SoldierRecord rec{};
-                rec.entityId = ++gs.nextMacroSpawnOrdinal;
-                rec.kind = std::uint16_t(NPCType::Vendor);
-                rec.level = 1;
-                if (!spec.members.push(rec)) break;
-            }
-            if (spawn_squad(gs, *mw.world, *mw.terrain, spec)
-                != entt::null) {
-                s.population -= 1 + spec.members.size();
                 ++raised;
             }
         }

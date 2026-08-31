@@ -156,6 +156,37 @@ bool scars_read(savefmt::Reader& r, const WorldFieldStoresMut& st) {
     return r.ok;
 }
 
+// ── Built: features squads made — ploughed fields… (since v71) ──────────
+// Verbatim, append-order: the list IS the history of works, and the load
+// re-stamps it in the same order the crews built it.
+void built_write(savefmt::Writer& w, const WorldFieldStores& st) {
+    if (!st.gs) { w.count(0, kMaxFieldCells); return; }
+    const auto& built = st.gs->builtFeatures;
+    if (w.count(built.size(), kMaxFieldCells)) {
+        for (const BuiltFeature& b : built) {
+            w.pod(b.x);
+            w.pod(b.y);
+            w.pod(b.ft);
+        }
+    }
+}
+bool built_read(savefmt::Reader& r, const WorldFieldStoresMut& st) {
+    std::uint32_t n = 0;
+    if (!savefmt::read_count(r, n, kMaxFieldCells)) return false;
+    if (!st.gs) { r.ok = false; return false; }
+    auto& built = st.gs->builtFeatures;
+    built.clear();
+    built.reserve(n);
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        BuiltFeature b{};
+        r.pod(b.x);
+        r.pod(b.y);
+        r.pod(b.ft);
+        if (r.ok) built.push_back(b);
+    }
+    return r.ok;
+}
+
 struct WorldFieldRow {
     WorldField id;
     const char* name;
@@ -168,6 +199,7 @@ constexpr WorldFieldRow kWorldFields[std::size_t(WorldField::Count)] = {
     {WorldField::Knowledge, "knowledge", knowledge_write, knowledge_read},
     {WorldField::Deposits,  "deposits",  deposits_write,  deposits_read},
     {WorldField::Scars,     "scars",     scars_write,     scars_read},
+    {WorldField::Built,     "built",     built_write,     built_read},
 };
 static_assert(rows_in_enum_order(kWorldFields, &WorldFieldRow::id),
               "every WorldField needs its row — the table IS the system");

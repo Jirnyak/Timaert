@@ -79,8 +79,21 @@ struct RecipeDef {
 // спреда серебра).
 inline constexpr const char* kMintOutput = "coin";
 
+// THE productivity anchor (owner 2026-08-30/31, CANON S10): one worker at ANY
+// link of the chain covers the needs of ~32 souls — «1 добытчик кормит 32
+// душ» extended through the whole chain (поле → печь → рот) on 2026-08-31.
+// Declared above the recipe table because the bread row derives from it.
+inline constexpr int kGatherPerWorkerDay = 32;
+
 inline constexpr RecipeDef kRecipes[] = {
-    {"bread",     {{"grain", 1}, {nullptr, 0}}, 8, EconSite::Any},
+    // BREAD = the anchor made chain-wide: a baker's day turns exactly one
+    // farmer's gather-day of grain (32) into 32 bread, so the farmer+baker
+    // pair feeds 16 and the slack pays for crafts and the road. The old 8
+    // per worker-day × the 1/8 labour quota put the bake ceiling at exactly
+    // the population — a knife-edge measured by the дубль-прогон: 150/210
+    // villages starved daily sitting on 2.1M hoarded grain.
+    {"bread",     {{"grain", 1}, {nullptr, 0}}, kGatherPerWorkerDay,
+     EconSite::Any},
     // ЧЕКАНКА: все города (site City = право v1); 4 металла на рабочий-день
     // — балансовая крутилка темпа эмиссии.
     {kMintOutput, {{"silver", 1}, {nullptr, 0}}, 4, EconSite::City},
@@ -115,13 +128,12 @@ inline constexpr NeedDef kNeeds[] = {
 };
 inline constexpr int kNeedCount = int(sizeof(kNeeds) / sizeof(kNeeds[0]));
 
-inline constexpr int kGatherPerWorkerDay = 32;
-
-// One worker per this many heads (po2) — THE labour quota: the same share
-// of hands staffs the benches (econ_produce_day) and walks out with the
-// daily crews (npc_ai.h rotate_worker_squads). One number, one law of who
-// works; it moved here from world_tick.cpp when the crews were born
-// (2026-08-30) so the two consumers cannot drift.
+// One worker per this many heads (po2) — the BENCH quota: the share of
+// hands staffing the recipes (econ_produce_day). The daily CREWS are the
+// landmark's own law since 2026-08-31 (landmark_registry: crews rows +
+// labourShift — «какие сквады кто спавнит — таблично»); the city's
+// labourShift = log2 of this number, so the two laws meet at the same
+// eighth of a town.
 inline constexpr int kHeadsPerCityWorker = 8;
 
 // The working rhythm (owner 2026-08-30, CANON S10/S14: work burns the SAME

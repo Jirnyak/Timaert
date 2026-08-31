@@ -101,6 +101,22 @@ void settle_landmark_day(Landmark& lm,
 
 namespace {
 
+// The UNIVERSAL tribute assessment (owner 2026-08-31, CANON S10/S24: «дань
+// универсальна СТОИМОСТЬЮ — забудь о казне»): on the place's own seasonal
+// pay-day (the ONE slow cycle wages already ride) an eighth of the WHOLE
+// store's value — coin is just a ware in it — is charged into the debt the
+// carriers pay down (vendor to the market city, courier to the capital).
+// Missed seasons accumulate honestly. Only a place WITH a suzerain owes;
+// the top of a chain (a capital, a market-less village) is charged nothing.
+void assess_tithe_(Landmark& lm, int day, bool hasSuzerain) {
+    if (!hasSuzerain) return;
+    if (day % kDaysPerSeason != lm.id % kDaysPerSeason) return;
+    const int season = day / kDaysPerSeason;
+    if (lm.titheSeasonAssessed == season) return;
+    lm.titheSeasonAssessed = season;
+    lm.titheOwed += std::int64_t(inventory_value(lm.inventory)) >> 3;
+}
+
 // The pure econ steps are landmark-blind (they see one Inventory); this relay
 // stamps the landmark id onto every fact on its way to the listener — the
 // daily tick is the ONE caller that knows whose store it handed in.
@@ -179,6 +195,19 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
             }
         }
 
+        // The city's suzerain is its kingdom's capital — a capital owes
+        // nobody above itself.
+        {
+            const bool hasSuzerain =
+                s.kingdomIdx >= 0
+                && s.kingdomIdx < int(gs.politik.kingdoms.size())
+                && gs.politik.kingdoms[std::size_t(s.kingdomIdx)]
+                           .capitalLandmarkId >= 0
+                && gs.politik.kingdoms[std::size_t(s.kingdomIdx)]
+                           .capitalLandmarkId != s.id;
+            assess_tithe_(s, day, hasSuzerain);
+        }
+
         bool famine = false, revolt = false, died = false;
         const int headsBefore = s.population;
         settle_landmark_day(s, famine, revolt, died, rs, ru);
@@ -242,6 +271,9 @@ void tick_villages_(GameState& gs, int day, WorldTickRuntime& runtime,
                              ? std::max(1, v.population / kHeadsPerCityWorker)
                              : 0,
                          v.population, rs, ru);
+
+        // The village's suzerain is its market city (CANON S24).
+        assess_tithe_(v, day, landmark_by_id(gs, v.nearestCityId) != nullptr);
 
         bool famine = false, revolt = false, died = false;
         const int headsBefore = v.population;

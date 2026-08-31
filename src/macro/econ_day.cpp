@@ -107,9 +107,9 @@ int econ_produce_day(Inventory& store, EconSite site, int workers,
         if (byInputs <= 0) return;
         // THE population-efficiency law (owner 2026-08-30, CANON S10, ?31
         // closed): КПД = log2(популяции)/4 — «город вдвое больше работает
-        // на четверть лучше». Integer log2 (bit width); the village floor
-        // (16 souls, settlement_score kVillagePopFloor) lands exactly at
-        // ×1, a 512-soul city at ×2¼. One law prices why the city bakes
+        // на четверть лучше». Integer log2 (bit width); a born village
+        // (the owner's-scale hundred, kVillageBornBase) lands at ×1½,
+        // a 512-soul city at ×2¼. One law prices why the city bakes
         // better — never a second recipe row, never a site wall. The
         // quarter is a balance-run tunable.
         const int popLog =

@@ -29,6 +29,7 @@
 #include <cstdint>
 #include <unordered_map>
 
+#include "macro/features.h"      // the kind's own mine feature (v71)
 #include "macro/map_generator.h"
 
 namespace sm {
@@ -49,14 +50,18 @@ struct DepositDef {
     DepositKind kind;         // MUST equal the row's index (guard below)
     const char* commodityId;
     int         siteWorth;    // settlement-score base of a vein in reach
+    // The kind's OWN mine feature (owner 2026-08-31, v71): «шахты-фичи
+    // разных типов — золотая, серебряная, каменоломня» — the column the
+    // mining crew stamps when it opens the vein (ai_gatherer).
+    FeatureType mineFeature;
 };
 inline constexpr DepositDef kDepositDefs[kDepositKindCount] = {
-    {DepositKind::Clay,  "clay",   8},
-    {DepositKind::Iron,  "iron",  16},
-    {DepositKind::Stone, "stone",  8},
+    {DepositKind::Clay,  "clay",   8, FT_ClayPit},
+    {DepositKind::Iron,  "iron",  16, FT_IronMine},
+    {DepositKind::Stone, "stone",  8, FT_Quarry},
     // A silver vein prices like iron for a settlement site: the mint is
     // wealth, but the town still eats bread, not coins.
-    {DepositKind::Silver, "silver", 16},
+    {DepositKind::Silver, "silver", 16, FT_SilverMine},
 };
 static_assert(rows_in_enum_order(kDepositDefs, &DepositDef::kind),
               "kDepositDefs row order must mirror DepositKind");
@@ -147,5 +152,15 @@ void restore_deposit_cells(DepositLayer& layer, const DepositLayer& loaded);
 // number, living at the deposit table's own door.
 int iron_vein_lump();
 int silver_vein_lump();
+
+// The MINE's consolidation (owner 2026-08-31, CANON S10 «шахта — фича, как
+// поле»): flood the locally CONNECTED cluster of same-kind veins
+// (8-adjacency over live deposit cells) from the mine's cell and fold their
+// units INTO that cell — the absorbed cells leave the map (the annihilation
+// law), the mine's cell holds their sum, and every worksite/score law reads
+// on unchanged because the stock never left the deposit layer. Returns the
+// number of cells absorbed (0 = the mine sits on a lone vein — also fine).
+int consolidate_deposit_cluster(DepositLayer& layer, DepositKind kind,
+                                int x, int y);
 
 } // namespace sm

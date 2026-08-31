@@ -3036,6 +3036,9 @@ namespace sm::ui
                 case sub::Structure::Door:
                 case sub::Structure::SpireGate:
                 case sub::Structure::SpireOrb:
+                // The kerb is the bridge's own parapet rail — the deck above
+                // already paints the crossing; a second mark would be noise.
+                case sub::Structure::Kerb:
                 case sub::Structure::Lantern:
                 case sub::Structure::Stairs:
                 case sub::Structure::Chest:

@@ -137,4 +137,15 @@ void stamp_field_features(FeatureLayer& fl, const MacroWorld& world,
                           const std::vector<FieldSite>& villages,
                           float seaLevel = 0.40f);
 
+// The RUNTIME half of the field stamp (owner 2026-08-31, CANON S10 «фичи
+// создаются сквадами»): ONE cell ploughed by a crew's day of work — the
+// same gates and the same FT_Field write the worldgen stamp lands, shared
+// through plough_cell_ok, so a runtime field and a genesis field can never
+// disagree. Returns false when the cell refuses the plough (feature there
+// already / water / rock / lean soil). Torus-wrapped.
+bool plough_cell_ok(const FeatureLayer& fl, const MacroWorld& world,
+                    int x, int y, int& wheatOut, float seaLevel = 0.40f);
+bool plough_field_cell(FeatureLayer& fl, const MacroWorld& world,
+                       int x, int y, float seaLevel = 0.40f);
+
 } // namespace sm

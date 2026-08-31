@@ -8,6 +8,7 @@
 #include "macro/faction.h"
 #include "macro/map_generator.h"
 #include "macro/language.h"
+#include "macro/npc_ai.h"          // kGathererReach — the field's press radius
 #include "macro/settlement_score.h"
 #include "core/rng.h"
 #include "core/torus.h"
@@ -184,29 +185,41 @@ void populate_landmarks_from_politik(GameState& gs,
         gs.landmarks.push_back(std::move(s));
     }
 
-    // ── Villages: resources decide (R2). Politics placed the cities;
-    // each city's hinterland — half the city spacing, the land nearest
-    // to it by construction — is scanned WHOLE, every candidate priced
-    // by THE settlement score, and villages take the best sites in
-    // order. The COUNT derives from the hinterland's summed capacity (a
-    // lush delta feeds more mouths than a dry steppe, a barren one
-    // feeds none), the POPULATION from the chosen site's own score. The
-    // old dice — 1+rng%3 villages, 18 blind darts whose only criterion
-    // was "land", 30+rng%90 souls — are dead; rng still names things.
+    // ── Villages: the settlement FIELD decides (owner 2026-08-31,
+    // «полевой подход»). Politics placed the cities; each city's
+    // hinterland is scanned WHOLE and every candidate priced by THE
+    // settlement score — then villages OCCUPY best-first, and every
+    // placed village PRESSES the field around itself
+    // (village_pressure), so the next best honestly moves away. The
+    // old separation rule, the capacity quota and the per-city cap
+    // died into the field; placement stops when the best pressed
+    // candidate falls under half this hinterland's own first-best —
+    // the land's own quality bar, no absolute constant. Souls are the
+    // owner's SCALE (kVillageBornBase + a seed roll), never the score.
     SettlementSiteContext site{};
     site.w.gs      = &gs;
     site.w.trees   = &trees;
     site.w.terrain = &terrain;
     site.w.deposits = &deposits;
     site.seaLevel8 = seaLevel8;
+    // The deposit-reach field: the score sees what the crews mine (v71).
+    const std::vector<std::uint16_t> depositReach =
+        build_deposit_reach_field(deposits, gs.mapW, gs.mapH);
+    site.depositReach = depositReach.empty() ? nullptr
+                                             : depositReach.data();
     const int spacing = derive_city_spacing(&terrain, seaLevel8,
                                             gs.mapW, gs.mapH,
                                             int(cities.size()));
     const int reach = std::max(4, spacing / 2);
 
-    struct Candidate { int score, x, y; };
+    struct Candidate { int pressed, raw, x, y; bool feeds; };
     std::vector<Candidate> cands;
     cands.reserve(std::size_t(2 * reach + 1) * std::size_t(2 * reach + 1));
+    // Every village placed so far, with the RAW score of its ground —
+    // what it claims and consumes is what presses the field, across
+    // hinterland rims and city borders alike (one world, one field).
+    struct PlacedVillage { int x, y, score; };
+    std::vector<PlacedVillage> pressed;
 
     // Snapshot the cities before appending villages: the loop below pushes
     // into the SAME gs.landmarks vector, and a live iterator would not
@@ -220,9 +233,16 @@ void populate_landmarks_from_politik(GameState& gs,
         }
     }
 
+    const auto torus_cheb = [&](int ax, int ay, int bx, int by) {
+        const int ddx = std::min(std::abs(ax - bx),
+                                 gs.mapW - std::abs(ax - bx));
+        const int ddy = std::min(std::abs(ay - by),
+                                 gs.mapH - std::abs(ay - by));
+        return std::max(ddx, ddy);
+    };
+
     for (const auto& s : cityRefs) {
         cands.clear();
-        long long hinterlandCapacity = 0;
         for (int dy = -reach; dy <= reach; ++dy) {
             for (int dx = -reach; dx <= reach; ++dx) {
                 // The town works its own kSettlementReach ring; a village
@@ -234,56 +254,64 @@ void populate_landmarks_from_politik(GameState& gs,
                 const int score = settlement_site_score(
                     site, SettlementScoreRow::Village, x, y);
                 if (score < 0) continue;   // vetoed ground
-                hinterlandCapacity += score;
-                cands.push_back(Candidate{score, x, y});
+                // The SELF-FEEDING GATE (settlement_score.h): beyond the
+                // forced first hamlet, a village stands only where its box
+                // ploughs its born hundred or a prize vein pays the bread.
+                const SettlementSiteTerms t =
+                    settlement_site_terms(site, x, y);
+                const bool feeds = t.arable >= kVillageArableGate
+                                || t.deposit >= kVillageDepositGate;
+                // Pressed once against everything already standing —
+                // neighbouring hinterlands may touch at the rim.
+                int v = score;
+                for (const PlacedVillage& pv : pressed) {
+                    const int d = torus_cheb(x, y, pv.x, pv.y);
+                    if (d <= kGathererReach)
+                        v -= village_pressure(pv.score, d);
+                }
+                cands.push_back(Candidate{v, score, x, y, feeds});
             }
         }
-        // Capacity says how many the land feeds; a city with ANY admissible
-        // ground keeps at least one village (owner: a town with no hamlet
-        // at all reads as a bug, not as honesty).
-        const int n = std::max<long long>(1, std::min<long long>(
-            kMaxVillagesPerCity,
-            hinterlandCapacity / kVillageCapacityQuota));
         if (cands.empty()) continue;
-        // Best sites first; ties resolved by scan order (y, then x) so
-        // the pick is a fact of the world data, not of the sort.
-        std::stable_sort(cands.begin(), cands.end(),
-                         [](const Candidate& a, const Candidate& b) {
-                             return a.score > b.score;
-                         });
-        // Villages DIVIDE the city's land rather than share one pocket of
-        // it: the separation is half the hinterland, so the k best sites
-        // land in different quarters of the ring and scatter AROUND the
-        // town instead of stacking a block apart in the single fattest
-        // corner. A crowded-out candidate is skipped, not downgraded —
-        // the next-best free site wins, which is what spreads them.
-        const int separation = village_separation(reach);
-        int placed = 0;
-        for (const Candidate& c : cands) {
-            if (placed >= n) break;
-            // Torus distance against every village so far — neighbouring
-            // hinterlands may touch at the rim.
-            bool crowded = false;
-            for (const auto& other : gs.landmarks) {
-                if (other.type != LandmarkType::Village) continue;
-                const int ddx = std::min(std::abs(c.x - other.x),
-                                         gs.mapW - std::abs(c.x - other.x));
-                const int ddy = std::min(std::abs(c.y - other.y),
-                                         gs.mapH - std::abs(c.y - other.y));
-                if (std::max(ddx, ddy) < separation) {
-                    crowded = true;
-                    break;
-                }
+        int placedHere = 0;
+        for (;;) {
+            // The best PRESSED candidate that can FEED itself; ties
+            // resolved by scan order so the pick is a fact of the world
+            // data, not of a sort. The forced first hamlet ignores the
+            // gate (owner: a town with no hamlet reads as a bug).
+            int bestIdx = -1;
+            for (std::size_t i = 0; i < cands.size(); ++i) {
+                if (placedHere > 0 && !cands[i].feeds) continue;
+                if (bestIdx < 0
+                    || cands[i].pressed > cands[std::size_t(bestIdx)].pressed)
+                    bestIdx = int(i);
             }
-            if (crowded) continue;
+            if (bestIdx < 0) break;
+            const Candidate c = cands[std::size_t(bestIdx)];
+            if (placedHere > 0 && c.pressed <= 0) {
+                break;   // the field is spent — the land carries no more
+            }
+            cands[std::size_t(bestIdx)] = cands.back();
+            cands.pop_back();
+            // The new village presses the remaining field around itself.
+            for (Candidate& r : cands) {
+                const int d = torus_cheb(r.x, r.y, c.x, c.y);
+                if (d <= kGathererReach)
+                    r.pressed -= village_pressure(c.raw, d);
+            }
+            pressed.push_back(PlacedVillage{c.x, c.y, c.raw});
+            ++placedHere;
             Landmark vil{};
             vil.type          = LandmarkType::Village;
             vil.id            = int(gs.nextLandmarkOrdinal++);   // v54: same issuer
             vil.x             = c.x;
             vil.y             = c.y;
             vil.kingdomIdx    = s.kingdomIdx;
-            // The land feeds as many as it yields: souls ARE the score.
-            vil.population    = std::max(kVillagePopFloor, c.score);
+            // Souls = the owner's scale, never the score (CANON S25):
+            // a hundred-odd, the ~200 tail included.
+            vil.population    = kVillageBornBase
+                              + int(rng.next_u32()
+                                    % std::uint32_t(kVillageBornSpread));
             vil.mood          = SettlementMood::Stable;
             vil.nearestCityId = s.id;
             seed_landmark_inventory(
@@ -299,7 +327,6 @@ void populate_landmarks_from_politik(GameState& gs,
                 vil.name = "Hamlet";
             }
             gs.landmarks.push_back(std::move(vil));
-            ++placed;
         }
     }
 }

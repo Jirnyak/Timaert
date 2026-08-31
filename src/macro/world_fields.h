@@ -34,6 +34,9 @@ enum class WorldField : std::uint8_t {
                  //   on write, sight is recomputed after load (since v40)
     Deposits,    // sparse i32 per kind — Clay/Iron/Stone veins (since v37)
     Scars,       // sparse u16 per resource row — harvest/hunt debts (v35)
+    Built,       // sparse — features squads built: ploughed fields… (v71).
+                 //   The feature GRID stays derived (rebaked from seed);
+                 //   this row is the truth the load re-stamps onto it.
     Count,
 };
 

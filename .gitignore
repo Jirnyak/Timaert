@@ -43,4 +43,4 @@ imgui.ini
 /Docs/Tasks/Imported_Hecton8/
 
 # balance harness TSV output (tests/balance_run.cpp)
-balance_out/
+balance_out*/

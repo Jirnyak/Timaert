@@ -165,3 +165,20 @@ Planned on the same rows, no new dialects (owner's design intent,
 * **`econ_gather_day` is DELETED** (owner 2026-08-31: «уже собирают
   крестьяне») — the field agents are the only gather; econ_v1_test models
   their person-day norm directly.
+* **MINES are features of the ONE feature system, fed by the ONE registry**
+  (owner 2026-08-31, CANON S10 «шахта — фича, как поле»). Nothing new owns
+  ore: the veins stay the carrier rows this file describes, and a mine is
+  a FeatureType byte like a road or a field — one per deposit kind
+  (`kDepositDefs.mineFeature`: FT_ClayPit / FT_IronMine / FT_Quarry /
+  FT_SilverMine). A mining crew arriving at a bare vein spends its first
+  work day BUILDING the kind's mine: `consolidate_deposit_cluster` folds
+  the locally CONNECTED same-kind veins into that one cell (absorbed cells
+  leave the map by the annihilation law; the mine's cell holds their sum —
+  «как поле переводит фертильность в зерно»), the stamp rides the save as
+  a Built work (v71), and every worksite/score/growth law reads on
+  UNCHANGED because the stock never left the deposit layer.
+* **The crews' labour lives in the landmark registry** (2026-08-31): WHO a
+  place raises is its own registry row (`LandmarkDef.crews` +
+  `labourShift` — village ½ of souls, city couriers only), and every
+  raised squad is PROVISIONED with bread for its roster by its errand's
+  own roundtrip (npc_ai.h provision_squad).

@@ -11,6 +11,7 @@
 #pragma once
 #include <cstdint>
 #include "core/table_guard.h"
+#include "macro/npc.h"   // NPCType — the crew rows below name who a place raises
 #include <string_view>
 
 namespace sm {
@@ -32,6 +33,29 @@ enum class LandmarkType : std::uint8_t {
 // forest/biome row decides, the place states no override of its own.
 inline constexpr std::uint16_t kLandmarkFaunaGround    = 0xFFFFu;
 inline constexpr std::uint8_t  kLandmarkFaunaCapGround = 0xFFu;
+
+// ── Crew rows: WHO this place raises (owner 2026-08-31, CANON S10) ────────
+// «Какие сквады кто спавнит — таблично по видам ландмарков»: the landmark's
+// own registry row carries its labour law, so a future landmark kind (castle
+// patrols, a capital's own trains) is rows here, never engine code. The daily
+// rotation (npc_ai.cpp rotate_worker_squads) reads EXACTLY this list. The
+// gate is the row's PRECONDITION — the same predicates the old hardcodes
+// tested, now data. (Two spawns remain their own code as fold-targets: the
+// caravan fleet law `replenish_caravans` and the garrison recruiting in
+// world_tick — owner 2026-08-31: separate increments, «чтобы не разбухал».)
+enum class CrewGate : std::uint8_t {
+    Worksite = 0,   // a live worksite of the row's profession within reach
+    HomeCity = 1,   // the village knows its market (Landmark.nearestCityId)
+    Suzerain = 2,   // the realm has a capital that is not this town itself
+};
+struct LandmarkCrewRow {
+    NPCType  npc  = NPCType::Peasant;
+    CrewGate gate = CrewGate::Worksite;
+    // A solo row rides ALONE (the tax courier); otherwise the crew takes an
+    // even split of the place's crew pool (pop >> labourShift) across the
+    // rows whose gates are open today — even split = zero new constants.
+    bool     solo = false;
+};
 
 struct LandmarkDef {
     // MUST equal the row's index in kLandmarks (guard below the table).
@@ -90,6 +114,20 @@ struct LandmarkDef {
     // hardcode City/Village per loop, so an S9 transition (village→city)
     // will re-profile production by flipping `type` alone.
     std::int8_t      econSite = -1;
+
+    // ── The labour law of the place (owner 2026-08-31, CANON S10) ─────────
+    // Crew pool = population >> labourShift — the share of souls that walks
+    // out with the daily crews. Village = 1 («половина деревни на работу» —
+    // owner's word; the world-feeding arithmetic backs it: 32 souls per
+    // farmer × villages ≈ 1/6 of the world's souls ⇒ at least every fifth
+    // villager must farm, half gives slack for wood/clay/ore/vendor runs).
+    // City = 3 (= log2(kHeadsPerCityWorker), the bench quota's own shift):
+    // the M&B doctrine — «деревня добывает ресурсы, город производит
+    // товары» — keeps a city's hands at its benches; its crew pool exists
+    // for couriers. Default 3 = the bench quota, inert while crewCount = 0.
+    std::uint8_t     labourShift = 3;
+    LandmarkCrewRow  crews[8] = {};
+    std::uint8_t     crewCount = 0;
 };
 
 // Night-light columns (lightColor / lightPop) drive the universal macro
@@ -103,8 +141,16 @@ struct LandmarkDef {
 // 128..255, unchanged in meaning, finer in resolution.
 inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
     {LandmarkType::None,    "none",    "",          0, 255, ' ', 0x00000000u, true, 0x00000000u,   0.0f },
-    {LandmarkType::City,    "city",    "City",      0,  76, '#', 0xFFE7D27Au, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.5f,  /*hab*/0u,       0, 0, /*cap*/2, /*econ*/1 },
-    {LandmarkType::Village, "village", "Village",   0, 101, 'v', 0xFFCCB068u, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.0f,  /*hab*/0u,       0, 0, /*cap*/2, /*econ*/0 },
+    {LandmarkType::City,    "city",    "City",      0,  76, '#', 0xFFE7D27Au, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.5f,  /*hab*/0u,       0, 0, /*cap*/2, /*econ*/1,
+     /*labour*/3, {{NPCType::TaxCollector, CrewGate::Suzerain, /*solo*/true}}, 1 },
+    {LandmarkType::Village, "village", "Village",   0, 101, 'v', 0xFFCCB068u, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.0f,  /*hab*/0u,       0, 0, /*cap*/2, /*econ*/0,
+     /*labour*/1, {{NPCType::Peasant,     CrewGate::Worksite},
+                   {NPCType::Woodcutter,  CrewGate::Worksite},
+                   {NPCType::Miner,       CrewGate::Worksite},
+                   {NPCType::Quarryman,   CrewGate::Worksite},
+                   {NPCType::ClayDigger,  CrewGate::Worksite},
+                   {NPCType::SilverMiner, CrewGate::Worksite},
+                   {NPCType::Vendor,      CrewGate::HomeCity}}, 7 },
     {LandmarkType::Spire,   "spire",   "Spire",   128, 255, 'I', 0xFFA86CFFu, true, 0xFFA86CFFu, 200.0f, "demons", /*wealth*/1.25f, /*hab*/1u << 13, 4, 9, kLandmarkFaunaCapGround },
     {LandmarkType::Ruin,    "ruin",    "Ruin",     51, 229, 'r', 0xFF8E8576u, true, 0xFF8E8576u,  40.0f, "demons", /*wealth*/0.5f,  /*hab*/1u << 12, 2, 6, kLandmarkFaunaCapGround },
     {LandmarkType::Lair,    "lair",    "Lair",    102, 255, 'L', 0xFF883A3Au, true, 0xFF883A3Au,  70.0f, nullptr, /*wealth*/1.25f },

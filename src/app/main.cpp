@@ -1670,6 +1670,9 @@ bool boot_world_from_save(App& app, const std::string& path) {
     app.gs.relations         = fresh.relations;
     app.gs.subState          = std::move(fresh.subState);
     app.gs.deserterPool      = fresh.deserterPool;
+    // Features built by squads (v71): the list is the truth; the grid gets
+    // them re-stamped below, before the rebaker reads it.
+    app.gs.builtFeatures     = std::move(fresh.builtFeatures);
     app.activeQuests         = std::move(loadedQuests);
     app.questMarkerSig       = 0;   // force quest-marker rebuild on next tick
 
@@ -1715,6 +1718,16 @@ bool boot_world_from_save(App& app, const std::string& path) {
                      loadedTrees.size(), app.treeLayer.cell_count());
     }
     sm::restore_deposit_cells(app.deposits, loadedDeposits);
+    // Features BUILT BY SQUADS (v71, CANON S10): boot_world baked the SEED's
+    // virgin grid; re-stamp the crews' works onto it BEFORE the rebaker
+    // reads features (zones, cost). The list is append-order — the same
+    // order the crews built in.
+    for (const sm::BuiltFeature& bf : app.gs.builtFeatures) {
+        const int wx = sm::FeatureLayer::wrap_coord(bf.x, app.features.width);
+        const int wy = sm::FeatureLayer::wrap_coord(bf.y, app.features.height);
+        app.features.data[std::size_t(wy) * std::size_t(app.features.width)
+                          + std::size_t(wx)] = sm::FeatureType(bf.ft);
+    }
     rebake_world(app);
     app.macro.upload_tree_field(app.device, &app.treeLayer);
     app.uploadedTreeRev = app.treeLayer.revision;

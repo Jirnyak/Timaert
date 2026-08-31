@@ -18,6 +18,16 @@ namespace sm {
 
 enum FeatureType : std::uint8_t {
     FT_None = 0, FT_Road = 1, FT_DirtRoad = 2, FT_Field = 3, FT_Bridge = 4,
+    // The MINES (owner 2026-08-31, CANON S10 «шахта — фича клетки, как
+    // поле»): one feature per DepositKind — «шахты-фичи разных типов…
+    // несколько независимых фич — это нормально» (DOD-инкапсуляция). A
+    // mining crew arriving at a bare vein spends its first work day
+    // BUILDING the kind's mine (ai_gatherer), which consolidates the
+    // locally CONNECTED cluster of same-kind veins into this one cell —
+    // the cells zero out, the mine holds their sum, «как поле переводит
+    // фертильность в зерно». The deposit stock itself stays in the deposit
+    // layer AT the mine's cell, so every worksite law reads on unchanged.
+    FT_ClayPit = 5, FT_IronMine = 6, FT_Quarry = 7, FT_SilverMine = 8,
     FT_Count,
 };
 
@@ -39,6 +49,9 @@ static_assert(FT_Road == 1, "FeatureType byte layout");
 static_assert(FT_DirtRoad == 2, "FeatureType byte layout");
 static_assert(FT_Field == 3, "FeatureType byte layout");
 static_assert(FT_Bridge == 4, "FeatureType byte layout");
+static_assert(FT_ClayPit == 5 && FT_IronMine == 6 && FT_Quarry == 7
+                  && FT_SilverMine == 8,
+              "FeatureType byte layout (mines, v71)");
 
 // ── THE feature registry (CANON S16, 2026-08-29) ─────────────────────────
 // Everything the world says ABOUT a feature is a column of ONE row. These
@@ -78,6 +91,13 @@ inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
     // bed (the march never notices the river under it), it is the same open
     // corridor to light and sight, and it seeds the same civilization pull.
     {FT_Bridge,   1.0f, 0.65f, 0.35f},
+    // Mines share the field's columns: worked ground, not an engineered
+    // bed (0 = the biome's own footing), nothing to hide behind, and a
+    // workplace that is tended, not garrisoned.
+    {FT_ClayPit,    0.0f, 1.00f, 0.0f },
+    {FT_IronMine,   0.0f, 1.00f, 0.0f },
+    {FT_Quarry,     0.0f, 1.00f, 0.0f },
+    {FT_SilverMine, 0.0f, 1.00f, 0.0f },
 };
 static_assert(rows_in_enum_order(kFeatureDefs, &FeatureDef::type),
               "kFeatureDefs row order must mirror FeatureType — a new "

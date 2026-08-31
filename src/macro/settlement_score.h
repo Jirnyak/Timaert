@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 #include "macro/macro_stock.h"   // MacroWorld — the one context envelope
 
@@ -55,9 +56,12 @@ static_assert(sizeof(kSettlementScoreRows) / sizeof(kSettlementScoreRows[0])
                   == std::size_t(SettlementScoreRow::Count),
               "every SettlementScoreRow needs its weights — the table IS the system");
 
-// The working radius of a settlement, in cells (Chebyshev): the ring its
-// people actually farm — the same radius stamp_field_features ploughs.
-inline constexpr int kSettlementReach = 2;
+// The working radius of a settlement, in cells (Chebyshev): THE home-field
+// box — the ±3 ring find_home_field harvests, the plough prospects
+// (npc_ai.cpp) and the genesis stamp seeds (spawners.cpp). ONE radius,
+// three consumers; it was 2 here while the crews' box was a drifted
+// hardcoded 3 — unified 2026-08-31 with the field-birth law.
+inline constexpr int kSettlementReach = 3;
 
 // Everything the score reads. MacroWorld is the registry's own envelope —
 // terrain, tree layer, deposit layer and scars all ride it, and every term
@@ -65,7 +69,23 @@ inline constexpr int kSettlementReach = 2;
 struct SettlementSiteContext {
     MacroWorld   w{};
     std::uint8_t seaLevel8 = 0;
+    // The deposit-reach FIELD (owner 2026-08-31, «полевой подход»): the
+    // sparse veins splatted once per world to the crews' working reach so
+    // the score sees what the hands actually mine — a per-candidate 33²
+    // box scan over four hash maps priced a billion lookups per worldgen.
+    // Built by build_deposit_reach_field below; the vector is the caller's,
+    // width×height, value = the deposit term 0..16 at that cell. Null =
+    // the term reads 0 (a context without geology prices none — the same
+    // fail-closed zero every absent layer answers).
+    const std::uint16_t* depositReach = nullptr;
 };
+
+// Splat every live vein's worth ladder into a flat field: value at a cell =
+// max over veins in reach of (siteWorth >> (d / (kSettlementReach + 1))) —
+// the same po2 ladder village_pressure walks, clamped to the term contract
+// 0..16. One law of distance for working, pricing and pressing.
+std::vector<std::uint16_t> build_deposit_reach_field(const DepositLayer& dl,
+                                                     int mapW, int mapH);
 
 // The one door: capacity of a WRAPPED cell as a settlement site.
 // -1 = vetoed (water / forest-massif cell / mountain rock); otherwise
@@ -73,29 +93,57 @@ struct SettlementSiteContext {
 int settlement_site_score(const SettlementSiteContext& ctx,
                           SettlementScoreRow row, int x, int y);
 
-// ── Population and village count derive from the same number ────────────
-// A village's souls ARE its site score (the land feeds as many as it
-// yields), floored so a border-case site is still a hamlet, not a ghost.
-inline constexpr int kVillagePopFloor = 16;
+// The raw terms behind the score — same reads, same vetoes (vetoed ground
+// answers all-zero terms and the score door answers -1). Exposed so birth
+// gates can ask "CAN this place feed itself" without a second term
+// implementation drifting beside the score's.
+struct SettlementSiteTerms {
+    int arable = 0, water = 0, forest = 0, deposit = 0;
+};
+SettlementSiteTerms settlement_site_terms(const SettlementSiteContext& ctx,
+                                          int x, int y);
 
-// One village per this much summed hinterland capacity: the COUNT of
-// villages a city's land carries is its total admissible score / quota.
-inline constexpr int kVillageCapacityQuota = 16384;   // po2, calibrated below
+// The SELF-FEEDING GATE of village birth (owner's field law, 2026-08-31):
+// beyond each city's forced first hamlet, a site must either plough enough
+// to feed the owner's-scale souls — arable ≥ 4: the top parcels at a mean
+// of ~1024 stands turn over ~128 grain/day per season-regrow, the born
+// hundred fed by its own box — or sit on ore worth the trade: deposit ≥ 8
+// is a prize vein (worth 16) within half the working reach, the mining
+// village the owner legalized, living on bought bread. Without this gate
+// the relative quality bar let an empty steppe breed hamlets as freely as
+// a river delta (measured by the placement test's lush>dry control).
+inline constexpr int kVillageArableGate  = 4;
+inline constexpr int kVillageDepositGate = 8;
 
-// Guard rail for lush deltas.
-inline constexpr int kMaxVillagesPerCity = 4;
-
-// The FLOOR of the spacing between village sites (tiny maps). On a real
-// hinterland the separation derives from the hinterland itself — villages
-// DIVIDE the city's land, each claiming half the reach (see
-// village_separation) — so the best sites of one lush pocket cannot all
-// crowd into it: the k-best spread around the town instead of stacking a
-// block apart (owner: "рассеяны вокруг, не плотными кластерами").
-inline constexpr int kVillageSeparationFloor = 4;
-
-inline int village_separation(int hinterlandReach) {
-    return std::max(kVillageSeparationFloor, hinterlandReach / 2);
+// ── Birth by the settlement FIELD (owner 2026-08-31, «полевой подход») ───
+// Candidates are priced by the ONE score; villages OCCUPY best-first, and
+// every placed village PRESSES the field around itself — «поставленная
+// деревня сразу давит поле, следующая берёт нового лучшего». The old
+// separation rule, the capacity quota and the per-city cap all died into
+// this law: their work is done by the field itself.
+//
+// The press of a placed village of score S on a candidate at Chebyshev
+// distance d: the home-field box (d ≤ kSettlementReach) is CLAIMED whole —
+// the full S, so no later candidate inside another village's farmland can
+// survive the relative-quality bar below — and beyond it the press halves
+// per box-width of distance, the same po2 ladder the deposit reach walks.
+inline int village_pressure(int placedScore, int d) {
+    if (d <= kSettlementReach) return placedScore;
+    return placedScore >> (d / (kSettlementReach + 1));
 }
+
+// Placement stops when the best PRESSED candidate falls under HALF the
+// hinterland's own first-best: «занимаются от самых дорогих», and the tail
+// is cut by the land's own quality bar — no absolute constant, a lush
+// delta feeds many villages and a dry steppe few, emergently.
+
+// Born souls = the OWNER'S SCALE, never the score (CANON S25, 2026-08-31:
+// «скор — закон места, души — замысел масштаба»): a village is a
+// hundred-odd souls — base + a seed roll of the spread lands [64..191],
+// the «крупная деревня ~200» tail included. The score decides only WHERE
+// and in what ORDER.
+inline constexpr int kVillageBornBase   = 64;
+inline constexpr int kVillageBornSpread = 128;
 
 // Cities live by the same law (the old 4000+rng%3000 / 800+rng%1500 /
 // 600+rng%1200 dice are dead): souls = per-score rate × site capacity,

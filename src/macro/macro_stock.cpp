@@ -9,6 +9,8 @@
 #include "macro/deposit_layer.h"
 #include "macro/fauna.h"
 #include "macro/map_generator.h"
+#include "macro/spawners.h"   // the field-stamp contract this file defines
+                              //   the runtime half of (plough_*)
 #include "macro/state.h"
 #include "macro/tree_layer.h"
 
@@ -292,6 +294,55 @@ scars_of(GameState& gs, ResourceFieldId f) {
 }
 
 } // namespace
+
+// ── The plough: the runtime half of the field stamp (owner 2026-08-31) ───
+// Declared in spawners.h beside the worldgen stamp; DEFINED here because
+// the labour rotation (npc_ai.cpp) calls them and its test targets link
+// the land's doors, not the worldgen.
+
+int field_wheat_min() {
+    // The ploughable bar, carried into the registry's units by the
+    // wheat baseline's own scale — ONE fertility door, so raising the
+    // bar or rescaling the field can never leave the two disagreeing.
+    return int(kFieldMoistureMin) * kMaxWheatStandsPerCell / 255;
+}
+
+bool plough_cell_ok(const FeatureLayer& fl, const MacroWorld& world,
+                    int x, int y, int& wheatOut, float seaLevel)
+{
+    std::size_t total = 0;
+    if (!FeatureLayer::cell_count_for(fl.width, fl.height, total)
+        || fl.data.size() < total || !world.terrain)
+        return false;
+    const TerrainData& td = *world.terrain;
+    if (td.width != fl.width || td.height != fl.height
+        || td.rgba.size() < total * 4u)
+        return false;
+    const int wx = FeatureLayer::wrap_coord(x, fl.width);
+    const int wy = FeatureLayer::wrap_coord(y, fl.height);
+    const std::size_t idx =
+        std::size_t(wy) * std::size_t(fl.width) + std::size_t(wx);
+    if (fl.data[idx] != FT_None) return false;  // roads win
+    const std::uint8_t alpha = td.rgba[idx * 4u + 3];
+    const float height01 = float(td.rgba[idx * 4u + 0]) / 255.0f;
+    if (alpha == 0 || height01 < seaLevel) return false;   // water
+    if (height01 >= kMountainBiomeLevel) return false;     // no rock terraces
+    // The ONE fertility door: potential minus what play has taken.
+    wheatOut = resource_field_read(world, ResourceFieldId::Wheat, wx, wy);
+    return wheatOut >= field_wheat_min();
+}
+
+bool plough_field_cell(FeatureLayer& fl, const MacroWorld& world,
+                       int x, int y, float seaLevel)
+{
+    int wheat = 0;
+    if (!plough_cell_ok(fl, world, x, y, wheat, seaLevel)) return false;
+    const int wx = FeatureLayer::wrap_coord(x, fl.width);
+    const int wy = FeatureLayer::wrap_coord(y, fl.height);
+    fl.data[std::size_t(wy) * std::size_t(fl.width) + std::size_t(wx)] =
+        FT_Field;
+    return true;
+}
 
 const ResourceFieldDef& resource_field_def(ResourceFieldId f) {
     return kResourceFields[std::size_t(f)

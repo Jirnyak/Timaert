@@ -719,6 +719,8 @@ void write_landmark(Writer& w, const Landmark& lm) {
     w.pod(lm.renown);            // v53: a place's standing is world memory
     w.pod(lm.spellId);
     write_bool(w, lm.depleted);
+    w.pod(lm.titheOwed);            // v71: the universal value-tribute debt
+    w.pod(lm.titheSeasonAssessed);
 }
 
 void read_landmark(Reader& r, Landmark& lm) {
@@ -741,6 +743,8 @@ void read_landmark(Reader& r, Landmark& lm) {
     r.pod(lm.renown);            // v53
     r.pod(lm.spellId);
     read_bool(r, lm.depleted);
+    r.pod(lm.titheOwed);            // v71
+    r.pod(lm.titheSeasonAssessed);
 }
 
 void write_marker(Writer& w, const Marker& m) {

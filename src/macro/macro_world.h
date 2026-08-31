@@ -61,7 +61,11 @@ struct MacroWorld {
     const TerrainData* terrain = nullptr;   // the fauna row derives its
                                             //   baseline from the cell's biome
     DepositLayer* deposits = nullptr;       // the Clay/Iron/Stone carrier
-    const FeatureLayer* features = nullptr; // roads / dirt roads / fields
+    // Roads / dirt roads / fields. Non-const since 2026-08-31 (CANON S10
+    // «фичи создаются сквадами»): the plough writes ONE cell through
+    // plough_field_cell — the same carrier-layer precedent trees and
+    // deposits set. Every other reader still only reads.
+    FeatureLayer* features = nullptr;
     const ZoneLayer*    zones    = nullptr; // danger byte 0..255 (zones.h)
     const PathCostData* pathCost = nullptr; // baked SP-weight grid + water flag
     const TreeGrid*     treeGrid = nullptr; // tree-point buckets (npc_ai.h) —
