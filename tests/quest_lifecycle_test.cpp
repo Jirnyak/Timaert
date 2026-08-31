@@ -1814,6 +1814,14 @@ void test_generated_delivery_quest_flow() {
     const int rewardGold = gold_reward(selected);
     CHECK_OR_RETURN(!(rewardGold <= 0),
         "selected generated delivery quest has no gold reward");
+    // The reward is PAID OFF THE GIVER'S STORE now (owner 2026-08-31,
+    // canon-audit B3 closed) — fund the treasury, or the town honestly
+    // pays nothing and this test would measure a thin purse, not the law.
+    {
+        sm::Landmark* giver = sm::landmark_by_id(gs, settlement.id);
+        CHECK_OR_RETURN(!(giver == nullptr), "fixture: giver landmark");
+        giver->inventory.add("coin_empire", rewardGold * 4);
+    }
     bag.add("tools", selected.objectives.front().quantity);
 
     sm::EventBus bus;

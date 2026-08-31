@@ -52,6 +52,8 @@ void sink(void* user, const sm::EconFact& f) {
         case sm::EconFact::Kind::Starved: ++led->starvedEvents; break;
         case sm::EconFact::Kind::FamineStarted: ++led->famineStarted; break;
         case sm::EconFact::Kind::FamineEnded: ++led->famineEnded; break;
+        case sm::EconFact::Kind::Consumed: break;   // counted by the caller
+        case sm::EconFact::Kind::Minted: break;     // no mint in this fixture
     }
 }
 
@@ -141,9 +143,17 @@ int main() {
     Inventory city{};
     std::array<long, kCommodityCount> consumed{};
 
-    Deposit fields[]{{grainIdx, 1 << 20}};
-    Deposit forest[]{{woodIdx, 1 << 20}};
-    Deposit pits[]{{clayIdx, 1 << 20}, {ironIdx, 1 << 20}, {stoneIdx, 1 << 20}};
+    // The GATHER half lives with the field agents now (ai_gatherer; the
+    // pure econ_gather_day died with the owner's 2026-08-31 ruling — «уже
+    // собирают крестьяне»). The self-play models their person-day norm
+    // directly, and the ledger counts it the way the sink used to.
+    const auto gather = [&](Inventory& store, int commodityIdx, int workers,
+                            Ledger& l) {
+        const int take = workers * kGatherPerWorkerDay;
+        if (store.add_of(commodity_item_index(commodityIdx), take)) {
+            l.gathered[std::size_t(commodityIdx)] += take;
+        }
+    };
 
     const int villagePop = 16;
     const int cityPop = 32;
@@ -153,9 +163,10 @@ int main() {
     const int kDays = 64;
     for (int day = 0; day < kDays; ++day) {
         // Village: 7 workers on grain, 1 in the forest, 1 rotating the pits.
-        econ_gather_day(village, fields, 1, 7, &sink, &led);
-        econ_gather_day(village, forest, 1, 1, &sink, &led);
-        econ_gather_day(village, &pits[day % 3], 1, 1, &sink, &led);
+        gather(village, grainIdx, 7, led);
+        gather(village, woodIdx, 1, led);
+        const int pitRotation[3] = {clayIdx, ironIdx, stoneIdx};
+        gather(village, pitRotation[day % 3], 1, led);
 
         // Caravan abstraction v1: all raw moves to the city for crafting.
         for (int c = 0; c < kRawCommodityCount; ++c) {
@@ -217,13 +228,9 @@ int main() {
             return fail("conservation law violated");
         }
     }
-    // Deposits drained exactly what was gathered.
-    long drained = (long(1) << 20) * 5 - fields[0].remaining - forest[0].remaining
-        - pits[0].remaining - pits[1].remaining - pits[2].remaining;
-    long gatheredTotal = 0;
-    for (int c = 0; c < kCommodityCount; ++c)
-        gatheredTotal += led.gathered[std::size_t(c)];
-    if (drained != gatheredTotal) return fail("deposits leaked");
+    // (The deposit-drain half of the ledger lives with the field agents
+    // now — woodcutter_gather_test holds «layer loss == store gain» over
+    // the live layers; the pure-step drain died with econ_gather_day.)
 
     // ── Famine transitions fire once, not daily ─────────────────────────
     Ledger fled{};

@@ -710,7 +710,6 @@ void write_landmark(Writer& w, const Landmark& lm) {
     write_inventory(w, lm.inventory);
     write_history(w, lm.history);
     write_squad(w, lm.garrison);
-    w.pod(lm.garrisonPurse);      // v68: the maintenance purse
     w.pod(lm.kingdomIdx);
     w.pod(lm.nearestCityId);
     w.pod(lm.starvedYesterday);  // v29: the honest day's readouts
@@ -733,7 +732,6 @@ void read_landmark(Reader& r, Landmark& lm) {
     read_inventory(r, lm.inventory);
     read_history(r, lm.history);
     read_squad(r, lm.garrison);
-    r.pod(lm.garrisonPurse);      // v68
     r.pod(lm.kingdomIdx);
     r.pod(lm.nearestCityId);
     r.pod(lm.starvedYesterday);  // v29

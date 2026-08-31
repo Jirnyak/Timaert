@@ -59,9 +59,24 @@ static void emit_reward(const Reward& r, GameState& gs, Inventory* bag,
             // and a short wallet pays what it holds.
             int delta = 0;
             if (r.amount >= 0) {
-                // v1 pays imperial; the giver's own mint when the engine
-                // learns factions.
-                if ((*bag).add("coin_empire", r.amount)) {
+                // A PROCEDURAL reward is paid off the GIVER'S OWN STORE
+                // (owner 2026-08-31, CANON S20: «деревня наняла — деревня
+                // платит»; minting was canon-audit B3): real coin moves by
+                // transfer_value, and a thin treasury honestly pays what it
+                // holds. Only an AUTHORED reward with NO giver (a story
+                // fixed by design) may still mint — the owner's sanctioned
+                // exception.
+                Landmark* giver = giverSettlementId >= 0
+                    ? landmark_by_id(gs, giverSettlementId)
+                    : nullptr;
+                if (giver) {
+                    delta = transfer_value(giver->inventory, *bag, r.amount);
+                    if (delta < r.amount) {
+                        session_feed_push(gs.sessionFeed,
+                                          "The treasury runs thin — you are "
+                                          "paid what it holds.");
+                    }
+                } else if ((*bag).add("coin_empire", r.amount)) {
                     delta = r.amount;
                 } else {
                     session_feed_push(gs.sessionFeed,

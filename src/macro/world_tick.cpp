@@ -144,37 +144,31 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
                              faction_index_for_kingdom(gs.politik,
                                                        s.kingdomIdx))));
 
-        // ── The garrison's MAINTENANCE (owner 2026-08-30; CANON S10) ──
-        // «В ком гарнизон, тот и платит»: the town pays the ONE upkeep law
-        // (calculate_squad_upkeep — the same product the player's payroll
-        // reads) into the garrison purse; the soldiers buy their bread back
-        // off the town store at nominal, so the coin circulates and the
-        // loaf is consumed. Pay short OR bread short — ONE maintenance law
-        // (?34: no second mechanic), and
-        // either half bleeds an EIGHTH of the roster the same day (owner
-        // 2026-08-31: no patience crutch — a big army melts fast).
+        // ── The garrison's MAINTENANCE (owner 2026-08-30/31; CANON S10) ──
+        // TWO PARALLEL NEEDS, one consequence: an army wants BOARD and PAY —
+        // short of either, an eighth of the roster walks the same day.
+        // BOARD is daily (bread off the town store — the person-day anchor).
+        // PAY is SEASONAL, on the town's own pay-day (ordinal % season — the
+        // world's one slow cycle, «единые циклы — легче балансить»), and the
+        // paid wage leaves the economy INTO THE LOOT POOL: spent soldiers'
+        // coin is lost money by the owner's word, and the pool already IS
+        // the world's lost-value stock — ruins and dungeons will return it.
         if (total_soldiers(s.garrison) > 0) {
-            const int wage = calculate_squad_upkeep(s.garrison);
-            const int paid = wallet_spend_up_to(s.inventory, wage);
-            s.garrisonPurse += paid;
-            // The soldiers EAT off the town store — board is PART of the
-            // maintenance, not a purchase: the wage column (2-3/day) is
-            // smaller than a loaf's nominal (10), so a buy-back model
-            // starved every garrison by construction (measured, 2026-08-31;
-            // re-pricing the upkeep table is the alternative and it belongs
-            // to the owner). The purse accumulates as the soldiers' own
-            // hoard — a future consumer (gear, carousing) drains it.
+            bool shorted = false;
             const int breadIdx =
                 commodity_item_index(commodity_index("bread"));
             const int need = total_soldiers(s.garrison);
             const int can = std::min(need, s.inventory.count_of(breadIdx));
             if (can > 0) s.inventory.remove_of(breadIdx, can);
-            // A shorted day bleeds AT ONCE, proportionally (owner
-            // 2026-08-31: «как только недоплата/недоед — сразу уходят,
-            // процентно от размера»): an eighth of the roster walks per
-            // shorted day — po2, and a thousand-man garrison melts in
-            // days, not years. No patience counter, no crutch.
-            if (paid < wage || can < need) {
+            shorted = shorted || can < need;
+            if (day % kDaysPerSeason == s.id % kDaysPerSeason) {
+                const int wage =
+                    calculate_squad_upkeep(s.garrison) * kDaysPerSeason;
+                const int paid = wallet_spend_up_to(s.inventory, wage);
+                gs.lootPoolValue += paid;
+                shorted = shorted || paid < wage;
+            }
+            if (shorted) {
                 int walkers = std::max(1, total_soldiers(s.garrison) / 8);
                 while (walkers-- > 0 && total_soldiers(s.garrison) > 0) {
                     const int last = s.garrison.size() - 1;

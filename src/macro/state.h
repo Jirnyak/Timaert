@@ -244,7 +244,7 @@ namespace sm {
 // city pairs that used to component-prune connect. Nothing new is
 // serialized — the feature grid is regenerated at boot — but an old slot's
 // squads and knowledge would sit in a subtly different world.
-constexpr int kSaveVersion = 69;   // v69: maintenance counter dead — desertion is immediate (v68: purse)
+constexpr int kSaveVersion = 70;   // v70: purse dead — wages leave into the loot pool; seasonal pay-day
 
 enum class SettlementMood : std::uint8_t {
     Prosperous, Stable, Tense, Unrest, Revolt, Count
@@ -345,13 +345,6 @@ struct Landmark {
     Inventory inventory;
     SettlementHistory history;
     SoldierSquad garrison;       // empty unless the kind keeps one (cities)
-    // THE garrison's MAINTENANCE purse (owner 2026-08-30, CANON S10): the
-    // town pays wages INTO this value-stock (S5) and the soldiers buy their
-    // bread back off the town store — coin circulates, the loaf is
-    // consumed. A shorted day (pay or bread) bleeds an eighth of the
-    // roster into the deserter pool AT ONCE (owner 2026-08-31: no patience
-    // counter).
-    std::int32_t garrisonPurse = 0;
     int kingdomIdx = -1;
     int nearestCityId = -1;      // a village's market city; -1 elsewhere
     // The honest economy's daily readouts (v29): yesterday's hunger and

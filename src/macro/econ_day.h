@@ -44,15 +44,6 @@ namespace sm {
 // this instead of carrying a second numbering of the same things.
 int commodity_item_index(int commodityIdx);
 
-// A source of raw units in the world: a grain field, a clay pit, a stand of
-// timber. Finite — gathering DRAINS it (regrowth is the tree-layer-style
-// years-toward-baseline pass, a later increment; the ledger already treats
-// deposits as part of the conserved total).
-struct Deposit {
-    int commodity = 0;   // must be a Raw-tier index
-    int remaining = 0;
-};
-
 // ── Data tables ──────────────────────────────────────────────────────────
 
 // v1: buildings are ABSTRACT (owner ruling) — a recipe names the KIND of
@@ -169,12 +160,6 @@ struct EconFact {
 using EconFactSink = void (*)(void* user, const EconFact& fact);
 
 // ── The day, in three pure steps ─────────────────────────────────────────
-
-// Workers pull raw units out of deposits (in deposit order) into the store.
-// Returns total gathered. Conservation: Σdeposits shrinks by exactly the
-// amount the stockpile grows.
-int econ_gather_day(Inventory& store, Deposit* deposits, int depositCount,
-                    int workers, EconFactSink sink, void* user);
 
 // Workers run the site's recipes in three passes: today's TABLE first (each
 // consumed output staffed up to the town's daily demand, table order — bread

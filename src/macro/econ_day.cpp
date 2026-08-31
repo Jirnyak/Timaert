@@ -70,28 +70,6 @@ void report(EconFactSink sink, void* user, EconFact::Kind kind,
 
 } // namespace
 
-int econ_gather_day(Inventory& store, Deposit* deposits, int depositCount,
-                    int workers, EconFactSink sink, void* user) {
-    if (workers <= 0 || depositCount <= 0 || !deposits) return 0;
-    int capacity = workers * kGatherPerWorkerDay;
-    int total = 0;
-    for (int d = 0; d < depositCount && capacity > 0; ++d) {
-        Deposit& dep = deposits[d];
-        if (dep.remaining <= 0) continue;
-        if (dep.commodity < 0 || dep.commodity >= kRawCommodityCount) continue;
-        const int take = std::min(dep.remaining, capacity);
-        // Credit BEFORE debit (CANON S5): a store with no room refuses, and
-        // the ore stays in the vein — nothing is gathered into the void and
-        // no Gathered fact lies about it.
-        if (!store.add_of(commodity_item_index(dep.commodity), take)) continue;
-        dep.remaining -= take;
-        capacity -= take;
-        total += take;
-        report(sink, user, EconFact::Kind::Gathered, dep.commodity, take);
-    }
-    return total;
-}
-
 int econ_produce_day(Inventory& store, EconSite site, int workers,
                      int population, EconFactSink sink, void* user,
                      const char* mintCurrencyId) {

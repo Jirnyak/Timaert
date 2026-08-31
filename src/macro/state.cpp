@@ -170,6 +170,17 @@ void populate_landmarks_from_politik(GameState& gs,
         } else {
             s.name = !c.name.empty() ? c.name : "Outpost";
         }
+        // The capital's landmark ID (owner 2026-08-31): this loop is the
+        // one place that knows which landmark politik city `i` became —
+        // stamp the kingdom's suzerain edge here, never resolve it by
+        // coordinates again.
+        if (s.kingdomIdx >= 0
+            && s.kingdomIdx < int(gs.politik.kingdoms.size())
+            && gs.politik.kingdoms[std::size_t(s.kingdomIdx)]
+                       .capitalCityIdx == int(i)) {
+            gs.politik.kingdoms[std::size_t(s.kingdomIdx)]
+                .capitalLandmarkId = s.id;
+        }
         gs.landmarks.push_back(std::move(s));
     }
 

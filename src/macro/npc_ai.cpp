@@ -1064,10 +1064,14 @@ void ai_vendor(entt::entity self, ecs::Position& p,
         // The TITHE rides with the crew (owner 2026-08-30, CANON S24: the
         // feudal tax graph — the village pays its own city, and the coin
         // travels by CARRIER, never by decree). One eighth of the home
-        // purse: the po2 tithe, and the sink that stops the village
-        // hoarding the world's coin (measured, balance_run).
-        rt.taxCarried = transfer_value(homeLm->inventory, bag->inv,
-                                       wallet_value(homeLm->inventory) / 8);
+        // purse, and SEASONAL (owner 2026-08-31: taxes ride the world's one
+        // slow cycle, on the home's own pay-day so the season is smooth).
+        rt.taxCarried =
+            ctx.mw.gs->worldTime.day() % kDaysPerSeason
+                        == homeLm->id % kDaysPerSeason
+                ? transfer_value(homeLm->inventory, bag->inv,
+                                 wallet_value(homeLm->inventory) / 8)
+                : 0;
         if (inventory_weight(bag->inv) <= 0.0f && rt.taxCarried <= 0) {
             // Nothing to sell and nothing owed: wait out the morning.
             rt.stateTimer = std::int16_t(40 + rand_int(ctx, 40));
@@ -1165,15 +1169,14 @@ Landmark* capital_of_(const TickContext& ctx, const Landmark& town) {
     const auto& pk = ctx.mw.gs->politik;
     if (town.kingdomIdx < 0
         || town.kingdomIdx >= int(pk.kingdoms.size())) return nullptr;
-    const int capIdx = pk.kingdoms[std::size_t(town.kingdomIdx)]
-                           .capitalCityIdx;
-    if (capIdx < 0 || capIdx >= int(pk.cities.size())) return nullptr;
-    const auto& cap = pk.cities[std::size_t(capIdx)];
-    for (auto& lm : ctx.mw.gs->landmarks) {
-        if (lm.type == LandmarkType::City && lm.x == cap.x && lm.y == cap.y)
-            return &lm;
-    }
-    return nullptr;
+    // By ID (owner 2026-08-31: «у столицы айди — убрать координаты»),
+    // stamped at populate_landmarks_from_politik — the edge survives any
+    // future S9 transition that moves what stands on the cell.
+    const int capId = pk.kingdoms[std::size_t(town.kingdomIdx)]
+                          .capitalLandmarkId;
+    if (capId < 0) return nullptr;
+    Landmark* cap = landmark_by_id(*ctx.mw.gs, capId);
+    return cap && cap->type == LandmarkType::City ? cap : nullptr;
 }
 
 // The feudal courier (owner 2026-08-30; CANON S24): walk the town's eighth
@@ -1202,6 +1205,12 @@ void ai_taxrun(entt::entity self, ecs::Position& p,
         if (!cap || cap->id == homeLm->id) {
             // The capital pays nobody above it — the courier stands down.
             rt.stateTimer = std::int16_t(200);
+            return;
+        }
+        // Seasonal, on the town's own pay-day (owner 2026-08-31).
+        if (ctx.mw.gs->worldTime.day() % kDaysPerSeason
+            != homeLm->id % kDaysPerSeason) {
+            rt.stateTimer = std::int16_t(64);
             return;
         }
         rt.taxCarried = transfer_value(homeLm->inventory, bag->inv,

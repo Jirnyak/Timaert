@@ -2719,7 +2719,13 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                     lootCtx.danger = zones_->at(cellX, cellY);
                 }
             }
-            const int gold = kind
+            // Only a DERIVED body mints its purse (the same empty-bag gate
+            // the item roll above obeys): a tracked body carries its REAL
+            // wallet in `inv` already, and generating on top of it was the
+            // double mint of canon-audit B2 (owner 2026-08-31: генерик без
+            // инвентаря генерит — это норм; у кого кошелёк есть — роняет
+            // кошелёк).
+            const int gold = (kind && inv.used_slots() == 0)
                 ? generate_loot_gold(int(kind->type), lvl, lootCtx,
                                      &loot_rng_f01)
                 : 0;

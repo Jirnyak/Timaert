@@ -53,6 +53,10 @@ struct Kingdom {
     std::string name;              // materialized from the faction registry
     Temperament temperament;       // ditto — drives the UI label, not relations
     int         capitalCityIdx;
+    // THE capital's landmark id (owner 2026-08-31: «у столицы айди — убрать
+    // координаты»): filled by populate_landmarks_from_politik, the one place
+    // that knows which landmark each politik city became. -1 until then.
+    int         capitalLandmarkId = -1;
     std::vector<int> cityIdxs;
     Language    language;
     std::uint32_t color;           // ditto
