@@ -121,6 +121,8 @@ inline constexpr RoleWeights kRoleWeights[int(NPCType::Count)] = {
     {NPCType::Vendor,       {3, 3, 3, 1, 1, 2, 1, 1, 1}, {2, 0, 1, 1, 1, 2, 0, 3}},
     // Silver-miner — the miner's body, row for row.
     {NPCType::SilverMiner,  {4, 3, 3, 1, 1, 1, 1, 1, 1}, {3, 0, 1, 1, 1, 2, 0, 4}},
+    // Tax-collector — a courier's legs, a clerk's head.
+    {NPCType::TaxCollector, {2, 2, 3, 2, 2, 2, 1, 2, 3}, {1, 1, 3, 3, 0, 2, 0, 2}},
 };
 
 static_assert(rows_in_enum_order(kRoleWeights, &RoleWeights::type),

@@ -45,6 +45,9 @@ enum class NPCType : std::uint8_t {
     // The silver villages' man (CANON S10 чеканка): the same gatherer loop
     // as every profession — a row, never a branch. Appended.
     SilverMiner,
+    // The feudal graph's carrier (CANON S24): walks the town's tithe up to
+    // its capital — «налог течёт по рёбрам носителями». Appended.
+    TaxCollector,
     Count,
 };
 
@@ -572,6 +575,21 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/0,
         /*hireGold=*/30,
     },
+    // Tax-collector — the feudal graph's own courier (owner 2026-08-30)
+    {
+        NPCType::TaxCollector, "tax_collector", "Tax-collector",
+        SpriteId::Peasant, 2,
+        AIBehaviour::TaxRun, kWoodcutterCombat, 1, true, 12,
+        /*weight*/21, /*loot*/nullptr, /*radius*/0.0f,
+        {{"Foka","Yeremey","Lavrenty","Sofron","Nikanor"}}, 5,
+        {{"The crown's eighth, weighed and sealed.",
+          "Rob me and you rob the capital - think on that.",
+          "Every realm stands on carried coin."}}, 3,
+        /*lightRadius=*/0.0f, /*lightIntensity=*/0.0f,
+        /*lightR=*/0.0f, /*lightG=*/0.0f, /*lightB=*/0.0f,
+        /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/0,
+        /*hireGold=*/30,
+    },
 };
 static_assert(rows_in_enum_order(kNpcTypeDefs, &NpcTypeDef::type),
               "kNpcTypeDefs row order must mirror NPCType");
@@ -654,6 +672,7 @@ inline constexpr NpcPurseRow kNpcPurse[std::size_t(NPCType::Count)] = {
     {NPCType::Adventurer,   0, 0},
     {NPCType::Vendor,       1, 10},
     {NPCType::SilverMiner,  1, 10},
+    {NPCType::TaxCollector, 1, 10},
 };
 static_assert(rows_in_enum_order(kNpcPurse, &NpcPurseRow::type),
               "kNpcPurse row order must mirror NPCType");
@@ -704,6 +723,7 @@ inline constexpr NpcMapColorRow kNpcMapColor[std::size_t(NPCType::Count)] = {
     {NPCType::Adventurer,   0xC8C8C8u},
     {NPCType::Vendor,       0xC8C8C8u},
     {NPCType::SilverMiner,  0xC8C8C8u},
+    {NPCType::TaxCollector, 0xC8C8C8u},
 };
 static_assert(rows_in_enum_order(kNpcMapColor, &NpcMapColorRow::type),
               "kNpcMapColor row order must mirror NPCType");

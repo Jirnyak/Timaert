@@ -220,17 +220,14 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
         // to it at dusk. The genesis town wakes on day one and raises its
         // own hands.
         if (rng.next_f01() > 0.4f) {
-            auto p = find_valid_spawn(s.x, s.y, 4, rng, mw, mh, terrain);
-            // A merchant is a RESIDENT, so he wears his town's colours like
-            // every other citizen — there is no trade guild standing above the
-            // realms. He used to be hardcoded to "timaert", which made the
-            // shopkeeper of a Magica city a foreign republican.
-            make_npc(w, NPCType::Merchant, fIdx, p.x, p.y, s.id, rng, spawnIndex);
+            // Residents are born ON the town cell (owner 2026-08-31).
+            make_npc(w, NPCType::Merchant, fIdx, s.x, s.y, s.id, rng,
+                     spawnIndex);
         }
         int guardCount = 1 + int(rng.next_u32() % 2u);
         for (int i = 0; i < guardCount; ++i) {
-            auto p = find_valid_spawn(s.x, s.y, 6, rng, mw, mh, terrain);
-            make_npc(w, NPCType::Guard, fIdx, p.x, p.y, s.id, rng, spawnIndex);
+            make_npc(w, NPCType::Guard, fIdx, s.x, s.y, s.id, rng,
+                     spawnIndex);
         }
     }
 
@@ -242,12 +239,12 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
     if (caravanCount < 1) caravanCount = 1;
     for (int i = 0; i < caravanCount; ++i) {
         auto& home = *cities[rng.next_u32() % nSet];
-        auto p = find_valid_spawn(home.x, home.y, 8, rng, mw, mh, terrain);
         // A caravan flies the flag of the town it sets out FROM (the same home
         // id it already carries), not of a guild — same rule as its merchant.
+        // Born ON the town cell (owner 2026-08-31).
         make_npc(w, NPCType::Caravan,
                  settlement_faction_index(gs, home.kingdomIdx),
-                 p.x, p.y, home.id, rng, spawnIndex);
+                 home.x, home.y, home.id, rng, spawnIndex);
     }
 
     // Bandits: 0.3 * settlements + 2
@@ -335,9 +332,16 @@ entt::entity spawn_squad(GameState& gs, ecs::World& w,
     // Deterministic from the world seed and the named cell, like spawn_npc_at.
     Rng rng(hash3(std::uint32_t(spec.x), std::uint32_t(spec.y),
                   gs.worldSeed ^ 0x50AD5EEDu));
-    const XY p = find_valid_spawn(wrapi(spec.x, gs.mapW),
-                                  wrapi(spec.y, gs.mapH),
-                                  4, rng, gs.mapW, gs.mapH, terrain);
+    // Born ON the named cell (owner 2026-08-31: «пусть все рождаются именно
+    // на клетке ландмарка») — a landmark is dry by construction, so a crew
+    // raised by one starts exactly where its home stands. The scatter
+    // fallback survives only for a WET spec cell (a blood-field band whose
+    // field peak lies on a river).
+    const XY named{wrapi(spec.x, gs.mapW), wrapi(spec.y, gs.mapH)};
+    const XY p = is_land(terrain, gs.mapW, gs.mapH, named.x, named.y)
+        ? named
+        : find_valid_spawn(named.x, named.y, 4, rng, gs.mapW, gs.mapH,
+                           terrain);
 
     // Ordinals from the ONE persistent counter (v23) — the max-over-living
     // scan and its 19.24 reuse hole are gone.

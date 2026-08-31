@@ -44,6 +44,10 @@ enum class AIBehaviour : std::uint8_t {
     // then the daily labour rotation dissolves it into the population like
     // every working crew.
     VendorTrade,
+    // The feudal courier (CANON S24): carry the town's tithe up the graph to
+    // its capital and walk home — «каждый узел знает только своих прямых
+    // подчинённых и сюзерена», and this walker IS that edge.
+    TaxRun,
     Count,
 };
 

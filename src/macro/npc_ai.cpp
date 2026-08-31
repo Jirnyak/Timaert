@@ -1158,6 +1158,117 @@ void ai_vendor(entt::entity self, ecs::Position& p,
     }
 }
 
+// The capital LANDMARK of a town's kingdom — the one suzerain edge a city
+// knows (CANON S24: «каждый узел знает только прямых подчинённых и
+// сюзерена»). Resolved by the politik's capitalCityIdx coordinates.
+Landmark* capital_of_(const TickContext& ctx, const Landmark& town) {
+    const auto& pk = ctx.mw.gs->politik;
+    if (town.kingdomIdx < 0
+        || town.kingdomIdx >= int(pk.kingdoms.size())) return nullptr;
+    const int capIdx = pk.kingdoms[std::size_t(town.kingdomIdx)]
+                           .capitalCityIdx;
+    if (capIdx < 0 || capIdx >= int(pk.cities.size())) return nullptr;
+    const auto& cap = pk.cities[std::size_t(capIdx)];
+    for (auto& lm : ctx.mw.gs->landmarks) {
+        if (lm.type == LandmarkType::City && lm.x == cap.x && lm.y == cap.y)
+            return &lm;
+    }
+    return nullptr;
+}
+
+// The feudal courier (owner 2026-08-30; CANON S24): walk the town's eighth
+// up the graph to its capital, pay, walk home, dissolve with the rotation.
+// The same carrier law as the village tithe riding with the vendor — an
+// edge of the ONE graph, walked by a body that can be robbed.
+void ai_taxrun(entt::entity self, ecs::Position& p,
+               ecs::MacroNpcRuntime& rt, const TickContext& ctx) {
+    XY home;
+    if (!home_pos(rt, ctx, home) || !ctx.mw.world) {
+        ai_nomad(p, rt, ctx);
+        return;
+    }
+    auto& reg = ctx.mw.world->reg;
+    auto* bag = reg.try_get<ecs::NpcInventory>(self);
+    Landmark* homeLm = landmark_by_id(*ctx.mw.gs, rt.homeSettlementId);
+    if (!bag || !homeLm || homeLm->type != LandmarkType::City) {
+        ai_home_wanderer(p, rt, ctx);
+        return;
+    }
+
+    if (rt.state == std::uint8_t(NS::Idle)) {
+        --rt.stateTimer;
+        if (rt.stateTimer > 0) return;
+        Landmark* cap = capital_of_(ctx, *homeLm);
+        if (!cap || cap->id == homeLm->id) {
+            // The capital pays nobody above it — the courier stands down.
+            rt.stateTimer = std::int16_t(200);
+            return;
+        }
+        rt.taxCarried = transfer_value(homeLm->inventory, bag->inv,
+                                       wallet_value(homeLm->inventory) / 8);
+        if (rt.taxCarried <= 0) {
+            rt.stateTimer = std::int16_t(200);   // nothing owed today
+            return;
+        }
+        rt.targetSettlementId = cap->id;
+        rt.targetX = float(cap->x);
+        rt.targetY = float(cap->y);
+        rt.state = std::uint8_t(NS::Traveling);
+        return;
+    }
+    if (rt.state == std::uint8_t(NS::Traveling)) {
+        if (at_target(p, rt, ctx)) {
+            rt.state = std::uint8_t(NS::Working);
+            rt.stateTimer = std::int16_t(4 + rand_int(ctx, 4));
+            return;
+        }
+        const float ox = p.x, oy = p.y;
+        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        if (march_is_stuck_(p, ox, oy, rt)) {
+            rt.targetX = home.x;
+            rt.targetY = home.y;
+            rt.state = std::uint8_t(NS::Returning);
+        }
+        return;
+    }
+    if (rt.state == std::uint8_t(NS::Working)) {
+        --rt.stateTimer;
+        if (rt.stateTimer > 0) return;
+        if (Landmark* cap = landmark_by_id(*ctx.mw.gs,
+                                           rt.targetSettlementId);
+            cap && cap->type == LandmarkType::City && rt.taxCarried > 0) {
+            const int paid = transfer_value(
+                bag->inv, cap->inventory,
+                std::min(rt.taxCarried, wallet_value(bag->inv)));
+            if (paid > 0) {
+                record_landmark_fact(*ctx.mw.gs, FactKind::Taxed,
+                                     rt.homeSettlementId,
+                                     int(rt.targetX), int(rt.targetY),
+                                     paid, rt.targetSettlementId);
+            }
+            rt.taxCarried = 0;
+        }
+        rt.targetX = home.x;
+        rt.targetY = home.y;
+        rt.state = std::uint8_t(NS::Returning);
+        return;
+    }
+    if (rt.state == std::uint8_t(NS::Wandering)
+        || rt.state == std::uint8_t(NS::Returning)) {
+        if (at_target(p, rt, ctx)) {
+            if (rt.state == std::uint8_t(NS::Returning)) {
+                // Anything undelivered rides back into the town store.
+                transfer_value(bag->inv, homeLm->inventory,
+                               wallet_value(bag->inv));
+            }
+            rt.state = std::uint8_t(NS::Idle);
+            rt.stateTimer = std::int16_t(10 + rand_int(ctx, 15));
+            return;
+        }
+        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+    }
+}
+
 void ai_trader(ecs::Position& p, ecs::MacroNpcRuntime& rt,
                const TickContext& ctx) {
     XY home;
@@ -1666,6 +1777,7 @@ void dispatch(AIBehaviour b, entt::entity e, ecs::Position& p,
         case AIBehaviour::Gatherer:     ai_gatherer(e, p, kind, rt, ctx); break;
         case AIBehaviour::CaravanTrade: ai_caravan   (e, p, rt, ctx); break;
         case AIBehaviour::VendorTrade:  ai_vendor    (e, p, rt, ctx); break;
+        case AIBehaviour::TaxRun:       ai_taxrun    (e, p, rt, ctx); break;
         case AIBehaviour::Trader:       ai_trader       (p, rt, ctx); break;
         case AIBehaviour::Nomad:        ai_nomad        (p, rt, ctx); break;
         case AIBehaviour::Aggressive:   ai_aggressive   (p, rt, ctx); break;
@@ -1899,7 +2011,8 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
     // The vendor crew rotates with the working crews — one law of labour.
     const auto is_crew = [&](std::uint16_t type) {
         return def_index(type) >= 0
-               || type == std::uint16_t(NPCType::Vendor);
+               || type == std::uint16_t(NPCType::Vendor)
+               || type == std::uint16_t(NPCType::TaxCollector);
     };
 
     // 1) DISSOLVE yesterday's crews that made it home: souls and leftovers
@@ -1948,6 +2061,8 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         int gi = def_index(kind.type);
         if (gi < 0 && kind.type == std::uint16_t(NPCType::Vendor))
             gi = 7;   // the vendor's own bit, above the profession bits
+        if (gi < 0 && kind.type == std::uint16_t(NPCType::TaxCollector))
+            gi = 6;   // the courier's bit
         if (gi < 0) continue;
         const int row = row_of(rt.homeSettlementId);
         if (row >= 0) outMask[std::size_t(row)] |= std::uint8_t(1u << gi);
@@ -1997,6 +2112,21 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             if (spawn_squad(gs, *mw.world, *mw.terrain, spec)
                 != entt::null) {
                 s.population -= 1 + spec.members.size();
+                ++raised;
+            }
+        }
+        // The tax run (CANON S24): a CITY with a suzerain capital sends its
+        // eighth up the feudal graph — one courier, one soul.
+        if (s.type == LandmarkType::City && !(outMask[row] & 0x40u)
+            && s.population > 0) {
+            SquadSpec spec{};
+            spec.leaderType = NPCType::TaxCollector;
+            spec.x = s.x;
+            spec.y = s.y;
+            spec.homeSettlementId = s.id;
+            if (spawn_squad(gs, *mw.world, *mw.terrain, spec)
+                != entt::null) {
+                s.population -= 1;
                 ++raised;
             }
         }
