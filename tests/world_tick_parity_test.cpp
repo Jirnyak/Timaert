@@ -162,6 +162,11 @@ void test_garrison_never_exceeds_its_cap() {
     s.type = sm::LandmarkType::City;
     s.id = 1;
     s.population = 5000;                 // deep enough to want the full packet
+    // The maintenance law bleeds a SHORTED garrison at once (2026-08-31),
+    // and this test is about the recruiting CAP — so the fixture keeps its
+    // men fed and paid: a full purse of coin and bread on the shelf.
+    s.inventory.add("coin_empire", 1 << 16);
+    s.inventory.add("bread", 1 << 13);  // > pop + garrison: everyone eats, both copies alike
     // Fill to one below the ceiling: the state the old check waved through.
     for (int i = 0; i < sm::kMaxGarrisonPerSettlement - 1; ++i) {
         s.garrison.push(sm::make_soldier(

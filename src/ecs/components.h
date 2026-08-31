@@ -275,10 +275,6 @@ struct MacroNpcRuntime {
     // keeps the leg from ping-ponging between two neighbours. Runtime-only.
     std::uint8_t  stationsLeft = 0;
     std::int32_t  prevStationId = -1;
-    // The squad's MAINTENANCE counter, hunger half (owner 2026-08-30, ?34:
-    // one counter for pay and bread): days the crew went short of its
-    // bread. Runtime-only.
-    std::uint8_t  hungerDays = 0;
     // The tithe riding in the bag toward the suzerain (the feudal tax graph,
     // CANON S24): set at departure, paid out at the market. Runtime-only.
     std::int32_t  taxCarried = 0;

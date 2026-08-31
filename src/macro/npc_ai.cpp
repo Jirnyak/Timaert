@@ -2004,20 +2004,17 @@ int feed_squads_daily(MacroWorld& mw) {
         const int have = bag.inv.count("bread");
         const int ate = std::min(need, have);
         if (ate > 0) bag.inv.remove("bread", ate);
-        if (ate >= need) {
-            rt.hungerDays = 0;
-            continue;
-        }
-        if (rt.hungerDays < 255) ++rt.hungerDays;
-        // Past a week of short rations (po2) one soul a day walks — the
-        // same gradual desertion the unpaid garrison bleeds by (?34).
-        if (rt.hungerDays > 8 && roster.squad.size() > 0) {
+        if (ate >= need) continue;
+        // A short day bleeds AT ONCE, proportionally (owner 2026-08-31):
+        // an eighth of the roster walks — the same immediate law the
+        // shorted garrison bleeds by (?34, one mechanic).
+        int walkers = std::max(1, roster.squad.size() / 8);
+        while (walkers-- > 0 && roster.squad.size() > 0) {
             const int last = roster.squad.size() - 1;
             const SoldierRecord walker = roster.squad[last];
-            if (gs.deserterPool.push(walker)) {
-                roster.squad.remove_at(last);
-                ++deserted;
-            }
+            if (!gs.deserterPool.push(walker)) break;
+            roster.squad.remove_at(last);
+            ++deserted;
         }
     }
     return deserted;

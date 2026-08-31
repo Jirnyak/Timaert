@@ -181,6 +181,23 @@ capital; each node knows only its direct vassals and its suzerain — CANON
 S24) as the villages' sink, MINTING (silver → the city's recipe) as the
 cities' source, wages as the spread.
 
+### Increment 4 complete (2026-08-31, commits 7a2a4f1..e5db41e+)
+
+The FEUDAL MONEY CIRCUIT is built and measured end to end: village tithe
+(an eighth, riding WITH the vendor) → city; city eighth (a TaxCollector
+courier, robbable) → its capital; silver veins → the mint recipe (the price
+table IS the mint, seigniorage emergent); garrison wages by the ONE upkeep
+law into a value-purse, soldiers eat off the town store; squads eat bread
+out of their own bags on the march; a shorted day (pay or bread) bleeds an
+EIGHTH of the roster into the deserter pool AT ONCE (owner: no patience
+counters). Deaths with no victor fold their worth into the world LOOT POOL
+(one value; ruins/dungeons will roll loot with a budget from it). Walking
+NPCs never enter ground they cannot camp on (water sans bridge — the
+Session-21 ford is dead); everyone is born ON their landmark's cell.
+Measured across seeds: money supply stable ~1.0–1.1M for two game years,
+trade alive the whole horizon (150–400 deals/day), the victorless-death
+pool down from 26M to ~1.5k.
+
 **Honesty debts** (audit 2026-08-23, canon-audit.md §B — places where the
 "honest economy" headline is not yet true):
 

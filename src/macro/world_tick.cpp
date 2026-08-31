@@ -149,41 +149,37 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
         // (calculate_squad_upkeep — the same product the player's payroll
         // reads) into the garrison purse; the soldiers buy their bread back
         // off the town store at nominal, so the coin circulates and the
-        // loaf is consumed. Pay short OR bread short — either half raises
-        // the ONE maintenance counter (?34: no second mechanic), and past
-        // its patience (8 days, po2 — a week of unpaid hunger) one soul a
-        // day walks into the deserter pool.
+        // loaf is consumed. Pay short OR bread short — ONE maintenance law
+        // (?34: no second mechanic), and
+        // either half bleeds an EIGHTH of the roster the same day (owner
+        // 2026-08-31: no patience crutch — a big army melts fast).
         if (total_soldiers(s.garrison) > 0) {
             const int wage = calculate_squad_upkeep(s.garrison);
             const int paid = wallet_spend_up_to(s.inventory, wage);
             s.garrisonPurse += paid;
+            // The soldiers EAT off the town store — board is PART of the
+            // maintenance, not a purchase: the wage column (2-3/day) is
+            // smaller than a loaf's nominal (10), so a buy-back model
+            // starved every garrison by construction (measured, 2026-08-31;
+            // re-pricing the upkeep table is the alternative and it belongs
+            // to the owner). The purse accumulates as the soldiers' own
+            // hoard — a future consumer (gear, carousing) drains it.
             const int breadIdx =
                 commodity_item_index(commodity_index("bread"));
-            const ItemDef* breadDef = item_def("bread");
-            const int loaf = breadDef ? breadDef->value : 10;
             const int need = total_soldiers(s.garrison);
-            const int can = std::min({need, s.garrisonPurse / loaf,
-                                      s.inventory.count_of(breadIdx)});
-            if (can > 0) {
-                s.inventory.remove_of(breadIdx, can);
-                s.garrisonPurse -= can * loaf;
-                // The purse pays in the town's own coin — the same nominal
-                // it was paid in (the purse is a value stock, S5).
-                s.inventory.add(
-                    currency_for_faction_id(faction_id_for_index(
-                        faction_index_for_kingdom(gs.politik,
-                                                  s.kingdomIdx))),
-                    can * loaf);
-            }
+            const int can = std::min(need, s.inventory.count_of(breadIdx));
+            if (can > 0) s.inventory.remove_of(breadIdx, can);
+            // A shorted day bleeds AT ONCE, proportionally (owner
+            // 2026-08-31: «как только недоплата/недоед — сразу уходят,
+            // процентно от размера»): an eighth of the roster walks per
+            // shorted day — po2, and a thousand-man garrison melts in
+            // days, not years. No patience counter, no crutch.
             if (paid < wage || can < need) {
-                if (s.upkeepUnpaidDays < 255) ++s.upkeepUnpaidDays;
-            } else {
-                s.upkeepUnpaidDays = 0;
-            }
-            if (s.upkeepUnpaidDays > 8 && total_soldiers(s.garrison) > 0) {
-                const int last = s.garrison.size() - 1;
-                const SoldierRecord walker = s.garrison[last];
-                if (gs.deserterPool.push(walker)) {
+                int walkers = std::max(1, total_soldiers(s.garrison) / 8);
+                while (walkers-- > 0 && total_soldiers(s.garrison) > 0) {
+                    const int last = s.garrison.size() - 1;
+                    const SoldierRecord walker = s.garrison[last];
+                    if (!gs.deserterPool.push(walker)) break;
                     s.garrison.remove_at(last);
                 }
             }
