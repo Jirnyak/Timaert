@@ -260,6 +260,24 @@ Pure simulation. No GPU state, no events, no UI. The C++ modules are the
 index; the last column notes the retired TS-prototype module each one grew
 from, kept as history only.
 
+**THE one world baker + the balance harness (2026-08-30, the balance
+track).** [macro/world_gen.{h,cpp}](src/macro/world_gen.h) is the whole
+genesis sequence (CANON S8 causality: terrain → resources → politik →
+landmarks → roads → zones → spires → fields → NPCs) extracted bodily from
+the app's `boot_world` — the game boot and the headless balance harness
+raise the SAME world through the SAME function, so a second generation
+path cannot drift (CANON S26). The harness,
+[tests/balance_run.cpp](tests/balance_run.cpp) (`balance_run` target, no
+SDL/Vulkan), runs the live loop's own cadence — 256 AI sweeps of
+`kAiTicks` + the daily tick per game day; the live loop's 8192 frame
+steps are a rendering artifact it skips — at ~20 s per 2 game years per
+seed, writes per-day TSV (world totals + per-commodity flows + a
+per-landmark cut), listens to `EconFactSink` through the `MacroWorld`
+envelope (facts stamped with `landmarkId` by the world-tick relay), and
+asserts world laws. It is the instrument CANON S10 «дубль-прогон»
+mandates, and everything the economy now is was measured into place
+with it.
+
 | C++ module                 | Responsibility                                                        | TS prototype (historical) |
 |----------------------------|------------------------------------------------------------------------|---------------------------|
 | [macro/state.{h,cpp}](src/macro/state.h)                              | `GameState`, `PlayerState`, `WorldTime`, `Landmark` (ONE record + `type` column since v62 — `Settlement`/`Village`/`Spire` are dead, [landmarks.md](landmarks.md)), save version | `game/state.ts` |

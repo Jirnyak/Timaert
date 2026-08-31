@@ -138,3 +138,30 @@ Planned on the same rows, no new dialects (owner's design intent,
   iron, thick forest, rich soil), never a second store of the world. Rank
   can widen the radius, deepen the detail (presence → kind → remaining), or
   reveal what discovery has not yet struck.
+
+## 2026-08-30/31 — the balance track's additions
+
+* **Silver, the mint metal** — one more set of rows through every door this
+  file describes: a `kCommodities` Raw row, `DepositKind::Silver` (veins
+  1/1024 of mountain cells × 512 units — 4× rarer than iron, the world's
+  whole money supply IS its silver geology × the catalog value 32),
+  `ResourceFieldId::Silver` with the same born-where-scarce Geology growth
+  iron uses, and `NPCType::SilverMiner` as one more `kGathererDefs` row —
+  the daily labour rotation raises silver crews wherever a vein anchors a
+  home, with zero new code.
+* **Wheat turns over its own potential in ONE season**
+  (`kWheatSeasonsToRegrow`, macro_stock.h — public so crop_stock_test
+  derives from the same number). The old +1-per-season law fed the world
+  ~7 grain a day; the seasonal-pulse harvest stays deferred with field
+  seasonality, this is its smooth stand-in.
+* **Crews are transient and work costs SP** (`rotate_worker_squads`,
+  npc_ai.h; kWorkCyclesPerBar/kGatherPerCycle, econ_day.h): a settlement
+  raises pop/kHeadsPerCityWorker souls across its live professions at dawn
+  and dissolves the returners next dawn; a work cycle burns a quarter of
+  the squad's bar at a fixed squad price, the roster multiplies the yield
+  (owner: «SP тратится столько же, добывают кратно больше»), and one
+  gatherer covers TENS of souls (kGatherPerWorkerDay = 32, the owner's
+  productivity anchor — CANON S10).
+* **`econ_gather_day` is DELETED** (owner 2026-08-31: «уже собирают
+  крестьяне») — the field agents are the only gather; econ_v1_test models
+  their person-day norm directly.

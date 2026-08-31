@@ -181,16 +181,19 @@ capital; each node knows only its direct vassals and its suzerain — CANON
 S24) as the villages' sink, MINTING (silver → the city's recipe) as the
 cities' source, wages as the spread.
 
-### Increment 4 complete (2026-08-31, commits 7a2a4f1..e5db41e+)
+### Increment 4 complete (2026-08-31, commits 7a2a4f1..d9ba96d)
 
 The FEUDAL MONEY CIRCUIT is built and measured end to end: village tithe
 (an eighth, riding WITH the vendor) → city; city eighth (a TaxCollector
 courier, robbable) → its capital; silver veins → the mint recipe (the price
 table IS the mint, seigniorage emergent); garrison wages by the ONE upkeep
 law into a value-purse, soldiers eat off the town store; squads eat bread
-out of their own bags on the march; a shorted day (pay or bread) bleeds an
-EIGHTH of the roster into the deserter pool AT ONCE (owner: no patience
-counters). Deaths with no victor fold their worth into the world LOOT POOL
+out of their own bags on the march; a shorted day (pay or bread — TWO parallel
+needs) bleeds an EIGHTH of the roster into the deserter pool AT ONCE
+(owner: no patience counters). Wages and tithes are SEASONAL — each
+landmark pays on its own day of the 32-day season (ordinal % season), the
+world's one slow cycle; paid wages LEAVE the economy into the loot pool
+(spent soldiers' coin is lost money — ruins and dungeons will return it). Deaths with no victor fold their worth into the world LOOT POOL
 (one value; ruins/dungeons will roll loot with a budget from it). Walking
 NPCs never enter ground they cannot camp on (water sans bridge — the
 Session-21 ford is dead); everyone is born ON their landmark's cell.
