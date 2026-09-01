@@ -182,3 +182,20 @@ Planned on the same rows, no new dialects (owner's design intent,
   `labourShift` — village ½ of souls, city couriers only), and every
   raised squad is PROVISIONED with bread for its roster by its errand's
   own roundtrip (npc_ai.h provision_squad).
+* **Geology is a FIELD, like the climate** (v72, owner 2026-09-01 —
+  «диффузионная полевая генерация; горы дают ВЕСА, не гейт»). The vein
+  cells this file's carrier rows read are BORN from a concentration
+  field: the one torus-tiling fbm stack (core/field_noise.h — moved
+  verbatim out of the map generator, one noise for every field of the
+  world), shaped per kind (blob lenses, or the RIDGE profile the mountain
+  chains themselves are drawn with — metal runs along orogeny), weighted
+  by terrain affinity (height⁴ for metals and stone, river moisture for
+  clay), thresholded at the crest, richness ∝ the excess. Nests replace
+  the old lone hash-rolled veins — and the nest IS what a mine's
+  consolidation folds. Rows live in deposit_layer.cpp `kDepositGen`;
+  world totals are calibrated to the old law's sums (the `[deposits]`
+  stderr fingerprint is the instrument; silver × catalog value 32 = the
+  world's coin ceiling). Ore worksites are gated by the REACH WAVE (a
+  vein without a marchable route is not work), and a crew whose route
+  needs one bridged water cell BUILDS the bridge from the home store's
+  more abundant material — stone or plank, one worker-day of it per span.

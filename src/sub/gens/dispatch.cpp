@@ -64,8 +64,11 @@ SubworldMode resolve_mode(const CellContext& ctx) {
     if (feature == FT_Road)     return SubworldMode::Road;
     if (feature == FT_DirtRoad) return SubworldMode::Road;
     // A bridge is the road continued over a water cell: Road mode carves the
-    // line, and gen_road's Biome::Water branch raises the stone span.
-    if (feature == FT_Bridge)   return SubworldMode::Road;
+    // line, and gen_road's Biome::Water branch raises the span. The crews'
+    // wooden bridge (v72) rides the same mode — the deck material is a
+    // rendering nuance, the crossing is the crossing.
+    if (feature == FT_Bridge)     return SubworldMode::Road;
+    if (feature == FT_WoodBridge) return SubworldMode::Road;
     if (feature == FT_Field)    return SubworldMode::Field;
     if (ctx.biome == Biome::Mountain) return SubworldMode::Mountain;
     if (ctx.biome == Biome::Water)    return SubworldMode::Water;
@@ -1841,8 +1844,10 @@ static void edge_anchor_target(const CellContext& ctx, int dx, int dy,
 
 static bool is_road_feature(std::uint8_t f) {
     // A bridge is a road for connectivity: the banks' roads aim their edge
-    // anchors at it, and its own carve line runs bank to bank.
-    return f == FT_Road || f == FT_DirtRoad || f == FT_Bridge;
+    // anchors at it, and its own carve line runs bank to bank. Wooden or
+    // stone — the crossing connects either way (v72).
+    return f == FT_Road || f == FT_DirtRoad || f == FT_Bridge
+        || f == FT_WoodBridge;
 }
 
 // An honest bridge — the gate-lintel mechanism writ long (owner, 2026-08-29:

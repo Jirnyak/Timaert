@@ -255,8 +255,21 @@ void test_empty_and_malformed_inputs_are_safe()
                      && sm::FeatureLayer::decode(std::uint8_t(sm::FT_Bridge))
                             == sm::FT_Bridge,
                  "FT_Bridge must be a first-class feature byte");
-    CHECK(!sm::FeatureLayer::is_valid_byte(5u)
-                     && sm::FeatureLayer::decode(5u) == sm::FT_None,
+    // Bytes 5..9 are the mines and the wooden bridge (v71/v72) — validity
+    // comes from the ENUM now, not a hand list: the frontier is FT_Count.
+    CHECK(sm::FeatureLayer::is_valid_byte(std::uint8_t(sm::FT_SilverMine))
+                     && sm::FeatureLayer::decode(
+                            std::uint8_t(sm::FT_SilverMine))
+                            == sm::FT_SilverMine,
+                 "a mine is a first-class feature byte");
+    CHECK(sm::FeatureLayer::is_valid_byte(std::uint8_t(sm::FT_WoodBridge))
+                     && sm::FeatureLayer::decode(
+                            std::uint8_t(sm::FT_WoodBridge))
+                            == sm::FT_WoodBridge,
+                 "the wooden bridge is a first-class feature byte");
+    CHECK(!sm::FeatureLayer::is_valid_byte(std::uint8_t(sm::FT_Count))
+                     && sm::FeatureLayer::decode(std::uint8_t(sm::FT_Count))
+                            == sm::FT_None,
                  "first unassigned feature byte must fail closed to None");
     CHECK(fl.at(0, 0) == sm::FT_Road,
                  "short road masks must apply prefix bytes");

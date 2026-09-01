@@ -28,6 +28,12 @@ enum FeatureType : std::uint8_t {
     // фертильность в зерно». The deposit stock itself stays in the deposit
     // layer AT the mine's cell, so every worksite law reads on unchanged.
     FT_ClayPit = 5, FT_IronMine = 6, FT_Quarry = 7, FT_SilverMine = 8,
+    // The WOODEN bridge (owner 2026-08-31): crews span one-cell water gaps
+    // on the way to their veins with whatever the home store holds more of
+    // — stone lays the road planner's own FT_Bridge, timber lays this. Same
+    // water-only law as FT_Bridge; the bed column below prices the
+    // difference (a plank deck marches like a dirt lane, not a paved road).
+    FT_WoodBridge = 9,
     FT_Count,
 };
 
@@ -52,6 +58,7 @@ static_assert(FT_Bridge == 4, "FeatureType byte layout");
 static_assert(FT_ClayPit == 5 && FT_IronMine == 6 && FT_Quarry == 7
                   && FT_SilverMine == 8,
               "FeatureType byte layout (mines, v71)");
+static_assert(FT_WoodBridge == 9, "FeatureType byte layout (v72)");
 
 // ── THE feature registry (CANON S16, 2026-08-29) ─────────────────────────
 // Everything the world says ABOUT a feature is a column of ONE row. These
@@ -98,6 +105,10 @@ inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
     {FT_IronMine,   0.0f, 1.00f, 0.0f },
     {FT_Quarry,     0.0f, 1.00f, 0.0f },
     {FT_SilverMine, 0.0f, 1.00f, 0.0f },
+    // Planks march like the dirt lane (bed 1.5 — the same half-again the
+    // paved bed dirt pays), carry the bridge's open sight line, and seed
+    // the dirt lane's own modest civilization pull.
+    {FT_WoodBridge, 1.5f, 0.65f, 0.22f},
 };
 static_assert(rows_in_enum_order(kFeatureDefs, &FeatureDef::type),
               "kFeatureDefs row order must mirror FeatureType — a new "
@@ -113,21 +124,16 @@ struct FeatureLayer {
     int width = 0, height = 0;
     std::vector<std::uint8_t> data;
 
+    // Validity comes from the ENUM, never a hand list (2026-08-31): the old
+    // `<= FT_Bridge` whitelist would have sanitized the mine and wood-bridge
+    // bytes to FT_None the day they were born — exactly the drift the
+    // feature registry exists to kill.
     static bool is_valid_byte(std::uint8_t value) {
-        return value <= FT_Bridge;
+        return value < FT_Count;
     }
 
     static FeatureType decode(std::uint8_t value) {
-        switch (value) {
-            case FT_None:
-            case FT_Road:
-            case FT_DirtRoad:
-            case FT_Field:
-            case FT_Bridge:
-                return FeatureType(value);
-            default:
-                return FT_None;
-        }
+        return value < FT_Count ? FeatureType(value) : FT_None;
     }
 
     static bool cell_count_for(int w, int h, std::size_t &out) {

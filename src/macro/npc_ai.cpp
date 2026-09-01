@@ -250,8 +250,18 @@ void settle_march_rhythm(entt::entity e, const ecs::Position& p,
         rt.stateTimer = 0;
     }
 
+    // A body is STOPPED when it is where it meant to be, when it DECIDED to
+    // stop — or when its legs were REFUSED (owner 2026-08-31: «если встал —
+    // безусловно, агностично, сразу реген»): a full step's budget standing
+    // unspent after the think means the march found no step to take (no
+    // standable cell closer, or a climb the bar cannot pay) — that body is
+    // standing, not banking a part-cell, and the one regen law owes it rest.
+    // The banking marcher never trips this: his budget is spent below one.
+    // Measured 2026-08-31: a silver crew froze at 48/110 SP for days at a
+    // river bank — walking nowhere, resting never.
     const bool stopped = rt.state == std::uint8_t(NPCState::Resting)
-                         || at_target(p, rt, ctx);
+                         || at_target(p, rt, ctx)
+                         || (!moved && rt.moveBudget >= 1.0f);
 
     // ...and `!moved` on top, because a think that arrived still MARCHED: you
     // do not walk two cells and take a slice of rest in the same breath. Rest
@@ -556,30 +566,133 @@ const GathererDef* gatherer_def(NPCType t) {
     return nullptr;
 }
 
-// The home's nearest live cell of the row's deposit kind, torus-metric,
-// capped at kGathererReach. The deposit maps are sparse, so this is a walk
-// over a handful of cells, not the map.
+// ── The REACH WAVE (owner 2026-08-31): «руки достают = руки ДОЙДУТ» ──────
+// A flood over STANDABLE cells in the crews' working box around home: what
+// a march can actually arrive at. Water without a bridge cuts the wave —
+// the measured killer: a silver crew froze for days two cells from a live
+// vein, a mountain river between them, the greedy march blind to detours.
+// A second label marks cells reachable across exactly ONE water cell — the
+// gap a crew can SPAN with a day of work and a back of material (the
+// bridging law below, CANON S10 «фичи создаются сквадами»).
+struct ReachWave {
+    static constexpr int kSide = 2 * kGathererReach + 1;
+    // 0 = unreached; 1 = reachable dry; 2 = reachable across one water cell
+    std::uint8_t label[kSide * kSide];
+    // For label-2 cells: the water cell the route crosses (box index).
+    std::int16_t gap[kSide * kSide];
+};
+
+int wave_index(int dx, int dy) {   // box offset → flat index, -1 outside
+    if (std::abs(dx) > kGathererReach || std::abs(dy) > kGathererReach)
+        return -1;
+    return (dy + kGathererReach) * ReachWave::kSide + (dx + kGathererReach);
+}
+
+void build_reach_wave(const TickContext& ctx, const XY& home, ReachWave& w) {
+    std::fill(std::begin(w.label), std::end(w.label), std::uint8_t(0));
+    std::fill(std::begin(w.gap), std::end(w.gap), std::int16_t(-1));
+    const int hx = int(home.x), hy = int(home.y);
+    struct Cell { std::int8_t dx, dy; };
+    Cell frontier[ReachWave::kSide * ReachWave::kSide];
+    int head = 0, tail = 0;
+    const auto push = [&](int dx, int dy, std::uint8_t lab, std::int16_t g) {
+        const int i = wave_index(dx, dy);
+        if (i < 0 || w.label[i] != 0) return;
+        w.label[i] = lab;
+        w.gap[i] = g;
+        frontier[tail++] = Cell{std::int8_t(dx), std::int8_t(dy)};
+    };
+    push(0, 0, 1, -1);
+    while (head < tail) {
+        const Cell c = frontier[head++];
+        const int ci = wave_index(c.dx, c.dy);
+        const std::uint8_t lab = w.label[ci];
+        const std::int16_t g = w.gap[ci];
+        for (int oy = -1; oy <= 1; ++oy) {
+            for (int ox = -1; ox <= 1; ++ox) {
+                if (ox == 0 && oy == 0) continue;
+                const int ndx = c.dx + ox, ndy = c.dy + oy;
+                const int ni = wave_index(ndx, ndy);
+                if (ni < 0 || w.label[ni] != 0) continue;
+                if (can_stand_at(ctx, hx + ndx, hy + ndy)) {
+                    // Dry ground carries the wave at its own label: a
+                    // bridged route stays bridged past the gap.
+                    push(ndx, ndy, lab, g);
+                } else if (lab == 1) {
+                    // ONE water cell may be spanned; beyond it the wave
+                    // walks label-2. A second gap is not offered — a crew
+                    // builds one bridge a route, not a causeway.
+                    for (int wy = -1; wy <= 1; ++wy) {
+                        for (int wx = -1; wx <= 1; ++wx) {
+                            if (wx == 0 && wy == 0) continue;
+                            const int fdx = ndx + wx, fdy = ndy + wy;
+                            const int fi = wave_index(fdx, fdy);
+                            if (fi < 0 || w.label[fi] != 0) continue;
+                            if (!can_stand_at(ctx, hx + fdx, hy + fdy))
+                                continue;
+                            push(fdx, fdy, 2, std::int16_t(ni));
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// The home's nearest REACHABLE live cell of the row's deposit kind — dry
+// routes first; failing every dry vein, the nearest vein reachable across
+// one bridgeable gap (bridgeOut = the water cell to span; untouched when
+// the pick is dry). The deposit maps are sparse: the wave is 33², the vein
+// scan a handful of cells.
 bool find_home_deposit(const TickContext& ctx, ResourceFieldId row,
-                       const XY& home, XY& out) {
+                       const XY& home, XY& out, XY* bridgeOut = nullptr) {
     if (!ctx.mw.deposits || ctx.mapW <= 0) return false;
     const DepositKind kind =
         DepositKind(std::uint8_t(row) - std::uint8_t(ResourceFieldId::Clay));
     const auto& cells = ctx.mw.deposits->cells[std::size_t(kind)];
-    float bestSq = float(kGathererReach) * float(kGathererReach);
-    bool found = false;
+    if (cells.empty()) return false;
+    ReachWave wave;
+    build_reach_wave(ctx, home, wave);
+    const int hx = int(home.x), hy = int(home.y);
+    float bestSq[3] = {1e30f, 1e30f, 1e30f};   // [label]
+    XY    bestAt[3];
+    int   bestGap = -1;
     for (const auto& [idx, remaining] : cells) {
         (void)remaining;   // every entry is ALIVE (annihilation law, v55)
-        const float x = float(int(idx % std::uint32_t(ctx.mapW)));
-        const float y = float(int(idx / std::uint32_t(ctx.mapW)));
-        const float dsq = torus_dist_sq(home.x, home.y, x, y,
-                                        float(ctx.mapW), float(ctx.mapH));
-        if (dsq <= bestSq) {
-            bestSq = dsq;
-            out = XY{x, y};
-            found = true;
+        const int x = int(idx % std::uint32_t(ctx.mapW));
+        const int y = int(idx / std::uint32_t(ctx.mapW));
+        // Box offset via the torus fold.
+        int dx = x - hx, dy = y - hy;
+        if (dx > ctx.mapW / 2) dx -= ctx.mapW;
+        if (dx < -ctx.mapW / 2) dx += ctx.mapW;
+        if (dy > ctx.mapH / 2) dy -= ctx.mapH;
+        if (dy < -ctx.mapH / 2) dy += ctx.mapH;
+        const int i = wave_index(dx, dy);
+        if (i < 0) continue;
+        const std::uint8_t lab = wave.label[i];
+        if (lab == 0) continue;   // no march arrives — not a worksite
+        const float dsq = float(dx * dx + dy * dy);
+        if (dsq < bestSq[lab]) {
+            bestSq[lab] = dsq;
+            bestAt[lab] = XY{float(x), float(y)};
+            if (lab == 2) bestGap = wave.gap[i];
         }
     }
-    return found;
+    if (bestSq[1] < 1e30f) {
+        out = bestAt[1];
+        return true;
+    }
+    if (bestSq[2] < 1e30f && bestGap >= 0) {
+        out = bestAt[2];
+        if (bridgeOut) {
+            const int gdx = bestGap % ReachWave::kSide - kGathererReach;
+            const int gdy = bestGap / ReachWave::kSide - kGathererReach;
+            *bridgeOut = XY{float(wrapi(hx + gdx, ctx.mapW)),
+                            float(wrapi(hy + gdy, ctx.mapH))};
+        }
+        return true;
+    }
+    return false;
 }
 
 bool find_worksite(const GathererDef& def, const TickContext& ctx,
@@ -597,6 +710,17 @@ bool find_worksite(const GathererDef& def, const TickContext& ctx,
     return false;
 }
 
+// One bridge span costs one worker's DAY of gathering in material
+// (= kGatherPerWorkerDay — the plank/stone load one back brings home in a
+// working day; the owner's «32» of 2026-08-31, derived, not assigned).
+constexpr int kBridgeMaterialUnits = kGatherPerWorkerDay;
+
+// Defined with the trade behaviours below; the crews share both laws.
+bool march_is_stuck_(const ecs::Position& p, float oldX, float oldY,
+                     const ecs::MacroNpcRuntime& rt);
+int haul_between(Inventory& from, Inventory& to, const char* id,
+                 int maxUnits, float capacityLeftKg);
+
 void ai_gatherer(entt::entity self, ecs::Position& p,
                  const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
                  const TickContext& ctx) {
@@ -609,7 +733,38 @@ void ai_gatherer(entt::entity self, ecs::Position& p,
         --rt.stateTimer;
         if (rt.stateTimer <= 0) {
             XY site;
-            if (find_worksite(*def, ctx, p, home, site)) {
+            XY gap{-1.0f, -1.0f};
+            const bool found =
+                def->worksite == Worksite::Deposit
+                    ? find_home_deposit(ctx, def->row, home, site, &gap)
+                    : find_worksite(*def, ctx, p, home, site);
+            if (found && gap.x >= 0.0f) {
+                // The route needs its BRIDGE first (owner 2026-08-31): load
+                // a span's worth of whichever material the home store holds
+                // MORE of («из того, чего на складе больше, из того и
+                // строят») and walk to the gap. No material today — no
+                // errand: the vein waits for the woodcutters.
+                Inventory* store = home_inventory(rt, ctx);
+                auto* bag = ctx.mw.world
+                    ? ctx.mw.world->reg.try_get<ecs::NpcInventory>(self)
+                    : nullptr;
+                const int wood  = store ? store->count("wood") : 0;
+                const int stone = store ? store->count("stone") : 0;
+                const char* mat = stone > wood ? "stone" : "wood";
+                if (store && bag
+                    && std::max(wood, stone) >= kBridgeMaterialUnits
+                    && haul_between(*store, bag->inv, mat,
+                                    kBridgeMaterialUnits, 1e9f)
+                           >= kBridgeMaterialUnits) {
+                    rt.targetX = gap.x;
+                    rt.targetY = gap.y;
+                    rt.state = std::uint8_t(NS::Bridging);
+                    return;
+                }
+                rt.stateTimer = std::int16_t(40 + rand_int(ctx, 40));
+                return;
+            }
+            if (found) {
                 rt.targetX = site.x; rt.targetY = site.y;
                 rt.state = std::uint8_t(NS::Traveling);
             } else if (torus_dist_sq(p.x, p.y, home.x, home.y,
@@ -633,7 +788,85 @@ void ai_gatherer(entt::entity self, ecs::Position& p,
             rt.stateTimer = std::int16_t(8 + rand_int(ctx, 8));
             return;
         }
+        const float ox = p.x, oy = p.y;
         try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        // A leg that cannot advance gives the run up (the vendor's own
+        // law): the reach wave keeps this rare, but a concave shore can
+        // still wedge a greedy march — better home tonight than frozen at
+        // the bank forever (measured 2026-08-31).
+        if (march_is_stuck_(p, ox, oy, rt)) {
+            rt.targetX = home.x;
+            rt.targetY = home.y;
+            rt.state = std::uint8_t(NS::Returning);
+        }
+        return;
+    }
+    if (rt.state == std::uint8_t(NS::Bridging)) {
+        // Someone spanned it first (or the wave was stale): the errand is
+        // done without us — tomorrow's think routes across the deck.
+        if (can_stand_at(ctx, int(rt.targetX), int(rt.targetY))) {
+            rt.state = std::uint8_t(NS::Idle);
+            rt.stateTimer = 1;
+            return;
+        }
+        const float dsq = torus_dist_sq(p.x, p.y, rt.targetX, rt.targetY,
+                                        float(ctx.mapW), float(ctx.mapH));
+        if (dsq <= 2.5f) {   // standing at the bank beside the gap
+            const int cycleCost =
+                std::max(1, int(rt.maxSp) / kWorkCyclesPerBar);
+            auto* bag = ctx.mw.world
+                ? ctx.mw.world->reg.try_get<ecs::NpcInventory>(self)
+                : nullptr;
+            if (!bag || !ctx.mw.features || !ctx.mw.gs) {
+                rt.state = std::uint8_t(NS::Returning);
+                rt.targetX = home.x; rt.targetY = home.y;
+                return;
+            }
+            if (int(rt.sp) < cycleCost) return;   // stand — the regen law
+                                                  // rests refused legs now
+            const bool haveStone =
+                bag->inv.count("stone") >= kBridgeMaterialUnits;
+            const bool haveWood =
+                bag->inv.count("wood") >= kBridgeMaterialUnits;
+            if (haveStone || haveWood) {
+                // Stone lays the road planner's own span; timber lays the
+                // plank deck («камень — каменный, дерево — деревянный»).
+                const FeatureType ft = haveStone ? FT_Bridge : FT_WoodBridge;
+                FeatureLayer& fl = *ctx.mw.features;
+                std::size_t total = 0;
+                if (FeatureLayer::cell_count_for(fl.width, fl.height, total)
+                    && fl.data.size() >= total) {
+                    const int wx =
+                        FeatureLayer::wrap_coord(int(rt.targetX), fl.width);
+                    const int wy =
+                        FeatureLayer::wrap_coord(int(rt.targetY), fl.height);
+                    fl.data[std::size_t(wy) * std::size_t(fl.width)
+                            + std::size_t(wx)] = ft;
+                    bag->inv.remove(haveStone ? "stone" : "wood",
+                                    kBridgeMaterialUnits);
+                    // The span is WORLD TRUTH: it rides the save as a Built
+                    // work and the load re-stamps it (state.h v71).
+                    ctx.mw.gs->builtFeatures.push_back(BuiltFeature{
+                        int(rt.targetX), int(rt.targetY),
+                        std::uint8_t(ft)});
+                    // The day of making pays the working cycle (S14).
+                    rt.spCarry -= float(cycleCost);
+                    settle_sp_carry(rt);
+                }
+            }
+            // Built — or the material was lost on the road: either way the
+            // next think re-decides with honest eyes.
+            rt.state = std::uint8_t(NS::Idle);
+            rt.stateTimer = 1;
+            return;
+        }
+        const float ox = p.x, oy = p.y;
+        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        if (march_is_stuck_(p, ox, oy, rt)) {
+            rt.targetX = home.x;
+            rt.targetY = home.y;
+            rt.state = std::uint8_t(NS::Returning);
+        }
         return;
     }
     if (rt.state == std::uint8_t(NS::Working)) {
@@ -1915,7 +2148,9 @@ AIBehaviour effective_behaviour(entt::registry& reg, entt::entity e,
 // is one law is the PRICE; what is two is who decides to stop paying it.
 bool can_stand_at(const TickContext& ctx, int x, int y) {
     if (!cell_is_water(ctx, x, y)) return true;
-    return ctx.mw.features && ctx.mw.features->at(x, y) == FT_Bridge;
+    if (!ctx.mw.features) return false;
+    const FeatureType ft = FeatureType(ctx.mw.features->at(x, y));
+    return ft == FT_Bridge || ft == FT_WoodBridge;
 }
 
 bool cell_is_water(const TickContext& ctx, int x, int y) {

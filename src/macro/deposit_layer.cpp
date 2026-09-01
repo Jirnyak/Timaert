@@ -1,31 +1,76 @@
 #include "macro/deposit_layer.h"
 
-#include "core/rng.h"
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <utility>
+#include <vector>
+
+#include "core/field_noise.h"   // the ONE noise stack of the world's fields
+#include "core/table_guard.h"
 #include "macro/biomes.h"
 
 namespace sm {
 
 namespace {
 
-// Densities and base amounts — po2 by house style. Stone is quasi-infinite
-// (the owner's "огромный remaining"); iron is FINITE, so a mine can run dry
-// and the discovery rule (W2c) has a fact to answer.
-constexpr std::uint32_t kClayChanceMask  = 63;    // 1 in 64 river-adjacent cells
-constexpr std::uint32_t kStoneChanceMask = 63;    // 1 in 64 mountain cells
-constexpr std::uint32_t kIronChanceMask  = 255;   // 1 in 256 mountain cells
-// The mint metal is 4× rarer than iron and its veins are small: the world's
-// whole money supply = veins × kSilverBase × value(silver)=32 coins/unit
-// (items.cpp) — geology sets the money of the WORLD (CANON S10).
-constexpr std::uint32_t kSilverChanceMask = 1023; // 1 in 1024 mountain cells
-constexpr std::int32_t  kClayBase  = 4096;
-constexpr std::int32_t  kIronBase  = 2048;
-constexpr std::int32_t  kSilverBase = 512;
-constexpr std::int32_t  kStoneBase = 65536;
+// ── The FIELD law of geology (owner 2026-08-31, v72) ─────────────────────
+// «Естественная диффузионная полевая генерация месторождений — шум; горы
+// дают ВЕСА, не гейт». Ore is a CONCENTRATION FIELD: the same torus-tiling
+// fbm stack the climate is made of (terrain_fbm, map_generator.h), shaped
+// by the kind's profile, weighted by the kind's terrain affinity, and
+// thresholded — a vein exists where the field crests, and its richness is
+// the excess over the threshold, so nests are fat at the core and lean at
+// the rims: the natural deposit profile. Nests ARE the clusters the mine's
+// consolidation folds («шахта всасывает связное месторождение»). The old
+// law — a bare hash roll per cell — scattered lone veins that clustered
+// with nothing; it fed the world for a day and starved the mint forever.
+//
+// Profiles: Blob = the moisture field's own rounded lenses; Ridge =
+// pow(1−|fbm|, 3) — the SAME trick the mountain chains are drawn with, so
+// metal runs in veins along orogeny, which is where metal actually runs.
+// Affinity: a WEIGHT, never a gate — metals concentrate where the land is
+// high (weight = height⁴: mountains ~1, plains ~nothing but never zero),
+// clay where rivers wet the lowland.
+enum class OreProfile : std::uint8_t { Blob, Ridge };
+enum class OreAffinity : std::uint8_t { MountainHeight, RiverMoisture };
+struct DepositGenRow {
+    DepositKind  kind;        // MUST equal the row's index (guard below)
+    OreProfile   profile;
+    OreAffinity  affinity;
+    // WHOLE tiles across the torus — a fractional period cuts a seam the
+    // seed hides inside the map (the mountain-cliff scar of
+    // map_generator.cpp, same lesson). Lower period = fewer, larger nests.
+    float        period;
+    float        threshold;   // the field's crest line: vein above, none below
+    // Units per full point of excess concentration — calibrated so world
+    // totals stay the order the hash law produced (silver especially: the
+    // world's money supply IS its silver geology × catalog value 32).
+    std::int32_t unitScale;
+    std::uint32_t salt;
+};
+// Thresholds and scales are CALIBRATED against the hash law's world totals
+// (the fingerprint line below is the instrument): the money supply and the
+// tool economy must not jump an order of magnitude because the SHAPE of
+// geology changed. Targets (1024², seed-family means): clay ~1.2M units,
+// iron ~0.8M, stone ~100M (quasi-infinite), silver ~50k (× catalog value
+// 32 = the world's coin ceiling).
+constexpr DepositGenRow kDepositGen[kDepositKindCount] = {
+    //                       profile            affinity              period thresh scale  salt
+    {DepositKind::Clay,   OreProfile::Blob,  OreAffinity::RiverMoisture, 16.0f, 0.60f,  12288, 0xC1A70000u},
+    {DepositKind::Iron,   OreProfile::Ridge, OreAffinity::MountainHeight, 8.0f, 0.82f,   2048, 0x1F0E0000u},
+    {DepositKind::Stone,  OreProfile::Blob,  OreAffinity::MountainHeight, 8.0f, 0.60f,  65536, 0x570E0000u},
+    // The mint metal: the lowest period and the highest bar — few nests,
+    // truly rare, but a found one is a mining town's whole reason.
+    {DepositKind::Silver, OreProfile::Ridge, OreAffinity::MountainHeight, 6.0f, 0.96f,    384, 0x517E0000u},
+};
+static_assert(rows_in_enum_order(kDepositGen, &DepositGenRow::kind),
+              "kDepositGen row order must mirror DepositKind");
 
-constexpr std::uint32_t kClaySalt  = 0xC1A70000u;
-constexpr std::uint32_t kIronSalt  = 0x1F0E0000u;
-constexpr std::uint32_t kSilverSalt = 0x517E0000u;
-constexpr std::uint32_t kStoneSalt = 0x570E0000u;
+// The vein a fresh discovery opens with (iron/silver Geology growth law) —
+// kept as the old per-vein lumps.
+constexpr std::int32_t kIronBase   = 2048;
+constexpr std::int32_t kSilverBase = 512;
 
 bool river_adjacent(const TerrainData& t, int x, int y) {
     if (!t.has_river_storage()) return false;
@@ -58,57 +103,66 @@ DepositLayer build_deposit_layer(const TerrainData& terrain,
         return layer;
     }
     const std::uint8_t sea8 = std::uint8_t(seaLevel * 255.0f);
+    // The one seed→float cast, the noise's own idiom (map_generator.cpp).
+    const float fseed = float(seed % 100000u);
     for (int y = 0; y < terrain.height; ++y) {
+        const float uy = (float(y) + 0.5f) / float(terrain.height);
         for (int x = 0; x < terrain.width; ++x) {
             if (terrain.is_water(x, y, sea8)) continue;
+            const float ux = (float(x) + 0.5f) / float(terrain.width);
             const std::uint32_t idx =
                 std::uint32_t(y) * std::uint32_t(terrain.width)
                 + std::uint32_t(x);
             const float h01 = float(terrain.height_at(x, y)) / 255.0f;
-            const bool mountain = h01 >= kMountainBiomeLevel;
-            // Mountains hold the minerals; iron is the rare one, and where
-            // both would land at derivation, the SCARCE kind takes the cell
-            // (discovery may later add iron INTO a stone cell — that is the
-            // one way a cell comes to carry two kinds).
-            if (mountain) {
-                // The SCARCEST kind takes the cell: silver before iron
-                // before stone (the derivation rule this loop always had).
-                if ((hash3(std::uint32_t(x), std::uint32_t(y),
-                           seed ^ kSilverSalt) & kSilverChanceMask) == 0) {
-                    layer.cells[std::size_t(DepositKind::Silver)]
-                        .emplace(idx, kSilverBase);
-                    layer.virginUnits[std::size_t(DepositKind::Silver)]
-                        += kSilverBase;
-                    continue;
+            for (int k = 0; k < kDepositKindCount; ++k) {
+                const DepositGenRow& g = kDepositGen[std::size_t(k)];
+                // The terrain WEIGHT (never a gate): metals ride height⁴ —
+                // mountains ~1, plains vanishing but legal; clay rides the
+                // river-wetted lowland.
+                float weight = 0.0f;
+                switch (g.affinity) {
+                    case OreAffinity::MountainHeight:
+                        weight = h01 * h01 * h01 * h01;
+                        break;
+                    case OreAffinity::RiverMoisture: {
+                        const float m01 =
+                            float(terrain.moisture_at(x, y)) / 255.0f;
+                        weight = river_adjacent(terrain, x, y) ? m01
+                                                               : m01 / 8.0f;
+                        break;
+                    }
                 }
-                if ((hash3(std::uint32_t(x), std::uint32_t(y),
-                           seed ^ kIronSalt) & kIronChanceMask) == 0) {
-                    layer.cells[std::size_t(DepositKind::Iron)]
-                        .emplace(idx, kIronBase);
-                    layer.virginUnits[std::size_t(DepositKind::Iron)]
-                        += kIronBase;
-                    continue;
-                }
-                if ((hash3(std::uint32_t(x), std::uint32_t(y),
-                           seed ^ kStoneSalt) & kStoneChanceMask) == 0) {
-                    layer.cells[std::size_t(DepositKind::Stone)]
-                        .emplace(idx, kStoneBase);
-                    layer.virginUnits[std::size_t(DepositKind::Stone)]
-                        += kStoneBase;
-                }
-                continue;
-            }
-            // Clay is alluvial: lowland cells touching a river.
-            if ((hash3(std::uint32_t(x), std::uint32_t(y),
-                       seed ^ kClaySalt) & kClayChanceMask) == 0
-                && river_adjacent(terrain, x, y)) {
-                layer.cells[std::size_t(DepositKind::Clay)]
-                    .emplace(idx, kClayBase);
-                layer.virginUnits[std::size_t(DepositKind::Clay)]
-                    += kClayBase;
+                // Below-threshold weight cannot crest whatever the noise
+                // says — skip the fbm for the 90% of cells it cannot help.
+                if (weight <= g.threshold) continue;
+                const float n =
+                    terrain_fbm(ux * g.period, uy * g.period, 3, 0.5f,
+                                g.period, fseed + float(g.salt & 0xFFFFu));
+                const float c = weight
+                    * (g.profile == OreProfile::Ridge
+                           ? std::pow(1.0f - std::fabs(n), 3.0f)
+                           : n * 0.5f + 0.5f);
+                if (c <= g.threshold) continue;
+                const std::int32_t amount = std::max<std::int32_t>(
+                    1, std::int32_t(float(g.unitScale)
+                                    * (c - g.threshold)
+                                    / (1.0f - g.threshold)));
+                layer.cells[std::size_t(k)].emplace(idx, amount);
+                layer.virginUnits[std::size_t(k)] += amount;
             }
         }
     }
+    // The geology fingerprint — the calibration eye of the field law and
+    // the money supply's own birth certificate (silver × catalog value 32).
+    std::fprintf(stderr,
+                 "[deposits] clay=%lld iron=%lld stone=%lld silver=%lld "
+                 "(cells %zu/%zu/%zu/%zu)\n",
+                 (long long)layer.virginUnits[0],
+                 (long long)layer.virginUnits[1],
+                 (long long)layer.virginUnits[2],
+                 (long long)layer.virginUnits[3],
+                 layer.cells[0].size(), layer.cells[1].size(),
+                 layer.cells[2].size(), layer.cells[3].size());
     return layer;
 }
 

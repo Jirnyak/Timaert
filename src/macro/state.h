@@ -248,7 +248,10 @@ namespace sm {
 // сквадами») — the cells squads ploughed/built ride the save as their own
 // world-field row and are re-stamped onto the seed-baked feature grid at
 // load, BEFORE the rebaker reads it. The grid itself stays derived.
-constexpr int kSaveVersion = 71;
+// v72: the FIELD law of geology (owner 2026-08-31) — deposits derive from
+// noise-field nests, not per-cell hash rolls. Nothing new is serialized,
+// but an old slot's veins would sit in a subtly different world.
+constexpr int kSaveVersion = 72;
 
 enum class SettlementMood : std::uint8_t {
     Prosperous, Stable, Tense, Unrest, Revolt, Count

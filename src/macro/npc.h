@@ -61,6 +61,11 @@ enum class NPCState : std::uint8_t {
     // S10 «фичи создаются сквадами»): the crew that found its field eaten
     // bare spends the rest of its bar ploughing the best cell near home.
     Plowing,
+    // Walking to (and spanning) a one-cell water gap on the way to a vein
+    // (owner 2026-08-31): the crew carries a day's gathering of timber or
+    // stone and a day of work lays the bridge — the same feature system
+    // the road planner builds with.
+    Bridging,
 };
 
 enum class NPCTrait : std::uint8_t {

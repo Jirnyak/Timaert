@@ -42,7 +42,10 @@ TerrainData make_terrain() {
     for (int y = 0; y < kH; ++y) {
         for (int x = 0; x < kW; ++x) {
             const std::size_t s = std::size_t(y * kW + x) * 4u;
-            t.rgba[s + 0] = y >= 40 ? 220 : 180;   // land / mountain band
+            // Peaks, not foothills (v72): the field law of geology weights
+            // metal by height⁴, so the fixture band must be honestly TALL
+            // for its veins to crest.
+            t.rgba[s + 0] = y >= 40 ? 250 : 180;   // land / mountain peaks
             t.rgba[s + 3] = 255;                   // land mask
         }
     }
@@ -213,11 +216,11 @@ void test_iron_is_born_where_scarce() {
 
     // Annihilation (v55/v56): the worked-out veins LEFT the map, and only
     // the DERIVED born-with baseline still says the world ever knew iron —
-    // which is what keeps the scarcity law prospecting.
+    // which is what keeps the scarcity law prospecting. (Under the field
+    // law of geology, v72, a vein's units vary with the nest's profile, so
+    // the baseline is a positive SUM, no longer count × lump.)
     CHECK(ironCells() == 0
-              && deposits.virginUnits[std::size_t(DepositKind::Iron)]
-                     == std::int64_t(virginIron)
-                            * std::int64_t(iron_vein_lump()),
+              && deposits.virginUnits[std::size_t(DepositKind::Iron)] > 0,
           "mined-out veins are annihilated; the baseline is derived");
 
     // A mined-out world prospects at depletion/8 = 12.5 %/day: over 256

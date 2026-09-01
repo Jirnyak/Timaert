@@ -219,11 +219,37 @@ time in the track's history (seed 1: 220.7k born → 192.8k at day 384 →
   villages press the field — village_pressure; separation/quota/cap died;
   the self-feeding gate; souls = the owner's scale 64..191).
 
-Open after the session: ore gathering is dead and was dead BEFORE the
-mines (iron/silver_gathered = 0 on every run; clay 27/day — the geometry
-of mining villages or the march into the mountains, needs the fprintf
-methodology); squads/bandits hold 1.26M coin (the military-political
-layer's cue); the dense world costs ~10 min/seed in the balance run.
+**The ore hunt closed the session (2026-09-01, save v72).** The dead-ore
+root was found by probe, not guess: a silver crew stood frozen two cells
+from a live vein — a mountain RIVER between them (greedy stepping only
+walks strictly-closer, so it cannot detour), and the crew neither walked
+nor rested (regen only fired for Resting/at-target bodies). Four laws
+landed, each the owner's verdict:
+
+- **Regen is unconditional** («встал — отдыхаешь»): refused legs — a full
+  step's budget standing unspent after the think — count as standing.
+- **The reach wave** (npc_ai.cpp ReachWave): an ore worksite must have a
+  MARCHABLE route; a vein one water cell away is flagged bridgeable.
+- **Crews build bridges**: a span costs one worker's day of material
+  (32 = kGatherPerWorkerDay) of whatever the home store holds more of —
+  stone lays FT_Bridge (road bed), timber lays FT_WoodBridge (dirt bed).
+- **Geology is a FIELD** (core/field_noise.h — the climate's own fbm
+  stack, one noise for every field of the world): ore concentration =
+  profile (blob / RIDGE along orogeny) × terrain weight (height⁴ for
+  metals — «горы дают веса, не гейт»; river moisture for clay), veins
+  where the field crests, richness ∝ the excess — nests fat at the core.
+  Thresholds calibrated to the hash law's world totals ([deposits]
+  fingerprint).
+
+Measured (4 seeds × 4 years): populations are the healthiest the track
+has seen — born 220-228k, dip −8..−19%, growing at the tail (191-211k
+final, all seeds climbing); silver is mined by hands for the first time
+and THE MINT CAME ALIVE — 89,568 coins on seed 1. Two measured tails ride
+problems.md §34: the SILVER LOTTERY (mint fired on one seed of four while
+the ground held silver on all — mining villages vs the arable-dominant
+score, or nests behind wide water) and the INFLATION TAP (+57% money mass
+over 4 years — the daily crews' spawn purses, ×1400 villages: the
+honest-spawn-wealth track is now material).
 
 ### Increment 4 complete (2026-08-31, commits 7a2a4f1..d9ba96d)
 
