@@ -29,6 +29,16 @@ death) already respects the flag, so there is no player special-case to maintain
 
 - **The player is a flag.** `PlayerTag` is an empty tag component. The tagged
   entity is the player; nothing else marks the player.
+- **Замысел флага — только ввод и камера** (владелец, 2026-09-03, дословно:
+  «замысел со вселением простой — это что игрок = НПЦ, то есть PlayerTag
+  просто отвечает за инпут от игрока и камеру-центровку; при этом сама
+  камера — это агностик, независимая система, она может и свободной быть;
+  и в принципе по игре может меняться, за кого игрок играет — это вообще
+  не важно»). Следствие для каждого мирового закона: тело с флагом живёт
+  ВСЕ судьбы обычного NPC — и закон, который уничтожает/растворяет тела
+  (ротация артелей, будущие слияния), обязан решить, что происходит с
+  флагом, а не предполагать, что игрок «не такой». Открытая дыра —
+  problems.md §35 (растворение ротации у крыльца не проверяет PlayerTag).
 - **Exactly one `PlayerTag` at all times** — the single system-wide invariant.
   The minimal flag on the overworld, the full combat actor in a subworld, never
   both, never zero mid-frame. Smoke-guarded across a macro→sub→macro cycle.

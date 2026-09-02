@@ -19,6 +19,7 @@
 #include "macro/npc.h"
 #include "macro/npc_ai.h"
 #include "macro/npc_spawn.h"
+#include "macro/threat_field.h"
 #include "core/rng.h"
 #include <algorithm>
 #include <cmath>
@@ -191,17 +192,24 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
         // paid wage leaves the economy INTO THE LOOT POOL: spent soldiers'
         // coin is lost money by the owner's word, and the pool already IS
         // the world's lost-value stock — ruins and dungeons will return it.
+        //
+        // ДОМА — ВСЁ СОДЕРЖАНИЕ >>1 (владелец 2026-09-02: «гарнизон платит
+        // пол цены содержания, как в Mount & Blade» — и жалованье, И
+        // провиант). В ПОЛЕ — полное: вылазка ест целый хлеб из своей сумки
+        // (feed_squads_daily), и эта разница — «доплата за поле» — и есть
+        // цена похода в скоре патрульного аукциона (npc_ai.cpp).
         if (total_soldiers(s.garrison) > 0) {
             bool shorted = false;
             const int breadIdx =
                 commodity_item_index(commodity_index("bread"));
-            const int need = total_soldiers(s.garrison);
+            const int need = total_soldiers(s.garrison) >> 1;
             const int can = std::min(need, s.inventory.count_of(breadIdx));
             if (can > 0) s.inventory.remove_of(breadIdx, can);
             shorted = shorted || can < need;
             if (day % kDaysPerSeason == s.id % kDaysPerSeason) {
                 const int wage =
-                    calculate_squad_upkeep(s.garrison) * kDaysPerSeason;
+                    (calculate_squad_upkeep(s.garrison) * kDaysPerSeason)
+                    >> 1;
                 const int paid = wallet_spend_up_to(s.inventory, wage);
                 gs.lootPoolValue += paid;
                 shorted = shorted || paid < wage;
@@ -415,6 +423,11 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
             // one from its population — losses stay permanent, the trade
             // arm regrows through the world (CANON S4).
             replenish_caravans(gs, *macro->world, *macro->terrain);
+            // Поле угрозы (threat_field.h): влить свежие Died-факты,
+            // диффузия по мембранам, распад — ПЕРЕД ротацией, чтобы
+            // аукцион дня (патрули стражи, страх артелей) читал уже
+            // сегодняшнее поле.
+            threat_field_daily(*macro, day);
             // The labour rotation (npc_ai.h): yesterday's crews dissolve
             // into the population, today's are raised to its size.
             rotate_worker_squads(*macro, day);

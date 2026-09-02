@@ -132,6 +132,15 @@ struct NavWorld {
     std::vector<std::uint32_t> routeDistSea;
     std::vector<std::uint16_t> routeNextSea;
 
+    // ── ПОЛЕ УГРОЗЫ (CANON S10 «хемотаксис по графу округ», 2026-09-02) ──
+    // Скаляр threat НА ОКРУГУ, в ДЕНЬГАХ (стоимость погибших душ по строке
+    // найма/жалованья — macro/threat_field.h, единственный писатель). Живёт
+    // при графе, потому что делит его судьбу: перепёк перенумеровывает
+    // округи, и threat_field_daily видит несовпадение размера и реплеит
+    // свежую летопись заново. DERIVED — в сейв не едет, как весь NavWorld.
+    std::vector<std::uint32_t> threat;
+    std::uint32_t threatSeenSeq = 0;   // хвост летописи, уже влитый в поле
+
     bool baked() const { return mapW > 0 && !regionOf.empty(); }
     std::size_t cell(int x, int y) const;   // завёрнутый индекс
 };

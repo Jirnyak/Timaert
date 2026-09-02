@@ -60,6 +60,12 @@ struct LandmarkCrewRow {
     // even split of the place's crew pool (pop >> labourShift) across the
     // rows whose gates are open today — even split = zero new constants.
     bool     solo = false;
+    // ДУШИ ИЗ ГАРНИЗОНА (CANON S10 «стража», владелец 2026-09-02): строка
+    // комплектуется ЗАПИСЯМИ ГАРНИЗОНА, не населением — патруль = вылазка
+    // (вернулся — души назад в гарнизон; погибший патруль = дыра в
+    // обороне), а гейт Auction для такой строки решает ПАТРУЛЬНЫЙ аукцион
+    // (горячие округи поля угрозы), не аукцион добычи.
+    bool     garrison = false;
 };
 
 struct LandmarkDef {
@@ -146,8 +152,14 @@ struct LandmarkDef {
 // 128..255, unchanged in meaning, finer in resolution.
 inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
     {LandmarkType::None,    "none",    "",          0, 255, ' ', 0x00000000u, true, 0x00000000u,   0.0f },
+    // Стража города — строка ростера {Guard, Auction} с душами ИЗ ГАРНИЗОНА
+    // (CANON S10, 2026-09-02): патрульный аукцион открывает её только когда
+    // поле угрозы предъявило горячую округу дороже похода — тихий город
+    // держит гарнизон дома за полцены содержания.
     {LandmarkType::City,    "city",    "City",      0,  76, '#', 0xFFE7D27Au, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.5f,  /*hab*/0u,       0, 0, /*cap*/2, /*econ*/1,
-     /*labour*/3, {{NPCType::TaxCollector, CrewGate::Suzerain, /*solo*/true}}, 1 },
+     /*labour*/3, {{NPCType::TaxCollector, CrewGate::Suzerain, /*solo*/true},
+                   {NPCType::Guard, CrewGate::Auction, /*solo*/false,
+                    /*garrison*/true}}, 2 },
     // Артели деревни — N ОДИНАКОВЫХ крестьянских строк (снос профессий,
     // CANON S10): каждая берёт поручение своим броском рулетки аукциона —
     // диверсификация без координации. N = одновременность артелей, крутилка
