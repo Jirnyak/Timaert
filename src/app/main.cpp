@@ -324,6 +324,7 @@ sm::MacroWorld macro_world(App& app) {
     mw.pathCost = &app.pathCost;
     mw.treeGrid = &app.treeGrid;
     mw.landmarks = &app.landmarkGrid;
+    mw.nav      = &app.navWorld;
     return mw;
 }
 

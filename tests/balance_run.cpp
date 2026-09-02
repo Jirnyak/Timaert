@@ -31,6 +31,7 @@
 #include "macro/landmark_grid.h"
 #include "macro/macro_world.h"
 #include "macro/map_generator.h"
+#include "macro/nav_field.h"
 #include "macro/npc_ai.h"
 #include "macro/pathfinding.h"
 #include "macro/spawners.h"
@@ -179,8 +180,10 @@ int main(int argc, char** argv) {
         sm::reset_macro_npc_ai_runtime(ai, seed);
 
         DayAccum accum;
+        sm::NavWorld nav;        // запечённая навигация (CANON S7), derived
         sm::MacroWorld mw{};
         mw.gs = &gs;
+        mw.nav = &nav;
         mw.trees = &treeLayer;
         mw.world = &ecs;
         mw.terrain = &terrain;
@@ -192,6 +195,72 @@ int main(int argc, char** argv) {
         mw.landmarks = &landmarkGrid;
         mw.econFacts = &econ_fact_sink;
         mw.econFactsUser = &accum;
+
+        // ВРЕМЯНКА §34.1: перепись серебра в волне достижимости (npc_ai.h)
+        // — на генезисе и в конце прогона; разводит гипотезы лотереи
+        // («сироты» = рождение мимо серебра, «blocked» = широкая вода).
+        const auto silverCensus = [&](const char* when) {
+            // Уровень моря — из THE-источника синтеза (LayerParameters),
+            // тем же выводом, что world_gen.cpp: sea8 = seaLevel × 255.
+            const auto sea8 =
+                std::uint8_t(sm::LayerParameters{}.seaLevel * 255.0f);
+            sm::SilverReachCensus c;
+            sm::census_silver_reach(mw, sea8, c);
+            std::fprintf(stderr,
+                         "[silver-census] seed=%u %s villages=%d "
+                         "(dry=%d bridge=%d blocked=%d none=%d) "
+                         "nests=%d (dry=%d bridge=%d blocked=%d orphan=%d) "
+                         "units=%lld (dry=%lld bridge=%lld blocked=%lld "
+                         "orphan=%lld) cells=%d\n",
+                         seed, when, c.villages, c.vDry, c.vBridge,
+                         c.vBlocked, c.vNone, c.nests, c.nestsDry,
+                         c.nestsBridge, c.nestsBlocked, c.nestsOrphan,
+                         c.unitsTotal, c.unitsDry, c.unitsBridge,
+                         c.unitsBlocked, c.unitsOrphan, c.silverCells);
+            std::fprintf(stderr,
+                         "[silver-orphans] seed=%u %s noGround=%d/%lld "
+                         "noFeed=%d/%lld outsideHinterland=%d/%lld "
+                         "lostScore=%d/%lld\n",
+                         seed, when, c.orphanNoGround, c.unitsNoGround,
+                         c.orphanNoFeed, c.unitsNoFeed, c.orphanOutside,
+                         c.unitsOutside, c.orphanLost, c.unitsLost);
+            std::fprintf(stderr,
+                         "[silver-dist] seed=%u %s orphan→village: "
+                         "<=24: %d/%lld <=32: %d/%lld <=48: %d/%lld "
+                         ">48: %d/%lld\n",
+                         seed, when, c.orphanWithin24, c.unitsWithin24,
+                         c.orphanWithin32, c.unitsWithin32,
+                         c.orphanWithin48, c.unitsWithin48,
+                         c.orphanBeyond48, c.unitsBeyond48);
+        };
+        silverCensus("genesis");
+
+        // ВРЕМЯНКА §34.1: маршруты вендоров по графу округ — у скольких
+        // деревень НЕТ пути до своего рынка (снести с решением).
+        {
+            sm::nav_ensure(mw, nav);
+            int noRoute = 0, vills = 0;
+            const int R = int(nav.regionLandmarkId.size());
+            for (const auto& lm : gs.landmarks) {
+                if (lm.type != sm::LandmarkType::Village
+                    || lm.population <= 0) continue;
+                const sm::Landmark* city = nullptr;
+                for (const auto& c : gs.landmarks)
+                    if (c.id == lm.nearestCityId) { city = &c; break; }
+                if (!city) continue;
+                ++vills;
+                const auto rv = sm::nav_region_at(nav, lm.x, lm.y);
+                const auto rc = sm::nav_region_at(nav, city->x, city->y);
+                if (rv == sm::kNavNoRegion || rc == sm::kNavNoRegion
+                    || nav.routeNext[std::size_t(rv) * std::size_t(R) + rc]
+                           == sm::kNavNoRegion) {
+                    ++noRoute;
+                }
+            }
+            std::fprintf(stderr,
+                         "[nav-probe] villages=%d noRouteToMarket=%d\n",
+                         vills, noRoute);
+        }
 
         // ── TSV writers ──────────────────────────────────────────────────
         char path[512];
@@ -314,6 +383,40 @@ int main(int argc, char** argv) {
             }
             std::fprintf(stderr, "[muster] AT SEA at run end: %d\n", atSea);
         }
+        // Silver muster (времянка §34.1): where the mined units actually sit.
+        {
+            long long silverBags = 0;
+            int miners = 0;
+            int minerStates[8] = {};
+            for (auto [e, kind, crt, bag]
+                 : ecs.reg.view<sm::ecs::NPCKind, sm::ecs::MacroNpcRuntime,
+                                sm::ecs::NpcInventory>().each()) {
+                (void)e;
+                silverBags += bag.inv.count("silver");
+                if (kind.type == std::uint16_t(sm::NPCType::SilverMiner)) {
+                    ++miners;
+                    if (crt.state < 8) ++minerStates[crt.state];
+                    const auto* pos =
+                        ecs.reg.try_get<sm::ecs::Position>(e);
+                    std::fprintf(stderr,
+                                 "[silver-miner] pos=%.0f,%.0f target=%.0f,"
+                                 "%.0f home=%d state=%d sp=%d/%d overload=%d "
+                                 "cap=%.0f load=%.0f\n",
+                                 pos ? pos->x : -1.f, pos ? pos->y : -1.f,
+                                 crt.targetX, crt.targetY,
+                                 crt.homeSettlementId, int(crt.state),
+                                 int(crt.sp), int(crt.maxSp),
+                                 int(crt.overloadCost), crt.carryCap,
+                                 sm::inventory_weight(bag.inv));
+                }
+            }
+            std::fprintf(stderr,
+                         "[silver-muster] bags=%lld miners=%d states="
+                         "[%d %d %d %d %d %d %d %d]\n",
+                         silverBags, miners, minerStates[0], minerStates[1],
+                         minerStates[2], minerStates[3], minerStates[4],
+                         minerStates[5], minerStates[6], minerStates[7]);
+        }
         // Closing muster: the trade fleet is this track's working part, and
         // its health must be readable without a debugger.
         {
@@ -371,6 +474,7 @@ int main(int argc, char** argv) {
                      "[balance] seed=%u days=%d pop=%lld aliveSettlements=%d "
                      "secs=%.1f\n",
                      seed, days, popEnd, alive, secs);
+        silverCensus("run-end");
         std::fprintf(stderr, "[law] world still populated: %s\n",
                      populated ? "OK" : "FAIL");
         std::fclose(fw);

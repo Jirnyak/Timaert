@@ -211,6 +211,16 @@ time in the track's history (seed 1: 220.7k born → 192.8k at day 384 →
   carriers pay it down in kind — coin exact, then the fattest stacks
   (transfer_worth). The in-kind tribute is the non-monetary food channel
   that finally feeds the cities.
+  **SUPERSEDED 2026-09-02 — the tribute is BY POSITION now** (owner: «дают
+  по 1/8 всего со склада, с округлением до меньшего»; save v73): an eighth
+  of EACH commodity stack (floor) plus an eighth of the coin are assessed
+  into per-position debts (`titheOwedGoods[15]` + `titheOwedCoin`) and the
+  carriers deliver them IN KIND. The value-debt's «fattest stack» draw paid
+  the suzerain in grain while the silver stayed home (measured: 4308 silver
+  parked in a village for 100 days, mint starved) — a slice of every stack
+  carries the mint metal too. `transfer_worth` is dead with no caller. The
+  eighth is universal on EVERY edge of the graph (village→city,
+  city→capital) — «десятина» is a word, not a tenth (CANON S10).
 - **Mines + field birth**: a mine is a FEATURE per deposit kind
   (kDepositDefs.mineFeature; the crew's first day builds it and
   consolidates the connected vein cluster into the cell — stock stays in

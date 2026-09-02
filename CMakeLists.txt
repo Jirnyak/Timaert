@@ -331,6 +331,7 @@ add_executable(balance_run tests/balance_run.cpp
     src/macro/knowledge.cpp
     src/macro/npc_spawn.cpp
     src/macro/npc_ai.cpp
+    src/macro/nav_field.cpp
     src/macro/world_tick.cpp
     src/macro/world_fields.cpp
     src/macro/player_entity.cpp
@@ -412,6 +413,7 @@ timaert_test(world_tick_parity_test
         src/macro/world_tick.cpp
         # the daily labour rotation lives with the working AI (npc_ai.h)
         src/macro/npc_ai.cpp
+        src/macro/nav_field.cpp
         src/macro/economy.cpp
         # a landmark's famine and revolt are facts of the world
         src/macro/chronicle.cpp
@@ -565,6 +567,7 @@ timaert_test(squad_roster_test
 timaert_test(caravan_deal_test
     SOURCES
         src/macro/npc_ai.cpp
+        src/macro/nav_field.cpp
         src/macro/economy.cpp
         src/macro/chronicle.cpp
         src/macro/macro_stock.cpp
@@ -578,6 +581,7 @@ timaert_test(caravan_deal_test
 timaert_test(macro_npc_ai_parity_test
     SOURCES
         src/macro/npc_ai.cpp
+        src/macro/nav_field.cpp
         # the caravan deal prices through the one law (stock_price)
         src/macro/economy.cpp
         # the gatherer and the caravan file world facts (chronicle door)
@@ -623,6 +627,7 @@ timaert_test(deserter_bands_test
 timaert_test(squad_war_test
     SOURCES
         src/macro/npc_ai.cpp
+        src/macro/nav_field.cpp
         # the caravan deal prices through the one law (stock_price)
         src/macro/economy.cpp
         # the gatherer and the caravan file world facts (chronicle door)
@@ -651,6 +656,7 @@ timaert_test(macro_travel_parity_test
 timaert_test(squad_travel_test
     SOURCES
         src/macro/npc_ai.cpp
+        src/macro/nav_field.cpp
         # the caravan deal prices through the one law (stock_price)
         src/macro/economy.cpp
         # the gatherer and the caravan file world facts (chronicle door)
@@ -665,6 +671,12 @@ timaert_test(squad_travel_test
 timaert_test(item_use_parity_test
     SOURCES
         src/macro/items.cpp)
+
+# Запечённая навигация (CANON S7): округи + порталы + граф на синтетическом
+# торе — стресс «телепорт в глушь», честная недостижимость, инвариантность
+# длин маршрутов к трансляции тора (никакого дерева над тором).
+timaert_test(nav_region_test SOURCES
+    src/macro/nav_field.cpp)
 
 timaert_test(pathfinding_parity_test
     SOURCES
@@ -965,6 +977,7 @@ timaert_test(seasons_test)
 timaert_test(trade_law_test
     SOURCES
         src/macro/npc_ai.cpp
+        src/macro/nav_field.cpp
         # the caravan deal prices through the one law (stock_price)
         src/macro/economy.cpp
         src/macro/macro_stock.cpp
@@ -1037,6 +1050,7 @@ timaert_test(crop_stock_test
         src/macro/world_tick.cpp
         # the daily labour rotation lives with the working AI (npc_ai.h)
         src/macro/npc_ai.cpp
+        src/macro/nav_field.cpp
         src/macro/economy.cpp
         # a landmark's famine and revolt are facts of the world
         src/macro/chronicle.cpp
@@ -1061,6 +1075,7 @@ timaert_test(fauna_stock_test
         src/macro/world_tick.cpp
         # the daily labour rotation lives with the working AI (npc_ai.h)
         src/macro/npc_ai.cpp
+        src/macro/nav_field.cpp
         src/macro/economy.cpp
         # a landmark's famine and revolt are facts of the world
         src/macro/chronicle.cpp
@@ -1074,6 +1089,7 @@ timaert_test(fauna_stock_test
 timaert_test(woodcutter_gather_test
     SOURCES
         src/macro/npc_ai.cpp
+        src/macro/nav_field.cpp
         # the caravan deal prices through the one law (stock_price)
         src/macro/economy.cpp
         # the gatherer and the caravan file world facts (chronicle door)
@@ -1276,6 +1292,7 @@ timaert_test(player_is_a_squad_test
     SOURCES
         src/macro/player_entity.cpp
         src/macro/npc_ai.cpp
+        src/macro/nav_field.cpp
         # the caravan deal prices through the one law (stock_price)
         src/macro/economy.cpp
         # the gatherer and the caravan file world facts (chronicle door)

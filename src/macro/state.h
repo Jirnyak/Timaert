@@ -10,6 +10,7 @@
 #include "core/time.h"
 #include "macro/attributes.h"
 #include "macro/character_sheet.h"
+#include "macro/commodity.h"   // kCommodityCount — дань по позициям (v73)
 #include "macro/items.h"
 #include "macro/agent_memory.h"
 #include "macro/army.h"
@@ -251,7 +252,10 @@ namespace sm {
 // v72: the FIELD law of geology (owner 2026-08-31) — deposits derive from
 // noise-field nests, not per-cell hash rolls. Nothing new is serialized,
 // but an old slot's veins would sit in a subtly different world.
-constexpr int kSaveVersion = 72;
+// v73 (2026-09-02): дань по позициям — Landmark несёт titheOwedGoods[15] +
+// titheOwedCoin вместо стоимостного titheOwed (вердикт «по 1/8 каждого
+// запаса с округлением вниз»).
+constexpr int kSaveVersion = 73;
 
 enum class SettlementMood : std::uint8_t {
     Prosperous, Stable, Tense, Unrest, Revolt, Count
@@ -373,14 +377,19 @@ struct Landmark {
     // and whether its orb has been drained.
     std::uint32_t spellId = 0;
     bool depleted = false;
-    // ── The UNIVERSAL tribute (owner 2026-08-31, CANON S24/S10; v71) ─────
-    // «Дань универсальна СТОИМОСТЬЮ»: on the place's own seasonal pay-day
-    // an eighth of the WHOLE store's value (inventory_value — coin is just
-    // a ware in it, «забудь о казне») is ASSESSED into this debt; carriers
-    // (the vendor, the tax courier) pay it down with whatever the place is
-    // rich in. Missed seasons accumulate honestly. int64 by the loot-pool
-    // precedent: a value accumulator over years of hoards outruns int32.
-    std::int64_t titheOwed = 0;
+    // ── The UNIVERSAL tribute, BY POSITION (owner 2026-09-02; v73) ───────
+    // «Дают по 1/8 всего со склада, с округлением до меньшего»: on the
+    // place's own seasonal pay-day an eighth of EACH commodity stack (floor)
+    // and an eighth of the coin are ASSESSED into these per-position debts;
+    // carriers (the vendor, the tax courier) deliver them IN KIND. The old
+    // value-debt paid «coin, then the fattest stacks» — and the fattest was
+    // grain, so the suzerain never saw a grain-rich vassal's silver and the
+    // mint starved (measured, seed 7: 4308 silver parked in a village for
+    // 100 days). A slice of every stack is a slice of everything the vassal
+    // is rich in — the mint metal included. Missed seasons accumulate
+    // honestly, per position.
+    std::int32_t titheOwedGoods[kCommodityCount] = {};
+    std::int64_t titheOwedCoin = 0;
     std::int32_t titheSeasonAssessed = -1;   // last season charged (-1 never)
 };
 

@@ -12,7 +12,9 @@
 #include "macro/landmark_registry.h"
 #include "macro/movement_cost.h"
 #include "macro/npc.h"
+#include "macro/nav_field.h"        // локальные поля-округи (CANON S7)
 #include "macro/npc_spawn.h"
+#include "macro/politik.h"          // derive_city_spacing — времянка §34.1
 #include "macro/settlement_score.h" // kSettlementReach — the home-field box
 #include "macro/spawners.h"
 #include "macro/squad.h"
@@ -25,6 +27,8 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace sm {
 
@@ -42,6 +46,13 @@ inline float rand_f01(const TickContext& ctx) { return ctx.rng->next_f01(); }
 // ── Helpers shared by all behaviours ──────────────────────────
 
 struct XY { float x, y; };
+
+// Торовая складка разности координат в бокс-офсет.
+inline int fold_d(int d, int period) {
+    if (d > period / 2) return d - period;
+    if (d < -period / 2) return d + period;
+    return d;
+}
 
 XY pick_random_nearby(float cx, float cy, int range, const TickContext& ctx) {
     float nx = wrapf(cx + float(rand_int(ctx, range * 2) - range),
@@ -362,45 +373,64 @@ void try_move(ecs::Position& p, ecs::MacroNpcRuntime& rt,
         // through is finally forded at its honest price. O(8) per cell:
         // 16384 squads can afford it where a pathfind each would starve
         // the frame.
-        const Step straight =
-            torus_step_toward(ix, iy, itx, ity, ctx.mapW, ctx.mapH);
-        // The straight step is a CANDIDATE, not a right: it obeys the same
-        // standing predicate as every neighbour. The old shape let it
-        // through unfiltered — «a river is forded at its honest price» was
-        // Session 21's design, and the owner's 2026-08-30 ruling ended it:
-        // ground a walker cannot stop on is ground it does not enter, so a
-        // squad with no standable step simply halts at the bank.
-        // …and the gate binds only DRY feet: a body already floating (a
-        // genesis accident, a shipwreck) may step wherever gets it out —
-        // its unpayable steps bleed by the sea-bite law below.
         const bool standingDry = can_stand_at(ctx, ix, iy);
         int bx = -1, by = -1;
         float bw = 1e30f;
-        if (!standingDry || can_stand_at(ctx, straight.nx, straight.ny)) {
-            bx = straight.nx;
-            by = straight.ny;
-            bw = edge_weight(ctx, ix, iy, bx, by);
+
+        // ЗАПЕЧЁННАЯ ПОХОДКА (CANON S7, 2026-09-02): округи + порталы +
+        // граф — три чтения, ни волны, ни поиска. Любой рейс любого сквада
+        // идёт системой; жадный шаг остаётся мокрым ногам (тонущий
+        // выбирается сам) и миру без запечённой навигации.
+        if (standingDry && ctx.mw.nav && ctx.mw.nav->baked()) {
+            int fdx = 0, fdy = 0;
+            if (nav_step(*ctx.mw.nav, ix, iy, itx, ity, fdx, fdy)) {
+                bx = wrapi(ix + fdx, ctx.mapW);
+                by = wrapi(iy + fdy, ctx.mapH);
+                bw = edge_weight(ctx, ix, iy, bx, by);
+            }
         }
-        const float dHere =
-            torus_dist_sq(float(ix), float(iy), float(itx), float(ity),
-                          mapWf, mapHf);
-        for (int oy = -1; oy <= 1; ++oy) {
-            for (int ox = -1; ox <= 1; ++ox) {
-                if (ox == 0 && oy == 0) continue;
-                const int nx = wrapi(ix + ox, ctx.mapW);
-                const int ny = wrapi(iy + oy, ctx.mapH);
-                if (nx == bx && ny == by) continue;
-                const float d =
-                    torus_dist_sq(float(nx), float(ny), float(itx), float(ity),
-                                  mapWf, mapHf);
-                if (d >= dHere) continue;   // only steps that make progress
-                // The standing predicate: a walking NPC does not consider
-                // ground it could not stop on (water without a bridge) —
-                // the drowned-trader flood this closes fed 70% of the
-                // world's money into the loot pool (measured 2026-08-30).
-                if (standingDry && !can_stand_at(ctx, nx, ny)) continue;
-                const float w = edge_weight(ctx, ix, iy, nx, ny);
-                if (w < bw) { bx = nx; by = ny; bw = w; }
+
+        if (bx < 0) {
+            // Жадный шаг — закон дальних маршей вне округ (Session 21).
+            const Step straight =
+                torus_step_toward(ix, iy, itx, ity, ctx.mapW, ctx.mapH);
+            // The straight step is a CANDIDATE, not a right: it obeys the
+            // same standing predicate as every neighbour. The old shape let
+            // it through unfiltered — «a river is forded at its honest
+            // price» was Session 21's design, and the owner's 2026-08-30
+            // ruling ended it: ground a walker cannot stop on is ground it
+            // does not enter, so a squad with no standable step simply
+            // halts at the bank.
+            // …and the gate binds only DRY feet: a body already floating (a
+            // genesis accident, a shipwreck) may step wherever gets it out —
+            // its unpayable steps bleed by the sea-bite law below.
+            if (!standingDry || can_stand_at(ctx, straight.nx, straight.ny)) {
+                bx = straight.nx;
+                by = straight.ny;
+                bw = edge_weight(ctx, ix, iy, bx, by);
+            }
+            const float dHere =
+                torus_dist_sq(float(ix), float(iy), float(itx), float(ity),
+                              mapWf, mapHf);
+            for (int oy = -1; oy <= 1; ++oy) {
+                for (int ox = -1; ox <= 1; ++ox) {
+                    if (ox == 0 && oy == 0) continue;
+                    const int nx = wrapi(ix + ox, ctx.mapW);
+                    const int ny = wrapi(iy + oy, ctx.mapH);
+                    if (nx == bx && ny == by) continue;
+                    const float d = torus_dist_sq(float(nx), float(ny),
+                                                  float(itx), float(ity),
+                                                  mapWf, mapHf);
+                    if (d >= dHere) continue;   // only steps that progress
+                    // The standing predicate: a walking NPC does not
+                    // consider ground it could not stop on (water without a
+                    // bridge) — the drowned-trader flood this closes fed
+                    // 70% of the world's money into the loot pool
+                    // (measured 2026-08-30).
+                    if (standingDry && !can_stand_at(ctx, nx, ny)) continue;
+                    const float w = edge_weight(ctx, ix, iy, nx, ny);
+                    if (w < bw) { bx = nx; by = ny; bw = w; }
+                }
             }
         }
         if (bx < 0) break;   // nowhere to stand: the leg ends at the bank
@@ -566,84 +596,20 @@ const GathererDef* gatherer_def(NPCType t) {
     return nullptr;
 }
 
-// ── The REACH WAVE (owner 2026-08-31): «руки достают = руки ДОЙДУТ» ──────
-// A flood over STANDABLE cells in the crews' working box around home: what
-// a march can actually arrive at. Water without a bridge cuts the wave —
-// the measured killer: a silver crew froze for days two cells from a live
-// vein, a mountain river between them, the greedy march blind to detours.
-// A second label marks cells reachable across exactly ONE water cell — the
-// gap a crew can SPAN with a day of work and a back of material (the
-// bridging law below, CANON S10 «фичи создаются сквадами»).
-struct ReachWave {
-    static constexpr int kSide = 2 * kGathererReach + 1;
-    // 0 = unreached; 1 = reachable dry; 2 = reachable across one water cell
-    std::uint8_t label[kSide * kSide];
-    // For label-2 cells: the water cell the route crosses (box index).
-    std::int16_t gap[kSide * kSide];
-};
-
-int wave_index(int dx, int dy) {   // box offset → flat index, -1 outside
-    if (std::abs(dx) > kGathererReach || std::abs(dy) > kGathererReach)
-        return -1;
-    return (dy + kGathererReach) * ReachWave::kSide + (dx + kGathererReach);
-}
-
-void build_reach_wave(const TickContext& ctx, const XY& home, ReachWave& w) {
-    std::fill(std::begin(w.label), std::end(w.label), std::uint8_t(0));
-    std::fill(std::begin(w.gap), std::end(w.gap), std::int16_t(-1));
-    const int hx = int(home.x), hy = int(home.y);
-    struct Cell { std::int8_t dx, dy; };
-    Cell frontier[ReachWave::kSide * ReachWave::kSide];
-    int head = 0, tail = 0;
-    const auto push = [&](int dx, int dy, std::uint8_t lab, std::int16_t g) {
-        const int i = wave_index(dx, dy);
-        if (i < 0 || w.label[i] != 0) return;
-        w.label[i] = lab;
-        w.gap[i] = g;
-        frontier[tail++] = Cell{std::int8_t(dx), std::int8_t(dy)};
-    };
-    push(0, 0, 1, -1);
-    while (head < tail) {
-        const Cell c = frontier[head++];
-        const int ci = wave_index(c.dx, c.dy);
-        const std::uint8_t lab = w.label[ci];
-        const std::int16_t g = w.gap[ci];
-        for (int oy = -1; oy <= 1; ++oy) {
-            for (int ox = -1; ox <= 1; ++ox) {
-                if (ox == 0 && oy == 0) continue;
-                const int ndx = c.dx + ox, ndy = c.dy + oy;
-                const int ni = wave_index(ndx, ndy);
-                if (ni < 0 || w.label[ni] != 0) continue;
-                if (can_stand_at(ctx, hx + ndx, hy + ndy)) {
-                    // Dry ground carries the wave at its own label: a
-                    // bridged route stays bridged past the gap.
-                    push(ndx, ndy, lab, g);
-                } else if (lab == 1) {
-                    // ONE water cell may be spanned; beyond it the wave
-                    // walks label-2. A second gap is not offered — a crew
-                    // builds one bridge a route, not a causeway.
-                    for (int wy = -1; wy <= 1; ++wy) {
-                        for (int wx = -1; wx <= 1; ++wx) {
-                            if (wx == 0 && wy == 0) continue;
-                            const int fdx = ndx + wx, fdy = ndy + wy;
-                            const int fi = wave_index(fdx, fdy);
-                            if (fi < 0 || w.label[fi] != 0) continue;
-                            if (!can_stand_at(ctx, hx + fdx, hy + fdy))
-                                continue;
-                            push(fdx, fdy, 2, std::int16_t(ni));
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
+// ── «Руки достают = руки ДОЙДУТ» — читается из ОКРУГИ (nav_field.h) ──────
+// Волна достижимости влита в мировое разбиение (CANON S7, 2026-09-02):
+// рабочая зона добытчика = СВОЯ округа ∩ радиус рук — две деревни никогда
+// не доят одно гнездо, «чья жила» решает поле тяготения. Радиус рук ОБЯЗАН
+// совпадать с навигационным законом труда.
+static_assert(kNavHandReach == kGathererReach,
+              "радиус рук артелей — один на гейт и навигацию (CANON S7)");
 
 // The home's nearest REACHABLE live cell of the row's deposit kind — dry
-// routes first; failing every dry vein, the nearest vein reachable across
-// one bridgeable gap (bridgeOut = the water cell to span; untouched when
-// the pick is dry). The deposit maps are sparse: the wave is 33², the vein
-// scan a handful of cells.
+// routes first (by the world partition's own march price); failing every
+// dry vein, the nearest vein reachable across one bridgeable water gap
+// (bridgeOut = the water cell to span; untouched when the pick is dry).
+// Without a baked NavWorld (bare test fixtures) the pick degrades to the
+// nearest vein in the box by straight line — the pre-v72 behaviour.
 bool find_home_deposit(const TickContext& ctx, ResourceFieldId row,
                        const XY& home, XY& out, XY* bridgeOut = nullptr) {
     if (!ctx.mw.deposits || ctx.mapW <= 0) return false;
@@ -651,45 +617,83 @@ bool find_home_deposit(const TickContext& ctx, ResourceFieldId row,
         DepositKind(std::uint8_t(row) - std::uint8_t(ResourceFieldId::Clay));
     const auto& cells = ctx.mw.deposits->cells[std::size_t(kind)];
     if (cells.empty()) return false;
-    ReachWave wave;
-    build_reach_wave(ctx, home, wave);
     const int hx = int(home.x), hy = int(home.y);
-    float bestSq[3] = {1e30f, 1e30f, 1e30f};   // [label]
-    XY    bestAt[3];
-    int   bestGap = -1;
+    NavWorld* nv = ctx.mw.nav;
+    const bool navReady = nv && nav_ensure(ctx.mw, *nv);
+    const std::uint16_t myRegion =
+        navReady ? nav_region_at(*nv, hx, hy) : kNavNoRegion;
+    std::uint32_t bestDry = ~0u, bestGapCost = ~0u;
+    float bestSq = 1e30f;
+    XY dryAt{}, gapVein{}, gapCell{};
+    bool haveDry = false, haveGap = false, haveNear = false;
+    XY nearAt{};
     for (const auto& [idx, remaining] : cells) {
         (void)remaining;   // every entry is ALIVE (annihilation law, v55)
         const int x = int(idx % std::uint32_t(ctx.mapW));
         const int y = int(idx / std::uint32_t(ctx.mapW));
-        // Box offset via the torus fold.
-        int dx = x - hx, dy = y - hy;
-        if (dx > ctx.mapW / 2) dx -= ctx.mapW;
-        if (dx < -ctx.mapW / 2) dx += ctx.mapW;
-        if (dy > ctx.mapH / 2) dy -= ctx.mapH;
-        if (dy < -ctx.mapH / 2) dy += ctx.mapH;
-        const int i = wave_index(dx, dy);
-        if (i < 0) continue;
-        const std::uint8_t lab = wave.label[i];
-        if (lab == 0) continue;   // no march arrives — not a worksite
-        const float dsq = float(dx * dx + dy * dy);
-        if (dsq < bestSq[lab]) {
-            bestSq[lab] = dsq;
-            bestAt[lab] = XY{float(x), float(y)};
-            if (lab == 2) bestGap = wave.gap[i];
+        const int dx = fold_d(x - hx, ctx.mapW);
+        const int dy = fold_d(y - hy, ctx.mapH);
+        if (std::abs(dx) > kNavHandReach || std::abs(dy) > kNavHandReach)
+            continue;   // за радиусом рук — не работа этого дома
+        if (!navReady) {
+            const float dsq = float(dx * dx + dy * dy);
+            if (dsq < bestSq) {
+                bestSq = dsq;
+                nearAt = XY{float(x), float(y)};
+                haveNear = true;
+            }
+            continue;
+        }
+        const std::uint16_t r = nav_region_at(*nv, x, y);
+        if (r == myRegion) {
+            const std::uint32_t d = nv->distHome[nv->cell(x, y)];
+            if (d < bestDry) {
+                bestDry = d;
+                dryAt = XY{float(x), float(y)};
+                haveDry = true;
+            }
+            continue;
+        }
+        if (r != kNavNoRegion) continue;   // чужая округа — сосед возьмёт
+        // Жила в водяном кармане: мостовой закон — РОВНО ОДИН разрыв от
+        // моей округи (та же метка 2, что несла волна).
+        for (int wy = -1; wy <= 1; ++wy) {
+            for (int wx = -1; wx <= 1; ++wx) {
+                if (wx == 0 && wy == 0) continue;
+                const int gx = wrapi(x + wx, ctx.mapW);
+                const int gy = wrapi(y + wy, ctx.mapH);
+                if (can_stand_at(ctx, gx, gy)) continue;   // разрыв = вода
+                for (int by = -1; by <= 1; ++by) {
+                    for (int bx = -1; bx <= 1; ++bx) {
+                        if (bx == 0 && by == 0) continue;
+                        const int cx2 = wrapi(gx + bx, ctx.mapW);
+                        const int cy2 = wrapi(gy + by, ctx.mapH);
+                        if (nav_region_at(*nv, cx2, cy2) != myRegion)
+                            continue;
+                        const std::uint32_t cost =
+                            nv->distHome[nv->cell(cx2, cy2)] + 32u;
+                        if (cost < bestGapCost) {
+                            bestGapCost = cost;
+                            gapVein = XY{float(x), float(y)};
+                            gapCell = XY{float(gx), float(gy)};
+                            haveGap = true;
+                        }
+                    }
+                }
+            }
         }
     }
-    if (bestSq[1] < 1e30f) {
-        out = bestAt[1];
+    if (!navReady) {
+        if (haveNear) out = nearAt;
+        return haveNear;
+    }
+    if (haveDry) {
+        out = dryAt;
         return true;
     }
-    if (bestSq[2] < 1e30f && bestGap >= 0) {
-        out = bestAt[2];
-        if (bridgeOut) {
-            const int gdx = bestGap % ReachWave::kSide - kGathererReach;
-            const int gdy = bestGap / ReachWave::kSide - kGathererReach;
-            *bridgeOut = XY{float(wrapi(hx + gdx, ctx.mapW)),
-                            float(wrapi(hy + gdy, ctx.mapH))};
-        }
+    if (haveGap) {
+        out = gapVein;
+        if (bridgeOut) *bridgeOut = gapCell;
         return true;
     }
     return false;
@@ -732,6 +736,26 @@ void ai_gatherer(entt::entity self, ecs::Position& p,
     if (rt.state == std::uint8_t(NS::Idle)) {
         --rt.stateTimer;
         if (rt.stateTimer <= 0) {
+            // ПОЛНАЯ СПИНА ИДЁТ ДОМОЙ (S10 «возвращается, кладёт на склад»):
+            // отдых посреди дорогого маршрута будит артель в Idle, а Idle
+            // слал её к жиле — даже с грузом, которому на жиле нечего взять.
+            // Вечный челнок «шахта→привал→шахта» держал 536 серебра в одной
+            // сумке 48 дней при пустом складе (измерено, сид 7).
+            if (auto* bagIdle = ctx.mw.world
+                    ? ctx.mw.world->reg.try_get<ecs::NpcInventory>(self)
+                    : nullptr) {
+                const ItemDef* idef = item_def(def->commodity);
+                const float unitKg =
+                    idef && idef->weight > 0.0f ? idef->weight : 1.0f;
+                if (bagIdle->inv.count(def->commodity) > 0
+                    && rt.carryCap - inventory_weight(bagIdle->inv)
+                           < unitKg) {
+                    rt.targetX = home.x;
+                    rt.targetY = home.y;
+                    rt.state = std::uint8_t(NS::Returning);
+                    return;
+                }
+            }
             XY site;
             XY gap{-1.0f, -1.0f};
             const bool found =
@@ -941,9 +965,24 @@ void ai_gatherer(entt::entity self, ecs::Position& p,
                     ctx.mw.world->reg.try_get<ecs::SquadRoster>(self);
                 const int workers =
                     1 + (roster ? roster->squad.size() : 0);
-                const int take =
-                    std::min(kGatherPerCycle * workers, have);
                 auto* bag = ctx.mw.world->reg.try_get<ecs::NpcInventory>(self);
+                // «Берёт ПО СВОЕЙ ГРУЗОПОДЪЁМНОСТИ» — CANON S10 дословно:
+                // спины сквада ограничивают тейк. Без этой скобы артель
+                // грузила цикл×души невзирая на вес и каменела перегрузом
+                // на обратном пути НАВСЕГДА (наценка 256 SP/клетку при баре
+                // 110 неоплатна и после полного отдыха — измерено: рудокоп
+                // с 2400 кг серебра на спине в 2145 кг, сид 7).
+                int carryMax = have;
+                if (bag) {
+                    const ItemDef* idef = item_def(def->commodity);
+                    const float unitKg =
+                        idef && idef->weight > 0.0f ? idef->weight : 1.0f;
+                    const float freeKg =
+                        rt.carryCap - inventory_weight(bag->inv);
+                    carryMax = std::max(0, int(freeKg / unitKg));
+                }
+                const int take = std::min(
+                    std::min(kGatherPerCycle * workers, have), carryMax);
                 // Credit BEFORE debit (CANON S5): the field pays only what
                 // the OWN bag actually took — a bagless walker, or a bag
                 // with no room, drains nothing and writes no Drained fact.
@@ -1146,45 +1185,9 @@ int haul_between(Inventory& from, Inventory& to, const char* id,
     return n;
 }
 
-// Move `worth` of VALUE between inventories (owner 2026-08-31: «дань
-// универсальна СТОИМОСТЬЮ — можно деньгами, можно ресурсами, каждый решает
-// сам»). Coin goes first — exact change to the unit — then wares by the
-// payer's own PLENTY (fattest stack-value first: «деревня, в которой много
-// какого-то ресурса, естественным образом относит данью этот ресурс»),
-// floor units so a lumpy ware never overpays; the shortfall below the
-// smallest ware stays owed. Weight-capped: a courier pays what his back
-// carries, the rest waits for the next season's run. Returns value moved.
-int transfer_worth(Inventory& from, Inventory& to, int worth, float maxKg) {
-    if (worth <= 0) return 0;
-    int moved = transfer_value(from, to,
-                               std::min(worth, wallet_value(from)));
-    // Fattest holdings first — computed on the spot over the 14 nouns.
-    int order[kCommodityCount];
-    long long stackValue[kCommodityCount];
-    for (int i = 0; i < kCommodityCount; ++i) {
-        order[i] = i;
-        const ItemDef* def = item_def(kCommodities[i].id);
-        stackValue[i] = def
-            ? (long long)from.count(kCommodities[i].id) * def->value
-            : 0;
-    }
-    std::sort(order, order + kCommodityCount,
-              [&](int a, int b) { return stackValue[a] > stackValue[b]; });
-    float kgLeft = maxKg;
-    for (int oi = 0; oi < kCommodityCount && moved < worth && kgLeft > 0.0f;
-         ++oi) {
-        const int i = order[oi];
-        const ItemDef* def = item_def(kCommodities[i].id);
-        if (!def || def->value <= 0 || stackValue[i] <= 0) continue;
-        const int units = (worth - moved) / def->value;
-        if (units <= 0) continue;
-        const int sent =
-            haul_between(from, to, kCommodities[i].id, units, kgLeft);
-        moved += sent * def->value;
-        kgLeft -= float(sent) * (def->weight > 0.0f ? def->weight : 1.0f);
-    }
-    return moved;
-}
+// (transfer_worth — the value-tribute's «coin, then fattest stacks» door —
+// died 2026-09-02 with the per-position tithe: the fattest-first draw paid
+// the debt in grain while the silver stayed home, and no caller remains.)
 
 // A leg that cannot advance (every candidate step refused — the target is
 // beyond water with no bridge) reads as: position pinned while the move
@@ -1439,6 +1442,24 @@ void ai_vendor(entt::entity self, ecs::Position& p,
                            homeLm->inventory,
                            std::uint16_t(rt.homeSettlementId),
                            ctx.mw.gs->worldTime.day()));
+        // The TRIBUTE loads FIRST and IN KIND (owner 2026-09-02: «по 1/8
+        // всего со склада» — per-position debts, world_tick assess_tithe_):
+        // the back's priority belongs to the debt, so the slice of every
+        // stack — the silver included — actually leaves the village.
+        for (int c = 0; c < kCommodityCount
+                        && inventory_weight(bag->inv) < rt.carryCap;
+             ++c) {
+            const int owed = homeLm->titheOwedGoods[c];
+            if (owed <= 0) continue;
+            haul_between(homeLm->inventory, bag->inv, kCommodities[c].id,
+                         owed, rt.carryCap - inventory_weight(bag->inv));
+        }
+        if (homeLm->titheOwedCoin > 0) {
+            transfer_value(homeLm->inventory, bag->inv,
+                           int(std::min<std::int64_t>(
+                               homeLm->titheOwedCoin,
+                               wallet_value(homeLm->inventory))));
+        }
         // Load the surplus above the home's own daily demand — never its
         // living stock.
         const EconSite homeSite =
@@ -1454,19 +1475,6 @@ void ai_vendor(entt::entity self, ecs::Position& p,
             if (surplus <= 0) continue;
             haul_between(homeLm->inventory, bag->inv, id, surplus,
                          rt.carryCap - inventory_weight(bag->inv));
-        }
-        // The TRIBUTE is a VALUE debt now (owner 2026-08-31: «дань
-        // универсальна стоимостью»), assessed by the world's own pay-day
-        // law (world_tick assess_tithe_) into homeLm->titheOwed. The WARES
-        // toward it are already aboard — the sale load above IS the
-        // village's plenty, and the city takes the debt off the top of it —
-        // so here the crew only adds COIN toward the debt (the sale load
-        // moves commodities, never the purse).
-        if (homeLm->titheOwed > 0) {
-            transfer_value(homeLm->inventory, bag->inv,
-                           int(std::min<std::int64_t>(
-                               homeLm->titheOwed,
-                               wallet_value(homeLm->inventory))));
         }
         if (inventory_weight(bag->inv) <= 0.0f
             && wallet_value(bag->inv) <= 0) {
@@ -1506,21 +1514,39 @@ void ai_vendor(entt::entity self, ecs::Position& p,
                 std::uint16_t(rt.homeSettlementId));
             // The tribute lands FIRST — it is owed, not traded (a crew cut
             // down on the road drops it with the cargo, and the debt
-            // honestly stands). Paid as VALUE out of the WHOLE hold — coin
-            // exact, then the fattest wares — through the one worth door.
-            if (homeLm->titheOwed > 0) {
-                const int paid = transfer_worth(
-                    bag->inv, market->inventory,
-                    int(std::min<std::int64_t>(homeLm->titheOwed,
-                                               1 << 30)),
-                    1e9f);
-                if (paid > 0) {
-                    homeLm->titheOwed =
-                        std::max<std::int64_t>(0, homeLm->titheOwed - paid);
+            // honestly stands). Delivered IN KIND, per position (owner
+            // 2026-09-02): the slice of each stack goes to the suzerain as
+            // itself — the debt can no longer be paid off in grain while
+            // the silver stays home.
+            {
+                long long paidValue = 0;
+                for (int c = 0; c < kCommodityCount; ++c) {
+                    const int owed = homeLm->titheOwedGoods[c];
+                    if (owed <= 0) continue;
+                    const char* id = kCommodities[c].id;
+                    const int moved = haul_between(
+                        bag->inv, market->inventory, id, owed, 1e9f);
+                    if (moved <= 0) continue;
+                    homeLm->titheOwedGoods[c] -= moved;
+                    const ItemDef* d = item_def(id);
+                    paidValue += (long long)moved * (d ? d->value : 0);
+                }
+                if (homeLm->titheOwedCoin > 0) {
+                    const int coins = transfer_value(
+                        bag->inv, market->inventory,
+                        int(std::min<std::int64_t>(
+                            homeLm->titheOwedCoin,
+                            wallet_value(bag->inv))));
+                    homeLm->titheOwedCoin -= coins;
+                    paidValue += coins;
+                }
+                if (paidValue > 0) {
                     record_landmark_fact(*ctx.mw.gs, FactKind::Taxed,
                                          rt.homeSettlementId,
                                          int(rt.targetX), int(rt.targetY),
-                                         paid, rt.targetSettlementId);
+                                         int(std::min<long long>(
+                                             paidValue, 1 << 30)),
+                                         rt.targetSettlementId);
                 }
             }
             const CaravanDeal deal = trade_vendor_at_market(
@@ -1608,19 +1634,38 @@ void ai_taxrun(entt::entity self, ecs::Position& p,
             rt.stateTimer = std::int16_t(200);
             return;
         }
-        // DEBT-driven (owner 2026-08-31): the assessment is the world's
-        // pay-day law (world_tick assess_tithe_); the courier rides
-        // whenever the town owes, paying as VALUE — coin exact, then the
-        // town's fattest wares — as much as his back carries; the rest
-        // waits for the next run.
-        if (homeLm->titheOwed <= 0) {
+        // DEBT-driven (owner 2026-08-31), delivered IN KIND per position
+        // (owner 2026-09-02: «по 1/8 всего со склада»): the courier rides
+        // whenever the town owes, loading the slice of each stack plus the
+        // coin eighth — as much as his back carries; the rest waits.
+        bool owesAny = homeLm->titheOwedCoin > 0;
+        for (int c = 0; !owesAny && c < kCommodityCount; ++c)
+            owesAny = homeLm->titheOwedGoods[c] > 0;
+        if (!owesAny) {
             rt.stateTimer = std::int16_t(64);   // nothing owed today
             return;
         }
-        rt.taxCarried = transfer_worth(
-            homeLm->inventory, bag->inv,
-            int(std::min<std::int64_t>(homeLm->titheOwed, 1 << 30)),
-            rt.carryCap - inventory_weight(bag->inv));
+        long long loaded = 0;
+        for (int c = 0; c < kCommodityCount
+                        && inventory_weight(bag->inv) < rt.carryCap;
+             ++c) {
+            const int owed = homeLm->titheOwedGoods[c];
+            if (owed <= 0) continue;
+            const char* id = kCommodities[c].id;
+            const int moved = haul_between(
+                homeLm->inventory, bag->inv, id, owed,
+                rt.carryCap - inventory_weight(bag->inv));
+            if (moved <= 0) continue;
+            const ItemDef* d = item_def(id);
+            loaded += (long long)moved * (d ? d->value : 0);
+        }
+        if (homeLm->titheOwedCoin > 0) {
+            loaded += transfer_value(
+                homeLm->inventory, bag->inv,
+                int(std::min<std::int64_t>(homeLm->titheOwedCoin,
+                                           wallet_value(homeLm->inventory))));
+        }
+        rt.taxCarried = int(std::min<long long>(loaded, 1 << 30));
         if (rt.taxCarried <= 0) {
             rt.stateTimer = std::int16_t(200);   // owed, but the store is bare
             return;
@@ -1652,15 +1697,34 @@ void ai_taxrun(entt::entity self, ecs::Position& p,
         if (Landmark* cap = landmark_by_id(*ctx.mw.gs,
                                            rt.targetSettlementId);
             cap && cap->type == LandmarkType::City && rt.taxCarried > 0) {
-            const int paid = transfer_worth(bag->inv, cap->inventory,
-                                            rt.taxCarried, 1e9f);
+            // In kind, per position (owner 2026-09-02) — the same delivery
+            // law as the village vendor's tribute above.
+            long long paid = 0;
+            for (int c = 0; c < kCommodityCount; ++c) {
+                const int owed = homeLm->titheOwedGoods[c];
+                if (owed <= 0) continue;
+                const char* id = kCommodities[c].id;
+                const int moved = haul_between(bag->inv, cap->inventory,
+                                               id, owed, 1e9f);
+                if (moved <= 0) continue;
+                homeLm->titheOwedGoods[c] -= moved;
+                const ItemDef* d = item_def(id);
+                paid += (long long)moved * (d ? d->value : 0);
+            }
+            if (homeLm->titheOwedCoin > 0) {
+                const int coins = transfer_value(
+                    bag->inv, cap->inventory,
+                    int(std::min<std::int64_t>(homeLm->titheOwedCoin,
+                                               wallet_value(bag->inv))));
+                homeLm->titheOwedCoin -= coins;
+                paid += coins;
+            }
             if (paid > 0) {
-                homeLm->titheOwed =
-                    std::max<std::int64_t>(0, homeLm->titheOwed - paid);
                 record_landmark_fact(*ctx.mw.gs, FactKind::Taxed,
                                      rt.homeSettlementId,
                                      int(rt.targetX), int(rt.targetY),
-                                     paid, rt.targetSettlementId);
+                                     int(std::min<long long>(paid, 1 << 30)),
+                                     rt.targetSettlementId);
             }
             rt.taxCarried = 0;
         }
@@ -2147,10 +2211,8 @@ AIBehaviour effective_behaviour(entt::registry& reg, entt::entity e,
 // AI chooses when its legs are gone, and the player keeps his own aim. What
 // is one law is the PRICE; what is two is who decides to stop paying it.
 bool can_stand_at(const TickContext& ctx, int x, int y) {
-    if (!cell_is_water(ctx, x, y)) return true;
-    if (!ctx.mw.features) return false;
-    const FeatureType ft = FeatureType(ctx.mw.features->at(x, y));
-    return ft == FT_Bridge || ft == FT_WoodBridge;
+    // ОДИН закон стояния на марш и запекание округи (nav_field.h).
+    return nav_can_stand(ctx.mw, x, y);
 }
 
 bool cell_is_water(const TickContext& ctx, int x, int y) {
@@ -2474,6 +2536,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
     ctx.mw = mw;
     ctx.mapW = gs.mapW;
     ctx.mapH = gs.mapH;
+    if (mw.nav) nav_ensure(mw, *mw.nav);   // гейты читают округи
 
     const auto row_of = [&](int id) -> int {
         for (std::size_t i = 0; i < gs.landmarks.size(); ++i)
@@ -2783,6 +2846,10 @@ void tick_macro_npc_ai(MacroWorld& mw,
 
     build_squad_index(runtime.squadIndex, w, gs.mapW, gs.mapH);
 
+    // Свежесть запечённой навигации — раз на свип, не в шаге (тор-закон
+    // gigahrush2 «never re-bake per tick»: перепёк только на границах).
+    if (mw.nav) nav_ensure(mw, *mw.nav);
+
     TickContext ctx = make_tick_context(mw, runtime, allowAutoBattle);
 
     for (auto e : view) {
@@ -2905,6 +2972,7 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     // that had drifted (the deposits epitaph now lives on TickContext itself,
     // npc_ai.h); the two drivers may differ in HOW they walk the entities —
     // never in what world the entities think about (CANON.md S2).
+    if (mw.nav) nav_ensure(mw, *mw.nav);
     TickContext ctx = make_tick_context(mw, runtime, allowAutoBattle);
 
     while (runtime.pendingSweeps > 0
@@ -2964,6 +3032,209 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     destroy_dead_macro_squads(w, &gs.lootPoolValue);
     result.backlog = result.backlog || runtime.pendingSweeps > 0;
     return result;
+}
+
+// ── ВРЕМЯНКА §34.1: перепись серебра в волне достижимости ────────────────
+// Контракт и зачем — в npc_ai.h. Считает ТЕМИ ЖЕ законами, какими живёт
+// рудная артель: build_reach_wave над становимыми клетками рабочего бокса,
+// ранги исходов dry(3) > bridge(2) > blocked(1) > none(0). Снести с §34.1.
+void census_silver_reach(const MacroWorld& mw, std::uint8_t seaLevel8,
+                         SilverReachCensus& out) {
+    out = SilverReachCensus{};
+    if (!mw.gs || !mw.deposits) return;
+    Rng waveRng(1);   // волна RNG не бросает; контексту нужен непустой ствол
+    TickContext ctx{};
+    ctx.mw = mw;
+    ctx.mapW = mw.gs->mapW;
+    ctx.mapH = mw.gs->mapH;
+    ctx.rng = &waveRng;
+    const auto& cells =
+        mw.deposits->cells[std::size_t(DepositKind::Silver)];
+    out.silverCells = int(cells.size());
+    for (const auto& [idx, units] : cells) {
+        (void)idx;
+        out.unitsTotal += units;
+    }
+    // Лучший исход каждой серебряной клетки по ВСЕМ деревням мира —
+    // теперь читается из мирового разбиения (округа = чья жила): dry(3) =
+    // жила в СВОЕЙ округе в радиусе рук; bridge(2) = в водяном кармане
+    // через один разрыв от своей округи; blocked(1) = в боксе, но не моя
+    // и не мостится.
+    NavWorld* nv = mw.nav;
+    const bool navReady = nv && nav_ensure(mw, *nv);
+    std::unordered_map<std::uint32_t, std::uint8_t> bestByCell;
+    for (const Landmark& lm : mw.gs->landmarks) {
+        if (lm.type != LandmarkType::Village || lm.population <= 0) continue;
+        ++out.villages;
+        if (cells.empty() || !navReady) {
+            ++out.vNone;
+            continue;
+        }
+        const std::uint16_t myRegion = nav_region_at(*nv, lm.x, lm.y);
+        std::uint8_t vBest = 0;
+        for (const auto& [idx, units] : cells) {
+            (void)units;
+            const int x = int(idx % std::uint32_t(ctx.mapW));
+            const int y = int(idx / std::uint32_t(ctx.mapW));
+            const int dx = fold_d(x - lm.x, ctx.mapW);
+            const int dy = fold_d(y - lm.y, ctx.mapH);
+            if (std::abs(dx) > kNavHandReach || std::abs(dy) > kNavHandReach)
+                continue;
+            const std::uint16_t r = nav_region_at(*nv, x, y);
+            std::uint8_t rank = 1;
+            if (r == myRegion) rank = 3;
+            else if (r == kNavNoRegion) {
+                for (int wy = -1; wy <= 1 && rank < 2; ++wy)
+                    for (int wx = -1; wx <= 1 && rank < 2; ++wx) {
+                        if (wx == 0 && wy == 0) continue;
+                        const int gx = wrapi(x + wx, ctx.mapW);
+                        const int gy = wrapi(y + wy, ctx.mapH);
+                        if (can_stand_at(ctx, gx, gy)) continue;
+                        for (int by = -1; by <= 1 && rank < 2; ++by)
+                            for (int bx = -1; bx <= 1 && rank < 2; ++bx) {
+                                if (bx == 0 && by == 0) continue;
+                                if (nav_region_at(*nv,
+                                                  wrapi(gx + bx, ctx.mapW),
+                                                  wrapi(gy + by, ctx.mapH))
+                                    == myRegion)
+                                    rank = 2;
+                            }
+                    }
+            }
+            std::uint8_t& b = bestByCell[idx];
+            b = std::max(b, rank);
+            vBest = std::max(vBest, rank);
+        }
+        if (vBest == 3) ++out.vDry;
+        else if (vBest == 2) ++out.vBridge;
+        else if (vBest == 1) ++out.vBlocked;
+        else ++out.vNone;
+    }
+    // Классификатор сирот — ровно те же двери, какими рождается деревня
+    // (state.cpp): settlement_site_score/terms + гейт самопрокорма + бокс
+    // хинтерланда города (reach = max(4, spacing/2) от derive_city_spacing).
+    SettlementSiteContext site{};
+    site.w = mw;
+    site.seaLevel8 = seaLevel8;
+    const std::vector<std::uint16_t> depositReach =
+        build_deposit_reach_field(*mw.deposits, ctx.mapW, ctx.mapH);
+    site.depositReach = depositReach.empty() ? nullptr : depositReach.data();
+    std::vector<std::pair<int, int>> cityXY;
+    for (const Landmark& lm : mw.gs->landmarks)
+        if (lm.type == LandmarkType::City) cityXY.push_back({lm.x, lm.y});
+    const int spacing = derive_city_spacing(mw.terrain, seaLevel8, ctx.mapW,
+                                            ctx.mapH, int(cityXY.size()));
+    const int hinterReach = std::max(4, spacing / 2);
+    const auto torus_cheb = [&](int ax, int ay, int bx, int by) {
+        const int ddx = std::min(std::abs(ax - bx),
+                                 ctx.mapW - std::abs(ax - bx));
+        const int ddy = std::min(std::abs(ay - by),
+                                 ctx.mapH - std::abs(ay - by));
+        return std::max(ddx, ddy);
+    };
+    const auto in_hinterland = [&](int x, int y) {
+        for (const auto& [cx, cy] : cityXY)
+            if (torus_cheb(x, y, cx, cy) <= hinterReach) return true;
+        return false;
+    };
+    // Класс сироты по объединению рабочих боксов её клеток:
+    // 3 = lost (кормит и в хинтерланде) > 2 = outside > 1 = noFeed > 0.
+    const auto orphan_class = [&](const std::vector<std::uint32_t>& nest) {
+        std::unordered_set<std::uint32_t> scanned;
+        int cls = 0;
+        for (const std::uint32_t idx : nest) {
+            const int nx = int(idx % std::uint32_t(ctx.mapW));
+            const int ny = int(idx / std::uint32_t(ctx.mapW));
+            for (int dy = -kGathererReach; dy <= kGathererReach; ++dy) {
+                for (int dx = -kGathererReach; dx <= kGathererReach; ++dx) {
+                    const int x = wrapi(nx + dx, ctx.mapW);
+                    const int y = wrapi(ny + dy, ctx.mapH);
+                    const std::uint32_t ci =
+                        std::uint32_t(y) * std::uint32_t(ctx.mapW)
+                        + std::uint32_t(x);
+                    if (!scanned.insert(ci).second) continue;
+                    if (settlement_site_score(site,
+                                              SettlementScoreRow::Village,
+                                              x, y) < 0)
+                        continue;   // вето — не грунт
+                    const SettlementSiteTerms t =
+                        settlement_site_terms(site, x, y);
+                    const bool feeds = t.arable >= kVillageArableGate
+                                    || t.deposit >= kVillageDepositGate;
+                    int c = 1;                       // грунт есть
+                    if (feeds) c = in_hinterland(x, y) ? 3 : 2;
+                    cls = std::max(cls, c);
+                    if (cls == 3) return cls;        // хуже уже не станет
+                }
+            }
+        }
+        return cls;
+    };
+    // Гнёзда = связные компоненты серебра (8-связность по тору) — та же
+    // связность, которую сворачивает шахта. Исход гнезда = лучший исход
+    // любой его клетки; сирота = ни одна деревня не видит его боксом.
+    std::unordered_set<std::uint32_t> seen;
+    std::vector<std::uint32_t> stack;
+    std::vector<std::uint32_t> nestCells;
+    for (const auto& [start, u0] : cells) {
+        (void)u0;
+        if (seen.count(start)) continue;
+        seen.insert(start);
+        stack.assign(1, start);
+        nestCells.clear();
+        long long units = 0;
+        std::uint8_t nestBest = 0;
+        while (!stack.empty()) {
+            const std::uint32_t idx = stack.back();
+            stack.pop_back();
+            nestCells.push_back(idx);
+            units += cells.at(idx);
+            const auto it = bestByCell.find(idx);
+            if (it != bestByCell.end()) nestBest = std::max(nestBest, it->second);
+            const int x = int(idx % std::uint32_t(ctx.mapW));
+            const int y = int(idx / std::uint32_t(ctx.mapW));
+            for (int oy = -1; oy <= 1; ++oy) {
+                for (int ox = -1; ox <= 1; ++ox) {
+                    if (ox == 0 && oy == 0) continue;
+                    const std::uint32_t nidx =
+                        std::uint32_t(wrapi(y + oy, ctx.mapH))
+                            * std::uint32_t(ctx.mapW)
+                        + std::uint32_t(wrapi(x + ox, ctx.mapW));
+                    if (!cells.count(nidx) || seen.count(nidx)) continue;
+                    seen.insert(nidx);
+                    stack.push_back(nidx);
+                }
+            }
+        }
+        ++out.nests;
+        if (nestBest == 3) { ++out.nestsDry; out.unitsDry += units; }
+        else if (nestBest == 2) { ++out.nestsBridge; out.unitsBridge += units; }
+        else if (nestBest == 1) { ++out.nestsBlocked; out.unitsBlocked += units; }
+        else {
+            ++out.nestsOrphan;
+            out.unitsOrphan += units;
+            switch (orphan_class(nestCells)) {
+                case 3: ++out.orphanLost;     out.unitsLost += units; break;
+                case 2: ++out.orphanOutside;  out.unitsOutside += units; break;
+                case 1: ++out.orphanNoFeed;   out.unitsNoFeed += units; break;
+                default: ++out.orphanNoGround; out.unitsNoGround += units;
+            }
+            int dMin = 1 << 20;
+            for (const Landmark& lm : mw.gs->landmarks) {
+                if (lm.type != LandmarkType::Village || lm.population <= 0)
+                    continue;
+                for (const std::uint32_t idx : nestCells) {
+                    const int x = int(idx % std::uint32_t(ctx.mapW));
+                    const int y = int(idx / std::uint32_t(ctx.mapW));
+                    dMin = std::min(dMin, torus_cheb(x, y, lm.x, lm.y));
+                }
+            }
+            if (dMin <= 24) { ++out.orphanWithin24; out.unitsWithin24 += units; }
+            else if (dMin <= 32) { ++out.orphanWithin32; out.unitsWithin32 += units; }
+            else if (dMin <= 48) { ++out.orphanWithin48; out.unitsWithin48 += units; }
+            else { ++out.orphanBeyond48; out.unitsBeyond48 += units; }
+        }
+    }
 }
 
 } // namespace sm

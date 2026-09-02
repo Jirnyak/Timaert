@@ -41,6 +41,7 @@
 #include "macro/spawners.h"
 #include "macro/tree_layer.h"
 #include "macro/landmark_grid.h"
+#include "macro/nav_field.h"
 #include "macro/deposit_layer.h"
 #include "macro/spires.h"
 #include "macro/zones.h"
@@ -262,6 +263,10 @@ struct App {
     // smoke travel probe): allocated once per map size, generation-reset per
     // search — the per-call ~13 MB of scratch vectors died with it (S7).
     sm::PathScratch pathScratch;
+    // Запечённая навигация рейсов: округи + порталы + граф
+    // (macro/nav_field.h, CANON S7). Derived: свежесть ловит nav_ensure
+    // (сид, ландмарки, мосты) — ручной чистки не нужно.
+    sm::NavWorld navWorld;
     sm::ui::CustomGameParams customParams; // remembered across visits to the menu
     ImTextureID  customPreviewTex   = ImTextureID();  // biome-coloured world preview
     int          customPreviewSide  = 0;        // 0 = no preview built yet

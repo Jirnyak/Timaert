@@ -52,6 +52,7 @@ struct ZoneLayer;
 struct PathCostData;
 struct TreeGrid;
 struct LandmarkGrid;
+struct NavWorld;
 namespace ecs { struct World; }
 
 struct MacroWorld {
@@ -72,6 +73,10 @@ struct MacroWorld {
                                             //   the woodcutter's target search
     const LandmarkGrid* landmarks = nullptr; // baked cell → landmark index
                                              //   (macro/landmark_grid.h)
+    NavWorld* nav = nullptr;   // запечённая навигация: округи + порталы +
+                               //   граф (macro/nav_field.h, CANON S7); null =
+                               //   походка падает в жадный шаг — нулевой
+                               //   вклад отсутствующего слоя
 
     // ── The way OUT: facts the macro layer produces ───────────────────────
     // The macro layer must not see the event bus (that is L3; econ_day

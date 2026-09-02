@@ -101,20 +101,26 @@ void settle_landmark_day(Landmark& lm,
 
 namespace {
 
-// The UNIVERSAL tribute assessment (owner 2026-08-31, CANON S10/S24: «дань
-// универсальна СТОИМОСТЬЮ — забудь о казне»): on the place's own seasonal
-// pay-day (the ONE slow cycle wages already ride) an eighth of the WHOLE
-// store's value — coin is just a ware in it — is charged into the debt the
-// carriers pay down (vendor to the market city, courier to the capital).
-// Missed seasons accumulate honestly. Only a place WITH a suzerain owes;
-// the top of a chain (a capital, a market-less village) is charged nothing.
+// The UNIVERSAL tribute assessment, BY POSITION (owner 2026-09-02: «дают
+// по 1/8 всего со склада, с округлением до меньшего»): on the place's own
+// seasonal pay-day (the ONE slow cycle wages already ride) an eighth of
+// EACH commodity stack — floor — and an eighth of the coin are charged
+// into the per-position debts the carriers deliver IN KIND (vendor to the
+// market city, courier to the capital). A slice of every stack carries the
+// vassal's silver to the mint, which the old value-debt's «fattest stack»
+// draw never did. Missed seasons accumulate honestly, per position. Only a
+// place WITH a suzerain owes; the top of a chain is charged nothing.
 void assess_tithe_(Landmark& lm, int day, bool hasSuzerain) {
     if (!hasSuzerain) return;
     if (day % kDaysPerSeason != lm.id % kDaysPerSeason) return;
     const int season = day / kDaysPerSeason;
     if (lm.titheSeasonAssessed == season) return;
     lm.titheSeasonAssessed = season;
-    lm.titheOwed += std::int64_t(inventory_value(lm.inventory)) >> 3;
+    for (int c = 0; c < kCommodityCount; ++c) {
+        lm.titheOwedGoods[c] +=
+            lm.inventory.count_of(commodity_item_index(c)) >> 3;
+    }
+    lm.titheOwedCoin += std::int64_t(wallet_value(lm.inventory)) >> 3;
 }
 
 // The pure econ steps are landmark-blind (they see one Inventory); this relay

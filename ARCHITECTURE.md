@@ -289,6 +289,7 @@ with it.
 | [macro/politik.{h,cpp}](src/macro/politik.h)                          | `KingdomDef` registry, capital + city placement, MST + extra roads, Voronoi `cellOwner`; malformed or mismatched terrain storage is ignored as absent terrain | `game/politik.ts` |
 | [macro/language.{h,cpp}](src/macro/language.h)                        | Procedural per-kingdom phonotactic name generation | `game/language.ts` |
 | [macro/pathfinding.{h,cpp}](src/macro/pathfinding.h)                  | A* over traversability grid | `game/pathfinding.ts` |
+| [macro/nav_field.{h,cpp}](src/macro/nav_field.h)                      | Запечённая навигация рейсов: округи-зоны тяготения (одна мультиисточниковая Дейкстра от всех ландмарков), порталы по сегментам границ, циклический граф + routeNext; походка = три чтения, никакого поиска в тике ([nav.md](nav.md), CANON S7) | — (native, 2026-09-02) |
 | [macro/world_tick.{h,cpp}](src/macro/world_tick.h)                    | Time advancement, daily settlement / village / economy tick; `subworld_time` smoke proves runtime advance on seed 42 | `game/world-tick.ts` |
 | [macro/spawners.{h,cpp}](src/macro/spawners.h) `spawn_trees`          | FBM-density tree placement with a 2-cell river exclusion | `game/tree-spawner.ts` |
 | [macro/spawners.{h,cpp}](src/macro/spawners.h) `trace_roads`          | Native terrain-cost A* with component pre-prune and large-map step cap; road topology + rejected-water pruning held by `road_river_generation_test` | `game/road-spawner.ts`, `game/road-network.ts` |
