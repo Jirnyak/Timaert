@@ -1,0 +1,170 @@
+[deposits] clay=1110222 iron=1333779 stone=1498892950 silver=463646 (cells 723/1770/63545/2419)
+[muster] spawned at sea: 5
+[silver-census] seed=1 genesis villages=1400 (dry=7 bridge=0 blocked=0 none=1393) nests=45 (dry=3 bridge=0 blocked=0 orphan=42) units=463646 (dry=94651 bridge=0 blocked=0 orphan=368995) cells=2419
+[silver-orphans] seed=1 genesis noGround=31/257752 noFeed=0/0 outsideHinterland=11/111243 lostScore=0/0
+[silver-dist] seed=1 genesis orphan→village: <=24: 2/12134 <=32: 8/128237 <=48: 13/103064 >48: 19/125560
+[muster] AT SEA at run end: 110
+[silver-miner] pos=147,697 target=156,710 home=804 state=1 sp=61/130 overload=0 cap=2028 load=4
+[silver-miner] pos=186,719 target=190,724 home=796 state=7 sp=68/140 overload=0 cap=1344 load=108
+[silver-miner] pos=320,354 target=328,348 home=425 state=1 sp=30/140 overload=0 cap=1755 load=0
+[silver-miner] pos=310,326 target=305,326 home=416 state=1 sp=140/140 overload=0 cap=1680 load=0
+[silver-muster] bags=28 miners=4 states=[0 3 0 0 0 0 0 1]
+[caravan] home=55 state=7 sp=30/160 cap=5280 load=5280 coin=1314 grain=0 wood=0 clay=0
+[caravan] home=56 state=7 sp=20/140 cap=4608 load=4607 coin=11660 grain=375 wood=806 clay=0
+[caravan] home=62 state=7 sp=52/120 cap=4160 load=2133 coin=5419 grain=0 wood=0 clay=0
+[caravan] home=15 state=2 sp=30/110 cap=4160 load=4159 coin=748 grain=8 wood=573 clay=0
+[caravan] home=59 state=3 sp=160/160 cap=3840 load=16426 coin=31153 grain=600 wood=1180 clay=0
+[caravan] home=29 state=3 sp=63/150 cap=3840 load=1920 coin=1 grain=0 wood=0 clay=0
+[caravan] home=63 state=3 sp=27/140 cap=4608 load=2304 coin=39 grain=0 wood=0 clay=0
+[caravan] home=60 state=2 sp=25/160 cap=4576 load=4575 coin=8098 grain=562 wood=793 clay=0
+[caravan] home=58 state=2 sp=69/120 cap=4160 load=2080 coin=1 grain=0 wood=0 clay=0
+[caravan] home=54 state=2 sp=62/120 cap=3872 load=3872 coin=14372 grain=135 wood=769 clay=0
+[caravan] home=53 state=8 sp=120/120 cap=3840 load=1 coin=0 grain=0 wood=0 clay=0
+[caravan] home=52 state=3 sp=130/130 cap=4992 load=4991 coin=8653 grain=0 wood=1199 clay=0
+[caravan] home=51 state=7 sp=22/110 cap=4480 load=4479 coin=22065 grain=49 wood=989 clay=1
+[caravan] home=50 state=3 sp=50/120 cap=4992 load=2667 coin=17158 grain=0 wood=0 clay=0
+[caravan] home=49 state=2 sp=36/110 cap=4928 load=2633 coin=17171 grain=0 wood=0 clay=0
+[caravan] home=48 state=7 sp=53/130 cap=4224 load=4224 coin=4300 grain=58 wood=976 clay=0
+[caravan] home=47 state=2 sp=36/110 cap=4224 load=4223 coin=10233 grain=16 wood=2 clay=0
+[caravan] home=46 state=3 sp=150/150 cap=4224 load=4223 coin=9249 grain=0 wood=1007 clay=0
+[caravan] home=45 state=7 sp=66/150 cap=3840 load=3854 coin=55543 grain=7 wood=689 clay=0
+[caravan] home=44 state=3 sp=130/130 cap=4160 load=4160 coin=8246 grain=0 wood=995 clay=0
+[caravan] home=43 state=3 sp=55/140 cap=4576 load=2287 coin=0 grain=0 wood=0 clay=0
+[caravan] home=42 state=0 sp=75/130 cap=4224 load=0 coin=0 grain=0 wood=0 clay=0
+[caravan] home=40 state=7 sp=34/160 cap=5376 load=5375 coin=3731 grain=160 wood=1223 clay=0
+[caravan] home=39 state=3 sp=140/140 cap=4576 load=4575 coin=12226 grain=0 wood=1077 clay=0
+[caravan] home=38 state=2 sp=57/130 cap=4224 load=2510 coin=7621 grain=0 wood=161 clay=0
+[caravan] home=37 state=3 sp=150/150 cap=3872 load=1946 coin=0 grain=0 wood=5 clay=0
+[caravan] home=36 state=2 sp=64/140 cap=3840 load=1920 coin=0 grain=0 wood=0 clay=0
+[caravan] home=35 state=7 sp=60/130 cap=4224 load=4224 coin=12012 grain=0 wood=944 clay=0
+[caravan] home=34 state=2 sp=40/140 cap=4480 load=4479 coin=3655 grain=12 wood=1033 clay=0
+[caravan] home=33 state=2 sp=50/150 cap=4160 load=4159 coin=6155 grain=136 wood=775 clay=0
+[caravan] home=31 state=8 sp=29/160 cap=4928 load=4928 coin=8228 grain=2 wood=1176 clay=0
+[caravan] home=30 state=3 sp=130/130 cap=3520 load=3520 coin=13098 grain=5 wood=826 clay=0
+[caravan] home=27 state=2 sp=76/150 cap=4160 load=4183 coin=14235 grain=0 wood=368 clay=0
+[caravan] home=26 state=2 sp=19/140 cap=3840 load=3840 coin=5327 grain=4 wood=932 clay=0
+[caravan] home=25 state=3 sp=150/150 cap=4160 load=4160 coin=19569 grain=18 wood=938 clay=0
+[caravan] home=24 state=2 sp=39/120 cap=4160 load=4159 coin=7993 grain=0 wood=997 clay=0
+[caravan] home=23 state=7 sp=69/140 cap=4928 load=4927 coin=8041 grain=124 wood=1107 clay=0
+[caravan] home=22 state=3 sp=130/130 cap=3840 load=1919 coin=7 grain=0 wood=0 clay=0
+[caravan] home=20 state=3 sp=140/140 cap=3520 load=1781 coin=2348 grain=0 wood=0 clay=0
+[caravan] home=18 state=2 sp=26/150 cap=4608 load=2428 coin=12545 grain=0 wood=0 clay=0
+[caravan] home=17 state=3 sp=120/120 cap=3840 load=2016 coin=9600 grain=0 wood=0 clay=0
+[caravan] home=16 state=7 sp=61/130 cap=4608 load=4607 coin=4999 grain=0 wood=1124 clay=0
+[caravan] home=14 state=2 sp=31/130 cap=4576 load=4575 coin=10648 grain=0 wood=1108 clay=0
+[caravan] home=13 state=2 sp=46/120 cap=3872 load=2156 coin=22048 grain=0 wood=0 clay=0
+[caravan] home=12 state=2 sp=52/120 cap=4160 load=2225 coin=14692 grain=0 wood=0 clay=0
+[caravan] home=11 state=2 sp=21/130 cap=4160 load=4159 coin=13903 grain=537 wood=303 clay=0
+[caravan] home=8 state=2 sp=45/140 cap=3840 load=3840 coin=6901 grain=1 wood=779 clay=0
+[caravan] home=7 state=2 sp=20/110 cap=4608 load=4607 coin=10974 grain=26 wood=1070 clay=0
+[caravan] home=5 state=3 sp=140/140 cap=4224 load=4224 coin=3987 grain=7 wood=1031 clay=0
+[caravan] home=3 state=2 sp=61/130 cap=4992 load=4992 coin=5254 grain=240 wood=987 clay=0
+[caravan] home=2 state=3 sp=52/160 cap=4576 load=4575 coin=3584 grain=109 wood=846 clay=0
+[caravan] home=1 state=2 sp=52/150 cap=3520 load=3519 coin=47516 grain=5 wood=640 clay=0
+[caravan] home=41 state=2 sp=60/110 cap=4576 load=2287 coin=0 grain=0 wood=0 clay=0
+[caravan] home=4 state=2 sp=28/120 cap=4576 load=4575 coin=29525 grain=116 wood=850 clay=0
+[caravan] home=19 state=2 sp=32/130 cap=4608 load=4607 coin=11852 grain=38 wood=1017 clay=0
+[caravan] home=32 state=7 sp=47/130 cap=3872 load=3871 coin=10002 grain=0 wood=923 clay=0
+[caravan] home=10 state=7 sp=29/140 cap=5408 load=5407 coin=9110 grain=133 wood=1126 clay=0
+[caravan] home=32 state=2 sp=65/180 cap=3520 load=3519 coin=4217 grain=66 wood=667 clay=0
+[caravan] home=9 state=2 sp=53/120 cap=5280 load=5279 coin=3353 grain=1292 wood=396 clay=0
+[caravan] home=4 state=2 sp=59/150 cap=4224 load=4223 coin=23068 grain=86 wood=853 clay=0
+[caravan] home=21 state=3 sp=120/120 cap=4224 load=4223 coin=8740 grain=10 wood=1007 clay=0
+[caravan] home=57 state=2 sp=23/150 cap=4224 load=4223 coin=8837 grain=166 wood=622 clay=0
+[caravan] home=6 state=3 sp=180/180 cap=5632 load=5631 coin=10983 grain=0 wood=1345 clay=0
+[caravan] home=61 state=7 sp=17/140 cap=4160 load=4160 coin=10459 grain=174 wood=904 clay=0
+[caravan] home=28 state=3 sp=140/140 cap=5824 load=5823 coin=1611 grain=0 wood=813 clay=1
+[caravan] home=61 state=2 sp=31/140 cap=3840 load=3839 coin=22708 grain=0 wood=771 clay=0
+[balance] caravans=66 vendors=1409 (idle=242 away=1167 load=2872136kg)
+[balance] seed=1 days=512 pop=225809 aliveSettlements=1447 secs=895.4
+[silver-census] seed=1 run-end villages=1384 (dry=0 bridge=0 blocked=0 none=1384) nests=52 (dry=0 bridge=0 blocked=0 orphan=52) units=374115 (dry=0 bridge=0 blocked=0 orphan=374115) cells=1932
+[silver-orphans] seed=1 run-end noGround=41/262872 noFeed=0/0 outsideHinterland=11/111243 lostScore=0/0
+[silver-dist] seed=1 run-end orphan→village: <=24: 3/12646 <=32: 8/128237 <=48: 16/104600 >48: 25/128632
+[law] world still populated: OK
+[deposits] clay=262706 iron=1047957 stone=662217955 silver=117255 (cells 281/1182/36632/634)
+[muster] spawned at sea: 2
+[silver-census] seed=7 genesis villages=1575 (dry=1 bridge=0 blocked=0 none=1574) nests=21 (dry=1 bridge=0 blocked=0 orphan=20) units=117255 (dry=5881 bridge=0 blocked=0 orphan=111374) cells=634
+[silver-orphans] seed=7 genesis noGround=16/88705 noFeed=0/0 outsideHinterland=3/5735 lostScore=1/16934
+[silver-dist] seed=7 genesis orphan→village: <=24: 4/38974 <=32: 5/39049 <=48: 3/20231 >48: 8/13120
+[muster] AT SEA at run end: 130
+[silver-miner] pos=977,945 target=977,948 home=1299 state=1 sp=110/110 overload=0 cap=2145 load=2084
+[silver-muster] bags=1478 miners=1 states=[0 1 0 0 0 0 0 0]
+[caravan] home=8 state=7 sp=47/160 cap=3520 load=1766 coin=755 grain=0 wood=0 clay=0
+[caravan] home=54 state=2 sp=41/130 cap=4992 load=2534 coin=4004 grain=0 wood=0 clay=0
+[caravan] home=41 state=3 sp=140/140 cap=4224 load=2251 coin=0 grain=0 wood=70 clay=0
+[caravan] home=65 state=4 sp=140/140 cap=4480 load=5237 coin=5261 grain=0 wood=343 clay=0
+[caravan] home=43 state=7 sp=21/140 cap=3520 load=1897 coin=13869 grain=0 wood=0 clay=0
+[caravan] home=64 state=2 sp=80/150 cap=3840 load=3839 coin=5741 grain=0 wood=867 clay=0
+[caravan] home=63 state=3 sp=120/120 cap=4224 load=4223 coin=5197 grain=74 wood=969 clay=0
+[caravan] home=62 state=7 sp=72/150 cap=4224 load=4224 coin=3529 grain=0 wood=1037 clay=0
+[caravan] home=61 state=7 sp=42/120 cap=4800 load=4800 coin=37974 grain=157 wood=694 clay=0
+[caravan] home=60 state=2 sp=31/120 cap=5408 load=2858 coin=15675 grain=0 wood=0 clay=0
+[caravan] home=59 state=3 sp=140/140 cap=4608 load=4607 coin=3296 grain=0 wood=1130 clay=0
+[caravan] home=58 state=2 sp=47/140 cap=4224 load=2234 coin=12300 grain=0 wood=0 clay=0
+[caravan] home=56 state=4 sp=51/160 cap=4576 load=4575 coin=21755 grain=299 wood=785 clay=0
+[caravan] home=55 state=2 sp=30/130 cap=3872 load=3872 coin=19077 grain=3 wood=256 clay=0
+[caravan] home=53 state=2 sp=57/120 cap=4224 load=2323 coin=21365 grain=0 wood=0 clay=0
+[caravan] home=52 state=8 sp=120/120 cap=3840 load=0 coin=0 grain=0 wood=0 clay=0
+[caravan] home=51 state=2 sp=140/160 cap=5824 load=2908 coin=1 grain=0 wood=0 clay=0
+[caravan] home=49 state=7 sp=39/160 cap=4224 load=4223 coin=3822 grain=0 wood=1033 clay=10
+[caravan] home=48 state=3 sp=130/130 cap=4576 load=4576 coin=2692 grain=2 wood=1002 clay=0
+[caravan] home=46 state=3 sp=170/170 cap=4928 load=4928 coin=11233 grain=0 wood=1170 clay=0
+[caravan] home=45 state=3 sp=140/140 cap=4160 load=4160 coin=10992 grain=5 wood=975 clay=0
+[caravan] home=44 state=3 sp=140/140 cap=4224 load=4223 coin=7027 grain=0 wood=1023 clay=0
+[caravan] home=39 state=8 sp=170/170 cap=4576 load=3122 coin=9 grain=0 wood=0 clay=0
+[caravan] home=37 state=2 sp=33/140 cap=4576 load=2395 coin=10876 grain=0 wood=0 clay=0
+[caravan] home=36 state=3 sp=130/130 cap=4576 load=4575 coin=11742 grain=0 wood=1082 clay=0
+[caravan] home=33 state=3 sp=130/130 cap=4928 load=2511 coin=4792 grain=0 wood=0 clay=0
+[caravan] home=31 state=3 sp=140/140 cap=4576 load=4575 coin=5248 grain=9 wood=1114 clay=0
+[caravan] home=30 state=3 sp=150/150 cap=6272 load=6272 coin=4079 grain=0 wood=1539 clay=0
+[caravan] home=29 state=3 sp=140/140 cap=5824 load=5824 coin=1626 grain=3 wood=1441 clay=0
+[caravan] home=28 state=7 sp=45/140 cap=4928 load=2697 coin=23523 grain=0 wood=0 clay=0
+[caravan] home=27 state=3 sp=130/130 cap=4224 load=4223 coin=51176 grain=0 wood=797 clay=0
+[caravan] home=26 state=3 sp=140/140 cap=4480 load=2346 coin=10748 grain=0 wood=0 clay=0
+[caravan] home=25 state=3 sp=150/150 cap=4160 load=2100 coin=2166 grain=0 wood=0 clay=0
+[caravan] home=24 state=2 sp=40/160 cap=4928 load=4927 coin=10087 grain=29 wood=1149 clay=0
+[caravan] home=23 state=7 sp=53/120 cap=4928 load=4931 coin=10610 grain=46 wood=1125 clay=0
+[caravan] home=21 state=2 sp=47/150 cap=3520 load=3519 coin=12501 grain=144 wood=636 clay=0
+[caravan] home=20 state=2 sp=54/120 cap=4992 load=2644 coin=14861 grain=0 wood=0 clay=0
+[caravan] home=18 state=3 sp=59/140 cap=3840 load=2457 coin=53932 grain=0 wood=0 clay=0
+[caravan] home=16 state=2 sp=45/120 cap=5280 load=5279 coin=5927 grain=29 wood=1286 clay=0
+[caravan] home=14 state=3 sp=31/140 cap=4800 load=2528 coin=12986 grain=0 wood=0 clay=0
+[caravan] home=13 state=2 sp=46/130 cap=3840 load=3839 coin=16658 grain=256 wood=719 clay=0
+[caravan] home=12 state=7 sp=45/140 cap=3520 load=3519 coin=8855 grain=22 wood=807 clay=0
+[caravan] home=10 state=2 sp=30/150 cap=4608 load=4608 coin=6042 grain=188 wood=773 clay=16
+[caravan] home=6 state=2 sp=42/120 cap=4608 load=2801 coin=49898 grain=0 wood=0 clay=0
+[caravan] home=5 state=8 sp=38/150 cap=3872 load=3873 coin=1495 grain=0 wood=957 clay=0
+[caravan] home=4 state=7 sp=15/120 cap=6144 load=6143 coin=17818 grain=65 wood=1326 clay=0
+[caravan] home=2 state=2 sp=68/150 cap=4480 load=4480 coin=6282 grain=5 wood=1084 clay=0
+[caravan] home=1 state=8 sp=21/140 cap=4224 load=4224 coin=9578 grain=10 wood=1003 clay=0
+[caravan] home=17 state=7 sp=38/140 cap=5376 load=2713 coin=2627 grain=0 wood=0 clay=0
+[caravan] home=34 state=3 sp=140/140 cap=4576 load=4576 coin=2461 grain=0 wood=1116 clay=0
+[caravan] home=7 state=8 sp=22/120 cap=4576 load=4576 coin=9746 grain=1190 wood=114 clay=78
+[caravan] home=42 state=7 sp=35/150 cap=4160 load=4159 coin=7032 grain=71 wood=694 clay=0
+[caravan] home=15 state=8 sp=42/140 cap=4576 load=4576 coin=7285 grain=1027 wood=387 clay=3
+[caravan] home=19 state=2 sp=46/140 cap=4576 load=4576 coin=11021 grain=23 wood=1089 clay=0
+[caravan] home=50 state=7 sp=32/140 cap=4992 load=4991 coin=4870 grain=399 wood=917 clay=0
+[caravan] home=11 state=2 sp=25/120 cap=5280 load=5279 coin=7822 grain=892 wood=356 clay=204
+[caravan] home=35 state=8 sp=27/140 cap=3840 load=3840 coin=4821 grain=69 wood=817 clay=0
+[caravan] home=32 state=7 sp=50/140 cap=3520 load=1937 coin=17807 grain=0 wood=0 clay=0
+[caravan] home=22 state=2 sp=57/140 cap=5760 load=5760 coin=4140 grain=92 wood=1146 clay=0
+[caravan] home=57 state=7 sp=56/140 cap=4608 load=2431 coin=13003 grain=0 wood=0 clay=0
+[caravan] home=50 state=2 sp=28/150 cap=5760 load=5760 coin=4172 grain=198 wood=1210 clay=0
+[caravan] home=40 state=2 sp=35/180 cap=3520 load=3519 coin=11673 grain=295 wood=0 clay=0
+[caravan] home=47 state=2 sp=46/150 cap=3520 load=3519 coin=10590 grain=9 wood=823 clay=0
+[caravan] home=66 state=3 sp=150/150 cap=5376 load=7664 coin=7064 grain=1540 wood=172 clay=0
+[caravan] home=3 state=7 sp=46/130 cap=6720 load=6723 coin=5812 grain=105 wood=252 clay=0
+[caravan] home=38 state=7 sp=48/120 cap=3520 load=3520 coin=5170 grain=590 wood=429 clay=0
+[caravan] home=15 state=8 sp=22/160 cap=3840 load=3840 coin=2482 grain=95 wood=773 clay=0
+[caravan] home=9 state=3 sp=180/180 cap=3520 load=3518 coin=635 grain=0 wood=869 clay=0
+[balance] caravans=68 vendors=1614 (idle=249 away=1365 load=3690737kg)
+[balance] seed=7 days=512 pop=242470 aliveSettlements=1618 secs=1000.1
+[silver-census] seed=7 run-end villages=1552 (dry=0 bridge=0 blocked=0 none=1552) nests=24 (dry=0 bridge=0 blocked=0 orphan=24) units=113422 (dry=0 bridge=0 blocked=0 orphan=113422) cells=609
+[silver-orphans] seed=7 run-end noGround=20/90753 noFeed=0/0 outsideHinterland=3/5735 lostScore=1/16934
+[silver-dist] seed=7 run-end orphan→village: <=24: 5/39486 <=32: 6/39561 <=48: 5/21255 >48: 8/13120
+[law] world still populated: OK
+[deposits] clay=253337 iron=1680013 stone=761370397 silver=200357 (cells 251/1967/38916/1139)
+[muster] spawned at sea: 2
+[silver-census] seed=999 genesis villages=1570 (dry=0 bridge=0 blocked=0 none=1570) nests=27 (dry=0 bridge=0 blocked=0 orphan=27) units=200357 (dry=0 bridge=0 blocked=0 orphan=200357) cells=1139
+[silver-orphans] seed=999 genesis noGround=22/110325 noFeed=0/0 outsideHinterland=4/42051 lostScore=1/47981
+[silver-dist] seed=999 genesis orphan→village: <=24: 6/74796 <=32: 10/64785 <=48: 5/33425 >48: 6/27351
