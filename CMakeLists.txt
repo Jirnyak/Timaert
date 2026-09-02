@@ -1103,6 +1103,23 @@ timaert_test(woodcutter_gather_test
         src/macro/econ_day.cpp
     LINK_SDL LINK_ENTT)
 
+# Аукцион целей ротации (CANON S10 «универсальный ИИ сквадов»): поручения
+# {глагол, объект}, рулетка по скору-деньгам, отказ = вывод аукциона.
+timaert_test(goal_auction_test
+    SOURCES
+        src/macro/npc_ai.cpp
+        src/macro/nav_field.cpp
+        src/macro/economy.cpp
+        src/macro/chronicle.cpp
+        src/macro/macro_stock.cpp
+        src/macro/deposit_layer.cpp
+        src/macro/fauna.cpp
+        src/macro/tree_layer.cpp
+        src/macro/npc_spawn.cpp
+        src/macro/items.cpp
+        src/macro/econ_day.cpp
+    LINK_SDL LINK_ENTT)
+
 timaert_test(rng_contract_test)
 
 timaert_test(torus_geometry_test)

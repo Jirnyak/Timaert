@@ -568,6 +568,82 @@ inline void loot_fallen_owner(ecs::World& w, entt::entity fallen,
     }
 }
 
+// ── СМЕРТЬ ГОВОРИТ В ЛЕТОПИСЬ (CANON S20.1, владелец 2026-09-02) ──────────
+// The verdict door is the ONLY place the killer is still known, so the
+// world's memory is written here and nowhere else — ONE door for EVERY
+// auto-resolve, the AI↔AI settle and the player's own button alike (owner
+// 2026-09-02, хвост 2б: «игрок ничем не особенен» — his massacres feed the
+// same hatred, danger price and threat field as any lord's). Two records,
+// each true from its author's side:
+//   · Killed — the winner over the fallen loser. Renown flows by the one
+//     deed law (record_deed), and «who kills near this village» becomes
+//     a chronicle_near_kind question with no new storage.
+//   · Died — each bereaved HOME landmark's own loss, object = the killer
+//     (a NAMED band by its ordinal, a nameless one by its faction —
+//     owner's ruling): the record hatred, revenge quests and the danger
+//     term of the refusal price all READ instead of keeping counters.
+inline std::int32_t battle_dead(const std::vector<std::uint32_t>& casualties,
+                                float leaderFraction) {
+    return std::int32_t(casualties.size())
+           + (leaderFraction <= 0.0f ? 1 : 0);
+}
+
+inline void record_battle_facts(const MacroWorld& mw,
+                                entt::entity winner, entt::entity loser,
+                                std::int32_t loserDead,
+                                std::int32_t winnerDead) {
+    GameState& gs = *mw.gs;
+    ecs::World& w = *mw.world;
+    auto& reg = w.reg;
+    const auto* battlePos = reg.try_get<ecs::Position>(winner);
+    const std::int16_t bx =
+        std::int16_t(battlePos ? int(battlePos->x) : 0);
+    const std::int16_t by =
+        std::int16_t(battlePos ? int(battlePos->y) : 0);
+    if (loserDead > 0) {
+        WorldFact f{};
+        f.day = gs.worldTime.day();
+        f.kind = std::uint16_t(FactKind::Killed);
+        f.objectKind = std::uint8_t(FactSubject::Squad);
+        const auto* lid = reg.try_get<ecs::MacroSpawnId>(loser);
+        f.object = lid ? lid->index : 0u;
+        f.x = bx;
+        f.y = by;
+        f.amount = loserDead;
+        record_deed(w, gs, f, winner);
+    }
+    const auto bereave = [&](entt::entity side, entt::entity foe,
+                             std::int32_t dead) {
+        if (dead <= 0) return;
+        const auto* srt = reg.try_get<ecs::MacroNpcRuntime>(side);
+        if (!srt || landmark_by_id(gs, srt->homeSettlementId) == nullptr)
+            return;   // the homeless bereave nobody — Killed already spoke
+        WorldFact f{};
+        f.day = gs.worldTime.day();
+        f.kind = std::uint16_t(FactKind::Died);
+        f.subjectKind = std::uint8_t(FactSubject::Landmark);
+        f.subject = std::uint32_t(srt->homeSettlementId);
+        const auto* fid = reg.try_get<ecs::MacroSpawnId>(foe);
+        const std::uint32_t foeOrd = fid ? fid->index : 0u;
+        if (foeOrd != 0u
+            && renown_is_named(renown_of(
+                   w, gs, std::uint8_t(FactSubject::Squad), foeOrd))) {
+            f.objectKind = std::uint8_t(FactSubject::Squad);
+            f.object = foeOrd;
+        } else {
+            const auto* fkind = reg.try_get<ecs::NPCKind>(foe);
+            f.objectKind = std::uint8_t(FactSubject::Faction);
+            f.object = fkind ? fkind->factionIdx : 0u;
+        }
+        f.x = bx;
+        f.y = by;
+        f.amount = dead;
+        record_deed(w, gs, f);
+    };
+    bereave(loser, winner, loserDead);
+    bereave(winner, loser, winnerDead);
+}
+
 // Settle a resolved AI↔AI auto-battle — the composition of the halves
 // above: deaths by name, leader fractions, spoils to the victor when the
 // owner fell (a caravan raid PAYS), survivors of a dead leader into the
@@ -605,6 +681,13 @@ inline void settle_auto_battle(const MacroWorld& mw,
 
     drain_dead_leader_squads(w, gs.deserterPool);
     award_leader_xp(w, winner, xp);
+
+    record_battle_facts(mw, winner, loser,
+                        battle_dead(loserCasualties, loserFraction),
+                        battle_dead(o.winner == 0 ? o.casualtiesA
+                                                  : o.casualtiesB,
+                                    o.winner == 0 ? o.leaderFractionA
+                                                  : o.leaderFractionB));
 }
 
 // Settle the PLAYER's auto-resolve against a macro squad (Inc 6 — the M&B
@@ -724,6 +807,23 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
         loot_fallen_owner(w, enemy, *playerBag);
     }
     drain_dead_leader_squads(w, gs.deserterPool);
+
+    // Пара Killed+Died — ТА ЖЕ дверь, что у ИИ↔ИИ (хвост 2б, владелец
+    // 2026-09-02): осиротевшие дома жертв игрока получают Died, и
+    // ненависть/цена опасности/поле угрозы видят игрока-мясника так же,
+    // как любого лорда.
+    if (const entt::entity playerSquad = player_squad_entity(w);
+        playerSquad != entt::null) {
+        const entt::entity pw = playerWon ? playerSquad : enemy;
+        const entt::entity pl = playerWon ? enemy : playerSquad;
+        record_battle_facts(mw, pw, pl,
+                            battle_dead(playerWon ? enemyCas : playerCas,
+                                        playerWon ? enemyFraction
+                                                  : playerFraction),
+                            battle_dead(playerWon ? playerCas : enemyCas,
+                                        playerWon ? playerFraction
+                                                  : enemyFraction));
+    }
 
     if (xp > 0) {
         const DerivedBonuses d = calculate_derived(gs.player.sheet.attributes,

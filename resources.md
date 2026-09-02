@@ -120,15 +120,16 @@ by the SAME radius and the same data that raise the macro profession.
 Planned on the same rows, no new dialects (owner's design intent,
 2026-08-13):
 
-* **The economy entire** (work_vector №1): every gatherer role is "walk to
-  the nearest cell where `read > 0`, take through `apply`, haul home". The
-  first slice is BUILT (2026-08-13): ONE `ai_gatherer` loop drives every
-  profession from a `kGathererDefs` row — {type, registry row, commodity,
-  worksite} — woodcutter, farmer, miner, quarryman and clay-digger are five
-  rows of it, and a village raises the professions its own ground holds (a
-  live vein inside `kGathererReach` spawns its man; specialisation stays
-  context, never a village type). Since 2026-08-24 the professions also reach
-  the STREET: the subworld's town crowd rolls the same gate (see C4 above).
+* **The economy entire** (work_vector №1): every gather errand is "walk to
+  the nearest cell where `read > 0`, take through `apply`, haul home". ONE
+  `ai_gatherer` loop drives every GOAL from a `kGathererDefs` row —
+  {registry row, commodity, worksite}. Since 2026-09-02 (CANON S10 «аукцион
+  целей») the `type` column is DEAD with the professions themselves: the
+  rotation raises generic peasant crews and each crew's errand
+  (rt.errandVerb/errandObject) names its goal row by a score-roulette —
+  specialisation is not even context any more, it is a daily auction. The
+  street crowd still rolls miner/quarryman looks off the deposit gate (C4
+  above) — a LOOK is a row, no longer a role.
 * **The player as harvester**: the player takes through the same doors and
   receipts as any agent — his chop already does (the console `chop`, the
   subworld prop harvest).
@@ -146,9 +147,9 @@ Planned on the same rows, no new dialects (owner's design intent,
   1/1024 of mountain cells × 512 units — 4× rarer than iron, the world's
   whole money supply IS its silver geology × the catalog value 32),
   `ResourceFieldId::Silver` with the same born-where-scarce Geology growth
-  iron uses, and `NPCType::SilverMiner` as one more `kGathererDefs` row —
-  the daily labour rotation raises silver crews wherever a vein anchors a
-  home, with zero new code.
+  iron uses, and one more `kGathererDefs` GOAL row (the SilverMiner type
+  died with the professions, 2026-09-02) — the auction sends a peasant crew
+  to the vein whenever the roulette draws silver, with zero new code.
 * **Wheat turns over its own potential in ONE season**
   (`kWheatSeasonsToRegrow`, macro_stock.h — public so crop_stock_test
   derives from the same number). The old +1-per-season law fed the world
@@ -156,7 +157,7 @@ Planned on the same rows, no new dialects (owner's design intent,
   seasonality, this is its smooth stand-in.
 * **Crews are transient and work costs SP** (`rotate_worker_squads`,
   npc_ai.h; kWorkCyclesPerBar/kGatherPerCycle, econ_day.h): a settlement
-  raises pop/kHeadsPerCityWorker souls across its live professions at dawn
+  raises its crew pool across its roster rows at dawn (goals by auction)
   and dissolves the returners next dawn; a work cycle burns a quarter of
   the squad's bar at a fixed squad price, the roster multiplies the yield
   (owner: «SP тратится столько же, добывают кратно больше»), and one

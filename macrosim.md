@@ -123,12 +123,12 @@ the record of what was approved — nothing in it may be hardcoded to
    `get_carry_capacity(Attributes, Skills)`** — the same per-sheet weight
    system the player already uses; squad capacity is contextual from member
    tables, never a per-role constant.
-3. **Farm.** Woodcutters O(n)-search the nearest forest-class cells of the
-   **TreeLayer field** (the `ai_woodcutter` / `TreeGrid` path must migrate
-   off the legacy `app.trees` point list) and harvest via the registry's
-   Trees row (`resource_field_apply`) — the count drops, the map sprite
-   thins, the subworld agrees, the save carries it. Harvest amount is
-   bounded by remaining capacity.
+3. **Farm.** A crew whose errand names the Trees goal (the auction row —
+   CANON S10, 2026-09-02: professions are dead, WHO gathers is whichever
+   peasant crew drew the row) TreeGrid-searches the nearest forest-class
+   cell and harvests via the registry's Trees row (`resource_field_apply`)
+   — the count drops, the map sprite thins, the subworld agrees, the save
+   carries it. Harvest amount is bounded by remaining capacity.
 4. **Return.** A squad REMEMBERS its home landmark (village id), walks
    back, deposits `Wood` into the village `Inventory`/`eco.resources`, and
    dissolves back into `population` — the same universal

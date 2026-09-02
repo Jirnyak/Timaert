@@ -67,6 +67,10 @@ entt::entity make_woodcutter(ecs::World& w, float x, float y,
         NPCType::Woodcutter, 3, leader_sheet_seed(11u));
     refresh_leader_travel_stats(rt, sheet, NPCType::Woodcutter);
     rt.sp = rt.maxSp;
+    // Работа именуется ПОРУЧЕНИЕМ, не типом (аукцион, CANON S10): рубка =
+    // Gather над строкой целей Trees — то, что рулетка ротации выдала бы.
+    rt.errandVerb = std::uint8_t(ErrandVerb::Gather);
+    rt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Trees));
     reg.emplace<ecs::MacroNpcRuntime>(e, rt);
     reg.emplace<ecs::MacroSpawnId>(e, 11u);
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(3));
@@ -183,6 +187,8 @@ void test_the_farmer_works_the_field() {
         prt, make_character_sheet(NPCType::Peasant, 2, leader_sheet_seed(12u)),
         NPCType::Peasant);
     prt.sp = prt.maxSp;
+    prt.errandVerb = std::uint8_t(ErrandVerb::Gather);
+    prt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Wheat));
     reg.emplace<ecs::MacroNpcRuntime>(e, prt);
     reg.emplace<ecs::MacroSpawnId>(e, 12u);
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(2));
@@ -249,6 +255,8 @@ void test_farmer_without_terrain_conjures_nothing() {
         prt, make_character_sheet(NPCType::Peasant, 2, leader_sheet_seed(12u)),
         NPCType::Peasant);
     prt.sp = prt.maxSp;
+    prt.errandVerb = std::uint8_t(ErrandVerb::Gather);
+    prt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Wheat));
     reg.emplace<ecs::MacroNpcRuntime>(e, prt);
     reg.emplace<ecs::MacroSpawnId>(e, 12u);
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(2));
@@ -343,6 +351,8 @@ void test_the_mine_runs_while_the_player_is_away() {
         rt, make_character_sheet(NPCType::Miner, 3, leader_sheet_seed(13u)),
         NPCType::Miner);
     rt.sp = rt.maxSp;
+    rt.errandVerb = std::uint8_t(ErrandVerb::Gather);
+    rt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Iron));
     reg.emplace<ecs::MacroNpcRuntime>(e, rt);
     reg.emplace<ecs::MacroSpawnId>(e, 13u);
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(3));
@@ -558,6 +568,8 @@ void test_the_miner_works_the_vein() {
         rt, make_character_sheet(NPCType::Miner, 3, leader_sheet_seed(13u)),
         NPCType::Miner);
     rt.sp = rt.maxSp;
+    rt.errandVerb = std::uint8_t(ErrandVerb::Gather);
+    rt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Iron));
     reg.emplace<ecs::MacroNpcRuntime>(e, rt);
     reg.emplace<ecs::MacroSpawnId>(e, 13u);
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(3));

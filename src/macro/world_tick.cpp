@@ -112,15 +112,31 @@ namespace {
 // place WITH a suzerain owes; the top of a chain is charged nothing.
 void assess_tithe_(Landmark& lm, int day, bool hasSuzerain) {
     if (!hasSuzerain) return;
+    // The assessment BASE is the season's AVERAGE store (owner 2026-09-02:
+    // «лучше среднего склада за месяц, а то пустой склад случайно — и
+    // ничего не платит, или наоборот»): a po2 EMA with the season's own
+    // horizon, fed daily, so the pay day stops being a lottery of whether
+    // the vendor happened to leave this morning. Signed shifts floor toward
+    // the value from either side; a young store's average grows from zero,
+    // so a young world honestly owes little in its first season.
+    constexpr int kTitheAvgShift = 5;
+    static_assert(1 << kTitheAvgShift == kDaysPerSeason,
+                  "the tithe average's horizon IS the season");
+    for (int c = 0; c < kCommodityCount; ++c) {
+        lm.titheAvgGoods[c] +=
+            (std::int32_t(lm.inventory.count_of(commodity_item_index(c)))
+             - lm.titheAvgGoods[c]) >> kTitheAvgShift;
+    }
+    lm.titheAvgCoin += (std::int64_t(wallet_value(lm.inventory))
+                        - lm.titheAvgCoin) >> kTitheAvgShift;
     if (day % kDaysPerSeason != lm.id % kDaysPerSeason) return;
     const int season = day / kDaysPerSeason;
     if (lm.titheSeasonAssessed == season) return;
     lm.titheSeasonAssessed = season;
     for (int c = 0; c < kCommodityCount; ++c) {
-        lm.titheOwedGoods[c] +=
-            lm.inventory.count_of(commodity_item_index(c)) >> 3;
+        lm.titheOwedGoods[c] += lm.titheAvgGoods[c] >> 3;
     }
-    lm.titheOwedCoin += std::int64_t(wallet_value(lm.inventory)) >> 3;
+    lm.titheOwedCoin += lm.titheAvgCoin >> 3;
 }
 
 // The pure econ steps are landmark-blind (they see one Inventory); this relay

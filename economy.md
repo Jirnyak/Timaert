@@ -68,10 +68,16 @@ a living edge; a valley emptied whole is extinct) — see
 
 ## Work is agents
 
-- **Woodcutter** (village's man since the home-link fix): chops through
-  `set_tree_count`, hauls in his OWN bag, lands it in the home store.
-- **Farmer** (the Peasant's behaviour): works the nearest home field for
-  grain, same loop, same one law of labour (`kGatherPerWorkerDay`).
+- **Peasant crew** (АУКЦИОН ЦЕЛЕЙ, CANON S10, 2026-09-02 — professions are
+  DEAD as roles): the daily rotation raises N generic peasant crews per
+  village; each takes an errand {verb, object} by a score-weighted roulette
+  over the goal table (kGathererDefs rows: grain/wood/ore/clay/stone/silver)
+  plus the sell run — score is MONEY by the price law (home stock_price ×
+  a worker-day take / road). The gather loop itself is unchanged: take
+  through the registry row into the OWN bag, land it in the home store,
+  one law of labour (`kGatherPerWorkerDay`). The sell errand walks the
+  vendor machine (surplus + tithe to the nearest city) — the Vendor TYPE
+  died with the professions.
 - **Caravan** (the CITY's agent): snapshots the home market at departure
   (AgentMemory MarketSnapshot — stock classes, a trader's memory, not a
   ledger), carries the city's plenty out to its villages and hauls back

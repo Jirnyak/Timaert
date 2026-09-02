@@ -347,25 +347,8 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     if (p.spawnMacroNpcs) {
         spawn_macro_npcs(gs, *out.world, *out.terrain, gs.worldSeed,
                          out.deposits);
-        if (p.trace) {
-            // The causality report's second half: ore inside a village's
-            // reach raises its profession — count the men the ground raised.
-            int miners = 0, quarrymen = 0, clayDiggers = 0;
-            for (auto [e, kind]
-                 : out.world->reg.view<ecs::NPCKind>().each()) {
-                (void)e;
-                if (kind.type == std::uint16_t(NPCType::Miner)) ++miners;
-                else if (kind.type == std::uint16_t(NPCType::Quarryman))
-                    ++quarrymen;
-                else if (kind.type == std::uint16_t(NPCType::ClayDigger))
-                    ++clayDiggers;
-            }
-            std::fprintf(stderr,
-                         "[worldgen] professions miners=%d quarrymen=%d "
-                         "clayDiggers=%d\n",
-                         miners, quarrymen, clayDiggers);
-            std::fflush(stderr);
-        }
+        // (Генезисный цензус профессий умер со сносом профессий — поручения
+        // раздаёт аукцион ротации, CANON S10, владелец 2026-09-02.)
     }
 
     if (p.anchorPlayer) {

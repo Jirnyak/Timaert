@@ -34,6 +34,13 @@ enum FeatureType : std::uint8_t {
     // water-only law as FT_Bridge; the bed column below prices the
     // difference (a plank deck marches like a dirt lane, not a paved road).
     FT_WoodBridge = 9,
+    // КОРАБЛИ — ЧЕРЕЗ ФИЧУ (владелец 2026-09-02, CANON S10): порт — фича
+    // берега со СЧЁТЧИКОМ кораблей («у поля урожай, у шахты залежи, у
+    // порта корабли»); счётчик живёт в gs.shipsAtCell (v74). Порт строит
+    // верфь-работа сквада за дерево; БРОШЕННЫЙ КОРАБЛЬ — та же форма без
+    // намерения: пристал к дикому берегу — корабль остаётся фичей («можно
+    // много бросить»), вернёшься — уплывёшь.
+    FT_Port = 10, FT_BeachedShip = 11,
     FT_Count,
 };
 
@@ -59,6 +66,8 @@ static_assert(FT_ClayPit == 5 && FT_IronMine == 6 && FT_Quarry == 7
                   && FT_SilverMine == 8,
               "FeatureType byte layout (mines, v71)");
 static_assert(FT_WoodBridge == 9, "FeatureType byte layout (v72)");
+static_assert(FT_Port == 10 && FT_BeachedShip == 11,
+              "FeatureType byte layout (ships, v74)");
 
 // ── THE feature registry (CANON S16, 2026-08-29) ─────────────────────────
 // Everything the world says ABOUT a feature is a column of ONE row. These
@@ -109,6 +118,11 @@ inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
     // paved bed dirt pays), carry the bridge's open sight line, and seed
     // the dirt lane's own modest civilization pull.
     {FT_WoodBridge, 1.5f, 0.65f, 0.22f},
+    // The harbour is worked shore: a plank apron (dirt-lane bed), open to
+    // sight, with the dirt lane's modest civilization pull.
+    {FT_Port,        1.5f, 0.85f, 0.22f},
+    // A beached hull builds nothing and guards nothing — it just waits.
+    {FT_BeachedShip, 0.0f, 1.00f, 0.0f },
 };
 static_assert(rows_in_enum_order(kFeatureDefs, &FeatureDef::type),
               "kFeatureDefs row order must mirror FeatureType — a new "

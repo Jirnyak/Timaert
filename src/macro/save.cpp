@@ -722,6 +722,8 @@ void write_landmark(Writer& w, const Landmark& lm) {
     w.pod(lm.titheOwedGoods);       // v73: the per-position tribute debts
     w.pod(lm.titheOwedCoin);
     w.pod(lm.titheSeasonAssessed);
+    w.pod(lm.titheAvgGoods);        // v74: the season-average base (EMA)
+    w.pod(lm.titheAvgCoin);
 }
 
 void read_landmark(Reader& r, Landmark& lm) {
@@ -747,6 +749,8 @@ void read_landmark(Reader& r, Landmark& lm) {
     r.pod(lm.titheOwedGoods);       // v73
     r.pod(lm.titheOwedCoin);
     r.pod(lm.titheSeasonAssessed);
+    r.pod(lm.titheAvgGoods);        // v74: the season-average base (EMA)
+    r.pod(lm.titheAvgCoin);
 }
 
 void write_marker(Writer& w, const Marker& m) {
@@ -999,6 +1003,14 @@ void write_payload(Writer& w, const GameState& s,
     // v67: the world's loot pool — the victorless dead's worth, ONE number
     // (CANON S5, the deserter pool's sibling for things).
     w.pod(s.lootPoolValue);
+    // v74: the ship counters of port/beached cells (CANON S10 «корабли
+    // через фичу») — sparse, cell → hull count, the deposit-cells shape.
+    if (w.count(s.shipsAtCell.size(), 1u << 20)) {
+        for (const auto& [cell, n2] : s.shipsAtCell) {
+            w.pod(cell);
+            w.pod(n2);
+        }
+    }
     write_player(w, s.player);
 
     if (w.count(s.landmarks.size(), kMaxLandmarks)) {
@@ -1074,6 +1086,18 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
     r.str(s.saveName);
     r.str(s.savedAt);
     r.pod(s.lootPoolValue);   // v67
+    {   // v74: ship counters
+        std::uint32_t nShips = 0;
+        if (!read_count(r, nShips, 1u << 20)) return;
+        s.shipsAtCell.clear();
+        for (std::uint32_t i = 0; i < nShips && r.ok; ++i) {
+            std::uint32_t cell = 0;
+            std::uint16_t count = 0;
+            r.pod(cell);
+            r.pod(count);
+            s.shipsAtCell[cell] = count;
+        }
+    }
     read_player(r, s.player);
 
     std::uint32_t n = 0;

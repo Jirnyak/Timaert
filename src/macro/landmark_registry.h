@@ -44,13 +44,18 @@ inline constexpr std::uint8_t  kLandmarkFaunaCapGround = 0xFFu;
 // caravan fleet law `replenish_caravans` and the garrison recruiting in
 // world_tick — owner 2026-08-31: separate increments, «чтобы не разбухал».)
 enum class CrewGate : std::uint8_t {
-    Worksite = 0,   // a live worksite of the row's profession within reach
-    HomeCity = 1,   // the village knows its market (Landmark.nearestCityId)
-    Suzerain = 2,   // the realm has a capital that is not this town itself
+    // АУКЦИОН ЦЕЛЕЙ (CANON S10, владелец 2026-09-02): у артели НЕТ
+    // специализации — строка открыта, когда аукцион нашёл хоть одну цель с
+    // положительным скором (строки таблицы целей kGathererDefs + рейс
+    // сбыта); поручение выбирает рулетка по скору. Старые гейты профессий
+    // (Worksite/HomeCity) умерли вместе с профессиями — их предикаты живут
+    // внутри аукциона (find_worksite = кандидат, рынок = кандидат сбыта).
+    Auction  = 0,
+    Suzerain = 1,   // the realm has a capital that is not this town itself
 };
 struct LandmarkCrewRow {
     NPCType  npc  = NPCType::Peasant;
-    CrewGate gate = CrewGate::Worksite;
+    CrewGate gate = CrewGate::Auction;
     // A solo row rides ALONE (the tax courier); otherwise the crew takes an
     // even split of the place's crew pool (pop >> labourShift) across the
     // rows whose gates are open today — even split = zero new constants.
@@ -143,14 +148,16 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
     {LandmarkType::None,    "none",    "",          0, 255, ' ', 0x00000000u, true, 0x00000000u,   0.0f },
     {LandmarkType::City,    "city",    "City",      0,  76, '#', 0xFFE7D27Au, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.5f,  /*hab*/0u,       0, 0, /*cap*/2, /*econ*/1,
      /*labour*/3, {{NPCType::TaxCollector, CrewGate::Suzerain, /*solo*/true}}, 1 },
+    // Артели деревни — N ОДИНАКОВЫХ крестьянских строк (снос профессий,
+    // CANON S10): каждая берёт поручение своим броском рулетки аукциона —
+    // диверсификация без координации. N = одновременность артелей, крутилка
+    // дубль-прогона (4 ≈ поле+лес+жила+сбыт живого мира; строки Vendor и
+    // шести профессий умерли — их работу раздаёт аукцион).
     {LandmarkType::Village, "village", "Village",   0, 101, 'v', 0xFFCCB068u, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.0f,  /*hab*/0u,       0, 0, /*cap*/2, /*econ*/0,
-     /*labour*/1, {{NPCType::Peasant,     CrewGate::Worksite},
-                   {NPCType::Woodcutter,  CrewGate::Worksite},
-                   {NPCType::Miner,       CrewGate::Worksite},
-                   {NPCType::Quarryman,   CrewGate::Worksite},
-                   {NPCType::ClayDigger,  CrewGate::Worksite},
-                   {NPCType::SilverMiner, CrewGate::Worksite},
-                   {NPCType::Vendor,      CrewGate::HomeCity}}, 7 },
+     /*labour*/1, {{NPCType::Peasant, CrewGate::Auction},
+                   {NPCType::Peasant, CrewGate::Auction},
+                   {NPCType::Peasant, CrewGate::Auction},
+                   {NPCType::Peasant, CrewGate::Auction}}, 4 },
     {LandmarkType::Spire,   "spire",   "Spire",   128, 255, 'I', 0xFFA86CFFu, true, 0xFFA86CFFu, 200.0f, "demons", /*wealth*/1.25f, /*hab*/1u << 13, 4, 9, kLandmarkFaunaCapGround },
     {LandmarkType::Ruin,    "ruin",    "Ruin",     51, 229, 'r', 0xFF8E8576u, true, 0xFF8E8576u,  40.0f, "demons", /*wealth*/0.5f,  /*hab*/1u << 12, 2, 6, kLandmarkFaunaCapGround },
     {LandmarkType::Lair,    "lair",    "Lair",    102, 255, 'L', 0xFF883A3Au, true, 0xFF883A3Au,  70.0f, nullptr, /*wealth*/1.25f },

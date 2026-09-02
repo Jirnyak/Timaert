@@ -255,7 +255,9 @@ namespace sm {
 // v73 (2026-09-02): дань по позициям — Landmark несёт titheOwedGoods[15] +
 // titheOwedCoin вместо стоимостного titheOwed (вердикт «по 1/8 каждого
 // запаса с округлением вниз»).
-constexpr int kSaveVersion = 73;
+// v74 (2026-09-02): корабли через фичу — gs.shipsAtCell (счётчик кораблей
+// по клеткам портов/брошенных) + MacroNpcRuntime.aboard/dockX/dockY.
+constexpr int kSaveVersion = 74;
 
 enum class SettlementMood : std::uint8_t {
     Prosperous, Stable, Tense, Unrest, Revolt, Count
@@ -391,6 +393,14 @@ struct Landmark {
     std::int32_t titheOwedGoods[kCommodityCount] = {};
     std::int64_t titheOwedCoin = 0;
     std::int32_t titheSeasonAssessed = -1;   // last season charged (-1 never)
+    // v74: the assessment BASE is the season's AVERAGE store, not the
+    // pay-day snapshot (owner 2026-09-02: «лучше среднего склада за месяц,
+    // а то пустой склад случайно — и ничего не платит, или наоборот»).
+    // Average = po2 EMA with the season's own horizon (>> log2(32)),
+    // updated daily by assess_tithe_ — the pay day stops being a lottery
+    // of whether the vendor left this morning.
+    std::int32_t titheAvgGoods[kCommodityCount] = {};
+    std::int64_t titheAvgCoin = 0;
 };
 
 enum class GameSubStateKind : std::uint8_t {
@@ -720,6 +730,13 @@ struct GameState {
     // grid, re-stamped onto the seed-baked grid at load (world_fields.h row
     // Built). The grid itself stays DERIVED; this list is the truth.
     std::vector<BuiltFeature> builtFeatures;
+    // ── КОРАБЛИ У ФИЧИ (CANON S10, владелец 2026-09-02; v74) ─────────────
+    // «У фич часто свои счётчики: у поля урожай, у шахты залежи, у порта
+    // корабли — элегантно». Ключ = клетка (y*mapW+x) порта или брошенного
+    // корабля, значение = сколько корпусов стоит. Корабль СТРОИТСЯ за
+    // дерево верфь-работой сквада; взял = −1, пришвартовался = +1. Спарс и
+    // в сейве целиком — прецедент живых клеток депозит-слоя (v37).
+    std::unordered_map<std::uint32_t, std::uint16_t> shipsAtCell;
 };
 
 // ── The landmark-fact door: file the deed AND pay the fame ───────────────

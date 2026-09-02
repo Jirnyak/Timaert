@@ -10,6 +10,7 @@
 #include "check.h"
 
 #include "macro/npc_ai.h"
+#include "macro/resource_field.h"
 #include "ecs/components.h"
 
 #include <cmath>
@@ -112,6 +113,14 @@ void test_woodcutter_targets_nearest_tree() {
 
     sm::ecs::World world;
     auto e = spawn_ai(world, sm::NPCType::Woodcutter, 21.0f, 20.0f, 1);
+    {
+        // Работа именуется поручением (аукцион, CANON S10): рубка = Gather
+        // над строкой целей Trees; тип — лишь лист и спина.
+        auto& wrt = world.reg.get<sm::ecs::MacroNpcRuntime>(e);
+        wrt.errandVerb = std::uint8_t(sm::ErrandVerb::Gather);
+        wrt.errandObject = std::uint32_t(
+            sm::gather_goal_row(sm::ResourceFieldId::Trees));
+    }
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 20u);
     tick_once(gs, world, runtime, &grid);

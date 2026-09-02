@@ -142,7 +142,11 @@ inline constexpr FactKindDef kFactKinds[] = {
     // Deeds against SOMEBODY. Their base is small on purpose: what these are
     // really worth comes from WHOM they were done to (renown_for_deed).
     {FactKind::Killed,       "killed",        "Killed",        32,      1},
-    {FactKind::Died,         "died",          "Died",          32,      0},
+    // victimShare false (owner 2026-09-02: «что это за слава за то, что
+    // умер — это бред»): dying to a famous killer ennobles NOBODY — the
+    // bereaved home files the loss for its READERS (grudges, revenge
+    // quests, the danger price), not for standing.
+    {FactKind::Died,         "died",          "Died",          32,      0, false},
     {FactKind::Battle,       "battle",        "Battle",        32,      5},
     {FactKind::Robbed,       "robbed",        "Robbed",        16,      2},
     // What a place suffers or does. It earns the PLACE its standing.

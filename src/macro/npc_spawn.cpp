@@ -345,9 +345,19 @@ entt::entity spawn_squad(GameState& gs, ecs::World& w,
 
     // Ordinals from the ONE persistent counter (v23) — the max-over-living
     // scan and its 19.24 reuse hole are gone.
+    //
+    // ФРАКЦИЯ ЖИТЕЛЯ — СОБСТВЕННИК ЕГО ЛАНДМАРКА (CANON S24, владелец
+    // 2026-09-02: «у каждого ландмарка уже есть собственник»): артель носит
+    // фракцию королевства-собственника ДОМА — politik.h и так объявляет
+    // faction_index_for_kingdom THE резолвером поселений. Клеточный резолвер
+    // на границах одевал деревню и её же город в воюющие фракции — крестьяне
+    // резали крестьян на общей дороге (измерено, [death-1299] сид 7).
+    // «Земля решает» остаётся правилом БЕЗДОМНЫХ и контекстных спавнов.
+    const Landmark* home = landmark_by_id(gs, spec.homeSettlementId);
     const std::uint16_t f = spec.factionIndex >= 0
         ? std::uint16_t(spec.factionIndex)
-        : faction_index_for_cell(gs.politik, p.x, p.y);
+        : home ? faction_index_for_kingdom(gs.politik, home->kingdomIdx)
+               : faction_index_for_cell(gs.politik, p.x, p.y);
 
     const entt::entity leader =
         make_npc(w, spec.leaderType, f, p.x, p.y, spec.homeSettlementId,

@@ -196,6 +196,27 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
                                    int homePopulation, EconSite homeSite,
                                    int charisma, int bargaining);
 
+// ── ПОРУЧЕНИЕ: цель сквада = {глагол, объект} ────────────────────────────
+// (CANON S10 «универсальный ИИ сквадов», владелец 2026-09-02.) Один слой
+// выбора целей на ВСЕ широкие классы: рефлексы прерывают, аукцион выбирает,
+// машины-глаголы исполняют. Глагол — что делать; объект — над чем: строка
+// kGathererDefs (Gather) или ординал рынка (Sell). Пара живёт в
+// ecs::MacroNpcRuntime (errandVerb/errandObject, сейв v74) и выдаётся
+// аукционом ротации; пере-аукцион ТОЛЬКО по завершении цели (артель
+// растворилась — завтрашняя ротация решает заново). Будущие классы целей
+// (патруль, охота, война, разведка) — новые глаголы-строки, не новая форма.
+enum class ErrandVerb : std::uint8_t {
+    None = 0,    // поручения нет: поведение по колонке ai строки типа
+    Gather = 1,  // добыть: объект = строка таблицы целей kGathererDefs
+    Sell = 2,    // рейс сбыта (излишки + дань-относ): объект = ординал рынка
+};
+
+// Строка таблицы целей, добывающая ресурс `row` — объект поручения Gather;
+// -1 = такой ресурс артелями не добывается. Порядок таблицы — деталь
+// npc_ai.cpp: снаружи цель называют РЕСУРСОМ, не индексом.
+enum class ResourceFieldId : std::uint8_t;
+int gather_goal_row(ResourceFieldId row);
+
 // ── The daily labour rotation (owner 2026-08-30; CANON S10) ──────────────
 // «Поселение поднимает рабочий сквад → сквад идёт к полю → возвращается,
 // кладёт на склад, растворяется в населении.» Souls are the stock every
@@ -203,10 +224,20 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
 // the squad's one SP price (ai_gatherer). Called once per game day:
 // yesterday's crews standing home in Idle DISSOLVE first (souls + leftovers
 // back to the landmark), then every settled landmark raises a fresh crew for
-// each profession with a live worksite and no crew already out — sized to
+// each ROW of its registry crew list with no crew already out — sized to
 // TODAY'S population. Genesis seeds no eternal gatherers any more: a crew
 // cut down on the road stays dead, and the town raises fewer souls
-// tomorrow. Returns crews raised.
+// tomorrow.
+//
+// АУКЦИОН ЦЕЛЕЙ (CANON S10, владелец 2026-09-02): у рабочего сквада НЕТ
+// специализации — крестьянская артель строки CrewGate::Auction получает
+// поручение аукционом. Кандидаты = все строки таблицы целей (find_worksite)
+// + рейс сбыта; скор ДЕНЬГАМИ по закону цены: ценность дома (stock_price —
+// нужда сама дорожает дефицитом) × ожидаемый дневной тейк / (1 + маршрут).
+// РУЛЕТКА по скору — артели диверсифицируются без координации; нет цели с
+// положительным скором = вывод аукциона, артель не поднимается. Терм
+// опасности (Died-факты у маршрута) — добавить ПОСЛЕ, вес дубль-прогоном.
+// Returns crews raised.
 int rotate_worker_squads(MacroWorld& mw, int day);
 
 // Squads EAT (owner 2026-08-30/31; CANON S10, реф M&B): bread is for the
@@ -242,52 +273,6 @@ void tick_macro_npc_ai(MacroWorld& mw,
 // Smooth macro NPC render positions toward their logical cell positions.
 // Mirrors TS `visualX/Y` interpolation and snaps long seam/teleport jumps.
 void tick_macro_npc_visuals(ecs::World& w, int mapW, int mapH, float dt);
-
-// ── ВРЕМЯНКА §34.1 (владелец 2026-09-02): перепись серебра в волне ───────
-// Диагностика серебряной лотереи (сид 1 чеканит, 7/999/12345 — minted=0 при
-// живой геологии). Перепись отвечает двумя срезами, теми же законами, какими
-// живут артели (build_reach_wave / рабочий бокс kGathererReach):
-//   деревни — у скольких серебро достижимо посуху / за одним разрывом /
-//   стоит в боксе, но волна не доходит / отсутствует в боксе вовсе;
-//   гнёзда (связные компоненты серебра) — сколько работаемы, сколько
-//   заперты водой и сколько СИРОТЫ без единой деревни в рабочем боксе.
-// Сироты = гипотеза «вес жилы проигрывает пашне при рождении»; запертые =
-// гипотеза «гнёзда за широкой водой». Снести вместе с решением §34.1.
-struct SilverReachCensus {
-    int villages = 0;         // живые деревни мира
-    int vDry = 0;             // серебро в волне посуху
-    int vBridge = 0;          // лучший исход — за одним водным разрывом
-    int vBlocked = 0;         // серебро в боксе 33², но волна не доходит
-    int vNone = 0;            // серебра в боксе нет
-    int silverCells = 0;
-    int nests = 0;
-    int nestsDry = 0, nestsBridge = 0, nestsBlocked = 0, nestsOrphan = 0;
-    long long unitsTotal = 0;
-    long long unitsDry = 0, unitsBridge = 0, unitsBlocked = 0,
-              unitsOrphan = 0;
-    // Почему гнездо — сирота (классы по закону рождения state.cpp):
-    //   noGround — в рабочем боксе гнезда нет ни одной клетки со score ≥ 0
-    //              (вето: горный массив / вода / лес-массив);
-    //   noFeed   — грунт есть, но ни одна клетка не проходит гейт
-    //              самопрокорма (arable < 4 и deposit-терм < 8);
-    //   outside  — кормящий кандидат есть, но ВСЕ такие клетки вне
-    //              хинтерланда всех городов (рождение там не рассматривалось);
-    //   lost     — кормящий кандидат в хинтерланде БЫЛ — деревня не встала
-    //              (проигрыш скора/давления: «вес жилы проигрывает пашне»).
-    int orphanNoGround = 0, orphanNoFeed = 0, orphanOutside = 0,
-        orphanLost = 0;
-    long long unitsNoGround = 0, unitsNoFeed = 0, unitsOutside = 0,
-              unitsLost = 0;
-    // Дистанция гнезда-сироты до БЛИЖАЙШЕЙ живой деревни (торо-Чебышев):
-    // прайсит вариант «дальний рудный бокс» — сколько гнёзд накрыл бы
-    // рабочий радиус 24/32/48 без единого нового поселения.
-    int orphanWithin24 = 0, orphanWithin32 = 0, orphanWithin48 = 0,
-        orphanBeyond48 = 0;
-    long long unitsWithin24 = 0, unitsWithin32 = 0, unitsWithin48 = 0,
-              unitsBeyond48 = 0;
-};
-void census_silver_reach(const MacroWorld& mw, std::uint8_t seaLevel8,
-                         SilverReachCensus& out);
 
 // Subworld path: queues one AI sweep per kAiTicks of WORLD time, then
 // dispatches at most `max_npc_ticks` entities this step. Because the clock

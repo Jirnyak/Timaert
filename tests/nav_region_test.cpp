@@ -79,6 +79,47 @@ struct Fixture {
         sm::nav_bake(mw, nav);
     }
 
+    // Остров через пролив (водное ребро, CANON S10 «ярус на стихию»):
+    // материк x<20, остров 5×5 у (40,32), вокруг — открытое море. Пеший
+    // профиль обязан ОТКАЗАТЬ (сухого маршрута нет), морской — ЗНАТЬ.
+    void build_island() {
+        gs.mapW = W;
+        gs.mapH = H;
+        gs.worldSeed = 43;
+        pc.width = W;
+        pc.height = H;
+        pc.costGrid.assign(std::size_t(W) * H, 1.0f);
+        pc.water.assign(std::size_t(W) * H, 1);
+        pc.height8.assign(std::size_t(W) * H, 0);
+        for (int y = 0; y < H; ++y) {
+            for (int x = 0; x < W; ++x) {
+                const bool mainland = x < 20;
+                const bool island =
+                    std::abs(x - 40) <= 2 && std::abs(y - 32) <= 2;
+                if (mainland || island)
+                    pc.water[std::size_t(y) * W + x] = 0;
+            }
+        }
+        gs.landmarks.clear();
+        sm::Landmark main{};
+        main.id = 1;
+        main.type = sm::LandmarkType::City;
+        main.x = 5;
+        main.y = 32;
+        main.population = 100;
+        gs.landmarks.push_back(std::move(main));
+        sm::Landmark isle{};
+        isle.id = 2;
+        isle.type = sm::LandmarkType::Village;
+        isle.x = 40;
+        isle.y = 32;
+        isle.population = 100;
+        gs.landmarks.push_back(std::move(isle));
+        mw.gs = &gs;
+        mw.pathCost = &pc;
+        sm::nav_bake(mw, nav);
+    }
+
     bool standable(int x, int y) const {
         return pc.water[std::size_t(sm::wrapi(y, H)) * W
                         + std::size_t(sm::wrapi(x, W))] == 0;
@@ -118,6 +159,10 @@ int main() {
     CHECK(base.nav.baked(), "nav bakes on the synthetic torus");
     CHECK(int(base.nav.regionLandmarkId.size()) == 6,
           "every landmark seeds a region");
+    // Кап порталов НЕ резал переходы — счётчик, не stderr (грабля «кричит
+    // в лог, grep не ловит» убита механизмом).
+    CHECK(base.nav.portalOverflows == 0,
+          "no region silently lost a portal to the cap");
     std::size_t land = 0, owned = 0;
     for (int y = 0; y < H; ++y)
         for (int x = 0; x < W; ++x) {
@@ -177,6 +222,36 @@ int main() {
             CHECK(std::abs(steps - pairSteps[a][b]) <= 2,
                   "route length survives the torus translation");
         }
+    }
+
+    // ВОДНОЕ РЕБРО (CANON S10 «ярус на стихию»): остров через пролив.
+    // Пеший профиль ОТКАЗЫВАЕТ (сухая таблица маршрут не знает), морской
+    // ЗНАЕТ — и вода у берегов честно чья-то (водный ярус залит).
+    {
+        Fixture sea;
+        sea.build_island();
+        CHECK(sea.nav.baked(), "island world bakes");
+        CHECK(int(sea.nav.regionLandmarkId.size()) == 2,
+              "mainland and island each seed a region");
+        const auto rm = sm::nav_region_at(sea.nav, 5, 32);
+        const auto ri = sm::nav_region_at(sea.nav, 40, 32);
+        CHECK(rm != sm::kNavNoRegion && ri != sm::kNavNoRegion && rm != ri,
+              "the strait honestly splits the partition in two");
+        const std::size_t R = sea.nav.regionLandmarkId.size();
+        CHECK(sea.nav.routeNext[std::size_t(ri) * R + rm]
+                  == sm::kNavNoRegion,
+              "the DRY profile refuses the strait (no walking route)");
+        CHECK(sea.nav.routeNextSea[std::size_t(ri) * R + rm]
+                  != sm::kNavNoRegion,
+              "the SEA profile knows the crossing (water edge in the graph)");
+        CHECK(sea.nav.routeNextSea[std::size_t(rm) * R + ri]
+                  != sm::kNavNoRegion,
+              "the water edge carries both directions");
+        // Вода у берега — чья-то (водный ярус залит от берегов): клетка
+        // моря возле острова принадлежит чьей-то воде, не ничейная.
+        CHECK(sea.nav.waterRegionOf[std::size_t(32) * W + 44]
+                  != sm::kNavNoRegion,
+              "shore water is owned by the water tier");
     }
 
     return sm::test::report("nav_region_test");
