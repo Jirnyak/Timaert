@@ -36,15 +36,18 @@ namespace ecs { struct NpcTraits; }
 float mood_price_mult(SettlementMood mood, bool buying);
 float trait_price_mult(const ecs::NpcTraits* traits, bool buying);
 
-// THE player trade price — ONE law (owner ruling 2026-08-05). Base = the
-// canonical charisma+bargaining pricing; context — the settlement's mood or
-// the merchant's temperament — enters as ONE multiplier column resolved by
-// the caller. `bargaining` is the future trade skill's column, 0 today.
-int player_trade_price(int baseValue, int charisma, int bargaining,
+// THE trade price — ONE law (owner ruling 2026-08-05). Squad-agnostic since
+// the 2026-09-03 sweep (was `player_*`, but the player is a squad like any
+// other — NPC vendors already priced through it, so the name lied). Base =
+// the canonical charisma+bargaining pricing (cha_trade_discount, THE one
+// CHA formula); context — the settlement's mood or the merchant's
+// temperament — enters as ONE multiplier column resolved by the caller.
+// `bargaining` is the Trade skill's column (CANON S14), 0 until it lands.
+int trade_price(int baseValue, int charisma, int bargaining,
                        float contextMult, bool buying);
 
-int player_buy_price (int basePrice, int charisma, int bargaining);
-int player_sell_price(int basePrice, int charisma, int bargaining);
+int trade_buy_price (int basePrice, int charisma, int bargaining);
+int trade_sell_price(int basePrice, int charisma, int bargaining);
 
 // ── Price FROM STOCK (the starcluster law, owner-approved) ───────────────
 //

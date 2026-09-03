@@ -220,12 +220,14 @@ void test_power_grows_with_the_sheet() {
     CHECK(pVet > pFew, "higher levels are more strength - the sheet IS the scaling");
 
     // The aura reaches the resolver through the same door the births use.
+    // (Hand-built totals since the 2026-09-03 perk purge emptied the aura
+    // table; the redesigned perks will feed this same door — CANON S14.)
     AutoBattleSide led = side_of(NPCType::Guard, 3, &few);
-    CharacterSheet leaderSheet{};
-    add_perk(leaderSheet.perks, PerkID::Leader);
-    led.bonuses = squad_bonuses(leaderSheet);
+    BonusTotals aura{};
+    aura.attr[std::size_t(AttributeId::Vit)] = 1;
+    led.bonuses = aura;
     CHECK(squad_power(led) > pFew,
-          "a Leader-perk lord commands a stronger squad by the same aura law");
+          "a lord's aura commands a stronger squad by the same law");
 
     // Fatigue and terrain are context, not flavour.
     AutoBattleSide tired = side_of(NPCType::Guard, 3, &few);

@@ -703,14 +703,14 @@ const char* npc_trait_label(std::uint8_t raw) {
 int trade_overlay_buy_price(int baseValue,
                             int charisma,
                             const ecs::NpcTraits* traits) {
-    return sm::player_trade_price(baseValue, charisma, /*bargaining*/ 0,
+    return sm::trade_price(baseValue, charisma, /*bargaining*/ 0,
                                   sm::trait_price_mult(traits, true),
                                   /*buying*/ true);
 }
 
 int trade_overlay_sell_price(int baseValue, int charisma,
                              const ecs::NpcTraits* traits) {
-    return sm::player_trade_price(baseValue, charisma, /*bargaining*/ 0,
+    return sm::trade_price(baseValue, charisma, /*bargaining*/ 0,
                                   sm::trait_price_mult(traits, false),
                                   /*buying*/ false);
 }
@@ -1029,11 +1029,9 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
             const auto& def = npc_def(t);
             {
                 const char* npcName = npc_display_name(def, ch);
-                // (The player's derived bonuses were computed here and never
-                // read: `tradeDiscount` — what CHA is FOR — reaches no price in
-                // this panel or anywhere else. Not fixed here, because the
-                // attribute law is its own job; recorded in problems.md so it
-                // stops hiding behind a variable that looks used.)
+                // (CHA reaches every price through the one formula since the
+                // 2026-09-03 sweep: trade_price → cha_trade_discount, the
+                // same helper the derived sheet column reads.)
                 sync_trade_message_for(g_trade_npc);
                 ImGui::SetNextWindowPos(ImVec2(float(viewW) * 0.5f, 190.0f),
                                         ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.0f));

@@ -130,8 +130,9 @@ debts below.)
 **Prices come from STOCK** (the starcluster law): scarcity =
 (demand + 1)/(supply + 1) po2-clamped to [1/4, 4], price = base × scarcity,
 evaluated at POST-TRADE supply — every deal pays its own slippage. Charisma
-and context (mood / temperament) stay the one `player_trade_price` law on
-top. Arbitrage dies two ways (price_law_test): full-shelf round trips lose
+and context (mood / temperament) stay the one `trade_price` law on top
+(squad-agnostic since 2026-09-03 — was `player_trade_price`, but NPC vendors
+priced through it too; CHA enters via THE one `cha_trade_discount` formula). Arbitrage dies two ways (price_law_test): full-shelf round trips lose
 to slippage, and any residual drip from a favourable pair (a generous
 merchant genuinely overpays — temperament, not a bug) drains his FINITE
 purse and stops dead.

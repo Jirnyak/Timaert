@@ -384,7 +384,7 @@ void settle_march_rhythm(entt::entity e, const ecs::Position& p,
             // 5%-per-think was ~53% of the bar per game HOUR — a rest that
             // cost nothing. Fractional carry, the player's own idiom.
             rt.spCarry += float(maxSp) * kSpRegenPctPerHour
-                          * skill_bonus_mult(int(rt.marathonRank))
+                          * skill_mult_of(SkillId::Marathon, int(rt.marathonRank))
                           * kAiTickGameHours;
             settle_sp_carry(rt);
         }
@@ -474,7 +474,7 @@ void try_move(ecs::Position& p, ecs::MacroNpcRuntime& rt,
     if (rt.moveBudget > perThink + 1.0f) rt.moveBudget = perThink + 1.0f;
 
     // What the leader's own training says a cell costs him (travel skill).
-    const float efficiency = skill_cost_mult(int(rt.travelRank));
+    const float efficiency = skill_mult_of(SkillId::Travel, int(rt.travelRank));
     const int playerCellX = wrapi(int(ctx.playerX), ctx.mapW);
     const int playerCellY = wrapi(int(ctx.playerY), ctx.mapH);
 
@@ -2921,7 +2921,7 @@ CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
             // caravan out-trades a peasant because its ROW rolls a better
             // sheet, never because the code knows who it is (owner,
             // 2026-08-30).
-            const int price = player_sell_price(
+            const int price = trade_sell_price(
                 stock_price(base, have + moved, demand),
                 charisma, bargaining);
             out.soldValue += transfer_value(ms, hold, moved * price);
@@ -2948,7 +2948,7 @@ CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
                              capacityKg - inventory_weight(hold));
             if (moved <= 0) continue;
             const int cost =
-                moved * player_buy_price(
+                moved * trade_buy_price(
                             stock_price(base, have - moved, demand),
                             charisma, bargaining);
             out.boughtValue += transfer_value(hold, ms, cost);
@@ -3002,7 +3002,7 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
         // Same ONE trade-price law as the station: a village hand haggles
         // with a peasant's charisma, a caravan with a trader's — the sheet
         // is the whole difference.
-        const int price = player_sell_price(
+        const int price = trade_sell_price(
             stock_price(base, have + moved, demand), charisma, bargaining);
         out.soldValue += transfer_value(ms, bag, moved * price);
         out.movedTableValue += base * moved;
@@ -3048,7 +3048,7 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
                              capacityKg - inventory_weight(bag));
             if (moved <= 0) continue;
             const int cost =
-                moved * player_buy_price(
+                moved * trade_buy_price(
                             stock_price(base, have - moved, demand),
                             charisma, bargaining);
             out.boughtValue += transfer_value(bag, ms, cost);

@@ -71,7 +71,6 @@ PlayerState default_player() {
     // PlayerState cannot carry goods any more; it is not a container.)
     p.sheet.attributes = default_attributes();
     p.sheet.skills     = default_skills();
-    p.sheet.perks      = default_perks();
     p.sheet.levelData  = default_level_data();
     p.combatStats = calculate_combat_stats(p.sheet.attributes, p.sheet.skills);
 

@@ -546,7 +546,7 @@ namespace sm::ui
 
         int trade_overlay_buy_price(int baseValue, int charisma, SettlementMood mood)
         {
-            return sm::player_trade_price(baseValue, charisma, /*bargaining*/ 0,
+            return sm::trade_price(baseValue, charisma, /*bargaining*/ 0,
                                           sm::mood_price_mult(mood, true),
                                           /*buying*/ true);
         }
@@ -554,7 +554,7 @@ namespace sm::ui
         int trade_overlay_sell_price(int baseValue, int charisma,
                                      SettlementMood mood)
         {
-            return sm::player_trade_price(baseValue, charisma, /*bargaining*/ 0,
+            return sm::trade_price(baseValue, charisma, /*bargaining*/ 0,
                                           sm::mood_price_mult(mood, false),
                                           /*buying*/ false);
         }
@@ -983,7 +983,6 @@ namespace sm::ui
                         ImGui::Text("Coin %d", wallet_value(playerBag));
                         ImGui::Text("Attr pts %d", p.sheet.levelData.attributePoints);
                         ImGui::Text("Skill pts %d", p.sheet.levelData.skillPoints);
-                        ImGui::Text("Perk pts %d", p.sheet.levelData.perkPoints);
                         if (p.sheet.levelData.exp >= p.sheet.levelData.expToNext)
                         {
                             if (ImGui::Button("Level Up"))
@@ -1027,7 +1026,6 @@ namespace sm::ui
                         ImGui::Text("EXP x%.2f", derived.expMult);
                         ImGui::Text("Move x%.2f", derived.moveSpeedMult);
                         ImGui::Text("Trade %.0f%%", derived.tradeDiscount * 100.0f);
-                        ImGui::Text("Crit %.1f%%", derived.critBase * 100.0f);
                         ImGui::Text("Carry %.1f / %.0f kg", carryWeight, carryCap);
                         ImGui::EndTable();
                     }
@@ -1074,49 +1072,10 @@ namespace sm::ui
                         }
                         ImGui::EndTable();
                     }
-                    ImGui::Spacing();
-                    if (ImGui::BeginTable("perks_grid", 2,
-                                          ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg))
-                    {
-                        ImGui::TableSetupColumn("Perk");
-                        ImGui::TableSetupColumn("State", ImGuiTableColumnFlags_WidthFixed, 110.0f);
-                        ImGui::TableHeadersRow();
-                        for (const PerkInfo &perk : kPerkList)
-                        {
-                            ImGui::TableNextRow();
-                            ImGui::TableNextColumn();
-                            ImGui::Text("%s", perk.name);
-                            if (ImGui::IsItemHovered())
-                                ImGui::SetTooltip("%s\n%s\n%s",
-                                                  perk.description,
-                                                  perk.advantage,
-                                                  perk.disadvantage);
-                            ImGui::TableNextColumn();
-                            const bool owned = has_perk(p.sheet.perks, perk.id);
-                            if (owned)
-                            {
-                                ImGui::TextDisabled("active");
-                            }
-                            else
-                            {
-                                ImGui::PushID(perk.name);
-                                ImGui::BeginDisabled(p.sheet.levelData.perkPoints <= 0);
-                                if (ImGui::SmallButton("Choose"))
-                                {
-                                    add_perk(p.sheet.perks, perk.id);
-                                    --p.sheet.levelData.perkPoints;
-                                    if (perk.id == PerkID::Talented)
-                                    {
-                                        if (try_level_up(p.sheet.levelData))
-                                            reset_player_combat_stats(p);
-                                    }
-                                }
-                                ImGui::EndDisabled();
-                                ImGui::PopID();
-                            }
-                        }
-                        ImGui::EndTable();
-                    }
+                    // (The perk grid died with the 2026-09-03 purge: six of
+                    // its eight rows promised mechanics that did not exist,
+                    // and the Talented branch was the hardcode the bonus
+                    // registry forbids. Perks return redesigned — CANON S14.)
                     ImGui::EndTabItem();
                 }
 

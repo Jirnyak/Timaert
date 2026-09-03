@@ -187,11 +187,11 @@ void test_a_leaders_gift_is_the_same_totals_as_everything_else() {
     CHECK(squad_bonuses(leader).attr[std::size_t(AttributeId::Vit)] == 0,
           "a sheet with no sources buffs nobody");
 
-    add_perk(leader.perks, PerkID::Leader);
-    const BonusTotals gift = squad_bonuses(leader);
-    CHECK(gift.attr[std::size_t(AttributeId::Vit)] == 1,
-          "the Leader perk row lands as +1 vit, in the same BonusTotals a "
-          "sword's affix lands in — one road to the sheet, not two");
+    // (The Leader perk row died with the 2026-09-03 perk purge; the door
+    // stays empty until the redesigned perks feed it rows — CANON S14. The
+    // application path below is exercised with a hand-built gift instead.)
+    BonusTotals gift{};
+    gift.attr[std::size_t(AttributeId::Vit)] = 1;
 
     // ...and it reaches a trooper through the ONE application.
     CharacterSheet trooper{};

@@ -8,7 +8,7 @@
 //   2. THE WIS DIVIDEND — award_exp(ld, amount, expMult) scales the grant by
 //      the sheet's expMult (+1% per wis point), round half up. Before this,
 //      wis was computed and consumed by nothing.
-//   3. ONE PRICE LAW — player_trade_price = the canonical charisma+bargaining
+//   3. ONE PRICE LAW — trade_price = the canonical charisma+bargaining
 //      pricing (formerly dead code while three homegrown UI laws diverged)
 //      with context (mood/trait) as one multiplier column.
 
@@ -91,20 +91,20 @@ int main() {
         // Canon base: buy discount 1% cha + 2% bargaining, floor 0.5;
         // sell 0.7 × (1 + same bonus), cap 1.5. Context multiplies the base
         // value BEFORE the canon so its clamps still govern.
-        if (player_trade_price(100, 10, 0, 1.0f, true) != 90) {
+        if (trade_price(100, 10, 0, 1.0f, true) != 90) {
             return fail("buy: cha 10 must price 100 at 90");
         }
-        if (player_trade_price(100, 10, 0, 1.0f, false) != 77) {
+        if (trade_price(100, 10, 0, 1.0f, false) != 77) {
             return fail("sell: cha 10 must price 100 at 77 (0.7 * 1.1)");
         }
-        if (player_trade_price(100, 10, 0, 1.2f, true)
-            != player_trade_price(120, 10, 0, 1.0f, true)) {
+        if (trade_price(100, 10, 0, 1.2f, true)
+            != trade_price(120, 10, 0, 1.0f, true)) {
             return fail("context multiplier must equal scaling the base value");
         }
-        if (player_trade_price(100, 200, 0, 1.0f, true) != 50) {
+        if (trade_price(100, 200, 0, 1.0f, true) != 50) {
             return fail("buy discount must floor at 0.5 of base");
         }
-        if (player_trade_price(1, 0, 0, 0.1f, false) < 1) {
+        if (trade_price(1, 0, 0, 0.1f, false) < 1) {
             return fail("prices never fall below 1 gold");
         }
     }

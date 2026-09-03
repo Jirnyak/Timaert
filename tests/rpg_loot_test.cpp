@@ -162,8 +162,7 @@ static void test_sheet_budget_identity() {
             std::snprintf(msg, sizeof msg,
                 "sheet L%d role %d: pools drained to zero", lvl, int(role));
             CHECK(cs.levelData.attributePoints == 0
-                  && cs.levelData.skillPoints == 0
-                  && cs.levelData.perkPoints == 0, msg);
+                  && cs.levelData.skillPoints == 0, msg);
 
             std::snprintf(msg, sizeof msg,
                 "sheet L%d role %d: level + xp curve set", lvl, int(role));

@@ -3777,8 +3777,8 @@ void register_console_commands(App& app) {
                 if (ld.exp < ld.expToNext) ld.exp = ld.expToNext;
                 sm::try_level_up(ld);
             }
-            c.printfln(Lvl::Ok, "level %d -> %d  (%d attr, %d skill, %d perk pts avail)",
-                       before, ld.level, ld.attributePoints, ld.skillPoints, ld.perkPoints);
+            c.printfln(Lvl::Ok, "level %d -> %d  (%d attr, %d skill pts avail)",
+                       before, ld.level, ld.attributePoints, ld.skillPoints);
             return true;
         });
 
@@ -4147,9 +4147,8 @@ void draw_debug_panels(App& app) {
             ImGui::Text("hp      %d / %d", p.combatStats.currentHp, p.combatStats.maxHp);
             ImGui::Text("mp      %d / %d", p.combatStats.currentMp, p.combatStats.maxMp);
             ImGui::Text("sp      %d / %d", p.combatStats.currentSp, p.combatStats.maxSp);
-            ImGui::Text("points  attr %d  skill %d  perk %d",
-                        p.sheet.levelData.attributePoints, p.sheet.levelData.skillPoints,
-                        p.sheet.levelData.perkPoints);
+            ImGui::Text("points  attr %d  skill %d",
+                        p.sheet.levelData.attributePoints, p.sheet.levelData.skillPoints);
             ImGui::Text("spells  %d learned",
                         sm::spellbook_learned_count(p.spellBook));
             ImGui::SeparatorText("World");

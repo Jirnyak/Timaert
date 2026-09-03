@@ -55,10 +55,10 @@ void test_arbitrage_dies_two_ways() {
                             // exists there and WALL 2 (the purse) is the
                             // guard. Slippage's own law needs headroom.
                             if (demand >= s) continue;
-                            const int buyUnit = player_trade_price(
+                            const int buyUnit = trade_price(
                                 stock_price(base, 0, demand),
                                 cha, 0, c[0], /*buying=*/true);
-                            const int sellUnit = player_trade_price(
+                            const int sellUnit = trade_price(
                                 stock_price(base, s, demand),
                                 cha, 0, c[1], /*buying=*/false);
                             ++trips;
@@ -89,9 +89,9 @@ void test_arbitrage_dies_two_ways() {
         bool farmDied = false;
         for (; rounds < 10000; ++rounds) {
             const int supply = merchant.count("bread");
-            const int buyUnit = player_trade_price(
+            const int buyUnit = trade_price(
                 stock_price(100, supply - 1, 0), 10, 0, 0.9f, true);
-            const int sellUnit = player_trade_price(
+            const int sellUnit = trade_price(
                 stock_price(100, supply, 0), 10, 0, 1.2f, false);
             if (sellUnit <= buyUnit) { farmDied = true; break; }   // profitless
             if (wallet_value(player) < buyUnit) break;

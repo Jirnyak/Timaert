@@ -261,7 +261,7 @@ namespace sm {
 // v75 (2026-09-03): хищник-жертва (CANON S10) — поля следов фракций едут в
 // сейве (gs.scent, разреженно) + Robbed ВЫРЕЗАН из FactKind (вердикт
 // «минимум систем»: сдвиг ординалов видов фактов).
-constexpr int kSaveVersion = 75;
+constexpr int kSaveVersion = 76;
 
 enum class SettlementMood : std::uint8_t {
     Prosperous, Stable, Tense, Unrest, Revolt, Count

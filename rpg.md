@@ -2,6 +2,14 @@
 
 Character sheet: attributes, XP/levels, items, inventory, equipment, loot.
 
+> **The full role system was FINALIZED 2026-09-03 — CANON.md S14 (sheet,
+> progression, dice), S13 (damage/armour types, no to-hit), S15 (six schools)
+> are the design of record.** This document describes what is BUILT; where the
+> two differ (8 attributes vs today's 9, the 64-skill envelope, learned
+> skills, the dice door), the canon wins and the phased plan lives in
+> NEXT_SESSION.md. The perk system was PURGED whole 2026-09-03 pending its
+> redesign — the game currently carries no perk state at all.
+
 - **Code:** [macro/attributes.h](src/macro/attributes.h),
   [macro/character_sheet.h](src/macro/character_sheet.h) (`CharacterSheet`),
   [macro/items.h](src/macro/items.h),
@@ -11,9 +19,11 @@ Character sheet: attributes, XP/levels, items, inventory, equipment, loot.
 ## Model
 
 - **Attributes & levels:** stat block + XP curves in `attributes.h`.
-- **Universal `CharacterSheet`:** one type — Attributes + Skills + Perks +
-  LevelData — shared by the player (embedded in `PlayerState`) and every
-  humanoid NPC (an ECS component). Combat is **derived** from it, never stored
+- **Universal `CharacterSheet`:** one type — Attributes + Skills + LevelData —
+  shared by the player (embedded in `PlayerState`, the only STORED sheet) and
+  every humanoid NPC (whose sheet is DERIVED on demand from
+  `(role, level, seed)` via `make_character_sheet` — same point economy, role
+  weights decide where the points went). Combat is **derived** from it, never stored
   inside: the player keeps an authoritative `CombatStats`, an NPC its ECS
   `Health`/`Combat`, both projected through the same formulas (`project_combat`,
   [microcombat.md](microcombat.md)). In the subworld the player additionally
@@ -37,10 +47,12 @@ Character sheet: attributes, XP/levels, items, inventory, equipment, loot.
     at **one percent per rank, capped at `kMaxSkillRank = 100`**.
 
   A rank therefore *reads as its percentage*: "Athletics 37" is +37 % speed,
-  "Travel 37" is −37 % terrain stamina. Two helpers state it once —
-  `skill_bonus_mult(rank)` = 1 + rank/100 for a bonus, `skill_cost_mult(rank)`
-  = 1 − rank/100 for a skill that buys a cost DOWN — and every skill uses one of
-  them. Linear and capped on purpose: an asymptotic curve cannot be balanced by
+  "Travel 37" is −37 % terrain stamina. ONE door states it —
+  `skill_mult_of(SkillId, rank)` (and its sheet-reading wrapper `skill_mult`);
+  the row's `pctPerRank` column and `buysCostDown` flag decide the size and the
+  direction. (The generic `skill_bonus_mult`/`skill_cost_mult` helpers — a
+  second formula that did not know its row — died in the 2026-09-03 sweep.)
+  Linear and capped on purpose: an asymptotic curve cannot be balanced by
   reading it, and the ceiling should be a decision, not an accident. The cap is
   enforced at the single door into a rank (`spend_skill_point`), so no formula
   has to defend itself against an impossible rank.

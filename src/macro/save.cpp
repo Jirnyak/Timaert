@@ -636,24 +636,6 @@ void read_history(Reader& r, SettlementHistory& h) {
     }
 }
 
-void write_perks(Writer& w, const Perks& perks) {
-    if (!w.count(perks.ids.size(), kMaxSmallVector)) return;
-    for (PerkID id : perks.ids) write_enum8(w, id);
-}
-
-void read_perks(Reader& r, Perks& perks) {
-    std::uint32_t n = 0;
-    if (!read_count(r, n, kMaxSmallVector)) return;
-    perks.ids.clear();
-    perks.ids.reserve(n);
-    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-        PerkID id = PerkID::Immortal;
-        if (read_enum8(r, id, static_cast<std::uint8_t>(PerkID::KingPesant))) {
-            perks.ids.push_back(id);
-        }
-    }
-}
-
 void write_spell_book(Writer& w, const SpellBook& spellBook) {
     // v59: ordinal-for-ordinal over the append-only registry — the row count
     // is written first so a book saved against a DIFFERENT registry length
@@ -690,7 +672,8 @@ void write_player(Writer& w, const PlayerState& p) {
     w.pod(p.combatStats);
     w.pod(p.sheet.levelData);
     w.pod(p.sheet.skills);
-    write_perks(w, p.sheet.perks);
+    // (No perk block since v76: the perk system was purged whole pending its
+    // redesign — CANON S14. The bytes return when the perks do.)
     // (No inventory block: his bag is an ordinary NpcInventory on his squad
     // entity, and rides the macro snapshot with every other squad's.)
     // No reputation map: the player's standing is his row in gs.factions, which
@@ -728,7 +711,6 @@ void read_player(Reader& r, PlayerState& p) {
     r.pod(p.combatStats);
     r.pod(p.sheet.levelData);
     r.pod(p.sheet.skills);
-    read_perks(r, p.sheet.perks);
     r.pod(p.codexUnlockedBits);   // v63
     read_spell_book(r, p.spellBook);
     r.pod(p.factionPeaceUntilDay);

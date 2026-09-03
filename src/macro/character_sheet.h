@@ -14,7 +14,7 @@ namespace sm {
 // ── Universal character sheet ──────────────────────────────────────────────
 //
 // The SINGLE representation shared by the player and every humanoid NPC. It
-// bundles the four persistent RPG facets — attributes, skills, perks and the
+// bundles the persistent RPG facets — attributes, skills and the
 // level/XP economy — exactly as the player carries them today (see
 // `PlayerState` in macro/state.h). Combat numbers (HP/MP/SP, damage) are
 // DERIVED from this sheet, never stored inside it (the player keeps a
@@ -34,7 +34,6 @@ namespace sm {
 struct CharacterSheet {
     Attributes attributes;
     Skills     skills;
-    Perks      perks;
     LevelData  levelData;
 };
 
@@ -188,9 +187,8 @@ inline std::uint32_t leader_sheet_seed(std::uint32_t spawnOrdinal) {
 // EXACT player point economy for `level` — 8 + 3·(level-1) attribute points
 // and 3 + (level-1) skill points — into the role's signature stats, so a
 // level-N NPC is budget-identical to a level-N player, merely allocated toward
-// its role. Points are fully consumed (levelData.*Points end at 0). Generic
-// NPCs take no perks (perkPoints = 0); plot NPCs supply an authored sheet
-// instead of calling this.
+// its role. Points are fully consumed (levelData.*Points end at 0). Plot NPCs
+// supply an authored sheet instead of calling this.
 inline CharacterSheet make_character_sheet(NPCType role, int level,
                                            std::uint32_t seed) {
     if (level < 1) level = 1;
@@ -204,7 +202,6 @@ inline CharacterSheet make_character_sheet(NPCType role, int level,
     // (start 8/3, +3/+1 per level-up); we then spend all of it below.
     cs.levelData.attributePoints = 8 + 3 * (level - 1);
     cs.levelData.skillPoints     = 3 + (level - 1);
-    cs.levelData.perkPoints      = 0; // generic NPCs settle without perks
 
     const csheet_detail::RoleWeights& w = csheet_detail::role_weights(role);
     csheet_detail::SheetRng rng{
@@ -269,29 +266,16 @@ inline CharacterSheet effective_sheet(const CharacterSheet& base,
 // costs the game nothing because squad == leader (S4) and the leader's sheet
 // was always the only source.
 //
-// SOURCES are the extension axis: perk rows today, and the leader's skills,
-// charisma and carried gear when the perk epic lands. Each is a few lines
-// appending into the same totals, and no consumer ever learns where a
-// modifier came from.
-struct SquadBonusRow {
-    PerkID perk;
-    Bonus  bonus;
-};
-
-// A perk that buffs the carrier's squad is a ROW, never a branch in a spawner.
-// The Leader perk is the owner's own example made real: "+10 HP to every
-// soldier" is +1 vit through the one formula (a vit point is 10 max HP), so
-// the buff lands in the member's sheet and nowhere else.
-inline constexpr SquadBonusRow kSquadPerkBonuses[] = {
-    {PerkID::Leader, {std::uint8_t(BonusId::Vit), +1}},
-};
-
-inline BonusTotals squad_bonuses(const CharacterSheet& leader) {
-    BonusTotals out{};
-    for (const SquadBonusRow& row : kSquadPerkBonuses) {
-        if (has_perk(leader.perks, row.perk)) accumulate(out, row.bonus);
-    }
-    return out;
+// SOURCES are the extension axis: perk rows (returning with the perk
+// redesign, CANON S14), and the leader's skills, charisma and carried gear
+// when their turns come. Each is a few lines appending into the same totals,
+// and no consumer ever learns where a modifier came from.
+//
+// EMPTY since the 2026-09-03 perk purge: the one aura row (Leader → +1 vit)
+// died with the perk system it hung on. The DOOR stays — every body-birth
+// already walks through it — so the redesigned perks feed rows, not code.
+inline BonusTotals squad_bonuses(const CharacterSheet&) {
+    return BonusTotals{};
 }
 
 // Derive combat numbers for a humanoid from its CharacterSheet, layered on top

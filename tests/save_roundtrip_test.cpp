@@ -323,7 +323,6 @@ sm::GameState make_state() {
     gs.player.sheet.levelData.expToNext = 6543;
     gs.player.sheet.levelData.attributePoints = 4;
     gs.player.sheet.levelData.skillPoints = 5;
-    gs.player.sheet.levelData.perkPoints = 6;
     gs.player.combatStats.currentHp = 33;
     gs.player.combatStats.maxHp = 111;
     gs.player.combatStats.currentMp = 44;
@@ -333,8 +332,6 @@ sm::GameState make_state() {
     gs.player.combatStats.hpRegen = 1.25f;
     gs.player.combatStats.mpRegen = 2.5f;
     gs.player.combatStats.spRegen = 3.75f;
-    sm::add_perk(gs.player.sheet.perks, sm::PerkID::Natural);
-    sm::add_perk(gs.player.sheet.perks, sm::PerkID::Educated);
     gs.player.codexUnlockedBits = sm::codex_bit(sm::CodexArticleId::Witches)
                                 | sm::codex_bit(sm::CodexArticleId::Market);
     {   // the JOURNAL (v58): two learned facts ride the save entry-for-entry
@@ -867,17 +864,12 @@ void run_roundtrip() {
     if (p.sheet.levelData.level != 6 || p.sheet.levelData.exp != 321
         || p.sheet.levelData.expToNext != 6543
         || p.sheet.levelData.attributePoints != 4
-        || p.sheet.levelData.skillPoints != 5
-        || p.sheet.levelData.perkPoints != 6) {
+        || p.sheet.levelData.skillPoints != 5) {
         FAIL_BAIL("player level data lost");
     }
     if (p.combatStats.currentHp != 33 || p.combatStats.maxMp != 222
         || !nearf(p.combatStats.spRegen, 3.75f)) {
         FAIL_BAIL("player combat stats lost");
-    }
-    if (!sm::has_perk(p.sheet.perks, sm::PerkID::Natural)
-        || !sm::has_perk(p.sheet.perks, sm::PerkID::Educated)) {
-        FAIL_BAIL("player perks lost");
     }
 
     if (sm::player_reputation(&loaded, "guild") != 42) {

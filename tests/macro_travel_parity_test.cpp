@@ -352,17 +352,22 @@ void test_travel_balance_holds_its_intent() {
     CHECK(marching.combatStats.currentHp >= fresh.currentHp,
            "and suppressing stamina recovery does not stop the body healing");
 
-    // THE SKILL LAW, pinned: one rank is one percent, and the cap is the
-    // ceiling. A future skill that invents its own curve should trip this.
-    CHECK(nearf(sm::skill_bonus_mult(0), 1.0f), "rank 0 grants nothing");
-    CHECK(nearf(sm::skill_bonus_mult(37), 1.37f), "rank reads as percent");
-    CHECK(nearf(sm::skill_cost_mult(37), 0.63f), "and as percent off a cost");
-    CHECK(nearf(sm::skill_cost_mult(sm::kMaxSkillRank), 0.0f),
+    // THE SKILL LAW, pinned through the one door (skill_mult_of): a rank is
+    // the row's percent, and the cap is the ceiling. The generic helpers that
+    // once answered without knowing their row died in the 2026-09-03 sweep.
+    CHECK(nearf(sm::skill_mult_of(sm::SkillId::Marathon, 0), 1.0f),
+           "rank 0 grants nothing");
+    CHECK(nearf(sm::skill_mult_of(sm::SkillId::Marathon, 37), 1.37f),
+           "rank reads as the row's percent");
+    CHECK(nearf(sm::skill_mult_of(sm::SkillId::Travel, 37), 0.63f),
+           "and as percent off a cost");
+    CHECK(nearf(sm::skill_mult_of(sm::SkillId::Travel, sm::kMaxSkillRank), 0.0f),
            "mastery of a cost skill removes that cost entirely");
-    CHECK(nearf(sm::skill_bonus_mult(sm::kMaxSkillRank + 500),
-                 sm::skill_bonus_mult(sm::kMaxSkillRank)),
+    CHECK(nearf(sm::skill_mult_of(sm::SkillId::Marathon, sm::kMaxSkillRank + 500),
+                 sm::skill_mult_of(sm::SkillId::Marathon, sm::kMaxSkillRank)),
            "nothing above the cap counts, however it got there");
-    CHECK(nearf(sm::skill_cost_mult(-5), 1.0f), "and nothing below zero does");
+    CHECK(nearf(sm::skill_mult_of(sm::SkillId::Travel, -5), 1.0f),
+           "and nothing below zero does");
 
     // Mastery earns free ground — but only the GROUND. An overloaded master
     // still pays for what he carries, and the exhaustion curve is untouched.

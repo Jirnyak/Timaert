@@ -1,9 +1,8 @@
 // Faithful port of `src/game/attributes.ts`.
 //
-// Schema: 9 attributes (str/vit/end/wil/int/wis/lck/cha/spd), 7 skills,
-// 24 perks (only level-relevant subset is enforced; cosmetic perks live
-// in PERK_LIST), level/XP curve `1000 * level * (0.1 * level + 1)`,
-// universal carry-weight rule.
+// Schema: 9 attributes (str/vit/end/wil/int/wis/lck/cha/spd), 8 skills,
+// level/XP curve `1000 * level * (0.1 * level + 1)`, universal carry-weight
+// rule. (Perks purged 2026-09-03 pending redesign — see the block below.)
 //
 // Naming: TS `int` is reserved in C+ +; field is renamed `intl` (kept short
 // since this struct is hot data).
@@ -123,24 +122,6 @@ inline constexpr const AttributeDef& attribute_def(AttributeId id) {
 // not an exploit.
 constexpr int kMaxSkillRank = 100;
 
-// The generic 1 %/rank forms, kept for the two macro callers that hold a
-// CACHED rank and not a sheet (ecs::MacroNpcRuntime travelRank/marathonRank —
-// both 1 %/rank rows, so the answer is the same one skill_mult would give).
-// New code names its skill and asks skill_mult; these do not know which skill
-// they are speaking for, which is exactly why they are not THE law.
-inline float skill_bonus_mult(int rank) {
-    if (rank < 0) rank = 0;
-    if (rank > kMaxSkillRank) rank = kMaxSkillRank;
-    return 1.0f + float(rank) * 0.01f;
-}
-
-// ...and 1 - rank/100 for a skill that BUYS DOWN a cost (never below zero).
-inline float skill_cost_mult(int rank) {
-    if (rank < 0) rank = 0;
-    if (rank > kMaxSkillRank) rank = kMaxSkillRank;
-    return 1.0f - float(rank) * 0.01f;
-}
-
 // ── Skills: a fixed envelope of ranks, and a TABLE of what they mean ──
 //
 // The ranks are a flat array under a po2 cap and the MEANINGS are rows beneath
@@ -248,61 +229,16 @@ inline float skill_mult(const Skills& s, SkillId id) {
     return skill_mult_of(id, s.of(id));
 }
 
-// ── Perks ──────────────────────────────────────────────────────
+// ── Perks: PURGED 2026-09-03 ───────────────────────────────────
+//
+// The TS-era perk block (24 ids, 8 tooltip rows, effects on TWO) died whole:
+// six of the eight rows promised mechanics that did not exist, and the system
+// is to be REDESIGNED from scratch (CANON S14 — Underrail-grade, one perk at a
+// time, once the RPG core stands). Until then the game carries no perk state:
+// no enum, no bag, no points, no save bytes (kSaveVersion 76). The one thing
+// that survives is the aura DOOR (character_sheet.h squad_bonuses) — the
+// mechanism perks will feed rows into when they return.
 
-enum class PerkID : std::uint8_t {
-    Immortal, ShortLived, Mechanical, Talented, Gifted, GodsMark, Saint,
-    Possess, DeathWord, Antimagus, MagicBody, BloodMagic, Autist, Leader,
-    Specialization, Generalist, Educated, Natural, Apostle, Demiurg,
-    Revenant, Stonks, Sacrilegist, KingPesant,
-};
-
-struct PerkInfo {
-    PerkID id;
-    const char* name;
-    const char* description;
-    const char* advantage;
-    const char* disadvantage;
-};
-
-// Cosmetic registry — currently exposes the 7 perks the TS file enumerated
-// (the rest of `PerkID` values exist for save-format parity but have no
-// info row yet; mirror the TS PERK_LIST length exactly).
-inline constexpr PerkInfo kPerkList[] = {
-    {PerkID::Immortal,   "Immortal",   "Never die from old age",
-                         "Immunity to aging",                "100% more EXP needed to level up"},
-    {PerkID::ShortLived, "Short-Lived","Die of old age at 33",
-                         "100% more EXP gained",             "Die at age 33"},
-    {PerkID::Mechanical, "Mechanical", "Constructed being with no growth",
-                         "Start with +100 attribute points & choose 10 skills",
-                         "No level-up or EXP gain"},
-    {PerkID::Talented,   "Talented",   "Natural prodigy",
-                         "Instantly gain 1 level",           "Uses 1 perk point"},
-    {PerkID::Gifted,     "Gifted",     "Extreme specialization",
-                         "Choose two attributes; one is multiplied by 2",
-                         "Other chosen attribute is divided by 2"},
-    {PerkID::Natural,    "Natural",    "Pure physical excellence",
-                         "+1 attribute point per level",     "No skill points gained"},
-    {PerkID::Educated,   "Educated",   "Highly trained specialist",
-                         "+1 skill point per level",         "No attribute points gained"},
-    // The first perk whose effect is a DATA ROW (character_sheet.h
-    // kSquadPerkBonuses); this entry only makes it takeable and tells the
-    // player the truth about what it does.
-    {PerkID::Leader,     "Leader",     "Born to command",
-                         "+1 vitality to every soldier in your squad",
-                         "Uses 1 perk point"},
-};
-
-// Bag of perk ids — small set, vector is fine (rarely > 5 entries).
-struct Perks { std::vector<PerkID> ids; };
-
-inline bool has_perk(const Perks& p, PerkID id) {
-    for (auto i : p.ids) if (i == id) return true;
-    return false;
-}
-inline void add_perk(Perks& p, PerkID id) {
-    if (!has_perk(p, id)) p.ids.push_back(id);
-}
 // ── Combat stats (player) ──────────────────────────────────────
 //
 // Mirrors `CombatStats` exactly; uses int for HP/SP/MP and float for
@@ -319,14 +255,14 @@ struct CombatStats {
 
 // ── Derived bonuses (ephemeral) ────────────────────────────────
 
+// (critBase and relationBonus died in the 2026-09-03 sweep: zero readers
+// beyond one UI print — LCK's real home is the dice-roll door, CANON S13.)
 struct DerivedBonuses {
     float rawPhysDamage = 0;
     float rawSpellDamage = 0;
     float expMult = 1;
     float moveSpeedMult = 1;
     float tradeDiscount = 0;
-    float relationBonus = 0;
-    float critBase = 0;
 };
 
 // ── Level data ─────────────────────────────────────────────────
@@ -337,7 +273,8 @@ struct LevelData {
     int expToNext         = 0; // populated by `default_level_data`
     int attributePoints   = 8;
     int skillPoints       = 3;
-    int perkPoints        = 1;
+    // (perkPoints died with the perk purge; the redesigned system brings its
+    // own accrual — every 5th level + one at creation, CANON S14.)
 };
 
 // (No `attribute_value` switches either. A score is `attributes[AttributeId::X]`
@@ -385,7 +322,6 @@ inline int exp_to_next_level(int level) {
 // kill pays through the ONE npc_xp_reward law in macro/npc.h now.)
 inline Attributes default_attributes() { return {}; }
 inline Skills     default_skills()     { return {}; }
-inline Perks      default_perks()      { return {}; }
 
 inline LevelData default_level_data() {
     LevelData ld{};
@@ -452,6 +388,15 @@ inline void recompute_combat_maxima(CombatStats& c, const Attributes& a,
     c.currentSp = std::min(curSp, c.maxSp);
 }
 
+// THE one CHA→trade-discount formula (1 % per point). Both of its doors read
+// it — the trade price (economy.cpp trade_buy/sell_price) and the payroll
+// (calculate_squad_upkeep via the derived column below). The 2026-09-03 sweep
+// found it spelled inline in TWO places; a drifted copy here would desync the
+// shop from the sheet panel silently.
+inline float cha_trade_discount(int cha) {
+    return float(cha) * 0.01f;
+}
+
 inline DerivedBonuses calculate_derived(const Attributes& a, const Skills& s) {
     DerivedBonuses d;
     const float rawPhys  = float(a.of(AttributeId::Str));
@@ -465,9 +410,7 @@ inline DerivedBonuses calculate_derived(const Attributes& a, const Skills& s) {
     // buys DISTANCE per bar of stamina, not speed (macro/movement_cost.h).
     d.moveSpeedMult  = (1.0f + float(a.of(AttributeId::Spd)) / float(a.of(AttributeId::Spd) + 50))
                        * skill_mult(s, SkillId::Athletics);
-    d.tradeDiscount  = float(a.of(AttributeId::Cha)) * 0.01f;
-    d.relationBonus  = float(a.of(AttributeId::Cha));
-    d.critBase       = float(a.of(AttributeId::Lck)) / float(a.of(AttributeId::Lck) + 50);
+    d.tradeDiscount  = cha_trade_discount(a.of(AttributeId::Cha));
     return d;
 }
 
@@ -492,7 +435,6 @@ inline bool try_level_up(LevelData& ld) {
     ld.expToNext      = exp_to_next_level(ld.level);
     ld.attributePoints += 3;
     ld.skillPoints     += 1;
-    if (ld.level % 10 == 0) ld.perkPoints += 1;
     return true;
 }
 

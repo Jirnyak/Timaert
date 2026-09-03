@@ -6075,10 +6075,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             app.ui.quest = false;
             app.ui.codex = false;
             std::fprintf(stderr,
-                         "[smoke] stats open attrPts=%d skillPts=%d perkPts=%d vit=%d bodybuilding=%d hpMax=%d\n",
+                         "[smoke] stats open attrPts=%d skillPts=%d vit=%d bodybuilding=%d hpMax=%d\n",
                          app.gs.player.sheet.levelData.attributePoints,
                          app.gs.player.sheet.levelData.skillPoints,
-                         app.gs.player.sheet.levelData.perkPoints,
                          app.gs.player.sheet.attributes.of(sm::AttributeId::Vit),
                          app.gs.player.sheet.skills.of(sm::SkillId::Bodybuilding),
                          app.gs.player.combatStats.maxHp);

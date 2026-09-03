@@ -280,11 +280,11 @@ void test_a_leaders_aura_reaches_his_men() {
     const BonusTotals none = squad_bonuses(leader);
     CHECK(none.attr[std::size_t(AttributeId::Vit)] == 0,
           "a sheet with no sources buffs nobody");
-    add_perk(leader.perks, PerkID::Leader);
-    const BonusTotals gift = squad_bonuses(leader);
-    CHECK(gift.attr[std::size_t(AttributeId::Vit)] == 1,
-          "the Leader perk row collects as +1 vit: the '+10 HP to every "
-          "soldier' the owner named, said through the ONE bonus registry");
+    // (The Leader perk row died with the 2026-09-03 perk purge — the door is
+    // empty until the redesign, CANON S14. The application contract below is
+    // exercised with a hand-built gift through the same BonusTotals.)
+    BonusTotals gift{};
+    gift.attr[std::size_t(AttributeId::Vit)] = 1;
 
     // The clamps are the registry's, and they are the same ones a legitimate
     // point spend respects — one door for a leader's gift and a sword's affix.
