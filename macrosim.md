@@ -260,6 +260,32 @@ the code stands now:
   whose roster emptied leaves the registry instead of haunting every view
   (deferred out of the settle itself because the settle's callers still
   hold the entities).
+* **Predator–prey: scent fields & the hunt (2026-09-03, CANON S10)** —
+  macro/scent_field.h + npc_ai.cpp: per-faction CELL-tier chemotaxis under
+  the region-tier threat field (threat = страх места, scent = запах
+  существа). TWO channels per faction — STRENGTH (deposit = `squad_power`,
+  the one battle law, never a second formula) and WEALTH (roster souls at
+  hire-row prices + `inventory_value` of the bag); every thinking squad
+  deposits into its own cell (the player's squad too, by the sweep), the
+  daily step diffuses 1/8 to the eight torus neighbours and decays >>1
+  every 4 days, and the whole field RIDES THE SAVE (v75, sparse). The hunt
+  (`scent_hunt_step`, after the visual threat step): an unengaged combatant
+  climbs the hostile WEALTH gradient under the STRENGTH filter (trail ≤ my
+  power × 2^kHuntBoldShift); visual contact hands over to the old reflex
+  and the one battle law. The macro errand is never touched — a hunt is a
+  temporary distraction over the standing goal («по ходу дела их может
+  временно отвлечь враг» — пауза, не амнезия). Hostility is baked to a
+  uint64 mask per faction once per sweep (`TickContext::factionHostileMask`);
+  the world's faction limit is ONE constant, `kMaxFactions = 64`
+  (macro/faction.h — the subworld crowd cap references it). Perception goes
+  through `squad_sight_cells()` — the RPG layer's door, v1 constant.
+  Future readers come free: strength field = military presence map, wealth
+  field = economic map (wars, strategy, scouting are new READERS, not new
+  mechanics). Tests: tests/scent_field_test.cpp (25 checks). Knobs not yet
+  swept: kScentDecayDays/DiffusionShift/QuantShift, kHuntBoldShift/
+  ScentFloor. Known v1 residue: diffusion is blind to water (the scent cone
+  swims straits); deposit recomputes squad_power every think (the perf
+  suspect of §34.8); prey does not yet dodge predator trails.
 * **The map stops you** — the forced pre-battle screen (main.cpp,
   `GameSubStateKind::PreBattle`): a TABLE of actions — talk / pay off /
   flee / fight (the old `route_macro_npc_attack`, rebuilt as promised) /
