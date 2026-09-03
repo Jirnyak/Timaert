@@ -2436,6 +2436,16 @@ void ai_wanderer(ecs::Position& p, ecs::MacroNpcRuntime& rt,
 //     one auto-battle law, settled through the one ledger.
 
 constexpr float kSquadSightCells = 6.0f;
+
+// ВОСПРИЯТИЕ — свойство сквада, не спец-механика (владелец 2026-09-03,
+// CANON S10: «это контекстно … из свойств самого сквада и ролевой системы
+// (будет расширено и доработано)»). v1 отдаёт всем один базовый радиус;
+// ролевой слой наполнит листом (перцепция, следопытство) — читатели уже
+// ходят через эту дверь, а не через голую константу.
+inline float squad_sight_cells(const ecs::NPCKind&) {
+    return kSquadSightCells;
+}
+
 // Flee when the enemy is this many times stronger; trait-scaled below.
 constexpr float kBraveryBase   = 1.5f;
 constexpr float kBraveryCoward = 0.6f;   // Cowardly: breaks far earlier
@@ -2465,7 +2475,8 @@ entt::entity nearest_hostile_squad(entt::entity self, const ecs::Position& p,
     const char* myFaction = faction_id_for_index(kind.factionIdx);
     const int cx0 = int(p.x) / b.cellSize;
     const int cy0 = int(p.y) / b.cellSize;
-    float best = kSquadSightCells * kSquadSightCells + 1.0f;
+    const float sight = squad_sight_cells(kind);
+    float best = sight * sight + 1.0f;
     entt::entity found = entt::null;
     for (int oy = -1; oy <= 1; ++oy) {
         for (int ox = -1; ox <= 1; ++ox) {
@@ -2590,6 +2601,129 @@ bool squad_threat_step(entt::entity self, ecs::Position& p,
     return false;
 }
 
+} // namespace
+
+// ── СЛЕД И ОХОТА (scent_field.h, CANON S10 «хищник-жертва», 2026-09-03) ──
+// Поле отвечает «куда», закон боя — «бить или бежать». Писатель один: каждый
+// think сквад кладёт в СВОЮ клетку два вклада — силу (squad_power, тот же
+// единственный закон, что решает автобой) и цену (души по строкам найма +
+// ценность груза по таблице цен). Хищник — незанятый боем combatant — идёт
+// ВВЕРХ по градиенту чужой ЦЕНЫ под фильтром СИЛЫ; макроцель (errand) при
+// этом не трогается — отвлечение временно по построению (владелец: «по ходу
+// дела их может временно отвлечь враг»). Публично — по прецеденту
+// trade_caravan_at_station: тест водит один think охоты руками.
+
+// Цена душ сквада по строкам найма — та же таблица, что жалованье и threat
+// (лидер — субъект, как в законе хлеба: 0 бойцов = 0 запаха богатства).
+static std::uint32_t roster_worth(ecs::World& w, entt::entity e) {
+    std::uint32_t worth = 0;
+    if (const auto* roster = w.reg.try_get<ecs::SquadRoster>(e)) {
+        for (const SoldierRecord& r : roster->squad) {
+            if (!valid_npc_kind(r.kind)) continue;
+            worth += std::uint32_t(
+                std::max(0, npc_def(NPCType(std::uint8_t(r.kind))).hireGold));
+        }
+    }
+    return worth;
+}
+
+void scent_squad_deposit(entt::entity e, const ecs::Position& p,
+                         const ecs::NPCKind& kind, const TickContext& ctx) {
+    if (!ctx.mw.gs || !ctx.mw.world) return;
+    ScentField& sf = ctx.mw.gs->scent;
+    const int f = int(kind.factionIdx);
+    if (f < 0 || f >= sf.factions) return;   // kNoFaction не следит
+    const float power =
+        squad_power(auto_battle_side_of(*ctx.mw.world, e));
+    std::uint32_t worth = roster_worth(*ctx.mw.world, e);
+    if (const auto* bag = ctx.mw.world->reg.try_get<ecs::NpcInventory>(e)) {
+        worth += std::uint32_t(std::max(0, inventory_value(bag->inv)));
+    }
+    scent_deposit(sf, f, wrapi(int(p.x), sf.w), wrapi(int(p.y), sf.h),
+                  power <= 0.0f ? 0u : std::uint32_t(power), worth);
+}
+
+// След игрока: его сквад — обычный сквад (auto_battle_side_of отвечает за
+// обоих), но think-свип его осознанно не водит, так что вклад кладёт свип
+// целиком — раз, рядом с nav_ensure. Бандит охотится на игрока тем же
+// рефлексом, что на караван: петля демо «убегай от бандитов к страже».
+void scent_player_deposit(const TickContext& ctx) {
+    if (!ctx.mw.world) return;
+    auto view = ctx.mw.world->reg.view<ecs::PlayerSquadTag, ecs::Position,
+                                       ecs::NPCKind>(entt::exclude<ecs::Dead>);
+    for (auto e : view) {
+        scent_squad_deposit(e, view.get<ecs::Position>(e),
+                            view.get<ecs::NPCKind>(e), ctx);
+    }
+}
+
+// (Крутилки охоты — kHuntBoldShift и kHuntScentFloor — в npc_ai.h: их
+// читает тест и вертит дубль-прогон.)
+bool scent_hunt_step(entt::entity self, ecs::Position& p,
+                     const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
+                     const TickContext& ctx) {
+    if (!ctx.mw.gs || !ctx.mw.world) return false;
+    if (!combatant_behaviour(kNpcTypeDefs[kind.type].ai)) return false;
+    const ScentField& sf = ctx.mw.gs->scent;
+    if (sf.factions <= 0 || sf.w != ctx.mapW || sf.h != ctx.mapH)
+        return false;
+    const int f = int(kind.factionIdx);
+    if (f < 0 || f >= kFactionCount) return false;
+    const std::uint64_t hostile = ctx.factionHostileMask[f];
+    if (hostile == 0ull) return false;
+
+    const float myPower =
+        squad_power(auto_battle_side_of(*ctx.mw.world, self));
+    if (myPower <= 0.0f) return false;
+    const std::uint32_t fearCap =
+        (std::uint32_t(myPower) >> kScentQuantShift) << kHuntBoldShift;
+
+    // Сумма враждебных каналов клетки — фракции по битам запечённой маски.
+    const auto sniff = [&](int x, int y, std::uint32_t& outStr,
+                           std::uint32_t& outWea) {
+        outStr = 0;
+        outWea = 0;
+        for (int b = 0; b < sf.factions; ++b) {
+            if (!(hostile & (1ull << b))) continue;
+            outStr += scent_strength_at(sf, b, x, y);
+            outWea += scent_wealth_at(sf, b, x, y);
+        }
+    };
+
+    const int x0 = wrapi(int(p.x), sf.w);
+    const int y0 = wrapi(int(p.y), sf.h);
+    std::uint32_t hereStr = 0, hereWea = 0;
+    sniff(x0, y0, hereStr, hereWea);
+
+    // Строго ВВЕРХ по цене: лучший из восьми соседей, что богаче моей клетки,
+    // не ниже пола и не страшнее моей смелости. Нет такого — следа нет,
+    // думает роль (подъём заканчивается на локальном максимуме сам, и это
+    // и есть конец погони: либо жертва в радиусе зрения — рефлекс выше уже
+    // перехватил, — либо след остыл и артель возвращается к делу).
+    std::uint32_t best = std::max(hereWea, kHuntScentFloor - 1u);
+    int bx = -1, by = -1;
+    for (int oy = -1; oy <= 1; ++oy) {
+        for (int ox = -1; ox <= 1; ++ox) {
+            if (ox == 0 && oy == 0) continue;
+            const int x = wrapi(x0 + ox, sf.w);
+            const int y = wrapi(y0 + oy, sf.h);
+            std::uint32_t s = 0, v = 0;
+            sniff(x, y, s, v);
+            if (v <= best) continue;
+            if (s > fearCap) continue;   // туда мне страшно — пусть решает
+                                         //   визуальный рефлекс, не запах
+            best = v;
+            bx = x;
+            by = y;
+        }
+    }
+    if (bx < 0) return false;
+    try_move(p, rt, float(bx), float(by), ctx);
+    return true;
+}
+
+namespace {
+
 // Follow the waypoint route in the squad's orders (Session 15, Inc 7): walk
 // to the current waypoint, arrive, take the next, loop. A squad ordered onto
 // a route with no route wanders — a degraded order is a visible NPC, not a
@@ -2704,7 +2838,12 @@ void settle_exhaustion(entt::entity e, const ecs::Position& p,
 void dispatch(AIBehaviour b, entt::entity e, ecs::Position& p,
               const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
               const TickContext& ctx) {
+    // Каждый думающий сквад следит — писатель полей следов один (CANON S10).
+    scent_squad_deposit(e, p, kind, ctx);
     if (squad_threat_step(e, p, kind, rt, ctx)) return;
+    // Визуального врага нет — может, есть запах: охота съедает think, роль
+    // ждёт получаса потише (макроцель в rt не тронута — пауза, не амнезия).
+    if (scent_hunt_step(e, p, kind, rt, ctx)) return;
     switch (b) {
         case AIBehaviour::Gatherer:     ai_gatherer(e, p, kind, rt, ctx); break;
         case AIBehaviour::CaravanTrade: ai_caravan   (e, p, rt, ctx); break;
@@ -3591,6 +3730,18 @@ static TickContext make_tick_context(MacroWorld& mw,
     ctx.playerY = mw.gs->player.y;
     ctx.squads  = &runtime.squadIndex;
     ctx.allowAutoBattle = allowAutoBattle;
+    // Запечь враждебность реестра на свип (CANON S10 «хищник-жертва»): F²
+    // вопросов к ОДНОЙ матрице раз в свип — копейки, и охота по следу читает
+    // бит вместо строкового слота отношений на каждом think.
+    for (int a = 0; a < kFactionCount; ++a) {
+        std::uint64_t m = 0;
+        for (int b = 0; b < kFactionCount; ++b) {
+            if (a != b && factions_hostile(mw.gs, kFactionDefs[a].id,
+                                           kFactionDefs[b].id))
+                m |= 1ull << b;
+        }
+        ctx.factionHostileMask[a] = m;
+    }
     return ctx;
 }
 
@@ -3610,8 +3761,10 @@ void tick_macro_npc_ai(MacroWorld& mw,
     // Свежесть запечённой навигации — раз на свип, не в шаге (тор-закон
     // gigahrush2 «never re-bake per tick»: перепёк только на границах).
     if (mw.nav) nav_ensure(mw, *mw.nav);
+    scent_ensure(gs.scent, gs.mapW, gs.mapH);
 
     TickContext ctx = make_tick_context(mw, runtime, allowAutoBattle);
+    scent_player_deposit(ctx);   // игрок следит наравне со всеми (CANON S10)
 
     for (auto e : view) {
         auto& p    = view.get<ecs::Position>(e);
@@ -3734,7 +3887,9 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     // npc_ai.h); the two drivers may differ in HOW they walk the entities —
     // never in what world the entities think about (CANON.md S2).
     if (mw.nav) nav_ensure(mw, *mw.nav);
+    scent_ensure(gs.scent, gs.mapW, gs.mapH);
     TickContext ctx = make_tick_context(mw, runtime, allowAutoBattle);
+    scent_player_deposit(ctx);   // игрок следит наравне со всеми (CANON S10)
 
     while (runtime.pendingSweeps > 0
            && result.npcsProcessed < max_npc_ticks) {

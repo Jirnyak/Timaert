@@ -78,7 +78,9 @@ enum class FactKind : std::uint16_t {
     Killed,          // subject killed object            (amount = bodies)
     Died,            // subject died                     (amount = bodies)
     Battle,          // subject fought object            (amount = casualties)
-    Robbed,          // subject took from object         (amount = value)
+    // (Robbed ВЫРЕЗАН, владелец 2026-09-03: «минимум систем … died уже
+    // достаточно» — лут павшего и так молчит правильно: Died/Killed несут
+    // бой, поле угрозы грабёж не греет. Сдвиг ординалов = бамп v75.)
     Traded,          // subject traded with object       (amount = value)
     Gathered,        // subject took from the land       (amount = units)
     Built,           // subject raised something         (amount = units)
@@ -148,7 +150,6 @@ inline constexpr FactKindDef kFactKinds[] = {
     // quests, the danger price), not for standing.
     {FactKind::Died,         "died",          "Died",          32,      0, false},
     {FactKind::Battle,       "battle",        "Battle",        32,      5},
-    {FactKind::Robbed,       "robbed",        "Robbed",        16,      2},
     // What a place suffers or does. It earns the PLACE its standing.
     // victimShare false: a deal is mutual, not a deed against the partner.
     {FactKind::Traded,       "traded",        "Traded",         8,      0, false},

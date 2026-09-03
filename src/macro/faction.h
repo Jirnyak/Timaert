@@ -122,6 +122,15 @@ struct FactionDef {
 // id, which every relation path already treats as neutral / fights-nobody.
 inline constexpr std::uint16_t kNoFaction = 0xFFFFu;
 
+// ЛИМИТ МИРА: 64 фракции ЕДИНОЙ КОНСТАНТОЙ (владелец 2026-09-03, CANON S10:
+// «у нас был уже кап естественный универсальный для фракций вроде 64 — пиши
+// в канон и просто как единая константа»). Естественный он потому, что
+// враг-маска фракции — один std::uint64_t (sub/movement.h kMaxCrowdFactions
+// ссылается сюда); поля следов (scent_field.h) аллоцируются по kFactionCount
+// и упираются в этот же потолок. 65-я строка реестра — осознанное решение
+// о ширине маски, не тихий рост.
+inline constexpr int kMaxFactions = 64;
+
 // THE player's faction id — one spelling for the whole project. It names an
 // ordinary registry row (see the "player" entry below), so it interns, resolves
 // and compares exactly like every other faction; nothing about the player is a
@@ -212,6 +221,8 @@ inline constexpr FactionDef kFactionDefs[] = {
 inline constexpr int kFactionCount =
     int(sizeof(kFactionDefs) / sizeof(kFactionDefs[0]));
 static_assert(kFactionCount < int(kNoFaction), "sentinel must stay out of range");
+static_assert(kFactionCount <= kMaxFactions,
+              "world limit: 64 factions (one uint64 enemy mask, CANON S10)");
 
 // Index of a faction id, -1 for null/empty/unknown. Pointer-first: ids are
 // string literals, so the common path never reaches strcmp.

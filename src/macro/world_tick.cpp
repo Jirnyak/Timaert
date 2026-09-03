@@ -19,6 +19,7 @@
 #include "macro/npc.h"
 #include "macro/npc_ai.h"
 #include "macro/npc_spawn.h"
+#include "macro/scent_field.h"
 #include "macro/threat_field.h"
 #include "core/rng.h"
 #include <algorithm>
@@ -428,6 +429,11 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
             // аукцион дня (патрули стражи, страх артелей) читал уже
             // сегодняшнее поле.
             threat_field_daily(*macro, day);
+            // Поля следов фракций (scent_field.h, CANON S10 «хищник-
+            // жертва»): диффузия конуса запаха + распад — та же дверь дня,
+            // что и threat; вклады пишет think-свип, здесь только физика.
+            scent_ensure(gs.scent, gs.mapW, gs.mapH);
+            scent_field_daily(gs.scent, day);
             // The labour rotation (npc_ai.h): yesterday's crews dissolve
             // into the population, today's are raised to its size.
             rotate_worker_squads(*macro, day);

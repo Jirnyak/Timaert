@@ -333,8 +333,8 @@ void test_a_band_becomes_a_figure_by_its_deeds() {
     // somebody, a mutual deal pays none — the kind row says so by column.
     CHECK(renown_for_deed(FactKind::Traded, 1000u) == 0u,
           "a deal with a famous city tithes none of its renown");
-    CHECK(fact_kind_def(FactKind::Robbed).victimShare,
-          "the control is real: robbing the same city still pays the share");
+    CHECK(fact_kind_def(FactKind::Killed).victimShare,
+          "the control is real: raiding the same city still pays the share");
 
     // ── THE VICTIM ANSWERS WHAT A DEED IS WORTH ──────────────────────────
     // Owner's ruling: renown is contextual, and the context is WHOM it was

@@ -619,6 +619,11 @@ void run_roundtrip() {
         FAIL_BAIL("QuestEngine::accept did not emit QuestStart");
     }
 
+    // v75: поля следов едут в сейве (CANON S10 «хищник-жертва») — след,
+    // положенный до сохранения, обязан пахнуть и после загрузки.
+    sm::scent_ensure(gs.scent, gs.mapW, gs.mapH);
+    sm::scent_deposit(gs.scent, 1, 100, 100, 400u, 4000u);
+
     const std::vector<sm::MacroNpcRecord> macroFixture = make_macro_records();
     if (!sm::save_game(gs, quests, macroFixture, treeCounts, deposits,
                        path)) {
@@ -660,6 +665,13 @@ void run_roundtrip() {
     if (loaded.worldTime.day() != 12 || loaded.worldTime.hour() != 13
         || loaded.worldTime.minute() != 14) {
         FAIL_BAIL("world time lost");
+    }
+    if (!loaded.scent.sized_for(loaded.mapW, loaded.mapH)
+        || sm::scent_strength_at(loaded.scent, 1, 100, 100)
+               != (400u >> sm::kScentQuantShift)
+        || sm::scent_wealth_at(loaded.scent, 1, 100, 100)
+               != (4000u >> sm::kScentQuantShift)) {
+        FAIL_BAIL("scent field lost (v75)");
     }
     if (loaded.lastWorldRebakeDay != 9) {
         FAIL_BAIL("lastWorldRebakeDay (autosave phase) lost");

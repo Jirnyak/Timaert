@@ -334,6 +334,7 @@ add_executable(balance_run tests/balance_run.cpp
     src/macro/nav_field.cpp
     src/macro/world_tick.cpp
     src/macro/threat_field.cpp
+    src/macro/scent_field.cpp
     src/macro/world_fields.cpp
     src/macro/player_entity.cpp
     src/sub/base_generator.cpp)
@@ -413,6 +414,7 @@ timaert_test(world_tick_parity_test
     SOURCES
         src/macro/world_tick.cpp
         src/macro/threat_field.cpp
+        src/macro/scent_field.cpp
         # the daily labour rotation lives with the working AI (npc_ai.h)
         src/macro/npc_ai.cpp
         src/macro/nav_field.cpp
@@ -989,6 +991,7 @@ timaert_test(trade_law_test
         src/macro/econ_day.cpp
         src/macro/world_tick.cpp
         src/macro/threat_field.cpp
+        src/macro/scent_field.cpp
         # a landmark's famine and revolt are facts of the world
         src/macro/chronicle.cpp
         src/macro/deposit_layer.cpp
@@ -1052,6 +1055,7 @@ timaert_test(crop_stock_test
         src/macro/tree_layer.cpp
         src/macro/world_tick.cpp
         src/macro/threat_field.cpp
+        src/macro/scent_field.cpp
         # the daily labour rotation lives with the working AI (npc_ai.h)
         src/macro/npc_ai.cpp
         src/macro/nav_field.cpp
@@ -1078,6 +1082,7 @@ timaert_test(fauna_stock_test
         src/macro/tree_layer.cpp
         src/macro/world_tick.cpp
         src/macro/threat_field.cpp
+        src/macro/scent_field.cpp
         # the daily labour rotation lives with the working AI (npc_ai.h)
         src/macro/npc_ai.cpp
         src/macro/nav_field.cpp
@@ -1135,6 +1140,27 @@ timaert_test(threat_field_test
         src/macro/chronicle.cpp
         src/macro/items.cpp
     LINK_ENTT)
+
+# Поля следов и охота (CANON S10 «хищник-жертва»): физика клеточного яруса
+# (квант, изотропная диффузия на торе, распад по календарю), писатель следа
+# (сила = squad_power, цена = души + груз), рефлекс охоты (вверх по цене под
+# фильтром силы, макроцель не тронута).
+timaert_test(scent_field_test
+    SOURCES
+        src/macro/npc_ai.cpp
+        src/macro/nav_field.cpp
+        src/macro/threat_field.cpp
+        src/macro/scent_field.cpp
+        src/macro/economy.cpp
+        src/macro/chronicle.cpp
+        src/macro/macro_stock.cpp
+        src/macro/deposit_layer.cpp
+        src/macro/fauna.cpp
+        src/macro/tree_layer.cpp
+        src/macro/npc_spawn.cpp
+        src/macro/items.cpp
+        src/macro/econ_day.cpp
+    LINK_SDL LINK_ENTT)
 
 # Стража (CANON S10 «стража + поле угрозы»): факты → вылазка душами из
 # гарнизона, тишина → гарнизон, возврат → души назад, страх артелей —

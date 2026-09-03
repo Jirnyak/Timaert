@@ -162,7 +162,35 @@ struct TickContext {
     // projected bodies whose fight belongs to the ground, not to the resolver.
     const SquadIndex* squads = nullptr;
     bool              allowAutoBattle = true;
+    // Враждебность реестра, запечённая на свип (CANON S10 «хищник-жертва»):
+    // бит g в [f] = фракция f враждебна фракции g — ОДИН порог над ОДНОЙ
+    // матрицей (factions_hostile), прожёванный заранее, чтобы охота по следу
+    // не гоняла строковые слоты отношений на каждый think. uint64 хватает по
+    // построению: лимит мира = kMaxFactions = 64 (faction.h).
+    std::uint64_t factionHostileMask[kMaxFactions] = {};
 };
+
+// ── След и охота (scent_field.h, CANON S10 «хищник-жертва», 2026-09-03) ──
+// Публично по прецеденту trade_caravan_at_station: тест водит один think.
+// Смелость охоты: преследуем след силы ≤ моя сила × 2^shift. Величина следа
+// = сила × время присутствия, не сила хозяина — остывший след занижает,
+// ошибки консервативны, их ловит визуальный рефлекс при контакте (закон
+// боя). Обе — крутилки дубль-прогона.
+inline constexpr int kHuntBoldShift = 1;
+// Пол запаха в единицах поля (квант kScentQuantShift): след беднее — не
+// стоит и шага, иначе боец дёргается на каждую пылинку диффузии.
+inline constexpr std::uint32_t kHuntScentFloor = 8u;
+// Писатель полей следов — вклад сквада в свою клетку (сила = squad_power,
+// цена = души по строкам найма + ценность груза); зовётся из dispatch на
+// каждый think, для игрока — свипом (scent_player_deposit внутри драйверов).
+void scent_squad_deposit(entt::entity e, const ecs::Position& p,
+                         const ecs::NPCKind& kind, const TickContext& ctx);
+// Рефлекс охоты: незанятый боем combatant идёт ВВЕРХ по градиенту чужой
+// ЦЕНЫ под фильтром СИЛЫ (след силы ≤ моя сила × 2^kHuntBoldShift); true =
+// think съеден охотой, макроцель в rt не тронута (пауза, не амнезия).
+bool scent_hunt_step(entt::entity self, ecs::Position& p,
+                     const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
+                     const TickContext& ctx);
 
 // ── Trading at a market (owner, 2026-08-30; CANON S10/S25) ───────────────
 // Locality is the law: every decision reads the market the squad STANDS ON

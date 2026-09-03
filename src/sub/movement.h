@@ -63,6 +63,8 @@
 #include <cstdint>
 #include <vector>
 
+#include "macro/faction.h"   // kMaxFactions — THE world faction limit
+
 namespace sm::sub {
 
 // ── Universal capacity ─────────────────────────────────────────────────────
@@ -87,10 +89,12 @@ constexpr float kNoThreatDistance2 = 1.0e18f;
 // any number of factions: only the ones actually standing in this 3×3 window
 // occupy a slot.
 //
-// The cap is on SIMULTANEOUSLY PRESENT factions, not on the world's roster; 64
-// lets one enemy mask stay a single std::uint64_t. A 65th distinct faction in
-// one window degrades to neutral (it fights nobody) rather than misbehaving.
-constexpr int kMaxCrowdFactions = 64;
+// The cap is on SIMULTANEOUSLY PRESENT factions; one enemy mask stays a single
+// std::uint64_t. A 65th distinct faction in one window degrades to neutral (it
+// fights nobody) rather than misbehaving. Since 2026-09-03 (owner, CANON S10)
+// this is THE world faction limit spelled once — macro/faction.h kMaxFactions —
+// and the world's roster obeys the same 64 (static_assert beside the registry).
+constexpr int kMaxCrowdFactions = kMaxFactions;
 
 struct FactionSet {
     const char* ids[kMaxCrowdFactions]{};

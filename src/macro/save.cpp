@@ -509,6 +509,69 @@ void write_chronicle(Writer& w, const Chronicle& c) {
     }
 }
 
+// v75: поля следов фракций (macro/scent_field.h, CANON S10 «хищник-жертва»).
+// Едут в сейве целиком (вердикт владельца: движение не фактируется, реплеить
+// след не из чего). РАЗРЕЖЕННО — планы почти пусты (след живёт на дорогах),
+// а плотные 2×64 плана большой карты пробили бы kMaxPayloadBytes: пишутся
+// только ненулевые клетки парами {индекс, значение}.
+void write_scent_channel(Writer& w, const std::vector<std::uint16_t>& cells) {
+    std::size_t live = 0;
+    for (const std::uint16_t v : cells)
+        if (v != 0u) ++live;
+    if (!w.count(live, std::uint32_t(cells.size()))) return;
+    for (std::size_t i = 0; i < cells.size(); ++i) {
+        if (cells[i] == 0u) continue;
+        w.pod(std::uint32_t(i));
+        w.pod(cells[i]);
+    }
+}
+
+bool read_scent_channel(Reader& r, std::vector<std::uint16_t>& cells) {
+    std::uint32_t live = 0;
+    if (!read_count(r, live, std::uint32_t(cells.size()))) return false;
+    for (std::uint32_t i = 0; i < live && r.ok; ++i) {
+        std::uint32_t idx = 0;
+        std::uint16_t v = 0;
+        r.pod(idx);
+        r.pod(v);
+        if (!r.ok || idx >= cells.size()) { r.ok = false; return false; }
+        cells[idx] = v;
+    }
+    return r.ok;
+}
+
+void write_scent(Writer& w, const ScentField& sf) {
+    w.pod(sf.w);
+    w.pod(sf.h);
+    w.pod(sf.factions);
+    write_scent_channel(w, sf.strength);
+    write_scent_channel(w, sf.wealth);
+}
+
+void read_scent(Reader& r, ScentField& sf, int mapW, int mapH) {
+    std::int32_t w = 0, h = 0, factions = 0;
+    r.pod(w);
+    r.pod(h);
+    r.pod(factions);
+    // Мир, сохранённый до первого think-свипа, несёт ХОЛОДНОЕ поле —
+    // легальный ноль (S6): scent_ensure скроит его на первом тике.
+    if (r.ok && w == 0 && h == 0 && factions == 0) {
+        sf = ScentField{};
+        std::uint32_t none = 0;
+        if (read_count(r, none, 0u)) read_count(r, none, 0u);
+        return;
+    }
+    // Версия гейтит формат, реестр фракций меняется только с бампом (правило
+    // репо №2) — несовпадение измерений здесь значит битый файл, не миграцию.
+    if (!r.ok || w != mapW || h != mapH || factions != kFactionCount) {
+        r.ok = false;
+        return;
+    }
+    scent_reset(sf, mapW, mapH);
+    if (!read_scent_channel(r, sf.strength)) return;
+    read_scent_channel(r, sf.wealth);
+}
+
 void read_chronicle(Reader& r, Chronicle& c) {
     r.pod(c.nextSeq);
     r.pod(c.countingDay);
@@ -1059,6 +1122,9 @@ void write_payload(Writer& w, const GameState& s,
     // derivative is a second truth waiting to disagree with the first.
     write_chronicle(w, s.chronicle);
 
+    // v75: поля следов фракций — рядом с летописью, обе — память мира.
+    write_scent(w, s.scent);
+
     // v25: story progress — which logic nodes still exist / are active.
     write_string_vector(w, s.logicNodesRegistered);
     write_string_vector(w, s.logicNodesActive);
@@ -1155,6 +1221,8 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
     // modulo the capacity and a chronicle with no world has nowhere to put it.
     chronicle_init(s.chronicle, s.mapW, s.mapH);
     read_chronicle(r, s.chronicle);
+
+    read_scent(r, s.scent, s.mapW, s.mapH);   // v75
 
     read_string_vector(r, s.logicNodesRegistered);   // v25
     read_string_vector(r, s.logicNodesActive);

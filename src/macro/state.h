@@ -22,6 +22,7 @@
 #include "macro/relations.h"
 #include "macro/knowledge.h"
 #include "macro/chronicle.h"
+#include "macro/scent_field.h"
 #include "macro/markers.h"
 #include "macro/spell_book_state.h"
 #include "macro/map_generator.h"
@@ -257,7 +258,10 @@ namespace sm {
 // запаса с округлением вниз»).
 // v74 (2026-09-02): корабли через фичу — gs.shipsAtCell (счётчик кораблей
 // по клеткам портов/брошенных) + MacroNpcRuntime.aboard/dockX/dockY.
-constexpr int kSaveVersion = 74;
+// v75 (2026-09-03): хищник-жертва (CANON S10) — поля следов фракций едут в
+// сейве (gs.scent, разреженно) + Robbed ВЫРЕЗАН из FactKind (вердикт
+// «минимум систем»: сдвиг ординалов видов фактов).
+constexpr int kSaveVersion = 75;
 
 enum class SettlementMood : std::uint8_t {
     Prosperous, Stable, Tense, Unrest, Revolt, Count
@@ -649,6 +653,11 @@ struct GameState {
     // they are part of the world, and a legends mode will read exactly them
     // (owner, 2026-08-27).
     Chronicle chronicle;
+    // ПОЛЯ СЛЕДОВ ФРАКЦИЙ (macro/scent_field.h, CANON S10 «хищник-жертва»,
+    // v75): два клеточных канала на фракцию — сила (squad_power) и цена
+    // (души + груз). Едут в сейве целиком (вердикт владельца: движение не
+    // фактируется, реплеить след не из чего).
+    ScentField scent;
     // The session feed (see SessionFeed above): presentation, NEVER saved.
     SessionFeed sessionFeed;
     // THE relation matrix — flat, by ordinal (macro/relations.h). The

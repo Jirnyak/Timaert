@@ -70,7 +70,7 @@ void test_participation_locality_and_silence() {
           "re-asking the chronicle re-learns nothing");
 
     // The player as the OBJECT of another's deed — his side of a done-to.
-    WorldFact hit = fact(2, FactKind::Robbed,
+    WorldFact hit = fact(2, FactKind::Killed,
                          fact_subject(FactSubject::Squad, false), 778u,
                          30, 30);
     hit.objectKind = fact_subject(FactSubject::Squad, true);
@@ -220,14 +220,14 @@ void test_the_deed_door_files_and_pays_as_one_action() {
 
     WorldFact f{};
     f.day = 1;
-    f.kind = std::uint16_t(FactKind::Robbed);
+    f.kind = std::uint16_t(FactKind::Killed);
     f.objectKind = std::uint8_t(FactSubject::Landmark);
     f.object = 3u;
     f.x = 10;
     f.y = 10;
     f.amount = 5;
     const std::uint32_t seq = record_deed(w, gs, f, band);
-    const std::uint32_t worth = renown_for_deed(FactKind::Robbed, 50u);
+    const std::uint32_t worth = renown_for_deed(FactKind::Killed, 50u);
     CHECK(seq != 0u, "the door filed the fact");
     CHECK(rt.renown == worth,
           "…and paid the doer exactly renown_for_deed — one action");
