@@ -1,6 +1,7 @@
 #include "ui/screens.h"
 #include "ui/keymap.h"
 #include "macro/state.h"
+#include "content/plot/intro.h"   // creation_*_choices: the authored tables
 #include "imgui.h"
 #include <SDL_keyboard.h>
 #include <algorithm>
@@ -68,6 +69,142 @@ ShellResult draw_title_menu(int /*vw*/, int /*vh*/) {
     ImGui::Dummy(ImVec2(0, 12));
     ImGui::SetCursorPosX(16);
     ImGui::TextDisabled("v0.1 — C++ / Vulkan / EnTT");
+    ImGui::End();
+    return r;
+}
+
+// ── Character creation (pre-world) ──────────────────────────────────────
+//
+// The screen authors a CreationState through the sheet's OWN doors —
+// spend_attribute_point and spend_learn_pick — so it cannot grant what the
+// game would refuse. The two "-" refunds are the screen's own right: creation
+// is authoring, nothing in the world has read the sheet yet, and taking a
+// point back before the world exists is not a respec. The choice tables
+// (sex, homeland) come from content/plot/intro.h verbatim — the same authored
+// rows the intro story used to ask through.
+ShellResult draw_character_creation(CreationState& cs, int /*vw*/, int /*vh*/) {
+    ShellResult r{};
+    draw_dim_background(0.85f);
+    centred_window("##creation", ImVec2(780, 660));
+    ImGui::Begin("##creation", nullptr,
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoMove     | ImGuiWindowFlags_NoCollapse);
+    ImGui::SetWindowFontScale(1.6f);
+    ImGui::SetCursorPosX((780 - ImGui::CalcTextSize("Create Your Character").x * 1.6f) * 0.5f);
+    ImGui::Text("Create Your Character");
+    ImGui::SetWindowFontScale(1.0f);
+    ImGui::Separator();
+
+    // ── identity ──
+    ImGui::Text("Name");
+    ImGui::SameLine(120);
+    ImGui::SetNextItemWidth(240);
+    ImGui::InputText("##name", cs.name, sizeof(cs.name));
+
+    std::size_t sexCount = 0;
+    const content::StoryChoice* sexes = content::creation_sex_choices(sexCount);
+    ImGui::Text("Nature");
+    for (std::size_t i = 0; i < sexCount; ++i) {
+        ImGui::SameLine(i == 0 ? 120.0f : 0.0f);
+        if (ImGui::RadioButton(sexes[i].label, cs.sexIdx == int(i)))
+            cs.sexIdx = int(i);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", sexes[i].description);
+    }
+
+    std::size_t realmCount = 0;
+    const content::StoryChoice* realms =
+        content::creation_realm_choices(realmCount);
+    ImGui::Text("Homeland");
+    for (std::size_t i = 0; i < realmCount; ++i) {
+        ImGui::SameLine(i == 0 ? 120.0f : 0.0f);
+        if (ImGui::RadioButton(realms[i].label, cs.realmIdx == int(i)))
+            cs.realmIdx = int(i);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", realms[i].description);
+    }
+    ImGui::Separator();
+
+    LevelData& ld = cs.sheet.levelData;
+    if (ImGui::BeginTable("creation_cols", 2, ImGuiTableFlags_BordersInnerV)) {
+        ImGui::TableSetupColumn("attrs", ImGuiTableColumnFlags_WidthFixed, 300.0f);
+        ImGui::TableSetupColumn("skills");
+        ImGui::TableNextRow();
+
+        // ── attributes: 5 points, refundable while authoring ──
+        ImGui::TableNextColumn();
+        ImGui::Text("Attributes");
+        ImGui::SameLine();
+        ImGui::TextDisabled("(%d points left)", ld.attributePoints);
+        for (const AttributeDef& row : kAttributeDefs) {
+            ImGui::PushID(row.label);
+            ImGui::Text("%s %d", row.label, cs.sheet.attributes.of(row.id));
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", row.effect);
+            ImGui::SameLine(120);
+            ImGui::BeginDisabled(cs.sheet.attributes.of(row.id) <= 1);
+            if (ImGui::SmallButton("-")) {
+                --cs.sheet.attributes[row.id];
+                ++ld.attributePoints;
+            }
+            ImGui::EndDisabled();
+            ImGui::SameLine();
+            ImGui::BeginDisabled(ld.attributePoints <= 0);
+            if (ImGui::SmallButton("+"))
+                spend_attribute_point(ld, cs.sheet.attributes, row.id);
+            ImGui::EndDisabled();
+            ImGui::PopID();
+        }
+        ImGui::Spacing();
+        ImGui::Text("Perks");
+        // Honest, not coy: the system is designed separately (CANON S14) and
+        // creation owes one starter-pool pick when it lands.
+        ImGui::TextDisabled("One starter perk arrives with\nthe perk system.");
+
+        // ── skills: 5 learn picks; rank 1 = known ──
+        ImGui::TableNextColumn();
+        ImGui::Text("Skills");
+        ImGui::SameLine();
+        ImGui::TextDisabled("(%d picks left — a pick learns a skill)",
+                            ld.learnPicks);
+        if (ImGui::BeginChild("##skill_list", ImVec2(0, 330), true)) {
+            for (const SkillDef& row : kSkillDefs) {
+                ImGui::PushID(row.label);
+                const bool known = cs.sheet.skills.of(row.id) > 0;
+                if (known) {
+                    ImGui::Text("%s", row.label);
+                    ImGui::SameLine(200);
+                    if (ImGui::SmallButton("x")) {
+                        cs.sheet.skills[row.id] = 0;   // creation-only refund
+                        ++ld.learnPicks;
+                    }
+                } else {
+                    ImGui::TextDisabled("%s", row.label);
+                    ImGui::SameLine(200);
+                    ImGui::BeginDisabled(ld.learnPicks <= 0);
+                    if (ImGui::SmallButton("Learn"))
+                        spend_learn_pick(ld, cs.sheet.skills, row.id);
+                    ImGui::EndDisabled();
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("%c%d%% %s",
+                                      row.buysCostDown ? '-' : '+',
+                                      int(row.pctPerRank), row.effect);
+                ImGui::PopID();
+            }
+        }
+        ImGui::EndChild();
+        ImGui::EndTable();
+    }
+
+    ImGui::Separator();
+    const bool ready = cs.name[0] != '\0' && cs.sexIdx >= 0 && cs.realmIdx >= 0;
+    if (!ready)
+        ImGui::TextDisabled("Name, nature and homeland make a person.");
+    ImGui::BeginDisabled(!ready);
+    if (ImGui::Button("Start", ImVec2(220, 44))) r.startCreatedGame = true;
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Back", ImVec2(140, 44))) r.cancelCreation = true;
     ImGui::End();
     return r;
 }

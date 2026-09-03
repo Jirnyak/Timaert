@@ -503,10 +503,10 @@ void test_grant_xp_levels_through_the_one_path() {
     CHECK_OR_RETURN(!(player.sheet.levelData.expToNext != sm::exp_to_next_level(2)),
         "the next threshold was not recomputed for the new level");
     CHECK_OR_RETURN(!(player.sheet.levelData.attributePoints
-            != sm::default_level_data().attributePoints + 3
+            != sm::default_level_data().attributePoints + 1
         || player.sheet.levelData.skillPoints
             != sm::default_level_data().skillPoints + 1),
-        "levelling through grant_xp did not pay its points");
+        "levelling through grant_xp did not pay its points (1:1 per level)");
 }
 
 // The wis dividend (owner ruling 2026-08-05): every XP grant scales by the
@@ -908,26 +908,26 @@ void test_logic_node_self_reactivation_safe_cases() {
 void test_intro_show_story_node() {
     bag.clear();
     head = sm::AgentMemory{};
+    // The intro is PURE SLIDES since 2026-09-03: the asking (sex, name,
+    // homeland) moved to the pre-world creation screen, which renders the
+    // same authored choice tables through creation_*_choices — pinned here so
+    // the screen cannot lose a row the story used to offer.
     const sm::content::StoryDef& story = sm::content::intro_story();
     CHECK_OR_RETURN(!(std::string(story.id) != "intro"
         || std::string(story.sourceNodeId) != "intro_main"
-        || story.phaseCount != 4),
-        "intro story table identity does not match TS intro");
+        || story.phaseCount != 1),
+        "intro story table identity does not match the slides-only intro");
     CHECK_OR_RETURN(!(story.phases[0].kind != sm::content::StoryPhaseKind::Slides
         || story.phases[0].slideCount != 9),
         "intro story slide phase does not match TS intro");
-    CHECK_OR_RETURN(!(story.phases[1].kind != sm::content::StoryPhaseKind::Choice
-        || std::string(story.phases[1].id) != "sex"
-        || story.phases[1].choiceCount != 2),
-        "intro story sex choice phase does not match TS intro");
-    CHECK_OR_RETURN(!(story.phases[2].kind != sm::content::StoryPhaseKind::Input
-        || std::string(story.phases[2].id) != "name"
-        || story.phases[2].maxLength != 24),
-        "intro story input phase does not match TS intro");
-    CHECK_OR_RETURN(!(story.phases[3].kind != sm::content::StoryPhaseKind::Choice
-        || std::string(story.phases[3].id) != "realm"
-        || story.phases[3].choiceCount != 3),
-        "intro story realm choice phase does not match TS intro");
+    std::size_t sexCount = 0;
+    (void)sm::content::creation_sex_choices(sexCount);
+    CHECK_OR_RETURN(sexCount == 2,
+        "the creation screen's sex table lost the authored rows");
+    std::size_t realmCount = 0;
+    (void)sm::content::creation_realm_choices(realmCount);
+    CHECK_OR_RETURN(realmCount == 3,
+        "the creation screen's homeland table lost the authored rows");
 
     sm::PlayerState player{};
     sm::EventBus bus;
@@ -948,11 +948,11 @@ void test_intro_show_story_node() {
         "intro_main did not emit ShowStory");
     CHECK_OR_RETURN(!(event->s1 != "intro_main"
         || event->s2 != "intro"
-        || event->ix != 4
+        || event->ix != 1     // one phase: the slides
         || event->iy != 9
-        || event->a != 5
-        || event->b != 24),
-        "ShowStory flat payload does not match TS intro shape");
+        || event->a != 0      // no choices ride the story any more
+        || event->b != 0),    // ...and no input either (creation screen owns both)
+        "ShowStory flat payload does not match the slides-only intro");
 
     bus.flush();
     logic.tick(bus, player);

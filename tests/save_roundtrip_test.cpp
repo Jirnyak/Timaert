@@ -203,7 +203,7 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
         sm::ItemRef coat{};
         coat.def = std::uint16_t(sm::item_index("arm_leather"));
         coat.count = 1;
-        coat.affix[0] = {std::uint8_t(sm::BonusId::Vit), 4};
+        coat.affix[0] = {std::uint8_t(sm::BonusId::End), 4};
         if (sm::equip(player.gear, coat) < 0) {
             std::fprintf(stderr, "fixture: the coat did not go on\n");
         }
@@ -303,7 +303,6 @@ sm::GameState make_state() {
     // (His HEAD rides the same record: AgentMemory is a column of every
     // leader's macro record, and the player is a leader.)
     gs.player.sheet.attributes[sm::AttributeId::Str] = 7;
-    gs.player.sheet.attributes[sm::AttributeId::Vit] = 8;
     gs.player.sheet.attributes[sm::AttributeId::End] = 9;
     gs.player.sheet.attributes[sm::AttributeId::Wil] = 10;
     gs.player.sheet.attributes[sm::AttributeId::Intl] = 11;
@@ -314,7 +313,7 @@ sm::GameState make_state() {
     gs.player.sheet.skills[sm::SkillId::Bodybuilding] = 1;
     gs.player.sheet.skills[sm::SkillId::Meditation] = 2;
     gs.player.sheet.skills[sm::SkillId::Travel] = 3;
-    gs.player.sheet.skills[sm::SkillId::Fighter] = 4;
+    gs.player.sheet.skills[sm::SkillId::Armsmaster] = 4;
     gs.player.sheet.skills[sm::SkillId::Marathon] = 5;
     gs.player.sheet.skills[sm::SkillId::Spellcraft] = 6;
     gs.player.sheet.skills[sm::SkillId::Weightlifting] = 7;
@@ -778,7 +777,7 @@ void run_roundtrip() {
         }
         // The rolled affix rides with it: a procedural item that lost its
         // roll would be a different item wearing the same name.
-        if (coat.affix[0].row != std::uint8_t(sm::BonusId::Vit)
+        if (coat.affix[0].row != std::uint8_t(sm::BonusId::End)
             || coat.affix[0].value != 4) {
             FAIL_BAIL("the coat's rolled affix lost");
         }

@@ -3091,9 +3091,9 @@ bool SubworldEngine::drink_from_well() {
         return false;
     }
     // An hour of rest, taken standing: the rest law's own per-hour fraction
-    // of the bar (kSpRegenPctPerHour), so the well cannot be a better rest
+    // of the bar (kRestRegenPctPerHour), so the well cannot be a better rest
     // than resting and cannot be a worse one.
-    const int gain = std::max(1, int(float(cs.maxSp) * kSpRegenPctPerHour));
+    const int gain = std::max(1, int(float(cs.maxSp) * kRestRegenPctPerHour));
     cs.currentSp = std::min(cs.maxSp, cs.currentSp + gain);
     char msg[64];
     std::snprintf(msg, sizeof(msg), "You drink deep. +%d SP", gain);

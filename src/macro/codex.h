@@ -128,15 +128,16 @@ namespace sm
             CodexCategoryId::Mechanics,
             "Attributes",
             "Eight primary attributes shape your character:\n\n"
-            "- STR (Strength): +1 physical damage per point.\n"
-            "- VIT (Vitality): +10 max HP per point.\n"
-            "- END (Endurance): +10 max SP per point.\n"
-            "- WIL (Willpower): +10 max MP per point.\n"
+            "- STR (Strength): +1 physical damage, +10 kg carry per point.\n"
+            "- END (Endurance): +10 max HP, +5 max SP per point.\n"
             "- INT (Intelligence): +1 spell damage per point.\n"
-            "- WIS (Wisdom): +1% EXP bonus per point.\n"
-            "- LCK (Luck): crit scaling and better loot.\n"
-            "- CHA (Charisma): trade discount and relation bonus.\n"
-            "- SPD (Speed): movement speed with asymptotic scaling.",
+            "- WILL (Willpower): +10 max MP, +5 max SP per point.\n"
+            "- SPD (Speed): movement speed with asymptotic scaling.\n"
+            "- LCK (Luck): shifts the game's dice in your favor.\n"
+            "- CHA (Charisma): 1% off prices and payroll per point.\n"
+            "- WIS (Wisdom): +1% EXP bonus per point.\n\n"
+            "Stamina has two owners on purpose: the warrior's endurance and "
+            "the mage's will both buy the day.",
         },
         {
             CodexArticleId::PerksSkills,

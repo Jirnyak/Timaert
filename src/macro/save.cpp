@@ -665,6 +665,7 @@ void read_spell_book(Reader& r, SpellBook& spellBook) {
 
 void write_player(Writer& w, const PlayerState& p) {
     w.str(p.name);
+    w.pod(p.sexIdx);              // v78: the creation screen's nature pick
     w.pod(p.ageDays);
     w.pod(p.x);
     w.pod(p.y);
@@ -704,6 +705,7 @@ void write_player(Writer& w, const PlayerState& p) {
 
 void read_player(Reader& r, PlayerState& p) {
     r.str(p.name);
+    r.pod(p.sexIdx);              // v78
     r.pod(p.ageDays);
     r.pod(p.x);
     r.pod(p.y);

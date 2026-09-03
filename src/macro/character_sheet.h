@@ -58,70 +58,120 @@ struct RoleWeights {
     std::uint8_t skill[std::size_t(SkillId::Count)];
 };
 
+// Attr columns follow the canon-eight order (2026-09-03). The old VIT column
+// merged into END as max(vit, end) — whichever of the two carried the row's
+// identity (the bear's VIT, the rabbit's END) keeps it.
+//
+// Skill columns follow the canon-32 order (skills-64, same date). A role's
+// weights answer TWO questions with one row: which 5 skills its people LEARN
+// at creation (weighted picks, no repeats) and where their level points go
+// (weighted spends into the learned set only). The flavor writes itself:
+// the miner's weapon is his pick (Mace) and his eye is Prospecting; a beast
+// fights through Armsmaster (its body IS the weapon) and wears Unarmored.
+//
+// skills: Swd Axe Spr Mac Dag Bow Stf|Hvy Lgt Una Shd|Fir Wat Air Ear Arc Voi|
+//         Arm Spl|Bod Med Mar Ath Wgt|Trv Acr Sct Prs|Trd Qtm For Lrn
 inline constexpr RoleWeights kRoleWeights[int(NPCType::Count)] = {
-    // Peasant     — hardy laborer, no combat training
-    {NPCType::Peasant, {3, 3, 3, 1, 1, 2, 1, 1, 1}, {3, 0, 1, 1, 1, 3, 0, 2}},
-    // Woodcutter  — strong laborer
-    {NPCType::Woodcutter, {4, 3, 3, 1, 1, 1, 1, 1, 1}, {3, 0, 1, 1, 1, 2, 0, 4}},
-    // Merchant    — social, lucky, sedentary
-    {NPCType::Merchant, {1, 2, 2, 1, 2, 3, 3, 4, 1}, {1, 1, 1, 2, 0, 1, 0, 2}},
-    // Caravan     — mobile trader: lives on the road, hence both movement skills
+    // Peasant     — hardy laborer: pitchfork and flail, forage and endure
+    {NPCType::Peasant, {3, 3, 1, 1, 1, 1, 1, 2},
+     {0,0,2,1,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 1,0, 3,0,3,1,2, 1,0,0,0, 0,0,3,1}},
+    // Woodcutter  — strong laborer: the axe is the trade and the argument
+    {NPCType::Woodcutter, {4, 3, 1, 1, 1, 1, 1, 1},
+     {0,4,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 3,0,2,1,4, 1,0,0,0, 0,0,2,0}},
+    // Merchant    — social, lucky, sedentary: the ledger, not the blade
+    {NPCType::Merchant, {1, 2, 2, 1, 1, 3, 4, 3},
+     {0,0,0,0,1,0,0, 0,1,0,0, 0,0,0,0,0,0, 0,0, 1,1,1,0,2, 2,0,0,0, 4,2,0,2}},
+    // Caravan     — mobile trader: lives on the road, hence the road skills
     // Cha 5: the trade house on wheels — its whole market edge is this row
     // (owner 2026-08-30: «у каравана в таблице выше уровень и харизма»).
-    {NPCType::Caravan, {2, 2, 3, 1, 1, 2, 2, 5, 3}, {1, 1, 3, 4, 0, 2, 0, 2}},
-    // Bandit      — aggressive melee raider, fast on his feet
-    {NPCType::Bandit, {4, 3, 2, 1, 1, 1, 2, 1, 3}, {2, 0, 3, 2, 4, 1, 0, 1}},
-    // Guard       — disciplined tank
-    {NPCType::Guard, {4, 4, 3, 1, 1, 2, 1, 2, 2}, {3, 0, 2, 1, 3, 2, 0, 1}},
-    // Witch       — practical caster
-    {NPCType::Witch, {1, 2, 1, 4, 4, 3, 2, 2, 1}, {0, 4, 1, 1, 0, 1, 4, 0}},
-    // Sorceress   — elite caster
-    {NPCType::Sorceress, {1, 2, 1, 4, 5, 3, 3, 3, 1}, {0, 4, 1, 1, 0, 1, 5, 0}},
-    // Miner       — strong laborer (the woodcutter's build, underground)
-    {NPCType::Miner, {4, 3, 3, 1, 1, 1, 1, 1, 1}, {3, 0, 1, 1, 1, 2, 0, 4}},
-    // Quarryman   — strong laborer
-    {NPCType::Quarryman, {4, 3, 3, 1, 1, 1, 1, 1, 1}, {3, 0, 1, 1, 1, 2, 0, 4}},
+    {NPCType::Caravan, {2, 3, 1, 1, 3, 2, 5, 2},
+     {0,0,0,1,0,0,0, 0,1,0,0, 0,0,0,0,0,0, 0,0, 1,1,2,3,2, 4,0,0,0, 4,3,2,1}},
+    // Bandit      — aggressive raider: knife and bow, fast on his feet
+    {NPCType::Bandit, {4, 3, 1, 1, 3, 2, 1, 1},
+     {2,0,0,0,3,2,0, 0,2,1,0, 0,0,0,0,0,0, 3,0, 2,0,1,3,1, 2,1,2,0, 0,0,1,0}},
+    // Guard       — disciplined tank: sword, shield and heavy plate
+    {NPCType::Guard, {4, 4, 1, 1, 2, 1, 2, 2},
+     {3,0,2,1,0,0,0, 3,0,0,3, 0,0,0,0,0,0, 2,0, 3,0,2,1,1, 1,0,0,0, 0,0,0,0}},
+    // Witch       — practical caster: hedge schools, a staff to lean on
+    {NPCType::Witch, {1, 2, 4, 4, 1, 2, 2, 3},
+     {0,0,0,0,1,0,2, 0,0,2,0, 2,2,0,2,0,1, 0,4, 0,4,1,1,0, 1,0,0,0, 0,0,1,2}},
+    // Sorceress   — elite caster: the high schools, arcane first
+    {NPCType::Sorceress, {1, 2, 5, 4, 1, 3, 3, 3},
+     {0,0,0,0,0,0,2, 0,1,2,0, 3,0,2,0,3,2, 0,5, 0,4,1,1,0, 1,0,0,0, 0,0,0,2}},
+    // Miner       — strong laborer: the pick swings like a mace, the eye
+    // reads the vein (Prospecting is the trade's whole point)
+    {NPCType::Miner, {4, 3, 1, 1, 1, 1, 1, 1},
+     {0,0,0,4,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 3,0,2,1,4, 0,0,0,4, 0,0,1,0}},
+    // Quarryman   — strong laborer: stone over ore, the back over the eye
+    {NPCType::Quarryman, {4, 3, 1, 1, 1, 1, 1, 1},
+     {0,0,0,4,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 3,0,2,1,5, 0,0,0,2, 0,0,1,0}},
     // Clay-digger — hardy laborer (the peasant's build, wetter)
-    {NPCType::ClayDigger, {3, 3, 3, 1, 1, 2, 1, 1, 1}, {3, 0, 1, 1, 1, 3, 0, 2}},
+    {NPCType::ClayDigger, {3, 3, 1, 1, 1, 1, 1, 2},
+     {0,0,2,1,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 1,0, 3,0,3,1,2, 1,0,0,0, 0,0,2,1}},
     // ── The creature rows ────────────────────────────────────────────────
     // A beast has a sheet like a man has a sheet (owner, 2026-08-20: one
     // system, "у всех лист статов как в обливионе"). What differs is only the
     // EMPHASIS, and it is the same five shapes over and over: prey is all
     // endurance and speed, a grazer is prey with mass, a predator buys speed
     // with muscle, a brute is muscle without speed, and the unnatural things
-    // are built like soldiers because that is what they fight as.
-    // attrs: str vit end wil int wis lck cha spd | skills: body med ath trv fgt mar spl brg
-    {NPCType::Rabbit,       {1, 1, 4, 1, 1, 1, 3, 1, 5}, {1, 0, 5, 2, 0, 3, 0, 0}},
-    {NPCType::Deer,         {2, 2, 4, 1, 1, 1, 2, 1, 5}, {2, 0, 5, 2, 0, 3, 0, 0}},
-    {NPCType::Fox,          {2, 2, 3, 1, 2, 2, 3, 1, 4}, {1, 0, 4, 2, 2, 2, 0, 0}},
-    {NPCType::Wolf,         {4, 3, 3, 1, 1, 1, 2, 1, 4}, {2, 0, 3, 2, 4, 2, 0, 0}},
-    {NPCType::Bear,         {5, 5, 3, 1, 1, 1, 1, 1, 2}, {5, 0, 1, 1, 4, 1, 0, 0}},
-    {NPCType::Boar,         {4, 4, 3, 1, 1, 1, 1, 1, 3}, {4, 0, 2, 1, 3, 1, 0, 0}},
-    {NPCType::Snake,        {3, 1, 2, 1, 1, 1, 3, 1, 3}, {1, 0, 2, 1, 4, 1, 0, 0}},
-    {NPCType::Hawk,         {2, 1, 3, 1, 2, 2, 3, 1, 5}, {1, 0, 5, 2, 2, 2, 0, 0}},
-    {NPCType::Frog,         {1, 1, 3, 1, 1, 1, 2, 1, 3}, {1, 0, 3, 1, 0, 2, 0, 0}},
-    {NPCType::Goat,         {2, 3, 4, 1, 1, 1, 1, 1, 4}, {3, 0, 4, 3, 0, 2, 0, 0}},
-    {NPCType::Eagle,        {2, 2, 3, 1, 2, 2, 3, 1, 5}, {1, 0, 5, 2, 3, 2, 0, 0}},
-    {NPCType::Croc,         {4, 4, 3, 1, 1, 1, 2, 1, 2}, {4, 0, 1, 1, 4, 1, 0, 0}},
-    {NPCType::Goblin,       {3, 2, 3, 1, 2, 1, 2, 1, 3}, {2, 0, 3, 2, 3, 2, 0, 1}},
-    {NPCType::Skeleton,     {3, 3, 4, 1, 1, 1, 1, 1, 2}, {3, 0, 1, 1, 3, 1, 0, 0}},
-    {NPCType::Troll,        {5, 5, 4, 1, 1, 1, 1, 1, 1}, {5, 0, 1, 1, 4, 1, 0, 0}},
-    {NPCType::SwampThing,   {4, 4, 4, 2, 1, 1, 1, 1, 1}, {4, 1, 1, 1, 3, 1, 0, 0}},
-    {NPCType::IceWraith,    {3, 2, 3, 4, 3, 2, 2, 1, 3}, {1, 3, 3, 1, 2, 1, 3, 0}},
-    {NPCType::SandScorpion, {3, 2, 3, 1, 1, 1, 2, 1, 3}, {2, 0, 3, 2, 3, 1, 0, 0}},
-    {NPCType::StoneGolem,   {5, 5, 5, 1, 1, 1, 1, 1, 1}, {5, 0, 1, 1, 3, 1, 0, 0}},
+    // are built like soldiers because that is what they fight as. A beast's
+    // weapon skill is Armsmaster (its body is the weapon) and its armor is
+    // Unarmored (its hide is the coat); prey reads the wind (Scouting).
+    {NPCType::Rabbit,       {1, 4, 1, 1, 5, 3, 1, 1},
+     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 0,0, 1,0,3,5,0, 2,3,2,0, 0,0,0,0}},
+    {NPCType::Deer,         {2, 4, 1, 1, 5, 2, 1, 1},
+     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 2,0,3,5,0, 2,2,2,0, 0,0,0,0}},
+    {NPCType::Fox,          {2, 3, 2, 1, 4, 3, 1, 2},
+     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 2,0, 1,0,2,4,0, 2,1,3,0, 0,0,0,0}},
+    {NPCType::Wolf,         {4, 3, 1, 1, 4, 2, 1, 1},
+     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 4,0, 2,0,2,3,0, 2,0,3,0, 0,0,0,0}},
+    {NPCType::Bear,         {5, 5, 1, 1, 2, 1, 1, 1},
+     {0,0,0,0,0,0,0, 0,0,3,0, 0,0,0,0,0,0, 4,0, 5,0,1,1,0, 1,0,1,0, 0,0,0,0}},
+    {NPCType::Boar,         {4, 4, 1, 1, 3, 1, 1, 1},
+     {0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 3,0, 4,0,1,2,0, 1,0,1,0, 0,0,0,0}},
+    {NPCType::Snake,        {3, 2, 1, 1, 3, 3, 1, 1},
+     {0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 4,0, 1,0,1,2,0, 1,0,1,0, 0,0,0,0}},
+    {NPCType::Hawk,         {2, 3, 2, 1, 5, 3, 1, 2},
+     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 2,0, 1,0,2,5,0, 2,0,3,0, 0,0,0,0}},
+    {NPCType::Frog,         {1, 3, 1, 1, 3, 2, 1, 1},
+     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 1,0,2,3,0, 1,3,0,0, 0,0,0,0}},
+    {NPCType::Goat,         {2, 4, 1, 1, 4, 1, 1, 1},
+     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 3,0,2,4,0, 3,3,0,0, 0,0,0,0}},
+    {NPCType::Eagle,        {2, 3, 2, 1, 5, 3, 1, 2},
+     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 3,0, 1,0,2,5,0, 2,0,3,0, 0,0,0,0}},
+    {NPCType::Croc,         {4, 4, 1, 1, 2, 2, 1, 1},
+     {0,0,0,0,0,0,0, 0,0,3,0, 0,0,0,0,0,0, 4,0, 4,0,1,1,0, 1,0,1,0, 0,0,0,0}},
+    {NPCType::Goblin,       {3, 3, 2, 1, 3, 2, 1, 1},
+     {0,0,1,0,2,1,0, 0,1,1,0, 0,0,0,0,0,0, 2,0, 2,0,2,3,1, 2,0,1,0, 0,0,0,0}},
+    {NPCType::Skeleton,     {3, 4, 1, 1, 2, 1, 1, 1},
+     {2,0,1,0,0,0,0, 1,0,1,1, 0,0,0,0,0,0, 3,0, 3,0,1,1,0, 0,0,0,0, 0,0,0,0}},
+    {NPCType::Troll,        {5, 5, 1, 1, 1, 1, 1, 1},
+     {0,0,0,2,0,0,0, 0,0,3,0, 0,0,0,0,0,0, 4,0, 5,0,1,1,0, 1,0,0,0, 0,0,0,0}},
+    {NPCType::SwampThing,   {4, 4, 1, 2, 1, 1, 1, 1},
+     {0,0,0,0,0,0,0, 0,0,3,0, 0,2,0,1,0,0, 3,1, 4,1,1,1,0, 0,0,0,0, 0,0,0,0}},
+    // Ice is the Water school (S15 remap): the wraith casts what it is.
+    {NPCType::IceWraith,    {3, 3, 3, 4, 3, 2, 1, 2},
+     {0,0,0,0,0,0,0, 0,0,2,0, 0,3,1,0,0,2, 1,3, 1,3,1,3,0, 1,0,0,0, 0,0,0,0}},
+    {NPCType::SandScorpion, {3, 3, 1, 1, 3, 2, 1, 1},
+     {0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 3,0, 2,0,1,3,0, 2,0,1,0, 0,0,0,0}},
+    {NPCType::StoneGolem,   {5, 5, 1, 1, 1, 1, 1, 1},
+     {0,0,0,0,0,0,0, 0,0,4,0, 0,0,0,0,0,0, 3,0, 5,0,1,1,0, 0,0,0,0, 0,0,0,0}},
     // Adventurer — the player's row. Even weights on purpose: a generated
     // adventurer is a blank slate, and the player's OWN points are spent by
     // him, not rolled by this table (it answers only when something asks the
     // world for "an adventurer", e.g. a projected body of his squad).
-    {NPCType::Adventurer,   {2, 2, 2, 2, 2, 2, 2, 2, 2}, {1, 1, 1, 1, 1, 1, 1, 1}},
+    {NPCType::Adventurer,   {2, 2, 2, 2, 2, 2, 2, 2},
+     {1,1,1,1,1,1,1, 1,1,1,1, 1,1,1,1,1,1, 1,1, 1,1,1,1,1, 1,1,1,1, 1,1,1,1}},
     // Vendor — the village hauler on the town road: a labourer's back with a
     // seller's tongue (the Woodcutter body, a pinch of the Merchant charm).
-    {NPCType::Vendor,       {3, 3, 3, 1, 1, 2, 1, 1, 1}, {2, 0, 1, 1, 1, 2, 0, 3}},
+    {NPCType::Vendor,       {3, 3, 1, 1, 1, 1, 1, 2},
+     {0,0,0,1,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 2,0,2,1,3, 2,0,0,0, 3,1,1,1}},
     // Silver-miner — the miner's body, row for row.
-    {NPCType::SilverMiner,  {4, 3, 3, 1, 1, 1, 1, 1, 1}, {3, 0, 1, 1, 1, 2, 0, 4}},
+    {NPCType::SilverMiner,  {4, 3, 1, 1, 1, 1, 1, 1},
+     {0,0,0,4,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 3,0,2,1,4, 0,0,0,4, 0,0,1,0}},
     // Tax-collector — a courier's legs, a clerk's head.
-    {NPCType::TaxCollector, {2, 2, 3, 2, 2, 2, 1, 2, 3}, {1, 1, 3, 3, 0, 2, 0, 2}},
+    {NPCType::TaxCollector, {2, 3, 2, 2, 3, 1, 2, 2},
+     {0,0,0,0,1,0,0, 0,1,0,0, 0,0,0,0,0,0, 0,0, 1,1,2,3,2, 3,0,0,0, 2,2,0,2}},
 };
 
 static_assert(rows_in_enum_order(kRoleWeights, &RoleWeights::type),
@@ -184,11 +234,12 @@ inline std::uint32_t leader_sheet_seed(std::uint32_t spawnOrdinal) {
 // Deterministic in `seed`: no global RNG and no external Rng object — the same
 // (role, level, seed) always yields the same sheet, matching the subworld's
 // "everything regenerates from the seed" contract. The generator spends the
-// EXACT player point economy for `level` — 8 + 3·(level-1) attribute points
-// and 3 + (level-1) skill points — into the role's signature stats, so a
-// level-N NPC is budget-identical to a level-N player, merely allocated toward
-// its role. Points are fully consumed (levelData.*Points end at 0). Plot NPCs
-// supply an authored sheet instead of calling this.
+// EXACT player point economy for `level` (CANON S14, 2026-09-03): creation is
+// 5 attribute points and 5 LEARN PICKS, every level adds +1 attribute and +1
+// skill point, and skill points spend ONLY into what the creation picks
+// taught — so a level-N NPC is budget-identical to a level-N player, merely
+// allocated toward its role. Points are fully consumed (levelData pools end
+// at 0). Plot NPCs supply an authored sheet instead of calling this.
 inline CharacterSheet make_character_sheet(NPCType role, int level,
                                            std::uint32_t seed) {
     if (level < 1) level = 1;
@@ -198,26 +249,61 @@ inline CharacterSheet make_character_sheet(NPCType role, int level,
     cs.levelData.level     = level;
     cs.levelData.exp       = 0;
     cs.levelData.expToNext = exp_to_next_level(level);
-    // The exact point economy a player of this level would have accumulated
-    // (start 8/3, +3/+1 per level-up); we then spend all of it below.
-    cs.levelData.attributePoints = 8 + 3 * (level - 1);
-    cs.levelData.skillPoints     = 3 + (level - 1);
+    cs.levelData.attributePoints = 5 + (level - 1);
+    cs.levelData.skillPoints     = (level - 1);
 
     const csheet_detail::RoleWeights& w = csheet_detail::role_weights(role);
-    csheet_detail::SheetRng rng{
-        csheet_detail::mix32(seed, std::uint32_t(role), std::uint32_t(level))};
+    // TWO streams, and LEVEL is in NEITHER seed — this is what makes a
+    // levelling leader's sheet MONOTONIC: the level-N sheet is the level-N-1
+    // sheet plus exactly one more attribute pick and one more skill pick
+    // (each loop below draws a prefix-stable sequence). The old generator
+    // mixed the level into one stream, so every level-up RE-ROLLED the whole
+    // sheet and a leader could visibly get WEAKER by growing — the perversity
+    // hid under the fat legacy +3/level and surfaced with the 1:1 economy.
+    // Растёт то, что мир хранит (S14) — a sheet only ever grows.
+    csheet_detail::SheetRng attrRng{
+        csheet_detail::mix32(seed, std::uint32_t(role), 0xA77Bu)};
+    csheet_detail::SheetRng skillRng{
+        csheet_detail::mix32(seed, std::uint32_t(role), 0x5C11u)};
 
     while (cs.levelData.attributePoints > 0) {
-        const int pick = csheet_detail::weighted_pick(w.attr, rng.next());
+        const int pick = csheet_detail::weighted_pick(w.attr, attrRng.next());
         if (!spend_attribute_point(cs.levelData, cs.attributes,
                                    AttributeId(std::uint8_t(pick))))
             break; // safety net; the loop guard already prevents this
     }
+    // CREATION: learn 5 distinct skills by the role's weights — a weighted
+    // pick that lands on a known skill rerolls, and if the row runs out of
+    // distinct weighted skills (a narrow beast), the pick learns the first
+    // still-unknown weighted skill instead of spinning.
+    while (cs.levelData.learnPicks > 0) {
+        bool learned = false;
+        for (int attempt = 0; attempt < 16 && !learned; ++attempt) {
+            const int pick =
+                csheet_detail::weighted_pick(w.skill, skillRng.next());
+            learned = spend_learn_pick(cs.levelData, cs.skills,
+                                       SkillId(std::uint8_t(pick)));
+        }
+        if (learned) continue;
+        for (int i = 0; i < int(SkillId::Count) && !learned; ++i)
+            if (w.skill[std::size_t(i)] > 0)
+                learned = spend_learn_pick(cs.levelData, cs.skills,
+                                           SkillId(std::uint8_t(i)));
+        if (!learned) break;   // fewer than 5 weighted skills in the row
+    }
+    // LEVELS: points spend only into the learned set (THE learn law) — the
+    // weights are re-read through a mask so an unknown skill cannot draw.
     while (cs.levelData.skillPoints > 0) {
-        const int pick = csheet_detail::weighted_pick(w.skill, rng.next());
+        std::uint8_t known[std::size_t(SkillId::Count)] = {};
+        for (int i = 0; i < int(SkillId::Count); ++i)
+            if (cs.skills.rank[std::size_t(i)] > 0
+                && cs.skills.rank[std::size_t(i)] < kMaxSkillRank)
+                known[std::size_t(i)] = w.skill[std::size_t(i)] > 0
+                                            ? w.skill[std::size_t(i)] : 1;
+        const int pick = csheet_detail::weighted_pick(known, skillRng.next());
         if (!spend_skill_point(cs.levelData, cs.skills,
                                SkillId(std::uint8_t(pick))))
-            break;
+            break;   // every learned skill at mastery (or nothing learned)
     }
     return cs;
 }
@@ -285,7 +371,7 @@ inline BonusTotals squad_bonuses(const CharacterSheet&) {
 //
 // The projection reuses the EXACT player formulas from attributes.h, so player
 // and NPC sit on ONE combat curve:
-//   hp     = (base.hp + vit·10) · (1 + bodybuilding·0.05)      // calculate_combat_stats
+//   hp     = (base.hp + end·10) · (1 + bodybuilding·0.05)      // calculate_combat_stats
 //   damage = base.damage + (missile ? intl·(1+spellcraft·0.05)  // caster: spell stats
 //                                    : str ·(1+fighter   ·0.05)) // melee : physical stats
 // The authored template supplies the per-role HP/damage FLOOR plus the attack

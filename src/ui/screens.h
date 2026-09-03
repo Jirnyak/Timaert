@@ -11,6 +11,7 @@
 
 #include "imgui.h"
 
+#include "macro/character_sheet.h" // CharacterSheet (the creation screen authors one)
 #include "macro/map_generator.h"   // LayerParameters
 #include "macro/save.h"            // SaveSummary
 
@@ -35,6 +36,23 @@ enum class AppState : int {
     Dead        = 3,
     CustomNewGame = 4,
     Load        = 5,
+    // The pre-world character creation screen (owner verdict, 2026-09-03):
+    // New Game asks WHO before it generates WHERE. Name, sex, homeland,
+    // attribute points and learn picks are authored here through the sheet's
+    // own doors; the world boots only on Start.
+    CharacterCreation = 6,
+};
+
+// Everything the creation screen authors, gathered so the app can apply it in
+// one place after the world boots. `sheet` is edited through the REAL doors
+// (spend_attribute_point / spend_learn_pick), so the screen can never grant
+// what the game would refuse; the two refunds (a creation-only right) are the
+// screen's own.
+struct CreationState {
+    char name[25]   = "Traveller";   // the intro input's own cap (24 + NUL)
+    int  sexIdx     = -1;            // index into creation_sex_choices; -1 = unpicked
+    int  realmIdx   = -1;            // index into creation_realm_choices; -1 = unpicked
+    CharacterSheet sheet{};          // default pools: 5 attr points, 5 learn picks
 };
 
 // World-generation parameters editable from the Custom New Game screen.
@@ -50,7 +68,9 @@ struct CustomGameParams {
 };
 
 struct ShellResult {
-    bool startNewGame       = false;   // title → playing (default world)
+    bool startNewGame       = false;   // title → CharacterCreation (default world)
+    bool startCreatedGame   = false;   // CharacterCreation → playing (boot + apply)
+    bool cancelCreation     = false;   // CharacterCreation → back where it came from
     bool openCustomNewGame  = false;   // title → CustomNewGame
     bool startCustomNewGame = false;   // CustomNewGame → playing
     bool cancelCustomNewGame= false;   // CustomNewGame → title
@@ -69,6 +89,12 @@ struct ShellResult {
 
 // Title menu: New Game / Custom New Game / Load Game / Quit.
 ShellResult draw_title_menu(int viewportW, int viewportH);
+
+// The character creation screen (pre-world). Renders the authored choice
+// tables (content/plot/intro.h creation_*_choices) plus the sheet's own
+// registries; Start stays disabled until name, sex and homeland are given.
+ShellResult draw_character_creation(CreationState& cs,
+                                    int viewportW, int viewportH);
 
 // Custom new game screen: a wide two-column window. Left column is a
 // scrollable parameter editor (map size, seed, city target, all

@@ -15,6 +15,7 @@
 // stored in the save — a load starts the carry at zero, worth at most 1 SP.
 #pragma once
 #include <cmath>
+#include "core/time.h"       // the ladder: kSubworldWalkTilesPerSecond derives from it
 #include "macro/attributes.h"
 #include "macro/biomes.h"
 #include "macro/features.h"
@@ -44,12 +45,14 @@ namespace sm {
 // (travel skill, overload, terrain √) is a multiplier ON TOP, never folded
 // in. A fresh level-1 walker (~110 SP) drops after ~55 meadow cells — about
 // ten game hours of open country, a full day's march with an ache — and a
-// night's rest (kSpRegenPctPerHour) buys it all back: the daily rhythm
+// night's rest (kRestRegenPctPerHour) buys it all back: the daily rhythm
 // closes itself.
 constexpr float kStaminaPerCell = 1.0f;
 
-// Fraction of the normal stamina recovery that a MARCHING body gets. Zero: legs
-// in motion are not resting. HP and MP are untouched — this is about stamina.
+// Fraction of the normal recovery that a MARCHING body gets. Zero: legs in
+// motion are not resting. Since 2026-09-03 this gates ALL THREE bars — health
+// and mana wait for camp exactly as stamina does (CANON S14: rest is the one
+// recovery; a wound does not close on the road).
 constexpr float kMarchRecoveryPct = 0.0f;
 
 // What the `travel` skill does, and the only thing it does: it buys down the
@@ -91,22 +94,35 @@ constexpr float kExhaustionBite = 1.0f;
 // morning ended, and every distance in the world meant nothing.
 constexpr float kMacroWalkCellsPerHour = 8.0f;
 
+// Tiles of subworld scene per macro cell. sub/map_data.h kCellSize asserts
+// against THIS number, so the two scales cannot quietly disagree about how
+// long a cell is (it lives here because the macro side may not include sub/).
+constexpr float kSubworldTilesPerMacroCell = 1024.0f;
+
 // Base on-foot speed in the SUBWORLD, in tiles per REAL second, before the
 // character's own pace (DerivedBonuses::moveSpeedMult) and haste.
 //
-// It lives HERE, beside the march it is derived from, because that is what it
-// is: the same body walking the same world at the other scale. 8 cells/game
-// hour above (kMacroWalkCellsPerHour) = 8000 tiles per subworld game hour;
-// down there an hour lasts kTicksPerDay/24 × kSubworldTickDivisor ticks =
-// 85⅓ real seconds, so the honest rate is 8000 / 85.33 = 93.75 tiles/s —
-// rounded up 2.4 % to 96, a named fantasy allowance, not a tuned number.
-// (The old macro 32 made this look like a 4× disagreement — canon-audit A8;
-// the ground floor was right all along, the map was galloping.)
+// DERIVED, NOT TUNED — and since 2026-09-03 derived IN CODE, because it was
+// derived in a comment and the comment could not follow a knob: it is the
+// same body walking the same world at the other scale, so crossing a cell's
+// scene costs exactly the game minutes the macro march charges for that cell
+// (the owner's parity anchor, «клетка ≈ клетка»). The arithmetic:
+// kMacroWalkCellsPerHour × kSubworldTilesPerMacroCell tiles per game hour,
+// over what a subworld game hour lasts in real seconds
+// (kTicksPerDay/24/kTicksPerRealSecond × kSubworldTickDivisor). The TIME
+// RUNG is therefore the one visual-pace knob: ÷16 gave 96 t/s (the racing
+// the owner rejected), ÷64 gives 24 (canon-audit A8's «the map was
+// galloping» stays honoured — the map's own 8 is untouched).
 //
 // It is the speed on the REFERENCE bed — the road (bed 1.0) — because the
 // march it derives from is; every other ground divides it by √weight through
 // terrain_speed_mult, which is the one law both scales walk by.
-constexpr float kSubworldWalkTilesPerSecond = 96.0f;
+constexpr float kSubworldWalkTilesPerSecond =
+    kMacroWalkCellsPerHour * kSubworldTilesPerMacroCell
+    * float(kTicksPerRealSecond) * 24.0f
+    / (float(kTicksPerDay) * float(kSubworldTickDivisor));
+static_assert(kSubworldWalkTilesPerSecond == 24.0f,
+              "the ÷64 rung reads as 24 tiles/s — a moved knob shows here");
 
 // THE pace of a body, from what its row says it is against a walking man
 // (army.h CombatTemplate::speedMarchMult). One scale for everything that

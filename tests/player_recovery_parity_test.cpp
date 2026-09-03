@@ -40,10 +40,9 @@ void test_attribute_rate_and_max_clamp() {
     // The rates are no longer restated here: recovery consumes the sheet's own
     // derived stats (calculate_combat_stats), so a tougher sheet recovers more
     // per hour because its DERIVED rates say so — HP/MP via the attribute
-    // rate, SP as a percent of the bar (kSpRegenPctPerHour, Session 21).
+    // rate, SP as a percent of the bar (kRestRegenPctPerHour, Session 21).
     sm::PlayerState player{};
     player.sheet.attributes[sm::AttributeId::End] = 20;
-    player.sheet.attributes[sm::AttributeId::Vit] = 20;
     player.sheet.attributes[sm::AttributeId::Wil] = 20;
     player.combatStats = sm::calculate_combat_stats(player.sheet.attributes,
                                                     player.sheet.skills);

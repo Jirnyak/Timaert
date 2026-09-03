@@ -31,8 +31,8 @@ using namespace sm;
 
 // ── Attributes are the SAME shape: an envelope and a table ───────────────
 void test_attributes_are_an_envelope_and_a_table() {
-    CHECK(int(AttributeId::Count) == 9,
-          "nine scores stand in the registry today");
+    CHECK(int(AttributeId::Count) == 8,
+          "the canon eight stand in the registry today");
     for (int i = 0; i < int(AttributeId::Count); ++i) {
         const AttributeDef& d = attribute_def(AttributeId(i));
         CHECK(int(d.id) == i, "every row stands at its own ordinal");
@@ -50,7 +50,7 @@ void test_attributes_are_an_envelope_and_a_table() {
     }
     a[AttributeId::Str] = 7;
     CHECK(a.of(AttributeId::Str) == 7, "a score writes and reads by ordinal");
-    CHECK(a.of(AttributeId::Vit) == 1,
+    CHECK(a.of(AttributeId::End) == 1,
           "negative control: writing one score moved no other");
     CHECK(int(a.score.size()) == kMaxAttributes,
           "the envelope is the size the save promises");
@@ -70,7 +70,8 @@ void test_attributes_are_an_envelope_and_a_table() {
 
 // ── The table is a table ─────────────────────────────────────────────────
 void test_the_registry_is_addressable_by_ordinal() {
-    CHECK(int(SkillId::Count) == 8, "eight skills stand in the registry today");
+    CHECK(int(SkillId::Count) == 32,
+          "the canon thirty-two stand in the registry today");
     for (int i = 0; i < int(SkillId::Count); ++i) {
         const SkillDef& d = skill_def(SkillId(i));
         CHECK(int(d.id) == i, "every row stands at its own ordinal");
@@ -87,8 +88,8 @@ void test_ranks_are_a_flat_envelope() {
     for (int i = 0; i < int(SkillId::Count); ++i) {
         CHECK(s.of(SkillId(i)) == 0, "a fresh sheet is trained in nothing");
     }
-    s[SkillId::Fighter] = 7;
-    CHECK(s.of(SkillId::Fighter) == 7, "a rank writes and reads by ordinal");
+    s[SkillId::Armsmaster] = 7;
+    CHECK(s.of(SkillId::Armsmaster) == 7, "a rank writes and reads by ordinal");
     CHECK(s.of(SkillId::Travel) == 0,
           "negative control: writing one rank moved no other");
     CHECK(int(s.rank.size()) == kMaxSkills,
@@ -133,14 +134,22 @@ void test_the_cap_belongs_to_the_law() {
     CHECK(skill_mult_of(SkillId::Travel, kMaxSkillRank * 4) >= 0.0f,
           "and never starts paying him");
 
-    // The rank cap is enforced at the ONE door into a rank.
+    // The rank cap is enforced at the ONE door into a rank — and so is THE
+    // learn law: rank 0 is ignorance, ignorance refuses the point, and
+    // mastery is therefore 1 (learned) + 99 spends.
     LevelData ld{};
     Skills s{};
     ld.skillPoints = kMaxSkillRank + 10;
+    CHECK(!spend_skill_point(ld, s, SkillId::Travel),
+          "an unknown skill refuses the point: learn first");
+    CHECK(learn_skill(s, SkillId::Travel),
+          "learning is the one door out of ignorance (rank 0 -> 1)");
+    CHECK(!learn_skill(s, SkillId::Travel),
+          "and a teacher cannot teach what is already known");
     int spent = 0;
     while (spend_skill_point(ld, s, SkillId::Travel)) ++spent;
-    CHECK(spent == kMaxSkillRank, "a rank stops at mastery");
-    CHECK(ld.skillPoints == 10,
+    CHECK(spent == kMaxSkillRank - 1, "a rank stops at mastery");
+    CHECK(ld.skillPoints == 11,
           "and a refused spend keeps the point for another skill");
     CHECK(!spend_skill_point(ld, s, SkillId::Count),
           "a rank that names no row is refused, not written past the end");
@@ -152,9 +161,9 @@ void test_the_cap_belongs_to_the_law() {
 // spell 0.05 inline and bypass the law entirely.
 void test_the_governed_numbers_follow_the_row() {
     Attributes a{};
-    a[AttributeId::Vit] = 10;  a[AttributeId::Wil]  = 10;
+    a[AttributeId::End] = 10;  a[AttributeId::Wil]  = 10;
     a[AttributeId::Str] = 10;  a[AttributeId::Intl] = 10;
-    a[AttributeId::End] = 10;  a[AttributeId::Spd]  = 10;
+    a[AttributeId::Spd] = 10;
     Skills none{};
     const CombatStats bare = calculate_combat_stats(a, none);
     const DerivedBonuses bareD = calculate_derived(a, none);
@@ -163,7 +172,7 @@ void test_the_governed_numbers_follow_the_row() {
     Skills trained{};
     trained[SkillId::Bodybuilding]  = 20;   // 5 %/rank -> x2
     trained[SkillId::Meditation]    = 20;   // 5 %/rank -> x2
-    trained[SkillId::Fighter]       = 20;   // 5 %/rank -> x2
+    trained[SkillId::Armsmaster]       = 20;   // 5 %/rank -> x2
     trained[SkillId::Spellcraft]    = 20;   // 5 %/rank -> x2
     trained[SkillId::Weightlifting] = 10;   // 10 %/rank -> x2
     const CombatStats tr = calculate_combat_stats(a, trained);

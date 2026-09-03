@@ -224,7 +224,7 @@ void test_power_grows_with_the_sheet() {
     // table; the redesigned perks will feed this same door — CANON S14.)
     AutoBattleSide led = side_of(NPCType::Guard, 3, &few);
     BonusTotals aura{};
-    aura.attr[std::size_t(AttributeId::Vit)] = 1;
+    aura.attr[std::size_t(AttributeId::End)] = 1;
     led.bonuses = aura;
     CHECK(squad_power(led) > pFew,
           "a lord's aura commands a stronger squad by the same law");

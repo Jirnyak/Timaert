@@ -983,6 +983,8 @@ namespace sm::ui
                         ImGui::Text("Coin %d", wallet_value(playerBag));
                         ImGui::Text("Attr pts %d", p.sheet.levelData.attributePoints);
                         ImGui::Text("Skill pts %d", p.sheet.levelData.skillPoints);
+                        if (p.sheet.levelData.learnPicks > 0)
+                            ImGui::Text("Learn picks %d", p.sheet.levelData.learnPicks);
                         if (p.sheet.levelData.exp >= p.sheet.levelData.expToNext)
                         {
                             if (ImGui::Button("Level Up"))
@@ -1053,21 +1055,45 @@ namespace sm::ui
                             }
                             ImGui::TableNextColumn();
                             ImGui::PushID(row.label);
-                            ImGui::Text("%d", p.sheet.skills.of(row.id));
-                            // Same rule as the attribute rows: the [+] sits at
-                            // a fixed number-field width, not right after the
-                            // digits, so rank 10 does not push it sideways.
-                            ImGui::SameLine(number_field_x());
-                            ImGui::BeginDisabled(p.sheet.levelData.skillPoints <= 0);
-                            if (ImGui::SmallButton("+"))
+                            const int rank = p.sheet.skills.of(row.id);
+                            if (rank == 0)
                             {
-                                if (spend_skill_point(p.sheet.levelData, p.sheet.skills, row.id))
+                                // THE learn law: rank 0 IS ignorance. The row
+                                // offers the learn door, not the spend door —
+                                // creation picks feed it today, teachers and
+                                // events feed the same door tomorrow.
+                                ImGui::TextDisabled("—");
+                                ImGui::SameLine(number_field_x());
+                                ImGui::BeginDisabled(p.sheet.levelData.learnPicks <= 0);
+                                if (ImGui::SmallButton("Learn"))
                                 {
-                                    recompute_player_combat_maxima(p);
-                                    derived = calculate_derived(p.sheet.attributes, p.sheet.skills);
+                                    if (spend_learn_pick(p.sheet.levelData, p.sheet.skills, row.id))
+                                    {
+                                        recompute_player_combat_maxima(p);
+                                        derived = calculate_derived(p.sheet.attributes, p.sheet.skills);
+                                    }
                                 }
+                                ImGui::EndDisabled();
                             }
-                            ImGui::EndDisabled();
+                            else
+                            {
+                                ImGui::Text("%d", rank);
+                                // Same rule as the attribute rows: the [+] sits
+                                // at a fixed number-field width, not right
+                                // after the digits, so rank 10 does not push
+                                // it sideways.
+                                ImGui::SameLine(number_field_x());
+                                ImGui::BeginDisabled(p.sheet.levelData.skillPoints <= 0);
+                                if (ImGui::SmallButton("+"))
+                                {
+                                    if (spend_skill_point(p.sheet.levelData, p.sheet.skills, row.id))
+                                    {
+                                        recompute_player_combat_maxima(p);
+                                        derived = calculate_derived(p.sheet.attributes, p.sheet.skills);
+                                    }
+                                }
+                                ImGui::EndDisabled();
+                            }
                             ImGui::PopID();
                         }
                         ImGui::EndTable();

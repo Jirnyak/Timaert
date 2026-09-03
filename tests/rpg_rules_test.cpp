@@ -40,7 +40,7 @@ int main() {
         c.currentHp = 7;
         c.currentMp = 3;
         c.currentSp = 5;
-        ++a[AttributeId::Vit];  // the spend
+        ++a[AttributeId::End];  // the spend
         recompute_combat_maxima(c, a, s);
         if (c.maxHp != calculate_combat_stats(a, s).maxHp) {
             return fail("maxima must recompute from the new attributes");

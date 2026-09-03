@@ -378,12 +378,12 @@ void settle_march_rhythm(entt::entity e, const ecs::Position& p,
     // begins on the first think after the legs stop.
     if (stopped && !moved) {
         if (canCamp && int(rt.sp) < maxSp) {
-            // THE regen law (attributes.h kSpRegenPctPerHour): a percent of
+            // THE regen law (attributes.h kRestRegenPctPerHour): a percent of
             // the bar per game hour, the leader's marathon skill speeding the
             // rate, paid out in this think's slice of the day. The old
             // 5%-per-think was ~53% of the bar per game HOUR — a rest that
             // cost nothing. Fractional carry, the player's own idiom.
-            rt.spCarry += float(maxSp) * kSpRegenPctPerHour
+            rt.spCarry += float(maxSp) * kRestRegenPctPerHour
                           * skill_mult_of(SkillId::Marathon, int(rt.marathonRank))
                           * kAiTickGameHours;
             settle_sp_carry(rt);

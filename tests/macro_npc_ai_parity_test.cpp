@@ -345,7 +345,7 @@ void test_resting_recovery_prevents_permanent_stall() {
                       sm::NPCState::Resting, 0, 0);
 
     // Resting exits at HALF the bar, and the regen law is a percent of the
-    // bar per game hour (kSpRegenPctPerHour = 1/8): from empty that is 4 game
+    // bar per game hour (kRestRegenPctPerHour = 1/8): from empty that is 4 game
     // hours ≈ 43 thinks, whatever the bar's size (the old 10-tick loop was
     // calibrated to the retired 5%-per-think dialect). Tick until the state
     // flips — the NPC starts LIVING again right after, so a fixed overshoot

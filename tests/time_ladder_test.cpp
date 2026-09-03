@@ -42,7 +42,11 @@ int main() {
     // ── Ladder geometry ──────────────────────────────────────────────────
     if (kTicksPerDay != 8192)        return fail("day is not 8192 ticks");
     if (kTicksPerRealSecond != 64)   return fail("step rate is not 64/s");
-    if (kSubworldTickDivisor != 16)  return fail("subworld divisor is not 16");
+    // ÷64 is THE VISUAL-PACE RUNG (owner, 2026-09-03): with the cell↔cell
+    // parity anchor, the divisor sets how bodies read on screen — 24 tiles/s
+    // on the road. Still po2; a retuned rung updates this pin AND the derived
+    // kSubworldWalkTilesPerSecond assert (movement_cost.h) together.
+    if (kSubworldTickDivisor != 64)  return fail("subworld divisor is not 64");
     if (kRealSecondsPerDay != 128.0f) return fail("day is not 128 real seconds");
     // The top rung: 32 days a season, 128 a year, and a year is exactly 2^20
     // ticks. If the calendar and the ladder ever part company, this catches it.

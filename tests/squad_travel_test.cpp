@@ -279,7 +279,7 @@ void test_land_exhaustion_makes_camp_without_blood() {
     // still. This is the control that separates "moving in debt" from
     // "being in debt".
     const float campedAt = w.reg.get<ecs::Health>(e).hp;
-    // The LEDGER, not the bar: regen is fractional (kSpRegenPctPerHour of a
+    // The LEDGER, not the bar: regen is fractional (kRestRegenPctPerHour of a
     // 4-point bar per game hour), so eight thinks may not add a WHOLE point.
     // The file's own convention — sp + carry — is what actually moved.
     const float ledgerAt = float(npc.sp) + npc.spCarry;

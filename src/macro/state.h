@@ -261,7 +261,14 @@ namespace sm {
 // v75 (2026-09-03): хищник-жертва (CANON S10) — поля следов фракций едут в
 // сейве (gs.scent, разреженно) + Robbed ВЫРЕЗАН из FactKind (вердикт
 // «минимум систем»: сдвиг ординалов видов фактов).
-constexpr int kSaveVersion = 76;
+// v77 (2026-09-03): восьмёрка атрибутов (CANON S14) — VIT вырезан (END = HP
+// + SP/2, WILL = MP + SP/2), порядок AttributeId стал каноничным, ординалы
+// атрибутов И BonusId сдвинулись; реген всех баров процентный.
+// v78 (2026-09-03): скиллы-64 (CANON S14) — SkillId = канонные 32 строки
+// (ординалы пересеклись, Fighter → Armsmaster), конверт Skills 32→64 байта,
+// LevelData несёт learnPicks (создание = 5 атрибутов + 5 выучиваний),
+// раздача 1:1; BonusId получил хвост из 24 скилл-строк (append).
+constexpr int kSaveVersion = 78;
 
 enum class SettlementMood : std::uint8_t {
     Prosperous, Stable, Tense, Unrest, Revolt, Count
@@ -464,6 +471,10 @@ struct SettledQuestOffer {
 
 struct PlayerState {
     std::string name;
+    // The creation screen's "nature" pick (v78): 0 = male, 1 = female. A
+    // byte, not an enum class — it indexes the authored choice table
+    // (content/plot/intro.h creation_sex_choices) whose rows own the words.
+    std::uint8_t sexIdx = 0;
     int ageDays = 1000;
     float x = 0, y = 0;
     // (No gold FIELD: money is faction coin in `inventory` — macro/currency.h

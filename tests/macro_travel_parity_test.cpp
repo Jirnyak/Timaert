@@ -268,11 +268,12 @@ void test_travel_balance_holds_its_intent() {
     CHECK(water < mountain * 0.8f, "swimming is the most expensive way to travel");
 
     // Progression: an RPG must reward the character sheet. A veteran carries a
-    // bigger pool (the END attribute ALONE — Session 21 split the levers) AND
-    // spends less on the same ground (travel), so his day of marching becomes
-    // several.
+    // bigger pool (END and WILL by half each — the canon eight, 2026-09-03)
+    // AND spends less on the same ground (travel), so his day of marching
+    // becomes several.
     sm::Attributes vetAttrs = attrs;
     vetAttrs[sm::AttributeId::End] = 20;
+    vetAttrs[sm::AttributeId::Wil] = 20;
     sm::Skills vetSkills = skills;
     vetSkills[sm::SkillId::Travel] = 10;
     const sm::CombatStats veteran = sm::calculate_combat_stats(vetAttrs, vetSkills);
@@ -281,10 +282,11 @@ void test_travel_balance_holds_its_intent() {
     CHECK(vetMeadow > meadow * 3.0f,
            "training triples the distance a traveller covers");
 
-    // The Session 21 lever split, pinned. The bar belongs to the END attribute
-    // and to nothing else; `marathon` buys the RATE of recovery and never the
-    // bar. Full rest is therefore the same 8 hours for every sheet in the
-    // world (regen is a PERCENT of the bar), and only marathon shortens it.
+    // The Session 21 lever split, pinned. The bar belongs to the ATTRIBUTES
+    // alone (END and WILL by half each); `marathon` buys the RATE of recovery
+    // and never the bar. Full rest is therefore the same 8 hours for every
+    // sheet in the world (regen is a PERCENT of the bar), and only marathon
+    // shortens it.
     sm::Skills marathoner = skills;
     marathoner[sm::SkillId::Marathon] = 20;
     CHECK(sm::calculate_combat_stats(attrs, marathoner).maxSp == fresh.maxSp,
@@ -294,7 +296,7 @@ void test_travel_balance_holds_its_intent() {
            "marathon does speed the recovery");
     const float freshRestH = float(fresh.maxSp) / fresh.spRegen;
     const float vetRestH = float(veteran.maxSp) / veteran.spRegen;
-    CHECK(nearf(freshRestH, 1.0f / sm::kSpRegenPctPerHour),
+    CHECK(nearf(freshRestH, 1.0f / sm::kRestRegenPctPerHour),
            "a full rest is the designed 8 hours");
     CHECK(nearf(vetRestH, freshRestH),
            "a bigger bar rests no longer — regen is a percent of it");
@@ -381,15 +383,22 @@ void test_travel_balance_holds_its_intent() {
                                    sm::travel_skill_efficiency(master)) > 2.9f,
            "but the pack on his back still weighs what it weighs");
 
-    // The cap is enforced at the one door into a rank, so no path can exceed it.
+    // The cap is enforced at the one door into a rank, so no path can exceed
+    // it. Learning comes first (THE learn law): rank 0 refuses a spend, so
+    // mastery is 1 (learned) + 99 spends.
     sm::LevelData ld{};
     sm::Skills capped{};
     ld.skillPoints = sm::kMaxSkillRank + 10;
+    CHECK(!sm::spend_skill_point(ld, capped, sm::SkillId::Travel),
+           "an unknown skill refuses the point: learn first");
+    CHECK(sm::learn_skill(capped, sm::SkillId::Travel),
+           "the world teaches, and rank 1 is the knowing");
     int spent = 0;
     while (sm::spend_skill_point(ld, capped, sm::SkillId::Travel)) ++spent;
-    CHECK(spent == sm::kMaxSkillRank && capped.of(sm::SkillId::Travel) == sm::kMaxSkillRank,
+    CHECK(spent == sm::kMaxSkillRank - 1
+              && capped.of(sm::SkillId::Travel) == sm::kMaxSkillRank,
            "a rank stops at mastery");
-    CHECK(ld.skillPoints == 10,
+    CHECK(ld.skillPoints == 11,
            "and a refused spend keeps the point for another skill");
 
     // The balance, printed on every run: a number you can read is a number you

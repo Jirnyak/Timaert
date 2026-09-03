@@ -259,8 +259,13 @@ void test_a_victorious_leader_levels() {
     CHECK(w.reg.get<ecs::NpcLevel>(tsar).value >= 2,
           "the level landed on the leader");
     const auto& hp1 = w.reg.get<ecs::Health>(tsar);
-    CHECK(hp1.maxHp > maxHp0,
-          "the macro ceiling grows with the level");
+    // Under the 1:1 economy a single level pays ONE attribute point, and the
+    // role's weighted roll may legally land it outside END/Bodybuilding — so
+    // the honest claim is re-derivation (never stale, never smaller), not
+    // unconditional growth; the wound-fraction check below is what proves the
+    // ceiling was actually recomputed across the level.
+    CHECK(hp1.maxHp >= maxHp0,
+          "the macro ceiling re-derives with the level and never shrinks");
     const float frac1 = hp1.hp / hp1.maxHp;
     CHECK(std::fabs(frac1 - frac0) < 0.1f,
           "the wound crossed the level-up as a fraction, not a free heal");

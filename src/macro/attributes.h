@@ -1,11 +1,13 @@
-// Faithful port of `src/game/attributes.ts`.
+// The character sheet's numeric core (CANON S14, finalized 2026-09-03).
 //
-// Schema: 9 attributes (str/vit/end/wil/int/wis/lck/cha/spd), 8 skills,
-// level/XP curve `1000 * level * (0.1 * level + 1)`, universal carry-weight
-// rule. (Perks purged 2026-09-03 pending redesign — see the block below.)
+// Schema: 8 attributes (str/end/int/wil/spd/lck/cha/wis — VIT and PER died
+// in the canon session; their work is re-dealt: END owns HP AND half of SP,
+// WILL owns MP and the other half), 8 skills, level/XP curve
+// `1000 * level * (0.1 * level + 1)`, universal carry-weight rule.
+// (Perks purged 2026-09-03 pending redesign — see the block below.)
 //
-// Naming: TS `int` is reserved in C+ +; field is renamed `intl` (kept short
-// since this struct is hot data).
+// Naming: `int` is reserved in C++; the attribute is named `intl` (kept short
+// since this struct is hot data). `wil` reads WILL on the sheet.
 #pragma once
 #include "core/table_guard.h"
 #include <array>
@@ -19,13 +21,31 @@ namespace sm {
 // Declared FIRST because the blocks below are addressed BY them: a sheet's
 // ranks are a flat array and its meanings are rows, and both index by these.
 enum class AttributeId : std::uint8_t {
-    Str, Vit, End, Wil, Intl, Wis, Lck, Cha, Spd,
+    Str, End, Intl, Wil, Spd, Lck, Cha, Wis,
     Count
 };
 
+// The canon skill list (S14, 2026-09-03), in registry groups. ORDINALS ARE
+// FOREVER from kSaveVersion 78 on — append at the END, never insert.
+// Leadership is deliberately absent: its work is undecided (NOT a squad cap —
+// CANON S14), and a row without a law would be a liar; it appends later
+// without moving the save. The old `Fighter` became `Armsmaster` (same idea,
+// the canon name): the generic multiplier ON TOP of the weapon skills.
 enum class SkillId : std::uint8_t {
-    Bodybuilding, Meditation, Athletics, Travel, Fighter,
-    Marathon, Spellcraft, Weightlifting,
+    // weapons (7) — rank multiplies damage DONE WITH that weapon type
+    Sword, Axe, Spear, Mace, Dagger, Bow, Staff,
+    // armor (4) — rank multiplies protection OF that armor type
+    HeavyArmor, LightArmor, Unarmored, Shield,
+    // magic schools (6, S15) — rank multiplies power of the school's spells
+    FireMagic, WaterMagic, AirMagic, EarthMagic, ArcaneMagic, VoidMagic,
+    // the generic pair — a SMALLER percent on top of the typed skills
+    Armsmaster, Spellcraft,
+    // body (5)
+    Bodybuilding, Meditation, Marathon, Athletics, Weightlifting,
+    // road & world (4)
+    Travel, Acrobatics, Scouting, Prospecting,
+    // husbandry (4)
+    Trade, Quartermaster, Foraging, Learning,
     Count
 };
 
@@ -63,25 +83,28 @@ struct Attributes {
 };
 
 // What an attribute IS, in the sheet's own words. The character panel walks
-// these rows instead of keeping a sixth copy of the same nine facts.
+// these rows instead of keeping a sixth copy of the same eight facts.
 struct AttributeDef {
     // MUST equal the row's index in kAttributeDefs (guard below the table).
     AttributeId id;
     const char* key;      // authoring id; runtime addresses by ordinal
-    const char* label;    // the three letters a player reads
+    const char* label;    // the short name a player reads
     const char* effect;   // what one point buys
 };
 
+// The canon eight (S14, 2026-09-03), in the canon's own order. END and WILL
+// each feed half of SP — the one bar with two owners, deliberately: the
+// warrior and the mage come to stamina from opposite sides, the hybrid wins.
+// LCK's reader is the dice door (S13; lands with the dice phase).
 inline constexpr AttributeDef kAttributeDefs[] = {
-    {AttributeId::Str,  "str",  "STR", "+1 physical damage per point"},
-    {AttributeId::Vit,  "vit",  "VIT", "+10 max HP per point"},
-    {AttributeId::End,  "end",  "END", "+10 max SP per point"},
-    {AttributeId::Wil,  "wil",  "WIL", "+10 max MP per point"},
+    {AttributeId::Str,  "str",  "STR", "+1 physical damage, +10 kg carry per point"},
+    {AttributeId::End,  "end",  "END", "+10 max HP, +5 max SP per point"},
     {AttributeId::Intl, "intl", "INT", "+1 spell damage per point"},
-    {AttributeId::Wis,  "wis",  "WIS", "+1% EXP bonus per point"},
-    {AttributeId::Lck,  "lck",  "LCK", "Crit scaling and loot luck"},
-    {AttributeId::Cha,  "cha",  "CHA", "Trade discount and relation bonus"},
+    {AttributeId::Wil,  "wil",  "WILL", "+10 max MP, +5 max SP per point"},
     {AttributeId::Spd,  "spd",  "SPD", "Asymptotic movement speed"},
+    {AttributeId::Lck,  "lck",  "LCK", "Shifts the game's dice in your favor"},
+    {AttributeId::Cha,  "cha",  "CHA", "1% off prices and payroll per point"},
+    {AttributeId::Wis,  "wis",  "WIS", "+1% EXP bonus per point"},
 };
 static_assert(sizeof(kAttributeDefs) / sizeof(kAttributeDefs[0])
                   == std::size_t(AttributeId::Count),
@@ -132,10 +155,11 @@ constexpr int kMaxSkillRank = 100;
 // character_sheet.h); it is one row and one weight per role now, and the save
 // format does not move at all because the envelope is fixed.
 //
-// 32 slots for 8 skills: the envelope is the thing the save promises, so it is
-// sized once, generously, in a power of two. A byte per rank because the rank
-// cap is 100 and rank READS as a percent (kMaxSkillRank below).
-inline constexpr int kMaxSkills = 32;
+// 64 slots for the canon ~35 (CANON S14 says the envelope by name): the
+// envelope is the thing the save promises, so it is sized once, generously,
+// in a power of two. A byte per rank because the rank cap is 100 and rank
+// READS as a percent (kMaxSkillRank below).
+inline constexpr int kMaxSkills = 64;
 
 struct Skills {
     std::array<std::uint8_t, kMaxSkills> rank{};
@@ -175,28 +199,87 @@ struct SkillDef {
     bool         buysCostDown = false;
 };
 
+// Percent verdicts (owner, 2026-09-03 evening): TYPED skills (weapons, armor,
+// schools) = 10 %/rank — capstone ×11 on your own type; the GENERIC pair =
+// 5 %/rank ON TOP — Armsmaster multiplies the FINAL physical damage whatever
+// the weapon, Spellcraft the final spell power whatever the school (the M&M
+// shape; "меньший процент ПОВЕРХ типовых", CANON S14). World-skill rows whose
+// reader is a later phase (weapons → the damage door, schools → S15 wiring,
+// Acrobatics/Scouting/Prospecting/Trade/… → the world readers) still state
+// their law here: the row IS the design, the reader arrives once.
 inline constexpr SkillDef kSkillDefs[] = {
-    {SkillId::Bodybuilding,  "bodybuilding",  "Bodybuilding",
-     "max HP per rank",                  5},
-    {SkillId::Meditation,    "meditation",    "Meditation",
-     "max MP per rank",                  5},
-    {SkillId::Athletics,     "athletics",     "Athletics",
-     "move speed per rank",              1},
-    // How FAR you get on one bar, never how fast (movement_cost.h): the only
-    // cost skill, and the reason the flag exists.
-    {SkillId::Travel,        "travel",        "Travel",
-     "terrain stamina cost per rank",    1, /*buysCostDown*/true},
-    {SkillId::Fighter,       "fighter",       "Fighter",
-     "physical damage per rank",         5},
-    // Owner ruling, Session 21: the BAR is the END attribute's business alone,
-    // so this skill shortens the REST instead. (Was `endurance`, +5 % max SP —
-    // a multiplier that double-counted the attribute.)
-    {SkillId::Marathon,      "marathon",      "Marathon",
-     "SP recovery rate per rank",        1},
-    {SkillId::Spellcraft,    "spellcraft",    "Spellcraft",
-     "spell damage per rank",            5},
+    {SkillId::Sword,       "sword",       "Sword",
+     "sword damage per rank",                 10},
+    {SkillId::Axe,         "axe",         "Axe",
+     "axe damage per rank",                   10},
+    {SkillId::Spear,       "spear",       "Spear",
+     "spear damage per rank",                 10},
+    {SkillId::Mace,        "mace",        "Mace",
+     "mace damage per rank",                  10},
+    {SkillId::Dagger,      "dagger",      "Dagger",
+     "dagger damage per rank",                10},
+    {SkillId::Bow,         "bow",         "Bow",
+     "bow damage per rank",                   10},
+    {SkillId::Staff,       "staff",       "Staff",
+     "staff damage per rank",                 10},
+    {SkillId::HeavyArmor,  "heavy_armor", "Heavy Armor",
+     "heavy armor protection per rank",       10},
+    {SkillId::LightArmor,  "light_armor", "Light Armor",
+     "light armor protection per rank",       10},
+    {SkillId::Unarmored,   "unarmored",   "Unarmored",
+     "protection while unarmored per rank",   10},
+    {SkillId::Shield,      "shield",      "Shield",
+     "shield block per rank",                 10},
+    {SkillId::FireMagic,   "fire_magic",  "Fire Magic",
+     "fire spell power per rank",             10},
+    {SkillId::WaterMagic,  "water_magic", "Water Magic",
+     "water spell power per rank",            10},
+    {SkillId::AirMagic,    "air_magic",   "Air Magic",
+     "air spell power per rank",              10},
+    {SkillId::EarthMagic,  "earth_magic", "Earth Magic",
+     "earth spell power per rank",            10},
+    {SkillId::ArcaneMagic, "arcane_magic", "Arcane Magic",
+     "arcane spell power per rank",           10},
+    {SkillId::VoidMagic,   "void_magic",  "Void Magic",
+     "void spell power per rank",             10},
+    // The generic pair multiplies the FINAL number on top of the typed skill
+    // (owner, 2026-09-03: «процент поверх итогового — усиляет весь урон»).
+    {SkillId::Armsmaster,  "armsmaster",  "Armsmaster",
+     "ALL physical damage per rank",           5},
+    {SkillId::Spellcraft,  "spellcraft",  "Spellcraft",
+     "ALL spell power per rank",               5},
+    {SkillId::Bodybuilding, "bodybuilding", "Bodybuilding",
+     "max HP per rank",                        5},
+    {SkillId::Meditation,  "meditation",  "Meditation",
+     "max MP per rank",                        5},
+    // Owner ruling, Session 21: the BAR belongs to attributes alone (END and
+    // WILL by half each since the canon eight), so this skill shortens the
+    // REST instead. (Was `endurance`, +5 % max SP — a multiplier that
+    // double-counted the attribute.)
+    {SkillId::Marathon,    "marathon",    "Marathon",
+     "SP recovery rate per rank",              1},
+    {SkillId::Athletics,   "athletics",   "Athletics",
+     "move speed per rank",                    1},
     {SkillId::Weightlifting, "weightlifting", "Weightlifting",
-     "carry capacity per rank",         10},
+     "carry capacity per rank",               10},
+    // How FAR you get on one bar, never how fast (movement_cost.h): a cost
+    // skill, and the reason the flag exists.
+    {SkillId::Travel,      "travel",      "Travel",
+     "terrain stamina cost per rank",          1, /*buysCostDown*/true},
+    {SkillId::Acrobatics,  "acrobatics",  "Acrobatics",
+     "jump height per rank",                   1},
+    {SkillId::Scouting,    "scouting",    "Scouting",
+     "track-field reading per rank",           1},
+    {SkillId::Prospecting, "prospecting", "Prospecting",
+     "deposit sense per rank",                 1},
+    {SkillId::Trade,       "trade",       "Trade",
+     "final price edge per rank",              1},
+    {SkillId::Quartermaster, "quartermaster", "Quartermaster",
+     "squad payroll per rank",                 1, /*buysCostDown*/true},
+    {SkillId::Foraging,    "foraging",    "Foraging",
+     "provision drain per rank",               1, /*buysCostDown*/true},
+    {SkillId::Learning,    "learning",    "Learning",
+     "experience gained per rank",             1},
 };
 static_assert(sizeof(kSkillDefs) / sizeof(kSkillDefs[0])
                   == std::size_t(SkillId::Count),
@@ -239,18 +322,19 @@ inline float skill_mult(const Skills& s, SkillId id) {
 // that survives is the aura DOOR (character_sheet.h squad_bonuses) — the
 // mechanism perks will feed rows into when they return.
 
-// ── Combat stats (player) ──────────────────────────────────────
+// ── Combat stats ───────────────────────────────────────────────
 //
-// Mirrors `CombatStats` exactly; uses int for HP/SP/MP and float for
-// regen rates. `current*` start equal to `max*`.
+// int for the HP/SP/MP pools, float for the per-game-hour rest rates.
+// `current*` start equal to `max*`; defaults are the 100-bar under the one
+// recovery law (kRestRegenPctPerHour below): 100 × 1/8 per rest hour.
 
 struct CombatStats {
     int   currentHp = 100, maxHp = 100;
     int   currentMp = 100, maxMp = 100;
     int   currentSp = 100, maxSp = 100;
-    float hpRegen   = 10.0f;
-    float mpRegen   = 10.0f;
-    float spRegen   = 10.0f;
+    float hpRegen   = 12.5f;
+    float mpRegen   = 12.5f;
+    float spRegen   = 12.5f;
 };
 
 // ── Derived bonuses (ephemeral) ────────────────────────────────
@@ -271,10 +355,15 @@ struct LevelData {
     int level             = 1;
     int exp               = 0;
     int expToNext         = 0; // populated by `default_level_data`
-    int attributePoints   = 8;
-    int skillPoints       = 3;
-    // (perkPoints died with the perk purge; the redesigned system brings its
-    // own accrual — every 5th level + one at creation, CANON S14.)
+    // The creation budget (CANON S14, owner 2026-09-03): 5 attribute points
+    // and 5 LEARN PICKS — a pick teaches a skill (rank 0 → 1), it is not a
+    // rank point. Skill points arrive with levels and spend only into what
+    // is already known.
+    int attributePoints   = 5;
+    int skillPoints       = 0;
+    int learnPicks        = 5;
+    // (perkPoints return with the redesigned perk system — every 10th level
+    // + one starter-pool pick at creation, CANON S14. No state until then.)
 };
 
 // (No `attribute_value` switches either. A score is `attributes[AttributeId::X]`
@@ -300,12 +389,42 @@ inline bool spend_attribute_point(LevelData& ld, Attributes& a, AttributeId id) 
     return true;
 }
 
+// ── THE LEARN LAW (CANON S14, owner 2026-09-03) ────────────────
+//
+// Rank 0 IS "you do not know this skill" — no bit beside the rank, zero and
+// ignorance are one fact. Points spend only into what is KNOWN; knowing comes
+// from the WORLD (teachers, events) or from creation's learn picks. To learn
+// is to reach rank 1.
+
+// The one door from ignorance to rank 1. Refuses what is already known — a
+// teacher cannot teach you twice, and a world-source that lands on a known
+// skill should say so rather than silently burn.
+inline bool learn_skill(Skills& s, SkillId id) {
+    if (id >= SkillId::Count) return false;
+    std::uint8_t& rank = s[id];
+    if (rank != 0) return false;
+    rank = 1;
+    return true;
+}
+
+// A creation pick is a learn with a budget: 5 at character creation
+// (default_level_data), consumed through this door so the pool cannot
+// over-spend and a refused learn keeps the pick.
+inline bool spend_learn_pick(LevelData& ld, Skills& s, SkillId id) {
+    if (ld.learnPicks <= 0) return false;
+    if (!learn_skill(s, id)) return false;
+    --ld.learnPicks;
+    return true;
+}
+
 // The cap is enforced HERE, at the only door into a skill rank, so no caller
 // can push one past mastery and no formula has to defend itself against a rank
-// nobody could legitimately have. A refused spend keeps the point.
+// nobody could legitimately have. A refused spend keeps the point. Rank 0
+// refuses too — THE learn law above: you cannot train what you do not know.
 inline bool spend_skill_point(LevelData& ld, Skills& s, SkillId id) {
     if (id >= SkillId::Count || ld.skillPoints <= 0) return false;
     std::uint8_t& rank = s[id];
+    if (rank == 0) return false;               // unknown: learn first
     if (int(rank) >= kMaxSkillRank) return false;
     ++rank;
     --ld.skillPoints;
@@ -329,42 +448,47 @@ inline LevelData default_level_data() {
     return ld;
 }
 
-// Fraction of maxSp recovered per GAME HOUR at rest (Session 21, owner
-// ruling): SP regeneration is a PERCENT of the bar, not a flat number, so a
-// full rest takes the same 8 hours for every body in the world — the veteran's
-// bigger bar refills proportionally faster in absolute SP, and nobody "rests
-// longer because he is tougher" (the perversity a flat rate had). The ONLY
-// thing that shortens the rest is the `marathon` skill, multiplying this rate
-// by THE skill law (+1%/rank; capstone rank 100 halves the rest to 4 h).
-// Attributes deliberately do not touch the rate: END's whole business is the
-// bar (maxSp below). 1/8 (po2): full bar in 8 game hours — a night refills
-// any traveller with room to spare.
-constexpr float kSpRegenPctPerHour = 0.125f;
+// THE ONE RECOVERY LAW (CANON S14; owner rulings Session 21 and 2026-09-03):
+// every bar recovers as a PERCENT of itself per GAME HOUR of REST, and rest —
+// standing still, doing nothing — is the ONLY thing that recovers a bar
+// (the march heals nothing; kMarchRecoveryPct is zero on all three now).
+// A percent, not a flat number, so a full rest takes the same 8 hours for
+// every body in the world — the veteran's bigger bar refills proportionally
+// faster in absolute points, and nobody "rests longer because he is tougher"
+// (the perversity the flat 10·(1+vit·0.01) legacy had). Since only waiting
+// refills a bar, SP is literally time in a bar: END/WILL do not shorten the
+// night, they fatten the day. The ONLY thing that shortens a rest is the
+// `marathon` skill on SP, multiplying this rate by THE skill law (+1%/rank;
+// capstone rank 100 halves the rest to 4 h). One fraction for all three bars
+// (owner, 2026-09-03): 1/8 (po2) — a full bar in 8 game hours, a night
+// refills any traveller with room to spare.
+constexpr float kRestRegenPctPerHour = 0.125f;
 
 // FinalStat = (base + attrRaw) × (1 + skillRank × skillMult)
 inline CombatStats calculate_combat_stats(const Attributes& a, const Skills& s,
                                           int baseHp = 100,
                                           int baseMp = 100,
                                           int baseSp = 100) {
-    const float rawHp = float(baseHp + a.of(AttributeId::Vit) * 10);
+    const float rawHp = float(baseHp + a.of(AttributeId::End) * 10);
     const float rawMp = float(baseMp + a.of(AttributeId::Wil) * 10);
-    // The SP bar is the END attribute's alone — no skill multiplier. The old
-    // `endurance` skill (+5% max SP) double-counted the attribute; its points
-    // now live in `marathon`, which multiplies the RECOVERY RATE instead
-    // (kSpRegenPctPerHour above), so bar and rest are two separate levers.
-    const float rawSp = float(baseSp + a.of(AttributeId::End) * 10);
     CombatStats c;
     c.maxHp = int(rawHp * skill_mult(s, SkillId::Bodybuilding));
     c.maxMp = int(rawMp * skill_mult(s, SkillId::Meditation));
-    c.maxSp = int(rawSp);
+    // The SP bar has TWO owners by half each (CANON S14): the warrior's END
+    // and the mage's WILL both buy the day. Integer floor, house style; no
+    // skill multiplies the bar — `marathon` multiplies the RECOVERY RATE
+    // instead (kRestRegenPctPerHour above), so bar and rest are two levers.
+    c.maxSp = baseSp + ((a.of(AttributeId::End) + a.of(AttributeId::Wil)) >> 1)
+                           * 10;
     c.currentHp = c.maxHp;
     c.currentMp = c.maxMp;
     c.currentSp = c.maxSp;
-    c.hpRegen = 10.0f * (1.0f + float(a.of(AttributeId::Vit)) * 0.01f);
-    c.mpRegen = 10.0f * (1.0f + float(a.of(AttributeId::Wil)) * 0.01f);
-    // SP per game hour at rest, THE one regen law for the player and every
-    // macro leader (npc_ai reads the same formula through the leader's sheet).
-    c.spRegen = float(c.maxSp) * kSpRegenPctPerHour
+    // Per game hour AT REST, all three through the one law above — for the
+    // player and every macro leader (npc_ai reads the same formula through
+    // the leader's sheet).
+    c.hpRegen = float(c.maxHp) * kRestRegenPctPerHour;
+    c.mpRegen = float(c.maxMp) * kRestRegenPctPerHour;
+    c.spRegen = float(c.maxSp) * kRestRegenPctPerHour
                 * skill_mult(s, SkillId::Marathon);
     return c;
 }
@@ -401,7 +525,11 @@ inline DerivedBonuses calculate_derived(const Attributes& a, const Skills& s) {
     DerivedBonuses d;
     const float rawPhys  = float(a.of(AttributeId::Str));
     const float rawSpell = float(a.of(AttributeId::Intl));
-    d.rawPhysDamage  = rawPhys  * skill_mult(s, SkillId::Fighter);
+    // The GENERIC half of the damage stack (S14): Armsmaster multiplies all
+    // physical, Spellcraft all spell power. The TYPED half — the weapon skill
+    // of what the hand holds, the school of the spell being cast — reads at
+    // the damage door (dice phase) and the school wiring (S15), on top.
+    d.rawPhysDamage  = rawPhys  * skill_mult(s, SkillId::Armsmaster);
     d.rawSpellDamage = rawSpell * skill_mult(s, SkillId::Spellcraft);
     d.expMult        = 1.0f + float(a.of(AttributeId::Wis)) * 0.01f;
     // Attributes add, skills multiply. `spd` is the body's own quickness
@@ -428,12 +556,17 @@ inline float get_overload_penalty(float weightKg, float capacityKg) {
 
 // ── Level-up ───────────────────────────────────────────────────
 
+// THE level grant (CANON S14, owner verdict 2026-09-03 evening): +1 attribute
+// point AND +1 skill point EVERY level — 1:1, «для чистоты». Specialization
+// is held by perk GATES (designed against this income, up to "requires 100"),
+// not by point scarcity. The perk point (every 10th level) returns with the
+// perk system itself — no state to accrue into until then.
 inline bool try_level_up(LevelData& ld) {
     if (ld.exp < ld.expToNext) return false;
     ld.exp           -= ld.expToNext;
     ld.level         += 1;
     ld.expToNext      = exp_to_next_level(ld.level);
-    ld.attributePoints += 3;
+    ld.attributePoints += 1;
     ld.skillPoints     += 1;
     return true;
 }

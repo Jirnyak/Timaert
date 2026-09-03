@@ -85,7 +85,7 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"stats_settle", SmokeAction::StatsSettle},
     {"open_map", SmokeAction::OpenMap},
     {"open_stats", SmokeAction::OpenStats},
-    {"spend_attribute_vit", SmokeAction::SpendAttributeVit},
+    {"spend_attribute_end", SmokeAction::SpendAttributeEnd},
     {"spend_skill_bodybuilding", SmokeAction::SpendSkillBodybuilding},
     {"macro_travel_sp", SmokeAction::MacroTravelSp},
     {"macro_recovery", SmokeAction::MacroRecovery},
@@ -655,7 +655,7 @@ bool run_subworld_time_smoke(App& app) {
 // branch simply did not, and a green smoke said that was intended. Owner ruling
 // 2026-08-20: recovery is driven by TIME, so what it now proves is that the
 // same game minutes buy the same points in both worlds. Underground those
-// minutes cost sixteen times more real seconds, which is the whole point and
+// minutes cost kSubworldTickDivisor times more real seconds, which is the whole point and
 // costs this file nothing to state.
 bool run_subworld_recovery_smoke(App& app) {
     if (!smoke_boot_invariants_hold(app)) {
@@ -1339,7 +1339,6 @@ bool run_macro_recovery_smoke(App& app) {
 
     auto& player = app.gs.player;
     player.sheet.attributes[sm::AttributeId::End] = 1;
-    player.sheet.attributes[sm::AttributeId::Vit] = 1;
     player.sheet.attributes[sm::AttributeId::Wil] = 1;
     player.combatStats.currentSp = 0;
     // ONE hit point, not zero: at zero the player is dead by the game's own
@@ -4249,7 +4248,7 @@ bool run_console_smoke(App& app) {
         // fractional, and on worlds where the fraction is real the old
         // un-floored comparison went red for the door's own arithmetic) —
         // and both must exceed the authored floor (a spent sheet always adds
-        // vit-HP and str/int-damage).
+        // end-HP and str/int-damage).
         const sm::CombatTemplate base = sm::npc_def(sm::NPCType::Bandit).combat;
         const sm::CombatTemplate proj = sm::project_combat(*sheet, base);
         const float projHp = std::max(1.0f, std::floor(proj.hp));
@@ -4277,7 +4276,7 @@ bool run_console_smoke(App& app) {
                      "fighter=%d bodybuilding=%d hp=%.0f(base=%.0f) "
                      "dmg=%.1f(base=%.1f) derived_from_sheet=1\n",
                      sheet->levelData.level, aSum,
-                     sheet->skills.of(sm::SkillId::Fighter),
+                     sheet->skills.of(sm::SkillId::Armsmaster),
                      sheet->skills.of(sm::SkillId::Bodybuilding),
                      hlt->maxHp, base.hp, cmb->damage, base.damage);
         std::fflush(stderr);
@@ -4539,7 +4538,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
         case SmokeAction::NewGame:
             std::fprintf(stderr, "[smoke] action=new_game\n");
             std::fflush(stderr);
+            // Both flags at once = the headless player pressing Start on the
+            // default creation sheet (New Game leads through the pre-world
+            // creation screen since 2026-09-03; a smoke needs no human at it).
             shell.startNewGame = true;
+            shell.startCreatedGame = true;
             ++app.smoke.cursor;
             break;
         case SmokeAction::SaveGame: {
@@ -6075,30 +6078,30 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             app.ui.quest = false;
             app.ui.codex = false;
             std::fprintf(stderr,
-                         "[smoke] stats open attrPts=%d skillPts=%d vit=%d bodybuilding=%d hpMax=%d\n",
+                         "[smoke] stats open attrPts=%d skillPts=%d end=%d bodybuilding=%d hpMax=%d\n",
                          app.gs.player.sheet.levelData.attributePoints,
                          app.gs.player.sheet.levelData.skillPoints,
-                         app.gs.player.sheet.attributes.of(sm::AttributeId::Vit),
+                         app.gs.player.sheet.attributes.of(sm::AttributeId::End),
                          app.gs.player.sheet.skills.of(sm::SkillId::Bodybuilding),
                          app.gs.player.combatStats.maxHp);
             std::fflush(stderr);
             ++app.smoke.cursor;
             break;
         }
-        case SmokeAction::SpendAttributeVit: {
-            std::fprintf(stderr, "[smoke] action=spend_attribute_vit\n");
+        case SmokeAction::SpendAttributeEnd: {
+            std::fprintf(stderr, "[smoke] action=spend_attribute_end\n");
             std::fflush(stderr);
             if (!app.worldLoaded) {
-                smoke_fail(app, "spend_attribute_vit without world");
+                smoke_fail(app, "spend_attribute_end without world");
                 break;
             }
             const int beforePoints = app.gs.player.sheet.levelData.attributePoints;
-            const int beforeVit = app.gs.player.sheet.attributes.of(sm::AttributeId::Vit);
+            const int beforeEnd = app.gs.player.sheet.attributes.of(sm::AttributeId::End);
             const int beforeHp = app.gs.player.combatStats.maxHp;
             if (!sm::spend_attribute_point(app.gs.player.sheet.levelData,
                                            app.gs.player.sheet.attributes,
-                                           sm::AttributeId::Vit)) {
-                smoke_fail(app, "spend_attribute_vit rejected");
+                                           sm::AttributeId::End)) {
+                smoke_fail(app, "spend_attribute_end rejected");
                 break;
             }
             // Same rule the UI enforces now: maxima recompute, CURRENT pools
@@ -6108,18 +6111,18 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                                         app.gs.player.sheet.attributes,
                                         app.gs.player.sheet.skills);
             if (app.gs.player.sheet.levelData.attributePoints != beforePoints - 1
-                || app.gs.player.sheet.attributes.of(sm::AttributeId::Vit) != beforeVit + 1
+                || app.gs.player.sheet.attributes.of(sm::AttributeId::End) != beforeEnd + 1
                 || app.gs.player.combatStats.maxHp <= beforeHp
                 || app.gs.player.combatStats.currentHp != curHpBefore) {
-                smoke_fail(app, "spend_attribute_vit invariant");
+                smoke_fail(app, "spend_attribute_end invariant");
                 break;
             }
             std::fprintf(stderr,
-                         "[smoke] spend_attr_vit points=%d->%d vit=%d->%d hpMax=%d->%d\n",
+                         "[smoke] spend_attr_end points=%d->%d end=%d->%d hpMax=%d->%d\n",
                          beforePoints,
                          app.gs.player.sheet.levelData.attributePoints,
-                         beforeVit,
-                         app.gs.player.sheet.attributes.of(sm::AttributeId::Vit),
+                         beforeEnd,
+                         app.gs.player.sheet.attributes.of(sm::AttributeId::End),
                          beforeHp,
                          app.gs.player.combatStats.maxHp);
             std::fflush(stderr);
@@ -6127,36 +6130,51 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             break;
         }
         case SmokeAction::SpendSkillBodybuilding: {
+            // THE learn law, end to end on the live player: a level-1 body
+            // carries 5 learn picks and ZERO skill points (points come with
+            // levels), so the honest exercise is learn-then-refused-spend —
+            // a pick teaches Bodybuilding (rank 0 -> 1, the bar follows) and
+            // the spend door refuses for want of a point.
             std::fprintf(stderr, "[smoke] action=spend_skill_bodybuilding\n");
             std::fflush(stderr);
             if (!app.worldLoaded) {
                 smoke_fail(app, "spend_skill_bodybuilding without world");
                 break;
             }
-            const int beforePoints = app.gs.player.sheet.levelData.skillPoints;
+            const int beforePicks = app.gs.player.sheet.levelData.learnPicks;
             const int beforeRank = app.gs.player.sheet.skills.of(sm::SkillId::Bodybuilding);
             const int beforeHp = app.gs.player.combatStats.maxHp;
-            if (!sm::spend_skill_point(app.gs.player.sheet.levelData,
-                                       app.gs.player.sheet.skills,
-                                       sm::SkillId::Bodybuilding)) {
-                smoke_fail(app, "spend_skill_bodybuilding rejected");
+            if (beforeRank != 0) {
+                smoke_fail(app, "spend_skill_bodybuilding expected ignorance");
+                break;
+            }
+            if (!sm::spend_learn_pick(app.gs.player.sheet.levelData,
+                                      app.gs.player.sheet.skills,
+                                      sm::SkillId::Bodybuilding)) {
+                smoke_fail(app, "spend_skill_bodybuilding learn rejected");
                 break;
             }
             const int curHpBefore = app.gs.player.combatStats.currentHp;
             sm::recompute_combat_maxima(app.gs.player.combatStats,
                                         app.gs.player.sheet.attributes,
                                         app.gs.player.sheet.skills);
-            if (app.gs.player.sheet.levelData.skillPoints != beforePoints - 1
-                || app.gs.player.sheet.skills.of(sm::SkillId::Bodybuilding) != beforeRank + 1
+            const bool spendRefused =
+                app.gs.player.sheet.levelData.skillPoints <= 0
+                && !sm::spend_skill_point(app.gs.player.sheet.levelData,
+                                          app.gs.player.sheet.skills,
+                                          sm::SkillId::Bodybuilding);
+            if (app.gs.player.sheet.levelData.learnPicks != beforePicks - 1
+                || app.gs.player.sheet.skills.of(sm::SkillId::Bodybuilding) != 1
                 || app.gs.player.combatStats.maxHp <= beforeHp
-                || app.gs.player.combatStats.currentHp != curHpBefore) {
+                || app.gs.player.combatStats.currentHp != curHpBefore
+                || !spendRefused) {
                 smoke_fail(app, "spend_skill_bodybuilding invariant");
                 break;
             }
             std::fprintf(stderr,
-                         "[smoke] spend_skill_bodybuilding points=%d->%d rank=%d->%d hpMax=%d->%d\n",
-                         beforePoints,
-                         app.gs.player.sheet.levelData.skillPoints,
+                         "[smoke] spend_skill_bodybuilding picks=%d->%d rank=%d->%d hpMax=%d->%d spend_refused=1\n",
+                         beforePicks,
+                         app.gs.player.sheet.levelData.learnPicks,
                          beforeRank,
                          app.gs.player.sheet.skills.of(sm::SkillId::Bodybuilding),
                          beforeHp,

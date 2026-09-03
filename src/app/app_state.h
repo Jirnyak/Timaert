@@ -268,6 +268,11 @@ struct App {
     // (сид, ландмарки, мосты) — ручной чистки не нужно.
     sm::NavWorld navWorld;
     sm::ui::CustomGameParams customParams; // remembered across visits to the menu
+    // The pre-world character creation screen's working state. Reset on every
+    // entry (a new hero starts blank); `creationCustom` remembers whether
+    // Start should boot the custom-params world or the default one.
+    sm::ui::CreationState creation;
+    bool creationCustom = false;
     ImTextureID  customPreviewTex   = ImTextureID();  // biome-coloured world preview
     int          customPreviewSide  = 0;        // 0 = no preview built yet
     bool         customWorldReady   = false;    // true after a regen succeeds

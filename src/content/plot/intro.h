@@ -58,6 +58,14 @@ namespace sm
         const StoryDef &intro_story();
         void register_intro_story_nodes(LogicNodeEngine &logic);
 
+        // The authored creation choices (sex, homeland) — the character
+        // creation screen renders THESE rows, verbatim. They lived as intro
+        // story phases until 2026-09-03; the owner's creation-screen verdict
+        // moved the asking to a pre-world screen, and the intro became pure
+        // slides. One authored table, one renderer at a time.
+        const StoryChoice *creation_sex_choices(std::size_t &count);
+        const StoryChoice *creation_realm_choices(std::size_t &count);
+
         // Resolve a homeland CHOICE to a real row of the faction registry.
         //
         // A choice may name a GROUP: "Barbarian Kingdoms" is not a country, it

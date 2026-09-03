@@ -60,7 +60,7 @@ void test_every_row_names_an_address_that_exists() {
 }
 
 void test_the_authoring_key_resolves_and_refuses() {
-    CHECK(bonus_id("vit") == BonusId::Vit, "content names a row by string");
+    CHECK(bonus_id("end") == BonusId::End, "content names a row by string");
     CHECK(bonus_id("heal_hp") == BonusId::HealHp, "and the instant rows too");
     // Refusal, not the zero-th row by accident: those are the same value and
     // only one of them is a mistake.
@@ -83,19 +83,19 @@ void test_the_authoring_key_resolves_and_refuses() {
 void test_standing_bonuses_land_where_the_row_says() {
     CharacterSheet base{};
     base.attributes[AttributeId::Str] = 10;
-    base.skills[SkillId::Fighter] = 20;
+    base.skills[SkillId::Armsmaster] = 20;
 
     BonusTotals t{};
     accumulate(t, Bonus{std::uint8_t(BonusId::Str), +5});
-    accumulate(t, Bonus{std::uint8_t(BonusId::Fighter), +10});
+    accumulate(t, Bonus{std::uint8_t(BonusId::Armsmaster), +10});
     const CharacterSheet eff = effective_sheet(base, t);
 
     CHECK(eff.attributes.of(AttributeId::Str) == 15,
           "the attribute row adds to the score it names");
-    CHECK(eff.skills.of(SkillId::Fighter) == 30,
+    CHECK(eff.skills.of(SkillId::Armsmaster) == 30,
           "the skill row adds to the rank it names");
-    CHECK(eff.attributes.of(AttributeId::Vit)
-              == base.attributes.of(AttributeId::Vit),
+    CHECK(eff.attributes.of(AttributeId::End)
+              == base.attributes.of(AttributeId::End),
           "negative control: a score no row named did not move");
 
     // ...and the derived numbers follow, because they are derived from the
@@ -109,11 +109,11 @@ void test_standing_bonuses_land_where_the_row_says() {
 // ── THE property: standing means REMOVABLE ───────────────────────────────
 void test_a_standing_bonus_can_be_taken_off() {
     CharacterSheet base{};
-    base.attributes[AttributeId::Vit] = 8;
+    base.attributes[AttributeId::End] = 8;
     const int bareHp = calculate_combat_stats(base.attributes, base.skills).maxHp;
 
     BonusTotals worn{};
-    accumulate(worn, Bonus{std::uint8_t(BonusId::Vit), +6});
+    accumulate(worn, Bonus{std::uint8_t(BonusId::End), +6});
     const CharacterSheet armoured = effective_sheet(base, worn);
     const int wornHp =
         calculate_combat_stats(armoured.attributes, armoured.skills).maxHp;
@@ -121,7 +121,7 @@ void test_a_standing_bonus_can_be_taken_off() {
 
     // The STORED sheet never moved — which is exactly what the old aura could
     // not say about itself.
-    CHECK(base.attributes.of(AttributeId::Vit) == 8,
+    CHECK(base.attributes.of(AttributeId::End) == 8,
           "the character the player built is untouched by what he is wearing");
 
     // Take it off: not by undoing anything, but by not adding it.
@@ -133,11 +133,11 @@ void test_a_standing_bonus_can_be_taken_off() {
 void test_effective_sheet_owns_the_clamps() {
     CharacterSheet s{};
     BonusTotals curse{};
-    accumulate(curse, Bonus{std::uint8_t(BonusId::Vit), -50});
+    accumulate(curse, Bonus{std::uint8_t(BonusId::End), -50});
     accumulate(curse, Bonus{std::uint8_t(BonusId::Bodybuilding),
                             std::int16_t(500)});
     const CharacterSheet out = effective_sheet(s, curse);
-    CHECK(out.attributes.of(AttributeId::Vit) == 1,
+    CHECK(out.attributes.of(AttributeId::End) == 1,
           "no modifier curses a score below the base every score starts at");
     CHECK(out.skills.of(SkillId::Bodybuilding) == kMaxSkillRank,
           "and none pushes a rank past mastery");
@@ -184,14 +184,14 @@ void test_instant_bonuses_move_pools_and_tell_the_truth() {
 // container was pure weight.
 void test_a_leaders_gift_is_the_same_totals_as_everything_else() {
     CharacterSheet leader{};
-    CHECK(squad_bonuses(leader).attr[std::size_t(AttributeId::Vit)] == 0,
+    CHECK(squad_bonuses(leader).attr[std::size_t(AttributeId::End)] == 0,
           "a sheet with no sources buffs nobody");
 
     // (The Leader perk row died with the 2026-09-03 perk purge; the door
     // stays empty until the redesigned perks feed it rows — CANON S14. The
     // application path below is exercised with a hand-built gift instead.)
     BonusTotals gift{};
-    gift.attr[std::size_t(AttributeId::Vit)] = 1;
+    gift.attr[std::size_t(AttributeId::End)] = 1;
 
     // ...and it reaches a trooper through the ONE application.
     CharacterSheet trooper{};
@@ -201,7 +201,7 @@ void test_a_leaders_gift_is_the_same_totals_as_everything_else() {
     CHECK(calculate_combat_stats(ledSheet.attributes, ledSheet.skills).maxHp
               > alone,
           "a led soldier is tougher, by the vit point's worth");
-    CHECK(trooper.attributes.of(AttributeId::Vit) == 1,
+    CHECK(trooper.attributes.of(AttributeId::End) == 1,
           "negative control: and his OWN sheet was not rewritten to say so — "
           "which is exactly what the old aura could not claim");
 }

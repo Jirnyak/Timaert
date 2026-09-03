@@ -122,11 +122,20 @@ fractional part, so 1.0 is exact and only a deliberate fast-forward rounds.
 
 ## Underground the day stretches
 
-In the subworld, `kSubworldTickDivisor = 16` simulation steps buy one tick of
-world time: a game hour costs 85 real seconds instead of 5. The simulation does
-not slow down — your body still moves at the full step rate, it is the *day*
-that stretches. The leftover steps are kept as a whole number in the tick
+In the subworld, `kSubworldTickDivisor = 64` simulation steps buy one tick of
+world time: a game hour costs ~341 real seconds instead of 5. The simulation
+does not slow down — your body still moves at the full step rate, it is the
+*day* that stretches. The leftover steps are kept as a whole number in the tick
 runtime, so pausing, saving or walking out mid-divisor loses nothing.
+
+The divisor is also **the visual-pace rung** (owner verdict, 2026-09-03): the
+subworld walking speed DERIVES from it (`movement_cost.h
+kSubworldWalkTilesPerSecond` — a formula, not a number) under the parity
+anchor «crossing a cell's scene below costs the same game minutes as crossing
+that cell above». ÷16 made every body race at 96 tiles/s; ÷64 reads as 24 —
+tested in play and accepted. Retuning the feel = moving this one rung (128 →
+12 t/s, 256 → 6 t/s); the trade of bigger rungs is that a dungeon crawl
+spends almost no world time.
 
 Because the whole macro world reads the same clock, the lords outside slow down
 with it. Nobody crosses the continent while you clear one room.

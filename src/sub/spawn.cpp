@@ -185,6 +185,12 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
     // is against a walking man. ONE scale for every body, the player's
     // included — a peasant walks at exactly the speed the map says a man
     // walks, and a bandit's 2.25 means he runs.
+    // The guard that keeps the two scales honest about a cell's LENGTH: the
+    // macro side derives the walking speed from kSubworldTilesPerMacroCell,
+    // and this file is where both constants stand in one scope.
+    static_assert(float(kCellSize) == kSubworldTilesPerMacroCell,
+                  "sub/map_data.h kCellSize must equal the macro side's "
+                  "kSubworldTilesPerMacroCell — the parity anchor rides on it");
     const float bodySpeed = march_speed(pc.speedMarchMult);
     reg.emplace<ecs::Combat>(e,
         damage, bodySpeed, pc.attackRange, pc.cooldown, 0u,

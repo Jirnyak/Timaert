@@ -237,7 +237,7 @@ void test_the_entity_numbers_are_not_stale() {
     const auto& hp = w.reg.get<ecs::Health>(e);
     CHECK(hp.hp == 17.0f, "the wound reached the entity");
     CHECK(hp.maxHp == float(gs.player.combatStats.maxHp),
-          "and so did the bigger bar the new VIT bought");
+          "and so did the bigger bar the new END bought");
     const auto& rt = w.reg.get<ecs::MacroNpcRuntime>(e);
     CHECK(rt.maxSp == gs.player.combatStats.maxSp,
           "the stamina ceiling followed the END he trained");
@@ -286,8 +286,7 @@ void test_one_door_assembles_every_battle_side() {
     GameState gs{};
     gs.mapW = gs.mapH = 64;
     gs.player.sheet.attributes[sm::AttributeId::Str] = 18;
-    gs.player.sheet.attributes[sm::AttributeId::Vit] = 18;
-    gs.player.sheet.attributes[sm::AttributeId::End] = 14;
+    gs.player.sheet.attributes[sm::AttributeId::End] = 18;
     gs.player.sheet.levelData.level = 5;
     recompute_combat_maxima(gs.player.combatStats,
                             gs.player.sheet.attributes,
@@ -323,7 +322,7 @@ void test_one_door_assembles_every_battle_side() {
 void test_the_players_wound_settles_through_the_one_door() {
     GameState gs{};
     gs.mapW = gs.mapH = 64;
-    gs.player.sheet.attributes[sm::AttributeId::Vit] = 10;
+    gs.player.sheet.attributes[sm::AttributeId::End] = 10;
     recompute_combat_maxima(gs.player.combatStats,
                             gs.player.sheet.attributes,
                             gs.player.sheet.skills);

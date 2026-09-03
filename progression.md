@@ -26,9 +26,14 @@ plot/event arc** — driven by the L3 event system.
   survives in `event_types.h` for whoever wires this up for real. Note how it hid
   for so long: its unit test emitted `PlayerLevelUp` itself, proving the handler
   worked while saying nothing about whether the event is ever raised.
-- **Attribute & skill points:** 3 attribute + 1 skill point per level, spent
-  through `spend_attribute_point` / `spend_skill_point`. Skills follow one law —
-  a rank is a percent, capped at 100 — see [rpg.md](rpg.md).
+- **Attribute & skill points (CANON S14, owner verdict 2026-09-03):** creation
+  = 5 attribute points + 5 LEARN PICKS (the pre-world creation screen); every
+  level pays **+1 attribute and +1 skill point (1:1)**, spent through
+  `spend_attribute_point` / `spend_skill_point`; a skill point spends only
+  into a LEARNED skill (rank 0 = ignorance; `learn_skill` is the one door out
+  of it). The perk point returns with the perk system — every 10th level plus
+  one starter-pool pick at creation. Skills follow one law — a rank is its
+  row's `pctPerRank`, capped at 100 — see [rpg.md](rpg.md).
 - **Spells:** learned / unlocked through the spell book ([spells.md](spells.md)).
 - **Plot:** L4 pure-data `LogicNode` factories (intro slides, chapters) applied
   via `effect_applicator`; the quest arc mixes main / procedural / side

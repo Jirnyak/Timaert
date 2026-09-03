@@ -35,6 +35,10 @@ constexpr StoryChoice kRealmChoices[] = {
     {"Barbarian Kingdoms", "Feudal warlords ruling by sword and steel.", "barbarians", nullptr},
 };
 
+// The intro is PURE SLIDES since 2026-09-03: the asking (sex, name, homeland)
+// moved to the pre-world character creation screen, which renders the same
+// authored choice tables through creation_*_choices below. The slides play
+// in-world exactly as before.
 constexpr StoryPhaseDef kIntroPhases[] = {
     {
         StoryPhaseKind::Slides,
@@ -45,45 +49,6 @@ constexpr StoryPhaseDef kIntroPhases[] = {
         sizeof(kIntroSlides) / sizeof(kIntroSlides[0]),
         nullptr,
         0,
-        nullptr,
-        nullptr,
-        0,
-    },
-    {
-        StoryPhaseKind::Choice,
-        "sex",
-        "Choose Your Nature",
-        "The body shapes the mind, and the mind shapes destiny.",
-        nullptr,
-        0,
-        kSexChoices,
-        sizeof(kSexChoices) / sizeof(kSexChoices[0]),
-        nullptr,
-        nullptr,
-        0,
-    },
-    {
-        StoryPhaseKind::Input,
-        "name",
-        "What Is Your Name?",
-        "A name is the first claim a soul makes upon the world.",
-        nullptr,
-        0,
-        nullptr,
-        0,
-        "Enter your name",
-        "Traveller",
-        24,
-    },
-    {
-        StoryPhaseKind::Choice,
-        "realm",
-        "Choose Your Homeland",
-        "Where you were born determines who you must become - or defy.",
-        nullptr,
-        0,
-        kRealmChoices,
-        sizeof(kRealmChoices) / sizeof(kRealmChoices[0]),
         nullptr,
         nullptr,
         0,
@@ -138,6 +103,16 @@ LogicNode intro_main_node() {
 
 const StoryDef& intro_story() {
     return kIntroStory;
+}
+
+const StoryChoice* creation_sex_choices(std::size_t& count) {
+    count = sizeof(kSexChoices) / sizeof(kSexChoices[0]);
+    return kSexChoices;
+}
+
+const StoryChoice* creation_realm_choices(std::size_t& count) {
+    count = sizeof(kRealmChoices) / sizeof(kRealmChoices[0]);
+    return kRealmChoices;
 }
 
 const char* resolve_homeland_faction(const char* choiceValue,

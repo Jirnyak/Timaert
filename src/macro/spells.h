@@ -26,15 +26,86 @@ namespace sm {
 
 enum class SpellTag : std::uint8_t {
     Fire, Ice, Lightning, Dark, Light, Earth, Air, Arcane, Body, Mind,
+    Count
 };
 
 enum class SpellRarity : std::uint8_t {
     Common, Uncommon, Rare, Epic, Mythic,
+    Count
 };
 
 enum class DeliveryShape : std::uint8_t {
     Projectile, Beam, Nova, Self, Aura, Chain, Summon, Targeted,
+    Count
 };
+
+// The words a player reads for each of the three classification enums — rows
+// under the enum, not switches (a row added to a table cannot forget its
+// label; the guards refuse a drifted one). Same shape as kSpellRuleDefs.
+struct SpellTagDef {
+    // MUST equal the row's index in kSpellTagDefs (guard below the table).
+    SpellTag    id;
+    const char* label;
+};
+
+inline constexpr SpellTagDef kSpellTagDefs[] = {
+    {SpellTag::Fire,      "Fire"},
+    {SpellTag::Ice,       "Ice"},
+    {SpellTag::Lightning, "Lightning"},
+    {SpellTag::Dark,      "Dark"},
+    {SpellTag::Light,     "Light"},
+    {SpellTag::Earth,     "Earth"},
+    {SpellTag::Air,       "Air"},
+    {SpellTag::Arcane,    "Arcane"},
+    {SpellTag::Body,      "Body"},
+    {SpellTag::Mind,      "Mind"},
+};
+static_assert(sizeof(kSpellTagDefs) / sizeof(kSpellTagDefs[0])
+                  == std::size_t(SpellTag::Count),
+              "kSpellTagDefs must carry one row per SpellTag");
+static_assert(rows_in_enum_order(kSpellTagDefs, &SpellTagDef::id),
+              "kSpellTagDefs rows must stand in SpellTag order");
+
+struct SpellRarityDef {
+    // MUST equal the row's index in kSpellRarityDefs (guard below the table).
+    SpellRarity id;
+    const char* label;
+};
+
+inline constexpr SpellRarityDef kSpellRarityDefs[] = {
+    {SpellRarity::Common,   "Common"},
+    {SpellRarity::Uncommon, "Uncommon"},
+    {SpellRarity::Rare,     "Rare"},
+    {SpellRarity::Epic,     "Epic"},
+    {SpellRarity::Mythic,   "Mythic"},
+};
+static_assert(sizeof(kSpellRarityDefs) / sizeof(kSpellRarityDefs[0])
+                  == std::size_t(SpellRarity::Count),
+              "kSpellRarityDefs must carry one row per SpellRarity");
+static_assert(rows_in_enum_order(kSpellRarityDefs, &SpellRarityDef::id),
+              "kSpellRarityDefs rows must stand in SpellRarity order");
+
+struct DeliveryShapeDef {
+    // MUST equal the row's index in kDeliveryShapeDefs (guard below the table).
+    DeliveryShape id;
+    const char*   label;
+};
+
+inline constexpr DeliveryShapeDef kDeliveryShapeDefs[] = {
+    {DeliveryShape::Projectile, "Projectile"},
+    {DeliveryShape::Beam,       "Beam"},
+    {DeliveryShape::Nova,       "Nova"},
+    {DeliveryShape::Self,       "Self"},
+    {DeliveryShape::Aura,       "Aura"},
+    {DeliveryShape::Chain,      "Chain"},
+    {DeliveryShape::Summon,     "Summon"},
+    {DeliveryShape::Targeted,   "Targeted"},
+};
+static_assert(sizeof(kDeliveryShapeDefs) / sizeof(kDeliveryShapeDefs[0])
+                  == std::size_t(DeliveryShape::Count),
+              "kDeliveryShapeDefs must carry one row per DeliveryShape");
+static_assert(rows_in_enum_order(kDeliveryShapeDefs, &DeliveryShapeDef::id),
+              "kDeliveryShapeDefs rows must stand in DeliveryShape order");
 
 // THE HYBRID (owner's ruling, 2026-08-27). A spell effect is one of two
 // things, and which one is not a matter of taste:
@@ -414,44 +485,18 @@ constexpr bool spell_has_tag(const SpellDef& spell, SpellTag tag) {
 }
 
 constexpr const char* spell_tag_label(SpellTag tag) {
-    switch (tag) {
-        case SpellTag::Fire: return "Fire";
-        case SpellTag::Ice: return "Ice";
-        case SpellTag::Lightning: return "Lightning";
-        case SpellTag::Dark: return "Dark";
-        case SpellTag::Light: return "Light";
-        case SpellTag::Earth: return "Earth";
-        case SpellTag::Air: return "Air";
-        case SpellTag::Arcane: return "Arcane";
-        case SpellTag::Body: return "Body";
-        case SpellTag::Mind: return "Mind";
-    }
-    return "";
+    return std::size_t(tag) < std::size_t(SpellTag::Count)
+               ? kSpellTagDefs[std::size_t(tag)].label : "";
 }
 
 constexpr const char* spell_rarity_label(SpellRarity rarity) {
-    switch (rarity) {
-        case SpellRarity::Common: return "Common";
-        case SpellRarity::Uncommon: return "Uncommon";
-        case SpellRarity::Rare: return "Rare";
-        case SpellRarity::Epic: return "Epic";
-        case SpellRarity::Mythic: return "Mythic";
-    }
-    return "";
+    return std::size_t(rarity) < std::size_t(SpellRarity::Count)
+               ? kSpellRarityDefs[std::size_t(rarity)].label : "";
 }
 
 constexpr const char* spell_shape_label(DeliveryShape shape) {
-    switch (shape) {
-        case DeliveryShape::Projectile: return "Projectile";
-        case DeliveryShape::Beam: return "Beam";
-        case DeliveryShape::Nova: return "Nova";
-        case DeliveryShape::Self: return "Self";
-        case DeliveryShape::Aura: return "Aura";
-        case DeliveryShape::Chain: return "Chain";
-        case DeliveryShape::Summon: return "Summon";
-        case DeliveryShape::Targeted: return "Targeted";
-    }
-    return "";
+    return std::size_t(shape) < std::size_t(DeliveryShape::Count)
+               ? kDeliveryShapeDefs[std::size_t(shape)].label : "";
 }
 
 // (No `spell_macro_label` switch. A rule LABELS ITSELF in its row

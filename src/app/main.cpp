@@ -2645,32 +2645,48 @@ void emit_simple_dialog(App& app, const char* title, const std::string& body,
     app.bus.emit(dialog);
 }
 
-void apply_intro_story_result(App& app, const sm::StoryResultPayload& result) {
-    const std::string* sex = story_result_value(result, "sex");
-    const std::string* realm = story_result_value(result, "realm");
-    const std::string* playerName = story_result_value(result, "name");
+// The intro is pure slides since 2026-09-03 (the asking moved to the
+// pre-world creation screen), so its completion carries no values — what it
+// still marks is the STORY BEAT: the prologue ended, chapter 1 begins.
+void apply_intro_story_result(App& app, const sm::StoryResultPayload&) {
+    app.logic.activate("plot_chapter_1");
+}
 
-    if (playerName && !playerName->empty()) {
-        app.gs.player.name = *playerName;
-    }
+// Applies the creation screen's authored state to the freshly-booted world:
+// the identity, the sheet (spent through the real doors on the screen), the
+// homeland's welcome. Runs ONCE, right after boot_world on Start — this is a
+// moment that SAYS it heals, so the pools fill to their new maxima.
+void apply_creation(App& app) {
+    const sm::ui::CreationState& cs = app.creation;
+    if (cs.name[0] != '\0') app.gs.player.name = cs.name;
+    app.gs.player.sexIdx = std::uint8_t(cs.sexIdx > 0 ? 1 : 0);
+    app.gs.player.sheet = cs.sheet;
 
-    if (sex && *sex == "male") {
-        app.gs.player.sheet.levelData.skillPoints += 1;
-    } else if (sex && *sex == "female") {
-        app.gs.player.sheet.levelData.attributePoints += 1;
+    // The nature bonus, exactly as the authored rows promise it ("Strong
+    // mind" / "Strong body"): a POINT, left for the player to place.
+    std::size_t sexCount = 0;
+    const sm::content::StoryChoice* sexes =
+        sm::content::creation_sex_choices(sexCount);
+    if (cs.sexIdx >= 0 && std::size_t(cs.sexIdx) < sexCount) {
+        const std::string_view v = sexes[cs.sexIdx].value;
+        if (v == "male")   app.gs.player.sheet.levelData.skillPoints += 1;
+        if (v == "female") app.gs.player.sheet.levelData.attributePoints += 1;
     }
+    app.gs.player.combatStats = sm::calculate_combat_stats(
+        app.gs.player.sheet.attributes, app.gs.player.sheet.skills);
 
     // A homeland CHOICE is not always a country: "Barbarian Kingdoms" is four
     // of them, and the world picks which one raised you (owner, 2026-08-20 —
     // they are procedural, so it is the world's business). Resolved once,
-    // seeded from the world, so a reload cannot move your birthplace. Until
-    // this door existed the choice value went straight into the registry, found
-    // no row called "barbarians", and one of the three opening buttons awarded
-    // nothing at all.
+    // seeded from the world, so a reload cannot move your birthplace.
+    std::size_t realmCount = 0;
+    const sm::content::StoryChoice* realms =
+        sm::content::creation_realm_choices(realmCount);
     const char* const homeland =
-        realm ? sm::content::resolve_homeland_faction(realm->c_str(),
-                                                      app.gs.worldSeed)
-              : nullptr;
+        (cs.realmIdx >= 0 && std::size_t(cs.realmIdx) < realmCount)
+            ? sm::content::resolve_homeland_faction(
+                  realms[cs.realmIdx].value, app.gs.worldSeed)
+            : nullptr;
     if (homeland) {
         sm::add_player_reputation(app.gs, homeland, 15);
         // The starting money is re-minted into the HOMELAND's own coin
@@ -2687,7 +2703,8 @@ void apply_intro_story_result(App& app, const sm::StoryResultPayload& result) {
     }
 
     std::string born = "Born ";
-    born += sex ? *sex : "unknown";
+    born += (cs.sexIdx >= 0 && std::size_t(cs.sexIdx) < sexCount)
+                ? sexes[cs.sexIdx].value : "unknown";
     born += ", homeland: ";
     // The RESOLVED realm, by its registry name: a player who picked "Barbarian
     // Kingdoms" is told which of them he was actually born in, because that is
@@ -2700,12 +2717,6 @@ void apply_intro_story_result(App& app, const sm::StoryResultPayload& result) {
     }
     born += ".";
     sm::session_feed_push(app.gs.sessionFeed, born.c_str());
-
-    app.logic.activate("plot_chapter_1");
-
-    // (A "q_travel_*" first-steps dialog loop stood here for months — a TS
-    // relic scanning for quests NOTHING in this codebase ever creates. Dead
-    // code, removed with the quest id strings, 2026-08-29.)
 }
 
 void apply_pending_story_results(App& app) {
@@ -3076,8 +3087,8 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // the next tick's pull.
         //
         // Walking is not resting, exactly as marching is not on the map: the
-        // legs pay the same kMarchRecoveryPct on stamina, and health and mana
-        // are untouched by the distinction.
+        // same kMarchRecoveryPct gates all three bars (one recovery law,
+        // CANON S14) — a wound waits for a stand-still down here too.
         sm::apply_minute_recovery(app.gs.player,
                                   stats.timeTick.minutesAdvanced,
                                   app.playerRecovery,
@@ -3135,10 +3146,11 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
                 rebake_world(app);
             }
         }
-        // Marching is not resting: while the player is walking a route, his
-        // stamina does not come back (health and mana still do). This is what
-        // turns a journey into a budget he has to plan instead of an allowance
-        // that pays for itself — see macro/movement_cost.h kMarchRecoveryPct.
+        // Marching is not resting: while the player is walking a route, NO
+        // bar comes back — stamina, health and mana all wait for camp (one
+        // recovery law, CANON S14). This is what turns a journey into a
+        // budget he has to plan instead of an allowance that pays for itself
+        // — see macro/movement_cost.h kMarchRecoveryPct.
         // ...and standing in the open sea is not resting either: a body that
         // cannot make camp cannot recover, which is the same sentence a macro
         // squad's think obeys (npc_ai.cpp settle_march_rhythm). It is what
@@ -4289,6 +4301,8 @@ void build_world_preview(App& app, int side = 384) {
 
 void merge_shell_result(sm::ui::ShellResult& dst, const sm::ui::ShellResult& src) {
     dst.startNewGame        = dst.startNewGame        || src.startNewGame;
+    dst.startCreatedGame    = dst.startCreatedGame    || src.startCreatedGame;
+    dst.cancelCreation      = dst.cancelCreation      || src.cancelCreation;
     dst.openCustomNewGame   = dst.openCustomNewGame   || src.openCustomNewGame;
     dst.startCustomNewGame  = dst.startCustomNewGame  || src.startCustomNewGame;
     dst.cancelCustomNewGame = dst.cancelCustomNewGame || src.cancelCustomNewGame;
@@ -4303,7 +4317,34 @@ void merge_shell_result(sm::ui::ShellResult& dst, const sm::ui::ShellResult& src
 
 
 void apply_shell_actions(App& app, const sm::ui::ShellResult& r) {
-    if (r.startNewGame)        boot_world(app, choose_new_game_seed(app));
+    // New Game asks WHO before it generates WHERE (owner, 2026-09-03): both
+    // entrances lead to the creation screen; the world boots on its Start.
+    if (r.startNewGame) {
+        app.creation = {};
+        app.creationCustom = false;
+        app.state = sm::ui::AppState::CharacterCreation;
+    }
+    if (r.startCreatedGame) {
+        if (app.creationCustom) {
+            if (!app.customWorldReady) {
+                const int side = 1 << app.customParams.mapSizeLog2;
+                const std::uint32_t seed = app.customParams.seed != 0
+                    ? app.customParams.seed
+                    : choose_new_game_seed(app);
+                boot_world(app, seed, side, side, &app.customParams.layer,
+                           app.customParams.cityCountTarget);
+            }
+            app.customWorldReady = false;
+        } else {
+            boot_world(app, choose_new_game_seed(app));
+        }
+        apply_creation(app);
+        app.state = sm::ui::AppState::Playing;
+    }
+    if (r.cancelCreation) {
+        app.state = app.creationCustom ? sm::ui::AppState::CustomNewGame
+                                       : sm::ui::AppState::Title;
+    }
     if (r.openCustomNewGame) {
         app.state = sm::ui::AppState::CustomNewGame;
         app.customWorldReady = false;   // force a fresh regen
@@ -4325,16 +4366,11 @@ void apply_shell_actions(App& app, const sm::ui::ShellResult& r) {
         app.customWorldReady = true;
     }
     if (r.startCustomNewGame) {
-        if (!app.customWorldReady) {
-            const int side = 1 << app.customParams.mapSizeLog2;
-            const std::uint32_t seed = app.customParams.seed != 0
-                ? app.customParams.seed
-                : choose_new_game_seed(app);
-            boot_world(app, seed, side, side, &app.customParams.layer,
-                       app.customParams.cityCountTarget);
-        }
-        app.state = sm::ui::AppState::Playing;
-        app.customWorldReady = false;
+        // The custom world's Start leads through the creation screen too —
+        // a preview-built world (customWorldReady) survives to its Start.
+        app.creation = {};
+        app.creationCustom = true;
+        app.state = sm::ui::AppState::CharacterCreation;
     }
     if (r.loadGame || r.loadAutosave) {
         if (app.state == sm::ui::AppState::Load) {
@@ -4621,6 +4657,10 @@ void frame(App& app, int simSteps) {
         case sm::ui::AppState::Load:
             shell = sm::ui::draw_load_screen(app.saveSummary, app.autosaveSummary,
                                              app.width, app.height);
+            break;
+        case sm::ui::AppState::CharacterCreation:
+            shell = sm::ui::draw_character_creation(app.creation,
+                                                    app.width, app.height);
             break;
         case sm::ui::AppState::Playing:
         {

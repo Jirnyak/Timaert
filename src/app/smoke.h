@@ -62,7 +62,7 @@ enum class SmokeAction : std::uint8_t {
     StatsSettle,
     OpenMap,
     OpenStats,
-    SpendAttributeVit,
+    SpendAttributeEnd,
     SpendSkillBodybuilding,
     MacroTravelSp,
     MacroRecovery,

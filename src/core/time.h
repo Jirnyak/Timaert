@@ -32,11 +32,20 @@ inline constexpr std::uint64_t kTicksPerDay        = 8192;  // 2^13
 // In the subworld the WORLD CLOCK advances one tick per this many simulation
 // steps. The simulation itself does not slow down: your body still moves at
 // the full step rate, it is the day that stretches, so an hour spent under a
-// hill costs 85 real seconds instead of 5. One integer divisor replaces the
+// hill costs ~341 real seconds instead of 5. One integer divisor replaces the
 // old float kSubworldTimeScale, and because the whole macro world reads the
 // same clock, the lords outside slow down with it — nobody crosses the
 // continent while you clear one room.
-inline constexpr std::uint64_t kSubworldTickDivisor = 16;   // 2^4
+//
+// THE VISUAL-PACE RUNG (owner, 2026-09-03): with the cell↔cell parity anchor
+// fixed («пройти клетку внизу стоит те же игровые минуты, что наверху» —
+// kSubworldWalkTilesPerSecond DERIVES from this divisor), the rung directly
+// sets how bodies read on screen: ÷16 was 96 tiles/s (everyone raced), ÷64
+// is 24 t/s (a brisk run; cell crossed in ~43 real s, an hour of real play
+// underground buys ~56 game minutes). Owner: «давай сперва 64, затещу» —
+// next rungs if the feel asks: 128 → 12 t/s, 256 → 6 t/s; the trade is that
+// bigger rungs make the dungeon nearly FREE in world time.
+inline constexpr std::uint64_t kSubworldTickDivisor = 64;   // 2^6
 
 // ── The STEP: what a fight is measured in ─────────────────────────────────
 // A blow lands, a spell comes off cooldown and a sustained drain is paid in

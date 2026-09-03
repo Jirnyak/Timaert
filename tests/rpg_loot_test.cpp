@@ -66,8 +66,8 @@ static void test_project_combat_melee() {
     CharacterSheet cs;
     cs.attributes[sm::AttributeId::Str] = 12;
     cs.attributes[sm::AttributeId::Intl] = 7;
-    cs.attributes[sm::AttributeId::Vit] = 9;
-    cs.skills[sm::SkillId::Fighter] = 4;
+    cs.attributes[sm::AttributeId::End] = 9;
+    cs.skills[sm::SkillId::Armsmaster] = 4;
     cs.skills[sm::SkillId::Spellcraft] = 3;
     cs.skills[sm::SkillId::Bodybuilding] = 2;
 
@@ -103,7 +103,7 @@ static void test_project_combat_missile() {
     CharacterSheet cs;
     cs.attributes[sm::AttributeId::Str] = 12;
     cs.attributes[sm::AttributeId::Intl] = 7;
-    cs.skills[sm::SkillId::Fighter] = 4;
+    cs.skills[sm::SkillId::Armsmaster] = 4;
     cs.skills[sm::SkillId::Spellcraft] = 3;
 
     CombatTemplate base{};
@@ -140,29 +140,32 @@ static int skill_sum(const Skills& s) {
 }
 
 static void test_sheet_budget_identity() {
-    // Every attribute starts at 1 (9 total baseline); every skill starts at 0.
-    // A level-N sheet must spend EXACTLY the player economy: 8+3(N-1) attribute
-    // points and 3+(N-1) skill points, leaving the pools at zero.
+    // Every attribute starts at 1 (8 total baseline — the canon eight); every
+    // skill starts at 0. A level-N sheet must spend EXACTLY the player
+    // economy (CANON S14, 2026-09-03): creation = 5 attribute points + 5
+    // learn picks (each pick = rank 1), then +1 attribute and +1 skill point
+    // per level — pools AND picks end at zero.
     const int levels[] = {1, 5, 20, 32};
     for (int lvl : levels) {
         for (NPCType role : {NPCType::Peasant, NPCType::Bandit, NPCType::Sorceress}) {
             const CharacterSheet cs = make_character_sheet(role, lvl, 0xC0FFEEu);
-            const int expAttr = 8 + 3 * (lvl - 1);
-            const int expSkill = 3 + (lvl - 1);
+            const int expAttr = 5 + (lvl - 1);
+            const int expSkill = 5 + (lvl - 1);   // 5 learned ranks + points
 
             char msg[128];
             std::snprintf(msg, sizeof msg,
                 "sheet L%d role %d: attribute budget fully spent", lvl, int(role));
-            CHECK(attr_sum(cs.attributes) == 9 + expAttr, msg);
+            CHECK(attr_sum(cs.attributes) == 8 + expAttr, msg);
 
             std::snprintf(msg, sizeof msg,
                 "sheet L%d role %d: skill budget fully spent", lvl, int(role));
-            CHECK(skill_sum(cs.skills) == 0 + expSkill, msg);
+            CHECK(skill_sum(cs.skills) == expSkill, msg);
 
             std::snprintf(msg, sizeof msg,
                 "sheet L%d role %d: pools drained to zero", lvl, int(role));
             CHECK(cs.levelData.attributePoints == 0
-                  && cs.levelData.skillPoints == 0, msg);
+                  && cs.levelData.skillPoints == 0
+                  && cs.levelData.learnPicks == 0, msg);
 
             std::snprintf(msg, sizeof msg,
                 "sheet L%d role %d: level + xp curve set", lvl, int(role));

@@ -4,11 +4,18 @@ Character sheet: attributes, XP/levels, items, inventory, equipment, loot.
 
 > **The full role system was FINALIZED 2026-09-03 — CANON.md S14 (sheet,
 > progression, dice), S13 (damage/armour types, no to-hit), S15 (six schools)
-> are the design of record.** This document describes what is BUILT; where the
-> two differ (8 attributes vs today's 9, the 64-skill envelope, learned
-> skills, the dice door), the canon wins and the phased plan lives in
-> NEXT_SESSION.md. The perk system was PURGED whole 2026-09-03 pending its
-> redesign — the game currently carries no perk state at all.
+> are the design of record.** Phases 0–2 are BUILT the same day (save v78):
+> the canon EIGHT attributes (END = HP + ½SP, WILL = MP + ½SP, percent rest
+> regen 1/8 for all three bars, rest is the ONLY recovery — the march heals
+> nothing), the canon 32 skills in the 64-envelope (typed 10 %/rank, the
+> generic pair Armsmaster/Spellcraft 5 % ON TOP of the final number), THE
+> LEARN LAW (rank 0 = ignorance, `learn_skill` the one door out), the 1:1
+> level grant, and the pre-world character creation screen (name / nature /
+> homeland + 5 attribute points + 5 learn picks; the intro story is pure
+> slides now). Still ahead (NEXT_SESSION.md): the dice door + 9 damage types
+> (phase 3), the effective-sheet door (4), school wiring (5), world readers
+> (6). The perk system was PURGED whole 2026-09-03 pending its redesign — the
+> game currently carries no perk state at all.
 
 - **Code:** [macro/attributes.h](src/macro/attributes.h),
   [macro/character_sheet.h](src/macro/character_sheet.h) (`CharacterSheet`),
@@ -42,9 +49,12 @@ Character sheet: attributes, XP/levels, items, inventory, equipment, loot.
 - **Attributes add, skills multiply.** THE progression law, and the one to
   extend by (`attributes.h`):
   - an **attribute** is what the body IS — it contributes DIRECTLY
-    (`maxSp = 100 + END×10`, `carry = 100 + STR×10`);
-  - a **skill** is what it has been TRAINED to do — it MULTIPLIES that,
-    at **one percent per rank, capped at `kMaxSkillRank = 100`**.
+    (`maxHp = 100 + END×10`, `maxSp = 100 + ((END+WILL)>>1)×10` — the one bar
+    with two owners, deliberately; `carry = 100 + STR×10`);
+  - a **skill** is what it has been TRAINED to do — it MULTIPLIES that, at
+    **its row's `pctPerRank`, capped at `kMaxSkillRank = 100`** (typed
+    weapon/armor/school rows say 10, the generic pair says 5, body rows keep
+    their settled columns).
 
   A rank therefore *reads as its percentage*: "Athletics 37" is +37 % speed,
   "Travel 37" is −37 % terrain stamina. ONE door states it —
@@ -74,11 +84,14 @@ Character sheet: attributes, XP/levels, items, inventory, equipment, loot.
   enforced at the one door into a rank.
 
   **Mastery is meant to be reachable and to mean something.** One skill point
-  per level across eight skills makes rank 100 a hundred levels poured into a
-  single craft; at that point a bonus skill doubles what it governs and a cost
-  skill removes that cost outright — a capstone, not an exploit, because the
-  other terms of the formula (an overloaded pack, the exhaustion curve) are
-  separate and keep biting.
+  per level across the canon 32 makes rank 100 a hundred levels poured into a
+  single craft (1 learned + 99 spends — THE LEARN LAW: rank 0 is ignorance
+  and refuses the point; `learn_skill` / `spend_learn_pick` are the one door
+  out of it, fed by creation's 5 picks today and by teachers/events
+  tomorrow); at the capstone a bonus skill's row says what it tops out at and
+  a cost skill removes its cost outright — a capstone, not an exploit,
+  because the other terms of the formula (an overloaded pack, the exhaustion
+  curve) are separate and keep biting.
 
 - **One skill, one meaning.** `athletics` makes you FASTER, `travel` makes you
   get FURTHER on one bar of stamina — never both, or the sheet stops telling the
@@ -92,14 +105,19 @@ Character sheet: attributes, XP/levels, items, inventory, equipment, loot.
 - **Adding a skill is ONE ROW plus one weight per role** (2026-08-27). It used
   to touch five places — a named field in `Skills`, a `SkillId` value, a case in
   each of two `skill_value` switches, a row in the UI table and a weight column
-  — and that was four too many. Ranks are now a flat `std::array<uint8_t, 32>`
+  — and that was four too many. Ranks are now a flat `std::array<uint8_t, 64>`
   addressed by `SkillId`, the meanings are `kSkillDefs` rows carrying their own
   enum as a column (`rows_in_enum_order`, so a drifted table refuses to
   compile), and the character panel WALKS that registry instead of restating
-  it. The envelope is fixed at 32 slots for 8 skills on purpose: a new skill
-  does not move the save format. The per-role weight array is sized by
+  it. The envelope is fixed at 64 slots for the canon 32 on purpose: a new
+  skill does not move the save format (Leadership will append here once its
+  work is decided — CANON S14). The per-role weight array is sized by
   `SkillId::Count`, so adding a skill is a compile error until every role says
   what it thinks of it — a silent zero would be a role that never trains it.
+  NPC sheets are MONOTONIC in level (2026-09-03): the generator draws from
+  two level-free RNG streams, so a level-N sheet is the level-N−1 sheet plus
+  exactly one more attribute pick and one more skill pick — a leader can
+  never get weaker by levelling.
 
 - **Items & inventory:** `Item`, `Inventory` (count/add/remove); one unified
   loot registry in `items.cpp` keyed by `lootId` (`roll_loot_profile`) — see

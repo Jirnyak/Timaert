@@ -74,13 +74,22 @@ enum class PoolId : std::uint8_t { Hp, Mp, Sp, Count };
 
 enum class BonusId : std::uint8_t {
     None = 0,
-    // One row per attribute — an address, not a formula.
-    Str, Vit, End, Wil, Intl, Wis, Lck, Cha, Spd,
-    // ...and one per skill rank.
-    Bodybuilding, Meditation, Athletics, Travel, Fighter,
+    // One row per attribute — an address, not a formula. (Vit died with the
+    // canon eight, 2026-09-03; save bumped, ordinals re-keyed.)
+    Str, End, Wil, Intl, Wis, Lck, Cha, Spd,
+    // ...and one per skill rank. (Fighter became Armsmaster with the canon
+    // skill list — same ordinal, the canon name.)
+    Bodybuilding, Meditation, Athletics, Travel, Armsmaster,
     Marathon, Spellcraft, Weightlifting,
     // ...and the pools, which are the instant half.
     HealHp, HealMp, HealSp,
+    // ── skills-64 tail (2026-09-03, kSaveVersion 78) — APPENDED, because a
+    // bonus ordinal is a byte in every saved affix. One row per new skill.
+    Sword, Axe, Spear, Mace, Dagger, Bow, Staff,
+    HeavyArmor, LightArmor, Unarmored, Shield,
+    FireMagic, WaterMagic, AirMagic, EarthMagic, ArcaneMagic, VoidMagic,
+    Acrobatics, Scouting, Prospecting,
+    Trade, Quartermaster, Foraging, Learning,
     Count
 };
 
@@ -97,7 +106,6 @@ inline constexpr BonusDef kBonusDefs[] = {
     {BonusId::None, "none", "—", BonusTarget::Attribute, 0},
 
     {BonusId::Str,  "str",  "Strength",     BonusTarget::Attribute, std::uint8_t(AttributeId::Str)},
-    {BonusId::Vit,  "vit",  "Vitality",     BonusTarget::Attribute, std::uint8_t(AttributeId::Vit)},
     {BonusId::End,  "end",  "Endurance",    BonusTarget::Attribute, std::uint8_t(AttributeId::End)},
     {BonusId::Wil,  "wil",  "Will",         BonusTarget::Attribute, std::uint8_t(AttributeId::Wil)},
     {BonusId::Intl, "intl", "Intellect",    BonusTarget::Attribute, std::uint8_t(AttributeId::Intl)},
@@ -114,8 +122,8 @@ inline constexpr BonusDef kBonusDefs[] = {
      BonusTarget::SkillRank, std::uint8_t(SkillId::Athletics)},
     {BonusId::Travel,        "travel",        "Travel",
      BonusTarget::SkillRank, std::uint8_t(SkillId::Travel)},
-    {BonusId::Fighter,       "fighter",       "Fighter",
-     BonusTarget::SkillRank, std::uint8_t(SkillId::Fighter)},
+    {BonusId::Armsmaster,    "armsmaster",    "Armsmaster",
+     BonusTarget::SkillRank, std::uint8_t(SkillId::Armsmaster)},
     {BonusId::Marathon,      "marathon",      "Marathon",
      BonusTarget::SkillRank, std::uint8_t(SkillId::Marathon)},
     {BonusId::Spellcraft,    "spellcraft",    "Spellcraft",
@@ -142,6 +150,57 @@ inline constexpr BonusDef kBonusDefs[] = {
     {BonusId::HealHp, "heal_hp", "HP", BonusTarget::Pool, std::uint8_t(PoolId::Hp)},
     {BonusId::HealMp, "heal_mp", "MP", BonusTarget::Pool, std::uint8_t(PoolId::Mp)},
     {BonusId::HealSp, "heal_sp", "SP", BonusTarget::Pool, std::uint8_t(PoolId::Sp)},
+
+    // ── skills-64 tail (v78): every canon skill is addressable by an item
+    // affix, a spell effect or a future perk row through the ONE registry.
+    {BonusId::Sword,       "sword",        "Sword",
+     BonusTarget::SkillRank, std::uint8_t(SkillId::Sword)},
+    {BonusId::Axe,         "axe",          "Axe",
+     BonusTarget::SkillRank, std::uint8_t(SkillId::Axe)},
+    {BonusId::Spear,       "spear",        "Spear",
+     BonusTarget::SkillRank, std::uint8_t(SkillId::Spear)},
+    {BonusId::Mace,        "mace",         "Mace",
+     BonusTarget::SkillRank, std::uint8_t(SkillId::Mace)},
+    {BonusId::Dagger,      "dagger",       "Dagger",
+     BonusTarget::SkillRank, std::uint8_t(SkillId::Dagger)},
+    {BonusId::Bow,         "bow",          "Bow",
+     BonusTarget::SkillRank, std::uint8_t(SkillId::Bow)},
+    {BonusId::Staff,       "staff",        "Staff",
+     BonusTarget::SkillRank, std::uint8_t(SkillId::Staff)},
+    {BonusId::HeavyArmor,  "heavy_armor",  "Heavy Armor",
+     BonusTarget::SkillRank, std::uint8_t(SkillId::HeavyArmor)},
+    {BonusId::LightArmor,  "light_armor",  "Light Armor",
+     BonusTarget::SkillRank, std::uint8_t(SkillId::LightArmor)},
+    {BonusId::Unarmored,   "unarmored",    "Unarmored",
+     BonusTarget::SkillRank, std::uint8_t(SkillId::Unarmored)},
+    {BonusId::Shield,      "shield",       "Shield",
+     BonusTarget::SkillRank, std::uint8_t(SkillId::Shield)},
+    {BonusId::FireMagic,   "fire_magic",   "Fire Magic",
+     BonusTarget::SkillRank, std::uint8_t(SkillId::FireMagic)},
+    {BonusId::WaterMagic,  "water_magic",  "Water Magic",
+     BonusTarget::SkillRank, std::uint8_t(SkillId::WaterMagic)},
+    {BonusId::AirMagic,    "air_magic",    "Air Magic",
+     BonusTarget::SkillRank, std::uint8_t(SkillId::AirMagic)},
+    {BonusId::EarthMagic,  "earth_magic",  "Earth Magic",
+     BonusTarget::SkillRank, std::uint8_t(SkillId::EarthMagic)},
+    {BonusId::ArcaneMagic, "arcane_magic", "Arcane Magic",
+     BonusTarget::SkillRank, std::uint8_t(SkillId::ArcaneMagic)},
+    {BonusId::VoidMagic,   "void_magic",   "Void Magic",
+     BonusTarget::SkillRank, std::uint8_t(SkillId::VoidMagic)},
+    {BonusId::Acrobatics,  "acrobatics",   "Acrobatics",
+     BonusTarget::SkillRank, std::uint8_t(SkillId::Acrobatics)},
+    {BonusId::Scouting,    "scouting",     "Scouting",
+     BonusTarget::SkillRank, std::uint8_t(SkillId::Scouting)},
+    {BonusId::Prospecting, "prospecting",  "Prospecting",
+     BonusTarget::SkillRank, std::uint8_t(SkillId::Prospecting)},
+    {BonusId::Trade,       "trade",        "Trade",
+     BonusTarget::SkillRank, std::uint8_t(SkillId::Trade)},
+    {BonusId::Quartermaster, "quartermaster", "Quartermaster",
+     BonusTarget::SkillRank, std::uint8_t(SkillId::Quartermaster)},
+    {BonusId::Foraging,    "foraging",     "Foraging",
+     BonusTarget::SkillRank, std::uint8_t(SkillId::Foraging)},
+    {BonusId::Learning,    "learning",     "Learning",
+     BonusTarget::SkillRank, std::uint8_t(SkillId::Learning)},
 };
 static_assert(sizeof(kBonusDefs) / sizeof(kBonusDefs[0])
                   == std::size_t(BonusId::Count),
