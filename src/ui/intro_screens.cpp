@@ -531,7 +531,7 @@ ShellResult draw_studio_splash(SplashState& st) {
     // nothing closes): walk away and the screen excuses itself after the
     // show has stood a while; play with the mouse and it stays forever.
     // Only the KEYBOARD moves things along — the mouse is the toy.
-    constexpr float kOutStart = 11.0f, kOutEnd = 12.0f;
+    constexpr float kOutStart = 15.0f, kOutEnd = 16.5f;
     if (st.t > 5.5f && st.idleT > kOutStart) {   // show played AND hands off
         const float a = std::min((st.idleT - kOutStart) / (kOutEnd - kOutStart), 1.0f);
         ImGui::GetForegroundDrawList()->AddRectFilled(

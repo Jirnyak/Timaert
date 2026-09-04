@@ -75,7 +75,8 @@ Three laws it must keep:
    time: while the mouse plays, the screen stays open forever.
 
 Pacing: swarm ~3.5 s, subtitle at 4 s, blood at 4.6 s, auto-exit after the
-show has played and the hands have been off for ~11 s.
+show has played and the hands have been off for ~15 s (the fade itself takes
+another 1.5 s).
 
 ### The intro slideshow
 
