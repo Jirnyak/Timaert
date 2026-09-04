@@ -1,6 +1,6 @@
 <div align="center">
 
-# Timaert (Samosbor) — Procedural World Simulation
+# Legacy of Sacrilege — The Timaert Chronicles
 
 [![License](https://img.shields.io/badge/License-True%20People's%20v2.0-red?style=for-the-badge)](LICENSE.md)
 [![Engine](https://img.shields.io/badge/Engine-C%2B%2B23%20%2B%20Vulkan-blue?style=for-the-badge)]()
@@ -43,7 +43,7 @@
 
 ### What is Timaert?
 
-**Timaert** (working title *Samosbor*) is a native **C++23** game: **Vulkan**
+**Legacy of Sacrilege** (*The Timaert Chronicles*; the codebase and its docs still say **Timaert**) is a native **C++23** game: **Vulkan**
 rendering (MoltenVK on macOS), **SDL2** as the platform/input/audio layer
 (never the graphics API), **EnTT** ECS, **ImGui** overlays. It plays on two
 scales of the same world:

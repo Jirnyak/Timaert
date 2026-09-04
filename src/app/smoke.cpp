@@ -104,7 +104,6 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"prepare_spell_auras", SmokeAction::PrepareSpellAuras},
     {"trigger_count_only_dialog", SmokeAction::TriggerCountOnlyDialog},
     {"trigger_story_overlay", SmokeAction::TriggerStoryOverlay},
-    {"complete_story_overlay", SmokeAction::CompleteStoryOverlay},
     {"return_title", SmokeAction::ReturnTitle},
     {"quit", SmokeAction::Quit},
     {"console", SmokeAction::ConsoleSmoke},
@@ -4538,10 +4537,12 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
         case SmokeAction::NewGame:
             std::fprintf(stderr, "[smoke] action=new_game\n");
             std::fflush(stderr);
-            // Both flags at once = the headless player pressing Start on the
-            // default creation sheet (New Game leads through the pre-world
-            // creation screen since 2026-09-03; a smoke needs no human at it).
+            // Three flags at once = the headless player skipping the intro,
+            // pressing Default and then Start — the SAME doors a human walks
+            // (apply_shell_actions handles them in exactly this order), so
+            // the sheet a smoke boots with is the one-click player sheet.
             shell.startNewGame = true;
+            shell.creationDefault = true;
             shell.startCreatedGame = true;
             ++app.smoke.cursor;
             break;
@@ -6095,6 +6096,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "spend_attribute_end without world");
                 break;
             }
+            // The default creation preset spends the whole budget, exactly as
+            // a one-click player would. This scenario tests the SPEND DOOR,
+            // not the creation budget — grant the point a level-up grants.
+            app.gs.player.sheet.levelData.attributePoints += 1;
             const int beforePoints = app.gs.player.sheet.levelData.attributePoints;
             const int beforeEnd = app.gs.player.sheet.attributes.of(sm::AttributeId::End);
             const int beforeHp = app.gs.player.combatStats.maxHp;
@@ -6141,6 +6146,14 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "spend_skill_bodybuilding without world");
                 break;
             }
+            // The default preset spends all 5 creation picks; this scenario
+            // tests the LEARN DOOR, so grant one the way a world-teacher
+            // would. Bodybuilding stays unlearned by the preset on purpose —
+            // the "expected ignorance" gate below still holds. The male
+            // nature bonus banks one skill POINT — drop it, because the last
+            // assertion is precisely that the spend door refuses without one.
+            app.gs.player.sheet.levelData.learnPicks += 1;
+            app.gs.player.sheet.levelData.skillPoints = 0;
             const int beforePicks = app.gs.player.sheet.levelData.learnPicks;
             const int beforeRank = app.gs.player.sheet.skills.of(sm::SkillId::Bodybuilding);
             const int beforeHp = app.gs.player.combatStats.maxHp;
@@ -7034,7 +7047,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             if (!sm::ui::story_overlay_active(app.storyOverlay)) {
                 sm::GameEvent ev{sm::EventTag::ShowStory};
                 ev.s1 = "intro_main";
-                ev.s2 = "intro";
+                ev.s2 = "arrival";   // the in-world opening slide
                 app.bus.emit(ev);
                 capture_presentation_events(app);
             }
@@ -7044,61 +7057,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             std::fprintf(stderr,
-                         "[smoke] show_story id=\"%s\" phases=%zu phase=%zu slide=%zu\n",
+                         "[smoke] show_story id=\"%s\" slides=%zu slide=%zu\n",
                          app.storyOverlay.story->id ? app.storyOverlay.story->id : "(none)",
-                         app.storyOverlay.story->phaseCount,
-                         app.storyOverlay.phaseIndex,
+                         app.storyOverlay.story->slideCount,
                          app.storyOverlay.slideIndex);
-            std::fflush(stderr);
-            ++app.smoke.cursor;
-            break;
-        }
-        case SmokeAction::CompleteStoryOverlay: {
-            std::fprintf(stderr, "[smoke] action=complete_story_overlay\n");
-            std::fflush(stderr);
-            if (!app.worldLoaded) {
-                smoke_fail(app, "complete_story_overlay without world");
-                break;
-            }
-            if (!sm::ui::story_overlay_active(app.storyOverlay)) {
-                sm::GameEvent ev{sm::EventTag::ShowStory};
-                ev.s1 = "intro_main";
-                ev.s2 = "intro";
-                app.bus.emit(ev);
-                capture_presentation_events(app);
-            }
-            if (!sm::ui::story_overlay_active(app.storyOverlay)) {
-                smoke_fail(app, "complete_story_overlay missing active story");
-                break;
-            }
-
-            const int beforeAttributePoints = app.gs.player.sheet.levelData.attributePoints;
-            const int beforeReputation =
-                sm::player_reputation(&app.gs, "magika");
-            const bool valuesOk =
-                sm::ui::set_story_overlay_value(app.storyOverlay, "sex", "female") &&
-                sm::ui::set_story_overlay_value(app.storyOverlay, "name", "Smoke Traveller") &&
-                sm::ui::set_story_overlay_value(app.storyOverlay, "realm", "magika");
-            if (!valuesOk ||
-                !sm::ui::complete_story_overlay(app.storyOverlay, app.bus)) {
-                smoke_fail(app, "complete_story_overlay could not emit StoryResult");
-                break;
-            }
-            apply_pending_story_results(app);
-            if (sm::ui::story_overlay_active(app.storyOverlay) ||
-                app.gs.player.name != "Smoke Traveller" ||
-                app.gs.player.sheet.levelData.attributePoints <= beforeAttributePoints ||
-                sm::player_reputation(&app.gs, "magika") < beforeReputation + 15) {
-                smoke_fail(app, "complete_story_overlay result was not applied");
-                break;
-            }
-            std::fprintf(stderr,
-                         "[smoke] complete_story name=\"%s\" attr=%d->%d magika=%d->%d\n",
-                         app.gs.player.name.c_str(),
-                         beforeAttributePoints,
-                         app.gs.player.sheet.levelData.attributePoints,
-                         beforeReputation,
-                         sm::player_reputation(&app.gs, "magika"));
             std::fflush(stderr);
             ++app.smoke.cursor;
             break;

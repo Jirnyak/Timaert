@@ -915,11 +915,17 @@ void test_intro_show_story_node() {
     const sm::content::StoryDef& story = sm::content::intro_story();
     CHECK_OR_RETURN(!(std::string(story.id) != "intro"
         || std::string(story.sourceNodeId) != "intro_main"
-        || story.phaseCount != 1),
+        || story.slideCount != 9
+        || story.slides == nullptr),
         "intro story table identity does not match the slides-only intro");
-    CHECK_OR_RETURN(!(story.phases[0].kind != sm::content::StoryPhaseKind::Slides
-        || story.phases[0].slideCount != 9),
-        "intro story slide phase does not match TS intro");
+    // The world's own opening: one arrival slide through the same channel
+    // (the nine intro slides play pre-world on the IntroSlides screen).
+    const sm::content::StoryDef& arrival = sm::content::arrival_story();
+    CHECK_OR_RETURN(!(std::string(arrival.id) != "arrival"
+        || std::string(arrival.sourceNodeId) != "intro_main"
+        || arrival.slideCount != 1
+        || arrival.slides == nullptr),
+        "arrival story table identity does not match the one-slide opening");
     std::size_t sexCount = 0;
     (void)sm::content::creation_sex_choices(sexCount);
     CHECK_OR_RETURN(sexCount == 2,
@@ -947,12 +953,9 @@ void test_intro_show_story_node() {
     CHECK_OR_RETURN(!(!event),
         "intro_main did not emit ShowStory");
     CHECK_OR_RETURN(!(event->s1 != "intro_main"
-        || event->s2 != "intro"
-        || event->ix != 1     // one phase: the slides
-        || event->iy != 9
-        || event->a != 0      // no choices ride the story any more
-        || event->b != 0),    // ...and no input either (creation screen owns both)
-        "ShowStory flat payload does not match the slides-only intro");
+        || event->s2 != "arrival"
+        || event->ix != 1),   // the slide count — the story IS its slides now
+        "ShowStory flat payload does not match the one-slide arrival");
 
     bus.flush();
     logic.tick(bus, player);

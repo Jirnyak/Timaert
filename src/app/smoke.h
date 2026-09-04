@@ -81,7 +81,6 @@ enum class SmokeAction : std::uint8_t {
     PrepareSpellAuras,
     TriggerCountOnlyDialog,
     TriggerStoryOverlay,
-    CompleteStoryOverlay,
     ConsoleSmoke,
     ReturnTitle,
     Quit,

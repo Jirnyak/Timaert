@@ -1,32 +1,28 @@
 #include "ui/screens.h"
 #include "ui/keymap.h"
+#include "ui/ui_theme.h"   // palette + viewport_size + draw_title_backdrop
+#include "git_hash.h"      // TIMAERT_GIT_HASH, generated per build (CMakeLists)
 #include "macro/state.h"
 #include "content/plot/intro.h"   // creation_*_choices: the authored tables
 #include "imgui.h"
 #include <SDL_keyboard.h>
 #include <algorithm>
+#include <cfloat>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 
 namespace sm::ui {
 namespace {
 
-// All ImGui geometry is in *logical points* (DisplaySize), never in
-// drawable pixels. On a Retina display the SDL drawable size is 2x the
-// window size, so passing drawable pixels here would push the menu off
-// screen. Always read size from ImGui itself.
-ImVec2 viewport_size() {
-    return ImGui::GetIO().DisplaySize;
-}
-
-void centred_window(const char* /*id*/, ImVec2 size) {
+void centred_window(ImVec2 size) {
     const ImVec2 vp = viewport_size();
     ImGui::SetNextWindowPos(ImVec2(vp.x * 0.5f, vp.y * 0.5f),
                             ImGuiCond_Always, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(size, ImGuiCond_Always);
 }
 
-void big_button(ShellResult& /*out*/, bool* slot, const char* label, ImVec2 size) {
+void big_button(bool* slot, const char* label, ImVec2 size) {
     if (ImGui::Button(label, size)) *slot = true;
 }
 
@@ -39,36 +35,42 @@ void draw_dim_background(float alpha) {
 
 } // namespace
 
-ShellResult draw_title_menu(int /*vw*/, int /*vh*/) {
+ShellResult draw_title_menu() {
     ShellResult r{};
-    draw_dim_background(0.85f);
-    centred_window("##title", ImVec2(440, 420));
+    draw_title_backdrop();
+    centred_window(ImVec2(440, 420));
     ImGui::Begin("##title", nullptr,
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
         ImGuiWindowFlags_NoMove     | ImGuiWindowFlags_NoCollapse |
         ImGuiWindowFlags_NoScrollbar);
     auto* dl = ImGui::GetWindowDrawList();
     ImVec2 wp = ImGui::GetWindowPos();
-    dl->AddRectFilled(wp, ImVec2(wp.x + 440, wp.y + 56), IM_COL32(30, 18, 8, 255));
+    dl->AddRectFilled(wp, ImVec2(wp.x + 440, wp.y + 56), kPalNight);
+    dl->AddLine(ImVec2(wp.x, wp.y + 56), ImVec2(wp.x + 440, wp.y + 56),
+                kPalBronze, 1.0f);
     ImGui::SetCursorPosY(14);
     ImGui::PushFont(nullptr);
     ImGui::SetWindowFontScale(2.4f);
-    ImGui::SetCursorPosX((440 - ImGui::CalcTextSize("SAMOSBOR").x) * 0.5f);
-    ImGui::Text("SAMOSBOR");
+    ImGui::SetCursorPosX((440 - ImGui::CalcTextSize("Legacy of Sacrilege").x) * 0.5f);
+    ImGui::PushStyleColor(ImGuiCol_Text, kPalParchment);
+    ImGui::Text("Legacy of Sacrilege");
+    ImGui::PopStyleColor();
     ImGui::SetWindowFontScale(1.0f);
     ImGui::PopFont();
     ImGui::SetCursorPosY(72);
-    ImGui::SetCursorPosX((440 - ImGui::CalcTextSize("Timaert chronicles").x) * 0.5f);
-    ImGui::TextDisabled("Timaert chronicles");
+    ImGui::SetCursorPosX((440 - ImGui::CalcTextSize("The Timaert Chronicles").x) * 0.5f);
+    ImGui::TextDisabled("The Timaert Chronicles");
     ImGui::Dummy(ImVec2(0, 30));
     const ImVec2 sz(360, 44);
-    ImGui::SetCursorPosX((440 - sz.x) * 0.5f); big_button(r, &r.startNewGame, "New Game",  sz);
-    ImGui::SetCursorPosX((440 - sz.x) * 0.5f); big_button(r, &r.openCustomNewGame, "Custom New Game", sz);
-    ImGui::SetCursorPosX((440 - sz.x) * 0.5f); big_button(r, &r.loadGame,     "Load Game", sz);
-    ImGui::SetCursorPosX((440 - sz.x) * 0.5f); big_button(r, &r.quit,         "Quit",      sz);
+    ImGui::SetCursorPosX((440 - sz.x) * 0.5f); big_button(&r.startNewGame, "New Game",  sz);
+    ImGui::SetCursorPosX((440 - sz.x) * 0.5f); big_button(&r.openCustomNewGame, "Custom New Game", sz);
+    ImGui::SetCursorPosX((440 - sz.x) * 0.5f); big_button(&r.loadGame,     "Load Game", sz);
+    ImGui::SetCursorPosX((440 - sz.x) * 0.5f); big_button(&r.quit,         "Quit",      sz);
     ImGui::Dummy(ImVec2(0, 12));
     ImGui::SetCursorPosX(16);
-    ImGui::TextDisabled("v0.1 — C++ / Vulkan / EnTT");
+    // The built commit, for tracking a build back to its source. A "+"
+    // suffix marks uncommitted changes in the tree it was built from.
+    ImGui::TextDisabled("build " TIMAERT_GIT_HASH);
     ImGui::End();
     return r;
 }
@@ -82,10 +84,10 @@ ShellResult draw_title_menu(int /*vw*/, int /*vh*/) {
 // point back before the world exists is not a respec. The choice tables
 // (sex, homeland) come from content/plot/intro.h verbatim — the same authored
 // rows the intro story used to ask through.
-ShellResult draw_character_creation(CreationState& cs, int /*vw*/, int /*vh*/) {
+ShellResult draw_character_creation(CreationState& cs) {
     ShellResult r{};
-    draw_dim_background(0.85f);
-    centred_window("##creation", ImVec2(780, 660));
+    draw_title_backdrop();
+    centred_window(ImVec2(780, 660));
     ImGui::Begin("##creation", nullptr,
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
         ImGuiWindowFlags_NoMove     | ImGuiWindowFlags_NoCollapse);
@@ -204,9 +206,34 @@ ShellResult draw_character_creation(CreationState& cs, int /*vw*/, int /*vh*/) {
     if (ImGui::Button("Start", ImVec2(220, 44))) r.startCreatedGame = true;
     ImGui::EndDisabled();
     ImGui::SameLine();
+    if (ImGui::Button("Default", ImVec2(140, 44))) r.creationDefault = true;
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Fill everything with the standard wanderer preset.");
+    ImGui::SameLine();
     if (ImGui::Button("Back", ImVec2(140, 44))) r.cancelCreation = true;
     ImGui::End();
     return r;
+}
+
+// The standard wanderer: an Empire swordhand of the road. Spent through the
+// REAL doors, so if a budget or a cap ever shrinks this preset fails loudly
+// in the smoke instead of silently granting the impossible.
+void creation_apply_default(CreationState& cs) {
+    cs = CreationState{};                    // name stays "Traveller"
+    cs.sexIdx = 0;                           // Male: +1 skill point
+    cs.realmIdx = 1;                         // Empire of Light (keeps the
+                                             // imperial starting coin)
+    LevelData& ld = cs.sheet.levelData;
+    spend_attribute_point(ld, cs.sheet.attributes, AttributeId::Str);
+    spend_attribute_point(ld, cs.sheet.attributes, AttributeId::Str);
+    spend_attribute_point(ld, cs.sheet.attributes, AttributeId::End);
+    spend_attribute_point(ld, cs.sheet.attributes, AttributeId::End);
+    spend_attribute_point(ld, cs.sheet.attributes, AttributeId::Spd);
+    spend_learn_pick(ld, cs.sheet.skills, SkillId::Sword);
+    spend_learn_pick(ld, cs.sheet.skills, SkillId::LightArmor);
+    spend_learn_pick(ld, cs.sheet.skills, SkillId::Shield);
+    spend_learn_pick(ld, cs.sheet.skills, SkillId::Athletics);
+    spend_learn_pick(ld, cs.sheet.skills, SkillId::Travel);
 }
 
 namespace {
@@ -254,11 +281,10 @@ static bool draw_save_slot(const char* label, const char* fallbackFile,
 }
 
 ShellResult draw_load_screen(const SaveSummary& save,
-                             const SaveSummary& autosave,
-                             int /*vw*/, int /*vh*/) {
+                             const SaveSummary& autosave) {
     ShellResult r{};
     draw_dim_background(0.85f);
-    centred_window("##load", ImVec2(500, 520));
+    centred_window(ImVec2(500, 520));
     ImGui::Begin("##load", nullptr,
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
         ImGuiWindowFlags_NoMove     | ImGuiWindowFlags_NoCollapse);
@@ -325,8 +351,7 @@ static constexpr ParamSpec kCustomParamSpec[] = {
 ShellResult draw_custom_new_game(CustomGameParams& p,
                                  ImTextureID previewTex,
                                  int previewW, int previewH,
-                                 bool worldReady,
-                                 int /*vw*/, int /*vh*/) {
+                                 bool worldReady) {
     ShellResult r{};
     draw_dim_background(0.85f);
 
@@ -335,7 +360,7 @@ ShellResult draw_custom_new_game(CustomGameParams& p,
     const ImVec2 vp = viewport_size();
     const float winW = std::min(vp.x - 40.0f, 980.0f);
     const float winH = std::min(vp.y - 40.0f, 660.0f);
-    centred_window("##custom", ImVec2(winW, winH));
+    centred_window(ImVec2(winW, winH));
     ImGui::Begin("##custom", nullptr,
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
         ImGuiWindowFlags_NoMove     | ImGuiWindowFlags_NoCollapse);
@@ -438,10 +463,10 @@ ShellResult draw_custom_new_game(CustomGameParams& p,
     return r;
 }
 
-ShellResult draw_game_menu(int /*vw*/, int /*vh*/) {
+ShellResult draw_game_menu() {
     ShellResult r{};
     draw_dim_background(0.55f);
-    centred_window("##menu", ImVec2(360, 444));
+    centred_window(ImVec2(360, 444));
     ImGui::Begin("##menu", nullptr,
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
         ImGuiWindowFlags_NoMove     | ImGuiWindowFlags_NoCollapse);
@@ -451,22 +476,22 @@ ShellResult draw_game_menu(int /*vw*/, int /*vh*/) {
     ImGui::SetWindowFontScale(1.0f);
     ImGui::Dummy(ImVec2(0, 16));
     const ImVec2 sz(300, 36);
-    ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(r, &r.resume,        "Resume",    sz);
-    ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(r, &r.saveGame,      "Save",      sz);
-    ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(r, &r.loadGame,      "Load",      sz);
-    ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(r, &r.openCodex,     "Codex",     sz);
-    ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(r, &r.openInterface, "Interface", sz);
-    ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(r, &r.openControls,  "Controls",  sz);
-    ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(r, &r.returnToTitle, "Title",     sz);
-    ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(r, &r.quit,          "Quit",      sz);
+    ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(&r.resume,        "Resume",    sz);
+    ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(&r.saveGame,      "Save",      sz);
+    ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(&r.loadGame,      "Load",      sz);
+    ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(&r.openCodex,     "Codex",     sz);
+    ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(&r.openInterface, "Interface", sz);
+    ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(&r.openControls,  "Controls",  sz);
+    ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(&r.returnToTitle, "Title",     sz);
+    ImGui::SetCursorPosX((360 - sz.x) * 0.5f); big_button(&r.quit,          "Quit",      sz);
     ImGui::End();
     return r;
 }
 
-ShellResult draw_death_screen(const GameState& gs, int /*vw*/, int /*vh*/) {
+ShellResult draw_death_screen(const GameState& gs) {
     ShellResult r{};
     draw_dim_background(0.85f);
-    centred_window("##dead", ImVec2(420, 240));
+    centred_window(ImVec2(420, 240));
     ImGui::Begin("##dead", nullptr,
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
         ImGuiWindowFlags_NoMove     | ImGuiWindowFlags_NoCollapse);
@@ -480,8 +505,8 @@ ShellResult draw_death_screen(const GameState& gs, int /*vw*/, int /*vh*/) {
         gs.worldTime.day(), gs.player.ageDays);
     ImGui::Dummy(ImVec2(0, 12));
     const ImVec2 sz(360, 36);
-    ImGui::SetCursorPosX((420 - sz.x) * 0.5f); big_button(r, &r.returnToTitle, "Return to Title", sz);
-    ImGui::SetCursorPosX((420 - sz.x) * 0.5f); big_button(r, &r.quit,          "Quit",            sz);
+    ImGui::SetCursorPosX((420 - sz.x) * 0.5f); big_button(&r.returnToTitle, "Return to Title", sz);
+    ImGui::SetCursorPosX((420 - sz.x) * 0.5f); big_button(&r.quit,          "Quit",            sz);
     ImGui::End();
     return r;
 }

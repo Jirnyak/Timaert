@@ -1557,7 +1557,9 @@ layers above.
 | `screens/TitleScreen.svelte`        | [ui/screens.cpp](src/ui/screens.cpp) `draw_title_menu`  | Title menu with New / Custom / Load / Quit |
 | `screens/LoadScreen.svelte`         | [ui/screens.cpp](src/ui/screens.cpp) `draw_load_screen` | Single-slot save browser for `save.bin`; runtime evidence is listed in README |
 | `screens/SandboxSetup.svelte`       | [ui/screens.cpp](src/ui/screens.cpp) `draw_custom_new_game` | Custom world parameter screen |
-| `screens/StoryOverlay.svelte`       | [ui/overlays.cpp](src/ui/overlays.cpp) `draw_story_overlay` / `open_story_overlay` | Universal narrative overlay for slides, choices, and text input; `trigger_story_overlay` smoke captures intro phase 0 |
+| (none — new, 2026-09-04)            | [ui/intro_screens.cpp](src/ui/intro_screens.cpp) `draw_studio_splash` / `draw_intro_slides` | The two PRE-WORLD cinematic screens: studio splash (assembling pixel emblem, toy cursor) and the nine-slide intro. Depend on nothing in the game — see [shell-screens.md](shell-screens.md) |
+| `screens/CharacterCreation` (none)  | [ui/screens.cpp](src/ui/screens.cpp) `draw_character_creation` | Pre-world sheet authoring through the real spend doors, plus the one-click Default preset the `new_game` smoke also presses |
+| `screens/StoryOverlay.svelte`       | [ui/overlays.cpp](src/ui/overlays.cpp) `draw_story_overlay` / `open_story_overlay` | In-WORLD narrative overlay: a story is a run of slides (the choice/input phases died with the creation screen). Today it carries the one arrival slide; chapter breaks add table rows. `trigger_story_overlay` smoke captures it |
 | `screens/EventOverlay.svelte`       | [ui/overlays.cpp](src/ui/overlays.cpp) `draw_encounter_modal` / `draw_show_dialog` | Encounter modal plus `ShowDialog` choice/effect consumer |
 | `screens/StatOverlay.svelte`        | [ui/overlays.cpp](src/ui/overlays.cpp) `draw_character_panel` | Character stats / inventory / army / equipment / spells panel; tabs are runtime-evidenced, equipment slots are placeholder text |
 | `screens/MapOverlay.svelte`         | `ui::draw_map_overlay`                                  | Full-screen minimap |

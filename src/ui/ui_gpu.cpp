@@ -4,6 +4,7 @@
 #include "backends/imgui_impl_vulkan.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 
@@ -11,6 +12,13 @@ namespace sm::ui {
 namespace {
 
 const gpu::VulkanDevice* g_dev = nullptr;
+
+// Success chatter is opt-in (TIMAERT_STORY_UI_TRACE, the story-image trace
+// flag); failures below still print unconditionally — they are the signal.
+bool ui_gpu_trace_enabled() {
+    static const bool enabled = std::getenv("TIMAERT_STORY_UI_TRACE") != nullptr;
+    return enabled;
+}
 
 // ImTextureID is unsigned long long on macOS (MoltenVK) but VkDescriptorSet
 // is a pointer.  We round-trip through memcpy to avoid strict-aliasing UB.
@@ -47,8 +55,9 @@ ImTextureID create_ui_texture(int w, int h, const std::uint8_t* rgba,
         std::fprintf(stderr, "[ui_gpu] create_rgba8 failed %dx%d\n", w, h);
         return ImTextureID();
     }
-    std::fprintf(stderr, "[ui_gpu] creating texture %dx%d sampler=%p view=%p\n",
-                 w, h, (void*)vk.sampler, (void*)vk.view);
+    if (ui_gpu_trace_enabled())
+        std::fprintf(stderr, "[ui_gpu] creating texture %dx%d sampler=%p view=%p\n",
+                     w, h, (void*)vk.sampler, (void*)vk.view);
     VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(
         vk.sampler, vk.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     if (!ds) {

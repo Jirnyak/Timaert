@@ -10,6 +10,7 @@
 #pragma once
 
 #include "imgui.h"
+#include <cstdint>
 
 #include "macro/character_sheet.h" // CharacterSheet (the creation screen authors one)
 #include "macro/map_generator.h"   // LayerParameters
@@ -41,7 +42,21 @@ enum class AppState : int {
     // attribute points and learn picks are authored here through the sheet's
     // own doors; the world boots only on Start.
     CharacterCreation = 6,
+    // The pre-world intro slideshow (owner verdict, 2026-09-04): the nine
+    // authored slides play BETWEEN the menu and character creation, on no
+    // engine at all — fullscreen frame, typewriter caption, Esc to skip.
+    // The world's own opening is the single arrival slide, in-world.
+    IntroSlides = 7,
+    // The studio splash (owner verdict, 2026-09-04): the very first screen.
+    // A swarm of blood-dark pixels assembles into the pixel sword and the
+    // TENEVIK GAMES letters — procedural assembly IS the studio's face; the
+    // cursor can shove the particles (the Lionhead nod), the spring wins.
+    Splash = 8,
 };
+
+// (The two cinematic pre-world screens — the studio splash and the intro
+// slideshow — and their state live in ui/intro_screens.h. They answer with
+// the same ShellResult, and depend on nothing in the game.)
 
 // Everything the creation screen authors, gathered so the app can apply it in
 // one place after the world boots. `sheet` is edited through the REAL doors
@@ -68,7 +83,10 @@ struct CustomGameParams {
 };
 
 struct ShellResult {
-    bool startNewGame       = false;   // title → CharacterCreation (default world)
+    bool splashDone         = false;   // Splash → Title (input or timeout)
+    bool startNewGame       = false;   // title → IntroSlides (default world)
+    bool introFinished      = false;   // IntroSlides → CharacterCreation (last slide or Esc)
+    bool creationDefault    = false;   // CharacterCreation: fill the default preset
     bool startCreatedGame   = false;   // CharacterCreation → playing (boot + apply)
     bool cancelCreation     = false;   // CharacterCreation → back where it came from
     bool openCustomNewGame  = false;   // title → CustomNewGame
@@ -87,14 +105,24 @@ struct ShellResult {
     bool quit               = false;   // any → exit app
 };
 
+// Every screen below reads its geometry from ImGui::GetIO().DisplaySize
+// itself (logical points — the only honest unit under HiDPI), so none of
+// them takes a viewport size: the parameters everyone passed were drawable
+// pixels and every body ignored them.
+
 // Title menu: New Game / Custom New Game / Load Game / Quit.
-ShellResult draw_title_menu(int viewportW, int viewportH);
+ShellResult draw_title_menu();
 
 // The character creation screen (pre-world). Renders the authored choice
 // tables (content/plot/intro.h creation_*_choices) plus the sheet's own
 // registries; Start stays disabled until name, sex and homeland are given.
-ShellResult draw_character_creation(CreationState& cs,
-                                    int viewportW, int viewportH);
+ShellResult draw_character_creation(CreationState& cs);
+
+// THE default hero — one definition behind the creation screen's Default
+// button AND the new_game smoke, so the sheet a test boots with is exactly
+// the sheet a player gets from one click. Deterministic, spent through the
+// same doors the screen uses; Start still belongs to the caller.
+void creation_apply_default(CreationState& cs);
 
 // Custom new game screen: a wide two-column window. Left column is a
 // scrollable parameter editor (map size, seed, city target, all
@@ -106,23 +134,21 @@ ShellResult draw_character_creation(CreationState& cs,
 ShellResult draw_custom_new_game(CustomGameParams& params,
                                  ImTextureID previewTex,
                                  int previewW, int previewH,
-                                 bool worldReady,
-                                 int viewportW, int viewportH);
+                                 bool worldReady);
 
 // Two-slot load screen: the manual save and the monthly autosave, each with
 // its own header/status and Load button, plus Back.
 ShellResult draw_load_screen(const SaveSummary& save,
-                             const SaveSummary& autosave,
-                             int viewportW, int viewportH);
+                             const SaveSummary& autosave);
 
 // Game menu [Esc]: Resume / Save / Load / Title / Quit. This is the MENU, not
 // the pause — pausing the world is one flag toggled by Space and the toolbar's
 // II, and it is a state you keep playing in. Opening this screen stops the
 // world too, but only because nothing ticks outside AppState::Playing.
-ShellResult draw_game_menu(int viewportW, int viewportH);
+ShellResult draw_game_menu();
 
 // Death overlay: brief epitaph + Return to Title / Quit.
-ShellResult draw_death_screen(const GameState& gs, int viewportW, int viewportH);
+ShellResult draw_death_screen(const GameState& gs);
 
 // Top-left player HUD: HP / MP / SP bars, gold, day/time, level, position.
 void draw_player_hud(const GameState& gs, float scale = 1.0f);

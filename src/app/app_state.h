@@ -80,6 +80,7 @@
 #include "macro/fauna.h"
 #include "ui/overlays.h"
 #include "ui/screens.h"
+#include "ui/intro_screens.h"   // SplashState / IntroSlidesState (pre-world)
 #include "ui/macro_overlay.h"
 #include "ui/ui_gpu.h"
 #include "ui/keymap.h"
@@ -117,7 +118,9 @@ struct App {
     std::string   prefsPath = kPrefsFileName;
     std::string   keymapPath = kKeymapFileName;
 
-    sm::ui::AppState state = sm::ui::AppState::Title;
+    // Launch opens on the studio splash; returnToTitle lands on Title —
+    // the splash plays once per run, never again mid-session.
+    sm::ui::AppState state = sm::ui::AppState::Splash;
     sm::ui::AppState loadReturnState = sm::ui::AppState::Title;
     bool worldLoaded = false;
     // The macro↔micro transition edge (CANON S7, owner 2026-08-24: the world
@@ -273,6 +276,10 @@ struct App {
     // Start should boot the custom-params world or the default one.
     sm::ui::CreationState creation;
     bool creationCustom = false;
+    // The pre-world intro slideshow's finger (reset on every New Game).
+    sm::ui::IntroSlidesState introSlides;
+    // The studio splash's particles (runs once, at launch).
+    sm::ui::SplashState splash;
     ImTextureID  customPreviewTex   = ImTextureID();  // biome-coloured world preview
     int          customPreviewSide  = 0;        // 0 = no preview built yet
     bool         customWorldReady   = false;    // true after a regen succeeds

@@ -13,15 +13,15 @@ namespace sm::content {
 namespace {
 
 constexpr StorySlide kIntroSlides[] = {
-    {"/assets/backgrounds/intro0.png", "In the time before memory, the gods shaped a world upon the surface of a torus - infinite yet bounded."},
-    {"/assets/backgrounds/intro1.png", "Pure Magic flowed through every stone and river, the breath of creation itself."},
-    {"/assets/backgrounds/intro2.png", "But the gods grew jealous of their own work... and destroyed one another."},
-    {"/assets/backgrounds/intro3.png", "Their corpses became the Black Force - void and negation, whispering from beyond."},
-    {"/assets/backgrounds/intro4.png", "Where Pure Magic and Black Force meet, both are annihilated. The world trembles."},
-    {"/assets/backgrounds/intro5.png", "Kingdoms rose. Mage-lords built towers of arrogance. Empires banned magic under pain of death."},
-    {"/assets/backgrounds/intro6.png", "Barbarian kings seized castles from slain wizards, promising freedom they could not deliver."},
-    {"/assets/backgrounds/intro7.png", "A prophecy speaks of a Black Child - herald of the end of Pure Magic."},
-    {"/assets/backgrounds/intro8.png", "And now, traveller, you arrive. The world does not yet know your name."},
+    {"assets/backgrounds/intro0.png", "In the time before memory, the gods shaped a world upon the surface of a torus - infinite yet bounded."},
+    {"assets/backgrounds/intro1.png", "Pure Magic flowed through every stone and river, the breath of creation itself."},
+    {"assets/backgrounds/intro2.png", "But the gods grew jealous of their own work... and destroyed one another."},
+    {"assets/backgrounds/intro3.png", "Their corpses became the Black Force - void and negation, whispering from beyond."},
+    {"assets/backgrounds/intro4.png", "Where Pure Magic and Black Force meet, both are annihilated. The world trembles."},
+    {"assets/backgrounds/intro5.png", "Kingdoms rose. Mage-lords built towers of arrogance. Empires banned magic under pain of death."},
+    {"assets/backgrounds/intro6.png", "Barbarian kings seized castles from slain wizards, promising freedom they could not deliver."},
+    {"assets/backgrounds/intro7.png", "A prophecy speaks of a Black Child - herald of the end of Pure Magic."},
+    {"assets/backgrounds/intro8.png", "And now, traveller, you arrive. The world does not yet know your name."},
 };
 
 constexpr StoryChoice kSexChoices[] = {
@@ -37,63 +37,42 @@ constexpr StoryChoice kRealmChoices[] = {
 
 // The intro is PURE SLIDES since 2026-09-03: the asking (sex, name, homeland)
 // moved to the pre-world character creation screen, which renders the same
-// authored choice tables through creation_*_choices below. The slides play
-// in-world exactly as before.
-constexpr StoryPhaseDef kIntroPhases[] = {
-    {
-        StoryPhaseKind::Slides,
-        nullptr,
-        nullptr,
-        nullptr,
-        kIntroSlides,
-        sizeof(kIntroSlides) / sizeof(kIntroSlides[0]),
-        nullptr,
-        0,
-        nullptr,
-        nullptr,
-        0,
-    },
-};
-
+// authored choice tables through creation_*_choices below. Since 2026-09-04
+// these nine play BEFORE the world exists (the IntroSlides screen); the world
+// itself opens with the single arrival slide below.
 constexpr StoryDef kIntroStory = {
     "intro",
     "intro_main",
-    kIntroPhases,
-    sizeof(kIntroPhases) / sizeof(kIntroPhases[0]),
+    kIntroSlides,
+    sizeof(kIntroSlides) / sizeof(kIntroSlides[0]),
 };
 
-constexpr std::uint32_t total_choices(const StoryDef& story) {
-    std::uint32_t total = 0;
-    for (std::size_t i = 0; i < story.phaseCount; ++i) {
-        total += static_cast<std::uint32_t>(story.phases[i].choiceCount);
-    }
-    return total;
-}
+// PLACEHOLDER text and a borrowed frame (owner authors both later): the slot
+// matters — the first thing the world says, through the same overlay channel
+// chapter breaks and scene interludes will use.
+constexpr StorySlide kArrivalSlides[] = {
+    {"assets/backgrounds/intro8.png", "The road has carried you here. Whatever you were before, Timaert will ask again."},
+};
 
-constexpr int input_max_length(const StoryDef& story) {
-    for (std::size_t i = 0; i < story.phaseCount; ++i) {
-        if (story.phases[i].kind == StoryPhaseKind::Input) {
-            return story.phases[i].maxLength;
-        }
-    }
-    return 0;
-}
+constexpr StoryDef kArrivalStory = {
+    "arrival",
+    "intro_main",
+    kArrivalSlides,
+    sizeof(kArrivalSlides) / sizeof(kArrivalSlides[0]),
+};
 
 LogicNode intro_main_node() {
     LogicNode n;
-    n.id = kIntroStory.sourceNodeId;
+    n.id = kArrivalStory.sourceNodeId;
     n.label = "Intro Sequence";
     n.tags.push_back("intro");
     n.tags.push_back("plot");
     n.effect = [](NodeContext& ctx) {
-        const StoryDef& story = intro_story();
+        const StoryDef& story = arrival_story();
         GameEvent ev{EventTag::ShowStory};
         ev.s1 = story.sourceNodeId;
         ev.s2 = story.id;
-        ev.ix = static_cast<int>(story.phaseCount);
-        ev.iy = story.phaseCount > 0 ? static_cast<int>(story.phases[0].slideCount) : 0;
-        ev.a = total_choices(story);
-        ev.b = static_cast<std::uint32_t>(input_max_length(story));
+        ev.ix = static_cast<int>(story.slideCount);
         ctx.bus->emit(ev);
     };
     return n;
@@ -103,6 +82,10 @@ LogicNode intro_main_node() {
 
 const StoryDef& intro_story() {
     return kIntroStory;
+}
+
+const StoryDef& arrival_story() {
+    return kArrivalStory;
 }
 
 const StoryChoice* creation_sex_choices(std::size_t& count) {

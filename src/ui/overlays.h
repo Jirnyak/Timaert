@@ -19,9 +19,6 @@ namespace content { struct StoryDef; }
 
 namespace sm::ui {
 
-inline constexpr std::size_t kStoryOverlayMaxPhases = 8;
-inline constexpr std::size_t kStoryOverlayMaxText = 64;
-
 enum class CharacterPanelTab : std::uint8_t {
     Stats,
     Inventory,
@@ -58,15 +55,13 @@ struct Toggles {
     SettlementPanelTab settlementTab = SettlementPanelTab::Info;
 };
 
+// A story on screen is a run of slides and a finger in it — nothing else.
+// The choice/input machinery that used to live here died with the story
+// phases: the creation screen owns the asking (content/plot/intro.h).
 struct StoryOverlayState {
     bool open = false;
     const content::StoryDef* story = nullptr;
-    std::size_t phaseIndex = 0;
     std::size_t slideIndex = 0;
-    bool inputPrepared = false;
-    std::array<int, kStoryOverlayMaxPhases> selectedChoice{};
-    std::array<std::array<char, kStoryOverlayMaxText>, kStoryOverlayMaxPhases> values{};
-    std::array<bool, kStoryOverlayMaxPhases> hasValue{};
 };
 
 struct DialogOverlayState {
@@ -113,10 +108,6 @@ void draw_show_dialog(GameState& gs,
                       bool* open);
 void open_story_overlay(StoryOverlayState& state, const content::StoryDef& story);
 bool story_overlay_active(const StoryOverlayState& state);
-bool set_story_overlay_value(StoryOverlayState& state,
-                             const char* phaseId,
-                             const char* value);
-bool complete_story_overlay(StoryOverlayState& state, EventBus& bus);
 void draw_story_overlay(StoryOverlayState& state, EventBus& bus);
 // (The macro "World Map" minimap window is GONE — the M toggle now opens the
 // full-screen map page, ui/map_screen.h: the shipping macro shader under a

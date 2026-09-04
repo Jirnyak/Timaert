@@ -19,6 +19,7 @@
 #include "content/plot/intro.h"
 #include "events/event_bus.h"
 #include "ui/ui_gpu.h"
+#include "ui/ui_image.h"
 #include "imgui.h"
 #include "sub/base_generator.h"
 #include "sub/material.h"
@@ -42,24 +43,6 @@ namespace sm::ui
 {
     namespace
     {
-        struct StoryTexture
-        {
-            const char *key = nullptr;
-            ImTextureID tex = 0;
-            int w = 0;
-            int h = 0;
-            bool tried = false;
-        };
-
-        constexpr std::size_t kStoryTextureCapacity = 16;
-        std::array<StoryTexture, kStoryTextureCapacity> g_storyTextures{};
-
-        bool story_ui_trace_enabled()
-        {
-            static const bool enabled = std::getenv("TIMAERT_STORY_UI_TRACE") != nullptr;
-            return enabled;
-        }
-
         float modal_width(const ImGuiViewport *vp,
                           float preferred,
                           float minimum)
@@ -80,138 +63,6 @@ namespace sm::ui
             if (!src)
                 src = "";
             std::snprintf(dst, cap, "%s", src);
-        }
-
-        const char *asset_rel_path(const char *path)
-        {
-            if (!path)
-                return "";
-            return path[0] == '/' ? path + 1 : path;
-        }
-
-        unsigned char *load_story_pixels(const char *path, int &w, int &h)
-        {
-            static const char *kPrefixes[] = {
-                "",
-                "../",
-                "../public/",
-                "../../public/",
-                "public/",
-            };
-
-            const char *rel = asset_rel_path(path);
-            char candidate[512];
-            int comp = 0;
-            for (const char *prefix : kPrefixes)
-            {
-                const int n = std::snprintf(candidate, sizeof(candidate),
-                                            "%s%s", prefix, rel);
-                if (n <= 0 || std::size_t(n) >= sizeof(candidate))
-                    continue;
-                unsigned char *px = stbi_load(candidate, &w, &h, &comp, 4);
-                if (px)
-                    return px;
-            }
-            return nullptr;
-        }
-
-        const StoryTexture *story_texture_for(const char *path)
-        {
-            if (!path || path[0] == '\0')
-                return nullptr;
-
-            StoryTexture *freeSlot = nullptr;
-            for (StoryTexture &slot : g_storyTextures)
-            {
-                if (slot.key && std::strcmp(slot.key, path) == 0)
-                    return slot.tex ? &slot : nullptr;
-                if (!slot.key && !freeSlot)
-                    freeSlot = &slot;
-            }
-            if (!freeSlot)
-                return nullptr;
-
-            freeSlot->key = path;
-            freeSlot->tried = true;
-            int w = 0;
-            int h = 0;
-            unsigned char *px = load_story_pixels(path, w, h);
-            if (!px)
-            {
-                if (story_ui_trace_enabled())
-                    std::fprintf(stderr, "[story-ui] missing image: %s\n", path);
-                return nullptr;
-            }
-
-            freeSlot->tex = create_ui_texture(w, h, px,
-                                               /*linear=*/true);
-            freeSlot->w = w;
-            freeSlot->h = h;
-            stbi_image_free(px);
-            if (!freeSlot->tex)
-                return nullptr;
-            if (story_ui_trace_enabled())
-                std::fprintf(stderr, "[story-ui] loaded image %s (%dx%d) tex=%u\n",
-                             path, w, h, static_cast<unsigned>(freeSlot->tex));
-            return freeSlot;
-        }
-
-        void draw_story_image(const StoryTexture &tex,
-                              float maxW,
-                              float maxH,
-                              bool center)
-        {
-            if (tex.w <= 0 || tex.h <= 0 || tex.tex == 0)
-                return;
-            const float scale = std::min(maxW / float(tex.w), maxH / float(tex.h));
-            const ImVec2 size(float(tex.w) * scale, float(tex.h) * scale);
-            if (center && size.x < maxW)
-                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (maxW - size.x) * 0.5f);
-            ImGui::Image(tex.tex, size);
-        }
-
-        void clear_story_slots(StoryOverlayState &state)
-        {
-            state.selectedChoice.fill(-1);
-            state.hasValue.fill(false);
-            for (auto &value : state.values)
-                value[0] = '\0';
-        }
-
-        void trim_or_default(char *buf, std::size_t cap, const char *fallback)
-        {
-            if (!buf || cap == 0)
-                return;
-            std::size_t len = std::strlen(buf);
-            while (len > 0 && (buf[len - 1] == ' ' || buf[len - 1] == '\t' ||
-                               buf[len - 1] == '\r' || buf[len - 1] == '\n'))
-            {
-                buf[--len] = '\0';
-            }
-            std::size_t first = 0;
-            while (buf[first] == ' ' || buf[first] == '\t' ||
-                   buf[first] == '\r' || buf[first] == '\n')
-            {
-                ++first;
-            }
-            if (first > 0)
-            {
-                std::memmove(buf, buf + first, len - first + 1);
-                len -= first;
-            }
-            if (len == 0)
-                copy_cstr(buf, cap, fallback && fallback[0] ? fallback : "Traveller");
-        }
-
-        std::size_t story_input_capacity(const content::StoryPhaseDef &phase)
-        {
-            if (phase.maxLength > 0)
-            {
-                const std::size_t capped =
-                    static_cast<std::size_t>(phase.maxLength) + 1u;
-                return std::min(kStoryOverlayMaxText, capped);
-            }
-            return std::min<std::size_t>(kStoryOverlayMaxText, 33u);
         }
 
         void set_dialog_result(DialogOverlayState &state, const char *message)
@@ -252,6 +103,9 @@ namespace sm::ui
             session_feed_push(gs.sessionFeed, line.c_str());
         }
 
+        // Closing the last slide IS the story's completion: the StoryResult it
+        // emits carries no values any more (the creation screen owns the
+        // asking) — it marks the story beat, nothing else.
         void complete_story(StoryOverlayState &state, EventBus &bus)
         {
             if (!state.story)
@@ -263,34 +117,9 @@ namespace sm::ui
                 state.story->sourceNodeId ? state.story->sourceNodeId : "";
             result.storyResult->storyId = state.story->id ? state.story->id : "";
 
-            for (std::size_t i = 0; i < state.story->phaseCount &&
-                                    i < kStoryOverlayMaxPhases; ++i)
-            {
-                const content::StoryPhaseDef &phase = state.story->phases[i];
-                if (!phase.id || !state.hasValue[i])
-                    continue;
-                result.storyResult->values.emplace_back(phase.id, state.values[i].data());
-            }
-
             bus.emit(result);
             state.open = false;
             state.story = nullptr;
-        }
-
-        void advance_story_phase(StoryOverlayState &state, EventBus &bus)
-        {
-            if (!state.story)
-                return;
-            if (state.phaseIndex + 1 < state.story->phaseCount)
-            {
-                ++state.phaseIndex;
-                state.slideIndex = 0;
-                state.inputPrepared = false;
-            }
-            else
-            {
-                complete_story(state, bus);
-            }
         }
 
         // The codex catalogue is a REGISTRY now (macro/codex.h): articles by
@@ -347,67 +176,12 @@ namespace sm::ui
     {
         state.open = true;
         state.story = &story;
-        state.phaseIndex = 0;
         state.slideIndex = 0;
-        state.inputPrepared = false;
-        clear_story_slots(state);
     }
 
     bool story_overlay_active(const StoryOverlayState &state)
     {
         return state.open && state.story != nullptr;
-    }
-
-    bool set_story_overlay_value(StoryOverlayState &state,
-                                 const char *phaseId,
-                                 const char *value)
-    {
-        if (!story_overlay_active(state) || !phaseId || !phaseId[0])
-            return false;
-
-        const content::StoryDef &story = *state.story;
-        for (std::size_t i = 0; i < story.phaseCount &&
-                                i < kStoryOverlayMaxPhases; ++i)
-        {
-            const content::StoryPhaseDef &phase = story.phases[i];
-            if (!phase.id || std::strcmp(phase.id, phaseId) != 0)
-                continue;
-
-            const std::size_t cap = phase.kind == content::StoryPhaseKind::Input
-                ? story_input_capacity(phase)
-                : kStoryOverlayMaxText;
-            copy_cstr(state.values[i].data(), cap, value ? value : "");
-            if (phase.kind == content::StoryPhaseKind::Input)
-                trim_or_default(state.values[i].data(), cap, phase.defaultValue);
-
-            if (phase.kind == content::StoryPhaseKind::Choice &&
-                phase.choices && phase.choiceCount > 0)
-            {
-                state.selectedChoice[i] = -1;
-                for (std::size_t c = 0; c < phase.choiceCount; ++c)
-                {
-                    const char *choiceValue = phase.choices[c].value
-                        ? phase.choices[c].value
-                        : "";
-                    if (std::strcmp(choiceValue, state.values[i].data()) == 0)
-                    {
-                        state.selectedChoice[i] = int(c);
-                        break;
-                    }
-                }
-            }
-            state.hasValue[i] = true;
-            return true;
-        }
-        return false;
-    }
-
-    bool complete_story_overlay(StoryOverlayState &state, EventBus &bus)
-    {
-        if (!story_overlay_active(state))
-            return false;
-        complete_story(state, bus);
-        return true;
     }
 
     void draw_diplomacy(GameState &gs, bool *open, float scale)
@@ -2447,12 +2221,13 @@ namespace sm::ui
             return;
 
         const content::StoryDef &story = *state.story;
-        if (story.phaseCount == 0 || state.phaseIndex >= story.phaseCount)
+        if (story.slideCount == 0 || !story.slides)
         {
-            state.open = false;
-            state.story = nullptr;
+            complete_story(state, bus);
             return;
         }
+        if (state.slideIndex >= story.slideCount)
+            state.slideIndex = story.slideCount - 1;
 
         ImGui::OpenPopup("Story");
         ImGuiViewport *vp = ImGui::GetMainViewport();
@@ -2466,169 +2241,30 @@ namespace sm::ui
             return;
         }
 
-        const content::StoryPhaseDef &phase = story.phases[state.phaseIndex];
-        const char *heading = phase.title ? phase.title : story.id;
-
-        if (phase.kind == content::StoryPhaseKind::Slides)
-        {
-            if (phase.slideCount == 0 || !phase.slides)
-            {
-                advance_story_phase(state, bus);
-                ImGui::EndPopup();
-                return;
-            }
-            if (state.slideIndex >= phase.slideCount)
-                state.slideIndex = phase.slideCount - 1;
-
-            const content::StorySlide &slide = phase.slides[state.slideIndex];
-            ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.45f, 1.0f), "%s", heading);
-            ImGui::SameLine();
-            ImGui::TextDisabled("%zu / %zu", state.slideIndex + 1, phase.slideCount);
-            ImGui::Separator();
-            if (const StoryTexture *image = story_texture_for(slide.image))
-            {
-                const float imageW = ImGui::GetContentRegionAvail().x;
-                draw_story_image(*image, imageW, 360.0f, true);
-                ImGui::Spacing();
-            }
-            ImGui::PushTextWrapPos(0.0f);
-            ImGui::TextWrapped("%s", slide.narration ? slide.narration : "");
-            ImGui::PopTextWrapPos();
-            ImGui::Spacing();
-            const bool lastSlide = state.slideIndex + 1 >= phase.slideCount;
-            if (ImGui::Button(lastSlide ? "Begin" : "Continue", ImVec2(-FLT_MIN, 0.0f)) ||
-                ImGui::IsKeyPressed(ImGuiKey_Enter) ||
-                ImGui::IsKeyPressed(ImGuiKey_Space))
-            {
-                if (!lastSlide)
-                    ++state.slideIndex;
-                else
-                    advance_story_phase(state, bus);
-            }
-            ImGui::EndPopup();
-            return;
-        }
-
-        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.45f, 1.0f), "%s", heading);
+        const content::StorySlide &slide = story.slides[state.slideIndex];
+        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.45f, 1.0f), "%s", story.id);
+        ImGui::SameLine();
+        ImGui::TextDisabled("%zu / %zu", state.slideIndex + 1, story.slideCount);
         ImGui::Separator();
-        if (phase.description && phase.description[0])
+        if (const UiImage *image = ui_image_for(slide.image))
         {
-            ImGui::PushTextWrapPos(0.0f);
-            ImGui::TextWrapped("%s", phase.description);
-            ImGui::PopTextWrapPos();
-            ImGui::Separator();
+            const float imageW = ImGui::GetContentRegionAvail().x;
+            draw_ui_image(*image, imageW, 360.0f, true);
+            ImGui::Spacing();
         }
-
-        if (phase.kind == content::StoryPhaseKind::Choice)
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextWrapped("%s", slide.narration ? slide.narration : "");
+        ImGui::PopTextWrapPos();
+        ImGui::Spacing();
+        const bool lastSlide = state.slideIndex + 1 >= story.slideCount;
+        if (ImGui::Button(lastSlide ? "Begin" : "Continue", ImVec2(-FLT_MIN, 0.0f)) ||
+            ImGui::IsKeyPressed(ImGuiKey_Enter) ||
+            ImGui::IsKeyPressed(ImGuiKey_Space))
         {
-            if (!phase.choices || phase.choiceCount == 0)
-            {
-                ImGui::TextDisabled("No choices supplied by story content.");
-                if (ImGui::Button("Continue", ImVec2(-FLT_MIN, 0.0f)))
-                    advance_story_phase(state, bus);
-                ImGui::EndPopup();
-                return;
-            }
-
-            bool portraits = false;
-            for (std::size_t i = 0; i < phase.choiceCount; ++i)
-            {
-                if (phase.choices[i].image)
-                {
-                    portraits = true;
-                    break;
-                }
-            }
-            const float availW = ImGui::GetContentRegionAvail().x;
-            const float spacing = ImGui::GetStyle().ItemSpacing.x;
-            const bool portraitsInline = portraits && phase.choiceCount > 1 &&
-                availW >= (140.0f * float(phase.choiceCount)) +
-                    spacing * float(phase.choiceCount - 1);
-            const float buttonW = portraitsInline
-                ? (availW - ImGui::GetStyle().ItemSpacing.x * float(phase.choiceCount - 1)) /
-                    float(phase.choiceCount)
-                : availW;
-
-            for (std::size_t i = 0; i < phase.choiceCount; ++i)
-            {
-                const content::StoryChoice &choice = phase.choices[i];
-                ImGui::PushID(int(i));
-                if (portraits)
-                    ImGui::BeginGroup();
-                if (portraits)
-                {
-                    if (const StoryTexture *image = story_texture_for(choice.image))
-                    {
-                        draw_story_image(*image, buttonW, 220.0f, true);
-                    }
-                    else
-                    {
-                        ImGui::Dummy(ImVec2(buttonW, 220.0f));
-                    }
-                }
-                if (ImGui::Button(choice.label ? choice.label : "Choice",
-                                  ImVec2(buttonW, portraits ? 40.0f : 0.0f)))
-                {
-                    if (state.phaseIndex < kStoryOverlayMaxPhases)
-                    {
-                        state.selectedChoice[state.phaseIndex] = int(i);
-                        state.hasValue[state.phaseIndex] = true;
-                        copy_cstr(state.values[state.phaseIndex].data(),
-                                  state.values[state.phaseIndex].size(),
-                                  choice.value);
-                    }
-                    advance_story_phase(state, bus);
-                }
-                if (choice.description && choice.description[0])
-                {
-                    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + buttonW);
-                    ImGui::TextDisabled("%s", choice.description);
-                    ImGui::PopTextWrapPos();
-                }
-                if (portraits)
-                {
-                    ImGui::EndGroup();
-                    if (portraitsInline && i + 1 < phase.choiceCount)
-                        ImGui::SameLine();
-                }
-                ImGui::PopID();
-            }
-            ImGui::EndPopup();
-            return;
-        }
-
-        if (phase.kind == content::StoryPhaseKind::Input)
-        {
-            const std::size_t inputCap = story_input_capacity(phase);
-            if (state.phaseIndex < kStoryOverlayMaxPhases && !state.inputPrepared)
-            {
-                copy_cstr(state.values[state.phaseIndex].data(),
-                          inputCap,
-                          phase.defaultValue);
-                state.inputPrepared = true;
-            }
-
-            char *input = state.phaseIndex < kStoryOverlayMaxPhases
-                ? state.values[state.phaseIndex].data()
-                : nullptr;
-            if (input)
-            {
-                ImGui::InputTextWithHint("##story_input",
-                                         phase.placeholder ? phase.placeholder : "",
-                                         input,
-                                         inputCap);
-                if (ImGui::Button("Continue", ImVec2(-FLT_MIN, 0.0f)) ||
-                    ImGui::IsKeyPressed(ImGuiKey_Enter))
-                {
-                    trim_or_default(input, inputCap, phase.defaultValue);
-                    state.hasValue[state.phaseIndex] = true;
-                    advance_story_phase(state, bus);
-                }
-            }
+            if (!lastSlide)
+                ++state.slideIndex;
             else
-            {
-                ImGui::TextDisabled("Input buffer unavailable.");
-            }
+                complete_story(state, bus);
         }
         ImGui::EndPopup();
     }

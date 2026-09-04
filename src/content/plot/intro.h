@@ -11,13 +11,6 @@ namespace sm
     namespace content
     {
 
-        enum class StoryPhaseKind : std::uint8_t
-        {
-            Slides,
-            Choice,
-            Input,
-        };
-
         struct StorySlide
         {
             const char *image = "";
@@ -32,30 +25,30 @@ namespace sm
             const char *image = "";
         };
 
-        struct StoryPhaseDef
-        {
-            StoryPhaseKind kind = StoryPhaseKind::Slides;
-            const char *id = "";
-            const char *title = "";
-            const char *description = "";
-            const StorySlide *slides = nullptr;
-            std::size_t slideCount = 0;
-            const StoryChoice *choices = nullptr;
-            std::size_t choiceCount = 0;
-            const char *placeholder = "";
-            const char *defaultValue = "";
-            int maxLength = 0;
-        };
-
+        // A story IS a run of slides since 2026-09-03: the asking phases
+        // (Choice/Input) moved to the pre-world creation screen and no story
+        // ever used them again, so the phase layer was one indirection deep
+        // for exactly one caller. Future chapter breaks and scene interludes
+        // are runs of slides too — a new story is a new table, not a new kind.
         struct StoryDef
         {
             const char *id = "";
             const char *sourceNodeId = "";
-            const StoryPhaseDef *phases = nullptr;
-            std::size_t phaseCount = 0;
+            const StorySlide *slides = nullptr;
+            std::size_t slideCount = 0;
         };
 
+        // The pre-world slideshow (9 slides): played by the IntroSlides
+        // screen between the title menu and character creation, on no engine
+        // at all — the world does not exist yet.
         const StoryDef &intro_story();
+
+        // The one in-world opening slide (owner verdict 2026-09-04): the
+        // intro_main node emits THIS on the first world tick, through the
+        // same story-overlay channel future chapter breaks will use. Its
+        // text is a placeholder until the owner authors the real one.
+        const StoryDef &arrival_story();
+
         void register_intro_story_nodes(LogicNodeEngine &logic);
 
         // The authored creation choices (sex, homeland) — the character

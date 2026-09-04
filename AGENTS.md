@@ -1,4 +1,4 @@
-# Agent Instructions — Samosbor / Timaert (C++ Port)
+# Agent Instructions — Legacy of Sacrilege / Timaert (C++ Port)
 
 > **`timaert_c/` is the final game.** The TypeScript prototype is history; the C++
 > port IS the product. Design intent lives in [CANON.md](CANON.md).

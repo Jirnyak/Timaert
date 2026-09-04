@@ -77,6 +77,8 @@
 #include "sub/tree_atlas.h"
 #include "macro/fauna.h"
 #include "ui/overlays.h"
+#include "ui/intro_screens.h"
+#include "ui/ui_image.h"
 #include "ui/screens.h"
 #include "ui/macro_overlay.h"
 #include "ui/ui_gpu.h"
@@ -1097,7 +1099,7 @@ bool boot_window(App& app) {
         std::fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
         return false;
     }
-    app.window = SDL_CreateWindow("Samosbor / Timaert",
+    app.window = SDL_CreateWindow("Legacy of Sacrilege / Timaert",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         app.width, app.height,
         SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
@@ -1595,7 +1597,9 @@ void boot_world(App& app, std::uint32_t seed,
     app.subworld.init(app.device, app.renderer.renderPass);
     boot_trace("subworld init done");
     app.worldLoaded = true;
-    app.state = sm::ui::AppState::Playing;
+    // app.state is NOT touched here: screens belong to apply_shell_actions,
+    // the one transition dispatcher. When boot set Playing itself, the
+    // custom-game preview had to fight it back to CustomNewGame every regen.
     boot_trace("done");
 }
 
@@ -2625,14 +2629,6 @@ void apply_pending_event_effects(App& app) {
     }
 }
 
-const std::string* story_result_value(const sm::StoryResultPayload& result,
-                                      const char* key) {
-    for (const auto& entry : result.values) {
-        if (entry.first == key) return &entry.second;
-    }
-    return nullptr;
-}
-
 void emit_simple_dialog(App& app, const char* title, const std::string& body,
                         const char* label) {
     sm::GameEvent dialog{sm::EventTag::ShowDialog};
@@ -2821,8 +2817,11 @@ bool macro_overlay_blocks_npc_proximity(const App& app) {
 }
 
 const sm::content::StoryDef* story_def_for_event(const sm::GameEvent& ev) {
-    const sm::content::StoryDef& intro = sm::content::intro_story();
-    if (ev.s2.empty() || ev.s2 == intro.id) return &intro;
+    // The nine-slide intro plays PRE-WORLD (the IntroSlides screen) and never
+    // rides this channel; the world's own stories resolve here. Today that is
+    // the single arrival slide — chapter breaks will add rows, not branches.
+    const sm::content::StoryDef& arrival = sm::content::arrival_story();
+    if (ev.s2.empty() || ev.s2 == arrival.id) return &arrival;
     return nullptr;
 }
 
@@ -4299,8 +4298,13 @@ void build_world_preview(App& app, int side = 384) {
     app.customPreviewSide = side;
 }
 
+// EVERY ShellResult flag, or the merge is a trap: a smoke action that raises
+// a flag this function forgets is silently dropped on the floor.
 void merge_shell_result(sm::ui::ShellResult& dst, const sm::ui::ShellResult& src) {
+    dst.splashDone          = dst.splashDone          || src.splashDone;
     dst.startNewGame        = dst.startNewGame        || src.startNewGame;
+    dst.introFinished       = dst.introFinished       || src.introFinished;
+    dst.creationDefault     = dst.creationDefault     || src.creationDefault;
     dst.startCreatedGame    = dst.startCreatedGame    || src.startCreatedGame;
     dst.cancelCreation      = dst.cancelCreation      || src.cancelCreation;
     dst.openCustomNewGame   = dst.openCustomNewGame   || src.openCustomNewGame;
@@ -4308,7 +4312,11 @@ void merge_shell_result(sm::ui::ShellResult& dst, const sm::ui::ShellResult& src
     dst.cancelCustomNewGame = dst.cancelCustomNewGame || src.cancelCustomNewGame;
     dst.regenerateCustom    = dst.regenerateCustom    || src.regenerateCustom;
     dst.loadGame            = dst.loadGame            || src.loadGame;
+    dst.loadAutosave        = dst.loadAutosave        || src.loadAutosave;
     dst.cancelLoad          = dst.cancelLoad          || src.cancelLoad;
+    dst.openCodex           = dst.openCodex           || src.openCodex;
+    dst.openInterface       = dst.openInterface       || src.openInterface;
+    dst.openControls        = dst.openControls        || src.openControls;
     dst.saveGame            = dst.saveGame            || src.saveGame;
     dst.resume              = dst.resume              || src.resume;
     dst.returnToTitle       = dst.returnToTitle       || src.returnToTitle;
@@ -4317,12 +4325,26 @@ void merge_shell_result(sm::ui::ShellResult& dst, const sm::ui::ShellResult& src
 
 
 void apply_shell_actions(App& app, const sm::ui::ShellResult& r) {
-    // New Game asks WHO before it generates WHERE (owner, 2026-09-03): both
-    // entrances lead to the creation screen; the world boots on its Start.
+    if (r.splashDone) {
+        app.state = sm::ui::AppState::Title;
+    }
+    // New Game asks WHO before it generates WHERE (owner, 2026-09-03), and
+    // since 2026-09-04 the intro slideshow plays first: both entrances lead
+    // through IntroSlides to the creation screen; the world boots on Start.
     if (r.startNewGame) {
         app.creation = {};
         app.creationCustom = false;
+        app.introSlides = {};
+        app.state = sm::ui::AppState::IntroSlides;
+    }
+    if (r.introFinished) {
         app.state = sm::ui::AppState::CharacterCreation;
+    }
+    // Ordered between the New Game reset above and the Start below, so the
+    // smoke may press all three in one frame and get exactly a human's run:
+    // reset, default sheet, boot.
+    if (r.creationDefault) {
+        sm::ui::creation_apply_default(app.creation);
     }
     if (r.startCreatedGame) {
         if (app.creationCustom) {
@@ -4361,22 +4383,25 @@ void apply_shell_actions(App& app, const sm::ui::ShellResult& r) {
             : choose_new_game_seed(app);
         boot_world(app, seed, side, side, &app.customParams.layer,
                    app.customParams.cityCountTarget);
-        app.state = sm::ui::AppState::CustomNewGame;  // stay in menu
         build_world_preview(app);
         app.customWorldReady = true;
     }
     if (r.startCustomNewGame) {
-        // The custom world's Start leads through the creation screen too —
-        // a preview-built world (customWorldReady) survives to its Start.
+        // The custom world's Start leads through the slideshow and the
+        // creation screen too — a preview-built world (customWorldReady)
+        // survives to its Start. Esc skips the slides in one keypress.
         app.creation = {};
         app.creationCustom = true;
-        app.state = sm::ui::AppState::CharacterCreation;
+        app.introSlides = {};
+        app.state = sm::ui::AppState::IntroSlides;
     }
     if (r.loadGame || r.loadAutosave) {
         if (app.state == sm::ui::AppState::Load) {
             const std::string& path =
                 r.loadAutosave ? app.autosavePath : app.savePath;
-            if (!boot_world_from_save(app, path)) {
+            if (boot_world_from_save(app, path)) {
+                app.state = sm::ui::AppState::Playing;
+            } else {
                 std::fprintf(stderr, "load_game: no save at %s\n", path.c_str());
                 refresh_save_summary(app);
             }
@@ -4643,24 +4668,27 @@ void frame(App& app, int simSteps) {
 
     sm::ui::ShellResult shell{};
     switch (app.state) {
+        case sm::ui::AppState::Splash:
+            shell = sm::ui::draw_studio_splash(app.splash);
+            break;
         case sm::ui::AppState::Title:
-            shell = sm::ui::draw_title_menu(app.width, app.height);
+            shell = sm::ui::draw_title_menu();
             break;
         case sm::ui::AppState::CustomNewGame:
             shell = sm::ui::draw_custom_new_game(app.customParams,
                                                  app.customPreviewTex,
                                                  app.customPreviewSide,
                                                  app.customPreviewSide,
-                                                 app.customWorldReady,
-                                                 app.width, app.height);
+                                                 app.customWorldReady);
             break;
         case sm::ui::AppState::Load:
-            shell = sm::ui::draw_load_screen(app.saveSummary, app.autosaveSummary,
-                                             app.width, app.height);
+            shell = sm::ui::draw_load_screen(app.saveSummary, app.autosaveSummary);
+            break;
+        case sm::ui::AppState::IntroSlides:
+            shell = sm::ui::draw_intro_slides(app.introSlides);
             break;
         case sm::ui::AppState::CharacterCreation:
-            shell = sm::ui::draw_character_creation(app.creation,
-                                                    app.width, app.height);
+            shell = sm::ui::draw_character_creation(app.creation);
             break;
         case sm::ui::AppState::Playing:
         {
@@ -4970,10 +4998,10 @@ void frame(App& app, int simSteps) {
         case sm::ui::AppState::Menu:
             if (app.uiSettings.visible(sm::ui::UiElementId::PlayerHud))
                 sm::ui::draw_player_hud(app.gs, app.uiSettings.scale(sm::ui::UiElementId::PlayerHud));
-            shell = sm::ui::draw_game_menu(app.width, app.height);
+            shell = sm::ui::draw_game_menu();
             break;
         case sm::ui::AppState::Dead:
-            shell = sm::ui::draw_death_screen(app.gs, app.width, app.height);
+            shell = sm::ui::draw_death_screen(app.gs);
             break;
     }
     merge_shell_result(shell, tick_smoke_script(app));
@@ -5137,6 +5165,7 @@ int main(int /*argc*/, char* /*argv*/[]) {
     vkDeviceWaitIdle(app.device.device);
     destroy_world(app);
     sm::ui::destroy_all_ui_textures();
+    sm::ui::ui_image_reset();   // after the GPU side: no slot keeps a dead id
     sm::sprite_atlas_shutdown();
     app.subworld.destroy(app.device);
     app.macro.destroy(app.device);

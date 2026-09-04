@@ -152,6 +152,19 @@ endif()
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/src ${stb_SOURCE_DIR})
+
+# The built commit's hash, stamped into the title-menu footer. Regenerated
+# every build (not at configure time — that goes stale between commits);
+# the script rewrites git_hash.h only when the hash actually changed.
+add_custom_target(timaert_git_hash
+    COMMAND ${CMAKE_COMMAND}
+        -DSRC=${CMAKE_SOURCE_DIR}
+        -DOUT=${CMAKE_BINARY_DIR}/generated/git_hash.h
+        -P ${CMAKE_SOURCE_DIR}/cmake/git_hash.cmake
+    BYPRODUCTS ${CMAKE_BINARY_DIR}/generated/git_hash.h
+    COMMENT "Stamping git hash")
+add_dependencies(${PROJECT_NAME} timaert_git_hash)
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_BINARY_DIR}/generated)
 target_link_libraries(${PROJECT_NAME} PRIVATE EnTT::EnTT)
 target_compile_definitions(${PROJECT_NAME} PRIVATE ENTT_NOEXCEPTION)
 if(NOT TIMAERT_SDL2_MIXER_TARGET STREQUAL "")
