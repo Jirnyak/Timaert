@@ -74,6 +74,26 @@ Three laws it must keep:
    `splash_any_key_pressed`), and the auto-exit clocks IDLE time, not show
    time: while the mouse plays, the screen stays open forever.
 
+### What "any key" must never mean
+
+Three exclusions, each one a bug that shipped:
+
+- **Mouse buttons.** See law 2 above.
+- **Modifiers alone.** Ctrl by itself is nobody pressing a key.
+- **Anything while a modifier is held.** A chord is a system command. This
+  was the fullscreen bug: macOS fullscreen is **Ctrl+Cmd+F**, so `Ctrl` read
+  as the first key (assemble at once) and `Cmd` as the second (leave) — the
+  splash ended before it had even finished forming.
+
+And input is deafened across a **window transition** (`window_busy`): the
+frame a resize lands on plus a ~0.35 s grace, triggered by a changed
+DisplaySize or a `DeltaTime` over 0.25 s. macOS blocks the run loop for the
+whole fullscreen animation and then delivers a burst of size changes with one
+enormous frame; that input belongs to the window command, not the player.
+The slideshow uses the same guard (a resize burst must not turn pages) and
+clamps its typewriter delta, or the blocked frame would print a whole line at
+once. Nothing is ever *rebuilt* on resize — only input is ignored.
+
 Pacing: swarm ~3.5 s, subtitle at 4 s, blood at 4.6 s, auto-exit after the
 show has played and the hands have been off for ~15 s (the fade itself takes
 another 1.5 s).

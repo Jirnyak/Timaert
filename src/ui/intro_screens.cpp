@@ -231,15 +231,47 @@ constexpr ImU32 kParchShades[3] = {
 };
 
 // Any KEYBOARD (or gamepad) key, except Esc — the hint says "press any key"
-// and the hint must not lie. Mouse buttons are deliberately NOT here: the
-// mouse is the toy (shove, punch), and a toy that closed the screen the
-// third time you poked it would be a trap — the B&W / reference-intro rule.
+// and the hint must not lie. Three exclusions, each a real bug:
+//   · mouse buttons — the mouse is the TOY (shove, punch), and a toy that
+//     closed the screen the third time you poked it would be a trap
+//     (the B&W / reference-intro rule); ImGui counts them as keys.
+//   · MODIFIERS on their own — Ctrl alone is nobody pressing "a key".
+//   · anything while a modifier is HELD — a chord is a system command, not
+//     a skip. This was the fullscreen bug: macOS fullscreen is Ctrl+Cmd+F,
+//     so Ctrl read as the first key (assemble at once) and Cmd as the
+//     second (leave) — the splash ended before it had finished forming.
 bool splash_any_key_pressed() {
+    const ImGuiIO& io = ImGui::GetIO();
+    if (io.KeyCtrl || io.KeyShift || io.KeyAlt || io.KeySuper) return false;
     for (int k = ImGuiKey_NamedKey_BEGIN; k < ImGuiKey_NamedKey_END; ++k) {
         const ImGuiKey key = ImGuiKey(k);
         if (key == ImGuiKey_Escape) continue;
         if (key >= ImGuiKey_MouseLeft && key <= ImGuiKey_MouseWheelY) continue;
+        if (key >= ImGuiKey_LeftCtrl && key <= ImGuiKey_RightSuper) continue;
+        if (key >= ImGuiKey_ReservedForModCtrl
+            && key <= ImGuiKey_ReservedForModSuper) continue;
         if (ImGui::IsKeyPressed(key, false)) return true;
+    }
+    return false;
+}
+
+// True while the window itself is busy: the frame a resize lands on, and a
+// short grace after it. macOS blocks the run loop for the whole fullscreen
+// animation and then delivers a burst of size changes plus one enormous
+// DeltaTime; input arriving across that seam belongs to the window command,
+// not to the player, and neither cinematic screen may act on it. NOTHING is
+// rebuilt here — every layout is derived per frame anyway; only input is
+// deafened, which is the honest half of the reference intros' resize bug.
+bool window_busy(float& lastW, float& lastH, float& inputLock,
+                 const ImVec2& vp, float rawDt) {
+    const bool sizeChanged = std::abs(vp.x - lastW) > 0.5f
+                          || std::abs(vp.y - lastH) > 0.5f;
+    lastW = vp.x;
+    lastH = vp.y;
+    if (sizeChanged || rawDt > 0.25f) inputLock = 0.35f;
+    if (inputLock > 0.0f) {
+        inputLock -= std::min(rawDt, 0.05f);
+        return true;
     }
     return false;
 }
@@ -255,13 +287,19 @@ ShellResult draw_studio_splash(SplashState& st) {
 
     const float dt = std::min(io.DeltaTime, 0.05f);
     st.t += dt;
+    // A window transition (fullscreen, resize) deafens input for a moment —
+    // see splash_window_busy. The show itself never pauses.
+    const bool busy = window_busy(st.lastW, st.lastH, st.inputLock,
+                                  vp, io.DeltaTime);
     // Playing with the mouse holds the door open: the auto-exit clocks
     // IDLE time, not show time — poke the pixels as long as you like
-    // (the B&W / reference-intro contract).
-    const bool mousePlaying = io.MouseDelta.x != 0.0f || io.MouseDelta.y != 0.0f
-        || ImGui::IsMouseDown(ImGuiMouseButton_Left);
+    // (the B&W / reference-intro contract). A transition frame teleports the
+    // cursor, so its "movement" is not the player playing.
+    const bool mousePlaying = !busy
+        && (io.MouseDelta.x != 0.0f || io.MouseDelta.y != 0.0f
+            || ImGui::IsMouseDown(ImGuiMouseButton_Left));
     st.idleT = mousePlaying ? 0.0f : st.idleT + dt;
-    const bool punch = ImGui::IsMouseClicked(ImGuiMouseButton_Left);
+    const bool punch = !busy && ImGui::IsMouseClicked(ImGuiMouseButton_Left);
     const SplashLayout L = splash_layout(vp);
     auto* dl = ImGui::GetBackgroundDrawList();
     dl->AddRectFilled(ImVec2(0, 0), vp, IM_COL32(0, 0, 0, 255));
@@ -541,6 +579,7 @@ ShellResult draw_studio_splash(SplashState& st) {
             return r;
         }
     }
+    if (busy) return r;   // window mid-transition: none of this input is ours
     if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
         r.splashDone = true;
         return r;
@@ -604,7 +643,12 @@ ShellResult draw_intro_slides(IntroSlidesState& st) {
     // the cut-off prefix — the other reference lesson.)
     const char* full = slide.narration ? slide.narration : "";
     const std::size_t fullCp = utf8_length(full);
-    st.typedChars += ImGui::GetIO().DeltaTime * kIntroTypeCharsPerSec;
+    // Clamped: a blocked run loop (the fullscreen animation) hands back one
+    // enormous frame, and an unclamped typewriter would spit the whole line
+    // out in it — the reference intro types straight off the raw delta and
+    // does exactly that.
+    st.typedChars += std::min(ImGui::GetIO().DeltaTime, 0.05f)
+                   * kIntroTypeCharsPerSec;
     const std::size_t shownCp = std::min(fullCp, std::size_t(st.typedChars));
     const bool typing = shownCp < fullCp;
     const float capY = artY + artH + 18.0f;
@@ -632,6 +676,12 @@ ShellResult draw_intro_slides(IntroSlidesState& st) {
     fg->AddText(ImVec2(margin, vp.y - 26.0f), kPalParchDim, "Esc  skip");
 
     // ── input: first tap finishes the line, the second turns the page ──
+    // Deaf across a window transition, for the same reason as the splash:
+    // the fullscreen chord and the resize burst are not page turns.
+    if (window_busy(st.lastW, st.lastH, st.inputLock,
+                    vp, ImGui::GetIO().DeltaTime)) {
+        return r;
+    }
     if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
         r.introFinished = true;
         return r;

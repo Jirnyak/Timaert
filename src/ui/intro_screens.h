@@ -55,6 +55,8 @@ struct SplashState {
     float t = 0.0f;               // seconds since the splash began
     float idleT = 0.0f;           // seconds since the mouse last played
     float punchCharge = 0.0f;     // rapid clicking builds a bigger burst
+    float lastW = 0.0f, lastH = 0.0f;  // viewport last frame (resize detector)
+    float inputLock = 0.0f;       // seconds of ignoring input after a transition
     int   count = 0;
     SplashParticle p[kMaxParticles]{};
     float bloodLen[3] = {0, 0, 0};   // runnels down the blade, px
@@ -76,6 +78,8 @@ ShellResult draw_studio_splash(SplashState& st);
 struct IntroSlidesState {
     int   slide      = 0;
     float typedChars = 0.0f;
+    float lastW = 0.0f, lastH = 0.0f;  // viewport last frame (resize detector)
+    float inputLock = 0.0f;            // deaf to input across a window transition
 };
 
 // The pre-world slideshow (content/plot/intro.h intro_story): frame in the
