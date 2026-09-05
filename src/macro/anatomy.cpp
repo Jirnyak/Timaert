@@ -140,17 +140,20 @@ int worn_cells(const Equipment& eq) {
     return n;
 }
 
-int worn_armor(const Equipment& eq) {
-    int sum = 0;
+ArmorProfile worn_armor(const Equipment& eq) {
+    ArmorProfile sum{};
     const int n = eq.cells();
     for (int i = 0; i < n; ++i) {
         const ItemRef& r = eq.worn[std::size_t(i)];
         if (r.empty() || cell_blocked(r)) continue;
         if (const ItemDef* def = item_def_at(int(r.def))) {
-            sum += def->armor;
+            for (std::size_t t = 0; t < kDamageTypeCount; ++t) {
+                const int v = int(sum.v[t]) + int(def->armor.v[t]);
+                sum.v[t] = std::uint8_t(v > 255 ? 255 : v);
+            }
         }
     }
-    return sum > 0 ? sum : 0;
+    return sum;
 }
 
 } // namespace sm

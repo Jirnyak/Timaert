@@ -29,6 +29,8 @@
 // the wound.
 #pragma once
 
+#include "macro/damage_types.h"
+
 #include <cstdint>
 #include <entt/entt.hpp>
 
@@ -41,9 +43,9 @@ namespace sm::sub {
 // the stamp now, so it owns the number.
 inline constexpr float kHitFlashDuration = 0.15f;
 
-// The halving point of the mitigation law, kArmorHalving, lives beside the
-// armour column it scales (macro/npc.h) — the auto-resolve reads it there
-// too, and the macro data layer cannot include this ECS-facing header.
+// The mitigation law itself (the 9-type symmetry, kArmorHalving,
+// mitigate_amount) lives in macro/damage_types.h — the auto-resolve reads it
+// there too, and the macro data layer cannot include this ECS-facing header.
 
 // A damage KIND is a row, and the row is the whole difference between weapons.
 // Two columns: whether the blow names a killer (LastHit is what the reaper
@@ -92,12 +94,16 @@ struct DamageResult {
     bool lethal = false;   // this blow drove hp to zero
 };
 
+// `type` is WHICH of the nine columns the blow argues with (CANON S13: the
+// 9×9 symmetry) — it selects the armour column inside the door and nothing
+// else; a kind whose row says armour is not in the way ignores it entirely.
 DamageResult apply_damage(entt::registry& reg, entt::entity target,
                           const DamageSource& src, float amount,
-                          DamageKind kind, EventBus* bus);
+                          DamageKind kind, DamageType type, EventBus* bus);
 
 // An execution: one blow of exactly the target's remaining hp, through the
-// same door. The dev cheat and the harness kill-scenarios use this instead of
+// same door (typed Blunt for form's sake — its kinds bypass armour by row).
+// The dev cheat and the harness kill-scenarios use this instead of
 // hand-writing hp = 0 with a private copy of the protocol.
 DamageResult apply_lethal_damage(entt::registry& reg, entt::entity target,
                                  const DamageSource& src, DamageKind kind,

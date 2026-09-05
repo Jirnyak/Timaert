@@ -14,11 +14,12 @@
 //     stay silent for it while every other weapon spoke;
 //   * the ONE already-dead guard: a corpse takes no second blow, no matter the
 //     weapon — the spell path used to have none;
-//   * MITIGATION, now that armour has landed: a body in its own skin keeps the
-//     identity (armour 0 is the limiting case of the law, not a branch around
-//     it), an armoured row softens the blow by its row's number, and whether
-//     armour is in the way at all is the damage KIND's column — plate does not
-//     soften a fall.
+//   * MITIGATION by the hybrid law (macro/damage_types.h): a body in its own
+//     skin keeps the identity (armour 0 is the limiting case, not a branch),
+//     an armoured row cuts the larger of its column's threshold or the
+//     halving fraction — full block of a blow the plate outweighs is REAL
+//     (owner verdict 2026-09-05) — and whether armour is in the way at all is
+//     the damage KIND's column: plate does not soften a fall.
 
 #include "check.h"
 #include "sub/damage.h"
@@ -72,7 +73,8 @@ void test_death_is_indistinguishable() {
         const entt::entity e = make_body(reg, 10.0f);
         const DamageSource src{42u, false,
                                kind == DamageKind::Spell ? 900u : 0u};
-        const DamageResult hit = apply_damage(reg, e, src, 25.0f, kind, &bus);
+        const DamageResult hit = apply_damage(reg, e, src, 25.0f, kind,
+                                              sm::DamageType::Blunt, &bus);
 
         CHECK(hit.applied == 25.0f, "lethal blow applies its full amount");
         CHECK(hit.lethal, "a blow past remaining hp is lethal");
@@ -122,24 +124,37 @@ void test_armour_softens_by_the_row_and_the_kind() {
 
     const float blow = 20.0f;
     const DamageResult onBare =
-        apply_damage(reg, bare, DamageSource{}, blow, DamageKind::Melee, &bus);
+        apply_damage(reg, bare, DamageSource{}, blow, DamageKind::Melee, sm::DamageType::Blunt, &bus);
     const DamageResult onPlate =
-        apply_damage(reg, plated, DamageSource{}, blow, DamageKind::Melee, &bus);
+        apply_damage(reg, plated, DamageSource{}, blow, DamageKind::Melee, sm::DamageType::Blunt, &bus);
 
     CHECK(onBare.applied == blow, "an unarmoured row takes the whole blow");
     CHECK(onPlate.applied < onBare.applied,
           "and an armoured one takes less of the SAME blow");
 
-    // THE law, stated as arithmetic rather than as a pinned number: the blow
-    // keeps kArmorHalving / (kArmorHalving + armour).
-    const float armour = float(sm::npc_def(sm::NPCType::Guard).armor);
-    const float expect =
-        blow * (sm::kArmorHalving / (sm::kArmorHalving + armour));
-    CHECK(onPlate.applied > expect - 0.01f && onPlate.applied < expect + 0.01f,
-          "the fraction kept is the row's armour against the halving point");
-    CHECK(onPlate.applied > 0.0f,
-          "armour SOFTENS and never makes a body immune — the law is "
-          "asymptotic, so there is no threshold to fall off");
+    // The door routes through THE law: expectation is mitigate_amount over
+    // the row's own column, not a pinned number (testing law #4). The law's
+    // own shape is asserted separately below.
+    const int armour = sm::npc_def(sm::NPCType::Guard).armor
+                           .of(sm::DamageType::Blunt);
+    const float expect = float(sm::mitigate_amount(int(blow), armour));
+    CHECK(onPlate.applied == expect,
+          "the door applies exactly the hybrid law of the blow's own column");
+
+    // The hybrid's THRESHOLD branch (owner verdict 2026-09-05): a blow no
+    // bigger than the plate finds no flesh at all — full block is real, and
+    // a blocked blow is a silent no-op like any zero contribution.
+    const entt::entity turtle = reg.create();
+    reg.emplace<sm::ecs::Health>(turtle, 100.0f, 100.0f);
+    reg.emplace<sm::ecs::NPCKind>(
+        turtle, std::uint16_t(sm::NPCType::Guard), std::uint16_t{0});
+    const DamageResult tink =
+        apply_damage(reg, turtle, DamageSource{}, float(armour),
+                     DamageKind::Melee, sm::DamageType::Blunt, &bus);
+    CHECK(tink.applied == 0.0f,
+          "a blow the plate outweighs never lands — 100% reduction is real");
+    CHECK(!reg.any_of<sm::ecs::HitFlash>(turtle),
+          "and a fully blocked blow stamps nothing, like any no-op");
 
     // ...and whether armour is in the way at all is the KIND's column.
     const entt::entity falling = reg.create();
@@ -147,10 +162,42 @@ void test_armour_softens_by_the_row_and_the_kind() {
     reg.emplace<sm::ecs::NPCKind>(
         falling, std::uint16_t(sm::NPCType::Guard), std::uint16_t{0});
     const DamageResult fell =
-        apply_damage(reg, falling, DamageSource{}, blow, DamageKind::Fall, &bus);
+        apply_damage(reg, falling, DamageSource{}, blow, DamageKind::Fall, sm::DamageType::Blunt, &bus);
     CHECK(fell.applied == blow,
           "plate does not soften the ground: the fall row says armour is not "
           "in the way, and that is DATA, not an `if` in the door");
+}
+
+// THE hybrid law's own shape (macro/damage_types.h) — properties, not a
+// recomputation of the formula (testing law #5): each claim can break alone.
+void test_mitigation_law_shape() {
+    int probes = 0, wrong = 0;
+    // Threshold regime: everything up to the armour itself is a full block.
+    for (int dmg = 0; dmg <= 10; ++dmg) {
+        ++probes;
+        if (sm::mitigate_amount(dmg, 10) != 0) ++wrong;
+    }
+    // Percent regime: past the crossover (dmg > A + kArmorHalving) the flat
+    // cut is UNDER the percent cut, so more damage must get through than the
+    // flat branch alone would allow, and the kept share must shrink below
+    // the raw blow — both branches visibly at work.
+    for (int dmg = 21; dmg <= 200; dmg += 20) {
+        ++probes;
+        const int kept = sm::mitigate_amount(dmg, 10);
+        if (!(kept > 0 && kept < dmg - 10 + 1 && kept <= dmg)) ++wrong;
+    }
+    // Monotone in armour: more plate never lets MORE through.
+    for (int a = 0; a < 40; ++a) {
+        ++probes;
+        if (sm::mitigate_amount(50, a + 1) > sm::mitigate_amount(50, a))
+            ++wrong;
+    }
+    // Armour 0 is the identity — the limiting case, not a branch.
+    ++probes;
+    if (sm::mitigate_amount(37, 0) != 37) ++wrong;
+    CHECK(probes == 61 && wrong == 0,
+          "the hybrid law: full block under the threshold, softening past "
+          "the crossover, monotone in armour, identity at zero");
 }
 
 void test_survivor_protocol() {
@@ -158,7 +205,7 @@ void test_survivor_protocol() {
     sm::EventBus bus;
     const entt::entity e = make_body(reg, 30.0f);
     const DamageResult hit = apply_damage(reg, e, DamageSource{7u, true},
-                                          10.0f, DamageKind::Melee, &bus);
+                                          10.0f, DamageKind::Melee, sm::DamageType::Blunt, &bus);
     CHECK(hit.applied == 10.0f,
           "a body in its own skin keeps the whole blow: armour 0 is the "
           "limiting case of the law, applied == asked to the bit");
@@ -186,7 +233,8 @@ void test_player_death_is_not_an_npc_kill() {
         const entt::entity e = make_body(reg, 5.0f);
         reg.emplace<sm::ecs::PlayerTag>(e);
         const DamageResult hit =
-            apply_damage(reg, e, DamageSource{3u, false}, 50.0f, kind, &bus);
+            apply_damage(reg, e, DamageSource{3u, false}, 50.0f, kind,
+                         sm::DamageType::Blunt, &bus);
         CHECK(hit.lethal, "the player body does die");
         CHECK(reg.all_of<sm::ecs::Dead>(e),
               "Dead is stamped so the reconcile sees the death");
@@ -202,7 +250,7 @@ void test_kindless_body_still_reports() {
     sm::EventBus bus;
     const entt::entity e = make_body(reg, 5.0f, /*withKind=*/false);
     apply_damage(reg, e, DamageSource{1u, false, 33u}, 50.0f,
-                 DamageKind::Spell, &bus);
+                 DamageKind::Spell, sm::DamageType::Blunt, &bus);
     CHECK(death_events(bus) == 1, "a kindless death still emits");
     if (const sm::GameEvent* ev = last_death(bus)) {
         CHECK(ev->ix == sm::kNoNpcType,
@@ -215,11 +263,11 @@ void test_no_second_blow() {
     entt::registry reg;
     sm::EventBus bus;
     const entt::entity e = make_body(reg, 10.0f);
-    apply_damage(reg, e, DamageSource{1u, false}, 50.0f, DamageKind::Melee,
+    apply_damage(reg, e, DamageSource{1u, false}, 50.0f, DamageKind::Melee, sm::DamageType::Blunt,
                  &bus);
     const float hpAfterDeath = reg.get<sm::ecs::Health>(e).hp;
     const DamageResult again = apply_damage(reg, e, DamageSource{2u, false},
-                                            50.0f, DamageKind::Spell, &bus);
+                                            50.0f, DamageKind::Spell, sm::DamageType::Blunt, &bus);
     CHECK(again.applied == 0.0f, "a corpse takes no damage");
     CHECK(!again.lethal, "a no-op blow is not lethal");
     CHECK(reg.get<sm::ecs::Health>(e).hp == hpAfterDeath,
@@ -250,14 +298,14 @@ void test_zero_and_missing_target() {
     sm::EventBus bus;
     const entt::entity e = make_body(reg, 10.0f);
     const DamageResult zero =
-        apply_damage(reg, e, DamageSource{}, 0.0f, DamageKind::Melee, &bus);
+        apply_damage(reg, e, DamageSource{}, 0.0f, DamageKind::Melee, sm::DamageType::Blunt, &bus);
     CHECK(zero.applied == 0.0f, "a zero blow is a no-op");
     CHECK(!reg.any_of<sm::ecs::HitFlash>(e),
           "a no-op stamps nothing — zero is a silent contribution");
     const entt::entity bare = reg.create();  // no Health at all
     const DamageResult none =
         apply_damage(reg, bare, DamageSource{}, 10.0f, DamageKind::Melee,
-                     &bus);
+                     sm::DamageType::Blunt, &bus);
     CHECK(none.applied == 0.0f, "a body without Health cannot be struck");
 }
 
@@ -266,6 +314,7 @@ void test_zero_and_missing_target() {
 int main() {
     test_death_is_indistinguishable();
     test_armour_softens_by_the_row_and_the_kind();
+    test_mitigation_law_shape();
     test_survivor_protocol();
     test_player_death_is_not_an_npc_kill();
     test_kindless_body_still_reports();

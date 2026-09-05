@@ -15,6 +15,7 @@
 
 #pragma once
 #include "macro/bonus.h"
+#include "macro/damage_types.h"
 #include <array>
 #include <cstdint>
 #include <span>
@@ -77,9 +78,12 @@ struct ItemDef {
     // exists for: it sits in the main grip and takes the off hand with it.
     // 0 = takes only its own cell.
     std::uint64_t blocksMask = 0;
-    // What it stops. Same units as damage and as a creature row's own armour,
-    // because all three meet in one formula (sub/damage.cpp).
-    int           armor      = 0;
+    // What it stops — nine columns, one per DamageType, same units as damage
+    // and as a creature row's own armour, because all three meet in ONE law
+    // (macro/damage_types.h mitigate_amount). Scalar-era rows convert with
+    // uniform_armor(x); per-column authoring (a fire-warding cloak) is what
+    // the nine columns are FOR.
+    ArmorProfile  armor{};
 };
 
 // ── THE item instance, and THE container ───────────────────────────────────

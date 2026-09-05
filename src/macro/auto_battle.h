@@ -82,12 +82,27 @@ namespace auto_battle_detail {
 // One fighter's worth, from the SAME numbers a subworld body of this row and
 // level fights with: hp × damage-per-second of the sheet-projected template.
 // The floor() mirrors emplace_body — both layers fight with integers.
-// Armour enters as EFFECTIVE HP, the exact identity of the damage door's
-// mitigation (sub/damage.cpp): every blow keeps
+// The armour a fighter brings to a macro battle, as ONE number: physical
+// blows are what macro armies trade today, so the credit is the mean of the
+// three physical columns. When auto-resolve learns attack types, the pairing
+// reads the column the OPPONENT's blow names — this helper is the
+// approximation, not a second law.
+inline int auto_battle_armor(const ArmorProfile& a) {
+    return (a.of(DamageType::Slash) + a.of(DamageType::Pierce) +
+            a.of(DamageType::Blunt)) / 3;
+}
+
+// Armour enters as EFFECTIVE HP through the PERCENT branch of the hybrid
+// mitigation law (macro/damage_types.h): a big blow keeps
 // kArmorHalving / (kArmorHalving + armor) of itself, so a body of hp H
 // absorbs H * (kArmorHalving + armor) / kArmorHalving worth of raw blows —
-// the same law, read as a multiplier. The armour source is the door's own
-// for this row: npc_def().armor (macro fighters wear no equipment today).
+// the same law, read as a multiplier. The hybrid's THRESHOLD branch (small
+// blows fully blocked) is deliberately uncredited here: it depends on the
+// opponent's blow size, which a per-fighter power scalar does not know, so
+// heavy armour is worth slightly MORE in a fought battle than the
+// auto-resolve credits — a bias, not a disagreement of laws. The armour
+// source is the door's own for this row: npc_def().armor (macro fighters
+// wear no equipment today).
 inline float fighter_power(NPCType type, int level, std::uint32_t seed,
                            const BonusTotals* squadBonuses, float healthFraction) {
     CharacterSheet sheet = make_character_sheet(type, level, seed);
@@ -96,8 +111,8 @@ inline float fighter_power(NPCType type, int level, std::uint32_t seed,
     const CombatTemplate pc = project_combat(sheet, def.combat);
     const float hp  = std::max(1.0f, std::floor(pc.hp)) *
                       std::clamp(healthFraction, 0.0f, 1.0f) *
-                      ((kArmorHalving + float(std::max(0, def.armor)))
-                       / kArmorHalving);
+                      (float(kArmorHalving + auto_battle_armor(def.armor))
+                       / float(kArmorHalving));
     const float dps = std::floor(pc.damage) /
                       std::max(0.1f, pc.cooldown);
     return hp * dps;

@@ -1015,15 +1015,20 @@ namespace sm::ui
                     {
                         Equipment &gear = eqc->gear;
                         const BonusTotals worn = worn_bonuses(gear);
+                        // Worn armour is nine columns now; the panel prints
+                        // the physical face of it (worn rows are uniform
+                        // until per-column authoring lands) — a full 9-column
+                        // readout is the phase-4 sheet door's business.
                         ImGui::Text("%s — armour %d",
-                                    gear.shape().label, worn_armor(gear));
+                                    gear.shape().label,
+                                    worn_armor(gear).of(sm::DamageType::Blunt));
                         if (ImGui::IsItemHovered())
                         {
                             ImGui::SetTooltip(
-                                "A blow keeps %.0f/(%.0f+armour) of itself — "
-                                "armour softens, it never makes you immune.",
-                                double(sm::kArmorHalving),
-                                double(sm::kArmorHalving));
+                                "Armour of the blow's own type stops the "
+                                "larger of itself (blows it outweighs never "
+                                "land) or armour/(armour+%d) of the blow.",
+                                sm::kArmorHalving);
                         }
                         ImGui::SameLine();
                         ImGui::TextDisabled("(%d of %d cells filled)",

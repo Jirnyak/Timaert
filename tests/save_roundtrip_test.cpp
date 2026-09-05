@@ -781,7 +781,7 @@ void run_roundtrip() {
             || coat.affix[0].value != 4) {
             FAIL_BAIL("the coat's rolled affix lost");
         }
-        if (sm::worn_armor(worn->gear) <= 0) {
+        if (sm::worn_armor(worn->gear).of(sm::DamageType::Blunt) <= 0) {
             FAIL_BAIL("and it stops nothing, so the row did not come back");
         }
     }

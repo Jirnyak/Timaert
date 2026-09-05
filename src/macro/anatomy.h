@@ -263,8 +263,9 @@ void remark_equipment_blocks(Equipment& eq);
 // "3 of 24 filled" without walking the array itself.
 int worn_cells(const Equipment& eq);
 
-// Armour worn, summed — the addend `sub/damage.cpp defense_of` was waiting
-// for. A creature's row number and what it wears meet in one number.
-int worn_armor(const Equipment& eq);
+// Armour worn, summed per DamageType column (saturating at the column's 255
+// ceiling) — the addend `sub/damage.cpp defense_of` was waiting for. A
+// creature's own row profile and what it wears meet column by column.
+ArmorProfile worn_armor(const Equipment& eq);
 
 } // namespace sm

@@ -135,8 +135,12 @@ void apply_spell_damage(ecs::World& w,
     const bool playerOwned = projectile_owner_is_player_side(w.reg, p);
     const DamageSource src{p.ownerId, playerOwned,
                            p.spellId & kSpellEventIdMask};
-    const DamageResult hit =
-        apply_damage(w.reg, target, src, damage, DamageKind::Spell, bus);
+    // Blunt until spells carry their tag-mapped type (phase 3 step 3:
+    // Fire→Fire, Ice→Water per the canon remap) — with the mechanical uniform
+    // armour profiles the column choice changes nothing yet.
+    const DamageResult hit = apply_damage(w.reg, target, src, damage,
+                                          DamageKind::Spell,
+                                          DamageType::Blunt, bus);
     if (hit.applied <= 0.0f) return;
     if (playerOwned && logFn
         && !w.reg.any_of<ecs::PlayerTag, ecs::PlayerSoldierTag>(target)) {

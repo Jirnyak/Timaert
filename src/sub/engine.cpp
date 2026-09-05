@@ -189,7 +189,9 @@ float apply_fall_damage(entt::registry& reg, entt::entity e, float impactVz,
                         float radius, EventBus* bus) {
     const float dmg = fall_damage(impactVz, radius);
     if (dmg < 0.5f) return 0.0f;
-    return apply_damage(reg, e, DamageSource{}, dmg, DamageKind::Fall, bus)
+    // Typed Blunt for form's sake — the Fall row says armour is not in the way.
+    return apply_damage(reg, e, DamageSource{}, dmg, DamageKind::Fall,
+                        DamageType::Blunt, bus)
         .applied;
 }
 
@@ -1581,9 +1583,12 @@ void SubworldEngine::tick_player_melee(float dt) {
         return;
     }
 
+    // Blunt until the weapon-in-hand carries its own dice+type row (phase 3
+    // step 3) — with the mechanical uniform armour profiles the column choice
+    // changes nothing yet.
     const DamageResult hit = apply_damage(
         reg, target, DamageSource{std::uint32_t{0}, true}, meleeDamage,
-        DamageKind::Melee, bus_);
+        DamageKind::Melee, DamageType::Blunt, bus_);
     if (hit.applied <= 0.0f) return;
     push_player_hit_log(std::uint32_t(entt::to_integral(target)),
                         hit.applied, hit.lethal);
@@ -2493,7 +2498,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
             reg, target,
             DamageSource{std::uint32_t(entt::to_integral(attacker)),
                          playerOwned},
-            c.damage, DamageKind::Melee, bus_);
+            c.damage, DamageKind::Melee, DamageType::Blunt, bus_);
         if (hit.applied <= 0.0f) return;
         c.cooldownSteps = steps_from_seconds(c.cooldown);
     };

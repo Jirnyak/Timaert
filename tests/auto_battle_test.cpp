@@ -77,11 +77,11 @@ struct ManualOutcome {
 ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
     struct Body {
         float x, y, vx, vy, hp, dmg, cd, cdMax, reach, speed, radius;
-        // The fraction of an incoming blow this body keeps — THE door's own
-        // mitigation, kArmorHalving / (kArmorHalving + armor)
-        // (sub/damage.cpp), so the fought harness softens every strike by
-        // the same law the shipping door does.
-        float mitigate;
+        // This body's armour against the physical blow the harness trades —
+        // fed to THE door's own law (mitigate_amount, macro/damage_types.h),
+        // so the fought harness softens every strike exactly as the shipping
+        // door does, hybrid threshold included.
+        int armour;
         int side;
         bool alive;
         bool missile;
@@ -105,8 +105,7 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
         f.reach = pc.attackRange;
         f.speed = sm::march_speed(pc.speedMarchMult);
         f.radius = npc_body_radius(def);
-        f.mitigate = kArmorHalving
-                   / (kArmorHalving + float(std::max(0, def.armor)));
+        f.armour = def.armor.of(DamageType::Blunt);
         f.side = side;
         f.alive = true;
         f.missile = pc.attackKind == CombatTemplate::Missile;
@@ -196,7 +195,7 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
                 && f.cd <= 0.0f) {
                 Body& v = bodies[std::size_t(
                     slot[std::size_t(u.target[std::size_t(i)])])];
-                v.hp -= f.dmg * v.mitigate;
+                v.hp -= float(mitigate_amount(int(f.dmg), v.armour));
                 if (v.hp <= 0.0f) v.alive = false;
                 f.cd = f.cdMax;
             }

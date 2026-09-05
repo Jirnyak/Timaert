@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include "macro/army.h"
+#include "macro/damage_types.h"
 #include "macro/sprite_rows.h"
 
 namespace sm {
@@ -79,21 +80,10 @@ constexpr std::size_t kMaxNpcNames     = 16;
 constexpr std::size_t kMaxNpcTalkLines = 6;
 constexpr int kNpcUpkeepNone = -1;
 
-// The armour at which a blow is HALVED — and therefore the whole scale on
-// which every armour number in the game reads. It is not picked, it is the
-// game's own plain blow: `kPlayerBaseMeleeDamage` (sub/engine.h), what an
-// untrained man does with his bare hands. So "armour 10" is not a number
-// needing a table to interpret — it says «this body halves a plain blow», and
-// twice that quarters it. Armour and damage share units because they meet in
-// one formula, and the halving point is where they meet.
-//
-// ONE home, next to the `armor` column below, because BOTH laws of battle
-// read it: the damage door mitigates every blow by
-// kArmorHalving / (kArmorHalving + armor) (sub/damage.cpp), and the
-// auto-resolve credits the identical protection as EFFECTIVE HP — a body of
-// hp H dies to exactly H * (kArmorHalving + armor) / kArmorHalving worth of
-// raw blows, which is the same law read from the other side.
-inline constexpr float kArmorHalving = 10.0f;
+// The armour scale, the 9-type symmetry and THE mitigation law all live in
+// macro/damage_types.h (kArmorHalving, ArmorProfile, mitigate_amount) — one
+// home, because both laws of battle read them: the damage door
+// (sub/damage.cpp) and the auto-resolve (auto_battle.h).
 
 struct NpcTypeDef {
     // MUST equal the row's index in kNpcTypeDefs (guard below the table).
@@ -198,18 +188,20 @@ struct NpcTypeDef {
     // end costs no other row a comma.
     float haulMult = 1.0f;
 
-    // ARMOUR THE ROW IS WEARING — the crowd's defence, as a NUMBER rather than
-    // as instances (owner ruling, 2026-08-27: «броня массовки = ЧИСЛО ИЗ
+    // ARMOUR THE ROW IS WEARING — the crowd's defence, as ROW DATA rather
+    // than as instances (owner ruling, 2026-08-27: «броня массовки = ЧИСЛО ИЗ
     // СТРОКИ»). A troll's hide and a guard's plate are what those rows ARE;
     // giving sixteen thousand bodies an equipment container each to say so
     // would be one fact stored ten thousand times. A body that also WEARS
     // things adds them on top of this — the same shape the authored body
     // radius has, where a creature's own number and the default meet at one
-    // reader. Zero (every row that omits it) is a body in its own skin.
+    // reader. All-zero (every row that omits it) is a body in its own skin.
     //
-    // Units are the damage's own, because the two meet in one formula
-    // (sub/damage.cpp).
-    int armor = 0;
+    // Nine columns since the 9×9 symmetry (CANON S13) — one per DamageType,
+    // units the damage's own, because the two meet in mitigate_amount().
+    // Scalar-era rows convert with uniform_armor(x) (mechanical translation,
+    // owner verdict 2026-09-05); per-column authoring is content-stage work.
+    ArmorProfile armor{};
 
     // WHAT A BODY OF THIS ROW COSTS to take into a roster, in gold at its
     // level-1 worth (CANON S25: a creature's price is a column of its row,
@@ -249,7 +241,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         // the price column at the row's end: upkeep 1 × 30 days.
         /*lightRadius=*/0.0f, /*lightIntensity=*/0.0f,
         /*lightR=*/0.0f, /*lightG=*/0.0f, /*lightB=*/0.0f,
-        /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/0,
+        /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/{},
         /*hireGold=*/30,
     },
     // Woodcutter
@@ -265,7 +257,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         // Defaults to reach the price column: upkeep 1 × 30 days.
         /*lightRadius=*/0.0f, /*lightIntensity=*/0.0f,
         /*lightR=*/0.0f, /*lightG=*/0.0f, /*lightB=*/0.0f,
-        /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/0,
+        /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/{},
         /*hireGold=*/30,
     },
     // Merchant
@@ -336,7 +328,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         // is not the default; kArmorHalving is what makes 10 legible — it
         // HALVES a plain blow.
         /*haulMult=*/1.0f,
-        /*armor=*/10,
+        /*armor=*/uniform_armor(10),
         // The price column: upkeep 3 × 30 days.
         /*hireGold=*/90,
     },
@@ -375,7 +367,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         // Defaults to reach the price column: upkeep 1 × 30 days.
         /*lightRadius=*/0.0f, /*lightIntensity=*/0.0f,
         /*lightR=*/0.0f, /*lightG=*/0.0f, /*lightB=*/0.0f,
-        /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/0,
+        /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/{},
         /*hireGold=*/30,
     },
     // Quarryman — stone out of the mountain, the same law of labour
@@ -390,7 +382,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         // Defaults to reach the price column: upkeep 1 × 30 days.
         /*lightRadius=*/0.0f, /*lightIntensity=*/0.0f,
         /*lightR=*/0.0f, /*lightG=*/0.0f, /*lightB=*/0.0f,
-        /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/0,
+        /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/{},
         /*hireGold=*/30,
     },
     // Clay-digger — the riverbank's man
@@ -405,7 +397,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         // Defaults to reach the price column: upkeep 1 × 30 days.
         /*lightRadius=*/0.0f, /*lightIntensity=*/0.0f,
         /*lightR=*/0.0f, /*lightG=*/0.0f, /*lightB=*/0.0f,
-        /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/0,
+        /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/{},
         /*hireGold=*/30,
     },
     // Rabbit
@@ -566,7 +558,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "Buy now - by evening the good grain is gone."}}, 3,
         /*lightRadius=*/0.0f, /*lightIntensity=*/0.0f,
         /*lightR=*/0.0f, /*lightG=*/0.0f, /*lightB=*/0.0f,
-        /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/0,
+        /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/{},
         /*hireGold=*/30,
     },
     // Silver-miner — the mint's first hand (owner 2026-08-30)
@@ -581,7 +573,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "The vein glitters, the lungs pay."}}, 3,
         /*lightRadius=*/0.0f, /*lightIntensity=*/0.0f,
         /*lightR=*/0.0f, /*lightG=*/0.0f, /*lightB=*/0.0f,
-        /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/0,
+        /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/{},
         /*hireGold=*/30,
     },
     // Tax-collector — the feudal graph's own courier (owner 2026-08-30)
@@ -596,7 +588,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "Every realm stands on carried coin."}}, 3,
         /*lightRadius=*/0.0f, /*lightIntensity=*/0.0f,
         /*lightR=*/0.0f, /*lightG=*/0.0f, /*lightB=*/0.0f,
-        /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/0,
+        /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/{},
         /*hireGold=*/30,
     },
 };

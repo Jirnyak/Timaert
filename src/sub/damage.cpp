@@ -21,11 +21,11 @@ namespace {
 // thousand times. A body that also WEARS things adds them on top; that sum is
 // one line here when the equipment component lands, and no damage site
 // changes to gain it.
-int defense_of(entt::registry& reg, entt::entity target) {
+int defense_of(entt::registry& reg, entt::entity target, DamageType type) {
     int armour = 0;
     if (const auto* kind = reg.try_get<ecs::NPCKind>(target)) {
         if (kind->type < std::uint16_t(NPCType::Count)) {
-            armour = npc_def(NPCType(std::uint8_t(kind->type))).armor;
+            armour = npc_def(NPCType(std::uint8_t(kind->type))).armor.of(type);
         }
     }
     // ...and what it WEARS, for the few bodies that wear anything. This is the
@@ -33,42 +33,45 @@ int defense_of(entt::registry& reg, entt::entity target) {
     // and a body with no BodyEquipment is the limiting case rather than a
     // branch — which is the same sentence armour 0 already was.
     if (const auto* eq = reg.try_get<ecs::BodyEquipment>(target)) {
-        armour += worn_armor(eq->gear);
+        armour += worn_armor(eq->gear).of(type);
     }
     return std::max(0, armour);
 }
 
 // Mitigation, second step inside the door.
 //
-// THE LAW: a blow keeps the fraction kArmorHalving / (kArmorHalving + armour).
-// Asymptotic on purpose — armour SOFTENS, it never makes a body immune, so no
-// amount of plate turns a fight into an impossibility and there is no
-// threshold anywhere for a designer to fall off. A creature with no defences
-// is the limiting case (armour 0 keeps everything), not a branch around the
-// law.
+// THE LAW is mitigate_amount (macro/damage_types.h): the hybrid — armour cuts
+// the larger of itself (a blow no bigger than the plate finds no flesh) and
+// the halving fraction (a big blow is softened, never zeroed). The armour
+// NUMBER is the column of the blow's own type: nine damage types against
+// nine armour columns, and the meeting point is this one call.
 //
 // Whether armour is even in the way is the damage KIND's column, not an `if`
 // here: plate does not soften a fall, and a scripted settlement must not be
 // argued with by a breastplate.
+//
+// Integer law, float edges: blows arrive as whole-valued floats today (melee
+// floors upstream, spell damage is int-born); the truncation here is the
+// bridge that dies with the Health int sweep (phase 3 step 4).
 float mitigate(entt::registry& reg, entt::entity target, float amount,
-               DamageKind kind) {
+               DamageKind kind, DamageType type) {
     const DamageKindRow& row = kDamageKinds[std::size_t(kind)];
     if (!row.armourApplies) return amount;
-    const int armour = defense_of(reg, target);
+    const int armour = defense_of(reg, target, type);
     if (armour <= 0) return amount;
-    return amount * (kArmorHalving / (kArmorHalving + float(armour)));
+    return float(mitigate_amount(int(amount), armour));
 }
 
 } // namespace
 
 DamageResult apply_damage(entt::registry& reg, entt::entity target,
                           const DamageSource& src, float amount,
-                          DamageKind kind, EventBus* bus) {
+                          DamageKind kind, DamageType type, EventBus* bus) {
     DamageResult out{};
     if (!reg.valid(target)) return out;
     auto* hp = reg.try_get<ecs::Health>(target);
     if (hp == nullptr || hp->hp <= 0.0f) return out;
-    const float amt = mitigate(reg, target, amount, kind);
+    const float amt = mitigate(reg, target, amount, kind, type);
     if (amt <= 0.0f) return out;
 
     hp->hp -= amt;
@@ -104,7 +107,7 @@ DamageResult apply_lethal_damage(entt::registry& reg, entt::entity target,
                                  EventBus* bus) {
     const auto* hp = reg.try_get<ecs::Health>(target);
     if (hp == nullptr || hp->hp <= 0.0f) return {};
-    return apply_damage(reg, target, src, hp->hp, kind, bus);
+    return apply_damage(reg, target, src, hp->hp, kind, DamageType::Blunt, bus);
 }
 
 } // namespace sm::sub

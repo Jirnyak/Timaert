@@ -183,17 +183,26 @@ void test_worn_sums_reach_the_one_currency() {
     leather.def = std::uint16_t(item_index("arm_leather"));
     leather.count = 1;
 
-    CHECK(worn_armor(eq) == 0, "a naked body stops nothing");
+    CHECK(worn_armor(eq).of(DamageType::Blunt) == 0,
+          "a naked body stops nothing");
     const BonusTotals bare = worn_bonuses(eq);
     CHECK(bare.attr[std::size_t(AttributeId::End)] == 0, "and grants nothing");
 
     const int cell = equip(eq, leather);
     CHECK(cell >= 0, "the coat is on");
     const ItemDef* def = item_def_at(int(leather.def));
-    CHECK(def != nullptr && def->armor > 0,
+    CHECK(def != nullptr && def->armor.of(DamageType::Blunt) > 0,
           "the fixture's coat is actually armoured — else this proves nothing");
-    CHECK(worn_armor(eq) == def->armor,
-          "worn armour is the sum of the rows worn, in the door's own units");
+    // Column by column: what is worn reaches the door in every one of the
+    // nine types the row authors (uniform for the scalar-era coat).
+    int columns = 0, drifted = 0;
+    for (std::size_t t = 0; t < kDamageTypeCount; ++t) {
+        ++columns;
+        if (worn_armor(eq).v[t] != def->armor.v[t]) ++drifted;
+    }
+    CHECK(columns == int(kDamageTypeCount) && drifted == 0,
+          "worn armour is the per-column sum of the rows worn, in the door's "
+          "own units");
 
     // The coat's authored "+2 END" was FICTION until the registry landed and
     // equipment could carry it. Now it is a standing bonus like any other.
@@ -203,7 +212,7 @@ void test_worn_sums_reach_the_one_currency() {
           "'+2 END when equipped' the row has claimed since day one");
 
     unequip(eq, cell);
-    CHECK(worn_armor(eq) == 0 && worn_bonuses(eq).attr[
+    CHECK(worn_armor(eq).of(DamageType::Blunt) == 0 && worn_bonuses(eq).attr[
               std::size_t(AttributeId::End)] == 0,
           "take it off and both sums fall back to nothing: no residue");
 }
