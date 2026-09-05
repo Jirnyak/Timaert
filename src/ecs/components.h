@@ -490,6 +490,10 @@ struct Projectile {
     bool friendlyFire;
     bool visualOnly;
     bool explodeOnExpiry;
+    // The blow's armour column (DamageType ordinal) and the crit verdict —
+    // both rolled at cast/loose, carried to the damage door like the wound.
+    std::uint8_t dmgType;
+    bool critical;
 };
 
 } // namespace sm::ecs

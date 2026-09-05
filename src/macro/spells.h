@@ -18,6 +18,7 @@
 #include "core/table_guard.h"
 #include "macro/attributes.h"
 #include "macro/bonus.h"
+#include "macro/damage_types.h"
 #include <algorithm>
 #include <cstdint>
 #include <string_view>
@@ -46,19 +47,26 @@ struct SpellTagDef {
     // MUST equal the row's index in kSpellTagDefs (guard below the table).
     SpellTag    id;
     const char* label;
+    // Which of the nine armour columns this tag's damage argues with — the
+    // canon remap (S15, owner verdict 2026-09-05: Ice→Water, Lightning→Air,
+    // Dark→Void, Light→Arcane) applied as DATA, so the phase-5 tag→school
+    // collapse changes rows here and nothing anywhere else. Body/Mind are
+    // pre-war tags with no school: their damage reads as Blunt/Arcane until
+    // that collapse retires them.
+    DamageType  dmgType;
 };
 
 inline constexpr SpellTagDef kSpellTagDefs[] = {
-    {SpellTag::Fire,      "Fire"},
-    {SpellTag::Ice,       "Ice"},
-    {SpellTag::Lightning, "Lightning"},
-    {SpellTag::Dark,      "Dark"},
-    {SpellTag::Light,     "Light"},
-    {SpellTag::Earth,     "Earth"},
-    {SpellTag::Air,       "Air"},
-    {SpellTag::Arcane,    "Arcane"},
-    {SpellTag::Body,      "Body"},
-    {SpellTag::Mind,      "Mind"},
+    {SpellTag::Fire,      "Fire",      DamageType::Fire},
+    {SpellTag::Ice,       "Ice",       DamageType::Water},
+    {SpellTag::Lightning, "Lightning", DamageType::Air},
+    {SpellTag::Dark,      "Dark",      DamageType::Void},
+    {SpellTag::Light,     "Light",     DamageType::Arcane},
+    {SpellTag::Earth,     "Earth",     DamageType::Earth},
+    {SpellTag::Air,       "Air",       DamageType::Air},
+    {SpellTag::Arcane,    "Arcane",    DamageType::Arcane},
+    {SpellTag::Body,      "Body",      DamageType::Blunt},
+    {SpellTag::Mind,      "Mind",      DamageType::Arcane},
 };
 static_assert(sizeof(kSpellTagDefs) / sizeof(kSpellTagDefs[0])
                   == std::size_t(SpellTag::Count),
@@ -182,7 +190,9 @@ struct SpellDef {
     bool  hasMicro;                  // castable in the subworld
     bool  hasMacro;                  // castable on the world map
     // ── effect numbers ──
-    float baseDamage;
+    // The blow as DICE (CANON S13: урон = NdM строкой спелла). Scalar-era
+    // rows converted mechanically to Nd1; authored spreads are content-stage.
+    Dice  dice;
     float baseHeal;
     float baseRadius;                // blast / nova spread
     int   chainCount;
@@ -222,6 +232,12 @@ struct SpellDef {
     const char* cons[kMaxSpellFlavorItems] = {};
 };
 
+// The armour column this spell's blow argues with: its primary tag's row.
+// One reader, so the phase-5 tag→school collapse moves nothing but the table.
+inline constexpr DamageType spell_damage_type(const SpellDef& s) {
+    return kSpellTagDefs[std::size_t(s.tag)].dmgType;
+}
+
 // What ONE effect cell of a spell is worth in the caster's hands.
 //
 // THE LAW is the project's own, said about magic: attributes ADD, skills
@@ -253,7 +269,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .manaCost = 60, .cooldown = 2.0f, .castTime = 0.3f,
         .sustained = false, .manaDrain = 0.0f,
         .hasMicro = true, .hasMacro = true,
-        .baseDamage = 30.0f, .baseHeal = 0.0f, .baseRadius = 48.0f,
+        .dice = {30, 1}, .baseHeal = 0.0f, .baseRadius = 48.0f,
         .chainCount = 0, .chainDecay = 0.0f,
         .speed = 280.0f, .duration = 0.0f, .friendlyFire = true,
         .statusEffect = "burning", .statusDuration = 3.0f,
@@ -277,7 +293,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .manaCost = 30, .cooldown = 1.5f, .castTime = 0.2f,
         .sustained = false, .manaDrain = 0.0f,
         .hasMicro = true, .hasMacro = true,
-        .baseDamage = 40.0f, .baseHeal = 0.0f, .baseRadius = 0.0f,
+        .dice = {40, 1}, .baseHeal = 0.0f, .baseRadius = 0.0f,
         .chainCount = 0, .chainDecay = 0.0f,
         .speed = 350.0f, .duration = 0.0f, .friendlyFire = false,
         .statusEffect = "chilled", .statusDuration = 4.0f,
@@ -304,7 +320,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .manaCost = 10, .cooldown = 0.0f, .castTime = 0.0f,
         .sustained = false, .manaDrain = 0.0f,
         .hasMicro = true, .hasMacro = false,
-        .baseDamage = 12.0f, .baseHeal = 0.0f, .baseRadius = 0.0f,
+        .dice = {12, 1}, .baseHeal = 0.0f, .baseRadius = 0.0f,
         .chainCount = 0, .chainDecay = 0.0f,
         .speed = 400.0f, .duration = 0.0f, .friendlyFire = false,
         .statusEffect = "", .statusDuration = 0.0f,
@@ -326,7 +342,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .manaCost = 60, .cooldown = 4.0f, .castTime = 0.1f,
         .sustained = false, .manaDrain = 0.0f,
         .hasMicro = true, .hasMacro = true,
-        .baseDamage = 22.0f, .baseHeal = 0.0f, .baseRadius = 0.0f,
+        .dice = {22, 1}, .baseHeal = 0.0f, .baseRadius = 0.0f,
         .chainCount = 4, .chainDecay = 0.70f,
         .speed = 0.0f, .duration = 0.0f, .friendlyFire = false,
         .statusEffect = "shocked", .statusDuration = 2.0f,
@@ -350,7 +366,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .manaCost = 100, .cooldown = 2.5f, .castTime = 0.4f,
         .sustained = false, .manaDrain = 0.0f,
         .hasMicro = true, .hasMacro = false,
-        .baseDamage = 25.0f, .baseHeal = 0.0f, .baseRadius = 8.0f,
+        .dice = {25, 1}, .baseHeal = 0.0f, .baseRadius = 8.0f,
         .chainCount = 0, .chainDecay = 0.0f,
         .speed = 0.0f, .duration = 0.0f, .friendlyFire = true,
         .statusEffect = "", .statusDuration = 0.0f,
@@ -373,7 +389,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .manaCost = 1000, .cooldown = 120.0f, .castTime = 2.0f,
         .sustained = false, .manaDrain = 0.0f,
         .hasMicro = true, .hasMacro = true,
-        .baseDamage = 80.0f, .baseHeal = 0.0f, .baseRadius = 160.0f,
+        .dice = {80, 1}, .baseHeal = 0.0f, .baseRadius = 160.0f,
         .chainCount = 0, .chainDecay = 0.0f,
         .speed = 0.0f, .duration = 0.0f, .friendlyFire = true,
         .statusEffect = "burning", .statusDuration = 8.0f,
@@ -397,7 +413,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .manaCost = 0, .cooldown = 0.0f, .castTime = 0.0f,
         .sustained = true, .manaDrain = 10.0f,
         .hasMicro = true, .hasMacro = true,
-        .baseDamage = 0.0f, .baseHeal = 0.0f, .baseRadius = 0.0f,
+        .dice = {0, 1}, .baseHeal = 0.0f, .baseRadius = 0.0f,
         .chainCount = 0, .chainDecay = 0.0f,
         .speed = 0.0f, .duration = 0.0f, .friendlyFire = false,
         .statusEffect = "hasted", .statusDuration = 0.0f,
@@ -426,7 +442,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .manaCost = 0, .cooldown = 0.0f, .castTime = 0.0f,
         .sustained = true, .manaDrain = 20.0f,
         .hasMicro = true, .hasMacro = true,
-        .baseDamage = 0.0f, .baseHeal = 0.0f, .baseRadius = 0.0f,
+        .dice = {0, 1}, .baseHeal = 0.0f, .baseRadius = 0.0f,
         .chainCount = 0, .chainDecay = 0.0f,
         .speed = 0.0f, .duration = 0.0f, .friendlyFire = false,
         .statusEffect = "flying", .statusDuration = 0.0f,

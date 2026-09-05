@@ -243,12 +243,13 @@ int main() {
         return fail("magic_bolt flavor metadata wrong");
     }
     // A DAMAGING spell carries no stat row and no rule: damage is a BLOW, and
-    // blows have exactly one door. `baseDamage` is what it strikes for, and
-    // that is the whole of it — the old `macroType = DamageRegion, macroPower
-    // = 10` was the same fact told a second time, in a vocabulary nobody read.
+    // blows have exactly one door. Its DICE are what it strikes for (the
+    // scalar-era 30 is the mechanical 30d1), and that is the whole of it —
+    // the old `macroType = DamageRegion, macroPower = 10` was the same fact
+    // told a second time, in a vocabulary nobody read.
     if (fireDef->rule != sm::SpellRuleId::None
         || fireDef->effects[0].row != 0
-        || !nearf(fireDef->baseDamage, 30.0f)
+        || fireDef->dice.n != 30 || fireDef->dice.m != 1
         || sm::spell_flavor_count(fireDef->pros) != 3
         || std::strcmp(fireDef->pros[1], "Burning DOT") != 0) {
         return fail("fireball effect/flavor metadata wrong");

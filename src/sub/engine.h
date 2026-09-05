@@ -466,6 +466,9 @@ public:
     entt::entity player_entity() const;
     void  rotate_camera(float dyaw, float dpitch);
     float spell_rng01() { return spellRng_.next_f01(); }
+    // The stream a cast's WOUND is rolled from (spell_strike) — the same
+    // spell stream, handed out so the book can roll where the sheet lives.
+    Rng&  spell_rng() { return spellRng_; }
     const char* status_line() const { return statusLine_.c_str(); }
     int combat_log_count() const { return combatLogCount_; }
     const CombatLogEntry* combat_log_entry(int index) const;

@@ -2149,7 +2149,8 @@ bool cast_active_spell(App& app) {
         nz,
         true,
         &subworld_spell_rng01,
-        &app.subworld);
+        &app.subworld,
+        &app.subworld.spell_rng());
     emit_spell_cast(app, id, ok, ok ? "" : "Cast failed");
     return ok;
 }

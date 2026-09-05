@@ -27,12 +27,33 @@ float spell_strength(const SpellDef& spell,
     return derived.rawSpellDamage * tierMul;
 }
 
+// The scaling column as the strike assembly's whole percent — one rounding,
+// one place.
+static int spell_mult_pct(const SpellDef& spell) {
+    return int(spell.scalingPower * 100.0f + 0.5f);
+}
+
 int spell_damage(const SpellDef& spell,
                  const Attributes& attributes,
                  const Skills& skills) {
-    if (spell.baseDamage <= 0.0f) return 0;
+    if (spell.dice.n == 0) return 0;
     const float s = spell_strength(spell, attributes, skills);
-    return int(std::floor((spell.baseDamage + s) * spell.scalingPower));
+    // The strike's EXPECTATION — what a panel prints and a macro reader
+    // credits; the cast itself rolls (spell_strike below). Exact for the
+    // mechanical Nd1 rows, honest for authored spreads later.
+    return strike_mean_x2(spell.dice, int(std::floor(s)),
+                          spell_mult_pct(spell)) / 2;
+}
+
+StrikeRoll spell_strike(Rng& rng, const SpellDef& spell,
+                        const Attributes& attributes, const Skills& skills) {
+    if (spell.dice.n == 0) return {};
+    const float s = spell_strength(spell, attributes, skills);
+    // THE strike assembly, the same the sword swings through: dice + the
+    // sheet's add, scaled by the row's percent, LCK asking the crit door.
+    return roll_strike(rng, spell.dice, int(std::floor(s)),
+                       spell_mult_pct(spell),
+                       attributes.of(AttributeId::Lck));
 }
 
 int spell_heal(const SpellDef& spell,
@@ -102,7 +123,8 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, CombatStats& combat,
                     std::uint32_t pid, float px, float py, float pz,
                     float nx, float ny, float nz, bool inMicro,
                     SpellRngFn rng01,
-                    void* rngUser) {
+                    void* rngUser,
+                    Rng* diceRng) {
     if (!spellbook_can_cast_ex(sb, combat, spellOrd, inMicro).ok) return false;
     const SpellDef* d = &kSpellDefs[spellOrd];
     if (d->sustained || d->shape == DeliveryShape::Self) {
@@ -114,12 +136,17 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, CombatStats& combat,
     }
 
     const float blastRadius = d->friendlyFire ? d->baseRadius : 0.0f;
+    // The wound is ROLLED here, at the cast — the bolt then carries its
+    // number like a loosed arrow. No stream = the expectation, no crit.
+    const StrikeRoll strike = diceRng
+        ? spell_strike(*diceRng, *d, attributes, skills)
+        : StrikeRoll{spell_damage(*d, attributes, skills), false};
     SpellSpawnContext ctx{
         px, py,
         pz,
         kSpellCasterRadius,
         nx, ny, nz,
-        float(spell_damage(*d, attributes, skills)),
+        float(strike.amount),
         d->speed > 0.0f ? d->speed : 300.0f,
         d->projectileRadius,
         blastRadius,
@@ -129,6 +156,8 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, CombatStats& combat,
         rng01,
         rngUser,
     };
+    ctx.dmgType = std::uint8_t(spell_damage_type(*d));
+    ctx.critical = strike.critical;
 
     if (!cast_spell(w, *d, ctx)) return false;
     spellbook_start_cast(sb, combat, spellOrd);

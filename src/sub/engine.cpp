@@ -394,10 +394,10 @@ void spawn_npc_missile(entt::registry& reg,
     const std::uint8_t a = std::uint8_t((color >> 24) & 0xFFu);
 
     // The missile's wound is rolled AT LOOSE through the one assembly — the
-    // arrow leaves the bow carrying its number (crit lands with the typed
-    // projectile rework; the flag would need to ride the projectile).
+    // arrow leaves the bow carrying its number, the crit verdict included.
     const StrikeRoll loose = roll_strike(combatRng, combat.dice,
-                                         combat.flatAdd, combat.multPct, 0);
+                                         combat.flatAdd, combat.multPct,
+                                         int(combat.luck));
     entt::entity e = reg.create();
     reg.emplace<ecs::Position>(e, sx, sy, sz);
     reg.emplace<ecs::Projectile>(
@@ -416,7 +416,9 @@ void spawn_npc_missile(entt::registry& reg,
         ecs::Projectile::Bolt,
         false,
         false,
-        false);
+        false,
+        combat.dmgType,
+        loose.critical);
     reg.emplace<ecs::Sprite>(e, std::uint16_t(0x1FD), r, g, b,
                              a == 0 ? std::uint8_t(255) : a, 1.2f);
     reg.emplace<ecs::SubworldTag>(e);

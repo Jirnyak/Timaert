@@ -133,14 +133,13 @@ void apply_spell_damage(ecs::World& w,
     if (damage <= 0.0f || !w.reg.valid(target)) return;
     if (!is_spell_target(w.reg, target, p, canHitFn, canHitUser)) return;
     const bool playerOwned = projectile_owner_is_player_side(w.reg, p);
+    // The projectile brought everything from the cast: its wound, its tag's
+    // armour column and the crit verdict — the door just applies them.
     const DamageSource src{p.ownerId, playerOwned,
-                           p.spellId & kSpellEventIdMask};
-    // Blunt until spells carry their tag-mapped type (phase 3 step 3:
-    // Fire→Fire, Ice→Water per the canon remap) — with the mechanical uniform
-    // armour profiles the column choice changes nothing yet.
+                           p.spellId & kSpellEventIdMask, p.critical};
     const DamageResult hit = apply_damage(w.reg, target, src, damage,
                                           DamageKind::Spell,
-                                          DamageType::Blunt, bus);
+                                          DamageType(p.dmgType), bus);
     if (hit.applied <= 0.0f) return;
     if (playerOwned && logFn
         && !w.reg.any_of<ecs::PlayerTag, ecs::PlayerSoldierTag>(target)) {

@@ -107,7 +107,7 @@ void emplace_projectile(ecs::World& w, const SpellSpawnContext& c,
         c.px, c.py, 0.0f,
         0.0f, 0.0f,
         c.spellId, c.playerId, std::int16_t(0), ecs::Projectile::Bolt,
-        c.friendlyFire, false, false);
+        c.friendlyFire, false, false, c.dmgType, c.critical);
     w.reg.emplace<ecs::Sprite>(e, std::uint16_t(0),
         r, g, b, std::uint8_t(255), 1.0f);
     w.reg.emplace<ecs::SubworldTag>(e);
@@ -159,7 +159,7 @@ void spawn_energy_beam(ecs::World& w, const SpellSpawnContext& c) {
         c.px + c.nx * spawnOffset, c.py + c.ny * spawnOffset, kBeamLen,
         0.0f, 0.0f,
         c.spellId, c.playerId, std::int16_t(0), ecs::Projectile::Beam,
-        c.friendlyFire, true, true);
+        c.friendlyFire, true, true, c.dmgType, c.critical);
     w.reg.emplace<ecs::Sprite>(e, std::uint16_t(0),
         std::uint8_t(0xAA), std::uint8_t(0xDD), std::uint8_t(0xFF),
         std::uint8_t(220), 1.0f);
@@ -192,7 +192,7 @@ void spawn_armageddon(ecs::World& w, const SpellSpawnContext& c) {
             c.px, c.py, 0.0f,
             0.0f, 0.0f,
             c.spellId, c.playerId, std::int16_t(0), ecs::Projectile::Bolt,
-            c.friendlyFire, true, true);
+            c.friendlyFire, true, true, c.dmgType, c.critical);
         w.reg.emplace<ecs::Sprite>(e, std::uint16_t(0),
             std::uint8_t(0xFF), std::uint8_t(0x55), std::uint8_t(0x11),
             std::uint8_t(255), 1.0f);
@@ -252,13 +252,15 @@ bool cast_spell(ecs::World& w, std::string_view id,
                           0.0f,
                           kSpellCasterRadius,
                           nx, ny, 0.0f,
-                          s->baseDamage,
+                          // No sheet, no stream: the row's own expectation.
+                          float(dice_mean_x2(s->dice)) * 0.5f,
                           s->speed > 0.0f ? s->speed : 300.0f,
                           s->projectileRadius,
                           s->friendlyFire ? s->baseRadius : 0.0f,
                           s->friendlyFire,
                           playerId,
                           stable_spell_id(s->id)};
+    ctx.dmgType = std::uint8_t(spell_damage_type(*s));
     return cast_spell(w, *s, ctx);
 }
 

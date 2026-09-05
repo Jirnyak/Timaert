@@ -21,7 +21,8 @@ struct SpellSpawnContext {
     float pz;              // caster altitude (metres above ground)
     float playerRadius;
     float nx, ny, nz;      // 3D aim direction (normalised)
-    float damage;
+    float damage;          // ROLLED at cast (spell_strike) — the bolt carries
+                           // its wound like an arrow does
     float speed;
     float projectileRadius;
     float effectRadius;
@@ -30,6 +31,11 @@ struct SpellSpawnContext {
     std::uint32_t spellId;
     SpellRngFn rng01 = nullptr;
     void* rngUser = nullptr;
+    // The blow's armour column (DamageType ordinal — the tag's row) and the
+    // crit door's verdict at cast; both ride the projectile to the damage
+    // door. Appended with defaults so positional builders stay whole.
+    std::uint8_t dmgType = 2;  // DamageType::Blunt
+    bool critical = false;
 };
 
 using SpellSpawnFn = void (*)(ecs::World&, const SpellSpawnContext&);
