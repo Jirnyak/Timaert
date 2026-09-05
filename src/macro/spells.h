@@ -196,7 +196,7 @@ struct SpellDef {
     float baseHeal;
     float baseRadius;                // blast / nova spread
     int   chainCount;
-    float chainDecay;                // damage multiplier per jump
+    std::uint8_t chainDecayPct;      // damage kept per jump, whole percent
     float speed;                     // projectile speed, tiles/s
     float duration;
     bool  friendlyFire;
@@ -270,7 +270,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .sustained = false, .manaDrain = 0.0f,
         .hasMicro = true, .hasMacro = true,
         .dice = {30, 1}, .baseHeal = 0.0f, .baseRadius = 48.0f,
-        .chainCount = 0, .chainDecay = 0.0f,
+        .chainCount = 0, .chainDecayPct = 0,
         .speed = 280.0f, .duration = 0.0f, .friendlyFire = true,
         .statusEffect = "burning", .statusDuration = 3.0f,
         .scalingPower = 1.2f, .scalingDuration = 0.0f, .scalingRadius = 0.5f,
@@ -294,7 +294,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .sustained = false, .manaDrain = 0.0f,
         .hasMicro = true, .hasMacro = true,
         .dice = {40, 1}, .baseHeal = 0.0f, .baseRadius = 0.0f,
-        .chainCount = 0, .chainDecay = 0.0f,
+        .chainCount = 0, .chainDecayPct = 0,
         .speed = 350.0f, .duration = 0.0f, .friendlyFire = false,
         .statusEffect = "chilled", .statusDuration = 4.0f,
         .scalingPower = 1.4f, .scalingDuration = 0.3f, .scalingRadius = 0.0f,
@@ -321,7 +321,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .sustained = false, .manaDrain = 0.0f,
         .hasMicro = true, .hasMacro = false,
         .dice = {12, 1}, .baseHeal = 0.0f, .baseRadius = 0.0f,
-        .chainCount = 0, .chainDecay = 0.0f,
+        .chainCount = 0, .chainDecayPct = 0,
         .speed = 400.0f, .duration = 0.0f, .friendlyFire = false,
         .statusEffect = "", .statusDuration = 0.0f,
         .scalingPower = 1.0f, .scalingDuration = 0.0f, .scalingRadius = 0.0f,
@@ -343,7 +343,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .sustained = false, .manaDrain = 0.0f,
         .hasMicro = true, .hasMacro = true,
         .dice = {22, 1}, .baseHeal = 0.0f, .baseRadius = 0.0f,
-        .chainCount = 4, .chainDecay = 0.70f,
+        .chainCount = 4, .chainDecayPct = 70,
         .speed = 0.0f, .duration = 0.0f, .friendlyFire = false,
         .statusEffect = "shocked", .statusDuration = 2.0f,
         .scalingPower = 1.0f, .scalingDuration = 0.0f, .scalingRadius = 0.4f,
@@ -367,7 +367,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .sustained = false, .manaDrain = 0.0f,
         .hasMicro = true, .hasMacro = false,
         .dice = {25, 1}, .baseHeal = 0.0f, .baseRadius = 8.0f,
-        .chainCount = 0, .chainDecay = 0.0f,
+        .chainCount = 0, .chainDecayPct = 0,
         .speed = 0.0f, .duration = 0.0f, .friendlyFire = true,
         .statusEffect = "", .statusDuration = 0.0f,
         .scalingPower = 1.1f, .scalingDuration = 0.0f, .scalingRadius = 0.3f,
@@ -390,7 +390,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .sustained = false, .manaDrain = 0.0f,
         .hasMicro = true, .hasMacro = true,
         .dice = {80, 1}, .baseHeal = 0.0f, .baseRadius = 160.0f,
-        .chainCount = 0, .chainDecay = 0.0f,
+        .chainCount = 0, .chainDecayPct = 0,
         .speed = 0.0f, .duration = 0.0f, .friendlyFire = true,
         .statusEffect = "burning", .statusDuration = 8.0f,
         .scalingPower = 2.0f, .scalingDuration = 0.5f, .scalingRadius = 1.0f,
@@ -414,7 +414,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .sustained = true, .manaDrain = 10.0f,
         .hasMicro = true, .hasMacro = true,
         .dice = {0, 1}, .baseHeal = 0.0f, .baseRadius = 0.0f,
-        .chainCount = 0, .chainDecay = 0.0f,
+        .chainCount = 0, .chainDecayPct = 0,
         .speed = 0.0f, .duration = 0.0f, .friendlyFire = false,
         .statusEffect = "hasted", .statusDuration = 0.0f,
         .scalingPower = 0.5f, .scalingDuration = 1.2f, .scalingRadius = 0.0f,
@@ -443,7 +443,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .sustained = true, .manaDrain = 20.0f,
         .hasMicro = true, .hasMacro = true,
         .dice = {0, 1}, .baseHeal = 0.0f, .baseRadius = 0.0f,
-        .chainCount = 0, .chainDecay = 0.0f,
+        .chainCount = 0, .chainDecayPct = 0,
         .speed = 0.0f, .duration = 0.0f, .friendlyFire = false,
         .statusEffect = "flying", .statusDuration = 0.0f,
         .scalingPower = 0.0f, .scalingDuration = 1.0f, .scalingRadius = 0.0f,

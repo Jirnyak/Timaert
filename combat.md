@@ -1,7 +1,8 @@
-# The Damage Door — work_vector §4, built
+# The Damage Door — work_vector §4, built; dice + 9×9 landed (phase 3)
 
-Track write-up, 2026-08-27. Increments 1–6 shipped (commits
-`3a82a12..38abcd3`). This is THE doc for the blow: what the law is, where each
+Track write-up, 2026-08-27; updated 2026-09-05 (RPG phase 3: the dice door,
+the 9×9 type symmetry, the hybrid armour law, the crit — commits
+`4efe468..`). This is THE doc for the blow: what the law is, where each
 piece lives, and the contracts that keep the two scales of battle honest. The
 intent it implements is [work_vector.md](work_vector.md) §4, with CANON S12,
 S13, S14 and S16 riding along.
@@ -12,6 +13,25 @@ S13, S14 and S16 riding along.
 cheat, a harness script — strikes through `apply_damage`, and death from any
 of them is indistinguishable by protocol. What differs between weapons is a
 ROW, not a code path.
+
+**One roll makes a wound (phase 3, CANON S13).** Damage is NdM dice of the
+weapon/spell/creature row through the ONE assembly `roll_strike`
+([macro/damage_types.h](src/macro/damage_types.h)):
+`(roll NdM + attribute add) · skill percent`, integer end to end. Attributes
+ADD, skills MULTIPLY, and there is no to-hit — the physics of the swing or
+the projectile decides contact. Fixed damage is the degenerate die Nd1 and
+consumes zero rng. LCK's ONE reader is the crit (`crit_procs`, 1 LCK = 0.5%):
+a crit is the blade finding the ARMOUR GAP — it ignores mitigation and
+multiplies nothing. The verdict is rolled at the strike site (melee) or rides
+the projectile from the cast/loose (spells, missiles) as
+`DamageSource.critical` / `Projectile.critical`.
+
+**Nine damage types = nine armour columns (CANON S13).** `DamageType` —
+Slash/Pierce/Blunt + the six school elements — is ONE enum for blows and
+armour both; a body's defence is an `ArmorProfile` (nine columns on the
+creature row AND the item row), and the blow argues with the column of its
+own type. A spell's type is its tag's row (`kSpellTagDefs.dmgType`, the canon
+remap as data); a weapon's is its item column; a fist is Blunt.
 
 **One rule decides an enemy.** A relation below the threshold is hostility,
 spelled once; everything else is a form of that answer — the battle masks are
@@ -26,10 +46,12 @@ resolved it on the map.
 
 | Piece | Where | What it is |
 |---|---|---|
-| THE door | [sub/damage.h](src/sub/damage.h) | `apply_damage(reg, target, src, amount, kind, bus)` — the only code that subtracts subworld hp, in one fixed order: the already-dead guard, mitigation, subtract-then-judge, the protocol stamp, `Dead` once, `NpcDeath` under the ONE `PlayerTag` guard. `apply_lethal_damage` is the execution form (dev cheat, harness kills). |
+| THE door | [sub/damage.h](src/sub/damage.h) | `apply_damage(reg, target, src, amount, kind, type, bus)` — the only code that subtracts subworld hp, in one fixed order: the already-dead guard, mitigation of the blow's own type column (skipped when `src.critical` — the gap was found), subtract-then-judge, the protocol stamp, `Dead` once, `NpcDeath` under the ONE `PlayerTag` guard. `amount` is integer like every combat quantity. `apply_lethal_damage` is the execution form (dev cheat, harness kills; a fractional bar dies to the ceiling blow). |
+| THE dice | [core/dice.h](src/core/dice.h) | `Dice{n,m}` as table data; `roll_dice` (exactly n draws, Nd1 = zero), `crit_procs` (LCK·5 per mille), `dice_mean_x2` (exact expectation ×2 in ints — the auto-resolve's read). |
+| THE strike assembly | [macro/damage_types.h](src/macro/damage_types.h) | `roll_strike(rng, dice, flatAdd, multPct, luck)` — every blow's algebra, and `strike_mean_x2` its expectation. Carriers: `ecs::Combat` (dice/flatAdd/multPct/luck/dmgType, filled by `project_combat` for NPCs and `hand_strike_fields` for the player), `SpellDef.dice` + `spell_strike` for casts. The player's weapon IN HAND (`weapon_in_hand`, macro/anatomy.h) picks the dice, the type and WHICH weapon skill multiplies; bare hands are `kFistDice` 1d2 Blunt through Unarmed. |
 | The kinds | same file | `kDamageKinds` — melee / spell / fall / script / dev, two columns: `attributesKiller` and `armourApplies`. "No XP for gravity" and "plate does not soften a fall" are both the Fall row's DATA, not a skipped component or an `if` at one call site. |
 | The world remembers | [chronicle.md](chronicle.md) | A death that the auto-resolve settles is filed as a FACT at the cell it happened on, and pays the killer renown priced by what the victim was worth. The trail a monster leaves is made of these. |
-| Mitigation | `mitigate()` / `defense_of()` in [sub/damage.cpp](src/sub/damage.cpp) | The second step INSIDE the door, and the socket is filled (2026-08-27). A blow keeps `kArmorHalving / (kArmorHalving + armour)` — asymptotic, so armour SOFTENS and never makes a body immune, and a creature in its own skin (armour 0) is the limiting case of the law rather than a branch around it. `kArmorHalving` is not picked: it IS `kPlayerBaseMeleeDamage`, the game's own plain blow, which is what makes "armour 10" readable without a table — it halves a plain blow. Armour comes from the creature ROW (`NpcTypeDef::armor`, the owner's «броня массовки = число из строки»); a body that also WEARS things adds them at one line in `defense_of`, and **no damage site changes** to gain it. Since 2026-08-29 the constant's HOME is [macro/npc.h](src/macro/npc.h), beside the `armor` column it prices — the macro layer (auto-resolve) may not include the ECS-facing `damage.h`, and the law must live where both scales can read it. |
+| Mitigation | `mitigate_amount()` in [macro/damage_types.h](src/macro/damage_types.h), read by `mitigate()`/`defense_of()` in [sub/damage.cpp](src/sub/damage.cpp) | The second step INSIDE the door — THE HYBRID (owner verdict 2026-09-05): armour A of the blow's own type cuts the LARGER of A itself (the threshold — a blow the plate outweighs never lands; 100% reduction is real and countered by crits, big dice and the right type) and `dmg·A/(A+10)` (the percent — a big blow is softened, never zeroed). The branches cross at `dmg = A + kArmorHalving`. Integer law. `kArmorHalving = 10` is the historical plain blow the rows were tuned against. Armour comes from the creature ROW's nine columns (`NpcTypeDef::armor`, scalar era converted with `uniform_armor`); what a body WEARS adds per column (`worn_armor`). The law's HOME is damage_types.h because both scales read it — the macro layer may not include the ECS-facing `damage.h`. |
 | THE hostility rule | [macro/state.h](src/macro/state.h) `factions_hostile` / `player_hostile_to` | One threshold over the one matrix. Six hand-spelled comparisons converged here, and the last private resolver (the macro Aggressive pursuit, which chased regardless of standing) now asks it. Both ends of the scale — `kHostileThreshold`, `kAllyRepThreshold` — and the price of a kill, `kKillRepPenalty`, live in [macro/faction.h](src/macro/faction.h) beside the matrix they cut. |
 | Faction as an INSTANCE | [ecs/components.h](src/ecs/components.h) `NPCKind.factionIdx` | Owner's ruling, 2026-08-27: «в записи существа вообще не должно быть фракции — моб/нпц это чистый нпц». `NpcTypeDef.factionId` is gone; the SPAWNER dresses the body — a town in its kingdom's colours, a landmark in its `spawnFaction`, a squad in its leader's, the open land in the spawn law's own `wildFaction` column. The same wolf is wildlife in a meadow and a demon in a ruin. |
 | THE reach | [sub/targeting.cpp](src/sub/targeting.cpp) `melee_pick_target` | In reach ⇔ `dist − body_radius(target) ≤ range`, ranked by the surface GAP — the same law the NPC strike always walked (`reach + radius[target]`). Attack reach is ONE number per row (`attackRange`); a spear will modify that number, never introduce a second system. Body WIDTH is one column ([macro/npc.h](src/macro/npc.h) `radius` + `npc_body_radius`); `CombatTemplate::bodyRadius` — a shadow copy authored by zero rows — is dead. |
@@ -62,7 +84,7 @@ Protocol divergences, each now impossible by construction and pinned by
 | Loot | `roll_loot_profile` + the purse law | `roll_fallen_spoils` — the same doors |
 | Player XP | `award_exp` with the wis dividend | `award_exp` with the wis dividend |
 | NPC leader XP | `award_leader_xp` (increment 6) | `award_leader_xp` |
-| **Armour** (2026-08-29) | `mitigate()`: a blow keeps `kArmorHalving / (kArmorHalving + armour)` | `fighter_power` (auto_battle.h) scales effective HP by `(kArmorHalving + armour) / kArmorHalving` — the algebraic INVERSE of the door's multiplier, so an armoured body is worth on the map exactly what it soaks underfoot. The agreement test (`auto_battle_test`) softens its hand-fought hits by the same identity — the resolver is pinned to the door, not to a second armour law. |
+| **Armour** (2026-09-05) | `mitigate_amount` — the hybrid, per type column | `fighter_power` (auto_battle.h) credits the PERCENT branch as effective HP (`(kArmorHalving + armour)/kArmorHalving` over the physical-mean column) and the swing as `strike_mean_x2` — the same algebra taken at its expectation. Two deliberate BIASES, not second laws: the threshold branch and the crit both depend on the opponent, which a per-fighter scalar cannot know, so heavy armour soaks slightly more in a fought battle than the resolver credits and crits pierce slightly more. The agreement test (`auto_battle_test`) softens its hand-fought hits through `mitigate_amount` itself. |
 | **XP price of a body** (2026-08-29) | `npc_xp_reward(type, level)` | the same `npc_xp_reward` (`xp_for_fallen`, macro/squad.h) |
 
 CANON S14 made literal: a lord grows from a fight underfoot
@@ -82,9 +104,14 @@ same function.
 
 ## Tests that guard the door
 
-`damage_door_test` (98 checks) rolls every kind through the door and pins the
-one protocol, the attribution column, the two guards and the identity of
-mitigation. `melee_reach_test` pins the surface law with the frog/troll pair
+`dice_door_test` (11 checks) locks the roll contract: bounds, Nd1 = zero
+draws, exactly-n draws, the crit law's frequencies, determinism, and that
+`dice_mean_x2` IS the expectation of `roll_dice` — the two scales share one
+algebra by test. `damage_door_test` (105+ checks) rolls every kind through
+the door and pins the one protocol, the attribution column, the two guards,
+the hybrid law's shape (full block under the threshold, softening past the
+crossover, monotone in armour, identity at zero) and that the door routes
+through `mitigate_amount` of the blow's own column. `melee_reach_test` pins the surface law with the frog/troll pair
 (same range, same distance, different answer — because a troll is wider) plus
 grid-arm/full-scan parity and the -1 fallback. `auto_resolve_speaks_test`
 pins facts, the kill price and the rolled spoils with their negative controls
@@ -94,9 +121,16 @@ touches no test.
 
 ## Left standing, deliberately
 
-- **Worn equipment still adds nothing** — the row's `armor` is live at both
-  scales (2026-08-29), but a body that WEARS things waits for the equipment
-  track; the socket is one line in `defense_of`, not a change at five sites.
+- **Worn ARMOUR still protects nobody underfoot** — `defense_of` reads
+  `BodyEquipment` per column, but gear lives on the MACRO squad entity and no
+  subworld body carries the component; wiring the projection is phase-4
+  (sheet door) work. The worn WEAPON, by contrast, is live: the player's
+  strike reads it every tick.
+- **`Health` stays float STORAGE** — every combat writer is integer now, so
+  the bar holds whole values in practice; the storage sweep (and the macro
+  snapshot bump it drags) is deferred, not forgotten.
+- **NPC weapon skills** — `multPct` is 100 for every NPC (their rows hold no
+  weapons); their strength rides `flatAdd` through Armsmaster as before.
 - **`sight` stays unauthored** — every row answers 200 and only the alert chain
   reads it. Owner's ruling: it waits for the vision track (CANON S11), where
   it becomes a real column instead of a number invented here.

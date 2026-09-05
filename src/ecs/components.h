@@ -476,12 +476,16 @@ struct Projectile {
     float radius;
     float lifeTimer;
     float maxLifeTimer;
-    float damage;
+    // The wound, rolled at cast/loose — integer like every combat quantity
+    // (the geometry around it stays float: distances are physics, not law).
+    std::int32_t damage;
     float blastRadius;
     float originX;
     float originY;
     float beamLength;
-    float chainDecay;
+    // Per-jump damage retention in whole percent (70 = each hop keeps 70%) —
+    // the int face of the spell row's own column.
+    std::uint8_t chainDecayPct;
     float chainRadius;
     std::uint32_t spellId;
     std::uint32_t ownerId;

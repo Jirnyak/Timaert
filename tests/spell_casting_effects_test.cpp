@@ -384,11 +384,12 @@ int main() {
     auto blastProjectile = blastWorld.create();
     blastWorld.reg.emplace<sm::ecs::Position>(blastProjectile, 0.0f, 0.0f, 0.0f);
     blastWorld.reg.emplace<sm::ecs::Projectile>(blastProjectile,
-        0.0f, 0.0f, 0.0f, 2.5f, 0.0f, 0.0f, 10.0f, 48.0f,
-        0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, 2.5f, 0.0f, 0.0f, 10, 48.0f,
+        0.0f, 0.0f, 0.0f, std::uint8_t(0), 0.0f,
         sm::stable_spell_id("fireball"), std::uint32_t{0},
         std::int16_t{0}, sm::ecs::Projectile::Bolt,
-        true, true, true);
+        true, true, true,
+        std::uint8_t(sm::DamageType::Fire), false);
     const auto blastEdge =
         add_target(blastWorld, 48.0f, 0.0f, 100.0f, false);
     const auto blastOutside =
@@ -836,12 +837,13 @@ int main() {
         auto selfBlast = selfWorld.create();
         selfWorld.reg.emplace<sm::ecs::Position>(selfBlast, 0.0f, 0.0f, 0.0f);
         selfWorld.reg.emplace<sm::ecs::Projectile>(selfBlast,
-            0.0f, 0.0f, 0.0f, 2.5f, 0.0f, 0.0f, 10.0f, 48.0f,
-            0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 0.0f, 2.5f, 0.0f, 0.0f, 10, 48.0f,
+            0.0f, 0.0f, 0.0f, std::uint8_t(0), 0.0f,
             sm::stable_spell_id("fireball"),
             std::uint32_t(entt::to_integral(selfPlayer)),
             std::int16_t{0}, sm::ecs::Projectile::Bolt,
-            true, true, true);   // friendlyFire, visualOnly, explodeOnExpiry
+            true, true, true,   // friendlyFire, visualOnly, explodeOnExpiry
+            std::uint8_t(sm::DamageType::Fire), false);
         sm::sub::tick_spell_projectiles(selfWorld, nullptr, 0.0f);
         if (!(hp_of(selfWorld, selfPlayer) < 100.0f)
             || !player_last_hit(selfWorld, selfPlayer)) {
@@ -864,12 +866,13 @@ int main() {
         auto shieldBolt = shieldWorld.create();
         shieldWorld.reg.emplace<sm::ecs::Position>(shieldBolt, 0.0f, 0.0f, 0.0f);
         shieldWorld.reg.emplace<sm::ecs::Projectile>(shieldBolt,
-            0.0f, 0.0f, 0.0f, 1.5f, 1.0f, 1.0f, 10.0f, 0.0f,
-            0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 0.0f, 1.5f, 1.0f, 1.0f, 10, 0.0f,
+            0.0f, 0.0f, 0.0f, std::uint8_t(0), 0.0f,
             sm::stable_spell_id("magic_bolt"),
             std::uint32_t(entt::to_integral(shieldPlayer)),
             std::int16_t{0}, sm::ecs::Projectile::Bolt,
-            false, false, false);   // NOT friendlyFire
+            false, false, false,   // NOT friendlyFire
+            std::uint8_t(sm::DamageType::Arcane), false);
         sm::sub::tick_spell_projectiles(shieldWorld, nullptr, 0.0f);
         if (!nearf(hp_of(shieldWorld, shieldPlayer), 90.0f)) {
             return fail("agnostic projectiles: bolt on its own player caster "
@@ -889,12 +892,13 @@ int main() {
         auto npcBlast = npcWorld.create();
         npcWorld.reg.emplace<sm::ecs::Position>(npcBlast, 0.0f, 0.0f, 0.0f);
         npcWorld.reg.emplace<sm::ecs::Projectile>(npcBlast,
-            0.0f, 0.0f, 0.0f, 2.5f, 0.0f, 0.0f, 10.0f, 48.0f,
-            0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 0.0f, 2.5f, 0.0f, 0.0f, 10, 48.0f,
+            0.0f, 0.0f, 0.0f, std::uint8_t(0), 0.0f,
             sm::stable_spell_id("fireball"),
             std::uint32_t(entt::to_integral(npcCaster)),
             std::int16_t{0}, sm::ecs::Projectile::Bolt,
-            true, true, true);   // friendlyFire
+            true, true, true,   // friendlyFire
+            std::uint8_t(sm::DamageType::Fire), false);
         sm::sub::tick_spell_projectiles(npcWorld, nullptr, 0.0f);
         if (!(hp_of(npcWorld, npcCaster) < 100.0f)
             || player_last_hit(npcWorld, npcCaster)) {

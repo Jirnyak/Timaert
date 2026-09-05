@@ -776,11 +776,11 @@ private:
     std::uint32_t subZonesEntered_ = 0;   // bitmask over kMaxSubZones
     void push_combat_log(const char* msg);
     void push_player_hit_log(std::uint32_t targetEntityId,
-                             float damage,
+                             int damage,
                              bool lethal);
     static void spell_damage_log_callback(void* user,
                                           std::uint32_t targetEntityId,
-                                          float damage,
+                                          int damage,
                                           bool lethal);
     static bool spell_can_hit_callback(void* user,
                                        const ecs::Projectile& projectile,

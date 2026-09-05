@@ -181,12 +181,13 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
             400.0f, 0.0f, 0.0f,               // vx, vy, vz
             1.5f,                             // radius
             1.0f, 1.0f,                       // lifeTimer, maxLifeTimer
-            13.0f, 0.0f,                      // damage, blastRadius
+            13, 0.0f,                         // damage, blastRadius
             98.5f, 100.0f,                    // originX, originY
-            0.0f, 0.0f, 0.0f,                 // beamLength, chainDecay, chainRadius
+            0.0f, std::uint8_t(0), 0.0f,      // beamLength, chainDecayPct, chainRadius
             1u, owner,
             std::int16_t{0}, Projectile::Bolt,
-            false, false, false);
+            false, false, false,
+            std::uint8_t(0), false);
         ticks = 10;
         break;
     }
@@ -195,12 +196,13 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
         reg.emplace<Projectile>(pe,
             0.0f, 0.0f, 0.0f, 1.5f,
             0.005f, 1.0f,                     // expires on the first tick
-            20.0f, 12.0f,
+            20, 12.0f,
             500.0f, 500.0f,
-            0.0f, 0.0f, 0.0f,
+            0.0f, std::uint8_t(0), 0.0f,
             2u, std::uint32_t(0xFFFFFFFFu),
             std::int16_t{0}, Projectile::Bolt,
-            false, false, true);              // explodeOnExpiry
+            false, false, true,               // explodeOnExpiry
+            std::uint8_t(0), false);
         break;
     case 2: {
         // Direction (10, 0, 2) normalised inside; entity sits at the beam
@@ -212,12 +214,13 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
         reg.emplace<Projectile>(pe,
             10.0f, 0.0f, 2.0f, 1.2f,
             0.005f, 1.0f,
-            15.0f, 0.0f,
+            15, 0.0f,
             600.0f, 600.0f,
-            40.0f, 0.0f, 0.0f,                // beamLength
+            40.0f, std::uint8_t(0), 0.0f,     // beamLength
             3u, std::uint32_t(0xFFFFFFFFu),
             std::int16_t{0}, Projectile::Beam,
-            false, false, false);
+            false, false, false,
+            std::uint8_t(0), false);
         break;
     }
     case 3:
@@ -225,12 +228,13 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
         reg.emplace<Projectile>(pe,
             400.0f, 0.0f, 0.0f, 1.5f,
             1.0f, 1.0f,
-            16.0f, 0.0f,
+            16, 0.0f,
             800.0f, 800.0f,
-            0.0f, 0.5f, 15.0f,                // chainDecay, chainRadius
+            0.0f, std::uint8_t(50), 15.0f,    // chainDecayPct, chainRadius
             4u, std::uint32_t(0xFFFFFFFFu),
             std::int16_t{3}, Projectile::Bolt, // chainRemaining
-            false, false, false);
+            false, false, false,
+            std::uint8_t(0), false);
         ticks = 10;
         break;
     }

@@ -123,14 +123,14 @@ void apply_spell_damage(ecs::World& w,
                         EventBus* bus,
                         entt::entity target,
                         const ecs::Projectile& p,
-                        float damage,
+                        int damage,
                         SpellDamageLogFn logFn,
                         void* logUser,
                         SpellCanHitFn canHitFn,
                         void* canHitUser) {
     (void)reaps;
     (void)reapCount;
-    if (damage <= 0.0f || !w.reg.valid(target)) return;
+    if (damage <= 0 || !w.reg.valid(target)) return;
     if (!is_spell_target(w.reg, target, p, canHitFn, canHitUser)) return;
     const bool playerOwned = projectile_owner_is_player_side(w.reg, p);
     // The projectile brought everything from the cast: its wound, its tag's
@@ -140,7 +140,7 @@ void apply_spell_damage(ecs::World& w,
     const DamageResult hit = apply_damage(w.reg, target, src, damage,
                                           DamageKind::Spell,
                                           DamageType(p.dmgType), bus);
-    if (hit.applied <= 0.0f) return;
+    if (hit.applied <= 0) return;
     if (playerOwned && logFn
         && !w.reg.any_of<ecs::PlayerTag, ecs::PlayerSoldierTag>(target)) {
         logFn(logUser, std::uint32_t(entt::to_integral(target)),
@@ -326,7 +326,7 @@ void apply_spell_chain(ecs::World& w,
                        void* canHitUser,
                        SpellNeighborsFn neighborsFn,
                        void* neighborsUser) {
-    if (p.chainRemaining <= 0 || p.chainDecay <= 0.0f || p.chainRadius <= 0.0f) {
+    if (p.chainRemaining <= 0 || p.chainDecayPct == 0 || p.chainRadius <= 0.0f) {
         return;
     }
     std::array<entt::entity, 8> chainHits{};
@@ -334,7 +334,7 @@ void apply_spell_chain(ecs::World& w,
     chainHits[std::size_t(hitCount++)] = first;
 
     entt::entity current = first;
-    float damage = p.damage * p.chainDecay;
+    int damage = p.damage * int(p.chainDecayPct) / 100;
     for (int i = 0; i < p.chainRemaining && hitCount < int(chainHits.size()); ++i) {
         if (!w.reg.valid(current)) break;
         const auto* cp = w.reg.try_get<ecs::Position>(current);
@@ -364,7 +364,7 @@ void apply_spell_chain(ecs::World& w,
                            logFn, logUser, canHitFn, canHitUser);
         chainHits[std::size_t(hitCount++)] = best;
         current = best;
-        damage *= p.chainDecay;
+        damage = damage * int(p.chainDecayPct) / 100;
     }
 }
 

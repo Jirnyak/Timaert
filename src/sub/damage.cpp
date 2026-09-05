@@ -4,6 +4,7 @@
 #include "macro/npc.h"
 #include "macro/anatomy.h"
 #include <algorithm>
+#include <cmath>
 #include "events/event_bus.h"
 #include "events/event_types.h"
 
@@ -50,22 +51,19 @@ int defense_of(entt::registry& reg, entt::entity target, DamageType type) {
 // here: plate does not soften a fall, and a scripted settlement must not be
 // argued with by a breastplate.
 //
-// Integer law, float edges: blows arrive as whole-valued floats today (melee
-// floors upstream, spell damage is int-born); the truncation here is the
-// bridge that dies with the Health int sweep (phase 3 step 4).
-float mitigate(entt::registry& reg, entt::entity target, float amount,
-               DamageKind kind, DamageType type) {
+int mitigate(entt::registry& reg, entt::entity target, int amount,
+             DamageKind kind, DamageType type) {
     const DamageKindRow& row = kDamageKinds[std::size_t(kind)];
     if (!row.armourApplies) return amount;
     const int armour = defense_of(reg, target, type);
     if (armour <= 0) return amount;
-    return float(mitigate_amount(int(amount), armour));
+    return mitigate_amount(amount, armour);
 }
 
 } // namespace
 
 DamageResult apply_damage(entt::registry& reg, entt::entity target,
-                          const DamageSource& src, float amount,
+                          const DamageSource& src, int amount,
                           DamageKind kind, DamageType type, EventBus* bus) {
     DamageResult out{};
     if (!reg.valid(target)) return out;
@@ -73,12 +71,12 @@ DamageResult apply_damage(entt::registry& reg, entt::entity target,
     if (hp == nullptr || hp->hp <= 0.0f) return out;
     // A crit found the armour gap: mitigation is not in the way, exactly as
     // the Fall row's column says plate is not in the way of the ground.
-    const float amt = src.critical
-                          ? amount
-                          : mitigate(reg, target, amount, kind, type);
-    if (amt <= 0.0f) return out;
+    const int amt = src.critical
+                        ? amount
+                        : mitigate(reg, target, amount, kind, type);
+    if (amt <= 0) return out;
 
-    hp->hp -= amt;
+    hp->hp -= float(amt);
     out.applied = amt;
     out.lethal = hp->hp <= 0.0f;
 
@@ -111,7 +109,10 @@ DamageResult apply_lethal_damage(entt::registry& reg, entt::entity target,
                                  EventBus* bus) {
     const auto* hp = reg.try_get<ecs::Health>(target);
     if (hp == nullptr || hp->hp <= 0.0f) return {};
-    return apply_damage(reg, target, src, hp->hp, kind, DamageType::Blunt, bus);
+    // ceil: a fractional bar (float storage, integer writers) still dies to
+    // one blow — overkill by under a point, never a survivor.
+    return apply_damage(reg, target, src, int(std::ceil(hp->hp)), kind,
+                        DamageType::Blunt, bus);
 }
 
 } // namespace sm::sub

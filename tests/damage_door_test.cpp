@@ -280,17 +280,28 @@ void test_no_second_blow() {
 void test_execution_helper() {
     entt::registry reg;
     sm::EventBus bus;
-    const entt::entity e = make_body(reg, 37.5f);
+    // Whole hp: every combat writer is integer now (phase 3), so a whole bar
+    // is the world's own case. The fractional-bar edge (ceil = overkill by
+    // under a point, still one blow) is asserted separately below.
+    const entt::entity e = make_body(reg, 37.0f);
     const DamageResult hit = apply_lethal_damage(
         reg, e, DamageSource{0u, true}, DamageKind::Dev, &bus);
     CHECK(hit.lethal, "an execution is lethal by construction");
-    CHECK(hit.applied == 37.5f, "an execution strikes exactly remaining hp");
+    CHECK(hit.applied == 37, "an execution strikes exactly remaining hp");
     CHECK(reg.get<sm::ecs::Health>(e).hp == 0.0f,
           "an execution lands the body at exactly zero");
     const DamageResult again = apply_lethal_damage(
         reg, e, DamageSource{0u, true}, DamageKind::Dev, &bus);
-    CHECK(again.applied == 0.0f, "executing a corpse is a no-op");
+    CHECK(again.applied == 0, "executing a corpse is a no-op");
     CHECK(death_events(bus) == 1, "one execution, one event");
+
+    // A fractional bar (float storage, integer blows) still dies to ONE blow.
+    const entt::entity frac = make_body(reg, 12.5f);
+    const DamageResult fracHit = apply_lethal_damage(
+        reg, frac, DamageSource{0u, true}, DamageKind::Dev, &bus);
+    CHECK(fracHit.lethal && fracHit.applied == 13,
+          "a fractional bar is executed by the ceiling blow — overkill under "
+          "a point, never a survivor");
 }
 
 void test_zero_and_missing_target() {

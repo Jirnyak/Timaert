@@ -95,15 +95,18 @@ struct DamageSource {
 };
 
 struct DamageResult {
-    float applied = 0.0f;  // post-mitigation hp actually subtracted; 0 = no-op
-    bool lethal = false;   // this blow drove hp to zero
+    int applied = 0;      // post-mitigation hp actually subtracted; 0 = no-op
+    bool lethal = false;  // this blow drove hp to zero
 };
 
 // `type` is WHICH of the nine columns the blow argues with (CANON S13: the
 // 9×9 symmetry) — it selects the armour column inside the door and nothing
 // else; a kind whose row says armour is not in the way ignores it entirely.
+// `amount` is integer like every combat quantity (phase 3: combat floats are
+// dead; the physics that PRODUCED a number — a fall's kinetics — stays float
+// and rounds once, at this threshold).
 DamageResult apply_damage(entt::registry& reg, entt::entity target,
-                          const DamageSource& src, float amount,
+                          const DamageSource& src, int amount,
                           DamageKind kind, DamageType type, EventBus* bus);
 
 // An execution: one blow of exactly the target's remaining hp, through the

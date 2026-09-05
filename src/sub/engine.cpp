@@ -183,12 +183,14 @@ float dist3sq(float ax, float ay, float az, float bx, float by, float bz) {
 // One fall-damage path for EVERY body, player included: honest kinetics
 // (height.h fall_damage), body radius as the mass proxy, the blow itself
 // through THE damage door. "No XP for gravity" is the Fall kind's row, not a
-// skipped component here. Returns the damage applied (0 when below the 0.5
-// threshold or the body is already dead) so the player path can log it.
-float apply_fall_damage(entt::registry& reg, entt::entity e, float impactVz,
-                        float radius, EventBus* bus) {
-    const float dmg = fall_damage(impactVz, radius);
-    if (dmg < 0.5f) return 0.0f;
+// skipped component here. Returns the damage applied (0 when the kinetics
+// round to nothing or the body is already dead) so the player path can log
+// it. The physics stays float and rounds ONCE, here — the blow past this
+// line is integer like every combat quantity.
+int apply_fall_damage(entt::registry& reg, entt::entity e, float impactVz,
+                      float radius, EventBus* bus) {
+    const int dmg = int(std::lround(fall_damage(impactVz, radius)));
+    if (dmg <= 0) return 0;
     // Typed Blunt for form's sake — the Fall row says armour is not in the way.
     return apply_damage(reg, e, DamageSource{}, dmg, DamageKind::Fall,
                         DamageType::Blunt, bus)
@@ -404,11 +406,11 @@ void spawn_npc_missile(entt::registry& reg,
         e,
         nx * speed, ny * speed, nz * speed,
         projectileRadius, life, life,
-        float(loose.amount),
+        loose.amount,
         blast,
         sx, sy,
         0.0f,
-        0.0f,
+        std::uint8_t(0),
         0.0f,
         kNpcMissileSpellId,
         std::uint32_t(entt::to_integral(attacker)),
@@ -1396,14 +1398,14 @@ void SubworldEngine::push_combat_log(const char* msg) {
 }
 
 void SubworldEngine::push_player_hit_log(std::uint32_t targetEntityId,
-                                         float damage,
+                                         int damage,
                                          bool lethal) {
-    if (!ecs_ || damage <= 0.0f) return;
+    if (!ecs_ || damage <= 0) return;
     entt::entity target = entt::entity(targetEntityId);
     if (!ecs_->reg.valid(target)) return;
     apply_player_hit_reputation(ecs_->reg, target, gs_);
 
-    const int dmg = std::max(0, int(std::round(damage)));
+    const int dmg = damage;
     char msg[96]{};
     std::snprintf(msg, sizeof(msg), "You %s %s for %d",
                   lethal ? "killed" : "hit",
@@ -1414,7 +1416,7 @@ void SubworldEngine::push_player_hit_log(std::uint32_t targetEntityId,
 
 void SubworldEngine::spell_damage_log_callback(void* user,
                                                std::uint32_t targetEntityId,
-                                               float damage,
+                                               int damage,
                                                bool lethal) {
     auto* engine = static_cast<SubworldEngine*>(user);
     if (!engine) return;
@@ -1623,9 +1625,9 @@ void SubworldEngine::tick_player_melee(float dt) {
                     strikeStats.multPct, strikeStats.luck);
     const DamageResult hit = apply_damage(
         reg, target, DamageSource{std::uint32_t{0}, true, 0u, swing.critical},
-        float(swing.amount), DamageKind::Melee,
+        swing.amount, DamageKind::Melee,
         DamageType(strikeStats.dmgType), bus_);
-    if (hit.applied <= 0.0f) {
+    if (hit.applied <= 0) {
         playerAttackTimer_ = meleeCooldown;  // a blocked swing still swung
         return;
     }
@@ -1636,7 +1638,7 @@ void SubworldEngine::tick_player_melee(float dt) {
     std::snprintf(status, sizeof(status), "You %s %s for %d%s",
                   hit.lethal ? "killed" : "hit",
                   label,
-                  std::max(0, int(std::round(hit.applied))),
+                  std::max(0, hit.applied),
                   swing.critical ? " (crit)" : "");
     set_status(status);
     playerAttackTimer_ = meleeCooldown;
@@ -2540,7 +2542,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
             reg, target,
             DamageSource{std::uint32_t(entt::to_integral(attacker)),
                          playerOwned, 0u, swing.critical},
-            float(swing.amount), DamageKind::Melee, DamageType(c.dmgType),
+            swing.amount, DamageKind::Melee, DamageType(c.dmgType),
             bus_);
         // A blocked or dead-blocked swing still swung: the cooldown pays
         // either way, or a fully-armoured target would grant free retries
@@ -3626,14 +3628,14 @@ void SubworldEngine::sync_player_vertical(float dt) {
         // still drives the death screen).
         if (playerGrounded_ && prevVz < 0.0f && !godMode_ && ecs_) {
             const auto e = player_entity();
-            const float dmg = e != entt::null
+            const int dmg = e != entt::null
                 ? apply_fall_damage(ecs_->reg, e, -prevVz, kPlayerBodyRadius,
                                     bus_)
-                : 0.0f;
-            if (dmg >= 0.5f) {
+                : 0;
+            if (dmg > 0) {
                 char msg[96];
                 std::snprintf(msg, sizeof(msg),
-                              "The landing hurts: -%d HP", int(dmg));
+                              "The landing hurts: -%d HP", dmg);
                 push_combat_log(msg);
             }
         }

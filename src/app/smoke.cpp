@@ -3436,7 +3436,7 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     // This assertion used to read the opposite way, and passed only because the
     // bolt was sitting at z=0 a kilometre below its target and could not hit
     // anything. Fixing the elevation exposed the stale expectation.
-    const float kFriendlySpellDamage = 13.0f;
+    const int kFriendlySpellDamage = 13;
     const float beforeFriendlySpellHp = reg.get<sm::ecs::Health>(target).hp;
     const int beforeFriendlySpellLog = app.subworld.combat_log_count();
     const entt::entity friendlyProjectile = reg.create();
@@ -3455,11 +3455,12 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     reg.emplace<sm::ecs::Projectile>(
         friendlyProjectile,
         0.0f, 0.0f, 0.0f, 1.5f, 1.0f, 1.0f, kFriendlySpellDamage, 0.0f,
-        tx, py, 0.0f, 0.0f, 0.0f,
+        tx, py, 0.0f, std::uint8_t(0), 0.0f,
         sm::stable_spell_id("magic_bolt"),
         app.subworld.player_entity_id(),
         std::int16_t{0}, sm::ecs::Projectile::Bolt,
-        false, false, false);
+        false, false, false,
+        std::uint8_t(sm::DamageType::Blunt), false);
     reg.emplace<sm::ecs::SubworldTag>(friendlyProjectile);
     RuntimeFrameStats friendlySpellFrame =
         advance_sim_seconds(app, 0.05f, false);
@@ -3470,7 +3471,7 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     const float afterFriendlySpellHp = reg.get<sm::ecs::Health>(target).hp;
     const bool spellTookHp =
         std::fabs(beforeFriendlySpellHp - afterFriendlySpellHp
-                  - kFriendlySpellDamage) <= 0.001f;
+                  - float(kFriendlySpellDamage)) <= 0.001f;
     const bool spellFlashed = reg.any_of<sm::ecs::HitFlash>(target);
     const bool spellLogged =
         app.subworld.combat_log_count() > beforeFriendlySpellLog;

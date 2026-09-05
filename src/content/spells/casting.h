@@ -21,8 +21,9 @@ struct SpellSpawnContext {
     float pz;              // caster altitude (metres above ground)
     float playerRadius;
     float nx, ny, nz;      // 3D aim direction (normalised)
-    float damage;          // ROLLED at cast (spell_strike) — the bolt carries
-                           // its wound like an arrow does
+    std::int32_t damage;   // ROLLED at cast (spell_strike) — the bolt carries
+                           // its wound like an arrow does, integer like every
+                           // combat quantity
     float speed;
     float projectileRadius;
     float effectRadius;

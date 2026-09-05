@@ -11,7 +11,7 @@ namespace sm::sub {
 
 using SpellDamageLogFn = void (*)(void* user,
                                   std::uint32_t targetEntityId,
-                                  float damage,
+                                  int damage,
                                   bool lethal);
 using SpellCanHitFn = bool (*)(void* user,
                                const ecs::Projectile& projectile,
