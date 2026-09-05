@@ -46,6 +46,10 @@ enum class SkillId : std::uint8_t {
     Travel, Acrobatics, Scouting, Prospecting,
     // husbandry (4)
     Trade, Quartermaster, Foraging, Learning,
+    // the EIGHTH weapon (owner verdict 2026-09-05, appended v79 — ordinals
+    // are forever): the bare fist is a weapon type like any other, so an
+    // unarmed monk is a build and not a gap in the law.
+    Unarmed,
     Count
 };
 
@@ -280,6 +284,9 @@ inline constexpr SkillDef kSkillDefs[] = {
      "provision drain per rank",               1, /*buysCostDown*/true},
     {SkillId::Learning,    "learning",    "Learning",
      "experience gained per rank",             1},
+    // Appended v79 with its enum row — a weapon skill like the seven above.
+    {SkillId::Unarmed,     "unarmed",     "Unarmed",
+     "unarmed damage per rank",               10},
 };
 static_assert(sizeof(kSkillDefs) / sizeof(kSkillDefs[0])
                   == std::size_t(SkillId::Count),
@@ -310,6 +317,15 @@ inline float skill_mult_of(SkillId id, int rank) {
 
 inline float skill_mult(const Skills& s, SkillId id) {
     return skill_mult_of(id, s.of(id));
+}
+
+// The SAME law in whole percent, for the integer combat house (the strike
+// assembly multiplies by multPct/100 — macro/damage_types.h roll_strike).
+// Only the growing direction exists here: no combat law buys a cost down.
+inline int skill_mult_pct(const Skills& s, SkillId id) {
+    int rank = s.of(id);
+    if (rank > kMaxSkillRank) rank = kMaxSkillRank;
+    return 100 + rank * int(skill_def(id).pctPerRank);
 }
 
 // ── Perks: PURGED 2026-09-03 ───────────────────────────────────

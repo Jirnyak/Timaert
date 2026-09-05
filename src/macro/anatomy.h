@@ -268,4 +268,29 @@ int worn_cells(const Equipment& eq);
 // creature's own row profile and what it wears meet column by column.
 ArmorProfile worn_armor(const Equipment& eq);
 
+// THE weapon actually in hand: the first weapon-typed row sitting on an
+// unblocked Grip-type cell. nullptr = bare hands.
+const ItemDef* weapon_in_hand(const Equipment& eq);
+
+// The bare fist's row (owner verdict 2026-09-05): 1d2 Blunt through the
+// Unarmed skill — a fist is useless against plate, and that is the hybrid
+// law's threshold branch doing its work, not a bug.
+inline constexpr Dice kFistDice{1, 2};
+
+// What a sheet strikes with, given what its body holds — the ONE assembly of
+// the strike fields (dice + type + attribute add + skill percent + LCK) that
+// every carrier of ecs::Combat copies from. The weapon picks WHICH skill
+// multiplies (its own row's column; the fist's is Unarmed); attributes ADD
+// through the sheet's raw damage exactly as project_combat does for a
+// creature's natural weapon.
+struct StrikeFields {
+    Dice          dice{};
+    DamageType    dmgType = DamageType::Blunt;
+    std::int16_t  flatAdd = 0;
+    std::int16_t  multPct = 100;
+    std::uint8_t  luck    = 0;
+};
+StrikeFields hand_strike_fields(const Attributes& attributes,
+                                const Skills& skills, const Equipment* eq);
+
 } // namespace sm

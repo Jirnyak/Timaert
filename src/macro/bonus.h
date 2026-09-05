@@ -90,6 +90,8 @@ enum class BonusId : std::uint8_t {
     FireMagic, WaterMagic, AirMagic, EarthMagic, ArcaneMagic, VoidMagic,
     Acrobatics, Scouting, Prospecting,
     Trade, Quartermaster, Foraging, Learning,
+    // Appended v79 with SkillId::Unarmed — ordinals are forever.
+    Unarmed,
     Count
 };
 
@@ -201,6 +203,8 @@ inline constexpr BonusDef kBonusDefs[] = {
      BonusTarget::SkillRank, std::uint8_t(SkillId::Foraging)},
     {BonusId::Learning,    "learning",     "Learning",
      BonusTarget::SkillRank, std::uint8_t(SkillId::Learning)},
+    {BonusId::Unarmed,     "unarmed",      "Unarmed",
+     BonusTarget::SkillRank, std::uint8_t(SkillId::Unarmed)},
 };
 static_assert(sizeof(kBonusDefs) / sizeof(kBonusDefs[0])
                   == std::size_t(BonusId::Count),

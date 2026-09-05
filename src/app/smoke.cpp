@@ -2913,7 +2913,9 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
         hostile, sm::ecs::NPCKind{std::uint16_t(0x1FE), std::uint16_t(2)});
     reg.emplace<sm::ecs::Health>(hostile, 18.0f, 18.0f);
     reg.emplace<sm::ecs::Combat>(hostile,
-        7.0f, 0.0f, 8.0f, 0.30f, 0u, sm::ecs::Combat::Melee);
+        sm::Dice{7, 1}, std::int16_t(0), std::int16_t(100), std::uint8_t(0),
+        std::uint8_t(sm::DamageType::Blunt),
+        0.0f, 8.0f, 0.30f, 0u, sm::ecs::Combat::Melee);
     reg.emplace<sm::ecs::SubworldTag>(hostile);
     reg.emplace<sm::ecs::SubworldAi>(hostile,
         sm::ecs::SubworldAi::Combat, 0.0f, 0.0f, 0.0f, 0.0f, 1.2f);
@@ -3038,7 +3040,8 @@ bool run_subworld_missile_feedback_smoke(App& app) {
     reg.emplace<sm::ecs::Health>(hostile, 30.0f, 30.0f);
     reg.emplace<sm::ecs::Combat>(
         hostile,
-        6.0f,
+        sm::Dice{6, 1}, std::int16_t(0), std::int16_t(100), std::uint8_t(0),
+        std::uint8_t(sm::DamageType::Blunt),
         0.0f,
         45.0f,
         0.30f,
@@ -3259,10 +3262,6 @@ bool run_subworld_player_melee_smoke(App& app) {
         std::uint8_t(255), std::uint8_t(84), std::uint8_t(54),
         std::uint8_t(255), 1.2f);
 
-    const sm::DerivedBonuses derived =
-        sm::calculate_derived(app.gs.player.sheet.attributes,
-                              app.gs.player.sheet.skills);
-    const float expectedDamage = std::floor(10.0f + derived.rawPhysDamage);
     const float beforeHp = reg.get<sm::ecs::Health>(target).hp;
     const int beforeCombatLog = app.subworld.combat_log_count();
     app.subworld.set_player_attack_held(true);
@@ -3287,28 +3286,41 @@ bool run_subworld_player_melee_smoke(App& app) {
     const float afterHp = hp ? hp->hp : -1.0f;
     const float dealt = beforeHp - afterHp;
 
-    // Inc 4c white-box guard: the swing damage must be sourced from the player
-    // entity's Combat (populated at spawn, refreshed each tick from the sheet) —
-    // not an inert 0 nor an ad-hoc recompute. Prove the component itself carries
-    // the expected sheet-derived swing, so a future regression that leaves the
-    // player's Combat inert fails here even if the dealt number coincided.
-    float playerCombatDamage = -1.0f;
+    // Inc 4c white-box guard, dice edition: the swing must be sourced from
+    // the player entity's Combat (populated at spawn, refreshed each tick
+    // from the sheet + the weapon in hand) — not an inert 0 nor an ad-hoc
+    // recompute. The wound is a ROLL now, so the guard is the strike law's
+    // own bounds derived from the component's fields (the bandit row wears
+    // no armour, so what was rolled is what landed; a crit changes nothing
+    // against a bare target).
+    const sm::ecs::Combat* playerCombat = nullptr;
     for (auto pe : reg.view<sm::ecs::PlayerTag, sm::ecs::Combat>()) {
-        playerCombatDamage = reg.get<sm::ecs::Combat>(pe).damage;
+        playerCombat = &reg.get<sm::ecs::Combat>(pe);
         break;
     }
+    float minStrike = -1.0f;
+    float maxStrike = -1.0f;
+    if (playerCombat) {
+        const int n = int(playerCombat->dice.n);
+        const int m = int(playerCombat->dice.m);
+        const int add = int(playerCombat->flatAdd);
+        const int pct = int(playerCombat->multPct);
+        minStrike = float((n + add) * pct / 100);
+        maxStrike = float((n * m + add) * pct / 100);
+    }
     const bool combatRouted =
-        playerCombatDamage > 0.0f
-        && std::fabs(std::floor(playerCombatDamage) - expectedDamage) <= 0.001f;
+        playerCombat != nullptr && playerCombat->dice.n >= 1
+        && playerCombat->multPct >= 100
+        && dealt >= minStrike - 0.001f && dealt <= maxStrike + 0.001f;
 
     std::fprintf(stderr,
                  "[smoke] subworld_player_melee hp=%.1f->%.1f "
-                 "expected=%.1f combatDmg=%.1f routed=%d flash=%.3f "
+                 "bounds=[%.1f,%.1f] routed=%d flash=%.3f "
                  "playerOwned=%d log=\"%s\" status=\"%s\"\n",
                  double(beforeHp),
                  double(afterHp),
-                 double(expectedDamage),
-                 double(playerCombatDamage),
+                 double(minStrike),
+                 double(maxStrike),
                  combatRouted ? 1 : 0,
                  hitFlash ? double(hitFlash->timer) : 0.0,
                  lastHit && lastHit->playerOwned ? 1 : 0,
@@ -3316,7 +3328,7 @@ bool run_subworld_player_melee_smoke(App& app) {
                  statusSet ? status : "");
     std::fflush(stderr);
 
-    if (!hp || std::fabs(dealt - expectedDamage) > 0.001f
+    if (!hp || dealt <= 0.0f
         || !combatRouted
         || !hitFlash || hitFlash->timer <= 0.0f
         || !lastHit || !lastHit->playerOwned
@@ -3387,7 +3399,9 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     reg.emplace<sm::ecs::Health>(target, 40.0f, 40.0f);
     reg.emplace<sm::ecs::Combat>(
         target,
-        3.0f, 20.0f, 2.0f, 1.5f, 0u,
+        sm::Dice{3, 1}, std::int16_t(0), std::int16_t(100), std::uint8_t(0),
+        std::uint8_t(sm::DamageType::Blunt),
+        20.0f, 2.0f, 1.5f, 0u,
         sm::ecs::Combat::Melee);
     reg.emplace<sm::ecs::SubworldAi>(
         target,
@@ -4251,7 +4265,6 @@ bool run_console_smoke(App& app) {
         const sm::CombatTemplate base = sm::npc_def(sm::NPCType::Bandit).combat;
         const sm::CombatTemplate proj = sm::project_combat(*sheet, base);
         const float projHp = std::max(1.0f, std::floor(proj.hp));
-        const float projDamage = std::floor(proj.damage);
         const auto* hlt = reg.try_get<sm::ecs::Health>(be);
         const auto* cmb = reg.try_get<sm::ecs::Combat>(be);
         if (!hlt || !cmb) {
@@ -4260,12 +4273,18 @@ bool run_console_smoke(App& app) {
         auto near_eq = [](float a, float b) {
             float d = a - b; if (d < 0.0f) d = -d; return d <= 0.01f;
         };
-        if (!near_eq(hlt->maxHp, projHp) || !near_eq(cmb->damage, projDamage)) {
+        // The wound is dice now: the entity must carry the ROW's dice
+        // verbatim and the sheet's flatAdd/luck exactly as project_combat
+        // wrote them — the spent sheet always adds str-damage, so flatAdd
+        // must be positive where the template's is zero.
+        if (!near_eq(hlt->maxHp, projHp)
+            || cmb->dice.n != proj.dice.n || cmb->dice.m != proj.dice.m
+            || cmb->flatAdd != proj.flatAdd || cmb->luck != proj.luck) {
             restore();
             smoke_fail(app, "combat: bandit Health/Combat != project_combat(sheet)");
             return false;
         }
-        if (!(proj.hp > base.hp) || !(proj.damage > base.damage)) {
+        if (!(proj.hp > base.hp) || !(proj.flatAdd > base.flatAdd)) {
             restore();
             smoke_fail(app, "combat: derived combat did not exceed template floor");
             return false;
@@ -4273,11 +4292,12 @@ bool run_console_smoke(App& app) {
         std::fprintf(stderr,
                      "[smoke] npc_sheet bandit level=%d attr_sum=%d "
                      "fighter=%d bodybuilding=%d hp=%.0f(base=%.0f) "
-                     "dmg=%.1f(base=%.1f) derived_from_sheet=1\n",
+                     "dice=%dd%d+%d derived_from_sheet=1\n",
                      sheet->levelData.level, aSum,
                      sheet->skills.of(sm::SkillId::Armsmaster),
                      sheet->skills.of(sm::SkillId::Bodybuilding),
-                     hlt->maxHp, base.hp, cmb->damage, base.damage);
+                     hlt->maxHp, base.hp,
+                     int(cmb->dice.n), int(cmb->dice.m), int(cmb->flatAdd));
         std::fflush(stderr);
     }
 

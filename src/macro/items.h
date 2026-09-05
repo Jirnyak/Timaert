@@ -84,6 +84,15 @@ struct ItemDef {
     // uniform_armor(x); per-column authoring (a fire-warding cloak) is what
     // the nine columns are FOR.
     ArmorProfile  armor{};
+
+    // ── What a WEAPON row deals (CANON S13: урон = NdM строкой предмета) ──
+    // dice{0,1} (every non-weapon) rolls nothing; dmgType names the armour
+    // column the blow argues with; skill names WHICH weapon skill multiplies
+    // a strike made with this row (SkillId::Count = none — the wielder falls
+    // back to Unarmed, which is honest for a swung sack of grain).
+    Dice          dice{};
+    DamageType    dmgType   = DamageType::Blunt;
+    SkillId       skill     = SkillId::Count;
 };
 
 // ── THE item instance, and THE container ───────────────────────────────────

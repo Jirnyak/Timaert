@@ -80,13 +80,18 @@ inline constexpr DamageKindRow kDamageKinds[] = {
     {"dev",    true,  false},
 };
 
-// Who struck. attackerId is the entity bits (or a projectile's ownerId); 0 is
-// the established "the player himself" convention. spellId rides into
-// NpcDeath.iy so spell kills stay tellable apart downstream (0 = not a spell).
+// Who struck, and how. attackerId is the entity bits (or a projectile's
+// ownerId); 0 is the established "the player himself" convention. spellId
+// rides into NpcDeath.iy so spell kills stay tellable apart downstream (0 =
+// not a spell). critical is the crit door's verdict (core/dice.h, rolled at
+// the strike site where the attacker's LCK lives): the blade found the
+// ARMOUR GAP, so the door lets the blow past mitigation — the one thing a
+// crit does (owner verdict 2026-09-05).
 struct DamageSource {
     std::uint32_t attackerId = 0;
     bool playerOwned = false;
     std::uint32_t spellId = 0;
+    bool critical = false;
 };
 
 struct DamageResult {

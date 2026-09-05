@@ -71,7 +71,11 @@ DamageResult apply_damage(entt::registry& reg, entt::entity target,
     if (!reg.valid(target)) return out;
     auto* hp = reg.try_get<ecs::Health>(target);
     if (hp == nullptr || hp->hp <= 0.0f) return out;
-    const float amt = mitigate(reg, target, amount, kind, type);
+    // A crit found the armour gap: mitigation is not in the way, exactly as
+    // the Fall row's column says plate is not in the way of the ground.
+    const float amt = src.critical
+                          ? amount
+                          : mitigate(reg, target, amount, kind, type);
     if (amt <= 0.0f) return out;
 
     hp->hp -= amt;

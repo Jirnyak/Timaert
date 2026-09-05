@@ -268,7 +268,10 @@ namespace sm {
 // (ординалы пересеклись, Fighter → Armsmaster), конверт Skills 32→64 байта,
 // LevelData несёт learnPicks (создание = 5 атрибутов + 5 выучиваний),
 // раздача 1:1; BonusId получил хвост из 24 скилл-строк (append).
-constexpr int kSaveVersion = 78;
+// v79 (2026-09-05): Фаза 3 кубы — SkillId/BonusId получили Unarmed (append,
+// ординалы навсегда), ecs::Combat/CombatTemplate несут Dice+flatAdd+LCK
+// вместо float damage; сейв инвалидируется правилом репо №2.
+constexpr int kSaveVersion = 79;
 
 enum class SettlementMood : std::uint8_t {
     Prosperous, Stable, Tense, Unrest, Revolt, Count

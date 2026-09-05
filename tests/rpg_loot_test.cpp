@@ -72,7 +72,7 @@ static void test_project_combat_melee() {
     cs.skills[sm::SkillId::Bodybuilding] = 2;
 
     CombatTemplate base{};
-    base.hp = 50; base.damage = 6; base.speedMarchMult = 1.65f; base.attackRange = 3.5f;
+    base.hp = 50; base.dice = {6, 1}; base.speedMarchMult = 1.65f; base.attackRange = 3.5f;
     base.cooldown = 1.25f; base.label = "TST"; base.attackKind = CombatTemplate::Melee;
     base.missileSpeed = 12.5f; base.missileBlast = 4.0f; base.missileColorRGBA = 0xAABBCCDDu;
 
@@ -84,8 +84,12 @@ static void test_project_combat_melee() {
 
     CHECK(approx(out.hp, float(expCs.maxHp)),
           "melee: hp == calculate_combat_stats(sheet, base.hp).maxHp");
-    CHECK(approx(out.damage, base.damage + expD.rawPhysDamage),
-          "melee: damage == base.damage + rawPhysDamage");
+    CHECK(out.dice.n == base.dice.n && out.dice.m == base.dice.m,
+          "melee: the row's dice pass through the projection verbatim");
+    CHECK(out.flatAdd == std::int16_t(std::floor(expD.rawPhysDamage)),
+          "melee: flatAdd == floor(rawPhysDamage) — attributes ADD to the dice");
+    CHECK(int(out.luck) == int(cs.attributes[sm::AttributeId::Lck]),
+          "melee: the sheet's LCK rides to the crit door");
     // Attack identity preserved verbatim.
     CHECK(approx(out.speedMarchMult, base.speedMarchMult),
           "melee: pace (as a fraction of the march) preserved");
@@ -107,13 +111,13 @@ static void test_project_combat_missile() {
     cs.skills[sm::SkillId::Spellcraft] = 3;
 
     CombatTemplate base{};
-    base.hp = 60; base.damage = 8; base.attackKind = CombatTemplate::Missile;
+    base.hp = 60; base.dice = {8, 1}; base.attackKind = CombatTemplate::Missile;
 
     const CombatTemplate out = project_combat(cs, base);
     const DerivedBonuses expD = calculate_derived(cs.attributes, cs.skills);
 
-    CHECK(approx(out.damage, base.damage + expD.rawSpellDamage),
-          "missile: damage == base.damage + rawSpellDamage");
+    CHECK(out.flatAdd == std::int16_t(std::floor(expD.rawSpellDamage)),
+          "missile: flatAdd == floor(rawSpellDamage) — the bonus is the SPELL one");
     CHECK(out.attackKind == CombatTemplate::Missile, "missile: kind preserved");
     // Sanity: spell bonus (intl 7, spellcraft 3) differs from phys (str 12,
     // fighter 4), so the branch actually matters.

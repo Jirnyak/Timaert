@@ -1,6 +1,8 @@
 // Wearing things: the flat-array half of macro/anatomy.h.
 #include "macro/anatomy.h"
 
+#include <cmath>
+
 namespace sm {
 
 namespace {
@@ -138,6 +140,35 @@ int worn_cells(const Equipment& eq) {
         if (!r.empty() && !cell_blocked(r)) ++n;
     }
     return n;
+}
+
+const ItemDef* weapon_in_hand(const Equipment& eq) {
+    const int n = eq.cells();
+    for (int i = 0; i < n; ++i) {
+        const ItemRef& r = eq.worn[std::size_t(i)];
+        if (r.empty() || cell_blocked(r)) continue;
+        const BodyPartId part = eq.part_at(i);
+        if (part != BodyPartId::Grip && part != BodyPartId::OffGrip) continue;
+        if (const ItemDef* def = item_def_at(int(r.def))) {
+            if (def->type == ItemType::Weapon) return def;
+        }
+    }
+    return nullptr;
+}
+
+StrikeFields hand_strike_fields(const Attributes& attributes,
+                                const Skills& skills, const Equipment* eq) {
+    const ItemDef* w = eq ? weapon_in_hand(*eq) : nullptr;
+    StrikeFields out{};
+    out.dice    = w ? w->dice : kFistDice;
+    out.dmgType = w ? w->dmgType : DamageType::Blunt;
+    const SkillId skill =
+        (w && w->skill != SkillId::Count) ? w->skill : SkillId::Unarmed;
+    out.multPct = std::int16_t(skill_mult_pct(skills, skill));
+    const DerivedBonuses d = calculate_derived(attributes, skills);
+    out.flatAdd = std::int16_t(std::floor(d.rawPhysDamage));
+    out.luck    = std::uint8_t(attributes.of(AttributeId::Lck));
+    return out;
 }
 
 ArmorProfile worn_armor(const Equipment& eq) {

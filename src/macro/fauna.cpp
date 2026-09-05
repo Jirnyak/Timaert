@@ -170,8 +170,8 @@ std::uint8_t spawn_strength(NPCType t) {
             double lo = 1e30, hi = -1e30;
             for (std::size_t i = 0; i < L.size(); ++i) {
                 const CombatTemplate& c = kNpcTypeDefs[i].combat;
-                const double dps =
-                    double(c.damage) / std::max(0.25, double(c.cooldown));
+                const double dps = double(dice_mean_x2(c.dice)) * 0.5 /
+                                   std::max(0.25, double(c.cooldown));
                 const double power = std::max(1.0, double(c.hp) * dps);
                 L[i] = std::log2(power);
                 lo = std::min(lo, L[i]);

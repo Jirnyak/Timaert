@@ -95,7 +95,9 @@ struct CombatLogEntry {
 // would price the same player differently.
 constexpr float kPlayerMeleeRange      = 5.0f;
 constexpr float kPlayerMeleeCooldown   = 0.5f;
-constexpr float kPlayerBaseMeleeDamage = 10.0f;
+// kPlayerBaseMeleeDamage is DEAD (phase 3): the bare hand is the fist's own
+// dice row now (macro/anatomy.h kFistDice) and a weapon brings its own. The
+// historical 10 survives only as the armour scale's anchor (kArmorHalving).
 
 // Universal player-relationship on ONE continuous, signed axis — the single
 // source of truth shared by the HUD (and any future threat UI), so a marker's
@@ -620,6 +622,10 @@ private:
     bool  playerGrounded_ = false;
     float playerAttackTimer_ = 0.0f;
     Rng   spellRng_{1u};
+    // The melee dice stream (core/dice.h): every hand-to-hand roll_strike in
+    // this window draws from here. Separate from spellRng_ so a swing cannot
+    // shift what a cast would have rolled. Seeded beside it on entry.
+    Rng   combatRng_{1u};
     void sync_macro_player_to_center();
     // Inc 5e-1/5e-2: exit-position remap. If the body currently carrying the
     // player flag was PROJECTED from a macro NPC (it has a `MacroOrigin` backlink

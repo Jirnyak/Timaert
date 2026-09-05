@@ -97,7 +97,10 @@ constexpr ItemDef kCatalog[] = {
     {"wpn_dagger",  "Rusty Dagger",    ItemType::Weapon,     30, 1.00f, "\xF0\x9F\x97\xA1",
         "+2 STR when equipped", {{std::uint8_t(BonusId::Str), 2}},
         /*slot*/part_bit(BodyPartId::Grip) | part_bit(BodyPartId::OffGrip),
-        /*blocks*/0, /*armor*/{}},
+        // 1d4 piercing through the Dagger skill: a rusty sticker — mean 2.5
+        // against the fist's 1.5, and the point slips where a club cannot.
+        /*blocks*/0, /*armor*/{}, /*dice*/{1, 4},
+        /*dmgType*/DamageType::Pierce, /*skill*/SkillId::Dagger},
     {"arm_leather", "Leather Armor",   ItemType::Armor,      60, 5.00f, "\xF0\x9F\x9B\xA1",
         "+2 END when equipped", {{std::uint8_t(BonusId::End), 2}},
         /*slot*/part_bit(BodyPartId::Torso), /*blocks*/0,

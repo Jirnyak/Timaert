@@ -33,9 +33,17 @@ struct Health { float hp, maxHp; };
 // player-specific: it is a plain spatial property any actor may hold.
 struct BodyRadius { float radius; };
 
-// Combat stats — universal stat block (matches CombatTemplate in TS).
+// Combat stats — universal stat block, the ECS face of CombatTemplate.
 struct Combat {
-    float damage;
+    // The strike as DATA for the one assembly law (macro/damage_types.h
+    // roll_strike): dice + attribute add + skill percent + LCK. dmgType is
+    // the DamageType ORDINAL raw — the ecs layer stores ordinals, not macro
+    // enums (the NPCKind.type idiom); the strike site casts it back.
+    Dice dice;
+    std::int16_t flatAdd;
+    std::int16_t multPct;   // 100 = untrained; 100 + rank·pctPerRank in hand
+    std::uint8_t luck;
+    std::uint8_t dmgType;
     float speed;            // grid units / s
     float attackRange;
     float cooldown;         // authored seconds (the table's own number)

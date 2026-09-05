@@ -12,6 +12,7 @@
 // halving formula died here 2026-09-05.
 #pragma once
 
+#include "core/dice.h"
 #include "core/table_guard.h"
 
 #include <array>
@@ -57,12 +58,13 @@ static_assert(rows_in_enum_order(kDamageTypeDefs, &DamageTypeDef::type),
               "kDamageTypeDefs must mirror DamageType ordinals");
 
 // The armour at which a blow is HALVED by the percent branch — and therefore
-// the whole scale on which every armour number in the game reads. It is not
-// picked, it is the game's own plain blow: `kPlayerBaseMeleeDamage`
-// (sub/engine.h), what an untrained man does with his bare hands. So
-// "armour 10" says «this body halves a plain blow» — and, since the hybrid
-// law below took over, «...and shrugs anything up to a plain blow off
-// entirely».
+// the whole scale on which every armour number in the game reads. 10 is the
+// historical plain blow (the pre-dice player's bare-handed 10, the anchor
+// every creature and armour row was tuned against), so "armour 10" says
+// «this body halves the historical plain blow» — and, since the hybrid law
+// below took over, «...and shrugs anything up to that off entirely». A bare
+// FIST is now the honest 1d2 of the fist's own row: useless against plate,
+// which is what the threshold branch is for.
 inline constexpr int kArmorHalving = 10;
 
 // A body's defence: one column per DamageType, same units as damage because
@@ -104,6 +106,38 @@ constexpr int mitigate_amount(int dmg, int armour) {
     const int pctCut = dmg * armour / (armour + kArmorHalving);
     const int cut = armour > pctCut ? armour : pctCut;
     return dmg > cut ? dmg - cut : 0;
+}
+
+// ── THE strike assembly (CANON S13/S14) ────────────────────────────────────
+// One algebra for every blow, so no attack site can grow a private law:
+//     wound = (roll NdM + attribute add) · skill percent, then the crit.
+// Attributes ADD (flatAdd = the sheet's raw damage, floored to the int
+// house), skills MULTIPLY (multPct in whole percent: 100 = untrained,
+// 100 + rank·pctPerRank for the weapon in hand), and LCK asks the crit door
+// once per strike — a crit is the blade finding the ARMOUR GAP, so it rides
+// to the damage door as "mitigation does not apply", never as a multiplier.
+struct StrikeRoll {
+    int amount = 0;
+    bool critical = false;
+};
+
+inline StrikeRoll roll_strike(Rng& rng, Dice dice, int flatAdd, int multPct,
+                              int luck) {
+    StrikeRoll out{};
+    const int raw = roll_dice(rng, dice) + flatAdd;
+    out.amount = raw > 0 ? raw * multPct / 100 : 0;
+    out.critical = crit_procs(rng, luck);
+    return out;
+}
+
+// What the auto-resolve credits per swing — the strike's exact expectation
+// (dice_mean_x2 keeps the half-point without floats: ×2 throughout, halved
+// once at the end). Crit expectation is deliberately uncredited, like the
+// threshold branch: it depends on the victim's armour, which a per-fighter
+// scalar does not know (see auto_battle.h fighter_power).
+constexpr int strike_mean_x2(Dice dice, int flatAdd, int multPct) {
+    const int rawX2 = dice_mean_x2(dice) + flatAdd * 2;
+    return rawX2 > 0 ? rawX2 * multPct / 100 : 0;
 }
 
 } // namespace sm

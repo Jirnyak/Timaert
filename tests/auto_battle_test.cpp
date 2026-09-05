@@ -99,7 +99,10 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
         Body f{};
         f.hp = std::max(1.0f, std::floor(pc.hp)) *
                std::clamp(frac, 0.0f, 1.0f);
-        f.dmg = std::floor(pc.damage);
+        // The fought harness swings the strike's expectation (the shipping
+        // path rolls, but every authored row is Nd1 today — mean == roll —
+        // and the resolver credits the same mean, so the agreement is exact).
+        f.dmg = float(strike_mean_x2(pc.dice, pc.flatAdd, 100)) * 0.5f;
         f.cd = 0.0f;
         f.cdMax = std::max(0.1f, pc.cooldown);
         f.reach = pc.attackRange;

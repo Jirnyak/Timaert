@@ -70,8 +70,9 @@ void test_attributes_are_an_envelope_and_a_table() {
 
 // ── The table is a table ─────────────────────────────────────────────────
 void test_the_registry_is_addressable_by_ordinal() {
-    CHECK(int(SkillId::Count) == 32,
-          "the canon thirty-two stand in the registry today");
+    CHECK(int(SkillId::Count) == 33,
+          "the canon thirty-two plus Unarmed (v79 append) stand in the "
+          "registry today");
     for (int i = 0; i < int(SkillId::Count); ++i) {
         const SkillDef& d = skill_def(SkillId(i));
         CHECK(int(d.id) == i, "every row stands at its own ordinal");

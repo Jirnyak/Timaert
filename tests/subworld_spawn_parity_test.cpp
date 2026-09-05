@@ -223,7 +223,10 @@ std::vector<SpawnRecord> actual_fauna(sm::ecs::World& world) {
         r.y = pos.y;
         r.hp = hp.hp;
         r.maxHp = hp.maxHp;
-        r.damage = combat.damage;
+        // The wound is dice now; the record keeps the strike's expectation
+        // (print-only — strength is asserted as a property, not mirrored).
+        r.damage = float(sm::dice_mean_x2(combat.dice)) * 0.5f
+                 + float(combat.flatAdd);
         r.speed = combat.speed;
         r.range = combat.attackRange;
         r.cooldown = combat.cooldown;
@@ -717,8 +720,10 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
         const auto& h = reg.get<sm::ecs::Health>(pWrap);
         if (!(h.maxHp > 0.0f && h.hp == h.maxHp)) return false;
     }
-    // Combat SYNTHESISED from the fresh sheet (capability), damage must be sane.
-    if (!(reg.get<sm::ecs::Combat>(pBandit).damage > 0.0f)) return false;
+    // Combat SYNTHESISED from the fresh sheet (capability): the row's dice
+    // must be real and the sheet's add positive — a spent sheet always adds.
+    if (!(reg.get<sm::ecs::Combat>(pBandit).dice.n > 0)) return false;
+    if (!(reg.get<sm::ecs::Combat>(pBandit).flatAdd > 0)) return false;
 
     // Identity + faction copied verbatim from the macro NPC.
     if (reg.get<sm::ecs::NpcCharacter>(pBandit).visualSeed != 0xB0B0u) return false;

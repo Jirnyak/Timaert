@@ -167,9 +167,9 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
 
     // Integers, not fractions: a body that hits for 17.85 accumulates a
     // different wound than one that hits for 17, and the two spawners used to
-    // disagree about which it was.
+    // disagree about which it was. (The wound itself is dice + an already-
+    // floored flatAdd now — the strike assembly is integer end to end.)
     const float maxHp  = float(body_max_hp(sheet, def.combat));
-    const float damage = std::floor(pc.damage);
     // Wounds travel as a FRACTION, not as a number of points, so the two layers
     // never have to agree on how big a lord's bar is. A tracked entity at two
     // thirds arrives at two thirds whatever the sheet says down here, and the
@@ -193,7 +193,8 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
                   "kSubworldTilesPerMacroCell — the parity anchor rides on it");
     const float bodySpeed = march_speed(pc.speedMarchMult);
     reg.emplace<ecs::Combat>(e,
-        damage, bodySpeed, pc.attackRange, pc.cooldown, 0u,
+        pc.dice, pc.flatAdd, std::int16_t(100), pc.luck,
+        std::uint8_t(pc.dmgType), bodySpeed, pc.attackRange, pc.cooldown, 0u,
         pc.attackKind == CombatTemplate::Missile ? ecs::Combat::Missile
                                                  : ecs::Combat::Melee);
     maybe_emplace_missile_attack(reg, e, pc);

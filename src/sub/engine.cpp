@@ -350,6 +350,7 @@ void spawn_npc_missile(entt::registry& reg,
                        entt::entity attacker,
                        const ecs::Position& origin,
                        const ecs::Combat& combat,
+                       Rng& combatRng,
                        float targetX,
                        float targetY,
                        float targetZ) {
@@ -392,13 +393,18 @@ void spawn_npc_missile(entt::registry& reg,
     const std::uint8_t b = std::uint8_t(color & 0xFFu);
     const std::uint8_t a = std::uint8_t((color >> 24) & 0xFFu);
 
+    // The missile's wound is rolled AT LOOSE through the one assembly — the
+    // arrow leaves the bow carrying its number (crit lands with the typed
+    // projectile rework; the flag would need to ride the projectile).
+    const StrikeRoll loose = roll_strike(combatRng, combat.dice,
+                                         combat.flatAdd, combat.multPct, 0);
     entt::entity e = reg.create();
     reg.emplace<ecs::Position>(e, sx, sy, sz);
     reg.emplace<ecs::Projectile>(
         e,
         nx * speed, ny * speed, nz * speed,
         projectileRadius, life, life,
-        combat.damage,
+        float(loose.amount),
         blast,
         sx, sy,
         0.0f,
@@ -654,6 +660,11 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     spellRng_ = Rng{gs.worldSeed
         + std::uint32_t(cx) * std::uint32_t{1000}
         + std::uint32_t(cy)};
+    // Same cell identity, decorrelated stream (golden-ratio odd constant —
+    // the standard stream-splitting mix, not a tunable).
+    combatRng_ = Rng{(gs.worldSeed
+        + std::uint32_t(cx) * std::uint32_t{1000}
+        + std::uint32_t(cy)) ^ 0x9E3779B9u};
 
     // Fill all nine window cells from their own macro contexts (per-cell fauna
     // + settlement citizens), so the whole visible 3×3 is populated up front
@@ -840,11 +851,18 @@ void SubworldEngine::spawn_player_entity() {
         : maxHp;
     reg.emplace<ecs::Health>(e, ecs::Health{float(curHp), float(maxHp)});
     reg.emplace<ecs::BodyRadius>(e, ecs::BodyRadius{kPlayerBodyRadius});
-    const float meleeDamage = gs_
-        ? kPlayerBaseMeleeDamage
-              + calculate_derived(gs_->player.sheet.attributes,
-                                  gs_->player.sheet.skills).rawPhysDamage
-        : kPlayerBaseMeleeDamage;
+    // The strike: the ONE assembly (macro/anatomy.h hand_strike_fields) from
+    // the sheet and the weapon actually in hand on the SQUAD entity — gear is
+    // macro state, the body is its projection. Refreshed each tick beside the
+    // pace, so drawing a dagger changes the next swing, not the next descent.
+    const ecs::BodyEquipment* eqp = nullptr;
+    if (const entt::entity sq = player_squad_entity(*ecs_); sq != entt::null)
+        eqp = reg.try_get<ecs::BodyEquipment>(sq);
+    const StrikeFields hs = gs_
+        ? hand_strike_fields(gs_->player.sheet.attributes,
+                             gs_->player.sheet.skills,
+                             eqp ? &eqp->gear : nullptr)
+        : StrikeFields{kFistDice, DamageType::Blunt, 0, 100, 0};
     // Speed: a walking man's, from the ONE scale every body is stated on
     // (macro/movement_cost.h). Refreshed each tick beside the damage, so a
     // hasted or burdened player's body says what it can actually do.
@@ -853,8 +871,10 @@ void SubworldEngine::spawn_player_entity() {
                                    gs_->player.sheet.skills).moveSpeedMult
                : 1.0f);
     reg.emplace<ecs::Combat>(
-        e, ecs::Combat{meleeDamage, playerPace, kPlayerMeleeRange,
-                       kPlayerMeleeCooldown, 0u, ecs::Combat::Melee});
+        e, ecs::Combat{hs.dice, hs.flatAdd, hs.multPct, hs.luck,
+                       std::uint8_t(hs.dmgType), playerPace,
+                       kPlayerMeleeRange, kPlayerMeleeCooldown, 0u,
+                       ecs::Combat::Melee});
     reg.emplace<ecs::SubworldTag>(e);
     // First honest point-light emitter (Inc 4): a warm carried lantern. Gathered
     // by the renderer through the universal view<Position, LightEmitter,
@@ -969,7 +989,18 @@ void SubworldEngine::sync_player_entity_position() {
             if (auto* c = reg.try_get<ecs::Combat>(e)) {
                 const DerivedBonuses d = calculate_derived(
                     gs_->player.sheet.attributes, gs_->player.sheet.skills);
-                c->damage = kPlayerBaseMeleeDamage + d.rawPhysDamage;
+                const ecs::BodyEquipment* eqp = nullptr;
+                if (const entt::entity sq = player_squad_entity(*ecs_);
+                    sq != entt::null)
+                    eqp = reg.try_get<ecs::BodyEquipment>(sq);
+                const StrikeFields hs = hand_strike_fields(
+                    gs_->player.sheet.attributes, gs_->player.sheet.skills,
+                    eqp ? &eqp->gear : nullptr);
+                c->dice    = hs.dice;
+                c->flatAdd = hs.flatAdd;
+                c->multPct = hs.multPct;
+                c->luck    = hs.luck;
+                c->dmgType = std::uint8_t(hs.dmgType);
                 // HIS PACE, on his body, like every other body carries it.
                 // It was zero — the player was the one thing in the world
                 // with no speed of its own, because his legs used to live in
@@ -1555,8 +1586,8 @@ void SubworldEngine::tick_player_melee(float dt) {
         break;
     }
     if (!pc) return;
-    const float meleeDamage = std::floor(pc->damage);
-    const float meleeCooldown = pc->cooldown;
+    const ecs::Combat strikeStats = *pc;  // scalars up front (see above)
+    const float meleeCooldown = strikeStats.cooldown;
     // HOSTILES FIRST (owner ruling 2026-08-05, targeting.cpp
     // melee_pick_target): the nearest hostile in reach wins; only with no
     // hostile around does the swing fall back to the nearest body of any
@@ -1583,21 +1614,28 @@ void SubworldEngine::tick_player_melee(float dt) {
         return;
     }
 
-    // Blunt until the weapon-in-hand carries its own dice+type row (phase 3
-    // step 3) — with the mechanical uniform armour profiles the column choice
-    // changes nothing yet.
+    // THE strike: dice + add + skill percent through one assembly, LCK asks
+    // the crit door, and a crit rides to the damage door as "found the gap".
+    const StrikeRoll swing =
+        roll_strike(combatRng_, strikeStats.dice, strikeStats.flatAdd,
+                    strikeStats.multPct, strikeStats.luck);
     const DamageResult hit = apply_damage(
-        reg, target, DamageSource{std::uint32_t{0}, true}, meleeDamage,
-        DamageKind::Melee, DamageType::Blunt, bus_);
-    if (hit.applied <= 0.0f) return;
+        reg, target, DamageSource{std::uint32_t{0}, true, 0u, swing.critical},
+        float(swing.amount), DamageKind::Melee,
+        DamageType(strikeStats.dmgType), bus_);
+    if (hit.applied <= 0.0f) {
+        playerAttackTimer_ = meleeCooldown;  // a blocked swing still swung
+        return;
+    }
     push_player_hit_log(std::uint32_t(entt::to_integral(target)),
                         hit.applied, hit.lethal);
     const char* label = subworld_attacker_label(reg, target);
     char status[96]{};
-    std::snprintf(status, sizeof(status), "You %s %s for %d",
+    std::snprintf(status, sizeof(status), "You %s %s for %d%s",
                   hit.lethal ? "killed" : "hit",
                   label,
-                  std::max(0, int(std::round(hit.applied))));
+                  std::max(0, int(std::round(hit.applied))),
+                  swing.critical ? " (crit)" : "");
     set_status(status);
     playerAttackTimer_ = meleeCooldown;
 }
@@ -2494,13 +2532,19 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
 
     auto strike = [&](entt::entity attacker, entt::entity target,
                       ecs::Combat& c, bool playerOwned) {
+        const StrikeRoll swing =
+            roll_strike(combatRng_, c.dice, c.flatAdd, c.multPct, c.luck);
         const DamageResult hit = apply_damage(
             reg, target,
             DamageSource{std::uint32_t(entt::to_integral(attacker)),
-                         playerOwned},
-            c.damage, DamageKind::Melee, DamageType::Blunt, bus_);
-        if (hit.applied <= 0.0f) return;
+                         playerOwned, 0u, swing.critical},
+            float(swing.amount), DamageKind::Melee, DamageType(c.dmgType),
+            bus_);
+        // A blocked or dead-blocked swing still swung: the cooldown pays
+        // either way, or a fully-armoured target would grant free retries
+        // every step.
         c.cooldownSteps = steps_from_seconds(c.cooldown);
+        (void)hit;
     };
 
     // ── Resolve blows ──────────────────────────────────────────────────────
@@ -2539,7 +2583,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
         if (c.kind == ecs::Combat::Missile) {
             const auto& p = reg.get<ecs::Position>(e);
             const auto& tp = reg.get<ecs::Position>(targetEnt);
-            spawn_npc_missile(reg, e, p, c, tp.x, tp.y, tp.z);
+            spawn_npc_missile(reg, e, p, c, combatRng_, tp.x, tp.y, tp.z);
             c.cooldownSteps = steps_from_seconds(c.cooldown);
             continue;
         }

@@ -4,6 +4,8 @@
 // the NPC registry's CombatTemplate; there is no separate unit schema.
 #pragma once
 
+#include "macro/damage_types.h"
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -25,7 +27,12 @@ inline constexpr float kNpcSightDefaultM = 200.0f;
 struct CombatTemplate {
     enum AttackKind : std::uint8_t { Melee = 0, Missile = 1 };
     float       hp;
-    float       damage;
+    // The row's natural weapon as DICE (CANON S13: урон = NdM строкой).
+    // Scalar-era rows converted mechanically to Nd1 — the same fixed number
+    // they always dealt, expectation AND variance preserved to the point
+    // (owner verdict 2026-09-05); authored spreads (a troll's 4d12) are
+    // content-stage work.
+    Dice        dice;
     // How fast this row moves, as a FRACTION OF THE MARCH (owner's ruling,
     // 2026-08-30: «привести всех к маршу»). 1.0 is the world's own walking
     // pace — kSubworldWalkTilesPerSecond, itself derived from the 8 cells per
@@ -70,6 +77,17 @@ struct CombatTemplate {
     // sub/movement.h), so a rear rank charges because its front rank saw, while a
     // lone animal that noticed nothing stays put.
     float       sight = kNpcSightDefaultM;
+
+    // ── Filled by project_combat, never authored (a row has no sheet) ──────
+    // The sheet's attribute ADD to every roll of the dice above (STR-derived
+    // for melee rows, INT-derived for missile ones), floored to the int house.
+    std::int16_t flatAdd = 0;
+    // The sheet's LCK — the crit door's ask, once per strike (core/dice.h).
+    std::uint8_t luck = 0;
+    // Which of the nine columns this row's natural weapon argues with.
+    // Authored Blunt everywhere by the mechanical translation; claws and
+    // fangs pick their columns at content stage.
+    DamageType   dmgType = DamageType::Blunt;
 };
 
 struct SoldierRecord {

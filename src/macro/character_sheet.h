@@ -70,44 +70,46 @@ struct RoleWeights {
 // fights through Armsmaster (its body IS the weapon) and wears Unarmored.
 //
 // skills: Swd Axe Spr Mac Dag Bow Stf|Hvy Lgt Una Shd|Fir Wat Air Ear Arc Voi|
-//         Arm Spl|Bod Med Mar Ath Wgt|Trv Acr Sct Prs|Trd Qtm For Lrn
+//         Arm Spl|Bod Med Mar Ath Wgt|Trv Acr Sct Prs|Trd Qtm For Lrn|Unr
+// (Unr = Unarmed, appended v79 like its enum row; 0 everywhere until a
+// brawler role wants it — beasts keep fighting through Armsmaster.)
 inline constexpr RoleWeights kRoleWeights[int(NPCType::Count)] = {
     // Peasant     — hardy laborer: pitchfork and flail, forage and endure
     {NPCType::Peasant, {3, 3, 1, 1, 1, 1, 1, 2},
-     {0,0,2,1,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 1,0, 3,0,3,1,2, 1,0,0,0, 0,0,3,1}},
+     {0,0,2,1,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 1,0, 3,0,3,1,2, 1,0,0,0, 0,0,3,1,0}},
     // Woodcutter  — strong laborer: the axe is the trade and the argument
     {NPCType::Woodcutter, {4, 3, 1, 1, 1, 1, 1, 1},
-     {0,4,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 3,0,2,1,4, 1,0,0,0, 0,0,2,0}},
+     {0,4,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 3,0,2,1,4, 1,0,0,0, 0,0,2,0,0}},
     // Merchant    — social, lucky, sedentary: the ledger, not the blade
     {NPCType::Merchant, {1, 2, 2, 1, 1, 3, 4, 3},
-     {0,0,0,0,1,0,0, 0,1,0,0, 0,0,0,0,0,0, 0,0, 1,1,1,0,2, 2,0,0,0, 4,2,0,2}},
+     {0,0,0,0,1,0,0, 0,1,0,0, 0,0,0,0,0,0, 0,0, 1,1,1,0,2, 2,0,0,0, 4,2,0,2,0}},
     // Caravan     — mobile trader: lives on the road, hence the road skills
     // Cha 5: the trade house on wheels — its whole market edge is this row
     // (owner 2026-08-30: «у каравана в таблице выше уровень и харизма»).
     {NPCType::Caravan, {2, 3, 1, 1, 3, 2, 5, 2},
-     {0,0,0,1,0,0,0, 0,1,0,0, 0,0,0,0,0,0, 0,0, 1,1,2,3,2, 4,0,0,0, 4,3,2,1}},
+     {0,0,0,1,0,0,0, 0,1,0,0, 0,0,0,0,0,0, 0,0, 1,1,2,3,2, 4,0,0,0, 4,3,2,1,0}},
     // Bandit      — aggressive raider: knife and bow, fast on his feet
     {NPCType::Bandit, {4, 3, 1, 1, 3, 2, 1, 1},
-     {2,0,0,0,3,2,0, 0,2,1,0, 0,0,0,0,0,0, 3,0, 2,0,1,3,1, 2,1,2,0, 0,0,1,0}},
+     {2,0,0,0,3,2,0, 0,2,1,0, 0,0,0,0,0,0, 3,0, 2,0,1,3,1, 2,1,2,0, 0,0,1,0,0}},
     // Guard       — disciplined tank: sword, shield and heavy plate
     {NPCType::Guard, {4, 4, 1, 1, 2, 1, 2, 2},
-     {3,0,2,1,0,0,0, 3,0,0,3, 0,0,0,0,0,0, 2,0, 3,0,2,1,1, 1,0,0,0, 0,0,0,0}},
+     {3,0,2,1,0,0,0, 3,0,0,3, 0,0,0,0,0,0, 2,0, 3,0,2,1,1, 1,0,0,0, 0,0,0,0,0}},
     // Witch       — practical caster: hedge schools, a staff to lean on
     {NPCType::Witch, {1, 2, 4, 4, 1, 2, 2, 3},
-     {0,0,0,0,1,0,2, 0,0,2,0, 2,2,0,2,0,1, 0,4, 0,4,1,1,0, 1,0,0,0, 0,0,1,2}},
+     {0,0,0,0,1,0,2, 0,0,2,0, 2,2,0,2,0,1, 0,4, 0,4,1,1,0, 1,0,0,0, 0,0,1,2,0}},
     // Sorceress   — elite caster: the high schools, arcane first
     {NPCType::Sorceress, {1, 2, 5, 4, 1, 3, 3, 3},
-     {0,0,0,0,0,0,2, 0,1,2,0, 3,0,2,0,3,2, 0,5, 0,4,1,1,0, 1,0,0,0, 0,0,0,2}},
+     {0,0,0,0,0,0,2, 0,1,2,0, 3,0,2,0,3,2, 0,5, 0,4,1,1,0, 1,0,0,0, 0,0,0,2,0}},
     // Miner       — strong laborer: the pick swings like a mace, the eye
     // reads the vein (Prospecting is the trade's whole point)
     {NPCType::Miner, {4, 3, 1, 1, 1, 1, 1, 1},
-     {0,0,0,4,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 3,0,2,1,4, 0,0,0,4, 0,0,1,0}},
+     {0,0,0,4,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 3,0,2,1,4, 0,0,0,4, 0,0,1,0,0}},
     // Quarryman   — strong laborer: stone over ore, the back over the eye
     {NPCType::Quarryman, {4, 3, 1, 1, 1, 1, 1, 1},
-     {0,0,0,4,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 3,0,2,1,5, 0,0,0,2, 0,0,1,0}},
+     {0,0,0,4,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 3,0,2,1,5, 0,0,0,2, 0,0,1,0,0}},
     // Clay-digger — hardy laborer (the peasant's build, wetter)
     {NPCType::ClayDigger, {3, 3, 1, 1, 1, 1, 1, 2},
-     {0,0,2,1,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 1,0, 3,0,3,1,2, 1,0,0,0, 0,0,2,1}},
+     {0,0,2,1,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 1,0, 3,0,3,1,2, 1,0,0,0, 0,0,2,1,0}},
     // ── The creature rows ────────────────────────────────────────────────
     // A beast has a sheet like a man has a sheet (owner, 2026-08-20: one
     // system, "у всех лист статов как в обливионе"). What differs is only the
@@ -118,60 +120,60 @@ inline constexpr RoleWeights kRoleWeights[int(NPCType::Count)] = {
     // weapon skill is Armsmaster (its body is the weapon) and its armor is
     // Unarmored (its hide is the coat); prey reads the wind (Scouting).
     {NPCType::Rabbit,       {1, 4, 1, 1, 5, 3, 1, 1},
-     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 0,0, 1,0,3,5,0, 2,3,2,0, 0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 0,0, 1,0,3,5,0, 2,3,2,0, 0,0,0,0,0}},
     {NPCType::Deer,         {2, 4, 1, 1, 5, 2, 1, 1},
-     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 2,0,3,5,0, 2,2,2,0, 0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 2,0,3,5,0, 2,2,2,0, 0,0,0,0,0}},
     {NPCType::Fox,          {2, 3, 2, 1, 4, 3, 1, 2},
-     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 2,0, 1,0,2,4,0, 2,1,3,0, 0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 2,0, 1,0,2,4,0, 2,1,3,0, 0,0,0,0,0}},
     {NPCType::Wolf,         {4, 3, 1, 1, 4, 2, 1, 1},
-     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 4,0, 2,0,2,3,0, 2,0,3,0, 0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 4,0, 2,0,2,3,0, 2,0,3,0, 0,0,0,0,0}},
     {NPCType::Bear,         {5, 5, 1, 1, 2, 1, 1, 1},
-     {0,0,0,0,0,0,0, 0,0,3,0, 0,0,0,0,0,0, 4,0, 5,0,1,1,0, 1,0,1,0, 0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,3,0, 0,0,0,0,0,0, 4,0, 5,0,1,1,0, 1,0,1,0, 0,0,0,0,0}},
     {NPCType::Boar,         {4, 4, 1, 1, 3, 1, 1, 1},
-     {0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 3,0, 4,0,1,2,0, 1,0,1,0, 0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 3,0, 4,0,1,2,0, 1,0,1,0, 0,0,0,0,0}},
     {NPCType::Snake,        {3, 2, 1, 1, 3, 3, 1, 1},
-     {0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 4,0, 1,0,1,2,0, 1,0,1,0, 0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 4,0, 1,0,1,2,0, 1,0,1,0, 0,0,0,0,0}},
     {NPCType::Hawk,         {2, 3, 2, 1, 5, 3, 1, 2},
-     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 2,0, 1,0,2,5,0, 2,0,3,0, 0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 2,0, 1,0,2,5,0, 2,0,3,0, 0,0,0,0,0}},
     {NPCType::Frog,         {1, 3, 1, 1, 3, 2, 1, 1},
-     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 1,0,2,3,0, 1,3,0,0, 0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 1,0,2,3,0, 1,3,0,0, 0,0,0,0,0}},
     {NPCType::Goat,         {2, 4, 1, 1, 4, 1, 1, 1},
-     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 3,0,2,4,0, 3,3,0,0, 0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 3,0,2,4,0, 3,3,0,0, 0,0,0,0,0}},
     {NPCType::Eagle,        {2, 3, 2, 1, 5, 3, 1, 2},
-     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 3,0, 1,0,2,5,0, 2,0,3,0, 0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 3,0, 1,0,2,5,0, 2,0,3,0, 0,0,0,0,0}},
     {NPCType::Croc,         {4, 4, 1, 1, 2, 2, 1, 1},
-     {0,0,0,0,0,0,0, 0,0,3,0, 0,0,0,0,0,0, 4,0, 4,0,1,1,0, 1,0,1,0, 0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,3,0, 0,0,0,0,0,0, 4,0, 4,0,1,1,0, 1,0,1,0, 0,0,0,0,0}},
     {NPCType::Goblin,       {3, 3, 2, 1, 3, 2, 1, 1},
-     {0,0,1,0,2,1,0, 0,1,1,0, 0,0,0,0,0,0, 2,0, 2,0,2,3,1, 2,0,1,0, 0,0,0,0}},
+     {0,0,1,0,2,1,0, 0,1,1,0, 0,0,0,0,0,0, 2,0, 2,0,2,3,1, 2,0,1,0, 0,0,0,0,0}},
     {NPCType::Skeleton,     {3, 4, 1, 1, 2, 1, 1, 1},
-     {2,0,1,0,0,0,0, 1,0,1,1, 0,0,0,0,0,0, 3,0, 3,0,1,1,0, 0,0,0,0, 0,0,0,0}},
+     {2,0,1,0,0,0,0, 1,0,1,1, 0,0,0,0,0,0, 3,0, 3,0,1,1,0, 0,0,0,0, 0,0,0,0,0}},
     {NPCType::Troll,        {5, 5, 1, 1, 1, 1, 1, 1},
-     {0,0,0,2,0,0,0, 0,0,3,0, 0,0,0,0,0,0, 4,0, 5,0,1,1,0, 1,0,0,0, 0,0,0,0}},
+     {0,0,0,2,0,0,0, 0,0,3,0, 0,0,0,0,0,0, 4,0, 5,0,1,1,0, 1,0,0,0, 0,0,0,0,0}},
     {NPCType::SwampThing,   {4, 4, 1, 2, 1, 1, 1, 1},
-     {0,0,0,0,0,0,0, 0,0,3,0, 0,2,0,1,0,0, 3,1, 4,1,1,1,0, 0,0,0,0, 0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,3,0, 0,2,0,1,0,0, 3,1, 4,1,1,1,0, 0,0,0,0, 0,0,0,0,0}},
     // Ice is the Water school (S15 remap): the wraith casts what it is.
     {NPCType::IceWraith,    {3, 3, 3, 4, 3, 2, 1, 2},
-     {0,0,0,0,0,0,0, 0,0,2,0, 0,3,1,0,0,2, 1,3, 1,3,1,3,0, 1,0,0,0, 0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,2,0, 0,3,1,0,0,2, 1,3, 1,3,1,3,0, 1,0,0,0, 0,0,0,0,0}},
     {NPCType::SandScorpion, {3, 3, 1, 1, 3, 2, 1, 1},
-     {0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 3,0, 2,0,1,3,0, 2,0,1,0, 0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 3,0, 2,0,1,3,0, 2,0,1,0, 0,0,0,0,0}},
     {NPCType::StoneGolem,   {5, 5, 1, 1, 1, 1, 1, 1},
-     {0,0,0,0,0,0,0, 0,0,4,0, 0,0,0,0,0,0, 3,0, 5,0,1,1,0, 0,0,0,0, 0,0,0,0}},
+     {0,0,0,0,0,0,0, 0,0,4,0, 0,0,0,0,0,0, 3,0, 5,0,1,1,0, 0,0,0,0, 0,0,0,0,0}},
     // Adventurer — the player's row. Even weights on purpose: a generated
     // adventurer is a blank slate, and the player's OWN points are spent by
     // him, not rolled by this table (it answers only when something asks the
     // world for "an adventurer", e.g. a projected body of his squad).
     {NPCType::Adventurer,   {2, 2, 2, 2, 2, 2, 2, 2},
-     {1,1,1,1,1,1,1, 1,1,1,1, 1,1,1,1,1,1, 1,1, 1,1,1,1,1, 1,1,1,1, 1,1,1,1}},
+     {1,1,1,1,1,1,1, 1,1,1,1, 1,1,1,1,1,1, 1,1, 1,1,1,1,1, 1,1,1,1, 1,1,1,1,0}},
     // Vendor — the village hauler on the town road: a labourer's back with a
     // seller's tongue (the Woodcutter body, a pinch of the Merchant charm).
     {NPCType::Vendor,       {3, 3, 1, 1, 1, 1, 1, 2},
-     {0,0,0,1,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 2,0,2,1,3, 2,0,0,0, 3,1,1,1}},
+     {0,0,0,1,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 2,0,2,1,3, 2,0,0,0, 3,1,1,1,0}},
     // Silver-miner — the miner's body, row for row.
     {NPCType::SilverMiner,  {4, 3, 1, 1, 1, 1, 1, 1},
-     {0,0,0,4,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 3,0,2,1,4, 0,0,0,4, 0,0,1,0}},
+     {0,0,0,4,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 3,0,2,1,4, 0,0,0,4, 0,0,1,0,0}},
     // Tax-collector — a courier's legs, a clerk's head.
     {NPCType::TaxCollector, {2, 3, 2, 2, 3, 1, 2, 2},
-     {0,0,0,0,1,0,0, 0,1,0,0, 0,0,0,0,0,0, 0,0, 1,1,2,3,2, 3,0,0,0, 2,2,0,2}},
+     {0,0,0,0,1,0,0, 0,1,0,0, 0,0,0,0,0,0, 0,0, 1,1,2,3,2, 3,0,0,0, 2,2,0,2,0}},
 };
 
 static_assert(rows_in_enum_order(kRoleWeights, &RoleWeights::type),
@@ -393,8 +395,12 @@ inline CombatTemplate project_combat(const CharacterSheet& sheet,
     const float atkBonus = (base.attackKind == CombatTemplate::Missile)
                                ? d.rawSpellDamage
                                : d.rawPhysDamage;
-    out.hp     = float(cs.maxHp);
-    out.damage = base.damage + atkBonus;
+    out.hp      = float(cs.maxHp);
+    // Attributes ADD to the row's dice (CANON S14: «атрибуты складывают»),
+    // floored to the int house — the strike assembly (roll_strike) does the
+    // rest. The sheet's LCK rides along for the crit door.
+    out.flatAdd = std::int16_t(std::floor(atkBonus));
+    out.luck    = std::uint8_t(sheet.attributes.of(AttributeId::Lck));
     return out;
 }
 

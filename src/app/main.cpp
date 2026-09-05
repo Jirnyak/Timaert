@@ -557,10 +557,17 @@ sm::AutoBattleSide player_auto_battle_side(App& app) {
     const sm::PlayerState& p = app.gs.player;
     sm::AutoBattleSide s = sm::auto_battle_side_of(
         app.ecs, sm::player_squad_entity(app.ecs), &p.sheet);
-    const float swing = std::floor(
-        sm::sub::kPlayerBaseMeleeDamage
-        + sm::calculate_derived(p.sheet.attributes, p.sheet.skills)
-              .rawPhysDamage);
+    // The player's swing, credited exactly as the fought path rolls it: the
+    // ONE assembly (hand_strike_fields) over the weapon actually in hand,
+    // taken at its expectation like every auto-resolve number.
+    const sm::ecs::BodyEquipment* eqp = nullptr;
+    if (const entt::entity sq = sm::player_squad_entity(app.ecs);
+        sq != entt::null)
+        eqp = app.ecs.reg.try_get<sm::ecs::BodyEquipment>(sq);
+    const sm::StrikeFields hs = sm::hand_strike_fields(
+        p.sheet.attributes, p.sheet.skills, eqp ? &eqp->gear : nullptr);
+    const float swing = float(
+        sm::strike_mean_x2(hs.dice, hs.flatAdd, hs.multPct)) * 0.5f;
     s.leaderDpsOverride = swing / sm::sub::kPlayerMeleeCooldown;
     return s;
 }
