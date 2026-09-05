@@ -1196,6 +1196,8 @@ timaert_test(guard_patrol_test
 
 timaert_test(rng_contract_test)
 
+timaert_test(dice_door_test)
+
 timaert_test(torus_geometry_test)
 
 timaert_test(celestial_test)
