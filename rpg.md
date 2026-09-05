@@ -12,10 +12,17 @@ Character sheet: attributes, XP/levels, items, inventory, equipment, loot.
 > LEARN LAW (rank 0 = ignorance, `learn_skill` the one door out), the 1:1
 > level grant, and the pre-world character creation screen (name / nature /
 > homeland + 5 attribute points + 5 learn picks; the intro story is pure
-> slides now). Still ahead (NEXT_SESSION.md): the dice door + 9 damage types
-> (phase 3), the effective-sheet door (4), school wiring (5), world readers
-> (6). The perk system was PURGED whole 2026-09-03 pending its redesign — the
-> game currently carries no perk state at all.
+> slides now). **Phase 3 is BUILT 2026-09-05 (save v79, combat.md = THE
+> doc):** the dice door + the crit (LCK, 0.5%/point, armour-gap), the 9×9
+> type symmetry with the HYBRID armour law, dice on creatures/weapons/spells,
+> the weapon in hand + weapon skills (Unarmed appended as the eighth), and
+> integer combat arithmetic end to end. Still ahead (NEXT_SESSION.md): the
+> effective-sheet door (4), school wiring (5), the trimmed world readers (6),
+> then faction service. The perk system was PURGED whole 2026-09-03 pending
+> its redesign — the game currently carries no perk state at all. NOTE: this
+> doc's body below predates the phases and is due a full rewrite AFTER them
+> (NEXT_SESSION.md §5) — trust CANON S13-S15 and combat.md over it where they
+> disagree.
 
 - **Code:** [macro/attributes.h](src/macro/attributes.h),
   [macro/character_sheet.h](src/macro/character_sheet.h) (`CharacterSheet`),

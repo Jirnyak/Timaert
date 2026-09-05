@@ -101,6 +101,9 @@ placement and the tower's storeys all derive from the registry row.
 
 ## Connections
 
-Mana/costs from the RPG system ([rpg.md](rpg.md)); damage resolves in combat
-([microcombat.md](microcombat.md)); unlocks are part of progression
-([progression.md](progression.md)).
+Mana/costs from the RPG system ([rpg.md](rpg.md)). Damage is DICE of the
+spell row since phase 3 (2026-09-05): `SpellDef.dice` rolled at cast through
+THE strike assembly (`spell_strike` → roll_strike, caster's LCK at the crit
+door), the wound + its tag's DamageType column + the crit verdict ride the
+projectile to the one damage door — see [combat.md](combat.md). Unlocks are
+part of progression ([progression.md](progression.md)).

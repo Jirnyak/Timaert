@@ -37,9 +37,12 @@ player spell direction.
   (no `SubworldAi`). `combatStats.currentHp` stays macro-authoritative: an
   int↔float bridge PULLs it onto the entity's `Health` at tick-top and PUSHes the
   reconciled value back at tick-end — and the same PULL refreshes the entity's
-  `Combat.damage` from the sheet. Outgoing **melee** now flows from that `Combat`
-  too: `tick_player_melee` reads its damage/range/cooldown instead of
-  recomputing, and the NPC actor loop still never swings it because
+  `Combat` strike fields (dice/flatAdd/multPct/luck/dmgType since phase 3,
+  2026-09-05) from the sheet AND the weapon actually in hand
+  (`hand_strike_fields`, macro/anatomy.h — bare hands are 1d2 Blunt through
+  Unarmed). Outgoing **melee** now flows from that `Combat`
+  too: `tick_player_melee` rolls `roll_strike` from it (see combat.md for the
+  one strike algebra and the crit), and the NPC actor loop still never swings it because
   `is_player_side()` makes the player non-hostile-to-itself. Outgoing **spells**
   now carry the player's real entity id too (4d): `player_entity_id()` stamps
   each player-cast projectile's `ownerId` exactly as an NPC missile carries its

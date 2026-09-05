@@ -436,16 +436,33 @@ sampled point (a bolt strides several units per tick and would otherwise step
 straight over anything closer than its stride). It dies on terrain, on masonry,
 or on any face of the 3×3 window — walls, floor, and ceiling alike.
 
+**One law of the wound (RPG phase 3, 2026-09-05 — [combat.md](combat.md) is
+THE doc).** Damage is DICE of the row (`Dice{n,m}`, [core/dice.h](src/core/dice.h))
+through ONE strike assembly (`roll_strike`,
+[macro/damage_types.h](src/macro/damage_types.h)):
+`(roll + attribute add) · skill percent`, integer end to end, no to-hit.
+LCK's one reader is the crit (0.5%/point — the blade finds the armour gap:
+mitigation skipped, nothing multiplied). Nine damage types = nine armour
+columns (one enum, `ArmorProfile` on creature and item rows), hybrid
+mitigation `max(A, dmg·A/(A+10))` in `mitigate_amount` — read by the damage
+door and inverted by the auto-resolve, so the two scales price a body
+identically.
+
 **Universal stat block — `CombatTemplate`:**
 ```cpp
 struct CombatTemplate {
-    int   hp, damage;
-    float speed, attackRange, cooldown;
+    float hp;
+    Dice  dice;                      // the row's natural weapon (NdM)
+    float speedMarchMult, attackRange, cooldown;
     const char* label;
     AttackKind  attackKind;          // Melee | Missile
     float       missileSpeed;
     float       missileBlast;
-    std::uint32_t missileColor;
+    std::uint32_t missileColorRGBA;
+    // filled by project_combat, never authored:
+    std::int16_t flatAdd;            // sheet's attribute add
+    std::uint8_t luck;               // sheet's LCK, for the crit door
+    DamageType   dmgType;
 };
 ```
 Every NPC kind (`kNpcTypes[i].combat`) carries this block. There is no
