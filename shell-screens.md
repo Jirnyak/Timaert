@@ -166,7 +166,11 @@ because the preset spends the creation budget to zero.
 
 ## Open tails
 
-- Portraits on the creation screen (`male.png` / `female.png` are authored in
-  the choice table and not yet drawn).
+- ~~Portraits on the creation screen~~ — DONE 2026-09-06 (c935420): the
+  choice row's `image` column is consumed (the leading slash that would
+  never have loaded was cut), drawn via `draw_ui_image` into the identity
+  block's right corner. Not yet eyeballed in a live run.
 - `arrival_story()` carries placeholder text and a borrowed frame.
-- The codex article on perks/skills still describes the pre-war skill law.
+- ~~The codex article on perks/skills~~ — rewritten 2026-09-06 (a386af4)
+  to the canon law (attributes add, skills multiply, learn law; perks
+  «reforged and will return»).

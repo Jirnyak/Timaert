@@ -1031,7 +1031,8 @@ gives the flag a home on both sides of the seam.
 `remove<PlayerTag>(old); emplace<PlayerTag>(target)` — the vacated body reverts to
 an ordinary NPC. Targeting is scale-split: in the subworld you look at a body and
 possess it (`possess_aim` uses the `aim_target` forward-cone primitive on the
-camera yaw; keybind **V** / console `possess`), with `possess_by_id` as the debug
+camera yaw; dev console `possess` — the player keybind V died 2026-09-06,
+a possession SPELL replaces it), with `possess_by_id` as the debug
 by-id path. Possession is **body-native**: the inhabited body fights with its OWN
 `CharacterSheet`/`Combat`/`Health` (possess a lord ⇒ strong; a rat ⇒ weak), and
 `gs.player` (the hero) is preserved untouched as the revert target — the

@@ -271,7 +271,8 @@ README, which orchestrates them.
   ordinary ECS body (a minimal marker on the overworld, a full combat actor in a
   subworld), with one system-wide invariant — exactly one `PlayerTag` at all
   times. *Possession* (вселение) moves that one flag onto a body you look at
-  (subworld reticle, keybind **V**) or name (`control <id>`); the body fights on
+  (subworld reticle — dev console `possess`; the player keybind died
+  2026-09-06, a possession SPELL replaces it) or name (`control <id>`); the body fights on
   its OWN character sheet (possess a lord ⇒ strong, a rat ⇒ weak) and the one you
   left reverts to a normal NPC. Overworld NPCs are projected into the subworld as
   real bodies where they actually stand, and leaving *as* a possessed body lands

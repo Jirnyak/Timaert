@@ -282,24 +282,24 @@ Deliberate sleepers (rows exist, no reader yet — content will wake them):
 
 Known debts (defects to burn down, not design):
 
-- **Foraging and Scouting bypass the table column**: `(100 ± rank)/100`
-  spelled inline (npc_ai.cpp) — numerically the row's 1% today, but a
-  retuned column would not follow. Trade was the same and was fixed
-  through `skill_mult_of`; these two await the same pass.
 - **XP grants of quest_engine / effect_applicator land on the BASE sheet**
   (no world in the event bus) — a +WIS hat does not scale them; the door
   arrives with the PlayerState move (~550 sites, its own track).
-- **The codex article PerksSkills and the console `levelup` help still
-  describe perks** — a purged system (стартовые хвосты, NEXT_SESSION §4).
+
+Burned down same-day (2026-09-06, one sweep): Foraging and Scouting now
+walk the table door (`skill_mult_pct_of` — the integer twin with both
+directions; an inline `(100 ± rank)/100` died with Trade's inline 2%);
+the codex article and the console `levelup` help no longer describe the
+purged perks.
 
 ## Data-driven extension
 
 Add an item → one `item_catalog()` row. Add a loot drop → one loot-profile
 row keyed by a stable `lootId`. Add a skill → one `kSkillDefs` row (id,
 key, label, effect text, `pctPerRank`, `buysCostDown`) plus one weight per
-role. Express its effect through `skill_mult` — never a private curve, and
-never a percent spelled inline (the ledger above lists the two surviving
-violations). Add a spell school → a `kSpellTagDefs` column value; add an
+role. Express its effect through `skill_mult` / `skill_mult_pct_of` —
+never a private curve, and never a percent spelled inline (three such
+violations died 2026-09-06; the count today is zero). Add a spell school → a `kSpellTagDefs` column value; add an
 attribute → append inside the 16 envelope with its law in
 `calculate_combat_stats`/`calculate_derived`.
 
