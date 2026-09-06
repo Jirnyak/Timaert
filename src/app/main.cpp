@@ -3031,14 +3031,25 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     // The bars follow the EFFECTIVE sheet (phase 4): a worn «+2 END» plate
     // fattens the SP bar, and taking it off (or a sustained spell lapsing —
     // spellbook_tick above has already snuffed this step's casualties) thins
-    // it back. Refreshed every simulation step because equipment and spells
-    // change on no schedule; recompute_combat_maxima PRESERVES the current
-    // pools, so this is never a free heal (owner ruling 2026-08-05 — the full
-    // restore belongs to creation and the level-up, which say they heal).
+    // it back. Refreshed exactly WHEN the standing sum changes, not every
+    // step: recompute rewrites the whole derived block (maxima AND regen
+    // rates), so running it on a schedule would stomp runtime state that
+    // nothing changed — the travel harness froze spRegen for a measurement
+    // and a per-step refresh silently thawed it (seed-999 conservation
+    // failure, 2026-09-06). recompute_combat_maxima PRESERVES the current
+    // pools, so this is never a free heal (owner ruling 2026-08-05 — the
+    // full restore belongs to creation and the level-up, which say they
+    // heal). Base-sheet growth has its own recompute sites (level-up, the
+    // point spends); this one watches what he WEARS and what BURNS.
     {
-        const sm::CharacterSheet eff = player_effective_sheet(app);
-        sm::recompute_combat_maxima(app.gs.player.combatStats,
-                                    eff.attributes, eff.skills);
+        const sm::BonusTotals standing = player_standing_bonuses(app);
+        if (standing != app.lastStandingBonuses) {
+            app.lastStandingBonuses = standing;
+            const sm::CharacterSheet eff =
+                sm::effective_sheet(app.gs.player.sheet, standing);
+            sm::recompute_combat_maxima(app.gs.player.combatStats,
+                                        eff.attributes, eff.skills);
+        }
     }
     if (app.subworld.active()) {
         stats.subworldActive = true;

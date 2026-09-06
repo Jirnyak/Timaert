@@ -251,6 +251,9 @@ inline BonusId bonus_id(const char* key) {
 struct BonusTotals {
     std::array<std::int16_t, kMaxAttributes> attr{};
     std::array<std::int16_t, kMaxSkills>     skill{};
+    // "Did what stands on him CHANGE?" is a question the per-step bar
+    // refresh asks (app loop) — equality is the whole answer.
+    bool operator==(const BonusTotals&) const = default;
 };
 
 inline void accumulate(BonusTotals& t, Bonus b) {

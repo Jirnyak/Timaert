@@ -423,8 +423,79 @@ void test_spawn_squad_is_one_spec_one_door() {
 
 } // namespace
 
+// ── Phase 6: the leader's TRAINING reads at the three new doors ──────────
+// Trade → the price law's bargaining argument (a literal 0 since the law
+// was written), Foraging → the daily bread draw, Scouting → the runtime's
+// sight cache. Each with a negative control.
+void test_the_leaders_training_reads_at_the_new_doors() {
+    // 1. The scouting rank rides the runtime cache through the ONE refresh
+    // door — the same door the march caches cannot drift through.
+    {
+        ecs::MacroNpcRuntime rt{};
+        CharacterSheet trained{};
+        trained.skills[SkillId::Scouting] = 25;
+        refresh_leader_travel_stats(rt, trained, NPCType::Bandit);
+        CHECK(rt.scoutRank == 25, "the scouting rank rides the runtime cache");
+        CharacterSheet bare{};
+        refresh_leader_travel_stats(rt, bare, NPCType::Bandit);
+        CHECK(rt.scoutRank == 0,
+              "negative control: a rankless sheet clears the cache");
+    }
+    // 2. Bargaining is ALIVE in the price law.
+    {
+        CHECK(trade_buy_price(1000, 0, 50) < trade_buy_price(1000, 0, 0),
+              "a trained haggler buys cheaper through the one price law");
+        CHECK(trade_sell_price(1000, 0, 50) > trade_sell_price(1000, 0, 0),
+              "and sells dearer through the same law");
+    }
+    // 3. Foraging thins the daily bread draw. The trained forager is FOUND,
+    // not authored — leaders derive their sheets — so the scan pins that the
+    // derivation can produce the rank at all; the Guard's role weights say 0
+    // Foraging, which is the untrained control.
+    {
+        GameState gs = make_world(0);
+        ecs::World w;
+        int trainedRank = 0, lvl = 0;
+        std::uint32_t ord = 0;
+        for (int L = 2; L <= 40 && trainedRank == 0; ++L) {
+            for (std::uint32_t o = 1; o <= 8 && trainedRank == 0; ++o) {
+                const int r = make_character_sheet(
+                                  NPCType::Peasant, L, leader_sheet_seed(o))
+                                  .skills.of(SkillId::Foraging);
+                if (r > 0 && r < 100) { trainedRank = r; lvl = L; ord = o; }
+            }
+        }
+        CHECK_OR_RETURN(trainedRank > 0, "the scan found a trained forager");
+        const entt::entity forager = make_squad_at(
+            w, NPCType::Peasant, "timaert", lvl, 10.0f, 10.0f, ord,
+            {1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u}, NPCType::Peasant, 1);
+        const entt::entity untrained = make_squad_at(
+            w, NPCType::Guard, "timaert", 3, 20.0f, 20.0f, 999u,
+            {11u, 12u, 13u, 14u, 15u, 16u, 17u, 18u}, NPCType::Guard, 1);
+        CHECK(make_character_sheet(NPCType::Guard, 3, leader_sheet_seed(999u))
+                      .skills.of(SkillId::Foraging) == 0,
+              "the Guard control is honestly untrained");
+        w.reg.get<ecs::NpcInventory>(forager).inv.add("bread", 64);
+        w.reg.get<ecs::NpcInventory>(untrained).inv.add("bread", 64);
+        MacroWorld mw{&gs, nullptr, &w};
+        feed_squads_daily(mw);
+        const int foragerLeft =
+            w.reg.get<ecs::NpcInventory>(forager).inv.count("bread");
+        const int untrainedLeft =
+            w.reg.get<ecs::NpcInventory>(untrained).inv.count("bread");
+        CHECK(untrainedLeft == 64 - 8,
+              "an untrained camp eats a loaf a head — the M&B law unchanged");
+        CHECK(foragerLeft > untrainedLeft,
+              "a trained forager's camp lives partly off the land");
+        CHECK(foragerLeft < 64,
+              "negative control: foraging thins the draw, it is not a "
+              "free kitchen below rank 100");
+    }
+}
+
 int main() {
     test_hostiles_on_one_cell_fight_and_the_ledger_pays();
+    test_the_leaders_training_reads_at_the_new_doors();
     test_the_weak_flee_and_fighters_pursue();
     test_neutral_squads_ignore_each_other();
     test_no_auto_battle_when_the_ground_owns_the_fight();

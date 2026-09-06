@@ -49,6 +49,8 @@ inline void refresh_leader_travel_stats(ecs::MacroNpcRuntime& rt,
         std::clamp(sheet.skills.of(SkillId::Travel), 0, kMaxSkillRank));
     rt.marathonRank = std::uint8_t(
         std::clamp(sheet.skills.of(SkillId::Marathon), 0, kMaxSkillRank));
+    rt.scoutRank = std::uint8_t(
+        std::clamp(sheet.skills.of(SkillId::Scouting), 0, kMaxSkillRank));
     // The cache is the walk's own float; the LAW is whole percent (4в).
     rt.moveMult = float(
         calculate_derived(sheet.attributes, sheet.skills).moveSpeedPct)

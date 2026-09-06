@@ -307,6 +307,11 @@ struct MacroNpcRuntime {
     std::int16_t  maxSp = 100;
     std::uint8_t  travelRank = 0;
     std::uint8_t  marathonRank = 0;
+    // Phase 6: the scouting rank widens how far this squad SEES (npc_ai
+    // squad_sight_cells) — cached beside its two SP siblings because the
+    // sight query runs per think, where a sheet re-derivation has no
+    // business. Same one refresh door, so it cannot drift either.
+    std::uint8_t  scoutRank = 0;
     float         moveMult = 1.0f;
     // What this leader's back can hold (attributes.h get_carry_capacity), the
     // fifth scalar of the same sheet cache — and the SP surcharge his current

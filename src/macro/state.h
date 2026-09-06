@@ -274,7 +274,10 @@ namespace sm {
 // v80 (2026-09-06): Фаза 4г — ecs::Health стал int{hp,maxHp} (float-хранилище
 // умерло: все писатели целые с Фазы 3, дробный реген живёт в carry-
 // аккумуляторах, не в баре); MacroNpcRecord.health едет тем же POD-ом.
-constexpr int kSaveVersion = 80;
+// v81 (2026-09-06): Фаза 6 — MacroNpcRuntime получил scoutRank (кэш ранга
+// Разведки лидера рядом с travelRank/marathonRank, та же дверь рефреша);
+// рантайм едет в MacroNpcRecord целиком.
+constexpr int kSaveVersion = 81;
 
 enum class SettlementMood : std::uint8_t {
     Prosperous, Stable, Tense, Unrest, Revolt, Count

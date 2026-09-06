@@ -190,6 +190,12 @@ struct App {
     // survives a load; App only keeps derived caches here.
     bool                 lastSpellFlight = false;
     bool                 lastJumpHeld = false;
+    // What stood on the player LAST step (worn + sustained) — the per-step
+    // bar refresh recomputes the derived block only when this CHANGES, so a
+    // scheduled rewrite cannot stomp runtime state nothing touched (the
+    // travel harness's frozen spRegen was the victim, 2026-09-06). Runtime
+    // cache: zeroed on load, so a loaded coat re-registers on step one.
+    sm::BonusTotals      lastStandingBonuses{};
     sm::ecs::World       ecs;
     sm::EventBus         bus;
     sm::LogicNodeEngine  logic;

@@ -700,17 +700,21 @@ const char* npc_trait_label(std::uint8_t raw) {
 // (The temperament column moved to the law's own home — macro/economy.h
 // trait_price_mult.)
 
+// `bargaining` is the shopper's TRADE rank (phase 6, off the effective
+// sheet) — the price law's own argument, fed a literal 0 until the skill
+// woke. Required, not defaulted: a default would silently un-train every
+// haggler at a new call site.
 int trade_overlay_buy_price(int baseValue,
-                            int charisma,
+                            int charisma, int bargaining,
                             const ecs::NpcTraits* traits) {
-    return sm::trade_price(baseValue, charisma, /*bargaining*/ 0,
+    return sm::trade_price(baseValue, charisma, bargaining,
                                   sm::trait_price_mult(traits, true),
                                   /*buying*/ true);
 }
 
-int trade_overlay_sell_price(int baseValue, int charisma,
+int trade_overlay_sell_price(int baseValue, int charisma, int bargaining,
                              const ecs::NpcTraits* traits) {
-    return sm::trade_price(baseValue, charisma, /*bargaining*/ 0,
+    return sm::trade_price(baseValue, charisma, bargaining,
                                   sm::trait_price_mult(traits, false),
                                   /*buying*/ false);
 }
@@ -1048,6 +1052,9 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                         player_effective_sheet(w, gs.player);
                     const int chaEff =
                         effTrade.attributes.of(AttributeId::Cha);
+                    // ...and his TRADE rank haggles beside it (phase 6).
+                    const int tradeEff =
+                        effTrade.skills.of(SkillId::Trade);
                     ImGui::Text("%s  Coin %d", npcName,
                                 wallet_value(playerBag));
                     draw_trade_carry_line(effTrade, playerBag);
@@ -1075,13 +1082,13 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                                              const ItemDef& def, int n) {
                         return trade_overlay_buy_price(
                             stock_price(def.value, bag.inv.count(id) - n, 0),
-                            chaEff, traits);
+                            chaEff, tradeEff, traits);
                     };
                     const auto sellUnit = [&](const std::string& id,
                                               const ItemDef& def, int n) {
                         return trade_overlay_sell_price(
                             stock_price(def.value, bag.inv.count(id) + n, 0),
-                            chaEff, traits);
+                            chaEff, tradeEff, traits);
                     };
 
                     ImGui::Columns(2, "npc_trade_cols", true);

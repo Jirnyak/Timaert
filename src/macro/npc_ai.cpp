@@ -1470,6 +1470,18 @@ int leader_charisma_(entt::registry& reg, entt::entity self, NPCType type) {
     return int(sheet.attributes.of(AttributeId::Cha));
 }
 
+// ...and the same derivation's TRADE rank (phase 6): the caravan master's
+// haggling edge, fed into the price law's `bargaining` argument, which had
+// waited as a literal 0 since the law was written.
+int leader_trade_rank_(entt::registry& reg, entt::entity self, NPCType type) {
+    const auto* sid = reg.try_get<ecs::MacroSpawnId>(self);
+    const auto* lvl = reg.try_get<ecs::NpcLevel>(self);
+    if (!sid) return 0;
+    const CharacterSheet sheet = make_character_sheet(
+        type, lvl ? int(lvl->value) : 1, leader_sheet_seed(sid->index));
+    return sheet.skills.of(SkillId::Trade);
+}
+
 // The walker's OWN row — who actually stands at the market. The sell run is
 // a peasant errand now (auction, CANON S10), so the machine may not assume
 // a Vendor's sheet: the haggler's numbers are whoever's numbers they are.
@@ -1583,7 +1595,7 @@ void ai_caravan(entt::entity self, ecs::Position& p,
             const CaravanDeal deal = trade_caravan_at_station(
                 bag->inv, rt.carryCap, *market,
                 leader_charisma_(reg, self, NPCType::Caravan),
-                /*bargaining=*/0);
+                leader_trade_rank_(reg, self, NPCType::Caravan));
             // The exchange is DONE — that one moment is the fact (S20.1: a
             // deal is a transition by nature; the ride on is the same
             // cargo, not a second deal). Subject = the home city whose
@@ -2438,12 +2450,15 @@ void ai_wanderer(ecs::Position& p, ecs::MacroNpcRuntime& rt,
 constexpr float kSquadSightCells = 6.0f;
 
 // ВОСПРИЯТИЕ — свойство сквада, не спец-механика (владелец 2026-09-03,
-// CANON S10: «это контекстно … из свойств самого сквада и ролевой системы
-// (будет расширено и доработано)»). v1 отдаёт всем один базовый радиус;
-// ролевой слой наполнит листом (перцепция, следопытство) — читатели уже
-// ходят через эту дверь, а не через голую константу.
-inline float squad_sight_cells(const ecs::NPCKind&) {
-    return kSquadSightCells;
+// CANON S10: «это контекстно … из свойств самого сквада и ролевой системы»).
+// Phase 6: the ROLE layer arrived — the leader's Scouting rank widens the
+// base radius by THE skill law (+1 %/rank), read off the runtime's cached
+// rank (refresh_leader_travel_stats, the one refresh door) because this
+// query runs per think. A rankless squad sees the v1 constant exactly.
+inline float squad_sight_cells(const ecs::NPCKind&,
+                               const ecs::MacroNpcRuntime* rt) {
+    const int rank = rt ? int(rt->scoutRank) : 0;
+    return kSquadSightCells * float(100 + rank) / 100.0f;
 }
 
 // Flee when the enemy is this many times stronger; trait-scaled below.
@@ -2475,7 +2490,8 @@ entt::entity nearest_hostile_squad(entt::entity self, const ecs::Position& p,
     const char* myFaction = faction_id_for_index(kind.factionIdx);
     const int cx0 = int(p.x) / b.cellSize;
     const int cy0 = int(p.y) / b.cellSize;
-    const float sight = squad_sight_cells(kind);
+    const float sight =
+        squad_sight_cells(kind, reg.try_get<ecs::MacroNpcRuntime>(self));
     float best = sight * sight + 1.0f;
     entt::entity found = entt::null;
     for (int oy = -1; oy <= 1; ++oy) {
@@ -3091,7 +3107,25 @@ int feed_squads_daily(MacroWorld& mw) {
         // Bread is for the ROSTER only (owner 2026-08-31, the M&B law): the
         // leader is a SUBJECT — «0 бойцов = 0 хлеба и жалования». A lone
         // rider is honestly immune to hunger; there is nobody to feed.
-        const int need = roster.squad.size();
+        // Phase 6: the leader's FORAGING lives off the land — the daily
+        // draw shrinks by THE cost-down skill law (-1 %/rank; rank 100 =
+        // the squad feeds itself whole). The player's rank is his EFFECTIVE
+        // sheet's (the phase-4 door); a lord's is his derived sheet's, the
+        // same derivation his charisma haggles with (leader_charisma_).
+        int foragingRank = 0;
+        if (reg.all_of<ecs::PlayerSquadTag>(e)) {
+            foragingRank = player_effective_sheet(*mw.world, gs.player)
+                               .skills.of(SkillId::Foraging);
+        } else if (const auto* sid = reg.try_get<ecs::MacroSpawnId>(e)) {
+            const auto* lvl = reg.try_get<ecs::NpcLevel>(e);
+            foragingRank = make_character_sheet(
+                               NPCType(std::uint8_t(kind.type)),
+                               lvl ? int(lvl->value) : 1,
+                               leader_sheet_seed(sid->index))
+                               .skills.of(SkillId::Foraging);
+        }
+        foragingRank = std::clamp(foragingRank, 0, kMaxSkillRank);
+        const int need = roster.squad.size() * (100 - foragingRank) / 100;
         if (need <= 0) continue;
         const int have = bag.inv.count("bread");
         const int ate = std::min(need, have);

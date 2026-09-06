@@ -318,17 +318,21 @@ namespace sm::ui
         // (The mood column moved to the law's own home — macro/economy.h
         // mood_price_mult — beside charisma and the merchant temperament.)
 
-        int trade_overlay_buy_price(int baseValue, int charisma, SettlementMood mood)
+        // `bargaining` is the shopper's TRADE rank (phase 6, off the
+        // effective sheet) — the price law's own argument, fed a literal 0
+        // until the skill woke. Required, not defaulted.
+        int trade_overlay_buy_price(int baseValue, int charisma,
+                                    int bargaining, SettlementMood mood)
         {
-            return sm::trade_price(baseValue, charisma, /*bargaining*/ 0,
+            return sm::trade_price(baseValue, charisma, bargaining,
                                           sm::mood_price_mult(mood, true),
                                           /*buying*/ true);
         }
 
         int trade_overlay_sell_price(int baseValue, int charisma,
-                                     SettlementMood mood)
+                                     int bargaining, SettlementMood mood)
         {
-            return sm::trade_price(baseValue, charisma, /*bargaining*/ 0,
+            return sm::trade_price(baseValue, charisma, bargaining,
                                           sm::mood_price_mult(mood, false),
                                           /*buying*/ false);
         }
@@ -1552,6 +1556,9 @@ namespace sm::ui
                         player_effective_sheet(world, gs.player);
                     const int chaEff =
                         effTrade.attributes.of(AttributeId::Cha);
+                    // ...and his TRADE rank haggles beside it (phase 6).
+                    const int tradeEff =
+                        effTrade.skills.of(SkillId::Trade);
                     ImGui::Text("Player coin: %d", wallet_value(playerBag));
                     ImGui::SameLine();
                     ImGui::TextDisabled("Mood: %s", mood_label(s->mood));
@@ -1577,7 +1584,7 @@ namespace sm::ui
                                             id.c_str(), s->population,
                                             EconSite(landmark_def(
                                                 s->type).econSite))),
-                            chaEff, s->mood);
+                            chaEff, tradeEff, s->mood);
                     };
                     const auto sellUnit = [&](const std::string &id,
                                               const ItemDef &def, int n) {
@@ -1587,7 +1594,7 @@ namespace sm::ui
                                             id.c_str(), s->population,
                                             EconSite(landmark_def(
                                                 s->type).econSite))),
-                            chaEff, s->mood);
+                            chaEff, tradeEff, s->mood);
                     };
 
                     ImGui::Columns(2, "trade_cols", true);
