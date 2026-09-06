@@ -66,7 +66,7 @@ void test_cell_costs_follow_the_weight_table() {
     const sm::FeatureLayer features = make_features();
 
     sm::MacroTravelCost cost;
-    CHECK(sm::macro_travel_cost_for_cell(gs, &bag, terrain, nullptr, 0, 0, cost),
+    CHECK(sm::macro_travel_cost_for_cell(gs.player.sheet, &bag, terrain, nullptr, 0, 0, cost),
            "water cost query succeeds");
     CHECK(cost.biome == sm::Water, "height below seaLevel becomes Water");
     CHECK(cost.feature == sm::FT_None, "missing feature layer means no feature");
@@ -76,14 +76,14 @@ void test_cell_costs_follow_the_weight_table() {
            "one cell of open water costs weight x kStaminaPerCell");
     CHECK(cost.totalCost == cost.cellCost, "no inventory means no overload");
 
-    CHECK(sm::macro_travel_cost_for_cell(gs, &bag, terrain, &features, 0, 0, cost),
+    CHECK(sm::macro_travel_cost_for_cell(gs.player.sheet, &bag, terrain, &features, 0, 0, cost),
            "road-over-water query succeeds");
     CHECK(cost.biome == sm::Water, "feature does not rewrite biome");
     CHECK(cost.feature == sm::FT_Road, "feature layer returns road");
     CHECK(nearf(cost.cellCost, 1.0f * sm::kStaminaPerCell),
            "a road over water is paid at the road weight, not the water one");
 
-    CHECK(sm::macro_travel_cost_for_cell(gs, &bag, terrain, &features, 0, 1, cost),
+    CHECK(sm::macro_travel_cost_for_cell(gs.player.sheet, &bag, terrain, &features, 0, 1, cost),
            "mountain biome query succeeds");
     CHECK(cost.biome == sm::Mountain,
            "height above mountain level becomes the Mountain biome");
@@ -91,7 +91,7 @@ void test_cell_costs_follow_the_weight_table() {
     CHECK(nearf(cost.cellCost, 5.0f * sm::kStaminaPerCell),
            "a mountain cell costs the mountain weight");
 
-    CHECK(sm::macro_travel_cost_for_cell(gs, &bag, terrain, &features, -1, -1, cost),
+    CHECK(sm::macro_travel_cost_for_cell(gs.player.sheet, &bag, terrain, &features, -1, -1, cost),
            "negative coordinates wrap");
     CHECK(cost.feature == sm::FT_DirtRoad, "wrapped cell reads dirt road");
     CHECK(nearf(cost.cellCost, 1.5f * sm::kStaminaPerCell),
@@ -107,7 +107,7 @@ void test_overload_and_drain_charge_per_cell() {
     const sm::FeatureLayer features = make_features();
 
     sm::MacroTravelCost cost;
-    CHECK(sm::macro_travel_cost_for_cell(gs, &bag, terrain, &features, 0, 0, cost),
+    CHECK(sm::macro_travel_cost_for_cell(gs.player.sheet, &bag, terrain, &features, 0, 0, cost),
            "overload road query succeeds");
     CHECK(nearf(cost.cellCost, 1.0f * sm::kStaminaPerCell),
            "overload case walks a road");
@@ -132,7 +132,7 @@ void test_overload_and_drain_charge_per_cell() {
     // it DOWN, so the fraction still owed reads as a negative remainder.
     float spCarry = 0.0f;
     for (int i = 0; i < 5; ++i) {
-        CHECK(sm::drain_player_sp_for_macro_cell(drainGs, &drainBag, terrain,
+        CHECK(sm::drain_player_sp_for_macro_cell(drainGs, drainGs.player.sheet, &drainBag, terrain,
                                                   &features,
                                                   -1, -1, spCarry, &cost),
                "drain query succeeds");
@@ -421,7 +421,7 @@ void test_invalid_terrain_fails_closed() {
 
     sm::MacroTravelCost cost;
     cost.cellCost = 777.0f;
-    CHECK(!sm::macro_travel_cost_for_cell(gs, &bag, terrain, nullptr, 0, 0, cost),
+    CHECK(!sm::macro_travel_cost_for_cell(gs.player.sheet, &bag, terrain, nullptr, 0, 0, cost),
            "invalid terrain storage is rejected");
     CHECK(nearf(cost.cellCost, 0.0f) && nearf(cost.totalCost, 0.0f),
            "failed query clears stale cost output");

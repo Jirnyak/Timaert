@@ -826,8 +826,10 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
     }
 
     if (xp > 0) {
-        const DerivedBonuses d = calculate_derived(gs.player.sheet.attributes,
-                                                   gs.player.sheet.skills);
+        // The EFFECTIVE sheet's WIS scales the take (phase 4, the one door —
+        // macro/player_entity.h); the exp lands in the BASE levelData.
+        const CharacterSheet eff = player_effective_sheet(w, gs.player);
+        const DerivedBonuses d = calculate_derived(eff.attributes, eff.skills);
         award_exp(gs.player.sheet.levelData, xp, d.expMult);
     }
     return xp;

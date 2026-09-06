@@ -19,18 +19,22 @@
 #include <string>
 
 #include "macro/attributes.h"
+#include "macro/character_sheet.h"
 #include "macro/currency.h"
 #include "macro/items.h"
 #include "macro/state.h"
 
 namespace sm::ui {
 
-inline void draw_trade_carry_line(const GameState& gs, const Inventory& bag) {
+// `sheet` is the shopper's EFFECTIVE one (phase 4) — the caller owns the door
+// (player_effective_sheet); this line just prints what that back can hold.
+inline void draw_trade_carry_line(const CharacterSheet& sheet,
+                                  const Inventory& bag) {
     ImGui::SameLine();
     ImGui::TextDisabled("Carry %.1f / %.0f kg",
                         double(inventory_weight(bag)),
-                        double(get_carry_capacity(gs.player.sheet.attributes,
-                                                  gs.player.sheet.skills)));
+                        double(get_carry_capacity(sheet.attributes,
+                                                  sheet.skills)));
 }
 
 // The shared staging step. Clamps in place so the player SEES the rule.

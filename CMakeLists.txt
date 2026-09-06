@@ -350,6 +350,7 @@ add_executable(balance_run tests/balance_run.cpp
     src/macro/scent_field.cpp
     src/macro/world_fields.cpp
     src/macro/player_entity.cpp
+    src/macro/anatomy.cpp
     src/sub/base_generator.cpp)
 set_target_properties(balance_run PROPERTIES
     CXX_STANDARD 23
@@ -436,6 +437,7 @@ timaert_test(world_tick_parity_test
         src/macro/chronicle.cpp
         # The player's upkeep reads his roster off his squad entity now.
         src/macro/player_entity.cpp
+        src/macro/anatomy.cpp
         src/macro/deposit_layer.cpp
         src/macro/econ_day.cpp
         src/macro/items.cpp
@@ -651,6 +653,7 @@ timaert_test(squad_war_test
         src/macro/chronicle.cpp
         # The player's squad is an ordinary squad entity (2026-08-27).
         src/macro/player_entity.cpp
+        src/macro/anatomy.cpp
         src/macro/macro_stock.cpp
         src/macro/deposit_layer.cpp
         src/macro/fauna.cpp
@@ -885,6 +888,7 @@ timaert_test(subworld_spawn_parity_test
         src/sub/dgn/cave.cpp
         src/sub/dgn/spire_tower.cpp
         src/macro/player_entity.cpp
+        src/macro/anatomy.cpp
     LINK_ENTT)
 # Pure-logic unit tests for the RPG spine (character_sheet.h) + unified loot
 # table (items.cpp). Header-only sheet code needs no extra deps; the loot
@@ -1090,6 +1094,7 @@ timaert_test(spire_generation_test
 timaert_test(fauna_stock_test
     SOURCES
         src/macro/player_entity.cpp
+        src/macro/anatomy.cpp
         src/macro/macro_stock.cpp
         src/macro/fauna.cpp
         src/macro/tree_layer.cpp
@@ -1228,6 +1233,7 @@ timaert_test(settlement_faction_test
         src/sub/dgn/cave.cpp
         src/sub/dgn/spire_tower.cpp
         src/macro/player_entity.cpp
+        src/macro/anatomy.cpp
     LINK_ENTT)
 
 timaert_test(carried_light_spawn_test
@@ -1248,6 +1254,7 @@ timaert_test(carried_light_spawn_test
         src/sub/dgn/cave.cpp
         src/sub/dgn/spire_tower.cpp
         src/macro/player_entity.cpp
+        src/macro/anatomy.cpp
     LINK_ENTT)
 # A settlement's people live inside the settlement: the citizen spawner must
 # fill the generated town's built-up disk (sub/city_layout.h), not scatter the
@@ -1272,6 +1279,7 @@ timaert_test(city_population_inside_walls_test
         src/sub/dgn/cave.cpp
         src/sub/dgn/spire_tower.cpp
         src/macro/player_entity.cpp
+        src/macro/anatomy.cpp
     LINK_ENTT)
 # Particle-sim contract (FX Inc A): the transient-VFX pool is Vulkan-free by
 # design, so it links only particles.cpp + core and asserts every numeric
@@ -1371,6 +1379,7 @@ timaert_test(auto_resolve_speaks_test
         # The player's squad is an ordinary squad entity: the settle finds it
         # by ordinal (macro/player_entity.h).
         src/macro/player_entity.cpp
+        src/macro/anatomy.cpp
         src/macro/items.cpp
         src/macro/macro_stock.cpp
         # a struck vein is a chronicle fact now (v58)
@@ -1384,6 +1393,7 @@ timaert_test(auto_resolve_speaks_test
 timaert_test(player_is_a_squad_test
     SOURCES
         src/macro/player_entity.cpp
+        src/macro/anatomy.cpp
         src/macro/npc_ai.cpp
         src/macro/nav_field.cpp
         # the caravan deal prices through the one law (stock_price)

@@ -12,7 +12,7 @@
 
 namespace sm {
 
-bool macro_travel_cost_for_cell(const GameState& gs,
+bool macro_travel_cost_for_cell(const CharacterSheet& sheet,
                                 const Inventory* bag,
                                 const TerrainData& terrain,
                                 const FeatureLayer* features,
@@ -56,12 +56,12 @@ bool macro_travel_cost_for_cell(const GameState& gs,
     }
     // A trained traveller spends less on the same ground (the `travel` skill's
     // documented -2%/rank, applied here for the first time).
-    out.efficiency = travel_skill_efficiency(gs.player.sheet.skills);
+    out.efficiency = travel_skill_efficiency(sheet.skills);
     out.cellCost = travel_stamina_cost(out.weight, /*cells*/1.0f, 0,
                                        out.efficiency);
 
     const OverloadCharge oc =
-        overload_charge(gs.player.sheet, bag ? *bag : Inventory{});
+        overload_charge(sheet, bag ? *bag : Inventory{});
     out.overload = oc.overload;
     out.overloadCost = oc.cost;
     out.totalCost = travel_stamina_cost(out.weight, 1.0f, out.overloadCost,
@@ -70,6 +70,7 @@ bool macro_travel_cost_for_cell(const GameState& gs,
 }
 
 bool drain_player_sp_for_macro_cell(GameState& gs,
+                                    const CharacterSheet& sheet,
                                     const Inventory* bag,
                                     const TerrainData& terrain,
                                     const FeatureLayer* features,
@@ -79,7 +80,7 @@ bool drain_player_sp_for_macro_cell(GameState& gs,
                                     const TreeLayer* treeLayer,
                                     int fromX, int fromY) {
     MacroTravelCost cost;
-    if (!macro_travel_cost_for_cell(gs, bag, terrain, features, x, y, cost,
+    if (!macro_travel_cost_for_cell(sheet, bag, terrain, features, x, y, cost,
                                     treeLayer, fromX, fromY)) {
         return false;
     }

@@ -1042,9 +1042,15 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                     playerBagPtr ? *playerBagPtr : playerBagFallback;
                 if (ImGui::Begin("NPC Trade", nullptr,
                                  ImGuiWindowFlags_NoCollapse)) {
+                    // The EFFECTIVE sheet haggles and carries (phase 4) —
+                    // same door as the settlement counter (overlays.cpp).
+                    const CharacterSheet effTrade =
+                        player_effective_sheet(w, gs.player);
+                    const int chaEff =
+                        effTrade.attributes.of(AttributeId::Cha);
                     ImGui::Text("%s  Coin %d", npcName,
                                 wallet_value(playerBag));
-                    draw_trade_carry_line(gs, playerBag);
+                    draw_trade_carry_line(effTrade, playerBag);
                     draw_counterparty_gold(bag.inv);
                     draw_trade_amount_input(&g_trade_amount);
                     if (traits && traits->count > 0) {
@@ -1069,13 +1075,13 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                                              const ItemDef& def, int n) {
                         return trade_overlay_buy_price(
                             stock_price(def.value, bag.inv.count(id) - n, 0),
-                            gs.player.sheet.attributes.of(AttributeId::Cha), traits);
+                            chaEff, traits);
                     };
                     const auto sellUnit = [&](const std::string& id,
                                               const ItemDef& def, int n) {
                         return trade_overlay_sell_price(
                             stock_price(def.value, bag.inv.count(id) + n, 0),
-                            gs.player.sheet.attributes.of(AttributeId::Cha), traits);
+                            chaEff, traits);
                     };
 
                     ImGui::Columns(2, "npc_trade_cols", true);

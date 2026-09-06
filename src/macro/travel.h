@@ -70,7 +70,11 @@ struct MacroTravelCost {
 // It is passed in because his bag is an ordinary NpcInventory on his squad
 // entity now (macro/player_entity.h); null = an unburdened walker, which is
 // exactly what a bare test fixture is.
-bool macro_travel_cost_for_cell(const GameState& gs,
+// `sheet` is the walker's — passed in, not dug out of GameState, because the
+// caller owns WHICH sheet walks (phase 4: the player's callers hand the
+// EFFECTIVE sheet through player_effective_sheet; a bare test fixture hands
+// a base one, which is honestly a walker wearing nothing).
+bool macro_travel_cost_for_cell(const CharacterSheet& sheet,
                                 const Inventory* bag,
                                 const TerrainData& terrain,
                                 const FeatureLayer* features,
@@ -91,6 +95,7 @@ bool macro_travel_cost_for_cell(const GameState& gs,
 // Returns false only when the terrain query fails; `out` receives the resolved
 // cost either way.
 bool drain_player_sp_for_macro_cell(GameState& gs,
+                                    const CharacterSheet& sheet,
                                     const Inventory* bag,
                                     const TerrainData& terrain,
                                     const FeatureLayer* features,

@@ -359,10 +359,53 @@ void test_the_players_wound_settles_through_the_one_door() {
           "a survivor is not marked dead by the shared door");
 }
 
+// ── Phase 4: THE sheet door ──────────────────────────────────────────────
+// player_effective_sheet is the ONE read of the player's numbers (owner,
+// 2026-09-06: «финальное после всего — и его везде использует»). What it
+// buys, pinned with its negative controls: a worn bonus is IN the answer,
+// the BASE sheet never moves, and taking the item off leaves no residue.
+void test_the_sheet_door_reads_what_is_standing() {
+    ecs::World w;
+    GameState gs;
+    gs.player.sheet.attributes[AttributeId::End] = 8;
+    ensure_macro_player_entity(gs, w);
+
+    const CharacterSheet bare = player_effective_sheet(w, gs.player);
+    CHECK(bare.attributes.of(AttributeId::End) == 8,
+          "nothing worn, nothing burning: the door answers the base sheet");
+
+    const entt::entity squad = player_squad_entity(w);
+    CHECK_OR_RETURN(squad != entt::null, "the player's squad exists");
+    auto& eq = w.reg.emplace<ecs::BodyEquipment>(squad);
+    ItemRef plate{};
+    plate.count = 1;
+    plate.affix[0].row = std::uint8_t(BonusId::End);
+    plate.affix[0].value = +2;
+    eq.gear.worn[0] = plate;
+
+    const CharacterSheet dressed = player_effective_sheet(w, gs.player);
+    CHECK(dressed.attributes.of(AttributeId::End) == 10,
+          "a worn +2 END is IN the sheet the world asks about");
+    // ...and the bar follows, because the bar is derived from the sheet —
+    // phase 4's promised effect: the breastplate fattens the SP bar.
+    CHECK(calculate_combat_stats(dressed.attributes, dressed.skills).maxSp
+              > calculate_combat_stats(bare.attributes, bare.skills).maxSp,
+          "a worn +END widens what a day of marching can hold");
+    CHECK(gs.player.sheet.attributes.of(AttributeId::End) == 8,
+          "the BASE sheet never moved — reads walk the door, writes never do");
+
+    // Take it off: the door simply stops summing it.
+    eq.gear.worn[0] = ItemRef{};
+    CHECK(player_effective_sheet(w, gs.player)
+                  .attributes.of(AttributeId::End) == 8,
+          "negative control: off the body, out of the answer — no residue");
+}
+
 } // namespace
 
 int main() {
     test_player_carries_everything_a_squad_carries();
+    test_the_sheet_door_reads_what_is_standing();
     test_the_mark_survives_losing_the_flag();
     test_ai_leaves_the_player_squad_standing();
     test_the_players_men_never_desert();

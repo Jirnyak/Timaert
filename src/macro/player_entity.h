@@ -23,6 +23,7 @@
 // a tick until they collapse too.
 #pragma once
 #include "ecs/world.h"
+#include "macro/character_sheet.h"
 #include "macro/state.h"
 
 namespace sm {
@@ -76,5 +77,23 @@ float* player_sp_carry(ecs::World& world);
 
 AgentMemory* player_head(ecs::World& world);
 const AgentMemory* player_head(const ecs::World& world);
+
+// EVERYTHING STANDING ON THE PLAYER, summed once. His sheet is the character
+// he built; what acts in the world is that character PLUS what he is wearing
+// (ecs::BodyEquipment on his squad entity) and what is currently burning on
+// him (sustained spells). Both are rows of the one bonus registry, so both are
+// the same sum — and because the sum is read through a modified COPY
+// (`effective_sheet`), taking the coat off or letting the spell lapse is
+// simply not adding it next time.
+BonusTotals player_standing_bonuses(ecs::World& world,
+                                    const PlayerState& player);
+
+// The sheet the world should actually ask about him — THE door (phase 4,
+// owner 2026-09-06): «финальный лист после всех источников — прокачка,
+// врождённое, предмет — и его везде использует». Every reader of his numbers
+// (bars, damage, march, carry, prices, XP, UI) walks through here; writes
+// (creation, level-up, learning) go to the BASE sheet, never to this copy.
+CharacterSheet player_effective_sheet(ecs::World& world,
+                                      const PlayerState& player);
 
 } // namespace sm

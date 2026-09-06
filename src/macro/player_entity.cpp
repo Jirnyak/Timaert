@@ -2,9 +2,11 @@
 #include "ecs/components.h"
 #include "ecs/npc_character.h"
 #include "macro/agent_memory.h"
+#include "macro/anatomy.h"
 #include "macro/character_sheet.h"
 #include "macro/faction.h"
 #include "macro/npc.h"
+#include "macro/spells.h"
 #include "macro/squad.h"
 #include <algorithm>
 #include <array>
@@ -74,7 +76,8 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
         rt.targetX = gs.player.x;
         rt.targetY = gs.player.y;
         rt.state = std::uint8_t(NPCState::Idle);
-        refresh_leader_travel_stats(rt, gs.player.sheet,
+        refresh_leader_travel_stats(rt,
+                                    player_effective_sheet(world, gs.player),
                                     NPCType::Adventurer);
         rt.sp = rt.maxSp;
         reg.emplace<ecs::MacroNpcRuntime>(squad, rt);
@@ -113,7 +116,10 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
     if (auto* rt = reg.try_get<ecs::MacroNpcRuntime>(squad)) {
         // The SAME door every lord's caches go through (squad.h) — the sheet
         // is the law, these four are its cache, and there is one refresh.
-        refresh_leader_travel_stats(*rt, gs.player.sheet,
+        // The EFFECTIVE sheet (phase 4): a worn +END breastplate carries and
+        // marches like the body actually wearing it.
+        refresh_leader_travel_stats(*rt,
+                                    player_effective_sheet(world, gs.player),
                                     NPCType::Adventurer);
         rt->sp = std::int16_t(std::clamp(gs.player.combatStats.currentSp,
                                          -32768, 32767));
@@ -138,6 +144,39 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
 
 entt::entity player_squad_entity(ecs::World& world) {
     return find_player_squad(world);
+}
+
+BonusTotals player_standing_bonuses(ecs::World& world,
+                                    const PlayerState& player) {
+    BonusTotals t{};
+    // What he wears. Opt-in: a player who has equipped nothing has no
+    // component, and the limiting case costs a lookup.
+    if (const entt::entity e = find_player_squad(world); e != entt::null) {
+        if (const auto* eq = world.reg.try_get<ecs::BodyEquipment>(e)) {
+            const BonusTotals worn = worn_bonuses(eq->gear);
+            for (int i = 0; i < kMaxAttributes; ++i)
+                t.attr[std::size_t(i)] += worn.attr[std::size_t(i)];
+            for (int i = 0; i < kMaxSkills; ++i)
+                t.skill[std::size_t(i)] += worn.skill[std::size_t(i)];
+        }
+    }
+    // ...and what is burning on him. A sustained spell contributes while it
+    // burns and stops the moment it does not — no bookkeeping, because nothing
+    // was ever written down. Scaled by his BASE training on purpose: the
+    // standing sum cannot read the sheet it is itself a term of.
+    for (int ord = 0; ord < kSpellCount; ++ord) {
+        if (!player.spellBook.sustained[ord]) continue;
+        const SpellDef* def = &kSpellDefs[ord];
+        for (const Bonus& b : def->effects) {
+            accumulate(t, spell_bonus(b, player.sheet.skills));
+        }
+    }
+    return t;
+}
+
+CharacterSheet player_effective_sheet(ecs::World& world,
+                                      const PlayerState& player) {
+    return effective_sheet(player.sheet, player_standing_bonuses(world, player));
 }
 
 SoldierSquad* player_roster(ecs::World& world) {

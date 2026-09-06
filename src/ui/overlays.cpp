@@ -651,16 +651,28 @@ namespace sm::ui
 
         // FULL restore — reserved for the moments that SAY they heal: the
         // level-up itself (M&M tradition) and the Talented perk's bonus level.
-        void reset_player_combat_stats(PlayerState &p)
+        // Both helpers read the EFFECTIVE sheet (phase 4): the bar's maximum
+        // is what the man in his coat can hold, on level-up as on any tick.
+        void reset_player_combat_stats(ecs::World &world, PlayerState &p)
         {
-            p.combatStats = calculate_combat_stats(p.sheet.attributes, p.sheet.skills);
+            const CharacterSheet eff = player_effective_sheet(world, p);
+            p.combatStats = calculate_combat_stats(eff.attributes, eff.skills);
         }
 
         // Point spend: maxima grow, CURRENT pools stay (clamped). Spending an
         // attribute point is not a free full heal (owner ruling 2026-08-05).
-        void recompute_player_combat_maxima(PlayerState &p)
+        void recompute_player_combat_maxima(ecs::World &world, PlayerState &p)
         {
-            recompute_combat_maxima(p.combatStats, p.sheet.attributes, p.sheet.skills);
+            const CharacterSheet eff = player_effective_sheet(world, p);
+            recompute_combat_maxima(p.combatStats, eff.attributes, eff.skills);
+        }
+
+        // The panel's derived block after a spend — same door as its header.
+        DerivedBonuses calculate_derived_effective(ecs::World &world,
+                                                   const PlayerState &p)
+        {
+            const CharacterSheet eff = player_effective_sheet(world, p);
+            return calculate_derived(eff.attributes, eff.skills);
         }
 
         // Width of a number field that never reflows: three digits plus the
@@ -716,9 +728,13 @@ namespace sm::ui
         Inventory &playerBag = bagPtr ? *bagPtr : bagFallback;
         const SoldierSquad *army = player_roster(world);
         const CharacterPanelTab current = tab ? *tab : CharacterPanelTab::Stats;
-        DerivedBonuses derived = calculate_derived(p.sheet.attributes, p.sheet.skills);
+        // The panel SHOWS the EFFECTIVE sheet (phase 4, owner: «финальное
+        // после всего — и его везде использует»); the spend buttons below
+        // still write the BASE one, which is the only thing they may touch.
+        const CharacterSheet effPanel = player_effective_sheet(world, p);
+        DerivedBonuses derived = calculate_derived(effPanel.attributes, effPanel.skills);
         const float carryWeight = inventory_weight(playerBag);
-        const float carryCap = get_carry_capacity(p.sheet.attributes, p.sheet.skills);
+        const float carryCap = get_carry_capacity(effPanel.attributes, effPanel.skills);
         const int armyTotal = army ? total_soldiers(*army) : 0;
         const int armyUpkeep = army
             ? calculate_squad_upkeep(*army, derived.tradeDiscount) : 0;
@@ -764,7 +780,7 @@ namespace sm::ui
                             if (ImGui::Button("Level Up"))
                             {
                                 if (try_level_up(p.sheet.levelData))
-                                    reset_player_combat_stats(p);
+                                    reset_player_combat_stats(world, p);
                             }
                         }
                         ImGui::TableNextColumn();
@@ -789,8 +805,8 @@ namespace sm::ui
                             {
                                 if (spend_attribute_point(p.sheet.levelData, p.sheet.attributes, row.id))
                                 {
-                                    recompute_player_combat_maxima(p);
-                                    derived = calculate_derived(p.sheet.attributes, p.sheet.skills);
+                                    recompute_player_combat_maxima(world, p);
+                                    derived = calculate_derived_effective(world, p);
                                 }
                             }
                             ImGui::EndDisabled();
@@ -843,8 +859,8 @@ namespace sm::ui
                                 {
                                     if (spend_learn_pick(p.sheet.levelData, p.sheet.skills, row.id))
                                     {
-                                        recompute_player_combat_maxima(p);
-                                        derived = calculate_derived(p.sheet.attributes, p.sheet.skills);
+                                        recompute_player_combat_maxima(world, p);
+                                        derived = calculate_derived_effective(world, p);
                                     }
                                 }
                                 ImGui::EndDisabled();
@@ -862,8 +878,8 @@ namespace sm::ui
                                 {
                                     if (spend_skill_point(p.sheet.levelData, p.sheet.skills, row.id))
                                     {
-                                        recompute_player_combat_maxima(p);
-                                        derived = calculate_derived(p.sheet.attributes, p.sheet.skills);
+                                        recompute_player_combat_maxima(world, p);
+                                        derived = calculate_derived_effective(world, p);
                                     }
                                 }
                                 ImGui::EndDisabled();
@@ -1529,10 +1545,17 @@ namespace sm::ui
                     // (No DerivedBonuses here any more: prices go through the
                     // ONE law in macro/economy.h, which takes the raw charisma
                     // — the derived tradeDiscount is the canon's own business.)
+                    // The charisma that haggles is the EFFECTIVE sheet's
+                    // (phase 4): a +CHA amulet talks the price down the same
+                    // as a silver tongue grown by levels.
+                    const CharacterSheet effTrade =
+                        player_effective_sheet(world, gs.player);
+                    const int chaEff =
+                        effTrade.attributes.of(AttributeId::Cha);
                     ImGui::Text("Player coin: %d", wallet_value(playerBag));
                     ImGui::SameLine();
                     ImGui::TextDisabled("Mood: %s", mood_label(s->mood));
-                    draw_trade_carry_line(gs, playerBag);
+                    draw_trade_carry_line(effTrade, playerBag);
                     draw_counterparty_gold(s->inventory);
                     draw_trade_amount_input(&g_settlement_trade_amount);
                     if (g_settlement_trade_message[0] != '\0')
@@ -1554,7 +1577,7 @@ namespace sm::ui
                                             id.c_str(), s->population,
                                             EconSite(landmark_def(
                                                 s->type).econSite))),
-                            gs.player.sheet.attributes.of(AttributeId::Cha), s->mood);
+                            chaEff, s->mood);
                     };
                     const auto sellUnit = [&](const std::string &id,
                                               const ItemDef &def, int n) {
@@ -1564,7 +1587,7 @@ namespace sm::ui
                                             id.c_str(), s->population,
                                             EconSite(landmark_def(
                                                 s->type).econSite))),
-                            gs.player.sheet.attributes.of(AttributeId::Cha), s->mood);
+                            chaEff, s->mood);
                     };
 
                     ImGui::Columns(2, "trade_cols", true);
@@ -1693,8 +1716,7 @@ namespace sm::ui
                             "Daily upkeep: %d g",
                             calculate_squad_upkeep(
                                 *army,
-                                calculate_derived(gs.player.sheet.attributes,
-                                                  gs.player.sheet.skills)
+                                calculate_derived_effective(world, gs.player)
                                     .tradeDiscount));
                     }
                     ImGui::EndTabItem();

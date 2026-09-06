@@ -678,8 +678,10 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     // The squad wears its owner's colours — the player's own realm row. The
     // rule lives at the call site because the owner is what the call site knows.
     // The owner's AURA rides the same way (character_sheet.h squad_bonuses): the player leads this
-    // squad, so the player's sheet buffs every soldier born here.
-    const BonusTotals playerBonuses = squad_bonuses(gs.player.sheet);
+    // squad, so the player's sheet buffs every soldier born here — the
+    // EFFECTIVE sheet (phase 4): a leader in a +CHA crown leads like one.
+    const BonusTotals playerBonuses =
+        squad_bonuses(player_effective_sheet(ecs, gs.player));
     spawn_player_squad(ecs, player_roster(ecs) ? *player_roster(ecs)
                                               : SoldierSquad{},
                        mgr_, playerX_, playerY_,
@@ -862,17 +864,21 @@ void SubworldEngine::spawn_player_entity() {
     const ecs::BodyEquipment* eqp = nullptr;
     if (const entt::entity sq = player_squad_entity(*ecs_); sq != entt::null)
         eqp = reg.try_get<ecs::BodyEquipment>(sq);
+    // The EFFECTIVE sheet swings and paces (phase 4): the ring's +STR is in
+    // the blow, the sustained haste's +SPD is in the step.
+    const CharacterSheet effBody = gs_
+        ? player_effective_sheet(*ecs_, gs_->player) : CharacterSheet{};
     const StrikeFields hs = gs_
-        ? hand_strike_fields(gs_->player.sheet.attributes,
-                             gs_->player.sheet.skills,
+        ? hand_strike_fields(effBody.attributes,
+                             effBody.skills,
                              eqp ? &eqp->gear : nullptr)
         : StrikeFields{kFistDice, DamageType::Blunt, 0, 100, 0};
     // Speed: a walking man's, from the ONE scale every body is stated on
     // (macro/movement_cost.h). Refreshed each tick beside the damage, so a
     // hasted or burdened player's body says what it can actually do.
     const float playerPace = march_speed(kHumanMarchMult)
-        * (gs_ ? calculate_derived(gs_->player.sheet.attributes,
-                                   gs_->player.sheet.skills).moveSpeedMult
+        * (gs_ ? calculate_derived(effBody.attributes,
+                                   effBody.skills).moveSpeedMult
                : 1.0f);
     reg.emplace<ecs::Combat>(
         e, ecs::Combat{hs.dice, hs.flatAdd, hs.multPct, hs.luck,
@@ -991,14 +997,18 @@ void SubworldEngine::sync_player_entity_position() {
                     gs_->player.combatStats.currentHp, 0, maxHp));
             }
             if (auto* c = reg.try_get<ecs::Combat>(e)) {
+                // Per-tick refresh reads the same EFFECTIVE sheet the spawn
+                // did (phase 4) — equipping mid-fight changes the next swing.
+                const CharacterSheet eff =
+                    player_effective_sheet(*ecs_, gs_->player);
                 const DerivedBonuses d = calculate_derived(
-                    gs_->player.sheet.attributes, gs_->player.sheet.skills);
+                    eff.attributes, eff.skills);
                 const ecs::BodyEquipment* eqp = nullptr;
                 if (const entt::entity sq = player_squad_entity(*ecs_);
                     sq != entt::null)
                     eqp = reg.try_get<ecs::BodyEquipment>(sq);
                 const StrikeFields hs = hand_strike_fields(
-                    gs_->player.sheet.attributes, gs_->player.sheet.skills,
+                    eff.attributes, eff.skills,
                     eqp ? &eqp->gear : nullptr);
                 c->dice    = hs.dice;
                 c->flatAdd = hs.flatAdd;
@@ -2680,9 +2690,13 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                     NPCType(std::uint8_t(kind ? kind->type : 0)), lvl);
                 // The wis dividend: kill XP scales by the sheet's expMult
                 // (owner ruling 2026-08-05 — the attribute is live now).
+                // The EFFECTIVE sheet's WIS (phase 4); the exp itself lands
+                // in the BASE levelData — writes never touch the copy.
+                const CharacterSheet effXp =
+                    player_effective_sheet(*ecs_, gs_->player);
                 award_exp(gs_->player.sheet.levelData, xp,
-                          calculate_derived(gs_->player.sheet.attributes,
-                                            gs_->player.sheet.skills).expMult);
+                          calculate_derived(effXp.attributes,
+                                            effXp.skills).expMult);
                 apply_player_kill_reputation(gs_, kind);
             } else if (lastHit && mw_.world) {
                 // CANON S14: «сквад == лидер, и только NPC-лидеры растут — и

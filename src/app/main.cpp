@@ -953,6 +953,7 @@ void charge_macro_walk_cell(void* user, int x, int y) {
     // The climb half of the law prices the EDGE: the previous crossed cell
     // is the origin; the walk's first cell has none and climbs free.
     if (!sm::drain_player_sp_for_macro_cell(ctx->app->gs,
+                                            player_effective_sheet(*ctx->app),
                                             &player_bag(*ctx->app),
                                             ctx->app->terrain,
                                             &ctx->app->features,
@@ -1046,52 +1047,18 @@ float& player_sp_carry(App& app) {
     return carry ? *carry : scratch;
 }
 
-// EVERYTHING STANDING ON THE PLAYER, summed once.
-//
-// His sheet is the character he built; what fights is that character PLUS what
-// he is wearing and what is currently burning on him. Both are rows of the one
-// bonus registry, so both are the same sum — and because the sum is read
-// through a modified COPY (`effective_sheet`), taking the coat off or letting
-// the spell lapse is simply not adding it next time.
-//
-// This door is why haste stopped being a literal. It used to be `×1.5` spelled
-// at two call sites, keyed by a string compare on "haste", duplicating the
-// number the spell's own row already carried — a fourth place the same fact
-// lived. Now the row says "+20 SPD at a novice's hand", the caster's training
-// scales it (spell_bonus), and the pace formula simply reads a sheet.
+// EVERYTHING STANDING ON THE PLAYER — the sum and THE door both moved to
+// macro/player_entity.h (phase 4): the sheet's readers live on every layer,
+// so the door could not stay up here where only the app can knock. These two
+// are the App-shaped handles the app/smoke call sites keep.
 sm::BonusTotals player_standing_bonuses(const App& app) {
-    sm::BonusTotals t{};
-    // What he wears. Opt-in: a player who has equipped nothing has no
-    // component, and the limiting case costs a lookup.
-    if (const entt::entity e = sm::player_squad_entity(
-            const_cast<sm::ecs::World&>(app.ecs));
-        e != entt::null) {
-        if (const auto* eq =
-                app.ecs.reg.try_get<sm::ecs::BodyEquipment>(e)) {
-            const sm::BonusTotals worn = sm::worn_bonuses(eq->gear);
-            for (int i = 0; i < sm::kMaxAttributes; ++i)
-                t.attr[std::size_t(i)] += worn.attr[std::size_t(i)];
-            for (int i = 0; i < sm::kMaxSkills; ++i)
-                t.skill[std::size_t(i)] += worn.skill[std::size_t(i)];
-        }
-    }
-    // ...and what is burning on him. A sustained spell contributes while it
-    // burns and stops the moment it does not — no bookkeeping, because nothing
-    // was ever written down.
-    for (int ord = 0; ord < sm::kSpellCount; ++ord) {
-        if (!app.gs.player.spellBook.sustained[ord]) continue;
-        const sm::SpellDef* def = &sm::kSpellDefs[ord];
-        for (const sm::Bonus& b : def->effects) {
-            sm::accumulate(t, sm::spell_bonus(b, app.gs.player.sheet.skills));
-        }
-    }
-    return t;
+    return sm::player_standing_bonuses(const_cast<sm::ecs::World&>(app.ecs),
+                                       app.gs.player);
 }
 
-// The sheet the world should actually ask about him.
 sm::CharacterSheet player_effective_sheet(const App& app) {
-    return sm::effective_sheet(app.gs.player.sheet,
-                               player_standing_bonuses(app));
+    return sm::player_effective_sheet(const_cast<sm::ecs::World&>(app.ecs),
+                                      app.gs.player);
 }
 
 // Is a RULE of the world switched on for him right now? A rule has no
@@ -1943,11 +1910,14 @@ void tick_subworld_hit_flash(App& app, float dt) {
 int charge_subworld_sp_for_distance(App& app, float distance) {
     if (distance <= 0.01f) return 0;
     const float cells = distance / float(sm::sub::kCellSize);
+    // The EFFECTIVE sheet prices his legs (phase 4): a strength ring carries,
+    // a travel-skill charm marches, exactly as the macro path charges.
+    const sm::CharacterSheet eff = player_effective_sheet(app);
     const int overloadCost =
-        sm::overload_charge(app.gs.player.sheet, player_bag(app)).cost;
+        sm::overload_charge(eff, player_bag(app)).cost;
     const float cost = sm::travel_stamina_cost(
         app.subworld.player_ground_travel_weight(), cells, overloadCost,
-        sm::travel_skill_efficiency(app.gs.player.sheet.skills));
+        sm::travel_skill_efficiency(eff.skills));
     return sm::spend_travel_stamina(app.gs.player.combatStats,
                                     player_sp_carry(app), cost);
 }
@@ -2132,11 +2102,14 @@ bool cast_active_spell(App& app) {
     const float nx = std::cos(app.subworld.cam_yaw()) * cp;
     const float ny = std::sin(app.subworld.cam_yaw()) * cp;
     const float nz = std::sin(app.subworld.cam_pitch());
+    // The EFFECTIVE sheet casts (phase 4): a worn +INT circlet strengthens
+    // the bolt the same way it strengthens every other read of him.
+    const sm::CharacterSheet effCast = player_effective_sheet(app);
     const bool ok = sm::spellbook_cast(app.ecs,
         app.gs.player.spellBook,
         app.gs.player.combatStats,
-        app.gs.player.sheet.attributes,
-        app.gs.player.sheet.skills,
+        effCast.attributes,
+        effCast.skills,
         ord,
         app.subworld.player_entity_id(),
         app.subworld.player_x(),
@@ -3054,6 +3027,18 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     sm::spellbook_tick(app.gs.player.spellBook,
                        app.gs.player.combatStats,
                        /*steps=*/1u);
+    // The bars follow the EFFECTIVE sheet (phase 4): a worn «+2 END» plate
+    // fattens the SP bar, and taking it off (or a sustained spell lapsing —
+    // spellbook_tick above has already snuffed this step's casualties) thins
+    // it back. Refreshed every simulation step because equipment and spells
+    // change on no schedule; recompute_combat_maxima PRESERVES the current
+    // pools, so this is never a free heal (owner ruling 2026-08-05 — the full
+    // restore belongs to creation and the level-up, which say they heal).
+    {
+        const sm::CharacterSheet eff = player_effective_sheet(app);
+        sm::recompute_combat_maxima(app.gs.player.combatStats,
+                                    eff.attributes, eff.skills);
+    }
     if (app.subworld.active()) {
         stats.subworldActive = true;
         // Where he stands BEFORE the world steps. The input below only states

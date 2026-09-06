@@ -1222,9 +1222,13 @@ bool run_macro_travel_sp_smoke(App& app) {
 
     float expectedCost = 0.0f;
     sm::MacroTravelCost lastExpected{};
+    // The walk below charges through the EFFECTIVE sheet (phase 4), so the
+    // expectation must price the same walker — sheet door parity is part of
+    // what this smoke pins.
+    const sm::CharacterSheet travelSheet = player_effective_sheet(app);
     for (int i = 1; i <= kSmokeMacroTravelSteps; ++i) {
         sm::MacroTravelCost cost;
-        if (!sm::macro_travel_cost_for_cell(app.gs, &player_bag(app), app.terrain,
+        if (!sm::macro_travel_cost_for_cell(travelSheet, &player_bag(app), app.terrain,
                                             &app.features,
                                             path.path[std::size_t(i)].x,
                                             path.path[std::size_t(i)].y,
