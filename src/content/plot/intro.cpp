@@ -25,8 +25,10 @@ constexpr StorySlide kIntroSlides[] = {
 };
 
 constexpr StoryChoice kSexChoices[] = {
-    {"Male", "Strong mind - +1 skill point", "male", "/assets/sprites/male.png"},
-    {"Female", "Strong body - +1 attribute point", "female", "/assets/sprites/female.png"},
+    // Paths are relative to the working directory — ui_image_for's contract
+    // (a leading slash sat here unconsumed and would never have loaded).
+    {"Male", "Strong mind - +1 skill point", "male", "assets/sprites/male.png"},
+    {"Female", "Strong body - +1 attribute point", "female", "assets/sprites/female.png"},
 };
 
 constexpr StoryChoice kRealmChoices[] = {

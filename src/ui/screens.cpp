@@ -1,6 +1,7 @@
 #include "ui/screens.h"
 #include "ui/keymap.h"
 #include "ui/ui_theme.h"   // palette + viewport_size + draw_title_backdrop
+#include "ui/ui_image.h"   // creation portraits — THE png door
 #include "git_hash.h"      // TIMAERT_GIT_HASH, generated per build (CMakeLists)
 #include "macro/state.h"
 #include "content/plot/intro.h"   // creation_*_choices: the authored tables
@@ -112,6 +113,20 @@ ShellResult draw_character_creation(CreationState& cs) {
             cs.sexIdx = int(i);
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("%s", sexes[i].description);
+    }
+    // ── the portrait: the CHOICE ROW's own image column (male/female today;
+    // a realm crest tomorrow is a path in its row, not code). Aspect-fit
+    // into the free right corner of the identity block through THE png door
+    // (ui_image_for — lazy, cached, a missing file probes for free). No
+    // selection — no picture; the frame does not pretend.
+    if (cs.sexIdx >= 0 && cs.sexIdx < int(sexCount)
+        && sexes[cs.sexIdx].image && sexes[cs.sexIdx].image[0]) {
+        if (const UiImage* img = ui_image_for(sexes[cs.sexIdx].image)) {
+            const ImVec2 keep = ImGui::GetCursorPos();
+            ImGui::SetCursorPos(ImVec2(620.0f, 46.0f));
+            draw_ui_image(*img, 140.0f, 140.0f, /*center=*/false);
+            ImGui::SetCursorPos(keep);
+        }
     }
 
     std::size_t realmCount = 0;
