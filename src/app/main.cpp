@@ -554,9 +554,13 @@ bool modal_overlay_active(const App& app);   // defined with the pause block
 // know: what a swing of his is worth, which is the subworld's melee identity
 // (sub/engine.h) and belongs to the layer that can see both worlds.
 sm::AutoBattleSide player_auto_battle_side(App& app) {
-    const sm::PlayerState& p = app.gs.player;
+    // The EFFECTIVE sheet, like every other reader of his numbers (phase 4):
+    // the fought path already swings by it (sub/engine.cpp refreshes his
+    // Combat from it), so the resolver pricing the same fight from the same
+    // ring must read the same sheet or the two verdicts disagree.
+    const sm::CharacterSheet eff = player_effective_sheet(app);
     sm::AutoBattleSide s = sm::auto_battle_side_of(
-        app.ecs, sm::player_squad_entity(app.ecs), &p.sheet);
+        app.ecs, sm::player_squad_entity(app.ecs), &eff);
     // The player's swing, credited exactly as the fought path rolls it: the
     // ONE assembly (hand_strike_fields) over the weapon actually in hand,
     // taken at its expectation like every auto-resolve number.
@@ -565,7 +569,7 @@ sm::AutoBattleSide player_auto_battle_side(App& app) {
         sq != entt::null)
         eqp = app.ecs.reg.try_get<sm::ecs::BodyEquipment>(sq);
     const sm::StrikeFields hs = sm::hand_strike_fields(
-        p.sheet.attributes, p.sheet.skills, eqp ? &eqp->gear : nullptr);
+        eff.attributes, eff.skills, eqp ? &eqp->gear : nullptr);
     const float swing = float(
         sm::strike_mean_x2(hs.dice, hs.flatAdd, hs.multPct)) * 0.5f;
     s.leaderDpsOverride = swing / sm::sub::kPlayerMeleeCooldown;

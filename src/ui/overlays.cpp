@@ -735,7 +735,9 @@ namespace sm::ui
         // The panel SHOWS the EFFECTIVE sheet (phase 4, owner: «финальное
         // после всего — и его везде использует»); the spend buttons below
         // still write the BASE one, which is the only thing they may touch.
-        const CharacterSheet effPanel = player_effective_sheet(world, p);
+        // Mutable: a spend refreshes it in place so the row shows the new
+        // number this very frame, not the next.
+        CharacterSheet effPanel = player_effective_sheet(world, p);
         DerivedBonuses derived = calculate_derived(effPanel.attributes, effPanel.skills);
         const float carryWeight = inventory_weight(playerBag);
         const float carryCap = get_carry_capacity(effPanel.attributes, effPanel.skills);
@@ -799,8 +801,11 @@ namespace sm::ui
                         for (const AttributeDef &row : kAttributeDefs)
                         {
                             ImGui::PushID(row.label);
+                            // EFFECTIVE number on display — what a worn ring
+                            // adds is part of what he IS right now. The spend
+                            // door below still writes the base sheet only.
                             ImGui::Text("%s %d", row.label,
-                                        p.sheet.attributes.of(row.id));
+                                        effPanel.attributes.of(row.id));
                             if (ImGui::IsItemHovered())
                                 ImGui::SetTooltip("%s", row.effect);
                             ImGui::SameLine(attrPlusX);
@@ -810,6 +815,7 @@ namespace sm::ui
                                 if (spend_attribute_point(p.sheet.levelData, p.sheet.attributes, row.id))
                                 {
                                     recompute_player_combat_maxima(world, p);
+                                    effPanel = player_effective_sheet(world, p);
                                     derived = calculate_derived_effective(world, p);
                                 }
                             }
@@ -849,14 +855,25 @@ namespace sm::ui
                             }
                             ImGui::TableNextColumn();
                             ImGui::PushID(row.label);
+                            // The DOORS are gated by the BASE rank — the learn
+                            // law lives on the base sheet, and a charm's +3 to
+                            // an unlearned craft must not eat a learn pick's
+                            // job. The DISPLAY is the effective rank — the
+                            // number the formulas actually read.
                             const int rank = p.sheet.skills.of(row.id);
+                            const int rankShown = effPanel.skills.of(row.id);
                             if (rank == 0)
                             {
                                 // THE learn law: rank 0 IS ignorance. The row
                                 // offers the learn door, not the spend door —
                                 // creation picks feed it today, teachers and
-                                // events feed the same door tomorrow.
-                                ImGui::TextDisabled("—");
+                                // events feed the same door tomorrow. A worn
+                                // bonus can still put a WORKING rank on an
+                                // unlearned craft — print it, honestly.
+                                if (rankShown > 0)
+                                    ImGui::Text("%d", rankShown);
+                                else
+                                    ImGui::TextDisabled("—");
                                 ImGui::SameLine(number_field_x());
                                 ImGui::BeginDisabled(p.sheet.levelData.learnPicks <= 0);
                                 if (ImGui::SmallButton("Learn"))
@@ -864,6 +881,7 @@ namespace sm::ui
                                     if (spend_learn_pick(p.sheet.levelData, p.sheet.skills, row.id))
                                     {
                                         recompute_player_combat_maxima(world, p);
+                                        effPanel = player_effective_sheet(world, p);
                                         derived = calculate_derived_effective(world, p);
                                     }
                                 }
@@ -871,7 +889,7 @@ namespace sm::ui
                             }
                             else
                             {
-                                ImGui::Text("%d", rank);
+                                ImGui::Text("%d", rankShown);
                                 // Same rule as the attribute rows: the [+] sits
                                 // at a fixed number-field width, not right
                                 // after the digits, so rank 10 does not push
@@ -883,6 +901,7 @@ namespace sm::ui
                                     if (spend_skill_point(p.sheet.levelData, p.sheet.skills, row.id))
                                     {
                                         recompute_player_combat_maxima(world, p);
+                                        effPanel = player_effective_sheet(world, p);
                                         derived = calculate_derived_effective(world, p);
                                     }
                                 }
