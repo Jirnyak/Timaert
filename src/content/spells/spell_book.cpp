@@ -30,9 +30,16 @@ int spell_strength(const SpellDef& spell,
 }
 
 // The scaling column as the strike assembly's whole percent — one rounding,
-// one place.
-static int spell_mult_pct(const SpellDef& spell) {
-    return int(spell.scalingPower * 100.0f + 0.5f);
+// one place. Phase 5 (CANON S15): the spell's own SCHOOL multiplies on top,
+// exactly where the weapon skill multiplies a swing (hand_strike_fields) —
+// the typed half of the damage stack; Spellcraft stays the generic half
+// inside rawSpellDamage. A sleeping tag (no school) multiplies by nothing,
+// which is the whole pre-school behaviour.
+static int spell_mult_pct(const SpellDef& spell, const Skills& caster) {
+    const int base = int(spell.scalingPower * 100.0f + 0.5f);
+    const SkillId school = spell_school(spell);
+    if (school == SkillId::Count) return base;
+    return base * skill_mult_pct(caster, school) / 100;
 }
 
 int spell_damage(const SpellDef& spell,
@@ -44,7 +51,7 @@ int spell_damage(const SpellDef& spell,
     // credits; the cast itself rolls (spell_strike below). Exact for the
     // mechanical Nd1 rows, honest for authored spreads later.
     return strike_mean_x2(spell.dice, s,
-                          spell_mult_pct(spell)) / 2;
+                          spell_mult_pct(spell, skills)) / 2;
 }
 
 StrikeRoll spell_strike(Rng& rng, const SpellDef& spell,
@@ -54,7 +61,7 @@ StrikeRoll spell_strike(Rng& rng, const SpellDef& spell,
     // THE strike assembly, the same the sword swings through: dice + the
     // sheet's add, scaled by the row's percent, LCK asking the crit door.
     return roll_strike(rng, spell.dice, s,
-                       spell_mult_pct(spell),
+                       spell_mult_pct(spell, skills),
                        attributes.of(AttributeId::Lck));
 }
 

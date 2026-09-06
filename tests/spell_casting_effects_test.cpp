@@ -275,17 +275,44 @@ int main() {
                     "bigger number");
     }
     // The magnitude follows the CASTER, through the one door that turns a
-    // rank into a multiplier — with its own negative control.
+    // rank into a multiplier — with its own negative control. Haste's tag
+    // (Body) SLEEPS (phase 5, CANON S15), so its school is none and
+    // Spellcraft alone carries it — exactly the pre-school law.
     sm::Skills novice{}, adept{};
     adept[sm::SkillId::Spellcraft] = 10;   // 5 %/rank -> x1.5
-    const sm::Bonus weak = sm::spell_bonus(hasteDef->effects[0], novice);
-    const sm::Bonus strong = sm::spell_bonus(hasteDef->effects[0], adept);
+    const sm::SkillId hasteSchool = sm::spell_school(*hasteDef);
+    if (hasteSchool != sm::SkillId::Count) {
+        return fail("Body is a sleeping tag: it must have no school yet");
+    }
+    const sm::Bonus weak =
+        sm::spell_bonus(hasteDef->effects[0], novice, hasteSchool);
+    const sm::Bonus strong =
+        sm::spell_bonus(hasteDef->effects[0], adept, hasteSchool);
     if (weak.row != strong.row || strong.value <= weak.value) {
         return fail("a trained caster's haste must be worth more than a "
                     "novice's, and land in the same place");
     }
     if (weak.value != hasteDef->effects[0].value) {
         return fail("an untrained caster gets exactly what the row says");
+    }
+    // ── Phase 5: the school is the typed half of the damage stack ────────
+    // A fire adept's fireball hits harder; water training buys fire nothing
+    // (the negative control that says the SPELL'S OWN school is read).
+    {
+        sm::Attributes caster{};
+        caster[sm::AttributeId::Intl] = 10;
+        sm::Skills bare{}, fireAdept{}, waterAdept{};
+        fireAdept[sm::SkillId::FireMagic] = 50;
+        waterAdept[sm::SkillId::WaterMagic] = 50;
+        const int plain = sm::spell_damage(*fireDef, caster, bare);
+        const int trained = sm::spell_damage(*fireDef, caster, fireAdept);
+        const int wrong = sm::spell_damage(*fireDef, caster, waterAdept);
+        if (!(trained > plain)) {
+            return fail("fire training must strengthen a fire spell");
+        }
+        if (wrong != plain) {
+            return fail("negative control: water training buys fire nothing");
+        }
     }
     // Both are castable on the map because their ROW says so — the old test
     // read a macro-effect enum instead, which is the field that had to agree

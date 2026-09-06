@@ -168,7 +168,8 @@ BonusTotals player_standing_bonuses(ecs::World& world,
         if (!player.spellBook.sustained[ord]) continue;
         const SpellDef* def = &kSpellDefs[ord];
         for (const Bonus& b : def->effects) {
-            accumulate(t, spell_bonus(b, player.sheet.skills));
+            accumulate(t, spell_bonus(b, player.sheet.skills,
+                                      spell_school(*def)));
         }
     }
     return t;

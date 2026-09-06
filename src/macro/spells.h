@@ -54,19 +54,26 @@ struct SpellTagDef {
     // pre-war tags with no school: their damage reads as Blunt/Arcane until
     // that collapse retires them.
     DamageType  dmgType;
+    // THE tag→school collapse itself (phase 5, CANON S15: «школа = скилл
+    // листа, спелл читает ранг СВОЕЙ школы»), as a column: the six schools
+    // are six skills the sheet already has, and the same canon remap names
+    // which one this tag's spells train under. Body/Mind SLEEP («до апдейта
+    // паладинов и клириков») — SkillId::Count says "no school yet", and a
+    // sleeping tag's spells read Spellcraft alone, exactly as before.
+    SkillId     school;
 };
 
 inline constexpr SpellTagDef kSpellTagDefs[] = {
-    {SpellTag::Fire,      "Fire",      DamageType::Fire},
-    {SpellTag::Ice,       "Ice",       DamageType::Water},
-    {SpellTag::Lightning, "Lightning", DamageType::Air},
-    {SpellTag::Dark,      "Dark",      DamageType::Void},
-    {SpellTag::Light,     "Light",     DamageType::Arcane},
-    {SpellTag::Earth,     "Earth",     DamageType::Earth},
-    {SpellTag::Air,       "Air",       DamageType::Air},
-    {SpellTag::Arcane,    "Arcane",    DamageType::Arcane},
-    {SpellTag::Body,      "Body",      DamageType::Blunt},
-    {SpellTag::Mind,      "Mind",      DamageType::Arcane},
+    {SpellTag::Fire,      "Fire",      DamageType::Fire,   SkillId::FireMagic},
+    {SpellTag::Ice,       "Ice",       DamageType::Water,  SkillId::WaterMagic},
+    {SpellTag::Lightning, "Lightning", DamageType::Air,    SkillId::AirMagic},
+    {SpellTag::Dark,      "Dark",      DamageType::Void,   SkillId::VoidMagic},
+    {SpellTag::Light,     "Light",     DamageType::Arcane, SkillId::ArcaneMagic},
+    {SpellTag::Earth,     "Earth",     DamageType::Earth,  SkillId::EarthMagic},
+    {SpellTag::Air,       "Air",       DamageType::Air,    SkillId::AirMagic},
+    {SpellTag::Arcane,    "Arcane",    DamageType::Arcane, SkillId::ArcaneMagic},
+    {SpellTag::Body,      "Body",      DamageType::Blunt,  SkillId::Count},
+    {SpellTag::Mind,      "Mind",      DamageType::Arcane, SkillId::Count},
 };
 static_assert(sizeof(kSpellTagDefs) / sizeof(kSpellTagDefs[0])
                   == std::size_t(SpellTag::Count),
@@ -238,21 +245,32 @@ inline constexpr DamageType spell_damage_type(const SpellDef& s) {
     return kSpellTagDefs[std::size_t(s.tag)].dmgType;
 }
 
+// The school this spell trains under: its primary tag's row. SkillId::Count =
+// a sleeping tag (Body/Mind) — no school, Spellcraft alone carries it.
+inline constexpr SkillId spell_school(const SpellDef& s) {
+    return kSpellTagDefs[std::size_t(s.tag)].school;
+}
+
 // What ONE effect cell of a spell is worth in the caster's hands.
 //
 // THE LAW is the project's own, said about magic: attributes ADD, skills
-// MULTIPLY. The row states what a novice's casting does; `spellcraft` is the
-// training that multiplies it, through the one door that turns a rank into a
+// MULTIPLY. The row states what a novice's casting does; the caster's
+// training multiplies it through the one door that turns a rank into a
 // multiplier (`skill_mult`, macro/attributes.h) — so magic's mastery curve is
 // not a private formula and cannot drift from the rest of the sheet.
 //
-// (When schools become skills of their own — `SpellTag` is already the M&M
-// school list — this reads the SCHOOL's rank instead of `spellcraft`, and
-// nothing else here changes. That is the one line this shape was chosen for.)
-inline Bonus spell_bonus(const Bonus& base, const Skills& caster) {
+// Phase 5 (CANON S15): the training that scales an EFFECT is the spell's own
+// SCHOOL — the line this shape was chosen for. A sleeping tag (school ==
+// SkillId::Count) falls back to Spellcraft, which is exactly what every
+// spell read before schools woke. The school is REQUIRED, not defaulted:
+// callers hold the SpellDef and must say `spell_school(def)` — a default
+// would be silently wrong for exactly the six tags that just woke.
+inline Bonus spell_bonus(const Bonus& base, const Skills& caster,
+                         SkillId school) {
     if (base.row == 0) return {};
-    const float scaled =
-        float(base.value) * skill_mult(caster, SkillId::Spellcraft);
+    const SkillId trained =
+        school != SkillId::Count ? school : SkillId::Spellcraft;
+    const float scaled = float(base.value) * skill_mult(caster, trained);
     const int rounded = int(scaled < 0.0f ? scaled - 0.5f : scaled + 0.5f);
     Bonus out = base;
     out.value = std::int16_t(std::clamp(rounded, -32768, 32767));
