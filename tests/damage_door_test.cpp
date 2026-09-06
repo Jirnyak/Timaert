@@ -168,6 +168,56 @@ void test_armour_softens_by_the_row_and_the_kind() {
           "in the way, and that is DATA, not an `if` in the door");
 }
 
+// Phase 4б (owner verdict 2026-09-06): the player's worn armour protects him
+// UNDERGROUND, read where it lives — the BodyEquipment on his macro squad
+// entity («макро — это контекст для микромира», no projected copy). His
+// subworld body carries the flag, not a wardrobe.
+void test_players_worn_plate_stands_underground() {
+    entt::registry reg;
+
+    // His body down here: PlayerTag, no equipment component of its own.
+    const entt::entity body = make_body(reg, 100.0f, /*withKind*/false);
+    reg.emplace<sm::ecs::PlayerTag>(body);
+    // His squad on the map: the gear's one home. arm_leather is the phase's
+    // own promise made flesh — «+2 END» AND a coat worth its column.
+    const entt::entity squad = reg.create();
+    reg.emplace<sm::ecs::PlayerSquadTag>(squad);
+    auto& eq = reg.emplace<sm::ecs::BodyEquipment>(squad);
+    const int coatIdx = sm::item_index("arm_leather");
+    CHECK_OR_RETURN(coatIdx >= 0, "the catalog knows the leather coat");
+    sm::ItemRef coat{};
+    coat.def = std::uint16_t(coatIdx);
+    coat.count = 1;
+    eq.gear.worn[0] = coat;
+
+    const int armour = sm::item_def_at(coatIdx)->armor
+                           .of(sm::DamageType::Blunt);
+    CHECK_OR_RETURN(armour > 0, "and the coat is worth something");
+
+    // A blow the coat outweighs never reaches the flesh — three cells of
+    // separation between the body hit and the entity wearing the armour.
+    const DamageResult tink =
+        apply_damage(reg, body, DamageSource{}, armour,
+                     DamageKind::Melee, sm::DamageType::Blunt, nullptr);
+    CHECK(tink.applied == 0,
+          "the map-side coat blocks the dungeon-side blow in full");
+    // ...and a big blow is softened by exactly THE law over the coat's column.
+    const DamageResult big =
+        apply_damage(reg, body, DamageSource{}, 20,
+                     DamageKind::Melee, sm::DamageType::Blunt, nullptr);
+    CHECK(big.applied == sm::mitigate_amount(20, armour),
+          "the worn column meets the hybrid law like any other armour");
+
+    // Negative control: an ordinary body beside the same squad wears nothing
+    // of it — the macro read is keyed to the FLAG, not to proximity.
+    const entt::entity bystander = make_body(reg, 100.0f, /*withKind*/false);
+    const DamageResult bare =
+        apply_damage(reg, bystander, DamageSource{}, 20,
+                     DamageKind::Melee, sm::DamageType::Blunt, nullptr);
+    CHECK(bare.applied == 20,
+          "negative control: the player's coat covers the player alone");
+}
+
 // THE hybrid law's own shape (macro/damage_types.h) — properties, not a
 // recomputation of the formula (testing law #5): each claim can break alone.
 void test_mitigation_law_shape() {
@@ -325,6 +375,7 @@ void test_zero_and_missing_target() {
 int main() {
     test_death_is_indistinguishable();
     test_armour_softens_by_the_row_and_the_kind();
+    test_players_worn_plate_stands_underground();
     test_mitigation_law_shape();
     test_survivor_protocol();
     test_player_death_is_not_an_npc_kill();

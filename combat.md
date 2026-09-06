@@ -121,11 +121,14 @@ touches no test.
 
 ## Left standing, deliberately
 
-- **Worn ARMOUR still protects nobody underfoot** — `defense_of` reads
-  `BodyEquipment` per column, but gear lives on the MACRO squad entity and no
-  subworld body carries the component; wiring the projection is phase-4
-  (sheet door) work. The worn WEAPON, by contrast, is live: the player's
-  strike reads it every tick.
+- ~~Worn ARMOUR still protects nobody underfoot~~ — CLOSED, phase 4б
+  (2026-09-06): `defense_of` reads the player's `BodyEquipment` off his MACRO
+  squad entity when the flagged body carries none of its own («макро — это
+  контекст для микромира», no projected copy to go stale on a dungeon
+  re-dress) — the same read the strike already does for the weapon in hand.
+  Keyed to `PlayerTag`, else-branch so a body that one day carries its own
+  wardrobe cannot be counted twice; pinned with its negative control in
+  `damage_door_test`.
 - **`Health` stays float STORAGE** — every combat writer is integer now, so
   the bar holds whole values in practice; the storage sweep (and the macro
   snapshot bump it drags) is deferred, not forgotten.

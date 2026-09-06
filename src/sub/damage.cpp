@@ -35,6 +35,19 @@ int defense_of(entt::registry& reg, entt::entity target, DamageType type) {
     // branch — which is the same sentence armour 0 already was.
     if (const auto* eq = reg.try_get<ecs::BodyEquipment>(target)) {
         armour += worn_armor(eq->gear).of(type);
+    } else if (reg.any_of<ecs::PlayerTag>(target)) {
+        // The player's gear is MACRO state on his squad entity — one truth,
+        // read where it lives (owner, 2026-09-06: «макро — это контекст для
+        // микромира», no projected copy to go stale on a dungeon re-dress).
+        // The flagged body reads it the same way its strike already reads the
+        // weapon in hand (sub/engine.cpp hand_strike_fields via
+        // player_squad_entity); else-branch, so a body that one day carries
+        // its own equipment cannot be counted twice.
+        for (const auto sq : reg.view<ecs::PlayerSquadTag>()) {
+            if (const auto* worn = reg.try_get<ecs::BodyEquipment>(sq))
+                armour += worn_armor(worn->gear).of(type);
+            break;
+        }
     }
     return std::max(0, armour);
 }
