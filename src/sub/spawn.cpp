@@ -174,13 +174,13 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
     // never have to agree on how big a lord's bar is. A tracked entity at two
     // thirds arrives at two thirds whatever the sheet says down here, and the
     // return trip needs no conversion table either.
-    const float hp = std::clamp(std::floor(maxHp * healthFraction), 1.0f, maxHp);
+    const int hp = std::clamp(int(maxHp * healthFraction), 1, int(maxHp));
 
     const auto e = reg.create();
     reg.emplace<ecs::Position>(e, body.x, body.y, 0.0f);
     reg.emplace<ecs::VisualPos>(e, body.x, body.y, kBodyVisualCatchUp);
     reg.emplace<ecs::NPCKind>(e, std::uint16_t(body.type), body.faction);
-    reg.emplace<ecs::Health>(e, hp, maxHp);
+    reg.emplace<ecs::Health>(e, hp, int(maxHp));
     // Its pace: the world's march (macro/movement_cost.h) times what this row
     // is against a walking man. ONE scale for every body, the player's
     // included — a peasant walks at exactly the speed the map says a man
@@ -342,8 +342,8 @@ entt::entity spawn_tracked_body(entt::registry& reg, entt::entity macro,
     if (!valid_npc_kind(kind.type)) return entt::null;
 
     const auto& health = reg.get<ecs::Health>(macro);
-    const float fraction = health.maxHp > 0.0f
-        ? std::clamp(health.hp / health.maxHp, 0.0f, 1.0f)
+    const float fraction = health.maxHp > 0
+        ? std::clamp(float(health.hp) / float(health.maxHp), 0.0f, 1.0f)
         : 1.0f;
 
     BodySpec body{};

@@ -477,7 +477,7 @@ const std::vector<MinimapBlip>& SubworldEngine::collect_minimap_blips() const {
     auto view = reg.view<ecs::Position, ecs::Health, ecs::NPCKind,
                          ecs::SubworldTag>(entt::exclude<ecs::Dead, ecs::PlayerTag>);
     for (auto e : view) {
-        if (view.get<ecs::Health>(e).hp <= 0.0f) continue;
+        if (view.get<ecs::Health>(e).hp <= 0) continue;
         const auto& pos = view.get<ecs::Position>(e);
         minimapBlips_.push_back(
             MinimapBlip{pos.x, pos.y, player_stance(reg, e, gs_)});
@@ -505,7 +505,7 @@ float SubworldEngine::crosshair_stance() const {
                          ecs::SubworldTag>(entt::exclude<ecs::Dead>);
     for (auto e : view) {
         if (reg.any_of<ecs::PlayerTag>(e)) continue;
-        if (view.get<ecs::Health>(e).hp <= 0.0f) continue;
+        if (view.get<ecs::Health>(e).hp <= 0) continue;
         const auto& pos = view.get<ecs::Position>(e);
         const float r = body_radius(reg, e);
         // Ray-sphere: project entity onto the aim segment, check distance.
@@ -855,7 +855,7 @@ void SubworldEngine::spawn_player_entity() {
     const int curHp = gs_
         ? std::clamp(gs_->player.combatStats.currentHp, 0, maxHp)
         : maxHp;
-    reg.emplace<ecs::Health>(e, ecs::Health{float(curHp), float(maxHp)});
+    reg.emplace<ecs::Health>(e, ecs::Health{curHp, maxHp});
     reg.emplace<ecs::BodyRadius>(e, ecs::BodyRadius{kPlayerBodyRadius});
     // The strike: the ONE assembly (macro/anatomy.h hand_strike_fields) from
     // the sheet and the weapon actually in hand on the SQUAD entity — gear is
@@ -1051,11 +1051,12 @@ void SubworldEngine::reconcile_tracked_bodies_to_macro() {
         const entt::entity macro = view.get<ecs::MacroOrigin>(e).macro;
         if (!reg.valid(macro)) continue;
         auto* mh = reg.try_get<ecs::Health>(macro);
-        if (!mh || mh->maxHp <= 0.0f) continue;
+        if (!mh || mh->maxHp <= 0) continue;
         const auto& h = view.get<ecs::Health>(e);
-        if (h.maxHp <= 0.0f) continue;
-        const float fraction = std::clamp(h.hp / h.maxHp, 0.0f, 1.0f);
-        mh->hp = std::clamp(mh->maxHp * fraction, 1.0f, mh->maxHp);
+        if (h.maxHp <= 0) continue;
+        const float fraction =
+            std::clamp(float(h.hp) / float(h.maxHp), 0.0f, 1.0f);
+        mh->hp = std::clamp(int(float(mh->maxHp) * fraction), 1, mh->maxHp);
     }
 }
 
@@ -1081,7 +1082,7 @@ void SubworldEngine::reconcile_player_hp_to_macro() {
             if (godMode_) {
                 if (h.hp < 1.0f) h.hp = 1.0f;
                 reg.remove<ecs::Dead>(e);
-            } else if (h.hp <= 0.0f) {
+            } else if (h.hp <= 0) {
                 gs_->player.combatStats.currentHp = 0;
             }
             continue;
@@ -2364,7 +2365,7 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
     for (auto e : actorView) {
         const auto& p = actorView.get<ecs::Position>(e);
         const auto& hp = actorView.get<ecs::Health>(e);
-        if (hp.hp <= 0.0f) continue;
+        if (hp.hp <= 0) continue;
         const auto* c = reg.try_get<ecs::Combat>(e);
 
         BodyDesc d{};

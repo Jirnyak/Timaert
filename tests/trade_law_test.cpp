@@ -94,7 +94,7 @@ int main() {
         reg.emplace<ecs::MacroNpcRuntime>(e, rt);
         reg.emplace<ecs::MacroSpawnId>(e, 21u);
         reg.emplace<ecs::NpcLevel>(e, std::int16_t(3));
-        reg.emplace<ecs::Health>(e, 25.0f, 25.0f);
+        reg.emplace<ecs::Health>(e, 25, 25);
         reg.emplace<ecs::SquadRoster>(e);
         reg.emplace<ecs::NpcInventory>(e);
         reg.emplace<AgentMemory>(e);

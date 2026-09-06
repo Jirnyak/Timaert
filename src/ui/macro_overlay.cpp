@@ -366,7 +366,7 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
             const auto& pos  = view.get<ecs::Position>(e);
             const auto& kind = view.get<ecs::NPCKind>(e);
             const auto& hp   = view.get<ecs::Health>(e);
-            if (hp.hp <= 0.0f) continue;
+            if (hp.hp <= 0) continue;
             const ecs::VisualPos* visual = w.reg.try_get<ecs::VisualPos>(e);
             const float drawX = visual ? visual->vx : pos.x;
             const float drawY = visual ? visual->vy : pos.y;

@@ -57,7 +57,7 @@ entt::entity spawn_ai(sm::ecs::World& world,
     rt.visualSpeed = 0.0f;
     rt.tickAccum = 0.0f;
     world.reg.emplace<sm::ecs::MacroNpcRuntime>(e, rt);
-    world.reg.emplace<sm::ecs::Health>(e, 50.0f, 50.0f);
+    world.reg.emplace<sm::ecs::Health>(e, 50, 50);
     return e;
 }
 

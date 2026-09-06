@@ -503,7 +503,7 @@ bool route_macro_npc_attack(App& app, entt::entity npc) {
     }
 
     const auto& hp = reg.get<sm::ecs::Health>(npc);
-    if (hp.hp <= 0.0f) return false;
+    if (hp.hp <= 0) return false;
 
     app.cursor.path.clear();
     app.cursor.pathIdx = 0;
@@ -808,7 +808,7 @@ void detect_forced_encounter(App& app) {
     for (auto e : view) {
         if (e == app.encounterGraceNpc) continue;
         const auto& hp = view.get<sm::ecs::Health>(e);
-        if (hp.hp <= 0.0f) continue;
+        if (hp.hp <= 0) continue;
         const auto& pos = view.get<sm::ecs::Position>(e);
         if (sm::wrapi(int(std::floor(pos.x)), app.gs.mapW) != px
             || sm::wrapi(int(std::floor(pos.y)), app.gs.mapH) != py) {
@@ -841,7 +841,7 @@ void draw_pre_battle_modal(App& app) {
         || !reg.all_of<sm::ecs::Position, sm::ecs::NPCKind, sm::ecs::Health,
                        sm::ecs::NpcLevel, sm::ecs::NpcCharacter>(npc)
         || reg.all_of<sm::ecs::Dead>(npc)
-        || reg.get<sm::ecs::Health>(npc).hp <= 0.0f) {
+        || reg.get<sm::ecs::Health>(npc).hp <= 0) {
         close_pre_battle(app, false);   // fail closed (stale save / dead foe)
         return;
     }

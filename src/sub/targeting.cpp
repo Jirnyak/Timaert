@@ -16,7 +16,7 @@ inline bool melee_candidate(entt::registry& reg, entt::entity e) {
         return false;
     }
     if (reg.any_of<ecs::PlayerTag, ecs::PlayerSoldierTag>(e)) return false;
-    return reg.get<ecs::Health>(e).hp > 0.0f;
+    return reg.get<ecs::Health>(e).hp > 0;
 }
 
 } // namespace
@@ -104,7 +104,7 @@ entt::entity aim_target(entt::registry& reg,
         if (reg.any_of<ecs::PlayerTag, ecs::PlayerSoldierTag>(e)) continue;
 
         const auto& hp = view.get<ecs::Health>(e);
-        if (hp.hp <= 0.0f) continue;
+        if (hp.hp <= 0) continue;
 
         const auto& pos = view.get<ecs::Position>(e);
         const float dx = pos.x - px;

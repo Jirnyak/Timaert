@@ -1573,7 +1573,7 @@ entt::entity smoke_find_macro_npc_trace_target(App& app) {
                       sm::ecs::PlayerSquadTag>);
     for (auto e : view) {
         const auto& hp = view.get<sm::ecs::Health>(e);
-        if (hp.hp <= 0.0f) continue;
+        if (hp.hp <= 0) continue;
         const auto& kind = view.get<sm::ecs::NPCKind>(e);
         if (fallback == entt::null) fallback = e;
         if (kind.type == std::uint16_t(sm::NPCType::Caravan)
@@ -2915,7 +2915,7 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
         std::min(px + 5.0f, float(sm::sub::kFullSize - 2)), py, 0.0f);
     reg.emplace<sm::ecs::NPCKind>(
         hostile, sm::ecs::NPCKind{std::uint16_t(0x1FE), std::uint16_t(2)});
-    reg.emplace<sm::ecs::Health>(hostile, 18.0f, 18.0f);
+    reg.emplace<sm::ecs::Health>(hostile, 18, 18);
     reg.emplace<sm::ecs::Combat>(hostile,
         sm::Dice{7, 1}, std::int16_t(0), std::int16_t(100), std::uint8_t(0),
         std::uint8_t(sm::DamageType::Blunt),
@@ -2934,7 +2934,7 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
         entt::exclude<sm::ecs::Dead>);
     for (auto e : spriteView) {
         const auto& hp = spriteView.get<sm::ecs::Health>(e);
-        if (hp.hp <= 0.0f) continue;
+        if (hp.hp <= 0) continue;
         if (reg.any_of<sm::ecs::NpcCharacter>(e)) continue;
         ++spriteOnlyVisible;
     }
@@ -3041,7 +3041,7 @@ bool run_subworld_missile_feedback_smoke(App& app) {
         sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Witch),
             std::uint16_t(sm::faction_index("bandits"))});
-    reg.emplace<sm::ecs::Health>(hostile, 30.0f, 30.0f);
+    reg.emplace<sm::ecs::Health>(hostile, 30, 30);
     reg.emplace<sm::ecs::Combat>(
         hostile,
         sm::Dice{6, 1}, std::int16_t(0), std::int16_t(100), std::uint8_t(0),
@@ -3258,7 +3258,7 @@ bool run_subworld_player_melee_smoke(App& app) {
         sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Bandit),
             std::uint16_t(3)});
-    reg.emplace<sm::ecs::Health>(target, 40.0f, 40.0f);
+    reg.emplace<sm::ecs::Health>(target, 40, 40);
     reg.emplace<sm::ecs::SubworldTag>(target);
     reg.emplace<sm::ecs::Sprite>(
         target,
@@ -3400,7 +3400,7 @@ bool run_subworld_reputation_hit_smoke(App& app) {
         sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Peasant),
             std::uint16_t(sm::faction_index("empire"))});
-    reg.emplace<sm::ecs::Health>(target, 40.0f, 40.0f);
+    reg.emplace<sm::ecs::Health>(target, 40, 40);
     reg.emplace<sm::ecs::Combat>(
         target,
         sm::Dice{3, 1}, std::int16_t(0), std::int16_t(100), std::uint8_t(0),
@@ -4296,12 +4296,12 @@ bool run_console_smoke(App& app) {
         }
         std::fprintf(stderr,
                      "[smoke] npc_sheet bandit level=%d attr_sum=%d "
-                     "fighter=%d bodybuilding=%d hp=%.0f(base=%.0f) "
+                     "fighter=%d bodybuilding=%d hp=%d(base=%.0f) "
                      "dice=%dd%d+%d derived_from_sheet=1\n",
                      sheet->levelData.level, aSum,
                      sheet->skills.of(sm::SkillId::Armsmaster),
                      sheet->skills.of(sm::SkillId::Bodybuilding),
-                     hlt->maxHp, base.hp,
+                     hlt->maxHp, double(base.hp),
                      int(cmb->dice.n), int(cmb->dice.m), int(cmb->flatAdd));
         std::fflush(stderr);
     }
@@ -4937,7 +4937,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                                                          sm::ecs::SubworldTag>();
                             for (auto e : view) {
                                 if (app.ecs.reg.any_of<sm::ecs::Dead>(e)) ++dead;
-                                else if (view.get<sm::ecs::Health>(e).hp > 0.0f) ++alive;
+                                else if (view.get<sm::ecs::Health>(e).hp > 0) ++alive;
                             }
                             std::fprintf(stderr,
                                          "[smoke] battle_soak t=%ds alive=%d dead=%d\n",
@@ -5267,7 +5267,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 for (auto e : view) {
                     const auto& ai = view.get<sm::ecs::SubworldAi>(e);
                     const auto& hp = view.get<sm::ecs::Health>(e);
-                    if (ai.kind == sm::ecs::SubworldAi::Combat && hp.hp > 0.0f) {
+                    if (ai.kind == sm::ecs::SubworldAi::Combat && hp.hp > 0) {
                         ++n;
                     }
                 }
@@ -5290,7 +5290,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 for (auto e : view) {
                     const auto& ai = view.get<sm::ecs::SubworldAi>(e);
                     const auto& hp = view.get<sm::ecs::Health>(e);
-                    if (ai.kind == sm::ecs::SubworldAi::Combat && hp.hp > 0.0f) {
+                    if (ai.kind == sm::ecs::SubworldAi::Combat && hp.hp > 0) {
                         return e;
                     }
                 }
@@ -5566,7 +5566,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             bool found = false;
             for (auto e : view) {
                 const auto& hp = view.get<sm::ecs::Health>(e);
-                if (hp.hp <= 0.0f) continue;
+                if (hp.hp <= 0) continue;
                 const auto& pos = view.get<sm::ecs::Position>(e);
                 const auto& kind = view.get<sm::ecs::NPCKind>(e);
                 app.gs.player.x = pos.x;
@@ -5612,7 +5612,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             int type = -1;
             for (auto e : view) {
                 const auto& hp = view.get<sm::ecs::Health>(e);
-                if (hp.hp <= 0.0f) continue;
+                if (hp.hp <= 0) continue;
                 const auto& pos = view.get<sm::ecs::Position>(e);
                 const auto& kind = view.get<sm::ecs::NPCKind>(e);
                 const auto& bag = view.get<sm::ecs::NpcInventory>(e);
@@ -5658,7 +5658,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             entt::entity target = entt::null;
             for (auto e : view) {
                 const auto& hp = view.get<sm::ecs::Health>(e);
-                if (hp.hp <= 0.0f) continue;
+                if (hp.hp <= 0) continue;
                 const auto& pos = view.get<sm::ecs::Position>(e);
                 app.gs.player.x = pos.x;
                 app.gs.player.y = pos.y;
@@ -5744,7 +5744,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 entt::exclude<sm::ecs::Dead, sm::ecs::PlayerTag,
                               sm::ecs::PlayerSquadTag, sm::ecs::SubworldTag>);
             for (auto e : view) {
-                if (view.get<sm::ecs::Health>(e).hp <= 0.0f) continue;
+                if (view.get<sm::ecs::Health>(e).hp <= 0) continue;
                 const auto& kind = view.get<sm::ecs::NPCKind>(e);
                 if (sm::player_hostile_to(
                         &app.gs, sm::faction_id_for_index(kind.factionIdx))) {
@@ -5777,7 +5777,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             const bool enemyGone = !reg.valid(hostile)
                 || reg.all_of<sm::ecs::Dead>(hostile)
-                || reg.get<sm::ecs::Health>(hostile).hp <= 0.0f;
+                || reg.get<sm::ecs::Health>(hostile).hp <= 0;
             const bool enemyHurt = !enemyGone
                 && reg.get<sm::ecs::Health>(hostile).hp
                        < reg.get<sm::ecs::Health>(hostile).maxHp;
@@ -5940,7 +5940,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 app.smoke.trackedMacro = macro;
                 app.smoke.trackedMacroHp0 = reg.get<sm::ecs::Health>(macro).hp;
                 auto& h = reg.get<sm::ecs::Health>(body);
-                h.hp = std::max(1.0f, h.maxHp * 0.25f);   // a quarter left
+                h.hp = std::max(1, h.maxHp / 4);   // a quarter left
                 std::fprintf(stderr,
                              "[smoke] tracked body wounded to %.1f/%.1f "
                              "(macro hp %.1f)\n",
@@ -5961,7 +5961,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                              "[smoke] macro hp %.1f -> %.1f after wound\n",
                              double(app.smoke.trackedMacroHp0), double(mh.hp));
                 std::fflush(stderr);
-                if (!(mh.hp < app.smoke.trackedMacroHp0 && mh.hp > 0.0f)) {
+                if (!(mh.hp < app.smoke.trackedMacroHp0 && mh.hp > 0)) {
                     smoke_fail(app, "a wound underground did not reach the map");
                     break;
                 }
@@ -6377,7 +6377,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 sm::ecs::NPCKind{
                     std::uint16_t(sm::NPCType::Bandit),
                     std::uint16_t(sm::faction_index("bandits"))});
-            app.ecs.reg.emplace<sm::ecs::Health>(spellTarget, 30.0f, 30.0f);
+            app.ecs.reg.emplace<sm::ecs::Health>(spellTarget, 30, 30);
             app.ecs.reg.emplace<sm::ecs::SubworldTag>(spellTarget);
             app.ecs.reg.emplace<sm::ecs::Sprite>(
                 spellTarget,

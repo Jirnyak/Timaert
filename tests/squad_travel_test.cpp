@@ -56,7 +56,7 @@ void paint_water(PathCostData& g, int x, int y) {
 // number below is arithmetic, not a seed's opinion.
 entt::entity make_walker(ecs::World& w, float x, float y,
                          float tx, float ty,
-                         int maxSp, float hp = 100.0f) {
+                         int maxSp, int hp = 100) {
     auto e = w.reg.create();
     w.reg.emplace<ecs::Position>(e, x, y, 0.0f);
     w.reg.emplace<ecs::VisualPos>(e, x, y, 0.0f);

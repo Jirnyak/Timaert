@@ -515,7 +515,7 @@ MacroSeeds seed_macro_npcs(entt::registry& reg, int mapW) {
     // (Inc 5e-2), so stamping it here lets the parity test exercise reattach.
     std::uint32_t spawnIndex = 0;
     auto mk = [&](sm::NPCType type, std::uint16_t faction, int cx, int cy,
-                  float hp, float maxHp, std::int16_t level,
+                  int hp, int maxHp, std::int16_t level,
                   std::uint32_t vseed) {
         auto e = reg.create();
         reg.emplace<sm::ecs::MacroNpcRuntime>(e);
@@ -561,7 +561,7 @@ bool run_beast_member_projection_case(
     reg.emplace<sm::ecs::Position>(leader, 0.0f, 0.0f, 0.0f);
     reg.emplace<sm::ecs::NPCKind>(leader, std::uint16_t(sm::NPCType::Bandit),
                                   std::uint16_t(3));
-    reg.emplace<sm::ecs::Health>(leader, 10.0f, 10.0f);
+    reg.emplace<sm::ecs::Health>(leader, 10, 10);
     reg.emplace<sm::ecs::NpcLevel>(leader, std::int16_t(3));
     reg.emplace<sm::ecs::NpcCharacter>(leader, sm::ecs::NpcCharacter{});
 
@@ -710,8 +710,8 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // survives any rebalance of either side.
     {
         const auto& h = reg.get<sm::ecs::Health>(pBandit);
-        if (!(h.maxHp > 0.0f && h.hp >= 1.0f && h.hp <= h.maxHp)) return false;
-        const float frac = h.hp / h.maxHp;
+        if (!(h.maxHp > 0 && h.hp >= 1 && h.hp <= h.maxHp)) return false;
+        const float frac = float(h.hp) / float(h.maxHp);
         if (!(frac > 0.4f && frac < 0.6f)) return false;
     }
     // The control: an untouched macro entity arrives untouched. Without this,

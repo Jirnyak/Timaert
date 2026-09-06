@@ -64,7 +64,7 @@ bool find_projectile_pose_by_spell(sm::ecs::World& w, const char* spellId,
 }
 
 entt::entity add_target(sm::ecs::World& w, float x, float y,
-                        float hp, bool playerSide) {
+                        int hp, bool playerSide) {
     auto e = w.create();
     w.reg.emplace<sm::ecs::Position>(e, x, y, 0.0f);
     w.reg.emplace<sm::ecs::Health>(e, hp, hp);
@@ -87,7 +87,7 @@ entt::entity add_target(sm::ecs::World& w, float x, float y,
 std::uint32_t add_player(sm::ecs::World& w, float x, float y) {
     auto e = w.create();
     w.reg.emplace<sm::ecs::Position>(e, x, y, 0.0f);
-    w.reg.emplace<sm::ecs::Health>(e, 1000.0f, 1000.0f);
+    w.reg.emplace<sm::ecs::Health>(e, 1000, 1000);
     w.reg.emplace<sm::ecs::SubworldTag>(e);
     w.reg.emplace<sm::ecs::PlayerTag>(e);
     return std::uint32_t(entt::to_integral(e));
@@ -831,7 +831,7 @@ int main() {
         sm::ecs::World selfWorld;
         auto selfPlayer = selfWorld.create();
         selfWorld.reg.emplace<sm::ecs::Position>(selfPlayer, 0.0f, 0.0f, 0.0f);
-        selfWorld.reg.emplace<sm::ecs::Health>(selfPlayer, 100.0f, 100.0f);
+        selfWorld.reg.emplace<sm::ecs::Health>(selfPlayer, 100, 100);
         selfWorld.reg.emplace<sm::ecs::SubworldTag>(selfPlayer);
         selfWorld.reg.emplace<sm::ecs::PlayerTag>(selfPlayer);
         auto selfBlast = selfWorld.create();
@@ -860,7 +860,7 @@ int main() {
         sm::ecs::World shieldWorld;
         auto shieldPlayer = shieldWorld.create();
         shieldWorld.reg.emplace<sm::ecs::Position>(shieldPlayer, 0.0f, 0.0f, 0.0f);
-        shieldWorld.reg.emplace<sm::ecs::Health>(shieldPlayer, 100.0f, 100.0f);
+        shieldWorld.reg.emplace<sm::ecs::Health>(shieldPlayer, 100, 100);
         shieldWorld.reg.emplace<sm::ecs::SubworldTag>(shieldPlayer);
         shieldWorld.reg.emplace<sm::ecs::PlayerTag>(shieldPlayer);
         auto shieldBolt = shieldWorld.create();
@@ -886,7 +886,7 @@ int main() {
         sm::ecs::World npcWorld;
         auto npcCaster = npcWorld.create();
         npcWorld.reg.emplace<sm::ecs::Position>(npcCaster, 0.0f, 0.0f, 0.0f);
-        npcWorld.reg.emplace<sm::ecs::Health>(npcCaster, 100.0f, 100.0f);
+        npcWorld.reg.emplace<sm::ecs::Health>(npcCaster, 100, 100);
         npcWorld.reg.emplace<sm::ecs::SubworldTag>(npcCaster);
         npcWorld.reg.emplace<sm::ecs::NPCKind>(npcCaster, sm::ecs::NPCKind{2, 2});
         auto npcBlast = npcWorld.create();
@@ -947,7 +947,7 @@ int main() {
             auto sweepTarget = sweepWorld.create();
             sweepWorld.reg.emplace<sm::ecs::Position>(
                 sweepTarget, range, 0.0f, 0.0f);
-            sweepWorld.reg.emplace<sm::ecs::Health>(sweepTarget, 100.0f, 100.0f);
+            sweepWorld.reg.emplace<sm::ecs::Health>(sweepTarget, 100, 100);
             sweepWorld.reg.emplace<sm::ecs::SubworldTag>(sweepTarget);
             sweepWorld.reg.emplace<sm::ecs::BodyRadius>(
                 sweepTarget, sm::ecs::BodyRadius{1.2f});

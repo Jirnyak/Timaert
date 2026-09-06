@@ -151,7 +151,7 @@ void test_every_squad_body_is_a_whole_body() {
 // One macro entity, shaped the way the overworld shapes them.
 entt::entity make_macro_lord(entt::registry& reg, sm::NPCType type,
                              std::uint16_t faction, int level,
-                             float hp, float maxHp,
+                             int hp, int maxHp,
                              std::uint32_t visualSeed) {
     const auto e = reg.create();
     reg.emplace<sm::ecs::MacroNpcRuntime>(e);
@@ -204,7 +204,8 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
     // whatever either layer thinks a health bar is worth.
     {
         const auto& h = reg.get<ecs::Health>(body);
-        const float frac = h.maxHp > 0.0f ? h.hp / h.maxHp : -1.0f;
+        const float frac =
+            h.maxHp > 0 ? float(h.hp) / float(h.maxHp) : -1.0f;
         CHECK(frac > 0.4f && frac < 0.6f,
               "a wounded entity arrives wounded, in proportion");
     }
@@ -256,7 +257,7 @@ void test_a_body_that_is_not_an_entity_is_refused() {
     // one — the guard is on the WIDE type, before any narrowing.
     const auto monster = reg.create();
     reg.emplace<ecs::NPCKind>(monster, std::uint16_t(0x103), std::uint16_t(1));
-    reg.emplace<ecs::Health>(monster, 10.0f, 10.0f);
+    reg.emplace<ecs::Health>(monster, 10, 10);
     reg.emplace<ecs::NpcLevel>(monster, std::int16_t(2));
     reg.emplace<ecs::NpcCharacter>(monster, ecs::NpcCharacter{});
     CHECK(sub::spawn_tracked_body(reg, monster, 5.0f, 5.0f, 1u, false)

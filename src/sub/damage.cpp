@@ -81,7 +81,7 @@ DamageResult apply_damage(entt::registry& reg, entt::entity target,
     DamageResult out{};
     if (!reg.valid(target)) return out;
     auto* hp = reg.try_get<ecs::Health>(target);
-    if (hp == nullptr || hp->hp <= 0.0f) return out;
+    if (hp == nullptr || hp->hp <= 0) return out;
     // A crit found the armour gap: mitigation is not in the way, exactly as
     // the Fall row's column says plate is not in the way of the ground.
     const int amt = src.critical
@@ -89,9 +89,9 @@ DamageResult apply_damage(entt::registry& reg, entt::entity target,
                         : mitigate(reg, target, amount, kind, type);
     if (amt <= 0) return out;
 
-    hp->hp -= float(amt);
+    hp->hp -= amt;
     out.applied = amt;
-    out.lethal = hp->hp <= 0.0f;
+    out.lethal = hp->hp <= 0;
 
     const DamageKindRow& row = kDamageKinds[std::size_t(kind)];
     if (row.attributesKiller) {
@@ -121,10 +121,10 @@ DamageResult apply_lethal_damage(entt::registry& reg, entt::entity target,
                                  const DamageSource& src, DamageKind kind,
                                  EventBus* bus) {
     const auto* hp = reg.try_get<ecs::Health>(target);
-    if (hp == nullptr || hp->hp <= 0.0f) return {};
-    // ceil: a fractional bar (float storage, integer writers) still dies to
-    // one blow — overkill by under a point, never a survivor.
-    return apply_damage(reg, target, src, int(std::ceil(hp->hp)), kind,
+    if (hp == nullptr || hp->hp <= 0) return {};
+    // The bar is integer now (4г), so "everything it has left" needs no ceil
+    // — the whole remaining number is exactly one lethal blow.
+    return apply_damage(reg, target, src, hp->hp, kind,
                         DamageType::Blunt, bus);
 }
 

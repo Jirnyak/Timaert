@@ -271,7 +271,10 @@ namespace sm {
 // v79 (2026-09-05): Фаза 3 кубы — SkillId/BonusId получили Unarmed (append,
 // ординалы навсегда), ecs::Combat/CombatTemplate несут Dice+flatAdd+LCK
 // вместо float damage; сейв инвалидируется правилом репо №2.
-constexpr int kSaveVersion = 79;
+// v80 (2026-09-06): Фаза 4г — ecs::Health стал int{hp,maxHp} (float-хранилище
+// умерло: все писатели целые с Фазы 3, дробный реген живёт в carry-
+// аккумуляторах, не в баре); MacroNpcRecord.health едет тем же POD-ом.
+constexpr int kSaveVersion = 80;
 
 enum class SettlementMood : std::uint8_t {
     Prosperous, Stable, Tense, Unrest, Revolt, Count

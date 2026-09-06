@@ -52,7 +52,7 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
             std::uint16_t(faction_index(kPlayerFactionId)));
         reg.emplace<ecs::NpcLevel>(
             squad, std::int16_t(std::max(1, gs.player.sheet.levelData.level)));
-        const float hp = float(std::max(1, gs.player.combatStats.maxHp));
+        const int hp = std::max(1, gs.player.combatStats.maxHp);
         reg.emplace<ecs::Health>(squad, hp, hp);
         reg.emplace<ecs::NpcTraits>(squad, ecs::NpcTraits{});
         {
@@ -109,8 +109,8 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
     reg.emplace_or_replace<ecs::Position>(squad, gs.player.x, gs.player.y, 0.0f);
     reg.emplace_or_replace<ecs::Health>(
         squad,
-        float(std::max(0, gs.player.combatStats.currentHp)),
-        float(std::max(1, gs.player.combatStats.maxHp)));
+        std::max(0, gs.player.combatStats.currentHp),
+        std::max(1, gs.player.combatStats.maxHp));
     reg.emplace_or_replace<ecs::NpcLevel>(
         squad, std::int16_t(std::max(1, gs.player.sheet.levelData.level)));
     if (auto* rt = reg.try_get<ecs::MacroNpcRuntime>(squad)) {

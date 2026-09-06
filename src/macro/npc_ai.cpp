@@ -282,7 +282,7 @@ void refresh_overload_cost(ecs::MacroNpcRuntime& rt,
 
 ThinkGate prepare_macro_npc_tick(ecs::MacroNpcRuntime& rt,
                                  const ecs::Health& hp) {
-    if (hp.hp <= 0.0f) {
+    if (hp.hp <= 0) {
         rt.visualSpeed = 0.0f;
         return ThinkGate::Dead;
     }
@@ -2828,8 +2828,8 @@ void settle_exhaustion(entt::entity e, const ecs::Position& p,
 
     const int bite = exhaustion_bite(int(rt.sp));
     if (bite <= 0) return;
-    hp.hp -= float(bite);
-    if (hp.hp <= 0.0f && ctx.mw.world && ctx.mw.gs) {
+    hp.hp -= bite;
+    if (hp.hp <= 0 && ctx.mw.world && ctx.mw.gs) {
         settle_leader_fraction(*ctx.mw.world, e, 0.0f);
         drain_dead_leader_squads(*ctx.mw.world, ctx.mw.gs->deserterPool);
     }
@@ -3812,7 +3812,7 @@ void tick_macro_npc_visuals(ecs::World& w, int mapW, int mapH, float dt) {
         auto& v = view.get<ecs::VisualPos>(e);
         const auto& rt = view.get<ecs::MacroNpcRuntime>(e);
         const auto& hp = view.get<ecs::Health>(e);
-        if (hp.hp <= 0.0f || !std::isfinite(v.vx) || !std::isfinite(v.vy)) {
+        if (hp.hp <= 0 || !std::isfinite(v.vx) || !std::isfinite(v.vy)) {
             v.vx = p.x;
             v.vy = p.y;
             v.speed = 0.0f;

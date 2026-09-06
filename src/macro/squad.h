@@ -297,8 +297,8 @@ inline AutoBattleSide auto_battle_side_of(ecs::World& w, entt::entity e,
         s.leaderSeed = leader_sheet_seed(sid->index);
     }
     if (const auto* hp = reg.try_get<ecs::Health>(e)) {
-        s.leaderHealthFraction = hp->maxHp > 0.0f
-            ? std::clamp(hp->hp / hp->maxHp, 0.0f, 1.0f) : 1.0f;
+        s.leaderHealthFraction = hp->maxHp > 0
+            ? std::clamp(float(hp->hp) / float(hp->maxHp), 0.0f, 1.0f) : 1.0f;
         if (const auto* rt = reg.try_get<ecs::MacroNpcRuntime>(e)) {
             // sp may be a NEGATIVE debt (exhaustion); the 0.1 floor already
             // says "a squad never fights at literal zero".
@@ -352,15 +352,16 @@ inline int award_leader_xp(ecs::World& w, entt::entity e, int xp) {
                 const auto* sid = reg.try_get<ecs::MacroSpawnId>(e);
                 const std::uint32_t seed =
                     leader_sheet_seed(sid ? sid->index : 0u);
-                const float frac = hp->maxHp > 0.0f
-                    ? std::clamp(hp->hp / hp->maxHp, 0.0f, 1.0f) : 1.0f;
+                const float frac = hp->maxHp > 0
+                    ? std::clamp(float(hp->hp) / float(hp->maxHp), 0.0f, 1.0f)
+                    : 1.0f;
                 const CharacterSheet sheet =
                     make_character_sheet(type, lvl->value, seed);
                 const CombatTemplate pc =
                     project_combat(sheet, npc_def(type).combat);
-                hp->maxHp = std::max(1.0f, std::floor(pc.hp));
-                hp->hp = std::clamp(std::floor(hp->maxHp * frac),
-                                    1.0f, hp->maxHp);
+                hp->maxHp = std::max(1, int(pc.hp));
+                hp->hp = std::clamp(int(float(hp->maxHp) * frac),
+                                    1, hp->maxHp);
                 // The march caches follow the sheet through the same door,
                 // preserving the SP fraction like the wound above — a level
                 // is not a free rest. An exhaustion DEBT (sp < 0) survives
@@ -517,11 +518,11 @@ inline void settle_leader_fraction(ecs::World& w, entt::entity e,
     auto* hp = w.reg.try_get<ecs::Health>(e);
     if (!hp) return;
     if (fraction <= 0.0f) {
-        hp->hp = 0.0f;
+        hp->hp = 0;
         w.reg.emplace_or_replace<ecs::Dead>(e);
         return;
     }
-    hp->hp = std::clamp(std::floor(hp->maxHp * fraction), 1.0f, hp->maxHp);
+    hp->hp = std::clamp(int(float(hp->maxHp) * fraction), 1, hp->maxHp);
 }
 
 // What the fallen of `loser` are worth, through the ONE reward law. Read

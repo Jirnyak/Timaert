@@ -20,8 +20,12 @@ struct Position { float x, y, z; };
 // Smoothed render position (for visual interpolation).
 struct VisualPos { float vx, vy, speed; };
 
-// Health component.
-struct Health { float hp, maxHp; };
+// Health component. INTEGER since phase 4г: every combat writer has been
+// whole since the dice phase (int amount through the one damage door), so the
+// float storage held nothing but the memory of fractional wounds that no
+// longer exist. Fractional REGEN lives in its accumulators
+// (macro/player_recovery.h carries), never in the bar.
+struct Health { int hp, maxHp; };
 
 // Explicit combat body radius — the distance at which this entity is struck by
 // melee, projectiles, and blasts (see the sub-layer target_radius()). It is the

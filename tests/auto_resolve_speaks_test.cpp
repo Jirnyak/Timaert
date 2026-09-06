@@ -56,7 +56,7 @@ entt::entity squad(ecs::World& w, NPCType leaderType, const char* factionId,
     reg.emplace<ecs::NPCKind>(e, std::uint16_t(leaderType),
                               std::uint16_t(faction_index(factionId)));
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(level));
-    reg.emplace<ecs::Health>(e, 100.0f, 100.0f);
+    reg.emplace<ecs::Health>(e, 100, 100);
     reg.emplace<ecs::MacroSpawnId>(e, spawnIndex);
     reg.emplace<ecs::MacroNpcRuntime>(e, ecs::MacroNpcRuntime{});
     auto& roster = reg.emplace<ecs::SquadRoster>(e);

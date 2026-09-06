@@ -34,7 +34,7 @@ using sm::ecs::Health;
 using sm::ecs::Projectile;
 using sm::ecs::SubworldTag;
 
-constexpr float kBodyHp = 100.0f;
+constexpr int kBodyHp = 100;
 
 entt::entity add_body(entt::registry& reg, float x, float y, float z) {
     const auto e = reg.create();

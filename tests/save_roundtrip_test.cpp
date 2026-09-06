@@ -122,7 +122,7 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     a.pos = {33.5f, 44.25f, 0.0f};
     a.visual = {33.0f, 44.0f, 1.5f};
     a.kind = {std::uint16_t(sm::NPCType::Bandit), 3};
-    a.health = {17.0f, 42.0f};
+    a.health = {17, 42};
     a.level = {5};
     a.runtime.homeSettlementId = 2;
     a.runtime.targetSettlementId = 4;
@@ -178,7 +178,7 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     d.pos = {1.0f, 2.0f, 0.0f};
     d.visual = {1.0f, 2.0f, 0.0f};
     d.kind = {std::uint16_t(sm::NPCType::Guard), 1};
-    d.health = {0.0f, 55.0f};
+    d.health = {0, 55};
     d.level = {3};
     d.dead = 1;
     out.push_back(std::move(d));
@@ -193,7 +193,7 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     player.visual = {12.0f, 13.0f, 0.0f};
     player.kind = {std::uint16_t(sm::NPCType::Adventurer),
                    std::uint16_t(sm::faction_index(sm::kPlayerFactionId))};
-    player.health = {40.0f, 40.0f};
+    player.health = {40, 40};
     player.level = {3};
     // ...and what he WEARS. Equipment is opt-in on the entity, so the record
     // must carry the shape AND the occupied cells: a saved coat that comes

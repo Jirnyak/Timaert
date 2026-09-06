@@ -71,8 +71,8 @@ entt::entity make_squad_at(ecs::World& w, NPCType type, const char* faction,
     reg.emplace<ecs::MacroNpcRuntime>(e, rt);
     reg.emplace<ecs::MacroSpawnId>(e, ordinal);
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(level));
-    const float hp = std::max(
-        1.0f, std::floor(project_combat(sheet, npc_def(type).combat).hp));
+    const int hp = std::max(
+        1, int(project_combat(sheet, npc_def(type).combat).hp));
     reg.emplace<ecs::Health>(e, hp, hp);
     auto& roster = reg.emplace<ecs::SquadRoster>(e);
     for (std::uint32_t id : memberIds) {
@@ -248,9 +248,9 @@ void test_a_victorious_leader_levels() {
     const auto tsar = make_squad_at(w, NPCType::Peasant, "timaert", 1,
                                     10.0f, 10.0f, 1u, {}, NPCType::Peasant, 1);
     auto& hp = w.reg.get<ecs::Health>(tsar);
-    const float maxHp0 = hp.maxHp;
-    hp.hp = std::floor(hp.maxHp * 0.5f);   // walks in wounded
-    const float frac0 = hp.hp / hp.maxHp;
+    const int maxHp0 = hp.maxHp;
+    hp.hp = hp.maxHp / 2;   // walks in wounded
+    const float frac0 = float(hp.hp) / float(hp.maxHp);
 
     CHECK(award_leader_xp(w, tsar, exp_to_next_level(1) / 2) == 0,
           "half a bar is not a level");
@@ -266,7 +266,7 @@ void test_a_victorious_leader_levels() {
     // ceiling was actually recomputed across the level.
     CHECK(hp1.maxHp >= maxHp0,
           "the macro ceiling re-derives with the level and never shrinks");
-    const float frac1 = hp1.hp / hp1.maxHp;
+    const float frac1 = float(hp1.hp) / float(hp1.maxHp);
     CHECK(std::fabs(frac1 - frac0) < 0.1f,
           "the wound crossed the level-up as a fraction, not a free heal");
 }

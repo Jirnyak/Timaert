@@ -121,7 +121,7 @@ entt::entity make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
     w.reg.emplace<AgentMemory>(e);
 
     // Health derived from the character sheet — the same law the subworld uses.
-    w.reg.emplace<ecs::Health>(e, float(hp), float(hp));
+    w.reg.emplace<ecs::Health>(e, hp, hp);
 
     w.reg.emplace<ecs::NpcLevel>(e, std::int16_t(lvl));
 

@@ -40,7 +40,7 @@ using sm::sub::DamageSource;
 
 constexpr std::uint16_t kTestNpcType = 7;
 
-entt::entity make_body(entt::registry& reg, float hp, bool withKind = true) {
+entt::entity make_body(entt::registry& reg, int hp, bool withKind = true) {
     const entt::entity e = reg.create();
     reg.emplace<sm::ecs::Health>(e, hp, hp);
     if (withKind) reg.emplace<sm::ecs::NPCKind>(e, kTestNpcType,
@@ -118,7 +118,7 @@ void test_armour_softens_by_the_row_and_the_kind() {
     // number is READ and not assumed.
     const entt::entity bare = make_body(reg, 100.0f);
     const entt::entity plated = reg.create();
-    reg.emplace<sm::ecs::Health>(plated, 100.0f, 100.0f);
+    reg.emplace<sm::ecs::Health>(plated, 100, 100);
     reg.emplace<sm::ecs::NPCKind>(
         plated, std::uint16_t(sm::NPCType::Guard), std::uint16_t{0});
 
@@ -145,7 +145,7 @@ void test_armour_softens_by_the_row_and_the_kind() {
     // bigger than the plate finds no flesh at all — full block is real, and
     // a blocked blow is a silent no-op like any zero contribution.
     const entt::entity turtle = reg.create();
-    reg.emplace<sm::ecs::Health>(turtle, 100.0f, 100.0f);
+    reg.emplace<sm::ecs::Health>(turtle, 100, 100);
     reg.emplace<sm::ecs::NPCKind>(
         turtle, std::uint16_t(sm::NPCType::Guard), std::uint16_t{0});
     const DamageResult tink =
@@ -158,7 +158,7 @@ void test_armour_softens_by_the_row_and_the_kind() {
 
     // ...and whether armour is in the way at all is the KIND's column.
     const entt::entity falling = reg.create();
-    reg.emplace<sm::ecs::Health>(falling, 100.0f, 100.0f);
+    reg.emplace<sm::ecs::Health>(falling, 100, 100);
     reg.emplace<sm::ecs::NPCKind>(
         falling, std::uint16_t(sm::NPCType::Guard), std::uint16_t{0});
     const DamageResult fell =
@@ -345,13 +345,13 @@ void test_execution_helper() {
     CHECK(again.applied == 0, "executing a corpse is a no-op");
     CHECK(death_events(bus) == 1, "one execution, one event");
 
-    // A fractional bar (float storage, integer blows) still dies to ONE blow.
-    const entt::entity frac = make_body(reg, 12.5f);
-    const DamageResult fracHit = apply_lethal_damage(
-        reg, frac, DamageSource{0u, true}, DamageKind::Dev, &bus);
-    CHECK(fracHit.lethal && fracHit.applied == 13,
-          "a fractional bar is executed by the ceiling blow — overkill under "
-          "a point, never a survivor");
+    // The bar is INTEGER now (4г): the execution blow is exactly what is
+    // left, and one blow is always enough — no ceil, no survivor.
+    const entt::entity odd = make_body(reg, 13);
+    const DamageResult oddHit = apply_lethal_damage(
+        reg, odd, DamageSource{0u, true}, DamageKind::Dev, &bus);
+    CHECK(oddHit.lethal && oddHit.applied == 13,
+          "the whole remaining bar is one lethal blow, never a survivor");
 }
 
 void test_zero_and_missing_target() {

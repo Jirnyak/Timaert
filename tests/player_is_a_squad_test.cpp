@@ -40,7 +40,7 @@ entt::entity npc_squad(ecs::World& w, float x, float y, std::uint32_t ordinal,
     reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Bandit),
                               std::uint16_t(faction_index("bandits")));
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(2));
-    reg.emplace<ecs::Health>(e, 50.0f, 50.0f);
+    reg.emplace<ecs::Health>(e, 50, 50);
     reg.emplace<ecs::MacroSpawnId>(e, ordinal);
     ecs::MacroNpcRuntime rt{};
     rt.homeSettlementId = -1;

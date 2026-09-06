@@ -74,7 +74,7 @@ entt::entity make_woodcutter(ecs::World& w, float x, float y,
     reg.emplace<ecs::MacroNpcRuntime>(e, rt);
     reg.emplace<ecs::MacroSpawnId>(e, 11u);
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(3));
-    reg.emplace<ecs::Health>(e, 30.0f, 30.0f);
+    reg.emplace<ecs::Health>(e, 30, 30);
     reg.emplace<ecs::SquadRoster>(e);
     reg.emplace<ecs::NpcInventory>(e);
     return e;
@@ -192,7 +192,7 @@ void test_the_farmer_works_the_field() {
     reg.emplace<ecs::MacroNpcRuntime>(e, prt);
     reg.emplace<ecs::MacroSpawnId>(e, 12u);
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(2));
-    reg.emplace<ecs::Health>(e, 20.0f, 20.0f);
+    reg.emplace<ecs::Health>(e, 20, 20);
     reg.emplace<ecs::SquadRoster>(e);
     reg.emplace<ecs::NpcInventory>(e);
 
@@ -260,7 +260,7 @@ void test_farmer_without_terrain_conjures_nothing() {
     reg.emplace<ecs::MacroNpcRuntime>(e, prt);
     reg.emplace<ecs::MacroSpawnId>(e, 12u);
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(2));
-    reg.emplace<ecs::Health>(e, 20.0f, 20.0f);
+    reg.emplace<ecs::Health>(e, 20, 20);
     reg.emplace<ecs::SquadRoster>(e);
     reg.emplace<ecs::NpcInventory>(e);
 
@@ -356,7 +356,7 @@ void test_the_mine_runs_while_the_player_is_away() {
     reg.emplace<ecs::MacroNpcRuntime>(e, rt);
     reg.emplace<ecs::MacroSpawnId>(e, 13u);
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(3));
-    reg.emplace<ecs::Health>(e, 30.0f, 30.0f);
+    reg.emplace<ecs::Health>(e, 30, 30);
     reg.emplace<ecs::SquadRoster>(e);
     reg.emplace<ecs::NpcInventory>(e);
 
@@ -469,7 +469,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
     reg.emplace<ecs::MacroNpcRuntime>(e, crt);
     reg.emplace<ecs::MacroSpawnId>(e, 13u);
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(3));
-    reg.emplace<ecs::Health>(e, 25.0f, 25.0f);
+    reg.emplace<ecs::Health>(e, 25, 25);
     reg.emplace<ecs::SquadRoster>(e);
     reg.emplace<ecs::NpcInventory>(e);
     reg.emplace<AgentMemory>(e);
@@ -573,7 +573,7 @@ void test_the_miner_works_the_vein() {
     reg.emplace<ecs::MacroNpcRuntime>(e, rt);
     reg.emplace<ecs::MacroSpawnId>(e, 13u);
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(3));
-    reg.emplace<ecs::Health>(e, 30.0f, 30.0f);
+    reg.emplace<ecs::Health>(e, 30, 30);
     reg.emplace<ecs::SquadRoster>(e);
     reg.emplace<ecs::NpcInventory>(e);
 
@@ -635,7 +635,7 @@ void test_the_miner_works_the_vein() {
     w2.reg.emplace<ecs::MacroNpcRuntime>(e2, rt);
     w2.reg.emplace<ecs::MacroSpawnId>(e2, 14u);
     w2.reg.emplace<ecs::NpcLevel>(e2, std::int16_t(3));
-    w2.reg.emplace<ecs::Health>(e2, 30.0f, 30.0f);
+    w2.reg.emplace<ecs::Health>(e2, 30, 30);
     w2.reg.emplace<ecs::SquadRoster>(e2);
     w2.reg.emplace<ecs::NpcInventory>(e2);
     MacroNpcAiRuntime art2{};

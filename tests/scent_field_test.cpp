@@ -147,7 +147,7 @@ struct HuntRig {
         rt.targetX = x;
         rt.targetY = y;
         w.reg.emplace<ecs::MacroNpcRuntime>(e, rt);
-        w.reg.emplace<ecs::Health>(e, 50.0f, 50.0f);
+        w.reg.emplace<ecs::Health>(e, 50, 50);
         return e;
     }
 };
