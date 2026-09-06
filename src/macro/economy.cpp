@@ -1,4 +1,5 @@
 #include "macro/economy.h"
+#include "macro/attributes.h"
 #include "macro/state.h"
 #include "ecs/components.h"
 #include "macro/econ_day.h"
@@ -11,18 +12,26 @@ namespace sm {
 
 namespace {
 inline float jround(float v) { return std::round(v); }
+
+// The bargaining edge is the Trade ROW's percent (kSkillDefs), not a number
+// of this file's own: the skill tooltip quotes the column, so the till must
+// charge the column. An inline 0.02f lived here — a second truth the panel
+// never promised (owner ruling 2026-09-06: торговля = 1%/ранг, таблица).
+inline float bargaining_edge(int bargaining) {
+    return skill_mult_of(SkillId::Trade, bargaining) - 1.0f;
+}
 } // namespace
 
 int trade_buy_price(int basePrice, int charisma, int bargaining) {
     const float discount = 1.0f - (cha_trade_discount(charisma)
-                                  + static_cast<float>(bargaining) * 0.02f);
+                                  + bargaining_edge(bargaining));
     const float scaled = static_cast<float>(basePrice) * std::max(0.5f, discount);
     return std::max(1, static_cast<int>(jround(scaled)));
 }
 
 int trade_sell_price(int basePrice, int charisma, int bargaining) {
     const float bonus = 1.0f + (cha_trade_discount(charisma)
-                               + static_cast<float>(bargaining) * 0.02f);
+                               + bargaining_edge(bargaining));
     const float scaled = static_cast<float>(basePrice) * 0.7f * std::min(1.5f, bonus);
     return std::max(1, static_cast<int>(jround(scaled)));
 }

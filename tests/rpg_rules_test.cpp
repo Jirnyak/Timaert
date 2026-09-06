@@ -88,11 +88,22 @@ int main() {
 
     // ── 3. One price law ────────────────────────────────────────────────
     {
-        // Canon base: buy discount 1% cha + 2% bargaining, floor 0.5;
-        // sell 0.7 × (1 + same bonus), cap 1.5. Context multiplies the base
-        // value BEFORE the canon so its clamps still govern.
+        // Canon base: buy discount 1%/point cha + the Trade ROW's percent per
+        // bargaining rank (kSkillDefs — 1 today), floor 0.5; sell 0.7 ×
+        // (1 + same bonus), cap 1.5. Context multiplies the base value
+        // BEFORE the canon so its clamps still govern.
         if (trade_price(100, 10, 0, 1.0f, true) != 90) {
             return fail("buy: cha 10 must price 100 at 90");
+        }
+        // Bargaining walks the table door: rank 10 at the row's 1%/rank is
+        // the same 10% edge charisma 10 buys — the tooltip and the till must
+        // quote one column. (The old law charged an inline 2%/rank the
+        // panel never promised; no assertion ever pinned it.)
+        if (trade_price(100, 0, 10, 1.0f, true) != 90) {
+            return fail("buy: bargaining 10 must price 100 at 90 (table 1%/rank)");
+        }
+        if (trade_price(100, 0, 10, 1.0f, false) != 77) {
+            return fail("sell: bargaining 10 must price 100 at 77 (0.7 * 1.1)");
         }
         if (trade_price(100, 10, 0, 1.0f, false) != 77) {
             return fail("sell: cha 10 must price 100 at 77 (0.7 * 1.1)");
