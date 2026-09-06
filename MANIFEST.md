@@ -136,8 +136,10 @@ README, which orchestrates them.
   costs O(new content), not a full 3072² re-upload — see
   [seamless-crossing.md](seamless-crossing.md).
 - First-person 3D subworld rendering (sky, terrain, water, structures,
-  billboards). The flat top-down 2D view is the macro map / minimap, not a
-  subworld mode.
+  billboards, two-class particle FX — additive energy + lit alpha-over
+  matter — a persistent GPU stain canvas for blood/marks, and world-space
+  precipitation computed entirely in the vertex stage). The flat top-down 2D
+  view is the macro map / minimap, not a subworld mode.
 - **Honest 3D subworld simulation.** World generation is 2D (terrain heightmap +
   decorations like trees and buildings), and the seamless 3×3 window shifts in 2D,
   but **all entity simulation is full 3D** — X, Y, Z are equal coordinates:

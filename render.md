@@ -39,10 +39,17 @@ flowchart TD
     H --> I[Trees: instanced billboards]
     I --> Is[Structures: instanced boxes + PCF shadow sample]
     Is --> In[Bodies: ONE pass, sprite bank or procedural]
-    In --> Ip[Particles: additive FX billboards, depth read / no write]
+    In --> Im[Matter particles: alpha-over LIT billboards, sim-sorted far-to-near]
+    Im --> Ip[Energy particles: additive FX billboards, depth read / no write]
     Ip --> J[Water: transparent plane, depth read / no write]
-    J --> K[end_frame: end pass, submit, present]
+    J --> R[Rain: world drops from gl_InstanceIndex, depth read / no write]
+    R --> K[end_frame: end pass, submit, present]
 ```
+
+(Before the shadow pass, OUTSIDE the main pass, the frame may also record the
+**stain-canvas stamp pass** — an offscreen accumulation into the persistent
+8192² mark texture; see §Stain canvas below. It self-skips when nothing landed
+and the camera did not move.)
 
 **Draw order and depth policy** (main pass):
 
@@ -53,13 +60,19 @@ flowchart TD
 | 3 | Trees | `create_mesh()` instanced | LESS | on | off (alpha-test discard) |
 | 4 | Structures | `create_mesh()` instanced | LESS | on | off |
 | 5 | Bodies (drawn + procedural, ONE pass) | `create_mesh()` instanced | LESS | on | alpha |
-| 6 | **Particles** | `create_mesh(additive)` instanced | LESS | **off** | **additive** |
-| 7 | Water | `create_mesh()` stride 0 | LESS | **off** | alpha |
+| 6 | **Matter particles** (blood, dust, smoke — LIT) | `create_mesh()` instanced, litSet | LESS | **off** | alpha |
+| 7 | **Energy particles** (magic, fire, sparks) | `create_mesh(additive)` instanced | LESS | **off** | **additive** |
+| 8 | Water | `create_mesh()` stride 0 | LESS | **off** | alpha |
+| 9 | **Rain** (world drops, Inc D) | `create_mesh()` stride 0, instanced draw | LESS | **off** | alpha |
 
-Sky is drawn first as a backdrop; everything else depth-tests over it. Particles
-and water are drawn last (after all opaque geometry) so they read existing depth
-and blend without occluding it. Particles come **before** water so a torch/impact
-glow does not double-count through a transparent surface it sits behind.
+Sky is drawn first as a backdrop; everything else depth-tests over it. The two
+particle ranges draw over ONE staged buffer via `firstInstance` (energy at the
+head, matter at the tail — `ParticleSystem::pack()`'s layout): matter first
+(its segment arrives back-to-front sorted from the sim — alpha-over is
+order-dependent), energy on top so glow adds over blood. Both come **before**
+water so a torch/impact glow does not double-count through a transparent
+surface it sits behind. Rain is last: real drops between the camera and
+everything it sees, still depth-tested so walls and hills keep you dry.
 
 ---
 
@@ -481,23 +494,39 @@ disc radii scaled by the celestial `kSkyStarSizeScale` seam; and drifting clouds
 `GPU_SMOKE_SKY=1` aims the gpu_smoke3d camera at the dome for LOOK-able
 captures.
 
-**Precipitation** is the submodule's SECOND fullscreen pass
-([shaders/precip.frag](shaders/precip.frag)): drawn LAST in the main pass
-(the weather falls between the camera and the world), depth off, alpha over,
-three hash-grid depth layers for parallax — no particles, no textures. What
-falls and how hard is the calendar's weather (`sub/sky.h weather_at` — a pure
-per-day derivation until the macro weather field lands): winter snows, summer
-rains, spring may hail, autumn rain/snow, with smooth in/out shower windows
-and per-day kinds (owner ruling, data in `kSeasonPrecip`). A wet spell drags
-`cloudiness01` up, so rain falls from a heavy sky and the cloud-shadow system
-darkens the world for free. Thunderstorms ride heavy rain: `storm_flash01`
-(pure function of the render clock, hash-gated ~6 s windows, double-strike
-envelope) is ADDED TO AMBIENT — the channel every lit pass already receives —
-so the whole world blinks; the dome whitens via `SkyPush.p3.w` and the rain
-sheet silvers in its own pass. On a dry day the pass is skipped entirely:
-verified byte-identical (md5) to a build without it. Harness overrides:
-`GPU_SMOKE_PRECIP=<0..1>`, `GPU_SMOKE_PRECIP_KIND=<0 rain|1 snow|2 hail>`,
-`GPU_SMOKE_STORM=1`.
+**Precipitation** is WORLD-SPACE since Inc D
+(particles-unified-matter, owner verdict 2026-09-06; the old screen-space
+`precip.frag` overlay is buried): [shaders/rain.vert](shaders/rain.vert) /
+[rain.frag](shaders/rain.frag), drawn LAST in the main pass with **zero
+buffers** — the vertex stage computes every drop's world position from
+`gl_InstanceIndex` + time (area-uniform hash disk, radius 24 m around the
+CAMERA, a 22 m fall column wrapping toroidally in time), so drops are real
+points the ordinary depth test occludes: a wall between you and the rain
+keeps you dry. The streak quad is oriented along the drop's own fall velocity
+(gravity + the cloud wind), so a gale visibly slants every streak; snow flies
+slow with a lazy per-drop sway, hail fast and barely deflected (`precipKind`).
+The drop tint is scaled by the sky's light (sun+ambient luminance lanes in
+`RainPush`) — night rain is dark — and a drop below the water plane dies
+(alpha 0): rain ends at the river's skin. Intensity = instance count
+(`clamp(4096 × precip01, 64…)`), so a drizzle is a few hundred drops and a
+storm the full complement.
+
+What falls and how hard is the calendar's weather (`sub/sky.h weather_at` — a
+pure per-day hash derivation, IDENTICAL across worlds, until the macro weather
+field lands): winter snows, summer rains, spring may hail, autumn rain/snow,
+with smooth in/out shower windows and per-day kinds (owner ruling, data in
+`kSeasonPrecip`). The first wet day of a new game is day 5 (~07:00–12:00
+shower). A wet spell drags `cloudiness01` up, so rain falls from a heavy sky
+and the cloud-shadow system darkens the world for free. Thunderstorms ride
+heavy rain: `storm_flash01` (pure function of the render clock, hash-gated
+~6 s windows, double-strike envelope) is ADDED TO AMBIENT — the channel every
+lit pass already receives — so the whole world blinks; the dome whitens via
+`SkyPush.p3.w` and the falling drops silver via the flash lane in `RainPush`.
+On a dry day the pass is skipped entirely (provably inert). Harness overrides
+(gpu_smoke3d mirrors THIS pass): `GPU_SMOKE_PRECIP=<0..1>`,
+`GPU_SMOKE_PRECIP_KIND=<0 rain|1 snow|2 hail>`, `GPU_SMOKE_STORM=1`.
+Known v1 artifact (accepted): drops do not collide, so near large openings a
+drop may fall through a roof — the cover-height mask is a post-demo item.
 
 ---
 
@@ -630,25 +659,44 @@ scene's deepest water cell and aims the camera across it.
 
 ---
 
-## Particles / additive FX
+## Particles — the world's two classes of visible stuff
 
-Transient visual effects — spell trails, impact bursts, blood, dust, embers,
-explosions — render as **additive billboards** in a pass drawn after all opaque
-geometry and creatures, immediately before water. The pass is **emissive**: it
-binds **no descriptor set** (no lighting, no shadow — the particles *are* the
-light), keeps depth-**test** on so terrain/trees/creatures occlude them, and
-depth-**write off** + **additive blend** (`dstColorBlendFactor = ONE`) so
-overlapping cards accumulate into a glow with **no back-to-front sort**. Additive
-blend is order-independent by construction, which is the whole reason the pool
-needs no per-frame depth sort. At the 8-bit LDR swapchain, dense overlap
-saturates to white — exactly the white-hot-core-to-warm-halo look of pixel-art /
-Final-Fantasy magic FX.
+Transient visual effects — spell trails, impact bursts, blood, dust, smoke,
+embers, explosions — split by ONE column of the preset table
+(`FxPreset.blend`, [src/sub/particles.h](src/sub/particles.h)) into the two
+classes of stuff the world has (particles-unified-matter, Inc A):
 
-**The pipeline flag.** `create_mesh(..., additive)` (the trailing bool on both
-overloads, [vk_pipeline.h](src/gpu/vk_pipeline.h)) is the *only* renderer-side
-switch: `additive=true` flips the colour-blend `dst` factor from
-`ONE_MINUS_SRC_ALPHA` to `ONE`. Every other pass passes the default `false` and
-is byte-for-byte unchanged. The particle pipeline is the sole caller today.
+**ENERGY** (magic, fire, sparks, embers) is *light*: additive billboards, an
+**emissive** pass binding **no descriptor set** — the particles *are* the
+light. Depth-**test** on so terrain/trees/creatures occlude them, depth-
+**write off** + **additive blend** (`dstColorBlendFactor = ONE`) so
+overlapping cards accumulate into a glow with **no back-to-front sort**
+(additive is order-independent by construction). At the 8-bit LDR swapchain,
+dense overlap saturates to white — the white-hot-core-to-warm-halo look of
+pixel-art / Final-Fantasy magic FX.
+
+**MATTER** (blood, dust, smoke) is *stuff*: it occludes and darkens, so it
+rides a second pipeline over the SAME instance buffer —
+[shaders/particle_matter.vert](shaders/particle_matter.vert)/[.frag](shaders/particle_matter.frag),
+alpha-over blend, and **LIT by the one universal law**: the fragment includes
+`lighting.glsl` + `shadow_common.glsl`, binds the shared litSet, and answers
+sun/shadow/point-lights at the particle's CENTRE (flat varyings — one lighting
+sample per droplet, no billboard acne by construction). Blood by a torch reads
+warm, blood in a dark crypt is dark, at night it is moonlit; no white-hot core
+lift. This is the fix for the shipped additive-blood bug (blood read as a red
+lamp, dust saturated to a white orb — additive can only add light).
+`ParticleSystem::pack(out, capacity, camPos)` partitions the one buffer —
+energy at the head in pool order, matter at the tail **sorted back-to-front
+from the camera** (alpha-over composites far-to-near; ties break on pool index
+so equal-seed packs stay byte-identical) — and the renderer issues two ranged
+instanced draws via `firstInstance`: one upload, two pipelines.
+
+**The pipeline flags.** `create_mesh(..., additive)`
+([vk_pipeline.h](src/gpu/vk_pipeline.h)): `additive=true` flips the
+colour-blend `dst` factor from `ONE_MINUS_SRC_ALPHA` to `ONE` (the energy
+pass). `accumulateAlpha=true` (multi-set overload only) makes the ALPHA
+channel blend ONE/ONE — coverage adds and saturates — which is the
+stain-canvas accumulation law; the stamp pipeline is its sole caller.
 
 **The sim is Vulkan-free and lives on the engine, not the renderer.** Transient
 VFX are deliberately **not** ECS entities — they are a flat POD pool
@@ -687,9 +735,18 @@ squared `1 − r` falloff from the quad centre, alpha-premultiplied, whitening t
 core (`mix(colour, white, fall·0.35)`) so dense cores read as white-hot; it
 `discard`s once alpha drops below a threshold.
 
-**The pass self-skips when the pool is empty** (`particleCount_ == 0`, the common
-case) → zero cost when nothing is emitting. This is why every non-FX scene today
-is unchanged.
+**Both ranges self-skip when empty** (`particleEnergyCount_` /
+`particleMatterCount_` == 0, the common case) → zero cost when nothing is
+emitting. This is why every non-FX scene today is unchanged.
+
+**The floor is lethal (Inc C).** `tick(dt, ground, land)` takes the engine's
+heightfield as a function pointer (the movement.h hook idiom — the sim stays
+Vulkan-free and unit-testable): a FALLING particle (`vel.y ≤ 0`) at or below
+the carrying surface dies THERE, clamped to the contact point, and if its
+preset row carries a `landMark` (Blood → Splat; Dust/Smoke → none, as the
+reference) the engine turns the landing into a stain-canvas stamp command in
+the particle's own colour. Gravity landing kills the particle; the mark is its
+remains.
 
 Verify it headless with `GPU_SMOKE_FX=1` (see §Frame capture): it stages a
 standing additive burst over the cluster centre. Paired with `GPU_SMOKE_NIGHT=1`
@@ -751,6 +808,60 @@ can only add), and the mean *added* RGB is warm for fire (`R>G>B`) vs violet for
 arcane (`B>R`) — the tints are measurably, and visibly, distinct.
 
 ---
+
+## Stain canvas — persistent GPU surface marks (Inc C)
+
+Blood splats, death pools, wounded drips and scorch live on a persistent
+**8192² RGBA8 canvas** ([src/gpu/vk_canvas.h](src/gpu/vk_canvas.h)
+`VulkanStainCanvas`) that never round-trips to the CPU. Laws ported verbatim
+from the gigahrush reference (`surface_marks.ts` / `blood_fx.ts` — see
+proposals/particles-unified-matter.md), execution returned to the GPU where
+per-pixel work belongs:
+
+- **Addressing is toroidal**: 1024² world tiles at 8 px/tile; texel = world
+  tile mod 1024, and the REPEAT sampler does the wrap in hardware. A seam
+  recentre shifts the window by exactly `kCellSize` = 1024 tiles = the
+  toroidal period, so **the canvas survives the seam with zero work**
+  (static_asserts pin the lockstep between `stamp.vert`, `mesh.frag` and the
+  C++ constants).
+- **Stamping is a draw call**: the engine gathers per-frame stamp COMMANDS
+  (24 B `StampInstance`: position, radius, seed, colour, intensity, MarkType)
+  from particle landings, lethal blows (Pool + a fan of 6 splats) and wounded
+  bodies under half HP (Drip); `stage_stamps()` uploads them and records one
+  instanced draw into the canvas's own LOAD-preserving render pass. The
+  fragment stage ([shaders/stamp.frag](shaders/stamp.frag)) IS the ported
+  shape library: hash/snoise/3-octave-fbm and the SPLAT (fbm tendrils), POOL,
+  DRIP, SCORCH organisms, seeded per mark.
+- **Accumulation is fixed-function**: colour blends alpha-over, alpha blends
+  ONE/ONE and saturates (`create_mesh(accumulateAlpha)`) — one drop is a
+  faint pixel, ten drops a dense stain, blood over soot maroon. The
+  reference's `writeSurfacePixel` law, in blend hardware; a saturated pixel
+  costs no more than a clean one, so the canvas price is AREA, never battle
+  size.
+- **Eviction is geometry**: the canvas slides with the CAMERA (which must
+  stay separable from the player — owner ruling); strips entering the window
+  are cleared inside the stamp pass (`vkCmdClearAttachments`, ≤2 rects per
+  axis at the wrap seam), so whatever leaves the half-kilometre ring is
+  forgotten — the reference's "farthest from the action dies first" as
+  geometry, zero eviction code. `enter()`/dungeon transitions request a full
+  clear (the ground under the canvas changed identity). Marks are session
+  decoration: never saved.
+- **Reading is one sample in the terrain stage**: `mesh.frag` (set 1
+  binding 1, riding the material set) mixes the mark into the albedo BEFORE
+  `lit_surface()`, so stains are shadowed/moonlit exactly like the ground
+  they lie on; a validity ring in `MeshPush.stain` (camera XZ + 500 m
+  Chebyshev radius) masks the toroidal far side's stale texels. The
+  gpu_smoke3d harness fulfils the shared-shader contract with a 1×1
+  transparent dummy at binding 1 and a zeroed `stain` lane.
+
+Scale contract (thousands-strong battles): the stamp ring caps at 1024
+commands/frame and drops the FARTHEST from the camera (`nth_element`), and
+particle emission is FX-LOD-gated (full burst ≤ 32 m, single droplet ≤ 64 m,
+none beyond — but a distant kill still stamps its pool, almost free), so both
+canvases of cost — pool slots and canvas texels — stay bounded by area and
+distance, never by combat intensity. V1 scope: floors only (terrain,
+including dungeon floors); wall splatter (`splatAdjacentWalls`) and mark fade
+are post-demo items.
 
 ## Structures (walls, houses, towers, gate lintels)
 
@@ -898,11 +1009,14 @@ All matrices + lighting travel as push constants (`VERTEX | FRAGMENT`).
 |------|--------|-------|----------|
 | Macro synth | `Push` (macro.frag) | 32 | resolution, mapSize, viewCells, seaLevel, seed, time |
 | Sky | `SkyPush` | 224 | forward+moonCount, right+starScale, up, (resX,resY,fov,tod), (fogRGB,time), sunDir, 3×moon(dir,size), 3×moon(tint,illum), (cloudiness,wind,precip), seasonTint |
-| Terrain | `MeshPush` | 176 | mvp, sunDir, sunColor, ambient, lightMvp |
+| Terrain | `MeshPush` | 192 | mvp, sunDir, sunColor, ambient, lightMvp, stain(camXZ,radius,enable) |
 | Trees | `BbPush` | 176 | mvp, camRight, sunColor, ambient, lightMvp |
-| Structures | `MeshPush` (reused) | 176 | mvp, sunDir, sunColor, ambient, lightMvp |
+| Structures | `MeshPush` (reused) | 192 | mvp, sunDir, sunColor, ambient, lightMvp, stain |
+| Energy particles | `ParticlePush` | 96 | mvp, camRight, camUp |
+| Matter particles | `ParticleMatterPush` | 192 | mvp, camRight, camUp, sunColor, ambient, lightMvp |
+| Stamp (stain canvas) | — | 0 | everything rides the 24 B instance attrs |
 | Water | `WaterPush` | 128 | mvp, camPos, sunDir, sunColor, (time,ambient,waterLevel,extent) |
-| Precipitation | `PrecipPush` | 32 | (resX,resY,time,precip01), (kind,tilt,flash,·) |
+| Rain | `RainPush` | 128 | mvp, camPos+time, camRight+precip01, (kind,wind,flash), (waterY,sunLum,ambLum) |
 | Shadow (mesh) | `ShadowPush` | 64 | lightMvp |
 | Shadow (trees) | `ShadowBbPush` | 80 | lightMvp, lightRight |
 | Shadow (struct) | `ShadowPush` (reused) | 64 | lightMvp |
