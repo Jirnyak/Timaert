@@ -61,8 +61,13 @@ death) already respects the flag, so there is no player special-case to maintain
   `remove<PlayerTag>(old); emplace<PlayerTag>(target)`. Targeting is scale-split
   (owner D1): in the subworld you **look at a body and possess it** —
   `possess_aim` runs the `aim_target` forward-cone pick on the camera yaw
-  (keybind **V** / console `possess`) — with `possess_by_id` as the debug
-  by-id path; on the macro map a `control <id>` console command is the follow-on.
+  (console `possess`) — with `possess_by_id` as the debug by-id path; on the
+  macro map a `control <id>` console command is the follow-on.
+  **The player keybind (V) died 2026-09-06** (owner: вселение — не игроцкая
+  кнопка «просто как механика»; в игру оно придёт ЗАКЛИНАНИЕМ вселения, как и
+  телепорт — своим спеллом). The machinery below is untouched and is exactly
+  the door that spell will walk through; today it is reachable by the dev
+  console and exercised by the `console` / `subworld_exit_remap` smokes.
 - **Met where they live (projection).** So the lords/bandits/peasants roaming
   the overworld can actually be *met* and possessed, `enter()` runs
   `project_macro_npcs_into_subworld`: every persistent macro NPC within ±1 cell
@@ -100,7 +105,7 @@ commit (build + validated smoke + `build/*_test` green each stage):
 | macro-4a | Macro player promoted scalar → minimal `Position + PlayerTag` flag; self-healing across the seam; exactly-one invariant established. |
 | 5a | Subworld position authority inverted (entity `Position` authoritative; scalars a mirror). |
 | 5b | `aim_target` forward-cone pick primitive. |
-| 5c | The possession act — body-native combat, keybind **V** / console, non-mutating `player_display_hp`, AI/render skip the flagged body. |
+| 5c | The possession act — body-native combat, console `possess` (the V keybind died 2026-09-06 — a future possession SPELL replaces it), non-mutating `player_display_hp`, AI/render skip the flagged body. |
 | 5d | `project_macro_npcs_into_subworld` + `MacroOrigin` backlink (macro NPCs → combat bodies on enter). |
 | 5e-1 | Exit **position** remap — land on the possessed body's macro origin cell. |
 | 5e-2 | Exit **identity** remap — `adopt_possessed_macro_as_player` moves the macro `PlayerTag` onto the origin so you exit *as* the lord, and a deterministic `MacroSpawnId` ordinal (stored in `possessedMacroSpawnId`, **kSaveVersion 9→10**) re-finds the same lord after a save/load regenerates the NPCs (`reattach_player_to_macro_spawn`). Owner decision: identity **survives** save/load. |

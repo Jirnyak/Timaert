@@ -2236,12 +2236,6 @@ void handle_event_playing(App& app, const SDL_Event& e) {
             else if (is(ActionId::Interact)) {       // sub face of the E key
                 app.subworld.interact();
             }
-            else if (is(ActionId::Possess)) {
-                // вселение / possession (Inc 5c): take over the body under
-                // the reticle. Subworld-only; a no-op with the status line
-                // set when nothing is in reach.
-                app.subworld.possess_aim();
-            }
             else if (is(ActionId::SpellsTab)) {
                 app.ui.character = true;
                 app.ui.characterTab = sm::ui::CharacterPanelTab::Spells;

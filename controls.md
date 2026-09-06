@@ -34,9 +34,11 @@ one enum value plus one table row (the same *spec-table → auto UI* idiom as
   `key` is the stable prefs-file identifier (order-independent), `scope` is
   `UiScope::{Both, Macro, Sub}`, `def` the default `SDL_Scancode`.
 - `const ActionSpec kActionSpec[kActionCount]` — **the** table, one row per
-  action (a `static_assert` guards the count). ~28 rows: 12 Both (panels,
+  action (a `static_assert` guards the count). ~27 rows: 12 Both (panels,
   save/load, enter/leave, debug), 7 Macro (pause, rest, equipment, 4×pan),
-  9 Sub (4×move, attack, cast, jump, interact, possess).
+  8 Sub (4×move, attack, cast, jump, interact). The possess key died
+  2026-09-06 (owner: вселение — не игроцкая кнопка, придёт заклинанием);
+  the engine doors stay for the dev console, the smokes and that spell.
 - `class Keymap` — `get(id)` / `set(id, sc)` (set applies the steal rule) /
   `reset_defaults()`, plus `pendingRebind`: the panel's “press a key now”
   latch, *armed* by the panel but *consumed* in `handle_event` — the SDL

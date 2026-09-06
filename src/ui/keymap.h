@@ -57,7 +57,9 @@ enum class ActionId : std::uint8_t {
     CastSpell,
     Jump,
     Interact,
-    Possess,
+    // Possess died here 2026-09-06 (owner: вселение — не игроцкая кнопка;
+    // придёт заклинанием). The engine doors (possess_aim/possess_by_id)
+    // stay for the dev console, the smokes and the future spell.
     Count
 };
 
