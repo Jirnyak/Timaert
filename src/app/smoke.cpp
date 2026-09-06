@@ -832,6 +832,15 @@ bool run_subworld_sp_drain_smoke(App& app) {
     float expected = 0.0f;
     float weight = 0.0f;
     int charged = 0;
+    // The ruler must walk the same door the legs pay through: the charge reads
+    // the EFFECTIVE sheet (overload, travel-skill efficiency — the Default
+    // creation preset learns Travel, which is a real −1%), so an expectation
+    // priced without them is a second law off by exactly that percent.
+    const sm::CharacterSheet effDrain = player_effective_sheet(app);
+    const int overloadCostDrain =
+        sm::overload_charge(effDrain, player_bag(app)).cost;
+    const float travelEffDrain =
+        sm::travel_skill_efficiency(effDrain.skills);
     for (int leg = 0; leg < 24; ++leg) {
         const float legX = app.subworld.player_x();
         const float legY = app.subworld.player_y();
@@ -843,7 +852,8 @@ bool run_subworld_sp_drain_smoke(App& app) {
         weight = app.subworld.player_ground_travel_weight();
         distance += legDist;
         expected += sm::travel_stamina_cost(
-            weight, legDist / float(sm::sub::kCellSize));
+            weight, legDist / float(sm::sub::kCellSize),
+            overloadCostDrain, travelEffDrain);
         charged += charge_subworld_sp_for_distance(app, legDist);
         // Let a tick run between legs. The seamless 3×3 window only re-centres
         // inside tick(), so a walk that never ticks rams the edge of the window

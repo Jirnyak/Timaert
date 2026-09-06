@@ -3832,6 +3832,8 @@ void SubworldEngine::tick(float dt) {
     // A place that means something notices him crossing into it.
     tick_zones();
     int prevCx = mgr_.center_cx(), prevCy = mgr_.center_cy();
+    seamShiftCellsX_ = 0;
+    seamShiftCellsY_ = 0;
     const auto seamStart = Clock::now();
     // A dungeon window is STATIC: no seam, no re-centre — the interior is
     // walled and its ring is sealed Void filler. The initial build was fully
@@ -3851,6 +3853,8 @@ void SubworldEngine::tick(float dt) {
         // the cells that genuinely left are despawned.
         const int dx = mgr_.center_cx() - prevCx;
         const int dy = mgr_.center_cy() - prevCy;
+        seamShiftCellsX_ = dx;
+        seamShiftCellsY_ = dy;
         repopulate_after_recenter(dx, dy);
         // Inc 5a: check_boundary rewrapped the scalars ∓cell and the rebase inside
         // repopulate shifted the SubworldTag-tagged player entity by the SAME

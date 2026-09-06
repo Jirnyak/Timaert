@@ -456,6 +456,12 @@ public:
     // no incoming damage to the player (projectiles still vanish on contact).
     void  set_god_mode(bool on) { godMode_ = on; }
     bool  god_mode() const { return godMode_; }
+    // How far the seam rebased the player's coordinates this tick, in macro
+    // cells (0 on a tick with no re-centre). The leg-payer outside tick()
+    // adds shift×kCellSize back before measuring the step, so crossing a
+    // window boundary is never billed as a walked cell.
+    int   player_seam_shift_cells_x() const { return seamShiftCellsX_; }
+    int   player_seam_shift_cells_y() const { return seamShiftCellsY_; }
     // Dev console: kill every hostile in the current scene as if the player
     // struck the killing blow — grants XP + loot through the normal death path.
     // Returns the number killed; 0 outside a subworld.
@@ -614,6 +620,12 @@ private:
     float playerVx_ = 0.0f;
     float playerVy_ = 0.0f;
     int   debugIntentSteps_ = 0;   // harness hold (debug_hold_intent)
+    // The seam's rebase of the player scalars this tick, in macro cells
+    // (check_boundary subtracts shift×kCellSize; zero when the window stayed
+    // put). The stamina charge outside adds it back: the rebase moves the
+    // NUMBERS, not the legs.
+    int   seamShiftCellsX_ = 0;
+    int   seamShiftCellsY_ = 0;
 
     bool  godMode_ = false;   // dev console: suppress incoming player damage
     bool  playerAttackHeld_ = false;

@@ -3104,8 +3104,17 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // body — so this is where the ground he actually covered is known,
         // and where his legs pay for it.
         {
-            const float movedX = app.subworld.player_x() - prevX;
-            const float movedY = app.subworld.player_y() - prevY;
+            // The seam's re-centre rebased his coordinates by ∓kCellSize per
+            // crossed axis inside that tick (check_boundary). Add the shift
+            // back before measuring: the rebase moved the numbers, not the
+            // legs — billing it charged a whole phantom cell of SP at every
+            // window boundary (the red subworld_sp_drain smoke, 2026-09-06).
+            const float movedX = app.subworld.player_x() - prevX
+                + float(app.subworld.player_seam_shift_cells_x())
+                      * float(sm::sub::kCellSize);
+            const float movedY = app.subworld.player_y() - prevY
+                + float(app.subworld.player_seam_shift_cells_y())
+                      * float(sm::sub::kCellSize);
             movedThisStep = std::sqrt(movedX * movedX + movedY * movedY);
             (void)charge_subworld_sp_for_distance(app, movedThisStep);
         }
