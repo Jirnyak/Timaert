@@ -305,7 +305,8 @@ over water on a flat SP price~~ — Session 21's ONE movement-cost law SHIPPED
 grid, steers greedily around water, and an unpayable ocean drowns the LORD
 (he is the squad's avatar — owner ruling); the leader's sheet reaches the
 macro march (maxSp from END, travel discount, marathon regen, spd pace).
-Full record: proposals/session-prompts.md «Сессия 21».
+Full record: git history of proposals/session-prompts.md «Сессия 21»
+(the file was gutted and removed 2026-09-06).
 
 ### Three rulings that pin the shape (owner, 2026-08-06)
 

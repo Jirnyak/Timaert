@@ -126,6 +126,6 @@ is a row; a consumer is a hook reading the field. Nothing here may grow an
 if-chain per season — the `SeasonDef`/`kSeasonPrecip` table idiom is the
 template.
 
-The track's prompt lives in
-[proposals/session-prompts.md](proposals/session-prompts.md) § «Сессия —
-сезоны и погода».
+The track's prompt lived in proposals/session-prompts.md (gutted and
+removed 2026-09-06) — this section IS the record of the owner's vision;
+nothing was lost in the cut.
