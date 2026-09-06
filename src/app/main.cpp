@@ -2465,8 +2465,9 @@ void poll_movement(App& app, float dt) {
         // sheet, not a multiplier bolted on beside the formula, so a swift
         // ring and a swiftness spell are the same kind of fast.
         const sm::CharacterSheet eff = player_effective_sheet(app);
-        const float pace = sm::calculate_derived(eff.attributes, eff.skills)
-                               .moveSpeedMult;
+        const float pace =
+            float(sm::calculate_derived(eff.attributes, eff.skills)
+                      .moveSpeedPct) / 100.0f;
         bool spellFlight = player_rule_active(app, sm::SpellRuleId::Flight);
         if (spellFlight != app.lastSpellFlight) {
             app.subworld.set_flying(spellFlight);
@@ -2508,8 +2509,8 @@ void poll_movement(App& app, float dt) {
     if (!app.cursor.path.empty() && !paused) {
         const sm::CharacterSheet effSheet = player_effective_sheet(app);
         const float pace =
-            sm::calculate_derived(effSheet.attributes, effSheet.skills)
-                .moveSpeedMult;
+            float(sm::calculate_derived(effSheet.attributes, effSheet.skills)
+                      .moveSpeedPct) / 100.0f;
         // The march is quoted in cells per GAME hour (macro/movement_cost.h).
         // This file is the one place that knows what a game hour costs in real
         // seconds, so the conversion lives here and nowhere else.

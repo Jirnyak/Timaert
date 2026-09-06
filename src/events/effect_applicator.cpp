@@ -54,7 +54,7 @@ void apply_effect(PlayerState& p, const GameEvent& ev) {
         // one law for every grant path (owner ruling 2026-08-05). XP is not a
         // pool and not a sheet address; it has its own door and keeps it.
         award_exp(p.sheet.levelData, value,
-                  calculate_derived(p.sheet.attributes, p.sheet.skills).expMult);
+                  calculate_derived(p.sheet.attributes, p.sheet.skills).expMultPct);
         return;
     }
 

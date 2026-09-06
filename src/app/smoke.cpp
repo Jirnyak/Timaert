@@ -6804,12 +6804,12 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // read the way the game reads it: off his effective sheet.
             const sm::CharacterSheet hasted = player_effective_sheet(app);
             const float hastePace =
-                sm::calculate_derived(hasted.attributes, hasted.skills)
-                    .moveSpeedMult;
+                float(sm::calculate_derived(hasted.attributes, hasted.skills)
+                          .moveSpeedPct) / 100.0f;
             const float basePace =
-                sm::calculate_derived(app.gs.player.sheet.attributes,
-                                      app.gs.player.sheet.skills)
-                    .moveSpeedMult;
+                float(sm::calculate_derived(app.gs.player.sheet.attributes,
+                                            app.gs.player.sheet.skills)
+                          .moveSpeedPct) / 100.0f;
             if (!active || afterMp >= beforeMp || !(hastePace > basePace)) {
                 smoke_fail(app, "haste sustained drain/speed invariant");
                 break;

@@ -19,12 +19,14 @@ std::string cooldown_reason(std::uint32_t steps) {
 
 } // namespace
 
-float spell_strength(const SpellDef& spell,
-                     const Attributes& attributes,
-                     const Skills& skills) {
+int spell_strength(const SpellDef& spell,
+                   const Attributes& attributes,
+                   const Skills& skills) {
     const DerivedBonuses derived = calculate_derived(attributes, skills);
-    const float tierMul = 1.0f + 0.08f * float(spell.tier - 1);
-    return derived.rawSpellDamage * tierMul;
+    // +8 % per tier above the first, in the whole-percent house (4в) — the
+    // float twin was ×(1 + 0.08·(tier−1)) floored by every caller itself.
+    const int tierPct = 100 + 8 * (spell.tier - 1);
+    return derived.rawSpellDamage * tierPct / 100;
 }
 
 // The scaling column as the strike assembly's whole percent — one rounding,
@@ -37,21 +39,21 @@ int spell_damage(const SpellDef& spell,
                  const Attributes& attributes,
                  const Skills& skills) {
     if (spell.dice.n == 0) return 0;
-    const float s = spell_strength(spell, attributes, skills);
+    const int s = spell_strength(spell, attributes, skills);
     // The strike's EXPECTATION — what a panel prints and a macro reader
     // credits; the cast itself rolls (spell_strike below). Exact for the
     // mechanical Nd1 rows, honest for authored spreads later.
-    return strike_mean_x2(spell.dice, int(std::floor(s)),
+    return strike_mean_x2(spell.dice, s,
                           spell_mult_pct(spell)) / 2;
 }
 
 StrikeRoll spell_strike(Rng& rng, const SpellDef& spell,
                         const Attributes& attributes, const Skills& skills) {
     if (spell.dice.n == 0) return {};
-    const float s = spell_strength(spell, attributes, skills);
+    const int s = spell_strength(spell, attributes, skills);
     // THE strike assembly, the same the sword swings through: dice + the
     // sheet's add, scaled by the row's percent, LCK asking the crit door.
-    return roll_strike(rng, spell.dice, int(std::floor(s)),
+    return roll_strike(rng, spell.dice, s,
                        spell_mult_pct(spell),
                        attributes.of(AttributeId::Lck));
 }
@@ -60,16 +62,16 @@ int spell_heal(const SpellDef& spell,
                const Attributes& attributes,
                const Skills& skills) {
     if (spell.baseHeal <= 0.0f) return 0;
-    const float s = spell_strength(spell, attributes, skills);
-    return int(std::floor((spell.baseHeal + s) * spell.scalingPower));
+    const int s = spell_strength(spell, attributes, skills);
+    return int(std::floor((spell.baseHeal + float(s)) * spell.scalingPower));
 }
 
 int spell_radius(const SpellDef& spell,
                  const Attributes& attributes,
                  const Skills& skills) {
     if (spell.baseRadius <= 0.0f) return 0;
-    const float s = spell_strength(spell, attributes, skills);
-    const float scaleFactor = s / (s + 50.0f);
+    const int s = spell_strength(spell, attributes, skills);
+    const float scaleFactor = float(s) / float(s + 50);
     return int(std::floor(spell.baseRadius
         * (1.0f + scaleFactor * spell.scalingRadius)));
 }

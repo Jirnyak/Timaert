@@ -181,9 +181,9 @@ void test_the_governed_numbers_follow_the_row() {
 
     CHECK(tr.maxHp == bare.maxHp * 2, "maxHp follows bodybuilding's row");
     CHECK(tr.maxMp == bare.maxMp * 2, "maxMp follows meditation's row");
-    CHECK(trD.rawPhysDamage == bareD.rawPhysDamage * 2.0f,
+    CHECK(trD.rawPhysDamage == bareD.rawPhysDamage * 2,
           "physical damage follows fighter's row");
-    CHECK(trD.rawSpellDamage == bareD.rawSpellDamage * 2.0f,
+    CHECK(trD.rawSpellDamage == bareD.rawSpellDamage * 2,
           "spell damage follows spellcraft's row");
     CHECK(get_carry_capacity(a, trained) == bareCarry * 2.0f,
           "carry capacity follows weightlifting's row");
@@ -203,8 +203,8 @@ void test_the_governed_numbers_follow_the_row() {
     pathfinder[SkillId::Travel] = 25;
     CHECK(travel_skill_efficiency(pathfinder) < 1.0f,
           "training travel makes ground cheaper");
-    CHECK(calculate_derived(a, pathfinder).moveSpeedMult
-              == bareD.moveSpeedMult,
+    CHECK(calculate_derived(a, pathfinder).moveSpeedPct
+              == bareD.moveSpeedPct,
           "and it does NOT make him faster: one skill, one meaning");
 }
 

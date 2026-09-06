@@ -330,14 +330,17 @@ void tick_villages_(GameState& gs, int day, WorldTickRuntime& runtime,
 namespace {
 
 // ── Daily player tick (upkeep + age) ──────────────────────────
-void tick_player_daily_(PlayerState& p, const SoldierSquad* roster,
+// `sheet` is his EFFECTIVE one (phase 4, the caller owns the door): a +CHA
+// amulet talks the payroll down like every other price he haggles.
+void tick_player_daily_(PlayerState& p, const CharacterSheet& sheet,
+                        const SoldierSquad* roster,
                         Inventory* purse) {
     // The player's men are a roster on his squad entity now, exactly like any
     // lord's — no roster (no world yet) simply means no wages.
     const int upkeep = roster
         ? calculate_squad_upkeep(
-              *roster, calculate_derived(p.sheet.attributes, p.sheet.skills)
-                           .tradeDiscount)
+              *roster, calculate_derived(sheet.attributes, sheet.skills)
+                           .tradeDiscountPct)
         : 0;
     // Pay what the wallet holds; an unpaid remainder is simply unpaid today
     // (wage-debt desertion is the №3 pipeline's future rule).
@@ -399,6 +402,9 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
         tick_villages_   (gs, day, runtime, esink, euser);
         tick_player_daily_(
             gs.player,
+            macro && macro->world
+                ? player_effective_sheet(*macro->world, gs.player)
+                : gs.player.sheet,
             macro && macro->world ? player_roster(*macro->world) : nullptr,
             macro && macro->world ? player_inventory(*macro->world) : nullptr);
 

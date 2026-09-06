@@ -737,7 +737,7 @@ namespace sm::ui
         const float carryCap = get_carry_capacity(effPanel.attributes, effPanel.skills);
         const int armyTotal = army ? total_soldiers(*army) : 0;
         const int armyUpkeep = army
-            ? calculate_squad_upkeep(*army, derived.tradeDiscount) : 0;
+            ? calculate_squad_upkeep(*army, derived.tradeDiscountPct) : 0;
 
         ImGui::SetNextWindowSize(ImVec2(760 * scale, 560 * scale), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("Character", open))
@@ -813,11 +813,11 @@ namespace sm::ui
                             ImGui::PopID();
                         }
                         ImGui::TableNextColumn();
-                        ImGui::Text("Phys dmg +%.0f", derived.rawPhysDamage);
-                        ImGui::Text("Spell dmg +%.0f", derived.rawSpellDamage);
-                        ImGui::Text("EXP x%.2f", derived.expMult);
-                        ImGui::Text("Move x%.2f", derived.moveSpeedMult);
-                        ImGui::Text("Trade %.0f%%", derived.tradeDiscount * 100.0f);
+                        ImGui::Text("Phys dmg +%d", derived.rawPhysDamage);
+                        ImGui::Text("Spell dmg +%d", derived.rawSpellDamage);
+                        ImGui::Text("EXP %d%%", derived.expMultPct);
+                        ImGui::Text("Move %d%%", derived.moveSpeedPct);
+                        ImGui::Text("Trade %d%%", derived.tradeDiscountPct);
                         ImGui::Text("Carry %.1f / %.0f kg", carryWeight, carryCap);
                         ImGui::EndTable();
                     }
@@ -1717,7 +1717,7 @@ namespace sm::ui
                             calculate_squad_upkeep(
                                 *army,
                                 calculate_derived_effective(world, gs.player)
-                                    .tradeDiscount));
+                                    .tradeDiscountPct));
                     }
                     ImGui::EndTabItem();
                 }

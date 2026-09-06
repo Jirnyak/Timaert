@@ -877,8 +877,9 @@ void SubworldEngine::spawn_player_entity() {
     // (macro/movement_cost.h). Refreshed each tick beside the damage, so a
     // hasted or burdened player's body says what it can actually do.
     const float playerPace = march_speed(kHumanMarchMult)
-        * (gs_ ? calculate_derived(effBody.attributes,
-                                   effBody.skills).moveSpeedMult
+        * (gs_ ? float(calculate_derived(effBody.attributes,
+                                         effBody.skills).moveSpeedPct)
+                     / 100.0f
                : 1.0f);
     reg.emplace<ecs::Combat>(
         e, ecs::Combat{hs.dice, hs.flatAdd, hs.multPct, hs.luck,
@@ -1021,7 +1022,7 @@ void SubworldEngine::sync_player_entity_position() {
                 // the input path. The mover reads it for what a body can do
                 // (its acceleration and its brake are scaled by it), so a
                 // speedless body could start but never quite finish stopping.
-                c->speed = march_speed(kHumanMarchMult) * d.moveSpeedMult;
+                c->speed = march_speed(kHumanMarchMult) * float(d.moveSpeedPct) / 100.0f;
             }
         }
         break;
@@ -2696,7 +2697,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                     player_effective_sheet(*ecs_, gs_->player);
                 award_exp(gs_->player.sheet.levelData, xp,
                           calculate_derived(effXp.attributes,
-                                            effXp.skills).expMult);
+                                            effXp.skills).expMultPct);
                 apply_player_kill_reputation(gs_, kind);
             } else if (lastHit && mw_.world) {
                 // CANON S14: «сквад == лидер, и только NPC-лидеры растут — и

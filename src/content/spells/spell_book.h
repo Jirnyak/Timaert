@@ -17,7 +17,7 @@ struct CastCheck {
     float cooldownRemaining = 0.0f;
 };
 
-float spell_strength(const SpellDef& spell,
+int spell_strength(const SpellDef& spell,
                      const Attributes& attributes,
                      const Skills& skills);
 // The strike's EXPECTATION — panels and macro readers; the cast rolls.

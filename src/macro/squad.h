@@ -49,8 +49,10 @@ inline void refresh_leader_travel_stats(ecs::MacroNpcRuntime& rt,
         std::clamp(sheet.skills.of(SkillId::Travel), 0, kMaxSkillRank));
     rt.marathonRank = std::uint8_t(
         std::clamp(sheet.skills.of(SkillId::Marathon), 0, kMaxSkillRank));
-    rt.moveMult =
-        calculate_derived(sheet.attributes, sheet.skills).moveSpeedMult;
+    // The cache is the walk's own float; the LAW is whole percent (4в).
+    rt.moveMult = float(
+        calculate_derived(sheet.attributes, sheet.skills).moveSpeedPct)
+        / 100.0f;
     const float haul = npc_def(type).haulMult;
     rt.carryCap = get_carry_capacity(sheet.attributes, sheet.skills)
                   * (haul > 0.0f ? haul : 1.0f);
@@ -830,7 +832,7 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
         // macro/player_entity.h); the exp lands in the BASE levelData.
         const CharacterSheet eff = player_effective_sheet(w, gs.player);
         const DerivedBonuses d = calculate_derived(eff.attributes, eff.skills);
-        award_exp(gs.player.sheet.levelData, xp, d.expMult);
+        award_exp(gs.player.sheet.levelData, xp, d.expMultPct);
     }
     return xp;
 }

@@ -68,22 +68,22 @@ int main() {
     {
         Attributes a{};
         a[AttributeId::Wis] = 10;
-        const float mult = calculate_derived(a, Skills{}).expMult;
+        const int multPct = calculate_derived(a, Skills{}).expMultPct;
         LevelData ld = default_level_data();
-        award_exp(ld, 100, mult);
+        award_exp(ld, 100, multPct);
         if (ld.exp != 110) {
             std::fprintf(stderr, "exp=%d\n", ld.exp);
             return fail("wis 10 must turn 100 xp into 110");
         }
         LevelData ld2 = default_level_data();
-        award_exp(ld2, 25, mult);  // 27.5 -> round half up -> 28
+        award_exp(ld2, 25, multPct);  // 27.5 -> round half up -> 28
         if (ld2.exp != 28) {
             std::fprintf(stderr, "exp=%d\n", ld2.exp);
-            return fail("the dividend rounds half up (25 * 1.1 = 28)");
+            return fail("the dividend rounds half up (25 * 110% = 28)");
         }
         LevelData ld3 = default_level_data();
-        award_exp(ld3, 100, 1.0f);
-        if (ld3.exp != 100) return fail("expMult 1.0 must be the identity");
+        award_exp(ld3, 100, 100);
+        if (ld3.exp != 100) return fail("expMultPct 100 must be the identity");
     }
 
     // ── 3. One price law ────────────────────────────────────────────────

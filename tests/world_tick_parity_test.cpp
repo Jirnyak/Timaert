@@ -91,11 +91,15 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     runtime.nextDailyTickDay = 12;
 
     // The expectation is DERIVED from the same law the tick pays by, so the
-    // upkeep table can be retuned without touching this file.
+    // upkeep table can be retuned without touching this file. The tick reads
+    // the EFFECTIVE sheet (phase 4) — and so does the expectation: the door's
+    // own clamp (an attribute never reads below 1) is part of the law.
+    const sm::CharacterSheet effSheet =
+        sm::player_effective_sheet(world, gs.player);
     const int expectedUpkeep = sm::calculate_squad_upkeep(
-        *army, sm::calculate_derived(gs.player.sheet.attributes,
-                                     gs.player.sheet.skills)
-                   .tradeDiscount);
+        *army, sm::calculate_derived(effSheet.attributes,
+                                     effSheet.skills)
+                   .tradeDiscountPct);
     const int expectedGold = (5 - expectedUpkeep) > 0 ? (5 - expectedUpkeep) : 0;
 
     const int processed = sm::process_world_daily_ticks(gs, runtime, 1, &mw);

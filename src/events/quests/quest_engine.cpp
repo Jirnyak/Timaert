@@ -111,7 +111,7 @@ static void emit_reward(const Reward& r, GameState& gs, Inventory* bag,
             // wis dividend applies here like on every grant (owner ruling).
             award_exp(p.sheet.levelData, r.amount,
                       calculate_derived(p.sheet.attributes,
-                                        p.sheet.skills).expMult);
+                                        p.sheet.skills).expMultPct);
             break;
         case RewardKind::Item:
             // A full bag refuses; the loss is said out loud instead of the

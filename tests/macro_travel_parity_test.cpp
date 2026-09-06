@@ -313,13 +313,13 @@ void test_travel_balance_holds_its_intent() {
     sprinter[sm::SkillId::Athletics] = 20;
     CHECK(nearf(sm::travel_skill_efficiency(sprinter), 1.0f),
            "athletics does not make ground cheaper");
-    CHECK(sm::calculate_derived(attrs, sprinter).moveSpeedMult
-               > sm::calculate_derived(attrs, skills).moveSpeedMult,
+    CHECK(sm::calculate_derived(attrs, sprinter).moveSpeedPct
+               > sm::calculate_derived(attrs, skills).moveSpeedPct,
            "athletics does make the traveller faster");
     sm::Skills pathfinder = skills;
     pathfinder[sm::SkillId::Travel] = 20;
-    CHECK(nearf(sm::calculate_derived(attrs, pathfinder).moveSpeedMult,
-                 sm::calculate_derived(attrs, skills).moveSpeedMult),
+    CHECK(sm::calculate_derived(attrs, pathfinder).moveSpeedPct
+               == sm::calculate_derived(attrs, skills).moveSpeedPct,
            "the travel skill does not make the traveller faster");
     CHECK(sm::travel_skill_efficiency(pathfinder) < 1.0f,
            "the travel skill does make ground cheaper");

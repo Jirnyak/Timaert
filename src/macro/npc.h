@@ -777,16 +777,16 @@ inline int soldier_upkeep(const SoldierRecord& s) {
     return npc_upkeep_base(soldier_npc_type(s)) * soldier_level_factor(s.level);
 }
 
-// `tradeDiscount` is the ONE derived sheet's column (attributes.h
-// calculate_derived — cha × 1 %), not a private copy of that formula; the
-// derived column is uncapped, so the 90 % ceiling stays HERE, at the site
-// that applies it to a payroll.
+// `tradeDiscountPct` is the ONE derived sheet's column (attributes.h
+// calculate_derived — cha × 1 %, whole percent since 4в), not a private copy
+// of that formula; the derived column is uncapped, so the 90 % ceiling stays
+// HERE, at the site that applies it to a payroll.
 inline int calculate_squad_upkeep(const SoldierSquad& squad,
-                                  float tradeDiscount = 0.0f) {
+                                  int tradeDiscountPct = 0) {
     int base = 0;
     for (const auto& s : squad) base += soldier_upkeep(s);
-    const float discount = std::clamp(tradeDiscount, 0.0f, 0.90f);
-    return int(float(base) * (1.0f - discount));
+    const int discountPct = std::clamp(tradeDiscountPct, 0, 90);
+    return base * (100 - discountPct) / 100;
 }
 
 // The row's price column × THE one level law (soldier_level_factor) — the

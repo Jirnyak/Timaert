@@ -357,12 +357,19 @@ struct CombatStats {
 
 // (critBase and relationBonus died in the 2026-09-03 sweep: zero readers
 // beyond one UI print — LCK's real home is the dice-roll door, CANON S13.)
+//
+// INTEGER, phase 4в (the discrete house): the adds are whole points and the
+// multipliers are whole PERCENT (100 = ×1) — the same currency the strike
+// assembly already multiplies by (multPct/100, macro/damage_types.h). The
+// floats they were forced every reader to floor at its own doorstep; the
+// floor now happens once, in calculate_derived, and a drifted rounding
+// cannot exist.
 struct DerivedBonuses {
-    float rawPhysDamage = 0;
-    float rawSpellDamage = 0;
-    float expMult = 1;
-    float moveSpeedMult = 1;
-    float tradeDiscount = 0;
+    int rawPhysDamage = 0;
+    int rawSpellDamage = 0;
+    int expMultPct = 100;
+    int moveSpeedPct = 100;
+    int tradeDiscountPct = 0;
 };
 
 // ── Level data ─────────────────────────────────────────────────
@@ -533,28 +540,37 @@ inline void recompute_combat_maxima(CombatStats& c, const Attributes& a,
 // (calculate_squad_upkeep via the derived column below). The 2026-09-03 sweep
 // found it spelled inline in TWO places; a drifted copy here would desync the
 // shop from the sheet panel silently.
+// Whole percent (1 % per point), phase 4в — the float twin was ×0.01 of this.
+inline int cha_trade_discount_pct(int cha) {
+    return cha;
+}
+// The float application some price math still speaks (economy.cpp works in
+// fractional multipliers before its own jround) — ×0.01 of THE law above,
+// never a second spelling of it.
 inline float cha_trade_discount(int cha) {
-    return float(cha) * 0.01f;
+    return float(cha_trade_discount_pct(cha)) * 0.01f;
 }
 
 inline DerivedBonuses calculate_derived(const Attributes& a, const Skills& s) {
     DerivedBonuses d;
-    const float rawPhys  = float(a.of(AttributeId::Str));
-    const float rawSpell = float(a.of(AttributeId::Intl));
     // The GENERIC half of the damage stack (S14): Armsmaster multiplies all
     // physical, Spellcraft all spell power. The TYPED half — the weapon skill
     // of what the hand holds, the school of the spell being cast — reads at
     // the damage door (dice phase) and the school wiring (S15), on top.
-    d.rawPhysDamage  = rawPhys  * skill_mult(s, SkillId::Armsmaster);
-    d.rawSpellDamage = rawSpell * skill_mult(s, SkillId::Spellcraft);
-    d.expMult        = 1.0f + float(a.of(AttributeId::Wis)) * 0.01f;
+    // Integer floor once, here — readers used to floor the float themselves.
+    d.rawPhysDamage  = a.of(AttributeId::Str)
+                       * skill_mult_pct(s, SkillId::Armsmaster) / 100;
+    d.rawSpellDamage = a.of(AttributeId::Intl)
+                       * skill_mult_pct(s, SkillId::Spellcraft) / 100;
+    d.expMultPct     = 100 + a.of(AttributeId::Wis);
     // Attributes add, skills multiply. `spd` is the body's own quickness
     // (asymptotic, so a monstrous score cannot run away with the game);
     // `athletics` is training on top of it. `travel` has no business here — it
     // buys DISTANCE per bar of stamina, not speed (macro/movement_cost.h).
-    d.moveSpeedMult  = (1.0f + float(a.of(AttributeId::Spd)) / float(a.of(AttributeId::Spd) + 50))
-                       * skill_mult(s, SkillId::Athletics);
-    d.tradeDiscount  = cha_trade_discount(a.of(AttributeId::Cha));
+    const int spd = a.of(AttributeId::Spd);
+    d.moveSpeedPct   = (100 + (100 * spd) / (spd + 50))
+                       * skill_mult_pct(s, SkillId::Athletics) / 100;
+    d.tradeDiscountPct = cha_trade_discount_pct(a.of(AttributeId::Cha));
     return d;
 }
 
@@ -605,12 +621,12 @@ inline int award_exp(LevelData& ld, int amount) {
 }
 
 // The wis dividend (owner ruling 2026-08-05: the first formerly-dead
-// attribute wired live): every award multiplies by the recipient's expMult
-// (calculate_derived — +1% per wis point). Round half up, so small grants
-// still feel the attribute.
-inline int award_exp(LevelData& ld, int amount, float expMult) {
+// attribute wired live): every award multiplies by the recipient's expMultPct
+// (calculate_derived — +1% per wis point; 100 = ×1). Integer round half up
+// ((·+50)/100), so small grants still feel the attribute.
+inline int award_exp(LevelData& ld, int amount, int expMultPct) {
     const int scaled = amount > 0
-        ? int(float(amount) * expMult + 0.5f)
+        ? (amount * expMultPct + 50) / 100
         : amount;
     return award_exp(ld, scaled);
 }

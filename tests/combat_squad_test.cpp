@@ -87,10 +87,10 @@ int main() {
         return fail("garrison id base or preview hire price is unstable");
     }
 
-    // The discount parameter is the derived sheet's tradeDiscount column now
-    // (cha × 1 %): 50 charisma reads as 0.50.
-    const int baseUpkeep = sm::calculate_squad_upkeep(player, 0.0f);
-    const int charismaUpkeep = sm::calculate_squad_upkeep(player, 0.50f);
+    // The discount parameter is the derived sheet's tradeDiscountPct column
+    // now (cha × 1 %, whole percent since 4в): 50 charisma reads as 50.
+    const int baseUpkeep = sm::calculate_squad_upkeep(player, 0);
+    const int charismaUpkeep = sm::calculate_squad_upkeep(player, 50);
     if (baseUpkeep <= 0 || charismaUpkeep >= baseUpkeep) {
         return fail("NPC-kind upkeep or charisma discount invalid");
     }
