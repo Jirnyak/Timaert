@@ -319,13 +319,22 @@ inline float skill_mult(const Skills& s, SkillId id) {
     return skill_mult_of(id, s.of(id));
 }
 
-// The SAME law in whole percent, for the integer combat house (the strike
-// assembly multiplies by multPct/100 — macro/damage_types.h roll_strike).
-// Only the growing direction exists here: no combat law buys a cost down.
-inline int skill_mult_pct(const Skills& s, SkillId id) {
-    int rank = s.of(id);
+// The SAME law in whole percent, for the integer house (the strike assembly
+// multiplies by multPct/100; the world readers scale counts and radii by
+// pct/100). Both directions, exactly as the float door: a cost-down row
+// walks DOWN and floors at free — Foraging 100 is a squad fed off the land,
+// not a negative loaf.
+inline int skill_mult_pct_of(SkillId id, int rank) {
+    if (rank < 0) rank = 0;
     if (rank > kMaxSkillRank) rank = kMaxSkillRank;
-    return 100 + rank * int(skill_def(id).pctPerRank);
+    const SkillDef& d = skill_def(id);
+    const int step = rank * int(d.pctPerRank);
+    if (!d.buysCostDown) return 100 + step;
+    return step >= 100 ? 0 : 100 - step;        // a cost never goes past free
+}
+
+inline int skill_mult_pct(const Skills& s, SkillId id) {
+    return skill_mult_pct_of(id, s.of(id));
 }
 
 // ── Perks: PURGED 2026-09-03 ───────────────────────────────────

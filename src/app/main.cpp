@@ -3790,7 +3790,7 @@ void register_console_commands(App& app) {
         });
 
     con.register_cmd("levelup", "levelup [count]",
-        "force N level-ups, granting the usual attribute/skill/perk points",
+        "force N level-ups, granting the usual attribute/skill points",
         [&app](Con& c, const std::vector<std::string>& a) {
             int n = 1; sm::dev::arg_int(a, 0, n);
             if (n < 1) n = 1;

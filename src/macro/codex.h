@@ -143,15 +143,18 @@ namespace sm
             CodexArticleId::PerksSkills,
             CodexCategoryId::Mechanics,
             "Skills & Perks",
-            "Skills provide flat base stat increases applied before "
-            "attribute-based multipliers. They do not modify attributes "
-            "directly. Examples include Bodybuilding and martial "
-            "disciplines.\n\n"
-            "Perks are powerful, build-defining choices that provide both "
-            "significant advantages and disadvantages. They are gained at "
-            "level 1 and every 10 levels. Example: \"Immortal\" prevents "
-            "death from old age, but requires much more experience to level "
-            "up.",
+            "Attributes add, skills multiply. An attribute is what your "
+            "body IS; a skill is what it has been TRAINED to do, and its "
+            "rank reads as its percentage: Athletics 37 is +37% speed, "
+            "Travel 37 is -37% terrain stamina. Each skill states its own "
+            "percent per rank; ranks cap at 100, and a cost skill at the "
+            "capstone removes its cost outright.\n\n"
+            "Rank 0 is ignorance: an unknown skill refuses points until "
+            "something teaches it - creation picks today, teachers and "
+            "events tomorrow. Every level grants one attribute point and "
+            "one skill point.\n\n"
+            "Perks - rare, build-defining choices - are being reforged and "
+            "will return.",
         },
         {
             CodexArticleId::Market,

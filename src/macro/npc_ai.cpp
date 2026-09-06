@@ -2452,13 +2452,15 @@ constexpr float kSquadSightCells = 6.0f;
 // ВОСПРИЯТИЕ — свойство сквада, не спец-механика (владелец 2026-09-03,
 // CANON S10: «это контекстно … из свойств самого сквада и ролевой системы»).
 // Phase 6: the ROLE layer arrived — the leader's Scouting rank widens the
-// base radius by THE skill law (+1 %/rank), read off the runtime's cached
-// rank (refresh_leader_travel_stats, the one refresh door) because this
-// query runs per think. A rankless squad sees the v1 constant exactly.
+// base radius by THE skill law (the row's pctPerRank, through the table
+// door — never an inline percent), read off the runtime's cached rank
+// (refresh_leader_travel_stats, the one refresh door) because this query
+// runs per think. A rankless squad sees the v1 constant exactly.
 inline float squad_sight_cells(const ecs::NPCKind&,
                                const ecs::MacroNpcRuntime* rt) {
     const int rank = rt ? int(rt->scoutRank) : 0;
-    return kSquadSightCells * float(100 + rank) / 100.0f;
+    return kSquadSightCells
+        * float(skill_mult_pct_of(SkillId::Scouting, rank)) / 100.0f;
 }
 
 // Flee when the enemy is this many times stronger; trait-scaled below.
@@ -3124,8 +3126,11 @@ int feed_squads_daily(MacroWorld& mw) {
                                leader_sheet_seed(sid->index))
                                .skills.of(SkillId::Foraging);
         }
-        foragingRank = std::clamp(foragingRank, 0, kMaxSkillRank);
-        const int need = roster.squad.size() * (100 - foragingRank) / 100;
+        // Through the table door, not an inline percent: the row's own
+        // pctPerRank walks the cost down (Trade learned this the hard way —
+        // an inline number is a second truth the tooltip never promised).
+        const int need = roster.squad.size()
+            * skill_mult_pct_of(SkillId::Foraging, foragingRank) / 100;
         if (need <= 0) continue;
         const int have = bag.inv.count("bread");
         const int ate = std::min(need, have);
