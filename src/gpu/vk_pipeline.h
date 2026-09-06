@@ -49,6 +49,15 @@ namespace gpu
                          VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE,
                          bool additive = false);
         // Multi-set overload: accepts N descriptor set layouts (set=0..N-1).
+        //
+        // `accumulateAlpha` (only meaningful with blend=true, additive=false):
+        // the ALPHA channel blends ONE/ONE instead of ONE/ZERO, so coverage
+        // ADDS and the UNORM target saturates at 1.0 while the colour channel
+        // stays alpha-over. This is the stain-canvas accumulation law
+        // (gigahrush writeSurfacePixel in fixed function): each new mark mixes
+        // its colour in proportion to its own alpha and DEEPENS the stored
+        // coverage — one drop is faint, ten drops are dense. Left false
+        // everywhere else: on-screen passes never reuse destination alpha.
         bool create_mesh(const VulkanDevice& dev, VkRenderPass renderPass,
                          const char* vertSpvPath, const char* fragSpvPath,
                          std::uint32_t pushConstantBytes,
@@ -59,7 +68,8 @@ namespace gpu
                          bool cullBack,
                          const VkDescriptorSetLayout* setLayouts,
                          std::uint32_t setLayoutCount,
-                         bool additive = false);
+                         bool additive = false,
+                         bool accumulateAlpha = false);
         // Depth-only shadow-caster pipeline: no colour attachment, depth test +
         // write, slope-scaled depth bias, push constants (e.g. the light MVP).
         bool create_shadow(const VulkanDevice& dev, VkRenderPass shadowPass,

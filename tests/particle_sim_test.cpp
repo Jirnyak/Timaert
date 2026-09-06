@@ -19,6 +19,10 @@
 //   5. pack() writes <= alive instances, positions match the live pool, alpha
 //      is always in [0,1] and zero for a just-reaped slot, size lerps start→end.
 //   6. Determinism: two systems seeded alike produce byte-identical packs.
+//   7. Blend partition (Inc A, particles-unified-matter): the table pins Blood
+//      and Dust as Matter (the shipped additive-blood bug can never silently
+//      return); pack() lays energy at the head and matter at the tail, matter
+//      sorted back-to-front from the camera.
 //
 // Pure — links only particles.cpp + core. No Vulkan, no ECS.
 #include "check.h"
@@ -36,10 +40,18 @@ using namespace sm::sub;
 
 namespace {
 
+// pack() from the origin (the tests' default camera) returning the total
+// instance count — most invariants below don't care about the split.
+std::uint32_t pack_all(const ParticleSystem& ps, ParticleInstance* buf,
+                       std::uint32_t capacity) {
+    const ParticleSystem::PackCounts n = ps.pack(buf, capacity, {0, 0, 0});
+    return n.energy + n.matter;
+}
+
 // Count how many packed instances a fresh single-burst system holds.
 std::uint32_t pack_count(const ParticleSystem& ps) {
     static ParticleInstance buf[ParticleSystem::kMaxParticles];
-    return ps.pack(buf, ParticleSystem::kMaxParticles);
+    return pack_all(ps, buf, ParticleSystem::kMaxParticles);
 }
 
 // ── 1. Table contract ──
@@ -84,7 +96,7 @@ void test_emit() {
         const vec3 tint{0.0f, 1.0f, 0.0f};
         ps.emit(FxKind::Spark, {0, 0, 0}, &tint);
         static ParticleInstance buf[64];
-        std::uint32_t n = ps.pack(buf, 64);
+        std::uint32_t n = pack_all(ps, buf, 64);
         CHECK(n >= 1, "tinted burst produced particles");
         bool allGreen = true;
         for (std::uint32_t i = 0; i < n; ++i)
@@ -125,7 +137,7 @@ void test_physics() {
         const int steps = static_cast<int>(t / (1.0f / 120.0f));
         for (int i = 0; i < steps; ++i) ps.tick(1.0f / 120.0f);
         static ParticleInstance buf[ParticleSystem::kMaxParticles];
-        std::uint32_t n = ps.pack(buf, ParticleSystem::kMaxParticles);
+        std::uint32_t n = pack_all(ps, buf, ParticleSystem::kMaxParticles);
         if (n == 0) return 10.0f; // all reaped: treat as unmoved
         float s = 0.0f;
         for (std::uint32_t i = 0; i < n; ++i) s += buf[i].py;
@@ -144,7 +156,7 @@ void test_pack() {
     ps.emit(FxKind::MagicBurst, {3.0f, 4.0f, 5.0f});
     ps.tick(0.05f);
     static ParticleInstance buf[ParticleSystem::kMaxParticles];
-    std::uint32_t n = ps.pack(buf, ParticleSystem::kMaxParticles);
+    std::uint32_t n = pack_all(ps, buf, ParticleSystem::kMaxParticles);
     CHECK(static_cast<int>(n) == ps.alive(), "pack count == alive");
     for (std::uint32_t i = 0; i < n; ++i) {
         CHECK(buf[i].alpha >= 0.0f && buf[i].alpha <= 1.0f, "alpha in [0,1]");
@@ -154,7 +166,7 @@ void test_pack() {
     }
     // Capacity clamp: a tiny output buffer must never be overrun.
     ParticleInstance small[4];
-    std::uint32_t m = ps.pack(small, 4);
+    std::uint32_t m = pack_all(ps, small, 4);
     CHECK(m <= 4, "pack respects capacity");
 }
 
@@ -170,8 +182,8 @@ void test_determinism() {
     CHECK(a.alive() == b.alive(), "same seed → same alive count");
     static ParticleInstance ba[ParticleSystem::kMaxParticles];
     static ParticleInstance bb[ParticleSystem::kMaxParticles];
-    std::uint32_t na = a.pack(ba, ParticleSystem::kMaxParticles);
-    std::uint32_t nb = b.pack(bb, ParticleSystem::kMaxParticles);
+    std::uint32_t na = pack_all(a, ba, ParticleSystem::kMaxParticles);
+    std::uint32_t nb = pack_all(b, bb, ParticleSystem::kMaxParticles);
     CHECK(na == nb, "same seed → same pack count");
     CHECK(na > 0 && std::memcmp(ba, bb, na * sizeof(ParticleInstance)) == 0,
           "same seed → byte-identical packs");
@@ -214,7 +226,7 @@ void test_streak() {
         ParticleSystem ps(3u);
         ps.emit_streak(FxKind::SpellTrail, {0, 0, 0}, {8.0f, 0, 0}, 2.0f);
         static ParticleInstance buf[64];
-        std::uint32_t n = ps.pack(buf, 64);
+        std::uint32_t n = pack_all(ps, buf, 64);
         CHECK(n == 4, "8m at 2m spacing lays 4 motes");
         float minX = 1e9f, maxX = -1e9f;
         for (std::uint32_t i = 0; i < n; ++i) {
@@ -241,7 +253,7 @@ void test_streak() {
         const vec3 tint{1.0f, 0.0f, 1.0f}; // magenta
         ps.emit_streak(FxKind::SpellTrail, {0, 0, 0}, {6.0f, 0, 0}, 2.0f, &tint);
         static ParticleInstance buf[64];
-        std::uint32_t n = ps.pack(buf, 64);
+        std::uint32_t n = pack_all(ps, buf, 64);
         CHECK(n >= 1, "tinted streak produced motes");
         bool allMagenta = true;
         for (std::uint32_t i = 0; i < n; ++i)
@@ -249,6 +261,136 @@ void test_streak() {
                 allMagenta = false;
         CHECK(allMagenta, "streak tint applied verbatim");
     }
+}
+
+// ── 8. Blend partition: matter at the tail, back-to-front ──
+void test_blend_partition() {
+    // The table pins the fix for the shipped additive-blood bug: Blood and
+    // Dust are MATTER (alpha-over), the energy kinds stay Energy. A future
+    // row-shuffle that silently flips blood back to additive fails here.
+    CHECK(fx_preset(FxKind::Blood).blend == FxBlend::Matter,
+          "Blood is matter (never additive again)");
+    CHECK(fx_preset(FxKind::Dust).blend == FxBlend::Matter,
+          "Dust is matter");
+    CHECK(fx_preset(FxKind::Spark).blend == FxBlend::Energy,
+          "Spark stays energy");
+    CHECK(fx_preset(FxKind::FireBurst).blend == FxBlend::Energy,
+          "FireBurst stays energy");
+    CHECK(fx_preset(FxKind::SpellTrail).blend == FxBlend::Energy,
+          "SpellTrail stays energy");
+
+    // Mixed pool: tint energy pure red and matter pure green, then the packed
+    // segments must be colour-pure — energy [0, e), matter [e, e+m).
+    ParticleSystem ps(4242u);
+    const vec3 red{1.0f, 0.0f, 0.0f};
+    const vec3 green{0.0f, 1.0f, 0.0f};
+    ps.emit(FxKind::Spark, {1.0f, 0.0f, 0.0f}, &red);
+    // Three blood bursts at growing distance from the camera at the origin —
+    // the matter segment must come back sorted FAR→NEAR (back-to-front).
+    ps.emit(FxKind::Blood, {20.0f, 0.0f, 0.0f}, &green);
+    ps.emit(FxKind::Blood, {5.0f, 0.0f, 0.0f}, &green);
+    ps.emit(FxKind::Blood, {40.0f, 0.0f, 0.0f}, &green);
+    static ParticleInstance buf[ParticleSystem::kMaxParticles];
+    const ParticleSystem::PackCounts n =
+        ps.pack(buf, ParticleSystem::kMaxParticles, {0, 0, 0});
+    CHECK(static_cast<int>(n.energy + n.matter) == ps.alive(),
+          "partitioned pack covers the whole pool");
+    CHECK(n.energy > 0 && n.matter > 0, "both segments populated");
+    for (std::uint32_t i = 0; i < n.energy; ++i)
+        CHECK(buf[i].r == 1.0f && buf[i].g == 0.0f,
+              "energy segment is energy only");
+    float prevD2 = 1e30f;
+    for (std::uint32_t i = n.energy; i < n.energy + n.matter; ++i) {
+        CHECK(buf[i].r == 0.0f && buf[i].g == 1.0f,
+              "matter segment is matter only");
+        const float d2 = buf[i].px * buf[i].px + buf[i].py * buf[i].py
+                         + buf[i].pz * buf[i].pz;
+        CHECK(d2 <= prevD2 + 1e-3f, "matter sorted back-to-front");
+        prevD2 = d2;
+    }
+
+    // Determinism holds across the partition: same seed + same camera ⇒
+    // byte-identical split packs.
+    ParticleSystem a(777u), b(777u);
+    a.emit(FxKind::Blood, {3, 0, 0});
+    b.emit(FxKind::Blood, {3, 0, 0});
+    a.emit(FxKind::Spark, {1, 0, 0});
+    b.emit(FxKind::Spark, {1, 0, 0});
+    static ParticleInstance ba[64], bb[64];
+    const ParticleSystem::PackCounts na = a.pack(ba, 64, {0, 0, 0});
+    const ParticleSystem::PackCounts nb = b.pack(bb, 64, {0, 0, 0});
+    CHECK(na.energy == nb.energy && na.matter == nb.matter,
+          "same seed → same split");
+    CHECK(std::memcmp(ba, bb,
+                      (na.energy + na.matter) * sizeof(ParticleInstance)) == 0,
+          "same seed → byte-identical partitioned packs");
+}
+
+// ── 9. Ground landing hook (Inc C): the floor is lethal, landings report ──
+namespace land_hook {
+int landed = 0;
+float lastY = -1e9f;
+FxKind lastKind = FxKind::Count;
+float flat_ground(void*, float, float) { return 0.0f; }
+void on_land(void*, const Particle& p) {
+    ++landed;
+    lastY = p.pos.y;
+    lastKind = p.kind;
+}
+} // namespace land_hook
+
+void test_ground_landing() {
+    using namespace land_hook;
+    // Blood sprayed just above a flat floor: the downward half of the sphere
+    // lands within a few ticks; a droplet flung UP may honestly age out
+    // mid-arc (life 0.3-0.55 s vs a ~0.7 s round trip), so the law is "many
+    // land, none land below the floor", not "all land". Every landing is
+    // clamped exactly to the contact height and reports its preset row.
+    {
+        ParticleSystem ps(9001u);
+        ps.emit(FxKind::Blood, {0.0f, 0.05f, 0.0f});
+        const int spawned = ps.alive();
+        landed = 0;
+        for (int i = 0; i < 240 && ps.alive() > 0; ++i)
+            ps.tick(1.0f / 120.0f, &flat_ground, nullptr, &on_land, nullptr);
+        CHECK(landed > 0 && landed <= spawned,
+              "blood droplets land on the floor");
+        CHECK(lastY == 0.0f, "landing clamps the particle to the contact point");
+        CHECK(lastKind == FxKind::Blood, "landing reports the preset row");
+        CHECK(ps.alive() == 0, "landed particles are reaped");
+    }
+    // Landing beats aging: spawned at 5 cm the downward half dies on the
+    // floor in a few ticks; WITHOUT hooks (the old law) the same seed keeps
+    // every droplet alive below the floor until age reaps it.
+    {
+        ParticleSystem withGround(7777u), without(7777u);
+        withGround.emit(FxKind::Blood, {0.0f, 0.05f, 0.0f});
+        without.emit(FxKind::Blood, {0.0f, 0.05f, 0.0f});
+        for (int i = 0; i < 30; ++i) {
+            withGround.tick(1.0f / 120.0f, &flat_ground, nullptr, nullptr,
+                            nullptr);
+            without.tick(1.0f / 120.0f);
+        }
+        CHECK(withGround.alive() < without.alive(),
+              "the floor reaps faster than age alone (hookless law unchanged)");
+    }
+    // A rising particle is not a landing: an Ember born AT floor height with
+    // upward bias must survive the ground check (vel.y > 0 gate).
+    {
+        ParticleSystem ps(31u);
+        ps.emit(FxKind::Ember, {0.0f, 0.0f, 0.0f});
+        landed = 0;
+        ps.tick(1.0f / 120.0f, &flat_ground, nullptr, &on_land, nullptr);
+        CHECK(landed == 0, "a rising mote at floor height does not land");
+        CHECK(ps.alive() == 1, "the ember lives on");
+    }
+    // The landMark table pins the law's inputs: blood stamps, dust does not.
+    CHECK(fx_preset(FxKind::Blood).markType == MarkType::Splat,
+          "Blood lands as a splat mark");
+    CHECK(fx_preset(FxKind::Blood).markRadiusM > 0.0f,
+          "Blood mark has a radius");
+    CHECK(fx_preset(FxKind::Dust).markType == MarkType::None,
+          "Dust settles without a stain");
 }
 
 } // namespace
@@ -261,5 +403,7 @@ int main() {
     test_pack();
     test_determinism();
     test_streak();
+    test_blend_partition();
+    test_ground_landing();
     return sm::test::report("particle_sim_test");
 }

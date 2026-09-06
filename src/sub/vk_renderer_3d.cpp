@@ -62,13 +62,18 @@ struct Vtx {
 // materialBase, picked per-fragment from the sampled tile id.
 
 // Push-constant block for the terrain mesh — matches mesh.frag / mesh.vert.
-// 176 bytes (= 11 × vec4), within MoltenVK's ≥256 B limit.
+// 192 bytes (= 12 × vec4), within MoltenVK's ≥256 B limit.
 struct MeshPush {
     float mvp[16];
     float sunDir[4];
     float sunColor[4];
     float ambient[4];
     float lightMvp[16];
+    // Stain-canvas validity (Inc C): xy = camera world XZ (the canvas centre),
+    // z = valid radius (m, Chebyshev — the canvas is square), w = enable.
+    // Texels beyond the radius hold marks from the toroidal far side and must
+    // read as clean ground; w=0 (the harness) makes the whole term inert.
+    float stain[4];
 };
 
 // Push-constant block for the procedural sky — matches sky.frag.
@@ -87,11 +92,16 @@ struct SkyPush {
     float p3[4];      // seasonal day-sky tint multiplier rgb, w = storm flash
 };
 
-// Push-constant block for the precipitation overlay — matches precip.frag.
-// 32 bytes (= 2 × vec4). The atmosphere submodule's SECOND fullscreen pass.
-struct PrecipPush {
-    float p0[4]; // resX, resY, time(sec), precip01
-    float p1[4]; // kind (0 rain, 1 snow, 2 hail), tilt, flash01, reserved
+// Push-constant block for WORLD-SPACE precipitation — matches rain.vert
+// (Inc D, particles-unified-matter). 128 bytes (= 8 × vec4). Successor of the
+// screen-space precip overlay: drops are real world points computed in the
+// vertex stage from gl_InstanceIndex + time, depth-tested against the world.
+struct RainPush {
+    float mvp[16];
+    float camPos[4];   // xyz camera world pos, w = time (s)
+    float camRight[4]; // xyz camera right,     w = precip01
+    float p0[4];       // kind, windX, windZ, storm flash01
+    float p1[4];       // water plane Y (m), sun lum, ambient lum, reserved
 };
 
 // Push-constant block for the transparent water plane — matches water.vert/frag.
@@ -180,10 +190,33 @@ struct ParticlePush {
     float camUp[4];
 };
 
+// Push-constant block for the MATTER particle pass — matches
+// particle_matter.vert/frag. 192 bytes (= 12 × vec4), within MoltenVK's
+// ≥256 B limit: the energy block plus what a lit surface needs (sun, ambient,
+// the crisp near shadow level; the far level rides the light SSBO).
+struct ParticleMatterPush {
+    float mvp[16];
+    float camRight[4];
+    float camUp[4];
+    float sunColor[4];
+    float ambient[4];
+    float lightMvp[16];
+};
+
 // The renderer's per-frame particle instance layout is exactly the sim's packed
 // record; pin them so a change to one can't silently desync the vertex attrs.
 static_assert(sizeof(ParticleInstance) == 32,
               "ParticleInstance must match the particle.vert attribute layout");
+static_assert(sizeof(Renderer3DVk::StampInstance) == 24,
+              "StampInstance must match the stamp.vert attribute layout");
+// stamp.vert bakes the world→canvas mapping as literals (w + 1536, span 1024);
+// pin the C++ side so a window resize can't silently shear the canvas.
+static_assert(kFullSize / 2 == 1536,
+              "stamp.vert kHalfWindowTiles must match kFullSize/2");
+static_assert(Renderer3DVk::kCanvasTiles == 1024
+                  && kCellSize == 1024,
+              "canvas span must equal the seam recentre step (kCellSize) so a "
+              "crossing lands marks on the same toroidal texels");
 static_assert(Renderer3DVk::kMaxParticleInstances
                   == static_cast<std::uint32_t>(ParticleSystem::kMaxParticles),
               "renderer particle ceiling must match the sim pool size");
@@ -533,18 +566,23 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
     // when the images are born (flush_uploads). A crossing then swaps by
     // flipping matFront_ instead of rewriting a set an in-flight frame reads.
     {
-        VkDescriptorSetLayoutBinding b{};
-        b.binding = 0;
-        b.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        b.descriptorCount = 1;
-        b.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        // binding 0 = tile material id grid; binding 1 = the stain canvas
+        // (Inc C) — it rides the same set because every reader of one reads
+        // the other (the terrain fragment), so marks cost zero extra binds.
+        VkDescriptorSetLayoutBinding b[2]{};
+        b[0].binding = 0;
+        b[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        b[0].descriptorCount = 1;
+        b[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        b[1] = b[0];
+        b[1].binding = 1;
         VkDescriptorSetLayoutCreateInfo dlci{};
         dlci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        dlci.bindingCount = 1;
-        dlci.pBindings = &b;
+        dlci.bindingCount = 2;
+        dlci.pBindings = b;
         vkCreateDescriptorSetLayout(dev.device, &dlci, nullptr, &materialSetLayout_);
 
-        VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2};
+        VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4};
         VkDescriptorPoolCreateInfo dpci{};
         dpci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         dpci.maxSets = 2;
@@ -647,18 +685,21 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         std::fprintf(stderr, "[Renderer3DVk] sky pipeline FAILED\n");
     }
 
-    // A2b: Precipitation overlay (fullscreen.vert + precip.frag) — the
-    // atmosphere submodule's second pass: drawn LAST in the main pass (the
-    // weather falls between the camera and the world), depth off, alpha
-    // over. Skipped entirely on a dry day, so it is provably inert then.
-    spv_path(vpath, sizeof vpath, "fullscreen.vert");
-    spv_path(fpath, sizeof fpath, "precip.frag");
-    if (!precipPipe_.create_mesh(dev, mainPass, vpath, fpath,
-                                 sizeof(PrecipPush), 0, nullptr, 0,
-                                 /*instanced=*/false, /*depthTest=*/false,
-                                 /*depthWrite=*/false, /*blend=*/true,
-                                 /*cullBack=*/false)) {
-        std::fprintf(stderr, "[Renderer3DVk] precip pipeline FAILED\n");
+    // A2b: WORLD precipitation (rain.vert + rain.frag, Inc D) — the successor
+    // of the screen-space precip sheet (buried 2026-09-06 by owner verdict;
+    // the harness's GPU_SMOKE_PRECIP mode mirrors THIS pass now). No vertex
+    // or instance buffers: the vertex stage computes every drop from
+    // gl_InstanceIndex + time in a cylinder around the camera. Depth test ON
+    // (walls and hills occlude real drops), write off, alpha-over. Skipped
+    // entirely on a dry day, so it is provably inert then.
+    spv_path(vpath, sizeof vpath, "rain.vert");
+    spv_path(fpath, sizeof fpath, "rain.frag");
+    if (!rainPipe_.create_mesh(dev, mainPass, vpath, fpath,
+                               sizeof(RainPush), 0, nullptr, 0,
+                               /*instanced=*/false, /*depthTest=*/true,
+                               /*depthWrite=*/false, /*blend=*/true,
+                               /*cullBack=*/false)) {
+        std::fprintf(stderr, "[Renderer3DVk] rain pipeline FAILED\n");
     }
 
     // A3: Water pipeline (water.vert + water.frag, stride=0, depth test, no depth write, blend).
@@ -698,6 +739,58 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
                                        /*descriptorSetLayout=*/VK_NULL_HANDLE,
                                        /*additive=*/true)) {
             std::fprintf(stderr, "[Renderer3DVk] particle pipeline FAILED\n");
+        }
+        // FX: MATTER particle pipeline (particle_matter.vert/frag) — same
+        // instance layout and depth flags over the SAME buffer, but alpha-over
+        // (additive=false: blood darkens, never glows) and LIT: binds the
+        // shared litSet (shadow + point-light SSBO) like water/bodies do.
+        spv_path(vpath, sizeof vpath, "particle_matter.vert");
+        spv_path(fpath, sizeof fpath, "particle_matter.frag");
+        if (!particleMatterPipe_.create_mesh(
+                dev, mainPass, vpath, fpath, sizeof(ParticleMatterPush),
+                sizeof(ParticleInstance), pAttrs, 3, /*instanced=*/true,
+                /*depthTest=*/true, /*depthWrite=*/false,
+                /*blend=*/true, /*cullBack=*/false, shadowSetLayout_,
+                /*additive=*/false)) {
+            std::fprintf(stderr,
+                         "[Renderer3DVk] matter particle pipeline FAILED\n");
+        }
+    }
+
+    // Inc C: stain canvas + stamp pipeline (stamp.vert/frag). The canvas is
+    // its own tiny render pass; the pipeline blends colour alpha-over with
+    // ACCUMULATING alpha — the one place accumulateAlpha is true (the
+    // gigahrush writeSurfacePixel law in fixed function). No depth, no cull.
+    if (!stainCanvas_.init(dev, kCanvasTiles * kStainPxPerTile)) {
+        std::fprintf(stderr, "[Renderer3DVk] stain canvas FAILED\n");
+    } else {
+        std::vector<StampInstance> dummyStamps(kMaxStamps);
+        if (!stampInstBuf_.create_device_local(
+                dev, dummyStamps.data(),
+                dummyStamps.size() * sizeof(StampInstance),
+                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
+                    | VK_BUFFER_USAGE_TRANSFER_DST_BIT)) {
+            std::fprintf(stderr, "[Renderer3DVk] stamp buffer FAILED\n");
+        }
+        spv_path(vpath, sizeof vpath, "stamp.vert");
+        spv_path(fpath, sizeof fpath, "stamp.frag");
+        VkVertexInputAttributeDescription sAttrs[3]{};
+        sAttrs[0].location = 0; sAttrs[0].binding = 0;
+        sAttrs[0].format = VK_FORMAT_R32G32B32A32_SFLOAT; sAttrs[0].offset = 0;
+        sAttrs[1].location = 1; sAttrs[1].binding = 0;
+        sAttrs[1].format = VK_FORMAT_R8G8B8A8_UNORM;      sAttrs[1].offset = 16;
+        sAttrs[2].location = 2; sAttrs[2].binding = 0;
+        sAttrs[2].format = VK_FORMAT_R32_SFLOAT;          sAttrs[2].offset = 20;
+        const VkDescriptorSetLayout* noSets = nullptr;
+        if (!stampPipe_.create_mesh(dev, stainCanvas_.renderPass, vpath, fpath,
+                                    /*pushConstantBytes=*/0,
+                                    sizeof(StampInstance), sAttrs, 3,
+                                    /*instanced=*/true, /*depthTest=*/false,
+                                    /*depthWrite=*/false, /*blend=*/true,
+                                    /*cullBack=*/false, noSets, 0,
+                                    /*additive=*/false,
+                                    /*accumulateAlpha=*/true)) {
+            std::fprintf(stderr, "[Renderer3DVk] stamp pipeline FAILED\n");
         }
     }
 
@@ -852,7 +945,7 @@ void Renderer3DVk::destroy(const gpu::VulkanDevice& dev) {
     terrainVtx_.destroy(dev);
     terrainPipe_.destroy(dev);
     skyPipe_.destroy(dev);
-    precipPipe_.destroy(dev);
+    rainPipe_.destroy(dev);
     skyStarsBuf_.destroy(dev);
     if (skyPool_ != VK_NULL_HANDLE) {
         vkDestroyDescriptorPool(dev.device, skyPool_, nullptr);
@@ -885,8 +978,14 @@ void Renderer3DVk::destroy(const gpu::VulkanDevice& dev) {
     shadowCylPipe_.destroy(dev);
     shadowBodyPipe_.destroy(dev);
     particlePipe_.destroy(dev);
+    particleMatterPipe_.destroy(dev);
     particleInstBuf_.destroy(dev);
-    particleCount_ = 0;
+    particleEnergyCount_ = 0;
+    particleMatterCount_ = 0;
+    stampPipe_.destroy(dev);
+    stampInstBuf_.destroy(dev);
+    stainCanvas_.destroy(dev);
+    canvasClearAll_ = true;
     bank_.destroy(dev);
     shadow_.destroy(dev);
     shadowFar_.destroy(dev);
@@ -1044,13 +1143,20 @@ void Renderer3DVk::prepare_frame(VkCommandBuffer cmd, ecs::World* ecs,
 }
 
 void Renderer3DVk::stage_particles(VkCommandBuffer cmd, const void* data,
-                                   std::uint32_t count) {
-    particleCount_ = std::min(count, kMaxParticleInstances);
-    if (particleCount_ == 0 || data == nullptr) return;
+                                   std::uint32_t energyCount,
+                                   std::uint32_t matterCount) {
+    // One contiguous upload carries both segments (energy head, matter tail —
+    // exactly ParticleSystem::pack()'s layout). Clamp the tail first: the
+    // matter segment sits at the end, so a clamp cannot shift the energy range.
+    particleEnergyCount_ = std::min(energyCount, kMaxParticleInstances);
+    particleMatterCount_ = std::min(matterCount,
+                                    kMaxParticleInstances - particleEnergyCount_);
+    const std::uint32_t total = particleEnergyCount_ + particleMatterCount_;
+    if (total == 0 || data == nullptr) return;
     // Same per-frame path as NPC/creature instances: overwrite the device-local
     // buffer in place, then barrier TRANSFER_WRITE → VERTEX_ATTRIBUTE_READ.
     vkCmdUpdateBuffer(cmd, particleInstBuf_.buffer, 0,
-                      VkDeviceSize(particleCount_) * sizeof(ParticleInstance),
+                      VkDeviceSize(total) * sizeof(ParticleInstance),
                       data);
     VkMemoryBarrier mb{};
     mb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
@@ -1059,6 +1165,97 @@ void Renderer3DVk::stage_particles(VkCommandBuffer cmd, const void* data,
     vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
                          VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
                          0, 1, &mb, 0, nullptr, 0, nullptr);
+}
+
+void Renderer3DVk::stage_stamps(VkCommandBuffer cmd, const StampInstance* cmds,
+                                std::uint32_t count, float camWx, float camWz) {
+    if (stampPipe_.pipeline == VK_NULL_HANDLE) return; // canvas never born
+    count = std::min(count, kMaxStamps);
+
+    // The camera's tile in window space — the same +kFullSize/2 offset
+    // stamp.vert and mesh.frag bake into their canvas mapping.
+    const int camTx =
+        static_cast<int>(std::floor(camWx)) + kFullSize / 2;
+    const int camTz =
+        static_cast<int>(std::floor(camWz)) + kFullSize / 2;
+    const int half = static_cast<int>(kCanvasTiles) / 2;
+    const int dx = camTx - canvasCamTileX_;
+    const int dz = camTz - canvasCamTileZ_;
+    // A move of half a canvas or more per frame (subworld enter, teleport,
+    // seam recentre's ±kCellSize which is exactly the toroidal period and
+    // needs NO clearing — but arrives merged with real movement, so treat any
+    // huge delta conservatively) invalidates everything.
+    const bool fullClear = canvasClearAll_
+                           || std::abs(dx) >= half || std::abs(dz) >= half;
+    const bool anyClear = fullClear || dx != 0 || dz != 0;
+    canvasCamTileX_ = camTx;
+    canvasCamTileZ_ = camTz;
+    canvasClearAll_ = false;
+    if (count == 0 && !anyClear) return; // nothing landed, camera still
+
+    // Upload the frame's commands BEFORE the pass opens (transfer is illegal
+    // inside a render pass) — same update+barrier path as particle instances.
+    if (count > 0) {
+        vkCmdUpdateBuffer(cmd, stampInstBuf_.buffer, 0,
+                          VkDeviceSize(count) * sizeof(StampInstance), cmds);
+        VkMemoryBarrier mb{};
+        mb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        mb.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        mb.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
+                             0, 1, &mb, 0, nullptr, 0, nullptr);
+    }
+
+    stainCanvas_.begin(cmd);
+
+    if (fullClear) {
+        stainCanvas_.clear_all(cmd);
+    } else {
+        // Strips entering the sliding window hold stale marks from the
+        // toroidal far side — clear them. An X strip spans the full canvas
+        // height, a Z strip the full width (the shared corner clears twice,
+        // harmlessly). Tile range → texels, split at the wrap seam.
+        const int px = static_cast<int>(kStainPxPerTile);
+        const int span = static_cast<int>(kCanvasTiles * kStainPxPerTile);
+        auto wrap_px = [&](int tile) {
+            const int m = static_cast<int>(kCanvasTiles);
+            return (((tile % m) + m) % m) * px;
+        };
+        auto clear_span = [&](bool xAxis, int t0, int nTiles) {
+            if (nTiles <= 0) return;
+            int p0 = wrap_px(t0);
+            int w = nTiles * px;
+            const int first = std::min(w, span - p0);
+            if (xAxis) {
+                stainCanvas_.clear_rect(cmd, p0, 0, std::uint32_t(first),
+                                        std::uint32_t(span));
+                if (w > first)
+                    stainCanvas_.clear_rect(cmd, 0, 0, std::uint32_t(w - first),
+                                            std::uint32_t(span));
+            } else {
+                stainCanvas_.clear_rect(cmd, 0, p0, std::uint32_t(span),
+                                        std::uint32_t(first));
+                if (w > first)
+                    stainCanvas_.clear_rect(cmd, 0, 0, std::uint32_t(span),
+                                            std::uint32_t(w - first));
+            }
+        };
+        if (dx > 0) clear_span(true, camTx + half - dx, dx);
+        if (dx < 0) clear_span(true, camTx - half, -dx);
+        if (dz > 0) clear_span(false, camTz + half - dz, dz);
+        if (dz < 0) clear_span(false, camTz - half, -dz);
+    }
+
+    if (count > 0) {
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          stampPipe_.pipeline);
+        VkDeviceSize off = 0;
+        vkCmdBindVertexBuffers(cmd, 0, 1, &stampInstBuf_.buffer, &off);
+        vkCmdDraw(cmd, 6, count, 0, 0);
+    }
+
+    stainCanvas_.end(cmd);
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -2159,8 +2356,12 @@ void Renderer3DVk::flush_uploads(VkCommandBuffer cmd) {
         // only the front set). From here on a ping-pong swap flips matFront_
         // and never touches a descriptor again.
         VkDescriptorImageInfo dii[2]{};
-        VkWriteDescriptorSet w[2]{};
+        VkDescriptorImageInfo stainDii{};
+        VkWriteDescriptorSet w[4]{};
         const gpu::VulkanTexture* tex[2] = {&materialTex_, &materialTexAlt_};
+        stainDii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        stainDii.imageView = stainCanvas_.view;
+        stainDii.sampler = stainCanvas_.sampler;
         for (int i = 0; i < 2; ++i) {
             dii[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             dii[i].imageView = tex[i]->view;
@@ -2171,8 +2372,13 @@ void Renderer3DVk::flush_uploads(VkCommandBuffer cmd) {
             w[i].descriptorCount = 1;
             w[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             w[i].pImageInfo = &dii[i];
+            // binding 1 = the stain canvas — SAME image behind both ping-pong
+            // sets (the canvas needs no ping-pong: it is seam-invariant).
+            w[2 + i] = w[i];
+            w[2 + i].dstBinding = 1;
+            w[2 + i].pImageInfo = &stainDii;
         }
-        vkUpdateDescriptorSets(dev.device, 2, w, 0, nullptr);
+        vkUpdateDescriptorSets(dev.device, 4, w, 0, nullptr);
         matFront_ = 0;
         const VkDeviceSize off =
             arena_push(matScratch_.data(), VkDeviceSize(matScratch_.size()));
@@ -2672,6 +2878,13 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
     // it does not "pop" when the seamless window recentres at a seam crossing.
     push.sunDir[3]   = groundOriginX_;
     push.sunColor[3] = groundOriginY_;
+    // Stain canvas: centred on the CAMERA (it follows the camera, not the
+    // player). Valid ring 500 tiles — half the canvas minus a margin for the
+    // strips cleared this frame.
+    push.stain[0] = cam.pos.x;
+    push.stain[1] = cam.pos.z;
+    push.stain[2] = 500.0f;
+    push.stain[3] = (stampPipe_.pipeline != VK_NULL_HANDLE) ? 1.0f : 0.0f;
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       terrainPipe_.pipeline);
@@ -2800,12 +3013,41 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
         vkCmdDraw(cmd, 6, bodyCount_, 0, 0);
     }
 
-    // ── FX: Additive particles (after creatures, before water). Emissive: no
-    //    descriptor set, no shadow. depth-test on / write off so terrain and
-    //    creatures occlude them but they never occlude each other; additive
-    //    blend is order-independent so no sort. Skips itself when the pool is
-    //    empty (the common case ⇒ zero cost). ──
-    if (particleCount_ > 0) {
+    // ── FX: particles (after creatures, before water), two ranged draws over
+    //    the one staged buffer. MATTER first (alpha-over + lit — blood, dust:
+    //    its segment is pre-sorted back-to-front by the sim), ENERGY on top
+    //    (additive emissive — glow adds over blood, order-independent). Both
+    //    depth-test on / write off so terrain and creatures occlude them.
+    //    Skip themselves when their range is empty (the common case ⇒ zero
+    //    cost). ──
+    if (particleMatterCount_ > 0) {
+        ParticleMatterPush mp{};
+        std::memcpy(mp.mvp, mvp.m, sizeof(mp.mvp));
+        mp.camRight[0] = rgt.x; mp.camRight[1] = rgt.y; mp.camRight[2] = rgt.z;
+        mp.camUp[0] = upv.x;    mp.camUp[1] = upv.y;    mp.camUp[2] = upv.z;
+        mp.sunColor[0] = sun.sunColor.x;
+        mp.sunColor[1] = sun.sunColor.y;
+        mp.sunColor[2] = sun.sunColor.z;
+        mp.ambient[0] = sun.ambientColor.x;
+        mp.ambient[1] = sun.ambientColor.y;
+        mp.ambient[2] = sun.ambientColor.z;
+        std::memcpy(mp.lightMvp, lightMvp.m, sizeof(mp.lightMvp));
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          particleMatterPipe_.pipeline);
+        // set 0 = shadow sampler + point-light SSBO — matter is a lit surface.
+        if (litSet != VK_NULL_HANDLE)
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    particleMatterPipe_.layout, 0, 1, &litSet,
+                                    0, nullptr);
+        VkDeviceSize mio = 0;
+        vkCmdBindVertexBuffers(cmd, 0, 1, &particleInstBuf_.buffer, &mio);
+        vkCmdPushConstants(cmd, particleMatterPipe_.layout,
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0, sizeof(mp), &mp);
+        vkCmdDraw(cmd, 6, particleMatterCount_, 0,
+                  /*firstInstance=*/particleEnergyCount_);
+    }
+    if (particleEnergyCount_ > 0) {
         ParticlePush pp{};
         std::memcpy(pp.mvp, mvp.m, sizeof(pp.mvp));
         pp.camRight[0] = rgt.x; pp.camRight[1] = rgt.y; pp.camRight[2] = rgt.z;
@@ -2817,7 +3059,7 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
         vkCmdPushConstants(cmd, particlePipe_.layout,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(pp), &pp);
-        vkCmdDraw(cmd, 6, particleCount_, 0, 0);
+        vkCmdDraw(cmd, 6, particleEnergyCount_, 0, 0);
     }
 
     // ── A3: Water (transparent quad, drawn last, depth test but no write) ──
@@ -2850,27 +3092,41 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
         vkCmdDraw(cmd, 6, 1, 0, 0);
     }
 
-    // ── A2b: Precipitation (fullscreen overlay, LAST — the weather falls
-    // between the camera and everything above). Skipped on a dry day: the
-    // frame is then byte-identical to a build without this pass at all —
-    // the atmosphere submodule's isolation, provable by capture diff.
+    // ── A2b: WORLD precipitation (Inc D, LAST) — real drops in a cylinder
+    // around the camera, computed entirely in the vertex stage and depth-
+    // tested against the world: a wall between you and the rain keeps you
+    // dry. Instance count scales with intensity — a drizzle is a few hundred
+    // drops, a storm the full complement. Skipped on a dry day: the frame is
+    // then byte-identical to a build without this pass at all.
     if (skyCtx.precip01 > 0.001f) {
-        PrecipPush pp{};
-        pp.p0[0] = static_cast<float>(ext.width);
-        pp.p0[1] = static_cast<float>(ext.height);
-        pp.p0[2] = elapsed;
-        pp.p0[3] = skyCtx.precip01;
-        pp.p1[0] = static_cast<float>(skyCtx.precipKind);
-        // Streak tilt: the cloud wind projected onto the camera's right axis
-        // — the same wind that drifts the clouds drives the rain sideways.
-        pp.p1[1] = (rgt.x * skyCtx.windX + rgt.z * skyCtx.windZ) * 30.0f;
-        pp.p1[2] = stormFlash;
+        constexpr std::uint32_t kMaxRainDrops = 4096;
+        const std::uint32_t drops = std::max(
+            64u, std::uint32_t(float(kMaxRainDrops) * skyCtx.precip01));
+        RainPush rp{};
+        std::memcpy(rp.mvp, mvp.m, sizeof(rp.mvp));
+        rp.camPos[0] = cam.pos.x;
+        rp.camPos[1] = cam.pos.y;
+        rp.camPos[2] = cam.pos.z;
+        rp.camPos[3] = elapsed;
+        rp.camRight[0] = rgt.x;
+        rp.camRight[1] = rgt.y;
+        rp.camRight[2] = rgt.z;
+        rp.camRight[3] = skyCtx.precip01;
+        rp.p0[0] = static_cast<float>(skyCtx.precipKind);
+        rp.p0[1] = skyCtx.windX;
+        rp.p0[2] = skyCtx.windZ;
+        rp.p0[3] = stormFlash;
+        rp.p1[0] = waterLevel * kHeightScaleM;
+        // Sky-light luminance lanes: night rain is dark, a flash silvers it.
+        rp.p1[1] = (sun.sunColor.x + sun.sunColor.y + sun.sunColor.z) / 3.0f;
+        rp.p1[2] = (sun.ambientColor.x + sun.ambientColor.y
+                    + sun.ambientColor.z) / 3.0f;
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          precipPipe_.pipeline);
-        vkCmdPushConstants(cmd, precipPipe_.layout,
+                          rainPipe_.pipeline);
+        vkCmdPushConstants(cmd, rainPipe_.layout,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(pp), &pp);
-        vkCmdDraw(cmd, 3, 1, 0, 0);
+                           0, sizeof(rp), &rp);
+        vkCmdDraw(cmd, 6, drops, 0, 0);
     }
 }
 

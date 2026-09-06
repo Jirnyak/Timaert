@@ -515,6 +515,19 @@ private:
     // Scratch buffer for packing live particles → GPU instances each frame.
     // Sized once to the pool ceiling; reused (no per-frame allocation).
     std::vector<ParticleInstance> particleScratch_;
+    // Stain-canvas stamp commands gathered this frame (particle landings,
+    // death pools — the gigahrush landMark law) and handed to
+    // Renderer3DVk::stage_stamps in prepare_frame. Unbounded per-push; when it
+    // exceeds the renderer's per-frame cap the FARTHEST from the camera are
+    // dropped at stage time (a distant battle loses droplet marks before the
+    // fight at your feet loses anything).
+    std::vector<Renderer3DVk::StampInstance> stampRing_;
+    std::uint32_t stampSeq_ = 0;   // per-mark shape-variation counter (seed)
+    Rng stampRng_{0x51A17u};       // cosmetic jitter of the death-pool fan
+    // Per-flame emit_stream accumulators (Inc B: torch embers + haze), keyed
+    // by index into propLights_ — a composite rebuild resets both together.
+    std::vector<float> emberAccum_;
+    std::vector<float> smokeAccum_;
     // Mass-battle state (sub/movement.h). One SoA snapshot plus its two grids,
     // allocated once and reused every tick — the combat pass never allocates.
     // The ECS stays the authority for damage/death/loot; this is only "where do
@@ -806,6 +819,14 @@ private:
     // Terrain hook for the battle pass (sub/movement.h stays Vulkan-free, so it
     // reaches the CPU heightfield through a function pointer, not an include).
     static float ground_height_callback(void* user, float x, float y);
+    // Particle-sim ground hooks (same fn-pointer idiom, WORLD metres in): the
+    // floor kills a falling particle, and a landing with a landMark preset row
+    // becomes a stain-canvas stamp command.
+    static float particle_ground_callback(void* user, float wx, float wz);
+    static void particle_land_callback(void* user, const Particle& p);
+    // Append one stain-canvas stamp command (world metres; colour linear 0-1).
+    void push_stamp(float wx, float wz, float radiusM, float r, float g,
+                    float b, std::uint8_t intensity, MarkType type);
     // Solidity hooks (sub/collide.h through the same fn-pointer idiom): the
     // battle pass and wander/flee AI ask "may a body stand here", spell bolts
     // ask "is this point inside masonry".

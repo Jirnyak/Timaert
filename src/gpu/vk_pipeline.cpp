@@ -188,7 +188,7 @@ namespace gpu
         bool instanced, bool depthTest, bool depthWrite, bool blend,
         bool cullBack,
         const VkDescriptorSetLayout* setLayouts, std::uint32_t setLayoutCount,
-        bool additive)
+        bool additive, bool accumulateAlpha)
     {
         std::vector<char> vsrc, fsrc;
         if (!read_file(vertSpvPath, vsrc)) return false;
@@ -259,7 +259,10 @@ namespace gpu
                                            : VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
         cba.colorBlendOp = VK_BLEND_OP_ADD;
         cba.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-        cba.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+        // Stain-canvas accumulation law: alpha ADDS (ONE/ONE, UNORM saturates)
+        // so repeated marks deepen coverage. ZERO (replace) everywhere else.
+        cba.dstAlphaBlendFactor = accumulateAlpha ? VK_BLEND_FACTOR_ONE
+                                                  : VK_BLEND_FACTOR_ZERO;
         cba.alphaBlendOp = VK_BLEND_OP_ADD;
 
         VkPipelineColorBlendStateCreateInfo cb{};

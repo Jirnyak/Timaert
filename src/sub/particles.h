@@ -13,11 +13,17 @@
 // spread. Adding an effect = adding a row, never touching the sim or renderer.
 //
 // Rendering: ParticleSystem::pack() flattens the live pool into ParticleInstance
-// records (world position + size + premultiplied-ish colour + alpha) that the
-// renderer uploads to an instanced, ADDITIVE-blended billboard pass
-// (shaders/particle.vert|frag). Additive is commutative ⇒ order-independent ⇒
-// the pool needs no depth sort. The renderer knows nothing about FxKind or the
-// sim; it only draws instances.
+// records (world position + size + colour + alpha) that the renderer uploads as
+// ONE buffer feeding TWO instanced billboard passes, split by the preset's
+// blend class (proposals/particles-unified-matter.md):
+//   ENERGY (additive, shaders/particle.vert|frag) — light that adds: magic,
+//     fire, sparks. Additive is commutative ⇒ order-independent ⇒ no sort.
+//   MATTER (alpha-over, lit, shaders/particle_matter.vert|frag) — stuff that
+//     occludes and darkens: blood, dust, smoke. Alpha-over is NOT commutative,
+//     so pack() sorts the matter segment back-to-front from the camera.
+// pack() lays energy at the head of the buffer and matter right after it; the
+// renderer draws each segment with its own pipeline via firstInstance. The
+// renderer still knows nothing about FxKind; it only draws two ranges.
 #pragma once
 
 #include <cstdint>
@@ -38,7 +44,28 @@ enum class FxKind : std::uint8_t {
     Blood,         // dark-red spray on a melee/projectile hit
     Dust,          // brown-grey puff (footfall, corpse fall) — gravity-bound
     Ember,         // slow warm rising mote from a flame (torch/lantern ambient)
+    Smoke,         // grey rising wisp (torch haze, explosion aftersmoke) — matter
     Count
+};
+
+// The world's two classes of visible stuff. ENERGY emits light (additive,
+// emissive, unlit); MATTER occludes it (alpha-over, lit by sun/ambient/points
+// like every other surface). One column in the preset table decides which
+// pipeline a burst rides — adding smoke/debris later is a row, not code.
+enum class FxBlend : std::uint8_t {
+    Energy = 0, // additive: magic, fire, sparks — can only ADD light
+    Matter,     // alpha-over + lit: blood, dust, smoke — darkens what's behind
+};
+
+// What a particle leaves on the ground when it lands (the gigahrush landMark
+// law): the stain-canvas stamp shape. Numeric values are the contract with
+// shaders/stamp.frag's shape switch — append only.
+enum class MarkType : std::uint8_t {
+    None = 0, // lands silently (dust, smoke — the reference stamps neither)
+    Splat,    // organic fluid splatter with tendrils (blood droplets)
+    Pool,     // large irregular death pool
+    Drip,     // elongated gravity-pulled drip (wounded trail)
+    Scorch,   // charred radial burn (fire / explosion)
 };
 
 // One preset row: everything a burst needs, in world-space metres / seconds.
@@ -53,6 +80,13 @@ struct FxPreset {
     float drag;                       // per-second velocity damping (0 = none)
     float r, g, b;                    // base linear colour (tint may override)
     float spread;                     // 0=hemisphere up, 1=full sphere
+    FxBlend blend;                    // Energy (additive) or Matter (alpha-over)
+    // landMark: what a landing particle stamps on the stain canvas (None =
+    // nothing; the particle still dies at the ground). Mark colour = the
+    // particle's own colour; radius in metres; intensity = max alpha 0-255.
+    MarkType markType;
+    float markRadiusM;
+    std::uint8_t markIntensity;
 };
 
 // GPU-facing per-particle instance. 32 bytes — matches the instanced attribute
@@ -76,6 +110,8 @@ struct Particle {
     float drag;     // velocity damping (per s)
     float sizeStart, sizeEnd;
     float r, g, b;
+    FxBlend blend;  // copied from the preset at spawn (pack partitions on it)
+    FxKind kind;    // preset row — the landing hook reads its landMark columns
 };
 
 class ParticleSystem {
@@ -111,21 +147,48 @@ public:
     void emit_streak(FxKind kind, vec3 a, vec3 b, float spacingM,
                      const vec3* tint = nullptr, float scale = 1.0f);
 
+    // Ground hooks for tick() — the sim stays Vulkan-free and pure, so the
+    // world's floor comes in as a function (the movement.h hook pattern):
+    //   GroundFn — height of the carrying surface (m) under world (x, z);
+    //   LandFn   — called when a particle touches that surface (its pos is
+    //              clamped to the contact point). The engine turns a landing
+    //              into a stain-canvas stamp command when the particle's
+    //              preset row has a landMark (the gigahrush law: gravity
+    //              landing kills the particle; the mark is its remains).
+    using GroundFn = float (*)(void* user, float wx, float wz);
+    using LandFn = void (*)(void* user, const Particle& p);
+
     // Advance every live particle by dt (integrate, fade, reap dead via
-    // swap-remove). Pure — no allocation, no Vulkan.
-    void tick(float dt);
+    // swap-remove). Pure — no allocation, no Vulkan. With a GroundFn the
+    // floor becomes lethal: a particle at or below ground height dies there
+    // (and reports to onLand); without one, behaviour is exactly the old law
+    // (age-only reaping) — every existing caller and test is untouched.
+    void tick(float dt, GroundFn ground = nullptr, void* groundUser = nullptr,
+              LandFn onLand = nullptr, void* landUser = nullptr);
+
+    // How pack() split the buffer: energy instances occupy [0, energy), matter
+    // occupies [energy, energy + matter). The renderer draws each range with
+    // its own pipeline via firstInstance; total upload = energy + matter.
+    struct PackCounts {
+        std::uint32_t energy = 0;
+        std::uint32_t matter = 0;
+    };
 
     // Flatten live particles into `out` (caller supplies a buffer of at least
-    // capacity slots). Returns the count written (<= min(alive, capacity)).
-    // Colour is pre-faded (alpha ramps in over the first 15% of life, out over
-    // the tail) so the additive shader can be a trivial rgb*alpha.
-    std::uint32_t pack(ParticleInstance* out, std::uint32_t capacity) const;
+    // capacity slots), partitioned by blend class: energy first (pool order —
+    // additive needs no sort), then matter sorted BACK-TO-FRONT from `camPos`
+    // (alpha-over is order-dependent; ties break on pool index so equal-seed
+    // systems stay byte-identical). Colour is pre-faded (alpha ramps in over
+    // the first 15% of life, out over the tail) so both shaders stay trivial.
+    PackCounts pack(ParticleInstance* out, std::uint32_t capacity,
+                    vec3 camPos) const;
 
     int alive() const { return count_; }
     void clear() { count_ = 0; }
 
 private:
-    void spawn_one(const FxPreset& fx, vec3 p, vec3 col, float scale);
+    void spawn_one(FxKind kind, const FxPreset& fx, vec3 p, vec3 col,
+                   float scale);
 
     Particle pool_[kMaxParticles];
     int count_ = 0;

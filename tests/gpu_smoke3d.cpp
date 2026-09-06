@@ -98,6 +98,11 @@ namespace
         float sunColor[4]; // rgb = sun colour
         float ambient[4];  // rgb = ambient (sky / moon)
         float lightMvp[16];
+        // Stain-canvas validity (mesh.frag pc.stain). Zero-init everywhere in
+        // the harness: w=0 disables the term, and binding 1 below is a 1x1
+        // transparent dummy — the shared shader stays byte-identical to
+        // shipping while the harness scene has no canvas.
+        float stain[4];
     };
 
     struct ShadowPush
@@ -165,11 +170,15 @@ namespace
         float p3[4];      // seasonal day-sky tint multiplier rgb, w = flash
     };
 
-    // Mirrors the shipping renderer's PrecipPush (precip.frag).
-    struct PrecipPush
+    // Mirrors the shipping renderer's RainPush (rain.vert/frag — WORLD
+    // precipitation, Inc D; the screen-space precip overlay is buried).
+    struct RainPush
     {
-        float p0[4]; // resX, resY, time(sec), precip01
-        float p1[4]; // kind, tilt, flash01, reserved
+        float mvp[16];
+        float camPos[4];   // xyz camera world pos, w = time (s)
+        float camRight[4]; // xyz camera right,     w = precip01
+        float p0[4];       // kind, windX, windZ, storm flash01
+        float p1[4];       // water plane Y (m), sun lum, ambient lum
     };
 
     // ── FX additive particles (GPU_SMOKE_FX) — mirrors the shipping renderer's
@@ -183,6 +192,18 @@ namespace
         float mvp[16];
         float camRight[4];
         float camUp[4];
+    };
+    // Matches the shipping ParticleMatterPush (particle_matter.vert/frag):
+    // the energy block plus what a lit surface needs. The blood A/B judges the
+    // REAL matter pass — alpha-over, lit — not a stand-in.
+    struct ParticleMatterPush
+    {
+        float mvp[16];
+        float camRight[4];
+        float camUp[4];
+        float sunColor[4];
+        float ambient[4];
+        float lightMvp[16];
     };
     struct ParticleInstanceGpu
     {
@@ -614,24 +635,37 @@ int main(int, char**)
         return 4;
     }
 
-    // Descriptor set 1 binding 0 = the terrain material id texture (mirrors the
-    // shipping renderer's set-1 material binding).
+    // Descriptor set 1 = terrain textures (mirrors the shipping renderer's
+    // set-1 layout): binding 0 the material id grid, binding 1 the stain
+    // canvas — here a 1x1 TRANSPARENT dummy, because mesh.frag statically
+    // samples it (shared-shader contract) while the harness has no canvas.
+    gpu::VulkanTexture stainDummyTex;
+    {
+        const std::uint8_t clearPx[4] = {0, 0, 0, 0};
+        if (!stainDummyTex.create_rgba8(dev, 1, 1, clearPx,
+                                        /*linearFilter=*/false,
+                                        /*repeat=*/true)) {
+            std::fprintf(stderr, "[gpu_smoke3d] stain dummy FAILED\n");
+        }
+    }
     VkDescriptorSetLayout materialSetLayout = VK_NULL_HANDLE;
     VkDescriptorPool materialPool = VK_NULL_HANDLE;
     VkDescriptorSet materialSet = VK_NULL_HANDLE;
     {
-        VkDescriptorSetLayoutBinding b{};
-        b.binding = 0;
-        b.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        b.descriptorCount = 1;
-        b.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        VkDescriptorSetLayoutBinding b[2]{};
+        b[0].binding = 0;
+        b[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        b[0].descriptorCount = 1;
+        b[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        b[1] = b[0];
+        b[1].binding = 1;
         VkDescriptorSetLayoutCreateInfo dlci{};
         dlci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        dlci.bindingCount = 1;
-        dlci.pBindings = &b;
+        dlci.bindingCount = 2;
+        dlci.pBindings = b;
         vkCreateDescriptorSetLayout(dev.device, &dlci, nullptr, &materialSetLayout);
 
-        VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1};
+        VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2};
         VkDescriptorPoolCreateInfo dpci{};
         dpci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         dpci.maxSets = 1;
@@ -650,14 +684,21 @@ int main(int, char**)
         dii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         dii.imageView = materialTex.view;
         dii.sampler = materialTex.sampler;
-        VkWriteDescriptorSet write{};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet = materialSet;
-        write.dstBinding = 0;
-        write.descriptorCount = 1;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        write.pImageInfo = &dii;
-        vkUpdateDescriptorSets(dev.device, 1, &write, 0, nullptr);
+        VkDescriptorImageInfo sdii{};
+        sdii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        sdii.imageView = stainDummyTex.view;
+        sdii.sampler = stainDummyTex.sampler;
+        VkWriteDescriptorSet write[2]{};
+        write[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write[0].dstSet = materialSet;
+        write[0].dstBinding = 0;
+        write[0].descriptorCount = 1;
+        write[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        write[0].pImageInfo = &dii;
+        write[1] = write[0];
+        write[1].dstBinding = 1;
+        write[1].pImageInfo = &sdii;
+        vkUpdateDescriptorSets(dev.device, 2, write, 0, nullptr);
     }
 
     // Scatter instanced trees on land (skip water-ish lows and snow peaks).
@@ -1012,24 +1053,25 @@ int main(int, char**)
         }
     }
 
-    // Precipitation overlay pipeline — mirrors the shipping renderer's A2b
-    // pass (fullscreen.vert + precip.frag, depth off, alpha over).
+    // World-precipitation pipeline — mirrors the shipping renderer's A2b
+    // pass (rain.vert + rain.frag: real drops from gl_InstanceIndex, depth
+    // test ON so the terrain occludes them, alpha over).
     gpu::VulkanPipeline precipPipeline;
     {
         char* base = SDL_GetBasePath();
         char vpath[1024], fpath[1024];
-        std::snprintf(vpath, sizeof vpath, "%sshaders/fullscreen.vert.spv",
+        std::snprintf(vpath, sizeof vpath, "%sshaders/rain.vert.spv",
                       base ? base : "./");
-        std::snprintf(fpath, sizeof fpath, "%sshaders/precip.frag.spv",
+        std::snprintf(fpath, sizeof fpath, "%sshaders/rain.frag.spv",
                       base ? base : "./");
         if (base) SDL_free(base);
         if (!precipPipeline.create_mesh(dev, renderer.renderPass, vpath, fpath,
-                                        sizeof(PrecipPush), 0, nullptr, 0,
+                                        sizeof(RainPush), 0, nullptr, 0,
                                         /*instanced=*/false,
-                                        /*depthTest=*/false,
+                                        /*depthTest=*/true,
                                         /*depthWrite=*/false, /*blend=*/true,
                                         /*cullBack=*/false)) {
-            std::fprintf(stderr, "[gpu_smoke3d] precip pipeline FAILED\n");
+            std::fprintf(stderr, "[gpu_smoke3d] rain pipeline FAILED\n");
             precipPipeline.destroy(dev);
             skyPipeline.destroy(dev);
             bbPipeline.destroy(dev);
@@ -1434,10 +1476,16 @@ int main(int, char**)
         particleCount = static_cast<std::uint32_t>(burst.size());
         char* base = SDL_GetBasePath();
         char vp[1024], fp[1024];
-        std::snprintf(vp, sizeof vp, "%sshaders/particle.vert.spv",
-                      base ? base : "./");
-        std::snprintf(fp, sizeof fp, "%sshaders/particle.frag.spv",
-                      base ? base : "./");
+        // Blood/dust are MATTER since Inc A (particles-unified-matter): the
+        // blood scene rides the shipping matter pipeline — alpha-over + lit
+        // (particle_matter shaders, litSet bound) — while the trail/burst
+        // scenes stay on the additive energy pipeline. Same fork as shipping's
+        // two ranged draws, expressed here as one pipeline per scene (a scene
+        // is all-matter or all-energy by construction).
+        std::snprintf(vp, sizeof vp, "%sshaders/particle%s.vert.spv",
+                      base ? base : "./", optFxBlood ? "_matter" : "");
+        std::snprintf(fp, sizeof fp, "%sshaders/particle%s.frag.spv",
+                      base ? base : "./", optFxBlood ? "_matter" : "");
         if (base) SDL_free(base);
         VkVertexInputAttributeDescription pa[3]{};
         pa[0].location = 0; pa[0].binding = 0;
@@ -1450,18 +1498,30 @@ int main(int, char**)
             particleBuf.create_device_local(
                 dev, burst.data(), burst.size() * sizeof(ParticleInstanceGpu),
                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
-            && particlePipeline.create_mesh(
-                   dev, renderer.renderPass, vp, fp, sizeof(ParticlePush),
-                   sizeof(ParticleInstanceGpu), pa, 3, /*instanced=*/true,
-                   /*depthTest=*/true, /*depthWrite=*/false, /*blend=*/true,
-                   /*cullBack=*/false, VK_NULL_HANDLE, /*additive=*/true);
+            && (optFxBlood
+                    ? particlePipeline.create_mesh(
+                          dev, renderer.renderPass, vp, fp,
+                          sizeof(ParticleMatterPush),
+                          sizeof(ParticleInstanceGpu), pa, 3,
+                          /*instanced=*/true, /*depthTest=*/true,
+                          /*depthWrite=*/false, /*blend=*/true,
+                          /*cullBack=*/false, shadowSetLayout,
+                          /*additive=*/false)
+                    : particlePipeline.create_mesh(
+                          dev, renderer.renderPass, vp, fp,
+                          sizeof(ParticlePush),
+                          sizeof(ParticleInstanceGpu), pa, 3,
+                          /*instanced=*/true, /*depthTest=*/true,
+                          /*depthWrite=*/false, /*blend=*/true,
+                          /*cullBack=*/false, VK_NULL_HANDLE,
+                          /*additive=*/true));
         if (!ok) {
             std::fprintf(stderr, "[gpu_smoke3d] FX particle pipeline FAILED "
                                  "(non-fatal, pass skipped)\n");
             particleCount = 0;
         } else {
-            std::fprintf(stderr, "[gpu_smoke3d] FX: %u additive particles staged\n",
-                         particleCount);
+            std::fprintf(stderr, "[gpu_smoke3d] FX: %u %s particles staged\n",
+                         particleCount, optFxBlood ? "matter" : "additive");
         }
     }
 
@@ -1915,27 +1975,52 @@ int main(int, char**)
                 vkCmdDraw(c, 6, npcCount, 0, 0);
             }
 
-            // ---- FX additive particles (GPU_SMOKE_FX) — after opaque, before
-            //      water, exactly as the shipping renderer. Emissive: binds NO
-            //      descriptor set, depth-test on / write off, additive blend so
-            //      overlapping cards accumulate into a glow with no sort. ----
+            // ---- FX particles (GPU_SMOKE_FX*) — after opaque, before water,
+            //      exactly as the shipping renderer. Trail/burst scenes ride
+            //      the additive ENERGY pass (no descriptors, glow accumulates,
+            //      no sort); the blood scene rides the MATTER pass (alpha-over
+            //      + lit: litSet bound, sun/ambient/lightMvp pushed) so the
+            //      A/B judges blood that darkens and shades, not glows. ----
             if (particleCount > 0) {
-                ParticlePush pp{};
-                std::memcpy(pp.mvp, mvp.m, sizeof(pp.mvp));
                 sm::vec3 cr = sm::normalize(
                     sm::v3(view.m[0], view.m[4], view.m[8]));
                 sm::vec3 cu = sm::normalize(
                     sm::v3(view.m[1], view.m[5], view.m[9]));
-                pp.camRight[0] = cr.x; pp.camRight[1] = cr.y; pp.camRight[2] = cr.z;
-                pp.camUp[0] = cu.x;    pp.camUp[1] = cu.y;    pp.camUp[2] = cu.z;
                 vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                   particlePipeline.pipeline);
                 VkDeviceSize po = 0;
                 vkCmdBindVertexBuffers(c, 0, 1, &particleBuf.buffer, &po);
-                vkCmdPushConstants(c, particlePipeline.layout,
-                                   VK_SHADER_STAGE_VERTEX_BIT
-                                       | VK_SHADER_STAGE_FRAGMENT_BIT,
-                                   0, sizeof(pp), &pp);
+                if (optFxBlood) {
+                    ParticleMatterPush pm{};
+                    std::memcpy(pm.mvp, mvp.m, sizeof(pm.mvp));
+                    pm.camRight[0] = cr.x; pm.camRight[1] = cr.y;
+                    pm.camRight[2] = cr.z;
+                    pm.camUp[0] = cu.x; pm.camUp[1] = cu.y; pm.camUp[2] = cu.z;
+                    pm.sunColor[0] = sunColor.x;
+                    pm.sunColor[1] = sunColor.y;
+                    pm.sunColor[2] = sunColor.z;
+                    pm.ambient[0] = ambient.x;
+                    pm.ambient[1] = ambient.y;
+                    pm.ambient[2] = ambient.z;
+                    std::memcpy(pm.lightMvp, lightMvp.m, sizeof(pm.lightMvp));
+                    vkCmdBindDescriptorSets(c, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                            particlePipeline.layout, 0, 1,
+                                            &shadowSet, 0, nullptr);
+                    vkCmdPushConstants(c, particlePipeline.layout,
+                                       VK_SHADER_STAGE_VERTEX_BIT
+                                           | VK_SHADER_STAGE_FRAGMENT_BIT,
+                                       0, sizeof(pm), &pm);
+                } else {
+                    ParticlePush pp{};
+                    std::memcpy(pp.mvp, mvp.m, sizeof(pp.mvp));
+                    pp.camRight[0] = cr.x; pp.camRight[1] = cr.y;
+                    pp.camRight[2] = cr.z;
+                    pp.camUp[0] = cu.x; pp.camUp[1] = cu.y; pp.camUp[2] = cu.z;
+                    vkCmdPushConstants(c, particlePipeline.layout,
+                                       VK_SHADER_STAGE_VERTEX_BIT
+                                           | VK_SHADER_STAGE_FRAGMENT_BIT,
+                                       0, sizeof(pp), &pp);
+                }
                 vkCmdDraw(c, 6, particleCount, 0, 0);
             }
 
@@ -1968,25 +2053,39 @@ int main(int, char**)
                 vkCmdDraw(c, 6, 1, 0, 0);
             }
 
-            // ---- Precipitation (fullscreen overlay, LAST; GPU_SMOKE_PRECIP
-            // stages it — default 0 keeps the frame byte-identical to a build
-            // without this pass, the module-isolation control). ----
+            // ---- World precipitation (LAST; GPU_SMOKE_PRECIP stages it —
+            // default 0 keeps the frame byte-identical to a build without
+            // this pass, the module-isolation control). Mirrors shipping:
+            // instance count scales with the forced amount. ----
             if (optPrecip > 0.001f) {
-                PrecipPush prp{};
-                prp.p0[0] = static_cast<float>(ext.width);
-                prp.p0[1] = static_cast<float>(ext.height);
-                prp.p0[2] = static_cast<float>(frame) * 0.02f;
-                prp.p0[3] = optPrecip;
-                prp.p1[0] = static_cast<float>(optPrecipKind);
-                prp.p1[1] = 0.12f;   // a mild fixed wind tilt for captures
-                prp.p1[2] = stormFlash;
+                const std::uint32_t drops = std::max(
+                    64u, std::uint32_t(4096.0f * optPrecip));
+                RainPush prp{};
+                std::memcpy(prp.mvp, mvp.m, sizeof(prp.mvp));
+                prp.camPos[0] = eye.x;
+                prp.camPos[1] = eye.y;
+                prp.camPos[2] = eye.z;
+                prp.camPos[3] = static_cast<float>(frame) * 0.02f;
+                sm::vec3 rr = sm::normalize(
+                    sm::v3(view.m[0], view.m[4], view.m[8]));
+                prp.camRight[0] = rr.x;
+                prp.camRight[1] = rr.y;
+                prp.camRight[2] = rr.z;
+                prp.camRight[3] = optPrecip;
+                prp.p0[0] = static_cast<float>(optPrecipKind);
+                prp.p0[1] = 0.35f;   // a mild fixed wind for captures
+                prp.p0[2] = 0.0f;
+                prp.p0[3] = stormFlash;
+                prp.p1[0] = 0.16f;   // the harness water plane Y
+                prp.p1[1] = (sunColor.x + sunColor.y + sunColor.z) / 3.0f;
+                prp.p1[2] = (ambient.x + ambient.y + ambient.z) / 3.0f;
                 vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                   precipPipeline.pipeline);
                 vkCmdPushConstants(c, precipPipeline.layout,
                                    VK_SHADER_STAGE_VERTEX_BIT
                                        | VK_SHADER_STAGE_FRAGMENT_BIT,
                                    0, sizeof(prp), &prp);
-                vkCmdDraw(c, 3, 1, 0, 0);
+                vkCmdDraw(c, 6, drops, 0, 0);
             }
 
             // GPU_SMOKE_SHOT: on the target frame, copy the rendered image into
@@ -2044,6 +2143,7 @@ int main(int, char**)
     vkDestroyDescriptorPool(dev.device, skyPool, nullptr);
     vkDestroyDescriptorSetLayout(dev.device, skySetLayout, nullptr);
     materialTex.destroy(dev);
+    stainDummyTex.destroy(dev);
     shadowMap.destroy(dev);
     skyPipeline.destroy(dev);
     precipPipeline.destroy(dev);

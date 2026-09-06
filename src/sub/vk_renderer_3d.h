@@ -18,6 +18,7 @@
 #include "assets/sprite_bank.h"
 #include "gpu/bb_instance.h"
 #include "gpu/vk_buffer.h"
+#include "gpu/vk_canvas.h"
 #include "gpu/vk_pipeline.h"
 #include "gpu/vk_shadow.h"
 #include "gpu/vk_texture.h"
@@ -57,6 +58,11 @@ public:
     // ParticleSystem::kMaxParticles (sub/particles.h): 2048 × 32B = 64 KiB, the
     // vkCmdUpdateBuffer per-call maximum. A static_assert in the .cpp pins them.
     static constexpr std::uint32_t kMaxParticleInstances = 2048;
+    // Stain canvas (Inc C): 1024² world tiles at 8 px/tile = one 8192² RGBA8
+    // image; the engine's stamp ring is truncated to kMaxStamps per frame.
+    static constexpr std::uint32_t kCanvasTiles = 1024;
+    static constexpr std::uint32_t kStainPxPerTile = 8;
+    static constexpr std::uint32_t kMaxStamps = 1024;
 
     void init(const gpu::VulkanDevice& dev, VkRenderPass mainPass);
     void destroy(const gpu::VulkanDevice& dev);
@@ -67,11 +73,44 @@ public:
 
     // Upload the frame's live particle instances into the device-local particle
     // buffer (same per-frame vkCmdUpdateBuffer + barrier path as NPCs). `data`
-    // points at `count` packed sub::ParticleInstance records (32B each); count
-    // is clamped to kMaxParticleInstances. Call from prepare_frame BEFORE the
-    // render pass opens. Passing count==0 draws nothing (the pass self-skips).
+    // points at energy+matter packed sub::ParticleInstance records (32B each),
+    // laid out exactly as ParticleSystem::pack() returns them: energy first
+    // [0, energyCount), then matter [energyCount, energyCount+matterCount)
+    // sorted back-to-front. The draw issues TWO ranged instanced draws over the
+    // one buffer — matter (alpha-over, lit) first, energy (additive) on top —
+    // via firstInstance, so the split costs no second upload. Totals clamp to
+    // kMaxParticleInstances (matter clamps first — it sits at the tail). Call
+    // from prepare_frame BEFORE the render pass opens; zero counts self-skip.
     void stage_particles(VkCommandBuffer cmd, const void* data,
-                         std::uint32_t count);
+                         std::uint32_t energyCount, std::uint32_t matterCount);
+
+    // One stain-canvas stamp COMMAND, GPU instance layout (24 B): where a
+    // mark lands, how big, its colour, and which shape shader draws it
+    // (shaders/stamp.vert|frag). The engine fills these from particle
+    // landings and death pools (the gigahrush landMark law); the renderer
+    // only draws them into the canvas.
+    struct StampInstance {
+        float wx, wz;      // world position (m), same plane as vWorld.xz
+        float radiusM;     // mark radius (m)
+        float seed;        // shape variation (integer counter as float)
+        std::uint8_t r, g, b;  // mark colour (unorm)
+        std::uint8_t intensity; // max alpha 0-255
+        float type;        // sub::MarkType as float (vertex attr)
+    };
+
+    // Upload this frame's stamp commands and record the stain-canvas pass:
+    // clear the strips entering the camera-centred sliding window (they hold
+    // stale marks from the toroidal far side), then draw every stamp. Must be
+    // recorded OUTSIDE the shadow/main passes (call between prepare_frame and
+    // record_shadow). Zero stamps + no camera movement ⇒ the pass self-skips
+    // entirely. (camWx, camWz) = the CAMERA's world position — the canvas
+    // follows the camera, which must stay separable from the player.
+    void stage_stamps(VkCommandBuffer cmd, const StampInstance* cmds,
+                      std::uint32_t count, float camWx, float camWz);
+
+    // Forget every mark (subworld enter/leave: the ground under the canvas
+    // changed identity). Takes effect in the next stage_stamps.
+    void request_canvas_clear() { canvasClearAll_ = true; }
 
     // CPU stage of a terrain/instance rebuild: resample heights, fill material
     // bytes and rebuild instance lists into persistent scratch, then queue the
@@ -204,7 +243,7 @@ private:
     gpu::VulkanPipeline skyPipe_{};
     // A2b: precipitation overlay — the atmosphere submodule's second
     // fullscreen pass (rain/snow/hail between the camera and the world).
-    gpu::VulkanPipeline precipPipe_{};
+    gpu::VulkanPipeline rainPipe_{}; // world-space precipitation (Inc D)
     // Constellation stars: a tiny STATIC UBO (sub/sky.h SkyStarsUbo) written
     // once at create() from macro/celestial.h's authored tables; set 0 on the
     // sky pipeline. Never touched per frame.
@@ -352,15 +391,40 @@ private:
                          std::size_t& cap, const void* data, std::size_t count,
                          std::size_t elemSize, const char* what);
 
-    // ── FX: additive particle billboards (spell trails, impacts, blood, embers,
-    //    explosions). Drawn after creatures, before water, with depth-test on /
-    //    depth-write off so terrain occludes them but they never occlude each
-    //    other; additive blend is order-independent so the pool needs no sort.
+    // ── FX: particle billboards (spell trails, impacts, blood, dust, embers,
+    //    explosions), TWO pipelines over ONE instance buffer, split by the
+    //    preset table's blend class (sub/particles.h FxBlend):
+    //      matter — alpha-over + lit (blood, dust, smoke): binds the shared
+    //        litSet (shadow + point lights), drawn FIRST, back-to-front (the
+    //        sim sorts its segment);
+    //      energy — additive emissive (magic, fire, sparks): no descriptors,
+    //        order-independent, drawn on top so glow adds over blood.
+    //    Both after creatures, before water, depth-test on / depth-write off.
     //    The sim lives in the engine (sub/particles.h) — this pass only draws
-    //    the packed instances handed to stage_particles(). No shadow caster. ──
-    gpu::VulkanPipeline particlePipe_{};
+    //    the packed ranges handed to stage_particles(). No shadow caster. ──
+    gpu::VulkanPipeline particlePipe_{};       // energy (additive)
+    gpu::VulkanPipeline particleMatterPipe_{}; // matter (alpha-over, lit)
     gpu::VulkanBuffer   particleInstBuf_{};
-    std::uint32_t       particleCount_ = 0;
+    std::uint32_t       particleEnergyCount_ = 0;
+    std::uint32_t       particleMatterCount_ = 0;
+
+    // ── Stain canvas (particles-unified-matter Inc C): persistent GPU-only
+    //    surface marks — blood splats, death pools, drips, scorch. A single
+    //    8192² RGBA8 image = 1024² world tiles at 8 px/tile, addressed
+    //    toroidally (world tile mod 1024 — the REPEAT sampler wraps reads, so
+    //    a seam recentre of exactly kCellSize=1024 tiles lands on the SAME
+    //    texels: the canvas survives the seam with zero work). It slides with
+    //    the CAMERA: strips entering the window are cleared in stage_stamps;
+    //    what leaves the half-kilometre ring is forgotten — the gigahrush
+    //    eviction law ("farthest from the action dies first") as geometry.
+    //    mesh.frag samples it into the terrain albedo BEFORE lit_surface, so
+    //    marks are shadowed/moonlit like the ground they lie on. ──
+    gpu::VulkanStainCanvas stainCanvas_{};
+    gpu::VulkanPipeline    stampPipe_{};
+    gpu::VulkanBuffer      stampInstBuf_{};
+    bool canvasClearAll_ = true;  // first frame / subworld enter: start clean
+    int  canvasCamTileX_ = 0;     // camera tile of the last stamp pass
+    int  canvasCamTileZ_ = 0;
 };
 
 } // namespace sub

@@ -12,6 +12,12 @@
 layout(set = 0, binding = 0) uniform sampler2DShadow u_shadow;
 layout(set = 0, binding = 3) uniform sampler2DShadow u_shadowFar;
 layout(set = 1, binding = 0) uniform sampler2D u_material; // R8 tile material id / 255
+// The stain canvas (Inc C, particles-unified-matter): persistent GPU-only
+// surface marks — blood splats, death pools — mixed into the albedo BEFORE
+// lit_surface() so a stain is shadowed/moonlit exactly like the ground it
+// lies on. Toroidal: world tile mod 1024 at 8 px/tile; the REPEAT sampler
+// does the wrap, the push's validity ring masks the far side's stale texels.
+layout(set = 1, binding = 1) uniform sampler2D u_stain;
 
 layout(location = 0) in vec3 vNormal;
 layout(location = 1) in float vHeight;
@@ -24,6 +30,7 @@ layout(push_constant) uniform Push {
     vec4 sunColor;
     vec4 ambient;
     mat4 lightMvp;
+    vec4 stain; // xy = camera world XZ, z = valid radius (m), w = enable
 } pc;
 
 layout(location = 0) out vec4 outColor;
@@ -119,6 +126,14 @@ void main() {
     // the synth stays put across the seam. Lighting/shadow math keep window vWorld.
     vec2 gWorld = vWorld.xz + vec2(pc.sunDir.w, pc.sunColor.w);
     vec3 base = groundColor(gWorld, vHeight, mat);
+    // Surface marks: alpha-over onto the albedo, gated by the validity ring
+    // (Chebyshev — the sliding canvas is square). Window vWorld is the right
+    // space: the canvas mapping is mod-1024, the exact seam recentre step, so
+    // marks stay put across a crossing. Keep in lockstep with stamp.vert.
+    vec4 mark = texture(u_stain, (vWorld.xz + vec2(1536.0)) / 1024.0);
+    vec2 dCam = abs(vWorld.xz - pc.stain.xy);
+    float markOk = pc.stain.w * step(max(dCam.x, dCam.y), pc.stain.z);
+    base = mix(base, mark.rgb, mark.a * markOk);
     vec3 col = lit_surface(base, pc.ambient.rgb, pc.sunColor.rgb, ndl, sh, vWorld);
     // Additive positional lights (torches, spells, player glow). Uses window vWorld
     // — the same space as the sun/shadow math — not the absolute gWorld synth coord.

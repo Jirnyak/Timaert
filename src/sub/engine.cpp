@@ -549,6 +549,11 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     statusLine_.clear();
     statusTimer_ = 0.0f;
     combatLogCount_ = 0;
+    // The ground under the stain canvas changes identity with the session —
+    // forget every mark and any commands gathered for a dead frame (the
+    // "enter() must reset engine state" bug class, NEXT_SESSION §4).
+    stampRing_.clear();
+    renderer3dVk_.request_canvas_clear();
     // A normal enter is always the open-air window; the dungeon session sets
     // its own scene through enter_dungeon_scene.
     sceneKind_ = SceneKind::Overworld;
@@ -1514,6 +1519,10 @@ void SubworldEngine::spell_fx_emit_callback(void* user,
         const float scale = std::clamp(1.0f + blastRadius * 0.04f, 1.0f, 3.0f);
         engine->particles_.emit(FxKind::FireBurst, vec3{wx, y, wz},
                                 tintPtr, scale);
+        // Aftersmoke: the hot bloom fades in under a second; a grey wisp
+        // (matter, 2-4 puffs) lingers over the crater for a few more.
+        engine->particles_.emit(FxKind::Smoke, vec3{wx, y, wz}, nullptr,
+                                scale);
     } else {
         engine->particles_.emit(FxKind::MagicBurst, vec3{wx, y, wz},
                                 tintPtr, 1.0f);
@@ -1795,6 +1804,28 @@ void SubworldEngine::tick_damage_fx() {
         Renderer3DVk::tile_to_world(pos.x, pos.y, wx, wz);
         const float y = pos.z + kSprayHeightM;
         particles_.emit(kind, vec3{wx, y, wz}, nullptr, scale);
+
+        // Death pool (gigahrush spawnDeathPool law): a lethal blow to FLESH
+        // leaves a large irregular pool under the body plus a fan of splats
+        // sprayed outward across neighbouring ground. Bloodless plans (the
+        // Dust kinds — skeletons, hulks) fall without a pool, exactly like
+        // the reference. Colour = the Blood row's own dark red.
+        if (fx.lethal && kind == FxKind::Blood) {
+            const FxPreset& blood = fx_preset(FxKind::Blood);
+            push_stamp(wx, wz, 0.43f, blood.r, blood.g, blood.b, 255,
+                       MarkType::Pool);
+            constexpr int kSplats = 6; // ref: 3 + goreLevel*3, goreLevel 1
+            for (int i = 0; i < kSplats; ++i) {
+                const float ang = (float(i) / kSplats) * 6.28318531f
+                                  + (stampRng_.next_f01() - 0.5f) * 1.2f;
+                const float dist = 0.3f + stampRng_.next_f01() * 1.1f;
+                const float rad = 0.18f + stampRng_.next_f01() * 0.08f;
+                push_stamp(wx + std::cos(ang) * dist, wz + std::sin(ang) * dist,
+                           rad, blood.r, blood.g, blood.b,
+                           std::uint8_t(160 + stampRng_.next_int(0, 61)),
+                           MarkType::Splat);
+            }
+        }
     }
     for (int i = 0; i < consumedCount; ++i) {
         const entt::entity e = consumed[std::size_t(i)];
@@ -3000,6 +3031,10 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     statusTimer_ = 0.0f;
     combatLogCount_ = 0;
     playerThreatD2_ = kNoThreatDistance2;
+    // New floor, new ground: the stain canvas forgets the overworld's marks
+    // (and vice versa on the way back through enter()).
+    stampRing_.clear();
+    renderer3dVk_.request_canvas_clear();
     // The envelope, whole — the interior's ledgers (residents borrowed from
     // the town, vermin from the fauna stock) pay through mw_ like any scene.
     mw_ = mw;
@@ -4028,8 +4063,116 @@ void SubworldEngine::tick(float dt) {
 
     // Advance the transient-VFX pool. Emitters (spell trails, impact bursts,
     // blood) feed it from the combat/spell ticks above; here we just integrate
-    // and reap. Pure CPU, no ECS churn — see sub/particles.h.
-    particles_.tick(dt);
+    // and reap. Pure CPU, no ECS churn — see sub/particles.h. The ground hooks
+    // make the floor lethal: a landing droplet dies at the contact point, and
+    // if its preset row carries a landMark it leaves a stain-canvas stamp
+    // (blood splats where the eye saw it fall — the gigahrush law).
+    particles_.tick(dt, &SubworldEngine::particle_ground_callback, this,
+                    &SubworldEngine::particle_land_callback, this);
+
+    // Torch embers + faint haze (Inc B): every prop flame near the camera
+    // sheds slow warm motes (Ember, energy) and a thin grey wisp (Smoke,
+    // matter) through emit_stream — per-emitter accumulators keep sub-frame
+    // rates honest. FX-LOD: beyond kFlameFxRangeM the stream stops AND its
+    // accumulator zeroes (no burst of saved-up motes when you walk back).
+    {
+        if (emberAccum_.size() != propLights_.size()) {
+            emberAccum_.assign(propLights_.size(), 0.0f);
+            smokeAccum_.assign(propLights_.size(), 0.0f);
+        }
+        constexpr float kFlameFxRangeM = 48.0f;
+        for (std::size_t i = 0; i < propLights_.size(); ++i) {
+            const entt::entity e = propLights_[i];
+            if (!ecs_->reg.valid(e)) continue;
+            const auto* pos = ecs_->reg.try_get<ecs::Position>(e);
+            const auto* le = ecs_->reg.try_get<ecs::LightEmitter>(e);
+            if (pos == nullptr || le == nullptr) continue;
+            float wx = 0.0f, wz = 0.0f;
+            Renderer3DVk::tile_to_world(pos->x, pos->y, wx, wz);
+            const float dx = wx - cam_.pos.x;
+            const float dz = wz - cam_.pos.z;
+            if (dx * dx + dz * dz > kFlameFxRangeM * kFlameFxRangeM) {
+                emberAccum_[i] = 0.0f;
+                smokeAccum_[i] = 0.0f;
+                continue;
+            }
+            const vec3 flame{wx + le->offX, pos->z + le->offY, wz + le->offZ};
+            emberAccum_[i] = particles_.emit_stream(FxKind::Ember, flame,
+                                                    1.2f, dt, emberAccum_[i]);
+            smokeAccum_[i] = particles_.emit_stream(FxKind::Smoke, flame,
+                                                    0.35f, dt, smokeAccum_[i]);
+        }
+    }
+
+    // Wounded drip (gigahrush updateBloodTrails law): a body under half HP
+    // leaks DRIP marks where it walks, probability rising as it nears death —
+    // a badly wounded fugitive leaves a readable trail. Bloodless plans
+    // (Undead / Hulk — the same archetype read as the Dust spray) never drip.
+    // Cost: two int loads per healthy body; the rng is drawn only past the
+    // half-HP gate.
+    {
+        const FxPreset& blood = fx_preset(FxKind::Blood);
+        auto view = ecs_->reg.view<ecs::Health, ecs::Position>();
+        for (auto e : view) {
+            const auto& hp = view.get<ecs::Health>(e);
+            if (hp.maxHp <= 0 || hp.hp * 2 >= hp.maxHp || hp.hp <= 0) continue;
+            // drip01 in (0,1]: 0 at half HP, 1 at death's door (the ref's
+            // (0.5 - ratio) * 2, integer-house form).
+            const float drip01 =
+                1.0f - 2.0f * float(hp.hp) / float(hp.maxHp);
+            if (stampRng_.next_f01() > drip01 * dt * 3.0f) continue;
+            if (const auto* spr = ecs_->reg.try_get<ecs::Sprite>(e)) {
+                const auto arch = static_cast<CreatureArchetype>(
+                    sprite_row(SpriteId(spr->spriteRow)).archetype);
+                if (arch == CreatureArchetype::Undead
+                    || arch == CreatureArchetype::Hulk)
+                    continue;
+            }
+            const auto& pos = view.get<ecs::Position>(e);
+            float wx = 0.0f, wz = 0.0f;
+            Renderer3DVk::tile_to_world(pos.x, pos.y, wx, wz);
+            push_stamp(wx + (stampRng_.next_f01() - 0.5f) * 0.3f,
+                       wz + (stampRng_.next_f01() - 0.5f) * 0.3f,
+                       0.06f + stampRng_.next_f01() * 0.04f,
+                       blood.r, blood.g, blood.b,
+                       std::uint8_t(60 + stampRng_.next_int(0, 41)),
+                       MarkType::Drip);
+        }
+    }
+}
+
+float SubworldEngine::particle_ground_callback(void* user, float wx, float wz) {
+    auto* self = static_cast<SubworldEngine*>(user);
+    // Particles live in world metres (vWorld); the heightfield answers in
+    // window-tile coords — the inverse of Renderer3DVk::tile_to_world.
+    return self->ground_height_at(wx + float(kFullSize) * 0.5f,
+                                  wz + float(kFullSize) * 0.5f);
+}
+
+void SubworldEngine::particle_land_callback(void* user, const Particle& p) {
+    auto* self = static_cast<SubworldEngine*>(user);
+    const FxPreset& fx = fx_preset(p.kind);
+    if (fx.markType == MarkType::None) return;
+    // The mark wears the particle's OWN colour (a tinted droplet stains in its
+    // tint) — the reference stamps p.r/g/b, not the preset's base colour.
+    self->push_stamp(p.pos.x, p.pos.z, fx.markRadiusM, p.r, p.g, p.b,
+                     fx.markIntensity, fx.markType);
+}
+
+void SubworldEngine::push_stamp(float wx, float wz, float radiusM, float r,
+                                float g, float b, std::uint8_t intensity,
+                                MarkType type) {
+    Renderer3DVk::StampInstance s{};
+    s.wx = wx;
+    s.wz = wz;
+    s.radiusM = radiusM;
+    s.seed = float(++stampSeq_ & 0xFFFFFFu); // exact in float, wraps harmlessly
+    s.r = std::uint8_t(std::lround(clamp01(r) * 255.0f));
+    s.g = std::uint8_t(std::lround(clamp01(g) * 255.0f));
+    s.b = std::uint8_t(std::lround(clamp01(b) * 255.0f));
+    s.intensity = intensity;
+    s.type = float(static_cast<std::uint8_t>(type));
+    stampRing_.push_back(s);
 }
 
 void SubworldEngine::prepare_frame(VkCommandBuffer cmd) {
@@ -4044,16 +4187,45 @@ void SubworldEngine::prepare_frame(VkCommandBuffer cmd) {
     renderer3dVk_.prepare_frame(cmd, ecs_, elapsed_, cam_.pos);
 
     // Pack the live particle pool into GPU instances and stage them for this
-    // frame's additive pass. Reused scratch (sized once to the pool ceiling) ⇒
-    // no per-frame allocation. Empty pool ⇒ stage_particles(...,0) draws nothing.
+    // frame's two particle passes: energy at the head, matter at the tail
+    // sorted back-to-front from the CAMERA (alpha-over composites far-to-near;
+    // the camera, not the player — they must stay separable). Reused scratch
+    // (sized once to the pool ceiling) ⇒ no per-frame allocation. Empty pool ⇒
+    // stage_particles(..., 0, 0) draws nothing.
     if (particleScratch_.size()
         != static_cast<std::size_t>(ParticleSystem::kMaxParticles)) {
         particleScratch_.resize(ParticleSystem::kMaxParticles);
     }
-    const std::uint32_t n =
+    const ParticleSystem::PackCounts pn =
         particles_.pack(particleScratch_.data(),
-                        static_cast<std::uint32_t>(particleScratch_.size()));
-    renderer3dVk_.stage_particles(cmd, particleScratch_.data(), n);
+                        static_cast<std::uint32_t>(particleScratch_.size()),
+                        cam_.pos);
+    renderer3dVk_.stage_particles(cmd, particleScratch_.data(), pn.energy,
+                                  pn.matter);
+
+    // Stain-canvas stamps: if this frame gathered more than the renderer's
+    // cap, drop the FARTHEST from the camera (nearest-first priority — a
+    // distant battle loses droplet marks before the fight at your feet loses
+    // anything). Then hand the ring over and reset it for the next frame.
+    if (stampRing_.size() > Renderer3DVk::kMaxStamps) {
+        const float cx = cam_.pos.x, cz = cam_.pos.z;
+        std::nth_element(
+            stampRing_.begin(),
+            stampRing_.begin() + Renderer3DVk::kMaxStamps, stampRing_.end(),
+            [cx, cz](const Renderer3DVk::StampInstance& a,
+                     const Renderer3DVk::StampInstance& b) {
+                const float da = (a.wx - cx) * (a.wx - cx)
+                                 + (a.wz - cz) * (a.wz - cz);
+                const float db = (b.wx - cx) * (b.wx - cx)
+                                 + (b.wz - cz) * (b.wz - cz);
+                return da < db;
+            });
+        stampRing_.resize(Renderer3DVk::kMaxStamps);
+    }
+    renderer3dVk_.stage_stamps(cmd, stampRing_.data(),
+                               static_cast<std::uint32_t>(stampRing_.size()),
+                               cam_.pos.x, cam_.pos.z);
+    stampRing_.clear();
 }
 
 void SubworldEngine::debug_flush_gpu_uploads() {

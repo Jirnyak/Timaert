@@ -245,7 +245,7 @@ set(_timaert_shader_incs
     ${CMAKE_SOURCE_DIR}/shaders/shadow_common.glsl
     ${CMAKE_SOURCE_DIR}/shaders/lighting.glsl
     ${CMAKE_SOURCE_DIR}/shaders/clouds.glsl)
-foreach(_sh fullscreen.vert macro.frag mesh.vert mesh.frag billboard.vert tree.frag sky.frag shadow_mesh.vert shadow_mesh.frag shadow_bb.vert shadow_tree.frag water.vert water.frag struct.vert struct.frag struct_cyl.vert shadow_cyl.vert shadow_struct.vert shadow_struct.frag body.frag shadow_body.frag particle.vert particle.frag precip.frag)
+foreach(_sh fullscreen.vert macro.frag mesh.vert mesh.frag billboard.vert tree.frag sky.frag shadow_mesh.vert shadow_mesh.frag shadow_bb.vert shadow_tree.frag water.vert water.frag struct.vert struct.frag struct_cyl.vert shadow_cyl.vert shadow_struct.vert shadow_struct.frag body.frag shadow_body.frag particle.vert particle.frag particle_matter.vert particle_matter.frag stamp.vert stamp.frag rain.vert rain.frag)
     add_custom_command(
         OUTPUT ${_timaert_spv_dir}/${_sh}.spv
         COMMAND ${Vulkan_GLSLC_EXECUTABLE} -O
