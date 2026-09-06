@@ -34,9 +34,11 @@ player spell direction.
   `target_radius()` reads that first, then
   `SubworldAi.radius`, then `Sprite.scale`, then a coarse fallback — the player
   needs the explicit one because it is the camera (no `Sprite`) and input-driven
-  (no `SubworldAi`). `combatStats.currentHp` stays macro-authoritative: an
-  int↔float bridge PULLs it onto the entity's `Health` at tick-top and PUSHes the
-  reconciled value back at tick-end — and the same PULL refreshes the entity's
+  (no `SubworldAi`). `combatStats.currentHp` stays macro-authoritative: the
+  bridge PULLs it onto the entity's `Health` at tick-top and PUSHes the
+  reconciled value back at tick-end (both sides INTEGER since phase 4г,
+  2026-09-06 — the float half of the old int↔float bridge died with the
+  float `Health` storage, save v80) — and the same PULL refreshes the entity's
   `Combat` strike fields (dice/flatAdd/multPct/luck/dmgType since phase 3,
   2026-09-05) from the sheet AND the weapon actually in hand
   (`hand_strike_fields`, macro/anatomy.h — bare hands are 1d2 Blunt through

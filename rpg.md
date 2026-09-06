@@ -16,13 +16,18 @@ Character sheet: attributes, XP/levels, items, inventory, equipment, loot.
 > doc):** the dice door + the crit (LCK, 0.5%/point, armour-gap), the 9×9
 > type symmetry with the HYBRID armour law, dice on creatures/weapons/spells,
 > the weapon in hand + weapon skills (Unarmed appended as the eighth), and
-> integer combat arithmetic end to end. Still ahead (NEXT_SESSION.md): the
-> effective-sheet door (4), school wiring (5), the trimmed world readers (6),
-> then faction service. The perk system was PURGED whole 2026-09-03 pending
-> its redesign — the game currently carries no perk state at all. NOTE: this
-> doc's body below predates the phases and is due a full rewrite AFTER them
-> (NEXT_SESSION.md §5) — trust CANON S13-S15 and combat.md over it where they
-> disagree.
+> integer combat arithmetic end to end. **Phases 4-6 are BUILT 2026-09-06
+> (saves v80-v81, CANON S14 carries the verdicts):** the effective-sheet
+> door (`player_effective_sheet` — the ONE read of the player's numbers;
+> writes go to the base sheet only), worn armour protecting underground by
+> READING the macro squad entity, the integer derived house (whole percent,
+> int Health), school wiring (a spell reads ITS school's rank, Body/Mind
+> sleep), and the three world readers (Trade→price law, Foraging→daily
+> bread, Scouting→squad sight). Ahead: faction service, then demo content.
+> The perk system was PURGED whole 2026-09-03 pending its redesign — the
+> game currently carries no perk state at all. NOTE: this doc's body below
+> predates the phases and is due a full rewrite (NEXT_SESSION.md §2) —
+> trust CANON S13-S15 and combat.md over it where they disagree.
 
 - **Code:** [macro/attributes.h](src/macro/attributes.h),
   [macro/character_sheet.h](src/macro/character_sheet.h) (`CharacterSheet`),

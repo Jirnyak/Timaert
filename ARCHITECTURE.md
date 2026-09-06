@@ -446,7 +446,14 @@ mitigation skipped, nothing multiplied). Nine damage types = nine armour
 columns (one enum, `ArmorProfile` on creature and item rows), hybrid
 mitigation `max(A, dmg·A/(A+10))` in `mitigate_amount` — read by the damage
 door and inverted by the auto-resolve, so the two scales price a body
-identically.
+identically. Phases 4-6 (2026-09-06, CANON S14 carries the verdicts) closed
+the sheet side: `player_effective_sheet` is the ONE read of the player's
+numbers (base + worn + sustained; writes go to the base sheet only), worn
+armour protects underground by READING the macro squad entity, the derived
+block is integer whole-percent (`Health` is `int{hp,maxHp}`, save v80), a
+spell's percent reads ITS school's rank (phase 5), and Trade/Foraging/
+Scouting read the leader's sheet at the price law / daily bread / squad
+sight (save v81).
 
 **Universal stat block — `CombatTemplate`:**
 ```cpp

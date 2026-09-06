@@ -105,5 +105,16 @@ Mana/costs from the RPG system ([rpg.md](rpg.md)). Damage is DICE of the
 spell row since phase 3 (2026-09-05): `SpellDef.dice` rolled at cast through
 THE strike assembly (`spell_strike` → roll_strike, caster's LCK at the crit
 door), the wound + its tag's DamageType column + the crit verdict ride the
-projectile to the one damage door — see [combat.md](combat.md). Unlocks are
+projectile to the one damage door — see [combat.md](combat.md).
+
+**Schools are SKILLS of the sheet since phase 5 (2026-09-06, CANON S15):**
+the tag→school collapse is a `school` column on `kSpellTagDefs` (the same
+canon remap the DamageType column carries: Ice→Water, Lightning→Air,
+Dark→Void, Light→Arcane), read through the one helper `spell_school(def)`.
+The school's rank multiplies the spell's strike percent exactly where a
+weapon skill multiplies a swing (`spell_mult_pct`), and scales its EFFECT
+rows (`spell_bonus` — the school is a REQUIRED argument); Spellcraft stays
+the generic half inside `rawSpellDamage`. Body/Mind are sleeping tags
+(`SkillId::Count` = no school, «до апдейта паладинов и клириков») — their
+spells read Spellcraft alone, exactly the pre-school law. Unlocks are
 part of progression ([progression.md](progression.md)).
