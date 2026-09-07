@@ -31,6 +31,14 @@ Modular spell framework: **adding a spell is one file, no engine changes.**
   `recovery_steps(row.cooldown, attrs, skills, Spellcraft)` — SPD asymptote ×
   Spellcraft, the casts' generic tempo skill; the SCHOOL stays the power
   lever). A haste ring quickens every cast with no code in this module.
+  **castTime is honest since the same session** (it was a UI-only liar
+  column): a non-sustained micro cast WINDS UP — the bolt leaves the hand
+  `recovery_steps(row.castTime, …, Spellcraft)` steps after the press
+  (`App.pendingCastOrd/Steps`, resolved beside `spellbook_tick` in main.cpp
+  through the identical `resolve_active_cast` the zero-castTime path runs).
+  M&M defaults: the wind-up neither blocks movement nor breaks on a hit; aim
+  is taken at RELEASE; sustained rows toggle instantly (a stance flip is not
+  a throw); leaving the subworld or dying drops the spell from the arm.
   `tick` takes a step COUNT. That is why a
   spell comes back after the same amount of FIGHT whether the clock above is
   racing on the map or crawling underground — where a world tick is 0.25 real

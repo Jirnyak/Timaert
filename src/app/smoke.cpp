@@ -3128,6 +3128,20 @@ bool run_subworld_missile_feedback_smoke(App& app) {
 // spawns clear of the player's hit shell and moves away. (The owner's other half
 // — "your own blast still catches you" when the bolt detonates on a nearby enemy
 // — is the unchanged is_spell_target/faction behaviour and is not re-tested here.)
+// The honest cast wind-up (castTime through the recovery door, 2026-09-07):
+// a non-sustained micro cast leaves the hand pendingCastSteps later, so a
+// scenario that asserts the projectile/event must wait the wind-up out. One
+// sim step at a time until the app's OWN counter releases it — the exact
+// steps the game computed, +2 spare as the loop guard (the resolution
+// happens on the final decrementing tick; stopping right there keeps the
+// SpellCast event inside the still-visible tick buffer).
+static void smoke_wait_cast_windup(App& app) {
+    for (std::uint32_t guard = app.pendingCastSteps + 2u;
+         app.pendingCastOrd >= 0 && guard > 0u; --guard) {
+        (void)advance_sim_seconds(app, sm::kStepSeconds, false);
+    }
+}
+
 bool run_subworld_self_fireball_smoke(App& app) {
     if (!smoke_boot_invariants_hold(app)) {
         smoke_print_counts(app, "subworld_self_fireball_boot_failed");
@@ -3196,6 +3210,7 @@ bool run_subworld_self_fireball_smoke(App& app) {
         smoke_fail(app, "subworld_self_fireball cast failed");
         return false;
     }
+    smoke_wait_cast_windup(app);
     int spawnedProjectiles = 0;
     for (auto e : reg.view<sm::ecs::Projectile>()) {
         (void)e;
@@ -6406,6 +6421,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "active spell cast failed");
                 break;
             }
+            smoke_wait_cast_windup(app);
             const int afterSpellCastEvents =
                 count_tick_events(app.bus, sm::EventTag::SpellCast);
             const sm::GameEvent* spellEvent =
@@ -6529,6 +6545,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "cast_bolt_capture cast failed");
                 break;
             }
+            smoke_wait_cast_windup(app);
             int afterProjectiles = 0;
             int litProjectiles = 0;
             for (auto e : app.ecs.reg.view<sm::ecs::Projectile>()) {

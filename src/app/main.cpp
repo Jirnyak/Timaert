@@ -2069,8 +2069,52 @@ void draw_subworld_combat_log(const sm::sub::SubworldEngine& subworld,
     }
 }
 
+// The micro-cast RESOLUTION — the moment the spell actually leaves the hand:
+// aim is taken HERE (you steer during the wind-up, the bolt flies where you
+// look at release), the effective sheet casts, mana/cooldown settle inside
+// spellbook_cast. Split out of cast_active_spell so the wind-up expiry (the
+// tick site beside spellbook_tick) releases through the IDENTICAL code the
+// zero-castTime path runs — one cast, two entry times, no drift.
+bool resolve_active_cast(App& app, int ord) {
+    if (!sm::spell_ordinal_ok(ord)) return false;
+    const sm::SpellDef* def = &sm::kSpellDefs[ord];
+    const std::string id = def->id;   // the EVENT still speaks the string id
+
+    const float cp = std::cos(app.subworld.cam_pitch());
+    const float nx = std::cos(app.subworld.cam_yaw()) * cp;
+    const float ny = std::sin(app.subworld.cam_yaw()) * cp;
+    const float nz = std::sin(app.subworld.cam_pitch());
+    // The EFFECTIVE sheet casts (phase 4): a worn +INT circlet strengthens
+    // the bolt the same way it strengthens every other read of him.
+    const sm::CharacterSheet effCast = player_effective_sheet(app);
+    const bool ok = sm::spellbook_cast(app.ecs,
+        app.gs.player.spellBook,
+        app.gs.player.combatStats,
+        effCast.attributes,
+        effCast.skills,
+        ord,
+        app.subworld.player_entity_id(),
+        app.subworld.player_x(),
+        app.subworld.player_y(),
+        // The MUZZLE, not the feet: this is the same point (nx, ny, nz) is
+        // aimed from, so the bolt travels the crosshair's own line.
+        app.subworld.player_muzzle_z(),
+        nx,
+        ny,
+        nz,
+        true,
+        &subworld_spell_rng01,
+        &app.subworld,
+        &app.subworld.spell_rng());
+    emit_spell_cast(app, id, ok, ok ? "" : "Cast failed");
+    return ok;
+}
+
 bool cast_active_spell(App& app) {
     if (!app.worldLoaded) return false;
+    // A hand already winding up holds ITS spell — mashing the key neither
+    // restarts the wind-up nor queues a second cast.
+    if (app.pendingCastOrd >= 0) return true;
     const int ord = app.gs.player.spellBook.activeSpell;
     if (!sm::spell_ordinal_ok(ord)) {
         emit_spell_cast(app, "", false, "No active spell");
@@ -2109,34 +2153,24 @@ bool cast_active_spell(App& app) {
         return true;
     }
 
-    const float cp = std::cos(app.subworld.cam_pitch());
-    const float nx = std::cos(app.subworld.cam_yaw()) * cp;
-    const float ny = std::sin(app.subworld.cam_yaw()) * cp;
-    const float nz = std::sin(app.subworld.cam_pitch());
-    // The EFFECTIVE sheet casts (phase 4): a worn +INT circlet strengthens
-    // the bolt the same way it strengthens every other read of him.
-    const sm::CharacterSheet effCast = player_effective_sheet(app);
-    const bool ok = sm::spellbook_cast(app.ecs,
-        app.gs.player.spellBook,
-        app.gs.player.combatStats,
-        effCast.attributes,
-        effCast.skills,
-        ord,
-        app.subworld.player_entity_id(),
-        app.subworld.player_x(),
-        app.subworld.player_y(),
-        // The MUZZLE, not the feet: this is the same point (nx, ny, nz) is
-        // aimed from, so the bolt travels the crosshair's own line.
-        app.subworld.player_muzzle_z(),
-        nx,
-        ny,
-        nz,
-        true,
-        &subworld_spell_rng01,
-        &app.subworld,
-        &app.subworld.spell_rng());
-    emit_spell_cast(app, id, ok, ok ? "" : "Cast failed");
-    return ok;
+    // The honest WIND-UP (2026-09-07 — castTime was a UI-only liar column):
+    // a non-sustained micro cast leaves the hand castTime later, scaled by
+    // the SAME recovery door as every tempo the sheet owns (Spd asymptote ×
+    // Spellcraft — a master winds up faster, a haste ring quickens it).
+    // M&M defaults, v1: the wind-up neither blocks movement nor breaks on a
+    // hit; aim is taken at RELEASE (resolve_active_cast — you steer the
+    // crosshair during the wind-up). Sustained rows toggle instantly above
+    // and reach here only as micro non-sustained: a stance flip is not a
+    // throw. The expiry tick lives beside spellbook_tick in advance_frame.
+    if (!def->sustained && def->castTime > 0.0f) {
+        const sm::CharacterSheet eff = player_effective_sheet(app);
+        app.pendingCastOrd = ord;
+        app.pendingCastSteps = std::uint32_t(sm::recovery_steps(
+            def->castTime, eff.attributes, eff.skills,
+            sm::SkillId::Spellcraft));
+        return true;
+    }
+    return resolve_active_cast(app, ord);
 }
 
 // THE pause switch — the only place App::playerPaused is written. Every button
@@ -3033,6 +3067,24 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     sm::spellbook_tick(app.gs.player.spellBook,
                        app.gs.player.combatStats,
                        /*steps=*/1u);
+    // The cast wind-up counts the SAME quantum: castTime scaled through the
+    // recovery door at the press (cast_active_spell), released here through
+    // the identical resolution the zero-castTime path runs. Leaving the
+    // subworld or dying mid-wind-up drops the spell — the arm, not a queue.
+    if (app.pendingCastOrd >= 0) {
+        if (!app.subworld.active()
+            || app.gs.player.combatStats.currentHp <= 0) {
+            app.pendingCastOrd = -1;
+            app.pendingCastSteps = 0;
+        } else if (app.pendingCastSteps > 1u) {
+            --app.pendingCastSteps;
+        } else {
+            const int ord = app.pendingCastOrd;
+            app.pendingCastOrd = -1;
+            app.pendingCastSteps = 0;
+            resolve_active_cast(app, ord);
+        }
+    }
     // The bars follow the EFFECTIVE sheet (phase 4): a worn «+2 END» plate
     // fattens the SP bar, and taking it off (or a sustained spell lapsing —
     // spellbook_tick above has already snuffed this step's casualties) thins
