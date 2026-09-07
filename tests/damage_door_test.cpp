@@ -142,8 +142,13 @@ void test_armour_softens_by_the_row_and_the_kind() {
           "the door applies exactly the hybrid law of the blow's own column");
 
     // The hybrid's THRESHOLD branch (owner verdict 2026-09-05): a blow no
-    // bigger than the plate finds no flesh at all — full block is real, and
-    // a blocked blow is a silent no-op like any zero contribution.
+    // bigger than the plate finds no flesh at all — full block is real. And
+    // since 2026-09-06 (owner: «пусть пишет всё равно») a block is NOT a
+    // silent no-op: the flesh is untouched, but the world SHOWS the blow —
+    // HitFlash + DamageFx{blocked} so the drain sparks off the plate instead
+    // of bleeding, and the result says `blocked` so the striker can speak.
+    // The silence here was the shipped «как будто не попадаю» feel: every
+    // early-game fist swing against mail vanished without a trace.
     const entt::entity turtle = reg.create();
     reg.emplace<sm::ecs::Health>(turtle, 100, 100);
     reg.emplace<sm::ecs::NPCKind>(
@@ -153,8 +158,22 @@ void test_armour_softens_by_the_row_and_the_kind() {
                      DamageKind::Melee, sm::DamageType::Blunt, &bus);
     CHECK(tink.applied == 0.0f,
           "a blow the plate outweighs never lands — 100% reduction is real");
-    CHECK(!reg.any_of<sm::ecs::HitFlash>(turtle),
-          "and a fully blocked blow stamps nothing, like any no-op");
+    CHECK(tink.blocked && !tink.lethal,
+          "and the result names it BLOCKED, distinct from a dead-target no-op");
+    CHECK(reg.get<sm::ecs::Health>(turtle).hp == 100,
+          "the flesh under the plate is untouched");
+    CHECK(reg.all_of<sm::ecs::HitFlash>(turtle)
+              && reg.all_of<sm::ecs::DamageFx>(turtle),
+          "a blocked blow still shows: HitFlash + DamageFx travel together");
+    CHECK(reg.get<sm::ecs::DamageFx>(turtle).blocked
+              && !reg.get<sm::ecs::DamageFx>(turtle).lethal,
+          "and the fx is the spark flavour, not blood");
+    CHECK(!reg.any_of<sm::ecs::LastHit>(turtle),
+          "nothing happened to the BODY: no LastHit, no killer named");
+    // Negative control for the flag itself: a blow that DOES wound is not
+    // blocked — the two exits of the door stay distinguishable.
+    CHECK(!onPlate.blocked && !onBare.blocked,
+          "a landing blow never reads as blocked");
 
     // ...and whether armour is in the way at all is the KIND's column.
     const entt::entity falling = reg.create();

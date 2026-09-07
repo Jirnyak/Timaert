@@ -97,6 +97,11 @@ struct DamageSource {
 struct DamageResult {
     int applied = 0;      // post-mitigation hp actually subtracted; 0 = no-op
     bool lethal = false;  // this blow drove hp to zero
+    // A REAL blow that armour swallowed whole (amount > 0, mitigated to 0).
+    // Not the same thing as applied == 0: an invalid/dead target is a no-op,
+    // a blocked blow is a fact the world shows (spark, log line, flash) —
+    // owner 2026-09-06: «пусть пишет всё равно».
+    bool blocked = false;
 };
 
 // `type` is WHICH of the nine columns the blow argues with (CANON S13: the

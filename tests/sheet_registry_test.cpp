@@ -181,10 +181,21 @@ void test_the_governed_numbers_follow_the_row() {
 
     CHECK(tr.maxHp == bare.maxHp * 2, "maxHp follows bodybuilding's row");
     CHECK(tr.maxMp == bare.maxMp * 2, "maxMp follows meditation's row");
-    CHECK(trD.rawPhysDamage == bareD.rawPhysDamage * 2,
-          "physical damage follows fighter's row");
-    CHECK(trD.rawSpellDamage == bareD.rawSpellDamage * 2,
-          "spell damage follows spellcraft's row");
+    // «Один рычаг на ручку» (CANON S14, 2026-09-07): the generic pair moved
+    // to TEMPO — the raw adds are the ATTRIBUTE's alone now, and training
+    // Armsmaster/Spellcraft must move the recovery instead of the damage.
+    CHECK(trD.rawPhysDamage == bareD.rawPhysDamage
+              && trD.rawPhysDamage == a.of(AttributeId::Str),
+          "phys add is raw Str — Armsmaster no longer multiplies damage");
+    CHECK(trD.rawSpellDamage == bareD.rawSpellDamage
+              && trD.rawSpellDamage == a.of(AttributeId::Intl),
+          "spell add is raw Intl — Spellcraft no longer multiplies damage");
+    CHECK(recovery_steps(1.0f, a, trained, SkillId::Armsmaster)
+              < recovery_steps(1.0f, a, none, SkillId::Armsmaster),
+          "Armsmaster's row now governs the arm's tempo");
+    CHECK(recovery_steps(1.0f, a, trained, SkillId::Spellcraft)
+              < recovery_steps(1.0f, a, none, SkillId::Spellcraft),
+          "Spellcraft's row now governs the cast's tempo");
     CHECK(get_carry_capacity(a, trained) == bareCarry * 2.0f,
           "carry capacity follows weightlifting's row");
 

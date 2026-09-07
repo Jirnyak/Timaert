@@ -83,17 +83,32 @@ int main() {
     static_assert(!std::is_copy_assignable_v<sm::AudioSystem>);
     static_assert(!std::is_move_constructible_v<sm::AudioSystem>);
     static_assert(!std::is_move_assignable_v<sm::AudioSystem>);
-    // The LIVE set (canon audit 2026-08-29): two music rows, zero sfx rows.
-    // EmpireTheme and Witch were loaded-but-never-played dead content this
-    // test used to guard; the laws below are what it guards now.
+    // The LIVE set: two music rows, and the melee feedback trio (owner
+    // 2026-09-06 — every row is played by a real call site). SFX rows follow
+    // THE fallback law: the FILE may be absent (a procedural default is
+    // synthesized at init — audio.cpp synth_sfx_chunk), so this test demands
+    // the metadata, never the bytes on disk.
     static_assert(static_cast<int>(sm::MusicId::Count) == 2);
-    static_assert(static_cast<int>(sm::SfxId::Count) == 0);
+    static_assert(static_cast<int>(sm::SfxId::Count) == 3);
 
     if (!same_text(sm::music_key(sm::MusicId::Explore), "explore")) {
         return fail("explore music key changed");
     }
     if (!same_text(sm::music_key(sm::MusicId::Subworld), "subworld")) {
         return fail("subworld music key changed");
+    }
+    if (!same_text(sm::sfx_key(sm::SfxId::MeleeSwing), "melee-swing")
+        || !same_text(sm::sfx_file(sm::SfxId::MeleeSwing), "melee-swing.wav")) {
+        return fail("melee-swing sfx row changed");
+    }
+    if (!same_text(sm::sfx_key(sm::SfxId::MeleeHit), "melee-hit")
+        || !same_text(sm::sfx_file(sm::SfxId::MeleeHit), "melee-hit.wav")) {
+        return fail("melee-hit sfx row changed");
+    }
+    if (!same_text(sm::sfx_key(sm::SfxId::MeleeBlocked), "melee-blocked")
+        || !same_text(sm::sfx_file(sm::SfxId::MeleeBlocked),
+                      "melee-blocked.wav")) {
+        return fail("melee-blocked sfx row changed");
     }
     if (sm::music_key(sm::MusicId::Count) || sm::music_file(sm::MusicId::Count)) {
         return fail("invalid music id returned metadata");
@@ -129,8 +144,12 @@ int main() {
     if (!contains_text(audio.last_error(), "audio not initialized")) {
         return fail("play_music did not explain preinit failure");
     }
-    // (No preinit play_sfx probe: with zero sfx rows there is no valid id to
-    // ask with — the invalid-id law below is the whole surviving contract.)
+    if (audio.play_sfx(sm::SfxId::MeleeSwing, -1)) {
+        return fail("play_sfx succeeds before init");
+    }
+    if (!contains_text(audio.last_error(), "audio not initialized")) {
+        return fail("play_sfx did not explain preinit failure");
+    }
     if (audio.play_music(sm::MusicId::Count, 0)) {
         return fail("invalid music id succeeded");
     }

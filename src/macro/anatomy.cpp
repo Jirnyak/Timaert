@@ -168,6 +168,14 @@ StrikeFields hand_strike_fields(const Attributes& attributes,
     const DerivedBonuses d = calculate_derived(attributes, skills);
     out.flatAdd = std::int16_t(std::floor(d.rawPhysDamage));
     out.luck    = std::uint8_t(attributes.of(AttributeId::Lck));
+    // The TEMPO half (CANON S14 «один рычаг», 2026-09-07): the MASS law's
+    // base (weight → seconds, weapon_swing_seconds; the bare hand is the
+    // massless fastest) through the recovery door — Spd asymptote ×
+    // Armsmaster, the arms' generic, never the typed skill that already
+    // multiplied the dice above (one handle, one lever).
+    out.recoverySteps = recovery_steps(weapon_swing_seconds(w),
+                                       attributes, skills,
+                                       SkillId::Armsmaster);
     return out;
 }
 

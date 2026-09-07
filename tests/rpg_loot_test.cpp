@@ -94,7 +94,17 @@ static void test_project_combat_melee() {
     CHECK(approx(out.speedMarchMult, base.speedMarchMult),
           "melee: pace (as a fraction of the march) preserved");
     CHECK(approx(out.attackRange, base.attackRange), "melee: range preserved");
-    CHECK(approx(out.cooldown, base.cooldown), "melee: cooldown preserved");
+    // Tempo is the ONE exception to "identity preserved verbatim" since the
+    // recovery door (CANON S14 «один рычаг», 2026-09-07): the row's cooldown
+    // is the BASE and the sheet divides it — through exactly the door, so
+    // this expectation moves when the law moves, never a pinned number.
+    CHECK(approx(out.cooldown,
+                 seconds_from_steps(std::uint32_t(recovery_steps(
+                     base.cooldown, cs.attributes, cs.skills,
+                     sm::SkillId::Armsmaster)))),
+          "melee: cooldown == the recovery door's verdict (Armsmaster)");
+    CHECK(out.cooldown < base.cooldown,
+          "melee: a quick sheet strikes faster than its row's base");
     CHECK(out.attackKind == CombatTemplate::Melee, "melee: kind preserved");
     CHECK(out.label == base.label, "melee: label pointer preserved");
     CHECK(approx(out.missileSpeed, base.missileSpeed), "melee: missileSpeed preserved");
@@ -119,10 +129,19 @@ static void test_project_combat_missile() {
     CHECK(out.flatAdd == std::int16_t(std::floor(expD.rawSpellDamage)),
           "missile: flatAdd == floor(rawSpellDamage) — the bonus is the SPELL one");
     CHECK(out.attackKind == CombatTemplate::Missile, "missile: kind preserved");
-    // Sanity: spell bonus (intl 7, spellcraft 3) differs from phys (str 12,
-    // fighter 4), so the branch actually matters.
+    // Sanity: the raw spell add (intl 7) differs from the raw phys add
+    // (str 12), so the branch actually matters.
     CHECK(!approx(expD.rawSpellDamage, expD.rawPhysDamage),
           "missile: phys vs spell bonus differ (branch is meaningful)");
+    // Tempo branch: a caster's recovery divides by SPELLCRAFT's rank, not
+    // Armsmaster's — the same door, the domain's own generic.
+    CombatTemplate cdBase{};
+    cdBase.cooldown = 2.0f; cdBase.attackKind = CombatTemplate::Missile;
+    CHECK(approx(project_combat(cs, cdBase).cooldown,
+                 seconds_from_steps(std::uint32_t(recovery_steps(
+                     cdBase.cooldown, cs.attributes, cs.skills,
+                     sm::SkillId::Spellcraft)))),
+          "missile: cooldown == the recovery door's verdict (Spellcraft)");
 }
 
 // ── make_character_sheet: the level point-budget identity ────────────────────

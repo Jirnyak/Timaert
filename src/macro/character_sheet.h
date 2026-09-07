@@ -401,6 +401,17 @@ inline CombatTemplate project_combat(const CharacterSheet& sheet,
     // rest. The sheet's LCK rides along for the crit door.
     out.flatAdd = std::int16_t(std::floor(atkBonus));
     out.luck    = std::uint8_t(sheet.attributes.of(AttributeId::Lck));
+    // TEMPO through the same recovery door as the player's hand (CANON S14
+    // «один рычаг», 2026-09-07 — S4: спец-кода игрока нет, значит и спец-
+    // кривой НПЦ нет): the row's authored cooldown is the BASE, the sheet's
+    // Spd + the generic of the attack's domain divide it — a quick veteran
+    // bandit genuinely strikes faster than a peasant with the same club. One
+    // rounding, in the door; seconds again for the float carrier the strike
+    // pass converts per swing (steps_from_seconds).
+    out.cooldown = seconds_from_steps(std::uint32_t(recovery_steps(
+        base.cooldown, sheet.attributes, sheet.skills,
+        base.attackKind == CombatTemplate::Missile ? SkillId::Spellcraft
+                                                   : SkillId::Armsmaster)));
     return out;
 }
 

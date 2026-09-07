@@ -99,6 +99,8 @@ constexpr ItemDef kCatalog[] = {
         /*slot*/part_bit(BodyPartId::Grip) | part_bit(BodyPartId::OffGrip),
         // 1d4 piercing through the Dagger skill: a rusty sticker — mean 2.5
         // against the fist's 1.5, and the point slips where a club cannot.
+        // Its pace needs no column: the 1 kg above prices the swing through
+        // the mass law (anatomy.h weapon_swing_seconds).
         /*blocks*/0, /*armor*/{}, /*dice*/{1, 4},
         /*dmgType*/DamageType::Pierce, /*skill*/SkillId::Dagger},
     {"arm_leather", "Leather Armor",   ItemType::Armor,      60, 5.00f, "\xF0\x9F\x9B\xA1",

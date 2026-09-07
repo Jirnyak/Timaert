@@ -120,7 +120,49 @@ int main() {
         }
     }
 
-    std::printf("rpg_rules_test: preserve=ok wis=ok price_law=ok\n");
+    // ── 4. THE recovery door (CANON S14 «один рычаг», 2026-09-07) ───────
+    // Shape, not pinned numbers (testing law #4/#5): each claim breaks alone.
+    {
+        const float base = 0.5f;   // the one-handed anchor
+        Attributes a{};
+        a[AttributeId::Spd] = 0;   // the bases start at 1 — zero the ONE input
+        Skills s{};
+        const int blank = recovery_steps(base, a, s, SkillId::Armsmaster);
+        if (blank != int(steps_from_seconds(base))) {
+            return fail("a zeroed sheet swings at exactly the row's base");
+        }
+        // Spd quickens through the SAME asymptote the legs walk on…
+        Attributes fast = a;
+        fast[AttributeId::Spd] = 50;
+        const int quick = recovery_steps(base, fast, s, SkillId::Armsmaster);
+        if (!(quick < blank)) return fail("Spd must quicken the arm");
+        if (quickness_pct(50) != 150) {
+            return fail("half-saturation must sit at spd 50 (the legs' curve)");
+        }
+        // …and the GENERIC skill multiplies on top — the typed one must NOT
+        // (one handle, one lever: Sword already multiplied the dice).
+        Skills sw{};
+        sw[SkillId::Sword] = 100;
+        if (recovery_steps(base, a, sw, SkillId::Armsmaster) != blank) {
+            return fail("a typed skill must not touch the tempo");
+        }
+        s[SkillId::Armsmaster] = 100;
+        const int master = recovery_steps(base, a, s, SkillId::Armsmaster);
+        if (!(master < blank)) return fail("Armsmaster must quicken the arm");
+        // Healthy to the ENGINE caps (attribute 255, rank 100): monotone,
+        // positive, floored at the simulation's own quantum — never 0.
+        Attributes cap{};
+        cap[AttributeId::Spd] = 255;
+        const int demigod = recovery_steps(base, cap, s, SkillId::Armsmaster);
+        if (!(demigod >= 1 && demigod <= master)) {
+            return fail("the law must stay sane to the byte cap");
+        }
+        if (recovery_steps(0.001f, cap, s, SkillId::Armsmaster) != 1) {
+            return fail("the floor is one simulation step");
+        }
+    }
+
+    std::printf("rpg_rules_test: preserve=ok wis=ok price_law=ok recovery=ok\n");
     CHECK(true, "every gate above held");
     return sm::test::report("rpg_rules_test");
 }

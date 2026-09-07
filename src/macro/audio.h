@@ -12,13 +12,21 @@ enum class MusicId : std::uint8_t {
     Count,
 };
 
-// EMPTY today (canon audit 2026-08-29): the one row this enum ever had,
-// Witch, was loaded on every boot and played by nothing in the game — dead
-// content whose only reader was the test guarding it. The machinery stays (an
-// empty registry is a registry, and S23 will want honest world sounds); the
-// first live sound is one enum value + one kSfxAssets row (audio.cpp) again.
+// The first LIVE rows since the 2026-08-29 canon audit emptied this enum
+// (Witch was loaded-but-never-played dead content): the melee feedback trio
+// (owner 2026-09-06 — «не чувствуется сражение», the silent-swing session).
+// Every row is played by a real call site or it does not get a row.
+//
+// THE ASSET LAW, sound edition (the universal-sprite-resolver rule applied
+// to audio): a missing file is NOT silence. Every row has a PROCEDURAL
+// DEFAULT synthesized at init (audio.cpp synth_sfx_chunk), and a real file
+// in assets/sound with the row's name simply overrides it. Adding a sound is
+// one enum value + one kSfxAssets row; shipping it is optionally one file.
 enum class SfxId : std::uint8_t {
-    Count = 0,
+    MeleeSwing = 0,   // the arc itself — heard on EVERY swing, hit or air
+    MeleeHit,         // the blow bit flesh
+    MeleeBlocked,     // armour swallowed the blow whole (damage door blocked)
+    Count,
 };
 
 const char* music_key(MusicId id);

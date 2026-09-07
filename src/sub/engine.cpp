@@ -653,7 +653,7 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
         playerY_ = std::clamp(posOverride[1], 1.0f, float(kFullSize - 2));
     }
     playerAttackHeld_ = false;
-    playerAttackTimer_ = 0.0f;
+    pendingSfxCount_ = 0;   // entry resets engine state — no stale one-shots
     reset_player_motion();
     // ...and PUT HIM ON THE GROUND. playerZ_ is persistent engine state: without
     // this it still held the height of wherever the last subworld session ended,
@@ -889,7 +889,8 @@ void SubworldEngine::spawn_player_entity() {
     reg.emplace<ecs::Combat>(
         e, ecs::Combat{hs.dice, hs.flatAdd, hs.multPct, hs.luck,
                        std::uint8_t(hs.dmgType), playerPace,
-                       kPlayerMeleeRange, kPlayerMeleeCooldown, 0u,
+                       kPlayerMeleeRange,
+                       seconds_from_steps(std::uint32_t(hs.recoverySteps)), 0u,
                        ecs::Combat::Melee});
     reg.emplace<ecs::SubworldTag>(e);
     // First honest point-light emitter (Inc 4): a warm carried lantern. Gathered
@@ -1021,6 +1022,12 @@ void SubworldEngine::sync_player_entity_position() {
                 c->multPct = hs.multPct;
                 c->luck    = hs.luck;
                 c->dmgType = std::uint8_t(hs.dmgType);
+                // TEMPO rides the same refresh as the dice (recovery door,
+                // S14): equip a dagger mid-fight and the NEXT swing is a
+                // dagger's; haste (+Spd on the effective sheet) quickens the
+                // arm exactly as it quickens the legs below.
+                c->cooldown =
+                    seconds_from_steps(std::uint32_t(hs.recoverySteps));
                 // HIS PACE, on his body, like every other body carries it.
                 // It was zero — the player was the one thing in the world
                 // with no speed of its own, because his legs used to live in
@@ -1414,6 +1421,18 @@ void SubworldEngine::push_combat_log(const char* msg) {
     combatLog_[std::size_t(dst)].age = 0.0f;
 }
 
+void SubworldEngine::queue_sfx(SfxId id) {
+    if (pendingSfxCount_ >= kMaxPendingSfx) return;   // overflow drops
+    pendingSfx_[pendingSfxCount_++] = id;
+}
+
+int SubworldEngine::take_pending_sfx(SfxId* out, int cap) {
+    const int n = std::min(pendingSfxCount_, cap);
+    for (int i = 0; i < n; ++i) out[i] = pendingSfx_[i];
+    pendingSfxCount_ = 0;
+    return n;
+}
+
 void SubworldEngine::push_player_hit_log(std::uint32_t targetEntityId,
                                          int damage,
                                          bool lethal) {
@@ -1593,26 +1612,39 @@ bool SubworldEngine::player_threat_callback(void* user,
     return hostile_to_player_entity(reg, e, engine->gs_);
 }
 
-void SubworldEngine::tick_player_melee(float dt) {
-    if (!ecs_ || !gs_ || dt <= 0.0f) return;
+void SubworldEngine::tick_player_melee() {
+    if (!ecs_ || !gs_) return;
     if (gs_->player.combatStats.currentHp <= 0) return;
-
-    playerAttackTimer_ -= dt;
-    if (!playerAttackHeld_ || playerAttackTimer_ > 0.0f) return;
+    if (!playerAttackHeld_) return;
 
     auto& reg = ecs_->reg;
     // Inc 4c: the player's outgoing melee identity lives on its ECS Combat
     // (damage/range/cooldown), refreshed from the sheet by
     // sync_player_entity_position — read it here instead of recomputing. Capture
     // the scalars up front so later component emplaces can't dangle the pointer.
-    const ecs::Combat* pc = nullptr;
+    ecs::Combat* pc = nullptr;
     for (auto pe : reg.view<ecs::PlayerTag, ecs::Combat>()) {
         pc = &reg.get<ecs::Combat>(pe);
         break;
     }
     if (!pc) return;
+    // The swing gate is his Combat's OWN cooldownSteps — decremented by the
+    // one tick_combat_cooldowns like every fighter's. The float twin this
+    // replaces (playerAttackTimer_ -= dt) was the last clock in a fight
+    // quoted in real seconds instead of the simulation's integer quantum.
+    if (pc->cooldownSteps > 0u) return;
     const ecs::Combat strikeStats = *pc;  // scalars up front (see above)
-    const float meleeCooldown = strikeStats.cooldown;
+    // EVERY swing swings (owner 2026-09-06, the «не чувствуется сражение»
+    // session): the recovery is paid and the whoosh is heard whether the arc
+    // meets flesh, plate, a tree or thin air. Before this an empty swing was
+    // free and silent — holding attack in a clearing "swung" every frame and
+    // the first real feedback of the whole melee loop was the enemy's flash.
+    // Written BEFORE any emplace below (see the dangling note above).
+    pc->cooldownSteps = steps_from_seconds(strikeStats.cooldown);
+    queue_sfx(SfxId::MeleeSwing);
+    // TIMAERT_COMBAT_LOG: the owner's verification channel — one stderr line
+    // per swing, greppable as [melee].
+    static const bool combatLog = std::getenv("TIMAERT_COMBAT_LOG") != nullptr;
     // HOSTILES FIRST (owner ruling 2026-08-05, targeting.cpp
     // melee_pick_target): the nearest hostile in reach wins; only with no
     // hostile around does the swing fall back to the nearest body of any
@@ -1634,8 +1666,12 @@ void SubworldEngine::tick_player_melee(float dt) {
         // No creature in reach — the same swing harvests the nearest lootable
         // prop instead (tree, crop — whatever the kind table pays for; the
         // +1.5 covers the trunk radius the melee point-range does not model).
-        if (harvest_prop_near_player(pc->attackRange + 1.5f))
-            playerAttackTimer_ = meleeCooldown;
+        const bool harvested = harvest_prop_near_player(pc->attackRange + 1.5f);
+        if (combatLog) {
+            std::fprintf(stderr,
+                         "[melee] swing target=none harvested=%d cd=%.2fs\n",
+                         harvested ? 1 : 0, double(strikeStats.cooldown));
+        }
         return;
     }
 
@@ -1648,13 +1684,32 @@ void SubworldEngine::tick_player_melee(float dt) {
         reg, target, DamageSource{std::uint32_t{0}, true, 0u, swing.critical},
         swing.amount, DamageKind::Melee,
         DamageType(strikeStats.dmgType), bus_);
-    if (hit.applied <= 0) {
-        playerAttackTimer_ = meleeCooldown;  // a blocked swing still swung
+    const char* label = subworld_attacker_label(reg, target);
+    if (combatLog) {
+        std::fprintf(stderr,
+                     "[melee] swing target=%s rolled=%d applied=%d blocked=%d"
+                     " crit=%d lethal=%d cd=%.2fs\n",
+                     label, swing.amount, hit.applied, hit.blocked ? 1 : 0,
+                     swing.critical ? 1 : 0, hit.lethal ? 1 : 0,
+                     double(strikeStats.cooldown));
+    }
+    if (hit.blocked) {
+        // The plate swallowed the whole blow — SAY so (owner 2026-09-06:
+        // «пусть пишет всё равно»): the silent zero here was the entire
+        // "как будто не попадаю" feel — every early-game fist swing against
+        // a mailed bandit vanished without a line, a flash or a sound.
+        char status[96]{};
+        std::snprintf(status, sizeof(status),
+                      "Your blow glances off %s's armour", label);
+        set_status(status);
+        push_combat_log(status);
+        queue_sfx(SfxId::MeleeBlocked);
         return;
     }
+    if (hit.applied <= 0) return;   // dead/invalid target — no-op, no sound
+    queue_sfx(SfxId::MeleeHit);
     push_player_hit_log(std::uint32_t(entt::to_integral(target)),
                         hit.applied, hit.lethal);
-    const char* label = subworld_attacker_label(reg, target);
     char status[96]{};
     std::snprintf(status, sizeof(status), "You %s %s for %d%s",
                   hit.lethal ? "killed" : "hit",
@@ -1662,7 +1717,6 @@ void SubworldEngine::tick_player_melee(float dt) {
                   std::max(0, hit.applied),
                   swing.critical ? " (crit)" : "");
     set_status(status);
-    playerAttackTimer_ = meleeCooldown;
 }
 
 bool SubworldEngine::harvest_prop_near_player(float maxDist,
@@ -1786,9 +1840,12 @@ void SubworldEngine::tick_damage_fx() {
         // ghostly Undead and stone Hulk — read purely from the victim's own
         // sprite archetype, so a skeleton puffs grey and a wolf sprays red with
         // zero creature-specific branching. No Sprite (a plain NPC paper-doll,
-        // archetype 0xFF) is flesh ⇒ blood.
+        // archetype 0xFF) is flesh ⇒ blood. A BLOCKED blow (armour swallowed
+        // it whole, damage door) never reached the flesh at all — it strikes a
+        // spark off the plate, whatever the body plan.
         FxKind kind = FxKind::Blood;
-        if (const auto* spr = reg.try_get<ecs::Sprite>(e)) {
+        if (fx.blocked) kind = FxKind::Spark;
+        else if (const auto* spr = reg.try_get<ecs::Sprite>(e)) {
             const auto arch = static_cast<CreatureArchetype>(
                 sprite_row(SpriteId(spr->spriteRow)).archetype);
             if (arch == CreatureArchetype::Undead
@@ -2402,6 +2459,14 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
         BodyDesc d{};
         d.x = p.x; d.y = p.y; d.z = p.z;
         d.radius = body_radius(reg, e);
+        // The column's OTHER half, from the same authority the renderer
+        // draws: the Sprite's per-entity height (its row's body_height_m ×
+        // the shape byte, stamped at birth). Separation touches two bodies
+        // only while their columns overlap vertically — a flier clears a
+        // crowd of men at head height but is honestly inside a dragon's
+        // column. No Sprite / unstated height = 0 → the crowd's add() fills
+        // the man-column default.
+        if (const auto* spr = reg.try_get<ecs::Sprite>(e)) d.height = spr->height;
         d.speed = c ? c->speed : 0.0f;
         d.reach = c ? c->attackRange : 0.0f;
         d.sight = body_sight(reg, e);
@@ -2938,7 +3003,7 @@ void SubworldEngine::leave(bool force) {
     interactProps_.clear();
     playerAttackHeld_ = false;
     reset_player_motion();
-    playerAttackTimer_ = 0.0f;
+    pendingSfxCount_ = 0;
     statusLine_.clear();
     statusTimer_ = 0.0f;
     combatLogCount_ = 0;
@@ -3097,7 +3162,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     playerX_ = float(kCellSize) + ex;
     playerY_ = float(kCellSize) + ey;
     playerAttackHeld_ = false;
-    playerAttackTimer_ = 0.0f;
+    pendingSfxCount_ = 0;   // entry resets engine state — no stale one-shots
     reset_player_motion();
     playerZ_ = renderer3dVk_.sample_height_m(playerX_, playerY_);
     playerGrounded_ = true;
@@ -4021,7 +4086,7 @@ void SubworldEngine::tick(float dt) {
         // grid the same way the spell contact does, and the grid it asks must
         // be THIS tick's (it used to run before the build and could only full-
         // scan the registry on every swing).
-        tick_player_melee(dt);
+        tick_player_melee();
         ecs::sys::tick_visual_interp(*ecs_, dt);
         ecs::sys::tick_combat_cooldowns(*ecs_, /*steps=*/1u);
         tick_spell_projectiles(*ecs_, bus_, dt,

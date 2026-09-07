@@ -90,6 +90,11 @@ struct ItemDef {
     // column the blow argues with; skill names WHICH weapon skill multiplies
     // a strike made with this row (SkillId::Count = none — the wielder falls
     // back to Unarmed, which is honest for a swung sack of grain).
+    // There is deliberately NO tempo column: a weapon's swing time is
+    // DERIVED from its `weight` above (macro/anatomy.h weapon_swing_seconds
+    // — owner verdict 2026-09-07: «скорость привязать к массе»), so every
+    // future row gets its pace for free from the one kilogram figure the
+    // carry law already prices, and the two can never disagree.
     Dice          dice{};
     DamageType    dmgType   = DamageType::Blunt;
     SkillId       skill     = SkillId::Count;

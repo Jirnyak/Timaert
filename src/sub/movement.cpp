@@ -1,4 +1,5 @@
 #include "sub/movement.h"
+#include "sub/height.h"   // kBodyEyeM — the ONE body height (capsule columns)
 #include <bit>
 #include <cmath>
 #include <cstring>
@@ -95,7 +96,8 @@ void BodyCrowd::reserve(int n) {
     x.reserve(c); y.reserve(c); z.reserve(c);
     vx.reserve(c); vy.reserve(c);
     intentVx.reserve(c); intentVy.reserve(c);
-    radius.reserve(c); speed.reserve(c); reach.reserve(c); sight.reserve(c);
+    radius.reserve(c); height.reserve(c); speed.reserve(c); reach.reserve(c);
+    sight.reserve(c);
     enemyMask.reserve(c); faction.reserve(c); flags.reserve(c);
     target.reserve(c); inReach.reserve(c);
 }
@@ -107,7 +109,8 @@ void BodyCrowd::clear() {
     x.clear(); y.clear(); z.clear();
     vx.clear(); vy.clear();
     intentVx.clear(); intentVy.clear();
-    radius.clear(); speed.clear(); reach.clear(); sight.clear();
+    radius.clear(); height.clear(); speed.clear(); reach.clear();
+    sight.clear();
     enemyMask.clear(); faction.clear(); flags.clear();
     target.clear(); inReach.clear();
 }
@@ -119,6 +122,10 @@ int BodyCrowd::add(const BodyDesc& d) {
     vx.push_back(d.vx); vy.push_back(d.vy);
     intentVx.push_back(d.intentVx); intentVy.push_back(d.intentVy);
     radius.push_back(d.radius); speed.push_back(d.speed);
+    // An unstated column takes a person's room (kBodyEyeM — the entt-free
+    // man height this module may name); the engine's gather states the row's
+    // own drawn height, so a dragon's column towers by its table.
+    height.push_back(d.height > 0.0f ? d.height : kBodyEyeM);
     reach.push_back(d.reach); sight.push_back(d.sight);
     enemyMask.push_back(d.enemyMask);
     faction.push_back(d.faction);
@@ -448,6 +455,7 @@ void steer_bodies(BodyCrowd& u, const UnitGrid& fine, const UnitGrid& pick,
 
         const float px = u.x[si], py = u.y[si], pz = u.z[si];
         const float ri = u.radius[si];
+        const float hi = u.height[si];   // this body's column top = pz + hi
         const bool pinned = (u.flags[si] & B_Pinned) != 0u;
         // A passive body is one whose MIND refuses the war (a Flee brain): the
         // combat drive below never claims it, so a village at war does not
@@ -666,6 +674,26 @@ void steer_bodies(BodyCrowd& u, const UnitGrid& fine, const UnitGrid& pick,
                         const float d = length2d(dx, dy);
                         const float touch = (ri + u.radius[sj]) * prm.sepRadiusScale;
                         if (d >= touch) continue;
+                        // A body is a vertical COLUMN — its feet to its OWN
+                        // drawn height (the same table row the renderer
+                        // draws, u.height) — not its ground shadow. Two
+                        // bodies touch only while their columns overlap
+                        // vertically: a flier above the crowd's heads is
+                        // touched by nobody (the shipped bug: the flying
+                        // player was shoved sideways by ground NPCs through
+                        // his 2D projection), while the same flier over a
+                        // dragon is honestly inside the dragon's column.
+                        // Within the overlap the planar law below is
+                        // untouched — everyone standing on the same ground
+                        // pushes bit-identically to before. Deliberately NOT
+                        // a capsule (spherical caps): caps add a radius of
+                        // phantom height at each end, and a wide creature
+                        // would shove bodies it visibly floats clear of. The
+                        // push itself stays horizontal: this pass owns legs
+                        // in the plane, the vertical belongs to height.h
+                        // alone (no vz in the SoA).
+                        if (pz >= u.z[sj] + u.height[sj]
+                            || u.z[sj] >= pz + hi) continue;
                         if (d < 1.0e-3f) tie_break_dir(i, j, dx, dy);
                         else { dx /= d; dy /= d; }
                         const float force = 1.0f - d / touch;

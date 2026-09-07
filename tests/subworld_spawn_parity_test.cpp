@@ -182,7 +182,11 @@ std::vector<SpawnRecord> expected_cell_fauna(
         r.damage = damage;
         r.speed = sm::march_speed(f.combat.speedMarchMult);
         r.range = f.combat.attackRange;
-        r.cooldown = f.combat.cooldown;
+        // Cooldown is sheet-derived since the recovery door (S14, 2026-09-07)
+        // — per-body like hp/damage, so it leaves the exact mirror and is
+        // asserted as a PROPERTY below (`sheet_lifts_every_body`: the sheet
+        // may only QUICKEN the row's base, never slow or zero it).
+        r.cooldown = 0.0f;
         r.radius = f.radius;
         r.level = std::int16_t(level);
         r.ai = ai_kind(f.ai);
@@ -229,7 +233,7 @@ std::vector<SpawnRecord> actual_fauna(sm::ecs::World& world) {
                  + float(combat.flatAdd);
         r.speed = combat.speed;
         r.range = combat.attackRange;
-        r.cooldown = combat.cooldown;
+        r.cooldown = 0.0f;   // property, not mirror — see expected_fauna
         r.radius = ai.radius;
         r.level = level.value;
         r.ai = ai.kind;
@@ -530,13 +534,14 @@ MacroSeeds seed_macro_npcs(entt::registry& reg, int mapW) {
         return e;
     };
     MacroSeeds s;
-    // The bandit is HALF DEAD on the map (3.5 of 7) — the wound the projection
-    // has to carry down. Everyone else is whole, so "arrives whole" has a
-    // control standing right next to "arrives wounded".
-    s.bandit  = mk(sm::NPCType::Bandit,   3, 0,        0,   3.5f,  7.0f, 4, 0xB0B0u);
-    s.peasant = mk(sm::NPCType::Peasant,  1, 1,        0,  12.0f, 12.0f, 2, 0xCAFEu);
-    s.wrap    = mk(sm::NPCType::Guard,    2, mapW - 1, 0,  30.0f, 30.0f, 5, 0x1234u);
-    s.far     = mk(sm::NPCType::Merchant, 1, 50,       50, 20.0f, 20.0f, 3, 0x9999u);
+    // The bandit is WOUNDED on the map (3 of 7 — the bar is integer since
+    // v80; the old float 3.5f truncated to exactly this) — the wound the
+    // projection has to carry down. Everyone else is whole, so "arrives
+    // whole" has a control standing right next to "arrives wounded".
+    s.bandit  = mk(sm::NPCType::Bandit,   3, 0,        0,   3,  7, 4, 0xB0B0u);
+    s.peasant = mk(sm::NPCType::Peasant,  1, 1,        0,  12, 12, 2, 0xCAFEu);
+    s.wrap    = mk(sm::NPCType::Guard,    2, mapW - 1, 0,  30, 30, 5, 0x1234u);
+    s.far     = mk(sm::NPCType::Merchant, 1, 50,       50, 20, 20, 3, 0x9999u);
     return s;
 }
 
@@ -615,6 +620,15 @@ bool sheet_lifts_every_body(sm::ecs::World& world) {
         const auto& h = v.get<sm::ecs::Health>(e);
         if (!world.reg.all_of<sm::CharacterSheet>(e)) return false;
         if (!(h.maxHp >= float(row.combat.hp))) return false;
+        // The recovery door's half of the same property (S14, 2026-09-07):
+        // the sheet may only QUICKEN the row's authored tempo — Spd and the
+        // generic skill divide, nothing multiplies — and never to zero.
+        if (const auto* c = world.reg.try_get<sm::ecs::Combat>(e)) {
+            if (!(c->cooldown > 0.0f
+                  && c->cooldown <= row.combat.cooldown + 1.0e-4f)) {
+                return false;
+            }
+        }
         ++checked;
     }
     return checked > 0;   // a loop that measured nothing has proven nothing

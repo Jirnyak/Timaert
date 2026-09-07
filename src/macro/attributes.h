@@ -10,6 +10,7 @@
 // since this struct is hot data). `wil` reads WILL on the sheet.
 #pragma once
 #include "core/table_guard.h"
+#include "core/time.h"     // steps_from_seconds — the recovery door's quantum
 #include <array>
 #include <cstdint>
 #include <string>
@@ -560,27 +561,63 @@ inline float cha_trade_discount(int cha) {
     return float(cha_trade_discount_pct(cha)) * 0.01f;
 }
 
+// ── Natural quickness — THE Spd asymptote ──────────────────────
+// The body's own tempo curve, one shape for every limb (CANON S14 «один рычаг
+// на ручку», 2026-09-07): legs, sword arm and casting hand all divide their
+// base tempo by this. Asymptotic so a monstrous score cannot run away with
+// the game: half-saturation at 50 — half the endgame anchor (~100, S14), so a
+// mid-invested body has half its natural ceiling and the byte cap 255 lands
+// at ×1.84, still under the hard ×2 limit. Whole percents, 100 = ×1.
+inline int quickness_pct(int spd) {
+    if (spd < 0) spd = 0;
+    return 100 + (100 * spd) / (spd + 50);
+}
+
 inline DerivedBonuses calculate_derived(const Attributes& a, const Skills& s) {
     DerivedBonuses d;
-    // The GENERIC half of the damage stack (S14): Armsmaster multiplies all
-    // physical, Spellcraft all spell power. The TYPED half — the weapon skill
-    // of what the hand holds, the school of the spell being cast — reads at
-    // the damage door (dice phase) and the school wiring (S15), on top.
-    // Integer floor once, here — readers used to floor the float themselves.
-    d.rawPhysDamage  = a.of(AttributeId::Str)
-                       * skill_mult_pct(s, SkillId::Armsmaster) / 100;
-    d.rawSpellDamage = a.of(AttributeId::Intl)
-                       * skill_mult_pct(s, SkillId::Spellcraft) / 100;
+    // RAW adds (CANON S14 «один рычаг на ручку», 2026-09-07): the attribute
+    // is the whole add — «природная мощь». The 2026-09-03 form multiplied
+    // these by Armsmaster/Spellcraft, which counted the generic pair into
+    // damage while the same pair now governs TEMPO (recovery_steps below) —
+    // one handle in two totals is a hidden square, not a synergy. The TYPED
+    // half — weapon skill, school — still multiplies at the damage door /
+    // school wiring (S15), each lever exactly once.
+    d.rawPhysDamage  = a.of(AttributeId::Str);
+    d.rawSpellDamage = a.of(AttributeId::Intl);
     d.expMultPct     = 100 + a.of(AttributeId::Wis);
-    // Attributes add, skills multiply. `spd` is the body's own quickness
-    // (asymptotic, so a monstrous score cannot run away with the game);
-    // `athletics` is training on top of it. `travel` has no business here — it
-    // buys DISTANCE per bar of stamina, not speed (macro/movement_cost.h).
-    const int spd = a.of(AttributeId::Spd);
-    d.moveSpeedPct   = (100 + (100 * spd) / (spd + 50))
+    // Attributes add, skills multiply. `spd` is the body's own quickness;
+    // `athletics` is training on top of it — the legs' GENERIC tempo skill,
+    // exactly what Armsmaster is to the arms. `travel` has no business here —
+    // it buys DISTANCE per bar of stamina, not speed (macro/movement_cost.h).
+    d.moveSpeedPct   = quickness_pct(a.of(AttributeId::Spd))
                        * skill_mult_pct(s, SkillId::Athletics) / 100;
     d.tradeDiscountPct = cha_trade_discount_pct(a.of(AttributeId::Cha));
     return d;
+}
+
+// ── THE recovery door (CANON S14 «один рычаг на ручку», 2026-09-07) ────────
+// One tempo law for a swing, a cast — and the legs, which already walk this
+// exact shape inside moveSpeedPct above: the row's authored base, divided by
+// natural quickness (the Spd asymptote) and by the rank of the GENERIC skill
+// of the domain — Armsmaster for any physical act, Spellcraft for any cast.
+// The TYPED skill (Sword, FireMagic) is deliberately ABSENT: it is the POWER
+// lever, and one handle counted into both power and tempo is a hidden square
+// (×121 DPS from one skill), not a synergy.
+//
+// The base is DATA — the item row's `recovery`, the spell row's `cooldown`,
+// the NPC row's `cooldown` — so a dagger is faster than a mace by its row,
+// never by code. Floor = one simulation step: the time quantum itself, not an
+// invented cap. Integer end to end and healthy to the ENGINE caps (attribute
+// 255 → quickness ≤ 184, rank 100 → tempo ≤ 600 at 5 %/rank): worst numerator
+// is a 120 s base = 7680 steps × 10⁴ ≈ 7.7·10⁷, thirty-fold inside int; the
+// law test locks the caps explicitly.
+inline int recovery_steps(float baseSeconds, const Attributes& a,
+                          const Skills& s, SkillId genericSkill) {
+    const int quickPct = quickness_pct(a.of(AttributeId::Spd));
+    const int tempoPct = skill_mult_pct(s, genericSkill);
+    const int base = int(steps_from_seconds(baseSeconds));
+    const int steps = (base * 100 * 100) / (quickPct * tempoPct);
+    return steps < 1 ? 1 : steps;
 }
 
 // ── Carry weight ───────────────────────────────────────────────

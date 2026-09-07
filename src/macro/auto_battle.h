@@ -47,9 +47,10 @@ struct AutoBattleSide {
     // A leader STATED directly instead of derived from a row: the PLAYER.
     // His hp ceiling and damage-per-second come from the very numbers his
     // subworld body fights with (sub/engine.cpp spawn_player_entity:
-    // combatStats.maxHp, and (base + rawPhysDamage) each kPlayerMeleeCooldown
-    // seconds) — the same-game guarantee, extended to the resolver. Both < 0
-    // (the default) means "derive from the row" as every NPC leader does.
+    // combatStats.maxHp, and the hand_strike_fields swing at its own
+    // recovery tempo — the S14 door) — the same-game guarantee, extended to
+    // the resolver. Both < 0 (the default) means "derive from the row" as
+    // every NPC leader does.
     float         leaderHpOverride  = -1.0f;
     float         leaderDpsOverride = -1.0f;
     const SoldierSquad* roster = nullptr;   // may be empty/null

@@ -215,14 +215,24 @@ struct NpcTypeDef {
     int hireGold = 0;
 };
 
-inline constexpr CombatTemplate kPeasantCombat   {25,{3,1}, 1.0f, 2.0f, 1.5f, "Psr", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
-inline constexpr CombatTemplate kWoodcutterCombat{30,{8,1}, 1.0f, 2.0f, 1.2f, "Wdc", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
-inline constexpr CombatTemplate kMerchantCombat  {30,{5,1}, 1.25f, 2.0f, 1.5f, "Mrc", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
-inline constexpr CombatTemplate kCaravanCombat   {25,{4,1}, 1.5f, 2.0f, 1.5f, "Cvn", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
-inline constexpr CombatTemplate kBanditCombat    {50,{12,1}, 2.25f, 3.0f, 1.0f, "Bnd", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
-inline constexpr CombatTemplate kGuardCombat     {55,{14,1}, 1.75f, 3.0f, 1.0f, "Grd", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
-inline constexpr CombatTemplate kWitchCombat     {60,{18,1}, 1.5f, 20.0f,2.0f, "Wtc", CombatTemplate::Missile, 180, 0, 0xFFA070D0u};
-inline constexpr CombatTemplate kSorceressCombat {70,{22,1}, 1.25f, 25.0f,1.8f, "Src", CombatTemplate::Missile, 200, 6, 0xFF70C0E0u};
+// Humanoid cooldowns are authored ON THE MASS CURVE (anatomy.h
+// weapon_swing_seconds, owner 2026-09-07): a humanoid's natural attack IS an
+// implied weapon, so its tempo = kHandSwingS + implied_kg × kSwingSecondsPerKg
+// — the same second a real ItemDef of that heft would cost anyone's hand, so
+// the day these rows hold real inventories nothing about their pace changes.
+// Implied hefts: peasant/merchant/caravaner club-or-knife-and-fear ~3 kg (an
+// untrained wide swing), woodcutter's felling axe ~2.5 kg, bandit blade and
+// guard sword ~2 kg. Casters are not mass: their bolt tempo sits on the SPELL
+// rows' own scale (combat spells author 1.5–4 s cooldowns — spells.h).
+// Beast rows below keep their own authored tempos: a fang has no kilograms.
+inline constexpr CombatTemplate kPeasantCombat   {25,{3,1}, 1.0f, 2.0f, 3.0f, "Psr", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
+inline constexpr CombatTemplate kWoodcutterCombat{30,{8,1}, 1.0f, 2.0f, 2.75f, "Wdc", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
+inline constexpr CombatTemplate kMerchantCombat  {30,{5,1}, 1.25f, 2.0f, 3.0f, "Mrc", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
+inline constexpr CombatTemplate kCaravanCombat   {25,{4,1}, 1.5f, 2.0f, 3.0f, "Cvn", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
+inline constexpr CombatTemplate kBanditCombat    {50,{12,1}, 2.25f, 3.0f, 2.5f, "Bnd", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
+inline constexpr CombatTemplate kGuardCombat     {55,{14,1}, 1.75f, 3.0f, 2.5f, "Grd", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
+inline constexpr CombatTemplate kWitchCombat     {60,{18,1}, 1.5f, 20.0f,4.0f, "Wtc", CombatTemplate::Missile, 180, 0, 0xFFA070D0u};
+inline constexpr CombatTemplate kSorceressCombat {70,{22,1}, 1.25f, 25.0f,3.6f, "Src", CombatTemplate::Missile, 200, 6, 0xFF70C0E0u};
 
 inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // Peasant

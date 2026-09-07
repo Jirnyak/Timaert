@@ -10,6 +10,7 @@
 #include "core/rng.h"
 #include "core/time.h"
 #include "ecs/world.h"
+#include "macro/audio.h"     // SfxId — the one sound vocabulary (pending sfx)
 #include "macro/chronicle.h"
 #include "sub/seamless_manager.h"
 #include "sub/camera.h"
@@ -93,8 +94,11 @@ struct CombatLogEntry {
 // player's auto-battle side from it (hp × (base + rawPhysDamage) per
 // cooldown). One set of numbers, or the auto-resolve and the fought fight
 // would price the same player differently.
+// kPlayerMeleeCooldown is DEAD (recovery door, CANON S14 2026-09-07): the
+// swing's tempo comes from the held weapon's MASS through hand_strike_fields
+// (.recoverySteps — anatomy.h weapon_swing_seconds ÷ Spd asymptote ÷
+// Armsmaster), refreshed each tick like the dice.
 constexpr float kPlayerMeleeRange      = 5.0f;
-constexpr float kPlayerMeleeCooldown   = 0.5f;
 // kPlayerBaseMeleeDamage is DEAD (phase 3): the bare hand is the fist's own
 // dice row now (macro/anatomy.h kFistDice) and a weapon brings its own. The
 // historical 10 survives only as the armour scale's anchor (kArmorHalving).
@@ -478,6 +482,14 @@ public:
     const char* status_line() const { return statusLine_.c_str(); }
     int combat_log_count() const { return combatLogCount_; }
     const CombatLogEntry* combat_log_entry(int index) const;
+    // One-shot combat SFX queued by this tick's swings/hits, in THE sound
+    // vocabulary (macro/audio.h SfxId — no shadow enum to fall out of step).
+    // The app drains this after tick() and hands the ids to AudioSystem:
+    // sound is an app-side device exactly like the window, so the engine only
+    // states the FACT «a swing happened / a blow landed / the plate rang».
+    // Overflow drops silently — sixteen one-shots in one tick is already a
+    // wall of sound. Draining copies out and clears; returns the count.
+    int take_pending_sfx(SfxId* out, int cap);
 
 private:
     bool active_ = false;
@@ -648,7 +660,15 @@ private:
     float playerVz_ = 0.0f;
     // Feet-on-support this tick (sync_player_vertical) — the jump gate.
     bool  playerGrounded_ = false;
-    float playerAttackTimer_ = 0.0f;
+    // (playerAttackTimer_ is DEAD — the swing gate lives on the player
+    // Combat's own cooldownSteps, ticked by the ONE tick_combat_cooldowns
+    // like every other fighter's; the last float clock in a fight.)
+    // Pending one-shot combat sounds (take_pending_sfx above). A flat ring
+    // is enough: pushed by the melee tick, drained by the app once per frame.
+    static constexpr int kMaxPendingSfx = 16;
+    SfxId pendingSfx_[kMaxPendingSfx]{};
+    int   pendingSfxCount_ = 0;
+    void  queue_sfx(SfxId id);
     Rng   spellRng_{1u};
     // The melee dice stream (core/dice.h): every hand-to-hand roll_strike in
     // this window draws from here. Separate from spellRng_ so a swing cannot
@@ -756,7 +776,7 @@ private:
     float footing_height_m(float x, float y) const;
     bool exit_blocked_by_danger() const;
     bool has_hostile_near_player(float radius) const;
-    void tick_player_melee(float dt);
+    void tick_player_melee();
     void tick_hit_flashes(float dt);
     // Drain the one-shot ecs::DamageFx markers stamped by every damage site this
     // tick into blood / dust particle bursts, then remove them. ONE place turns a

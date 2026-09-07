@@ -35,17 +35,32 @@ constexpr MusicAsset kMusicAssets[kMusicCount] = {
 static_assert(rows_in_enum_order(kMusicAssets, &MusicAsset::id),
               "kMusicAssets row order must mirror MusicId");
 
-// The SFX table has ZERO rows while SfxId is empty (see audio.h) — and a
-// zero-length C array is ill-formed, so the table itself is absent and the
-// lookups answer "no row" directly. When SfxId gains its first live value,
-// restore `constexpr SfxAsset kSfxAssets[kSfxCount]` with the
-// rows_in_enum_order guard, exactly like the music table above.
-static_assert(kSfxCount == 0,
-              "SfxId grew a row: bring back the kSfxAssets table + guard");
+struct SfxAsset {
+    SfxId id;
+    const char* key;
+    const char* file;
+};
+
+// The melee feedback trio (owner 2026-09-06). The file column is where a real
+// recording will land when one exists — TODAY none do, and the procedural
+// default (synth_sfx_chunk, mixer branch below) answers for every missing
+// file. The row is live either way: play_sfx has a chunk by construction.
+constexpr SfxAsset kSfxAssets[kSfxCount] = {
+    {SfxId::MeleeSwing,   "melee-swing",   "melee-swing.wav"},
+    {SfxId::MeleeHit,     "melee-hit",     "melee-hit.wav"},
+    {SfxId::MeleeBlocked, "melee-blocked", "melee-blocked.wav"},
+};
+static_assert(rows_in_enum_order(kSfxAssets, &SfxAsset::id),
+              "kSfxAssets row order must mirror SfxId");
 
 const MusicAsset* find_music_asset(MusicId id) {
     const std::size_t i = std::size_t(id);
     return i < kMusicCount ? &kMusicAssets[i] : nullptr;
+}
+
+const SfxAsset* find_sfx_asset(SfxId id) {
+    const std::size_t i = std::size_t(id);
+    return i < kSfxCount ? &kSfxAssets[i] : nullptr;
 }
 
 } // namespace
@@ -58,11 +73,13 @@ const char* music_file(MusicId id) {
     const MusicAsset* a = find_music_asset(id);
     return a ? a->file : nullptr;
 }
-const char* sfx_key(SfxId) {
-    return nullptr;   // no rows — see the kSfxAssets note above
+const char* sfx_key(SfxId id) {
+    const SfxAsset* a = find_sfx_asset(id);
+    return a ? a->key : nullptr;
 }
-const char* sfx_file(SfxId) {
-    return nullptr;   // no rows — see the kSfxAssets note above
+const char* sfx_file(SfxId id) {
+    const SfxAsset* a = find_sfx_asset(id);
+    return a ? a->file : nullptr;
 }
 
 } // namespace sm
@@ -74,8 +91,10 @@ const char* sfx_file(SfxId) {
 
 #include <array>
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <vector>
 
 namespace sm {
 namespace {
@@ -176,8 +195,154 @@ Mix_Music* load_music_file(const char* file, const char* assetRoot,
     return nullptr;
 }
 
-// (load_sfx_file left with the last SFX row — restore it beside kSfxAssets
-// when the table gains one; load_music_file above is the shape to copy.)
+Mix_Chunk* load_sfx_file(const char* file, const char* assetRoot,
+                         char* loadedPath, std::size_t loadedPathSize,
+                         char* error, std::size_t errorSize) {
+    char path[512];
+    if (build_asset_root_path(path, sizeof(path), assetRoot, file)
+        && file_exists(path)) {
+        copy_text(loadedPath, loadedPathSize, path);
+        Mix_Chunk* chunk = Mix_LoadWAV(path);
+        if (!chunk) copy_text(error, errorSize, Mix_GetError());
+        return chunk;
+    }
+
+    if (build_base_path(path, sizeof(path), file) && file_exists(path)) {
+        copy_text(loadedPath, loadedPathSize, path);
+        Mix_Chunk* chunk = Mix_LoadWAV(path);
+        if (!chunk) copy_text(error, errorSize, Mix_GetError());
+        return chunk;
+    }
+
+    for (const char* prefix : kSoundPrefixes) {
+        if (!build_path(path, sizeof(path), prefix, file)) continue;
+        if (!file_exists(path)) continue;
+        copy_text(loadedPath, loadedPathSize, path);
+        Mix_Chunk* chunk = Mix_LoadWAV(path);
+        if (!chunk) copy_text(error, errorSize, Mix_GetError());
+        return chunk;
+    }
+
+    if (build_path(path, sizeof(path), kSoundPrefixes[0], file)) {
+        copy_text(loadedPath, loadedPathSize, path);
+    }
+    copy_text(error, errorSize, "file not found");
+    return nullptr;
+}
+
+// ── Procedural SFX defaults ────────────────────────────────────────────────
+// The universal-resolver law, sound edition (owner 2026-09-06: «где нет
+// ассетов пускаем процедурный дефолт»): a row whose file is absent is
+// synthesized right here, so play_sfx always has a chunk and a shipped .wav
+// simply overrides the synth. Deterministic by construction — a fixed-seed
+// xorshift per sound, no clocks — so every boot makes the identical bytes.
+//
+// The samples are written in the EXACT format Mix_OpenAudio opened below
+// (kSampleRate, MIX_DEFAULT_FORMAT = signed 16-bit native, kOutputChannels
+// interleaved): Mix_QuickLoad_RAW performs no conversion, it trusts the
+// buffer to be device-formatted, and this proximity is the guarantee.
+
+struct SynthRng {   // xorshift32; [-1,1) noise
+    std::uint32_t s;
+    explicit SynthRng(std::uint32_t seed) : s(seed ? seed : 1u) {}
+    float noise() {
+        s ^= s << 13; s ^= s >> 17; s ^= s << 5;
+        return float(s >> 8) * (2.0f / 16777216.0f) - 1.0f;
+    }
+};
+
+constexpr float kSynthPi = 3.14159265358979f;
+
+// The arc through the air: noise through a one-pole lowpass whose cutoff
+// rises and falls across the stroke — pink-ish rush, no tone of its own.
+void synth_melee_swing(std::vector<float>& mono) {
+    const int n = int(0.20f * kSampleRate);
+    mono.resize(std::size_t(n));
+    SynthRng rng(0xA5F00D1u);
+    float lp = 0.0f;
+    for (int i = 0; i < n; ++i) {
+        const float ph = float(i) / float(n);            // 0..1 over the stroke
+        const float cutoff = 250.0f + 1900.0f * std::sin(kSynthPi * ph);
+        const float a = 1.0f - std::exp(-2.0f * kSynthPi * cutoff
+                                        / float(kSampleRate));
+        lp += a * (rng.noise() - lp);
+        const float env = std::pow(std::sin(kSynthPi * ph), 1.5f);
+        mono[std::size_t(i)] = lp * env;
+    }
+}
+
+// The blow biting flesh: a low body whose pitch falls fast, under a short
+// noise slap — thud, not ring.
+void synth_melee_hit(std::vector<float>& mono) {
+    const int n = int(0.15f * kSampleRate);
+    mono.resize(std::size_t(n));
+    SynthRng rng(0xBEEF11u);
+    float phase = 0.0f;
+    for (int i = 0; i < n; ++i) {
+        const float t = float(i) / float(kSampleRate);
+        const float f = 60.0f + 110.0f * std::exp(-t * 28.0f);
+        phase += 2.0f * kSynthPi * f / float(kSampleRate);
+        const float body = std::sin(phase) * std::exp(-t * 26.0f);
+        const float slap = rng.noise() * 0.8f * std::exp(-t * 600.0f);
+        mono[std::size_t(i)] = body + slap;
+    }
+}
+
+// The plate ringing: a handful of inharmonic metal partials, the high ones
+// dying first, over a tick of noise attack — clink, unmistakably not a wound.
+void synth_melee_blocked(std::vector<float>& mono) {
+    const int n = int(0.28f * kSampleRate);
+    mono.resize(std::size_t(n));
+    SynthRng rng(0xC1A46u);
+    constexpr float kFreq[5] = {1913.0f, 2547.0f, 3289.0f, 4177.0f, 5401.0f};
+    constexpr float kAmp[5]  = {1.0f, 0.62f, 0.44f, 0.30f, 0.18f};
+    for (int i = 0; i < n; ++i) {
+        const float t = float(i) / float(kSampleRate);
+        float v = 0.0f;
+        for (int p = 0; p < 5; ++p) {
+            v += kAmp[p] * std::sin(2.0f * kSynthPi * kFreq[p] * t)
+               * std::exp(-t * (14.0f + kFreq[p] * 0.004f));
+        }
+        v += rng.noise() * 0.5f * std::exp(-t * 900.0f);
+        mono[std::size_t(i)] = v;
+    }
+}
+
+Mix_Chunk* synth_sfx_chunk(SfxId id) {
+    std::vector<float> mono;
+    switch (id) {
+        case SfxId::MeleeSwing:   synth_melee_swing(mono);   break;
+        case SfxId::MeleeHit:     synth_melee_hit(mono);     break;
+        case SfxId::MeleeBlocked: synth_melee_blocked(mono); break;
+        case SfxId::Count:        break;
+    }
+    if (mono.empty()) return nullptr;
+
+    float peak = 0.0f;
+    for (float v : mono) peak = std::max(peak, std::fabs(v));
+    const float gain = peak > 0.0f ? 0.6f / peak : 0.0f;
+
+    const std::size_t frames = mono.size();
+    const std::size_t bytes =
+        frames * std::size_t(kOutputChannels) * sizeof(std::int16_t);
+    auto* buf = static_cast<std::int16_t*>(SDL_malloc(bytes));
+    if (!buf) return nullptr;
+    for (std::size_t i = 0; i < frames; ++i) {
+        const float v = std::clamp(mono[i] * gain, -1.0f, 1.0f);
+        const auto s = std::int16_t(v * 32767.0f);
+        for (int c = 0; c < kOutputChannels; ++c) {
+            buf[i * std::size_t(kOutputChannels) + std::size_t(c)] = s;
+        }
+    }
+    Mix_Chunk* chunk =
+        Mix_QuickLoad_RAW(reinterpret_cast<Uint8*>(buf), Uint32(bytes));
+    if (!chunk) {
+        SDL_free(buf);
+        return nullptr;
+    }
+    chunk->allocated = 1;   // hand the SDL_malloc'd buffer to Mix_FreeChunk
+    return chunk;
+}
 
 } // namespace
 
@@ -244,8 +409,24 @@ bool AudioSystem::init(const char* assetRoot) {
         }
     }
 
-    // No SFX rows to load today (see the kSfxAssets note above); the loader
-    // loop returns with the table's first live row.
+    for (const SfxAsset& asset : kSfxAssets) {
+        path[0] = '\0';
+        error[0] = '\0';
+        Mix_Chunk* chunk = load_sfx_file(asset.file, assetRoot,
+                                         path, sizeof(path),
+                                         error, sizeof(error));
+        if (chunk) {
+            std::fprintf(stderr, "[audio] loaded sfx %s path=%s\n",
+                         asset.key, path);
+        } else {
+            // THE fallback law: absence of a file is not silence — the row's
+            // procedural default answers (synth_sfx_chunk above).
+            chunk = synth_sfx_chunk(asset.id);
+            std::fprintf(stderr, "[audio] procedural sfx %s (%s: %s)\n",
+                         asset.key, asset.file, error);
+        }
+        sfx_[sfx_index(asset.id)] = chunk;
+    }
     std::fflush(stderr);
 
     apply_volumes();

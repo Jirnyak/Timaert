@@ -44,7 +44,11 @@
 //      cannot serve both queries without going quadratic or blind.
 //   5. Bodies push each other apart (separation, capped at `maxSepNeighbors`),
 //      attackers stand on a ring around their target instead of inside it, and
-//      velocity is acceleration-limited — mass, not teleport.
+//      velocity is acceleration-limited — mass, not teleport. A body is a
+//      vertical CAPSULE (feet to eye line, height.h kBodyEyeM), not its ground
+//      shadow: two bodies push only while their columns overlap, so a flier
+//      above the crowd's heads is touched by nobody, while everyone standing
+//      on the same ground keeps the exact planar law (gap 0).
 //   6. Ground is a TABLE (sub/map_data.h kTileGroundWeight — the macro step
 //      law's own weights, converted by its own 1/√weight) plus a height
 //      gradient. This module has no idea what "water" is; adding a ground type
@@ -157,6 +161,12 @@ struct BodyDesc {
     float x = 0.0f, y = 0.0f, z = 0.0f;
     float vx = 0.0f, vy = 0.0f;
     float radius = 0.55f;       // body radius, world units (1 unit ≈ 1 m)
+    // How TALL this body's column stands, metres — the OTHER half of its
+    // room, from the same table row the renderer draws (sub/body.h
+    // body_height_m × shape). Separation touches two bodies only while
+    // their columns overlap vertically. ≤ 0 = unstated → add() fills the
+    // man-column default, so a bare fixture still takes a person's room.
+    float height = 0.0f;
     float speed = 0.0f;         // world units / s
     float reach = 0.0f;         // attack range, world units (surface-to-centre)
     float sight = 200.0f;       // own detection range; relays through comrades
@@ -179,7 +189,7 @@ struct BodyCrowd {
     std::vector<float> x, y, z;
     std::vector<float> vx, vy;
     std::vector<float> intentVx, intentVy;
-    std::vector<float> radius, speed, reach, sight;
+    std::vector<float> radius, height, speed, reach, sight;
     std::vector<std::uint64_t> enemyMask;
     std::vector<std::int16_t>  faction;
     std::vector<std::uint8_t>  flags;

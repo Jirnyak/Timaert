@@ -215,9 +215,12 @@ struct HitFlash { float timer; };
 // at the body's position, classifying the spray from the victim's own sprite
 // archetype — so no damage site needs to know about particles (the spell TU
 // stays renderer-free) and there is no per-creature hardcoding. `lethal` lets
-// the drain throw a bigger burst on the killing blow. Removed as soon as it is
+// the drain throw a bigger burst on the killing blow. `blocked` is a real blow
+// that armour swallowed whole (damage door, owner 2026-09-06): the drain
+// answers it with a spark off the plate instead of blood — a swing that lands
+// is never silent, even when it wounds nothing. Removed as soon as it is
 // consumed, so it never lingers on a surviving body.
-struct DamageFx { bool lethal; };
+struct DamageFx { bool lethal; bool blocked; };
 
 // Per-NPC visual identity. POD reinterpretation of TS `CharacterData`
 // (which is HTML-canvas-targeted: name + sprite-layer indices + palette

@@ -277,6 +277,38 @@ const ItemDef* weapon_in_hand(const Equipment& eq);
 // law's threshold branch doing its work, not a bug.
 inline constexpr Dice kFistDice{1, 2};
 
+// ── The swing's MASS law (owner verdict 2026-09-07) ────────────────────────
+// A weapon's base tempo is DERIVED from its weight, never authored twice:
+// «скорость привязать к массе — масса кулака бесконечно мала, он самый
+// быстрый». One line prices every present and future row from the same
+// kilogram the carry law already reads, and steel pays for its heft in TIME
+// exactly as it pays in the bag.
+//
+//   base = kHandSwingS + weight_kg × kSwingSecondsPerKg
+//
+// kHandSwingS — the EMPTY hand at a zero sheet, i.e. the game's slowest
+// striker: the «новичок = слабак» verdict made a number. Everything above it
+// is mass; everything below it is the sheet (the recovery door divides by
+// Spd + the generic skill, up to ~×12 at the S14 capstone — so the demigod's
+// bare hand lands ~8 jabs a second and a novice throws one in a second and a
+// half).
+inline constexpr float kHandSwingS = 1.5f;
+// One kilogram of steel costs half a second of swing: pins the 1 kg dagger
+// at 2.0 s and the implied 2 kg one-hand sword at 2.5 s — the M&M-shaped
+// novice exchange the tempo track was re-anchored to (the pre-door flat
+// 0.5 s was tuned as a FOREVER pace; the door made tempo grow, so the base
+// now anchors the weak end of the arc, not its middle).
+inline constexpr float kSwingSecondsPerKg = 0.5f;
+
+// THE base swing of whatever the hand holds. nullptr = the bare, massless
+// hand. Weapons only — a spell's base tempo is its own row's cooldown, and a
+// creature's natural weapon carries an authored cooldown in ITS row (a fang
+// has no kilograms; humanoid rows are authored ON this same curve through
+// their implied weapon's mass — npc.h).
+inline float weapon_swing_seconds(const ItemDef* w) {
+    return kHandSwingS + (w ? w->weight : 0.0f) * kSwingSecondsPerKg;
+}
+
 // What a sheet strikes with, given what its body holds — the ONE assembly of
 // the strike fields (dice + type + attribute add + skill percent + LCK) that
 // every carrier of ecs::Combat copies from. The weapon picks WHICH skill
@@ -289,6 +321,12 @@ struct StrikeFields {
     std::int16_t  flatAdd = 0;
     std::int16_t  multPct = 100;
     std::uint8_t  luck    = 0;
+    // Steps the arm needs between blows — the recovery door's verdict over
+    // the mass law's base (attributes.h recovery_steps: Spd asymptote ×
+    // Armsmaster; CANON S14 «один рычаг»). Default = the bare hand at a
+    // zero sheet (kHandSwingS × 64), so a fields{} harness literal swings
+    // honestly.
+    int           recoverySteps = 96;
 };
 StrikeFields hand_strike_fields(const Attributes& attributes,
                                 const Skills& skills, const Equipment* eq);

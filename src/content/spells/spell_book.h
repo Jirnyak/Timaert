@@ -41,7 +41,12 @@ CastCheck spellbook_can_cast_ex(const SpellBook& sb,
                                 const CombatStats& combat,
                                 int spellOrd,
                                 bool inMicro);
-int spellbook_start_cast(SpellBook& sb, CombatStats& combat, int spellOrd);
+// The caster's sheet prices the RECOVERY (S14 recovery door: Spd asymptote ×
+// Spellcraft — the casts' generic; the school stays the POWER lever) — which
+// is why the mana-and-cooldown half of a cast needs the attributes/skills.
+int spellbook_start_cast(SpellBook& sb, CombatStats& combat,
+                         const Attributes& attributes, const Skills& skills,
+                         int spellOrd);
 // diceRng — the stream the wound is ROLLED from at cast. nullptr = the
 // strike's exact expectation, no crit: what a harness with no stream gets,
 // deterministic by construction.

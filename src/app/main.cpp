@@ -572,7 +572,10 @@ sm::AutoBattleSide player_auto_battle_side(App& app) {
         eff.attributes, eff.skills, eqp ? &eqp->gear : nullptr);
     const float swing = float(
         sm::strike_mean_x2(hs.dice, hs.flatAdd, hs.multPct)) * 0.5f;
-    s.leaderDpsOverride = swing / sm::sub::kPlayerMeleeCooldown;
+    // ...over the same assembly's recovery (S14 door): the auto-resolve
+    // prices the player at the exact tempo the fought fight swings at.
+    s.leaderDpsOverride =
+        swing / sm::seconds_from_steps(std::uint32_t(hs.recoverySteps));
     return s;
 }
 
@@ -2096,8 +2099,12 @@ bool cast_active_spell(App& app) {
             emit_spell_cast(app, id, false, "World-map spell effect not implemented");
             return false;
         }
+        // The EFFECTIVE sheet prices the recovery, exactly like the micro
+        // cast below — a haste ring quickens a map-side cast the same way.
+        const sm::CharacterSheet effMap = player_effective_sheet(app);
         sm::spellbook_start_cast(app.gs.player.spellBook,
-                                 app.gs.player.combatStats, ord);
+                                 app.gs.player.combatStats,
+                                 effMap.attributes, effMap.skills, ord);
         emit_spell_cast(app, id, true, "");
         return true;
     }
@@ -3098,6 +3105,15 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
                                   app.subworld.player_marching()
                                       ? sm::kMarchRecoveryPct : 1.0f);
         app.subworld.tick(dt);
+        // Combat one-shots the tick queued (swing / hit / plate ring): the
+        // engine states the facts, the app owns the device — same split as
+        // the window. play_sfx degrades gracefully when audio failed to init.
+        {
+            sm::SfxId sfx[8];
+            const int n = app.subworld.take_pending_sfx(
+                sfx, int(std::size(sfx)));
+            for (int i = 0; i < n; ++i) app.audio.play_sfx(sfx[i]);
+        }
         // He has now been moved — by the same pass that moved every other
         // body — so this is where the ground he actually covered is known,
         // and where his legs pay for it.

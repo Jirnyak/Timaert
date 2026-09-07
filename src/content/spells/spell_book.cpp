@@ -110,7 +110,9 @@ CastCheck spellbook_can_cast_ex(const SpellBook& sb,
     return {true, "", 0.0f};
 }
 
-int spellbook_start_cast(SpellBook& sb, CombatStats& combat, int spellOrd) {
+int spellbook_start_cast(SpellBook& sb, CombatStats& combat,
+                         const Attributes& attributes, const Skills& skills,
+                         int spellOrd) {
     if (!spell_ordinal_ok(spellOrd)) return 0;
     const SpellDef* d = &kSpellDefs[spellOrd];
     if (d->sustained) {
@@ -119,9 +121,14 @@ int spellbook_start_cast(SpellBook& sb, CombatStats& combat, int spellOrd) {
     }
     combat.currentMp -= d->manaCost;
     if (combat.currentMp < 0) combat.currentMp = 0;
-    // The table authors seconds; the world counts steps.
+    // The table authors seconds; the caster's sheet divides them through THE
+    // recovery door (S14 «один рычаг», 2026-09-07): Spd asymptote ×
+    // Spellcraft — the generic tempo of ANY cast, while the school multiplied
+    // the POWER above. A master returns fire sooner, a haste spell (+Spd on
+    // the effective sheet) quickens every cast with no code here.
     if (d->cooldown > 0.0f) {
-        sb.cooldownSteps[spellOrd] = steps_from_seconds(d->cooldown);
+        sb.cooldownSteps[spellOrd] = std::uint32_t(recovery_steps(
+            d->cooldown, attributes, skills, SkillId::Spellcraft));
     }
     return d->manaCost;
 }
@@ -137,7 +144,7 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, CombatStats& combat,
     if (!spellbook_can_cast_ex(sb, combat, spellOrd, inMicro).ok) return false;
     const SpellDef* d = &kSpellDefs[spellOrd];
     if (d->sustained || d->shape == DeliveryShape::Self) {
-        spellbook_start_cast(sb, combat, spellOrd);
+        spellbook_start_cast(sb, combat, attributes, skills, spellOrd);
         return true;
     }
     if (!inMicro) {
@@ -169,7 +176,7 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, CombatStats& combat,
     ctx.critical = strike.critical;
 
     if (!cast_spell(w, *d, ctx)) return false;
-    spellbook_start_cast(sb, combat, spellOrd);
+    spellbook_start_cast(sb, combat, attributes, skills, spellOrd);
     return true;
 }
 

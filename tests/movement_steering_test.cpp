@@ -47,6 +47,7 @@
 #include "check.h"
 
 #include "sub/movement.h"
+#include "sub/height.h"   // kBodyEyeM — the capsule column the separation reads
 
 #include <algorithm>
 #include <cmath>
@@ -1244,6 +1245,84 @@ void test_intent_and_passive() {
     }
 }
 
+// ── Bodies are capsules, not ground shadows (owner bug, 2026-09-06) ────────
+// The shipped bug: separation compared only x/y, so the FLYING player was
+// shoved sideways by ground NPCs standing under him — «словно он с теми же XY
+// координатами но проецирован на землю». The law now: a body is a vertical
+// column from its feet to the eye line (height.h kBodyEyeM), and two bodies
+// push only while their columns overlap. Three gates below, each with its own
+// failure mode:
+//   • ground pair still separates (the planar law survived intact);
+//   • a flier above the heads is touched by nobody (the bug is dead);
+//   • a LOW flier whose legs still hang in the crowd IS pushed — this is what
+//     rejects the cheaper feet-sphere model, which loses contact a body-radius
+//     off the ground while the sprites still visibly overlap;
+//   • the law reads only the z DIFFERENCE: the same pair lifted wholesale to a
+//     rooftop behaves bit-identically to the pair on the ground;
+//   • the column is the body's OWN height (BodyDesc.height — the drawn row):
+//     the altitude that clears a man is inside a dragon, so a tall creature
+//     shoves exactly as much of the sky as it fills.
+void test_capsule_separation() {
+    const MoveParams prm{};
+    const MoveGround flat = flat_terrain();
+    const float dt = 1.0f / 60.0f;
+
+    // Two idle bodies overlapping in XY; returns how far apart they ended.
+    // heightB > 0 makes the second body that tall (0 = the man-column default).
+    auto ran_apart = [&](float zA, float zB, float* outMovedA = nullptr,
+                         float heightB = 0.0f) {
+        BodyCrowd u{};
+        u.add(soldier(1000.0f, 1000.0f, 0, 0ull));
+        BodyDesc b = soldier(1000.3f, 1000.0f, 0, 0ull);
+        b.height = heightB;
+        u.add(b);
+        u.z[0] = zA;
+        u.z[1] = zB;
+        UnitGrid fine{}, pick{};
+        InfluenceField f{};
+        for (int i = 0; i < 240; ++i)
+            advance(u, fine, pick, f, flat, prm, dt, nullptr);
+        if (outMovedA) {
+            const float ax = u.x[0] - 1000.0f, ay = u.y[0] - 1000.0f;
+            *outMovedA = std::sqrt(ax * ax + ay * ay);
+        }
+        const float dx = u.x[1] - u.x[0], dy = u.y[1] - u.y[0];
+        return std::sqrt(dx * dx + dy * dy);
+    };
+    // Both feet on the ground: the pair unpacks to arm's length, as always.
+    const float touch = (kBodyRadius + kBodyRadius) * prm.sepRadiusScale;
+    const float ground = ran_apart(0.0f, 0.0f);
+    CHECK(ground > touch * 0.9f, "a ground pair still pushes apart");
+
+    // One body hovers clear above the other's eye line: columns disjoint,
+    // NOBODY moves — neither the flier (the reported bug) nor the walker.
+    float flierMoved = 0.0f;
+    const float aloft = ran_apart(kBodyEyeM + 0.5f, 0.0f, &flierMoved);
+    CHECK(flierMoved < 1.0e-3f,
+          "a flier above the heads is not shoved by ground bodies");
+    CHECK(std::fabs(aloft - 0.3f) < 1.0e-3f,
+          "and the ground body is not shoved by the flier overhead");
+
+    // A LOW flier — feet at 1 m, legs still hanging through the crowd's head
+    // zone — is honestly pushed: the columns overlap, the capsule law bites.
+    // (The feet-sphere model would already answer "no contact" here.)
+    const float lowFlier = ran_apart(1.0f, 0.0f);
+    CHECK(lowFlier > touch * 0.9f,
+          "a low flier with its legs in the crowd still separates");
+
+    // Only the z DIFFERENCE exists for the law: a rooftop pair equals the
+    // ground pair exactly.
+    const float rooftop = ran_apart(40.0f, 40.0f);
+    CHECK(rooftop == ground, "the law reads dz only — height offset is free");
+
+    // The column is the body's OWN height: the altitude that cleared the man
+    // above is INSIDE a 3.5 m dragon, and the dragon shoves the flier out.
+    const float overDragon =
+        ran_apart(kBodyEyeM + 0.5f, 0.0f, nullptr, /*heightB*/3.5f);
+    CHECK(overDragon > touch * 0.9f,
+          "the same altitude that clears a man is inside a dragon's column");
+}
+
 // ── Inertia and its DISSIPATION (owner in play, 2026-08-30) ───────────────
 // The acceleration limit is what makes a charge read as mass — and applied
 // symmetrically it is ICE: the moment the player joined this pass he coasted
@@ -1321,6 +1400,7 @@ int main() {
     test_terrain_table();
     test_single_bandit();
     test_intent_and_passive();
+    test_capsule_separation();
     test_stop_is_a_stop_not_a_skid();
     test_determinism_and_capacity();
 

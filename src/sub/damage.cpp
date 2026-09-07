@@ -87,7 +87,22 @@ DamageResult apply_damage(entt::registry& reg, entt::entity target,
     const int amt = src.critical
                         ? amount
                         : mitigate(reg, target, amount, kind, type);
-    if (amt <= 0) return out;
+    if (amt <= 0) {
+        // BLOCKED, not silent (owner 2026-09-06: «пусть пишет всё равно»).
+        // A real blow the armour swallowed whole is a fact the world shows:
+        // the same flash + fx pair as a wound, with the blocked flag riding
+        // DamageFx so the drain throws a spark off the plate instead of
+        // blood. Nothing happened to the BODY — no Health change, no LastHit,
+        // no event — only to the armour, so the protocol below is not walked.
+        if (amount > 0) {
+            reg.emplace_or_replace<ecs::HitFlash>(
+                target, ecs::HitFlash{kHitFlashDuration});
+            reg.emplace_or_replace<ecs::DamageFx>(
+                target, ecs::DamageFx{false, true});
+            out.blocked = true;
+        }
+        return out;
+    }
 
     hp->hp -= amt;
     out.applied = amt;
@@ -100,7 +115,8 @@ DamageResult apply_damage(entt::registry& reg, entt::entity target,
     }
     reg.emplace_or_replace<ecs::HitFlash>(target,
                                           ecs::HitFlash{kHitFlashDuration});
-    reg.emplace_or_replace<ecs::DamageFx>(target, ecs::DamageFx{out.lethal});
+    reg.emplace_or_replace<ecs::DamageFx>(target,
+                                          ecs::DamageFx{out.lethal, false});
 
     if (out.lethal && !reg.any_of<ecs::Dead>(target)) {
         reg.emplace<ecs::Dead>(target);

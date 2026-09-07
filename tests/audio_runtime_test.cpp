@@ -52,10 +52,23 @@ int main() {
     if (audio.current_music() != sm::MusicId::Subworld) {
         return fail("subworld current music not tracked", audio);
     }
-    // play_sfx with an out-of-range id must refuse loudly even initialized —
-    // the invalid-id half of the sfx contract survives the empty table.
+    // play_sfx with an out-of-range id must refuse loudly even initialized.
     if (audio.play_sfx(sm::SfxId::Count, -1)) {
         return fail("invalid sfx id played after init", audio);
+    }
+    // THE fallback law, proven live: no melee .wav ships today, yet every row
+    // is loaded — the procedural default answered for the absent files — and
+    // plays on the dummy device. This is the guarantee the melee tick leans
+    // on: queue_sfx never queues a sound that cannot exist.
+    if (!audio.sfx_loaded(sm::SfxId::MeleeSwing)
+        || !audio.sfx_loaded(sm::SfxId::MeleeHit)
+        || !audio.sfx_loaded(sm::SfxId::MeleeBlocked)) {
+        return fail("procedural sfx default did not load every row", audio);
+    }
+    if (!audio.play_sfx(sm::SfxId::MeleeSwing, -1)
+        || !audio.play_sfx(sm::SfxId::MeleeHit, -1)
+        || !audio.play_sfx(sm::SfxId::MeleeBlocked, -1)) {
+        return fail("procedural sfx did not play", audio);
     }
 
     audio.stop_music(0);
