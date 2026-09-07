@@ -376,28 +376,10 @@ namespace sm::ui
         // part cannot be worn, whatever its type says — and the equipment tab
         // asks that instead of guessing from a category.)
 
-        // What a row does, read off the ONE registry. It used to print six
-        // named fields, three of which no code anywhere applied — so the panel
-        // cheerfully advertised "+2 STR" on a dagger that granted nothing, and
-        // an "AGI" the sheet does not have.
-        void draw_item_bonuses(const Bonus (&bonuses)[kMaxItemBonuses])
-        {
-            bool any = false;
-            for (const Bonus &b : bonuses)
-            {
-                if (b.row == 0 || b.value == 0)
-                    continue;
-                if (any)
-                    ImGui::SameLine();
-                ImGui::Text("%+d %s", int(b.value),
-                            bonus_def(BonusId(b.row)).label);
-                any = true;
-            }
-            if (!any)
-                ImGui::TextDisabled("-");
-        }
-
-
+        // (What a stack IS and DOES prints through the shared shopfront —
+        // ui/trade_widgets.h draw_item_ref_name / draw_item_ref_bonuses —
+        // one spelling for the bag, the body and the counter, instance
+        // affixes included.)
         struct SettlementPreviewCache
         {
             ImTextureID tex = 0;
@@ -960,14 +942,14 @@ namespace sm::ui
                             if (!def) continue;
                             ImGui::TableNextRow();
                             ImGui::TableNextColumn();
-                            ImGui::Text("%s", def->name);
+                            draw_item_ref_name(st, *def);
                             ImGui::TextDisabled("%s", def->id);
                             ImGui::TableNextColumn();
                             ImGui::Text("x%d", st.count);
                             ImGui::TableNextColumn();
-                            draw_item_bonuses(def->bonus);
+                            draw_item_ref_bonuses(st, *def);
                             ImGui::TableNextColumn();
-                            ImGui::Text("%d", def->value);
+                            ImGui::Text("%d", value_of(st));
                             ImGui::TableNextColumn();
                             const bool drinkable =
                                 item_type_consumable(def->type);
@@ -1114,9 +1096,9 @@ namespace sm::ui
                                 ImGui::TextDisabled("%s",
                                                     body_part_def(gear.part_at(cell)).label);
                                 ImGui::TableNextColumn();
-                                ImGui::Text("%s", def->name);
+                                draw_item_ref_name(r, *def);
                                 ImGui::TableNextColumn();
-                                draw_item_bonuses(def->bonus);
+                                draw_item_ref_bonuses(r, *def);
                                 ImGui::TableNextColumn();
                                 ImGui::PushID(cell);
                                 if (ImGui::SmallButton("Take off"))
@@ -1156,12 +1138,12 @@ namespace sm::ui
                                 ++equipStacks;
                                 ImGui::TableNextRow();
                                 ImGui::TableNextColumn();
-                                ImGui::Text("%s", def->name);
+                                draw_item_ref_name(st, *def);
                                 ImGui::TextDisabled("%s", def->id);
                                 ImGui::TableNextColumn();
                                 ImGui::Text("x%d", st.count);
                                 ImGui::TableNextColumn();
-                                draw_item_bonuses(def->bonus);
+                                draw_item_ref_bonuses(st, *def);
                                 ImGui::TableNextColumn();
                                 ImGui::PushID(slot);
                                 if (ImGui::SmallButton("Wear"))
@@ -1171,9 +1153,13 @@ namespace sm::ui
                                     // The body REFUSES when nothing fits, and
                                     // the item stays where it was: an item
                                     // that vanished on equip would be one the
-                                    // conservation law lost.
+                                    // conservation law lost. Removal is BY
+                                    // SLOT: by-ordinal removal was blind to
+                                    // affixes and would strip a plain twin
+                                    // while the rolled one went on — the
+                                    // conservation law broken both ways.
                                     if (equip(gear, one) >= 0)
-                                        playerBag.remove_of(int(st.def), 1);
+                                        playerBag.remove_at(slot, 1);
                                 }
                                 ImGui::PopID();
                             }

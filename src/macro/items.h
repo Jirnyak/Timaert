@@ -250,6 +250,19 @@ struct Inventory {
         r.count = n;
         return add_ref(r);
     }
+    // By SLOT — what a panel that already stands on the exact stack uses.
+    // remove_of(def, n) is blind to affixes: with procedural instances in
+    // play, wearing a rolled sword and removing "a sword" by ordinal could
+    // strip the PLAIN stack and leave the rolled one duplicated — the
+    // conservation law broken in both directions at once.
+    bool remove_at(int slot, int n) {
+        if (slot < 0 || slot >= kMaxInventorySlots || n <= 0) return false;
+        ItemRef& s = slots[std::size_t(slot)];
+        if (s.empty() || s.count < n) return false;
+        s.count -= n;
+        if (s.empty()) s = ItemRef{};
+        return true;
+    }
     bool remove_of(int defIdx, int n) {
         if (defIdx < 0 || n <= 0 || count_of(defIdx) < n) return false;
         int left = n;
@@ -365,6 +378,21 @@ void grant_affixes(ItemRef& item, std::uint8_t power, RngFn rng);
 // contract as loot_profile_count/loot_profile_id.
 std::size_t affix_def_count() noexcept;
 const char* affix_def_key(std::size_t i) noexcept;
+
+// How many affix cells actually say something — the number the UI tint and
+// the suffix read.
+int affix_count(const ItemRef& item) noexcept;
+
+// What THIS instance is worth: the row's price plus every affix cell priced
+// per point of its bonus row («чем реже, тем ценнее» made arithmetic). A
+// plain stack answers exactly def->value, so nothing in the economy moves.
+// Floored at 0 — a cursed thing is worthless, not a debt.
+int value_of(const ItemRef& item) noexcept;
+
+// The title's tail, from the affix table's own name column: the FIRST
+// speaking cell names the instance ("Rusty Dagger of Strength"). "" when
+// plain.
+const char* affix_suffix(const ItemRef& item) noexcept;
 
 // ── THE corpse-loot context (owner's design, 2026-08-27) ──────────────────
 // «контекст от таблицы мобов × зоны сложности (0..255) × богатство ландмарка

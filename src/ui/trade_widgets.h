@@ -40,6 +40,48 @@ inline void draw_trade_carry_line(const CharacterSheet& sheet,
                                                   sheet.skills, standing)));
 }
 
+// ── The rolled instance's shopfront ───────────────────────────────────────
+
+// The name's tint is FUNCTIONAL, not a hardcoded rarity ladder (owner
+// verdict 2026-09-07): one lerp from plain to charged, driven by how many
+// affix cells speak over the format's cap. Add a ninth cell someday and the
+// gradient re-derives itself.
+inline ImVec4 affix_tint(int affixes) {
+    const float t = float(affixes) / float(kMaxItemAffixes);
+    // plain parchment white → deep gold
+    return ImVec4(1.0f, 1.0f - 0.35f * t, 1.0f - 0.85f * t, 1.0f);
+}
+
+// The one spelling of an instance's title line: name, the suffix its first
+// affix gives it, the tint its count earns. Every panel that names a stack
+// calls this, so a rolled thing cannot look plain in one window and charged
+// in another.
+inline void draw_item_ref_name(const ItemRef& st, const ItemDef& def) {
+    const int n = affix_count(st);
+    if (n == 0) {
+        ImGui::Text("%s", def.name);
+        return;
+    }
+    const char* suffix = affix_suffix(st);
+    ImGui::TextColored(affix_tint(n), suffix[0] ? "%s %s" : "%s%s",
+                       def.name, suffix);
+}
+
+// ...and of what it DOES: the row's innate bonuses and the instance's rolled
+// affixes, one vocabulary (they are the same type), one line style.
+inline void draw_item_ref_bonuses(const ItemRef& st, const ItemDef& def) {
+    bool any = false;
+    const auto line = [&any](Bonus b) {
+        if (b.row == 0 || b.value == 0) return;
+        if (any) ImGui::SameLine();
+        ImGui::Text("%+d %s", int(b.value), bonus_def(BonusId(b.row)).label);
+        any = true;
+    };
+    for (const Bonus& b : def.bonus) line(b);
+    for (int i = 0; i < kMaxItemAffixes; ++i) line(st.affix_at(i));
+    if (!any) ImGui::TextDisabled("-");
+}
+
 // The shared staging step. Clamps in place so the player SEES the rule.
 inline void draw_trade_amount_input(int* amount) {
     ImGui::SetNextItemWidth(110.0f);

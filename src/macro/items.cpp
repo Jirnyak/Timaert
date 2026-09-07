@@ -593,6 +593,60 @@ const char* affix_def_key(std::size_t i) noexcept {
     return i < affix_def_count() ? kAffixDefs[i].key : "";
 }
 
+namespace {
+
+// The affix-table row that speaks for a stored bonus row — how a saved
+// {row, value} finds its name and its price without carrying either. A
+// skill row (what "of Mastery" writes: Sword, Staff, …) has no fixed row of
+// its own and answers with the class row, exactly the one that wrote it.
+const AffixDef* affix_def_for_row(std::uint8_t row) {
+    if (row == 0 || row >= std::uint8_t(BonusId::Count)) return nullptr;
+    for (const AffixDef& a : kAffixDefs) {
+        if (a.bonusRow == row) return &a;
+    }
+    if (bonus_def(BonusId(row)).target == BonusTarget::SkillRank) {
+        for (const AffixDef& a : kAffixDefs) {
+            if (a.bonusRow == 0) return &a;
+        }
+    }
+    return nullptr;
+}
+
+} // namespace
+
+int affix_count(const ItemRef& item) noexcept {
+    int n = 0;
+    for (int i = 0; i < kMaxItemAffixes; ++i) {
+        const Bonus b = item.affix_at(i);
+        if (b.row != 0 && b.value != 0) ++n;
+    }
+    return n;
+}
+
+int value_of(const ItemRef& item) noexcept {
+    const ItemDef* def = item_def_at(int(item.def));
+    int v = def ? def->value : 0;
+    for (int i = 0; i < kMaxItemAffixes; ++i) {
+        const Bonus b = item.affix_at(i);
+        if (b.row == 0 || b.value == 0) continue;
+        const AffixDef* a = affix_def_for_row(b.row);
+        if (!a || a->step == 0) continue;
+        // Units recovered by the row's own step; a curse subtracts (and the
+        // floor below keeps a ruined thing at worthless, never a debt).
+        v += (int(b.value) / int(a->step)) * int(a->pricePerUnit);
+    }
+    return v < 0 ? 0 : v;
+}
+
+const char* affix_suffix(const ItemRef& item) noexcept {
+    for (int i = 0; i < kMaxItemAffixes; ++i) {
+        const Bonus b = item.affix_at(i);
+        if (b.row == 0 || b.value == 0) continue;
+        if (const AffixDef* a = affix_def_for_row(b.row)) return a->name;
+    }
+    return "";
+}
+
 const char* npc_loot_id(int npcType) noexcept {
     if (npcType < 0 || npcType >= static_cast<int>(std::size(kNpcLootId))) return "";
     // A row that names no profile of its own answers with the empty string, not

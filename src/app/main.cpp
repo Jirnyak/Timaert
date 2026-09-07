@@ -3856,6 +3856,48 @@ void register_console_commands(App& app) {
             return true;
         });
 
+    con.register_cmd("roll", "roll <itemId> [power]",
+        "roll ONE procedural instance through the affix door into the bag "
+        "(power 0-255, default 255 - the deep end's dice)",
+        [&app](Con& c, const std::vector<std::string>& a) {
+            if (a.empty()) return false;
+            const int idx = sm::item_index(a[0]);
+            const sm::ItemDef* def = sm::item_def_at(idx);
+            if (!def) {
+                c.error("unknown item '" + a[0] + "' - type 'items' for the list");
+                return true;
+            }
+            if (def->slotMask == 0) {
+                c.error("'" + a[0] + "' cannot be worn - the affix door refuses it");
+                return true;
+            }
+            int power = 255;
+            sm::dev::arg_int(a, 1, power);
+            power = std::clamp(power, 0, 255);
+            sm::ItemRef r{};
+            r.def = std::uint16_t(idx);
+            r.count = 1;
+            sm::grant_affixes(r, std::uint8_t(power), &console_loot_rng_f01);
+            const int n = sm::affix_count(r);
+            if (!player_bag(app).add_ref(r)) {
+                c.error("bag full - the roll is refused, not dropped");
+                return true;
+            }
+            const char* suffix = sm::affix_suffix(r);
+            c.printfln(Lvl::Ok, "%s%s%s  (power %d, %d affix(es), value %d)",
+                       def->name, suffix[0] ? " " : "", suffix, power, n,
+                       sm::value_of(r));
+            for (int i = 0; i < sm::kMaxItemAffixes; ++i) {
+                const sm::Bonus b = r.affix_at(i);
+                if (b.row == 0 || b.value == 0) continue;
+                c.printfln(Lvl::Info, "  %+d %s", int(b.value),
+                           sm::bonus_def(sm::BonusId(b.row)).label);
+            }
+            if (n == 0)
+                c.printfln(Lvl::Info, "  plain - the coin said no this time");
+            return true;
+        });
+
     con.register_cmd("take", "take <item|gold> [count]",
         "remove items from the player inventory",
         [&app](Con& c, const std::vector<std::string>& a) {
