@@ -249,7 +249,7 @@ static void test_npc_loot_id() {
         // rng_high on a real profile yields a vector (possibly empty); an
         // UNKNOWN id would also yield empty, so instead assert rng_zero (which
         // fires every entry) returns at least one stack for a valid role.
-        CHECK(!roll_loot_profile(id, 1, rng_zero).empty(), msg);
+        CHECK(!roll_loot_profile(id, 1, rng_zero, 0).empty(), msg);
     }
 }
 
@@ -257,7 +257,7 @@ static void test_roll_loot_profile() {
     // rng_zero: 0.0 < chance for every entry, qty = min + int(0*range) = min.
     // Peasant table: bread(min1), wood(min1), herb(min1) — the PURSE is not
     // loot: it is the faction's coin, added by make_npc (macro/currency.h).
-    auto peasant = roll_loot_profile("peasant", 1, rng_zero);
+    auto peasant = roll_loot_profile("peasant", 1, rng_zero, 0);
     CHECK(peasant.size() == 3, "peasant/rng_zero: all three entries drop");
     CHECK(count_of(peasant, "bread") == 1
           && count_of(peasant, "wood") == 1
@@ -265,44 +265,44 @@ static void test_roll_loot_profile() {
           "peasant/rng_zero: quantities pinned at min");
 
     // minLevel gate: bandit's wpn_dagger requires level>=3.
-    auto bandit1 = roll_loot_profile("bandit", 1, rng_zero);
+    auto bandit1 = roll_loot_profile("bandit", 1, rng_zero, 0);
     CHECK(count_of(bandit1, "wpn_dagger") == -1,
           "bandit L1: level-gated dagger excluded");
     CHECK(count_of(bandit1, "potion_hp") == 1 && count_of(bandit1, "misc_gem") == 1,
           "bandit L1: ungated entries still drop");
-    auto bandit3 = roll_loot_profile("bandit", 3, rng_zero);
+    auto bandit3 = roll_loot_profile("bandit", 3, rng_zero, 0);
     CHECK(count_of(bandit3, "wpn_dagger") == 1,
           "bandit L3: level-gated dagger now included");
 
     // rng_high: only chance==1.0 entries fire; qty = min + int(0.9999*range).
     // Woodcutter: wood chance 1.0, min2 max7 -> 2 + int(0.9999*6) = 7.
-    auto wood = roll_loot_profile("woodcutter", 1, rng_high);
+    auto wood = roll_loot_profile("woodcutter", 1, rng_high, 0);
     CHECK(wood.size() == 1 && count_of(wood, "wood") == 7,
           "woodcutter/rng_high: only the certain drop, at max qty");
 
     // World props pay through the same registry: the crop profile (Field Inc
     // F2) rolls grain — the harvest door then scales by metric height.
-    auto crop = roll_loot_profile("crop", 1, rng_zero);
+    auto crop = roll_loot_profile("crop", 1, rng_zero, 0);
     CHECK(crop.size() == 1 && count_of(crop, "grain") == 1,
           "crop/rng_zero: grain at min qty");
-    auto cropHigh = roll_loot_profile("crop", 1, rng_high);
+    auto cropHigh = roll_loot_profile("crop", 1, rng_high, 0);
     CHECK(count_of(cropHigh, "grain") == 2, "crop/rng_high: grain at max qty");
 
     // Unknown / empty id -> no items.
-    CHECK(roll_loot_profile("does_not_exist", 5, rng_zero).empty(),
+    CHECK(roll_loot_profile("does_not_exist", 5, rng_zero, 0).empty(),
           "unknown lootId -> empty");
-    CHECK(roll_loot_profile("", 5, rng_zero).empty(), "empty lootId -> empty");
-    CHECK(roll_loot_profile(nullptr, 5, rng_zero).empty(), "null lootId -> empty");
+    CHECK(roll_loot_profile("", 5, rng_zero, 0).empty(), "empty lootId -> empty");
+    CHECK(roll_loot_profile(nullptr, 5, rng_zero, 0).empty(), "null lootId -> empty");
 
     // "bandits" faction id reuses the bandit table (the old zero-loot fix).
-    auto bandits = roll_loot_profile("bandits", 5, rng_zero);
+    auto bandits = roll_loot_profile("bandits", 5, rng_zero, 0);
     CHECK(!bandits.empty(), "bandits faction id resolves (not zero-loot)");
 
     // Exact per-entry qty via a scripted sequence: chance-roll then qty-roll.
     // Peasant bread: chance 0.6, min1 max3. seq {0.1 (fire), 0.5 (qty)} ->
     // 1 + int(0.5*3) = 1 + 1 = 2. Then wood: {0.9 (skip)}, herb: {0.0,0.0->1}.
     seq_set({0.1f, 0.5f, 0.9f, 0.0f, 0.0f});
-    auto scripted = roll_loot_profile("peasant", 1, rng_seq);
+    auto scripted = roll_loot_profile("peasant", 1, rng_seq, 0);
     CHECK(count_of(scripted, "bread") == 2, "scripted: bread qty = min + int(0.5*range)");
     CHECK(count_of(scripted, "wood") == -1, "scripted: wood skipped (roll>=chance)");
     CHECK(count_of(scripted, "mat_herb") == 1, "scripted: herb fires at min");

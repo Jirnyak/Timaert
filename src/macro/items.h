@@ -313,6 +313,58 @@ float inventory_weight(const Inventory& inv) noexcept;
 // Loot generation. `rng()` returns float in [0, 1).
 using RngFn = float (*)();
 
+// ── THE coin run — the one shape of "how many" and "how strong" ───────────
+// (owner verdict 2026-09-07: «везде где можно — единые формулы-константы»).
+// Flip a p = num/den coin until it fails or the cap stops it; the count of
+// heads is the answer. Geometric, smooth, no tiers: the same law says how
+// many affixes a drop grows and how strong each one rolls, and a deeper
+// power does not open new shelves — it bends the one curve. Every user
+// quotes p as (base + power) / kAffixChanceDen with its own base below.
+inline int coin_run(RngFn rng, int num, int den, int cap) {
+    int n = 0;
+    while (n < cap && rng() * float(den) < float(num)) ++n;
+    return n;
+}
+
+inline constexpr int kAffixChanceDen  = 512;
+// How many: at power 0 a field hare's dagger rolls an affix 1-in-32; at 255
+// every second deep drop carries one, and the SAME coin keeps flipping for
+// the 2nd..8th (p² , p³ … — multi-affix finds live in the deep end's curve,
+// not in a rule).
+inline constexpr int kAffixCountBase  = 16;
+// How strong: the value coin starts three times friendlier (25%..75% across
+// the power span), so "+1 usually, the bigger the rarer" holds everywhere
+// and the tail is exponential rather than shelved.
+inline constexpr int kAffixValueBase  = 128;
+// The roll's own ceiling, in UNITS of the affix row's step (one constant for
+// every row — «на века»): 16 units ≈ a tenth of the endgame's ~100-point
+// scores at step 1. It caps what LUCK can write, not what the format holds —
+// an int16 value cell lets a designed artifact state numbers the coin never
+// will.
+inline constexpr int kAffixValueCapUnits = 16;
+
+// The world's one affix-power byte: how loaded the dice are where this thing
+// dropped. Level pulls 8/level, the danger byte rides in whole, the place's
+// wealth adds up to 64 («богатство = стоимость, шире золота» — the third
+// term is the owner's verdict, not a double-count of the purse law).
+std::uint8_t affix_power(int level, std::uint8_t danger, float wealthMul);
+
+// ── THE affix writer (owner's design 2026-09-07) ──────────────────────────
+// One door for every way an item gains modifiers. The RANDOM path — this
+// call — is the loot roll's special case: pick rows from the affix table by
+// the weight column of this item's type (no zeros — armour CAN roll damage,
+// it is merely untypical), roll each value on the coin above, stamp the seed
+// so the stacking law separates it. A FIXED issuance (artifact, quest
+// reward, a script) writes the same cells through set_affix and never calls
+// the coin — «рандом = частный случай выдачи».
+// Non-wearables (slotMask 0) are refused: an affix is a WORN thing.
+void grant_affixes(ItemRef& item, std::uint8_t power, RngFn rng);
+
+// The affix table's own listing, for printers (the dev console) — same
+// contract as loot_profile_count/loot_profile_id.
+std::size_t affix_def_count() noexcept;
+const char* affix_def_key(std::size_t i) noexcept;
+
 // ── THE corpse-loot context (owner's design, 2026-08-27) ──────────────────
 // «контекст от таблицы мобов × зоны сложности (0..255) × богатство ландмарка
 // /экономика, и расширяемо — в принципе может быть ещё что-то».
@@ -368,7 +420,11 @@ int                    generate_loot_gold(int npcType, int level,
 // (NPCType-int vs faction-string) with a single keyed path. Registered ids:
 // the 8 NPC roles (peasant..sorceress), plus faction defaults wildlife /
 // demons / bandits. Unknown / empty id => no items.
-std::vector<ItemRef> roll_loot_profile(const char* lootId, int level, RngFn rng);
+// `affixPower` — the context byte the wearable stacks roll their affixes on
+// (affix_power above). NOT defaulted on purpose: a new call site must state
+// what the world says there, and the compiler asks where a comment could not.
+std::vector<ItemRef> roll_loot_profile(const char* lootId, int level, RngFn rng,
+                                       std::uint8_t affixPower);
 
 // The registry's own listing — for printers (the dev console's `loots`), so
 // the id list is never restated anywhere. Index order is the table's.

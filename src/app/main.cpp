@@ -4064,9 +4064,10 @@ void register_console_commands(App& app) {
             return true;
         });
 
-    con.register_cmd("loot", "loot <profileId> [rolls]",
+    con.register_cmd("loot", "loot <profileId> [rolls] [power]",
         "roll a loot profile into the bag - the same registry a death or a "
-        "chest pays through ('loots' for ids)",
+        "chest pays through ('loots' for ids); power 0-255 loads the affix "
+        "dice (default: the player's own level, open land)",
         [&app](Con& c, const std::vector<std::string>& a) {
             if (a.empty()) return false;
             int rolls = 1;
@@ -4080,16 +4081,21 @@ void register_console_commands(App& app) {
                 return true;
             }
             const int level = app.gs.player.sheet.levelData.level;
+            int power = int(sm::affix_power(level, 0, 1.0f));
+            sm::dev::arg_int(a, 2, power);
+            power = std::clamp(power, 0, 255);
             int stacks = 0, refused = 0;
             for (int r = 0; r < rolls; ++r) {
                 for (const sm::ItemRef& s : sm::roll_loot_profile(
-                         a[0].c_str(), level, &console_loot_rng_f01)) {
+                         a[0].c_str(), level, &console_loot_rng_f01,
+                         std::uint8_t(power))) {
                     if (player_bag(app).add_ref(s)) ++stacks;
                     else ++refused;   // bag full: refusal, the roll is forfeit
                 }
             }
-            c.printfln(Lvl::Ok, "%d roll(s) of '%s' at level %d: +%d stack(s)",
-                       rolls, a[0].c_str(), level, stacks);
+            c.printfln(Lvl::Ok,
+                       "%d roll(s) of '%s' at level %d power %d: +%d stack(s)",
+                       rolls, a[0].c_str(), level, power, stacks);
             if (refused > 0)
                 c.printfln(Lvl::Warn, "bag full: %d stack(s) refused", refused);
             return true;

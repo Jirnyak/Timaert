@@ -150,7 +150,12 @@ entt::entity make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
     // they are what it will still be carrying when it is embodied below.
     ecs::NpcInventory bag{};
     tl_rng = &rng;
-    auto stacks = roll_loot_profile(npc_loot_id(int(type)), lvl, &tl_rng_f01);
+    // Affix power from the body's own level alone: at birth there is no
+    // corpse cell to read danger from, and a veteran's kit is loaded by the
+    // years exactly as his purse is. The cell's own say joins where he FALLS
+    // (roll_fallen_spoils / the subworld reaper).
+    auto stacks = roll_loot_profile(npc_loot_id(int(type)), lvl, &tl_rng_f01,
+                                    affix_power(lvl, 0, 1.0f));
     tl_rng = nullptr;
     for (const ItemRef& s : stacks) bag.inv.add_ref(s);
     // The PURSE (owner, W2d): money is the agent's FACTION coin, carried in

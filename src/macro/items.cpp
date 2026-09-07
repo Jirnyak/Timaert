@@ -325,6 +325,82 @@ constexpr bool every_npc_loot_id_resolves() {
 static_assert(every_npc_loot_id_resolves(),
               "an NPC row names a loot profile that is not in the registry");
 
+// ── The affix table (owner's design 2026-09-07) ───────────────────────────
+// What the random half of the one issuance door (grant_affixes) rolls from.
+// A row is a NAME over an address: which bonus row it writes, at what scale
+// (step), how it prices (per unit, for value_of), and how likely it is on
+// each item type. The weights are a FULL matrix with no zeros (owner:
+// «на всё возможно всё — броня вполне может дать урон, просто нетипично»):
+// mechanically every affix is just a modifier, so the table states taste,
+// never possibility. A new item type is a new weight column; a new affix is
+// a new row; neither is code.
+//
+// `bonusRow` 0 is the ONE class row, "of Mastery": it resolves to the
+// item's own skill column at grant time (a sword's Sword, a future flail's
+// whatever the flail row says — new weapons join the affix system by
+// existing). No skill column means Unarmed, the same fallback the strike
+// law already answers for a swung sack of grain.
+inline constexpr int kItemTypeCount = 6;   // ItemType Weapon..Misc
+
+struct AffixDef {
+    const char*  key;
+    const char*  name;          // what the item's title wears: "of Strength"
+    std::uint8_t bonusRow;      // BonusId ordinal; 0 = the item's own skill
+    std::uint8_t step;          // bonus points per rolled unit
+    std::uint8_t pricePerUnit;  // value_of's column (coin per rolled unit)
+    // Pick weight per ItemType: Weapon, Armor, Potion, Food, Material, Misc.
+    // The middle three never reach the door (slotMask 0 refuses them), their
+    // 1s just keep the no-zero law honest if a wearable potion ever exists.
+    std::uint8_t weight[kItemTypeCount];
+};
+
+constexpr AffixDef kAffixDefs[] = {
+    // ── attributes: at home anywhere, fondest of jewelry ──────────────────
+    {"of_strength",  "of Strength",  std::uint8_t(BonusId::Str),  1, 25, {6, 6, 1, 1, 1, 8}},
+    {"of_endurance", "of Endurance", std::uint8_t(BonusId::End),  1, 25, {6, 6, 1, 1, 1, 8}},
+    {"of_will",      "of Will",      std::uint8_t(BonusId::Wil),  1, 25, {6, 6, 1, 1, 1, 8}},
+    {"of_intellect", "of Intellect", std::uint8_t(BonusId::Intl), 1, 25, {6, 6, 1, 1, 1, 8}},
+    {"of_wisdom",    "of Wisdom",    std::uint8_t(BonusId::Wis),  1, 25, {6, 6, 1, 1, 1, 8}},
+    {"of_luck",      "of Luck",      std::uint8_t(BonusId::Lck),  1, 25, {6, 6, 1, 1, 1, 8}},
+    {"of_charisma",  "of Charisma",  std::uint8_t(BonusId::Cha),  1, 25, {6, 6, 1, 1, 1, 8}},
+    {"of_speed",     "of Speed",     std::uint8_t(BonusId::Spd),  1, 25, {6, 6, 1, 1, 1, 8}},
+    // ── the class row: the item's own skill ───────────────────────────────
+    {"of_mastery",   "of Mastery",   0,                           1, 15, {8, 1, 1, 1, 1, 1}},
+    // ── armour columns: the physical three at home on armour ──────────────
+    {"of_slash_warding",  "of Slash Warding",  std::uint8_t(BonusId::ArmorSlash),  1, 10, {1, 6, 1, 1, 1, 2}},
+    {"of_pierce_warding", "of Pierce Warding", std::uint8_t(BonusId::ArmorPierce), 1, 10, {1, 6, 1, 1, 1, 2}},
+    {"of_blunt_warding",  "of Blunt Warding",  std::uint8_t(BonusId::ArmorBlunt),  1, 10, {1, 6, 1, 1, 1, 2}},
+    // ...and the elemental six, rarer everywhere (the schools' wards)
+    {"of_fire_warding",   "of Fire Warding",   std::uint8_t(BonusId::ArmorFire),   1, 10, {1, 3, 1, 1, 1, 3}},
+    {"of_water_warding",  "of Water Warding",  std::uint8_t(BonusId::ArmorWater),  1, 10, {1, 3, 1, 1, 1, 3}},
+    {"of_air_warding",    "of Air Warding",    std::uint8_t(BonusId::ArmorAir),    1, 10, {1, 3, 1, 1, 1, 3}},
+    {"of_earth_warding",  "of Earth Warding",  std::uint8_t(BonusId::ArmorEarth),  1, 10, {1, 3, 1, 1, 1, 3}},
+    {"of_arcane_warding", "of Arcane Warding", std::uint8_t(BonusId::ArmorArcane), 1, 10, {1, 3, 1, 1, 1, 3}},
+    {"of_void_warding",   "of Void Warding",   std::uint8_t(BonusId::ArmorVoid),   1, 10, {1, 3, 1, 1, 1, 3}},
+    // ── the derived outputs ───────────────────────────────────────────────
+    {"of_wounding",  "of Wounding",  std::uint8_t(BonusId::DmgFlat),  1, 20, {8, 1, 1, 1, 1, 1}},
+    {"of_quickness", "of Quickness", std::uint8_t(BonusId::SwingPct), 5,  8, {4, 1, 1, 1, 1, 2}},
+    {"of_the_wind",  "of the Wind",  std::uint8_t(BonusId::MovePct),  5,  8, {1, 3, 1, 1, 1, 4}},
+    {"of_the_mule",  "of the Mule",  std::uint8_t(BonusId::CarryKg),  5,  3, {1, 4, 1, 1, 1, 3}},
+};
+
+// The class row's resolution: a SkillId to its rank's bonus ordinal, through
+// the registry itself rather than a parallel map that could drift.
+constexpr std::uint8_t skill_bonus_row(SkillId s) {
+    const SkillId use = s != SkillId::Count ? s : SkillId::Unarmed;
+    for (const BonusDef& d : kBonusDefs) {
+        if (d.target == BonusTarget::SkillRank
+            && d.index == std::uint8_t(use)) {
+            return std::uint8_t(d.id);
+        }
+    }
+    return 0;
+}
+// Every skill the catalog can name resolves to a registry row — at compile
+// time, so a skill added without its bonus row trips here, not in a drop.
+static_assert(skill_bonus_row(SkillId::Count) != 0,
+              "the Unarmed fallback must exist in the bonus registry");
+
 const LootProfile* loot_profile(const char* lootId) noexcept {
     if (!lootId || !lootId[0]) return nullptr;
     for (const auto& p : kLootProfiles) {
@@ -334,7 +410,8 @@ const LootProfile* loot_profile(const char* lootId) noexcept {
 }
 
 inline std::vector<ItemRef> roll_loot(const LootEntry* table, std::size_t n,
-                                        int level, RngFn rng) {
+                                        int level, RngFn rng,
+                                        std::uint8_t affixPower) {
     std::vector<ItemRef> out;
     out.reserve(n);
     for (std::size_t i = 0; i < n; ++i) {
@@ -348,6 +425,10 @@ inline std::vector<ItemRef> roll_loot(const LootEntry* table, std::size_t n,
             if (idx < 0) continue;      // a profile naming an unknown row drops
             r.def = std::uint16_t(idx);
             r.count = qty;
+            // Every wearable stack meets the one issuance door on its way
+            // out (it refuses bread and ore itself: an affix is a worn
+            // thing). The world's byte is the caller's word.
+            grant_affixes(r, affixPower, rng);
             out.push_back(r);
         }
     }
@@ -404,10 +485,69 @@ float inventory_weight(const Inventory& inv) noexcept {
     return total;
 }
 
-std::vector<ItemRef> roll_loot_profile(const char* lootId, int level, RngFn rng) {
+std::vector<ItemRef> roll_loot_profile(const char* lootId, int level, RngFn rng,
+                                       std::uint8_t affixPower) {
     const LootProfile* p = loot_profile(lootId);
     if (!p) return {};
-    return roll_loot(p->data, p->n, level, rng);
+    return roll_loot(p->data, p->n, level, rng, affixPower);
+}
+
+std::uint8_t affix_power(int level, std::uint8_t danger, float wealthMul) {
+    // Three contributions, one byte: 8 per level past the first, the danger
+    // byte verbatim, and up to 64 from the place's wealth — «стоимость», the
+    // same wealthMul the purse law reads, capped so a palace cannot outbid
+    // the deep country's danger on its own.
+    int p = (level > 1 ? (level - 1) * 8 : 0) + int(danger);
+    if (wealthMul > 1.0f) {
+        const float w = (wealthMul - 1.0f) * 64.0f;
+        p += int(w > 64.0f ? 64.0f : w);
+    }
+    return std::uint8_t(p > 255 ? 255 : p);
+}
+
+void grant_affixes(ItemRef& item, std::uint8_t power, RngFn rng) {
+    const ItemDef* def = item_def_at(int(item.def));
+    // An affix is a WORN thing: the door refuses what cannot be worn, so
+    // every caller may offer every stack without knowing the distinction.
+    if (!def || def->slotMask == 0) return;
+    const int n = coin_run(rng, kAffixCountBase + int(power),
+                           kAffixChanceDen, kMaxItemAffixes);
+    if (n <= 0) return;
+    const int t = int(def->type);
+    int total = 0;
+    for (const AffixDef& a : kAffixDefs) total += int(a.weight[t]);
+    for (int i = 0; i < n; ++i) {
+        // Weighted pick down the type's own column. The clamp covers the
+        // rng contract hole (core/rng.h may return exactly 1.0f).
+        int roll = int(rng() * float(total));
+        if (roll >= total) roll = total - 1;
+        const AffixDef* pick = &kAffixDefs[0];
+        for (const AffixDef& a : kAffixDefs) {
+            roll -= int(a.weight[t]);
+            if (roll < 0) { pick = &a; break; }
+        }
+        std::uint8_t row = pick->bonusRow;
+        if (row == 0) row = skill_bonus_row(def->skill);   // "of Mastery"
+        const int units = 1 + coin_run(rng, kAffixValueBase + int(power),
+                                       kAffixChanceDen,
+                                       kAffixValueCapUnits - 1);
+        item.set_affix(i, Bonus{row, std::int16_t(units * int(pick->step))});
+    }
+    // The seed marks a ROLLED instance: it never merges with the plain row,
+    // and two same-day twins stay two items (the stacking law reads it).
+    if (item.seed == 0) {
+        const std::uint32_t hi = std::uint32_t(rng() * 65536.0f);
+        const std::uint32_t lo = std::uint32_t(rng() * 65536.0f);
+        item.seed = ((hi << 16) | lo) | 1u;
+    }
+}
+
+std::size_t affix_def_count() noexcept {
+    return sizeof(kAffixDefs) / sizeof(kAffixDefs[0]);
+}
+
+const char* affix_def_key(std::size_t i) noexcept {
+    return i < affix_def_count() ? kAffixDefs[i].key : "";
 }
 
 const char* npc_loot_id(int npcType) noexcept {

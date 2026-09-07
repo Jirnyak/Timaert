@@ -464,7 +464,8 @@ inline void roll_fallen_spoils(const MacroWorld& mw, std::uint16_t kind,
     if (!lootId || !lootId[0]) lootId = npc_loot_id(int(type));
     if (!lootId || !lootId[0]) lootId = factionId;
     for (const ItemRef& s :
-         roll_loot_profile(lootId, level, &squad_loot_rng_f01)) {
+         roll_loot_profile(lootId, level, &squad_loot_rng_f01,
+                           affix_power(level, ctx.danger, ctx.wealthMul))) {
         into.add_ref(s);
     }
     const int coins =

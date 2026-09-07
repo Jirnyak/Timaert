@@ -1796,8 +1796,11 @@ std::string SubworldEngine::grant_prop_loot(const Structure& prop) {
         std::uint32_t((mgr_.center_cy() - 1) * kCellSize + int(prop.y));
     Rng rng(gs_->worldSeed ^ (absX * 2246822519u) ^ (absY * 3266489917u));
     gLootRng = &rng;
+    // Affix power 0: a felled tree pays wood and a stand pays grain — the
+    // world's props carry no worn things to load dice for, and 0 keeps the
+    // deterministic-per-place contract above exactly as cheap as it reads.
     auto stacks = roll_loot_profile(lootId, gs_->player.sheet.levelData.level,
-                                    &loot_rng_f01);
+                                    &loot_rng_f01, /*affixPower*/ 0);
     gLootRng = nullptr;
 
     // Yield reference height comes from the kind's own row (a tree's is the
@@ -2846,34 +2849,14 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 ^ std::uint32_t(lvl * 7919);
             Rng rng(seed);
             gLootRng = &rng;
-            if (inv.used_slots() == 0 && kind) {
-                // Single keyed loot path (macro/items.h roll_loot_profile): a
-                // humanoid NPC resolves by role, a monster by its creature-table
-                // lootId (null => faction default). Both share one resolver, so a
-                // Bandits-faction creature now drops real items via the "bandits"
-                // profile instead of nothing (the old faction-string gap).
-                // The row answers first with its own column, then with the
-                // per-role list, and a row that says nothing either way drops
-                // by its faction. One chain for a bandit and for a wolf.
-                const NpcTypeDef* row = row_for(kind);
-                const char* lootId = row && row->lootId && row->lootId[0]
-                    ? row->lootId
-                    : npc_loot_id(int(kind->type));
-                if (!lootId || !lootId[0]) lootId = faction_id_for_kind(kind);
-                auto stacks = roll_loot_profile(lootId, lvl, &loot_rng_f01);
-                for (const ItemRef& s : stacks) inv.add_ref(s);
-            }
-            // Coin: the row's purse, modulated by the WEALTH OF THE PLACE
-            // this body fell in (owner ruling 2026-08-27). The place is the
-            // landmark standing on the body's own macro cell, read from the
-            // baked grid — one array lookup, never a facts assembly (the door
-            // track's performance contract). Open land is 1.0 and silent.
-            // Coin: the row's purse, modulated by the WORLD the body fell in
-            // — the danger of its cell and the wealth of the place standing
-            // on it (owner's design 2026-08-27). Both read from BAKED grids,
-            // one array lookup each, never a facts assembly (the door track's
-            // performance contract); a new contribution is a new field of
-            // CorpseLootContext and one more line here.
+            // The WORLD the body fell in — the danger of its cell and the
+            // wealth of the place standing on it (owner's design 2026-08-27).
+            // Both read from BAKED grids, one array lookup each, never a
+            // facts assembly (the door track's performance contract); a new
+            // contribution is a new field of CorpseLootContext and one more
+            // line here. Assembled BEFORE the rolls because it feeds both:
+            // the purse below, and the affix power the item roll loads its
+            // dice with (the affix track, 2026-09-07).
             CorpseLootContext lootCtx{};
             if (pos) {
                 // Window tile → macro cell: the 3×3 window's centre cell is
@@ -2890,6 +2873,25 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 if (zones_ && !zones_->data.empty()) {
                     lootCtx.danger = zones_->at(cellX, cellY);
                 }
+            }
+            if (inv.used_slots() == 0 && kind) {
+                // Single keyed loot path (macro/items.h roll_loot_profile): a
+                // humanoid NPC resolves by role, a monster by its creature-table
+                // lootId (null => faction default). Both share one resolver, so a
+                // Bandits-faction creature now drops real items via the "bandits"
+                // profile instead of nothing (the old faction-string gap).
+                // The row answers first with its own column, then with the
+                // per-role list, and a row that says nothing either way drops
+                // by its faction. One chain for a bandit and for a wolf.
+                const NpcTypeDef* row = row_for(kind);
+                const char* lootId = row && row->lootId && row->lootId[0]
+                    ? row->lootId
+                    : npc_loot_id(int(kind->type));
+                if (!lootId || !lootId[0]) lootId = faction_id_for_kind(kind);
+                auto stacks = roll_loot_profile(
+                    lootId, lvl, &loot_rng_f01,
+                    affix_power(lvl, lootCtx.danger, lootCtx.wealthMul));
+                for (const ItemRef& s : stacks) inv.add_ref(s);
             }
             // Only a DERIVED body mints its purse (the same empty-bag gate
             // the item roll above obeys): a tracked body carries its REAL
