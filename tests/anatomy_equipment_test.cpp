@@ -204,14 +204,24 @@ void test_worn_sums_reach_the_one_currency() {
           "worn armour is the per-column sum of the rows worn, in the door's "
           "own units");
 
-    // The coat's authored "+2 END" was FICTION until the registry landed and
-    // equipment could carry it. Now it is a standing bonus like any other.
+    // BASE rows are BARE (owner verdict (а), 2026-09-07): the plain coat
+    // says nothing through the bonus column — that voice belongs to uniques.
+    // What a worn INSTANCE says comes from its own affix cells, and it lands
+    // in the one currency the sheet reads.
+    CHECK(worn_bonuses(eq).attr[std::size_t(AttributeId::End)] == 0,
+          "a plain base row grants nothing standing — the placeholder era is "
+          "over");
+    ItemRef rolled = leather;
+    rolled.set_affix(0, {std::uint8_t(BonusId::End), 2});
+    rolled.seed = 7;   // a rolled instance, per the stacking law
+    unequip(eq, cell);
+    const int rolledCell = equip(eq, rolled);
+    CHECK(rolledCell >= 0, "the rolled coat is on");
     const BonusTotals worn = worn_bonuses(eq);
     CHECK(worn.attr[std::size_t(AttributeId::End)] == 2,
-          "and its bonus lands in the one currency the sheet reads — the "
-          "'+2 END when equipped' the row has claimed since day one");
+          "and its AFFIX lands in the one currency the sheet reads");
 
-    unequip(eq, cell);
+    unequip(eq, rolledCell);
     CHECK(worn_armor(eq).of(DamageType::Blunt) == 0 && worn_bonuses(eq).attr[
               std::size_t(AttributeId::End)] == 0,
           "take it off and both sums fall back to nothing: no residue");

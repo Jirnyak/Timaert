@@ -90,12 +90,17 @@ constexpr ItemDef kCatalog[] = {
         "Alchemy ingredient", {}},
 
     // Equipment
-    // The two rows that finally MEAN what they have always said. `slotMask`
-    // names TYPES, so a dagger fits any body with a grip and the leather fits
-    // any body with a torso — an octopus included, without either row knowing
-    // an octopus exists.
+    // BASE rows are BARE (owner verdict (а), 2026-09-07): the innate bonus
+    // column stays a column — it is the legitimate voice of a future unique
+    // or artifact — but a plain dagger says nothing through it. The «+2 STR»
+    // and «+2 END» that stood here were placeholders from the day the door
+    // was proved (2026-08-27), and every drop repeated them bit-for-bit;
+    // what a rolled instance says now comes from grant_affixes. `slotMask`
+    // names TYPES, so a dagger fits any body with a grip and the leather
+    // fits any body with a torso — an octopus included, without either row
+    // knowing an octopus exists.
     {"wpn_dagger",  "Rusty Dagger",    ItemType::Weapon,     30, 1.00f, "\xF0\x9F\x97\xA1",
-        "+2 STR when equipped", {{std::uint8_t(BonusId::Str), 2}},
+        "A rusty sidearm, quick in the hand", {},
         /*slot*/part_bit(BodyPartId::Grip) | part_bit(BodyPartId::OffGrip),
         // 1d4 piercing through the Dagger skill: a rusty sticker — mean 2.5
         // against the fist's 1.5, and the point slips where a club cannot.
@@ -104,7 +109,7 @@ constexpr ItemDef kCatalog[] = {
         /*blocks*/0, /*armor*/{}, /*dice*/{1, 4},
         /*dmgType*/DamageType::Pierce, /*skill*/SkillId::Dagger},
     {"arm_leather", "Leather Armor",   ItemType::Armor,      60, 5.00f, "\xF0\x9F\x9B\xA1",
-        "+2 END when equipped", {{std::uint8_t(BonusId::End), 2}},
+        "A boiled-leather coat over the torso", {},
         /*slot*/part_bit(BodyPartId::Torso), /*blocks*/0,
         // A leather coat is worth a third of a plain blow (kArmorHalving);
         // uniform across the nine types — the mechanical scalar-era
@@ -114,6 +119,44 @@ constexpr ItemDef kCatalog[] = {
     // Valuables
     {"misc_gem",    "Gemstone",        ItemType::Misc,      100, 0.05f, "\xF0\x9F\x92\x8E",
         "Valuable gem, can be sold", {}},
+
+    // ── The weapon rack (affix track step 4, 2026-09-07) ──────────────────
+    // One bare row per weapon skill that had none — APPENDED, because a
+    // saved ItemRef carries the catalog ordinal. Tempo is nobody's column:
+    // the kilogram figure prices every swing through the one mass law
+    // (anatomy.h weapon_swing_seconds — dagger 2.0s … mace 3.25s), so the
+    // ladder below trades SPEED for its growing die. The bow is deliberately
+    // ABSENT: loosing an arrow needs the universal shooting/throwing law
+    // (owner verdict — a future design pass), and a bow row that clubs
+    // people melee-style would teach the wrong game.
+    {"wpn_sword",   "Worn Sword",      ItemType::Weapon,     60, 2.00f, "\xE2\x9A\x94",
+        "A soldier's blade, past its best years", {},
+        /*slot*/part_bit(BodyPartId::Grip) | part_bit(BodyPartId::OffGrip),
+        /*blocks*/0, /*armor*/{}, /*dice*/{1, 6},
+        /*dmgType*/DamageType::Slash, /*skill*/SkillId::Sword},
+    // The two-handers say so through the mask, not through code: they sit in
+    // the main grip and take the off hand with them — the case blocksMask
+    // exists for.
+    {"wpn_spear",   "Crude Spear",     ItemType::Weapon,     50, 2.50f, "\xF0\x9F\x94\xB1",
+        "A sharpened head on a long shaft; needs both hands", {},
+        /*slot*/part_bit(BodyPartId::Grip),
+        /*blocks*/part_bit(BodyPartId::OffGrip), /*armor*/{}, /*dice*/{1, 8},
+        /*dmgType*/DamageType::Pierce, /*skill*/SkillId::Spear},
+    {"wpn_axe",     "Woodsman's Axe",  ItemType::Weapon,     70, 3.00f, "\xF0\x9F\xAA\x93",
+        "Made for timber, willing to argue", {},
+        /*slot*/part_bit(BodyPartId::Grip) | part_bit(BodyPartId::OffGrip),
+        /*blocks*/0, /*armor*/{}, /*dice*/{1, 10},
+        /*dmgType*/DamageType::Slash, /*skill*/SkillId::Axe},
+    {"wpn_mace",    "Iron Mace",       ItemType::Weapon,     80, 3.50f, "\xE2\x9A\x92",
+        "A blunt argument no armour fully wins", {},
+        /*slot*/part_bit(BodyPartId::Grip) | part_bit(BodyPartId::OffGrip),
+        /*blocks*/0, /*armor*/{}, /*dice*/{1, 12},
+        /*dmgType*/DamageType::Blunt, /*skill*/SkillId::Mace},
+    {"wpn_staff",   "Quarterstaff",    ItemType::Weapon,     40, 2.00f, "\xF0\x9F\xAA\x84",
+        "A traveller's stick and a caster's habit; both hands", {},
+        /*slot*/part_bit(BodyPartId::Grip),
+        /*blocks*/part_bit(BodyPartId::OffGrip), /*armor*/{}, /*dice*/{1, 6},
+        /*dmgType*/DamageType::Blunt, /*skill*/SkillId::Staff},
 };
 
 const std::unordered_map<std::string, const ItemDef*>& catalog_map() {

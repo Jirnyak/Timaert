@@ -5,13 +5,14 @@
 //   ItemType { Weapon=0, Armor=1, Potion=2, Food=3, Material=4, Misc=5 }
 // Stacking semantics: at most one entry per id (addItem stacks quantity).
 //
-// Catalog (24 ids): gold, potion_hp, potion_mp, food_meat, mat_bone,
-// mat_hide, mat_herb, wpn_dagger, arm_leather, misc_gem — plus the economy's
-// 14 commodity nouns (macro/commodity.h, owner's one-dictionary ruling):
-// wood, stone, iron, clay, grain, bread, bricks, cloth, tools, furniture,
-// wagon, jewelry, carving, statue. The bread a city bakes and the bread in
-// the player's bag are ONE row; ids and weights match commodity.h verbatim
-// (link law in econ_v1_test).
+// Catalog: the 4 faction coins, consumables (potion_hp/mp, bread, food_meat),
+// monster materials (mat_bone/hide/herb), equipment (wpn_dagger/sword/spear/
+// axe/mace/staff, arm_leather), misc_gem — plus the economy's 14 commodity
+// nouns (macro/commodity.h, owner's one-dictionary ruling): wood, stone,
+// iron, silver, clay, grain, bricks, cloth, tools, furniture, wagon, jewelry,
+// carving, statue. The bread a city bakes and the bread in the player's bag
+// are ONE row; ids and weights match commodity.h verbatim (link law in
+// econ_v1_test). New rows APPEND — a saved ItemRef carries the ordinal.
 
 #pragma once
 #include "macro/bonus.h"
