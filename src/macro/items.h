@@ -343,6 +343,11 @@ int                    generate_loot_gold(int npcType, int level,
 // demons / bandits. Unknown / empty id => no items.
 std::vector<ItemRef> roll_loot_profile(const char* lootId, int level, RngFn rng);
 
+// The registry's own listing — for printers (the dev console's `loots`), so
+// the id list is never restated anywhere. Index order is the table's.
+std::size_t loot_profile_count() noexcept;
+const char* loot_profile_id(std::size_t i) noexcept;
+
 // NPCType integer -> its loot-profile id (npc.h enum order). "" if out of range.
 const char* npc_loot_id(int npcType) noexcept;
 

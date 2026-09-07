@@ -164,6 +164,7 @@ const ConsoleCommand* Console::find(std::string_view name) const {
 
 // ── Output ────────────────────────────────────────────────────────
 void Console::print(ConsoleLevel level, std::string text) {
+    if (level == ConsoleLevel::Error) ++errorCount;
     scrollback.push_back({std::move(text), level});
     constexpr std::size_t kMax = 1000;
     if (scrollback.size() > kMax)
@@ -182,16 +183,16 @@ void Console::printfln(ConsoleLevel level, const char* fmt, ...) {
 }
 
 // ── Dispatch ──────────────────────────────────────────────────────
-void Console::execute(std::string_view line) {
+bool Console::execute(std::string_view line) {
     const std::string cmdline = trim(line);
-    if (cmdline.empty()) return;
+    if (cmdline.empty()) return true;   // a blank line is not a failure
 
     print(ConsoleLevel::Echo, "> " + cmdline);
     history.push_back(cmdline);
     historyPos = -1;
 
     const std::vector<std::string> toks = tokenize(cmdline);
-    if (toks.empty()) return;
+    if (toks.empty()) return true;
 
     const ConsoleCommand* cmd = find(toks[0]);
     if (!cmd) {
@@ -205,12 +206,17 @@ void Console::execute(std::string_view line) {
         }
         if (best && bestLen >= 1) info("did you mean '" + best->name + "'?  (try 'help')");
         else info("type 'help' for the command list");
-        return;
+        return false;
     }
 
     const std::vector<std::string> args(toks.begin() + 1, toks.end());
+    const std::uint32_t errsBefore = errorCount;
     const bool ok = cmd->fn ? cmd->fn(*this, args) : false;
-    if (!ok) print(ConsoleLevel::Warn, "usage: " + cmd->usage);
+    if (!ok) {
+        print(ConsoleLevel::Warn, "usage: " + cmd->usage);
+        return false;
+    }
+    return errorCount == errsBefore;
 }
 
 // ── Built-ins ─────────────────────────────────────────────────────

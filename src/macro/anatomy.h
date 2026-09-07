@@ -246,6 +246,12 @@ bool item_fits_cell(const Equipment& eq, int cell, const ItemDef& def);
 // container — see `kBlockedByDef`.
 int equip(Equipment& eq, const ItemRef& item);
 
+// Put it on THAT cell — the same law as `equip` (fit, emptiness, a blocker's
+// cells clear), one chosen cell instead of the first that answers. This is
+// how two rings land on two different fingers. Returns the cell, or -1 on
+// refusal (same conservation stance: never a silent drop).
+int equip_at(Equipment& eq, const ItemRef& item, int cell);
+
 // Take it off the given cell, returning what was there ({} if nothing). Any
 // cells that item was blocking are released with it.
 ItemRef unequip(Equipment& eq, int cell);

@@ -124,7 +124,57 @@ stress the UI). The game HUD (F3) shows FPS/camera/world counters. For a quick
 apples-to-apples, run `GPU_SMOKE_FRAMES=600 ./build-prof/gpu_smoke` and report
 the printed frame count / any stalls.
 
-### 7.-1 Render-diagnostic console commands
+### 7.-1 The dev console — THE unified test system
+
+Backtick (`` ` ``) opens it in the Playing state. Verdict (owner, 2026-09-07):
+the console is the ONE way to assemble a game state for testing — «командами
+собирать себе состояния игры; минимум систем — максимум функциональности».
+No preset system, no scenario DSL: a state IS a text file of the same
+commands (`exec`, below).
+
+The machinery is `app/debug_console.h` — a table-driven registry. Adding a
+command is one `register_cmd` row in `register_console_commands` (main.cpp),
+never a dispatch switch; handlers call the SAME gameplay doors the engine
+uses, so the console cannot drift from real behaviour. `help` lists
+everything; every table-printer command is the source-of-truth registry
+printing its own ids.
+
+The commands, by group (usage via `help <cmd>`):
+
+* **world** — `tp`, `tp_settlement`, `settime`, `addtime`, `simspeed`,
+  `rest`, `revealmap`, `chop`, `pos`, `time`.
+* **spawning** — `spawn` (NPC/monster table), `spawn_squad`, `squad_orders`,
+  `test_battle`, `spawn_fauna`, `killall`, `possess`.
+* **inventory** — `items` (catalog ids), `give`, `take`, `gold`;
+  `loots` / `loot <profileId> [rolls]` — rolls through THE loot registry
+  (the same `roll_loot_profile` a death or a chest pays through) into the
+  bag, at the player's level.
+* **sheet doors** (phase 4: writes go to the BASE sheet, the world reads the
+  EFFECTIVE one) — `skills` / `skill <key|all> <rank>` (0 = unlearned, the
+  learn law's own zero; cap 100), `attrs` / `attr <key|all> <score>`
+  (floor 1, cap 255), `addexp`, `levelup`. A write that actually changed
+  something recomputes the combat maxima through the point-spend's own site —
+  current pools survive, never a free heal.
+* **equipment** (anatomy doors) — `gear` (every body cell), `equip <itemId>
+  [cell]` (no cell → the door picks the first that fits; a cell → the
+  `equip_at` door, two rings on two fingers), `unequip <cell>`. Conservation
+  law throughout: refusal, never a silent drop.
+* **spells** — `spells`, `learn`, `learnall`.
+* **readouts** — `sheet` prints base → effective attributes/skills, derived
+  block, and TEMPOS through the recovery door: the hand's swing (weapon in
+  hand or fist, mass law) and the wind-up of every known non-sustained spell
+  — the test window into CANON S14 «один рычаг на ручку».
+* **cheats/flags** — `heal`, `godmode`, `flight`.
+
+**`exec <file>` — a state is a text file.** Runs the file line by line: `#`
+comments and blank lines skip; the run STOPS at the first error with the
+line number (a state either assembled whole or said where it broke — a test
+never rides a half-built state); nesting is forbidden (one file = one state,
+readable top to bottom). `Console::execute` returns that verdict; its
+witness is the console's error counter, so a handler that prints an error
+fails the line even where it returns "usage was fine".
+
+### 7.-2 Render-diagnostic console commands
 
 * `fpshud [on|off]` — persistent framerate chip.
 * `sunfreeze [on|off]` — pin the sun/moon for RENDERING only (sim keeps

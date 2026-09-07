@@ -370,6 +370,14 @@ int item_index(const char* id) noexcept {
 
 int item_index(const std::string& id) noexcept { return item_index(id.c_str()); }
 
+std::size_t loot_profile_count() noexcept {
+    return sizeof(kLootProfiles) / sizeof(kLootProfiles[0]);
+}
+
+const char* loot_profile_id(std::size_t i) noexcept {
+    return i < loot_profile_count() ? kLootProfiles[i].id : "";
+}
+
 const ItemDef* item_def_at(int idx) noexcept {
     return (idx >= 0 && idx < int(std::size(kCatalog))) ? &kCatalog[idx]
                                                         : nullptr;

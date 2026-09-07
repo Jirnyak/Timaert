@@ -58,6 +58,35 @@ bool item_fits_cell(const Equipment& eq, int cell, const ItemDef& def) {
     return (def.slotMask & part_bit(part)) != 0;
 }
 
+namespace {
+
+// The one per-cell attempt both equip doors walk: fit, emptiness, a blocker's
+// cells clear — then wear. Returns whether cell `i` took the item.
+bool try_equip_cell(Equipment& eq, const ItemRef& item, const ItemDef& def,
+                    int i) {
+    if (!item_fits_cell(eq, i, def)) return false;
+    if (!eq.worn[std::size_t(i)].empty()) return false;   // taken, or blocked
+
+    // A two-hander needs its blocked cells EMPTY, not merely present: it
+    // may not shove a shield off an arm the wearer chose to use.
+    if (def.blocksMask != 0) {
+        const int n = eq.cells();
+        for (int j = 0; j < n; ++j) {
+            if (j == i) continue;
+            if ((def.blocksMask & part_bit(eq.part_at(j))) == 0) continue;
+            if (!eq.worn[std::size_t(j)].empty()) return false;
+        }
+    }
+
+    ItemRef one = item;
+    one.count = 1;              // a body wears ONE, not a stack
+    eq.worn[std::size_t(i)] = one;
+    mark_blocks(eq, i, def.blocksMask);
+    return true;
+}
+
+} // namespace
+
 int equip(Equipment& eq, const ItemRef& item) {
     if (item.empty()) return -1;
     const ItemDef* def = item_def_at(int(item.def));
@@ -65,28 +94,16 @@ int equip(Equipment& eq, const ItemRef& item) {
 
     const int n = eq.cells();
     for (int i = 0; i < n; ++i) {
-        if (!item_fits_cell(eq, i, *def)) continue;
-        if (!eq.worn[std::size_t(i)].empty()) continue;   // taken, or blocked
-
-        // A two-hander needs its blocked cells EMPTY, not merely present: it
-        // may not shove a shield off an arm the wearer chose to use.
-        if (def->blocksMask != 0) {
-            bool clear = true;
-            for (int j = 0; j < n && clear; ++j) {
-                if (j == i) continue;
-                if ((def->blocksMask & part_bit(eq.part_at(j))) == 0) continue;
-                if (!eq.worn[std::size_t(j)].empty()) clear = false;
-            }
-            if (!clear) continue;   // try another cell before refusing
-        }
-
-        ItemRef one = item;
-        one.count = 1;              // a body wears ONE, not a stack
-        eq.worn[std::size_t(i)] = one;
-        mark_blocks(eq, i, def->blocksMask);
-        return i;
+        if (try_equip_cell(eq, item, *def, i)) return i;
     }
     return -1;   // nothing on this body can take it — refusal, never a drop
+}
+
+int equip_at(Equipment& eq, const ItemRef& item, int cell) {
+    if (item.empty()) return -1;
+    const ItemDef* def = item_def_at(int(item.def));
+    if (!def || def->slotMask == 0) return -1;
+    return try_equip_cell(eq, item, *def, cell) ? cell : -1;
 }
 
 ItemRef unequip(Equipment& eq, int cell) {

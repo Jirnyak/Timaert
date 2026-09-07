@@ -4,12 +4,14 @@
 #include <cassert>
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
+#include <fstream>
 #include <memory>
 #include <span>
 #include <string>
@@ -3405,6 +3407,45 @@ bool console_toggle_arg(const std::vector<std::string>& a, bool current) {
     return !current;
 }
 
+// Row lookups by authoring key, for the sheet commands — the tables print
+// their own ids (`skills` / `attrs`), these turn one back into a row.
+const sm::SkillDef* console_skill_by_key(const std::string& key) {
+    for (const auto& d : sm::kSkillDefs)
+        if (key == d.key) return &d;
+    return nullptr;
+}
+
+const sm::AttributeDef* console_attr_by_key(const std::string& key) {
+    for (const auto& d : sm::kAttributeDefs)
+        if (key == d.key) return &d;
+    return nullptr;
+}
+
+// The point-spend's own recompute site (ui/overlays.cpp): maxima follow the
+// EFFECTIVE sheet, current pools survive — never a free heal. Called only
+// when a console write actually CHANGED the base sheet (the "something
+// changed" gate; an unconditional recompute stomps runtime state nothing
+// touched — the frozen-spRegen regression, 2026-09-06).
+void console_recompute_maxima(App& app) {
+    const sm::CharacterSheet eff = player_effective_sheet(app);
+    sm::recompute_combat_maxima(app.gs.player.combatStats, eff.attributes,
+                                eff.skills);
+}
+
+// THE player's wardrobe, the way the equipment tab gets it: an opt-in
+// container on his squad entity, created the moment something wants to wear.
+// nullptr before the world exists.
+sm::ecs::BodyEquipment* console_player_equipment(App& app) {
+    const entt::entity pe = sm::player_squad_entity(app.ecs);
+    if (pe == entt::null) return nullptr;
+    return &app.ecs.reg.get_or_emplace<sm::ecs::BodyEquipment>(pe);
+}
+
+// Console loot rolls: one stream per process with a fixed seed, so an `exec`
+// file replayed from a fresh boot rolls the same drops in the same order.
+sm::Rng gConsoleLootRng{0x100Cu};
+float console_loot_rng_f01() { return gConsoleLootRng.next_f01(); }
+
 void register_console_commands(App& app) {
     Con& con = app.console;
     con.register_builtins();
@@ -3910,6 +3951,326 @@ void register_console_commands(App& app) {
         });
 
     // ── World & toggles ───────────────────────────────────────
+    // ── The sheet doors (phase 4: writes go to the BASE sheet, the world
+    //    reads the EFFECTIVE one; maxima recompute only when something
+    //    actually changed) ───────────────────────────────────────
+    con.register_cmd("skills", "skills",
+        "list every skill: key, base rank -> effective rank (source of truth)",
+        [&app](Con& c, const std::vector<std::string>&) {
+            const sm::CharacterSheet& base = app.gs.player.sheet;
+            const sm::CharacterSheet eff = player_effective_sheet(app);
+            for (const auto& d : sm::kSkillDefs)
+                c.printfln(Lvl::Info, "  %-12s %3d -> %3d  %s", d.key,
+                           base.skills.of(d.id), eff.skills.of(d.id), d.label);
+            c.printfln(Lvl::Ok, "%zu skills (rank 0 = unlearned, cap %d)",
+                       std::size(sm::kSkillDefs), sm::kMaxSkillRank);
+            return true;
+        });
+
+    con.register_cmd("skill", "skill <key|all> <rank>",
+        "set a BASE skill rank (0 = unlearned; 'skills' for keys)",
+        [&app](Con& c, const std::vector<std::string>& a) {
+            int rank = 0;
+            if (a.size() < 2 || !sm::dev::arg_int(a, 1, rank)) return false;
+            const int want = std::clamp(rank, 0, sm::kMaxSkillRank);
+            if (want != rank)
+                c.printfln(Lvl::Warn, "rank clamped to %d (the law's cap)", want);
+            auto& skills = app.gs.player.sheet.skills;
+            bool changed = false;
+            if (a[0] == "all") {
+                for (const auto& d : sm::kSkillDefs) {
+                    if (skills.of(d.id) == want) continue;
+                    skills[d.id] = std::uint8_t(want);
+                    changed = true;
+                }
+                c.printfln(Lvl::Ok, "all %zu skills -> %d",
+                           std::size(sm::kSkillDefs), want);
+            } else {
+                const sm::SkillDef* d = console_skill_by_key(a[0]);
+                if (!d) {
+                    c.error("unknown skill '" + a[0] + "' - type 'skills' for keys");
+                    return true;
+                }
+                changed = skills.of(d->id) != want;
+                skills[d->id] = std::uint8_t(want);
+                c.printfln(Lvl::Ok, "%s = %d (effective %d)", d->key, want,
+                           player_effective_sheet(app).skills.of(d->id));
+            }
+            if (changed) console_recompute_maxima(app);
+            return true;
+        });
+
+    con.register_cmd("attrs", "attrs",
+        "list every attribute: key, base score -> effective score",
+        [&app](Con& c, const std::vector<std::string>&) {
+            const sm::CharacterSheet& base = app.gs.player.sheet;
+            const sm::CharacterSheet eff = player_effective_sheet(app);
+            for (const auto& d : sm::kAttributeDefs)
+                c.printfln(Lvl::Info, "  %-4s %3d -> %3d  %s", d.key,
+                           base.attributes.of(d.id), eff.attributes.of(d.id),
+                           d.effect);
+            c.printfln(Lvl::Ok, "%zu attributes (floor 1, cap %d)",
+                       std::size(sm::kAttributeDefs), sm::kMaxAttributeScore);
+            return true;
+        });
+
+    con.register_cmd("attr", "attr <key|all> <score>",
+        "set a BASE attribute score ('attrs' for keys)",
+        [&app](Con& c, const std::vector<std::string>& a) {
+            int score = 0;
+            if (a.size() < 2 || !sm::dev::arg_int(a, 1, score)) return false;
+            // Floor 1, the scores' own birth value (Attributes{} = ones): a
+            // zero would divide differently in the asymptotic formulas, and
+            // the effective door lifts it right back anyway.
+            const int want = std::clamp(score, 1, sm::kMaxAttributeScore);
+            if (want != score)
+                c.printfln(Lvl::Warn, "score clamped to %d", want);
+            auto& attrs = app.gs.player.sheet.attributes;
+            bool changed = false;
+            if (a[0] == "all") {
+                for (const auto& d : sm::kAttributeDefs) {
+                    if (attrs.of(d.id) == want) continue;
+                    attrs[d.id] = std::uint8_t(want);
+                    changed = true;
+                }
+                c.printfln(Lvl::Ok, "all %zu attributes -> %d",
+                           std::size(sm::kAttributeDefs), want);
+            } else {
+                const sm::AttributeDef* d = console_attr_by_key(a[0]);
+                if (!d) {
+                    c.error("unknown attribute '" + a[0] + "' - type 'attrs' for keys");
+                    return true;
+                }
+                changed = attrs.of(d->id) != want;
+                attrs[d->id] = std::uint8_t(want);
+                c.printfln(Lvl::Ok, "%s = %d (effective %d)", d->key, want,
+                           player_effective_sheet(app).attributes.of(d->id));
+            }
+            if (changed) console_recompute_maxima(app);
+            return true;
+        });
+
+    con.register_cmd("loots", "loots",
+        "list every loot profile id in the registry (source of truth)",
+        [](Con& c, const std::vector<std::string>&) {
+            for (std::size_t i = 0; i < sm::loot_profile_count(); ++i)
+                c.printfln(Lvl::Info, "  %s", sm::loot_profile_id(i));
+            c.printfln(Lvl::Ok, "%zu profiles", sm::loot_profile_count());
+            return true;
+        });
+
+    con.register_cmd("loot", "loot <profileId> [rolls]",
+        "roll a loot profile into the bag - the same registry a death or a "
+        "chest pays through ('loots' for ids)",
+        [&app](Con& c, const std::vector<std::string>& a) {
+            if (a.empty()) return false;
+            int rolls = 1;
+            sm::dev::arg_int(a, 1, rolls);
+            if (rolls < 1) rolls = 1;
+            bool known = false;
+            for (std::size_t i = 0; i < sm::loot_profile_count(); ++i)
+                known = known || a[0] == sm::loot_profile_id(i);
+            if (!known) {
+                c.error("unknown profile '" + a[0] + "' - type 'loots' for ids");
+                return true;
+            }
+            const int level = app.gs.player.sheet.levelData.level;
+            int stacks = 0, refused = 0;
+            for (int r = 0; r < rolls; ++r) {
+                for (const sm::ItemRef& s : sm::roll_loot_profile(
+                         a[0].c_str(), level, &console_loot_rng_f01)) {
+                    if (player_bag(app).add_ref(s)) ++stacks;
+                    else ++refused;   // bag full: refusal, the roll is forfeit
+                }
+            }
+            c.printfln(Lvl::Ok, "%d roll(s) of '%s' at level %d: +%d stack(s)",
+                       rolls, a[0].c_str(), level, stacks);
+            if (refused > 0)
+                c.printfln(Lvl::Warn, "bag full: %d stack(s) refused", refused);
+            return true;
+        });
+
+    // ── The anatomy doors (equipment; the sheet door reads what is worn
+    //    through the standing-bonus gate on its own) ─────────────
+    con.register_cmd("gear", "gear",
+        "print every body cell: index, part, what is worn",
+        [&app](Con& c, const std::vector<std::string>&) {
+            sm::ecs::BodyEquipment* eqc = console_player_equipment(app);
+            if (!eqc) { c.error("no body to dress (no world yet)"); return true; }
+            const sm::Equipment& gear = eqc->gear;
+            c.printfln(Lvl::Ok, "%s - %d of %d cells filled",
+                       gear.shape().label, sm::worn_cells(gear), gear.cells());
+            for (int cell = 0; cell < gear.cells(); ++cell) {
+                const sm::ItemRef& r = gear.worn[std::size_t(cell)];
+                const sm::ItemDef* def =
+                    r.empty() ? nullptr : sm::item_def_at(int(r.def));
+                c.printfln(Lvl::Info, "  %2d %-10s %s", cell,
+                           sm::body_part_def(gear.part_at(cell)).label,
+                           r.empty() ? "(empty)"
+                                     : (def ? def->id : "(blocked)"));
+            }
+            return true;
+        });
+
+    con.register_cmd("equip", "equip <itemId> [cell]",
+        "wear an item from the bag; no cell = the door picks the first that "
+        "fits ('gear' for cells, 'items' for ids)",
+        [&app](Con& c, const std::vector<std::string>& a) {
+            if (a.empty()) return false;
+            sm::ecs::BodyEquipment* eqc = console_player_equipment(app);
+            if (!eqc) { c.error("no body to dress (no world yet)"); return true; }
+            const int defIdx = sm::item_index(a[0]);
+            if (defIdx < 0) {
+                c.error("unknown item '" + a[0] + "' - type 'items' for the list");
+                return true;
+            }
+            // The bag's own stack, so a rolled instance keeps its affixes on
+            // the way to the body (the UI's Wear button does exactly this).
+            sm::Inventory& bag = player_bag(app);
+            const sm::ItemRef* stack = nullptr;
+            for (const sm::ItemRef& st : bag.slots) {
+                if (!st.empty() && int(st.def) == defIdx) { stack = &st; break; }
+            }
+            if (!stack) {
+                c.error("'" + a[0] + "' is not in the bag (try 'give')");
+                return true;
+            }
+            sm::ItemRef one = *stack;
+            one.count = 1;
+            int cell = -1;
+            const bool hasCell = sm::dev::arg_int(a, 1, cell);
+            const int landed = hasCell ? sm::equip_at(eqc->gear, one, cell)
+                                       : sm::equip(eqc->gear, one);
+            if (landed >= 0) {
+                bag.remove_of(defIdx, 1);
+                c.printfln(Lvl::Ok, "%s -> cell %d (%s)", a[0].c_str(), landed,
+                           sm::body_part_def(eqc->gear.part_at(landed)).label);
+            } else {
+                // Refusal, never a drop: the item stays in the bag.
+                c.printfln(Lvl::Warn, "the body refuses %s%s", a[0].c_str(),
+                           hasCell ? " on that cell" : "");
+            }
+            return true;
+        });
+
+    con.register_cmd("unequip", "unequip <cell>",
+        "take off what a body cell wears, back to the bag ('gear' for cells)",
+        [&app](Con& c, const std::vector<std::string>& a) {
+            int cell = -1;
+            if (!sm::dev::arg_int(a, 0, cell)) return false;
+            sm::ecs::BodyEquipment* eqc = console_player_equipment(app);
+            if (!eqc) { c.error("no body to dress (no world yet)"); return true; }
+            const sm::ItemRef taken = sm::unequip(eqc->gear, cell);
+            if (taken.empty()) {
+                c.printfln(Lvl::Warn, "nothing to take off in cell %d", cell);
+                return true;
+            }
+            const sm::ItemDef* def = sm::item_def_at(int(taken.def));
+            if (!player_bag(app).add_ref(taken)) {
+                // Conservation: no room in the bag means it stays ON.
+                sm::equip(eqc->gear, taken);
+                c.printfln(Lvl::Warn, "bag full - %s stays on",
+                           def ? def->id : "?");
+                return true;
+            }
+            c.printfln(Lvl::Ok, "took off %s (cell %d)",
+                       def ? def->id : "?", cell);
+            return true;
+        });
+
+    con.register_cmd("sheet", "sheet",
+        "print the base and effective sheet, with TEMPOS through the "
+        "recovery door (hand swing, spell wind-ups)",
+        [&app](Con& c, const std::vector<std::string>&) {
+            const sm::CharacterSheet& base = app.gs.player.sheet;
+            const sm::CharacterSheet eff = player_effective_sheet(app);
+            const sm::LevelData& ld = base.levelData;
+            const sm::CombatStats& cs = app.gs.player.combatStats;
+            c.printfln(Lvl::Ok,
+                       "level %d  exp %d/%d  points: %d attr, %d skill, %d learn",
+                       ld.level, ld.exp, ld.expToNext, ld.attributePoints,
+                       ld.skillPoints, ld.learnPicks);
+            c.printfln(Lvl::Info, "HP %d/%d  MP %d/%d  SP %d/%d", cs.currentHp,
+                       cs.maxHp, cs.currentMp, cs.maxMp, cs.currentSp, cs.maxSp);
+            for (const auto& d : sm::kAttributeDefs)
+                c.printfln(Lvl::Info, "  %-4s %3d -> %3d", d.key,
+                           base.attributes.of(d.id), eff.attributes.of(d.id));
+            for (const auto& d : sm::kSkillDefs) {
+                if (base.skills.of(d.id) == 0 && eff.skills.of(d.id) == 0)
+                    continue;   // unlearned stays off the sheet
+                c.printfln(Lvl::Info, "  %-12s %3d -> %3d", d.key,
+                           base.skills.of(d.id), eff.skills.of(d.id));
+            }
+            const sm::DerivedBonuses d =
+                sm::calculate_derived(eff.attributes, eff.skills);
+            c.printfln(Lvl::Info,
+                       "quickness %d%%  move %d%%  phys +%d  spell +%d  "
+                       "exp %d%%  trade -%d%%",
+                       sm::quickness_pct(eff.attributes.of(sm::AttributeId::Spd)),
+                       d.moveSpeedPct, d.rawPhysDamage, d.rawSpellDamage,
+                       d.expMultPct, d.tradeDiscountPct);
+            // TEMPOS — the recovery door's own numbers (CANON S14 «один
+            // рычаг»), the same calls the strike assembly and the cast
+            // wind-up make: mass base ÷ Spd asymptote ÷ the domain generic.
+            const sm::ecs::BodyEquipment* eqc = nullptr;
+            if (const entt::entity pe = sm::player_squad_entity(app.ecs);
+                pe != entt::null)
+                eqc = app.ecs.reg.try_get<sm::ecs::BodyEquipment>(pe);
+            const sm::ItemDef* w = eqc ? sm::weapon_in_hand(eqc->gear) : nullptr;
+            const float handSec = sm::seconds_from_steps(std::uint32_t(
+                sm::recovery_steps(sm::weapon_swing_seconds(w), eff.attributes,
+                                   eff.skills, sm::SkillId::Armsmaster)));
+            c.printfln(Lvl::Ok, "hand: %-16s %.2fs swing",
+                       w ? w->id : "(fist)", handSec);
+            for (int ord = 0; ord < sm::kSpellCount; ++ord) {
+                if (!app.gs.player.spellBook.learned[ord]) continue;
+                const auto& s = sm::kSpellDefs[ord];
+                if (s.sustained || s.castTime <= 0.0f) continue;
+                const float windup = sm::seconds_from_steps(std::uint32_t(
+                    sm::recovery_steps(s.castTime, eff.attributes, eff.skills,
+                                       sm::SkillId::Spellcraft)));
+                c.printfln(Lvl::Ok, "cast: %-16s %.2fs wind-up", s.id, windup);
+            }
+            return true;
+        });
+
+    con.register_cmd("exec", "exec <file>",
+        "run a file of console lines - a game state IS a text file of the "
+        "same commands ('#' comments; stops at the first error; no nesting)",
+        [](Con& c, const std::vector<std::string>& a) {
+            if (a.empty()) return false;
+            std::ifstream in(a[0]);
+            if (!in) { c.error("cannot open '" + a[0] + "'"); return true; }
+            int lineNo = 0, ran = 0;
+            std::string line;
+            while (std::getline(in, line)) {
+                ++lineNo;
+                const std::size_t first = line.find_first_not_of(" \t\r");
+                if (first == std::string::npos || line[first] == '#') continue;
+                // One file = one state: a file may not exec another, so what
+                // a state contains is readable top to bottom in one place.
+                // The dispatch is case-insensitive, so this guard must be too.
+                std::string head;
+                for (std::size_t i = first;
+                     i < line.size() && !std::isspace((unsigned char)line[i]);
+                     ++i)
+                    head += char(std::tolower((unsigned char)line[i]));
+                if (head == "exec") {
+                    c.printfln(Lvl::Error, "%s:%d: nested exec is not allowed",
+                               a[0].c_str(), lineNo);
+                    return true;
+                }
+                if (!c.execute(line)) {
+                    c.printfln(Lvl::Error, "%s:%d: stopped at the first error",
+                               a[0].c_str(), lineNo);
+                    return true;
+                }
+                ++ran;
+            }
+            c.printfln(Lvl::Ok, "%s: %d line(s) executed", a[0].c_str(), ran);
+            return true;
+        });
+
     con.register_cmd("settime", "settime <hour> [minute]",
         "set the world clock (hour 0-23, minute 0-59)",
         [&app](Con& c, const std::vector<std::string>& a) {

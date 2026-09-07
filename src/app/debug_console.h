@@ -51,6 +51,7 @@ struct Console {
     std::vector<ConsoleCommand> commands;    // the registry (single source of truth)
     std::vector<ConsoleLine>    scrollback;  // printed lines (ring-capped)
     std::vector<std::string>    history;     // submitted command lines
+    std::uint32_t               errorCount = 0;  // Error-level lines ever printed
 
     // ImGui input buffer + transient UI state.
     char  input[512]      = {};
@@ -80,8 +81,12 @@ struct Console {
 
     // ── Dispatch ──────────────────────────────────────────────────
     // Tokenise `line`, echo it, look up the command and run it. Unknown
-    // commands print an error plus the nearest suggestion.
-    void execute(std::string_view line);
+    // commands print an error plus the nearest suggestion. Returns whether
+    // the line SUCCEEDED: found, usage-valid, and no Error-level output from
+    // the handler (`errorCount` is the witness, so a handler that prints
+    // `c.error(...)` and returns true still reads as a failure). The
+    // interactive path ignores the verdict; `exec` stops a file on it.
+    bool execute(std::string_view line);
     void clear() { scrollback.clear(); }
 };
 
