@@ -55,8 +55,52 @@ void test_every_row_names_an_address_that_exists() {
                 CHECK(d.index < std::uint8_t(PoolId::Count),
                       "a pool row names a pool a body has");
                 break;
+            case BonusTarget::Armor:
+                CHECK(d.index < std::uint8_t(kDamageTypeCount),
+                      "an armour row names a column of the 9×9");
+                break;
+            case BonusTarget::Derived:
+                CHECK(d.index < std::uint8_t(DerivedModId::Count),
+                      "a derived row names a law output that exists");
+                break;
         }
     }
+}
+
+// ── The affix tail: derived rows land where their laws read ──────────────
+void test_derived_rows_reach_their_laws() {
+    BonusTotals t{};
+    accumulate(t, {std::uint8_t(BonusId::ArmorFire), 3});
+    CHECK(t.armor[std::size_t(DamageType::Fire)] == 3,
+          "an Armor row lands in its own column of the totals");
+    accumulate(t, {std::uint8_t(BonusId::CarryKg), 25});
+    CHECK(t.derived_of(DerivedModId::CarryKg) == 25,
+          "a Derived row lands in its own cell");
+
+    // The overloads: the same laws, WITH what stands on the body.
+    Attributes a{};
+    Skills s{};
+    CHECK(get_carry_capacity(a, s, t) == get_carry_capacity(a, s) + 25.0f,
+          "worn CarryKg kilograms add to the one carry law");
+    accumulate(t, {std::uint8_t(BonusId::MovePct), 50});
+    CHECK(calculate_derived(a, s, t).moveSpeedPct
+              == calculate_derived(a, s).moveSpeedPct * 150 / 100,
+          "worn MovePct is a whole-percent verdict over the pace law");
+
+    // ONE clamp for every percent row: ×4 either way, never a freeze and
+    // never a division of time by zero.
+    BonusTotals cursed{};
+    accumulate(cursed, {std::uint8_t(BonusId::MovePct), -32000});
+    CHECK(calculate_derived(a, s, cursed).moveSpeedPct
+              == std::max(1, calculate_derived(a, s).moveSpeedPct
+                                 * (100 + kDerivedPctFloor) / 100),
+          "a curse bottoms at the one clamp, the legs never stop");
+
+    // The change-detection gate («что-то изменилось») sees the new arrays.
+    BonusTotals x{}, y{};
+    accumulate(y, {std::uint8_t(BonusId::ArmorVoid), 1});
+    CHECK(!(x == y), "equality reads the armour cells — the per-step gate "
+                     "cannot miss a ward changing");
 }
 
 void test_the_authoring_key_resolves_and_refuses() {
@@ -210,6 +254,7 @@ void test_a_leaders_gift_is_the_same_totals_as_everything_else() {
 
 int main() {
     test_every_row_names_an_address_that_exists();
+    test_derived_rows_reach_their_laws();
     test_the_authoring_key_resolves_and_refuses();
     test_standing_bonuses_land_where_the_row_says();
     test_a_standing_bonus_can_be_taken_off();

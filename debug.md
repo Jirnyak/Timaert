@@ -146,9 +146,13 @@ The commands, by group (usage via `help <cmd>`):
 * **spawning** — `spawn` (NPC/monster table), `spawn_squad`, `squad_orders`,
   `test_battle`, `spawn_fauna`, `killall`, `possess`.
 * **inventory** — `items` (catalog ids), `give`, `take`, `gold`;
-  `loots` / `loot <profileId> [rolls]` — rolls through THE loot registry
-  (the same `roll_loot_profile` a death or a chest pays through) into the
-  bag, at the player's level.
+  `loots` / `loot <profileId> [rolls] [power]` — rolls through THE loot
+  registry (the same `roll_loot_profile` a death or a chest pays through)
+  into the bag, at the player's level; `power` 0-255 loads the affix dice
+  (default: the player's level on open land). `roll <itemId> [power]` —
+  ONE procedural instance through the affix door (`grant_affixes`), printed
+  with its suffix, every affix line and its `value_of`; default power 255 =
+  the deep end's dice, so one command shows the ceiling of the system.
 * **sheet doors** (phase 4: writes go to the BASE sheet, the world reads the
   EFFECTIVE one) — `skills` / `skill <key|all> <rank>` (0 = unlearned, the
   learn law's own zero; cap 100), `attrs` / `attr <key|all> <score>`

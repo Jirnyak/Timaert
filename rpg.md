@@ -273,7 +273,68 @@ accumulator. Standing in open sea is not resting (`player_can_make_camp`).
 standing sum, worn armour feeds `defense_of`, the gripped weapon feeds
 `hand_strike_fields`. An `ItemDef` row carries dice, damage type, its
 governing skill, armour profile, bonuses — an item that changes the fight
-is one row.
+is one row. BASE rows are BARE (owner verdict (а), 2026-09-07): the innate
+bonus column belongs to future uniques; what a dropped instance says is its
+AFFIXES.
+
+## Affixes — one issuance door (2026-09-07)
+
+**The instance** (`ItemRef`, save v82): 8 affix cells as two flat arrays
+(`affixRow[8]` u8 + `affixValue[8]` i16 — SoA, no padding; 36 B/slot),
+`seed ≠ 0` marks a rolled thing and the stacking law separates it («two
+rolled swords never merge»). An affix IS a `Bonus` — a row of THE one
+registry — so a rolled «+2 Sword» and a potion and a perk speak one
+vocabulary.
+
+**The registry reaches every law output** (bonus.h): beside attributes and
+skill ranks, `BonusTarget::Armor` (index = DamageType — a fire ward IS fire
+armour, the 9×9 vocabulary) and `BonusTarget::Derived` (DmgFlat, SwingPct,
+MovePct, CarryKg). Each derived row has exactly ONE reader in its law:
+armour totals join `defense_of`, DmgFlat/SwingPct join `hand_strike_fields`
+(SwingPct = whole-percent verdict over the mass law, ONE clamp
+`kDerivedPctFloor/Ceil` = ×4 either way), MovePct/CarryKg join the
+`calculate_derived`/`get_carry_capacity` overloads that take the standing
+totals. A future modifier = a new row + one line in its law.
+
+**The writer** — `grant_affixes(item, power, rng)`: the ONE issuance door.
+Random loot is its special case; an artifact/quest/script writes the same
+cells via `set_affix` without the coin («рандом = частный случай выдачи»).
+It refuses non-wearables (slotMask 0) itself. The law is ONE primitive,
+`coin_run` — a p = (base+power)/512 coin flipped until it fails:
+* how many: base 16, cap = the format's 8 cells (field ~3%, deep ~53%,
+  2nd/3rd = p², p³);
+* how strong: base 128, units 1 + run, cap `kAffixValueCapUnits` 16 —
+  «обычно +1, чем больше — тем реже», exponential tail everywhere, no
+  tiers. The cap binds the ROLL, not the format (i16 lets a designed
+  artifact say more).
+
+**Which affix** — `kAffixDefs` (items.cpp): name («of Strength»), bonus
+row, step (units→points), price per unit, and a NO-ZERO weight per item
+type (owner: «на всё возможно всё» — armour CAN roll damage, merely
+untypical). `"of Mastery"` is the class row: it resolves to the item's own
+skill column at grant time, so a new weapon joins the affix system by
+existing (no skill column → Unarmed, the strike law's own fallback).
+
+**Power** — `affix_power(level, danger, wealthMul)` = 8/level past 1 +
+danger byte + up to 64 from the place's wealth («богатство = стоимость»,
+the third term by owner verdict). Assembled at the corpse BEFORE the rolls,
+same context as the purse; a birth inventory loads by level alone; props
+(tree, crop) honestly pass 0. `roll_loot_profile` takes power WITHOUT a
+default — a new loot site must state the world's word.
+
+**Worth and shopfront**: `value_of(ItemRef)` = row price + affixes priced
+by the table's own column (curse subtracts, floor 0); plain stack =
+`def->value` bit-for-bit. One UI spelling (ui/trade_widgets.h):
+`draw_item_ref_name` (suffix of the first speaking cell + FUNCTIONAL tint —
+one lerp plain→gold over n/cap, no hardcoded rarity shelves) and
+`draw_item_ref_bonuses` (innate + rolled, one line style). Console:
+`roll <itemId> [power]`, `loot <profileId> [rolls] [power]`.
+
+**Known edges (owner-ruled, queued)**: trade must hang off VALUE
+universally — a context-priced `value_of` (affixes, material, quality…) and
+per-instance counters (today the counters trade by id at the bare row's
+price); the bow waits for the universal shooting/throwing design pass;
+`material`/`quality` bytes ride the save with no readers yet.
 
 ## Renown — what the world thinks a band has done
 

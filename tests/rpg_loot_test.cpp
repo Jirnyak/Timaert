@@ -358,6 +358,75 @@ static void test_generate_loot_gold() {
           "gold never negative");
 }
 
+// ── The affix door (owner's design 2026-09-07) ─────────────────────────────
+
+static void test_affix_door() {
+    // THE coin run: geometric, capped, and the same primitive for "how many"
+    // and "how strong" (the one-formula verdict).
+    CHECK(coin_run(rng_zero, 16, kAffixChanceDen, 8) == 8,
+          "an always-heads coin runs to the cap and STOPS there");
+    CHECK(coin_run(rng_high, 271, kAffixChanceDen, 8) == 0,
+          "a tails coin runs zero times — no floor is invented");
+
+    // The power byte: three contributions, silent at their zeros.
+    CHECK(affix_power(1, 0, 1.0f) == 0, "a fresh body on open land: power 0");
+    CHECK(affix_power(10, 0, 1.0f) == 72, "level pulls 8 per level past 1");
+    CHECK(affix_power(1, 200, 1.0f) == 200, "the danger byte rides in whole");
+    CHECK(affix_power(1, 0, 1.5f) == 32,
+          "wealth adds (стоимость, not the purse law twice)");
+    CHECK(affix_power(100, 255, 9.9f) == 255, "the byte clamps, never wraps");
+
+    // The door refuses what cannot be worn — bread rolls nothing, spends no
+    // seed, and the caller did not have to know the distinction.
+    ItemRef bread{};
+    bread.def = std::uint16_t(item_index("bread"));
+    bread.count = 1;
+    grant_affixes(bread, 255, rng_zero);
+    CHECK(affix_count(bread) == 0 && bread.seed == 0,
+          "an affix is a WORN thing: bread walks through the door untouched");
+
+    // A wearable at the deep end, always-heads: the format's 8 cells, each
+    // at the roll cap — and rng_zero deterministically picks the FIRST
+    // weighted row (of Strength), so the whole instance is pinned.
+    ItemRef sword{};
+    sword.def = std::uint16_t(item_index("wpn_sword"));
+    sword.count = 1;
+    grant_affixes(sword, 255, rng_zero);
+    CHECK(affix_count(sword) == kMaxItemAffixes,
+          "always-heads at power 255 fills every cell the format has");
+    CHECK(sword.affix_at(0).row == std::uint8_t(BonusId::Str)
+              && sword.affix_at(0).value == kAffixValueCapUnits,
+          "value = cap units × the row's step; rng_zero picks the first row");
+    CHECK(sword.seed != 0, "a rolled instance stamps its seed");
+    for (int i = 0; i < kMaxItemAffixes; ++i) {
+        CHECK(sword.affix_at(i).row < std::uint8_t(BonusId::Count),
+              "every granted row is a registry ordinal");
+    }
+
+    // The stacking law reads the roll: a rolled sword and a plain sword are
+    // different KINDS and never merge.
+    ItemRef plain{};
+    plain.def = sword.def;
+    plain.count = 1;
+    CHECK(!plain.same_kind_as(sword),
+          "a rolled instance never merges with the plain row");
+
+    // What it is worth, and what it is called.
+    CHECK(value_of(plain) == item_def_at(int(plain.def))->value,
+          "a plain stack answers exactly its row's price — the economy "
+          "does not move");
+    CHECK(value_of(sword) > value_of(plain),
+          "«чем реже, тем ценнее» made arithmetic");
+    CHECK(std::string(affix_suffix(sword)) == "of Strength",
+          "the first speaking cell names the instance");
+    CHECK(affix_suffix(plain)[0] == '\0', "a plain thing has no suffix");
+
+    // A curse subtracts but the floor holds: worthless, never a debt.
+    ItemRef cursed = plain;
+    cursed.set_affix(0, {std::uint8_t(BonusId::Str), -32767});
+    CHECK(value_of(cursed) == 0, "a ruined thing is worthless, not a debt");
+}
+
 int main() {
     test_project_combat_melee();
     test_project_combat_missile();
@@ -366,5 +435,6 @@ int main() {
     test_npc_loot_id();
     test_roll_loot_profile();
     test_generate_loot_gold();
+    test_affix_door();
     return sm::test::report("rpg_loot_test");
 }

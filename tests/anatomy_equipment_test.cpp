@@ -227,6 +227,36 @@ void test_worn_sums_reach_the_one_currency() {
           "take it off and both sums fall back to nothing: no residue");
 }
 
+// ── The strike reads the gear's derived rows (affix track step 1) ─────────
+void test_strike_reads_derived_affixes() {
+    Attributes a{};
+    Skills s{};
+    Equipment eq{};   // Humanoid by default — grips included
+
+    ItemRef dagger{};
+    dagger.def = std::uint16_t(item_index("wpn_dagger"));
+    dagger.count = 1;
+    CHECK(equip(eq, dagger) >= 0, "the plain dagger is in hand");
+    const StrikeFields plainHit = hand_strike_fields(a, s, &eq);
+
+    ItemRef rolled = dagger;
+    rolled.seed = 11;
+    rolled.set_affix(0, {std::uint8_t(BonusId::DmgFlat), 5});
+    rolled.set_affix(1, {std::uint8_t(BonusId::SwingPct), 100});
+    Equipment eq2{};
+    CHECK(equip(eq2, rolled) >= 0, "the rolled dagger is in hand");
+    const StrikeFields rolledHit = hand_strike_fields(a, s, &eq2);
+
+    CHECK(rolledHit.flatAdd == plainHit.flatAdd + 5,
+          "a worn DmgFlat row is IN the blow, beside the attribute's add");
+    CHECK(rolledHit.recoverySteps
+              == std::max(1, plainHit.recoverySteps * 100 / 200),
+          "a worn SwingPct row is a whole-percent verdict over the mass "
+          "law's tempo");
+    CHECK(rolledHit.dice.m == plainHit.dice.m,
+          "the dice stay the ROW's — an affix modulates, never replaces");
+}
+
 } // namespace
 
 int main() {
@@ -237,5 +267,6 @@ int main() {
     test_a_mask_of_types_fits_a_body_it_never_heard_of();
     test_blocks_mask_occupies_and_releases();
     test_worn_sums_reach_the_one_currency();
+    test_strike_reads_derived_affixes();
     return sm::test::report("anatomy_equipment_test");
 }
