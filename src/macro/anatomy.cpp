@@ -1,6 +1,7 @@
 // Wearing things: the flat-array half of macro/anatomy.h.
 #include "macro/anatomy.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace sm {
@@ -183,16 +184,31 @@ StrikeFields hand_strike_fields(const Attributes& attributes,
         (w && w->skill != SkillId::Count) ? w->skill : SkillId::Unarmed;
     out.multPct = std::int16_t(skill_mult_pct(skills, skill));
     const DerivedBonuses d = calculate_derived(attributes, skills);
-    out.flatAdd = std::int16_t(std::floor(d.rawPhysDamage));
+    // What the gear itself says about the blow (bonus.h Derived rows — the
+    // affix track): a flat add beside the attribute's, and a whole-percent
+    // verdict over the mass law's tempo. Summed from EVERYTHING worn, not
+    // just the weapon — a striker's ring drives the same fist.
+    const BonusTotals worn = eq ? worn_bonuses(*eq) : BonusTotals{};
+    // A cursed sum below zero is a wound refused, not a heal: floor at 0.
+    const int flat = int(std::floor(d.rawPhysDamage))
+                   + worn.derived_of(DerivedModId::DmgFlat);
+    out.flatAdd = std::int16_t(flat < 0 ? 0 : flat);
     out.luck    = std::uint8_t(attributes.of(AttributeId::Lck));
     // The TEMPO half (CANON S14 «один рычаг», 2026-09-07): the MASS law's
     // base (weight → seconds, weapon_swing_seconds; the bare hand is the
     // massless fastest) through the recovery door — Spd asymptote ×
     // Armsmaster, the arms' generic, never the typed skill that already
-    // multiplied the dice above (one handle, one lever).
-    out.recoverySteps = recovery_steps(weapon_swing_seconds(w),
-                                       attributes, skills,
-                                       SkillId::Armsmaster);
+    // multiplied the dice above (one handle, one lever). The worn SwingPct
+    // rows speak LAST, clamped to ×4 either way (po2), so a curse cannot
+    // freeze the arm and a stack of hastes cannot divide time by zero.
+    const int steps = recovery_steps(weapon_swing_seconds(w),
+                                     attributes, skills,
+                                     SkillId::Armsmaster);
+    const int swingPct = 100 + std::clamp(
+        worn.derived_of(DerivedModId::SwingPct),
+        kDerivedPctFloor, kDerivedPctCeil);
+    const int paced = steps * 100 / swingPct;
+    out.recoverySteps = paced < 1 ? 1 : paced;
     return out;
 }
 

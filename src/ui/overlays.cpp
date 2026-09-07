@@ -737,10 +737,15 @@ namespace sm::ui
         // still write the BASE one, which is the only thing they may touch.
         // Mutable: a spend refreshes it in place so the row shows the new
         // number this very frame, not the next.
+        const BonusTotals panelStanding = player_standing_bonuses(world, p);
         CharacterSheet effPanel = player_effective_sheet(world, p);
-        DerivedBonuses derived = calculate_derived(effPanel.attributes, effPanel.skills);
+        DerivedBonuses derived = calculate_derived(effPanel.attributes,
+                                                   effPanel.skills,
+                                                   panelStanding);
         const float carryWeight = inventory_weight(playerBag);
-        const float carryCap = get_carry_capacity(effPanel.attributes, effPanel.skills);
+        const float carryCap = get_carry_capacity(effPanel.attributes,
+                                                  effPanel.skills,
+                                                  panelStanding);
         const int armyTotal = army ? total_soldiers(*army) : 0;
         const int armyUpkeep = army
             ? calculate_squad_upkeep(*army, derived.tradeDiscountPct) : 0;
@@ -1571,8 +1576,10 @@ namespace sm::ui
                     // The charisma that haggles is the EFFECTIVE sheet's
                     // (phase 4): a +CHA amulet talks the price down the same
                     // as a silver tongue grown by levels.
+                    const BonusTotals tradeStanding =
+                        player_standing_bonuses(world, gs.player);
                     const CharacterSheet effTrade =
-                        player_effective_sheet(world, gs.player);
+                        effective_sheet(gs.player.sheet, tradeStanding);
                     const int chaEff =
                         effTrade.attributes.of(AttributeId::Cha);
                     // ...and his TRADE rank haggles beside it (phase 6).
@@ -1581,7 +1588,7 @@ namespace sm::ui
                     ImGui::Text("Player coin: %d", wallet_value(playerBag));
                     ImGui::SameLine();
                     ImGui::TextDisabled("Mood: %s", mood_label(s->mood));
-                    draw_trade_carry_line(effTrade, playerBag);
+                    draw_trade_carry_line(effTrade, playerBag, tradeStanding);
                     draw_counterparty_gold(s->inventory);
                     draw_trade_amount_input(&g_settlement_trade_amount);
                     if (g_settlement_trade_message[0] != '\0')

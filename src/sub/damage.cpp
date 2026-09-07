@@ -34,7 +34,12 @@ int defense_of(entt::registry& reg, entt::entity target, DamageType type) {
     // and a body with no BodyEquipment is the limiting case rather than a
     // branch — which is the same sentence armour 0 already was.
     if (const auto* eq = reg.try_get<ecs::BodyEquipment>(target)) {
-        armour += worn_armor(eq->gear).of(type);
+        // Two contributions from the same gear, one law point: the rows'
+        // authored columns (worn_armor) and the instances' Armor-target
+        // bonus rows (bonus.h affix tail) — a rolled "+3 Fire Armor" lands
+        // here and nowhere else, so it cannot be counted twice.
+        armour += worn_armor(eq->gear).of(type)
+                + int(worn_bonuses(eq->gear).armor[std::size_t(type)]);
     } else if (reg.any_of<ecs::PlayerTag>(target)) {
         // The player's gear is MACRO state on his squad entity — one truth,
         // read where it lives (owner, 2026-09-06: «макро — это контекст для
@@ -44,8 +49,11 @@ int defense_of(entt::registry& reg, entt::entity target, DamageType type) {
         // player_squad_entity); else-branch, so a body that one day carries
         // its own equipment cannot be counted twice.
         for (const auto sq : reg.view<ecs::PlayerSquadTag>()) {
-            if (const auto* worn = reg.try_get<ecs::BodyEquipment>(sq))
-                armour += worn_armor(worn->gear).of(type);
+            if (const auto* worn = reg.try_get<ecs::BodyEquipment>(sq)) {
+                armour += worn_armor(worn->gear).of(type)
+                        + int(worn_bonuses(worn->gear)
+                                  .armor[std::size_t(type)]);
+            }
             break;
         }
     }

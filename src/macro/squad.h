@@ -39,9 +39,14 @@ namespace sm {
 // would be silently wrong for exactly the rows that matter — a caravan given a
 // man's shoulders is a caravan that can no longer afford to travel. A missing
 // argument should be a compile error, not a stranded trade route.
+// `standing` — what stands on the body beyond its sheet (worn Derived rows:
+// MovePct, CarryKg — bonus.h affix tail). nullptr = nothing stands, which is
+// every leader until macro NPCs wear gear; the sheet passed in is already the
+// EFFECTIVE one, so only the derived cells are read from it here.
 inline void refresh_leader_travel_stats(ecs::MacroNpcRuntime& rt,
                                         const CharacterSheet& sheet,
-                                        NPCType type) {
+                                        NPCType type,
+                                        const BonusTotals* standing = nullptr) {
     const CombatStats cs =
         calculate_combat_stats(sheet.attributes, sheet.skills);
     rt.maxSp = std::int16_t(std::clamp(cs.maxSp, 1, 32767));
@@ -53,10 +58,16 @@ inline void refresh_leader_travel_stats(ecs::MacroNpcRuntime& rt,
         std::clamp(sheet.skills.of(SkillId::Scouting), 0, kMaxSkillRank));
     // The cache is the walk's own float; the LAW is whole percent (4в).
     rt.moveMult = float(
-        calculate_derived(sheet.attributes, sheet.skills).moveSpeedPct)
+        (standing
+             ? calculate_derived(sheet.attributes, sheet.skills, *standing)
+             : calculate_derived(sheet.attributes, sheet.skills))
+            .moveSpeedPct)
         / 100.0f;
     const float haul = npc_def(type).haulMult;
-    rt.carryCap = get_carry_capacity(sheet.attributes, sheet.skills)
+    rt.carryCap = (standing
+                       ? get_carry_capacity(sheet.attributes, sheet.skills,
+                                            *standing)
+                       : get_carry_capacity(sheet.attributes, sheet.skills))
                   * (haul > 0.0f ? haul : 1.0f);
 }
 

@@ -870,9 +870,13 @@ void SubworldEngine::spawn_player_entity() {
     if (const entt::entity sq = player_squad_entity(*ecs_); sq != entt::null)
         eqp = reg.try_get<ecs::BodyEquipment>(sq);
     // The EFFECTIVE sheet swings and paces (phase 4): the ring's +STR is in
-    // the blow, the sustained haste's +SPD is in the step.
+    // the blow, the sustained haste's +SPD is in the step. The totals are
+    // assembled ONCE — the sheet copy takes the attr/skill cells, and the
+    // derived cells (a worn MovePct row) meet the pace law below.
+    const BonusTotals standing = gs_
+        ? player_standing_bonuses(*ecs_, gs_->player) : BonusTotals{};
     const CharacterSheet effBody = gs_
-        ? player_effective_sheet(*ecs_, gs_->player) : CharacterSheet{};
+        ? effective_sheet(gs_->player.sheet, standing) : CharacterSheet{};
     const StrikeFields hs = gs_
         ? hand_strike_fields(effBody.attributes,
                              effBody.skills,
@@ -883,7 +887,8 @@ void SubworldEngine::spawn_player_entity() {
     // hasted or burdened player's body says what it can actually do.
     const float playerPace = march_speed(kHumanMarchMult)
         * (gs_ ? float(calculate_derived(effBody.attributes,
-                                         effBody.skills).moveSpeedPct)
+                                         effBody.skills, standing)
+                           .moveSpeedPct)
                      / 100.0f
                : 1.0f);
     reg.emplace<ecs::Combat>(
@@ -1006,10 +1011,12 @@ void SubworldEngine::sync_player_entity_position() {
             if (auto* c = reg.try_get<ecs::Combat>(e)) {
                 // Per-tick refresh reads the same EFFECTIVE sheet the spawn
                 // did (phase 4) — equipping mid-fight changes the next swing.
+                const BonusTotals st =
+                    player_standing_bonuses(*ecs_, gs_->player);
                 const CharacterSheet eff =
-                    player_effective_sheet(*ecs_, gs_->player);
+                    effective_sheet(gs_->player.sheet, st);
                 const DerivedBonuses d = calculate_derived(
-                    eff.attributes, eff.skills);
+                    eff.attributes, eff.skills, st);
                 const ecs::BodyEquipment* eqp = nullptr;
                 if (const entt::entity sq = player_squad_entity(*ecs_);
                     sq != entt::null)

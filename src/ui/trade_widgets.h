@@ -28,13 +28,16 @@ namespace sm::ui {
 
 // `sheet` is the shopper's EFFECTIVE one (phase 4) — the caller owns the door
 // (player_effective_sheet); this line just prints what that back can hold.
+// `standing` — the same totals that built the sheet, for the derived CarryKg
+// cells the sheet copy cannot carry (bonus.h affix tail).
 inline void draw_trade_carry_line(const CharacterSheet& sheet,
-                                  const Inventory& bag) {
+                                  const Inventory& bag,
+                                  const BonusTotals& standing) {
     ImGui::SameLine();
     ImGui::TextDisabled("Carry %.1f / %.0f kg",
                         double(inventory_weight(bag)),
                         double(get_carry_capacity(sheet.attributes,
-                                                  sheet.skills)));
+                                                  sheet.skills, standing)));
 }
 
 // The shared staging step. Clamps in place so the player SEES the rule.

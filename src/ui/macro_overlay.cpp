@@ -1048,8 +1048,10 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                                  ImGuiWindowFlags_NoCollapse)) {
                     // The EFFECTIVE sheet haggles and carries (phase 4) —
                     // same door as the settlement counter (overlays.cpp).
+                    const BonusTotals tradeStanding =
+                        player_standing_bonuses(w, gs.player);
                     const CharacterSheet effTrade =
-                        player_effective_sheet(w, gs.player);
+                        effective_sheet(gs.player.sheet, tradeStanding);
                     const int chaEff =
                         effTrade.attributes.of(AttributeId::Cha);
                     // ...and his TRADE rank haggles beside it (phase 6).
@@ -1057,7 +1059,7 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                         effTrade.skills.of(SkillId::Trade);
                     ImGui::Text("%s  Coin %d", npcName,
                                 wallet_value(playerBag));
-                    draw_trade_carry_line(effTrade, playerBag);
+                    draw_trade_carry_line(effTrade, playerBag, tradeStanding);
                     draw_counterparty_gold(bag.inv);
                     draw_trade_amount_input(&g_trade_amount);
                     if (traits && traits->count > 0) {

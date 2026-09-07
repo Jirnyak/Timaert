@@ -76,9 +76,15 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
         rt.targetX = gs.player.x;
         rt.targetY = gs.player.y;
         rt.state = std::uint8_t(NPCState::Idle);
-        refresh_leader_travel_stats(rt,
-                                    player_effective_sheet(world, gs.player),
-                                    NPCType::Adventurer);
+        {
+            // One assembly of what stands on him, used for both halves: the
+            // sheet copy (attr/skill cells) and the derived cells the cache
+            // door reads past it (MovePct/CarryKg).
+            const BonusTotals st = player_standing_bonuses(world, gs.player);
+            refresh_leader_travel_stats(rt,
+                                        effective_sheet(gs.player.sheet, st),
+                                        NPCType::Adventurer, &st);
+        }
         rt.sp = rt.maxSp;
         reg.emplace<ecs::MacroNpcRuntime>(squad, rt);
     }
@@ -118,9 +124,10 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
         // is the law, these four are its cache, and there is one refresh.
         // The EFFECTIVE sheet (phase 4): a worn +END breastplate carries and
         // marches like the body actually wearing it.
+        const BonusTotals st = player_standing_bonuses(world, gs.player);
         refresh_leader_travel_stats(*rt,
-                                    player_effective_sheet(world, gs.player),
-                                    NPCType::Adventurer);
+                                    effective_sheet(gs.player.sheet, st),
+                                    NPCType::Adventurer, &st);
         rt->sp = std::int16_t(std::clamp(gs.player.combatStats.currentSp,
                                          -32768, 32767));
     }
@@ -153,11 +160,7 @@ BonusTotals player_standing_bonuses(ecs::World& world,
     // component, and the limiting case costs a lookup.
     if (const entt::entity e = find_player_squad(world); e != entt::null) {
         if (const auto* eq = world.reg.try_get<ecs::BodyEquipment>(e)) {
-            const BonusTotals worn = worn_bonuses(eq->gear);
-            for (int i = 0; i < kMaxAttributes; ++i)
-                t.attr[std::size_t(i)] += worn.attr[std::size_t(i)];
-            for (int i = 0; i < kMaxSkills; ++i)
-                t.skill[std::size_t(i)] += worn.skill[std::size_t(i)];
+            t += worn_bonuses(eq->gear);
         }
     }
     // ...and what is burning on him. A sustained spell contributes while it

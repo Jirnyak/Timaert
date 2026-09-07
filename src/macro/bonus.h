@@ -40,6 +40,7 @@
 
 #include "core/table_guard.h"
 #include "macro/attributes.h"
+#include "macro/damage_types.h"
 
 #include <algorithm>
 #include <array>
@@ -62,10 +63,28 @@ struct Bonus {
 // Where a bonus lands. Each is an address space the sheet already has, so a
 // bonus never invents a number — it names one that exists.
 enum class BonusTarget : std::uint8_t {
-    Attribute,   // index = AttributeId; standing
-    SkillRank,   // index = SkillId;     standing
-    Pool,        // index = PoolId;      instant
+    Attribute,   // index = AttributeId;  standing
+    SkillRank,   // index = SkillId;      standing
+    Pool,        // index = PoolId;       instant
+    // The affix track's generalisation (owner, 2026-09-07: «модификаторы ко
+    // ВСЕМ выходам ролевой системы»): a bonus may land past the sheet, on the
+    // numbers the laws DERIVE from it. Same registry, same byte-row in the
+    // save — only two more address spaces.
+    Armor,       // index = DamageType;   standing — a column of the defence sum
+    Derived,     // index = DerivedModId; standing — a law's own output
 };
+
+// The derived numbers a bonus can land on — each names the OUTPUT of exactly
+// one law, and that law's own assembly is the row's one reader:
+//   DmgFlat  — flat damage on the strike (anatomy.cpp hand_strike_fields);
+//   SwingPct — whole percent of attack speed (same assembly, over the mass
+//              law's recovery; +25 swings a quarter faster);
+//   MovePct  — whole percent of move speed (attributes.h calculate_derived,
+//              over the Spd×Athletics product);
+//   CarryKg  — whole kilograms of back (attributes.h get_carry_capacity).
+// A future modifier (sight, regen, …) is a new id here, a new cell in
+// BonusTotals and one line in its law — nothing else moves.
+enum class DerivedModId : std::uint8_t { DmgFlat, SwingPct, MovePct, CarryKg, Count };
 
 // The three pools a body actually carries. They are NOT part of the sheet
 // (rpg.md: combat is derived from the sheet, never stored inside it), which is
@@ -92,6 +111,12 @@ enum class BonusId : std::uint8_t {
     Trade, Quartermaster, Foraging, Learning,
     // Appended v79 with SkillId::Unarmed — ordinals are forever.
     Unarmed,
+    // ── affix-track tail (2026-09-07) — APPENDED, ordinals are forever. One
+    // row per armour column (the 9×9 symmetry: a fire ward IS fire armour,
+    // one vocabulary) and one per derived law output.
+    ArmorSlash, ArmorPierce, ArmorBlunt, ArmorFire, ArmorWater,
+    ArmorAir, ArmorEarth, ArmorArcane, ArmorVoid,
+    DmgFlat, SwingPct, MovePct, CarryKg,
     Count
 };
 
@@ -205,6 +230,39 @@ inline constexpr BonusDef kBonusDefs[] = {
      BonusTarget::SkillRank, std::uint8_t(SkillId::Learning)},
     {BonusId::Unarmed,     "unarmed",      "Unarmed",
      BonusTarget::SkillRank, std::uint8_t(SkillId::Unarmed)},
+
+    // ── affix-track tail: the armour columns. Labels match the damage-type
+    // labels (kDamageTypeDefs) so "+3 Fire Armor" and "deals Fire" are one
+    // word to the player's eye.
+    {BonusId::ArmorSlash,  "armor_slash",  "Slashing Armor",
+     BonusTarget::Armor, std::uint8_t(DamageType::Slash)},
+    {BonusId::ArmorPierce, "armor_pierce", "Piercing Armor",
+     BonusTarget::Armor, std::uint8_t(DamageType::Pierce)},
+    {BonusId::ArmorBlunt,  "armor_blunt",  "Bludgeoning Armor",
+     BonusTarget::Armor, std::uint8_t(DamageType::Blunt)},
+    {BonusId::ArmorFire,   "armor_fire",   "Fire Armor",
+     BonusTarget::Armor, std::uint8_t(DamageType::Fire)},
+    {BonusId::ArmorWater,  "armor_water",  "Water Armor",
+     BonusTarget::Armor, std::uint8_t(DamageType::Water)},
+    {BonusId::ArmorAir,    "armor_air",    "Air Armor",
+     BonusTarget::Armor, std::uint8_t(DamageType::Air)},
+    {BonusId::ArmorEarth,  "armor_earth",  "Earth Armor",
+     BonusTarget::Armor, std::uint8_t(DamageType::Earth)},
+    {BonusId::ArmorArcane, "armor_arcane", "Arcane Armor",
+     BonusTarget::Armor, std::uint8_t(DamageType::Arcane)},
+    {BonusId::ArmorVoid,   "armor_void",   "Void Armor",
+     BonusTarget::Armor, std::uint8_t(DamageType::Void)},
+
+    // ...and the derived outputs. The % rows are labelled the way the sheet
+    // panel already speaks ("Move 128%").
+    {BonusId::DmgFlat,  "damage",       "Damage",
+     BonusTarget::Derived, std::uint8_t(DerivedModId::DmgFlat)},
+    {BonusId::SwingPct, "attack_speed", "Attack Speed %",
+     BonusTarget::Derived, std::uint8_t(DerivedModId::SwingPct)},
+    {BonusId::MovePct,  "move_speed",   "Move Speed %",
+     BonusTarget::Derived, std::uint8_t(DerivedModId::MovePct)},
+    {BonusId::CarryKg,  "carry",        "Carry (kg)",
+     BonusTarget::Derived, std::uint8_t(DerivedModId::CarryKg)},
 };
 static_assert(sizeof(kBonusDefs) / sizeof(kBonusDefs[0])
                   == std::size_t(BonusId::Count),
@@ -251,9 +309,31 @@ inline BonusId bonus_id(const char* key) {
 struct BonusTotals {
     std::array<std::int16_t, kMaxAttributes> attr{};
     std::array<std::int16_t, kMaxSkills>     skill{};
+    // The affix track's two new address spaces, summed exactly like the
+    // first two. `armor` is read by the defence assembly (sub/damage.cpp)
+    // BESIDE the worn rows' own columns; `derived` is read by each law at
+    // its own output (see DerivedModId).
+    std::array<std::int16_t, kDamageTypeCount>                  armor{};
+    std::array<std::int16_t, std::size_t(DerivedModId::Count)>  derived{};
     // "Did what stands on him CHANGE?" is a question the per-step bar
     // refresh asks (app loop) — equality is the whole answer.
     bool operator==(const BonusTotals&) const = default;
+
+    // Whole-struct merge — what player_standing_bonuses does with the worn
+    // sum. A member so a NEW array here cannot be forgotten at a call site
+    // that copies field by field (a comment asking for lockstep is not a
+    // mechanism).
+    BonusTotals& operator+=(const BonusTotals& o) {
+        for (std::size_t i = 0; i < attr.size(); ++i)    attr[i]    += o.attr[i];
+        for (std::size_t i = 0; i < skill.size(); ++i)   skill[i]   += o.skill[i];
+        for (std::size_t i = 0; i < armor.size(); ++i)   armor[i]   += o.armor[i];
+        for (std::size_t i = 0; i < derived.size(); ++i) derived[i] += o.derived[i];
+        return *this;
+    }
+
+    int derived_of(DerivedModId id) const {
+        return int(derived[std::size_t(id)]);
+    }
 };
 
 inline void accumulate(BonusTotals& t, Bonus b) {
@@ -265,6 +345,14 @@ inline void accumulate(BonusTotals& t, Bonus b) {
             break;
         case BonusTarget::SkillRank:
             if (d.index < kMaxSkills) t.skill[d.index] += b.value;
+            break;
+        case BonusTarget::Armor:
+            if (d.index < kDamageTypeCount) t.armor[d.index] += b.value;
+            break;
+        case BonusTarget::Derived:
+            if (d.index < std::uint8_t(DerivedModId::Count)) {
+                t.derived[d.index] += b.value;
+            }
             break;
         case BonusTarget::Pool:
             break;   // instant rows do not stand; apply_instant takes them
@@ -279,6 +367,40 @@ inline void accumulate(BonusTotals& t, const Bonus* first, int count) {
 // macro/character_sheet.h, beside the type it copies. This file stays a leaf
 // above attributes.h so the item catalog can include it without dragging the
 // creature registry in behind it.)
+
+// ── Derived rows meeting their laws ──────────────────────────────────────
+// ONE clamp for every whole-percent derived row (SwingPct, MovePct): ×4
+// either way, po2 — a curse cannot freeze a body and a stack of hastes
+// cannot divide time by zero. Spelled once; the strike assembly
+// (anatomy.cpp) and the overloads below both read it.
+inline constexpr int kDerivedPctFloor = -75;
+inline constexpr int kDerivedPctCeil  = 300;
+
+inline int derived_pct_mult(int base, const BonusTotals& t, DerivedModId id) {
+    const int pct = 100 + std::clamp(t.derived_of(id),
+                                     kDerivedPctFloor, kDerivedPctCeil);
+    const int out = base * pct / 100;
+    return out < 1 ? 1 : out;
+}
+
+// The sheet laws, WITH what stands on the body. These live here and not in
+// attributes.h because that file is below this one and cannot see the totals;
+// a call site that has no totals keeps calling the two-argument law.
+inline DerivedBonuses calculate_derived(const Attributes& a, const Skills& s,
+                                        const BonusTotals& t) {
+    DerivedBonuses d = calculate_derived(a, s);
+    d.moveSpeedPct = derived_pct_mult(d.moveSpeedPct, t, DerivedModId::MovePct);
+    return d;
+}
+
+inline float get_carry_capacity(const Attributes& a, const Skills& s,
+                                const BonusTotals& t) {
+    const float kg = get_carry_capacity(a, s)
+                   + float(t.derived_of(DerivedModId::CarryKg));
+    // A back cannot hold a negative load; zero is the honest floor and the
+    // overload law upstairs already prices every carried kilogram over it.
+    return kg < 0.0f ? 0.0f : kg;
+}
 
 // ── Instant: act once on the pools ───────────────────────────────────────
 

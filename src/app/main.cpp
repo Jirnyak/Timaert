@@ -2505,9 +2505,11 @@ void poll_movement(App& app, float dt) {
         // And haste is IN that character now: it is +SPD on his effective
         // sheet, not a multiplier bolted on beside the formula, so a swift
         // ring and a swiftness spell are the same kind of fast.
-        const sm::CharacterSheet eff = player_effective_sheet(app);
+        const sm::BonusTotals standing = player_standing_bonuses(app);
+        const sm::CharacterSheet eff =
+            sm::effective_sheet(app.gs.player.sheet, standing);
         const float pace =
-            float(sm::calculate_derived(eff.attributes, eff.skills)
+            float(sm::calculate_derived(eff.attributes, eff.skills, standing)
                       .moveSpeedPct) / 100.0f;
         bool spellFlight = player_rule_active(app, sm::SpellRuleId::Flight);
         if (spellFlight != app.lastSpellFlight) {
@@ -2548,9 +2550,12 @@ void poll_movement(App& app, float dt) {
     // is priced per cell — so a fast traveller and a tough one are different
     // characters, not the same one twice.
     if (!app.cursor.path.empty() && !paused) {
-        const sm::CharacterSheet effSheet = player_effective_sheet(app);
+        const sm::BonusTotals standing = player_standing_bonuses(app);
+        const sm::CharacterSheet effSheet =
+            sm::effective_sheet(app.gs.player.sheet, standing);
         const float pace =
-            float(sm::calculate_derived(effSheet.attributes, effSheet.skills)
+            float(sm::calculate_derived(effSheet.attributes, effSheet.skills,
+                                        standing)
                       .moveSpeedPct) / 100.0f;
         // The march is quoted in cells per GAME hour (macro/movement_cost.h).
         // This file is the one place that knows what a game hour costs in real
@@ -4183,7 +4188,8 @@ void register_console_commands(App& app) {
         "recovery door (hand swing, spell wind-ups)",
         [&app](Con& c, const std::vector<std::string>&) {
             const sm::CharacterSheet& base = app.gs.player.sheet;
-            const sm::CharacterSheet eff = player_effective_sheet(app);
+            const sm::BonusTotals standing = player_standing_bonuses(app);
+            const sm::CharacterSheet eff = sm::effective_sheet(base, standing);
             const sm::LevelData& ld = base.levelData;
             const sm::CombatStats& cs = app.gs.player.combatStats;
             c.printfln(Lvl::Ok,
@@ -4202,7 +4208,7 @@ void register_console_commands(App& app) {
                            base.skills.of(d.id), eff.skills.of(d.id));
             }
             const sm::DerivedBonuses d =
-                sm::calculate_derived(eff.attributes, eff.skills);
+                sm::calculate_derived(eff.attributes, eff.skills, standing);
             c.printfln(Lvl::Info,
                        "quickness %d%%  move %d%%  phys +%d  spell +%d  "
                        "exp %d%%  trade -%d%%",
@@ -4210,16 +4216,19 @@ void register_console_commands(App& app) {
                        d.moveSpeedPct, d.rawPhysDamage, d.rawSpellDamage,
                        d.expMultPct, d.tradeDiscountPct);
             // TEMPOS — the recovery door's own numbers (CANON S14 «один
-            // рычаг»), the same calls the strike assembly and the cast
-            // wind-up make: mass base ÷ Spd asymptote ÷ the domain generic.
+            // рычаг»). The hand's line is THE strike assembly itself
+            // (hand_strike_fields — mass base ÷ Spd ÷ Armsmaster, then the
+            // worn SwingPct verdict), so what this prints and what the arm
+            // does cannot be two spellings of the chain.
             const sm::ecs::BodyEquipment* eqc = nullptr;
             if (const entt::entity pe = sm::player_squad_entity(app.ecs);
                 pe != entt::null)
                 eqc = app.ecs.reg.try_get<sm::ecs::BodyEquipment>(pe);
             const sm::ItemDef* w = eqc ? sm::weapon_in_hand(eqc->gear) : nullptr;
-            const float handSec = sm::seconds_from_steps(std::uint32_t(
-                sm::recovery_steps(sm::weapon_swing_seconds(w), eff.attributes,
-                                   eff.skills, sm::SkillId::Armsmaster)));
+            const sm::StrikeFields hf = sm::hand_strike_fields(
+                eff.attributes, eff.skills, eqc ? &eqc->gear : nullptr);
+            const float handSec = sm::seconds_from_steps(
+                std::uint32_t(hf.recoverySteps));
             c.printfln(Lvl::Ok, "hand: %-16s %.2fs swing",
                        w ? w->id : "(fist)", handSec);
             for (int ord = 0; ord < sm::kSpellCount; ++ord) {
