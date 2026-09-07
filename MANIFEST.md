@@ -52,7 +52,7 @@ README, which orchestrates them.
 | Landmarks | [landmarks.md](landmarks.md) | Settlements, spires, dungeons, markers |
 | Features | [features.md](features.md) | Roads, dirt roads, fields, BRIDGES (the road's one-cell water crossing) + the two movement laws they uncovered: ONE mover for every body incl. the player, and ONE ground law shared by both scales |
 | Spells | [spells.md](spells.md) | Spell book, cooldowns, mana, effect modules |
-| RPG system | [rpg.md](rpg.md) | Attributes, XP, items, inventory, equipment |
+| RPG system | [rpg.md](rpg.md) | Attributes, XP, items, inventory, equipment, affixes (one issuance door, 2026-09-07) |
 | Economy | [economy.md](economy.md) | Settlement inventories, prices, trade tick |
 | Zones | [zones.md](zones.md) | The danger CONTINUUM — one byte 0..255 per cell; the old 0–9 steps survive as display bands only |
 | Microcombat | [microcombat.md](microcombat.md) | Sword-and-magic ARPG combat (unified, in-subworld) |

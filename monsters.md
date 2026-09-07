@@ -108,10 +108,16 @@ everyone. What remains at the boundary:
 
 ## The loot table
 
-`roll_loot_profile(lootId, level, rng)` ([macro/items.h](src/macro/items.h)) is
-the **single** loot entry point. It looks up a named profile in the
-`kLootProfiles[]` registry ([macro/items.cpp](src/macro/items.cpp)) and rolls it
-through the shared `roll_loot()` core. Unknown / empty `lootId` ⇒ no items.
+`roll_loot_profile(lootId, level, rng, affixPower)`
+([macro/items.h](src/macro/items.h)) is the **single** loot entry point. It
+looks up a named profile in the `kLootProfiles[]` registry
+([macro/items.cpp](src/macro/items.cpp)) and rolls it through the shared
+`roll_loot()` core. Unknown / empty `lootId` ⇒ no items. Every wearable stack
+then meets the ONE affix-issuance door (`grant_affixes` — the affix track,
+2026-09-07, [rpg.md](rpg.md)): `affixPower` is the world's 0..255 byte
+(`affix_power(level, danger, wealthMul)`) loading the dice; the parameter has
+NO default on purpose — a new loot site must state the world's word, and the
+compiler finds the ones that forgot.
 
 Registered profile ids:
 
@@ -176,8 +182,10 @@ const char* lootId = row && row->lootId && row->lootId[0]
     ? row->lootId                                  // the row's own column
     : npc_loot_id(int(kind->type));                // the per-role list
 if (!lootId || !lootId[0]) lootId = faction_id_for_kind(kind);  // faction default
-auto stacks = roll_loot_profile(lootId, lvl, &loot_rng_f01);
-```
+auto stacks = roll_loot_profile(
+    lootId, lvl, &loot_rng_f01,
+    affix_power(lvl, lootCtx.danger, lootCtx.wealthMul));  // the same context
+```                                                        // the purse reads
 
 One chain for a bandit and for a wolf. A body that died with a real inventory
 drops that inventory instead — the roll fills only empty pockets.

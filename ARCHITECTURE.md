@@ -283,7 +283,7 @@ with it.
 | [macro/state.{h,cpp}](src/macro/state.h)                              | `GameState`, `PlayerState`, `WorldTime`, `Landmark` (ONE record + `type` column since v62 — `Settlement`/`Village`/`Spire` are dead, [landmarks.md](landmarks.md)), save version | `game/state.ts` |
 | [macro/economy.{h,cpp}](src/macro/economy.h)                          | Per-settlement inventory, prices, daily trade tick | `game/economy.ts` |
 | [macro/attributes.h](src/macro/attributes.h)                          | Stat block, level data, XP curves | `game/attributes.ts` |
-| [macro/items.{h,cpp}](src/macro/items.h)                              | `Item`, `Inventory` (count/add/remove), unified loot registry (`roll_loot_profile` keyed by `lootId`) | `game/items.ts` |
+| [macro/items.{h,cpp}](src/macro/items.h)                              | `Item`, `Inventory` (count/add/remove), unified loot registry (`roll_loot_profile` keyed by `lootId`), THE affix issuance door (`grant_affixes` + `kAffixDefs` + `coin_run`, [rpg.md](rpg.md)) | `game/items.ts` |
 | [macro/army.h](src/macro/army.h)                                      | `CombatTemplate`, `SoldierRecord`, and `SoldierSquad` universal NPC-as-soldier records. Current source has no legacy 4-unit/RPS schema (`UnitType`, `kUnitStats`, `damage_multiplier`, `kHireCost`, `kUpkeepCost`, `hire_unit` are absent). | `game/army.ts` |
 | [macro/npc.h](src/macro/npc.h), [macro/npc_spawn.cpp](src/macro/npc_spawn.cpp) | `NPCType` enum + `kNpcTypeDefs[]` registry (ONE table of living things); macro NPC spawning treats invalid or mismatched terrain as absent terrain, fails closed on invalid map dimensions, and keeps spawn fallback positions inside map bounds | `game/npc.ts` |
 | [macro/politik.{h,cpp}](src/macro/politik.h)                          | `KingdomDef` registry, capital + city placement, MST + extra roads, Voronoi `cellOwner`; malformed or mismatched terrain storage is ignored as absent terrain | `game/politik.ts` |
@@ -517,7 +517,8 @@ never projected: their `Combat`/`Health` stay the raw `FaunaEntry` row.
   corpse is interactable until despawned (use → transfer to player
   inventory). This mirrors Might & Magic 6/7/8 corpse interaction.
 - **One loot table, one path.** Every drop — humanoid NPC *or* monster —
-  resolves through a single `roll_loot_profile(lootId, level, rng)` registry
+  resolves through a single `roll_loot_profile(lootId, level, rng, affixPower)`
+  registry
   in `macro/items.{h,cpp}`. The `lootId` is a stable string: `npc_loot_id()`
   maps the 8 `NPCType` roles to their profiles; a monster uses its
   `FaunaEntry.lootId` override or falls back to its faction default
