@@ -379,8 +379,7 @@ void test_the_sheet_door_reads_what_is_standing() {
     auto& eq = w.reg.emplace<ecs::BodyEquipment>(squad);
     ItemRef plate{};
     plate.count = 1;
-    plate.affix[0].row = std::uint8_t(BonusId::End);
-    plate.affix[0].value = +2;
+    plate.set_affix(0, {std::uint8_t(BonusId::End), +2});
     eq.gear.worn[0] = plate;
 
     const CharacterSheet dressed = player_effective_sheet(w, gs.player);

@@ -277,7 +277,10 @@ namespace sm {
 // v81 (2026-09-06): Фаза 6 — MacroNpcRuntime получил scoutRank (кэш ранга
 // Разведки лидера рядом с travelRank/marathonRank, та же дверь рефреша);
 // рантайм едет в MacroNpcRecord целиком.
-constexpr int kSaveVersion = 81;
+// v82 (2026-09-07): аффикс-трек — ItemRef несёт 8 аффиксов (было 4) двумя
+// плоскими массивами rows[8]+values[8] (SoA, паддинг пар умер); сейв пишет
+// оба массива вместо одного массива пар с дырками.
+constexpr int kSaveVersion = 82;
 
 enum class SettlementMood : std::uint8_t {
     Prosperous, Stable, Tense, Unrest, Revolt, Count

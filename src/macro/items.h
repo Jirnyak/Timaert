@@ -41,7 +41,12 @@ inline constexpr bool item_type_consumable(ItemType t) {
     return t == ItemType::Potion || t == ItemType::Food;
 }
 
-inline constexpr int kMaxItemAffixes = 4;
+// 8 (owner verdict 2026-09-07, affix track): the random ladder above 4 is
+// astronomically rare (each further affix pays ÷4), but ARTIFACTS are fixed
+// SETS through the same door and a designed set wants the room — cheaper to
+// state once now than to move the save format twice. In bytes it is +8 per
+// slot next to the pair-of-structs era (see the SoA note on ItemRef).
+inline constexpr int kMaxItemAffixes = 8;
 
 // What a row DOES, as rows of the one bonus registry (macro/bonus.h).
 //
@@ -49,9 +54,10 @@ inline constexpr int kMaxItemAffixes = 4;
 // of it was fiction: nothing anywhere read `str`, `end` or `agi`, so the
 // dagger's authored "+2 STR when equipped" and the leather's "+2 END" did
 // nothing at all, and `agi` named an attribute the sheet does not even have
-// (it is `spd`). Four cells because that is what an item INSTANCE already
-// carries (kMaxItemAffixes): a catalog row and a rolled affix say the same
-// kind of thing, so they say it in the same words.
+// (it is `spd`). As many cells as an item INSTANCE carries (kMaxItemAffixes):
+// a catalog row and a rolled affix say the same kind of thing, so they say it
+// in the same words — and a unique's innate set gets the same room a rolled
+// set does.
 inline constexpr int kMaxItemBonuses = kMaxItemAffixes;
 
 // Static blueprint — `ItemDef` mirrors `ItemDef = Omit<Item, 'quantity'>`.
@@ -128,9 +134,10 @@ inline constexpr int kMaxInventorySlots = 256;   // 16×16, the player's grid
 
 // An affix IS a bonus (macro/bonus.h `Bonus`): a row of the one registry and
 // how much of it. The name stays because "affix" is what a rolled modifier on
-// an item is CALLED, but the type is the same one a perk and an aura carry —
-// byte-identical to the `{uint8 row, int16 value}` this format already wrote,
-// so naming it did not move a single saved item.
+// an item is CALLED, but the type is the same one a perk and an aura carry.
+// Since the SoA move (v82) it is the CURRENCY of affix_at/set_affix rather
+// than the stored shape — the instance keeps rows and values in two flat
+// arrays and hands them out as this pair.
 using ItemAffix = Bonus;
 
 struct ItemRef {
@@ -139,9 +146,24 @@ struct ItemRef {
     std::uint8_t  quality = 0;     // 0 = ordinary
     std::int32_t  count = 0;       // 0 = THIS SLOT IS EMPTY
     std::uint32_t seed = 0;        // 0 = plain, not procedurally rolled
-    ItemAffix     affix[kMaxItemAffixes]{};
+    // The affixes, SoA: rows in one flat array, values in another. The array
+    // of {u8 row, i16 value} pairs this replaces paid a padding byte per cell
+    // to alignment — a third of the affix block spent on nothing, in the one
+    // struct the game keeps 256 × per container. Two arrays carry the same
+    // facts at 3 bytes a cell exactly, and the save writes them without the
+    // padding it used to (v82). Readers go through affix_at/set_affix, so the
+    // layout is this struct's own business.
+    std::uint8_t  affixRow[kMaxItemAffixes]{};
+    std::int16_t  affixValue[kMaxItemAffixes]{};
 
     bool empty() const { return count == 0; }
+    Bonus affix_at(int i) const {
+        return Bonus{affixRow[i], affixValue[i]};
+    }
+    void set_affix(int i, Bonus b) {
+        affixRow[i] = b.row;
+        affixValue[i] = b.value;
+    }
     // Everything except the count — the whole stacking rule.
     bool same_kind_as(const ItemRef& o) const {
         if (def != o.def || material != o.material || quality != o.quality
@@ -149,14 +171,19 @@ struct ItemRef {
             return false;
         }
         for (int i = 0; i < kMaxItemAffixes; ++i) {
-            if (affix[i].row != o.affix[i].row
-                || affix[i].value != o.affix[i].value) {
+            if (affixRow[i] != o.affixRow[i]
+                || affixValue[i] != o.affixValue[i]) {
                 return false;
             }
         }
         return true;
     }
 };
+
+// The byte price is a stated fact, not a discovery: 12 of header + 8 rows +
+// 16 values = 36, no padding. A field added without reading this line trips
+// here instead of silently growing every container in the game by kilobytes.
+static_assert(sizeof(ItemRef) == 36, "ItemRef grew — reprice the containers");
 
 // The catalog ordinal of an authoring id, or -1. Strings name rows in tables;
 // nothing compares them per tick.

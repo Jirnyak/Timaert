@@ -129,7 +129,9 @@ BonusTotals worn_bonuses(const Equipment& eq) {
         if (const ItemDef* def = item_def_at(int(r.def))) {
             accumulate(t, def->bonus, kMaxItemBonuses);
         }
-        accumulate(t, r.affix, kMaxItemAffixes);
+        for (int a = 0; a < kMaxItemAffixes; ++a) {
+            accumulate(t, r.affix_at(a));
+        }
     }
     return t;
 }

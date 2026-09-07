@@ -203,7 +203,7 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
         sm::ItemRef coat{};
         coat.def = std::uint16_t(sm::item_index("arm_leather"));
         coat.count = 1;
-        coat.affix[0] = {std::uint8_t(sm::BonusId::End), 4};
+        coat.set_affix(0, {std::uint8_t(sm::BonusId::End), 4});
         if (sm::equip(player.gear, coat) < 0) {
             std::fprintf(stderr, "fixture: the coat did not go on\n");
         }
@@ -777,8 +777,8 @@ void run_roundtrip() {
         }
         // The rolled affix rides with it: a procedural item that lost its
         // roll would be a different item wearing the same name.
-        if (coat.affix[0].row != std::uint8_t(sm::BonusId::End)
-            || coat.affix[0].value != 4) {
+        if (coat.affix_at(0).row != std::uint8_t(sm::BonusId::End)
+            || coat.affix_at(0).value != 4) {
             FAIL_BAIL("the coat's rolled affix lost");
         }
         if (sm::worn_armor(worn->gear).of(sm::DamageType::Blunt) <= 0) {

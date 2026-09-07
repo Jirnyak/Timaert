@@ -276,7 +276,8 @@ void write_inventory(Writer& w, const Inventory& inv) {
         w.pod(s.quality);
         w.pod(s.count);
         w.pod(s.seed);
-        w.pod(s.affix);
+        w.pod(s.affixRow);
+        w.pod(s.affixValue);
     }
 }
 
@@ -298,7 +299,8 @@ void write_equipment(Writer& w, const Equipment& eq) {
         w.pod(s.quality);
         w.pod(s.count);
         w.pod(s.seed);
-        w.pod(s.affix);
+        w.pod(s.affixRow);
+        w.pod(s.affixValue);
     }
 }
 
@@ -317,7 +319,8 @@ void read_equipment(Reader& r, Equipment& eq) {
         r.pod(s.quality);
         r.pod(s.count);
         r.pod(s.seed);
-        r.pod(s.affix);
+        r.pod(s.affixRow);
+        r.pod(s.affixValue);
         if (cell >= std::uint8_t(eq.cells())) { r.ok = false; return; }
         eq.worn[std::size_t(cell)] = s;
     }
@@ -338,7 +341,8 @@ void read_inventory(Reader& r, Inventory& inv) {
         r.pod(s.quality);
         r.pod(s.count);
         r.pod(s.seed);
-        r.pod(s.affix);
+        r.pod(s.affixRow);
+        r.pod(s.affixValue);
         if (!r.ok) break;
         // A row the catalog does not know, or a stack of nothing, is a save
         // from a different game — refuse it out loud rather than carry a
