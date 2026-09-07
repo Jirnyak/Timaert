@@ -25,7 +25,13 @@ Modular spell framework: **adding a spell is one file, no engine changes.**
   `cooldownSteps` holds **steps remaining, not seconds left** (core/time.h
   `kStepsPerSecond`): the registry authors seconds, the world counts the
   simulation's own integer quantum, and the only conversion back is the string
-  a human reads ("Cooldown 1.4s"). `tick` takes a step COUNT. That is why a
+  a human reads ("Cooldown 1.4s"). Since the recovery door (CANON S14
+  «один рычаг», 2026-09-07) the row's seconds are the BASE: the caster's
+  sheet divides them at cast (`spellbook_start_cast` →
+  `recovery_steps(row.cooldown, attrs, skills, Spellcraft)` — SPD asymptote ×
+  Spellcraft, the casts' generic tempo skill; the SCHOOL stays the power
+  lever). A haste ring quickens every cast with no code in this module.
+  `tick` takes a step COUNT. That is why a
   spell comes back after the same amount of FIGHT whether the clock above is
   racing on the map or crawling underground — where a world tick is 0.25 real
   seconds, so counting ticks instead would have made a one-second cooldown last

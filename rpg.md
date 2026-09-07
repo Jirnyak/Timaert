@@ -62,11 +62,11 @@ What each point buys (`calculate_combat_stats` / `calculate_derived`):
 
 | attr | effect (the row's own words) | the law |
 |---|---|---|
-| STR | +1 physical damage, +10 kg carry | `carry = (100 + STR·10) × skill_mult(Weightlifting)`; phys damage via Armsmaster below |
+| STR | +1 physical damage, +10 kg carry | `carry = (100 + STR·10) × skill_mult(Weightlifting)`; the phys add is RAW STR («один рычаг», 2026-09-07) |
 | END | +10 max HP, +5 max SP | `maxHp = (100 + END·10) × skill_mult(Bodybuilding)` |
 | INT | +1 spell damage | spell damage via Spellcraft below |
 | WILL | +10 max MP, +5 max SP | `maxMp = (100 + WILL·10) × skill_mult(Meditation)` |
-| SPD | asymptotic move speed | `moveSpeedPct = 100 + 100·spd/(spd+50)` — +50% at 50, ceiling +100% |
+| SPD | asymptotic TEMPO of every limb | `quickness_pct(spd) = 100 + 100·spd/(spd+50)` — +50% at 50, ceiling +100%; divides move pace, swing recovery AND cast recovery (the recovery door below) |
 | LCK | shifts the game's dice | crit chance = 0.5% per point (`crit_procs`, core/dice.h); a crit ignores armour |
 | CHA | 1% off prices and payroll per point | `tradeDiscountPct = CHA`, one spelling (`cha_trade_discount_pct`) |
 | WIS | +1% EXP per point | `expMultPct = 100 + WIS` |
@@ -78,8 +78,45 @@ multiplies the bar itself; Marathon multiplies its RECOVERY.
 **The derived block is integer** (phase 4в): `DerivedBonuses` carries whole
 percent (`100 = ×1`), the floor happens ONCE in `calculate_derived`, and
 consumers (`award_exp`, `calculate_squad_upkeep`, the pace laws) take pct
-ints. `rawPhysDamage = STR × skill_mult_pct(Armsmaster)/100`,
-`rawSpellDamage = INT × skill_mult_pct(Spellcraft)/100`.
+ints. `rawPhysDamage = STR`, `rawSpellDamage = INT` — **raw** since the
+«один рычаг на ручку» verdict (CANON S14, 2026-09-07): the generic pair
+moved out of damage and into TEMPO (below), so no handle is counted twice.
+
+## THE recovery door — one tempo law (CANON S14, 2026-09-07)
+
+`recovery_steps(baseSeconds, attrs, skills, generic)` (macro/attributes.h):
+
+```
+steps = base × 100/quickness_pct(SPD) × 100/skill_mult_pct(generic)
+floor = 1 simulation step (the time quantum, not an invented cap)
+```
+
+- **«Один рычаг на ручку»:** power attrs (STR/INT) add raw; SPD is the one
+  tempo attribute; TYPED skills (weapon, school) multiply POWER only; the
+  GENERIC trio multiplies TEMPO only — Armsmaster the arms, Spellcraft the
+  casts, Athletics the legs (the legs walked this exact shape first:
+  `moveSpeedPct = quickness_pct × Athletics`). One handle in two totals is a
+  hidden square, not a synergy (a typed skill in both power and tempo would
+  be ×121 DPS from one investment — rejected with arithmetic).
+- **The base is MASS, not a column** (owner: «масса кулака бесконечно мала —
+  он самый быстрый»): a weapon's base swing =
+  `kHandSwingS (1.5 s) + weight_kg × kSwingSecondsPerKg (0.5 s/kg)`
+  (`weapon_swing_seconds`, macro/anatomy.h) — the bare hand is the massless
+  fastest, the 1 kg dagger lands at 2.0 s, and every future row prices its
+  pace from the same kilogram the carry law already reads. Humanoid NPC rows
+  author their natural-weapon cooldowns ON this curve (implied heft); beast
+  rows keep their own tempos (a fang has no kilograms); a spell's base is its
+  row's `cooldown`.
+- **Consumers, all through the door:** `hand_strike_fields.recoverySteps`
+  (the player entity's Combat refreshes per tick — a haste ring quickens the
+  arm), `project_combat` (an NPC's sheet divides its row's cooldown — S4, no
+  player-special curve), `spellbook_start_cast` (Spellcraft), the auto-battle
+  DPS override. The player's swing gate is his Combat's own `cooldownSteps`,
+  ticked by the one `tick_combat_cooldowns` — the last float combat clock is
+  dead.
+- **The arc:** a zero-sheet bare hand swings every ~1.5 s; SPD 50 +
+  generic 100 ≈ ×12 — the capstone demigod jabs ~8×/s. The base anchors the
+  WEAK end of the arc; growth is the sheet's job.
 
 ## Skills — 33 rows in the 64 envelope
 
@@ -88,8 +125,9 @@ the eighth weapon skill), in a fixed 64-slot envelope so a new skill never
 moves the save. Groups: weapons ×8 (Sword, Axe, Spear, Mace, Dagger, Bow,
 Staff, Unarmed — 10%/rank), armour ×4 (Heavy, Light, Unarmored, Shield —
 10%/rank), the six schools (Fire/Water/Air/Earth/Arcane/Void Magic —
-10%/rank), the generic pair (Armsmaster, Spellcraft — 5% ON TOP of the
-final number), body ×5 (Bodybuilding, Meditation ×5%; Marathon, Athletics
+10%/rank), the generic pair (Armsmaster, Spellcraft — 5%/rank of TEMPO in
+their domain, the recovery door above; their pre-2026-09-07 damage role is
+dead), body ×5 (Bodybuilding, Meditation ×5%; Marathon, Athletics
 ×1%; Weightlifting ×10%), road & world ×4 (Travel −1% cost, Acrobatics,
 Scouting, Prospecting ×1%), husbandry ×4 (Trade, Quartermaster −1% cost,
 Foraging −1% cost, Learning ×1%). Leadership is absent deliberately —

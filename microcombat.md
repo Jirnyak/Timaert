@@ -22,8 +22,12 @@ player spell direction.
   the *exact* player formulas (`calculate_combat_stats` / `calculate_derived`).
   The per-role `CombatTemplate` is the authored **base**: the HP/damage floor
   plus the attack identity (speed, range, cooldown, melee/missile, missile
-  params) — attributes/skills/level then scale hp/damage on top. No RPS table;
-  per-unit variance comes from the sheet, not a per-type stat row.
+  params) — attributes/skills/level then scale hp/damage on top, and since
+  the recovery door (CANON S14 «один рычаг», 2026-09-07) the cooldown too:
+  the row's seconds are the BASE and the sheet divides them (SPD asymptote ×
+  Armsmaster for melee, Spellcraft for casters) — a veteran genuinely
+  strikes faster. No RPS table; per-unit variance comes from the sheet, not
+  a per-type stat row.
 - **The player is a combat target like any other.** In the subworld the player
   is a real ECS entity (`PlayerTag + Health + Combat + BodyRadius + SubworldTag`)
   struck by melee, projectiles, and blasts through the *same* paths as any NPC —
