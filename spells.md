@@ -14,36 +14,35 @@ Modular spell framework: **adding a spell is one file, no engine changes.**
 
 - **`SpellBook`** — FLAT ordinal-indexed rows over the append-only registry
   (v59): `learned[kSpellCount]`, `activeSpell` (ordinal, −1 = none),
-  `cooldownSteps[kSpellCount]`, `sustained[kSpellCount]`,
-  `sustainedDrainCarry`. The three string-keyed heap containers died (S26:
-  flat data; S20.1: the ordinal IS the identity — strings resolve at the
-  edges via `spell_ordinal`). API `learn / set_active / can_cast / cast /
-  tick`, all by ordinal. Behavioural rules resolve by ROW too since
-  2026-08-29: `spellbook_rule_active(book, SpellRuleId::Flight)` scans the
-  sustained rows against the registry's own `rule` column — the last
-  name-based check (a `"flight"` string compare) is dead.
-  `cooldownSteps` holds **steps remaining, not seconds left** (core/time.h
-  `kStepsPerSecond`): the registry authors seconds, the world counts the
-  simulation's own integer quantum, and the only conversion back is the string
-  a human reads ("Cooldown 1.4s"). Since the recovery door (CANON S14
-  «один рычаг», 2026-09-07) the row's seconds are the BASE: the caster's
-  sheet divides them at cast (`spellbook_start_cast` →
-  `recovery_steps(row.cooldown, attrs, skills, Spellcraft)` — SPD asymptote ×
-  Spellcraft, the casts' generic tempo skill; the SCHOOL stays the power
-  lever). A haste ring quickens every cast with no code in this module.
-  **castTime is honest since the same session** (it was a UI-only liar
-  column): a non-sustained micro cast WINDS UP — the bolt leaves the hand
-  `recovery_steps(row.castTime, …, Spellcraft)` steps after the press
-  (`App.pendingCastOrd/Steps`, resolved beside `spellbook_tick` in main.cpp
-  through the identical `resolve_active_cast` the zero-castTime path runs).
-  M&M defaults: the wind-up neither blocks movement nor breaks on a hit; aim
-  is taken at RELEASE; sustained rows toggle instantly (a stance flip is not
-  a throw); leaving the subworld or dying drops the spell from the arm.
-  `tick` takes a step COUNT. That is why a
-  spell comes back after the same amount of FIGHT whether the clock above is
-  racing on the map or crawling underground — where a world tick is 0.25 real
-  seconds, so counting ticks instead would have made a one-second cooldown last
-  sixteen. See [time.md](time.md).
+  `sustained[kSpellCount]`, `sustainedDrainCarry`. The three string-keyed
+  heap containers died (S26: flat data; S20.1: the ordinal IS the identity —
+  strings resolve at the edges via `spell_ordinal`). API `learn / set_active
+  / can_cast / cast / tick`, all by ordinal. Behavioural rules resolve by
+  ROW too since 2026-08-29: `spellbook_rule_active(book,
+  SpellRuleId::Flight)` scans the sustained rows against the registry's own
+  `rule` column — the last name-based check (a `"flight"` string compare) is
+  dead.
+  **The book keeps no timers (owner verdict 2026-09-09, save v83).** A cast
+  fires the instant it is asked and charges the caster BODY's one recovery
+  gate — `ecs::Combat.recoverySteps`, the same field a sword swing charges,
+  found by the caster's own entity id inside `spellbook_cast` and drained by
+  the one `tick_combat_recovery`. While that gate ticks the body starts NO
+  action — no swing, no cast, not even a sustained stance flip (the gate is
+  agnostic to what occupied it); walking is deliberately free. The row's
+  `recovery` seconds are the BASE, priced by the caster's sheet through THE
+  recovery door (`recovery_steps(row.recovery, attrs, skills, Spellcraft)` —
+  SPD asymptote × Spellcraft, the casts' generic tempo skill; the SCHOOL
+  stays the power lever). A haste ring quickens every cast with no code in
+  this module. The `castTime` wind-up column DIED into `recovery` the same
+  session (fireball 2.0+0.3 → 2.3): a pre-action delay and a post-action
+  debt spend the same fight time, and the pending-cast machinery
+  (`App.pendingCastOrd/Steps`, `resolve_active_cast`) went with it — aim is
+  the crosshair's line at the click. The per-spell `cooldownSteps[]` array
+  died with the wind-up; there is no per-spell timer of any kind. Steps, not
+  seconds (core/time.h): the gate counts the simulation's own integer
+  quantum, so a cast comes back after the same amount of FIGHT whether the
+  clock above is racing on the map or crawling underground. See
+  [time.md](time.md).
 - **Registry** = `kSpellDefs` (macro/spells.h): one constexpr DATA row per
   spell — fireball, ice-shard, magic-bolt, lightning-chain, energy-beam,
   armageddon, haste, flight — with APPEND-ONLY ordinals (the row index rides

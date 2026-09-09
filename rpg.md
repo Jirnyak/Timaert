@@ -106,14 +106,20 @@ floor = 1 simulation step (the time quantum, not an invented cap)
   pace from the same kilogram the carry law already reads. Humanoid NPC rows
   author their natural-weapon cooldowns ON this curve (implied heft); beast
   rows keep their own tempos (a fang has no kilograms); a spell's base is its
-  row's `cooldown`.
+  row's `recovery` (the castTime wind-up died into it, 2026-09-09).
 - **Consumers, all through the door:** `hand_strike_fields.recoverySteps`
   (the player entity's Combat refreshes per tick — a haste ring quickens the
   arm), `project_combat` (an NPC's sheet divides its row's cooldown — S4, no
-  player-special curve), `spellbook_start_cast` (Spellcraft), the auto-battle
-  DPS override. The player's swing gate is his Combat's own `cooldownSteps`,
-  ticked by the one `tick_combat_cooldowns` — the last float combat clock is
-  dead.
+  player-special curve), `spellbook_cast` (Spellcraft), the auto-battle
+  DPS override.
+- **ONE gate per body (owner verdict 2026-09-09):** what the door prices
+  lands in `Combat.recoverySteps` — the body's single «occupied» clock. A
+  swing charges it, a cast charges it (any cast: attack, buff, stance flip —
+  the gate is agnostic), a future shot will; every action checks the same
+  field first, so sword and magic can no longer run on two clocks. Movement
+  never reads it — recovering legs still walk. Drained by the one
+  `tick_combat_recovery`; per-spell cooldowns are DEAD (save v83) — the last
+  float combat clock died before it, and the last second timer with it.
 - **The arc:** a zero-sheet bare hand swings every ~1.5 s; SPD 50 +
   generic 100 ≈ ×12 — the capstone demigod jabs ~8×/s. The base anchors the
   WEAK end of the arc; growth is the sheet's job.

@@ -26,7 +26,10 @@ player spell direction.
   the recovery door (CANON S14 «один рычаг», 2026-09-07) the cooldown too:
   the row's seconds are the BASE and the sheet divides them (SPD asymptote ×
   Armsmaster for melee, Spellcraft for casters) — a veteran genuinely
-  strikes faster. No RPS table; per-unit variance comes from the sheet, not
+  strikes faster. What the door prices lands in the body's ONE gate
+  (`Combat.recoverySteps`, verdict 2026-09-09): swings and casts charge the
+  same field, every action checks it first, one `tick_combat_recovery`
+  drains it for everyone. No RPS table; per-unit variance comes from the sheet, not
   a per-type stat row.
 - **The player is a combat target like any other.** In the subworld the player
   is a real ECS entity (`PlayerTag + Health + Combat + BodyRadius + SubworldTag`)

@@ -166,8 +166,8 @@ The commands, by group (usage via `help <cmd>`):
 * **spells** — `spells`, `learn`, `learnall`.
 * **readouts** — `sheet` prints base → effective attributes/skills, derived
   block, and TEMPOS through the recovery door: the hand's swing (weapon in
-  hand or fist, mass law) and the wind-up of every known non-sustained spell
-  — the test window into CANON S14 «один рычаг на ручку».
+  hand or fist, mass law) and the recovery of every known spell with a
+  nonzero row — the test window into CANON S14 «один рычаг на ручку».
 * **cheats/flags** — `heal`, `godmode`, `flight`.
 
 **`exec <file>` — a state is a text file.** Runs the file line by line: `#`

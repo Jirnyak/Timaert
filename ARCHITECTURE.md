@@ -329,7 +329,7 @@ changes.
 | C++ module                   | Role |
 |------------------------------|------|
 | [macro/spells.h](src/macro/spells.h)                                          | `kSpellDefs` — THE pure-data spell registry (append-only ordinals; school/tier as columns; a spire per row) |
-| [content/spells/spell_book.{h,cpp}](src/content/spells/spell_book.h)          | Cast logic, cooldowns (integer simulation steps), mana cost, sustained drain |
+| [content/spells/spell_book.{h,cpp}](src/content/spells/spell_book.h)          | Cast logic, mana cost, sustained drain; a cast charges the caster BODY's one recovery gate (`ecs::Combat.recoverySteps`) |
 | [content/spells/casting.h](src/content/spells/casting.h) + [content/spells/effects.cpp](src/content/spells/effects.cpp) | The binding layer: `kSpellEffects` — one effect entry per `kSpellDefs` row, bound by ordinal (a `static_assert` per row) |
 | [sub/spell_effects.{h,cpp}](src/sub/spell_effects.h)                          | Subworld runtime for the bound effects: AoE projectile (fireball), targeted projectile (ice shard), bouncing arc (lightning chain), sustained beam, basic bolt, bounded meteor swarm (armageddon) |
 | [sub/engine.{h,cpp}](src/sub/engine.h)                                        | Flight: sustained macro path bypass plus pitch-based subworld flight height |
@@ -339,8 +339,8 @@ changes.
 their content became `kSpellDefs` rows + `kSpellEffects` bindings.)
 
 ```
-SpellBook { learned[kSpellCount], activeSpell, cooldownSteps[kSpellCount],
-            sustained[kSpellCount], sustainedDrainCarry }   // flat, by ordinal (v59)
+SpellBook { learned[kSpellCount], activeSpell,
+            sustained[kSpellCount], sustainedDrainCarry }   // flat, by ordinal (v59; cooldown cells died v83 — recovery is the body's one gate)
 spellbook_learn / set_active / can_cast / cast / tick       // ordinals; strings at edges
 ```
 
