@@ -1056,8 +1056,17 @@ void write_payload(Writer& w, const GameState& s,
     w.pod(s.lootPoolValue);
     // v74: the ship counters of port/beached cells (CANON S10 «корабли
     // через фичу») — sparse, cell → hull count, the deposit-cells shape.
+    // Sorted by cell, for the same reason the deposit and scar blocks are
+    // (world_fields.cpp:87-88): the map's iteration order is unspecified and
+    // the payload is CHECKSUMMED, so one world state must be one byte stream.
+    // Without the sort two saves of the same world differed in bytes and in
+    // checksum, and the load door's fold witness had nothing stable to
+    // compare against (SAVE-3).
     if (w.count(s.shipsAtCell.size(), 1u << 20)) {
-        for (const auto& [cell, n2] : s.shipsAtCell) {
+        std::vector<std::pair<std::uint32_t, std::uint16_t>> ships(
+            s.shipsAtCell.begin(), s.shipsAtCell.end());
+        std::sort(ships.begin(), ships.end());
+        for (const auto& [cell, n2] : ships) {
             w.pod(cell);
             w.pod(n2);
         }
@@ -1282,6 +1291,22 @@ bool save_game(const GameState& s, const std::vector<Quest>& activeQuests,
     h.checksum = checksum32(payload.bytes.data(), payload.bytes.size());
 
     return atomic_replace(path, h, payload.bytes);
+}
+
+std::uint32_t save_payload_fingerprint(
+    const GameState& s, const std::vector<Quest>& activeQuests,
+    const std::vector<MacroNpcRecord>& macroNpcs,
+    const std::vector<std::uint16_t>& treeCounts,
+    const DepositLayer& deposits) {
+    Writer payload;
+    payload.bytes.reserve(64u * 1024u);
+    // The stamp is held FIXED, and it is the only field that has to be: two
+    // honest saves of one state differ in savedAt by construction (a fresh
+    // UTC stamp per save, save.cpp:1272), and that is not state.
+    write_payload(payload, s, std::string(), activeQuests, macroNpcs,
+                  treeCounts, deposits);
+    if (!payload.ok) return 0u;   // 0 = "no answer", never a real fingerprint
+    return checksum32(payload.bytes.data(), payload.bytes.size());
 }
 
 bool load_game(GameState& s, std::vector<Quest>& activeQuests,

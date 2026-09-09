@@ -1662,6 +1662,11 @@ bool boot_world_from_save(App& app, const std::string& path) {
                        loadedDeposits, path)) {
         return false;
     }
+    // What the FILE says the world is, weighed before a single field of it is
+    // applied. Compared against the living world at the bottom of this
+    // function — see the fold witness there.
+    const std::uint32_t fileFingerprint = sm::save_payload_fingerprint(
+        fresh, loadedQuests, loadedMacro, loadedTrees, loadedDeposits);
     // registerIntroStory=TRUE even on load (v25): node definitions are code
     // and must all exist before the saved story progress is replayed below.
     // The old `false` here was the 3-nodes -> 1 bug: a loaded game lost the
@@ -1670,17 +1675,40 @@ bool boot_world_from_save(App& app, const std::string& path) {
                &fresh.mapParams, fresh.cityCountTarget,
                /*registerIntroStory=*/true, /*spawnMacroNpcs=*/false);
 
-    app.gs.version           = fresh.version;
-    app.gs.saveName          = std::move(fresh.saveName);
-    app.gs.savedAt           = std::move(fresh.savedAt);
-    app.gs.mapParams         = fresh.mapParams;
-    app.gs.cityCountTarget   = fresh.cityCountTarget;
-    app.gs.worldTime         = fresh.worldTime;
-    app.gs.lastWorldRebakeDay = fresh.lastWorldRebakeDay;   // autosave phase (v22)
-    app.gs.nextMacroSpawnOrdinal = fresh.nextMacroSpawnOrdinal;   // identity issuer (v23)
-    app.gs.nextQuestOrdinal      = fresh.nextQuestOrdinal;        // quest issuer (v63)
-    app.gs.worldTickRt       = fresh.worldTickRt;           // world rhythm (v24)
-    app.gs.macroAiRhythm     = fresh.macroAiRhythm;
+    // ── THE fold: the world the file names REPLACES the world the seed made ─
+    //
+    // This used to be a hand-written list of 21 assignments, and a hand-written
+    // list is a fold that can drop a field: five of them rode the save and were
+    // simply not in it (SAVE-1 — the resource scars, the loot pool, the ships
+    // at cell, the scent fields, the landmark issuer). Nothing could see it.
+    // The forest a squad felled regrew on load, moored ships evaporated with
+    // the wood they cost, and the one landmark-id issuer restarted below its
+    // own living ids.
+    //
+    // So the direction is INVERTED. The file owns thirty of GameState's
+    // thirty-two fields; genesis owns two, and only those two are named here.
+    // A truth added to the save now arrives by construction — the only thing
+    // that can still be forgotten is a new field genesis owns, and that list
+    // is short, closed, and written out right here:
+    //
+    //   politik     — kingdoms, capitals, the map's ownership. Derived from
+    //                 worldSeed by generate_macro_world and NOT in the file
+    //                 (save.h's opening line says so: the terrain/politik
+    //                 layers are regenerated). boot_world just built it for
+    //                 this exact seed, so it is the same politik the save was
+    //                 written under.
+    //   sessionFeed — presentation, never saved by design (state.h:684). The
+    //                 live one (just cleared by destroy_world) stays.
+    fresh.politik     = std::move(app.gs.politik);
+    fresh.sessionFeed = std::move(app.gs.sessionFeed);
+    app.gs = std::move(fresh);
+    // `fresh` is a husk from here on — every read below goes to app.gs.
+    //
+    // The bus's chronicle door is unaffected: it points at the MEMBER
+    // app.gs.chronicle (boot_world attached it), and that address does not
+    // move when the state is assigned into — the world owns the past, the bus
+    // only writes to it.
+
     // The second sync door (v24): boot_world reset App::npcAi from the seed;
     // the LOADED rhythm now overwrites that, so the AI resumes mid-phase with
     // its own jitter stream instead of re-rolling the same sequence.
@@ -1688,8 +1716,6 @@ bool boot_world_from_save(App& app, const std::string& path) {
     app.npcAi.sweepAccum    = app.gs.macroAiRhythm.sweepAccum;
     app.npcAi.pendingSweeps = app.gs.macroAiRhythm.pendingSweeps;
     app.npcAi.sweepCursor   = std::size_t(app.gs.macroAiRhythm.sweepCursor);
-    app.gs.logicNodesRegistered = std::move(fresh.logicNodesRegistered);
-    app.gs.logicNodesActive     = std::move(fresh.logicNodesActive);
     // Story progress (v25): every content node was just registered as on a
     // new game; replay the saved progress — a consumed one-shot stays
     // consumed, and the active set is restored exactly.
@@ -1709,26 +1735,51 @@ bool boot_world_from_save(App& app, const std::string& path) {
             app.logic.activate(id);
         }
     }
-    app.gs.player            = std::move(fresh.player);
-    app.gs.landmarks         = std::move(fresh.landmarks);
-    app.gs.markers           = std::move(fresh.markers);
-    // The explored map (v40). Visible cells were clamped away on write; the
-    // first sight sweep after this load re-opens them from the restored
-    // position (destroy_world invalidated the sight anchor).
-    app.gs.knowledge         = std::move(fresh.knowledge);
-    // The world's own memory comes back with it. `boot_world` above sized a
-    // FRESH chronicle for this map; the saved one replaces it, and the bus's
-    // door still points at the same member — the world owns the past, the bus
-    // only writes to it.
-    app.gs.chronicle         = std::move(fresh.chronicle);
-    app.gs.relations         = fresh.relations;
-    app.gs.subState          = std::move(fresh.subState);
-    app.gs.deserterPool      = fresh.deserterPool;
-    // Features built by squads (v71): the list is the truth; the grid gets
-    // them re-stamped below, before the rebaker reads it.
-    app.gs.builtFeatures     = std::move(fresh.builtFeatures);
+    // (The explored map rode in with the state above — v40. Visible cells were
+    // clamped away on write; the first sight sweep after this load re-opens
+    // them from the restored position, since destroy_world invalidated the
+    // sight anchor. The features squads BUILT rode in too (v71): that list is
+    // the truth, and it is re-stamped onto the seed-baked grid below, before
+    // the rebaker reads it.)
     app.activeQuests         = std::move(loadedQuests);
     app.questMarkerSig       = 0;   // force quest-marker rebuild on next tick
+
+    // ── THE fold witness (SAVE-1) ─────────────────────────────────────────
+    //
+    // Everything above is the APPLY half of a load: a file already parsed into
+    // `fresh`, moved into the living world. That half was never watched by
+    // anything — save_roundtrip_test proves file→GameState, which is the half
+    // that worked, while five fields died right here, on the way in.
+    //
+    // So weigh the living world with the same writer that weighed the file,
+    // on the same side vectors, and demand the two agree. The fields are
+    // ENUMERATED BY THE WRITER: a truth added to write_payload is guarded from
+    // the day it is added, and one dropped in this fold is a mismatch the same
+    // second. This must stand BEFORE settlementId is recomputed below — that
+    // line legitimately re-derives a field, and a witness must compare the
+    // fold, not the world's own thinking.
+    const std::uint32_t liveFingerprint = sm::save_payload_fingerprint(
+        app.gs, app.activeQuests, loadedMacro, loadedTrees, loadedDeposits);
+    // A witness that answers "0" twice would agree with itself over a world it
+    // never weighed: 0 is what the fingerprint returns when the writer FAILED.
+    // Refuse that agreement out loud — a check that cannot fail is the defect
+    // this whole door was built against.
+    if (fileFingerprint == 0u || liveFingerprint == 0u) {
+        std::fprintf(stderr,
+                     "load: the fold witness could not weigh the world "
+                     "(file=%08x live=%08x) — the payload writer failed.\n",
+                     fileFingerprint, liveFingerprint);
+        std::fflush(stderr);
+        if (app.smoke.enabled) sm::app::smoke_fail(app, "fold witness mute");
+    } else if (liveFingerprint != fileFingerprint) {
+        std::fprintf(stderr,
+                     "load: THE FOLD LOST STATE — the file weighs %08x, the "
+                     "world it became weighs %08x. A field that rides the save "
+                     "is not being applied in boot_world_from_save.\n",
+                     fileFingerprint, liveFingerprint);
+        std::fflush(stderr);
+        if (app.smoke.enabled) sm::app::smoke_fail(app, "load fold lost state");
+    }
 
     // The macro snapshot (Session 17): boot_world above spawned NOTHING
     // (spawnMacroNpcs=false), so the registry holds no macro NPCs yet —
