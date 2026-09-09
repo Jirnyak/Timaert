@@ -22,32 +22,45 @@
 
 namespace sm {
 
-// SP per weight-unit per macro cell. THE knob for how far a body can march,
-// and it is calibrated in GAME HOURS against the owner's anchor (Session 21):
-// a fresh, unskilled traveller BURNS HIS WHOLE BAR IN ABOUT 8 HOURS OF ROAD —
-// a real day's march, camp by nightfall. 7/16 (po2 fraction, house style):
-// 110 SP / (1.0 road weight × 7/16 × 32 cells/h) = 7.9 h. With the terrain
-// speed law below folded in, the fresh traveller's bar buys about
+// SP per weight-unit per macro cell. THE knob for how far a body can march:
+// this number × the cell's weight × cells crossed, and every modifier (travel
+// skill, overload, terrain √) is a multiplier ON TOP, never folded in — the
+// owner's shape, 2026-08-24.
 //
-//     road 7.9 h · meadow 5.6 h · forest 4.5 h · mountain 3.5 h · water 2.5 h
+// TWO, and the two has a compile-time gate under it (kRoadHoursPerFreshBar,
+// below the bed tables) because THIS NUMBER ALONE SAYS NOTHING. What is
+// balanced is GAME HOURS of road, and the hours are the PRODUCT of this knob
+// and the pace — a product with no name of its own to fail under. That is
+// exactly how it drifted: the 2026-08-24 recalibration moved the pace
+// 32 → 8 cells/h and this knob 7/16 → 1, the product fell 14 → 8 SP/h, and
+// every quoted hour below silently grew by 1.75× while the arithmetic that
+// derived them stayed in the comment. Measured in play 2026-09-09: a fresh bar
+// bought 13.75 h of road — a day and a half — under a comment that said 7.9.
+// The gate closes the CLASS, not the instance: move either knob and the build
+// fails naming the design, instead of the balance failing in someone's hands.
 //
-// The previous 0.2 was NOT a working economy at level 1: the road cost
-// 6.4 SP/h against a standing recovery of ~10 SP/h, so any pause between
-// clicks repaid the walk and the player could march for days without the bar
-// moving — "SP не тратится вообще" (owner, in play). Now the road costs
-// 14 SP/h against a fresh regen of 13.75 SP/h: an unhurried walk with rests
-// breaks even ON THE ROAD ONLY — it pays in TIME, the real currency — while
-// off-road marching always outruns the rest. Stamina still does not recover
-// while marching (kMarchRecoveryPct), which is what makes this a budget
-// instead of an allowance.
-// ONE — the owner's word (2026-08-24): the base is a pure level-1 number,
-// balanced as data. 1 SP × the cell's weight × cells crossed; every modifier
-// (travel skill, overload, terrain √) is a multiplier ON TOP, never folded
-// in. A fresh level-1 walker (~110 SP) drops after ~55 meadow cells — about
-// ten game hours of open country, a full day's march with an ache — and a
-// night's rest (kRestRegenPctPerHour) buys it all back: the daily rhythm
-// closes itself.
-constexpr float kStaminaPerCell = 1.0f;
+// Priced per CELL, never per hour. Walking faster covers the same ground for
+// the same stamina, which is why `travel` (distance) and `spd` (speed) never
+// fight; the hours are only how the result READS.
+//
+// With the terrain speed law below folded in, a fresh level-1 bar (110 SP —
+// attributes.h, the bare sheet) buys about
+//
+//     road 6.9 h · meadow 4.9 h · forest 3.2 h · mountain 3.1 h · water 2.2 h
+//
+// — a real day's march on the road, camp by nightfall, and a night's rest
+// (kRestRegenPctPerHour) buys it all back: the daily rhythm closes itself.
+//
+// The number is chosen to sit ABOVE the standing regen, not on it: the road
+// costs 16 SP/h against a fresh 13.75 SP/h at rest, so a stop-and-go march
+// always loses ground and stamina stays a BUDGET. The 1.75 that would have
+// restored the old hours exactly puts 16 → 14 against that same 13.75 — a
+// knife-edge that two ranks of `marathon` flip into the free ride the owner
+// already caught in play once ("SP не тратится вообще", when the road cost
+// 6.4 SP/h against ~10 of regen). Under 2 that flip is EARNED, at marathon
+// ~17: a road that pays for itself is what a travel-trained character is for.
+// Stamina still does not recover while marching at all (kMarchRecoveryPct).
+constexpr float kStaminaPerCell = 2.0f;
 
 // Fraction of the normal recovery that a MARCHING body gets. Zero: legs in
 // motion are not resting. Since 2026-09-03 this gates ALL THREE bars — health
@@ -201,6 +214,42 @@ inline constexpr float biome_sp_weight(Biome b) {
 inline constexpr float feature_bed_weight(FeatureType f) {
     return feature_def(f).bedWeight;
 }
+
+// ── THE anchor gate: where the hours and the per-cell price meet ──────────
+//
+// The economy is BALANCED in game hours and PRICED per cell, and until
+// 2026-09-09 the arithmetic joining the two lived in a comment — which cannot
+// follow a moved knob. It failed exactly that way (kStaminaPerCell's own
+// epitaph): two knobs moved, their product fell 1.75×, and every test stayed
+// green because every test DERIVED its expectation from the same constants it
+// was meant to be guarding. A tautology guards nothing.
+//
+// So the design numbers are stated here as literals, and the derived ones are
+// asserted against them. `kFreshBarSp` is the bare level-1 bar — 100 base plus
+// the untouched sheet's END/WIL pair (attributes.h calculate_combat_stats);
+// squad_travel_test pins that it still reads 110, so this literal cannot drift
+// away from the sheet in silence either.
+inline constexpr float kFreshBarSp = 110.0f;
+
+// What that bar buys on the reference bed, in game hours. The one number the
+// owner actually balances: "a day's march, camp by nightfall".
+inline constexpr float kRoadHoursPerFreshBar =
+    kFreshBarSp / (feature_bed_weight(FT_Road) * kStaminaPerCell
+                   * kMacroWalkCellsPerHour);
+static_assert(kRoadHoursPerFreshBar > 6.0f && kRoadHoursPerFreshBar < 9.0f,
+              "a fresh bar must buy a DAY of road (6-9 game hours). Moving "
+              "kStaminaPerCell or kMacroWalkCellsPerHour moves their PRODUCT, "
+              "and this is the line that says so out loud");
+
+// ...and the road has to stay dearer than standing still, or a stop-and-go
+// march repays itself and the budget is an allowance again — the failure the
+// owner caught in play ("SP не тратится вообще"). Marching earns nothing
+// (kMarchRecoveryPct), so the comparison is march-hour against rest-hour.
+inline constexpr float kRoadStaminaPerHour =
+    feature_bed_weight(FT_Road) * kStaminaPerCell * kMacroWalkCellsPerHour;
+static_assert(kRoadStaminaPerHour > kFreshBarSp * kRestRegenPctPerHour,
+              "the road must outrun the rest it is measured against, with "
+              "room for `marathon` to buy the free ride honestly");
 
 // Full-thicket drag: at density 1.0 (kMaxTreesPerCell) the wood adds 2.5 on
 // top of its ground — a meadow choked to full forest walks at 4.5, the old

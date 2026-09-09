@@ -822,11 +822,11 @@ bool run_subworld_sp_drain_smoke(App& app) {
 
     const int beforeSp = app.gs.player.combatStats.currentSp;
     const int beforeHp = app.gs.player.combatStats.currentHp;
-    // Walk far enough to owe a WHOLE point of SP. At kStaminaPerCell one macro
-    // cell of ordinary ground costs a FRACTION of a point, so this is several
-    // cells of walking — the old "one cell already costs a point" premise dates
-    // from when kStaminaPerCell was 1.0 and stopped being true when the owner
-    // set it to 0.2.
+    // Walk far enough to owe a WHOLE point of SP. How far that is has moved
+    // three times now (1.0 → 0.2 → 7/16 → 2.0 per weight-unit), which is why
+    // the expectation below is BUILT from the shipping formula leg by leg
+    // instead of naming a distance: the scenario is "walk until a whole point
+    // is owed", and it must not care what the knob currently says.
     //
     // Each leg is priced with the weight of the ground under THAT leg, sampled
     // at the same instant charge_subworld_sp_for_distance samples it, so the

@@ -238,21 +238,32 @@ void test_travel_balance_holds_its_intent() {
     const sm::Skills skills = sm::default_skills();
     const sm::CombatStats fresh = sm::calculate_combat_stats(attrs, skills);
 
-    // THE anchor (owner, 2026-08-24 recalibration): a fresh traveller burns
-    // his whole bar in ROUGHLY A DAY'S WALKING of open country — out at dawn,
-    // spent with the light, camp. The bar
-    // has to run out inside a day's walking, or camping is a thing the player
-    // never has to think about (at the old 0.2/cell it never did: 17+ hours
-    // of road, and any pause repaid the walk).
-    const float meadow = march_hours(fresh, skills,
-                                      sm::cell_sp_weight(sm::Meadow, sm::FT_None));
-    CHECK(meadow > 8.0f && meadow < 12.0f,
-           "a day's march over open country spends the fresh bar");
-    // The road stretches the same bar further than open country by exactly
-    // the law's own ratio — weight halves, pace gains √2, endurance gains
-    // weight × 1/√weight = √2 (that is WHY roads are worth building).
+    // THE anchor (owner, 2026-08-24; RESTATED ON THE ROAD 2026-09-09): a fresh
+    // traveller burns his whole bar in ROUGHLY A DAY'S MARCH — out at dawn,
+    // spent by dusk, camp. The bar has to run out inside a day, or camping is
+    // a thing the player never has to think about (at the old 0.2/cell it
+    // never did: 17+ hours of road, and any pause repaid the walk).
+    //
+    // Stated on the ROAD, and the bed matters: this band used to be written on
+    // the MEADOW at 8-12 h, which is the SAME SENTENCE about a bed the law
+    // makes √2 cheaper — it quietly licensed 11-17 hours of road. That is
+    // exactly the day-and-a-half the owner walked in play (2026-09-09), under
+    // a comment in movement_cost.h that said 7.9 h. Two anchors on two beds
+    // cannot both be the design; the reference bed wins, because it is the one
+    // every other ground is a multiplier OF — and the one the player walks on.
+    // movement_cost.h asserts the same band at compile time
+    // (kRoadHoursPerFreshBar); this checks the same claim through the shipping
+    // cost formula, sheet and all.
     const float road = march_hours(fresh, skills,
                                    sm::cell_sp_weight(sm::Meadow, sm::FT_Road));
+    CHECK(road > 6.0f && road < 9.0f,
+           "a day's march down the road spends the fresh bar");
+    // Open country is then DERIVED, never pinned twice: the road stretches the
+    // same bar further by exactly the law's own ratio — weight halves, pace
+    // gains √2, endurance gains weight × 1/√weight = √2 (that is WHY roads are
+    // worth building).
+    const float meadow = march_hours(fresh, skills,
+                                      sm::cell_sp_weight(sm::Meadow, sm::FT_None));
     CHECK(road > meadow * 1.35f && road < meadow * 1.5f,
            "the road stretches the bar by the law's own sqrt-2");
 

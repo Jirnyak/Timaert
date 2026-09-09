@@ -200,7 +200,14 @@ void test_ocean_drowns_who_cannot_reach_the_shore() {
         for (int x = 0; x < 26; ++x) paint_water(grid, x, y);
 
     {   // Near the shore: out in debt, bled but alive.
-        auto e = make_walker(w, 23.0f, 10.0f, 30.0f, 10.0f, /*maxSp*/8,
+        // The bar is what makes a shore NEAR — not the cell count. Water is
+        // 20 SP a cell since the 2026-09-09 recalibration (kStaminaPerCell 2),
+        // and the bite takes the WHOLE outstanding debt every step, so an
+        // empty-legged body three cells out now owes 12 + 32 + 52 HP and drowns
+        // one step short: that is the law working, not a regression. A bar that
+        // covers most of the swim is what "near" has always meant — he wades
+        // the first cells on his legs and pays only the last one in blood.
+        auto e = make_walker(w, 23.0f, 10.0f, 30.0f, 10.0f, /*maxSp*/40,
                              /*hp*/30.0f);
         MacroNpcAiRuntime rt{};
         reset_macro_npc_ai_runtime(rt, 23u);
@@ -377,12 +384,14 @@ void test_road_bar_lasts_a_days_march() {
     const auto& p = w.reg.get<ecs::Position>(e);
     const float cells = p.x - 10.0f;
     const float hours = float(thinks) * kAiTickGameHours;
-    // DERIVED, never pinned: a fresh bar buys maxSp / (roadBed ×
-    // kStaminaPerCell) road cells, and the clock is cells / pace. Under the
-    // 2026-08-24 recalibration (base 1 SP × weight, 8 cells/h) that is ~110
-    // cells over ~13¾ h — the road stretches a walker past the open-country
-    // day, which is why roads are worth building. The bands are ±10% so the
-    // owner can retune the data without touching this file.
+    // DERIVED, and that used to be the WHOLE test — which is why it never
+    // fired. `expectCells` reads the same two constants the march reads, so
+    // when the 2026-08-24 recalibration moved their product 1.75× the walk and
+    // the expectation moved together and the file stayed green under a heading
+    // that said "~8 game hours" while the body walked 13¾ (owner caught it in
+    // play, 2026-09-09). A tautology guards the FORMULA, never the DESIGN.
+    // It is kept — the formula is worth guarding — and the design is pinned
+    // separately below, in literals no knob can move.
     // The leg ends at the CAMP MARGIN, not at zero (npc_ai.h
     // kCampBarDivisor — the same number the automaton reads).
     const float expectCells =
@@ -395,6 +404,32 @@ void test_road_bar_lasts_a_days_march() {
           "a fresh bar buys maxSp/(bed x kStaminaPerCell) road cells");
     CHECK(hours > expectHours * 0.9f && hours < expectHours * 1.1f,
           "and the march clock is cells over the derived pace");
+
+    // ── THE DESIGN, in literals ──────────────────────────────────────────
+    // A day's march, camp by nightfall: a fresh bar buys 6-9 game hours of
+    // road and not a day and a half. The same band movement_cost.h asserts at
+    // compile time (kRoadHoursPerFreshBar) — said twice on purpose, because
+    // the static_assert guards the constants and THIS guards the squad that
+    // actually walks on them. 5/8 of the bar is spent by the camp margin, so
+    // the measured leg is compared against the full-bar figure scaled by it.
+    CHECK(kRoadHoursPerFreshBar > 6.0f && kRoadHoursPerFreshBar < 9.0f,
+          "a fresh bar buys a DAY of road, not a day and a half");
+    const float legShare = 1.0f - 1.0f / float(kCampBarDivisor);
+    CHECK(hours > kRoadHoursPerFreshBar * legShare * 0.9f
+          && hours < kRoadHoursPerFreshBar * legShare * 1.1f,
+          "and the squad that walks it agrees with the stated anchor");
+
+    // The bar the anchor is stated against is the bar the SHEET hands a fresh
+    // level-1 body — the literal in movement_cost.h cannot drift away from
+    // attributes.h without this line saying so.
+    CHECK(calculate_combat_stats(Attributes{}, Skills{}).maxSp
+              == int(kFreshBarSp),
+          "kFreshBarSp is the bare level-1 bar the sheet actually builds");
+
+    // The road stays dearer than standing still: a stop-and-go march must lose
+    // ground, or stamina is an allowance again («SP не тратится вообще»).
+    CHECK(kRoadStaminaPerHour > kFreshBarSp * kRestRegenPctPerHour,
+          "an hour of road costs more than an hour of rest returns");
 }
 
 // ── The regen gate is «остановился», not «не сдвинулся в этот раз» ────────
