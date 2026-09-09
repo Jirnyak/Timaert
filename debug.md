@@ -282,12 +282,21 @@ spawn_squad_at_player,subworld_enter,macro_kill_writeback   # the spawn goes FIR
 ```
 
 `spawn_squad_at_player` refuses inside a subworld by construction, so it leads
-the chain rather than following the entry. `wait_visible` is the quiet one: it
-passes after `subworld_enter` or `open_map` and fails on every seed when it
-stands alone, so give it a scene to judge. The first full-suite sweep of
+the chain rather than following the entry. The first full-suite sweep of
 2026-09-09 spent four false reds learning exactly this — the composition is not
-guessable from the token table (`smoke.cpp:49`), and it is not written anywhere
-else.
+guessable from the token table (`smoke.cpp:49`).
+
+**The suite is DATA now: `smoke_suite.txt`, one line per scenario.**
+
+```bash
+sh smoke.sh all                  # the whole suite on the pinned seed
+sh smoke.sh all 12345,1,7,999    # the whole suite on four worlds
+```
+
+`all` refuses to run at all if a token in `smoke.cpp`'s table appears in no
+line of the suite, and names it — so a scenario added and forgotten is caught
+on the next run instead of going unrun for a month. The three tokens smoke.sh
+supplies itself (`new_game`, `wait_boot_done`, `quit`) are the only exemptions.
 
 **And a red from a long sweep is a HYPOTHESIS until a lone run repeats it.**
 Three macro-time scenarios — `macro_recovery`, `chronicle_rate`,

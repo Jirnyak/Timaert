@@ -438,7 +438,7 @@ Launch path:
 | Windows/MSVC build | VERIFIED | Canonical `build-msvc` command passes as of 2026-05-15 and links `timaert.exe` plus the executable test targets. This is not gameplay parity evidence. |
 | SDL stack | VERIFIED | CMake requires SDL2 and native SDL2_mixer with MP3 support; SDL3 is invalid for this repo. |
 | No exceptions / no RTTI | VERIFIED BY BUILD FLAGS | CMake applies `/GR- /EHs-c-` on MSVC and `-fno-rtti -fno-exceptions` elsewhere. |
-| Runtime smoke artifacts | LOCAL ONLY | Root `runtime_*`, `smoke_*`, and `save.bin` artifacts belong under ignored `artifacts/runtime-smoke/`; `.gitignore` also keeps legacy root patterns ignored. |
+| Runtime smoke artifacts | LOCAL ONLY | Root `runtime_*`, `smoke_*`, and `save.bin` artifacts belong under ignored `artifacts/runtime-smoke/`; `.gitignore` also keeps legacy root patterns ignored. **One exception, tracked on purpose: `smoke_suite.txt`** — that is not an artifact but THE list of scenarios `sh smoke.sh all` runs, and it matches the `/smoke_*.txt` pattern only by accident of naming (`.gitignore` carries an explicit `!` line for it). |
 
 ### Test / Smoke Infrastructure
 
