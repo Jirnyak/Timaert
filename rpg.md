@@ -336,11 +336,25 @@ one lerp plain→gold over n/cap, no hardcoded rarity shelves) and
 `draw_item_ref_bonuses` (innate + rolled, one line style). Console:
 `roll <itemId> [power]`, `loot <profileId> [rolls] [power]`.
 
+**Delivery — how a row's blow travels (shooting law, 2026-09-09)**: a
+weapon row carries `delivery` (Melee / Missile / Thrown) and `range`. A
+Missile row (the appended `wpn_bow`) makes its wielder a Missile attacker
+through the SAME strike assembly: `hand_strike_fields` marks the delivery,
+the body's `ecs::Combat` learns kind + the row's range on the same per-tick
+refresh as the dice, and the attack press looses through
+`spawn_npc_missile` — the one door every NPC shooter already uses (wound
+rolled at loose, muzzle cleared, eye height both ends). NO ammo exists
+(ARPG conceit, owner verdict) and a missile blow takes NO attribute add —
+dice + typed skill + LCK; range is the compensation, a future firearm is
+the same law with fatter flat dice (worn DmgFlat affixes still speak: that
+is equipment's voice, not the body's). The loose pays the same recovery
+gate from the same kilogram. `Thrown` is the reserved third value — the
+item itself flies; it awakens after the demo.
+
 **Known edges (owner-ruled, queued)**: trade must hang off VALUE
 universally — a context-priced `value_of` (affixes, material, quality…) and
 per-instance counters (today the counters trade by id at the bare row's
-price); the bow waits for the universal shooting/throwing design pass;
-`material`/`quality` bytes ride the save with no readers yet.
+price); `material`/`quality` bytes ride the save with no readers yet.
 
 ## Renown — what the world thinks a band has done
 
