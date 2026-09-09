@@ -1674,9 +1674,10 @@ Magic-gated, version-gated, regenerate-from-seed. **No save compatibility:**
 bump `kSaveVersion` for any breaking change to serialised data; existing
 saves are silently invalidated.
 
-Current save schema is `kSaveVersion = 18` in
+Current save schema is `kSaveVersion = 83` in
 [macro/state.h](src/macro/state.h) — the file's own comment block is the
-authoritative changelog, bump by bump. The most recent: 17→18, where the world
+authoritative changelog, bump by bump, and the number here has been stale
+before; read it there. Kept for the record, 17→18, where the world
 clock became ONE integer tick (`core/time.h`), so three ints shrank to one
 `uint64` and a save now states the instant exactly, to 1/64 of a real second
 (see [time.md](time.md)). Per the no-compat rule the loader hard-rejects any
@@ -1687,6 +1688,19 @@ binary writer/reader and harness evidence are verified by
 `save_roundtrip_test`; GUI round-trip smoke
 `new_game,wait_boot_done,save_game,open_load,load_game,wait_boot_done,quit`
 passed with a 51733-byte v10 save slot.
+
+**A load has TWO halves, and only one of them is a test's business.** File→
+`GameState` is `load_game`, and `save_roundtrip_test` proves it. The other half
+is APPLY: `boot_world_from_save` (`app/main.cpp`) raises the world from the
+saved seed and then replaces it with the world the file names — that half lives
+among renderers and the ECS, so no unit test can reach it. It used to be a
+hand-written list of assignments and it silently dropped five fields
+(problems.md §38). It is now INVERTED: the file owns thirty of `GameState`'s
+thirty-two fields, genesis owns two (`politik`, `sessionFeed`), and the rest
+arrives as one `std::move`. Its witness is `save_payload_fingerprint`
+(`macro/save.h`) — the same `write_payload` with the timestamp held fixed,
+checksummed, taken before the fold and after it, so **the writer enumerates the
+fields, not a human**. A truth added to the save is guarded the day it is added.
 
 ---
 

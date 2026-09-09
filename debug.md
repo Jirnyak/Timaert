@@ -269,6 +269,37 @@ never re-pin the number** — it now counts STEPS (Chebyshev, so a diagonal hop
 costs one while spanning √2) and asks the glide to land strictly between start
 and finish in any direction.
 
+**A scenario is not always a TOKEN.** Five tokens need a scene standing before
+them and say so on their own failure line; run them bare and you get a red that
+is your call, not the game's:
+
+```
+subworld_enter,subworld_walk
+subworld_enter,fauna_kill_writeback
+subworld_enter,cast_bolt_capture
+subworld_enter,light_probe_capture
+spawn_squad_at_player,subworld_enter,macro_kill_writeback   # the spawn goes FIRST
+```
+
+`spawn_squad_at_player` refuses inside a subworld by construction, so it leads
+the chain rather than following the entry. `wait_visible` is the quiet one: it
+passes after `subworld_enter` or `open_map` and fails on every seed when it
+stands alone, so give it a scene to judge. The first full-suite sweep of
+2026-09-09 spent four false reds learning exactly this — the composition is not
+guessable from the token table (`smoke.cpp:49`), and it is not written anywhere
+else.
+
+**And a red from a long sweep is a HYPOTHESIS until a lone run repeats it.**
+Three macro-time scenarios — `macro_recovery`, `chronicle_rate`,
+`macro_travel_sp` — went red inside a 268-run sweep and green every time they
+were run alone (7 of 7, then 6 of 6 in repeats). All three failed the same way:
+the world got no time (`minutes=0`, `day=1->1`, 600 frames without a single
+cell). The tell is on the clock — `chronicle_rate` takes 8–9 s when it passes
+and 3–4 s when it fails, i.e. it left early rather than went and did not arrive.
+Not reproducible on demand: not by repetition, not under ten CPU burners. Cause
+unknown; **the practical rule is that these three carry no verdict about the
+code until a solo run agrees.**
+
 ### 7.0 Is the crowd's BRAIN dead, or its EYE? (`TIMAERT_NPC_VISUAL_TRACE`)
 
 ```bash
