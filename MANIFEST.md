@@ -51,7 +51,7 @@ README, which orchestrates them.
 | Biomes | [biomes.md](biomes.md) | 3×3 climate matrix + Water/Mountain by elevation, procedural GPU biome textures |
 | Landmarks | [landmarks.md](landmarks.md) | Settlements, spires, dungeons, markers |
 | Features | [features.md](features.md) | Roads, dirt roads, fields, BRIDGES (the road's one-cell water crossing) + the two movement laws they uncovered: ONE mover for every body incl. the player, and ONE ground law shared by both scales |
-| Spells | [spells.md](spells.md) | Spell book, cooldowns, mana, effect modules |
+| Spells | [spells.md](spells.md) | Spell book, the body's one recovery gate (no per-spell cooldowns since v83), mana, effect modules |
 | RPG system | [rpg.md](rpg.md) | Attributes, XP, items, inventory, equipment, affixes (one issuance door, 2026-09-07) |
 | Economy | [economy.md](economy.md) | Settlement inventories, prices, trade tick |
 | Zones | [zones.md](zones.md) | The danger CONTINUUM — one byte 0..255 per cell; the old 0–9 steps survive as display bands only |
@@ -306,7 +306,8 @@ README, which orchestrates them.
   world map as gold "!" pins — a *derived* overlay on the universal marker layer
   (one pin per incomplete world-anchored objective, all targets of every quest),
   rebuilt only when the quest set changes and toggled/scaled from UI settings.
-- Modular spell system: spell book, cooldowns, mana regen.
+- Modular spell system: spell book, instant casts over the body's one
+  recovery gate (per-spell cooldowns died v83), mana regen.
 - ImGui debug HUD + Diplomacy / Settlement / Quest / Codex / Map overlays.
 - One universal UI settings registry (macro + micro): every HUD element and
   pop-up panel toggles on/off and resizes from a single "Interface" pause-menu
