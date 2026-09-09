@@ -78,6 +78,18 @@ Tile dungeon_floor_tile(const DungeonRef& ref);
 // a module that stamps none stands under the honest sky.)
 struct DungeonKindRow {
     std::uint8_t kind;       // DungeonRef::Kind — rows_in_enum_order guard
+    // The kind's NAME, the way every registry in the game is addressed
+    // (an npc row's id, an item's, a faction's). It is what lets a scene be
+    // authored in content/ — which never includes sub/ — without a magic
+    // ordinal: the scene says "prologue_road", this layer resolves it.
+    const char* id;
+    // What DYING here means. nullptr = death is death (the default and the
+    // CANON law). A name = the logic node death ACTIVATES instead: the
+    // scene's own story beat, keyed on the place rather than on the player,
+    // so the damage door and the game-over path stay untouched. Its node
+    // fires on the next logic tick — a story shown from gameplay goes
+    // through a node, never a raw event (see the runtime's intercept).
+    const char* deathNode;
     bool householdAbove;     // storeys ≥0 borrow RESIDENTS from Population
     bool verminAbove;        // storeys ≥0 draw VERMIN from FaunaCount
                              //   (a cellar, level<0, is always a den)
@@ -101,6 +113,10 @@ struct DungeonKindRow {
 // Void (0xFF) and anything unknown read the None row: no people, no beasts,
 // no hatch — filler is inert by the same columns that make a house lively.
 const DungeonKindRow& dungeon_kind_row(std::uint8_t kind);
+
+// The kind a name addresses (DungeonRef::None when nothing answers) — the
+// same token→row scan every registry here uses.
+std::uint8_t dungeon_kind_from_token(const char* token);
 
 // Interior room rectangle (cell-local tile coords) derived from the door's
 // exterior footprint — the ONE geometry rule shared by the generator, the

@@ -65,9 +65,17 @@ rather than data plumbed between them.
 `sub/dgn/dispatch.{h,cpp}` mirrors `sub/gens/dispatch`: one self-contained TU
 per kind, routed by `DungeonRef::kind`. What a kind IS behaviourally lives in
 **`kDungeonKindRows`** (2026-09-09, the CANON S17 "open pocket" groundwork):
-one row per kind — household/vermin population law, den family, shaft-ladder
-vs fixed pairs, roof hatch, water level, ring filler — under the
-`rows_in_enum_order` guard. The session reads columns instead of comparing
+one row per kind — its registry `id`, its `deathNode`, household/vermin
+population law, den family, shaft-ladder vs fixed pairs, roof hatch, water
+level, ring filler, scene biome, wrap block — under the `rows_in_enum_order`
+guard. Two of those columns carry laws worth naming: **`id`** is how a scene
+authored in `content/` (which never includes `sub/`) names a pocket without
+a magic ordinal, resolved by the same token scan every registry here uses;
+**`deathNode`** is what dying in that place MEANS — `nullptr` everywhere but
+the prologue, where it names the logic node death activates instead of the
+game over. Death being the end of the game stays the law (CANON S17); a
+PLACE may say otherwise about itself, and it says so in a column rather than
+in a branch that names the prologue in the runtime. The session reads columns instead of comparing
 kinds, so a new kind is a row and a module, not a hunt for scattered
 branches. (The sky needs no column: a ceiling is module masonry, and a module
 that stamps none stands under the honest sky.) A module owes three answers:
@@ -118,7 +126,7 @@ already flushed the bus and captured this tick's presentations, so a raw
 event is wiped before anything can show it. A story shown from gameplay goes
 through a NODE, which is why the arrival slide always worked.
 
-The plot populates the pocket (`begin_prologue`'s ambush); the
+The plot populates the pocket (the scene row's cast, placed by `begin_scene`); the
 household/vermin columns are off. The ambushers are their own creature —
 **`NPCType::RoadAmbusher`** (owner 2026-09-09), a bandit in body, sprite,
 behaviour, sheet and loot, appended to the one table so no saved ordinal
@@ -150,13 +158,13 @@ per-role `kNpcLootId` list, and ambient fauna never raises it (habitat 0).
 
 **The map is shut while the opening plays.** The optical sweep
 (`update_player_sight`) runs above the pause gate, so a scene alone will not
-stop it: `begin_prologue` raises `App::prologueHoldsMap` and the witch's
+stop it: `begin_scene` raises `App::sceneHoldsMap` from the scene row's own `holdsMap` column and the witch's
 StoryResult drops it, which is why the world's first sight arrives with the
 arrival slide instead of filling in behind the prologue (owner, playtest 2 —
 an opened map under the opening scene ruins the immersion). Session state
 only: a dungeon is never saved, so a load lands in the world with the map
 opening normally. The smoke harness skips the prologue at
-boot exactly as it skips the intro (`begin_prologue`'s smoke branch).
+boot exactly as it skips the intro (the boot door's smoke branch).
 
 **`spire_tower.cpp` climbs.** One round hall per storey (the exterior 7-tile
 cylinder at the shared ×4 interior scale), a masonry ring of oriented chords,
@@ -328,5 +336,5 @@ to unified combat).
 | smoke `dungeon_house` | enter through the aimed door, land on floor, household + population write-back, storeys, cellar vermin + fauna write-back, chest moves goods and costs standing, well and board, the leave key REFUSES inside, tile-hash determinism |
 | smoke `dungeon_cave` | hunts a real mouth in the world, enters, hoard present, no stairs, the leave key refuses hunted AND clear, the walked exit through the mouth door lets go |
 | `dungeon_prologue_test` | 3×3 block continuity (every variant seam — including across the wrap — no rougher than the interior, the bed continues down the road column), full-width bed in every road-cell row and NONE in forest cells, entry pad on the bed, no walls/lid, forest in force in every variant with distinct woods, kind-row columns, determinism |
-| smoke `prologue_road` | drives `begin_prologue` itself (the shipping door, not a copy): the ambush waits SEVEN strong beyond the generic detection radius, carries its OWN row's HP, and CLOSES the gap once the world runs (~267 → ~120 units in four seconds — the 1000 m eye proven as behaviour, not read off a table), leave key refuses, no exit point, a mid-cell bandit survives a wrap crossing, three crossings loop the block back to the same ground (async seam drained), the RESCUE (scalar death → Playing, healed, anchored on the boot spot) with the witch overlay actually OPEN, and the MAP LAW both ways on unexplored ground — frozen while held, revealed the moment her StoryResult lands. Both new laws were negative-controlled by hand: the raw-emit rescue fails `witchOpen`, an unheld map fails `mapHeld` |
+| smoke `prologue_road` | drives `begin_scene` on the authored `prologue_scene()` row itself (the shipping door, not a copy): the ambush waits SEVEN strong beyond the generic detection radius, carries its OWN row's HP, and CLOSES the gap once the world runs (~267 → ~120 units in four seconds — the 1000 m eye proven as behaviour, not read off a table), leave key refuses, no exit point, a mid-cell bandit survives a wrap crossing, three crossings loop the block back to the same ground (async seam drained), the RESCUE (scalar death → Playing, healed, anchored on the boot spot) with the witch overlay actually OPEN, and the MAP LAW both ways on unexplored ground — frozen while held, revealed the moment her StoryResult lands. Both new laws were negative-controlled by hand: the raw-emit rescue fails `witchOpen`, an unheld map fails `mapHeld` |
 | smoke `spire_climb` | the whole spire loop live: yard fight (the danger law holds the gate while demons roam), gate, every storey's guard, roof hatch onto the crown (Δz = the tower height), orb → spell learned + spire depleted + orb gone + log entry; STAY hooks (`TIMAERT_SMOKE_SPIRE_STAY=ground\|hall\|roof`) for photo regressions |

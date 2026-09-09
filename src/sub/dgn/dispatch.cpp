@@ -46,22 +46,29 @@ Tile dungeon_floor_tile(const DungeonRef& ref) {
     }
 }
 
-// kind, household≥0, vermin≥0, den family, ladder, hatch, water, ring,
-// scene biome (rock ring for interiors), wrap block (0 = static window)
+// kind, id, death node, household≥0, vermin≥0, den family, ladder, hatch,
+// water, ring, scene biome (rock ring for interiors), wrap block (0 = static)
 constexpr DungeonKindRow kDungeonKindRows[] = {
-    { DungeonRef::None,       false, false, LandmarkType::Ruin,
+    { DungeonRef::None,       "none",   nullptr,
+                              false, false, LandmarkType::Ruin,
                               false, false, 0.0f, DungeonRef::Void,
                               Biome::Mountain, 0 },
-    { DungeonRef::House,      true,  false, LandmarkType::Ruin,
+    { DungeonRef::House,      "house",  nullptr,
+                              true,  false, LandmarkType::Ruin,
                               false, false, 0.0f, DungeonRef::Void,
                               Biome::Mountain, 0 },
-    { DungeonRef::Cave,       false, true,  LandmarkType::Ruin,
+    { DungeonRef::Cave,       "cave",   nullptr,
+                              false, true,  LandmarkType::Ruin,
                               false, false, 0.0f, DungeonRef::Void,
                               Biome::Mountain, 0 },
-    { DungeonRef::SpireTower, false, true,  LandmarkType::Spire,
+    { DungeonRef::SpireTower, "spire_tower", nullptr,
+                              false, true,  LandmarkType::Spire,
                               true,  true,  0.0f, DungeonRef::Void,
                               Biome::Mountain, 0 },
-    { DungeonRef::PrologueRoad, false, false, LandmarkType::Ruin,
+    // The one place in the world where dying is a story beat: the witch
+    // takes the body the road took (release.md §3 scene 2).
+    { DungeonRef::PrologueRoad, "prologue_road", "prologue_main",
+                              false, false, LandmarkType::Ruin,
                               false, false, 0.0f, DungeonRef::Void,
                               Biome::Taiga, 3 },
 };
@@ -71,6 +78,18 @@ static_assert(rows_in_enum_order(kDungeonKindRows, &DungeonKindRow::kind),
 const DungeonKindRow& dungeon_kind_row(std::uint8_t kind) {
     return kind < std::size(kDungeonKindRows) ? kDungeonKindRows[kind]
                                               : kDungeonKindRows[0];
+}
+
+std::uint8_t dungeon_kind_from_token(const char* token) {
+    if (token == nullptr) return DungeonRef::None;
+    for (const DungeonKindRow& row : kDungeonKindRows) {
+        if (row.id == nullptr) continue;
+        const char* a = token;
+        const char* b = row.id;
+        while (*a != '\0' && *a == *b) { ++a; ++b; }
+        if (*a == '\0' && *b == '\0') return row.kind;
+    }
+    return DungeonRef::None;
 }
 
 DungeonRoom dungeon_room(const DungeonRef& ref) {
