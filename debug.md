@@ -269,6 +269,33 @@ never re-pin the number** — it now counts STEPS (Chebyshev, so a diagonal hop
 costs one while spanning √2) and asks the glide to land strictly between start
 and finish in any direction.
 
+### 7.0 Is the crowd's BRAIN dead, or its EYE? (`TIMAERT_NPC_VISUAL_TRACE`)
+
+```bash
+TIMAERT_NPC_VISUAL_TRACE=1 ./build/timaert 2>&1 | tee /tmp/npcvis.log
+```
+
+One stderr line a second while the macro map is live:
+
+```
+[npcvis] ticks=60/60f npcs=185 moved=16/16 gliding=104 maxGap=1.37 worst=143 \
+         pos=618.00,326.00 vis=618.97,326.97 vspeed=2.83 state=2
+```
+
+`moved` counts sampled squads whose **Position** changed since the last line —
+the AI walking. `gliding` counts squads whose **VisualPos** is still chasing a
+Position it has not reached — the eye following. `ticks` is what the turn bought
+the world, i.e. the numerator the smoothing is fed.
+
+Read it as a two-by-two: `moved=0` is a dead brain; `moved>0` with `ticks=0` is
+a dead eye. The second is not hypothetical — it is exactly how every AI squad in
+the world froze at its spawn cell for a day (problems.md §37) while marching on
+underneath. Zoom matters when you check by eye instead: squads only draw at
+`zoom >= 10` px/cell.
+
+`ticks=0` is also the LEGITIMATE reading on pause — the world lives no ticks, so
+bodies hold their intermediate positions on purpose.
+
 ### 7.1 Seam-crossing profiling (the one that bites)
 
 A subworld cell crossing is the spikiest frame in the game. Two env vars:

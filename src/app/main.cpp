@@ -3427,12 +3427,23 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
 // Run the world for N fixed steps and fold the per-step results into one
 // summary. Counters add up; the flags report where the world ENDED, because a
 // step in the middle of the run may have entered or left the subworld.
+//
+// EVERY counter adds up — the hard way to learn it was `ticksAdvanced`, which
+// this fold silently dropped from the day the integer tick was introduced. It
+// cost nothing while the return value was discarded (this ran for its side
+// effects), and it cost EVERYTHING the moment frame() started dividing by it:
+// the macro NPC smoothing got dt = 0 forever, stopped writing VisualPos, and
+// every AI squad on the map froze at its spawn cell while its Position marched
+// on unseen (owner, in play, 2026-09-09). A field omitted from a hand-written
+// fold-up is invisible until someone reads it; run_macro_npc_trace_smoke now
+// keeps a witness on this loop's arithmetic.
 RuntimeFrameStats advance_sim_steps(App& app, int steps, bool allowInput) {
     RuntimeFrameStats total{};
     for (int i = 0; i < steps; ++i) {
         const RuntimeFrameStats s = tick_playing_runtime(app, allowInput);
         total.ticked = total.ticked || s.ticked;
         total.subworldActive = s.subworldActive;
+        total.timeTick.ticksAdvanced += s.timeTick.ticksAdvanced;
         total.timeTick.minutesAdvanced += s.timeTick.minutesAdvanced;
         total.timeTick.hoursAdvanced += s.timeTick.hoursAdvanced;
         total.timeTick.daysAdvanced += s.timeTick.daysAdvanced;
@@ -5066,6 +5077,81 @@ void apply_shell_actions(App& app, const sm::ui::ShellResult& r) {
     if (r.quit)          app.running = false;
 }
 
+// TIMAERT_NPC_VISUAL_TRACE=1: one stderr line a second on the macro map,
+// answering the only question a frozen crowd raises — is it the BRAIN or the
+// EYE? `moved` counts squads whose Position changed since the last line (the
+// AI walking), `gliding` counts squads whose VisualPos is chasing a Position
+// it has not reached (the eye following). Brain dead reads moved=0; eye dead
+// reads moved>0 with a `ticks=0` denominator, which is exactly the shape of
+// the bug this trace was written for (advance_sim_steps dropping
+// ticksAdvanced, 2026-09-09).
+void trace_macro_npc_visuals(App& app, int ticksAdvanced) {
+    static const bool on = std::getenv("TIMAERT_NPC_VISUAL_TRACE") != nullptr;
+    if (!on) return;
+    struct Seen { std::uint32_t id; float x, y; };
+    constexpr int kWatched = 16;              // a sample, not a census
+    static Seen prev[kWatched] = {};
+    static int  prevCount = 0;
+    static int  frames = 0;
+    static int  ticks = 0;
+    ticks += ticksAdvanced;
+    if (++frames < 60) return;                // ~one line per second
+
+    Seen now[kWatched] = {};
+    int  nowCount = 0;
+    int  npcs = 0, gliding = 0, moved = 0;
+    float maxGap = 0.0f;
+    entt::entity sample = entt::null;
+    auto view = app.ecs.reg.view<sm::ecs::Position, sm::ecs::VisualPos,
+                                 sm::ecs::MacroNpcRuntime>(
+        entt::exclude<sm::ecs::Dead, sm::ecs::SubworldTag,
+                      sm::ecs::PlayerTag, sm::ecs::PlayerSquadTag>);
+    for (auto e : view) {
+        const auto& p = view.get<sm::ecs::Position>(e);
+        const auto& v = view.get<sm::ecs::VisualPos>(e);
+        ++npcs;
+        const float gap = sm::torus_dist(p.x, p.y, v.vx, v.vy,
+                                         float(app.gs.mapW),
+                                         float(app.gs.mapH));
+        if (gap > 0.01f) ++gliding;
+        if (gap > maxGap) { maxGap = gap; sample = e; }
+        if (nowCount < kWatched)
+            now[nowCount++] = Seen{entt::to_integral(e), p.x, p.y};
+    }
+    for (int i = 0; i < nowCount; ++i)
+        for (int j = 0; j < prevCount; ++j)
+            if (now[i].id == prev[j].id
+                && (std::fabs(now[i].x - prev[j].x) > 0.001f
+                    || std::fabs(now[i].y - prev[j].y) > 0.001f)) {
+                ++moved;
+                break;
+            }
+
+    float px = 0.0f, py = 0.0f, vx = 0.0f, vy = 0.0f, vspeed = 0.0f;
+    int   sstate = -1;
+    if (sample != entt::null) {
+        const auto& p = app.ecs.reg.get<sm::ecs::Position>(sample);
+        const auto& v = app.ecs.reg.get<sm::ecs::VisualPos>(sample);
+        const auto& rt = app.ecs.reg.get<sm::ecs::MacroNpcRuntime>(sample);
+        px = p.x; py = p.y; vx = v.vx; vy = v.vy;
+        vspeed = rt.visualSpeed;
+        sstate = int(rt.state);
+    }
+    std::fprintf(stderr,
+                 "[npcvis] ticks=%d/60f npcs=%d moved=%d/%d gliding=%d "
+                 "maxGap=%.2f worst=%u pos=%.2f,%.2f vis=%.2f,%.2f "
+                 "vspeed=%.2f state=%d\n",
+                 ticks, npcs, moved, prevCount, gliding,
+                 maxGap, unsigned(entt::to_integral(sample)),
+                 px, py, vx, vy, vspeed, sstate);
+    std::fflush(stderr);
+
+    for (int i = 0; i < nowCount; ++i) prev[i] = now[i];
+    prevCount = nowCount;
+    frames = 0;
+    ticks = 0;
+}
+
 // One turn of the loop: `simSteps` ticks of the world, then one drawn frame.
 // Normally one tick (a `simspeed` other than 1 is the only reason it differs).
 //
@@ -5111,6 +5197,7 @@ void frame(App& app, int simSteps) {
         sm::tick_macro_npc_visuals(app.ecs, app.gs.mapW, app.gs.mapH,
                                    float(turn.timeTick.ticksAdvanced)
                                        * sm::kStepSeconds);
+        trace_macro_npc_visuals(app, turn.timeTick.ticksAdvanced);
     }
     sync_audio_music(app);
 

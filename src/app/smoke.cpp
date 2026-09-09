@@ -1784,23 +1784,54 @@ bool run_macro_npc_trace_smoke(App& app) {
         && glidedMid < marched
         && std::fabs(visualEnd - logicalX) < 0.001f;
 
+    // ── The DENOMINATOR the loop actually feeds that smoothing ────────────
+    //
+    // Everything above hands tick_macro_npc_visuals a dt of its own choosing,
+    // which tests the glide and NOT the wiring: the loop reads
+    // advance_sim_steps().timeTick.ticksAdvanced and multiplies it by
+    // kStepSeconds, and that fold-up quietly returned zero for months because
+    // one `+=` was missing from a hand-written list of fields. Nothing went
+    // red; every AI squad on the map simply stopped where it stood while its
+    // Position marched on unseen (owner, in play, 2026-09-09).
+    //
+    // So the witness stands on the FOLD, where the hole was: N macro steps
+    // must report N world ticks. A field dropped from that loop again fails
+    // here instead of in someone's hands.
+    // Snapshot the two live references first: advance_sim_steps runs the real
+    // world, and the corpse sweep inside it may destroy the traced entity out
+    // from under `kind`/`rt` (the lane comment above records that happening on
+    // seed 999).
+    const int tracedKind = int(kind.type);
+    const int tracedMarathon = int(rt.marathonRank);
+    const int foldSteps = int(sm::kAiTicks);
+    const RuntimeFrameStats folded =
+        advance_sim_steps(app, foldSteps, /*allowInput*/false);
+    const bool foldCountsTicks =
+        folded.timeTick.ticksAdvanced == foldSteps;
+    const float loopDt =
+        float(folded.timeTick.ticksAdvanced) * sm::kStepSeconds;
+    const bool loopDtIsLive = loopDt > 0.0f;
+
     std::fprintf(stderr,
                  "[smoke] macro_npc_trace entity=%u kind=%d marathon=%d "
                  "maxSp=%d "
                  "rest=%d:%d recovered=%d move=%.1f,%.1f->%.1f,%.1f "
-                 "steps=%d marched=%.2f visual=%.2f->%.2f->%.2f\n",
+                 "steps=%d marched=%.2f visual=%.2f->%.2f->%.2f "
+                 "foldTicks=%d/%d loopDt=%.4f\n",
                  unsigned(entt::to_integral(e)),
-                 int(kind.type), int(rt.marathonRank),
+                 tracedKind, tracedMarathon,
                  maxSp,
                  recoveredSp,
                  recoveredState,
                  recovered ? 1 : 0,
                  float(baseX), float(baseY), logicalX, logicalY,
                  steps, marched,
-                 visualBefore, visualMid, visualEnd);
+                 visualBefore, visualMid, visualEnd,
+                 folded.timeTick.ticksAdvanced, foldSteps, loopDt);
     std::fflush(stderr);
 
-    if (!recovered || !logicalMoved || !visualSmoothed) {
+    if (!recovered || !logicalMoved || !visualSmoothed
+        || !foldCountsTicks || !loopDtIsLive) {
         smoke_fail(app, "macro_npc_trace invariant");
         return false;
     }
