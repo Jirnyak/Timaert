@@ -361,6 +361,11 @@ constexpr NpcLootRow kNpcLootId[std::size_t(NPCType::Count)] = {
     {NPCType::Vendor,       nullptr},
     {NPCType::SilverMiner,  nullptr},
     {NPCType::TaxCollector, nullptr},
+    // The ambusher's ordinal falls past the creature boundary (npc.h
+    // is_creature_row is a plain ordinal line and this row is appended), so
+    // he names his drop in his OWN lootId column like every creature does —
+    // the per-ROLE list stops where the roles stop.
+    {NPCType::RoadAmbusher, nullptr},
 };
 static_assert(rows_in_enum_order(kNpcLootId, &NpcLootRow::type),
               "kNpcLootId row order must mirror NPCType");

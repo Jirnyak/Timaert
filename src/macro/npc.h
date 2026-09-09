@@ -49,6 +49,13 @@ enum class NPCType : std::uint8_t {
     // The feudal graph's carrier (CANON S24): walks the town's tithe up to
     // its capital — «налог течёт по рёбрам носителями». Appended.
     TaxCollector,
+    // The prologue's ambush (owner 2026-09-09): a bandit in every respect
+    // that matters — same body, same fight, same loot — who WATCHES THE
+    // WHOLE ROAD. Its own row rather than a tuned Bandit, so the world's
+    // bandits keep their ordinary eyes and the opening scene keeps its
+    // teeth: perception is a property of the creature, so a creature that
+    // lies in wait is a creature, not a flag. Appended.
+    RoadAmbusher,
     Count,
 };
 
@@ -231,6 +238,23 @@ inline constexpr CombatTemplate kMerchantCombat  {30,{5,1}, 1.25f, 2.0f, 3.0f, "
 inline constexpr CombatTemplate kCaravanCombat   {25,{4,1}, 1.5f, 2.0f, 3.0f, "Cvn", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
 inline constexpr CombatTemplate kBanditCombat    {50,{12,1}, 2.25f, 3.0f, 2.5f, "Bnd", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
 inline constexpr CombatTemplate kGuardCombat     {55,{14,1}, 1.75f, 3.0f, 2.5f, "Grd", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
+// The ambusher fights EXACTLY like a bandit — every number above is his —
+// and differs in one column: he sees the whole road. 1000 m against a
+// prologue block three cells wide means there is nowhere in that scene to
+// walk unseen, which is what an ambush is. The trailing two are spelled out
+// because this template is positionally initialised: bodyHeight (0 = the
+// body table decides) then sight, or the number would land in the wrong
+// field without a word from the compiler.
+// HP 100 (owner's number) against the bandit's 50: the scene ENDS in his
+// death — the witch is the pocket's only exit — so a level-1 character must
+// not be able to fight his way out of the story. He opens with FISTS (the
+// creation kit carries coin, bread and two potions, no weapon, and there is
+// no shop before the road), so 1d2 + STR against three of these is 60-odd
+// connected blows while they answer.
+// Their DAMAGE is the bandit's, untouched (owner: «но не ваншотеров»): 12 a
+// blow every 2.5 s against ~130 player HP is eleven blows — a real fight
+// that he loses, not an execution.
+inline constexpr CombatTemplate kAmbusherCombat  {100,{12,1}, 2.25f, 3.0f, 2.5f, "Amb", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu, /*bodyHeight*/0.0f, /*sight*/1000.0f};
 inline constexpr CombatTemplate kWitchCombat     {60,{18,1}, 1.5f, 20.0f,4.0f, "Wtc", CombatTemplate::Missile, 180, 0, 0xFFA070D0u};
 inline constexpr CombatTemplate kSorceressCombat {70,{22,1}, 1.25f, 25.0f,3.6f, "Src", CombatTemplate::Missile, 200, 6, 0xFF70C0E0u};
 
@@ -601,6 +625,24 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         /*lightHeight=*/0.0f, /*haulMult=*/1.0f, /*armor=*/{},
         /*hireGold=*/30,
     },
+    // Road ambusher — the prologue's teeth (owner 2026-09-09). A bandit in
+    // body, sprite, behaviour and loot; his row exists for two columns the
+    // world's bandits must NOT inherit: he watches the whole road
+    // (kAmbusherCombat sight) and he cannot be beaten at level 1 (its HP).
+    // Appended, so every saved ordinal stays where it was.
+    {
+        NPCType::RoadAmbusher, "road_ambusher", "Ambusher",
+        SpriteId::Bandit, 3,
+        AIBehaviour::Aggressive, kAmbusherCombat, kNpcUpkeepNone, false, 20,
+        // He drops what a bandit drops, named in his own column: his ordinal
+        // sits past the creature boundary (is_creature_row), where the
+        // per-role loot list no longer answers.
+        /*weight*/0, /*loot*/"bandit", /*radius*/0.0f,
+        {{"Krivoy","Sukhoy","Gnily","Ryaboy","Tishina"}}, 5,
+        {{"We have been watching this road all morning.",
+          "Nothing personal, traveller. The road is ours.",
+          "Down. Stay down and it goes easier."}}, 3,
+    },
 };
 static_assert(rows_in_enum_order(kNpcTypeDefs, &NpcTypeDef::type),
               "kNpcTypeDefs row order must mirror NPCType");
@@ -684,6 +726,8 @@ inline constexpr NpcPurseRow kNpcPurse[std::size_t(NPCType::Count)] = {
     {NPCType::Vendor,       1, 10},
     {NPCType::SilverMiner,  1, 10},
     {NPCType::TaxCollector, 1, 10},
+    // He robs the road for a living, exactly like the bandit he is.
+    {NPCType::RoadAmbusher, 5, 30},
 };
 static_assert(rows_in_enum_order(kNpcPurse, &NpcPurseRow::type),
               "kNpcPurse row order must mirror NPCType");
@@ -735,6 +779,7 @@ inline constexpr NpcMapColorRow kNpcMapColor[std::size_t(NPCType::Count)] = {
     {NPCType::Vendor,       0xC8C8C8u},
     {NPCType::SilverMiner,  0xC8C8C8u},
     {NPCType::TaxCollector, 0xC8C8C8u},
+    {NPCType::RoadAmbusher, 0xDC3C3Cu},   // bandit red — he is one
 };
 static_assert(rows_in_enum_order(kNpcMapColor, &NpcMapColorRow::type),
               "kNpcMapColor row order must mirror NPCType");

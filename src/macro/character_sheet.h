@@ -174,6 +174,10 @@ inline constexpr RoleWeights kRoleWeights[int(NPCType::Count)] = {
     // Tax-collector — a courier's legs, a clerk's head.
     {NPCType::TaxCollector, {2, 3, 2, 2, 3, 1, 2, 2},
      {0,0,0,0,1,0,0, 0,1,0,0, 0,0,0,0,0,0, 0,0, 1,1,2,3,2, 3,0,0,0, 2,2,0,2,0}},
+    // Road ambusher — the bandit's sheet, row for row: what sets him apart
+    // lives in his combat template (the road-wide eye, the HP), not here.
+    {NPCType::RoadAmbusher, {4, 3, 1, 1, 3, 2, 1, 1},
+     {2,0,0,0,3,2,0, 0,2,1,0, 0,0,0,0,0,0, 3,0, 2,0,1,3,1, 2,1,2,0, 0,0,1,0,0}},
 };
 
 static_assert(rows_in_enum_order(kRoleWeights, &RoleWeights::type),

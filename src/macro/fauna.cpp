@@ -116,6 +116,9 @@ constexpr SpawnHabitatRow kSpawnHabitats[std::size_t(NPCType::Count)] = {
     {NPCType::Vendor,       0},
     {NPCType::SilverMiner,  0},
     {NPCType::TaxCollector, 0},
+    // Ambient spawning never raises him: the prologue's plot places him by
+    // hand, exactly as the bandit's own 0 says of ambient banditry.
+    {NPCType::RoadAmbusher,  0},
 };
 static_assert(rows_in_enum_order(kSpawnHabitats, &SpawnHabitatRow::type),
               "every body row states its ground — the table IS the system");
