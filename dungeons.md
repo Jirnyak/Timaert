@@ -45,17 +45,13 @@ lasting act pays UP through a macro stock.
 **looking at**; inside, a stair shaft under your feet changes storey and the
 threshold walks you back out to the exact tile you knocked from.
 
-There are two ways out and both obey the danger law:
-
-| | What it is | Where it lands you | Gate |
-|---|---|---|---|
-| Walked | the door prop, or a stair shaft | the doorstep you came from, one layer up | the subworld exit gate |
-| Quick | the ordinary leave key | the **macro map**, from any storey | the HUD's danger gem must be green |
-
-The quick exit is gated on the gem rather than on the cell's zone on purpose:
-a dungeon's macro cell is a town square, so the zone would report the safety of
-the *street* while a troll stands two paces behind you (owner ruling
-2026-08-12: an interior must not be a place the player walks out of backwards).
+**The only way out is walked** (owner ruling 2026-09-09, reversing
+2026-08-12's quick exit): the door prop, a stair shaft, or the spire's roof
+hatch — each gated by the subworld exit gate, each landing you where it
+honestly leads (the doorstep you knocked from, one storey along, the crown).
+The leave key does nothing inside an interior; it belongs to the open
+subworld alone. A scene that declares no exit — the prologue — is a scene
+the player does not leave.
 
 ## 3. Storeys, and what a module owes
 
@@ -67,7 +63,14 @@ geometry is a rule the generator stamps, the engine reads and the test asserts,
 rather than data plumbed between them.
 
 `sub/dgn/dispatch.{h,cpp}` mirrors `sub/gens/dispatch`: one self-contained TU
-per kind, routed by `DungeonRef::kind`. A module owes three answers:
+per kind, routed by `DungeonRef::kind`. What a kind IS behaviourally lives in
+**`kDungeonKindRows`** (2026-09-09, the CANON S17 "open pocket" groundwork):
+one row per kind — household/vermin population law, den family, shaft-ladder
+vs fixed pairs, roof hatch, water level, ring filler — under the
+`rows_in_enum_order` guard. The session reads columns instead of comparing
+kinds, so a new kind is a row and a module, not a hunt for scattered
+branches. (The sky needs no column: a ceiling is module masonry, and a module
+that stamps none stands under the honest sky.) A module owes three answers:
 
 - its **shape** (`gen_dungeon_*`),
 - its **room** (`dungeon_*_room`) — the rectangle the shared rules address,
@@ -76,7 +79,7 @@ per kind, routed by `DungeonRef::kind`. A module owes three answers:
   cave's first cut used one tile id for floor and walls alike and *nothing*
   could be placed in it.
 
-Three kinds ship, and the differences between them are the point of the layer:
+Four kinds ship, and the differences between them are the point of the layer:
 
 **`house.cpp` stamps.** A rectangle cut by partitions with one doorway each,
 furniture placed with a clearance ring, a household, storeys joined by shafts.
@@ -87,6 +90,73 @@ solid rock; connectivity holds by construction because consecutive carve discs
 always share ground. A cave has to be walked. The mouth's footprint drives the
 cavern (a crack opens on a burrow, a yawning gap on a hall), which is why the
 mouths are rolled at different sizes where they are placed.
+
+**`prologue_road.cpp` loops.** The demo's opening pocket: a forest road under
+the honest sky (no lid is stamped — the sky is the absence of masonry), and
+the first OPEN and first TOROIDAL kind. The scene is a **3×3 block** of
+variant cells (owner, 2026-09-09: «в центре 3 дороги, по краям лес — и
+заторить»): the road runs down one column through three distinct road cells,
+the six flanking cells are unbroken forest. Its row sets `wrapCells = 3`:
+every window cell resolves to its `(x mod 3, y mod 3)` variant, the seam
+re-centres exactly like the open world, and the module's one structural
+promise is CONTINUITY — relief is a periodic function of global block
+coordinates (integer wave numbers over 3·kCellSize, phases from the
+scene-wide seed), the road axis a block-periodic swing — so any two
+neighbouring cells, including across the wrap, continue each other exactly.
+Walk on; the same stretch returns three cells (~3 km) later, and what stands
+beside the road is real forest, not a mirrored road. Raised by the plot
+through `enter_pocket_scene` — no door, `DungeonSession::hasDoor = false`,
+so there is no threshold, no exit point, no walked exit: ANY death in the
+scene is the exit — the runtime intercept (a property of the SCENE, keyed on
+its kind) tears the pocket down, stands the player up where boot anchored
+him, and **activates the `prologue_main` node**, which emits the witch scene
+onto the story-overlay channel; her StoryResult activates `intro_main` (the
+arrival slide, then the world). *Scar tissue:* the rescue first emitted that
+event directly, and the owner's first playtest died into no window at all —
+the intercept runs at the END of a step, after `process_world_events` has
+already flushed the bus and captured this tick's presentations, so a raw
+event is wiped before anything can show it. A story shown from gameplay goes
+through a NODE, which is why the arrival slide always worked.
+
+The plot populates the pocket (`begin_prologue`'s ambush); the
+household/vermin columns are off. The ambushers are their own creature —
+**`NPCType::RoadAmbusher`** (owner 2026-09-09), a bandit in body, sprite,
+behaviour, sheet and loot, appended to the one table so no saved ordinal
+moves. Two columns are his alone, and they are why he exists rather than a
+tuned bandit spawn: `sight` **1000** (against the world's 200 default, which
+every other row still takes) and HP **100** (against 50). The first makes
+the ambush an ambush — a block three cells wide has nowhere to walk unseen,
+so they set off the moment the scene rises and come at him from ~300 units
+up the road, through the trees, with no special aggro and no line of sight
+needed (detection is a RADIUS; the wood hides them from HIS eye only). The
+second closes the story's one hole together with the COUNT — **seven of
+them**, staggered up both sides of the road so they arrive as a wave: the
+scene ENDS in his death, and a level-1 character opens with fists (coin,
+bread and two potions, no weapon, no shop before the road), so he cannot
+fight his way out of the plot. That matters more than difficulty does: the
+pocket has no exit but dying, so a lucky build that felled the ambush would
+have been stranded in the opening scene forever. Their damage is the
+bandit's, untouched: eleven blows to fell him, a fight he loses rather than
+an execution.
+
+*Perception is a creature's property, not a scene's flag* — which is why
+this is a row. Adding it is six data rows and no code: the enum, the combat
+template, the body row, and the three parallel tables (`kNpcPurse`,
+`kNpcMapColor`, `kRoleWeights`) whose `rows_in_enum_order` guards refuse to
+compile until they are fed. Note the ordinal boundary it lands past:
+`is_creature_row` is a plain `>= Rabbit` line, so an appended row is a
+CREATURE — it names its drop in its own `lootId` column instead of the
+per-role `kNpcLootId` list, and ambient fauna never raises it (habitat 0).
+
+**The map is shut while the opening plays.** The optical sweep
+(`update_player_sight`) runs above the pause gate, so a scene alone will not
+stop it: `begin_prologue` raises `App::prologueHoldsMap` and the witch's
+StoryResult drops it, which is why the world's first sight arrives with the
+arrival slide instead of filling in behind the prologue (owner, playtest 2 —
+an opened map under the opening scene ruins the immersion). Session state
+only: a dungeon is never saved, so a load lands in the world with the map
+opening normally. The smoke harness skips the prologue at
+boot exactly as it skips the intro (`begin_prologue`'s smoke branch).
 
 **`spire_tower.cpp` climbs.** One round hall per storey (the exterior 7-tile
 cylinder at the shared ×4 interior scale), a masonry ring of oriented chords,
@@ -255,6 +325,8 @@ to unified combat).
 | `dungeon_cave_test` | flood-fill reachability with a walled-ring control, floor/wall distinguishable by tile, apron, prop set + no two grounded solids inside one another, footprint drives the chamber, no storeys, determinism |
 | `spire_tower_test` | round hall inside the room circle for every tier × storey, the shaft-ladder rule (pads, tags, hatch, gate), connectivity, sealed masonry ring with a removed-chord control, one cylinder ceiling on the wall crowns, shaft-arrival mapping, floors clamp, severed-hall control |
 | `prop_interaction_test` | table consistency, door-per-house with a gapless ordinal set, interior door/stair geometry, snapshot round trip whose control strips a kind from *both* sides |
-| smoke `dungeon_house` | enter through the aimed door, land on floor, household + population write-back, storeys, cellar vermin + fauna write-back, chest moves goods and costs standing, well and board, quick exit, tile-hash determinism |
-| smoke `dungeon_cave` | hunts a real mouth in the world, enters, hoard present, no stairs, and the danger gate **both** ways |
+| smoke `dungeon_house` | enter through the aimed door, land on floor, household + population write-back, storeys, cellar vermin + fauna write-back, chest moves goods and costs standing, well and board, the leave key REFUSES inside, tile-hash determinism |
+| smoke `dungeon_cave` | hunts a real mouth in the world, enters, hoard present, no stairs, the leave key refuses hunted AND clear, the walked exit through the mouth door lets go |
+| `dungeon_prologue_test` | 3×3 block continuity (every variant seam — including across the wrap — no rougher than the interior, the bed continues down the road column), full-width bed in every road-cell row and NONE in forest cells, entry pad on the bed, no walls/lid, forest in force in every variant with distinct woods, kind-row columns, determinism |
+| smoke `prologue_road` | drives `begin_prologue` itself (the shipping door, not a copy): the ambush waits SEVEN strong beyond the generic detection radius, carries its OWN row's HP, and CLOSES the gap once the world runs (~267 → ~120 units in four seconds — the 1000 m eye proven as behaviour, not read off a table), leave key refuses, no exit point, a mid-cell bandit survives a wrap crossing, three crossings loop the block back to the same ground (async seam drained), the RESCUE (scalar death → Playing, healed, anchored on the boot spot) with the witch overlay actually OPEN, and the MAP LAW both ways on unexplored ground — frozen while held, revealed the moment her StoryResult lands. Both new laws were negative-controlled by hand: the raw-emit rescue fails `witchOpen`, an unheld map fails `mapHeld` |
 | smoke `spire_climb` | the whole spire loop live: yard fight (the danger law holds the gate while demons roam), gate, every storey's guard, roof hatch onto the crown (Δz = the tower height), orb → spell learned + spire depleted + orb gone + log entry; STAY hooks (`TIMAERT_SMOKE_SPIRE_STAY=ground\|hall\|roof`) for photo regressions |

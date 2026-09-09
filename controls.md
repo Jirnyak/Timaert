@@ -53,9 +53,10 @@ one enum value plus one table row (the same *spec-table → auto UI* idiom as
   the crosshair from the very same resolution the keypress runs, quoting the
   live binding — so the prompt cannot promise an action the key will not
   perform. Verbs and props: [dungeons.md](dungeons.md).
-- The leave key is the universal way out: from the open subworld it surfaces
-  you to the map, and from inside an interior it does the same from any storey
-  — both gated on the danger law.
+- The leave key belongs to the **open subworld only**: it surfaces you to the
+  map, gated on the danger law. Inside an interior it does nothing (owner
+  ruling 2026-09-09) — a dungeon is left on foot through its own exits
+  (door, stairs, hatch).
 
 ## Persistence
 

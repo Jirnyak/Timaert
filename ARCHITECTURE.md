@@ -1353,14 +1353,11 @@ storey and the threshold walks you back out to the exact tile you knocked
 from. Corpse loot outranks both — the same E, ordered by what is under the
 reticle.
 
-**Two ways out, both gated by danger.** The *walked* way is the door or the
-stair: it puts you back on the doorstep you came from, one layer up. The
-*quick* way is the ordinary leave key, and it surfaces you straight to the
-**map** from any storey — the same universal exit the open subworld has, so a
-cellar is not a place the player must walk out of backwards. It is gated on
-the HUD's own danger gem being green, asked of the interior itself rather
-than of the cell's zone: a dungeon's macro cell is a town square, whose zone
-would report the safety of the *street* while a troll stands behind you.
+**The only way out is walked** (owner ruling 2026-09-09, reversing
+2026-08-12's quick exit): the door, the stair or the roof hatch, each gated
+by the danger law, each putting you back where it honestly leads. The leave
+key does nothing inside — it belongs to the open subworld alone. A scene
+that declares no exit (the prologue) is a scene the player does not leave.
 
 **Storeys.** `DungeonRef::level` is signed: 0 is the level the door opens
 onto, +1 up, −1 a cellar. A stair is the same portal as the street door
