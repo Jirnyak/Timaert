@@ -10,6 +10,7 @@
 #include "check.h"
 
 #include "macro/npc_ai.h"
+#include "macro/player_recovery.h"
 #include "macro/resource_field.h"
 #include "ecs/components.h"
 
@@ -387,6 +388,90 @@ void test_macro_visual_smoothing_and_snap() {
           "a snapped body reports no travel speed: it did not walk there");
 }
 
+// ── ONE RECOVERY LAW, ONE BODY (CANON S14; owner, 2026-09-09) ────────────
+//
+// «Три ресурса, один закон восстановления» — and the player is a flag on an
+// active squad, not a second kind of creature. So a wounded lord standing in
+// camp must mend at EXACTLY the rate a wounded player standing in camp mends:
+// a percent of his own bar per game hour of REST (attributes.h
+// kRestRegenPctPerHour), through the same fractional carry.
+//
+// The two clocks are made to meet on a whole number: one think is
+// kAiTickGameHours = 0.09375 h, so SIXTEEN thinks are 1.5 game hours are the
+// player's 90 minutes. Nothing here restates the rate — both sides are asked
+// for their own answer and the answers must be the same number.
+void test_a_resting_lord_mends_at_the_players_rate() {
+    sm::GameState gs{};
+    gs.mapW = 128;
+    gs.mapH = 128;
+
+    // Resting with an empty bar: the body stays in camp for the whole window
+    // (Resting is left at HALF the bar, ~43 thinks away), so all sixteen
+    // thinks are honest rest and none of them is a march.
+    sm::ecs::World world;
+    auto e = spawn_ai(world, sm::NPCType::Bandit, 10.0f, 10.0f, -1,
+                      sm::NPCState::Resting, 0, 0);
+    auto& hp = world.reg.get<sm::ecs::Health>(e);
+    hp.maxHp = 50;
+    hp.hp = 10;
+
+    sm::MacroNpcAiRuntime runtime;
+    sm::reset_macro_npc_ai_runtime(runtime, 90u);
+    constexpr int kThinks = 16;
+    for (int i = 0; i < kThinks; ++i) tick_once(gs, world, runtime);
+
+    CHECK(in_state(world.reg.get<sm::ecs::MacroNpcRuntime>(e),
+                   sm::NPCState::Resting),
+          "the fixture is honest: the lord spent the whole window in camp");
+    CHECK(hp.hp > 10,
+          "a wounded lord at rest MENDS — a wound is not permanent for an NPC");
+
+    // The same wound, the same bar, the same game time — asked of the player.
+    sm::PlayerState player{};
+    player.combatStats = sm::calculate_combat_stats(player.sheet.attributes,
+                                                    player.sheet.skills);
+    player.combatStats.maxHp = 50;
+    player.combatStats.currentHp = 10;
+    player.combatStats.hpRegen = float(50) * sm::kRestRegenPctPerHour;
+    sm::PlayerRecoveryAccumulator accumulator{};
+    float spCarry = 0.0f;
+    sm::apply_minute_recovery(player, 90, accumulator, spCarry, 1.0f);
+
+    CHECK(hp.hp == player.combatStats.currentHp,
+          "one recovery law: lord and player mend the SAME points per hour");
+}
+
+// The other half of the law, and the half a careless fix deletes: rest is
+// PAID FOR BY STANDING STILL. `restRate` gates the player's three bars the
+// moment his legs move (kMarchRecoveryPct = 0); the squads' words for the same
+// gate are `stopped && !moved`. A marching body that mends would heal the
+// world's every wound for free, and no other check in this file would notice.
+void test_a_marching_body_does_not_mend() {
+    sm::GameState gs{};
+    gs.mapW = 128;
+    gs.mapH = 128;
+    gs.landmarks.push_back(settlement(1, 50, 50));
+
+    sm::ecs::World world;
+    auto e = spawn_ai(world, sm::NPCType::Peasant, 80.0f, 50.0f, 1);
+    auto& hp = world.reg.get<sm::ecs::Health>(e);
+    hp.maxHp = 50;
+    hp.hp = 10;
+    const auto& pos = world.reg.get<sm::ecs::Position>(e);
+    const float startX = pos.x;
+
+    sm::MacroNpcAiRuntime runtime;
+    sm::reset_macro_npc_ai_runtime(runtime, 11u);
+    for (int i = 0; i < 16; ++i) tick_once(gs, world, runtime);
+
+    // Not a tolerance — a precondition. If the body never walked, the wound
+    // check below would pass for the wrong reason, so it fails out loud.
+    CHECK(!close_enough(pos.x, startX),
+          "the fixture is honest: the body actually MARCHED these sixteen thinks");
+    CHECK(hp.hp == 10,
+          "the road does not heal: a body on the move mends nothing");
+}
+
 } // namespace
 
 int main() {
@@ -400,6 +485,8 @@ int main() {
     test_teleporter_cooldown_counts_down();
     test_wanderer_enters_wandering_state();
     test_resting_recovery_prevents_permanent_stall();
+    test_a_resting_lord_mends_at_the_players_rate();
+    test_a_marching_body_does_not_mend();
     test_macro_visual_smoothing_and_snap();
     return sm::test::report("macro_npc_ai_parity_test");
 }

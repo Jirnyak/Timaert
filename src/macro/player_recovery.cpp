@@ -5,12 +5,10 @@
 
 namespace sm {
 
-namespace {
-
-void apply_fractional_recovery(float amount,
-                               float& accumulator,
-                               int& current,
-                               int maximum) {
+void recover_bar(float amount,
+                 float& accumulator,
+                 int& current,
+                 int maximum) {
     if (maximum <= 0) {
         current = 0;
         accumulator = 0.0f;
@@ -38,8 +36,6 @@ void apply_fractional_recovery(float amount,
         accumulator = 0.0f;
     }
 }
-
-} // namespace
 
 void reset_player_recovery(PlayerRecoveryAccumulator& accumulator) {
     accumulator = PlayerRecoveryAccumulator{};
@@ -85,14 +81,10 @@ void apply_minute_recovery(PlayerState& player,
         cs.currentSp = cs.maxSp;
         if (spCarry > 0.0f) spCarry = 0.0f;
     }
-    apply_fractional_recovery(cs.hpRegen * minutesScale * restRate,
-                              accumulator.hp,
-                              cs.currentHp,
-                              cs.maxHp);
-    apply_fractional_recovery(cs.mpRegen * minutesScale * restRate,
-                              accumulator.mp,
-                              cs.currentMp,
-                              cs.maxMp);
+    recover_bar(cs.hpRegen * minutesScale * restRate,
+                accumulator.hp, cs.currentHp, cs.maxHp);
+    recover_bar(cs.mpRegen * minutesScale * restRate,
+                accumulator.mp, cs.currentMp, cs.maxMp);
 }
 
 } // namespace sm

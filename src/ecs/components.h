@@ -23,9 +23,17 @@ struct VisualPos { float vx, vy, speed; };
 // Health component. INTEGER since phase 4г: every combat writer has been
 // whole since the dice phase (int amount through the one damage door), so the
 // float storage held nothing but the memory of fractional wounds that no
-// longer exist. Fractional REGEN lives in its accumulators
-// (macro/player_recovery.h carries), never in the bar.
-struct Health { int hp, maxHp; };
+// longer exist. Fractional REGEN lives in a carry beside the bar — never in
+// the bar itself.
+//
+// `carry` is that remainder, and it sits HERE rather than in a table off to
+// the side because a bar and its remainder are one fact. The player's used to
+// live in an App-side accumulator that never reached the save, and the lord's
+// did not exist at all: a rest slice worth 0.59 points floored to zero every
+// think, so «heal an NPC» could not even be expressed. Owner, 2026-09-09:
+// «один закон, никакого особенного игрока и ущербных НПЦ» — one law
+// (player_recovery.h recover_bar) needs one home for its remainder.
+struct Health { int hp, maxHp; float carry = 0.0f; };
 
 // Explicit combat body radius — the distance at which this entity is struck by
 // melee, projectiles, and blasts (see the sub-layer target_radius()). It is the

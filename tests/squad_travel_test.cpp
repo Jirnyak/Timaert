@@ -26,6 +26,7 @@
 #include "macro/npc.h"
 #include "core/torus.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 
@@ -211,15 +212,27 @@ void test_ocean_drowns_who_cannot_reach_the_shore() {
                              /*hp*/30.0f);
         MacroNpcAiRuntime rt{};
         reset_macro_npc_ai_runtime(rt, 23u);
+        // THE LOW-WATER MARK, not the final reading. Since the one recovery
+        // law reached the NPC camp (2026-09-09, CANON S14), a body that
+        // reaches its target CAMPS THERE and mends — so by think 60 this
+        // survivor is whole again and a probe of his final HP measures the
+        // rest, not the bite. The promise here is that the sea BIT him; the
+        // honest place to read that is while it is happening.
+        int lowest = w.reg.get<ecs::Health>(e).hp;
         for (int i = 0; i < 60 && w.reg.valid(e); ++i) {
             MacroWorld mw{.gs = &gs, .world = &w, .pathCost = &grid};
             tick_macro_npc_ai(mw, rt, kAiTicks, false);
+            if (w.reg.valid(e))
+                lowest = std::min(lowest, w.reg.get<ecs::Health>(e).hp);
         }
         CHECK(w.reg.valid(e) && w.reg.get<ecs::Position>(e).x >= 26.0f,
               "a floating body wades OUT: water is exited, never entered");
-        CHECK(w.reg.get<ecs::Health>(e).hp < 30.0f,
+        CHECK(lowest < 30,
               "and the unpayable steps out were paid in blood — the sea "
               "bite lives");
+        CHECK(w.reg.get<ecs::Health>(e).hp > lowest,
+              "and ashore the wound MENDS: the one recovery law reaches an "
+              "NPC in camp, not only the player");
     }
     {   // Far from shore: the crossing is unpayable by design and kills.
         auto e = make_walker(w, 2.0f, 40.0f, 30.0f, 40.0f, /*maxSp*/8,

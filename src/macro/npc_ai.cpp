@@ -14,6 +14,7 @@
 #include "macro/npc.h"
 #include "macro/nav_field.h"        // локальные поля-округи (CANON S7)
 #include "macro/npc_spawn.h"
+#include "macro/player_recovery.h"  // recover_bar — ОДНА дверь отдыха на все тела
 #include "macro/politik.h"          // derive_city_spacing — времянка §34.1
 #include "macro/settlement_score.h" // kSettlementReach — the home-field box
 #include "macro/spawners.h"
@@ -376,18 +377,33 @@ void settle_march_rhythm(entt::entity e, const ecs::Position& p,
     // ...and `!moved` on top, because a think that arrived still MARCHED: you
     // do not walk two cells and take a slice of rest in the same breath. Rest
     // begins on the first think after the legs stop.
-    if (stopped && !moved) {
-        if (canCamp && int(rt.sp) < maxSp) {
-            // THE regen law (attributes.h kRestRegenPctPerHour): a percent of
-            // the bar per game hour, the leader's marathon skill speeding the
-            // rate, paid out in this think's slice of the day. The old
-            // 5%-per-think was ~53% of the bar per game HOUR — a rest that
-            // cost nothing. Fractional carry, the player's own idiom.
+    if (stopped && !moved && canCamp) {
+        // THE regen law (attributes.h kRestRegenPctPerHour): a percent of
+        // the bar per game hour, paid out in this think's slice of the day.
+        // The old 5%-per-think was ~53% of the bar per game HOUR — a rest that
+        // cost nothing.
+        //
+        // BOTH bars, because a body has more than legs (CANON S14 «три
+        // ресурса, один закон восстановления»; owner, 2026-09-09). Until this
+        // line only stamina came back here, so a wounded lord stayed wounded
+        // until something killed him: `ecs::Health` had no writer anywhere in
+        // the game that moved it UP. The wound outlived the war that made it,
+        // and the map filled with permanent invalids nobody could explain.
+        //
+        // Marathon speeds the LEGS only — it multiplies spRegen and nothing
+        // else (attributes.h calculate_combat_stats), so the mending rate here
+        // is the plain one the player's own hpRegen is.
+        if (int(rt.sp) < maxSp) {
             rt.spCarry += float(maxSp) * kRestRegenPctPerHour
                           * skill_mult_of(SkillId::Marathon, int(rt.marathonRank))
                           * kAiTickGameHours;
             settle_sp_carry(rt);
         }
+        // Through the PLAYER'S OWN DOOR, not a second copy of it: the carry,
+        // the clamp and the "a full bar cannot bank rest" rule are one
+        // implementation for every body in the world (player_recovery.h).
+        recover_bar(float(hp.maxHp) * kRestRegenPctPerHour * kAiTickGameHours,
+                    hp.carry, hp.hp, hp.maxHp);
     }
 
     // A body that took a step with its bar already spent pays for it, whether

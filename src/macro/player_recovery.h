@@ -25,6 +25,21 @@ struct PlayerRecoveryAccumulator {
 
 void reset_player_recovery(PlayerRecoveryAccumulator& accumulator);
 
+// THE fractional recovery of ONE bar, and the only implementation of it in
+// the game (CANON S14 «три ресурса, один закон восстановления»; owner,
+// 2026-09-09: «никакого особенного игрока и ущербных НПЦ»). Whole points move
+// into `current`, the sub-point remainder waits in `carry`, and a full bar
+// cannot bank rest — that last rule is what stops an hour spent at full health
+// from paying out the moment the first step is taken.
+//
+// It lives in the header because the macro AI's camp (npc_ai.cpp
+// settle_march_rhythm) mends a lord's wound through THIS function, not through
+// a second copy of the same arithmetic: an NPC that heals by its own rules is
+// how a wound became permanent for everyone but the player and stayed that way
+// until the post-demo audit. `amount` is per-call, already scaled by the
+// caller's slice of time and by its rest gate.
+void recover_bar(float amount, float& carry, int& current, int maximum);
+
 // `restRate` gates ALL THREE bars (CANON S14, one recovery law; owner,
 // 2026-09-03): 1.0 for a body at rest, macro/movement_cost.h
 // kMarchRecoveryPct (zero) while it is on the move. Legs in motion are not

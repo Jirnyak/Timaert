@@ -280,7 +280,11 @@ namespace sm {
 // v82 (2026-09-07): аффикс-трек — ItemRef несёт 8 аффиксов (было 4) двумя
 // плоскими массивами rows[8]+values[8] (SoA, паддинг пар умер); сейв пишет
 // оба массива вместо одного массива пар с дырками.
-constexpr int kSaveVersion = 83;
+// v84 (2026-09-09): ОДИН ЗАКОН ВОССТАНОВЛЕНИЯ (CANON S14; владелец:
+// «никакого особенного игрока и ущербных НПЦ»). `ecs::Health` несёт дробный
+// остаток отдыха рядом со своей полосой, и она едет в снимке макро-ECS
+// сырыми байтами (save.cpp w.pod) — рост POD'а есть смена формата.
+constexpr int kSaveVersion = 84;
 
 enum class SettlementMood : std::uint8_t {
     Prosperous, Stable, Tense, Unrest, Revolt, Count
