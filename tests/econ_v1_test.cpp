@@ -453,10 +453,81 @@ int main() {
         }
     }
 
+    // ── 13. THE MINT is inside the conservation law ────────────────────
+    // Law №2 at the top of this file is asserted over the commodity ledger,
+    // and the sink skipped the mint's fact with «no mint in this fixture» —
+    // so the one recipe that turns a stack into MONEY sat outside the law
+    // that says nothing vanishes. The metal is what is pinned here, twice,
+    // because it can be lost two ways: a strike that succeeds must consume
+    // the metal ONCE, and a strike the shelf refuses must leave it where it
+    // was (the promise add_ref's own comment makes, and the promise the
+    // non-mint path already keeps by putting its inputs back).
+    {
+        const ItemDef* metal = item_def_at(item_index("silver"));
+        if (!metal || metal->value <= 0) {
+            return fail("silver carries no catalog value for the mint to pay");
+        }
+        const int yield = metal->value;   // the price table IS the mint
+        auto minted_sink = [](void* user, const EconFact& f) {
+            if (f.kind == EconFact::Kind::Minted) {
+                *static_cast<long*>(user) += f.amount;
+            }
+        };
+
+        // A store of metal and nothing else: no other City recipe can be fed,
+        // so every write below belongs to the mint. Two workers on a hamlet's
+        // population strike far less than the store holds — the leftover is
+        // what makes a SECOND debit visible at all (drain the stack dry and
+        // the extra remove_of fails silently and hides itself).
+        long mintedCoins = 0;
+        Inventory store;
+        store.add("silver", 40);
+        econ_produce_day(store, EconSite::City, /*workers*/2, /*population*/2,
+                         minted_sink, &mintedCoins, "coin_empire");
+
+        const int spent = 40 - store.count("silver");
+        const int coins = store.count("coin_empire");
+        if (coins <= 0) return fail("the mint struck nothing from a store of silver");
+        if (long(coins) != mintedCoins) {
+            return fail("the Minted fact and the coins on the shelf disagree");
+        }
+        if (spent * yield != coins) {
+            std::printf("  mint: silver spent=%d yield=%d coins struck=%d\n",
+                        spent, yield, coins);
+            return fail("the mint's metal does not match the coins struck");
+        }
+
+        // The refused strike. Every slot but one is taken by a distinct kind
+        // (distinct seeds do not stack), the last holds more metal than one
+        // day can strike — so the debited stack stays occupied, the coin has
+        // nowhere to land, and add() refuses.
+        Inventory full;
+        for (int i = 0; i < kMaxInventorySlots - 1; ++i) {
+            ItemRef junk{};
+            junk.def = std::uint16_t(item_index("potion_hp"));
+            junk.count = 1;
+            junk.seed = std::uint32_t(i + 1);
+            if (!full.add_ref(junk)) return fail("could not fill the fixture's store");
+        }
+        full.add("silver", 40);
+        if (!full.full()) return fail("the fixture's store is not full");
+        econ_produce_day(full, EconSite::City, /*workers*/2, /*population*/2,
+                         nullptr, nullptr, "coin_empire");
+        if (full.count("coin_empire") != 0) {
+            return fail("a full shelf accepted coins it had no slot for");
+        }
+        if (full.count("silver") != 40) {
+            std::printf("  refused mint: silver left=%d of 40\n",
+                        full.count("silver"));
+            return fail("a refused strike ate the metal — the inputs were not put back");
+        }
+    }
+
     std::printf("econ_v1_test: dictionary=ok conservation=ok deposits=ok "
                 "no_starvation=ok famine_transitions=ok consume_laws=ok "
                 "produce_fair=ok birth_stocks=ok population_law=ok "
-                "one_store=ok ghost_bench=ok days=%d\n", kDays);
+                "one_store=ok ghost_bench=ok mint_conservation=ok days=%d\n",
+                kDays);
     CHECK(true, "every gate above held");
     return sm::test::report("econ_v1_test");
 }

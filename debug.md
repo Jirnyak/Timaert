@@ -309,6 +309,20 @@ Not reproducible on demand: not by repetition, not under ten CPU burners. Cause
 unknown; **the practical rule is that these three carry no verdict about the
 code until a solo run agrees.**
 
+**A witness for «charged twice» must leave a REMAINDER.** The mint bug of
+2026-09-09 (`problems.md` §40) debited its silver twice, and a fixture where
+the day spends the whole stack was GREEN on the broken code: the second
+`remove_of` found less than it asked for, returned false in silence, and hid
+the defect it was supposed to expose. It only goes red where the first debit
+leaves something behind — two workers on a store of forty rather than eight.
+The rule generalises past the mint: **any witness for «this happened one time
+too many» has to leave the resource the extra time would print on.** Drain it
+and the overdraw fails against the floor, which reads exactly like correct
+behaviour. The same reasoning picks the other half of that fixture: to prove a
+refused operation puts its inputs back, the store must be full of stacks that
+CANNOT merge (distinct seeds do not stack) and the debited stack must stay
+occupied — empty a slot and the refusal you were testing never happens.
+
 ### 7.0 Is the crowd's BRAIN dead, or its EYE? (`TIMAERT_NPC_VISUAL_TRACE`)
 
 ```bash

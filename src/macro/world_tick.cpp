@@ -118,9 +118,23 @@ void assess_tithe_(Landmark& lm, int day, bool hasSuzerain) {
     // «лучше среднего склада за месяц, а то пустой склад случайно — и
     // ничего не платит, или наоборот»): a po2 EMA with the season's own
     // horizon, fed daily, so the pay day stops being a lottery of whether
-    // the vendor happened to leave this morning. Signed shifts floor toward
-    // the value from either side; a young store's average grows from zero,
-    // so a young world honestly owes little in its first season.
+    // the vendor happened to leave this morning. A young store's average
+    // grows from zero, so a young world honestly owes little in its first
+    // season.
+    //
+    // The shift is NOT symmetric, and that is the ruling, not an oversight
+    // (owner 2026-09-09, audit ECON-3). A signed >> floors toward minus
+    // infinity, so the step is one full unit DOWN for any shortfall at all,
+    // and zero UP until the store exceeds the average by the whole horizon:
+    // the memory tracks a shrinking store exactly and a growing one only
+    // once the growth is worth a whole unit of memory. Two consequences,
+    // both accepted: the average settles a horizon BELOW the true store, and
+    // a stack that never exceeds 31 keeps an average of zero — so the small
+    // stock is never tithed. Whole units are all this field can hold; a
+    // rounding rule cannot invent resolution the representation does not
+    // have (holding the average pre-scaled would, and was declined —
+    // the tithe's weight is a balance question for a measured run, not a
+    // defect to patch here).
     constexpr int kTitheAvgShift = 5;
     static_assert(1 << kTitheAvgShift == kDaysPerSeason,
                   "the tithe average's horizon IS the season");

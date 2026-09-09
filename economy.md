@@ -319,3 +319,61 @@ pool down from 26M to ~1.5k.
   station and vendor deals above pay through `transfer_value` with
   conservation by construction; `caravan_deal_test` holds the corridor and
   the no-coin-no-confiscation control).
+
+## 2026-09-09 — the mint stopped eating its own metal (audit ECON-1/ECON-2)
+
+Post-demo audit findings `ECON-1` and `ECON-2` (`postdemoaudit.md` §2),
+closed with ONE edit to `econ_produce_day` (`macro/econ_day.cpp`).
+
+**What was wrong.** The common input debit — the loop every recipe passes
+through before its output is placed — was followed, inside the mint branch
+only, by a SECOND debit of the same inputs. A city struck coins for four
+silver and paid eight. The bug could not fall over, because `remove_of`
+returns `false` in silence when the stack is short, so the overdraw simply
+took whatever was there. On top of that, both of the mint's early returns
+(`yield <= 0`, and a store too full to hold the coin) left through the
+debit without putting the inputs back — while the non-mint path four lines
+below had been putting them back, with a comment explaining why, since it
+was written.
+
+**The shape now.** Inputs leave the store exactly once, for every recipe
+the table has. A single `refund_inputs()` door puts them back, and all
+three failure paths go through it — a metal the catalog prices at nothing,
+a purse with no slot for the coin, a shelf with no slot for the goods.
+A recipe's output being COIN rather than a stack changes nothing about
+conservation: that is the whole point of «the price table IS the mint».
+
+**The witness** (`tests/econ_v1_test` §13, `mint_conservation`). The file's
+law №2 — gathered + produced == used + consumed + remaining, nothing
+created, nothing lost — had been declared over the commodity ledger while
+the sink dropped the mint's fact with «no mint in this fixture». The one
+recipe that turns a stack into MONEY was outside the conservation law. It
+is inside it now, from both directions: the metal a successful strike
+consumes matches the coins struck, and a refused strike leaves the metal
+where it was.
+
+> **The fixture's key, and the reason this survived a year of green runs.**
+> A double debit is INVISIBLE when the day drains the stack dry: the second
+> `remove_of` finds less than it asks for, returns false, and hides itself.
+> It only shows where the first debit leaves a REMAINDER — two workers on a
+> store of forty. A witness for «charged twice» must be built on partial
+> consumption, never on full.
+
+**Tithe rounding — ruled, not fixed** (`ECON-3`). The seasonal average that
+the tithe is assessed from moves by a signed `>> 5`, which floors: one full
+unit down for any shortfall, zero up until the store beats the average by
+the whole horizon. So the average settles a horizon below the true store,
+and a stack that never exceeds 31 keeps an average of zero and is never
+tithed. Owner's ruling 2026-09-09: **that is the design.** The floor is
+honest — an eighth of four IS zero — and the two shifts in
+`assess_tithe_` are not one law wearing two hats: `>> 5` is TIME (the
+memory's horizon, pinned to `kDaysPerSeason` by static_assert), `>> 3` is
+the SHARE the suzerain takes. Making them share a rounding rule would buy a
+false symmetry, and a symmetric step would be worse than the asymmetry it
+removes: the average would freeze inside a dead zone of ±31 in BOTH
+directions instead of tracking a shrinking store exactly. What no rounding
+rule can do is invent resolution the field does not hold — whole units with
+a 1/32 step cannot represent the average of a small stock. Pre-scaling the
+stored average would, and was declined: the tithe's weight is a balance
+question for a measured run, not a defect. The comment at the site now says
+all of this, because it used to claim a symmetry that was never there.

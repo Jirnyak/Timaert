@@ -121,24 +121,40 @@ int econ_produce_day(Inventory& store, EconSite site, int workers,
         const int staffed = std::min(wanted, workersLeft);
         const int made = std::min(byInputs, staffed * perDay);
         if (made <= 0) return;
+        // The inputs leave the store ONCE, here, for every recipe the table
+        // has — a recipe that then cannot place its output refunds them
+        // through the one door below. (The mint used to debit its metal a
+        // second time inside its own branch, on top of this one: up to twice
+        // the silver for the coins actually struck.)
         for (int k = 0; k < 2; ++k) {
             if (rr.inputIdx[k] < 0) continue;
             store.remove_of(commodity_item_index(rr.inputIdx[k]),
                             made * rr.inputQty[k]);
         }
+        // The output could not be placed: put the inputs back — the slots they
+        // just left are still free, so this cannot fail. The day makes nothing
+        // here, and no fact lies about goods that do not exist. BOTH outputs a
+        // recipe can have leave through this door: a shelf of goods and a
+        // purse of coin obey the same conservation law.
+        auto refund_inputs = [&] {
+            for (int k = 0; k < 2; ++k) {
+                if (rr.inputIdx[k] < 0) continue;
+                store.add_of(commodity_item_index(rr.inputIdx[k]),
+                             made * rr.inputQty[k]);
+            }
+        };
         if (rr.isMint) {
             // Yield per metal unit = the metal's OWN catalog value — the one
             // price table is the mint (CANON S10); nothing else names the
-            // number. Credit before debit like every add.
+            // number. A metal the catalog prices at nothing, and a full store
+            // with nowhere to put the coin, are both a day that did not
+            // happen — the metal goes back on the shelf.
             const ItemDef* metal = item_def_at(
                 commodity_item_index(rr.inputIdx[0]));
             const int yield = metal ? metal->value : 0;
-            if (yield <= 0) return;
-            if (!store.add(mintCurrencyId, made * yield)) return;
-            for (int k = 0; k < 2; ++k) {
-                if (rr.inputIdx[k] < 0) continue;
-                store.remove_of(commodity_item_index(rr.inputIdx[k]),
-                                made * rr.inputQty[k]);
+            if (yield <= 0 || !store.add(mintCurrencyId, made * yield)) {
+                refund_inputs();
+                return;
             }
             workersLeft -= staffed;
             total += made;
@@ -147,15 +163,7 @@ int econ_produce_day(Inventory& store, EconSite site, int workers,
             return;
         }
         if (!store.add_of(commodity_item_index(rr.output), made)) {
-            // The shelf refused the output: put the inputs back (the slots
-            // they just left are still free, so this cannot fail) — the day
-            // makes nothing here, and no Produced fact lies about goods that
-            // do not exist.
-            for (int k = 0; k < 2; ++k) {
-                if (rr.inputIdx[k] < 0) continue;
-                store.add_of(commodity_item_index(rr.inputIdx[k]),
-                             made * rr.inputQty[k]);
-            }
+            refund_inputs();
             return;
         }
         workersLeft -= staffed;
