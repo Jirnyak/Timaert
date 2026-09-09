@@ -2293,6 +2293,60 @@ int apply_rest_promotion(App& app, int ticks) {
     return int(std::min(kRestTicksPerTurn, left));
 }
 
+// ── THE tick promotion door ───────────────────────────────────────────────
+//
+// How many world ticks THIS turn is worth. One turn is one tick unless
+// something buys more, and there are exactly two buyers: the fast-forward
+// multiplier (`>>` / console `simspeed`) and the rest aim (Z / `rest`).
+//
+// They used to be promoted in two places under two unequal rules. The rest aim
+// re-derived its whole scene every turn and cancelled itself; the multiplier
+// was gated ONCE, on the toolbar BUTTON, by `!subworld.active()`. A gate on the
+// button guards the ACT, never the STATE — so a 4× armed on the map stayed
+// armed through a dive into the subworld, through Esc to the menu, and through
+// starting a whole new game, because after the click nothing ever asked again
+// (owner, in play 2026-09-09).
+//
+// The cure is the one this file already runs for the pause — see «THE pause»
+// above, and its warning about the opposite scheme: DERIVE the permission on
+// the spot, every turn, from state that already exists, instead of remembering
+// to switch it off at each of the exits. A derived gate cannot leak because
+// there is nothing to forget, and the exits are precisely the paths that would
+// have been forgotten one by one: a load that returns early, the menu reached
+// from a modal, a new game, a subworld entered by falling down a hole.
+bool fast_forward_allowed(const App& app) {
+    // Promotion belongs to the LIVE MAP and nowhere else. The subworld is REAL
+    // TIME — a swing, a fall and a cast are all quoted in it — and a menu or an
+    // unloaded world has no clock worth promoting.
+    return app.state == sm::ui::AppState::Playing
+        && app.worldLoaded
+        && !app.subworld.active();
+}
+
+int promote_turn_ticks(App& app) {
+    if (!fast_forward_allowed(app)) {
+        // DROPPED, not merely ignored (owner: «очень жёстко отключалось»), so
+        // that the world, the toolbar button and the console readout cannot
+        // disagree, and so that climbing back onto the map never resumes a
+        // speed armed in a scene the player has left. The carry goes with it —
+        // a stale fraction of a promoted turn has nothing to belong to.
+        app.simSpeed = 1.0f;
+        app.simStepCarry = 0.0f;
+        app.restUntilTick = 0;
+        return 1;
+    }
+    // A deliberate speed-up runs several ticks per turn; its fractional part
+    // carries so 1.0 is exact and only a speed-up ever rounds.
+    app.simStepCarry += app.simSpeed;
+    int ticks = int(app.simStepCarry);
+    app.simStepCarry -= float(ticks);
+    if (ticks < 0) ticks = 0;
+    // Rest REPLACES the multiplier rather than multiplying with it: the rest is
+    // aimed at a full bar, not at a pace, and its own 128 ticks a turn is the
+    // whole of what it is allowed to buy.
+    return apply_rest_promotion(app, ticks);
+}
+
 void handle_event_playing(App& app, const SDL_Event& e) {
     switch (e.type) {
         case SDL_KEYDOWN: {
@@ -4436,6 +4490,14 @@ void register_console_commands(App& app) {
             if (m < 0.0f) m = 0.0f; if (m > 100.0f) m = 100.0f;
             app.simSpeed = m;
             c.printfln(Lvl::Ok, "simspeed = %.2fx", app.simSpeed);
+            // The scene is the authority (promote_turn_ticks), not this
+            // command: set a speed where the map is not live and the next turn
+            // drops it. Say so, rather than let the readout lie for a frame.
+            if (m != 1.0f && !fast_forward_allowed(app)) {
+                c.printfln(Lvl::Warn,
+                           "...and the scene will drop it next turn: "
+                           "fast-forward is the live map only");
+            }
             return true;
         });
 
@@ -5019,19 +5081,36 @@ void frame(App& app, int simSteps) {
     // stderr line per second — where the frame's milliseconds actually go.
     static const bool gpuStatsOn = std::getenv("TIMAERT_GPU_STATS") != nullptr;
     const auto statsSimT0 = std::chrono::steady_clock::now();
-    advance_sim_steps(app, simSteps, !modal_overlay_active(app));
+    const RuntimeFrameStats turn =
+        advance_sim_steps(app, simSteps, !modal_overlay_active(app));
     const double statsSimMs =
         gpuStatsOn ? std::chrono::duration<double, std::milli>(
                          std::chrono::steady_clock::now() - statsSimT0).count()
                    : 0.0;
     // Macro NPC render positions ease toward the cells the AI put them in.
     // Interpolation for the eye — but it WRITES to the ECS, so it is fed the
-    // tick, not the measured length of the turn. Anything that touches game
-    // state advances by ticks, without exception; otherwise a slow machine
-    // would smooth these at a different pace than the world moved them.
+    // TICKS THE WORLD JUST LIVED, never the measured length of the turn.
+    //
+    // It used to be handed one tick's worth flat, which is the same number only
+    // while the turn IS one tick. A turn is several whenever time is promoted —
+    // the toolbar's `>>` (simSpeed 4) and the Z rest fast-forward (128 ticks a
+    // turn) — and then the squads' Positions ran N times further than their
+    // VisualPos was allowed to follow. The gap grew every frame until it passed
+    // the snap bound and teleported: on the road, at rest speed, exactly three
+    // cells a frame (128 / kAiTicks = 4 thinks × 0.75 cells). The owner saw it
+    // on `>>` and called it what it was, 2026-09-09.
+    //
+    // `ticksAdvanced` is the right denominator and not merely a bigger one:
+    // MacroNpcRuntime::visualSpeed is quoted in cells per kAiPeriodSeconds,
+    // which IS kAiTicks of world clock, so the two only agree when both are
+    // counted in ticks. It also carries the subworld for free — down there
+    // tick_world_subworld_steps advances the macro clock once per
+    // kSubworldTickDivisor steps, so the squads think rarely and smooth rarely,
+    // in the same crawling ratio.
     if (app.state == sm::ui::AppState::Playing && app.worldLoaded) {
         sm::tick_macro_npc_visuals(app.ecs, app.gs.mapW, app.gs.mapH,
-                                   sm::kStepSeconds);
+                                   float(turn.timeTick.ticksAdvanced)
+                                       * sm::kStepSeconds);
     }
     sync_audio_music(app);
 
@@ -5671,22 +5750,12 @@ int main(int /*argc*/, char* /*argv*/[]) {
         std::max<Uint64>(1, freq / Uint64(sm::kTicksPerRealSecond));
     Uint64 turnStart = SDL_GetPerformanceCounter();
     while (app.running) {
-        // A developer fast-forward runs several ticks per turn; its fractional
-        // part carries so 1.0 is exact and only a deliberate speed-up rounds.
-        app.simStepCarry += app.simSpeed;
-        int ticks = int(app.simStepCarry);
-        app.simStepCarry -= float(ticks);
-        if (ticks < 0) ticks = 0;
-
-        // Rest (toolbar Z): promote this turn's ticks until the player's SP
-        // bar is FULL, capped by restUntilTick (two days — the guard against
-        // an SP debt that regenerates slower than the marching discount).
-        // 128 ticks a turn × 64 turns a second = 8192 ticks/s — exactly ONE
-        // game day per real second, so a full rest lands in about a second
-        // while every frame still renders (the rest is visible and
-        // interruptible). The law itself — promote / stop on full / cancel
-        // on a scene change — lives in apply_rest_promotion.
-        ticks = apply_rest_promotion(app, ticks);
+        // What this turn is worth in world ticks — ONE door, asked fresh every
+        // turn (promote_turn_ticks): it owns the fast-forward multiplier, the
+        // rest aim, and the scene predicate that refuses both anywhere but the
+        // live map. The loop keeps no promotion state of its own, which is why
+        // there is no exit path here to get wrong.
+        const int ticks = promote_turn_ticks(app);
 
         frame(app, ticks);
         const Uint64 turnEnd0 = SDL_GetPerformanceCounter();

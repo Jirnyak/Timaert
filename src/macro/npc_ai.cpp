@@ -3861,10 +3861,21 @@ void tick_macro_npc_visuals(ecs::World& w, int mapW, int mapH, float dt) {
         const float dx = p.x - v.vx;
         const float dy = p.y - v.vy;
         const float dSq = dx * dx + dy * dy;
-        // Snap bound covers one full think of honest marching (up to ~4 cells
-        // diagonal ≈ 5.7): a road-pace squad GLIDES; only true jumps
-        // (teleporter, seam remaps) snap. Was 3 cells, sized to the old
-        // one-cell step.
+        // The BACKSTOP, not the smoothing: only true jumps — a teleporter's
+        // hop, a torus seam remap, a snapshot restore — land further than six
+        // cells from where the eye last saw the body, and those must not be
+        // walked across.
+        //
+        // Deliberately generous, and deliberately NOT re-derived from the pace.
+        // The number was sized when a think covered ~3 cells (the old 32
+        // cells/h); a think is under one cell now, so it looks 6× too big — and
+        // tightening it would be treating the symptom of a bug that lived
+        // elsewhere. A visual DESYNC used to accumulate here until it tripped
+        // this line, which is why the bound felt load-bearing; the cause was
+        // the caller feeding one tick of dt while the world lived several
+        // (app/main.cpp frame(), fixed 2026-09-09). With the smoothing honest,
+        // this only ever sees real teleports, and a tight bound would start
+        // snapping the fast legal marches a quick leader is entitled to.
         if (dSq > 36.0f) {
             v.vx = p.x;
             v.vy = p.y;

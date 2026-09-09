@@ -316,9 +316,16 @@ struct App {
     entt::entity preBattleNpc      = entt::null;
     entt::entity encounterGraceNpc = entt::null;
     std::string  encounterTalkLine;
-    // Dev console: multiplies the live-frame simulation dt (1.0 = normal). Only
-    // the interactive frame path honours this; scripted/smoke steps keep their
-    // fixed dt so determinism is preserved.
+    // Toolbar `>>` / dev console: how many world ticks a turn buys (1.0 =
+    // normal). Only the interactive loop honours it; scripted/smoke steps keep
+    // their fixed dt so determinism is preserved.
+    //
+    // AN INTENT, NOT A PERMISSION. Whether it is honoured is DERIVED every turn
+    // from the scene (main.cpp promote_turn_ticks / fast_forward_allowed), and
+    // a scene that refuses drops this back to 1.0 rather than suspending it.
+    // Nothing else may reset it: the load path, the menu and the subworld
+    // entrance deliberately do NOT know about this field, which is exactly why
+    // an armed 4× can no longer survive them (it used to survive all three).
     float simSpeed = 1.0f;
     // Fractional part of a simSpeed-scaled step count, carried between frames.
     // At the normal 1.0 it stays exactly zero — steps * 1.0f leaves no residue —
