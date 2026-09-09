@@ -43,13 +43,18 @@ namespace sm {
 // MovePct, CarryKg — bonus.h affix tail). nullptr = nothing stands, which is
 // every leader until macro NPCs wear gear; the sheet passed in is already the
 // EFFECTIVE one, so only the derived cells are read from it here.
+// `pools` is the body whose bars this sheet caps. It is a separate argument
+// because the bar left this struct (2026-09-09): the ceiling and the value it
+// caps must be refreshed by one door, or `maxSp` drifts away from the `sp` it
+// bounds — the drift this helper was written to prevent in the first place.
 inline void refresh_leader_travel_stats(ecs::MacroNpcRuntime& rt,
+                                        ecs::Pools& pools,
                                         const CharacterSheet& sheet,
                                         NPCType type,
                                         const BonusTotals* standing = nullptr) {
     const CombatStats cs =
         calculate_combat_stats(sheet.attributes, sheet.skills);
-    rt.maxSp = std::int16_t(std::clamp(cs.maxSp, 1, 32767));
+    pools.maxSp = std::clamp(cs.maxSp, 1, 32767);
     rt.travelRank = std::uint8_t(
         std::clamp(sheet.skills.of(SkillId::Travel), 0, kMaxSkillRank));
     rt.marathonRank = std::uint8_t(
@@ -312,13 +317,11 @@ inline AutoBattleSide auto_battle_side_of(ecs::World& w, entt::entity e,
     if (const auto* hp = reg.try_get<ecs::Pools>(e)) {
         s.leaderHealthFraction = hp->maxHp > 0
             ? std::clamp(float(hp->hp) / float(hp->maxHp), 0.0f, 1.0f) : 1.0f;
-        if (const auto* rt = reg.try_get<ecs::MacroNpcRuntime>(e)) {
-            // sp may be a NEGATIVE debt (exhaustion); the 0.1 floor already
-            // says "a squad never fights at literal zero".
-            s.fatigue = std::clamp(
-                float(rt->sp) / float(std::max<int>(1, rt->maxSp)),
-                0.1f, 1.0f);
-        }
+        // sp may be a NEGATIVE debt (exhaustion); the 0.1 floor already
+        // says "a squad never fights at literal zero". Same block as the
+        // wound now — one read, one component.
+        s.fatigue = std::clamp(
+            float(hp->sp) / float(std::max<int>(1, hp->maxSp)), 0.1f, 1.0f);
     }
     if (const auto* roster = reg.try_get<ecs::SquadRoster>(e)) {
         s.roster = &roster->squad;
@@ -390,13 +393,13 @@ inline int award_leader_xp(ecs::World& w, entt::entity e, int xp) {
                 // preserving the SP fraction like the wound above — a level
                 // is not a free rest. An exhaustion DEBT (sp < 0) survives
                 // as-is: levelling mid-collapse does not forgive it.
-                const float spFrac = float(rt->sp)
-                    / float(std::max<int>(1, rt->maxSp));
-                refresh_leader_travel_stats(*rt, sheet, type);
-                if (rt->sp > 0) {
-                    rt->sp = std::int16_t(std::clamp(
-                        int(std::lround(spFrac * float(rt->maxSp))),
-                        1, int(rt->maxSp)));
+                const float spFrac = float(hp->sp)
+                    / float(std::max<int>(1, hp->maxSp));
+                refresh_leader_travel_stats(*rt, *hp, sheet, type);
+                if (hp->sp > 0) {
+                    hp->sp = std::clamp(
+                        int(std::lround(spFrac * float(hp->maxSp))),
+                        1, hp->maxSp);
                 }
             }
         }

@@ -46,18 +46,24 @@ struct VisualPos { float vx, vy, speed; };
 // «heal an NPC» could not even be expressed. One law
 // (player_recovery.h recover_bar) needs one home for its remainder.
 //
-// SP is NOT here yet — it still lives on MacroNpcRuntime, with its own signed
-// carry and its own debt semantics (a body may march into stamina debt; no
-// other bar goes below zero). Moving it is the next landing of this track,
-// and it is deliberately not folded in blind: `sp` would arrive with a
-// meaning the other two do not have.
+// STAMINA IS NOT LIKE THE OTHER TWO, and it lives here anyway. `sp` may go
+// NEGATIVE — a march can be taken on credit, and the debt is bitten out of hp
+// by the exhaustion law (movement_cost.h) — so its carry is SIGNED and settles
+// through `settle_sp_carry`, not through `recover_bar`. Every other bar floors
+// at zero. That difference is why it kept its own house on MacroNpcRuntime for
+// so long; it is not a reason for a body's third bar to live somewhere its
+// other two do not. The bar and its ceiling travel together: a ceiling in one
+// struct and its value in another is how `maxSp` came to be refreshed by a
+// door that could not see the bar it capped.
 struct Pools {
     int   hp = 0, maxHp = 0;
     int   mp = 0, maxMp = 0;
+    int   sp = 0, maxSp = 0;
     float hpCarry = 0.0f;
     float mpCarry = 0.0f;
+    float spCarry = 0.0f;   // SIGNED: a march spends through the same remainder
 };
-static_assert(sizeof(Pools) == 24,
+static_assert(sizeof(Pools) == 36,
               "Pools grew — it rides the macro snapshot as raw bytes "
               "(save.cpp w.pod), so its layout IS the save format: pay a "
               "kSaveVersion bump. Its neighbours ItemRef/WorldFact/AgentMemory "
@@ -335,18 +341,19 @@ struct MacroNpcRuntime {
     float         targetX, targetY;
     std::int16_t  stateTimer;
     std::int16_t  teleportCooldown;
-    std::int16_t  sp;            // stamina; may go NEGATIVE — the exhaustion
-                                 // debt the player's bar also carries
-    // The leader's sheet, cached as the four scalars the macro march actually
-    // reads (Session 21). The full CharacterSheet is derived, never stored:
-    // make_npc and the level-up recompute both re-derive it from
+    // STAMINA IS NOT HERE ANY MORE. `sp`, `maxSp` and the signed `spCarry`
+    // moved to ecs::Pools beside the body's other two bars (2026-09-09): a
+    // body has three pools, and this struct is the march's RUNTIME, not a
+    // second pool store. What stayed are the sheet CACHES the march reads per
+    // think — the ranks and the pace — which are not bars.
+    //
+    // The leader's sheet, cached as the scalars the macro march actually reads
+    // (Session 21). The full CharacterSheet is derived, never stored: make_npc
+    // and the level-up recompute both re-derive it from
     // leader_sheet_seed(MacroSpawnId) and refresh these through ONE helper
     // (squad.h refresh_leader_travel_stats), so the cache cannot drift from
-    // the sheet law. maxSp: the END bar (calculate_combat_stats), the ceiling
-    // regen fills and auto-battle fatigue divides by. travelRank/marathonRank:
-    // the two SP skills (cost discount / recovery rate). moveMult: spd ×
-    // athletics, the sheet's own pace.
-    std::int16_t  maxSp = 100;
+    // the sheet law. travelRank/marathonRank: the two SP skills (cost discount
+    // / recovery rate). moveMult: spd × athletics, the sheet's own pace.
     std::uint8_t  travelRank = 0;
     std::uint8_t  marathonRank = 0;
     // Phase 6: the scouting rank widens how far this squad SEES (npc_ai
@@ -364,12 +371,6 @@ struct MacroNpcRuntime {
     // of carrying it.
     float         carryCap = 0.0f;
     std::int16_t  overloadCost = 0;
-    // Fractional SP carry (both directions: march costs and rest regen), the
-    // THE fractional carry (movement_cost.h settle_sp_carry), signed and
-    // bidirectional, and the player keeps his HERE too — this is his squad's
-    // runtime like any lord's.
-    // Runtime-only like the rest of this struct.
-    float         spCarry = 0.0f;
     // Fractional CELLS banked toward the next whole step: the march is quoted
     // in cells per game hour (kMacroWalkCellsPerHour) but a think is discrete,
     // so slow ground (water at a third of road pace) banks part-cells across

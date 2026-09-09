@@ -141,13 +141,14 @@ struct HuntRig {
         w.reg.emplace<ecs::NPCKind>(e, std::uint16_t(type),
                                     std::uint16_t(factionIdx));
         ecs::MacroNpcRuntime rt{};
-        rt.sp = 100;
-        rt.maxSp = 100;
         rt.moveMult = 1.0f;
         rt.targetX = x;
         rt.targetY = y;
         w.reg.emplace<ecs::MacroNpcRuntime>(e, rt);
-        w.reg.emplace<ecs::Pools>(e, 50, 50);
+        ecs::Pools pools{};
+        pools.hp = pools.maxHp = 50;
+        pools.sp = pools.maxSp = 100;
+        w.reg.emplace<ecs::Pools>(e, pools);
         return e;
     }
 };
@@ -189,11 +190,11 @@ void test_hunter_climbs_wealth_gradient() {
 
     auto& p = rig.w.reg.get<ecs::Position>(e);
     auto& rt = rig.w.reg.get<ecs::MacroNpcRuntime>(e);
-    CHECK(scent_hunt_step(e, p, rig.w.reg.get<ecs::NPCKind>(e), rt, rig.ctx),
+    CHECK(scent_hunt_step(e, p, rig.w.reg.get<ecs::NPCKind>(e), rt, rig.w.reg.get<ecs::Pools>(e), rig.ctx),
           "запах добычи съедает think — охота пошла");
     // Один think копит бюджет ног (0.75 клетки), второй шагает — та же
     // честная походка, что у любого марша.
-    scent_hunt_step(e, p, rig.w.reg.get<ecs::NPCKind>(e), rt, rig.ctx);
+    scent_hunt_step(e, p, rig.w.reg.get<ecs::NPCKind>(e), rt, rig.w.reg.get<ecs::Pools>(e), rig.ctx);
     CHECK(int(p.x) == 11 && int(p.y) == 10,
           "шаг строго вверх по градиенту цены");
 }
@@ -212,14 +213,14 @@ void test_fear_filter_and_scent_floor() {
     // Богато, но след силы страшнее моей смелости — не преследуем: пусть
     // решает визуальный рефлекс (закон боя), не запах.
     scent_deposit(rig.gs.scent, fPrey, 11, 10, 4u << 20, 400u);
-    CHECK(!scent_hunt_step(e, p, kind, rt, rig.ctx),
+    CHECK(!scent_hunt_step(e, p, kind, rt, rig.w.reg.get<ecs::Pools>(e), rig.ctx),
           "страшный след не преследуется");
 
     // Пылинка диффузии ниже пола не дёргает бойца с места.
     scent_reset(rig.gs.scent, 64, 64);
     scent_deposit(rig.gs.scent, fPrey, 11, 10, 0u,
                   (kHuntScentFloor / 2u) << kScentQuantShift);
-    CHECK(!scent_hunt_step(e, p, kind, rt, rig.ctx),
+    CHECK(!scent_hunt_step(e, p, kind, rt, rig.w.reg.get<ecs::Pools>(e), rig.ctx),
           "запах беднее пола — не стоит и шага");
     CHECK(int(p.x) == 10 && int(p.y) == 10, "ноги не тронуты");
 }
@@ -244,12 +245,12 @@ void test_local_maximum_ends_the_hunt_and_keeps_errand() {
     // Сам стою на максимуме — подъёма нет, погоня окончена, думает роль.
     scent_deposit(rig.gs.scent, fPrey, 10, 10, 0u, 4000u);
     scent_deposit(rig.gs.scent, fPrey, 11, 10, 0u, 400u);
-    CHECK(!scent_hunt_step(e, p, kind, rt, rig.ctx),
+    CHECK(!scent_hunt_step(e, p, kind, rt, rig.w.reg.get<ecs::Pools>(e), rig.ctx),
           "локальный максимум = конец погони");
 
     scent_reset(rig.gs.scent, 64, 64);
     scent_deposit(rig.gs.scent, fPrey, 11, 10, 0u, 400u);
-    CHECK(scent_hunt_step(e, p, kind, rt, rig.ctx), "охота пошла (фикстура)");
+    CHECK(scent_hunt_step(e, p, kind, rt, rig.w.reg.get<ecs::Pools>(e), rig.ctx), "охота пошла (фикстура)");
     CHECK(rt.errandVerb == std::uint8_t(ErrandVerb::Patrol)
               && rt.errandObject == 42u
               && int(rt.targetX) == 50 && int(rt.targetY) == 50,
@@ -266,7 +267,7 @@ void test_civilian_never_hunts() {
 
     auto& p = rig.w.reg.get<ecs::Position>(e);
     auto& rt = rig.w.reg.get<ecs::MacroNpcRuntime>(e);
-    CHECK(!scent_hunt_step(e, p, rig.w.reg.get<ecs::NPCKind>(e), rt, rig.ctx),
+    CHECK(!scent_hunt_step(e, p, rig.w.reg.get<ecs::NPCKind>(e), rt, rig.w.reg.get<ecs::Pools>(e), rig.ctx),
           "не-combatant не охотится: кто хищник — решает колонка поведения");
 }
 

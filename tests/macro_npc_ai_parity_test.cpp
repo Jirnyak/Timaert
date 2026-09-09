@@ -53,12 +53,17 @@ entt::entity spawn_ai(sm::ecs::World& world,
     rt.targetY = y;
     rt.stateTimer = std::int16_t(timer);
     rt.teleportCooldown = 0;
-    rt.sp = std::int16_t(sp);
     rt.state = std::uint8_t(state);
     rt.visualSpeed = 0.0f;
     rt.tickAccum = 0.0f;
     world.reg.emplace<sm::ecs::MacroNpcRuntime>(e, rt);
-    world.reg.emplace<sm::ecs::Pools>(e, 50, 50);
+    // The body's three bars live in one block since the pools landing; the
+    // legs' bar is filled here beside the wound, not in the march runtime.
+    sm::ecs::Pools pools{};
+    pools.hp = pools.maxHp = 50;
+    pools.sp = sp;
+    pools.maxSp = 100;
+    world.reg.emplace<sm::ecs::Pools>(e, pools);
     return e;
 }
 
@@ -228,7 +233,8 @@ void test_aggressive_chases_visible_player() {
           "the chase closes the two-cell gap and stops on the player");
     // The march debt is the trip's true price: two featureless cells at
     // kStaminaPerCell each, part paid in whole SP, the rest in the carry.
-    const float paid = float(100 - int(rt.sp)) - rt.spCarry;
+    const auto& chaserPools = world.reg.get<sm::ecs::Pools>(e);
+    const float paid = float(100 - chaserPools.sp) - chaserPools.spCarry;
     CHECK(std::fabs(paid - 2.0f * sm::kStaminaPerCell) < 0.01f,
           "chasing pays exactly the two cells' derived march debt");
     CHECK(rt.visualSpeed > 0.0f,
@@ -362,7 +368,8 @@ void test_resting_recovery_prevents_permanent_stall() {
     }
     CHECK(in_state(rt, sm::NPCState::Idle),
           "Resting is a state an NPC LEAVES: exhaustion is never permanent");
-    CHECK(int(rt.sp) >= int(rt.maxSp) / 2,
+    const auto& restedPools = world.reg.get<sm::ecs::Pools>(e);
+    CHECK(restedPools.sp >= restedPools.maxSp / 2,
           "leaving Resting means stamina actually came back");
 }
 

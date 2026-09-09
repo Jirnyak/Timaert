@@ -323,8 +323,9 @@ int main(int argc, char** argv) {
         {
             int caravans = 0, vendors = 0, vIdle = 0, vAway = 0;
             long long vendorLoad = 0;
-            for (auto [e, kind, crt, bag]
+            for (auto [e, kind, crt, cpools, bag]
                  : ecs.reg.view<sm::ecs::NPCKind, sm::ecs::MacroNpcRuntime,
+                                sm::ecs::Pools,
                                 sm::ecs::NpcInventory>().each()) {
                 (void)e;
                 // Рейс сбыта — поручение крестьян (аукцион, CANON S10):
@@ -342,7 +343,7 @@ int main(int argc, char** argv) {
                              "[caravan] home=%d state=%d sp=%d/%d cap=%.0f "
                              "load=%.0f coin=%lld grain=%d wood=%d clay=%d\n",
                              crt.homeSettlementId, int(crt.state),
-                             int(crt.sp), int(crt.maxSp), crt.carryCap,
+                             cpools.sp, cpools.maxSp, crt.carryCap,
                              sm::inventory_weight(bag.inv),
                              coins_in(bag.inv, coinIdx),
                              bag.inv.count("grain"), bag.inv.count("wood"),

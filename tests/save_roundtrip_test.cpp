@@ -130,12 +130,12 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     a.runtime.targetY = 200.0f;
     a.runtime.stateTimer = 11;
     a.runtime.teleportCooldown = 3;
-    a.runtime.sp = -25;               // exhaustion DEBT must survive a load
-    a.runtime.maxSp = 130;
+    a.pools.sp = -25;                 // exhaustion DEBT must survive a load
+    a.pools.maxSp = 130;
     a.runtime.travelRank = 2;
     a.runtime.marathonRank = 4;
     a.runtime.moveMult = 1.25f;
-    a.runtime.spCarry = 0.5f;
+    a.pools.spCarry = 0.5f;
     a.runtime.moveBudget = 0.75f;
     a.runtime.state = 2;
     a.runtime.entryDir = 0x12;
@@ -800,7 +800,7 @@ void run_roundtrip() {
             FAIL_BAIL("macro wounds lost");
         }
         if (a.level.value != want.level.value) FAIL_BAIL("macro level lost");
-        if (a.runtime.sp != -25) FAIL_BAIL("macro SP debt lost");
+        if (a.pools.sp != -25) FAIL_BAIL("macro SP debt lost");
         if (a.runtime.xp != 555) FAIL_BAIL("macro leader xp lost");
         if (a.runtime.targetX != want.runtime.targetX
             || a.runtime.state != want.runtime.state

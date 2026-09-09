@@ -243,12 +243,10 @@ bool at_target(const ecs::Position& p, const ecs::MacroNpcRuntime& rt,
 // costs push it negative, rest regen positive), the player's fractional-carry
 // idiom. The bar clamps at maxSp above and keeps its DEBT below zero, exactly
 // like the player's (movement_cost.h apply_stamina_cost).
-void settle_sp_carry(ecs::MacroNpcRuntime& rt) {
-    // The runtime keeps its bar in an int16, so the shared law works on an int
-    // and the narrowing lives here, at the one place that owns the field.
-    int sp = int(rt.sp);
-    sm::settle_sp_carry(sp, int(rt.maxSp), rt.spCarry);
-    rt.sp = std::int16_t(std::clamp(sp, -32768, 32767));
+void settle_sp_carry(ecs::Pools& pools) {
+    // The bar is a plain int now that it lives with its siblings — the int16
+    // narrowing this wrapper existed to own went with the field it guarded.
+    sm::settle_sp_carry(pools.sp, pools.maxSp, pools.spCarry);
 }
 
 // Why a think is or is not dispatched. A corpse is skipped WHOLE; a camping
@@ -293,7 +291,7 @@ ThinkGate prepare_macro_npc_tick(ecs::MacroNpcRuntime& rt,
     rt.entryTicks = saturate_entry_ticks(rt.entryTicks);
 
     const auto state = static_cast<NPCState>(rt.state);
-    const int maxSp = std::max<int>(1, rt.maxSp);
+    const int maxSp = std::max<int>(1, hp.maxSp);
 
     // Getting up is a DECISION (owner: «до скольки отдыхать — решение
     // конечного автомата»), and half a bar is this AI's answer to it. The
@@ -301,7 +299,7 @@ ThinkGate prepare_macro_npc_tick(ecs::MacroNpcRuntime& rt,
     // both drink from the one regen law below, which is where the mechanic
     // ends and the decider begins.
     if (state == NPCState::Resting) {
-        if (int(rt.sp) >= maxSp / 2) {
+        if (int(hp.sp) >= maxSp / 2) {
             // ЛАГЕРЬ — ПАУЗА, НЕ АМНЕЗИЯ (components.h stateAfterRest):
             // подъём возвращает ПРЕРВАННУЮ ногу — Returning остаётся
             // Returning. Старая побудка в Idle посреди дороги домой
@@ -343,7 +341,7 @@ ThinkGate prepare_macro_npc_tick(ecs::MacroNpcRuntime& rt,
 void settle_march_rhythm(entt::entity e, const ecs::Position& p,
                          ecs::MacroNpcRuntime& rt, ecs::Pools& hp,
                          bool moved, const TickContext& ctx) {
-    const int maxSp = std::max<int>(1, rt.maxSp);
+    const int maxSp = std::max<int>(1, hp.maxSp);
     // Палуба — лагерь: сквад НА корабле стоит на якоре и отдыхает; тонет
     // только тот, кого вода застала БЕЗ корпуса под ногами.
     const bool canCamp =
@@ -354,7 +352,7 @@ void settle_march_rhythm(entt::entity e, const ecs::Position& p,
     // half-bar wake-up (prepare_) resumes the leg. The regen gate below
     // stays strict — banking a part-cell on the road is NOT rest (the first
     // cut of this law let the road pay for itself; its test still stands).
-    if (canCamp && int(rt.sp) <= maxSp / kCampBarDivisor
+    if (canCamp && int(hp.sp) <= maxSp / kCampBarDivisor
         && rt.state != std::uint8_t(NPCState::Resting)) {
         rt.stateAfterRest = rt.state;   // пауза, не амнезия (components.h)
         rt.state = std::uint8_t(NPCState::Resting);
@@ -393,11 +391,11 @@ void settle_march_rhythm(entt::entity e, const ecs::Position& p,
         // Marathon speeds the LEGS only — it multiplies spRegen and nothing
         // else (attributes.h calculate_combat_stats), so the mending rate here
         // is the plain one the player's own hpRegen is.
-        if (int(rt.sp) < maxSp) {
-            rt.spCarry += float(maxSp) * kRestRegenPctPerHour
+        if (int(hp.sp) < maxSp) {
+            hp.spCarry += float(maxSp) * kRestRegenPctPerHour
                           * skill_mult_of(SkillId::Marathon, int(rt.marathonRank))
                           * kAiTickGameHours;
-            settle_sp_carry(rt);
+            settle_sp_carry(hp);
         }
         // Through the PLAYER'S OWN DOOR, not a second copy of it: the carry,
         // the clamp and the "a full bar cannot bank rest" rule are one
@@ -456,7 +454,7 @@ float edge_weight(const TickContext& ctx, int fx, int fy, int tx, int ty) {
     return w;
 }
 
-void try_move(ecs::Position& p, ecs::MacroNpcRuntime& rt,
+void try_move(ecs::Position& p, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
               float tx, float ty, const TickContext& ctx) {
     int ix = int(p.x), iy = int(p.y);
     int itx = int(tx), ity = int(ty);
@@ -635,7 +633,7 @@ void try_move(ecs::Position& p, ecs::MacroNpcRuntime& rt,
         // bite — «неоплатный океан топит лорда» (S7), verbatim.
         const float stepCost = travel_stamina_cost(
             bw, 1.0f, int(rt.overloadCost), efficiency);
-        if (float(rt.sp) + rt.spCarry < stepCost
+        if (float(pools.sp) + pools.spCarry < stepCost
             && (sailing || can_stand_at(ctx, ix, iy))) {
             break;   // палуба держит якорную стоянку не хуже лагеря
         }
@@ -664,9 +662,9 @@ void try_move(ecs::Position& p, ecs::MacroNpcRuntime& rt,
         // `overloadCost` is this think's surcharge, refreshed from the bag by
         // the sweep before the behaviour ran, so a caravan hauling more than
         // its leader's back can hold buys the trip at the honest price.
-        rt.spCarry -= stepCost;
-        settle_sp_carry(rt);
-        if (int(rt.sp) < 0) break;   // spent: the think's march ends
+        pools.spCarry -= stepCost;
+        settle_sp_carry(pools);
+        if (int(pools.sp) < 0) break;   // spent: the think's march ends
 
         // Never hop OVER the player's cell in a multi-cell think: the forced
         // encounter (Inc 6) is geometric, so the squad stops ON the meeting
@@ -723,7 +721,7 @@ bool find_nearest_tree_grid(const TreeGrid& g, float px, float py,
 using NS = NPCState;
 
 void ai_home_wanderer(ecs::Position& p, ecs::MacroNpcRuntime& rt,
-                      const TickContext& ctx) {
+                      ecs::Pools& pools, const TickContext& ctx) {
     XY home;
     if (!home_pos(rt, ctx, home)) return;
 
@@ -750,7 +748,7 @@ void ai_home_wanderer(ecs::Position& p, ecs::MacroNpcRuntime& rt,
             rt.stateTimer = std::int16_t(10 + rand_int(ctx, 20));
             return;
         }
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
     }
 }
 
@@ -952,7 +950,8 @@ constexpr int kBridgeMaterialUnits = kGatherPerWorkerDay;
 
 // Defined with the trade behaviours below; the crews share both laws.
 bool march_is_stuck_(const ecs::Position& p, float oldX, float oldY,
-                     const ecs::MacroNpcRuntime& rt);
+                     const ecs::MacroNpcRuntime& rt,
+                     const ecs::Pools& pools);
 int haul_between(Inventory& from, Inventory& to, const char* id,
                  int maxUnits, float capacityLeftKg);
 
@@ -960,11 +959,12 @@ int haul_between(Inventory& from, Inventory& to, const char* id,
 // peasant crew whose errand is Sell walks the SAME machine the vendor
 // walked — reuse, not a second copy (CANON S26).
 void ai_vendor(entt::entity self, ecs::Position& p,
-               ecs::MacroNpcRuntime& rt, const TickContext& ctx);
+               ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
+               const TickContext& ctx);
 
 void ai_gatherer(entt::entity self, ecs::Position& p,
                  const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
-                 const TickContext& ctx) {
+                 ecs::Pools& pools, const TickContext& ctx) {
     (void)kind;   // the errand, not the type, names the work (CANON S10)
     XY home;
     if (!home_pos(rt, ctx, home)) return;
@@ -972,11 +972,11 @@ void ai_gatherer(entt::entity self, ecs::Position& p,
     // машиной той же артелью; Gather — строка таблицы целей; None — артель
     // без цели живёт домоседом (вывод аукциона: сидеть дома).
     if (rt.errandVerb == std::uint8_t(ErrandVerb::Sell)) {
-        ai_vendor(self, p, rt, ctx);
+        ai_vendor(self, p, rt, pools, ctx);
         return;
     }
     const GathererDef* def = gatherer_def_of(rt);
-    if (!def) { ai_home_wanderer(p, rt, ctx); return; }
+    if (!def) { ai_home_wanderer(p, rt, pools, ctx); return; }
 
     if (rt.state == std::uint8_t(NS::Idle)) {
         --rt.stateTimer;
@@ -1058,12 +1058,12 @@ void ai_gatherer(entt::entity self, ecs::Position& p,
             return;
         }
         const float ox = p.x, oy = p.y;
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
         // A leg that cannot advance gives the run up (the vendor's own
         // law): the reach wave keeps this rare, but a concave shore can
         // still wedge a greedy march — better home tonight than frozen at
         // the bank forever (measured 2026-08-31).
-        if (march_is_stuck_(p, ox, oy, rt)) {
+        if (march_is_stuck_(p, ox, oy, rt, pools)) {
             rt.targetX = home.x;
             rt.targetY = home.y;
             rt.state = std::uint8_t(NS::Returning);
@@ -1082,7 +1082,7 @@ void ai_gatherer(entt::entity self, ecs::Position& p,
                                         float(ctx.mapW), float(ctx.mapH));
         if (dsq <= 2.5f) {   // standing at the bank beside the gap
             const int cycleCost =
-                std::max(1, int(rt.maxSp) / kWorkCyclesPerBar);
+                std::max(1, int(pools.maxSp) / kWorkCyclesPerBar);
             auto* bag = ctx.mw.world
                 ? ctx.mw.world->reg.try_get<ecs::NpcInventory>(self)
                 : nullptr;
@@ -1091,7 +1091,7 @@ void ai_gatherer(entt::entity self, ecs::Position& p,
                 rt.targetX = home.x; rt.targetY = home.y;
                 return;
             }
-            if (int(rt.sp) < cycleCost) return;   // stand — the regen law
+            if (int(pools.sp) < cycleCost) return;   // stand — the regen law
                                                   // rests refused legs now
             const bool haveStone =
                 bag->inv.count("stone") >= kBridgeMaterialUnits;
@@ -1119,8 +1119,8 @@ void ai_gatherer(entt::entity self, ecs::Position& p,
                         int(rt.targetX), int(rt.targetY),
                         std::uint8_t(ft)});
                     // The day of making pays the working cycle (S14).
-                    rt.spCarry -= float(cycleCost);
-                    settle_sp_carry(rt);
+                    pools.spCarry -= float(cycleCost);
+                    settle_sp_carry(pools);
                 }
             }
             // Built — or the material was lost on the road: either way the
@@ -1130,8 +1130,8 @@ void ai_gatherer(entt::entity self, ecs::Position& p,
             return;
         }
         const float ox = p.x, oy = p.y;
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
-        if (march_is_stuck_(p, ox, oy, rt)) {
+        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
+        if (march_is_stuck_(p, ox, oy, rt, pools)) {
             rt.targetX = home.x;
             rt.targetY = home.y;
             rt.state = std::uint8_t(NS::Returning);
@@ -1146,8 +1146,8 @@ void ai_gatherer(entt::entity self, ecs::Position& p,
             // too spent for a cycle goes home to rest instead of working on
             // an empty bar — the same sentence the march pays.
             const int cycleCost =
-                std::max(1, int(rt.maxSp) / kWorkCyclesPerBar);
-            if (int(rt.sp) < cycleCost) {
+                std::max(1, int(pools.maxSp) / kWorkCyclesPerBar);
+            if (int(pools.sp) < cycleCost) {
                 rt.targetX = home.x;
                 rt.targetY = home.y;
                 rt.state = std::uint8_t(NS::Returning);
@@ -1192,8 +1192,8 @@ void ai_gatherer(entt::entity self, ecs::Position& p,
                         ctx.mw.gs->builtFeatures.push_back(
                             BuiltFeature{tx, ty, std::uint8_t(mineFt)});
                         // The day of MAKING pays the working cycle (S14).
-                        rt.spCarry -= float(cycleCost);
-                        settle_sp_carry(rt);
+                        pools.spCarry -= float(cycleCost);
+                        settle_sp_carry(pools);
                         rt.targetX = home.x;
                         rt.targetY = home.y;
                         rt.state = std::uint8_t(NS::Returning);
@@ -1237,8 +1237,8 @@ void ai_gatherer(entt::entity self, ecs::Position& p,
                     // the same fractional carry the march charges
                     // (settle_sp_carry above): work and walking drain one
                     // purse, which is the whole law.
-                    rt.spCarry -= float(cycleCost);
-                    settle_sp_carry(rt);
+                    pools.spCarry -= float(cycleCost);
+                    settle_sp_carry(pools);
                     // A DEPOSIT worked down to nothing is a fact of the world
                     // (FactKind::Drained: "a vein worked out") — and by the
                     // annihilation law the cell itself leaves the map, so
@@ -1266,7 +1266,7 @@ void ai_gatherer(entt::entity self, ecs::Position& p,
                 // arrival works the day's second cycle into a new field.
                 if (def->row == ResourceFieldId::Wheat
                     && have < kGatherPerCycle * workers
-                    && int(rt.sp) >= cycleCost && ctx.mw.features) {
+                    && int(pools.sp) >= cycleCost && ctx.mw.features) {
                     int bestWheat = 0;
                     XY plot{};
                     for (int dy = -kSettlementReach; dy <= kSettlementReach;
@@ -1302,14 +1302,14 @@ void ai_gatherer(entt::entity self, ecs::Position& p,
     if (rt.state == std::uint8_t(NS::Plowing)) {
         if (at_target(p, rt, ctx)) {
             const int cycleCost =
-                std::max(1, int(rt.maxSp) / kWorkCyclesPerBar);
-            if (int(rt.sp) >= cycleCost && ctx.mw.features && ctx.mw.gs
+                std::max(1, int(pools.maxSp) / kWorkCyclesPerBar);
+            if (int(pools.sp) >= cycleCost && ctx.mw.features && ctx.mw.gs
                 && plough_field_cell(*ctx.mw.features, ctx.mw,
                                      int(rt.targetX), int(rt.targetY))) {
                 // The day of MAKING pays the same cycle the day of taking
                 // pays — one labour law (S14).
-                rt.spCarry -= float(cycleCost);
-                settle_sp_carry(rt);
+                pools.spCarry -= float(cycleCost);
+                settle_sp_carry(pools);
                 // The work is WORLD TRUTH: it rides the save as the Built
                 // row and the load re-stamps it (state.h v71).
                 ctx.mw.gs->builtFeatures.push_back(BuiltFeature{
@@ -1321,7 +1321,7 @@ void ai_gatherer(entt::entity self, ecs::Position& p,
             rt.state = std::uint8_t(NS::Returning);
             return;
         }
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
         return;
     }
     if (rt.state == std::uint8_t(NS::Wandering)
@@ -1336,7 +1336,7 @@ void ai_gatherer(entt::entity self, ecs::Position& p,
             rt.stateTimer = std::int16_t(6 + rand_int(ctx, 12));
             return;
         }
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
     }
 }
 
@@ -1357,7 +1357,7 @@ void ai_gatherer(entt::entity self, ecs::Position& p,
 // answered to the overload law that priced the very same cargo's march.
 
 void ai_nomad(ecs::Position& p, ecs::MacroNpcRuntime& rt,
-              const TickContext& ctx);
+              ecs::Pools& pools, const TickContext& ctx);
 
 // Move up to `maxUnits` of `id` between inventories, bounded by the cargo
 // hold's remaining weight. Returns units moved.
@@ -1439,9 +1439,10 @@ int haul_between(Inventory& from, Inventory& to, const char* id,
 // budget stands whole and the bar is fresh. The rider gives the run up
 // instead of pacing the surf forever.
 bool march_is_stuck_(const ecs::Position& p, float oldX, float oldY,
-                     const ecs::MacroNpcRuntime& rt) {
+                     const ecs::MacroNpcRuntime& rt,
+                     const ecs::Pools& pools) {
     return p.x == oldX && p.y == oldY && rt.moveBudget >= 1.0f
-           && int(rt.sp) > int(rt.maxSp) / 2;
+           && int(pools.sp) > int(pools.maxSp) / 2;
 }
 
 // Pick the caravan's next STATION: the nearest other city, never the one it
@@ -1512,11 +1513,12 @@ NPCType own_type_(entt::registry& reg, entt::entity self) {
 }
 
 void ai_caravan(entt::entity self, ecs::Position& p,
-                ecs::MacroNpcRuntime& rt, const TickContext& ctx) {
+                ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
+                const TickContext& ctx) {
     XY home;
     if (!home_pos(rt, ctx, home) || !ctx.mw.world) {
         // No honest home — degrade to the old nomad wander.
-        ai_nomad(p, rt, ctx);
+        ai_nomad(p, rt, pools, ctx);
         return;
     }
     auto& reg = ctx.mw.world->reg;
@@ -1526,7 +1528,7 @@ void ai_caravan(entt::entity self, ecs::Position& p,
     // and the caravan degrades below).
     Landmark* homeLm = landmark_by_id(*ctx.mw.gs, rt.homeSettlementId);
     if (!bag || !homeLm || homeLm->type != LandmarkType::City) {
-        ai_nomad(p, rt, ctx);
+        ai_nomad(p, rt, pools, ctx);
         return;
     }
     Inventory* homeStore = &homeLm->inventory;
@@ -1575,7 +1577,7 @@ void ai_caravan(entt::entity self, ecs::Position& p,
         const int next = pick_next_station_(ctx, p, rt.homeSettlementId,
                                             -1, nx, ny);
         if (next < 0) {
-            ai_nomad(p, rt, ctx);   // a one-city world: wander on
+            ai_nomad(p, rt, pools, ctx);   // a one-city world: wander on
             return;
         }
         rt.stationsLeft = std::uint8_t(2 + rand_int(ctx, 2));
@@ -1593,8 +1595,8 @@ void ai_caravan(entt::entity self, ecs::Position& p,
             return;
         }
         const float ox = p.x, oy = p.y;
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
-        if (march_is_stuck_(p, ox, oy, rt)) {
+        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
+        if (march_is_stuck_(p, ox, oy, rt, pools)) {
             // The station is beyond water: give the run up, ride home.
             rt.targetX = home.x;
             rt.targetY = home.y;
@@ -1668,7 +1670,7 @@ void ai_caravan(entt::entity self, ecs::Position& p,
             rt.stateTimer = std::int16_t(10 + rand_int(ctx, 15));
             return;
         }
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
     }
 }
 
@@ -1679,10 +1681,11 @@ void ai_caravan(entt::entity self, ecs::Position& p,
 // walk back. The labour rotation raises and dissolves the crew like any
 // working squad.
 void ai_vendor(entt::entity self, ecs::Position& p,
-               ecs::MacroNpcRuntime& rt, const TickContext& ctx) {
+               ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
+               const TickContext& ctx) {
     XY home;
     if (!home_pos(rt, ctx, home) || !ctx.mw.world) {
-        ai_nomad(p, rt, ctx);
+        ai_nomad(p, rt, pools, ctx);
         return;
     }
     auto& reg = ctx.mw.world->reg;
@@ -1690,7 +1693,7 @@ void ai_vendor(entt::entity self, ecs::Position& p,
     auto* mem = reg.try_get<AgentMemory>(self);
     Landmark* homeLm = landmark_by_id(*ctx.mw.gs, rt.homeSettlementId);
     if (!bag || !mem || !homeLm) {
-        ai_home_wanderer(p, rt, ctx);
+        ai_home_wanderer(p, rt, pools, ctx);
         return;
     }
 
@@ -1724,7 +1727,7 @@ void ai_vendor(entt::entity self, ecs::Position& p,
         }
         Landmark* market = landmark_by_id(*ctx.mw.gs, homeLm->nearestCityId);
         if (!market || market->type != LandmarkType::City) {
-            ai_home_wanderer(p, rt, ctx);
+            ai_home_wanderer(p, rt, pools, ctx);
             return;
         }
         // The crew's memory of ITS OWN home at departure — what the buy
@@ -1817,8 +1820,8 @@ void ai_vendor(entt::entity self, ecs::Position& p,
             return;
         }
         const float ox = p.x, oy = p.y;
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
-        if (march_is_stuck_(p, ox, oy, rt)) {
+        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
+        if (march_is_stuck_(p, ox, oy, rt, pools)) {
             // ВЕРФЬ НА БЕРЕГУ: рейс упёрся в воду без корабля — сквад
             // строит (порт-фича + корпус за лес из сумки) и следующий
             // think отчаливает. Нет леса — честный отказ рейса (закон
@@ -1925,7 +1928,7 @@ void ai_vendor(entt::entity self, ecs::Position& p,
             rt.stateTimer = std::int16_t(10 + rand_int(ctx, 15));
             return;
         }
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
     }
 }
 
@@ -1951,17 +1954,18 @@ Landmark* capital_of_(const TickContext& ctx, const Landmark& town) {
 // The same carrier law as the village tithe riding with the vendor — an
 // edge of the ONE graph, walked by a body that can be robbed.
 void ai_taxrun(entt::entity self, ecs::Position& p,
-               ecs::MacroNpcRuntime& rt, const TickContext& ctx) {
+               ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
+               const TickContext& ctx) {
     XY home;
     if (!home_pos(rt, ctx, home) || !ctx.mw.world) {
-        ai_nomad(p, rt, ctx);
+        ai_nomad(p, rt, pools, ctx);
         return;
     }
     auto& reg = ctx.mw.world->reg;
     auto* bag = reg.try_get<ecs::NpcInventory>(self);
     Landmark* homeLm = landmark_by_id(*ctx.mw.gs, rt.homeSettlementId);
     if (!bag || !homeLm || homeLm->type != LandmarkType::City) {
-        ai_home_wanderer(p, rt, ctx);
+        ai_home_wanderer(p, rt, pools, ctx);
         return;
     }
 
@@ -2024,8 +2028,8 @@ void ai_taxrun(entt::entity self, ecs::Position& p,
             return;
         }
         const float ox = p.x, oy = p.y;
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
-        if (march_is_stuck_(p, ox, oy, rt)) {
+        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
+        if (march_is_stuck_(p, ox, oy, rt, pools)) {
             rt.targetX = home.x;
             rt.targetY = home.y;
             rt.state = std::uint8_t(NS::Returning);
@@ -2091,12 +2095,12 @@ void ai_taxrun(entt::entity self, ecs::Position& p,
             rt.stateTimer = std::int16_t(10 + rand_int(ctx, 15));
             return;
         }
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
     }
 }
 
 void ai_trader(ecs::Position& p, ecs::MacroNpcRuntime& rt,
-               const TickContext& ctx) {
+               ecs::Pools& pools, const TickContext& ctx) {
     XY home;
     if (!home_pos(rt, ctx, home)) return;
     auto& settles = ctx.mw.gs->landmarks;
@@ -2134,7 +2138,7 @@ void ai_trader(ecs::Position& p, ecs::MacroNpcRuntime& rt,
             rt.stateTimer = std::int16_t(15 + rand_int(ctx, 20));
             return;
         }
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
         return;
     }
     if (rt.state == std::uint8_t(NS::Working)) {
@@ -2152,12 +2156,12 @@ void ai_trader(ecs::Position& p, ecs::MacroNpcRuntime& rt,
             rt.stateTimer = std::int16_t(20 + rand_int(ctx, 30));
             return;
         }
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
     }
 }
 
 void ai_nomad(ecs::Position& p, ecs::MacroNpcRuntime& rt,
-              const TickContext& ctx) {
+              ecs::Pools& pools, const TickContext& ctx) {
     auto& settles = ctx.mw.gs->landmarks;
     if (rt.state == std::uint8_t(NS::Idle)) {
         --rt.stateTimer;
@@ -2191,12 +2195,12 @@ void ai_nomad(ecs::Position& p, ecs::MacroNpcRuntime& rt,
             rt.stateTimer = std::int16_t(10 + rand_int(ctx, 15));
             return;
         }
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
     }
 }
 
 void ai_aggressive(ecs::Position& p, ecs::MacroNpcRuntime& rt,
-                   const TickContext& ctx) {
+                   ecs::Pools& pools, const TickContext& ctx) {
     // No private player-channel here any more (owner, 2026-08-29: «игрок
     // ничем не особенен»). Perception and pursuit are squad_threat_step's —
     // the player's squad sits in the SAME SquadIndex at the SAME
@@ -2224,7 +2228,7 @@ void ai_aggressive(ecs::Position& p, ecs::MacroNpcRuntime& rt,
             rt.stateTimer = std::int16_t(8 + rand_int(ctx, 15));
             return;
         }
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
     }
 }
 
@@ -2273,7 +2277,7 @@ void collect_trouble_cells_(void* user, const WorldFact& f) {
 // Возвращает true, когда думает поручение; false = поручения нет, живёт
 // легаси-кругом у дома (генезис-стража до первого растворения).
 bool ai_patrol_errand(ecs::Position& p, ecs::MacroNpcRuntime& rt,
-                      const TickContext& ctx) {
+                      ecs::Pools& pools, const TickContext& ctx) {
     if (rt.errandVerb != std::uint8_t(ErrandVerb::Patrol) || !ctx.mw.gs)
         return false;
     GameState& gs = *ctx.mw.gs;
@@ -2305,7 +2309,7 @@ bool ai_patrol_errand(ecs::Position& p, ecs::MacroNpcRuntime& rt,
             return true;
         case NS::Traveling:
             if (!at_target(p, rt, ctx)) {
-                try_move(p, rt, rt.targetX, rt.targetY, ctx);
+                try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
                 return true;
             }
             rt.state = std::uint8_t(NS::Patrolling);
@@ -2345,7 +2349,7 @@ bool ai_patrol_errand(ecs::Position& p, ecs::MacroNpcRuntime& rt,
                 rt.targetY = t.y;
                 return true;
             }
-            try_move(p, rt, rt.targetX, rt.targetY, ctx);
+            try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
             return true;
         case NS::Returning:
             if (at_target(p, rt, ctx)) {
@@ -2357,7 +2361,7 @@ bool ai_patrol_errand(ecs::Position& p, ecs::MacroNpcRuntime& rt,
                 rt.stateTimer = std::int16_t(kPatrolDwellThinks);
                 return true;
             }
-            try_move(p, rt, rt.targetX, rt.targetY, ctx);
+            try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
             return true;
         default:
             return true;   // Fleeing и прочее — рефлекс сам вернёт в Idle
@@ -2365,8 +2369,8 @@ bool ai_patrol_errand(ecs::Position& p, ecs::MacroNpcRuntime& rt,
 }
 
 void ai_patrol(ecs::Position& p, ecs::MacroNpcRuntime& rt,
-               const TickContext& ctx) {
-    if (ai_patrol_errand(p, rt, ctx)) return;
+               ecs::Pools& pools, const TickContext& ctx) {
+    if (ai_patrol_errand(p, rt, pools, ctx)) return;
     XY home;
     if (!home_pos(rt, ctx, home)) return;
     float dh = torus_dist_sq(p.x, p.y, home.x, home.y,
@@ -2391,12 +2395,12 @@ void ai_patrol(ecs::Position& p, ecs::MacroNpcRuntime& rt,
             rt.stateTimer = std::int16_t(6 + rand_int(ctx, 10));
             return;
         }
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
     }
 }
 
 void ai_teleporter(ecs::Position& p, ecs::MacroNpcRuntime& rt,
-                   const TickContext& ctx) {
+                   ecs::Pools& pools, const TickContext& ctx) {
     if (rt.teleportCooldown > 0) --rt.teleportCooldown;
     if (rt.teleportCooldown <= 0 && rand_f01(ctx) < 0.005f) {
         XY t = pick_random_nearby(p.x, p.y, 40, ctx);
@@ -2425,12 +2429,12 @@ void ai_teleporter(ecs::Position& p, ecs::MacroNpcRuntime& rt,
             rt.stateTimer = std::int16_t(12 + rand_int(ctx, 20));
             return;
         }
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
     }
 }
 
 void ai_wanderer(ecs::Position& p, ecs::MacroNpcRuntime& rt,
-                 const TickContext& ctx) {
+                 ecs::Pools& pools, const TickContext& ctx) {
     if (rt.state == std::uint8_t(NS::Idle)) {
         --rt.stateTimer;
         if (rt.stateTimer <= 0) {
@@ -2446,7 +2450,7 @@ void ai_wanderer(ecs::Position& p, ecs::MacroNpcRuntime& rt,
             rt.stateTimer = std::int16_t(10 + rand_int(ctx, 15));
             return;
         }
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
     }
 }
 
@@ -2548,7 +2552,7 @@ entt::entity nearest_hostile_squad(entt::entity self, const ecs::Position& p,
 // fought); the role behaviour then waits for a calmer half hour.
 bool squad_threat_step(entt::entity self, ecs::Position& p,
                        const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
-                       const TickContext& ctx) {
+                       ecs::Pools& pools, const TickContext& ctx) {
     if (!ctx.mw.world || !ctx.squads || !ctx.mw.gs) return false;
 
     const entt::entity enemy = nearest_hostile_squad(self, p, kind, ctx);
@@ -2617,7 +2621,7 @@ bool squad_threat_step(entt::entity self, ecs::Position& p,
         rt.targetX = wrapf(p.x + dx / len * 8.0f, float(ctx.mapW));
         rt.targetY = wrapf(p.y + dy / len * 8.0f, float(ctx.mapH));
         rt.state = std::uint8_t(NS::Fleeing);
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
         return true;
     }
 
@@ -2628,7 +2632,7 @@ bool squad_threat_step(entt::entity self, ecs::Position& p,
         rt.state = std::uint8_t(NS::Chasing);
         rt.targetX = ep.x;
         rt.targetY = ep.y;
-        try_move(p, rt, rt.targetX, rt.targetY, ctx);
+        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
         return true;
     }
 
@@ -2699,7 +2703,7 @@ void scent_player_deposit(const TickContext& ctx) {
 // читает тест и вертит дубль-прогон.)
 bool scent_hunt_step(entt::entity self, ecs::Position& p,
                      const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
-                     const TickContext& ctx) {
+                     ecs::Pools& pools, const TickContext& ctx) {
     if (!ctx.mw.gs || !ctx.mw.world) return false;
     if (!combatant_behaviour(kNpcTypeDefs[kind.type].ai)) return false;
     const ScentField& sf = ctx.mw.gs->scent;
@@ -2756,7 +2760,7 @@ bool scent_hunt_step(entt::entity self, ecs::Position& p,
         }
     }
     if (bx < 0) return false;
-    try_move(p, rt, float(bx), float(by), ctx);
+    try_move(p, rt, pools, float(bx), float(by), ctx);
     return true;
 }
 
@@ -2767,11 +2771,11 @@ namespace {
 // a route with no route wanders — a degraded order is a visible NPC, not a
 // frozen one.
 void ai_waypoints(entt::entity e, ecs::Position& p, ecs::MacroNpcRuntime& rt,
-                  const TickContext& ctx) {
+                  ecs::Pools& pools, const TickContext& ctx) {
     ecs::SquadOrders* orders = ctx.mw.world
         ? ctx.mw.world->reg.try_get<ecs::SquadOrders>(e) : nullptr;
     if (!orders || orders->waypointCount == 0) {
-        ai_wanderer(p, rt, ctx);
+        ai_wanderer(p, rt, pools, ctx);
         return;
     }
     const int i = orders->currentWaypoint % orders->waypointCount;
@@ -2791,7 +2795,7 @@ void ai_waypoints(entt::entity e, ecs::Position& p, ecs::MacroNpcRuntime& rt,
         return;
     }
     rt.state = std::uint8_t(NS::Traveling);
-    try_move(p, rt, rt.targetX, rt.targetY, ctx);
+    try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
 }
 
 // The behaviour a squad ACTUALLY lives by: its type row's ai column, unless
@@ -2849,7 +2853,7 @@ bool cell_is_water(const TickContext& ctx, int x, int y) {
 void settle_exhaustion(entt::entity e, const ecs::Position& p,
                        ecs::MacroNpcRuntime& rt, ecs::Pools& hp,
                        bool canCamp, const TickContext& ctx) {
-    if (int(rt.sp) >= 0) return;
+    if (int(hp.sp) >= 0) return;
 
     // The AI's DECISION: legs gone, make camp — wherever a camp is possible.
     // Standing still costs nothing; that is the same sentence as «остановился
@@ -2864,7 +2868,7 @@ void settle_exhaustion(entt::entity e, const ecs::Position& p,
         rt.stateTimer = 0;
     }
 
-    const int bite = exhaustion_bite(int(rt.sp));
+    const int bite = exhaustion_bite(int(hp.sp));
     if (bite <= 0) return;
     hp.hp -= bite;
     if (hp.hp <= 0 && ctx.mw.world && ctx.mw.gs) {
@@ -2875,31 +2879,31 @@ void settle_exhaustion(entt::entity e, const ecs::Position& p,
 
 void dispatch(AIBehaviour b, entt::entity e, ecs::Position& p,
               const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
-              const TickContext& ctx) {
+              ecs::Pools& pools, const TickContext& ctx) {
     // Каждый думающий сквад следит — писатель полей следов один (CANON S10).
     scent_squad_deposit(e, p, kind, ctx);
-    if (squad_threat_step(e, p, kind, rt, ctx)) return;
+    if (squad_threat_step(e, p, kind, rt, pools, ctx)) return;
     // Визуального врага нет — может, есть запах: охота съедает think, роль
     // ждёт получаса потише (макроцель в rt не тронута — пауза, не амнезия).
-    if (scent_hunt_step(e, p, kind, rt, ctx)) return;
+    if (scent_hunt_step(e, p, kind, rt, pools, ctx)) return;
     switch (b) {
-        case AIBehaviour::Gatherer:     ai_gatherer(e, p, kind, rt, ctx); break;
-        case AIBehaviour::CaravanTrade: ai_caravan   (e, p, rt, ctx); break;
-        case AIBehaviour::VendorTrade:  ai_vendor    (e, p, rt, ctx); break;
-        case AIBehaviour::TaxRun:       ai_taxrun    (e, p, rt, ctx); break;
-        case AIBehaviour::Trader:       ai_trader       (p, rt, ctx); break;
-        case AIBehaviour::Nomad:        ai_nomad        (p, rt, ctx); break;
-        case AIBehaviour::Aggressive:   ai_aggressive   (p, rt, ctx); break;
-        case AIBehaviour::Patrol:       ai_patrol       (p, rt, ctx); break;
-        case AIBehaviour::Teleporter:   ai_teleporter   (p, rt, ctx); break;
-        case AIBehaviour::Wanderer:     ai_wanderer     (p, rt, ctx); break;
+        case AIBehaviour::Gatherer:     ai_gatherer(e, p, kind, rt, pools, ctx); break;
+        case AIBehaviour::CaravanTrade: ai_caravan   (e, p, rt, pools, ctx); break;
+        case AIBehaviour::VendorTrade:  ai_vendor    (e, p, rt, pools, ctx); break;
+        case AIBehaviour::TaxRun:       ai_taxrun    (e, p, rt, pools, ctx); break;
+        case AIBehaviour::Trader:       ai_trader       (p, rt, pools, ctx); break;
+        case AIBehaviour::Nomad:        ai_nomad        (p, rt, pools, ctx); break;
+        case AIBehaviour::Aggressive:   ai_aggressive   (p, rt, pools, ctx); break;
+        case AIBehaviour::Patrol:       ai_patrol       (p, rt, pools, ctx); break;
+        case AIBehaviour::Teleporter:   ai_teleporter   (p, rt, pools, ctx); break;
+        case AIBehaviour::Wanderer:     ai_wanderer     (p, rt, pools, ctx); break;
         // Prey. Running is not its own errand: the threat step above already
         // makes ANY row run from what it cannot beat (squad_power), so what
         // this column says about an untroubled day is "it roams" — the same
         // walk a wanderer takes. The difference between a fox and a rabbit is
         // what happens when something appears, and that is decided above.
-        case AIBehaviour::Flee:         ai_wanderer     (p, rt, ctx); break;
-        case AIBehaviour::Waypoints:    ai_waypoints (e, p, rt, ctx); break;
+        case AIBehaviour::Flee:         ai_wanderer     (p, rt, pools, ctx); break;
+        case AIBehaviour::Waypoints:    ai_waypoints (e, p, rt, pools, ctx); break;
         case AIBehaviour::Count:        break;
     }
 }
@@ -3846,7 +3850,7 @@ void tick_macro_npc_ai(MacroWorld& mw,
         refresh_overload_cost(rt, reg.try_get<ecs::NpcInventory>(e));
         const float x0 = p.x, y0 = p.y;
         if (gate == ThinkGate::Think)
-            dispatch(effective_behaviour(reg, e, kind), e, p, kind, rt, ctx);
+            dispatch(effective_behaviour(reg, e, kind), e, p, kind, rt, hp, ctx);
         settle_march_rhythm(e, p, rt, hp, p.x != x0 || p.y != y0, ctx);
     }
 
@@ -3984,7 +3988,7 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
                     const float x0 = p.x, y0 = p.y;
                     if (gate == ThinkGate::Think) {
                         dispatch(effective_behaviour(reg, e, kind), e, p, kind,
-                                 rt, ctx);
+                                 rt, hp, ctx);
                     }
                     settle_march_rhythm(e, p, rt, hp,
                                         p.x != x0 || p.y != y0, ctx);

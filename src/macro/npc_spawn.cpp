@@ -103,10 +103,19 @@ entt::entity make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
     // differ by seed only; hp stays with the birth sheet so the boot RNG
     // stream and every world stays byte-identical, and cross-layer state
     // travels as FRACTIONS (wound law, fatigue) so the seams never notice.
+    // ALL THREE POOLS, built before the caches that cap them — the ceiling and
+    // the bar it bounds are filled by one door, in one place (squad.h
+    // refresh_leader_travel_stats). Named fields, not a positional list: this
+    // block grows, and a body born short of a bar is the defect the pools
+    // landing exists to make impossible.
+    ecs::Pools pools{};
+    pools.hp = pools.maxHp = hp;
+    pools.mp = pools.maxMp = body_max_mp(sheet);
     refresh_leader_travel_stats(
-        rt, make_character_sheet(type, lvl, leader_sheet_seed(ordinal)),
+        rt, pools, make_character_sheet(type, lvl, leader_sheet_seed(ordinal)),
         type);
-    rt.sp = rt.maxSp;   // born rested
+    pools.sp = pools.maxSp;   // born rested
+    w.reg.emplace<ecs::Pools>(e, pools);
     w.reg.emplace<ecs::MacroNpcRuntime>(e, rt);
 
     w.reg.emplace<ecs::MacroSpawnId>(e, ordinal);
@@ -119,17 +128,6 @@ entt::entity make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
     // born empty. 136 B × the 16384-squad cap ≈ 2.2 MiB — the whole world's
     // memory budget, by the owner's brief.
     w.reg.emplace<AgentMemory>(e);
-
-    // BOTH pools derived from the character sheet — the same laws the subworld
-    // uses (body_max_hp / body_max_mp). Named fields, not a positional list:
-    // this block grows, and a body born short of a bar is exactly the defect
-    // this landing exists to make impossible.
-    {
-        ecs::Pools pools{};
-        pools.hp = pools.maxHp = hp;
-        pools.mp = pools.maxMp = body_max_mp(sheet);
-        w.reg.emplace<ecs::Pools>(e, pools);
-    }
 
     w.reg.emplace<ecs::NpcLevel>(e, std::int16_t(lvl));
 

@@ -190,7 +190,7 @@ void scent_squad_deposit(entt::entity e, const ecs::Position& p,
 // think съеден охотой, макроцель в rt не тронута (пауза, не амнезия).
 bool scent_hunt_step(entt::entity self, ecs::Position& p,
                      const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
-                     const TickContext& ctx);
+                     ecs::Pools& pools, const TickContext& ctx);
 
 // ── Trading at a market (owner, 2026-08-30; CANON S10/S25) ───────────────
 // Locality is the law: every decision reads the market the squad STANDS ON

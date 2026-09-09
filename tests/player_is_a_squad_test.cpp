@@ -48,7 +48,6 @@ entt::entity npc_squad(ecs::World& w, float x, float y, std::uint32_t ordinal,
     rt.targetX = x;
     rt.targetY = y;
     rt.state = std::uint8_t(NPCState::Idle);
-    rt.sp = 100;
     reg.emplace<ecs::MacroNpcRuntime>(e, rt);
     auto& roster = reg.emplace<ecs::SquadRoster>(e);
     for (int i = 0; i < members; ++i) {
@@ -215,7 +214,7 @@ void test_the_entity_numbers_are_not_stale() {
     ensure_macro_player_entity(gs, w);
     const entt::entity e = player_squad_entity(w);
 
-    const int bornMaxSp = w.reg.get<ecs::MacroNpcRuntime>(e).maxSp;
+    const int bornMaxSp = w.reg.get<ecs::Pools>(e).maxSp;
     CHECK(bornMaxSp == gs.player.combatStats.maxSp,
           "his squad is born with his own stamina bar");
 
@@ -238,13 +237,12 @@ void test_the_entity_numbers_are_not_stale() {
     CHECK(hp.hp == 17.0f, "the wound reached the entity");
     CHECK(hp.maxHp == float(gs.player.combatStats.maxHp),
           "and so did the bigger bar the new END bought");
-    const auto& rt = w.reg.get<ecs::MacroNpcRuntime>(e);
-    CHECK(rt.maxSp == gs.player.combatStats.maxSp,
+    CHECK(hp.maxSp == gs.player.combatStats.maxSp,
           "the stamina ceiling followed the END he trained");
-    CHECK(rt.maxSp > bornMaxSp,
+    CHECK(hp.maxSp > bornMaxSp,
           "negative control: that ceiling did MOVE — the check above is not "
           "comparing two copies of the same stale number");
-    CHECK(rt.sp == -6, "the exhaustion DEBT survives the projection, unclamped");
+    CHECK(hp.sp == -6, "the exhaustion DEBT survives the projection, unclamped");
     CHECK(w.reg.get<ecs::NpcLevel>(e).value == 4, "and he is level 4 to the map");
     const auto& pos = w.reg.get<ecs::Position>(e);
     CHECK(pos.x == 33.0f && pos.y == 44.0f, "the entity stands where he stands");

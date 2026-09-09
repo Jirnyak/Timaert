@@ -66,14 +66,17 @@ entt::entity make_squad_at(ecs::World& w, NPCType type, const char* faction,
     rt.state = std::uint8_t(NPCState::Idle);
     const CharacterSheet sheet = make_character_sheet(
         type, level, leader_sheet_seed(ordinal));
-    refresh_leader_travel_stats(rt, sheet, type);  // same door make_npc uses
-    rt.sp = rt.maxSp;                         // rested: fatigue 1.0, as before
+    const int hp = std::max(
+        1, int(project_combat(sheet, npc_def(type).combat).hp));
+    ecs::Pools pools{};
+    pools.hp = pools.maxHp = hp;
+    // same door make_npc uses — it caps the bar it is handed
+    refresh_leader_travel_stats(rt, pools, sheet, type);
+    pools.sp = pools.maxSp;               // rested: fatigue 1.0, as before
+    reg.emplace<ecs::Pools>(e, pools);
     reg.emplace<ecs::MacroNpcRuntime>(e, rt);
     reg.emplace<ecs::MacroSpawnId>(e, ordinal);
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(level));
-    const int hp = std::max(
-        1, int(project_combat(sheet, npc_def(type).combat).hp));
-    reg.emplace<ecs::Pools>(e, hp, hp);
     auto& roster = reg.emplace<ecs::SquadRoster>(e);
     for (std::uint32_t id : memberIds) {
         roster.squad.push(
@@ -150,9 +153,9 @@ void test_the_weak_flee_and_fighters_pursue() {
     // Freeze the bandits: resting with empty stamina, so the caravan's
     // flight is measured against a fixed threat.
     {
-        auto& brt = w.reg.get<ecs::MacroNpcRuntime>(bandit);
-        brt.sp = 0;
-        brt.state = std::uint8_t(NPCState::Resting);
+        w.reg.get<ecs::Pools>(bandit).sp = 0;
+        w.reg.get<ecs::MacroNpcRuntime>(bandit).state =
+            std::uint8_t(NPCState::Resting);
     }
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 43u);
@@ -181,9 +184,9 @@ void test_the_weak_flee_and_fighters_pursue() {
                                     15.0f, 10.0f, 2u, {},
                                     NPCType::Peasant, 1);
     {
-        auto& crt = w2.reg.get<ecs::MacroNpcRuntime>(prey);
-        crt.sp = 0;
-        crt.state = std::uint8_t(NPCState::Resting);
+        w2.reg.get<ecs::Pools>(prey).sp = 0;
+        w2.reg.get<ecs::MacroNpcRuntime>(prey).state =
+            std::uint8_t(NPCState::Resting);
     }
     MacroNpcAiRuntime rt2{};
     reset_macro_npc_ai_runtime(rt2, 44u);
@@ -432,12 +435,13 @@ void test_the_leaders_training_reads_at_the_new_doors() {
     // door — the same door the march caches cannot drift through.
     {
         ecs::MacroNpcRuntime rt{};
+        ecs::Pools pools{};
         CharacterSheet trained{};
         trained.skills[SkillId::Scouting] = 25;
-        refresh_leader_travel_stats(rt, trained, NPCType::Bandit);
+        refresh_leader_travel_stats(rt, pools, trained, NPCType::Bandit);
         CHECK(rt.scoutRank == 25, "the scouting rank rides the runtime cache");
         CharacterSheet bare{};
-        refresh_leader_travel_stats(rt, bare, NPCType::Bandit);
+        refresh_leader_travel_stats(rt, pools, bare, NPCType::Bandit);
         CHECK(rt.scoutRank == 0,
               "negative control: a rankless sheet clears the cache");
     }

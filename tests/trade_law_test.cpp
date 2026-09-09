@@ -88,13 +88,15 @@ int main() {
         rt.targetY = 32.0f;
         rt.state = std::uint8_t(NPCState::Idle);
         rt.stateTimer = 0;
-        refresh_leader_travel_stats(rt, make_character_sheet(
+        ecs::Pools pools{};
+        pools.hp = pools.maxHp = 25;
+        refresh_leader_travel_stats(rt, pools, make_character_sheet(
             NPCType::Caravan, 3, leader_sheet_seed(21u)), NPCType::Caravan);
-        rt.sp = rt.maxSp;
+        pools.sp = pools.maxSp;
+        reg.emplace<ecs::Pools>(e, pools);
         reg.emplace<ecs::MacroNpcRuntime>(e, rt);
         reg.emplace<ecs::MacroSpawnId>(e, 21u);
         reg.emplace<ecs::NpcLevel>(e, std::int16_t(3));
-        reg.emplace<ecs::Pools>(e, 25, 25);
         reg.emplace<ecs::SquadRoster>(e);
         reg.emplace<ecs::NpcInventory>(e);
         reg.emplace<AgentMemory>(e);

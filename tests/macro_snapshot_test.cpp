@@ -89,7 +89,7 @@ void test_snapshot_round_trips_the_living_map() {
     // the tracked-death shape (hp=0 + Dead) the whole game uses.
     auto& rtA = w.reg.get<ecs::MacroNpcRuntime>(a);
     rtA.xp = 777;
-    rtA.sp = -15;
+    w.reg.get<ecs::Pools>(a).sp = -15;
     auto& posA = w.reg.get<ecs::Position>(a);
     posA.x = 25.0f;
     posA.y = 21.0f;
@@ -124,7 +124,7 @@ void test_snapshot_round_trips_the_living_map() {
     CHECK_OR_RETURN(a2 != entt::null, "leader A restored under his ordinal");
     CHECK(w2.reg.get<ecs::MacroNpcRuntime>(a2).xp == 777,
           "the leader's campaigns (xp) survive the save");
-    CHECK(w2.reg.get<ecs::MacroNpcRuntime>(a2).sp == -15,
+    CHECK(w2.reg.get<ecs::Pools>(a2).sp == -15,
           "the leader's exhaustion debt survives the save");
     CHECK(w2.reg.get<ecs::Position>(a2).x == 25.0f
               && w2.reg.get<ecs::Position>(a2).y == 21.0f,

@@ -1690,13 +1690,14 @@ bool run_macro_npc_trace_smoke(App& app) {
     visual.vy = pos.y;
 
     // The leader's bar is his SHEET's (Session 21): the cached maxSp the
-    // regen law fills, not the retired 2×maxHp dialect. (void)hp — the body
-    // still anchors the entity, but SP no longer derives from it.
-    (void)hp;
-    const int maxSp = std::max(1, int(rt.maxSp));
+    // regen law fills, not the retired 2×maxHp dialect. Since the pools
+    // landing the bar lives in the body's own block beside the wound, so this
+    // trace stomps ALL of it there — a carry left behind in another struct is
+    // exactly how a trace leaks between runs.
+    const int maxSp = std::max(1, hp.maxSp);
     rt.state = std::uint8_t(sm::NPCState::Resting);
-    rt.sp = 0;
-    rt.spCarry = 0.0f;
+    hp.sp = 0;
+    hp.spCarry = 0.0f;
     rt.moveBudget = 0.0f;
     rt.tickAccum = 0;
     rt.visualSpeed = 0.0f;
@@ -1716,7 +1717,7 @@ bool run_macro_npc_trace_smoke(App& app) {
             break;
         }
     }
-    const int recoveredSp = rt.sp;
+    const int recoveredSp = hp.sp;
     const int recoveredState = int(rt.state);
     const bool recovered =
         recoveredSp >= maxSp / 2
@@ -1732,7 +1733,7 @@ bool run_macro_npc_trace_smoke(App& app) {
     rt.targetY = float(baseY);
     rt.targetSettlementId = -1;
     rt.state = std::uint8_t(sm::NPCState::Traveling);
-    rt.sp = std::int16_t(maxSp);
+    hp.sp = std::int16_t(maxSp);
     rt.tickAccum = 0;
     rt.visualSpeed = 0.0f;
 

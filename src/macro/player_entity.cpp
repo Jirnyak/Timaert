@@ -52,12 +52,9 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
             std::uint16_t(faction_index(kPlayerFactionId)));
         reg.emplace<ecs::NpcLevel>(
             squad, std::int16_t(std::max(1, gs.player.sheet.levelData.level)));
-        {
-            ecs::Pools pools{};
-            pools.hp = pools.maxHp = std::max(1, gs.player.combatStats.maxHp);
-            pools.mp = pools.maxMp = std::max(0, gs.player.combatStats.maxMp);
-            reg.emplace<ecs::Pools>(squad, pools);
-        }
+        ecs::Pools& pools = reg.emplace<ecs::Pools>(squad, ecs::Pools{});
+        pools.hp = pools.maxHp = std::max(1, gs.player.combatStats.maxHp);
+        pools.mp = pools.maxMp = std::max(0, gs.player.combatStats.maxMp);
         reg.emplace<ecs::NpcTraits>(squad, ecs::NpcTraits{});
         {
             Rng faceRng(ecs::kPlayerSquadOrdinal ^ 0x9E3779B9u);
@@ -85,11 +82,11 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
             // sheet copy (attr/skill cells) and the derived cells the cache
             // door reads past it (MovePct/CarryKg).
             const BonusTotals st = player_standing_bonuses(world, gs.player);
-            refresh_leader_travel_stats(rt,
+            refresh_leader_travel_stats(rt, pools,
                                         effective_sheet(gs.player.sheet, st),
                                         NPCType::Adventurer, &st);
         }
-        rt.sp = rt.maxSp;
+        pools.sp = pools.maxSp;
         reg.emplace<ecs::MacroNpcRuntime>(squad, rt);
     }
 
@@ -117,31 +114,30 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
     // No +0.5 on the position — Position is the raw cell coordinate, and the
     // overlay applies the render centring.
     reg.emplace_or_replace<ecs::Position>(squad, gs.player.x, gs.player.y, 0.0f);
+    // ALL THREE bars are re-projected, not just the one anybody happened to
+    // read: a projection that copies a subset is the "lie with a long fuse"
+    // this function's own header warns about, and the subset is exactly how
+    // mana stayed the player's private property. The fractional carries are
+    // NOT touched — they are the body's own remainder, not the scalar's.
     {
-        // BOTH bars are re-projected, not just the one anybody happened to
-        // read: a projection that copies a subset is the "lie with a long
-        // fuse" this function's own header warns about, and the subset was
-        // how mana stayed the player's private property.
-        ecs::Pools pools{};
+        ecs::Pools& pools = reg.get_or_emplace<ecs::Pools>(squad);
         pools.hp    = std::max(0, gs.player.combatStats.currentHp);
         pools.maxHp = std::max(1, gs.player.combatStats.maxHp);
         pools.mp    = std::max(0, gs.player.combatStats.currentMp);
         pools.maxMp = std::max(0, gs.player.combatStats.maxMp);
-        reg.emplace_or_replace<ecs::Pools>(squad, pools);
-    }
-    reg.emplace_or_replace<ecs::NpcLevel>(
-        squad, std::int16_t(std::max(1, gs.player.sheet.levelData.level)));
-    if (auto* rt = reg.try_get<ecs::MacroNpcRuntime>(squad)) {
-        // The SAME door every lord's caches go through (squad.h) — the sheet
-        // is the law, these four are its cache, and there is one refresh.
-        // The EFFECTIVE sheet (phase 4): a worn +END breastplate carries and
-        // marches like the body actually wearing it.
-        const BonusTotals st = player_standing_bonuses(world, gs.player);
-        refresh_leader_travel_stats(*rt,
-                                    effective_sheet(gs.player.sheet, st),
-                                    NPCType::Adventurer, &st);
-        rt->sp = std::int16_t(std::clamp(gs.player.combatStats.currentSp,
-                                         -32768, 32767));
+        reg.emplace_or_replace<ecs::NpcLevel>(
+            squad, std::int16_t(std::max(1, gs.player.sheet.levelData.level)));
+        if (auto* rt = reg.try_get<ecs::MacroNpcRuntime>(squad)) {
+            // The SAME door every lord's caches go through (squad.h) — the
+            // sheet is the law, these are its cache, and there is one refresh.
+            // The EFFECTIVE sheet (phase 4): a worn +END breastplate carries
+            // and marches like the body actually wearing it.
+            const BonusTotals st = player_standing_bonuses(world, gs.player);
+            refresh_leader_travel_stats(*rt, pools,
+                                        effective_sheet(gs.player.sheet, st),
+                                        NPCType::Adventurer, &st);
+            pools.sp = gs.player.combatStats.currentSp;
+        }
     }
 
     // ── The flag ──────────────────────────────────────────────────────────
@@ -220,8 +216,8 @@ const Inventory* player_inventory(const ecs::World& world) {
 float* player_sp_carry(ecs::World& world) {
     const entt::entity e = find_player_squad(world);
     if (e == entt::null) return nullptr;
-    auto* rt = world.reg.try_get<ecs::MacroNpcRuntime>(e);
-    return rt ? &rt->spCarry : nullptr;
+    auto* pools = world.reg.try_get<ecs::Pools>(e);
+    return pools ? &pools->spCarry : nullptr;
 }
 
 AgentMemory* player_head(ecs::World& world) {

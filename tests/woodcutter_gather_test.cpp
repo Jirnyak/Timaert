@@ -63,10 +63,11 @@ entt::entity make_woodcutter(ecs::World& w, float x, float y,
     rt.targetY = y;
     rt.state = std::uint8_t(NPCState::Idle);
     rt.stateTimer = 0;
+    ecs::Pools pools{};
     const CharacterSheet sheet = make_character_sheet(
         NPCType::Woodcutter, 3, leader_sheet_seed(11u));
-    refresh_leader_travel_stats(rt, sheet, NPCType::Woodcutter);
-    rt.sp = rt.maxSp;
+    refresh_leader_travel_stats(rt, pools, sheet, NPCType::Woodcutter);
+    pools.sp = pools.maxSp;
     // Работа именуется ПОРУЧЕНИЕМ, не типом (аукцион, CANON S10): рубка =
     // Gather над строкой целей Trees — то, что рулетка ротации выдала бы.
     rt.errandVerb = std::uint8_t(ErrandVerb::Gather);
@@ -74,7 +75,8 @@ entt::entity make_woodcutter(ecs::World& w, float x, float y,
     reg.emplace<ecs::MacroNpcRuntime>(e, rt);
     reg.emplace<ecs::MacroSpawnId>(e, 11u);
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(3));
-    reg.emplace<ecs::Pools>(e, 30, 30);
+    pools.hp = pools.maxHp = 30;
+    reg.emplace<ecs::Pools>(e, pools);
     reg.emplace<ecs::SquadRoster>(e);
     reg.emplace<ecs::NpcInventory>(e);
     return e;
@@ -183,16 +185,18 @@ void test_the_farmer_works_the_field() {
     prt.targetY = 10.0f;
     prt.state = std::uint8_t(NPCState::Idle);
     prt.stateTimer = 0;
+    ecs::Pools pools{};
     refresh_leader_travel_stats(
-        prt, make_character_sheet(NPCType::Peasant, 2, leader_sheet_seed(12u)),
+        prt, pools, make_character_sheet(NPCType::Peasant, 2, leader_sheet_seed(12u)),
         NPCType::Peasant);
-    prt.sp = prt.maxSp;
+    pools.sp = pools.maxSp;
     prt.errandVerb = std::uint8_t(ErrandVerb::Gather);
     prt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Wheat));
     reg.emplace<ecs::MacroNpcRuntime>(e, prt);
     reg.emplace<ecs::MacroSpawnId>(e, 12u);
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(2));
-    reg.emplace<ecs::Pools>(e, 20, 20);
+    pools.hp = pools.maxHp = 20;
+    reg.emplace<ecs::Pools>(e, pools);
     reg.emplace<ecs::SquadRoster>(e);
     reg.emplace<ecs::NpcInventory>(e);
 
@@ -251,16 +255,18 @@ void test_farmer_without_terrain_conjures_nothing() {
     prt.targetY = 10.0f;
     prt.state = std::uint8_t(NPCState::Idle);
     prt.stateTimer = 0;
+    ecs::Pools pools{};
     refresh_leader_travel_stats(
-        prt, make_character_sheet(NPCType::Peasant, 2, leader_sheet_seed(12u)),
+        prt, pools, make_character_sheet(NPCType::Peasant, 2, leader_sheet_seed(12u)),
         NPCType::Peasant);
-    prt.sp = prt.maxSp;
+    pools.sp = pools.maxSp;
     prt.errandVerb = std::uint8_t(ErrandVerb::Gather);
     prt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Wheat));
     reg.emplace<ecs::MacroNpcRuntime>(e, prt);
     reg.emplace<ecs::MacroSpawnId>(e, 12u);
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(2));
-    reg.emplace<ecs::Pools>(e, 20, 20);
+    pools.hp = pools.maxHp = 20;
+    reg.emplace<ecs::Pools>(e, pools);
     reg.emplace<ecs::SquadRoster>(e);
     reg.emplace<ecs::NpcInventory>(e);
 
@@ -347,16 +353,18 @@ void test_the_mine_runs_while_the_player_is_away() {
     rt.targetY = 10.0f;
     rt.state = std::uint8_t(NPCState::Idle);
     rt.stateTimer = 0;
+    ecs::Pools pools{};
     refresh_leader_travel_stats(
-        rt, make_character_sheet(NPCType::Miner, 3, leader_sheet_seed(13u)),
+        rt, pools, make_character_sheet(NPCType::Miner, 3, leader_sheet_seed(13u)),
         NPCType::Miner);
-    rt.sp = rt.maxSp;
+    pools.sp = pools.maxSp;
     rt.errandVerb = std::uint8_t(ErrandVerb::Gather);
     rt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Iron));
     reg.emplace<ecs::MacroNpcRuntime>(e, rt);
     reg.emplace<ecs::MacroSpawnId>(e, 13u);
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(3));
-    reg.emplace<ecs::Pools>(e, 30, 30);
+    pools.hp = pools.maxHp = 30;
+    reg.emplace<ecs::Pools>(e, pools);
     reg.emplace<ecs::SquadRoster>(e);
     reg.emplace<ecs::NpcInventory>(e);
 
@@ -462,14 +470,16 @@ void test_the_vendor_sells_at_the_nearest_city() {
     crt.targetY = 10.0f;
     crt.state = std::uint8_t(NPCState::Idle);
     crt.stateTimer = 0;
+    ecs::Pools pools{};
     refresh_leader_travel_stats(
-        crt, make_character_sheet(NPCType::Vendor, 3, leader_sheet_seed(13u)),
+        crt, pools, make_character_sheet(NPCType::Vendor, 3, leader_sheet_seed(13u)),
         NPCType::Vendor);
-    crt.sp = crt.maxSp;
+    pools.sp = pools.maxSp;
     reg.emplace<ecs::MacroNpcRuntime>(e, crt);
     reg.emplace<ecs::MacroSpawnId>(e, 13u);
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(3));
-    reg.emplace<ecs::Pools>(e, 25, 25);
+    pools.hp = pools.maxHp = 25;
+    reg.emplace<ecs::Pools>(e, pools);
     reg.emplace<ecs::SquadRoster>(e);
     reg.emplace<ecs::NpcInventory>(e);
     reg.emplace<AgentMemory>(e);
@@ -564,16 +574,18 @@ void test_the_miner_works_the_vein() {
     rt.targetY = 10.0f;
     rt.state = std::uint8_t(NPCState::Idle);
     rt.stateTimer = 0;
+    ecs::Pools pools{};
     refresh_leader_travel_stats(
-        rt, make_character_sheet(NPCType::Miner, 3, leader_sheet_seed(13u)),
+        rt, pools, make_character_sheet(NPCType::Miner, 3, leader_sheet_seed(13u)),
         NPCType::Miner);
-    rt.sp = rt.maxSp;
+    pools.sp = pools.maxSp;
     rt.errandVerb = std::uint8_t(ErrandVerb::Gather);
     rt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Iron));
     reg.emplace<ecs::MacroNpcRuntime>(e, rt);
     reg.emplace<ecs::MacroSpawnId>(e, 13u);
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(3));
-    reg.emplace<ecs::Pools>(e, 30, 30);
+    pools.hp = pools.maxHp = 30;
+    reg.emplace<ecs::Pools>(e, pools);
     reg.emplace<ecs::SquadRoster>(e);
     reg.emplace<ecs::NpcInventory>(e);
 
@@ -635,7 +647,12 @@ void test_the_miner_works_the_vein() {
     w2.reg.emplace<ecs::MacroNpcRuntime>(e2, rt);
     w2.reg.emplace<ecs::MacroSpawnId>(e2, 14u);
     w2.reg.emplace<ecs::NpcLevel>(e2, std::int16_t(3));
-    w2.reg.emplace<ecs::Pools>(e2, 30, 30);
+    {
+        ecs::Pools p2{};
+        p2.hp = p2.maxHp = 30;
+        p2.sp = p2.maxSp = 100;
+        w2.reg.emplace<ecs::Pools>(e2, p2);
+    }
     w2.reg.emplace<ecs::SquadRoster>(e2);
     w2.reg.emplace<ecs::NpcInventory>(e2);
     MacroNpcAiRuntime art2{};

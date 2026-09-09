@@ -69,15 +69,18 @@ entt::entity make_walker(ecs::World& w, float x, float y,
     rt.targetX = tx;
     rt.targetY = ty;
     rt.state = std::uint8_t(NPCState::Traveling);
-    rt.maxSp = std::int16_t(maxSp);
-    rt.sp = std::int16_t(maxSp);
     rt.travelRank = 0;
     rt.marathonRank = 0;
     rt.moveMult = 1.0f;
     w.reg.emplace<ecs::MacroNpcRuntime>(e, rt);
     w.reg.emplace<ecs::MacroSpawnId>(e, 7u);
     w.reg.emplace<ecs::NpcLevel>(e, std::int16_t(1));
-    w.reg.emplace<ecs::Pools>(e, hp, hp);
+    // Three bars, one block (pools landing): the legs' bar is filled here
+    // beside the wound, not in the march runtime.
+    ecs::Pools pools{};
+    pools.hp = pools.maxHp = hp;
+    pools.sp = pools.maxSp = maxSp;
+    w.reg.emplace<ecs::Pools>(e, pools);
     w.reg.emplace<ecs::SquadRoster>(e);
     return e;
 }
@@ -115,8 +118,8 @@ bool drive_to_arrival(GameState& gs, ecs::World& w, MacroNpcAiRuntime& rt,
 
 // SP the whole trip charged, fractional carry included — the ledger that sees
 // every sub-step a per-think position trace cannot.
-float sp_spent(const ecs::MacroNpcRuntime& npc, int maxSp) {
-    return float(maxSp) - (float(npc.sp) + npc.spCarry);
+float sp_spent(const ecs::Pools& pools, int maxSp) {
+    return float(maxSp) - (float(pools.sp) + pools.spCarry);
 }
 
 // ── Water is walked around when dry progress exists ────────────────────────
@@ -137,7 +140,7 @@ void test_greedy_walks_around_a_wet_cell() {
     // Seven-to-eight weight-1 cells cost that many × kStaminaPerCell; ONE
     // swum cell would add ten more. Derived, never pinned: the ledger says
     // the trip stayed dry, sub-steps included.
-    CHECK(sp_spent(npc, 110) < 9.0f * kStaminaPerCell,
+    CHECK(sp_spent(w.reg.get<ecs::Pools>(e), 110) < 9.0f * kStaminaPerCell,
           "the trip was paid at dry prices: the greedy step went around");
 }
 
@@ -284,7 +287,8 @@ void test_land_exhaustion_makes_camp_without_blood() {
 
     CHECK(thinks < 32 && npc.state == std::uint8_t(NPCState::Resting),
           "a bar spent on land is a camp, not a catastrophe");
-    CHECK(int(npc.sp) <= int(npc.maxSp) / kCampBarDivisor,
+    const auto& campPools = w.reg.get<ecs::Pools>(e);
+    CHECK(campPools.sp <= campPools.maxSp / kCampBarDivisor,
           "the legs stopped at the camp margin, the automaton's own answer");
     const float bled = 100.0f - w.reg.get<ecs::Pools>(e).hp;
     // The camp decision lands BEFORE debt (npc_ai.h kCampBarDivisor): on
@@ -302,14 +306,14 @@ void test_land_exhaustion_makes_camp_without_blood() {
     // The LEDGER, not the bar: regen is fractional (kRestRegenPctPerHour of a
     // 4-point bar per game hour), so eight thinks may not add a WHOLE point.
     // The file's own convention — sp + carry — is what actually moved.
-    const float ledgerAt = float(npc.sp) + npc.spCarry;
+    const float ledgerAt = float(w.reg.get<ecs::Pools>(e).sp) + w.reg.get<ecs::Pools>(e).spCarry;
     for (int i = 0; i < 8; ++i) {
         MacroWorld mw{.gs = &gs, .world = &w, .pathCost = &grid};
         tick_macro_npc_ai(mw, rt, kAiTicks, false);
     }
     CHECK(w.reg.get<ecs::Pools>(e).hp == campedAt,
           "eight thinks in camp cost no blood at all");
-    CHECK(float(npc.sp) + npc.spCarry > ledgerAt,
+    CHECK(float(w.reg.get<ecs::Pools>(e).sp) + w.reg.get<ecs::Pools>(e).spCarry > ledgerAt,
           "negative control: those thinks DID pass — the bar was refilling");
 }
 
@@ -472,7 +476,7 @@ void test_banking_a_part_cell_is_not_resting() {
         tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle*/false);
     }
     const float cells = w.reg.get<ecs::Position>(e).x - 10.0f;
-    const float ledgerSpent = 110.0f - (float(npc.sp) + npc.spCarry);
+    const float ledgerSpent = 110.0f - (float(w.reg.get<ecs::Pools>(e).sp) + w.reg.get<ecs::Pools>(e).spCarry);
 
     CHECK(cells > 0.0f, "the walker is on the road");
     CHECK(std::fabs(ledgerSpent - cells * kStaminaPerCell) < 0.01f,
@@ -482,12 +486,12 @@ void test_banking_a_part_cell_is_not_resting() {
     // The control: the SAME body, standing at its target, DOES recover.
     npc.targetX = w.reg.get<ecs::Position>(e).x;
     npc.targetY = 4.0f;
-    const float restingFrom = float(npc.sp) + npc.spCarry;
+    const float restingFrom = float(w.reg.get<ecs::Pools>(e).sp) + w.reg.get<ecs::Pools>(e).spCarry;
     for (int i = 0; i < 8; ++i) {
         MacroWorld mw{.gs = &gs, .world = &w, .pathCost = &grid};
         tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle*/false);
     }
-    CHECK(float(npc.sp) + npc.spCarry > restingFrom,
+    CHECK(float(w.reg.get<ecs::Pools>(e).sp) + w.reg.get<ecs::Pools>(e).spCarry > restingFrom,
           "negative control: standing where it meant to be, it recovers — "
           "the gate is «остановился», and it is open");
 }
@@ -539,8 +543,8 @@ void test_a_laden_squad_pays_for_its_load() {
         tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle*/false);
     }
 
-    const auto& lrt = w.reg.get<ecs::MacroNpcRuntime>(light);
-    const auto& hrt = w.reg.get<ecs::MacroNpcRuntime>(heavy);
+    const auto& lrt = w.reg.get<ecs::Pools>(light);
+    const auto& hrt = w.reg.get<ecs::Pools>(heavy);
     const float lightSpent = 110.0f - (float(lrt.sp) + lrt.spCarry);
     const float heavySpent = 110.0f - (float(hrt.sp) + hrt.spCarry);
     const float lightCells = w.reg.get<ecs::Position>(light).x - 10.0f;
@@ -548,7 +552,9 @@ void test_a_laden_squad_pays_for_its_load() {
 
     CHECK(heavySpent > lightSpent,
           "the laden squad paid more for the same road — the pack is a cost");
-    CHECK(hrt.overloadCost > 0 && lrt.overloadCost == 0,
+    const auto& lrtRun = w.reg.get<ecs::MacroNpcRuntime>(light);
+    const auto& hrtRun = w.reg.get<ecs::MacroNpcRuntime>(heavy);
+    CHECK(hrtRun.overloadCost > 0 && lrtRun.overloadCost == 0,
           "and the surcharge is on the laden one alone");
     CHECK(lightCells > 0.0f && heavyCells > 0.0f,
           "negative control: BOTH of them actually walked, so the gap above "
