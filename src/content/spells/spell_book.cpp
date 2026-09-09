@@ -1,5 +1,7 @@
 #include "content/spells/spell_book.h"
 #include "core/time.h"
+#include "ecs/components.h"
+#include "ecs/world.h"
 
 #include <cstddef>
 #include <cmath>
@@ -10,9 +12,9 @@ namespace sm {
 namespace {
 
 // The one place steps turn back into seconds: a human reads seconds.
-std::string cooldown_reason(std::uint32_t steps) {
+std::string recovery_reason(std::uint32_t steps) {
     char buf[32]{};
-    std::snprintf(buf, sizeof(buf), "Cooldown %.1fs",
+    std::snprintf(buf, sizeof(buf), "Recovery %.1fs",
                   double(seconds_from_steps(steps)));
     return std::string(buf);
 }
@@ -86,18 +88,22 @@ int spell_radius(const SpellDef& spell,
 CastCheck spellbook_can_cast_ex(const SpellBook& sb,
                                 const CombatStats& combat,
                                 int spellOrd,
-                                bool inMicro) {
+                                bool inMicro,
+                                std::uint32_t bodyRecoverySteps) {
     if (!spell_ordinal_ok(spellOrd)) return {false, "Unknown spell", 0.0f};
     const SpellDef* d = &kSpellDefs[spellOrd];
     if (!spellbook_has_learned(sb, spellOrd))
         return {false, "Spell not learned", 0.0f};
+    // The BODY's one gate, asked before anything the spell itself could say
+    // (owner verdict 2026-09-09): a hand still recovering — from a swing, a
+    // cast, anything — starts no action, and even a stance flip waits.
+    if (bodyRecoverySteps > 0u) {
+        return {false, recovery_reason(bodyRecoverySteps),
+                seconds_from_steps(bodyRecoverySteps)};
+    }
     if (d->sustained && spellbook_has_sustained(sb, spellOrd))
         return {true, "", 0.0f};
     if (combat.currentMp < d->manaCost) return {false, "Not enough mana", 0.0f};
-
-    if (const std::uint32_t cd = sb.cooldownSteps[spellOrd]; cd > 0u) {
-        return {false, cooldown_reason(cd), seconds_from_steps(cd)};
-    }
 
     if (inMicro && !d->hasMicro) return {false, "Cannot use here", 0.0f};
     if (!inMicro && !d->hasMacro) {
@@ -111,7 +117,6 @@ CastCheck spellbook_can_cast_ex(const SpellBook& sb,
 }
 
 int spellbook_start_cast(SpellBook& sb, CombatStats& combat,
-                         const Attributes& attributes, const Skills& skills,
                          int spellOrd) {
     if (!spell_ordinal_ok(spellOrd)) return 0;
     const SpellDef* d = &kSpellDefs[spellOrd];
@@ -121,15 +126,6 @@ int spellbook_start_cast(SpellBook& sb, CombatStats& combat,
     }
     combat.currentMp -= d->manaCost;
     if (combat.currentMp < 0) combat.currentMp = 0;
-    // The table authors seconds; the caster's sheet divides them through THE
-    // recovery door (S14 «один рычаг», 2026-09-07): Spd asymptote ×
-    // Spellcraft — the generic tempo of ANY cast, while the school multiplied
-    // the POWER above. A master returns fire sooner, a haste spell (+Spd on
-    // the effective sheet) quickens every cast with no code here.
-    if (d->cooldown > 0.0f) {
-        sb.cooldownSteps[spellOrd] = std::uint32_t(recovery_steps(
-            d->cooldown, attributes, skills, SkillId::Spellcraft));
-    }
     return d->manaCost;
 }
 
@@ -141,10 +137,32 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, CombatStats& combat,
                     SpellRngFn rng01,
                     void* rngUser,
                     Rng* diceRng) {
-    if (!spellbook_can_cast_ex(sb, combat, spellOrd, inMicro).ok) return false;
+    // THE body gate (owner verdict 2026-09-09, «одно рекавери на всё»): the
+    // caster's own ecs::Combat, found by the same id that will own the bolt —
+    // the field a sword swing charges and tick_combat_recovery drains. A
+    // harness world with no such body (or the world map) carries no gate.
+    ecs::Combat* gate = nullptr;
+    if (const auto body = static_cast<entt::entity>(pid); w.reg.valid(body))
+        gate = w.reg.try_get<ecs::Combat>(body);
+    if (!spellbook_can_cast_ex(sb, combat, spellOrd, inMicro,
+                               gate ? gate->recoverySteps : 0u).ok)
+        return false;
     const SpellDef* d = &kSpellDefs[spellOrd];
+    // Every action that HAPPENS charges the one gate with the row's recovery
+    // through THE door (S14: Spd asymptote × Spellcraft — the casts' generic;
+    // the school stays the POWER lever). A master returns fire sooner, haste
+    // (+Spd on the effective sheet) quickens every cast with no code here.
+    // Floor = one step (the time quantum), so even a zero-base row occupies
+    // the body for the instant it acted in.
+    const auto charge_gate = [&] {
+        if (gate) {
+            gate->recoverySteps = std::uint32_t(recovery_steps(
+                d->recovery, attributes, skills, SkillId::Spellcraft));
+        }
+    };
     if (d->sustained || d->shape == DeliveryShape::Self) {
-        spellbook_start_cast(sb, combat, attributes, skills, spellOrd);
+        spellbook_start_cast(sb, combat, spellOrd);
+        charge_gate();
         return true;
     }
     if (!inMicro) {
@@ -176,18 +194,16 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, CombatStats& combat,
     ctx.critical = strike.critical;
 
     if (!cast_spell(w, *d, ctx)) return false;
-    spellbook_start_cast(sb, combat, attributes, skills, spellOrd);
+    spellbook_start_cast(sb, combat, spellOrd);
+    charge_gate();
     return true;
 }
 
 void spellbook_tick(SpellBook& sb, CombatStats& combat, std::uint32_t steps) {
     if (steps == 0u) return;
     const float dt = float(steps) * kStepSeconds;   // for the per-second rates
-    for (int i = 0; i < kSpellCount; ++i) {
-        sb.cooldownSteps[i] = sb.cooldownSteps[i] <= steps
-                                  ? 0u
-                                  : sb.cooldownSteps[i] - steps;
-    }
+    // No cooldown loop: recovery lives on the BODY's one gate, drained by
+    // tick_combat_recovery with every other fighter's (verdict 2026-09-09).
 
     // Sustained drains: flat flags over the registry — a set flag is valid
     // by construction (toggle guards the ordinal), so the row's own

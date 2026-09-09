@@ -2071,16 +2071,58 @@ void draw_subworld_combat_log(const sm::sub::SubworldEngine& subworld,
     }
 }
 
-// The micro-cast RESOLUTION — the moment the spell actually leaves the hand:
-// aim is taken HERE (you steer during the wind-up, the bolt flies where you
-// look at release), the effective sheet casts, mana/cooldown settle inside
-// spellbook_cast. Split out of cast_active_spell so the wind-up expiry (the
-// tick site beside spellbook_tick) releases through the IDENTICAL code the
-// zero-castTime path runs — one cast, two entry times, no drift.
-bool resolve_active_cast(App& app, int ord) {
-    if (!sm::spell_ordinal_ok(ord)) return false;
+// The micro-cast: the spell leaves the hand THE INSTANT it is asked (owner
+// verdict 2026-09-09 — the wind-up column died into the recovery column).
+// Aim is the crosshair's line at the click; what the caster owes comes AFTER,
+// as the body's one recovery gate (ecs::Combat::recoverySteps) — charged
+// inside spellbook_cast through the S14 door, the same field a sword swing
+// charges, so «occupied» is one fact whatever occupied him.
+bool cast_active_spell(App& app) {
+    if (!app.worldLoaded) return false;
+    const int ord = app.gs.player.spellBook.activeSpell;
+    if (!sm::spell_ordinal_ok(ord)) {
+        emit_spell_cast(app, "", false, "No active spell");
+        return false;
+    }
     const sm::SpellDef* def = &sm::kSpellDefs[ord];
     const std::string id = def->id;   // the EVENT still speaks the string id
+
+    const bool inMicro = app.subworld.active();
+    // The body's gate, for the check's honest phrasing («Recovery 1.4s»);
+    // enforcement lives in spellbook_cast, which finds the same Combat by
+    // the caster's own entity id. The world map has no fighting body.
+    std::uint32_t gateSteps = 0u;
+    if (inMicro) {
+        for (auto e : app.ecs.reg.view<sm::ecs::PlayerTag, sm::ecs::Combat>()) {
+            gateSteps = app.ecs.reg.get<sm::ecs::Combat>(e).recoverySteps;
+            break;
+        }
+    }
+    const sm::CastCheck check = sm::spellbook_can_cast_ex(
+        app.gs.player.spellBook, app.gs.player.combatStats, ord, inMicro,
+        gateSteps);
+    if (!check.ok) {
+        emit_spell_cast(app, id, false, check.reason.c_str(),
+                        check.recoveryRemaining);
+        return false;
+    }
+
+    if (!inMicro) {
+        // A world-map cast needs something the world map can DO with it: a
+        // standing stat effect, or a rule to switch. Both are rows now.
+        bool saysSomething = def->rule != sm::SpellRuleId::None;
+        for (const sm::Bonus& b : def->effects) {
+            if (b.row != 0 && b.value != 0) saysSomething = true;
+        }
+        if (!def->sustained || !saysSomething) {
+            emit_spell_cast(app, id, false, "World-map spell effect not implemented");
+            return false;
+        }
+        sm::spellbook_start_cast(app.gs.player.spellBook,
+                                 app.gs.player.combatStats, ord);
+        emit_spell_cast(app, id, true, "");
+        return true;
+    }
 
     const float cp = std::cos(app.subworld.cam_pitch());
     const float nx = std::cos(app.subworld.cam_yaw()) * cp;
@@ -2110,69 +2152,6 @@ bool resolve_active_cast(App& app, int ord) {
         &app.subworld.spell_rng());
     emit_spell_cast(app, id, ok, ok ? "" : "Cast failed");
     return ok;
-}
-
-bool cast_active_spell(App& app) {
-    if (!app.worldLoaded) return false;
-    // A hand already winding up holds ITS spell — mashing the key neither
-    // restarts the wind-up nor queues a second cast.
-    if (app.pendingCastOrd >= 0) return true;
-    const int ord = app.gs.player.spellBook.activeSpell;
-    if (!sm::spell_ordinal_ok(ord)) {
-        emit_spell_cast(app, "", false, "No active spell");
-        return false;
-    }
-    const sm::SpellDef* def = &sm::kSpellDefs[ord];
-    const std::string id = def->id;   // the EVENT still speaks the string id
-
-    const bool inMicro = app.subworld.active();
-    const sm::CastCheck check = sm::spellbook_can_cast_ex(
-        app.gs.player.spellBook, app.gs.player.combatStats, ord, inMicro);
-    if (!check.ok) {
-        emit_spell_cast(app, id, false, check.reason.c_str(),
-                        check.cooldownRemaining);
-        return false;
-    }
-
-    if (!inMicro) {
-        // A world-map cast needs something the world map can DO with it: a
-        // standing stat effect, or a rule to switch. Both are rows now.
-        bool saysSomething = def->rule != sm::SpellRuleId::None;
-        for (const sm::Bonus& b : def->effects) {
-            if (b.row != 0 && b.value != 0) saysSomething = true;
-        }
-        if (!def->sustained || !saysSomething) {
-            emit_spell_cast(app, id, false, "World-map spell effect not implemented");
-            return false;
-        }
-        // The EFFECTIVE sheet prices the recovery, exactly like the micro
-        // cast below — a haste ring quickens a map-side cast the same way.
-        const sm::CharacterSheet effMap = player_effective_sheet(app);
-        sm::spellbook_start_cast(app.gs.player.spellBook,
-                                 app.gs.player.combatStats,
-                                 effMap.attributes, effMap.skills, ord);
-        emit_spell_cast(app, id, true, "");
-        return true;
-    }
-
-    // The honest WIND-UP (2026-09-07 — castTime was a UI-only liar column):
-    // a non-sustained micro cast leaves the hand castTime later, scaled by
-    // the SAME recovery door as every tempo the sheet owns (Spd asymptote ×
-    // Spellcraft — a master winds up faster, a haste ring quickens it).
-    // M&M defaults, v1: the wind-up neither blocks movement nor breaks on a
-    // hit; aim is taken at RELEASE (resolve_active_cast — you steer the
-    // crosshair during the wind-up). Sustained rows toggle instantly above
-    // and reach here only as micro non-sustained: a stance flip is not a
-    // throw. The expiry tick lives beside spellbook_tick in advance_frame.
-    if (!def->sustained && def->castTime > 0.0f) {
-        const sm::CharacterSheet eff = player_effective_sheet(app);
-        app.pendingCastOrd = ord;
-        app.pendingCastSteps = std::uint32_t(sm::recovery_steps(
-            def->castTime, eff.attributes, eff.skills,
-            sm::SkillId::Spellcraft));
-        return true;
-    }
-    return resolve_active_cast(app, ord);
 }
 
 // THE pause switch — the only place App::playerPaused is written. Every button
@@ -3074,24 +3053,9 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     sm::spellbook_tick(app.gs.player.spellBook,
                        app.gs.player.combatStats,
                        /*steps=*/1u);
-    // The cast wind-up counts the SAME quantum: castTime scaled through the
-    // recovery door at the press (cast_active_spell), released here through
-    // the identical resolution the zero-castTime path runs. Leaving the
-    // subworld or dying mid-wind-up drops the spell — the arm, not a queue.
-    if (app.pendingCastOrd >= 0) {
-        if (!app.subworld.active()
-            || app.gs.player.combatStats.currentHp <= 0) {
-            app.pendingCastOrd = -1;
-            app.pendingCastSteps = 0;
-        } else if (app.pendingCastSteps > 1u) {
-            --app.pendingCastSteps;
-        } else {
-            const int ord = app.pendingCastOrd;
-            app.pendingCastOrd = -1;
-            app.pendingCastSteps = 0;
-            resolve_active_cast(app, ord);
-        }
-    }
+    // (No wind-up queue: a cast resolves at its own click — owner verdict
+    // 2026-09-09 — and what it costs in time is the body's recovery gate,
+    // drained with every other fighter's by tick_combat_recovery.)
     // The bars follow the EFFECTIVE sheet (phase 4): a worn «+2 END» plate
     // fattens the SP bar, and taking it off (or a sustained spell lapsing —
     // spellbook_tick above has already snuffed this step's casualties) thins
@@ -4233,7 +4197,7 @@ void register_console_commands(App& app) {
 
     con.register_cmd("sheet", "sheet",
         "print the base and effective sheet, with TEMPOS through the "
-        "recovery door (hand swing, spell wind-ups)",
+        "recovery door (hand swing, spell recoveries)",
         [&app](Con& c, const std::vector<std::string>&) {
             const sm::CharacterSheet& base = app.gs.player.sheet;
             const sm::BonusTotals standing = player_standing_bonuses(app);
@@ -4282,11 +4246,11 @@ void register_console_commands(App& app) {
             for (int ord = 0; ord < sm::kSpellCount; ++ord) {
                 if (!app.gs.player.spellBook.learned[ord]) continue;
                 const auto& s = sm::kSpellDefs[ord];
-                if (s.sustained || s.castTime <= 0.0f) continue;
-                const float windup = sm::seconds_from_steps(std::uint32_t(
-                    sm::recovery_steps(s.castTime, eff.attributes, eff.skills,
+                if (s.recovery <= 0.0f) continue;
+                const float rec = sm::seconds_from_steps(std::uint32_t(
+                    sm::recovery_steps(s.recovery, eff.attributes, eff.skills,
                                        sm::SkillId::Spellcraft)));
-                c.printfln(Lvl::Ok, "cast: %-16s %.2fs wind-up", s.id, windup);
+                c.printfln(Lvl::Ok, "cast: %-16s %.2fs recovery", s.id, rec);
             }
             return true;
         });

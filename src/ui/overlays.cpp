@@ -1199,7 +1199,7 @@ namespace sm::ui
                         ImGui::TableSetupColumn("Shape");
                         ImGui::TableSetupColumn("Tags");
                         ImGui::TableSetupColumn("Mana");
-                        ImGui::TableSetupColumn("Cooldown");
+                        ImGui::TableSetupColumn("Recovery");
                         ImGui::TableSetupColumn("Power");
                         ImGui::TableSetupColumn("State");
                         ImGui::TableSetupColumn("Active");
@@ -1226,13 +1226,14 @@ namespace sm::ui
                                                     spell_rarity_label(def->rarity),
                                                     def->tier,
                                                     spell_shape_label(def->shape));
-                                if (def->castTime > 0.0f)
-                                    ImGui::TextDisabled("Cast %.1fs / Cooldown %.1fs",
-                                                        def->castTime,
-                                                        def->cooldown);
+                                // Casts are instant (verdict 2026-09-09) —
+                                // the row's one tempo number is what the
+                                // body owes AFTER, through the S14 door.
+                                if (def->recovery > 0.0f)
+                                    ImGui::TextDisabled("Recovery %.1fs",
+                                                        def->recovery);
                                 else
-                                    ImGui::TextDisabled("Cast instant / Cooldown %.1fs",
-                                                        def->cooldown);
+                                    ImGui::TextDisabled("No recovery");
                                 if (def->description && def->description[0] != '\0')
                                 {
                                     ImGui::Separator();
@@ -1311,13 +1312,11 @@ namespace sm::ui
                             else
                                 ImGui::TextDisabled("-");
                             ImGui::TableNextColumn();
-                            const std::uint32_t cdSteps =
-                                p.spellBook.cooldownSteps[ord];
-                            if (cdSteps > 0u)
-                                ImGui::Text("%.1fs",
-                                            double(sm::seconds_from_steps(cdSteps)));
-                            else if (def && def->cooldown > 0.0f)
-                                ImGui::Text("%.1fs", def->cooldown);
+                            // The row's authored recovery: live «busy» state
+                            // is the BODY's one gate, not a book cell — and a
+                            // world open on this panel is a paused world.
+                            if (def && def->recovery > 0.0f)
+                                ImGui::Text("%.1fs", def->recovery);
                             else
                                 ImGui::TextDisabled("-");
                             ImGui::TableNextColumn();
@@ -1355,16 +1354,18 @@ namespace sm::ui
                             }
                             else
                             {
+                                // Gate 0: the panel pauses the world, so the
+                                // body's recovery is not racing this frame.
                                 const CastCheck check = spellbook_can_cast_ex(
-                                    p.spellBook, p.combatStats, ord, true);
+                                    p.spellBook, p.combatStats, ord, true, 0u);
                                 if (check.ok)
                                 {
                                     ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.45f, 1.0f), "Ready");
                                 }
-                                else if (check.cooldownRemaining > 0.0f)
+                                else if (check.recoveryRemaining > 0.0f)
                                 {
                                     ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.35f, 1.0f),
-                                                       "Cooldown");
+                                                       "Recovery");
                                 }
                                 else
                                 {

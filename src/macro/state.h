@@ -280,7 +280,7 @@ namespace sm {
 // v82 (2026-09-07): аффикс-трек — ItemRef несёт 8 аффиксов (было 4) двумя
 // плоскими массивами rows[8]+values[8] (SoA, паддинг пар умер); сейв пишет
 // оба массива вместо одного массива пар с дырками.
-constexpr int kSaveVersion = 82;
+constexpr int kSaveVersion = 83;
 
 enum class SettlementMood : std::uint8_t {
     Prosperous, Stable, Tense, Unrest, Revolt, Count

@@ -3128,18 +3128,14 @@ bool run_subworld_missile_feedback_smoke(App& app) {
 // spawns clear of the player's hit shell and moves away. (The owner's other half
 // — "your own blast still catches you" when the bolt detonates on a nearby enemy
 // — is the unchanged is_spell_target/faction behaviour and is not re-tested here.)
-// The honest cast wind-up (castTime through the recovery door, 2026-09-07):
-// a non-sustained micro cast leaves the hand pendingCastSteps later, so a
-// scenario that asserts the projectile/event must wait the wind-up out. One
-// sim step at a time until the app's OWN counter releases it — the exact
-// steps the game computed, +2 spare as the loop guard (the resolution
-// happens on the final decrementing tick; stopping right there keeps the
-// SpellCast event inside the still-visible tick buffer).
-static void smoke_wait_cast_windup(App& app) {
-    for (std::uint32_t guard = app.pendingCastSteps + 2u;
-         app.pendingCastOrd >= 0 && guard > 0u; --guard) {
-        (void)advance_sim_seconds(app, sm::kStepSeconds, false);
+// The BODY's one recovery gate (verdict 2026-09-09: casts resolve at the
+// click and charge the same ecs::Combat::recoverySteps a swing does) — what
+// a scenario prints to show the fight's clock honestly.
+static std::uint32_t smoke_player_recovery_steps(App& app) {
+    for (auto e : app.ecs.reg.view<sm::ecs::PlayerTag, sm::ecs::Combat>()) {
+        return app.ecs.reg.get<sm::ecs::Combat>(e).recoverySteps;
     }
+    return 0u;
 }
 
 bool run_subworld_self_fireball_smoke(App& app) {
@@ -3210,7 +3206,6 @@ bool run_subworld_self_fireball_smoke(App& app) {
         smoke_fail(app, "subworld_self_fireball cast failed");
         return false;
     }
-    smoke_wait_cast_windup(app);
     int spawnedProjectiles = 0;
     for (auto e : reg.view<sm::ecs::Projectile>()) {
         (void)e;
@@ -6323,9 +6318,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             app.ui.characterTab = sm::ui::CharacterPanelTab::Spells;
             const auto& book = app.gs.player.spellBook;
             const int activeOrd = book.activeSpell;
-            const float cd = sm::spell_ordinal_ok(activeOrd)
-                ? sm::seconds_from_steps(book.cooldownSteps[activeOrd])
-                : 0.0f;
+            const float cd =
+                sm::seconds_from_steps(smoke_player_recovery_steps(app));
             int sustainedCount = 0;
             for (int i = 0; i < sm::kSpellCount; ++i)
                 sustainedCount += book.sustained[i] ? 1 : 0;
@@ -6421,7 +6415,6 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "active spell cast failed");
                 break;
             }
-            smoke_wait_cast_windup(app);
             const int afterSpellCastEvents =
                 count_tick_events(app.bus, sm::EventTag::SpellCast);
             const sm::GameEvent* spellEvent =
@@ -6489,9 +6482,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          liveProjectiles,
                          targetHp ? double(targetHp->hp) : -1.0,
                          app.gs.player.combatStats.currentMp,
-                         std::size_t(sm::spell_ordinal_ok(book.activeSpell)
-                                         ? book.cooldownSteps[book.activeSpell]
-                                         : 0u),
+                         std::size_t(smoke_player_recovery_steps(app)),
                          afterSpellCastEvents - beforeSpellCastEvents,
                          hitFlash ? double(hitFlash->timer) : -1.0,
                          combatLog ? combatLog->text : "");
@@ -6545,7 +6536,6 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "cast_bolt_capture cast failed");
                 break;
             }
-            smoke_wait_cast_windup(app);
             int afterProjectiles = 0;
             int litProjectiles = 0;
             for (auto e : app.ecs.reg.view<sm::ecs::Projectile>()) {

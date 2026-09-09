@@ -14,7 +14,7 @@ namespace sm {
 struct CastCheck {
     bool ok = false;
     std::string reason{};
-    float cooldownRemaining = 0.0f;
+    float recoveryRemaining = 0.0f;
 };
 
 int spell_strength(const SpellDef& spell,
@@ -37,15 +37,20 @@ int spell_radius(const SpellDef& spell,
 // Spells are addressed by their registry ORDINAL (macro/spells.h) — the one
 // identity the book itself is indexed by. Strings resolve at the edges
 // (console tokens, event payloads) via spell_ordinal(), never in here.
+// `bodyRecoverySteps` is the caster BODY's one gate (ecs::Combat::
+// recoverySteps — the field a sword swing charges): a busy body casts
+// nothing, whatever the spell is (owner verdict 2026-09-09). Deliberately no
+// default — a call site without a body in hand (a paused panel, the world
+// map) says 0 out loud.
 CastCheck spellbook_can_cast_ex(const SpellBook& sb,
                                 const CombatStats& combat,
                                 int spellOrd,
-                                bool inMicro);
-// The caster's sheet prices the RECOVERY (S14 recovery door: Spd asymptote ×
-// Spellcraft — the casts' generic; the school stays the POWER lever) — which
-// is why the mana-and-cooldown half of a cast needs the attributes/skills.
+                                bool inMicro,
+                                std::uint32_t bodyRecoverySteps);
+// The mana-or-toggle half of a cast. Recovery is NOT charged here — the
+// micro door (spellbook_cast) writes the body's gate; a world-map cast has
+// no fighting body and owes none.
 int spellbook_start_cast(SpellBook& sb, CombatStats& combat,
-                         const Attributes& attributes, const Skills& skills,
                          int spellOrd);
 // diceRng — the stream the wound is ROLLED from at cast. nullptr = the
 // strike's exact expectation, no crit: what a harness with no stream gets,

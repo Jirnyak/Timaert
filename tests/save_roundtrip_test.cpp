@@ -353,7 +353,7 @@ sm::GameState make_state() {
     const int hasteOrd = sm::spell_ordinal("haste");
     sm::spellbook_learn(gs.player.spellBook, sparkOrd);
     sm::spellbook_set_active(gs.player.spellBook, sparkOrd);
-    gs.player.spellBook.cooldownSteps[sparkOrd] = sm::steps_from_seconds(2.5f);
+    // (No cooldown cell to plant: recovery is the BODY's session gate — v83.)
     sm::spellbook_learn(gs.player.spellBook, hasteOrd);
     sm::spellbook_toggle_sustained(gs.player.spellBook, hasteOrd);
     gs.player.factionPeaceUntilDay[
@@ -895,12 +895,6 @@ void run_roundtrip() {
     }
     if (p.spellBook.activeSpell != sm::spell_ordinal("fireball")) {
         FAIL_BAIL("active spell lost");
-    }
-    // Steps are integers: an exact compare, not a float tolerance. The old
-    // nearf() here was tolerance for a quantity that never needed any.
-    if (p.spellBook.cooldownSteps[sm::spell_ordinal("fireball")]
-        != sm::steps_from_seconds(2.5f)) {
-        FAIL_BAIL("spell cooldown lost");
     }
     if (!sm::spellbook_has_sustained(p.spellBook,
                                      sm::spell_ordinal("haste"))) {

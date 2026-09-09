@@ -3,6 +3,7 @@
 #include "core/time.h"
 #include "content/spells/casting.h"
 #include "content/spells/spell_book.h"
+#include "ecs/systems.h"
 #include "ecs/world.h"
 #include "sub/spell_effects.h"
 
@@ -181,49 +182,49 @@ int main() {
     if (!fireDef->icon || std::strcmp(fireDef->icon, "*") != 0
         || !fireDef->sourceIcon || std::strcmp(fireDef->sourceIcon, "\xF0\x9F\x94\xA5") != 0
         || fireDef->rarity != sm::SpellRarity::Common
-        || !nearf(fireDef->castTime, 0.3f)) {
+        || !nearf(fireDef->recovery, 2.3f)) {
         return fail("fireball identity metadata wrong");
     }
     if (!iceDef->icon || std::strcmp(iceDef->icon, "I") != 0
         || !iceDef->sourceIcon || std::strcmp(iceDef->sourceIcon, "\xE2\x9D\x84") != 0
         || iceDef->rarity != sm::SpellRarity::Uncommon
-        || !nearf(iceDef->castTime, 0.2f)) {
+        || !nearf(iceDef->recovery, 1.7f)) {
         return fail("ice_shard identity metadata wrong");
     }
     if (!magicDef || !magicDef->icon || std::strcmp(magicDef->icon, "+") != 0
         || !magicDef->sourceIcon || std::strcmp(magicDef->sourceIcon, "\xE2\x9C\xA6") != 0
         || magicDef->rarity != sm::SpellRarity::Common
-        || !nearf(magicDef->castTime, 0.0f)) {
+        || !nearf(magicDef->recovery, 0.0f)) {
         return fail("magic_bolt identity metadata wrong");
     }
     if (!chainDef->icon || std::strcmp(chainDef->icon, "Z") != 0
         || !chainDef->sourceIcon || std::strcmp(chainDef->sourceIcon, "\xE2\x9B\xA7") != 0
         || chainDef->rarity != sm::SpellRarity::Rare
-        || !nearf(chainDef->castTime, 0.1f)) {
+        || !nearf(chainDef->recovery, 4.1f)) {
         return fail("lightning_chain identity metadata wrong");
     }
     if (!beamDef->icon || std::strcmp(beamDef->icon, "=") != 0
         || !beamDef->sourceIcon || std::strcmp(beamDef->sourceIcon, "\xE2\x9A\xA1") != 0
         || beamDef->rarity != sm::SpellRarity::Uncommon
-        || !nearf(beamDef->castTime, 0.4f)) {
+        || !nearf(beamDef->recovery, 2.9f)) {
         return fail("energy_beam identity metadata wrong");
     }
     if (!armDef || !armDef->icon || std::strcmp(armDef->icon, "X") != 0
         || !armDef->sourceIcon || std::strcmp(armDef->sourceIcon, "\xE2\x98\xA0") != 0
         || armDef->rarity != sm::SpellRarity::Mythic
-        || !nearf(armDef->castTime, 2.0f)) {
+        || !nearf(armDef->recovery, 122.0f)) {
         return fail("armageddon identity metadata wrong");
     }
     if (!hasteDef->icon || std::strcmp(hasteDef->icon, ">") != 0
         || !hasteDef->sourceIcon || std::strcmp(hasteDef->sourceIcon, "\xF0\x9F\x92\xA8") != 0
         || hasteDef->rarity != sm::SpellRarity::Uncommon
-        || !nearf(hasteDef->castTime, 0.0f)) {
+        || !nearf(hasteDef->recovery, 0.0f)) {
         return fail("haste identity metadata wrong");
     }
     if (!flightDef->icon || std::strcmp(flightDef->icon, "^") != 0
         || !flightDef->sourceIcon || std::strcmp(flightDef->sourceIcon, "\xF0\x9F\x95\x8A") != 0
         || flightDef->rarity != sm::SpellRarity::Rare
-        || !nearf(flightDef->castTime, 0.0f)) {
+        || !nearf(flightDef->recovery, 0.0f)) {
         return fail("flight identity metadata wrong");
     }
     if (!std::strstr(fireDef->description, "allies included")
@@ -238,7 +239,7 @@ int main() {
     }
     if (!magicDef || magicDef->rule != sm::SpellRuleId::None
         || sm::spell_flavor_count(magicDef->pros) != 3
-        || std::strcmp(magicDef->pros[0], "No cooldown") != 0
+        || std::strcmp(magicDef->pros[0], "No recovery") != 0
         || std::strcmp(magicDef->cons[2], "No utility") != 0) {
         return fail("magic_bolt flavor metadata wrong");
     }
@@ -256,8 +257,8 @@ int main() {
     }
     if (!armDef || armDef->rule != sm::SpellRuleId::None
         || armDef->effects[0].row != 0
-        || sm::spell_flavor_count(armDef->cons) != 5
-        || std::strcmp(armDef->cons[4], "2 min cooldown") != 0) {
+        || sm::spell_flavor_count(armDef->cons) != 4
+        || std::strcmp(armDef->cons[3], "2 min recovery") != 0) {
         return fail("armageddon effect/flavor metadata wrong");
     }
 
@@ -352,27 +353,53 @@ int main() {
         return fail("magic_bolt descriptor wrong");
     }
     const sm::CastCheck macroBolt =
-        sm::spellbook_can_cast_ex(book, combat, sm::spell_ordinal("magic_bolt"), false);
+        sm::spellbook_can_cast_ex(book, combat, sm::spell_ordinal("magic_bolt"),
+                                  false, 0u);
     if (macroBolt.ok || macroBolt.reason != "Cannot use on world map") {
         return fail("magic_bolt macro gate failed");
     }
 
+    // ── THE recovery law (owner verdict 2026-09-09) ──────────────────────
+    // A cast charges the CASTER BODY's one gate — ecs::Combat::recoverySteps,
+    // the same field a sword swing charges — priced by the row's `recovery`
+    // through the S14 door. No per-spell timer exists anywhere, and a busy
+    // body starts NO action, whatever occupied it.
     sm::spellbook_learn(book, sm::spell_ordinal("fireball"));
+    const auto casterBody = world.create();
+    world.reg.emplace<sm::ecs::Position>(casterBody, 100.0f, 100.0f, 0.0f);
+    world.reg.emplace<sm::ecs::Combat>(casterBody);
+    const auto casterId = std::uint32_t(entt::to_integral(casterBody));
     if (!sm::spellbook_cast(world, book, combat, attributes, skills,
-                            sm::spell_ordinal("fireball"), std::uint32_t{0}, 100.0f, 100.0f, 0.0f,
+                            sm::spell_ordinal("fireball"), casterId, 100.0f, 100.0f, 0.0f,
                             1.0f, 0.0f, 0.0f, true)) {
         return fail("fireball cast rejected");
     }
-    const std::uint32_t fireCd =
-        book.cooldownSteps[sm::spell_ordinal("fireball")];
-    if (fireCd == 0u) {
-        return fail("fireball cooldown not started");
+    const std::uint32_t fireGate =
+        world.reg.get<sm::ecs::Combat>(casterBody).recoverySteps;
+    const auto wantGate = std::uint32_t(sm::recovery_steps(
+        fireDef->recovery, attributes, skills, sm::SkillId::Spellcraft));
+    if (fireGate == 0u || fireGate != wantGate) {
+        return fail("fireball recovery did not charge the body gate");
     }
-    const sm::CastCheck fireBlocked =
-        sm::spellbook_can_cast_ex(book, combat, sm::spell_ordinal("fireball"), true);
-    if (fireBlocked.ok || fireBlocked.cooldownRemaining <= 0.0f
-        || fireBlocked.reason != "Cooldown 2.0s") {
-        return fail("fireball cooldown gate failed");
+    // Agnostic: the gate blocks even the no-recovery bolt, and the reason
+    // speaks recovery, not the spell that caused it.
+    const sm::CastCheck fireBlocked = sm::spellbook_can_cast_ex(
+        book, combat, sm::spell_ordinal("magic_bolt"), true, fireGate);
+    if (fireBlocked.ok || fireBlocked.recoveryRemaining <= 0.0f
+        || fireBlocked.reason.rfind("Recovery", 0) != 0) {
+        return fail("busy body was allowed to act");
+    }
+    const int busyProjectiles = projectile_count(world);
+    if (sm::spellbook_cast(world, book, combat, attributes, skills,
+                           sm::spell_ordinal("magic_bolt"), casterId, 100.0f, 100.0f, 0.0f,
+                           1.0f, 0.0f, 0.0f, true)
+        || projectile_count(world) != busyProjectiles) {
+        return fail("busy body cast through the gate");
+    }
+    // The ONE drain — the same system that frees a swordarm frees the caster.
+    sm::ecs::sys::tick_combat_recovery(world, fireGate);
+    if (world.reg.get<sm::ecs::Combat>(casterBody).recoverySteps != 0u) {
+        return fail("tick_combat_recovery did not drain the gate");
     }
 
     sm::ecs::Projectile fireball{};
@@ -454,7 +481,8 @@ int main() {
     lowCombat.currentMp = 0;
     lowCombat.maxMp = 10;
     const sm::CastCheck lowMana =
-        sm::spellbook_can_cast_ex(lowBook, lowCombat, sm::spell_ordinal("fireball"), true);
+        sm::spellbook_can_cast_ex(lowBook, lowCombat, sm::spell_ordinal("fireball"),
+                                  true, 0u);
     if (lowMana.ok || lowMana.reason != "Not enough mana") {
         return fail("low mana gate failed");
     }
@@ -472,7 +500,8 @@ int main() {
     macroCombat.maxMp = 2000;
     for (const char* id : macroSpellIds) {
         const sm::CastCheck macroCheck =
-            sm::spellbook_can_cast_ex(macroBook, macroCombat, sm::spell_ordinal(id), false);
+            sm::spellbook_can_cast_ex(macroBook, macroCombat, sm::spell_ordinal(id),
+                                      false, 0u);
         if (!macroCheck.ok) {
             return fail("world-map macro canCast drifted from TS");
         }
@@ -486,11 +515,6 @@ int main() {
     if (projectile_count(world) != beforeMacroProjectiles
         || macroCombat.currentMp != 2000) {
         return fail("world-map fireball mutated state");
-    }
-
-    sm::spellbook_tick(book, combat, sm::steps_from_seconds(10.0f));
-    if (book.cooldownSteps[sm::spell_ordinal("fireball")] != 0u) {
-        return fail("fireball cooldown did not expire");
     }
 
     sm::spellbook_learn(book, sm::spell_ordinal("energy_beam"));
@@ -1002,15 +1026,14 @@ int main() {
         }
     }
 
-    int cdActive = 0, susActive = 0;
+    int susActive = 0;
     for (int i = 0; i < sm::kSpellCount; ++i) {
-        cdActive += book.cooldownSteps[i] > 0u ? 1 : 0;
         susActive += book.sustained[i] ? 1 : 0;
     }
     std::fprintf(stderr,
-                 "PASS: projectiles=%d mp=%d cooldowns=%d sustained=%d\n",
+                 "PASS: projectiles=%d mp=%d sustained=%d\n",
                  projectile_count(world), combat.currentMp,
-                 cdActive, susActive);
+                 susActive);
     CHECK(true, "every gate above held");
     return sm::test::report("spell_casting_effects_test");
 }

@@ -661,8 +661,9 @@ private:
     // Feet-on-support this tick (sync_player_vertical) — the jump gate.
     bool  playerGrounded_ = false;
     // (playerAttackTimer_ is DEAD — the swing gate lives on the player
-    // Combat's own cooldownSteps, ticked by the ONE tick_combat_cooldowns
-    // like every other fighter's; the last float clock in a fight.)
+    // Combat's own recoverySteps, THE one gate every action shares (casts
+    // charge it too), drained by the ONE tick_combat_recovery like every
+    // other fighter's; the last float clock in a fight.)
     // Pending one-shot combat sounds (take_pending_sfx above). A flat ring
     // is enough: pushed by the melee tick, drained by the app once per frame.
     static constexpr int kMaxPendingSfx = 16;

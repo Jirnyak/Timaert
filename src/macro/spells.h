@@ -190,8 +190,15 @@ struct SpellDef {
     int           tier;              // 1..5; drives spire zone gating
     // ── cast economy ──
     int   manaCost;
-    float cooldown;                  // seconds
-    float castTime;                  // seconds
+    // The action's RECOVERY base, in authored seconds — the ONE tempo column
+    // (owner verdict 2026-09-09): the cast fires the instant it is asked and
+    // this is what the caster's body owes afterwards, priced through THE
+    // recovery door (attributes.h recovery_steps) into the body's ONE gate
+    // (ecs::Combat::recoverySteps — the same field a sword swing charges).
+    // The castTime wind-up column died into this number (fireball 2.0+0.3 →
+    // 2.3): a pre-action delay and a post-action debt spend the same fight
+    // time, and one law is one system.
+    float recovery;                  // seconds
     bool  sustained;                 // toggled aura paid by drain, not cost
     float manaDrain;                 // mana per second while sustained
     bool  hasMicro;                  // castable in the subworld
@@ -284,7 +291,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .tag = SpellTag::Fire, .secondaryTag = SpellTag::Fire,
         .rarity = SpellRarity::Common, .shape = DeliveryShape::Projectile,
         .tier = 2,
-        .manaCost = 60, .cooldown = 2.0f, .castTime = 0.3f,
+        .manaCost = 60, .recovery = 2.3f,
         .sustained = false, .manaDrain = 0.0f,
         .hasMicro = true, .hasMacro = true,
         .dice = {30, 1}, .baseHeal = 0.0f, .baseRadius = 48.0f,
@@ -300,7 +307,7 @@ inline constexpr SpellDef kSpellDefs[] = {
                        "everything in the blast radius - allies included. The "
                        "classic.",
         .pros = {"Strong AoE damage", "Burning DOT", "Good at chokepoints"},
-        .cons = {"Friendly fire", "Cast time", "Higher mana cost"},
+        .cons = {"Friendly fire", "Long recovery", "Higher mana cost"},
     },
     {
         .id = "ice_shard", .name = "Ice Shard", .icon = "I",
@@ -308,7 +315,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .tag = SpellTag::Ice, .secondaryTag = SpellTag::Ice,
         .rarity = SpellRarity::Uncommon, .shape = DeliveryShape::Projectile,
         .tier = 2,
-        .manaCost = 30, .cooldown = 1.5f, .castTime = 0.2f,
+        .manaCost = 30, .recovery = 1.7f,
         .sustained = false, .manaDrain = 0.0f,
         .hasMicro = true, .hasMacro = true,
         .dice = {40, 1}, .baseHeal = 0.0f, .baseRadius = 0.0f,
@@ -326,7 +333,7 @@ inline constexpr SpellDef kSpellDefs[] = {
                        "elites - useless against a horde.",
         .pros = {"High single-target burst", "Chill slows enemy",
                  "No friendly fire"},
-        .cons = {"Single target only", "Short cooldown still matters",
+        .cons = {"Single target only", "Recovery still matters",
                  "Weak vs crowds"},
     },
     {
@@ -335,7 +342,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .tag = SpellTag::Arcane, .secondaryTag = SpellTag::Arcane,
         .rarity = SpellRarity::Common, .shape = DeliveryShape::Projectile,
         .tier = 1,
-        .manaCost = 10, .cooldown = 0.0f, .castTime = 0.0f,
+        .manaCost = 10, .recovery = 0.0f,
         .sustained = false, .manaDrain = 0.0f,
         .hasMicro = true, .hasMacro = false,
         .dice = {12, 1}, .baseHeal = 0.0f, .baseRadius = 0.0f,
@@ -348,7 +355,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .description = "A bolt of raw arcane energy. Cheap, fast, reliable - "
                        "the bread and butter of every spell-caster. Won't win "
                        "wars, but keeps you alive.",
-        .pros = {"No cooldown", "Low mana cost", "Fast projectile"},
+        .pros = {"No recovery", "Low mana cost", "Fast projectile"},
         .cons = {"Weak scaling at high tiers", "No AoE", "No utility"},
     },
     {
@@ -357,7 +364,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .tag = SpellTag::Lightning, .secondaryTag = SpellTag::Lightning,
         .rarity = SpellRarity::Rare, .shape = DeliveryShape::Chain,
         .tier = 3,
-        .manaCost = 60, .cooldown = 4.0f, .castTime = 0.1f,
+        .manaCost = 60, .recovery = 4.1f,
         .sustained = false, .manaDrain = 0.0f,
         .hasMicro = true, .hasMacro = true,
         .dice = {22, 1}, .baseHeal = 0.0f, .baseRadius = 0.0f,
@@ -372,7 +379,7 @@ inline constexpr SpellDef kSpellDefs[] = {
                        "enemies, losing force with each jump. Brilliant "
                        "against scattered groups - unreliable when you need "
                        "precision.",
-        .pros = {"Hits up to 5 targets", "Shock interrupts", "Fast cast"},
+        .pros = {"Hits up to 5 targets", "Shock interrupts", "Instant arc"},
         .cons = {"Unpredictable jumps", "Damage decays per jump", "High mana"},
     },
     {
@@ -381,7 +388,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .tag = SpellTag::Arcane, .secondaryTag = SpellTag::Light,
         .rarity = SpellRarity::Uncommon, .shape = DeliveryShape::Beam,
         .tier = 2,
-        .manaCost = 100, .cooldown = 2.5f, .castTime = 0.4f,
+        .manaCost = 100, .recovery = 2.9f,
         .sustained = false, .manaDrain = 0.0f,
         .hasMicro = true, .hasMacro = false,
         .dice = {25, 1}, .baseHeal = 0.0f, .baseRadius = 8.0f,
@@ -404,7 +411,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .tag = SpellTag::Fire, .secondaryTag = SpellTag::Dark,
         .rarity = SpellRarity::Mythic, .shape = DeliveryShape::Nova,
         .tier = 5,
-        .manaCost = 1000, .cooldown = 120.0f, .castTime = 2.0f,
+        .manaCost = 1000, .recovery = 122.0f,
         .sustained = false, .manaDrain = 0.0f,
         .hasMicro = true, .hasMacro = true,
         .dice = {80, 1}, .baseHeal = 0.0f, .baseRadius = 160.0f,
@@ -419,8 +426,8 @@ inline constexpr SpellDef kSpellDefs[] = {
                        "enemies, allies, buildings, reputation. The ultimate "
                        "expression of magical supremacy and moral bankruptcy.",
         .pros = {"Massive AoE", "Battle-ending power", "Burns everything"},
-        .cons = {"Friendly fire", "2s cast time", "Enormous mana cost",
-                 "Faction reputation hit", "2 min cooldown"},
+        .cons = {"Friendly fire", "Enormous mana cost",
+                 "Faction reputation hit", "2 min recovery"},
     },
     {
         .id = "haste", .name = "Haste", .icon = ">",
@@ -428,7 +435,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .tag = SpellTag::Body, .secondaryTag = SpellTag::Air,
         .rarity = SpellRarity::Uncommon, .shape = DeliveryShape::Self,
         .tier = 2,
-        .manaCost = 0, .cooldown = 0.0f, .castTime = 0.0f,
+        .manaCost = 0, .recovery = 0.0f,
         .sustained = true, .manaDrain = 10.0f,
         .hasMicro = true, .hasMacro = true,
         .dice = {0, 1}, .baseHeal = 0.0f, .baseRadius = 0.0f,
@@ -457,7 +464,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .tag = SpellTag::Air, .secondaryTag = SpellTag::Arcane,
         .rarity = SpellRarity::Rare, .shape = DeliveryShape::Self,
         .tier = 3,
-        .manaCost = 0, .cooldown = 0.0f, .castTime = 0.0f,
+        .manaCost = 0, .recovery = 0.0f,
         .sustained = true, .manaDrain = 20.0f,
         .hasMicro = true, .hasMacro = true,
         .dice = {0, 1}, .baseHeal = 0.0f, .baseRadius = 0.0f,

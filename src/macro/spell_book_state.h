@@ -18,10 +18,10 @@ namespace sm {
 struct SpellBook {
     std::uint8_t  learned[kSpellCount] = {};        // 0/1 per registry row
     std::int32_t  activeSpell = -1;                 // ordinal; -1 = none
-    // Steps remaining, not seconds left (core/time.h): a fight is measured in
-    // the simulation's own integer quantum, so a spell comes back at the same
-    // pace whether the world clock above is racing or crawling.
-    std::uint32_t cooldownSteps[kSpellCount] = {};
+    // No per-spell timers (owner verdict 2026-09-09, v83): a cast charges the
+    // BODY's one recovery gate (ecs::Combat::recoverySteps) — the same field
+    // a sword swing charges — so «occupied» is one fact with one home, and a
+    // book row never counts fight time on its own.
     std::uint8_t  sustained[kSpellCount] = {};      // 0/1 active drains
     // Fractional mana owed by sustained spells, carried between steps: a drain
     // of 3 mana/second is 3/64 per step and the pool is an integer.

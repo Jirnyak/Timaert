@@ -645,9 +645,10 @@ void write_spell_book(Writer& w, const SpellBook& spellBook) {
     // is written first so a book saved against a DIFFERENT registry length
     // is refused loudly instead of sliding rows onto wrong spells.
     w.pod(std::int32_t(kSpellCount));
+    // v83: no per-spell cooldown cell — recovery is the BODY's one gate
+    // (session-scene state, never saved), so the book carries only knowledge.
     for (int i = 0; i < kSpellCount; ++i) {
         w.pod(spellBook.learned[i]);
-        w.pod(spellBook.cooldownSteps[i]);
         w.pod(spellBook.sustained[i]);
     }
     w.pod(spellBook.activeSpell);
@@ -660,7 +661,6 @@ void read_spell_book(Reader& r, SpellBook& spellBook) {
     if (!r.ok || rows != kSpellCount) { r.ok = false; return; }
     for (int i = 0; i < kSpellCount; ++i) {
         r.pod(spellBook.learned[i]);
-        r.pod(spellBook.cooldownSteps[i]);
         r.pod(spellBook.sustained[i]);
     }
     r.pod(spellBook.activeSpell);

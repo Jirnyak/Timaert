@@ -51,12 +51,14 @@ struct Combat {
     float speed;            // grid units / s
     float attackRange;
     float cooldown;         // authored seconds (the table's own number)
-    // Steps left before this body may strike again (core/time.h). It was a
-    // float decremented by dt — a rate quoted in REAL seconds inside a world
-    // that runs on an integer tick, and one of three such exceptions where the
-    // ladder claimed exactly one. Integer now, and a blow lands after the same
-    // amount of FIGHT whether the clock above races or crawls.
-    std::uint32_t cooldownSteps;
+    // THE recovery gate — the body's ONE «occupied» clock (owner verdict
+    // 2026-09-09): steps left before this body may ACT again. A swing charges
+    // it, a cast charges it (spellbook_cast), a future shot will charge it —
+    // and every action checks the same field first, so a hand busy with a
+    // sword cannot also be throwing fire. Integer steps (core/time.h): a blow
+    // lands after the same amount of FIGHT whether the clock races or crawls.
+    // Movement deliberately never reads it — recovering legs still walk.
+    std::uint32_t recoverySteps;
     enum Kind : std::uint8_t { Melee = 0, Missile = 1 } kind;
 };
 

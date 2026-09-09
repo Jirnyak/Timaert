@@ -1635,11 +1635,11 @@ void SubworldEngine::tick_player_melee() {
         break;
     }
     if (!pc) return;
-    // The swing gate is his Combat's OWN cooldownSteps — decremented by the
-    // one tick_combat_cooldowns like every fighter's. The float twin this
-    // replaces (playerAttackTimer_ -= dt) was the last clock in a fight
-    // quoted in real seconds instead of the simulation's integer quantum.
-    if (pc->cooldownSteps > 0u) return;
+    // The swing gate is his Combat's OWN recoverySteps — THE one gate every
+    // action shares (a cast charges the same field via spellbook_cast), so a
+    // hand mid-recovery from anything swings nothing. Drained by the one
+    // tick_combat_recovery like every fighter's.
+    if (pc->recoverySteps > 0u) return;
     const ecs::Combat strikeStats = *pc;  // scalars up front (see above)
     // EVERY swing swings (owner 2026-09-06, the «не чувствуется сражение»
     // session): the recovery is paid and the whoosh is heard whether the arc
@@ -1647,7 +1647,7 @@ void SubworldEngine::tick_player_melee() {
     // free and silent — holding attack in a clearing "swung" every frame and
     // the first real feedback of the whole melee loop was the enemy's flash.
     // Written BEFORE any emplace below (see the dangling note above).
-    pc->cooldownSteps = steps_from_seconds(strikeStats.cooldown);
+    pc->recoverySteps = steps_from_seconds(strikeStats.cooldown);
     queue_sfx(SfxId::MeleeSwing);
     // TIMAERT_COMBAT_LOG: the owner's verification channel — one stderr line
     // per swing, greppable as [melee].
@@ -2662,10 +2662,10 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
                          playerOwned, 0u, swing.critical},
             swing.amount, DamageKind::Melee, DamageType(c.dmgType),
             bus_);
-        // A blocked or dead-blocked swing still swung: the cooldown pays
+        // A blocked or dead-blocked swing still swung: the recovery pays
         // either way, or a fully-armoured target would grant free retries
         // every step.
-        c.cooldownSteps = steps_from_seconds(c.cooldown);
+        c.recoverySteps = steps_from_seconds(c.cooldown);
         (void)hit;
     };
 
@@ -2700,13 +2700,13 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
         auto* cp = reg.try_get<ecs::Combat>(e);
         if (!cp) continue;
         auto& c = *cp;
-        if (c.cooldownSteps > 0u) continue;
+        if (c.recoverySteps > 0u) continue;
         const bool owned = reg.any_of<ecs::PlayerSoldierTag>(e);
         if (c.kind == ecs::Combat::Missile) {
             const auto& p = reg.get<ecs::Position>(e);
             const auto& tp = reg.get<ecs::Position>(targetEnt);
             spawn_npc_missile(reg, e, p, c, combatRng_, tp.x, tp.y, tp.z);
-            c.cooldownSteps = steps_from_seconds(c.cooldown);
+            c.recoverySteps = steps_from_seconds(c.cooldown);
             continue;
         }
         strike(e, targetEnt, c, owned);
@@ -4097,7 +4097,7 @@ void SubworldEngine::tick(float dt) {
         // scan the registry on every swing).
         tick_player_melee();
         ecs::sys::tick_visual_interp(*ecs_, dt);
-        ecs::sys::tick_combat_cooldowns(*ecs_, /*steps=*/1u);
+        ecs::sys::tick_combat_recovery(*ecs_, /*steps=*/1u);
         tick_spell_projectiles(*ecs_, bus_, dt,
                                &SubworldEngine::spell_damage_log_callback,
                                this,

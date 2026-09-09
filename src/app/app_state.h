@@ -221,13 +221,9 @@ struct App {
     sm::MusicId          audioFailed = sm::MusicId::Count;
     int                  subworldLastPlayerHp = -1;
     float                subworldHitFlashTimer = 0.0f;
-    // The pending micro cast's WIND-UP (the honest castTime, 2026-09-07):
-    // ordinal + simulation steps left before the spell leaves the hand
-    // (resolve_active_cast). -1 = nothing winding up. Session-transient by
-    // design — leaving the subworld or dying drops the spell from the arm
-    // (cleared at the expiry tick's own gate), never saved.
-    int                  pendingCastOrd = -1;
-    std::uint32_t        pendingCastSteps = 0;
+    // (No pending-cast wind-up: a cast resolves at its own click and the
+    // time it costs is the BODY's one recovery gate — ecs::Combat::
+    // recoverySteps, owner verdict 2026-09-09.)
     // ONE fractional stamina carry for the whole body: the map walk and the
     // subworld walk charge the same purse through the same law, so they share
     // the remainder instead of each rounding on its own. Runtime only.
