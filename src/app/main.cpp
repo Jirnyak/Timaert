@@ -1456,6 +1456,78 @@ void enter_subworld(App& app) {
     app.subworld.enter(macro_world(app), app.bus);
 }
 
+// The demo opens INSIDE the scene (release.md §3, owner 2026-09-09): the
+// world stands ready underneath — the player anchored by his city — and the
+// prologue pocket rises over it through the same one transition. The ambush
+// is the PLOT's population (the kind row spawns nobody): bandits from the
+// one monster table, "the world's first teacher" (lore.md). Their count and
+// level are guided content numbers, not law.
+void begin_prologue(App& app) {
+    rebake_world(app, /*uploadNow=*/false);
+    sm::sub::DungeonRef ref{};
+    ref.kind = sm::sub::DungeonRef::PrologueRoad;
+    app.subworld.enter_pocket_scene(macro_world(app), app.bus, ref,
+                                    /*floorHeight=*/0.55f);
+    if (!app.subworld.active()) {
+        // Fail-open: a boot that could not raise the scene starts the world
+        // the pre-prologue way — the arrival slide first, map and all.
+        app.prologueHoldsMap = false;
+        app.logic.activate("intro_main");
+        return;
+    }
+    // The world is not his yet: no optical sweep until the witch lets go.
+    app.prologueHoldsMap = true;
+    // The ambush waits UP THE ROAD, in the trees off the bed (its half-width
+    // is 4 tiles), BEYOND its own detection radius (the bandit row's
+    // combat.sight column, kNpcSightDefaultM = 200): what springs the trap
+    // is the player's own advance, so he gets his road, his forest and his
+    // look around first (owner, playtests 1-2: «не успевает даже
+    // оглядеться»). Once he walks into that radius they come at him through
+    // the trunks with no special aggro and no line of sight needed —
+    // detection is a RADIUS, so the wood hides them from HIS eye only.
+    // SEVEN of them (owner 2026-09-09), staggered up both sides of the road
+    // rather than clumped: they arrive in a wave, and seven is what shuts
+    // the story's last hole — the pocket has no exit but death, so a lucky
+    // spell build that felled three would have been stranded in it forever.
+    const float px = app.subworld.player_x();
+    const float py = app.subworld.player_y();
+    constexpr float kAmbushOffsets[][2] = {
+        {-52.0f, -262.0f}, { 44.0f, -288.0f}, {-18.0f, -305.0f},
+        { 62.0f, -330.0f}, {-70.0f, -352.0f}, { 26.0f, -395.0f},
+        {-38.0f, -430.0f}};
+    constexpr std::uint32_t kAmbushCount =
+        std::uint32_t(sizeof(kAmbushOffsets) / sizeof(kAmbushOffsets[0]));
+    for (std::uint32_t i = 0; i < kAmbushCount; ++i) {
+        const float pos[2] = {px + kAmbushOffsets[i][0],
+                              py + kAmbushOffsets[i][1]};
+        app.subworld.spawn_npc_body("road_ambusher", "Ambusher", 3,
+                                    app.gs.worldSeed ^ (0xA3B10000u + i),
+                                    "bandits", nullptr, pos);
+    }
+    sm::session_feed_push(app.gs.sessionFeed,
+                          "Steel glints between the trees.");
+}
+
+// The witch's rescue — the prologue's ONE exit (owner 2026-09-09: any death
+// in the scene, agnostically). Tear the pocket down (the doorless leave
+// keeps the macro player where boot anchored him), stand the player back up
+// (a rescue that SAYS it heals, the apply_creation law), and open the witch
+// scene through the one presentation channel. Her StoryResult activates
+// intro_main — the arrival slide, then the world.
+void rescue_from_prologue(App& app) {
+    app.subworld.leave(true);
+    auto& cs = app.gs.player.combatStats;
+    cs.currentHp = cs.maxHp;
+    cs.currentMp = cs.maxMp;
+    cs.currentSp = cs.maxSp;
+    // Through the NODE, never bus.emit from here: this runs after
+    // process_world_events already flushed and captured this tick, so a raw
+    // event would be wiped before the presentation pump ever saw it (the
+    // owner's first playtest: he died and no window came). The node fires
+    // on the next logic tick, exactly the arrival slide's own channel.
+    app.logic.activate("prologue_main");
+}
+
 void boot_world(App& app, std::uint32_t seed,
                 int mapW = 1024, int mapH = 1024,
                 const sm::LayerParameters* lpOverride = nullptr,
@@ -2741,6 +2813,15 @@ void apply_pending_story_results(App& app) {
             continue;
         if (ev.storyResult->sourceNodeId == "intro_main")
             apply_intro_story_result(app, *ev.storyResult);
+        // The witch let go: NOW the world starts — intro_main fires the
+        // arrival slide on the next logic tick (its activation moved here
+        // from boot, 2026-09-09: the prologue plays first), and the map
+        // opens with it: the first optical sweep runs the moment this flag
+        // drops, so the world's sight arrives ON the arrival slide.
+        if (ev.storyResult->sourceNodeId == "prologue_main") {
+            app.prologueHoldsMap = false;
+            app.logic.activate("intro_main");
+        }
     }
     app.appliedStoryResultCount = end;
 }
@@ -2832,8 +2913,10 @@ bool macro_overlay_blocks_npc_proximity(const App& app) {
 
 const sm::content::StoryDef* story_def_for_event(const sm::GameEvent& ev) {
     // The nine-slide intro plays PRE-WORLD (the IntroSlides screen) and never
-    // rides this channel; the world's own stories resolve here. Today that is
-    // the single arrival slide — chapter breaks will add rows, not branches.
+    // rides this channel; the world's own stories resolve here — one row per
+    // story, chapter breaks will add rows, not branches.
+    const sm::content::StoryDef& witch = sm::content::prologue_witch_story();
+    if (ev.s2 == witch.id) return &witch;
     const sm::content::StoryDef& arrival = sm::content::arrival_story();
     if (ev.s2.empty() || ev.s2 == arrival.id) return &arrival;
     return nullptr;
@@ -3023,7 +3106,10 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     // even while a panel holds the world still, so the map is never blank
     // around a player who has not yet unpaused. The `revealmap` console
     // toggle suspends the sweep while it pins the projection to "everything".
-    if (!app.revealMapOn) {
+    // ...unless the prologue holds it shut: the opening scene plays over a
+    // world the player has not arrived in yet, and a map filling itself in
+    // behind that scene is the immersion leak the owner caught in playtest 2.
+    if (!app.revealMapOn && !app.prologueHoldsMap) {
         sm::update_player_sight(app.gs.knowledge, app.sightRt,
                                 optical_world(app),
                                 app.gs.player.x, app.gs.player.y,
@@ -3272,7 +3358,17 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     sm::player_journal_capture(app.gs);
     tick_subworld_hit_flash(app, dt);
     if (app.gs.player.combatStats.currentHp <= 0) {
-        app.state = sm::ui::AppState::Dead;
+        // The prologue's death is a STORY BEAT, not a game over (CANON
+        // S17/S20, owner 2026-09-09): ANY death in the prologue scene —
+        // blade, fall, anything — hands the body to the witch. A property
+        // of the SCENE, read off the scene; no player-special path (the
+        // damage door ran unchanged).
+        if (app.subworld.dungeon_kind()
+            == std::uint8_t(sm::sub::DungeonRef::PrologueRoad)) {
+            rescue_from_prologue(app);
+        } else {
+            app.state = sm::ui::AppState::Dead;
+        }
     }
     return stats;
 }
@@ -4831,6 +4927,16 @@ void apply_shell_actions(App& app, const sm::ui::ShellResult& r) {
         }
         apply_creation(app);
         app.state = sm::ui::AppState::Playing;
+        // The demo's opening scene rises over the standing world — the
+        // player wakes into the macro map only through the witch (§3). The
+        // headless player SKIPS it exactly as he skips the intro: a smoke
+        // boots into the macro world the pre-prologue way, and the one
+        // smoke that tests the opening calls begin_prologue itself.
+        if (app.smoke.enabled) {
+            app.logic.activate("intro_main");
+        } else {
+            begin_prologue(app);
+        }
     }
     if (r.cancelCreation) {
         app.state = app.creationCustom ? sm::ui::AppState::CustomNewGame

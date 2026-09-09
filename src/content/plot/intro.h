@@ -49,6 +49,12 @@ namespace sm
         // text is a placeholder until the owner authors the real one.
         const StoryDef &arrival_story();
 
+        // The witch scene the prologue's death opens (release.md §3 scene 2;
+        // the intercept is a SCENE property, keyed on the prologue pocket).
+        // Placeholder slides until the owner authors them — his texts land
+        // verbatim. Its StoryResult is what activates intro_main.
+        const StoryDef &prologue_witch_story();
+
         void register_intro_story_nodes(LogicNodeEngine &logic);
 
         // The authored creation choices (sex, homeland) — the character

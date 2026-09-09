@@ -25,6 +25,7 @@
 #endif
 
 #include "macro/anatomy.h"
+#include "sub/ai.h"        // kDetectionRadius — the ambush's own wait line
 #include "macro/codex.h"
 #include "macro/items.h"
 #include "macro/player_entity.h"
@@ -71,6 +72,7 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"subworld_exit_remap", SmokeAction::SubworldExitRemap},
     {"dungeon_house", SmokeAction::DungeonHouse},
     {"dungeon_cave", SmokeAction::DungeonCave},
+    {"prologue_road", SmokeAction::PrologueRoad},
     {"spire_climb", SmokeAction::SpireClimb},
     {"trigger_battle_start", SmokeAction::TriggerBattleStart},
     {"wait_visible", SmokeAction::WaitVisible},
@@ -2407,17 +2409,17 @@ bool run_dungeon_house_smoke(App& app) {
         exited2 = app.subworld.interact() && !app.subworld.in_dungeon();
     }
 
-    // The universal quick exit: from INSIDE an interior, with nothing on you,
-    // the leave key surfaces you straight to the map — no walk back to the
-    // door, no stair climb. Enter once more (we are standing on the doorstep
-    // after the walked exit), then leave from within.
+    // The leave key does NOT work in an interior (owner ruling 2026-09-09):
+    // a dungeon is left on foot through its own exits. Enter once more (we
+    // are standing on the doorstep after the walked exit), press the leave
+    // key from within, and the scene must REFUSE to flip.
     app.subworld.tick(0.016f);
     face_door();
-    bool quickExit = false;
+    bool leaveRefused = false;
     if (app.subworld.interact() && app.subworld.in_dungeon()) {
         app.subworld.tick(0.016f);
         app.subworld.leave();
-        quickExit = !app.subworld.active();
+        leaveRefused = app.subworld.in_dungeon();
     }
     restore();
 
@@ -2425,7 +2427,7 @@ bool run_dungeon_house_smoke(App& app) {
                  "[smoke] dungeon_house entered=%d/%d in=%d/%d exited=%d/%d "
                  "out=%d tags=%d/%d/%d hash=%08x/%08x residents=%d "
                  "pop=%d->%d storeys=%d/%d/%d/%d/%d vermin=%d fauna=%d->%d "
-                 "floorTile=%d quickExit=%d chests=%d searched=%d "
+                 "floorTile=%d leaveRefused=%d chests=%d searched=%d "
                  "store=%d->%d bag=%d->%d rep=%d->%d "
                  "wells=%d signs=%d drank=%d sp=%d->%d read=%d\n",
                  entered ? 1 : 0, entered2 ? 1 : 0, inD1 ? 1 : 0, inD2 ? 1 : 0,
@@ -2434,7 +2436,7 @@ bool run_dungeon_house_smoke(App& app) {
                  popBefore, popAfter,
                  lvl0, lvlUp, lvlBack, lvlDown, lvlBack2,
                  vermin, faunaBefore, faunaAfter, floorTile,
-                 quickExit ? 1 : 0, chestProps, searched ? 1 : 0,
+                 leaveRefused ? 1 : 0, chestProps, searched ? 1 : 0,
                  storeBefore, storeAfter, bagBefore, bagAfter,
                  repBefore, repAfter, wells, signs, drank ? 1 : 0,
                  spBefore, spAfter, readSign ? 1 : 0);
@@ -2457,7 +2459,7 @@ bool run_dungeon_house_smoke(App& app) {
         // A city house holds a household, and a death behind the door thins
         // the town by exactly one, in the tick it happens.
         || residents < 1 || popBefore <= 0 || popAfter != popBefore - 1
-        || !storeysOk || !verminOk || !onFloor || !quickExit
+        || !storeysOk || !verminOk || !onFloor || !leaveRefused
         // A house has a chest, and searching it MOVES goods from the town's
         // store into the bag — same count out as in — at a price in standing.
         || chestProps < 1 || !searched
@@ -2595,36 +2597,322 @@ bool run_dungeon_cave_smoke(App& app) {
     // No storeys underground: a cave has depth, and depth is walked.
     const bool noStairs = !app.subworld.debug_take_stairs(true)
                        && !app.subworld.debug_take_stairs(false);
-    // The quick exit obeys the danger law BOTH ways, and a cave with beasts
-    // in it is the honest place to prove it: while they are on you the map is
-    // not an escape hatch, and once they are down it is.
+    // The leave key does not work in an interior AT ALL (owner ruling
+    // 2026-09-09): hunted or clear alike, the mouth is the only way out.
+    // Refuse both ways, then prove the WALKED exit still lets go — stand on
+    // the threshold, look at its door, press E.
     app.subworld.leave();
-    const bool refusedWhileHunted = vermin > 0 && app.subworld.in_dungeon();
+    const bool refusedWhileHunted = app.subworld.in_dungeon();
     if (vermin > 0) {
         app.subworld.dev_kill_all_hostiles();
         app.subworld.tick(0.016f);   // let the threat scan settle
         app.subworld.tick(0.016f);
     }
     app.subworld.leave();
-    const bool leftToMap = !app.subworld.active();
+    const bool refusedWhenClear = app.subworld.in_dungeon();
+    bool walkedOut = false;
+    float exitX = 0.0f, exitY = 0.0f;
+    if (app.subworld.dungeon_exit_point(exitX, exitY)) {
+        app.subworld.set_player_pos(exitX, exitY);
+        for (const auto& st : app.subworld.mgr().structures()) {
+            if (st.kind != sm::sub::Structure::Door) continue;
+            app.subworld.rotate_camera(
+                std::atan2(st.y - exitY, st.x - exitX)
+                    - app.subworld.cam_yaw(), 0.0f);
+            break;
+        }
+        walkedOut = app.subworld.interact() && !app.subworld.in_dungeon();
+    }
     restore();
 
     std::fprintf(stderr,
                  "[smoke] dungeon_cave tried=%d mouths=%d entered=%d in=%d "
                  "level=%d floorTile=%d hoards=%d vermin=%d noStairs=%d "
-                 "hunted=%d leftToMap=%d\n",
+                 "refusedHunted=%d refusedClear=%d walkedOut=%d\n",
                  tried, mouths, entered ? 1 : 0, inCave ? 1 : 0, level,
                  floorTile, hoards, vermin, noStairs ? 1 : 0,
-                 refusedWhileHunted ? 1 : 0, leftToMap ? 1 : 0);
+                 refusedWhileHunted ? 1 : 0, refusedWhenClear ? 1 : 0,
+                 walkedOut ? 1 : 0);
     std::fflush(stderr);
 
     if (!entered || !inCave || level != 0 || !onFloor || hoards < 1
-        || !noStairs || !leftToMap
-        // A cave without beasts is a cave the fauna stock could not pay for,
-        // which is legitimate on a hunted cell — but if it HAD beasts, the
-        // gate must have held while they lived.
-        || (vermin > 0 && !refusedWhileHunted)) {
+        || !noStairs || !refusedWhileHunted || !refusedWhenClear
+        || !walkedOut) {
         smoke_fail(app, "dungeon_cave invariant");
+        return false;
+    }
+    return true;
+}
+
+// prologue_road — the demo's opening pocket LIVE: raised with no door
+// (enter_pocket_scene), the window WRAPS (the toroidal kind row — walk north
+// and the road meets itself), the leave key refuses, no threshold is marked,
+// and a hostile survives the first wrap crossing carried by the ordinary
+// seam machinery.
+bool run_prologue_road_smoke(App& app) {
+    if (!smoke_boot_invariants_hold(app)) {
+        smoke_print_counts(app, "prologue_road_boot_failed");
+        smoke_fail(app, "prologue_road boot invariants");
+        return false;
+    }
+    const float oldX = app.gs.player.x;
+    const float oldY = app.gs.player.y;
+    const auto oldSubState = app.gs.subState;
+    auto restore = [&]() {
+        if (app.subworld.active()) app.subworld.leave(true);
+        app.gs.player.x = oldX;
+        app.gs.player.y = oldY;
+        app.gs.subState = oldSubState;
+    };
+
+    // THE opening door itself (the boot skips it for the headless player):
+    // the pocket, its ambush and the map hold, exactly as a new game runs
+    // them — a harness that raised its own scene would not be testing the
+    // thing that ships.
+    if (app.subworld.active()) app.subworld.leave(true);
+    smoke_clear_modal_overlays(app);
+    const std::uint32_t knowRevAtOpen = app.gs.knowledge.revision;
+    begin_prologue(app);
+    const bool entered = app.subworld.active() && app.subworld.in_dungeon();
+    if (!entered) {
+        restore();
+        smoke_fail(app, "prologue_road pocket did not raise");
+        return false;
+    }
+    app.subworld.tick(0.016f);
+
+    // The centre cell's ground, hashed — every torus copy must serve the
+    // SAME cell, so the hash must survive any number of wrap crossings.
+    auto centre_hash = [&]() {
+        const auto& tiles = app.subworld.mgr().tiles();
+        std::uint32_t h = 2166136261u;
+        for (int y = 0; y < sm::sub::kCellSize; ++y) {
+            for (int x = 0; x < sm::sub::kCellSize; ++x) {
+                const std::size_t i =
+                    std::size_t(y + sm::sub::kCellSize) * sm::sub::kFullSize
+                    + std::size_t(x + sm::sub::kCellSize);
+                h = (h ^ std::uint32_t(tiles[i])) * 16777619u;
+            }
+        }
+        return h;
+    };
+    auto scene_bodies = [&]() {
+        int n = 0;
+        for (auto e : app.ecs.reg.view<sm::ecs::NPCKind, sm::ecs::SubworldTag>(
+                 entt::exclude<sm::ecs::Dead>)) {
+            (void)e;
+            ++n;
+        }
+        return n;
+    };
+
+    // The entry pad seats the walker ON the bed (the module's room law).
+    int ftile = -1;
+    {
+        const auto& tiles = app.subworld.mgr().tiles();
+        const int ix = int(app.subworld.player_x());
+        const int iy = int(app.subworld.player_y());
+        const std::size_t i = std::size_t(iy) * sm::sub::kFullSize
+                            + std::size_t(ix);
+        if (i < tiles.size()) ftile = int(tiles[i]);
+    }
+    const bool onRoad = ftile == sm::sub::TILE_ROAD;
+
+    // No exits, by every door: the leave key refuses and no threshold is
+    // marked for the HUD.
+    app.subworld.leave();
+    const bool leaveRefused = app.subworld.in_dungeon();
+    float ex = 0.0f, ey = 0.0f;
+    const bool noExitPoint = !app.subworld.dungeon_exit_point(ex, ey);
+    const std::uint32_t h1 = centre_hash();
+
+    // THE AMBUSH (owner, playtests 1-2): it waits up the road, OUT of its
+    // own detection radius, so the player gets his walk before the trap
+    // springs — and it is off the bed, in the trees.
+    int ambushers = 0;
+    float nearestAmbush2 = 1e18f;
+    for (auto e : app.ecs.reg.view<sm::ecs::NPCKind, sm::ecs::Position,
+                                   sm::ecs::SubworldTag>(
+             entt::exclude<sm::ecs::Dead>)) {
+        const auto& p = app.ecs.reg.get<sm::ecs::Position>(e);
+        const float dx = p.x - app.subworld.player_x();
+        const float dy = p.y - app.subworld.player_y();
+        ++ambushers;
+        nearestAmbush2 = std::min(nearestAmbush2, dx * dx + dy * dy);
+    }
+    const float nearestAmbush = ambushers > 0 ? std::sqrt(nearestAmbush2)
+                                              : 0.0f;
+    // Seven: the count IS the law here — the pocket's only exit is the
+    // player's death, so the ambush must be unwinnable, not merely hard.
+    const bool ambushWaits = ambushers >= 7
+        && nearestAmbush > sm::sub::kDetectionRadius;
+
+    // The row reached the body: this is the ambusher's OWN row (HP 100), not
+    // the world's bandit (50) — the prologue's teeth are a creature, not a
+    // tuned spawn.
+    int ambushMaxHp = 0;
+    for (auto e : app.ecs.reg.view<sm::ecs::NPCKind, sm::ecs::Health,
+                                   sm::ecs::SubworldTag>(
+             entt::exclude<sm::ecs::Dead>)) {
+        ambushMaxHp = std::max(ambushMaxHp,
+                               int(app.ecs.reg.get<sm::ecs::Health>(e).maxHp));
+    }
+
+    // AND THEY COME. Standing 300 m off, they are far outside the generic
+    // 200 m detection every other creature lives by — only their own row's
+    // 1000 m eye can see the player there, and the alert chain brings the
+    // rest. Let the world run and the gap must CLOSE: this is the owner's
+    // «бежали к нему издалека», asserted as behaviour rather than assumed
+    // from a number in a table.
+    advance_sim_seconds(app, 4.0f, false);
+    float closed2 = 1e18f;
+    for (auto e : app.ecs.reg.view<sm::ecs::NPCKind, sm::ecs::Position,
+                                   sm::ecs::SubworldTag>(
+             entt::exclude<sm::ecs::Dead>)) {
+        const auto& p = app.ecs.reg.get<sm::ecs::Position>(e);
+        const float dx = p.x - app.subworld.player_x();
+        const float dy = p.y - app.subworld.player_y();
+        closed2 = std::min(closed2, dx * dx + dy * dy);
+    }
+    const float nearestAfter = ambushers > 0 ? std::sqrt(closed2) : 0.0f;
+    const bool ambushCloses = ambushers > 0
+        && nearestAfter < nearestAmbush - 8.0f;
+
+    // The crossing experiment wants a CLEAN ledger: the boot's ambushers
+    // stand by the entry pad at the cell's south edge, where one window
+    // shift honestly evicts them — that is the eviction law, not the seam
+    // carrying bodies. Clear them, stand mid-cell, and spawn ONE tracked
+    // hostile beside the player: a body a cell-shift keeps inside the
+    // window must be CARRIED by the seam machinery, not wiped by it.
+    app.subworld.dev_kill_all_hostiles();
+    app.subworld.tick(0.016f);
+    app.subworld.set_player_pos(float(sm::sub::kCellSize) * 1.5f,
+                                float(sm::sub::kCellSize) * 1.5f);
+    app.subworld.tick(0.016f);
+    if (!app.subworld.spawn_npc_body("bandit", "Prologue Bandit", 3,
+                                     app.gs.worldSeed ^ 0xBAD1u, "bandits")) {
+        restore();
+        smoke_fail(app, "prologue_road bandit spawn failed");
+        return false;
+    }
+    app.subworld.tick(0.05f);
+    const int bodiesBefore = scene_bodies();
+
+    // Cross the wrap: stand in the north ring and let the ordinary tick
+    // re-centre the window (the wrapCells column's whole point).
+    app.subworld.set_player_pos(app.subworld.player_x(),
+                                float(sm::sub::kCellSize) - 8.0f);
+    app.subworld.tick(0.016f);
+    const bool wrappedOnce = app.subworld.active()
+                          && app.subworld.in_dungeon();
+    const int bodiesAfter = scene_bodies();
+
+    // Two more crossings: the block is 3 cells tall (wrapCells), so THREE
+    // crossings walk the whole road column and stand the player on the
+    // variant he began on. (A body left cells behind may honestly evict —
+    // only the GROUND is the loop's promise.)
+    bool wrapped = wrappedOnce;
+    for (int i = 0; i < 2; ++i) {
+        app.subworld.set_player_pos(app.subworld.player_x(),
+                                    float(sm::sub::kCellSize) - 8.0f);
+        app.subworld.tick(0.016f);
+        wrapped = wrapped && app.subworld.active()
+               && app.subworld.in_dungeon();
+    }
+    // The initial dungeon build is synchronous, but a re-centre streams its
+    // new cells through the ASYNC seam path — let it drain before asking
+    // whether the torus served the SAME stretch again after a full loop.
+    std::uint32_t h2 = centre_hash();
+    for (int i = 0; i < 240 && h2 != h1; ++i) {
+        app.subworld.tick(0.016f);
+        h2 = centre_hash();
+    }
+    const bool torusSame = h1 == h2;
+
+    // THE RESCUE (owner 2026-09-09): any death in the prologue scene is a
+    // story beat, not a game over. Kill the player's BODY through the one
+    // damage door; the runtime intercept must tear the pocket down, stand
+    // the player back up in Playing, open the witch scene — and the
+    // doorless teardown must NOT move the macro player off the spot boot
+    // anchored him to.
+    // The arrival popup (the smoke boot's own opening slide) pauses the
+    // world — dismiss it the way the harness always does, or the ticked
+    // runtime below never runs. The wound lands on the SCALAR: the hero
+    // body's HP is macro-authoritative (pull_player_entity_to_scalars
+    // rewrites it from currentHp every tick — a body killed BETWEEN ticks
+    // heals back), and the scalar is the very number the intercept reads,
+    // the same one the macro auto-resolve writes. One step then: the
+    // intercept answers within the tick, and the witch event is still in
+    // this tick's bus.
+    smoke_clear_modal_overlays(app);
+    app.gs.player.combatStats.currentHp = 0;
+    advance_sim_seconds(app, 0.016f, false);
+    const bool rescued = !app.subworld.active()
+        && app.state == sm::ui::AppState::Playing
+        && app.gs.player.combatStats.currentHp > 0;
+    const bool anchored = app.gs.player.x == oldX
+                       && app.gs.player.y == oldY;
+    // The witch must actually OPEN — the owner's first playtest died and got
+    // NO window, because the rescue emitted its event straight onto the bus
+    // after that tick's process_world_events had already flushed and
+    // captured. It rides a logic NODE now, so it lands on a LATER tick:
+    // step until the overlay is up, then assert what the player would see.
+    bool witchOpen = false;
+    for (int i = 0; i < 8 && !witchOpen; ++i) {
+        advance_sim_seconds(app, 0.016f, false);
+        witchOpen = sm::ui::story_overlay_active(app.storyOverlay)
+            && app.storyOverlay.story != nullptr
+            && app.storyOverlay.story->id != nullptr
+            && std::string_view(app.storyOverlay.story->id)
+                   == "prologue_witch";
+    }
+    // THE MAP LAW, both ways, on the SAME ground — the boot already swept
+    // the city's surroundings, so asking about known cells could not fail.
+    // Stand the macro player on land nobody has seen: while the prologue
+    // holds the map (it still does, behind the witch), the optical sweep —
+    // which runs above the pause gate, so nothing else would stop it —
+    // must leave the layer untouched.
+    app.gs.player.x = std::fmod(oldX + 300.0f, float(app.gs.mapW));
+    app.gs.player.y = std::fmod(oldY + 300.0f, float(app.gs.mapH));
+    const std::uint32_t knowRevOnFreshLand = app.gs.knowledge.revision;
+    advance_sim_seconds(app, 0.2f, false);
+    const bool mapHeldAtWitch =
+        app.gs.knowledge.revision == knowRevOnFreshLand;
+
+    // ...and the moment she lets go it opens: play the Begin button the
+    // overlay would send (complete_story's payload) and the same steps on
+    // the same ground must now reveal it.
+    sm::GameEvent done{sm::EventTag::StoryResult};
+    done.storyResult = std::make_shared<sm::StoryResultPayload>();
+    done.storyResult->sourceNodeId = "prologue_main";
+    done.storyResult->storyId = "prologue_witch";
+    app.bus.emit(done);
+    smoke_clear_modal_overlays(app);
+    advance_sim_seconds(app, 0.2f, false);
+    const bool mapOpened = app.gs.knowledge.revision != knowRevOnFreshLand;
+    restore();
+
+    std::fprintf(stderr,
+                 "[smoke] prologue_road entered=%d onRoad=%d tile=%d "
+                 "ambush=%d/%.0fm->%.0fm hp=%d leaveRefused=%d noExitPoint=%d "
+                 "bodies=%d->%d wrapped=%d hash=%08x/%08x rescued=%d "
+                 "anchored=%d witchOpen=%d mapHeld=%d mapOpened=%d\n",
+                 entered ? 1 : 0, onRoad ? 1 : 0, ftile,
+                 ambushers, double(nearestAmbush), double(nearestAfter),
+                 ambushMaxHp, leaveRefused ? 1 : 0, noExitPoint ? 1 : 0,
+                 bodiesBefore, bodiesAfter, wrapped ? 1 : 0, h1, h2,
+                 rescued ? 1 : 0, anchored ? 1 : 0, witchOpen ? 1 : 0,
+                 mapHeldAtWitch ? 1 : 0, mapOpened ? 1 : 0);
+    std::fflush(stderr);
+
+    if (!entered || !onRoad || !ambushWaits || !ambushCloses
+        || ambushMaxHp < 100
+        || !leaveRefused || !noExitPoint
+        || bodiesBefore < 1 || bodiesAfter != bodiesBefore
+        || !wrapped || !torusSame
+        || !rescued || !anchored || !witchOpen
+        || !mapHeldAtWitch || !mapOpened) {
+        smoke_fail(app, "prologue_road invariant");
         return false;
     }
     return true;
@@ -5367,6 +5655,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr, "[smoke] action=dungeon_cave\n");
             std::fflush(stderr);
             if (run_dungeon_cave_smoke(app)) ++app.smoke.cursor;
+            break;
+        case SmokeAction::PrologueRoad:
+            std::fprintf(stderr, "[smoke] action=prologue_road\n");
+            std::fflush(stderr);
+            if (run_prologue_road_smoke(app)) ++app.smoke.cursor;
             break;
         case SmokeAction::SpireClimb:
             std::fprintf(stderr, "[smoke] action=spire_climb\n");

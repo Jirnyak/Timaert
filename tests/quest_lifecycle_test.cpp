@@ -939,13 +939,19 @@ void test_intro_show_story_node() {
     sm::EventBus bus;
     sm::LogicNodeEngine logic;
     sm::content::register_intro_story_nodes(logic);
-    CHECK_OR_RETURN(!(logic.node_count() != 2 || logic.active_count() != 1),
-        "plot node registration did not match TS plot index");
+    // Registration activates NOTHING (2026-09-09): the demo opens with the
+    // prologue pocket, and intro_main waits for the witch scene's
+    // StoryResult — the activation below plays that moment's part.
+    CHECK_OR_RETURN(!(logic.node_count() != 3 || logic.active_count() != 0),
+        "plot node registration did not match the prologue-first plot index");
     CHECK_OR_RETURN(!(!logic.has("intro_main")
+        || !logic.has("prologue_main")
         || !logic.has(sm::content::kChapter1NodeId)
-        || !logic.is_active("intro_main")
+        || logic.is_active("intro_main")
+        || logic.is_active("prologue_main")
         || logic.is_active(sm::content::kChapter1NodeId)),
-        "plot node ids/initial activation do not match TS plot registry");
+        "plot node ids/initial activation do not match the prologue-first law");
+    logic.activate("intro_main");
 
     logic.tick(bus, player);
 

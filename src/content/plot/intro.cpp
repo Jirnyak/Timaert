@@ -63,6 +63,27 @@ constexpr StoryDef kArrivalStory = {
     sizeof(kArrivalSlides) / sizeof(kArrivalSlides[0]),
 };
 
+// The witch scene — what the prologue's death OPENS (release.md §3 scene 2:
+// Hokma, lore.md §2). PLACEHOLDER text, no art yet (owner authors both; his
+// texts land VERBATIM). Plays through the same story-overlay channel as the
+// arrival slide; its completion is what starts the world (the intro_main
+// activation moves to its StoryResult).
+constexpr StorySlide kPrologueWitchSlides[] = {
+    {nullptr, "[PLACEHOLDER] Darkness. Then a fire, and a voice: the bandits "
+              "left you for dead on the forest road."},
+    {nullptr, "[PLACEHOLDER] The red witch watches you breathe. Her sister "
+              "stands at the treeline, silent."},
+    {nullptr, "[PLACEHOLDER] By morning the hut is gone, the road is not the "
+              "same road, and you owe your life to someone the world fears."},
+};
+
+constexpr StoryDef kPrologueWitchStory = {
+    "prologue_witch",
+    "prologue_main",
+    kPrologueWitchSlides,
+    sizeof(kPrologueWitchSlides) / sizeof(kPrologueWitchSlides[0]),
+};
+
 LogicNode intro_main_node() {
     LogicNode n;
     n.id = kArrivalStory.sourceNodeId;
@@ -80,6 +101,27 @@ LogicNode intro_main_node() {
     return n;
 }
 
+// The witch node — what the prologue's death ACTIVATES (the rescue calls
+// logic.activate, never bus.emit: an event raised after process_world_events
+// already ran its tick is flushed before the presentation capture ever sees
+// it — the arrival slide rides this same node channel for the same reason).
+LogicNode prologue_main_node() {
+    LogicNode n;
+    n.id = kPrologueWitchStory.sourceNodeId;
+    n.label = "Prologue Witch";
+    n.tags.push_back("intro");
+    n.tags.push_back("plot");
+    n.effect = [](NodeContext& ctx) {
+        const StoryDef& story = prologue_witch_story();
+        GameEvent ev{EventTag::ShowStory};
+        ev.s1 = story.sourceNodeId;
+        ev.s2 = story.id;
+        ev.ix = static_cast<int>(story.slideCount);
+        ctx.bus->emit(ev);
+    };
+    return n;
+}
+
 } // namespace
 
 const StoryDef& intro_story() {
@@ -88,6 +130,10 @@ const StoryDef& intro_story() {
 
 const StoryDef& arrival_story() {
     return kArrivalStory;
+}
+
+const StoryDef& prologue_witch_story() {
+    return kPrologueWitchStory;
 }
 
 const StoryChoice* creation_sex_choices(std::size_t& count) {
@@ -142,8 +188,12 @@ const char* resolve_homeland_faction(const char* choiceValue,
 
 void register_intro_story_nodes(LogicNodeEngine& logic) {
     logic.add(intro_main_node());
+    logic.add(prologue_main_node());
     register_chapter_1_nodes(logic);
-    logic.activate(kIntroStory.sourceNodeId);
+    // intro_main is NOT activated here any more (2026-09-09): the demo opens
+    // with the prologue pocket (release.md §3), and the arrival slide waits
+    // for the witch scene's StoryResult — the app activates it there. A boot
+    // that raises no prologue activates it directly (the fail-open path).
 }
 
 } // namespace sm::content

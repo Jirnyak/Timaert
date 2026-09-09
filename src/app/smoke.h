@@ -45,6 +45,7 @@ enum class SmokeAction : std::uint8_t {
     SubworldExitRemap,
     DungeonHouse,
     DungeonCave,
+    PrologueRoad,
     SpireClimb,
     TriggerBattleStart,
     WaitVisible,

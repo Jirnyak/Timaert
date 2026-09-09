@@ -259,6 +259,14 @@ struct App {
     std::uint32_t showDialogCapturedTick = std::uint32_t(-1);
     sm::ui::StoryOverlayState storyOverlay;
     std::uint32_t showStoryCapturedTick = std::uint32_t(-1);
+    // The prologue holds the MAP shut (owner, playtest 2: an opened map
+    // while the opening scene plays ruins the immersion). The map is
+    // KNOWLEDGE, and a man ambushed on a road has none yet — the optical
+    // sweep does not run until the witch lets him go, so the world's first
+    // sight arrives with the arrival slide. Set by begin_prologue, cleared
+    // by the witch's StoryResult. Session state: a dungeon is never saved,
+    // so a load lands in the world with the map opening normally.
+    bool prologueHoldsMap = false;
     std::array<sm::GameEvent, kPendingPresentationMax> pendingPresentationEvents{};
     std::size_t pendingPresentationCount = 0;
     std::uint32_t pendingPresentationTick = std::uint32_t(-1);
@@ -396,6 +404,10 @@ void apply_pending_story_results(App& app);
 void capture_presentation_events(App& app);
 std::uint64_t quest_marker_signature(const std::vector<sm::Quest>& active);
 void process_world_events(App& app);
+// THE demo's opening (release.md §3): raises the prologue pocket over the
+// standing world, sets its ambush, and holds the map shut. Declared for the
+// smoke harness, which drives this very door rather than a copy of it.
+void begin_prologue(App& app);
 RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput);
 RuntimeFrameStats advance_sim_steps(App& app, int steps, bool allowInput);
 RuntimeFrameStats advance_sim_seconds(App& app, float seconds, bool allowInput);
