@@ -1079,17 +1079,23 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                     // Price FROM STOCK at POST-TRADE quantity — a lone
                     // trader has no town demand: his scarcity is his own
                     // shelf. Coin never reaches these lambdas (face value
-                    // inside draw_barter_column).
-                    const auto buyUnit = [&](const std::string& id,
+                    // inside draw_barter_column). The base is THE contextual
+                    // price of the INSTANCE (value_of — affixes priced, the
+                    // bare twin cheaper); scarcity still counts the KIND.
+                    const auto buyUnit = [&](const ItemRef& ref,
                                              const ItemDef& def, int n) {
+                        (void)def;
                         return trade_overlay_buy_price(
-                            stock_price(def.value, bag.inv.count(id) - n, 0),
+                            stock_price(value_of(ref),
+                                        bag.inv.count_of(int(ref.def)) - n, 0),
                             chaEff, tradeEff, traits);
                     };
-                    const auto sellUnit = [&](const std::string& id,
+                    const auto sellUnit = [&](const ItemRef& ref,
                                               const ItemDef& def, int n) {
+                        (void)def;
                         return trade_overlay_sell_price(
-                            stock_price(def.value, bag.inv.count(id) + n, 0),
+                            stock_price(value_of(ref),
+                                        bag.inv.count_of(int(ref.def)) + n, 0),
                             chaEff, tradeEff, traits);
                     };
 

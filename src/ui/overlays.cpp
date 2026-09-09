@@ -1588,23 +1588,28 @@ namespace sm::ui
                     // Price FROM STOCK at POST-TRADE quantity: every line
                     // of the package pays its own slippage (the widget
                     // passes n = the staged count; coin never gets here —
-                    // it is face value inside draw_barter_column).
-                    const auto buyUnit = [&](const std::string &id,
+                    // it is face value inside draw_barter_column). The base
+                    // is THE contextual price of the INSTANCE (value_of —
+                    // affixes priced, the bare twin cheaper); scarcity and
+                    // demand still count the KIND.
+                    const auto buyUnit = [&](const ItemRef &ref,
                                              const ItemDef &def, int n) {
                         return trade_overlay_buy_price(
-                            stock_price(def.value, s->inventory.count(id) - n,
+                            stock_price(value_of(ref),
+                                        s->inventory.count_of(int(ref.def)) - n,
                                         daily_demand_for(
-                                            id.c_str(), s->population,
+                                            def.id, s->population,
                                             EconSite(landmark_def(
                                                 s->type).econSite))),
                             chaEff, tradeEff, s->mood);
                     };
-                    const auto sellUnit = [&](const std::string &id,
+                    const auto sellUnit = [&](const ItemRef &ref,
                                               const ItemDef &def, int n) {
                         return trade_overlay_sell_price(
-                            stock_price(def.value, s->inventory.count(id) + n,
+                            stock_price(value_of(ref),
+                                        s->inventory.count_of(int(ref.def)) + n,
                                         daily_demand_for(
-                                            id.c_str(), s->population,
+                                            def.id, s->population,
                                             EconSite(landmark_def(
                                                 s->type).econSite))),
                             chaEff, tradeEff, s->mood);

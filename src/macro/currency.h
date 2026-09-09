@@ -100,43 +100,62 @@ inline int transfer_value(Inventory& from, Inventory& to, int value) {
 
 // ── The package deal: two bundles swap whole or not at all ───────────────
 
-// One side of a deal: lines of (catalog id, count) leaving a bag. Ids may
-// repeat; validation sums them.
-using BarterPackage = std::vector<std::pair<std::string, int>>;
+// One staged line of a deal: the SLOT of the source shelf, not an id — a
+// rolled sword and its bare twin are two stacks of one id, and an id-keyed
+// line priced the plain while shipping whichever the bag found first (the
+// exact class Inventory::remove_at was built against, owner verdict
+// 2026-09-07 «торговля пер-стак»). `def` is the row the slot held when the
+// line was staged — a shelf slot re-filled by the economy day under an open
+// panel refuses the stale line instead of shipping strangers.
+struct BarterLine {
+    int           slot  = -1;
+    int           count = 0;
+    std::uint16_t def   = 0;
+};
+using BarterPackage = std::vector<BarterLine>;
 
 // The GENERAL settlement of a barter (owner ruling 2026-08-07): the trade
 // screens stage a package on EACH side and ONE button settles both, all-or-
-// nothing — counts are checked against the PRE-DEAL bags, then everything
-// travels. Coin is not special here: a currency row is just another line,
-// which is how a deal balances. VALUE fairness (given covers taken) is the
-// caller's law — the screens price both sides and gate the button.
+// nothing — lines are checked against the PRE-DEAL bags, then everything
+// travels. What travels is the slot's WHOLE identity (seed, affixes,
+// material, quality) — add_ref re-stacks by the one stacking law, so a
+// rolled instance arrives as itself and never merges into a plain pile.
+// Coin is not special here: a currency row is just another line, which is
+// how a deal balances. VALUE fairness (given covers taken) is the caller's
+// law — the screens price both sides and gate the button.
 inline bool barter_swap(Inventory& a, Inventory& b,
                         const BarterPackage& fromA,
                         const BarterPackage& fromB) {
     const auto covered = [](const Inventory& bag, const BarterPackage& pkg) {
-        for (const auto& line : pkg) {
-            if (line.second <= 0) return false;
+        for (const BarterLine& line : pkg) {
+            if (line.count <= 0) return false;
+            if (line.slot < 0 || line.slot >= kMaxInventorySlots) return false;
+            const ItemRef& s = bag.slots[std::size_t(line.slot)];
+            if (s.empty() || s.def != line.def) return false;
             int need = 0;
-            for (const auto& l : pkg)
-                if (l.first == line.first) need += l.second;
-            if (bag.count(line.first) < need) return false;
+            for (const BarterLine& l : pkg)
+                if (l.slot == line.slot) need += l.count;
+            if (s.count < need) return false;
         }
         return true;
     };
     if (!covered(a, fromA) || !covered(b, fromB)) return false;
-    // Settle on COPIES and commit whole: `add` can refuse a full bag
+    // Settle on COPIES and commit whole: `add_ref` can refuse a full bag
     // mid-deal, and a half-settled swap would burn the goods already
     // removed. All-or-nothing stays literal — a refused deal leaves both
     // pre-deal bags untouched (CANON S5: nothing evaporates).
     Inventory na = a, nb = b;
-    for (const auto& line : fromA) {
-        na.remove(line.first, line.second);
-        if (!nb.add(line.first, line.second)) return false;
-    }
-    for (const auto& line : fromB) {
-        nb.remove(line.first, line.second);
-        if (!na.add(line.first, line.second)) return false;
-    }
+    const auto ship = [](Inventory& from, Inventory& to,
+                         const BarterPackage& pkg) {
+        for (const BarterLine& line : pkg) {
+            ItemRef payload = from.slots[std::size_t(line.slot)];
+            payload.count = line.count;
+            if (!from.remove_at(line.slot, line.count)) return false;
+            if (!to.add_ref(payload)) return false;
+        }
+        return true;
+    };
+    if (!ship(na, nb, fromA) || !ship(nb, na, fromB)) return false;
     a = na;
     b = nb;
     return true;
@@ -163,13 +182,15 @@ inline int wallet_spend_up_to(Inventory& inv, int value) {
 }
 
 // The whole bag in universal VALUE — what every formula converts to
-// (owner: «внутри всё равно учитывается стоимость»).
+// (owner: «внутри всё равно учитывается стоимость»). Per stack through THE
+// contextual price (value_of — row + affixes; material/quality wake here
+// with their tables): a bandit hauling a rolled blade is worth hunting for
+// exactly what the blade would fetch, not for its bare row.
 inline int inventory_value(const Inventory& inv) {
     int total = 0;
     for (const ItemRef& s : inv.slots) {
         if (s.empty()) continue;
-        const ItemDef* def = item_def_at(int(s.def));
-        total += (def ? def->value : 0) * s.count;
+        total += value_of(s) * s.count;
     }
     return total;
 }

@@ -119,43 +119,52 @@ struct BarterState {
     bool empty() const { return take.empty() && give.empty(); }
 };
 
-inline int barter_staged(const BarterPackage& pkg, const std::string& id) {
-    for (const auto& line : pkg)
-        if (line.first == id) return line.second;
+// Lines are keyed by SLOT of the source shelf (currency.h BarterLine —
+// «торговля пер-стак», owner verdict 2026-09-07): a rolled sword and its
+// bare twin are two lines with two prices, never one id.
+inline int barter_staged(const BarterPackage& pkg, int slot) {
+    for (const BarterLine& line : pkg)
+        if (line.slot == slot) return line.count;
     return 0;
 }
 
-inline void barter_stage(BarterPackage& pkg, const std::string& id, int n) {
+inline void barter_stage(BarterPackage& pkg, int slot, std::uint16_t def,
+                         int n) {
     for (auto it = pkg.begin(); it != pkg.end(); ++it) {
-        if (it->first == id) {
+        if (it->slot == slot) {
             if (n <= 0) pkg.erase(it);
-            else it->second = n;
+            else { it->count = n; it->def = def; }
             return;
         }
     }
-    if (n > 0) pkg.push_back({id, n});
+    if (n > 0) pkg.push_back({slot, n, def});
 }
 
 // The shelf moved under an open panel (a caravan bought it out, the day
 // crafted): clamp the staged lines to what is still real instead of
-// clearing the whole deal.
+// clearing the whole deal. A slot that emptied — or was re-filled with a
+// DIFFERENT row — drops its line; a shrunk stack clamps.
 inline void barter_clamp(BarterPackage& pkg, const Inventory& shelf) {
     for (std::size_t i = 0; i < pkg.size();) {
-        const int have = shelf.count(pkg[i].first);
-        if (have <= 0) {
+        const int slot = pkg[i].slot;
+        const ItemRef* s = slot >= 0 && slot < kMaxInventorySlots
+            ? &shelf.slots[std::size_t(slot)] : nullptr;
+        if (!s || s->empty() || s->def != pkg[i].def) {
             pkg.erase(pkg.begin() + std::ptrdiff_t(i));
             continue;
         }
-        if (pkg[i].second > have) pkg[i].second = have;
+        if (pkg[i].count > s->count) pkg[i].count = s->count;
         ++i;
     }
 }
 
-// One shelf column. Every row stages into `pkg` by +/− (step = Amount);
-// prices come from `unitPrice(id, def, n)` — the caller's own law columns
+// One shelf column. Every STACK stages into `pkg` by +/− (step = Amount);
+// prices come from `unitPrice(ref, def, n)` — the caller's own law columns
 // (stock, charisma, context) at POST-TRADE quantity n, so every line pays
-// its slippage — except currency, which is ALWAYS face value. Returns the
-// staged package's total value.
+// its slippage — except currency, which is ALWAYS face value. The callback
+// takes the INSTANCE (owner verdict 2026-09-07 «цена везде через value_of»):
+// a rolled stack prices its affixes, its bare twin two slots down does not,
+// and each is its own line. Returns the staged package's total value.
 template <class UnitPriceFn>
 inline int draw_barter_column(const char* childId, const Inventory& shelf,
                               BarterPackage& pkg, int step,
@@ -164,42 +173,50 @@ inline int draw_barter_column(const char* childId, const Inventory& shelf,
     int total = 0;
     ImGui::BeginChild(childId, ImVec2(0, 260), true);
     if (shelf.used_slots() == 0) ImGui::TextDisabled("(empty)");
-    // Walk the OCCUPIED slots of the flat store. `i` is the slot index, so a
-    // row's ImGui identity follows its slot rather than its position in a
-    // shifting list — a stack that empties no longer renames the widget under
-    // the one after it.
+    // Walk the OCCUPIED slots of the flat store. `i` is the slot index — the
+    // package's own key, so a row's ImGui identity and its staged line both
+    // follow the STACK rather than a name two stacks share.
     for (int i = 0; i < kMaxInventorySlots; ++i) {
         const ItemRef& ref = shelf.slots[std::size_t(i)];
         if (ref.empty()) continue;
         const ItemDef* def = item_def_at(int(ref.def));
-        const std::string id = def ? def->id : std::string();
         const int count = ref.count;
-        const bool coin = def && is_currency_item(id.c_str());
-        const int staged = barter_staged(pkg, id);
+        const bool coin = def && is_currency_item(def->id);
+        const int staged = barter_staged(pkg, i);
         const int next = staged + step > count ? count : staged + step;
         ImGui::PushID(i);
         const bool canAdd = def && staged < count;
         if (!canAdd) ImGui::BeginDisabled();
-        if (ImGui::Button("+", ImVec2(24, 0))) barter_stage(pkg, id, next);
+        if (ImGui::Button("+", ImVec2(24, 0)))
+            barter_stage(pkg, i, ref.def, next);
         if (!canAdd) ImGui::EndDisabled();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !def)
             ImGui::SetTooltip("Unknown item id");
         ImGui::SameLine();
         if (staged <= 0) ImGui::BeginDisabled();
         if (ImGui::Button("-", ImVec2(24, 0)))
-            barter_stage(pkg, id, staged - step < 0 ? 0 : staged - step);
+            barter_stage(pkg, i, ref.def,
+                         staged - step < 0 ? 0 : staged - step);
         if (staged <= 0) ImGui::EndDisabled();
         ImGui::SameLine();
         // The row previews the unit price of the NEXT press; the staged
         // line below is valued at its own post-trade quantity.
         const int unit = !def ? 0
                          : coin ? def->value
-                                : unitPrice(id, *def, next > 0 ? next : step);
-        ImGui::Text("%s x%d  %d g", def ? def->name : id.c_str(), count, unit);
+                                : unitPrice(ref, *def, next > 0 ? next : step);
+        if (def) {
+            // The ONE shopfront spelling: a rolled stack shows its suffix
+            // and tint on the counter exactly as in the bag.
+            draw_item_ref_name(ref, *def);
+            ImGui::SameLine();
+            ImGui::Text("x%d  %d g", count, unit);
+        } else {
+            ImGui::Text("(unknown) x%d", count);
+        }
         draw_trade_item_tooltip(def);
         if (staged > 0 && def) {
             const int lineValue = coin ? def->value * staged
-                                       : unitPrice(id, *def, staged) * staged;
+                                       : unitPrice(ref, *def, staged) * staged;
             total += lineValue;
             ImGui::SameLine();
             ImGui::TextDisabled("| deal x%d = %d g", staged, lineValue);
