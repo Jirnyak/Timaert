@@ -406,7 +406,7 @@ inline float get_carry_capacity(const Attributes& a, const Skills& s,
 
 // The three pools, named so this layer can speak about them without knowing
 // which container a particular body keeps them in (the player's CombatStats,
-// a body's ecs::Health). Values are ints because pools are ints everywhere.
+// a body's ecs::Pools). Values are ints because pools are ints everywhere.
 struct PoolSlice {
     int* current[int(PoolId::Count)] = {nullptr, nullptr, nullptr};
     int  maximum[int(PoolId::Count)] = {0, 0, 0};

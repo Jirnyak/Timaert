@@ -30,7 +30,7 @@
 namespace {
 
 using sm::ecs::Position;
-using sm::ecs::Health;
+using sm::ecs::Pools;
 using sm::ecs::Projectile;
 using sm::ecs::SubworldTag;
 
@@ -39,7 +39,7 @@ constexpr int kBodyHp = 100;
 entt::entity add_body(entt::registry& reg, float x, float y, float z) {
     const auto e = reg.create();
     reg.emplace<Position>(e, x, y, z);
-    reg.emplace<Health>(e, kBodyHp, kBodyHp);
+    reg.emplace<Pools>(e, kBodyHp, kBodyHp);
     reg.emplace<SubworldTag>(e);
     return e;
 }
@@ -90,7 +90,7 @@ void build_scene(entt::registry& reg, int scenario) {
 
 std::vector<entt::entity> bodies_in_creation_order(entt::registry& reg) {
     std::vector<entt::entity> v;
-    auto view = reg.view<Position, Health>();
+    auto view = reg.view<Position, Pools>();
     for (auto e : view) v.push_back(e);
     // EnTT iterates newest-first; reverse for stable creation order.
     std::vector<entt::entity> r(v.rbegin(), v.rend());
@@ -109,7 +109,7 @@ struct GridBroadPhase {
     void build(entt::registry& reg) {
         units.clear();
         ents.clear();
-        auto view = reg.view<Position, Health>(entt::exclude<sm::ecs::Dead>);
+        auto view = reg.view<Position, Pools>(entt::exclude<sm::ecs::Dead>);
         for (auto e : view) {
             const auto& p = view.get<Position>(e);
             sm::sub::BodyDesc d{};
@@ -264,7 +264,7 @@ std::vector<float> run_scenario(int scenario, Mode mode) {
 
     std::vector<float> hp;
     hp.reserve(bodies.size());
-    for (auto e : bodies) hp.push_back(reg.get<Health>(e).hp);
+    for (auto e : bodies) hp.push_back(reg.get<Pools>(e).hp);
     return hp;
 }
 

@@ -52,8 +52,12 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
             std::uint16_t(faction_index(kPlayerFactionId)));
         reg.emplace<ecs::NpcLevel>(
             squad, std::int16_t(std::max(1, gs.player.sheet.levelData.level)));
-        const int hp = std::max(1, gs.player.combatStats.maxHp);
-        reg.emplace<ecs::Health>(squad, hp, hp);
+        {
+            ecs::Pools pools{};
+            pools.hp = pools.maxHp = std::max(1, gs.player.combatStats.maxHp);
+            pools.mp = pools.maxMp = std::max(0, gs.player.combatStats.maxMp);
+            reg.emplace<ecs::Pools>(squad, pools);
+        }
         reg.emplace<ecs::NpcTraits>(squad, ecs::NpcTraits{});
         {
             Rng faceRng(ecs::kPlayerSquadOrdinal ^ 0x9E3779B9u);
@@ -113,10 +117,18 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
     // No +0.5 on the position — Position is the raw cell coordinate, and the
     // overlay applies the render centring.
     reg.emplace_or_replace<ecs::Position>(squad, gs.player.x, gs.player.y, 0.0f);
-    reg.emplace_or_replace<ecs::Health>(
-        squad,
-        std::max(0, gs.player.combatStats.currentHp),
-        std::max(1, gs.player.combatStats.maxHp));
+    {
+        // BOTH bars are re-projected, not just the one anybody happened to
+        // read: a projection that copies a subset is the "lie with a long
+        // fuse" this function's own header warns about, and the subset was
+        // how mana stayed the player's private property.
+        ecs::Pools pools{};
+        pools.hp    = std::max(0, gs.player.combatStats.currentHp);
+        pools.maxHp = std::max(1, gs.player.combatStats.maxHp);
+        pools.mp    = std::max(0, gs.player.combatStats.currentMp);
+        pools.maxMp = std::max(0, gs.player.combatStats.maxMp);
+        reg.emplace_or_replace<ecs::Pools>(squad, pools);
+    }
     reg.emplace_or_replace<ecs::NpcLevel>(
         squad, std::int16_t(std::max(1, gs.player.sheet.levelData.level)));
     if (auto* rt = reg.try_get<ecs::MacroNpcRuntime>(squad)) {

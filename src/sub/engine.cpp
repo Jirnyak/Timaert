@@ -269,7 +269,7 @@ std::uint32_t string_hash(const char* s) {
 // could not carry a name. Faces are derived in ONE place now: sub/spawn.cpp.)
 
 bool alive_subworld_entity(entt::registry& reg, entt::entity e) {
-    const auto* h = reg.try_get<ecs::Health>(e);
+    const auto* h = reg.try_get<ecs::Pools>(e);
     return h && h->hp > 0.0f && reg.all_of<ecs::SubworldTag>(e)
         && !reg.any_of<ecs::Dead>(e);
 }
@@ -485,10 +485,10 @@ const std::vector<MinimapBlip>& SubworldEngine::collect_minimap_blips() const {
     // 5c), so exclude PlayerTag explicitly — the player is the map centre / its
     // own heading triangle, never a blip. Projected player soldiers keep their
     // NPCKind (and no PlayerTag) and read as fully allied (+1).
-    auto view = reg.view<ecs::Position, ecs::Health, ecs::NPCKind,
+    auto view = reg.view<ecs::Position, ecs::Pools, ecs::NPCKind,
                          ecs::SubworldTag>(entt::exclude<ecs::Dead, ecs::PlayerTag>);
     for (auto e : view) {
-        if (view.get<ecs::Health>(e).hp <= 0) continue;
+        if (view.get<ecs::Pools>(e).hp <= 0) continue;
         const auto& pos = view.get<ecs::Position>(e);
         minimapBlips_.push_back(
             MinimapBlip{pos.x, pos.y, player_stance(reg, e, gs_)});
@@ -512,11 +512,11 @@ float SubworldEngine::crosshair_stance() const {
     entt::entity best = entt::null;
     float bestT = kMaxRange;
 
-    auto view = reg.view<ecs::Position, ecs::Health, ecs::NPCKind,
+    auto view = reg.view<ecs::Position, ecs::Pools, ecs::NPCKind,
                          ecs::SubworldTag>(entt::exclude<ecs::Dead>);
     for (auto e : view) {
         if (reg.any_of<ecs::PlayerTag>(e)) continue;
-        if (view.get<ecs::Health>(e).hp <= 0) continue;
+        if (view.get<ecs::Pools>(e).hp <= 0) continue;
         const auto& pos = view.get<ecs::Position>(e);
         const float r = body_radius(reg, e);
         // Ray-sphere: project entity onto the aim segment, check distance.
@@ -871,7 +871,19 @@ void SubworldEngine::spawn_player_entity() {
     const int curHp = gs_
         ? std::clamp(gs_->player.combatStats.currentHp, 0, maxHp)
         : maxHp;
-    reg.emplace<ecs::Health>(e, ecs::Health{curHp, maxHp});
+    {
+        ecs::Pools pools{};
+        pools.hp = curHp;
+        pools.maxHp = maxHp;
+        // The player's mana is still owned by the macro scalar and spent from
+        // it (spellbook_start_cast); this mirrors it onto the body so the
+        // scene reads one block for every actor, the player included.
+        pools.maxMp = gs_ ? std::max(0, gs_->player.combatStats.maxMp) : 0;
+        pools.mp = gs_
+            ? std::clamp(gs_->player.combatStats.currentMp, 0, pools.maxMp)
+            : pools.maxMp;
+        reg.emplace<ecs::Pools>(e, pools);
+    }
     reg.emplace<ecs::BodyRadius>(e, ecs::BodyRadius{kPlayerBodyRadius});
     // The strike: the ONE assembly (macro/anatomy.h hand_strike_fields) from
     // the sheet and the weapon actually in hand on the SQUAD entity — gear is
@@ -1018,11 +1030,17 @@ void SubworldEngine::sync_player_entity_position() {
         playerY_ = p.y;
         playerZ_ = p.z;
         if (gs_ && !reg.all_of<ecs::NPCKind>(e)) {
-            if (auto* h = reg.try_get<ecs::Health>(e)) {
+            if (auto* h = reg.try_get<ecs::Pools>(e)) {
                 const int maxHp = std::max(1, gs_->player.combatStats.maxHp);
-                h->maxHp = float(maxHp);
-                h->hp = float(std::clamp(
-                    gs_->player.combatStats.currentHp, 0, maxHp));
+                h->maxHp = maxHp;
+                h->hp = std::clamp(
+                    gs_->player.combatStats.currentHp, 0, maxHp);
+                // Mana rides down with it — a cast spends the macro scalar,
+                // and a body whose block says 0/0 mana would be a body the
+                // scene believes has none.
+                h->maxMp = std::max(0, gs_->player.combatStats.maxMp);
+                h->mp = std::clamp(
+                    gs_->player.combatStats.currentMp, 0, h->maxMp);
             }
             if (auto* c = reg.try_get<ecs::Combat>(e)) {
                 // Per-tick refresh reads the same EFFECTIVE sheet the spawn
@@ -1088,14 +1106,14 @@ void SubworldEngine::reconcile_tracked_bodies_to_macro() {
     //
     // Bodies still standing only: death is settled once, by the reaper, which
     // has already put the origin at zero.
-    auto view = reg.view<ecs::MacroOrigin, ecs::Health, ecs::SubworldTag>(
+    auto view = reg.view<ecs::MacroOrigin, ecs::Pools, ecs::SubworldTag>(
         entt::exclude<ecs::Dead>);
     for (auto e : view) {
         const entt::entity macro = view.get<ecs::MacroOrigin>(e).macro;
         if (!reg.valid(macro)) continue;
-        auto* mh = reg.try_get<ecs::Health>(macro);
+        auto* mh = reg.try_get<ecs::Pools>(macro);
         if (!mh || mh->maxHp <= 0) continue;
-        const auto& h = view.get<ecs::Health>(e);
+        const auto& h = view.get<ecs::Pools>(e);
         if (h.maxHp <= 0) continue;
         const float fraction =
             std::clamp(float(h.hp) / float(h.maxHp), 0.0f, 1.0f);
@@ -1112,9 +1130,9 @@ void SubworldEngine::reconcile_player_hp_to_macro() {
     // feedback and godMode invulnerability are unified here — one place for both
     // melee and projectile damage, since both now mutate the same Health.
     // View includes Dead: a lethal hit must still reconcile currentHp to 0.
-    auto pv = reg.view<ecs::PlayerTag, ecs::Health>();
+    auto pv = reg.view<ecs::PlayerTag, ecs::Pools>();
     for (auto e : pv) {
-        auto& h = pv.get<ecs::Health>(e);
+        auto& h = pv.get<ecs::Pools>(e);
         // Inc 5c (D3 body-native): a POSSESSED foreign body (has NPCKind) owns
         // its Health — do NOT reconcile it onto gs.player, which stays frozen as
         // the preserved revert target. The one thing that must still cross back
@@ -1631,8 +1649,8 @@ int SubworldEngine::player_display_hp() const {
         // combatStats (kept in sync each tick), for a possessed foreign body it is
         // the body's own pool — so the HUD/flash follows possession with no
         // gs.player mutation (D3 keeps gs.player frozen as the revert target).
-        for (auto e : ecs_->reg.view<ecs::PlayerTag, ecs::Health>()) {
-            return int(std::round(ecs_->reg.get<ecs::Health>(e).hp));
+        for (auto e : ecs_->reg.view<ecs::PlayerTag, ecs::Pools>()) {
+            return int(std::round(ecs_->reg.get<ecs::Pools>(e).hp));
         }
     }
     return gs_ ? gs_->player.combatStats.currentHp : 0;
@@ -2518,11 +2536,11 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
     // is exactly the staleness the spell broad phase must pad its queries by.
     float maxDrive = 0.0f;
 
-    auto actorView = reg.view<ecs::Position, ecs::Health,
+    auto actorView = reg.view<ecs::Position, ecs::Pools,
                               ecs::SubworldTag>(entt::exclude<ecs::Dead>);
     for (auto e : actorView) {
         const auto& p = actorView.get<ecs::Position>(e);
-        const auto& hp = actorView.get<ecs::Health>(e);
+        const auto& hp = actorView.get<ecs::Pools>(e);
         if (hp.hp <= 0) continue;
         const auto* c = reg.try_get<ecs::Combat>(e);
 
@@ -2822,7 +2840,7 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
             // knows a body has died, so this is the only place that can be.
             if (const auto* origin = reg.try_get<ecs::MacroOrigin>(e)) {
                 if (reg.valid(origin->macro)) {
-                    if (auto* mh = reg.try_get<ecs::Health>(origin->macro)) {
+                    if (auto* mh = reg.try_get<ecs::Pools>(origin->macro)) {
                         mh->hp = 0.0f;
                     }
                     reg.emplace_or_replace<ecs::Dead>(origin->macro);
@@ -4066,7 +4084,7 @@ int SubworldEngine::dev_kill_all_hostiles() {
     do {
         std::array<entt::entity, kMaxSubworldDeathsPerStep> victims{};
         batch = 0;
-        auto view = reg.view<ecs::Health, ecs::SubworldTag>(
+        auto view = reg.view<ecs::Pools, ecs::SubworldTag>(
             entt::exclude<ecs::Dead>);
         for (auto e : view) {
             if (batch >= kMaxSubworldDeathsPerStep) break;
@@ -4362,9 +4380,9 @@ void SubworldEngine::tick(float dt) {
     // half-HP gate.
     {
         const FxPreset& blood = fx_preset(FxKind::Blood);
-        auto view = ecs_->reg.view<ecs::Health, ecs::Position>();
+        auto view = ecs_->reg.view<ecs::Pools, ecs::Position>();
         for (auto e : view) {
-            const auto& hp = view.get<ecs::Health>(e);
+            const auto& hp = view.get<ecs::Pools>(e);
             if (hp.maxHp <= 0 || hp.hp * 2 >= hp.maxHp || hp.hp <= 0) continue;
             // drip01 in (0,1]: 0 at half HP, 1 at death's door (the ref's
             // (0.5 - ratio) * 2, integer-house form).

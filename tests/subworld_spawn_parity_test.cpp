@@ -208,13 +208,13 @@ std::vector<SpawnRecord> expected_cell_fauna(
 std::vector<SpawnRecord> actual_fauna(sm::ecs::World& world) {
     std::vector<SpawnRecord> out;
     auto view = world.reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
-                               sm::ecs::Position, sm::ecs::Health,
+                               sm::ecs::Position, sm::ecs::Pools,
                                sm::ecs::Combat, sm::ecs::NpcLevel,
                                sm::ecs::SubworldAi, sm::ecs::Sprite>();
     for (auto e : view) {
         const auto& kind = view.get<sm::ecs::NPCKind>(e);
         const auto& pos = view.get<sm::ecs::Position>(e);
-        const auto& hp = view.get<sm::ecs::Health>(e);
+        const auto& hp = view.get<sm::ecs::Pools>(e);
         const auto& combat = view.get<sm::ecs::Combat>(e);
         const auto& level = view.get<sm::ecs::NpcLevel>(e);
         const auto& ai = view.get<sm::ecs::SubworldAi>(e);
@@ -526,7 +526,7 @@ MacroSeeds seed_macro_npcs(entt::registry& reg, int mapW) {
         reg.emplace<sm::ecs::MacroSpawnId>(e, spawnIndex++);
         reg.emplace<sm::ecs::Position>(e, float(cx), float(cy), 0.0f);
         reg.emplace<sm::ecs::NPCKind>(e, std::uint16_t(type), faction);
-        reg.emplace<sm::ecs::Health>(e, hp, maxHp);
+        reg.emplace<sm::ecs::Pools>(e, hp, maxHp);
         reg.emplace<sm::ecs::NpcLevel>(e, level);
         sm::ecs::NpcCharacter ch{};
         ch.visualSeed = vseed;
@@ -566,7 +566,7 @@ bool run_beast_member_projection_case(
     reg.emplace<sm::ecs::Position>(leader, 0.0f, 0.0f, 0.0f);
     reg.emplace<sm::ecs::NPCKind>(leader, std::uint16_t(sm::NPCType::Bandit),
                                   std::uint16_t(3));
-    reg.emplace<sm::ecs::Health>(leader, 10, 10);
+    reg.emplace<sm::ecs::Pools>(leader, 10, 10);
     reg.emplace<sm::ecs::NpcLevel>(leader, std::int16_t(3));
     reg.emplace<sm::ecs::NpcCharacter>(leader, sm::ecs::NpcCharacter{});
 
@@ -612,12 +612,12 @@ bool run_beast_member_projection_case(
 bool sheet_lifts_every_body(sm::ecs::World& world) {
     int checked = 0;
     auto v = world.reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
-                            sm::ecs::Health, sm::ecs::NpcLevel>();
+                            sm::ecs::Pools, sm::ecs::NpcLevel>();
     for (auto e : v) {
         const std::uint16_t t = v.get<sm::ecs::NPCKind>(e).type;
         if (!sm::valid_npc_kind(t)) return false;
         const sm::NpcTypeDef& row = sm::npc_def(sm::NPCType(t));
-        const auto& h = v.get<sm::ecs::Health>(e);
+        const auto& h = v.get<sm::ecs::Pools>(e);
         if (!world.reg.all_of<sm::CharacterSheet>(e)) return false;
         if (!(h.maxHp >= float(row.combat.hp))) return false;
         // The recovery door's half of the same property (S14, 2026-09-07):
@@ -723,7 +723,7 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // of whatever his sheet gives him down here — that is the invariant, and it
     // survives any rebalance of either side.
     {
-        const auto& h = reg.get<sm::ecs::Health>(pBandit);
+        const auto& h = reg.get<sm::ecs::Pools>(pBandit);
         if (!(h.maxHp > 0 && h.hp >= 1 && h.hp <= h.maxHp)) return false;
         const float frac = float(h.hp) / float(h.maxHp);
         if (!(frac > 0.4f && frac < 0.6f)) return false;
@@ -731,7 +731,7 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     // The control: an untouched macro entity arrives untouched. Without this,
     // "wounded arrives wounded" would also pass if every body arrived at half.
     {
-        const auto& h = reg.get<sm::ecs::Health>(pWrap);
+        const auto& h = reg.get<sm::ecs::Pools>(pWrap);
         if (!(h.maxHp > 0.0f && h.hp == h.maxHp)) return false;
     }
     // Combat SYNTHESISED from the fresh sheet (capability): the row's dice

@@ -180,7 +180,18 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
     reg.emplace<ecs::Position>(e, body.x, body.y, 0.0f);
     reg.emplace<ecs::VisualPos>(e, body.x, body.y, kBodyVisualCatchUp);
     reg.emplace<ecs::NPCKind>(e, std::uint16_t(body.type), body.faction);
-    reg.emplace<ecs::Health>(e, hp, int(maxHp));
+    // Both pools, through both doors. Mana does NOT cross as a fraction the
+    // way a wound does: nothing in the world spends an NPC's mana yet, so a
+    // body arrives with a full well rather than importing a number no macro
+    // writer maintains. The day an NPC pays for a cast, this is the one line
+    // that starts carrying `mpFraction` beside `healthFraction`.
+    {
+        ecs::Pools pools{};
+        pools.hp = hp;
+        pools.maxHp = int(maxHp);
+        pools.mp = pools.maxMp = body_max_mp(sheet);
+        reg.emplace<ecs::Pools>(e, pools);
+    }
     // Its pace: the world's march (macro/movement_cost.h) times what this row
     // is against a walking man. ONE scale for every body, the player's
     // included — a peasant walks at exactly the speed the map says a man
@@ -329,7 +340,7 @@ entt::entity spawn_tracked_body(entt::registry& reg, entt::entity macro,
                                 float x, float y, std::uint32_t seed,
                                 bool combatant) {
     if (macro == entt::null || !reg.valid(macro)) return entt::null;
-    if (!reg.all_of<ecs::NPCKind, ecs::Health, ecs::NpcLevel,
+    if (!reg.all_of<ecs::NPCKind, ecs::Pools, ecs::NpcLevel,
                     ecs::NpcCharacter>(macro)) {
         return entt::null;
     }
@@ -341,7 +352,7 @@ entt::entity spawn_tracked_body(entt::registry& reg, entt::entity macro,
     // way (CANON.md S4).
     if (!valid_npc_kind(kind.type)) return entt::null;
 
-    const auto& health = reg.get<ecs::Health>(macro);
+    const auto& health = reg.get<ecs::Pools>(macro);
     const float fraction = health.maxHp > 0
         ? std::clamp(float(health.hp) / float(health.maxHp), 0.0f, 1.0f)
         : 1.0f;
@@ -839,7 +850,7 @@ int project_macro_npcs_into_subworld(ecs::World& w,
     std::vector<entt::entity> sources;
     {
         auto view = reg.view<ecs::MacroNpcRuntime, ecs::Position, ecs::NPCKind,
-                             ecs::Health, ecs::NpcLevel, ecs::NpcCharacter>(
+                             ecs::Pools, ecs::NpcLevel, ecs::NpcCharacter>(
             entt::exclude<ecs::SubworldTag, ecs::Dead, ecs::PlayerTag,
                           ecs::PlayerSquadTag>);
         for (auto macro : view) sources.push_back(macro);

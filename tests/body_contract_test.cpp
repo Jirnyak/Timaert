@@ -66,7 +66,7 @@ void test_every_squad_body_is_a_whole_body() {
     for (auto e : view) {
         ++bodies;
         const auto* kind   = reg.try_get<ecs::NPCKind>(e);
-        const auto* health = reg.try_get<ecs::Health>(e);
+        const auto* health = reg.try_get<ecs::Pools>(e);
         const auto* combat = reg.try_get<ecs::Combat>(e);
         const auto* sprite = reg.try_get<ecs::Sprite>(e);
         const auto* ai     = reg.try_get<ecs::SubworldAi>(e);
@@ -157,7 +157,7 @@ entt::entity make_macro_lord(entt::registry& reg, sm::NPCType type,
     reg.emplace<sm::ecs::MacroNpcRuntime>(e);
     reg.emplace<sm::ecs::Position>(e, 10.0f, 12.0f, 0.0f);
     reg.emplace<sm::ecs::NPCKind>(e, std::uint16_t(type), faction);
-    reg.emplace<sm::ecs::Health>(e, hp, maxHp);
+    reg.emplace<sm::ecs::Pools>(e, hp, maxHp);
     reg.emplace<sm::ecs::NpcLevel>(e, std::int16_t(level));
     sm::ecs::NpcCharacter face{};
     face.visualSeed = visualSeed;
@@ -189,7 +189,7 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
     CHECK_OR_RETURN(body != entt::null && reg.valid(body),
                     "a body-shaped macro entity can be embodied");
 
-    CHECK((reg.all_of<ecs::NpcCharacter, ecs::Position, ecs::Health, ecs::Combat,
+    CHECK((reg.all_of<ecs::NpcCharacter, ecs::Position, ecs::Pools, ecs::Combat,
                       CharacterSheet, ecs::SubworldAi, ecs::NpcLevel,
                       ecs::Sprite, ecs::SubworldTag>(body)),
           "a tracked body is as whole a body as a derived one");
@@ -203,7 +203,7 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
     // The wound crosses as a fraction, not as points: half above, half below,
     // whatever either layer thinks a health bar is worth.
     {
-        const auto& h = reg.get<ecs::Health>(body);
+        const auto& h = reg.get<ecs::Pools>(body);
         const float frac =
             h.maxHp > 0 ? float(h.hp) / float(h.maxHp) : -1.0f;
         CHECK(frac > 0.4f && frac < 0.6f,
@@ -231,7 +231,7 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
         sub::spawn_tracked_body(reg, whole, 60.0f, 61.0f, 778u, true);
     CHECK_OR_RETURN(wholeBody != entt::null, "the control body was embodied");
     {
-        const auto& h = reg.get<ecs::Health>(wholeBody);
+        const auto& h = reg.get<ecs::Pools>(wholeBody);
         CHECK(h.maxHp > 0.0f && h.hp == h.maxHp,
               "an untouched entity arrives untouched");
     }
@@ -257,7 +257,7 @@ void test_a_body_that_is_not_an_entity_is_refused() {
     // one — the guard is on the WIDE type, before any narrowing.
     const auto monster = reg.create();
     reg.emplace<ecs::NPCKind>(monster, std::uint16_t(0x103), std::uint16_t(1));
-    reg.emplace<ecs::Health>(monster, 10, 10);
+    reg.emplace<ecs::Pools>(monster, 10, 10);
     reg.emplace<ecs::NpcLevel>(monster, std::int16_t(2));
     reg.emplace<ecs::NpcCharacter>(monster, ecs::NpcCharacter{});
     CHECK(sub::spawn_tracked_body(reg, monster, 5.0f, 5.0f, 1u, false)
@@ -321,8 +321,8 @@ void test_a_leaders_aura_reaches_his_men() {
                     != linkLed.entityId) {
                 continue;
             }
-            const float withAura = led.reg.get<ecs::Health>(eLed).maxHp;
-            const float without  = alone.reg.get<ecs::Health>(eAlone).maxHp;
+            const float withAura = led.reg.get<ecs::Pools>(eLed).maxHp;
+            const float without  = alone.reg.get<ecs::Pools>(eAlone).maxHp;
             const float delta = withAura - without;
             CHECK(delta >= 9.0f && delta <= 61.0f,
                   "a led soldier is tougher by his leader's vit point - "
@@ -383,7 +383,7 @@ void test_a_squad_on_the_map_projects_its_roster() {
         const auto* kind = reg.try_get<ecs::NPCKind>(e);
         if (kind && kind->factionIdx != 5) ++wrongFaction;
         if (reg.all_of<ecs::NpcCharacter, CharacterSheet, ecs::Sprite,
-                       ecs::Health, ecs::Combat>(e)) {
+                       ecs::Pools, ecs::Combat>(e)) {
             ++wholeMembers;
         }
     }

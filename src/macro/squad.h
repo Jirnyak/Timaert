@@ -309,7 +309,7 @@ inline AutoBattleSide auto_battle_side_of(ecs::World& w, entt::entity e,
     if (const auto* sid = reg.try_get<ecs::MacroSpawnId>(e)) {
         s.leaderSeed = leader_sheet_seed(sid->index);
     }
-    if (const auto* hp = reg.try_get<ecs::Health>(e)) {
+    if (const auto* hp = reg.try_get<ecs::Pools>(e)) {
         s.leaderHealthFraction = hp->maxHp > 0
             ? std::clamp(float(hp->hp) / float(hp->maxHp), 0.0f, 1.0f) : 1.0f;
         if (const auto* rt = reg.try_get<ecs::MacroNpcRuntime>(e)) {
@@ -358,7 +358,7 @@ inline int award_leader_xp(ecs::World& w, entt::entity e, int xp) {
         ++gained;
     }
     if (gained > 0) {
-        if (auto* hp = reg.try_get<ecs::Health>(e)) {
+        if (auto* hp = reg.try_get<ecs::Pools>(e)) {
             if (const auto* kind = reg.try_get<ecs::NPCKind>(e);
                 kind && kind->type < std::uint16_t(NPCType::Count)) {
                 const NPCType type = NPCType(std::uint8_t(kind->type));
@@ -375,6 +375,17 @@ inline int award_leader_xp(ecs::World& w, entt::entity e, int xp) {
                 hp->maxHp = std::max(1, int(pc.hp));
                 hp->hp = std::clamp(int(float(hp->maxHp) * frac),
                                     1, hp->maxHp);
+                // Mana climbs by the SAME rule as the wound and the legs: the
+                // ceiling follows the sheet, the fraction is preserved. A bar
+                // added to this block and forgotten HERE is the project's
+                // oldest bug shape — a field that falls out of a hand-written
+                // fold is invisible until somebody reads it.
+                const float mpFrac = hp->maxMp > 0
+                    ? std::clamp(float(hp->mp) / float(hp->maxMp), 0.0f, 1.0f)
+                    : 1.0f;
+                hp->maxMp = body_max_mp(sheet);
+                hp->mp = std::clamp(int(float(hp->maxMp) * mpFrac),
+                                    0, hp->maxMp);
                 // The march caches follow the sheet through the same door,
                 // preserving the SP fraction like the wound above — a level
                 // is not a free rest. An exhaustion DEBT (sp < 0) survives
@@ -529,7 +540,7 @@ inline void settle_squad_casualties(GameState& gs, ecs::World& w,
 // to everything upstream.
 inline void settle_leader_fraction(ecs::World& w, entt::entity e,
                                    float fraction) {
-    auto* hp = w.reg.try_get<ecs::Health>(e);
+    auto* hp = w.reg.try_get<ecs::Pools>(e);
     if (!hp) return;
     if (fraction <= 0.0f) {
         hp->hp = 0;
@@ -763,7 +774,7 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
         playerSquad != entt::null) {
         settle_leader_fraction(w, playerSquad,
                                std::clamp(playerFraction, 0.0f, 1.0f));
-        if (const auto* hp = w.reg.try_get<ecs::Health>(playerSquad)) {
+        if (const auto* hp = w.reg.try_get<ecs::Pools>(playerSquad)) {
             gs.player.combatStats.currentHp = int(hp->hp);
         }
     }

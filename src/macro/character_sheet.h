@@ -428,4 +428,20 @@ inline int body_max_hp(const CharacterSheet& sheet, const CombatTemplate& base) 
     return std::max(1, int(std::floor(project_combat(sheet, base).hp)));
 }
 
+// THE mana bar of a body of this sheet — the same question as body_max_hp,
+// asked of the other pool, and answered by the same derivation
+// (calculate_combat_stats: the WILL bar times Meditation).
+//
+// It had no door because it had no readers: `project_combat` computed maxMp
+// on every single birth in the game and dropped it on the floor, so mana was
+// the player's private property and every other body in the world was a
+// cripple with one bar (owner, 2026-09-09: «это РПГ, у всех должна быть HP SP
+// MP»). The row contributes nothing here on purpose — a creature's mana is
+// its MIND, not its species' hit points, and no row authors a mana floor yet.
+// The day one does, it joins exactly here, the way `base.hp` joins above.
+inline int body_max_mp(const CharacterSheet& sheet) {
+    return std::max(0, calculate_combat_stats(sheet.attributes,
+                                              sheet.skills).maxMp);
+}
+
 } // namespace sm

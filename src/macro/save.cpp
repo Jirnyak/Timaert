@@ -414,7 +414,7 @@ void write_macro_npc(Writer& w, const MacroNpcRecord& m) {
     w.pod(m.pos);
     w.pod(m.visual);
     w.pod(m.kind);
-    w.pod(m.health);
+    w.pod(m.pools);
     w.pod(m.level);
     w.pod(m.runtime);
     w.pod(m.traits);
@@ -433,7 +433,7 @@ void read_macro_npc(Reader& r, MacroNpcRecord& m) {
     r.pod(m.pos);
     r.pod(m.visual);
     r.pod(m.kind);
-    r.pod(m.health);
+    r.pod(m.pools);
     r.pod(m.level);
     r.pod(m.runtime);
     r.pod(m.traits);

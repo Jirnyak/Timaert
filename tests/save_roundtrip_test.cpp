@@ -122,7 +122,7 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     a.pos = {33.5f, 44.25f, 0.0f};
     a.visual = {33.0f, 44.0f, 1.5f};
     a.kind = {std::uint16_t(sm::NPCType::Bandit), 3};
-    a.health = {17, 42};
+    a.pools = {17, 42};
     a.level = {5};
     a.runtime.homeSettlementId = 2;
     a.runtime.targetSettlementId = 4;
@@ -178,7 +178,7 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     d.pos = {1.0f, 2.0f, 0.0f};
     d.visual = {1.0f, 2.0f, 0.0f};
     d.kind = {std::uint16_t(sm::NPCType::Guard), 1};
-    d.health = {0, 55};
+    d.pools = {0, 55};
     d.level = {3};
     d.dead = 1;
     out.push_back(std::move(d));
@@ -193,7 +193,7 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     player.visual = {12.0f, 13.0f, 0.0f};
     player.kind = {std::uint16_t(sm::NPCType::Adventurer),
                    std::uint16_t(sm::faction_index(sm::kPlayerFactionId))};
-    player.health = {40, 40};
+    player.pools = {40, 40};
     player.level = {3};
     // ...and what he WEARS. Equipment is opt-in on the entity, so the record
     // must carry the shape AND the occupied cells: a saved coat that comes
@@ -796,7 +796,7 @@ void run_roundtrip() {
             || a.kind.factionIdx != want.kind.factionIdx) {
             FAIL_BAIL("macro kind/faction lost");
         }
-        if (a.health.hp != want.health.hp || a.health.maxHp != want.health.maxHp) {
+        if (a.pools.hp != want.pools.hp || a.pools.maxHp != want.pools.maxHp) {
             FAIL_BAIL("macro wounds lost");
         }
         if (a.level.value != want.level.value) FAIL_BAIL("macro level lost");
@@ -840,7 +840,7 @@ void run_roundtrip() {
             FAIL_BAIL("a beast member did not survive the save");
         }
     }
-    if (loadedMacro[1].dead != 1 || loadedMacro[1].health.hp != 0.0f) {
+    if (loadedMacro[1].dead != 1 || loadedMacro[1].pools.hp != 0.0f) {
         FAIL_BAIL("the killed lord did not stay dead across the save");
     }
     if (loaded.worldTime.tick != gs.worldTime.tick) {

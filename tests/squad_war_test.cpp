@@ -73,7 +73,7 @@ entt::entity make_squad_at(ecs::World& w, NPCType type, const char* faction,
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(level));
     const int hp = std::max(
         1, int(project_combat(sheet, npc_def(type).combat).hp));
-    reg.emplace<ecs::Health>(e, hp, hp);
+    reg.emplace<ecs::Pools>(e, hp, hp);
     auto& roster = reg.emplace<ecs::SquadRoster>(e);
     for (std::uint32_t id : memberIds) {
         roster.squad.push(
@@ -247,7 +247,7 @@ void test_a_victorious_leader_levels() {
     ecs::World w;
     const auto tsar = make_squad_at(w, NPCType::Peasant, "timaert", 1,
                                     10.0f, 10.0f, 1u, {}, NPCType::Peasant, 1);
-    auto& hp = w.reg.get<ecs::Health>(tsar);
+    auto& hp = w.reg.get<ecs::Pools>(tsar);
     const int maxHp0 = hp.maxHp;
     hp.hp = hp.maxHp / 2;   // walks in wounded
     const float frac0 = float(hp.hp) / float(hp.maxHp);
@@ -258,7 +258,7 @@ void test_a_victorious_leader_levels() {
           "a full bar turns into a level by the player's own curve");
     CHECK(w.reg.get<ecs::NpcLevel>(tsar).value >= 2,
           "the level landed on the leader");
-    const auto& hp1 = w.reg.get<ecs::Health>(tsar);
+    const auto& hp1 = w.reg.get<ecs::Pools>(tsar);
     // Under the 1:1 economy a single level pays ONE attribute point, and the
     // role's weighted roll may legally land it outside END/Bodybuilding — so
     // the honest claim is re-derivation (never stale, never smaller), not
@@ -384,7 +384,7 @@ void test_spawn_squad_is_one_spec_one_door() {
     CHECK_OR_RETURN(leader != entt::null && w.reg.valid(leader),
                     "the spec became a squad");
     CHECK((w.reg.all_of<ecs::MacroNpcRuntime, ecs::MacroSpawnId,
-                        ecs::Health, ecs::NpcLevel, ecs::NpcCharacter,
+                        ecs::Pools, ecs::NpcLevel, ecs::NpcCharacter,
                         ecs::NpcInventory, ecs::SquadRoster>(leader)),
           "the leader came out of the ONE creation door, whole");
     CHECK(w.reg.get<ecs::NpcLevel>(leader).value == 4,

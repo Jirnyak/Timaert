@@ -10,13 +10,13 @@ namespace {
 // The shared melee-candidate filter: live, current-scene, not the player's
 // own side. One spelling for both the grid arm and the full-scan arm.
 inline bool melee_candidate(entt::registry& reg, entt::entity e) {
-    if (!reg.all_of<ecs::Position, ecs::Health, ecs::NPCKind,
+    if (!reg.all_of<ecs::Position, ecs::Pools, ecs::NPCKind,
                     ecs::SubworldTag>(e)
         || reg.any_of<ecs::Dead>(e)) {
         return false;
     }
     if (reg.any_of<ecs::PlayerTag, ecs::PlayerSoldierTag>(e)) return false;
-    return reg.get<ecs::Health>(e).hp > 0;
+    return reg.get<ecs::Pools>(e).hp > 0;
 }
 
 } // namespace
@@ -74,7 +74,7 @@ entt::entity melee_pick_target(entt::registry& reg,
             return hostileBest != entt::null ? hostileBest : anyBest;
         }
     }
-    auto view = reg.view<ecs::Position, ecs::Health, ecs::NPCKind,
+    auto view = reg.view<ecs::Position, ecs::Pools, ecs::NPCKind,
                          ecs::SubworldTag>(entt::exclude<ecs::Dead>);
     for (auto e : view) consider(e);
     return hostileBest != entt::null ? hostileBest : anyBest;
@@ -97,13 +97,13 @@ entt::entity aim_target(entt::registry& reg,
     // current-scene NPCs/monsters. Requiring NPCKind also excludes the player
     // entity, which carries no NPCKind; the explicit player-side skip below
     // additionally covers projected player soldiers.
-    auto view = reg.view<ecs::Position, ecs::Health, ecs::NPCKind,
+    auto view = reg.view<ecs::Position, ecs::Pools, ecs::NPCKind,
                          ecs::SubworldTag>(entt::exclude<ecs::Dead>);
     for (auto e : view) {
         if (e == shooter) continue;
         if (reg.any_of<ecs::PlayerTag, ecs::PlayerSoldierTag>(e)) continue;
 
-        const auto& hp = view.get<ecs::Health>(e);
+        const auto& hp = view.get<ecs::Pools>(e);
         if (hp.hp <= 0) continue;
 
         const auto& pos = view.get<ecs::Position>(e);

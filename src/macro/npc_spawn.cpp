@@ -120,8 +120,16 @@ entt::entity make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
     // memory budget, by the owner's brief.
     w.reg.emplace<AgentMemory>(e);
 
-    // Health derived from the character sheet — the same law the subworld uses.
-    w.reg.emplace<ecs::Health>(e, hp, hp);
+    // BOTH pools derived from the character sheet — the same laws the subworld
+    // uses (body_max_hp / body_max_mp). Named fields, not a positional list:
+    // this block grows, and a body born short of a bar is exactly the defect
+    // this landing exists to make impossible.
+    {
+        ecs::Pools pools{};
+        pools.hp = pools.maxHp = hp;
+        pools.mp = pools.maxMp = body_max_mp(sheet);
+        w.reg.emplace<ecs::Pools>(e, pools);
+    }
 
     w.reg.emplace<ecs::NpcLevel>(e, std::int16_t(lvl));
 

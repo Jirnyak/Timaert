@@ -29,7 +29,7 @@ struct MacroNpcRecord {
     ecs::Position        pos{};
     ecs::VisualPos       visual{};
     ecs::NPCKind         kind{};
-    ecs::Health          health{};
+    ecs::Pools           pools{};
     ecs::NpcLevel        level{};
     ecs::MacroNpcRuntime runtime{};
     ecs::NpcTraits       traits{};

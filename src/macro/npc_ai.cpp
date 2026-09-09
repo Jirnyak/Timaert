@@ -259,7 +259,7 @@ void settle_sp_carry(ecs::MacroNpcRuntime& rt) {
 enum class ThinkGate : std::uint8_t { Dead, Rest, Think };
 
 void settle_exhaustion(entt::entity e, const ecs::Position& p,
-                       ecs::MacroNpcRuntime& rt, ecs::Health& hp,
+                       ecs::MacroNpcRuntime& rt, ecs::Pools& hp,
                        bool canCamp, const TickContext& ctx);
 bool cell_is_water(const TickContext& ctx, int x, int y);
 
@@ -282,7 +282,7 @@ void refresh_overload_cost(ecs::MacroNpcRuntime& rt,
 }
 
 ThinkGate prepare_macro_npc_tick(ecs::MacroNpcRuntime& rt,
-                                 const ecs::Health& hp) {
+                                 const ecs::Pools& hp) {
     if (hp.hp <= 0) {
         rt.visualSpeed = 0.0f;
         return ThinkGate::Dead;
@@ -341,7 +341,7 @@ ThinkGate prepare_macro_npc_tick(ecs::MacroNpcRuntime& rt,
 // it meant to be, or when it has DECIDED to stop — which is exactly the
 // player's own gate, «маршрут пуст», said in the squads' words.
 void settle_march_rhythm(entt::entity e, const ecs::Position& p,
-                         ecs::MacroNpcRuntime& rt, ecs::Health& hp,
+                         ecs::MacroNpcRuntime& rt, ecs::Pools& hp,
                          bool moved, const TickContext& ctx) {
     const int maxSp = std::max<int>(1, rt.maxSp);
     // Палуба — лагерь: сквад НА корабле стоит на якоре и отдыхает; тонет
@@ -386,7 +386,7 @@ void settle_march_rhythm(entt::entity e, const ecs::Position& p,
         // BOTH bars, because a body has more than legs (CANON S14 «три
         // ресурса, один закон восстановления»; owner, 2026-09-09). Until this
         // line only stamina came back here, so a wounded lord stayed wounded
-        // until something killed him: `ecs::Health` had no writer anywhere in
+        // until something killed him: `ecs::Pools` had no writer anywhere in
         // the game that moved it UP. The wound outlived the war that made it,
         // and the map filled with permanent invalids nobody could explain.
         //
@@ -402,8 +402,12 @@ void settle_march_rhythm(entt::entity e, const ecs::Position& p,
         // Through the PLAYER'S OWN DOOR, not a second copy of it: the carry,
         // the clamp and the "a full bar cannot bank rest" rule are one
         // implementation for every body in the world (player_recovery.h).
+        // Both pools of the block, at the one rate — a lord's well refills in
+        // camp exactly as a player's does.
         recover_bar(float(hp.maxHp) * kRestRegenPctPerHour * kAiTickGameHours,
-                    hp.carry, hp.hp, hp.maxHp);
+                    hp.hpCarry, hp.hp, hp.maxHp);
+        recover_bar(float(hp.maxMp) * kRestRegenPctPerHour * kAiTickGameHours,
+                    hp.mpCarry, hp.mp, hp.maxMp);
     }
 
     // A body that took a step with its bar already spent pays for it, whether
@@ -2843,7 +2847,7 @@ bool cell_is_water(const TickContext& ctx, int x, int y) {
 }
 
 void settle_exhaustion(entt::entity e, const ecs::Position& p,
-                       ecs::MacroNpcRuntime& rt, ecs::Health& hp,
+                       ecs::MacroNpcRuntime& rt, ecs::Pools& hp,
                        bool canCamp, const TickContext& ctx) {
     if (int(rt.sp) >= 0) return;
 
@@ -3808,7 +3812,7 @@ void tick_macro_npc_ai(MacroWorld& mw,
     ecs::World& w = *mw.world;
     auto& reg = w.reg;
     auto view = reg.view<ecs::Position, ecs::NPCKind,
-                         ecs::MacroNpcRuntime, ecs::Health>(
+                         ecs::MacroNpcRuntime, ecs::Pools>(
         entt::exclude<ecs::Dead, ecs::PlayerTag, ecs::PlayerSquadTag>);  // never AI-drive the player: the flag OR his own squad
 
     build_squad_index(runtime.squadIndex, w, gs.mapW, gs.mapH);
@@ -3825,7 +3829,7 @@ void tick_macro_npc_ai(MacroWorld& mw,
         auto& p    = view.get<ecs::Position>(e);
         auto& kind = view.get<ecs::NPCKind>(e);
         auto& rt   = view.get<ecs::MacroNpcRuntime>(e);
-        auto& hp   = view.get<ecs::Health>(e);
+        auto& hp   = view.get<ecs::Pools>(e);
 
         // One think per call at most, as before: a caller that hands over a
         // huge jump does not get a burst of catch-up thinking, it gets one.
@@ -3859,14 +3863,14 @@ void tick_macro_npc_visuals(ecs::World& w, int mapW, int mapH, float dt) {
     if (mapW <= 0 || mapH <= 0 || dt <= 0.0f) return;
 
     auto view = w.reg.view<ecs::Position, ecs::VisualPos,
-                           ecs::MacroNpcRuntime, ecs::Health>(
+                           ecs::MacroNpcRuntime, ecs::Pools>(
         entt::exclude<ecs::Dead, ecs::SubworldTag, ecs::PlayerTag,
                       ecs::PlayerSquadTag>);  // player drawn by its own marker (Inc 5e-2)
     for (auto e : view) {
         const auto& p = view.get<ecs::Position>(e);
         auto& v = view.get<ecs::VisualPos>(e);
         const auto& rt = view.get<ecs::MacroNpcRuntime>(e);
-        const auto& hp = view.get<ecs::Health>(e);
+        const auto& hp = view.get<ecs::Pools>(e);
         if (hp.hp <= 0 || !std::isfinite(v.vx) || !std::isfinite(v.vy)) {
             v.vx = p.x;
             v.vy = p.y;
@@ -3943,7 +3947,7 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
 
     auto& reg = w.reg;
     auto view = reg.view<ecs::Position, ecs::NPCKind,
-                         ecs::MacroNpcRuntime, ecs::Health>(
+                         ecs::MacroNpcRuntime, ecs::Pools>(
         entt::exclude<ecs::Dead, ecs::PlayerTag, ecs::PlayerSquadTag>);  // never AI-drive the player: the flag OR his own squad
 
     build_squad_index(runtime.squadIndex, w, gs.mapW, gs.mapH);
@@ -3970,7 +3974,7 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
             auto& p    = view.get<ecs::Position>(e);
             auto& kind = view.get<ecs::NPCKind>(e);
             auto& rt   = view.get<ecs::MacroNpcRuntime>(e);
-            auto& hp   = view.get<ecs::Health>(e);
+            auto& hp   = view.get<ecs::Pools>(e);
             if (kind.type < std::uint16_t(NPCType::Count)
                 && !reg.all_of<ecs::Dead>(e)) {   // may have died this sweep
                 const ThinkGate gate = prepare_macro_npc_tick(rt, hp);

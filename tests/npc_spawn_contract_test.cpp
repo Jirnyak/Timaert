@@ -36,6 +36,29 @@ int count_macro_npcs(const sm::ecs::World& world) {
     return count;
 }
 
+// ── NO BODY IS BORN SHORT OF A BAR (CANON S14; owner, 2026-09-09) ─────────
+// «Это РПГ, у всех должна быть HP SP MP». Mana was the player's private
+// property for the whole life of the project — not by a ruling, but because
+// `project_combat` computed maxMp at every birth in the game and dropped it
+// on the floor, and nobody ever looked. A missing bar is invisible exactly
+// like a skill no formula reads: nothing crashes, nothing warns, the body
+// simply is not what it claims to be.
+//
+// So the guard is a HEADCOUNT over the world's own spawn door, not a sample:
+// every macro NPC the genesis raises must carry a full block. The day a new
+// pool joins ecs::Pools, this is the line that fails until every birth fills
+// it.
+int bodies_without_a_full_block(const sm::ecs::World& world) {
+    int bad = 0;
+    auto view = world.reg.view<const sm::ecs::NPCKind, const sm::ecs::Pools>();
+    for (auto entity : view) {
+        const auto& pools = view.get<const sm::ecs::Pools>(entity);
+        if (pools.maxHp <= 0 || pools.hp <= 0) ++bad;
+        if (pools.maxMp <= 0 || pools.mp <= 0) ++bad;
+    }
+    return bad;
+}
+
 bool positions_inside_map(const sm::ecs::World& world, int mapW, int mapH) {
     auto view = world.reg.view<const sm::ecs::NPCKind, const sm::ecs::Position>();
     for (auto entity : view) {
@@ -67,6 +90,9 @@ int main() {
         return fail("invalid terrain should not suppress all macro NPC spawns");
     if (!positions_inside_map(world, gs.mapW, gs.mapH))
         return fail("macro NPC fallback positions must stay inside map bounds");
+    CHECK(bodies_without_a_full_block(world) == 0,
+          "every body the world raises is born with EVERY pool filled — "
+          "mana included, for all of them, not for the player alone");
 
     sm::TerrainData mismatchedTerrain;
     mismatchedTerrain.width = 8;

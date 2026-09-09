@@ -42,7 +42,7 @@ constexpr std::uint16_t kTestNpcType = 7;
 
 entt::entity make_body(entt::registry& reg, int hp, bool withKind = true) {
     const entt::entity e = reg.create();
-    reg.emplace<sm::ecs::Health>(e, hp, hp);
+    reg.emplace<sm::ecs::Pools>(e, hp, hp);
     if (withKind) reg.emplace<sm::ecs::NPCKind>(e, kTestNpcType,
                                                 std::uint16_t{0});
     return e;
@@ -118,7 +118,7 @@ void test_armour_softens_by_the_row_and_the_kind() {
     // number is READ and not assumed.
     const entt::entity bare = make_body(reg, 100.0f);
     const entt::entity plated = reg.create();
-    reg.emplace<sm::ecs::Health>(plated, 100, 100);
+    reg.emplace<sm::ecs::Pools>(plated, 100, 100);
     reg.emplace<sm::ecs::NPCKind>(
         plated, std::uint16_t(sm::NPCType::Guard), std::uint16_t{0});
 
@@ -150,7 +150,7 @@ void test_armour_softens_by_the_row_and_the_kind() {
     // The silence here was the shipped «как будто не попадаю» feel: every
     // early-game fist swing against mail vanished without a trace.
     const entt::entity turtle = reg.create();
-    reg.emplace<sm::ecs::Health>(turtle, 100, 100);
+    reg.emplace<sm::ecs::Pools>(turtle, 100, 100);
     reg.emplace<sm::ecs::NPCKind>(
         turtle, std::uint16_t(sm::NPCType::Guard), std::uint16_t{0});
     const DamageResult tink =
@@ -160,7 +160,7 @@ void test_armour_softens_by_the_row_and_the_kind() {
           "a blow the plate outweighs never lands — 100% reduction is real");
     CHECK(tink.blocked && !tink.lethal,
           "and the result names it BLOCKED, distinct from a dead-target no-op");
-    CHECK(reg.get<sm::ecs::Health>(turtle).hp == 100,
+    CHECK(reg.get<sm::ecs::Pools>(turtle).hp == 100,
           "the flesh under the plate is untouched");
     CHECK(reg.all_of<sm::ecs::HitFlash>(turtle)
               && reg.all_of<sm::ecs::DamageFx>(turtle),
@@ -177,7 +177,7 @@ void test_armour_softens_by_the_row_and_the_kind() {
 
     // ...and whether armour is in the way at all is the KIND's column.
     const entt::entity falling = reg.create();
-    reg.emplace<sm::ecs::Health>(falling, 100, 100);
+    reg.emplace<sm::ecs::Pools>(falling, 100, 100);
     reg.emplace<sm::ecs::NPCKind>(
         falling, std::uint16_t(sm::NPCType::Guard), std::uint16_t{0});
     const DamageResult fell =
@@ -279,7 +279,7 @@ void test_survivor_protocol() {
           "a body in its own skin keeps the whole blow: armour 0 is the "
           "limiting case of the law, applied == asked to the bit");
     CHECK(!hit.lethal, "a survivable blow is not lethal");
-    CHECK(reg.get<sm::ecs::Health>(e).hp == 20.0f,
+    CHECK(reg.get<sm::ecs::Pools>(e).hp == 20.0f,
           "hp drops by exactly the applied amount");
     CHECK(!reg.any_of<sm::ecs::Dead>(e), "a survivor is not Dead");
     CHECK(death_events(bus) == 0, "a survivor emits nothing");
@@ -334,12 +334,12 @@ void test_no_second_blow() {
     const entt::entity e = make_body(reg, 10.0f);
     apply_damage(reg, e, DamageSource{1u, false}, 50.0f, DamageKind::Melee, sm::DamageType::Blunt,
                  &bus);
-    const float hpAfterDeath = reg.get<sm::ecs::Health>(e).hp;
+    const float hpAfterDeath = reg.get<sm::ecs::Pools>(e).hp;
     const DamageResult again = apply_damage(reg, e, DamageSource{2u, false},
                                             50.0f, DamageKind::Spell, sm::DamageType::Blunt, &bus);
     CHECK(again.applied == 0.0f, "a corpse takes no damage");
     CHECK(!again.lethal, "a no-op blow is not lethal");
-    CHECK(reg.get<sm::ecs::Health>(e).hp == hpAfterDeath,
+    CHECK(reg.get<sm::ecs::Pools>(e).hp == hpAfterDeath,
           "a corpse's hp does not move");
     CHECK(death_events(bus) == 1, "a corpse dies once — one event, ever");
     CHECK(reg.get<sm::ecs::LastHit>(e).attackerId == 1u,
@@ -357,7 +357,7 @@ void test_execution_helper() {
         reg, e, DamageSource{0u, true}, DamageKind::Dev, &bus);
     CHECK(hit.lethal, "an execution is lethal by construction");
     CHECK(hit.applied == 37, "an execution strikes exactly remaining hp");
-    CHECK(reg.get<sm::ecs::Health>(e).hp == 0.0f,
+    CHECK(reg.get<sm::ecs::Pools>(e).hp == 0.0f,
           "an execution lands the body at exactly zero");
     const DamageResult again = apply_lethal_damage(
         reg, e, DamageSource{0u, true}, DamageKind::Dev, &bus);

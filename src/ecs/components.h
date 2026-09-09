@@ -20,20 +20,49 @@ struct Position { float x, y, z; };
 // Smoothed render position (for visual interpolation).
 struct VisualPos { float vx, vy, speed; };
 
-// Health component. INTEGER since phase 4г: every combat writer has been
-// whole since the dice phase (int amount through the one damage door), so the
-// float storage held nothing but the memory of fractional wounds that no
-// longer exist. Fractional REGEN lives in a carry beside the bar — never in
-// the bar itself.
+// THE POOLS OF A BODY — every body, one block (CANON S14 «три ресурса»;
+// owner, 2026-09-09: «это РПГ, у всех должна быть HP SP MP»).
 //
-// `carry` is that remainder, and it sits HERE rather than in a table off to
-// the side because a bar and its remainder are one fact. The player's used to
-// live in an App-side accumulator that never reached the save, and the lord's
-// did not exist at all: a rest slice worth 0.59 points floored to zero every
-// think, so «heal an NPC» could not even be expressed. Owner, 2026-09-09:
-// «один закон, никакого особенного игрока и ущербных НПЦ» — one law
+// It was called `Health` and it held one bar, because the other two were the
+// player's private property: `CombatStats` existed in exactly ONE instance in
+// the whole game (PlayerState::combatStats), and `project_combat` — the door
+// EVERY body is born through — computed maxMp and maxSp from the sheet and
+// threw both away on the spot. A lord had stamina in a different house
+// (MacroNpcRuntime) and no mana at all; a body in a scene had neither. Three
+// bars of one body lived in three homes, and two kinds of body out of three
+// were missing two of them.
+//
+// One block is the guard the doctrine could not be: a new kind of body cannot
+// be born short of a bar, because there is nowhere to leave one out.
+//
+// INTEGER bars since phase 4г: every combat writer has been whole since the
+// dice phase (int amount through the one damage door), so float storage held
+// nothing but the memory of fractional wounds that no longer exist.
+// Fractional REGEN lives in a carry beside its bar — never in the bar itself.
+// The carries sit HERE rather than in a table off to the side because a bar
+// and its remainder are one fact: the player's used to live in an App-side
+// accumulator that never reached the save, and the lord's did not exist at
+// all, so a rest slice worth 0.59 points floored to zero every think and
+// «heal an NPC» could not even be expressed. One law
 // (player_recovery.h recover_bar) needs one home for its remainder.
-struct Health { int hp, maxHp; float carry = 0.0f; };
+//
+// SP is NOT here yet — it still lives on MacroNpcRuntime, with its own signed
+// carry and its own debt semantics (a body may march into stamina debt; no
+// other bar goes below zero). Moving it is the next landing of this track,
+// and it is deliberately not folded in blind: `sp` would arrive with a
+// meaning the other two do not have.
+struct Pools {
+    int   hp = 0, maxHp = 0;
+    int   mp = 0, maxMp = 0;
+    float hpCarry = 0.0f;
+    float mpCarry = 0.0f;
+};
+static_assert(sizeof(Pools) == 24,
+              "Pools grew — it rides the macro snapshot as raw bytes "
+              "(save.cpp w.pod), so its layout IS the save format: pay a "
+              "kSaveVersion bump. Its neighbours ItemRef/WorldFact/AgentMemory "
+              "carry this same guard; this block went without one until the "
+              "post-demo audit and grew silently.");
 
 // Explicit combat body radius — the distance at which this entity is struck by
 // melee, projectiles, and blasts (see the sub-layer target_radius()). It is the

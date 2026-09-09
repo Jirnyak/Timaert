@@ -58,7 +58,7 @@ entt::entity spawn_ai(sm::ecs::World& world,
     rt.visualSpeed = 0.0f;
     rt.tickAccum = 0.0f;
     world.reg.emplace<sm::ecs::MacroNpcRuntime>(e, rt);
-    world.reg.emplace<sm::ecs::Health>(e, 50, 50);
+    world.reg.emplace<sm::ecs::Pools>(e, 50, 50);
     return e;
 }
 
@@ -205,7 +205,7 @@ void test_aggressive_chases_visible_player() {
     // And pursuit is the one STRENGTH law (squad_threat_step): a fighter
     // closes only fights it wins with margin. The player is wounded to 10%
     // so the chase is the law's own verdict, not a leftover reflex.
-    world.reg.get<sm::ecs::Health>(player).hp = 5.0f;
+    world.reg.get<sm::ecs::Pools>(player).hp = 5.0f;
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 50u);
     // The march budget is DERIVED data now (kMacroWalkCellsPerHour ×
@@ -259,7 +259,7 @@ void test_aggressive_spares_a_friend() {
     world.reg.get<sm::ecs::NPCKind>(player).factionIdx =
         std::uint16_t(sm::faction_index(sm::kPlayerFactionId));
     world.reg.emplace<sm::ecs::PlayerSquadTag>(player);
-    world.reg.get<sm::ecs::Health>(player).hp = 5.0f;
+    world.reg.get<sm::ecs::Pools>(player).hp = 5.0f;
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 50u);
     const float perThink =
@@ -411,9 +411,11 @@ void test_a_resting_lord_mends_at_the_players_rate() {
     sm::ecs::World world;
     auto e = spawn_ai(world, sm::NPCType::Bandit, 10.0f, 10.0f, -1,
                       sm::NPCState::Resting, 0, 0);
-    auto& hp = world.reg.get<sm::ecs::Health>(e);
+    auto& hp = world.reg.get<sm::ecs::Pools>(e);
     hp.maxHp = 50;
     hp.hp = 10;
+    hp.maxMp = 50;
+    hp.mp = 10;
 
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 90u);
@@ -433,12 +435,21 @@ void test_a_resting_lord_mends_at_the_players_rate() {
     player.combatStats.maxHp = 50;
     player.combatStats.currentHp = 10;
     player.combatStats.hpRegen = float(50) * sm::kRestRegenPctPerHour;
+    player.combatStats.maxMp = 50;
+    player.combatStats.currentMp = 10;
+    player.combatStats.mpRegen = float(50) * sm::kRestRegenPctPerHour;
     sm::PlayerRecoveryAccumulator accumulator{};
     float spCarry = 0.0f;
     sm::apply_minute_recovery(player, 90, accumulator, spCarry, 1.0f);
 
     CHECK(hp.hp == player.combatStats.currentHp,
           "one recovery law: lord and player mend the SAME points per hour");
+    // And the bar that did not exist for a lord until this landing. A lord's
+    // well refills in camp exactly as a player's does — mana is a property of
+    // a BODY, not a privilege of the one the camera follows.
+    CHECK(hp.mp == player.combatStats.currentMp,
+          "the lord's MANA returns at the player's rate: every body has three "
+          "bars, and one law fills them");
 }
 
 // The other half of the law, and the half a careless fix deletes: rest is
@@ -454,7 +465,7 @@ void test_a_marching_body_does_not_mend() {
 
     sm::ecs::World world;
     auto e = spawn_ai(world, sm::NPCType::Peasant, 80.0f, 50.0f, 1);
-    auto& hp = world.reg.get<sm::ecs::Health>(e);
+    auto& hp = world.reg.get<sm::ecs::Pools>(e);
     hp.maxHp = 50;
     hp.hp = 10;
     const auto& pos = world.reg.get<sm::ecs::Position>(e);

@@ -93,7 +93,7 @@ void test_snapshot_round_trips_the_living_map() {
     auto& posA = w.reg.get<ecs::Position>(a);
     posA.x = 25.0f;
     posA.y = 21.0f;
-    w.reg.get<ecs::Health>(b).hp = 0.0f;
+    w.reg.get<ecs::Pools>(b).hp = 0.0f;
     w.reg.emplace<ecs::Dead>(b);
 
     // Snapshot -> save -> load -> restore, through the REAL save file.
@@ -140,7 +140,7 @@ void test_snapshot_round_trips_the_living_map() {
     const entt::entity b2 = find_by_ordinal(w2, ordinalB);
     CHECK_OR_RETURN(b2 != entt::null, "the dead leader is still ON the map");
     CHECK(w2.reg.all_of<ecs::Dead>(b2)
-              && w2.reg.get<ecs::Health>(b2).hp == 0.0f,
+              && w2.reg.get<ecs::Pools>(b2).hp == 0.0f,
           "the KILLED lord stays dead across the save");
 
     // ── Ordinals are for life (19.24). Remove the HIGHEST-ordinal squad

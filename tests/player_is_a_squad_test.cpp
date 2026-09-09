@@ -40,7 +40,7 @@ entt::entity npc_squad(ecs::World& w, float x, float y, std::uint32_t ordinal,
     reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Bandit),
                               std::uint16_t(faction_index("bandits")));
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(2));
-    reg.emplace<ecs::Health>(e, 50, 50);
+    reg.emplace<ecs::Pools>(e, 50, 50);
     reg.emplace<ecs::MacroSpawnId>(e, ordinal);
     ecs::MacroNpcRuntime rt{};
     rt.homeSettlementId = -1;
@@ -74,7 +74,7 @@ void test_player_carries_everything_a_squad_carries() {
     // if the player misses one, he is not saved, and a save that forgets the
     // player's own army is the loudest bug this merge could ship.
     CHECK((w.reg.all_of<ecs::MacroSpawnId, ecs::Position, ecs::VisualPos,
-                        ecs::NPCKind, ecs::Health, ecs::NpcLevel,
+                        ecs::NPCKind, ecs::Pools, ecs::NpcLevel,
                         ecs::MacroNpcRuntime, ecs::NpcTraits,
                         ecs::NpcCharacter, ecs::NpcInventory,
                         ecs::SquadRoster>(e)),
@@ -234,7 +234,7 @@ void test_the_entity_numbers_are_not_stale() {
     gs.player.y = 44.0f;
     ensure_macro_player_entity(gs, w);
 
-    const auto& hp = w.reg.get<ecs::Health>(e);
+    const auto& hp = w.reg.get<ecs::Pools>(e);
     CHECK(hp.hp == 17.0f, "the wound reached the entity");
     CHECK(hp.maxHp == float(gs.player.combatStats.maxHp),
           "and so did the bigger bar the new END bought");
@@ -346,7 +346,7 @@ void test_the_players_wound_settles_through_the_one_door() {
     }
     settle_player_auto_battle(mw, foe, o, /*playerIsA*/true);
 
-    const auto& hp = w.reg.get<ecs::Health>(mine);
+    const auto& hp = w.reg.get<ecs::Pools>(mine);
     CHECK(hp.hp == std::floor(hp.maxHp * 0.5f),
           "the door wrote his wound onto the entity, by the entity's ceiling");
     CHECK(gs.player.combatStats.currentHp == int(hp.hp),

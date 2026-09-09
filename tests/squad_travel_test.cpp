@@ -77,7 +77,7 @@ entt::entity make_walker(ecs::World& w, float x, float y,
     w.reg.emplace<ecs::MacroNpcRuntime>(e, rt);
     w.reg.emplace<ecs::MacroSpawnId>(e, 7u);
     w.reg.emplace<ecs::NpcLevel>(e, std::int16_t(1));
-    w.reg.emplace<ecs::Health>(e, hp, hp);
+    w.reg.emplace<ecs::Pools>(e, hp, hp);
     w.reg.emplace<ecs::SquadRoster>(e);
     return e;
 }
@@ -161,7 +161,7 @@ void test_river_is_a_wall_and_a_bridge_is_the_door() {
         CHECK(w.reg.get<ecs::Position>(e).x <= 15.0f,
               "the walker halted at the bank — never a cell of water under "
               "his feet");
-        CHECK(w.reg.get<ecs::Health>(e).hp >= 30.0f,
+        CHECK(w.reg.get<ecs::Pools>(e).hp >= 30.0f,
               "and the bank cost no blood: he stopped, he did not swim");
     }
     {   // The door: the SAME river with a bridge cell carries the march.
@@ -218,19 +218,19 @@ void test_ocean_drowns_who_cannot_reach_the_shore() {
         // survivor is whole again and a probe of his final HP measures the
         // rest, not the bite. The promise here is that the sea BIT him; the
         // honest place to read that is while it is happening.
-        int lowest = w.reg.get<ecs::Health>(e).hp;
+        int lowest = w.reg.get<ecs::Pools>(e).hp;
         for (int i = 0; i < 60 && w.reg.valid(e); ++i) {
             MacroWorld mw{.gs = &gs, .world = &w, .pathCost = &grid};
             tick_macro_npc_ai(mw, rt, kAiTicks, false);
             if (w.reg.valid(e))
-                lowest = std::min(lowest, w.reg.get<ecs::Health>(e).hp);
+                lowest = std::min(lowest, w.reg.get<ecs::Pools>(e).hp);
         }
         CHECK(w.reg.valid(e) && w.reg.get<ecs::Position>(e).x >= 26.0f,
               "a floating body wades OUT: water is exited, never entered");
         CHECK(lowest < 30,
               "and the unpayable steps out were paid in blood — the sea "
               "bite lives");
-        CHECK(w.reg.get<ecs::Health>(e).hp > lowest,
+        CHECK(w.reg.get<ecs::Pools>(e).hp > lowest,
               "and ashore the wound MENDS: the one recovery law reaches an "
               "NPC in camp, not only the player");
     }
@@ -286,7 +286,7 @@ void test_land_exhaustion_makes_camp_without_blood() {
           "a bar spent on land is a camp, not a catastrophe");
     CHECK(int(npc.sp) <= int(npc.maxSp) / kCampBarDivisor,
           "the legs stopped at the camp margin, the automaton's own answer");
-    const float bled = 100.0f - w.reg.get<ecs::Health>(e).hp;
+    const float bled = 100.0f - w.reg.get<ecs::Pools>(e).hp;
     // The camp decision lands BEFORE debt (npc_ai.h kCampBarDivisor): on
     // campable ground nobody bleeds — the bite stays a LAW for whoever
     // cannot stop (the ocean section above drowns a lord through it) or
@@ -298,7 +298,7 @@ void test_land_exhaustion_makes_camp_without_blood() {
     // Resting must cost nothing, or a tired squad would bleed out standing
     // still. This is the control that separates "moving in debt" from
     // "being in debt".
-    const float campedAt = w.reg.get<ecs::Health>(e).hp;
+    const float campedAt = w.reg.get<ecs::Pools>(e).hp;
     // The LEDGER, not the bar: regen is fractional (kRestRegenPctPerHour of a
     // 4-point bar per game hour), so eight thinks may not add a WHOLE point.
     // The file's own convention — sp + carry — is what actually moved.
@@ -307,7 +307,7 @@ void test_land_exhaustion_makes_camp_without_blood() {
         MacroWorld mw{.gs = &gs, .world = &w, .pathCost = &grid};
         tick_macro_npc_ai(mw, rt, kAiTicks, false);
     }
-    CHECK(w.reg.get<ecs::Health>(e).hp == campedAt,
+    CHECK(w.reg.get<ecs::Pools>(e).hp == campedAt,
           "eight thinks in camp cost no blood at all");
     CHECK(float(npc.sp) + npc.spCarry > ledgerAt,
           "negative control: those thinks DID pass — the bar was refilling");
@@ -356,8 +356,8 @@ void test_a_map_of_marchers_survives_the_new_law() {
         // loudly instead of dereferencing a gone entity.
         if (!w.reg.valid(e)) continue;
         if (!w.reg.all_of<ecs::Dead>(e)
-            && w.reg.get<ecs::Health>(e).hp > 0.0f) ++alive;
-        if (w.reg.get<ecs::Health>(e).hp < 100.0f) ++bled;
+            && w.reg.get<ecs::Pools>(e).hp > 0.0f) ++alive;
+        if (w.reg.get<ecs::Pools>(e).hp < 100.0f) ++bled;
         if (w.reg.get<ecs::Position>(e).x != 4.0f) ++moved;
     }
     CHECK(alive == kWalkers,

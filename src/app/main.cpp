@@ -500,12 +500,12 @@ bool route_macro_npc_attack(App& app, entt::entity npc) {
     auto& reg = app.ecs.reg;
     if (!reg.valid(npc)) return false;
     if (!reg.all_of<sm::ecs::Position, sm::ecs::NPCKind,
-                    sm::ecs::Health, sm::ecs::NpcLevel,
+                    sm::ecs::Pools, sm::ecs::NpcLevel,
                     sm::ecs::NpcCharacter>(npc)) {
         return false;
     }
 
-    const auto& hp = reg.get<sm::ecs::Health>(npc);
+    const auto& hp = reg.get<sm::ecs::Pools>(npc);
     if (hp.hp <= 0) return false;
 
     app.cursor.path.clear();
@@ -812,12 +812,12 @@ void detect_forced_encounter(App& app) {
     }
 
     auto view = reg.view<sm::ecs::Position, sm::ecs::NPCKind,
-                         sm::ecs::MacroNpcRuntime, sm::ecs::Health>(
+                         sm::ecs::MacroNpcRuntime, sm::ecs::Pools>(
         entt::exclude<sm::ecs::Dead, sm::ecs::PlayerTag,
                       sm::ecs::PlayerSquadTag, sm::ecs::SubworldTag>);
     for (auto e : view) {
         if (e == app.encounterGraceNpc) continue;
-        const auto& hp = view.get<sm::ecs::Health>(e);
+        const auto& hp = view.get<sm::ecs::Pools>(e);
         if (hp.hp <= 0) continue;
         const auto& pos = view.get<sm::ecs::Position>(e);
         if (sm::wrapi(int(std::floor(pos.x)), app.gs.mapW) != px
@@ -848,10 +848,10 @@ void draw_pre_battle_modal(App& app) {
     auto& reg = app.ecs.reg;
     const entt::entity npc = app.preBattleNpc;
     if (npc == entt::null || !reg.valid(npc)
-        || !reg.all_of<sm::ecs::Position, sm::ecs::NPCKind, sm::ecs::Health,
+        || !reg.all_of<sm::ecs::Position, sm::ecs::NPCKind, sm::ecs::Pools,
                        sm::ecs::NpcLevel, sm::ecs::NpcCharacter>(npc)
         || reg.all_of<sm::ecs::Dead>(npc)
-        || reg.get<sm::ecs::Health>(npc).hp <= 0) {
+        || reg.get<sm::ecs::Pools>(npc).hp <= 0) {
         close_pre_battle(app, false);   // fail closed (stale save / dead foe)
         return;
     }
@@ -4782,7 +4782,7 @@ void draw_debug_panels(App& app) {
                         ImGui::Text("%d", int(lv->value));
                     else ImGui::TextUnformatted("-");
                     ImGui::TableNextColumn();
-                    if (const auto* h = reg.try_get<sm::ecs::Health>(e))
+                    if (const auto* h = reg.try_get<sm::ecs::Pools>(e))
                         ImGui::Text("%.0f/%.0f", double(h->hp), double(h->maxHp));
                     else ImGui::TextUnformatted("-");
                     ImGui::TableNextColumn();
@@ -4823,7 +4823,7 @@ void draw_debug_panels(App& app) {
             struct Row { const char* name; std::size_t count; };
             const Row rows[] = {
                 {"Position",        cnt(reg.view<sm::ecs::Position>())},
-                {"Health",          cnt(reg.view<sm::ecs::Health>())},
+                {"Health",          cnt(reg.view<sm::ecs::Pools>())},
                 {"Combat",          cnt(reg.view<sm::ecs::Combat>())},
                 {"NPCKind",         cnt(reg.view<sm::ecs::NPCKind>())},
                 {"SubworldTag",     cnt(reg.view<sm::ecs::SubworldTag>())},

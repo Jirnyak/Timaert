@@ -1607,11 +1607,11 @@ entt::entity smoke_find_macro_npc_trace_target(App& app) {
     entt::entity fallback = entt::null;
     auto view = app.ecs.reg.view<sm::ecs::Position, sm::ecs::NPCKind,
                                  sm::ecs::MacroNpcRuntime,
-                                 sm::ecs::Health, sm::ecs::VisualPos>(
+                                 sm::ecs::Pools, sm::ecs::VisualPos>(
         entt::exclude<sm::ecs::Dead, sm::ecs::SubworldTag,
                       sm::ecs::PlayerSquadTag>);
     for (auto e : view) {
-        const auto& hp = view.get<sm::ecs::Health>(e);
+        const auto& hp = view.get<sm::ecs::Pools>(e);
         if (hp.hp <= 0) continue;
         const auto& kind = view.get<sm::ecs::NPCKind>(e);
         if (fallback == entt::null) fallback = e;
@@ -1645,7 +1645,7 @@ bool run_macro_npc_trace_smoke(App& app) {
     auto& pos = app.ecs.reg.get<sm::ecs::Position>(e);
     auto& kind = app.ecs.reg.get<sm::ecs::NPCKind>(e);
     auto& rt = app.ecs.reg.get<sm::ecs::MacroNpcRuntime>(e);
-    auto& hp = app.ecs.reg.get<sm::ecs::Health>(e);
+    auto& hp = app.ecs.reg.get<sm::ecs::Pools>(e);
     auto& visual = app.ecs.reg.get<sm::ecs::VisualPos>(e);
 
     // The trace lane must be QUIET: the trace measures rest and march
@@ -1864,7 +1864,7 @@ bool run_macro_npc_trace_smoke(App& app) {
 entt::entity smoke_find_subworld_npc(App& app, sm::NPCType type) {
     auto& reg = app.ecs.reg;
     auto view = reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
-                         sm::ecs::Health>(
+                         sm::ecs::Pools>(
         entt::exclude<sm::ecs::Dead, sm::ecs::PlayerSoldierTag>);
     for (auto e : view) {
         const auto& kind = view.get<sm::ecs::NPCKind>(e);
@@ -2280,7 +2280,7 @@ bool run_dungeon_house_smoke(App& app) {
         // fauna_count, so a kill down here thins the cell for good.
         entt::entity beast = entt::null;
         sm::ecs::MacroDebt beastDebt{};
-        for (auto e : app.ecs.reg.view<sm::ecs::MacroDebt, sm::ecs::Health,
+        for (auto e : app.ecs.reg.view<sm::ecs::MacroDebt, sm::ecs::Pools,
                                        sm::ecs::SubworldTag>(
                  entt::exclude<sm::ecs::Dead>)) {
             const auto& d = app.ecs.reg.get<sm::ecs::MacroDebt>(e);
@@ -2408,7 +2408,7 @@ bool run_dungeon_house_smoke(App& app) {
     entt::entity victim = entt::null;
     sm::ecs::MacroDebt victimDebt{};
     for (auto e : app.ecs.reg.view<sm::ecs::NPCKind, sm::ecs::MacroDebt,
-                                   sm::ecs::Health, sm::ecs::SubworldTag>(
+                                   sm::ecs::Pools, sm::ecs::SubworldTag>(
              entt::exclude<sm::ecs::Dead>)) {
         const auto& d = app.ecs.reg.get<sm::ecs::MacroDebt>(e);
         if (d.stock != std::uint8_t(sm::MacroStock::Population)) continue;
@@ -2844,11 +2844,11 @@ bool run_prologue_road_smoke(App& app) {
     // the world's bandit (50) — the prologue's teeth are a creature, not a
     // tuned spawn.
     int ambushMaxHp = 0;
-    for (auto e : app.ecs.reg.view<sm::ecs::NPCKind, sm::ecs::Health,
+    for (auto e : app.ecs.reg.view<sm::ecs::NPCKind, sm::ecs::Pools,
                                    sm::ecs::SubworldTag>(
              entt::exclude<sm::ecs::Dead>)) {
         ambushMaxHp = std::max(ambushMaxHp,
-                               int(app.ecs.reg.get<sm::ecs::Health>(e).maxHp));
+                               int(app.ecs.reg.get<sm::ecs::Pools>(e).maxHp));
     }
 
     // AND THEY COME. Standing 300 m off, they are far outside the generic
@@ -3349,7 +3349,7 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
         std::min(px + 5.0f, float(sm::sub::kFullSize - 2)), py, 0.0f);
     reg.emplace<sm::ecs::NPCKind>(
         hostile, sm::ecs::NPCKind{std::uint16_t(0x1FE), std::uint16_t(2)});
-    reg.emplace<sm::ecs::Health>(hostile, 18, 18);
+    reg.emplace<sm::ecs::Pools>(hostile, 18, 18);
     reg.emplace<sm::ecs::Combat>(hostile,
         sm::Dice{7, 1}, std::int16_t(0), std::int16_t(100), std::uint8_t(0),
         std::uint8_t(sm::DamageType::Blunt),
@@ -3364,10 +3364,10 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
 
     int spriteOnlyVisible = 0;
     auto spriteView = reg.view<sm::ecs::Position, sm::ecs::Sprite,
-                               sm::ecs::Health, sm::ecs::SubworldTag>(
+                               sm::ecs::Pools, sm::ecs::SubworldTag>(
         entt::exclude<sm::ecs::Dead>);
     for (auto e : spriteView) {
-        const auto& hp = spriteView.get<sm::ecs::Health>(e);
+        const auto& hp = spriteView.get<sm::ecs::Pools>(e);
         if (hp.hp <= 0) continue;
         if (reg.any_of<sm::ecs::NpcCharacter>(e)) continue;
         ++spriteOnlyVisible;
@@ -3397,7 +3397,7 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
         entt::entity pe = entt::null;
         for (auto e : reg.view<sm::ecs::PlayerTag>()) { ++playerTags; pe = e; }
         if (playerTags == 1) {
-            if (const auto* h = reg.try_get<sm::ecs::Health>(pe)) {
+            if (const auto* h = reg.try_get<sm::ecs::Pools>(pe)) {
                 const int hMax = std::max(1, int(std::round(h->maxHp)));
                 const int hNow = std::clamp(int(std::round(h->hp)), 0, hMax);
                 playerEntityRouted = h->hp < h->maxHp && hNow == afterHp;
@@ -3475,7 +3475,7 @@ bool run_subworld_missile_feedback_smoke(App& app) {
         sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Witch),
             std::uint16_t(sm::faction_index("bandits"))});
-    reg.emplace<sm::ecs::Health>(hostile, 30, 30);
+    reg.emplace<sm::ecs::Pools>(hostile, 30, 30);
     reg.emplace<sm::ecs::Combat>(
         hostile,
         sm::Dice{6, 1}, std::int16_t(0), std::int16_t(100), std::uint8_t(0),
@@ -3592,7 +3592,7 @@ bool run_subworld_self_fireball_smoke(App& app) {
     // no legitimate target and any HP loss can only be a self-hit at the muzzle.
     {
         std::vector<entt::entity> doomed;
-        for (auto e : reg.view<sm::ecs::Health>()) {
+        for (auto e : reg.view<sm::ecs::Pools>()) {
             if (!reg.any_of<sm::ecs::PlayerTag, sm::ecs::PlayerSquadTag>(e)) {
                 doomed.push_back(e);
             }
@@ -3702,7 +3702,7 @@ bool run_subworld_player_melee_smoke(App& app) {
         sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Bandit),
             std::uint16_t(3)});
-    reg.emplace<sm::ecs::Health>(target, 40, 40);
+    reg.emplace<sm::ecs::Pools>(target, 40, 40);
     reg.emplace<sm::ecs::SubworldTag>(target);
     reg.emplace<sm::ecs::Sprite>(
         target,
@@ -3710,7 +3710,7 @@ bool run_subworld_player_melee_smoke(App& app) {
         std::uint8_t(255), std::uint8_t(84), std::uint8_t(54),
         std::uint8_t(255), 1.2f);
 
-    const float beforeHp = reg.get<sm::ecs::Health>(target).hp;
+    const float beforeHp = reg.get<sm::ecs::Pools>(target).hp;
     const int beforeCombatLog = app.subworld.combat_log_count();
     app.subworld.set_player_attack_held(true);
     RuntimeFrameStats frameStats = advance_sim_seconds(app, 0.05f, false);
@@ -3720,7 +3720,7 @@ bool run_subworld_player_melee_smoke(App& app) {
         return false;
     }
 
-    const auto* hp = reg.try_get<sm::ecs::Health>(target);
+    const auto* hp = reg.try_get<sm::ecs::Pools>(target);
     const auto* hitFlash = reg.try_get<sm::ecs::HitFlash>(target);
     const auto* lastHit = reg.try_get<sm::ecs::LastHit>(target);
     const int afterCombatLog = app.subworld.combat_log_count();
@@ -3820,7 +3820,7 @@ bool run_subworld_player_bow_smoke(App& app) {
     // ray would make this a referendum on the seed's foot traffic.
     {
         std::vector<entt::entity> doomed;
-        for (auto e : reg.view<sm::ecs::Health>()) {
+        for (auto e : reg.view<sm::ecs::Pools>()) {
             if (!reg.any_of<sm::ecs::PlayerTag, sm::ecs::PlayerSquadTag>(e)) {
                 doomed.push_back(e);
             }
@@ -3864,7 +3864,7 @@ bool run_subworld_player_bow_smoke(App& app) {
         sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Bandit),
             std::uint16_t(sm::faction_index("bandits"))});
-    reg.emplace<sm::ecs::Health>(target, 40, 40);
+    reg.emplace<sm::ecs::Pools>(target, 40, 40);
     reg.emplace<sm::ecs::SubworldTag>(target);
     reg.emplace<sm::ecs::Sprite>(
         target,
@@ -3872,7 +3872,7 @@ bool run_subworld_player_bow_smoke(App& app) {
         std::uint8_t(255), std::uint8_t(84), std::uint8_t(54),
         std::uint8_t(255), 1.2f);
 
-    const float beforeHp = reg.get<sm::ecs::Health>(target).hp;
+    const float beforeHp = reg.get<sm::ecs::Pools>(target).hp;
     int beforeProjectiles = 0;
     for (auto e : reg.view<sm::ecs::Projectile>()) {
         (void)e;
@@ -3906,7 +3906,7 @@ bool run_subworld_player_bow_smoke(App& app) {
 
     // Let the arrow fly: 20 units at 200 u/s plus muzzle clearance.
     (void)advance_sim_seconds(app, 0.30f, false);
-    const auto* hp = reg.try_get<sm::ecs::Health>(target);
+    const auto* hp = reg.try_get<sm::ecs::Pools>(target);
     const auto* lastHit = reg.try_get<sm::ecs::LastHit>(target);
     const float afterHp = hp ? hp->hp : -1.0f;
     const float dealt = beforeHp - afterHp;
@@ -3992,7 +3992,7 @@ bool run_subworld_reputation_hit_smoke(App& app) {
         sm::ecs::NPCKind{
             std::uint16_t(sm::NPCType::Peasant),
             std::uint16_t(sm::faction_index("empire"))});
-    reg.emplace<sm::ecs::Health>(target, 40, 40);
+    reg.emplace<sm::ecs::Pools>(target, 40, 40);
     reg.emplace<sm::ecs::Combat>(
         target,
         sm::Dice{3, 1}, std::int16_t(0), std::int16_t(100), std::uint8_t(0),
@@ -4033,7 +4033,7 @@ bool run_subworld_reputation_hit_smoke(App& app) {
     // bolt was sitting at z=0 a kilometre below its target and could not hit
     // anything. Fixing the elevation exposed the stale expectation.
     const int kFriendlySpellDamage = 13;
-    const float beforeFriendlySpellHp = reg.get<sm::ecs::Health>(target).hp;
+    const float beforeFriendlySpellHp = reg.get<sm::ecs::Pools>(target).hp;
     const int beforeFriendlySpellLog = app.subworld.combat_log_count();
     const entt::entity friendlyProjectile = reg.create();
     // Parked exactly ON the peasant, at its own ground height. Two properties
@@ -4064,7 +4064,7 @@ bool run_subworld_reputation_hit_smoke(App& app) {
         smoke_fail(app, "subworld_reputation_hit friendly spell tick inactive");
         return false;
     }
-    const float afterFriendlySpellHp = reg.get<sm::ecs::Health>(target).hp;
+    const float afterFriendlySpellHp = reg.get<sm::ecs::Pools>(target).hp;
     const bool spellTookHp =
         std::fabs(beforeFriendlySpellHp - afterFriendlySpellHp
                   - float(kFriendlySpellDamage)) <= 0.001f;
@@ -4721,7 +4721,7 @@ bool run_console_smoke(App& app) {
         }
         // Full combat actor: the components that put it in the actor/target set
         // must be present, and Health must mirror the macro combat scalar.
-        const auto* phealth = reg.try_get<sm::ecs::Health>(pe);
+        const auto* phealth = reg.try_get<sm::ecs::Pools>(pe);
         if (!phealth || !reg.all_of<sm::ecs::Combat, sm::ecs::SubworldTag>(pe)) {
             restore();
             smoke_fail(app,
@@ -4758,7 +4758,7 @@ bool run_console_smoke(App& app) {
         auto& reg = app.ecs.reg;
         int n = 0;
         auto view = reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
-                             sm::ecs::Health>(
+                             sm::ecs::Pools>(
             entt::exclude<sm::ecs::Dead, sm::ecs::PlayerSoldierTag>);
         for (auto e : view) {
             if (view.get<sm::ecs::NPCKind>(e).type
@@ -4821,7 +4821,7 @@ bool run_console_smoke(App& app) {
         };
         entt::entity be = entt::null;
         auto view = reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
-                             sm::ecs::Health>(
+                             sm::ecs::Pools>(
             entt::exclude<sm::ecs::Dead, sm::ecs::PlayerSoldierTag>);
         for (auto e : view) {
             if (view.get<sm::ecs::NPCKind>(e).type
@@ -4862,7 +4862,7 @@ bool run_console_smoke(App& app) {
         const sm::CombatTemplate base = sm::npc_def(sm::NPCType::Bandit).combat;
         const sm::CombatTemplate proj = sm::project_combat(*sheet, base);
         const float projHp = std::max(1.0f, std::floor(proj.hp));
-        const auto* hlt = reg.try_get<sm::ecs::Health>(be);
+        const auto* hlt = reg.try_get<sm::ecs::Pools>(be);
         const auto* cmb = reg.try_get<sm::ecs::Combat>(be);
         if (!hlt || !cmb) {
             restore(); smoke_fail(app, "combat: bandit missing Health/Combat"); return false;
@@ -4907,7 +4907,7 @@ bool run_console_smoke(App& app) {
         auto& reg = app.ecs.reg;
         int n = 0;
         auto view = reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
-                             sm::ecs::Health>(
+                             sm::ecs::Pools>(
             entt::exclude<sm::ecs::Dead, sm::ecs::PlayerSoldierTag>);
         for (auto e : view) {
             if (sm::is_monster_kind(view.get<sm::ecs::NPCKind>(e).type)) ++n;
@@ -4925,7 +4925,7 @@ bool run_console_smoke(App& app) {
         const sm::FaunaEntry* wolf = sm::creature_def("wolf");
         entt::entity wolfE = entt::null;
         auto view = reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
-                             sm::ecs::Health>(
+                             sm::ecs::Pools>(
             entt::exclude<sm::ecs::Dead, sm::ecs::PlayerSoldierTag>);
         for (auto e : view) {
             if (sm::creature_def_from_kind(
@@ -4990,7 +4990,7 @@ bool run_console_smoke(App& app) {
         entt::entity target = entt::null;
         {
             auto tv = reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
-                               sm::ecs::Health, sm::ecs::Combat>(
+                               sm::ecs::Pools, sm::ecs::Combat>(
                 entt::exclude<sm::ecs::Dead, sm::ecs::PlayerTag,
                               sm::ecs::PlayerSoldierTag>);
             for (auto e : tv) {
@@ -5009,7 +5009,7 @@ bool run_console_smoke(App& app) {
             restore(); smoke_fail(app, "possess: hero husk missing or not a hero body"); return false;
         }
         // Invariants possession must preserve.
-        const float bodyMaxHp   = reg.get<sm::ecs::Health>(target).maxHp;
+        const float bodyMaxHp   = reg.get<sm::ecs::Pools>(target).maxHp;
         const int   heroHpBefore  = app.gs.player.combatStats.currentHp;
         const int   heroMaxBefore = app.gs.player.combatStats.maxHp;
         const float tx = reg.get<sm::ecs::Position>(target).x;
@@ -5026,7 +5026,7 @@ bool run_console_smoke(App& app) {
             restore(); smoke_fail(app, "possess: flag not solely on the target body"); return false;
         }
         // The possessed body keeps its OWN combat components (nothing stripped).
-        if (!reg.all_of<sm::ecs::NPCKind, sm::ecs::Health, sm::ecs::Combat>(target)) {
+        if (!reg.all_of<sm::ecs::NPCKind, sm::ecs::Pools, sm::ecs::Combat>(target)) {
             restore(); smoke_fail(app, "possess: possessed body lost its own components"); return false;
         }
         // The hero husk is destroyed — no stranded, un-AI'd, un-rendered zombie.
@@ -5046,7 +5046,7 @@ bool run_console_smoke(App& app) {
         // sync path stamped gs.player HP/maxHp onto the PlayerTag body; this is
         // the assertion that the NPCKind gate now suppresses that.)
         app.subworld.tick(0.016f);
-        if (std::fabs(double(reg.get<sm::ecs::Health>(target).maxHp - bodyMaxHp)) > 0.01) {
+        if (std::fabs(double(reg.get<sm::ecs::Pools>(target).maxHp - bodyMaxHp)) > 0.01) {
             restore(); smoke_fail(app, "possess: tick stamped hero maxHp onto the body"); return false;
         }
         if (app.gs.player.combatStats.currentHp != heroHpBefore ||
@@ -5057,7 +5057,7 @@ bool run_console_smoke(App& app) {
         // reports the possessed body's own HP, NOT the frozen hero scalar. With a
         // level-3 body (maxHp≈99) vs the level-1 hero (110) these are distinct.
         const int dispHp = app.subworld.player_display_hp();
-        const int bodyHp = int(std::lround(reg.get<sm::ecs::Health>(target).hp));
+        const int bodyHp = int(std::lround(reg.get<sm::ecs::Pools>(target).hp));
         if (dispHp != bodyHp || dispHp == app.gs.player.combatStats.currentHp) {
             restore(); smoke_fail(app, "possess: player_display_hp() not body-native"); return false;
         }
@@ -5525,11 +5525,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                                 advance_sim_seconds(app, 1.0f / 60.0f, false);
                             }
                             int alive = 0, dead = 0;
-                            auto view = app.ecs.reg.view<sm::ecs::Health,
+                            auto view = app.ecs.reg.view<sm::ecs::Pools,
                                                          sm::ecs::SubworldTag>();
                             for (auto e : view) {
                                 if (app.ecs.reg.any_of<sm::ecs::Dead>(e)) ++dead;
-                                else if (view.get<sm::ecs::Health>(e).hp > 0) ++alive;
+                                else if (view.get<sm::ecs::Pools>(e).hp > 0) ++alive;
                             }
                             std::fprintf(stderr,
                                          "[smoke] battle_soak t=%ds alive=%d dead=%d\n",
@@ -5864,11 +5864,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 int n = 0;
                 auto view = app.ecs.reg.view<sm::ecs::SubworldTag,
                                              sm::ecs::SubworldAi,
-                                             sm::ecs::Health>(
+                                             sm::ecs::Pools>(
                     entt::exclude<sm::ecs::Dead, sm::ecs::PlayerSoldierTag>);
                 for (auto e : view) {
                     const auto& ai = view.get<sm::ecs::SubworldAi>(e);
-                    const auto& hp = view.get<sm::ecs::Health>(e);
+                    const auto& hp = view.get<sm::ecs::Pools>(e);
                     if (ai.kind == sm::ecs::SubworldAi::Combat && hp.hp > 0) {
                         ++n;
                     }
@@ -5887,11 +5887,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             auto findSmokeHostile = [&]() -> entt::entity {
                 auto view = app.ecs.reg.view<sm::ecs::SubworldTag,
                                              sm::ecs::SubworldAi,
-                                             sm::ecs::Health>(
+                                             sm::ecs::Pools>(
                     entt::exclude<sm::ecs::Dead, sm::ecs::PlayerSoldierTag>);
                 for (auto e : view) {
                     const auto& ai = view.get<sm::ecs::SubworldAi>(e);
-                    const auto& hp = view.get<sm::ecs::Health>(e);
+                    const auto& hp = view.get<sm::ecs::Pools>(e);
                     if (ai.kind == sm::ecs::SubworldAi::Combat && hp.hp > 0) {
                         return e;
                     }
@@ -5931,7 +5931,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "battle_start hostile missing paper-doll character");
                 break;
             }
-            auto* smokeHp = app.ecs.reg.try_get<sm::ecs::Health>(smokeHostile);
+            auto* smokeHp = app.ecs.reg.try_get<sm::ecs::Pools>(smokeHostile);
             if (!smokeHp) {
                 smoke_fail(app, "battle_start hostile lost health");
                 break;
@@ -6160,14 +6160,14 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             smoke_clear_modal_overlays(app);
             auto view = app.ecs.reg.view<sm::ecs::Position,
                                          sm::ecs::NPCKind,
-                                         sm::ecs::Health,
+                                         sm::ecs::Pools,
                                          sm::ecs::NpcLevel,
                                          sm::ecs::NpcCharacter,
                                          sm::ecs::NpcInventory>(
                 entt::exclude<sm::ecs::PlayerSquadTag>);
             bool found = false;
             for (auto e : view) {
-                const auto& hp = view.get<sm::ecs::Health>(e);
+                const auto& hp = view.get<sm::ecs::Pools>(e);
                 if (hp.hp <= 0) continue;
                 const auto& pos = view.get<sm::ecs::Position>(e);
                 const auto& kind = view.get<sm::ecs::NPCKind>(e);
@@ -6204,7 +6204,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             app.ui.quest = false;
             auto view = app.ecs.reg.view<sm::ecs::Position,
                                          sm::ecs::NPCKind,
-                                         sm::ecs::Health,
+                                         sm::ecs::Pools,
                                          sm::ecs::NpcLevel,
                                          sm::ecs::NpcCharacter,
                                          sm::ecs::NpcInventory>(
@@ -6213,7 +6213,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             int stock = 0;
             int type = -1;
             for (auto e : view) {
-                const auto& hp = view.get<sm::ecs::Health>(e);
+                const auto& hp = view.get<sm::ecs::Pools>(e);
                 if (hp.hp <= 0) continue;
                 const auto& pos = view.get<sm::ecs::Position>(e);
                 const auto& kind = view.get<sm::ecs::NPCKind>(e);
@@ -6253,13 +6253,13 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             smoke_clear_modal_overlays(app);
             auto view = app.ecs.reg.view<sm::ecs::Position,
                                          sm::ecs::NPCKind,
-                                         sm::ecs::Health,
+                                         sm::ecs::Pools,
                                          sm::ecs::NpcLevel,
                                          sm::ecs::NpcCharacter>(
                 entt::exclude<sm::ecs::PlayerSquadTag>);
             entt::entity target = entt::null;
             for (auto e : view) {
-                const auto& hp = view.get<sm::ecs::Health>(e);
+                const auto& hp = view.get<sm::ecs::Pools>(e);
                 if (hp.hp <= 0) continue;
                 const auto& pos = view.get<sm::ecs::Position>(e);
                 app.gs.player.x = pos.x;
@@ -6342,11 +6342,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             auto& reg = app.ecs.reg;
             entt::entity hostile = entt::null;
             auto view = reg.view<sm::ecs::Position, sm::ecs::NPCKind,
-                                 sm::ecs::MacroNpcRuntime, sm::ecs::Health>(
+                                 sm::ecs::MacroNpcRuntime, sm::ecs::Pools>(
                 entt::exclude<sm::ecs::Dead, sm::ecs::PlayerTag,
                               sm::ecs::PlayerSquadTag, sm::ecs::SubworldTag>);
             for (auto e : view) {
-                if (view.get<sm::ecs::Health>(e).hp <= 0) continue;
+                if (view.get<sm::ecs::Pools>(e).hp <= 0) continue;
                 const auto& kind = view.get<sm::ecs::NPCKind>(e);
                 if (sm::player_hostile_to(
                         &app.gs, sm::faction_id_for_index(kind.factionIdx))) {
@@ -6379,10 +6379,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             const bool enemyGone = !reg.valid(hostile)
                 || reg.all_of<sm::ecs::Dead>(hostile)
-                || reg.get<sm::ecs::Health>(hostile).hp <= 0;
+                || reg.get<sm::ecs::Pools>(hostile).hp <= 0;
             const bool enemyHurt = !enemyGone
-                && reg.get<sm::ecs::Health>(hostile).hp
-                       < reg.get<sm::ecs::Health>(hostile).maxHp;
+                && reg.get<sm::ecs::Pools>(hostile).hp
+                       < reg.get<sm::ecs::Pools>(hostile).maxHp;
             const bool playerPaid =
                 (sm::player_roster(app.ecs)
                      ? sm::total_soldiers(*sm::player_roster(app.ecs)) : 0)
@@ -6445,7 +6445,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             if (app.smoke.trackedPhase == 0) {
                 entt::entity body = entt::null;
                 const sm::ecs::MacroDebt* debt = nullptr;
-                for (auto e : reg.view<sm::ecs::MacroDebt, sm::ecs::Health,
+                for (auto e : reg.view<sm::ecs::MacroDebt, sm::ecs::Pools,
                                        sm::ecs::SubworldTag>(
                          entt::exclude<sm::ecs::Dead>)) {
                     const auto& d = reg.get<sm::ecs::MacroDebt>(e);
@@ -6523,7 +6523,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             auto& reg = app.ecs.reg;
             if (app.smoke.trackedPhase == 0) {
                 entt::entity body = entt::null;
-                for (auto e : reg.view<sm::ecs::MacroOrigin, sm::ecs::Health,
+                for (auto e : reg.view<sm::ecs::MacroOrigin, sm::ecs::Pools,
                                        sm::ecs::SubworldTag>()) {
                     body = e;
                     break;
@@ -6534,14 +6534,14 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 }
                 const entt::entity macro =
                     reg.get<sm::ecs::MacroOrigin>(body).macro;
-                if (!reg.valid(macro) || !reg.all_of<sm::ecs::Health>(macro)) {
+                if (!reg.valid(macro) || !reg.all_of<sm::ecs::Pools>(macro)) {
                     smoke_fail(app, "tracked body backlinks nothing");
                     break;
                 }
                 app.smoke.trackedBody = body;
                 app.smoke.trackedMacro = macro;
-                app.smoke.trackedMacroHp0 = reg.get<sm::ecs::Health>(macro).hp;
-                auto& h = reg.get<sm::ecs::Health>(body);
+                app.smoke.trackedMacroHp0 = reg.get<sm::ecs::Pools>(macro).hp;
+                auto& h = reg.get<sm::ecs::Pools>(body);
                 h.hp = std::max(1, h.maxHp / 4);   // a quarter left
                 std::fprintf(stderr,
                              "[smoke] tracked body wounded to %.1f/%.1f "
@@ -6558,7 +6558,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     smoke_fail(app, "tracked pair vanished before the wound landed");
                     break;
                 }
-                const auto& mh = reg.get<sm::ecs::Health>(app.smoke.trackedMacro);
+                const auto& mh = reg.get<sm::ecs::Pools>(app.smoke.trackedMacro);
                 std::fprintf(stderr,
                              "[smoke] macro hp %.1f -> %.1f after wound\n",
                              double(app.smoke.trackedMacroHp0), double(mh.hp));
@@ -6583,7 +6583,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             const bool gone = !reg.valid(app.smoke.trackedMacro);
             const bool dead = gone
                 || (reg.any_of<sm::ecs::Dead>(app.smoke.trackedMacro)
-                    && reg.get<sm::ecs::Health>(app.smoke.trackedMacro).hp
+                    && reg.get<sm::ecs::Pools>(app.smoke.trackedMacro).hp
                            <= 0.0f);
             std::fprintf(stderr, "[smoke] macro entity dead=%d gone=%d\n",
                          dead ? 1 : 0, gone ? 1 : 0);
@@ -6938,7 +6938,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // That is the fix working; the fixture was the thing at fault.
             {
                 std::vector<entt::entity> doomed;
-                for (auto e : app.ecs.reg.view<sm::ecs::Health>()) {
+                for (auto e : app.ecs.reg.view<sm::ecs::Pools>()) {
                     if (!app.ecs.reg.any_of<sm::ecs::PlayerTag,
                                             sm::ecs::PlayerSquadTag>(e)) {
                         doomed.push_back(e);
@@ -6978,7 +6978,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 sm::ecs::NPCKind{
                     std::uint16_t(sm::NPCType::Bandit),
                     std::uint16_t(sm::faction_index("bandits"))});
-            app.ecs.reg.emplace<sm::ecs::Health>(spellTarget, 30, 30);
+            app.ecs.reg.emplace<sm::ecs::Pools>(spellTarget, 30, 30);
             app.ecs.reg.emplace<sm::ecs::SubworldTag>(spellTarget);
             app.ecs.reg.emplace<sm::ecs::Sprite>(
                 spellTarget,
@@ -7052,7 +7052,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 ++liveProjectiles;
             }
             const auto* targetHp =
-                app.ecs.reg.try_get<sm::ecs::Health>(spellTarget);
+                app.ecs.reg.try_get<sm::ecs::Pools>(spellTarget);
             const auto& book = app.gs.player.spellBook;
             std::fprintf(stderr,
                          "[smoke] spell_projectile active=%s projectiles=%d->%d alive=%d "

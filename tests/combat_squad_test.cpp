@@ -130,7 +130,7 @@ int main() {
                                 playerFaction);
     auto view = world.reg.view<sm::ecs::PlayerSoldierTag, sm::ecs::SoldierLink,
                                sm::ecs::NPCKind, sm::ecs::Combat,
-                               sm::ecs::Health, sm::ecs::NpcLevel,
+                               sm::ecs::Pools, sm::ecs::NpcLevel,
                                sm::ecs::SubworldAi>();
     int projected = 0;
     for (auto e : view) {

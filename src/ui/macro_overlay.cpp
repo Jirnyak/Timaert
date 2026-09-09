@@ -359,13 +359,13 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
     // cleanly — at zoom < 10 px/cell a 256-px sprite shrinks to a
     // monochromatic blob that visually competes with the GLSL features.
     if (zoom >= 10.0f) {
-        auto view = w.reg.view<ecs::Position, ecs::NPCKind, ecs::Health>(
+        auto view = w.reg.view<ecs::Position, ecs::NPCKind, ecs::Pools>(
             entt::exclude<ecs::Dead, ecs::PlayerTag,
                           ecs::PlayerSquadTag>);  // the player is his own marker, under possession too
         for (auto e : view) {
             const auto& pos  = view.get<ecs::Position>(e);
             const auto& kind = view.get<ecs::NPCKind>(e);
-            const auto& hp   = view.get<ecs::Health>(e);
+            const auto& hp   = view.get<ecs::Pools>(e);
             if (hp.hp <= 0) continue;
             const ecs::VisualPos* visual = w.reg.try_get<ecs::VisualPos>(e);
             const float drawX = visual ? visual->vx : pos.x;
@@ -616,7 +616,7 @@ const char* npc_display_name(const NpcTypeDef& def, const ecs::NpcCharacter& ch)
 
 bool live_npc_entity(const ecs::World& w, entt::entity e) {
     if (e == entt::null || !w.reg.valid(e)) return false;
-    const auto* hp = w.reg.try_get<ecs::Health>(e);
+    const auto* hp = w.reg.try_get<ecs::Pools>(e);
     return hp && hp->hp > 0.0f;
 }
 
@@ -751,7 +751,7 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
     const bool drawRowsEnabled = showRows && !npc_proximity_popup_open();
     if (drawRowsEnabled) {
 
-        auto view = w.reg.view<ecs::Position, ecs::NPCKind, ecs::Health,
+        auto view = w.reg.view<ecs::Position, ecs::NPCKind, ecs::Pools,
                                ecs::NpcLevel, ecs::NpcCharacter>(
             entt::exclude<ecs::PlayerTag,
                           ecs::PlayerSquadTag>);  // never list the player as a party standing next to himself
@@ -775,7 +775,7 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
 
         for (auto e : view) {
             const auto& pos = view.get<ecs::Position>(e);
-            const auto& hp  = view.get<ecs::Health>(e);
+            const auto& hp  = view.get<ecs::Pools>(e);
             if (hp.hp <= 0) continue;
 
             int nx = int(std::floor(pos.x));
@@ -841,7 +841,7 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                 for (std::size_t rowIdx = 0; rowIdx < drawRows; ++rowIdx) {
                     auto& r = rows[rowIdx];
                     const auto& kind = view.get<ecs::NPCKind>(r.e);
-                    const auto& hp   = view.get<ecs::Health>(r.e);
+                    const auto& hp   = view.get<ecs::Pools>(r.e);
                     const auto& lvl  = view.get<ecs::NpcLevel>(r.e);
                     const auto& ch   = view.get<ecs::NpcCharacter>(r.e);
 

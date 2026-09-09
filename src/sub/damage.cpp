@@ -88,7 +88,7 @@ DamageResult apply_damage(entt::registry& reg, entt::entity target,
                           DamageKind kind, DamageType type, EventBus* bus) {
     DamageResult out{};
     if (!reg.valid(target)) return out;
-    auto* hp = reg.try_get<ecs::Health>(target);
+    auto* hp = reg.try_get<ecs::Pools>(target);
     if (hp == nullptr || hp->hp <= 0) return out;
     // A crit found the armour gap: mitigation is not in the way, exactly as
     // the Fall row's column says plate is not in the way of the ground.
@@ -144,7 +144,7 @@ DamageResult apply_damage(entt::registry& reg, entt::entity target,
 DamageResult apply_lethal_damage(entt::registry& reg, entt::entity target,
                                  const DamageSource& src, DamageKind kind,
                                  EventBus* bus) {
-    const auto* hp = reg.try_get<ecs::Health>(target);
+    const auto* hp = reg.try_get<ecs::Pools>(target);
     if (hp == nullptr || hp->hp <= 0) return {};
     // The bar is integer now (4г), so "everything it has left" needs no ceil
     // — the whole remaining number is exactly one lethal blow.
