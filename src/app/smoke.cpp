@@ -211,11 +211,28 @@ void smoke_fail(App& app, const char* reason) {
 // so the scenario now judges real pixels.
 //
 // Two questions, because either alone is cheatable:
-//   * is anything LIT — at least one sample above black; and
+//   * is anything LIT — enough samples above black to be a picture; and
 //   * does the picture VARY — a cleared screen is one flat colour everywhere,
 //     and a flat frame is exactly the failure this scenario exists to catch.
-// Samples sit on the quarter/half/three-quarter grid, away from the edges, so
-// a HUD strip or a letterbox border cannot pass for the world.
+//
+// WHERE it looks was wrong for a year, and the fix is worth the paragraph.
+// The probe used to sit on nine points of the quarter/half/three-quarter grid,
+// which encodes an assumption nobody stated: that a frame showing the world is
+// lit ALL OVER. On the macro map that is false BY DESIGN — the fog of war
+// (map.md) blacks out everything the player has not seen, and at boot he has
+// seen one island around himself. Measured on seed 12345: eight of the nine
+// points read (0,0,0) and the ninth, clipping the island's edge, read (5,0,0)
+// against a threshold of 24. So `wait_visible` was red on every seed over a
+// perfectly drawn map, and the suite carried that red as if it meant something
+// (postdemoaudit.md SMOKE-6).
+//
+// So look where the world IS: a dense grid over the CENTRAL HALF of the frame,
+// which is where the camera keeps the player in both worlds. Central, because
+// the HUD strips top and bottom and the panels at the right edge are lit
+// whatever the world is doing — the original reason for staying off the edges
+// still holds, and it is the reason this is not a full-frame scan. Dense,
+// because a fogged map lights only a few per cent of even that box, and a
+// handful of fixed points is a lottery over which pixel the island covers.
 bool smoke_framebuffer_has_world_pixels(const App& app, int& samplesHit) {
     samplesHit = 0;
     const std::vector<std::uint8_t>& px = app.smoke.probePixels;
@@ -225,13 +242,19 @@ bool smoke_framebuffer_has_world_pixels(const App& app, int& samplesHit) {
     if (px.size() < std::size_t(w) * std::size_t(h) * 4u) return false;
 
     constexpr int kBlackSum = 24;   // of 765; darker than any lit ground
+    constexpr int kGrid     = 32;   // 32x32 = 1024 samples over the box
+    // The fogged boot map lights ~6 % of the central box, i.e. ~60 of 1024:
+    // eight is a floor with room to spare that still refuses a black frame
+    // carrying one stray lit pixel.
+    constexpr int kMinLit   = 8;
     std::uint32_t firstColour = 0;
     bool haveFirst = false;
     int distinct = 0;
-    for (int gy = 1; gy <= 3; ++gy) {
-        for (int gx = 1; gx <= 3; ++gx) {
-            const int x = w * gx / 4;
-            const int y = h * gy / 4;
+    for (int gy = 0; gy < kGrid; ++gy) {
+        for (int gx = 0; gx < kGrid; ++gx) {
+            // The central half: [w/4, 3w/4) x [h/4, 3h/4).
+            const int x = w / 4 + (w / 2) * gx / kGrid;
+            const int y = h / 4 + (h / 2) * gy / kGrid;
             const std::size_t i =
                 (std::size_t(y) * std::size_t(w) + std::size_t(x)) * 4u;
             const int sum = int(px[i]) + int(px[i + 1u]) + int(px[i + 2u]);
@@ -243,7 +266,7 @@ bool smoke_framebuffer_has_world_pixels(const App& app, int& samplesHit) {
             else if (colour != firstColour) ++distinct;
         }
     }
-    return samplesHit > 0 && distinct > 0;
+    return samplesHit >= kMinLit && distinct > 0;
 }
 
 // Write a captured swapchain frame to a PNG. Arm the capture with
@@ -2534,7 +2557,15 @@ bool run_dungeon_cave_smoke(App& app) {
     // tried, because "found none" must be distinguishable from "looked once".
     int tried = 0;
     int mouths = 0;
-    const sm::sub::Structure* mouth = nullptr;
+    int guarded = 0;   // mouths skipped because the danger gate holds them shut
+    // BY VALUE, not by pointer into mgr().structures(): a tick can rebuild that
+    // vector (the prop cache and the composite are refreshed under it), and a
+    // pointer taken before one is a pointer to nothing after. Held as a pointer,
+    // this cost seeds 1 and 999 their green the moment a tick was added between
+    // the find and the use — the aim then read garbage coordinates and the
+    // scenario reported "Nothing to interact with" over a perfectly good cave.
+    sm::sub::Structure mouth{};
+    bool haveMouth = false;
     for (int cy = 0; cy < app.gs.mapH && mouths == 0; cy += 7) {
         for (int cx = 0; cx < app.gs.mapW && mouths == 0; cx += 7) {
             const std::size_t midx =
@@ -2555,22 +2586,53 @@ bool run_dungeon_cave_smoke(App& app) {
             for (const auto& s : app.subworld.mgr().structures()) {
                 if (s.kind != sm::sub::Structure::CaveMouth) continue;
                 ++mouths;
-                if (!mouth) mouth = &s;
+                if (!haveMouth) { mouth = s; haveMouth = true; }
+            }
+            // A mouth the DANGER GATE would refuse is not a defect — it is a
+            // subject this scenario cannot use. Entering tears the outdoor
+            // session down through the ordinary leave(), which refuses to let
+            // anyone break away with hostiles at his back; on seed 7 the first
+            // highland mouth sits in exactly such a cell (31 head of vermin
+            // about) and the scenario read the correct refusal as a red
+            // (postdemoaudit.md SMOKE-5). Ask the gate the same question the
+            // door will ask, from the very spot the entry is attempted, and
+            // walk on if the answer is no.
+            // Asked WITHOUT moving anyone and WITHOUT a tick, on purpose. The
+            // first version of this check walked the player to the mouth and
+            // ticked once to settle the threat scan — and that tick recentred
+            // the window, which rebases every structure in it, so the mouth's
+            // coordinates no longer named the mouth and all four seeds began
+            // reporting "Nothing to interact with" over perfectly good caves.
+            // The gate reads the CELL's danger and the hostiles around the
+            // player, and the player is standing in that same cell already:
+            // near enough to pick a subject, and free of side effects.
+            if (mouths > 0 && app.subworld.exit_blocked_by_danger()) {
+                ++guarded;
+                mouths = 0;
+                haveMouth = false;
+                app.subworld.leave(true);
+                continue;
             }
             if (mouths == 0) app.subworld.leave(true);
         }
     }
-    if (mouths == 0 || mouth == nullptr) {
+    if (mouths == 0 || !haveMouth) {
         restore();
-        std::fprintf(stderr, "[smoke] dungeon_cave tried=%d found no mouth\n",
-                     tried);
+        std::fprintf(stderr,
+                     "[smoke] dungeon_cave tried=%d guarded=%d found no mouth\n",
+                     tried, guarded);
         std::fflush(stderr);
-        smoke_fail(app, "dungeon_cave no cave mouth in any highland cell");
+        // Say WHICH nothing this is: no rock bore a cave at all, or every cave
+        // it bore stood behind the danger gate. The second is a world worth
+        // knowing about; failing both under one sentence hides it.
+        smoke_fail(app, guarded > 0
+                       ? "dungeon_cave every mouth found was danger-gated"
+                       : "dungeon_cave no cave mouth in any highland cell");
         return false;
     }
 
     // Stand off the mouth and look at it — the same aim the player uses.
-    const sm::sub::Structure m = *mouth;
+    const sm::sub::Structure m = mouth;
     const float standX = m.x - 4.0f * std::sin(m.yaw);
     const float standY = m.y + 4.0f * std::cos(m.yaw);
     app.subworld.set_player_pos(standX, standY);
@@ -2657,10 +2719,10 @@ bool run_dungeon_cave_smoke(App& app) {
     restore();
 
     std::fprintf(stderr,
-                 "[smoke] dungeon_cave tried=%d mouths=%d entered=%d in=%d "
+                 "[smoke] dungeon_cave tried=%d guarded=%d mouths=%d entered=%d in=%d "
                  "level=%d floorTile=%d hoards=%d vermin=%d noStairs=%d "
                  "refusedHunted=%d refusedClear=%d walkedOut=%d\n",
-                 tried, mouths, entered ? 1 : 0, inCave ? 1 : 0, level,
+                 tried, guarded, mouths, entered ? 1 : 0, inCave ? 1 : 0, level,
                  floorTile, hoards, vermin, noStairs ? 1 : 0,
                  refusedWhileHunted ? 1 : 0, refusedWhenClear ? 1 : 0,
                  walkedOut ? 1 : 0);

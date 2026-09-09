@@ -24,6 +24,11 @@ imgui.ini
 /smoke_*.err
 /smoke_*.log
 /smoke_*.txt
+# ...but the SUITE is not an artifact, it is the source list of scenarios
+# smoke.sh runs (`sh smoke.sh all`). It matches /smoke_*.txt by accident of
+# naming, and without this line it would have been born ignored: green on the
+# machine that wrote it, "smoke_suite.txt not found" on every other.
+!/smoke_suite.txt
 /save.bin
 /save.bin.tmp
 /save.bin.bak

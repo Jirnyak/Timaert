@@ -1,0 +1,92 @@
+# THE smoke suite — one line, one scenario, in the order smoke.sh runs them.
+#
+#   sh smoke.sh all                  -> the whole suite on the pinned seed
+#   sh smoke.sh all 12345,1,7,999    -> the whole suite on four worlds
+#
+# A LINE IS A COMPOSITION, NOT A TOKEN. Five scenarios need a scene standing
+# before them and say so on their own failure line ("needs subworld_enter
+# first"); run them bare and the red is the caller's, not the game's. The
+# first full-suite sweep of 2026-09-09 spent four false reds learning this,
+# which is why the list lives here instead of in someone's head.
+#
+# smoke.sh adds the boot prefix (new_game,wait_boot_done) and the trailing
+# quit, so those three tokens never appear below — they are the only ones
+# exempt from the coverage check that runs before the suite.
+
+subworld_time
+subworld_enter
+subworld_enter,subworld_walk
+subworld_seam
+subworld_audio
+subworld_exit_gate
+subworld_exit_remap
+subworld_loot_xp
+subworld_enemy_feedback
+subworld_missile_feedback
+subworld_self_fireball
+subworld_player_melee
+subworld_player_bow
+subworld_reputation_hit
+subworld_mouse_release
+subworld_tree_anchor
+subworld_recovery
+subworld_sp_drain
+dungeon_house
+dungeon_cave
+prologue_road
+spire_climb
+trigger_battle_start
+
+# The pixel probe stands ALONE on purpose: bare, it judges the macro map with
+# its fog of war, which is the frame that caught the probe's own bad
+# assumption (SMOKE-6). A scene in front of it would hide that forever.
+wait_visible
+capture_frame
+subworld_enter,cast_bolt_capture
+subworld_enter,light_probe_capture
+
+# Settlements, people, trade.
+open_settlement_build
+open_settlement_trade
+open_settlement_map
+enter_first_settlement
+focus_npc_panel
+open_npc_trade
+attack_first_npc
+
+# Writebacks: the spawn goes FIRST — spawn_squad_at_player refuses inside a
+# subworld by construction, so it cannot follow the entry.
+spawn_squad_at_player,subworld_enter,macro_kill_writeback
+subworld_enter,fauna_kill_writeback
+force_encounter
+
+# The macro world's own clock and march.
+stats_settle
+open_map
+open_stats
+spend_attribute_end
+spend_skill_bodybuilding
+macro_travel_sp
+macro_recovery
+rest_sp
+timeadvance_burst
+chronicle_rate
+macro_npc_trace
+
+# Panels, spells, story.
+open_quests
+open_codex
+open_spells
+cast_spell
+toggle_haste
+toggle_flight
+prepare_spell_auras
+trigger_count_only_dialog
+trigger_story_overlay
+
+# Save and load, with the fold witness on the door (problems.md §38).
+save_game,open_load,load_game,wait_boot_done
+subworld_enter,fauna_kill_writeback,subworld_exit_remap,save_game,open_load,load_game,wait_boot_done
+
+return_title
+console

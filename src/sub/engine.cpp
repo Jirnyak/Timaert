@@ -82,6 +82,17 @@ constexpr int kBattleGridMaxDim = 256;
 // carry several steps or none.
 constexpr int kMaxSubworldDeathsPerStep = 512;
 constexpr int kMaxSubworldEntityReaps = 2048;
+
+// ONE sentence for the danger gate, because it guards ONE law from two sides.
+// The gate refuses to let the player disengage while enemies are on him — and
+// entering a door disengages just as much as leaving one does, since the way
+// in tears the outdoor session down through the very same leave(). The old
+// wording said "Exit blocked", which is true of half its call sites and a
+// riddle at the other half: press E on a cave mouth, be told about an exit.
+// Naming the ACT (breaking away) instead of the direction says the same thing
+// to a man walking in and a man walking out.
+constexpr const char* kDisengageBlockedMsg =
+    "Cannot break away — hostiles are too close in this danger zone.";
 // kHitFlashDuration now lives in sub/spell_effects.h — one constant for every
 // weapon's on-hit flash.
 // kPlayerMeleeRange / kPlayerMeleeCooldown / kPlayerBaseMeleeDamage moved to
@@ -2982,7 +2993,7 @@ void SubworldEngine::leave(bool force) {
         return;
     }
     if (!force && exit_blocked_by_danger()) {
-        set_status("Exit blocked: hostiles are too close in this danger zone.");
+        set_status(kDisengageBlockedMsg);
         return;
     }
     entt::entity possessedMacro = entt::null;   // set iff exit was AS a lord (5e-2)
@@ -3738,7 +3749,7 @@ bool SubworldEngine::try_exit_dungeon() {
     // The same danger law as any subworld exit: the door does not save you
     // while hostiles stand at your back (owner ruling 2026-08-12).
     if (exit_blocked_by_danger()) {
-        set_status("Exit blocked: hostiles are too close in this danger zone.");
+        set_status(kDisengageBlockedMsg);
         return false;
     }
 

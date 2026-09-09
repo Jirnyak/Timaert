@@ -502,6 +502,13 @@ public:
     // spell stream, handed out so the book can roll where the sheet lives.
     Rng&  spell_rng() { return spellRng_; }
     const char* status_line() const { return statusLine_.c_str(); }
+    // THE danger gate, asked from outside: would breaking away be refused
+    // here and now? Public because a caller may legitimately need to know
+    // BEFORE it acts — the cave smoke picks a mouth it can actually open, and
+    // a mouth standing in a danger cell with a hostile beside it is not a
+    // defect to report but a subject to skip (postdemoaudit.md SMOKE-5).
+    // Read-only: it answers, it never disengages.
+    bool exit_blocked_by_danger() const;
     int combat_log_count() const { return combatLogCount_; }
     const CombatLogEntry* combat_log_entry(int index) const;
     // One-shot combat SFX queued by this tick's swings/hits, in THE sound
@@ -797,7 +804,6 @@ private:
     void sync_player_vertical(float dt);
     // What would carry a body arriving at (x, y): max(terrain, solid top).
     float footing_height_m(float x, float y) const;
-    bool exit_blocked_by_danger() const;
     bool has_hostile_near_player(float radius) const;
     void tick_player_melee();
     void tick_hit_flashes(float dt);

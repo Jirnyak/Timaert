@@ -3504,6 +3504,30 @@ RuntimeFrameStats advance_sim_steps(App& app, int steps, bool allowInput) {
         total.macroNpcAi.sweepsCompleted += s.macroNpcAi.sweepsCompleted;
         total.macroNpcAi.backlog = s.macroNpcAi.backlog;
     }
+    // A promotion that bought NO time, asked for its reason on the spot.
+    //
+    // Three macro-time smokes have come back "the world advanced nothing"
+    // inside a long sweep and been green every time they were run alone
+    // (postdemoaudit.md SMOKE-7). The symptom is all any of them could say;
+    // the CAUSE could only be the pause gate below, because this loop has no
+    // wall-clock budget — it runs the steps it was given, and a step that
+    // buys nothing was gated. So name the gate while it is still shut,
+    // instead of leaving the next reader to guess between four reasons.
+    //
+    // Silent unless the world was PLAYING and still refused: outside Playing
+    // (splash, the intro slides, the menu) a promotion legitimately buys
+    // nothing, and a diagnostic that cries there teaches people to ignore it.
+    if (steps > 0 && !total.ticked && app.state == sm::ui::AppState::Playing) {
+        const std::uint8_t m = pause_reasons(app);
+        std::fprintf(stderr,
+                     "[pause] advance_sim_steps(%d) bought NO tick — mask=%02x "
+                     "player=%d panel=%d modal=%d menu=%d sub=%d\n",
+                     steps, unsigned(m),
+                     (m & kPausePlayer) ? 1 : 0, (m & kPausePanel) ? 1 : 0,
+                     (m & kPauseModal) ? 1 : 0, (m & kPauseMenu) ? 1 : 0,
+                     app.subworld.active() ? 1 : 0);
+        std::fflush(stderr);
+    }
     return total;
 }
 
