@@ -32,11 +32,11 @@ constexpr float kCeilingSlabM = 1.0f;
 // plus one tile of clearance — two fighters cannot pass abreast, one walks
 // through without wall-scraping.
 constexpr float kDoorGapTiles = 4.0f;
-// A hall is split into rooms only while each half keeps at least this span:
-// wider than kPlayerMeleeRange on both sides of a doorway, with furniture
-// clearance to spare — a room you can fight in, not a corridor you clip
-// through.
-constexpr float kMinRoomSpanTiles = 12.0f;
+// A hall is split into rooms only while each half keeps the manoeuvre floor —
+// the shared interior invariant (dgn/dispatch.h), because "a room you can
+// fight in" is one quantity and the tower's hall is guarded against the same
+// number.
+constexpr float kMinRoomSpanTiles = kInteriorFightSpanTiles;
 
 DungeonRoom dungeon_house_room(const DungeonRef& ref) {
     DungeonRoom room;
@@ -333,13 +333,16 @@ void gen_dungeon_house(const CellContext& ctx, SubworldMapData& out) {
         place_prop(Structure::Door, px, room.cy + room.hy - doorHalfY, 0,
                    0.0f);
     }
+    // Each shaft end through the shared law (dgn/dispatch.h): a ladder to a
+    // ceiling opening where the storey climbs, a lid in the floor where it
+    // descends. A cellar's stair looked exactly like an attic's until this.
     if (padNW) {
         pave_pad(nwX, nwY);
-        place_prop(Structure::Stairs, nwX, nwY, /*tag: up*/1, 0.0f);
+        stamp_dungeon_shaft(out, /*up*/true, nwX, nwY, wallH);
     }
     if (padNE) {
         pave_pad(neX, neY);
-        place_prop(Structure::Stairs, neX, neY, /*tag: down*/0, 0.0f);
+        stamp_dungeon_shaft(out, /*up*/false, neX, neY, wallH);
     }
 
     // ── Furniture: every room gets a household's worth ──────────────────────

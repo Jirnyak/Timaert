@@ -320,7 +320,10 @@ struct InteractRow {
 inline constexpr InteractRow kInteractRows[int(InteractId::Count)] = {
     { InteractId::None,   "",             0.0f},
     { InteractId::Door,   "Enter",        5.0f},
-    { InteractId::Stairs, "Take stairs",  5.0f},
+    // "Climb", not "Take stairs": a shaft is a ladder one way and a lid the
+    // other, and there has never been a flight of steps anywhere in the game
+    // for the word to name.
+    { InteractId::Stairs, "Climb",        5.0f},
     { InteractId::Loot,   "Loot",        12.0f},
     { InteractId::Drink,  "Drink",        5.0f},
     { InteractId::Read,   "Read",         5.0f},
@@ -335,10 +338,10 @@ inline constexpr const InteractRow& interact_row(InteractId i) {
 
 struct Structure {
     enum Kind : std::uint8_t { Tree = 0, Rock, House, Wall, Bridge, Crop,
-                               Fence, Furnish, Door, Lantern, Stairs,
+                               Fence, Furnish, Door, Lantern, Hatch,
                                Chest, CaveMouth, Well, Sign, SpireGate,
-                               SpireOrb, Kerb } kind;
-    static constexpr int kKindCount = int(Kerb) + 1;
+                               SpireOrb, Kerb, Ladder, SpireHatch } kind;
+    static constexpr int kKindCount = int(SpireHatch) + 1;
     // Footprint silhouette. Box is the default; Cylinder renders (and collides)
     // as a round prism — wall towers, gate jambs, the spire. One byte, not a
     // new Kind: shape is orthogonal to what the thing IS.
@@ -456,6 +459,8 @@ struct StructureKindRow {
         Well,        // wet stone curb over dark water
         Sign,        // painted board on a post
         SpireOrb,    // dark plinth crowned by a burning blue orb
+        Hatch,       // dark planked lid with an iron ring — a way DOWN
+        Ladder,      // two stiles and rungs — a way UP
     };
     Material material;
     // What pressing E on this prop does (InteractId::None = scenery).
@@ -464,6 +469,14 @@ struct StructureKindRow {
     // a branch in the engine — the day a keep or a barrow wants its own
     // module, it is one row here and one case in the dungeon dispatch.
     DungeonRef::Kind opens;
+    // ...and WHICH END of it. A door is on the ground floor by default, which
+    // is why the entry path wrote `level = 0` as a literal for as long as
+    // every door was. A tower has a second one on its crown: you climbed to
+    // it, and a door that dropped you back at the foot of the climb would be
+    // a lie the interior tells about the world outside it. `true` = this door
+    // opens the interior's TOP storey (which storey that is belongs to the
+    // kind — a tower's is its tier), and the body arrives by its roof hatch.
+    bool opensTop;
     // Light this prop casts, as 0xRRGGBB + reach in tiles (0 radius = dark).
     // The engine hangs a LightEmitter on every lit prop through the ONE
     // point-light path (sub/lighting.h), so a lantern lights the street with
@@ -496,22 +509,22 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     { Structure::Tree, "tree", 1.6f, 3.5f, 14.0f, false, "You fell a tree",
                   StructureKindRow::Draw::Billboard,
                   StructureKindRow::Material::Wood,
-                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f,
+                  InteractId::None, DungeonRef::None, false, 0u, 0.0f, 0.0f,
                   kWalkTileTransparent},
     { Structure::Rock, "",     1.6f, 3.5f,  0.0f, false, "",
                   StructureKindRow::Draw::None,
                   StructureKindRow::Material::Stone,
-                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f,
+                  InteractId::None, DungeonRef::None, false, 0u, 0.0f, 0.0f,
                   kWalkTileTransparent},
     { Structure::House, "",     1.6f, 3.5f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::House,
-                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f,
+                  InteractId::None, DungeonRef::None, false, 0u, 0.0f, 0.0f,
                   std::uint8_t(TILE_SQUARE)},
     { Structure::Wall, "",     1.2f, 4.0f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Stone,
-                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f,
+                  InteractId::None, DungeonRef::None, false, 0u, 0.0f, 0.0f,
                   std::uint8_t(TILE_SQUARE)},
     // Bridge: honest masonry (owner, 2026-08-29 — "like the city gates: over
     // the water, arches beneath, not a dam"). The generator emits it as
@@ -523,19 +536,19 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     { Structure::Bridge, "",     0.4f, 0.5f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Stone,
-                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f,
+                  InteractId::None, DungeonRef::None, false, 0u, 0.0f, 0.0f,
                   std::uint8_t(TILE_ROAD)},
     { Structure::Crop, "crop", 0.4f, 0.5f,  1.2f, false, "You harvest the crop",
                   StructureKindRow::Draw::Billboard,
                   StructureKindRow::Material::Wood,
-                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f,
+                  InteractId::None, DungeonRef::None, false, 0u, 0.0f, 0.0f,
                   kWalkTileTransparent},
     // Fence: the field balks' boulder walls — knee-high, honest to walk
     // around (solid), drawn by the same box pass as walls in stone flavour.
     { Structure::Fence, "",     0.3f, 0.4f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Stone,
-                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f,
+                  InteractId::None, DungeonRef::None, false, 0u, 0.0f, 0.0f,
                   kWalkTileTransparent},
     // Furnish: interior furniture (beds, tables, chests — sub/dgn/). Solid so
     // a room fights around its furniture; waist-high floor (0.4 m) so a chest
@@ -545,7 +558,7 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     { Structure::Furnish, "",     0.5f, 0.4f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Wood,
-                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f,
+                  InteractId::None, DungeonRef::None, false, 0u, 0.0f, 0.0f,
                   kWalkTileTransparent},
     // Door: the way in. Not solid — it hangs flush on a wall that already
     // blocks, and a door you bump into instead of opening is a door that
@@ -554,7 +567,7 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     { Structure::Door, "",     0.5f, 2.0f,  0.0f, false, "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Door,
-                  InteractId::Door, DungeonRef::House, 0u, 0.0f, 0.0f,
+                  InteractId::Door, DungeonRef::House, false, 0u, 0.0f, 0.0f,
                   kWalkTileTransparent},
     // Lantern: a post with a flame on top. Solid so it is a real obstacle you
     // walk around, knee-thin. Warm 0xFFB060 at 24 tiles — the carried-torch
@@ -563,15 +576,19 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     { Structure::Lantern, "",     0.3f, 3.0f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Lantern,
-                  InteractId::None, DungeonRef::None, 0xFFB060u, 24.0f, 3.0f,
+                  InteractId::None, DungeonRef::None, false, 0xFFB060u, 24.0f, 3.0f,
                   kWalkTileTransparent},
-    // Stairs: the shaft between storeys, drawn as a low block you step onto.
-    // Not solid (you stand ON its tile and press E), knee-high so it reads as
-    // a flight of steps and not a table.
-    { Structure::Stairs, "",     1.5f, 0.5f,  0.0f, false, "",
+    // Hatch: the DOWNWARD end of a shaft — a planked lid in the floor you
+    // stand on and open. Not solid (you stand ON its tile and press E),
+    // knee-high because a lid is a lid. It was called Stairs and drawn in the
+    // generic timber of a bed or a deck, which is exactly what it looked like:
+    // a plank plate, identical whichever way the shaft went (see
+    // stamp_dungeon_shaft, sub/dgn/dispatch.h). Same prop, recessed into a
+    // ceiling, is the opening a ladder climbs to.
+    { Structure::Hatch, "",     1.5f, 0.5f,  0.0f, false, "",
                   StructureKindRow::Draw::Solid,
-                  StructureKindRow::Material::Wood,
-                  InteractId::Stairs, DungeonRef::None, 0u, 0.0f, 0.0f,
+                  StructureKindRow::Material::Hatch,
+                  InteractId::Stairs, DungeonRef::None, false, 0u, 0.0f, 0.0f,
                   kWalkTileTransparent},
     // Chest: the household's store, waist-high and solid like the furniture
     // it is. It has no loot ROW of its own on purpose — a chest does not
@@ -581,7 +598,7 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     { Structure::Chest, "",     0.8f, 0.9f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Chest,
-                  InteractId::Search, DungeonRef::None, 0u, 0.0f, 0.0f,
+                  InteractId::Search, DungeonRef::None, false, 0u, 0.0f, 0.0f,
                   kWalkTileTransparent},
     // CaveMouth: a dark opening in rock. The SAME door verb as a house's
     // leaf — the column below is what makes it open a cavern instead of a
@@ -591,7 +608,7 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     { Structure::CaveMouth, "",     2.0f, 3.0f,  0.0f, false, "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::CaveMouth,
-                  InteractId::Door, DungeonRef::Cave, 0u, 0.0f, 0.0f,
+                  InteractId::Door, DungeonRef::Cave, false, 0u, 0.0f, 0.0f,
                   kWalkTileTransparent},
     // Well: waist-high stonework you walk around (solid), drawn as a round
     // curb because that is what a well IS — the cylinder pass already has
@@ -599,24 +616,24 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     { Structure::Well, "",     1.6f, 1.2f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Well,
-                  InteractId::Drink, DungeonRef::None, 0u, 0.0f, 0.0f,
+                  InteractId::Drink, DungeonRef::None, false, 0u, 0.0f, 0.0f,
                   kWalkTileTransparent},
     // Sign: a board at head height on a thin post. Not solid — you read it,
     // you do not walk into it.
     { Structure::Sign, "",     0.9f, 2.2f,  0.0f, false, "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Sign,
-                  InteractId::Read, DungeonRef::None, 0u, 0.0f, 0.0f,
+                  InteractId::Read, DungeonRef::None, false, 0u, 0.0f, 0.0f,
                   kWalkTileTransparent},
     // SpireGate: the tower's own doorway — the CaveMouth pattern (a Door verb
     // whose `opens` column names its OWN interior), sized like the house leaf
-    // it visually is (the Door material draws it). One kind serves both ends
-    // of the climb: the gate at the tower's foot and the roof hatch on the
-    // top storey — the dungeon session reads which end from the storey.
+    // it visually is (the Door material draws it). The gate at the tower's
+    // FOOT; the crown's way in is a hatch, not a door standing in the open sky
+    // (SpireHatch below), and the climb inside is a ladder.
     { Structure::SpireGate, "",     0.5f, 2.0f,  0.0f, false, "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Door,
-                  InteractId::Door, DungeonRef::SpireTower, 0u, 0.0f, 0.0f,
+                  InteractId::Door, DungeonRef::SpireTower, false, 0u, 0.0f, 0.0f,
                   kWalkTileTransparent},
     // SpireOrb: the spell on the crown — a waist-high plinth (solid: you walk
     // around a shrine, not through it) burning the spire's cold blue, the
@@ -626,7 +643,7 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     { Structure::SpireOrb, "",     0.8f, 1.6f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::SpireOrb,
-                  InteractId::Learn, DungeonRef::None, 0xA86CFFu, 24.0f, 1.4f,
+                  InteractId::Learn, DungeonRef::None, false, 0xA86CFFu, 24.0f, 1.4f,
                   kWalkTileTransparent},
     // Kerb: the parapet rail along a bridge's roadway — its own KIND, not a
     // thin Bridge, because a bridge is what carries you and a kerb is what
@@ -638,8 +655,30 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
     { Structure::Kerb, "",     0.2f, 0.3f,  0.0f, true,  "",
                   StructureKindRow::Draw::Solid,
                   StructureKindRow::Material::Stone,
-                  InteractId::None, DungeonRef::None, 0u, 0.0f, 0.0f,
+                  InteractId::None, DungeonRef::None, false, 0u, 0.0f, 0.0f,
                   std::uint8_t(TILE_ROAD)},
+    // Ladder: the UPWARD end of a shaft. Thin enough to read as two stiles
+    // (0.7 tiles — a body's shoulders, not a wall), and its height is not a
+    // floor at all but the storey it climbs: the module states the run so the
+    // top rung meets the ceiling it opens (stamp_dungeon_shaft). Not solid —
+    // you stand at its foot and press E, exactly as you did on the old plate;
+    // what changed is that the eye can now see where the shaft GOES.
+    { Structure::Ladder, "",     0.35f, 4.0f,  0.0f, false, "",
+                  StructureKindRow::Draw::Solid,
+                  StructureKindRow::Material::Ladder,
+                  InteractId::Stairs, DungeonRef::None, false, 0u, 0.0f, 0.0f,
+                  kWalkTileTransparent},
+    // SpireHatch: the crown's way back in — the same lid the top storey looks
+    // up at, from the other side. A DOOR verb (it opens an interior from the
+    // open air, like the gate at the foot) whose `opensTop` column lands you
+    // on the storey you climbed from, because a crown is reached by climbing
+    // and a door that undid the climb would be a lie. Sized and drawn as the
+    // hatch it is, so the two ends of one opening look like one opening.
+    { Structure::SpireHatch, "",     1.5f, 0.5f,  0.0f, false, "",
+                  StructureKindRow::Draw::Solid,
+                  StructureKindRow::Material::Hatch,
+                  InteractId::Door, DungeonRef::SpireTower, true, 0u, 0.0f, 0.0f,
+                  kWalkTileTransparent},
 };
 static_assert(rows_in_enum_order(kStructureKindRows, &StructureKindRow::kind),
               "kStructureKindRows row order must mirror Structure::Kind");
@@ -679,6 +718,10 @@ inline constexpr InteractId structure_interact(Structure::Kind k) {
 // Which interior a Door-verb prop opens (DungeonRef::None for every other).
 inline constexpr DungeonRef::Kind structure_opens(Structure::Kind k) {
     return structure_kind_row(k).opens;
+}
+// ...and whether it opens at that interior's TOP storey instead of its ground.
+inline constexpr bool structure_opens_top(Structure::Kind k) {
+    return structure_kind_row(k).opensTop;
 }
 inline constexpr bool structure_is_lit(Structure::Kind k) {
     return structure_kind_row(k).lightRadiusTiles > 0.0f;

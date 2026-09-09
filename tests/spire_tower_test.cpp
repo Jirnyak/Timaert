@@ -10,15 +10,18 @@
 //      (dungeon_spire_tower_room), sealed rock outside it.
 //   3. Storey furniture follows the ladder rule for every tier × level:
 //      up-shaft pad iff a storey above exists, down-shaft pad iff one below,
-//      ground gate iff level 0, roof hatch iff top storey — each pad paved,
-//      walkable, and carrying its prop (Stairs tag up/down, SpireGate tag =
-//      ordinal).
+//      ground gate iff level 0, roof climb iff top storey — each pad paved,
+//      walkable, and carrying the SHAFT PAIR its direction calls for: a
+//      ladder running the storey's height plus an opening flush with the
+//      ceiling going up, one lid at your feet going down (tag 1 / 0). No door
+//      leaf stands on the roof pad; the only SpireGate is the one at the foot.
 //   4. Connectivity — flood fill from a pad reaches every walkable tile.
 //   5. The perimeter is sealed by GEOMETRY: ring samples one wall
 //      half-thickness outside the hall lie inside a ground-level solid; the
 //      NEGATIVE CONTROL removes one ring segment and the same detector must
 //      see the hole.
-//   6. Exactly one lifted structure (the ceiling), seated on the wall crowns.
+//   6. Exactly one lifted piece of MASONRY (the ceiling), seated on the wall
+//      crowns — the openings cut in it are joinery and are checked in 3.
 //   7. Shaft arrival mapping — a tower's up-shaft tops out on the target
 //      storey's DOWN pad (and vice versa), and that pad exists there.
 //   8. The floors clamp holds for foreign ordinals (0 ⇒ 1, 99 ⇒ 5).
@@ -178,28 +181,45 @@ void test_every_storey_of_every_tier() {
             dungeon_stair_point(ctx.dungeon, true, ux, uy);
             dungeon_stair_point(ctx.dungeon, false, dxp, dyp);
             dungeon_roof_hatch_point(ctx.dungeon, hx, hy);
-            const Structure* up = find_prop(map, Structure::Stairs, ux, uy);
+            // A shaft is a PAIR of props (stamp_dungeon_shaft): climbing is a
+            // ladder plus the opening it reaches, descending is one lid.
+            const float wallH = structure_min_height(Structure::Wall);
+            const Structure* up = find_prop(map, Structure::Ladder, ux, uy);
+            const Structure* upLid = find_prop(map, Structure::Hatch, ux, uy);
             const Structure* down =
-                find_prop(map, Structure::Stairs, dxp, dyp);
-            const Structure* hatch =
-                find_prop(map, Structure::SpireGate, hx, hy);
+                find_prop(map, Structure::Hatch, dxp, dyp);
+            const Structure* roof = find_prop(map, Structure::Ladder, hx, hy);
             CHECK((up != nullptr) == wantUp,
                   "an up shaft stands iff a storey above exists");
             CHECK((down != nullptr) == wantDown,
                   "a down shaft stands iff a storey below exists");
-            CHECK((hatch != nullptr) == wantHatch,
-                  "the roof hatch stands only on the top storey");
+            CHECK((roof != nullptr) == wantHatch,
+                  "the roof climb stands only on the top storey");
             if (up) {
                 CHECK(up->tag == 1, "the W shaft climbs");
+                CHECK(up->height == wallH,
+                      "the ladder's run is the storey it climbs");
+                CHECK(upLid != nullptr && upLid->tag == 1,
+                      "a climb ends in an opening, not in a ceiling");
+                CHECK(upLid != nullptr && upLid->zBase > 0.0f
+                          && upLid->zBase + upLid->height == wallH,
+                      "the opening is flush with the ceiling it is cut in");
                 assert_pad(map, ux, uy, "the up pad's 3x3 is walkable");
             }
             if (down) {
                 CHECK(down->tag == 0, "the E shaft descends");
+                CHECK(down->zBase == 0.0f, "a lid you open lies at your feet");
                 assert_pad(map, dxp, dyp, "the down pad's 3x3 is walkable");
             }
             if (wantHatch) {
+                CHECK(find_prop(map, Structure::Hatch, hx, hy) != nullptr,
+                      "the roof climb reaches an opening like any other");
                 assert_pad(map, hx, hy, "the hatch pad's 3x3 is walkable");
             }
+            // The door leaf that used to stand on the roof pad is gone: the
+            // only SpireGate a tower owns is the one at its foot.
+            CHECK(find_prop(map, Structure::SpireGate, hx, hy) == nullptr,
+                  "no door leaf stands in the middle of the top storey");
             float ex = 0, ey = 0;
             dungeon_entry_point(ctx.dungeon, ex, ey);
             const Structure* gate =
@@ -233,10 +253,12 @@ void test_every_storey_of_every_tier() {
             CHECK(samples > 0 && uncovered == 0,
                   "the masonry ring is sealed by geometry");
 
-            // 6. Exactly one lifted solid: the ceiling on the wall crowns.
+            // 6. Exactly one lifted MASONRY solid: the ceiling on the wall
+            // crowns. (Openings cut in it are lifted too — asserted above,
+            // flush with the slab — and they are joinery, not structure.)
             int lifted = 0;
             for (const Structure& s : map.structures) {
-                if (s.zBase <= 0.0f) continue;
+                if (s.zBase <= 0.0f || s.kind != Structure::Wall) continue;
                 ++lifted;
                 CHECK(s.zBase == structure_min_height(Structure::Wall),
                       "the ceiling sits exactly on the wall crowns");
@@ -306,8 +328,8 @@ void test_shaft_arrival_lands_on_the_partner_pad() {
           "an up shaft tops out on the target storey's down pad");
     SubworldMapData map;
     generate(above, map);
-    CHECK(find_prop(map, Structure::Stairs, ax, ay) != nullptr,
-          "the arrival pad exists and carries its stair");
+    CHECK(find_prop(map, Structure::Hatch, ax, ay) != nullptr,
+          "the arrival pad exists and carries the lid you came up through");
     // And descending 1→0 lands on storey 0's UP pad.
     float bx = 0, by = 0;
     dungeon_shaft_arrival_point(below.dungeon, /*wentUp*/false, bx, by);

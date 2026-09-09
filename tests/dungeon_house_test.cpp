@@ -335,13 +335,15 @@ void test_sealed_box() {
     CHECK(cov.samples > 0 && cov.uncovered == 0,
           "every ring sample around the room lies inside a solid wall");
 
-    // Exactly one lifted structure: the ceiling slab on the wall crowns.
-    // (Partitions and furniture are grounded — zBase 0 — so the lid stays
-    // the only lifted body no matter the seed.)
+    // Exactly one lifted piece of MASONRY: the ceiling slab on the wall
+    // crowns. (Partitions and furniture are grounded — zBase 0 — so the lid
+    // stays the only lifted wall no matter the seed. The opening a climbing
+    // shaft cuts in the slab is lifted too, and is joinery, not structure:
+    // the shaft law asserts it flush with the ceiling in its own test.)
     int lifted = 0;
     Structure lid{};
     for (const Structure& s : out.structures) {
-        if (s.zBase > 0.0f) {
+        if (s.zBase > 0.0f && s.kind == Structure::Wall) {
             ++lifted;
             lid = s;
         }

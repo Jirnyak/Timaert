@@ -191,8 +191,19 @@ void test_table_consistency() {
     // The two payload contracts the generators stamp and the engine reads.
     CHECK(structure_interact(Structure::Door) == InteractId::Door,
           "contract: a Door prop dispatches the Door interaction");
-    CHECK(structure_interact(Structure::Stairs) == InteractId::Stairs,
-          "contract: a Stairs prop dispatches the Stairs interaction");
+    // Both ends of a shaft take the same verb: a lid you open at your feet
+    // and a ladder you climb are one interaction wearing two shapes.
+    CHECK(structure_interact(Structure::Hatch) == InteractId::Stairs,
+          "contract: a Hatch prop dispatches the shaft interaction");
+    CHECK(structure_interact(Structure::Ladder) == InteractId::Stairs,
+          "contract: a Ladder prop dispatches the same shaft interaction");
+    // The crown's hatch is a DOOR into the tower, and it opens the far END of
+    // the climb — the one prop in the game whose opensTop column is set.
+    CHECK(structure_opens(Structure::SpireHatch) == DungeonRef::SpireTower
+              && structure_opens_top(Structure::SpireHatch),
+          "contract: the crown hatch opens the tower at its top storey");
+    CHECK(!structure_opens_top(Structure::SpireGate),
+          "contract: the gate at the foot opens the ground floor");
     // A door hangs flush on a wall that already blocks: solid, it would be a
     // door you bump into instead of opening.
     CHECK(!structure_is_solid(Structure::Door),
@@ -302,9 +313,13 @@ void test_interior_props() {
     dungeon_stair_point(ctx.dungeon, /*up*/true,  upX, upY);
     dungeon_stair_point(ctx.dungeon, /*up*/false, dnX, dnY);
 
+    // A climb is a ladder plus the opening it reaches, so the UP shaft is
+    // counted by its ladder — the lid above it rides the same point and the
+    // same tag, and is asserted flush with the ceiling by the tower's test.
     int upStairs = 0, downStairs = 0, offShaft = 0, stairsSeen = 0;
     for (const Structure& s : out.structures) {
-        if (s.kind != Structure::Stairs) continue;
+        if (s.kind == Structure::Hatch && s.zBase > 0.0f) continue;
+        if (s.kind != Structure::Hatch && s.kind != Structure::Ladder) continue;
         ++stairsSeen;
         if (s.tag == 1) {
             ++upStairs;

@@ -19,19 +19,47 @@ std::uint32_t dungeon_scene_seed(std::uint32_t worldSeed, int cx, int cy,
 // Shared between the OPEN-AIR generator (gens/dispatch gen_spire stamps the
 // cylinder) and the dungeon session (the roof exit stands the player at the
 // crown) — one authority or the roof and the tower disagree by metres.
-// 96 m = 24 courses of the 4 m wall module (structure_min_height(Wall)):
+// 128 m = 32 courses of the 4 m wall module (structure_min_height(Wall)):
 // tall enough to crest the treeline (~30 m species tops) from anywhere in
 // the 3×3 window — a spire the player cannot see is not a landmark.
-inline constexpr float kSpireTowerHeightM = 96.0f;
-// 7-tile exterior radius (14-tile diameter): wide enough that the ×4
-// interior scale below yields a hall a battle fits in, narrow enough to
-// read as a spire, not a keep.
-inline constexpr float kSpireTowerRadiusTiles = 7.0f;
+inline constexpr float kSpireTowerHeightM = 128.0f;
+// 12-tile exterior radius (24-tile crown). The floor is what the CROWN must
+// seat, because the crown is a place a body stands: a parapet one wall module
+// deep on the rim (1.2 tiles), the orb's plinth at the axis, and the hatch
+// between them at half radius — 6 tiles of clear walking either side of it.
+// A 7-tile crown seated none of that, which is why standing on it meant
+// falling off it (owner, 2026-09-09). The aspect stays a spire's: 128 / 24 is
+// still five and a half times as tall as it is wide.
+inline constexpr float kSpireTowerRadiusTiles = 12.0f;
 // WHERE in its cell the tower stands (cell-local tile coord of the axis,
 // same on both axes): gen_spire stamps it at the cell's midpoint. Placement
 // is the generator module's policy (CANON S17) — the engine (roof exit,
 // power-circle zone) reads this instead of re-deriving it.
 inline constexpr float kSpireTowerLocalCenter = float(kCellSize / 2);
+
+// ── The crown ───────────────────────────────────────────────────────────────
+// The tower top is a PLACE, not a lid: the orb at the axis, a parapet on the
+// rim, and a hatch between them — the way back in. The open-air generator
+// stamps all three (gens/dispatch gen_spire); the dungeon session reads the
+// hatch point to stand the body coming out of it, so the two ends of one
+// doorway can never disagree about where it is.
+//
+// Chest-high rail (above kStepUpM = 0.9 m, sub/collide.h — a body steps over
+// a kerb and cannot step over this). It is the whole answer to a 128 m drop:
+// leaving the crown is a decision, not an accident.
+inline constexpr float kSpireCrownParapetHeightM = 1.2f;
+// The hatch's seat on the crown: NORTH of the axis at half the radius — clear
+// of the orb's plinth at the centre and clear of the rail on the rim, so a
+// body materialising on it touches neither.
+void spire_crown_hatch_point(float& x, float& y);
+
+// ── The manoeuvre floor ─────────────────────────────────────────────────────
+// The span an interior room needs to be a room you FIGHT in rather than a
+// corridor you clinch in: melee reach (kPlayerMeleeRange = 5 tiles) on both
+// sides of a doorway, with furniture clearance to spare. Shared, because it
+// is one quantity: the house splits its hall while both halves keep it, and
+// the tower's hall is guarded against it below.
+inline constexpr float kInteriorFightSpanTiles = 12.0f;
 
 // ── Storeys ─────────────────────────────────────────────────────────────────
 // A house is up to three levels: cellar (-1) ↔ ground (0) ↔ upper (+1),
@@ -61,6 +89,18 @@ void dungeon_shaft_arrival_point(const DungeonRef& ref, bool wentUp,
 // crown (the open-air scene, standing on the cylinder). Shared by the
 // module (stamps the prop) and the engine (reach check + exit placement).
 void dungeon_roof_hatch_point(const DungeonRef& ref, float& x, float& y);
+
+// ── A shaft, as the eye reads it ────────────────────────────────────────────
+// A shaft is a PAIR of props, not one block: climbing, you see a ladder rising
+// to a dark hatch in the ceiling; descending, you see the hatch in the floor at
+// your feet. One knee-high block served both directions until 2026-09-09 and
+// read as a floor hatch in both, so "up" was a trapdoor underfoot leading
+// nowhere the eye could follow (owner: «лестницы наверх выглядят как люки»).
+// Every storey stamps its OWN end of a shaft, which is what keeps the pair
+// agreeing: the hatch you climb to from below is the hatch you stand on above.
+// `ceilingM` is where this storey's lid begins — the ladder's full run.
+void stamp_dungeon_shaft(SubworldMapData& out, bool up, float x, float y,
+                         float ceilingM);
 
 // The tile an interior's WALKABLE ground is paved with. Placement code (the
 // resident and vermin spawners) reads the composite's tiles, so the module
@@ -149,6 +189,19 @@ DungeonRoom dungeon_cave_room(const DungeonRef& ref);
 // One round hall per storey; the "room" is the hall's bounding square.
 void gen_dungeon_spire_tower(const CellContext& ctx, SubworldMapData& out);
 DungeonRoom dungeon_spire_tower_room(const DungeonRef& ref);
+// The hall's radius in tiles, STATED — not derived from the exterior.
+//
+// It used to be the exterior radius × 4, the house's law copied verbatim. It
+// never belonged here. A house's facade VARIES, so its interior must be a
+// multiple to guarantee the smallest one still seats a fight; every spire
+// raises the same tower, so multiplying one constant by another only hid the
+// fight floor inside a product — and balance living in a product of two knobs
+// drifts silently, so widening the silhouette would have quietly rebuilt the
+// battlefield. Two questions, two numbers. This one answers "how much room is
+// a storey worth", and the guard below is the only thing it owes anyone.
+inline constexpr float kSpireTowerHallRadiusTiles = 48.0f;
+static_assert(kSpireTowerHallRadiusTiles >= kInteriorFightSpanTiles,
+              "a tower storey must seat a fight, not a clinch");
 // Storey count of the tower (= clamped ordinal = the spell's tier).
 int dungeon_spire_tower_floors(const DungeonRef& ref);
 

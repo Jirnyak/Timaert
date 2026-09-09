@@ -3071,6 +3071,7 @@ bool run_spire_climb_smoke(App& app) {
     // The hatch: stand on its pad, look at it, press E — out onto the crown.
     bool onRoof = false;
     float roofZ = 0.0f;
+    float exitX = 0.0f, exitY = 0.0f;
     if (inTower && !climbStuck) {
         app.subworld.dev_kill_all_hostiles();
         app.subworld.tick(0.016f);
@@ -3090,6 +3091,8 @@ bool run_spire_climb_smoke(App& app) {
         app.subworld.tick(0.016f);
         onRoof = app.subworld.active() && !app.subworld.in_dungeon();
         roofZ = app.subworld.player_z();
+        exitX = app.subworld.player_x();
+        exitY = app.subworld.player_y();
     }
 
     if (stay && std::strcmp(stay, "roof") == 0) {
@@ -3138,6 +3141,25 @@ bool run_spire_climb_smoke(App& app) {
             }
         }
     }
+    // The way back: the crown's hatch, walked the player's way. A crown you
+    // can only leave by falling 128 m is not a place, it is a trap — before
+    // 2026-09-09 there was no prop up here at all.
+    bool backInside = false;
+    int backLevel = -1;
+    if (onRoof) {
+        float chx = 0.0f, chy = 0.0f;
+        sm::sub::spire_crown_hatch_point(chx, chy);
+        const float wx = float(sm::sub::kCellSize) + chx;
+        const float wy = float(sm::sub::kCellSize) + chy;
+        app.subworld.set_player_pos(wx, wy + 2.0f);
+        app.subworld.rotate_camera(
+            std::atan2(-2.0f, 0.0f) - app.subworld.cam_yaw(), 0.0f);
+        app.subworld.interact();
+        app.subworld.tick(0.016f);
+        backInside = app.subworld.in_dungeon();
+        backLevel = backInside ? app.subworld.dungeon_level() : -1;
+    }
+
     restore();
 
     // THE MICRO→MACRO DOOR, proved end to end (CANON S20.1): a deed done
@@ -3152,16 +3174,26 @@ bool run_spire_climb_smoke(App& app) {
                                  ++*static_cast<int*>(u);
                          }, &remembered);
 
+    // Where the crown put him: the distance from the tower's AXIS, which is
+    // where the orb's plinth stands. Zero means he came up inside the shrine.
+    const float axis = float(sm::sub::kCellSize)
+                     + sm::sub::kSpireTowerLocalCenter;
+    const float exitR = onRoof
+        ? std::sqrt((exitX - axis) * (exitX - axis)
+                    + (exitY - axis) * (exitY - axis))
+        : 0.0f;
+
     std::fprintf(stderr,
                  "[smoke] spire_climb spell=%s tier=%d gateTier=%d entered=%d "
                  "inTower=%d climbs=%d top=%d yard=%d guards=%d stuck=%d "
-                 "onRoof=%d dz=%.1f learned=%d depleted=%d orbsAfter=%d "
-                 "logged=%d remembered=%d\n",
+                 "onRoof=%d dz=%.1f exitR=%.1f back=%d backLvl=%d learned=%d "
+                 "depleted=%d orbsAfter=%d logged=%d remembered=%d\n",
                  def.id, tier, gateTier, entered ? 1 : 0,
                  inTower ? 1 : 0,
                  climbs, topLevel, yardGuards, guardsSeen,
                  climbStuck ? 1 : 0,
-                 onRoof ? 1 : 0, roofZ - groundZ, learned ? 1 : 0,
+                 onRoof ? 1 : 0, roofZ - groundZ, exitR,
+                 backInside ? 1 : 0, backLevel, learned ? 1 : 0,
                  depletedFlag ? 1 : 0, orbsAfter, logged ? 1 : 0, remembered);
     std::fflush(stderr);
 
@@ -3170,6 +3202,13 @@ bool run_spire_climb_smoke(App& app) {
         // The crown stands a tower height over the ground the player entered
         // on (the flattened plateau): most of that height must be under him.
         || roofZ - groundZ < sm::sub::kSpireTowerHeightM * 0.8f
+        // He comes up ON THE HATCH, clear of the orb's plinth — not inside it,
+        // eye in the burning head, shoved off the middle of the drop by the
+        // collision pass (owner, 2026-09-09).
+        || exitR <= sm::sub::structure_min_half_xy(sm::sub::Structure::SpireOrb)
+        // ...and the crown's own hatch takes him back to the storey he
+        // climbed from, not to the foot of the whole climb.
+        || !backInside || backLevel != tier - 1
         // The garrison is ONE headcount: the yard's roamers and the storey
         // guards borrow from the same FaunaCount, so between them a fresh
         // spire must have fielded somebody.

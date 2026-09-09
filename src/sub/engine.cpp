@@ -3124,6 +3124,16 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
     ses.ref.kind = std::uint8_t(opens);
     ses.ref.level = 0;
     ses.ref.ordinal = ordinal;
+    // WHICH END of the interior this door opens is the prop's own column, not
+    // a literal here: a street leaf opens the ground floor, a tower's crown
+    // hatch opens the storey you climbed to. The top storey is the kind's
+    // business (a tower's is its tier), so it is asked of the same floors
+    // rule the module stamps its pads by.
+    const bool opensTop = structure_opens_top(door.kind);
+    if (opensTop && opens == DungeonRef::SpireTower) {
+        ses.ref.level =
+            std::int8_t(dungeon_spire_tower_floors(ses.ref) - 1);
+    }
     ses.ref.footHx = structure_half_x(*shape);
     ses.ref.footHy = structure_half_y(*shape);
     ses.doorCx = doorCx;
@@ -3137,7 +3147,10 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
     ses.settlementId = doorCtx.landmark.id;   // ONE landmark id space (v54)
     ses.landmarkPop = doorCtx.landmark.size;
     ses.faction = faction_index_for_kingdom(gs_->politik, doorCtx.landmark.kingdomIdx);
-    ses.arrival = DungeonArrival::Door;   // in off the street
+    // In off the street — or down through the crown, which lands on the roof
+    // pad instead of the south threshold (a storey above the ground has no
+    // threshold to land on at all).
+    ses.arrival = opensTop ? DungeonArrival::Roof : DungeonArrival::Door;
 
     // Tear the overworld session down through the one ordinary door: leave()
     // runs the danger gate and every write-back — and RESETS the envelope, so
@@ -3264,6 +3277,11 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
             break;
         case DungeonArrival::ShaftDown:
             dungeon_shaft_arrival_point(ses.ref, /*wentUp*/false, ex, ey);
+            break;
+        case DungeonArrival::Roof:
+            // In through the crown: the roof pad, the top of the ladder the
+            // climb would have used — the same point its hatch is stamped on.
+            dungeon_roof_hatch_point(ses.ref, ex, ey);
             break;
         case DungeonArrival::Door:
         default:
@@ -3577,9 +3595,22 @@ bool SubworldEngine::try_take_dungeon_stairs() {
                               : (level == 0 && hasUpper) || level == 1;
     const bool padNE = ladder ? level > 0
                               : (level == 0 && hasCellar) || level == -1;
+    const float reach2 = kPlayerMeleeRange * kPlayerMeleeRange;
+    // The top storey's climb leaves the tower: a hatched kind's roof pad is
+    // the last rung of the same ladder, and what it opens on is the crown
+    // instead of another hall. One prop family, one verb, one law — the scene
+    // it hands you to is the whole of the difference. It is asked BEFORE the
+    // shaft pads, because a one-storey tower has neither and its roof is the
+    // only climb it owns.
+    if (dungeon_kind_row(ref.kind).roofHatch && !hasUpper) {
+        float rx = 0.0f, ry = 0.0f;
+        dungeon_roof_hatch_point(ref, rx, ry);
+        const float rdx = playerX_ - (float(kCellSize) + rx);
+        const float rdy = playerY_ - (float(kCellSize) + ry);
+        if (rdx * rdx + rdy * rdy <= reach2) return try_exit_dungeon();
+    }
     if (!padNW && !padNE) return false;
 
-    const float reach2 = kPlayerMeleeRange * kPlayerMeleeRange;
     auto on_pad = [&](bool up, float& ox, float& oy) {
         float sx = 0.0f, sy = 0.0f;
         dungeon_stair_point(ref, up, sx, sy);
@@ -3744,19 +3775,34 @@ bool SubworldEngine::try_exit_dungeon() {
     gs.player.entryDir = kEntryDirNone;
     gs.player.entryTicks = 0;
     gs.player.entryTickAccum = 0;
-    // The tower stands where its generator says it does (dgn/dispatch.h
-    // kSpireTowerLocalCenter), and the re-entered window is centred on its cell.
-    const float crown = float(kCellSize) + kSpireTowerLocalCenter;
+    // Out through the crown: you come up ON THE HATCH you climbed to, not on
+    // the tower's axis — the axis is where the orb's plinth stands, and a body
+    // put there materialised INSIDE the shrine, its eye in the burning head
+    // and the collision pass shoving it off the middle of a 128 m drop (owner,
+    // 2026-09-09: «спавнится как будто под чем-то, не в центре шпиля»). The
+    // hatch's own point is the shared one the generator stamped it on
+    // (dgn/dispatch.h), and the re-entered window is centred on the cell.
+    float crownX = 0.0f, crownY = 0.0f;
+    spire_crown_hatch_point(crownX, crownY);
     const float pos[2] = {
-        roofExit ? crown : float(kCellSize) + ses.returnLocalX,
-        roofExit ? crown : float(kCellSize) + ses.returnLocalY};
+        float(kCellSize) + (roofExit ? crownX : ses.returnLocalX),
+        float(kCellSize) + (roofExit ? crownY : ses.returnLocalY)};
     enter(mwCopy, bus, pos);
     if (roofExit && active_) {
-        // enter() seated the player on the terrain sample; lift to the crown
-        // (structure top = seat + height, the one geometry contract). The
-        // next vertical_step finds the cylinder top as support and stands.
-        playerZ_ = renderer3dVk_.sample_height_m(playerX_, playerY_)
-                 + kSpireTowerHeightM;
+        // enter() seated the player on the terrain 128 m below — and it has
+        // already indexed the scene's solids, so ASK what is up here instead
+        // of keeping a second copy of "seat plus tower height" to drift from
+        // the crown the generator actually stated. The probe stands a wall
+        // course above the expected crown and allows a course of tolerance:
+        // the tower is built of 4 m courses and nothing else on the cell can
+        // be within one of its top. If the index answers nothing, the
+        // expected crown stands — the same number as before.
+        const float course = structure_min_height(Structure::Wall);
+        const float expected = renderer3dVk_.sample_height_m(playerX_, playerY_)
+                             + kSpireTowerHeightM;
+        const float support = structIndex_.support_at(
+            playerX_, playerY_, kPlayerBodyRadius, expected + course, course);
+        playerZ_ = support > expected - course ? support : expected;
         playerVz_ = 0.0f;
         playerGrounded_ = true;
         if (ecs_) {

@@ -166,18 +166,37 @@ only: a dungeon is never saved, so a load lands in the world with the map
 opening normally. The smoke harness skips the prologue at
 boot exactly as it skips the intro (the boot door's smoke branch).
 
-**`spire_tower.cpp` climbs.** One round hall per storey (the exterior 7-tile
-cylinder at the shared ×4 interior scale), a masonry ring of oriented chords,
-storeys 0..tier−1 where `ordinal` IS the spire spell's tier — every spire
-raises the same tower, only its height varies, so unlike a house the module
-ignores the door's footprint. The shafts form a LADDER: the W pad always
-climbs, the E pad always descends (an up-shaft tops out on the next storey's
-DOWN pad — `dungeon_shaft_arrival_point` is the one dispatch that keeps the
-engine's placement and the module's pads agreeing). The top storey has a
-second way out: the roof HATCH, which ends the session on the tower's CROWN
-in the open-air scene (`playerZ = seat + kSpireTowerHeightM`; the honest
-support physics stands the body on the cylinder), where the orb waits
+**`spire_tower.cpp` climbs.** One round hall per storey, a masonry ring of
+oriented chords, storeys 0..tier−1 where `ordinal` IS the spire spell's tier —
+every spire raises the same tower, only its height varies, so unlike a house
+the module ignores the door's footprint. The shafts form a LADDER: the W pad
+always climbs, the E pad always descends (an up-shaft tops out on the next
+storey's DOWN pad — `dungeon_shaft_arrival_point` is the one dispatch that
+keeps the engine's placement and the module's pads agreeing). The top storey's
+climb leaves the tower: its roof pad is the last rung, and it ends the session
+on the CROWN in the open-air scene, where the orb waits
 ([spells.md](spells.md) §Learning).
+
+The hall's radius is its **own** number (`kSpireTowerHallRadiusTiles`), not the
+exterior radius times a scale. The house multiplies because a facade VARIES and
+the smallest one must still seat a fight; a tower has one facade, so a product
+of two constants only hid the fight floor inside the silhouette — widening the
+spire would have silently rebuilt the battlefield. Both numbers are guarded
+against `kInteriorFightSpanTiles`, the one manoeuvre floor the house splits its
+rooms by.
+
+**The crown is a place, not a lid.** The open-air generator levels the tower's
+footprint to its own mean (the house's cut-vs-fill law) and states ONE absolute
+height for everything standing up there — cylinder, parapet, hatch, orb, all
+`zWorld` ([map_data.h](src/sub/map_data.h) `zWorld`, the bridge's rule): a
+height sampled per structure wobbles by the gap between the generator's exact
+tile heights and the renderer's 16-tile mesh, and a parapet that wobbles has
+gaps in it. The rail is chest-high — above `kStepUpM`, so leaving the crown is
+a decision and not an accident — and the hatch beside the orb is the way back
+in, landing you on the storey you climbed from (`opensTop`). Before 2026-09-09
+there was no rail and no hatch, the crown was 14 m across, and the roof exit
+put the body on the tower's AXIS, which is where the orb's plinth stands: you
+came up inside the shrine and were shoved off the middle of a 96 m drop.
 
 ## 4. Props and the one interaction
 
@@ -195,6 +214,7 @@ composite array. Everything the engine wants to know about a kind is a
 | `material` | how it looks (`shaders/struct.frag` has one branch per row) |
 | `interact` | what pressing E on it does |
 | `opens` | for a Door verb: WHICH interior it raises |
+| `opensTop` | ...and WHICH END of it — a street leaf opens the ground floor, a tower's crown hatch the storey you climbed to |
 | `lightRgb`, `lightRadiusTiles`, `lightHeightM` | the light it casts |
 
 Per-*instance* payload rides `Structure::tag`: a door carries the ordinal of
@@ -222,12 +242,26 @@ The HUD prompt under the crosshair runs the **identical** resolution, so it can
 never offer a verb the keypress will not perform, and it quotes the live
 binding.
 
+### A shaft is a pair of props
+
+One verb, two shapes, and the shape says which way it goes. Climbing, you see a
+**ladder** running the storey's full height to a dark opening flush with the
+ceiling; descending, you see the **hatch** at your feet. `stamp_dungeon_shaft`
+(dgn/dispatch) stamps both ends, so the house and the tower cannot drift apart,
+and the opening you climb to from below is the lid somebody upstairs stands on.
+
+Until 2026-09-09 both directions were ONE knee-high plate in the generic timber
+of a bed or a deck: "up" was a trapdoor underfoot leading nowhere the eye could
+follow (owner: «лестницы наверх выглядят как люки»). The verb's prompt is
+"Climb", not "Take stairs" — there has never been a flight of steps in the game
+for the older word to name.
+
 ### The verbs
 
 | Verb | Prop | What it does | Whose law it borrows |
 |------|------|--------------|----------------------|
 | `Door` | house leaf, cave mouth | raises the interior its row declares | the dungeon session |
-| `Stairs` | shaft block | same identity, one storey along | the dungeon session |
+| `Stairs` | ladder (up) / hatch (down) | same identity, one storey along — or, from a tower's roof pad, out onto the crown | the dungeon session |
 | `Loot` | corpse | the kill's own drop | the one loot registry |
 | `Search` | chest | a stack of the owning landmark's store, at a price in standing | `Landmark::inventory` + `add_player_reputation` |
 | `Drink` | well | an hour of rest, standing | `kSpRegenPctPerHour` |
@@ -331,10 +365,10 @@ to unified combat).
 |-------|----------------|
 | `dungeon_house_test` | room geometry, connectivity per seed/footprint with a severed-row control, pad safety, partitions, furniture, ceiling, Void filler |
 | `dungeon_cave_test` | flood-fill reachability with a walled-ring control, floor/wall distinguishable by tile, apron, prop set + no two grounded solids inside one another, footprint drives the chamber, no storeys, determinism |
-| `spire_tower_test` | round hall inside the room circle for every tier × storey, the shaft-ladder rule (pads, tags, hatch, gate), connectivity, sealed masonry ring with a removed-chord control, one cylinder ceiling on the wall crowns, shaft-arrival mapping, floors clamp, severed-hall control |
+| `spire_tower_test` | round hall inside the room circle for every tier × storey, the shaft-ladder rule (pads, tags, and the PAIR each direction stamps — ladder + ceiling opening up, one lid down), connectivity, sealed masonry ring with a removed-chord control, one cylinder ceiling on the wall crowns, shaft-arrival mapping, floors clamp, severed-hall control |
 | `prop_interaction_test` | table consistency, door-per-house with a gapless ordinal set, interior door/stair geometry, snapshot round trip whose control strips a kind from *both* sides |
 | smoke `dungeon_house` | enter through the aimed door, land on floor, household + population write-back, storeys, cellar vermin + fauna write-back, chest moves goods and costs standing, well and board, the leave key REFUSES inside, tile-hash determinism |
 | smoke `dungeon_cave` | hunts a real mouth in the world, enters, hoard present, no stairs, the leave key refuses hunted AND clear, the walked exit through the mouth door lets go |
 | `dungeon_prologue_test` | 3×3 block continuity (every variant seam — including across the wrap — no rougher than the interior, the bed continues down the road column), full-width bed in every road-cell row and NONE in forest cells, entry pad on the bed, no walls/lid, forest in force in every variant with distinct woods, kind-row columns, determinism |
 | smoke `prologue_road` | drives `begin_scene` on the authored `prologue_scene()` row itself (the shipping door, not a copy): the ambush waits SEVEN strong beyond the generic detection radius, carries its OWN row's HP, and CLOSES the gap once the world runs (~267 → ~120 units in four seconds — the 1000 m eye proven as behaviour, not read off a table), leave key refuses, no exit point, a mid-cell bandit survives a wrap crossing, three crossings loop the block back to the same ground (async seam drained), the RESCUE (scalar death → Playing, healed, anchored on the boot spot) with the witch overlay actually OPEN, and the MAP LAW both ways on unexplored ground — frozen while held, revealed the moment her StoryResult lands. Both new laws were negative-controlled by hand: the raw-emit rescue fails `witchOpen`, an unheld map fails `mapHeld` |
-| smoke `spire_climb` | the whole spire loop live: yard fight (the danger law holds the gate while demons roam), gate, every storey's guard, roof hatch onto the crown (Δz = the tower height), orb → spell learned + spire depleted + orb gone + log entry; STAY hooks (`TIMAERT_SMOKE_SPIRE_STAY=ground\|hall\|roof`) for photo regressions |
+| smoke `spire_climb` | the whole spire loop live: yard fight (the danger law holds the gate while demons roam), gate, every storey's guard, roof climb onto the crown (Δz = the tower height), the exit landing CLEAR of the orb's plinth rather than inside it, orb → spell learned + spire depleted + orb gone + log entry, and the crown's hatch taking you back to the storey you climbed from; STAY hooks (`TIMAERT_SMOKE_SPIRE_STAY=ground\|hall\|roof`) for photo regressions |

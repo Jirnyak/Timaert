@@ -179,6 +179,46 @@ void dungeon_roof_hatch_point(const DungeonRef& ref, float& x, float& y) {
     y = room.cy - room.hy + 6.0f;
 }
 
+void spire_crown_hatch_point(float& x, float& y) {
+    // North of the axis at half the radius — the derivation is in the header:
+    // clear of the orb at the centre, clear of the parapet on the rim.
+    x = kSpireTowerLocalCenter;
+    y = kSpireTowerLocalCenter - kSpireTowerRadiusTiles * 0.5f;
+}
+
+void stamp_dungeon_shaft(SubworldMapData& out, bool up, float x, float y,
+                         float ceilingM) {
+    // Both ends of a shaft are square props on the pad's own axis; only the
+    // kind, the lift and the run differ. The direction rides `tag`, which is
+    // what the engine reads to know which way this end goes.
+    const std::uint16_t tag = up ? std::uint16_t(1) : std::uint16_t(0);
+    auto prop = [&](Structure::Kind kind, float zBase, float height) {
+        Structure s{};
+        s.kind = kind;
+        s.x = x;
+        s.y = y;
+        s.hx = structure_min_half_xy(kind);
+        s.hy = s.hx;
+        s.radius = s.hx;
+        s.zBase = zBase;
+        s.height = height > 0.0f ? height : structure_min_height(kind);
+        s.tag = tag;
+        out.structures.push_back(s);
+    };
+    if (!up) {
+        prop(Structure::Hatch, 0.0f, 0.0f);   // the lid at your feet
+        return;
+    }
+    // Climbing: the ladder runs the storey's full height, and the opening it
+    // climbs to is the same hatch leaf RECESSED into the slab — its top flush
+    // with the ceiling, so from below the eye sees a hole in the masonry and
+    // not a plank hanging under it. No thickness of its own: a lid you look up
+    // at is the lid somebody upstairs stands on.
+    prop(Structure::Ladder, 0.0f, ceilingM);
+    prop(Structure::Hatch, ceilingM - structure_min_height(Structure::Hatch),
+         0.0f);
+}
+
 void dispatch_generate_dungeon(const CellContext& ctx, SubworldMapData& out) {
     switch (ctx.dungeon.kind) {
         case DungeonRef::House:      gen_dungeon_house(ctx, out);       break;

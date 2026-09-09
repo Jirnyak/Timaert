@@ -15,17 +15,12 @@ namespace sm::sub {
 
 namespace {
 
-// The same M&M interior scale the house uses (owner ruling 2026-08-12:
-// inside is roomier than outside): the 7-tile exterior radius becomes a
-// 28-tile hall — a 56-tile round fight floor, wide enough that the guards'
-// separation ring and kPlayerMeleeRange (5) never collapse the fight into
-// the doorway.
-constexpr float kTowerInteriorScale = 4.0f;
 // The masonry ring is built of oriented Wall segments; enough of them that
-// the largest gap between chords stays under a body radius (1.5 tiles):
-// chord sag = R·(1−cos(π/N)) ≈ 0.17 tiles at N=24, R=28 — sealed by
-// geometry with margin, not by luck.
-constexpr int kWallSegments = 24;
+// the chord's sag stays well under the wall's own half-thickness (1.2 tiles),
+// so the ring is sealed by geometry rather than by luck, and enough that the
+// eye reads a circle rather than a polygon at arm's length: sag =
+// R·(1−cos(π/N)) ≈ 0.24 tiles at N=32, R=48.
+constexpr int kWallSegments = 32;
 // Ceiling slab over the hall, the house's own 1 m — an honest solid for
 // projectiles, and the visual floor of the storey above.
 constexpr float kCeilingSlabM = 1.0f;
@@ -47,9 +42,11 @@ DungeonRoom dungeon_spire_tower_room(const DungeonRef&) {
     DungeonRoom room;
     room.cx = float(kCellSize) / 2.0f;
     room.cy = float(kCellSize) / 2.0f;
-    const float r = kSpireTowerRadiusTiles * kTowerInteriorScale;
-    room.hx = r;
-    room.hy = r;
+    // The hall is its own number (dgn/dispatch.h), not the facade times a
+    // scale: every spire raises the same tower, so there is no varying input
+    // to derive from — only a fight floor to state.
+    room.hx = kSpireTowerHallRadiusTiles;
+    room.hy = kSpireTowerHallRadiusTiles;
     return room;
 }
 
@@ -142,51 +139,50 @@ void gen_dungeon_spire_tower(const CellContext& ctx, SubworldMapData& out) {
             }
         }
     };
-    auto place_prop = [&](Structure::Kind kind, float cx, float cy,
-                          std::uint16_t tag) {
-        Structure s{};
-        s.kind = kind;
-        s.x = cx;
-        s.y = cy;
-        s.hx = kind == Structure::SpireGate
-            ? 0.75f // a leaf 1.5 tiles across, like the street door
-            : structure_min_half_xy(kind);
-        s.hy = structure_min_half_xy(kind);
-        s.radius = std::max(s.hx, s.hy);
-        s.height = structure_min_height(kind);
-        s.tag = tag;
-        out.structures.push_back(s);
-    };
-
     // Ground floor: the way back out to the scorched ring, on the same
-    // south threshold rule every interior keeps (dungeon_entry_point).
+    // south threshold rule every interior keeps (dungeon_entry_point). The
+    // only prop this module places by hand — a leaf hanging on the inner face
+    // of the ring, 1.5 tiles across like the street door it mirrors.
     if (level == 0) {
         float px = 0.0f, py = 0.0f;
         dungeon_entry_point(ctx.dungeon, px, py);
         pave_pad(px, py);
-        place_prop(Structure::SpireGate, px,
-                   room.cy + r - structure_min_half_xy(Structure::SpireGate),
-                   ctx.dungeon.ordinal);
+        Structure gate{};
+        gate.kind = Structure::SpireGate;
+        gate.x = px;
+        gate.y = room.cy + r - structure_min_half_xy(Structure::SpireGate);
+        gate.hx = 0.75f;
+        gate.hy = structure_min_half_xy(Structure::SpireGate);
+        gate.radius = std::max(gate.hx, gate.hy);
+        gate.height = structure_min_height(Structure::SpireGate);
+        gate.tag = ctx.dungeon.ordinal;
+        out.structures.push_back(gate);
     }
-    // The ladder of shafts: W climbs, E descends (dungeon_stair_point).
+    // The ladder of shafts: W climbs, E descends (dungeon_stair_point). Each
+    // end is stamped by the shared shaft law — a ladder to a ceiling opening
+    // going up, a lid in the floor going down.
     if (level < floors - 1) {
         float ux = 0.0f, uy = 0.0f;
         dungeon_stair_point(ctx.dungeon, /*up*/true, ux, uy);
         pave_pad(ux, uy);
-        place_prop(Structure::Stairs, ux, uy, /*tag: up*/1);
+        stamp_dungeon_shaft(out, /*up*/true, ux, uy, wallH);
     }
     if (level > 0) {
         float dx = 0.0f, dy = 0.0f;
         dungeon_stair_point(ctx.dungeon, /*up*/false, dx, dy);
         pave_pad(dx, dy);
-        place_prop(Structure::Stairs, dx, dy, /*tag: down*/0);
+        stamp_dungeon_shaft(out, /*up*/false, dx, dy, wallH);
     }
-    // Top storey: the hatch onto the crown, where the orb waits.
+    // Top storey: the climb OUT, onto the crown where the orb waits. It is the
+    // last rung of the same ladder and looks like one — the opening it reaches
+    // is the crown's own hatch seen from underneath. A door leaf stood here
+    // once, which read as a wardrobe in the middle of a round room and told
+    // the eye nothing about the sky above it.
     if (level == floors - 1) {
         float hx = 0.0f, hy = 0.0f;
         dungeon_roof_hatch_point(ctx.dungeon, hx, hy);
         pave_pad(hx, hy);
-        place_prop(Structure::SpireGate, hx, hy, ctx.dungeon.ordinal);
+        stamp_dungeon_shaft(out, /*up*/true, hx, hy, wallH);
     }
 }
 

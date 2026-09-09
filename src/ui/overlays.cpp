@@ -2713,7 +2713,9 @@ namespace sm::ui
                 // already paints the crossing; a second mark would be noise.
                 case sub::Structure::Kerb:
                 case sub::Structure::Lantern:
-                case sub::Structure::Stairs:
+                case sub::Structure::Hatch:
+                case sub::Structure::Ladder:
+                case sub::Structure::SpireHatch:
                 case sub::Structure::Chest:
                 case sub::Structure::CaveMouth:
                 case sub::Structure::Well:

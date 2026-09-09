@@ -119,7 +119,7 @@ void main() {
                      * (0.90 + 0.10 * s_hash(vec2(floor(vFace.x * 5.0),
                                                   floor(vFace.y * 5.0)) + vSeed));
         base = mix(vec3(0.28, 0.20, 0.13), plank, board);
-    } else {
+    } else if (vType < 9.5) {
         // Spire orb: a black plinth whose crown BURNS the spire's own night
         // tint (macro landmark row 0xA86CFF family) — the lantern's law: a
         // vertical head band reads from every side and any distance (the
@@ -131,6 +131,38 @@ void main() {
         vec3 glow = mix(vec3(0.66, 0.42, 1.00), vec3(0.98, 0.92, 1.00),
                         smoothstep(0.88, 1.00, vLocalY));
         base = mix(plinth, glow, head);
+    } else if (vType < 10.5) {
+        // Hatch: a lid, and a lid must not read as the floor it lies in. Dark
+        // boards banded across the leaf with an iron ring at the centre —
+        // face-space, so a lid of any size wears the same ironwork, and the
+        // ring is what says "lift me" from across a room. The old plate wore
+        // the generic timber of a bed and a deck, which is exactly why "down"
+        // and "up" looked like the same piece of furniture.
+        vec3 boards = vec3(0.24, 0.16, 0.10)
+                      * (0.86 + 0.14 * s_hash(vec2(floor(vFace.y * 4.0),
+                                                   floor(vFace.x * 1.5)) + vSeed));
+        float seam = abs(fract(vFace.y * 2.0) - 0.5) * 2.0;
+        boards *= 1.0 - 0.30 * pow(seam, 8.0);
+        // Iron: a border strap around the leaf, and the pull-ring inside it.
+        float rim = max(smoothstep(0.84, 0.94, abs(vFace.x)),
+                        smoothstep(0.84, 0.94, abs(vFace.y)));
+        float ring = 1.0 - smoothstep(0.04, 0.07,
+                                      abs(length(vFace) - 0.30));
+        base = mix(boards, vec3(0.30, 0.31, 0.33), max(rim, ring));
+    } else {
+        // Ladder: two stiles and the rungs between them. Drawn in face space
+        // so the rungs stay rungs at any run length — the run is the storey's
+        // own height (stamp_dungeon_shaft), not a fixed prop size. Whatever is
+        // neither stile nor rung is the dark of the shaft behind it, which is
+        // what makes a ladder read as something you climb INTO rather than a
+        // post you walk around.
+        float stile = smoothstep(0.62, 0.78, abs(vFace.x));
+        // One rung per half-metre of run: vFace.y spans the whole leaf, so the
+        // count rides the same 12 rungs a 4 m storey wants.
+        float rung = 1.0 - smoothstep(0.16, 0.30,
+                                      abs(fract(vFace.y * 6.0) - 0.5) * 2.0);
+        vec3 timber = s_planks(vWorld, vSeed, 0.4, vec3(0.46, 0.32, 0.19));
+        base = mix(vec3(0.05, 0.05, 0.06), timber, max(stile, rung));
     }
 
     vec3 N = normalize(vNormal);

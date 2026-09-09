@@ -56,7 +56,11 @@ enum class SceneKind : std::uint8_t { Overworld, Dungeon };
 // Which threshold the player came in by — the tile they materialise on when
 // the scene is raised. A storey has up to three (street door, climbing shaft,
 // descending shaft) and the level alone cannot say which was used.
-enum class DungeonArrival : std::uint8_t { Door, ShaftUp, ShaftDown };
+// How a body got onto the storey it is standing on — which decides WHERE on
+// it the body materialises. Roof: in through the crown's own hatch, so the
+// body lands on the top storey's roof pad, the far end of the ladder it would
+// have climbed.
+enum class DungeonArrival : std::uint8_t { Door, ShaftUp, ShaftDown, Roof };
 
 // Live dungeon session bookkeeping. The dungeon is a projection OF the
 // subworld: identity is {door cell, ordinal, level} (see map_data.h

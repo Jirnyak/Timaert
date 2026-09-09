@@ -1,5 +1,6 @@
 #include "check.h"
 #include "sub/gens/dispatch.h"
+#include "sub/dgn/dispatch.h"   // the tower's shared dimensions
 #include "macro/tree_layer.h"
 #include "sub/base_generator.h"
 #include "sub/collide.h"   // kStepUpM — the arch must be WALKED
@@ -493,19 +494,140 @@ int main() {
         return fail("spire landmark did not resolve to Spire mode");
     }
 
+    // The tower is ONE round central cylinder of the dungeon layer's shared
+    // dimensions (dgn/dispatch.h — the same authority the roof exit reads;
+    // literals here would be a second opinion about one tower). It stands at
+    // an ABSOLUTE height (zWorld) with its foot buried, so what is asserted is
+    // the span it presents to a body: a crown exactly kSpireTowerHeightM above
+    // the levelled pad.
     int towerCount = 0;
     for (const Structure& s : spireOut.structures) {
         if (s.kind == Structure::Wall
             && int(std::floor(s.x)) == center
             && int(std::floor(s.y)) == center
-            && std::fabs(s.radius - 7.0f) < 0.001f
-            && std::fabs(s.height - 96.0f) < 0.001f
+            && std::fabs(s.radius - kSpireTowerRadiusTiles) < 0.001f
+            && s.zWorld
+            && s.height > kSpireTowerHeightM
             && s.shape == Structure::Cylinder) {
             ++towerCount;
         }
     }
     if (towerCount != 1) {
         return fail("spire generator did not create one TS-sized round central tower");
+    }
+
+    // ── The crown is a PLACE a body stands on ───────────────────────────────
+    // Everything up here shares ONE stated height (zWorld), or the rail ripples
+    // and the hatch floats: find the tower's crown and demand the rest agree
+    // with it exactly.
+    float crownM = 0.0f;
+    for (const Structure& s : spireOut.structures) {
+        if (s.kind == Structure::Wall && s.shape == Structure::Cylinder
+            && s.zWorld && int(std::floor(s.x)) == center) {
+            crownM = s.zBase + s.height;
+        }
+    }
+    // 1. The parapet SEALS the rim. Sample the ring at the wall's own centre
+    // line and demand every sample lies inside a chord standing on the crown —
+    // the same detector the hall's masonry ring is held to.
+    {
+        const float wallHalf = structure_min_half_xy(Structure::Wall);
+        const float ringR = kSpireTowerRadiusTiles - wallHalf;
+        int uncovered = 0;
+        for (int k = 0; k < 256; ++k) {
+            const float a = float(k) * 6.2831853f / 256.0f;
+            const float px = float(center) + std::cos(a) * ringR;
+            const float py = float(center) + std::sin(a) * ringR;
+            bool covered = false;
+            for (const Structure& s : spireOut.structures) {
+                if (s.kind != Structure::Wall || s.shape != Structure::Box) {
+                    continue;
+                }
+                if (std::fabs(s.zBase - crownM) > 0.001f) continue;
+                if (structure_surface_dist2(s, px, py) <= 0.0f) {
+                    covered = true;
+                    break;
+                }
+            }
+            uncovered += covered ? 0 : 1;
+        }
+        if (uncovered != 0) {
+            return fail("the crown's parapet has gaps a body can walk out of");
+        }
+        // NEGATIVE CONTROL: drop one chord and the same detector must see it,
+        // or "sealed" proved only that the detector is blind.
+        SubworldMapData holed = spireOut;
+        for (std::size_t i = 0; i < holed.structures.size(); ++i) {
+            const Structure& s = holed.structures[i];
+            if (s.kind == Structure::Wall && s.shape == Structure::Box
+                && std::fabs(s.zBase - crownM) <= 0.001f) {
+                holed.structures.erase(holed.structures.begin()
+                                       + std::ptrdiff_t(i));
+                break;
+            }
+        }
+        int holes = 0;
+        for (int k = 0; k < 256; ++k) {
+            const float a = float(k) * 6.2831853f / 256.0f;
+            const float px = float(center) + std::cos(a) * ringR;
+            const float py = float(center) + std::sin(a) * ringR;
+            bool covered = false;
+            for (const Structure& s : holed.structures) {
+                if (s.kind != Structure::Wall || s.shape != Structure::Box) {
+                    continue;
+                }
+                if (std::fabs(s.zBase - crownM) > 0.001f) continue;
+                if (structure_surface_dist2(s, px, py) <= 0.0f) {
+                    covered = true;
+                    break;
+                }
+            }
+            holes += covered ? 0 : 1;
+        }
+        if (holes == 0) {
+            return fail("control: a removed parapet chord is a visible gap");
+        }
+    }
+    // 2. The rail is chest-high — a body must not be able to step over it
+    // (sub/collide.h kStepUpM), which is the whole reason it is built.
+    for (const Structure& s : spireOut.structures) {
+        if (s.kind != Structure::Wall || s.shape != Structure::Box) continue;
+        if (std::fabs(s.zBase - crownM) > 0.001f) continue;
+        if (s.height <= sm::sub::kStepUpM) {
+            return fail("a parapet a body steps over is not a parapet");
+        }
+    }
+    // 3. The way back in stands on the crown, at the SHARED point, and NOT on
+    // the axis — the axis is the orb's plinth, and a body put there comes up
+    // inside the shrine (the 2026-09-09 defect this whole crown answers).
+    {
+        float hx = 0.0f, hy = 0.0f;
+        sm::sub::spire_crown_hatch_point(hx, hy);
+        const Structure* hatch = nullptr;
+        const Structure* orb = nullptr;
+        for (const Structure& s : spireOut.structures) {
+            if (s.kind == Structure::SpireHatch) hatch = &s;
+            if (s.kind == Structure::SpireOrb) orb = &s;
+        }
+        if (!hatch || hatch->x != hx || hatch->y != hy
+            || std::fabs(hatch->zBase - crownM) > 0.001f) {
+            return fail("the crown carries no hatch at the shared point");
+        }
+        if (!orb) return fail("an un-drained spire raises its orb");
+        if (structure_surface_dist2(*orb, hatch->x, hatch->y) <= 0.0f) {
+            return fail("the crown's hatch stands inside the orb's plinth");
+        }
+        if (std::fabs(orb->zBase - crownM) > 0.001f) {
+            return fail("the orb stands on the same crown as everything else");
+        }
+        // And it lands INSIDE the rail, not on it.
+        const float dx = hatch->x - float(center);
+        const float dy = hatch->y - float(center);
+        const float rail = kSpireTowerRadiusTiles
+                         - 2.0f * structure_min_half_xy(Structure::Wall);
+        if (dx * dx + dy * dy >= rail * rail) {
+            return fail("the crown's hatch is buried in its own parapet");
+        }
     }
 
     int scorchRock = 0;

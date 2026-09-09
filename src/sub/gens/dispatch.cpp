@@ -1476,19 +1476,122 @@ static void gen_spire(const CellContext& ctx, const Biome nbBiome[9],
         }
     }
 
+    // ── The pedestal ────────────────────────────────────────────────────────
+    // Everything the tower carries on its crown — the parapet on the rim, the
+    // hatch beside the orb — stands OFF the axis, and a grounded structure is
+    // seated by the terrain under ITSELF (sub/collide.h). On the damped but
+    // still uneven ground a spire cell keeps (terrain_mod_for), that would
+    // have rippled the rail around the crown by whatever the slope did across
+    // 24 tiles. So the footprint is levelled to its own mean first — the
+    // house's cut-vs-fill law, the tower's shape — and painted as the masonry
+    // it is, which also keeps the road smoother (which touches road/square
+    // paint only) off the pad.
+    const float padR = kSpireTowerRadiusTiles + 2.0f;
+    float groundM = ctx.macroHeight * kHeightScaleM;
+    if (out.heightmap.size() == std::size_t(kCellSize) * kCellSize) {
+        const int p = int(padR);
+        double sum = 0.0;
+        int cnt = 0;
+        for (int y = std::max(0, cy - p); y <= std::min(kCellSize - 1, cy + p); ++y) {
+            for (int x = std::max(0, cx - p); x <= std::min(kCellSize - 1, cx + p); ++x) {
+                const int dx = x - cx, dy = y - cy;
+                if (float(dx * dx + dy * dy) > padR * padR) continue;
+                sum += out.heightmap[std::size_t(y) * kCellSize + x];
+                ++cnt;
+            }
+        }
+        if (cnt > 0) {
+            const float level = float(sum / double(cnt));
+            groundM = level * kHeightScaleM;
+            for (int y = std::max(0, cy - p); y <= std::min(kCellSize - 1, cy + p); ++y) {
+                for (int x = std::max(0, cx - p); x <= std::min(kCellSize - 1, cx + p); ++x) {
+                    const int dx = x - cx, dy = y - cy;
+                    const float d2 = float(dx * dx + dy * dy);
+                    if (d2 > padR * padR) continue;
+                    const std::size_t i = std::size_t(y) * kCellSize + x;
+                    out.heightmap[i] = level;
+                    if (d2 <= kSpireTowerRadiusTiles * kSpireTowerRadiusTiles) {
+                        out.tiles[i] = TILE_WALL;
+                        out.trav[i] = 0;
+                    }
+                }
+            }
+        }
+    }
+    // The crown, in absolute world metres. Stated once here and read by
+    // everything standing on it, for the bridge's reason (map_data.h zWorld):
+    // a height sampled per structure wobbles by the difference between the
+    // generator's exact tile heights and the renderer's 16-tile mesh, and a
+    // parapet that wobbles is a parapet with gaps in it.
+    const float crownM = groundM + kSpireTowerHeightM;
+
     // The spire itself: one ROUND tower (the cylinder shape is what makes it
     // a spire and not a crate). Dimensions are the dungeon layer's shared
     // authority (dgn/dispatch.h) — the roof exit stands the player at this
-    // exact crown.
+    // exact crown. Its foot is buried one wall course deep, the bridge pier's
+    // rule: nothing a sampler disagrees about can leave the tower hanging.
     {
+        const float footingM = structure_min_height(Structure::Wall);
         Structure spire{};
         spire.kind = Structure::Wall;
         spire.x = float(cx);
         spire.y = float(cy);
         spire.radius = kSpireTowerRadiusTiles;
-        spire.height = kSpireTowerHeightM;
         spire.shape = Structure::Cylinder;
+        spire.zWorld = true;
+        spire.zBase = groundM - footingM;
+        spire.height = kSpireTowerHeightM + footingM;
         out.structures.push_back(spire);
+    }
+    // The parapet: the same chord ring that seals the hall inside, laid on the
+    // rim. Sixteen segments put the chord's sag at 0.21 tiles — far inside the
+    // wall's own half-thickness, so the rail has no gaps — and each chord runs
+    // a half-chord plus a wall's half so neighbours overlap. It stands ON the
+    // crown (zWorld, one stated height for every segment), and it is what
+    // makes leaving the crown a decision instead of an accident.
+    {
+        constexpr int kCrownParapetSegments = 16;
+        const float wallHalf = structure_min_half_xy(Structure::Wall);
+        const float ringR = kSpireTowerRadiusTiles - wallHalf;
+        const float halfChord =
+            ringR * std::sin(3.14159265f / float(kCrownParapetSegments))
+            + wallHalf;
+        for (int s = 0; s < kCrownParapetSegments; ++s) {
+            const float a = (float(s) + 0.5f) * 2.0f * 3.14159265f
+                          / float(kCrownParapetSegments);
+            Structure seg{};
+            seg.kind = Structure::Wall;
+            seg.x = float(cx) + std::cos(a) * ringR;
+            seg.y = float(cy) + std::sin(a) * ringR;
+            seg.yaw = a + 3.14159265f / 2.0f;   // tangent to the circle
+            seg.hx = halfChord;
+            seg.hy = wallHalf;
+            seg.radius = seg.hx;
+            seg.zWorld = true;
+            seg.zBase = crownM;
+            seg.height = kSpireCrownParapetHeightM;
+            out.structures.push_back(seg);
+        }
+    }
+    // The way back in: the lid the top storey's ladder climbs to, from above.
+    // Without it the crown was a one-way trip — take the orb, then jump 128 m
+    // (owner, 2026-09-09). Its tag carries the tier, exactly as the gate at
+    // the foot does, because both open the same tower.
+    {
+        float hxT = 0.0f, hyT = 0.0f;
+        spire_crown_hatch_point(hxT, hyT);
+        Structure hatch{};
+        hatch.kind = Structure::SpireHatch;
+        hatch.x = hxT;
+        hatch.y = hyT;
+        hatch.hx = structure_min_half_xy(Structure::SpireHatch);
+        hatch.hy = hatch.hx;
+        hatch.radius = hatch.hx;
+        hatch.zWorld = true;
+        hatch.zBase = crownM;
+        hatch.height = structure_min_height(Structure::SpireHatch);
+        hatch.tag = std::uint16_t(std::clamp(ctx.landmark.size, 1, 5));
+        out.structures.push_back(hatch);
     }
     // The gate on the south face — the CaveMouth pattern: a Door-verb prop
     // whose row opens the tower's own interior. tag carries the spell's
@@ -1518,7 +1621,8 @@ static void gen_spire(const CellContext& ctx, const Biome nbBiome[9],
         orb.y = float(cy);
         orb.radius = structure_min_half_xy(Structure::SpireOrb);
         orb.height = structure_min_height(Structure::SpireOrb);
-        orb.zBase = kSpireTowerHeightM;
+        orb.zWorld = true;      // one crown, one stated height
+        orb.zBase = crownM;
         out.structures.push_back(orb);
     }
     scatter_universal_trees(out, kCellSize,
