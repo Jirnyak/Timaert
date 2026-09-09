@@ -2778,6 +2778,11 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
             // drives currentHp to 0 -> AppState::Dead), not a loot/XP/removal
             // event, and the entity is reset on the next subworld enter().
             if (reg.any_of<ecs::PlayerTag>(e)) continue;
+            // The fall is HEARD (SfxId queue, 2026-09-09) — but only on the
+            // fight tick: the drainAll sweeps (leave, teardown) settle books,
+            // and a chorus of death-thuds over a door closing would be noise
+            // about nothing the player watched happen.
+            if (!drainAll) queue_sfx(SfxId::Death);
             // THE macro settlement, and it happens HERE — once, for every
             // borrowed thing, whatever kind of body it turned out to be. A
             // citizen is one unit of its town's population made visible

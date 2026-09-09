@@ -1903,6 +1903,10 @@ void tick_subworld_hit_flash(App& app, float dt) {
     } else if (hp < app.subworldLastPlayerHp) {
         app.subworldHitFlashTimer =
             std::max(app.subworldHitFlashTimer, kSubworldHitFlashSeconds);
+        // The wound SOUNDS beside the flash it triggers — the same hp-drop
+        // fact, so the ear and the eye can never disagree about being hit
+        // (SfxId queue, 2026-09-09; a shipped player-hurt.wav overrides).
+        app.audio.play_sfx(sm::SfxId::PlayerHurt);
     }
     app.subworldLastPlayerHp = hp;
     if (app.subworldHitFlashTimer > 0.0f) {
@@ -2151,6 +2155,9 @@ bool cast_active_spell(App& app) {
         &app.subworld,
         &app.subworld.spell_rng());
     emit_spell_cast(app, id, ok, ok ? "" : "Cast failed");
+    // ANY cast that happened sounds (one door, one voice — a stance flip
+    // included); the deferred «звук каста» of 443f0f5, delivered 2026-09-09.
+    if (ok) app.audio.play_sfx(sm::SfxId::SpellCast);
     return ok;
 }
 

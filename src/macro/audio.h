@@ -26,6 +26,11 @@ enum class SfxId : std::uint8_t {
     MeleeSwing = 0,   // the arc itself — heard on EVERY swing, hit or air
     MeleeHit,         // the blow bit flesh
     MeleeBlocked,     // armour swallowed the blow whole (damage door blocked)
+    // The 2026-09-09 trio (owner queue, NEXT_SESSION §5): appended — the
+    // asset table mirrors this order and a .wav simply overrides the synth.
+    SpellCast,        // a cast leaving the hand (any cast — one door, one voice)
+    PlayerHurt,       // the blow that found the INHABITED body (hp dropped)
+    Death,            // a body going down in the scene (never the player's own)
     Count,
 };
 

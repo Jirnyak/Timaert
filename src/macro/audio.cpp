@@ -49,6 +49,9 @@ constexpr SfxAsset kSfxAssets[kSfxCount] = {
     {SfxId::MeleeSwing,   "melee-swing",   "melee-swing.wav"},
     {SfxId::MeleeHit,     "melee-hit",     "melee-hit.wav"},
     {SfxId::MeleeBlocked, "melee-blocked", "melee-blocked.wav"},
+    {SfxId::SpellCast,    "spell-cast",    "spell-cast.wav"},
+    {SfxId::PlayerHurt,   "player-hurt",   "player-hurt.wav"},
+    {SfxId::Death,        "death",         "death.wav"},
 };
 static_assert(rows_in_enum_order(kSfxAssets, &SfxAsset::id),
               "kSfxAssets row order must mirror SfxId");
@@ -308,12 +311,74 @@ void synth_melee_blocked(std::vector<float>& mono) {
     }
 }
 
+// A cast leaving the hand: one bright partial sweeping upward under a
+// breath of air — shimmer, not a whoosh (the whoosh is the swing's voice).
+void synth_spell_cast(std::vector<float>& mono) {
+    const int n = int(0.22f * kSampleRate);
+    mono.resize(std::size_t(n));
+    SynthRng rng(0x5CA1AB1u);
+    float phase = 0.0f;
+    for (int i = 0; i < n; ++i) {
+        const float ph = float(i) / float(n);
+        const float t = float(i) / float(kSampleRate);
+        const float f = 320.0f + 1500.0f * ph * ph;
+        phase += 2.0f * kSynthPi * f / float(kSampleRate);
+        const float vib = 1.0f + 0.03f * std::sin(2.0f * kSynthPi * 9.0f * t);
+        const float env = std::pow(std::sin(kSynthPi * ph), 0.8f);
+        const float tone = std::sin(phase * vib) * 0.8f;
+        const float air = rng.noise() * 0.3f;
+        mono[std::size_t(i)] = (tone + air) * env;
+    }
+}
+
+// The blow that found the INHABITED body: lower and duller than the hit we
+// deal out — a thump under the ribs, longer in the chest, no ring.
+void synth_player_hurt(std::vector<float>& mono) {
+    const int n = int(0.24f * kSampleRate);
+    mono.resize(std::size_t(n));
+    SynthRng rng(0xD00F00Du);
+    float phase = 0.0f;
+    for (int i = 0; i < n; ++i) {
+        const float t = float(i) / float(kSampleRate);
+        const float f = 42.0f + 70.0f * std::exp(-t * 18.0f);
+        phase += 2.0f * kSynthPi * f / float(kSampleRate);
+        const float body = std::sin(phase) * std::exp(-t * 12.0f);
+        const float slap = rng.noise() * 0.5f * std::exp(-t * 300.0f);
+        mono[std::size_t(i)] = body + slap;
+    }
+}
+
+// A body going down: a tone falling through an octave into floor noise —
+// collapse, distinct from the wound that caused it.
+void synth_death(std::vector<float>& mono) {
+    const int n = int(0.35f * kSampleRate);
+    mono.resize(std::size_t(n));
+    SynthRng rng(0xDEAD5EEDu);
+    float phase = 0.0f;
+    float lp = 0.0f;
+    for (int i = 0; i < n; ++i) {
+        const float t = float(i) / float(kSampleRate);
+        const float f = 55.0f + 170.0f * std::exp(-t * 7.0f);
+        phase += 2.0f * kSynthPi * f / float(kSampleRate);
+        const float body = std::sin(phase) * std::exp(-t * 7.0f);
+        // the slump: low-passed noise swelling briefly as the ground takes it
+        const float a = 1.0f - std::exp(-2.0f * kSynthPi * 300.0f
+                                        / float(kSampleRate));
+        lp += a * (rng.noise() - lp);
+        const float thud = lp * 0.9f * std::exp(-t * 9.0f);
+        mono[std::size_t(i)] = body * 0.8f + thud;
+    }
+}
+
 Mix_Chunk* synth_sfx_chunk(SfxId id) {
     std::vector<float> mono;
     switch (id) {
         case SfxId::MeleeSwing:   synth_melee_swing(mono);   break;
         case SfxId::MeleeHit:     synth_melee_hit(mono);     break;
         case SfxId::MeleeBlocked: synth_melee_blocked(mono); break;
+        case SfxId::SpellCast:    synth_spell_cast(mono);    break;
+        case SfxId::PlayerHurt:   synth_player_hurt(mono);   break;
+        case SfxId::Death:        synth_death(mono);         break;
         case SfxId::Count:        break;
     }
     if (mono.empty()) return nullptr;

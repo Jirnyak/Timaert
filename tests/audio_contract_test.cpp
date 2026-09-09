@@ -83,13 +83,14 @@ int main() {
     static_assert(!std::is_copy_assignable_v<sm::AudioSystem>);
     static_assert(!std::is_move_constructible_v<sm::AudioSystem>);
     static_assert(!std::is_move_assignable_v<sm::AudioSystem>);
-    // The LIVE set: two music rows, and the melee feedback trio (owner
-    // 2026-09-06 — every row is played by a real call site). SFX rows follow
-    // THE fallback law: the FILE may be absent (a procedural default is
-    // synthesized at init — audio.cpp synth_sfx_chunk), so this test demands
-    // the metadata, never the bytes on disk.
+    // The LIVE set: two music rows, the melee feedback trio (owner
+    // 2026-09-06) and the 2026-09-09 trio (cast / player-hurt / death, the
+    // owner's SfxId queue) — every row is played by a real call site. SFX
+    // rows follow THE fallback law: the FILE may be absent (a procedural
+    // default is synthesized at init — audio.cpp synth_sfx_chunk), so this
+    // test demands the metadata, never the bytes on disk.
     static_assert(static_cast<int>(sm::MusicId::Count) == 2);
-    static_assert(static_cast<int>(sm::SfxId::Count) == 3);
+    static_assert(static_cast<int>(sm::SfxId::Count) == 6);
 
     if (!same_text(sm::music_key(sm::MusicId::Explore), "explore")) {
         return fail("explore music key changed");
@@ -109,6 +110,18 @@ int main() {
         || !same_text(sm::sfx_file(sm::SfxId::MeleeBlocked),
                       "melee-blocked.wav")) {
         return fail("melee-blocked sfx row changed");
+    }
+    if (!same_text(sm::sfx_key(sm::SfxId::SpellCast), "spell-cast")
+        || !same_text(sm::sfx_file(sm::SfxId::SpellCast), "spell-cast.wav")) {
+        return fail("spell-cast sfx row changed");
+    }
+    if (!same_text(sm::sfx_key(sm::SfxId::PlayerHurt), "player-hurt")
+        || !same_text(sm::sfx_file(sm::SfxId::PlayerHurt), "player-hurt.wav")) {
+        return fail("player-hurt sfx row changed");
+    }
+    if (!same_text(sm::sfx_key(sm::SfxId::Death), "death")
+        || !same_text(sm::sfx_file(sm::SfxId::Death), "death.wav")) {
+        return fail("death sfx row changed");
     }
     if (sm::music_key(sm::MusicId::Count) || sm::music_file(sm::MusicId::Count)) {
         return fail("invalid music id returned metadata");
