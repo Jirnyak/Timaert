@@ -117,10 +117,17 @@ chargen. Trade is universal BARTER by PACKAGE (owner ruling 2026-08-07):
 both trade screens stage lines from BOTH shelves (+/− by the shared Amount
 step, carry weight always shown), the footer faces the two totals, and ONE
 Deal button settles the whole package through `barter_swap` — all-or-
-nothing, counts checked against the pre-deal bags. The law: the player's
-GIVEN value must cover the TAKEN; any excess is his own generosity. Coin is
-a ware IN the package, always at FACE value on both sides (charisma pricing
-a coin would mint money out of a round trip) — so "buying" is staging coin
+nothing, counts checked against the pre-deal bags. Lines are keyed by
+SLOT, not id (owner verdict 2026-09-07 «торговля пер-стак», built
+2026-09-09): a rolled instance and its bare twin are two lines with two
+prices, the staged stack travels with its whole identity (seed + affixes —
+`add_ref` re-stacks by the one stacking law), and every base price is THE
+contextual `value_of` of the instance (scarcity/demand still count the
+KIND). `inventory_value` sums the same way — a bag of rolled blades is
+worth its blades, not count × bare row. The law: the player's GIVEN value
+must cover the TAKEN; any excess is his own generosity. Coin is a ware IN
+the package, always at FACE value on both sides (charisma pricing a coin
+would mint money out of a round trip) — so "buying" is staging coin
 against goods and "selling" is the reverse. `transfer_value` remains the
 settlement half of scripted payments (recruit, rest, penalties): real coin
 stacks travel, nothing is minted **in a barter deal**. (Outside barter the

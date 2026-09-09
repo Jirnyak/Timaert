@@ -351,10 +351,14 @@ is equipment's voice, not the body's). The loose pays the same recovery
 gate from the same kilogram. `Thrown` is the reserved third value — the
 item itself flies; it awakens after the demo.
 
-**Known edges (owner-ruled, queued)**: trade must hang off VALUE
-universally — a context-priced `value_of` (affixes, material, quality…) and
-per-instance counters (today the counters trade by id at the bare row's
-price); `material`/`quality` bytes ride the save with no readers yet.
+**Trade hangs off VALUE (built 2026-09-09, verdict 2026-09-07)**: both
+counters stage PER-STACK (`BarterLine` keys the slot, currency.h) and price
+every line's base through `value_of` of the INSTANCE — a rolled sword sells
+for its affixes and travels as itself; the bare twin is its own cheaper
+line. `inventory_value` (hunt cargo price, loot pools, NPC worth) sums the
+same door. Still sleeping: `material`/`quality` bytes ride the save with no
+writers — they wake INSIDE `value_of` when their tables arrive (writers
+first; a reader of an always-zero byte would be fiction).
 
 ## Renown — what the world thinks a band has done
 
