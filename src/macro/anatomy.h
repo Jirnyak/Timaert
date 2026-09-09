@@ -333,6 +333,12 @@ struct StrikeFields {
     // zero sheet (kHandSwingS × 64), so a fields{} harness literal swings
     // honestly.
     int           recoverySteps = 96;
+    // HOW the blow travels + the missile's reach — the weapon row's own
+    // columns riding the one assembly, so every carrier of ecs::Combat
+    // learns how the blow travels from the same place it learns what the
+    // blow is (shooting law, 2026-09-09).
+    Delivery      delivery = Delivery::Melee;
+    float         range    = 0.0f;
 };
 StrikeFields hand_strike_fields(const Attributes& attributes,
                                 const Skills& skills, const Equipment* eq);

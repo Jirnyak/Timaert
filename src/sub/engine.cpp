@@ -891,12 +891,17 @@ void SubworldEngine::spawn_player_entity() {
                            .moveSpeedPct)
                      / 100.0f
                : 1.0f);
+    // Delivery rides the same fields (shooting law, 2026-09-09): a bow in
+    // hand makes this body a Missile attacker with the ROW's reach, exactly
+    // the pair every NPC shooter's table authors.
     reg.emplace<ecs::Combat>(
         e, ecs::Combat{hs.dice, hs.flatAdd, hs.multPct, hs.luck,
                        std::uint8_t(hs.dmgType), playerPace,
-                       kPlayerMeleeRange,
+                       hs.delivery == Delivery::Missile && hs.range > 0.0f
+                           ? hs.range : kPlayerMeleeRange,
                        seconds_from_steps(std::uint32_t(hs.recoverySteps)), 0u,
-                       ecs::Combat::Melee});
+                       hs.delivery == Delivery::Missile
+                           ? ecs::Combat::Missile : ecs::Combat::Melee});
     reg.emplace<ecs::SubworldTag>(e);
     // First honest point-light emitter (Inc 4): a warm carried lantern. Gathered
     // by the renderer through the universal view<Position, LightEmitter,
@@ -1035,6 +1040,14 @@ void SubworldEngine::sync_player_entity_position() {
                 // arm exactly as it quickens the legs below.
                 c->cooldown =
                     seconds_from_steps(std::uint32_t(hs.recoverySteps));
+                // DELIVERY rides it too (shooting law, 2026-09-09): draw a
+                // bow mid-fight and the next press looses an arrow at the
+                // row's range; put it away and the arm is a melee arm again.
+                c->kind = hs.delivery == Delivery::Missile
+                              ? ecs::Combat::Missile : ecs::Combat::Melee;
+                c->attackRange =
+                    c->kind == ecs::Combat::Missile && hs.range > 0.0f
+                        ? hs.range : kPlayerMeleeRange;
                 // HIS PACE, on his body, like every other body carries it.
                 // It was zero — the player was the one thing in the world
                 // with no speed of its own, because his legs used to live in
@@ -1630,8 +1643,10 @@ void SubworldEngine::tick_player_melee() {
     // sync_player_entity_position — read it here instead of recomputing. Capture
     // the scalars up front so later component emplaces can't dangle the pointer.
     ecs::Combat* pc = nullptr;
+    entt::entity playerEnt = entt::null;
     for (auto pe : reg.view<ecs::PlayerTag, ecs::Combat>()) {
         pc = &reg.get<ecs::Combat>(pe);
+        playerEnt = pe;
         break;
     }
     if (!pc) return;
@@ -1652,6 +1667,35 @@ void SubworldEngine::tick_player_melee() {
     // TIMAERT_COMBAT_LOG: the owner's verification channel — one stderr line
     // per swing, greppable as [melee].
     static const bool combatLog = std::getenv("TIMAERT_COMBAT_LOG") != nullptr;
+    // A MISSILE weapon in hand (shooting law, 2026-09-09): the same press
+    // looses an arrow down the crosshair's line through THE SAME DOOR every
+    // NPC shooter uses — spawn_npc_missile rolls the wound at loose through
+    // the one assembly (no attribute add: the row said so upstream), clears
+    // the muzzle off the shell, raises both ends to eye height. The recovery
+    // above is already paid by the same gate a swing pays; there is no ammo
+    // anywhere (ARPG conceit), and no harvest fallback — a bow fells no
+    // trees. The aim point is a spot on the crosshair ray at the row's
+    // range: spawn_npc_missile normalises the delta, so this IS the aim
+    // direction, said as the target the door speaks in.
+    if (strikeStats.kind == ecs::Combat::Missile) {
+        const float cp = std::cos(cam_.pitch);
+        const float dirX = std::cos(cam_.yaw) * cp;
+        const float dirY = std::sin(cam_.yaw) * cp;
+        const float dirZ = std::sin(cam_.pitch);
+        spawn_npc_missile(reg, playerEnt,
+                          ecs::Position{playerX_, playerY_, playerZ_},
+                          strikeStats, combatRng_,
+                          playerX_ + dirX * strikeStats.attackRange,
+                          playerY_ + dirY * strikeStats.attackRange,
+                          playerZ_ + dirZ * strikeStats.attackRange);
+        if (combatLog) {
+            std::fprintf(stderr,
+                         "[melee] loose range=%.1f cd=%.2fs\n",
+                         double(strikeStats.attackRange),
+                         double(strikeStats.cooldown));
+        }
+        return;
+    }
     // HOSTILES FIRST (owner ruling 2026-08-05, targeting.cpp
     // melee_pick_target): the nearest hostile in reach wins; only with no
     // hostile around does the swing fall back to the nearest body of any

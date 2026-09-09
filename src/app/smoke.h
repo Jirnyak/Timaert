@@ -35,6 +35,7 @@ enum class SmokeAction : std::uint8_t {
     SubworldMissileFeedback,
     SubworldSelfFireball,
     SubworldPlayerMelee,
+    SubworldPlayerBow,
     SubworldReputationHit,
     SubworldMouseRelease,
     SubworldTreeAnchor,

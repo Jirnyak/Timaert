@@ -24,7 +24,10 @@
 #pragma clang diagnostic pop
 #endif
 
+#include "macro/anatomy.h"
 #include "macro/codex.h"
+#include "macro/items.h"
+#include "macro/player_entity.h"
 #include <bit>
 
 namespace sm::app {
@@ -58,6 +61,7 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"subworld_missile_feedback", SmokeAction::SubworldMissileFeedback},
     {"subworld_self_fireball", SmokeAction::SubworldSelfFireball},
     {"subworld_player_melee", SmokeAction::SubworldPlayerMelee},
+    {"subworld_player_bow", SmokeAction::SubworldPlayerBow},
     {"subworld_reputation_hit", SmokeAction::SubworldReputationHit},
     {"subworld_mouse_release", SmokeAction::SubworldMouseRelease},
     {"subworld_tree_anchor", SmokeAction::SubworldTreeAnchor},
@@ -3363,6 +3367,154 @@ bool run_subworld_player_melee_smoke(App& app) {
     return true;
 }
 
+// The bow through the shooting law (2026-09-09): the appended wpn_bow row
+// goes into the hand through the equip door, the SAME attack key is held,
+// and the press must LOOSE — a projectile through the NPC shooters' own
+// door (spawn_npc_missile), its wound priced with NO attribute add, its
+// recovery charged into the body's one gate. The target stands down the
+// default aim line (yaw 0 = «looking +X», the cast_spell idiom) at the
+// caster's own altitude, so the level shot arrives eye-to-eye.
+bool run_subworld_player_bow_smoke(App& app) {
+    if (!smoke_boot_invariants_hold(app)) {
+        smoke_print_counts(app, "subworld_player_bow_boot_failed");
+        smoke_fail(app, "subworld_player_bow boot invariants");
+        return false;
+    }
+    smoke_clear_modal_overlays(app);
+    // Enter WHERE THE PLAYER STANDS, the cast_spell idiom — no open-cell
+    // relocation: the relocated spot on seed 1 has terrain/trunks rising
+    // across the +X eye line within arm's reach of the muzzle, and a level
+    // arrow died on scenery before the count. cast_spell proved this
+    // default line clear for 43 units on every pinned seed.
+    if (!app.subworld.active()) {
+        enter_subworld(app);
+    }
+    if (!app.subworld.active()) {
+        smoke_fail(app, "subworld_player_bow enter failed");
+        return false;
+    }
+
+    auto& reg = app.ecs.reg;
+    // Clear the line of fire (the cast_spell idiom): a swept arrow honestly
+    // strikes the first body in its path, so an ambient bystander on the
+    // ray would make this a referendum on the seed's foot traffic.
+    {
+        std::vector<entt::entity> doomed;
+        for (auto e : reg.view<sm::ecs::Health>()) {
+            if (!reg.any_of<sm::ecs::PlayerTag, sm::ecs::PlayerSquadTag>(e)) {
+                doomed.push_back(e);
+            }
+        }
+        for (const entt::entity e : doomed) {
+            if (reg.valid(e)) reg.destroy(e);
+        }
+    }
+
+    // The bow into the hand through the door — the same gear cell the sheet
+    // console edits, on the squad entity the per-tick refresh reads.
+    const entt::entity sq = sm::player_squad_entity(app.ecs);
+    if (sq == entt::null) {
+        smoke_fail(app, "subworld_player_bow no squad entity");
+        return false;
+    }
+    // get_or_emplace — the same lazy idiom the equip console/UI doors use: a
+    // body that never dressed carries no component until something dresses it.
+    auto* eqc = &reg.get_or_emplace<sm::ecs::BodyEquipment>(sq);
+    sm::ItemRef bow{};
+    bow.def = std::uint16_t(sm::item_index("wpn_bow"));
+    bow.count = 1;
+    if (sm::equip(eqc->gear, bow) < 0) {
+        smoke_fail(app, "subworld_player_bow equip refused");
+        return false;
+    }
+
+    // +8: past the melee arm's reach (kPlayerMeleeRange 5) so only a SHOT
+    // can wound it, yet short enough that no seed's rising terrain eats the
+    // level arrow mid-flight (seed 1 did exactly that at +20 — the fireball
+    // smoke's old referendum-on-terrain failure mode).
+    const float px = app.subworld.player_x();
+    const float py = app.subworld.player_y();
+    const float pz = app.subworld.player_z();
+    const float tx = std::min(px + 8.0f, float(sm::sub::kFullSize - 2));
+    const entt::entity target = reg.create();
+    reg.emplace<sm::ecs::Position>(target, tx, py, pz);
+    reg.emplace<sm::ecs::VisualPos>(target, tx, py, pz);
+    reg.emplace<sm::ecs::NPCKind>(
+        target,
+        sm::ecs::NPCKind{
+            std::uint16_t(sm::NPCType::Bandit),
+            std::uint16_t(sm::faction_index("bandits"))});
+    reg.emplace<sm::ecs::Health>(target, 40, 40);
+    reg.emplace<sm::ecs::SubworldTag>(target);
+    reg.emplace<sm::ecs::Sprite>(
+        target,
+        std::uint16_t(sm::NPCType::Bandit),
+        std::uint8_t(255), std::uint8_t(84), std::uint8_t(54),
+        std::uint8_t(255), 1.2f);
+
+    const float beforeHp = reg.get<sm::ecs::Health>(target).hp;
+    int beforeProjectiles = 0;
+    for (auto e : reg.view<sm::ecs::Projectile>()) {
+        (void)e;
+        ++beforeProjectiles;
+    }
+
+    app.subworld.set_player_attack_held(true);
+    RuntimeFrameStats frameStats = advance_sim_seconds(app, 0.05f, false);
+    app.subworld.set_player_attack_held(false);
+    if (!frameStats.ticked || !frameStats.subworldActive) {
+        smoke_fail(app, "subworld_player_bow tick inactive");
+        return false;
+    }
+
+    int loosedProjectiles = 0;
+    for (auto e : reg.view<sm::ecs::Projectile>()) {
+        (void)e;
+        ++loosedProjectiles;
+    }
+    const std::uint32_t gateSteps = smoke_player_recovery_steps(app);
+    // The press routed as a SHOT because the weapon row said Missile — the
+    // white-box guard that the delivery column reached the body's Combat.
+    const sm::ecs::Combat* playerCombat = nullptr;
+    for (auto pe : reg.view<sm::ecs::PlayerTag, sm::ecs::Combat>()) {
+        playerCombat = &reg.get<sm::ecs::Combat>(pe);
+        break;
+    }
+    const bool missileRouted = playerCombat
+        && playerCombat->kind == sm::ecs::Combat::Missile
+        && playerCombat->flatAdd == 0;   // no attribute add, the row's law
+
+    // Let the arrow fly: 20 units at 200 u/s plus muzzle clearance.
+    (void)advance_sim_seconds(app, 0.30f, false);
+    const auto* hp = reg.try_get<sm::ecs::Health>(target);
+    const auto* lastHit = reg.try_get<sm::ecs::LastHit>(target);
+    const float afterHp = hp ? hp->hp : -1.0f;
+    const float dealt = beforeHp - afterHp;
+
+    std::fprintf(stderr,
+                 "[smoke] subworld_player_bow projectiles=%d->%d routed=%d "
+                 "gate=%u hp=%.1f->%.1f playerOwned=%d\n",
+                 beforeProjectiles, loosedProjectiles,
+                 missileRouted ? 1 : 0,
+                 unsigned(gateSteps),
+                 double(beforeHp), double(afterHp),
+                 lastHit && lastHit->playerOwned ? 1 : 0);
+    std::fflush(stderr);
+
+    // The projectile COUNT is diagnostic only: at 8 units the arrow can
+    // arrive (and be consumed) inside the very hold window that loosed it.
+    // The wound is the witness — a bandit past arm's reach bleeding a
+    // player-owned hit can only have been shot.
+    if (!missileRouted
+        || gateSteps == 0u
+        || !hp || dealt <= 0.0f
+        || !lastHit || !lastHit->playerOwned) {
+        smoke_fail(app, "subworld_player_bow invariant");
+        return false;
+    }
+    return true;
+}
+
 bool run_subworld_reputation_hit_smoke(App& app) {
     if (!app.worldLoaded) {
         smoke_fail(app, "subworld_reputation_hit without world");
@@ -5245,6 +5397,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr, "[smoke] action=subworld_player_melee\n");
             std::fflush(stderr);
             if (run_subworld_player_melee_smoke(app)) ++app.smoke.cursor;
+            break;
+        case SmokeAction::SubworldPlayerBow:
+            std::fprintf(stderr, "[smoke] action=subworld_player_bow\n");
+            std::fflush(stderr);
+            if (run_subworld_player_bow_smoke(app)) ++app.smoke.cursor;
             break;
         case SmokeAction::SubworldReputationHit:
             std::fprintf(stderr, "[smoke] action=subworld_reputation_hit\n");

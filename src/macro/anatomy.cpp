@@ -180,8 +180,10 @@ StrikeFields hand_strike_fields(const Attributes& attributes,
                                 const Skills& skills, const Equipment* eq) {
     const ItemDef* w = eq ? weapon_in_hand(*eq) : nullptr;
     StrikeFields out{};
-    out.dice    = w ? w->dice : kFistDice;
-    out.dmgType = w ? w->dmgType : DamageType::Blunt;
+    out.dice     = w ? w->dice : kFistDice;
+    out.dmgType  = w ? w->dmgType : DamageType::Blunt;
+    out.delivery = w ? w->delivery : Delivery::Melee;
+    out.range    = w ? w->range : 0.0f;
     const SkillId skill =
         (w && w->skill != SkillId::Count) ? w->skill : SkillId::Unarmed;
     out.multPct = std::int16_t(skill_mult_pct(skills, skill));
@@ -191,8 +193,14 @@ StrikeFields hand_strike_fields(const Attributes& attributes,
     // verdict over the mass law's tempo. Summed from EVERYTHING worn, not
     // just the weapon — a striker's ring drives the same fist.
     const BonusTotals worn = eq ? worn_bonuses(*eq) : BonusTotals{};
+    // A MISSILE row takes NO attribute add (owner verdict 2026-09-09): its
+    // potential is the dice × its skill alone — range is the compensation,
+    // and a firearm will be this same law with fatter flat dice. What the
+    // GEAR says (worn DmgFlat affixes) still speaks: that is equipment's
+    // voice, not the body's.
     // A cursed sum below zero is a wound refused, not a heal: floor at 0.
-    const int flat = int(std::floor(d.rawPhysDamage))
+    const int flat = (out.delivery == Delivery::Missile
+                          ? 0 : int(std::floor(d.rawPhysDamage)))
                    + worn.derived_of(DerivedModId::DmgFlat);
     out.flatAdd = std::int16_t(flat < 0 ? 0 : flat);
     out.luck    = std::uint8_t(attributes.of(AttributeId::Lck));

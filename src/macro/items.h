@@ -42,6 +42,18 @@ inline constexpr bool item_type_consumable(ItemType t) {
     return t == ItemType::Potion || t == ItemType::Food;
 }
 
+// How a weapon row's blow TRAVELS (owner verdicts 2026-09-09, CANON S14
+// «СТРЕЛЬБА/МЕТАНИЕ»). Melee swings at reach; Missile looses a projectile
+// down the aim line the instant it is asked — NO ammo of any kind (the ARPG
+// conceit: «даже в M&B стрелы восполняются каждый бой») — and pays the same
+// body recovery gate from the same mass law as a swing; Thrown is the
+// reserved third value (the item itself flies — awakens after the demo).
+enum class Delivery : std::uint8_t {
+    Melee   = 0,
+    Missile = 1,
+    Thrown  = 2,
+};
+
 // 8 (owner verdict 2026-09-07, affix track): the random ladder above 4 is
 // astronomically rare (each further affix pays ÷4), but ARTIFACTS are fixed
 // SETS through the same door and a designed set wants the room — cheaper to
@@ -105,6 +117,15 @@ struct ItemDef {
     Dice          dice{};
     DamageType    dmgType   = DamageType::Blunt;
     SkillId       skill     = SkillId::Count;
+    // How the blow travels (enum above). A Missile row's damage deliberately
+    // takes NO attribute add (hand_strike_fields, owner verdict 2026-09-09):
+    // dice + typed skill + LCK only — range is the compensation, and a future
+    // firearm is this exact law with fatter flat dice.
+    Delivery      delivery  = Delivery::Melee;
+    // How far a loosed missile is aimed and flies (grid units; the projectile
+    // door derives its lifetime from this). 0 on melee rows — their reach
+    // stays the engine's arm's-length constant.
+    float         range     = 0.0f;
 };
 
 // ── THE item instance, and THE container ───────────────────────────────────

@@ -157,6 +157,20 @@ constexpr ItemDef kCatalog[] = {
         /*slot*/part_bit(BodyPartId::Grip),
         /*blocks*/part_bit(BodyPartId::OffGrip), /*armor*/{}, /*dice*/{1, 6},
         /*dmgType*/DamageType::Blunt, /*skill*/SkillId::Staff},
+
+    // ── The bow (shooting law, 2026-09-09) — APPENDED, ordinals are forever.
+    // The absence above is over: Delivery::Missile IS the universal
+    // shooting law the rack was waiting for. Its damage takes no attribute
+    // add (dice + Bow skill + LCK — range is the compensation, owner
+    // verdict); its pace is the same kilogram through the same mass law;
+    // its arrow is the same projectile door every NPC shooter looses
+    // through, with no ammo anywhere. Both hands, like the spear.
+    {"wpn_bow",     "Hunting Bow",     ItemType::Weapon,     70, 1.00f, "\xF0\x9F\x8F\xB9",
+        "A self bow of yew; kills at a distance it never has to close", {},
+        /*slot*/part_bit(BodyPartId::Grip),
+        /*blocks*/part_bit(BodyPartId::OffGrip), /*armor*/{}, /*dice*/{1, 8},
+        /*dmgType*/DamageType::Pierce, /*skill*/SkillId::Bow,
+        /*delivery*/Delivery::Missile, /*range*/80.0f},
 };
 
 const std::unordered_map<std::string, const ItemDef*>& catalog_map() {

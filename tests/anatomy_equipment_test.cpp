@@ -257,6 +257,58 @@ void test_strike_reads_derived_affixes() {
           "the dice stay the ROW's — an affix modulates, never replaces");
 }
 
+// ── The missile row's law (shooting verdicts 2026-09-09) ──────────────────
+void test_missile_row_shoots_without_the_attribute() {
+    Attributes a{};
+    a[AttributeId::Str] = 40;   // a strongman, to make the absence loud
+    Skills s{};
+
+    const ItemDef* bowDef = item_def_at(item_index("wpn_bow"));
+    CHECK(bowDef && bowDef->delivery == Delivery::Missile
+              && bowDef->skill == SkillId::Bow
+              && bowDef->dice.n == 1 && bowDef->dice.m == 8
+              && bowDef->range > 0.0f
+              && bowDef->blocksMask != 0,
+          "the appended bow row: Missile delivery, Bow skill, 1d8, a real "
+          "range, both hands");
+
+    Equipment sword{};
+    ItemRef blade{};
+    blade.def = std::uint16_t(item_index("wpn_sword"));
+    blade.count = 1;
+    CHECK(equip(sword, blade) >= 0, "the sword is in hand");
+    const StrikeFields swordHit = hand_strike_fields(a, s, &sword);
+    CHECK(swordHit.delivery == Delivery::Melee && swordHit.flatAdd == 40,
+          "a melee blow carries the attribute's whole add");
+
+    Equipment bow{};
+    ItemRef loose{};
+    loose.def = std::uint16_t(item_index("wpn_bow"));
+    loose.count = 1;
+    CHECK(equip(bow, loose) >= 0, "the bow is in hand");
+    const StrikeFields bowHit = hand_strike_fields(a, s, &bow);
+    CHECK(bowHit.delivery == Delivery::Missile
+              && bowHit.range == bowDef->range,
+          "the delivery and reach ride the strike assembly");
+    CHECK(bowHit.flatAdd == 0,
+          "a missile blow takes NO attribute add — dice, skill and LCK "
+          "alone (range is the compensation)");
+    CHECK(bowHit.recoverySteps
+              == recovery_steps(weapon_swing_seconds(bowDef), a, s,
+                                SkillId::Armsmaster),
+          "the loose pays the same mass law through the same door");
+
+    // The GEAR's own voice still speaks: a worn DmgFlat affix is equipment,
+    // not the body, so it lands on an arrow exactly as on a blade.
+    ItemRef rolled = loose;
+    rolled.seed = 5;
+    rolled.set_affix(0, {std::uint8_t(BonusId::DmgFlat), 3});
+    Equipment bow2{};
+    CHECK(equip(bow2, rolled) >= 0, "the rolled bow is in hand");
+    CHECK(hand_strike_fields(a, s, &bow2).flatAdd == 3,
+          "a worn DmgFlat affix is IN the arrow, the attribute still is not");
+}
+
 } // namespace
 
 int main() {
@@ -268,5 +320,6 @@ int main() {
     test_blocks_mask_occupies_and_releases();
     test_worn_sums_reach_the_one_currency();
     test_strike_reads_derived_affixes();
+    test_missile_row_shoots_without_the_attribute();
     return sm::test::report("anatomy_equipment_test");
 }
