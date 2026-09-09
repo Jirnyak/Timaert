@@ -40,17 +40,46 @@ static void gen_dungeon_void(const CellContext& ctx, SubworldMapData& out) {
 
 Tile dungeon_floor_tile(const DungeonRef& ref) {
     switch (ref.kind) {
-        case DungeonRef::Cave: return TILE_ROCK;    // scree
-        default:               return TILE_SQUARE;  // flagged hall
+        case DungeonRef::Cave:         return TILE_ROCK;  // scree
+        case DungeonRef::PrologueRoad: return TILE_ROAD;  // the paved bed
+        default:                       return TILE_SQUARE; // flagged hall
     }
+}
+
+// kind, household≥0, vermin≥0, den family, ladder, hatch, water, ring,
+// scene biome (rock ring for interiors), wrap block (0 = static window)
+constexpr DungeonKindRow kDungeonKindRows[] = {
+    { DungeonRef::None,       false, false, LandmarkType::Ruin,
+                              false, false, 0.0f, DungeonRef::Void,
+                              Biome::Mountain, 0 },
+    { DungeonRef::House,      true,  false, LandmarkType::Ruin,
+                              false, false, 0.0f, DungeonRef::Void,
+                              Biome::Mountain, 0 },
+    { DungeonRef::Cave,       false, true,  LandmarkType::Ruin,
+                              false, false, 0.0f, DungeonRef::Void,
+                              Biome::Mountain, 0 },
+    { DungeonRef::SpireTower, false, true,  LandmarkType::Spire,
+                              true,  true,  0.0f, DungeonRef::Void,
+                              Biome::Mountain, 0 },
+    { DungeonRef::PrologueRoad, false, false, LandmarkType::Ruin,
+                              false, false, 0.0f, DungeonRef::Void,
+                              Biome::Taiga, 3 },
+};
+static_assert(rows_in_enum_order(kDungeonKindRows, &DungeonKindRow::kind),
+              "kDungeonKindRows must mirror DungeonRef::Kind");
+
+const DungeonKindRow& dungeon_kind_row(std::uint8_t kind) {
+    return kind < std::size(kDungeonKindRows) ? kDungeonKindRows[kind]
+                                              : kDungeonKindRows[0];
 }
 
 DungeonRoom dungeon_room(const DungeonRef& ref) {
     switch (ref.kind) {
-        case DungeonRef::House:      return dungeon_house_room(ref);
-        case DungeonRef::Cave:       return dungeon_cave_room(ref);
-        case DungeonRef::SpireTower: return dungeon_spire_tower_room(ref);
-        default:                     return DungeonRoom{};
+        case DungeonRef::House:        return dungeon_house_room(ref);
+        case DungeonRef::Cave:         return dungeon_cave_room(ref);
+        case DungeonRef::SpireTower:   return dungeon_spire_tower_room(ref);
+        case DungeonRef::PrologueRoad: return dungeon_prologue_road_room(ref);
+        default:                       return DungeonRoom{};
     }
 }
 
@@ -67,12 +96,13 @@ void dungeon_entry_point(const DungeonRef& ref, float& x, float& y) {
 }
 
 bool dungeon_has_upper(const DungeonRef& ref) {
-    // A cave has no storeys: it has depth, and depth is walked, not climbed.
-    if (ref.kind == DungeonRef::Cave) return false;
     // A tower climbs 0..floors-1; every storey below the top has a way up.
     if (ref.kind == DungeonRef::SpireTower) {
         return int(ref.level) < dungeon_spire_tower_floors(ref) - 1;
     }
+    // Only a house stacks rooms. A cave has depth, and depth is walked, not
+    // climbed; an open pocket stands under the sky.
+    if (ref.kind != DungeonRef::House) return false;
     // A storey is worth climbing only if it seats a room you can fight in:
     // both interior half-spans at least the manoeuvre floor the partitions
     // are cut to (sub/dgn/house.cpp kMinRoomSpanTiles = 12 — a doorway plus
@@ -83,10 +113,11 @@ bool dungeon_has_upper(const DungeonRef& ref) {
 
 bool dungeon_has_cellar(const DungeonRef& ref, std::uint32_t worldSeed,
                         int cx, int cy) {
-    if (ref.kind == DungeonRef::Cave) return false;   // see above
-    // A tower rises; nothing of it is dug. Its downward shafts live BETWEEN
-    // storeys (E pad, dungeon_stair_point), never below the ground floor.
-    if (ref.kind == DungeonRef::SpireTower) return false;
+    // Only a house digs. A cave IS the underground; a tower rises, nothing
+    // of it is dug (its downward shafts live BETWEEN storeys — E pad,
+    // dungeon_stair_point — never below the ground floor); an open pocket
+    // has no door to dig under.
+    if (ref.kind != DungeonRef::House) return false;
     // Design parameter, not an invariant: every second hearth keeps a
     // cellar. Rolled from the LEVEL-0 stream so every storey of one house
     // agrees on whether the shaft below exists.
@@ -114,10 +145,10 @@ void dungeon_stair_point(const DungeonRef& ref, bool up, float& x, float& y) {
 
 void dungeon_shaft_arrival_point(const DungeonRef& ref, bool wentUp,
                                  float& x, float& y) {
-    // A tower's up-shaft tops out at the new storey's DOWN pad (and the
-    // down-shaft lands on the UP pad) — the ladder alternates sides. A
-    // house shaft is one vertical line: you arrive on the pad you took.
-    const bool pad = ref.kind == DungeonRef::SpireTower ? !wentUp : wentUp;
+    // A ladder's up-shaft tops out at the new storey's DOWN pad (and the
+    // down-shaft lands on the UP pad) — the sides alternate. A fixed-pair
+    // shaft is one vertical line: you arrive on the pad you took.
+    const bool pad = dungeon_kind_row(ref.kind).shaftLadder ? !wentUp : wentUp;
     dungeon_stair_point(ref, pad, x, y);
 }
 
@@ -134,6 +165,9 @@ void dispatch_generate_dungeon(const CellContext& ctx, SubworldMapData& out) {
         case DungeonRef::House:      gen_dungeon_house(ctx, out);       break;
         case DungeonRef::Cave:       gen_dungeon_cave(ctx, out);        break;
         case DungeonRef::SpireTower: gen_dungeon_spire_tower(ctx, out); break;
+        case DungeonRef::PrologueRoad:
+            gen_dungeon_prologue_road(ctx, out);
+            break;
         case DungeonRef::Void:
         default:                     gen_dungeon_void(ctx, out);        break;
     }

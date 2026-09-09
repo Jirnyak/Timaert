@@ -759,6 +759,7 @@ timaert_test(subworld_generator_parity_test
         src/sub/dgn/house.cpp
         src/sub/dgn/cave.cpp
         src/sub/dgn/spire_tower.cpp
+        src/sub/dgn/prologue_road.cpp
     LINK_SDL)
 
 timaert_test(tree_layer_test
@@ -775,6 +776,7 @@ timaert_test(city_distribution_test
         src/sub/dgn/house.cpp
         src/sub/dgn/cave.cpp
         src/sub/dgn/spire_tower.cpp
+        src/sub/dgn/prologue_road.cpp
     LINK_SDL)
 
 timaert_test(material_seam_test
@@ -790,6 +792,7 @@ timaert_test(structure_collide_test
         src/sub/dgn/house.cpp
         src/sub/dgn/cave.cpp
         src/sub/dgn/spire_tower.cpp
+        src/sub/dgn/prologue_road.cpp
     LINK_SDL)
 
 timaert_test(house_pad_flatten_test
@@ -800,6 +803,7 @@ timaert_test(house_pad_flatten_test
         src/sub/dgn/house.cpp
         src/sub/dgn/cave.cpp
         src/sub/dgn/spire_tower.cpp
+        src/sub/dgn/prologue_road.cpp
     LINK_SDL)
 # Dungeon house interior (sub/dgn/house.cpp): sealed room projected from the
 # door's DungeonRef, routed through dispatch_generate's early return — links
@@ -813,6 +817,7 @@ timaert_test(dungeon_house_test
         src/sub/dgn/house.cpp
         src/sub/dgn/cave.cpp
         src/sub/dgn/spire_tower.cpp
+        src/sub/dgn/prologue_road.cpp
     LINK_SDL)
 
 # Dungeon cave interior (sub/dgn/cave.cpp): a cavern CARVED out of solid rock —
@@ -828,6 +833,21 @@ timaert_test(dungeon_cave_test
         src/sub/dgn/house.cpp
         src/sub/dgn/cave.cpp
         src/sub/dgn/spire_tower.cpp
+        src/sub/dgn/prologue_road.cpp
+    LINK_SDL)
+
+# Prologue road pocket (sub/dgn/prologue_road.cpp): the demo's opening — a
+# toroidal forest road under open sky. Locks periodicity (the wrap law), the
+# bed, the open-sky promise and the kind row's columns.
+timaert_test(dungeon_prologue_test
+    SOURCES
+        src/sub/base_generator.cpp
+        src/sub/gens/dispatch.cpp
+        src/sub/dgn/dispatch.cpp
+        src/sub/dgn/house.cpp
+        src/sub/dgn/cave.cpp
+        src/sub/dgn/spire_tower.cpp
+        src/sub/dgn/prologue_road.cpp
     LINK_SDL)
 
 # Spire tower interior (sub/dgn/spire_tower.cpp): the spell's climb — round
@@ -841,6 +861,7 @@ timaert_test(spire_tower_test
         src/sub/dgn/house.cpp
         src/sub/dgn/cave.cpp
         src/sub/dgn/spire_tower.cpp
+        src/sub/dgn/prologue_road.cpp
     LINK_SDL)
 
 # Universal prop / interaction system: the kStructureKindRows draw / light /
@@ -855,6 +876,7 @@ timaert_test(prop_interaction_test
         src/sub/dgn/house.cpp
         src/sub/dgn/cave.cpp
         src/sub/dgn/spire_tower.cpp
+        src/sub/dgn/prologue_road.cpp
         src/sub/map_factory.cpp
     LINK_SDL)
 
@@ -871,7 +893,8 @@ timaert_test(subworld_async_seam_test
         src/sub/dgn/dispatch.cpp
         src/sub/dgn/house.cpp
         src/sub/dgn/cave.cpp
-        src/sub/dgn/spire_tower.cpp)
+        src/sub/dgn/spire_tower.cpp
+        src/sub/dgn/prologue_road.cpp)
 
 timaert_test(subworld_spawn_parity_test
     SOURCES
@@ -890,6 +913,7 @@ timaert_test(subworld_spawn_parity_test
         src/sub/dgn/house.cpp
         src/sub/dgn/cave.cpp
         src/sub/dgn/spire_tower.cpp
+        src/sub/dgn/prologue_road.cpp
         src/macro/player_entity.cpp
         src/macro/anatomy.cpp
     LINK_ENTT)
@@ -1235,6 +1259,7 @@ timaert_test(settlement_faction_test
         src/sub/dgn/house.cpp
         src/sub/dgn/cave.cpp
         src/sub/dgn/spire_tower.cpp
+        src/sub/dgn/prologue_road.cpp
         src/macro/player_entity.cpp
         src/macro/anatomy.cpp
     LINK_ENTT)
@@ -1256,6 +1281,7 @@ timaert_test(carried_light_spawn_test
         src/sub/dgn/house.cpp
         src/sub/dgn/cave.cpp
         src/sub/dgn/spire_tower.cpp
+        src/sub/dgn/prologue_road.cpp
         src/macro/player_entity.cpp
         src/macro/anatomy.cpp
     LINK_ENTT)
@@ -1281,6 +1307,7 @@ timaert_test(city_population_inside_walls_test
         src/sub/dgn/house.cpp
         src/sub/dgn/cave.cpp
         src/sub/dgn/spire_tower.cpp
+        src/sub/dgn/prologue_road.cpp
         src/macro/player_entity.cpp
         src/macro/anatomy.cpp
     LINK_ENTT)

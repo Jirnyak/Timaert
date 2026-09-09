@@ -68,6 +68,40 @@ void dungeon_roof_hatch_point(const DungeonRef& ref, float& x, float& y);
 // a house is flagged and paved, a cave is bare scree.
 Tile dungeon_floor_tile(const DungeonRef& ref);
 
+// ── What a kind IS, in columns ──────────────────────────────────────────────
+// The behavioural facts of an interior kind, one row per DungeonRef::Kind.
+// The session reads these instead of comparing kinds, so a new kind — an
+// open pocket scene under real sky (CANON S17) — is a row and a module, not
+// a hunt for scattered branches. Geometry stays in the dispatches above: a
+// column says what a kind IS, a dispatch says where its footprint puts
+// things. (The sky itself needs no column: a ceiling is module masonry, and
+// a module that stamps none stands under the honest sky.)
+struct DungeonKindRow {
+    std::uint8_t kind;       // DungeonRef::Kind — rows_in_enum_order guard
+    bool householdAbove;     // storeys ≥0 borrow RESIDENTS from Population
+    bool verminAbove;        // storeys ≥0 draw VERMIN from FaunaCount
+                             //   (a cellar, level<0, is always a den)
+    LandmarkType denFamily;  // whose monster-table family the den draws
+    bool shaftLadder;        // pads are directional (W climbs, E descends)
+                             //   instead of fixed storey pairs
+    bool roofHatch;          // the top storey opens a hatch onto open air
+    float waterLevel;        // the scene's sea plane (an interior has none)
+    std::uint8_t ringFiller; // DungeonRef::Kind sealing the window's ring
+    Biome sceneBiome;        // the biome the synthetic resolver reports —
+                             //   the ground's material (rock ring vs green)
+    std::uint8_t wrapCells;  // 0 = static walled window (interiors).
+                             //   N = TOROIDAL pocket: the scene is an N×N
+                             //   block of variant cells, every window cell
+                             //   resolves to its (x mod N, y mod N) variant,
+                             //   and the seam re-centres — walk on forever,
+                             //   the block meets itself. The ring filler is
+                             //   unused under wrap. The module reads this
+                             //   same column for its periodicity law.
+};
+// Void (0xFF) and anything unknown read the None row: no people, no beasts,
+// no hatch — filler is inert by the same columns that make a house lively.
+const DungeonKindRow& dungeon_kind_row(std::uint8_t kind);
+
 // Interior room rectangle (cell-local tile coords) derived from the door's
 // exterior footprint — the ONE geometry rule shared by the generator, the
 // engine's entry placement, and the tests. Dispatches on ref.kind.
@@ -101,5 +135,12 @@ void gen_dungeon_spire_tower(const CellContext& ctx, SubworldMapData& out);
 DungeonRoom dungeon_spire_tower_room(const DungeonRef& ref);
 // Storey count of the tower (= clamped ordinal = the spell's tier).
 int dungeon_spire_tower_floors(const DungeonRef& ref);
+
+// Prologue road (sub/dgn/prologue_road.cpp — self-contained module). The
+// demo's opening pocket: a forest road under the honest sky, TOROIDALLY
+// continuous (every height and tile is a periodic function of the cell, so
+// the wrapped window walks forever). No door, no exit, no ceiling.
+void gen_dungeon_prologue_road(const CellContext& ctx, SubworldMapData& out);
+DungeonRoom dungeon_prologue_road_room(const DungeonRef& ref);
 
 } // namespace sm::sub

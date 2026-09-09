@@ -65,6 +65,10 @@ enum class DungeonArrival : std::uint8_t { Door, ShaftUp, ShaftDown };
 struct DungeonSession {
     DungeonRef ref{};
     DungeonArrival arrival = DungeonArrival::Door;
+    // Whether a real street door raised this scene. A pocket raised by the
+    // plot (enter_pocket_scene) has no doorstep: no exit point, no walked
+    // exit — the scene ends by the plot's own teardown.
+    bool hasDoor = true;
     int doorCx = 0, doorCy = 0;   // wrapped macro cell of the entered door
     // Where the player stood when opening the door, cell-local to the door's
     // cell — the spot the exit walks back out to.
@@ -149,6 +153,13 @@ public:
     // squad ring / macro projections spawn around the player.
     void enter(const MacroWorld& mw, EventBus& bus,
                const float* posOverride = nullptr);
+    // Raise a POCKET scene directly — no street door, no overworld session
+    // underneath (the prologue's entry: character creation drops the player
+    // here). The scene has no doorstep and no walked exit; it ends by the
+    // plot's teardown (leave(true)). `floorHeight` is the pocket's macro
+    // height in the normalised [0,1] range the heightmap law reads.
+    void enter_pocket_scene(const MacroWorld& mw, EventBus& bus,
+                            const DungeonRef& ref, float floorHeight);
     void leave(bool force = false);
     bool interact();
     // True while the active scene is a dungeon interior (see SceneKind).
@@ -159,6 +170,13 @@ public:
     // opens onto, +1 up, -1 a cellar. Read by the HUD and the smokes.
     int dungeon_level() const {
         return in_dungeon() ? int(dungeon_.ref.level) : 0;
+    }
+    // Kind of the active interior (DungeonRef::None outside one). WHAT scene
+    // the player stands in is a scene property others may key on — the
+    // prologue's death intercept reads this, never a player flag.
+    std::uint8_t dungeon_kind() const {
+        return in_dungeon() ? dungeon_.ref.kind
+                            : std::uint8_t(DungeonRef::None);
     }
     // Window-tile position of this storey's street threshold — the tile E
     // leaves the building from. False when the storey has none (an upper

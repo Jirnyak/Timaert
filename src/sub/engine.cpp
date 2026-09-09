@@ -1235,6 +1235,11 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
         || terrain_->height <= 0) {
         return;
     }
+    // An interior owns its own population (enter_dungeon_scene): this path
+    // resolves the REAL macro cell at the window's virtual coordinates, and
+    // a wrapped pocket re-centring through it would pour some unrelated
+    // street's crowd into the scene.
+    if (sceneKind_ == SceneKind::Dungeon) return;
     const int ccx = mgr_.center_cx() + ox;
     const int ccy = mgr_.center_cy() + oy;
     const CellContext ctx = resolve_context(ccx, ccy);
@@ -2968,21 +2973,16 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
 }
 
 void SubworldEngine::leave(bool force) {
-    if (!force && exit_blocked_by_danger()) {
-        set_status("Exit blocked: hostiles are too close in this danger zone.");
+    // The leave key belongs to the OPEN subworld only (owner ruling
+    // 2026-09-09, reversing 2026-08-12): a dungeon is left the way it is
+    // entered — on foot, through its own exits (door, stairs, hatch). A
+    // scene that declares no exit is a scene the player does not leave.
+    if (!force && sceneKind_ == SceneKind::Dungeon) {
+        set_status("No way out here — find the exit.");
         return;
     }
-    // The universal way out (owner ruling 2026-08-12, revised): the leave key
-    // surfaces you to the MAP from wherever you stand — a cellar as readily as
-    // an open field — as long as nothing is on you. That "nothing" is the same
-    // danger gem the HUD shows, asked of the interior itself, because a
-    // dungeon's macro cell is a town square and its zone would report the
-    // safety of the STREET while a troll is two paces behind you. The door and
-    // the stairs stay the walked way out; this is the one that respects the
-    // player's time.
-    if (!force && sceneKind_ == SceneKind::Dungeon
-        && danger_level() != DangerLevel::Green) {
-        set_status("Too dangerous to slip away — fight or find the door.");
+    if (!force && exit_blocked_by_danger()) {
+        set_status("Exit blocked: hostiles are too close in this danger zone.");
         return;
     }
     entt::entity possessedMacro = entt::null;   // set iff exit was AS a lord (5e-2)
@@ -3019,7 +3019,13 @@ void SubworldEngine::leave(bool force) {
         // every SubworldTag body. Falls back to the window centre for a normal
         // un-possessed exit.
         possessedMacro = remap_macro_player_to_origin();
-        if (possessedMacro == entt::null) {
+        // A DOORLESS pocket's window coordinates are virtual (and a wrapped
+        // one's centre drifts with every torus loop): syncing them into the
+        // macro player would teleport him across the real map. The pocket's
+        // teardown leaves the macro player exactly where boot anchored him.
+        const bool doorlessPocket =
+            sceneKind_ == SceneKind::Dungeon && !dungeon_.hasDoor;
+        if (possessedMacro == entt::null && !doorlessPocket) {
             sync_macro_player_to_center();
         }
     }
@@ -3147,6 +3153,24 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
     return true;
 }
 
+void SubworldEngine::enter_pocket_scene(const MacroWorld& mw, EventBus& bus,
+                                        const DungeonRef& ref,
+                                        float floorHeight) {
+    // A pocket is raised from the map or from boot, never over a live scene
+    // (the plot that raises it owns the ordering).
+    if (active_) return;
+    dungeon_ = {};
+    dungeon_.ref = ref;
+    dungeon_.arrival = DungeonArrival::Door;
+    dungeon_.hasDoor = false;
+    dungeon_.doorCx = 0;   // virtual anchor: a doorless pocket owes no cell
+    dungeon_.doorCy = 0;
+    dungeon_.floorHeight = floorHeight;
+    dungeon_.settlementId = -1;
+    sceneKind_ = SceneKind::Dungeon;
+    enter_dungeon_scene(mw, bus);
+}
+
 void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
                                          EventBus& bus) {
     if (!mw.gs || !mw.terrain || !mw.features || !mw.world) return;
@@ -3166,29 +3190,58 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     GameState& gs = *gs_;
 
     // Synthetic resolver: the door cell IS the interior, the ring is sealed
-    // Void filler. Everything downstream (workers, composite, renderer,
-    // collision) runs the ordinary window path — a dungeon is just a window
-    // whose macro context says "behind a door" (pocket-subworld model).
+    // by whatever filler the kind's row names (Void rock today; an open
+    // pocket may wall itself in forest). Everything downstream (workers,
+    // composite, renderer, collision) runs the ordinary window path — a
+    // dungeon is just a window whose macro context says "behind a door"
+    // (pocket-subworld model).
     const DungeonSession ses = dungeon_;
     const std::uint32_t worldSeed = gs.worldSeed;
-    auto resolver = [ses, worldSeed](int x, int y) {
+    const DungeonKindRow& kindRow = dungeon_kind_row(ses.ref.kind);
+    // The capture rides SmallFunction's 64-byte inline storage: fields, not
+    // the whole session/row.
+    const DungeonRef sceneRef = ses.ref;
+    const int doorCx = ses.doorCx, doorCy = ses.doorCy;
+    const float floorH = ses.floorHeight;
+    const Biome sceneBiome = kindRow.sceneBiome;
+    const std::uint8_t ringKind = kindRow.ringFiller;
+    const std::uint8_t wrapCells = kindRow.wrapCells;
+    auto resolver = [sceneRef, doorCx, doorCy, floorH, worldSeed, sceneBiome,
+                     ringKind, wrapCells](int x, int y) {
         CellContext ctx{};
         ctx.cx = x;
         ctx.cy = y;
-        ctx.macroHeight = ses.floorHeight;
-        ctx.biome = Biome::Mountain; // masonry/rock material ring underfoot
+        ctx.macroHeight = floorH;
+        ctx.biome = sceneBiome;  // ground material (rock ring / green)
         ctx.feature = FT_None;
         ctx.landmark.id = -1;
         ctx.landmark.size = 0;
         ctx.landmark.kingdomIdx = -1;
         ctx.worldSeed = worldSeed;
-        const bool centre = (x == ses.doorCx && y == ses.doorCy);
+        if (wrapCells > 0) {
+            // TOROIDAL pocket: the scene is an N×N block of variant cells
+            // and every window cell resolves to its (x mod N, y mod N)
+            // variant, anchored so the entered cell is variant (0,0). The
+            // module keeps the block's edges periodic; the wrap does the
+            // rest. ctx.cx/cy carry the VARIANT — the module's coordinates
+            // in the block, not the window's virtual ones.
+            const int n = int(wrapCells);
+            const int vx = ((x - doorCx) % n + n) % n;
+            const int vy = ((y - doorCy) % n + n) % n;
+            ctx.cx = vx;
+            ctx.cy = vy;
+            ctx.dungeon = sceneRef;
+            ctx.seed = dungeon_scene_seed(worldSeed, vx, vy,
+                                          sceneRef.ordinal, sceneRef.level);
+            return ctx;
+        }
+        const bool centre = (x == doorCx && y == doorCy);
         ctx.dungeon = centre
-            ? ses.ref
-            : DungeonRef{DungeonRef::Void, ses.ref.level, 0, 0.0f, 0.0f};
+            ? sceneRef
+            : DungeonRef{ringKind, sceneRef.level, 0, 0.0f, 0.0f};
         ctx.seed = dungeon_scene_seed(worldSeed, x, y,
-                                centre ? ses.ref.ordinal : std::uint16_t(0),
-                                ses.ref.level);
+                                centre ? sceneRef.ordinal : std::uint16_t(0),
+                                sceneRef.level);
         return ctx;
     };
     mgr_.init(ses.doorCx, ses.doorCy, resolver);
@@ -3238,8 +3291,9 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     // while the town still has people to lend. A door in an emptied town
     // opens on an empty house; that is the honest reading of the stock.
     // Living storeys only: a cellar is nobody's bedroom (its own population
-    // is the vermin below).
-    if (ses.ref.kind == DungeonRef::House && ses.ref.level >= 0
+    // is the vermin below). WHICH kinds keep a household is a column of the
+    // kind table (dgn/dispatch.h) — the row read at the top of this scene.
+    if (kindRow.householdAbove && ses.ref.level >= 0
         && ses.settlementId >= 0 && ecs_) {
         MacroWorld mw = mw_;
         const MacroStockKey popKey{ses.settlementId,
@@ -3278,10 +3332,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     // capacity already counts), so clearing the climb thins the spire
     // through the same receipt a hunt settles, and the one growth law is
     // what re-summons the guard.
-    const bool denOfBeasts =
-        (ses.ref.kind == DungeonRef::House && ses.ref.level < 0)
-        || ses.ref.kind == DungeonRef::Cave
-        || ses.ref.kind == DungeonRef::SpireTower;
+    const bool denOfBeasts = ses.ref.level < 0 || kindRow.verminAbove;
     if (denOfBeasts && ecs_) {
         MacroWorld mw = mw_;
         const MacroStockKey faunaKey{-1, std::int16_t(ses.doorCx),
@@ -3290,10 +3341,9 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
         const DungeonRoom room = dungeon_room(ses.ref);
         // The den's table is its landmark's: a spire storey draws the Spire
         // family (demons), a cellar and a cave the Ruin family — the same
-        // ONE law the open cell runs (fauna.h roll_spawns).
-        const LandmarkType denKind = ses.ref.kind == DungeonRef::SpireTower
-            ? LandmarkType::Spire
-            : LandmarkType::Ruin;
+        // ONE law the open cell runs (fauna.h roll_spawns). Whose family is
+        // the kind row's column.
+        const LandmarkType denKind = kindRow.denFamily;
         spawn_dungeon_vermin(*ecs_, mgr_,
             dungeon_scene_seed(worldSeed, ses.doorCx, ses.doorCy,
                                ses.ref.ordinal, ses.ref.level),
@@ -3515,17 +3565,18 @@ bool SubworldEngine::try_take_dungeon_stairs() {
     const int level = int(ref.level);
     // Which shafts stand on THIS storey — the same rule the generator stamps
     // its pads by (sub/dgn/dispatch.h), asked of the same three functions, so
-    // a pad you can see is a pad that works. A tower's pads are directional
-    // (W always climbs, E always descends — the ladder of shafts); a house's
-    // two shafts each join a fixed pair of storeys.
-    const bool tower = ref.kind == DungeonRef::SpireTower;
+    // a pad you can see is a pad that works. A ladder kind's pads are
+    // directional (W always climbs, E always descends); a fixed-pair kind's
+    // two shafts each join a fixed pair of storeys. Which law applies is the
+    // kind row's column.
+    const bool ladder = dungeon_kind_row(ref.kind).shaftLadder;
     const bool hasUpper = dungeon_has_upper(ref);
     const bool hasCellar = dungeon_has_cellar(ref, gs_->worldSeed,
                                               dungeon_.doorCx, dungeon_.doorCy);
-    const bool padNW = tower ? hasUpper
-                             : (level == 0 && hasUpper) || level == 1;
-    const bool padNE = tower ? level > 0
-                             : (level == 0 && hasCellar) || level == -1;
+    const bool padNW = ladder ? hasUpper
+                              : (level == 0 && hasUpper) || level == 1;
+    const bool padNE = ladder ? level > 0
+                              : (level == 0 && hasCellar) || level == -1;
     if (!padNW && !padNE) return false;
 
     const float reach2 = kPlayerMeleeRange * kPlayerMeleeRange;
@@ -3539,16 +3590,16 @@ bool SubworldEngine::try_take_dungeon_stairs() {
         return dx * dx + dy * dy <= reach2;
     };
     float wx = 0.0f, wy = 0.0f;
-    // House: the NW shaft joins 0↔+1 and the NE shaft 0↔-1, so the storey
-    // you stand on decides which way a shaft goes. Tower: the pads ARE the
-    // directions — W is always one storey up, E always one down.
+    // Fixed pairs: the NW shaft joins 0↔+1 and the NE shaft 0↔-1, so the
+    // storey you stand on decides which way a shaft goes. Ladder: the pads
+    // ARE the directions — W is always one storey up, E always one down.
     int target = level;
     DungeonArrival arrival = DungeonArrival::Door;
     if (padNW && on_pad(/*up*/true, wx, wy)) {
-        target = tower ? level + 1 : (level == 0) ? 1 : 0;
+        target = ladder ? level + 1 : (level == 0) ? 1 : 0;
         arrival = DungeonArrival::ShaftUp;
     } else if (padNE && on_pad(/*up*/false, wx, wy)) {
-        target = tower ? level - 1 : (level == 0) ? -1 : 0;
+        target = ladder ? level - 1 : (level == 0) ? -1 : 0;
         arrival = DungeonArrival::ShaftDown;
     } else {
         return false;
@@ -3585,7 +3636,10 @@ bool SubworldEngine::try_take_dungeon_stairs() {
 }
 
 bool SubworldEngine::dungeon_exit_point(float& x, float& y) const {
-    if (!in_dungeon() || dungeon_.ref.level != 0) return false;
+    // A doorless pocket (the prologue) has no threshold to mark.
+    if (!in_dungeon() || dungeon_.ref.level != 0 || !dungeon_.hasDoor) {
+        return false;
+    }
     float ex = 0.0f, ey = 0.0f;
     dungeon_entry_point(dungeon_.ref, ex, ey);
     x = float(kCellSize) + ex;
@@ -3607,15 +3661,22 @@ bool SubworldEngine::try_exit_dungeon() {
     if (!active_ || sceneKind_ != SceneKind::Dungeon || !gs_ || !terrain_) {
         return false;
     }
-    // The street door exists on the storey it opens onto — and a spire
-    // tower's TOP storey has a second way out: the roof hatch onto the
+    // A doorless pocket has no walked exit either — the scene ends by the
+    // plot, not by the player (unreachable without a door prop to aim at;
+    // kept explicit so no future prop makes it reachable by accident).
+    if (!dungeon_.hasDoor) {
+        set_status("No way out here.");
+        return false;
+    }
+    // The street door exists on the storey it opens onto — and a hatched
+    // kind's TOP storey has a second way out: the roof hatch onto the
     // crown. Which threshold the keypress means is decided by reach, the
     // same rule that resolves two doors side by side.
-    const bool tower = dungeon_.ref.kind == DungeonRef::SpireTower;
+    const bool hatched = dungeon_kind_row(dungeon_.ref.kind).roofHatch;
     const int topLevel =
-        tower ? dungeon_spire_tower_floors(dungeon_.ref) - 1 : 0;
+        hatched ? dungeon_spire_tower_floors(dungeon_.ref) - 1 : 0;
     bool roofExit = false;
-    if (tower && int(dungeon_.ref.level) == topLevel) {
+    if (hatched && int(dungeon_.ref.level) == topLevel) {
         float hx = 0.0f, hy = 0.0f;
         dungeon_roof_hatch_point(dungeon_.ref, hx, hy);
         const float dx = playerX_ - (float(kCellSize) + hx);
@@ -3996,14 +4057,23 @@ void SubworldEngine::tick(float dt) {
     // A dungeon window is STATIC: no seam, no re-centre — the interior is
     // walled and its ring is sealed Void filler. The initial build was fully
     // synchronous (load_all), so there are no async cells to drain either.
-    if (sceneKind_ != SceneKind::Dungeon) {
+    // A WRAPPED pocket (kind row wrapCells > 0) is the exception: its ring
+    // IS the scene, so the seam re-centres exactly like the open world and
+    // the walker loops the torus.
+    if (sceneKind_ != SceneKind::Dungeon
+        || dungeon_kind_row(dungeon_.ref.kind).wrapCells > 0) {
         mgr_.check_boundary(playerX_, playerY_);
     }
     const SeamTiming timing = mgr_.last_seam_timing();
     const bool centerChanged = prevCx != mgr_.center_cx() || prevCy != mgr_.center_cy();
     const CompositeDirty dirtyNow = mgr_.consume_composite_dirty_cells();
     if (centerChanged) {
-        sync_macro_player_to_center();
+        // A pocket's window coordinates are virtual — a torus loop must not
+        // drag the MACRO player across the real map (the pocket ends by the
+        // plot's teardown, which owns the landing).
+        if (sceneKind_ != SceneKind::Dungeon) {
+            sync_macro_player_to_center();
+        }
         // Seamless persistence: carry the current 3×3's creatures across the
         // re-centre (shift + evict-departed + spawn-newly-entered) instead of
         // wiping and rebuilding. Entities in cells still inside the window —
@@ -4390,8 +4460,9 @@ void SubworldEngine::record_main(VkCommandBuffer cmd, VkExtent2D ext,
     // shared plane flooded the room. Heights are normalised [0,1], so 0 is
     // beneath every floor that can exist: one number retires the whole class
     // of "sea inside a cellar" bugs.
-    const float waterLevel =
-        sceneKind_ == SceneKind::Dungeon ? 0.0f : WATER_LEVEL;
+    const float waterLevel = sceneKind_ == SceneKind::Dungeon
+        ? dungeon_kind_row(dungeon_.ref.kind).waterLevel
+        : WATER_LEVEL;
     renderer3dVk_.record_main(cmd, ext, cam_, render_time(), waterLevel,
                               &mgr_, ecs_, hasteAura, flightAura,
                               playerX_, playerY_, elapsed_, frameIndex);

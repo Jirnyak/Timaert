@@ -144,6 +144,9 @@ struct DungeonRef {
                         //   interior that is nobody's property
         SpireTower = 3, // the spire's tower: storeys climbed bottom to top,
                         //   ordinal = the spire spell's TIER = storey count
+        PrologueRoad = 4, // the demo's opening pocket: a forest road under
+                        //   the honest sky, toroidal (wrapWindow) — walk on
+                        //   and the road meets itself; no door, no exit
         Void = 0xFF,    // sealed filler for the dungeon window's ring cells
     };
     std::uint8_t  kind = None;
