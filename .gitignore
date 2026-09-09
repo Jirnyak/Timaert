@@ -27,6 +27,11 @@ imgui.ini
 /save.bin
 /save.bin.tmp
 /save.bin.bak
+# save_roundtrip_test writes its fixtures through temp_save_path, which falls
+# back to "." when neither TEMP nor TMP is set — and macOS sets only TMPDIR.
+# So running the test binary from the repo root drops these here every time;
+# one of them (timaert_save_roundtrip_v8.bin) rode into 08f941b that way.
+/timaert_*.bin
 /*.obj
 /*.diff
 /*.patch
