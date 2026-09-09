@@ -143,6 +143,12 @@ The commands, by group (usage via `help <cmd>`):
 
 * **world** — `tp`, `tp_settlement`, `settime`, `addtime`, `simspeed`,
   `rest`, `revealmap`, `chop`, `pos`, `time`.
+  `simspeed` and `rest` state an INTENT; the SCENE is the authority
+  (`promote_turn_ticks`, `time.md` "THE tick promotion door"). Both are dropped
+  to 1× the moment the map is not live — the subworld, the menu, an unloaded
+  world — so a speed armed on the map cannot follow you down a hole or into a
+  new game. `simspeed` warns on the spot when the current scene will drop what
+  you just set, rather than letting the readout lie for a frame.
 * **spawning** — `spawn` (NPC/monster table), `spawn_squad`, `squad_orders`,
   `test_battle`, `spawn_fauna`, `killall`, `possess`.
 * **inventory** — `items` (catalog ids), `give`, `take`, `gold`;

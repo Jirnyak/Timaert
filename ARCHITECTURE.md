@@ -243,7 +243,11 @@ envelope layer, an empty mask bit), never through a second code path.
   squad step, the per-cell charge and the road planner alike (the planner's
   private second cost table is dead; roads are laid over the law they will be
   marched on). March calibration is pure level-1 data:
-  `kMacroWalkCellsPerHour = 8`, `kStaminaPerCell = 1`; the subworld's 96
+  `kMacroWalkCellsPerHour = 8`, `kStaminaPerCell = 2`, anchored by a
+  compile-time gate on the ROAD (`kRoadHoursPerFreshBar`, 6–9 game hours per
+  fresh bar) because the hours are the PRODUCT of the two knobs and a product
+  has no name to fail under — both moved in 2026-08-24 and the anchor drifted
+  1.75× in silence; the subworld's 96
   tiles/s is DERIVED from it (93.75 + 2.4% named allowance — the A8 debt
   closed by derivation).
 
@@ -1619,6 +1623,27 @@ Name + Lv + EXP`) and bottom command toolbar (`II  >  >>  Z | Inv Map Bld
 Qst Par Eq | Cdx Dip In/Out | – +`) live in
 [ui/screens.cpp](src/ui/screens.cpp) and emit `ToolbarResult` flag bundles
 consumed by the `Playing` branch of `main.cpp`.
+
+**Two derived-permission laws govern the loop, and they are the same law
+twice.** Neither stores what it could ask for:
+
+- **THE pause** (`pause_reasons`) — the world lives only while the whole mask
+  is clear. Exactly one bit is stored (the player's Space); a panel, a modal
+  and the menu pause the world by BEING on screen. The opposite scheme —
+  push on open, pop on close — wedges the world forever the first time a path
+  returns early without popping, and the bug looks like a hang with nothing in
+  the log.
+- **THE tick promotion** (`promote_turn_ticks` → [time.md](time.md)) — one turn
+  is one tick unless the fast-forward multiplier or the rest aim buys more, and
+  the permission (`fast_forward_allowed`: live map only) is re-derived every
+  turn. This one was learned the hard way in 2026-09-09: the multiplier's gate
+  sat on the toolbar BUTTON, which guards the ACT and not the STATE, so an
+  armed 4× survived the subworld, the menu and a whole new game because after
+  the click nothing ever asked again.
+
+The moral both share: **a derived permission cannot leak, because there is
+nothing to forget** — and what would have been forgotten is never the path you
+thought of, it is the load that returns early or the menu reached from a modal.
 
 Runtime evidence exists for Load, character tabs, settlement trade/quest
 accept, NPC Talk, NPC Trade, NPC Attack, Spell overlay/casting, `ShowDialog`,

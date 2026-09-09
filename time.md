@@ -120,6 +120,40 @@ time to spare.
 The developer `simspeed` multiplier runs several ticks per turn and carries its
 fractional part, so 1.0 is exact and only a deliberate fast-forward rounds.
 
+### THE tick promotion door
+
+One turn is one tick unless something buys more, and there are exactly two
+buyers: the fast-forward multiplier (toolbar `>>`, console `simspeed`) and the
+rest aim (`Z`, console `rest`). Both go through **one** door,
+`promote_turn_ticks` (`app/main.cpp`), which is the only producer of the tick
+count `frame()` is given — the loop keeps no promotion state of its own. Rest
+REPLACES the multiplier rather than multiplying with it: the rest is aimed at a
+full bar, not at a pace, and its own 128 ticks a turn is the whole of what it is
+allowed to buy.
+
+Promotion belongs to the **live map** and nowhere else — `fast_forward_allowed`
+is `Playing && worldLoaded && !subworld.active()`. The subworld is real time (a
+swing, a fall and a cast are all quoted in it); a menu or an unloaded world has
+no clock worth promoting. A scene that refuses **drops** both aims to 1× rather
+than suspending them (owner: «очень жёстко»), so the world, the toolbar button
+and the console readout cannot disagree, and climbing back onto the map never
+resumes a speed armed in a scene the player has left.
+
+The permission is **derived every turn, never stored** — the same law as THE
+pause (`ARCHITECTURE.md`, `pause_reasons`), and for the same reason. The
+multiplier used to be gated once, on the toolbar BUTTON, by
+`!subworld.active()`; a gate on the button guards the ACT, never the STATE, so
+an armed 4× survived a dive into the subworld, Esc to the menu and starting a
+whole new game, because after the click nothing ever asked again (owner, in
+play 2026-09-09). A derived gate cannot leak, because there is nothing to
+forget — and the exits are precisely the paths that would have been forgotten
+one at a time: a load that returns early, the menu reached from a modal, a
+subworld entered by falling down a hole.
+
+`App::simSpeed` is therefore an INTENT, not a permission. Nothing outside that
+door may reset it — the load path, the menu and the subworld entrance
+deliberately do not know the field exists.
+
 ## Underground the day stretches
 
 In the subworld, `kSubworldTickDivisor = 64` simulation steps buy one tick of
@@ -172,10 +206,21 @@ row — once the A8 debt ("two walking speeds diverging ×4") — is **CLOSED BY
 DERIVATION** (2026-08-24): the march was recalibrated to
 `kMacroWalkCellsPerHour = 8` (owner: «степени двойки»; a brisk paved pace at
 the world's own scale — the old 32 was a courier's gallop miscalled walking),
-with `kStaminaPerCell = 1` as the pure level-1 base — every modifier (travel
-skill, overload, terrain √) multiplies ON TOP, a fresh walker drops after
-~10 game hours of open country, and a night's rest (⅛ of the bar per hour)
-buys the whole bar back. With the map no longer galloping,
+with `kStaminaPerCell = 2` as the pure level-1 base (retuned 2026-09-09 — the
+2026-08-24 value of 1 put the anchor 1.75× out, see below) — every modifier
+(travel skill, overload, terrain √) multiplies ON TOP, a fresh walker drops
+after ~6.9 game hours of ROAD and ~4.9 of open country, and a night's rest
+(⅛ of the bar per hour) buys the whole bar back.
+
+The anchor is now a **compile-time gate** (`kRoadHoursPerFreshBar`), and the
+reason is a time-ladder lesson worth keeping: what is balanced is GAME HOURS,
+what is priced is the CELL, and the hours are the PRODUCT of the per-cell price
+and the pace. A product has no name to fail under. The 2026-08-24 pass moved
+both factors (pace 32 → 8, price 7/16 → 1); the product fell 14 → 8 SP per game
+hour and every hour quoted in the comments grew 1.75× without a single test
+going red — every test derived its expectation from the same constants it was
+guarding. Design numbers belong in literals, asserted; derived numbers belong
+in code, never in prose. With the map no longer galloping,
 `kSubworldWalkTilesPerSecond = 96` carries its derivation beside it
 (`app/main.cpp`): 8 cells/game hour = 8000 tiles per subworld game hour, and
 an hour down there lasts 85⅓ real seconds, so the honest rate is
@@ -206,15 +251,36 @@ quoted in real seconds.
 
 The step is for things the world does. The frame is for things the player sees.
 `tick_macro_npc_visuals` — the easing of a macro NPC's drawn position toward the
-cell its AI put it in — is interpolation for the eye, so it runs once per FRAME
-at the rate the frame is actually drawn, not on a 64 Hz step the monitor knows
-nothing about. `frame()` takes `frameSeconds` for exactly this class of work.
+cell its AI put it in — is interpolation for the eye, and it runs once per
+frame, because that is when there is something to look at.
 
-And it is drawn tighter than that: **nothing that writes game state is ever
-handed the real duration of a turn.** Every dt inside a step is the compile-time
-constant `kStepSeconds`. Even the easing of a macro NPC's drawn position — pure
-interpolation for the eye, but it writes to the ECS — advances by the tick, so a
-slow machine cannot smooth it at a different pace than the world moved it.
+But it is drawn tighter than "once per frame": **nothing that writes game state
+is ever handed the real duration of a turn.** Every dt inside a step is the
+compile-time constant `kStepSeconds`, and the easing — pure interpolation for
+the eye, but it WRITES TO THE ECS — is handed **the ticks the world actually
+lived this turn**, `stats.timeTick.ticksAdvanced × kStepSeconds`. So a slow
+machine cannot smooth it at a different pace than the world moved it.
+
+**Once per frame is not once per tick, and that gap was a shipped bug**
+(2026-09-09). The easing used to be handed one tick's worth flat — the same
+number only while a turn IS one tick. A turn is several whenever time is
+promoted (`>>`, the rest aim), and then a squad's `Position` ran N times further
+than its `VisualPos` was allowed to follow: the gap grew every frame until it
+passed the snap bound and the squad teleported. On the road at rest speed that
+was exactly three cells a frame — `128 / kAiTicks = 4` thinks × 0.75 cells — and
+the owner saw it as squads jumping.
+
+The denominator has to be TICKS and not frames for a reason worth stating, since
+the numbers happen to coincide at 1×: `MacroNpcRuntime::visualSpeed` is quoted
+in cells per `kAiPeriodSeconds`, which IS `kAiTicks` of world clock. Two
+quantities counted in different units only agree by accident. It also carries
+the subworld for free — down there `tick_world_subworld_steps` advances the
+macro clock once per `kSubworldTickDivisor` steps, so macro squads think rarely
+and smooth rarely, in the same crawling ratio.
+
+One consequence, deliberate: a paused world lives no ticks, so a body caught
+mid-glide by the pause now holds its intermediate position instead of easing
+into its cell over a stopped world.
 
 Real time is read in exactly three places in the whole game, and not one of them
 can change what the world does:
