@@ -423,6 +423,7 @@ void write_macro_npc(Writer& w, const MacroNpcRecord& m) {
     w.pod(m.memory);   // v28: the leader's memory — padding-free by static_assert
     w.pod(m.hasOrders);
     w.pod(m.dead);
+    w.pod(m.playerFlag);   // v87: PlayerTag rides the snapshot honestly
     write_inventory(w, m.inventory);
     write_equipment(w, m.gear);
     write_squad(w, m.roster);
@@ -442,9 +443,10 @@ void read_macro_npc(Reader& r, MacroNpcRecord& m) {
     r.pod(m.memory);   // v28
     r.pod(m.hasOrders);
     r.pod(m.dead);
+    r.pod(m.playerFlag);   // v87
     if (!r.ok) return;
     if (m.kind.type >= std::uint16_t(NPCType::Count)
-        || m.hasOrders > 1 || m.dead > 1) {
+        || m.hasOrders > 1 || m.dead > 1 || m.playerFlag > 1) {
         r.ok = false;
         return;
     }
@@ -697,7 +699,8 @@ void write_player(Writer& w, const PlayerState& p) {
     }
     w.pod(p.completedQuestCount);
     w.pod(p.failedQuestCount);
-    w.pod(p.possessedMacroSpawnId);   // Inc 5e-2 (kSaveVersion 10)
+    // (No possessedMacroSpawnId since v87: "who is controlled" is the honest
+    // playerFlag byte on the possessed record itself — one store, the world's.)
     w.pod(p.entryDir);                // entry-side context (kSaveVersion 15)
     w.pod(p.entryTicks);
     // v57: the player's journal — copies of the chronicle records he learned
@@ -732,7 +735,6 @@ void read_player(Reader& r, PlayerState& p) {
     }
     r.pod(p.completedQuestCount);
     r.pod(p.failedQuestCount);
-    r.pod(p.possessedMacroSpawnId);   // Inc 5e-2 (kSaveVersion 10)
     r.pod(p.entryDir);                // entry-side context (kSaveVersion 15)
     r.pod(p.entryTicks);
     std::uint32_t jn = 0;             // v57: the journal rides whole

@@ -843,8 +843,9 @@ void SubworldEngine::spawn_player_entity() {
     // strip only the MACRO flag (this is the one macro act of this function,
     // moved here from clear_player_entity when the flags split: leave() must
     // NOT strip the squad's own flag). The ensure door re-claims the flag
-    // onto his squad on the next macro tick. Clear the persisted ordinal too
-    // so a mid-subworld save records the hero — matching what load restores.
+    // onto his squad on the next macro tick. (Nothing else to clear since
+    // v87: the flag itself IS the record of control — the save carries it as
+    // the possessed record's own byte, and the out-of-snapshot ordinal died.)
     {
         std::array<entt::entity, 8> holders{};
         int held = 0;
@@ -857,7 +858,6 @@ void SubworldEngine::spawn_player_entity() {
             reg.remove<ecs::PlayerTag>(holders[std::size_t(i)]);
         }
     }
-    if (gs_) gs_->player.possessedMacroSpawnId = -1;
     const entt::entity e = reg.create();
     reg.emplace<ecs::Position>(e, playerX_, playerY_, 0.0f);
     reg.emplace<ecs::AvatarTag>(e);
@@ -3096,16 +3096,15 @@ void SubworldEngine::leave(bool force) {
         // into the macro world.
         clear_player_entity();
         // Inc 5e-2 (identity remap): if the exit was AS a possessed lord, ADOPT
-        // that macro NPC as the persistent player — move the single flag onto it
-        // and record its save-stable spawn ordinal. clear_player_entity() just
-        // tore down the subworld body that wore the flag, and the macro entity
-        // (no SubworldTag) survived the reaper, so this re-homes the one flag
-        // cleanly. Un-possessed exits pass entt::null ⇒ -1, and the next macro
-        // tick's ensure_macro_player_entity() re-creates the hero husk.
-        if (gs_) {
-            gs_->player.possessedMacroSpawnId =
-                adopt_possessed_macro_as_player(*ecs_, possessedMacro);
-        }
+        // that macro NPC as the persistent player — move the single flag onto
+        // it. clear_player_entity() just tore down the subworld body that wore
+        // the flag, and the macro entity (no SubworldTag) survived the reaper,
+        // so this re-homes the one flag cleanly. Un-possessed exits pass
+        // entt::null ⇒ no flag moves, and the next macro tick's
+        // ensure_macro_player_entity() re-claims it onto his squad. The flag
+        // IS the whole record of control since v87 — the save carries it as
+        // the possessed record's own byte, nothing else to write down.
+        adopt_possessed_macro_as_player(*ecs_, possessedMacro);
     }
     active_ = false;
     pendingUpload3d_ = {};

@@ -38,6 +38,7 @@ void test_participation_locality_and_silence() {
     gs.mapW = 64;
     gs.mapH = 64;
     chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
+    ecs::World w;   // no PlayerTag anywhere → he wears nobody
     gs.player.x = 10.0f;
     gs.player.y = 10.0f;
 
@@ -57,7 +58,7 @@ void test_participation_locality_and_silence() {
                      fact(1, FactKind::Revolted,
                           std::uint8_t(FactSubject::Landmark), 3u, 40, 40));
 
-    player_journal_capture(gs);
+    player_journal_capture(gs, w);
     CHECK(gs.player.journal.size() == 2,
           "participation and locality are learned; the far world is not");
     CHECK(gs.player.journal[0].subject == ecs::kPlayerSquadOrdinal
@@ -65,7 +66,7 @@ void test_participation_locality_and_silence() {
           "the journal keeps the very records, in the order they happened");
 
     // Idempotence: the reader's cursor moved, so nothing is learned twice.
-    player_journal_capture(gs);
+    player_journal_capture(gs, w);
     CHECK(gs.player.journal.size() == 2,
           "re-asking the chronicle re-learns nothing");
 
@@ -76,7 +77,7 @@ void test_participation_locality_and_silence() {
     hit.objectKind = fact_subject(FactSubject::Squad, true);
     hit.object = ecs::kPlayerSquadOrdinal;
     chronicle_record(gs.chronicle, hit);
-    player_journal_capture(gs);
+    player_journal_capture(gs, w);
     CHECK(gs.player.journal.size() == 3
               && gs.player.journal[2].object == ecs::kPlayerSquadOrdinal,
           "being done-to is participation too");
@@ -89,7 +90,7 @@ void test_participation_locality_and_silence() {
                      fact(3, FactKind::Battle,
                           fact_subject(FactSubject::Squad, false),
                           779u, 40, 40));
-    player_journal_capture(gs);
+    player_journal_capture(gs, w);
     CHECK(gs.player.journal.size() == 4,
           "locality follows the player, not a fixed home cell");
 }
@@ -99,6 +100,7 @@ void test_the_journal_never_forgets_and_the_cap_is_loud() {
     gs.mapW = 64;
     gs.mapH = 64;
     chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
+    ecs::World w;
     gs.player.x = 5.0f;
     gs.player.y = 5.0f;
 
@@ -117,7 +119,7 @@ void test_the_journal_never_forgets_and_the_cap_is_loud() {
                                   1000u + filed + i, 5, 5));
         }
         filed += slice;
-        player_journal_capture(gs);
+        player_journal_capture(gs, w);
     }
     CHECK(gs.player.journal.size() == std::size_t(cap)
               && gs.player.journalFull == 0,
@@ -129,7 +131,7 @@ void test_the_journal_never_forgets_and_the_cap_is_loud() {
                      fact(300, FactKind::Battle,
                           fact_subject(FactSubject::Squad, false),
                           999999u, 5, 5));
-    player_journal_capture(gs);
+    player_journal_capture(gs, w);
     CHECK(gs.player.journal.size() == std::size_t(cap)
               && gs.player.journalFull == 1,
           "the cap is loud, never a silent drop of his past");
@@ -143,6 +145,7 @@ void test_a_possessed_lords_deeds_are_his_participation() {
     gs.mapW = 64;
     gs.mapH = 64;
     chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
+    ecs::World w;
     gs.player.x = 5.0f;
     gs.player.y = 5.0f;
 
@@ -151,17 +154,21 @@ void test_a_possessed_lords_deeds_are_his_participation() {
                      fact(1, FactKind::Killed,
                           fact_subject(FactSubject::Squad, false),
                           42u, 50, 50));
-    player_journal_capture(gs);
+    player_journal_capture(gs, w);
     CHECK(gs.player.journal.empty(),
           "an unpossessed lord's deed far away is not the player's");
 
-    // Possessing him: the same deed, wherever it happened, is HIS.
-    gs.player.possessedMacroSpawnId = 42;
+    // Possessing him: the same deed, wherever it happened, is HIS. «Whom do
+    // I wear» is the flag on the lord himself (v87) — the world is asked, no
+    // out-of-snapshot field.
+    const entt::entity lord = w.reg.create();
+    w.reg.emplace<ecs::MacroSpawnId>(lord, ecs::MacroSpawnId{42u});
+    w.reg.emplace<ecs::PlayerTag>(lord);
     chronicle_record(gs.chronicle,
                      fact(2, FactKind::Killed,
                           fact_subject(FactSubject::Squad, false),
                           42u, 50, 50));
-    player_journal_capture(gs);
+    player_journal_capture(gs, w);
     CHECK(gs.player.journal.size() == 1
               && gs.player.journal[0].subject == 42u,
           "while possessed, the lord's ordinal is the player's participation");
@@ -176,6 +183,7 @@ void test_a_captured_copy_carries_no_ring_link() {
     gs.mapW = 64;
     gs.mapH = 64;
     chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
+    ecs::World w;
     gs.player.x = 5.0f;
     gs.player.y = 5.0f;
 
@@ -186,7 +194,7 @@ void test_a_captured_copy_carries_no_ring_link() {
     chronicle_record(gs.chronicle,
                      fact(1, FactKind::Battle,
                           fact_subject(FactSubject::Squad, false), 8u, 5, 5));
-    player_journal_capture(gs);
+    player_journal_capture(gs, w);
     CHECK(gs.player.journal.size() == 2
               && gs.player.journal[0].nextInCell == 0u
               && gs.player.journal[1].nextInCell == 0u,

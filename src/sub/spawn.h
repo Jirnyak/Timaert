@@ -359,14 +359,13 @@ MacroExitCell macro_exit_cell_for_body(ecs::World& w, entt::entity body,
 // Inc 5e-2 (identity remap). After leave() lands the macro player on a possessed
 // body's origin cell, ADOPT that macro NPC as the persistent player: move the
 // single macro PlayerTag flag onto `macro` — the overworld player now IS the
-// lord/bandit/peasant you inhabited, fighting on its own sheet — and return its
-// deterministic MacroSpawnId ordinal for save persistence
-// (PlayerState::possessedMacroSpawnId). Returns -1 and moves NO flag when `macro`
-// is null / invalid / not a real macro NPC (no MacroNpcRuntime); if it is a real
-// macro NPC the flag is placed but the return is still -1 when it lacks a
-// MacroSpawnId (synthetic setups only — make_npc always stamps one). Pure
-// registry mutation; the caller owns the surrounding flag/husk lifecycle.
-int adopt_possessed_macro_as_player(ecs::World& w, entt::entity macro);
+// lord/bandit/peasant you inhabited, fighting on its own sheet. Moves NO flag
+// when `macro` is null / invalid / not a real macro NPC (no MacroNpcRuntime).
+// The flag itself is the whole record of control (v87): the macro snapshot
+// carries it as the possessed record's honest byte, so there is no ordinal to
+// hand back for a second store. Pure registry mutation; the caller owns the
+// surrounding flag/husk lifecycle.
+void adopt_possessed_macro_as_player(ecs::World& w, entt::entity macro);
 
 // ── Possession / вселение (Inc 5c) ───────────────────────────────────────
 //

@@ -20,11 +20,12 @@
 
 #include "core/torus.h"
 #include "ecs/components.h"
+#include "ecs/world.h"
 #include "macro/state.h"
 
 namespace sm {
 
-inline void player_journal_capture(GameState& gs) {
+inline void player_journal_capture(GameState& gs, ecs::World& world) {
     const Chronicle& c = gs.chronicle;
     if (!c.ready() || gs.mapW <= 0 || gs.mapH <= 0) return;
     PlayerState& p = gs.player;
@@ -40,11 +41,17 @@ inline void player_journal_capture(GameState& gs) {
     const int px = wrapi(int(p.x), gs.mapW);
     const int py = wrapi(int(p.y), gs.mapH);
     // Participation is by the ordinal his deeds FILE UNDER — and while he
-    // wears a possessed lord (possession.md, PlayerState::possessedMacroSpawnId)
-    // that is the LORD's ordinal, wherever the deed happened: «узнаётся
-    // УЧАСТИЕ, где бы ни случилось». A capture keyed to his own squad alone
-    // learned a possessed reign only by standing on its cell.
-    const int possessed = p.possessedMacroSpawnId;
+    // wears a possessed lord (possession.md) that is the LORD's ordinal,
+    // wherever the deed happened: «узнаётся УЧАСТИЕ, где бы ни случилось».
+    // "Whom does he wear" is asked of the world itself — the ONE holder of
+    // ecs::PlayerTag (v87: the out-of-snapshot double of this answer died
+    // with SAVE-4). A capture keyed to his own squad alone learned a
+    // possessed reign only by standing on its cell.
+    int possessed = -1;
+    for (auto e : world.reg.view<ecs::PlayerTag, ecs::MacroSpawnId>()) {
+        const std::uint32_t idx = world.reg.get<ecs::MacroSpawnId>(e).index;
+        if (idx != ecs::kPlayerSquadOrdinal) possessed = int(idx);
+    }
     const auto isHis = [possessed](std::uint8_t kind, std::uint32_t ordinal) {
         if (fact_subject_kind(kind) != std::uint8_t(FactSubject::Squad))
             return false;

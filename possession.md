@@ -21,13 +21,14 @@ physically cannot see the macro side.
   (`spawn_player_entity` / `sync_player_entity_position` / `clear_player_entity`,
   `possess_aim` / `possess_by_id`, `remap_macro_player_to_origin`),
   [macro/player_entity.h](src/macro/player_entity.h) / `player_entity.cpp`
-  (`ensure_macro_player_entity`, `reattach_player_to_macro_spawn`),
+  (`ensure_macro_player_entity`),
   [ecs/components.h](src/ecs/components.h)
   (`PlayerTag`, `MacroOrigin`, `MacroSpawnId`),
-  [macro/state.h](src/macro/state.h) / `save.cpp`
-  (`PlayerState::possessedMacroSpawnId` — с v10, a historical number;
-  `kSaveVersion` is 42 today, and identity via the `MacroSpawnId` ordinal
-  still survives the save)
+  [macro/macro_snapshot.h](src/macro/macro_snapshot.h) / `save.cpp`
+  (`MacroNpcRecord.playerFlag` — v87: the flag rides the snapshot as the
+  possessed record's own honest byte; the out-of-snapshot ordinal
+  `possessedMacroSpawnId` and `reattach_player_to_macro_spawn` died with
+  SAVE-5)
 - **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) §Combat System /
   §L2 — Microworld (the subworld player & possession block)
 
@@ -97,16 +98,18 @@ physically cannot see the macro side.
   NPC itself (5e-2), so you leave **as** the lord — the flag rides a real
   `MacroNpcRuntime` body, not the hero husk. Any un-possessed exit falls back to
   the window centre, and the next macro tick re-heals the ordinary hero husk.
-- **Identity survives save/load.** The ECS is never serialized — macro NPCs
-  regenerate from `worldSeed` in a fixed creation order every boot — so the
-  durable identity is a deterministic **spawn ordinal** (`ecs::MacroSpawnId`,
-  stamped by the sole creation path `make_npc`, i.e. the Nth NPC created gets
-  ordinal N). `PlayerState::possessedMacroSpawnId` stores the possessed lord's
-  ordinal (**kSaveVersion 9→10**); on load, `reattach_player_to_macro_spawn`
-  re-finds the regenerated NPC by ordinal and hands the flag over from the
-  freshly-built husk. A missing ordinal (the lord died before the save, or the
-  seed changed) falls back to the hero, changing nothing. Owner decision
-  (`npc-sheet-possession-plan`): the possessed identity **must** persist.
+- **Identity survives save/load — honestly, since v87.** The macro-ECS
+  snapshot (Session 17) serializes every persistent macro NPC whole, and the
+  flag rides it as the possessed record's own byte
+  (`MacroNpcRecord.playerFlag`): restore re-stamps `PlayerTag` on the very
+  lord, nothing is re-derived. Owner verdict 2026-09-10: «сейв честно хранит
+  снимок всего мира… и потом честно просто смотрится у кого флажок игрок».
+  The old shape — `PlayerState::possessedMacroSpawnId` +
+  `reattach_player_to_macro_spawn` re-finding the lord by stored ordinal —
+  was a second store of "whom do I control" outside the snapshot, and it
+  masked the load-path genesis raising a SECOND player squad that every door
+  then pointed at (SAVE-5). Owner decision (`npc-sheet-possession-plan`):
+  the possessed identity **must** persist — it does, as world state.
 
 ## Increments
 
@@ -122,7 +125,7 @@ commit (build + validated smoke + `build/*_test` green each stage):
 | 5c | The possession act — body-native combat, console `possess` (the V keybind died 2026-09-06 — a future possession SPELL replaces it), non-mutating `player_display_hp`, AI/render skip the flagged body. |
 | 5d | `project_macro_npcs_into_subworld` + `MacroOrigin` backlink (macro NPCs → combat bodies on enter). |
 | 5e-1 | Exit **position** remap — land on the possessed body's macro origin cell. |
-| 5e-2 | Exit **identity** remap — `adopt_possessed_macro_as_player` moves the macro `PlayerTag` onto the origin so you exit *as* the lord, and a deterministic `MacroSpawnId` ordinal (stored in `possessedMacroSpawnId`, **kSaveVersion 9→10**) re-finds the same lord after a save/load regenerates the NPCs (`reattach_player_to_macro_spawn`). Owner decision: identity **survives** save/load. |
+| 5e-2 | Exit **identity** remap — `adopt_possessed_macro_as_player` moves the macro `PlayerTag` onto the origin so you exit *as* the lord. Persistence became the snapshot's job in **v87**: the flag rides `MacroNpcRecord.playerFlag` and restore re-stamps it (the stored-ordinal shape `possessedMacroSpawnId` + `reattach_player_to_macro_spawn` died with SAVE-5). Owner decision: identity **survives** save/load. |
 | **5e-3** *(open debt — status not re-verified since July 2026)* | Re-**enter** a subworld while still possessing a lord preserves possession end-to-end. As last verified, re-entry drops the flag to the hero — `clear_player_entity` strips-not-destroys a `MacroNpcRuntime` flag holder, so the lord survives as an autonomous NPC and nothing leaks, but the hero husk is rebuilt on enter. Full carry-through needs the enter path to stamp the possessed origin onto the new subworld body. This is the track's standing open item; re-check against the code before building on it. |
 
 ## Data-driven extension

@@ -40,6 +40,9 @@ std::vector<MacroNpcRecord> snapshot_macro_ecs(ecs::World& w) {
         if (const auto* mem = reg.try_get<AgentMemory>(e)) m.memory = *mem;
         if (const auto* eq = reg.try_get<ecs::BodyEquipment>(e)) m.gear = eq->gear;
         m.dead = reg.all_of<ecs::Dead>(e) ? 1 : 0;
+        // The flag rides the snapshot honestly (v87) — restore re-stamps it,
+        // no re-derivation from a second store.
+        m.playerFlag = reg.all_of<ecs::PlayerTag>(e) ? 1 : 0;
         out.push_back(std::move(m));
     }
     // Registry iteration order is an implementation detail; the ordinal is
@@ -77,6 +80,15 @@ void restore_macro_ecs(const std::vector<MacroNpcRecord>& records,
             reg.emplace<ecs::BodyEquipment>(e, ecs::BodyEquipment{m.gear});
         }
         if (m.dead) reg.emplace<ecs::Dead>(e);
+        // The two player marks, by their two sources of truth (CANON S2/S4):
+        // PlayerSquadTag = the reserved ordinal spelled as a tag (derived),
+        // PlayerTag = the honest byte the save carries (owner 2026-09-10 —
+        // «честно просто смотрится у кого флажок игрок»). Before this the
+        // load-path genesis raised a second player squad and every door kept
+        // pointing at it, ghosting the restored one (SAVE-5).
+        if (m.spawnId.index == ecs::kPlayerSquadOrdinal)
+            reg.emplace<ecs::PlayerSquadTag>(e);
+        if (m.playerFlag) reg.emplace<ecs::PlayerTag>(e);
         if (!any || m.spawnId.index > maxOrdinal) maxOrdinal = m.spawnId.index;
         any = true;
     }

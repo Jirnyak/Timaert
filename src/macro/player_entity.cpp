@@ -247,44 +247,4 @@ const AgentMemory* player_head(const ecs::World& world) {
     return player_head(const_cast<ecs::World&>(world));
 }
 
-bool reattach_player_to_macro_spawn(ecs::World& world, int id, float px, float py,
-                                    int mapW) {
-    if (id < 0) return false;
-    auto& reg = world.reg;
-
-    // Find the regenerated macro NPC that carries this deterministic ordinal.
-    // spawn_macro_npcs recreated the whole population from `worldSeed` in the same
-    // order, so the ordinal that was possessed at save time names the same NPC.
-    entt::entity target = entt::null;
-    for (auto e : reg.view<ecs::MacroSpawnId, ecs::MacroNpcRuntime>()) {
-        if (int(reg.get<ecs::MacroSpawnId>(e).index) == id) { target = e; break; }
-    }
-    if (target == entt::null) return false;  // died before save / seed changed
-
-    // Collect prior flag holders first — never mutate a pool while iterating it.
-    std::array<entt::entity, 8> prior{};
-    int n = 0;
-    for (auto e : reg.view<ecs::PlayerTag>()) {
-        if (e == target) continue;
-        if (n >= int(prior.size())) break;
-        prior[std::size_t(n++)] = e;
-    }
-    for (int i = 0; i < n; ++i) {
-        const entt::entity e = prior[std::size_t(i)];
-        if (!reg.valid(e)) continue;
-        // Strip only: the player's OWN squad and any possessed lord are real
-        // macro entities that must outlive losing the flag. Nothing here is a
-        // husk any more — the husk was the thing this merge deleted.
-        reg.remove<ecs::PlayerTag>(e);
-        if (!reg.all_of<ecs::MacroNpcRuntime>(e)) reg.destroy(e);
-    }
-
-    if (!reg.all_of<ecs::PlayerTag>(target)) reg.emplace<ecs::PlayerTag>(target);
-    // The loaded scalar is authoritative for WHERE the player is; the ordinal is
-    // authoritative for WHO. Snap the adopted squad to the saved cell.
-    reg.emplace_or_replace<ecs::MacroCell>(
-        target, ecs::cell_index(int(px), int(py), mapW));
-    return true;
-}
-
 } // namespace sm

@@ -1082,17 +1082,17 @@ stood but hands you the lord's *identity*: after the position remap,
 `adopt_possessed_macro_as_player(reg, macro)` moves the single macro `PlayerTag`
 onto the origin macro NPC itself, so the flag rides a real `MacroNpcRuntime` body
 and the vacated hero husk is reaped by the normal teardown (strip-not-destroy spares
-only `MacroNpcRuntime` holders, so exactly-one-`PlayerTag` still holds). Because the
-ECS is never serialized — macro NPCs regenerate deterministically from `worldSeed`
-in a fixed creation order every boot — a save-stable identity cannot be an
-`entt::entity`; it is a deterministic **spawn ordinal**. The runtime component
-`ecs::MacroSpawnId { std::uint32_t index; }` is stamped by the sole creation path
-`make_npc` (the Nth NPC created gets ordinal N) and is itself never serialized; only
-the *chosen* ordinal is persisted, in `PlayerState::possessedMacroSpawnId` (the one
-new serialized field, **`kSaveVersion` 9→10**). On load,
-`reattach_player_to_macro_spawn` re-finds the regenerated NPC by ordinal and hands
-the flag over from the freshly-healed husk; a missing ordinal (the lord died before
-the save, or the seed changed) falls back to the hero, changing nothing. The owner's
+only `MacroNpcRuntime` holders, so exactly-one-`PlayerTag` still holds). Persistence
+is the macro snapshot's job (**v87**): every persistent macro NPC is serialized
+whole (Session 17), and `PlayerTag` rides the possessed record as its own honest
+byte (`MacroNpcRecord.playerFlag`) — restore re-stamps the flag on the very lord,
+and the load-path genesis raises no macro bodies at all. Owner verdict 2026-09-10:
+«сейв честно хранит снимок всего мира… и потом честно просто смотрится у кого
+флажок игрок». (The old shape — the ordinal stored beside the world in
+`PlayerState::possessedMacroSpawnId`, re-derived on load by
+`reattach_player_to_macro_spawn` — was a second store of "whom do I control", and
+it masked the load raising a SECOND player squad every door then pointed at:
+postdemoaudit SAVE-5.) The owner's
 decision was that the possessed identity **must** survive save/load. The remaining
 staged work (5e-3) is carrying possession through a *re-enter* — today re-entering a
 subworld while possessing drops the flag back to the hero (the lord survives as an

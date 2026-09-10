@@ -1542,7 +1542,8 @@ void boot_world(App& app, std::uint32_t seed,
                 const sm::LayerParameters* lpOverride = nullptr,
                 int targetTotalCities = 0,
                 bool registerIntroStory = true,
-                bool spawnMacroNpcs = true) {
+                bool spawnMacroNpcs = true,
+                bool anchorPlayer = true) {
     boot_trace("start");
     if (boot_trace_enabled()) {
         std::fprintf(stderr, "[boot] params seed=%u map=%dx%d targetCities=%d\n",
@@ -1588,6 +1589,11 @@ void boot_world(App& app, std::uint32_t seed,
     gp.lpOverride = lpOverride;
     gp.targetTotalCities = targetTotalCities;
     gp.spawnMacroNpcs = spawnMacroNpcs;
+    // On the load path (both false) genesis raises NOBODY: the snapshot is
+    // the one source of the world's people, the player's squad included —
+    // an anchored genesis here used to raise a SECOND carrier of the
+    // reserved ordinal that every player door then pointed at (SAVE-5).
+    gp.anchorPlayer = anchorPlayer;
     gp.trace = boot_trace_enabled();
     sm::WorldGenOut go{};
     go.gs           = &app.gs;
@@ -1690,7 +1696,8 @@ bool boot_world_from_save(App& app, const std::string& path) {
     // intro and chapter 1 outright.
     boot_world(app, fresh.worldSeed, fresh.mapW, fresh.mapH,
                &fresh.mapParams, fresh.cityCountTarget,
-               /*registerIntroStory=*/true, /*spawnMacroNpcs=*/false);
+               /*registerIntroStory=*/true, /*spawnMacroNpcs=*/false,
+               /*anchorPlayer=*/false);
 
     // ── THE fold: the world the file names REPLACES the world the seed made ─
     //
@@ -1807,22 +1814,13 @@ bool boot_world_from_save(App& app, const std::string& path) {
     // TODO: rebuild_landmarks (PHASE C — landmark glyphs/lights).
     app.camX = app.camTargetX = app.gs.player.x + 0.5f;
     app.camY = app.camTargetY = app.gs.player.y + 0.5f;
-    // macro-4a: boot_world above created the flag at the pre-load anchor; the
-    // player scalar was just overwritten from the save, so re-sync the flag's
-    // Position to the loaded coordinates (the macro tick would also heal it).
+    // The restore above brought the player's squad AND the flag back verbatim
+    // (v87: PlayerTag is an honest byte of the possessed record — no
+    // re-derivation, no second store). ensure_ is a heal pass here, not a
+    // creator: genesis anchored nobody, so the squad the doors find is the
+    // restored one — the very defect SAVE-5 named was this call finding a
+    // load-path husk instead.
     sm::ensure_macro_player_entity(app.gs, app.ecs);
-    // Inc 5e-2 (possession persistence): if the player saved while possessing a
-    // macro lord, re-home the flag onto that SAME regenerated NPC, matched by its
-    // save-stable spawn ordinal. boot_world above respawned the macro NPCs from
-    // the same worldSeed, so the ordinal names the same body. On failure (it died
-    // before the save, or the ordinal is stale) keep the hero husk that ensure_
-    // just created and clear the field so we never retry a dead identity.
-    if (app.gs.player.possessedMacroSpawnId >= 0
-        && !sm::reattach_player_to_macro_spawn(app.ecs,
-               app.gs.player.possessedMacroSpawnId,
-               app.gs.player.x, app.gs.player.y, app.gs.mapW)) {
-        app.gs.player.possessedMacroSpawnId = -1;
-    }
     app.gs.subState.settlementId = settlement_at_player(app.gs);
     app.ui.settlementId = app.gs.subState.settlementId;
 
@@ -3474,7 +3472,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     // The player LEARNS this tick's facts — participation and his own cell
     // (macro/journal.h). Runs on both sides of the seam: underground the
     // engine files into the very macro cell he stands in.
-    sm::player_journal_capture(app.gs);
+    sm::player_journal_capture(app.gs, app.ecs);
     tick_subworld_hit_flash(app, dt);
     // The REAL pools only: the scratch fallback is all zeros, and a frame
     // before the squad entity exists must not read as a death.

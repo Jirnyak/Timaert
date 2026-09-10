@@ -513,10 +513,9 @@ struct MacroSeeds {
 };
 
 MacroSeeds seed_macro_npcs(entt::registry& reg, int mapW) {
-    // Deterministic spawn ordinal, one per NPC, reset per call — exactly like the
-    // shipping `spawn_macro_npcs`/`make_npc` counter. This is the save-stable
-    // identity a possessed lord is re-found by after a load regenerates the ECS
-    // (Inc 5e-2), so stamping it here lets the parity test exercise reattach.
+    // Deterministic spawn ordinal, one per NPC, reset per call — exactly like
+    // the shipping `spawn_macro_npcs`/`make_npc` counter: the save-stable
+    // identity every persistent macro NPC carries (Inc 5e-2).
     std::uint32_t spawnIndex = 0;
     auto mk = [&](sm::NPCType type, std::uint16_t faction, int cx, int cy,
                   int hp, int maxHp, std::int16_t level,
@@ -850,14 +849,13 @@ bool run_exit_remap_case(const sm::sub::SeamlessSubworldManager& mgr) {
     return true;
 }
 
-// Inc 5e-2 — identity remap ("exit AS the lord", surviving save/load). Two pure
-// ECS halves compose the round-trip, with the serialised int between them:
-//   1. adopt_possessed_macro_as_player: leave() hands the single PlayerTag to the
-//      possessed macro origin and reports its save-stable ordinal.
-//   2. reattach_player_to_macro_spawn: a later load regenerates the macro NPCs
-//      from `worldSeed`; the stored ordinal re-finds the SAME lord and moves the
-//      flag off the freshly-built hero husk onto it.
-// save_roundtrip_test proves the int itself survives; this proves the ECS halves.
+// Inc 5e-2 — identity remap ("exit AS the lord"). leave() hands the single
+// PlayerTag to the possessed macro origin via adopt_possessed_macro_as_player,
+// and since v87 that flag IS the whole record of control: the macro snapshot
+// carries it as the possessed record's own byte (macro_snapshot_test proves
+// the round-trip; the old reattach-by-stored-ordinal half died with SAVE-5).
+// What is pinned here is the pure ECS move: one flag, on the lord, and the
+// guards that refuse a husk or a null handle.
 bool run_identity_remap_case(const sm::sub::SeamlessSubworldManager& mgr) {
     constexpr int kMapW = 1024, kMapH = 1024;
     constexpr std::uint32_t kSeed = 0x1DEA1DEAu;
@@ -869,77 +867,35 @@ bool run_identity_remap_case(const sm::sub::SeamlessSubworldManager& mgr) {
             world, mgr, 0, 0, kMapW, kMapH, kSeed) != 3) {
         return false;
     }
-    // The ordinal stamped on the bandit (creation order 0) is what adopt must
-    // report and what reattach must re-find in a regenerated registry.
-    const std::uint32_t banditOrdinal =
-        reg.get<sm::ecs::MacroSpawnId>(s.bandit).index;
-
-    // ── Step 1: ADOPT. Mirror leave(): the flag-wearing subworld body is already
-    // gone (reaped) by the time adopt runs, so the macro origin has NO PlayerTag
-    // yet — adopt must create it AND return the ordinal. ──
+    // ── ADOPT. Mirror leave(): the flag-wearing subworld body is already gone
+    // (reaped) by the time adopt runs, so the macro origin has NO PlayerTag
+    // yet — adopt must place the ONE flag on it. Since v87 the flag itself IS
+    // the whole record of control (it rides the macro snapshot as the
+    // record's own byte — persistence is macro_snapshot_test's to prove), so
+    // there is no ordinal contract left to assert here. ──
     if (reg.any_of<sm::ecs::PlayerTag>(s.bandit)) return false;  // precondition
-    const int adopted = sm::sub::adopt_possessed_macro_as_player(world, s.bandit);
-    if (adopted < 0 || std::uint32_t(adopted) != banditOrdinal) return false;
+    sm::sub::adopt_possessed_macro_as_player(world, s.bandit);
     if (!reg.all_of<sm::ecs::PlayerTag>(s.bandit)) return false;
     {
         int tags = 0;
         for (auto e : reg.view<sm::ecs::PlayerTag>()) { (void)e; ++tags; }
         if (tags != 1) return false;   // exactly one flag, on the lord
     }
-    // adopt only adopts real macro NPCs: a bare husk (no MacroNpcRuntime) and a
-    // null/invalid handle both yield -1 and touch nothing.
+    // adopt only adopts real macro NPCs: a bare husk (no MacroNpcRuntime) and
+    // a null handle both touch nothing — the bandit keeps the one flag.
     {
         auto husk = reg.create();
         reg.emplace<sm::ecs::Position>(husk, 3.0f, 3.0f, 0.0f);
-        if (sm::sub::adopt_possessed_macro_as_player(world, husk) != -1) return false;
+        sm::sub::adopt_possessed_macro_as_player(world, husk);
         if (reg.any_of<sm::ecs::PlayerTag>(husk)) return false;
         reg.destroy(husk);
     }
-    if (sm::sub::adopt_possessed_macro_as_player(world, entt::null) != -1) {
-        return false;
-    }
-
-    // ── Step 2: REATTACH after a simulated load. A load rebuilds the ECS from
-    // scratch, so use a FRESH registry seeded by the same helper (same ordinals →
-    // same NPCs) and stand up the ordinary hero husk that boot creates before
-    // reattach runs. ──
-    sm::ecs::World loaded{};
-    auto& lreg = loaded.reg;
-    const MacroSeeds ls = seed_macro_npcs(lreg, kMapW);
-    const auto husk = lreg.create();
-    lreg.emplace<sm::ecs::PlayerTag>(husk);
-    lreg.emplace<sm::ecs::Position>(husk, 999.0f, 999.0f, 0.0f);   // stale husk cell
-
-    const float px = 12.0f, py = 34.0f;   // the loaded player scalar (authoritative)
-    if (!sm::reattach_player_to_macro_spawn(loaded, int(banditOrdinal), px, py, kMapW)) {
-        return false;
-    }
-    if (lreg.valid(husk)) return false;                          // husk destroyed
-    if (!lreg.all_of<sm::ecs::PlayerTag>(ls.bandit)) return false;
+    sm::sub::adopt_possessed_macro_as_player(world, entt::null);
     {
         int tags = 0;
         entt::entity flag = entt::null;
-        for (auto e : lreg.view<sm::ecs::PlayerTag>()) { ++tags; flag = e; }
-        if (tags != 1 || flag != ls.bandit) return false;        // one flag, on the lord
-    }
-    {
-        const auto& c = lreg.get<sm::ecs::MacroCell>(ls.bandit);
-        if (sm::ecs::cell_x(c, kMapW) != int(px)
-            || sm::ecs::cell_y(c, kMapW) != int(py)) return false; // snapped
-    }
-
-    // Negative paths: an absent ordinal (died before save / seed changed) and a
-    // sentinel id<0 both change nothing — the ordinary hero husk is preserved.
-    {
-        sm::ecs::World miss{};
-        seed_macro_npcs(miss.reg, kMapW);
-        const auto missHusk = miss.reg.create();
-        miss.reg.emplace<sm::ecs::PlayerTag>(missHusk);
-        miss.reg.emplace<sm::ecs::Position>(missHusk, 1.0f, 2.0f, 0.0f);
-        if (sm::reattach_player_to_macro_spawn(miss, 9999, 5.0f, 6.0f, kMapW)) return false;
-        if (!miss.reg.valid(missHusk)) return false;             // husk preserved
-        if (sm::reattach_player_to_macro_spawn(miss, -1, 5.0f, 6.0f, kMapW)) return false;
-        if (!miss.reg.valid(missHusk)) return false;
+        for (auto e : reg.view<sm::ecs::PlayerTag>()) { ++tags; flag = e; }
+        if (tags != 1 || flag != s.bandit) return false;  // still one, still his
     }
 
     return true;
@@ -1022,9 +978,7 @@ int main() {
 
     if (!run_identity_remap_case(mgr)) {
         sm::sub::clear_saved_subworlds();
-        return fail("identity remap wrong "
-                    "(adopt ordinal/flag/one-tag/guards or reattach "
-                    "find/husk-swap/snap/miss)");
+        return fail("identity remap wrong (adopt flag/one-tag/guards)");
     }
 
     std::printf("OK subworld_spawn_parity_test fauna=%zu seed=%u no_autolevel=%d "

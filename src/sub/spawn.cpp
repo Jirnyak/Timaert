@@ -1078,12 +1078,12 @@ MacroExitCell macro_exit_cell_for_body(ecs::World& w, entt::entity body,
 
 // ── Identity adoption (Inc 5e-2) ──────────────────────────────────────────
 
-int adopt_possessed_macro_as_player(ecs::World& w, entt::entity macro) {
+void adopt_possessed_macro_as_player(ecs::World& w, entt::entity macro) {
     auto& reg = w.reg;
     // Null / stale / not a real macro NPC → nothing to adopt; leave the flag
     // wherever the caller's teardown put it (this is the un-possessed exit path).
-    if (macro == entt::null || !reg.valid(macro)) return -1;
-    if (!reg.all_of<ecs::MacroNpcRuntime>(macro)) return -1;
+    if (macro == entt::null || !reg.valid(macro)) return;
+    if (!reg.all_of<ecs::MacroNpcRuntime>(macro)) return;
     // Move the single MACRO flag onto the lord you inhabited. Since the
     // scale split (2026-09-10) PlayerTag never left the player's own squad
     // during the scene (the body wore AvatarTag, and leave() reaped it), so
@@ -1102,14 +1102,8 @@ int adopt_possessed_macro_as_player(ecs::World& w, entt::entity macro) {
         }
     }
     if (!reg.all_of<ecs::PlayerTag>(macro)) reg.emplace<ecs::PlayerTag>(macro);
-    // The save-stable identity is the deterministic spawn ordinal, not the
-    // (never-serialised) entity id. make_npc always stamps one; a missing id
-    // means a synthetic setup, in which case in-memory possession still works
-    // but cannot persist (return -1 ⇒ boot won't try to reattach).
-    if (const auto* sid = reg.try_get<ecs::MacroSpawnId>(macro)) {
-        return int(sid->index);
-    }
-    return -1;
+    // Nothing to return since v87: the flag on the entity IS the persistence
+    // — the macro snapshot writes it as the record's own honest byte.
 }
 
 // ── Possession (Inc 5c) ──────────────────────────────────────────────────

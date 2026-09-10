@@ -5318,6 +5318,48 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             smoke_clear_modal_overlays(app);
             if (app.smoke.pendingLoadBoot) {
                 smoke_print_counts(app, "load_boot");
+                // THE SAVE-5 trap (permanent, not a scratch print). A load must
+                // leave EXACTLY ONE carrier of the reserved player ordinal and
+                // EXACTLY ONE PlayerTag, and the doors must answer with that
+                // carrier or the flag holder. Before v87 the load-path genesis
+                // raised a second carrier and every door pointed at it: bars,
+                // bag and roster silently reset to a fresh husk while the
+                // restored squad ghosted the map — green fold witness, green
+                // ctest, nothing weighed the registry.
+                {
+                    auto& reg = app.ecs.reg;
+                    int carriers = 0, flags = 0;
+                    entt::entity flagHolder = entt::null;
+                    for (auto e : reg.view<sm::ecs::MacroSpawnId>()) {
+                        if (reg.get<sm::ecs::MacroSpawnId>(e).index
+                            == sm::ecs::kPlayerSquadOrdinal) ++carriers;
+                    }
+                    for (auto e : reg.view<sm::ecs::PlayerTag>()) {
+                        ++flags;
+                        flagHolder = e;
+                    }
+                    const entt::entity door = sm::player_squad_entity(app.ecs);
+                    const bool doorHonest =
+                        door != entt::null
+                        && reg.valid(door)
+                        && reg.get<sm::ecs::MacroSpawnId>(door).index
+                               == sm::ecs::kPlayerSquadOrdinal
+                        && (door == flagHolder
+                            || (flagHolder != entt::null && reg.valid(flagHolder)
+                                && reg.all_of<sm::ecs::MacroNpcRuntime>(
+                                       flagHolder)));
+                    std::fprintf(stderr,
+                                 "[smoke] load_boot player carriers=%d flags=%d "
+                                 "door_honest=%d\n",
+                                 carriers, flags, doorHonest ? 1 : 0);
+                    std::fflush(stderr);
+                    if (carriers != 1 || flags != 1 || !doorHonest) {
+                        smoke_fail(app,
+                                   "load duplicated or lost the player squad "
+                                   "(SAVE-5)");
+                        break;
+                    }
+                }
                 app.smoke.pendingLoadBoot = false;
             } else {
                 smoke_print_counts(app,
@@ -5831,32 +5873,28 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 }
                 // Inc 5e-2 (identity remap): leaving AS a lord must also ADOPT it.
                 // Exactly one PlayerTag must now ride the macro ORIGIN itself — a
-                // real MacroNpcRuntime NPC, not a bare hero husk — and its
-                // save-stable ordinal must be recorded on the player scalar, so a
-                // later save can re-find the same lord once the macro NPCs
-                // regenerate from `worldSeed`.
+                // real MacroNpcRuntime NPC, not a bare hero husk. The flag IS the
+                // whole record of control (v87): the macro snapshot writes it as
+                // the possessed record's own byte, so there is no scalar to check.
                 int tags = 0;
                 entt::entity flag = entt::null;
                 for (auto e : reg.view<sm::ecs::PlayerTag>()) { ++tags; flag = e; }
                 const bool onMacroNpc =
                     flag != entt::null && reg.all_of<sm::ecs::MacroNpcRuntime>(flag);
                 const bool ridesOrigin = (flag == origin);
-                const bool idRecorded  = (app.gs.player.possessedMacroSpawnId >= 0);
                 std::fprintf(stderr,
                              "[smoke] subworld_exit_remap adopt tags=%d on_macro_npc=%d "
-                             "rides_origin=%d spawnId=%d\n",
-                             tags, onMacroNpc ? 1 : 0, ridesOrigin ? 1 : 0,
-                             app.gs.player.possessedMacroSpawnId);
+                             "rides_origin=%d\n",
+                             tags, onMacroNpc ? 1 : 0, ridesOrigin ? 1 : 0);
                 std::fflush(stderr);
-                if (tags != 1 || !onMacroNpc || !ridesOrigin || !idRecorded) {
+                if (tags != 1 || !onMacroNpc || !ridesOrigin) {
                     smoke_fail(app, "exit_remap: possessed identity not adopted on exit");
                     break;
                 }
                 // Restore a clean single-husk macro state for a self-contained
                 // process: strip the flag off the lord (it reverts to an autonomous
-                // NPC), drop the ordinal, and re-materialise the ordinary hero husk.
+                // NPC) and re-claim it onto the ordinary hero squad.
                 reg.remove<sm::ecs::PlayerTag>(flag);
-                app.gs.player.possessedMacroSpawnId = -1;
                 sm::ensure_macro_player_entity(app.gs, app.ecs);
             }
             ++app.smoke.cursor;

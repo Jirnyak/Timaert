@@ -8,10 +8,15 @@
 // stranger (problems.md 19.24).
 //
 // A MacroNpcRecord is ONE macro entity flattened to rows: the POD components
-// verbatim, the roster as its SoldierRecord rows, the two opt-ins (orders,
-// death) as explicit flags. PlayerTag is deliberately absent — the flag's
-// identity already persists as PlayerState::possessedMacroSpawnId and is
-// re-attached by ordinal after restore, the same door possession always used.
+// verbatim, the roster as its SoldierRecord rows, the opt-ins (orders, death,
+// the player flag) as explicit flags. PlayerTag rides HONESTLY (owner verdict
+// 2026-09-10: «сейв честно хранит снимок всего мира… и потом честно просто
+// смотрится у кого флажок игрок»): it used to be re-derived after restore
+// from PlayerState::possessedMacroSpawnId — a second store of "who is
+// controlled" outside the snapshot — while the load-path genesis raised a
+// SECOND player squad the doors then pointed at, ghosting the restored one
+// (postdemoaudit SAVE-5). PlayerSquadTag is NOT stored: it is the reserved
+// ordinal spelled as a tag, so restore re-derives it from spawnId.
 #pragma once
 #include <cstdint>
 #include <vector>
@@ -38,6 +43,9 @@ struct MacroNpcRecord {
     AgentMemory          memory{};          // what the leader remembers (v28)
     std::uint8_t         hasOrders = 0;
     std::uint8_t         dead = 0;
+    // «Кем я управляю» — ecs::PlayerTag as one honest byte (v87). At most one
+    // record of a save carries 1: the player's own squad, or a possessed lord.
+    std::uint8_t         playerFlag = 0;
     Inventory            inventory;         // NpcInventory.inv
     // What this body WEARS (ecs::BodyEquipment). Opt-in on the entity, so a
     // record whose `anatomy` cells are all empty simply writes a zero count —

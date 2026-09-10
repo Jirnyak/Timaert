@@ -294,7 +294,14 @@ namespace sm {
 // вердикт владельца: «мир — плоский массив, связный тор, у каждой клетки
 // ровно одно число»). `MacroNpcRecord.pos` (12 байт float) → `cell`
 // (4 байта u32) — смена формата снимка макро-ECS.
-constexpr int kSaveVersion = 86;
+// v87 (2026-09-10): ЧЕСТНЫЙ ФЛАГ — `PlayerTag` едет байтом записи снапшота
+// (`MacroNpcRecord.playerFlag`), вердикт владельца: «сейв честно хранит
+// снимок всего мира… и потом честно просто смотрится у кого флажок игрок».
+// `PlayerState::possessedMacroSpawnId` умер (второй склад «кем управляю»
+// вне снапшота); генезис на пути загрузки больше не создаёт макро-тел —
+// до этого каждая загрузка подсовывала дверям СВЕЖИЙ сквад игрока, а
+// восстановленный ходил призраком (SAVE-5).
+constexpr int kSaveVersion = 87;
 
 enum class SettlementMood : std::uint8_t {
     Prosperous, Stable, Tense, Unrest, Revolt, Count
@@ -593,14 +600,11 @@ struct PlayerState {
     // provenance list above; history will be the chronicle's job.
     std::uint32_t completedQuestCount = 0;
     std::uint32_t failedQuestCount = 0;
-    // Possession persistence (Inc 5e-2, kSaveVersion 10). If the player left a
-    // subworld while possessing a projected macro NPC, this holds that NPC's
-    // deterministic spawn ordinal (ecs::MacroSpawnId) so the PlayerTag flag can
-    // be re-attached to the SAME regenerated NPC after load. -1 = not possessing
-    // anyone (the flag rides the ordinary hero husk). The ordinal — not an
-    // entt::entity — is the one identity that survives the ECS never being
-    // serialized (see components.h MacroSpawnId, boot_world_from_save).
-    int possessedMacroSpawnId = -1;
+    // (No possessedMacroSpawnId since v87. "Whom do I control" has ONE store —
+    // ecs::PlayerTag on the macro entity itself, riding the snapshot as an
+    // honest byte (MacroNpcRecord.playerFlag). The field was the flag's
+    // out-of-snapshot double, and the re-derivation it fed masked the load
+    // raising a second player squad — SAVE-5.)
     // Entry-side context (macro/entry_context.h, kSaveVersion 15): the packed
     // signed step of the last macro cell change (0xFF = unknown) and the
     // saturating count of AI ticks spent in the cell since. Same two bytes a

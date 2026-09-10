@@ -446,9 +446,9 @@ struct MacroNpcRuntime {
 
 // Deterministic spawn ordinal for a persistent macro NPC (Inc 5e-2), assigned
 // in creation order (0,1,2,…) by the SOLE creation path (make_npc) — the one
-// identity that survives save/load. Possession persistence stores the
-// possessed body's ordinal (PlayerState::possessedMacroSpawnId) and re-finds
-// the same NPC after a load (reattach_player_to_macro_spawn).
+// identity that survives save/load. (Possession persists WITHOUT it since
+// v87: PlayerTag rides the macro snapshot as the possessed record's own
+// honest byte — no ordinal store, no re-derivation after load.)
 //
 // AND IT IS SAVE FORMAT. Since v23 the macro-ECS snapshot serializes every
 // persistent macro NPC whole (macro/macro_snapshot.h → save.cpp

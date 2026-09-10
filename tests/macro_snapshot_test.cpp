@@ -93,6 +93,11 @@ void test_snapshot_round_trips_the_living_map() {
     w.reg.get<ecs::MacroCell>(a).idx = ecs::cell_index(25, 21, 64);
     w.reg.get<ecs::Pools>(b).hp = 0.0f;
     w.reg.emplace<ecs::Dead>(b);
+    // …and the player POSSESSES lord A (v87): «кем я управляю» is the flag on
+    // the entity itself, and the save must carry it as the record's own honest
+    // byte — the out-of-snapshot ordinal it used to be re-derived from is
+    // dead (SAVE-5: the re-derivation masked a load that ghosted the squad).
+    w.reg.emplace<ecs::PlayerTag>(a);
 
     // Snapshot -> save -> load -> restore, through the REAL save file.
     const std::string path = temp_path("timaert_macro_snapshot_test.bin");
@@ -134,6 +139,17 @@ void test_snapshot_round_trips_the_living_map() {
     CHECK(orders2 != nullptr && orders2->waypointCount == 2,
           "the squad's route survives");
     CHECK(!w2.reg.all_of<ecs::Dead>(a2), "the living leader is not dead");
+    // The flag rode the snapshot honestly and landed on the SAME lord — and
+    // on nobody else (the negative control: B carried no flag and must not
+    // grow one; a restore that stamps everyone would also pass a bare
+    // "A has it" check).
+    CHECK(w2.reg.all_of<ecs::PlayerTag>(a2),
+          "the possessed lord keeps the player flag across the save");
+    {
+        int flags = 0;
+        for (auto e : w2.reg.view<ecs::PlayerTag>()) { (void)e; ++flags; }
+        CHECK(flags == 1, "exactly one player flag restored");
+    }
 
     const entt::entity b2 = find_by_ordinal(w2, ordinalB);
     CHECK_OR_RETURN(b2 != entt::null, "the dead leader is still ON the map");
