@@ -195,8 +195,12 @@ of what a single archmage does to an army.
   (owner's ruling) — there is no separate row and none is wanted; `lower_magica`
   is the south. The registry already carries the political shape of it: the one
   authored alliance override in the whole file is `empire` ↔ `lower_magica`, so
-  the south is the Empire's client by construction. — *the war itself is
-  `NOT BUILT`; today the northern/southern pair band comes from temperament.*
+  the south is the Empire's client by construction. Even a thousand years after
+  the Sacrilegist erased their host, the Empire is **still terrified to march its
+  own armies openly into the north**; the trauma of that vanishing keeps the
+  Thirteen Eunuchs fighting through proxies rather than risking direct contact. —
+  *the war itself is `NOT BUILT`; today the northern/southern pair band comes from
+  temperament.*
 - **No cults.** Living magic annihilates black energy on contact, so cultists
   physically cannot get a footing here.
 - **In micro-combat, a mage squad is a boss fight.** On the macro map it is ten
@@ -204,6 +208,24 @@ of what a single archmage does to an army.
   your army in five seconds with a single high-tier cast. You do not brawl a
   mage squad, you **hunt** it: isolate, kite, assassinate, or bring black
   energy — the one thing that annihilates them.
+- **Religion is outlawed in Old Magica.** The old academic-magical elite banned
+  all organized religion by statute; its cities have no temples, priests, or
+  sanctified altars. Only in **Lower Magica** (the South, the Empire's client) do
+  weak parish chapels of the Church of Light cling on. A player struck by deep
+  curses (from vampires, liches, or necrotic tomb traps) in Old Magica cannot buy
+  absolution at a local tavern — they must embark on a grim cross-border pilgrimage
+  to Lower Magica or the Empire of Light before the curse drains their health pool.
+- **The Degeneration of the Magocracy:** The Sacrilegist's ideal of open, public
+  magic for the peasantry withered after his vanishing. In terror of losing
+  power, the mage-lords withdrew into their spires and ivory towers, locking
+  magical treatises away and turning the common folk into disenfranchised serfs.
+  Though their arts are pale shadows of the Sacrilegist's heights, their reign
+  over the peasantry is despotic and total.
+- **The Two Pillars of Magika:** The fragmented Magikas fight bitter feuds among
+  themselves, with one steadfast exception: **Old Magica (`old_magica`) and the
+  Lake Duchy (`lake_duchy`) consider themselves the two legitimate pillars and sole
+  rightful heirs of the original unified kingdom**, mutually despising both the
+  crude barbarian breakaway fiefdoms and the southern client states.
 
 ### 3.2 The Empire of Light — the clay giant
 
@@ -221,6 +243,24 @@ from its own size. Not strong in magic. Not strong in technology. Strong in
 - **The Religion of Light is a forgery.** The eunuchs built it to hold power.
   Magic is not dark sorcery — it is the living force of nature — but the faith
   declares it heresy, and **the paladins do not know**.
+- **The secret origin of the Paladins — forged from Black Artifacts.** The central
+  paradox of the Church of Light is that its holy champions are created from the
+  dead gods themselves. Black energy inherently **annihilates Pure Magic and
+  dominates dark manifestations**. The "sacred relics and holy martyr bones"
+  housed in golden cathedral reliquaries are in fact **Black Artifacts of the Dead
+  Gods**. The secret consecration rites expose initiates to these black shards —
+  a lethal ordeal that kills most candidates and leaves only a handful of living
+  paladins. This scarcity is why the Empire, despite its massive territorial armies,
+  cannot produce paladins in bulk and overrun the continent. The paladins themselves
+  are completely sincere, fervent believers in the Light; **only the Thirteen Great
+  Eunuchs know the truth**.
+- **The Dragon counters:** Dragons are ancient, dwindling beasts that are naturally
+  **completely immune to magic**. Archmages are helpless against them, and musket
+  volleys deflect from their thick angled scales. **Paladins of Light are the
+  world's primary dragon-slayers**: their consecrated steel, unbreakable zeal,
+  and anti-magical black-aura shielding let them survive dragon breath and drive
+  sanctified blades into dragon hide. They similarly hard-counter liches, undead,
+  and magical horrors.
 - **The magebane paladins (паладины-магоборцы)** are the tragedy of the
   setting: sincere, brave, genuinely protective of the weak and the innocent,
   carrying real ideals — and every mage they burn tears another hole in the
@@ -275,6 +315,36 @@ against.
 - The Republic's **galleons** are floating fortresses; a broadside of fifty guns
   ends any adventurer who attacks one out of greed. — *ships and naval combat
   are `NOT BUILT`.*
+- **A peaceful overseas mercantile republic (Venice / Dutch model).** Timaert
+  does not launch reckless conquest expeditions across the sea. Why conquer
+  mud, marshes, and cursed ruins when it is vastly more profitable to trade?
+  They maintain steep tariffs, but their coastal cities are the richest in the
+  world and possess virtually infinite liquidity to absorb raw mainland timber,
+  clay, stone, silver, and grain.
+- **Technology: Railways, Cannons, and Dirigibles.** Beyond locomotives and broadside
+  galleons, Timaert operates transport **dirigibles (airships)** navigating high
+  mountain passes — offering swift passage above rugged terrain and bandit roads.
+  Yet airships are massive envelopes of lifting gas and coal engines: neither a dragon
+  nor an archmage is intimidated by a dirigible; a single arc of lightning or breath
+  of dragon flame reduces the multi-ton vessel into falling embers.
+- **Vulnerabilities of the Line Infantry:** A synchronized musket volley tears through
+  cavalry charges and peasant levies. But the line has distinct tactical counters:
+  1. *Longbows at long range:* High-angle arrow volleys outrange and outpace
+     smoothbore muskets, and arrows easily punch through wool uniforms before
+     the infantry can close to effective volley range.
+  2. *High-tier AoE Magic:* Tight, packed infantry ranks are catastrophic targets
+     for an archmage's *Fireball* or *Chain Lightning*, which detonates powder pouches.
+- **Private armadas for the wealthy:** Any trader or mercenary who amasses hundreds
+  of thousands of gold can purchase Timaert galleons, mount bronze/iron artillery,
+  and hire Timaert line infantry mercenary regiments.
+- **The Geometers of Timaert and Toroidal Cosmology:** The navigators, engineers,
+  and natural philosophers of the Republic are fully aware that the world is a
+  mathematically closed $1024 \times 1024$ torus. Their charts, sextants, and
+  logarithmic tables account for wrap-around topologies: sailing east through the
+  ocean brings a galleon to the western barbarian coastline. Crucially, they know
+  no alternatives (having never conceived of a spherical planet or infinite plane);
+  to them, a toroidal continuum under the sun and its companion moons is simply the single
+  natural, self-evident geometry of existence.
 
 ### 3.4 The Barbarian Kingdoms — the procedural wildcard
 
@@ -291,6 +361,21 @@ rabble with pitchforks, or a fanatical heavy infantry that fears nothing and
 chews your soldiers apart.
 
 - The Peasant King **roams here and in the Magikas** (§5).
+- **Feudal successor fiefdoms (Frankish / Germanic model):** Centuries of strife
+  have eroded the fringes of the old unified realm. Many of these barbarian lands
+  are rebel territories that tore themselves free — emerging as classic early
+  medieval feudal states with armored knights, fortified keeps, disenfranchised
+  serfs, and ceaseless border squabbles. The Magikas wage bitter wars against
+  certain barbarian warlords, while having traded peacefully with others for
+  generations.
+- **Procedural generation as a narrative statement:** The Barbarian Kingdoms are
+  fully procedurally generated on every single playthrough — their names, dynastic
+  rulers, lords, traits, and diplomatic relations with all neighbors are rolled
+  fresh by the engine. This is not merely replayability; it is the game's central
+  thematic claim: **the old imperial/magical world is eroding, but what will
+  replace it is entirely unwritten**. History here is open and volatile; the game,
+  in dialogue with the player's actions, will discover procedurally through the
+  simulation what new world emerges from the ashes.
 - Few cults: the land was magical until recently, and there is no imperial
   vacuum yet.
 - *Per-kingdom procedural strengths/weaknesses are `NOT BUILT` — kingdoms today
@@ -482,6 +567,16 @@ because a mind that finds everything interesting finds *everything* interesting.
 Nothing about them is morally scored, ever. They are not the good witches or the
 bad witches; they are what their subject is, in full.
 
+- **Metaphysics: Demiurges and Systemic Agents.** The Witches are demiurges
+  standing outside the world yet embodied within it. They are not creators, nor
+  are they gods (the gods are dead). For comprehension, they function like
+  **Agent Smiths in the Matrix**: self-contained monitoring processes instantiated
+  to maintain the underlying constraints and boundaries of the torus (holding
+  the demon gates sealed, anchoring fundamental domains, managing artifact
+  sinks) without striving for mortal crowns or political empires. When their
+  apostle fulfills their quests, they hold no coronation and celebrate no
+  triumph — they simply terminate their active cycle and depart this world.
+
 ### The four
 
 Hierarchy-free. Each is a colour and a temperament first, a quest generator
@@ -553,6 +648,40 @@ chosen over Ruach.
   abyss.
 - **Your Realm** (`player`) — the player's own faction row, from a household to
   a late-game kingdom.
+
+### 3.8 The Cemeteries and the Crypts — the quiet dead
+
+*A macro landmark of barrows, graves, and subterranean mausoleums.*
+
+- **Atmosphere: desolation and dread.** A sprawling cemetery set beneath a dead,
+  pale grey sky and creeping ground mist, dotted with weathered gravestones,
+  broken sarcophagi, and iron-gated mausoleums. Caravans and patrols on the
+  macro map give the site a wide berth.
+- **The metaphysics of the undead:** The dead do not return as their former
+  selves; death in Timaert carries a distinct cosmic weight. Rising corpses are
+  **physical reanimated husks animated by condensed dark energy** — literal
+  shadows of the dead gods filling empty vessels. They hold no memories, speak
+  no words, and march relentlessly in terrifying numbers toward any living spark.
+- **The Crypt Bosses — Liches and Vampires:** Entering the central mausoleum
+  descends into pitch-black stone corridors and vaulted crypts. The depths are
+  ruled by ancient Liches or Vampires acting as formidable dungeon bosses:
+  massive health pools, devastating dark magic, and lethal tactical awareness
+  (such as unleashing dragon's breath or fiery torrents straight down narrow
+  bottlenecks if an intruder attempts to hold a doorway).
+- **Procedural loot:** Slaying the crypt lord rewards the delve with procedural
+  hoards: ancient gold crowns, enchanted arms and armor, black relics, or rare
+  spell scrolls (*Town Portal*, *Flight*).
+- **The Extraction Law:** Killing the Lich or Vampire does **NOT** cause the
+  surrounding undead to crumble into dust. Skeletons, zombies, and shades are
+  physical monsters; every creature left undefeated outside remains waiting.
+  The return trip through the graveyard is a deadly survival gauntlet. If dusk
+  falls during the delve, the surface becomes pitch-black: the player's vision
+  contracts to a few paces, while the undead sense life unerringly in the dark.
+- **Economic circulation of relics:** Treasures, ancient cuirasses, and coins
+  recovered from crypts and sold to town merchants do not vanish into a void.
+  They remain in the settlement's inventory and enter the living economy — the
+  town may trade them to distant provinces via passing caravans or offer an
+  ancient enchanted armor set as feudal tribute to its regional lord.
 
 ## 4. The player's story
 
@@ -702,6 +831,57 @@ Gone for a thousand years, present in everything: the ruin of the Empire's army,
 the founding and fragmentation of Magika, the near-extinction of the cults. He
 is the ghost in the foundation.
 
+- **The setting's anchor — "Legacy of the Sacrilegist" (Наследие Святотатца):**
+  The game is conceived and subtitled **Legacy of the Sacrilegist** because the
+  entire story unfolds **precisely one thousand years after his disappearance**.
+  His historical shadow is so vast that, ten centuries later, the great powers
+  still navigate the geopolitical reality carved out by his departure.
+- **The Young Duelist and the Lake Academy:** As a young prodigy at the **Lake
+  Academy on the island in the Lake of Magic** (now the Lake Duchy / `lake_duchy`),
+  he challenged the ruling Archmage to a formal magical duel and killed him with
+  shocking, effortless ease. Taking the mantle of Archmage, he promptly left the
+  island, subjugated the surrounding regions, unified the Kingdom of Magica,
+  and established the Council of Mages.
+- **The Policy of Open, Public Magic:** He broke the esoteric monopoly of the
+  guilds and made magic public and accessible. In his unified Magica, **even
+  commoners and peasants knew and practiced basic spells** — elevating an entire
+  society's baseline power.
+- **Why he was named "The Sacrilegist" (Святотатец):** He flatly denied the
+  existence of divine authority and dismissed the "astral/sacred" mysticism of
+  the arcane, treating magic strictly as an impersonal, quantifiable force of
+  nature (in which he was mechanically correct). Horrified priests and orthodox
+  magical elites branded him "The Sacrilegist" for desecrating their dogmas and
+  treating their gods as natural physics.
+- **Discovery of the Dead Gods and Annihilation:** Digging through ancient
+  archives and chronicles, he uncovered the truth of the dead gods, lunatics,
+  and Black Artifacts. He was the one who deduced the arithmetic law of
+  **mutual annihilation between Pure Magic and Black Energy**. Realising that
+  Black Artifacts were an existential rot suffocating the living world, he set
+  out on a crusade to eradicate cults and smash black relics. He was one of the
+  exceedingly rare mortals with the sheer magical density required to
+  physically shatter a Black Artifact (which, by §1.1, made him a walking
+  fountain of positive magic).
+- **Stance on the Empire of Light:** He held no reverence for the Religion of
+  Light, viewing it as primitive superstition, and intuitively sensed that the
+  Church was a corrupted vessel carrying the whispers of the dead gods. Yet he
+  harboured no imperial ambition to conquer the Empire: he simply wanted them
+  not to obstruct his research. His only true ambition was Promethean: **to
+  comprehend every secret and boundary of magic** — and that boundless ambition
+  is what ultimately destroyed him.
+- **The warning to the Emperor:** When the Empire of Light mobilized for war, the
+  Sacrilegist teleported directly into the imperial throne room, confronting the
+  Emperor in person with a cold ultimatum to leave Magika alone.
+- **The sphere of erasure:** The Thirteen Great Eunuchs ignored the ultimatum and
+  marched an imperial host from the south. The Sacrilegist teleported to the front
+  line to face them. But having pushed magical inquiry far past the safe bounds of
+  human sanity and physics, his ultimate casting literally **erased him and an
+  entire spherical volume of reality from existence**, annihilating half the
+  Imperial army with him.
+- **A millennium of inertia:** Nobody in the world knows his true fate for
+  certain. For a thousand years, Magika persisted on the sheer momentum of his
+  name, laws, and spells under the Council of Mages. But without his genius, it
+  gradually ossified, lost its democratic magical culture, and fractured into
+  Old Magica, Northern Magica, and the Lake Duchy.
 - **Where:** a side quest chain leads to **a place that does not exist**,
   outside time.
 - **Entry condition (natural, not a class lock):** you have visited **every
@@ -737,6 +917,28 @@ optional elite boss you can simply run into and challenge.
   with.
 - **The meaning:** the test for STR / END / melee timing. Beat magic immunity in
   the mud, by hand.
+- **The Crusade against Magocracy:** The Peasant King's march is a direct
+  reaction to the historical rot of Magika. When the paranoid mage-lords locked
+  magical knowledge back into their ivory towers and forced the common folk into
+  crushing serfdom, the King took up the Black Spear — whose dark anti-magical
+  nullification shatters their wards and protects him from their spells — to
+  break the spires and free the peasantry from magical despotism.
+- **Interaction with the King:** He interacts through standard squad mechanics
+  (Player == NPC). A player who shares his hatred of magical tyranny can fight
+  alongside him, joining battles to overthrow oppressive mage garrisons.
+  Conversely, if the player is allied with the Magikas or radiates strong
+  magical emanations, the King perceives them as another parasite on the
+  common folk and attacks on sight.
+- **The Tragedy of the Black Spear and the Black Child:** The ultimate fate of
+  the Peasant King is the setting's central tragedy. After decades of liberating
+  the downtrodden, he is ultimately **betrayed by the very barbarian warlord
+  kings he elevated**. In his final, shattered hour, broken by grief, madness,
+  and total despair, the King drives his Black Spear into an innocent child —
+  not understanding the cosmic gravity of what he has done. In that blind moment
+  of anguish, the mortal sacrifice seals the ancient prophecy of the **Black
+  Child**, ushering in the end of the Pure Magic era. The Thirteen Great Eunuchs
+  have waited centuries for this prophecy in their vaults, yet even they never
+  foresaw the terrible, tragic mechanism of its fulfillment.
 
 ### The Captain of the Republic of Timaert — the logistics mirror
 
