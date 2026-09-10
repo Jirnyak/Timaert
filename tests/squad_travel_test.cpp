@@ -140,7 +140,6 @@ void test_greedy_walks_around_a_wet_cell() {
     paint_water(grid, 16, 10);   // one wet cell dead on the straight line
 
     auto e = make_walker(w, gs.mapW, 13.0f, 10.0f, 20.0f, 10.0f, 110);
-    auto& npc = w.reg.get<ecs::MacroNpcRuntime>(e);
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 21u);
     CHECK(drive_to_arrival(gs, w, rt, &grid, e, 20.0f, 10.0f, 8),

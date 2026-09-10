@@ -2827,7 +2827,6 @@ bool run_prologue_road_smoke(App& app) {
     // thing that ships.
     if (app.subworld.active()) app.subworld.leave(true);
     smoke_clear_modal_overlays(app);
-    const std::uint32_t knowRevAtOpen = app.gs.knowledge.revision;
     begin_scene(app, sm::content::prologue_scene());
     const bool entered = app.subworld.active() && app.subworld.in_dungeon();
     if (!entered) {
