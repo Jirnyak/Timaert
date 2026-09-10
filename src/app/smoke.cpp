@@ -677,14 +677,15 @@ bool run_subworld_time_smoke(App& app) {
 
 // ONE recovery law, proven by making the two worlds agree.
 //
-// This smoke used to assert the OPPOSITE — that a body underground recovers
-// NOTHING — which is how a defect ends up with a guard on it (AGENTS.md testing
-// law #7): the macro branch called apply_minute_recovery and the subworld
-// branch simply did not, and a green smoke said that was intended. Owner ruling
-// 2026-08-20: recovery is driven by TIME, so what it now proves is that the
-// same game minutes buy the same points in both worlds. Underground those
-// minutes cost kSubworldTickDivisor times more real seconds, which is the whole point and
-// costs this file nothing to state.
+// Owner ruling 2026-09-10, superseding 2026-08-20's «recovery is driven by
+// TIME»: «в субмире НЕТ РЕГЕНОВ … реген только один когда стоишь на месте в
+// макромире (типа привал) и это всё». A body underground mends NOTHING — not
+// health, not mana, not stamina — no matter how long it stands; rest is a
+// macro camp. This smoke is the NEGATIVE witness of that law, with a positive
+// control built from the macro law itself: the same game minutes that buy
+// whole points on the map (the reference below) must buy exactly zero down
+// here. The smoke has flipped direction twice now, each time on an explicit
+// owner ruling — the comment trail IS the paper.
 bool run_subworld_recovery_smoke(App& app) {
     if (!smoke_boot_invariants_hold(app)) {
         smoke_print_counts(app, "subworld_recovery_boot_failed");
@@ -757,12 +758,12 @@ bool run_subworld_recovery_smoke(App& app) {
     const int afterSp = app.gs.player.combatStats.currentSp;
     app.subworld.leave(true);
 
-    // The REFERENCE: the same body, the same minutes, on the map. Not a
-    // restated formula — the very function the macro branch calls, which is
-    // exactly the claim being made ("one law, both worlds"). It also catches
-    // something a hand-written expectation could not: the subworld pays its
-    // minutes in many small chunks and this pays them in one, so the
-    // fractional carry has to make those identical or the answer drifts.
+    // The POSITIVE CONTROL: the same body, the same minutes, ON THE MAP —
+    // through the very function the macro branch calls. If this reference
+    // gains nothing, the run was too short and «unchanged bars» below would
+    // pass while measuring nothing (testing law #3): the control proves the
+    // minutes were worth whole points to a resting macro body, which is what
+    // makes their buying ZERO underground a statement instead of a rounding.
     sm::PlayerState reference = app.gs.player;
     reference.combatStats.currentHp = 5;
     reference.combatStats.currentMp = 5;
@@ -776,7 +777,7 @@ bool run_subworld_recovery_smoke(App& app) {
 
     std::fprintf(stderr,
                  "[smoke] subworld_recovery steps=%d minutes=%d "
-                 "hp=%d mp=%d sp=%d expect hp=%d mp=%d sp=%d\n",
+                 "hp=%d mp=%d sp=%d macro-control hp=%d mp=%d sp=%d\n",
                  kFrames, minutesAdvanced, afterHp, afterMp, afterSp,
                  reference.combatStats.currentHp,
                  reference.combatStats.currentMp,
@@ -787,17 +788,13 @@ bool run_subworld_recovery_smoke(App& app) {
         smoke_fail(app, "subworld_recovery bought no game minutes");
         return false;
     }
-    // The measurement must have MEASURED: if the reference itself gained
-    // nothing, the run was too short and an equal-and-unmoved pair would pass
-    // while proving that recovery is still switched off.
     if (reference.combatStats.currentHp <= 5) {
-        smoke_fail(app, "subworld_recovery reference gained nothing");
+        smoke_fail(app, "subworld_recovery macro control gained nothing");
         return false;
     }
-    if (afterHp != reference.combatStats.currentHp
-        || afterMp != reference.combatStats.currentMp
-        || afterSp != reference.combatStats.currentSp) {
-        smoke_fail(app, "subworld_recovery differs from the macro law");
+    // The law itself: underground, those same minutes move NO bar.
+    if (afterHp != 5 || afterMp != 5 || afterSp != 5) {
+        smoke_fail(app, "subworld_recovery bars moved underground");
         return false;
     }
     return true;

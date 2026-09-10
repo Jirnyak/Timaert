@@ -3299,26 +3299,13 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // have drifted. Mark dirty; the macro path re-bakes on return (we never
         // sync the GPU for the map while the subworld is what's on screen).
         if (stats.timeTick.dailyTicksProcessed > 0) app.macroLightsDirty = true;
-        // Recovery is driven by TIME, in both worlds and by the same law
-        // (macro/player_recovery.h). Underground the clock crawls, so standing
-        // still under a hill mends at the macro rate per game HOUR — sixteen
-        // times slower on the wall clock, which is what makes waiting out a
-        // wound down there an actual wait rather than a free heal.
-        //
-        // BEFORE subworld.tick on purpose: that tick opens by pulling the macro
-        // scalar into the player entity's Health and closes by pushing the
-        // post-combat result back, so a heal applied after it would be undone by
-        // the next tick's pull.
-        //
-        // Walking is not resting, exactly as marching is not on the map: the
-        // same kMarchRecoveryPct gates all three bars (one recovery law,
-        // CANON S14) — a wound waits for a stand-still down here too.
-        sm::apply_minute_recovery(app.gs.player,
-                                  stats.timeTick.minutesAdvanced,
-                                  app.playerRecovery,
-                                  player_sp_carry(app),
-                                  app.subworld.player_marching()
-                                      ? sm::kMarchRecoveryPct : 1.0f);
+        // NO recovery underground — for anyone, the player included (owner
+        // ruling 2026-09-10, superseding 2026-08-20's «recovery is driven by
+        // TIME»; CANON S14 «HP/MP/SP не регенерируют в субмире» now holds
+        // literally): rest is a macro camp, and the ONLY thing that refills a
+        // bar is standing still on the map. A subworld body that wants its
+        // bars back climbs out and camps. The apply_minute_recovery call that
+        // stood here was the last writer that moved a bar UP below ground.
         app.subworld.tick(dt);
         // Combat one-shots the tick queued (swing / hit / plate ring): the
         // engine states the facts, the app owns the device — same split as
