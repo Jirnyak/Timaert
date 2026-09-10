@@ -46,7 +46,19 @@ items, inventory, equipment, loot.
   from two level-free RNG streams, so a level-N sheet is the level-N−1 sheet
   plus exactly one more attribute pick and one more skill pick — a leader can
   never get weaker by levelling. `leader_sheet_seed(spawnOrdinal)` is the one
-  home of the seed law; macro never stores a leader's sheet, only derives it.
+  home of the seed law — the BIRTH ROLL.
+- **Named characters OWN their sheets** (§41 root 1 landing A, v90 — owner
+  verdict 2026-09-10, the MMORPG model: «у каждого персистентного персонажа
+  свой лист и идёт в сейв»). A named kind (npc.h `kNamedKinds`: merchant,
+  bandit chief, witch, sorceress, adventurer — one line to extend) is born
+  owning a `CharacterSheet` COMPONENT rolled once from its ordinal seed;
+  level-ups write INTO it and it rides the macro snapshot (opt-in record
+  block). A transient crew (rotation professions, caravans — dissolved by
+  their landmark) derives its generic sheet on the spot and stores nothing.
+  THE door is `sheet_of(world, e)` / `owned_sheet` (macro/squad.h) — an
+  ontology split (named/transient), never a player branch. The player's own
+  sheet still lives in PlayerState until landing Б moves it onto his squad's
+  component.
 - **Possession is body-native:** the player is a movable `PlayerTag` flag,
   and the body it lands on fights on its OWN `CharacterSheet` — the flag
   marks *who you control*, it never copies the hero's stats onto the target.

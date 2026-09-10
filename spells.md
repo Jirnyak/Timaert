@@ -12,12 +12,20 @@ Modular spell framework: **adding a spell is one file, no engine changes.**
 
 ## Model
 
-- **`SpellBook`** — FLAT ordinal-indexed rows over the append-only registry
-  (v59): `learned[kSpellCount]`, `activeSpell` (ordinal, −1 = none),
-  `sustained[kSpellCount]`, `sustainedDrainCarry`. The three string-keyed
-  heap containers died (S26: flat data; S20.1: the ordinal IS the identity —
-  strings resolve at the edges via `spell_ordinal`). API `learn / set_active
-  / can_cast / cast / tick`, all by ordinal. Behavioural rules resolve by
+- **`SpellBook`** — a COMPONENT of every macro body since §41 root 3
+  (v89): two 256-bit planes (`learned`/`sustained` — the owner's spell
+  envelope, «точно не больше 256»; a loud static_assert, not a silent
+  truncation), `activeSpell` (ordinal, −1 = none), `sustainedDrainCarry`.
+  Every squad is BORN with an all-zero book («не знает ничего»); the
+  player's is the one on his squad entity (`player_spellbook`,
+  macro/player_entity.h), and it rides his MacroNpcRecord like every
+  body's. The one-copy `PlayerState::spellBook` — the reason only the
+  player could cast, drain or be taught — is dead. Bit math lives in TWO
+  functions (`spellbook_bit`/`spellbook_bit_set`); no consumer indexes the
+  planes raw. The three string-keyed heap containers died earlier (v59;
+  S26: flat data; S20.1: the ordinal IS the identity — strings resolve at
+  the edges via `spell_ordinal`). API `learn / set_active / can_cast /
+  cast / tick`, all by ordinal. Behavioural rules resolve by
   ROW too since 2026-08-29: `spellbook_rule_active(book,
   SpellRuleId::Flight)` scans the sustained rows against the registry's own
   `rule` column — the last name-based check (a `"flight"` string compare) is
