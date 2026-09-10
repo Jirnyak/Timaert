@@ -89,14 +89,20 @@ One healthy core the system lands on:
   SECOND dictionary beside `faunaHabitat`, deliberately: the crowd's family
   and the wild fauna's family answer different questions.
 
-## Debt (approved increments, each under its own owner "да")
+- **Инк 2 (2026-09-11)** — the floor catalog + the placement door.
+  `dispatch_generate_dungeon` folds every `trav==1` tile into
+  `SubworldMapData::standPoints` (map_data.h StandPoint) — the fold runs in
+  the ONE place every interior passes, gated by the kind row's own columns
+  (householdAbove/verminAbove, a cellar always); the witness sits on the
+  FOLD (dungeon_cave_test: catalog == walkable floor, and it spans past the
+  mouth chamber). Residents and vermin draw the catalog uniformly WITHOUT
+  replacement (partial Fisher-Yates, wrap says itself aloud) — the mouth
+  rectangle and the 24 silent attempts are dead. The street's disk and the
+  wild cell's scatter go through the one `resolve_stand` door bit-for-bit,
+  and every refusal is now COUNTED and said to stderr (`[spawn] WARN`) —
+  no body is dropped silently anywhere.
 
-- **Инк 2 — the floor-point channel + the placement door.** Generators emit
-  their scene's standable-point catalog (computed at generation, while
-  `trav` is alive — which fixes the cave: today's residents scatter into a
-  `dungeon_room` rectangle that is only the cave's MOUTH, and 24 silent
-  attempts drop bodies). One `Placement{point, spread}` shape at the core;
-  the entry band stays as the traveler computer, untouched.
+## Debt (approved increments, each under its own owner "да")
 - **Инк 3 — the population door unlocks + the soul partition.** Gate becomes
   `pop > 0 && crowdHabitat != 0`; interiors reserve, street = remainder;
   `cell_facts` size/tier overload split (a spire's `landmark.size` is its

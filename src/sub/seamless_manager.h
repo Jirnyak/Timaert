@@ -215,6 +215,13 @@ public:
     bool cell_field_furrows_vertical(int idx) const {
         return cells_[std::size_t(idx)].fieldFurrowsVert;
     }
+    // The cell's floor catalog (map_data.h StandPoint, CANON S28) — the
+    // generator's own standable tiles, cell-local. The composite carries
+    // tiles only, so this is the ONE walkability truth a runtime spawner
+    // can hold; empty for scenes that never populate.
+    const std::vector<StandPoint>& cell_stand_points(int idx) const {
+        return cells_[std::size_t(idx)].data.standPoints;
+    }
 
 private:
     int cx_ = 0, cy_ = 0;

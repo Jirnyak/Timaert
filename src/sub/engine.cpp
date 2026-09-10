@@ -3400,16 +3400,16 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
             worldSeed, ses.doorCx, ses.doorCy, ses.ref.ordinal, ses.ref.level);
         const int household = std::min(popNow,
             1 + int((dSeed >> 8) % 3u) + (ses.landmarkPop >= 128 ? 1 : 0));
-        const DungeonRoom room = dungeon_room(ses.ref);
-        spawn_dungeon_residents(*ecs_, mgr_,
+        // Placement is the scene's OWN floor catalog (CANON S28): every
+        // standable tile the generator emitted, not a rectangle guessed
+        // from the door's footprint. The interior lives in the window's
+        // centre cell; the catalog is cell-local, hence the kCellSize map.
+        spawn_dungeon_residents(*ecs_,
             dSeed ^ 0x5EEDD00Du,
             ses.faction, ses.landmarkKind,
             doorFacts.zone, doorFacts.depositsNear, household,
-            float(kCellSize) + room.cx - room.hx,
-            float(kCellSize) + room.cy - room.hy,
-            float(kCellSize) + room.cx + room.hx,
-            float(kCellSize) + room.cy + room.hy,
-            std::uint8_t(dungeon_floor_tile(ses.ref)), popKey);
+            mgr_.cell_stand_points(4),
+            float(kCellSize), float(kCellSize), popKey);
     }
     // What lives in the dark. A cellar and a cavern hold the same thing by
     // the same law: the RUIN row family of the one monster table (what creeps
@@ -3433,22 +3433,20 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
         const MacroStockKey faunaKey{-1, std::int16_t(ses.doorCx),
                                      std::int16_t(ses.doorCy)};
         const int budget = macro_stock_read(mw, MacroStock::FaunaCount, faunaKey);
-        const DungeonRoom room = dungeon_room(ses.ref);
         // The den's table is its landmark's: a spire storey draws the Spire
         // family (demons), a cellar and a cave the Ruin family — the same
         // ONE law the open cell runs (fauna.h roll_spawns). Whose family is
-        // the kind row's column.
+        // the kind row's column. Placement is the scene's floor catalog: a
+        // cave's whole gallery chain holds its creatures, never just the
+        // mouth chamber the old rectangle described (CANON S28).
         const LandmarkType denKind = kindRow.denFamily;
-        spawn_dungeon_vermin(*ecs_, mgr_,
+        spawn_dungeon_vermin(*ecs_,
             dungeon_scene_seed(worldSeed, ses.doorCx, ses.doorCy,
                                ses.ref.ordinal, ses.ref.level),
             denKind, doorFacts.zone, doorFacts.biome,
             std::max(0, doorFacts.treeCount), budget,
-            float(kCellSize) + room.cx - room.hx,
-            float(kCellSize) + room.cy - room.hy,
-            float(kCellSize) + room.cx + room.hx,
-            float(kCellSize) + room.cy + room.hy,
-            std::uint8_t(dungeon_floor_tile(ses.ref)), faunaKey);
+            mgr_.cell_stand_points(4),
+            float(kCellSize), float(kCellSize), faunaKey);
     }
     if (gs_) {
         {

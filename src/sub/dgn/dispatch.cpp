@@ -230,6 +230,25 @@ void dispatch_generate_dungeon(const CellContext& ctx, SubworldMapData& out) {
         case DungeonRef::Void:
         default:                     gen_dungeon_void(ctx, out);        break;
     }
+    // The scene's floor catalog (CANON S28): every trav==1 tile becomes a
+    // stand point, folded HERE — the one moment `trav` is alive and the one
+    // place every interior passes through, so no module can forget it and
+    // no spawner has to guess walkability back out of a tile byte. Only a
+    // scene that can ever populate pays for the vector, and WHICH scenes
+    // those are is the kind row's own columns (a cellar, level < 0, is
+    // always a den) — never a branch on the kind here.
+    out.standPoints.clear();
+    const DungeonKindRow& kindRow = dungeon_kind_row(ctx.dungeon.kind);
+    const bool populates = kindRow.householdAbove || kindRow.verminAbove
+                        || ctx.dungeon.level < 0;
+    if (populates && out.trav.size() == out.tiles.size()) {
+        for (std::size_t i = 0; i < out.trav.size(); ++i) {
+            if (!out.trav[i]) continue;
+            out.standPoints.push_back(
+                StandPoint{std::uint16_t(i % std::size_t(kCellSize)),
+                           std::uint16_t(i / std::size_t(kCellSize)), 0u});
+        }
+    }
 }
 
 } // namespace sm::sub

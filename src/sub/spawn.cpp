@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <vector>
 
 namespace sm::sub {
@@ -77,6 +78,27 @@ ecs::NpcCharacter derive_face(std::uint32_t seed, NPCType type,
     return ecs::roll_npc_character(rng, kBodyFaceTintBase);
 }
 
+// ── THE placement door (CANON S28) ────────────────────────────────────────
+// One law for every rejection-sampled stand: draw candidates from the
+// caller's OWN point law — the owner of the truth about "where" — until one
+// stands. The door only answers yes or no; the CALLER counts the refusals
+// and says them out loud (no silent drops, no ceilings). Catalog-backed
+// scenes (interiors) never come here at all: their floor points are
+// standable by construction (dgn/dispatch.cpp folds trav while it is alive).
+template <typename NextPoint, typename Accept>
+bool resolve_stand(int attempts, NextPoint next, Accept ok,
+                   float& outX, float& outY) {
+    for (int a = 0; a < attempts; ++a) {
+        float fx = 0.0f, fy = 0.0f;
+        next(fx, fy);
+        if (!ok(fx, fy)) continue;
+        outX = fx;
+        outY = fy;
+        return true;
+    }
+    return false;
+}
+
 // Find a spot for one inhabitant of the settlement centred at (cx, cy) with
 // built-up radius `radius` (sub/city_layout.h — the SAME number the generator
 // stamped its walls from).
@@ -101,22 +123,33 @@ bool find_city_spawn_spot(const std::vector<std::uint8_t>& tiles,
     }
     if (!(radius > 0.0f)) return false;
     constexpr float kTau = 6.2831853f;
-    for (int attempt = 0; attempt < 64; ++attempt) {
-        const float a = rng.next_f01() * kTau;
-        const float r = radius * std::sqrt(rng.next_f01());
-        const int x = int(cx + std::cos(a) * r);
-        const int y = int(cy + std::sin(a) * r);
-        if (x < 0 || x >= kFullSize || y < 0 || y >= kFullSize) continue;
-        const std::uint8_t t = tiles[std::size_t(y) * kFullSize + x];
-        // Water drowns; house/wall footprints are SOLID now (sub/collide.h) —
-        // a body born inside masonry would have to walk out through the
-        // escape rule, so don't put it there in the first place.
-        if (t == TILE_WATER || t == TILE_HOUSE || t == TILE_WALL) continue;
-        fx = float(x) + 0.5f;
-        fy = float(y) + 0.5f;
-        return true;
-    }
-    return false;
+    // Through THE placement door: the disk is this computer's own point law
+    // (uniform in AREA), the tile filter its own ground question. Same RNG
+    // stream, same attempt count as before the door — bit for bit.
+    const bool found = resolve_stand(
+        64,
+        [&](float& sx, float& sy) {
+            const float a = rng.next_f01() * kTau;
+            const float r = radius * std::sqrt(rng.next_f01());
+            sx = cx + std::cos(a) * r;
+            sy = cy + std::sin(a) * r;
+        },
+        [&](float sx, float sy) {
+            const int x = int(sx), y = int(sy);
+            if (x < 0 || x >= kFullSize || y < 0 || y >= kFullSize) {
+                return false;
+            }
+            const std::uint8_t t = tiles[std::size_t(y) * kFullSize + x];
+            // Water drowns; house/wall footprints are SOLID (sub/collide.h)
+            // — a body born inside masonry would have to walk out through
+            // the escape rule, so don't put it there in the first place.
+            return t != TILE_WATER && t != TILE_HOUSE && t != TILE_WALL;
+        },
+        fx, fy);
+    if (!found) return false;
+    fx = float(int(fx)) + 0.5f;
+    fy = float(int(fy)) + 0.5f;
+    return true;
 }
 
 // (pick_civilian_type lived here until 2026-08-24 — an RNG-only crowd that
@@ -281,11 +314,15 @@ void spawn_settlement_population(ecs::World& w,
     const float centerY = float(originY) + float(kCellSize) * 0.5f;
     const float populationRadius = settlement_population_radius(city, pop);
 
+    int refused = 0;
     for (int i = 0; i < target; ++i) {
         float fx = 0.0f;
         float fy = 0.0f;
         if (!find_city_spawn_spot(tiles, rng, centerX, centerY,
                                   populationRadius, fx, fy)) {
+            // A soul that found no ground is COUNTED and said below — never
+            // dropped silently (CANON S28: no silent truncation anywhere).
+            ++refused;
             continue;
         }
         NPCType type = NPCType::Peasant;
@@ -320,6 +357,15 @@ void spawn_settlement_population(ecs::World& w,
                 /*combatant*/false},
             /*faceSalt*/std::uint32_t(i) * 7919u,
             BodyLoan::from(MacroStock::Population, populationKey));
+    }
+    if (refused > 0) {
+        const std::string_view id = landmark_def(landmark).id;
+        std::fprintf(stderr,
+                     "[spawn] WARN %.*s crowd at cell (%d,%d): %d of %d "
+                     "bodies found no ground\n",
+                     int(id.size()), id.data(),
+                     int(populationKey.cellX), int(populationKey.cellY),
+                     refused, target);
     }
 }
 
@@ -439,44 +485,60 @@ void maybe_emplace_carried_light(entt::registry& reg,
 
 // ── Dungeon residents (sub/dgn interiors) ────────────────────────────────
 
+namespace {
+// Uniform draw WITHOUT replacement over the scene's floor catalog (partial
+// Fisher-Yates): body k stands on order[k % n]. While free floor remains no
+// two draws share a tile; past the catalog's size the draw wraps — bodies
+// share tiles rather than vanish (CANON S28: no silent ceilings; the caller
+// says the shortage out loud). The catalog's points are standable by
+// construction (dgn/dispatch.cpp folds trav while it is alive), so there is
+// no rejection here at all — the guessing that dropped bodies against a
+// tile byte 24 tries at a time is gone.
+struct FloorDraw {
+    std::vector<std::uint32_t> order;
+    std::size_t drawn = 0;
+    explicit FloorDraw(std::size_t n) : order(n) {
+        for (std::uint32_t i = 0; i < std::uint32_t(n); ++i) order[i] = i;
+    }
+    const StandPoint& next(const std::vector<StandPoint>& catalog, Rng& rng) {
+        const std::size_t n = order.size();
+        const std::size_t slot = drawn % n;
+        if (drawn < n && slot + 1 < n) {
+            const std::size_t j =
+                slot + std::size_t(rng.next_u32() % std::uint32_t(n - slot));
+            std::swap(order[slot], order[j]);
+        }
+        ++drawn;
+        return catalog[order[slot]];
+    }
+};
+} // namespace
+
 int spawn_dungeon_residents(ecs::World& w,
-                            const SeamlessSubworldManager& mgr,
                             std::uint32_t seed,
                             std::uint16_t settlementFaction,
                             LandmarkType landmark,
                             std::uint8_t danger,
                             std::uint8_t depositsNear,
                             int count,
-                            float x0, float y0, float x1, float y1,
-                            std::uint8_t floorTile,
+                            const std::vector<StandPoint>& floorCatalog,
+                            float originX, float originY,
                             MacroStockKey populationKey) {
     if (count <= 0) return 0;
-    const auto& tiles = mgr.tiles();
-    if (tiles.size() < std::size_t(kFullSize) * std::size_t(kFullSize)) {
+    if (floorCatalog.empty()) {
+        std::fprintf(stderr,
+                     "[spawn] WARN interior of landmark %d: empty floor "
+                     "catalog — %d residents refused\n",
+                     int(populationKey.subject), count);
         return 0;
     }
     Rng rng(seed ^ 0xD0E51DE7u);
+    FloorDraw draw(floorCatalog.size());
     int placed = 0;
     for (int i = 0; i < count; ++i) {
-        // Plain interior floor only: partitions paint TILE_WALL, furniture
-        // paints TILE_HOUSE, the threshold TILE_ROAD — a body stands on none
-        // of them, and WHICH tile is floor is the interior's own answer.
-        float fx = 0.0f, fy = 0.0f;
-        bool found = false;
-        for (int attempt = 0; attempt < 24 && !found; ++attempt) {
-            fx = x0 + rng.next_f01() * std::max(0.0f, x1 - x0);
-            fy = y0 + rng.next_f01() * std::max(0.0f, y1 - y0);
-            const int ix = int(fx), iy = int(fy);
-            if (ix < 1 || iy < 1 || ix >= kFullSize - 1 || iy >= kFullSize - 1) {
-                continue;
-            }
-            if (tiles[std::size_t(iy) * kFullSize + std::size_t(ix)]
-                != floorTile) {
-                continue;
-            }
-            found = true;
-        }
-        if (!found) continue;
+        const StandPoint& pt = draw.next(floorCatalog, rng);
+        const float fx = originX + float(pt.x) + 0.5f;
+        const float fy = originY + float(pt.y) + 0.5f;
         SpawnContext townCtx{};
         // The household rolls its OWN place's crowd stripe — the landmark
         // kind travels in from the door (§42: the hardcoded City that stood
@@ -505,19 +567,21 @@ int spawn_dungeon_residents(ecs::World& w,
 }
 
 int spawn_dungeon_vermin(ecs::World& w,
-                         const SeamlessSubworldManager& mgr,
                          std::uint32_t seed,
                          LandmarkType tableKind,
                          std::uint8_t danger,
                          Biome biome,
                          int treeCount,
                          int budget,
-                         float x0, float y0, float x1, float y1,
-                         std::uint8_t floorTile,
+                         const std::vector<StandPoint>& floorCatalog,
+                         float originX, float originY,
                          MacroStockKey faunaKey) {
     if (budget <= 0) return 0;
-    const auto& tiles = mgr.tiles();
-    if (tiles.size() < std::size_t(kFullSize) * std::size_t(kFullSize)) {
+    if (floorCatalog.empty()) {
+        std::fprintf(stderr,
+                     "[spawn] WARN den at cell (%d,%d): empty floor catalog "
+                     "— %d heads refused\n",
+                     int(faunaKey.cellX), int(faunaKey.cellY), budget);
         return 0;
     }
     // The same ONE law the open cell runs (fauna.h roll_spawns): habitat ×
@@ -533,26 +597,14 @@ int spawn_dungeon_vermin(ecs::World& w,
 
     Rng pos(rngState);
     auto& reg = w.reg;
+    FloorDraw draw(floorCatalog.size());
     int placed = 0;
     for (const auto& p : picks) {
         if (placed >= budget) break;
         const FaunaEntry& f = *p.entry;
-        float fx = 0.0f, fy = 0.0f;
-        bool found = false;
-        for (int attempt = 0; attempt < 24 && !found; ++attempt) {
-            fx = x0 + pos.next_f01() * std::max(0.0f, x1 - x0);
-            fy = y0 + pos.next_f01() * std::max(0.0f, y1 - y0);
-            const int ix = int(fx), iy = int(fy);
-            if (ix < 1 || iy < 1 || ix >= kFullSize - 1 || iy >= kFullSize - 1) {
-                continue;
-            }
-            if (tiles[std::size_t(iy) * kFullSize + std::size_t(ix)]
-                != floorTile) {
-                continue;
-            }
-            found = true;
-        }
-        if (!found) continue;
+        const StandPoint& pt = draw.next(floorCatalog, pos);
+        const float fx = originX + float(pt.x) + 0.5f;
+        const float fy = originY + float(pt.y) + 0.5f;
         const int npcLevel = normalize_soldier_level(
             int(f.baseLevel) + int(std::floor(pos.next_f01() * 2.0f)));
         spawn_derived_body(reg,
@@ -663,26 +715,31 @@ void spawn_cell_npcs(ecs::World& w,
     const auto& tiles = mgr.tiles();
     const bool tilesUsable =
         tiles.size() >= std::size_t(kFullSize) * std::size_t(kFullSize);
+    int refused = 0;
     for (const auto& p : picks) {
         if (budget <= 0) break;
         const FaunaEntry& f = *p.entry;
-        // Scatter within this cell's sub-region only. Up to 20 retries to dodge
-        // water; positions are composite-window tiles like everything else.
+        // Through THE placement door: the cell's own uniform scatter is the
+        // ground's point law, dodging water. Same RNG stream and attempt
+        // count as before the door — bit for bit.
         float fx = 0.0f, fy = 0.0f;
-        bool placed = false;
-        for (int attempt = 0; attempt < 20; ++attempt) {
-            fx = float(originX) + pos.next_f01() * float(kCellSize);
-            fy = float(originY) + pos.next_f01() * float(kCellSize);
-            const int ix = int(fx), iy = int(fy);
-            if (ix < 0 || ix >= kFullSize || iy < 0 || iy >= kFullSize) continue;
-            if (tilesUsable &&
-                tiles[std::size_t(iy) * kFullSize + ix] == TILE_WATER) {
-                continue;
-            }
-            placed = true;
-            break;
-        }
-        if (!placed) continue;
+        const bool placed = resolve_stand(
+            20,
+            [&](float& sx, float& sy) {
+                sx = float(originX) + pos.next_f01() * float(kCellSize);
+                sy = float(originY) + pos.next_f01() * float(kCellSize);
+            },
+            [&](float sx, float sy) {
+                const int ix = int(sx), iy = int(sy);
+                if (ix < 0 || ix >= kFullSize || iy < 0 || iy >= kFullSize) {
+                    return false;
+                }
+                return !(tilesUsable &&
+                         tiles[std::size_t(iy) * kFullSize + ix]
+                             == TILE_WATER);
+            },
+            fx, fy);
+        if (!placed) { ++refused; continue; }
 
         const int npcLevel = normalize_soldier_level(
             int(f.baseLevel) + int(std::floor(pos.next_f01() * 2.0f)));
@@ -693,6 +750,12 @@ void spawn_cell_npcs(ecs::World& w,
                      /*combatant*/false},
             /*faceSalt*/std::uint32_t(budget) * 7919u, faunaLoan);
         --budget;
+    }
+    if (refused > 0) {
+        std::fprintf(stderr,
+                     "[spawn] WARN fauna at cell (%d,%d): %d heads found no "
+                     "dry ground\n",
+                     macroCellX, macroCellY, refused);
     }
 }
 

@@ -751,11 +751,26 @@ inline void structure_solid_span(const Structure& s, float seatM,
     z1 = z0 + structure_visible_height(s);
 }
 
+// One standable tile of a generated scene — the generator's own answer to
+// "where can a body stand here" (CANON S28), emitted while `trav` is still
+// alive. The composite keeps tiles only, so this catalog is the ONE runtime
+// survivor of walkability: a spawner that scatters blind into a rectangle
+// guesses, and guesses wrong in a carved cave, where the "room" is only the
+// mouth. `tag` addresses an authored point (hash of a design name; garrison
+// posts, a throne, a zoo cage); 0 = generic floor.
+struct StandPoint {
+    std::uint16_t x = 0, y = 0;   // cell-local tile
+    std::uint32_t tag = 0;
+};
+
 struct SubworldMapData {
     std::vector<std::uint8_t> tiles;     // FullSize × FullSize
     std::vector<std::uint8_t> trav;      // 0 = wall, 1 = walkable
     std::vector<float>        heightmap; // FullSize × FullSize
     std::vector<Structure>    structures;
+    // The scene's floor catalog (CANON S28). Empty where the scene never
+    // populates — the kind row's own columns say so, not a caller branch.
+    std::vector<StandPoint>   standPoints;
     float waterLevel = 0.4f;
 };
 

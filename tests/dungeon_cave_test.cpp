@@ -38,6 +38,7 @@
 #include "sub/gens/dispatch.h"
 #include "sub/map_data.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <vector>
@@ -462,6 +463,54 @@ void test_determinism() {
     CHECK(differing > 0, "a different seed carves a different cavern");
 }
 
+// ── 8. Floor catalog (CANON S28) ───────────────────────────────────────────
+// The dungeon dispatch folds every trav==1 tile into SubworldMapData's
+// standPoints — the ONE walkability truth a runtime spawner holds (the
+// composite keeps tiles only). Witness on the FOLD, not the consumer: the
+// catalog must be the walkable floor exactly, and it must span past the
+// mouth chamber — the rectangle the old scatter guessed from the door — or
+// a hundred bodies stand in the mouth again and the gallery chain is empty.
+void test_floor_catalog() {
+    int seedsTested = 0;
+    for (int si = 0; si < kSeedCount; ++si) {
+        const CellContext ctx = make_cave_ctx(kSeeds[si]);
+        SubworldMapData out{};
+        generate(ctx, out);
+        ++seedsTested;
+
+        int walkable = 0;
+        for (std::uint8_t t : out.trav) {
+            if (t == 1) ++walkable;
+        }
+        CHECK(int(out.standPoints.size()) == walkable,
+              "the floor catalog is the walkable floor, tile for tile");
+        int minX = kCellSize, maxX = -1, minY = kCellSize, maxY = -1;
+        bool allWalkable = true;
+        for (const StandPoint& pt : out.standPoints) {
+            if (out.trav[cell_index(int(pt.x), int(pt.y))] != 1) {
+                allWalkable = false;
+            }
+            minX = std::min(minX, int(pt.x));
+            maxX = std::max(maxX, int(pt.x));
+            minY = std::min(minY, int(pt.y));
+            maxY = std::max(maxY, int(pt.y));
+        }
+        CHECK(allWalkable, "every catalog point stands on trav==1");
+
+        const DungeonRoom mouth = dungeon_room(ctx.dungeon);
+        const bool beyondMouth =
+            float(minX) < mouth.cx - mouth.hx - 1.0f
+            || float(maxX) > mouth.cx + mouth.hx + 1.0f
+            || float(minY) < mouth.cy - mouth.hy - 1.0f
+            || float(maxY) > mouth.cy + mouth.hy + 1.0f;
+        CHECK(beyondMouth,
+              "the catalog spans past the mouth chamber — the gallery chain "
+              "holds bodies too");
+    }
+    CHECK(seedsTested == kSeedCount,
+          "the catalog sweep tested every seed it was given");
+}
+
 } // namespace
 
 int main() {
@@ -472,5 +521,6 @@ int main() {
     test_props();
     test_no_storeys();
     test_determinism();
+    test_floor_catalog();
     return sm::test::report("dungeon_cave_test");
 }
