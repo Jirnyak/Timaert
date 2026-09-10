@@ -76,7 +76,7 @@ Every consumer that used to name a band now derives its byte:
 
 The 2026-08-20 promise ("shape the COMPOSITION of what spawns") is **built**.
 The one spawn law ([macro/fauna.h](src/macro/fauna.h), `roll_spawns` /
-`pick_town_row`) weighs every row of the one body table:
+`pick_crowd_row`) weighs every row of the one body table:
 
     weight(row, cell) = row.weight × habitat(row, cell)
                       × danger_match(spawn_strength(row), danger byte)

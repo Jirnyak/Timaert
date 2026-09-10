@@ -198,9 +198,16 @@ int spawn_dungeon_residents(ecs::World& w,
                             const SeamlessSubworldManager& mgr,
                             std::uint32_t seed,
                             std::uint16_t settlementFaction,
-                            // The household rolls by the same town law as the
-                            // street (fauna.h pick_town_row): the door cell's
-                            // danger byte and deposit gates.
+                            // WHOSE household this is: the door cell's own
+                            // landmark kind. The residents roll the crowd
+                            // stripe of THAT place's registry row (fauna.h
+                            // pick_crowd_row) — a hall in a spire is manned
+                            // by the spire's crowd, not by townsfolk (§42:
+                            // the old hardcoded City here dressed every
+                            // interior in the world as a town house).
+                            LandmarkType landmark,
+                            // The door cell's danger byte and deposit gates
+                            // complete the same context the street rolls.
                             std::uint8_t danger,
                             std::uint8_t depositsNear,
                             int count,

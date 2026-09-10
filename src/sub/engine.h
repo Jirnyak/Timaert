@@ -84,6 +84,9 @@ struct DungeonSession {
     // reads no strength from the place: a body is its row (CANON.md S12).
     int settlementId = -1;        // landmark id; -1 = a wilderness building
     int landmarkPop = 0;          // settlement population (household-size term)
+    // The door cell's landmark KIND — whose crowd stripe the household rolls
+    // (§42: the interior's people are the PLACE's people, not always a town's).
+    LandmarkType landmarkKind = LandmarkType::None;
     std::uint16_t faction = 0;    // owning kingdom's registry faction index
 };
 

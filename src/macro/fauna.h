@@ -80,6 +80,14 @@ inline constexpr std::uint16_t hab(Biome b) {
 static_assert(landmark_def(LandmarkType::Ruin).faunaHabitat == kHabRuin
            && landmark_def(LandmarkType::Spire).faunaHabitat == kHabSpire,
               "kLandmarks fauna columns must quote fauna.h's habitat bits");
+// Same guard for the CROWD column (§42): the crowd's family is the place's
+// registry row, and the quoted bits must be the real ones.
+static_assert(landmark_def(LandmarkType::City).crowdHabitat == kHabTown
+           && landmark_def(LandmarkType::Village).crowdHabitat == kHabTown
+           && landmark_def(LandmarkType::Spire).crowdHabitat == kHabSpire
+           && landmark_def(LandmarkType::Ruin).crowdHabitat == kHabRuin
+           && landmark_def(LandmarkType::Lair).crowdHabitat == kHabRuin,
+              "kLandmarks crowd column must quote fauna.h's habitat bits");
 
 // Halving distance of the match law. Derived, not tuned: ten halvings span
 // the whole 0..255 continuum (a full-span mismatch lands at 2^-10 of the
@@ -114,12 +122,14 @@ struct FaunaPick { const FaunaEntry* entry; const char* factionId; };
 std::vector<FaunaPick> roll_spawns(const SpawnContext& ctx,
                                    std::uint32_t& rngState);
 
-// One townsperson, by the SAME law over the kHabTown stripe: the row weights
-// carry the old 55/21/21/3 mix as data, a profession row joins the crowd only
-// where its deposit gate is open, and the danger match rides on top. This
-// replaced the RNG-only pick_civilian_type — the crowd that could not tell an
-// iron town from a swamp one (canon-audit F4).
-NPCType pick_town_row(const SpawnContext& ctx, std::uint32_t& rngState);
+// One head of a place's CROWD, by the SAME law over the place's OWN stripe —
+// the landmark registry's crowdHabitat column (§42: the town stripe used to
+// be baked into the picker's name, which is why only a town could have a
+// crowd). For the kHabTown stripe the row weights carry the old 55/21/21/3
+// mix as data, a profession row joins the crowd only where its deposit gate
+// is open, and the danger match rides on top — that law replaced the
+// RNG-only pick_civilian_type (canon-audit F4) and stands bit-for-bit.
+NPCType pick_crowd_row(const SpawnContext& ctx, std::uint32_t& rngState);
 
 // ── The honest headcount (Session 16) ────────────────────────────────
 // A cell's fauna CAPACITY — how many heads its own spawn table carries

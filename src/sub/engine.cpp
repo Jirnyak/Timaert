@@ -3221,6 +3221,7 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
     // numbers the street spawner reads (spawn_cell), captured once here.
     ses.settlementId = doorCtx.landmark.id;   // ONE landmark id space (v54)
     ses.landmarkPop = doorCtx.landmark.size;
+    ses.landmarkKind = doorCtx.landmark.kind;
     ses.faction = faction_index_for_kingdom(gs_->politik, doorCtx.landmark.kingdomIdx);
     // In off the street — or down through the crown, which lands on the roof
     // pad instead of the south threshold (a storey above the ground has no
@@ -3402,7 +3403,8 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
         const DungeonRoom room = dungeon_room(ses.ref);
         spawn_dungeon_residents(*ecs_, mgr_,
             dSeed ^ 0x5EEDD00Du,
-            ses.faction, doorFacts.zone, doorFacts.depositsNear, household,
+            ses.faction, ses.landmarkKind,
+            doorFacts.zone, doorFacts.depositsNear, household,
             float(kCellSize) + room.cx - room.hx,
             float(kCellSize) + room.cy - room.hy,
             float(kCellSize) + room.cx + room.hx,

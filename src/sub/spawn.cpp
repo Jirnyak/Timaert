@@ -121,7 +121,7 @@ bool find_city_spawn_spot(const std::vector<std::uint8_t>& tiles,
 
 // (pick_civilian_type lived here until 2026-08-24 — an RNG-only crowd that
 // could not tell an iron town from a swamp one, canon-audit F4. The crowd
-// rolls by THE spawn law now: fauna.h pick_town_row.)
+// rolls by THE spawn law now: fauna.h pick_crowd_row.)
 
 // ── THE birth of a subworld humanoid ───────────────────────────────────────
 //
@@ -297,7 +297,7 @@ void spawn_settlement_population(ecs::World& w,
             type = NPCType::Woodcutter;
         } else {
             std::uint32_t ts = rng.state;
-            type = pick_town_row(townCtx, ts);
+            type = pick_crowd_row(townCtx, ts);
             rng.state = ts;
         }
         // A citizen is DERIVED — he is one unit of this place's population made
@@ -443,6 +443,7 @@ int spawn_dungeon_residents(ecs::World& w,
                             const SeamlessSubworldManager& mgr,
                             std::uint32_t seed,
                             std::uint16_t settlementFaction,
+                            LandmarkType landmark,
                             std::uint8_t danger,
                             std::uint8_t depositsNear,
                             int count,
@@ -477,11 +478,14 @@ int spawn_dungeon_residents(ecs::World& w,
         }
         if (!found) continue;
         SpawnContext townCtx{};
-        townCtx.landmark = LandmarkType::City;   // a household is town folk
+        // The household rolls its OWN place's crowd stripe — the landmark
+        // kind travels in from the door (§42: the hardcoded City that stood
+        // here dressed every interior in the world as a town house).
+        townCtx.landmark = landmark;
         townCtx.danger = danger;
         townCtx.depositsNear = depositsNear;
         std::uint32_t ts = rng.state;
-        const NPCType type = pick_town_row(townCtx, ts);
+        const NPCType type = pick_crowd_row(townCtx, ts);
         rng.state = ts;
         // The same derived-citizen birth as the street (one row of one law):
         // level from his own row, loan from the SAME population stock — a death

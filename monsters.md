@@ -24,7 +24,7 @@ row, never an `if`-chain.
   [macro/behaviour.h](src/macro/behaviour.h) (the one `AIBehaviour` column),
   [macro/fauna.h](src/macro/fauna.h),
   [macro/fauna.cpp](src/macro/fauna.cpp) (THE spawn law `roll_spawns` /
-  `pick_town_row`, the `kSpawnHabitats` habitat column, derived
+  `pick_crowd_row`, the `kSpawnHabitats` habitat column, derived
   `spawn_strength`, creature accessors, per-cell capacity; MACRO data since
   2026-08-07 — the file moved from sub/ when the honest headcount made the
   macro layer its second reader);
@@ -225,17 +225,27 @@ rolls every wild cell ([macro/fauna.h](src/macro/fauna.h) `roll_spawns`):
   (`landmark_registry.h`): a ruin's wolves ARE demons; open land keeps each
   row's own faction.
 
-### The town crowd rolls by the same law
+### The crowd rolls by the same law, over the place's own stripe
 
 `pick_civilian_type` — the RNG-only crowd that could not tell an iron town
-from a swamp one (canon-audit F4) — is dead. `pick_town_row` rolls the
-`kHabTown` stripe of the same table: the old 55/21/21/3 mix became the ROW
-WEIGHTS (`npc.h weight`: Peasant 55, Merchant/Woodcutter 21, Witch 3, each
-profession 21), the danger match rides on top, and a profession stands in the
-street only where its ground does — `depositGate` (the `kSpawnHabitats`
-column): a live vein within `kGathererReach` puts the miner / quarryman /
-clay-digger into the crowd, down to the residents of houses — the same radius
-and data that raise the macro profession ([resources.md](resources.md)).
+from a swamp one (canon-audit F4) — is dead. `pick_crowd_row` rolls a CROWD
+stripe of the same table, and WHICH stripe is the place's registry column
+`LandmarkDef::crowdHabitat` (§42: the town stripe used to be baked into the
+picker's name — a second dictionary of the City/Village gate; City/Village →
+`kHabTown`, Spire → `kHabSpire`, Ruin/Lair → `kHabRuin`, 0 = the kind keeps
+no crowd; static_assert-guarded beside the bits in fauna.h). This is a
+SECOND column beside `faunaHabitat`, deliberately: the crowd's family and
+the wild fauna's family are different dictionaries — a city has a town
+crowd and no wild fauna. On the `kHabTown` stripe the old 55/21/21/3 mix
+stands as the ROW WEIGHTS (`npc.h weight`: Peasant 55, Merchant/Woodcutter
+21, Witch 3, each profession 21), the danger match rides on top, and a
+profession stands in the street only where its ground does — `depositGate`
+(the `kSpawnHabitats` column): a live vein within `kGathererReach` puts the
+miner / quarryman / clay-digger into the crowd, down to the residents of
+houses — the same radius and data that raise the macro profession
+([resources.md](resources.md)). A household behind a door rolls the stripe
+of ITS OWN door cell's landmark (`DungeonSession::landmarkKind`), never a
+hardcoded town's.
 
 ## Spawn paths (three, one table)
 

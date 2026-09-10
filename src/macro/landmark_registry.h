@@ -117,6 +117,14 @@ struct LandmarkDef {
     // number is the place's own cap — a town is the poorest hunting ground
     // that still is one (the old ruin row's minCount, 2).
     std::uint8_t     faunaCap = kLandmarkFaunaCapGround;
+    // crowdHabitat — the habitat bit of this place's CROWD: its population
+    // made visible (street folk, a household behind a door, a garrisoned
+    // hall). A SECOND dictionary from faunaHabitat above, deliberately: a
+    // city has a town crowd and no wild fauna, a spire has a demon crowd AND
+    // the mountain's own beasts on its slopes. 0 = the place keeps no crowd
+    // (§42: the crowd's family is the place's COLUMN, never a name baked
+    // into the picker). Cross-checked against fauna.h beside the bits.
+    std::uint16_t    crowdHabitat = 0;
     // Which production TABLE this place works its benches as — the ordinal
     // of EconSite (macro/econ_day.h; world_tick.cpp cross-checks the pairing
     // where both vocabularies are visible). -1 = no benches: a spire or a
@@ -156,7 +164,7 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
     // (CANON S10, 2026-09-02): патрульный аукцион открывает её только когда
     // поле угрозы предъявило горячую округу дороже похода — тихий город
     // держит гарнизон дома за полцены содержания.
-    {LandmarkType::City,    "city",    "City",      0,  76, '#', 0xFFE7D27Au, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.5f,  /*hab*/0u,       0, 0, /*cap*/2, /*econ*/1,
+    {LandmarkType::City,    "city",    "City",      0,  76, '#', 0xFFE7D27Au, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.5f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*econ*/1,
      /*labour*/3, {{NPCType::TaxCollector, CrewGate::Suzerain, /*solo*/true},
                    {NPCType::Guard, CrewGate::Auction, /*solo*/false,
                     /*garrison*/true}}, 2 },
@@ -165,14 +173,14 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
     // диверсификация без координации. N = одновременность артелей, крутилка
     // дубль-прогона (4 ≈ поле+лес+жила+сбыт живого мира; строки Vendor и
     // шести профессий умерли — их работу раздаёт аукцион).
-    {LandmarkType::Village, "village", "Village",   0, 101, 'v', 0xFFCCB068u, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.0f,  /*hab*/0u,       0, 0, /*cap*/2, /*econ*/0,
+    {LandmarkType::Village, "village", "Village",   0, 101, 'v', 0xFFCCB068u, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.0f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*econ*/0,
      /*labour*/1, {{NPCType::Peasant, CrewGate::Auction},
                    {NPCType::Peasant, CrewGate::Auction},
                    {NPCType::Peasant, CrewGate::Auction},
                    {NPCType::Peasant, CrewGate::Auction}}, 4 },
-    {LandmarkType::Spire,   "spire",   "Spire",   128, 255, 'I', 0xFFA86CFFu, true, 0xFFA86CFFu, 200.0f, "demons", /*wealth*/1.25f, /*hab*/1u << 13, 4, 9, kLandmarkFaunaCapGround },
-    {LandmarkType::Ruin,    "ruin",    "Ruin",     51, 229, 'r', 0xFF8E8576u, true, 0xFF8E8576u,  40.0f, "demons", /*wealth*/0.5f,  /*hab*/1u << 12, 2, 6, kLandmarkFaunaCapGround },
-    {LandmarkType::Lair,    "lair",    "Lair",    102, 255, 'L', 0xFF883A3Au, true, 0xFF883A3Au,  70.0f, nullptr, /*wealth*/1.25f },
+    {LandmarkType::Spire,   "spire",   "Spire",   128, 255, 'I', 0xFFA86CFFu, true, 0xFFA86CFFu, 200.0f, "demons", /*wealth*/1.25f, /*hab*/1u << 13, 4, 9, kLandmarkFaunaCapGround, /*crowd*/1u << 13 },
+    {LandmarkType::Ruin,    "ruin",    "Ruin",     51, 229, 'r', 0xFF8E8576u, true, 0xFF8E8576u,  40.0f, "demons", /*wealth*/0.5f,  /*hab*/1u << 12, 2, 6, kLandmarkFaunaCapGround, /*crowd*/1u << 12 },
+    {LandmarkType::Lair,    "lair",    "Lair",    102, 255, 'L', 0xFF883A3Au, true, 0xFF883A3Au,  70.0f, nullptr, /*wealth*/1.25f, kLandmarkFaunaGround, 0, 0, kLandmarkFaunaCapGround, /*crowd*/1u << 12 },
     {LandmarkType::Shrine,  "shrine",  "Shrine",   25, 178, '+', 0xFFE2E2E2u, true, 0xFFE2E2E2u,  90.0f },
     {LandmarkType::Mine,    "mine",    "Mine",     51, 203, 'M', 0xFF8B6332u, true, 0xFF8B6332u,  60.0f, nullptr, /*wealth*/1.25f },
     {LandmarkType::Tower,   "tower",   "Tower",    76, 203, 'T', 0xFF6E6E89u, true, 0xFF6E6E89u,  80.0f },

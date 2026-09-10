@@ -113,7 +113,7 @@ assembled once by its owner and handed whole, so a layer can no longer be
 forgotten at a call site ([context.md](context.md)). Its first fruit is on
 the street: `CellFacts.depositsNear` carries the live deposit kinds within
 `kGathererReach`, and the town crowd reads it through the spawn law's
-`depositGate` column (fauna.h `pick_town_row`) — a live vein in reach puts
+`depositGate` column (fauna.h `pick_crowd_row`) — a live vein in reach puts
 the miner / quarryman / clay-digger into the street crowd and into the houses,
 by the SAME radius and the same data that raise the macro profession.
 

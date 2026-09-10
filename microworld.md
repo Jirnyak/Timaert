@@ -443,7 +443,7 @@ projection OF the subworld exactly as the subworld is a projection of the map,
 so nothing below the door is saved and every lasting act pays up through a
 macro stock. `enter_dungeon_scene` takes the same `MacroWorld` envelope, and
 interiors spawn by the same laws as the street: residents through the door
-cell's `pick_town_row` (deposit-gated professions live in houses too), vermin
+cell's `pick_crowd_row` (deposit-gated professions live in houses too), vermin
 through `roll_spawns` with the door cell's danger byte
 ([monsters.md](monsters.md)). The whole layer, the prop table it stands on
 and the one E-verb dispatch are written up in **[dungeons.md](dungeons.md)**.
