@@ -56,9 +56,15 @@ struct DesignCharacterDef {
     // Строка ОДНОГО реестра фракций (authoring-ключ); nullptr = фракция
     // ДОМА (царь варварского города — их человек, чей бы город ни выпал).
     const char*  factionId;
-    LandmarkType homeType;  // None = клетка ниже
-    std::int16_t homeIndex; // N-й ландмарк рода; < 0 = случайный сидом
+    LandmarkType homeType;  // None = клетка ниже / вершина
+    std::int16_t homeIndex; // N-й ландмарк рода; < 0 = случайный сидом.
+                            // При homePeak — ординал ВЕРШИНЫ (0 = высшая).
     const char*  homeFactionPrefix;  // nullptr = род без фильтра фракции
+    // Дом — ВЕРШИНА ГОРНОГО МАССИВА (владелец: «рандом центр горного
+    // массива — самая высокая клетка»): homeType = None, спавн-дверь
+    // резолвит homeIndex-ю из высочайших клеток карты с разносом, и она
+    // же становится ЛОГОВОМ (rt.lairX/Y) для модели LairSorties.
+    bool         homePeak;
     std::int16_t cellX, cellY;
     AIBehaviour  behaviour; // какая модель думает (лестница effective_behaviour)
     DesignAgenda agenda;
@@ -82,7 +88,7 @@ inline constexpr DesignCharacterDef kDesignCharacterDefs[] = {
         /*authoredSheet*/ false, CharacterSheet{},
         "empire",
         LandmarkType::City, /*homeIndex*/ 0, /*homeFaction*/ nullptr,
-        /*cell*/ 0, 0,
+        /*homePeak*/ false, /*cell*/ 0, 0,
         AIBehaviour::Waypoints,
         DesignAgenda{.routeToNearest =
                          std::int8_t(LandmarkType::Village)},
@@ -103,9 +109,48 @@ inline constexpr DesignCharacterDef kDesignCharacterDefs[] = {
         "king_peasant",
         LandmarkType::City, /*homeIndex: случайный*/ -1,
         /*homeFaction*/ "barbarian",
-        /*cell*/ 0, 0,
+        /*homePeak*/ false, /*cell*/ 0, 0,
         AIBehaviour::MageHunt,
         DesignAgenda{},
+    },
+    // Драконы (владелец, 2026-09-10; тестовые — «сделай несколько по всей
+    // карте», имена DragonN его словом): тело Dragon (первый ЛЕТУН-боец —
+    // честный полёт cruiseM, огненный шар Missile-колонками), фракция
+    // dragons ОБЩАЯ (вердикт: «фракция мобы/драконы, не он сам»), дом —
+    // вершины трёх горных массивов, модель — вылеты из логова (радиус 10,
+    // бьёт любой сквад слабее себя, возвращается спать).
+    {
+        "dragon1", "Dragon1",
+        NPCType::Dragon, /*level*/ 10,
+        /*authoredSheet*/ false, CharacterSheet{},
+        "dragons",
+        LandmarkType::None, /*homeIndex: вершина №0*/ 0,
+        /*homeFaction*/ nullptr,
+        /*homePeak*/ true, /*cell*/ 0, 0,
+        AIBehaviour::LairSorties,
+        DesignAgenda{.radiusCells = 10},
+    },
+    {
+        "dragon2", "Dragon2",
+        NPCType::Dragon, /*level*/ 10,
+        /*authoredSheet*/ false, CharacterSheet{},
+        "dragons",
+        LandmarkType::None, /*homeIndex: вершина №1*/ 1,
+        /*homeFaction*/ nullptr,
+        /*homePeak*/ true, /*cell*/ 0, 0,
+        AIBehaviour::LairSorties,
+        DesignAgenda{.radiusCells = 10},
+    },
+    {
+        "dragon3", "Dragon3",
+        NPCType::Dragon, /*level*/ 10,
+        /*authoredSheet*/ false, CharacterSheet{},
+        "dragons",
+        LandmarkType::None, /*homeIndex: вершина №2*/ 2,
+        /*homeFaction*/ nullptr,
+        /*homePeak*/ true, /*cell*/ 0, 0,
+        AIBehaviour::LairSorties,
+        DesignAgenda{.radiusCells = 10},
     },
 };
 

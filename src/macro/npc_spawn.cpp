@@ -91,6 +91,9 @@ entt::entity make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
 
     ecs::MacroNpcRuntime rt{};
     rt.homeSettlementId   = homeId;   // ONE landmark id space (v54)
+    // ЛЕТУН (v93): кэш колонки строки по образцу travelRank — try_move
+    // читает per-think, лукап строки там не нужен.
+    rt.flying             = def.combat.cruiseM > 0.0f ? 1 : 0;
     rt.targetSettlementId = -1;
     rt.targetX            = float(x);
     rt.targetY            = float(y);
@@ -332,12 +335,58 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
     spawn_design_characters(gs, w, terrain, rng, spawnIndex);
 }
 
+// Вершины горных массивов — дома драконьих анкет: K высочайших клеток
+// карты с разносом ≥ 1/8 стороны (иначе три «вершины» — три камня одной
+// горы). O(N) по клеткам, один проход генезиса; высота = красный канал
+// terrain (та же власть, которой смотрит биом).
+static void resolve_mountain_peaks(const TerrainData& terrain,
+                                   int mapW, int mapH,
+                                   XY* peaks, int peakCount) {
+    for (int i = 0; i < peakCount; ++i) peaks[i] = {-1, -1};
+    // Мир без рельефа (headless-фикстуры зовут генезис с пустым terrain)
+    // вершин не имеет — тот же ответ, что у мира без гор.
+    if (terrain.rgba.size() < std::size_t(mapW) * std::size_t(mapH) * 4u) {
+        return;
+    }
+    const int minSpacing = std::max(8, mapW / 8);
+    // Вершина обязана быть ГОРОЙ — порог из одной власти биома
+    // (biomes.h kMountainBiomeLevel): мир без гор вершин не имеет, и
+    // драконья строка честно не рождается.
+    const int mountainFloor = int(kMountainBiomeLevel * 255.0f);
+    for (int slot = 0; slot < peakCount; ++slot) {
+        int bestH = mountainFloor - 1, bx = -1, by = -1;
+        for (int y = 0; y < mapH; ++y) {
+            for (int x = 0; x < mapW; ++x) {
+                const int h =
+                    terrain.rgba[(std::size_t(y) * mapW + x) * 4u + 0];
+                if (h <= bestH) continue;
+                bool tooClose = false;
+                for (int i = 0; i < slot; ++i) {
+                    const int dx = std::abs(peaks[i].x - x);
+                    const int dy = std::abs(peaks[i].y - y);
+                    const int cheb = std::max(std::min(dx, mapW - dx),
+                                              std::min(dy, mapH - dy));
+                    if (cheb < minSpacing) { tooClose = true; break; }
+                }
+                if (tooClose) continue;
+                bestH = h; bx = x; by = y;
+            }
+        }
+        peaks[slot] = {bx, by};
+    }
+}
+
 void spawn_design_characters(GameState& gs, ecs::World& w,
                              const TerrainData& terrain, Rng& rng,
                              std::uint32_t& spawnIndex) {
     const int mw = gs.mapW;
     const int mh = gs.mapH;
     if (mw <= 0 || mh <= 0) return;
+
+    // Вершины резолвятся один раз на генезис — только если стол их просит.
+    constexpr int kMaxPeaks = 8;
+    XY peaks[kMaxPeaks];
+    bool peaksResolved = false;
     for (std::int16_t ord = 0; ord < kDesignCharacterCount; ++ord) {
         const DesignCharacterDef& row = kDesignCharacterDefs[ord];
 
@@ -348,7 +397,21 @@ void spawn_design_characters(GameState& gs, ecs::World& w,
         int hx = row.cellX, hy = row.cellY;
         int homeId = -1;
         const Landmark* home = nullptr;
-        if (row.homeType != LandmarkType::None) {
+        if (row.homePeak) {
+            // Дом — вершина горного массива (драконья строка): homeIndex-я
+            // из высочайших с разносом. Мир без гор анкету не рождает —
+            // тот же закон «нет дома — нет тела».
+            if (!peaksResolved) {
+                resolve_mountain_peaks(terrain, mw, mh, peaks, kMaxPeaks);
+                peaksResolved = true;
+            }
+            const int slot =
+                int(row.homeIndex) % kMaxPeaks >= 0
+                    ? int(row.homeIndex) % kMaxPeaks : 0;
+            if (peaks[slot].x < 0) continue;
+            hx = peaks[slot].x;
+            hy = peaks[slot].y;
+        } else if (row.homeType != LandmarkType::None) {
             std::vector<const Landmark*> ofKind;
             for (const auto& lm : gs.landmarks) {
                 if (lm.type != row.homeType) continue;
@@ -411,6 +474,14 @@ void spawn_design_characters(GameState& gs, ecs::World& w,
             }
         }
         w.reg.emplace<ecs::DesignCharacterTag>(e, ord);
+
+        // Логово — дом-клетка модели вылетов: вершина и есть его дом.
+        if (row.homePeak) {
+            if (auto* rt = w.reg.try_get<ecs::MacroNpcRuntime>(e)) {
+                rt->lairX = std::int16_t(hx);
+                rt->lairY = std::int16_t(hy);
+            }
+        }
 
         // Маршрут «дом ↔ ближайший ландмарк рода из агенды» — резолв
         // контекста, как find_valid_spawn: строка называет РОД цели, мир

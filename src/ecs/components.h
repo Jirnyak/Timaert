@@ -160,7 +160,11 @@ struct SubworldAi {
     float vx, vy;
     float wanderSpeed;
     float radius;
-    float wantVx = 0.0f, wantVy = 0.0f;
+    // НАМЕРЕНИЕ — ТРИ ОСИ (владелец 2026-09-10: «субмир 3D — все
+    // воспринимают x/y/z»; 2D-мозг был пережитком старого субмира).
+    // wantVz читает только тело с ecs::Flying — ходока к земле прижимает
+    // закон опоры (vertical_step), не другой мозг: один mover, одна рамка.
+    float wantVx = 0.0f, wantVy = 0.0f, wantVz = 0.0f;
     // Decision counter, folded into the wander RNG seed. The seed used to be
     // entity-bits ⊕ position — safe while the brain moved its own body, fatal
     // once it stopped: a wanderer that rolled "stand" froze its position, and
@@ -446,6 +450,17 @@ struct MacroNpcRuntime {
     // деревни 1299 заперты в поле 30 дней, пере-аукцион не наступал).
     // 0 = Idle — старое поведение для тех, кто лёг без прерванной ноги.
     std::uint8_t  stateAfterRest = 0;
+    // ── ЛЕТУН на карте (v93; владелец 2026-09-10 — полёт честный и
+    // системный). Кэш колонки строки (CombatTemplate::cruiseM > 0),
+    // положенный сюда make_npc по образцу travelRank: try_move читает его
+    // per-think, где лукап строки не нужен. Летящий марш не платит рельеф
+    // и не требует корабля — воздух его дорога.
+    std::uint8_t  flying = 0;
+    // ЛОГОВО — дом-КЛЕТКА для тех, чей дом не ландмарк (драконья гора,
+    // стол анкет): модель вылетов (LairSorties) кружит вокруг неё и
+    // возвращается. -1 = логова нет. int16 расчётом: клетка карты ≤ 1023.
+    std::int16_t  lairX = -1;
+    std::int16_t  lairY = -1;
 };
 
 // Deterministic spawn ordinal for a persistent macro NPC (Inc 5e-2), assigned

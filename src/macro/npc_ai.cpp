@@ -444,7 +444,12 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
     // (нет) и не садился на собственный корабль (измерено: out=63, вся
     // деревня вечно в отлучке).
     const int realTx = itx, realTy = ity;
-    const bool seaTrip = route_dry_unreachable(ctx, ix, iy, realTx, realTy);
+    // ЛЕТУН (v93): воздух — его стихия, как вода у паруса. Море ему не
+    // «недостижимо посуху», док не нужен, рельеф не платится, любая клетка
+    // держит — ОДИН цикл марша, меняется только стихия (образец кораблей).
+    const bool flying = rt.flying != 0;
+    const bool seaTrip = !flying
+        && route_dry_unreachable(ctx, ix, iy, realTx, realTy);
     // «ГДЕ МОЙ КОРАБЛЬ» — универсальная дисциплина дока (CANON S10): пеший
     // рейс, недостижимый сушей, у сквада с пришвартованным корпусом идёт
     // СНАЧАЛА к своей швартовке — не в надежде на счастливый берег. Без
@@ -466,7 +471,9 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
     // 3 cells per think on a road, ~1 in open water.
     const float perThink = kMacroWalkCellsPerHour * kAiTickGameHours
                            * std::max(0.0f, rt.moveMult)
-                           * terrain_speed_mult(cell_weight(ctx, ix, iy));
+                           * (flying ? 1.0f
+                                     : terrain_speed_mult(
+                                           cell_weight(ctx, ix, iy)));
     rt.moveBudget += perThink;
     // Banking bound, not a speed limit: at most one whole spare cell rides
     // across thinks on top of this think's own production.
@@ -509,7 +516,8 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
         // идёт системой: пеший — сухим ярусом, ПАРУС В ВОДЕ — водным
         // (спуск по водному полю ведёт по фьордам); жадный шаг остаётся
         // мокрым ногам без корпуса и миру без запечённого слоя.
-        if ((sailing ? cell_is_water(ctx, ix, iy) : standingDry)
+        if (!flying
+            && (sailing ? cell_is_water(ctx, ix, iy) : standingDry)
             && ctx.mw.nav && ctx.mw.nav->baked()) {
             int fdx = 0, fdy = 0;
             if (nav_step(*ctx.mw.nav, ix, iy, itx, ity, fdx, fdy)) {
@@ -536,6 +544,7 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
             // Цена шага глазами ходока: под парусом вода — его дорога
             // (kShipWaterWeight), суша — причал (обычная цена).
             const auto walker_w = [&](int nx2, int ny2) {
+                if (flying) return 1.0f;   // воздух — дорога летуна
                 if (sailing && cell_is_water(ctx, nx2, ny2))
                     return kShipWaterWeight;
                 return edge_weight(ctx, ix, iy, nx2, ny2);
@@ -551,7 +560,7 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
             const bool fleeingFord =
                 rt.state == std::uint8_t(NPCState::Fleeing);
             const auto walker_stands = [&](int nx2, int ny2) {
-                return sailing || fleeingFord
+                return sailing || flying || fleeingFord
                        || can_stand_at(ctx, nx2, ny2);
             };
             if (!standingDry || walker_stands(straight.nx, straight.ny)) {
@@ -615,7 +624,7 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
         const float stepCost = travel_stamina_cost(
             bw, 1.0f, int(rt.overloadCost), efficiency);
         if (float(pools.sp) + pools.spCarry < stepCost
-            && (sailing || can_stand_at(ctx, ix, iy))) {
+            && (sailing || flying || can_stand_at(ctx, ix, iy))) {
             break;   // палуба держит якорную стоянку не хуже лагеря
         }
 
@@ -2320,6 +2329,146 @@ void ai_mage_hunt(entt::entity self, MacroPos& p, ecs::MacroNpcRuntime& rt,
     }
 }
 
+// ── Вылеты из логова (стол анкет — модель дракона) ───────────────────────
+// Дом — КЛЕТКА (rt.lairX/Y, гора — не ландмарк), радиус вылетов — агенда
+// строки анкеты. В вылете бьёт любой сквад СЛАБЕЕ себя (слово владельца) —
+// той же дверью встречи, что threat step; наевшись или улетев за радиус —
+// домой. Игрокова встреча — форс-двери игрока, как у всех.
+entt::entity nearest_weaker_squad(entt::entity self, const MacroPos& p,
+                                  float sightCells, const TickContext& ctx) {
+    const SquadIndex& g = *ctx.squads;
+    const CellBuckets& b = g.grid;
+    if (b.cols <= 0 || b.rows <= 0) return entt::null;
+    auto& reg = ctx.mw.world->reg;
+    const float myPower =
+        squad_power(auto_battle_side_of(*ctx.mw.world, self));
+    const int cx0 = int(p.x) / b.cellSize;
+    const int cy0 = int(p.y) / b.cellSize;
+    float best = sightCells * sightCells + 1.0f;
+    entt::entity found = entt::null;
+    for (int oy = -2; oy <= 2; ++oy) {
+        for (int ox = -2; ox <= 2; ++ox) {
+            const int gx = wrapi(cx0 + ox, b.cols);
+            const int gy = wrapi(cy0 + oy, b.rows);
+            for (const std::uint32_t* it = b.cell_begin(gx, gy),
+                                    * end = b.cell_end(gx, gy);
+                 it != end; ++it) {
+                const entt::entity e = entt::entity(*it);
+                if (e == self || !reg.valid(e)) continue;
+                if (reg.any_of<ecs::Dead>(e)) continue;
+                const auto* oc = reg.try_get<ecs::MacroCell>(e);
+                if (!oc) continue;
+                const float d = torus_dist_sq(
+                    p.x, p.y,
+                    float(ecs::cell_x(*oc, ctx.mapW)),
+                    float(ecs::cell_y(*oc, ctx.mapW)),
+                    float(ctx.mapW), float(ctx.mapH));
+                if (d >= best) continue;
+                if (squad_power(auto_battle_side_of(*ctx.mw.world, e))
+                        >= myPower) {
+                    continue;   // добыча — только слабее
+                }
+                best = d;
+                found = e;
+            }
+        }
+    }
+    return found;
+}
+
+void ai_lair_sorties(entt::entity self, MacroPos& p,
+                     ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
+                     const TickContext& ctx) {
+    // Логово самозалечивается: тело без дома объявляет домом место, где
+    // проснулось (спавн-дверь анкеты пишет честную клетку раньше).
+    if (rt.lairX < 0 || rt.lairY < 0) {
+        rt.lairX = std::int16_t(wrapi(int(p.x), ctx.mapW));
+        rt.lairY = std::int16_t(wrapi(int(p.y), ctx.mapH));
+    }
+    // Радиус вылетов — агенда СТРОКИ анкеты (данные в строке — решения в
+    // функции); тело без анкеты, если когда-то получит эту модель, кружит
+    // дефолтной восьмёркой.
+    float radius = 8.0f;
+    if (const auto* dc =
+            ctx.mw.world->reg.try_get<ecs::DesignCharacterTag>(self)) {
+        if (const DesignCharacterDef* row = design_character(dc->ordinal)) {
+            if (row->agenda.radiusCells > 0) {
+                radius = float(row->agenda.radiusCells);
+            }
+        }
+    }
+    const float fromLair = std::sqrt(torus_dist_sq(
+        p.x, p.y, float(rt.lairX), float(rt.lairY),
+        float(ctx.mapW), float(ctx.mapH)));
+
+    if (ctx.squads && ctx.mw.world && ctx.mw.gs && fromLair < radius) {
+        const entt::entity prey =
+            nearest_weaker_squad(self, p, radius, ctx);
+        if (prey != entt::null) {
+            auto& reg = ctx.mw.world->reg;
+            const auto& ecell = reg.get<ecs::MacroCell>(prey);
+            const MacroPos ep{float(ecs::cell_x(ecell, ctx.mapW)),
+                              float(ecs::cell_y(ecell, ctx.mapW))};
+            if (int(p.x) == int(ep.x) && int(p.y) == int(ep.y)) {
+                if (reg.any_of<ecs::PlayerTag, ecs::PlayerSquadTag>(prey)) {
+                    rt.visualSpeed = 0.0f;
+                    return;
+                }
+                if (!ctx.allowAutoBattle) return;
+                const AutoBattleOutcome o = resolve_auto_battle(
+                    auto_battle_side_of(*ctx.mw.world, self),
+                    auto_battle_side_of(*ctx.mw.world, prey),
+                    Ambush::SideA, *ctx.rng);
+                settle_auto_battle(ctx.mw, self, prey, o);
+                rt.visualSpeed = 0.0f;
+                if (!reg.all_of<ecs::Dead>(self)) {
+                    rt.state = std::uint8_t(NS::Idle);
+                    rt.stateTimer = std::int16_t(5 + rand_int(ctx, 8));
+                }
+                return;
+            }
+            rt.targetX = ep.x;
+            rt.targetY = ep.y;
+            rt.state = std::uint8_t(NS::Chasing);
+            try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
+            return;
+        }
+    }
+
+    // Улетел за радиус или добычи нет и стоит не дома — домой.
+    if (fromLair >= radius
+        || (rt.state != std::uint8_t(NS::Wandering)
+            && (int(p.x) != int(rt.lairX) || int(p.y) != int(rt.lairY)))) {
+        rt.targetX = float(rt.lairX);
+        rt.targetY = float(rt.lairY);
+        rt.state = std::uint8_t(NS::Returning);
+        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
+        return;
+    }
+    // Дома и сыт: кружи по округе логова.
+    if (rt.state == std::uint8_t(NS::Idle)) {
+        --rt.stateTimer;
+        if (rt.stateTimer <= 0) {
+            XY t = pick_random_nearby(float(rt.lairX), float(rt.lairY),
+                                      int(radius), ctx);
+            rt.targetX = float(t.x); rt.targetY = float(t.y);
+            rt.state = std::uint8_t(NS::Wandering);
+        }
+        return;
+    }
+    if (rt.state == std::uint8_t(NS::Wandering)) {
+        if (at_target(p, rt, ctx)) {
+            rt.state = std::uint8_t(NS::Idle);
+            rt.stateTimer = std::int16_t(10 + rand_int(ctx, 20));
+            return;
+        }
+        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
+        return;
+    }
+    rt.state = std::uint8_t(NS::Idle);
+    rt.stateTimer = std::int16_t(3 + rand_int(ctx, 5));
+}
+
 // ── Патруль стражи (CANON S10 «стража + поле угрозы», 2026-09-02) ────────
 // Досягаемость кандидатов патруля — ШАГИ ГРАФА округ от своей: округа =
 // клетка ткани мира, и «в K шагах» — вопрос о мембранах, не о клетках.
@@ -3019,6 +3168,7 @@ void dispatch(AIBehaviour b, entt::entity e, MacroPos& p,
         case AIBehaviour::Flee:         ai_wanderer     (p, rt, pools, ctx); break;
         case AIBehaviour::Waypoints:    ai_waypoints (e, p, rt, pools, ctx); break;
         case AIBehaviour::MageHunt:     ai_mage_hunt (e, p, rt, pools, ctx); break;
+        case AIBehaviour::LairSorties:  ai_lair_sorties(e, p, rt, pools, ctx); break;
         case AIBehaviour::Count:        break;
     }
 }

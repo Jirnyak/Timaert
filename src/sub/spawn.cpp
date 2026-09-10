@@ -215,6 +215,7 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
         pc.attackKind == CombatTemplate::Missile ? ecs::Combat::Missile
                                                  : ecs::Combat::Melee);
     maybe_emplace_missile_attack(reg, e, pc);
+    maybe_emplace_flying(reg, e, pc);
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(body.level));
     reg.emplace<ecs::SubworldTag>(e);
     // How much room this body takes: the row's ONE width column, man-shaped
@@ -408,6 +409,12 @@ void maybe_emplace_missile_attack(entt::registry& reg,
         combat.missileSpeed > 0.0f ? combat.missileSpeed : 200.0f,
         combat.missileBlast,
         combat.missileColorRGBA);
+}
+
+void maybe_emplace_flying(entt::registry& reg, entt::entity e,
+                          const CombatTemplate& combat) {
+    if (combat.cruiseM <= 0.0f) return;
+    reg.emplace<ecs::Flying>(e);
 }
 
 // Attach the NPC type's carried light (torch / lantern / arcane glow), if it has

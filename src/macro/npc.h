@@ -56,6 +56,11 @@ enum class NPCType : std::uint8_t {
     // teeth: perception is a property of the creature, so a creature that
     // lies in wait is a creature, not a flag. Appended.
     RoadAmbusher,
+    // The dragon (owner 2026-09-10, стол анкет): the first FLYING fighter —
+    // cruiseM > 0 births ecs::Flying, the honest M&M flight the player has
+    // (one envelope, one law), and the missile fireball is the ordinary
+    // Missile columns every shooter row uses. Appended.
+    Dragon,
     Count,
 };
 
@@ -299,6 +304,13 @@ static_assert(kAdventurerCombat.hp == 100.0f && kAdventurerCombat.mp == 100
 inline constexpr CombatTemplate kAmbusherCombat  {100,{12,1}, 2.25f, 3.0f, 2.5f, "Amb", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu, /*bodyHeight*/0.0f, /*sight*/1000.0f};
 inline constexpr CombatTemplate kWitchCombat     {60,{18,1}, 1.5f, 20.0f,4.0f, "Wtc", CombatTemplate::Missile, 180, 0, 0xFFA070D0u};
 inline constexpr CombatTemplate kSorceressCombat {70,{22,1}, 1.25f, 25.0f,3.6f, "Src", CombatTemplate::Missile, 200, 6, 0xFF70C0E0u};
+// Дракон (владелец 2026-09-10): «маленькая армия в одном теле» — hp 500,
+// огненный шар = обычные Missile-колонки (бласт 2.5 м — АоЕ, цвет огня),
+// урон 3d20 Fire (тип — колонка dmgType ниже дефолтов, авторится в строке
+// project_combat не трогается). ЛЕТУН: cruiseM 10 — честный полёт (конверт
+// игрока), рождается с ecs::Flying; на карте марш не платит рельеф.
+// bodyHeight 6 — башня, не человек (одна колонка, не ветка рендера).
+inline constexpr CombatTemplate kDragonCombat    {500,{3,20}, 1.6f, 40.0f,3.0f, "Drg", CombatTemplate::Missile, 260, 2.5f, 0xFF3060FFu, /*bodyHeight*/6.0f, /*sight*/60.0f, /*mp*/100, /*sp*/100, DamageType::Fire, /*cruiseM*/10.0f};
 
 inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // Peasant
@@ -528,7 +540,9 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // Hawk
     {
         NPCType::Hawk, "hawk", "Hawk", SpriteId::Hawk, 1,
-        AIBehaviour::Wanderer, {8, {5,1}, 3.0f, 3, 1.0f, "Hwk"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
+        // ЛЕТУН: cruiseM 5 — ястреб честно в воздухе (полёт-посадка
+        // 2026-09-10), гравитации нет, конверт общий с игроком.
+        AIBehaviour::Wanderer, {8, {5,1}, 3.0f, 3, 1.0f, "Hwk", CombatTemplate::Melee, 0, 0, 0xFFFFFFFFu, 0.0f, kNpcSightDefaultM, 100, 100, DamageType::Blunt, 5.0f}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
         /*weight*/3, /*loot*/nullptr, /*radius*/0.4f,
         {{}}, 0, {{}}, 0,
     },
@@ -549,7 +563,8 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // Eagle
     {
         NPCType::Eagle, "eagle", "Eagle", SpriteId::Eagle, 2,
-        AIBehaviour::Wanderer, {12, {7,1}, 3.25f, 3, 1.0f, "Egl"}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/15,
+        // ЛЕТУН: cruiseM 6 — орёл выше ястреба, тот же закон.
+        AIBehaviour::Wanderer, {12, {7,1}, 3.25f, 3, 1.0f, "Egl", CombatTemplate::Melee, 0, 0, 0xFFFFFFFFu, 0.0f, kNpcSightDefaultM, 100, 100, DamageType::Blunt, 6.0f}, kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/15,
         /*weight*/4, /*loot*/nullptr, /*radius*/0.5f,
         {{}}, 0, {{}}, 0,
     },
@@ -685,6 +700,20 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "Nothing personal, traveller. The road is ours.",
           "Down. Stay down and it goes easier."}}, 3,
     },
+    // Dragon (owner 2026-09-10, стол анкет): первый ЛЕТУН-боец —
+    // kDragonCombat несёт cruiseM 10 (честный полёт, конверт игрока) и
+    // огненный шар обычными Missile-колонками (3d20 Fire, бласт 2.5 м).
+    // Ряд Wanderer по умолчанию — дизайн-дракон думает своей моделью
+    // (LairSorties) через ступень анкеты; дикий, если когда-то родится
+    // спавн-таблицей, будет просто кружить. weight 0 — вслепую мир его
+    // не выбрасывает: дракон приходит только по имени (анкета, данж).
+    {
+        NPCType::Dragon, "dragon", "Dragon", SpriteId::Dragon, 10,
+        AIBehaviour::Wanderer, kDragonCombat, kNpcUpkeepNone, false,
+        /*xp*/ 500,
+        /*weight*/0, /*loot*/nullptr, /*radius*/1.6f,
+        {{}}, 0, {{}}, 0,
+    },
 };
 static_assert(rows_in_enum_order(kNpcTypeDefs, &NpcTypeDef::type),
               "kNpcTypeDefs row order must mirror NPCType");
@@ -770,6 +799,9 @@ inline constexpr NpcPurseRow kNpcPurse[std::size_t(NPCType::Count)] = {
     {NPCType::TaxCollector, 1, 10},
     // He robs the road for a living, exactly like the bandit he is.
     {NPCType::RoadAmbusher, 5, 30},
+    // Дракон монет не носит — его богатство лежит в логове (артефакт-стол
+    // положит клад контентом; кошелёк зверя честно пуст).
+    {NPCType::Dragon, 0, 0},
 };
 static_assert(rows_in_enum_order(kNpcPurse, &NpcPurseRow::type),
               "kNpcPurse row order must mirror NPCType");
@@ -822,6 +854,7 @@ inline constexpr NpcMapColorRow kNpcMapColor[std::size_t(NPCType::Count)] = {
     {NPCType::SilverMiner,  0xC8C8C8u},
     {NPCType::TaxCollector, 0xC8C8C8u},
     {NPCType::RoadAmbusher, 0xDC3C3Cu},   // bandit red — he is one
+    {NPCType::Dragon,       0xB03030u},   // драконья киноварь — цвет спрайта
 };
 static_assert(rows_in_enum_order(kNpcMapColor, &NpcMapColorRow::type),
               "kNpcMapColor row order must mirror NPCType");

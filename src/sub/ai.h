@@ -22,6 +22,10 @@ constexpr float kDetectionRadius  = kNpcSightDefaultM;
 constexpr int   kHitRepPenalty    = -1;
 
 using PlayerThreatFn = bool (*)(void* user, std::uint32_t entityId);
+// Рельеф под точкой, метры — восприятие ЗЕМЛИ ПОД СОБОЙ для вертикального
+// намерения летуна (полёт-посадка 2026-09-10: «все воспринимают x/y/z»).
+// nullptr = мозг слеп по вертикали и wantVz не пишет (headless-тесты).
+using GroundHeightFn = float (*)(void* user, float x, float y);
 
 // A brain needs no collision gate: walls, bounds and the crowd are the
 // steering pass's business. The SolidCanStandFn parameter died with the
@@ -29,6 +33,8 @@ using PlayerThreatFn = bool (*)(void* user, std::uint32_t entityId);
 void tick_npc_ai(ecs::World& w, float playerX, float playerY,
                  std::uint32_t playerEntityId, float dt,
                  PlayerThreatFn threatFn = nullptr,
-                 void* threatUser = nullptr);
+                 void* threatUser = nullptr,
+                 GroundHeightFn heightFn = nullptr,
+                 void* heightUser = nullptr);
 
 } // namespace sm::sub

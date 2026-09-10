@@ -2,6 +2,7 @@
 #include "sub/map_data.h"
 #include "ecs/components.h"
 #include "core/rng.h"
+#include "macro/npc.h"   // cruiseM — крейсерская высота рода летуна
 #include <cmath>
 #include <algorithm>
 
@@ -23,7 +24,9 @@ static constexpr float kFleeSpeedMult = 2.2f;
 void tick_npc_ai(ecs::World& w, float px, float py,
                  std::uint32_t /*playerEnt*/, float dt,
                  PlayerThreatFn threatFn,
-                 void* threatUser) {
+                 void* threatUser,
+                 GroundHeightFn heightFn,
+                 void* heightUser) {
     auto& reg = w.reg;
 
     auto view = reg.view<ecs::Position, ecs::SubworldAi>();
@@ -89,9 +92,13 @@ void tick_npc_ai(ecs::World& w, float px, float py,
             break;
         }
         case ecs::SubworldAi::Combat:
-            // The Combat mind wants nothing HERE: its drive is the influence
-            // field and the contact scan inside the battle pass. Writing an
-            // intent for it would put a second voice in that body's head.
+            // The Combat mind wants nothing HORIZONTAL here: its drive is the
+            // influence field and the contact scan inside the battle pass.
+            // Writing an x/y intent for it would put a second voice in that
+            // body's head. (The VERTICAL below is not a second voice — the
+            // battle pass has no vertical voice at all; a fighting flyer
+            // holds its cruise and bites from altitude until the day a
+            // fighting MELEE flyer needs the dive.)
             //
             // Two paths used to live in this file and BOTH homed on the player
             // scalar: this case, and a "legacy" view over Position+Combat+NPCKind
@@ -103,6 +110,31 @@ void tick_npc_ai(ecs::World& w, float px, float py,
             // body through one universal path — the player is simply another
             // faction slot in the influence field, not a hardcoded destination.
             break;
+        }
+
+        // ── Вертикальное намерение — ТРЕТЬЯ ось того же мозга ────────────
+        // (полёт-посадка 2026-09-10, владелец: «субмир 3D — все
+        // воспринимают x/y/z»; 2D-мозг был пережитком старого субмира.)
+        // Пишется только летуну (ecs::Flying): ходока к земле прижимает
+        // закон опоры, его wantVz мёртв по построению — один mover, одна
+        // рамка, никакого «мозга для летающих». Закон прост: тянись к
+        // крейсерской высоте своего рода (ПРЕДПОЧТЕНИЕ характера, не
+        // закон — конверт [опора, потолок] остаётся единственным законом),
+        // беглец предпочитает вдвое выше: высота — его дорога. Темп
+        // подъёма = его же wanderSpeed: одно тело — один темп.
+        if (heightFn && reg.any_of<ecs::Flying>(e)) {
+            const auto* kind = reg.try_get<ecs::NPCKind>(e);
+            const float cruise =
+                kind && kind->type < std::uint16_t(NPCType::Count)
+                    ? kNpcTypeDefs[kind->type].combat.cruiseM : 0.0f;
+            if (cruise > 0.0f) {
+                const float floorZ = heightFn(heightUser, p.x, p.y);
+                const float targetZ = floorZ
+                    + (a.kind == ecs::SubworldAi::Flee ? cruise * 2.0f
+                                                       : cruise);
+                a.wantVz = std::clamp(targetZ - p.z,
+                                      -a.wanderSpeed, a.wanderSpeed);
+            }
         }
     }
 }

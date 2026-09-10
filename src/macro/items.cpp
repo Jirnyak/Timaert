@@ -366,6 +366,8 @@ constexpr NpcLootRow kNpcLootId[std::size_t(NPCType::Count)] = {
     // he names his drop in his OWN lootId column like every creature does —
     // the per-ROLE list stops where the roles stop.
     {NPCType::RoadAmbusher, nullptr},
+    // Дракон: пер-рольного лута нет — клад логова придёт артефакт-столом.
+    {NPCType::Dragon, nullptr},
 };
 static_assert(rows_in_enum_order(kNpcLootId, &NpcLootRow::type),
               "kNpcLootId row order must mirror NPCType");

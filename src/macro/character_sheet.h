@@ -178,6 +178,11 @@ inline constexpr RoleWeights kRoleWeights[int(NPCType::Count)] = {
     // lives in his combat template (the road-wide eye, the HP), not here.
     {NPCType::RoadAmbusher, {4, 3, 1, 1, 3, 2, 1, 1},
      {2,0,0,0,3,2,0, 0,2,1,0, 0,0,0,0,0,0, 3,0, 2,0,1,3,1, 2,1,2,0, 0,0,1,0,0}},
+    // Дракон — зверь силы и воли: STR/END тяжёлые, интеллект древний;
+    // скиллы зверя пусты — его бой живёт в комбат-шаблоне (3d20 Fire),
+    // не в оружейных рядах человека.
+    {NPCType::Dragon, {8, 6, 4, 5, 3, 2, 1, 4},
+     {0,0,0,0,0,0,0, 0,0,0,0, 0,0,0,0,0,0, 0,0, 0,0,0,0,0, 0,0,0,0, 0,0,0,0,0}},
 };
 
 static_assert(rows_in_enum_order(kRoleWeights, &RoleWeights::type),

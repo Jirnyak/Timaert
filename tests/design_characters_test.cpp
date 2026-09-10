@@ -238,6 +238,48 @@ void test_king_needs_a_barbarian_city() {
           "the king is honestly NOT born without a barbarian city");
 }
 
+void test_dragons_nest_on_mountain_peaks() {
+    // Мир с ГОРНЫМ МАССИВОМ: пятно высоты 250 (выше kMountainBiomeLevel)
+    // с вершиной в (48,48) — и плоская равнина вокруг. Плоские фикстуры
+    // остальных тестов драконов честно НЕ рождают (порог биома).
+    GameState gs = make_world();
+    TerrainData terrain = make_terrain();
+    for (int y = 44; y <= 52; ++y) {
+        for (int x = 44; x <= 52; ++x) {
+            terrain.rgba[(std::size_t(y) * kW + x) * 4u + 0] =
+                std::uint8_t(x == 48 && y == 48 ? 250 : 230);
+        }
+    }
+    ecs::World w;
+    Rng rng(999u);
+    gs.nextMacroSpawnOrdinal = 0;
+    spawn_design_characters(gs, w, terrain, rng, gs.nextMacroSpawnOrdinal);
+
+    // Один массив = одна вершина: Dragon1 рождается, №2/№3 (вершины с
+    // разносом ≥ mapW/8) — честно нет.
+    const entt::entity d1 = find_design(w, 2);
+    CHECK_OR_RETURN(d1 != entt::null, "Dragon1 nests on the one massif");
+    CHECK(find_design(w, 3) == entt::null && find_design(w, 4) == entt::null,
+          "one massif births one dragon — spacing is honest");
+
+    const auto& rt = w.reg.get<ecs::MacroNpcRuntime>(d1);
+    CHECK(rt.lairX == 48 && rt.lairY == 48,
+          "his LAIR is the massif's highest cell");
+    CHECK(rt.flying == 1,
+          "the row's cruiseM cached as the march-side flying byte (v93)");
+    CHECK(int(w.reg.get<ecs::NPCKind>(d1).factionIdx)
+              == faction_index("dragons"),
+          "dragons share the ONE dragons faction row (owner verdict)");
+    CHECK(owned_sheet(w, d1) != nullptr,
+          "the dragon OWNS his sheet like every design character");
+    const auto& kind = w.reg.get<ecs::NPCKind>(d1);
+    CHECK(effective_behaviour(w.reg, d1, kind) == AIBehaviour::LairSorties,
+          "the design rung answers LairSorties");
+    CHECK(kNpcTypeDefs[std::uint16_t(NPCType::Dragon)].ai
+              != AIBehaviour::LairSorties,
+          "negative control: the type row does not sortie — the rung is real");
+}
+
 void test_no_home_no_birth() {
     GameState gs{};   // мир вовсе без ландмарков
     gs.mapW = kW;
@@ -261,6 +303,7 @@ int main() {
     test_snapshot_carries_the_ordinal();
     test_king_peasant_births_by_home_faction();
     test_king_needs_a_barbarian_city();
+    test_dragons_nest_on_mountain_peaks();
     test_no_home_no_birth();
     return sm::test::report("design_characters_test");
 }

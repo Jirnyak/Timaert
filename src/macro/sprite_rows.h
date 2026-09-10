@@ -114,6 +114,9 @@ enum class SpriteId : std::uint8_t {
     Goblin, Skeleton, Troll, SwampThing, IceWraith, SandScorpion, StoneGolem,
     // Interface marks that are not world bodies.
     Coins,
+    // Appended past Coins — ordinal discipline (the rows above never move).
+    // Dragon: procedural Avian, дракон стола анкет (owner 2026-09-10).
+    Dragon,
     Count_,
 };
 
@@ -187,6 +190,8 @@ inline constexpr SpriteDef kSpriteRows[std::size_t(SpriteId::Count_)] = {
                                               std::uint8_t(CreatureArchetype::Hulk),      0x7A7A7Au},
 
     {SpriteId::Coins,        "coins",         "coins.png",          kNoBody, 0u},
+    {SpriteId::Dragon,       "dragon",        nullptr,
+                                              std::uint8_t(CreatureArchetype::Avian),     0xB03030u},
 };
 
 static_assert(rows_in_enum_order(kSpriteRows, &SpriteDef::id),

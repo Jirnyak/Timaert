@@ -4316,6 +4316,14 @@ void SubworldEngine::tick(float dt) {
                                      ecs::Flying>(entt::exclude<ecs::AvatarTag>);
             for (auto e : fv) {
                 auto& p = fv.get<ecs::Position>(e);
+                // Вертикальное НАМЕРЕНИЕ мозга (SubworldAi.wantVz, третья
+                // ось — полёт-посадка 2026-09-10) интегрируется здесь, тем
+                // же тактом, что клампится конверт: mover исполняет, мозг
+                // хочет — ровно как ноги по x/y.
+                if (const auto* ai =
+                        ecs_->reg.try_get<ecs::SubworldAi>(e)) {
+                    p.z += ai->wantVz * dt;
+                }
                 float floorZ = renderer3dVk_.sample_height_m(p.x, p.y);
                 if (!structIndex_.empty()) {
                     floorZ = std::max(floorZ, structIndex_.support_at(
@@ -4331,7 +4339,14 @@ void SubworldEngine::tick(float dt) {
         sync_player_vertical(dt);
         push_scalars_to_player_entity();
         tick_npc_ai(*ecs_, playerX_, playerY_, std::uint32_t{0}, dt,
-                    &SubworldEngine::player_threat_callback, this);
+                    &SubworldEngine::player_threat_callback, this,
+                    // Восприятие земли под собой — для вертикального
+                    // намерения летунов (третья ось мозга).
+                    [](void* user, float x, float y) {
+                        return static_cast<SubworldEngine*>(user)
+                            ->renderer3dVk_.sample_height_m(x, y);
+                    },
+                    this);
         tick_subworld_bodies(dt);
         // The player's swing AFTER the combat gather: it asks the battle pick
         // grid the same way the spell contact does, and the grid it asks must

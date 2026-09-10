@@ -323,7 +323,10 @@ namespace sm {
 // (macro/characters.h), восстанавливается тегом DesignCharacterTag.
 // Смерть анкеты навсегда: генезис на загрузке не гоняется, погибшая
 // просто отсутствует в снапшоте.
-constexpr int kSaveVersion = 92;
+// v93 (2026-09-10): ПОЛЁТ + ЛОГОВО — MacroNpcRuntime вырос тремя полями
+// (flying-кэш колонки cruiseM, lairX/lairY дом-клетка модели LairSorties);
+// runtime едет в записи POD-ом, его раскладка = формат.
+constexpr int kSaveVersion = 93;
 
 enum class SettlementMood : std::uint8_t {
     Prosperous, Stable, Tense, Unrest, Revolt, Count

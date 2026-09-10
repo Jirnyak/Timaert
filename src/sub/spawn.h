@@ -35,6 +35,11 @@ inline ecs::SubworldAi::Kind subworld_ai_for(AIBehaviour ai) {
 // byte-identical file-local twins in the two TUs.
 void maybe_emplace_missile_attack(entt::registry& reg, entt::entity e,
                                   const CombatTemplate& combat);
+// ЛЕТУН (полёт-посадка 2026-09-10): строка с cruiseM > 0 рождается с
+// ecs::Flying — гравитация снята, конверт [опора, потолок] ОБЩИЙ с
+// игроком, вертикальное намерение пишет её же мозг (sub/ai.cpp).
+void maybe_emplace_flying(entt::registry& reg, entt::entity e,
+                          const CombatTemplate& combat);
 void maybe_emplace_carried_light(entt::registry& reg, entt::entity e,
                                  const NpcTypeDef& def);
 

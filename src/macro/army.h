@@ -88,6 +88,21 @@ struct CombatTemplate {
     // bar is a design number in the hundreds, not a float.
     std::int16_t mp = 100;
     std::int16_t sp = 100;
+    // Which of the nine columns this row's natural weapon argues with.
+    // Authored Blunt everywhere by the mechanical translation; claws and
+    // fangs pick their columns at content stage — the dragon's fire is the
+    // first (it sat in the "filled, never authored" section below, which
+    // its own comment contradicted).
+    DamageType   dmgType = DamageType::Blunt;
+    // ЛЕТУН (владелец 2026-09-10: «субмир 3D — надо чтобы все воспринимали
+    // x/y/z»; полёт честный, как у игрока — M&M-реф). > 0 = тело рождается
+    // с ecs::Flying (гравитация снята, конверт [опора, потолок] общий с
+    // игроком) и КРЕЙСЕРСКОЙ высотой предпочтения в метрах — это характер,
+    // не закон: мозг тянется к ней в роаме, уходит выше в побеге, снижается
+    // в атаку (пике придёт с первым дерущимся меле-летуном). 0 = наземный.
+    // На карте та же колонка делает марш полётным (try_move: рельеф не
+    // платится, вода не требует корабля).
+    float cruiseM = 0.0f;
 
     // ── Filled by project_combat, never authored (a row has no sheet) ──────
     // The sheet's attribute ADD to every roll of the dice above (STR-derived
@@ -95,10 +110,6 @@ struct CombatTemplate {
     std::int16_t flatAdd = 0;
     // The sheet's LCK — the crit door's ask, once per strike (core/dice.h).
     std::uint8_t luck = 0;
-    // Which of the nine columns this row's natural weapon argues with.
-    // Authored Blunt everywhere by the mechanical translation; claws and
-    // fangs pick their columns at content stage.
-    DamageType   dmgType = DamageType::Blunt;
 };
 
 struct SoldierRecord {
