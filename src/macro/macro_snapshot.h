@@ -24,6 +24,7 @@
 #include "ecs/components.h"
 #include "ecs/world.h"
 #include "macro/agent_memory.h"
+#include "macro/character_sheet.h"
 #include "macro/spell_book_state.h"
 
 namespace sm {
@@ -46,6 +47,13 @@ struct MacroNpcRecord {
     SpellBook            book{};
     ecs::SquadOrders     orders{};          // meaningful iff hasOrders
     AgentMemory          memory{};          // what the leader remembers (v28)
+    // The OWNED sheet of a NAMED character (v90, owner 2026-09-10 ММОРПГ-
+    // модель: «у каждого персистентного персонажа свой лист и идёт в
+    // сейв»). Opt-in like orders: a transient crew derives its generic
+    // sheet from its row and writes nothing — a stored copy of a
+    // derivable sheet would be a second truth.
+    CharacterSheet       sheet{};           // meaningful iff hasSheet
+    std::uint8_t         hasSheet = 0;
     std::uint8_t         hasOrders = 0;
     std::uint8_t         dead = 0;
     // «Кем я управляю» — ecs::PlayerTag as one honest byte (v87). At most one

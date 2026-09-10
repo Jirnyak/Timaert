@@ -98,6 +98,16 @@ void test_snapshot_round_trips_the_living_map() {
     // byte — the out-of-snapshot ordinal it used to be re-derived from is
     // dead (SAVE-5: the re-derivation masked a load that ghosted the squad).
     w.reg.emplace<ecs::PlayerTag>(a);
+    // A bandit chief is a NAMED character (v90): born OWNING his sheet.
+    // His campaign diverges it from the birth roll — the owner's ММОРПГ
+    // point is that exactly this divergence survives the save.
+    CHECK_OR_RETURN(w.reg.all_of<CharacterSheet>(a),
+                    "a named kind is born owning his sheet");
+    w.reg.get<CharacterSheet>(a).attributes[AttributeId::End] = 13;
+    // A peasant crew is TRANSIENT: no component, nothing stored — its
+    // generic sheet derives from its row (the negative control).
+    CHECK(!w.reg.all_of<CharacterSheet>(b),
+          "a transient crew owns no sheet");
 
     // Snapshot -> save -> load -> restore, through the REAL save file.
     const std::string path = temp_path("timaert_macro_snapshot_test.bin");
@@ -145,6 +155,14 @@ void test_snapshot_round_trips_the_living_map() {
     // "A has it" check).
     CHECK(w2.reg.all_of<ecs::PlayerTag>(a2),
           "the possessed lord keeps the player flag across the save");
+    CHECK_OR_RETURN(w2.reg.all_of<CharacterSheet>(a2),
+                    "the named chief still OWNS his sheet after the save");
+    CHECK(w2.reg.get<CharacterSheet>(a2).attributes.of(AttributeId::End)
+              == 13,
+          "…and his campaign's divergence from the birth roll survived");
+    const entt::entity b2pre = find_by_ordinal(w2, ordinalB);
+    CHECK(b2pre != entt::null && !w2.reg.all_of<CharacterSheet>(b2pre),
+          "the transient crew still stores nothing");
     {
         int flags = 0;
         for (auto e : w2.reg.view<ecs::PlayerTag>()) { (void)e; ++flags; }

@@ -445,6 +445,14 @@ void write_macro_npc(Writer& w, const MacroNpcRecord& m) {
     w.pod(m.orders);
     w.pod(m.memory);   // v28: the leader's memory — padding-free by static_assert
     write_spell_book(w, m.book);   // v89: knowledge is the body's (§41 root 3)
+    // v90: the OWNED sheet of a named character, opt-in like orders — the
+    // ММОРПГ-модель's whole point is that his campaign rides the save.
+    w.pod(m.hasSheet);
+    if (m.hasSheet) {
+        w.pod(m.sheet.attributes);
+        w.pod(m.sheet.skills);
+        w.pod(m.sheet.levelData);
+    }
     w.pod(m.hasOrders);
     w.pod(m.dead);
     w.pod(m.playerFlag);   // v87: PlayerTag rides the snapshot honestly
@@ -466,6 +474,13 @@ void read_macro_npc(Reader& r, MacroNpcRecord& m) {
     r.pod(m.orders);
     r.pod(m.memory);   // v28
     read_spell_book(r, m.book);    // v89
+    r.pod(m.hasSheet);             // v90
+    if (!r.ok || m.hasSheet > 1) { r.ok = false; return; }
+    if (m.hasSheet) {
+        r.pod(m.sheet.attributes);
+        r.pod(m.sheet.skills);
+        r.pod(m.sheet.levelData);
+    }
     r.pod(m.hasOrders);
     r.pod(m.dead);
     r.pod(m.playerFlag);   // v87

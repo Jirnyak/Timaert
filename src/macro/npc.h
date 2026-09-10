@@ -222,6 +222,32 @@ struct NpcTypeDef {
     int hireGold = 0;
 };
 
+// ── «ИМЕНОВАННОСТЬ» — субъектность рода (owner verdict 2026-09-10) ─────────
+// The MMORPG model: a NAMED kind's every individual OWNS his character sheet
+// — an ecs::CharacterSheet component born with the body (make_npc), levelled
+// in place and ridden by the save — «он как игрок». A transient crew
+// (rotation professions, caravans — «они уничтожаются своим ландмарком»)
+// derives its generic sheet from its row on the spot and stores nothing.
+// The door that speaks this split is sheet_of (macro/squad.h).
+//
+// A TABLE, not an engine branch: adding a named kind is one line here. It
+// sits beside the rows instead of being a NpcTypeDef column only because
+// the rows are positional aggregates and a trailing opt-in bool would cost
+// every named row the whole light/haul/armor tail spelled by hand.
+inline constexpr NPCType kNamedKinds[] = {
+    NPCType::Merchant,     // торговец-одиночка
+    NPCType::Bandit,       // вожак банды — банда не растворяется ландмарком
+    NPCType::Witch,        // фигуры, не массовка
+    NPCType::Sorceress,
+    NPCType::Adventurer,   // герой/игрок (его лист приедет посадкой Б)
+};
+inline constexpr bool npc_named(NPCType t) {
+    for (const NPCType k : kNamedKinds) {
+        if (k == t) return true;
+    }
+    return false;
+}
+
 // Humanoid cooldowns are authored ON THE MASS CURVE (anatomy.h
 // weapon_swing_seconds, owner 2026-09-07): a humanoid's natural attack IS an
 // implied weapon, so its tempo = kHandSwingS + implied_kg × kSwingSecondsPerKg

@@ -1462,35 +1462,22 @@ int pick_next_station_(const TickContext& ctx, const MacroPos& p,
 // The trader's OWN sheet, derived the ordinal way (leader_sheet_seed) —
 // the deal reads charisma (and one day the trade skill) off it: the row's
 // weights and level are the entire advantage (owner 2026-08-30).
-int leader_charisma_(entt::registry& reg, entt::entity self, NPCType type) {
-    const auto* sid = reg.try_get<ecs::MacroSpawnId>(self);
-    const auto* lvl = reg.try_get<ecs::NpcLevel>(self);
-    if (!sid) return 0;
-    const CharacterSheet sheet = make_character_sheet(
-        type, lvl ? int(lvl->value) : 1, leader_sheet_seed(sid->index));
-    return int(sheet.attributes.of(AttributeId::Cha));
+int leader_charisma_(ecs::World& w, entt::entity self) {
+    // Through THE sheet door (ММОРПГ-модель): a named merchant's OWNED
+    // charisma, a transient crew's generic roll — one law, no re-derive
+    // branch per reader.
+    return int(sheet_of(w, self).attributes.of(AttributeId::Cha));
 }
 
 // ...and the same derivation's TRADE rank (phase 6): the caravan master's
 // haggling edge, fed into the price law's `bargaining` argument, which had
 // waited as a literal 0 since the law was written.
-int leader_trade_rank_(entt::registry& reg, entt::entity self, NPCType type) {
-    const auto* sid = reg.try_get<ecs::MacroSpawnId>(self);
-    const auto* lvl = reg.try_get<ecs::NpcLevel>(self);
-    if (!sid) return 0;
-    const CharacterSheet sheet = make_character_sheet(
-        type, lvl ? int(lvl->value) : 1, leader_sheet_seed(sid->index));
-    return sheet.skills.of(SkillId::Trade);
+int leader_trade_rank_(ecs::World& w, entt::entity self) {
+    return sheet_of(w, self).skills.of(SkillId::Trade);
 }
 
-// The walker's OWN row — who actually stands at the market. The sell run is
-// a peasant errand now (auction, CANON S10), so the machine may not assume
-// a Vendor's sheet: the haggler's numbers are whoever's numbers they are.
-NPCType own_type_(entt::registry& reg, entt::entity self) {
-    const auto* k = reg.try_get<ecs::NPCKind>(self);
-    return k && valid_npc_kind(k->type) ? NPCType(std::uint8_t(k->type))
-                                        : NPCType::Peasant;
-}
+// (No own_type_ any more: sheet_of asks the entity itself — «the haggler's
+// numbers are whoever's numbers they are» is the door's own law now.)
 
 void ai_caravan(entt::entity self, MacroPos& p,
                 ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
@@ -1596,8 +1583,8 @@ void ai_caravan(entt::entity self, MacroPos& p,
             // knowledge of anywhere else.
             const CaravanDeal deal = trade_caravan_at_station(
                 bag->inv, rt.carryCap, *market,
-                leader_charisma_(reg, self, NPCType::Caravan),
-                leader_trade_rank_(reg, self, NPCType::Caravan));
+                leader_charisma_(*ctx.mw.world, self),
+                leader_trade_rank_(*ctx.mw.world, self));
             // The exchange is DONE — that one moment is the fact (S20.1: a
             // deal is a transition by nature; the ride on is the same
             // cargo, not a second deal). Subject = the home city whose
@@ -1876,7 +1863,7 @@ void ai_vendor(entt::entity self, MacroPos& p,
                 bag->inv, rt.carryCap, *market, snap,
                 homeLm->population,
                 EconSite(landmark_def(homeLm->type).econSite),
-                leader_charisma_(reg, self, own_type_(reg, self)),
+                leader_charisma_(*ctx.mw.world, self),
                 /*bargaining=*/0);
             if (deal.movedTableValue > 0) {
                 record_landmark_fact(*ctx.mw.gs, FactKind::Traded,
@@ -3129,13 +3116,8 @@ int feed_squads_daily(MacroWorld& mw) {
         if (reg.all_of<ecs::PlayerSquadTag>(e)) {
             foragingRank = player_effective_sheet(*mw.world, gs.player)
                                .skills.of(SkillId::Foraging);
-        } else if (const auto* sid = reg.try_get<ecs::MacroSpawnId>(e)) {
-            const auto* lvl = reg.try_get<ecs::NpcLevel>(e);
-            foragingRank = make_character_sheet(
-                               NPCType(std::uint8_t(kind.type)),
-                               lvl ? int(lvl->value) : 1,
-                               leader_sheet_seed(sid->index))
-                               .skills.of(SkillId::Foraging);
+        } else {
+            foragingRank = sheet_of(*mw.world, e).skills.of(SkillId::Foraging);
         }
         // Through the table door, not an inline percent: the row's own
         // pctPerRank walks the cost down (Trade learned this the hard way —

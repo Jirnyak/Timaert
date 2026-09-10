@@ -242,6 +242,35 @@ inline entt::entity macro_entity_by_spawn_id(ecs::World& w,
     return entt::null;
 }
 
+// ── THE SHEET OF A MACRO BODY (owner verdict 2026-09-10, ММОРПГ-модель) ───
+//
+// A NAMED character (npc.h kNamedKinds) OWNS his sheet: the CharacterSheet
+// component born with him in make_npc — «он как игрок»: it levels in place
+// and rides the save inside his MacroNpcRecord. A transient crew (rotation
+// professions, caravans) derives its GENERIC sheet from its row + level on
+// the spot — «они уничтожаются своим ландмарком», there is nothing of
+// theirs to store. One door, an honest ontology split — never «игрок/НПЦ».
+
+// The OWNED sheet, when this body has one — the writable store a level-up
+// or a future teacher mutates. nullptr = transient (derive instead).
+inline CharacterSheet* owned_sheet(ecs::World& w, entt::entity e) {
+    return w.reg.try_get<CharacterSheet>(e);
+}
+
+// THE sheet, whoever asks: the owned component verbatim, or the generic
+// birth roll a transient IS. By value — the derive path builds one anyway,
+// and no caller may hold a reference across a tick (ecs-ref grabla).
+inline CharacterSheet sheet_of(ecs::World& w, entt::entity e) {
+    if (const CharacterSheet* own = owned_sheet(w, e)) return *own;
+    const auto* kind = w.reg.try_get<ecs::NPCKind>(e);
+    const auto* lvl  = w.reg.try_get<ecs::NpcLevel>(e);
+    const auto* sid  = w.reg.try_get<ecs::MacroSpawnId>(e);
+    const NPCType type = kind && kind->type < std::uint16_t(NPCType::Count)
+        ? NPCType(std::uint8_t(kind->type)) : NPCType::Peasant;
+    return make_character_sheet(type, lvl ? int(lvl->value) : 1,
+                                leader_sheet_seed(sid ? sid->index : 0u));
+}
+
 // ── STANDING, FOR ANY MACRO PARTICIPANT (CANON S20.1) ─────────────────────
 //
 // Owner's ruling, 2026-08-27: renown is not a squad's private counter — every
@@ -436,15 +465,25 @@ inline int award_leader_xp(ecs::World& w, entt::entity e, int xp) {
                 const auto* sid = reg.try_get<ecs::MacroSpawnId>(e);
                 const std::uint32_t seed =
                     leader_sheet_seed(sid ? sid->index : 0u);
+                // The new level's sheet — rolled by the one growth law. A
+                // NAMED leader OWNS his: the roll is WRITTEN into his
+                // component (ММОРПГ-модель — the campaign persists; a
+                // future teacher diverges it from the seed and nothing
+                // here overwrites that day's hand-spent points… until
+                // content adds spending, the roll and the store agree by
+                // construction). A transient's roll is used and dropped.
+                const CharacterSheet grown =
+                    make_character_sheet(type, lvl->value, seed);
+                if (CharacterSheet* own = reg.try_get<CharacterSheet>(e)) {
+                    *own = grown;
+                }
                 // Ceilings, fractions and march caches all follow the new
                 // level's sheet through THE one refresh door above. The
                 // fraction-preserving arithmetic that used to be spelled out
                 // here, bar by hand-written bar, IS that door now — a bar
                 // added to Pools and forgotten in a hand-written fold is the
                 // project's oldest bug shape.
-                refresh_body_from_sheet(
-                    *hp, rt, make_character_sheet(type, lvl->value, seed),
-                    type);
+                refresh_body_from_sheet(*hp, rt, grown, type);
             }
         }
     }

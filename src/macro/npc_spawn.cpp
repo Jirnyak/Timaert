@@ -124,6 +124,16 @@ entt::entity make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
 
     w.reg.emplace<ecs::MacroSpawnId>(e, ordinal);
 
+    // A NAMED kind OWNS his sheet from birth (owner 2026-09-10, ММОРПГ-
+    // модель): the ordinal roll — the very sheet every consumer used to
+    // re-derive per read — is rolled ONCE and stored; from here he levels in
+    // place and rides the save. Transients keep deriving on the spot
+    // (sheet_of, squad.h) and store nothing.
+    if (npc_named(type)) {
+        w.reg.emplace<CharacterSheet>(
+            e, make_character_sheet(type, lvl, leader_sheet_seed(ordinal)));
+    }
+
     // Every macro entity IS a squad; born alone, it is a squad of one and its
     // own leader (ecs::SquadRoster doctrine). Draws no RNG — streams untouched.
     w.reg.emplace<ecs::SquadRoster>(e);
