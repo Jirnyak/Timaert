@@ -66,7 +66,7 @@ entt::entity make_woodcutter(ecs::World& w, float x, float y,
     ecs::Pools pools{};
     const CharacterSheet sheet = make_character_sheet(
         NPCType::Woodcutter, 3, leader_sheet_seed(11u));
-    refresh_leader_travel_stats(rt, pools, sheet, NPCType::Woodcutter);
+    refresh_body_from_sheet(pools, &rt, sheet, NPCType::Woodcutter);
     pools.sp = pools.maxSp;
     // Работа именуется ПОРУЧЕНИЕМ, не типом (аукцион, CANON S10): рубка =
     // Gather над строкой целей Trees — то, что рулетка ротации выдала бы.
@@ -186,8 +186,8 @@ void test_the_farmer_works_the_field() {
     prt.state = std::uint8_t(NPCState::Idle);
     prt.stateTimer = 0;
     ecs::Pools pools{};
-    refresh_leader_travel_stats(
-        prt, pools, make_character_sheet(NPCType::Peasant, 2, leader_sheet_seed(12u)),
+    refresh_body_from_sheet(
+        pools, &prt, make_character_sheet(NPCType::Peasant, 2, leader_sheet_seed(12u)),
         NPCType::Peasant);
     pools.sp = pools.maxSp;
     prt.errandVerb = std::uint8_t(ErrandVerb::Gather);
@@ -256,8 +256,8 @@ void test_farmer_without_terrain_conjures_nothing() {
     prt.state = std::uint8_t(NPCState::Idle);
     prt.stateTimer = 0;
     ecs::Pools pools{};
-    refresh_leader_travel_stats(
-        prt, pools, make_character_sheet(NPCType::Peasant, 2, leader_sheet_seed(12u)),
+    refresh_body_from_sheet(
+        pools, &prt, make_character_sheet(NPCType::Peasant, 2, leader_sheet_seed(12u)),
         NPCType::Peasant);
     pools.sp = pools.maxSp;
     prt.errandVerb = std::uint8_t(ErrandVerb::Gather);
@@ -354,8 +354,8 @@ void test_the_mine_runs_while_the_player_is_away() {
     rt.state = std::uint8_t(NPCState::Idle);
     rt.stateTimer = 0;
     ecs::Pools pools{};
-    refresh_leader_travel_stats(
-        rt, pools, make_character_sheet(NPCType::Miner, 3, leader_sheet_seed(13u)),
+    refresh_body_from_sheet(
+        pools, &rt, make_character_sheet(NPCType::Miner, 3, leader_sheet_seed(13u)),
         NPCType::Miner);
     pools.sp = pools.maxSp;
     rt.errandVerb = std::uint8_t(ErrandVerb::Gather);
@@ -471,8 +471,8 @@ void test_the_vendor_sells_at_the_nearest_city() {
     crt.state = std::uint8_t(NPCState::Idle);
     crt.stateTimer = 0;
     ecs::Pools pools{};
-    refresh_leader_travel_stats(
-        crt, pools, make_character_sheet(NPCType::Vendor, 3, leader_sheet_seed(13u)),
+    refresh_body_from_sheet(
+        pools, &crt, make_character_sheet(NPCType::Vendor, 3, leader_sheet_seed(13u)),
         NPCType::Vendor);
     pools.sp = pools.maxSp;
     reg.emplace<ecs::MacroNpcRuntime>(e, crt);
@@ -575,8 +575,8 @@ void test_the_miner_works_the_vein() {
     rt.state = std::uint8_t(NPCState::Idle);
     rt.stateTimer = 0;
     ecs::Pools pools{};
-    refresh_leader_travel_stats(
-        rt, pools, make_character_sheet(NPCType::Miner, 3, leader_sheet_seed(13u)),
+    refresh_body_from_sheet(
+        pools, &rt, make_character_sheet(NPCType::Miner, 3, leader_sheet_seed(13u)),
         NPCType::Miner);
     pools.sp = pools.maxSp;
     rt.errandVerb = std::uint8_t(ErrandVerb::Gather);

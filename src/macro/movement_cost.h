@@ -11,11 +11,12 @@
 //
 // Costs are FRACTIONAL and accumulate; SP is spent in whole points
 // (TravelStamina below), the same fractional-carry idiom the hourly regeneration
-// uses (macro/player_recovery.cpp). Nothing is lost to rounding and nothing is
+// uses (macro/recovery.cpp). Nothing is lost to rounding and nothing is
 // stored in the save — a load starts the carry at zero, worth at most 1 SP.
 #pragma once
 #include <cmath>
 #include "core/time.h"       // the ladder: kSubworldWalkTilesPerSecond derives from it
+#include "ecs/pools.h"       // the bars this law spends and bites — one home
 #include "macro/attributes.h"
 #include "macro/biomes.h"
 #include "macro/features.h"
@@ -59,14 +60,17 @@ namespace sm {
 // already caught in play once ("SP не тратится вообще", when the road cost
 // 6.4 SP/h against ~10 of regen). Under 2 that flip is EARNED, at marathon
 // ~17: a road that pays for itself is what a travel-trained character is for.
-// Stamina still does not recover while marching at all (kMarchRecoveryPct).
+// Stamina still does not recover while marching at all — a marching body
+// simply never calls the rest law (structural since landing 4; the old
+// kMarchRecoveryPct=0 knob had become a constant with no reader).
 constexpr float kStaminaPerCell = 2.0f;
 
-// Fraction of the normal recovery that a MARCHING body gets. Zero: legs in
-// motion are not resting. Since 2026-09-03 this gates ALL THREE bars — health
-// and mana wait for camp exactly as stamina does (CANON S14: rest is the one
-// recovery; a wound does not close on the road).
-constexpr float kMarchRecoveryPct = 0.0f;
+// (No kMarchRecoveryPct. «Марш не лечит НИЧЕГО» is not a rate of zero any
+// more — it is the SHAPE of the callers: rest_pools has exactly two, the
+// player's standing-in-camp branch (main.cpp) and the squads'
+// `stopped && !moved` camp think (npc_ai.cpp), and legs in motion reach
+// neither. A knob that could be set to 0.2 was a door back to the road
+// healing for free.)
 
 // What the `travel` skill does, and the only thing it does: it buys down the
 // stamina cost of ground, one percent per rank, under THE skill law
@@ -244,7 +248,8 @@ static_assert(kRoadHoursPerFreshBar > 6.0f && kRoadHoursPerFreshBar < 9.0f,
 // ...and the road has to stay dearer than standing still, or a stop-and-go
 // march repays itself and the budget is an allowance again — the failure the
 // owner caught in play ("SP не тратится вообще"). Marching earns nothing
-// (kMarchRecoveryPct), so the comparison is march-hour against rest-hour.
+// (a marching body never calls the rest law), so the comparison is
+// march-hour against rest-hour.
 inline constexpr float kRoadStaminaPerHour =
     feature_bed_weight(FT_Road) * kStaminaPerCell * kMacroWalkCellsPerHour;
 static_assert(kRoadStaminaPerHour > kFreshBarSp * kRestRegenPctPerHour,
@@ -309,12 +314,13 @@ inline int exhaustion_bite(int sp) {
 //
 // The body keeps its debt: stamina is NOT floored at zero, so the state is
 // visible in the UI and has to be recovered before the bar refills. What the
-// curve above charges is that debt, once per step.
-inline int apply_stamina_cost(CombatStats& cs, int cost) {
+// curve above charges is that debt, once per step. Operates on the body's
+// own Pools block — the one home of every bar since landing 4.
+inline int apply_stamina_cost(ecs::Pools& pools, int cost) {
     if (cost <= 0) return 0;
-    cs.currentSp -= cost;
-    const int bite = exhaustion_bite(cs.currentSp);
-    cs.currentHp -= bite;
+    pools.sp -= cost;
+    const int bite = exhaustion_bite(pools.sp);
+    pools.hp -= bite;
     return bite;
 }
 
@@ -342,14 +348,18 @@ inline int settle_sp_carry(int& sp, int maxSp, float& carry) {
     return whole;
 }
 
-// Spend one step's worth (travel_stamina_cost above) through that carry, and
-// let the exhaustion curve bill the body for the step it could not pay for.
-// Returns the SP actually charged (0 while the cost is still fractional).
-inline int spend_travel_stamina(CombatStats& cs, float& carry, float cost) {
-    if (cost > 0.0f) carry -= cost;
-    const int moved = settle_sp_carry(cs.currentSp, cs.maxSp, carry);
+// Spend one step's worth (travel_stamina_cost above) through the body's OWN
+// signed carry, and let the exhaustion curve bill the body for the step it
+// could not pay for. Returns the SP actually charged (0 while the cost is
+// still fractional). One bookkeeping for both scales since landing 4: the
+// carry is Pools::spCarry — the player used to spend a CombatStats bar
+// through a carry that lived on a different struct, while the macro AI spent
+// the same shape through its own per-think settle.
+inline int spend_travel_stamina(ecs::Pools& pools, float cost) {
+    if (cost > 0.0f) pools.spCarry -= cost;
+    const int moved = settle_sp_carry(pools.sp, pools.maxSp, pools.spCarry);
     if (moved >= 0) return 0;
-    cs.currentHp -= exhaustion_bite(cs.currentSp);
+    pools.hp -= exhaustion_bite(pools.sp);
     return -moved;
 }
 

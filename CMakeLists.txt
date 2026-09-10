@@ -345,8 +345,8 @@ add_executable(balance_run tests/balance_run.cpp
     src/macro/npc_spawn.cpp
     src/macro/npc_ai.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
-        # player's own door (player_recovery.h recover_bar), never a copy.
-        src/macro/player_recovery.cpp
+        # player's own door (recovery.h recover_bar), never a copy.
+        src/macro/recovery.cpp
     src/macro/nav_field.cpp
     src/macro/world_tick.cpp
     src/macro/threat_field.cpp
@@ -435,8 +435,8 @@ timaert_test(world_tick_parity_test
         # the daily labour rotation lives with the working AI (npc_ai.h)
         src/macro/npc_ai.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
-        # player's own door (player_recovery.h recover_bar), never a copy.
-        src/macro/player_recovery.cpp
+        # player's own door (recovery.h recover_bar), never a copy.
+        src/macro/recovery.cpp
         src/macro/nav_field.cpp
         src/macro/economy.cpp
         # a landmark's famine and revolt are facts of the world
@@ -456,9 +456,9 @@ timaert_test(world_tick_parity_test
         src/macro/npc_spawn.cpp
     LINK_SDL LINK_ENTT)
 
-timaert_test(player_recovery_parity_test
+timaert_test(recovery_law_test
     SOURCES
-        src/macro/player_recovery.cpp)
+        src/macro/recovery.cpp)
 
 timaert_test(save_roundtrip_test
     SOURCES
@@ -596,8 +596,8 @@ timaert_test(caravan_deal_test
     SOURCES
         src/macro/npc_ai.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
-        # player's own door (player_recovery.h recover_bar), never a copy.
-        src/macro/player_recovery.cpp
+        # player's own door (recovery.h recover_bar), never a copy.
+        src/macro/recovery.cpp
         src/macro/nav_field.cpp
         src/macro/economy.cpp
         src/macro/chronicle.cpp
@@ -628,7 +628,7 @@ timaert_test(macro_npc_ai_parity_test
         # ONE recovery law (CANON S14): the parity check asks the player's own
         # door for its answer and compares it to the lord's, so the two cannot
         # drift into two laws again.
-        src/macro/player_recovery.cpp
+        src/macro/recovery.cpp
     LINK_ENTT)
 
 # Squad↔squad war on the macro map (Session 15 Inc 5): perception, flee /
@@ -663,8 +663,8 @@ timaert_test(squad_war_test
     SOURCES
         src/macro/npc_ai.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
-        # player's own door (player_recovery.h recover_bar), never a copy.
-        src/macro/player_recovery.cpp
+        # player's own door (recovery.h recover_bar), never a copy.
+        src/macro/recovery.cpp
         src/macro/nav_field.cpp
         # the caravan deal prices through the one law (stock_price)
         src/macro/economy.cpp
@@ -686,7 +686,7 @@ timaert_test(squad_war_test
 timaert_test(macro_travel_parity_test
     SOURCES
         src/macro/travel.cpp
-        src/macro/player_recovery.cpp
+        src/macro/recovery.cpp
         src/macro/items.cpp)
 
 # The macro march pays the map (Session 21): greedy steering on the baked
@@ -696,8 +696,8 @@ timaert_test(squad_travel_test
     SOURCES
         src/macro/npc_ai.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
-        # player's own door (player_recovery.h recover_bar), never a copy.
-        src/macro/player_recovery.cpp
+        # player's own door (recovery.h recover_bar), never a copy.
+        src/macro/recovery.cpp
         src/macro/nav_field.cpp
         # the caravan deal prices through the one law (stock_price)
         src/macro/economy.cpp
@@ -1045,8 +1045,8 @@ timaert_test(trade_law_test
     SOURCES
         src/macro/npc_ai.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
-        # player's own door (player_recovery.h recover_bar), never a copy.
-        src/macro/player_recovery.cpp
+        # player's own door (recovery.h recover_bar), never a copy.
+        src/macro/recovery.cpp
         src/macro/nav_field.cpp
         # the caravan deal prices through the one law (stock_price)
         src/macro/economy.cpp
@@ -1125,8 +1125,8 @@ timaert_test(crop_stock_test
         # the daily labour rotation lives with the working AI (npc_ai.h)
         src/macro/npc_ai.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
-        # player's own door (player_recovery.h recover_bar), never a copy.
-        src/macro/player_recovery.cpp
+        # player's own door (recovery.h recover_bar), never a copy.
+        src/macro/recovery.cpp
         src/macro/nav_field.cpp
         src/macro/economy.cpp
         # a landmark's famine and revolt are facts of the world
@@ -1156,8 +1156,8 @@ timaert_test(fauna_stock_test
         # the daily labour rotation lives with the working AI (npc_ai.h)
         src/macro/npc_ai.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
-        # player's own door (player_recovery.h recover_bar), never a copy.
-        src/macro/player_recovery.cpp
+        # player's own door (recovery.h recover_bar), never a copy.
+        src/macro/recovery.cpp
         src/macro/nav_field.cpp
         src/macro/economy.cpp
         # a landmark's famine and revolt are facts of the world
@@ -1173,8 +1173,8 @@ timaert_test(woodcutter_gather_test
     SOURCES
         src/macro/npc_ai.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
-        # player's own door (player_recovery.h recover_bar), never a copy.
-        src/macro/player_recovery.cpp
+        # player's own door (recovery.h recover_bar), never a copy.
+        src/macro/recovery.cpp
         src/macro/nav_field.cpp
         # the caravan deal prices through the one law (stock_price)
         src/macro/economy.cpp
@@ -1195,8 +1195,8 @@ timaert_test(goal_auction_test
     SOURCES
         src/macro/npc_ai.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
-        # player's own door (player_recovery.h recover_bar), never a copy.
-        src/macro/player_recovery.cpp
+        # player's own door (recovery.h recover_bar), never a copy.
+        src/macro/recovery.cpp
         src/macro/nav_field.cpp
         src/macro/economy.cpp
         src/macro/chronicle.cpp
@@ -1228,8 +1228,8 @@ timaert_test(scent_field_test
     SOURCES
         src/macro/npc_ai.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
-        # player's own door (player_recovery.h recover_bar), never a copy.
-        src/macro/player_recovery.cpp
+        # player's own door (recovery.h recover_bar), never a copy.
+        src/macro/recovery.cpp
         src/macro/nav_field.cpp
         src/macro/threat_field.cpp
         src/macro/scent_field.cpp
@@ -1251,8 +1251,8 @@ timaert_test(guard_patrol_test
     SOURCES
         src/macro/npc_ai.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
-        # player's own door (player_recovery.h recover_bar), never a copy.
-        src/macro/player_recovery.cpp
+        # player's own door (recovery.h recover_bar), never a copy.
+        src/macro/recovery.cpp
         src/macro/nav_field.cpp
         src/macro/threat_field.cpp
         src/macro/economy.cpp
@@ -1466,8 +1466,8 @@ timaert_test(player_is_a_squad_test
         src/macro/anatomy.cpp
         src/macro/npc_ai.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
-        # player's own door (player_recovery.h recover_bar), never a copy.
-        src/macro/player_recovery.cpp
+        # player's own door (recovery.h recover_bar), never a copy.
+        src/macro/recovery.cpp
         src/macro/nav_field.cpp
         # the caravan deal prices through the one law (stock_price)
         src/macro/economy.cpp

@@ -383,7 +383,7 @@ public:
     // Current HP of the body the player currently INHABITS, for HUD / hit-flash
     // feedback that must follow possession (Inc 5c, D3) WITHOUT mutating
     // gs.player (the frozen revert target). The flagged body always carries a
-    // Health: for the hero it mirrors combatStats; for a possessed foreign body
+    // Health: for the hero it mirrors the squad Pools; for a possessed foreign body
     // it is that body's own pool. Falls back to the macro scalar only when no
     // flagged Health exists (never expected mid-subworld).
     int player_display_hp() const;
@@ -742,7 +742,7 @@ private:
     // they keep working unchanged). The seam (check_boundary) is the one path that
     // legitimately moves the scalars ∓cell; the tick commits that back onto the
     // entity so it stays the single source of truth. HP stays macro-authoritative
-    // (combatStats -> entity in sync; entity -> currentHp in reconcile).
+    // (squad Pools -> body in sync; body -> squad Pools in reconcile).
     // ── Dungeon session (SceneKind::Dungeon) ──
     // Dungeon interact() face: E on the exit pad walks back out to the very
     // spot the door was opened from. Gated by the same danger law as any

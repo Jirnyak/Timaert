@@ -14,7 +14,7 @@ items, inventory, equipment, loot.
 > points, no save bytes); only the aura door survives, returning empty.
 
 - **Code:** [macro/attributes.h](src/macro/attributes.h) (attributes, skills,
-  `CombatStats`, `DerivedBonuses`, the learn/spend doors),
+  `BarCeilings`, `DerivedBonuses`, the learn/spend doors),
   [macro/character_sheet.h](src/macro/character_sheet.h) (`CharacterSheet`,
   `make_character_sheet`, `effective_sheet`, `project_combat`),
   [macro/player_entity.h](src/macro/player_entity.h)

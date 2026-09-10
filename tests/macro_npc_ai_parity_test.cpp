@@ -10,7 +10,7 @@
 #include "check.h"
 
 #include "macro/npc_ai.h"
-#include "macro/player_recovery.h"
+#include "macro/recovery.h"
 #include "macro/resource_field.h"
 #include "ecs/components.h"
 
@@ -435,33 +435,33 @@ void test_a_resting_lord_mends_at_the_players_rate() {
     CHECK(hp.hp > 10,
           "a wounded lord at rest MENDS — a wound is not permanent for an NPC");
 
-    // The same wound, the same bar, the same game time — asked of the player.
-    sm::PlayerState player{};
-    player.combatStats = sm::calculate_combat_stats(player.sheet.attributes,
-                                                    player.sheet.skills);
-    player.combatStats.maxHp = 50;
-    player.combatStats.currentHp = 10;
-    player.combatStats.hpRegen = float(50) * sm::kRestRegenPctPerHour;
-    player.combatStats.maxMp = 50;
-    player.combatStats.currentMp = 10;
-    player.combatStats.mpRegen = float(50) * sm::kRestRegenPctPerHour;
-    sm::PlayerRecoveryAccumulator accumulator{};
-    float spCarry = 0.0f;
-    sm::apply_minute_recovery(player, 90, accumulator, spCarry, 1.0f);
+    // The same wound, the same bar, the same game time — asked of the
+    // player's own rest path: 90 minutes of standing in camp is one call of
+    // THE rest law over an identical Pools block (main.cpp's macro rest
+    // branch does exactly this). Since landing 4 the parity is held by
+    // construction — one function — and this test guards that the AI's
+    // per-think slicing of the same hours does not drift from one whole
+    // slice (the fractional carry is what makes them identical).
+    sm::ecs::Pools player{};
+    player.maxHp = 50;
+    player.hp = 10;
+    player.maxMp = 50;
+    player.mp = 10;
+    sm::rest_pools(player, 90.0f / 60.0f, 0);
 
-    CHECK(hp.hp == player.combatStats.currentHp,
+    CHECK(hp.hp == player.hp,
           "one recovery law: lord and player mend the SAME points per hour");
     // And the bar that did not exist for a lord until this landing. A lord's
     // well refills in camp exactly as a player's does — mana is a property of
     // a BODY, not a privilege of the one the camera follows.
-    CHECK(hp.mp == player.combatStats.currentMp,
+    CHECK(hp.mp == player.mp,
           "the lord's MANA returns at the player's rate: every body has three "
           "bars, and one law fills them");
 }
 
 // The other half of the law, and the half a careless fix deletes: rest is
 // PAID FOR BY STANDING STILL. `restRate` gates the player's three bars the
-// moment his legs move (kMarchRecoveryPct = 0); the squads' words for the same
+// moment his legs move (a marching body never calls the rest law); the squads' words for the same
 // gate are `stopped && !moved`. A marching body that mends would heal the
 // world's every wound for free, and no other check in this file would notice.
 void test_a_marching_body_does_not_mend() {

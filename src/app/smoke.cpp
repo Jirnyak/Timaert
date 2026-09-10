@@ -707,14 +707,15 @@ bool run_subworld_recovery_smoke(App& app) {
         app.ui.settlementId = -1;
     }
 
-    auto& stats = app.gs.player.combatStats;
-    stats.currentHp = 5;
-    stats.currentMp = 5;
-    stats.currentSp = 5;
-    stats.maxHp = 100;
-    stats.maxMp = 100;
-    stats.maxSp = 100;
-    sm::reset_player_recovery(app.playerRecovery);
+    sm::ecs::Pools& stats = player_pools(app);
+    stats.hp = 5;
+    stats.mp = 5;
+    stats.sp = 5;
+    stats.hpCarry = stats.mpCarry = 0.0f;
+    stats.spCarry = 0.0f;
+    const int maxHp = stats.maxHp;
+    const int maxMp = stats.maxMp;
+    const int maxSp = stats.maxSp;
 
     enter_subworld(app);
     if (!app.subworld.active()) {
@@ -753,9 +754,9 @@ bool run_subworld_recovery_smoke(App& app) {
         minutesAdvanced += frameStats.timeTick.minutesAdvanced;
     }
 
-    const int afterHp = app.gs.player.combatStats.currentHp;
-    const int afterMp = app.gs.player.combatStats.currentMp;
-    const int afterSp = app.gs.player.combatStats.currentSp;
+    const int afterHp = player_pools(app).hp;
+    const int afterMp = player_pools(app).mp;
+    const int afterSp = player_pools(app).sp;
     app.subworld.leave(true);
 
     // The POSITIVE CONTROL: the same body, the same minutes, ON THE MAP —
@@ -764,31 +765,30 @@ bool run_subworld_recovery_smoke(App& app) {
     // pass while measuring nothing (testing law #3): the control proves the
     // minutes were worth whole points to a resting macro body, which is what
     // makes their buying ZERO underground a statement instead of a rounding.
-    sm::PlayerState reference = app.gs.player;
-    reference.combatStats.currentHp = 5;
-    reference.combatStats.currentMp = 5;
-    reference.combatStats.currentSp = 5;
-    sm::PlayerRecoveryAccumulator referenceAcc{};
-    // A hypothetical body gets a hypothetical carry: this reference is not the
-    // player, and must not spend out of his.
-    float referenceCarry = 0.0f;
-    sm::apply_minute_recovery(reference, minutesAdvanced, referenceAcc,
-                              referenceCarry);
+    // A hypothetical BODY, not the player's: the same bars, the same minutes,
+    // through the very rest law the macro branch calls (rest_pools).
+    sm::ecs::Pools reference{};
+    reference.hp = 5;
+    reference.mp = 5;
+    reference.sp = 5;
+    reference.maxHp = maxHp;
+    reference.maxMp = maxMp;
+    reference.maxSp = maxSp;
+    sm::rest_pools(reference, float(minutesAdvanced) / 60.0f,
+                   /*marathonRank=*/0);
 
     std::fprintf(stderr,
                  "[smoke] subworld_recovery steps=%d minutes=%d "
                  "hp=%d mp=%d sp=%d macro-control hp=%d mp=%d sp=%d\n",
                  kFrames, minutesAdvanced, afterHp, afterMp, afterSp,
-                 reference.combatStats.currentHp,
-                 reference.combatStats.currentMp,
-                 reference.combatStats.currentSp);
+                 reference.hp, reference.mp, reference.sp);
     std::fflush(stderr);
 
     if (minutesAdvanced <= 0) {
         smoke_fail(app, "subworld_recovery bought no game minutes");
         return false;
     }
-    if (reference.combatStats.currentHp <= 5) {
+    if (reference.hp <= 5) {
         smoke_fail(app, "subworld_recovery macro control gained nothing");
         return false;
     }
@@ -820,19 +820,15 @@ bool run_subworld_sp_drain_smoke(App& app) {
         app.gs.subState.settlementId = -1;
         app.ui.settlementId = -1;
     }
-    app.gs.player.combatStats.currentSp = 100;
-    app.gs.player.combatStats.currentHp = 100;
-    app.gs.player.combatStats.maxSp = 100;
-    app.gs.player.combatStats.maxHp = 100;
+    player_pools(app).sp = 100;
+    player_pools(app).hp = 100;
+    player_pools(app).maxSp = 100;
+    player_pools(app).maxHp = 100;
     player_sp_carry(app) = 0.0f;
-    // Stamina has ONE signed carry now, and rest fills the very remainder a
-    // march spends out of — which is the point of it, and which means a single
-    // frame of recovery lands inside the number this smoke is measuring. It
-    // used to land in a separate regen-only accumulator nobody counted, so the
-    // leak was invisible rather than absent. The ruler measures what the
-    // GROUND charged, so the body does not mend while it is being read.
-    const float spRegenWas = app.gs.player.combatStats.spRegen;
-    app.gs.player.combatStats.spRegen = 0.0f;
+    // (No spRegen freeze any more — there is no spRegen field to freeze, and
+    // no regen underground AT ALL (owner 2026-09-10): the whole measurement
+    // runs below ground, where the rest law simply is not called. The ruler
+    // measures what the GROUND charged, by construction.)
 
     enter_subworld(app);
     if (!app.subworld.active()) {
@@ -840,8 +836,8 @@ bool run_subworld_sp_drain_smoke(App& app) {
         return false;
     }
 
-    const int beforeSp = app.gs.player.combatStats.currentSp;
-    const int beforeHp = app.gs.player.combatStats.currentHp;
+    const int beforeSp = player_pools(app).sp;
+    const int beforeHp = player_pools(app).hp;
     // Walk far enough to owe a WHOLE point of SP. How far that is has moved
     // three times now (1.0 → 0.2 → 7/16 → 2.0 per weight-unit), which is why
     // the expectation below is BUILT from the shipping formula leg by leg
@@ -887,8 +883,8 @@ bool run_subworld_sp_drain_smoke(App& app) {
         // of SP, which is precisely how this scenario used to fail.
         advance_sim_seconds(app, 0.05f, false);
     }
-    const int afterSp = app.gs.player.combatStats.currentSp;
-    const int afterHp = app.gs.player.combatStats.currentHp;
+    const int afterSp = player_pools(app).sp;
+    const int afterHp = player_pools(app).hp;
     const float carryAfter = player_sp_carry(app);
     app.subworld.leave(true);
 
@@ -902,7 +898,6 @@ bool run_subworld_sp_drain_smoke(App& app) {
     // reads as a negative remainder: the ground asked for everything the bar
     // gave up plus everything the carry sank by.
     const float accounted = float(charged) + (carryBefore - carryAfter);
-    app.gs.player.combatStats.spRegen = spRegenWas;   // the body may mend again
 
     std::fprintf(stderr,
                  "[smoke] subworld_sp_drain distance=%.1f weight=%.2f "
@@ -1279,12 +1274,14 @@ bool run_macro_travel_sp_smoke(App& app) {
     app.cursor.path.assign(path.path.begin(),
                            path.path.begin() + kSmokeMacroTravelSteps + 1);
     app.cursor.pathIdx = 1;
-    // Same reason as subworld_sp_drain: one signed carry means a frame of rest
-    // lands inside the number being measured. The ruler measures the ground.
-    const float spRegenWas = app.gs.player.combatStats.spRegen;
-    app.gs.player.combatStats.spRegen = 0.0f;
-    const int beforeSp = app.gs.player.combatStats.currentSp;
-    const int beforeHp = app.gs.player.combatStats.currentHp;
+    // One signed carry means a frame of rest (an idle frame at the route's
+    // end) would land inside the number being measured. Freeze the LAW at
+    // its one call site, not a cached rate: the old spRegen-zeroing idiom
+    // was thawed silently by a maxima refresh once (seed-999, 2026-09-06),
+    // and the rate it zeroed no longer exists. The ruler measures the ground.
+    app.restRegenSuppressed = true;
+    const int beforeSp = player_pools(app).sp;
+    const int beforeHp = player_pools(app).hp;
     const float beforeX = app.gs.player.x;
     const float beforeY = app.gs.player.y;
     const float carryBefore = player_sp_carry(app);
@@ -1302,15 +1299,15 @@ bool run_macro_travel_sp_smoke(App& app) {
         ++frames;
     }
 
-    const int afterSp = app.gs.player.combatStats.currentSp;
-    const int afterHp = app.gs.player.combatStats.currentHp;
+    const int afterSp = player_pools(app).sp;
+    const int afterHp = player_pools(app).hp;
     const int spentSp = beforeSp - afterSp;
     // Costs are fractional now, so the invariant is CONSERVATION, not equality
     // with a whole number: every point the terrain asked for is either taken
     // from stamina or still carried, and stamina fell by exactly what was taken.
     const float accounted =
         float(spentSp) + (carryBefore - player_sp_carry(app));
-    app.gs.player.combatStats.spRegen = spRegenWas;
+    app.restRegenSuppressed = false;   // the body may mend again
 
     // Print BEFORE judging. A harness that reports its numbers only when it
     // passes is useless exactly when it matters; this line is the first thing
@@ -1379,39 +1376,52 @@ bool run_macro_recovery_smoke(App& app) {
     auto& player = app.gs.player;
     player.sheet.attributes[sm::AttributeId::End] = 1;
     player.sheet.attributes[sm::AttributeId::Wil] = 1;
-    player.combatStats.currentSp = 0;
-    // ONE hit point, not zero: at zero the player is dead by the game's own
-    // rule (checked at the end of every simulation step), and a corpse does not
-    // convalesce. The coarse pre-tick frame used to hide this — recovery and
-    // the death check landed in the same call, so a 0-HP player could round his
-    // way back to 1 before anything noticed. Stamina and mana still start empty,
-    // which is what this smoke is actually about.
-    player.combatStats.currentHp = 1;
-    player.combatStats.currentMp = 0;
-    player.combatStats.maxSp = 100;
-    player.combatStats.maxHp = 100;
-    player.combatStats.maxMp = 100;
-    sm::reset_player_recovery(app.playerRecovery);
+    // The sheet changed: ceilings follow through THE door (the per-tick walk
+    // would do it anyway; doing it here makes the numbers below honest NOW).
+    // No pinned maxima — the ceiling is the sheet's business, and a pinned
+    // 100 would be silently rescaled back by the very door being exercised.
+    sm::refresh_player_body(player, app.ecs);
+    // Never hold this reference across a simulated tick — spawning entities
+    // reallocates the component storage under it (the rest_sp lesson).
+    {
+        sm::ecs::Pools& pools = player_pools(app);
+        pools.sp = 0;
+        // ONE hit point, not zero: at zero the player is dead by the game's
+        // own rule (checked at the end of every simulation step), and a
+        // corpse does not convalesce. The coarse pre-tick frame used to hide
+        // this — recovery and the death check landed in the same call, so a
+        // 0-HP player could round his way back to 1 before anything noticed.
+        // Stamina and mana still start empty, which is what this smoke is
+        // actually about.
+        pools.hp = 1;
+        pools.mp = 0;
+        pools.hpCarry = pools.mpCarry = pools.spCarry = 0.0f;
+    }
 
     // Exactly six game minutes, whatever phase of the minute the clock is in.
     const RuntimeFrameStats stats = advance_sim_steps(
         app, int(sm::ticks_to_advance_minutes(app.gs.worldTime.tick, 6)), false);
+    const sm::ecs::Pools& pools = player_pools(app);   // fresh after the sim
     // Report before judging: a smoke that fails without printing its numbers
     // tells you only that something is wrong (same lesson as macro_travel_sp).
     std::fprintf(stderr,
-                 "[smoke] macro_recovery minutes=%d hp=%d mp=%d sp=%d sub=%d\n",
+                 "[smoke] macro_recovery minutes=%d hp=%d/%d mp=%d/%d sp=%d/%d"
+                 " sub=%d\n",
                  stats.timeTick.minutesAdvanced,
-                 player.combatStats.currentHp,
-                 player.combatStats.currentMp,
-                 player.combatStats.currentSp,
+                 pools.hp, pools.maxHp, pools.mp, pools.maxMp,
+                 pools.sp, pools.maxSp,
                  stats.subworldActive ? 1 : 0);
     std::fflush(stderr);
 
+    // The INVARIANT, not restated arithmetic: six resting minutes buy whole
+    // points on all three bars (the hourly rate over these ceilings is worth
+    // >1 point), and health cannot round past what the same law gives the
+    // other two starting from the same emptiness.
     if (stats.subworldActive
         || stats.timeTick.minutesAdvanced != 6
-        || player.combatStats.currentSp != 1
-        || player.combatStats.currentHp != 2
-        || player.combatStats.currentMp != 1) {
+        || pools.sp < 1
+        || pools.hp < 2
+        || pools.mp < 1) {
         smoke_fail(app, "macro_recovery invariant");
         return false;
     }
@@ -1436,11 +1446,16 @@ bool run_rest_sp_smoke(App& app) {
     }
     smoke_clear_modal_overlays(app);
 
-    auto& cs = app.gs.player.combatStats;
-    cs.currentSp = 0;
-    cs.maxSp = 100;
-    if (cs.currentHp < 1) cs.currentHp = 1;   // a corpse does not convalesce
-    sm::reset_player_recovery(app.playerRecovery);
+    // NEVER hold this reference across a simulated tick: spawning entities
+    // reallocates the component storage under it (caught live — a dangling
+    // ref here read a stale 54/120 out of freed memory while the real bar
+    // stood full). Re-fetch through the door after every advance.
+    {
+        sm::ecs::Pools& cs = player_pools(app);
+        cs.sp = 0;
+        if (cs.hp < 1) cs.hp = 1;   // a corpse does not convalesce
+        cs.hpCarry = cs.mpCarry = cs.spCarry = 0.0f;
+    }
 
     // Rest IS a stop: arming Z mid-march must kill the click-route...
     app.cursor.path.push_back(sm::PathPoint{0, 0});
@@ -1481,7 +1496,8 @@ bool run_rest_sp_smoke(App& app) {
         ++turns;
     }
     const std::uint64_t slept = app.gs.worldTime.tick - t0;
-    const bool full = cs.currentSp >= cs.maxSp;
+    const sm::ecs::Pools& cs = player_pools(app);   // fresh: see note above
+    const bool full = cs.sp >= cs.maxSp;
     const bool underCap = slept < 2 * sm::kTicksPerDay;
 
     aim_rest_until_rested(app);   // full bar: must NOT arm again
@@ -1495,7 +1511,7 @@ bool run_rest_sp_smoke(App& app) {
                  turns,
                  (unsigned long long)slept,
                  double(slept) * 24.0 / double(sm::kTicksPerDay),
-                 cs.currentSp, cs.maxSp,
+                 cs.sp, cs.maxSp,
                  underCap ? 1 : 0, noNap ? 1 : 0,
                  unsigned(stuckPaused));
     std::fflush(stderr);
@@ -2173,13 +2189,13 @@ bool run_dungeon_house_smoke(App& app) {
         if (well != nullptr) {
             // Spend some stamina first, or a full bar makes the well refuse —
             // which is itself correct, and not what we are testing here.
-            app.gs.player.combatStats.currentSp =
-                app.gs.player.combatStats.maxSp / 2;
-            spBefore = app.gs.player.combatStats.currentSp;
+            player_pools(app).sp =
+                player_pools(app).maxSp / 2;
+            spBefore = player_pools(app).sp;
             app.subworld.set_player_pos(well->x, well->y - 2.0f);
             app.subworld.rotate_camera(1.5707963f - app.subworld.cam_yaw(), 0.0f);
             drank = app.subworld.interact();
-            spAfter = app.gs.player.combatStats.currentSp;
+            spAfter = player_pools(app).sp;
         }
         if (sign != nullptr) {
             app.subworld.set_player_pos(sign->x, sign->y - 2.0f);
@@ -2936,11 +2952,11 @@ bool run_prologue_road_smoke(App& app) {
     // intercept answers within the tick, and the witch event is still in
     // this tick's bus.
     smoke_clear_modal_overlays(app);
-    app.gs.player.combatStats.currentHp = 0;
+    player_pools(app).hp = 0;
     advance_sim_seconds(app, 0.016f, false);
     const bool rescued = !app.subworld.active()
         && app.state == sm::ui::AppState::Playing
-        && app.gs.player.combatStats.currentHp > 0;
+        && player_pools(app).hp > 0;
     const bool anchored = app.gs.player.x == oldX
                        && app.gs.player.y == oldY;
     // The witch must actually OPEN — the owner's first playtest died and got
@@ -3371,9 +3387,9 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
         ++spriteOnlyVisible;
     }
 
-    const int beforeHp = app.gs.player.combatStats.currentHp;
+    const int beforeHp = player_pools(app).hp;
     advance_sim_seconds(app, 0.20f, false);
-    const int afterHp = app.gs.player.combatStats.currentHp;
+    const int afterHp = player_pools(app).hp;
     const float flash = app.subworldHitFlashTimer;
     const sm::sub::DangerLevel danger = app.subworld.danger_level();
     const char* status = app.subworld.status_line();
@@ -3501,14 +3517,14 @@ bool run_subworld_missile_feedback_smoke(App& app) {
         (void)e;
         ++beforeProjectiles;
     }
-    const int beforeHp = app.gs.player.combatStats.currentHp;
+    const int beforeHp = player_pools(app).hp;
     advance_sim_seconds(app, 0.10f, false);
     int afterProjectiles = 0;
     for (auto e : reg.view<sm::ecs::Projectile>()) {
         (void)e;
         ++afterProjectiles;
     }
-    const int afterHp = app.gs.player.combatStats.currentHp;
+    const int afterHp = player_pools(app).hp;
     const float flash = app.subworldHitFlashTimer;
     const int combatLogCount = app.subworld.combat_log_count();
     const sm::sub::CombatLogEntry* combatLog =
@@ -3601,7 +3617,7 @@ bool run_subworld_self_fireball_smoke(App& app) {
     }
 
     // Guarantee the cast is affordable regardless of the player's current mana.
-    app.gs.player.combatStats.currentMp = 999;
+    player_pools(app).mp = 999;
     sm::spellbook_learn(app.gs.player.spellBook,
                         sm::spell_ordinal("fireball"));
     sm::spellbook_set_active(app.gs.player.spellBook,
@@ -3617,7 +3633,7 @@ bool run_subworld_self_fireball_smoke(App& app) {
     // geometry this scenario exists to guard.
     app.subworld.rotate_camera(0.0f, 0.9f);
 
-    const int beforeHp = app.gs.player.combatStats.currentHp;
+    const int beforeHp = player_pools(app).hp;
     int beforeProjectiles = 0;
     for (auto e : reg.view<sm::ecs::Projectile>()) {
         (void)e;
@@ -3642,7 +3658,7 @@ bool run_subworld_self_fireball_smoke(App& app) {
     // on the first hit test, which runs AFTER the projectile has stepped forward.
     advance_sim_seconds(app, 0.10f, false);
     advance_sim_seconds(app, 0.10f, false);
-    const int afterHp = app.gs.player.combatStats.currentHp;
+    const int afterHp = player_pools(app).hp;
 
     bool playerDead = false;
     for (auto e : reg.view<sm::ecs::PlayerTag>()) {
@@ -4507,7 +4523,7 @@ bool run_console_smoke(App& app) {
     const int    oldGold         = sm::wallet_value(player_bag(app));
     const auto   oldInv          = player_bag(app);
     const auto   oldLevel        = app.gs.player.sheet.levelData;
-    const auto   oldCombat       = app.gs.player.combatStats;
+    const sm::ecs::Pools oldPools = player_pools(app);
     const auto   oldSpellBook    = app.gs.player.spellBook;
     const auto   oldTime         = app.gs.worldTime;
     const float  oldSimSpeed     = app.simSpeed;
@@ -4530,7 +4546,7 @@ bool run_console_smoke(App& app) {
         }
         player_bag(app)   = oldInv;
         app.gs.player.sheet.levelData   = oldLevel;
-        app.gs.player.combatStats = oldCombat;
+        player_pools(app)         = oldPools;
         app.gs.player.spellBook   = oldSpellBook;
         app.gs.worldTime          = oldTime;
         app.simSpeed              = oldSimSpeed;
@@ -4589,9 +4605,9 @@ bool run_console_smoke(App& app) {
     if (!(app.simSpeed > 2.99f && app.simSpeed < 3.01f)) {
         restore(); smoke_fail(app, "console simspeed"); return false;
     }
-    app.gs.player.combatStats.currentHp = 1;
+    player_pools(app).hp = 1;
     con.execute("heal");
-    if (app.gs.player.combatStats.currentHp != app.gs.player.combatStats.maxHp) {
+    if (player_pools(app).hp != player_pools(app).maxHp) {
         restore(); smoke_fail(app, "console heal"); return false;
     }
 
@@ -4689,7 +4705,7 @@ bool run_console_smoke(App& app) {
     // is a full combat actor: PlayerTag + Position + Health + Combat +
     // SubworldTag, so hostiles target it through the SAME universal melee /
     // projectile paths as any NPC. Its Position tracks the player scalars and
-    // its Health mirrors the macro-authoritative combatStats. It is still NOT an
+    // its Pools mirror the squad store (landing 4). It is still NOT an
     // NPC: no NPCKind / SubworldAi / PlayerSoldierTag / NpcInventory, so no AI,
     // loot, XP, or squad-removal path can ever fire on it.
     {
@@ -4726,13 +4742,14 @@ bool run_console_smoke(App& app) {
                 "player_entity: combat entity missing Health/Combat/SubworldTag");
             return false;
         }
-        const int maxHp = std::max(1, app.gs.player.combatStats.maxHp);
+        const int maxHp = std::max(1, player_pools(app).maxHp);
         const int curHp =
-            std::clamp(app.gs.player.combatStats.currentHp, 0, maxHp);
+            std::clamp(player_pools(app).hp, 0, maxHp);
         if (!near_half(phealth->hp, float(curHp)) ||
             !near_half(phealth->maxHp, float(maxHp))) {
             restore();
-            smoke_fail(app, "player_entity: Health does not mirror combatStats");
+            smoke_fail(app,
+                "player_entity: body Pools do not mirror the squad store");
             return false;
         }
         // Still not an NPC/soldier: none of these may be present, or an NPC-only
@@ -5008,8 +5025,8 @@ bool run_console_smoke(App& app) {
         }
         // Invariants possession must preserve.
         const float bodyMaxHp   = reg.get<sm::ecs::Pools>(target).maxHp;
-        const int   heroHpBefore  = app.gs.player.combatStats.currentHp;
-        const int   heroMaxBefore = app.gs.player.combatStats.maxHp;
+        const int   heroHpBefore  = player_pools(app).hp;
+        const int   heroMaxBefore = player_pools(app).maxHp;
         const float tx = reg.get<sm::ecs::Position>(target).x;
         const float ty = reg.get<sm::ecs::Position>(target).y;
 
@@ -5047,8 +5064,8 @@ bool run_console_smoke(App& app) {
         if (std::fabs(double(reg.get<sm::ecs::Pools>(target).maxHp - bodyMaxHp)) > 0.01) {
             restore(); smoke_fail(app, "possess: tick stamped hero maxHp onto the body"); return false;
         }
-        if (app.gs.player.combatStats.currentHp != heroHpBefore ||
-            app.gs.player.combatStats.maxHp   != heroMaxBefore) {
+        if (player_pools(app).hp != heroHpBefore ||
+            player_pools(app).maxHp   != heroMaxBefore) {
             restore(); smoke_fail(app, "possess: gs.player mutated (revert target not preserved)"); return false;
         }
         // HUD / hit-flash follows the inhabited body (D3): player_display_hp()
@@ -5056,7 +5073,7 @@ bool run_console_smoke(App& app) {
         // level-3 body (maxHp≈99) vs the level-1 hero (110) these are distinct.
         const int dispHp = app.subworld.player_display_hp();
         const int bodyHp = int(std::lround(reg.get<sm::ecs::Pools>(target).hp));
-        if (dispHp != bodyHp || dispHp == app.gs.player.combatStats.currentHp) {
+        if (dispHp != bodyHp || dispHp == player_pools(app).hp) {
             restore(); smoke_fail(app, "possess: player_display_hp() not body-native"); return false;
         }
         std::fprintf(stderr,
@@ -6369,7 +6386,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             const sm::SoldierSquad* pArmy = sm::player_roster(app.ecs);
             const int armyBefore = pArmy ? sm::total_soldiers(*pArmy) : 0;
-            const int hpBefore = app.gs.player.combatStats.currentHp;
+            const int hpBefore = player_pools(app).hp;
             perform_encounter_auto(app, hostile, sm::Ambush::None);
             if (app.gs.subState.kind != sm::GameSubStateKind::Exploring) {
                 smoke_fail(app, "auto-resolve did not hand the map back");
@@ -6385,7 +6402,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 (sm::player_roster(app.ecs)
                      ? sm::total_soldiers(*sm::player_roster(app.ecs)) : 0)
                     < armyBefore
-                || app.gs.player.combatStats.currentHp < hpBefore;
+                || player_pools(app).hp < hpBefore;
             if (!enemyGone && !enemyHurt && !playerPaid) {
                 smoke_fail(app, "auto-resolve settled nothing on either side");
                 break;
@@ -6709,7 +6726,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          app.gs.player.sheet.levelData.skillPoints,
                          app.gs.player.sheet.attributes.of(sm::AttributeId::End),
                          app.gs.player.sheet.skills.of(sm::SkillId::Bodybuilding),
-                         app.gs.player.combatStats.maxHp);
+                         player_pools(app).maxHp);
             std::fflush(stderr);
             ++app.smoke.cursor;
             break;
@@ -6727,23 +6744,31 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             app.gs.player.sheet.levelData.attributePoints += 1;
             const int beforePoints = app.gs.player.sheet.levelData.attributePoints;
             const int beforeEnd = app.gs.player.sheet.attributes.of(sm::AttributeId::End);
-            const int beforeHp = app.gs.player.combatStats.maxHp;
+            const int beforeHp = player_pools(app).maxHp;
             if (!sm::spend_attribute_point(app.gs.player.sheet.levelData,
                                            app.gs.player.sheet.attributes,
                                            sm::AttributeId::End)) {
                 smoke_fail(app, "spend_attribute_end rejected");
                 break;
             }
-            // Same rule the UI enforces now: maxima recompute, CURRENT pools
-            // stay — spending a point is not a free full heal.
-            const int curHpBefore = app.gs.player.combatStats.currentHp;
-            sm::recompute_combat_maxima(app.gs.player.combatStats,
-                                        app.gs.player.sheet.attributes,
-                                        app.gs.player.sheet.skills);
+            // The rule the UI enforces now («доля у всех», owner 2026-09-10):
+            // the ceiling follows the sheet through THE door and the bar
+            // keeps its FRACTION — never a free full heal, never a theft.
+            // Wound him first, or a full bar's preserved fraction of 1.0
+            // would be indistinguishable from the free heal being denied.
+            player_pools(app).hp = std::max(1, beforeHp / 2);
+            const int curHpBefore = player_pools(app).hp;
+            sm::refresh_player_body(app.gs.player, app.ecs);
+            const sm::ecs::Pools& afterSpend = player_pools(app);
+            const float fracBefore = float(curHpBefore) / float(beforeHp);
+            const float fracAfter =
+                float(afterSpend.hp) / float(std::max(1, afterSpend.maxHp));
             if (app.gs.player.sheet.levelData.attributePoints != beforePoints - 1
                 || app.gs.player.sheet.attributes.of(sm::AttributeId::End) != beforeEnd + 1
-                || app.gs.player.combatStats.maxHp <= beforeHp
-                || app.gs.player.combatStats.currentHp != curHpBefore) {
+                || afterSpend.maxHp <= beforeHp
+                || afterSpend.hp >= afterSpend.maxHp
+                || std::fabs(fracAfter - fracBefore)
+                       > 1.0f / float(std::max(1, afterSpend.maxHp))) {
                 smoke_fail(app, "spend_attribute_end invariant");
                 break;
             }
@@ -6754,7 +6779,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          beforeEnd,
                          app.gs.player.sheet.attributes.of(sm::AttributeId::End),
                          beforeHp,
-                         app.gs.player.combatStats.maxHp);
+                         player_pools(app).maxHp);
             std::fflush(stderr);
             ++app.smoke.cursor;
             break;
@@ -6781,7 +6806,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             app.gs.player.sheet.levelData.skillPoints = 0;
             const int beforePicks = app.gs.player.sheet.levelData.learnPicks;
             const int beforeRank = app.gs.player.sheet.skills.of(sm::SkillId::Bodybuilding);
-            const int beforeHp = app.gs.player.combatStats.maxHp;
+            const int beforeHp = player_pools(app).maxHp;
             if (beforeRank != 0) {
                 smoke_fail(app, "spend_skill_bodybuilding expected ignorance");
                 break;
@@ -6792,19 +6817,27 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "spend_skill_bodybuilding learn rejected");
                 break;
             }
-            const int curHpBefore = app.gs.player.combatStats.currentHp;
-            sm::recompute_combat_maxima(app.gs.player.combatStats,
-                                        app.gs.player.sheet.attributes,
-                                        app.gs.player.sheet.skills);
+            // Same «доля у всех» witness as the attribute spend: wound him,
+            // let the ceiling grow, demand the fraction survived and no
+            // full heal happened.
+            player_pools(app).hp = std::max(1, beforeHp / 2);
+            const int curHpBefore = player_pools(app).hp;
+            sm::refresh_player_body(app.gs.player, app.ecs);
             const bool spendRefused =
                 app.gs.player.sheet.levelData.skillPoints <= 0
                 && !sm::spend_skill_point(app.gs.player.sheet.levelData,
                                           app.gs.player.sheet.skills,
                                           sm::SkillId::Bodybuilding);
+            const sm::ecs::Pools& afterLearn = player_pools(app);
+            const float fracBefore = float(curHpBefore) / float(beforeHp);
+            const float fracAfter =
+                float(afterLearn.hp) / float(std::max(1, afterLearn.maxHp));
             if (app.gs.player.sheet.levelData.learnPicks != beforePicks - 1
                 || app.gs.player.sheet.skills.of(sm::SkillId::Bodybuilding) != 1
-                || app.gs.player.combatStats.maxHp <= beforeHp
-                || app.gs.player.combatStats.currentHp != curHpBefore
+                || afterLearn.maxHp <= beforeHp
+                || afterLearn.hp >= afterLearn.maxHp
+                || std::fabs(fracAfter - fracBefore)
+                       > 1.0f / float(std::max(1, afterLearn.maxHp))
                 || !spendRefused) {
                 smoke_fail(app, "spend_skill_bodybuilding invariant");
                 break;
@@ -6816,7 +6849,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          beforeRank,
                          app.gs.player.sheet.skills.of(sm::SkillId::Bodybuilding),
                          beforeHp,
-                         app.gs.player.combatStats.maxHp);
+                         player_pools(app).maxHp);
             std::fflush(stderr);
             ++app.smoke.cursor;
             break;
@@ -6908,8 +6941,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          sm::spellbook_learned_count(book),
                          sm::spell_ordinal_ok(activeOrd)
                              ? sm::kSpellDefs[activeOrd].id : "(none)",
-                         app.gs.player.combatStats.currentMp,
-                         app.gs.player.combatStats.maxMp,
+                         player_pools(app).mp,
+                         player_pools(app).maxMp,
                          cd,
                          sustainedCount);
             std::fflush(stderr);
@@ -7061,7 +7094,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          afterProjectiles,
                          liveProjectiles,
                          targetHp ? double(targetHp->hp) : -1.0,
-                         app.gs.player.combatStats.currentMp,
+                         player_pools(app).mp,
                          std::size_t(smoke_player_recovery_steps(app)),
                          afterSpellCastEvents - beforeSpellCastEvents,
                          hitFlash ? double(hitFlash->timer) : -1.0,
@@ -7105,8 +7138,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             sm::spellbook_learn(app.gs.player.spellBook, sm::spell_ordinal(boltSpell));
             sm::spellbook_set_active(app.gs.player.spellBook, sm::spell_ordinal(boltSpell));
             // Refill mana so the cast cannot fail on cost in a fresh smoke run.
-            app.gs.player.combatStats.currentMp =
-                app.gs.player.combatStats.maxMp;
+            player_pools(app).mp =
+                player_pools(app).maxMp;
             int beforeProjectiles = 0;
             for (auto e : app.ecs.reg.view<sm::ecs::Projectile>()) {
                 (void)e;
@@ -7380,7 +7413,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             sm::spellbook_learn(app.gs.player.spellBook, sm::spell_ordinal("haste"));
             sm::spellbook_set_active(app.gs.player.spellBook, sm::spell_ordinal("haste"));
-            const int beforeMp = app.gs.player.combatStats.currentMp;
+            const int beforeMp = player_pools(app).mp;
             if (!cast_active_spell(app)) {
                 smoke_fail(app, "haste toggle failed");
                 break;
@@ -7393,7 +7426,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             const bool active = sm::spellbook_has_sustained(
                 app.gs.player.spellBook, sm::spell_ordinal("haste"));
-            const int afterMp = app.gs.player.combatStats.currentMp;
+            const int afterMp = player_pools(app).mp;
             // ...and it MAKES HIM FASTER. The smoke used to prove only that
             // mana drained, so the whole reason to cast it went unmeasured —
             // and the ×1.5 that delivered it lived as a literal beside the
@@ -7440,7 +7473,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 (void)e;
                 ++beforeProjectiles;
             }
-            const int beforeMp = app.gs.player.combatStats.currentMp;
+            const int beforeMp = player_pools(app).mp;
             if (!cast_active_spell(app)) {
                 smoke_fail(app, "flight toggle failed");
                 break;
@@ -7456,7 +7489,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             const bool active = sm::spellbook_has_sustained(
                 app.gs.player.spellBook, sm::spell_ordinal("flight"));
-            if (!active || app.gs.player.combatStats.currentMp != beforeMp) {
+            if (!active || player_pools(app).mp != beforeMp) {
                 smoke_fail(app, "flight toggle invariant");
                 break;
             }
@@ -7474,7 +7507,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             RuntimeFrameStats frameStats =
                 advance_sim_seconds(app, 0.60f, false);
             if (!frameStats.ticked
-                || app.gs.player.combatStats.currentMp >= beforeMp) {
+                || player_pools(app).mp >= beforeMp) {
                 smoke_fail(app, "flight drain tick inactive");
                 break;
             }
@@ -7565,7 +7598,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          "[smoke] sustained_flight active=%d mp=%d->%d path=%zu projectileDelta=%d subFlight=%.2f\n",
                          active ? 1 : 0,
                          beforeMp,
-                         app.gs.player.combatStats.currentMp,
+                         player_pools(app).mp,
                          path.size(),
                          afterProjectiles - beforeProjectiles,
                          flightH1 - flightH0);
@@ -7625,7 +7658,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          flight ? 1 : 0,
                          app.subworld.active() ? 1 : 0,
                          app.subworld.flying() ? 1 : 0,
-                         app.gs.player.combatStats.currentMp);
+                         player_pools(app).mp);
             std::fflush(stderr);
             ++app.smoke.cursor;
             break;

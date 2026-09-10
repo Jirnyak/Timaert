@@ -14,7 +14,7 @@
 #include "macro/npc.h"
 #include "macro/nav_field.h"        // локальные поля-округи (CANON S7)
 #include "macro/npc_spawn.h"
-#include "macro/player_recovery.h"  // recover_bar — ОДНА дверь отдыха на все тела
+#include "macro/recovery.h"  // recover_bar — ОДНА дверь отдыха на все тела
 #include "macro/politik.h"          // derive_city_spacing — времянка §34.1
 #include "macro/settlement_score.h" // kSettlementReach — the home-field box
 #include "macro/spawners.h"
@@ -376,7 +376,7 @@ void settle_march_rhythm(entt::entity e, const ecs::Position& p,
     // do not walk two cells and take a slice of rest in the same breath. Rest
     // begins on the first think after the legs stop.
     if (stopped && !moved && canCamp) {
-        // THE rest law, THE implementation (player_recovery.h rest_pools):
+        // THE rest law, THE implementation (recovery.h rest_pools):
         // all three bars, a percent of themselves per game hour, paid out in
         // this think's slice of the day. This block used to restate the three
         // formulas inline — a drifted copy of attributes.h held together by a

@@ -674,7 +674,9 @@ void write_player(Writer& w, const PlayerState& p) {
     w.pod(p.x);
     w.pod(p.y);
     w.pod(p.sheet.attributes);
-    w.pod(p.combatStats);
+    // (No combatStats block since v85: the player's bars ride the macro-ECS
+    // snapshot inside his squad's MacroNpcRecord like every lord's — a second
+    // copy of the same three bars on disk was the defect landing 4 removed.)
     w.pod(p.sheet.levelData);
     w.pod(p.sheet.skills);
     // (No perk block since v76: the perk system was purged whole pending its
@@ -714,7 +716,6 @@ void read_player(Reader& r, PlayerState& p) {
     r.pod(p.x);
     r.pod(p.y);
     r.pod(p.sheet.attributes);
-    r.pod(p.combatStats);
     r.pod(p.sheet.levelData);
     r.pod(p.sheet.skills);
     r.pod(p.codexUnlockedBits);   // v63

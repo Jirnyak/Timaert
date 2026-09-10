@@ -5,7 +5,7 @@
 #include "macro/map_generator.h"
 #include "macro/movement_cost.h"
 #include "macro/state.h"
-#include "macro/player_recovery.h"
+#include "macro/recovery.h"
 #include "macro/world_tick.h"
 #include "macro/travel.h"
 
@@ -126,15 +126,20 @@ void test_overload_and_drain_charge_per_cell() {
     sm::Inventory drainBag{};
     sm::GameState drainGs;
     drainGs.mapParams.seaLevel = 0.40f;
-    drainGs.player.combatStats.currentSp = 100;
-    drainGs.player.combatStats.currentHp = 100;
-    // ONE signed carry, the shape every body on the map keeps: a march drives
-    // it DOWN, so the fraction still owed reads as a negative remainder.
-    float spCarry = 0.0f;
+    // The walker is a BODY block (landing 4): the bar, its ceiling and the
+    // ONE signed carry all live together — a march drives the carry DOWN, so
+    // the fraction still owed reads as a negative remainder.
+    sm::ecs::Pools drainPools{};
+    drainPools.sp = 100;
+    drainPools.maxSp = 100;
+    drainPools.hp = 100;
+    drainPools.maxHp = 100;
     for (int i = 0; i < 5; ++i) {
-        CHECK(sm::drain_player_sp_for_macro_cell(drainGs, drainGs.player.sheet, &drainBag, terrain,
+        CHECK(sm::drain_player_sp_for_macro_cell(drainPools,
+                                                  drainGs.player.sheet,
+                                                  &drainBag, terrain,
                                                   &features,
-                                                  -1, -1, spCarry, &cost),
+                                                  -1, -1, &cost),
                "drain query succeeds");
     }
     // Expectations derived from the constants, never restated as numbers: a
@@ -143,11 +148,11 @@ void test_overload_and_drain_charge_per_cell() {
     const float owed = 5.0f * perCell;
     const int charged = int(owed);
     CHECK(nearf(cost.cellCost, perCell), "the dirt-road cell costs its weight");
-    CHECK(drainGs.player.combatStats.currentSp == 100 - charged,
+    CHECK(drainPools.sp == 100 - charged,
            "whole SP are charged, and only whole ones");
-    CHECK(nearf(spCarry, -(owed - float(charged))),
+    CHECK(nearf(drainPools.spCarry, -(owed - float(charged))),
            "the fraction is carried to the next step, not lost or rounded up");
-    CHECK(drainGs.player.combatStats.currentHp == 100,
+    CHECK(drainPools.hp == 100,
            "a rested body pays travel in stamina alone");
 }
 
@@ -157,27 +162,27 @@ void test_overload_and_drain_charge_per_cell() {
 // after it — so it can never again become an accident of the accounting.
 void test_exhaustion_curve_bites_deeper_each_step() {
     bag.clear();
-    sm::CombatStats cs{};
-    cs.currentSp = 3;
-    cs.currentHp = 100;
+    sm::ecs::Pools cs{};
+    cs.sp = 3;
+    cs.hp = 100;
 
     // Still solvent: stamina pays, the body does not.
     CHECK(sm::apply_stamina_cost(cs, 3) == 0, "stamina pays while it lasts");
-    CHECK(cs.currentSp == 0 && cs.currentHp == 100,
+    CHECK(cs.sp == 0 && cs.hp == 100,
            "reaching exactly zero costs no health");
 
     // Past zero: each step charges the WHOLE outstanding debt.
     CHECK(sm::apply_stamina_cost(cs, 2) == 2, "the first step over costs its deficit");
-    CHECK(cs.currentSp == -2 && cs.currentHp == 98, "debt is kept, health paid");
+    CHECK(cs.sp == -2 && cs.hp == 98, "debt is kept, health paid");
     CHECK(sm::apply_stamina_cost(cs, 2) == 4, "the next step costs the whole debt");
-    CHECK(cs.currentSp == -4 && cs.currentHp == 94, "the bite grows with the debt");
+    CHECK(cs.sp == -4 && cs.hp == 94, "the bite grows with the debt");
     CHECK(sm::apply_stamina_cost(cs, 2) == 6, "and keeps growing");
-    CHECK(cs.currentSp == -6 && cs.currentHp == 88,
+    CHECK(cs.sp == -6 && cs.hp == 88,
            "pressing on exhausted is a gamble, by design");
 
     // A zero/negative charge is not a free heal or a free step.
     CHECK(sm::apply_stamina_cost(cs, 0) == 0, "a zero cost changes nothing");
-    CHECK(cs.currentSp == -6 && cs.currentHp == 88, "and touches neither pool");
+    CHECK(cs.sp == -6 && cs.hp == 88, "and touches neither pool");
 }
 
 // The two layers walk the same world, so the same journey costs the same:
@@ -220,23 +225,38 @@ float cells_per_game_hour() {
     return sm::kMacroWalkCellsPerHour;
 }
 
-float march_hours(const sm::CombatStats& cs, const sm::Skills& skills,
+float march_hours(int fullBarSp, const sm::Skills& skills,
                   float weight) {
     const float perCell = sm::travel_stamina_cost(
         weight, 1.0f, 0, sm::travel_skill_efficiency(skills));
     if (perCell <= 0.0f) return 0.0f;
-    const float cells = float(cs.currentSp) / perCell;
+    const float cells = float(fullBarSp) / perCell;
     // Heavy ground also slows the legs (terrain_speed_mult, Session 21), so
     // the HOURS a bar buys shrink by √weight, not by weight: part of the
     // terrain's price arrives as time instead of stamina.
     return cells / (cells_per_game_hour() * sm::terrain_speed_mult(weight));
 }
 
+// Hours of camp until a bar refills from empty, lived through THE rest law
+// (rest_pools) hour by hour — never a restated rate.
+int rest_hours_to_full(int maxSp, int marathonRank) {
+    sm::ecs::Pools p{};
+    p.maxSp = maxSp;
+    p.maxHp = 1;
+    p.hp = 1;
+    int hours = 0;
+    while (p.sp < maxSp && hours < 64) {
+        sm::rest_pools(p, 1.0f, marathonRank);
+        ++hours;
+    }
+    return hours;
+}
+
 void test_travel_balance_holds_its_intent() {
     bag.clear();
     const sm::Attributes attrs = sm::default_attributes();
     const sm::Skills skills = sm::default_skills();
-    const sm::CombatStats fresh = sm::calculate_combat_stats(attrs, skills);
+    const sm::BarCeilings fresh = sm::bar_ceilings(attrs, skills);
 
     // THE anchor (owner, 2026-08-24; RESTATED ON THE ROAD 2026-09-09): a fresh
     // traveller burns his whole bar in ROUGHLY A DAY'S MARCH — out at dawn,
@@ -254,7 +274,7 @@ void test_travel_balance_holds_its_intent() {
     // movement_cost.h asserts the same band at compile time
     // (kRoadHoursPerFreshBar); this checks the same claim through the shipping
     // cost formula, sheet and all.
-    const float road = march_hours(fresh, skills,
+    const float road = march_hours(fresh.maxSp, skills,
                                    sm::cell_sp_weight(sm::Meadow, sm::FT_Road));
     CHECK(road > 6.0f && road < 9.0f,
            "a day's march down the road spends the fresh bar");
@@ -262,7 +282,7 @@ void test_travel_balance_holds_its_intent() {
     // same bar further by exactly the law's own ratio — weight halves, pace
     // gains √2, endurance gains weight × 1/√weight = √2 (that is WHY roads are
     // worth building).
-    const float meadow = march_hours(fresh, skills,
+    const float meadow = march_hours(fresh.maxSp, skills,
                                       sm::cell_sp_weight(sm::Meadow, sm::FT_None));
     CHECK(road > meadow * 1.35f && road < meadow * 1.5f,
            "the road stretches the bar by the law's own sqrt-2");
@@ -270,9 +290,9 @@ void test_travel_balance_holds_its_intent() {
     // Terrain has to MATTER, in the order the weight table declares. The gaps
     // are √weight, not weight: heavy ground pays part of its price in HOURS
     // (terrain_speed_mult) and the rest in stamina.
-    const float mountain = march_hours(fresh, skills,
+    const float mountain = march_hours(fresh.maxSp, skills,
                                        sm::cell_sp_weight(sm::Mountain, sm::FT_None));
-    const float water = march_hours(fresh, skills,
+    const float water = march_hours(fresh.maxSp, skills,
                                     sm::cell_sp_weight(sm::Water, sm::FT_None));
     CHECK(road > meadow * 1.3f, "a road is worth walking to");
     CHECK(mountain < meadow * 0.7f, "mountains are a real obstacle");
@@ -287,8 +307,8 @@ void test_travel_balance_holds_its_intent() {
     vetAttrs[sm::AttributeId::Wil] = 20;
     sm::Skills vetSkills = skills;
     vetSkills[sm::SkillId::Travel] = 10;
-    const sm::CombatStats veteran = sm::calculate_combat_stats(vetAttrs, vetSkills);
-    const float vetMeadow = march_hours(veteran, vetSkills,
+    const sm::BarCeilings veteran = sm::bar_ceilings(vetAttrs, vetSkills);
+    const float vetMeadow = march_hours(veteran.maxSp, vetSkills,
                                         sm::cell_sp_weight(sm::Meadow, sm::FT_None));
     CHECK(vetMeadow > meadow * 3.0f,
            "training triples the distance a traveller covers");
@@ -300,16 +320,17 @@ void test_travel_balance_holds_its_intent() {
     // shortens it.
     sm::Skills marathoner = skills;
     marathoner[sm::SkillId::Marathon] = 20;
-    CHECK(sm::calculate_combat_stats(attrs, marathoner).maxSp == fresh.maxSp,
+    CHECK(sm::bar_ceilings(attrs, marathoner).maxSp == fresh.maxSp,
            "marathon does not grow the bar");
-    CHECK(sm::calculate_combat_stats(attrs, marathoner).spRegen
-               > fresh.spRegen,
+    // The rate lives in the LAW now, not in a cached field: ask the law.
+    CHECK(rest_hours_to_full(fresh.maxSp, 20)
+               < rest_hours_to_full(fresh.maxSp, 0),
            "marathon does speed the recovery");
-    const float freshRestH = float(fresh.maxSp) / fresh.spRegen;
-    const float vetRestH = float(veteran.maxSp) / veteran.spRegen;
-    CHECK(nearf(freshRestH, 1.0f / sm::kRestRegenPctPerHour),
+    const int freshRestH = rest_hours_to_full(fresh.maxSp, 0);
+    const int vetRestH = rest_hours_to_full(veteran.maxSp, 0);
+    CHECK(freshRestH == int(1.0f / sm::kRestRegenPctPerHour),
            "a full rest is the designed 8 hours");
-    CHECK(nearf(vetRestH, freshRestH),
+    CHECK(vetRestH == freshRestH,
            "a bigger bar rests no longer — regen is a percent of it");
     CHECK(sm::travel_skill_efficiency(vetSkills) < 1.0f
                && sm::travel_skill_efficiency(vetSkills) > 0.0f,
@@ -337,33 +358,25 @@ void test_travel_balance_holds_its_intent() {
     // And speed costs no stamina: pricing per CELL means a sprinter and a
     // plodder pay the same for the same road, they just arrive at different
     // hours. That orthogonality is why both stats are worth having.
-    CHECK(nearf(march_hours(fresh, sprinter,
+    CHECK(nearf(march_hours(fresh.maxSp, sprinter,
                              sm::cell_sp_weight(sm::Meadow, sm::FT_None)),
                  meadow),
            "running does not burn a bigger share of the bar per cell");
 
-    // A night undoes a day: the bar refills in the hours the design promises,
-    // and NOT while the legs are moving.
-    sm::PlayerState resting{};
-    resting.combatStats = fresh;
-    resting.combatStats.currentSp = 0;
-    sm::PlayerRecoveryAccumulator acc{};
-    float restCarry = 0.0f;
-    sm::apply_minute_recovery(resting, 8 * 60, acc, restCarry);
-    CHECK(resting.combatStats.currentSp >= fresh.maxSp - 1,
+    // A night undoes a day: the bar refills in the hours the design promises.
+    // (The march half of this pin is STRUCTURAL now: a marching body simply
+    // does not call the rest law — main.cpp's gate and npc_ai's
+    // `stopped && !moved` are the two callers, and neither calls it for legs
+    // in motion. There is no restRate parameter left to misuse.)
+    sm::ecs::Pools resting{};
+    resting.maxHp = fresh.maxHp;
+    resting.hp = fresh.maxHp;
+    resting.maxMp = fresh.maxMp;
+    resting.maxSp = fresh.maxSp;
+    resting.sp = 0;
+    sm::rest_pools(resting, 8.0f, 0);
+    CHECK(resting.sp >= fresh.maxSp - 1,
            "eight hours of rest refill the whole bar (the 1/8-per-hour law)");
-
-    sm::PlayerState marching{};
-    marching.combatStats = fresh;
-    marching.combatStats.currentSp = 0;
-    sm::PlayerRecoveryAccumulator marchAcc{};
-    float marchCarry = 0.0f;
-    sm::apply_minute_recovery(marching, 8 * 60, marchAcc, marchCarry,
-                                    sm::kMarchRecoveryPct);
-    CHECK(marching.combatStats.currentSp == 0,
-           "marching returns no stamina — a journey is paid for, not subsidised");
-    CHECK(marching.combatStats.currentHp >= fresh.currentHp,
-           "and suppressing stamina recovery does not stop the body healing");
 
     // THE SKILL LAW, pinned through the one door (skill_mult_of): a rank is
     // the row's percent, and the cap is the ceiling. The generic helpers that

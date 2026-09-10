@@ -90,7 +90,7 @@ int main() {
         rt.stateTimer = 0;
         ecs::Pools pools{};
         pools.hp = pools.maxHp = 25;
-        refresh_leader_travel_stats(rt, pools, make_character_sheet(
+        refresh_body_from_sheet(pools, &rt, make_character_sheet(
             NPCType::Caravan, 3, leader_sheet_seed(21u)), NPCType::Caravan);
         pools.sp = pools.maxSp;
         reg.emplace<ecs::Pools>(e, pools);

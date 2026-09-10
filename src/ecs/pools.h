@@ -2,7 +2,7 @@
 // owner, 2026-09-09: «это РПГ, у всех должна быть HP SP MP»).
 //
 // In its own header, apart from the ECS glue, because it is pure DATA: the
-// recovery law (macro/player_recovery.cpp) and the stamina bookkeeping
+// recovery law (macro/recovery.cpp) and the stamina bookkeeping
 // operate on this block without needing entt or the component roster, and a
 // slim test target must be able to compile them without either.
 //
@@ -27,7 +27,7 @@
 // accumulator that never reached the save, and the lord's did not exist at
 // all, so a rest slice worth 0.59 points floored to zero every think and
 // «heal an NPC» could not even be expressed. One law
-// (player_recovery.h recover_bar) needs one home for its remainder.
+// (recovery.h recover_bar) needs one home for its remainder.
 //
 // STAMINA IS NOT LIKE THE OTHER TWO, and it lives here anyway. `sp` may go
 // NEGATIVE — a march can be taken on credit, and the debt is bitten out of hp

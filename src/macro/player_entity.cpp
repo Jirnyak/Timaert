@@ -15,11 +15,27 @@ namespace sm {
 
 namespace {
 
-// The player's macro squad, found by its reserved ordinal. A scan of the
-// squads, which is what every other by-ordinal lookup does (a handful of
-// thousands, on a transition — never in a loop).
+// The registry-side cache of the answer below. Lives in the registry's own
+// context (not a global — the world owns it, and dies with it), because
+// landing 4 turned this lookup from "a handful of calls on a transition"
+// into a per-frame door (bars, death check, HUD, spellbook, rest) and a
+// linear scan of sixteen thousand squads per call stopped being free.
+struct PlayerSquadCache { entt::entity e = entt::null; };
+
+// The player's macro squad, found by its reserved ordinal — through the
+// cache, revalidated on every hit: a stale entity id must never be trusted
+// (load rebuilds the world; leave() tears entities down), so a cached id
+// only answers while it is alive AND still wears the reserved ordinal.
 entt::entity find_player_squad(ecs::World& world) {
-    return macro_entity_by_spawn_id(world, ecs::kPlayerSquadOrdinal);
+    auto& cache = world.reg.ctx().emplace<PlayerSquadCache>();
+    if (cache.e != entt::null && world.reg.valid(cache.e)) {
+        if (const auto* sid = world.reg.try_get<ecs::MacroSpawnId>(cache.e);
+            sid && sid->index == ecs::kPlayerSquadOrdinal) {
+            return cache.e;
+        }
+    }
+    cache.e = macro_entity_by_spawn_id(world, ecs::kPlayerSquadOrdinal);
+    return cache.e;
 }
 
 } // namespace
@@ -53,8 +69,6 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
         reg.emplace<ecs::NpcLevel>(
             squad, std::int16_t(std::max(1, gs.player.sheet.levelData.level)));
         ecs::Pools& pools = reg.emplace<ecs::Pools>(squad, ecs::Pools{});
-        pools.hp = pools.maxHp = std::max(1, gs.player.combatStats.maxHp);
-        pools.mp = pools.maxMp = std::max(0, gs.player.combatStats.maxMp);
         reg.emplace<ecs::NpcTraits>(squad, ecs::NpcTraits{});
         {
             Rng faceRng(ecs::kPlayerSquadOrdinal ^ 0x9E3779B9u);
@@ -82,10 +96,14 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
             // sheet copy (attr/skill cells) and the derived cells the cache
             // door reads past it (MovePct/CarryKg).
             const BonusTotals st = player_standing_bonuses(world, gs.player);
-            refresh_leader_travel_stats(rt, pools,
-                                        effective_sheet(gs.player.sheet, st),
-                                        NPCType::Adventurer, &st);
+            refresh_body_from_sheet(pools, &rt,
+                                    effective_sheet(gs.player.sheet, st),
+                                    NPCType::Adventurer, &st);
         }
+        // Born whole — creation is a moment that SAYS it heals. Every bar,
+        // not a subset: a subset is exactly how mana stayed private property.
+        pools.hp = pools.maxHp;
+        pools.mp = pools.maxMp;
         pools.sp = pools.maxSp;
         reg.emplace<ecs::MacroNpcRuntime>(squad, rt);
     }
@@ -95,50 +113,27 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
     // so the mark has to be re-stamped every time this door is walked through.
     reg.emplace_or_replace<ecs::PlayerSquadTag>(squad);
 
-    // ── The numbers, projected EVERY walk ─────────────────────────────────
-    // PlayerState is still the authoritative store for where he stands, how
-    // hurt he is and how tired (those collapse onto the entity in the next
-    // step of this merge). Until they do, the entity's copies are projections
-    // — and a projection written ONCE at birth is not a projection, it is a
-    // lie with a long fuse. All three used to be exactly that: `Health` was
-    // stamped from maxHp at creation and never touched again, so the save
-    // persisted a full-health player who was dying, and the subworld projector
-    // would have raised his squad as an unwounded body; `maxSp` and the march
-    // caches were stamped from the sheet at creation, so spending a single END
-    // point left them behind forever.
-    //
-    // This door is walked on EVERY macro tick, and it is the only place these
-    // numbers are written, so the projection cannot drift by more than the
-    // tick it is refreshed on.
+    // ── Position, projected EVERY walk ────────────────────────────────────
+    // PlayerState is still the authoritative store for WHERE he stands (the
+    // last scalar of the merge). The bars are NOT projected any more — the
+    // Pools on this entity IS the store (landing 4), and the block below only
+    // keeps the sheet's derivatives honest.
     //
     // No +0.5 on the position — Position is the raw cell coordinate, and the
     // overlay applies the render centring.
     reg.emplace_or_replace<ecs::Position>(squad, gs.player.x, gs.player.y, 0.0f);
-    // ALL THREE bars are re-projected, not just the one anybody happened to
-    // read: a projection that copies a subset is the "lie with a long fuse"
-    // this function's own header warns about, and the subset is exactly how
-    // mana stayed the player's private property. The fractional carries are
-    // NOT touched — they are the body's own remainder, not the scalar's.
-    {
-        ecs::Pools& pools = reg.get_or_emplace<ecs::Pools>(squad);
-        pools.hp    = std::max(0, gs.player.combatStats.currentHp);
-        pools.maxHp = std::max(1, gs.player.combatStats.maxHp);
-        pools.mp    = std::max(0, gs.player.combatStats.currentMp);
-        pools.maxMp = std::max(0, gs.player.combatStats.maxMp);
-        reg.emplace_or_replace<ecs::NpcLevel>(
-            squad, std::int16_t(std::max(1, gs.player.sheet.levelData.level)));
-        if (auto* rt = reg.try_get<ecs::MacroNpcRuntime>(squad)) {
-            // The SAME door every lord's caches go through (squad.h) — the
-            // sheet is the law, these are its cache, and there is one refresh.
-            // The EFFECTIVE sheet (phase 4): a worn +END breastplate carries
-            // and marches like the body actually wearing it.
-            const BonusTotals st = player_standing_bonuses(world, gs.player);
-            refresh_leader_travel_stats(*rt, pools,
-                                        effective_sheet(gs.player.sheet, st),
-                                        NPCType::Adventurer, &st);
-            pools.sp = gs.player.combatStats.currentSp;
-        }
-    }
+    reg.emplace_or_replace<ecs::NpcLevel>(
+        squad, std::int16_t(std::max(1, gs.player.sheet.levelData.level)));
+    // The SAME door every lord's numbers go through (squad.h) — the sheet is
+    // the law, ceilings and march caches are its cache, and there is one
+    // refresh. The EFFECTIVE sheet (phase 4): a worn +END breastplate
+    // carries and marches like the body actually wearing it. The ceilings
+    // self-gate («доля у всех» rescale only when a ceiling actually moved),
+    // so this every-tick walk is an identity while nothing stands or falls
+    // off him — and a sheet-change moment anywhere that forgets its own
+    // refresh_player_body call heals within one macro tick instead of
+    // drifting forever.
+    refresh_player_body(gs.player, world);
 
     // ── The flag ──────────────────────────────────────────────────────────
     // Exactly one PlayerTag exists at a time. It rides the player's own squad
@@ -218,6 +213,27 @@ float* player_sp_carry(ecs::World& world) {
     if (e == entt::null) return nullptr;
     auto* pools = world.reg.try_get<ecs::Pools>(e);
     return pools ? &pools->spCarry : nullptr;
+}
+
+ecs::Pools* player_pools(ecs::World& world) {
+    const entt::entity e = find_player_squad(world);
+    if (e == entt::null) return nullptr;
+    return world.reg.try_get<ecs::Pools>(e);
+}
+
+const ecs::Pools* player_pools(const ecs::World& world) {
+    return player_pools(const_cast<ecs::World&>(world));
+}
+
+void refresh_player_body(PlayerState& player, ecs::World& world) {
+    const entt::entity e = find_player_squad(world);
+    if (e == entt::null) return;
+    auto* pools = world.reg.try_get<ecs::Pools>(e);
+    if (!pools) return;
+    auto* rt = world.reg.try_get<ecs::MacroNpcRuntime>(e);
+    const BonusTotals st = player_standing_bonuses(world, player);
+    refresh_body_from_sheet(*pools, rt, effective_sheet(player.sheet, st),
+                            NPCType::Adventurer, &st);
 }
 
 AgentMemory* player_head(ecs::World& world) {

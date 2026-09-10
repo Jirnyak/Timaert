@@ -17,8 +17,8 @@ namespace sm {
 // bundles the persistent RPG facets — attributes, skills and the
 // level/XP economy — exactly as the player carries them today (see
 // `PlayerState` in macro/state.h). Combat numbers (HP/MP/SP, damage) are
-// DERIVED from this sheet, never stored inside it (the player keeps a
-// `CombatStats`; an NPC gets ECS `Health`/`Combat`).
+// DERIVED from this sheet, never stored inside it (every body keeps its bars
+// in ECS `Pools` beside its `Combat` — the player's on his squad entity).
 //
 // EVERY body carries one — humanoid, creature and player alike (CANON S14).
 // The one birth door (`emplace_body`, sub/spawn.cpp) builds the sheet from the
@@ -392,8 +392,8 @@ inline BonusTotals squad_bonuses(const CharacterSheet&) {
 inline CombatTemplate project_combat(const CharacterSheet& sheet,
                                      const CombatTemplate& base) {
     CombatTemplate out = base; // keep attack identity + label + missile params
-    const CombatStats cs =
-        calculate_combat_stats(sheet.attributes, sheet.skills, int(base.hp));
+    const BarCeilings cs =
+        bar_ceilings(sheet.attributes, sheet.skills, int(base.hp));
     const DerivedBonuses d =
         calculate_derived(sheet.attributes, sheet.skills);
     const float atkBonus = (base.attackKind == CombatTemplate::Missile)
@@ -430,7 +430,7 @@ inline int body_max_hp(const CharacterSheet& sheet, const CombatTemplate& base) 
 
 // THE mana bar of a body of this sheet — the same question as body_max_hp,
 // asked of the other pool, and answered by the same derivation
-// (calculate_combat_stats: the WILL bar times Meditation).
+// (bar_ceilings: the WILL bar times Meditation).
 //
 // It had no door because it had no readers: `project_combat` computed maxMp
 // on every single birth in the game and dropped it on the floor, so mana was
@@ -440,8 +440,7 @@ inline int body_max_hp(const CharacterSheet& sheet, const CombatTemplate& base) 
 // its MIND, not its species' hit points, and no row authors a mana floor yet.
 // The day one does, it joins exactly here, the way `base.hp` joins above.
 inline int body_max_mp(const CharacterSheet& sheet) {
-    return std::max(0, calculate_combat_stats(sheet.attributes,
-                                              sheet.skills).maxMp);
+    return std::max(0, bar_ceilings(sheet.attributes, sheet.skills).maxMp);
 }
 
 } // namespace sm

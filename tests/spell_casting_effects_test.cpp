@@ -129,8 +129,8 @@ int main() {
 
     sm::ecs::World world;
     sm::SpellBook book;
-    sm::CombatStats combat{};
-    combat.currentMp = 2000;
+    sm::ecs::Pools combat{};
+    combat.mp = 2000;
     combat.maxMp = 2000;
     sm::Attributes attributes{};
     sm::Skills skills{};
@@ -333,7 +333,7 @@ int main() {
                             1.0f, 0.0f, 0.0f, true)) {
         return fail("magic_bolt cast rejected");
     }
-    if (combat.currentMp != 1990) return fail("magic_bolt mana cost");
+    if (combat.mp != 1990) return fail("magic_bolt mana cost");
     if (projectile_count(world) != 1) return fail("magic_bolt projectile spawn");
     sm::ecs::Projectile magicBolt{};
     sm::ecs::Position magicBoltPos{};
@@ -416,8 +416,8 @@ int main() {
 
     sm::ecs::World fireExpiryWorld;
     sm::SpellBook fireExpiryBook;
-    sm::CombatStats fireExpiryCombat{};
-    fireExpiryCombat.currentMp = 1000;
+    sm::ecs::Pools fireExpiryCombat{};
+    fireExpiryCombat.mp = 1000;
     fireExpiryCombat.maxMp = 1000;
     sm::spellbook_learn(fireExpiryBook, sm::spell_ordinal("fireball"));
     const auto fireExpiryVictim =
@@ -457,8 +457,8 @@ int main() {
 
     sm::ecs::World iceWorld;
     sm::SpellBook iceBook;
-    sm::CombatStats iceCombat{};
-    iceCombat.currentMp = 1000;
+    sm::ecs::Pools iceCombat{};
+    iceCombat.mp = 1000;
     iceCombat.maxMp = 1000;
     sm::spellbook_learn(iceBook, sm::spell_ordinal("ice_shard"));
     if (!sm::spellbook_cast(iceWorld, iceBook, iceCombat, attributes, skills,
@@ -477,8 +477,8 @@ int main() {
 
     sm::SpellBook lowBook;
     sm::spellbook_learn(lowBook, sm::spell_ordinal("fireball"));
-    sm::CombatStats lowCombat{};
-    lowCombat.currentMp = 0;
+    sm::ecs::Pools lowCombat{};
+    lowCombat.mp = 0;
     lowCombat.maxMp = 10;
     const sm::CastCheck lowMana =
         sm::spellbook_can_cast_ex(lowBook, lowCombat, sm::spell_ordinal("fireball"),
@@ -495,8 +495,8 @@ int main() {
     for (const char* id : macroSpellIds) {
         sm::spellbook_learn(macroBook, sm::spell_ordinal(id));
     }
-    sm::CombatStats macroCombat{};
-    macroCombat.currentMp = 2000;
+    sm::ecs::Pools macroCombat{};
+    macroCombat.mp = 2000;
     macroCombat.maxMp = 2000;
     for (const char* id : macroSpellIds) {
         const sm::CastCheck macroCheck =
@@ -513,7 +513,7 @@ int main() {
         return fail("world-map fireball spawned micro projectile");
     }
     if (projectile_count(world) != beforeMacroProjectiles
-        || macroCombat.currentMp != 2000) {
+        || macroCombat.mp != 2000) {
         return fail("world-map fireball mutated state");
     }
 
@@ -595,24 +595,24 @@ int main() {
     if (!sm::spellbook_has_sustained(book, sm::spell_ordinal("haste"))) {
         return fail("haste not sustained");
     }
-    const int beforeDrain = combat.currentMp;
+    const int beforeDrain = combat.mp;
     sm::spellbook_tick(book, combat, sm::steps_from_seconds(1.2f));
-    if (beforeDrain - combat.currentMp != 12) {
+    if (beforeDrain - combat.mp != 12) {
         return fail("haste fractional drain wrong");
     }
     if (!sm::spellbook_has_sustained(book, sm::spell_ordinal("haste"))) {
         return fail("haste dropped while mana remained");
     }
-    combat.currentMp = 1;
+    combat.mp = 1;
     sm::spellbook_tick(book, combat, sm::steps_from_seconds(1.0f));
-    if (combat.currentMp != 0 || sm::spellbook_has_sustained(book, sm::spell_ordinal("haste"))) {
+    if (combat.mp != 0 || sm::spellbook_has_sustained(book, sm::spell_ordinal("haste"))) {
         return fail("haste did not stop on mana depletion");
     }
 
     sm::SpellBook zeroTickBook;
     sm::spellbook_learn(zeroTickBook, sm::spell_ordinal("haste"));
-    sm::CombatStats zeroTickCombat{};
-    zeroTickCombat.currentMp = 1;
+    sm::ecs::Pools zeroTickCombat{};
+    zeroTickCombat.mp = 1;
     zeroTickCombat.maxMp = 1;
     if (!sm::spellbook_cast(world, zeroTickBook, zeroTickCombat,
                             attributes, skills, sm::spell_ordinal("haste"), std::uint32_t{0},
@@ -626,11 +626,11 @@ int main() {
     // float boundary — a test that broke the moment the clock became integer
     // and proved nothing about intent either way.
     int stepsToEmpty = 0;
-    while (zeroTickCombat.currentMp > 0 && stepsToEmpty < int(sm::kStepsPerSecond)) {
+    while (zeroTickCombat.mp > 0 && stepsToEmpty < int(sm::kStepsPerSecond)) {
         sm::spellbook_tick(zeroTickBook, zeroTickCombat, 1u);
         ++stepsToEmpty;
     }
-    if (zeroTickCombat.currentMp != 0) {
+    if (zeroTickCombat.mp != 0) {
         return fail("sustained drain never emptied a one-point pool");
     }
     if (stepsToEmpty <= 0) {
@@ -646,8 +646,8 @@ int main() {
 
     sm::SpellBook flightBook;
     sm::spellbook_learn(flightBook, sm::spell_ordinal("flight"));
-    sm::CombatStats flightCombat{};
-    flightCombat.currentMp = 50;
+    sm::ecs::Pools flightCombat{};
+    flightCombat.mp = 50;
     flightCombat.maxMp = 50;
     if (!sm::spellbook_cast(world, flightBook, flightCombat, attributes, skills,
                             sm::spell_ordinal("flight"), std::uint32_t{0}, 0.0f, 0.0f, 0.0f,
@@ -658,13 +658,13 @@ int main() {
         return fail("flight not sustained");
     }
     sm::spellbook_tick(flightBook, flightCombat, sm::steps_from_seconds(0.5f));
-    if (flightCombat.currentMp != 40) {
+    if (flightCombat.mp != 40) {
         return fail("flight drain wrong");
     }
 
     sm::SpellBook multiSustainBook;
-    sm::CombatStats multiSustainCombat{};
-    multiSustainCombat.currentMp = 25;
+    sm::ecs::Pools multiSustainCombat{};
+    multiSustainCombat.mp = 25;
     multiSustainCombat.maxMp = 25;
     sm::spellbook_learn(multiSustainBook, sm::spell_ordinal("haste"));
     sm::spellbook_learn(multiSustainBook, sm::spell_ordinal("flight"));
@@ -678,7 +678,7 @@ int main() {
     }
     sm::spellbook_tick(multiSustainBook, multiSustainCombat,
                        sm::steps_from_seconds(1.0f));
-    if (multiSustainCombat.currentMp != 0
+    if (multiSustainCombat.mp != 0
         || sm::spellbook_has_sustained(multiSustainBook, sm::spell_ordinal("haste"))
         || !sm::spellbook_has_sustained(multiSustainBook, sm::spell_ordinal("flight"))
         || [&]{ int n = 0;
@@ -690,8 +690,8 @@ int main() {
 
     sm::ecs::World hitWorld;
     sm::SpellBook hitBook;
-    sm::CombatStats hitCombat{};
-    hitCombat.currentMp = 1000;
+    sm::ecs::Pools hitCombat{};
+    hitCombat.mp = 1000;
     hitCombat.maxMp = 1000;
     sm::spellbook_learn(hitBook, sm::spell_ordinal("magic_bolt"));
     // Agnostic projectiles (owner design decision 2026-07-30): there is NO
@@ -714,8 +714,8 @@ int main() {
     // share one projectile now that nothing flies through a friendly.
     sm::ecs::World hostWorld;
     sm::SpellBook hostBook;
-    sm::CombatStats hostCombat{};
-    hostCombat.currentMp = 1000;
+    sm::ecs::Pools hostCombat{};
+    hostCombat.mp = 1000;
     hostCombat.maxMp = 1000;
     sm::spellbook_learn(hostBook, sm::spell_ordinal("magic_bolt"));
     const auto hostPlayer = add_player(hostWorld, -1000.0f, -1000.0f);
@@ -735,8 +735,8 @@ int main() {
 
     sm::ecs::World beamWorld;
     sm::SpellBook beamBook;
-    sm::CombatStats beamCombat{};
-    beamCombat.currentMp = 1000;
+    sm::ecs::Pools beamCombat{};
+    beamCombat.mp = 1000;
     beamCombat.maxMp = 1000;
     sm::spellbook_learn(beamBook, sm::spell_ordinal("energy_beam"));
     const auto beamPlayer = add_player(beamWorld, -1000.0f, -1000.0f);
@@ -759,8 +759,8 @@ int main() {
 
     sm::ecs::World chainWorld;
     sm::SpellBook chainBook;
-    sm::CombatStats chainCombat{};
-    chainCombat.currentMp = 1000;
+    sm::ecs::Pools chainCombat{};
+    chainCombat.mp = 1000;
     chainCombat.maxMp = 1000;
     sm::spellbook_learn(chainBook, sm::spell_ordinal("lightning_chain"));
     const auto chainPlayer = add_player(chainWorld, -1000.0f, -1000.0f);
@@ -793,8 +793,8 @@ int main() {
 
     sm::ecs::World armWorld;
     sm::SpellBook armBook;
-    sm::CombatStats armCombat{};
-    armCombat.currentMp = 2000;
+    sm::ecs::Pools armCombat{};
+    armCombat.mp = 2000;
     armCombat.maxMp = 2000;
     sm::spellbook_learn(armBook, sm::spell_ordinal("armageddon"));
     if (!armDef) return fail("armageddon definition missing");
@@ -818,7 +818,7 @@ int main() {
                             &seq_rng01, &armRng)) {
         return fail("armageddon cast rejected");
     }
-    if (armCombat.currentMp != 1000) return fail("armageddon mana cost");
+    if (armCombat.mp != 1000) return fail("armageddon mana cost");
     if (projectile_count(armWorld) != expectedMeteors) {
         return fail("armageddon meteor count wrong");
     }
@@ -980,8 +980,8 @@ int main() {
         for (const float range : kRanges) {
             sm::ecs::World sweepWorld;
             sm::SpellBook sweepBook;
-            sm::CombatStats sweepCombat{};
-            sweepCombat.currentMp = 1000;
+            sm::ecs::Pools sweepCombat{};
+            sweepCombat.mp = 1000;
             sweepCombat.maxMp = 1000;
             sm::spellbook_learn(sweepBook, sm::spell_ordinal("magic_bolt"));
             // Caster at the origin, so the muzzle geometry is production's —
@@ -1032,7 +1032,7 @@ int main() {
     }
     std::fprintf(stderr,
                  "PASS: projectiles=%d mp=%d sustained=%d\n",
-                 projectile_count(world), combat.currentMp,
+                 projectile_count(world), combat.mp,
                  susActive);
     CHECK(true, "every gate above held");
     return sm::test::report("spell_casting_effects_test");

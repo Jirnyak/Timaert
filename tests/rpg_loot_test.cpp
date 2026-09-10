@@ -78,12 +78,12 @@ static void test_project_combat_melee() {
 
     const CombatTemplate out = project_combat(cs, base);
 
-    const CombatStats expCs =
-        calculate_combat_stats(cs.attributes, cs.skills, int(base.hp));
+    const BarCeilings expCs =
+        bar_ceilings(cs.attributes, cs.skills, int(base.hp));
     const DerivedBonuses expD = calculate_derived(cs.attributes, cs.skills);
 
     CHECK(approx(out.hp, float(expCs.maxHp)),
-          "melee: hp == calculate_combat_stats(sheet, base.hp).maxHp");
+          "melee: hp == bar_ceilings(sheet, base.hp).maxHp");
     CHECK(out.dice.n == base.dice.n && out.dice.m == base.dice.m,
           "melee: the row's dice pass through the projection verbatim");
     CHECK(out.flatAdd == std::int16_t(std::floor(expD.rawPhysDamage)),

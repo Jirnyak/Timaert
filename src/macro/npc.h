@@ -238,6 +238,13 @@ inline constexpr CombatTemplate kMerchantCombat  {30,{5,1}, 1.25f, 2.0f, 3.0f, "
 inline constexpr CombatTemplate kCaravanCombat   {25,{4,1}, 1.5f, 2.0f, 3.0f, "Cvn", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
 inline constexpr CombatTemplate kBanditCombat    {50,{12,1}, 2.25f, 3.0f, 2.5f, "Bnd", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
 inline constexpr CombatTemplate kGuardCombat     {55,{14,1}, 1.75f, 3.0f, 2.5f, "Grd", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
+// The adventurer's own template — the PLAYER's row. Base hp 100: the bare
+// level-1 bar the sheet law always built for him (bar_ceilings' default
+// base). Until landing 4 that base hid in a default ARGUMENT while his row
+// shared the guard's 55 — a player-special number smuggled through a
+// signature; now the row carries it like every other body's floor, and his
+// ceilings go through body_max_hp like every other body's do.
+inline constexpr CombatTemplate kAdventurerCombat{100,{14,1}, 1.75f, 3.0f, 2.5f, "Adv", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
 // The ambusher fights EXACTLY like a bandit — every number above is his —
 // and differs in one column: he sees the whole road. 1000 m against a
 // prologue block three cells wide means there is nowhere in that scene to
@@ -575,7 +582,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // loot is the bag he actually carries rather than a rolled profile.
     {
         NPCType::Adventurer, "adventurer", "Adventurer", SpriteId::Peasant, 1,
-        AIBehaviour::Wanderer, kGuardCombat, kNpcUpkeepNone, false, 0,
+        AIBehaviour::Wanderer, kAdventurerCombat, kNpcUpkeepNone, false, 0,
         /*weight*/0, /*loot*/nullptr, /*radius*/0.0f,
         {{}}, 0, {{}}, 0,
     },

@@ -17,10 +17,11 @@
 // `ecs::SquadRoster`, the bag `ecs::NpcInventory`, the head `AgentMemory`, and
 // all three ride the same macro-snapshot record every lord's do.
 //
-// What has NOT moved yet: where he stands, how hurt he is, how tired, and his
-// sheet. PlayerState still owns those; `ensure_macro_player_entity` projects
-// them onto the entity on EVERY walk, so the copies cannot drift by more than
-// a tick until they collapse too.
+// What has NOT moved yet: where he stands, and his sheet. PlayerState still
+// owns those; `ensure_macro_player_entity` projects Position onto the entity
+// on EVERY walk. How hurt and how tired he is moved HERE with landing 4
+// (2026-09-10): his three bars are the ordinary ecs::Pools on this entity,
+// with no scalar copy anywhere — player_pools() below is the one door.
 #pragma once
 #include "ecs/world.h"
 #include "macro/character_sheet.h"
@@ -74,6 +75,22 @@ const Inventory* player_inventory(const ecs::World& world);
 // regen-only slot in PlayerRecoveryAccumulator), which between them could not
 // even express the state his own bar was in: a debt with a fraction owed.
 float* player_sp_carry(ecs::World& world);
+
+// THE player's three bars — the ordinary ecs::Pools on his squad entity, the
+// very block every lord and every scene body keeps (landing 4, owner
+// 2026-09-09/10: «полосы на тело, никакого особенного игрока»). It was
+// PlayerState::combatStats: a nine-field private store with three cached rest
+// rates, projected onto this block every tick and saved TWICE. Returns
+// nullptr before the world exists; there are no bars to read then.
+ecs::Pools* player_pools(ecs::World& world);
+const ecs::Pools* player_pools(const ecs::World& world);
+
+// «His sheet changed» — the ONE call every such moment makes (creation,
+// level-up, point spend, learning, gear on/off, console): ceilings and march
+// caches follow the EFFECTIVE sheet through THE door every lord's do
+// (squad.h refresh_body_from_sheet), each bar preserving its fraction
+// («доля у всех», owner 2026-09-10). No-op before the world exists.
+void refresh_player_body(PlayerState& player, ecs::World& world);
 
 AgentMemory* player_head(ecs::World& world);
 const AgentMemory* player_head(const ecs::World& world);

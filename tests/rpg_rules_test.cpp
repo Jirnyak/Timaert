@@ -1,10 +1,10 @@
 // Locks three owner rulings of 2026-08-05:
 //
-//   1. NO FREE FULL HEAL — recompute_combat_maxima grows the maxima and
-//      PRESERVES the current pools (clamped). The full restore in
-//      calculate_combat_stats belongs to creation and the level-up. (The bug:
-//      every '+' click on an attribute/skill was a free full heal because the
-//      UI recomputed through the creating function.)
+//   1. NO FREE HEAL, NO THEFT — «доля у всех» (owner 2026-09-10): a moved
+//      ceiling rescales its bar by FRACTION through the one door
+//      (squad.h refresh_body_from_sheet); the full restore belongs to
+//      creation alone. (The original bug: every «+» click was a free full
+//      heal because the UI recomputed through the creating function.)
 //   2. THE WIS DIVIDEND — award_exp(ld, amount, expMult) scales the grant by
 //      the sheet's expMult (+1% per wis point), round half up. Before this,
 //      wis was computed and consumed by nothing.
@@ -15,6 +15,7 @@
 #include "check.h"
 #include "macro/attributes.h"
 #include "macro/economy.h"
+#include "macro/squad.h"
 
 #include <cstdio>
 
@@ -32,35 +33,54 @@ int fail(const char* msg) {
 int main() {
     using namespace sm;
 
-    // ── 1. Point spend preserves the pools ──────────────────────────────
+    // ── 1. A moved ceiling preserves the FRACTION («доля у всех») ────────
+    // Owner 2026-09-10: the lord's level-up law is the ONLY rescale — a
+    // point spent, a level gained or a coat donned moves the ceiling and the
+    // bar follows proportionally. Never a free heal (the old player law
+    // full-restored on level-up), never a theft (the old «keep the number»
+    // clamp silently shrank the fraction).
     {
-        Attributes a{};
-        Skills s{};
-        CombatStats c = calculate_combat_stats(a, s);
-        c.currentHp = 7;
-        c.currentMp = 3;
-        c.currentSp = 5;
-        ++a[AttributeId::End];  // the spend
-        recompute_combat_maxima(c, a, s);
-        if (c.maxHp != calculate_combat_stats(a, s).maxHp) {
+        CharacterSheet sheet{};
+        ecs::Pools p{};
+        ecs::MacroNpcRuntime rt{};
+        refresh_body_from_sheet(p, &rt, sheet, NPCType::Adventurer);
+        if (p.maxHp != bar_ceilings(sheet.attributes, sheet.skills).maxHp) {
+            return fail("the adventurer row's base must be the sheet law's "
+                        "own 100 — one ceiling, no hidden default");
+        }
+        p.hp = p.maxHp / 2;   // wounded at one half
+        p.mp = p.maxMp / 4;
+        p.sp = p.maxSp;       // rested
+        ++sheet.attributes[AttributeId::End];  // the spend
+        refresh_body_from_sheet(p, &rt, sheet, NPCType::Adventurer);
+        if (p.maxHp != bar_ceilings(sheet.attributes, sheet.skills,
+                                    /*baseHp=*/100).maxHp) {
             return fail("maxima must recompute from the new attributes");
         }
-        if (c.currentHp != 7 || c.currentMp != 3 || c.currentSp != 5) {
-            std::fprintf(stderr, "hp=%d mp=%d sp=%d\n",
-                         c.currentHp, c.currentMp, c.currentSp);
-            return fail("spending a point must not touch the current pools");
+        const float hpFrac = float(p.hp) / float(p.maxHp);
+        if (hpFrac < 0.49f || hpFrac > 0.51f || p.hp >= p.maxHp) {
+            std::fprintf(stderr, "hp=%d/%d\n", p.hp, p.maxHp);
+            return fail("a grown ceiling must keep the wound fraction — "
+                        "no free heal, no theft");
         }
-        // Shrinking maxima (e.g. a future curse) clamps the pools down.
-        CombatStats over = calculate_combat_stats(a, s);
-        over.currentHp = over.maxHp + 500;
-        recompute_combat_maxima(over, a, s);
-        if (over.currentHp != over.maxHp) {
-            return fail("currents must clamp into the new maxima");
+        if (p.sp != p.maxSp) {
+            return fail("a rested bar stays rested when its ceiling grows");
         }
-        // The level-up path (calculate_combat_stats) still fully restores.
-        const CombatStats fresh = calculate_combat_stats(a, s);
-        if (fresh.currentHp != fresh.maxHp || fresh.currentSp != fresh.maxSp) {
-            return fail("the level-up restore must stay a FULL restore");
+        // A bar whose ceiling did not move is not touched at all: the
+        // every-tick walk must be an identity, not a rounding drain.
+        const int hpStable = p.hp;
+        refresh_body_from_sheet(p, &rt, sheet, NPCType::Adventurer);
+        if (p.hp != hpStable) {
+            return fail("an unchanged ceiling must not touch the bar");
+        }
+        // Dead stays dead: a growing ceiling must not resurrect.
+        ecs::Pools corpse{};
+        refresh_body_from_sheet(corpse, nullptr, sheet, NPCType::Adventurer);
+        corpse.hp = 0;
+        ++sheet.attributes[AttributeId::End];
+        refresh_body_from_sheet(corpse, nullptr, sheet, NPCType::Adventurer);
+        if (corpse.hp != 0) {
+            return fail("a grown ceiling must not resurrect a zero hp");
         }
     }
 

@@ -1,5 +1,6 @@
 #include "macro/bonus.h"
 #include "events/effect_applicator.h"
+#include "ecs/pools.h"
 #include "macro/codex.h"
 #include "macro/currency.h"
 #include "macro/spells.h"
@@ -44,10 +45,9 @@ constexpr EffectVerb kEffectVerbs[] = {
     {"drain_sp",   BonusId::HealSp, -1},
 };
 
-void apply_effect(PlayerState& p, const GameEvent& ev) {
+void apply_effect(PlayerState& p, ecs::Pools* cs, const GameEvent& ev) {
     const std::string& type = ev.s1;
     const int value = ev.ix;
-    auto& cs = p.combatStats;
 
     if (type == "grant_xp") {
         // wis dividend: scripted XP scales by the recipient's expMult too —
@@ -60,13 +60,14 @@ void apply_effect(PlayerState& p, const GameEvent& ev) {
 
     for (const EffectVerb& v : kEffectVerbs) {
         if (type != v.verb) continue;
+        if (!cs) break;   // no body yet: a pool verb has nowhere to land
         PoolSlice pools{};
-        pools.current[int(PoolId::Hp)] = &cs.currentHp;
-        pools.maximum[int(PoolId::Hp)] = cs.maxHp;
-        pools.current[int(PoolId::Mp)] = &cs.currentMp;
-        pools.maximum[int(PoolId::Mp)] = cs.maxMp;
-        pools.current[int(PoolId::Sp)] = &cs.currentSp;
-        pools.maximum[int(PoolId::Sp)] = cs.maxSp;
+        pools.current[int(PoolId::Hp)] = &cs->hp;
+        pools.maximum[int(PoolId::Hp)] = cs->maxHp;
+        pools.current[int(PoolId::Mp)] = &cs->mp;
+        pools.maximum[int(PoolId::Mp)] = cs->maxMp;
+        pools.current[int(PoolId::Sp)] = &cs->sp;
+        pools.maximum[int(PoolId::Sp)] = cs->maxSp;
         apply_instant(pools, {std::uint8_t(v.row),
                               std::int16_t(v.sign * value)});
         return;
@@ -76,7 +77,7 @@ void apply_effect(PlayerState& p, const GameEvent& ev) {
 } // namespace
 
 void apply_events(std::span<const GameEvent> events, GameState& gs,
-                  Inventory* bag,
+                  Inventory* bag, ecs::Pools* pools,
                   std::vector<GameEvent>* followups) {
     PlayerState& p = gs.player;
     for (auto& ev : events) {
@@ -136,7 +137,7 @@ void apply_events(std::span<const GameEvent> events, GameState& gs,
                 break;
             case EventTag::ApplyEffect:
                 if (ev.b != kEventEffectAlreadyApplied) {
-                    apply_effect(p, ev);
+                    apply_effect(p, pools, ev);
                 }
                 break;
             case EventTag::CodexUnlock:
@@ -163,10 +164,10 @@ void apply_events(std::span<const GameEvent> events, GameState& gs,
 }
 
 void apply_events(const std::vector<GameEvent>& events, GameState& gs,
-                  Inventory* bag,
+                  Inventory* bag, ecs::Pools* pools,
                   std::vector<GameEvent>* followups) {
     apply_events(std::span<const GameEvent>(events.data(), events.size()), gs,
-                 bag,
+                 bag, pools,
                  followups);
 }
 

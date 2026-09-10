@@ -510,10 +510,11 @@ ShellResult draw_death_screen(const GameState& gs) {
     return r;
 }
 
-void draw_player_hud(const GameState& gs, float scale) {
+void draw_player_hud(const GameState& gs, const ecs::Pools& pools,
+                     float scale) {
     // Proto_c-style top status bar — single horizontal strip across the
     // full width of the window: Time / HP / MP / SP / Coords / name+level.
-    const auto& cs = gs.player.combatStats;
+    const ecs::Pools& cs = pools;
     const ImVec2 vp = viewport_size();
     const float barH = kTopStatusBarHeight * scale;
 
@@ -555,11 +556,11 @@ void draw_player_hud(const GameState& gs, float scale) {
                     IM_COL32(255, 255, 255, 235), buf);
         ImGui::Dummy(ImVec2(w, h));
     };
-    compact_bar("HP", cs.currentHp, cs.maxHp, IM_COL32(200,  60,  60, 220), 130.0f * scale);
+    compact_bar("HP", cs.hp, cs.maxHp, IM_COL32(200,  60,  60, 220), 130.0f * scale);
     ImGui::SameLine();
-    compact_bar("MP", cs.currentMp, cs.maxMp, IM_COL32( 80, 120, 220, 220), 130.0f * scale);
+    compact_bar("MP", cs.mp, cs.maxMp, IM_COL32( 80, 120, 220, 220), 130.0f * scale);
     ImGui::SameLine();
-    compact_bar("SP", cs.currentSp, cs.maxSp, IM_COL32( 80, 200,  90, 220), 130.0f * scale);
+    compact_bar("SP", cs.sp, cs.maxSp, IM_COL32( 80, 200,  90, 220), 130.0f * scale);
 
     // No Coin / Items numbers here: coin is a per-faction COMMODITY since the
     // barter rework, so a single summed "wallet" (and a raw item count) is a

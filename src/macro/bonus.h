@@ -405,7 +405,7 @@ inline float get_carry_capacity(const Attributes& a, const Skills& s,
 // ── Instant: act once on the pools ───────────────────────────────────────
 
 // The three pools, named so this layer can speak about them without knowing
-// which container a particular body keeps them in (the player's CombatStats,
+// which container a particular body keeps them in (every body's Pools,
 // a body's ecs::Pools). Values are ints because pools are ints everywhere.
 struct PoolSlice {
     int* current[int(PoolId::Count)] = {nullptr, nullptr, nullptr};

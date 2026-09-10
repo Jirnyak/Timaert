@@ -5,6 +5,7 @@
 #include "content/plot/encounters.h"
 #include "content/plot/intro.h"
 #include "events/effect_applicator.h"
+#include "ecs/pools.h"
 #include "events/event_bus.h"
 #include "events/logic_nodes.h"
 #include "events/node_registry.h"
@@ -91,7 +92,7 @@ void apply_pending(sm::EventBus& bus, sm::GameState& gs, std::size_t& applied) {
         const std::size_t begin = applied;
         const std::size_t end = events.size();
         std::span<const sm::GameEvent> pending(events.data() + begin, end - begin);
-        sm::apply_events(pending, gs, &bag);
+        sm::apply_events(pending, gs, &bag, nullptr);
         applied = end;
     }
 }
@@ -315,12 +316,15 @@ void test_effect_applicator_ts_verbs() {
     player.sheet.levelData = sm::default_level_data();
     player.sheet.levelData.exp = 0;
     player.sheet.levelData.expToNext = 100;
-    player.combatStats.currentHp = 20;
-    player.combatStats.maxHp = 50;
-    player.combatStats.currentMp = 5;
-    player.combatStats.maxMp = 30;
-    player.combatStats.currentSp = 20;
-    player.combatStats.maxSp = 40;
+    // The bars are a BODY block now (landing 4) — the applicator is handed
+    // the Pools the way it is handed the bag.
+    sm::ecs::Pools verbPools{};
+    verbPools.hp = 20;
+    verbPools.maxHp = 50;
+    verbPools.mp = 5;
+    verbPools.maxMp = 30;
+    verbPools.sp = 20;
+    verbPools.maxSp = 40;
 
     std::vector<sm::GameEvent> events;
     sm::GameEvent gold{sm::EventTag::PlayerGoldChange};
@@ -405,7 +409,7 @@ void test_effect_applicator_ts_verbs() {
     events.push_back(failQuest);
     events.push_back(failQuest);
 
-    sm::apply_events(events, verbState, &bag);
+    sm::apply_events(events, verbState, &bag, &verbPools);
 
     // Money is coin now: the wallet drains to ZERO and cannot go negative —
     // the uncovered remainder of a penalty is a DEBT FACT, not a negative
@@ -414,9 +418,9 @@ void test_effect_applicator_ts_verbs() {
         "PlayerGoldChange did not drain the wallet");
     // HP is 50 rather than 33: the razed verb took nothing, which is the
     // point of razing it.
-    CHECK_OR_RETURN(!(player.combatStats.currentHp != 50
-        || player.combatStats.currentMp != 25
-        || player.combatStats.currentSp != 26),
+    CHECK_OR_RETURN(!(verbPools.hp != 50
+        || verbPools.mp != 25
+        || verbPools.sp != 26),
         "ApplyEffect hp/mp/sp verbs produced wrong combat stats");
     CHECK_OR_RETURN(!(player.sheet.levelData.exp != 42 || player.sheet.levelData.level != 1),
         "grant_xp did not apply XP without direct level mutation");
@@ -436,16 +440,16 @@ void test_effect_applicator_ts_verbs() {
     // NO PLOT FILE CAN WOUND ANYBODY (owner, 2026-08-27). The verb is gone,
     // and the road it used is closed too: an instant bonus may not drive HP
     // down, because a wound is a blow and blows have exactly one door.
-    sm::PlayerState hurtMe{};
-    hurtMe.combatStats.currentHp = 7;
-    hurtMe.combatStats.maxHp = 50;
+    sm::ecs::Pools hurtPools{};
+    hurtPools.hp = 7;
+    hurtPools.maxHp = 50;
     sm::GameEvent lethal{sm::EventTag::ApplyEffect};
     lethal.s1 = "damage_hp";
     lethal.ix = 10;
     sm::GameState lethalState{};
-    lethalState.player = hurtMe;
-    sm::apply_events(std::span<const sm::GameEvent>(&lethal, 1), lethalState, &bag);
-    CHECK_OR_RETURN(!(lethalState.player.combatStats.currentHp != 7),
+    sm::apply_events(std::span<const sm::GameEvent>(&lethal, 1), lethalState,
+                     &bag, &hurtPools);
+    CHECK_OR_RETURN(!(hurtPools.hp != 7),
         "a razed verb must do NOTHING, not something smaller");
     // ...and the registry itself refuses the same thing by the other road,
     // so restoring the verb would not restore the hole.
@@ -481,7 +485,6 @@ void test_grant_xp_levels_through_the_one_path() {
     sm::PlayerState& player = xpState.player;
     player.sheet.levelData = sm::default_level_data();
     player.sheet.attributes[sm::AttributeId::Wis] = 0;  // isolate from the wis dividend (own test)
-    player.combatStats = sm::calculate_combat_stats(player.sheet.attributes, player.sheet.skills);
     const int firstThreshold = player.sheet.levelData.expToNext;
 
     sm::EventBus bus;
@@ -523,7 +526,7 @@ void test_grant_xp_pays_the_wis_dividend() {
     sm::GameEvent grant{sm::EventTag::ApplyEffect};
     grant.s1 = "grant_xp";
     grant.ix = 100;
-    sm::apply_events(std::span<const sm::GameEvent>(&grant, 1), wisState, &bag);
+    sm::apply_events(std::span<const sm::GameEvent>(&grant, 1), wisState, &bag, nullptr);
     if (player.sheet.levelData.exp != 110) {
         std::fprintf(stderr, "exp=%d (expected 110)\n",
                      player.sheet.levelData.exp);
@@ -613,25 +616,27 @@ void test_unhandled_tag_is_inert_in_applicator() {
     player.sheet.levelData.exp =
         sm::exp_to_next_level(1) + sm::exp_to_next_level(2) + 5;
     player.sheet.levelData.attributePoints = 7;
-    player.combatStats.currentHp = 7;
-    player.combatStats.maxHp = 9;
+    sm::ecs::Pools inertPools{};
+    inertPools.hp = 7;
+    inertPools.maxHp = 9;
 
     const int beforeLevel = player.sheet.levelData.level;
     const int beforeExp = player.sheet.levelData.exp;
     const int beforeExpToNext = player.sheet.levelData.expToNext;
     const int beforeAttributePoints = player.sheet.levelData.attributePoints;
-    const int beforeHp = player.combatStats.currentHp;
-    const int beforeMaxHp = player.combatStats.maxHp;
+    const int beforeHp = inertPools.hp;
+    const int beforeMaxHp = inertPools.maxHp;
 
     sm::GameEvent unhandled{sm::EventTag::Custom};
     unhandled.ix = 99;
-    sm::apply_events(std::span<const sm::GameEvent>(&unhandled, 1), levelState, &bag);
+    sm::apply_events(std::span<const sm::GameEvent>(&unhandled, 1), levelState,
+                     &bag, &inertPools);
     CHECK_OR_RETURN(!(player.sheet.levelData.level != beforeLevel
         || player.sheet.levelData.exp != beforeExp
         || player.sheet.levelData.expToNext != beforeExpToNext
         || player.sheet.levelData.attributePoints != beforeAttributePoints
-        || player.combatStats.currentHp != beforeHp
-        || player.combatStats.maxHp != beforeMaxHp),
+        || inertPools.hp != beforeHp
+        || inertPools.maxHp != beforeMaxHp),
         "an unhandled tag mutated player inside effect applicator");
 }
 
@@ -1111,7 +1116,7 @@ void test_quest_failed_settles_its_offer() {
         || !offer_settled(gs.player, q)),
         "expiry did not settle the offer / count the failure honestly");
 
-    sm::apply_events(bus.tick_events(), gs, &bag);
+    sm::apply_events(bus.tick_events(), gs, &bag, nullptr);
     CHECK_OR_RETURN(!(gs.player.failedQuestCount != 1u),
         "an already-applied QuestFail was double-counted");
     CHECK_OR_RETURN(!(!engine.is_known(active, gs.player, q)),
@@ -1596,7 +1601,7 @@ void test_abandon_emits_and_removes() {
     // settlement may re-offer it the same day, exactly as before.
     sm::GameState abandonState{};
     sm::PlayerState& player = abandonState.player;
-    sm::apply_events(bus.tick_events(), abandonState, &bag);
+    sm::apply_events(bus.tick_events(), abandonState, &bag, nullptr);
     CHECK_OR_RETURN(!(player.completedQuestCount != 0u
         || player.failedQuestCount != 0u
         || engine.is_known(active, player, q)),
@@ -1852,7 +1857,7 @@ void test_generated_delivery_quest_flow() {
     CHECK_OR_RETURN(!(!has_tag(bus, sm::EventTag::QuestComplete)),
         "completion did not emit QuestComplete");
 
-    sm::apply_events(bus.tick_events(), gs, &bag);
+    sm::apply_events(bus.tick_events(), gs, &bag, nullptr);
     CHECK_OR_RETURN(!(gs.player.completedQuestCount != 1u),
         "QuestComplete was not applied to player completion state");
     CHECK_OR_RETURN(!(active.empty() && gs.nextQuestOrdinal != 2u),
@@ -1861,7 +1866,7 @@ void test_generated_delivery_quest_flow() {
         "gold reward was not applied exactly once");
 
     bus.flush();
-    sm::apply_events(bus.tick_events(), gs, &bag);
+    sm::apply_events(bus.tick_events(), gs, &bag, nullptr);
     CHECK_OR_RETURN(!(sm::wallet_value(bag) != startGold + rewardGold),
         "empty post-flush tick reapplied reward");
 }

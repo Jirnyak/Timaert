@@ -284,7 +284,12 @@ namespace sm {
 // «никакого особенного игрока и ущербных НПЦ»). `ecs::Pools` несёт дробный
 // остаток отдыха рядом со своей полосой, и она едет в снимке макро-ECS
 // сырыми байтами (save.cpp w.pod) — рост POD'а есть смена формата.
-constexpr int kSaveVersion = 84;
+// v85 (2026-09-10): посадка 4 — PlayerState::combatStats УМЕР: полосы игрока
+// живут в ecs::Pools его сквада и едут ТОЛЬКО снимком макро-ECS (36 байт
+// p.combatStats выпали из write_player; второй комплект полос игрока на
+// диске был дефектом). Дробные остатки HP/MP игрока впервые переживают
+// загрузку — они в Pools, а App-аккумулятор умер.
+constexpr int kSaveVersion = 85;
 
 enum class SettlementMood : std::uint8_t {
     Prosperous, Stable, Tense, Unrest, Revolt, Count
@@ -501,10 +506,13 @@ struct PlayerState {
     // player and every humanoid NPC now describe their RPG state through one
     // type; see macro/character_sheet.h.
     CharacterSheet sheet;
-    // Derived runtime combat block (HP/MP/SP + regen). Stays a top-level field,
-    // NOT inside the sheet — it is projected FROM the sheet, not persisted as
-    // part of it (mirrors an NPC's ECS Health/Combat living outside its sheet).
-    CombatStats combatStats;
+    // (No `combatStats` field. The player's three bars are the ordinary
+    // ecs::Pools on his squad entity — macro/player_entity.h player_pools()
+    // — refreshed from this sheet through the one door every leader's are
+    // (squad.h refresh_body_from_sheet). It sat here as a nine-field private
+    // store with three cached rest rates until 2026-09-10, and it was the
+    // last field that made him a different kind of body from the squads
+    // around him: landing 4 of the «полосы на тело» track.)
     // (No `inventory` field. The player's bag is the ordinary
     // ecs::NpcInventory on his squad entity — macro/player_entity.h
     // player_inventory(). It was the last large field that made him a

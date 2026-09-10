@@ -800,7 +800,7 @@ entt::entity SubworldEngine::remap_macro_player_to_origin() {
 // sim. Its scalars are a transient projection of the macro-authoritative
 // player: sync_player_entity_position pulls Position + Health in at each tick
 // top, combat mutates Health in place, and reconcile_player_hp_to_macro pushes
-// the result back onto combatStats.currentHp (which drives the death screen).
+// the result back onto the squad Pools (which drives the death screen).
 // Lifecycle is explicit and symmetric — spawn_player_entity() on enter,
 // clear_player_entity() on leave — so exactly one PlayerTag entity is live while
 // a subworld is active and none survives into the macro world. (The player
@@ -851,7 +851,7 @@ void SubworldEngine::spawn_player_entity() {
     reg.emplace<ecs::Position>(e, playerX_, playerY_, 0.0f);
     reg.emplace<ecs::PlayerTag>(e);
     // Inc 4b: the player is a full combat participant, not an inert anchor.
-    //  - Health mirrors the authoritative macro scalar (combatStats.currentHp);
+    //  - Pools mirror THE store — the squad entity's own block (landing 4);
     //    sync_player_entity_position pulls it in at each tick top and
     //    reconcile_player_hp_to_macro pushes the post-combat result back out.
     //  - SubworldTag puts the entity in the combat actor set so hostiles pick
@@ -867,21 +867,18 @@ void SubworldEngine::spawn_player_entity() {
     //    the next swing. The NPC actor loop still never drives it: is_player_side
     //    makes the player non-hostile-to-itself, so it is skipped as an attacker
     //    there — the sole trigger stays the input-driven tick_player_melee.
-    const int maxHp = gs_ ? std::max(1, gs_->player.combatStats.maxHp) : 1;
-    const int curHp = gs_
-        ? std::clamp(gs_->player.combatStats.currentHp, 0, maxHp)
-        : maxHp;
     {
+        // The body mirrors THE store — the ordinary Pools on his squad
+        // entity (landing 4; the squad survives entering a subworld by the
+        // MacroNpcRuntime rule above). All three bars, carries included:
+        // the mirror of a subset is exactly how mana stayed private
+        // property, and the seam pulls/pushes this same block each tick.
         ecs::Pools pools{};
-        pools.hp = curHp;
-        pools.maxHp = maxHp;
-        // The player's mana is still owned by the macro scalar and spent from
-        // it (spellbook_start_cast); this mirrors it onto the body so the
-        // scene reads one block for every actor, the player included.
-        pools.maxMp = gs_ ? std::max(0, gs_->player.combatStats.maxMp) : 0;
-        pools.mp = gs_
-            ? std::clamp(gs_->player.combatStats.currentMp, 0, pools.maxMp)
-            : pools.maxMp;
+        if (const ecs::Pools* squadPools = player_pools(*ecs_)) {
+            pools = *squadPools;
+        }
+        pools.maxHp = std::max(1, pools.maxHp);
+        pools.hp = std::clamp(pools.hp, 0, pools.maxHp);
         reg.emplace<ecs::Pools>(e, pools);
     }
     reg.emplace<ecs::BodyRadius>(e, ecs::BodyRadius{kPlayerBodyRadius});
@@ -1017,7 +1014,7 @@ void SubworldEngine::sync_player_entity_position() {
     //
     // Inc 5c (D3 body-native): only the HERO body is macro-driven. The hero body
     // carries no NPCKind — that is the discriminator possess_entity maintains. For
-    // it, HP stays MACRO-authoritative (pull combatStats -> Health here; combat
+    // it, HP stays SQUAD-authoritative (pull squad Pools -> body here; combat
     // mutates it in place; reconcile pushes it back onto currentHp at tick end)
     // and outgoing melee damage tracks the sheet so a mid-subworld level-up / gear
     // change lands on the next swing. A POSSESSED foreign body (has NPCKind) is
@@ -1031,16 +1028,15 @@ void SubworldEngine::sync_player_entity_position() {
         playerZ_ = p.z;
         if (gs_ && !reg.all_of<ecs::NPCKind>(e)) {
             if (auto* h = reg.try_get<ecs::Pools>(e)) {
-                const int maxHp = std::max(1, gs_->player.combatStats.maxHp);
-                h->maxHp = maxHp;
-                h->hp = std::clamp(
-                    gs_->player.combatStats.currentHp, 0, maxHp);
-                // Mana rides down with it — a cast spends the macro scalar,
-                // and a body whose block says 0/0 mana would be a body the
-                // scene believes has none.
-                h->maxMp = std::max(0, gs_->player.combatStats.maxMp);
-                h->mp = std::clamp(
-                    gs_->player.combatStats.currentMp, 0, h->maxMp);
+                // Pull THE store (the squad entity's Pools — landing 4)
+                // into the body's mirror, whole block: a cast spends the
+                // squad pools, a potion lands there, and the body must say
+                // what the store says before combat mutates it in place.
+                if (const ecs::Pools* squadPools = player_pools(*ecs_)) {
+                    *h = *squadPools;
+                    h->maxHp = std::max(1, h->maxHp);
+                    h->hp = std::clamp(h->hp, 0, h->maxHp);
+                }
             }
             if (auto* c = reg.try_get<ecs::Combat>(e)) {
                 // Per-tick refresh reads the same EFFECTIVE sheet the spawn
@@ -1124,39 +1120,43 @@ void SubworldEngine::reconcile_tracked_bodies_to_macro() {
 void SubworldEngine::reconcile_player_hp_to_macro() {
     if (!ecs_ || !gs_) return;
     auto& reg = ecs_->reg;
-    // Tick-end push: whatever damage the universal combat/projectile paths dealt
-    // to the player entity's Health this tick is written back onto the macro
-    // scalar (currentHp), which is what drives the death screen. Incoming-hit
-    // feedback and godMode invulnerability are unified here — one place for both
-    // melee and projectile damage, since both now mutate the same Health.
-    // View includes Dead: a lethal hit must still reconcile currentHp to 0.
+    // Tick-end push: whatever damage the universal combat/projectile paths
+    // dealt to the player BODY's Pools this tick is written back onto THE
+    // store — the ordinary Pools on his squad entity (landing 4) — which is
+    // what drives the death screen. Incoming-hit feedback and godMode
+    // invulnerability are unified here — one place for both melee and
+    // projectile damage, since both mutate the same block.
+    // View includes Dead: a lethal hit must still reconcile the store to 0.
+    ecs::Pools* squadPools = player_pools(*ecs_);
+    if (!squadPools) return;
     auto pv = reg.view<ecs::PlayerTag, ecs::Pools>();
     for (auto e : pv) {
         auto& h = pv.get<ecs::Pools>(e);
         // Inc 5c (D3 body-native): a POSSESSED foreign body (has NPCKind) owns
-        // its Health — do NOT reconcile it onto gs.player, which stays frozen as
-        // the preserved revert target. The one thing that must still cross back
-        // is death: if the body you inhabit dies, your consciousness dies with
-        // it (game-over routed through the macro scalar, exactly like the hero).
-        // godMode keeps the inhabited body on its feet.
+        // its Pools — do NOT reconcile them onto the player's squad, which
+        // stays frozen as the preserved revert target. The one thing that
+        // must still cross back is death: if the body you inhabit dies, your
+        // consciousness dies with it (game-over routed through the squad
+        // store, exactly like the hero). godMode keeps the inhabited body on
+        // its feet.
         if (reg.all_of<ecs::NPCKind>(e)) {
             if (godMode_) {
                 if (h.hp < 1.0f) h.hp = 1.0f;
                 reg.remove<ecs::Dead>(e);
             } else if (h.hp <= 0) {
-                gs_->player.combatStats.currentHp = 0;
+                squadPools->hp = 0;
             }
             continue;
         }
-        const int maxHp = std::max(1, gs_->player.combatStats.maxHp);
+        const int maxHp = std::max(1, squadPools->maxHp);
         if (godMode_) {
             // Invulnerable: undo any incoming damage applied this tick and keep
             // the entity out of the death path entirely.
-            h.hp = float(std::clamp(gs_->player.combatStats.currentHp, 0, maxHp));
+            h.hp = std::clamp(squadPools->hp, 0, maxHp);
             reg.remove<ecs::Dead>(e);
             continue;
         }
-        const int before = std::clamp(gs_->player.combatStats.currentHp, 0, maxHp);
+        const int before = std::clamp(squadPools->hp, 0, maxHp);
         const int after = std::clamp(int(std::round(h.hp)), 0, maxHp);
         // Keep the Dead tag consistent with the reconciled scalar. A lethal hit
         // (after == 0) leaves it on: the entity drops out of every combat view,
@@ -1194,7 +1194,7 @@ void SubworldEngine::reconcile_player_hp_to_macro() {
                           label, lethal ? "killed" : "hit", dmg);
             push_combat_log(logMsg);
         }
-        gs_->player.combatStats.currentHp = after;
+        squadPools->hp = after;
     }
 }
 
@@ -1645,15 +1645,19 @@ bool SubworldEngine::possess_by_id(std::uint32_t entityId) {
 
 int SubworldEngine::player_display_hp() const {
     if (ecs_) {
-        // The flagged body's Health IS the display truth: for the hero it mirrors
-        // combatStats (kept in sync each tick), for a possessed foreign body it is
-        // the body's own pool — so the HUD/flash follows possession with no
-        // gs.player mutation (D3 keeps gs.player frozen as the revert target).
+        // The flagged body's Pools ARE the display truth: for the hero they
+        // mirror the squad store (kept in sync each tick), for a possessed
+        // foreign body they are the body's own — so the HUD/flash follows
+        // possession with no squad mutation (D3 keeps the player's own squad
+        // frozen as the revert target).
         for (auto e : ecs_->reg.view<ecs::PlayerTag, ecs::Pools>()) {
             return int(std::round(ecs_->reg.get<ecs::Pools>(e).hp));
         }
+        if (const ecs::Pools* squadPools = player_pools(*ecs_)) {
+            return squadPools->hp;
+        }
     }
-    return gs_ ? gs_->player.combatStats.currentHp : 0;
+    return 0;
 }
 
 bool SubworldEngine::player_threat_callback(void* user,
@@ -1668,7 +1672,7 @@ bool SubworldEngine::player_threat_callback(void* user,
 
 void SubworldEngine::tick_player_melee() {
     if (!ecs_ || !gs_) return;
-    if (gs_->player.combatStats.currentHp <= 0) return;
+    if (player_display_hp() <= 0) return;
     if (!playerAttackHeld_) return;
 
     auto& reg = ecs_->reg;
@@ -3408,17 +3412,19 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
 }
 
 bool SubworldEngine::drink_from_well() {
-    if (!active_ || !gs_) return false;
-    auto& cs = gs_->player.combatStats;
-    if (cs.currentSp >= cs.maxSp) {
+    if (!active_ || !gs_ || !ecs_) return false;
+    ecs::Pools* cs = player_pools(*ecs_);
+    if (!cs) return false;
+    if (cs->sp >= cs->maxSp) {
         set_status("You are not thirsty.");
         return false;
     }
     // An hour of rest, taken standing: the rest law's own per-hour fraction
-    // of the bar (kRestRegenPctPerHour), so the well cannot be a better rest
-    // than resting and cannot be a worse one.
-    const int gain = std::max(1, int(float(cs.maxSp) * kRestRegenPctPerHour));
-    cs.currentSp = std::min(cs.maxSp, cs.currentSp + gain);
+    // of the bar (kRestRegenPctPerHour) — an INTERACTION, not a regen (the
+    // subworld has none, owner 2026-09-10) — so the well cannot be a better
+    // rest than resting and cannot be a worse one.
+    const int gain = std::max(1, int(float(cs->maxSp) * kRestRegenPctPerHour));
+    cs->sp = std::min(cs->maxSp, cs->sp + gain);
     char msg[64];
     std::snprintf(msg, sizeof(msg), "You drink deep. +%d SP", gain);
     set_status(msg);

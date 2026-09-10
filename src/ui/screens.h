@@ -12,6 +12,7 @@
 #include "imgui.h"
 #include <cstdint>
 
+#include "ecs/pools.h"             // Pools (the HUD reads THE bar store)
 #include "macro/character_sheet.h" // CharacterSheet (the creation screen authors one)
 #include "macro/map_generator.h"   // LayerParameters
 #include "macro/save.h"            // SaveSummary
@@ -151,7 +152,11 @@ ShellResult draw_game_menu();
 ShellResult draw_death_screen(const GameState& gs);
 
 // Top-left player HUD: HP / MP / SP bars, gold, day/time, level, position.
-void draw_player_hud(const GameState& gs, float scale = 1.0f);
+// `pools` — THE store of his bars (the ordinary ecs::Pools on his squad
+// entity, landing 4); the HUD is a reader like any other and is handed the
+// block rather than reaching for a scalar copy that no longer exists.
+void draw_player_hud(const GameState& gs, const ecs::Pools& pools,
+                     float scale = 1.0f);
 
 // Proto_c-style bottom command toolbar — visual buttons that emit
 // semantic intents the app loop translates into actions.

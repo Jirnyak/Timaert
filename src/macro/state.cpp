@@ -72,9 +72,10 @@ PlayerState default_player() {
     p.sheet.attributes = default_attributes();
     p.sheet.skills     = default_skills();
     p.sheet.levelData  = default_level_data();
-    p.combatStats = calculate_combat_stats(p.sheet.attributes, p.sheet.skills);
-
-
+    // (No bars here: the three pools are born WITH his squad entity —
+    // ensure_macro_player_entity fills them from this sheet through the one
+    // «sheet → body» door. A PlayerState cannot be hurt or tired any more;
+    // it is not a body.)
 
     // Starter spellbook: magic_bolt.
     spellbook_learn(p.spellBook, spell_ordinal("magic_bolt"));

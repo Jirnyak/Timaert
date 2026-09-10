@@ -6,6 +6,7 @@
 #include <string>
 
 #include "content/spells/casting.h"
+#include "ecs/pools.h"
 #include "macro/attributes.h"
 #include "macro/spell_book_state.h"
 
@@ -43,19 +44,19 @@ int spell_radius(const SpellDef& spell,
 // default — a call site without a body in hand (a paused panel, the world
 // map) says 0 out loud.
 CastCheck spellbook_can_cast_ex(const SpellBook& sb,
-                                const CombatStats& combat,
+                                const ecs::Pools& combat,
                                 int spellOrd,
                                 bool inMicro,
                                 std::uint32_t bodyRecoverySteps);
 // The mana-or-toggle half of a cast. Recovery is NOT charged here — the
 // micro door (spellbook_cast) writes the body's gate; a world-map cast has
 // no fighting body and owes none.
-int spellbook_start_cast(SpellBook& sb, CombatStats& combat,
+int spellbook_start_cast(SpellBook& sb, ecs::Pools& combat,
                          int spellOrd);
 // diceRng — the stream the wound is ROLLED from at cast. nullptr = the
 // strike's exact expectation, no crit: what a harness with no stream gets,
 // deterministic by construction.
-bool spellbook_cast(ecs::World& w, SpellBook& sb, CombatStats& combat,
+bool spellbook_cast(ecs::World& w, SpellBook& sb, ecs::Pools& combat,
                     const Attributes& attributes, const Skills& skills,
                     int spellOrd,
                     std::uint32_t playerId, float px, float py, float pz,
@@ -66,6 +67,6 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, CombatStats& combat,
 // Advance every timer the book owns by `steps` simulation steps (core/time.h).
 // It used to take a float dt of real seconds — the same wall-clock coupling the
 // tick ladder abolished everywhere else.
-void spellbook_tick(SpellBook& sb, CombatStats& combat, std::uint32_t steps);
+void spellbook_tick(SpellBook& sb, ecs::Pools& combat, std::uint32_t steps);
 
 } // namespace sm

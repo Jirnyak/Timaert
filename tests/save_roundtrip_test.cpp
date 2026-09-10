@@ -322,15 +322,10 @@ sm::GameState make_state() {
     gs.player.sheet.levelData.expToNext = 6543;
     gs.player.sheet.levelData.attributePoints = 4;
     gs.player.sheet.levelData.skillPoints = 5;
-    gs.player.combatStats.currentHp = 33;
-    gs.player.combatStats.maxHp = 111;
-    gs.player.combatStats.currentMp = 44;
-    gs.player.combatStats.maxMp = 222;
-    gs.player.combatStats.currentSp = 55;
-    gs.player.combatStats.maxSp = 333;
-    gs.player.combatStats.hpRegen = 1.25f;
-    gs.player.combatStats.mpRegen = 2.5f;
-    gs.player.combatStats.spRegen = 3.75f;
+    // (No bars here since v85: the player's three pools ride the macro-ECS
+    // snapshot inside his squad's MacroNpcRecord — the POD block the
+    // static_assert in ecs/pools.h guards — not the player scalar block this
+    // test drives. player_is_a_squad_test pins that path.)
     gs.player.codexUnlockedBits = sm::codex_bit(sm::CodexArticleId::Witches)
                                 | sm::codex_bit(sm::CodexArticleId::Market);
     {   // the JOURNAL (v58): two learned facts ride the save entry-for-entry
@@ -866,11 +861,6 @@ void run_roundtrip() {
         || p.sheet.levelData.skillPoints != 5) {
         FAIL_BAIL("player level data lost");
     }
-    if (p.combatStats.currentHp != 33 || p.combatStats.maxMp != 222
-        || !nearf(p.combatStats.spRegen, 3.75f)) {
-        FAIL_BAIL("player combat stats lost");
-    }
-
     if (sm::player_reputation(&loaded, "guild") != 42) {
         FAIL_BAIL("player standing lost (his row in the faction matrix)");
     }

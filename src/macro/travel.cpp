@@ -69,13 +69,12 @@ bool macro_travel_cost_for_cell(const CharacterSheet& sheet,
     return true;
 }
 
-bool drain_player_sp_for_macro_cell(GameState& gs,
+bool drain_player_sp_for_macro_cell(ecs::Pools& pools,
                                     const CharacterSheet& sheet,
                                     const Inventory* bag,
                                     const TerrainData& terrain,
                                     const FeatureLayer* features,
                                     int x, int y,
-                                    float& spCarry,
                                     MacroTravelCost* out,
                                     const TreeLayer* treeLayer,
                                     int fromX, int fromY) {
@@ -87,7 +86,7 @@ bool drain_player_sp_for_macro_cell(GameState& gs,
 
     // One act, one place: accumulate the fractional cost, charge whole SP, and
     // let the exhaustion curve bill the body for whatever stamina could not pay.
-    spend_travel_stamina(gs.player.combatStats, spCarry, cost.totalCost);
+    spend_travel_stamina(pools, cost.totalCost);
 
     if (out) {
         *out = cost;

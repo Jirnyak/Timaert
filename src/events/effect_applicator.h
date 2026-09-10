@@ -6,6 +6,7 @@
 #include "macro/state.h"
 
 namespace sm {
+namespace ecs { struct Pools; }
 
 // Takes the whole GameState, not just the player: a ReputationChange moves the
 // player's row in the ONE relation matrix (gs.factions), which is where his
@@ -21,11 +22,15 @@ namespace sm {
 // player's bag is an ordinary NpcInventory on his squad entity now, so the
 // applicator is handed the container rather than reaching into PlayerState.
 // Null = no world yet; a paying effect simply does not pay.
+// `pools` is the body a pool verb (heal_hp / restore_* / drain_sp) writes —
+// the ordinary ecs::Pools on the player's squad entity (landing 4; there is
+// no bar on PlayerState to write to). Null = no body yet; a pool verb
+// simply does not land, the same sentence the bag speaks.
 void apply_events(std::span<const GameEvent> events, GameState& gs,
-                  Inventory* bag,
+                  Inventory* bag, ecs::Pools* pools,
                   std::vector<GameEvent>* followups = nullptr);
 void apply_events(const std::vector<GameEvent>& events, GameState& gs,
-                  Inventory* bag,
+                  Inventory* bag, ecs::Pools* pools,
                   std::vector<GameEvent>* followups = nullptr);
 
 } // namespace sm

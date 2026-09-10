@@ -61,7 +61,7 @@
 #include "macro/journal.h"
 #include "macro/pathfinding.h"
 #include "macro/items.h"
-#include "macro/player_recovery.h"
+#include "macro/recovery.h"
 #include "macro/travel.h"
 #include "macro/audio.h"
 #include "macro/save.h"
@@ -214,7 +214,10 @@ struct App {
     std::size_t          appliedStoryResultCount = 0;
     std::size_t          appliedCombatEventCount = 0;
     std::size_t          appliedSpawnEventCount = 0;
-    sm::PlayerRecoveryAccumulator playerRecovery;
+    // (No playerRecovery accumulator. The fractional HP/MP rest remainders
+    // are Pools::hpCarry/mpCarry on the player's squad entity — the same
+    // slots every lord's are, and unlike the App-side pair they ride the
+    // save. Landing 4.)
     sm::MacroNpcAiRuntime npcAi;
     sm::sub::SubworldEngine subworld;
     sm::AudioSystem      audio;
@@ -222,6 +225,12 @@ struct App {
     sm::MusicId          audioFailed = sm::MusicId::Count;
     int                  subworldLastPlayerHp = -1;
     float                subworldHitFlashTimer = 0.0f;
+    // Harness-only: freeze the REST LAW itself for a conservation
+    // measurement (smoke.cpp SP-drain scenarios). The old idiom — zeroing
+    // the cached spRegen field — could be thawed silently by any maxima
+    // refresh (seed-999 regression, 2026-09-06); a gate on the one call
+    // site cannot, because there is no cached rate left to overwrite.
+    bool                 restRegenSuppressed = false;
     // (No pending-cast wind-up: a cast resolves at its own click and the
     // time it costs is the BODY's one recovery gate — ecs::Combat::
     // recoverySteps, owner verdict 2026-09-09.)
@@ -391,6 +400,7 @@ bool route_macro_npc_attack(App& app, entt::entity npc);
 void perform_encounter_auto(App& app, entt::entity npc, sm::Ambush ambush);
 void detect_forced_encounter(App& app);
 float& player_sp_carry(App& app);
+sm::ecs::Pools& player_pools(App& app);
 sm::CharacterSheet player_effective_sheet(const App& app);
 void sync_audio_music(App& app);
 void refresh_save_summary(App& app);

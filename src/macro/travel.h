@@ -42,7 +42,7 @@ inline OverloadCharge overload_charge_from_capacity(float capacityKg,
                                                     const Inventory& inventory) {
     const float carried = inventory_weight(inventory);
     const float overload = get_overload_penalty(carried, capacityKg);
-    // Native CombatStats are integer POD. Preserve the "any overload hurts"
+    // Bars are integer POD (Pools). Preserve the "any overload hurts"
     // behaviour instead of silently truncating sub-1kg overload to zero.
     return {overload, overload > 0.0f ? int(std::ceil(overload)) : 0};
 }
@@ -86,21 +86,18 @@ bool macro_travel_cost_for_cell(const CharacterSheet& sheet,
                                 // an originless first step are free).
                                 int fromX = -1, int fromY = -1);
 
-// Cross ONE macro cell: resolve its cost and pay it. `spCarry` is the body's
-// ONE signed fractional carry (movement_cost.h settle_sp_carry) — the same
-// field a macro squad keeps on its runtime, because the player is one. It
-// carries the
-// fractional remainder between steps (runtime state, never serialised) — pass
-// the SAME accumulator the subworld path uses, since it is one body walking.
-// Returns false only when the terrain query fails; `out` receives the resolved
-// cost either way.
-bool drain_player_sp_for_macro_cell(GameState& gs,
+// Cross ONE macro cell: resolve its cost and pay it out of `pools` — the
+// body's OWN bar block, carry included (movement_cost.h spend_travel_stamina;
+// the same fields a macro squad spends through, because the player is one).
+// Pass the SAME Pools the subworld path charges, since it is one body
+// walking. Returns false only when the terrain query fails; `out` receives
+// the resolved cost either way.
+bool drain_player_sp_for_macro_cell(ecs::Pools& pools,
                                     const CharacterSheet& sheet,
                                     const Inventory* bag,
                                     const TerrainData& terrain,
                                     const FeatureLayer* features,
                                     int x, int y,
-                                    float& spCarry,
                                     MacroTravelCost* out = nullptr,
                                     const TreeLayer* treeLayer = nullptr,
                                     int fromX = -1, int fromY = -1);

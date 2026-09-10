@@ -86,7 +86,7 @@ int spell_radius(const SpellDef& spell,
 }
 
 CastCheck spellbook_can_cast_ex(const SpellBook& sb,
-                                const CombatStats& combat,
+                                const ecs::Pools& combat,
                                 int spellOrd,
                                 bool inMicro,
                                 std::uint32_t bodyRecoverySteps) {
@@ -103,7 +103,7 @@ CastCheck spellbook_can_cast_ex(const SpellBook& sb,
     }
     if (d->sustained && spellbook_has_sustained(sb, spellOrd))
         return {true, "", 0.0f};
-    if (combat.currentMp < d->manaCost) return {false, "Not enough mana", 0.0f};
+    if (combat.mp < d->manaCost) return {false, "Not enough mana", 0.0f};
 
     if (inMicro && !d->hasMicro) return {false, "Cannot use here", 0.0f};
     if (!inMicro && !d->hasMacro) {
@@ -116,7 +116,7 @@ CastCheck spellbook_can_cast_ex(const SpellBook& sb,
     return {true, "", 0.0f};
 }
 
-int spellbook_start_cast(SpellBook& sb, CombatStats& combat,
+int spellbook_start_cast(SpellBook& sb, ecs::Pools& combat,
                          int spellOrd) {
     if (!spell_ordinal_ok(spellOrd)) return 0;
     const SpellDef* d = &kSpellDefs[spellOrd];
@@ -124,12 +124,12 @@ int spellbook_start_cast(SpellBook& sb, CombatStats& combat,
         spellbook_toggle_sustained(sb, spellOrd);
         return 0;
     }
-    combat.currentMp -= d->manaCost;
-    if (combat.currentMp < 0) combat.currentMp = 0;
+    combat.mp -= d->manaCost;
+    if (combat.mp < 0) combat.mp = 0;
     return d->manaCost;
 }
 
-bool spellbook_cast(ecs::World& w, SpellBook& sb, CombatStats& combat,
+bool spellbook_cast(ecs::World& w, SpellBook& sb, ecs::Pools& combat,
                     const Attributes& attributes, const Skills& skills,
                     int spellOrd,
                     std::uint32_t pid, float px, float py, float pz,
@@ -199,7 +199,7 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, CombatStats& combat,
     return true;
 }
 
-void spellbook_tick(SpellBook& sb, CombatStats& combat, std::uint32_t steps) {
+void spellbook_tick(SpellBook& sb, ecs::Pools& combat, std::uint32_t steps) {
     if (steps == 0u) return;
     const float dt = float(steps) * kStepSeconds;   // for the per-second rates
     // No cooldown loop: recovery lives on the BODY's one gate, drained by
@@ -218,7 +218,7 @@ void spellbook_tick(SpellBook& sb, CombatStats& combat, std::uint32_t steps) {
         return;
     }
 
-    if (combat.currentMp <= 0) {
+    if (combat.mp <= 0) {
         // No mana left: every paying drain collapses at once.
         for (int i = 0; i < kSpellCount; ++i) {
             if (sb.sustained[i] && kSpellDefs[i].manaDrain > 0.0f) {
@@ -234,15 +234,15 @@ void spellbook_tick(SpellBook& sb, CombatStats& combat, std::uint32_t steps) {
     if (drain <= 0) return;
     sb.sustainedDrainCarry -= float(drain);
 
-    if (combat.currentMp >= drain) {
-        combat.currentMp -= drain;
+    if (combat.mp >= drain) {
+        combat.mp -= drain;
         return;
     }
 
     // Not enough for the full bill: newest-numbered drains pay first and the
     // ones the pool cannot cover switch off (the old list's newest-first
     // walk, said in ordinals).
-    int remainingMp = combat.currentMp;
+    int remainingMp = combat.mp;
     int remainingDrain = drain;
     sb.sustainedDrainCarry = 0.0f;
 
@@ -264,7 +264,7 @@ void spellbook_tick(SpellBook& sb, CombatStats& combat, std::uint32_t steps) {
     }
     if (!spellbook_any_sustained(sb)) sb.sustainedDrainCarry = 0.0f;
 
-    combat.currentMp = remainingMp;
+    combat.mp = remainingMp;
 }
 
 } // namespace sm

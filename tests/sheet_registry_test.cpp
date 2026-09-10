@@ -166,7 +166,7 @@ void test_the_governed_numbers_follow_the_row() {
     a[AttributeId::Str] = 10;  a[AttributeId::Intl] = 10;
     a[AttributeId::Spd] = 10;
     Skills none{};
-    const CombatStats bare = calculate_combat_stats(a, none);
+    const BarCeilings bare = bar_ceilings(a, none);
     const DerivedBonuses bareD = calculate_derived(a, none);
     const float bareCarry = get_carry_capacity(a, none);
 
@@ -176,7 +176,7 @@ void test_the_governed_numbers_follow_the_row() {
     trained[SkillId::Armsmaster]       = 20;   // 5 %/rank -> x2
     trained[SkillId::Spellcraft]    = 20;   // 5 %/rank -> x2
     trained[SkillId::Weightlifting] = 10;   // 10 %/rank -> x2
-    const CombatStats tr = calculate_combat_stats(a, trained);
+    const BarCeilings tr = bar_ceilings(a, trained);
     const DerivedBonuses trD = calculate_derived(a, trained);
 
     CHECK(tr.maxHp == bare.maxHp * 2, "maxHp follows bodybuilding's row");
@@ -203,11 +203,12 @@ void test_the_governed_numbers_follow_the_row() {
     // deliberate absence, so it is pinned as one.
     Skills marathoner{};
     marathoner[SkillId::Marathon] = 50;
-    CHECK(calculate_combat_stats(a, marathoner).maxSp == bare.maxSp,
+    CHECK(bar_ceilings(a, marathoner).maxSp == bare.maxSp,
           "no skill grows the stamina BAR: marathon shortens the rest instead");
-    CHECK(calculate_combat_stats(a, marathoner).spRegen > bare.spRegen,
-          "negative control: it does move the rest, so the check above is "
-          "an absence and not a dead sheet");
+    CHECK(skill_mult_of(SkillId::Marathon, 50) > 1.0f,
+          "negative control: the rank does move the rest RATE (rest_pools "
+          "multiplies by this same skill law), so the check above is an "
+          "absence and not a dead sheet");
 
     // And the cost skill, through the movement law's own door.
     Skills pathfinder{};

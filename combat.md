@@ -132,7 +132,7 @@ touches no test.
   `damage_door_test`.
 - ~~`Health` stays float STORAGE~~ — CLOSED, phase 4г (2026-09-06): the bar
   is `int{hp, maxHp}` (save v80). Fractional regen lives in its carry
-  accumulators (macro/player_recovery.h), never in the bar; the execution
+  accumulators (macro/recovery.h; since landing 4 they live in Pools beside their bars), never in the bar; the execution
   blow (`apply_lethal_damage`) is exactly the remaining number, no ceil.
 - **NPC weapon skills** — `multPct` is 100 for every NPC (their rows hold no
   weapons); their strength rides `flatAdd` through Armsmaster as before.

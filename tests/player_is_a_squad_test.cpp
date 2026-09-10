@@ -207,42 +207,46 @@ void test_the_entity_numbers_are_not_stale() {
     gs.player.y = 20.0f;
     gs.player.sheet.attributes[sm::AttributeId::End] = 5;
     gs.player.sheet.levelData.level = 1;
-    recompute_combat_maxima(gs.player.combatStats,
-                            gs.player.sheet.attributes,
-                            gs.player.sheet.skills);
     ecs::World w;
     ensure_macro_player_entity(gs, w);
     const entt::entity e = player_squad_entity(w);
 
     const int bornMaxSp = w.reg.get<ecs::Pools>(e).maxSp;
-    CHECK(bornMaxSp == gs.player.combatStats.maxSp,
-          "his squad is born with his own stamina bar");
+    CHECK(bornMaxSp
+              == bar_ceilings(gs.player.sheet.attributes,
+                              gs.player.sheet.skills).maxSp,
+          "his squad is born with his own stamina bar — the sheet's ceiling");
 
-    // He is wounded, he grows tired, he trains END and he levels — every one
-    // of these used to leave the entity behind FOREVER, because Health and the
-    // march caches were written once at creation. The save then persisted a
-    // hale, rested, level-1 player over a dying, exhausted, level-4 one.
-    gs.player.combatStats.currentHp = 17;
-    gs.player.combatStats.currentSp = -6;   // an honest exhaustion debt
+    // He is wounded, he grows tired, he trains END and he levels. The Pools
+    // on the entity ARE the store now (landing 4): the wound and the debt
+    // are written straight into it, and the sheet change moves the ceilings
+    // through the one door — each bar keeping its FRACTION («доля у всех»),
+    // the debt surviving unclamped.
+    {
+        auto& pools = w.reg.get<ecs::Pools>(e);
+        pools.hp = 17;
+        pools.sp = -6;   // an honest exhaustion debt
+    }
+    const int oldMaxHp = w.reg.get<ecs::Pools>(e).maxHp;
     gs.player.sheet.attributes[sm::AttributeId::End] = 12;
     gs.player.sheet.levelData.level = 4;
-    recompute_combat_maxima(gs.player.combatStats,
-                            gs.player.sheet.attributes,
-                            gs.player.sheet.skills);
     gs.player.x = 33.0f;
     gs.player.y = 44.0f;
     ensure_macro_player_entity(gs, w);
 
     const auto& hp = w.reg.get<ecs::Pools>(e);
-    CHECK(hp.hp == 17.0f, "the wound reached the entity");
-    CHECK(hp.maxHp == float(gs.player.combatStats.maxHp),
-          "and so did the bigger bar the new END bought");
-    CHECK(hp.maxSp == gs.player.combatStats.maxSp,
+    CHECK(hp.maxHp == bar_ceilings(gs.player.sheet.attributes,
+                                   gs.player.sheet.skills).maxHp,
+          "the bigger bar the new END bought reached the entity");
+    CHECK(hp.hp == int(float(hp.maxHp) * (17.0f / float(oldMaxHp))),
+          "the wound rescaled by its FRACTION — no free heal, no theft");
+    CHECK(hp.maxSp == bar_ceilings(gs.player.sheet.attributes,
+                                   gs.player.sheet.skills).maxSp,
           "the stamina ceiling followed the END he trained");
     CHECK(hp.maxSp > bornMaxSp,
           "negative control: that ceiling did MOVE — the check above is not "
           "comparing two copies of the same stale number");
-    CHECK(hp.sp == -6, "the exhaustion DEBT survives the projection, unclamped");
+    CHECK(hp.sp == -6, "the exhaustion DEBT survives the rescale, unclamped");
     CHECK(w.reg.get<ecs::NpcLevel>(e).value == 4, "and he is level 4 to the map");
     const auto& pos = w.reg.get<ecs::Position>(e);
     CHECK(pos.x == 33.0f && pos.y == 44.0f, "the entity stands where he stands");
@@ -286,19 +290,21 @@ void test_one_door_assembles_every_battle_side() {
     gs.player.sheet.attributes[sm::AttributeId::Str] = 18;
     gs.player.sheet.attributes[sm::AttributeId::End] = 18;
     gs.player.sheet.levelData.level = 5;
-    recompute_combat_maxima(gs.player.combatStats,
-                            gs.player.sheet.attributes,
-                            gs.player.sheet.skills);
-    gs.player.combatStats.currentHp = gs.player.combatStats.maxHp / 2;
-    gs.player.combatStats.currentSp = gs.player.combatStats.maxSp / 4;
     ecs::World w;
     ensure_macro_player_entity(gs, w);
     const entt::entity e = player_squad_entity(w);
+    {
+        auto& pools = w.reg.get<ecs::Pools>(e);
+        pools.hp = pools.maxHp / 2;
+        pools.sp = pools.maxSp / 4;
+    }
 
     const AutoBattleSide mine = auto_battle_side_of(w, e, &gs.player.sheet);
     const AutoBattleSide generic = auto_battle_side_of(w, e);
 
-    CHECK(mine.leaderHpOverride == float(gs.player.combatStats.maxHp),
+    CHECK(mine.leaderHpOverride
+              == float(std::max(1, bar_ceilings(gs.player.sheet.attributes,
+                                                gs.player.sheet.skills).maxHp)),
           "handed his sheet, the door states HIS ceiling");
     CHECK(generic.leaderHpOverride < 0.0f,
           "negative control: handed none, the same door derives from the row "
@@ -321,14 +327,10 @@ void test_the_players_wound_settles_through_the_one_door() {
     GameState gs{};
     gs.mapW = gs.mapH = 64;
     gs.player.sheet.attributes[sm::AttributeId::End] = 10;
-    recompute_combat_maxima(gs.player.combatStats,
-                            gs.player.sheet.attributes,
-                            gs.player.sheet.skills);
-    gs.player.combatStats.currentHp = gs.player.combatStats.maxHp;
     ecs::World w;
     ensure_macro_player_entity(gs, w);
     const entt::entity mine = player_squad_entity(w);
-    const int maxHp = gs.player.combatStats.maxHp;
+    const int maxHp = w.reg.get<ecs::Pools>(mine).maxHp;
 
     MacroWorld mw{};
     mw.gs = &gs;
@@ -347,10 +349,7 @@ void test_the_players_wound_settles_through_the_one_door() {
     const auto& hp = w.reg.get<ecs::Pools>(mine);
     CHECK(hp.hp == std::floor(hp.maxHp * 0.5f),
           "the door wrote his wound onto the entity, by the entity's ceiling");
-    CHECK(gs.player.combatStats.currentHp == int(hp.hp),
-          "and his pool followed the entity — one writer, one direction");
-    CHECK(gs.player.combatStats.currentHp > 0
-          && gs.player.combatStats.currentHp < maxHp,
+    CHECK(hp.hp > 0 && hp.hp < maxHp,
           "negative control: he is HURT, not untouched and not dead — the "
           "fraction actually travelled");
     CHECK(!w.reg.all_of<ecs::Dead>(mine),
@@ -385,8 +384,8 @@ void test_the_sheet_door_reads_what_is_standing() {
           "a worn +2 END is IN the sheet the world asks about");
     // ...and the bar follows, because the bar is derived from the sheet —
     // phase 4's promised effect: the breastplate fattens the SP bar.
-    CHECK(calculate_combat_stats(dressed.attributes, dressed.skills).maxSp
-              > calculate_combat_stats(bare.attributes, bare.skills).maxSp,
+    CHECK(bar_ceilings(dressed.attributes, dressed.skills).maxSp
+              > bar_ceilings(bare.attributes, bare.skills).maxSp,
           "a worn +END widens what a day of marching can hold");
     CHECK(gs.player.sheet.attributes.of(AttributeId::End) == 8,
           "the BASE sheet never moved — reads walk the door, writes never do");

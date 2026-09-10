@@ -103,17 +103,21 @@ entt::entity make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
     // differ by seed only; hp stays with the birth sheet so the boot RNG
     // stream and every world stays byte-identical, and cross-layer state
     // travels as FRACTIONS (wound law, fatigue) so the seams never notice.
-    // ALL THREE POOLS, built before the caches that cap them — the ceiling and
-    // the bar it bounds are filled by one door, in one place (squad.h
-    // refresh_leader_travel_stats). Named fields, not a positional list: this
-    // block grows, and a body born short of a bar is the defect the pools
-    // landing exists to make impossible.
+    // ALL THREE POOLS, built through the one «sheet → body» door (squad.h
+    // refresh_body_from_sheet) with the ORDINAL sheet, THEN the hp/mp
+    // ceilings overwritten from the BIRTH sheet above — that override is the
+    // authored quirk of this site, stated here rather than hidden in the
+    // door: hp stays with the birth sheet so the boot RNG stream and every
+    // world stays byte-identical, and cross-layer state travels as FRACTIONS
+    // (wound law, fatigue) so the seams never notice. Named fields, not a
+    // positional list: this block grows, and a body born short of a bar is
+    // the defect the pools landing exists to make impossible.
     ecs::Pools pools{};
+    refresh_body_from_sheet(
+        pools, &rt,
+        make_character_sheet(type, lvl, leader_sheet_seed(ordinal)), type);
     pools.hp = pools.maxHp = hp;
     pools.mp = pools.maxMp = body_max_mp(sheet);
-    refresh_leader_travel_stats(
-        rt, pools, make_character_sheet(type, lvl, leader_sheet_seed(ordinal)),
-        type);
     pools.sp = pools.maxSp;   // born rested
     w.reg.emplace<ecs::Pools>(e, pools);
     w.reg.emplace<ecs::MacroNpcRuntime>(e, rt);

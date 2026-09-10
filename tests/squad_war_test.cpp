@@ -71,7 +71,7 @@ entt::entity make_squad_at(ecs::World& w, NPCType type, const char* faction,
     ecs::Pools pools{};
     pools.hp = pools.maxHp = hp;
     // same door make_npc uses — it caps the bar it is handed
-    refresh_leader_travel_stats(rt, pools, sheet, type);
+    refresh_body_from_sheet(pools, &rt, sheet, type);
     pools.sp = pools.maxSp;               // rested: fatigue 1.0, as before
     reg.emplace<ecs::Pools>(e, pools);
     reg.emplace<ecs::MacroNpcRuntime>(e, rt);
@@ -276,7 +276,7 @@ void test_a_victorious_leader_levels() {
 
 // The player's auto-resolve settles through the SAME halves (Inc 6): the
 // enemy through the ledger and the tracked-death shape, the player where his
-// truth lives — army rows by name, the wound fraction into combatStats, XP
+// truth lives — army rows by name, the wound fraction into his squad Pools, XP
 // by award_exp. Outcomes are CRAFTED here: this pins the settling law, not
 // the resolver's dice (those have their own tests).
 void test_player_auto_resolve_settles_through_the_same_doors() {
@@ -288,8 +288,8 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     SoldierSquad* army = player_roster(w);
     army->push(make_soldier(std::uint8_t(NPCType::Guard), 3, 501u));
     army->push(make_soldier(std::uint8_t(NPCType::Guard), 3, 502u));
-    gs.player.combatStats.maxHp = 100;
-    gs.player.combatStats.currentHp = 100;
+    player_pools(w)->maxHp = 100;
+    player_pools(w)->hp = 100;
     const int level0 = gs.player.sheet.levelData.level;
     const int exp0 = gs.player.sheet.levelData.exp;
     const auto enemy = make_squad_at(w, NPCType::Bandit, "bandits", 3,
@@ -314,8 +314,8 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
                                              /*playerIsA*/true);
     CHECK(total_soldiers(*army) == 1 && (*army)[0].entityId == 502u,
           "the player's fallen soldier left the army by name");
-    CHECK(gs.player.combatStats.currentHp == 60,
-          "the player's wound landed as the fraction, on the macro scalar");
+    CHECK(player_pools(w)->hp == 60,
+          "the player's wound landed as the fraction, in THE store — his squad's Pools");
     CHECK(roster_count(w, gs, 9u) == 0 && w.reg.all_of<ecs::Dead>(enemy),
           "the enemy died through the ledger and the tracked-death shape");
     CHECK(player_inventory(w)->count("wood") == 4,
@@ -333,8 +333,8 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     SoldierSquad* army2 = player_roster(w2);
     army2->push(make_soldier(std::uint8_t(NPCType::Guard), 3, 601u));
     army2->push(make_soldier(std::uint8_t(NPCType::Guard), 3, 602u));
-    gs2.player.combatStats.maxHp = 100;
-    gs2.player.combatStats.currentHp = 100;
+    player_pools(w2)->maxHp = 100;
+    player_pools(w2)->hp = 100;
     const auto victor = make_squad_at(w2, NPCType::Bandit, "bandits", 6,
                                       10.0f, 10.0f, 9u, {41u},
                                       NPCType::Bandit, 5);
@@ -347,7 +347,7 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     settle_player_auto_battle(mw2, victor, loss, /*playerIsA*/true);
     CHECK(total_soldiers(*army2) == 1,
           "defeat took the fallen and left the survivor");
-    CHECK(gs2.player.combatStats.currentHp >= 1,
+    CHECK(player_pools(w2)->hp >= 1,
           "while one of his men stands, defeat wounds the player - "
           "never kills him");
     CHECK(!w2.reg.all_of<ecs::Dead>(victor),
@@ -438,10 +438,10 @@ void test_the_leaders_training_reads_at_the_new_doors() {
         ecs::Pools pools{};
         CharacterSheet trained{};
         trained.skills[SkillId::Scouting] = 25;
-        refresh_leader_travel_stats(rt, pools, trained, NPCType::Bandit);
+        refresh_body_from_sheet(pools, &rt, trained, NPCType::Bandit);
         CHECK(rt.scoutRank == 25, "the scouting rank rides the runtime cache");
         CharacterSheet bare{};
-        refresh_leader_travel_stats(rt, pools, bare, NPCType::Bandit);
+        refresh_body_from_sheet(pools, &rt, bare, NPCType::Bandit);
         CHECK(rt.scoutRank == 0,
               "negative control: a rankless sheet clears the cache");
     }

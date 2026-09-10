@@ -180,16 +180,23 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
     reg.emplace<ecs::Position>(e, body.x, body.y, 0.0f);
     reg.emplace<ecs::VisualPos>(e, body.x, body.y, kBodyVisualCatchUp);
     reg.emplace<ecs::NPCKind>(e, std::uint16_t(body.type), body.faction);
-    // Both pools, through both doors. Mana does NOT cross as a fraction the
-    // way a wound does: nothing in the world spends an NPC's mana yet, so a
-    // body arrives with a full well rather than importing a number no macro
-    // writer maintains. The day an NPC pays for a cast, this is the one line
-    // that starts carrying `mpFraction` beside `healthFraction`.
+    // ALL THREE pools, through the sheet's own doors (CANON S14 «три
+    // ресурса» — a scene body is not a kind of body that gets fewer bars;
+    // sp/maxSp stood at ZERO here until landing 4в). Mana does NOT cross as
+    // a fraction the way a wound does: nothing in the world spends an NPC's
+    // mana yet, so a body arrives with a full well rather than importing a
+    // number no macro writer maintains. The day an NPC pays for a cast, this
+    // is the one line that starts carrying `mpFraction` beside
+    // `healthFraction`. Stamina likewise arrives full: combat does not burn
+    // SP (v1 verdict) and the macro squad's fatigue is squad state, not this
+    // one soldier's.
     {
         ecs::Pools pools{};
         pools.hp = hp;
         pools.maxHp = int(maxHp);
         pools.mp = pools.maxMp = body_max_mp(sheet);
+        pools.sp = pools.maxSp =
+            std::max(1, bar_ceilings(sheet.attributes, sheet.skills).maxSp);
         reg.emplace<ecs::Pools>(e, pools);
     }
     // Its pace: the world's march (macro/movement_cost.h) times what this row

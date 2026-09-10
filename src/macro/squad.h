@@ -26,14 +26,17 @@
 
 namespace sm {
 
-// Refresh the four cached scalars a macro leader's march reads
-// (ecs::MacroNpcRuntime) from his sheet — THE one door, called by make_npc at
-// birth and by award_leader_xp when a level changes the sheet. The old
-// ceiling (`maxSp = 2×maxHp`) was the squads' own SP dialect, priced against
-// nothing; now the leader's bar is calculate_combat_stats — the same formula
-// the player's bar comes from — so "battle of lords" is literal: the lord's
-// END is his squad's endurance, his travel skill its road discount, his
-// marathon its recovery (owner ruling, Session 21).
+// THE «sheet → body» refresh — ONE door for every body of the macro map,
+// the player's squad included: the sheet is the law, and everything derived
+// from it — the three bar ceilings AND the four cached scalars a march reads
+// (ecs::MacroNpcRuntime) — is refreshed here and nowhere else. Called by
+// make_npc at birth, by award_leader_xp when a level changes the sheet, by
+// the player's creation / point-spend / gear-change moments through the same
+// signature. It grew out of `refresh_leader_travel_stats` (maxSp + caches)
+// when landing 4 made the lord's fraction-preserving level-up rescale THE
+// rescale for all three bars of every body — before that the player's
+// ceilings moved by «keep the number, clamp» in one place and a full heal in
+// another, while the lord's kept the fraction: three laws for one event.
 // The KIND is required, not defaulted: the back this leader hauls with is a
 // column of his row (npc.h NpcTypeDef::haulMult), and a default of "a person"
 // would be silently wrong for exactly the rows that matter — a caravan given a
@@ -43,37 +46,86 @@ namespace sm {
 // MovePct, CarryKg — bonus.h affix tail). nullptr = nothing stands, which is
 // every leader until macro NPCs wear gear; the sheet passed in is already the
 // EFFECTIVE one, so only the derived cells are read from it here.
-// `pools` is the body whose bars this sheet caps. It is a separate argument
-// because the bar left this struct (2026-09-09): the ceiling and the value it
-// caps must be refreshed by one door, or `maxSp` drifts away from the `sp` it
-// bounds — the drift this helper was written to prevent in the first place.
-inline void refresh_leader_travel_stats(ecs::MacroNpcRuntime& rt,
-                                        ecs::Pools& pools,
-                                        const CharacterSheet& sheet,
-                                        NPCType type,
-                                        const BonusTotals* standing = nullptr) {
-    const CombatStats cs =
-        calculate_combat_stats(sheet.attributes, sheet.skills);
-    pools.maxSp = std::clamp(cs.maxSp, 1, 32767);
-    rt.travelRank = std::uint8_t(
+// `pools` is the body whose bars this sheet caps: the ceiling and the value
+// it caps must be refreshed by one door, or `maxSp` drifts away from the `sp`
+// it bounds — the drift the old helper was written to prevent. `rt` may be
+// null for a body with no march (none exists today on the macro map; the
+// argument keeps the door honest about what is bars and what is legs).
+inline void refresh_body_from_sheet(ecs::Pools& pools,
+                                    ecs::MacroNpcRuntime* rt,
+                                    const CharacterSheet& sheet,
+                                    NPCType type,
+                                    const BonusTotals* standing = nullptr) {
+    // ── The ceilings, each bar preserving its FRACTION ────────────────────
+    // Owner 2026-09-10: «доля у всех» — the lord's level-up law is now the
+    // ONLY rescale in the game, the player's included. A level, a spent point
+    // or a donned coat is never a free heal and never a theft: the ceiling
+    // follows the sheet, the fraction is what survives. A bar whose ceiling
+    // did not move is not touched AT ALL — this door is walked on every macro
+    // tick of the player's squad, and an unconditional rescale would be a
+    // slow rounding drain, not an identity. Dead stays dead: a growing
+    // ceiling must not resurrect a zero hp. An exhaustion DEBT (sp <= 0)
+    // survives any rescale as-is — levelling mid-collapse does not forgive
+    // it. The roundings are the ones the lord's level-up always used
+    // (truncation on hp/mp, lround on sp) — kept verbatim so the one door is
+    // byte-identical to the law it absorbed.
+    {
+        const int newMax = body_max_hp(sheet, npc_def(type).combat);
+        if (newMax != pools.maxHp) {
+            const float frac = pools.maxHp > 0
+                ? std::clamp(float(pools.hp) / float(pools.maxHp), 0.0f, 1.0f)
+                : 1.0f;
+            pools.maxHp = newMax;
+            if (pools.hp > 0) {
+                pools.hp = std::clamp(int(float(newMax) * frac), 1, newMax);
+            }
+        }
+    }
+    {
+        const int newMax = body_max_mp(sheet);
+        if (newMax != pools.maxMp) {
+            const float frac = pools.maxMp > 0
+                ? std::clamp(float(pools.mp) / float(pools.maxMp), 0.0f, 1.0f)
+                : 1.0f;
+            pools.maxMp = newMax;
+            pools.mp = std::clamp(int(float(newMax) * frac), 0, newMax);
+        }
+    }
+    {
+        const int newMax = std::max(
+            1, bar_ceilings(sheet.attributes, sheet.skills).maxSp);
+        if (newMax != pools.maxSp) {
+            const float frac =
+                float(pools.sp) / float(std::max<int>(1, pools.maxSp));
+            pools.maxSp = newMax;
+            if (pools.sp > 0) {
+                pools.sp = std::clamp(
+                    int(std::lround(frac * float(newMax))), 1, newMax);
+            }
+        }
+    }
+
+    // ── The march caches, when the body has legs ──────────────────────────
+    if (!rt) return;
+    rt->travelRank = std::uint8_t(
         std::clamp(sheet.skills.of(SkillId::Travel), 0, kMaxSkillRank));
-    rt.marathonRank = std::uint8_t(
+    rt->marathonRank = std::uint8_t(
         std::clamp(sheet.skills.of(SkillId::Marathon), 0, kMaxSkillRank));
-    rt.scoutRank = std::uint8_t(
+    rt->scoutRank = std::uint8_t(
         std::clamp(sheet.skills.of(SkillId::Scouting), 0, kMaxSkillRank));
     // The cache is the walk's own float; the LAW is whole percent (4в).
-    rt.moveMult = float(
+    rt->moveMult = float(
         (standing
              ? calculate_derived(sheet.attributes, sheet.skills, *standing)
              : calculate_derived(sheet.attributes, sheet.skills))
             .moveSpeedPct)
         / 100.0f;
     const float haul = npc_def(type).haulMult;
-    rt.carryCap = (standing
-                       ? get_carry_capacity(sheet.attributes, sheet.skills,
-                                            *standing)
-                       : get_carry_capacity(sheet.attributes, sheet.skills))
-                  * (haul > 0.0f ? haul : 1.0f);
+    rt->carryCap = (standing
+                        ? get_carry_capacity(sheet.attributes, sheet.skills,
+                                             *standing)
+                        : get_carry_capacity(sheet.attributes, sheet.skills))
+                   * (haul > 0.0f ? haul : 1.0f);
 }
 
 // Owner ruling 3 (macrosim.md): kill the leader and the squad lives on,
@@ -332,8 +384,8 @@ inline AutoBattleSide auto_battle_side_of(ecs::World& w, entt::entity e,
         // is deliberately NOT set here: a swing is priced by the subworld's
         // melee identity (sub/engine.h), and macro is L1 — it may not reach
         // up. The caller that knows both worlds states that one number.
-        const CombatStats cs = calculate_combat_stats(storedSheet->attributes,
-                                                      storedSheet->skills);
+        const BarCeilings cs = bar_ceilings(storedSheet->attributes,
+                                            storedSheet->skills);
         s.leaderHpOverride = float(std::max(1, cs.maxHp));
         s.bonuses = squad_bonuses(*storedSheet);
     }
@@ -368,39 +420,15 @@ inline int award_leader_xp(ecs::World& w, entt::entity e, int xp) {
                 const auto* sid = reg.try_get<ecs::MacroSpawnId>(e);
                 const std::uint32_t seed =
                     leader_sheet_seed(sid ? sid->index : 0u);
-                const float frac = hp->maxHp > 0
-                    ? std::clamp(float(hp->hp) / float(hp->maxHp), 0.0f, 1.0f)
-                    : 1.0f;
-                const CharacterSheet sheet =
-                    make_character_sheet(type, lvl->value, seed);
-                const CombatTemplate pc =
-                    project_combat(sheet, npc_def(type).combat);
-                hp->maxHp = std::max(1, int(pc.hp));
-                hp->hp = std::clamp(int(float(hp->maxHp) * frac),
-                                    1, hp->maxHp);
-                // Mana climbs by the SAME rule as the wound and the legs: the
-                // ceiling follows the sheet, the fraction is preserved. A bar
-                // added to this block and forgotten HERE is the project's
-                // oldest bug shape — a field that falls out of a hand-written
-                // fold is invisible until somebody reads it.
-                const float mpFrac = hp->maxMp > 0
-                    ? std::clamp(float(hp->mp) / float(hp->maxMp), 0.0f, 1.0f)
-                    : 1.0f;
-                hp->maxMp = body_max_mp(sheet);
-                hp->mp = std::clamp(int(float(hp->maxMp) * mpFrac),
-                                    0, hp->maxMp);
-                // The march caches follow the sheet through the same door,
-                // preserving the SP fraction like the wound above — a level
-                // is not a free rest. An exhaustion DEBT (sp < 0) survives
-                // as-is: levelling mid-collapse does not forgive it.
-                const float spFrac = float(hp->sp)
-                    / float(std::max<int>(1, hp->maxSp));
-                refresh_leader_travel_stats(*rt, *hp, sheet, type);
-                if (hp->sp > 0) {
-                    hp->sp = std::clamp(
-                        int(std::lround(spFrac * float(hp->maxSp))),
-                        1, hp->maxSp);
-                }
+                // Ceilings, fractions and march caches all follow the new
+                // level's sheet through THE one refresh door above. The
+                // fraction-preserving arithmetic that used to be spelled out
+                // here, bar by hand-written bar, IS that door now — a bar
+                // added to Pools and forgotten in a hand-written fold is the
+                // project's oldest bug shape.
+                refresh_body_from_sheet(
+                    *hp, rt, make_character_sheet(type, lvl->value, seed),
+                    type);
             }
         }
     }
@@ -725,11 +753,12 @@ inline void settle_auto_battle(const MacroWorld& mw,
 // button). The player is the same shape as any leader (his entity is the
 // leader, PlayerState::army is his roster), so the enemy half goes through
 // exactly the halves above; the player half lands where the player's truth
-// lives — army rows removed by name, the wound fraction into combatStats
-// (the macro scalar his subworld body mirrors), XP through award_exp with
-// the wis dividend. By the resolver's own law his head is never diced: he
-// reaches 0 only when his whole army died with him — and 0 currentHp is the
-// same game-over the fought version ends in. Returns the XP awarded.
+// lives — army rows removed by name, the wound fraction into the ordinary
+// Pools on his squad entity (THE store since landing 4), XP through
+// award_exp with the wis dividend. By the resolver's own law his head is
+// never diced: he reaches 0 only when his whole army died with him — and a
+// zero hp in the store is the same game-over the fought version ends in.
+// Returns the XP awarded.
 inline int settle_player_auto_battle(const MacroWorld& mw,
                                      entt::entity enemy,
                                      const AutoBattleOutcome& o,
@@ -765,21 +794,14 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
     }
     // His wound settles through THE door every leader's does
     // (settle_leader_fraction), not through a second copy of the same three
-    // lines of arithmetic. That copy was the last of the four player-specific
-    // battle paths: it read PlayerState's ceiling while the door read the
-    // entity's, so the two could round differently about one man.
-    //
-    // PlayerState still OWNS his hp (the store moves onto the entity when the
-    // rest of stage 4 lands), so the pool follows the entity the door just
-    // wrote — one writer, one direction, and the projection in
-    // ensure_macro_player_entity has nothing to fight with.
+    // lines of arithmetic — and it lands in THE store (his squad's Pools),
+    // because since landing 4 there is nowhere else for a bar to live. The
+    // back-copy onto PlayerState that used to follow this call was the last
+    // breath of the two-store era.
     if (const entt::entity playerSquad = player_squad_entity(w);
         playerSquad != entt::null) {
         settle_leader_fraction(w, playerSquad,
                                std::clamp(playerFraction, 0.0f, 1.0f));
-        if (const auto* hp = w.reg.try_get<ecs::Pools>(playerSquad)) {
-            gs.player.combatStats.currentHp = int(hp->hp);
-        }
     }
 
     // The enemy's dead are FACTS, and killing them has a PRICE — the same two

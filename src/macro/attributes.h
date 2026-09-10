@@ -348,19 +348,23 @@ inline int skill_mult_pct(const Skills& s, SkillId id) {
 // that survives is the aura DOOR (character_sheet.h squad_bonuses) — the
 // mechanism perks will feed rows into when they return.
 
-// ── Combat stats ───────────────────────────────────────────────
+// ── Bar ceilings ───────────────────────────────────────────────
 //
-// int for the HP/SP/MP pools, float for the per-game-hour rest rates.
-// `current*` start equal to `max*`; defaults are the 100-bar under the one
-// recovery law (kRestRegenPctPerHour below): 100 × 1/8 per rest hour.
+// What a sheet says the three bars of a body CAP at — derived, never stored.
+// This struct was `CombatStats`: nine fields, current values beside the
+// ceilings plus three cached hourly rest rates, existing in exactly ONE
+// instance in the whole game — PlayerState::combatStats, the player's private
+// second home for bars every other body kept in ecs::Pools. Landing 4 of the
+// «полосы на тело» track killed the store: bars live in Pools for everyone,
+// the rest rate is derived on the spot by the one law (recovery.h
+// rest_pools — a cached rate could FREEZE, and did, seed-999 2026-09-06),
+// and what remains of the type is the only thing that was ever derived
+// truth: the ceilings.
 
-struct CombatStats {
-    int   currentHp = 100, maxHp = 100;
-    int   currentMp = 100, maxMp = 100;
-    int   currentSp = 100, maxSp = 100;
-    float hpRegen   = 12.5f;
-    float mpRegen   = 12.5f;
-    float spRegen   = 12.5f;
+struct BarCeilings {
+    int maxHp = 100;
+    int maxMp = 100;
+    int maxSp = 100;
 };
 
 // ── Derived bonuses (ephemeral) ────────────────────────────────
@@ -484,7 +488,7 @@ inline LevelData default_level_data() {
 // THE ONE RECOVERY LAW (CANON S14; owner rulings Session 21 and 2026-09-03):
 // every bar recovers as a PERCENT of itself per GAME HOUR of REST, and rest —
 // standing still, doing nothing — is the ONLY thing that recovers a bar
-// (the march heals nothing; kMarchRecoveryPct is zero on all three now).
+// (the march heals nothing: a marching body never calls the rest law).
 // A percent, not a flat number, so a full rest takes the same 8 hours for
 // every body in the world — the veteran's bigger bar refills proportionally
 // faster in absolute points, and nobody "rests longer because he is tougher"
@@ -498,13 +502,20 @@ inline LevelData default_level_data() {
 constexpr float kRestRegenPctPerHour = 0.125f;
 
 // FinalStat = (base + attrRaw) × (1 + skillRank × skillMult)
-inline CombatStats calculate_combat_stats(const Attributes& a, const Skills& s,
-                                          int baseHp = 100,
-                                          int baseMp = 100,
-                                          int baseSp = 100) {
+//
+// Ceilings ONLY — no current values (they live in the body's ecs::Pools and
+// nothing here may touch them), no rest rates (the rate is derived from the
+// ceiling on the spot by rest_pools, so it cannot freeze the way the cached
+// spRegen did). How a moved ceiling meets the bar it caps is the ONE rescale
+// law, squad.h refresh_body_from_sheet: the fraction survives, for everyone
+// (owner 2026-09-10 «доля у всех»).
+inline BarCeilings bar_ceilings(const Attributes& a, const Skills& s,
+                                int baseHp = 100,
+                                int baseMp = 100,
+                                int baseSp = 100) {
     const float rawHp = float(baseHp + a.of(AttributeId::End) * 10);
     const float rawMp = float(baseMp + a.of(AttributeId::Wil) * 10);
-    CombatStats c;
+    BarCeilings c;
     c.maxHp = int(rawHp * skill_mult(s, SkillId::Bodybuilding));
     c.maxMp = int(rawMp * skill_mult(s, SkillId::Meditation));
     // The SP bar has TWO owners by half each (CANON S14): the warrior's END
@@ -513,36 +524,7 @@ inline CombatStats calculate_combat_stats(const Attributes& a, const Skills& s,
     // instead (kRestRegenPctPerHour above), so bar and rest are two levers.
     c.maxSp = baseSp + ((a.of(AttributeId::End) + a.of(AttributeId::Wil)) >> 1)
                            * 10;
-    c.currentHp = c.maxHp;
-    c.currentMp = c.maxMp;
-    c.currentSp = c.maxSp;
-    // Per game hour AT REST, all three through the one law above — for the
-    // player and every macro leader (npc_ai reads the same formula through
-    // the leader's sheet).
-    c.hpRegen = float(c.maxHp) * kRestRegenPctPerHour;
-    c.mpRegen = float(c.maxMp) * kRestRegenPctPerHour;
-    c.spRegen = float(c.maxSp) * kRestRegenPctPerHour
-                * skill_mult(s, SkillId::Marathon);
     return c;
-}
-
-// Recompute the MAXIMA from attributes/skills while PRESERVING the current
-// pools (clamped into the new maxima). Spending a point must never be a free
-// full heal (owner ruling 2026-08-05): the full restore in
-// calculate_combat_stats belongs to the moments that SAY they heal —
-// character creation and the LEVEL-UP itself (M&M tradition), plus explicit
-// healing (inn, potions).
-inline void recompute_combat_maxima(CombatStats& c, const Attributes& a,
-                                    const Skills& s,
-                                    int baseHp = 100, int baseMp = 100,
-                                    int baseSp = 100) {
-    const int curHp = c.currentHp;
-    const int curMp = c.currentMp;
-    const int curSp = c.currentSp;
-    c = calculate_combat_stats(a, s, baseHp, baseMp, baseSp);
-    c.currentHp = std::min(curHp, c.maxHp);
-    c.currentMp = std::min(curMp, c.maxMp);
-    c.currentSp = std::min(curSp, c.maxSp);
 }
 
 // THE one CHA→trade-discount formula (1 % per point). Both of its doors read

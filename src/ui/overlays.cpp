@@ -635,23 +635,13 @@ namespace sm::ui
         // already stand in kAttributeDefs (macro/attributes.h); a panel that
         // restates a registry drifts from it the first time a number is tuned.)
 
-        // FULL restore — reserved for the moments that SAY they heal: the
-        // level-up itself (M&M tradition) and the Talented perk's bonus level.
-        // Both helpers read the EFFECTIVE sheet (phase 4): the bar's maximum
-        // is what the man in his coat can hold, on level-up as on any tick.
-        void reset_player_combat_stats(ecs::World &world, PlayerState &p)
-        {
-            const CharacterSheet eff = player_effective_sheet(world, p);
-            p.combatStats = calculate_combat_stats(eff.attributes, eff.skills);
-        }
-
-        // Point spend: maxima grow, CURRENT pools stay (clamped). Spending an
-        // attribute point is not a free full heal (owner ruling 2026-08-05).
-        void recompute_player_combat_maxima(ecs::World &world, PlayerState &p)
-        {
-            const CharacterSheet eff = player_effective_sheet(world, p);
-            recompute_combat_maxima(p.combatStats, eff.attributes, eff.skills);
-        }
+        // (No reset/recompute helpers. Every «his sheet changed» moment —
+        // level-up, point spend, learning — calls THE one door
+        // refresh_player_body (macro/player_entity.h): ceilings follow the
+        // effective sheet, each bar keeps its FRACTION — «доля у всех»,
+        // owner 2026-09-10. The level-up full heal died with that verdict:
+        // the lord's law is the only rescale, and a lord's level never
+        // healed him.)
 
         // The panel's derived block after a spend — same door as its header.
         DerivedBonuses calculate_derived_effective(ecs::World &world,
@@ -712,6 +702,11 @@ namespace sm::ui
         Inventory *bagPtr = player_inventory(world);
         Inventory bagFallback{};
         Inventory &playerBag = bagPtr ? *bagPtr : bagFallback;
+        // His bars, through the one door (landing 4) — same fallback shape
+        // as the bag: a world that has none yet shows zeros, not a crash.
+        ecs::Pools *poolsPtr = player_pools(world);
+        ecs::Pools poolsFallback{};
+        ecs::Pools &pools = poolsPtr ? *poolsPtr : poolsFallback;
         const SoldierSquad *army = player_roster(world);
         const CharacterPanelTab current = tab ? *tab : CharacterPanelTab::Stats;
         // The panel SHOWS the EFFECTIVE sheet (phase 4, owner: «финальное
@@ -760,9 +755,9 @@ namespace sm::ui
                         ImGui::TableHeadersRow();
                         ImGui::TableNextRow();
                         ImGui::TableNextColumn();
-                        ImGui::Text("HP %d / %d", p.combatStats.currentHp, p.combatStats.maxHp);
-                        ImGui::Text("MP %d / %d", p.combatStats.currentMp, p.combatStats.maxMp);
-                        ImGui::Text("SP %d / %d", p.combatStats.currentSp, p.combatStats.maxSp);
+                        ImGui::Text("HP %d / %d", pools.hp, pools.maxHp);
+                        ImGui::Text("MP %d / %d", pools.mp, pools.maxMp);
+                        ImGui::Text("SP %d / %d", pools.sp, pools.maxSp);
                         ImGui::Text("Coin %d", wallet_value(playerBag));
                         ImGui::Text("Attr pts %d", p.sheet.levelData.attributePoints);
                         ImGui::Text("Skill pts %d", p.sheet.levelData.skillPoints);
@@ -773,7 +768,7 @@ namespace sm::ui
                             if (ImGui::Button("Level Up"))
                             {
                                 if (try_level_up(p.sheet.levelData))
-                                    reset_player_combat_stats(world, p);
+                                    refresh_player_body(p, world);
                             }
                         }
                         ImGui::TableNextColumn();
@@ -801,7 +796,7 @@ namespace sm::ui
                             {
                                 if (spend_attribute_point(p.sheet.levelData, p.sheet.attributes, row.id))
                                 {
-                                    recompute_player_combat_maxima(world, p);
+                                    refresh_player_body(p, world);
                                     effPanel = player_effective_sheet(world, p);
                                     derived = calculate_derived_effective(world, p);
                                 }
@@ -867,7 +862,7 @@ namespace sm::ui
                                 {
                                     if (spend_learn_pick(p.sheet.levelData, p.sheet.skills, row.id))
                                     {
-                                        recompute_player_combat_maxima(world, p);
+                                        refresh_player_body(p, world);
                                         effPanel = player_effective_sheet(world, p);
                                         derived = calculate_derived_effective(world, p);
                                     }
@@ -887,7 +882,7 @@ namespace sm::ui
                                 {
                                     if (spend_skill_point(p.sheet.levelData, p.sheet.skills, row.id))
                                     {
-                                        recompute_player_combat_maxima(world, p);
+                                        refresh_player_body(p, world);
                                         effPanel = player_effective_sheet(world, p);
                                         derived = calculate_derived_effective(world, p);
                                     }
@@ -959,13 +954,13 @@ namespace sm::ui
                                 if (ImGui::SmallButton("Use"))
                                 {
                                     PlayerCombatSlice pc{
-                                        p.combatStats.currentHp, p.combatStats.maxHp,
-                                        p.combatStats.currentMp, p.combatStats.maxMp,
-                                        p.combatStats.currentSp, p.combatStats.maxSp};
+                                        pools.hp, pools.maxHp,
+                                        pools.mp, pools.maxMp,
+                                        pools.sp, pools.maxSp};
                                     lastUseMessage = use_item(playerBag, def->id, pc);
-                                    p.combatStats.currentHp = pc.currentHp;
-                                    p.combatStats.currentMp = pc.currentMp;
-                                    p.combatStats.currentSp = pc.currentSp;
+                                    pools.hp = pc.currentHp;
+                                    pools.mp = pc.currentMp;
+                                    pools.sp = pc.currentSp;
                                 }
                                 ImGui::PopID();
                             }
@@ -1177,7 +1172,7 @@ namespace sm::ui
                     *tab = CharacterPanelTab::Spells;
                 if (spellsOpen)
                 {
-                    ImGui::Text("MP %d / %d", p.combatStats.currentMp, p.combatStats.maxMp);
+                    ImGui::Text("MP %d / %d", pools.mp, pools.maxMp);
                     if (spell_ordinal_ok(p.spellBook.activeSpell))
                     {
                         ImGui::SameLine();
@@ -1357,7 +1352,7 @@ namespace sm::ui
                                 // Gate 0: the panel pauses the world, so the
                                 // body's recovery is not racing this frame.
                                 const CastCheck check = spellbook_can_cast_ex(
-                                    p.spellBook, p.combatStats, ord, true, 0u);
+                                    p.spellBook, pools, ord, true, 0u);
                                 if (check.ok)
                                 {
                                     ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.45f, 1.0f), "Ready");
@@ -1864,9 +1859,13 @@ namespace sm::ui
                     if (ImGui::Button("Rest at Inn"))
                     {
                         wallet_spend_up_to(playerBag, cost);
-                        gs.player.combatStats.currentHp = gs.player.combatStats.maxHp;
-                        gs.player.combatStats.currentMp = gs.player.combatStats.maxMp;
-                        gs.player.combatStats.currentSp = gs.player.combatStats.maxSp;
+                        // The inn heals THE store — a paid full restore is a
+                        // door that SAYS it heals, not a rescale.
+                        if (ecs::Pools *pools = player_pools(world)) {
+                            pools->hp = pools->maxHp;
+                            pools->mp = pools->maxMp;
+                            pools->sp = pools->maxSp;
+                        }
                     }
                     if (!can)
                         ImGui::EndDisabled();

@@ -61,7 +61,7 @@
 #include "macro/journal.h"
 #include "macro/pathfinding.h"
 #include "macro/items.h"
-#include "macro/player_recovery.h"
+#include "macro/recovery.h"
 #include "macro/travel.h"
 #include "macro/audio.h"
 #include "macro/save.h"
@@ -962,13 +962,12 @@ void charge_macro_walk_cell(void* user, int x, int y) {
     sm::MacroTravelCost cost;
     // The climb half of the law prices the EDGE: the previous crossed cell
     // is the origin; the walk's first cell has none and climbs free.
-    if (!sm::drain_player_sp_for_macro_cell(ctx->app->gs,
+    if (!sm::drain_player_sp_for_macro_cell(player_pools(*ctx->app),
                                             player_effective_sheet(*ctx->app),
                                             &player_bag(*ctx->app),
                                             ctx->app->terrain,
                                             &ctx->app->features,
                                             x, y,
-                                            player_sp_carry(*ctx->app),
                                             &cost,
                                             &ctx->app->treeLayer,
                                             ctx->fromX, ctx->fromY)) {
@@ -1055,6 +1054,16 @@ float& player_sp_carry(App& app) {
     static float scratch = 0.0f;
     float* carry = sm::player_sp_carry(app.ecs);
     return carry ? *carry : scratch;
+}
+
+// His three bars, through the one door (landing 4: the Pools on his squad
+// entity IS the store — no scalar copy anywhere). Same scratch idiom as the
+// carry above: a frame before the world exists must not crash, and bars with
+// nowhere to live are bars nobody reads.
+sm::ecs::Pools& player_pools(App& app) {
+    static sm::ecs::Pools scratch{};
+    sm::ecs::Pools* pools = sm::player_pools(app.ecs);
+    return pools ? *pools : scratch;
 }
 
 // EVERYTHING STANDING ON THE PLAYER — the sum and THE door both moved to
@@ -1224,8 +1233,12 @@ void destroy_world(App& app) {
     app.appliedStoryResultCount = 0;
     app.appliedCombatEventCount = 0;
     app.appliedSpawnEventCount = 0;
-    sm::reset_player_recovery(app.playerRecovery);
-    player_sp_carry(app) = 0.0f;
+    {
+        // All three fractional remainders die with the session — they are
+        // the body's own (Pools carries), not the App's.
+        sm::ecs::Pools& pools = player_pools(app);
+        pools.hpCarry = pools.mpCarry = pools.spCarry = 0.0f;
+    }
     app.showDialogOpen = false;
     app.showDialogEvent = sm::GameEvent{};
     app.showDialogUi = sm::ui::DialogOverlayState{};
@@ -1510,10 +1523,10 @@ void end_scene_by_death(App& app, const char* storyNode) {
     app.subworld.leave(true);
     // A scene that survives its own death stands the body back up: whatever
     // took him, the story goes on from a man who can walk.
-    auto& cs = app.gs.player.combatStats;
-    cs.currentHp = cs.maxHp;
-    cs.currentMp = cs.maxMp;
-    cs.currentSp = cs.maxSp;
+    sm::ecs::Pools& pools = player_pools(app);
+    pools.hp = pools.maxHp;
+    pools.mp = pools.maxMp;
+    pools.sp = pools.maxSp;
     // Through the NODE, never bus.emit from here: this runs after
     // process_world_events already flushed and captured this tick, so a raw
     // event would be wiped before the presentation pump ever saw it (the
@@ -1541,8 +1554,10 @@ void boot_world(App& app, std::uint32_t seed,
     // game or a load through the surviving engine object.
     app.subworld.reset_render_diagnostics();
 
-    sm::reset_player_recovery(app.playerRecovery);
-    player_sp_carry(app) = 0.0f;
+    {
+        sm::ecs::Pools& pools = player_pools(app);
+        pools.hpCarry = pools.mpCarry = pools.spCarry = 0.0f;
+    }
     sm::reset_macro_npc_ai_runtime(app.npcAi, seed);
     app.appliedEventCount = 0;
     app.ui.settlementId = -1;
@@ -1999,7 +2014,7 @@ const sm::GameEvent* latest_tick_event(const sm::EventBus& bus,
 
 void tick_subworld_hit_flash(App& app, float dt) {
     if (!app.subworld.active()) {
-        app.subworldLastPlayerHp = app.gs.player.combatStats.currentHp;
+        app.subworldLastPlayerHp = player_pools(app).hp;
         app.subworldHitFlashTimer = 0.0f;
         // NOTE. The travel-stamina carry is deliberately NOT cleared here. This
         // branch runs every frame the player is on the map, and the carry is the
@@ -2048,8 +2063,7 @@ int charge_subworld_sp_for_distance(App& app, float distance) {
     const float cost = sm::travel_stamina_cost(
         app.subworld.player_ground_travel_weight(), cells, overloadCost,
         sm::travel_skill_efficiency(eff.skills));
-    return sm::spend_travel_stamina(app.gs.player.combatStats,
-                                    player_sp_carry(app), cost);
+    return sm::spend_travel_stamina(player_pools(app), cost);
 }
 
 float subworld_spell_rng01(void* user) {
@@ -2220,7 +2234,7 @@ bool cast_active_spell(App& app) {
         }
     }
     const sm::CastCheck check = sm::spellbook_can_cast_ex(
-        app.gs.player.spellBook, app.gs.player.combatStats, ord, inMicro,
+        app.gs.player.spellBook, player_pools(app), ord, inMicro,
         gateSteps);
     if (!check.ok) {
         emit_spell_cast(app, id, false, check.reason.c_str(),
@@ -2240,7 +2254,7 @@ bool cast_active_spell(App& app) {
             return false;
         }
         sm::spellbook_start_cast(app.gs.player.spellBook,
-                                 app.gs.player.combatStats, ord);
+                                 player_pools(app), ord);
         emit_spell_cast(app, id, true, "");
         return true;
     }
@@ -2254,7 +2268,7 @@ bool cast_active_spell(App& app) {
     const sm::CharacterSheet effCast = player_effective_sheet(app);
     const bool ok = sm::spellbook_cast(app.ecs,
         app.gs.player.spellBook,
-        app.gs.player.combatStats,
+        player_pools(app),
         effCast.attributes,
         effCast.skills,
         ord,
@@ -2299,8 +2313,8 @@ void set_paused(App& app, bool on) {
 }
 
 // Rest IS a stop (owner ruling): there is no rest mode, only the ONE macro
-// law that a STANDING squad regenerates SP (players: kMarchRecoveryPct=0
-// while a path is walked; NPC squads: regen in Idle/Resting only). So Z
+// law that a STANDING squad regenerates (a walking player never calls the
+// rest law; NPC squads: regen in Idle/Resting only). So Z
 // first stops the squad — the click-route dies here, exactly as an
 // encounter kills it — and then merely compresses time until the bar is
 // full. restUntilTick holds only a hard CAP of two days (an SP DEBT climbs
@@ -2310,8 +2324,8 @@ void set_paused(App& app, bool on) {
 void aim_rest_until_rested(App& app) {
     app.cursor.path.clear();
     app.cursor.pathIdx = 0;
-    const auto& cs = app.gs.player.combatStats;
-    if (cs.currentSp >= cs.maxSp) return;
+    const sm::ecs::Pools& pools = player_pools(app);
+    if (pools.sp >= pools.maxSp) return;
     if (!player_can_make_camp(app)) return;   // no camp in open water
     app.restUntilTick = app.gs.worldTime.tick + 2 * sm::kTicksPerDay;
 }
@@ -2324,7 +2338,7 @@ void aim_rest_until_rested(App& app) {
 // smoke: one law, one door.
 int apply_rest_promotion(App& app, int ticks) {
     if (app.restUntilTick == 0) return ticks;
-    const auto& cs = app.gs.player.combatStats;
+    const sm::ecs::Pools& cs = player_pools(app);
     // A non-empty path cancels too: rest is a stop, so the player clicking a
     // destination mid-rest IS the scene change — the squad marches at real
     // pace again and time flows at its honest rate. (Marching legs regain no
@@ -2332,7 +2346,7 @@ int apply_rest_promotion(App& app, int ticks) {
     const bool cancelled = app.subworld.active() || app.playerPaused
         || app.gs.subState.kind != sm::GameSubStateKind::Exploring
         || !app.cursor.path.empty()
-        || cs.currentSp >= cs.maxSp
+        || cs.sp >= cs.maxSp
         || !player_can_make_camp(app)
         || app.gs.worldTime.tick >= app.restUntilTick;
     if (cancelled) {
@@ -2802,7 +2816,7 @@ void apply_pending_event_effects(App& app) {
         // span points into) — the while loop picks them up as the next batch.
         std::vector<sm::GameEvent> followups;
         sm::apply_events(pending, app.gs, sm::player_inventory(app.ecs),
-                         &followups);
+                         sm::player_pools(app.ecs), &followups);
         bool spireDied = false;
         for (const sm::GameEvent& ev : pending) {
             if (ev.tag == sm::EventTag::SpireDepleted) spireDied = true;
@@ -2853,8 +2867,15 @@ void apply_creation(App& app) {
         if (v == "male")   app.gs.player.sheet.levelData.skillPoints += 1;
         if (v == "female") app.gs.player.sheet.levelData.attributePoints += 1;
     }
-    app.gs.player.combatStats = sm::calculate_combat_stats(
-        app.gs.player.sheet.attributes, app.gs.player.sheet.skills);
+    {
+        // The sheet changed wholesale: ceilings follow through THE door, and
+        // — a moment that SAYS it heals — every bar fills to its new maximum.
+        sm::refresh_player_body(app.gs.player, app.ecs);
+        sm::ecs::Pools& pools = player_pools(app);
+        pools.hp = pools.maxHp;
+        pools.mp = pools.maxMp;
+        pools.sp = pools.maxSp;
+    }
 
     // A homeland CHOICE is not always a country: "Barbarian Kingdoms" is four
     // of them, and the world picks which one raised you (owner, 2026-08-20 —
@@ -3243,7 +3264,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     // kSubworldTickDivisor steps) while the fight keeps the full step rate, so
     // a cooldown is the same length of FIGHT in both worlds (core/time.h).
     sm::spellbook_tick(app.gs.player.spellBook,
-                       app.gs.player.combatStats,
+                       player_pools(app),
                        /*steps=*/1u);
     // (No wind-up queue: a cast resolves at its own click — owner verdict
     // 2026-09-09 — and what it costs in time is the body's recovery gate,
@@ -3252,23 +3273,17 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     // fattens the SP bar, and taking it off (or a sustained spell lapsing —
     // spellbook_tick above has already snuffed this step's casualties) thins
     // it back. Refreshed exactly WHEN the standing sum changes, not every
-    // step: recompute rewrites the whole derived block (maxima AND regen
-    // rates), so running it on a schedule would stomp runtime state that
-    // nothing changed — the travel harness froze spRegen for a measurement
-    // and a per-step refresh silently thawed it (seed-999 conservation
-    // failure, 2026-09-06). recompute_combat_maxima PRESERVES the current
-    // pools, so this is never a free heal (owner ruling 2026-08-05 — the
-    // full restore belongs to creation and the level-up, which say they
-    // heal). Base-sheet growth has its own recompute sites (level-up, the
-    // point spends); this one watches what he WEARS and what BURNS.
+    // step (the change gate is cheap and the refresh is not free). The door
+    // preserves each bar's FRACTION («доля у всех», owner 2026-09-10), so
+    // this is never a free heal — the full restore belongs to creation,
+    // which says it heals. The old hazard this gate was born from — a
+    // per-step refresh silently thawing the harness's frozen spRegen
+    // (seed-999, 2026-09-06) — died with the cached rates themselves.
     {
         const sm::BonusTotals standing = player_standing_bonuses(app);
         if (standing != app.lastStandingBonuses) {
             app.lastStandingBonuses = standing;
-            const sm::CharacterSheet eff =
-                sm::effective_sheet(app.gs.player.sheet, standing);
-            sm::recompute_combat_maxima(app.gs.player.combatStats,
-                                        eff.attributes, eff.skills);
+            sm::refresh_player_body(app.gs.player, app.ecs);
         }
     }
     if (app.subworld.active()) {
@@ -3379,7 +3394,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // bar comes back — stamina, health and mana all wait for camp (one
         // recovery law, CANON S14). This is what turns a journey into a
         // budget he has to plan instead of an allowance that pays for itself
-        // — see macro/movement_cost.h kMarchRecoveryPct.
+        // — the gate below is the march half of the one recovery law.
         // ...and standing in the open sea is not resting either: a body that
         // cannot make camp cannot recover, which is the same sentence a macro
         // squad's think obeys (npc_ai.cpp settle_march_rhythm). It is what
@@ -3387,11 +3402,27 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // than a water special case — stopping mid-crossing buys nothing.
         const bool marching = !app.cursor.path.empty();
         const bool resting = !marching && player_can_make_camp(app);
-        sm::apply_minute_recovery(app.gs.player,
-                                        stats.timeTick.minutesAdvanced,
-                                        app.playerRecovery,
-                                        player_sp_carry(app),
-                                        resting ? 1.0f : sm::kMarchRecoveryPct);
+        // THE rest law over his own Pools — the very rest_pools a lord's camp
+        // think calls, at the one rate; Marathon from the same rt cache the
+        // refresh door fills. A body that is not resting simply does not
+        // call. The harness gate (restRegenSuppressed) freezes the LAW for a
+        // conservation measurement instead of zeroing a cached rate — the
+        // frozen-spRegen idiom whose silent thaw was the seed-999 regression.
+        if (resting && !app.restRegenSuppressed
+            && stats.timeTick.minutesAdvanced > 0) {
+            const entt::entity squad = sm::player_squad_entity(app.ecs);
+            if (squad != entt::null) {
+                auto& reg = app.ecs.reg;
+                if (auto* pools = reg.try_get<sm::ecs::Pools>(squad)) {
+                    const auto* rt =
+                        reg.try_get<sm::ecs::MacroNpcRuntime>(squad);
+                    sm::rest_pools(
+                        *pools,
+                        float(stats.timeTick.minutesAdvanced) / 60.0f,
+                        rt ? int(rt->marathonRank) : 0);
+                }
+            }
+        }
         sm::tick_macro_npc_ai(macroTickWorld, app.npcAi,
                               std::uint64_t(stats.timeTick.ticksAdvanced),
                               /*allowAutoBattle*/true);
@@ -3443,7 +3474,10 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     // engine files into the very macro cell he stands in.
     sm::player_journal_capture(app.gs);
     tick_subworld_hit_flash(app, dt);
-    if (app.gs.player.combatStats.currentHp <= 0) {
+    // The REAL pools only: the scratch fallback is all zeros, and a frame
+    // before the squad entity exists must not read as a death.
+    if (const sm::ecs::Pools* pools = sm::player_pools(app.ecs);
+        pools && pools->hp <= 0) {
         // Death is the end of the game — that is the law (CANON S17) — and a
         // PLACE may say otherwise about itself: the pocket's own kind row
         // carries the story node dying there activates (dgn/dispatch
@@ -3617,15 +3651,11 @@ const sm::AttributeDef* console_attr_by_key(const std::string& key) {
     return nullptr;
 }
 
-// The point-spend's own recompute site (ui/overlays.cpp): maxima follow the
-// EFFECTIVE sheet, current pools survive — never a free heal. Called only
-// when a console write actually CHANGED the base sheet (the "something
-// changed" gate; an unconditional recompute stomps runtime state nothing
-// touched — the frozen-spRegen regression, 2026-09-06).
+// A console write that CHANGED the base sheet refreshes through THE door
+// (fractions preserved — «доля у всех» — so never a free heal and never a
+// theft).
 void console_recompute_maxima(App& app) {
-    const sm::CharacterSheet eff = player_effective_sheet(app);
-    sm::recompute_combat_maxima(app.gs.player.combatStats, eff.attributes,
-                                eff.skills);
+    sm::refresh_player_body(app.gs.player, app.ecs);
 }
 
 // THE player's wardrobe, the way the equipment tab gets it: an opt-in
@@ -4430,13 +4460,13 @@ void register_console_commands(App& app) {
             const sm::BonusTotals standing = player_standing_bonuses(app);
             const sm::CharacterSheet eff = sm::effective_sheet(base, standing);
             const sm::LevelData& ld = base.levelData;
-            const sm::CombatStats& cs = app.gs.player.combatStats;
+            const sm::ecs::Pools& cs = player_pools(app);
             c.printfln(Lvl::Ok,
                        "level %d  exp %d/%d  points: %d attr, %d skill, %d learn",
                        ld.level, ld.exp, ld.expToNext, ld.attributePoints,
                        ld.skillPoints, ld.learnPicks);
-            c.printfln(Lvl::Info, "HP %d/%d  MP %d/%d  SP %d/%d", cs.currentHp,
-                       cs.maxHp, cs.currentMp, cs.maxMp, cs.currentSp, cs.maxSp);
+            c.printfln(Lvl::Info, "HP %d/%d  MP %d/%d  SP %d/%d", cs.hp,
+                       cs.maxHp, cs.mp, cs.maxMp, cs.sp, cs.maxSp);
             for (const auto& d : sm::kAttributeDefs)
                 c.printfln(Lvl::Info, "  %-4s %3d -> %3d", d.key,
                            base.attributes.of(d.id), eff.attributes.of(d.id));
@@ -4581,15 +4611,15 @@ void register_console_commands(App& app) {
                 c.printfln(Lvl::Warn, "rest is a MAP action - leave first");
                 return false;
             }
-            const auto& cs = app.gs.player.combatStats;
-            if (cs.currentSp >= cs.maxSp) {
+            const sm::ecs::Pools& cs = player_pools(app);
+            if (cs.sp >= cs.maxSp) {
                 c.printfln(Lvl::Ok, "already rested - SP %d/%d",
-                           cs.currentSp, cs.maxSp);
+                           cs.sp, cs.maxSp);
                 return true;
             }
             aim_rest_until_rested(app);
             c.printfln(Lvl::Ok, "resting from SP %d/%d until full (cap tick %llu)",
-                       cs.currentSp, cs.maxSp,
+                       cs.sp, cs.maxSp,
                        (unsigned long long)app.restUntilTick);
             return true;
         });
@@ -4597,10 +4627,10 @@ void register_console_commands(App& app) {
     con.register_cmd("heal", "heal",
         "restore the player's HP / MP / SP to full",
         [&app](Con& c, const std::vector<std::string>&) {
-            auto& cs = app.gs.player.combatStats;
-            cs.currentHp = cs.maxHp;
-            cs.currentMp = cs.maxMp;
-            cs.currentSp = cs.maxSp;
+            sm::ecs::Pools& cs = player_pools(app);
+            cs.hp = cs.maxHp;
+            cs.mp = cs.maxMp;
+            cs.sp = cs.maxSp;
             c.printfln(Lvl::Ok, "restored to full (%d hp / %d mp / %d sp)",
                        cs.maxHp, cs.maxMp, cs.maxSp);
             return true;
@@ -4852,9 +4882,12 @@ void draw_debug_panels(App& app) {
             ImGui::Text("coin    %d", wallet_value(player_bag(app)));
             ImGui::Text("level   %d   (exp %d / %d)",
                         p.sheet.levelData.level, p.sheet.levelData.exp, p.sheet.levelData.expToNext);
-            ImGui::Text("hp      %d / %d", p.combatStats.currentHp, p.combatStats.maxHp);
-            ImGui::Text("mp      %d / %d", p.combatStats.currentMp, p.combatStats.maxMp);
-            ImGui::Text("sp      %d / %d", p.combatStats.currentSp, p.combatStats.maxSp);
+            {
+                const sm::ecs::Pools& pools = player_pools(app);
+                ImGui::Text("hp      %d / %d", pools.hp, pools.maxHp);
+                ImGui::Text("mp      %d / %d", pools.mp, pools.maxMp);
+                ImGui::Text("sp      %d / %d", pools.sp, pools.maxSp);
+            }
             ImGui::Text("points  attr %d  skill %d",
                         p.sheet.levelData.attributePoints, p.sheet.levelData.skillPoints);
             ImGui::Text("spells  %d learned",
@@ -5494,7 +5527,7 @@ void frame(App& app, int simSteps) {
         {
             const bool modalActive = modal_overlay_active(app);
             if (app.uiSettings.visible(sm::ui::UiElementId::PlayerHud))
-                sm::ui::draw_player_hud(app.gs, app.uiSettings.scale(sm::ui::UiElementId::PlayerHud));
+                sm::ui::draw_player_hud(app.gs, player_pools(app), app.uiSettings.scale(sm::ui::UiElementId::PlayerHud));
             if (!modalActive)
             {
                 sm::ui::ToolbarResult tb{};
@@ -5797,7 +5830,7 @@ void frame(App& app, int simSteps) {
         }
         case sm::ui::AppState::Menu:
             if (app.uiSettings.visible(sm::ui::UiElementId::PlayerHud))
-                sm::ui::draw_player_hud(app.gs, app.uiSettings.scale(sm::ui::UiElementId::PlayerHud));
+                sm::ui::draw_player_hud(app.gs, player_pools(app), app.uiSettings.scale(sm::ui::UiElementId::PlayerHud));
             shell = sm::ui::draw_game_menu();
             break;
         case sm::ui::AppState::Dead:
