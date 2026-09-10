@@ -77,7 +77,7 @@ void apply_effect(PlayerState& p, ecs::Pools* cs, const GameEvent& ev) {
 } // namespace
 
 void apply_events(std::span<const GameEvent> events, GameState& gs,
-                  Inventory* bag, ecs::Pools* pools,
+                  Inventory* bag, ecs::Pools* pools, SpellBook* book,
                   std::vector<GameEvent>* followups) {
     PlayerState& p = gs.player;
     for (auto& ev : events) {
@@ -90,7 +90,7 @@ void apply_events(std::span<const GameEvent> events, GameState& gs,
                 // re-applied idempotently by this same switch.
                 if (ev.b < std::uint32_t(kSpellCount)) {
                     const SpellDef& def = kSpellDefs[ev.b];
-                    if (spellbook_learn(p.spellBook, int(ev.b))) {
+                    if (book && spellbook_learn(*book, int(ev.b))) {
                         char msg[96];
                         std::snprintf(msg, sizeof(msg),
                                       "You have learned %s!", def.name);
@@ -126,7 +126,7 @@ void apply_events(std::span<const GameEvent> events, GameState& gs,
             case EventTag::SpellLearned:
                 // The event still speaks the string id (the bus->chronicle
                 // merge will retire it); the book itself is ordinals only.
-                spellbook_learn(p.spellBook, spell_ordinal(ev.s1));
+                if (book) spellbook_learn(*book, spell_ordinal(ev.s1));
                 break;
             case EventTag::PlayerGoldChange:
                 if (ev.b != kEventEffectAlreadyApplied) {
@@ -164,10 +164,10 @@ void apply_events(std::span<const GameEvent> events, GameState& gs,
 }
 
 void apply_events(const std::vector<GameEvent>& events, GameState& gs,
-                  Inventory* bag, ecs::Pools* pools,
+                  Inventory* bag, ecs::Pools* pools, SpellBook* book,
                   std::vector<GameEvent>* followups) {
     apply_events(std::span<const GameEvent>(events.data(), events.size()), gs,
-                 bag, pools,
+                 bag, pools, book,
                  followups);
 }
 

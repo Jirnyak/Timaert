@@ -210,7 +210,7 @@ void spellbook_tick(SpellBook& sb, ecs::Pools& combat, std::uint32_t steps) {
     // `sustained` column is the only sanity the old string list re-checked.
     float drainPerSecond = 0.0f;
     for (int i = 0; i < kSpellCount; ++i) {
-        if (!sb.sustained[i]) continue;
+        if (!spellbook_bit(sb.sustained, i)) continue;
         drainPerSecond += kSpellDefs[i].manaDrain;
     }
     if (drainPerSecond <= 0.0f) {
@@ -221,8 +221,9 @@ void spellbook_tick(SpellBook& sb, ecs::Pools& combat, std::uint32_t steps) {
     if (combat.mp <= 0) {
         // No mana left: every paying drain collapses at once.
         for (int i = 0; i < kSpellCount; ++i) {
-            if (sb.sustained[i] && kSpellDefs[i].manaDrain > 0.0f) {
-                sb.sustained[i] = 0;
+            if (spellbook_bit(sb.sustained, i)
+                && kSpellDefs[i].manaDrain > 0.0f) {
+                spellbook_bit_set(sb.sustained, i, false);
             }
         }
         sb.sustainedDrainCarry = 0.0f;
@@ -247,7 +248,7 @@ void spellbook_tick(SpellBook& sb, ecs::Pools& combat, std::uint32_t steps) {
     sb.sustainedDrainCarry = 0.0f;
 
     for (int i = kSpellCount; i-- > 0 && remainingDrain > 0; ) {
-        if (!sb.sustained[i]) continue;
+        if (!spellbook_bit(sb.sustained, i)) continue;
         const SpellDef& d = kSpellDefs[i];
         int spellDrain = int(std::floor(d.manaDrain * dt));
         if (spellDrain <= 0 && d.manaDrain > 0.0f) spellDrain = 1;
@@ -259,7 +260,7 @@ void spellbook_tick(SpellBook& sb, ecs::Pools& combat, std::uint32_t steps) {
             remainingMp -= spellDrain;
         } else {
             remainingMp = 0;
-            sb.sustained[i] = 0;
+            spellbook_bit_set(sb.sustained, i, false);
         }
     }
     if (!spellbook_any_sustained(sb)) sb.sustainedDrainCarry = 0.0f;

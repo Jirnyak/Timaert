@@ -99,7 +99,7 @@ void apply_pending(sm::EventBus& bus, sm::GameState& gs, std::size_t& applied) {
         const std::size_t begin = applied;
         const std::size_t end = events.size();
         std::span<const sm::GameEvent> pending(events.data() + begin, end - begin);
-        sm::apply_events(pending, gs, &bag, nullptr);
+        sm::apply_events(pending, gs, &bag, nullptr, nullptr);
         applied = end;
     }
 }
@@ -416,7 +416,7 @@ void test_effect_applicator_ts_verbs() {
     events.push_back(failQuest);
     events.push_back(failQuest);
 
-    sm::apply_events(events, verbState, &bag, &verbPools);
+    sm::apply_events(events, verbState, &bag, &verbPools, nullptr);
 
     // Money is coin now: the wallet drains to ZERO and cannot go negative —
     // the uncovered remainder of a penalty is a DEBT FACT, not a negative
@@ -455,7 +455,7 @@ void test_effect_applicator_ts_verbs() {
     lethal.ix = 10;
     sm::GameState lethalState{};
     sm::apply_events(std::span<const sm::GameEvent>(&lethal, 1), lethalState,
-                     &bag, &hurtPools);
+                     &bag, &hurtPools, nullptr);
     CHECK_OR_RETURN(!(hurtPools.hp != 7),
         "a razed verb must do NOTHING, not something smaller");
     // ...and the registry itself refuses the same thing by the other road,
@@ -533,7 +533,7 @@ void test_grant_xp_pays_the_wis_dividend() {
     sm::GameEvent grant{sm::EventTag::ApplyEffect};
     grant.s1 = "grant_xp";
     grant.ix = 100;
-    sm::apply_events(std::span<const sm::GameEvent>(&grant, 1), wisState, &bag, nullptr);
+    sm::apply_events(std::span<const sm::GameEvent>(&grant, 1), wisState, &bag, nullptr, nullptr);
     if (player.sheet.levelData.exp != 110) {
         std::fprintf(stderr, "exp=%d (expected 110)\n",
                      player.sheet.levelData.exp);
@@ -639,7 +639,7 @@ void test_unhandled_tag_is_inert_in_applicator() {
     sm::GameEvent unhandled{sm::EventTag::Custom};
     unhandled.ix = 99;
     sm::apply_events(std::span<const sm::GameEvent>(&unhandled, 1), levelState,
-                     &bag, &inertPools);
+                     &bag, &inertPools, nullptr);
     CHECK_OR_RETURN(!(player.sheet.levelData.level != beforeLevel
         || player.sheet.levelData.exp != beforeExp
         || player.sheet.levelData.expToNext != beforeExpToNext
@@ -1125,7 +1125,7 @@ void test_quest_failed_settles_its_offer() {
         || !offer_settled(gs.player, q)),
         "expiry did not settle the offer / count the failure honestly");
 
-    sm::apply_events(bus.tick_events(), gs, &bag, nullptr);
+    sm::apply_events(bus.tick_events(), gs, &bag, nullptr, nullptr);
     CHECK_OR_RETURN(!(gs.player.failedQuestCount != 1u),
         "an already-applied QuestFail was double-counted");
     CHECK_OR_RETURN(!(!engine.is_known(active, gs.player, q)),
@@ -1610,7 +1610,7 @@ void test_abandon_emits_and_removes() {
     // settlement may re-offer it the same day, exactly as before.
     sm::GameState abandonState{};
     sm::PlayerState& player = abandonState.player;
-    sm::apply_events(bus.tick_events(), abandonState, &bag, nullptr);
+    sm::apply_events(bus.tick_events(), abandonState, &bag, nullptr, nullptr);
     CHECK_OR_RETURN(!(player.completedQuestCount != 0u
         || player.failedQuestCount != 0u
         || engine.is_known(active, player, q)),
@@ -1866,7 +1866,7 @@ void test_generated_delivery_quest_flow() {
     CHECK_OR_RETURN(!(!has_tag(bus, sm::EventTag::QuestComplete)),
         "completion did not emit QuestComplete");
 
-    sm::apply_events(bus.tick_events(), gs, &bag, nullptr);
+    sm::apply_events(bus.tick_events(), gs, &bag, nullptr, nullptr);
     CHECK_OR_RETURN(!(gs.player.completedQuestCount != 1u),
         "QuestComplete was not applied to player completion state");
     CHECK_OR_RETURN(!(active.empty() && gs.nextQuestOrdinal != 2u),
@@ -1875,7 +1875,7 @@ void test_generated_delivery_quest_flow() {
         "gold reward was not applied exactly once");
 
     bus.flush();
-    sm::apply_events(bus.tick_events(), gs, &bag, nullptr);
+    sm::apply_events(bus.tick_events(), gs, &bag, nullptr, nullptr);
     CHECK_OR_RETURN(!(sm::wallet_value(bag) != startGold + rewardGold),
         "empty post-flush tick reapplied reward");
 }

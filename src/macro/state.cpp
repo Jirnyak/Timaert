@@ -77,8 +77,8 @@ PlayerState default_player() {
     // «sheet → body» door. A PlayerState cannot be hurt or tired any more;
     // it is not a body.)
 
-    // Starter spellbook: magic_bolt.
-    spellbook_learn(p.spellBook, spell_ordinal("magic_bolt"));
+    // (Starter spellbook moved to the squad's own book — the component is
+    // born WITH his squad entity, ensure_macro_player_entity, v89.)
 
     p.codexUnlockedBits = kCodexInitialUnlockBits;
 

@@ -7,6 +7,7 @@
 #include "macro/character_sheet.h"
 #include "macro/faction.h"
 #include "macro/npc.h"
+#include "macro/spell_book_state.h"
 #include "macro/spells.h"
 #include "macro/squad.h"
 #include <algorithm>
@@ -87,6 +88,13 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
                 squad, ecs::roll_npc_character(faceRng, 160));
         }
         reg.emplace<AgentMemory>(squad);
+        // His book, born WITH the body like every squad's (v89) — with the
+        // starter spell the old PlayerState default carried (state.cpp).
+        {
+            SpellBook book{};
+            spellbook_learn(book, spell_ordinal("magic_bolt"));
+            reg.emplace<SpellBook>(squad, book);
+        }
         // The snapshot's view names every component make_npc emplaces, and the
         // player's squad is saved BY IT now — neither his roster nor his bag
         // nor his head is a field of PlayerState any more.
@@ -176,8 +184,9 @@ BonusTotals player_standing_bonuses(ecs::World& world,
     // burns and stops the moment it does not — no bookkeeping, because nothing
     // was ever written down. Scaled by his BASE training on purpose: the
     // standing sum cannot read the sheet it is itself a term of.
-    for (int ord = 0; ord < kSpellCount; ++ord) {
-        if (!player.spellBook.sustained[ord]) continue;
+    const SpellBook* book = player_spellbook(world);
+    for (int ord = 0; book && ord < kSpellCount; ++ord) {
+        if (!spellbook_has_sustained(*book, ord)) continue;
         const SpellDef* def = &kSpellDefs[ord];
         for (const Bonus& b : def->effects) {
             accumulate(t, spell_bonus(b, player.sheet.skills,
@@ -240,6 +249,16 @@ void refresh_player_body(PlayerState& player, ecs::World& world) {
     const BonusTotals st = player_standing_bonuses(world, player);
     refresh_body_from_sheet(*pools, rt, effective_sheet(player.sheet, st),
                             NPCType::Adventurer, &st);
+}
+
+SpellBook* player_spellbook(ecs::World& world) {
+    const entt::entity e = find_player_squad(world);
+    if (e == entt::null) return nullptr;
+    return world.reg.try_get<SpellBook>(e);
+}
+
+const SpellBook* player_spellbook(const ecs::World& world) {
+    return player_spellbook(const_cast<ecs::World&>(world));
 }
 
 AgentMemory* player_head(ecs::World& world) {

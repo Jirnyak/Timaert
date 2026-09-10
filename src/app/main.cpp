@@ -1064,6 +1064,15 @@ float& player_sp_carry(App& app) {
 // entity IS the store — no scalar copy anywhere). Same scratch idiom as the
 // carry above: a frame before the world exists must not crash, and bars with
 // nowhere to live are bars nobody reads.
+// His BOOK, through the one door — scratch fallback like the bars below:
+// a frame before the world exists must not crash, and a book with nowhere
+// to live is a book nobody reads.
+sm::SpellBook& player_book(App& app) {
+    static sm::SpellBook scratch{};
+    sm::SpellBook* book = sm::player_spellbook(app.ecs);
+    return book ? *book : scratch;
+}
+
 sm::ecs::Pools& player_pools(App& app) {
     static sm::ecs::Pools scratch{};
     sm::ecs::Pools* pools = sm::player_pools(app.ecs);
@@ -1088,7 +1097,8 @@ sm::CharacterSheet player_effective_sheet(const App& app) {
 // magnitude to scale, so this is a row lookup and a boolean, not a number —
 // the one scan beside the SpellBook itself (macro/spell_book_state.h).
 bool player_rule_active(const App& app, sm::SpellRuleId rule) {
-    return sm::spellbook_rule_active(app.gs.player.spellBook, rule);
+    return sm::spellbook_rule_active(
+        player_book(const_cast<App&>(app)), rule);
 }
 
 bool boot_window(App& app) {
@@ -2227,7 +2237,7 @@ void draw_subworld_combat_log(const sm::sub::SubworldEngine& subworld,
 // charges, so «occupied» is one fact whatever occupied him.
 bool cast_active_spell(App& app) {
     if (!app.worldLoaded) return false;
-    const int ord = app.gs.player.spellBook.activeSpell;
+    const int ord = player_book(app).activeSpell;
     if (!sm::spell_ordinal_ok(ord)) {
         emit_spell_cast(app, "", false, "No active spell");
         return false;
@@ -2247,7 +2257,7 @@ bool cast_active_spell(App& app) {
         }
     }
     const sm::CastCheck check = sm::spellbook_can_cast_ex(
-        app.gs.player.spellBook, player_pools(app), ord, inMicro,
+        player_book(app), player_pools(app), ord, inMicro,
         gateSteps);
     if (!check.ok) {
         emit_spell_cast(app, id, false, check.reason.c_str(),
@@ -2266,7 +2276,7 @@ bool cast_active_spell(App& app) {
             emit_spell_cast(app, id, false, "World-map spell effect not implemented");
             return false;
         }
-        sm::spellbook_start_cast(app.gs.player.spellBook,
+        sm::spellbook_start_cast(player_book(app),
                                  player_pools(app), ord);
         emit_spell_cast(app, id, true, "");
         return true;
@@ -2280,7 +2290,7 @@ bool cast_active_spell(App& app) {
     // the bolt the same way it strengthens every other read of him.
     const sm::CharacterSheet effCast = player_effective_sheet(app);
     const bool ok = sm::spellbook_cast(app.ecs,
-        app.gs.player.spellBook,
+        player_book(app),
         player_pools(app),
         effCast.attributes,
         effCast.skills,
@@ -2831,7 +2841,8 @@ void apply_pending_event_effects(App& app) {
         // span points into) — the while loop picks them up as the next batch.
         std::vector<sm::GameEvent> followups;
         sm::apply_events(pending, app.gs, sm::player_inventory(app.ecs),
-                         sm::player_pools(app.ecs), &followups);
+                         sm::player_pools(app.ecs),
+                         sm::player_spellbook(app.ecs), &followups);
         bool spireDied = false;
         for (const sm::GameEvent& ev : pending) {
             if (ev.tag == sm::EventTag::SpireDepleted) spireDied = true;
@@ -3286,7 +3297,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     // the wall clock's. Underground the world CLOCK crawls (one tick per
     // kSubworldTickDivisor steps) while the fight keeps the full step rate, so
     // a cooldown is the same length of FIGHT in both worlds (core/time.h).
-    sm::spellbook_tick(app.gs.player.spellBook,
+    sm::spellbook_tick(player_book(app),
                        player_pools(app),
                        /*steps=*/1u);
     // (No wind-up queue: a cast resolves at its own click — owner verdict
@@ -4234,7 +4245,7 @@ void register_console_commands(App& app) {
                 c.error("unknown spell '" + id + "' - type 'spells' for the list");
                 return true;
             }
-            if (sm::spellbook_learn(app.gs.player.spellBook,
+            if (sm::spellbook_learn(player_book(app),
                                     sm::spell_ordinal(id)))
                 c.printfln(Lvl::Ok, "learned %s", id.c_str());
             else
@@ -4247,9 +4258,9 @@ void register_console_commands(App& app) {
         [&app](Con& c, const std::vector<std::string>&) {
             int learned = 0;
             for (int ord = 0; ord < sm::kSpellCount; ++ord)
-                if (sm::spellbook_learn(app.gs.player.spellBook, ord)) ++learned;
+                if (sm::spellbook_learn(player_book(app), ord)) ++learned;
             c.printfln(Lvl::Ok, "learned %d new spell(s); know %d total", learned,
-                       sm::spellbook_learned_count(app.gs.player.spellBook));
+                       sm::spellbook_learned_count(player_book(app)));
             return true;
         });
 
@@ -4536,7 +4547,8 @@ void register_console_commands(App& app) {
             c.printfln(Lvl::Ok, "hand: %-16s %.2fs swing",
                        w ? w->id : "(fist)", handSec);
             for (int ord = 0; ord < sm::kSpellCount; ++ord) {
-                if (!app.gs.player.spellBook.learned[ord]) continue;
+                if (!sm::spellbook_has_learned(player_book(app),
+                                               ord)) continue;
                 const auto& s = sm::kSpellDefs[ord];
                 if (s.recovery <= 0.0f) continue;
                 const float rec = sm::seconds_from_steps(std::uint32_t(
@@ -4931,7 +4943,7 @@ void draw_debug_panels(App& app) {
             ImGui::Text("points  attr %d  skill %d",
                         p.sheet.levelData.attributePoints, p.sheet.levelData.skillPoints);
             ImGui::Text("spells  %d learned",
-                        sm::spellbook_learned_count(p.spellBook));
+                        sm::spellbook_learned_count(player_book(app)));
             ImGui::SeparatorText("World");
             ImGui::Text("clock   day %d, %02d:%02d",
                         app.gs.worldTime.day(), app.gs.worldTime.hour(),
@@ -5525,7 +5537,7 @@ void frame(App& app, int simSteps) {
             const sm::ecs::MacroCell* origin = sm::player_flag_cell(app.ecs);
             int sx = origin ? sm::ecs::cell_x(*origin, app.gs.mapW) : 0;
             int sy = origin ? sm::ecs::cell_y(*origin, app.gs.mapW) : 0;
-            if (sm::spellbook_rule_active(app.gs.player.spellBook,
+            if (sm::spellbook_rule_active(player_book(app),
                                           sm::SpellRuleId::Flight)) {
                 app.cursor.path = build_flight_path(sx, sy,
                     app.cursor.requestX, app.cursor.requestY,

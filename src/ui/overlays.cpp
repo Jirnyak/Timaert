@@ -1172,17 +1172,22 @@ namespace sm::ui
                     *tab = CharacterPanelTab::Spells;
                 if (spellsOpen)
                 {
+                    // His book, through the one door (v89): the component on
+                    // his squad — the panel is a reader like any other.
+                    static SpellBook bookScratch{};
+                    SpellBook* bookPtr = player_spellbook(world);
+                    SpellBook& book = bookPtr ? *bookPtr : bookScratch;
                     ImGui::Text("MP %d / %d", pools.mp, pools.maxMp);
-                    if (spell_ordinal_ok(p.spellBook.activeSpell))
+                    if (spell_ordinal_ok(book.activeSpell))
                     {
                         ImGui::SameLine();
                         ImGui::TextDisabled(
                             "Active: %s",
-                            kSpellDefs[p.spellBook.activeSpell].name);
+                            kSpellDefs[book.activeSpell].name);
                     }
                     ImGui::Separator();
 
-                    if (spellbook_learned_count(p.spellBook) == 0)
+                    if (spellbook_learned_count(book) == 0)
                     {
                         ImGui::TextDisabled("(none)");
                     }
@@ -1201,7 +1206,7 @@ namespace sm::ui
                         ImGui::TableHeadersRow();
                         for (int ord = 0; ord < kSpellCount; ++ord)
                         {
-                            if (!p.spellBook.learned[ord]) continue;
+                            if (!spellbook_has_learned(book, ord)) continue;
                             const SpellDef *def = &kSpellDefs[ord];
                             ImGui::TableNextRow();
                             ImGui::TableNextColumn();
@@ -1343,7 +1348,7 @@ namespace sm::ui
                                 ImGui::TextDisabled("-");
                             }
                             ImGui::TableNextColumn();
-                            if (def && def->sustained && spellbook_has_sustained(p.spellBook, ord))
+                            if (def && def->sustained && spellbook_has_sustained(book, ord))
                             {
                                 ImGui::TextColored(ImVec4(0.45f, 0.75f, 1.0f, 1.0f), "Sustained");
                             }
@@ -1352,7 +1357,7 @@ namespace sm::ui
                                 // Gate 0: the panel pauses the world, so the
                                 // body's recovery is not racing this frame.
                                 const CastCheck check = spellbook_can_cast_ex(
-                                    p.spellBook, pools, ord, true, 0u);
+                                    book, pools, ord, true, 0u);
                                 if (check.ok)
                                 {
                                     ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.45f, 1.0f), "Ready");
@@ -1369,13 +1374,13 @@ namespace sm::ui
                             }
                             ImGui::TableNextColumn();
                             ImGui::PushID(ord);
-                            if (p.spellBook.activeSpell == ord)
+                            if (book.activeSpell == ord)
                             {
                                 ImGui::TextDisabled("Selected");
                             }
                             else if (ImGui::SmallButton("Set"))
                             {
-                                spellbook_set_active(p.spellBook, ord);
+                                spellbook_set_active(book, ord);
                             }
                             ImGui::PopID();
                         }

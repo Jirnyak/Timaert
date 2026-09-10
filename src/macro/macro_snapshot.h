@@ -24,6 +24,7 @@
 #include "ecs/components.h"
 #include "ecs/world.h"
 #include "macro/agent_memory.h"
+#include "macro/spell_book_state.h"
 
 namespace sm {
 
@@ -39,6 +40,10 @@ struct MacroNpcRecord {
     ecs::MacroNpcRuntime runtime{};
     ecs::NpcTraits       traits{};
     ecs::NpcCharacter    character{};
+    // The body's KNOWLEDGE of the spell registry (§41 root 3, v89): two
+    // 256-bit planes + the active ordinal — a component like the pools,
+    // born all-zero with every squad and ridden verbatim.
+    SpellBook            book{};
     ecs::SquadOrders     orders{};          // meaningful iff hasOrders
     AgentMemory          memory{};          // what the leader remembers (v28)
     std::uint8_t         hasOrders = 0;

@@ -398,6 +398,29 @@ void read_squad(Reader& r, SoldierSquad& squad) {
     }
 }
 
+void write_spell_book(Writer& w, const SpellBook& spellBook) {
+    // v89: the ENVELOPE is written first (the owner's 256), so a book saved
+    // against a different capacity is refused loudly instead of sliding bit
+    // planes; ordinals inside the planes are append-only registry rows.
+    // v83: no per-spell cooldown cell — recovery is the BODY's one gate
+    // (session-scene state, never saved), so the book carries only knowledge.
+    w.pod(std::int32_t(kSpellBookCapacity));
+    for (const std::uint64_t word : spellBook.learned) w.pod(word);
+    for (const std::uint64_t word : spellBook.sustained) w.pod(word);
+    w.pod(spellBook.activeSpell);
+    w.pod(spellBook.sustainedDrainCarry);
+}
+
+void read_spell_book(Reader& r, SpellBook& spellBook) {
+    std::int32_t cap = 0;
+    r.pod(cap);
+    if (!r.ok || cap != kSpellBookCapacity) { r.ok = false; return; }
+    for (std::uint64_t& word : spellBook.learned) r.pod(word);
+    for (std::uint64_t& word : spellBook.sustained) r.pod(word);
+    r.pod(spellBook.activeSpell);
+    r.pod(spellBook.sustainedDrainCarry);
+}
+
 // One macro NPC of the ECS snapshot (v23, macro/macro_snapshot.h). The POD
 // components ride verbatim — any layout change to them is a save-format
 // change and pays a kSaveVersion bump, the same discipline Skills already
@@ -421,6 +444,7 @@ void write_macro_npc(Writer& w, const MacroNpcRecord& m) {
     w.pod(m.character);
     w.pod(m.orders);
     w.pod(m.memory);   // v28: the leader's memory — padding-free by static_assert
+    write_spell_book(w, m.book);   // v89: knowledge is the body's (§41 root 3)
     w.pod(m.hasOrders);
     w.pod(m.dead);
     w.pod(m.playerFlag);   // v87: PlayerTag rides the snapshot honestly
@@ -441,6 +465,7 @@ void read_macro_npc(Reader& r, MacroNpcRecord& m) {
     r.pod(m.character);
     r.pod(m.orders);
     r.pod(m.memory);   // v28
+    read_spell_book(r, m.book);    // v89
     r.pod(m.hasOrders);
     r.pod(m.dead);
     r.pod(m.playerFlag);   // v87
@@ -642,33 +667,6 @@ void read_history(Reader& r, SettlementHistory& h) {
     }
 }
 
-void write_spell_book(Writer& w, const SpellBook& spellBook) {
-    // v59: ordinal-for-ordinal over the append-only registry — the row count
-    // is written first so a book saved against a DIFFERENT registry length
-    // is refused loudly instead of sliding rows onto wrong spells.
-    w.pod(std::int32_t(kSpellCount));
-    // v83: no per-spell cooldown cell — recovery is the BODY's one gate
-    // (session-scene state, never saved), so the book carries only knowledge.
-    for (int i = 0; i < kSpellCount; ++i) {
-        w.pod(spellBook.learned[i]);
-        w.pod(spellBook.sustained[i]);
-    }
-    w.pod(spellBook.activeSpell);
-    w.pod(spellBook.sustainedDrainCarry);
-}
-
-void read_spell_book(Reader& r, SpellBook& spellBook) {
-    std::int32_t rows = 0;
-    r.pod(rows);
-    if (!r.ok || rows != kSpellCount) { r.ok = false; return; }
-    for (int i = 0; i < kSpellCount; ++i) {
-        r.pod(spellBook.learned[i]);
-        r.pod(spellBook.sustained[i]);
-    }
-    r.pod(spellBook.activeSpell);
-    r.pod(spellBook.sustainedDrainCarry);
-}
-
 void write_player(Writer& w, const PlayerState& p) {
     w.str(p.name);
     w.pod(p.sexIdx);              // v78: the creation screen's nature pick
@@ -691,7 +689,8 @@ void write_player(Writer& w, const PlayerState& p) {
     w.pod(p.codexUnlockedBits);   // v63: a bit per article ordinal
     // (No event log block since v58: session messages die with the session,
     // the player's past rides below as his journal of chronicle records.)
-    write_spell_book(w, p.spellBook);
+    // (No spellbook block since v89: his book is the SpellBook component on
+    // his squad entity, riding its MacroNpcRecord like every body's.)
     w.pod(p.factionPeaceUntilDay);
     // v63: settled quest OFFERS (same-day dedup PODs) + lifetime tallies —
     // the two eternal id-string vectors left the format.
@@ -721,7 +720,6 @@ void read_player(Reader& r, PlayerState& p) {
     r.pod(p.sheet.levelData);
     r.pod(p.sheet.skills);
     r.pod(p.codexUnlockedBits);   // v63
-    read_spell_book(r, p.spellBook);
     r.pod(p.factionPeaceUntilDay);
     std::uint32_t sn = 0;         // v63: settled offers ride as PODs
     if (!read_count(r, sn, kMaxQuests)) return;

@@ -18,7 +18,7 @@ std::vector<MacroNpcRecord> snapshot_macro_ecs(ecs::World& w) {
     auto view = reg.view<ecs::MacroSpawnId, ecs::MacroCell, ecs::MacroVisual,
                          ecs::NPCKind, ecs::Pools, ecs::NpcLevel,
                          ecs::MacroNpcRuntime, ecs::NpcTraits,
-                         ecs::NpcCharacter, ecs::NpcInventory,
+                         ecs::NpcCharacter, SpellBook, ecs::NpcInventory,
                          ecs::SquadRoster>();
     for (auto e : view) {
         MacroNpcRecord m{};
@@ -31,6 +31,7 @@ std::vector<MacroNpcRecord> snapshot_macro_ecs(ecs::World& w) {
         m.runtime   = view.get<ecs::MacroNpcRuntime>(e);
         m.traits    = view.get<ecs::NpcTraits>(e);
         m.character = view.get<ecs::NpcCharacter>(e);
+        m.book      = view.get<SpellBook>(e);
         m.inventory = view.get<ecs::NpcInventory>(e).inv;
         m.roster    = view.get<ecs::SquadRoster>(e).squad;
         if (const auto* orders = reg.try_get<ecs::SquadOrders>(e)) {
@@ -70,6 +71,7 @@ void restore_macro_ecs(const std::vector<MacroNpcRecord>& records,
         reg.emplace<ecs::MacroNpcRuntime>(e, m.runtime);
         reg.emplace<ecs::NpcTraits>(e, m.traits);
         reg.emplace<ecs::NpcCharacter>(e, m.character);
+        reg.emplace<SpellBook>(e, m.book);
         reg.emplace<ecs::NpcInventory>(e, ecs::NpcInventory{m.inventory});
         reg.emplace<ecs::SquadRoster>(e, ecs::SquadRoster{m.roster});
         if (m.hasOrders) reg.emplace<ecs::SquadOrders>(e, m.orders);

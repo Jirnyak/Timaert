@@ -683,7 +683,8 @@ int main() {
         || !sm::spellbook_has_sustained(multiSustainBook, sm::spell_ordinal("flight"))
         || [&]{ int n = 0;
                 for (int i = 0; i < sm::kSpellCount; ++i)
-                    n += multiSustainBook.sustained[i] ? 1 : 0;
+                    n += sm::spellbook_has_sustained(multiSustainBook, i)
+                             ? 1 : 0;
                 return n; }() != 1) {
         return fail("multi sustained partial depletion wrong");
     }
@@ -1028,7 +1029,7 @@ int main() {
 
     int susActive = 0;
     for (int i = 0; i < sm::kSpellCount; ++i) {
-        susActive += book.sustained[i] ? 1 : 0;
+        susActive += sm::spellbook_has_sustained(book, i) ? 1 : 0;
     }
     std::fprintf(stderr,
                  "PASS: projectiles=%d mp=%d sustained=%d\n",

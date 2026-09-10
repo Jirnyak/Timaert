@@ -49,6 +49,14 @@ static void smoke_teleport_player(App& app, int x, int y) {
     sm::player_jump_to_cell(app.gs, app.ecs, x, y);
 }
 
+// His book, through the one door (v89) — scratch like the main app's own
+// wrapper: a harness line before the world exists reads zeros, not garbage.
+static sm::SpellBook& smoke_player_book(App& app) {
+    static sm::SpellBook scratch{};
+    sm::SpellBook* book = sm::player_spellbook(app.ecs);
+    return book ? *book : scratch;
+}
+
 constexpr int kSubworldSmokeFrames = 1000;
 constexpr int kSubworldSeamSmokeSettleFrames = 120;
 constexpr int kSmokeMacroTravelSteps = 3;
@@ -3105,7 +3113,7 @@ bool run_spire_climb_smoke(App& app) {
         if (sp.type != sm::LandmarkType::Spire) continue;
         if (sp.depleted || sp.spellId >= std::uint32_t(sm::kSpellCount))
             continue;
-        if (sm::spellbook_has_learned(app.gs.player.spellBook,
+        if (sm::spellbook_has_learned(smoke_player_book(app),
                                       int(sp.spellId))) {
             continue;
         }
@@ -3284,7 +3292,7 @@ bool run_spire_climb_smoke(App& app) {
         // the buffer stops growing, so the follow-up SpellLearned is
         // delivered in the same pass.
         apply_pending_event_effects(app);
-        learned = sm::spellbook_has_learned(app.gs.player.spellBook,
+        learned = sm::spellbook_has_learned(smoke_player_book(app),
                                             sm::spell_ordinal(def.id));
         if (const sm::Landmark* sp = sm::landmark_by_id(app.gs, spireId))
             depletedFlag = sp->depleted;
@@ -3665,9 +3673,9 @@ bool run_subworld_self_fireball_smoke(App& app) {
 
     // Guarantee the cast is affordable regardless of the player's current mana.
     player_pools(app).mp = 999;
-    sm::spellbook_learn(app.gs.player.spellBook,
+    sm::spellbook_learn(smoke_player_book(app),
                         sm::spell_ordinal("fireball"));
-    sm::spellbook_set_active(app.gs.player.spellBook,
+    sm::spellbook_set_active(smoke_player_book(app),
                              sm::spell_ordinal("fireball"));
 
     // AIM AT THE SKY. Clearing the other actors leaves only one thing the bolt
@@ -4589,7 +4597,7 @@ bool run_console_smoke(App& app) {
     const auto   oldInv          = player_bag(app);
     const auto   oldLevel        = app.gs.player.sheet.levelData;
     const sm::ecs::Pools oldPools = player_pools(app);
-    const auto   oldSpellBook    = app.gs.player.spellBook;
+    const auto   oldSpellBook    = smoke_player_book(app);
     const auto   oldTime         = app.gs.worldTime;
     const float  oldSimSpeed     = app.simSpeed;
     const float  oldX            = smoke_player_x(app);
@@ -4612,7 +4620,7 @@ bool run_console_smoke(App& app) {
         player_bag(app)   = oldInv;
         app.gs.player.sheet.levelData   = oldLevel;
         player_pools(app)         = oldPools;
-        app.gs.player.spellBook   = oldSpellBook;
+        smoke_player_book(app)   = oldSpellBook;
         app.gs.worldTime          = oldTime;
         app.simSpeed              = oldSimSpeed;
                 smoke_teleport_player(app, int(oldX), int(oldY));
@@ -4655,7 +4663,7 @@ bool run_console_smoke(App& app) {
     }
 
     con.execute("learnall");
-    if (sm::spellbook_learned_count(app.gs.player.spellBook)
+    if (sm::spellbook_learned_count(smoke_player_book(app))
         != sm::kSpellCount) {
         restore(); smoke_fail(app, "console learnall count mismatch"); return false;
     }
@@ -5206,7 +5214,7 @@ bool run_console_smoke(App& app) {
     const int         rGold   = sm::wallet_value(player_bag(app));
     const int         rLevel  = app.gs.player.sheet.levelData.level;
     const std::size_t rSpells =
-        std::size_t(sm::spellbook_learned_count(app.gs.player.spellBook));
+        std::size_t(sm::spellbook_learned_count(smoke_player_book(app)));
     restore();
 
     std::fprintf(stderr,
@@ -7028,13 +7036,13 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             app.ui.character = true;
             app.ui.characterTab = sm::ui::CharacterPanelTab::Spells;
-            const auto& book = app.gs.player.spellBook;
+            const auto& book = smoke_player_book(app);
             const int activeOrd = book.activeSpell;
             const float cd =
                 sm::seconds_from_steps(smoke_player_recovery_steps(app));
             int sustainedCount = 0;
             for (int i = 0; i < sm::kSpellCount; ++i)
-                sustainedCount += book.sustained[i] ? 1 : 0;
+                sustainedCount += sm::spellbook_has_sustained(book, i) ? 1 : 0;
             std::fprintf(stderr,
                          "[smoke] spell_overlay learned=%d active=%s mp=%d/%d cd=%.2f sustained=%d\n",
                          sm::spellbook_learned_count(book),
@@ -7078,8 +7086,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     if (app.ecs.reg.valid(e)) app.ecs.reg.destroy(e);
                 }
             }
-            sm::spellbook_learn(app.gs.player.spellBook, sm::spell_ordinal("magic_bolt"));
-            sm::spellbook_set_active(app.gs.player.spellBook, sm::spell_ordinal("magic_bolt"));
+            sm::spellbook_learn(smoke_player_book(app), sm::spell_ordinal("magic_bolt"));
+            sm::spellbook_set_active(smoke_player_book(app), sm::spell_ordinal("magic_bolt"));
             const float spellTargetX = std::min(
                 app.subworld.player_x() + 43.5f,
                 float(sm::sub::kFullSize - 2));
@@ -7135,9 +7143,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 || !spellEvent
                 || spellEvent->ix != 1
                 || spellEvent->s1
-                       != sm::kSpellDefs[app.gs.player.spellBook.activeSpell].id
+                       != sm::kSpellDefs[smoke_player_book(app).activeSpell].id
                 || spellEvent->a != sm::stable_spell_id(
-                    sm::kSpellDefs[app.gs.player.spellBook.activeSpell].id)) {
+                    sm::kSpellDefs[smoke_player_book(app).activeSpell].id)) {
                 smoke_fail(app, "SpellCast event was not emitted honestly");
                 break;
             }
@@ -7183,7 +7191,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             const auto* targetHp =
                 app.ecs.reg.try_get<sm::ecs::Pools>(spellTarget);
-            const auto& book = app.gs.player.spellBook;
+            const auto& book = smoke_player_book(app);
             std::fprintf(stderr,
                          "[smoke] spell_projectile active=%s projectiles=%d->%d alive=%d "
                          "targetHp=%.1f mp=%d cd=%zu event=%d flash=%.3f log=\"%s\"\n",
@@ -7234,8 +7242,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // warm lantern and the blue moon).
             const char* boltSpell = std::getenv("TIMAERT_SMOKE_SPELL");
             if (!boltSpell || boltSpell[0] == '\0') boltSpell = "fireball";
-            sm::spellbook_learn(app.gs.player.spellBook, sm::spell_ordinal(boltSpell));
-            sm::spellbook_set_active(app.gs.player.spellBook, sm::spell_ordinal(boltSpell));
+            sm::spellbook_learn(smoke_player_book(app), sm::spell_ordinal(boltSpell));
+            sm::spellbook_set_active(smoke_player_book(app), sm::spell_ordinal(boltSpell));
             // Refill mana so the cast cannot fail on cost in a fresh smoke run.
             player_pools(app).mp =
                 player_pools(app).maxMp;
@@ -7510,8 +7518,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "toggle_haste without world");
                 break;
             }
-            sm::spellbook_learn(app.gs.player.spellBook, sm::spell_ordinal("haste"));
-            sm::spellbook_set_active(app.gs.player.spellBook, sm::spell_ordinal("haste"));
+            sm::spellbook_learn(smoke_player_book(app), sm::spell_ordinal("haste"));
+            sm::spellbook_set_active(smoke_player_book(app), sm::spell_ordinal("haste"));
             const int beforeMp = player_pools(app).mp;
             if (!cast_active_spell(app)) {
                 smoke_fail(app, "haste toggle failed");
@@ -7524,7 +7532,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             const bool active = sm::spellbook_has_sustained(
-                app.gs.player.spellBook, sm::spell_ordinal("haste"));
+                smoke_player_book(app), sm::spell_ordinal("haste"));
             const int afterMp = player_pools(app).mp;
             // ...and it MAKES HIM FASTER. The smoke used to prove only that
             // mana drained, so the whole reason to cast it went unmeasured —
@@ -7549,7 +7557,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          active ? 1 : 0,
                          beforeMp,
                          afterMp,
-                         app.gs.player.spellBook.sustainedDrainCarry,
+                         smoke_player_book(app).sustainedDrainCarry,
                          double(basePace), double(hastePace));
             std::fflush(stderr);
             ++app.smoke.cursor;
@@ -7565,8 +7573,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             if (app.subworld.active()) {
                 app.subworld.leave();
             }
-            sm::spellbook_learn(app.gs.player.spellBook, sm::spell_ordinal("flight"));
-            sm::spellbook_set_active(app.gs.player.spellBook, sm::spell_ordinal("flight"));
+            sm::spellbook_learn(smoke_player_book(app), sm::spell_ordinal("flight"));
+            sm::spellbook_set_active(smoke_player_book(app), sm::spell_ordinal("flight"));
             int beforeProjectiles = 0;
             for (auto e : app.ecs.reg.view<sm::ecs::Projectile>()) {
                 (void)e;
@@ -7587,7 +7595,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             const bool active = sm::spellbook_has_sustained(
-                app.gs.player.spellBook, sm::spell_ordinal("flight"));
+                smoke_player_book(app), sm::spell_ordinal("flight"));
             if (!active || player_pools(app).mp != beforeMp) {
                 smoke_fail(app, "flight toggle invariant");
                 break;
@@ -7720,19 +7728,19 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
 
-            sm::spellbook_learn(app.gs.player.spellBook, sm::spell_ordinal("haste"));
-            sm::spellbook_learn(app.gs.player.spellBook, sm::spell_ordinal("flight"));
+            sm::spellbook_learn(smoke_player_book(app), sm::spell_ordinal("haste"));
+            sm::spellbook_learn(smoke_player_book(app), sm::spell_ordinal("flight"));
             if (!sm::spellbook_has_sustained(
-                    app.gs.player.spellBook, sm::spell_ordinal("haste"))) {
-                sm::spellbook_set_active(app.gs.player.spellBook, sm::spell_ordinal("haste"));
+                    smoke_player_book(app), sm::spell_ordinal("haste"))) {
+                sm::spellbook_set_active(smoke_player_book(app), sm::spell_ordinal("haste"));
                 if (!cast_active_spell(app)) {
                     smoke_fail(app, "prepare_spell_auras haste failed");
                     break;
                 }
             }
             if (!sm::spellbook_has_sustained(
-                    app.gs.player.spellBook, sm::spell_ordinal("flight"))) {
-                sm::spellbook_set_active(app.gs.player.spellBook, sm::spell_ordinal("flight"));
+                    smoke_player_book(app), sm::spell_ordinal("flight"))) {
+                sm::spellbook_set_active(smoke_player_book(app), sm::spell_ordinal("flight"));
                 if (!cast_active_spell(app)) {
                     smoke_fail(app, "prepare_spell_auras flight failed");
                     break;
@@ -7743,9 +7751,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             RuntimeFrameStats frameStats =
                 advance_sim_seconds(app, 0.05f, false);
             const bool haste = sm::spellbook_has_sustained(
-                app.gs.player.spellBook, sm::spell_ordinal("haste"));
+                smoke_player_book(app), sm::spell_ordinal("haste"));
             const bool flight = sm::spellbook_has_sustained(
-                app.gs.player.spellBook, sm::spell_ordinal("flight"));
+                smoke_player_book(app), sm::spell_ordinal("flight"));
             if (!frameStats.ticked || !frameStats.subworldActive
                 || !haste || !flight || !app.subworld.flying()) {
                 smoke_fail(app, "prepare_spell_auras invariant");

@@ -29,6 +29,7 @@
 #include "ecs/world.h"
 #include "macro/character_sheet.h"
 #include "macro/entry_context.h"
+#include "macro/spell_book_state.h"
 #include "macro/state.h"
 
 namespace sm {
@@ -137,6 +138,16 @@ float* player_sp_carry(ecs::World& world);
 // nullptr before the world exists; there are no bars to read then.
 ecs::Pools* player_pools(ecs::World& world);
 const ecs::Pools* player_pools(const ecs::World& world);
+
+// THE player's spellbook — the ordinary SpellBook component on his squad
+// entity, the block every macro body is born with (§41 root 3, v89). It was
+// PlayerState::spellBook: a one-copy store that made casting, sustained
+// drains and spire-teaching player-only mechanics. Same family as
+// player_pools/player_inventory: HIS OWN squad by the reserved ordinal —
+// body-native casting through a possessed body's book arrives the day NPC
+// casting does. nullptr before the world exists.
+SpellBook* player_spellbook(ecs::World& world);
+const SpellBook* player_spellbook(const ecs::World& world);
 
 // «His sheet changed» — the ONE call every such moment makes (creation,
 // level-up, point spend, learning, gear on/off, console): ceilings and march

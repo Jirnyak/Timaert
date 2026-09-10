@@ -133,6 +133,12 @@ entt::entity make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
     // memory budget, by the owner's brief.
     w.reg.emplace<AgentMemory>(e);
 
+    // …and every body has a BOOK (§41 root 3, v89): born all zeros — knows
+    // nothing — until a spire, a teacher or content says otherwise. The
+    // component existing on everyone is what makes «НПЦ-маг» one bit, not a
+    // second system.
+    w.reg.emplace<SpellBook>(e);
+
     w.reg.emplace<ecs::NpcLevel>(e, std::int16_t(lvl));
 
     // TS `makeNpc`: 1-2 trait rolls, duplicates skipped.

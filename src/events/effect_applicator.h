@@ -26,11 +26,15 @@ namespace ecs { struct Pools; }
 // the ordinary ecs::Pools on the player's squad entity (landing 4; there is
 // no bar on PlayerState to write to). Null = no body yet; a pool verb
 // simply does not land, the same sentence the bag speaks.
+// `book` — the player's SpellBook component (v89), handed in exactly like
+// `bag` and `pools`: a spell-learn effect writes knowledge into the body
+// that owns it, and there is no PlayerState field to write to any more.
+// Null = no world yet; a learn effect simply does not land.
 void apply_events(std::span<const GameEvent> events, GameState& gs,
-                  Inventory* bag, ecs::Pools* pools,
+                  Inventory* bag, ecs::Pools* pools, SpellBook* book,
                   std::vector<GameEvent>* followups = nullptr);
 void apply_events(const std::vector<GameEvent>& events, GameState& gs,
-                  Inventory* bag, ecs::Pools* pools,
+                  Inventory* bag, ecs::Pools* pools, SpellBook* book,
                   std::vector<GameEvent>* followups = nullptr);
 
 } // namespace sm

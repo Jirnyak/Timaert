@@ -741,7 +741,11 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     // SubworldTag) that hostiles target through the universal paths (Inc 4b).
     spawn_player_entity();
     if (gs_) {
-        set_flying(spellbook_rule_active(gs_->player.spellBook, SpellRuleId::Flight));
+        {
+        const SpellBook* book = ecs_ ? player_spellbook(*ecs_) : nullptr;
+        set_flying(book
+                   && spellbook_rule_active(*book, SpellRuleId::Flight));
+    }
     }
 
     // ── PLACES IN THIS SCENE THAT MEAN SOMETHING ────────────────────────
@@ -3437,7 +3441,11 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
             std::uint8_t(dungeon_floor_tile(ses.ref)), faunaKey);
     }
     if (gs_) {
-        set_flying(spellbook_rule_active(gs_->player.spellBook, SpellRuleId::Flight));
+        {
+        const SpellBook* book = ecs_ ? player_spellbook(*ecs_) : nullptr;
+        set_flying(book
+                   && spellbook_rule_active(*book, SpellRuleId::Flight));
+    }
     }
 }
 
@@ -4564,7 +4572,9 @@ void SubworldEngine::record_main(VkCommandBuffer cmd, VkExtent2D ext,
                                  std::uint32_t frameIndex) {
     if (!active_ || !gs_) return;
     const bool hasteAura =
-        spellbook_has_sustained(gs_->player.spellBook, spell_ordinal("haste"));
+        (ecs_ && player_spellbook(*ecs_)
+         && spellbook_has_sustained(*player_spellbook(*ecs_),
+                                    spell_ordinal("haste")));
     const bool flightAura = flying();
     // An interior has no sea. The world's water plane sits at WATER_LEVEL
     // (0.40 of the normalised height range) and an interior floor is its

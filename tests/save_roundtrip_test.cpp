@@ -195,6 +195,12 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
                    std::uint16_t(sm::faction_index(sm::kPlayerFactionId))};
     player.pools = {40, 40};
     player.level = {3};
+    // ...and what he KNOWS (v89): learned + active + a burning sustained —
+    // the exact states the old PlayerState block used to carry.
+    sm::spellbook_learn(player.book, sm::spell_ordinal("fireball"));
+    sm::spellbook_set_active(player.book, sm::spell_ordinal("fireball"));
+    sm::spellbook_learn(player.book, sm::spell_ordinal("haste"));
+    sm::spellbook_toggle_sustained(player.book, sm::spell_ordinal("haste"));
     // ...and what he WEARS. Equipment is opt-in on the entity, so the record
     // must carry the shape AND the occupied cells: a saved coat that comes
     // back on a naked body is the same class of loss as a saved bag that comes
@@ -343,13 +349,8 @@ sm::GameState make_state() {
     // The book speaks ORDINALS of the real registry now (v59) — a fixture
     // can no longer invent a spell the table does not hold, which is the law
     // working, not a test limitation.
-    const int sparkOrd = sm::spell_ordinal("fireball");
-    const int hasteOrd = sm::spell_ordinal("haste");
-    sm::spellbook_learn(gs.player.spellBook, sparkOrd);
-    sm::spellbook_set_active(gs.player.spellBook, sparkOrd);
-    // (No cooldown cell to plant: recovery is the BODY's session gate — v83.)
-    sm::spellbook_learn(gs.player.spellBook, hasteOrd);
-    sm::spellbook_toggle_sustained(gs.player.spellBook, hasteOrd);
+    // (The BOOK is authored on his squad's RECORD below since v89 — a body's
+    // knowledge is a component and rides the snapshot like the pools do.)
     gs.player.factionPeaceUntilDay[
         std::size_t(sm::ensure_faction_slot(gs, "guild"))] = 55;
     gs.player.settledQuestOffers.push_back(
@@ -873,17 +874,27 @@ void run_roundtrip() {
         || p.journalSeenSeq != 77u) {
         FAIL_BAIL("the player's journal did not round-trip entry-for-entry");
     }
-    if (!sm::spellbook_has_learned(p.spellBook, sm::spell_ordinal("fireball"))
-        || !sm::spellbook_has_learned(p.spellBook,
-                                      sm::spell_ordinal("haste"))) {
-        FAIL_BAIL("spell learned state lost");
-    }
-    if (p.spellBook.activeSpell != sm::spell_ordinal("fireball")) {
-        FAIL_BAIL("active spell lost");
-    }
-    if (!sm::spellbook_has_sustained(p.spellBook,
-                                     sm::spell_ordinal("haste"))) {
-        FAIL_BAIL("sustained spell state lost");
+    {
+        // His BOOK rides his squad's record (v89) — find it by the reserved
+        // ordinal and demand the knowledge came back bit-for-bit.
+        const sm::MacroNpcRecord* prec = nullptr;
+        for (const sm::MacroNpcRecord& r : loadedMacro) {
+            if (r.spawnId.index == sm::ecs::kPlayerSquadOrdinal) prec = &r;
+        }
+        if (!prec) FAIL_BAIL("the player's squad record vanished");
+        if (!sm::spellbook_has_learned(prec->book,
+                                       sm::spell_ordinal("fireball"))
+            || !sm::spellbook_has_learned(prec->book,
+                                          sm::spell_ordinal("haste"))) {
+            FAIL_BAIL("spell learned state lost");
+        }
+        if (prec->book.activeSpell != sm::spell_ordinal("fireball")) {
+            FAIL_BAIL("active spell lost");
+        }
+        if (!sm::spellbook_has_sustained(prec->book,
+                                         sm::spell_ordinal("haste"))) {
+            FAIL_BAIL("sustained spell state lost");
+        }
     }
     if (p.completedQuestCount != 5u || p.failedQuestCount != 2u) {
         FAIL_BAIL("quest completion tallies lost");

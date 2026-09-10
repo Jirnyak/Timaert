@@ -305,7 +305,10 @@ namespace sm {
 // entry-байты умерли; позиция игрока = `MacroCell` его сквада в записи
 // снапшота, entry-контекст = байты его `MacroNpcRuntime` там же. Блок
 // игрока в сейве теряет 2 float + 2 байта; читателей у них больше нет.
-constexpr int kSaveVersion = 88;
+// v89 (2026-09-10): КНИГА НА ТЕЛО (§41 корень 3) — `SpellBook` стал
+// компонентом каждого макро-тела и битсетами конверта 256 (вердикт
+// владельца); запись снапшота несёт книгу, блок игрока её теряет.
+constexpr int kSaveVersion = 89;
 
 enum class SettlementMood : std::uint8_t {
     Prosperous, Stable, Tense, Unrest, Revolt, Count
@@ -584,7 +587,11 @@ struct PlayerState {
     std::vector<WorldFact>   journal;
     std::uint32_t            journalSeenSeq = 0;  // last chronicle seq scanned
     std::uint8_t             journalFull = 0;     // the loud cap flag
-    SpellBook spellBook;
+    // (No spellBook since v89. A body's knowledge is the SpellBook COMPONENT
+    // on its macro entity — §41 root 3: the one-copy field here was literally
+    // the class combatStats was before landing 4, and it is why only the
+    // player could cast, drain or be taught. His book rides his squad's
+    // MacroNpcRecord like every lord's.)
     // Truce clocks, one per faction SLOT (macro/relations.h): the day a
     // cease-fire with that faction runs out. It was the last string-keyed
     // faction map in the game — and it has no gameplay reader yet, so the
