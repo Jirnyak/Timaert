@@ -12,6 +12,7 @@
 #include "macro/state.h"
 
 namespace sm {
+namespace ecs { struct Pools; }
 
 struct PlayerRecoveryAccumulator {
     float hp = 0.0f;
@@ -39,6 +40,22 @@ void reset_player_recovery(PlayerRecoveryAccumulator& accumulator);
 // until the post-demo audit. `amount` is per-call, already scaled by the
 // caller's slice of time and by its rest gate.
 void recover_bar(float amount, float& carry, int& current, int maximum);
+
+// THE rest slice of one BODY — all three bars of its Pools block at the one
+// rate (attributes.h kRestRegenPctPerHour), `hours` already gated by the
+// caller: a body that is not at rest simply does not call (CANON S14 — the
+// march heals nothing; owner 2026-09-10: «реген только один когда стоишь на
+// месте в макромире (типа привал) и это всё»). Marathon multiplies the SP
+// rate ONLY, through the same skill law both scales read. SP settles through
+// THE signed carry (movement_cost.h settle_sp_carry) — the remainder a march
+// spends out of — and a full bar cannot BANK rest on any of the three: the
+// positive remainder dies with the fill, or an hour idled at full pays out
+// the moment the first step is taken.
+//
+// This function is the reason the formula exists ONCE: before it, the player
+// read a cached hourly rate off CombatStats while npc_ai re-derived the same
+// arithmetic inline — a drifted copy held together by a parity test.
+void rest_pools(ecs::Pools& pools, float hours, int marathonRank);
 
 // `restRate` gates ALL THREE bars (CANON S14, one recovery law; owner,
 // 2026-09-03): 1.0 for a body at rest, macro/movement_cost.h

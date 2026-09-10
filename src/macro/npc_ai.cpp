@@ -376,36 +376,15 @@ void settle_march_rhythm(entt::entity e, const ecs::Position& p,
     // do not walk two cells and take a slice of rest in the same breath. Rest
     // begins on the first think after the legs stop.
     if (stopped && !moved && canCamp) {
-        // THE regen law (attributes.h kRestRegenPctPerHour): a percent of
-        // the bar per game hour, paid out in this think's slice of the day.
-        // The old 5%-per-think was ~53% of the bar per game HOUR — a rest that
-        // cost nothing.
-        //
-        // BOTH bars, because a body has more than legs (CANON S14 «три
-        // ресурса, один закон восстановления»; owner, 2026-09-09). Until this
-        // line only stamina came back here, so a wounded lord stayed wounded
-        // until something killed him: `ecs::Pools` had no writer anywhere in
-        // the game that moved it UP. The wound outlived the war that made it,
-        // and the map filled with permanent invalids nobody could explain.
-        //
-        // Marathon speeds the LEGS only — it multiplies spRegen and nothing
-        // else (attributes.h calculate_combat_stats), so the mending rate here
-        // is the plain one the player's own hpRegen is.
-        if (int(hp.sp) < maxSp) {
-            hp.spCarry += float(maxSp) * kRestRegenPctPerHour
-                          * skill_mult_of(SkillId::Marathon, int(rt.marathonRank))
-                          * kAiTickGameHours;
-            settle_sp_carry(hp);
-        }
-        // Through the PLAYER'S OWN DOOR, not a second copy of it: the carry,
-        // the clamp and the "a full bar cannot bank rest" rule are one
-        // implementation for every body in the world (player_recovery.h).
-        // Both pools of the block, at the one rate — a lord's well refills in
-        // camp exactly as a player's does.
-        recover_bar(float(hp.maxHp) * kRestRegenPctPerHour * kAiTickGameHours,
-                    hp.hpCarry, hp.hp, hp.maxHp);
-        recover_bar(float(hp.maxMp) * kRestRegenPctPerHour * kAiTickGameHours,
-                    hp.mpCarry, hp.mp, hp.maxMp);
+        // THE rest law, THE implementation (player_recovery.h rest_pools):
+        // all three bars, a percent of themselves per game hour, paid out in
+        // this think's slice of the day. This block used to restate the three
+        // formulas inline — a drifted copy of attributes.h held together by a
+        // parity test — and before that it fed only stamina, so a wounded
+        // lord stayed wounded until something killed him: `ecs::Pools` had no
+        // writer anywhere in the game that moved it UP. The old 5%-per-think
+        // was ~53% of the bar per game HOUR — a rest that cost nothing.
+        rest_pools(hp, kAiTickGameHours, int(rt.marathonRank));
     }
 
     // A body that took a step with its bar already spent pays for it, whether
