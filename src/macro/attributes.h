@@ -509,10 +509,15 @@ constexpr float kRestRegenPctPerHour = 0.125f;
 // spRegen did). How a moved ceiling meets the bar it caps is the ONE rescale
 // law, squad.h refresh_body_from_sheet: the fraction survives, for everyone
 // (owner 2026-09-10 «доля у всех»).
+//
+// The bases are MANDATORY (§41 root 2): they are columns of the caller's
+// CombatTemplate row (`hp`/`mp`/`sp`), and a default argument here was that
+// row smuggled past the table — every body's MP/SP base was one hidden 100
+// the ROW could not override, and the row lied about what it built. Callers
+// that speak for a body go through the three body_max_* doors
+// (character_sheet.h), which unpack the row; only tests state bases raw.
 inline BarCeilings bar_ceilings(const Attributes& a, const Skills& s,
-                                int baseHp = 100,
-                                int baseMp = 100,
-                                int baseSp = 100) {
+                                int baseHp, int baseMp, int baseSp) {
     const float rawHp = float(baseHp + a.of(AttributeId::End) * 10);
     const float rawMp = float(baseMp + a.of(AttributeId::Wil) * 10);
     BarCeilings c;

@@ -117,7 +117,7 @@ entt::entity make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
         pools, &rt,
         make_character_sheet(type, lvl, leader_sheet_seed(ordinal)), type);
     pools.hp = pools.maxHp = hp;
-    pools.mp = pools.maxMp = body_max_mp(sheet);
+    pools.mp = pools.maxMp = body_max_mp(sheet, npc_def(type).combat);
     pools.sp = pools.maxSp;   // born rested
     w.reg.emplace<ecs::Pools>(e, pools);
     w.reg.emplace<ecs::MacroNpcRuntime>(e, rt);

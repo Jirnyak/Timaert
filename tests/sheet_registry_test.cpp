@@ -166,7 +166,7 @@ void test_the_governed_numbers_follow_the_row() {
     a[AttributeId::Str] = 10;  a[AttributeId::Intl] = 10;
     a[AttributeId::Spd] = 10;
     Skills none{};
-    const BarCeilings bare = bar_ceilings(a, none);
+    const BarCeilings bare = bar_ceilings(a, none, 100, 100, 100);
     const DerivedBonuses bareD = calculate_derived(a, none);
     const float bareCarry = get_carry_capacity(a, none);
 
@@ -176,7 +176,7 @@ void test_the_governed_numbers_follow_the_row() {
     trained[SkillId::Armsmaster]       = 20;   // 5 %/rank -> x2
     trained[SkillId::Spellcraft]    = 20;   // 5 %/rank -> x2
     trained[SkillId::Weightlifting] = 10;   // 10 %/rank -> x2
-    const BarCeilings tr = bar_ceilings(a, trained);
+    const BarCeilings tr = bar_ceilings(a, trained, 100, 100, 100);
     const DerivedBonuses trD = calculate_derived(a, trained);
 
     CHECK(tr.maxHp == bare.maxHp * 2, "maxHp follows bodybuilding's row");
@@ -203,7 +203,7 @@ void test_the_governed_numbers_follow_the_row() {
     // deliberate absence, so it is pinned as one.
     Skills marathoner{};
     marathoner[SkillId::Marathon] = 50;
-    CHECK(bar_ceilings(a, marathoner).maxSp == bare.maxSp,
+    CHECK(bar_ceilings(a, marathoner, 100, 100, 100).maxSp == bare.maxSp,
           "no skill grows the stamina BAR: marathon shortens the rest instead");
     CHECK(skill_mult_of(SkillId::Marathon, 50) > 1.0f,
           "negative control: the rank does move the rest RATE (rest_pools "
@@ -233,7 +233,39 @@ void test_every_role_rates_every_skill() {
 
 } // namespace
 
+// §41 root 2: the row's base bars are COLUMNS of CombatTemplate now, not
+// default arguments of bar_ceilings. The witness is arithmetic: author a row
+// with a different well and the body's bar must move by exactly the sheet
+// law over that base — while the untouched bars stand still (the negative
+// control against a door that ignores its row or crosses its columns).
+void test_the_rows_base_bars_reach_the_body() {
+    CharacterSheet sheet{};
+    sheet.attributes[AttributeId::End] = 4;
+    sheet.attributes[AttributeId::Wil] = 6;
+
+    CombatTemplate canon{};      // the bare 100/100/100 body (member defaults)
+    CombatTemplate frail = canon;
+    frail.mp = 40;               // a small well…
+    frail.sp = 60;               // …and short legs, authored BY THE ROW
+
+    // The same sheet over two rows: the delta is the BASE delta through the
+    // sheet law (no skills → multiplier 1), not a restated formula.
+    CHECK(body_max_mp(sheet, canon) - body_max_mp(sheet, frail) == 100 - 40,
+          "the row's mp column is the well the sheet law grows");
+    CHECK(body_max_sp(sheet, canon) - body_max_sp(sheet, frail) == 100 - 60,
+          "the row's sp column is the legs the sheet law grows");
+    // Negative controls: the columns do not cross, and hp keeps its own.
+    CHECK(body_max_hp(sheet, canon) == body_max_hp(sheet, frail),
+          "mp/sp authoring leaves the hp bar untouched");
+    CombatTemplate tank = canon;
+    tank.hp = 250.0f;
+    CHECK(body_max_mp(sheet, tank) == body_max_mp(sheet, canon)
+              && body_max_sp(sheet, tank) == body_max_sp(sheet, canon),
+          "hp authoring leaves the mp/sp bars untouched");
+}
+
 int main() {
+    test_the_rows_base_bars_reach_the_body();
     test_attributes_are_an_envelope_and_a_table();
     test_the_registry_is_addressable_by_ordinal();
     test_ranks_are_a_flat_envelope();

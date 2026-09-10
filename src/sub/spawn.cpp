@@ -194,9 +194,8 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
         ecs::Pools pools{};
         pools.hp = hp;
         pools.maxHp = int(maxHp);
-        pools.mp = pools.maxMp = body_max_mp(sheet);
-        pools.sp = pools.maxSp =
-            std::max(1, bar_ceilings(sheet.attributes, sheet.skills).maxSp);
+        pools.mp = pools.maxMp = body_max_mp(sheet, def.combat);
+        pools.sp = pools.maxSp = body_max_sp(sheet, def.combat);
         reg.emplace<ecs::Pools>(e, pools);
     }
     // Its pace: the world's march (macro/movement_cost.h) times what this row

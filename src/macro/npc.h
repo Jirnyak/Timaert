@@ -245,6 +245,15 @@ inline constexpr CombatTemplate kGuardCombat     {55,{14,1}, 1.75f, 3.0f, 2.5f, 
 // signature; now the row carries it like every other body's floor, and his
 // ceilings go through body_max_hp like every other body's do.
 inline constexpr CombatTemplate kAdventurerCombat{100,{14,1}, 1.75f, 3.0f, 2.5f, "Adv", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu};
+// THE canonical base bars (CANON S14). The whole bar law — creation, the
+// rescale door, the rest law's 8-hour night — is tuned around a bare
+// level-1 body of 100/100/100, and the adventurer's row IS that bare body.
+// If a retune moves these, it must move the LAW, not drift one row: this
+// guard makes the drift loud (product-of-two-knobs lesson, 2026-09-03).
+static_assert(kAdventurerCombat.hp == 100.0f && kAdventurerCombat.mp == 100
+                  && kAdventurerCombat.sp == 100,
+              "the adventurer's row is the canonical bare 100/100/100 body "
+              "the bar law is tuned around");
 // The ambusher fights EXACTLY like a bandit — every number above is his —
 // and differs in one column: he sees the whole road. 1000 m against a
 // prologue block three cells wide means there is nowhere in that scene to

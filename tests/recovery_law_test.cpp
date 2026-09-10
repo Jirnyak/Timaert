@@ -43,7 +43,7 @@ void test_derived_ceilings_recover_and_clamp() {
     sm::Attributes a{};
     a[sm::AttributeId::End] = 20;
     a[sm::AttributeId::Wil] = 20;
-    const sm::BarCeilings c = sm::bar_ceilings(a, sm::Skills{});
+    const sm::BarCeilings c = sm::bar_ceilings(a, sm::Skills{}, 100, 100, 100);
     sm::ecs::Pools p = empty_body(c.maxHp, c.maxMp, c.maxSp);
     p.hp = c.maxHp - 1;
     p.mp = c.maxMp - 1;

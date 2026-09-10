@@ -154,13 +154,13 @@ void test_standing_bonuses_land_where_the_row_says() {
 void test_a_standing_bonus_can_be_taken_off() {
     CharacterSheet base{};
     base.attributes[AttributeId::End] = 8;
-    const int bareHp = bar_ceilings(base.attributes, base.skills).maxHp;
+    const int bareHp = bar_ceilings(base.attributes, base.skills, 100, 100, 100).maxHp;
 
     BonusTotals worn{};
     accumulate(worn, Bonus{std::uint8_t(BonusId::End), +6});
     const CharacterSheet armoured = effective_sheet(base, worn);
     const int wornHp =
-        bar_ceilings(armoured.attributes, armoured.skills).maxHp;
+        bar_ceilings(armoured.attributes, armoured.skills, 100, 100, 100).maxHp;
     CHECK(wornHp > bareHp, "wearing it raises the ceiling");
 
     // The STORED sheet never moved — which is exactly what the old aura could
@@ -170,7 +170,7 @@ void test_a_standing_bonus_can_be_taken_off() {
 
     // Take it off: not by undoing anything, but by not adding it.
     const CharacterSheet bare = effective_sheet(base, BonusTotals{});
-    CHECK(bar_ceilings(bare.attributes, bare.skills).maxHp == bareHp,
+    CHECK(bar_ceilings(bare.attributes, bare.skills, 100, 100, 100).maxHp == bareHp,
           "taking it off is simply not accumulating it — no undo, no residue");
 }
 
@@ -240,9 +240,9 @@ void test_a_leaders_gift_is_the_same_totals_as_everything_else() {
     // ...and it reaches a trooper through the ONE application.
     CharacterSheet trooper{};
     const int alone =
-        bar_ceilings(trooper.attributes, trooper.skills).maxHp;
+        bar_ceilings(trooper.attributes, trooper.skills, 100, 100, 100).maxHp;
     const CharacterSheet ledSheet = effective_sheet(trooper, gift);
-    CHECK(bar_ceilings(ledSheet.attributes, ledSheet.skills).maxHp
+    CHECK(bar_ceilings(ledSheet.attributes, ledSheet.skills, 100, 100, 100).maxHp
               > alone,
           "a led soldier is tougher, by the vit point's worth");
     CHECK(trooper.attributes.of(AttributeId::End) == 1,

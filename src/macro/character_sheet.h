@@ -393,7 +393,8 @@ inline CombatTemplate project_combat(const CharacterSheet& sheet,
                                      const CombatTemplate& base) {
     CombatTemplate out = base; // keep attack identity + label + missile params
     const BarCeilings cs =
-        bar_ceilings(sheet.attributes, sheet.skills, int(base.hp));
+        bar_ceilings(sheet.attributes, sheet.skills,
+                     int(base.hp), base.mp, base.sp);
     const DerivedBonuses d =
         calculate_derived(sheet.attributes, sheet.skills);
     const float atkBonus = (base.attackKind == CombatTemplate::Missile)
@@ -430,17 +431,29 @@ inline int body_max_hp(const CharacterSheet& sheet, const CombatTemplate& base) 
 
 // THE mana bar of a body of this sheet — the same question as body_max_hp,
 // asked of the other pool, and answered by the same derivation
-// (bar_ceilings: the WILL bar times Meditation).
+// (bar_ceilings: the WILL bar times Meditation over the row's `mp` floor).
 //
 // It had no door because it had no readers: `project_combat` computed maxMp
 // on every single birth in the game and dropped it on the floor, so mana was
 // the player's private property and every other body in the world was a
 // cripple with one bar (owner, 2026-09-09: «это РПГ, у всех должна быть HP SP
-// MP»). The row contributes nothing here on purpose — a creature's mana is
-// its MIND, not its species' hit points, and no row authors a mana floor yet.
-// The day one does, it joins exactly here, the way `base.hp` joins above.
-inline int body_max_mp(const CharacterSheet& sheet) {
-    return std::max(0, bar_ceilings(sheet.attributes, sheet.skills).maxMp);
+// MP»). The row joins the derivation exactly the way `base.hp` joins above
+// (§41 root 2): its `mp` column IS the species' well — 100 for everyone
+// until a row says otherwise.
+inline int body_max_mp(const CharacterSheet& sheet,
+                       const CombatTemplate& base) {
+    return std::max(0, bar_ceilings(sheet.attributes, sheet.skills,
+                                    int(base.hp), base.mp, base.sp).maxMp);
+}
+
+// THE stamina bar — the third of the three, same door shape, same reason:
+// every caller that spelled `bar_ceilings(...).maxSp` inline was quietly
+// accepting the smuggled 100 for a row it never consulted. `std::max(1,…)`
+// belongs to the door: SP is the divisor of fatigue everywhere it is read.
+inline int body_max_sp(const CharacterSheet& sheet,
+                       const CombatTemplate& base) {
+    return std::max(1, bar_ceilings(sheet.attributes, sheet.skills,
+                                    int(base.hp), base.mp, base.sp).maxSp);
 }
 
 } // namespace sm

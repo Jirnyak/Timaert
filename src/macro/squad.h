@@ -82,7 +82,7 @@ inline void refresh_body_from_sheet(ecs::Pools& pools,
         }
     }
     {
-        const int newMax = body_max_mp(sheet);
+        const int newMax = body_max_mp(sheet, npc_def(type).combat);
         if (newMax != pools.maxMp) {
             const float frac = pools.maxMp > 0
                 ? std::clamp(float(pools.mp) / float(pools.maxMp), 0.0f, 1.0f)
@@ -92,8 +92,7 @@ inline void refresh_body_from_sheet(ecs::Pools& pools,
         }
     }
     {
-        const int newMax = std::max(
-            1, bar_ceilings(sheet.attributes, sheet.skills).maxSp);
+        const int newMax = body_max_sp(sheet, npc_def(type).combat);
         if (newMax != pools.maxSp) {
             const float frac =
                 float(pools.sp) / float(std::max<int>(1, pools.maxSp));
@@ -399,9 +398,11 @@ inline AutoBattleSide auto_battle_side_of(ecs::World& w, entt::entity e,
         // is deliberately NOT set here: a swing is priced by the subworld's
         // melee identity (sub/engine.h), and macro is L1 — it may not reach
         // up. The caller that knows both worlds states that one number.
-        const BarCeilings cs = bar_ceilings(storedSheet->attributes,
-                                            storedSheet->skills);
-        s.leaderHpOverride = float(std::max(1, cs.maxHp));
+        // Through THE hp door with his own ROW's floor (§41 root 2): the
+        // old raw bar_ceilings call rode the smuggled default base, which
+        // matched his body only while kAdventurerCombat.hp stayed 100.
+        s.leaderHpOverride = float(
+            body_max_hp(*storedSheet, npc_def(s.leaderType).combat));
         s.bonuses = squad_bonuses(*storedSheet);
     }
     return s;

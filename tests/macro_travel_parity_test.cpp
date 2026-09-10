@@ -256,7 +256,7 @@ void test_travel_balance_holds_its_intent() {
     bag.clear();
     const sm::Attributes attrs = sm::default_attributes();
     const sm::Skills skills = sm::default_skills();
-    const sm::BarCeilings fresh = sm::bar_ceilings(attrs, skills);
+    const sm::BarCeilings fresh = sm::bar_ceilings(attrs, skills, 100, 100, 100);
 
     // THE anchor (owner, 2026-08-24; RESTATED ON THE ROAD 2026-09-09): a fresh
     // traveller burns his whole bar in ROUGHLY A DAY'S MARCH — out at dawn,
@@ -307,7 +307,7 @@ void test_travel_balance_holds_its_intent() {
     vetAttrs[sm::AttributeId::Wil] = 20;
     sm::Skills vetSkills = skills;
     vetSkills[sm::SkillId::Travel] = 10;
-    const sm::BarCeilings veteran = sm::bar_ceilings(vetAttrs, vetSkills);
+    const sm::BarCeilings veteran = sm::bar_ceilings(vetAttrs, vetSkills, 100, 100, 100);
     const float vetMeadow = march_hours(veteran.maxSp, vetSkills,
                                         sm::cell_sp_weight(sm::Meadow, sm::FT_None));
     CHECK(vetMeadow > meadow * 3.0f,
@@ -320,7 +320,7 @@ void test_travel_balance_holds_its_intent() {
     // shortens it.
     sm::Skills marathoner = skills;
     marathoner[sm::SkillId::Marathon] = 20;
-    CHECK(sm::bar_ceilings(attrs, marathoner).maxSp == fresh.maxSp,
+    CHECK(sm::bar_ceilings(attrs, marathoner, 100, 100, 100).maxSp == fresh.maxSp,
            "marathon does not grow the bar");
     // The rate lives in the LAW now, not in a cached field: ask the law.
     CHECK(rest_hours_to_full(fresh.maxSp, 20)

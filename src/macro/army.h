@@ -77,6 +77,17 @@ struct CombatTemplate {
     // sub/movement.h), so a rear rank charges because its front rank saw, while a
     // lone animal that noticed nothing stays put.
     float       sight = kNpcSightDefaultM;
+    // The row's BASE MANA and BASE STAMINA — the floors the sheet law grows
+    // the other two bars from, exactly as `hp` above is the first bar's
+    // (CANON S14: the row is the floor, the sheet multiplies). 100 = the
+    // world's bare level-1 base the whole bar law is tuned around (the same
+    // 100 `hp` uses); a row that wants a different well states it here.
+    // Until §41 root 2 these lived as DEFAULT ARGUMENTS of bar_ceilings —
+    // a table row smuggled past the table, so every body's MP/SP base was
+    // one hidden 100 no row could override. int16 by the type law: a base
+    // bar is a design number in the hundreds, not a float.
+    std::int16_t mp = 100;
+    std::int16_t sp = 100;
 
     // ── Filled by project_combat, never authored (a row has no sheet) ──────
     // The sheet's attribute ADD to every roll of the dice above (STR-derived

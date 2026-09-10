@@ -44,7 +44,7 @@ int main() {
         ecs::Pools p{};
         ecs::MacroNpcRuntime rt{};
         refresh_body_from_sheet(p, &rt, sheet, NPCType::Adventurer);
-        if (p.maxHp != bar_ceilings(sheet.attributes, sheet.skills).maxHp) {
+        if (p.maxHp != bar_ceilings(sheet.attributes, sheet.skills, 100, 100, 100).maxHp) {
             return fail("the adventurer row's base must be the sheet law's "
                         "own 100 — one ceiling, no hidden default");
         }
@@ -54,7 +54,7 @@ int main() {
         ++sheet.attributes[AttributeId::End];  // the spend
         refresh_body_from_sheet(p, &rt, sheet, NPCType::Adventurer);
         if (p.maxHp != bar_ceilings(sheet.attributes, sheet.skills,
-                                    /*baseHp=*/100).maxHp) {
+                                    /*baseHp=*/100, 100, 100).maxHp) {
             return fail("maxima must recompute from the new attributes");
         }
         const float hpFrac = float(p.hp) / float(p.maxHp);

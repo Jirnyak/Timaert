@@ -448,7 +448,7 @@ void test_road_bar_lasts_a_days_march() {
     // The bar the anchor is stated against is the bar the SHEET hands a fresh
     // level-1 body — the literal in movement_cost.h cannot drift away from
     // attributes.h without this line saying so.
-    CHECK(bar_ceilings(Attributes{}, Skills{}).maxSp
+    CHECK(bar_ceilings(Attributes{}, Skills{}, 100, 100, 100).maxSp
               == int(kFreshBarSp),
           "kFreshBarSp is the bare level-1 bar the sheet actually builds");
 

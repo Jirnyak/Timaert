@@ -216,7 +216,7 @@ void test_the_entity_numbers_are_not_stale() {
     const int bornMaxSp = w.reg.get<ecs::Pools>(e).maxSp;
     CHECK(bornMaxSp
               == bar_ceilings(gs.player.sheet.attributes,
-                              gs.player.sheet.skills).maxSp,
+                              gs.player.sheet.skills, 100, 100, 100).maxSp,
           "his squad is born with his own stamina bar — the sheet's ceiling");
 
     // He is wounded, he grows tired, he trains END and he levels. The Pools
@@ -239,12 +239,12 @@ void test_the_entity_numbers_are_not_stale() {
 
     const auto& hp = w.reg.get<ecs::Pools>(e);
     CHECK(hp.maxHp == bar_ceilings(gs.player.sheet.attributes,
-                                   gs.player.sheet.skills).maxHp,
+                                   gs.player.sheet.skills, 100, 100, 100).maxHp,
           "the bigger bar the new END bought reached the entity");
     CHECK(hp.hp == int(float(hp.maxHp) * (17.0f / float(oldMaxHp))),
           "the wound rescaled by its FRACTION — no free heal, no theft");
     CHECK(hp.maxSp == bar_ceilings(gs.player.sheet.attributes,
-                                   gs.player.sheet.skills).maxSp,
+                                   gs.player.sheet.skills, 100, 100, 100).maxSp,
           "the stamina ceiling followed the END he trained");
     CHECK(hp.maxSp > bornMaxSp,
           "negative control: that ceiling did MOVE — the check above is not "
@@ -308,7 +308,7 @@ void test_one_door_assembles_every_battle_side() {
 
     CHECK(mine.leaderHpOverride
               == float(std::max(1, bar_ceilings(gs.player.sheet.attributes,
-                                                gs.player.sheet.skills).maxHp)),
+                                                gs.player.sheet.skills, 100, 100, 100).maxHp)),
           "handed his sheet, the door states HIS ceiling");
     CHECK(generic.leaderHpOverride < 0.0f,
           "negative control: handed none, the same door derives from the row "
@@ -388,8 +388,8 @@ void test_the_sheet_door_reads_what_is_standing() {
           "a worn +2 END is IN the sheet the world asks about");
     // ...and the bar follows, because the bar is derived from the sheet —
     // phase 4's promised effect: the breastplate fattens the SP bar.
-    CHECK(bar_ceilings(dressed.attributes, dressed.skills).maxSp
-              > bar_ceilings(bare.attributes, bare.skills).maxSp,
+    CHECK(bar_ceilings(dressed.attributes, dressed.skills, 100, 100, 100).maxSp
+              > bar_ceilings(bare.attributes, bare.skills, 100, 100, 100).maxSp,
           "a worn +END widens what a day of marching can hold");
     CHECK(gs.player.sheet.attributes.of(AttributeId::End) == 8,
           "the BASE sheet never moved — reads walk the door, writes never do");
