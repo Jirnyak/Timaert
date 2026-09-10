@@ -15,7 +15,7 @@ inline bool melee_candidate(entt::registry& reg, entt::entity e) {
         || reg.any_of<ecs::Dead>(e)) {
         return false;
     }
-    if (reg.any_of<ecs::PlayerTag, ecs::PlayerSoldierTag>(e)) return false;
+    if (reg.any_of<ecs::AvatarTag, ecs::PlayerSoldierTag>(e)) return false;
     return reg.get<ecs::Pools>(e).hp > 0;
 }
 
@@ -101,7 +101,7 @@ entt::entity aim_target(entt::registry& reg,
                          ecs::SubworldTag>(entt::exclude<ecs::Dead>);
     for (auto e : view) {
         if (e == shooter) continue;
-        if (reg.any_of<ecs::PlayerTag, ecs::PlayerSoldierTag>(e)) continue;
+        if (reg.any_of<ecs::AvatarTag, ecs::PlayerSoldierTag>(e)) continue;
 
         const auto& hp = view.get<ecs::Pools>(e);
         if (hp.hp <= 0) continue;

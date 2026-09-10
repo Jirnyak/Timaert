@@ -121,7 +121,7 @@ constexpr float kPlayerMeleeRange      = 5.0f;
 // below kHostileThreshold it saturates to -1, at or above kAllyRepThreshold to
 // +1, and 0 reputation maps to 0. The two hard overrides the combat code
 // applies are preserved: a provoked entity (TempHostileToPlayer) pins to -1
-// and the player's own side (PlayerTag / PlayerSoldierTag) to +1. Because the
+// and the player's own side (AvatarTag / PlayerSoldierTag) to +1. Because the
 // relationship is numeric, the HUD renders a smooth red→yellow→green gradient
 // rather than discrete buckets. Extensible by construction: retune a threshold
 // or add a per-faction shade here and every consumer updates at once.
@@ -363,7 +363,7 @@ public:
     // walk are floors too).
     float footing_height_at(float x, float y) const { return footing_height_m(x, y); }
     // Integral id (index+version) of the subworld player entity carrying
-    // PlayerTag — stamps player-cast spell projectiles with a real owner
+    // AvatarTag — stamps player-cast spell projectiles with a real owner
     // (Inc 4d), exactly as NPC missiles carry their firer's id. Returns the
     // entt::null integral when no player entity exists (never mid-cast).
     std::uint32_t player_entity_id() const;
@@ -732,7 +732,7 @@ private:
     void spawn_cell(int ox, int oy);
     void repopulate_after_recenter(int dx, int dy);
     // Player-as-entity lifecycle (Inc 4b + 5a). The player is a real ECS entity
-    // carrying PlayerTag + Health + Combat + SubworldTag: a full combat actor
+    // carrying AvatarTag + Health + Combat + SubworldTag: a full combat actor
     // that hostiles target through the universal melee/projectile paths. These
     // keep exactly one such entity alive while a subworld is active.
     //
@@ -790,7 +790,7 @@ private:
     void reconcile_tracked_bodies_to_macro();
     // 5a authority mirror: propagate the authoritative player-entity Position onto
     // the scalar mirror (pull) and vice-versa (push). Both are no-ops when no
-    // PlayerTag+Position entity exists (0/1 entities, cheap). push_ is an
+    // AvatarTag+Position entity exists (0/1 entities, cheap). push_ is an
     // assignment so it is idempotent w.r.t. the seam rebase that also shifts the
     // SubworldTag-tagged player entity.
     void pull_player_entity_to_scalars();

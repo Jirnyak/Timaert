@@ -566,7 +566,7 @@ void clear_subworld_world_entities(ecs::World& w) {
         int doomedCount = 0;
         auto view = reg.view<ecs::SubworldTag>();
         for (auto e : view) {
-            if (reg.any_of<ecs::PlayerSoldierTag, ecs::PlayerTag>(e)) continue;
+            if (reg.any_of<ecs::PlayerSoldierTag, ecs::AvatarTag>(e)) continue;
             // Projected macro NPCs (Inc 5d) mirror persistent overworld bodies,
             // not a cell's procedural fill — a whole-window rebuild (respawn_fauna)
             // must leave them be, exactly like the player-side projections above.
@@ -712,7 +712,7 @@ void despawn_subworld_entities_outside_window(ecs::World& w) {
         int doomedCount = 0;
         auto view = reg.view<ecs::SubworldTag, ecs::Position>();
         for (auto e : view) {
-            if (reg.any_of<ecs::PlayerSoldierTag, ecs::PlayerTag>(e)) continue;
+            if (reg.any_of<ecs::PlayerSoldierTag, ecs::AvatarTag>(e)) continue;
             const auto& p = view.get<ecs::Position>(e);
             const bool inside = p.x >= 0.0f && p.x < float(kFullSize)
                              && p.y >= 0.0f && p.y < float(kFullSize);
@@ -1084,9 +1084,23 @@ int adopt_possessed_macro_as_player(ecs::World& w, entt::entity macro) {
     // wherever the caller's teardown put it (this is the un-possessed exit path).
     if (macro == entt::null || !reg.valid(macro)) return -1;
     if (!reg.all_of<ecs::MacroNpcRuntime>(macro)) return -1;
-    // Move the single player flag onto the lord you inhabited. leave() has
-    // already reaped the SubworldTag body that wore it, so this becomes the sole
-    // PlayerTag afterwards — the exactly-one invariant holds.
+    // Move the single MACRO flag onto the lord you inhabited. Since the
+    // scale split (2026-09-10) PlayerTag never left the player's own squad
+    // during the scene (the body wore AvatarTag, and leave() reaped it), so
+    // adoption is a macro→macro transfer: strip the current holder(s), then
+    // flag the lord — the exactly-one invariant holds by this very move.
+    {
+        std::array<entt::entity, 8> holders{};
+        int held = 0;
+        for (auto e : reg.view<ecs::PlayerTag>()) {
+            if (e == macro) continue;
+            if (held >= int(holders.size())) break;
+            holders[std::size_t(held++)] = e;
+        }
+        for (int i = 0; i < held; ++i) {
+            reg.remove<ecs::PlayerTag>(holders[std::size_t(i)]);
+        }
+    }
     if (!reg.all_of<ecs::PlayerTag>(macro)) reg.emplace<ecs::PlayerTag>(macro);
     // The save-stable identity is the deterministic spawn ordinal, not the
     // (never-serialised) entity id. make_npc always stamps one; a missing id
@@ -1101,9 +1115,9 @@ int adopt_possessed_macro_as_player(ecs::World& w, entt::entity macro) {
 // ── Possession (Inc 5c) ──────────────────────────────────────────────────
 
 entt::entity current_player_body(ecs::World& w) {
-    // Exactly one PlayerTag flag is live while a subworld is active; return the
+    // Exactly one AvatarTag flag is live while a subworld is active; return the
     // first (and only) holder. entt::null before enter / after leave.
-    for (auto e : w.reg.view<ecs::PlayerTag>()) return e;
+    for (auto e : w.reg.view<ecs::AvatarTag>()) return e;
     return entt::null;
 }
 
@@ -1114,15 +1128,15 @@ bool possess_entity(ecs::World& w, entt::entity target) {
     const entt::entity cur = current_player_body(w);
     if (cur == target) return false;                      // already inhabiting it
     if (reg.valid(cur)) {
-        reg.remove<ecs::PlayerTag>(cur);
+        reg.remove<ecs::AvatarTag>(cur);
         // Hero husk (no NPCKind) has no independent existence — its canonical
         // state lives in gs.player. Destroy it rather than strand an inert,
         // un-rendered, un-AI'd body in the scene. A vacated FOREIGN body keeps
         // every component; with the flag gone its AI / draw / targetability all
-        // resume by construction (each is PlayerTag-gated).
+        // resume by construction (each is AvatarTag-gated).
         if (!reg.all_of<ecs::NPCKind>(cur)) reg.destroy(cur);
     }
-    if (!reg.all_of<ecs::PlayerTag>(target)) reg.emplace<ecs::PlayerTag>(target);
+    if (!reg.all_of<ecs::AvatarTag>(target)) reg.emplace<ecs::AvatarTag>(target);
     return true;
 }
 

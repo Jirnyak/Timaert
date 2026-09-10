@@ -2228,7 +2228,7 @@ bool cast_active_spell(App& app) {
     // the caster's own entity id. The world map has no fighting body.
     std::uint32_t gateSteps = 0u;
     if (inMicro) {
-        for (auto e : app.ecs.reg.view<sm::ecs::PlayerTag, sm::ecs::Combat>()) {
+        for (auto e : app.ecs.reg.view<sm::ecs::AvatarTag, sm::ecs::Combat>()) {
             gateSteps = app.ecs.reg.get<sm::ecs::Combat>(e).recoverySteps;
             break;
         }

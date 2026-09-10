@@ -40,7 +40,7 @@ int defense_of(entt::registry& reg, entt::entity target, DamageType type) {
         // here and nowhere else, so it cannot be counted twice.
         armour += worn_armor(eq->gear).of(type)
                 + int(worn_bonuses(eq->gear).armor[std::size_t(type)]);
-    } else if (reg.any_of<ecs::PlayerTag>(target)) {
+    } else if (reg.any_of<ecs::AvatarTag>(target)) {
         // The player's gear is MACRO state on his squad entity — one truth,
         // read where it lives (owner, 2026-09-06: «макро — это контекст для
         // микромира», no projected copy to go stale on a dungeon re-dress).
@@ -128,7 +128,7 @@ DamageResult apply_damage(entt::registry& reg, entt::entity target,
 
     if (out.lethal && !reg.any_of<ecs::Dead>(target)) {
         reg.emplace<ecs::Dead>(target);
-        if (bus != nullptr && !reg.any_of<ecs::PlayerTag>(target)) {
+        if (bus != nullptr && !reg.any_of<ecs::AvatarTag>(target)) {
             GameEvent ev{EventTag::NpcDeath};
             ev.a = std::uint32_t(entt::to_integral(target));
             ev.b = src.attackerId;

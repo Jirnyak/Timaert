@@ -71,14 +71,24 @@ struct MissileAttack {
 // zero readers — no view, no any_of, nothing ever asked. Deleted 2026-08-05:
 // a tag nobody reads is not a state, it is noise every spawn site paid for.)
 struct Dead {};
+// «Кем я на КАРТЕ» — the macro flag, and MACRO ONLY (scale split, owner
+// verdict 2026-09-10): it rides the player's own squad by default and a
+// possessed lord's macro entity while he wears one. It NEVER stands on a
+// SubworldTag body any more — that job belongs to AvatarTag below. Before
+// the split this one flag carried both meanings and MOVED between scales,
+// which put a cell-coordinate entity into 12 scene passes that thought they
+// had found a body in tiles.
 struct PlayerTag {};
-// The flag above answers «кем я управляю СЕЙЧАС» and MOVES: possession puts it
-// on a lord, a subworld session puts it on a body. This one answers a
-// different question — «чей это отряд» — and never moves off the player's own
-// macro squad. Two questions, two tags: a loop that means "another party"
-// excludes THIS one, because excluding PlayerTag stops working the moment the
-// player possesses someone or steps into a subworld, and his own squad becomes
-// prey / a trade partner / an AI walker to every scan on the map.
+// «Моё ТЕЛО в сцене» — the scene flag, and SCENE ONLY: the hero husk on
+// enter, or a possessed scene body. Dies with the scene. A view<AvatarTag>
+// physically cannot find a macro entity, so the scene's player passes need
+// no scale guards at all.
+struct AvatarTag {};
+// A third question — «чей это отряд» — and it never moves off the player's
+// own macro squad: a loop that means "another party" excludes THIS one,
+// because excluding PlayerTag stops working the moment the player possesses
+// someone, and his own squad becomes prey / a trade partner / an AI walker
+// to every scan on the map.
 struct PlayerSquadTag {};
 struct PlayerSoldierTag {};
 struct TempHostileToPlayer {};

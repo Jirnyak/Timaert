@@ -996,19 +996,21 @@ uninterrupted movement.
 ```
 
 The player at the centre is materialised as a real ECS entity carrying an
-`ecs::PlayerTag` — the movable *"player flag"*: any NPC can, in principle,
-receive the tag, and the tagged entity is the subworld's sim-centre. That
-entity is now a **full combat target**, carrying `Position + PlayerTag +
-Health + Combat + BodyRadius + SubworldTag`, so it is struck by melee,
-projectiles, and blasts through the *same* universal paths as any NPC — there
-is no player special-case in the hit code. `BodyRadius` (1.5) is the universal
-combat hit radius: any actor may carry one, and the player needs it explicitly
-because it is the camera (no `Sprite`) and is input-driven (no `SubworldAi`) —
-the two fields the hit code would otherwise read a radius from. Incoming damage
-lands on the entity's `Health`; `gs.player.combatStats` stays authoritative
-across the seam through an int↔float bridge — a tick-top PULL mirrors the macro
-HP onto `Health`, damage reduces it, and a tick-end PUSH reconciles the result
-back onto the scalar. Outgoing **melee** now flows from that same entity: the
+`ecs::AvatarTag` — the SCENE's player flag («моё тело здесь»; scale split,
+owner verdict 2026-09-10): any scene body can, in principle, receive the tag,
+and the tagged entity is the subworld's sim-centre. The macro flag
+(`PlayerTag`, «кем я на карте») never leaves the macro side — it rides the
+player's ordinary squad entity through the whole scene. The avatar entity is
+a **full combat target**, carrying `Position + AvatarTag + Pools + Combat +
+BodyRadius + SubworldTag`, so it is struck by melee, projectiles, and blasts
+through the *same* universal paths as any NPC — there is no player
+special-case in the hit code. `BodyRadius` (1.5) is the universal combat hit
+radius: any actor may carry one, and the player needs it explicitly because
+it is the camera (no `Sprite`) and is input-driven (no `SubworldAi`) — the
+two fields the hit code would otherwise read a radius from. Incoming damage
+lands on the body's `Pools`; the SQUAD's `Pools` (THE store since landing 4)
+stays authoritative across the seam — a tick-top PULL mirrors the store onto
+the body, damage reduces it, and a tick-end PUSH reconciles the result back. Outgoing **melee** now flows from that same entity: the
 tick-top PULL also refreshes its `Combat.damage` from the sheet, and
 `tick_player_melee` reads the entity's `Combat` (damage/range/cooldown) instead
 of recomputing — yet the NPC actor loop never auto-swings it, because
@@ -1018,22 +1020,18 @@ attacker there. Outgoing **spells** now carry the player's real entity id (4d):
 NPC missile carries its firer's, and the `ownerId == 0` sentinel is retired —
 ownership is decided purely by the owner entity's tags.
 
-On the **macro map** the player is now *also* a `PlayerTag` entity (macro-4a): a
-deliberately minimal flag carrying `Position + PlayerTag` only — no `SubworldTag`
-or `NPCKind`, so it is invisible to the overworld render / proximity / AI passes
-and to the subworld reapers. It is maintained by `ensure_macro_player_entity(gs,
-world)` (`src/macro/player_entity.cpp`), called at world boot, at save-load, and
-at the top of the macro (non-subworld) tick. Because both seam crossings funnel
-through `clear_player_entity()` (enter via `spawn_player_entity()`, leave
-explicitly), the macro tick simply *re-heals* the flag after any `leave()` and
-one-way syncs its `Position` from the macro-authoritative `gs.player` scalar. The
-system-wide invariant is **exactly one `PlayerTag` at all times** — the minimal
-flag on the overworld, the full combat actor in a subworld, never both. This
-gives the flag a home on both sides of the seam.
+On the **macro map** the player is a `PlayerTag` entity — his ORDINARY squad
+(macro-4a + the 2026-08-27 merge): `NPCKind` + roster + runtime + bars, like
+every other party. It is maintained by `ensure_macro_player_entity(gs,
+world)` (`src/macro/player_entity.cpp`), called at world boot, at save-load,
+and at the top of the macro (non-subworld) tick. The system-wide invariants
+since the scale split are **exactly one `PlayerTag` at all times (macro
+only)** and **exactly one `AvatarTag` while a scene is live (scene only)** —
+two flags, two questions, and no pass can mistake one scale for the other.
 
-**Possession / вселение (Inc 5c).** The `control` command MOVES the one
-`PlayerTag` flag onto a live body: `possess_entity(reg, target)` does
-`remove<PlayerTag>(old); emplace<PlayerTag>(target)` — the vacated body reverts to
+**Possession / вселение (Inc 5c).** The `control` command MOVES the flag of
+its scale onto a live body: in a scene `possess_entity(reg, target)` does
+`remove<AvatarTag>(old); emplace<AvatarTag>(target)` — the vacated body reverts to
 an ordinary NPC. Targeting is scale-split: in the subworld you look at a body and
 possess it (`possess_aim` uses the `aim_target` forward-cone primitive on the
 camera yaw; dev console `possess` — the player keybind V died 2026-09-06,

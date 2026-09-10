@@ -7,7 +7,7 @@
 //     right attribution (a = victim, b = attacker, ix = kind, iy = spellId);
 //   * attribution is DATA: the Fall/Script rows stamp no LastHit (nobody gets
 //     XP for gravity), the Melee/Spell/Dev rows do;
-//   * the ONE PlayerTag guard: a dead player emits no NpcDeath from ANY kind —
+//   * the ONE AvatarTag guard: a dead player body emits no NpcDeath from ANY kind —
 //     the spell path used to miss this guard and count a player death toward
 //     quest kill-tallies;
 //   * a kindless body still emits (ix = kNoNpcType) — the spell path used to
@@ -194,9 +194,9 @@ void test_armour_softens_by_the_row_and_the_kind() {
 void test_players_worn_plate_stands_underground() {
     entt::registry reg;
 
-    // His body down here: PlayerTag, no equipment component of its own.
+    // His body down here: AvatarTag (the scene flag), no equipment of its own.
     const entt::entity body = make_body(reg, 100.0f, /*withKind*/false);
-    reg.emplace<sm::ecs::PlayerTag>(body);
+    reg.emplace<sm::ecs::AvatarTag>(body);
     // His squad on the map: the gear's one home. arm_leather is the phase's
     // own promise made flesh — «+2 END» AND a coat worth its column.
     const entt::entity squad = reg.create();
@@ -300,7 +300,7 @@ void test_player_death_is_not_an_npc_kill() {
         entt::registry reg;
         sm::EventBus bus;
         const entt::entity e = make_body(reg, 5.0f);
-        reg.emplace<sm::ecs::PlayerTag>(e);
+        reg.emplace<sm::ecs::AvatarTag>(e);
         const DamageResult hit =
             apply_damage(reg, e, DamageSource{3u, false}, 50.0f, kind,
                          sm::DamageType::Blunt, &bus);

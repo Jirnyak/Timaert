@@ -229,7 +229,7 @@ int spawn_dungeon_vermin(ecs::World& w,
                          MacroStockKey faunaKey);
 
 // Destroy every world-owned subworld creature (fauna + citizens), preserving the
-// player-side projections (PlayerTag / PlayerSoldierTag) that follow the player
+// player-side projections (AvatarTag / PlayerSoldierTag) that follow the player
 // across re-centres rather than belonging to a cell. Used for a clean slate on
 // enter / leave; the per-cell path above avoids it on ordinary seam crossings.
 void clear_subworld_world_entities(ecs::World& w);
@@ -358,7 +358,7 @@ MacroExitCell macro_exit_cell_for_body(ecs::World& w, entt::entity body,
 
 // Inc 5e-2 (identity remap). After leave() lands the macro player on a possessed
 // body's origin cell, ADOPT that macro NPC as the persistent player: move the
-// single PlayerTag flag onto `macro` — the overworld player now IS the
+// single macro PlayerTag flag onto `macro` — the overworld player now IS the
 // lord/bandit/peasant you inhabited, fighting on its own sheet — and return its
 // deterministic MacroSpawnId ordinal for save persistence
 // (PlayerState::possessedMacroSpawnId). Returns -1 and moves NO flag when `macro`
@@ -370,7 +370,7 @@ int adopt_possessed_macro_as_player(ecs::World& w, entt::entity macro);
 
 // ── Possession / вселение (Inc 5c) ───────────────────────────────────────
 //
-// The player is one PlayerTag flag riding an ECS body (the "player is an NPC
+// The player is one AvatarTag flag riding an ECS body (the "player is an NPC
 // with a flag" model). Possession MOVES that single flag onto another live
 // body so the player inhabits it; because every consumer — camera, input,
 // incoming combat, minimap, and (on exit) the macro landing — was made
@@ -383,17 +383,17 @@ int adopt_possessed_macro_as_player(ecs::World& w, entt::entity macro);
 // hero body (spawn_player_entity) carries no NPCKind, every possessable scene
 // body does.
 //
-// current_player_body: the single entity currently carrying PlayerTag, or
+// current_player_body: the single entity currently carrying AvatarTag, or
 // entt::null (never null mid-subworld — exactly one flag is always live).
 entt::entity current_player_body(ecs::World& w);
 
 // Move the player flag onto `target` (must be a live, positioned scene body).
-// Removes PlayerTag from the current body; if that body was the hero husk (no
+// Removes AvatarTag from the current body; if that body was the hero husk (no
 // NPCKind) it is destroyed — the hero's canonical state lives in gs.player, so
 // nothing is lost and no inert, un-rendered, un-AI'd zombie is stranded in the
 // scene. A vacated FOREIGN body keeps all its components and, with the flag
 // gone, its AI / rendering / targetability resume automatically (every such
-// path is PlayerTag-gated). Emplaces PlayerTag on `target`. No-op returning
+// path is AvatarTag-gated). Emplaces AvatarTag on `target`. No-op returning
 // false if target is null / invalid / unpositioned / already the player. Pure
 // ECS: the caller re-mirrors the position scalars from the new body afterwards.
 bool possess_entity(ecs::World& w, entt::entity target);

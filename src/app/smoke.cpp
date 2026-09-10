@@ -2118,7 +2118,7 @@ bool run_subworld_loot_xp_smoke(App& app) {
 
 // dungeon_house — Inc 1 end-to-end: E at a house wall → a sealed interior on
 // the same engine → E on the exit pad → back on the doorstep. Asserts the
-// scene flag, the exactly-one-PlayerTag invariant at every stage, and that
+// scene flag, the exactly-one-AvatarTag invariant at every stage, and that
 // the same door deterministically re-derives the same interior (a tile-grid
 // hash across two independent visits).
 bool run_dungeon_house_smoke(App& app) {
@@ -2162,7 +2162,7 @@ bool run_dungeon_house_smoke(App& app) {
 
     auto playerTags = [&]() {
         int n = 0;
-        for (auto e : app.ecs.reg.view<sm::ecs::PlayerTag>()) {
+        for (auto e : app.ecs.reg.view<sm::ecs::AvatarTag>()) {
             (void)e;
             ++n;
         }
@@ -3453,7 +3453,7 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
     {
         int playerTags = 0;
         entt::entity pe = entt::null;
-        for (auto e : reg.view<sm::ecs::PlayerTag>()) { ++playerTags; pe = e; }
+        for (auto e : reg.view<sm::ecs::AvatarTag>()) { ++playerTags; pe = e; }
         if (playerTags == 1) {
             if (const auto* h = reg.try_get<sm::ecs::Pools>(pe)) {
                 const int hMax = std::max(1, int(std::round(h->maxHp)));
@@ -3614,7 +3614,7 @@ bool run_subworld_missile_feedback_smoke(App& app) {
 // click and charge the same ecs::Combat::recoverySteps a swing does) — what
 // a scenario prints to show the fight's clock honestly.
 static std::uint32_t smoke_player_recovery_steps(App& app) {
-    for (auto e : app.ecs.reg.view<sm::ecs::PlayerTag, sm::ecs::Combat>()) {
+    for (auto e : app.ecs.reg.view<sm::ecs::AvatarTag, sm::ecs::Combat>()) {
         return app.ecs.reg.get<sm::ecs::Combat>(e).recoverySteps;
     }
     return 0u;
@@ -3651,7 +3651,7 @@ bool run_subworld_self_fireball_smoke(App& app) {
     {
         std::vector<entt::entity> doomed;
         for (auto e : reg.view<sm::ecs::Pools>()) {
-            if (!reg.any_of<sm::ecs::PlayerTag, sm::ecs::PlayerSquadTag>(e)) {
+            if (!reg.any_of<sm::ecs::AvatarTag, sm::ecs::PlayerSquadTag>(e)) {
                 doomed.push_back(e);
             }
         }
@@ -3705,7 +3705,7 @@ bool run_subworld_self_fireball_smoke(App& app) {
     const int afterHp = player_pools(app).hp;
 
     bool playerDead = false;
-    for (auto e : reg.view<sm::ecs::PlayerTag>()) {
+    for (auto e : reg.view<sm::ecs::AvatarTag>()) {
         if (reg.any_of<sm::ecs::Dead>(e)) playerDead = true;
     }
 
@@ -3800,7 +3800,7 @@ bool run_subworld_player_melee_smoke(App& app) {
     // no armour, so what was rolled is what landed; a crit changes nothing
     // against a bare target).
     const sm::ecs::Combat* playerCombat = nullptr;
-    for (auto pe : reg.view<sm::ecs::PlayerTag, sm::ecs::Combat>()) {
+    for (auto pe : reg.view<sm::ecs::AvatarTag, sm::ecs::Combat>()) {
         playerCombat = &reg.get<sm::ecs::Combat>(pe);
         break;
     }
@@ -3879,7 +3879,7 @@ bool run_subworld_player_bow_smoke(App& app) {
     {
         std::vector<entt::entity> doomed;
         for (auto e : reg.view<sm::ecs::Pools>()) {
-            if (!reg.any_of<sm::ecs::PlayerTag, sm::ecs::PlayerSquadTag>(e)) {
+            if (!reg.any_of<sm::ecs::AvatarTag, sm::ecs::PlayerSquadTag>(e)) {
                 doomed.push_back(e);
             }
         }
@@ -3954,7 +3954,7 @@ bool run_subworld_player_bow_smoke(App& app) {
     // The press routed as a SHOT because the weapon row said Missile — the
     // white-box guard that the delivery column reached the body's Combat.
     const sm::ecs::Combat* playerCombat = nullptr;
-    for (auto pe : reg.view<sm::ecs::PlayerTag, sm::ecs::Combat>()) {
+    for (auto pe : reg.view<sm::ecs::AvatarTag, sm::ecs::Combat>()) {
         playerCombat = &reg.get<sm::ecs::Combat>(pe);
         break;
     }
@@ -4467,16 +4467,14 @@ bool run_console_smoke(App& app) {
         return false;
     }
 
-    // ── macro-4a: the player's PlayerTag flag is a PERSISTENT macro entity ────
-    // The player is "an NPC with a flag" (§8): the ecs::PlayerTag rides a real
-    // entity on BOTH sides of the seam so the possession command can move it. On
-    // the macro map it is a MINIMAL flag (Position + PlayerTag, no SubworldTag /
-    // NPCKind); entering a subworld swaps it for the full combat actor; leaving
-    // tears that down and the next macro tick re-heals the macro flag. Prove the
-    // whole macro->subworld->macro cycle keeps EXACTLY ONE PlayerTag, the correct
-    // flavour on each side, Position synced to the authoritative scalar. Modelled
-    // on the subworld player_entity block below. Self-contained: it restores the
-    // macro anchor the enter/leave cycle moves, so the battery below is unaffected.
+    // ── macro-4a + scale split: TWO flags, TWO scales, never crossed ─────────
+    // Since 2026-09-10 the flags are split by scale: PlayerTag («кем я на
+    // карте») NEVER leaves the macro side — it rides the player's own squad
+    // through the whole macro→subworld→macro cycle — while AvatarTag («моё
+    // тело здесь») exists ONLY while a scene is live, on a SubworldTag body.
+    // Prove exactly that: one PlayerTag always, macro flavour always; zero
+    // AvatarTag on the map, exactly one inside the scene. Self-contained: it
+    // restores the macro anchor the enter/leave cycle moves.
     {
         auto& reg = app.ecs.reg;
         const float saveX = app.gs.player.x;
@@ -4489,8 +4487,13 @@ bool run_console_smoke(App& app) {
             for (auto e : reg.view<sm::ecs::PlayerTag>()) { ++n; out = e; }
             return n;
         };
+        auto count_avatar_tags = [&]() {
+            int n = 0;
+            for (auto e : reg.view<sm::ecs::AvatarTag>()) { (void)e; ++n; }
+            return n;
+        };
 
-        // (1) Macro map: exactly one flag, MACRO flavour, Position == scalar.
+        // (1) Macro map: one PlayerTag, macro flavour, no avatars anywhere.
         entt::entity mpe = entt::null;
         if (count_player_tags(mpe) != 1) {
             smoke_fail(app, "macro_player_entity: expected one macro PlayerTag");
@@ -4501,35 +4504,45 @@ bool run_console_smoke(App& app) {
             smoke_fail(app, "macro_player_entity: macro flag Position off scalar");
             return false;
         }
-        // The flag rides an ORDINARY SQUAD now (owner, 2026-08-27) — it is
-        // supposed to carry NPCKind, a roster and a runtime, exactly like every
-        // other squad on the map. What it must NOT carry on the macro side is
-        // SubworldTag: that would put the player's own squad into the
-        // subworld reapers' set. This check used to demand the opposite,
-        // because the flag used to be a husk with nothing on it.
+        // The flag rides an ORDINARY SQUAD (owner, 2026-08-27) and must never
+        // carry SubworldTag — that would hand the squad to the scene reapers.
         if (reg.any_of<sm::ecs::SubworldTag>(mpe)) {
             smoke_fail(app,
                 "macro_player_entity: macro flag wrongly carries SubworldTag");
             return false;
         }
+        if (count_avatar_tags() != 0) {
+            smoke_fail(app, "macro_player_entity: an avatar exists on the map");
+            return false;
+        }
 
-        // (2) Enter a subworld: still exactly one flag, now the SubworldTag actor.
+        // (2) Enter a subworld: PlayerTag STAYS macro (on the squad, which
+        // survives the enter by the MacroNpcRuntime rule), and exactly one
+        // AvatarTag body appears, scene flavour.
         enter_subworld(app);
         if (!app.subworld.active()) {
             smoke_fail(app, "macro_player_entity: subworld enter failed");
             return false;
         }
         entt::entity spe = entt::null;
-        if (count_player_tags(spe) != 1 || !reg.all_of<sm::ecs::SubworldTag>(spe)) {
+        if (count_player_tags(spe) != 1 || reg.any_of<sm::ecs::SubworldTag>(spe)) {
             app.subworld.leave(true);
-            smoke_fail(app, "macro_player_entity: subworld flag missing/duplicated");
+            smoke_fail(app,
+                "macro_player_entity: PlayerTag left the macro side on enter");
+            return false;
+        }
+        int avatarsInScene = 0;
+        entt::entity avatar = entt::null;
+        for (auto e : reg.view<sm::ecs::AvatarTag>()) { ++avatarsInScene; avatar = e; }
+        if (avatarsInScene != 1 || !reg.all_of<sm::ecs::SubworldTag>(avatar)) {
+            app.subworld.leave(true);
+            smoke_fail(app, "macro_player_entity: scene avatar missing/duplicated");
             return false;
         }
 
-        // (3) Leave + one macro tick (dt=0 so world time / AI do not advance): the
-        // macro branch's ensure_macro_player_entity must recreate the flag —
-        // exactly one, MACRO flavour again, Position re-synced to the scalar that
-        // leave() snapped to the subworld exit cell.
+        // (3) Leave + one macro tick: avatar gone with its scene, PlayerTag
+        // still one and macro, Position re-synced to the scalar that leave()
+        // snapped to the subworld exit cell.
         app.subworld.leave(true);
         if (app.subworld.active()) {
             smoke_fail(app, "macro_player_entity: subworld leave failed");
@@ -4542,6 +4555,10 @@ bool run_console_smoke(App& app) {
                 "macro_player_entity: flag not restored to macro flavour on return");
             return false;
         }
+        if (count_avatar_tags() != 0) {
+            smoke_fail(app, "macro_player_entity: avatar outlived its scene");
+            return false;
+        }
         const auto* rpos = reg.try_get<sm::ecs::Position>(rpe);
         if (!rpos || !near_half(rpos->x, app.gs.player.x) ||
             !near_half(rpos->y, app.gs.player.y)) {
@@ -4550,8 +4567,8 @@ bool run_console_smoke(App& app) {
             return false;
         }
         std::fprintf(stderr,
-                     "[smoke] macro_player_entity cycle PlayerTag=1 "
-                     "macro->sub->macro pos=%.1f,%.1f not_npc=1\n",
+                     "[smoke] macro_player_entity cycle PlayerTag=1(macro) "
+                     "avatar 0->1->0 pos=%.1f,%.1f\n",
                      rpos->x, rpos->y);
         std::fflush(stderr);
 
@@ -4744,9 +4761,9 @@ bool run_console_smoke(App& app) {
     }
 
     // ── Player is a full combat ECS entity (Inc 4b) ──────────────────
-    // Entering a subworld materialises exactly ONE PlayerTag entity — the
+    // Entering a subworld materialises exactly ONE AvatarTag entity — the
     // movable "player flag" / subworld sim-centre (owner's §8 vision). In 4b it
-    // is a full combat actor: PlayerTag + Position + Health + Combat +
+    // is a full combat actor: AvatarTag + Position + Health + Combat +
     // SubworldTag, so hostiles target it through the SAME universal melee /
     // projectile paths as any NPC. Its Position tracks the player scalars and
     // its Pools mirror the squad store (landing 4). It is still NOT an
@@ -4756,16 +4773,16 @@ bool run_console_smoke(App& app) {
         auto& reg = app.ecs.reg;
         int playerTags = 0;
         entt::entity pe = entt::null;
-        for (auto e : reg.view<sm::ecs::PlayerTag>()) { ++playerTags; pe = e; }
+        for (auto e : reg.view<sm::ecs::AvatarTag>()) { ++playerTags; pe = e; }
         if (playerTags != 1) {
             restore();
-            smoke_fail(app, "player_entity: expected exactly one PlayerTag entity");
+            smoke_fail(app, "player_entity: expected exactly one AvatarTag entity");
             return false;
         }
         const auto* ppos = reg.try_get<sm::ecs::Position>(pe);
         if (!ppos) {
             restore();
-            smoke_fail(app, "player_entity: PlayerTag entity has no Position");
+            smoke_fail(app, "player_entity: AvatarTag entity has no Position");
             return false;
         }
         auto near_half = [](float a, float b) {
@@ -5035,7 +5052,7 @@ bool run_console_smoke(App& app) {
     }
 
     // ── Possession / вселение (Inc 5c) ───────────────────────────────
-    // Take over a live foreign body: the single PlayerTag flag MOVES onto it
+    // Take over a live foreign body: the single AvatarTag flag MOVES onto it
     // (D2), the hero husk is destroyed (its canonical state lives in gs.player),
     // and the possessed body keeps its OWN stats — no hero stats are stamped
     // (D3, body-native). Isolated here after killall: it spawns its own target
@@ -5050,7 +5067,7 @@ bool run_console_smoke(App& app) {
         {
             auto tv = reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
                                sm::ecs::Pools, sm::ecs::Combat>(
-                entt::exclude<sm::ecs::Dead, sm::ecs::PlayerTag,
+                entt::exclude<sm::ecs::Dead, sm::ecs::AvatarTag,
                               sm::ecs::PlayerSoldierTag>);
             for (auto e : tv) {
                 if (tv.get<sm::ecs::NPCKind>(e).type
@@ -5063,7 +5080,7 @@ bool run_console_smoke(App& app) {
         // The hero husk: the sole current flag-holder, which carries NO NPCKind
         // (that is precisely the discriminator body-native sync relies on).
         entt::entity husk = entt::null;
-        for (auto e : reg.view<sm::ecs::PlayerTag>()) { husk = e; break; }
+        for (auto e : reg.view<sm::ecs::AvatarTag>()) { husk = e; break; }
         if (husk == entt::null || reg.all_of<sm::ecs::NPCKind>(husk)) {
             restore(); smoke_fail(app, "possess: hero husk missing or not a hero body"); return false;
         }
@@ -5080,7 +5097,7 @@ bool run_console_smoke(App& app) {
         }
         // Exactly one flag, now solely on the target.
         int tags = 0; entt::entity holder = entt::null;
-        for (auto e : reg.view<sm::ecs::PlayerTag>()) { ++tags; holder = e; }
+        for (auto e : reg.view<sm::ecs::AvatarTag>()) { ++tags; holder = e; }
         if (tags != 1 || holder != target) {
             restore(); smoke_fail(app, "possess: flag not solely on the target body"); return false;
         }
@@ -5102,7 +5119,7 @@ bool run_console_smoke(App& app) {
         }
         // Body-native (D3): a tick must NOT stamp hero stats onto the body, and
         // must NOT mutate gs.player — the preserved revert target. (Pre-5c the
-        // sync path stamped gs.player HP/maxHp onto the PlayerTag body; this is
+        // sync path stamped gs.player HP/maxHp onto the flagged body; this is
         // the assertion that the NPCKind gate now suppresses that.)
         app.subworld.tick(0.016f);
         if (std::fabs(double(reg.get<sm::ecs::Pools>(target).maxHp - bodyMaxHp)) > 0.01) {
@@ -7014,7 +7031,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             {
                 std::vector<entt::entity> doomed;
                 for (auto e : app.ecs.reg.view<sm::ecs::Pools>()) {
-                    if (!app.ecs.reg.any_of<sm::ecs::PlayerTag,
+                    if (!app.ecs.reg.any_of<sm::ecs::AvatarTag,
                                             sm::ecs::PlayerSquadTag>(e)) {
                         doomed.push_back(e);
                     }
@@ -7325,7 +7342,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             auto is_probe_actor = [&](entt::entity e) {
                 if (!app.ecs.reg.all_of<sm::ecs::Sprite, sm::ecs::Position>(e))
                     return false;
-                return !app.ecs.reg.all_of<sm::ecs::PlayerTag>(e);
+                return !app.ecs.reg.all_of<sm::ecs::AvatarTag>(e);
             };
             std::vector<entt::entity> before;
             for (auto e : app.ecs.reg.view<sm::ecs::Sprite, sm::ecs::Position>())
@@ -7387,7 +7404,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // lantern simply drops out of the SSBO next frame. Harness only.
             if (std::getenv("TIMAERT_SMOKE_NO_PLAYER_LIGHT")) {
                 int stripped = 0;
-                auto pv = app.ecs.reg.view<sm::ecs::PlayerTag,
+                auto pv = app.ecs.reg.view<sm::ecs::AvatarTag,
                                            sm::ecs::LightEmitter>();
                 for (auto e : pv) {
                     app.ecs.reg.remove<sm::ecs::LightEmitter>(e);

@@ -136,14 +136,13 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
     refresh_player_body(gs.player, world);
 
     // ── The flag ──────────────────────────────────────────────────────────
-    // Exactly one PlayerTag exists at a time. It rides the player's own squad
-    // by default — and rides SOMEONE ELSE while he possesses them, which is
-    // why this only claims the flag when nobody macro-side holds it.
+    // Exactly one PlayerTag exists at a time, and it is MACRO ONLY since the
+    // scale split (2026-09-10): it rides the player's own squad by default
+    // and a possessed lord while he wears one — the scene body carries
+    // AvatarTag, a different question. The old "is the flag on a subworld
+    // body" guard fell away with the possibility it guarded.
     entt::entity flagHolder = entt::null;
     for (auto e : reg.view<ecs::PlayerTag>()) {
-        // Never touch a live subworld combat flag: that lifecycle belongs to
-        // SubworldEngine, and during a subworld session the flag is on a body.
-        if (reg.any_of<ecs::SubworldTag>(e)) return;
         flagHolder = e;
         break;
     }

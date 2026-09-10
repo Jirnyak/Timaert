@@ -1,11 +1,17 @@
 # Possession — Вселение (player = an NPC with a flag)
 
-The player is not a special object. It is **one `ecs::PlayerTag` flag riding an
-ordinary ECS body** — in the macroworld a minimal overworld marker, in the
-subworld a full combat actor. *Possession* (вселение) moves that one flag onto a
-different body: you become whatever you inhabit, and the body you left reverts to
-an ordinary NPC. Every universal path (combat, targeting, render, AI, loot,
-death) already respects the flag, so there is no player special-case to maintain.
+The player is not a special object. It is **one flag PER SCALE riding an
+ordinary ECS body** (scale split, owner verdict 2026-09-10): `ecs::PlayerTag`
+in the MACROWORLD only — «кем я на карте», the player's own squad by default,
+a possessed lord while he wears one, never leaving the macro side even while a
+scene is live — and `ecs::AvatarTag` in the SUBWORLD only — «моё тело здесь»,
+the hero husk or a possessed scene body, born with the scene and dead with it.
+*Possession* moves the flag of its own scale onto a different body: you become
+whatever you inhabit, and the body you left reverts to an ordinary NPC. Every
+universal path (combat, targeting, render, AI, loot, death) respects the flag
+of its scale, so there is no player special-case to maintain — and no scene
+pass can ever find a cell-coordinate entity, because `view<AvatarTag>`
+physically cannot see the macro side.
 
 - **Code:** [sub/spawn.h](src/sub/spawn.h) / `spawn.cpp`
   (`current_player_body`, `possess_entity`, `aim_target`,
@@ -27,8 +33,9 @@ death) already respects the flag, so there is no player special-case to maintain
 
 ## Model
 
-- **The player is a flag.** `PlayerTag` is an empty tag component. The tagged
-  entity is the player; nothing else marks the player.
+- **The player is a flag — one per scale.** `PlayerTag` (macro) and
+  `AvatarTag` (scene) are empty tag components. The tagged entity is the
+  player on that scale; nothing else marks the player.
 - **Замысел флага — только ввод и камера** (владелец, 2026-09-03, дословно:
   «замысел со вселением простой — это что игрок = НПЦ, то есть PlayerTag
   просто отвечает за инпут от игрока и камеру-центровку; при этом сама
@@ -39,17 +46,24 @@ death) already respects the flag, so there is no player special-case to maintain
   (ротация артелей, будущие слияния), обязан решить, что происходит с
   флагом, а не предполагать, что игрок «не такой». Открытая дыра —
   problems.md §35 (растворение ротации у крыльца не проверяет PlayerTag).
-- **Exactly one `PlayerTag` at all times** — the single system-wide invariant.
-  The minimal flag on the overworld, the full combat actor in a subworld, never
-  both, never zero mid-frame. Smoke-guarded across a macro→sub→macro cycle.
-- **Two homes across the seam.** On the macro map the flag is a *deliberately
-  minimal* body — `Position + PlayerTag` only, no `NPCKind`/`SubworldTag`, so it
-  is invisible to overworld render / proximity / AI and to the subworld reapers.
-  `ensure_macro_player_entity(gs, world)` heals it at boot, at save-load, and at
-  the top of every macro tick, one-way syncing its `Position` from the
-  macro-authoritative `gs.player` scalar. In the subworld the flag rides a full
-  combat body (`Position + Health + Combat + BodyRadius + SubworldTag`), whose
-  `Position` is authoritative intra-subworld (the scalars are a derived mirror).
+- **Exactly one `PlayerTag` at all times, exactly one `AvatarTag` while a
+  scene is live** — the system-wide invariants since the split. `PlayerTag`
+  rides the player's ordinary squad entity through the whole
+  macro→sub→macro cycle (it used to MOVE onto the scene body, which put a
+  cell-coordinate entity into a dozen scene passes); `AvatarTag` appears
+  with `spawn_player_entity` and dies with `clear_player_entity`.
+  Smoke-guarded across the full cycle (PlayerTag=1 macro always; avatar
+  0→1→0).
+- **Two homes across the seam.** On the macro map the flag rides the
+  player's ORDINARY squad (NPCKind + roster + runtime + bars — the merge of
+  2026-08-27/09-10). `ensure_macro_player_entity(gs, world)` heals it at
+  boot, at save-load, and at the top of every macro tick. In the subworld
+  the avatar rides a full combat body (`Position + Pools + Combat +
+  BodyRadius + SubworldTag`), whose `Position` is authoritative
+  intra-subworld (the scalars are a derived mirror). Dropping macro
+  possession on scene entry lives in `spawn_player_entity` (the one macro
+  act of that function — moved out of `clear_player_entity` so leave()
+  cannot strip the squad's own flag).
 - **Body-native stats.** The flag marks *who you control*, nothing more. The
   possessed body fights on its **own** `CharacterSheet`/`Combat`/`Health` —
   possess a lord ⇒ strong as the lord; possess a rat ⇒ weak as the rat (M&B

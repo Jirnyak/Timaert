@@ -84,7 +84,7 @@ int main() {
         entt::entity soldier = make_enemy(reg, 101, 100); // ahead, dist 1
         reg.emplace<ecs::PlayerSoldierTag>(soldier);  // player's own -> skip
         entt::entity ptag = make_enemy(reg, 102, 100); // ahead, dist 2
-        reg.emplace<ecs::PlayerTag>(ptag);            // the player -> skip
+        reg.emplace<ecs::AvatarTag>(ptag);            // the player body -> skip
         CHECK(sub::aim_target(reg, 100, 100, kFaceX, 50.0f, cone30) == a,
               "player-side entities excluded even when nearer");
     }

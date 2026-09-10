@@ -90,7 +90,7 @@ std::uint32_t add_player(sm::ecs::World& w, float x, float y) {
     w.reg.emplace<sm::ecs::Position>(e, x, y, 0.0f);
     w.reg.emplace<sm::ecs::Pools>(e, 1000, 1000);
     w.reg.emplace<sm::ecs::SubworldTag>(e);
-    w.reg.emplace<sm::ecs::PlayerTag>(e);
+    w.reg.emplace<sm::ecs::AvatarTag>(e);
     return std::uint32_t(entt::to_integral(e));
 }
 
@@ -884,7 +884,7 @@ int main() {
         selfWorld.reg.emplace<sm::ecs::Position>(selfPlayer, 0.0f, 0.0f, 0.0f);
         selfWorld.reg.emplace<sm::ecs::Pools>(selfPlayer, 100, 100);
         selfWorld.reg.emplace<sm::ecs::SubworldTag>(selfPlayer);
-        selfWorld.reg.emplace<sm::ecs::PlayerTag>(selfPlayer);
+        selfWorld.reg.emplace<sm::ecs::AvatarTag>(selfPlayer);
         auto selfBlast = selfWorld.create();
         selfWorld.reg.emplace<sm::ecs::Position>(selfBlast, 0.0f, 0.0f, 0.0f);
         selfWorld.reg.emplace<sm::ecs::Projectile>(selfBlast,
@@ -913,7 +913,7 @@ int main() {
         shieldWorld.reg.emplace<sm::ecs::Position>(shieldPlayer, 0.0f, 0.0f, 0.0f);
         shieldWorld.reg.emplace<sm::ecs::Pools>(shieldPlayer, 100, 100);
         shieldWorld.reg.emplace<sm::ecs::SubworldTag>(shieldPlayer);
-        shieldWorld.reg.emplace<sm::ecs::PlayerTag>(shieldPlayer);
+        shieldWorld.reg.emplace<sm::ecs::AvatarTag>(shieldPlayer);
         auto shieldBolt = shieldWorld.create();
         shieldWorld.reg.emplace<sm::ecs::Position>(shieldBolt, 0.0f, 0.0f, 0.0f);
         shieldWorld.reg.emplace<sm::ecs::Projectile>(shieldBolt,
