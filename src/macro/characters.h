@@ -38,8 +38,11 @@ struct DesignAgenda {
     std::int16_t radiusCells = 0;
 };
 
-// Дом анкеты: N-й ландмарк рода (индекс заворачивается по счёту рода) или,
-// когда homeType == LandmarkType::None, прямая клетка cellX/cellY.
+// Дом анкеты: ландмарк рода homeType — N-й по порядку (homeIndex ≥ 0,
+// заворот по счёту) или СЛУЧАЙНЫЙ сидом мира (homeIndex < 0); ряд можно
+// сузить префиксом фракции ландмарка (homeFactionPrefix, nullptr = любой:
+// «случайный варварский город» = City + "barbarian"). Когда homeType ==
+// LandmarkType::None — прямая клетка cellX/cellY.
 struct DesignCharacterDef {
     const char*  id;        // authoring-ключ (летопись, консоль) — не рантайм
     const char*  name;      // авторское имя (текст владельца — ДОСЛОВНО)
@@ -50,9 +53,12 @@ struct DesignCharacterDef {
     // именованного, ИЛИ авторские числа (вердикт «колонка строки»).
     bool           authoredSheet;
     CharacterSheet sheet;   // читается только при authoredSheet
-    const char*  factionId; // строка ОДНОГО реестра фракций (authoring-ключ)
+    // Строка ОДНОГО реестра фракций (authoring-ключ); nullptr = фракция
+    // ДОМА (царь варварского города — их человек, чей бы город ни выпал).
+    const char*  factionId;
     LandmarkType homeType;  // None = клетка ниже
-    std::int16_t homeIndex; // N-й ландмарк рода
+    std::int16_t homeIndex; // N-й ландмарк рода; < 0 = случайный сидом
+    const char*  homeFactionPrefix;  // nullptr = род без фильтра фракции
     std::int16_t cellX, cellY;
     AIBehaviour  behaviour; // какая модель думает (лестница effective_behaviour)
     DesignAgenda agenda;
@@ -75,10 +81,30 @@ inline constexpr DesignCharacterDef kDesignCharacterDefs[] = {
         NPCType::Merchant, /*level*/ 3,
         /*authoredSheet*/ false, CharacterSheet{},
         "empire",
-        LandmarkType::City, /*homeIndex*/ 0, /*cell*/ 0, 0,
+        LandmarkType::City, /*homeIndex*/ 0, /*homeFaction*/ nullptr,
+        /*cell*/ 0, 0,
         AIBehaviour::Waypoints,
         DesignAgenda{.routeToNearest =
                          std::int8_t(LandmarkType::Village)},
+    },
+    // Царь-крестьянин (владелец, 2026-09-10; тестовая анкета — контент
+    // доработается ещё много раз): тело Peasant как есть, лист — бросок
+    // 70-го уровня, ОДИН (без свиты), дом — СЛУЧАЙНЫЙ варварский город
+    // (фракция = чей город выпал), поводка нет — чистый роамер. Охота:
+    // ТОЛЬКО маги Магики (тела Witch/Sorceress фракции magika) — не
+    // культисты и НЕ крестьяне магики (слово владельца, важно). Модель —
+    // своя функция ai_mage_hunt (npc_ai.cpp), первая проба «своя
+    // ИИ-модель = функция + строка».
+    {
+        "king_peasant", "King-Peasant",
+        NPCType::Peasant, /*level*/ 70,
+        /*authoredSheet*/ false, CharacterSheet{},
+        /*factionId: дома*/ nullptr,
+        LandmarkType::City, /*homeIndex: случайный*/ -1,
+        /*homeFaction*/ "barbarian",
+        /*cell*/ 0, 0,
+        AIBehaviour::MageHunt,
+        DesignAgenda{},
     },
 };
 

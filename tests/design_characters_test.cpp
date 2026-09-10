@@ -82,7 +82,9 @@ void test_table_rows_resolve() {
     int checked = 0;
     for (const DesignCharacterDef& row : kDesignCharacterDefs) {
         CHECK(row.body < NPCType::Count, "row body names a registry row");
-        CHECK(faction_index(row.factionId) >= 0,
+        // nullptr = фракция дома (царь) — авторская строка обязана
+        // резолвиться только когда она есть.
+        CHECK(row.factionId == nullptr || faction_index(row.factionId) >= 0,
               "row faction resolves in THE one faction registry");
         CHECK(row.id != nullptr && row.id[0] != '\0', "row has an id key");
         ++checked;
@@ -178,6 +180,63 @@ void test_snapshot_carries_the_ordinal() {
           "...and his owned sheet came back with it (hasSheet)");
 }
 
+void test_king_peasant_births_by_home_faction() {
+    // Мир с ВАРВАРСКИМ городом: политика несёт королевство barbarian_north,
+    // город им владеем — и фикстурные freefolk-города рядом, чтобы фильтр
+    // префикса был утверждением, а не единственностью.
+    GameState gs = make_world();   // города 1 (freefolk) хватает для Варнавы
+    Kingdom barb{};
+    barb.id = "barbarian_north";
+    gs.politik.kingdoms.push_back(barb);
+    Landmark barbCity = make_landmark(9, LandmarkType::City, 50, 20);
+    barbCity.kingdomIdx = 0;
+    gs.landmarks.push_back(barbCity);
+
+    const TerrainData terrain = make_terrain();
+    ecs::World w;
+    Rng rng(555u);
+    gs.nextMacroSpawnOrdinal = 0;
+    spawn_design_characters(gs, w, terrain, rng, gs.nextMacroSpawnOrdinal);
+
+    const entt::entity king = find_design(w, 1);
+    CHECK_OR_RETURN(king != entt::null,
+                    "the king row became one body near the barbarian city");
+    CHECK(w.reg.get<ecs::MacroNpcRuntime>(king).homeSettlementId == 9,
+          "his home is the BARBARIAN city, not the freefolk one — the "
+          "faction-prefix filter picked the row's home");
+    // Фракция ДОМА (factionId = nullptr в строке): он ИХ человек.
+    CHECK(int(w.reg.get<ecs::NPCKind>(king).factionIdx)
+              == faction_index("barbarian_north"),
+          "his faction is his home city's");
+    const CharacterSheet* own = owned_sheet(w, king);
+    CHECK_OR_RETURN(own != nullptr, "the king OWNS his sheet");
+    CHECK(own->levelData.level == 70, "the level-70 roll reached the sheet");
+    // Лестница: приказов нет — ступень анкеты, доказуемо не строка типа
+    // (Peasant.ai = Gatherer).
+    const auto& kind = w.reg.get<ecs::NPCKind>(king);
+    CHECK(effective_behaviour(w.reg, king, kind) == AIBehaviour::MageHunt,
+          "the design rung answers MageHunt for the king");
+    CHECK(kNpcTypeDefs[std::uint16_t(NPCType::Peasant)].ai
+              != AIBehaviour::MageHunt,
+          "negative control: the peasant type row does not hunt mages");
+}
+
+void test_king_needs_a_barbarian_city() {
+    // Мир Варнавы (freefolk-город + деревни), варварского города НЕТ: царь
+    // честно не рождается, проповедник рождается — фильтр режет ровно
+    // одну строку, не весь стол.
+    GameState gs = make_world();
+    const TerrainData terrain = make_terrain();
+    ecs::World w;
+    Rng rng(556u);
+    gs.nextMacroSpawnOrdinal = 0;
+    spawn_design_characters(gs, w, terrain, rng, gs.nextMacroSpawnOrdinal);
+    CHECK(find_design(w, 0) != entt::null,
+          "Varnava is born in a world without barbarians");
+    CHECK(find_design(w, 1) == entt::null,
+          "the king is honestly NOT born without a barbarian city");
+}
+
 void test_no_home_no_birth() {
     GameState gs{};   // мир вовсе без ландмарков
     gs.mapW = kW;
@@ -199,6 +258,8 @@ int main() {
     test_table_rows_resolve();
     test_spawn_births_the_row();
     test_snapshot_carries_the_ordinal();
+    test_king_peasant_births_by_home_faction();
+    test_king_needs_a_barbarian_city();
     test_no_home_no_birth();
     return sm::test::report("design_characters_test");
 }

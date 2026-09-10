@@ -2200,6 +2200,126 @@ void ai_aggressive(MacroPos& p, ecs::MacroNpcRuntime& rt,
     }
 }
 
+// ── Царь-крестьянин: роамер-охотник на магов (стол анкет) ────────────────
+// Слово владельца (2026-09-10): «культистов он не трогает, только магов
+// Магики — но НЕ крестьян фракции магики»; поводка нет — чистый роамер по
+// всей карте. Кто цель — решение ЭТОЙ функции (закон стола: данные в
+// строке — решения в функции): тело мага (Witch/Sorceress) фракции
+// magika. Встреча решается ТОЙ ЖЕ дверью боя, что у threat step — один
+// закон битвы (CANON S13), никакого второго резолвера.
+
+// Охотничий глаз: в полтора раза дальше сквадного (kSquadSightCells = 8) —
+// охотник ИЩЕТ, а не натыкается; ±2 бакета грида (cellSize 8) покрывают
+// радиус целиком.
+constexpr float kMageHuntSightCells = 12.0f;
+
+entt::entity nearest_magika_mage(entt::entity self, const MacroPos& p,
+                                 const TickContext& ctx) {
+    const SquadIndex& g = *ctx.squads;
+    const CellBuckets& b = g.grid;
+    if (b.cols <= 0 || b.rows <= 0) return entt::null;
+    auto& reg = ctx.mw.world->reg;
+    const int magika = faction_index("magika");
+    const int cx0 = int(p.x) / b.cellSize;
+    const int cy0 = int(p.y) / b.cellSize;
+    float best = kMageHuntSightCells * kMageHuntSightCells + 1.0f;
+    entt::entity found = entt::null;
+    for (int oy = -2; oy <= 2; ++oy) {
+        for (int ox = -2; ox <= 2; ++ox) {
+            const int gx = wrapi(cx0 + ox, b.cols);
+            const int gy = wrapi(cy0 + oy, b.rows);
+            for (const std::uint32_t* it = b.cell_begin(gx, gy),
+                                    * end = b.cell_end(gx, gy);
+                 it != end; ++it) {
+                const entt::entity e = entt::entity(*it);
+                if (e == self || !reg.valid(e)) continue;
+                if (reg.any_of<ecs::Dead>(e)) continue;
+                const auto* oc = reg.try_get<ecs::MacroCell>(e);
+                const auto* ok = reg.try_get<ecs::NPCKind>(e);
+                if (!oc || !ok) continue;
+                // Маг = род тела, не флаг: ведьма и чародейка — строки
+                // реестра. Крестьянин Магики проходит мимо этого фильтра
+                // ЖИВЫМ — ровно то, что владелец назвал важным.
+                if (int(ok->factionIdx) != magika) continue;
+                const NPCType t = NPCType(std::uint8_t(ok->type));
+                if (t != NPCType::Witch && t != NPCType::Sorceress) continue;
+                const float d = torus_dist_sq(
+                    p.x, p.y,
+                    float(ecs::cell_x(*oc, ctx.mapW)),
+                    float(ecs::cell_y(*oc, ctx.mapW)),
+                    float(ctx.mapW), float(ctx.mapH));
+                if (d >= best) continue;
+                best = d;
+                found = e;
+            }
+        }
+    }
+    return found;
+}
+
+void ai_mage_hunt(entt::entity self, MacroPos& p, ecs::MacroNpcRuntime& rt,
+                  ecs::Pools& pools, const TickContext& ctx) {
+    if (ctx.squads && ctx.mw.world && ctx.mw.gs) {
+        const entt::entity prey = nearest_magika_mage(self, p, ctx);
+        if (prey != entt::null) {
+            auto& reg = ctx.mw.world->reg;
+            const auto& ecell = reg.get<ecs::MacroCell>(prey);
+            const MacroPos ep{float(ecs::cell_x(ecell, ctx.mapW)),
+                              float(ecs::cell_y(ecell, ctx.mapW))};
+            if (int(p.x) == int(ep.x) && int(p.y) == int(ep.y)) {
+                // Игрок в теле ведьмы: встреча принадлежит форс-двери
+                // игрока (main.cpp detect_forced_encounter), не тихому
+                // резолву — тот же гард, что у threat step.
+                if (reg.any_of<ecs::PlayerTag, ecs::PlayerSquadTag>(prey)) {
+                    rt.visualSpeed = 0.0f;
+                    return;
+                }
+                if (!ctx.allowAutoBattle) return;
+                const AutoBattleOutcome o = resolve_auto_battle(
+                    auto_battle_side_of(*ctx.mw.world, self),
+                    auto_battle_side_of(*ctx.mw.world, prey),
+                    Ambush::None, *ctx.rng);
+                settle_auto_battle(ctx.mw, self, prey, o);
+                rt.visualSpeed = 0.0f;
+                if (!reg.all_of<ecs::Dead>(self)) {
+                    rt.state = std::uint8_t(NS::Idle);
+                    rt.stateTimer = std::int16_t(3 + rand_int(ctx, 5));
+                }
+                return;
+            }
+            rt.targetX = ep.x;
+            rt.targetY = ep.y;
+            rt.state = std::uint8_t(NS::Chasing);
+            try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
+            return;
+        }
+    }
+    // Некого бить — чистый роам: дальняя случайная цель по ВСЕЙ карте, не
+    // прогулка по околице. Поводка нет — слово владельца.
+    if (rt.state == std::uint8_t(NS::Chasing)) {
+        rt.state = std::uint8_t(NS::Idle);
+        rt.stateTimer = 0;
+        return;
+    }
+    if (rt.state == std::uint8_t(NS::Idle)) {
+        --rt.stateTimer;
+        if (rt.stateTimer <= 0) {
+            rt.targetX = float(rand_int(ctx, ctx.mapW));
+            rt.targetY = float(rand_int(ctx, ctx.mapH));
+            rt.state = std::uint8_t(NS::Wandering);
+        }
+        return;
+    }
+    if (rt.state == std::uint8_t(NS::Wandering)) {
+        if (at_target(p, rt, ctx)) {
+            rt.state = std::uint8_t(NS::Idle);
+            rt.stateTimer = std::int16_t(8 + rand_int(ctx, 15));
+            return;
+        }
+        try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
+    }
+}
+
 // ── Патруль стражи (CANON S10 «стража + поле угрозы», 2026-09-02) ────────
 // Досягаемость кандидатов патруля — ШАГИ ГРАФА округ от своей: округа =
 // клетка ткани мира, и «в K шагах» — вопрос о мембранах, не о клетках.
@@ -2898,6 +3018,7 @@ void dispatch(AIBehaviour b, entt::entity e, MacroPos& p,
         // what happens when something appears, and that is decided above.
         case AIBehaviour::Flee:         ai_wanderer     (p, rt, pools, ctx); break;
         case AIBehaviour::Waypoints:    ai_waypoints (e, p, rt, pools, ctx); break;
+        case AIBehaviour::MageHunt:     ai_mage_hunt (e, p, rt, pools, ctx); break;
         case AIBehaviour::Count:        break;
     }
 }

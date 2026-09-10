@@ -7,6 +7,7 @@
 #include "macro/npc.h"
 #include "macro/deposit_layer.h"
 #include "macro/npc_ai.h"
+#include "macro/politik.h"
 #include "macro/squad.h"
 #include "macro/items.h"
 #include "ecs/components.h"
@@ -16,6 +17,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <cstdio>
 
 namespace sm {
@@ -339,23 +341,45 @@ void spawn_design_characters(GameState& gs, ecs::World& w,
     for (std::int16_t ord = 0; ord < kDesignCharacterCount; ++ord) {
         const DesignCharacterDef& row = kDesignCharacterDefs[ord];
 
-        // Дом из контекста мира: N-й ландмарк рода (заворот по счёту рода)
-        // или прямая клетка строки. Мир без такого рода — без этой анкеты.
+        // Дом из контекста мира: N-й ландмарк рода (homeIndex ≥ 0, заворот
+        // по счёту) или случайный сидом (homeIndex < 0), ряд опционально
+        // сужен префиксом фракции ландмарка («случайный варварский город»).
+        // Мир без такого дома — без этой анкеты.
         int hx = row.cellX, hy = row.cellY;
         int homeId = -1;
         const Landmark* home = nullptr;
         if (row.homeType != LandmarkType::None) {
             std::vector<const Landmark*> ofKind;
-            for (const auto& lm : gs.landmarks)
-                if (lm.type == row.homeType) ofKind.push_back(&lm);
+            for (const auto& lm : gs.landmarks) {
+                if (lm.type != row.homeType) continue;
+                if (row.homeFactionPrefix != nullptr) {
+                    const char* fid = faction_id_for_index(
+                        faction_index_for_kingdom(gs.politik, lm.kingdomIdx));
+                    if (std::strncmp(fid, row.homeFactionPrefix,
+                                     std::strlen(row.homeFactionPrefix))
+                        != 0) {
+                        continue;
+                    }
+                }
+                ofKind.push_back(&lm);
+            }
             if (ofKind.empty()) continue;
-            home = ofKind[std::size_t(row.homeIndex) % ofKind.size()];
+            home = row.homeIndex >= 0
+                ? ofKind[std::size_t(row.homeIndex) % ofKind.size()]
+                : ofKind[rng.next_u32() % std::uint32_t(ofKind.size())];
             hx = home->x; hy = home->y; homeId = home->id;
         }
         const XY p = find_valid_spawn(hx, hy, 10, rng, mw, mh, terrain);
 
+        // Фракция: строка стола, или — nullptr — фракция ДОМА: царь чужого
+        // города был бы вторым ответом на «чей это человек».
+        const std::uint16_t factionIdx = row.factionId != nullptr
+            ? std::uint16_t(faction_index(row.factionId))
+            : (home != nullptr
+                   ? faction_index_for_kingdom(gs.politik, home->kingdomIdx)
+                   : std::uint16_t(faction_index("freefolk")));
         const entt::entity e = make_npc(
-            w, row.body, std::uint16_t(faction_index(row.factionId)),
+            w, row.body, factionIdx,
             p.x, p.y, gs.mapW, homeId, rng, spawnIndex, int(row.level));
 
         // Анкета ВЛАДЕЕТ листом всегда — она индивид («он как игрок»),
