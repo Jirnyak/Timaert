@@ -7122,19 +7122,30 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             sm::spellbook_learn(smoke_player_book(app), sm::spell_ordinal("magic_bolt"));
             sm::spellbook_set_active(smoke_player_book(app), sm::spell_ordinal("magic_bolt"));
+            // Контракт свидетельницы — КАСТ→ПОЛЁТ→ПОПАДАНИЕ, а не «43.5
+            // юнита чистого воздуха на любом сиде» (SMOKE-2: мишень стояла
+            // на высоте НОГ в фиксированных 43.5, болт летел с ГЛАЗ
+            // горизонтально — на сиде 12345 рельеф по пути поднимался и
+            // съедал болт; alive=0 при нетронутой цели). Мишень стоит НА
+            // ЛИНИИ болта (player_muzzle_z — engine.h запрещает player_z
+            // прямым текстом) и на последней дистанции, где линия ещё над
+            // землёй: свидетельница меряет спелл-трубу, рельеф меряют
+            // другие.
+            const float muzzleZ = app.subworld.player_muzzle_z();
+            float spellDist = 43.5f;
+            for (float d = 2.0f; d <= 43.5f; d += 1.0f) {
+                const float gz = app.subworld.ground_height_at(
+                    app.subworld.player_x() + d, app.subworld.player_y());
+                if (gz >= muzzleZ - 0.5f) {
+                    spellDist = std::max(6.0f, d - 2.0f);
+                    break;
+                }
+            }
             const float spellTargetX = std::min(
-                app.subworld.player_x() + 43.5f,
+                app.subworld.player_x() + spellDist,
                 float(sm::sub::kFullSize - 2));
             const float spellTargetY = app.subworld.player_y();
-            // Stand the target at the CASTER'S OWN Z, not at zero. Z is world
-            // elevation in metres (playerZ_ = sample_height_m), so it is on the
-            // order of a thousand — while a hand-placed 0.0f puts the body a
-            // kilometre underground. The bolt leaves the muzzle at the caster's
-            // z and flies level (pitch 0), and find_projectile_hit is honestly
-            // 3D (dx²+dy²+dz² ≤ r², r≈1.5), so a target at zero is simply never
-            // touched. Yaw 0 already means "looking +X", so the aim was fine —
-            // only the altitude was fiction.
-            const float spellTargetZ = app.subworld.player_z();
+            const float spellTargetZ = muzzleZ;
             const entt::entity spellTarget = app.ecs.reg.create();
             app.ecs.reg.emplace<sm::ecs::Position>(
                 spellTarget, spellTargetX, spellTargetY, spellTargetZ);
@@ -7192,16 +7203,14 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "projectile was not spawned");
                 break;
             }
-            // This window is bounded on BOTH sides, and the old 0.10 s missed
-            // the lower one. magic_bolt flies at 400 units/s to a target 43.5
-            // away, so it needs ~0.10 s just to arrive (less the spawn offset)
-            // — 0.10 s expired with the bolt still a stride short, every seed,
-            // every run. The upper bound is the HitFlash this scenario also
-            // asserts: it lasts kHitFlashDuration (0.15 s) from the moment of
-            // impact, so waiting too long watches the evidence decay. 0.20 s
-            // (13 ticks of 1/64 s) lands between the two with room on each side.
+            // This window is bounded on BOTH sides. Lower: the bolt needs
+            // dist/400 s to arrive (400 units/s). Upper: the HitFlash this
+            // scenario asserts lasts kHitFlashDuration (0.15 s) from impact —
+            // waiting too long watches the evidence decay. The distance is
+            // ADAPTIVE now (the terrain probe above), so the window is
+            // derived, not pinned: arrival + half the flash's life.
             RuntimeFrameStats frameStats =
-                advance_sim_seconds(app, 0.20f, false);
+                advance_sim_seconds(app, spellDist / 400.0f + 0.07f, false);
             if (!frameStats.ticked || !frameStats.subworldActive) {
                 smoke_fail(app, "spell projectile tick inactive");
                 break;
@@ -7771,6 +7780,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     break;
                 }
             }
+            // Гейт рекавери ЕДИН для всех действий (0e3800e): второй каст
+            // В ТОМ ЖЕ КАДРЕ режется по построению — SMOKE-1 держал
+            // красным ЗАКОН, а не дефект. Тик между кастами: сценарий
+            // уважает закон, который сам же охраняет.
+            advance_sim_seconds(app, 0.10f, false);
             if (!sm::spellbook_has_sustained(
                     smoke_player_book(app), sm::spell_ordinal("flight"))) {
                 sm::spellbook_set_active(smoke_player_book(app), sm::spell_ordinal("flight"));
