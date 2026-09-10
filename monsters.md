@@ -249,6 +249,10 @@ hardcoded town's.
 
 ## Spawn paths (three, one table)
 
+> These paths are being folded into THE unified settlement system —
+> source × placement (a world point + an honest spread) × one birth door —
+> see [population.md](population.md) and CANON S28 (§42, under construction).
+
 1. **Ambient fauna** — [sub/spawn.cpp](src/sub/spawn.cpp) rolls each of the
    nine window cells through `roll_spawns` from its OWN macro context (the
    law above; count from the place's counts row). The roll PROPOSES, the

@@ -447,6 +447,9 @@ cell's `pick_crowd_row` (deposit-gated professions live in houses too), vermin
 through `roll_spawns` with the door cell's danger byte
 ([monsters.md](monsters.md)). The whole layer, the prop table it stands on
 and the one E-verb dispatch are written up in **[dungeons.md](dungeons.md)**.
+How the subworld gets its PEOPLE is being unified into THE settlement system
+(source × placement × one birth door) — **[population.md](population.md)**,
+CANON S28.
 
 ## Connections
 
