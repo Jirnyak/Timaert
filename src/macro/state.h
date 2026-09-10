@@ -318,7 +318,12 @@ namespace sm {
 // PlayerState::sheet мёртв, его лист едет в записи его сквада опт-ин
 // блоком hasSheet как у любого именованного; блок игрока теряет три
 // pod-поля листа (attributes/levelData/skills).
-constexpr int kSaveVersion = 91;
+// v92 (2026-09-10): СТОЛ АНКЕТ — запись сквада несёт designOrdinal (int16,
+// −1 = обычный сквад): строка стола дизайн-персонажей
+// (macro/characters.h), восстанавливается тегом DesignCharacterTag.
+// Смерть анкеты навсегда: генезис на загрузке не гоняется, погибшая
+// просто отсутствует в снапшоте.
+constexpr int kSaveVersion = 92;
 
 enum class SettlementMood : std::uint8_t {
     Prosperous, Stable, Tense, Unrest, Revolt, Count

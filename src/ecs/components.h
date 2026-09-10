@@ -509,6 +509,16 @@ struct SquadOrders {
     std::array<std::int16_t, 16> waypoints{};   // 8 × (x, y) macro cells
 };
 
+// Метка дизайн-персонажа: ординал строки стола анкет (macro/characters.h
+// kDesignCharacterDefs — стол авторских индивидов, owner 2026-09-10).
+// OPT-IN, как orders: обычный сквад её не несёт. Ординал, не указатель и
+// не копия строки — строка живёт в столе, сейв возит два байта (v92).
+// int16 расчётом (ЗАКОН ТИПА): авторских фигур десятки, не тысячи; знак —
+// чтобы «нет строки» в записи снапшота был честный −1, не магический max.
+struct DesignCharacterTag {
+    std::int16_t ordinal = -1;
+};
+
 // Static structure (tree, rock) — for subworld.
 struct Structure {
     enum Kind : std::uint8_t { Tree = 0, Rock = 1, House = 2, Wall = 3, Corpse = 4 } kind;

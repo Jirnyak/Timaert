@@ -696,6 +696,26 @@ timaert_test(macro_travel_parity_test
         src/macro/recovery.cpp
         src/macro/items.cpp)
 
+# СТОЛ АНКЕТ (macro/characters.h): спавн строки, лестница поведения,
+# ординал в снапшоте — линк-набор squad_war_test + сам снапшот.
+timaert_test(design_characters_test
+    SOURCES
+        src/macro/npc_ai.cpp
+        src/macro/recovery.cpp
+        src/macro/nav_field.cpp
+        src/macro/economy.cpp
+        src/macro/chronicle.cpp
+        src/macro/player_entity.cpp
+        src/macro/anatomy.cpp
+        src/macro/macro_stock.cpp
+        src/macro/deposit_layer.cpp
+        src/macro/fauna.cpp
+        src/macro/tree_layer.cpp
+        src/macro/npc_spawn.cpp
+        src/macro/macro_snapshot.cpp
+        src/macro/items.cpp
+    LINK_SDL LINK_ENTT)
+
 # The macro march pays the map (Session 21): greedy steering on the baked
 # cost grid, water avoided / forded / drowning by data, the 8-hour road
 # anchor for squads. Drives the same AI as the war test, same links.

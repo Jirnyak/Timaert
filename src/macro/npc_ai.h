@@ -6,6 +6,7 @@
 #include "core/rng.h"
 #include "core/time.h"
 #include "ecs/world.h"
+#include "macro/behaviour.h"
 #include "macro/macro_stock.h"
 #include "macro/pathfinding.h"
 #include "macro/state.h"
@@ -280,6 +281,15 @@ int gather_goal_row(ResourceFieldId row);
 // опасности (Died-факты у маршрута) — добавить ПОСЛЕ, вес дубль-прогоном.
 // Returns crews raised.
 int rotate_worker_squads(MacroWorld& mw, int day);
+
+// КЕМ ДУМАЕТ этот сквад — лестница приоритетов, ЗАКОН (владелец,
+// 2026-09-10): приказ (маршрут в SquadOrders — его наличие И ЕСТЬ приказ)
+// > строка стола анкет по ординалу тега > строка типа. Поведение не
+// хранится — выводится каждый think из данных на сущности; новая ступень =
+// данные + одна строка в определении (npc_ai.cpp), никогда ветка в
+// диспетче. Объявлена здесь ради свидетелей и будущих читателей лестницы.
+AIBehaviour effective_behaviour(entt::registry& reg, entt::entity e,
+                                const ecs::NPCKind& kind);
 
 // Squads EAT (owner 2026-08-30/31; CANON S10, реф M&B): bread is for the
 // ROSTER only — the leader is a SUBJECT and needs nothing by himself («0

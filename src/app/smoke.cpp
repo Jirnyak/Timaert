@@ -1440,7 +1440,6 @@ bool run_macro_recovery_smoke(App& app) {
     }
     smoke_clear_modal_overlays(app);
 
-    auto& player = app.gs.player;
     sm::player_sheet(app.ecs)->attributes[sm::AttributeId::End] = 1;
     sm::player_sheet(app.ecs)->attributes[sm::AttributeId::Wil] = 1;
     // The sheet changed: ceilings follow through THE door (the per-tick walk
@@ -1690,11 +1689,20 @@ bool run_timeadvance_burst_smoke(App& app) {
 
 entt::entity smoke_find_macro_npc_trace_target(App& app) {
     entt::entity fallback = entt::null;
+    // The trace REPAINTS its specimen (kind := Caravan, target := +3 east)
+    // and asserts the march mechanics follow. A body whose behaviour is
+    // pinned by a HIGHER rung of the effective_behaviour ladder cannot be
+    // repainted: a standing order (SquadOrders route) or a design-character
+    // row (the preacher walks his circuit whatever the kind byte says)
+    // lawfully overrides the type row the repaint writes. Exclude both —
+    // the lab needs a body the type row actually drives.
     auto view = app.ecs.reg.view<sm::ecs::MacroCell, sm::ecs::NPCKind,
                                  sm::ecs::MacroNpcRuntime,
                                  sm::ecs::Pools, sm::ecs::MacroVisual>(
         entt::exclude<sm::ecs::Dead,
-                      sm::ecs::PlayerSquadTag>);
+                      sm::ecs::PlayerSquadTag,
+                      sm::ecs::SquadOrders,
+                      sm::ecs::DesignCharacterTag>);
     for (auto e : view) {
         const auto& hp = view.get<sm::ecs::Pools>(e);
         if (hp.hp <= 0) continue;
@@ -7649,19 +7657,17 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             const float fallMid = app.subworld.flight_height_m();
             for (int i = 0; i < 200; ++i) app.subworld.tick(0.05f);
             const float fallRest = app.subworld.flight_height_m();
-            // "Came to rest on its support" — asked directly, instead of guessed
-            // from a height. The old check compared the landing altitude with the
-            // TAKE-OFF altitude, which flying 32 units forward has no reason to
-            // match: on a slope the body honestly lands metres lower, and that
-            // read as a gravity bug. Comparing against the terrain underfoot is
-            // wrong too, in the other direction — the support is max(terrain,
-            // structure top), so a body that lands on a roof rests legitimately
-            // above the ground (seed 7 lands 6 m up on a building).
-            //
-            // So assert the thing itself: keep ticking, and if the height has
-            // stopped changing the body is standing on SOMETHING; and it must not
-            // have sunk through the terrain. Structure-agnostic, and true of
-            // every landing.
+            // "Came to rest on its support" — asked directly, from the ONE
+            // vertical integrator (engine player_grounded ← height.h
+            // vertical_step): grounded means the feet rest on max(terrain,
+            // structure top), so a roof landing (seed 7, 6 m up) and a slope
+            // landing are both legitimate. The height-delta proxy this
+            // replaces («высота замерла между двумя соаками», SMOKE-4) held
+            // only by luck of flat ground: an uncontrolled body CRAWLS, and
+            // on a slope its height follows the relief underfoot forever —
+            // the property was true on the 40th tick while the proxy stayed
+            // red for eternity. Not-sunk stays as the second half: grounded
+            // ABOVE the terrain, never through it.
             for (int i = 0; i < 100; ++i) app.subworld.tick(0.05f);
             const float fallSettled = app.subworld.flight_height_m();
             const float landingGround = app.subworld.ground_height_at(
@@ -7670,13 +7676,14 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 flightApex > flightBase + 1.0f
                 && fallMid < flightApex - 0.05f
                 && fallMid > flightBase + 1.0f
-                && std::fabs(fallSettled - fallRest) < 0.01f
+                && app.subworld.player_grounded()
                 && fallSettled > landingGround - 0.05f;
             std::fprintf(stderr,
                          "[smoke] flight_fall base=%.2f apex=%.2f mid=%.2f "
-                         "rest=%.2f settled=%.2f ground=%.2f\n",
+                         "rest=%.2f settled=%.2f ground=%.2f grounded=%d\n",
                          flightBase, flightApex, fallMid, fallRest,
-                         fallSettled, landingGround);
+                         fallSettled, landingGround,
+                         app.subworld.player_grounded() ? 1 : 0);
             std::fflush(stderr);
             if (!fellNotSnapped) {
                 smoke_fail(app, "gravity fall-after-flight invariant");

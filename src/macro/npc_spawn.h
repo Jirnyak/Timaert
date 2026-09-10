@@ -27,6 +27,17 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
                       const TerrainData& terrain, std::uint32_t seed,
                       const DepositLayer* deposits = nullptr);
 
+// СТОЛ АНКЕТ → мир (macro/characters.h, owner 2026-09-10): одно тело на
+// строку, ТОЛЬКО в генезисе — spawn_macro_npcs зовёт это в хвосте, и
+// больше никто: загрузка генезис не гоняет (SAVE-5), поэтому смерть
+// анкеты — навсегда, ресспавнить некому по построению. Дом резолвится из
+// контекста мира (N-й ландмарк рода / клетка); мир, в котором дома нет,
+// эту анкету честно не рождает. Публична ради headless-свидетеля — тест
+// зовёт её на фикстуре напрямую, без полного генезиса.
+void spawn_design_characters(GameState& gs, ecs::World& w,
+                             const TerrainData& terrain, Rng& rng,
+                             std::uint32_t& spawnIndex);
+
 // Spawn ONE macro NPC of the named registry type near macro cell (x, y) —
 // the consumer half of the SpawnEntity event (quest onAccept is the producer:
 // s1 = type token, ix/iy = cell, a = level). Token resolves case-insensitively

@@ -4,6 +4,7 @@
 #include "macro/deposit_layer.h"
 #include "macro/state.h"
 #include "macro/macro_snapshot.h"
+#include "macro/characters.h"
 #include "events/quests/quest_types.h"
 
 #include <algorithm>
@@ -456,6 +457,7 @@ void write_macro_npc(Writer& w, const MacroNpcRecord& m) {
     w.pod(m.hasOrders);
     w.pod(m.dead);
     w.pod(m.playerFlag);   // v87: PlayerTag rides the snapshot honestly
+    w.pod(m.designOrdinal);   // v92: строка стола анкет, −1 у обычных
     write_inventory(w, m.inventory);
     write_equipment(w, m.gear);
     write_squad(w, m.roster);
@@ -484,9 +486,13 @@ void read_macro_npc(Reader& r, MacroNpcRecord& m) {
     r.pod(m.hasOrders);
     r.pod(m.dead);
     r.pod(m.playerFlag);   // v87
+    r.pod(m.designOrdinal);   // v92
     if (!r.ok) return;
     if (m.kind.type >= std::uint16_t(NPCType::Count)
-        || m.hasOrders > 1 || m.dead > 1 || m.playerFlag > 1) {
+        || m.hasOrders > 1 || m.dead > 1 || m.playerFlag > 1
+        // v92: ординал стола анкет обязан называть живую строку или −1 —
+        // каталожный закон (только аппенд) делает иное порчей файла.
+        || m.designOrdinal < -1 || m.designOrdinal >= kDesignCharacterCount) {
         r.ok = false;
         return;
     }

@@ -416,6 +416,13 @@ public:
     // flight smoke, but flight no longer has its own camera scalar — flying
     // is plain 3D movement of playerZ_ with gravity switched off.
     float flight_height_m() const { return playerZ_; }
+    // Feet-on-support this tick — THE grounded property (height.h
+    // vertical_step: a body rests on max(terrain, structure top)). Asked by
+    // the flight smoke to state "came to rest on its support" directly —
+    // the height-delta proxy it replaces held only on flat seeds (SMOKE-4:
+    // an uncontrolled body crawls, and on a slope its height follows the
+    // relief underfoot forever).
+    bool player_grounded() const { return playerGrounded_; }
     // Jump: an upward impulse (height.h kJumpSpeedMps) through the SAME
     // vertical integrator as everything else — only from solid footing, inert
     // while flying or already airborne.

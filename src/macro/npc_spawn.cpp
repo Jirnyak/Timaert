@@ -1,5 +1,6 @@
 #include "macro/npc_spawn.h"
 #include "macro/agent_memory.h"
+#include "macro/characters.h"
 #include "macro/currency.h"
 #include "macro/faction.h"
 #include "macro/biomes.h"
@@ -323,6 +324,96 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
     // — the same find_worksite the working AI walks by, so presence of ore
     // IS still the presence of miners, just souls-deep and mortal.
     (void)deposits;
+
+    // СТОЛ АНКЕТ — авторские фигуры мира, после массовки: их ординалы
+    // продолжают тот же поток идентичности.
+    spawn_design_characters(gs, w, terrain, rng, spawnIndex);
+}
+
+void spawn_design_characters(GameState& gs, ecs::World& w,
+                             const TerrainData& terrain, Rng& rng,
+                             std::uint32_t& spawnIndex) {
+    const int mw = gs.mapW;
+    const int mh = gs.mapH;
+    if (mw <= 0 || mh <= 0) return;
+    for (std::int16_t ord = 0; ord < kDesignCharacterCount; ++ord) {
+        const DesignCharacterDef& row = kDesignCharacterDefs[ord];
+
+        // Дом из контекста мира: N-й ландмарк рода (заворот по счёту рода)
+        // или прямая клетка строки. Мир без такого рода — без этой анкеты.
+        int hx = row.cellX, hy = row.cellY;
+        int homeId = -1;
+        const Landmark* home = nullptr;
+        if (row.homeType != LandmarkType::None) {
+            std::vector<const Landmark*> ofKind;
+            for (const auto& lm : gs.landmarks)
+                if (lm.type == row.homeType) ofKind.push_back(&lm);
+            if (ofKind.empty()) continue;
+            home = ofKind[std::size_t(row.homeIndex) % ofKind.size()];
+            hx = home->x; hy = home->y; homeId = home->id;
+        }
+        const XY p = find_valid_spawn(hx, hy, 10, rng, mw, mh, terrain);
+
+        const entt::entity e = make_npc(
+            w, row.body, std::uint16_t(faction_index(row.factionId)),
+            p.x, p.y, gs.mapW, homeId, rng, spawnIndex, int(row.level));
+
+        // Анкета ВЛАДЕЕТ листом всегда — она индивид («он как игрок»),
+        // даже когда тело — не-именованный род и make_npc броска не хранил.
+        // Авторские числа строки перекрывают бросок, и полосы/марш-кэши
+        // пересобираются от них через ту же дверь, что у всех.
+        {
+            CharacterSheet* own = w.reg.try_get<CharacterSheet>(e);
+            if (!own) {
+                const auto* sid = w.reg.try_get<ecs::MacroSpawnId>(e);
+                own = &w.reg.emplace<CharacterSheet>(
+                    e, make_character_sheet(
+                           row.body, std::max<int>(1, row.level),
+                           leader_sheet_seed(sid ? sid->index : 0u)));
+            }
+            if (row.authoredSheet) {
+                *own = row.sheet;
+                auto* pools = w.reg.try_get<ecs::Pools>(e);
+                auto* rt = w.reg.try_get<ecs::MacroNpcRuntime>(e);
+                if (pools) {
+                    refresh_body_from_sheet(*pools, rt,
+                                            effective_sheet_of(w, e),
+                                            row.body);
+                    // Рождение целым — как make_npc рождает всех.
+                    pools->hp = pools->maxHp;
+                    pools->mp = pools->maxMp;
+                    pools->sp = pools->maxSp;
+                }
+            }
+        }
+        w.reg.emplace<ecs::DesignCharacterTag>(e, ord);
+
+        // Маршрут «дом ↔ ближайший ландмарк рода из агенды» — резолв
+        // контекста, как find_valid_spawn: строка называет РОД цели, мир
+        // называет клетки. Наличие маршрута И ЕСТЬ приказ (лестница
+        // effective_behaviour, ступень 1).
+        if (row.agenda.routeToNearest >= 0 && home != nullptr) {
+            const Landmark* best = nullptr;
+            float bestD = 0.0f;
+            for (const auto& lm : gs.landmarks) {
+                if (std::int8_t(lm.type) != row.agenda.routeToNearest)
+                    continue;
+                const float d = torus_dist_sq(float(home->x), float(home->y),
+                                              float(lm.x), float(lm.y),
+                                              float(mw), float(mh));
+                if (!best || d < bestD) { best = &lm; bestD = d; }
+            }
+            if (best) {
+                ecs::SquadOrders orders{};
+                orders.waypointCount = 2;
+                orders.waypoints[0] = std::int16_t(home->x);
+                orders.waypoints[1] = std::int16_t(home->y);
+                orders.waypoints[2] = std::int16_t(best->x);
+                orders.waypoints[3] = std::int16_t(best->y);
+                w.reg.emplace<ecs::SquadOrders>(e, orders);
+            }
+        }
+    }
 }
 
 bool spawn_npc_at(GameState& gs, ecs::World& w, const TerrainData& terrain,

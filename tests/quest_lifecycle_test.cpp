@@ -497,7 +497,6 @@ void test_grant_xp_levels_through_the_one_path() {
     head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
     sm::GameState xpState{};
-    sm::PlayerState& player = xpState.player;
     sheet.levelData = sm::default_level_data();
     sheet.attributes[sm::AttributeId::Wis] = 0;  // isolate from the wis dividend (own test)
     const int firstThreshold = sheet.levelData.expToNext;
@@ -535,7 +534,6 @@ void test_grant_xp_pays_the_wis_dividend() {
     head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
     sm::GameState wisState{};
-    sm::PlayerState& player = wisState.player;
     sheet.levelData = sm::default_level_data();
     sheet.attributes[sm::AttributeId::Wis] = 10;  // expMult = 1.10
 
@@ -633,7 +631,6 @@ void test_unhandled_tag_is_inert_in_applicator() {
     head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
     sm::GameState levelState{};
-    sm::PlayerState& player = levelState.player;
     sheet.levelData = sm::default_level_data();
     sheet.levelData.exp =
         sm::exp_to_next_level(1) + sm::exp_to_next_level(2) + 5;

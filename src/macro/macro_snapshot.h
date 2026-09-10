@@ -56,6 +56,11 @@ struct MacroNpcRecord {
     std::uint8_t         hasSheet = 0;
     std::uint8_t         hasOrders = 0;
     std::uint8_t         dead = 0;
+    // Ординал строки стола анкет (v92, macro/characters.h) — −1 у всякого
+    // обычного сквада. Едет байтами, восстанавливается тегом: смерть
+    // навсегда держится именно этим — генезис на загрузке не гоняется, и
+    // погибшая анкета в снапшоте просто отсутствует.
+    std::int16_t         designOrdinal = -1;
     // «Кем я управляю» — ecs::PlayerTag as one honest byte (v87). At most one
     // record of a save carries 1: the player's own squad, or a possessed lord.
     std::uint8_t         playerFlag = 0;

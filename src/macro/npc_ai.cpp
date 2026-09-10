@@ -1,6 +1,7 @@
 // Macroworld NPC AI — full behaviour set, faithful port of `npc-ai.ts`.
 #include "macro/npc_ai.h"
 #include "macro/agent_memory.h"
+#include "macro/characters.h"  // стол анкет — ступень лестницы поведения
 #include "macro/chronicle.h"
 #include "macro/currency.h"
 #include "macro/economy.h"
@@ -2772,16 +2773,35 @@ void ai_waypoints(entt::entity e, MacroPos& p, ecs::MacroNpcRuntime& rt,
     try_move(p, rt, pools, rt.targetX, rt.targetY, ctx);
 }
 
+} // namespace
+
 // The behaviour a squad ACTUALLY lives by: its type row's ai column, unless
 // it CARRIES a waypoint route — the route's presence is the order (owner's
 // ruling: one knob, not two). New kinds of squad AI are rows, never fields.
+// ЛЕСТНИЦА ПРИОРИТЕТОВ — ЗАКОН этой двери (владелец, 2026-09-10).
+// Поведение не хранится — оно ВЫВОДИТСЯ каждый think из данных на
+// сущности, ступени сверху вниз:
+//   1. ПРИКАЗ: маршрут в SquadOrders (его наличие И ЕСТЬ приказ);
+//   2. (будущие перекрытия контекста — событие/факт пишет данные,
+//      ступень читает их здесь, никогда веткой в диспетче);
+//   3. АНКЕТА: строка стола дизайн-персонажей по ординалу тега;
+//   4. строка типа (kNpcTypeDefs.ai) — род как он есть.
+// Новая модель ИИ = функция + строка enum; новая ступень = данные на
+// сущности + одна строка здесь.
 AIBehaviour effective_behaviour(entt::registry& reg, entt::entity e,
                                 const ecs::NPCKind& kind) {
     if (const auto* orders = reg.try_get<ecs::SquadOrders>(e)) {
         if (orders->waypointCount > 0) return AIBehaviour::Waypoints;
     }
+    if (const auto* dc = reg.try_get<ecs::DesignCharacterTag>(e)) {
+        if (const DesignCharacterDef* row = design_character(dc->ordinal)) {
+            return row->behaviour;
+        }
+    }
     return kNpcTypeDefs[kind.type].ai;
 }
+
+namespace {
 
 // Exhaustion, settled once per think AFTER the behaviour marched — the one
 // door for every behaviour, where the dispatcher holds the entity and its
