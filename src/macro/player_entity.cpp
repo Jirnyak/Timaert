@@ -61,7 +61,8 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
     if (squad == entt::null) {
         squad = reg.create();
         reg.emplace<ecs::MacroSpawnId>(squad, ecs::kPlayerSquadOrdinal);
-        reg.emplace<ecs::Position>(squad, gs.player.x, gs.player.y, 0.0f);
+        reg.emplace<ecs::MacroCell>(squad, ecs::cell_index(
+            int(gs.player.x), int(gs.player.y), gs.mapW));
         reg.emplace<ecs::MacroVisual>(squad, gs.player.x, gs.player.y, 0.0f);
         reg.emplace<ecs::NPCKind>(
             squad, std::uint16_t(NPCType::Adventurer),
@@ -121,7 +122,8 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
     //
     // No +0.5 on the position — Position is the raw cell coordinate, and the
     // overlay applies the render centring.
-    reg.emplace_or_replace<ecs::Position>(squad, gs.player.x, gs.player.y, 0.0f);
+    reg.emplace_or_replace<ecs::MacroCell>(squad, ecs::cell_index(
+        int(gs.player.x), int(gs.player.y), gs.mapW));
     reg.emplace_or_replace<ecs::NpcLevel>(
         squad, std::int16_t(std::max(1, gs.player.sheet.levelData.level)));
     // The SAME door every lord's numbers go through (squad.h) — the sheet is
@@ -245,7 +247,8 @@ const AgentMemory* player_head(const ecs::World& world) {
     return player_head(const_cast<ecs::World&>(world));
 }
 
-bool reattach_player_to_macro_spawn(ecs::World& world, int id, float px, float py) {
+bool reattach_player_to_macro_spawn(ecs::World& world, int id, float px, float py,
+                                    int mapW) {
     if (id < 0) return false;
     auto& reg = world.reg;
 
@@ -278,8 +281,9 @@ bool reattach_player_to_macro_spawn(ecs::World& world, int id, float px, float p
 
     if (!reg.all_of<ecs::PlayerTag>(target)) reg.emplace<ecs::PlayerTag>(target);
     // The loaded scalar is authoritative for WHERE the player is; the ordinal is
-    // authoritative for WHO. Snap the adopted body to the saved cell.
-    reg.emplace_or_replace<ecs::Position>(target, px, py, 0.0f);
+    // authoritative for WHO. Snap the adopted squad to the saved cell.
+    reg.emplace_or_replace<ecs::MacroCell>(
+        target, ecs::cell_index(int(px), int(py), mapW));
     return true;
 }
 

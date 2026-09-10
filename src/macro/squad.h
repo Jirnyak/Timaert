@@ -566,14 +566,14 @@ inline void settle_squad_casualties(GameState& gs, ecs::World& w,
                                     const std::vector<std::uint32_t>& ids) {
     auto& reg = w.reg;
     const auto* sid = reg.try_get<ecs::MacroSpawnId>(e);
-    const auto* pos = reg.try_get<ecs::Position>(e);
+    const auto* cell = reg.try_get<ecs::MacroCell>(e);
     if (!sid) return;
     MacroWorld mw{.gs = &gs, .world = &w};  // named, not positional — the
                                             // envelope grows, positions rot
     MacroStockKey key{};
     key.subject = std::int32_t(sid->index);
-    key.cellX = pos ? std::int16_t(int(pos->x)) : std::int16_t(0);
-    key.cellY = pos ? std::int16_t(int(pos->y)) : std::int16_t(0);
+    key.cellX = cell ? std::int16_t(ecs::cell_x(*cell, gs.mapW)) : std::int16_t(0);
+    key.cellY = cell ? std::int16_t(ecs::cell_y(*cell, gs.mapW)) : std::int16_t(0);
     for (std::uint32_t id : ids) {
         key.detail = std::int32_t(id);
         macro_stock_apply(mw, MacroStock::Roster, key, -1);
@@ -669,11 +669,11 @@ inline void record_battle_facts(const MacroWorld& mw,
     GameState& gs = *mw.gs;
     ecs::World& w = *mw.world;
     auto& reg = w.reg;
-    const auto* battlePos = reg.try_get<ecs::Position>(winner);
-    const std::int16_t bx =
-        std::int16_t(battlePos ? int(battlePos->x) : 0);
-    const std::int16_t by =
-        std::int16_t(battlePos ? int(battlePos->y) : 0);
+    const auto* battleCell = reg.try_get<ecs::MacroCell>(winner);
+    const std::int16_t bx = std::int16_t(
+        battleCell ? ecs::cell_x(*battleCell, gs.mapW) : 0);
+    const std::int16_t by = std::int16_t(
+        battleCell ? ecs::cell_y(*battleCell, gs.mapW) : 0);
     if (loserDead > 0) {
         WorldFact f{};
         f.day = gs.worldTime.day();
@@ -841,9 +841,9 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
     // bags of their own (they are records, not entities), and this is where
     // they stop dropping nothing at all.
     if (playerWon) {
-        const auto* epos = w.reg.try_get<ecs::Position>(enemy);
-        const int cx = epos ? int(epos->x) : 0;
-        const int cy = epos ? int(epos->y) : 0;
+        const auto* ecell = w.reg.try_get<ecs::MacroCell>(enemy);
+        const int cx = ecell ? ecs::cell_x(*ecell, gs.mapW) : 0;
+        const int cy = ecell ? ecs::cell_y(*ecell, gs.mapW) : 0;
         Rng lootRng(hash3(std::uint32_t(entt::to_integral(enemy)),
                           std::uint32_t(enemyCas.size()),
                           gs.worldSeed));

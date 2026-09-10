@@ -58,10 +58,10 @@ XY find_valid_spawn(int cx, int cy, int radius, Rng& rng,
 // the level draw is consumed either way, so the boot RNG stream is untouched.
 // Returns the created entity (spawn_squad decorates it with roster/orders).
 entt::entity make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
-                      int x, int y, int homeId, Rng& rng,
+                      int x, int y, int mapW, int homeId, Rng& rng,
                       std::uint32_t& spawnIndex, int levelOverride = -1) {
     auto e = w.reg.create();
-    w.reg.emplace<ecs::Position>(e, float(x), float(y), 0.0f);
+    w.reg.emplace<ecs::MacroCell>(e, ecs::cell_index(x, y, mapW));
     w.reg.emplace<ecs::MacroVisual>(e, float(x), float(y), 0.0f);
     w.reg.emplace<ecs::NPCKind>(e, std::uint16_t(type), factionIdx);
 
@@ -236,12 +236,12 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
         // own hands.
         if (rng.next_f01() > 0.4f) {
             // Residents are born ON the town cell (owner 2026-08-31).
-            make_npc(w, NPCType::Merchant, fIdx, s.x, s.y, s.id, rng,
+            make_npc(w, NPCType::Merchant, fIdx, s.x, s.y, gs.mapW, s.id, rng,
                      spawnIndex);
         }
         int guardCount = 1 + int(rng.next_u32() % 2u);
         for (int i = 0; i < guardCount; ++i) {
-            make_npc(w, NPCType::Guard, fIdx, s.x, s.y, s.id, rng,
+            make_npc(w, NPCType::Guard, fIdx, s.x, s.y, gs.mapW, s.id, rng,
                      spawnIndex);
         }
     }
@@ -259,7 +259,7 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
         // Born ON the town cell (owner 2026-08-31).
         make_npc(w, NPCType::Caravan,
                  settlement_faction_index(gs, home.kingdomIdx),
-                 home.x, home.y, home.id, rng, spawnIndex);
+                 home.x, home.y, gs.mapW, home.id, rng, spawnIndex);
     }
 
     // Bandits: 0.3 * settlements + 2
@@ -271,7 +271,7 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
         int cx = wrapi(ref.x + int(std::lround(std::cos(angle) * dist)), mw);
         int cy = wrapi(ref.y + int(std::lround(std::sin(angle) * dist)), mh);
         auto p = find_valid_spawn(cx, cy, 15, rng, mw, mh, terrain);
-        make_npc(w, NPCType::Bandit, std::uint16_t(faction_index("bandits")), p.x, p.y, -1, rng, spawnIndex);
+        make_npc(w, NPCType::Bandit, std::uint16_t(faction_index("bandits")), p.x, p.y, gs.mapW, -1, rng, spawnIndex);
     }
 
     // Witches: max(1, 0.1 * settlements)
@@ -285,7 +285,7 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
         auto p = find_valid_spawn(cx, cy, 15, rng, mw, mh, terrain);
         std::uint16_t f = rng.next_f01() > 0.3f
                         ? std::uint16_t(faction_index("magika")) : std::uint16_t(faction_index("cults"));
-        make_npc(w, NPCType::Witch, f, p.x, p.y, -1, rng, spawnIndex);
+        make_npc(w, NPCType::Witch, f, p.x, p.y, gs.mapW, -1, rng, spawnIndex);
     }
 
     // Sorceresses: max(1, 0.05 * settlements)
@@ -299,7 +299,7 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
         auto p = find_valid_spawn(cx, cy, 15, rng, mw, mh, terrain);
         std::uint16_t f = rng.next_f01() > 0.5f
                         ? std::uint16_t(faction_index("magika")) : std::uint16_t(faction_index("cults"));
-        make_npc(w, NPCType::Sorceress, f, p.x, p.y, -1, rng, spawnIndex);
+        make_npc(w, NPCType::Sorceress, f, p.x, p.y, gs.mapW, -1, rng, spawnIndex);
     }
 
     // Villages seed no eternal gatherers either (owner 2026-08-30): the
@@ -335,7 +335,7 @@ bool spawn_npc_at(GameState& gs, ecs::World& w, const TerrainData& terrain,
         ? std::uint16_t(faction_index("bandits"))
         : faction_index_for_cell(gs.politik, p.x, p.y);
 
-    make_npc(w, type, f, p.x, p.y, /*homeId*/ -1, rng,
+    make_npc(w, type, f, p.x, p.y, gs.mapW, /*homeId*/ -1, rng,
              gs.nextMacroSpawnOrdinal, level);
     return true;
 }
@@ -375,7 +375,7 @@ entt::entity spawn_squad(GameState& gs, ecs::World& w,
                : faction_index_for_cell(gs.politik, p.x, p.y);
 
     const entt::entity leader =
-        make_npc(w, spec.leaderType, f, p.x, p.y, spec.homeSettlementId,
+        make_npc(w, spec.leaderType, f, p.x, p.y, gs.mapW, spec.homeSettlementId,
                  rng, gs.nextMacroSpawnOrdinal, spec.leaderLevel);
 
     // The roster rows — through the same append every other producer uses.

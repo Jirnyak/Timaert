@@ -411,7 +411,7 @@ void write_macro_npc(Writer& w, const MacroNpcRecord& m) {
         return;
     }
     w.pod(m.spawnId);
-    w.pod(m.pos);
+    w.pod(m.cell);   // v86: ОДНО число — клетка сквада (MacroCell)
     w.pod(m.visual);
     w.pod(m.kind);
     w.pod(m.pools);
@@ -430,7 +430,7 @@ void write_macro_npc(Writer& w, const MacroNpcRecord& m) {
 
 void read_macro_npc(Reader& r, MacroNpcRecord& m) {
     r.pod(m.spawnId);
-    r.pod(m.pos);
+    r.pod(m.cell);   // v86
     r.pod(m.visual);
     r.pod(m.kind);
     r.pod(m.pools);

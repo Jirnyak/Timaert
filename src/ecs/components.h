@@ -30,6 +30,33 @@ struct VisualPos { float vx, vy, speed; };
 // (identical layout — the save format did not move).
 struct MacroVisual { float vx, vy, speed; };
 
+// THE CELL OF A MACRO SQUAD — one number (owner verdict 2026-09-10, CANON
+// S2: «мир — плоский массив, связный тор; у каждой клетки ровно одно
+// число»): the row-major index of the 2^20-cell torus, the SAME index every
+// field of the world is addressed by (S5) — a squad reads the field under
+// its feet with no conversion at all. The map side is a power of two, so
+// the torus is masks and shifts, and a fractional cell is UNREPRESENTABLE:
+// the scale confusion that bred SUB-1 (cells read as tiles) cannot compile
+// against this type, and neither can a half-cell position — the fractional
+// march lives in the walk's own banked budget, the visual glide in
+// MacroVisual. Scene bodies keep Position (tiles + 3D metres); a macro
+// squad keeps THIS, and no pass can mistake one for the other.
+struct MacroCell { std::uint32_t idx; };
+
+// The three spellings of one address, beside the type they speak for.
+// `mapW` is the po2 map side (gs.mapW); wrap is masking, y is a shift.
+inline std::uint32_t cell_index(int x, int y, int mapW) {
+    const std::uint32_t m = std::uint32_t(mapW - 1);
+    return (std::uint32_t(y) & m) * std::uint32_t(mapW)
+         + (std::uint32_t(x) & m);
+}
+inline int cell_x(MacroCell c, int mapW) {
+    return int(c.idx & std::uint32_t(mapW - 1));
+}
+inline int cell_y(MacroCell c, int mapW) {
+    return int(c.idx / std::uint32_t(mapW));
+}
+
 // THE POOLS OF A BODY — moved to its own entt-free header (ecs/pools.h) so
 // the recovery law and the stamina bookkeeping compile without the component
 // roster; the story of the block lives with the block.

@@ -28,7 +28,7 @@ sm::Landmark make_settlement(int id, int x, int y) {
 
 int count_macro_npcs(const sm::ecs::World& world) {
     int count = 0;
-    auto view = world.reg.view<const sm::ecs::NPCKind, const sm::ecs::Position>();
+    auto view = world.reg.view<const sm::ecs::NPCKind, const sm::ecs::MacroCell>();
     for (auto entity : view) {
         (void)entity;
         ++count;
@@ -60,11 +60,12 @@ int bodies_without_a_full_block(const sm::ecs::World& world) {
 }
 
 bool positions_inside_map(const sm::ecs::World& world, int mapW, int mapH) {
-    auto view = world.reg.view<const sm::ecs::NPCKind, const sm::ecs::Position>();
+    auto view = world.reg.view<const sm::ecs::NPCKind, const sm::ecs::MacroCell>();
     for (auto entity : view) {
-        const auto& p = view.template get<const sm::ecs::Position>(entity);
-        if (p.x < 0.0f || p.x >= float(mapW) || p.y < 0.0f || p.y >= float(mapH))
-            return false;
+        const auto& c = view.template get<const sm::ecs::MacroCell>(entity);
+        const int x = sm::ecs::cell_x(c, mapW);
+        const int y = sm::ecs::cell_y(c, mapW);
+        if (x < 0 || x >= mapW || y < 0 || y >= mapH) return false;
     }
     return true;
 }

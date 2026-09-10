@@ -119,7 +119,7 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
 
     sm::MacroNpcRecord a{};
     a.spawnId.index = 7;
-    a.pos = {33.5f, 44.25f, 0.0f};
+    a.cell = {sm::ecs::cell_index(33, 44, 512)};
     a.visual = {33.0f, 44.0f, 1.5f};
     a.kind = {std::uint16_t(sm::NPCType::Bandit), 3};
     a.pools = {17, 42};
@@ -175,7 +175,7 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
 
     sm::MacroNpcRecord d{};
     d.spawnId.index = 9;
-    d.pos = {1.0f, 2.0f, 0.0f};
+    d.cell = {sm::ecs::cell_index(1, 2, 512)};
     d.visual = {1.0f, 2.0f, 0.0f};
     d.kind = {std::uint16_t(sm::NPCType::Guard), 1};
     d.pools = {0, 55};
@@ -189,7 +189,7 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
     // exactly what this record proves.
     sm::MacroNpcRecord player{};
     player.spawnId.index = sm::ecs::kPlayerSquadOrdinal;
-    player.pos = {12.0f, 13.0f, 0.0f};
+    player.cell = {sm::ecs::cell_index(12, 13, 512)};
     player.visual = {12.0f, 13.0f, 0.0f};
     player.kind = {std::uint16_t(sm::NPCType::Adventurer),
                    std::uint16_t(sm::faction_index(sm::kPlayerFactionId))};
@@ -784,8 +784,8 @@ void run_roundtrip() {
         const sm::MacroNpcRecord& a = loadedMacro[0];
         const sm::MacroNpcRecord& want = macroFixture[0];
         if (a.spawnId.index != want.spawnId.index) FAIL_BAIL("macro ordinal lost");
-        if (a.pos.x != want.pos.x || a.pos.y != want.pos.y) {
-            FAIL_BAIL("macro position lost");
+        if (a.cell.idx != want.cell.idx) {
+            FAIL_BAIL("macro cell lost");
         }
         if (a.kind.type != want.kind.type
             || a.kind.factionIdx != want.kind.factionIdx) {

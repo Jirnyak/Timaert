@@ -724,19 +724,23 @@ bool run_subworld_recovery_smoke(App& app) {
     // the blood-drip pass (the original SUB-1) has a body it WOULD pick up.
     entt::entity scaleWitness = entt::null;
     float wPx = 0.0f, wPy = 0.0f, wVx = 0.0f, wVy = 0.0f;
-    for (auto [e, rt, p, v, pools] :
-         app.ecs.reg.view<sm::ecs::MacroNpcRuntime, sm::ecs::Position,
+    std::uint32_t wCellIdx = 0;
+    for (auto [e, rt, c, v, pools] :
+         app.ecs.reg.view<sm::ecs::MacroNpcRuntime, sm::ecs::MacroCell,
                           sm::ecs::MacroVisual, sm::ecs::Pools>(
              entt::exclude<sm::ecs::PlayerSquadTag,
                            sm::ecs::Dead>).each()) {
         (void)rt;
         pools.maxHp = std::max(1, pools.maxHp);
         pools.hp = std::max(1, pools.maxHp / 3);   // under half: drip bait
-        v.vx = p.x + 0.4f;                          // mid-glide visual
-        v.vy = p.y;
+        wPx = float(sm::ecs::cell_x(c, app.gs.mapW));
+        wPy = float(sm::ecs::cell_y(c, app.gs.mapW));
+        v.vx = wPx + 0.4f;                          // mid-glide visual
+        v.vy = wPy;
         v.speed = 2.0f;
         scaleWitness = e;
-        wPx = p.x; wPy = p.y; wVx = v.vx; wVy = v.vy;
+        wCellIdx = c.idx;
+        wVx = v.vx; wVy = v.vy;
         break;
     }
 
@@ -783,13 +787,16 @@ bool run_subworld_recovery_smoke(App& app) {
     // The scale witness: the minute of scene ticks above must have left the
     // wounded macro squad exactly where the map put it, visual included.
     if (scaleWitness != entt::null && app.ecs.reg.valid(scaleWitness)) {
-        const auto& p = app.ecs.reg.get<sm::ecs::Position>(scaleWitness);
+        const auto& c = app.ecs.reg.get<sm::ecs::MacroCell>(scaleWitness);
         const auto& v = app.ecs.reg.get<sm::ecs::MacroVisual>(scaleWitness);
-        if (p.x != wPx || p.y != wPy || v.vx != wVx || v.vy != wVy) {
+        if (c.idx != wCellIdx || v.vx != wVx || v.vy != wVy) {
             std::fprintf(stderr,
-                         "[smoke] scale witness moved: pos %.2f,%.2f -> "
+                         "[smoke] scale witness moved: cell %.2f,%.2f -> "
                          "%.2f,%.2f visual %.2f,%.2f -> %.2f,%.2f\n",
-                         wPx, wPy, p.x, p.y, wVx, wVy, v.vx, v.vy);
+                         wPx, wPy,
+                         float(sm::ecs::cell_x(c, app.gs.mapW)),
+                         float(sm::ecs::cell_y(c, app.gs.mapW)),
+                         wVx, wVy, v.vx, v.vy);
             std::fflush(stderr);
             app.subworld.leave(true);
             smoke_fail(app, "subworld_recovery scene tick touched a MACRO squad");
@@ -1662,10 +1669,10 @@ bool run_timeadvance_burst_smoke(App& app) {
 
 entt::entity smoke_find_macro_npc_trace_target(App& app) {
     entt::entity fallback = entt::null;
-    auto view = app.ecs.reg.view<sm::ecs::Position, sm::ecs::NPCKind,
+    auto view = app.ecs.reg.view<sm::ecs::MacroCell, sm::ecs::NPCKind,
                                  sm::ecs::MacroNpcRuntime,
                                  sm::ecs::Pools, sm::ecs::MacroVisual>(
-        entt::exclude<sm::ecs::Dead, sm::ecs::SubworldTag,
+        entt::exclude<sm::ecs::Dead,
                       sm::ecs::PlayerSquadTag>);
     for (auto e : view) {
         const auto& hp = view.get<sm::ecs::Pools>(e);
@@ -1699,7 +1706,7 @@ bool run_macro_npc_trace_smoke(App& app) {
         return false;
     }
 
-    auto& pos = app.ecs.reg.get<sm::ecs::Position>(e);
+    auto& cell = app.ecs.reg.get<sm::ecs::MacroCell>(e);
     auto& kind = app.ecs.reg.get<sm::ecs::NPCKind>(e);
     auto& rt = app.ecs.reg.get<sm::ecs::MacroNpcRuntime>(e);
     auto& hp = app.ecs.reg.get<sm::ecs::Pools>(e);
@@ -1719,15 +1726,15 @@ bool run_macro_npc_trace_smoke(App& app) {
     int baseY = sm::wrapi(int(app.gs.player.y) + app.gs.mapH / 2,
                           app.gs.mapH);
     {
-        auto others = app.ecs.reg.view<sm::ecs::Position,
+        auto others = app.ecs.reg.view<sm::ecs::MacroCell,
                                        sm::ecs::MacroNpcRuntime>(
-            entt::exclude<sm::ecs::Dead, sm::ecs::SubworldTag>);
+            entt::exclude<sm::ecs::Dead>);
         auto lane_clear = [&](int cx, int cy) {
             for (auto o : others) {
                 if (o == e) continue;
-                const auto& op = others.get<sm::ecs::Position>(o);
-                const int dx = std::abs(int(op.x) - cx);
-                const int dy = std::abs(int(op.y) - cy);
+                const auto& oc = others.get<sm::ecs::MacroCell>(o);
+                const int dx = std::abs(sm::ecs::cell_x(oc, app.gs.mapW) - cx);
+                const int dy = std::abs(sm::ecs::cell_y(oc, app.gs.mapW) - cy);
                 const int cheb = std::max(std::min(dx, app.gs.mapW - dx),
                                           std::min(dy, app.gs.mapH - dy));
                 if (cheb < 16) return false;
@@ -1741,10 +1748,9 @@ bool run_macro_npc_trace_smoke(App& app) {
                               app.gs.mapH);
         }
     }
-    pos.x = float(baseX);
-    pos.y = float(baseY);
-    visual.vx = pos.x;
-    visual.vy = pos.y;
+    cell.idx = sm::ecs::cell_index(baseX, baseY, app.gs.mapW);
+    visual.vx = float(baseX);
+    visual.vy = float(baseY);
 
     // The leader's bar is his SHEET's (Session 21): the cached maxSp the
     // regen law fills, not the retired 2×maxHp dialect. Since the pools
@@ -1780,10 +1786,9 @@ bool run_macro_npc_trace_smoke(App& app) {
         recoveredSp >= maxSp / 2
         && rt.state == std::uint8_t(sm::NPCState::Idle);
 
-    pos.x = float(baseX);
-    pos.y = float(baseY);
-    visual.vx = pos.x;
-    visual.vy = pos.y;
+    cell.idx = sm::ecs::cell_index(baseX, baseY, app.gs.mapW);
+    visual.vx = float(baseX);
+    visual.vy = float(baseY);
     visual.speed = 0.0f;
     kind.type = std::uint16_t(sm::NPCType::Caravan);
     rt.targetX = float(sm::wrapi(baseX + 3, app.gs.mapW));
@@ -1812,8 +1817,8 @@ bool run_macro_npc_trace_smoke(App& app) {
         sm::tick_macro_npc_ai(traceMw2, app.npcAi, sm::kAiTicks,
                               /*allowAutoBattle=*/false);
     }
-    const float logicalX = pos.x;
-    const float logicalY = pos.y;
+    const float logicalX = float(sm::ecs::cell_x(cell, app.gs.mapW));
+    const float logicalY = float(sm::ecs::cell_y(cell, app.gs.mapW));
     const float visualBefore = visual.vx;
     sm::tick_macro_npc_visuals(app.ecs, app.gs.mapW, app.gs.mapH, 0.25f);
     const float visualMid = visual.vx;
@@ -4499,8 +4504,10 @@ bool run_console_smoke(App& app) {
             smoke_fail(app, "macro_player_entity: expected one macro PlayerTag");
             return false;
         }
-        const auto* mpos = reg.try_get<sm::ecs::Position>(mpe);
-        if (!mpos || !near_half(mpos->x, saveX) || !near_half(mpos->y, saveY)) {
+        const auto* mcell = reg.try_get<sm::ecs::MacroCell>(mpe);
+        if (!mcell
+            || !near_half(float(sm::ecs::cell_x(*mcell, app.gs.mapW)), saveX)
+            || !near_half(float(sm::ecs::cell_y(*mcell, app.gs.mapW)), saveY)) {
             smoke_fail(app, "macro_player_entity: macro flag Position off scalar");
             return false;
         }
@@ -4559,17 +4566,21 @@ bool run_console_smoke(App& app) {
             smoke_fail(app, "macro_player_entity: avatar outlived its scene");
             return false;
         }
-        const auto* rpos = reg.try_get<sm::ecs::Position>(rpe);
-        if (!rpos || !near_half(rpos->x, app.gs.player.x) ||
-            !near_half(rpos->y, app.gs.player.y)) {
+        const auto* rcell = reg.try_get<sm::ecs::MacroCell>(rpe);
+        if (!rcell
+            || !near_half(float(sm::ecs::cell_x(*rcell, app.gs.mapW)),
+                          app.gs.player.x)
+            || !near_half(float(sm::ecs::cell_y(*rcell, app.gs.mapW)),
+                          app.gs.player.y)) {
             smoke_fail(app,
                 "macro_player_entity: restored flag Position off scalar");
             return false;
         }
         std::fprintf(stderr,
                      "[smoke] macro_player_entity cycle PlayerTag=1(macro) "
-                     "avatar 0->1->0 pos=%.1f,%.1f\n",
-                     rpos->x, rpos->y);
+                     "avatar 0->1->0 pos=%d,%d\n",
+                     sm::ecs::cell_x(*rcell, app.gs.mapW),
+                     sm::ecs::cell_y(*rcell, app.gs.mapW));
         std::fflush(stderr);
 
         // Restore the macro anchor the enter/leave cycle moved (leave() snaps the
@@ -5441,10 +5452,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 int bestX = -1, bestY = -1;
                 long bestD = 1L << 60;
                 for (auto e : app.ecs.reg.view<sm::ecs::MacroNpcRuntime,
-                                               sm::ecs::Position>(
+                                               sm::ecs::MacroCell>(
                          entt::exclude<sm::ecs::PlayerSquadTag>)) {
-                    const auto& p = app.ecs.reg.get<sm::ecs::Position>(e);
-                    const int nx = int(p.x), ny = int(p.y);
+                    const auto& c = app.ecs.reg.get<sm::ecs::MacroCell>(e);
+                    const int nx = sm::ecs::cell_x(c, app.gs.mapW);
+                    const int ny = sm::ecs::cell_y(c, app.gs.mapW);
                     const long dx = nx - pcx, dy = ny - pcy;
                     const long d = dx * dx + dy * dy;
                     if (d < bestD) { bestD = d; bestX = nx; bestY = ny; }
@@ -5748,10 +5760,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 int bestX = -1, bestY = -1;
                 long bestD = 1L << 60;
                 for (auto e : app.ecs.reg.view<sm::ecs::MacroNpcRuntime,
-                                               sm::ecs::Position>(
+                                               sm::ecs::MacroCell>(
                          entt::exclude<sm::ecs::PlayerSquadTag>)) {
-                    const auto& p = app.ecs.reg.get<sm::ecs::Position>(e);
-                    const int nx = int(p.x), ny = int(p.y);
+                    const auto& c = app.ecs.reg.get<sm::ecs::MacroCell>(e);
+                    const int nx = sm::ecs::cell_x(c, app.gs.mapW);
+                    const int ny = sm::ecs::cell_y(c, app.gs.mapW);
                     const long dx = nx - pcx, dy = ny - pcy;
                     const long d = dx * dx + dy * dy;
                     if (d < bestD) { bestD = d; bestX = nx; bestY = ny; }
@@ -5780,7 +5793,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 entt::entity body = entt::null, origin = entt::null;
                 for (auto e : reg.view<sm::ecs::SubworldTag, sm::ecs::MacroOrigin>()) {
                     const entt::entity m = reg.get<sm::ecs::MacroOrigin>(e).macro;
-                    if (reg.valid(m) && reg.all_of<sm::ecs::Position>(m)) {
+                    if (reg.valid(m) && reg.all_of<sm::ecs::MacroCell>(m)) {
                         body = e; origin = m; break;
                     }
                 }
@@ -5793,8 +5806,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 const int W = app.terrain.width, H = app.terrain.height;
                 const int ocx = ((ccx + 7) % W + W) % W;
                 const int ocy = ((ccy + 5) % H + H) % H;
-                reg.get<sm::ecs::Position>(origin).x = float(ocx);
-                reg.get<sm::ecs::Position>(origin).y = float(ocy);
+                reg.get<sm::ecs::MacroCell>(origin).idx =
+                    sm::ecs::cell_index(ocx, ocy, app.gs.mapW);
                 // Possess the body, then leave via the real teardown path.
                 if (!app.subworld.possess_by_id(
                         static_cast<std::uint32_t>(entt::to_integral(body)))) {
@@ -6234,7 +6247,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             smoke_clear_modal_overlays(app);
-            auto view = app.ecs.reg.view<sm::ecs::Position,
+            auto view = app.ecs.reg.view<sm::ecs::MacroCell,
                                          sm::ecs::NPCKind,
                                          sm::ecs::Pools,
                                          sm::ecs::NpcLevel,
@@ -6245,17 +6258,18 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             for (auto e : view) {
                 const auto& hp = view.get<sm::ecs::Pools>(e);
                 if (hp.hp <= 0) continue;
-                const auto& pos = view.get<sm::ecs::Position>(e);
+                const auto& pcell = view.get<sm::ecs::MacroCell>(e);
                 const auto& kind = view.get<sm::ecs::NPCKind>(e);
-                app.gs.player.x = pos.x;
-                app.gs.player.y = pos.y;
+                app.gs.player.x = float(sm::ecs::cell_x(pcell, app.gs.mapW));
+                app.gs.player.y = float(sm::ecs::cell_y(pcell, app.gs.mapW));
                 app.cursor.path.clear();
                 app.cursor.pathIdx = 0;
                 app.ui.settlement = false;
                 found = true;
                 std::fprintf(stderr,
                              "[smoke] npc_panel focus type=%d x=%.2f y=%.2f inventory=1\n",
-                             int(kind.type), pos.x, pos.y);
+                             int(kind.type),
+                             double(app.gs.player.x), double(app.gs.player.y));
                 std::fflush(stderr);
                 break;
             }
@@ -6278,7 +6292,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             app.ui.codex = false;
             app.ui.map = false;
             app.ui.quest = false;
-            auto view = app.ecs.reg.view<sm::ecs::Position,
+            auto view = app.ecs.reg.view<sm::ecs::MacroCell,
                                          sm::ecs::NPCKind,
                                          sm::ecs::Pools,
                                          sm::ecs::NpcLevel,
@@ -6291,11 +6305,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             for (auto e : view) {
                 const auto& hp = view.get<sm::ecs::Pools>(e);
                 if (hp.hp <= 0) continue;
-                const auto& pos = view.get<sm::ecs::Position>(e);
+                const auto& pcell = view.get<sm::ecs::MacroCell>(e);
                 const auto& kind = view.get<sm::ecs::NPCKind>(e);
                 const auto& bag = view.get<sm::ecs::NpcInventory>(e);
-                app.gs.player.x = pos.x;
-                app.gs.player.y = pos.y;
+                app.gs.player.x = float(sm::ecs::cell_x(pcell, app.gs.mapW));
+                app.gs.player.y = float(sm::ecs::cell_y(pcell, app.gs.mapW));
                 app.cursor.path.clear();
                 app.cursor.pathIdx = 0;
                 target = e;
@@ -6327,7 +6341,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             smoke_clear_modal_overlays(app);
-            auto view = app.ecs.reg.view<sm::ecs::Position,
+            auto view = app.ecs.reg.view<sm::ecs::MacroCell,
                                          sm::ecs::NPCKind,
                                          sm::ecs::Pools,
                                          sm::ecs::NpcLevel,
@@ -6337,9 +6351,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             for (auto e : view) {
                 const auto& hp = view.get<sm::ecs::Pools>(e);
                 if (hp.hp <= 0) continue;
-                const auto& pos = view.get<sm::ecs::Position>(e);
-                app.gs.player.x = pos.x;
-                app.gs.player.y = pos.y;
+                const auto& acell = view.get<sm::ecs::MacroCell>(e);
+                app.gs.player.x = float(sm::ecs::cell_x(acell, app.gs.mapW));
+                app.gs.player.y = float(sm::ecs::cell_y(acell, app.gs.mapW));
                 target = e;
                 break;
             }
@@ -6388,18 +6402,19 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // 3x3 window. Arranging the subject is the harness's job; the
             // LAW under test is the writeback, not spawn placement.
             auto& reg = app.ecs.reg;
-            auto& pos = reg.get<sm::ecs::Position>(leader);
-            pos.x = app.gs.player.x;
-            pos.y = app.gs.player.y;
+            const int pcx = int(app.gs.player.x);
+            const int pcy = int(app.gs.player.y);
+            reg.get<sm::ecs::MacroCell>(leader).idx =
+                sm::ecs::cell_index(pcx, pcy, app.gs.mapW);
             auto& vis = reg.get<sm::ecs::MacroVisual>(leader);
-            vis.vx = pos.x;
-            vis.vy = pos.y;
+            vis.vx = float(pcx);
+            vis.vy = float(pcy);
             auto& rt = reg.get<sm::ecs::MacroNpcRuntime>(leader);
-            rt.targetX = pos.x;
-            rt.targetY = pos.y;
+            rt.targetX = float(pcx);
+            rt.targetY = float(pcy);
             std::fprintf(stderr,
                          "[smoke] squad spawned at player cell %d,%d "
-                         "ordinal=%u\n", int(pos.x), int(pos.y),
+                         "ordinal=%u\n", pcx, pcy,
                          reg.get<sm::ecs::MacroSpawnId>(leader).index);
             std::fflush(stderr);
             ++app.smoke.cursor;
@@ -6417,10 +6432,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             smoke_clear_modal_overlays(app);
             auto& reg = app.ecs.reg;
             entt::entity hostile = entt::null;
-            auto view = reg.view<sm::ecs::Position, sm::ecs::NPCKind,
+            auto view = reg.view<sm::ecs::MacroCell, sm::ecs::NPCKind,
                                  sm::ecs::MacroNpcRuntime, sm::ecs::Pools>(
                 entt::exclude<sm::ecs::Dead, sm::ecs::PlayerTag,
-                              sm::ecs::PlayerSquadTag, sm::ecs::SubworldTag>);
+                              sm::ecs::PlayerSquadTag>);
             for (auto e : view) {
                 if (view.get<sm::ecs::Pools>(e).hp <= 0) continue;
                 const auto& kind = view.get<sm::ecs::NPCKind>(e);
@@ -6434,9 +6449,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "force_encounter found no hostile squad");
                 break;
             }
-            const auto& pos = reg.get<sm::ecs::Position>(hostile);
-            app.gs.player.x = float(int(pos.x));
-            app.gs.player.y = float(int(pos.y));
+            const auto& hcell = reg.get<sm::ecs::MacroCell>(hostile);
+            app.gs.player.x = float(sm::ecs::cell_x(hcell, app.gs.mapW));
+            app.gs.player.y = float(sm::ecs::cell_y(hcell, app.gs.mapW));
             app.cursor.path.clear();
             app.cursor.pathIdx = 0;
             detect_forced_encounter(app);

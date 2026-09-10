@@ -41,9 +41,11 @@ entt::entity spawn_ai(sm::ecs::World& world,
                       int homeId,
                       sm::NPCState state = sm::NPCState::Idle,
                       int timer = 0,
-                      int sp = 100) {
+                      int sp = 100,
+                      int mapW = 128) {
     auto e = world.reg.create();
-    world.reg.emplace<sm::ecs::Position>(e, x, y, 0.0f);
+    world.reg.emplace<sm::ecs::MacroCell>(
+        e, sm::ecs::cell_index(int(x), int(y), mapW));
     world.reg.emplace<sm::ecs::MacroVisual>(e, x, y, 0.0f);
     world.reg.emplace<sm::ecs::NPCKind>(e, std::uint16_t(type), std::uint16_t{0});
 
@@ -222,7 +224,8 @@ void test_aggressive_chases_visible_player() {
     const int thinksToClose = int(std::ceil(2.0f / perThink));
     for (int i = 0; i < thinksToClose; ++i) tick_once(gs, world, runtime);
 
-    auto& p = world.reg.get<sm::ecs::Position>(e);
+    const auto& pcell = world.reg.get<sm::ecs::MacroCell>(e);
+    (void)pcell;
     auto& rt = world.reg.get<sm::ecs::MacroNpcRuntime>(e);
     CHECK(in_state(rt, sm::NPCState::Chasing),
           "an Aggressive NPC that can see the player gives chase");
@@ -230,7 +233,7 @@ void test_aggressive_chases_visible_player() {
           "the chase aims at where the player actually is");
     // A multi-cell march never hops OVER the player — it stops ON the
     // meeting cell, where the forced-encounter door looks.
-    CHECK(close_enough(p.x, 12.0f) && close_enough(p.y, 10.0f),
+    CHECK(sm::ecs::cell_x(pcell, 128) == 12 && sm::ecs::cell_y(pcell, 128) == 10,
           "the chase closes the two-cell gap and stops on the player");
     // The march debt is the trip's true price: two featureless cells at
     // kStaminaPerCell each, part paid in whole SP, the rest in the carry.
@@ -296,13 +299,12 @@ void test_patrol_returns_when_far_from_home() {
     const int thinks = int(std::ceil(3.0f / perThink));
     for (int i = 0; i < thinks; ++i) tick_once(gs, world, runtime);
 
-    auto& p = world.reg.get<sm::ecs::Position>(e);
     auto& rt = world.reg.get<sm::ecs::MacroNpcRuntime>(e);
     CHECK(in_state(rt, sm::NPCState::Returning),
           "a Patrol that strayed past its leash turns back");
     CHECK(targets(rt, 50.0f, 50.0f),
           "the returning Patrol aims at the settlement it guards");
-    CHECK(close_enough(p.x, 67.0f),
+    CHECK(sm::ecs::cell_x(world.reg.get<sm::ecs::MacroCell>(e), 128) == 67,
           "the Patrol actually MOVES homeward once it decides to "
           "(three cells at the derived march budget)");
 }
@@ -386,9 +388,8 @@ void test_macro_visual_smoothing_and_snap() {
     CHECK(close_enough(visual.vx, 11.0f) && close_enough(visual.vy, 10.0f),
           "the render position glides toward the logical one at speed * dt");
 
-    auto& p = world.reg.get<sm::ecs::Position>(e);
-    p.x = 30.0f;
-    p.y = 10.0f;
+    world.reg.get<sm::ecs::MacroCell>(e).idx =
+        sm::ecs::cell_index(30, 10, 128);
     sm::tick_macro_npc_visuals(world, 128, 128, 0.25f);
     CHECK(close_enough(visual.vx, 30.0f) && close_enough(visual.vy, 10.0f),
           "a jump too far to glide SNAPS instead of sliding across the map");
@@ -476,8 +477,8 @@ void test_a_marching_body_does_not_mend() {
     auto& hp = world.reg.get<sm::ecs::Pools>(e);
     hp.maxHp = 50;
     hp.hp = 10;
-    const auto& pos = world.reg.get<sm::ecs::Position>(e);
-    const float startX = pos.x;
+    const float startX = float(sm::ecs::cell_x(
+        world.reg.get<sm::ecs::MacroCell>(e), 128));
 
     sm::MacroNpcAiRuntime runtime;
     sm::reset_macro_npc_ai_runtime(runtime, 11u);
@@ -485,7 +486,8 @@ void test_a_marching_body_does_not_mend() {
 
     // Not a tolerance — a precondition. If the body never walked, the wound
     // check below would pass for the wrong reason, so it fails out loud.
-    CHECK(!close_enough(pos.x, startX),
+    CHECK(!close_enough(float(sm::ecs::cell_x(
+              world.reg.get<sm::ecs::MacroCell>(e), 128)), startX),
           "the fixture is honest: the body actually MARCHED these sixteen thinks");
     CHECK(hp.hp == 10,
           "the road does not heal: a body on the move mends nothing");
@@ -521,7 +523,8 @@ void test_a_full_pool_is_unloaded_on_the_spot() {
             sm::make_soldier(std::uint16_t(sm::NPCType::Peasant), 2, 9000u));
     }
     // A dead lord whose band survived him, killed this very tick.
-    const auto e = spawn_ai(world, sm::NPCType::Bandit, 3.0f, 3.0f, -1);
+    const auto e = spawn_ai(world, sm::NPCType::Bandit, 3.0f, 3.0f, -1,
+                            sm::NPCState::Idle, 0, 100, /*mapW*/8);
     world.reg.emplace<sm::ecs::MacroSpawnId>(e, 55u);
     auto& roster = world.reg.emplace<sm::ecs::SquadRoster>(e);
     constexpr int kBandSize = 12;

@@ -47,7 +47,8 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world);
 // hero husk), when `id < 0` or no live macro NPC carries that ordinal (it died
 // before the save, or the seed changed). Call AFTER ensure_macro_player_entity at
 // boot, so a husk already exists to hand the flag over from.
-bool reattach_player_to_macro_spawn(ecs::World& world, int id, float px, float py);
+bool reattach_player_to_macro_spawn(ecs::World& world, int id, float px, float py,
+                                    int mapW);
 
 // THE player's squad entity, by its reserved ordinal — and his ROSTER, which
 // is an ordinary ecs::SquadRoster on it (owner, 2026-08-27). It used to be

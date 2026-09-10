@@ -55,11 +55,11 @@ void paint_water(PathCostData& g, int x, int y) {
 // A marching fixture: one Traveling caravan with an explicit, known sheet
 // cache (bar 110 = the fresh traveller, no skills, neutral pace) so every
 // number below is arithmetic, not a seed's opinion.
-entt::entity make_walker(ecs::World& w, float x, float y,
+entt::entity make_walker(ecs::World& w, int mapW, float x, float y,
                          float tx, float ty,
                          int maxSp, int hp = 100) {
     auto e = w.reg.create();
-    w.reg.emplace<ecs::Position>(e, x, y, 0.0f);
+    w.reg.emplace<ecs::MacroCell>(e, ecs::cell_index(int(x), int(y), mapW));
     w.reg.emplace<ecs::MacroVisual>(e, x, y, 0.0f);
     w.reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Caravan),
                                 std::uint16_t{0});
@@ -103,8 +103,15 @@ int drive_until(GameState& gs, ecs::World& w, MacroNpcAiRuntime& rt,
 bool drive_to_arrival(GameState& gs, ecs::World& w, MacroNpcAiRuntime& rt,
                       const PathCostData* grid, entt::entity e,
                       float tx, float ty, int capThinks) {
-    const auto& p = w.reg.get<ecs::Position>(e);
+    // Fresh decode EVERY look (never a reference across a tick — the
+    // landing-4 grabla): the store is the cell, and a tick moves it.
+    auto at = [&]() {
+        const auto c = w.reg.get<ecs::MacroCell>(e);
+        return MacroPos{float(ecs::cell_x(c, gs.mapW)),
+                        float(ecs::cell_y(c, gs.mapW))};
+    };
     for (int i = 0; i < capThinks; ++i) {
+        const MacroPos p = at();
         if (torus_dist_sq(p.x, p.y, tx, ty,
                           float(gs.mapW), float(gs.mapH)) < 4.0f) {
             return true;
@@ -112,6 +119,7 @@ bool drive_to_arrival(GameState& gs, ecs::World& w, MacroNpcAiRuntime& rt,
         MacroWorld mw{.gs = &gs, .world = &w, .pathCost = grid};
         tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle*/false);
     }
+    const MacroPos p = at();
     return torus_dist_sq(p.x, p.y, tx, ty,
                          float(gs.mapW), float(gs.mapH)) < 4.0f;
 }
@@ -131,7 +139,7 @@ void test_greedy_walks_around_a_wet_cell() {
     PathCostData grid = make_grid(32, 32, 1.0f);
     paint_water(grid, 16, 10);   // one wet cell dead on the straight line
 
-    auto e = make_walker(w, 13.0f, 10.0f, 20.0f, 10.0f, 110);
+    auto e = make_walker(w, gs.mapW, 13.0f, 10.0f, 20.0f, 10.0f, 110);
     auto& npc = w.reg.get<ecs::MacroNpcRuntime>(e);
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 21u);
@@ -156,12 +164,12 @@ void test_river_is_a_wall_and_a_bridge_is_the_door() {
     for (int y = 0; y < 32; ++y) paint_water(grid, 16, y);   // a full river
 
     {   // The wall: the walker halts at the bank, alive and unbled.
-        auto e = make_walker(w, 13.0f, 10.0f, 20.0f, 10.0f, 110);
+        auto e = make_walker(w, gs.mapW, 13.0f, 10.0f, 20.0f, 10.0f, 110);
         MacroNpcAiRuntime rt{};
         reset_macro_npc_ai_runtime(rt, 22u);
         CHECK(!drive_to_arrival(gs, w, rt, &grid, e, 20.0f, 10.0f, 12),
               "a river with no bridge is a WALL, not a ford");
-        CHECK(w.reg.get<ecs::Position>(e).x <= 15.0f,
+        CHECK(float(ecs::cell_x(w.reg.get<ecs::MacroCell>(e), gs.mapW)) <= 15.0f,
               "the walker halted at the bank — never a cell of water under "
               "his feet");
         CHECK(w.reg.get<ecs::Pools>(e).hp >= 30.0f,
@@ -171,7 +179,7 @@ void test_river_is_a_wall_and_a_bridge_is_the_door() {
         FeatureLayer features;
         features.resize(32, 32);
         features.set(16, 10, FT_Bridge);
-        auto e = make_walker(w, 13.0f, 10.0f, 20.0f, 10.0f, 110);
+        auto e = make_walker(w, gs.mapW, 13.0f, 10.0f, 20.0f, 10.0f, 110);
         w.reg.replace<ecs::MacroSpawnId>(e, 44u);
         MacroNpcAiRuntime rt{};
         reset_macro_npc_ai_runtime(rt, 45u);
@@ -182,7 +190,7 @@ void test_river_is_a_wall_and_a_bridge_is_the_door() {
             tick_macro_npc_ai(mw, rt, kAiTicks, false);
             // CROSSED is the claim (the arrival radius is at_target's own
             // law): the walker stands east of the river it could not ford.
-            crossed = w.reg.get<ecs::Position>(e).x >= 18.0f;
+            crossed = float(ecs::cell_x(w.reg.get<ecs::MacroCell>(e), gs.mapW)) >= 18.0f;
         }
         CHECK(crossed, "the bridge carries the same march the river walled");
     }
@@ -211,7 +219,7 @@ void test_ocean_drowns_who_cannot_reach_the_shore() {
         // one step short: that is the law working, not a regression. A bar that
         // covers most of the swim is what "near" has always meant — he wades
         // the first cells on his legs and pays only the last one in blood.
-        auto e = make_walker(w, 23.0f, 10.0f, 30.0f, 10.0f, /*maxSp*/40,
+        auto e = make_walker(w, gs.mapW, 23.0f, 10.0f, 30.0f, 10.0f, /*maxSp*/40,
                              /*hp*/30.0f);
         MacroNpcAiRuntime rt{};
         reset_macro_npc_ai_runtime(rt, 23u);
@@ -228,7 +236,7 @@ void test_ocean_drowns_who_cannot_reach_the_shore() {
             if (w.reg.valid(e))
                 lowest = std::min(lowest, w.reg.get<ecs::Pools>(e).hp);
         }
-        CHECK(w.reg.valid(e) && w.reg.get<ecs::Position>(e).x >= 26.0f,
+        CHECK(w.reg.valid(e) && float(ecs::cell_x(w.reg.get<ecs::MacroCell>(e), gs.mapW)) >= 26.0f,
               "a floating body wades OUT: water is exited, never entered");
         CHECK(lowest < 30,
               "and the unpayable steps out were paid in blood — the sea "
@@ -238,7 +246,7 @@ void test_ocean_drowns_who_cannot_reach_the_shore() {
               "NPC in camp, not only the player");
     }
     {   // Far from shore: the crossing is unpayable by design and kills.
-        auto e = make_walker(w, 2.0f, 40.0f, 30.0f, 40.0f, /*maxSp*/8,
+        auto e = make_walker(w, gs.mapW, 2.0f, 40.0f, 30.0f, 40.0f, /*maxSp*/8,
                              /*hp*/30.0f);
         w.reg.replace<ecs::MacroSpawnId>(e, 55u);
         auto& roster = w.reg.get<ecs::SquadRoster>(e);
@@ -278,7 +286,7 @@ void test_land_exhaustion_makes_camp_without_blood() {
     ecs::World w;
     PathCostData grid = make_grid(64, 64, 2.0f);   // meadow everywhere
 
-    auto e = make_walker(w, 10.0f, 10.0f, 60.0f, 10.0f, /*maxSp*/4);
+    auto e = make_walker(w, gs.mapW, 10.0f, 10.0f, 60.0f, 10.0f, /*maxSp*/4);
     auto& npc = w.reg.get<ecs::MacroNpcRuntime>(e);
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 24u);
@@ -340,7 +348,7 @@ void test_a_map_of_marchers_survives_the_new_law() {
     walkers.reserve(kWalkers);
     for (int i = 0; i < kWalkers; ++i) {
         const float y = float(i % 100) + 8.0f;
-        entt::entity e = make_walker(w, 4.0f, y, 120.0f, y, /*maxSp*/20);
+        entt::entity e = make_walker(w, gs.mapW, 4.0f, y, 120.0f, y, /*maxSp*/20);
         // Each one hauls right across the map on its own line.
         w.reg.replace<ecs::MacroSpawnId>(e, std::uint32_t(100 + i));
         walkers.push_back(e);
@@ -362,7 +370,7 @@ void test_a_map_of_marchers_survives_the_new_law() {
         if (!w.reg.all_of<ecs::Dead>(e)
             && w.reg.get<ecs::Pools>(e).hp > 0.0f) ++alive;
         if (w.reg.get<ecs::Pools>(e).hp < 100.0f) ++bled;
-        if (w.reg.get<ecs::Position>(e).x != 4.0f) ++moved;
+        if (float(ecs::cell_x(w.reg.get<ecs::MacroCell>(e), gs.mapW)) != 4.0f) ++moved;
     }
     CHECK(alive == kWalkers,
           "a season of honest marching kills nobody: the bite is a cost, "
@@ -391,14 +399,16 @@ void test_road_bar_lasts_a_days_march() {
     // Target 300 cells EAST — beyond the ~251 the bar can pay, and well
     // under the torus half-width so the straight step never discovers a
     // short way west around the seam.
-    auto e = make_walker(w, 10.0f, 4.0f, 310.0f, 4.0f, /*maxSp*/110);
+    auto e = make_walker(w, gs.mapW, 10.0f, 4.0f, 310.0f, 4.0f, /*maxSp*/110);
     auto& npc = w.reg.get<ecs::MacroNpcRuntime>(e);
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 25u);
     const int thinks = drive_until(gs, w, rt, &grid, npc,
                                    NPCState::Resting, 200);
 
-    const auto& p = w.reg.get<ecs::Position>(e);
+    const auto& pcell = w.reg.get<ecs::MacroCell>(e);
+    const MacroPos p{float(ecs::cell_x(pcell, gs.mapW)),
+                     float(ecs::cell_y(pcell, gs.mapW))};
     const float cells = p.x - 10.0f;
     const float hours = float(thinks) * kAiTickGameHours;
     // DERIVED, and that used to be the WHOLE test — which is why it never
@@ -464,7 +474,7 @@ void test_banking_a_part_cell_is_not_resting() {
     ecs::World w;
     PathCostData grid = make_grid(1024, 8, 1.0f);   // one long road
 
-    auto e = make_walker(w, 10.0f, 4.0f, 400.0f, 4.0f, /*maxSp*/110);
+    auto e = make_walker(w, gs.mapW, 10.0f, 4.0f, 400.0f, 4.0f, /*maxSp*/110);
     auto& npc = w.reg.get<ecs::MacroNpcRuntime>(e);
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 91u);
@@ -475,7 +485,7 @@ void test_banking_a_part_cell_is_not_resting() {
         MacroWorld mw{.gs = &gs, .world = &w, .pathCost = &grid};
         tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle*/false);
     }
-    const float cells = w.reg.get<ecs::Position>(e).x - 10.0f;
+    const float cells = float(ecs::cell_x(w.reg.get<ecs::MacroCell>(e), gs.mapW)) - 10.0f;
     const float ledgerSpent = 110.0f - (float(w.reg.get<ecs::Pools>(e).sp) + w.reg.get<ecs::Pools>(e).spCarry);
 
     CHECK(cells > 0.0f, "the walker is on the road");
@@ -484,7 +494,7 @@ void test_banking_a_part_cell_is_not_resting() {
           "point less, so no think on the road was quietly paid as rest");
 
     // The control: the SAME body, standing at its target, DOES recover.
-    npc.targetX = w.reg.get<ecs::Position>(e).x;
+    npc.targetX = float(ecs::cell_x(w.reg.get<ecs::MacroCell>(e), gs.mapW));
     npc.targetY = 4.0f;
     const float restingFrom = float(w.reg.get<ecs::Pools>(e).sp) + w.reg.get<ecs::Pools>(e).spCarry;
     for (int i = 0; i < 8; ++i) {
@@ -515,9 +525,9 @@ void test_a_laden_squad_pays_for_its_load() {
     // squad LEAVES the map at tick end now (CANON S4, 2026-08-29), so the
     // fixture gives both walkers the health to outlive the 30 thinks — what
     // is measured here is the PRICE of the load, not the death it can buy.
-    auto light = make_walker(w, 10.0f, 4.0f, 60.0f, 4.0f, /*maxSp*/110,
+    auto light = make_walker(w, gs.mapW, 10.0f, 4.0f, 60.0f, 4.0f, /*maxSp*/110,
                              /*hp*/1e6f);
-    auto heavy = make_walker(w, 10.0f, 6.0f, 60.0f, 6.0f, /*maxSp*/110,
+    auto heavy = make_walker(w, gs.mapW, 10.0f, 6.0f, 60.0f, 6.0f, /*maxSp*/110,
                              /*hp*/1e6f);
     w.reg.replace<ecs::MacroSpawnId>(heavy, 8u);
     w.reg.get<ecs::MacroNpcRuntime>(light).targetY = 4.0f;
@@ -547,8 +557,8 @@ void test_a_laden_squad_pays_for_its_load() {
     const auto& hrt = w.reg.get<ecs::Pools>(heavy);
     const float lightSpent = 110.0f - (float(lrt.sp) + lrt.spCarry);
     const float heavySpent = 110.0f - (float(hrt.sp) + hrt.spCarry);
-    const float lightCells = w.reg.get<ecs::Position>(light).x - 10.0f;
-    const float heavyCells = w.reg.get<ecs::Position>(heavy).x - 10.0f;
+    const float lightCells = float(ecs::cell_x(w.reg.get<ecs::MacroCell>(light), gs.mapW)) - 10.0f;
+    const float heavyCells = float(ecs::cell_x(w.reg.get<ecs::MacroCell>(heavy), gs.mapW)) - 10.0f;
 
     CHECK(heavySpent > lightSpent,
           "the laden squad paid more for the same road — the pack is a cost");

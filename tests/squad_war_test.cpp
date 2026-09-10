@@ -54,7 +54,7 @@ entt::entity make_squad_at(ecs::World& w, NPCType type, const char* faction,
                            NPCType memberKind, int memberLevel) {
     auto& reg = w.reg;
     const auto e = reg.create();
-    reg.emplace<ecs::Position>(e, x, y, 0.0f);
+    reg.emplace<ecs::MacroCell>(e, ecs::cell_index(int(x), int(y), kMap));
     reg.emplace<ecs::MacroVisual>(e, x, y, 0.0f);
     reg.emplace<ecs::NPCKind>(e, std::uint16_t(type),
                               std::uint16_t(faction_index(faction)));
@@ -93,10 +93,12 @@ int roster_count(ecs::World& w, GameState& gs, std::uint32_t ordinal) {
 }
 
 float dist(ecs::World& w, entt::entity a, entt::entity b) {
-    const auto& pa = w.reg.get<ecs::Position>(a);
-    const auto& pb = w.reg.get<ecs::Position>(b);
-    return std::sqrt(torus_dist_sq(pa.x, pa.y, pb.x, pb.y,
-                                   float(kMap), float(kMap)));
+    const auto& ca = w.reg.get<ecs::MacroCell>(a);
+    const auto& cb = w.reg.get<ecs::MacroCell>(b);
+    return std::sqrt(torus_dist_sq(
+        float(ecs::cell_x(ca, kMap)), float(ecs::cell_y(ca, kMap)),
+        float(ecs::cell_x(cb, kMap)), float(ecs::cell_y(cb, kMap)),
+        float(kMap), float(kMap)));
 }
 
 void drive(GameState& gs, ecs::World& w, MacroNpcAiRuntime& rt, int thinks,
@@ -400,17 +402,18 @@ void test_spawn_squad_is_one_spec_one_door() {
 
     MacroNpcAiRuntime rt{};
     reset_macro_npc_ai_runtime(rt, 50u);
-    const float x0 = w.reg.get<ecs::Position>(leader).x;
+    const float x0 = float(ecs::cell_x(w.reg.get<ecs::MacroCell>(leader), kMap));
     drive(gs, w, rt, 3);
-    const auto& p1 = w.reg.get<ecs::Position>(leader);
-    CHECK(p1.x > x0,
+    const float p1x =
+        float(ecs::cell_x(w.reg.get<ecs::MacroCell>(leader), kMap));
+    CHECK(p1x > x0,
           "waypoint orders MARCH the squad east toward its route - the "
           "override, not the row, is steering");
 
     // Reaching a waypoint advances the route.
     for (int i = 0; i < 20; ++i) drive(gs, w, rt, 1);
     CHECK(w.reg.get<ecs::SquadOrders>(leader).currentWaypoint != 0
-              || w.reg.get<ecs::Position>(leader).x < 23.0f,
+              || float(ecs::cell_x(w.reg.get<ecs::MacroCell>(leader), kMap)) < 23.0f,
           "the route advances at a reached waypoint (or is already homing "
           "back on the second leg)");
 

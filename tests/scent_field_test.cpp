@@ -137,7 +137,8 @@ struct HuntRig {
 
     entt::entity spawn(NPCType type, int factionIdx, float x, float y) {
         auto e = w.reg.create();
-        w.reg.emplace<ecs::Position>(e, x, y, 0.0f);
+        w.reg.emplace<ecs::MacroCell>(
+            e, ecs::cell_index(int(x), int(y), ctx.mapW));
         w.reg.emplace<ecs::NPCKind>(e, std::uint16_t(type),
                                     std::uint16_t(factionIdx));
         ecs::MacroNpcRuntime rt{};
@@ -165,7 +166,9 @@ void test_deposit_writes_both_channels() {
     auto& bag = rig.w.reg.emplace<ecs::NpcInventory>(e);
     bag.inv.add("bread", 10);
 
-    scent_squad_deposit(e, rig.w.reg.get<ecs::Position>(e),
+    const auto& dcell = rig.w.reg.get<ecs::MacroCell>(e);
+    scent_squad_deposit(e, MacroPos{float(ecs::cell_x(dcell, rig.ctx.mapW)),
+                                    float(ecs::cell_y(dcell, rig.ctx.mapW))},
                         rig.w.reg.get<ecs::NPCKind>(e), rig.ctx);
 
     CHECK(scent_strength_at(rig.gs.scent, fVil, 20, 20) > 0u,
@@ -188,7 +191,9 @@ void test_hunter_climbs_wealth_gradient() {
     // Жирный след цены на востоке, силы в нём нет — чистая добыча.
     scent_deposit(rig.gs.scent, fPrey, 11, 10, 0u, 400u);
 
-    auto& p = rig.w.reg.get<ecs::Position>(e);
+    const auto& pc = rig.w.reg.get<ecs::MacroCell>(e);
+    MacroPos p{float(ecs::cell_x(pc, rig.ctx.mapW)),
+               float(ecs::cell_y(pc, rig.ctx.mapW))};
     auto& rt = rig.w.reg.get<ecs::MacroNpcRuntime>(e);
     CHECK(scent_hunt_step(e, p, rig.w.reg.get<ecs::NPCKind>(e), rt, rig.w.reg.get<ecs::Pools>(e), rig.ctx),
           "запах добычи съедает think — охота пошла");
@@ -206,7 +211,9 @@ void test_fear_filter_and_scent_floor() {
     auto e = rig.spawn(NPCType::Bandit, fBandit, 10.0f, 10.0f);
     rig.ctx.factionHostileMask[fBandit] = 1ull << fPrey;
 
-    auto& p = rig.w.reg.get<ecs::Position>(e);
+    const auto& pc = rig.w.reg.get<ecs::MacroCell>(e);
+    MacroPos p{float(ecs::cell_x(pc, rig.ctx.mapW)),
+               float(ecs::cell_y(pc, rig.ctx.mapW))};
     auto& rt = rig.w.reg.get<ecs::MacroNpcRuntime>(e);
     const auto& kind = rig.w.reg.get<ecs::NPCKind>(e);
 
@@ -232,7 +239,9 @@ void test_local_maximum_ends_the_hunt_and_keeps_errand() {
     auto e = rig.spawn(NPCType::Bandit, fBandit, 10.0f, 10.0f);
     rig.ctx.factionHostileMask[fBandit] = 1ull << fPrey;
 
-    auto& p = rig.w.reg.get<ecs::Position>(e);
+    const auto& pc = rig.w.reg.get<ecs::MacroCell>(e);
+    MacroPos p{float(ecs::cell_x(pc, rig.ctx.mapW)),
+               float(ecs::cell_y(pc, rig.ctx.mapW))};
     auto& rt = rig.w.reg.get<ecs::MacroNpcRuntime>(e);
     const auto& kind = rig.w.reg.get<ecs::NPCKind>(e);
 
@@ -265,7 +274,9 @@ void test_civilian_never_hunts() {
     rig.ctx.factionHostileMask[fVil] = 1ull << fPrey;
     scent_deposit(rig.gs.scent, fPrey, 11, 10, 0u, 4000u);
 
-    auto& p = rig.w.reg.get<ecs::Position>(e);
+    const auto& pc = rig.w.reg.get<ecs::MacroCell>(e);
+    MacroPos p{float(ecs::cell_x(pc, rig.ctx.mapW)),
+               float(ecs::cell_y(pc, rig.ctx.mapW))};
     auto& rt = rig.w.reg.get<ecs::MacroNpcRuntime>(e);
     CHECK(!scent_hunt_step(e, p, rig.w.reg.get<ecs::NPCKind>(e), rt, rig.w.reg.get<ecs::Pools>(e), rig.ctx),
           "не-combatant не охотится: кто хищник — решает колонка поведения");

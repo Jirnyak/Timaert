@@ -183,12 +183,20 @@ inline constexpr std::uint32_t kHuntScentFloor = 8u;
 // Писатель полей следов — вклад сквада в свою клетку (сила = squad_power,
 // цена = души по строкам найма + ценность груза); зовётся из dispatch на
 // каждый think, для игрока — свипом (scent_player_deposit внутри драйверов).
-void scent_squad_deposit(entt::entity e, const ecs::Position& p,
+// Дробный СКРЕТЧ марша внутри одного think (transition of the scale split,
+// 2026-09-10): ХРАНЕНИЕ клетки сквада — ecs::MacroCell (одно число, S2), а
+// эта пара float живёт только на стеке думки — драйвер декодирует клетку на
+// входе и кодирует обратно после settle. Никогда не компонент: полклетки в
+// хранилище невыразимы по построению. (Хвост: перевод внутренней арифметики
+// марша на int убьёт и этот скретч.)
+struct MacroPos { float x = 0.0f; float y = 0.0f; };
+
+void scent_squad_deposit(entt::entity e, const MacroPos& p,
                          const ecs::NPCKind& kind, const TickContext& ctx);
 // Рефлекс охоты: незанятый боем combatant идёт ВВЕРХ по градиенту чужой
 // ЦЕНЫ под фильтром СИЛЫ (след силы ≤ моя сила × 2^kHuntBoldShift); true =
 // think съеден охотой, макроцель в rt не тронута (пауза, не амнезия).
-bool scent_hunt_step(entt::entity self, ecs::Position& p,
+bool scent_hunt_step(entt::entity self, MacroPos& p,
                      const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
                      ecs::Pools& pools, const TickContext& ctx);
 

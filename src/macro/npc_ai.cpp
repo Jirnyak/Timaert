@@ -233,7 +233,7 @@ bool find_home_field(const TickContext& ctx, float px, float py,
     return found;
 }
 
-bool at_target(const ecs::Position& p, const ecs::MacroNpcRuntime& rt,
+bool at_target(const MacroPos& p, const ecs::MacroNpcRuntime& rt,
                const TickContext& ctx) {
     return torus_dist_sq(p.x, p.y, rt.targetX, rt.targetY,
                          float(ctx.mapW), float(ctx.mapH)) < 4.0f;
@@ -256,7 +256,7 @@ void settle_sp_carry(ecs::Pools& pools) {
 // was `continue`d past its own recovery.
 enum class ThinkGate : std::uint8_t { Dead, Rest, Think };
 
-void settle_exhaustion(entt::entity e, const ecs::Position& p,
+void settle_exhaustion(entt::entity e, const MacroPos& p,
                        ecs::MacroNpcRuntime& rt, ecs::Pools& hp,
                        bool canCamp, const TickContext& ctx);
 bool cell_is_water(const TickContext& ctx, int x, int y);
@@ -338,7 +338,7 @@ ThinkGate prepare_macro_npc_tick(ecs::MacroNpcRuntime& rt,
 // stamina and no squad ever ran out again. A body has stopped when it is where
 // it meant to be, or when it has DECIDED to stop — which is exactly the
 // player's own gate, «маршрут пуст», said in the squads' words.
-void settle_march_rhythm(entt::entity e, const ecs::Position& p,
+void settle_march_rhythm(entt::entity e, const MacroPos& p,
                          ecs::MacroNpcRuntime& rt, ecs::Pools& hp,
                          bool moved, const TickContext& ctx) {
     const int maxSp = std::max<int>(1, hp.maxSp);
@@ -433,7 +433,7 @@ float edge_weight(const TickContext& ctx, int fx, int fy, int tx, int ty) {
     return w;
 }
 
-void try_move(ecs::Position& p, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
+void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
               float tx, float ty, const TickContext& ctx) {
     int ix = int(p.x), iy = int(p.y);
     int itx = int(tx), ity = int(ty);
@@ -699,7 +699,7 @@ bool find_nearest_tree_grid(const TreeGrid& g, float px, float py,
 
 using NS = NPCState;
 
-void ai_home_wanderer(ecs::Position& p, ecs::MacroNpcRuntime& rt,
+void ai_home_wanderer(MacroPos& p, ecs::MacroNpcRuntime& rt,
                       ecs::Pools& pools, const TickContext& ctx) {
     XY home;
     if (!home_pos(rt, ctx, home)) return;
@@ -894,7 +894,7 @@ bool find_home_deposit(const TickContext& ctx, ResourceFieldId row,
 }
 
 bool find_worksite(const GathererDef& def, const TickContext& ctx,
-                   const ecs::Position& p, const XY& home, XY& out) {
+                   const MacroPos& p, const XY& home, XY& out) {
     switch (def.worksite) {
         case Worksite::ForestCell: {
             if (!ctx.mw.treeGrid
@@ -928,7 +928,7 @@ bool find_worksite(const GathererDef& def, const TickContext& ctx,
 constexpr int kBridgeMaterialUnits = kGatherPerWorkerDay;
 
 // Defined with the trade behaviours below; the crews share both laws.
-bool march_is_stuck_(const ecs::Position& p, float oldX, float oldY,
+bool march_is_stuck_(const MacroPos& p, float oldX, float oldY,
                      const ecs::MacroNpcRuntime& rt,
                      const ecs::Pools& pools);
 int haul_between(Inventory& from, Inventory& to, const char* id,
@@ -937,11 +937,11 @@ int haul_between(Inventory& from, Inventory& to, const char* id,
 // The sell-run machine (defined with the trade behaviours below): the
 // peasant crew whose errand is Sell walks the SAME machine the vendor
 // walked — reuse, not a second copy (CANON S26).
-void ai_vendor(entt::entity self, ecs::Position& p,
+void ai_vendor(entt::entity self, MacroPos& p,
                ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
                const TickContext& ctx);
 
-void ai_gatherer(entt::entity self, ecs::Position& p,
+void ai_gatherer(entt::entity self, MacroPos& p,
                  const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
                  ecs::Pools& pools, const TickContext& ctx) {
     (void)kind;   // the errand, not the type, names the work (CANON S10)
@@ -1335,7 +1335,7 @@ void ai_gatherer(entt::entity self, ecs::Position& p,
 // beside the legal one, so the hold neither grew with the leader's back nor
 // answered to the overload law that priced the very same cargo's march.
 
-void ai_nomad(ecs::Position& p, ecs::MacroNpcRuntime& rt,
+void ai_nomad(MacroPos& p, ecs::MacroNpcRuntime& rt,
               ecs::Pools& pools, const TickContext& ctx);
 
 // Move up to `maxUnits` of `id` between inventories, bounded by the cargo
@@ -1417,7 +1417,7 @@ int haul_between(Inventory& from, Inventory& to, const char* id,
 // beyond water with no bridge) reads as: position pinned while the move
 // budget stands whole and the bar is fresh. The rider gives the run up
 // instead of pacing the surf forever.
-bool march_is_stuck_(const ecs::Position& p, float oldX, float oldY,
+bool march_is_stuck_(const MacroPos& p, float oldX, float oldY,
                      const ecs::MacroNpcRuntime& rt,
                      const ecs::Pools& pools) {
     return p.x == oldX && p.y == oldY && rt.moveBudget >= 1.0f
@@ -1429,7 +1429,7 @@ bool march_is_stuck_(const ecs::Position& p, float oldX, float oldY,
 // from monopolising the leg. Pure geometry over the landmark list — the
 // road graph prices the march anyway (pathCost), so "nearest" IS "next
 // down the road" in practice.
-int pick_next_station_(const TickContext& ctx, const ecs::Position& p,
+int pick_next_station_(const TickContext& ctx, const MacroPos& p,
                        int currentId, int prevId, float& outX, float& outY) {
     int bestId = -1, secondId = -1;
     float bestD = 1e30f, secondD = 1e30f;
@@ -1491,7 +1491,7 @@ NPCType own_type_(entt::registry& reg, entt::entity self) {
                                         : NPCType::Peasant;
 }
 
-void ai_caravan(entt::entity self, ecs::Position& p,
+void ai_caravan(entt::entity self, MacroPos& p,
                 ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
                 const TickContext& ctx) {
     XY home;
@@ -1659,7 +1659,7 @@ void ai_caravan(entt::entity self, ecs::Position& p,
 // construction, not by rumour), sell everything, buy the home's lacks,
 // walk back. The labour rotation raises and dissolves the crew like any
 // working squad.
-void ai_vendor(entt::entity self, ecs::Position& p,
+void ai_vendor(entt::entity self, MacroPos& p,
                ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
                const TickContext& ctx) {
     XY home;
@@ -1932,7 +1932,7 @@ Landmark* capital_of_(const TickContext& ctx, const Landmark& town) {
 // up the graph to its capital, pay, walk home, dissolve with the rotation.
 // The same carrier law as the village tithe riding with the vendor — an
 // edge of the ONE graph, walked by a body that can be robbed.
-void ai_taxrun(entt::entity self, ecs::Position& p,
+void ai_taxrun(entt::entity self, MacroPos& p,
                ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
                const TickContext& ctx) {
     XY home;
@@ -2078,7 +2078,7 @@ void ai_taxrun(entt::entity self, ecs::Position& p,
     }
 }
 
-void ai_trader(ecs::Position& p, ecs::MacroNpcRuntime& rt,
+void ai_trader(MacroPos& p, ecs::MacroNpcRuntime& rt,
                ecs::Pools& pools, const TickContext& ctx) {
     XY home;
     if (!home_pos(rt, ctx, home)) return;
@@ -2139,7 +2139,7 @@ void ai_trader(ecs::Position& p, ecs::MacroNpcRuntime& rt,
     }
 }
 
-void ai_nomad(ecs::Position& p, ecs::MacroNpcRuntime& rt,
+void ai_nomad(MacroPos& p, ecs::MacroNpcRuntime& rt,
               ecs::Pools& pools, const TickContext& ctx) {
     auto& settles = ctx.mw.gs->landmarks;
     if (rt.state == std::uint8_t(NS::Idle)) {
@@ -2178,7 +2178,7 @@ void ai_nomad(ecs::Position& p, ecs::MacroNpcRuntime& rt,
     }
 }
 
-void ai_aggressive(ecs::Position& p, ecs::MacroNpcRuntime& rt,
+void ai_aggressive(MacroPos& p, ecs::MacroNpcRuntime& rt,
                    ecs::Pools& pools, const TickContext& ctx) {
     // No private player-channel here any more (owner, 2026-08-29: «игрок
     // ничем не особенен»). Perception and pursuit are squad_threat_step's —
@@ -2255,7 +2255,7 @@ void collect_trouble_cells_(void* user, const WorldFact& f) {
 // боевая (combatant_behaviour), догоняет всё враждебное по своему закону.
 // Возвращает true, когда думает поручение; false = поручения нет, живёт
 // легаси-кругом у дома (генезис-стража до первого растворения).
-bool ai_patrol_errand(ecs::Position& p, ecs::MacroNpcRuntime& rt,
+bool ai_patrol_errand(MacroPos& p, ecs::MacroNpcRuntime& rt,
                       ecs::Pools& pools, const TickContext& ctx) {
     if (rt.errandVerb != std::uint8_t(ErrandVerb::Patrol) || !ctx.mw.gs)
         return false;
@@ -2347,7 +2347,7 @@ bool ai_patrol_errand(ecs::Position& p, ecs::MacroNpcRuntime& rt,
     }
 }
 
-void ai_patrol(ecs::Position& p, ecs::MacroNpcRuntime& rt,
+void ai_patrol(MacroPos& p, ecs::MacroNpcRuntime& rt,
                ecs::Pools& pools, const TickContext& ctx) {
     if (ai_patrol_errand(p, rt, pools, ctx)) return;
     XY home;
@@ -2378,7 +2378,7 @@ void ai_patrol(ecs::Position& p, ecs::MacroNpcRuntime& rt,
     }
 }
 
-void ai_teleporter(ecs::Position& p, ecs::MacroNpcRuntime& rt,
+void ai_teleporter(MacroPos& p, ecs::MacroNpcRuntime& rt,
                    ecs::Pools& pools, const TickContext& ctx) {
     if (rt.teleportCooldown > 0) --rt.teleportCooldown;
     if (rt.teleportCooldown <= 0 && rand_f01(ctx) < 0.005f) {
@@ -2412,7 +2412,7 @@ void ai_teleporter(ecs::Position& p, ecs::MacroNpcRuntime& rt,
     }
 }
 
-void ai_wanderer(ecs::Position& p, ecs::MacroNpcRuntime& rt,
+void ai_wanderer(MacroPos& p, ecs::MacroNpcRuntime& rt,
                  ecs::Pools& pools, const TickContext& ctx) {
     if (rt.state == std::uint8_t(NS::Idle)) {
         --rt.stateTimer;
@@ -2485,7 +2485,7 @@ float bravery_of(const ecs::NpcTraits* traits) {
     return b;
 }
 
-entt::entity nearest_hostile_squad(entt::entity self, const ecs::Position& p,
+entt::entity nearest_hostile_squad(entt::entity self, const MacroPos& p,
                                    const ecs::NPCKind& kind,
                                    const TickContext& ctx) {
     const SquadIndex& g = *ctx.squads;
@@ -2508,12 +2508,15 @@ entt::entity nearest_hostile_squad(entt::entity self, const ecs::Position& p,
                  it != end; ++it) {
                 const entt::entity e = entt::entity(*it);
                 if (e == self || !reg.valid(e)) continue;
-                const auto* op = reg.try_get<ecs::Position>(e);
+                const auto* oc = reg.try_get<ecs::MacroCell>(e);
                 const auto* ok = reg.try_get<ecs::NPCKind>(e);
-                if (!op || !ok) continue;
-                const float d = torus_dist_sq(p.x, p.y, op->x, op->y,
-                                              float(ctx.mapW),
-                                              float(ctx.mapH));
+                if (!oc || !ok) continue;
+                const float d = torus_dist_sq(
+                    p.x, p.y,
+                    float(ecs::cell_x(*oc, ctx.mapW)),
+                    float(ecs::cell_y(*oc, ctx.mapW)),
+                    float(ctx.mapW),
+                    float(ctx.mapH));
                 if (d >= best) continue;
                 if (!factions_hostile(ctx.mw.gs, myFaction,
                                       faction_id_for_index(ok->factionIdx))) {
@@ -2529,7 +2532,7 @@ entt::entity nearest_hostile_squad(entt::entity self, const ecs::Position& p,
 
 // Returns true when the threat consumed this think (fled, pursued or
 // fought); the role behaviour then waits for a calmer half hour.
-bool squad_threat_step(entt::entity self, ecs::Position& p,
+bool squad_threat_step(entt::entity self, MacroPos& p,
                        const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
                        ecs::Pools& pools, const TickContext& ctx) {
     if (!ctx.mw.world || !ctx.squads || !ctx.mw.gs) return false;
@@ -2545,7 +2548,9 @@ bool squad_threat_step(entt::entity self, ecs::Position& p,
     }
 
     auto& reg = ctx.mw.world->reg;
-    const auto& ep = reg.get<ecs::Position>(enemy);
+    const auto& ecell = reg.get<ecs::MacroCell>(enemy);
+    const MacroPos ep{float(ecs::cell_x(ecell, ctx.mapW)),
+                      float(ecs::cell_y(ecell, ctx.mapW))};
     const float myPower = squad_power(auto_battle_side_of(*ctx.mw.world, self));
     const float theirPower =
         squad_power(auto_battle_side_of(*ctx.mw.world, enemy));
@@ -2648,7 +2653,7 @@ static std::uint32_t roster_worth(ecs::World& w, entt::entity e) {
     return worth;
 }
 
-void scent_squad_deposit(entt::entity e, const ecs::Position& p,
+void scent_squad_deposit(entt::entity e, const MacroPos& p,
                          const ecs::NPCKind& kind, const TickContext& ctx) {
     if (!ctx.mw.gs || !ctx.mw.world) return;
     ScentField& sf = ctx.mw.gs->scent;
@@ -2670,17 +2675,19 @@ void scent_squad_deposit(entt::entity e, const ecs::Position& p,
 // рефлексом, что на караван: петля демо «убегай от бандитов к страже».
 void scent_player_deposit(const TickContext& ctx) {
     if (!ctx.mw.world) return;
-    auto view = ctx.mw.world->reg.view<ecs::PlayerSquadTag, ecs::Position,
+    auto view = ctx.mw.world->reg.view<ecs::PlayerSquadTag, ecs::MacroCell,
                                        ecs::NPCKind>(entt::exclude<ecs::Dead>);
     for (auto e : view) {
-        scent_squad_deposit(e, view.get<ecs::Position>(e),
-                            view.get<ecs::NPCKind>(e), ctx);
+        const auto& c = view.get<ecs::MacroCell>(e);
+        const MacroPos p{float(ecs::cell_x(c, ctx.mapW)),
+                         float(ecs::cell_y(c, ctx.mapW))};
+        scent_squad_deposit(e, p, view.get<ecs::NPCKind>(e), ctx);
     }
 }
 
 // (Крутилки охоты — kHuntBoldShift и kHuntScentFloor — в npc_ai.h: их
 // читает тест и вертит дубль-прогон.)
-bool scent_hunt_step(entt::entity self, ecs::Position& p,
+bool scent_hunt_step(entt::entity self, MacroPos& p,
                      const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
                      ecs::Pools& pools, const TickContext& ctx) {
     if (!ctx.mw.gs || !ctx.mw.world) return false;
@@ -2749,7 +2756,7 @@ namespace {
 // to the current waypoint, arrive, take the next, loop. A squad ordered onto
 // a route with no route wanders — a degraded order is a visible NPC, not a
 // frozen one.
-void ai_waypoints(entt::entity e, ecs::Position& p, ecs::MacroNpcRuntime& rt,
+void ai_waypoints(entt::entity e, MacroPos& p, ecs::MacroNpcRuntime& rt,
                   ecs::Pools& pools, const TickContext& ctx) {
     ecs::SquadOrders* orders = ctx.mw.world
         ? ctx.mw.world->reg.try_get<ecs::SquadOrders>(e) : nullptr;
@@ -2829,7 +2836,7 @@ bool cell_is_water(const TickContext& ctx, int x, int y) {
                      + std::size_t(wx)] != 0u;
 }
 
-void settle_exhaustion(entt::entity e, const ecs::Position& p,
+void settle_exhaustion(entt::entity e, const MacroPos& p,
                        ecs::MacroNpcRuntime& rt, ecs::Pools& hp,
                        bool canCamp, const TickContext& ctx) {
     if (int(hp.sp) >= 0) return;
@@ -2856,7 +2863,7 @@ void settle_exhaustion(entt::entity e, const ecs::Position& p,
     }
 }
 
-void dispatch(AIBehaviour b, entt::entity e, ecs::Position& p,
+void dispatch(AIBehaviour b, entt::entity e, MacroPos& p,
               const ecs::NPCKind& kind, ecs::MacroNpcRuntime& rt,
               ecs::Pools& pools, const TickContext& ctx) {
     // Каждый думающий сквад следит — писатель полей следов один (CANON S10).
@@ -3189,9 +3196,9 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
     // it is a corpse-row awaiting the drain (AI-2). Without the exclusion a
     // dead leader and his dead men dissolved into the landmark as living
     // souls (and, on a garrison row, dead records marched into the garrison).
-    for (auto [e, kind, rt, p]
+    for (auto [e, kind, rt, cell]
          : reg.view<ecs::NPCKind, ecs::MacroNpcRuntime,
-                    ecs::Position>(entt::exclude<ecs::Dead>).each()) {
+                    ecs::MacroCell>(entt::exclude<ecs::Dead>).each()) {
         if (!is_crew(kind.type)) continue;
         if (rt.state != std::uint8_t(NS::Idle)) continue;
         const int row = row_of(rt.homeSettlementId);
@@ -3201,7 +3208,9 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         // предикат с вендорской погрузкой: точное равенство клетке
         // оставляло финишировавшую у крыльца артель нерастворённой
         // навсегда (души не возвращались, пере-аукцион не наступал).
-        if (torus_dist_sq(p.x, p.y, float(lm.x), float(lm.y),
+        if (torus_dist_sq(float(ecs::cell_x(cell, gs.mapW)),
+                          float(ecs::cell_y(cell, gs.mapW)),
+                          float(lm.x), float(lm.y),
                           float(gs.mapW), float(gs.mapH)) >= 4.0f)
             continue;
         done.push_back(e);
@@ -3299,7 +3308,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                           <= 8,
                       "outMask is one byte: one bit per crew row");
         const XY home{float(s.x), float(s.y)};
-        const ecs::Position homePos{home.x, home.y, 0.0f};
+        const MacroPos homePos{home.x, home.y};
         int live[8];
         int liveCount = 0;
         int solo[8];
@@ -3737,24 +3746,24 @@ void build_squad_index(SquadIndex& g, ecs::World& w, int mapW, int mapH,
     // what stays special is only the MEETING, which belongs to Inc 6's
     // forced-encounter door (squad_threat_step stops short of auto-battling
     // a player-controlled squad). The Dead are no squads at all.
-    auto view = w.reg.view<ecs::Position, ecs::NPCKind,
+    auto view = w.reg.view<ecs::MacroCell, ecs::NPCKind,
                            ecs::MacroNpcRuntime>(
-        entt::exclude<ecs::Dead, ecs::SubworldTag>);
+        entt::exclude<ecs::Dead>);
     // Two passes over the view — count, then scatter — which is what buys the
     // allocation-free rebuild. The view is cheap to walk twice; sixteen
     // thousand vector headers were not cheap to rebuild once.
     std::size_t total = 0;
     for (auto e : view) {
-        const auto& p = view.get<ecs::Position>(e);
-        bucket_count(b, wrapi(int(p.x) / b.cellSize, b.cols),
-                     wrapi(int(p.y) / b.cellSize, b.rows));
+        const auto& c = view.get<ecs::MacroCell>(e);
+        bucket_count(b, wrapi(ecs::cell_x(c, mapW) / b.cellSize, b.cols),
+                     wrapi(ecs::cell_y(c, mapW) / b.cellSize, b.rows));
         ++total;
     }
     bucket_prefix(b, total);
     for (auto e : view) {
-        const auto& p = view.get<ecs::Position>(e);
-        bucket_scatter(b, wrapi(int(p.x) / b.cellSize, b.cols),
-                       wrapi(int(p.y) / b.cellSize, b.rows),
+        const auto& c = view.get<ecs::MacroCell>(e);
+        bucket_scatter(b, wrapi(ecs::cell_x(c, mapW) / b.cellSize, b.cols),
+                       wrapi(ecs::cell_y(c, mapW) / b.cellSize, b.rows),
                        std::uint32_t(entt::to_integral(e)));
     }
 }
@@ -3826,7 +3835,7 @@ void tick_macro_npc_ai(MacroWorld& mw,
     GameState& gs = *mw.gs;
     ecs::World& w = *mw.world;
     auto& reg = w.reg;
-    auto view = reg.view<ecs::Position, ecs::NPCKind,
+    auto view = reg.view<ecs::MacroCell, ecs::NPCKind,
                          ecs::MacroNpcRuntime, ecs::Pools>(
         entt::exclude<ecs::Dead, ecs::PlayerTag, ecs::PlayerSquadTag>);  // never AI-drive the player: the flag OR his own squad
 
@@ -3841,7 +3850,7 @@ void tick_macro_npc_ai(MacroWorld& mw,
     scent_player_deposit(ctx);   // игрок следит наравне со всеми (CANON S10)
 
     for (auto e : view) {
-        auto& p    = view.get<ecs::Position>(e);
+        auto& cell = view.get<ecs::MacroCell>(e);
         auto& kind = view.get<ecs::NPCKind>(e);
         auto& rt   = view.get<ecs::MacroNpcRuntime>(e);
         auto& hp   = view.get<ecs::Pools>(e);
@@ -3859,10 +3868,16 @@ void tick_macro_npc_ai(MacroWorld& mw,
         const ThinkGate gate = prepare_macro_npc_tick(rt, hp);
         if (gate == ThinkGate::Dead) continue;
         refresh_overload_cost(rt, reg.try_get<ecs::NpcInventory>(e));
+        // Decode → think in fractional scratch → encode (the scale split):
+        // the STORE is one whole-cell number; the march's own float math
+        // lives only on this think's stack.
+        MacroPos p{float(ecs::cell_x(cell, gs.mapW)),
+                   float(ecs::cell_y(cell, gs.mapW))};
         const float x0 = p.x, y0 = p.y;
         if (gate == ThinkGate::Think)
             dispatch(effective_behaviour(reg, e, kind), e, p, kind, rt, hp, ctx);
         settle_march_rhythm(e, p, rt, hp, p.x != x0 || p.y != y0, ctx);
+        cell.idx = ecs::cell_index(int(p.x), int(p.y), gs.mapW);
     }
 
     // The END of every dead squad's story, once per tick (CANON S4): any
@@ -3876,12 +3891,14 @@ void tick_macro_npc_ai(MacroWorld& mw,
 void tick_macro_npc_visuals(ecs::World& w, int mapW, int mapH, float dt) {
     if (mapW <= 0 || mapH <= 0 || dt <= 0.0f) return;
 
-    auto view = w.reg.view<ecs::Position, ecs::MacroVisual,
+    auto view = w.reg.view<ecs::MacroCell, ecs::MacroVisual,
                            ecs::MacroNpcRuntime, ecs::Pools>(
-        entt::exclude<ecs::Dead, ecs::SubworldTag, ecs::PlayerTag,
+        entt::exclude<ecs::Dead, ecs::PlayerTag,
                       ecs::PlayerSquadTag>);  // player drawn by its own marker (Inc 5e-2)
     for (auto e : view) {
-        const auto& p = view.get<ecs::Position>(e);
+        const auto& c = view.get<ecs::MacroCell>(e);
+        const MacroPos p{float(ecs::cell_x(c, mapW)),
+                         float(ecs::cell_y(c, mapW))};
         auto& v = view.get<ecs::MacroVisual>(e);
         const auto& rt = view.get<ecs::MacroNpcRuntime>(e);
         const auto& hp = view.get<ecs::Pools>(e);
@@ -3960,7 +3977,7 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     if (runtime.pendingSweeps <= 0) return result;
 
     auto& reg = w.reg;
-    auto view = reg.view<ecs::Position, ecs::NPCKind,
+    auto view = reg.view<ecs::MacroCell, ecs::NPCKind,
                          ecs::MacroNpcRuntime, ecs::Pools>(
         entt::exclude<ecs::Dead, ecs::PlayerTag, ecs::PlayerSquadTag>);  // never AI-drive the player: the flag OR his own squad
 
@@ -3985,7 +4002,7 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
             sawEntity = true;
             if (index++ < runtime.sweepCursor) continue;
 
-            auto& p    = view.get<ecs::Position>(e);
+            auto& cell = view.get<ecs::MacroCell>(e);
             auto& kind = view.get<ecs::NPCKind>(e);
             auto& rt   = view.get<ecs::MacroNpcRuntime>(e);
             auto& hp   = view.get<ecs::Pools>(e);
@@ -3995,6 +4012,9 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
                 if (gate != ThinkGate::Dead) {
                     refresh_overload_cost(rt,
                                           reg.try_get<ecs::NpcInventory>(e));
+                    // Decode → fractional scratch → encode (the scale split).
+                    MacroPos p{float(ecs::cell_x(cell, gs.mapW)),
+                               float(ecs::cell_y(cell, gs.mapW))};
                     const float x0 = p.x, y0 = p.y;
                     if (gate == ThinkGate::Think) {
                         dispatch(effective_behaviour(reg, e, kind), e, p, kind,
@@ -4002,6 +4022,7 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
                     }
                     settle_march_rhythm(e, p, rt, hp,
                                         p.x != x0 || p.y != y0, ctx);
+                    cell.idx = ecs::cell_index(int(p.x), int(p.y), gs.mapW);
                 }
                 ++result.npcsProcessed;
             }

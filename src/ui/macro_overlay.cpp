@@ -359,17 +359,19 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
     // cleanly — at zoom < 10 px/cell a 256-px sprite shrinks to a
     // monochromatic blob that visually competes with the GLSL features.
     if (zoom >= 10.0f) {
-        auto view = w.reg.view<ecs::Position, ecs::NPCKind, ecs::Pools>(
+        auto view = w.reg.view<ecs::MacroCell, ecs::NPCKind, ecs::Pools>(
             entt::exclude<ecs::Dead, ecs::PlayerTag,
                           ecs::PlayerSquadTag>);  // the player is his own marker, under possession too
         for (auto e : view) {
-            const auto& pos  = view.get<ecs::Position>(e);
+            const auto& cell = view.get<ecs::MacroCell>(e);
             const auto& kind = view.get<ecs::NPCKind>(e);
             const auto& hp   = view.get<ecs::Pools>(e);
             if (hp.hp <= 0) continue;
             const ecs::MacroVisual* visual = w.reg.try_get<ecs::MacroVisual>(e);
-            const float drawX = visual ? visual->vx : pos.x;
-            const float drawY = visual ? visual->vy : pos.y;
+            const float drawX = visual ? visual->vx
+                                       : float(ecs::cell_x(cell, gs.mapW));
+            const float drawY = visual ? visual->vy
+                                       : float(ecs::cell_y(cell, gs.mapW));
             // A living walker is the WORLD, not the map: memory keeps no
             // people. Only cells in the player's current sight draw theirs.
             if (gs.knowledge.at(int(std::floor(drawX)), int(std::floor(drawY)))
@@ -751,7 +753,7 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
     const bool drawRowsEnabled = showRows && !npc_proximity_popup_open();
     if (drawRowsEnabled) {
 
-        auto view = w.reg.view<ecs::Position, ecs::NPCKind, ecs::Pools,
+        auto view = w.reg.view<ecs::MacroCell, ecs::NPCKind, ecs::Pools,
                                ecs::NpcLevel, ecs::NpcCharacter>(
             entt::exclude<ecs::PlayerTag,
                           ecs::PlayerSquadTag>);  // never list the player as a party standing next to himself
@@ -774,12 +776,12 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
         const int H  = gs.mapH;
 
         for (auto e : view) {
-            const auto& pos = view.get<ecs::Position>(e);
+            const auto& cell = view.get<ecs::MacroCell>(e);
             const auto& hp  = view.get<ecs::Pools>(e);
             if (hp.hp <= 0) continue;
 
-            int nx = int(std::floor(pos.x));
-            int ny = int(std::floor(pos.y));
+            int nx = ecs::cell_x(cell, W);
+            int ny = ecs::cell_y(cell, W);
             int dx = wrap_chebyshev(nx - px, W);
             int dy = wrap_chebyshev(ny - py, H);
             if (std::abs(dx) > 1 || std::abs(dy) > 1) continue;

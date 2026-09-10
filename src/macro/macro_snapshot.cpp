@@ -15,7 +15,7 @@ std::vector<MacroNpcRecord> snapshot_macro_ecs(ecs::World& w) {
     // roster and bag, told apart only by his reserved ordinal and his tag.
     // Tags are not snapshot state — ensure_macro_player_entity re-stamps
     // PlayerSquadTag every time it is walked through, load included.
-    auto view = reg.view<ecs::MacroSpawnId, ecs::Position, ecs::MacroVisual,
+    auto view = reg.view<ecs::MacroSpawnId, ecs::MacroCell, ecs::MacroVisual,
                          ecs::NPCKind, ecs::Pools, ecs::NpcLevel,
                          ecs::MacroNpcRuntime, ecs::NpcTraits,
                          ecs::NpcCharacter, ecs::NpcInventory,
@@ -23,7 +23,7 @@ std::vector<MacroNpcRecord> snapshot_macro_ecs(ecs::World& w) {
     for (auto e : view) {
         MacroNpcRecord m{};
         m.spawnId   = view.get<ecs::MacroSpawnId>(e);
-        m.pos       = view.get<ecs::Position>(e);
+        m.cell      = view.get<ecs::MacroCell>(e);
         m.visual    = view.get<ecs::MacroVisual>(e);
         m.kind      = view.get<ecs::NPCKind>(e);
         m.pools    = view.get<ecs::Pools>(e);
@@ -59,7 +59,7 @@ void restore_macro_ecs(const std::vector<MacroNpcRecord>& records,
     for (const MacroNpcRecord& m : records) {
         auto e = reg.create();
         reg.emplace<ecs::MacroSpawnId>(e, m.spawnId);
-        reg.emplace<ecs::Position>(e, m.pos);
+        reg.emplace<ecs::MacroCell>(e, m.cell);
         reg.emplace<ecs::MacroVisual>(e, m.visual);
         reg.emplace<ecs::NPCKind>(e, m.kind);
         reg.emplace<ecs::Pools>(e, m.pools);

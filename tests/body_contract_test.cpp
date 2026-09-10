@@ -155,7 +155,7 @@ entt::entity make_macro_lord(entt::registry& reg, sm::NPCType type,
                              std::uint32_t visualSeed) {
     const auto e = reg.create();
     reg.emplace<sm::ecs::MacroNpcRuntime>(e);
-    reg.emplace<sm::ecs::Position>(e, 10.0f, 12.0f, 0.0f);
+    reg.emplace<sm::ecs::MacroCell>(e, sm::ecs::cell_index(10, 12, 64));
     reg.emplace<sm::ecs::NPCKind>(e, std::uint16_t(type), faction);
     reg.emplace<sm::ecs::Pools>(e, hp, maxHp);
     reg.emplace<sm::ecs::NpcLevel>(e, std::int16_t(level));

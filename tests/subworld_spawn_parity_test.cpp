@@ -524,7 +524,8 @@ MacroSeeds seed_macro_npcs(entt::registry& reg, int mapW) {
         auto e = reg.create();
         reg.emplace<sm::ecs::MacroNpcRuntime>(e);
         reg.emplace<sm::ecs::MacroSpawnId>(e, spawnIndex++);
-        reg.emplace<sm::ecs::Position>(e, float(cx), float(cy), 0.0f);
+        reg.emplace<sm::ecs::MacroCell>(
+            e, sm::ecs::cell_index(cx, cy, 1024));
         reg.emplace<sm::ecs::NPCKind>(e, std::uint16_t(type), faction);
         reg.emplace<sm::ecs::Pools>(e, hp, maxHp);
         reg.emplace<sm::ecs::NpcLevel>(e, level);
@@ -563,7 +564,7 @@ bool run_beast_member_projection_case(
     auto leader = reg.create();
     reg.emplace<sm::ecs::MacroNpcRuntime>(leader);
     reg.emplace<sm::ecs::MacroSpawnId>(leader, std::uint32_t(0));
-    reg.emplace<sm::ecs::Position>(leader, 0.0f, 0.0f, 0.0f);
+    reg.emplace<sm::ecs::MacroCell>(leader, sm::ecs::cell_index(0, 0, 1024));
     reg.emplace<sm::ecs::NPCKind>(leader, std::uint16_t(sm::NPCType::Bandit),
                                   std::uint16_t(3));
     reg.emplace<sm::ecs::Pools>(leader, 10, 10);
@@ -910,7 +911,7 @@ bool run_identity_remap_case(const sm::sub::SeamlessSubworldManager& mgr) {
     lreg.emplace<sm::ecs::Position>(husk, 999.0f, 999.0f, 0.0f);   // stale husk cell
 
     const float px = 12.0f, py = 34.0f;   // the loaded player scalar (authoritative)
-    if (!sm::reattach_player_to_macro_spawn(loaded, int(banditOrdinal), px, py)) {
+    if (!sm::reattach_player_to_macro_spawn(loaded, int(banditOrdinal), px, py, kMapW)) {
         return false;
     }
     if (lreg.valid(husk)) return false;                          // husk destroyed
@@ -922,8 +923,9 @@ bool run_identity_remap_case(const sm::sub::SeamlessSubworldManager& mgr) {
         if (tags != 1 || flag != ls.bandit) return false;        // one flag, on the lord
     }
     {
-        const auto& p = lreg.get<sm::ecs::Position>(ls.bandit);
-        if (!near(p.x, px) || !near(p.y, py)) return false;      // snapped to scalar
+        const auto& c = lreg.get<sm::ecs::MacroCell>(ls.bandit);
+        if (sm::ecs::cell_x(c, kMapW) != int(px)
+            || sm::ecs::cell_y(c, kMapW) != int(py)) return false; // snapped
     }
 
     // Negative paths: an absent ordinal (died before save / seed changed) and a
@@ -934,9 +936,9 @@ bool run_identity_remap_case(const sm::sub::SeamlessSubworldManager& mgr) {
         const auto missHusk = miss.reg.create();
         miss.reg.emplace<sm::ecs::PlayerTag>(missHusk);
         miss.reg.emplace<sm::ecs::Position>(missHusk, 1.0f, 2.0f, 0.0f);
-        if (sm::reattach_player_to_macro_spawn(miss, 9999, 5.0f, 6.0f)) return false;
+        if (sm::reattach_player_to_macro_spawn(miss, 9999, 5.0f, 6.0f, kMapW)) return false;
         if (!miss.reg.valid(missHusk)) return false;             // husk preserved
-        if (sm::reattach_player_to_macro_spawn(miss, -1, 5.0f, 6.0f)) return false;
+        if (sm::reattach_player_to_macro_spawn(miss, -1, 5.0f, 6.0f, kMapW)) return false;
         if (!miss.reg.valid(missHusk)) return false;
     }
 

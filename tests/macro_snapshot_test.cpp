@@ -90,9 +90,7 @@ void test_snapshot_round_trips_the_living_map() {
     auto& rtA = w.reg.get<ecs::MacroNpcRuntime>(a);
     rtA.xp = 777;
     w.reg.get<ecs::Pools>(a).sp = -15;
-    auto& posA = w.reg.get<ecs::Position>(a);
-    posA.x = 25.0f;
-    posA.y = 21.0f;
+    w.reg.get<ecs::MacroCell>(a).idx = ecs::cell_index(25, 21, 64);
     w.reg.get<ecs::Pools>(b).hp = 0.0f;
     w.reg.emplace<ecs::Dead>(b);
 
@@ -126,9 +124,9 @@ void test_snapshot_round_trips_the_living_map() {
           "the leader's campaigns (xp) survive the save");
     CHECK(w2.reg.get<ecs::Pools>(a2).sp == -15,
           "the leader's exhaustion debt survives the save");
-    CHECK(w2.reg.get<ecs::Position>(a2).x == 25.0f
-              && w2.reg.get<ecs::Position>(a2).y == 21.0f,
-          "the march stands - position is the saved one, not the spawn one");
+    CHECK(ecs::cell_x(w2.reg.get<ecs::MacroCell>(a2), 64) == 25
+              && ecs::cell_y(w2.reg.get<ecs::MacroCell>(a2), 64) == 21,
+          "the march stands - the cell is the saved one, not the spawn one");
     CHECK(w2.reg.get<ecs::NpcLevel>(a2).value == 5, "the level survives");
     CHECK(w2.reg.get<ecs::SquadRoster>(a2).squad.size() == 2,
           "the roster rows survive");

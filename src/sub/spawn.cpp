@@ -856,9 +856,9 @@ int project_macro_npcs_into_subworld(ecs::World& w,
     // the same numbers PlayerState already owns.
     std::vector<entt::entity> sources;
     {
-        auto view = reg.view<ecs::MacroNpcRuntime, ecs::Position, ecs::NPCKind,
+        auto view = reg.view<ecs::MacroNpcRuntime, ecs::MacroCell, ecs::NPCKind,
                              ecs::Pools, ecs::NpcLevel, ecs::NpcCharacter>(
-            entt::exclude<ecs::SubworldTag, ecs::Dead, ecs::PlayerTag,
+            entt::exclude<ecs::Dead, ecs::PlayerTag,
                           ecs::PlayerSquadTag>);
         for (auto macro : view) sources.push_back(macro);
     }
@@ -880,10 +880,12 @@ int project_macro_npcs_into_subworld(ecs::World& w,
 
     int projected = 0;
     for (const entt::entity macro : sources) {
-        const auto& mpos = reg.get<ecs::Position>(macro);
+        const auto& mcell = reg.get<ecs::MacroCell>(macro);
+        const int mcx = ecs::cell_x(mcell, mapW);
+        const int mcy = ecs::cell_y(mcell, mapW);
         // Which of the 3×3 window cells does this macro NPC occupy (if any)?
-        const int ox = toroidal_cell_offset(int(mpos.x), centerCx, mapW);
-        const int oy = toroidal_cell_offset(int(mpos.y), centerCy, mapH);
+        const int ox = toroidal_cell_offset(mcx, centerCx, mapW);
+        const int oy = toroidal_cell_offset(mcy, centerCy, mapH);
         if (ox < -1 || ox > 1 || oy < -1 || oy > 1) continue;
         if (std::find(alreadyProjected.begin(), alreadyProjected.end(), macro)
             != alreadyProjected.end()) continue;
@@ -906,8 +908,8 @@ int project_macro_npcs_into_subworld(ecs::World& w,
         // reprojects identically, yet two same-type NPCs in one cell still differ
         // (their integer coords or the running index diverge the salt).
         const std::uint32_t salt =
-            (std::uint32_t(int(mpos.x)) * 73856093u) ^
-            (std::uint32_t(int(mpos.y)) * 19349663u) ^
+            (std::uint32_t(mcx) * 73856093u) ^
+            (std::uint32_t(mcy) * 19349663u) ^
             (std::uint32_t(kind.type) << 11) ^
             (std::uint32_t(projected) * 2654435761u);
         Rng rng(seed ^ salt);
@@ -1022,8 +1024,8 @@ int project_macro_npcs_into_subworld(ecs::World& w,
                     ? BodyLoan::from(
                           MacroStock::Roster,
                           MacroStockKey{std::int32_t(sid->index),
-                                        std::int16_t(int(mpos.x)),
-                                        std::int16_t(int(mpos.y)),
+                                        std::int16_t(mcx),
+                                        std::int16_t(mcy),
                                         std::int32_t(rec.entityId)})
                     : BodyLoan::none();
                 // ONE birth for every member — the sheet-less second birth is
@@ -1061,14 +1063,12 @@ MacroExitCell macro_exit_cell_for_body(ecs::World& w, entt::entity body,
     const entt::entity macro = reg.get<ecs::MacroOrigin>(body).macro;
     // The macro entity may have been reaped (e.g. it died in the meantime); a
     // stale handle just means "no remap" → fall back to the window centre.
-    if (!reg.valid(macro) || !reg.all_of<ecs::Position>(macro)) return out;
-    // Macro Position is an integer cell on the torus — the SAME space as
-    // gs.player.x/y; wrap exactly as sync_macro_player_to_center does.
-    const auto& mp = reg.get<ecs::Position>(macro);
-    int nx = int(mp.x) % mapW;
-    int ny = int(mp.y) % mapH;
-    if (nx < 0) nx += mapW;
-    if (ny < 0) ny += mapH;
+    if (!reg.valid(macro) || !reg.all_of<ecs::MacroCell>(macro)) return out;
+    // The macro cell is ONE number on the torus (scale split) — the SAME
+    // space as gs.player.x/y; already wrapped by construction.
+    const auto& mc = reg.get<ecs::MacroCell>(macro);
+    const int nx = ecs::cell_x(mc, mapW);
+    const int ny = ecs::cell_y(mc, mapW);
     out.has = true;
     out.cx = nx;
     out.cy = ny;

@@ -188,9 +188,7 @@ void test_returned_souls_rejoin_the_garrison() {
 
     // Патруль вернулся: Idle у крыльца, поручение исполнено.
     auto& rt = w.reg.get<ecs::MacroNpcRuntime>(g);
-    auto& p = w.reg.get<ecs::Position>(g);
-    p.x = 10.0f;
-    p.y = 10.0f;
+    w.reg.get<ecs::MacroCell>(g).idx = ecs::cell_index(10, 10, kMap);
     rt.state = std::uint8_t(NPCState::Idle);
     rt.errandVerb = std::uint8_t(ErrandVerb::None);
     rt.errandObject = 0;

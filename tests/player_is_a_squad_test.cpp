@@ -35,7 +35,8 @@ entt::entity npc_squad(ecs::World& w, float x, float y, std::uint32_t ordinal,
                        int members) {
     auto& reg = w.reg;
     const entt::entity e = reg.create();
-    reg.emplace<ecs::Position>(e, x, y, 0.0f);
+    // 64 — the fixture map side every test in this file boots (gs.mapW).
+    reg.emplace<ecs::MacroCell>(e, ecs::cell_index(int(x), int(y), 64));
     reg.emplace<ecs::MacroVisual>(e, x, y, 0.0f);
     reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Bandit),
                               std::uint16_t(faction_index("bandits")));
@@ -72,7 +73,7 @@ void test_player_carries_everything_a_squad_carries() {
     // The snapshot's view (macro/macro_snapshot.cpp) names exactly this set —
     // if the player misses one, he is not saved, and a save that forgets the
     // player's own army is the loudest bug this merge could ship.
-    CHECK((w.reg.all_of<ecs::MacroSpawnId, ecs::Position, ecs::MacroVisual,
+    CHECK((w.reg.all_of<ecs::MacroSpawnId, ecs::MacroCell, ecs::MacroVisual,
                         ecs::NPCKind, ecs::Pools, ecs::NpcLevel,
                         ecs::MacroNpcRuntime, ecs::NpcTraits,
                         ecs::NpcCharacter, ecs::NpcInventory,
@@ -153,8 +154,8 @@ void test_ai_leaves_the_player_squad_standing() {
           "the player's squad kept its state through eight AI sweeps");
     CHECK(after.targetX == before.targetX && after.targetY == before.targetY,
           "nothing gave the player's squad somewhere to be");
-    CHECK(w.reg.get<ecs::Position>(mine).x == 20.0f &&
-          w.reg.get<ecs::Position>(mine).y == 20.0f,
+    CHECK(ecs::cell_x(w.reg.get<ecs::MacroCell>(mine), 64) == 20 &&
+          ecs::cell_y(w.reg.get<ecs::MacroCell>(mine), 64) == 20,
           "and it did not walk off his cell");
     // The sharpest witness: the per-NPC accumulator the sweep advances on
     // everyone it visits. Untouched means never visited, not "visited and
@@ -248,8 +249,9 @@ void test_the_entity_numbers_are_not_stale() {
           "comparing two copies of the same stale number");
     CHECK(hp.sp == -6, "the exhaustion DEBT survives the rescale, unclamped");
     CHECK(w.reg.get<ecs::NpcLevel>(e).value == 4, "and he is level 4 to the map");
-    const auto& pos = w.reg.get<ecs::Position>(e);
-    CHECK(pos.x == 33.0f && pos.y == 44.0f, "the entity stands where he stands");
+    const auto& cellNow = w.reg.get<ecs::MacroCell>(e);
+    CHECK(ecs::cell_x(cellNow, 64) == 33 && ecs::cell_y(cellNow, 64) == 44,
+          "the entity stands where he stands");
 }
 
 // ── 6. Его голова — компонент, а не поле ─────────────────────────────────

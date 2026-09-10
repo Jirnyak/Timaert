@@ -289,7 +289,12 @@ namespace sm {
 // p.combatStats выпали из write_player; второй комплект полос игрока на
 // диске был дефектом). Дробные остатки HP/MP игрока впервые переживают
 // загрузку — они в Pools, а App-аккумулятор умер.
-constexpr int kSaveVersion = 85;
+// v86 (2026-09-10): МАСШТАБЫ — клетка сквада стала ОДНИМ ЧИСЛОМ
+// (`ecs::MacroCell{u32}` вместо `ecs::Position{float×3}` у макро-сущностей;
+// вердикт владельца: «мир — плоский массив, связный тор, у каждой клетки
+// ровно одно число»). `MacroNpcRecord.pos` (12 байт float) → `cell`
+// (4 байта u32) — смена формата снимка макро-ECS.
+constexpr int kSaveVersion = 86;
 
 enum class SettlementMood : std::uint8_t {
     Prosperous, Stable, Tense, Unrest, Revolt, Count

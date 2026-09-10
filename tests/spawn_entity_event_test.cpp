@@ -73,10 +73,12 @@ int main() {
         }
         const auto& lvl = w.reg.get<sm::ecs::NpcLevel>(e);
         if (lvl.value != 3) return fail("level 3 was not pinned");
-        const auto& pos = w.reg.get<sm::ecs::Position>(e);
+        const auto& pc = w.reg.get<sm::ecs::MacroCell>(e);
         // find_valid_spawn scatters within +-6 cells of the wrapped target.
-        const float d2 = sm::torus_dist_sq(pos.x, pos.y, 10.0f, 12.0f,
-                                           float(gs.mapW), float(gs.mapH));
+        const float d2 = sm::torus_dist_sq(
+            float(sm::ecs::cell_x(pc, gs.mapW)),
+            float(sm::ecs::cell_y(pc, gs.mapW)), 10.0f, 12.0f,
+            float(gs.mapW), float(gs.mapH));
         if (d2 > 2.0f * 6.0f * 6.0f) {
             return fail("body landed outside the spawn scatter of the cell");
         }

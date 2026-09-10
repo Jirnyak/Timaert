@@ -290,9 +290,9 @@ void raise_macro_fact(void* user, const sm::BattleFact& fact) {
     const entt::entity where = fact.killer != 0u
         ? entt::entity(fact.killer) : entt::entity(fact.victim);
     if (app.ecs.reg.valid(where)) {
-        if (const auto* p = app.ecs.reg.try_get<sm::ecs::Position>(where)) {
-            wf.x = std::int16_t(sm::wrapi(int(p->x), app.gs.mapW));
-            wf.y = std::int16_t(sm::wrapi(int(p->y), app.gs.mapH));
+        if (const auto* c = app.ecs.reg.try_get<sm::ecs::MacroCell>(where)) {
+            wf.x = std::int16_t(sm::ecs::cell_x(*c, app.gs.mapW));
+            wf.y = std::int16_t(sm::ecs::cell_y(*c, app.gs.mapW));
         }
     }
     // Filed AND paid, through the one door (macro/squad.h): the deed makes
@@ -499,7 +499,7 @@ bool route_macro_npc_attack(App& app, entt::entity npc) {
     if (!app.worldLoaded || app.subworld.active()) return false;
     auto& reg = app.ecs.reg;
     if (!reg.valid(npc)) return false;
-    if (!reg.all_of<sm::ecs::Position, sm::ecs::NPCKind,
+    if (!reg.all_of<sm::ecs::MacroCell, sm::ecs::NPCKind,
                     sm::ecs::Pools, sm::ecs::NpcLevel,
                     sm::ecs::NpcCharacter>(npc)) {
         return false;
@@ -715,9 +715,11 @@ const PreBattleAction kPreBattleActions[] = {
              // Slip two cells straight away from them, dodging water; a
              // failed search leaves you where you stand — graced, but they
              // may catch you again.
-             const auto& ep = app.ecs.reg.get<sm::ecs::Position>(npc);
-             float dx = app.gs.player.x - ep.x;
-             float dy = app.gs.player.y - ep.y;
+             const auto& ec = app.ecs.reg.get<sm::ecs::MacroCell>(npc);
+             float dx = app.gs.player.x
+                 - float(sm::ecs::cell_x(ec, app.gs.mapW));
+             float dy = app.gs.player.y
+                 - float(sm::ecs::cell_y(ec, app.gs.mapW));
              const float mw = float(app.gs.mapW), mh = float(app.gs.mapH);
              if (dx > mw * 0.5f) dx -= mw;
              if (dx < -mw * 0.5f) dx += mw;
@@ -801,27 +803,27 @@ void detect_forced_encounter(App& app) {
     if (app.encounterGraceNpc != entt::null) {
         bool together = false;
         if (reg.valid(app.encounterGraceNpc)) {
-            if (const auto* gp =
-                    reg.try_get<sm::ecs::Position>(app.encounterGraceNpc)) {
+            if (const auto* gc =
+                    reg.try_get<sm::ecs::MacroCell>(app.encounterGraceNpc)) {
                 together =
-                    sm::wrapi(int(std::floor(gp->x)), app.gs.mapW) == px
-                    && sm::wrapi(int(std::floor(gp->y)), app.gs.mapH) == py;
+                    sm::ecs::cell_x(*gc, app.gs.mapW) == px
+                    && sm::ecs::cell_y(*gc, app.gs.mapW) == py;
             }
         }
         if (!together) app.encounterGraceNpc = entt::null;
     }
 
-    auto view = reg.view<sm::ecs::Position, sm::ecs::NPCKind,
+    auto view = reg.view<sm::ecs::MacroCell, sm::ecs::NPCKind,
                          sm::ecs::MacroNpcRuntime, sm::ecs::Pools>(
         entt::exclude<sm::ecs::Dead, sm::ecs::PlayerTag,
-                      sm::ecs::PlayerSquadTag, sm::ecs::SubworldTag>);
+                      sm::ecs::PlayerSquadTag>);
     for (auto e : view) {
         if (e == app.encounterGraceNpc) continue;
         const auto& hp = view.get<sm::ecs::Pools>(e);
         if (hp.hp <= 0) continue;
-        const auto& pos = view.get<sm::ecs::Position>(e);
-        if (sm::wrapi(int(std::floor(pos.x)), app.gs.mapW) != px
-            || sm::wrapi(int(std::floor(pos.y)), app.gs.mapH) != py) {
+        const auto& cell = view.get<sm::ecs::MacroCell>(e);
+        if (sm::ecs::cell_x(cell, app.gs.mapW) != px
+            || sm::ecs::cell_y(cell, app.gs.mapW) != py) {
             continue;
         }
         const auto& kind = view.get<sm::ecs::NPCKind>(e);
@@ -848,7 +850,7 @@ void draw_pre_battle_modal(App& app) {
     auto& reg = app.ecs.reg;
     const entt::entity npc = app.preBattleNpc;
     if (npc == entt::null || !reg.valid(npc)
-        || !reg.all_of<sm::ecs::Position, sm::ecs::NPCKind, sm::ecs::Pools,
+        || !reg.all_of<sm::ecs::MacroCell, sm::ecs::NPCKind, sm::ecs::Pools,
                        sm::ecs::NpcLevel, sm::ecs::NpcCharacter>(npc)
         || reg.all_of<sm::ecs::Dead>(npc)
         || reg.get<sm::ecs::Pools>(npc).hp <= 0) {
@@ -1818,7 +1820,7 @@ bool boot_world_from_save(App& app, const std::string& path) {
     if (app.gs.player.possessedMacroSpawnId >= 0
         && !sm::reattach_player_to_macro_spawn(app.ecs,
                app.gs.player.possessedMacroSpawnId,
-               app.gs.player.x, app.gs.player.y)) {
+               app.gs.player.x, app.gs.player.y, app.gs.mapW)) {
         app.gs.player.possessedMacroSpawnId = -1;
     }
     app.gs.subState.settlementId = settlement_at_player(app.gs);
@@ -4839,7 +4841,8 @@ void draw_debug_panels(App& app) {
             };
             struct Row { const char* name; std::size_t count; };
             const Row rows[] = {
-                {"Position",        cnt(reg.view<sm::ecs::Position>())},
+                {"Position(scene)", cnt(reg.view<sm::ecs::Position>())},
+                {"MacroCell",       cnt(reg.view<sm::ecs::MacroCell>())},
                 {"Health",          cnt(reg.view<sm::ecs::Pools>())},
                 {"Combat",          cnt(reg.view<sm::ecs::Combat>())},
                 {"NPCKind",         cnt(reg.view<sm::ecs::NPCKind>())},
@@ -5197,21 +5200,23 @@ void trace_macro_npc_visuals(App& app, int ticksAdvanced) {
     int  npcs = 0, gliding = 0, moved = 0;
     float maxGap = 0.0f;
     entt::entity sample = entt::null;
-    auto view = app.ecs.reg.view<sm::ecs::Position, sm::ecs::MacroVisual,
+    auto view = app.ecs.reg.view<sm::ecs::MacroCell, sm::ecs::MacroVisual,
                                  sm::ecs::MacroNpcRuntime>(
-        entt::exclude<sm::ecs::Dead, sm::ecs::SubworldTag,
+        entt::exclude<sm::ecs::Dead,
                       sm::ecs::PlayerTag, sm::ecs::PlayerSquadTag>);
     for (auto e : view) {
-        const auto& p = view.get<sm::ecs::Position>(e);
+        const auto& c = view.get<sm::ecs::MacroCell>(e);
+        const float cx = float(sm::ecs::cell_x(c, app.gs.mapW));
+        const float cy = float(sm::ecs::cell_y(c, app.gs.mapW));
         const auto& v = view.get<sm::ecs::MacroVisual>(e);
         ++npcs;
-        const float gap = sm::torus_dist(p.x, p.y, v.vx, v.vy,
+        const float gap = sm::torus_dist(cx, cy, v.vx, v.vy,
                                          float(app.gs.mapW),
                                          float(app.gs.mapH));
         if (gap > 0.01f) ++gliding;
         if (gap > maxGap) { maxGap = gap; sample = e; }
         if (nowCount < kWatched)
-            now[nowCount++] = Seen{entt::to_integral(e), p.x, p.y};
+            now[nowCount++] = Seen{entt::to_integral(e), cx, cy};
     }
     for (int i = 0; i < nowCount; ++i)
         for (int j = 0; j < prevCount; ++j)
@@ -5225,10 +5230,12 @@ void trace_macro_npc_visuals(App& app, int ticksAdvanced) {
     float px = 0.0f, py = 0.0f, vx = 0.0f, vy = 0.0f, vspeed = 0.0f;
     int   sstate = -1;
     if (sample != entt::null) {
-        const auto& p = app.ecs.reg.get<sm::ecs::Position>(sample);
+        const auto& c = app.ecs.reg.get<sm::ecs::MacroCell>(sample);
         const auto& v = app.ecs.reg.get<sm::ecs::MacroVisual>(sample);
         const auto& rt = app.ecs.reg.get<sm::ecs::MacroNpcRuntime>(sample);
-        px = p.x; py = p.y; vx = v.vx; vy = v.vy;
+        px = float(sm::ecs::cell_x(c, app.gs.mapW));
+        py = float(sm::ecs::cell_y(c, app.gs.mapW));
+        vx = v.vx; vy = v.vy;
         vspeed = rt.visualSpeed;
         sstate = int(rt.state);
     }
