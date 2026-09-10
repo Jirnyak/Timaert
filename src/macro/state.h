@@ -301,7 +301,11 @@ namespace sm {
 // вне снапшота); генезис на пути загрузки больше не создаёт макро-тел —
 // до этого каждая загрузка подсовывала дверям СВЕЖИЙ сквад игрока, а
 // восстановленный ходил призраком (SAVE-5).
-constexpr int kSaveVersion = 87;
+// v88 (2026-09-10): ИГРОК-КАК-СКВАД (подпосадка 4) — `PlayerState.x/y` и
+// entry-байты умерли; позиция игрока = `MacroCell` его сквада в записи
+// снапшота, entry-контекст = байты его `MacroNpcRuntime` там же. Блок
+// игрока в сейве теряет 2 float + 2 байта; читателей у них больше нет.
+constexpr int kSaveVersion = 88;
 
 enum class SettlementMood : std::uint8_t {
     Prosperous, Stable, Tense, Unrest, Revolt, Count
@@ -509,7 +513,11 @@ struct PlayerState {
     // (content/plot/intro.h creation_sex_choices) whose rows own the words.
     std::uint8_t sexIdx = 0;
     int ageDays = 1000;
-    float x = 0, y = 0;
+    // (No `x`/`y` since v88. WHERE he stands is the ordinary ecs::MacroCell
+    // on his squad entity — подпосадка 4: the input walker steps it, the one
+    // glide integrator moves the eye, the snapshot restores it. The scalars
+    // were four literal duplicates of ECS fields, re-projected every tick —
+    // the anaesthesia-bridge of problems.md §41 root 4.)
     // (No gold FIELD: money is faction coin in `inventory` — macro/currency.h
     // wallet math. The player is a squad like any other, v32.)
     // Shared character sheet — the SAME sm::CharacterSheet type an NPC carries
@@ -605,21 +613,16 @@ struct PlayerState {
     // honest byte (MacroNpcRecord.playerFlag). The field was the flag's
     // out-of-snapshot double, and the re-derivation it fed masked the load
     // raising a second player squad — SAVE-5.)
-    // Entry-side context (macro/entry_context.h, kSaveVersion 15): the packed
-    // signed step of the last macro cell change (0xFF = unknown) and the
-    // saturating count of AI ticks spent in the cell since. Same two bytes a
-    // macro NPC carries in MacroNpcRuntime; consumed by SubworldEngine::enter
-    // to place the player near the edge it actually walked in from.
-    std::uint8_t entryDir = 0xFF;
-    std::uint8_t entryTicks = 0;
+    // (No entry-side context since v88: the packed entry step and the
+    // time-in-cell count are his squad's own MacroNpcRuntime bytes — the
+    // same two every marcher stamps — and the accumulator toward the next
+    // tick is that runtime's tickAccum, free on an input-driven squad the
+    // AI sweep never thinks for.)
     // (No `memory` field. The player's head is the ordinary AgentMemory on
     // his squad entity — the same component every squad leader carries, saved
     // by the same macro record. It sat here as a second store with ZERO
     // readers in src/: everything that remembers anything about the player
     // was already going through the entity.)
-    // Transient accumulator toward the next entryTicks increment; NOT
-    // serialized (worst case a load loses < kAiTicks of band depth).
-    std::uint32_t entryTickAccum = 0;   // world ticks toward the next entry tick
 };
 
 // The ONE door into the session feed (drawn and faded by the HUD, never

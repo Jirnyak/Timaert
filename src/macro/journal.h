@@ -21,6 +21,7 @@
 #include "core/torus.h"
 #include "ecs/components.h"
 #include "ecs/world.h"
+#include "macro/player_entity.h"
 #include "macro/state.h"
 
 namespace sm {
@@ -38,8 +39,11 @@ inline void player_journal_capture(GameState& gs, ecs::World& world) {
     if (p.journal.capacity() < std::size_t(PlayerState::kJournalFactsCap)) {
         p.journal.reserve(std::size_t(PlayerState::kJournalFactsCap));
     }
-    const int px = wrapi(int(p.x), gs.mapW);
-    const int py = wrapi(int(p.y), gs.mapH);
+    // WHERE he stands = the flag holder's cell (подпосадка 4) — locality is
+    // asked of the world, like possession above.
+    const ecs::MacroCell* pcell = player_flag_cell(world);
+    const int px = pcell ? ecs::cell_x(*pcell, gs.mapW) : -1;
+    const int py = pcell ? ecs::cell_y(*pcell, gs.mapW) : -1;
     // Participation is by the ordinal his deeds FILE UNDER — and while he
     // wears a possessed lord (possession.md) that is the LORD's ordinal,
     // wherever the deed happened: «узнаётся УЧАСТИЕ, где бы ни случилось».

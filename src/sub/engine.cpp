@@ -594,8 +594,22 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     ecs_ = mw_.world; bus_ = &bus; zones_ = mw_.zones; treeLayer_ = mw_.trees;
     GameState& gs = *gs_;
     ecs::World& ecs = *ecs_;   // shadows the namespace, as the old parameter did
-    int cx = int(gs.player.x);
-    int cy = int(gs.player.y);
+    // The scene raises around the FLAG HOLDER's cell — «кем я на карте» is
+    // where "here" is (подпосадка 4). The entry-side context reads the same
+    // holder's runtime below.
+    int cx = 0, cy = 0;
+    std::uint8_t entryDir = kEntryDirNone;
+    std::uint8_t entryTicks = 0;
+    if (const entt::entity fe = player_flag_entity(ecs); fe != entt::null) {
+        if (const auto* fc = ecs.reg.try_get<ecs::MacroCell>(fe)) {
+            cx = ecs::cell_x(*fc, gs.mapW);
+            cy = ecs::cell_y(*fc, gs.mapW);
+        }
+        if (const auto* frt = ecs.reg.try_get<ecs::MacroNpcRuntime>(fe)) {
+            entryDir = frt->entryDir;
+            entryTicks = frt->entryTicks;
+        }
+    }
 
     auto resolver = [this](int x, int y) { return resolve_context(x, y); };
 
@@ -626,11 +640,11 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     // whole entourage follows for free.
     {
         int sdx = 0, sdy = 0;
-        (void)unpack_entry_dir(gs.player.entryDir, sdx, sdy);
+        (void)unpack_entry_dir(entryDir, sdx, sdy);
         playerX_ = float(kCellSize)
-            + entry_axis_pos(sdx, gs.player.entryTicks, float(kCellSize), 0.5f);
+            + entry_axis_pos(sdx, entryTicks, float(kCellSize), 0.5f);
         playerY_ = float(kCellSize)
-            + entry_axis_pos(sdy, gs.player.entryTicks, float(kCellSize), 0.5f);
+            + entry_axis_pos(sdy, entryTicks, float(kCellSize), 0.5f);
         // DRY FOOTING (sub/height.h): a body arrives where something would
         // carry it above the water — the ground, or a solid standing on it.
         // Same law the projected macro figures follow, and it is about the
@@ -643,10 +657,10 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
                         ^ std::uint32_t(cy) ^ 0xB21D6Eu};
             for (int attempt = 0; attempt < 20; ++attempt) {
                 const float tx = float(kCellSize) + entry_axis_pos(
-                    sdx, gs.player.entryTicks, float(kCellSize),
+                    sdx, entryTicks, float(kCellSize),
                     landing.next_f01());
                 const float ty = float(kCellSize) + entry_axis_pos(
-                    sdy, gs.player.entryTicks, float(kCellSize),
+                    sdy, entryTicks, float(kCellSize),
                     landing.next_f01());
                 if (is_dry_footing(footing_height_m(tx, ty))) {
                     playerX_ = tx;
@@ -760,14 +774,10 @@ void SubworldEngine::sync_macro_player_to_center() {
     int ny = mgr_.center_cy() % terrain_->height;
     if (nx < 0) nx += terrain_->width;
     if (ny < 0) ny += terrain_->height;
-    gs_->player.x = float(nx);
-    gs_->player.y = float(ny);
-    // The remap is a jump, not a walk — no entry edge to speak of. The next
-    // enter() falls back to the centre until the player actually crosses a
-    // macro cell boundary again.
-    gs_->player.entryDir = kEntryDirNone;
-    gs_->player.entryTicks = 0;
-    gs_->player.entryTickAccum = 0;
+    // The remap is a jump, not a walk — the jump door erases the entry edge,
+    // so the next enter() falls back to the centre until the player actually
+    // crosses a macro cell boundary again.
+    if (ecs_) player_jump_to_cell(*gs_, *ecs_, nx, ny);
 }
 
 entt::entity SubworldEngine::remap_macro_player_to_origin() {
@@ -780,12 +790,8 @@ entt::entity SubworldEngine::remap_macro_player_to_origin() {
     const MacroExitCell cell =
         macro_exit_cell_for_body(*ecs_, body, terrain_->width, terrain_->height);
     if (!cell.has) return entt::null;
-    gs_->player.x = float(cell.cx);
-    gs_->player.y = float(cell.cy);
     // Same as sync_macro_player_to_center: a remap is a jump, no entry edge.
-    gs_->player.entryDir = kEntryDirNone;
-    gs_->player.entryTicks = 0;
-    gs_->player.entryTickAccum = 0;
+    player_jump_to_cell(*gs_, *ecs_, cell.cx, cell.cy);
     return cell.macro;   // adopted by leave() as the persistent player (5e-2)
 }
 
@@ -3829,11 +3835,7 @@ bool SubworldEngine::try_exit_dungeon() {
     // at the very spot the door was opened from — or, through the hatch, ON
     // the tower's crown: the cylinder's centre, one tower height above the
     // ground the honest support physics already carries bodies on.
-    gs.player.x = float(ses.doorCx);
-    gs.player.y = float(ses.doorCy);
-    gs.player.entryDir = kEntryDirNone;
-    gs.player.entryTicks = 0;
-    gs.player.entryTickAccum = 0;
+    player_jump_to_cell(gs, *ecs_, ses.doorCx, ses.doorCy);
     // Out through the crown: you come up ON THE HATCH you climbed to, not on
     // the tower's axis — the axis is where the orb's plinth stands, and a body
     // put there materialised INSIDE the shrine, its eye in the burning head

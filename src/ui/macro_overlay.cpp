@@ -468,9 +468,11 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
 
     // Player sprite — sized to fit one cell like other mobile entities.
     // Half-cell offset matches the landmark / NPC convention
-    // (cell centre = X+0.5).
-    {
-        ImVec2 p = world_to_screen(gs.player.x + 0.5f, gs.player.y + 0.5f,
+    // (cell centre = X+0.5). Drawn at the flag holder's VISUAL — the same
+    // glide every squad sprite rides (подпосадка 4); the cell is the truth,
+    // the visual is what the eye may see between cells.
+    if (const ecs::MacroVisual* pv = player_flag_visual(w)) {
+        ImVec2 p = world_to_screen(pv->vx + 0.5f, pv->vy + 0.5f,
                                    camX, camY, zoom, viewW, viewH, mapW, mapH);
         const float size = std::clamp(zoom * 1.1f, 14.0f, 64.0f);
         draw_sprite(dl, p, SpriteId::Peasant, size,
@@ -478,49 +480,56 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
     }
 }
 
-std::size_t step_macro_walk(GameState& gs, MacroCursor& cursor, float dt,
-                            float cellsPerSec,
+std::size_t step_macro_walk(GameState& gs, ecs::World& w, MacroCursor& cursor,
+                            float dt, float cellsPerSec,
                             MacroWalkReachedFn onReached,
                             void* onReachedUser) {
     if (cursor.path.empty() || cursor.pathIdx >= cursor.path.size()) return 0u;
 
+    // Input drives the FLAG HOLDER — «игрок это просто флажок для сквада,
+    // что на него инпут» (owner, подпосадка 4). No flag standing = no legs.
+    const entt::entity e = player_flag_entity(w);
+    if (e == entt::null) return 0u;
+    ecs::MacroCell* cell = w.reg.try_get<ecs::MacroCell>(e);
+    ecs::MacroNpcRuntime* rt = w.reg.try_get<ecs::MacroNpcRuntime>(e);
+    if (!cell || !rt) return 0u;
+
     const int W = gs.mapW;
     const int H = gs.mapH;
-    // wrap_delta: the file-scope helper at the top of this TU.
 
-    float remaining = cellsPerSec * dt;
+    // ONE law of the march (try_move, npc_ai.cpp): pace produces budget,
+    // a cell costs 1.0 of it, at most one spare cell banks across frames.
+    // The euclidean fraction the old walker priced a diagonal at was a
+    // second law of movement — «нужно вырезать любое специфическое для
+    // игрока» (owner verdict 1, 2026-09-10).
+    const float produced = cellsPerSec * dt;
+    rt->moveBudget += produced;
+    if (rt->moveBudget > produced + 1.0f) rt->moveBudget = produced + 1.0f;
+    // The glide follows at the walk's own pace — the same visualSpeed
+    // every marching squad hands its sprite.
+    rt->visualSpeed = cellsPerSec;
+
     std::size_t reached = 0u;
-    while (remaining > 0.0f && cursor.pathIdx < cursor.path.size()) {
+    while (rt->moveBudget >= 1.0f && cursor.pathIdx < cursor.path.size()) {
         const auto& nxt = cursor.path[cursor.pathIdx];
-        // Player position is stored in the SAME integer-cell convention
-        // as every other entity (NPCs, landmarks). The +0.5 cell-centre
-        // offset is applied ONLY at render time. Do not pre-bake it into
-        // the stored coord — that would put the player at X+1.0 once the
-        // renderer adds its own +0.5.
-        float tx = float(nxt.x);
-        float ty = float(nxt.y);
-        float dx = wrap_delta(tx - gs.player.x, float(W));
-        float dy = wrap_delta(ty - gs.player.y, float(H));
-        float d  = std::sqrt(dx * dx + dy * dy);
-        if (d <= remaining) {
-            gs.player.x = tx;
-            gs.player.y = ty;
-            remaining -= d;
-            ++cursor.pathIdx;
-            ++reached;
-            if (onReached) {
-                onReached(onReachedUser, nxt.x, nxt.y);
-            }
-        } else {
-            float k = remaining / std::max(d, 1e-6f);
-            gs.player.x += dx * k;
-            gs.player.y += dy * k;
-            remaining = 0.0f;
+        const int cx = ecs::cell_x(*cell, W);
+        const int cy = ecs::cell_y(*cell, W);
+        // Entry edge — the SAME two bytes try_move stamps on every squad,
+        // read by SubworldEngine::enter to place the body at the walked-in
+        // side. wrap_delta: the file-scope helper at the top of this TU.
+        const float dx = wrap_delta(float(nxt.x) - float(cx), float(W));
+        const float dy = wrap_delta(float(nxt.y) - float(cy), float(H));
+        rt->entryDir = pack_entry_dir(dx > 0.0f ? 1 : (dx < 0.0f ? -1 : 0),
+                                      dy > 0.0f ? 1 : (dy < 0.0f ? -1 : 0));
+        rt->entryTicks = 0;
+        rt->tickAccum = 0;
+        cell->idx = ecs::cell_index(nxt.x, nxt.y, W);
+        rt->moveBudget -= 1.0f;
+        ++cursor.pathIdx;
+        ++reached;
+        if (onReached) {
+            onReached(onReachedUser, nxt.x, nxt.y);
         }
-        if (gs.player.x < 0)             gs.player.x += float(W);
-        if (gs.player.x >= float(W))     gs.player.x -= float(W);
-        if (gs.player.y < 0)             gs.player.y += float(H);
-        if (gs.player.y >= float(H))     gs.player.y -= float(H);
     }
 
     if (cursor.pathIdx >= cursor.path.size()) {
@@ -676,8 +685,9 @@ void record_npc_deal_fact(GameState& gs, ecs::World& w,
     f.subject = ecs::kPlayerSquadOrdinal;
     f.objectKind = std::uint8_t(FactSubject::Squad);
     f.object = traderOrdinal;
-    f.x = std::int16_t(wrapi(int(gs.player.x), gs.mapW));
-    f.y = std::int16_t(wrapi(int(gs.player.y), gs.mapH));
+    const ecs::MacroCell* pc = player_flag_cell(w);
+    f.x = std::int16_t(pc ? ecs::cell_x(*pc, gs.mapW) : 0);
+    f.y = std::int16_t(pc ? ecs::cell_y(*pc, gs.mapW) : 0);
     f.amount = gave + took;
     record_deed(w, gs, f);
 }
@@ -770,8 +780,9 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
         std::size_t rowCount = 0;
         std::size_t totalRows = 0;
 
-        const int px = int(std::floor(gs.player.x));
-        const int py = int(std::floor(gs.player.y));
+        const ecs::MacroCell* pcell = player_flag_cell(w);
+        const int px = pcell ? ecs::cell_x(*pcell, gs.mapW) : 0;
+        const int py = pcell ? ecs::cell_y(*pcell, gs.mapW) : 0;
         const int W  = gs.mapW;
         const int H  = gs.mapH;
 

@@ -33,14 +33,26 @@ WorldFact fact(int day, FactKind kind, std::uint8_t subjKind,
     return f;
 }
 
+// Locality is the flag holder's CELL now (подпосадка 4): "standing at" is
+// a flagged entity with a MacroCell, moved by writing that cell — exactly
+// what the walker and the jump door do in the game.
+void stand_at(ecs::World& w, int x, int y) {
+    entt::entity e = entt::null;
+    for (auto ent : w.reg.view<ecs::PlayerTag>()) e = ent;
+    if (e == entt::null) {
+        e = w.reg.create();
+        w.reg.emplace<ecs::PlayerTag>(e);
+    }
+    w.reg.emplace_or_replace<ecs::MacroCell>(e, ecs::cell_index(x, y, 64));
+}
+
 void test_participation_locality_and_silence() {
     GameState gs{};
     gs.mapW = 64;
     gs.mapH = 64;
     chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
-    ecs::World w;   // no PlayerTag anywhere → he wears nobody
-    gs.player.x = 10.0f;
-    gs.player.y = 10.0f;
+    ecs::World w;   // the flag holder is nobody's LORD → he wears nobody
+    stand_at(w, 10, 10);
 
     // (a) The player's own deed, far away — learned by PARTICIPATION.
     chronicle_record(gs.chronicle,
@@ -84,8 +96,7 @@ void test_participation_locality_and_silence() {
 
     // Walking away changes what "here" means: the same foreign cell that was
     // silent above becomes his the tick he stands on it.
-    gs.player.x = 40.0f;
-    gs.player.y = 40.0f;
+    stand_at(w, 40, 40);
     chronicle_record(gs.chronicle,
                      fact(3, FactKind::Battle,
                           fact_subject(FactSubject::Squad, false),
@@ -101,8 +112,7 @@ void test_the_journal_never_forgets_and_the_cap_is_loud() {
     gs.mapH = 64;
     chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
     ecs::World w;
-    gs.player.x = 5.0f;
-    gs.player.y = 5.0f;
+    stand_at(w, 5, 5);
 
     // Fill to the cap in slices small enough that the ring never evicts
     // between captures (the live game captures every tick, so eviction
@@ -146,8 +156,7 @@ void test_a_possessed_lords_deeds_are_his_participation() {
     gs.mapH = 64;
     chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
     ecs::World w;
-    gs.player.x = 5.0f;
-    gs.player.y = 5.0f;
+    stand_at(w, 5, 5);
 
     // Not possessing: the lord's far-away deed is somebody else's.
     chronicle_record(gs.chronicle,
@@ -163,6 +172,11 @@ void test_a_possessed_lords_deeds_are_his_participation() {
     // out-of-snapshot field.
     const entt::entity lord = w.reg.create();
     w.reg.emplace<ecs::MacroSpawnId>(lord, ecs::MacroSpawnId{42u});
+    // Possession MOVES the one flag (exactly-one invariant): find the
+    // stand-in holder FIRST, remove after — never mutate a pool mid-walk.
+    entt::entity prev = entt::null;
+    for (auto ent : w.reg.view<ecs::PlayerTag>()) prev = ent;
+    if (prev != entt::null) w.reg.remove<ecs::PlayerTag>(prev);
     w.reg.emplace<ecs::PlayerTag>(lord);
     chronicle_record(gs.chronicle,
                      fact(2, FactKind::Killed,
@@ -184,8 +198,7 @@ void test_a_captured_copy_carries_no_ring_link() {
     gs.mapH = 64;
     chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
     ecs::World w;
-    gs.player.x = 5.0f;
-    gs.player.y = 5.0f;
+    stand_at(w, 5, 5);
 
     // Two facts on one cell: the second's ring slot LINKS to the first.
     chronicle_record(gs.chronicle,

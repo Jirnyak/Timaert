@@ -139,12 +139,12 @@ static void emit_reward(const Reward& r, GameState& gs, Inventory* bag,
 }
 
 static bool eval_objective(Objective& o, const std::vector<GameEvent>& events,
-                           GameState& gs, Inventory* bag) {
+                           GameState& gs, Inventory* bag,
+                           float px, float py) {
     if (o.completed) return true;
-    PlayerState& p = gs.player;
     switch (o.kind) {
         case ObjectiveKind::VisitCell:
-            if (obj_in_radius(gs, p.x, p.y, float(o.ix), float(o.iy), o.radius)) o.completed = true;
+            if (obj_in_radius(gs, px, py, float(o.ix), float(o.iy), o.radius)) o.completed = true;
             break;
         case ObjectiveKind::FindLocation:
             for (auto& ev : events) {
@@ -156,7 +156,7 @@ static bool eval_objective(Objective& o, const std::vector<GameEvent>& events,
             {
                 float sx = 0.0f, sy = 0.0f;
                 if (settlement_position(gs, o.targetSettlementId, sx, sy)
-                    && obj_in_radius(gs, p.x, p.y, sx, sy, 3.0f)
+                    && obj_in_radius(gs, px, py, sx, sy, 3.0f)
                     && bag && bag->count(o.itemId) >= o.quantity) {
                     o.completed = bag->remove(o.itemId, o.quantity);
                 }
@@ -175,7 +175,7 @@ static bool eval_objective(Objective& o, const std::vector<GameEvent>& events,
             if (o.killed >= o.count) o.completed = true;
             break;
         case ObjectiveKind::WaitAt:
-            if (obj_in_radius(gs, p.x, p.y, float(o.ix), float(o.iy), o.radius)) {
+            if (obj_in_radius(gs, px, py, float(o.ix), float(o.iy), o.radius)) {
                 for (auto& ev : events) {
                     if (ev.tag == EventTag::TimeAdvance) {
                         ++o.hoursWaited;
@@ -222,7 +222,8 @@ static void prune_settled_offers(PlayerState& p, int today) {
 } // namespace
 
 void QuestEngine::tick(std::vector<Quest>& active, EventBus& bus,
-                       GameState& gs, Inventory* bag, AgentMemory* head) {
+                       GameState& gs, Inventory* bag, AgentMemory* head,
+                       int px, int py) {
     auto& events = bus.last_tick_events();
     prune_settled_offers(gs.player, gs.worldTime.day());
     std::vector<Quest> completed;
@@ -247,7 +248,8 @@ void QuestEngine::tick(std::vector<Quest>& active, EventBus& bus,
         bool anyUpdated = false;
         for (auto& o : q.objectives) {
             const bool wasDone = o.completed;
-            if (!eval_objective(o, events, gs, bag)) allDone = false;
+            if (!eval_objective(o, events, gs, bag, float(px), float(py)))
+                allDone = false;
             if (!wasDone && o.completed) anyUpdated = true;
         }
         if (anyUpdated && !allDone) {

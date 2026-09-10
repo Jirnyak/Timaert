@@ -191,10 +191,16 @@ void test_aggressive_chases_visible_player() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
-    gs.player.x = 12.0f;
-    gs.player.y = 10.0f;
 
     sm::ecs::World world;
+    // The player the pursuit rule sees: a FLAGGED squad standing on its cell
+    // (подпосадка 4 — the AI asks the world for the flag holder, no scalar).
+    {
+        const auto pe = world.reg.create();
+        world.reg.emplace<sm::ecs::PlayerTag>(pe);
+        world.reg.emplace<sm::ecs::MacroCell>(
+            pe, sm::ecs::cell_index(12, 10, gs.mapW));
+    }
     auto e = spawn_ai(world, sm::NPCType::Bandit, 10.0f, 10.0f, -1);
     // Pursuit asks THE hostility rule now (damage-door Inc 3), so the fixture
     // must say WHO this bandit is and WHERE the pair stands — an aggressive
@@ -254,10 +260,16 @@ void test_aggressive_spares_a_friend() {
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
-    gs.player.x = 12.0f;
-    gs.player.y = 10.0f;
 
     sm::ecs::World world;
+    // The player the pursuit rule sees: a FLAGGED squad standing on its cell
+    // (подпосадка 4 — the AI asks the world for the flag holder, no scalar).
+    {
+        const auto pe = world.reg.create();
+        world.reg.emplace<sm::ecs::PlayerTag>(pe);
+        world.reg.emplace<sm::ecs::MacroCell>(
+            pe, sm::ecs::cell_index(12, 10, gs.mapW));
+    }
     auto e = spawn_ai(world, sm::NPCType::Bandit, 10.0f, 10.0f, -1);
     world.reg.get<sm::ecs::NPCKind>(e).factionIdx =
         std::uint16_t(sm::faction_index("bandits"));

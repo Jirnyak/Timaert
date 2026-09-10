@@ -295,11 +295,10 @@ sm::GameState make_state() {
 
     gs.player.name = "Tester";
     gs.player.ageDays = 1234;
-    gs.player.x = 41.5f;
-    gs.player.y = 82.25f;
-    // (His coin and goods ride his SQUAD's snapshot record — see the player
-    // record in make_macro_records — because his bag is an ordinary
-    // NpcInventory on his squad entity.)
+    // (No position scalars since v88: WHERE he stands is his squad record's
+    // MacroCell — set in make_macro_records and proven with every other
+    // record field. His coin and goods ride the same record, because his bag
+    // is an ordinary NpcInventory on his squad entity.)
     // (His HEAD rides the same record: AgentMemory is a column of every
     // leader's macro record, and the player is a leader.)
     gs.player.sheet.attributes[sm::AttributeId::Str] = 7;
@@ -357,11 +356,9 @@ sm::GameState make_state() {
         {/*giverSettlementId*/ 7, /*bornDay*/ 3, /*offerSlot*/ 2});
     gs.player.completedQuestCount = 5u;
     gs.player.failedQuestCount = 2u;
-    // Entry-side context (kSaveVersion 15): a non-default direction + tick
-    // count must survive the trip — a save made mid-march re-enters the
-    // subworld on the same side.
-    gs.player.entryDir = sm::pack_entry_dir(0, 1);   // walked in from the south
-    gs.player.entryTicks = 7;
+    // (No entry-side bytes since v88: the entry context is his squad's own
+    // MacroNpcRuntime — record `a` above plants runtime.entryDir = 0x12 and
+    // the record comparison proves the bytes ride.)
     // (The player's MEN are not a field of PlayerState any more: his squad is
     // an ordinary squad entity, so his roster rides the macro snapshot with
     // every other squad's — see the player record in make_macro_records.)
@@ -844,8 +841,8 @@ void run_roundtrip() {
 
     const sm::PlayerState& p = loaded.player;
     if (p.name != "Tester") FAIL_BAIL("player name lost");
-    if (p.ageDays != 1234 || !nearf(p.x, 41.5f) || !nearf(p.y, 82.25f)) {
-        FAIL_BAIL("player position or age lost");
+    if (p.ageDays != 1234) {
+        FAIL_BAIL("player age lost");
     }
 
     if (p.sheet.attributes.of(sm::AttributeId::Str) != 7 || p.sheet.attributes.of(sm::AttributeId::Intl) != 11 || p.sheet.attributes.of(sm::AttributeId::Spd) != 15) {
@@ -867,9 +864,7 @@ void run_roundtrip() {
     if (sm::faction_relation(&loaded, "guild", sm::kPlayerFactionId) != 42) {
         FAIL_BAIL("player standing is not symmetric after a save round-trip");
     }
-    if (p.entryDir != sm::pack_entry_dir(0, 1) || p.entryTicks != 7) {
-        FAIL_BAIL("entry-side context lost");
-    }
+    // (Entry-side context rides the macro records — asserted there.)
 
 
     if (p.journal.size() != 2

@@ -13,6 +13,7 @@
 #include "macro/movement_cost.h"
 #include "macro/npc.h"
 #include "macro/nav_field.h"        // локальные поля-округи (CANON S7)
+#include "macro/player_entity.h"
 #include "macro/npc_spawn.h"
 #include "macro/recovery.h"  // recover_bar — ОДНА дверь отдыха на все тела
 #include "macro/politik.h"          // derive_city_spacing — времянка §34.1
@@ -3781,8 +3782,14 @@ static TickContext make_tick_context(MacroWorld& mw,
     ctx.mapW    = mw.gs->mapW;
     ctx.mapH    = mw.gs->mapH;
     ctx.rng     = &runtime.jitter;
-    ctx.playerX = mw.gs->player.x;
-    ctx.playerY = mw.gs->player.y;
+    // The player is a squad: WHERE he is = his flag holder's cell, the same
+    // one-number truth every squad keeps (подпосадка 4).
+    if (mw.world) {
+        if (const ecs::MacroCell* pc = player_flag_cell(*mw.world)) {
+            ctx.playerX = float(ecs::cell_x(*pc, ctx.mapW));
+            ctx.playerY = float(ecs::cell_y(*pc, ctx.mapW));
+        }
+    }
     ctx.squads  = &runtime.squadIndex;
     ctx.allowAutoBattle = allowAutoBattle;
     // Запечь враждебность реестра на свип (CANON S10 «хищник-жертва»): F²
@@ -3891,10 +3898,12 @@ void tick_macro_npc_ai(MacroWorld& mw,
 void tick_macro_npc_visuals(ecs::World& w, int mapW, int mapH, float dt) {
     if (mapW <= 0 || mapH <= 0 || dt <= 0.0f) return;
 
+    // No player exclusion (подпосадка 4, owner: «универсально без игрокового
+    // кода»): his squad and a possessed lord glide by the SAME law as every
+    // sprite on the map — the walker moves the cell, this pass moves the eye.
     auto view = w.reg.view<ecs::MacroCell, ecs::MacroVisual,
                            ecs::MacroNpcRuntime, ecs::Pools>(
-        entt::exclude<ecs::Dead, ecs::PlayerTag,
-                      ecs::PlayerSquadTag>);  // player drawn by its own marker (Inc 5e-2)
+        entt::exclude<ecs::Dead>);
     for (auto e : view) {
         const auto& c = view.get<ecs::MacroCell>(e);
         const MacroPos p{float(ecs::cell_x(c, mapW)),

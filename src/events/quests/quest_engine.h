@@ -20,11 +20,16 @@ public:
     // same squad entity, where an unpayable fine is written down as a debt
     // fact. Handed in for the same reason `bag` is: this layer may not reach
     // into the ECS, and PlayerState is not a second store for either.
+    // `px`/`py` — the player's macro CELL (his squad's MacroCell, decoded by
+    // the caller): handed in like `bag` and `head`, because WHERE he stands
+    // stopped being a PlayerState scalar with подпосадка 4 and this layer
+    // does not reach into the ECS for it.
     void tick(std::vector<Quest>& active,
               EventBus& bus,
               GameState& gs,
               Inventory* bag,
-              AgentMemory* head);
+              AgentMemory* head,
+              int px, int py);
 
     // Accepting is the moment an offer becomes an object of the world, so
     // this is where its ordinal is issued (gs.nextQuestOrdinal — the one

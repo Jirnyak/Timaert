@@ -1064,8 +1064,8 @@ MacroExitCell macro_exit_cell_for_body(ecs::World& w, entt::entity body,
     // The macro entity may have been reaped (e.g. it died in the meantime); a
     // stale handle just means "no remap" → fall back to the window centre.
     if (!reg.valid(macro) || !reg.all_of<ecs::MacroCell>(macro)) return out;
-    // The macro cell is ONE number on the torus (scale split) — the SAME
-    // space as gs.player.x/y; already wrapped by construction.
+    // The macro cell is ONE number on the torus (scale split) — the same
+    // space the player's own squad cell lives in; wrapped by construction.
     const auto& mc = reg.get<ecs::MacroCell>(macro);
     const int nx = ecs::cell_x(mc, mapW);
     const int ny = ecs::cell_y(mc, mapW);

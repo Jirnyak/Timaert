@@ -673,8 +673,9 @@ void write_player(Writer& w, const PlayerState& p) {
     w.str(p.name);
     w.pod(p.sexIdx);              // v78: the creation screen's nature pick
     w.pod(p.ageDays);
-    w.pod(p.x);
-    w.pod(p.y);
+    // (No position block since v88: WHERE he stands is his squad's MacroCell
+    // inside its MacroNpcRecord — подпосадка 4 killed the scalar double,
+    // exactly as v85 killed the bars' one.)
     w.pod(p.sheet.attributes);
     // (No combatStats block since v85: the player's bars ride the macro-ECS
     // snapshot inside his squad's MacroNpcRecord like every lord's — a second
@@ -701,8 +702,8 @@ void write_player(Writer& w, const PlayerState& p) {
     w.pod(p.failedQuestCount);
     // (No possessedMacroSpawnId since v87: "who is controlled" is the honest
     // playerFlag byte on the possessed record itself — one store, the world's.)
-    w.pod(p.entryDir);                // entry-side context (kSaveVersion 15)
-    w.pod(p.entryTicks);
+    // (No entry-side bytes since v88: the entry context lives in his
+    // squad's MacroNpcRuntime, which rides the record verbatim.)
     // v57: the player's journal — copies of the chronicle records he learned
     // (his whole game, never forgotten), plus the reader's own cursor.
     if (w.count(p.journal.size(), PlayerState::kJournalFactsCap)) {
@@ -716,8 +717,6 @@ void read_player(Reader& r, PlayerState& p) {
     r.str(p.name);
     r.pod(p.sexIdx);              // v78
     r.pod(p.ageDays);
-    r.pod(p.x);
-    r.pod(p.y);
     r.pod(p.sheet.attributes);
     r.pod(p.sheet.levelData);
     r.pod(p.sheet.skills);
@@ -735,8 +734,7 @@ void read_player(Reader& r, PlayerState& p) {
     }
     r.pod(p.completedQuestCount);
     r.pod(p.failedQuestCount);
-    r.pod(p.entryDir);                // entry-side context (kSaveVersion 15)
-    r.pod(p.entryTicks);
+
     std::uint32_t jn = 0;             // v57: the journal rides whole
     if (!read_count(r, jn, PlayerState::kJournalFactsCap)) return;
     p.journal.clear();

@@ -17,25 +17,30 @@
 // `ecs::SquadRoster`, the bag `ecs::NpcInventory`, the head `AgentMemory`, and
 // all three ride the same macro-snapshot record every lord's do.
 //
-// What has NOT moved yet: where he stands, and his sheet. PlayerState still
-// owns those; `ensure_macro_player_entity` projects Position onto the entity
-// on EVERY walk. How hurt and how tired he is moved HERE with landing 4
-// (2026-09-10): his three bars are the ordinary ecs::Pools on this entity,
-// with no scalar copy anywhere — player_pools() below is the one door.
+// What has NOT moved yet: his sheet — PlayerState still owns it. WHERE he
+// stands moved HERE with подпосадка 4 (2026-09-10, v88): his cell is the
+// ordinary ecs::MacroCell on this entity, stepped by the input walker and
+// glided by the one MacroVisual integrator, with no scalar copy anywhere.
+// How hurt and how tired he is moved HERE with landing 4 (2026-09-10): his
+// three bars are the ordinary ecs::Pools on this entity — player_pools()
+// below is the one door.
 #pragma once
+#include "ecs/components.h"
 #include "ecs/world.h"
 #include "macro/character_sheet.h"
+#include "macro/entry_context.h"
 #include "macro/state.h"
 
 namespace sm {
 
-// Ensure exactly one macro PlayerTag flag exists and its Position mirrors the
-// authoritative player scalar (`gs.player.x/y`). Called once at world boot and
-// at the top of every macro (non-subworld) tick: it creates the flag on first
-// call, re-creates it after a subworld leave (which tears down all PlayerTag
-// entities), and otherwise re-syncs its Position. Idempotent and cheap — the
-// PlayerTag view holds 0 or 1 entity. It never touches a live subworld combat
-// flag (that lifecycle is owned by SubworldEngine).
+// Ensure exactly one player squad + one macro PlayerTag flag exist. Called
+// once at world boot and at the top of every macro (non-subworld) tick: it
+// creates the squad on first call (spawn cell derived from the world — the
+// realm's first city), re-stamps the tags a snapshot restore cannot carry,
+// and keeps the sheet's derivatives honest. It does NOT touch the squad's
+// MacroCell — where he stands is the entity's own truth (подпосадка 4).
+// Idempotent and cheap; never touches a live scene body (that lifecycle is
+// owned by SubworldEngine).
 void ensure_macro_player_entity(GameState& gs, ecs::World& world);
 
 // (No reattach_player_to_macro_spawn since v87. The flag is not re-derived
@@ -44,6 +49,58 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world);
 // genesis raises no macro bodies at all. The re-derivation this function did
 // was half of SAVE-5: it existed because "whom do I control" lived outside
 // the snapshot, in PlayerState::possessedMacroSpawnId — also dead.)
+
+// «КЕМ Я НА КАРТЕ» — the ONE holder of the macro PlayerTag flag: his own
+// squad by default, a possessed lord while he wears one (подпосадка 4,
+// owner 2026-09-10: «игрок это просто флажок для сквада, что на него инпут
+// и камера»). Input drives THIS entity's cell; the camera may follow THIS
+// entity's visual. Returns entt::null before the world exists. The view
+// holds 0 or 1 entity — a scan of a ≤1 pool, no cache needed.
+inline entt::entity player_flag_entity(ecs::World& world) {
+    for (auto e : world.reg.view<ecs::PlayerTag>()) return e;
+    return entt::null;
+}
+
+// The flag holder's cell and map-glide visual — the SAME components every
+// squad keeps (MacroCell = the one number that is his position's truth,
+// MacroVisual = what the eye sees between cells). nullptr before the world
+// exists. These replaced the gs.player.x/y scalars: the last duplicate
+// store of «where he stands» died with подпосадка 4 (v88). Inline like the
+// components they read: macro passes ask them without linking the app-side
+// creation door.
+inline ecs::MacroCell* player_flag_cell(ecs::World& world) {
+    const entt::entity e = player_flag_entity(world);
+    if (e == entt::null) return nullptr;
+    return world.reg.try_get<ecs::MacroCell>(e);
+}
+inline ecs::MacroVisual* player_flag_visual(ecs::World& world) {
+    const entt::entity e = player_flag_entity(world);
+    if (e == entt::null) return nullptr;
+    return world.reg.try_get<ecs::MacroVisual>(e);
+}
+
+// THE macro jump (escape teleport, console goto, subworld exit door): set
+// the flag holder's cell and erase the entry edge (a jump is not a walk —
+// SubworldEngine::enter must fall back to the centre). The VISUAL is left
+// to the one glide integrator on purpose (owner 2026-09-10: «универсально
+// без игрокового кода») — a short hop glides, a far jump snaps via the
+// integrator's own teleport backstop.
+inline void player_jump_to_cell(GameState& gs, ecs::World& world,
+                                int x, int y) {
+    const entt::entity e = player_flag_entity(world);
+    if (e == entt::null) return;
+    auto& reg = world.reg;
+    reg.emplace_or_replace<ecs::MacroCell>(
+        e, ecs::cell_index(x, y, gs.mapW));
+    // A jump is not a walk: no entry edge for the next subworld enter, and
+    // the think cadence restarts (the accumulator doubles as the player's
+    // entry-tick clock — same kAiTicks law as every squad's think).
+    if (auto* rt = reg.try_get<ecs::MacroNpcRuntime>(e)) {
+        rt->entryDir = kEntryDirNone;
+        rt->entryTicks = 0;
+        rt->tickAccum = 0;
+    }
+}
 
 // THE player's squad entity, by its reserved ordinal — and his ROSTER, which
 // is an ordinary ecs::SquadRoster on it (owner, 2026-08-27). It used to be

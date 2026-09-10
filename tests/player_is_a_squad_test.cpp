@@ -62,8 +62,8 @@ entt::entity npc_squad(ecs::World& w, float x, float y, std::uint32_t ordinal,
 void test_player_carries_everything_a_squad_carries() {
     GameState gs{};
     gs.mapW = gs.mapH = 64;
-    gs.player.x = 20.0f;
-    gs.player.y = 20.0f;
+    // (No position scalar to seed since подпосадка 4: the creation door
+    // derives the spawn cell from the world — map centre in a bare fixture.)
     ecs::World w;
     ensure_macro_player_entity(gs, w);
 
@@ -97,8 +97,8 @@ void test_player_carries_everything_a_squad_carries() {
 void test_the_mark_survives_losing_the_flag() {
     GameState gs{};
     gs.mapW = gs.mapH = 64;
-    gs.player.x = 20.0f;
-    gs.player.y = 20.0f;
+    // (No position scalar to seed since подпосадка 4: the creation door
+    // derives the spawn cell from the world — map centre in a bare fixture.)
     ecs::World w;
     ensure_macro_player_entity(gs, w);
     const entt::entity mine = player_squad_entity(w);
@@ -125,11 +125,14 @@ void test_the_mark_survives_losing_the_flag() {
 void test_ai_leaves_the_player_squad_standing() {
     GameState gs{};
     gs.mapW = gs.mapH = 64;
-    gs.player.x = 20.0f;
-    gs.player.y = 20.0f;
+    // (No position scalar to seed since подпосадка 4: the creation door
+    // derives the spawn cell from the world — map centre in a bare fixture.)
     ecs::World w;
     ensure_macro_player_entity(gs, w);
     const entt::entity mine = player_squad_entity(w);
+    // Stand him on 20,20 the way any placement happens now: by writing the
+    // squad's own cell (the jump door's core), not a scalar.
+    w.reg.get<ecs::MacroCell>(mine).idx = ecs::cell_index(20, 20, 64);
 
     // Possession, so PlayerTag is NOT on his squad — the exact state in which
     // the old `exclude<PlayerTag>` guard let the AI take the wheel.
@@ -204,8 +207,6 @@ void test_the_players_men_never_desert() {
 void test_the_entity_numbers_are_not_stale() {
     GameState gs{};
     gs.mapW = gs.mapH = 64;
-    gs.player.x = 20.0f;
-    gs.player.y = 20.0f;
     gs.player.sheet.attributes[sm::AttributeId::End] = 5;
     gs.player.sheet.levelData.level = 1;
     ecs::World w;
@@ -231,8 +232,9 @@ void test_the_entity_numbers_are_not_stale() {
     const int oldMaxHp = w.reg.get<ecs::Pools>(e).maxHp;
     gs.player.sheet.attributes[sm::AttributeId::End] = 12;
     gs.player.sheet.levelData.level = 4;
-    gs.player.x = 33.0f;
-    gs.player.y = 44.0f;
+    // He marched to 33,44 (a cell write — what the walker does); the heal
+    // pass below must rescale his numbers WITHOUT touching where he stands.
+    w.reg.get<ecs::MacroCell>(e).idx = ecs::cell_index(33, 44, 64);
     ensure_macro_player_entity(gs, w);
 
     const auto& hp = w.reg.get<ecs::Pools>(e);

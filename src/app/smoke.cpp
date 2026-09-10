@@ -33,6 +33,22 @@
 
 namespace sm::app {
 
+// ── The harness's doors to the player's macro position (подпосадка 4) ────
+// The truth is the flag holder's MacroCell (no scalar mirror exists any
+// more); a scripted placement is a JUMP through the one macro jump door —
+// the same one the escape teleport and the subworld exit walk through.
+static float smoke_player_x(App& app) {
+    const sm::ecs::MacroCell* c = sm::player_flag_cell(app.ecs);
+    return c ? float(sm::ecs::cell_x(*c, app.gs.mapW)) : 0.0f;
+}
+static float smoke_player_y(App& app) {
+    const sm::ecs::MacroCell* c = sm::player_flag_cell(app.ecs);
+    return c ? float(sm::ecs::cell_y(*c, app.gs.mapW)) : 0.0f;
+}
+static void smoke_teleport_player(App& app, int x, int y) {
+    sm::player_jump_to_cell(app.gs, app.ecs, x, y);
+}
+
 constexpr int kSubworldSmokeFrames = 1000;
 constexpr int kSubworldSeamSmokeSettleFrames = 120;
 constexpr int kSmokeMacroTravelSteps = 3;
@@ -496,16 +512,15 @@ bool run_subworld_time_smoke(App& app) {
     int safeCellX = 0;
     int safeCellY = 0;
     if (smoke_find_open_subworld_cell(app, safeCellX, safeCellY)) {
-        app.gs.player.x = float(safeCellX);
-        app.gs.player.y = float(safeCellY);
+                smoke_teleport_player(app, int(float(safeCellX)), int(float(safeCellY)));
         app.gs.subState.settlementId = -1;
         app.ui.settlementId = -1;
     }
 
     const sm::WorldTime before = app.gs.worldTime;
     const int beforeMinutes = smoke_total_minutes(before);
-    const float playerBeforeX = app.gs.player.x;
-    const float playerBeforeY = app.gs.player.y;
+    const float playerBeforeX = smoke_player_x(app);
+    const float playerBeforeY = smoke_player_y(app);
     const int expectedPlayerX =
         sm::wrapi(int(std::floor(playerBeforeX)), app.gs.mapW);
     const int expectedPlayerY =
@@ -597,8 +612,8 @@ bool run_subworld_time_smoke(App& app) {
 
     const sm::WorldTime after = app.gs.worldTime;
     const int afterMinutes = smoke_total_minutes(after);
-    const int playerAfterX = int(app.gs.player.x);
-    const int playerAfterY = int(app.gs.player.y);
+    const int playerAfterX = int(smoke_player_x(app));
+    const int playerAfterY = int(smoke_player_y(app));
     const bool timeAdvanced = afterMinutes > beforeMinutes
         && minutesAdvanced == afterMinutes - beforeMinutes;
     // What the ladder says those steps were worth: kSubworldTickDivisor steps
@@ -701,8 +716,7 @@ bool run_subworld_recovery_smoke(App& app) {
     int safeCellX = 0;
     int safeCellY = 0;
     if (smoke_find_open_subworld_cell(app, safeCellX, safeCellY)) {
-        app.gs.player.x = float(safeCellX);
-        app.gs.player.y = float(safeCellY);
+                smoke_teleport_player(app, int(float(safeCellX)), int(float(safeCellY)));
         app.gs.subState.settlementId = -1;
         app.ui.settlementId = -1;
     }
@@ -861,8 +875,7 @@ bool run_subworld_sp_drain_smoke(App& app) {
     int safeCellX = 0;
     int safeCellY = 0;
     if (smoke_find_open_subworld_cell(app, safeCellX, safeCellY)) {
-        app.gs.player.x = float(safeCellX);
-        app.gs.player.y = float(safeCellY);
+                smoke_teleport_player(app, int(float(safeCellX)), int(float(safeCellY)));
         app.gs.subState.settlementId = -1;
         app.ui.settlementId = -1;
     }
@@ -1256,8 +1269,8 @@ bool smoke_find_macro_travel_path(App& app, sm::PathResult& out) {
         return false;
     }
 
-    const int sx = sm::wrapi(int(std::floor(app.gs.player.x)), app.gs.mapW);
-    const int sy = sm::wrapi(int(std::floor(app.gs.player.y)), app.gs.mapH);
+    const int sx = sm::wrapi(int(std::floor(smoke_player_x(app))), app.gs.mapW);
+    const int sy = sm::wrapi(int(std::floor(smoke_player_y(app))), app.gs.mapH);
     for (int radius = kSmokeMacroTravelSteps; radius <= 48; ++radius) {
         for (int dy = -radius; dy <= radius; ++dy) {
             for (int dx = -radius; dx <= radius; ++dx) {
@@ -1328,8 +1341,8 @@ bool run_macro_travel_sp_smoke(App& app) {
     app.restRegenSuppressed = true;
     const int beforeSp = player_pools(app).sp;
     const int beforeHp = player_pools(app).hp;
-    const float beforeX = app.gs.player.x;
-    const float beforeY = app.gs.player.y;
+    const float beforeX = smoke_player_x(app);
+    const float beforeY = smoke_player_y(app);
     const float carryBefore = player_sp_carry(app);
 
     // Walk it through REAL FRAMES, not by calling the step directly. The whole
@@ -1366,7 +1379,7 @@ bool run_macro_travel_sp_smoke(App& app) {
                  kSmokeMacroTravelSteps, int(cellsBefore), frames,
                  int(app.cursor.path.size()),
                  beforeX, beforeY,
-                 app.gs.player.x, app.gs.player.y,
+                 smoke_player_x(app), smoke_player_y(app),
                  beforeSp, afterSp, spentSp,
                  beforeHp, afterHp,
                  double(expectedCost), double(accounted),
@@ -1721,9 +1734,9 @@ bool run_macro_npc_trace_smoke(App& app) {
     // of the torus from the player and take the first grid spot with no
     // other macro NPC within 16 cells (> 2× kSquadSightCells — perception
     // cannot reach the lane, and the 3-cell march stays inside the margin).
-    int baseX = sm::wrapi(int(app.gs.player.x) + app.gs.mapW / 2,
+    int baseX = sm::wrapi(int(smoke_player_x(app)) + app.gs.mapW / 2,
                           app.gs.mapW);
-    int baseY = sm::wrapi(int(app.gs.player.y) + app.gs.mapH / 2,
+    int baseY = sm::wrapi(int(smoke_player_y(app)) + app.gs.mapH / 2,
                           app.gs.mapH);
     {
         auto others = app.ecs.reg.view<sm::ecs::MacroCell,
@@ -1954,20 +1967,18 @@ bool run_subworld_exit_gate_smoke(App& app) {
         return false;
     }
 
-    const float oldX = app.gs.player.x;
-    const float oldY = app.gs.player.y;
+    const float oldX = smoke_player_x(app);
+    const float oldY = smoke_player_y(app);
     const auto oldSubState = app.gs.subState;
     const int oldUiSettlement = app.ui.settlementId;
     auto restore = [&]() {
         if (app.subworld.active()) app.subworld.leave(true);
-        app.gs.player.x = oldX;
-        app.gs.player.y = oldY;
+                smoke_teleport_player(app, int(oldX), int(oldY));
         app.gs.subState = oldSubState;
         app.ui.settlementId = oldUiSettlement;
     };
 
-    app.gs.player.x = float(cellX);
-    app.gs.player.y = float(cellY);
+        smoke_teleport_player(app, int(float(cellX)), int(float(cellY)));
     app.gs.subState.settlementId = -1;
     app.ui.settlementId = -1;
     enter_subworld(app);
@@ -2025,14 +2036,13 @@ bool run_subworld_loot_xp_smoke(App& app) {
         return false;
     }
 
-    const float oldX = app.gs.player.x;
-    const float oldY = app.gs.player.y;
+    const float oldX = smoke_player_x(app);
+    const float oldY = smoke_player_y(app);
     const auto oldSubState = app.gs.subState;
     const int oldUiSettlement = app.ui.settlementId;
     auto restore = [&]() {
         if (app.subworld.active()) app.subworld.leave(true);
-        app.gs.player.x = oldX;
-        app.gs.player.y = oldY;
+                smoke_teleport_player(app, int(oldX), int(oldY));
         app.gs.subState = oldSubState;
         app.ui.settlementId = oldUiSettlement;
     };
@@ -2141,21 +2151,19 @@ bool run_dungeon_house_smoke(App& app) {
         return false;
     }
 
-    const float oldX = app.gs.player.x;
-    const float oldY = app.gs.player.y;
+    const float oldX = smoke_player_x(app);
+    const float oldY = smoke_player_y(app);
     const auto oldSubState = app.gs.subState;
     const int oldUiSettlement = app.ui.settlementId;
     auto restore = [&]() {
         if (app.subworld.active()) app.subworld.leave(true);
-        app.gs.player.x = oldX;
-        app.gs.player.y = oldY;
+                smoke_teleport_player(app, int(oldX), int(oldY));
         app.gs.subState = oldSubState;
         app.ui.settlementId = oldUiSettlement;
     };
 
     // Land on the first city: its centre cell is guaranteed houses.
-    app.gs.player.x = float(app.gs.politik.cities[0].x);
-    app.gs.player.y = float(app.gs.politik.cities[0].y);
+        smoke_teleport_player(app, int(float(app.gs.politik.cities[0].x)), int(float(app.gs.politik.cities[0].y)));
     app.gs.subState.settlementId = -1;
     app.ui.settlementId = -1;
     enter_subworld(app);
@@ -2442,7 +2450,7 @@ bool run_dungeon_house_smoke(App& app) {
         sm::Landmark* town = nullptr;
         for (auto& s : app.gs.landmarks) {
             if (s.type != sm::LandmarkType::City) continue;
-            if (s.x == int(app.gs.player.x) && s.y == int(app.gs.player.y)) {
+            if (s.x == int(smoke_player_x(app)) && s.y == int(smoke_player_y(app))) {
                 town = &s;
                 break;
             }
@@ -2604,13 +2612,12 @@ bool run_dungeon_cave_smoke(App& app) {
         smoke_fail(app, "dungeon_cave boot invariants");
         return false;
     }
-    const float oldX = app.gs.player.x;
-    const float oldY = app.gs.player.y;
+    const float oldX = smoke_player_x(app);
+    const float oldY = smoke_player_y(app);
     const auto oldSubState = app.gs.subState;
     auto restore = [&]() {
         if (app.subworld.active()) app.subworld.leave(true);
-        app.gs.player.x = oldX;
-        app.gs.player.y = oldY;
+                smoke_teleport_player(app, int(oldX), int(oldY));
         app.gs.subState = oldSubState;
     };
 
@@ -2640,8 +2647,7 @@ bool run_dungeon_cave_smoke(App& app) {
                 < sm::kMountainBiomeLevel) continue;
             ++tried;
             if (tried > 24) break;                             // bounded hunt
-            app.gs.player.x = float(cx);
-            app.gs.player.y = float(cy);
+                        smoke_teleport_player(app, int(float(cx)), int(float(cy)));
             app.gs.subState.settlementId = -1;
             enter_subworld(app);
             if (!app.subworld.active()) continue;
@@ -2811,13 +2817,12 @@ bool run_prologue_road_smoke(App& app) {
         smoke_fail(app, "prologue_road boot invariants");
         return false;
     }
-    const float oldX = app.gs.player.x;
-    const float oldY = app.gs.player.y;
+    const float oldX = smoke_player_x(app);
+    const float oldY = smoke_player_y(app);
     const auto oldSubState = app.gs.subState;
     auto restore = [&]() {
         if (app.subworld.active()) app.subworld.leave(true);
-        app.gs.player.x = oldX;
-        app.gs.player.y = oldY;
+                smoke_teleport_player(app, int(oldX), int(oldY));
         app.gs.subState = oldSubState;
     };
 
@@ -3005,8 +3010,8 @@ bool run_prologue_road_smoke(App& app) {
     const bool rescued = !app.subworld.active()
         && app.state == sm::ui::AppState::Playing
         && player_pools(app).hp > 0;
-    const bool anchored = app.gs.player.x == oldX
-                       && app.gs.player.y == oldY;
+    const bool anchored = smoke_player_x(app) == oldX
+                       && smoke_player_y(app) == oldY;
     // The witch must actually OPEN — the owner's first playtest died and got
     // NO window, because the rescue emitted its event straight onto the bus
     // after that tick's process_world_events had already flushed and
@@ -3027,8 +3032,7 @@ bool run_prologue_road_smoke(App& app) {
     // holds the map (it still does, behind the witch), the optical sweep —
     // which runs above the pause gate, so nothing else would stop it —
     // must leave the layer untouched.
-    app.gs.player.x = std::fmod(oldX + 300.0f, float(app.gs.mapW));
-    app.gs.player.y = std::fmod(oldY + 300.0f, float(app.gs.mapH));
+        smoke_teleport_player(app, int(std::fmod(oldX + 300.0f, float(app.gs.mapW))), int(std::fmod(oldY + 300.0f, float(app.gs.mapH))));
     const std::uint32_t knowRevOnFreshLand = app.gs.knowledge.revision;
     advance_sim_seconds(app, 0.2f, false);
     const bool mapHeldAtWitch =
@@ -3084,13 +3088,12 @@ bool run_spire_climb_smoke(App& app) {
         smoke_fail(app, "spire_climb boot invariants");
         return false;
     }
-    const float oldX = app.gs.player.x;
-    const float oldY = app.gs.player.y;
+    const float oldX = smoke_player_x(app);
+    const float oldY = smoke_player_y(app);
     const auto oldSubState = app.gs.subState;
     auto restore = [&]() {
         if (app.subworld.active()) app.subworld.leave(true);
-        app.gs.player.x = oldX;
-        app.gs.player.y = oldY;
+                smoke_teleport_player(app, int(oldX), int(oldY));
         app.gs.subState = oldSubState;
     };
 
@@ -3120,8 +3123,7 @@ bool run_spire_climb_smoke(App& app) {
     const int spireId = target->id;
 
     // Stand on the spire's cell and enter its open-air scene.
-    app.gs.player.x = float(target->x);
-    app.gs.player.y = float(target->y);
+        smoke_teleport_player(app, int(float(target->x)), int(float(target->y)));
     app.gs.subState.settlementId = -1;
     enter_subworld(app);
     if (!app.subworld.active()) {
@@ -3389,8 +3391,7 @@ bool run_subworld_enemy_feedback_smoke(App& app) {
         int cellY = 0;
         if (smoke_find_open_subworld_cell(app, cellX, cellY)
             || smoke_find_danger_land_cell(app, cellX, cellY)) {
-            app.gs.player.x = float(cellX);
-            app.gs.player.y = float(cellY);
+                        smoke_teleport_player(app, int(float(cellX)), int(float(cellY)));
             app.gs.subState.settlementId = -1;
             app.ui.settlementId = -1;
         }
@@ -3501,8 +3502,7 @@ bool run_subworld_missile_feedback_smoke(App& app) {
         int cellY = 0;
         if (smoke_find_open_subworld_cell(app, cellX, cellY)
             || smoke_find_danger_land_cell(app, cellX, cellY)) {
-            app.gs.player.x = float(cellX);
-            app.gs.player.y = float(cellY);
+                        smoke_teleport_player(app, int(float(cellX)), int(float(cellY)));
             app.gs.subState.settlementId = -1;
             app.ui.settlementId = -1;
         }
@@ -3636,8 +3636,7 @@ bool run_subworld_self_fireball_smoke(App& app) {
         int cellY = 0;
         if (smoke_find_open_subworld_cell(app, cellX, cellY)
             || smoke_find_danger_land_cell(app, cellX, cellY)) {
-            app.gs.player.x = float(cellX);
-            app.gs.player.y = float(cellY);
+                        smoke_teleport_player(app, int(float(cellX)), int(float(cellY)));
             app.gs.subState.settlementId = -1;
             app.ui.settlementId = -1;
         }
@@ -3739,8 +3738,7 @@ bool run_subworld_player_melee_smoke(App& app) {
         int cellY = 0;
         if (smoke_find_open_subworld_cell(app, cellX, cellY)
             || smoke_find_danger_land_cell(app, cellX, cellY)) {
-            app.gs.player.x = float(cellX);
-            app.gs.player.y = float(cellY);
+                        smoke_teleport_player(app, int(float(cellX)), int(float(cellY)));
             app.gs.subState.settlementId = -1;
             app.ui.settlementId = -1;
         }
@@ -4008,8 +4006,7 @@ bool run_subworld_reputation_hit_smoke(App& app) {
         int cellY = 0;
         if (smoke_find_open_subworld_cell(app, cellX, cellY)
             || smoke_find_danger_land_cell(app, cellX, cellY)) {
-            app.gs.player.x = float(cellX);
-            app.gs.player.y = float(cellY);
+                        smoke_teleport_player(app, int(float(cellX)), int(float(cellY)));
             app.gs.subState.settlementId = -1;
             app.ui.settlementId = -1;
         }
@@ -4213,8 +4210,7 @@ bool run_subworld_mouse_release_smoke(App& app) {
         int cellX = 0;
         int cellY = 0;
         if (smoke_find_open_subworld_cell(app, cellX, cellY)) {
-            app.gs.player.x = float(cellX);
-            app.gs.player.y = float(cellY);
+                        smoke_teleport_player(app, int(float(cellX)), int(float(cellY)));
             app.gs.subState.settlementId = -1;
             app.ui.settlementId = -1;
         }
@@ -4293,8 +4289,7 @@ bool run_subworld_tree_anchor_smoke(App& app) {
     int cellY = 0;
     if (smoke_find_tree_subworld_cell(app, cellX, cellY)
         || smoke_find_open_subworld_cell(app, cellX, cellY)) {
-        app.gs.player.x = float(cellX);
-        app.gs.player.y = float(cellY);
+                smoke_teleport_player(app, int(float(cellX)), int(float(cellY)));
         app.gs.subState.settlementId = -1;
         app.ui.settlementId = -1;
     }
@@ -4481,8 +4476,8 @@ bool run_console_smoke(App& app) {
     // restores the macro anchor the enter/leave cycle moves.
     {
         auto& reg = app.ecs.reg;
-        const float saveX = app.gs.player.x;
-        const float saveY = app.gs.player.y;
+        const float saveX = smoke_player_x(app);
+        const float saveY = smoke_player_y(app);
         auto near_half = [](float a, float b) {
             float d = a - b; if (d < 0.0f) d = -d; return d <= 0.5f;
         };
@@ -4568,9 +4563,9 @@ bool run_console_smoke(App& app) {
         const auto* rcell = reg.try_get<sm::ecs::MacroCell>(rpe);
         if (!rcell
             || !near_half(float(sm::ecs::cell_x(*rcell, app.gs.mapW)),
-                          app.gs.player.x)
+                          smoke_player_x(app))
             || !near_half(float(sm::ecs::cell_y(*rcell, app.gs.mapW)),
-                          app.gs.player.y)) {
+                          smoke_player_y(app))) {
             smoke_fail(app,
                 "macro_player_entity: restored flag Position off scalar");
             return false;
@@ -4585,8 +4580,7 @@ bool run_console_smoke(App& app) {
         // Restore the macro anchor the enter/leave cycle moved (leave() snaps the
         // player to the exit cell), then re-sync the flag so the rest of this
         // console battery sees the original macro position.
-        app.gs.player.x = saveX;
-        app.gs.player.y = saveY;
+                smoke_teleport_player(app, int(saveX), int(saveY));
         sm::ensure_macro_player_entity(app.gs, app.ecs);
     }
 
@@ -4598,8 +4592,8 @@ bool run_console_smoke(App& app) {
     const auto   oldSpellBook    = app.gs.player.spellBook;
     const auto   oldTime         = app.gs.worldTime;
     const float  oldSimSpeed     = app.simSpeed;
-    const float  oldX            = app.gs.player.x;
-    const float  oldY            = app.gs.player.y;
+    const float  oldX            = smoke_player_x(app);
+    const float  oldY            = smoke_player_y(app);
     const auto   oldSubState     = app.gs.subState;
     const int    oldUiSettlement = app.ui.settlementId;
     auto restore = [&]() {
@@ -4621,8 +4615,7 @@ bool run_console_smoke(App& app) {
         app.gs.player.spellBook   = oldSpellBook;
         app.gs.worldTime          = oldTime;
         app.simSpeed              = oldSimSpeed;
-        app.gs.player.x           = oldX;
-        app.gs.player.y           = oldY;
+                smoke_teleport_player(app, int(oldX), int(oldY));
         app.gs.subState           = oldSubState;
         app.ui.settlementId       = oldUiSettlement;
     };
@@ -5406,8 +5399,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 if (const char* mp = std::getenv("TIMAERT_SMOKE_MACROPOS")) {
                     int mx = 0, my = 0;
                     if (std::sscanf(mp, "%d,%d", &mx, &my) == 2) {
-                        app.gs.player.x = float(mx);
-                        app.gs.player.y = float(my);
+                                                smoke_teleport_player(app, int(float(mx)), int(float(my)));
                         std::fprintf(stderr,
                                      "[smoke] macropos relocate -> %d,%d\n",
                                      mx, my);
@@ -5420,8 +5412,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // capture shows mountain relief instead of the spawn city. Test
             // harness only — normal play is unaffected.
             if (!app.subworld.active() && std::getenv("TIMAERT_SMOKE_MOUNTAIN")) {
-                const int pcx = int(app.gs.player.x);
-                const int pcy = int(app.gs.player.y);
+                const int pcx = int(smoke_player_x(app));
+                const int pcy = int(smoke_player_y(app));
                 int bestX = -1, bestY = -1;
                 long bestD = 1L << 60;
                 for (int y = 0; y < app.gs.mapH; ++y) {
@@ -5440,8 +5432,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     }
                 }
                 if (bestX >= 0) {
-                    app.gs.player.x = float(bestX);
-                    app.gs.player.y = float(bestY);
+                                        smoke_teleport_player(app, int(float(bestX)), int(float(bestY)));
                     std::fprintf(stderr, "[smoke] mountain relocate -> %d,%d\n",
                                  bestX, bestY);
                     std::fflush(stderr);
@@ -5451,8 +5442,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // nearest LAND cell with a WATER 4-neighbour, so a capture shows a
             // real coastline (land|water cell seam). Harness only.
             if (!app.subworld.active() && std::getenv("TIMAERT_SMOKE_COAST")) {
-                const int pcx = int(app.gs.player.x);
-                const int pcy = int(app.gs.player.y);
+                const int pcx = int(smoke_player_x(app));
+                const int pcy = int(smoke_player_y(app));
                 auto isLand = [&](int x, int y) {
                     if (x < 0 || y < 0 || x >= app.gs.mapW || y >= app.gs.mapH)
                         return true;  // off-map: treat as land (no relocate)
@@ -5475,8 +5466,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     }
                 }
                 if (bestX >= 0) {
-                    app.gs.player.x = float(bestX);
-                    app.gs.player.y = float(bestY);
+                                        smoke_teleport_player(app, int(float(bestX)), int(float(bestY)));
                     std::fprintf(stderr, "[smoke] coast relocate -> %d,%d\n",
                                  bestX, bestY);
                     std::fflush(stderr);
@@ -5488,8 +5478,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // check that overworld bodies materialise as subworld combat bodies.
             // Harness only; normal play unaffected.
             if (!app.subworld.active() && std::getenv("TIMAERT_SMOKE_NEAR_NPC")) {
-                const int pcx = int(app.gs.player.x);
-                const int pcy = int(app.gs.player.y);
+                const int pcx = int(smoke_player_x(app));
+                const int pcy = int(smoke_player_y(app));
                 int bestX = -1, bestY = -1;
                 long bestD = 1L << 60;
                 for (auto e : app.ecs.reg.view<sm::ecs::MacroNpcRuntime,
@@ -5503,8 +5493,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     if (d < bestD) { bestD = d; bestX = nx; bestY = ny; }
                 }
                 if (bestX >= 0) {
-                    app.gs.player.x = float(bestX);
-                    app.gs.player.y = float(bestY);
+                                        smoke_teleport_player(app, int(float(bestX)), int(float(bestY)));
                     app.gs.subState.settlementId = -1;
                     app.ui.settlementId = -1;
                     std::fprintf(stderr, "[smoke] near_npc relocate -> %d,%d\n",
@@ -5524,10 +5513,14 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             int entrySdx = 0, entrySdy = 0;
             if (const char* ed = std::getenv("TIMAERT_SMOKE_ENTRYDIR")) {
                 int edx = 0, edy = 0, eticks = 0;
-                if (!app.subworld.active()
+                const entt::entity fe = sm::player_flag_entity(app.ecs);
+                sm::ecs::MacroNpcRuntime* frt = fe != entt::null
+                    ? app.ecs.reg.try_get<sm::ecs::MacroNpcRuntime>(fe)
+                    : nullptr;
+                if (!app.subworld.active() && frt
                     && std::sscanf(ed, "%d,%d,%d", &edx, &edy, &eticks) == 3) {
-                    app.gs.player.entryDir = sm::pack_entry_dir(edx, edy);
-                    app.gs.player.entryTicks =
+                    frt->entryDir = sm::pack_entry_dir(edx, edy);
+                    frt->entryTicks =
                         std::uint8_t(std::clamp(eticks, 0, 255));
                     entrySdx = edx;
                     entrySdy = edy;
@@ -5797,7 +5790,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // Relocate onto the nearest persistent macro NPC so the projection is
             // guaranteed a body to possess.
             if (!app.subworld.active()) {
-                const int pcx = int(app.gs.player.x), pcy = int(app.gs.player.y);
+                const int pcx = int(smoke_player_x(app)), pcy = int(smoke_player_y(app));
                 int bestX = -1, bestY = -1;
                 long bestD = 1L << 60;
                 for (auto e : app.ecs.reg.view<sm::ecs::MacroNpcRuntime,
@@ -5814,8 +5807,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     smoke_fail(app, "exit_remap: no macro NPC to project");
                     break;
                 }
-                app.gs.player.x = float(bestX);
-                app.gs.player.y = float(bestY);
+                                smoke_teleport_player(app, int(float(bestX)), int(float(bestY)));
                 app.gs.subState.settlementId = -1;
                 app.ui.settlementId = -1;
                 enter_subworld(app);
@@ -5828,8 +5820,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 auto& reg = app.ecs.reg;
                 // The window centre BEFORE any remap — the default landing cell a
                 // non-possessed exit would snap to.
-                const int ccx = int(app.gs.player.x);
-                const int ccy = int(app.gs.player.y);
+                const int ccx = int(smoke_player_x(app));
+                const int ccy = int(smoke_player_y(app));
                 // Grab a projected body and its (valid, positioned) macro origin.
                 entt::entity body = entt::null, origin = entt::null;
                 for (auto e : reg.view<sm::ecs::SubworldTag, sm::ecs::MacroOrigin>()) {
@@ -5856,8 +5848,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     break;
                 }
                 app.subworld.leave(true);
-                const int gx = int(app.gs.player.x);
-                const int gy = int(app.gs.player.y);
+                const int gx = int(smoke_player_x(app));
+                const int gy = int(smoke_player_y(app));
                 const bool onOrigin  = (gx == ocx && gy == ocy);
                 const bool offCentre = (ocx != ccx || ocy != ccy);
                 std::fprintf(stderr,
@@ -6228,8 +6220,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             }
             smoke_clear_modal_overlays(app);
             const sm::Landmark& s = *firstCity;
-            app.gs.player.x = float(s.x);
-            app.gs.player.y = float(s.y);
+                        smoke_teleport_player(app, int(float(s.x)), int(float(s.y)));
             app.cursor.path.clear();
             app.cursor.pathIdx = 0;
             app.gs.subState.settlementId = s.id;
@@ -6297,8 +6288,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 if (hp.hp <= 0) continue;
                 const auto& pcell = view.get<sm::ecs::MacroCell>(e);
                 const auto& kind = view.get<sm::ecs::NPCKind>(e);
-                app.gs.player.x = float(sm::ecs::cell_x(pcell, app.gs.mapW));
-                app.gs.player.y = float(sm::ecs::cell_y(pcell, app.gs.mapW));
+                                smoke_teleport_player(app, int(float(sm::ecs::cell_x(pcell, app.gs.mapW))), int(float(sm::ecs::cell_y(pcell, app.gs.mapW))));
                 app.cursor.path.clear();
                 app.cursor.pathIdx = 0;
                 app.ui.settlement = false;
@@ -6306,7 +6296,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 std::fprintf(stderr,
                              "[smoke] npc_panel focus type=%d x=%.2f y=%.2f inventory=1\n",
                              int(kind.type),
-                             double(app.gs.player.x), double(app.gs.player.y));
+                             double(smoke_player_x(app)), double(smoke_player_y(app)));
                 std::fflush(stderr);
                 break;
             }
@@ -6345,8 +6335,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 const auto& pcell = view.get<sm::ecs::MacroCell>(e);
                 const auto& kind = view.get<sm::ecs::NPCKind>(e);
                 const auto& bag = view.get<sm::ecs::NpcInventory>(e);
-                app.gs.player.x = float(sm::ecs::cell_x(pcell, app.gs.mapW));
-                app.gs.player.y = float(sm::ecs::cell_y(pcell, app.gs.mapW));
+                                smoke_teleport_player(app, int(float(sm::ecs::cell_x(pcell, app.gs.mapW))), int(float(sm::ecs::cell_y(pcell, app.gs.mapW))));
                 app.cursor.path.clear();
                 app.cursor.pathIdx = 0;
                 target = e;
@@ -6389,8 +6378,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 const auto& hp = view.get<sm::ecs::Pools>(e);
                 if (hp.hp <= 0) continue;
                 const auto& acell = view.get<sm::ecs::MacroCell>(e);
-                app.gs.player.x = float(sm::ecs::cell_x(acell, app.gs.mapW));
-                app.gs.player.y = float(sm::ecs::cell_y(acell, app.gs.mapW));
+                                smoke_teleport_player(app, int(float(sm::ecs::cell_x(acell, app.gs.mapW))), int(float(sm::ecs::cell_y(acell, app.gs.mapW))));
                 target = e;
                 break;
             }
@@ -6423,8 +6411,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             sm::SquadSpec spec{};
             spec.leaderType = sm::NPCType::Peasant;   // neutral: no encounter
             spec.leaderLevel = 3;
-            spec.x = int(app.gs.player.x);
-            spec.y = int(app.gs.player.y);
+            spec.x = int(smoke_player_x(app));
+            spec.y = int(smoke_player_y(app));
             spec.factionIndex = -1;                   // the land decides
             spec.members.push(sm::make_soldier(
                 std::uint8_t(sm::NPCType::Peasant), 2, 0x50000001u));
@@ -6439,8 +6427,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // 3x3 window. Arranging the subject is the harness's job; the
             // LAW under test is the writeback, not spawn placement.
             auto& reg = app.ecs.reg;
-            const int pcx = int(app.gs.player.x);
-            const int pcy = int(app.gs.player.y);
+            const int pcx = int(smoke_player_x(app));
+            const int pcy = int(smoke_player_y(app));
             reg.get<sm::ecs::MacroCell>(leader).idx =
                 sm::ecs::cell_index(pcx, pcy, app.gs.mapW);
             auto& vis = reg.get<sm::ecs::MacroVisual>(leader);
@@ -6487,8 +6475,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             const auto& hcell = reg.get<sm::ecs::MacroCell>(hostile);
-            app.gs.player.x = float(sm::ecs::cell_x(hcell, app.gs.mapW));
-            app.gs.player.y = float(sm::ecs::cell_y(hcell, app.gs.mapW));
+                        smoke_teleport_player(app, int(float(sm::ecs::cell_x(hcell, app.gs.mapW))), int(float(sm::ecs::cell_y(hcell, app.gs.mapW))));
             app.cursor.path.clear();
             app.cursor.pathIdx = 0;
             detect_forced_encounter(app);
@@ -6529,8 +6516,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             Traces traces;
             sm::chronicle_near(
                 app.gs.chronicle,
-                sm::wrapi(int(app.gs.player.x), app.gs.mapW),
-                sm::wrapi(int(app.gs.player.y), app.gs.mapH),
+                sm::wrapi(int(smoke_player_x(app)), app.gs.mapW),
+                sm::wrapi(int(smoke_player_y(app)), app.gs.mapH),
                 /*radiusCells*/1, /*sinceDay*/0,
                 [](void* u, const sm::WorldFact& f) {
                     if (f.kind != std::uint16_t(sm::FactKind::Killed)) return;
@@ -6763,8 +6750,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 if (const char* mp = std::getenv("TIMAERT_SMOKE_MACROPOS")) {
                     int mx = 0, my = 0;
                     if (std::sscanf(mp, "%d,%d", &mx, &my) == 2) {
-                        app.gs.player.x = float(mx);
-                        app.gs.player.y = float(my);
+                                                smoke_teleport_player(app, int(float(mx)), int(float(my)));
                         app.camX = app.camTargetX = float(mx) + 0.5f;
                         app.camY = app.camTargetY = float(my) + 0.5f;
                         std::fprintf(stderr,
@@ -7606,8 +7592,8 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "flight toggle invariant");
                 break;
             }
-            const int sx = int(std::floor(app.gs.player.x));
-            const int sy = int(std::floor(app.gs.player.y));
+            const int sx = int(std::floor(smoke_player_x(app)));
+            const int sy = int(std::floor(smoke_player_y(app)));
             const int gx = sm::wrapi(sx + 17, app.gs.mapW);
             const int gy = sm::wrapi(sy + 9, app.gs.mapH);
             const auto path = build_flight_path(sx, sy, gx, gy,

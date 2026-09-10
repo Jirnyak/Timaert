@@ -20,6 +20,7 @@
 namespace sm {
 struct GameState;
 struct TerrainData;
+namespace ecs { struct World; }
 }
 
 namespace sm::ui {
@@ -51,7 +52,7 @@ float map_fit_zoom(int viewHPx, int mapH);
 // `gs` is mutable for exactly one reason: pins edit gs.markers. `viewW/viewH`
 // and `zoomLogical` in logical points (the page camera's zoom / dpr), like
 // every ImGui surface.
-void draw_map_screen(MapScreenState& st, GameState& gs,
+void draw_map_screen(MapScreenState& st, GameState& gs, ecs::World& world,
                      const TerrainData& terrain, bool* open,
                      int viewW, int viewH, float zoomLogical, float scale);
 

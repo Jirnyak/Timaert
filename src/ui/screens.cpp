@@ -1,4 +1,6 @@
 #include "ui/screens.h"
+
+#include "macro/player_entity.h"
 #include "ui/keymap.h"
 #include "ui/ui_theme.h"   // palette + viewport_size + draw_title_backdrop
 #include "git_hash.h"      // TIMAERT_GIT_HASH, generated per build (CMakeLists)
@@ -510,8 +512,8 @@ ShellResult draw_death_screen(const GameState& gs) {
     return r;
 }
 
-void draw_player_hud(const GameState& gs, const ecs::Pools& pools,
-                     float scale) {
+void draw_player_hud(const GameState& gs, ecs::World& world,
+                     const ecs::Pools& pools, float scale) {
     // Proto_c-style top status bar — single horizontal strip across the
     // full width of the window: Time / HP / MP / SP / Coords / name+level.
     const ecs::Pools& cs = pools;
@@ -568,7 +570,11 @@ void draw_player_hud(const GameState& gs, const ecs::Pools& pools,
     ImGui::SameLine();
     ImGui::TextDisabled("|");
     ImGui::SameLine();
-    ImGui::Text("Pos %4.0f, %4.0f", gs.player.x, gs.player.y);
+    {
+        const ecs::MacroCell* pc = player_flag_cell(world);
+        ImGui::Text("Pos %4d, %4d", pc ? ecs::cell_x(*pc, gs.mapW) : 0,
+                    pc ? ecs::cell_y(*pc, gs.mapW) : 0);
+    }
 
     // Right-aligned: name + level
     char nameBuf[64];

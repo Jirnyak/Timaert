@@ -3,6 +3,7 @@
 #include "ecs/npc_character.h"
 #include "macro/agent_memory.h"
 #include "macro/anatomy.h"
+#include "macro/entry_context.h"
 #include "macro/character_sheet.h"
 #include "macro/faction.h"
 #include "macro/npc.h"
@@ -59,11 +60,20 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
     // subworld by the same rule, with no case for itself.
     entt::entity squad = find_player_squad(world);
     if (squad == entt::null) {
+        // THE spawn cell, derived from the world itself (подпосадка 4 — no
+        // position scalar exists to seed from): the realm's first city, the
+        // map centre when the world has none. A LOADED world never reaches
+        // this branch — the snapshot restores his squad whole.
+        int sx = gs.mapW / 2, sy = gs.mapH / 2;
+        if (!gs.politik.cities.empty()) {
+            sx = gs.politik.cities[0].x;
+            sy = gs.politik.cities[0].y;
+        }
         squad = reg.create();
         reg.emplace<ecs::MacroSpawnId>(squad, ecs::kPlayerSquadOrdinal);
-        reg.emplace<ecs::MacroCell>(squad, ecs::cell_index(
-            int(gs.player.x), int(gs.player.y), gs.mapW));
-        reg.emplace<ecs::MacroVisual>(squad, gs.player.x, gs.player.y, 0.0f);
+        reg.emplace<ecs::MacroCell>(squad,
+                                    ecs::cell_index(sx, sy, gs.mapW));
+        reg.emplace<ecs::MacroVisual>(squad, float(sx), float(sy), 0.0f);
         reg.emplace<ecs::NPCKind>(
             squad, std::uint16_t(NPCType::Adventurer),
             std::uint16_t(faction_index(kPlayerFactionId)));
@@ -89,8 +99,8 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
         ecs::MacroNpcRuntime rt{};
         rt.homeSettlementId = -1;
         rt.targetSettlementId = -1;
-        rt.targetX = gs.player.x;
-        rt.targetY = gs.player.y;
+        rt.targetX = float(sx);
+        rt.targetY = float(sy);
         rt.state = std::uint8_t(NPCState::Idle);
         {
             // One assembly of what stands on him, used for both halves: the
@@ -114,16 +124,11 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
     // so the mark has to be re-stamped every time this door is walked through.
     reg.emplace_or_replace<ecs::PlayerSquadTag>(squad);
 
-    // ── Position, projected EVERY walk ────────────────────────────────────
-    // PlayerState is still the authoritative store for WHERE he stands (the
-    // last scalar of the merge). The bars are NOT projected any more — the
-    // Pools on this entity IS the store (landing 4), and the block below only
-    // keeps the sheet's derivatives honest.
-    //
-    // No +0.5 on the position — Position is the raw cell coordinate, and the
-    // overlay applies the render centring.
-    reg.emplace_or_replace<ecs::MacroCell>(squad, ecs::cell_index(
-        int(gs.player.x), int(gs.player.y), gs.mapW));
+    // ── No position projection any more ──────────────────────────────────
+    // The MacroCell on this entity IS where he stands (подпосадка 4): the
+    // walker steps it, the jump door writes it, the snapshot restores it.
+    // The scalar mirror this block used to re-project died with v88 — the
+    // anaesthesia-bridge of §41 root 4.
     reg.emplace_or_replace<ecs::NpcLevel>(
         squad, std::int16_t(std::max(1, gs.player.sheet.levelData.level)));
     // The SAME door every lord's numbers go through (squad.h) — the sheet is

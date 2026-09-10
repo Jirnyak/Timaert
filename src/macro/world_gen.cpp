@@ -352,17 +352,12 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     }
 
     if (p.anchorPlayer) {
-        if (!citiesFlat.empty()) {
-            gs.player.x = float(citiesFlat[0].x);
-            gs.player.y = float(citiesFlat[0].y);
-        } else {
-            gs.player.x = float(gs.mapW / 2);
-            gs.player.y = float(gs.mapH / 2);
-        }
-        // macro-4a: materialise the player's persistent PlayerTag flag on the
-        // macro map (Position + PlayerTag). The macro tick re-heals it
-        // thereafter; doing it here makes the invariant hold immediately
-        // after genesis, before the first tick.
+        // macro-4a: materialise the player's persistent squad + flag on the
+        // macro map. The spawn cell is derived INSIDE the creation door
+        // (first city of the realm, map centre when the world has none) —
+        // there is no player position scalar to seed since подпосадка 4.
+        // The macro tick re-heals the invariant thereafter; doing it here
+        // makes it hold immediately after genesis, before the first tick.
         ensure_macro_player_entity(gs, *out.world);
     }
 }

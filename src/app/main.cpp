@@ -410,11 +410,16 @@ const sm::Landmark* settlement_by_id(const sm::GameState& gs, int id) {
     return (lm && lm->type == sm::LandmarkType::City) ? lm : nullptr;
 }
 
-int settlement_at_player(const sm::GameState& gs, float radius = 3.0f) {
+int settlement_at_player(const sm::GameState& gs, sm::ecs::World& world,
+                         float radius = 3.0f) {
+    const sm::ecs::MacroCell* pc = sm::player_flag_cell(world);
+    if (!pc) return -1;
+    const float px = float(sm::ecs::cell_x(*pc, gs.mapW));
+    const float py = float(sm::ecs::cell_y(*pc, gs.mapW));
     const float r2 = radius * radius;
     for (const auto& s : gs.landmarks) {
         if (s.type != sm::LandmarkType::City) continue;
-        if (sm::torus_dist_sq(gs.player.x, gs.player.y,
+        if (sm::torus_dist_sq(px, py,
                               float(s.x), float(s.y),
                               float(gs.mapW), float(gs.mapH)) <= r2) {
             return s.id;
@@ -424,7 +429,7 @@ int settlement_at_player(const sm::GameState& gs, float radius = 3.0f) {
 }
 
 void refresh_player_settlement(App& app) {
-    const int id = settlement_at_player(app.gs);
+    const int id = settlement_at_player(app.gs, app.ecs);
     const int previousId = app.gs.subState.settlementId;
     if (id == previousId) return;
     if (previousId >= 0) {
@@ -716,9 +721,14 @@ const PreBattleAction kPreBattleActions[] = {
              // failed search leaves you where you stand — graced, but they
              // may catch you again.
              const auto& ec = app.ecs.reg.get<sm::ecs::MacroCell>(npc);
-             float dx = app.gs.player.x
+             const sm::ecs::MacroCell* pcell =
+                 sm::player_flag_cell(app.ecs);
+             if (!pcell) return true;
+             const int pcx = sm::ecs::cell_x(*pcell, app.gs.mapW);
+             const int pcy = sm::ecs::cell_y(*pcell, app.gs.mapW);
+             float dx = float(pcx)
                  - float(sm::ecs::cell_x(ec, app.gs.mapW));
-             float dy = app.gs.player.y
+             float dy = float(pcy)
                  - float(sm::ecs::cell_y(ec, app.gs.mapW));
              const float mw = float(app.gs.mapW), mh = float(app.gs.mapH);
              if (dx > mw * 0.5f) dx -= mw;
@@ -742,14 +752,13 @@ const PreBattleAction kPreBattleActions[] = {
              };
              for (float away = 2.0f; away >= 1.0f; away -= 1.0f) {
                  const int tx = sm::wrapi(
-                     int(std::floor(app.gs.player.x + dx / len * away)),
+                     int(std::floor(float(pcx) + dx / len * away)),
                      app.gs.mapW);
                  const int ty = sm::wrapi(
-                     int(std::floor(app.gs.player.y + dy / len * away)),
+                     int(std::floor(float(pcy) + dy / len * away)),
                      app.gs.mapH);
                  if (!land(tx, ty)) continue;
-                 app.gs.player.x = float(tx);
-                 app.gs.player.y = float(ty);
+                 sm::player_jump_to_cell(app.gs, app.ecs, tx, ty);
                  app.cursor.path.clear();
                  app.cursor.pathIdx = 0;
                  break;
@@ -796,8 +805,10 @@ void detect_forced_encounter(App& app) {
     if (app.gs.subState.kind != sm::GameSubStateKind::Exploring) return;
     if (modal_overlay_active(app)) return;
     auto& reg = app.ecs.reg;
-    const int px = sm::wrapi(int(std::floor(app.gs.player.x)), app.gs.mapW);
-    const int py = sm::wrapi(int(std::floor(app.gs.player.y)), app.gs.mapH);
+    const sm::ecs::MacroCell* pcell = sm::player_flag_cell(app.ecs);
+    if (!pcell) return;
+    const int px = sm::ecs::cell_x(*pcell, app.gs.mapW);
+    const int py = sm::ecs::cell_y(*pcell, app.gs.mapW);
 
     // A graced squad stops gracing the moment the two part cells.
     if (app.encounterGraceNpc != entt::null) {
@@ -934,8 +945,9 @@ void emit_player_move(App& app, float prevX, float prevY, float dist) {
     sm::GameEvent ev{sm::EventTag::PlayerMove};
     ev.fx = prevX;
     ev.fy = prevY;
-    ev.ix = sm::wrapi(int(std::floor(app.gs.player.x)), app.gs.mapW);
-    ev.iy = sm::wrapi(int(std::floor(app.gs.player.y)), app.gs.mapH);
+    const sm::ecs::MacroCell* evc = sm::player_flag_cell(app.ecs);
+    ev.ix = evc ? sm::ecs::cell_x(*evc, app.gs.mapW) : 0;
+    ev.iy = evc ? sm::ecs::cell_y(*evc, app.gs.mapW) : 0;
     ev.a = std::uint32_t(std::max(0.0f, dist) * 1000.0f);
     app.bus.emit(ev);
     refresh_player_settlement(app);
@@ -985,35 +997,19 @@ void charge_macro_walk_cell(void* user, int x, int y) {
 MacroWalkChargeResult step_macro_walk_with_travel_cost(App& app,
                                                        float dt,
                                                        float cellsPerSec) {
-    const float prevX = app.gs.player.x;
-    const float prevY = app.gs.player.y;
+    const sm::ecs::MacroCell* before = sm::player_flag_cell(app.ecs);
+    const float prevX = before ? float(sm::ecs::cell_x(*before, app.gs.mapW))
+                               : 0.0f;
+    const float prevY = before ? float(sm::ecs::cell_y(*before, app.gs.mapW))
+                               : 0.0f;
     MacroWalkChargeContext charge{&app, {}};
-    sm::ui::step_macro_walk(app.gs, app.cursor, dt, cellsPerSec,
-                            charge_macro_walk_cell, &charge);
-
-    float ddx = app.gs.player.x - prevX;
-    float ddy = app.gs.player.y - prevY;
-    if (ddx >  app.gs.mapW * 0.5f) ddx -= float(app.gs.mapW);
-    if (ddx < -app.gs.mapW * 0.5f) ddx += float(app.gs.mapW);
-    if (ddy >  app.gs.mapH * 0.5f) ddy -= float(app.gs.mapH);
-    if (ddy < -app.gs.mapH * 0.5f) ddy += float(app.gs.mapH);
-    const float dist = std::sqrt(ddx * ddx + ddy * ddy);
-
-    // Entry-side stamp (macro/entry_context.h): when this frame's walk crossed
-    // a cell boundary, record the side it crossed from — the same two bytes a
-    // macro NPC's try_move stamps, read by SubworldEngine::enter.
-    const int pcx = sm::wrapi(int(std::floor(prevX)), app.gs.mapW);
-    const int pcy = sm::wrapi(int(std::floor(prevY)), app.gs.mapH);
-    const int ncx = sm::wrapi(int(std::floor(app.gs.player.x)), app.gs.mapW);
-    const int ncy = sm::wrapi(int(std::floor(app.gs.player.y)), app.gs.mapH);
-    if (ncx != pcx || ncy != pcy) {
-        const int sdx = ddx > 0.0f ? 1 : (ddx < 0.0f ? -1 : 0);
-        const int sdy = ddy > 0.0f ? 1 : (ddy < 0.0f ? -1 : 0);
-        app.gs.player.entryDir = sm::pack_entry_dir(sdx, sdy);
-        app.gs.player.entryTicks = 0;
-        app.gs.player.entryTickAccum = 0;
-    }
-    emit_player_move(app, prevX, prevY, dist);
+    const std::size_t stepped =
+        sm::ui::step_macro_walk(app.gs, app.ecs, app.cursor, dt, cellsPerSec,
+                                charge_macro_walk_cell, &charge);
+    // Distance travelled = whole cells stepped: the march law prices every
+    // cell at 1.0 (try_move), and the walker stamped the entry edge per
+    // step itself — nothing to re-derive from coordinates here.
+    emit_player_move(app, prevX, prevY, float(stepped));
     return charge.result;
 }
 
@@ -1027,8 +1023,11 @@ float macro_cell_cost_weight(const App& app) {
         || pc.costGrid.size() != std::size_t(pc.width) * std::size_t(pc.height)) {
         return 1.0f;
     }
-    const int cx = sm::wrapi(int(std::floor(app.gs.player.x)), pc.width);
-    const int cy = sm::wrapi(int(std::floor(app.gs.player.y)), pc.height);
+    const sm::ecs::MacroCell* pcell = sm::player_flag_cell(
+        const_cast<App&>(app).ecs);
+    if (!pcell) return 1.0f;
+    const int cx = sm::wrapi(sm::ecs::cell_x(*pcell, app.gs.mapW), pc.width);
+    const int cy = sm::wrapi(sm::ecs::cell_y(*pcell, app.gs.mapW), pc.height);
     return pc.costGrid[std::size_t(cy) * std::size_t(pc.width) + std::size_t(cx)];
 }
 
@@ -1043,8 +1042,11 @@ bool player_can_make_camp(const App& app) {
         || pc.water.size() != std::size_t(pc.width) * std::size_t(pc.height)) {
         return true;   // no grid yet: nothing says he cannot
     }
-    const int cx = sm::wrapi(int(std::floor(app.gs.player.x)), pc.width);
-    const int cy = sm::wrapi(int(std::floor(app.gs.player.y)), pc.height);
+    const sm::ecs::MacroCell* pcell = sm::player_flag_cell(
+        const_cast<App&>(app).ecs);
+    if (!pcell) return true;
+    const int cx = sm::wrapi(sm::ecs::cell_x(*pcell, app.gs.mapW), pc.width);
+    const int cy = sm::wrapi(sm::ecs::cell_y(*pcell, app.gs.mapW), pc.height);
     return pc.water[std::size_t(cy) * std::size_t(pc.width)
                     + std::size_t(cx)] == 0u;
 }
@@ -1641,8 +1643,10 @@ void boot_world(App& app, std::uint32_t seed,
     // +0.5 in macro_overlay.cpp lines up with this so the player +
     // every NPC render at their cell centre, never at the cell
     // crossing. (The player himself is anchored by generate_macro_world.)
-    app.camX = app.camTargetX = app.gs.player.x + 0.5f;
-    app.camY = app.camTargetY = app.gs.player.y + 0.5f;
+    if (const sm::ecs::MacroVisual* pv = sm::player_flag_visual(app.ecs)) {
+        app.camX = app.camTargetX = pv->vx + 0.5f;
+        app.camY = app.camTargetY = pv->vy + 0.5f;
+    }
     app.camPanX = app.camPanY = 0;
     boot_trace("camera anchored");
     // The starter kit is DEALT INTO HIS BAG, which is a container on his squad
@@ -1660,7 +1664,7 @@ void boot_world(App& app, std::uint32_t seed,
     if (app.gs.subState.kind == sm::GameSubStateKind::Exploring
         && app.gs.subState.settlementId < 0) {
         boot_trace("settlement lookup start");
-        app.gs.subState.settlementId = settlement_at_player(app.gs);
+        app.gs.subState.settlementId = settlement_at_player(app.gs, app.ecs);
         boot_trace("settlement lookup done");
     }
     app.ui.settlementId = app.gs.subState.settlementId;
@@ -1812,8 +1816,8 @@ bool boot_world_from_save(App& app, const std::string& path) {
     sm::restore_macro_ecs(loadedMacro, app.ecs, app.gs);
 
     // TODO: rebuild_landmarks (PHASE C — landmark glyphs/lights).
-    app.camX = app.camTargetX = app.gs.player.x + 0.5f;
-    app.camY = app.camTargetY = app.gs.player.y + 0.5f;
+    // Camera anchor moved BELOW ensure_: the restored flag holder is the
+    // anchor, and it exists only after the restore has been healed over.
     // The restore above brought the player's squad AND the flag back verbatim
     // (v87: PlayerTag is an honest byte of the possessed record — no
     // re-derivation, no second store). ensure_ is a heal pass here, not a
@@ -1821,7 +1825,11 @@ bool boot_world_from_save(App& app, const std::string& path) {
     // restored one — the very defect SAVE-5 named was this call finding a
     // load-path husk instead.
     sm::ensure_macro_player_entity(app.gs, app.ecs);
-    app.gs.subState.settlementId = settlement_at_player(app.gs);
+    if (const sm::ecs::MacroVisual* pv = sm::player_flag_visual(app.ecs)) {
+        app.camX = app.camTargetX = pv->vx + 0.5f;
+        app.camY = app.camTargetY = pv->vy + 0.5f;
+    }
+    app.gs.subState.settlementId = settlement_at_player(app.gs, app.ecs);
     app.ui.settlementId = app.gs.subState.settlementId;
 
     // boot_world() above derived every field from the SEED's virgin world; we
@@ -1987,8 +1995,13 @@ void emit_spell_cast(App& app, const std::string& id,
     // deep-copied into the tick buffer and the history for no reader at all.)
     (void)reason;
     ev.ix = ok ? 1 : 0;
-    ev.fx = app.subworld.active() ? app.subworld.player_x() : app.gs.player.x;
-    ev.fy = app.subworld.active() ? app.subworld.player_y() : app.gs.player.y;
+    if (app.subworld.active()) {
+        ev.fx = app.subworld.player_x();
+        ev.fy = app.subworld.player_y();
+    } else if (const sm::ecs::MacroCell* pc = sm::player_flag_cell(app.ecs)) {
+        ev.fx = float(sm::ecs::cell_x(*pc, app.gs.mapW));
+        ev.fy = float(sm::ecs::cell_y(*pc, app.gs.mapW));
+    }
     ev.a = sm::stable_spell_id(id);
     ev.b = std::uint32_t(cooldown * 1000.0f);
     app.bus.emit(ev);
@@ -2781,8 +2794,10 @@ void update_camera(App& app, float dt) {
         app.camPanX *= decay;
         app.camPanY *= decay;
     }
-    app.camTargetX = app.gs.player.x + 0.5f + app.camPanX;
-    app.camTargetY = app.gs.player.y + 0.5f + app.camPanY;
+    if (const sm::ecs::MacroVisual* pv = sm::player_flag_visual(app.ecs)) {
+        app.camTargetX = pv->vx + 0.5f + app.camPanX;
+        app.camTargetY = pv->vy + 0.5f + app.camPanY;
+    }
     const float a = 1.0f - std::exp(-dt * 8.0f);
     // The camera follows across the SHORT way, because the world is a torus and
     // there is no long way (CANON.md S1). Without this the player's step from
@@ -3172,9 +3187,14 @@ void process_world_events(App& app) {
     app.appliedCombatEventCount = 0;
     app.appliedSpawnEventCount = 0;
     app.logic.tick(app.bus, app.gs.player);
-    app.quests.tick(app.activeQuests, app.bus, app.gs,
-                    sm::player_inventory(app.ecs),
-                    sm::player_head(app.ecs));
+    {
+        const sm::ecs::MacroCell* qc = sm::player_flag_cell(app.ecs);
+        app.quests.tick(app.activeQuests, app.bus, app.gs,
+                        sm::player_inventory(app.ecs),
+                        sm::player_head(app.ecs),
+                        qc ? sm::ecs::cell_x(*qc, app.gs.mapW) : 0,
+                        qc ? sm::ecs::cell_y(*qc, app.gs.mapW) : 0);
+    }
     // Refresh the derived quest-marker pins only when the active-quest set
     // actually changed. tick() runs every render frame; the rebuild allocates,
     // so the signature guard keeps steady-state frames allocation-free.
@@ -3230,10 +3250,13 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     // world the player has not arrived in yet, and a map filling itself in
     // behind that scene is the immersion leak the owner caught in playtest 2.
     if (!app.revealMapOn && !app.sceneHoldsMap) {
-        sm::update_player_sight(app.gs.knowledge, app.sightRt,
-                                optical_world(app),
-                                app.gs.player.x, app.gs.player.y,
-                                player_sight_budget_cells());
+        if (const sm::ecs::MacroCell* pc = sm::player_flag_cell(app.ecs)) {
+            sm::update_player_sight(app.gs.knowledge, app.sightRt,
+                                    optical_world(app),
+                                    float(sm::ecs::cell_x(*pc, app.gs.mapW)),
+                                    float(sm::ecs::cell_y(*pc, app.gs.mapW)),
+                                    player_sight_budget_cells());
+        }
     }
     // Refresh u_knowledgeMap (binding 5) the moment the layer moved — here,
     // not in the ticked section, because the first sweep of a fresh boot or
@@ -3429,15 +3452,23 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // The other half of the geometric meeting: a squad may have stepped
         // onto the PLAYER's cell during its own think.
         detect_forced_encounter(app);
-        // The player's time-in-cell advances on the same kAiTicks cadence the
-        // NPC counter uses (prepare_macro_npc_tick), and on the same clock — a
-        // cell crossing resets it in step_macro_walk_with_travel_cost.
-        app.gs.player.entryTickAccum +=
-            std::uint32_t(stats.timeTick.ticksAdvanced);
-        while (app.gs.player.entryTickAccum >= sm::kAiTicks) {
-            app.gs.player.entryTickAccum -= sm::kAiTicks;
-            app.gs.player.entryTicks =
-                sm::saturate_entry_ticks(app.gs.player.entryTicks);
+        // The flag holder's time-in-cell advances on the same kAiTicks
+        // cadence the NPC counter uses, ON THE SAME FIELDS: the input-driven
+        // squad is excluded from the AI sweep, so its rt.tickAccum is this
+        // driver's clock (подпосадка 4 — «тот же закон, ИИ тут это инпуты»).
+        // A cell crossing resets it in step_macro_walk.
+        if (const entt::entity fe = sm::player_flag_entity(app.ecs);
+            fe != entt::null) {
+            if (auto* frt =
+                    app.ecs.reg.try_get<sm::ecs::MacroNpcRuntime>(fe)) {
+                frt->tickAccum +=
+                    std::uint32_t(stats.timeTick.ticksAdvanced);
+                while (frt->tickAccum >= sm::kAiTicks) {
+                    frt->tickAccum -= sm::kAiTicks;
+                    frt->entryTicks =
+                        sm::saturate_entry_ticks(frt->entryTicks);
+                }
+            }
         }
         app.npcAi.sweepAccum = 0;
         app.npcAi.pendingSweeps = 0;
@@ -3735,9 +3766,11 @@ void register_console_commands(App& app) {
                 c.printfln(Lvl::Ok, "subworld pos = %.1f, %.1f  (cam height %.1f m)",
                            app.subworld.player_x(), app.subworld.player_y(),
                            app.subworld.cam_height_m());
-            else
-                c.printfln(Lvl::Ok, "macro pos = %.1f, %.1f",
-                           app.gs.player.x, app.gs.player.y);
+            else if (const sm::ecs::MacroCell* pc =
+                         sm::player_flag_cell(app.ecs))
+                c.printfln(Lvl::Ok, "macro cell = %d, %d",
+                           sm::ecs::cell_x(*pc, app.gs.mapW),
+                           sm::ecs::cell_y(*pc, app.gs.mapW));
             return true;
         });
 
@@ -3797,9 +3830,9 @@ void register_console_commands(App& app) {
             } else {
                 if (x < 0) x = 0; if (x > float(app.gs.mapW - 1)) x = float(app.gs.mapW - 1);
                 if (y < 0) y = 0; if (y > float(app.gs.mapH - 1)) y = float(app.gs.mapH - 1);
-                app.gs.player.x = x;
-                app.gs.player.y = y;
-                c.printfln(Lvl::Ok, "teleported (macro) to %.1f, %.1f", x, y);
+                sm::player_jump_to_cell(app.gs, app.ecs, int(x), int(y));
+                c.printfln(Lvl::Ok, "teleported (macro) to cell %d, %d",
+                           int(x), int(y));
             }
             return true;
         });
@@ -3821,8 +3854,7 @@ void register_console_commands(App& app) {
                         && console_icontains(s.name, q)) { found = &s; break; }
             }
             if (!found) { c.error("no settlement matching '" + a[0] + "'"); return true; }
-            app.gs.player.x = float(found->x);
-            app.gs.player.y = float(found->y);
+            sm::player_jump_to_cell(app.gs, app.ecs, found->x, found->y);
             if (app.subworld.active())
                 c.warn("leave the subworld (Enter) for the macro teleport to take effect");
             c.printfln(Lvl::Ok, "teleported to %s (id %d) at %d, %d",
@@ -3904,8 +3936,11 @@ void register_console_commands(App& app) {
                     return true;
                 }
             }
-            spec.x = int(std::floor(app.gs.player.x));
-            spec.y = int(std::floor(app.gs.player.y));
+            {
+                const sm::ecs::MacroCell* pc = sm::player_flag_cell(app.ecs);
+                spec.x = pc ? sm::ecs::cell_x(*pc, app.gs.mapW) : 0;
+                spec.y = pc ? sm::ecs::cell_y(*pc, app.gs.mapW) : 0;
+            }
             // Row ids in a console-made roster: a private id space (high two
             // bits 01) so they can never collide with garrison ids (high bit
             // 1) or quest/hire ids.
@@ -4879,7 +4914,11 @@ void draw_debug_panels(App& app) {
         if (ImGui::Begin("Game state", &app.panels.gameState)) {
             const auto& p = app.gs.player;
             ImGui::SeparatorText("Player");
-            ImGui::Text("pos     %.1f, %.1f", double(p.x), double(p.y));
+            if (const sm::ecs::MacroCell* pc = sm::player_flag_cell(app.ecs)) {
+                ImGui::Text("cell    %d, %d",
+                            sm::ecs::cell_x(*pc, app.gs.mapW),
+                            sm::ecs::cell_y(*pc, app.gs.mapW));
+            }
             ImGui::Text("coin    %d", wallet_value(player_bag(app)));
             ImGui::Text("level   %d   (exp %d / %d)",
                         p.sheet.levelData.level, p.sheet.levelData.exp, p.sheet.levelData.expToNext);
@@ -5416,8 +5455,13 @@ void frame(App& app, int simSteps) {
                         sm::ui::map_fit_zoom(app.height, app.gs.mapH)
                         * kMacroZoomMax);
                 }
-                app.mapScreen.camX = app.gs.player.x + 0.5f;
-                app.mapScreen.camY = app.gs.player.y + 0.5f;
+                if (const sm::ecs::MacroCell* pc =
+                        sm::player_flag_cell(app.ecs)) {
+                    app.mapScreen.camX =
+                        float(sm::ecs::cell_x(*pc, app.gs.mapW)) + 0.5f;
+                    app.mapScreen.camY =
+                        float(sm::ecs::cell_y(*pc, app.gs.mapW)) + 0.5f;
+                }
             }
             app.mapScreen.wasOpen = mapOpen;
             const float rCamX = mapOpen ? app.mapScreen.camX : app.camX;
@@ -5452,7 +5496,7 @@ void frame(App& app, int simSteps) {
         // click is the pin toggle.
         const bool mapOpen = macro_map_open(app);
         if (mapOpen) {
-            sm::ui::draw_map_screen(app.mapScreen, app.gs, app.terrain,
+            sm::ui::draw_map_screen(app.mapScreen, app.gs, app.ecs, app.terrain,
                                     &app.ui.map, logicalW, logicalH,
                                     app.mapScreen.zoom / dpr,
                                     app.uiSettings.scale(sm::ui::UiElementId::PanelMap));
@@ -5478,8 +5522,9 @@ void frame(App& app, int simSteps) {
         // Resolve a click → pathfind here so the overlay stays purely visual.
         if (app.cursor.requestPath) {
             app.cursor.requestPath = false;
-            int sx = int(std::floor(app.gs.player.x));
-            int sy = int(std::floor(app.gs.player.y));
+            const sm::ecs::MacroCell* origin = sm::player_flag_cell(app.ecs);
+            int sx = origin ? sm::ecs::cell_x(*origin, app.gs.mapW) : 0;
+            int sy = origin ? sm::ecs::cell_y(*origin, app.gs.mapW) : 0;
             if (sm::spellbook_rule_active(app.gs.player.spellBook,
                                           sm::SpellRuleId::Flight)) {
                 app.cursor.path = build_flight_path(sx, sy,
@@ -5532,7 +5577,7 @@ void frame(App& app, int simSteps) {
         {
             const bool modalActive = modal_overlay_active(app);
             if (app.uiSettings.visible(sm::ui::UiElementId::PlayerHud))
-                sm::ui::draw_player_hud(app.gs, player_pools(app), app.uiSettings.scale(sm::ui::UiElementId::PlayerHud));
+                sm::ui::draw_player_hud(app.gs, app.ecs, player_pools(app), app.uiSettings.scale(sm::ui::UiElementId::PlayerHud));
             if (!modalActive)
             {
                 sm::ui::ToolbarResult tb{};
@@ -5835,7 +5880,7 @@ void frame(App& app, int simSteps) {
         }
         case sm::ui::AppState::Menu:
             if (app.uiSettings.visible(sm::ui::UiElementId::PlayerHud))
-                sm::ui::draw_player_hud(app.gs, player_pools(app), app.uiSettings.scale(sm::ui::UiElementId::PlayerHud));
+                sm::ui::draw_player_hud(app.gs, app.ecs, player_pools(app), app.uiSettings.scale(sm::ui::UiElementId::PlayerHud));
             shell = sm::ui::draw_game_menu();
             break;
         case sm::ui::AppState::Dead:

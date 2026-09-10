@@ -17,6 +17,8 @@
 #include "macro/map_generator.h"   // LayerParameters
 #include "macro/save.h"            // SaveSummary
 
+namespace sm::ecs { struct World; }
+
 namespace sm {
 struct GameState;
 }
@@ -153,10 +155,11 @@ ShellResult draw_death_screen(const GameState& gs);
 
 // Top-left player HUD: HP / MP / SP bars, gold, day/time, level, position.
 // `pools` — THE store of his bars (the ordinary ecs::Pools on his squad
-// entity, landing 4); the HUD is a reader like any other and is handed the
-// block rather than reaching for a scalar copy that no longer exists.
-void draw_player_hud(const GameState& gs, const ecs::Pools& pools,
-                     float scale = 1.0f);
+// entity, landing 4); `world` — where he STANDS is his flag holder's cell
+// (подпосадка 4): the HUD is a reader like any other, handed the stores
+// rather than scalar copies that no longer exist.
+void draw_player_hud(const GameState& gs, ecs::World& world,
+                     const ecs::Pools& pools, float scale = 1.0f);
 
 // Proto_c-style bottom command toolbar — visual buttons that emit
 // semantic intents the app loop translates into actions.

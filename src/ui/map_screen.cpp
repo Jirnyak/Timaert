@@ -5,6 +5,7 @@
 #include "macro/landmark_registry.h"
 #include "macro/map_generator.h"
 #include "macro/markers.h"
+#include "macro/player_entity.h"
 #include "macro/state.h"
 #include "ui/landmark_draw.h"
 #include "ui/screens.h"
@@ -108,7 +109,7 @@ float map_fit_zoom(int viewHPx, int mapH) {
     return float(viewHPx) / float(mapH);
 }
 
-void draw_map_screen(MapScreenState& st, GameState& gs,
+void draw_map_screen(MapScreenState& st, GameState& gs, ecs::World& world,
                      const TerrainData& terrain, bool* open,
                      int viewW, int viewH, float zoomLogical, float scale) {
     if (!open || !*open) return;
@@ -215,9 +216,11 @@ void draw_map_screen(MapScreenState& st, GameState& gs,
     }
 
     // ── The player — a position mark, not a figure: cyan ring + crosshair
-    // (the old panel's mark, at page scale).
-    {
-        const ImVec2 p = to_screen(gs.player.x + 0.5f, gs.player.y + 0.5f, st,
+    // (the old panel's mark, at page scale). The mark stands on the flag
+    // holder's CELL — the map is a chart of truths, not of glides.
+    if (const ecs::MacroCell* pc = player_flag_cell(world)) {
+        const ImVec2 p = to_screen(float(ecs::cell_x(*pc, mapW)) + 0.5f,
+                                   float(ecs::cell_y(*pc, mapW)) + 0.5f, st,
                                    zoomLogical, viewW, viewH, mapW, mapH);
         const ImU32 cy = IM_COL32(80, 240, 240, 255);
         const float r = std::max(4.0f, zoomLogical * 0.35f);
@@ -263,7 +266,12 @@ void draw_map_screen(MapScreenState& st, GameState& gs,
                          | ImGuiWindowFlags_NoCollapse)) {
         ImGui::SetWindowFontScale(scale);
         ImGui::Text("%d x %d   Seed 0x%X", gs.mapW, gs.mapH, gs.worldSeed);
-        ImGui::Text("Position %.0f, %.0f", gs.player.x, gs.player.y);
+        {
+            const ecs::MacroCell* pc = player_flag_cell(world);
+            ImGui::Text("Position %d, %d",
+                        pc ? ecs::cell_x(*pc, mapW) : 0,
+                        pc ? ecs::cell_y(*pc, mapW) : 0);
+        }
         ImGui::Text("Charted %.2f%%", exploredPct);
         ImGui::Separator();
 

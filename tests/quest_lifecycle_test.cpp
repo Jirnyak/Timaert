@@ -31,6 +31,13 @@ namespace sm { std::vector<int> shuffled_order(Rng& rng); }
 
 namespace {
 
+// The player's macro CELL, handed to QuestEngine::tick the way the app
+// hands the flag holder's decoded MacroCell (подпосадка 4): the engine
+// does not reach into the ECS, and PlayerState no longer carries x/y.
+int g_playerCellX = 0;
+int g_playerCellY = 0;
+
+
 // THE fixture's container. The quest engine and the effect applicator are
 // handed a bag now instead of reaching into PlayerState for one (the player's
 // bag is an ordinary NpcInventory on his squad entity), so a headless test
@@ -557,9 +564,11 @@ void test_quest_xp_reward_levels_the_player() {
     sm::Quest q{};
     q.title = "Paid in experience";
     q.category = sm::QuestCategory::Procedural;
+    g_playerCellX = 0;   // the fixture stands him at (0,0) explicitly —
+    g_playerCellY = 0;   // file-scope cell state survives earlier tests
     sm::Objective done{};
     done.kind = sm::ObjectiveKind::VisitCell;
-    done.ix = 0; done.iy = 0; done.radius = 4.0f;   // player starts at (0,0)
+    done.ix = 0; done.iy = 0; done.radius = 4.0f;
     q.objectives.push_back(done);
     sm::Reward xp{};
     xp.kind = sm::RewardKind::Xp;
@@ -570,7 +579,7 @@ void test_quest_xp_reward_levels_the_player() {
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
     active.push_back(q);
-    engine.tick(active, bus, gs, &bag, &head);
+    engine.tick(active, bus, gs, &bag, &head, g_playerCellX, g_playerCellY);
 
     CHECK_OR_RETURN(active.empty(), "the reward quest did not complete");
     CHECK_OR_RETURN(!(gs.player.sheet.levelData.level != 4),
@@ -1075,8 +1084,8 @@ void test_quest_failed_settles_its_offer() {
     gs.mapW = 128;
     gs.mapH = 128;
     gs.worldTime = sm::world_time_at(10, 6, 0);
-    gs.player.x = 1.0f;
-    gs.player.y = 1.0f;
+        g_playerCellX = 1;
+    g_playerCellY = 1;
 
     sm::Quest q{};
     q.ordinal = 42u;
@@ -1098,7 +1107,7 @@ void test_quest_failed_settles_its_offer() {
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
     active.push_back(q);
-    engine.tick(active, bus, gs, &bag, &head);
+    engine.tick(active, bus, gs, &bag, &head, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(!active.empty()),
         "expired quest was not removed");
     CHECK_OR_RETURN(!(!has_tag(bus, sm::EventTag::QuestFail)),
@@ -1131,7 +1140,7 @@ void test_quest_failed_settles_its_offer() {
     // The day turns: this offer can never be generated again (its bornDay is
     // part of its identity), so the settled memory prunes itself.
     gs.worldTime = sm::world_time_at(11, 6, 0);
-    engine.tick(active, bus, gs, &bag, &head);
+    engine.tick(active, bus, gs, &bag, &head, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(!gs.player.settledQuestOffers.empty()),
         "yesterday's settled offer was not pruned with its day");
 }
@@ -1143,8 +1152,8 @@ void test_item_delivery_direct_path() {
     gs.mapW = 128;
     gs.mapH = 128;
     gs.worldTime = sm::world_time_at(0, 6, 0);
-    gs.player.x = 12.0f;
-    gs.player.y = 18.0f;
+        g_playerCellX = 12;
+    g_playerCellY = 18;
     bag.add("wood", 3);
 
     sm::Landmark settlement{};
@@ -1179,7 +1188,7 @@ void test_item_delivery_direct_path() {
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
     active.push_back(q);
-    engine.tick(active, bus, gs, &bag, &head);
+    engine.tick(active, bus, gs, &bag, &head, g_playerCellX, g_playerCellY);
 
     CHECK_OR_RETURN(!(!active.empty()),
         "delivery quest did not complete from inventory condition");
@@ -1204,8 +1213,8 @@ void test_quest_reward_dispatch_order_and_application() {
     gs.mapW = 128;
     gs.mapH = 128;
     gs.worldTime = sm::world_time_at(0, 6, 0);
-    gs.player.x = 10.0f;
-    gs.player.y = 10.0f;
+        g_playerCellX = 10;
+    g_playerCellY = 10;
     bag.add("coin_empire", 20);
     gs.player.sheet.levelData = sm::default_level_data();
     gs.player.sheet.levelData.exp = 0;
@@ -1263,7 +1272,7 @@ void test_quest_reward_dispatch_order_and_application() {
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
     active.push_back(q);
-    engine.tick(active, bus, gs, &bag, &head);
+    engine.tick(active, bus, gs, &bag, &head, g_playerCellX, g_playerCellY);
 
     const auto& events = bus.tick_events();
     CHECK_OR_RETURN(!(!active.empty() || events.size() != 4),
@@ -1339,7 +1348,7 @@ void test_find_location_player_move_objective() {
     move.iy = 33;
     bus.emit(move);
     bus.flush();
-    engine.tick(active, bus, gs, &bag, &head);
+    engine.tick(active, bus, gs, &bag, &head, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(!active.empty()),
         "PlayerMove did not complete FindLocation");
 }
@@ -1351,8 +1360,8 @@ void test_visit_cell_objective() {
     gs.mapW = 128;
     gs.mapH = 128;
     gs.worldTime = sm::world_time_at(0, 6, 0);
-    gs.player.x = 40.0f;
-    gs.player.y = 50.0f;
+        g_playerCellX = 40;
+    g_playerCellY = 50;
 
     sm::Quest q{};
     q.title = "Visit Cell";
@@ -1370,7 +1379,7 @@ void test_visit_cell_objective() {
     std::vector<sm::Quest> active;
     active.push_back(q);
     bus.flush();
-    engine.tick(active, bus, gs, &bag, &head);
+    engine.tick(active, bus, gs, &bag, &head, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(!active.empty() || !has_tag(bus, sm::EventTag::QuestComplete)),
         "VisitCell did not complete from player radius");
 }
@@ -1382,8 +1391,8 @@ void test_quest_completion_order_matches_ts_reverse_scan() {
     gs.mapW = 128;
     gs.mapH = 128;
     gs.worldTime = sm::world_time_at(0, 6, 0);
-    gs.player.x = 10.0f;
-    gs.player.y = 10.0f;
+        g_playerCellX = 10;
+    g_playerCellY = 10;
 
     auto make_visit = [](std::uint32_t ordinal, const char* title) {
         sm::Quest q{};
@@ -1407,7 +1416,7 @@ void test_quest_completion_order_matches_ts_reverse_scan() {
     active.push_back(make_visit(2u, "q_high"));
 
     bus.flush();
-    engine.tick(active, bus, gs, &bag, &head);
+    engine.tick(active, bus, gs, &bag, &head, g_playerCellX, g_playerCellY);
 
     std::vector<std::uint32_t> completed;
     for (const auto& ev : bus.tick_events()) {
@@ -1429,8 +1438,8 @@ void test_wait_at_timeadvance_objective() {
     gs.mapW = 128;
     gs.mapH = 128;
     gs.worldTime = sm::world_time_at(0, 6, 0);
-    gs.player.x = 12.0f;
-    gs.player.y = 18.0f;
+        g_playerCellX = 12;
+    g_playerCellY = 18;
 
     sm::Quest q{};
     q.title = "Wait At";
@@ -1453,7 +1462,7 @@ void test_wait_at_timeadvance_objective() {
     compressedLegacy.ix = 2;
     bus.emit(compressedLegacy);
     bus.flush();
-    engine.tick(active, bus, gs, &bag, &head);
+    engine.tick(active, bus, gs, &bag, &head, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(active.empty() || has_tag(bus, sm::EventTag::QuestComplete)
         || active[0].objectives[0].hoursWaited != 1),
         "WaitAt treated one TimeAdvance event as more than one TS hour");
@@ -1465,7 +1474,7 @@ void test_wait_at_timeadvance_objective() {
     anotherHour.ix = 1;
     bus.emit(anotherHour);
     bus.flush();
-    engine.tick(active, bus, gs, &bag, &head);
+    engine.tick(active, bus, gs, &bag, &head, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(!active.empty() || !has_tag(bus, sm::EventTag::QuestComplete)),
         "WaitAt did not complete after required TimeAdvance");
 }
@@ -1512,7 +1521,7 @@ void test_destroy_npc_objective() {
     bus.emit(impostor);
     bus.emit(kindless);
     bus.flush();
-    engine.tick(active, bus, gs, &bag, &head);
+    engine.tick(active, bus, gs, &bag, &head, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(active.size() != 1),
         "DestroyNpc counted an entity handle / a kindless body as a kill");
     CHECK_OR_RETURN(!(active[0].objectives[0].killed != 1),
@@ -1524,7 +1533,7 @@ void test_destroy_npc_objective() {
     secondReal.ix = 2;
     bus.emit(secondReal);
     bus.flush();
-    engine.tick(active, bus, gs, &bag, &head);
+    engine.tick(active, bus, gs, &bag, &head, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(!active.empty() || !has_tag(bus, sm::EventTag::QuestComplete)),
         "DestroyNpc did not complete on kills of the wanted type");
 }
@@ -1559,7 +1568,7 @@ void test_interact_cell_objective() {
     elsewhere.iy = 12;
     bus.emit(elsewhere);
     bus.flush();
-    engine.tick(active, bus, gs, &bag, &head);
+    engine.tick(active, bus, gs, &bag, &head, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(active.size() != 1),
         "InteractCell completed on an event from a different cell");
 
@@ -1568,7 +1577,7 @@ void test_interact_cell_objective() {
     edit.iy = 11;
     bus.emit(edit);
     bus.flush();
-    engine.tick(active, bus, gs, &bag, &head);
+    engine.tick(active, bus, gs, &bag, &head, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(!active.empty() || !has_tag(bus, sm::EventTag::QuestComplete)),
         "InteractCell did not consume WorldCellChange payload");
 }
@@ -1782,8 +1791,8 @@ void test_generated_delivery_quest_flow() {
     gs.mapW = 128;
     gs.mapH = 128;
     gs.worldTime = sm::world_time_at(0, 6, 0);
-    gs.player.x = 12.0f;
-    gs.player.y = 18.0f;
+        g_playerCellX = 12;
+    g_playerCellY = 18;
     bag.add("coin_empire", 100);
 
     sm::Landmark settlement{};
@@ -1851,7 +1860,7 @@ void test_generated_delivery_quest_flow() {
         "accept applied reward before completion");
 
     bus.flush();
-    engine.tick(active, bus, gs, &bag, &head);
+    engine.tick(active, bus, gs, &bag, &head, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(!active.empty()),
         "delivery items did not complete generated quest");
     CHECK_OR_RETURN(!(!has_tag(bus, sm::EventTag::QuestComplete)),
