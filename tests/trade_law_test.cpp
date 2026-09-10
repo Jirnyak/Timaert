@@ -78,7 +78,7 @@ int main() {
         auto& reg = w.reg;
         const auto e = reg.create();
         reg.emplace<ecs::Position>(e, 60.0f, 32.0f, 0.0f);
-        reg.emplace<ecs::VisualPos>(e, 60.0f, 32.0f, 0.0f);
+        reg.emplace<ecs::MacroVisual>(e, 60.0f, 32.0f, 0.0f);
         reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Caravan),
                                   std::uint16_t(faction_index("timaert")));
         ecs::MacroNpcRuntime rt{};

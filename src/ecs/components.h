@@ -18,8 +18,17 @@ namespace sm::ecs {
 // sub::kSeaLevelM ≈ 600 m — the whole vertical model is sub/height.h.
 struct Position { float x, y, z; };
 
-// Smoothed render position (for visual interpolation).
+// Smoothed render position (for visual interpolation) — SCENE units (tiles
+// of the composite window; the scale split, 2026-09-10). Scene bodies only.
 struct VisualPos { float vx, vy, speed; };
+
+// The macro twin — CELL units (map cells per second in `speed`). Same three
+// floats, split by SCALE, not by shape: one component carrying both units
+// let the scene's interpolator drag ~16k squads in the wrong space (the
+// systems.cpp hole beside SUB-1). Macro squads only; the scene physically
+// cannot see it. Rides the macro snapshot byte-for-byte where VisualPos did
+// (identical layout — the save format did not move).
+struct MacroVisual { float vx, vy, speed; };
 
 // THE POOLS OF A BODY — moved to its own entt-free header (ecs/pools.h) so
 // the recovery law and the stamina bookkeeping compile without the component

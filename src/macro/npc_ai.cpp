@@ -3876,13 +3876,13 @@ void tick_macro_npc_ai(MacroWorld& mw,
 void tick_macro_npc_visuals(ecs::World& w, int mapW, int mapH, float dt) {
     if (mapW <= 0 || mapH <= 0 || dt <= 0.0f) return;
 
-    auto view = w.reg.view<ecs::Position, ecs::VisualPos,
+    auto view = w.reg.view<ecs::Position, ecs::MacroVisual,
                            ecs::MacroNpcRuntime, ecs::Pools>(
         entt::exclude<ecs::Dead, ecs::SubworldTag, ecs::PlayerTag,
                       ecs::PlayerSquadTag>);  // player drawn by its own marker (Inc 5e-2)
     for (auto e : view) {
         const auto& p = view.get<ecs::Position>(e);
-        auto& v = view.get<ecs::VisualPos>(e);
+        auto& v = view.get<ecs::MacroVisual>(e);
         const auto& rt = view.get<ecs::MacroNpcRuntime>(e);
         const auto& hp = view.get<ecs::Pools>(e);
         if (hp.hp <= 0 || !std::isfinite(v.vx) || !std::isfinite(v.vy)) {

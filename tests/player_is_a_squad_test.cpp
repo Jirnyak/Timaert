@@ -36,7 +36,7 @@ entt::entity npc_squad(ecs::World& w, float x, float y, std::uint32_t ordinal,
     auto& reg = w.reg;
     const entt::entity e = reg.create();
     reg.emplace<ecs::Position>(e, x, y, 0.0f);
-    reg.emplace<ecs::VisualPos>(e, x, y, 0.0f);
+    reg.emplace<ecs::MacroVisual>(e, x, y, 0.0f);
     reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Bandit),
                               std::uint16_t(faction_index("bandits")));
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(2));
@@ -72,7 +72,7 @@ void test_player_carries_everything_a_squad_carries() {
     // The snapshot's view (macro/macro_snapshot.cpp) names exactly this set —
     // if the player misses one, he is not saved, and a save that forgets the
     // player's own army is the loudest bug this merge could ship.
-    CHECK((w.reg.all_of<ecs::MacroSpawnId, ecs::Position, ecs::VisualPos,
+    CHECK((w.reg.all_of<ecs::MacroSpawnId, ecs::Position, ecs::MacroVisual,
                         ecs::NPCKind, ecs::Pools, ecs::NpcLevel,
                         ecs::MacroNpcRuntime, ecs::NpcTraits,
                         ecs::NpcCharacter, ecs::NpcInventory,

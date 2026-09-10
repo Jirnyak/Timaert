@@ -367,7 +367,7 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
             const auto& kind = view.get<ecs::NPCKind>(e);
             const auto& hp   = view.get<ecs::Pools>(e);
             if (hp.hp <= 0) continue;
-            const ecs::VisualPos* visual = w.reg.try_get<ecs::VisualPos>(e);
+            const ecs::MacroVisual* visual = w.reg.try_get<ecs::MacroVisual>(e);
             const float drawX = visual ? visual->vx : pos.x;
             const float drawY = visual ? visual->vy : pos.y;
             // A living walker is the WORLD, not the map: memory keeps no

@@ -53,7 +53,7 @@ entt::entity make_woodcutter(ecs::World& w, float x, float y,
     auto& reg = w.reg;
     const auto e = reg.create();
     reg.emplace<ecs::Position>(e, x, y, 0.0f);
-    reg.emplace<ecs::VisualPos>(e, x, y, 0.0f);
+    reg.emplace<ecs::MacroVisual>(e, x, y, 0.0f);
     reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Woodcutter),
                               std::uint16_t(faction_index("timaert")));
     ecs::MacroNpcRuntime rt{};
@@ -175,7 +175,7 @@ void test_the_farmer_works_the_field() {
     auto& reg = w.reg;
     const auto e = reg.create();
     reg.emplace<ecs::Position>(e, 10.0f, 10.0f, 0.0f);
-    reg.emplace<ecs::VisualPos>(e, 10.0f, 10.0f, 0.0f);
+    reg.emplace<ecs::MacroVisual>(e, 10.0f, 10.0f, 0.0f);
     reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Peasant),
                               std::uint16_t(faction_index("timaert")));
     ecs::MacroNpcRuntime prt{};
@@ -245,7 +245,7 @@ void test_farmer_without_terrain_conjures_nothing() {
     auto& reg = w.reg;
     const auto e = reg.create();
     reg.emplace<ecs::Position>(e, 10.0f, 10.0f, 0.0f);
-    reg.emplace<ecs::VisualPos>(e, 10.0f, 10.0f, 0.0f);
+    reg.emplace<ecs::MacroVisual>(e, 10.0f, 10.0f, 0.0f);
     reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Peasant),
                               std::uint16_t(faction_index("timaert")));
     ecs::MacroNpcRuntime prt{};
@@ -343,7 +343,7 @@ void test_the_mine_runs_while_the_player_is_away() {
     auto& reg = w.reg;
     const auto e = reg.create();
     reg.emplace<ecs::Position>(e, 10.0f, 10.0f, 0.0f);
-    reg.emplace<ecs::VisualPos>(e, 10.0f, 10.0f, 0.0f);
+    reg.emplace<ecs::MacroVisual>(e, 10.0f, 10.0f, 0.0f);
     reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Miner),
                               std::uint16_t(faction_index("timaert")));
     ecs::MacroNpcRuntime rt{};
@@ -460,7 +460,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
     auto& reg = w.reg;
     const auto e = reg.create();
     reg.emplace<ecs::Position>(e, 16.0f, 10.0f, 0.0f);
-    reg.emplace<ecs::VisualPos>(e, 16.0f, 10.0f, 0.0f);
+    reg.emplace<ecs::MacroVisual>(e, 16.0f, 10.0f, 0.0f);
     reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Vendor),
                               std::uint16_t(faction_index("timaert")));
     ecs::MacroNpcRuntime crt{};
@@ -564,7 +564,7 @@ void test_the_miner_works_the_vein() {
     auto& reg = w.reg;
     const auto e = reg.create();
     reg.emplace<ecs::Position>(e, 10.0f, 10.0f, 0.0f);
-    reg.emplace<ecs::VisualPos>(e, 10.0f, 10.0f, 0.0f);
+    reg.emplace<ecs::MacroVisual>(e, 10.0f, 10.0f, 0.0f);
     reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Miner),
                               std::uint16_t(faction_index("timaert")));
     ecs::MacroNpcRuntime rt{};
@@ -641,7 +641,7 @@ void test_the_miner_works_the_vein() {
     ecs::World w2;
     const auto e2 = w2.reg.create();
     w2.reg.emplace<ecs::Position>(e2, 10.0f, 10.0f, 0.0f);
-    w2.reg.emplace<ecs::VisualPos>(e2, 10.0f, 10.0f, 0.0f);
+    w2.reg.emplace<ecs::MacroVisual>(e2, 10.0f, 10.0f, 0.0f);
     w2.reg.emplace<ecs::NPCKind>(e2, std::uint16_t(NPCType::Miner),
                                  std::uint16_t(faction_index("timaert")));
     w2.reg.emplace<ecs::MacroNpcRuntime>(e2, rt);

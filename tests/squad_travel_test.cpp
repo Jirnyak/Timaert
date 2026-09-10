@@ -60,7 +60,7 @@ entt::entity make_walker(ecs::World& w, float x, float y,
                          int maxSp, int hp = 100) {
     auto e = w.reg.create();
     w.reg.emplace<ecs::Position>(e, x, y, 0.0f);
-    w.reg.emplace<ecs::VisualPos>(e, x, y, 0.0f);
+    w.reg.emplace<ecs::MacroVisual>(e, x, y, 0.0f);
     w.reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Caravan),
                                 std::uint16_t{0});
     ecs::MacroNpcRuntime rt{};

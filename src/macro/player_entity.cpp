@@ -62,7 +62,7 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
         squad = reg.create();
         reg.emplace<ecs::MacroSpawnId>(squad, ecs::kPlayerSquadOrdinal);
         reg.emplace<ecs::Position>(squad, gs.player.x, gs.player.y, 0.0f);
-        reg.emplace<ecs::VisualPos>(squad, gs.player.x, gs.player.y, 0.0f);
+        reg.emplace<ecs::MacroVisual>(squad, gs.player.x, gs.player.y, 0.0f);
         reg.emplace<ecs::NPCKind>(
             squad, std::uint16_t(NPCType::Adventurer),
             std::uint16_t(faction_index(kPlayerFactionId)));

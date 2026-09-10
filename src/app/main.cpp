@@ -5197,13 +5197,13 @@ void trace_macro_npc_visuals(App& app, int ticksAdvanced) {
     int  npcs = 0, gliding = 0, moved = 0;
     float maxGap = 0.0f;
     entt::entity sample = entt::null;
-    auto view = app.ecs.reg.view<sm::ecs::Position, sm::ecs::VisualPos,
+    auto view = app.ecs.reg.view<sm::ecs::Position, sm::ecs::MacroVisual,
                                  sm::ecs::MacroNpcRuntime>(
         entt::exclude<sm::ecs::Dead, sm::ecs::SubworldTag,
                       sm::ecs::PlayerTag, sm::ecs::PlayerSquadTag>);
     for (auto e : view) {
         const auto& p = view.get<sm::ecs::Position>(e);
-        const auto& v = view.get<sm::ecs::VisualPos>(e);
+        const auto& v = view.get<sm::ecs::MacroVisual>(e);
         ++npcs;
         const float gap = sm::torus_dist(p.x, p.y, v.vx, v.vy,
                                          float(app.gs.mapW),
@@ -5226,7 +5226,7 @@ void trace_macro_npc_visuals(App& app, int ticksAdvanced) {
     int   sstate = -1;
     if (sample != entt::null) {
         const auto& p = app.ecs.reg.get<sm::ecs::Position>(sample);
-        const auto& v = app.ecs.reg.get<sm::ecs::VisualPos>(sample);
+        const auto& v = app.ecs.reg.get<sm::ecs::MacroVisual>(sample);
         const auto& rt = app.ecs.reg.get<sm::ecs::MacroNpcRuntime>(sample);
         px = p.x; py = p.y; vx = v.vx; vy = v.vy;
         vspeed = rt.visualSpeed;

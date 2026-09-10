@@ -62,7 +62,7 @@ entt::entity make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
                       std::uint32_t& spawnIndex, int levelOverride = -1) {
     auto e = w.reg.create();
     w.reg.emplace<ecs::Position>(e, float(x), float(y), 0.0f);
-    w.reg.emplace<ecs::VisualPos>(e, float(x), float(y), 0.0f);
+    w.reg.emplace<ecs::MacroVisual>(e, float(x), float(y), 0.0f);
     w.reg.emplace<ecs::NPCKind>(e, std::uint16_t(type), factionIdx);
 
     const auto& def = npc_def(type);

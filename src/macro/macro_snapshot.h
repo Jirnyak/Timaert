@@ -27,7 +27,7 @@ struct GameState;
 struct MacroNpcRecord {
     ecs::MacroSpawnId    spawnId{};
     ecs::Position        pos{};
-    ecs::VisualPos       visual{};
+    ecs::MacroVisual       visual{};
     ecs::NPCKind         kind{};
     ecs::Pools           pools{};
     ecs::NpcLevel        level{};

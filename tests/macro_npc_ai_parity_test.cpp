@@ -44,7 +44,7 @@ entt::entity spawn_ai(sm::ecs::World& world,
                       int sp = 100) {
     auto e = world.reg.create();
     world.reg.emplace<sm::ecs::Position>(e, x, y, 0.0f);
-    world.reg.emplace<sm::ecs::VisualPos>(e, x, y, 0.0f);
+    world.reg.emplace<sm::ecs::MacroVisual>(e, x, y, 0.0f);
     world.reg.emplace<sm::ecs::NPCKind>(e, std::uint16_t(type), std::uint16_t{0});
 
     sm::ecs::MacroNpcRuntime rt{};
@@ -377,7 +377,7 @@ void test_resting_recovery_prevents_permanent_stall() {
 void test_macro_visual_smoothing_and_snap() {
     sm::ecs::World world;
     auto e = spawn_ai(world, sm::NPCType::Peasant, 12.0f, 10.0f, -1);
-    auto& visual = world.reg.get<sm::ecs::VisualPos>(e);
+    auto& visual = world.reg.get<sm::ecs::MacroVisual>(e);
     auto& rt = world.reg.get<sm::ecs::MacroNpcRuntime>(e);
     visual.vx = 10.0f;
     visual.vy = 10.0f;

@@ -726,7 +726,7 @@ bool run_subworld_recovery_smoke(App& app) {
     float wPx = 0.0f, wPy = 0.0f, wVx = 0.0f, wVy = 0.0f;
     for (auto [e, rt, p, v, pools] :
          app.ecs.reg.view<sm::ecs::MacroNpcRuntime, sm::ecs::Position,
-                          sm::ecs::VisualPos, sm::ecs::Pools>(
+                          sm::ecs::MacroVisual, sm::ecs::Pools>(
              entt::exclude<sm::ecs::PlayerSquadTag,
                            sm::ecs::Dead>).each()) {
         (void)rt;
@@ -784,7 +784,7 @@ bool run_subworld_recovery_smoke(App& app) {
     // wounded macro squad exactly where the map put it, visual included.
     if (scaleWitness != entt::null && app.ecs.reg.valid(scaleWitness)) {
         const auto& p = app.ecs.reg.get<sm::ecs::Position>(scaleWitness);
-        const auto& v = app.ecs.reg.get<sm::ecs::VisualPos>(scaleWitness);
+        const auto& v = app.ecs.reg.get<sm::ecs::MacroVisual>(scaleWitness);
         if (p.x != wPx || p.y != wPy || v.vx != wVx || v.vy != wVy) {
             std::fprintf(stderr,
                          "[smoke] scale witness moved: pos %.2f,%.2f -> "
@@ -1664,7 +1664,7 @@ entt::entity smoke_find_macro_npc_trace_target(App& app) {
     entt::entity fallback = entt::null;
     auto view = app.ecs.reg.view<sm::ecs::Position, sm::ecs::NPCKind,
                                  sm::ecs::MacroNpcRuntime,
-                                 sm::ecs::Pools, sm::ecs::VisualPos>(
+                                 sm::ecs::Pools, sm::ecs::MacroVisual>(
         entt::exclude<sm::ecs::Dead, sm::ecs::SubworldTag,
                       sm::ecs::PlayerSquadTag>);
     for (auto e : view) {
@@ -1703,7 +1703,7 @@ bool run_macro_npc_trace_smoke(App& app) {
     auto& kind = app.ecs.reg.get<sm::ecs::NPCKind>(e);
     auto& rt = app.ecs.reg.get<sm::ecs::MacroNpcRuntime>(e);
     auto& hp = app.ecs.reg.get<sm::ecs::Pools>(e);
-    auto& visual = app.ecs.reg.get<sm::ecs::VisualPos>(e);
+    auto& visual = app.ecs.reg.get<sm::ecs::MacroVisual>(e);
 
     // The trace lane must be QUIET: the trace measures rest and march
     // MECHANICS, and any other squad within perception range can lawfully
@@ -6391,7 +6391,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             auto& pos = reg.get<sm::ecs::Position>(leader);
             pos.x = app.gs.player.x;
             pos.y = app.gs.player.y;
-            auto& vis = reg.get<sm::ecs::VisualPos>(leader);
+            auto& vis = reg.get<sm::ecs::MacroVisual>(leader);
             vis.vx = pos.x;
             vis.vy = pos.y;
             auto& rt = reg.get<sm::ecs::MacroNpcRuntime>(leader);

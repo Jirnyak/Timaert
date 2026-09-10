@@ -55,7 +55,7 @@ entt::entity make_squad_at(ecs::World& w, NPCType type, const char* faction,
     auto& reg = w.reg;
     const auto e = reg.create();
     reg.emplace<ecs::Position>(e, x, y, 0.0f);
-    reg.emplace<ecs::VisualPos>(e, x, y, 0.0f);
+    reg.emplace<ecs::MacroVisual>(e, x, y, 0.0f);
     reg.emplace<ecs::NPCKind>(e, std::uint16_t(type),
                               std::uint16_t(faction_index(faction)));
     ecs::MacroNpcRuntime rt{};
