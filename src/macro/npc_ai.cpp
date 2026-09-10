@@ -3185,9 +3185,13 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
     //    return to the landmark. Collect first, destroy after — the
     //    registry is never mutated under its own view.
     std::vector<entt::entity> done;
+    // exclude<Dead>: a dead crew at its home cell is NOT a crew coming home —
+    // it is a corpse-row awaiting the drain (AI-2). Without the exclusion a
+    // dead leader and his dead men dissolved into the landmark as living
+    // souls (and, on a garrison row, dead records marched into the garrison).
     for (auto [e, kind, rt, p]
          : reg.view<ecs::NPCKind, ecs::MacroNpcRuntime,
-                    ecs::Position>().each()) {
+                    ecs::Position>(entt::exclude<ecs::Dead>).each()) {
         if (!is_crew(kind.type)) continue;
         if (rt.state != std::uint8_t(NS::Idle)) continue;
         const int row = row_of(rt.homeSettlementId);
@@ -3787,6 +3791,34 @@ static TickContext make_tick_context(MacroWorld& mw,
     return ctx;
 }
 
+namespace {
+
+// THE settlement of the dead, shared by both tick drivers (AI-2; owner
+// 2026-09-10: «мёртвые не должны стоять вообще», survivors to the pool
+// UNIVERSALLY). The pool CAN refuse (kMaxSquadMembers) — and a refusal used
+// to leave the dead lord's band standing until the daily rotation returned
+// dead souls to a village as living population. Now the refusal UNLOADS the
+// pool on the spot through the very door the daily sim uses
+// (raise_deserter_bands: the freshest men walk off as a bandit band), then
+// drains again. Terminates by conservation: every pass either fails to
+// raise (spawn refused — the honest stderr case) or moves at least one man
+// out of a dead roster. Spawning here is safe: both drivers call this AFTER
+// their sweep, где никто не держит ссылок на компоненты (грабля посадки 4:
+// спавн реаллоцирует хранилище).
+void settle_dead_squads(MacroWorld& mw) {
+    GameState& gs = *mw.gs;
+    ecs::World& w = *mw.world;
+    drain_dead_leader_squads(w, gs.deserterPool);
+    while (mw.terrain && dead_rosters_remain(w)) {
+        if (raise_deserter_bands(gs, w, *mw.terrain,
+                                 gs.worldTime.day()) <= 0) break;
+        if (drain_dead_leader_squads(w, gs.deserterPool) <= 0) break;
+    }
+    destroy_dead_macro_squads(w, &gs.lootPoolValue);
+}
+
+} // namespace
+
 void tick_macro_npc_ai(MacroWorld& mw,
                        MacroNpcAiRuntime& runtime, std::uint64_t ticks,
                        bool allowAutoBattle) {
@@ -3838,8 +3870,7 @@ void tick_macro_npc_ai(MacroWorld& mw,
     // it also catches a dead=1 roster a save carried across the sweep
     // window), then the drained corpse-rows leave the map. Deferred to HERE
     // because the settle doors' callers still hold the entities mid-tick.
-    drain_dead_leader_squads(w, gs.deserterPool);
-    destroy_dead_macro_squads(w, &gs.lootPoolValue);
+    settle_dead_squads(mw);
 }
 
 void tick_macro_npc_visuals(ecs::World& w, int mapW, int mapH, float dt) {
@@ -3997,8 +4028,7 @@ MacroNpcAiSliceResult tick_macro_npc_ai_budgeted(
     // macro clock ticks underground too, and a lord felled down there must
     // leave the map by the same law. (The positional sweep cursor already
     // tolerates the view shrinking — every death mid-sweep shrinks it.)
-    drain_dead_leader_squads(w, gs.deserterPool);
-    destroy_dead_macro_squads(w, &gs.lootPoolValue);
+    settle_dead_squads(mw);
     result.backlog = result.backlog || runtime.pendingSweeps > 0;
     return result;
 }

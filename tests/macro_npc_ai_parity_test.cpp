@@ -10,6 +10,7 @@
 #include "check.h"
 
 #include "macro/npc_ai.h"
+#include "macro/map_generator.h"
 #include "macro/recovery.h"
 #include "macro/resource_field.h"
 #include "ecs/components.h"
@@ -492,6 +493,115 @@ void test_a_marching_body_does_not_mend() {
 
 } // namespace
 
+// ── AI-2: мёртвые не стоят ────────────────────────────────────────────────
+// Owner verdict (2026-09-10): a killed squad's men go to the deserter pool
+// UNIVERSALLY, and a full pool is not an excuse — it is UNLOADED on the spot
+// (raise_deserter_bands, the very door the daily sim uses) until the dead
+// are drained. Before this, a war-filled pool refused the drain, the dead
+// lord's band stood on the map, and the next daily rotation returned dead
+// souls to a village as living population.
+void test_a_full_pool_is_unloaded_on_the_spot() {
+    sm::GameState gs{};
+    gs.mapW = 8;
+    gs.mapH = 8;
+    gs.worldSeed = 7u;
+    // An 8×8 all-land world, the travel-test idiom: alpha 255 = dry footing,
+    // height above the sea, so find_valid_spawn always has somewhere to put
+    // a raised band.
+    sm::TerrainData terrain;
+    terrain.width = 8;
+    terrain.height = 8;
+    terrain.rgba.assign(8u * 8u * 4u, 255u);
+    for (std::size_t i = 0; i < 8u * 8u; ++i) terrain.rgba[i * 4u] = 180u;
+
+    sm::ecs::World world;
+    // The pool at its ceiling — a world mid-war.
+    while (!gs.deserterPool.full()) {
+        gs.deserterPool.push(
+            sm::make_soldier(std::uint16_t(sm::NPCType::Peasant), 2, 9000u));
+    }
+    // A dead lord whose band survived him, killed this very tick.
+    const auto e = spawn_ai(world, sm::NPCType::Bandit, 3.0f, 3.0f, -1);
+    world.reg.emplace<sm::ecs::MacroSpawnId>(e, 55u);
+    auto& roster = world.reg.emplace<sm::ecs::SquadRoster>(e);
+    constexpr int kBandSize = 12;
+    for (int i = 0; i < kBandSize; ++i) {
+        roster.squad.push(
+            sm::make_soldier(std::uint16_t(sm::NPCType::Bandit), 3,
+                             100u + std::uint32_t(i)));
+    }
+    world.reg.emplace<sm::ecs::Dead>(e);
+    const int soulsBefore = gs.deserterPool.size() + kBandSize;
+
+    sm::MacroNpcAiRuntime runtime;
+    sm::reset_macro_npc_ai_runtime(runtime, 1u);
+    sm::MacroWorld mw{.gs = &gs, .world = &world, .terrain = &terrain};
+    sm::tick_macro_npc_ai(mw, runtime, sm::kAiTicks);
+
+    CHECK(!world.reg.valid(e),
+          "the dead squad LEFT the map this tick — a full pool is no excuse");
+    // Conservation: every living soul is either in the pool or walking in a
+    // raised band (its leader entity + its roster).
+    int walking = 0;
+    for (auto [be, br] : world.reg.view<sm::ecs::SquadRoster>().each()) {
+        (void)be;
+        walking += 1 + br.squad.size();
+    }
+    CHECK(gs.deserterPool.size() + walking == soulsBefore,
+          "souls are conserved: pool + raised bands hold every man");
+    CHECK(walking > 0,
+          "negative control: the unload actually raised a band to make room");
+}
+
+// The rotation half of the same defect: the dissolve view took any Idle crew
+// at home — dead included — and paid its souls back to the landmark (or, for
+// a garrison row, pushed dead records into the garrison). A dead crew is not
+// a crew coming home; it is a corpse-row awaiting the drain.
+void test_rotation_does_not_dissolve_the_dead() {
+    sm::GameState gs{};
+    gs.mapW = 128;
+    gs.mapH = 128;
+    gs.landmarks.push_back(settlement(1, 50, 50));
+    sm::TerrainData terrain;
+    terrain.width = 8;
+    terrain.height = 8;
+    terrain.rgba.assign(8u * 8u * 4u, 255u);
+    for (std::size_t i = 0; i < 8u * 8u; ++i) terrain.rgba[i * 4u] = 180u;
+
+    sm::ecs::World world;
+    // A DEAD guard crew standing at its home city, Idle — the exact state
+    // the dissolve used to swallow.
+    const auto dead = spawn_ai(world, sm::NPCType::Guard, 50.0f, 50.0f, 1);
+    world.reg.emplace<sm::ecs::MacroSpawnId>(dead, 77u);
+    auto& deadRoster = world.reg.emplace<sm::ecs::SquadRoster>(dead);
+    deadRoster.squad.push(
+        sm::make_soldier(std::uint16_t(sm::NPCType::Guard), 2, 200u));
+    world.reg.emplace<sm::ecs::Dead>(dead);
+
+    const int popBefore = gs.landmarks[0].population;
+    const int garrisonBefore = gs.landmarks[0].garrison.size();
+    sm::MacroWorld mw{.gs = &gs, .world = &world, .terrain = &terrain};
+    sm::rotate_worker_squads(mw, /*day=*/3);
+
+    CHECK(gs.landmarks[0].population == popBefore,
+          "a dead crew's souls never return to the population");
+    CHECK(gs.landmarks[0].garrison.size() == garrisonBefore,
+          "and dead records never march into the garrison");
+    CHECK(world.reg.valid(dead),
+          "the corpse-row is the drain's business, not the rotation's");
+
+    // Negative control: the SAME crew alive dissolves into the garrison —
+    // the exclusion above is about death, not a dead door.
+    const auto alive = spawn_ai(world, sm::NPCType::Guard, 50.0f, 50.0f, 1);
+    world.reg.emplace<sm::ecs::MacroSpawnId>(alive, 78u);
+    auto& aliveRoster = world.reg.emplace<sm::ecs::SquadRoster>(alive);
+    aliveRoster.squad.push(
+        sm::make_soldier(std::uint16_t(sm::NPCType::Guard), 2, 201u));
+    sm::rotate_worker_squads(mw, /*day=*/4);
+    CHECK(gs.landmarks[0].garrison.size() > garrisonBefore,
+          "negative control: a LIVING guard crew does dissolve home");
+}
+
 int main() {
     test_home_wanderer_returns_when_far();
     test_woodcutter_targets_nearest_tree();
@@ -506,5 +616,7 @@ int main() {
     test_a_resting_lord_mends_at_the_players_rate();
     test_a_marching_body_does_not_mend();
     test_macro_visual_smoothing_and_snap();
+    test_a_full_pool_is_unloaded_on_the_spot();
+    test_rotation_does_not_dissolve_the_dead();
     return sm::test::report("macro_npc_ai_parity_test");
 }

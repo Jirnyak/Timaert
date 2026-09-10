@@ -165,6 +165,21 @@ inline int drain_dead_leader_squads(ecs::World& w, SoldierSquad& deserterPool) {
     return moved;
 }
 
+// Any dead leader still holding men — the state the drain above leaves ONLY
+// when the pool refused (its cap). The tick drivers ask this to know whether
+// to unload the pool on the spot (raise_deserter_bands) and drain again
+// (AI-2; owner 2026-09-10: «мёртвые не должны стоять вообще» — a full pool
+// is not an excuse for a corpse-row to live to the daily rotation).
+inline bool dead_rosters_remain(ecs::World& w) {
+    for (auto [e, roster] :
+         w.reg.view<ecs::SquadRoster, ecs::Dead>(
+             entt::exclude<ecs::PlayerSquadTag>).each()) {
+        (void)e;
+        if (!roster.squad.empty()) return true;
+    }
+    return false;
+}
+
 // ── The END of a dead squad's story (CANON S4, canon audit 2026-08-29) ────
 // «Убили всех — сквада на карте нет». A tracked death marks the leader
 // entity Dead (the subworld reaper, the auto-resolve, the exhaustion bite)

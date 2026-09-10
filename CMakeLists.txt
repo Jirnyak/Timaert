@@ -612,6 +612,10 @@ timaert_test(caravan_deal_test
 timaert_test(macro_npc_ai_parity_test
     SOURCES
         src/macro/npc_ai.cpp
+        # The tick drivers now settle the dead THROUGH the pool's own
+        # unloader (raise_deserter_bands, AI-2) and the rotation raises
+        # crews — both live in npc_spawn.cpp.
+        src/macro/npc_spawn.cpp
         src/macro/nav_field.cpp
         # the caravan deal prices through the one law (stock_price)
         src/macro/economy.cpp
@@ -694,6 +698,8 @@ timaert_test(macro_travel_parity_test
 # anchor for squads. Drives the same AI as the war test, same links.
 timaert_test(squad_travel_test
     SOURCES
+        # settle_dead_squads unloads the pool through raise_deserter_bands (AI-2)
+        src/macro/npc_spawn.cpp
         src/macro/npc_ai.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
         # player's own door (recovery.h recover_bar), never a copy.
@@ -1043,6 +1049,8 @@ timaert_test(seasons_test)
 
 timaert_test(trade_law_test
     SOURCES
+        # settle_dead_squads unloads the pool through raise_deserter_bands (AI-2)
+        src/macro/npc_spawn.cpp
         src/macro/npc_ai.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
         # player's own door (recovery.h recover_bar), never a copy.
@@ -1462,6 +1470,8 @@ timaert_test(auto_resolve_speaks_test
 # may ever choose. PlayerSquadTag vs PlayerTag, each guard with its control.
 timaert_test(player_is_a_squad_test
     SOURCES
+        # settle_dead_squads unloads the pool through raise_deserter_bands (AI-2)
+        src/macro/npc_spawn.cpp
         src/macro/player_entity.cpp
         src/macro/anatomy.cpp
         src/macro/npc_ai.cpp
