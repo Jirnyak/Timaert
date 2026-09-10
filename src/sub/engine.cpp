@@ -1335,6 +1335,20 @@ void SubworldEngine::repopulate_after_recenter(int dx, int dy) {
             if (!wasInWindow) spawn_cell(ox, oy);
         }
     }
+    // The lords of the freshly-entered cells (SUB-2): projection used to run
+    // ONCE, at enter(), while the reaper above honestly despawned any
+    // projected body whose cell slid out — so one step across a seam lost a
+    // lord until a full leave/enter. The door is idempotent now (standing
+    // projections are skipped and count against the same cap), so a recenter
+    // simply asks it again for the new window. Same salt shape as enter().
+    if (gs_) {
+        const int cx = mgr_.center_cx();
+        const int cy = mgr_.center_cy();
+        project_macro_npcs_into_subworld(*ecs_, mgr_, cx, cy,
+            gs_->mapW, gs_->mapH,
+            gs_->worldSeed ^ kMacroProjectionSalt ^ (std::uint32_t(cx) << 8)
+                ^ std::uint32_t(cy), nullptr, &structIndex_);
+    }
 }
 
 // THE MICRO→MACRO DOOR (CANON S20.1).
@@ -4386,7 +4400,12 @@ void SubworldEngine::tick(float dt) {
     // half-HP gate.
     {
         const FxPreset& blood = fx_preset(FxKind::Blood);
-        auto view = ecs_->reg.view<ecs::Pools, ecs::Position>();
+        // SubworldTag, or this pass reads MACRO squads: the registry is one
+        // for both scales, and a wounded lord's cell coordinates (0..1023)
+        // land here as window tiles — blood in the scene's corner from a war
+        // a continent away (SUB-1; it survived the Health→Pools rename).
+        auto view = ecs_->reg.view<ecs::Pools, ecs::Position,
+                                   ecs::SubworldTag>(entt::exclude<ecs::Dead>);
         for (auto e : view) {
             const auto& hp = view.get<ecs::Pools>(e);
             if (hp.maxHp <= 0 || hp.hp * 2 >= hp.maxHp || hp.hp <= 0) continue;

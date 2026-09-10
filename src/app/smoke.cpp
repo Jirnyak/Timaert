@@ -717,6 +717,29 @@ bool run_subworld_recovery_smoke(App& app) {
     const int maxMp = stats.maxMp;
     const int maxSp = stats.maxSp;
 
+    // A macro squad as the SCALE witness (SUB-1 class): a scene tick must
+    // not touch a single macro body — not its cell, not its smoothed visual.
+    // systems.cpp's interpolator used to walk all ~16k macro squads every
+    // sub-tick and drag their VisualPos in the wrong units. Wound it too, so
+    // the blood-drip pass (the original SUB-1) has a body it WOULD pick up.
+    entt::entity scaleWitness = entt::null;
+    float wPx = 0.0f, wPy = 0.0f, wVx = 0.0f, wVy = 0.0f;
+    for (auto [e, rt, p, v, pools] :
+         app.ecs.reg.view<sm::ecs::MacroNpcRuntime, sm::ecs::Position,
+                          sm::ecs::VisualPos, sm::ecs::Pools>(
+             entt::exclude<sm::ecs::PlayerSquadTag,
+                           sm::ecs::Dead>).each()) {
+        (void)rt;
+        pools.maxHp = std::max(1, pools.maxHp);
+        pools.hp = std::max(1, pools.maxHp / 3);   // under half: drip bait
+        v.vx = p.x + 0.4f;                          // mid-glide visual
+        v.vy = p.y;
+        v.speed = 2.0f;
+        scaleWitness = e;
+        wPx = p.x; wPy = p.y; wVx = v.vx; wVy = v.vy;
+        break;
+    }
+
     enter_subworld(app);
     if (!app.subworld.active()) {
         smoke_fail(app, "subworld_recovery enter failed");
@@ -757,6 +780,22 @@ bool run_subworld_recovery_smoke(App& app) {
     const int afterHp = player_pools(app).hp;
     const int afterMp = player_pools(app).mp;
     const int afterSp = player_pools(app).sp;
+    // The scale witness: the minute of scene ticks above must have left the
+    // wounded macro squad exactly where the map put it, visual included.
+    if (scaleWitness != entt::null && app.ecs.reg.valid(scaleWitness)) {
+        const auto& p = app.ecs.reg.get<sm::ecs::Position>(scaleWitness);
+        const auto& v = app.ecs.reg.get<sm::ecs::VisualPos>(scaleWitness);
+        if (p.x != wPx || p.y != wPy || v.vx != wVx || v.vy != wVy) {
+            std::fprintf(stderr,
+                         "[smoke] scale witness moved: pos %.2f,%.2f -> "
+                         "%.2f,%.2f visual %.2f,%.2f -> %.2f,%.2f\n",
+                         wPx, wPy, p.x, p.y, wVx, wVy, v.vx, v.vy);
+            std::fflush(stderr);
+            app.subworld.leave(true);
+            smoke_fail(app, "subworld_recovery scene tick touched a MACRO squad");
+            return false;
+        }
+    }
     app.subworld.leave(true);
 
     // The POSITIVE CONTROL: the same body, the same minutes, ON THE MAP —
@@ -1597,16 +1636,21 @@ bool run_timeadvance_burst_smoke(App& app) {
 
     const bool ok = subscriberOk && lateBurstOk;
 
+    // pause mask in the report (the SMOKE-7 lesson): hoursAdvanced=0 has
+    // meant «the world stood paused under the harness», and without the mask
+    // that read as a broken clock instead of a held one.
     std::fprintf(stderr,
                  "[smoke] timeadvance_burst hoursAdvanced=%d count=%d "
-                 "events=[%d:%02d,%d:%02d,%d:%02d] lateCount=%d latest=%d:%02d\n",
+                 "events=[%d:%02d,%d:%02d,%d:%02d] lateCount=%d latest=%d:%02d "
+                 "pause=0x%02X\n",
                  stats.timeTick.hoursAdvanced,
                  count,
                  days[0], hours[0],
                  days[1], hours[1],
                  days[2], hours[2],
                  lateCount,
-                 lateDay, lateHour);
+                 lateDay, lateHour,
+                 unsigned(pause_reasons(app)));
     std::fflush(stderr);
 
     if (!ok) {
@@ -7680,6 +7724,20 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             if (!app.showDialogOpen
                 || app.showDialogEvent.tag != sm::EventTag::ShowDialog
                 || app.showDialogEvent.dialogChoices) {
+                // The trap that names the reason (the SMOKE-7 lesson): WHICH
+                // clause refused, what stands captured, what holds the world.
+                std::fprintf(stderr,
+                             "[smoke] count_only_dialog REFUSED: open=%d "
+                             "tag=%d title=\"%s\" choices=%s pending=%zu "
+                             "pause=0x%02X\n",
+                             app.showDialogOpen ? 1 : 0,
+                             int(app.showDialogEvent.tag),
+                             app.showDialogEvent.s1.c_str(),
+                             app.showDialogEvent.dialogChoices ? "present"
+                                                               : "none",
+                             app.pendingPresentationCount,
+                             unsigned(pause_reasons(app)));
+                std::fflush(stderr);
                 smoke_fail(app, "count-only ShowDialog was not captured honestly");
                 break;
             }

@@ -14,7 +14,12 @@ namespace sm::ecs::sys {
 // 2026-08-05 (owner spotted it). One system per job.
 
 void tick_visual_interp(World& w, float dt) {
-    auto view = w.reg.view<Position, VisualPos>();
+    // SubworldTag: this is the SCENE's interpolator (its one caller is the
+    // subworld tick), and the registry carries both scales — without the tag
+    // it walked all ~16k macro squads every sub-tick, moving their VisualPos
+    // in the wrong units (cells read as tiles; macro smoothing has its own
+    // tick_macro_npc_visuals). Same hole class as SUB-1, one word.
+    auto view = w.reg.view<Position, VisualPos, SubworldTag>();
     for (auto e : view) {
         auto& p = view.get<Position>(e);
         auto& v = view.get<VisualPos>(e);

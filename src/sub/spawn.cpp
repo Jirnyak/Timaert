@@ -863,6 +863,21 @@ int project_macro_npcs_into_subworld(ecs::World& w,
         for (auto macro : view) sources.push_back(macro);
     }
 
+    // Idempotence (SUB-2): a macro NPC whose projection ALREADY stands in the
+    // scene is not projected twice. This is what lets a seam crossing call
+    // this door again for the freshly-entered cells — before, projection ran
+    // ONCE at enter() while the window reaper honestly despawned any lord
+    // whose cell slid out, so stepping one cell away lost him until a full
+    // leave/enter. His wounds are safe across that despawn: the per-tick
+    // write-back (reconcile_tracked_bodies_to_macro) has already paid the
+    // fraction up before any reap can run.
+    std::vector<entt::entity> alreadyProjected;
+    for (auto [body, origin] :
+         reg.view<ecs::MacroOrigin, ecs::SubworldTag>().each()) {
+        (void)body;
+        alreadyProjected.push_back(origin.macro);
+    }
+
     int projected = 0;
     for (const entt::entity macro : sources) {
         const auto& mpos = reg.get<ecs::Position>(macro);
@@ -870,12 +885,17 @@ int project_macro_npcs_into_subworld(ecs::World& w,
         const int ox = toroidal_cell_offset(int(mpos.x), centerCx, mapW);
         const int oy = toroidal_cell_offset(int(mpos.y), centerCy, mapH);
         if (ox < -1 || ox > 1 || oy < -1 || oy > 1) continue;
+        if (std::find(alreadyProjected.begin(), alreadyProjected.end(), macro)
+            != alreadyProjected.end()) continue;
 
         // The cap, checked AFTER the window filter so it only fires for a
         // body that WOULD stand here — and it fires out loud (CANON S26):
         // the macro entity persists untouched, but the scene is blind to it
-        // and the caller must be able to say so.
-        if (projected >= kMaxProjectedMacroNpcs) {
+        // and the caller must be able to say so. Standing projections count
+        // against it — a recenter's fresh cells fill the REMAINDER of one
+        // scene budget, not a second one.
+        if (int(alreadyProjected.size()) + projected
+            >= kMaxProjectedMacroNpcs) {
             if (truncated) *truncated = true;
             break;
         }
