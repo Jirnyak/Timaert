@@ -217,6 +217,17 @@ inline constexpr FactionDef kFactionDefs[] = {
     {"player",          "Your Realm",
      "You, your household, and everyone who marches under your banner.",
      0xfacc15, Temperament::Mercantile, 100},
+    // ── Дизайн-персонажи стола анкет (macro/characters.h) ─────────────────
+    // Вердикт владельца 2026-09-10: фракция царя-крестьянина — ОН САМ
+    // (индивид-субъект как игрок: своя строка одной матрицы, не чужое
+    // знамя), драконы — ОБЩАЯ фракция рода, не по-драконная. Аппенд —
+    // ординалы фракций едут в записях снапшота.
+    {"king_peasant",    "King-Peasant",
+     "The peasant who crowned himself. His war is with the Magika alone.",
+     0xb45309, Temperament::Savage, 0},
+    {"dragons",         "Dragons",
+     "The old fire above the peaks. Mortal politics do not reach them.",
+     0xdc2626, Temperament::Feral, -50, /*killIsNoCrime*/true},
 };
 inline constexpr int kFactionCount =
     int(sizeof(kFactionDefs) / sizeof(kFactionDefs[0]));

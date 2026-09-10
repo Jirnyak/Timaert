@@ -204,10 +204,11 @@ void test_king_peasant_births_by_home_faction() {
     CHECK(w.reg.get<ecs::MacroNpcRuntime>(king).homeSettlementId == 9,
           "his home is the BARBARIAN city, not the freefolk one — the "
           "faction-prefix filter picked the row's home");
-    // Фракция ДОМА (factionId = nullptr в строке): он ИХ человек.
+    // Фракция — ОН САМ (вердикт владельца): своя строка одной матрицы,
+    // как у игрока, а не знамя города, где он живёт.
     CHECK(int(w.reg.get<ecs::NPCKind>(king).factionIdx)
-              == faction_index("barbarian_north"),
-          "his faction is his home city's");
+              == faction_index("king_peasant"),
+          "his faction is his OWN registry row");
     const CharacterSheet* own = owned_sheet(w, king);
     CHECK_OR_RETURN(own != nullptr, "the king OWNS his sheet");
     CHECK(own->levelData.level == 70, "the level-70 roll reached the sheet");

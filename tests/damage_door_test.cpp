@@ -287,8 +287,9 @@ void test_survivor_protocol() {
           "HitFlash and DamageFx travel together on every hit");
     CHECK(!reg.get<sm::ecs::DamageFx>(e).lethal,
           "a survivable blow's DamageFx is not lethal");
-    CHECK(reg.get<sm::ecs::LastHit>(e).playerOwned,
-          "LastHit carries playerOwned for the reaper's XP");
+    CHECK(reg.get<sm::ecs::LastHit>(e).attackerId == 7u,
+          "LastHit carries the killer's BODY — the reaper resolves its "
+          "leader through the one kill-XP door (§41 root 5)");
 }
 
 // A dead player is a game-over, not an NPC kill — from EVERY weapon. The

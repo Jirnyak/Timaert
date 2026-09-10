@@ -99,9 +99,15 @@ float hp_of(sm::ecs::World& w, entt::entity e) {
     return hp ? hp->hp : -1.0f;
 }
 
-bool player_last_hit(sm::ecs::World& w, entt::entity e) {
+// Атрибуция «кем убит/ранен» — тело убийцы в LastHit (§41 корень 5:
+// байт playerOwned мёртв, жнец резолвит лидера по телу).
+bool last_hit_by(sm::ecs::World& w, entt::entity e,
+                 std::uint32_t attackerId) {
     const auto* hit = w.reg.try_get<sm::ecs::LastHit>(e);
-    return hit && hit->playerOwned;
+    return hit && hit->attackerId == attackerId;
+}
+bool last_hit_by(sm::ecs::World& w, entt::entity e, entt::entity attacker) {
+    return last_hit_by(w, e, std::uint32_t(entt::to_integral(attacker)));
 }
 
 int armageddon_meteor_count(int radius) {
@@ -729,7 +735,7 @@ int main() {
     sm::sub::tick_spell_projectiles(hostWorld, nullptr, 0.25f);
     sm::sub::tick_spell_projectiles(hostWorld, nullptr, 0.25f);
     if (!(hp_of(hostWorld, hostile) < 100.0f)
-        || !player_last_hit(hostWorld, hostile)
+        || !last_hit_by(hostWorld, hostile, hostPlayer)
         || projectile_count(hostWorld) != 0) {
         return fail("magic_bolt did not hit hostile target");
     }
@@ -751,7 +757,7 @@ int main() {
     }
     sm::sub::tick_spell_projectiles(beamWorld, nullptr, 0.40f);
     if (!(hp_of(beamWorld, beamHit) < 100.0f)
-        || !player_last_hit(beamWorld, beamHit)
+        || !last_hit_by(beamWorld, beamHit, beamPlayer)
         || !nearf(hp_of(beamWorld, beamNearMiss), 100.0f)
         || !nearf(hp_of(beamWorld, beamMiss), 100.0f)
         || projectile_count(beamWorld) != 0) {
@@ -866,7 +872,7 @@ int main() {
         add_target(armWorld, meteorX, meteorY, 1000.0f, false);
     sm::sub::tick_spell_projectiles(armWorld, nullptr, 1.0f);
     if (!(hp_of(armWorld, armVictim) < 1000.0f)
-        || !player_last_hit(armWorld, armVictim)
+        || !last_hit_by(armWorld, armVictim, armPlayer)
         || projectile_count(armWorld) != 0) {
         return fail("armageddon expiry blast wrong");
     }
@@ -898,7 +904,7 @@ int main() {
             std::uint8_t(sm::DamageType::Fire), false);
         sm::sub::tick_spell_projectiles(selfWorld, nullptr, 0.0f);
         if (!(hp_of(selfWorld, selfPlayer) < 100.0f)
-            || !player_last_hit(selfWorld, selfPlayer)) {
+            || !last_hit_by(selfWorld, selfPlayer, selfPlayer)) {
             return fail("Inc 4d: player friendlyFire blast did not catch its "
                         "own caster (Q1)");
         }
@@ -953,9 +959,9 @@ int main() {
             std::uint8_t(sm::DamageType::Fire), false);
         sm::sub::tick_spell_projectiles(npcWorld, nullptr, 0.0f);
         if (!(hp_of(npcWorld, npcCaster) < 100.0f)
-            || player_last_hit(npcWorld, npcCaster)) {
+            || !last_hit_by(npcWorld, npcCaster, npcCaster)) {
             return fail("Inc 4d: NPC friendlyFire blast self-catch/ownership "
-                        "wrong (must hit, must not be player-owned)");
+                        "wrong (must hit, attributed to the NPC body)");
         }
     }
 

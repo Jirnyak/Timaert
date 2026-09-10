@@ -26,6 +26,7 @@
 
 #include "macro/anatomy.h"
 #include "sub/ai.h"        // kDetectionRadius — the ambush's own wait line
+#include "sub/spawn.h"     // current_player_body — «рука игрока» атрибуции
 #include "macro/codex.h"
 #include "macro/items.h"
 #include "macro/player_entity.h"
@@ -2105,8 +2106,13 @@ bool run_subworld_loot_xp_smoke(App& app) {
         vp->vx = lootX;
         vp->vy = lootY;
     }
-    sm::sub::apply_lethal_damage(reg, target, sm::sub::DamageSource{0u, true},
-                                 sm::sub::DamageKind::Dev, &app.bus);
+    // Убийца — ТЕЛО аватара (§41 корень 5): «ничей» кил не платит никому.
+    sm::sub::apply_lethal_damage(
+        reg, target,
+        sm::sub::DamageSource{
+            std::uint32_t(entt::to_integral(
+                sm::sub::current_player_body(app.ecs))), true},
+        sm::sub::DamageKind::Dev, &app.bus);
 
     app.subworld.tick(0.016f);
     bool corpseFound = false;
@@ -3840,14 +3846,17 @@ bool run_subworld_player_melee_smoke(App& app) {
     std::fprintf(stderr,
                  "[smoke] subworld_player_melee hp=%.1f->%.1f "
                  "bounds=[%.1f,%.1f] routed=%d flash=%.3f "
-                 "playerOwned=%d log=\"%s\" status=\"%s\"\n",
+                 "byPlayerBody=%d log=\"%s\" status=\"%s\"\n",
                  double(beforeHp),
                  double(afterHp),
                  double(minStrike),
                  double(maxStrike),
                  combatRouted ? 1 : 0,
                  hitFlash ? double(hitFlash->timer) : 0.0,
-                 lastHit && lastHit->playerOwned ? 1 : 0,
+                 lastHit && lastHit->attackerId
+                         == std::uint32_t(entt::to_integral(
+                                sm::sub::current_player_body(app.ecs)))
+                     ? 1 : 0,
                  combatLogVisible ? combatLog->text : "",
                  statusSet ? status : "");
     std::fflush(stderr);
@@ -3855,7 +3864,9 @@ bool run_subworld_player_melee_smoke(App& app) {
     if (!hp || dealt <= 0.0f
         || !combatRouted
         || !hitFlash || hitFlash->timer <= 0.0f
-        || !lastHit || !lastHit->playerOwned
+        || !lastHit
+        || lastHit->attackerId != std::uint32_t(entt::to_integral(
+               sm::sub::current_player_body(app.ecs)))
         || !combatLogVisible || !statusSet) {
         smoke_fail(app, "subworld_player_melee invariant");
         return false;
@@ -3989,12 +4000,15 @@ bool run_subworld_player_bow_smoke(App& app) {
 
     std::fprintf(stderr,
                  "[smoke] subworld_player_bow projectiles=%d->%d routed=%d "
-                 "gate=%u hp=%.1f->%.1f playerOwned=%d\n",
+                 "gate=%u hp=%.1f->%.1f byPlayerBody=%d\n",
                  beforeProjectiles, loosedProjectiles,
                  missileRouted ? 1 : 0,
                  unsigned(gateSteps),
                  double(beforeHp), double(afterHp),
-                 lastHit && lastHit->playerOwned ? 1 : 0);
+                 lastHit && lastHit->attackerId
+                         == std::uint32_t(entt::to_integral(
+                                sm::sub::current_player_body(app.ecs)))
+                     ? 1 : 0);
     std::fflush(stderr);
 
     // The projectile COUNT is diagnostic only: at 8 units the arrow can
@@ -4004,7 +4018,9 @@ bool run_subworld_player_bow_smoke(App& app) {
     if (!missileRouted
         || gateSteps == 0u
         || !hp || dealt <= 0.0f
-        || !lastHit || !lastHit->playerOwned) {
+        || !lastHit
+        || lastHit->attackerId != std::uint32_t(entt::to_integral(
+               sm::sub::current_player_body(app.ecs)))) {
         smoke_fail(app, "subworld_player_bow invariant");
         return false;
     }
@@ -5032,9 +5048,14 @@ bool run_console_smoke(App& app) {
             return false;
         }
         const int expBefore = sm::player_sheet(app.ecs)->levelData.exp;
-        sm::sub::apply_lethal_damage(reg, wolfE,
-                                     sm::sub::DamageSource{0u, true},
-                                     sm::sub::DamageKind::Dev, &app.bus);
+        // Убийца — ТЕЛО аватара (§41 корень 5): жнец резолвит лидера по
+        // телу, и «ничей» чит-кил (attackerId 0) честно не платит никому.
+        sm::sub::apply_lethal_damage(
+            reg, wolfE,
+            sm::sub::DamageSource{
+                std::uint32_t(entt::to_integral(
+                    sm::sub::current_player_body(app.ecs))), true},
+            sm::sub::DamageKind::Dev, &app.bus);
         app.subworld.tick(0.016f);
         if (sm::player_sheet(app.ecs)->levelData.exp <= expBefore) {
             restore(); smoke_fail(app, "console wolf kill granted no XP"); return false;
@@ -6070,9 +6091,14 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "battle_start hostile lost health");
                 break;
             }
-            sm::sub::apply_lethal_damage(app.ecs.reg, smokeHostile,
-                                         sm::sub::DamageSource{0u, true},
-                                         sm::sub::DamageKind::Dev, &app.bus);
+            // Убийца — ТЕЛО аватара (§41 корень 5): жнец резолвит лидера
+            // по телу; «ничей» кил (attackerId 0) честно не платит никому.
+            sm::sub::apply_lethal_damage(
+                app.ecs.reg, smokeHostile,
+                sm::sub::DamageSource{
+                    std::uint32_t(entt::to_integral(
+                        sm::sub::current_player_body(app.ecs))), true},
+                sm::sub::DamageKind::Dev, &app.bus);
             app.subworld.leave(true);
             const sm::LevelData afterDeathXp = sm::player_sheet(app.ecs)->levelData;
             if (afterDeathXp.level <= beforeDeathXp.level

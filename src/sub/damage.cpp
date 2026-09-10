@@ -118,8 +118,7 @@ DamageResult apply_damage(entt::registry& reg, entt::entity target,
 
     const DamageKindRow& row = kDamageKinds[std::size_t(kind)];
     if (row.attributesKiller) {
-        reg.emplace_or_replace<ecs::LastHit>(target, src.attackerId,
-                                             src.playerOwned);
+        reg.emplace_or_replace<ecs::LastHit>(target, src.attackerId);
     }
     reg.emplace_or_replace<ecs::HitFlash>(target,
                                           ecs::HitFlash{kHitFlashDuration});

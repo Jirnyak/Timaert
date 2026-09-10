@@ -483,6 +483,18 @@ inline AutoBattleSide auto_battle_side_of(ecs::World& w, entt::entity e) {
 // from a sheet of the new level while PRESERVING the wound fraction — the
 // currency wounds already travel in. This is what makes the "wandering tsar"
 // a data row: any leader that wins fights, levels.
+// ── ОПЛАТА УБИЙСТВА: ОДНА дверь для любого лидера ────────────────────────
+// §41 корень 5, вердикт владельца 2026-09-10: «байт умирает; жнец резолвит
+// лидера убийцы для ВСЕХ — игрок просто лидер своего сквада». Лидер с
+// ВЛАДЕЕМЫМ листом (игрок, именованный, анкета) растёт как игрок: exp в
+// лист с WIS-дивидендом его эффективного листа, очки атрибутов/скиллов
+// КОПЯТСЯ нетраченными до контента трат (учителя/ИИ-траты — вердикт
+// «копить»); уровень на карте и потолки полос следуют за листом через ту
+// же одну дверь пересборки. Транзиент — прежний бросок (award_leader_xp
+// ниже): его лист деривируется, хранить нечего. Определена ПОСЛЕ
+// award_leader_xp — форвард здесь, тело ниже по файлу.
+inline void award_kill_xp(ecs::World& w, entt::entity leader, int xp);
+
 inline int award_leader_xp(ecs::World& w, entt::entity e, int xp) {
     if (xp <= 0) return 0;
     auto& reg = w.reg;
@@ -528,6 +540,38 @@ inline int award_leader_xp(ecs::World& w, entt::entity e, int xp) {
         }
     }
     return gained;
+}
+
+inline void award_kill_xp(ecs::World& w, entt::entity leader, int xp) {
+    if (xp <= 0 || leader == entt::null || !w.reg.valid(leader)) return;
+    CharacterSheet* own = owned_sheet(w, leader);
+    if (!own) {
+        // Транзиент: бросок из ординала, как жил всегда.
+        award_leader_xp(w, leader, xp);
+        return;
+    }
+    const CharacterSheet eff = effective_sheet_of(w, leader);
+    const int before = own->levelData.level;
+    award_exp(own->levelData, xp,
+              calculate_derived(eff.attributes, eff.skills).expMultPct);
+    if (own->levelData.level != before) {
+        // Уровень на карте и потолки следуют за листом — та же пара
+        // движений, что у транзиента в award_leader_xp, но лист НЕ
+        // перекатывается из сида: владеемое владеем (ММОРПГ-модель).
+        if (auto* lvl = w.reg.try_get<ecs::NpcLevel>(leader)) {
+            lvl->value = std::int16_t(
+                std::min<int>(kMaxSoldierLevel, own->levelData.level));
+        }
+        if (auto* pools = w.reg.try_get<ecs::Pools>(leader)) {
+            const auto* kind = w.reg.try_get<ecs::NPCKind>(leader);
+            const NPCType type =
+                kind && kind->type < std::uint16_t(NPCType::Count)
+                    ? NPCType(std::uint8_t(kind->type)) : NPCType::Peasant;
+            refresh_body_from_sheet(
+                *pools, w.reg.try_get<ecs::MacroNpcRuntime>(leader),
+                effective_sheet_of(w, leader), type);
+        }
+    }
 }
 
 // ── The settling halves — one set of doors for EVERY consumer ──────────────
@@ -834,7 +878,10 @@ inline void settle_auto_battle(const MacroWorld& mw,
     }
 
     drain_dead_leader_squads(w, gs.deserterPool);
-    award_leader_xp(w, winner, xp);
+    // ОДНА дверь оплаты (корень 5): именованный победитель растёт как
+    // игрок (лист владеем, WIS-дивиденд, очки копятся), транзиент —
+    // прежний бросок.
+    award_kill_xp(w, winner, xp);
 
     record_battle_facts(mw, winner, loser,
                         battle_dead(loserCasualties, loserFraction),
@@ -974,18 +1021,9 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
     }
 
     if (xp > 0) {
-        // The EFFECTIVE sheet's WIS scales the take (phase 4, the one door);
-        // the exp lands in the OWNED base sheet on his squad entity —
-        // посадка Б: there is no other store for it to land in.
-        if (const entt::entity playerSquad = player_squad_entity(w);
-            playerSquad != entt::null) {
-            const CharacterSheet eff = effective_sheet_of(w, playerSquad);
-            const DerivedBonuses d =
-                calculate_derived(eff.attributes, eff.skills);
-            if (CharacterSheet* own = owned_sheet(w, playerSquad)) {
-                award_exp(own->levelData, xp, d.expMultPct);
-            }
-        }
+        // ОДНА дверь оплаты (корень 5): игрок — просто лидер своего
+        // сквада, WIS-дивиденд и рост листа внутри award_kill_xp.
+        award_kill_xp(w, player_squad_entity(w), xp);
     }
     return xp;
 }

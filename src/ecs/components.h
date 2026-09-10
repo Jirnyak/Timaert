@@ -245,11 +245,15 @@ struct MacroDebt {
 // Runtime-only: never serialized, so it does not bump kSaveVersion.
 struct MacroOrigin { entt::entity macro; };
 
-// Last damaging owner. Used for player/squad XP attribution in normal
-// subworld combat.
+// Last damaging owner — the killer's BODY, and nothing else. The death
+// reaper resolves the body to its macro LEADER (MacroOrigin / roster
+// receipt / the avatar's own squad) and pays the kill through the ONE
+// XP door (squad.h award_kill_xp). It carried a `playerOwned` byte until
+// §41 root 5 (owner 2026-09-10: «байт умирает; жнец резолвит лидера
+// убийцы для ВСЕХ») — a second answer to «чья рука», fixed at hit time,
+// that split the reaper into two XP laws.
 struct LastHit {
     std::uint32_t attackerId;
-    bool          playerOwned;
 };
 
 // Short-lived red damage flash for subworld actors. Mirrors TS `hitTimer`.

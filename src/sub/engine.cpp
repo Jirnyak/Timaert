@@ -1808,8 +1808,14 @@ void SubworldEngine::tick_player_melee() {
     const StrikeRoll swing =
         roll_strike(combatRng_, strikeStats.dice, strikeStats.flatAdd,
                     strikeStats.multPct, strikeStats.luck);
+    // Убийца — ТЕЛО аватара, не «ничей ноль» (§41 корень 5): жнец резолвит
+    // лидера по телу, и нулевой attackerId платил бы XP никому. Байт
+    // playerOwned остаётся правдой лога, атрибуция — сущность.
     const DamageResult hit = apply_damage(
-        reg, target, DamageSource{std::uint32_t{0}, true, 0u, swing.critical},
+        reg, target,
+        DamageSource{std::uint32_t(entt::to_integral(
+                         sub::current_player_body(*ecs_))),
+                     true, 0u, swing.critical},
         swing.amount, DamageKind::Melee,
         DamageType(strikeStats.dmgType), bus_);
     const char* label = subworld_attacker_label(reg, target);
@@ -2915,38 +2921,22 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 continue;
             }
 
-            if (lastHit && lastHit->playerOwned) {
-                // One row, one formula (owner, 2026-08-29): what a kill is
-                // worth is npc_xp_reward (macro/npc.h) — the row's own
-                // xpReward stepped by level, for EVERY row. The old
-                // exp_from_fight(lvl) fallback for rows that named 0 was a
-                // second XP law; the creature rows author 5·(baseLevel+1)
-                // now, which pays the same 10·L₀ at the row's own level.
-                const int xp = npc_xp_reward(
-                    NPCType(std::uint8_t(kind ? kind->type : 0)), lvl);
-                // The wis dividend: kill XP scales by the sheet's expMult
-                // (owner ruling 2026-08-05 — the attribute is live now).
-                // The EFFECTIVE sheet's WIS (phase 4); the exp itself lands
-                // in the OWNED base component — writes never touch the copy.
-                const CharacterSheet effXp = player_effective_sheet(*ecs_);
-                if (CharacterSheet* own = player_sheet(*ecs_)) {
-                    award_exp(own->levelData, xp,
-                              calculate_derived(effXp.attributes,
-                                                effXp.skills).expMultPct);
-                }
-                apply_player_kill_reputation(gs_, kind);
-            } else if (lastHit && mw_.world) {
-                // CANON S14: «сквад == лидер, и только NPC-лидеры растут — и
-                // от дел в макромире, и от боя внизу». The macro half was
-                // built (award_leader_xp pays auto-battle victories); the
-                // GROUND half was missing, so a lord who won a real fight
-                // underfoot learned nothing from it while the same lord
-                // winning it on the map levelled. The killer's own body names
-                // its squad: a projected leader carries MacroOrigin, a
-                // roster member's receipt names its leader's spawn ordinal.
+            if (lastHit && mw_.world) {
+                // ОДИН закон оплаты килла (§41 корень 5, владелец
+                // 2026-09-10: «байт умирает; жнец резолвит лидера убийцы
+                // для ВСЕХ — игрок просто лидер своего сквада»). The
+                // killer's own BODY names its macro leader: a projected
+                // leader carries MacroOrigin (a possessed projection pays
+                // ITS OWN lord — body-native), a roster member's receipt
+                // names its leader's spawn ordinal, and the hero husk /
+                // the player's soldiers name the player's squad — the
+                // ordinary leader he is. The leader is then paid through
+                // THE one kill-XP door (squad.h award_kill_xp): an owned
+                // sheet grows like the player's, a transient rolls.
                 const entt::entity killerBody =
                     entt::entity(lastHit->attackerId);
                 entt::entity leader = entt::null;
+                bool playerHand = false;
                 if (reg.valid(killerBody)) {
                     if (const auto* origin =
                             reg.try_get<ecs::MacroOrigin>(killerBody)) {
@@ -2957,15 +2947,26 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                                    == std::uint8_t(MacroStock::Roster)) {
                         leader = macro_entity_by_spawn_id(
                             *mw_.world, std::uint32_t(debt->subject));
+                    } else if (reg.any_of<ecs::AvatarTag,
+                                          ecs::PlayerSoldierTag>(killerBody)) {
+                        leader = player_squad_entity(*ecs_);
                     }
+                    // «Рука игрока» — сценная правда для репутации: его
+                    // аватар (включая одержимое тело) или его солдат.
+                    playerHand = reg.any_of<ecs::AvatarTag,
+                                            ecs::PlayerSoldierTag>(killerBody);
                 }
                 if (leader != entt::null && mw_.world->reg.valid(leader)
                     && !mw_.world->reg.any_of<ecs::Dead>(leader)) {
-                    award_leader_xp(*mw_.world, leader,
-                                    npc_xp_reward(NPCType(std::uint8_t(
-                                                      kind ? kind->type : 0)),
-                                                  lvl));
+                    // One row, one formula (owner, 2026-08-29): what a kill
+                    // is worth is npc_xp_reward — the row's own xpReward
+                    // stepped by level, for EVERY row and EVERY killer.
+                    award_kill_xp(*mw_.world, leader,
+                                  npc_xp_reward(NPCType(std::uint8_t(
+                                                    kind ? kind->type : 0)),
+                                                lvl));
                 }
+                if (playerHand) apply_player_kill_reputation(gs_, kind);
             }
 
             Inventory inv{};
