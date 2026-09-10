@@ -259,8 +259,9 @@ void despawn_subworld_entities_outside_window(ecs::World& w);
 //
 // `squadBonuses` follows the same logic as the faction: the LEADER's gift,
 // collected once at the call site from whoever leads the squad (the player →
-// squad_bonuses(gs.player.sheet)) and applied into every member's sheet at
-// birth. nullptr = a leaderless context, nothing applied.
+// squad_bonuses over his owned component, squad.h sheet_of) and applied into
+// every member's sheet at birth. nullptr = a leaderless context, nothing
+// applied.
 void spawn_player_squad(ecs::World& w,
                         const SoldierSquad& squad,
                         const SeamlessSubworldManager& mgr,

@@ -69,11 +69,12 @@ PlayerState default_player() {
     // (The starter kit is dealt into his BAG — an ordinary NpcInventory on
     // his squad entity — by the world boot, once that entity exists. A
     // PlayerState cannot carry goods any more; it is not a container.)
-    p.sheet.attributes = default_attributes();
-    p.sheet.skills     = default_skills();
-    p.sheet.levelData  = default_level_data();
+    // (No sheet here since v91: his build is the owned CharacterSheet
+    // component born WITH his squad entity — ensure_macro_player_entity
+    // births the same default_* trio this block used to copy. A PlayerState
+    // cannot level or learn any more; it is not a character.)
     // (No bars here: the three pools are born WITH his squad entity —
-    // ensure_macro_player_entity fills them from this sheet through the one
+    // ensure_macro_player_entity fills them from his sheet through the one
     // «sheet → body» door. A PlayerState cannot be hurt or tired any more;
     // it is not a body.)
 

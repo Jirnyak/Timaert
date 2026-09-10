@@ -45,7 +45,8 @@ constexpr EffectVerb kEffectVerbs[] = {
     {"drain_sp",   BonusId::HealSp, -1},
 };
 
-void apply_effect(PlayerState& p, ecs::Pools* cs, const GameEvent& ev) {
+void apply_effect(PlayerState& p, ecs::Pools* cs, CharacterSheet* sheet,
+                  const GameEvent& ev) {
     const std::string& type = ev.s1;
     const int value = ev.ix;
 
@@ -53,8 +54,11 @@ void apply_effect(PlayerState& p, ecs::Pools* cs, const GameEvent& ev) {
         // wis dividend: scripted XP scales by the recipient's expMult too —
         // one law for every grant path (owner ruling 2026-08-05). XP is not a
         // pool and not a sheet address; it has its own door and keeps it.
-        award_exp(p.sheet.levelData, value,
-                  calculate_derived(p.sheet.attributes, p.sheet.skills).expMultPct);
+        if (sheet) {
+            award_exp(sheet->levelData, value,
+                      calculate_derived(sheet->attributes,
+                                        sheet->skills).expMultPct);
+        }
         return;
     }
 
@@ -78,6 +82,7 @@ void apply_effect(PlayerState& p, ecs::Pools* cs, const GameEvent& ev) {
 
 void apply_events(std::span<const GameEvent> events, GameState& gs,
                   Inventory* bag, ecs::Pools* pools, SpellBook* book,
+                  CharacterSheet* sheet,
                   std::vector<GameEvent>* followups) {
     PlayerState& p = gs.player;
     for (auto& ev : events) {
@@ -137,7 +142,7 @@ void apply_events(std::span<const GameEvent> events, GameState& gs,
                 break;
             case EventTag::ApplyEffect:
                 if (ev.b != kEventEffectAlreadyApplied) {
-                    apply_effect(p, pools, ev);
+                    apply_effect(p, pools, sheet, ev);
                 }
                 break;
             case EventTag::CodexUnlock:
@@ -165,9 +170,10 @@ void apply_events(std::span<const GameEvent> events, GameState& gs,
 
 void apply_events(const std::vector<GameEvent>& events, GameState& gs,
                   Inventory* bag, ecs::Pools* pools, SpellBook* book,
+                  CharacterSheet* sheet,
                   std::vector<GameEvent>* followups) {
     apply_events(std::span<const GameEvent>(events.data(), events.size()), gs,
-                 bag, pools, book,
+                 bag, pools, book, sheet,
                  followups);
 }
 

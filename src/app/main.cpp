@@ -567,8 +567,10 @@ sm::AutoBattleSide player_auto_battle_side(App& app) {
     // Combat from it), so the resolver pricing the same fight from the same
     // ring must read the same sheet or the two verdicts disagree.
     const sm::CharacterSheet eff = player_effective_sheet(app);
+    // The door reads his OWNED component itself (посадка Б) — no parameter
+    // to pass, no caller able to forget it.
     sm::AutoBattleSide s = sm::auto_battle_side_of(
-        app.ecs, sm::player_squad_entity(app.ecs), &eff);
+        app.ecs, sm::player_squad_entity(app.ecs));
     // The player's swing, credited exactly as the fought path rolls it: the
     // ONE assembly (hand_strike_fields) over the weapon actually in hand,
     // taken at its expectation like every auto-resolve number.
@@ -1084,13 +1086,14 @@ sm::ecs::Pools& player_pools(App& app) {
 // so the door could not stay up here where only the app can knock. These two
 // are the App-shaped handles the app/smoke call sites keep.
 sm::BonusTotals player_standing_bonuses(const App& app) {
-    return sm::player_standing_bonuses(const_cast<sm::ecs::World&>(app.ecs),
-                                       app.gs.player);
+    auto& world = const_cast<sm::ecs::World&>(app.ecs);
+    const entt::entity e = sm::player_squad_entity(world);
+    if (e == entt::null) return sm::BonusTotals{};
+    return sm::standing_bonuses_of(world, e);
 }
 
 sm::CharacterSheet player_effective_sheet(const App& app) {
-    return sm::player_effective_sheet(const_cast<sm::ecs::World&>(app.ecs),
-                                      app.gs.player);
+    return sm::player_effective_sheet(const_cast<sm::ecs::World&>(app.ecs));
 }
 
 // Is a RULE of the world switched on for him right now? A rule has no
@@ -2700,8 +2703,9 @@ void poll_movement(App& app, float dt) {
         // sheet, not a multiplier bolted on beside the formula, so a swift
         // ring and a swiftness spell are the same kind of fast.
         const sm::BonusTotals standing = player_standing_bonuses(app);
-        const sm::CharacterSheet eff =
-            sm::effective_sheet(app.gs.player.sheet, standing);
+        const sm::CharacterSheet* base = sm::player_sheet(app.ecs);
+        const sm::CharacterSheet eff = base
+            ? sm::effective_sheet(*base, standing) : sm::CharacterSheet{};
         const float pace =
             float(sm::calculate_derived(eff.attributes, eff.skills, standing)
                       .moveSpeedPct) / 100.0f;
@@ -2745,8 +2749,9 @@ void poll_movement(App& app, float dt) {
     // characters, not the same one twice.
     if (!app.cursor.path.empty() && !paused) {
         const sm::BonusTotals standing = player_standing_bonuses(app);
-        const sm::CharacterSheet effSheet =
-            sm::effective_sheet(app.gs.player.sheet, standing);
+        const sm::CharacterSheet* base = sm::player_sheet(app.ecs);
+        const sm::CharacterSheet effSheet = base
+            ? sm::effective_sheet(*base, standing) : sm::CharacterSheet{};
         const float pace =
             float(sm::calculate_derived(effSheet.attributes, effSheet.skills,
                                         standing)
@@ -2842,7 +2847,8 @@ void apply_pending_event_effects(App& app) {
         std::vector<sm::GameEvent> followups;
         sm::apply_events(pending, app.gs, sm::player_inventory(app.ecs),
                          sm::player_pools(app.ecs),
-                         sm::player_spellbook(app.ecs), &followups);
+                         sm::player_spellbook(app.ecs),
+                         sm::player_sheet(app.ecs), &followups);
         bool spireDied = false;
         for (const sm::GameEvent& ev : pending) {
             if (ev.tag == sm::EventTag::SpireDepleted) spireDied = true;
@@ -2881,7 +2887,12 @@ void apply_creation(App& app) {
     const sm::ui::CreationState& cs = app.creation;
     if (cs.name[0] != '\0') app.gs.player.name = cs.name;
     app.gs.player.sexIdx = std::uint8_t(cs.sexIdx > 0 ? 1 : 0);
-    app.gs.player.sheet = cs.sheet;
+    // The authored build lands in the OWNED component on his freshly-booted
+    // squad (посадка Б): boot_world ran ensure_macro_player_entity a moment
+    // ago, so the body — and the sheet slot on it — already exists.
+    sm::CharacterSheet* sheet = sm::player_sheet(app.ecs);
+    if (!sheet) return;
+    *sheet = cs.sheet;
 
     // The nature bonus, exactly as the authored rows promise it ("Strong
     // mind" / "Strong body"): a POINT, left for the player to place.
@@ -2890,13 +2901,13 @@ void apply_creation(App& app) {
         sm::content::creation_sex_choices(sexCount);
     if (cs.sexIdx >= 0 && std::size_t(cs.sexIdx) < sexCount) {
         const std::string_view v = sexes[cs.sexIdx].value;
-        if (v == "male")   app.gs.player.sheet.levelData.skillPoints += 1;
-        if (v == "female") app.gs.player.sheet.levelData.attributePoints += 1;
+        if (v == "male")   sheet->levelData.skillPoints += 1;
+        if (v == "female") sheet->levelData.attributePoints += 1;
     }
     {
         // The sheet changed wholesale: ceilings follow through THE door, and
         // — a moment that SAYS it heals — every bar fills to its new maximum.
-        sm::refresh_player_body(app.gs.player, app.ecs);
+        sm::refresh_player_body(app.ecs);
         sm::ecs::Pools& pools = player_pools(app);
         pools.hp = pools.maxHp;
         pools.mp = pools.maxMp;
@@ -3203,6 +3214,7 @@ void process_world_events(App& app) {
         app.quests.tick(app.activeQuests, app.bus, app.gs,
                         sm::player_inventory(app.ecs),
                         sm::player_head(app.ecs),
+                        sm::player_sheet(app.ecs),
                         qc ? sm::ecs::cell_x(*qc, app.gs.mapW) : 0,
                         qc ? sm::ecs::cell_y(*qc, app.gs.mapW) : 0);
     }
@@ -3317,7 +3329,7 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         const sm::BonusTotals standing = player_standing_bonuses(app);
         if (standing != app.lastStandingBonuses) {
             app.lastStandingBonuses = standing;
-            sm::refresh_player_body(app.gs.player, app.ecs);
+            sm::refresh_player_body(app.ecs);
         }
     }
     if (app.subworld.active()) {
@@ -3697,7 +3709,7 @@ const sm::AttributeDef* console_attr_by_key(const std::string& key) {
 // (fractions preserved — «доля у всех» — so never a free heal and never a
 // theft).
 void console_recompute_maxima(App& app) {
-    sm::refresh_player_body(app.gs.player, app.ecs);
+    sm::refresh_player_body(app.ecs);
 }
 
 // THE player's wardrobe, the way the equipment tab gets it: an opt-in
@@ -4205,7 +4217,9 @@ void register_console_commands(App& app) {
         [&app](Con& c, const std::vector<std::string>& a) {
             int amount = 0;
             if (!sm::dev::arg_int(a, 0, amount)) return false;
-            auto& ld = app.gs.player.sheet.levelData;
+            sm::CharacterSheet* sheet = sm::player_sheet(app.ecs);
+            if (!sheet) { c.printfln(Lvl::Error, "no world"); return false; }
+            auto& ld = sheet->levelData;
             const int gained = sm::award_exp(ld, amount);
             c.printfln(Lvl::Ok, "exp +%d -> level %d (%d gained), %d/%d to next",
                        amount, ld.level, gained, ld.exp, ld.expToNext);
@@ -4217,7 +4231,9 @@ void register_console_commands(App& app) {
         [&app](Con& c, const std::vector<std::string>& a) {
             int n = 1; sm::dev::arg_int(a, 0, n);
             if (n < 1) n = 1;
-            auto& ld = app.gs.player.sheet.levelData;
+            sm::CharacterSheet* sheet = sm::player_sheet(app.ecs);
+            if (!sheet) { c.printfln(Lvl::Error, "no world"); return false; }
+            auto& ld = sheet->levelData;
             const int before = ld.level;
             for (int i = 0; i < n; ++i) {
                 if (ld.exp < ld.expToNext) ld.exp = ld.expToNext;
@@ -4271,7 +4287,9 @@ void register_console_commands(App& app) {
     con.register_cmd("skills", "skills",
         "list every skill: key, base rank -> effective rank (source of truth)",
         [&app](Con& c, const std::vector<std::string>&) {
-            const sm::CharacterSheet& base = app.gs.player.sheet;
+            const sm::CharacterSheet* basePtr = sm::player_sheet(app.ecs);
+            if (!basePtr) { c.printfln(Lvl::Error, "no world"); return false; }
+            const sm::CharacterSheet& base = *basePtr;
             const sm::CharacterSheet eff = player_effective_sheet(app);
             for (const auto& d : sm::kSkillDefs)
                 c.printfln(Lvl::Info, "  %-12s %3d -> %3d  %s", d.key,
@@ -4289,7 +4307,9 @@ void register_console_commands(App& app) {
             const int want = std::clamp(rank, 0, sm::kMaxSkillRank);
             if (want != rank)
                 c.printfln(Lvl::Warn, "rank clamped to %d (the law's cap)", want);
-            auto& skills = app.gs.player.sheet.skills;
+            sm::CharacterSheet* sheet = sm::player_sheet(app.ecs);
+            if (!sheet) { c.printfln(Lvl::Error, "no world"); return false; }
+            auto& skills = sheet->skills;
             bool changed = false;
             if (a[0] == "all") {
                 for (const auto& d : sm::kSkillDefs) {
@@ -4317,7 +4337,9 @@ void register_console_commands(App& app) {
     con.register_cmd("attrs", "attrs",
         "list every attribute: key, base score -> effective score",
         [&app](Con& c, const std::vector<std::string>&) {
-            const sm::CharacterSheet& base = app.gs.player.sheet;
+            const sm::CharacterSheet* basePtr = sm::player_sheet(app.ecs);
+            if (!basePtr) { c.printfln(Lvl::Error, "no world"); return false; }
+            const sm::CharacterSheet& base = *basePtr;
             const sm::CharacterSheet eff = player_effective_sheet(app);
             for (const auto& d : sm::kAttributeDefs)
                 c.printfln(Lvl::Info, "  %-4s %3d -> %3d  %s", d.key,
@@ -4339,7 +4361,9 @@ void register_console_commands(App& app) {
             const int want = std::clamp(score, 1, sm::kMaxAttributeScore);
             if (want != score)
                 c.printfln(Lvl::Warn, "score clamped to %d", want);
-            auto& attrs = app.gs.player.sheet.attributes;
+            sm::CharacterSheet* sheet = sm::player_sheet(app.ecs);
+            if (!sheet) { c.printfln(Lvl::Error, "no world"); return false; }
+            auto& attrs = sheet->attributes;
             bool changed = false;
             if (a[0] == "all") {
                 for (const auto& d : sm::kAttributeDefs) {
@@ -4389,7 +4413,8 @@ void register_console_commands(App& app) {
                 c.error("unknown profile '" + a[0] + "' - type 'loots' for ids");
                 return true;
             }
-            const int level = app.gs.player.sheet.levelData.level;
+            const sm::CharacterSheet* sheet = sm::player_sheet(app.ecs);
+            const int level = sheet ? sheet->levelData.level : 1;
             int power = int(sm::affix_power(level, 0, 1.0f));
             sm::dev::arg_int(a, 2, power);
             power = std::clamp(power, 0, 255);
@@ -4502,7 +4527,9 @@ void register_console_commands(App& app) {
         "print the base and effective sheet, with TEMPOS through the "
         "recovery door (hand swing, spell recoveries)",
         [&app](Con& c, const std::vector<std::string>&) {
-            const sm::CharacterSheet& base = app.gs.player.sheet;
+            const sm::CharacterSheet* basePtr = sm::player_sheet(app.ecs);
+            if (!basePtr) { c.printfln(Lvl::Error, "no world"); return false; }
+            const sm::CharacterSheet& base = *basePtr;
             const sm::BonusTotals standing = player_standing_bonuses(app);
             const sm::CharacterSheet eff = sm::effective_sheet(base, standing);
             const sm::LevelData& ld = base.levelData;
@@ -4924,7 +4951,6 @@ void draw_debug_panels(App& app) {
     if (app.panels.gameState) {
         ImGui::SetNextWindowSize(ImVec2(340, 440), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("Game state", &app.panels.gameState)) {
-            const auto& p = app.gs.player;
             ImGui::SeparatorText("Player");
             if (const sm::ecs::MacroCell* pc = sm::player_flag_cell(app.ecs)) {
                 ImGui::Text("cell    %d, %d",
@@ -4932,16 +4958,18 @@ void draw_debug_panels(App& app) {
                             sm::ecs::cell_y(*pc, app.gs.mapW));
             }
             ImGui::Text("coin    %d", wallet_value(player_bag(app)));
-            ImGui::Text("level   %d   (exp %d / %d)",
-                        p.sheet.levelData.level, p.sheet.levelData.exp, p.sheet.levelData.expToNext);
             {
+                const sm::CharacterSheet* ps = sm::player_sheet(app.ecs);
+                const sm::LevelData ld = ps ? ps->levelData : sm::LevelData{};
+                ImGui::Text("level   %d   (exp %d / %d)",
+                            ld.level, ld.exp, ld.expToNext);
                 const sm::ecs::Pools& pools = player_pools(app);
                 ImGui::Text("hp      %d / %d", pools.hp, pools.maxHp);
                 ImGui::Text("mp      %d / %d", pools.mp, pools.maxMp);
                 ImGui::Text("sp      %d / %d", pools.sp, pools.maxSp);
+                ImGui::Text("points  attr %d  skill %d",
+                            ld.attributePoints, ld.skillPoints);
             }
-            ImGui::Text("points  attr %d  skill %d",
-                        p.sheet.levelData.attributePoints, p.sheet.levelData.skillPoints);
             ImGui::Text("spells  %d learned",
                         sm::spellbook_learned_count(player_book(app)));
             ImGui::SeparatorText("World");

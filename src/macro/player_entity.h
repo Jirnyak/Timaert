@@ -17,12 +17,13 @@
 // `ecs::SquadRoster`, the bag `ecs::NpcInventory`, the head `AgentMemory`, and
 // all three ride the same macro-snapshot record every lord's do.
 //
-// What has NOT moved yet: his sheet — PlayerState still owns it. WHERE he
-// stands moved HERE with подпосадка 4 (2026-09-10, v88): his cell is the
-// ordinary ecs::MacroCell on this entity, stepped by the input walker and
-// glided by the one MacroVisual integrator, with no scalar copy anywhere.
+// EVERYTHING has moved. WHERE he stands moved HERE with подпосадка 4
+// (2026-09-10, v88): his cell is the ordinary ecs::MacroCell on this entity,
+// stepped by the input walker and glided by the one MacroVisual integrator.
 // How hurt and how tired he is moved HERE with landing 4 (2026-09-10): his
-// three bars are the ordinary ecs::Pools on this entity — player_pools()
+// three bars are the ordinary ecs::Pools on this entity. WHO he built moved
+// HERE with посадка Б (2026-09-10, v91): his sheet is the ordinary owned
+// CharacterSheet component every named character carries — player_sheet()
 // below is the one door.
 #pragma once
 #include "ecs/components.h"
@@ -154,27 +155,30 @@ const SpellBook* player_spellbook(const ecs::World& world);
 // caches follow the EFFECTIVE sheet through THE door every lord's do
 // (squad.h refresh_body_from_sheet), each bar preserving its fraction
 // («доля у всех», owner 2026-09-10). No-op before the world exists.
-void refresh_player_body(PlayerState& player, ecs::World& world);
+void refresh_player_body(ecs::World& world);
 
 AgentMemory* player_head(ecs::World& world);
 const AgentMemory* player_head(const ecs::World& world);
 
-// EVERYTHING STANDING ON THE PLAYER, summed once. His sheet is the character
-// he built; what acts in the world is that character PLUS what he is wearing
-// (ecs::BodyEquipment on his squad entity) and what is currently burning on
-// him (sustained spells). Both are rows of the one bonus registry, so both are
-// the same sum — and because the sum is read through a modified COPY
-// (`effective_sheet`), taking the coat off or letting the spell lapse is
-// simply not adding it next time.
-BonusTotals player_standing_bonuses(ecs::World& world,
-                                    const PlayerState& player);
+// THE player's OWNED base sheet — the ordinary CharacterSheet component on
+// his squad entity (посадка Б, v91): the writable store creation, level-up,
+// point spends and learning mutate, the block the macro snapshot already
+// carries for every named character (hasSheet). It was PlayerState::sheet —
+// the LAST field that made him a different kind of body from the squads
+// around him. nullptr before the world exists. Never hold the pointer
+// across a simulated tick (ecs-ref grabla: a spawn reallocates storage).
+CharacterSheet* player_sheet(ecs::World& world);
+const CharacterSheet* player_sheet(const ecs::World& world);
 
 // The sheet the world should actually ask about him — THE door (phase 4,
 // owner 2026-09-06): «финальный лист после всех источников — прокачка,
 // врождённое, предмет — и его везде использует». Every reader of his numbers
 // (bars, damage, march, carry, prices, XP, UI) walks through here; writes
-// (creation, level-up, learning) go to the BASE sheet, never to this copy.
-CharacterSheet player_effective_sheet(ecs::World& world,
-                                      const PlayerState& player);
+// (creation, level-up, learning) go to the BASE sheet (player_sheet), never
+// to this copy. Since посадка Б this is the universal effective door
+// (squad.h effective_sheet_of) asked about his own squad — what stood here
+// as player_standing_bonuses dissolved into standing_bonuses_of: the player
+// is that door's ordinary case.
+CharacterSheet player_effective_sheet(ecs::World& world);
 
 } // namespace sm

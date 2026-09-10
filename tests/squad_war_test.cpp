@@ -292,8 +292,8 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     army->push(make_soldier(std::uint8_t(NPCType::Guard), 3, 502u));
     player_pools(w)->maxHp = 100;
     player_pools(w)->hp = 100;
-    const int level0 = gs.player.sheet.levelData.level;
-    const int exp0 = gs.player.sheet.levelData.exp;
+    const int level0 = sm::player_sheet(w)->levelData.level;
+    const int exp0 = sm::player_sheet(w)->levelData.exp;
     const auto enemy = make_squad_at(w, NPCType::Bandit, "bandits", 3,
                                      10.0f, 10.0f, 9u, {31u, 32u},
                                      NPCType::Bandit, 2);
@@ -323,8 +323,8 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     CHECK(player_inventory(w)->count("wood") == 4,
           "the fallen owner's goods landed in the player's own bag");
     CHECK(xp > 0
-              && (gs.player.sheet.levelData.exp > exp0
-                  || gs.player.sheet.levelData.level > level0),
+              && (sm::player_sheet(w)->levelData.exp > exp0
+                  || sm::player_sheet(w)->levelData.level > level0),
           "victory paid the player experience through award_exp");
 
     // The player LOSES with a man still standing: wounded, never dead — the

@@ -47,11 +47,12 @@ static bool objective_target_cell(const GameState& gs, const Objective& o,
 
 // Takes the GameState because a Reputation reward moves the player's row in the
 // ONE relation matrix — his standing is not a map of his own any more.
+// `sheet` — his OWNED component (посадка Б), handed in like `bag`/`head`:
+// an XP reward lands in the body that owns the build.
 static void emit_reward(const Reward& r, GameState& gs, Inventory* bag,
-                        AgentMemory* head, EventBus& bus,
-                        int giverSettlementId) {
+                        AgentMemory* head, CharacterSheet* sheet,
+                        EventBus& bus, int giverSettlementId) {
     if (!bag) return;   // no world, nowhere to pay
-    PlayerState& p = gs.player;
     switch (r.kind) {
         case RewardKind::Gold: {
             // What ACTUALLY moved — the event below reports this, not the
@@ -109,9 +110,11 @@ static void emit_reward(const Reward& r, GameState& gs, Inventory* bag,
         case RewardKind::Xp:
             // Through the one grant path: a contract that pays a level PAYS it.
             // wis dividend applies here like on every grant (owner ruling).
-            award_exp(p.sheet.levelData, r.amount,
-                      calculate_derived(p.sheet.attributes,
-                                        p.sheet.skills).expMultPct);
+            if (sheet) {
+                award_exp(sheet->levelData, r.amount,
+                          calculate_derived(sheet->attributes,
+                                            sheet->skills).expMultPct);
+            }
             break;
         case RewardKind::Item:
             // A full bag refuses; the loss is said out loud instead of the
@@ -223,7 +226,7 @@ static void prune_settled_offers(PlayerState& p, int today) {
 
 void QuestEngine::tick(std::vector<Quest>& active, EventBus& bus,
                        GameState& gs, Inventory* bag, AgentMemory* head,
-                       int px, int py) {
+                       CharacterSheet* sheet, int px, int py) {
     auto& events = bus.last_tick_events();
     prune_settled_offers(gs.player, gs.worldTime.day());
     std::vector<Quest> completed;
@@ -266,7 +269,8 @@ void QuestEngine::tick(std::vector<Quest>& active, EventBus& bus,
     for (auto& q : completed) {
         settle_offer(gs.player, q);
         ++gs.player.completedQuestCount;
-        for (auto& r : q.rewards) emit_reward(r, gs, bag, head, bus, q.giverSettlementId);
+        for (auto& r : q.rewards)
+            emit_reward(r, gs, bag, head, sheet, bus, q.giverSettlementId);
         GameEvent ev; ev.tag = EventTag::QuestComplete;
         ev.a = q.ordinal;
         ev.b = kEventEffectAlreadyApplied;

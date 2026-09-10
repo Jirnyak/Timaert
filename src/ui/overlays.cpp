@@ -644,10 +644,9 @@ namespace sm::ui
         // healed him.)
 
         // The panel's derived block after a spend — same door as its header.
-        DerivedBonuses calculate_derived_effective(ecs::World &world,
-                                                   const PlayerState &p)
+        DerivedBonuses calculate_derived_effective(ecs::World &world)
         {
-            const CharacterSheet eff = player_effective_sheet(world, p);
+            const CharacterSheet eff = player_effective_sheet(world);
             return calculate_derived(eff.attributes, eff.skills);
         }
 
@@ -709,13 +708,21 @@ namespace sm::ui
         ecs::Pools &pools = poolsPtr ? *poolsPtr : poolsFallback;
         const SoldierSquad *army = player_roster(world);
         const CharacterPanelTab current = tab ? *tab : CharacterPanelTab::Stats;
+        // His BASE sheet, through the one door (посадка Б) — same fallback
+        // shape as the bag and the bars: a world that has none yet shows a
+        // blank build, not a crash. The spend buttons write THIS block.
+        CharacterSheet *sheetPtr = player_sheet(world);
+        CharacterSheet sheetFallback{};
+        CharacterSheet &sheet = sheetPtr ? *sheetPtr : sheetFallback;
         // The panel SHOWS the EFFECTIVE sheet (phase 4, owner: «финальное
         // после всего — и его везде использует»); the spend buttons below
         // still write the BASE one, which is the only thing they may touch.
         // Mutable: a spend refreshes it in place so the row shows the new
         // number this very frame, not the next.
-        const BonusTotals panelStanding = player_standing_bonuses(world, p);
-        CharacterSheet effPanel = player_effective_sheet(world, p);
+        const entt::entity panelSquad = player_squad_entity(world);
+        const BonusTotals panelStanding = panelSquad != entt::null
+            ? standing_bonuses_of(world, panelSquad) : BonusTotals{};
+        CharacterSheet effPanel = player_effective_sheet(world);
         DerivedBonuses derived = calculate_derived(effPanel.attributes,
                                                    effPanel.skills,
                                                    panelStanding);
@@ -733,9 +740,9 @@ namespace sm::ui
             ImGui::SetWindowFontScale(scale);
             ImGui::Text("%s  Level %d  Age %d days",
                         p.name.empty() ? "Wanderer" : p.name.c_str(),
-                        p.sheet.levelData.level, p.ageDays);
+                        sheet.levelData.level, p.ageDays);
             ImGui::SameLine();
-            ImGui::TextDisabled("EXP %d / %d", p.sheet.levelData.exp, p.sheet.levelData.expToNext);
+            ImGui::TextDisabled("EXP %d / %d", sheet.levelData.exp, sheet.levelData.expToNext);
             ImGui::Separator();
 
             if (ImGui::BeginTabBar("##character_tabs"))
@@ -759,16 +766,16 @@ namespace sm::ui
                         ImGui::Text("MP %d / %d", pools.mp, pools.maxMp);
                         ImGui::Text("SP %d / %d", pools.sp, pools.maxSp);
                         ImGui::Text("Coin %d", wallet_value(playerBag));
-                        ImGui::Text("Attr pts %d", p.sheet.levelData.attributePoints);
-                        ImGui::Text("Skill pts %d", p.sheet.levelData.skillPoints);
-                        if (p.sheet.levelData.learnPicks > 0)
-                            ImGui::Text("Learn picks %d", p.sheet.levelData.learnPicks);
-                        if (p.sheet.levelData.exp >= p.sheet.levelData.expToNext)
+                        ImGui::Text("Attr pts %d", sheet.levelData.attributePoints);
+                        ImGui::Text("Skill pts %d", sheet.levelData.skillPoints);
+                        if (sheet.levelData.learnPicks > 0)
+                            ImGui::Text("Learn picks %d", sheet.levelData.learnPicks);
+                        if (sheet.levelData.exp >= sheet.levelData.expToNext)
                         {
                             if (ImGui::Button("Level Up"))
                             {
-                                if (try_level_up(p.sheet.levelData))
-                                    refresh_player_body(p, world);
+                                if (try_level_up(sheet.levelData))
+                                    refresh_player_body(world);
                             }
                         }
                         ImGui::TableNextColumn();
@@ -791,14 +798,14 @@ namespace sm::ui
                             if (ImGui::IsItemHovered())
                                 ImGui::SetTooltip("%s", row.effect);
                             ImGui::SameLine(attrPlusX);
-                            ImGui::BeginDisabled(p.sheet.levelData.attributePoints <= 0);
+                            ImGui::BeginDisabled(sheet.levelData.attributePoints <= 0);
                             if (ImGui::SmallButton("+"))
                             {
-                                if (spend_attribute_point(p.sheet.levelData, p.sheet.attributes, row.id))
+                                if (spend_attribute_point(sheet.levelData, sheet.attributes, row.id))
                                 {
-                                    refresh_player_body(p, world);
-                                    effPanel = player_effective_sheet(world, p);
-                                    derived = calculate_derived_effective(world, p);
+                                    refresh_player_body(world);
+                                    effPanel = player_effective_sheet(world);
+                                    derived = calculate_derived_effective(world);
                                 }
                             }
                             ImGui::EndDisabled();
@@ -842,7 +849,7 @@ namespace sm::ui
                             // an unlearned craft must not eat a learn pick's
                             // job. The DISPLAY is the effective rank — the
                             // number the formulas actually read.
-                            const int rank = p.sheet.skills.of(row.id);
+                            const int rank = sheet.skills.of(row.id);
                             const int rankShown = effPanel.skills.of(row.id);
                             if (rank == 0)
                             {
@@ -857,14 +864,14 @@ namespace sm::ui
                                 else
                                     ImGui::TextDisabled("—");
                                 ImGui::SameLine(number_field_x());
-                                ImGui::BeginDisabled(p.sheet.levelData.learnPicks <= 0);
+                                ImGui::BeginDisabled(sheet.levelData.learnPicks <= 0);
                                 if (ImGui::SmallButton("Learn"))
                                 {
-                                    if (spend_learn_pick(p.sheet.levelData, p.sheet.skills, row.id))
+                                    if (spend_learn_pick(sheet.levelData, sheet.skills, row.id))
                                     {
-                                        refresh_player_body(p, world);
-                                        effPanel = player_effective_sheet(world, p);
-                                        derived = calculate_derived_effective(world, p);
+                                        refresh_player_body(world);
+                                        effPanel = player_effective_sheet(world);
+                                        derived = calculate_derived_effective(world);
                                     }
                                 }
                                 ImGui::EndDisabled();
@@ -877,14 +884,14 @@ namespace sm::ui
                                 // after the digits, so rank 10 does not push
                                 // it sideways.
                                 ImGui::SameLine(number_field_x());
-                                ImGui::BeginDisabled(p.sheet.levelData.skillPoints <= 0);
+                                ImGui::BeginDisabled(sheet.levelData.skillPoints <= 0);
                                 if (ImGui::SmallButton("+"))
                                 {
-                                    if (spend_skill_point(p.sheet.levelData, p.sheet.skills, row.id))
+                                    if (spend_skill_point(sheet.levelData, sheet.skills, row.id))
                                     {
-                                        refresh_player_body(p, world);
-                                        effPanel = player_effective_sheet(world, p);
-                                        derived = calculate_derived_effective(world, p);
+                                        refresh_player_body(world);
+                                        effPanel = player_effective_sheet(world);
+                                        derived = calculate_derived_effective(world);
                                     }
                                 }
                                 ImGui::EndDisabled();
@@ -1322,9 +1329,9 @@ namespace sm::ui
                             ImGui::TableNextColumn();
                             if (def)
                             {
-                                const int dmg = spell_damage(*def, p.sheet.attributes, p.sheet.skills);
-                                const int heal = spell_heal(*def, p.sheet.attributes, p.sheet.skills);
-                                const int rad = spell_radius(*def, p.sheet.attributes, p.sheet.skills);
+                                const int dmg = spell_damage(*def, sheet.attributes, sheet.skills);
+                                const int heal = spell_heal(*def, sheet.attributes, sheet.skills);
+                                const int rad = spell_radius(*def, sheet.attributes, sheet.skills);
                                 if (dmg > 0 && rad > 0)
                                     ImGui::Text("%d / r%d", dmg, rad);
                                 else if (dmg > 0)
@@ -1563,10 +1570,12 @@ namespace sm::ui
                     // The charisma that haggles is the EFFECTIVE sheet's
                     // (phase 4): a +CHA amulet talks the price down the same
                     // as a silver tongue grown by levels.
-                    const BonusTotals tradeStanding =
-                        player_standing_bonuses(world, gs.player);
+                    const entt::entity tradeSquad = player_squad_entity(world);
+                    const BonusTotals tradeStanding = tradeSquad != entt::null
+                        ? standing_bonuses_of(world, tradeSquad)
+                        : BonusTotals{};
                     const CharacterSheet effTrade =
-                        effective_sheet(gs.player.sheet, tradeStanding);
+                        player_effective_sheet(world);
                     const int chaEff =
                         effTrade.attributes.of(AttributeId::Cha);
                     // ...and his TRADE rank haggles beside it (phase 6).
@@ -1741,7 +1750,7 @@ namespace sm::ui
                             "Daily upkeep: %d g",
                             calculate_squad_upkeep(
                                 *army,
-                                calculate_derived_effective(world, gs.player)
+                                calculate_derived_effective(world)
                                     .tradeDiscountPct));
                     }
                     ImGui::EndTabItem();

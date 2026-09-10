@@ -576,13 +576,14 @@ void draw_player_hud(const GameState& gs, ecs::World& world,
                     pc ? ecs::cell_y(*pc, gs.mapW) : 0);
     }
 
-    // Right-aligned: name + level
+    // Right-aligned: name + level. The base component through the one door
+    // (посадка Б) — a world without a body reads as the blank build.
+    const CharacterSheet* hudSheet = player_sheet(world);
+    const LevelData hudLevel = hudSheet ? hudSheet->levelData : LevelData{};
     char nameBuf[64];
     std::snprintf(nameBuf, sizeof(nameBuf), "%s  Lv %d   %d / %d EXP",
         gs.player.name.empty() ? "Wanderer" : gs.player.name.c_str(),
-        gs.player.sheet.levelData.level,
-        gs.player.sheet.levelData.exp,
-        gs.player.sheet.levelData.expToNext);
+        hudLevel.level, hudLevel.exp, hudLevel.expToNext);
     const float nw = ImGui::CalcTextSize(nameBuf).x;
     ImGui::SameLine(vp.x - nw - 14.0f);
     ImGui::TextColored(ImVec4(0.95f, 0.95f, 0.85f, 1.0f), "%s", nameBuf);

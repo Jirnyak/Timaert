@@ -30,11 +30,16 @@ namespace ecs { struct Pools; }
 // `bag` and `pools`: a spell-learn effect writes knowledge into the body
 // that owns it, and there is no PlayerState field to write to any more.
 // Null = no world yet; a learn effect simply does not land.
+// `sheet` — the player's OWNED CharacterSheet component (посадка Б), the
+// same idiom: a grant_xp effect lands in the body that owns the build.
+// Null = no world yet; the grant simply does not land.
 void apply_events(std::span<const GameEvent> events, GameState& gs,
                   Inventory* bag, ecs::Pools* pools, SpellBook* book,
+                  CharacterSheet* sheet,
                   std::vector<GameEvent>* followups = nullptr);
 void apply_events(const std::vector<GameEvent>& events, GameState& gs,
                   Inventory* bag, ecs::Pools* pools, SpellBook* book,
+                  CharacterSheet* sheet,
                   std::vector<GameEvent>* followups = nullptr);
 
 } // namespace sm

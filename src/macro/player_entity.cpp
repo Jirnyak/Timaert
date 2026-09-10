@@ -78,8 +78,19 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
         reg.emplace<ecs::NPCKind>(
             squad, std::uint16_t(NPCType::Adventurer),
             std::uint16_t(faction_index(kPlayerFactionId)));
+        // His OWNED sheet, born WITH the body like every named character's
+        // (посадка Б, v91) — the default creation-screen build (the same
+        // default_* trio default_player used to copy into PlayerState);
+        // apply_creation overwrites it through player_sheet() right after
+        // boot. On a LOADED world this branch is never reached: the snapshot
+        // restores the component inside his record (hasSheet, v90).
+        CharacterSheet birth{};
+        birth.attributes = default_attributes();
+        birth.skills     = default_skills();
+        birth.levelData  = default_level_data();
+        const CharacterSheet& sheet = reg.emplace<CharacterSheet>(squad, birth);
         reg.emplace<ecs::NpcLevel>(
-            squad, std::int16_t(std::max(1, gs.player.sheet.levelData.level)));
+            squad, std::int16_t(std::max(1, sheet.levelData.level)));
         ecs::Pools& pools = reg.emplace<ecs::Pools>(squad, ecs::Pools{});
         reg.emplace<ecs::NpcTraits>(squad, ecs::NpcTraits{});
         {
@@ -113,10 +124,11 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
         {
             // One assembly of what stands on him, used for both halves: the
             // sheet copy (attr/skill cells) and the derived cells the cache
-            // door reads past it (MovePct/CarryKg).
-            const BonusTotals st = player_standing_bonuses(world, gs.player);
+            // door reads past it (MovePct/CarryKg). Through the universal
+            // doors (squad.h) — he is their ordinary case.
+            const BonusTotals st = standing_bonuses_of(world, squad);
             refresh_body_from_sheet(pools, &rt,
-                                    effective_sheet(gs.player.sheet, st),
+                                    effective_sheet(sheet, st),
                                     NPCType::Adventurer, &st);
         }
         // Born whole — creation is a moment that SAYS it heals. Every bar,
@@ -137,8 +149,10 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
     // walker steps it, the jump door writes it, the snapshot restores it.
     // The scalar mirror this block used to re-project died with v88 — the
     // anaesthesia-bridge of §41 root 4.
-    reg.emplace_or_replace<ecs::NpcLevel>(
-        squad, std::int16_t(std::max(1, gs.player.sheet.levelData.level)));
+    if (const auto* own = reg.try_get<CharacterSheet>(squad)) {
+        reg.emplace_or_replace<ecs::NpcLevel>(
+            squad, std::int16_t(std::max(1, own->levelData.level)));
+    }
     // The SAME door every lord's numbers go through (squad.h) — the sheet is
     // the law, ceilings and march caches are its cache, and there is one
     // refresh. The EFFECTIVE sheet (phase 4): a worn +END breastplate
@@ -148,7 +162,7 @@ void ensure_macro_player_entity(GameState& gs, ecs::World& world) {
     // off him — and a sheet-change moment anywhere that forgets its own
     // refresh_player_body call heals within one macro tick instead of
     // drifting forever.
-    refresh_player_body(gs.player, world);
+    refresh_player_body(world);
 
     // ── The flag ──────────────────────────────────────────────────────────
     // Exactly one PlayerTag exists at a time, and it is MACRO ONLY since the
@@ -170,35 +184,22 @@ entt::entity player_squad_entity(ecs::World& world) {
     return find_player_squad(world);
 }
 
-BonusTotals player_standing_bonuses(ecs::World& world,
-                                    const PlayerState& player) {
-    BonusTotals t{};
-    // What he wears. Opt-in: a player who has equipped nothing has no
-    // component, and the limiting case costs a lookup.
-    if (const entt::entity e = find_player_squad(world); e != entt::null) {
-        if (const auto* eq = world.reg.try_get<ecs::BodyEquipment>(e)) {
-            t += worn_bonuses(eq->gear);
-        }
-    }
-    // ...and what is burning on him. A sustained spell contributes while it
-    // burns and stops the moment it does not — no bookkeeping, because nothing
-    // was ever written down. Scaled by his BASE training on purpose: the
-    // standing sum cannot read the sheet it is itself a term of.
-    const SpellBook* book = player_spellbook(world);
-    for (int ord = 0; book && ord < kSpellCount; ++ord) {
-        if (!spellbook_has_sustained(*book, ord)) continue;
-        const SpellDef* def = &kSpellDefs[ord];
-        for (const Bonus& b : def->effects) {
-            accumulate(t, spell_bonus(b, player.sheet.skills,
-                                      spell_school(*def)));
-        }
-    }
-    return t;
+CharacterSheet* player_sheet(ecs::World& world) {
+    const entt::entity e = find_player_squad(world);
+    if (e == entt::null) return nullptr;
+    return world.reg.try_get<CharacterSheet>(e);
 }
 
-CharacterSheet player_effective_sheet(ecs::World& world,
-                                      const PlayerState& player) {
-    return effective_sheet(player.sheet, player_standing_bonuses(world, player));
+const CharacterSheet* player_sheet(const ecs::World& world) {
+    return player_sheet(const_cast<ecs::World&>(world));
+}
+
+CharacterSheet player_effective_sheet(ecs::World& world) {
+    // The universal effective door asked about his own squad (посадка Б) —
+    // a missing world answers with the empty sheet a missing body IS.
+    const entt::entity e = find_player_squad(world);
+    if (e == entt::null) return CharacterSheet{};
+    return effective_sheet_of(world, e);
 }
 
 SoldierSquad* player_roster(ecs::World& world) {
@@ -240,14 +241,16 @@ const ecs::Pools* player_pools(const ecs::World& world) {
     return player_pools(const_cast<ecs::World&>(world));
 }
 
-void refresh_player_body(PlayerState& player, ecs::World& world) {
+void refresh_player_body(ecs::World& world) {
     const entt::entity e = find_player_squad(world);
     if (e == entt::null) return;
     auto* pools = world.reg.try_get<ecs::Pools>(e);
     if (!pools) return;
+    const auto* own = world.reg.try_get<CharacterSheet>(e);
+    if (!own) return;
     auto* rt = world.reg.try_get<ecs::MacroNpcRuntime>(e);
-    const BonusTotals st = player_standing_bonuses(world, player);
-    refresh_body_from_sheet(*pools, rt, effective_sheet(player.sheet, st),
+    const BonusTotals st = standing_bonuses_of(world, e);
+    refresh_body_from_sheet(*pools, rt, effective_sheet(*own, st),
                             NPCType::Adventurer, &st);
 }
 

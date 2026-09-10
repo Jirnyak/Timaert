@@ -3109,16 +3109,12 @@ int feed_squads_daily(MacroWorld& mw) {
         // rider is honestly immune to hunger; there is nobody to feed.
         // Phase 6: the leader's FORAGING lives off the land — the daily
         // draw shrinks by THE cost-down skill law (-1 %/rank; rank 100 =
-        // the squad feeds itself whole). The player's rank is his EFFECTIVE
-        // sheet's (the phase-4 door); a lord's is his derived sheet's, the
-        // same derivation his charisma haggles with (leader_charisma_).
-        int foragingRank = 0;
-        if (reg.all_of<ecs::PlayerSquadTag>(e)) {
-            foragingRank = player_effective_sheet(*mw.world, gs.player)
-                               .skills.of(SkillId::Foraging);
-        } else {
-            foragingRank = sheet_of(*mw.world, e).skills.of(SkillId::Foraging);
-        }
+        // the squad feeds itself whole). EVERY leader's rank is his
+        // EFFECTIVE sheet's (посадка Б, the universal door): a lord in a
+        // +Foraging coat forages like the body actually wearing it, and
+        // the player is nobody special here.
+        const int foragingRank =
+            effective_sheet_of(*mw.world, e).skills.of(SkillId::Foraging);
         // Through the table door, not an inline percent: the row's own
         // pctPerRank walks the cost down (Trade learned this the hard way —
         // an inline number is a second truth the tooltip never promised).

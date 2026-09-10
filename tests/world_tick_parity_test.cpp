@@ -74,7 +74,7 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     sm::ensure_macro_player_entity(gs, world);
     sm::player_inventory(world)->add("coin_empire", 5);
     gs.player.ageDays = 1000;
-    gs.player.sheet.attributes[sm::AttributeId::Cha] = 0;
+    sm::player_sheet(world)->attributes[sm::AttributeId::Cha] = 0;
     // The player's men live on his SQUAD ENTITY now (owner, 2026-08-27), so
     // the fixture raises one — the same shape a lord's warband has — and the
     // daily tick reads his wages from it through the envelope.
@@ -94,8 +94,7 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     // upkeep table can be retuned without touching this file. The tick reads
     // the EFFECTIVE sheet (phase 4) — and so does the expectation: the door's
     // own clamp (an attribute never reads below 1) is part of the law.
-    const sm::CharacterSheet effSheet =
-        sm::player_effective_sheet(world, gs.player);
+    const sm::CharacterSheet effSheet = sm::player_effective_sheet(world);
     const int expectedUpkeep = sm::calculate_squad_upkeep(
         *army, sm::calculate_derived(effSheet.attributes,
                                      effSheet.skills)

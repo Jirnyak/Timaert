@@ -207,16 +207,20 @@ void test_the_players_men_never_desert() {
 void test_the_entity_numbers_are_not_stale() {
     GameState gs{};
     gs.mapW = gs.mapH = 64;
-    gs.player.sheet.attributes[sm::AttributeId::End] = 5;
-    gs.player.sheet.levelData.level = 1;
     ecs::World w;
+    // The sheet is the OWNED component now (посадка Б): it exists only once
+    // the body does, so the build is written through the door and the next
+    // ensure walk (the per-tick refresh) moves the ceilings after it.
+    ensure_macro_player_entity(gs, w);
+    player_sheet(w)->attributes[sm::AttributeId::End] = 5;
+    player_sheet(w)->levelData.level = 1;
     ensure_macro_player_entity(gs, w);
     const entt::entity e = player_squad_entity(w);
 
     const int bornMaxSp = w.reg.get<ecs::Pools>(e).maxSp;
     CHECK(bornMaxSp
-              == bar_ceilings(gs.player.sheet.attributes,
-                              gs.player.sheet.skills, 100, 100, 100).maxSp,
+              == bar_ceilings(player_sheet(w)->attributes,
+                              player_sheet(w)->skills, 100, 100, 100).maxSp,
           "his squad is born with his own stamina bar — the sheet's ceiling");
 
     // He is wounded, he grows tired, he trains END and he levels. The Pools
@@ -230,21 +234,21 @@ void test_the_entity_numbers_are_not_stale() {
         pools.sp = -6;   // an honest exhaustion debt
     }
     const int oldMaxHp = w.reg.get<ecs::Pools>(e).maxHp;
-    gs.player.sheet.attributes[sm::AttributeId::End] = 12;
-    gs.player.sheet.levelData.level = 4;
+    player_sheet(w)->attributes[sm::AttributeId::End] = 12;
+    player_sheet(w)->levelData.level = 4;
     // He marched to 33,44 (a cell write — what the walker does); the heal
     // pass below must rescale his numbers WITHOUT touching where he stands.
     w.reg.get<ecs::MacroCell>(e).idx = ecs::cell_index(33, 44, 64);
     ensure_macro_player_entity(gs, w);
 
     const auto& hp = w.reg.get<ecs::Pools>(e);
-    CHECK(hp.maxHp == bar_ceilings(gs.player.sheet.attributes,
-                                   gs.player.sheet.skills, 100, 100, 100).maxHp,
+    CHECK(hp.maxHp == bar_ceilings(player_sheet(w)->attributes,
+                                   player_sheet(w)->skills, 100, 100, 100).maxHp,
           "the bigger bar the new END bought reached the entity");
     CHECK(hp.hp == int(float(hp.maxHp) * (17.0f / float(oldMaxHp))),
           "the wound rescaled by its FRACTION — no free heal, no theft");
-    CHECK(hp.maxSp == bar_ceilings(gs.player.sheet.attributes,
-                                   gs.player.sheet.skills, 100, 100, 100).maxSp,
+    CHECK(hp.maxSp == bar_ceilings(player_sheet(w)->attributes,
+                                   player_sheet(w)->skills, 100, 100, 100).maxSp,
           "the stamina ceiling followed the END he trained");
     CHECK(hp.maxSp > bornMaxSp,
           "negative control: that ceiling did MOVE — the check above is not "
@@ -286,15 +290,18 @@ void test_the_head_is_on_the_entity() {
 // The app used to build the player's AutoBattleSide by hand beside the door
 // every other squad went through — two answers to one question, reading two
 // different stores. They can no longer disagree because there is one of them;
-// what this pins is that the one door still says the PLAYER's numbers, not a
-// generic adventurer's, when it is handed his authored sheet.
+// what this pins is that the one door says the PLAYER's numbers, not a
+// generic adventurer's — read off the OWNED sheet component on his entity
+// (посадка Б: the storedSheet parameter died, no caller can forget it).
 void test_one_door_assembles_every_battle_side() {
     GameState gs{};
     gs.mapW = gs.mapH = 64;
-    gs.player.sheet.attributes[sm::AttributeId::Str] = 18;
-    gs.player.sheet.attributes[sm::AttributeId::End] = 18;
-    gs.player.sheet.levelData.level = 5;
     ecs::World w;
+    ensure_macro_player_entity(gs, w);
+    player_sheet(w)->attributes[sm::AttributeId::Str] = 18;
+    player_sheet(w)->attributes[sm::AttributeId::End] = 18;
+    player_sheet(w)->levelData.level = 5;
+    // The per-tick walk moves the ceilings after the build change.
     ensure_macro_player_entity(gs, w);
     const entt::entity e = player_squad_entity(w);
     {
@@ -303,16 +310,20 @@ void test_one_door_assembles_every_battle_side() {
         pools.sp = pools.maxSp / 4;
     }
 
-    const AutoBattleSide mine = auto_battle_side_of(w, e, &gs.player.sheet);
-    const AutoBattleSide generic = auto_battle_side_of(w, e);
+    // A transient squad owns no sheet — the same door, the derive path.
+    // Spawned BEFORE `mine` is assembled: the side carries a pointer into
+    // the roster pool, and a later spawn may reallocate it (ecs-ref grabla).
+    const entt::entity transient = npc_squad(w, 30.0f, 30.0f, 9u, 0);
+    const AutoBattleSide mine = auto_battle_side_of(w, e);
+    const AutoBattleSide generic = auto_battle_side_of(w, transient);
 
     CHECK(mine.leaderHpOverride
-              == float(std::max(1, bar_ceilings(gs.player.sheet.attributes,
-                                                gs.player.sheet.skills, 100, 100, 100).maxHp)),
-          "handed his sheet, the door states HIS ceiling");
+              == float(std::max(1, bar_ceilings(player_sheet(w)->attributes,
+                                                player_sheet(w)->skills, 100, 100, 100).maxHp)),
+          "owning his sheet, the door states HIS ceiling");
     CHECK(generic.leaderHpOverride < 0.0f,
-          "negative control: handed none, the same door derives from the row "
-          "— the sheet is what makes the difference, not the entity");
+          "negative control: a transient with no owned sheet derives from "
+          "the row — the component is what makes the difference");
     CHECK(mine.leaderHealthFraction > 0.45f && mine.leaderHealthFraction < 0.55f,
           "his wound walks in with him, read off the entity the merge made "
           "honest");
@@ -330,8 +341,10 @@ void test_one_door_assembles_every_battle_side() {
 void test_the_players_wound_settles_through_the_one_door() {
     GameState gs{};
     gs.mapW = gs.mapH = 64;
-    gs.player.sheet.attributes[sm::AttributeId::End] = 10;
     ecs::World w;
+    ensure_macro_player_entity(gs, w);
+    player_sheet(w)->attributes[sm::AttributeId::End] = 10;
+    // The per-tick walk moves the ceilings after the build change.
     ensure_macro_player_entity(gs, w);
     const entt::entity mine = player_squad_entity(w);
     const int maxHp = w.reg.get<ecs::Pools>(mine).maxHp;
@@ -368,10 +381,10 @@ void test_the_players_wound_settles_through_the_one_door() {
 void test_the_sheet_door_reads_what_is_standing() {
     ecs::World w;
     GameState gs;
-    gs.player.sheet.attributes[AttributeId::End] = 8;
     ensure_macro_player_entity(gs, w);
+    player_sheet(w)->attributes[AttributeId::End] = 8;
 
-    const CharacterSheet bare = player_effective_sheet(w, gs.player);
+    const CharacterSheet bare = player_effective_sheet(w);
     CHECK(bare.attributes.of(AttributeId::End) == 8,
           "nothing worn, nothing burning: the door answers the base sheet");
 
@@ -383,7 +396,7 @@ void test_the_sheet_door_reads_what_is_standing() {
     plate.set_affix(0, {std::uint8_t(BonusId::End), +2});
     eq.gear.worn[0] = plate;
 
-    const CharacterSheet dressed = player_effective_sheet(w, gs.player);
+    const CharacterSheet dressed = player_effective_sheet(w);
     CHECK(dressed.attributes.of(AttributeId::End) == 10,
           "a worn +2 END is IN the sheet the world asks about");
     // ...and the bar follows, because the bar is derived from the sheet —
@@ -391,12 +404,12 @@ void test_the_sheet_door_reads_what_is_standing() {
     CHECK(bar_ceilings(dressed.attributes, dressed.skills, 100, 100, 100).maxSp
               > bar_ceilings(bare.attributes, bare.skills, 100, 100, 100).maxSp,
           "a worn +END widens what a day of marching can hold");
-    CHECK(gs.player.sheet.attributes.of(AttributeId::End) == 8,
+    CHECK(player_sheet(w)->attributes.of(AttributeId::End) == 8,
           "the BASE sheet never moved — reads walk the door, writes never do");
 
     // Take it off: the door simply stops summing it.
     eq.gear.worn[0] = ItemRef{};
-    CHECK(player_effective_sheet(w, gs.player)
+    CHECK(player_effective_sheet(w)
                   .attributes.of(AttributeId::End) == 8,
           "negative control: off the body, out of the answer — no residue");
 }

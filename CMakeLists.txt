@@ -612,6 +612,9 @@ timaert_test(caravan_deal_test
 timaert_test(macro_npc_ai_parity_test
     SOURCES
         src/macro/npc_ai.cpp
+        # effective_sheet_of (squad.h, посадка Б) sums worn gear via
+        # anatomy.cpp worn_bonuses — the daily bread law walks it now.
+        src/macro/anatomy.cpp
         # The tick drivers now settle the dead THROUGH the pool's own
         # unloader (raise_deserter_bands, AI-2) and the rotation raises
         # crews — both live in npc_spawn.cpp.
@@ -701,6 +704,9 @@ timaert_test(squad_travel_test
         # settle_dead_squads unloads the pool through raise_deserter_bands (AI-2)
         src/macro/npc_spawn.cpp
         src/macro/npc_ai.cpp
+        # effective_sheet_of (squad.h, посадка Б) sums worn gear via
+        # anatomy.cpp worn_bonuses — the daily bread law walks it now.
+        src/macro/anatomy.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
         # player's own door (recovery.h recover_bar), never a copy.
         src/macro/recovery.cpp
@@ -1052,6 +1058,9 @@ timaert_test(trade_law_test
         # settle_dead_squads unloads the pool through raise_deserter_bands (AI-2)
         src/macro/npc_spawn.cpp
         src/macro/npc_ai.cpp
+        # effective_sheet_of (squad.h, посадка Б) sums worn gear via
+        # anatomy.cpp worn_bonuses — the daily bread law walks it now.
+        src/macro/anatomy.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
         # player's own door (recovery.h recover_bar), never a copy.
         src/macro/recovery.cpp
@@ -1180,6 +1189,9 @@ timaert_test(fauna_stock_test
 timaert_test(woodcutter_gather_test
     SOURCES
         src/macro/npc_ai.cpp
+        # effective_sheet_of (squad.h, посадка Б) sums worn gear via
+        # anatomy.cpp worn_bonuses — the daily bread law walks it now.
+        src/macro/anatomy.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
         # player's own door (recovery.h recover_bar), never a copy.
         src/macro/recovery.cpp
@@ -1235,6 +1247,9 @@ timaert_test(threat_field_test
 timaert_test(scent_field_test
     SOURCES
         src/macro/npc_ai.cpp
+        # effective_sheet_of (squad.h, посадка Б) sums worn gear via
+        # anatomy.cpp worn_bonuses — the daily bread law walks it now.
+        src/macro/anatomy.cpp
         # ONE recovery law (CANON S14): the camp mends HP through the
         # player's own door (recovery.h recover_bar), never a copy.
         src/macro/recovery.cpp

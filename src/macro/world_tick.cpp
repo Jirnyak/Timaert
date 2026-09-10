@@ -344,21 +344,24 @@ void tick_villages_(GameState& gs, int day, WorldTickRuntime& runtime,
 namespace {
 
 // ── Daily player tick (upkeep + age) ──────────────────────────
-// `sheet` is his EFFECTIVE one (phase 4, the caller owns the door): a +CHA
-// amulet talks the payroll down like every other price he haggles.
-void tick_player_daily_(PlayerState& p, const CharacterSheet& sheet,
-                        const SoldierSquad* roster,
-                        Inventory* purse) {
-    // The player's men are a roster on his squad entity now, exactly like any
-    // lord's — no roster (no world yet) simply means no wages.
-    const int upkeep = roster
-        ? calculate_squad_upkeep(
-              *roster, calculate_derived(sheet.attributes, sheet.skills)
-                           .tradeDiscountPct)
-        : 0;
-    // Pay what the wallet holds; an unpaid remainder is simply unpaid today
-    // (wage-debt desertion is the №3 pipeline's future rule).
-    if (purse) wallet_spend_up_to(*purse, upkeep);
+// The payroll haggles by his EFFECTIVE sheet (phase 4): a +CHA amulet talks
+// the wage down like every other price. No world = no squad = no wages
+// (посадка Б: the sheet lives ON the squad, so the old no-world fallback
+// sheet died with the field it read) — ageing needs no body.
+void tick_player_daily_(PlayerState& p, ecs::World* world) {
+    if (world) {
+        if (const SoldierSquad* roster = player_roster(*world)) {
+            const CharacterSheet eff = player_effective_sheet(*world);
+            const int upkeep = calculate_squad_upkeep(
+                *roster, calculate_derived(eff.attributes, eff.skills)
+                             .tradeDiscountPct);
+            // Pay what the wallet holds; an unpaid remainder is simply
+            // unpaid today (wage-debt desertion = the №3 pipeline's rule).
+            if (Inventory* purse = player_inventory(*world)) {
+                wallet_spend_up_to(*purse, upkeep);
+            }
+        }
+    }
     p.ageDays += 1;
 }
 
@@ -414,13 +417,8 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
         const int day = runtime.nextDailyTickDay;
         tick_settlements_(gs, day, runtime, esink, euser);
         tick_villages_   (gs, day, runtime, esink, euser);
-        tick_player_daily_(
-            gs.player,
-            macro && macro->world
-                ? player_effective_sheet(*macro->world, gs.player)
-                : gs.player.sheet,
-            macro && macro->world ? player_roster(*macro->world) : nullptr,
-            macro && macro->world ? player_inventory(*macro->world) : nullptr);
+        tick_player_daily_(gs.player,
+                           macro && macro->world ? macro->world : nullptr);
 
         // The ONE growth/diffusion law (R2 track): every resource field is
         // born from time and context through the same walker — the forest

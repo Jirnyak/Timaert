@@ -1061,10 +1061,11 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                                  ImGuiWindowFlags_NoCollapse)) {
                     // The EFFECTIVE sheet haggles and carries (phase 4) —
                     // same door as the settlement counter (overlays.cpp).
-                    const BonusTotals tradeStanding =
-                        player_standing_bonuses(w, gs.player);
+                    const entt::entity tradeSquad = player_squad_entity(w);
+                    const BonusTotals tradeStanding = tradeSquad != entt::null
+                        ? standing_bonuses_of(w, tradeSquad) : BonusTotals{};
                     const CharacterSheet effTrade =
-                        effective_sheet(gs.player.sheet, tradeStanding);
+                        player_effective_sheet(w);
                     const int chaEff =
                         effTrade.attributes.of(AttributeId::Cha);
                     // ...and his TRADE rank haggles beside it (phase 6).

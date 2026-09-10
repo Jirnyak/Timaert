@@ -689,12 +689,13 @@ void write_player(Writer& w, const PlayerState& p) {
     // (No position block since v88: WHERE he stands is his squad's MacroCell
     // inside its MacroNpcRecord — подпосадка 4 killed the scalar double,
     // exactly as v85 killed the bars' one.)
-    w.pod(p.sheet.attributes);
+    // (No sheet block since v91: his sheet is the owned CharacterSheet
+    // component on his squad entity, riding its MacroNpcRecord opt-in like
+    // every named character's — посадка Б. Second copy on disk = the same
+    // defect the bars' block was.)
     // (No combatStats block since v85: the player's bars ride the macro-ECS
     // snapshot inside his squad's MacroNpcRecord like every lord's — a second
     // copy of the same three bars on disk was the defect landing 4 removed.)
-    w.pod(p.sheet.levelData);
-    w.pod(p.sheet.skills);
     // (No perk block since v76: the perk system was purged whole pending its
     // redesign — CANON S14. The bytes return when the perks do.)
     // (No inventory block: his bag is an ordinary NpcInventory on his squad
@@ -731,9 +732,6 @@ void read_player(Reader& r, PlayerState& p) {
     r.str(p.name);
     r.pod(p.sexIdx);              // v78
     r.pod(p.ageDays);
-    r.pod(p.sheet.attributes);
-    r.pod(p.sheet.levelData);
-    r.pod(p.sheet.skills);
     r.pod(p.codexUnlockedBits);   // v63
     r.pod(p.factionPeaceUntilDay);
     std::uint32_t sn = 0;         // v63: settled offers ride as PODs

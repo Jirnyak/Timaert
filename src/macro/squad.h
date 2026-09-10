@@ -7,6 +7,7 @@
 #pragma once
 
 #include "ecs/world.h"
+#include "macro/anatomy.h"
 #include "macro/army.h"
 #include "macro/auto_battle.h"
 #include "core/rng.h"
@@ -17,6 +18,8 @@
 #include "macro/landmark_registry.h"
 #include "macro/macro_stock.h"
 #include "macro/player_entity.h"
+#include "macro/spell_book_state.h"
+#include "macro/spells.h"
 #include "macro/state.h"
 #include "macro/zones.h"
 
@@ -271,6 +274,42 @@ inline CharacterSheet sheet_of(ecs::World& w, entt::entity e) {
                                 leader_sheet_seed(sid ? sid->index : 0u));
 }
 
+// WHAT STANDS ON A MACRO BODY, summed once: what it is wearing
+// (ecs::BodyEquipment) and what is burning on it (the sustained bits of its
+// own SpellBook) — both opt-in components any macro body may carry, both
+// rows of the one bonus registry. Grew out of player_standing_bonuses
+// (посадка Б): the player is this door's ordinary case — the coat hangs on
+// his squad entity like on any lord's. Sustained magnitudes are scaled by
+// the BASE training on purpose: the standing sum cannot read the sheet it
+// is itself a term of.
+inline BonusTotals standing_bonuses_of(ecs::World& w, entt::entity e) {
+    BonusTotals t{};
+    if (const auto* eq = w.reg.try_get<ecs::BodyEquipment>(e)) {
+        t += worn_bonuses(eq->gear);
+    }
+    if (const auto* book = w.reg.try_get<SpellBook>(e)) {
+        const Skills base = sheet_of(w, e).skills;
+        for (int ord = 0; ord < kSpellCount; ++ord) {
+            if (!spellbook_has_sustained(*book, ord)) continue;
+            const SpellDef& def = kSpellDefs[ord];
+            for (const Bonus& b : def.effects) {
+                accumulate(t, spell_bonus(b, base, spell_school(def)));
+            }
+        }
+    }
+    return t;
+}
+
+// The sheet the world should actually ask about ANY macro body — THE
+// effective door (phase 4 law, generalized by посадка Б): the character it
+// is (sheet_of) PLUS everything standing on it. Every reader of a body's
+// numbers (bars, damage, march, carry, prices, XP, the daily bread law)
+// walks through here; writes (level-up, learning) go to the OWNED base
+// sheet, never to this copy.
+inline CharacterSheet effective_sheet_of(ecs::World& w, entt::entity e) {
+    return effective_sheet(sheet_of(w, e), standing_bonuses_of(w, e));
+}
+
 // ── STANDING, FOR ANY MACRO PARTICIPANT (CANON S20.1) ─────────────────────
 //
 // Owner's ruling, 2026-08-27: renown is not a squad's private counter — every
@@ -380,22 +419,21 @@ inline std::uint32_t record_deed(ecs::World& w, GameState& gs, WorldFact fact,
 // ordinal: the macro layer never stored his birth sheet seed, and both body
 // births already re-derive sheets from their own context seeds, so the
 // fraction-based wound law is what keeps the layers agreeing (sub/spawn.h).
-// `storedSheet`: a leader whose sheet was AUTHORED rather than rolled — today
-// that is the player and only the player, tomorrow it is every named lord.
-// Pass it and his own build fights the battle; pass nothing and the row is
-// derived from (type, level, seed) as a generic leader's always was.
+// A leader whose sheet is AUTHORED rather than rolled — a named character
+// with an OWNED component (посадка А/Б) — fights with his own build: the
+// component is read right here, so the player and every named lord get it
+// through one line and no caller can forget to pass it. A transient leader
+// has no component and the row is derived from (type, level, seed) inside
+// the resolver, as a generic leader's always was.
 //
-// This parameter is what killed the twin. The app used to assemble the
-// player's side by hand in `player_auto_battle_side` — twenty lines restating
-// health-as-a-fraction, fatigue-as-sp-over-max and roster lookup, beside the
-// twenty lines here that said the same things about everyone else. Two
-// answers to one question about the world, which CANON S26 forbids by name:
-// they had already drifted (the hand-built one read PlayerState while this one
-// read the entity), and the merge that made the player an ordinary squad is
-// exactly what made one function able to answer for both.
-inline AutoBattleSide auto_battle_side_of(ecs::World& w, entt::entity e,
-                                          const CharacterSheet* storedSheet
-                                              = nullptr) {
+// (The `storedSheet` parameter this replaced is what killed the twin: the
+// app used to assemble the player's side by hand in
+// `player_auto_battle_side` — twenty lines restating health-as-a-fraction,
+// fatigue-as-sp-over-max and roster lookup beside the twenty here saying
+// the same about everyone else. Посадка Б retired the parameter itself:
+// the sheet lives ON the entity now, so the door reads it like every other
+// component above.)
+inline AutoBattleSide auto_battle_side_of(ecs::World& w, entt::entity e) {
     AutoBattleSide s{};
     auto& reg = w.reg;
     if (const auto* kind = reg.try_get<ecs::NPCKind>(e)) {
@@ -421,18 +459,20 @@ inline AutoBattleSide auto_battle_side_of(ecs::World& w, entt::entity e,
     if (const auto* roster = reg.try_get<ecs::SquadRoster>(e)) {
         s.roster = &roster->squad;
     }
-    if (storedSheet) {
-        // His hp ceiling is his OWN sheet's, not a roll of his row — and his
-        // aura is what his perks and skills actually say. `leaderDpsOverride`
-        // is deliberately NOT set here: a swing is priced by the subworld's
+    if (owned_sheet(w, e)) {
+        // A named leader's hp ceiling is his OWN sheet's, not a roll of his
+        // row — and his aura is what his perks and skills actually say. The
+        // EFFECTIVE sheet (phase 4): the fought path swings by it, so the
+        // resolver pricing the same fight from the same ring must read the
+        // same sheet or the two verdicts disagree. `leaderDpsOverride` is
+        // deliberately NOT set here: a swing is priced by the subworld's
         // melee identity (sub/engine.h), and macro is L1 — it may not reach
         // up. The caller that knows both worlds states that one number.
-        // Through THE hp door with his own ROW's floor (§41 root 2): the
-        // old raw bar_ceilings call rode the smuggled default base, which
-        // matched his body only while kAdventurerCombat.hp stayed 100.
+        // Through THE hp door with his own ROW's floor (§41 root 2).
+        const CharacterSheet eff = effective_sheet_of(w, e);
         s.leaderHpOverride = float(
-            body_max_hp(*storedSheet, npc_def(s.leaderType).combat));
-        s.bonuses = squad_bonuses(*storedSheet);
+            body_max_hp(eff, npc_def(s.leaderType).combat));
+        s.bonuses = squad_bonuses(eff);
     }
     return s;
 }
@@ -934,11 +974,18 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
     }
 
     if (xp > 0) {
-        // The EFFECTIVE sheet's WIS scales the take (phase 4, the one door —
-        // macro/player_entity.h); the exp lands in the BASE levelData.
-        const CharacterSheet eff = player_effective_sheet(w, gs.player);
-        const DerivedBonuses d = calculate_derived(eff.attributes, eff.skills);
-        award_exp(gs.player.sheet.levelData, xp, d.expMultPct);
+        // The EFFECTIVE sheet's WIS scales the take (phase 4, the one door);
+        // the exp lands in the OWNED base sheet on his squad entity —
+        // посадка Б: there is no other store for it to land in.
+        if (const entt::entity playerSquad = player_squad_entity(w);
+            playerSquad != entt::null) {
+            const CharacterSheet eff = effective_sheet_of(w, playerSquad);
+            const DerivedBonuses d =
+                calculate_derived(eff.attributes, eff.skills);
+            if (CharacterSheet* own = owned_sheet(w, playerSquad)) {
+                award_exp(own->levelData, xp, d.expMultPct);
+            }
+        }
     }
     return xp;
 }

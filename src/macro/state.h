@@ -314,7 +314,11 @@ namespace sm {
 // (npc.h kNamedKinds), рождается броском сида один раз и дальше владеем;
 // запись снапшота несёт его опт-ин блоком (hasSheet). Транзиенты (ротация,
 // караваны) деривируют генерик на лету и не хранят ничего.
-constexpr int kSaveVersion = 90;
+// v91 (2026-09-10): ЛИСТ ИГРОКА = ТОТ ЖЕ КОМПОНЕНТ (посадка Б) —
+// PlayerState::sheet мёртв, его лист едет в записи его сквада опт-ин
+// блоком hasSheet как у любого именованного; блок игрока теряет три
+// pod-поля листа (attributes/levelData/skills).
+constexpr int kSaveVersion = 91;
 
 enum class SettlementMood : std::uint8_t {
     Prosperous, Stable, Tense, Unrest, Revolt, Count
@@ -529,12 +533,14 @@ struct PlayerState {
     // the anaesthesia-bridge of problems.md §41 root 4.)
     // (No gold FIELD: money is faction coin in `inventory` — macro/currency.h
     // wallet math. The player is a squad like any other, v32.)
-    // Shared character sheet — the SAME sm::CharacterSheet type an NPC carries
-    // (attributes + skills + perks + levelData). Serialized field-by-field in
-    // save.cpp with the on-disk order UNCHANGED (no kSaveVersion bump). The
-    // player and every humanoid NPC now describe their RPG state through one
-    // type; see macro/character_sheet.h.
-    CharacterSheet sheet;
+    // (No `sheet` field since v91 — посадка Б. WHO he built is the ordinary
+    // owned CharacterSheet component on his squad entity, the same block
+    // every named character carries (squad.h owned_sheet, посадка А), read
+    // through macro/player_entity.h player_sheet() and the universal
+    // effective door (squad.h effective_sheet_of). It rides the save inside
+    // his MacroNpcRecord like every named lord's (hasSheet, v90) — the
+    // player block stopped writing a second copy. It was the LAST field
+    // that made him a different kind of body from the squads around him.)
     // (No `combatStats` field. The player's three bars are the ordinary
     // ecs::Pools on his squad entity — macro/player_entity.h player_pools()
     // — refreshed from this sheet through the one door every leader's are

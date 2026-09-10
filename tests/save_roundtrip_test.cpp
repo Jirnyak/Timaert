@@ -195,6 +195,30 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
                    std::uint16_t(sm::faction_index(sm::kPlayerFactionId))};
     player.pools = {40, 40};
     player.level = {3};
+    // ...and WHO HE BUILT (посадка Б, v91): his sheet rides the record's
+    // opt-in hasSheet block like every named character's — the exact values
+    // the dead gs.player.sheet block used to drive.
+    player.hasSheet = 1;
+    player.sheet.attributes[sm::AttributeId::Str] = 7;
+    player.sheet.attributes[sm::AttributeId::End] = 9;
+    player.sheet.attributes[sm::AttributeId::Wil] = 10;
+    player.sheet.attributes[sm::AttributeId::Intl] = 11;
+    player.sheet.attributes[sm::AttributeId::Wis] = 12;
+    player.sheet.attributes[sm::AttributeId::Lck] = 13;
+    player.sheet.attributes[sm::AttributeId::Cha] = 14;
+    player.sheet.attributes[sm::AttributeId::Spd] = 15;
+    player.sheet.skills[sm::SkillId::Bodybuilding] = 1;
+    player.sheet.skills[sm::SkillId::Meditation] = 2;
+    player.sheet.skills[sm::SkillId::Travel] = 3;
+    player.sheet.skills[sm::SkillId::Armsmaster] = 4;
+    player.sheet.skills[sm::SkillId::Marathon] = 5;
+    player.sheet.skills[sm::SkillId::Spellcraft] = 6;
+    player.sheet.skills[sm::SkillId::Weightlifting] = 7;
+    player.sheet.levelData.level = 6;
+    player.sheet.levelData.exp = 321;
+    player.sheet.levelData.expToNext = 6543;
+    player.sheet.levelData.attributePoints = 4;
+    player.sheet.levelData.skillPoints = 5;
     // ...and what he KNOWS (v89): learned + active + a burning sustained —
     // the exact states the old PlayerState block used to carry.
     sm::spellbook_learn(player.book, sm::spell_ordinal("fireball"));
@@ -307,26 +331,9 @@ sm::GameState make_state() {
     // is an ordinary NpcInventory on his squad entity.)
     // (His HEAD rides the same record: AgentMemory is a column of every
     // leader's macro record, and the player is a leader.)
-    gs.player.sheet.attributes[sm::AttributeId::Str] = 7;
-    gs.player.sheet.attributes[sm::AttributeId::End] = 9;
-    gs.player.sheet.attributes[sm::AttributeId::Wil] = 10;
-    gs.player.sheet.attributes[sm::AttributeId::Intl] = 11;
-    gs.player.sheet.attributes[sm::AttributeId::Wis] = 12;
-    gs.player.sheet.attributes[sm::AttributeId::Lck] = 13;
-    gs.player.sheet.attributes[sm::AttributeId::Cha] = 14;
-    gs.player.sheet.attributes[sm::AttributeId::Spd] = 15;
-    gs.player.sheet.skills[sm::SkillId::Bodybuilding] = 1;
-    gs.player.sheet.skills[sm::SkillId::Meditation] = 2;
-    gs.player.sheet.skills[sm::SkillId::Travel] = 3;
-    gs.player.sheet.skills[sm::SkillId::Armsmaster] = 4;
-    gs.player.sheet.skills[sm::SkillId::Marathon] = 5;
-    gs.player.sheet.skills[sm::SkillId::Spellcraft] = 6;
-    gs.player.sheet.skills[sm::SkillId::Weightlifting] = 7;
-    gs.player.sheet.levelData.level = 6;
-    gs.player.sheet.levelData.exp = 321;
-    gs.player.sheet.levelData.expToNext = 6543;
-    gs.player.sheet.levelData.attributePoints = 4;
-    gs.player.sheet.levelData.skillPoints = 5;
+    // (No sheet here since v91 — посадка Б: his build is the owned
+    // CharacterSheet component riding his RECORD's hasSheet block, driven
+    // and asserted with the player record in make_macro_records.)
     // (No bars here since v85: the player's three pools ride the macro-ECS
     // snapshot inside his squad's MacroNpcRecord — the POD block the
     // static_assert in ecs/pools.h guards — not the player scalar block this
@@ -846,18 +853,32 @@ void run_roundtrip() {
         FAIL_BAIL("player age lost");
     }
 
-    if (p.sheet.attributes.of(sm::AttributeId::Str) != 7 || p.sheet.attributes.of(sm::AttributeId::Intl) != 11 || p.sheet.attributes.of(sm::AttributeId::Spd) != 15) {
-        FAIL_BAIL("player attributes lost");
-    }
-    if (p.sheet.skills.of(sm::SkillId::Bodybuilding) != 1 || p.sheet.skills.of(sm::SkillId::Spellcraft) != 6
-        || p.sheet.skills.of(sm::SkillId::Weightlifting) != 7) {
-        FAIL_BAIL("player skills lost");
-    }
-    if (p.sheet.levelData.level != 6 || p.sheet.levelData.exp != 321
-        || p.sheet.levelData.expToNext != 6543
-        || p.sheet.levelData.attributePoints != 4
-        || p.sheet.levelData.skillPoints != 5) {
-        FAIL_BAIL("player level data lost");
+    {
+        // His SHEET rides his squad's record now (посадка Б, v91) — find it
+        // by the reserved ordinal and demand the build came back verbatim.
+        const sm::MacroNpcRecord* prec = nullptr;
+        for (const sm::MacroNpcRecord& r : loadedMacro) {
+            if (r.spawnId.index == sm::ecs::kPlayerSquadOrdinal) prec = &r;
+        }
+        if (!prec) FAIL_BAIL("the player's squad record vanished");
+        if (!prec->hasSheet) FAIL_BAIL("the player's owned sheet flag lost");
+        const sm::CharacterSheet& sh = prec->sheet;
+        if (sh.attributes.of(sm::AttributeId::Str) != 7
+            || sh.attributes.of(sm::AttributeId::Intl) != 11
+            || sh.attributes.of(sm::AttributeId::Spd) != 15) {
+            FAIL_BAIL("player attributes lost");
+        }
+        if (sh.skills.of(sm::SkillId::Bodybuilding) != 1
+            || sh.skills.of(sm::SkillId::Spellcraft) != 6
+            || sh.skills.of(sm::SkillId::Weightlifting) != 7) {
+            FAIL_BAIL("player skills lost");
+        }
+        if (sh.levelData.level != 6 || sh.levelData.exp != 321
+            || sh.levelData.expToNext != 6543
+            || sh.levelData.attributePoints != 4
+            || sh.levelData.skillPoints != 5) {
+            FAIL_BAIL("player level data lost");
+        }
     }
     if (sm::player_reputation(&loaded, "guild") != 42) {
         FAIL_BAIL("player standing lost (his row in the faction matrix)");

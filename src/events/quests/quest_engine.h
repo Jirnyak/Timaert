@@ -24,11 +24,16 @@ public:
     // the caller): handed in like `bag` and `head`, because WHERE he stands
     // stopped being a PlayerState scalar with подпосадка 4 and this layer
     // does not reach into the ECS for it.
+    // `sheet` — the player's OWNED CharacterSheet component (посадка Б),
+    // handed in exactly like `bag` and `head`: an XP reward lands in the
+    // body that owns the build, and there is no PlayerState field to write
+    // to any more. Null = no world yet; an XP reward simply does not land.
     void tick(std::vector<Quest>& active,
               EventBus& bus,
               GameState& gs,
               Inventory* bag,
               AgentMemory* head,
+              CharacterSheet* sheet,
               int px, int py);
 
     // Accepting is the moment an offer becomes an object of the world, so

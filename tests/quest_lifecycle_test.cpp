@@ -47,6 +47,10 @@ sm::Inventory bag{};
 // engine is handed the container instead of reaching into PlayerState — the
 // same reason it is handed `bag`.
 sm::AgentMemory head{};
+// The player's OWNED sheet (посадка Б): an XP grant lands in the component
+// the body owns, and the applicator/engine are handed it like `bag` and
+// `head`. Reset per scenario beside them.
+sm::CharacterSheet sheet{};
 
 const sm::Quest* find_delivery_quest(const std::vector<sm::Quest>& quests,
                                      const char* itemId) {
@@ -99,7 +103,7 @@ void apply_pending(sm::EventBus& bus, sm::GameState& gs, std::size_t& applied) {
         const std::size_t begin = applied;
         const std::size_t end = events.size();
         std::span<const sm::GameEvent> pending(events.data() + begin, end - begin);
-        sm::apply_events(pending, gs, &bag, nullptr, nullptr);
+        sm::apply_events(pending, gs, &bag, nullptr, nullptr, &sheet);
         applied = end;
     }
 }
@@ -129,6 +133,7 @@ int count_tag(const sm::EventBus& bus, sm::EventTag tag) {
 void test_event_bus_contract_surface() {
     bag.clear();
     head = sm::AgentMemory{};
+    sheet = sm::CharacterSheet{};
     sm::EventBus bus;
     CHECK_OR_RETURN(!(bus.tick() != 0
         || bus.subscription_count() != 0
@@ -272,6 +277,7 @@ void test_event_bus_contract_surface() {
 void test_quest_accept_event_order() {
     bag.clear();
     head = sm::AgentMemory{};
+    sheet = sm::CharacterSheet{};
     sm::Quest q{};
     q.title = "Alias";
     sm::GameEvent onAccept{sm::EventTag::SpawnEntity};
@@ -315,14 +321,15 @@ void test_quest_accept_event_order() {
 void test_effect_applicator_ts_verbs() {
     bag.clear();
     head = sm::AgentMemory{};
+    sheet = sm::CharacterSheet{};
     // The player's standing lives in the relation matrix now, so the verb test
     // drives a whole GameState; `player` stays a reference for readability.
     sm::GameState verbState{};
     sm::PlayerState& player = verbState.player;
     bag.add("coin_empire", 10);
-    player.sheet.levelData = sm::default_level_data();
-    player.sheet.levelData.exp = 0;
-    player.sheet.levelData.expToNext = 100;
+    sheet.levelData = sm::default_level_data();
+    sheet.levelData.exp = 0;
+    sheet.levelData.expToNext = 100;
     // The bars are a BODY block now (landing 4) — the applicator is handed
     // the Pools the way it is handed the bag.
     sm::ecs::Pools verbPools{};
@@ -416,7 +423,7 @@ void test_effect_applicator_ts_verbs() {
     events.push_back(failQuest);
     events.push_back(failQuest);
 
-    sm::apply_events(events, verbState, &bag, &verbPools, nullptr);
+    sm::apply_events(events, verbState, &bag, &verbPools, nullptr, &sheet);
 
     // Money is coin now: the wallet drains to ZERO and cannot go negative —
     // the uncovered remainder of a penalty is a DEBT FACT, not a negative
@@ -429,7 +436,7 @@ void test_effect_applicator_ts_verbs() {
         || verbPools.mp != 25
         || verbPools.sp != 26),
         "ApplyEffect hp/mp/sp verbs produced wrong combat stats");
-    CHECK_OR_RETURN(!(player.sheet.levelData.exp != 42 || player.sheet.levelData.level != 1),
+    CHECK_OR_RETURN(!(sheet.levelData.exp != 42 || sheet.levelData.level != 1),
         "grant_xp did not apply XP without direct level mutation");
     CHECK_OR_RETURN(!(sm::player_reputation(&verbState, "guild") != 3),
         "ReputationChange did not move the player's row in the matrix");
@@ -455,7 +462,7 @@ void test_effect_applicator_ts_verbs() {
     lethal.ix = 10;
     sm::GameState lethalState{};
     sm::apply_events(std::span<const sm::GameEvent>(&lethal, 1), lethalState,
-                     &bag, &hurtPools, nullptr);
+                     &bag, &hurtPools, nullptr, &sheet);
     CHECK_OR_RETURN(!(hurtPools.hp != 7),
         "a razed verb must do NOTHING, not something smaller");
     // ...and the registry itself refuses the same thing by the other road,
@@ -488,11 +495,12 @@ void test_effect_applicator_ts_verbs() {
 void test_grant_xp_levels_through_the_one_path() {
     bag.clear();
     head = sm::AgentMemory{};
+    sheet = sm::CharacterSheet{};
     sm::GameState xpState{};
     sm::PlayerState& player = xpState.player;
-    player.sheet.levelData = sm::default_level_data();
-    player.sheet.attributes[sm::AttributeId::Wis] = 0;  // isolate from the wis dividend (own test)
-    const int firstThreshold = player.sheet.levelData.expToNext;
+    sheet.levelData = sm::default_level_data();
+    sheet.attributes[sm::AttributeId::Wis] = 0;  // isolate from the wis dividend (own test)
+    const int firstThreshold = sheet.levelData.expToNext;
 
     sm::EventBus bus;
     std::size_t applied = 0;
@@ -506,15 +514,15 @@ void test_grant_xp_levels_through_the_one_path() {
     bus.emit(xp2);
 
     apply_pending(bus, xpState, applied);
-    CHECK_OR_RETURN(!(player.sheet.levelData.level != 2),
+    CHECK_OR_RETURN(!(sheet.levelData.level != 2),
         "grant_xp left the player below a threshold he had passed");
-    CHECK_OR_RETURN(!(player.sheet.levelData.exp != 10),
+    CHECK_OR_RETURN(!(sheet.levelData.exp != 10),
         "the remainder past the threshold was not carried");
-    CHECK_OR_RETURN(!(player.sheet.levelData.expToNext != sm::exp_to_next_level(2)),
+    CHECK_OR_RETURN(!(sheet.levelData.expToNext != sm::exp_to_next_level(2)),
         "the next threshold was not recomputed for the new level");
-    CHECK_OR_RETURN(!(player.sheet.levelData.attributePoints
+    CHECK_OR_RETURN(!(sheet.levelData.attributePoints
             != sm::default_level_data().attributePoints + 1
-        || player.sheet.levelData.skillPoints
+        || sheet.levelData.skillPoints
             != sm::default_level_data().skillPoints + 1),
         "levelling through grant_xp did not pay its points (1:1 per level)");
 }
@@ -525,20 +533,22 @@ void test_grant_xp_levels_through_the_one_path() {
 void test_grant_xp_pays_the_wis_dividend() {
     bag.clear();
     head = sm::AgentMemory{};
+    sheet = sm::CharacterSheet{};
     sm::GameState wisState{};
     sm::PlayerState& player = wisState.player;
-    player.sheet.levelData = sm::default_level_data();
-    player.sheet.attributes[sm::AttributeId::Wis] = 10;  // expMult = 1.10
+    sheet.levelData = sm::default_level_data();
+    sheet.attributes[sm::AttributeId::Wis] = 10;  // expMult = 1.10
 
     sm::GameEvent grant{sm::EventTag::ApplyEffect};
     grant.s1 = "grant_xp";
     grant.ix = 100;
-    sm::apply_events(std::span<const sm::GameEvent>(&grant, 1), wisState, &bag, nullptr, nullptr);
-    if (player.sheet.levelData.exp != 110) {
+    sm::apply_events(std::span<const sm::GameEvent>(&grant, 1), wisState, &bag,
+                     nullptr, nullptr, &sheet);
+    if (sheet.levelData.exp != 110) {
         std::fprintf(stderr, "exp=%d (expected 110)\n",
-                     player.sheet.levelData.exp);
+                     sheet.levelData.exp);
     }
-    CHECK(player.sheet.levelData.exp == 110,
+    CHECK(sheet.levelData.exp == 110,
           "grant_xp ignored the wis expMult");
 }
 
@@ -549,11 +559,12 @@ void test_grant_xp_pays_the_wis_dividend() {
 void test_quest_xp_reward_levels_the_player() {
     bag.clear();
     head = sm::AgentMemory{};
+    sheet = sm::CharacterSheet{};
     sm::GameState gs{};
     gs.mapW = 64;
     gs.mapH = 64;
-    gs.player.sheet.levelData = sm::default_level_data();
-    gs.player.sheet.attributes[sm::AttributeId::Wis] = 0;  // isolate from the wis dividend
+    sheet.levelData = sm::default_level_data();
+    sheet.attributes[sm::AttributeId::Wis] = 0;  // isolate from the wis dividend
 
     // Worth three thresholds at once — a chapter reward at low level does this,
     // and one level-up per grant would silently swallow the rest.
@@ -579,12 +590,12 @@ void test_quest_xp_reward_levels_the_player() {
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
     active.push_back(q);
-    engine.tick(active, bus, gs, &bag, &head, g_playerCellX, g_playerCellY);
+    engine.tick(active, bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
 
     CHECK_OR_RETURN(active.empty(), "the reward quest did not complete");
-    CHECK_OR_RETURN(!(gs.player.sheet.levelData.level != 4),
+    CHECK_OR_RETURN(!(sheet.levelData.level != 4),
         "quest XP did not level the player (or stopped at one level)");
-    CHECK_OR_RETURN(!(gs.player.sheet.levelData.exp != 7),
+    CHECK_OR_RETURN(!(sheet.levelData.exp != 7),
         "the remainder past the last threshold was not carried");
 }
 
@@ -599,6 +610,7 @@ void test_quest_xp_reward_levels_the_player() {
 void test_builtin_nodes_are_registered_and_active() {
     bag.clear();
     head = sm::AgentMemory{};
+    sheet = sm::CharacterSheet{};
     sm::LogicNodeEngine logic;
     sm::register_builtin_nodes(logic);
     const char* kBuiltinIds[] = {"sys_settlement"};
@@ -619,31 +631,32 @@ void test_builtin_nodes_are_registered_and_active() {
 void test_unhandled_tag_is_inert_in_applicator() {
     bag.clear();
     head = sm::AgentMemory{};
+    sheet = sm::CharacterSheet{};
     sm::GameState levelState{};
     sm::PlayerState& player = levelState.player;
-    player.sheet.levelData = sm::default_level_data();
-    player.sheet.levelData.exp =
+    sheet.levelData = sm::default_level_data();
+    sheet.levelData.exp =
         sm::exp_to_next_level(1) + sm::exp_to_next_level(2) + 5;
-    player.sheet.levelData.attributePoints = 7;
+    sheet.levelData.attributePoints = 7;
     sm::ecs::Pools inertPools{};
     inertPools.hp = 7;
     inertPools.maxHp = 9;
 
-    const int beforeLevel = player.sheet.levelData.level;
-    const int beforeExp = player.sheet.levelData.exp;
-    const int beforeExpToNext = player.sheet.levelData.expToNext;
-    const int beforeAttributePoints = player.sheet.levelData.attributePoints;
+    const int beforeLevel = sheet.levelData.level;
+    const int beforeExp = sheet.levelData.exp;
+    const int beforeExpToNext = sheet.levelData.expToNext;
+    const int beforeAttributePoints = sheet.levelData.attributePoints;
     const int beforeHp = inertPools.hp;
     const int beforeMaxHp = inertPools.maxHp;
 
     sm::GameEvent unhandled{sm::EventTag::Custom};
     unhandled.ix = 99;
     sm::apply_events(std::span<const sm::GameEvent>(&unhandled, 1), levelState,
-                     &bag, &inertPools, nullptr);
-    CHECK_OR_RETURN(!(player.sheet.levelData.level != beforeLevel
-        || player.sheet.levelData.exp != beforeExp
-        || player.sheet.levelData.expToNext != beforeExpToNext
-        || player.sheet.levelData.attributePoints != beforeAttributePoints
+                     &bag, &inertPools, nullptr, &sheet);
+    CHECK_OR_RETURN(!(sheet.levelData.level != beforeLevel
+        || sheet.levelData.exp != beforeExp
+        || sheet.levelData.expToNext != beforeExpToNext
+        || sheet.levelData.attributePoints != beforeAttributePoints
         || inertPools.hp != beforeHp
         || inertPools.maxHp != beforeMaxHp),
         "an unhandled tag mutated player inside effect applicator");
@@ -662,6 +675,7 @@ void test_unhandled_tag_is_inert_in_applicator() {
 void test_settlement_show_dialog_node() {
     bag.clear();
     head = sm::AgentMemory{};
+    sheet = sm::CharacterSheet{};
     const auto run_case = [](sm::EventTag tag, const char* name) {
         sm::PlayerState player{};
         sm::EventBus bus;
@@ -705,6 +719,7 @@ void test_settlement_show_dialog_node() {
 void test_logic_node_add_registers_inactive() {
     bag.clear();
     head = sm::AgentMemory{};
+    sheet = sm::CharacterSheet{};
     sm::PlayerState player{};
     sm::EventBus bus;
     sm::LogicNodeEngine logic;
@@ -735,6 +750,7 @@ void test_logic_node_add_registers_inactive() {
 void test_logic_node_pending_ids_survive_node_add() {
     bag.clear();
     head = sm::AgentMemory{};
+    sheet = sm::CharacterSheet{};
     sm::PlayerState player{};
     sm::EventBus bus;
     sm::LogicNodeEngine logic;
@@ -787,6 +803,7 @@ void test_logic_node_pending_ids_survive_node_add() {
 void test_logic_node_tick_order_matches_ts_set() {
     bag.clear();
     head = sm::AgentMemory{};
+    sheet = sm::CharacterSheet{};
     sm::PlayerState player{};
     sm::EventBus bus;
     sm::LogicNodeEngine logic;
@@ -833,6 +850,7 @@ void test_logic_node_tick_order_matches_ts_set() {
 void test_logic_node_effect_can_remove_self() {
     bag.clear();
     head = sm::AgentMemory{};
+    sheet = sm::CharacterSheet{};
     sm::PlayerState player{};
     sm::EventBus bus;
     sm::LogicNodeEngine logic;
@@ -863,6 +881,7 @@ void test_logic_node_effect_can_remove_self() {
 void test_logic_node_self_reactivation_safe_cases() {
     bag.clear();
     head = sm::AgentMemory{};
+    sheet = sm::CharacterSheet{};
     {
         sm::PlayerState player{};
         sm::EventBus bus;
@@ -922,6 +941,7 @@ void test_logic_node_self_reactivation_safe_cases() {
 void test_intro_show_story_node() {
     bag.clear();
     head = sm::AgentMemory{};
+    sheet = sm::CharacterSheet{};
     // The intro is PURE SLIDES since 2026-09-03: the asking (sex, name,
     // homeland) moved to the pre-world creation screen, which renders the
     // same authored choice tables through creation_*_choices — pinned here so
@@ -997,6 +1017,7 @@ void test_intro_show_story_node() {
 void test_encounter_table_shape() {
     bag.clear();
     head = sm::AgentMemory{};
+    sheet = sm::CharacterSheet{};
     const auto& table = sm::content::encounters();
     CHECK_OR_RETURN(!(table.size() != 15),
         "encounter table count does not match TS buildEncounterTable");
@@ -1080,6 +1101,7 @@ void test_encounter_table_shape() {
 void test_quest_failed_settles_its_offer() {
     bag.clear();
     head = sm::AgentMemory{};
+    sheet = sm::CharacterSheet{};
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
@@ -1107,7 +1129,7 @@ void test_quest_failed_settles_its_offer() {
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
     active.push_back(q);
-    engine.tick(active, bus, gs, &bag, &head, g_playerCellX, g_playerCellY);
+    engine.tick(active, bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(!active.empty()),
         "expired quest was not removed");
     CHECK_OR_RETURN(!(!has_tag(bus, sm::EventTag::QuestFail)),
@@ -1125,7 +1147,7 @@ void test_quest_failed_settles_its_offer() {
         || !offer_settled(gs.player, q)),
         "expiry did not settle the offer / count the failure honestly");
 
-    sm::apply_events(bus.tick_events(), gs, &bag, nullptr, nullptr);
+    sm::apply_events(bus.tick_events(), gs, &bag, nullptr, nullptr, &sheet);
     CHECK_OR_RETURN(!(gs.player.failedQuestCount != 1u),
         "an already-applied QuestFail was double-counted");
     CHECK_OR_RETURN(!(!engine.is_known(active, gs.player, q)),
@@ -1140,7 +1162,7 @@ void test_quest_failed_settles_its_offer() {
     // The day turns: this offer can never be generated again (its bornDay is
     // part of its identity), so the settled memory prunes itself.
     gs.worldTime = sm::world_time_at(11, 6, 0);
-    engine.tick(active, bus, gs, &bag, &head, g_playerCellX, g_playerCellY);
+    engine.tick(active, bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(!gs.player.settledQuestOffers.empty()),
         "yesterday's settled offer was not pruned with its day");
 }
@@ -1148,6 +1170,7 @@ void test_quest_failed_settles_its_offer() {
 void test_item_delivery_direct_path() {
     bag.clear();
     head = sm::AgentMemory{};
+    sheet = sm::CharacterSheet{};
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
@@ -1188,7 +1211,7 @@ void test_item_delivery_direct_path() {
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
     active.push_back(q);
-    engine.tick(active, bus, gs, &bag, &head, g_playerCellX, g_playerCellY);
+    engine.tick(active, bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
 
     CHECK_OR_RETURN(!(!active.empty()),
         "delivery quest did not complete from inventory condition");
@@ -1209,6 +1232,7 @@ void test_item_delivery_direct_path() {
 void test_quest_reward_dispatch_order_and_application() {
     bag.clear();
     head = sm::AgentMemory{};
+    sheet = sm::CharacterSheet{};
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
@@ -1216,8 +1240,8 @@ void test_quest_reward_dispatch_order_and_application() {
         g_playerCellX = 10;
     g_playerCellY = 10;
     bag.add("coin_empire", 20);
-    gs.player.sheet.levelData = sm::default_level_data();
-    gs.player.sheet.levelData.exp = 0;
+    sheet.levelData = sm::default_level_data();
+    sheet.levelData.exp = 0;
 
     sm::Quest q{};
     q.ordinal = 9u;
@@ -1272,7 +1296,7 @@ void test_quest_reward_dispatch_order_and_application() {
     sm::QuestEngine engine;
     std::vector<sm::Quest> active;
     active.push_back(q);
-    engine.tick(active, bus, gs, &bag, &head, g_playerCellX, g_playerCellY);
+    engine.tick(active, bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
 
     const auto& events = bus.tick_events();
     CHECK_OR_RETURN(!(!active.empty() || events.size() != 4),
@@ -1297,7 +1321,7 @@ void test_quest_reward_dispatch_order_and_application() {
         || reputationSeenByListener != 3),
         "quest reward listeners did not see TS direct state mutation");
     CHECK_OR_RETURN(!(sm::wallet_value(bag) != 27
-        || gs.player.sheet.levelData.exp != 11
+        || sheet.levelData.exp != 11
         || sm::player_reputation(&gs, "guild") != 3
         || bag.count("misc_gem") != 2
         || gs.player.completedQuestCount != 1u),
@@ -1306,7 +1330,7 @@ void test_quest_reward_dispatch_order_and_application() {
     std::size_t applied = 0;
     apply_pending(bus, gs, applied);
     CHECK_OR_RETURN(!(sm::wallet_value(bag) != 27
-        || gs.player.sheet.levelData.exp != 11
+        || sheet.levelData.exp != 11
         || sm::player_reputation(&gs, "guild") != 3
         || bag.count("misc_gem") != 2
         || gs.player.completedQuestCount != 1u),
@@ -1314,7 +1338,7 @@ void test_quest_reward_dispatch_order_and_application() {
 
     apply_pending(bus, gs, applied);
     CHECK_OR_RETURN(!(sm::wallet_value(bag) != 27
-        || gs.player.sheet.levelData.exp != 11
+        || sheet.levelData.exp != 11
         || sm::player_reputation(&gs, "guild") != 3
         || bag.count("misc_gem") != 2
         || gs.player.completedQuestCount != 1u),
@@ -1324,6 +1348,7 @@ void test_quest_reward_dispatch_order_and_application() {
 void test_find_location_player_move_objective() {
     bag.clear();
     head = sm::AgentMemory{};
+    sheet = sm::CharacterSheet{};
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
@@ -1348,7 +1373,7 @@ void test_find_location_player_move_objective() {
     move.iy = 33;
     bus.emit(move);
     bus.flush();
-    engine.tick(active, bus, gs, &bag, &head, g_playerCellX, g_playerCellY);
+    engine.tick(active, bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(!active.empty()),
         "PlayerMove did not complete FindLocation");
 }
@@ -1356,6 +1381,7 @@ void test_find_location_player_move_objective() {
 void test_visit_cell_objective() {
     bag.clear();
     head = sm::AgentMemory{};
+    sheet = sm::CharacterSheet{};
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
@@ -1379,7 +1405,7 @@ void test_visit_cell_objective() {
     std::vector<sm::Quest> active;
     active.push_back(q);
     bus.flush();
-    engine.tick(active, bus, gs, &bag, &head, g_playerCellX, g_playerCellY);
+    engine.tick(active, bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(!active.empty() || !has_tag(bus, sm::EventTag::QuestComplete)),
         "VisitCell did not complete from player radius");
 }
@@ -1387,6 +1413,7 @@ void test_visit_cell_objective() {
 void test_quest_completion_order_matches_ts_reverse_scan() {
     bag.clear();
     head = sm::AgentMemory{};
+    sheet = sm::CharacterSheet{};
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
@@ -1416,7 +1443,7 @@ void test_quest_completion_order_matches_ts_reverse_scan() {
     active.push_back(make_visit(2u, "q_high"));
 
     bus.flush();
-    engine.tick(active, bus, gs, &bag, &head, g_playerCellX, g_playerCellY);
+    engine.tick(active, bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
 
     std::vector<std::uint32_t> completed;
     for (const auto& ev : bus.tick_events()) {
@@ -1434,6 +1461,7 @@ void test_quest_completion_order_matches_ts_reverse_scan() {
 void test_wait_at_timeadvance_objective() {
     bag.clear();
     head = sm::AgentMemory{};
+    sheet = sm::CharacterSheet{};
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
@@ -1462,7 +1490,7 @@ void test_wait_at_timeadvance_objective() {
     compressedLegacy.ix = 2;
     bus.emit(compressedLegacy);
     bus.flush();
-    engine.tick(active, bus, gs, &bag, &head, g_playerCellX, g_playerCellY);
+    engine.tick(active, bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(active.empty() || has_tag(bus, sm::EventTag::QuestComplete)
         || active[0].objectives[0].hoursWaited != 1),
         "WaitAt treated one TimeAdvance event as more than one TS hour");
@@ -1474,7 +1502,7 @@ void test_wait_at_timeadvance_objective() {
     anotherHour.ix = 1;
     bus.emit(anotherHour);
     bus.flush();
-    engine.tick(active, bus, gs, &bag, &head, g_playerCellX, g_playerCellY);
+    engine.tick(active, bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(!active.empty() || !has_tag(bus, sm::EventTag::QuestComplete)),
         "WaitAt did not complete after required TimeAdvance");
 }
@@ -1482,6 +1510,7 @@ void test_wait_at_timeadvance_objective() {
 void test_destroy_npc_objective() {
     bag.clear();
     head = sm::AgentMemory{};
+    sheet = sm::CharacterSheet{};
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
@@ -1521,7 +1550,7 @@ void test_destroy_npc_objective() {
     bus.emit(impostor);
     bus.emit(kindless);
     bus.flush();
-    engine.tick(active, bus, gs, &bag, &head, g_playerCellX, g_playerCellY);
+    engine.tick(active, bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(active.size() != 1),
         "DestroyNpc counted an entity handle / a kindless body as a kill");
     CHECK_OR_RETURN(!(active[0].objectives[0].killed != 1),
@@ -1533,7 +1562,7 @@ void test_destroy_npc_objective() {
     secondReal.ix = 2;
     bus.emit(secondReal);
     bus.flush();
-    engine.tick(active, bus, gs, &bag, &head, g_playerCellX, g_playerCellY);
+    engine.tick(active, bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(!active.empty() || !has_tag(bus, sm::EventTag::QuestComplete)),
         "DestroyNpc did not complete on kills of the wanted type");
 }
@@ -1541,6 +1570,7 @@ void test_destroy_npc_objective() {
 void test_interact_cell_objective() {
     bag.clear();
     head = sm::AgentMemory{};
+    sheet = sm::CharacterSheet{};
     sm::GameState gs{};
     gs.mapW = 128;
     gs.mapH = 128;
@@ -1568,7 +1598,7 @@ void test_interact_cell_objective() {
     elsewhere.iy = 12;
     bus.emit(elsewhere);
     bus.flush();
-    engine.tick(active, bus, gs, &bag, &head, g_playerCellX, g_playerCellY);
+    engine.tick(active, bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(active.size() != 1),
         "InteractCell completed on an event from a different cell");
 
@@ -1577,7 +1607,7 @@ void test_interact_cell_objective() {
     edit.iy = 11;
     bus.emit(edit);
     bus.flush();
-    engine.tick(active, bus, gs, &bag, &head, g_playerCellX, g_playerCellY);
+    engine.tick(active, bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(!active.empty() || !has_tag(bus, sm::EventTag::QuestComplete)),
         "InteractCell did not consume WorldCellChange payload");
 }
@@ -1585,6 +1615,7 @@ void test_interact_cell_objective() {
 void test_abandon_emits_and_removes() {
     bag.clear();
     head = sm::AgentMemory{};
+    sheet = sm::CharacterSheet{};
     sm::Quest q{};
     q.ordinal = 13u;
     q.giverSettlementId = 4;
@@ -1610,7 +1641,7 @@ void test_abandon_emits_and_removes() {
     // settlement may re-offer it the same day, exactly as before.
     sm::GameState abandonState{};
     sm::PlayerState& player = abandonState.player;
-    sm::apply_events(bus.tick_events(), abandonState, &bag, nullptr, nullptr);
+    sm::apply_events(bus.tick_events(), abandonState, &bag, nullptr, nullptr, &sheet);
     CHECK_OR_RETURN(!(player.completedQuestCount != 0u
         || player.failedQuestCount != 0u
         || engine.is_known(active, player, q)),
@@ -1624,6 +1655,7 @@ void test_abandon_emits_and_removes() {
 void test_village_protect_generator_spawn_event() {
     bag.clear();
     head = sm::AgentMemory{};
+    sheet = sm::CharacterSheet{};
     sm::GameState gs{};
     gs.worldSeed = 0x51515151u;
     gs.mapW = 128;
@@ -1678,6 +1710,7 @@ void test_village_protect_generator_spawn_event() {
 void test_offer_provenance_is_unique_per_slot_and_day() {
     bag.clear();
     head = sm::AgentMemory{};
+    sheet = sm::CharacterSheet{};
     sm::GameState gs{};
     gs.worldSeed = 0x71477147u;
     gs.mapW = 128;
@@ -1759,6 +1792,7 @@ void test_offer_provenance_is_unique_per_slot_and_day() {
 void test_shuffled_order_guards_rng_upper_bound() {
     bag.clear();
     head = sm::AgentMemory{};
+    sheet = sm::CharacterSheet{};
     auto is_permutation_0_6 = [](const std::vector<int>& order) -> bool {
         if (order.size() != 7) return false;
         bool seen[7] = {false, false, false, false, false, false, false};
@@ -1860,13 +1894,13 @@ void test_generated_delivery_quest_flow() {
         "accept applied reward before completion");
 
     bus.flush();
-    engine.tick(active, bus, gs, &bag, &head, g_playerCellX, g_playerCellY);
+    engine.tick(active, bus, gs, &bag, &head, &sheet, g_playerCellX, g_playerCellY);
     CHECK_OR_RETURN(!(!active.empty()),
         "delivery items did not complete generated quest");
     CHECK_OR_RETURN(!(!has_tag(bus, sm::EventTag::QuestComplete)),
         "completion did not emit QuestComplete");
 
-    sm::apply_events(bus.tick_events(), gs, &bag, nullptr, nullptr);
+    sm::apply_events(bus.tick_events(), gs, &bag, nullptr, nullptr, &sheet);
     CHECK_OR_RETURN(!(gs.player.completedQuestCount != 1u),
         "QuestComplete was not applied to player completion state");
     CHECK_OR_RETURN(!(active.empty() && gs.nextQuestOrdinal != 2u),
@@ -1875,7 +1909,7 @@ void test_generated_delivery_quest_flow() {
         "gold reward was not applied exactly once");
 
     bus.flush();
-    sm::apply_events(bus.tick_events(), gs, &bag, nullptr, nullptr);
+    sm::apply_events(bus.tick_events(), gs, &bag, nullptr, nullptr, &sheet);
     CHECK_OR_RETURN(!(sm::wallet_value(bag) != startGold + rewardGold),
         "empty post-flush tick reapplied reward");
 }
