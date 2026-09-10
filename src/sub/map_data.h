@@ -168,9 +168,11 @@ struct DungeonRef {
 struct LandmarkContext {
     LandmarkType kind = LandmarkType::None;
     int  id   = -1;   // the landmark's id within its kind; -1 = none
-    // Strength/size in the landmark's own currency: a settlement's population,
-    // a spire's spell tier (asked from the spell registry at resolve).
+    // POPULATION, for every kind (§42: the spire's spell tier used to ride
+    // in here — see `tier` below, its own field now).
     int  size = 0;
+    // The spire's spell tier (storey count of its tower); 0 elsewhere.
+    int  tier = 0;
     // Owning kingdom (index into Politik::kingdoms; -1 = none / unowned). The
     // subworld does not know what a kingdom IS — it carries the index so the
     // engine can resolve the citizens' faction through the one macro resolver

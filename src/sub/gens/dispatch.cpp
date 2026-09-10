@@ -1590,13 +1590,14 @@ static void gen_spire(const CellContext& ctx, const Biome nbBiome[9],
         hatch.zWorld = true;
         hatch.zBase = crownM;
         hatch.height = structure_min_height(Structure::SpireHatch);
-        hatch.tag = std::uint16_t(std::clamp(ctx.landmark.size, 1, 5));
+        hatch.tag = std::uint16_t(std::clamp(ctx.landmark.tier, 1, 5));
         out.structures.push_back(hatch);
     }
     // The gate on the south face — the CaveMouth pattern: a Door-verb prop
     // whose row opens the tower's own interior. tag carries the spell's
-    // tier (resolve_context stamps it into landmark.size for spire cells),
-    // which the dungeon reads as its storey count (DungeonRef::ordinal).
+    // tier (its OWN context field since §42 — `size` is population for
+    // every kind), which the dungeon reads as its storey count
+    // (DungeonRef::ordinal).
     {
         Structure gate{};
         gate.kind = Structure::SpireGate;
@@ -1606,7 +1607,7 @@ static void gen_spire(const CellContext& ctx, const Biome nbBiome[9],
         gate.hy = structure_min_half_xy(Structure::SpireGate);
         gate.radius = std::max(gate.hx, gate.hy);
         gate.height = structure_min_height(Structure::SpireGate);
-        gate.tag = std::uint16_t(std::clamp(ctx.landmark.size, 1, 5));
+        gate.tag = std::uint16_t(std::clamp(ctx.landmark.tier, 1, 5));
         out.structures.push_back(gate);
     }
     // The prize on the crown: the orb, seated on the tower top (zBase = the

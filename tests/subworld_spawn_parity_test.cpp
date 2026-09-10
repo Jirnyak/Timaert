@@ -295,7 +295,7 @@ void spawn_cell_at(sm::ecs::World& world,
     const sm::sub::CellContext c = meadow_cell(absCx, absCy);
     sm::sub::spawn_cell_npcs(world, c.biome, c.feature,
                              sm::LandmarkType::None, /*danger*/0, /*depositsNear*/0, mgr,
-                             ox, oy, c.seed,
+                             ox, oy, c.seed, /*worldSeed*/c.seed,
                              std::uint16_t(sm::faction_index("empire")),
                              0);
 }
@@ -344,6 +344,7 @@ bool run_city_population_projection_case(
                              mgr,
                              /*ox*/0, /*oy*/0,
                              0xFACEB00Cu,
+                             /*worldSeed*/0xFACEB00Cu,
                              std::uint16_t(sm::faction_index("empire")),
                              4000,
                              0);
@@ -407,6 +408,7 @@ bool run_population_does_not_scale_bodies_case(
                                  sm::LandmarkType::City, /*danger*/0, /*depositsNear*/0, mgr,
                                  /*ox*/0, /*oy*/0,
                                  0xFACEB00Cu,
+                                 /*worldSeed*/0xFACEB00Cu,
                                  std::uint16_t(sm::faction_index("empire")),
                                  t.pop);
         auto view = world.reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,

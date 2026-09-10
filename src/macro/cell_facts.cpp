@@ -76,17 +76,17 @@ CellFacts cell_facts(const MacroWorld& w, int x, int y) {
                                        : LandmarkRef{};
     if (w.gs && lm.type != LandmarkType::None) {
         // One roster, one find (CANON S9, 2026-08-29): the by-kind switch
-        // over three vectors died with the vectors. A spire's "size" IS its
-        // spell's tier — the strength column of this landmark, asked from
-        // the spell registry by ordinal (a foreign ordinal degrades to 1).
+        // over three vectors died with the vectors. Population and tier are
+        // SEPARATE fields (§42): `size` used to carry the spire's tier,
+        // which was harmless only while the population door was locked.
         if (const Landmark* rec = landmark_by_id(*w.gs, lm.id)) {
             const bool spire = rec->type == LandmarkType::Spire;
-            const int size = spire
+            const int tier = spire
                 ? (rec->spellId < std::uint32_t(kSpellCount)
                        ? kSpellDefs[rec->spellId].tier : 1)
-                : rec->population;
-            f.landmark = {rec->type, rec->id, size, rec->kingdomIdx,
-                          rec->depleted};
+                : 0;
+            f.landmark = {rec->type, rec->id, rec->population, tier,
+                          rec->kingdomIdx, rec->depleted};
         }
     }
     return f;

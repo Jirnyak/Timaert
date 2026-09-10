@@ -102,11 +102,25 @@ One healthy core the system lands on:
   and every refusal is now COUNTED and said to stderr (`[spawn] WARN`) —
   no body is dropped silently anywhere.
 
+- **Инк 3 (2026-09-11)** — the population door unlocked + the soul
+  partition. `spawn_settlement_population` died;
+  `spawn_landmark_population`'s gate is `pop > 0 && crowdHabitat != 0` —
+  City, Village, Spire, Ruin, Lair alike (a spire embodies the day genesis
+  gives it souls). THE household law lives once
+  (`interior_household_share`): the engine's interior spawn clamps it by
+  the live stock, the street SUBTRACTS the same shares as its reserve
+  (`interior_reserve_for_cell` walks the cell's House doors with the same
+  pure functions door-opening uses) — **street + hearths == population,
+  soul for soul**, asserted by the partition witness in
+  city_population_inside_walls_test. The size/tier overload is split:
+  `LandmarkFacts.size` / `LandmarkContext.size` is POPULATION for every
+  kind, the spire's spell tier rides its own `tier` field (the tower's
+  gate/hatch tags read it). The guard/merchant/woodcutter prefix is DATA —
+  registry crowd role rows (`LandmarkCrowdRole`, City guard min 2 /
+  Village min 1); the City/Village branch and the per-kind street seeds
+  are dead.
+
 ## Debt (approved increments, each under its own owner "да")
-- **Инк 3 — the population door unlocks + the soul partition.** Gate becomes
-  `pop > 0 && crowdHabitat != 0`; interiors reserve, street = remainder;
-  `cell_facts` size/tier overload split (a spire's `landmark.size` is its
-  spell TIER today — an armed trap).
 - **Инк 4 — interiors draw from THEIR place.** A spire storey's bodies come
   from the spire's Population, not the mountain's FaunaCount; a wild cave
   (no landmark) honestly stays on FaunaCount.

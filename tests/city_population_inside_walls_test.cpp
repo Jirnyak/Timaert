@@ -134,6 +134,7 @@ Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
                              mgr,
                              /*ox*/0, /*oy*/0,
                              seed,
+                             /*worldSeed*/seed,
                              std::uint16_t(sm::faction_index("empire")),
                              pop);
 
@@ -245,6 +246,20 @@ int main() {
                         "(radius sampled linearly instead of by area?)");
         }
         if (s.emptySectors != 0) return fail("city has an empty angular sector");
+
+        // §42 PARTITION WITNESS (CANON S28: одна душа воплощается один раз).
+        // The street crowd plus the hearth reserves behind the doors must
+        // sum to the town's population, soul for soul — the double
+        // embodiment (a soul on the square AND in a house) is dead.
+        const int reserve = sm::sub::interior_reserve_for_cell(
+            mgr.structures(), /*worldSeed*/0xC17015Eu, 0, 0,
+            float(sm::sub::kCellSize), float(sm::sub::kCellSize), 1200);
+        if (reserve <= 0) return fail("a 1200-soul city kept nobody at home");
+        if (s.citizens + reserve != 1200) {
+            std::fprintf(stderr, "  street %d + hearths %d != pop 1200\n",
+                         s.citizens, reserve);
+            return fail("the street and the hearths do not sum to the town");
+        }
     }
 
     // ── Village ─────────────────────────────────────────────────────────────
@@ -274,6 +289,17 @@ int main() {
             return fail("villagers clumped on the green");
         }
         if (s.emptySectors != 0) return fail("village has an empty angular sector");
+
+        // The same partition witness at village scale.
+        const int reserve = sm::sub::interior_reserve_for_cell(
+            mgr.structures(), /*worldSeed*/0x71114Eu, 0, 0,
+            float(sm::sub::kCellSize), float(sm::sub::kCellSize), 400);
+        if (reserve <= 0) return fail("a 400-soul village kept nobody at home");
+        if (s.citizens + reserve != 400) {
+            std::fprintf(stderr, "  street %d + hearths %d != pop 400\n",
+                         s.citizens, reserve);
+            return fail("the green and the hearths do not sum to the village");
+        }
     }
 
     if (!run_footprint_formula_parity()) {

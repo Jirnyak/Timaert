@@ -1,5 +1,7 @@
 #include "sub/spawn.h"
 #include "sub/city_layout.h"
+#include "sub/dgn/dispatch.h"   // dungeon_scene_seed, dungeon_has_upper —
+                                // the household/partition law (CANON S28)
 #include "macro/entry_context.h"
 #include "macro/faction.h"
 #include "ecs/components.h"
@@ -284,35 +286,66 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
     return e;
 }
 
-void spawn_settlement_population(ecs::World& w,
-                                 const SpawnContext& townCtx,
-                                 LandmarkType landmark,
-                                 const SeamlessSubworldManager& mgr,
-                                 std::uint32_t seed,
-                                 std::uint16_t settlementFaction,
-                                 int landmarkPop,
-                                 int originX,
-                                 int originY,
-                                 MacroStockKey populationKey) {
-    if (landmark != LandmarkType::City && landmark != LandmarkType::Village) {
-        return;
-    }
+void spawn_landmark_population(ecs::World& w,
+                               const SpawnContext& townCtx,
+                               LandmarkType landmark,
+                               const SeamlessSubworldManager& mgr,
+                               std::uint32_t seed,
+                               std::uint32_t worldSeed,
+                               std::uint16_t settlementFaction,
+                               int landmarkPop,
+                               int originX,
+                               int originY,
+                               MacroStockKey populationKey) {
+    // THE gate of the population door (§42): a place with souls and a crowd
+    // family embodies — City, Village, Spire, Ruin, Lair alike. The literal
+    // `!= City && != Village` that stood here outlived the refactor that
+    // universalised the record underneath it, and no test reddened because
+    // zero bodies is a legal count.
+    const LandmarkDef& def = landmark_def(landmark);
     const int pop = std::max(0, landmarkPop);
-    if (pop == 0) return;
+    if (pop == 0 || def.crowdHabitat == 0) return;
 
-    const bool city = landmark == LandmarkType::City;
-    const int target = pop;
-    const int guards = std::max(city ? 2 : 1, target / 10);
-    Rng rng(seed ^ (city ? 0xC1712E55u : 0xA117A6E5u));
+    // Partition (CANON S28: one soul embodies once): the interiors' own
+    // households come OFF the street — a door's residents are a SHARE of
+    // this number, never a second helping on top of it.
+    const int reserve = interior_reserve_for_cell(
+        mgr.structures(), worldSeed,
+        int(populationKey.cellX), int(populationKey.cellY),
+        float(originX), float(originY), pop);
+    const int target = std::max(0, pop - reserve);
+    if (target == 0) return;
+
+    // One street salt for every kind — the old city/village pair encoded
+    // the kind into the stream, which is context's job, not the seed's.
+    Rng rng(seed ^ 0xC1712E55u);
     const auto& tiles = mgr.tiles();
     auto& reg = w.reg;
 
-    // Both generators build their settlement on the CELL CENTRE, and the disk
-    // they build it in is defined once in sub/city_layout.h. A town's people
-    // belong in that disk — see find_city_spawn_spot.
+    // Both settlement generators build on the CELL CENTRE, and the disk they
+    // build in is defined once in sub/city_layout.h. The City/Village split
+    // here is the LAYOUT's own vocabulary (walled rings vs a house core) —
+    // geometry dispatch, exactly like resolve_mode; every other kind's
+    // exterior stands in the village-core disk until its own layout law
+    // earns a name (§42 Инк 5, the genesis increment).
     const float centerX = float(originX) + float(kCellSize) * 0.5f;
     const float centerY = float(originY) + float(kCellSize) * 0.5f;
-    const float populationRadius = settlement_population_radius(city, pop);
+    // The disk is the settlement's MASONRY footprint — a function of its
+    // population (the walls were built for everyone), never of the street
+    // remainder: souls at their hearths do not shrink the town.
+    const float populationRadius =
+        settlement_population_radius(landmark == LandmarkType::City, pop);
+
+    // Fixed posts as DATA (registry crowd role rows): the first bodies take
+    // the rows' types in order — max(min, div ? target/div : 0) each — and
+    // the rest roll the place's crowd stripe. No branch by kind.
+    int roleQuota[4] = {};
+    for (int r = 0; r < int(def.crowdRoleCount); ++r) {
+        const LandmarkCrowdRole& role = def.crowdRoles[r];
+        roleQuota[r] = std::max(int(role.min),
+                                role.div ? target / int(role.div) : 0);
+    }
+    int roleRow = 0;
 
     int refused = 0;
     for (int i = 0; i < target; ++i) {
@@ -325,13 +358,13 @@ void spawn_settlement_population(ecs::World& w,
             ++refused;
             continue;
         }
+        while (roleRow < int(def.crowdRoleCount) && roleQuota[roleRow] <= 0) {
+            ++roleRow;
+        }
         NPCType type = NPCType::Peasant;
-        if (i < guards) {
-            type = NPCType::Guard;
-        } else if (i == guards) {
-            type = NPCType::Merchant;
-        } else if (i == guards + 1) {
-            type = NPCType::Woodcutter;
+        if (roleRow < int(def.crowdRoleCount)) {
+            type = def.crowdRoles[roleRow].npc;
+            --roleQuota[roleRow];
         } else {
             std::uint32_t ts = rng.state;
             type = pick_crowd_row(townCtx, ts);
@@ -484,6 +517,54 @@ void maybe_emplace_carried_light(entt::registry& reg,
 }
 
 // ── Dungeon residents (sub/dgn interiors) ────────────────────────────────
+
+// THE household law (CANON S28): 1–3 souls per hearth, one more in a
+// crowded town (≥128 — a full city, not a hamlet). One place, two readers:
+// the engine's interior spawn clamps it by the live stock, the street
+// spawner subtracts the same shares as its reserve — the partition cannot
+// drift because there is nothing to drift between.
+int interior_household_share(std::uint32_t worldSeed, int cellX, int cellY,
+                             std::uint16_t ordinal, int level,
+                             int landmarkPop) {
+    const std::uint32_t dSeed = dungeon_scene_seed(
+        worldSeed, cellX, cellY, ordinal, std::int8_t(level));
+    return 1 + int((dSeed >> 8) % 3u) + (landmarkPop >= 128 ? 1 : 0);
+}
+
+// The reserve walk (CANON S28 partition): the composite's House-opening
+// doors of this cell, each storey asked of the ONE household law above —
+// the same pure functions the engine asks when a door is actually opened,
+// over the same inputs (ordinal = the door prop's tag, footprint = the
+// prop's own half-extents), so the street and the interior can never
+// disagree about who is home.
+int interior_reserve_for_cell(const std::vector<Structure>& structures,
+                              std::uint32_t worldSeed,
+                              int cellX, int cellY,
+                              float originX, float originY,
+                              int landmarkPop) {
+    int reserve = 0;
+    const float x1 = originX + float(kCellSize);
+    const float y1 = originY + float(kCellSize);
+    for (const Structure& s : structures) {
+        if (structure_opens(s.kind) != DungeonRef::House) continue;
+        if (structure_opens_top(s.kind)) continue;
+        if (s.x < originX || s.x >= x1 || s.y < originY || s.y >= y1) {
+            continue;
+        }
+        DungeonRef ref{};
+        ref.kind = DungeonRef::House;
+        ref.ordinal = s.tag;
+        ref.footHx = structure_half_x(s);
+        ref.footHy = structure_half_y(s);
+        reserve += interior_household_share(worldSeed, cellX, cellY,
+                                            s.tag, 0, landmarkPop);
+        if (dungeon_has_upper(ref)) {
+            reserve += interior_household_share(worldSeed, cellX, cellY,
+                                                s.tag, 1, landmarkPop);
+        }
+    }
+    return reserve;
+}
 
 namespace {
 // Uniform draw WITHOUT replacement over the scene's floor catalog (partial
@@ -655,6 +736,7 @@ void spawn_cell_npcs(ecs::World& w,
                      int ox,
                      int oy,
                      std::uint32_t cellSeed,
+                     std::uint32_t worldSeed,
                      std::uint16_t settlementFaction,
                      int landmarkPop,
                      int landmarkSubjectId,
@@ -681,12 +763,12 @@ void spawn_cell_npcs(ecs::World& w,
     townCtx.landmark = landmark;
     townCtx.danger = danger;
     townCtx.depositsNear = depositsNear;
-    spawn_settlement_population(w, townCtx, landmark, mgr, cellSeed,
-                                settlementFaction,
-                                landmarkPop, originX, originY,
-                                MacroStockKey{landmarkSubjectId,
-                                              std::int16_t(macroCellX),
-                                              std::int16_t(macroCellY)});
+    spawn_landmark_population(w, townCtx, landmark, mgr, cellSeed, worldSeed,
+                              settlementFaction,
+                              landmarkPop, originX, originY,
+                              MacroStockKey{landmarkSubjectId,
+                                            std::int16_t(macroCellX),
+                                            std::int16_t(macroCellY)});
 
     // THE spawn law (fauna.h): the danger byte weights the TABLE — who is
     // rolled — never the body after the pick (S12; the negative control in

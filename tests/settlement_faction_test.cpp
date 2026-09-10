@@ -156,6 +156,7 @@ bool run_citizens_wear_their_realm(const sm::sub::SeamlessSubworldManager& mgr) 
                              mgr,
                              /*ox*/0, /*oy*/0,
                              0xB105A11u,
+                             /*worldSeed*/0xB105A11u,
                              /*settlementFaction*/magica,
                              /*landmarkPop*/2000);
 
@@ -191,6 +192,7 @@ bool run_imperial_city_still_imperial(const sm::sub::SeamlessSubworldManager& mg
                              mgr,
                              /*ox*/0, /*oy*/0,
                              0xB105A12u,
+                             /*worldSeed*/0xB105A12u,
                              /*settlementFaction*/empire,
                              /*landmarkPop*/400);
 

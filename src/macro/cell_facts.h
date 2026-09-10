@@ -31,7 +31,13 @@ namespace sm {
 struct LandmarkFacts {
     LandmarkType type = LandmarkType::None;
     int  id = -1;          // id within its kind's register; -1 = none
-    int  size = 0;         // population (settlement) / spell tier (spire)
+    // POPULATION, for every kind (§42: this field used to carry a spire's
+    // spell TIER instead — an overload that would have handed a tier-3
+    // spire a crowd of three demons the day the population door opened).
+    int  size = 0;
+    // The spire's spell tier (its strength column, asked from the spell
+    // registry); 0 for every other kind. Its OWN field, never smuggled.
+    int  tier = 0;
     int  kingdomIdx = -1;  // owning kingdom; -1 = none
     bool depleted = false; // a spire whose orb is gone
 };

@@ -68,6 +68,19 @@ struct LandmarkCrewRow {
     bool     garrison = false;
 };
 
+// ── Crowd role rows: fixed posts the street crowd fills FIRST (§42) ──────
+// The guard/merchant/woodcutter prefix used to be a City/Village branch in
+// the street spawner («первые N — стража» as code). A role row is one such
+// post as DATA: the crowd's first bodies take the rows' types, in order,
+// `max(min, div ? crowd/div : 0)` each; the rest roll pick_crowd_row. The
+// City guard rows die into garrison records when §42's Инк 7 lands (street
+// guards = the place's own garrison, никаких бесплатных тел).
+struct LandmarkCrowdRole {
+    NPCType      npc = NPCType::Peasant;
+    std::uint8_t div = 0;   // one body per `div` souls of the crowd; 0 = none
+    std::uint8_t min = 0;   // the floor, whatever the crowd's size
+};
+
 struct LandmarkDef {
     // MUST equal the row's index in kLandmarks (guard below the table).
     LandmarkType     type;
@@ -147,6 +160,9 @@ struct LandmarkDef {
     std::uint8_t     labourShift = 3;
     LandmarkCrewRow  crews[8] = {};
     std::uint8_t     crewCount = 0;
+    // Fixed posts of the street crowd (see LandmarkCrowdRole above).
+    LandmarkCrowdRole crowdRoles[4] = {};
+    std::uint8_t      crowdRoleCount = 0;
 };
 
 // Night-light columns (lightColor / lightPop) drive the universal macro
@@ -167,7 +183,10 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
     {LandmarkType::City,    "city",    "City",      0,  76, '#', 0xFFE7D27Au, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.5f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*econ*/1,
      /*labour*/3, {{NPCType::TaxCollector, CrewGate::Suzerain, /*solo*/true},
                    {NPCType::Guard, CrewGate::Auction, /*solo*/false,
-                    /*garrison*/true}}, 2 },
+                    /*garrison*/true}}, 2,
+     /*crowdRoles*/{{NPCType::Guard, /*div*/10, /*min*/2},
+                    {NPCType::Merchant, 0, 1},
+                    {NPCType::Woodcutter, 0, 1}}, 3 },
     // Артели деревни — N ОДИНАКОВЫХ крестьянских строк (снос профессий,
     // CANON S10): каждая берёт поручение своим броском рулетки аукциона —
     // диверсификация без координации. N = одновременность артелей, крутилка
@@ -177,7 +196,10 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
      /*labour*/1, {{NPCType::Peasant, CrewGate::Auction},
                    {NPCType::Peasant, CrewGate::Auction},
                    {NPCType::Peasant, CrewGate::Auction},
-                   {NPCType::Peasant, CrewGate::Auction}}, 4 },
+                   {NPCType::Peasant, CrewGate::Auction}}, 4,
+     /*crowdRoles*/{{NPCType::Guard, /*div*/10, /*min*/1},
+                    {NPCType::Merchant, 0, 1},
+                    {NPCType::Woodcutter, 0, 1}}, 3 },
     {LandmarkType::Spire,   "spire",   "Spire",   128, 255, 'I', 0xFFA86CFFu, true, 0xFFA86CFFu, 200.0f, "demons", /*wealth*/1.25f, /*hab*/1u << 13, 4, 9, kLandmarkFaunaCapGround, /*crowd*/1u << 13 },
     {LandmarkType::Ruin,    "ruin",    "Ruin",     51, 229, 'r', 0xFF8E8576u, true, 0xFF8E8576u,  40.0f, "demons", /*wealth*/0.5f,  /*hab*/1u << 12, 2, 6, kLandmarkFaunaCapGround, /*crowd*/1u << 12 },
     {LandmarkType::Lair,    "lair",    "Lair",    102, 255, 'L', 0xFF883A3Au, true, 0xFF883A3Au,  70.0f, nullptr, /*wealth*/1.25f, kLandmarkFaunaGround, 0, 0, kLandmarkFaunaCapGround, /*crowd*/1u << 12 },

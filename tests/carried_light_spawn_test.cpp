@@ -105,6 +105,7 @@ bool run_spawn_attach_contract(const sm::sub::SeamlessSubworldManager& mgr) {
                              mgr,
                              /*ox*/0, /*oy*/0,
                              0xC0FFEE11u,
+                             /*worldSeed*/0xC0FFEE11u,
                              /*settlementFaction*/
                              std::uint16_t(sm::faction_index("empire")),
                              /*landmarkPop*/4000);

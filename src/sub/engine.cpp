@@ -1266,6 +1266,7 @@ CellContext SubworldEngine::resolve_context(int x, int y) const {
     c.landmark.kind       = f.landmark.type;
     c.landmark.id         = f.landmark.id;
     c.landmark.size       = f.landmark.size;
+    c.landmark.tier       = f.landmark.tier;
     c.landmark.kingdomIdx = f.landmark.kingdomIdx;
     c.landmark.depleted   = f.landmark.depleted;
     c.seed = gs_->worldSeed
@@ -1316,7 +1317,8 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
         MacroStockKey{-1, std::int16_t(wcx), std::int16_t(wcy)});
     spawn_cell_npcs(*ecs_, ctx.biome, ctx.treeCount, ctx.landmark.kind,
                     ctx.zone, ctx.depositsNear, mgr_,
-                    ox, oy, ctx.seed, settlementFaction, ctx.landmark.size,
+                    ox, oy, ctx.seed, ctx.worldSeed,
+                    settlementFaction, ctx.landmark.size,
                     // The macro stock these citizens are borrowed from: this
                     // cell's named place. Killing one of them pays the map back
                     // (macro/macro_stock.h) instead of vanishing without trace.
@@ -3394,12 +3396,17 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
                                    std::int16_t(ses.doorCx),
                                    std::int16_t(ses.doorCy)};
         const int popNow = macro_stock_read(mw, MacroStock::Population, popKey);
-        // Household size: 1–3 souls per hearth, one more in a crowded town
-        // (≥128 — a full city, not a hamlet), never more than the town has.
+        // THE household law lives in ONE place (spawn.h
+        // interior_household_share, CANON S28): the street spawner subtracts
+        // the same shares as its reserve, so a soul at a hearth is a soul
+        // NOT on the square. Clamped by the live stock: a door in an
+        // emptied town opens on an empty house.
         const std::uint32_t dSeed = dungeon_scene_seed(
             worldSeed, ses.doorCx, ses.doorCy, ses.ref.ordinal, ses.ref.level);
         const int household = std::min(popNow,
-            1 + int((dSeed >> 8) % 3u) + (ses.landmarkPop >= 128 ? 1 : 0));
+            interior_household_share(worldSeed, ses.doorCx, ses.doorCy,
+                                     ses.ref.ordinal, ses.ref.level,
+                                     ses.landmarkPop));
         // Placement is the scene's OWN floor catalog (CANON S28): every
         // standable tile the generator emitted, not a rectangle guessed
         // from the door's footprint. The interior lives in the window's

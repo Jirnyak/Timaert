@@ -167,6 +167,9 @@ void spawn_cell_npcs(ecs::World& w,
                      int ox,
                      int oy,
                      std::uint32_t cellSeed,
+                     // The world seed, for the interior-reserve law below
+                     // (interior_household_share keys households off it).
+                     std::uint32_t worldSeed,
                      std::uint16_t settlementFaction,
                      int landmarkPop = 0,
                      // Which macro stock the citizens are borrowed FROM: the
@@ -190,6 +193,28 @@ void spawn_cell_npcs(ecs::World& w,
 // population stock as the street crowd — each body carries the settlement's
 // Population loan, so a death behind a door pays the town back through the
 // exact write-back path a street kill uses (owner ruling 2026-08-12: one
+// The interior reserve of ONE storey behind a door (CANON S28 partition:
+// interiors reserve their souls, the street is the REMAINDER — one soul
+// embodies once). This is THE household law, in one place: the engine's
+// interior spawn takes `min(stock now, this share)`, and the street
+// spawner SUBTRACTS the same shares before it fills the square — the two
+// can never disagree about who lives behind a door. Deterministic from
+// (worldSeed, door cell, building ordinal, storey).
+int interior_household_share(std::uint32_t worldSeed, int cellX, int cellY,
+                             std::uint16_t ordinal, int level,
+                             int landmarkPop);
+
+// The interior reserve of ONE CELL: the sum of every household its doors
+// keep. Walks the structures for this cell's House-opening doors and asks
+// the household law above for each storey — the same pure functions over
+// the same inputs the engine uses when a door is opened. Street crowd =
+// population − this (the §42 partition witness asserts the sum exactly).
+int interior_reserve_for_cell(const std::vector<Structure>& structures,
+                              std::uint32_t worldSeed,
+                              int cellX, int cellY,
+                              float originX, float originY,
+                              int landmarkPop);
+
 // stock system, никакой второй копии). Placement is the scene's OWN floor
 // catalog (map_data.h StandPoint, CANON S28) — a uniform draw without
 // replacement over every standable tile the generator emitted, so a body
