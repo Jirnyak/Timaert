@@ -1567,10 +1567,11 @@ void boot_world(App& app, std::uint32_t seed,
     }
     destroy_world(app);
     boot_trace("destroyed previous world");
-    // Every session starts at the universal default: render diagnostics
-    // (sunfreeze, lightdbg) are per-run tools and must never leak into a new
-    // game or a load through the surviving engine object.
-    app.subworld.reset_render_diagnostics();
+    // Every session starts at the universal default: per-run dev state —
+    // читы (годмод) и рендер-диагностика (sunfreeze, lightdbg) — never
+    // leaks into a new game or a load through the surviving engine object
+    // (вердикт владельца 2026-09-11, PLAY-3).
+    app.subworld.reset_per_run_dev_state();
 
     {
         sm::ecs::Pools& pools = player_pools(app);
@@ -3592,16 +3593,30 @@ RuntimeFrameStats advance_sim_steps(App& app, int steps, bool allowInput) {
     // Silent unless the world was PLAYING and still refused: outside Playing
     // (splash, the intro slides, the menu) a promotion legitimately buys
     // nothing, and a diagnostic that cries there teaches people to ignore it.
+    // РАЗ НА СМЕНУ ПРИЧИНЫ, не раз на кадр (PLAY-7, лог владельца: 3552 из
+    // 3579 строк плейтеста — эта ловушка под открытой модалкой, кадр за
+    // кадром об одну и ту же маску). Диагноз прежний — маска и момент её
+    // появления; купленный тик сбрасывает память, чтобы СЛЕДУЮЩАЯ пауза
+    // напечаталась даже с той же маской. Попутно ловушка уже окупилась:
+    // поймала механизм SMOKE-7 живьём (mask=04 — модалка).
+    static std::uint8_t lastRefusalMask = 0;   // 0 = последний раз тик был
     if (steps > 0 && !total.ticked && app.state == sm::ui::AppState::Playing) {
         const std::uint8_t m = pause_reasons(app);
-        std::fprintf(stderr,
-                     "[pause] advance_sim_steps(%d) bought NO tick — mask=%02x "
-                     "player=%d panel=%d modal=%d menu=%d sub=%d\n",
-                     steps, unsigned(m),
-                     (m & kPausePlayer) ? 1 : 0, (m & kPausePanel) ? 1 : 0,
-                     (m & kPauseModal) ? 1 : 0, (m & kPauseMenu) ? 1 : 0,
-                     app.subworld.active() ? 1 : 0);
-        std::fflush(stderr);
+        if (m != lastRefusalMask) {
+            lastRefusalMask = m;
+            std::fprintf(stderr,
+                         "[pause] advance_sim_steps(%d) bought NO tick — "
+                         "mask=%02x player=%d panel=%d modal=%d menu=%d "
+                         "sub=%d\n",
+                         steps, unsigned(m),
+                         (m & kPausePlayer) ? 1 : 0,
+                         (m & kPausePanel) ? 1 : 0,
+                         (m & kPauseModal) ? 1 : 0, (m & kPauseMenu) ? 1 : 0,
+                         app.subworld.active() ? 1 : 0);
+            std::fflush(stderr);
+        }
+    } else if (total.ticked) {
+        lastRefusalMask = 0;
     }
     return total;
 }
@@ -5909,7 +5924,17 @@ void frame(App& app, int simSteps) {
                                                      showNpcRows,
                                                      app.uiSettings.scale(sm::ui::UiElementId::NpcProximity));
                 if (npcResult.attackNpc != entt::null) {
-                    (void)route_macro_npc_attack(app, npcResult.attackNpc);
+                    // ОДНА дверь встречи (вердикт владельца 2026-09-11,
+                    // PLAY-6 «если универсально»): кнопка ведёт в ту же
+                    // форс-встречу, что геометрия — Fight/Auto/Pay/Flee, и
+                    // Fight сведёт тела кольцом. Прямой вход в субмир
+                    // ставил игрока в пустое поле: враг-проекция стоял на
+                    // СВОЕЙ клетке, за сотни тайлов.
+                    app.preBattleNpc = npcResult.attackNpc;
+                    app.encounterTalkLine.clear();
+                    app.gs.subState.kind = sm::GameSubStateKind::PreBattle;
+                    app.cursor.path.clear();
+                    app.cursor.pathIdx = 0;
                 }
             }
             sm::ui::draw_show_dialog(app.gs, sm::player_inventory(app.ecs), app.showDialogEvent, app.bus,

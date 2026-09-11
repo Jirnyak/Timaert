@@ -2112,11 +2112,16 @@ DangerLevel SubworldEngine::danger_level() const {
 }
 
 bool SubworldEngine::exit_blocked_by_danger() const {
-    if (!active_ || !zones_ || zones_->data.empty()) return false;
-    const int danger = int(zones_->at(mgr_.center_cx(), mgr_.center_cy()));
-    if (danger <= kSafeExitDanger) return false;
-    // The RED band, not detection: «cannot break away» means a hostile is
-    // ON you, not that one has seen you (see kDangerProximityM above).
+    if (!active_) return false;
+    // ВЕРДИКТ владельца 2026-09-11 (PLAY-5, дословно): «не должно быть
+    // никакого байта зоны — это дупликат и ошибочная система; ВАЖНА
+    // ТОЛЬКО ОПАСНОСТЬ РЯДОМ С ТОБОЙ». Отрыв запрещает ВРАГ НА ТЕБЕ —
+    // тот же радиус, каким HUD краснеет (kDangerProximityM), где бы
+    // сцена ни стояла: выход — это инпут носителя флага, и мерить его
+    // чужим байтом зоны нельзя. До этого гейт сперва спрашивал байт
+    // зоны и в зелёной клетке отпускал игрока ИЗ-ПОД МЕЧА (поймано
+    // глазами владельца). Байт зоны остаётся законом УРОВНЯ зоны
+    // (спавны, знаки) — гейтом отрыва он больше не является.
     return has_hostile_near_player(kDangerProximityM);
 }
 
@@ -2394,14 +2399,6 @@ bool SubworldEngine::spawn_tracked_npc_body(entt::entity macro) {
     auto& reg = ecs_->reg;
     if (macro == entt::null || !reg.valid(macro)) return false;
 
-    // One entity above, one body below. enter() already projects every macro NPC
-    // standing in the 3×3 window, so the lord the player struck is usually here
-    // before this is ever called — and a second body for him would be a second
-    // lord to kill, each paying out once.
-    for (auto e : reg.view<ecs::MacroOrigin>()) {
-        if (reg.get<ecs::MacroOrigin>(e).macro == macro) return true;
-    }
-
     // Same placement rule as a spawned encounter — the shared ring, so the
     // two paths cannot disagree about where a body may stand.
     const auto* mpos = reg.try_get<ecs::Position>(macro);
@@ -2413,6 +2410,25 @@ bool SubworldEngine::spawn_tracked_npc_body(entt::entity macro) {
     float fx = playerX_;
     float fy = playerY_;
     place_body_ring(rng, fx, fy);
+
+    // One entity above, one body below. enter() already projects every macro
+    // NPC standing in the 3×3 window — НА ЕГО КЛЕТКЕ, т.е. до тысячи тайлов
+    // от игрока (PLAY-6, глаза владельца: «врага не видно, просто заходишь
+    // в субмир»). Бой ОБЪЯВЛЕН — противник сошёлся: уже стоящее тело
+    // встаёт в то же кольцо, куда встало бы рождённое, той же рукой
+    // (place_body_ring выше) — а второго тела для одного лорда не бывает.
+    for (auto e : reg.view<ecs::MacroOrigin>()) {
+        if (reg.get<ecs::MacroOrigin>(e).macro != macro) continue;
+        if (auto* p = reg.try_get<ecs::Position>(e)) {
+            p->x = fx;
+            p->y = fy;
+        }
+        if (auto* vp = reg.try_get<ecs::VisualPos>(e)) {
+            vp->vx = fx;
+            vp->vy = fy;
+        }
+        return true;
+    }
 
     const entt::entity body =
         spawn_tracked_body(reg, macro, fx, fy, seed, /*combatant*/true);
@@ -3089,6 +3105,8 @@ void SubworldEngine::leave(bool force) {
         return;
     }
     if (!force && exit_blocked_by_danger()) {
+        std::fprintf(stderr, "[dbg] leave gate threat=%.1f\n",
+                     std::sqrt(playerThreatD2_));
         set_status(kDisengageBlockedMsg);
         return;
     }
@@ -3786,6 +3804,8 @@ bool SubworldEngine::try_take_dungeon_stairs() {
     // A stair is a way out of the room you are in: the same danger law that
     // holds the street door shut holds it (owner ruling 2026-08-12).
     if (exit_blocked_by_danger()) {
+        std::fprintf(stderr, "[dbg] stair gate threat=%.1f\n",
+                     std::sqrt(playerThreatD2_));
         set_status("The stair is cut off: hostiles are too close.");
         return false;
     }
@@ -3886,6 +3906,8 @@ bool SubworldEngine::try_exit_dungeon() {
     // The same danger law as any subworld exit: the door does not save you
     // while hostiles stand at your back (owner ruling 2026-08-12).
     if (exit_blocked_by_danger()) {
+        std::fprintf(stderr, "[dbg] door gate threat=%.1f\n",
+                     std::sqrt(playerThreatD2_));
         set_status(kDisengageBlockedMsg);
         return false;
     }

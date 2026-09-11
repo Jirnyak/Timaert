@@ -405,12 +405,15 @@ public:
     std::uint32_t light_debug_mask() const {
         return renderer3dVk_.light_debug_mask();
     }
-    // Diagnostics are per-run TOOLS, not settings: every game session boots
-    // the universal default — everything on, nothing frozen. Called from the
-    // one session door (boot_world) so no console toggle can leak into a new
-    // game or a load (owner rule 2026-08-11; same bug class as playerZ_,
-    // problems.md engine-state-not-reset).
-    void reset_render_diagnostics() {
+    // ЧИТЫ И ДИАГНОСТИКА — инструменты СЕССИИ, не настройки (вердикт
+    // владельца 2026-09-11, PLAY-3: «читы работают только в своей сессии,
+    // при новой игре/загрузке — дефолт»; тот же закон, что 2026-08-11 для
+    // рендер-тумблеров). ОДНА функция, ОДНА дверь (boot_world): каждый
+    // per-run тумблер — движковый чит или рендер-диагностика — сбрасывается
+    // здесь, и новый тумблер обязан добавить сюда свою строку, иначе он
+    // протечёт в следующий мир (годмод именно так пережил главное меню).
+    void reset_per_run_dev_state() {
+        godMode_ = false;
         sunFreeze_ = false;
         renderer3dVk_.set_light_debug_mask(0);
     }

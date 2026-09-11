@@ -2415,6 +2415,24 @@ bool run_dungeon_house_smoke(App& app) {
             faunaAfter = sm::macro_stock_read(mw, sm::MacroStock::FaunaCount,
                                               key);
         }
+        // «От боя не оторваться» (PLAY-5, вердикт владельца): враждебная
+        // тварь в тесном подвале — это враг РЯДОМ, и лестница честно
+        // отрезана, пока он жив. Раньше гейт молчал в данжах (байт зоны
+        // пуст = выключен), и сценарий поднимался сквозь бой; теперь он
+        // уважает закон: подвал зачищается ЦЕЛИКОМ до подъёма.
+        for (auto e : app.ecs.reg.view<sm::ecs::MacroDebt, sm::ecs::Pools,
+                                       sm::ecs::SubworldTag>(
+                 entt::exclude<sm::ecs::Dead>)) {
+            if (app.ecs.reg.get<sm::ecs::MacroDebt>(e).stock
+                != std::uint8_t(sm::MacroStock::FaunaCount)) {
+                continue;
+            }
+            sm::sub::apply_lethal_damage(app.ecs.reg, e,
+                                         sm::sub::DamageSource{},
+                                         sm::sub::DamageKind::Script,
+                                         &app.bus);
+        }
+        app.subworld.tick(0.016f);
         if (app.subworld.debug_take_stairs(/*up*/false)) {
             lvlBack2 = app.subworld.dungeon_level();
             app.subworld.tick(0.016f);
@@ -5143,9 +5161,38 @@ bool run_console_smoke(App& app) {
         }
     }
 
+    // Свидетель PLAY-4 (владелец 2026-09-11: «unknown command exp» —
+    // разгадка: команда всегда звалась ADDEXP, «exp» наврала инструкция
+    // плейтеста): команда обязана существовать и платить в лист сквада.
+    {
+        const int expBefore = sm::player_sheet(app.ecs)->levelData.exp;
+        const int lvlBefore = sm::player_sheet(app.ecs)->levelData.level;
+        if (!con.execute("addexp 500")) {
+            restore(); smoke_fail(app, "console addexp command rejected");
+            return false;
+        }
+        const auto& ldNow = sm::player_sheet(app.ecs)->levelData;
+        if (ldNow.exp <= expBefore && ldNow.level <= lvlBefore) {
+            restore(); smoke_fail(app, "console addexp paid nothing");
+            return false;
+        }
+    }
+
+    // ЧИТ ЖИВЁТ ТОЛЬКО СВОЮ СЕССИЮ (PLAY-3): включённый годмод обязан
+    // умереть на двери boot_world вместе с рендер-диагностикой.
     con.execute("godmode on");
     if (!app.subworld.god_mode()) {
         restore(); smoke_fail(app, "console godmode on"); return false;
+    }
+    app.subworld.reset_per_run_dev_state();
+    if (app.subworld.god_mode()) {
+        restore();
+        smoke_fail(app, "per-run dev state must reset the cheat (PLAY-3)");
+        return false;
+    }
+    con.execute("godmode on");
+    if (!app.subworld.god_mode()) {
+        restore(); smoke_fail(app, "console godmode re-arm"); return false;
     }
     con.execute("godmode off");
     if (app.subworld.god_mode()) {
