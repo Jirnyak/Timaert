@@ -113,7 +113,7 @@ spires/dungeons, and runtime markers.
 
 ## Data-driven extension
 
-Add a kingdom/capital rule → one `kingdom_defs()` row. Add a marker style → one
+Add a realm/capital rule → one faction registry row + one `realm_seed_defs()` row (kingdoms are gone, 2026-09-11 — a realm IS its faction). Add a marker style → one
 `MarkerStyle` enumerator + one `kMarkerGlyph` / `kMarkerColor` entry. Change
 what land a settlement class wants → one `kSettlementScoreRows` row (weights
 only). Teach the score a new resource → one term reading its registry row.

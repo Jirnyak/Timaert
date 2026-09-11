@@ -71,7 +71,7 @@ time, kingdoms, NPCs, items, army. No GL/Vulkan, no events, no UI.
 
 ## Data-driven extension
 
-Add a kingdom → one `kingdom_defs()` row. Add an NPC kind → one `kNpcTypeDefs[]`
+Add a realm → one faction registry row + one `realm_seed_defs()` row. Add an NPC kind → one `kNpcTypeDefs[]`
 row. Reshape terrain/zones → edit the top-of-file `constexpr` tunables. No
 engine branches.
 

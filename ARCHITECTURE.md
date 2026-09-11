@@ -290,7 +290,7 @@ with it.
 | [macro/items.{h,cpp}](src/macro/items.h)                              | `Item`, `Inventory` (count/add/remove), unified loot registry (`roll_loot_profile` keyed by `lootId`), THE affix issuance door (`grant_affixes` + `kAffixDefs` + `coin_run`, [rpg.md](rpg.md)) | `game/items.ts` |
 | [macro/army.h](src/macro/army.h)                                      | `CombatTemplate`, `SoldierRecord`, and `SoldierSquad` universal NPC-as-soldier records. Current source has no legacy 4-unit/RPS schema (`UnitType`, `kUnitStats`, `damage_multiplier`, `kHireCost`, `kUpkeepCost`, `hire_unit` are absent). | `game/army.ts` |
 | [macro/npc.h](src/macro/npc.h), [macro/npc_spawn.cpp](src/macro/npc_spawn.cpp) | `NPCType` enum + `kNpcTypeDefs[]` registry (ONE table of living things); macro NPC spawning treats invalid or mismatched terrain as absent terrain, fails closed on invalid map dimensions, and keeps spawn fallback positions inside map bounds | `game/npc.ts` |
-| [macro/politik.{h,cpp}](src/macro/politik.h)                          | `KingdomDef` registry, capital + city placement, MST + extra roads, Voronoi `cellOwner`; malformed or mismatched terrain storage is ignored as absent terrain | `game/politik.ts` |
+| [macro/politik.{h,cpp}](src/macro/politik.h)                          | `RealmSeedDef` registry (a realm IS a faction registry row; kingdoms cut 2026-09-11), capital + city placement, MST + extra roads, Voronoi `cellOwner` (faction index per cell); malformed or mismatched terrain storage is ignored as absent terrain | `game/politik.ts` |
 | [macro/language.{h,cpp}](src/macro/language.h)                        | Procedural per-kingdom phonotactic name generation | `game/language.ts` |
 | [macro/pathfinding.{h,cpp}](src/macro/pathfinding.h)                  | A* over traversability grid | `game/pathfinding.ts` |
 | [macro/nav_field.{h,cpp}](src/macro/nav_field.h)                      | Запечённая навигация рейсов: округи-зоны тяготения (одна мультиисточниковая Дейкстра от всех ландмарков), порталы по сегментам границ, циклический граф + routeNext; походка = три чтения, никакого поиска в тике ([nav.md](nav.md), CANON S7) | — (native, 2026-09-02) |
@@ -357,10 +357,11 @@ them. Pure data: no rendering, no events, no UI.
 **Pipeline:**
 
 1. **`generate_politik(seed, mapW, mapH, terrain, seaLevel8, target, site)`**
-   — iterates `kingdom_defs()` (data registry of `{id, lineage, region,
-   minCities, maxCities, capital_requires_lake, color_rgb, priority}`),
-   places one capital per kingdom, scatters child cities around it, then
-   per kingdom builds a **Prim's MST** seeded at the capital + one extra
+   — iterates `realm_seed_defs()` (geometry seeds `{factionId, cx, cy,
+   minCities, maxCities, priority, capital_requires_lake}`; identity lives
+   on the faction registry row),
+   places one capital per realm, scatters child cities around it, then
+   per realm builds a **Prim's MST** seeded at the capital + one extra
    nearest non-connected edge per city for redundancy (cap 4 connections),
    and finally one inter-kingdom **bridge road** between every kingdom
    pair whose closest city pair is within `0.35 ×` the half-diagonal.
@@ -393,10 +394,10 @@ them. Pure data: no rendering, no events, no UI.
    the political map respects coastlines exactly. Consumed by the
    Diplomacy / map overlays.
 
-**Lineages** (`Empire | Magika | Timaert | Barbarians`) drive faction
-relations and city aesthetics. Adding a new kingdom = one entry in
-`kingdom_defs()` + one language seed; placement, naming, roads, and
-territory all adapt automatically.
+**Temperaments** (macro/faction.h) drive faction relations and city
+aesthetics. Adding a new realm = one faction registry row + one
+`realm_seed_defs()` entry; placement, naming (faction_language), roads,
+and territory all adapt automatically.
 
 **Output type `Politik`:**
 ```cpp
@@ -1594,7 +1595,7 @@ layers above.
 | `screens/TradeOverlay.svelte`       | settlement Trade tab + `ui::draw_npc_proximity_panel` NPC trade popup | Native intentionally does not duplicate a standalone full-screen wrapper; buy/sell gameplay exists in settlement and NPC surfaces |
 | `screens/QuestOverlay.svelte`       | [ui/overlays.cpp](src/ui/overlays.cpp) `draw_quest_log` | Active quest journal |
 | `screens/SpellOverlay.svelte`       | [ui/overlays.cpp](src/ui/overlays.cpp) character-panel Spells tab + [app/main.cpp](src/app/main.cpp) cast hooks | Spell book surface, active spell selection, cooldown/mana/sustained state, smoke-proven casts |
-| `screens/InteractionOverlay.svelte` | `ui::draw_npc_proximity_panel` action buttons           | Full modal dialog pending; Talk, NPC Trade, and Attack actions are runtime-evidenced |
+| `screens/InteractionOverlay.svelte` | proximity rows → the ONE subject panel (`ui::draw_settlement`, squad branch) | Row click opens the tabbed subject panel; Talk/Trade/Attack live in its banner and tabs (меню-сессия 2026-09-11) |
 | `screens/NpcProximityPanel.svelte`  | `ui::draw_npc_proximity_panel`                          | Right-edge nearby-NPC awareness panel; NPC Talk, trade, and attack flow are runtime-evidenced |
 | `screens/DebugOverlay.svelte`       | [app/main.cpp](src/app/main.cpp) `draw_debug_ui`; `TIMAERT_DEBUG_UI` is extra-debug only | Minimal FPS / camera / world counters; full tools / cheats / entity inspector pending |
 | `screens/DeathOverlay.svelte`       | `ui::draw_death_overlay`                                | Death screen with retry |
@@ -1796,7 +1797,7 @@ track knows where the engine is and where it will snag.
    Rule 13 below is the law all future content classes follow.
 2. **`CellContext` grows a field per fact** — CLOSED 2026-08-14: the five
    landmark columns folded into ONE `LandmarkContext` payload
-   (`ctx.landmark.{kind,id,size,kingdomIdx,depleted}`); a new landmark fact
+   (`ctx.landmark.{kind,id,size,factionIdx,depleted}`); a new landmark fact
    is a member there, never another context column.
 3. **Landmark consumers are hand-enumerated** — CLOSED 2026-08-14:
    `macro/landmark_iter.h for_each_landmark()` is the one enumerator, and

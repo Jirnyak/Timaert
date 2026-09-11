@@ -55,7 +55,7 @@ time at world scale — the strategic layer above microworld combat.
 
 ## Data-driven extension
 
-Add a kingdom → one `kingdom_defs()` row. Add a hireable kind → one stat +
+Add a realm → one faction registry row + one `realm_seed_defs()` row. Add a hireable kind → one stat +
 upkeep row. Balance baseline: 1 gold/day for the weakest hireable.
 
 ## Resource fields — the causality law (owner, 2026-08-09)

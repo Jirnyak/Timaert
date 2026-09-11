@@ -432,7 +432,7 @@ unsettling than a ruin. — *the specifics are deliberately deferred.*
 
 That last line is where the shadow field stops being atmosphere and becomes
 politics: **the field is what makes a settlement takeable.** And it lands on
-machinery that already exists — a settlement's owner is its `kingdomIdx`, and
+machinery that already exists — a settlement's owner is its `factionIdx`, and
 changing an owner is a data change, not an engine change
 (`src/macro/faction.h`). A city lost to the cults is the same operation as a
 city lost to a rival crown.
@@ -989,7 +989,7 @@ new system:
 | One, two, several eunuchs dead | **The Empire comes apart at the seams** — rebellions flare, and it loses lands |
 | **The last eunuch dead** | **Civil war swallows it. The Empire of Light ceases to exist as a state.** |
 
-Note how cleanly that lands on what already exists: a city whose `kingdomIdx`
+Note how cleanly that lands on what already exists: a city whose `factionIdx`
 goes to −1 becomes **Free Folk** by construction, with no code to change
 (`src/macro/faction.h`). The largest state in the world dissolving is, at the
 data level, its cities losing their owner one at a time.
