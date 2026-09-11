@@ -12,6 +12,7 @@
 #include <cstdint>
 #include "core/rng.h"    // the ONE generator (landmark_born_population)
 #include "core/table_guard.h"
+#include "macro/map_actions.h"  // the verb bits the `actions` column declares
 #include "macro/npc.h"   // NPCType — the crew rows below name who a place raises
 #include <string_view>
 
@@ -195,6 +196,15 @@ struct LandmarkDef {
     // Fixed posts of the street crowd (see LandmarkCrowdRole above).
     LandmarkCrowdRole crowdRoles[4] = {};
     std::uint8_t      crowdRoleCount = 0;
+
+    // ── The interaction verbs this KIND offers (меню-сессия, 2026-09-11) ──
+    // macro/map_actions.h bits: what the universal menu lists when the
+    // player stands beside one of these. 0 = the walk-in minimum (info +
+    // Enter — Enter is the `walkable` column above, actions_of() folds it
+    // in, no second byte). Availability NOW is the menu row's predicate;
+    // this column is the kind's vocabulary. Owner's verdicts: деревня =
+    // прилавок + найм + доска контрактов; отдых таверны вырезан вообще.
+    std::uint16_t     actions = 0;
 };
 
 // Night-light columns (lightColor / lightPop) drive the universal macro
@@ -217,7 +227,8 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
                    {NPCType::Guard, CrewGate::Auction, /*solo*/false,
                     /*garrison*/true}}, 2,
      /*crowdRoles*/{{NPCType::Merchant, 0, 1},
-                    {NPCType::Woodcutter, 0, 1}}, 2 },
+                    {NPCType::Woodcutter, 0, 1}}, 2,
+     /*actions*/ kMapActTrade | kMapActHire | kMapActQuests },
     // Артели деревни — N ОДИНАКОВЫХ крестьянских строк (снос профессий,
     // CANON S10): каждая берёт поручение своим броском рулетки аукциона —
     // диверсификация без координации. N = одновременность артелей, крутилка
@@ -229,7 +240,8 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
                    {NPCType::Peasant, CrewGate::Auction},
                    {NPCType::Peasant, CrewGate::Auction}}, 4,
      /*crowdRoles*/{{NPCType::Merchant, 0, 1},
-                    {NPCType::Woodcutter, 0, 1}}, 2 },
+                    {NPCType::Woodcutter, 0, 1}}, 2,
+     /*actions*/ kMapActTrade | kMapActHire | kMapActQuests },
     // Spire wild fauna returned to the GROUND (§42 Инк 5): its demons are
     // its POPULATION now — the mountain's own beasts roam the slopes, and
     // clearing the tower can never again be ambiguous between garrison and

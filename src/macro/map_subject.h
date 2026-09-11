@@ -28,7 +28,9 @@
 #pragma once
 
 #include "ecs/world.h"
+#include "macro/landmark_registry.h"
 #include "macro/macro_world.h"
+#include "macro/map_actions.h"
 #include "macro/state.h"
 
 #include <cstdint>
@@ -96,6 +98,32 @@ inline SoldierSquad* roster_of(const MacroWorld& w, MapSubject s) {
     case MapSubjectKind::None: break;
     }
     return nullptr;
+}
+
+// ── THE verbs door ───────────────────────────────────────────────────────
+// What this subject OFFERS (macro/map_actions.h bits) — the universal menu
+// lists exactly these rows. Landmarks declare theirs in the registry column
+// (`actions`, plus `walkable` folded in as Enter — one mask out, no second
+// byte in). A squad's vocabulary is the macro NPC's constant set: talk,
+// trade, attack — availability NOW (hostility, a live counterparty, an
+// actual bag) is the menu row's predicate, never a second table here.
+inline std::uint16_t actions_of(const MacroWorld& w, MapSubject s) {
+    switch (s.kind) {
+    case MapSubjectKind::Squad: {
+        if (!w.world || !w.world->reg.valid(s.squad)) return 0;
+        return kMapActTalk | kMapActTrade | kMapActAttack;
+    }
+    case MapSubjectKind::Landmark: {
+        if (!w.gs) return 0;
+        const Landmark* lm = landmark_by_id(*w.gs, int(s.landmark));
+        if (!lm) return 0;
+        const LandmarkDef& def = landmark_def(lm->type);
+        return std::uint16_t(def.actions
+                             | (def.walkable ? kMapActEnter : 0));
+    }
+    case MapSubjectKind::None: break;
+    }
+    return 0;
 }
 
 } // namespace sm

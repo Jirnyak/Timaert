@@ -129,6 +129,37 @@ void test_a_write_through_the_door_lands_in_the_world() {
           "a garrison record moves into a squad roster: one type, no seam");
 }
 
+// The verbs door: data declares, the door answers — and the owner's verdicts
+// of 2026-09-11 are pinned as LITERAL masks (the design numbers themselves,
+// house style), so a drifting column trips here, not in a playtest.
+void test_actions_are_declared_by_data() {
+    using namespace sm;
+    GameState gs = make_world();
+    ecs::World world;
+    const auto squad = make_squad(world, 5);
+    MacroWorld w{&gs, nullptr, &world};
+
+    CHECK(actions_of(w, subject_of_squad(squad))
+              == (kMapActTalk | kMapActTrade | kMapActAttack),
+          "a squad speaks talk/trade/attack — the macro NPC vocabulary");
+    CHECK(actions_of(w, subject_of_landmark(7))
+              == (kMapActTrade | kMapActHire | kMapActQuests | kMapActEnter),
+          "a city offers trade, hire, its contract board and the walk in");
+    CHECK(actions_of(w, subject_of_landmark(42))
+              == (kMapActTrade | kMapActHire | kMapActQuests | kMapActEnter),
+          "the village verdict: прилавок + найм + доска (and the walk in)");
+    CHECK(actions_of(w, subject_of_landmark(13)) == kMapActEnter,
+          "a spire declares no verbs of its own: the walk-in minimum");
+    CHECK((actions_of(w, subject_of_landmark(7)) & (kMapActTalk | kMapActAttack))
+              == 0,
+          "no place talks or is attacked through this menu (war is a track)");
+
+    CHECK(actions_of(w, MapSubject{}) == 0
+              && actions_of(w, subject_of_landmark(9999)) == 0
+              && actions_of(w, subject_of_squad(entt::null)) == 0,
+          "nobody offers no verbs, fail closed");
+}
+
 // Fail closed: a malformed subject or an absent layer answers nullptr and
 // touches nothing — the exact discipline of every macro door.
 void test_the_door_fails_closed() {
@@ -164,6 +195,7 @@ void test_the_door_fails_closed() {
 int main() {
     test_the_door_opens_the_old_addresses();
     test_a_write_through_the_door_lands_in_the_world();
+    test_actions_are_declared_by_data();
     test_the_door_fails_closed();
     return sm::test::report("map_subject_test");
 }
