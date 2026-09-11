@@ -238,14 +238,23 @@ SECOND column beside `faunaHabitat`, deliberately: the crowd's family and
 the wild fauna's family are different dictionaries — a city has a town
 crowd and no wild fauna. On the `kHabTown` stripe the old 55/21/21/3 mix
 stands as the ROW WEIGHTS (`npc.h weight`: Peasant 55, Merchant/Woodcutter
-21, Witch 3, each profession 21), the danger match rides on top, and a
-profession stands in the street only where its ground does — `depositGate`
+21, Witch 3, each mining trade 21), the danger match rides on top, and a
+trade row stands in the street only where its ground does — `depositGate`
 (the `kSpawnHabitats` column): a live vein within `kGathererReach` puts the
 miner / quarryman / clay-digger into the crowd, down to the residents of
 houses — the same radius and data that raise the macro profession
 ([resources.md](resources.md)). A household behind a door rolls the stripe
 of ITS OWN door cell's landmark (`DungeonSession::landmarkKind`), never a
 hardcoded town's.
+
+**Woodcutter is a BODY KIND, not a profession** (owner asked, 2026-09-11).
+The wood-cutting PROFESSION died with the profession teardown (CANON S10:
+village crews are identical PEASANT rows and the target auction hands out
+errands — peasants cut the wood). `NPCType::Woodcutter` survives as a row
+of the one body table — a townsman with an axe: a crowd flavour on the
+kHabTown stripe, a street post (crowd role row), and a cut of the garrison
+mix (60/25/15). If the name ever misleads, the fix is a rename of one row
+— nothing behavioural hangs on the word.
 
 ## Spawn paths (three, one table)
 
