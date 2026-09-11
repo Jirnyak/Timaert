@@ -13,18 +13,12 @@ namespace {
 struct ResolvedRecipe {
     int output = -1;
     // The mint row (econ_day.h kMintOutput): output resolves to the town's
-    // faction coin at run time; yield per metal unit = the metal's own
-    // catalog value (the price table IS the mint).
+    // faction coin at run time. NOTHING else about it is special (owner
+    // verdict 2026-09-12, «единая система крафта; города производят как
+    // экономика-ИИ, используя ту же систему»): its matter is the coin row's
+    // own composition and the day makes it through the same craft door as
+    // every other output — so no matter is stored here at all.
     bool isMint = false;
-    // Fact attribution: Minted reports the METAL's commodity row.
-    int mintMetalCommodity = -1;
-    // The recipe's MATTER = the output row's own composition (macro/items.h
-    // item_parts — the one matter table; owner verdict 2026-09-11). Part defs
-    // are CATALOG ordinals, so the store is asked directly, no bridge. The
-    // mint is the one row whose input is not a composition (a coin is 1/32
-    // silver): its matter is kMintMetal × 1, stated here.
-    ItemPart parts[kMaxItemParts]{};
-    int nParts = 0;
     // popPerUnitDay of the need row this output serves, 0 = not a need —
     // production plans "today's table" against this before any surplus.
     int demandDivisor = 0;
@@ -42,16 +36,6 @@ const ResolvedTables& resolved() {
             ResolvedRecipe& rr = r.recipes[i];
             rr.output = commodity_index(kRecipes[i].output);
             rr.isMint = std::strcmp(kRecipes[i].output, kMintOutput) == 0;
-            if (rr.isMint) {
-                rr.mintMetalCommodity = commodity_index(kMintMetal);
-                rr.parts[0] = ItemPart{std::uint16_t(item_index(kMintMetal)), 1};
-                rr.nParts = 1;
-            } else {
-                for (const ItemPart& part :
-                     item_parts(commodity_item_index(rr.output))) {
-                    rr.parts[rr.nParts++] = part;
-                }
-            }
             for (int n = 0; n < kNeedCount; ++n) {
                 if (std::strcmp(kNeeds[n].commodity, kRecipes[i].output) == 0) {
                     rr.demandDivisor = kNeeds[n].popPerUnitDay;
@@ -99,17 +83,34 @@ int econ_produce_day(Inventory& store, EconSite site, int workers,
     int workersLeft = workers;
     int fairShare = 0;
 
+    // The OUTPUT catalog row a recipe makes: the table's own commodity for
+    // goods, THIS town's coin for the mint — the one datum the mint right
+    // supplies. From that row on, everything (matter, yield, the making
+    // itself) is THE craft system, verbatim.
+    const auto output_row_of = [&](const ResolvedRecipe& rr) {
+        if (rr.isMint) {
+            return mintCurrencyId ? item_index(mintCurrencyId) : -1;
+        }
+        return commodity_item_index(rr.output);
+    };
+
     auto run_recipe = [&](int i, int unitCap, int workerCap) {
         const ResolvedRecipe& rr = t.recipes[i];
-        // The mint runs only where a coin is named (the right, v1: the
-        // caller's faction) — fail closed like every unwired layer.
-        if (rr.isMint && !mintCurrencyId) return;
-        // Units this recipe could make from the store alone. Parts are
-        // catalog ordinals — the store is asked directly.
-        int byInputs = unitCap;
-        for (int k = 0; k < rr.nParts; ++k) {
-            byInputs = std::min(byInputs, store.count_of(int(rr.parts[k].def))
-                                              / int(rr.parts[k].count));
+        // -1 = a mint with no coin named (no right here) or a dead id —
+        // fail closed like every unwired layer.
+        const int outIdx = output_row_of(rr);
+        if (outIdx < 0) return;
+        const auto parts = item_parts(outIdx);
+        const int yield = item_yield(outIdx);
+        if (parts.empty()) return;   // no composition: nothing from nothing
+        // BATCHES this recipe could run from the store alone. Parts are
+        // catalog ordinals — the store is asked directly. unitCap arrives in
+        // OUTPUT units (today's demand); one batch makes `yield` of them.
+        int byInputs = unitCap >= (1 << 20)
+            ? (1 << 20) : (unitCap + yield - 1) / yield;
+        for (const ItemPart& part : parts) {
+            byInputs = std::min(byInputs, store.count_of(int(part.def))
+                                              / int(part.count));
         }
         if (byInputs <= 0) return;
         // THE population-efficiency law (owner 2026-08-30, CANON S10, ?31
@@ -118,7 +119,8 @@ int econ_produce_day(Inventory& store, EconSite site, int workers,
         // (the owner's-scale hundred, kVillageBornBase) lands at ×1½,
         // a 512-soul city at ×2¼. One law prices why the city bakes
         // better — never a second recipe row, never a site wall. The
-        // quarter is a balance-run tunable.
+        // quarter is a balance-run tunable. Tempo counts BATCHES: for the
+        // mint that is metal units a day, exactly the old «4 металла».
         const int popLog =
             population > 1 ? (std::bit_width(unsigned(population)) - 1) : 0;
         const int perDay =
@@ -128,51 +130,26 @@ int econ_produce_day(Inventory& store, EconSite site, int workers,
         const int staffed = std::min(wanted, workersLeft);
         const int made = std::min(byInputs, staffed * perDay);
         if (made <= 0) return;
-        // The inputs leave the store ONCE, here, for every recipe the table
-        // has — a recipe that then cannot place its output refunds them
-        // through the one door below. (The mint used to debit its metal a
-        // second time inside its own branch, on top of this one: up to twice
-        // the silver for the coins actually struck.)
-        for (int k = 0; k < rr.nParts; ++k) {
-            store.remove_of(int(rr.parts[k].def),
-                            made * int(rr.parts[k].count));
-        }
-        // The output could not be placed: put the inputs back — the slots they
-        // just left are still free, so this cannot fail. The day makes nothing
-        // here, and no fact lies about goods that do not exist. BOTH outputs a
-        // recipe can have leave through this door: a shelf of goods and a
-        // purse of coin obey the same conservation law.
-        auto refund_inputs = [&] {
-            for (int k = 0; k < rr.nParts; ++k) {
-                store.add_of(int(rr.parts[k].def),
-                             made * int(rr.parts[k].count));
-            }
-        };
-        if (rr.isMint) {
-            // Yield per metal unit = the metal's OWN catalog value — the one
-            // price table is the mint (CANON S10); nothing else names the
-            // number. A metal the catalog prices at nothing, and a full store
-            // with nowhere to put the coin, are both a day that did not
-            // happen — the metal goes back on the shelf.
-            const ItemDef* metal = item_def_at(int(rr.parts[0].def));
-            const int yield = metal ? metal->value : 0;
-            if (yield <= 0 || !store.add(mintCurrencyId, made * yield)) {
-                refund_inputs();
-                return;
-            }
-            workersLeft -= staffed;
-            total += made;
-            report(sink, user, EconFact::Kind::Minted, rr.mintMetalCommodity,
-                   made * yield);
-            return;
-        }
-        if (!store.add_of(commodity_item_index(rr.output), made)) {
-            refund_inputs();
-            return;
-        }
+        // THE craft door — the town makes goods and strikes coin exactly as
+        // a hand at the bench does (owner 2026-09-12: «город делает монеты
+        // через систему крафта по своему ИИ»). All-or-nothing lives in the
+        // door: a full store is a day that did not happen, the inputs never
+        // left, and no fact lies about goods that do not exist. (The hand
+        // written debit-refund pair that stood here — and once double-debited
+        // the mint's silver — died with it.)
+        if (!craft_item(store, outIdx, made)) return;
         workersLeft -= staffed;
         total += made;
-        report(sink, user, EconFact::Kind::Produced, rr.output, made);
+        if (rr.isMint) {
+            // The fact names the METAL spent (part 0's commodity row) — the
+            // money-supply counter balance_run watches.
+            const ItemDef* metal = item_def_at(int(parts[0].def));
+            report(sink, user, EconFact::Kind::Minted,
+                   metal ? commodity_index(metal->id) : -1, made * yield);
+        } else {
+            report(sink, user, EconFact::Kind::Produced, rr.output,
+                   made * yield);
+        }
     };
 
     // Pass 0 — today's table, by demand.
@@ -187,17 +164,16 @@ int econ_produce_day(Inventory& store, EconSite site, int workers,
     }
 
     // Fair shares are computed AFTER the table is served, over the recipes
-    // that still have inputs.
+    // that still have inputs (one whole batch feedable).
     int liveRecipes = 0;
     for (int i = 0; i < kRecipeCount; ++i) {
         if (!recipe_runs_at(kRecipes[i].site, site)) continue;
-        const ResolvedRecipe& rr = t.recipes[i];
-        if (rr.output < 0 && !(rr.isMint && mintCurrencyId)) continue;
+        const int outIdx = output_row_of(t.recipes[i]);
+        if (outIdx < 0) continue;
         bool feedable = true;
-        for (int k = 0; k < rr.nParts; ++k) {
+        for (const ItemPart& part : item_parts(outIdx)) {
             feedable = feedable
-                && store.count_of(int(rr.parts[k].def))
-                       >= int(rr.parts[k].count);
+                && store.count_of(int(part.def)) >= int(part.count);
         }
         if (feedable) ++liveRecipes;
     }

@@ -408,3 +408,24 @@ owner's verdicts (4 slots, terminals, floor(n/2) entropy, variant byte).
 - **No-arbitrage is a table law now** (`item_parts_test`): a white base is
   worth at least its own halved scrap return, so buy → scrap → sell loses at
   every stall by construction, the same way round trips lose to slippage.
+
+### 2026-09-12 — the mint IS the craft door (owner, CAPS: «ЕДИНАЯ СИСТЕМА»)
+
+The section above left coin three special paths (a mint branch, a currency
+gate, terminal-for-scrap) — the owner killed all three the same day. The
+composition gained a YIELD column (one batch → N items; 1 everywhere, the
+coin rows say {silver 1} → 32): «состав монеты и есть монетный двор».
+Consequences, each a deletion:
+- `econ_produce_day` now makes EVERYTHING — bread and coin alike — by
+  calling `craft_item` on the store (the scheduler only counts labour:
+  batches per worker-day, which rows, whose coin). The hand-written
+  debit/refund pair and the whole mint branch died; conservation is the
+  door's own all-or-nothing.
+- Melting coin is `scrap_at` like any matter, under the POOLED entropy law
+  floor(K×count/(2×yield)): 64 coins → 1 silver, one coin honestly burns.
+  (Pooling also made bulk scrap honest for everything: two daggers → 1 iron
+  where per-unit flooring burnt both handles.)
+- The `item_is_currency` craft gate is GONE: a barter economy prices coin as
+  a ware, and the mint reaction is value-neutral (yield × nominal == the
+  composition's value — a static_assert beside the table), so a forger's
+  bench earns nothing a smith's doesn't. The Craft tab lists coins openly.

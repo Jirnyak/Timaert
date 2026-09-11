@@ -16,6 +16,7 @@
 //      TRANSITIONS, not every day).
 
 #include "check.h"
+#include "macro/currency.h"
 #include "macro/econ_day.h"
 #include "macro/items.h"
 
@@ -65,12 +66,15 @@ void sink(void* user, const sm::EconFact& f) {
 // «что ест печь» and «из чего хлеб» is exactly what the merge killed.
 void inputs_for_output(int outputIdx, int madeUnits,
                        std::array<long, sm::kCommodityCount>& used) {
-    for (const sm::ItemPart& part :
-         sm::item_parts(sm::commodity_item_index(outputIdx))) {
+    const int outCatalog = sm::commodity_item_index(outputIdx);
+    // One batch of the composition makes `yield` units — inputs per unit are
+    // count/yield (exact: a Produced amount is always whole batches).
+    const int yield = sm::item_yield(outCatalog);
+    for (const sm::ItemPart& part : sm::item_parts(outCatalog)) {
         const sm::ItemDef* d = sm::item_def_at(int(part.def));
         if (!d) continue;
         used[std::size_t(sm::commodity_index(d->id))]
-            += long(madeUnits) * int(part.count);
+            += long(madeUnits) * int(part.count) / yield;
     }
 }
 
@@ -323,14 +327,20 @@ int main() {
     }
 
     // ── 7. A recipe with no inputs would mint matter — table law ────────
-    // The mint's matter is kMintMetal (a coin is 1/32 silver — no u8 part
-    // can say it, CANON «Крафт/Скрап»); every OTHER output must carry a
-    // composition on its catalog row, or the day makes goods from nothing.
-    if (commodity_index(kMintMetal) < 0) return fail("mint metal id unknown");
+    // Every output must carry a composition on its catalog row, or the day
+    // makes goods from nothing. The mint's output resolves per town (any
+    // faction coin), so ALL currency rows answer for it — coin matter (and
+    // its value-neutrality) is pinned in item_parts_test and by the
+    // static_assert beside the table.
     for (int i = 0; i < kRecipeCount; ++i) {
         if (std::strcmp(kRecipes[i].output, kMintOutput) == 0) continue;
         if (item_parts(item_index(kRecipes[i].output)).empty()) {
             return fail("recipe with no inputs mints matter from nothing");
+        }
+    }
+    for (const CurrencyDef& c : kCurrencyDefs) {
+        if (item_parts(item_index(c.itemId)).empty()) {
+            return fail("a mint output (faction coin) has no composition");
         }
     }
 

@@ -78,13 +78,13 @@ struct RecipeDef {
 // «таблица цен и есть монетный двор»; сеньораж эмерджентен из рыночного
 // спреда серебра).
 inline constexpr const char* kMintOutput = "coin";
-// The mint's ONE input. It is deliberately NOT a composition: a coin is 1/32
-// of a silver unit («таблица цен и есть монетный двор» — yield per metal unit
-// = the metal's own catalog value), a share no u8 part cell can state, so the
-// coin rows stay TERMINAL for the universal scrap and the metal enters here.
-// Melting coin back is the future REVERSE of this same recipe (owner verdict
-// 2026-09-11), never the scrap door's business.
-inline constexpr const char* kMintMetal = "silver";
+// The mint's matter is NOT stated here (owner verdict 2026-09-12, «привести
+// к единой системе»): it is the COIN ROW'S OWN composition — {silver 1} →
+// yield 32 (items.cpp kPartsAuthoring, «состав монеты и есть монетный
+// двор») — so striking and MELTING coin are the one reaction every other
+// item runs. What this row keeps is the RIGHT and the TEMPO: only a place
+// with a coin named runs it, at outputPerWorkerDay BATCHES (= metal units)
+// a day.
 
 // THE productivity anchor (owner 2026-08-30/31, CANON S10): one worker at ANY
 // link of the chain covers the needs of ~32 souls — «1 добытчик кормит 32

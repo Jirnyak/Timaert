@@ -1056,41 +1056,67 @@ namespace sm::ui
                             const auto parts = item_parts(int(st.def));
                             if (!parts.empty())
                             {
-                                std::string back;
-                                for (std::size_t pi = 0; pi < parts.size(); ++pi)
-                                {
-                                    int mat = int(parts[pi].def);
-                                    if (pi == 0 && st.material != 0
-                                        && int(st.material) <= kRawCommodityCount)
+                                // The preview prints the door's own POOLED
+                                // arithmetic — floor(n×count/(2×yield)) per
+                                // part, the variant byte substituting part 0
+                                // — so the player reads the entropy price of
+                                // exactly the n he is about to pay.
+                                const int rowYield = item_yield(int(st.def));
+                                const auto returns_for = [&](int n) {
+                                    std::string back;
+                                    for (std::size_t pi = 0;
+                                         pi < parts.size(); ++pi)
                                     {
-                                        const int sub = item_index(
-                                            kCommodities[st.material - 1].id);
-                                        if (sub >= 0) mat = sub;
+                                        int mat = int(parts[pi].def);
+                                        if (pi == 0 && st.material != 0
+                                            && int(st.material)
+                                                   <= kRawCommodityCount)
+                                        {
+                                            const int sub = item_index(
+                                                kCommodities[st.material - 1]
+                                                    .id);
+                                            if (sub >= 0) mat = sub;
+                                        }
+                                        const int amt =
+                                            n * int(parts[pi].count)
+                                            / (2 * rowYield);
+                                        if (amt <= 0) continue;
+                                        const ItemDef *md = item_def_at(mat);
+                                        if (!md) continue;
+                                        if (!back.empty()) back += ", ";
+                                        back += std::to_string(amt);
+                                        back += "x ";
+                                        back += md->name;
                                     }
-                                    const int n = int(parts[pi].count) / 2;
-                                    if (n <= 0) continue;
-                                    const ItemDef *md = item_def_at(mat);
-                                    if (!md) continue;
-                                    if (!back.empty()) back += ", ";
-                                    back += std::to_string(n);
-                                    back += "x ";
-                                    back += md->name;
+                                    return back;
+                                };
+                                const std::string one = returns_for(1);
+                                if (st.count > 1)
+                                {
+                                    const std::string all =
+                                        returns_for(st.count);
+                                    ImGui::TextDisabled(
+                                        "Scrap 1 -> %s   |   all %d -> %s",
+                                        one.empty() ? "slag" : one.c_str(),
+                                        st.count,
+                                        all.empty() ? "slag" : all.c_str());
                                 }
-                                ImGui::TextDisabled(
-                                    back.empty()
-                                        ? "Scraps to slag: %s"
-                                        : "Scraps into (per unit): %s",
-                                    back.empty() ? "the parts burn whole"
-                                                 : back.c_str());
+                                else
+                                {
+                                    ImGui::TextDisabled(
+                                        "Scrap -> %s",
+                                        one.empty() ? "slag (the parts burn)"
+                                                    : one.c_str());
+                                }
                                 const auto scrap = [&](int n) {
-                                    const int slot = selectedSlot;
-                                    if (scrap_at(playerBag, slot, n))
+                                    const std::string back = returns_for(n);
+                                    if (scrap_at(playerBag, selectedSlot, n))
                                     {
                                         lastUseMessage = "Scrapped ";
                                         lastUseMessage += def->name;
                                         lastUseMessage += back.empty()
                                             ? ": all of it burnt to slag."
-                                            : (": +" + back + " per unit.");
+                                            : (": +" + back + ".");
                                     }
                                     else
                                     {
@@ -1125,8 +1151,10 @@ namespace sm::ui
                 // «Крафт/Скрап»): full price in materials, a WHITE base out
                 // (seed 0 — affixes are born in the world, never at a
                 // bench). The list is the CATALOG's own answer: every row
-                // with a composition, minus coin (чеканка = право двора,
-                // the door refuses it anyway) — nothing is restated here.
+                // with a composition, COIN INCLUDED (owner 2026-09-12:
+                // «У НАС БАРТЕРНАЯ ЭКОНОМИКА» — no currency filter exists;
+                // minting is value-neutral by the static_assert beside the
+                // table, so the bench forges nothing a smith doesn't).
                 const bool craftOpen = ImGui::BeginTabItem("Craft", nullptr,
                                                            selected_tab(current, CharacterPanelTab::Craft));
                 if (tab && ImGui::IsItemClicked())
@@ -1150,12 +1178,18 @@ namespace sm::ui
                         for (int ci = 0; ci < int(catalog.size()); ++ci)
                         {
                             const auto parts = item_parts(ci);
-                            if (parts.empty() || item_is_currency(ci))
+                            if (parts.empty())
                                 continue;
+                            const int yield = item_yield(ci);
                             const ItemDef &row = catalog[std::size_t(ci)];
                             ImGui::TableNextRow();
                             ImGui::TableNextColumn();
-                            ImGui::Text("%s", row.name);
+                            // One batch makes `yield` — the mint's 32 coins
+                            // say so right in the row name.
+                            if (yield > 1)
+                                ImGui::Text("%dx %s", yield, row.name);
+                            else
+                                ImGui::Text("%s", row.name);
                             if (ImGui::IsItemHovered())
                             {
                                 ImGui::BeginTooltip();
@@ -1199,6 +1233,12 @@ namespace sm::ui
                                 if (craft_item(playerBag, ci, 1))
                                 {
                                     lastCraftMessage = "Crafted ";
+                                    if (yield > 1)
+                                    {
+                                        lastCraftMessage +=
+                                            std::to_string(yield);
+                                        lastCraftMessage += "x ";
+                                    }
                                     lastCraftMessage += row.name;
                                     lastCraftMessage += ".";
                                 }

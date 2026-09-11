@@ -57,9 +57,11 @@ constexpr ItemDef kCatalog[] = {
         "Building material", {}},
     {"iron",    "Iron Ore",        ItemType::Material,   15, 4.00f, "\xE2\x9B\x8F",
         "Smithing material", {}},
-    // Value 32 IS the mint yield (CANON S10: «таблица цен = монетный двор»
-    // — one unit of silver coins into 32 nominal-1 coins, po2): the whole
-    // money supply of the world derives from this one number × geology.
+    // Value 32 = what one silver's worth of coin IS (po2): the mint yield
+    // lives on the COIN rows' composition ({silver 1} → 32, kPartsAuthoring
+    // — CANON S10 unified 2026-09-12, «состав монеты и есть монетный двор»),
+    // and the value-neutrality witness (item_parts_test) pins this number to
+    // that one, so the world's money supply stays geology × one figure.
     {"silver",  "Silver Ore",      ItemType::Material,   32, 4.00f, "\xE2\x9A\xAA",
         "Mint metal", {}},
     {"grain",   "Grain",           ItemType::Material,    5, 1.00f, "\xF0\x9F\x8C\xBE",
@@ -186,8 +188,22 @@ constexpr ItemDef kCatalog[] = {
 struct PartsAuthoringRow {
     const char* id;
     struct { const char* mat; int n; } p[kMaxItemParts];
+    // Items one batch of the composition makes. 1 everywhere but the coin
+    // rows: «состав монеты и есть монетный двор» (owner 2026-09-12) — the
+    // yield is pinned to the price anchor by the value-neutrality witness
+    // (item_parts_test), so 32 here and silver's value 32 cannot drift.
+    int yield = 1;
 };
 constexpr PartsAuthoringRow kPartsAuthoring[] = {
+    // The MINT rows (CANON S10 unified 2026-09-12): one silver strikes 32
+    // nominal-1 coins of any realm — the same matter table, the same scrap
+    // door melts them back (64 coins → 1 silver by the pooled entropy law).
+    // What stays a RIGHT is striking them: craft_item refuses currency, the
+    // production day strikes only the town's own coin.
+    {"coin_empire",  {{"silver", 1}}, 32},
+    {"coin_magika",  {{"silver", 1}}, 32},
+    {"coin_timaert", {{"silver", 1}}, 32},
+    {"coin_barbar",  {{"silver", 1}}, 32},
     // Consumables: alchemy is herb-matter; bread is the baking reaction
     // (grain 1 → bread 1), the exact row the production day runs.
     {"potion_hp",   {{"mat_herb", 2}}},
@@ -214,6 +230,39 @@ constexpr PartsAuthoringRow kPartsAuthoring[] = {
     {"wpn_bow",     {{"wood", 1}}},
     {"arm_leather", {{"mat_hide", 3}}},
 };
+
+// ── The mint is value-neutral, BY LITERAL (owner 2026-09-12) ───────────────
+// Coin is a commodity and minting is THE craft door — no gate, no second
+// path («У НАС БАРТЕРНАЯ ЭКОНОМИКА... ПРОСТО ГОРОД ДЕЛАЕТ МОНЕТЫ ЧЕРЕЗ
+// СИСТЕМУ КРАФТА»). What keeps a forger's bench harmless is arithmetic, not
+// a check: one silver IS its yield in nominal coin, so striking creates no
+// value. Two literals state that one fact (silver's catalog value, the coin
+// rows' yield) — this guard is the product-of-two-knobs law: they cannot
+// drift apart and compile.
+constexpr int catalog_value_of(std::string_view id) {
+    for (const ItemDef& d : kCatalog) {
+        if (std::string_view(d.id) == id) return d.value;
+    }
+    return -1;
+}
+constexpr bool mint_is_value_neutral() {
+    for (const CurrencyDef& c : kCurrencyDefs) {
+        int yield = 1;
+        int batchValue = 0;
+        for (const PartsAuthoringRow& r : kPartsAuthoring) {
+            if (std::string_view(r.id) != c.itemId) continue;
+            yield = r.yield;
+            for (const auto& p : r.p) {
+                if (p.mat) batchValue += p.n * catalog_value_of(p.mat);
+            }
+        }
+        if (yield * catalog_value_of(c.itemId) != batchValue) return false;
+    }
+    return true;
+}
+static_assert(mint_is_value_neutral(),
+              "the mint must be value-neutral: coin yield x nominal == the "
+              "composition's value (S10) - these literals drifted apart");
 
 const std::unordered_map<std::string, const ItemDef*>& catalog_map() {
     static const std::unordered_map<std::string, const ItemDef*> m = []{
@@ -611,6 +660,7 @@ namespace {
 struct ResolvedParts {
     ItemPart p[kMaxItemParts]{};
     int      n = 0;
+    int      yield = 1;
 };
 
 const std::array<ResolvedParts, std::size(kCatalog)>& parts_table() {
@@ -623,6 +673,7 @@ const std::array<ResolvedParts, std::size(kCatalog)>& parts_table() {
             // process over an authoring typo, the test exists to.
             if (idx < 0) continue;
             ResolvedParts& out = t[std::size_t(idx)];
+            out.yield = row.yield > 1 ? row.yield : 1;
             for (const auto& part : row.p) {
                 if (!part.mat || part.n <= 0) continue;
                 const int mi = item_index(part.mat);
@@ -645,26 +696,16 @@ std::span<const ItemPart> item_parts(int defIdx) noexcept {
     return std::span<const ItemPart>(r.p, std::size_t(r.n));
 }
 
-bool item_is_currency(int defIdx) noexcept {
-    // The currency rows of the catalog, marked once — the answer is the
-    // registry's (macro/currency.h kCurrencyDefs), never a name pattern.
-    static const auto kIsCoin = [] {
-        std::array<bool, std::size(kCatalog)> m{};
-        for (const CurrencyDef& c : kCurrencyDefs) {
-            const int i = item_index(c.itemId);
-            if (i >= 0) m[std::size_t(i)] = true;
-        }
-        return m;
-    }();
-    return defIdx >= 0 && defIdx < int(kIsCoin.size())
-        && kIsCoin[std::size_t(defIdx)];
+int item_yield(int defIdx) noexcept {
+    const auto& t = parts_table();
+    if (defIdx < 0 || defIdx >= int(t.size())) return 1;
+    return t[std::size_t(defIdx)].yield;
 }
 
 bool craft_item(Inventory& inv, int defIdx, int n) {
     if (n <= 0) return false;
     const auto parts = item_parts(defIdx);
     if (parts.empty()) return false;             // terminal: nothing composes it
-    if (item_is_currency(defIdx)) return false;  // чеканка = право двора (S10)
     // All-or-nothing on a copy (the barter_swap idiom): remove_of can succeed
     // partially across stacks before a later part runs short, and add_of can
     // refuse a full bag after the materials already left it.
@@ -672,7 +713,8 @@ bool craft_item(Inventory& inv, int defIdx, int n) {
     for (const ItemPart& part : parts) {
         if (!work.remove_of(int(part.def), n * int(part.count))) return false;
     }
-    if (!work.add_of(defIdx, n)) return false;   // white base: seed 0, plain
+    // n batches make n × yield items — white base: seed 0, plain.
+    if (!work.add_of(defIdx, n * item_yield(defIdx))) return false;
     inv = work;
     return true;
 }
@@ -694,10 +736,12 @@ bool scrap_at(Inventory& inv, int slot, int n) {
             const int sub = item_index(kCommodities[ref.material - 1].id);
             if (sub >= 0) mat = sub;
         }
-        // Entropy per UNIT scrapped: floor(count/2), so a 1-count part burns
-        // whole («рукоять сгорает») and «крафт 2 железа → разбор 1 железо»
-        // holds by arithmetic. Affix cells are simply never read: they burn.
-        const int back = n * (int(parts[i].count) / 2);
+        // POOLED entropy (owner 2026-09-12): half the TOTAL matter of the n
+        // units, floored — one sword still pays 1 iron, a lone dagger's
+        // handle still burns whole, two daggers pool into 1 iron, and 64
+        // coins (yield 32: each is 1/32 silver) melt to exactly 1 silver.
+        // Affix cells are simply never read: they burn.
+        const int back = n * int(parts[i].count) / (2 * item_yield(int(ref.def)));
         if (back > 0 && !work.add_of(mat, back)) return false;
     }
     inv = work;

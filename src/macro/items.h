@@ -368,32 +368,43 @@ float inventory_weight(const Inventory& inv) noexcept;
 inline constexpr int kMaxItemParts = 4;
 struct ItemPart {
     std::uint16_t def   = 0;   // catalog ordinal of a TERMINAL row
-    std::uint8_t  count = 0;   // units of it in ONE crafted item
+    std::uint8_t  count = 0;   // units of it in ONE batch (see item_yield)
 };
 // The row's composition; an empty span = terminal. Resolved once from the
 // authoring table in items.cpp (strings author, ordinals run).
 std::span<const ItemPart> item_parts(int defIdx) noexcept;
+// How many items one BATCH of the composition makes (owner verdict
+// 2026-09-12, «привести к единой системе»). 1 for nearly every row; the
+// coin rows say {silver 1} → 32 — which UNIFIES the mint: «состав монеты и
+// есть монетный двор», and melting coin is the same scrap door as melting a
+// sword. The witness pins value-neutrality (yield × coin value == the
+// composition's value), so this column and the price anchor cannot drift
+// apart unseen.
+int item_yield(int defIdx) noexcept;
 
-// Is this catalog row a faction coin (macro/currency.h kCurrencyDefs)? The
-// craft door refuses these: striking coin is a landmark's RIGHT (CANON S10,
-// чеканка = рецепт двора), never a bench act.
-bool item_is_currency(int defIdx) noexcept;
-
-// ── The reversible reaction (CANON «Крафт/Скрап», owner 2026-09-11) ────────
-// FORWARD — craft: consume exactly the composition (full price), emit n WHITE
-// base items (seed 0, no affixes — «закон нулевых аффиксов»: affixes are born
-// in the world, never at a bench). Refuses terminal rows (nothing composes
-// them), currency rows (the mint law above), missing materials or a full bag.
-// All-or-nothing on a copy: a refused craft leaves the bag untouched (CANON
-// S5 — goods never evaporate).
+// ── The reversible reaction (CANON «Крафт/Скрап», owner 2026-09-11/12) ─────
+// FORWARD — craft: consume exactly n BATCHES of the composition (full
+// price), emit n × yield WHITE base items (seed 0, no affixes — «закон
+// нулевых аффиксов»: affixes are born in the world, never at a bench).
+// Refuses terminal rows (nothing composes them), missing materials or a
+// full bag — NOTHING ELSE (owner verdict 2026-09-12, ЗАГЛАВНЫМИ: «У НАС
+// БАРТЕРНАЯ ЭКОНОМИКА... ПРОСТО ГОРОД ДЕЛАЕТ МОНЕТЫ ЧЕРЕЗ СИСТЕМУ КРАФТА
+// ПО СВОЕМУ АИ»): coin is a commodity like bread, the mint IS this door run
+// by the town's own AI, and hand-striking coin is harmless by arithmetic —
+// the reaction is value-neutral (the static_assert beside the table), so a
+// forger earns nothing a smith doesn't. All-or-nothing on a copy: a refused
+// craft leaves the bag untouched (CANON S5 — goods never evaporate).
 bool craft_item(Inventory& inv, int defIdx, int n);
-// REVERSE — scrap: n units of the SLOT (the instance is what is scrapped, not
-// the id — a rolled sword and its bare twin are different stacks) return
-// floor(count/2) of each part per unit («закон энтропии»: рукоять сгорает,
-// стружка уходит в шлак — a 1-count part burns whole); the seed and every
-// affix burn with no return, which is «запрет вечного реролла» as arithmetic.
-// A non-zero material byte substitutes part 0 (see ItemRef.material).
-// Terminal rows refuse: raw matter has no reverse. All-or-nothing on a copy.
+// REVERSE — scrap: n units of the SLOT (the instance is what is scrapped,
+// not the id — a rolled sword and its bare twin are different stacks) melt
+// back HALF THEIR TOTAL MATTER, floored per part: floor(n × count / (2 ×
+// yield)) («закон энтропии» pooled — owner verdict 2026-09-12: one sword
+// still returns 1 iron, one dagger's handle still burns whole, and 64 coins
+// melt to 1 silver through this same door — no coin special case exists).
+// The seed and every affix burn with no return («запрет вечного реролла» as
+// arithmetic). A non-zero material byte substitutes part 0 (see
+// ItemRef.material). Terminal rows refuse: raw matter has no reverse.
+// All-or-nothing on a copy.
 bool scrap_at(Inventory& inv, int slot, int n);
 // The AI's slot hygiene (CANON: «склад не забивается говном»). While MORE
 // than half the container is occupied, scrap the CHEAPEST non-fungible stacks

@@ -57,7 +57,9 @@ void test_table_laws() {
         if (!parts.empty()) ++rowsWithParts;
         CHECK(int(parts.size()) <= kMaxItemParts,
               "a row's parts fit the 4-slot ceiling");
-        long scrapReturn = 0;
+        const int yield = item_yield(i);
+        CHECK(yield >= 1, "a row's yield is at least one item per batch");
+        long batchMatterValue = 0;
         for (const ItemPart& p : parts) {
             CHECK(int(p.count) > 0, "a part states a positive count");
             const ItemDef* mat = item_def_at(int(p.def));
@@ -66,12 +68,17 @@ void test_table_laws() {
             // recursion can exist to be guarded elsewhere.
             CHECK(is_terminal(int(p.def)),
                   "parts reference ONLY terminal rows");
-            if (mat) scrapReturn += long(int(p.count) / 2) * mat->value;
+            if (mat) batchMatterValue += long(p.count) * mat->value;
         }
-        // NO-ARBITRAGE: white base value covers its own halved return.
+        // NO-ARBITRAGE, closed form over the POOLED entropy law: a scrap of
+        // any n returns at most n×count/(2×yield) of each part, so the
+        // return's value never exceeds items' value as long as half the
+        // batch's matter value fits inside the batch's own price.
         if (!parts.empty()) {
-            CHECK(long(catalog[std::size_t(i)].value) >= scrapReturn,
-                  "white base is worth >= its scrap return (no money machine)");
+            CHECK(batchMatterValue
+                      <= 2L * yield * catalog[std::size_t(i)].value,
+                  "half a batch's matter value fits its price (no money "
+                  "machine at any n)");
         }
         // Coverage by TYPE: what is worn is made of something.
         if (catalog[std::size_t(i)].slotMask != 0) {
@@ -91,17 +98,29 @@ void test_table_laws() {
             CHECK(!is_terminal(idx), "produced goods carry a composition");
         }
     }
-    // Coins are terminal for the universal scrap: melting is the future
-    // reverse of the MINT recipe (CANON S10), never the scrap door's.
+    // Coins are ORDINARY matter (owner 2026-09-12, «БАРТЕРНАЯ ЭКОНОМИКА»):
+    // every currency row carries the mint's composition and a >1 yield, and
+    // the reaction is VALUE-NEUTRAL — striking coin creates nothing, so no
+    // gate needs to exist (the static_assert beside the table pins the same
+    // fact at compile time; this is the runtime belt over those braces).
     for (const CurrencyDef& c : kCurrencyDefs) {
-        CHECK(is_terminal(item_index(c.itemId)), "coin rows are terminal");
-        CHECK(item_is_currency(item_index(c.itemId)),
-              "the coin gate knows its rows");
+        const int idx = item_index(c.itemId);
+        const auto coinParts = item_parts(idx);
+        CHECK(!coinParts.empty(), "a coin row carries the mint composition");
+        CHECK(item_yield(idx) > 1, "a coin's batch strikes many from one");
+        long in = 0;
+        for (const ItemPart& p : coinParts) {
+            const ItemDef* mat = item_def_at(int(p.def));
+            if (mat) in += long(p.count) * mat->value;
+        }
+        CHECK(in == long(item_yield(idx))
+                        * item_def_at(idx)->value,
+              "the mint is value-neutral: batch matter == batch nominal");
     }
-    CHECK(!item_is_currency(item_index("bread")),
-          "the coin gate refuses nothing else (negative control)");
     CHECK(item_parts(-1).empty() && item_parts(1 << 14).empty(),
           "out-of-catalog ordinals answer terminal, never UB");
+    CHECK(item_yield(-1) == 1 && item_yield(1 << 14) == 1,
+          "out-of-catalog yield answers one, never UB");
 }
 
 void test_craft_door() {
@@ -125,12 +144,20 @@ void test_craft_door() {
     const Inventory before = inv;
     CHECK(!craft_item(inv, sword, 1), "1 iron cannot craft a 2-iron sword");
     CHECK(!craft_item(inv, iron, 1), "terminal rows cannot be crafted");
-    inv.add("silver", 8);
-    CHECK(!craft_item(inv, item_index("coin_empire"), 1),
-          "the bench never strikes coin — чеканка is the landmark's right");
-    inv.remove("silver", 8);
     CHECK(std::memcmp(&before, &inv, sizeof(Inventory)) == 0,
           "a refused craft leaves the bag untouched (negative control)");
+
+    // The MINT is this same door (owner 2026-09-12: «город делает монеты
+    // через систему крафта» — and a hand may too; value-neutral, so a forge
+    // mints nothing a market didn't already price): one batch of silver
+    // strikes the row's whole yield.
+    Inventory mint;
+    mint.add("silver", 1);
+    const int coin = item_index("coin_empire");
+    CHECK(craft_item(mint, coin, 1), "one silver strikes a batch of coin");
+    CHECK(mint.count("coin_empire") == item_yield(coin),
+          "the batch struck exactly the row's yield");
+    CHECK(mint.count("silver") == 0, "the metal was consumed whole");
 }
 
 void test_scrap_door() {
@@ -144,13 +171,36 @@ void test_scrap_door() {
     CHECK(inv.count("iron") == 1, "scrap returned floor(2/2) = 1 iron");
     CHECK(inv.count_of(sword) == 0, "the scrapped sword is gone");
 
-    // A 1-count part burns whole («рукоять сгорает»): dagger = 1 iron → 0.
+    // A lone 1-count part burns whole («рукоять сгорает»): dagger = 1 iron
+    // → 0 — but the entropy POOLS (owner 2026-09-12): TWO daggers scrapped
+    // together are 2 iron of matter, and half of that survives.
     inv.clear();
     inv.add("wpn_dagger", 1);
     CHECK(scrap_at(inv, slot_of(inv, item_index("wpn_dagger")), 1),
           "a dagger scraps even when everything burns");
     CHECK(inv.count("iron") == 0, "floor(1/2) = 0: the unit burnt to slag");
     CHECK(inv.used_slots() == 0, "the slot was freed regardless");
+    inv.clear();
+    inv.add("wpn_dagger", 2);
+    CHECK(scrap_at(inv, slot_of(inv, item_index("wpn_dagger")), 2),
+          "two daggers scrap as one pool");
+    CHECK(inv.count("iron") == 1,
+          "pooled entropy: floor(2x1/2) = 1 iron survives");
+
+    // COINS melt through this same door (owner 2026-09-12: no coin special
+    // case): 64 coins embody 2 silver of matter, half survives; a single
+    // coin is 1/32 silver and honestly burns to slag.
+    inv.clear();
+    inv.add("coin_empire", 64);
+    const int coin = item_index("coin_empire");
+    CHECK(scrap_at(inv, slot_of(inv, coin), 64), "a coin pile melts");
+    CHECK(inv.count("silver") == 1 && inv.count("coin_empire") == 0,
+          "64 coins -> floor(64x1/(2x32)) = 1 silver");
+    inv.clear();
+    inv.add("coin_empire", 1);
+    CHECK(scrap_at(inv, slot_of(inv, coin), 1), "one coin may still melt");
+    CHECK(inv.count("silver") == 0 && inv.count("coin_empire") == 0,
+          "one coin is 1/32 silver: it burns whole to slag");
 
     // Affixes burn with no return: the rolled instance pays the same iron.
     inv.clear();
