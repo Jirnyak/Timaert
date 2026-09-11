@@ -1112,6 +1112,12 @@ timaert_test(econ_v1_test
         # The one-dictionary link law: every commodity is an item-catalog row.
         src/macro/items.cpp)
 
+# THE matter law (CANON «Крафт/Скрап», owner verdicts 2026-09-11): composition
+# on the catalog row, the reversible reaction doors, no-arbitrage, auto-scrap.
+timaert_test(item_parts_test
+    SOURCES
+        src/macro/items.cpp)
+
 timaert_test(deposit_layer_test
     SOURCES
         src/macro/deposit_layer.cpp)

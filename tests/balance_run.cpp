@@ -78,6 +78,9 @@ void econ_fact_sink(void* user, const sm::EconFact& f) {
         // amount = coins struck (commodity carries the INPUT silver row, so
         // this is its own counter, not a produced[] line).
         case sm::EconFact::Kind::Minted: a->mintedCoins += f.amount; break;
+        // Slot hygiene, not a flow of goods: what the melt RETURNS is not
+        // reported as Produced on purpose (entropy is a sink, not a source).
+        case sm::EconFact::Kind::Scrapped: break;
     }
 }
 

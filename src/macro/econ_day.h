@@ -58,14 +58,14 @@ inline bool recipe_runs_at(EconSite recipeSite, EconSite here) {
     return recipeSite == EconSite::Any || recipeSite == here;
 }
 
-struct RecipeInput {
-    const char* id;
-    int qty;
-};
-
+// A recipe names only LABOUR — what is worked on, how fast, where. Its
+// MATTER is not a column any more (owner verdict 2026-09-11, CANON
+// «Крафт/Скрап»): the inputs of every produced good are the composition of
+// its own catalog row (macro/items.h item_parts) — the ONE matter table the
+// craft door, the scrap door and this production day all read. Two tables of
+// «из чего сделан хлеб» drifted apart exactly once before they were merged.
 struct RecipeDef {
     const char* output;          // commodity id
-    RecipeInput inputs[2];       // unused slot: {nullptr, 0}
     int outputPerWorkerDay;      // units one worker makes per day
     EconSite site;
 };
@@ -78,6 +78,13 @@ struct RecipeDef {
 // «таблица цен и есть монетный двор»; сеньораж эмерджентен из рыночного
 // спреда серебра).
 inline constexpr const char* kMintOutput = "coin";
+// The mint's ONE input. It is deliberately NOT a composition: a coin is 1/32
+// of a silver unit («таблица цен и есть монетный двор» — yield per metal unit
+// = the metal's own catalog value), a share no u8 part cell can state, so the
+// coin rows stay TERMINAL for the universal scrap and the metal enters here.
+// Melting coin back is the future REVERSE of this same recipe (owner verdict
+// 2026-09-11), never the scrap door's business.
+inline constexpr const char* kMintMetal = "silver";
 
 // THE productivity anchor (owner 2026-08-30/31, CANON S10): one worker at ANY
 // link of the chain covers the needs of ~32 souls — «1 добытчик кормит 32
@@ -92,19 +99,20 @@ inline constexpr RecipeDef kRecipes[] = {
     // per worker-day × the 1/8 labour quota put the bake ceiling at exactly
     // the population — a knife-edge measured by the дубль-прогон: 150/210
     // villages starved daily sitting on 2.1M hoarded grain.
-    {"bread",     {{"grain", 1}, {nullptr, 0}}, kGatherPerWorkerDay,
-     EconSite::Any},
+    // (What each output CONSUMES lives on its catalog row — items.cpp
+    // kPartsAuthoring, moved verbatim from the input columns that stood here.)
+    {"bread",     kGatherPerWorkerDay, EconSite::Any},
     // ЧЕКАНКА: все города (site City = право v1); 4 металла на рабочий-день
-    // — балансовая крутилка темпа эмиссии.
-    {kMintOutput, {{"silver", 1}, {nullptr, 0}}, 4, EconSite::City},
-    {"bricks",    {{"clay", 1},  {nullptr, 0}}, 8, EconSite::City},
-    {"cloth",     {{"grain", 2}, {nullptr, 0}}, 4, EconSite::City},
-    {"tools",     {{"iron", 1},  {"wood", 1}},  2, EconSite::City},
-    {"furniture", {{"wood", 2},  {nullptr, 0}}, 2, EconSite::City},
-    {"wagon",     {{"wood", 4},  {"iron", 1}},  1, EconSite::City},
-    {"jewelry",   {{"iron", 1},  {"stone", 1}}, 1, EconSite::City},
-    {"carving",   {{"wood", 1},  {nullptr, 0}}, 2, EconSite::City},
-    {"statue",    {{"stone", 8}, {nullptr, 0}}, 1, EconSite::City},
+    // — балансовая крутилка темпа эмиссии. Вход = kMintMetal (закон выше).
+    {kMintOutput, 4, EconSite::City},
+    {"bricks",    8, EconSite::City},
+    {"cloth",     4, EconSite::City},
+    {"tools",     2, EconSite::City},
+    {"furniture", 2, EconSite::City},
+    {"wagon",     1, EconSite::City},
+    {"jewelry",   1, EconSite::City},
+    {"carving",   2, EconSite::City},
+    {"statue",    1, EconSite::City},
 };
 inline constexpr int kRecipeCount = int(sizeof(kRecipes) / sizeof(kRecipes[0]));
 
@@ -159,6 +167,8 @@ struct EconFact {
         Starved = 4,        // amount = pops that went unfed today
         Consumed = 5,       // commodity, amount — the needs ladder's take
         Minted = 6,         // amount = coins struck (commodity = silver row)
+        Scrapped = 7,       // amount = non-fungible stacks melted to matter
+                            // by the overflow law (items.h auto_scrap_overflow)
     };
     Kind kind{};
     int commodity = -1;

@@ -1393,8 +1393,13 @@ const std::array<int, std::size_t(kCommodityCount)>& caravan_buy_order() {
         for (int i = 0; i < kNeedCount; ++i) {
             for (const RecipeDef& r : kRecipes) {
                 if (std::strcmp(r.output, kNeeds[i].commodity) != 0) continue;
-                for (const RecipeInput& in : r.inputs) {
-                    if (in.id) push(commodity_index(in.id));
+                // The recipe's matter = the output row's own composition
+                // (items.h item_parts, the one matter table); part defs are
+                // catalog ordinals, bridged back to commodity rows by id.
+                for (const ItemPart& part : item_parts(item_index(r.output))) {
+                    if (const ItemDef* d = item_def_at(int(part.def))) {
+                        push(commodity_index(d->id));
+                    }
                 }
             }
         }
@@ -3387,6 +3392,13 @@ int feed_squads_daily(MacroWorld& mw) {
          : reg.view<ecs::NPCKind, ecs::MacroNpcRuntime, ecs::NpcInventory,
                     ecs::SquadRoster>().each()) {
         (void)e; (void)kind;
+        // Camp-life slot hygiene (CANON «Крафт/Скрап»: авто-скрап ИИ по
+        // порогу >50% — «склад города ИЛИ МЕШОК СКВАДА»): the same daily
+        // overflow law the settlement store runs. The gate is not a player
+        // privilege but the seam of DECISION: this loop is the AI deciding
+        // for its bag, and the PlayerTag bag's decisions come from input —
+        // «автоматическое уничтожение вещей игрока строго запрещено».
+        if (!reg.any_of<ecs::PlayerTag>(e)) auto_scrap_overflow(bag.inv);
         // A beast pays no upkeep and eats no bread here — its row already
         // says so (kNpcUpkeepNone), the same column the payroll reads.
         if (npc_upkeep_base(NPCType(kind.type)) <= 0) continue;

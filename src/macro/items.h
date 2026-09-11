@@ -164,7 +164,12 @@ using ItemAffix = Bonus;
 
 struct ItemRef {
     std::uint16_t def = 0;         // catalog ordinal
-    std::uint8_t  material = 0;    // a row of the raw tier; 0 = the row's own
+    // 1 + raw row of the commodity dictionary (macro/commodity.h); 0 = the
+    // row's own default. The +1 exists because raw row 0 (wood) is a real
+    // material and 0 must keep meaning "unset". At SCRAP the byte substitutes
+    // part 0 of the row's composition (owner verdict 2026-09-11): a steel
+    // sword returns steel, not the row's default iron.
+    std::uint8_t  material = 0;
     std::uint8_t  quality = 0;     // 0 = ordinary
     std::int32_t  count = 0;       // 0 = THIS SLOT IS EMPTY
     std::uint32_t seed = 0;        // 0 = plain, not procedurally rolled
@@ -344,6 +349,60 @@ std::span<const ItemDef> item_catalog() noexcept;
 
 // Total inventory weight in kg (sum of def.weight × count).
 float inventory_weight(const Inventory& inv) noexcept;
+
+// ── THE matter law: what a row is MADE OF (owner verdicts 2026-09-11) ──────
+// CANON «Крафт/Скрап»: the game is resource-oriented — every item is
+// materialised raw matter, and craft/scrap/production are ONE reversible
+// reaction over ONE table. That table is the catalog itself: a row's
+// composition lives HERE, as up to kMaxItemParts pairs {catalog ordinal,
+// count}, so the 36-byte instance grows by nothing and the one answer feeds
+// four consumers — the city's production day (econ_day), the craft door, the
+// scrap door, and the AI's overflow scrap below.
+//
+// A row with NO parts is TERMINAL — raw matter that "consists of itself"
+// (ore, hide, gems, meat, coins). Parts may reference ONLY terminal rows, so
+// the reaction is always one step deep; recursion cannot exist to be guarded.
+// 4 slots: the wagon wants wood+iron today, a composite armour wants
+// hide+iron+cloth tomorrow — 12 cold bytes per catalog row buy the headroom
+// «на века» (owner verdict; most rows author 1–2).
+inline constexpr int kMaxItemParts = 4;
+struct ItemPart {
+    std::uint16_t def   = 0;   // catalog ordinal of a TERMINAL row
+    std::uint8_t  count = 0;   // units of it in ONE crafted item
+};
+// The row's composition; an empty span = terminal. Resolved once from the
+// authoring table in items.cpp (strings author, ordinals run).
+std::span<const ItemPart> item_parts(int defIdx) noexcept;
+
+// Is this catalog row a faction coin (macro/currency.h kCurrencyDefs)? The
+// craft door refuses these: striking coin is a landmark's RIGHT (CANON S10,
+// чеканка = рецепт двора), never a bench act.
+bool item_is_currency(int defIdx) noexcept;
+
+// ── The reversible reaction (CANON «Крафт/Скрап», owner 2026-09-11) ────────
+// FORWARD — craft: consume exactly the composition (full price), emit n WHITE
+// base items (seed 0, no affixes — «закон нулевых аффиксов»: affixes are born
+// in the world, never at a bench). Refuses terminal rows (nothing composes
+// them), currency rows (the mint law above), missing materials or a full bag.
+// All-or-nothing on a copy: a refused craft leaves the bag untouched (CANON
+// S5 — goods never evaporate).
+bool craft_item(Inventory& inv, int defIdx, int n);
+// REVERSE — scrap: n units of the SLOT (the instance is what is scrapped, not
+// the id — a rolled sword and its bare twin are different stacks) return
+// floor(count/2) of each part per unit («закон энтропии»: рукоять сгорает,
+// стружка уходит в шлак — a 1-count part burns whole); the seed and every
+// affix burn with no return, which is «запрет вечного реролла» as arithmetic.
+// A non-zero material byte substitutes part 0 (see ItemRef.material).
+// Terminal rows refuse: raw matter has no reverse. All-or-nothing on a copy.
+bool scrap_at(Inventory& inv, int slot, int n);
+// The AI's slot hygiene (CANON: «склад не забивается говном»). While MORE
+// than half the container is occupied, scrap the CHEAPEST non-fungible stacks
+// (rolled/affixed instances — plain rows stack into one slot and cannot clog)
+// whole, cheapest first by value_of × count, into raw matter. Returns stacks
+// scrapped. The player's own bag NEVER passes through here — his scrap is a
+// manual act (owner law, same CANON section).
+inline constexpr int kAutoScrapSlots = kMaxInventorySlots / 2;  // 128 = 50%
+int auto_scrap_overflow(Inventory& inv);
 
 // Loot generation. `rng()` returns float in [0, 1).
 using RngFn = float (*)();

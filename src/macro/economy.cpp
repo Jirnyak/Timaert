@@ -77,6 +77,7 @@ int demand_for_(const char* itemId, int population, EconSite site,
         }
     }
     if (depth > 0) {
+        const int target = item_index(itemId);
         for (const RecipeDef& r : kRecipes) {
             // Derived demand exists only where the recipe CAN run: a
             // village that bakes nothing wants no grain beyond its own
@@ -85,10 +86,14 @@ int demand_for_(const char* itemId, int population, EconSite site,
             // ceiling and the caravans' loans bought a quarter of the lot
             // (measured, balance_run 2026-08-30).
             if (!recipe_runs_at(r.site, site)) continue;
-            for (const RecipeInput& in : r.inputs) {
-                if (!in.id || std::strcmp(in.id, itemId) != 0) continue;
+            // The recipe's matter = its output row's composition (the one
+            // matter table, items.h). The mint's output is no catalog row
+            // (-1 → empty span), and its silver demand was always zero:
+            // nothing NEEDS coin down the needs ladder.
+            for (const ItemPart& part : item_parts(item_index(r.output))) {
+                if (int(part.def) != target) continue;
                 demand += demand_for_(r.output, population, site, depth - 1)
-                          * in.qty;
+                          * int(part.count);
             }
         }
     }

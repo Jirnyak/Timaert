@@ -6,6 +6,8 @@
 
 #include "macro/items.h"
 #include "macro/anatomy.h"
+#include "macro/commodity.h"
+#include "macro/currency.h"
 #include "macro/npc.h"
 
 #include <algorithm>
@@ -171,6 +173,46 @@ constexpr ItemDef kCatalog[] = {
         /*blocks*/part_bit(BodyPartId::OffGrip), /*armor*/{}, /*dice*/{1, 8},
         /*dmgType*/DamageType::Pierce, /*skill*/SkillId::Bow,
         /*delivery*/Delivery::Missile, /*range*/80.0f},
+};
+
+// ── The matter table (owner verdicts 2026-09-11, CANON «Крафт/Скрап») ──────
+// What each row is MADE OF, authored by id and resolved once into the flat
+// per-ordinal table below. Rows absent here are TERMINAL (raw matter). The
+// economy's numbers are LOAD-BEARING: bread..statue moved VERBATIM from the
+// retired kRecipes inputs — the self-play harness (econ_v1_test) balances
+// against exactly these, so a change here is a balance change, not a tweak.
+// Equipment numbers are new authoring under the same witnesses
+// (item_parts_test: no-arbitrage, terminal refs).
+struct PartsAuthoringRow {
+    const char* id;
+    struct { const char* mat; int n; } p[kMaxItemParts];
+};
+constexpr PartsAuthoringRow kPartsAuthoring[] = {
+    // Consumables: alchemy is herb-matter; bread is the baking reaction
+    // (grain 1 → bread 1), the exact row the production day runs.
+    {"potion_hp",   {{"mat_herb", 2}}},
+    {"potion_mp",   {{"mat_herb", 2}}},
+    {"bread",       {{"grain", 1}}},
+    // The economy's goods — former kRecipes inputs, verbatim.
+    {"cloth",       {{"grain", 2}}},
+    {"bricks",      {{"clay", 1}}},
+    {"tools",       {{"iron", 1}, {"wood", 1}}},
+    {"furniture",   {{"wood", 2}}},
+    {"wagon",       {{"wood", 4}, {"iron", 1}}},
+    {"jewelry",     {{"iron", 1}, {"stone", 1}}},
+    {"carving",     {{"wood", 1}}},
+    {"statue",      {{"stone", 8}}},
+    // Equipment: the metal ladder follows the swing-mass ladder (a mace is
+    // more metal than a dagger); hafted rows carry their wood honestly so
+    // crafting one EATS wood and scrapping one returns it.
+    {"wpn_dagger",  {{"iron", 1}}},
+    {"wpn_sword",   {{"iron", 2}}},
+    {"wpn_spear",   {{"wood", 1}, {"iron", 1}}},
+    {"wpn_axe",     {{"iron", 2}, {"wood", 1}}},
+    {"wpn_mace",    {{"iron", 3}}},
+    {"wpn_staff",   {{"wood", 1}}},
+    {"wpn_bow",     {{"wood", 1}}},
+    {"arm_leather", {{"mat_hide", 3}}},
 };
 
 const std::unordered_map<std::string, const ItemDef*>& catalog_map() {
@@ -557,6 +599,138 @@ const ItemDef* item_def(const std::string& id) noexcept {
 
 std::span<const ItemDef> item_catalog() noexcept {
     return std::span<const ItemDef>(kCatalog, std::size(kCatalog));
+}
+
+// ── The matter law's resolved form and the reaction doors ──────────────────
+
+namespace {
+
+// kPartsAuthoring resolved once into per-ordinal rows — the same
+// string-authors/ordinal-runs contract as the catalog map above. A row the
+// authoring table does not name stays {n = 0} = terminal.
+struct ResolvedParts {
+    ItemPart p[kMaxItemParts]{};
+    int      n = 0;
+};
+
+const std::array<ResolvedParts, std::size(kCatalog)>& parts_table() {
+    static const auto kTable = [] {
+        std::array<ResolvedParts, std::size(kCatalog)> t{};
+        for (const PartsAuthoringRow& row : kPartsAuthoring) {
+            const int idx = item_index(row.id);
+            // An unknown id or material is a DEAD row here, and the witness
+            // (item_parts_test) reddens on it — this builder must not fail a
+            // process over an authoring typo, the test exists to.
+            if (idx < 0) continue;
+            ResolvedParts& out = t[std::size_t(idx)];
+            for (const auto& part : row.p) {
+                if (!part.mat || part.n <= 0) continue;
+                const int mi = item_index(part.mat);
+                if (mi < 0) continue;
+                out.p[out.n++] =
+                    ItemPart{std::uint16_t(mi), std::uint8_t(part.n)};
+            }
+        }
+        return t;
+    }();
+    return kTable;
+}
+
+} // namespace
+
+std::span<const ItemPart> item_parts(int defIdx) noexcept {
+    const auto& t = parts_table();
+    if (defIdx < 0 || defIdx >= int(t.size())) return {};
+    const ResolvedParts& r = t[std::size_t(defIdx)];
+    return std::span<const ItemPart>(r.p, std::size_t(r.n));
+}
+
+bool item_is_currency(int defIdx) noexcept {
+    // The currency rows of the catalog, marked once — the answer is the
+    // registry's (macro/currency.h kCurrencyDefs), never a name pattern.
+    static const auto kIsCoin = [] {
+        std::array<bool, std::size(kCatalog)> m{};
+        for (const CurrencyDef& c : kCurrencyDefs) {
+            const int i = item_index(c.itemId);
+            if (i >= 0) m[std::size_t(i)] = true;
+        }
+        return m;
+    }();
+    return defIdx >= 0 && defIdx < int(kIsCoin.size())
+        && kIsCoin[std::size_t(defIdx)];
+}
+
+bool craft_item(Inventory& inv, int defIdx, int n) {
+    if (n <= 0) return false;
+    const auto parts = item_parts(defIdx);
+    if (parts.empty()) return false;             // terminal: nothing composes it
+    if (item_is_currency(defIdx)) return false;  // чеканка = право двора (S10)
+    // All-or-nothing on a copy (the barter_swap idiom): remove_of can succeed
+    // partially across stacks before a later part runs short, and add_of can
+    // refuse a full bag after the materials already left it.
+    Inventory work = inv;
+    for (const ItemPart& part : parts) {
+        if (!work.remove_of(int(part.def), n * int(part.count))) return false;
+    }
+    if (!work.add_of(defIdx, n)) return false;   // white base: seed 0, plain
+    inv = work;
+    return true;
+}
+
+bool scrap_at(Inventory& inv, int slot, int n) {
+    if (slot < 0 || slot >= kMaxInventorySlots || n <= 0) return false;
+    const ItemRef ref = inv.slots[std::size_t(slot)];
+    if (ref.empty() || ref.count < n) return false;
+    const auto parts = item_parts(int(ref.def));
+    if (parts.empty()) return false;             // terminal: no reverse
+    Inventory work = inv;
+    if (!work.remove_at(slot, n)) return false;
+    for (std::size_t i = 0; i < parts.size(); ++i) {
+        int mat = int(parts[i].def);
+        // The instance's material byte substitutes part 0 (ItemRef.material:
+        // 1 + raw commodity row) — a steel sword returns steel.
+        if (i == 0 && ref.material != 0
+            && int(ref.material) <= kRawCommodityCount) {
+            const int sub = item_index(kCommodities[ref.material - 1].id);
+            if (sub >= 0) mat = sub;
+        }
+        // Entropy per UNIT scrapped: floor(count/2), so a 1-count part burns
+        // whole («рукоять сгорает») and «крафт 2 железа → разбор 1 железо»
+        // holds by arithmetic. Affix cells are simply never read: they burn.
+        const int back = n * (int(parts[i].count) / 2);
+        if (back > 0 && !work.add_of(mat, back)) return false;
+    }
+    inv = work;
+    return true;
+}
+
+int auto_scrap_overflow(Inventory& inv) {
+    int scrapped = 0;
+    while (inv.used_slots() > kAutoScrapSlots) {
+        // The cheapest non-fungible stack that HAS a reverse. Plain rows are
+        // never candidates: they merge into one slot and cannot clog. A
+        // linear pick per freed slot is the honest cost of a once-a-day tick
+        // over 256 fixed slots.
+        int best = -1;
+        long bestValue = 0;
+        for (int s = 0; s < kMaxInventorySlots; ++s) {
+            const ItemRef& r = inv.slots[std::size_t(s)];
+            if (r.empty()) continue;
+            const bool fungible = r.seed == 0 && r.material == 0
+                && r.quality == 0 && affix_count(r) == 0;
+            if (fungible) continue;
+            if (item_parts(int(r.def)).empty()) continue;
+            const long v = long(value_of(r)) * r.count;
+            if (best < 0 || v < bestValue) {
+                best = s;
+                bestValue = v;
+            }
+        }
+        if (best < 0) break;   // nothing scrappable: the law falls silent
+        if (!scrap_at(inv, best, inv.slots[std::size_t(best)].count)) break;
+        ++scrapped;
+    }
+    return scrapped;
 }
 
 float inventory_weight(const Inventory& inv) noexcept {

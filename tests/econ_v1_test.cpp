@@ -54,21 +54,23 @@ void sink(void* user, const sm::EconFact& f) {
         case sm::EconFact::Kind::FamineEnded: ++led->famineEnded; break;
         case sm::EconFact::Kind::Consumed: break;   // counted by the caller
         case sm::EconFact::Kind::Minted: break;     // no mint in this fixture
+        case sm::EconFact::Kind::Scrapped: break;   // no clog in this fixture
     }
 }
 
-// Inputs drawn per unit of each produced commodity, from the recipe table
-// (outputs are unique in v1, asserted below).
+// Inputs drawn per unit of each produced commodity — from the output row's
+// own composition (macro/items.h item_parts), which since 2026-09-11 IS the
+// recipe's matter (outputs are unique in v1, asserted below). The ledger
+// deliberately reads through the same door production does: a drift between
+// «что ест печь» and «из чего хлеб» is exactly what the merge killed.
 void inputs_for_output(int outputIdx, int madeUnits,
                        std::array<long, sm::kCommodityCount>& used) {
-    for (int r = 0; r < sm::kRecipeCount; ++r) {
-        if (sm::commodity_index(sm::kRecipes[r].output) != outputIdx) continue;
-        for (int k = 0; k < 2; ++k) {
-            if (!sm::kRecipes[r].inputs[k].id) continue;
-            used[std::size_t(sm::commodity_index(sm::kRecipes[r].inputs[k].id))]
-                += long(madeUnits) * sm::kRecipes[r].inputs[k].qty;
-        }
-        return;
+    for (const sm::ItemPart& part :
+         sm::item_parts(sm::commodity_item_index(outputIdx))) {
+        const sm::ItemDef* d = sm::item_def_at(int(part.def));
+        if (!d) continue;
+        used[std::size_t(sm::commodity_index(d->id))]
+            += long(madeUnits) * int(part.count);
     }
 }
 
@@ -111,12 +113,15 @@ int main() {
                 return fail("recipe outputs must be unique in v1");
             }
         }
-        for (int k = 0; k < 2; ++k) {
-            if (!kRecipes[r].inputs[k].id) continue;
-            if (commodity_index(kRecipes[r].inputs[k].id) < 0) {
-                return fail("recipe input id unknown");
+        // The recipe's matter = its output row's composition. Every part must
+        // be a commodity row too — production moves matter the economy's own
+        // dictionary can name (the mint's metal is checked in section 7).
+        for (const ItemPart& part : item_parts(commodity_item_index(out))) {
+            const ItemDef* d = item_def_at(int(part.def));
+            if (!d || commodity_index(d->id) < 0) {
+                return fail("recipe input is not a commodity row");
             }
-            if (kRecipes[r].inputs[k].qty <= 0) return fail("recipe qty <= 0");
+            if (int(part.count) <= 0) return fail("recipe qty <= 0");
         }
         if (kRecipes[r].outputPerWorkerDay <= 0) {
             return fail("outputPerWorkerDay <= 0");
@@ -318,9 +323,37 @@ int main() {
     }
 
     // ── 7. A recipe with no inputs would mint matter — table law ────────
+    // The mint's matter is kMintMetal (a coin is 1/32 silver — no u8 part
+    // can say it, CANON «Крафт/Скрап»); every OTHER output must carry a
+    // composition on its catalog row, or the day makes goods from nothing.
+    if (commodity_index(kMintMetal) < 0) return fail("mint metal id unknown");
     for (int i = 0; i < kRecipeCount; ++i) {
-        if (!kRecipes[i].inputs[0].id && !kRecipes[i].inputs[1].id) {
+        if (std::strcmp(kRecipes[i].output, kMintOutput) == 0) continue;
+        if (item_parts(item_index(kRecipes[i].output)).empty()) {
             return fail("recipe with no inputs mints matter from nothing");
+        }
+    }
+
+    // ── 7б. The overflow law rides the consume day (CANON «Крафт/Скрап») ─
+    // A store clogged past the half mark by non-fungible lut comes back to
+    // it within ONE daily tick — the wiring, not the door (the door's own
+    // laws live in item_parts_test).
+    {
+        Inventory s{};
+        const int dagger = item_index("wpn_dagger");
+        for (int i = 0; i < 200; ++i) {
+            ItemRef r{};
+            r.def = std::uint16_t(dagger);
+            r.count = 1;
+            r.seed = std::uint32_t(1 + i);   // distinct seeds: 200 slots
+            s.add_ref(r);
+        }
+        if (s.used_slots() <= kAutoScrapSlots) {
+            return fail("clog fixture did not overflow (negative control)");
+        }
+        econ_consume_day(s, 4, false, nullptr, nullptr);
+        if (s.used_slots() > kAutoScrapSlots) {
+            return fail("consume day left the store clogged past 50%");
         }
     }
 

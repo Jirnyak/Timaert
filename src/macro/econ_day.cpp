@@ -16,9 +16,15 @@ struct ResolvedRecipe {
     // faction coin at run time; yield per metal unit = the metal's own
     // catalog value (the price table IS the mint).
     bool isMint = false;
-    int mintYield = 0;
-    int inputIdx[2] = {-1, -1};
-    int inputQty[2] = {0, 0};
+    // Fact attribution: Minted reports the METAL's commodity row.
+    int mintMetalCommodity = -1;
+    // The recipe's MATTER = the output row's own composition (macro/items.h
+    // item_parts — the one matter table; owner verdict 2026-09-11). Part defs
+    // are CATALOG ordinals, so the store is asked directly, no bridge. The
+    // mint is the one row whose input is not a composition (a coin is 1/32
+    // silver): its matter is kMintMetal × 1, stated here.
+    ItemPart parts[kMaxItemParts]{};
+    int nParts = 0;
     // popPerUnitDay of the need row this output serves, 0 = not a need —
     // production plans "today's table" against this before any surplus.
     int demandDivisor = 0;
@@ -33,19 +39,22 @@ const ResolvedTables& resolved() {
     static const ResolvedTables t = [] {
         ResolvedTables r{};
         for (int i = 0; i < kRecipeCount; ++i) {
-            r.recipes[i].output = commodity_index(kRecipes[i].output);
-            r.recipes[i].isMint =
-                std::strcmp(kRecipes[i].output, kMintOutput) == 0;
-            for (int k = 0; k < 2; ++k) {
-                if (kRecipes[i].inputs[k].id) {
-                    r.recipes[i].inputIdx[k] =
-                        commodity_index(kRecipes[i].inputs[k].id);
-                    r.recipes[i].inputQty[k] = kRecipes[i].inputs[k].qty;
+            ResolvedRecipe& rr = r.recipes[i];
+            rr.output = commodity_index(kRecipes[i].output);
+            rr.isMint = std::strcmp(kRecipes[i].output, kMintOutput) == 0;
+            if (rr.isMint) {
+                rr.mintMetalCommodity = commodity_index(kMintMetal);
+                rr.parts[0] = ItemPart{std::uint16_t(item_index(kMintMetal)), 1};
+                rr.nParts = 1;
+            } else {
+                for (const ItemPart& part :
+                     item_parts(commodity_item_index(rr.output))) {
+                    rr.parts[rr.nParts++] = part;
                 }
             }
             for (int n = 0; n < kNeedCount; ++n) {
                 if (std::strcmp(kNeeds[n].commodity, kRecipes[i].output) == 0) {
-                    r.recipes[i].demandDivisor = kNeeds[n].popPerUnitDay;
+                    rr.demandDivisor = kNeeds[n].popPerUnitDay;
                     break;
                 }
             }
@@ -95,14 +104,12 @@ int econ_produce_day(Inventory& store, EconSite site, int workers,
         // The mint runs only where a coin is named (the right, v1: the
         // caller's faction) — fail closed like every unwired layer.
         if (rr.isMint && !mintCurrencyId) return;
-        // Units this recipe could make from the store alone.
+        // Units this recipe could make from the store alone. Parts are
+        // catalog ordinals — the store is asked directly.
         int byInputs = unitCap;
-        for (int k = 0; k < 2; ++k) {
-            if (rr.inputIdx[k] < 0) continue;
-            byInputs = std::min(
-                byInputs,
-                store.count_of(commodity_item_index(rr.inputIdx[k]))
-                    / rr.inputQty[k]);
+        for (int k = 0; k < rr.nParts; ++k) {
+            byInputs = std::min(byInputs, store.count_of(int(rr.parts[k].def))
+                                              / int(rr.parts[k].count));
         }
         if (byInputs <= 0) return;
         // THE population-efficiency law (owner 2026-08-30, CANON S10, ?31
@@ -126,10 +133,9 @@ int econ_produce_day(Inventory& store, EconSite site, int workers,
         // through the one door below. (The mint used to debit its metal a
         // second time inside its own branch, on top of this one: up to twice
         // the silver for the coins actually struck.)
-        for (int k = 0; k < 2; ++k) {
-            if (rr.inputIdx[k] < 0) continue;
-            store.remove_of(commodity_item_index(rr.inputIdx[k]),
-                            made * rr.inputQty[k]);
+        for (int k = 0; k < rr.nParts; ++k) {
+            store.remove_of(int(rr.parts[k].def),
+                            made * int(rr.parts[k].count));
         }
         // The output could not be placed: put the inputs back — the slots they
         // just left are still free, so this cannot fail. The day makes nothing
@@ -137,10 +143,9 @@ int econ_produce_day(Inventory& store, EconSite site, int workers,
         // recipe can have leave through this door: a shelf of goods and a
         // purse of coin obey the same conservation law.
         auto refund_inputs = [&] {
-            for (int k = 0; k < 2; ++k) {
-                if (rr.inputIdx[k] < 0) continue;
-                store.add_of(commodity_item_index(rr.inputIdx[k]),
-                             made * rr.inputQty[k]);
+            for (int k = 0; k < rr.nParts; ++k) {
+                store.add_of(int(rr.parts[k].def),
+                             made * int(rr.parts[k].count));
             }
         };
         if (rr.isMint) {
@@ -149,8 +154,7 @@ int econ_produce_day(Inventory& store, EconSite site, int workers,
             // number. A metal the catalog prices at nothing, and a full store
             // with nowhere to put the coin, are both a day that did not
             // happen — the metal goes back on the shelf.
-            const ItemDef* metal = item_def_at(
-                commodity_item_index(rr.inputIdx[0]));
+            const ItemDef* metal = item_def_at(int(rr.parts[0].def));
             const int yield = metal ? metal->value : 0;
             if (yield <= 0 || !store.add(mintCurrencyId, made * yield)) {
                 refund_inputs();
@@ -158,7 +162,7 @@ int econ_produce_day(Inventory& store, EconSite site, int workers,
             }
             workersLeft -= staffed;
             total += made;
-            report(sink, user, EconFact::Kind::Minted, rr.inputIdx[0],
+            report(sink, user, EconFact::Kind::Minted, rr.mintMetalCommodity,
                    made * yield);
             return;
         }
@@ -190,11 +194,10 @@ int econ_produce_day(Inventory& store, EconSite site, int workers,
         const ResolvedRecipe& rr = t.recipes[i];
         if (rr.output < 0 && !(rr.isMint && mintCurrencyId)) continue;
         bool feedable = true;
-        for (int k = 0; k < 2; ++k) {
-            if (rr.inputIdx[k] < 0) continue;
+        for (int k = 0; k < rr.nParts; ++k) {
             feedable = feedable
-                && store.count_of(commodity_item_index(rr.inputIdx[k]))
-                       >= rr.inputQty[k];
+                && store.count_of(int(rr.parts[k].def))
+                       >= int(rr.parts[k].count);
         }
         if (feedable) ++liveRecipes;
     }
@@ -251,6 +254,14 @@ ConsumeOutcome econ_consume_day(Inventory& store, int population,
             out.comfortDemand += demand;
         }
     }
+    // Slot hygiene rides the same daily tick (CANON «Крафт/Скрап»: авто-скрап
+    // ИИ по порогу >50%): a store clogged past the half mark by non-fungible
+    // lut melts its cheapest pieces back to matter, so bread and ore always
+    // have somewhere to land. Plain stacks are never touched, and the
+    // PLAYER'S bag never passes through this function at all.
+    report(sink, user, EconFact::Kind::Scrapped, -1,
+           auto_scrap_overflow(store));
+
     out.fedPop = fed;
     out.starvedPop = population - fed;
     out.famineActive = out.starvedPop > 0;
