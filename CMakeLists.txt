@@ -1451,6 +1451,14 @@ timaert_test(macro_stock_test
         src/macro/tree_layer.cpp
     LINK_ENTT)
 
+# The interaction menu's ONE addressing door (macro/map_subject.h): a squad's
+# and a landmark's store/roster answer through store_of/roster_of, kind-blind.
+# Header-only doors; items.cpp is the catalog TU the Inventory fixture needs.
+timaert_test(map_subject_test
+    SOURCES
+        src/macro/items.cpp
+    LINK_ENTT)
+
 # Mass-battle AI contract: the steering module is Vulkan-free and ECS-free by
 # design (that is what makes 16k-body combat testable headless), so it links
 # only movement.cpp. Pins the no-collapse invariant with a negative control and
