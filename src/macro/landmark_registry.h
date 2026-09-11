@@ -262,6 +262,15 @@ inline constexpr const LandmarkDef& landmark_def(LandmarkType t) {
     return kLandmarks[std::size_t(t)];
 }
 
+// Does this KIND open the settlement panel at all? The data answers: a kind
+// that declares at least one settlement verb (trade / hire / contract board)
+// has a panel; a spire or a ruin — the walk-in minimum — does not. This
+// predicate is what killed the LandmarkType::City hardcode of the old panel
+// gate (PLAY-2): a village answers the same door a city does.
+inline constexpr bool landmark_has_settlement_panel(LandmarkType t) {
+    return landmark_def(t).actions != 0;
+}
+
 // ── Born souls of a DUNGEON landmark (§42 Инк 5, CANON S28) ──────────────
 // mean = base + perScore × the kind's own context number (a spire's spell
 // tier, a ruin's danger byte) — the row's columns above, never literals in

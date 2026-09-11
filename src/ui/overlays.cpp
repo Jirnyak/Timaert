@@ -1409,8 +1409,11 @@ namespace sm::ui
         Inventory *bagPtr = player_inventory(world);
         Inventory bagFallback{};
         Inventory &playerBag = bagPtr ? *bagPtr : bagFallback;
+        // The panel opens for ANY kind that declares settlement verbs
+        // (actions column, PLAY-2) — the City hardcode is dead, the village
+        // walked in through the same door.
         Landmark *s = landmark_by_id(gs, settlementId);
-        if (s && s->type != LandmarkType::City)
+        if (s && !landmark_has_settlement_panel(s->type))
             s = nullptr;
         const SettlementPanelTab current = tab ? *tab : SettlementPanelTab::Info;
 
@@ -1428,11 +1431,13 @@ namespace sm::ui
             // ── Banner ── (one system: the place's faction registry row)
             const sm::FactionDef *fd =
                 sm::faction_def_by_index(sm::faction_or_freefolk(s->factionIdx));
+            const LandmarkDef &def = landmark_def(s->type);
+            const std::uint16_t acts = def.actions;
             ImGui::PushFont(nullptr);
             ImGui::TextColored(ImVec4(1.0f, 0.92f, 0.50f, 1.0f), "%s", s->name.c_str());
             ImGui::PopFont();
             ImGui::SameLine();
-            ImGui::TextDisabled("(City)");
+            ImGui::TextDisabled("(%.*s)", int(def.label.size()), def.label.data());
             ImGui::Text("Faction: %s   Temperament: %s",
                         fd ? fd->name : "Unaligned",
                         fd ? temperament_label(fd->temperament) : "?");
@@ -1454,8 +1459,9 @@ namespace sm::ui
                 if (infoOpen)
                 {
                     ImGui::TextWrapped("Welcome to %s.", s->name.c_str());
-                    ImGui::TextDisabled("A city with population %d.",
-                                        s->population);
+                    ImGui::TextDisabled("A %.*s with population %d.",
+                                        int(def.label.size()),
+                                        def.label.data(), s->population);
                     ImGui::Spacing();
 
                     if (ImGui::BeginTable("settlement_info", 2,
@@ -1477,23 +1483,21 @@ namespace sm::ui
                         ImGui::EndTable();
                     }
 
+                    // (The dead "Enter City" button died with the меню-
+                    // сессия: entry is the Enter verb of the interaction
+                    // popup, not a disabled decoration.)
                     ImGui::Spacing();
-                    ImGui::BeginDisabled();
-                    ImGui::Button("Enter City");
-                    ImGui::EndDisabled();
-                    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-                    {
-                        ImGui::SetTooltip("Native settlement entry is routed through Enter / In, not this overlay callback.");
-                    }
-                    ImGui::SameLine();
-                    if (ImGui::Button("Trade") && tab)
+                    if ((acts & kMapActTrade) && ImGui::Button("Trade") && tab)
                     {
                         *tab = SettlementPanelTab::Trade;
                     }
                     ImGui::EndTabItem();
                 }
 
-                // Build
+                // Build — a settlement's tab (gated by the actions column
+                // like Trade: a spire declares nothing and shows nothing).
+                if (acts & kMapActTrade)
+                {
                 const bool buildOpen = ImGui::BeginTabItem("Build", nullptr,
                                                            selected_tab(current, SettlementPanelTab::Build));
                 if (tab && ImGui::IsItemClicked())
@@ -1638,6 +1642,7 @@ namespace sm::ui
 
                     ImGui::EndTabItem();
                 }
+                }   // acts & kMapActTrade (Build + Trade)
 
                 // Garrison
                 const bool garrisonOpen = ImGui::BeginTabItem("Garrison", nullptr,
@@ -1669,7 +1674,10 @@ namespace sm::ui
                     }
                     ImGui::EndTabItem();
                 }
-                // Recruit
+                // Recruit — the Hire verb of the actions column (Roster-заём
+                // из гарнизона; деревня нанимает так же, как город).
+                if (acts & kMapActHire)
+                {
                 const bool recruitOpen = ImGui::BeginTabItem("Recruit", nullptr,
                                                              selected_tab(current, SettlementPanelTab::Recruit));
                 if (tab && ImGui::IsItemClicked())
@@ -1742,6 +1750,7 @@ namespace sm::ui
                     }
                     ImGui::EndTabItem();
                 }
+                }   // acts & kMapActHire
                 // Map
                 const bool mapOpen = ImGui::BeginTabItem("Map", nullptr,
                                                          selected_tab(current, SettlementPanelTab::Map));
@@ -1752,7 +1761,7 @@ namespace sm::ui
                     SettlementPreviewCache &preview = settlement_preview_cache();
                     const std::uint32_t previewSeed =
                         settlement_preview_seed(gs.worldSeed, s->id);
-                    ImGui::TextDisabled("City preview");
+                    ImGui::TextDisabled("Settlement preview");
                     ImGui::SameLine();
                     if (ImGui::Button("Refresh"))
                     {
@@ -1846,7 +1855,9 @@ namespace sm::ui
                 // The inn is gone (owner, 2026-09-11: «отдых таверны
                 // вырезать вообще»): a paid full restore beside the ONE
                 // macro rest law was a second, cheaper law of recovery.
-                // Quests
+                // Quests — the contract board (actions column: Quests).
+                if (acts & kMapActQuests)
+                {
                 const bool questsOpen = ImGui::BeginTabItem("Quests", nullptr,
                                                             selected_tab(current, SettlementPanelTab::Quests));
                 if (tab && ImGui::IsItemClicked())
@@ -1886,6 +1897,7 @@ namespace sm::ui
                     }
                     ImGui::EndTabItem();
                 }
+                }   // acts & kMapActQuests
                 ImGui::EndTabBar();
             }
         }

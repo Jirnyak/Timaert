@@ -405,9 +405,12 @@ long file_size_bytes(const std::string& path) {
 }
 
 
+// «Поселение» = ландмарк, объявивший хоть один глагол поселения (колонка
+// actions, PLAY-2): деревня отвечает той же дверью, что и город; шпиль/руина
+// панели не имеют — их минимум живёт в попапе взаимодействия.
 const sm::Landmark* settlement_by_id(const sm::GameState& gs, int id) {
     const sm::Landmark* lm = sm::landmark_by_id(gs, id);
-    return (lm && lm->type == sm::LandmarkType::City) ? lm : nullptr;
+    return (lm && sm::landmark_has_settlement_panel(lm->type)) ? lm : nullptr;
 }
 
 int settlement_at_player(const sm::GameState& gs, sm::ecs::World& world,
@@ -418,7 +421,7 @@ int settlement_at_player(const sm::GameState& gs, sm::ecs::World& world,
     const float py = float(sm::ecs::cell_y(*pc, gs.mapW));
     const float r2 = radius * radius;
     for (const auto& s : gs.landmarks) {
-        if (s.type != sm::LandmarkType::City) continue;
+        if (!sm::landmark_has_settlement_panel(s.type)) continue;
         if (sm::torus_dist_sq(px, py,
                               float(s.x), float(s.y),
                               float(gs.mapW), float(gs.mapH)) <= r2) {
@@ -471,8 +474,15 @@ void refresh_available_settlement_quests(App& app) {
         app.availableQuestDay = -1;
         return;
     }
-    app.availableSettlementQuests =
-        sm::generate_quests_for_settlement(*s, app.gs, app.gs.worldSeed);
+    // The board follows the actions column: a place that declares no Quests
+    // verb posts nothing; a village posts through its own generator.
+    if ((sm::landmark_def(s->type).actions & sm::kMapActQuests) == 0) {
+        app.availableSettlementQuests.clear();
+    } else {
+        app.availableSettlementQuests = s->type == sm::LandmarkType::Village
+            ? sm::generate_quests_for_village(*s, app.gs, app.gs.worldSeed)
+            : sm::generate_quests_for_settlement(*s, app.gs, app.gs.worldSeed);
+    }
     app.availableQuestSettlementId = id;
     app.availableQuestDay = app.gs.worldTime.day();
 }
@@ -5932,6 +5942,23 @@ void frame(App& app, int simSteps) {
                     app.gs.subState.kind = sm::GameSubStateKind::PreBattle;
                     app.cursor.path.clear();
                     app.cursor.pathIdx = 0;
+                }
+                // Глаголы ландмарк-ряда универсального меню (меню-сессия):
+                // Enter = та же дверь, что клавиша Enter; Trade/Hire/
+                // Contracts открывают панель поселения НА ВКЛАДКЕ глагола.
+                if (npcResult.enterRequested && !app.subworld.active()) {
+                    enter_subworld(app);
+                }
+                if (npcResult.openSettlementId >= 0) {
+                    app.ui.settlementId = npcResult.openSettlementId;
+                    app.ui.settlementTab =
+                        npcResult.settlementVerb == sm::kMapActHire
+                            ? sm::ui::SettlementPanelTab::Recruit
+                        : npcResult.settlementVerb == sm::kMapActQuests
+                            ? sm::ui::SettlementPanelTab::Quests
+                            : sm::ui::SettlementPanelTab::Trade;
+                    refresh_available_settlement_quests(app);
+                    app.ui.settlement = true;
                 }
             }
             sm::ui::draw_show_dialog(app.gs, sm::player_inventory(app.ecs), app.showDialogEvent, app.bus,

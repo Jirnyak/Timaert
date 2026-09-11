@@ -14,6 +14,7 @@
 #include "ui/trade_widgets.h"
 #include "ecs/world.h"
 #include "ecs/components.h"
+#include "macro/map_subject.h"   // MapSubject + actions_of — the menu's doors
 #include "macro/state.h"
 #include "macro/squad.h"   // record_deed — THE deed door (S20.1)
 #include "macro/landmark_iter.h"
@@ -255,7 +256,9 @@ void draw_macro_overlay(GameState& gs, ecs::World& w,
         for_each_landmark(gs, [&](const LandmarkView& lm) {
             if (lm.x != cursor.hoverX || lm.y != cursor.hoverY) return;
             if (!landmark[0]) landmark = lm.name;
-            if (lm.type == LandmarkType::City && hoverSettlementId < 0)
+            // Any kind that owns a settlement panel is pickable — the City
+            // hardcode died with PLAY-2 (a village opens its panel too).
+            if (landmark_has_settlement_panel(lm.type) && hoverSettlementId < 0)
                 hoverSettlementId = lm.id;
         });
 
@@ -607,6 +610,11 @@ entt::entity g_trade_message_npc = entt::null;
 char         g_trade_message[160] = "";
 int          g_trade_amount = 1;   // shared staging step (Amount)
 BarterState  g_npc_barter;         // the staged package deal
+// The universal interaction menu's subject (меню-сессия): kind == None
+// doubles as "no menu". Transient UI state, never save material.
+MapSubject   g_menu_subject{};
+
+void clear_interaction_menu() { g_menu_subject = MapSubject{}; }
 
 void clear_talk_popup() {
     g_talk_npc = entt::null;
@@ -646,6 +654,10 @@ void sanitize_popup_state(const ecs::World& w) {
     }
     if (g_trade_npc != entt::null && !valid_trade_npc_entity(w, g_trade_npc)) {
         clear_trade_popup();
+    }
+    if (g_menu_subject.kind == MapSubjectKind::Squad
+        && !live_npc_entity(w, g_menu_subject.squad)) {
+        clear_interaction_menu();
     }
 }
 
@@ -740,7 +752,8 @@ void open_npc_trade_panel(entt::entity npc) {
 }
 
 bool npc_proximity_popup_open() {
-    return g_talk_npc != entt::null || g_trade_npc != entt::null;
+    return g_talk_npc != entt::null || g_trade_npc != entt::null
+        || g_menu_subject.kind != MapSubjectKind::None;
 }
 
 NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
@@ -769,9 +782,10 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                           ecs::PlayerSquadTag>);  // never list the player as a party standing next to himself
 
         // Fixed row buffer: this render hot path must not grow heap storage
-        // when multiple NPCs share adjacent cells.
+        // when multiple objects share adjacent cells. A row names its
+        // subject (squad OR landmark — one shape, меню-сессия).
         struct Row {
-            entt::entity e;
+            MapSubject subject;
             int dx, dy;
             int rank;
             char dir[5];
@@ -786,20 +800,10 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
         const int W  = gs.mapW;
         const int H  = gs.mapH;
 
-        for (auto e : view) {
-            const auto& cell = view.get<ecs::MacroCell>(e);
-            const auto& hp  = view.get<ecs::Pools>(e);
-            if (hp.hp <= 0) continue;
-
-            int nx = ecs::cell_x(cell, W);
-            int ny = ecs::cell_y(cell, W);
-            int dx = wrap_chebyshev(nx - px, W);
-            int dy = wrap_chebyshev(ny - py, H);
-            if (std::abs(dx) > 1 || std::abs(dy) > 1) continue;
-
+        auto push_row = [&](MapSubject subject, int dx, int dy) {
             ++totalRows;
             Row row{};
-            row.e = e;
+            row.subject = subject;
             row.dx = dx;
             row.dy = dy;
             row.rank = proximity_row_rank(dx, dy);
@@ -817,6 +821,30 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                     rows[worst] = row;
                 }
             }
+        };
+
+        for (auto e : view) {
+            const auto& cell = view.get<ecs::MacroCell>(e);
+            const auto& hp  = view.get<ecs::Pools>(e);
+            if (hp.hp <= 0) continue;
+
+            int nx = ecs::cell_x(cell, W);
+            int ny = ecs::cell_y(cell, W);
+            int dx = wrap_chebyshev(nx - px, W);
+            int dy = wrap_chebyshev(ny - py, H);
+            if (std::abs(dx) > 1 || std::abs(dy) > 1) continue;
+            push_row(subject_of_squad(e), dx, dy);
+        }
+
+        // Landmarks pop the same panel (owner's verdict: «деревни, города,
+        // ландмарки тоже — если маркер игрока рядом, выскакивают их
+        // попапы»). Same neighbourhood law as the squads above.
+        for (const auto& lm : gs.landmarks) {
+            if (lm.type == LandmarkType::None) continue;
+            int dx = wrap_chebyshev(lm.x - px, W);
+            int dy = wrap_chebyshev(lm.y - py, H);
+            if (std::abs(dx) > 1 || std::abs(dy) > 1) continue;
+            push_row(subject_of_landmark(lm.id), dx, dy);
         }
 
         if (totalRows > 0) {
@@ -853,13 +881,35 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                 ImGui::SetWindowFontScale(scale);
                 for (std::size_t rowIdx = 0; rowIdx < drawRows; ++rowIdx) {
                     auto& r = rows[rowIdx];
-                    const auto& kind = view.get<ecs::NPCKind>(r.e);
-                    const auto& hp   = view.get<ecs::Pools>(r.e);
-                    const auto& lvl  = view.get<ecs::NpcLevel>(r.e);
-                    const auto& ch   = view.get<ecs::NpcCharacter>(r.e);
 
-                    const NPCType t  = npc_type_or_default(kind.type);
-                    const auto&   def = npc_def(t);
+                    // Resolve what the row SHOWS from its subject — one card
+                    // shape for a squad and a place, different columns in.
+                    const bool isSquad =
+                        r.subject.kind == MapSubjectKind::Squad;
+                    const Landmark* lm = isSquad
+                        ? nullptr
+                        : landmark_by_id(gs, int(r.subject.landmark));
+                    if (!isSquad && !lm) continue;
+
+                    const char* rowName = "";
+                    const char* rowRole = "";
+                    std::uint16_t rowFaction = kNoFaction;
+                    NPCType t = NPCType::Peasant;
+                    if (isSquad) {
+                        const auto& kind = view.get<ecs::NPCKind>(r.subject.squad);
+                        const auto& ch   = view.get<ecs::NpcCharacter>(r.subject.squad);
+                        t = npc_type_or_default(kind.type);
+                        const auto& def = npc_def(t);
+                        rowName = npc_display_name(def, ch);
+                        rowRole = def.label;
+                        rowFaction = kind.factionIdx;
+                    } else {
+                        const LandmarkDef& ldef = landmark_def(lm->type);
+                        rowName = !lm->name.empty() ? lm->name.c_str()
+                                                    : ldef.label.data();
+                        rowRole = ldef.label.data();
+                        rowFaction = faction_or_freefolk(lm->factionIdx);
+                    }
 
                     // Resolve faction colour through the macro registry. Falls
                     // back to a neutral grey for unknown ids.
@@ -867,20 +917,18 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                     // copied into the per-save faction map and read back from
                     // there, which is how a save could disagree with the game
                     // it was running in.
-                    const char* fid = faction_id_for_index(kind.factionIdx);
                     ImU32 fcol = IM_COL32(160, 160, 160, 255);
-                    const char* fname = fid;
+                    const char* fname = faction_id_for_index(rowFaction);
                     if (const FactionDef* fd =
-                            faction_def_by_index(kind.factionIdx)) {
+                            faction_def_by_index(rowFaction)) {
                         fcol  = fd->color | 0xFF000000u; // ensure opaque
                         fname = fd->name;
                     }
 
-                    // Per-NPC display name pulled from the type's name pool.
-                    const char* npcName = npc_display_name(def, ch);
-
-                    // Row group with explicit action buttons.
-                    ImGui::PushID(int(entt::to_integral(r.e)));
+                    // Row group — ONE clickable card (клик → меню, PLAY-1).
+                    ImGui::PushID(isSquad
+                        ? int(entt::to_integral(r.subject.squad))
+                        : int(0x40000000 | r.subject.landmark));
                     ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(20, 14, 8, 220));
                     ImGui::PushStyleColor(ImGuiCol_Border,
                                           (fcol & 0x00FFFFFFu) | 0x60000000u);
@@ -889,24 +937,35 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                     // because both used to be pixels off the ceiling (a 40-px
                     // picture beside a 51-px block of text, in an 88-px row).
                     // The picture is as tall as the three lines it stands
-                    // beside — name, role · level, faction — and the row is
-                    // that block plus the button strip under it. Nothing here
-                    // is a constant, so the whole card follows the font instead
-                    // of shearing away from it the moment the text grows.
+                    // beside — name, role, faction. The button strip is GONE
+                    // (клик по всему ряду открывает меню), so the row is just
+                    // that block plus padding.
                     const ImGuiStyle& rowStyle = ImGui::GetStyle();
                     const float kindPx = ImGui::GetTextLineHeightWithSpacing() * 3.0f;
-                    const float rowPx = kindPx + ImGui::GetFrameHeight()
-                                      + rowStyle.ItemSpacing.y
-                                      + rowStyle.WindowPadding.y * 2.0f;
+                    const float rowPx = kindPx + rowStyle.WindowPadding.y * 2.0f;
                     ImGui::BeginChild("##row", ImVec2(0.0f, rowPx), true,
                                       ImGuiWindowFlags_NoScrollbar);
 
-                    // Sprite — the kind's drawn PNG, falls back to a blank.
-                    {
+                    // Picture: the kind's drawn PNG for a squad; a landmark
+                    // draws its registry tile (colour + glyph) — no art yet.
+                    if (isSquad) {
                         const Sprite* sp = sprite_get(npc_sprite(t));
                         const ImVec2 side(kindPx, kindPx);
                         if (sp && sp->tex) ImGui::Image(sp->tex, side);
                         else               ImGui::Dummy(side);
+                    } else {
+                        const LandmarkDef& ldef = landmark_def(lm->type);
+                        const ImVec2 side(kindPx, kindPx);
+                        const ImVec2 p = ImGui::GetCursorScreenPos();
+                        ImGui::Dummy(side);
+                        ImDrawList* dl = ImGui::GetWindowDrawList();
+                        dl->AddRectFilled(
+                            p, ImVec2(p.x + side.x, p.y + side.y),
+                            ldef.color | 0xFF000000u, 4.0f);
+                        const char glyph[2] = {char(ldef.glyph), '\0'};
+                        dl->AddText(ImVec2(p.x + side.x * 0.38f,
+                                           p.y + side.y * 0.30f),
+                                    IM_COL32(0, 0, 0, 255), glyph);
                     }
                     ImGui::SameLine();
 
@@ -934,14 +993,11 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                         true);
                     ImGui::BeginGroup();
                     ImGui::PushStyleColor(ImGuiCol_Text, fcol);
-                    ImGui::TextUnformatted(npcName);
+                    ImGui::TextUnformatted(rowName);
                     ImGui::PopStyleColor();
-                    // The role alone. The level moved to the numbers column on
-                    // the right, where it belongs beside the HP: words on the
-                    // left, figures on the right, and the longest line on each
-                    // side got shorter for free — which is why the two columns
-                    // stopped fighting over the same pixels.
-                    ImGui::TextDisabled("%s", def.label);
+                    // The role alone. The figures live in the chip on the
+                    // right: words on the left, numbers on the right.
+                    ImGui::TextDisabled("%s", rowRole);
                     ImGui::PushStyleColor(ImGuiCol_Text,
                                           (fcol & 0x00FFFFFFu) | 0xC0000000u);
                     ImGui::TextUnformatted(fname);
@@ -949,54 +1005,39 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                     ImGui::EndGroup();
                     ImGui::PopClipRect();
 
-                    // Right-aligned direction + HP chip.
+                    // Right-aligned direction + figures chip: level and HP
+                    // for a squad, souls for a place.
                     ImGui::SameLine();
                     ImGui::SetCursorPosX(chipX);
                     ImGui::BeginGroup();
                     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 210, 120, 255));
                     ImGui::Text("%s", r.dir);
                     ImGui::PopStyleColor();
-                    ImGui::TextDisabled("Lv.%d", int(lvl.value));
-                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(220, 90, 90, 255));
-                    ImGui::Text("%d/%d", int(hp.hp), int(hp.maxHp));
-                    ImGui::PopStyleColor();
+                    if (isSquad) {
+                        const auto& hp  = view.get<ecs::Pools>(r.subject.squad);
+                        const auto& lvl = view.get<ecs::NpcLevel>(r.subject.squad);
+                        ImGui::TextDisabled("Lv.%d", int(lvl.value));
+                        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(220, 90, 90, 255));
+                        ImGui::Text("%d/%d", int(hp.hp), int(hp.maxHp));
+                        ImGui::PopStyleColor();
+                    } else {
+                        ImGui::TextDisabled("Pop");
+                        ImGui::Text("%d", lm->population);
+                    }
                     ImGui::EndGroup();
 
-                    // The button strip sits directly under the text block, at
-                    // the height that block actually occupies. It used to be a
-                    // literal 58, tuned against the row's old literal 88, so a
-                    // change to either silently slid the buttons.
-                    ImGui::SetCursorPosY(kindPx + rowStyle.WindowPadding.y);
-                    if (ImGui::Button("Talk", ImVec2(54, 22))) {
-                        clear_trade_popup();
-                        g_talk_npc = r.e;
-                        if (def.talkCount > 0) {
-                            const std::uint32_t pick =
-                                ch.visualSeed % std::uint32_t(def.talkCount);
-                            g_talk_line = def.talkLines[pick];
-                        } else {
-                            g_talk_line = "...";
+                    ImGui::EndChild();
+                    // THE row click (owner's verdict: «просто тыкать на них
+                    // для открытия меню взаимодействия») — the whole card is
+                    // the one button; the Talk/Trade/Attack scatter is dead.
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Interact");
+                        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                            clear_talk_popup();
+                            clear_trade_popup();
+                            g_menu_subject = r.subject;
                         }
                     }
-                    ImGui::SameLine();
-                    const bool tradeOk = w.reg.all_of<ecs::NpcInventory>(r.e);
-                    if (!tradeOk) ImGui::BeginDisabled();
-                    if (ImGui::Button("Trade", ImVec2(58, 22))) {
-                        open_npc_trade_panel(r.e);
-                    }
-                    if (!tradeOk) ImGui::EndDisabled();
-                    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !tradeOk) {
-                        ImGui::SetTooltip("Missing backend: ecs::NpcInventory component.");
-                    }
-                    ImGui::SameLine();
-                    if (ImGui::Button("Attack", ImVec2(62, 22))) {
-                        result.attackNpc = r.e;
-                    }
-                    if (ImGui::IsItemHovered()) {
-                        ImGui::SetTooltip("Enter normal subworld combat with this NPC.");
-                    }
-
-                    ImGui::EndChild();
                     ImGui::PopStyleVar();   // ChildBorderSize
                     ImGui::PopStyleColor(2); // ChildBg + Border
                     ImGui::PopID();
@@ -1007,6 +1048,146 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
             }
             ImGui::End();
             ImGui::PopStyleVar(3);
+        }
+    }
+
+    // ── THE universal interaction menu (меню-сессия, PLAY-1/2) ──────────
+    // One window for every subject: the verbs come from the DATA
+    // (actions_of — squad: talk/trade/attack; place: its actions column +
+    // walkable as Enter), the render is one loop, the perform is one
+    // switch. Specific screens (barter, settlement panel, встреча) open
+    // FROM here — M&B: у деревни и города разные опции, система одна.
+    if (g_menu_subject.kind != MapSubjectKind::None) {
+        MacroWorld mw{&gs, nullptr, &w};
+        const std::uint16_t acts = actions_of(mw, g_menu_subject);
+        const Landmark* mlm = g_menu_subject.kind == MapSubjectKind::Landmark
+            ? landmark_by_id(gs, int(g_menu_subject.landmark))
+            : nullptr;
+        if (acts == 0) {
+            clear_interaction_menu();   // subject died / id gone: fail closed
+        } else {
+            // Header facts, resolved once from the subject.
+            const char* headName = "";
+            const char* headRole = "";
+            std::uint16_t headFaction = kNoFaction;
+            if (g_menu_subject.kind == MapSubjectKind::Squad) {
+                const auto& kind =
+                    w.reg.get<ecs::NPCKind>(g_menu_subject.squad);
+                const auto& ch =
+                    w.reg.get<ecs::NpcCharacter>(g_menu_subject.squad);
+                const auto& def = npc_def(npc_type_or_default(kind.type));
+                headName = npc_display_name(def, ch);
+                headRole = def.label;
+                headFaction = kind.factionIdx;
+            } else if (mlm) {
+                const LandmarkDef& ldef = landmark_def(mlm->type);
+                headName = !mlm->name.empty() ? mlm->name.c_str()
+                                              : ldef.label.data();
+                headRole = ldef.label.data();
+                headFaction = faction_or_freefolk(mlm->factionIdx);
+            }
+            const FactionDef* fd = faction_def_by_index(headFaction);
+
+            ImGui::SetNextWindowPos(ImVec2(float(viewW) * 0.5f, 120.0f),
+                                    ImGuiCond_Always, ImVec2(0.5f, 0.0f));
+            ImGui::SetNextWindowSize(ImVec2(300, 0));
+            bool menuOpen = true;
+            if (ImGui::Begin("Interaction", &menuOpen,
+                             ImGuiWindowFlags_NoCollapse |
+                             ImGuiWindowFlags_NoResize)) {
+                ImGui::SetWindowFontScale(scale);
+                ImGui::TextUnformatted(headName);
+                ImGui::TextDisabled("%s — %s", headRole,
+                                    fd ? fd->name : "");
+                if (mlm) ImGui::TextDisabled("Population: %d",
+                                             mlm->population);
+                ImGui::Separator();
+
+                // The verb rows — data declares, one loop renders, one
+                // switch performs.
+                struct MenuVerb { std::uint16_t bit; const char* label; };
+                static constexpr MenuVerb kMenuVerbs[] = {
+                    {kMapActTalk,   "Talk"},
+                    {kMapActTrade,  "Trade"},
+                    {kMapActAttack, "Attack"},
+                    {kMapActEnter,  "Enter"},
+                    {kMapActHire,   "Hire troops"},
+                    {kMapActQuests, "Contracts"},
+                };
+                for (const MenuVerb& v : kMenuVerbs) {
+                    if ((acts & v.bit) == 0) continue;
+                    // Availability NOW is the row's predicate, never a
+                    // second table (map_actions.h).
+                    bool can = true;
+                    const char* why = nullptr;
+                    if (v.bit == kMapActTrade
+                        && g_menu_subject.kind == MapSubjectKind::Squad
+                        && !valid_trade_npc_entity(w, g_menu_subject.squad)) {
+                        can = false;
+                        why = "This one carries nothing to trade.";
+                    }
+                    if (!can) ImGui::BeginDisabled();
+                    const bool hit =
+                        ImGui::Button(v.label, ImVec2(-FLT_MIN, 0));
+                    if (!can) ImGui::EndDisabled();
+                    if (!can && why
+                        && ImGui::IsItemHovered(
+                               ImGuiHoveredFlags_AllowWhenDisabled)) {
+                        ImGui::SetTooltip("%s", why);
+                    }
+                    if (!hit) continue;
+
+                    const MapSubject subject = g_menu_subject;
+                    clear_interaction_menu();
+                    switch (v.bit) {
+                    case kMapActTalk: {
+                        const auto& kind =
+                            w.reg.get<ecs::NPCKind>(subject.squad);
+                        const auto& ch =
+                            w.reg.get<ecs::NpcCharacter>(subject.squad);
+                        const auto& def =
+                            npc_def(npc_type_or_default(kind.type));
+                        g_talk_npc = subject.squad;
+                        g_talk_line = def.talkCount > 0
+                            ? def.talkLines[ch.visualSeed
+                                            % std::uint32_t(def.talkCount)]
+                            : "...";
+                        break;
+                    }
+                    case kMapActTrade:
+                        if (subject.kind == MapSubjectKind::Squad) {
+                            open_npc_trade_panel(subject.squad);
+                        } else {
+                            result.openSettlementId = int(subject.landmark);
+                            result.settlementVerb = kMapActTrade;
+                        }
+                        break;
+                    case kMapActAttack:
+                        result.attackNpc = subject.squad;
+                        break;
+                    case kMapActEnter:
+                        result.enterRequested = true;
+                        break;
+                    case kMapActHire:
+                        result.openSettlementId = int(subject.landmark);
+                        result.settlementVerb = kMapActHire;
+                        break;
+                    case kMapActQuests:
+                        result.openSettlementId = int(subject.landmark);
+                        result.settlementVerb = kMapActQuests;
+                        break;
+                    default: break;
+                    }
+                    break;   // the menu is gone; stop walking its rows
+                }
+
+                ImGui::Spacing();
+                if (ImGui::Button("Close", ImVec2(-FLT_MIN, 0))) {
+                    clear_interaction_menu();
+                }
+            }
+            ImGui::End();
+            if (!menuOpen) clear_interaction_menu();
         }
     }
 
