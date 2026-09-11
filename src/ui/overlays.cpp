@@ -260,11 +260,6 @@ namespace sm::ui
                             255);
         }
 
-        int rest_cost(SettlementMood m)
-        {
-            return mood_row(m).restCost;
-        }
-
         int g_settlement_trade_message_id = -1;
         char g_settlement_trade_message[160] = "";
         int  g_settlement_trade_amount = 1;   // shared staging step (Amount)
@@ -1856,40 +1851,9 @@ namespace sm::ui
                     }
                     ImGui::EndTabItem();
                 }
-                // Rest
-                const bool restOpen = ImGui::BeginTabItem("Rest", nullptr,
-                                                          selected_tab(current, SettlementPanelTab::Rest));
-                if (tab && ImGui::IsItemClicked())
-                    *tab = SettlementPanelTab::Rest;
-                if (restOpen)
-                {
-                    int cost = rest_cost(s->mood);
-                    ImGui::Text("Inn rest: %d g (mood-priced)", cost);
-                    ImGui::Text("Restores HP / MP / SP to full.");
-                    ImGui::Spacing();
-                    bool can = wallet_value(playerBag) >= cost;
-                    if (!can)
-                        ImGui::BeginDisabled();
-                    if (ImGui::Button("Rest at Inn"))
-                    {
-                        wallet_spend_up_to(playerBag, cost);
-                        // The inn heals THE store — a paid full restore is a
-                        // door that SAYS it heals, not a rescale.
-                        if (ecs::Pools *pools = player_pools(world)) {
-                            pools->hp = pools->maxHp;
-                            pools->mp = pools->maxMp;
-                            pools->sp = pools->maxSp;
-                        }
-                    }
-                    if (!can)
-                        ImGui::EndDisabled();
-                    if (!can)
-                    {
-                        ImGui::SameLine();
-                        ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "not enough gold");
-                    }
-                    ImGui::EndTabItem();
-                }
+                // The inn is gone (owner, 2026-09-11: «отдых таверны
+                // вырезать вообще»): a paid full restore beside the ONE
+                // macro rest law was a second, cheaper law of recovery.
                 // Quests
                 const bool questsOpen = ImGui::BeginTabItem("Quests", nullptr,
                                                             selected_tab(current, SettlementPanelTab::Quests));

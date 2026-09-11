@@ -334,32 +334,33 @@ enum class SettlementMood : std::uint8_t {
 
 // ── THE mood registry (CANON S16) ────────────────────────────────────────
 // Everything the game says ABOUT a temper band is a column of ONE row: the
-// label and colour the UI prints, the market multipliers the economy prices
-// with (economy.cpp mood_price_mult — a prosperous town sells cheap and pays
-// well; one in revolt charges a risk premium and haggles the traveller down),
-// and the inn bed's cost. These lived as four switch-shaped dictionaries
-// across ui/overlays.cpp and macro/economy.cpp until 2026-08-29.
+// label and colour the UI prints, and the market multipliers the economy
+// prices with (economy.cpp mood_price_mult — a prosperous town sells cheap
+// and pays well; one in revolt charges a risk premium and haggles the
+// traveller down). These lived as switch-shaped dictionaries across
+// ui/overlays.cpp and macro/economy.cpp until 2026-08-29. The inn-bed cost
+// column died with the inn (owner, 2026-09-11: «отдых таверны вырезать
+// вообще») — rest is the ONE macro rest law, never a paid full restore.
 struct MoodRow {
     SettlementMood mood;      // MUST equal the row's index (guard below)
     const char*    label;
     std::uint32_t  color;     // 0xRRGGBB — the UI's tint for this band
     float          buyMul;    // what the town charges the traveller
     float          sellMul;   // what it pays him
-    int            restCost;  // inn bed, gold
 };
 inline constexpr MoodRow kMoodRows[std::size_t(SettlementMood::Count)] = {
-    {SettlementMood::Prosperous, "Prosperous", 0x5ADC78u, 0.9f, 1.1f,   5},
-    {SettlementMood::Stable,     "Stable",     0xDCDCDCu, 1.0f, 1.0f,  10},
-    {SettlementMood::Tense,      "Tense",      0xF0C850u, 1.0f, 1.0f,  15},
-    {SettlementMood::Unrest,     "Unrest",     0xDC8250u, 1.2f, 0.85f, 20},
-    {SettlementMood::Revolt,     "Revolt",     0xE64646u, 1.4f, 0.7f,  30},
+    {SettlementMood::Prosperous, "Prosperous", 0x5ADC78u, 0.9f, 1.1f},
+    {SettlementMood::Stable,     "Stable",     0xDCDCDCu, 1.0f, 1.0f},
+    {SettlementMood::Tense,      "Tense",      0xF0C850u, 1.0f, 1.0f},
+    {SettlementMood::Unrest,     "Unrest",     0xDC8250u, 1.2f, 0.85f},
+    {SettlementMood::Revolt,     "Revolt",     0xE64646u, 1.4f, 0.7f},
 };
 static_assert(rows_in_enum_order(kMoodRows, &MoodRow::mood),
               "kMoodRows row order must mirror SettlementMood");
 
 inline constexpr const MoodRow& mood_row(SettlementMood m) {
     // A byte from outside the band table answers as Stable — the neutral row
-    // the old switch defaults painted (colour, multiplier and cost match).
+    // the old switch defaults painted (colour and multipliers match).
     return std::size_t(m) < std::size_t(SettlementMood::Count)
                ? kMoodRows[std::size_t(m)]
                : kMoodRows[std::size_t(SettlementMood::Stable)];
