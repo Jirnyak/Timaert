@@ -924,26 +924,40 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                     ImGui::BeginChild("##row", ImVec2(0.0f, rowPx), true,
                                       ImGuiWindowFlags_NoScrollbar);
 
-                    // Picture: the kind's drawn PNG for a squad; a landmark
-                    // draws its registry tile (colour + glyph) — no art yet.
-                    if (isSquad) {
-                        const Sprite* sp = sprite_get(npc_sprite(t));
+                    // Picture: the kind's drawn PNG — a squad from the NPC
+                    // sprite bank, a landmark from THE same presentation row
+                    // the map draws (kLandmarkDraw, depleted variant and
+                    // all). Kinds without art fall back to the registry tile
+                    // (colour + glyph), same law as the map's glyph circle.
+                    {
                         const ImVec2 side(kindPx, kindPx);
-                        if (sp && sp->tex) ImGui::Image(sp->tex, side);
-                        else               ImGui::Dummy(side);
-                    } else {
-                        const LandmarkDef& ldef = landmark_def(lm->type);
-                        const ImVec2 side(kindPx, kindPx);
-                        const ImVec2 p = ImGui::GetCursorScreenPos();
-                        ImGui::Dummy(side);
-                        ImDrawList* dl = ImGui::GetWindowDrawList();
-                        dl->AddRectFilled(
-                            p, ImVec2(p.x + side.x, p.y + side.y),
-                            ldef.color | 0xFF000000u, 4.0f);
-                        const char glyph[2] = {char(ldef.glyph), '\0'};
-                        dl->AddText(ImVec2(p.x + side.x * 0.38f,
-                                           p.y + side.y * 0.30f),
-                                    IM_COL32(0, 0, 0, 255), glyph);
+                        const Sprite* sp = nullptr;
+                        if (isSquad) {
+                            sp = sprite_get(npc_sprite(t));
+                        } else {
+                            const LandmarkDrawRow& drow =
+                                kLandmarkDraw[std::size_t(lm->type)];
+                            const SpriteId sid = lm->depleted
+                                ? drow.spriteDepleted : drow.sprite;
+                            if (sid != SpriteId::None) sp = sprite_get(sid);
+                        }
+                        if (sp && sp->tex) {
+                            ImGui::Image(sp->tex, side);
+                        } else if (isSquad) {
+                            ImGui::Dummy(side);
+                        } else {
+                            const LandmarkDef& ldef = landmark_def(lm->type);
+                            const ImVec2 p = ImGui::GetCursorScreenPos();
+                            ImGui::Dummy(side);
+                            ImDrawList* dl = ImGui::GetWindowDrawList();
+                            dl->AddRectFilled(
+                                p, ImVec2(p.x + side.x, p.y + side.y),
+                                ldef.color | 0xFF000000u, 4.0f);
+                            const char glyph[2] = {char(ldef.glyph), '\0'};
+                            dl->AddText(ImVec2(p.x + side.x * 0.38f,
+                                               p.y + side.y * 0.30f),
+                                        IM_COL32(0, 0, 0, 255), glyph);
+                        }
                     }
                     ImGui::SameLine();
 
