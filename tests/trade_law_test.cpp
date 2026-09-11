@@ -115,18 +115,26 @@ int main() {
         }
     }
 
-    // ── 2. Garrison cap ─────────────────────────────────────────────────
-    static_assert(kMaxGarrisonPerSettlement < 8192,
-                  "cap must sit far below the save-format soldier guard");
-    if (garrison_wants_recruits(kMaxGarrisonPerSettlement - 1)
-        != true) {
-        return fail("one below the cap must still recruit");
-    }
-    if (garrison_wants_recruits(kMaxGarrisonPerSettlement) != false) {
-        return fail("at the cap recruiting must stop");
-    }
-    if (garrison_wants_recruits(kMaxGarrisonPerSettlement + 100) != false) {
-        return fail("over the cap recruiting must stop");
+    // ── 2. Garrison target (§42 Инк 7: population >> the registry shift;
+    // the flat 64-cap died with the tavern-pool law) ─────────────────────
+    {
+        const int pop = 1200;
+        const int target =
+            garrison_target_strength(LandmarkType::City, pop);   // 1200>>3
+        if (target != pop >> 3) {
+            return fail("the garrison target is the registry law");
+        }
+        if (garrison_wants_recruits(LandmarkType::City, pop, target - 1)
+            != true) {
+            return fail("one below the target must still recruit");
+        }
+        if (garrison_wants_recruits(LandmarkType::City, pop, target)
+            != false) {
+            return fail("at the target recruiting must stop");
+        }
+        if (garrison_target_strength(LandmarkType::Spire, 1000) != 0) {
+            return fail("a kind whose column says none keeps no garrison");
+        }
     }
 
     std::printf("trade_law_test: caravan_torus=ok garrison_cap=ok\n");

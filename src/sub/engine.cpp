@@ -1338,6 +1338,12 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
     const int faunaCount = macro_stock_read(
         faunaWorld, MacroStock::FaunaCount,
         MacroStockKey{-1, std::int16_t(wcx), std::int16_t(wcy)});
+    // The place's standing army, embodied beside its crowd (§42 Инк 7):
+    // the LIVE garrison roster travels down so the street shows exactly
+    // who is home today — patrol out, hired away, killed = not here.
+    const Landmark* lmRec = ctx.landmark.id >= 0
+        ? landmark_by_id(*gs_, ctx.landmark.id)
+        : nullptr;
     spawn_cell_npcs(*ecs_, ctx.biome, ctx.treeCount, ctx.landmark.kind,
                     ctx.zone, ctx.depositsNear, mgr_,
                     ox, oy, ctx.seed, ctx.worldSeed,
@@ -1346,7 +1352,8 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
                     // cell's named place. Killing one of them pays the map back
                     // (macro/macro_stock.h) instead of vanishing without trace.
                     ctx.landmark.id,
-                    wcx, wcy, faunaCount);
+                    wcx, wcy, faunaCount,
+                    lmRec ? &lmRec->garrison : nullptr);
 }
 
 // Clean fill of all nine window cells — enter() / fresh scene. The player's

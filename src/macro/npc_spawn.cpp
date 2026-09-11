@@ -232,11 +232,12 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
                       const TerrainData& terrain, std::uint32_t seed,
                       const DepositLayer* deposits) {
     Rng rng(seed + 7777u);
-    // Genesis of the ordinal stream (v23): the boot spawn starts the ONE
-    // persistent counter at zero; every later runtime spawn continues it and
-    // it rides the save, so an identity is never issued twice in a world's
-    // whole life.
-    gs.nextMacroSpawnOrdinal = 0;
+    // The ONE ordinal stream (v23) begins EARLIER now (§42 Инк 7): the
+    // landmark genesis already issued identities to every born garrison
+    // (state.cpp), so the boot spawn CONTINUES the counter instead of
+    // resetting it — a reset here would re-deal the garrisons' names to
+    // walkers. The counter rides the save; an identity is never issued
+    // twice in a world's whole life.
     std::uint32_t& spawnIndex = gs.nextMacroSpawnOrdinal;
     const int mw = gs.mapW;
     const int mh = gs.mapH;

@@ -168,8 +168,33 @@ One healthy core the system lands on:
   by subworld_exit_gate (blocked at arm's reach, freed at 80 tiles). THE
   MEASUREMENT: `spire_perf` smoke — tier-5 spire, 364 live hostile bodies,
   512 ticks: **0.654 ms/tick of the 15.625 ms budget = 4.2 % sim load**.
-- **Инк 7 — street guards = garrison records** (the pop/10 street-guard
-  share dies).
+- **Инк 7 (2026-09-11)** — the garrison IS the place's army (owner:
+  «гарнизон = армия ландмарка», «у городов должны быть сотни»). One roster
+  form, a landmark for an owner: the registry column `garrisonShift` sets
+  the target (`pop >> 3`: a 1200-city keeps ~150, a capital hundreds — the
+  old √pop×0.3-cap-10 law sized a tavern recruit pool), composition
+  60 % Guard / 25 % Woodcutter / 15 % Peasant (the hire pool lives inside
+  the army). City AND village are born with their army (souls paid out of
+  the born population — the bijection witness sums both sides); upkeep and
+  recruiting run as ONE column-gated law for every kind (the City-only
+  branches died); a day's recruit packet is at most target>>4 — a hole in
+  the defense heals over days. New stock row `Garrison` {subject =
+  landmark id, detail = record}: street guards are the LIVE records —
+  killed on the wall = struck from the roll, on patrol / hired away = not
+  on the street. Garrison identities come from THE one macro ordinal
+  issuer — the high-bit id space died (шов 2). The pop/10 street-guard
+  fiction and its crowd role rows are dead.
+
+## Debt — the MILITARY LAYER (its own future track, substrate ready)
+
+Lords-with-warbands, leader decisions, wars and land redivision, sieges
+(the garrison as an AutoBattleSide of its place), the capital treasury
+(?33), faction service, ONE upkeep law with the discontent counter
+(?34/?32 — today field squads pay bread only, garrisons bread+wage, the
+player wage only), a local deserter pool. The substrate already stands:
+one soldier dictionary, one auto-battle law, threat/scent fields (CANON
+S10: «войны и стратегия бесплатно — новые читатели тех же полей»), the
+feudal graph with taxes as its first tenant.
 
 ## Related docs
 

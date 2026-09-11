@@ -160,23 +160,28 @@ void test_settlement_history_keeps_a_rolling_window() {
 // own cap overshot by nine, by the placement of the question. A town that
 // cannot take a recruit must also not pay a head for him.
 void test_garrison_never_exceeds_its_cap() {
+    // §42 Инк 7: the ceiling is the registry TARGET (population >>
+    // garrisonShift) and a day's packet is at most target >> 4 — a hole in
+    // the defense heals over days, never in one morning.
     sm::GameState gs{};
     sm::Landmark s{};
     s.type = sm::LandmarkType::City;
     s.id = 1;
-    s.population = 5000;                 // deep enough to want the full packet
+    s.population = 5000;
+    const int target =
+        sm::garrison_target_strength(s.type, s.population);   // 5000>>3 = 625
+    CHECK(target == 5000 >> 3,
+          "the garrison target is the registry law: population >> shift");
     // The maintenance law bleeds a SHORTED garrison at once (2026-08-31),
-    // and this test is about the recruiting CAP — so the fixture keeps its
-    // men fed and paid: a full purse of coin and bread on the shelf.
+    // and this test is about recruiting — keep the men fed and paid.
     s.inventory.add("coin_empire", 1 << 16);
-    s.inventory.add("bread", 1 << 13);  // > pop + garrison: everyone eats, both copies alike
-    // Fill to one below the ceiling: the state the old check waved through.
-    for (int i = 0; i < sm::kMaxGarrisonPerSettlement - 1; ++i) {
+    s.inventory.add("bread", 1 << 13);
+    // One below the target: exactly one recruit wanted.
+    for (int i = 0; i < target - 1; ++i) {
         s.garrison.push(sm::make_soldier(
             std::uint8_t(sm::NPCType::Guard), 1, std::uint32_t(1000 + i)));
     }
     gs.landmarks.push_back(s);
-    const int popBefore = gs.landmarks[0].population;
 
     sm::WorldTickRuntime runtime{};
     sm::reset_world_tick_runtime(runtime, 4242u);
@@ -185,33 +190,29 @@ void test_garrison_never_exceeds_its_cap() {
     sm::process_world_daily_ticks(gs, runtime, 1);
 
     const int after = sm::total_soldiers(gs.landmarks[0].garrison);
-    CHECK(after <= sm::kMaxGarrisonPerSettlement,
-          "a day of recruiting never carries a garrison past its own cap");
-    CHECK(after == sm::kMaxGarrisonPerSettlement,
-          "…and it does fill the last free slot — the cap is a ceiling, not a "
-          "veto on recruiting at all");
-    // Population also moves for economic reasons on the same day, so the head
-    // price is measured against a CONTROL: the same town, the same day, with a
-    // garrison already full — where recruiting cannot happen at all. The gap
-    // between the two populations is exactly the men taken.
-    const int taken = after - (sm::kMaxGarrisonPerSettlement - 1);
-    sm::GameState control{};
-    sm::Landmark full = s;
-    full.garrison.push(sm::make_soldier(
-        std::uint8_t(sm::NPCType::Guard), 1, 9999u));   // now at the ceiling
-    control.landmarks.push_back(full);
-    sm::WorldTickRuntime controlRuntime{};
-    sm::reset_world_tick_runtime(controlRuntime, 4242u);
-    controlRuntime.pendingDailyTicks = 1;
-    controlRuntime.nextDailyTickDay = 3;
-    sm::process_world_daily_ticks(control, controlRuntime, 1);
-    CHECK(total_soldiers(control.landmarks[0].garrison)
-              == sm::kMaxGarrisonPerSettlement,
-          "the control's full garrison recruits nobody");
-    CHECK(control.landmarks[0].population
-              - gs.landmarks[0].population == taken,
-          "the town pays a head only for the men it actually took");
-    (void)popBefore;
+    CHECK(after <= sm::garrison_target_strength(
+                       gs.landmarks[0].type, gs.landmarks[0].population + 1),
+          "a day of recruiting never carries a garrison past its target");
+    CHECK(after == target,
+          "…and it does fill the last free slot — the target is a ceiling, "
+          "not a veto on recruiting at all");
+    // The gradualness arm: an EMPTY garrison refills by at most target>>4 a
+    // day — the same slow heal desertion bleeds at (1/8), never instantly.
+    sm::GameState slow{};
+    sm::Landmark hollow = s;
+    hollow.garrison = sm::SoldierSquad{};
+    hollow.inventory = sm::Inventory{};
+    hollow.inventory.add("coin_empire", 1 << 16);
+    hollow.inventory.add("bread", 1 << 13);
+    slow.landmarks.push_back(hollow);
+    sm::WorldTickRuntime slowRuntime{};
+    sm::reset_world_tick_runtime(slowRuntime, 4242u);
+    slowRuntime.pendingDailyTicks = 1;
+    slowRuntime.nextDailyTickDay = 3;
+    sm::process_world_daily_ticks(slow, slowRuntime, 1);
+    const int refilled = sm::total_soldiers(slow.landmarks[0].garrison);
+    CHECK(refilled > 0 && refilled <= std::max(1, target >> 4),
+          "a hollowed garrison heals by a day-packet, never in one morning");
 }
 
 void test_many_small_advances_equal_one_big_one() {

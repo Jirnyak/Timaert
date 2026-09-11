@@ -771,7 +771,8 @@ void spawn_cell_npcs(ecs::World& w,
                      int landmarkSubjectId,
                      int macroCellX,
                      int macroCellY,
-                     int faunaCount) {
+                     int faunaCount,
+                     const SoldierSquad* garrison) {
     auto& reg = w.reg;
     const int originX = (ox + 1) * kCellSize;
     const int originY = (oy + 1) * kCellSize;
@@ -798,6 +799,52 @@ void spawn_cell_npcs(ecs::World& w,
                               MacroStockKey{landmarkSubjectId,
                                             std::int16_t(macroCellX),
                                             std::int16_t(macroCellY)});
+
+    // THE PLACE'S STANDING ARMY on its streets (§42 Инк 7): every garrison
+    // record at home embodies as a FIGHTING body of its own row and level,
+    // under the place's banner, with the Garrison loan — killed on the wall
+    // = struck from the roll through THE one settle door; out on patrol or
+    // hired away = not in this roster = not on this street. Garrison souls
+    // were paid out of the population at recruitment, so they stand BESIDE
+    // the crowd's partition, never inside it.
+    if (garrison && garrison->size() > 0 && landmarkSubjectId >= 0) {
+        Rng grng(cellSeed ^ 0x6A121501u);
+        const float centerX = float(originX) + float(kCellSize) * 0.5f;
+        const float centerY = float(originY) + float(kCellSize) * 0.5f;
+        const float radius = settlement_population_radius(
+            landmark == LandmarkType::City, landmarkPop);
+        const auto& tiles = mgr.tiles();
+        int refused = 0;
+        for (int i = 0; i < garrison->size(); ++i) {
+            const SoldierRecord& rec = (*garrison)[i];
+            if (!valid_npc_kind(rec.kind)) continue;
+            float fx = 0.0f, fy = 0.0f;
+            if (!find_city_spawn_spot(tiles, grng, centerX, centerY,
+                                      radius, fx, fy)) {
+                ++refused;
+                continue;
+            }
+            spawn_derived_body(reg,
+                BodySpec{
+                    static_cast<NPCType>(rec.kind), fx, fy,
+                    settlementFaction,
+                    normalize_soldier_level(rec.level),
+                    cellSeed ^ (rec.entityId * 2654435761u),
+                    /*combatant*/true},
+                /*faceSalt*/rec.entityId * 7919u,
+                BodyLoan::from(MacroStock::Garrison,
+                               MacroStockKey{landmarkSubjectId,
+                                             std::int16_t(macroCellX),
+                                             std::int16_t(macroCellY),
+                                             std::int32_t(rec.entityId)}));
+        }
+        if (refused > 0) {
+            std::fprintf(stderr,
+                         "[spawn] WARN garrison of landmark %d: %d of %d "
+                         "soldiers found no ground\n",
+                         landmarkSubjectId, refused, garrison->size());
+        }
+    }
 
     // THE spawn law (fauna.h): the danger byte weights the TABLE — who is
     // rolled — never the body after the pick (S12; the negative control in

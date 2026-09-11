@@ -95,7 +95,15 @@ bool run_type_table_contract() {
 // guards — carries an ecs::LightEmitter equal to its type row, seated on +Y.
 bool run_spawn_attach_contract(const sm::sub::SeamlessSubworldManager& mgr) {
     sm::ecs::World world{};
-    // Big population so the guard count is comfortably > 0 (guards = max(2, …)).
+    // Street guards are the place's GARRISON records now (§42 Инк 7) — the
+    // fixture brings a three-man wall, and every one of them must be lit.
+    sm::SoldierSquad wall{};
+    for (int i = 0; i < 3; ++i) {
+        wall.push(sm::make_soldier(
+            std::uint8_t(sm::NPCType::Guard),
+            sm::npc_def(sm::NPCType::Guard).baseLevel,
+            7000u + std::uint32_t(i)));
+    }
     sm::sub::spawn_cell_npcs(world,
                              sm::Biome::Meadow,
                              sm::FT_None,
@@ -108,7 +116,10 @@ bool run_spawn_attach_contract(const sm::sub::SeamlessSubworldManager& mgr) {
                              /*worldSeed*/0xC0FFEE11u,
                              /*settlementFaction*/
                              std::uint16_t(sm::faction_index("empire")),
-                             /*landmarkPop*/4000);
+                             /*landmarkPop*/4000,
+                             /*landmarkSubjectId*/0,
+                             /*macroCellX*/0, /*macroCellY*/0,
+                             /*faunaCount*/-1, &wall);
 
     const sm::NpcTypeDef& guardDef = sm::npc_def(sm::NPCType::Guard);
 

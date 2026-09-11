@@ -65,6 +65,11 @@ enum class MacroStock : std::uint8_t {
                      //   + GameState::faunaOverrides — the hunted delta)
     CropCount,       // the standing wheat of one cell (fertility-derived
                      //   estimate − GameState::cropOverrides harvest scar)
+    Garrison,        // the standing army of a NAMED place (§42 Инк 7:
+                     //   Landmark::garrison — the roster whose owner is a
+                     //   landmark, not a squad; killed on the wall =
+                     //   struck from the roll, the same strike-through
+                     //   law the Roster row runs)
     Count,
 };
 

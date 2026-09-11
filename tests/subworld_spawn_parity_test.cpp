@@ -334,7 +334,17 @@ bool run_city_population_projection_case(
     const sm::sub::SeamlessSubworldManager& mgr) {
     sm::ecs::World world{};
     // City in the CENTRE window cell (ox=oy=0) — off-centre cities are covered
-    // by the carry-across case; here we lock the citizen role mix.
+    // by the carry-across case; here we lock the citizen role mix. The
+    // GUARDS are the place's own GARRISON records now (§42 Инк 7): the
+    // street shows exactly who is on the wall, so the fixture brings a
+    // five-man wall and expects five fighting guards.
+    sm::SoldierSquad wall{};
+    for (int i = 0; i < 5; ++i) {
+        wall.push(sm::make_soldier(
+            std::uint8_t(sm::NPCType::Guard),
+            sm::npc_def(sm::NPCType::Guard).baseLevel,
+            4000u + std::uint32_t(i)));
+    }
     sm::sub::spawn_cell_npcs(world,
                              sm::Biome::Meadow,
                              sm::FT_None,
@@ -347,7 +357,9 @@ bool run_city_population_projection_case(
                              /*worldSeed*/0xFACEB00Cu,
                              std::uint16_t(sm::faction_index("empire")),
                              4000,
-                             0);
+                             0,
+                             /*macroCellX*/0, /*macroCellY*/0,
+                             /*faunaCount*/-1, &wall);
 
     int count = 0;
     int guards = 0;
@@ -386,7 +398,7 @@ bool run_city_population_projection_case(
         }
     }
 
-    return count >= 24 && guards >= 2 && merchants >= 1 && woodcutters >= 1;
+    return count >= 24 && guards == 5 && merchants >= 1 && woodcutters >= 1;
 }
 
 // A place decides HOW MANY people stand in it — never how strong each of them is

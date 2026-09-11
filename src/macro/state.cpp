@@ -10,6 +10,7 @@
 #include "macro/language.h"
 #include "macro/npc_ai.h"          // kGathererReach — the field's press radius
 #include "macro/settlement_score.h"
+#include "macro/world_tick.h"      // garrison_target_strength (§42 Инк 7)
 #include "core/rng.h"
 #include "core/torus.h"
 #include <algorithm>
@@ -154,7 +155,21 @@ void populate_landmarks_from_politik(GameState& gs,
         // 200+rng%800 fallback was the last population dice standing.
         s.population  = std::max(1, c.population);
         s.mood        = SettlementMood::Stable;
-        s.garrison    = default_squad();
+        // Born WITH its army (§42 Инк 7, the «born mid-life» precedent the
+        // inventory set below): the registry target (pop >> garrisonShift),
+        // souls honestly paid out of the population, identities from THE
+        // one macro ordinal issuer (the boot NPC spawn continues it).
+        {
+            Rng grng(gs.worldSeed ^ 0x6A121500u
+                     ^ (std::uint32_t(s.id) * 2654435761u));
+            auto gr = generate_garrison(
+                garrison_target_strength(s.type, s.population),
+                [&grng] { return grng.next_f01(); },
+                gs.nextMacroSpawnOrdinal);
+            gs.nextMacroSpawnOrdinal += std::uint32_t(gr.garrison.size());
+            s.garrison = std::move(gr.garrison);
+            s.population = std::max(1, s.population - gr.popCost);
+        }
         // Born mid-life (owner): the market has wares on day one, and the
         // town has stocks to live on while the first caravans find their legs.
         // (The old EconomyState "archetype" strings died with it, W2b-4 —
@@ -315,6 +330,18 @@ void populate_landmarks_from_politik(GameState& gs,
                                     % std::uint32_t(kVillageBornSpread));
             vil.mood          = SettlementMood::Stable;
             vil.nearestCityId = s.id;
+            // The village's own small army, by the SAME one law (§42 Инк 7).
+            {
+                Rng grng(gs.worldSeed ^ 0x6A121500u
+                         ^ (std::uint32_t(vil.id) * 2654435761u));
+                auto gr = generate_garrison(
+                    garrison_target_strength(vil.type, vil.population),
+                    [&grng] { return grng.next_f01(); },
+                    gs.nextMacroSpawnOrdinal);
+                gs.nextMacroSpawnOrdinal += std::uint32_t(gr.garrison.size());
+                vil.garrison = std::move(gr.garrison);
+                vil.population = std::max(1, vil.population - gr.popCost);
+            }
             seed_landmark_inventory(
                 vil.inventory, vil.population,
                 EconSite(landmark_def(vil.type).econSite),

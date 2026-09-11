@@ -185,7 +185,14 @@ void spawn_cell_npcs(ecs::World& w,
                      // row). Each one is stamped with the cell's FaunaCount
                      // debt, so a kill thins the cell for good; -1 = no macro
                      // context wired (tests/harness) = the old unbounded roll.
-                     int faunaCount = -1);
+                     int faunaCount = -1,
+                     // The place's STANDING ARMY at home (§42 Инк 7:
+                     // Landmark::garrison — the roster whose owner is a
+                     // landmark). Every record embodies as a fighting body
+                     // with the Garrison loan: killed on the wall = struck
+                     // from the roll; out on patrol / hired away = not in
+                     // this roster = not on the street. nullptr = none.
+                     const SoldierSquad* garrison = nullptr);
 
 // ── Dungeon residents (sub/dgn interiors) ────────────────────────────────
 //

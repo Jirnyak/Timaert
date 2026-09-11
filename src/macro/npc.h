@@ -940,28 +940,33 @@ inline int npc_xp_reward(NPCType t, int level) {
     return base + (safeLevel - 1) * 5;
 }
 
-inline std::uint32_t garrison_soldier_id_base(int settlementId, int day) {
-    const std::uint32_t sid = std::uint32_t(std::max(0, settlementId)) & 0x7FFu;
-    const std::uint32_t d = std::uint32_t(std::max(0, day)) & 0x7FFFu;
-    return 0x80000000u | (sid << 20) | (d << 5);
-}
+// (garrison_soldier_id_base — the high-bit garrison id space — died with
+// §42 Инк 7: a garrison soul draws its identity from THE one macro
+// ordinal issuer (gs.nextMacroSpawnOrdinal), same as every other soldier.
+// One soul, one name space — a record that walked garrison → patrol →
+// garrison keeps one identity for its whole life.)
 
 struct GarrisonResult { SoldierSquad garrison; int popCost = 0; };
 
+// One recruiting packet of a place's own army (§42 Инк 7, owner: «гарнизон
+// = армия ландмарка»). `budget` = how many souls to raise — the CALLER
+// derives it from the registry law (population >> LandmarkDef::
+// garrisonShift, minus what already stands); the old law here — √pop×0.3
+// capped at 10 — sized a tavern recruit pool, not a defense force.
+// Composition is a soldiery with a recruit tail: 60 % Guard / 25 %
+// Woodcutter / 15 % Peasant (the hire pool lives on inside the army,
+// not the other way round). `idBase` = the first ordinal of a run drawn
+// from THE one issuer; the caller advances the issuer by the packet size.
 template <class Rng01>
-inline GarrisonResult generate_garrison(int population, Rng01&& rng,
-                                        std::uint32_t idBase = 1u) {
+inline GarrisonResult generate_garrison(int budget, Rng01&& rng,
+                                        std::uint32_t idBase) {
     GarrisonResult r{};
-    if (population < 20) return r;
-    int budget = int(std::sqrt(float(population)) * 0.3f);
-    if (budget > 10) budget = 10;
     if (budget <= 0) return r;
     for (int i = 0; i < budget; ++i) {
         const float roll = rng();
-        NPCType kind = NPCType::Peasant;
-        if      (roll < 0.55f) kind = NPCType::Peasant;
-        else if (roll < 0.85f) kind = NPCType::Woodcutter;
-        else                   kind = NPCType::Guard;
+        NPCType kind = NPCType::Guard;
+        if      (roll >= 0.60f && roll < 0.85f) kind = NPCType::Woodcutter;
+        else if (roll >= 0.85f)                 kind = NPCType::Peasant;
         const int level = npc_def(kind).baseLevel;
         if (!r.garrison.push(make_soldier(
                 static_cast<std::uint8_t>(kind), level,

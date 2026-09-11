@@ -312,12 +312,17 @@ void test_count_derives_from_capacity() {
                       "steppe");
     // Souls are the OWNER'S SCALE (CANON S25, 2026-08-31): a hundred-odd
     // per village, base + a seed roll of the spread — never the score and
-    // never the old 30+rng%90 dice.
+    // never the old 30+rng%90 dice. Since §42 Инк 7 a share of the born
+    // souls stands in the village's own GARRISON at birth — moved, not
+    // vanished: the bijection witness sums both sides.
     for (const auto* vp : villages) {
         const auto& v = *vp;
-        CHECK(v.population >= kVillageBornBase
-                  && v.population < kVillageBornBase + kVillageBornSpread,
-              "a village is born at the owner's scale: base + seed spread");
+        const int born = v.population + total_soldiers(v.garrison);
+        CHECK(born >= kVillageBornBase
+                  && born < kVillageBornBase + kVillageBornSpread,
+              "a village is born at the owner's scale, army included");
+        CHECK(total_soldiers(v.garrison) > 0,
+              "a village is born with its own small army (§42 Инк 7)");
     }
 }
 

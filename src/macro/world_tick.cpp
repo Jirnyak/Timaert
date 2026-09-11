@@ -175,6 +175,11 @@ void relay_econ_fact_(void* user, const EconFact& fact) {
 }
 
 // ── Settlement daily tick ─────────────────────────────────────
+// The garrison's day (§42 Инк 7) — ONE law for every kind that keeps one;
+// bodies below tick_settlements_, shared by both loops.
+void garrison_upkeep_(GameState& gs, Landmark& s, int day);
+void garrison_recruit_(GameState& gs, Landmark& s, WorldTickRuntime& runtime);
+
 void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
                        EconFactSink sink, void* user) {
     for (auto& s : gs.landmarks) {
@@ -201,47 +206,7 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
                              faction_index_for_kingdom(gs.politik,
                                                        s.kingdomIdx))));
 
-        // ── The garrison's MAINTENANCE (owner 2026-08-30/31; CANON S10) ──
-        // TWO PARALLEL NEEDS, one consequence: an army wants BOARD and PAY —
-        // short of either, an eighth of the roster walks the same day.
-        // BOARD is daily (bread off the town store — the person-day anchor).
-        // PAY is SEASONAL, on the town's own pay-day (ordinal % season — the
-        // world's one slow cycle, «единые циклы — легче балансить»), and the
-        // paid wage leaves the economy INTO THE LOOT POOL: spent soldiers'
-        // coin is lost money by the owner's word, and the pool already IS
-        // the world's lost-value stock — ruins and dungeons will return it.
-        //
-        // ДОМА — ВСЁ СОДЕРЖАНИЕ >>1 (владелец 2026-09-02: «гарнизон платит
-        // пол цены содержания, как в Mount & Blade» — и жалованье, И
-        // провиант). В ПОЛЕ — полное: вылазка ест целый хлеб из своей сумки
-        // (feed_squads_daily), и эта разница — «доплата за поле» — и есть
-        // цена похода в скоре патрульного аукциона (npc_ai.cpp).
-        if (total_soldiers(s.garrison) > 0) {
-            bool shorted = false;
-            const int breadIdx =
-                commodity_item_index(commodity_index("bread"));
-            const int need = total_soldiers(s.garrison) >> 1;
-            const int can = std::min(need, s.inventory.count_of(breadIdx));
-            if (can > 0) s.inventory.remove_of(breadIdx, can);
-            shorted = shorted || can < need;
-            if (day % kDaysPerSeason == s.id % kDaysPerSeason) {
-                const int wage =
-                    (calculate_squad_upkeep(s.garrison) * kDaysPerSeason)
-                    >> 1;
-                const int paid = wallet_spend_up_to(s.inventory, wage);
-                gs.lootPoolValue += paid;
-                shorted = shorted || paid < wage;
-            }
-            if (shorted) {
-                int walkers = std::max(1, total_soldiers(s.garrison) / 8);
-                while (walkers-- > 0 && total_soldiers(s.garrison) > 0) {
-                    const int last = s.garrison.size() - 1;
-                    const SoldierRecord walker = s.garrison[last];
-                    if (!gs.deserterPool.push(walker)) break;
-                    s.garrison.remove_at(last);
-                }
-            }
-        }
+        garrison_upkeep_(gs, s, day);
 
         // The city's suzerain is its kingdom's capital — a capital owes
         // nobody above itself.
@@ -272,30 +237,75 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
                                  headsBefore);
         }
 
-        if (s.population >= 20
-            && garrison_wants_recruits(total_soldiers(s.garrison))) {
-            auto gr = generate_garrison(s.population,
-                [&runtime] { return rand01_(runtime); },
-                garrison_soldier_id_base(s.id, day));
-            if (gr.popCost > 0) {
-                // The cap is checked BEFORE the packet is drawn, so a garrison
-                // at 63 could take a batch of ten and stand at 73 — its own
-                // ceiling overshot by design of the check's placement. Take
-                // only what fits, and pay POPULATION only for the men actually
-                // taken: the town keeps the heads it did not give up.
-                const int room = std::max(
-                    0, kMaxGarrisonPerSettlement - total_soldiers(s.garrison));
-                int taken = 0;
-                for (const SoldierRecord& rec : gr.garrison) {
-                    if (taken >= room || !s.garrison.push(rec)) break;
-                    ++taken;
-                }
-                s.population = std::max(0, s.population - taken);
-            }
-        }
+        garrison_recruit_(gs, s, runtime);
 
         push_history_(s.history, day, s.population);
     }
+}
+
+// ── The garrison's day — ONE law for every kind that keeps one (§42) ─────
+// (Defined below tick_settlements_, used by both loops — see the block.)
+// Gated by the registry row's garrisonShift, never by the landmark's name:
+// the City-only branches this replaces were the same class of gate the
+// population door wore for two refactors.
+//
+// UPKEEP (owner 2026-08-30/31; CANON S10): an army wants BOARD and PAY —
+// short of either, an eighth of the roster walks the same day. BOARD is
+// daily (bread off the place's store — the person-day anchor). PAY is
+// SEASONAL, on the place's own pay-day (ordinal % season), and the paid
+// wage leaves the economy INTO THE LOOT POOL. ДОМА — ВСЁ СОДЕРЖАНИЕ >>1
+// («гарнизон платит пол цены содержания, как в Mount & Blade»); в поле —
+// полное, и разница — «доплата за поле» в скоре патрульного аукциона.
+void garrison_upkeep_(GameState& gs, Landmark& s, int day) {
+    if (landmark_def(s.type).garrisonShift == 0xFFu) return;
+    if (total_soldiers(s.garrison) <= 0) return;
+    bool shorted = false;
+    const int breadIdx = commodity_item_index(commodity_index("bread"));
+    const int need = total_soldiers(s.garrison) >> 1;
+    const int can = std::min(need, s.inventory.count_of(breadIdx));
+    if (can > 0) s.inventory.remove_of(breadIdx, can);
+    shorted = shorted || can < need;
+    if (day % kDaysPerSeason == s.id % kDaysPerSeason) {
+        const int wage =
+            (calculate_squad_upkeep(s.garrison) * kDaysPerSeason) >> 1;
+        const int paid = wallet_spend_up_to(s.inventory, wage);
+        gs.lootPoolValue += paid;
+        shorted = shorted || paid < wage;
+    }
+    if (shorted) {
+        int walkers = std::max(1, total_soldiers(s.garrison) / 8);
+        while (walkers-- > 0 && total_soldiers(s.garrison) > 0) {
+            const int last = s.garrison.size() - 1;
+            const SoldierRecord walker = s.garrison[last];
+            if (!gs.deserterPool.push(walker)) break;
+            s.garrison.remove_at(last);
+        }
+    }
+}
+
+// RECRUITING toward the registry target (population >> garrisonShift, §42
+// Инк 7): a day's packet is at most target >> 4 — a hole cut into the
+// defense heals over DAYS, the same gradualness desertion bleeds at (1/8),
+// never in one morning. Souls move population → garrison; identities come
+// from THE one macro ordinal issuer (the high-bit garrison id space died).
+void garrison_recruit_(GameState& gs, Landmark& s,
+                       WorldTickRuntime& runtime) {
+    if (s.population < 20) return;
+    const int target = garrison_target_strength(s.type, s.population);
+    const int current = total_soldiers(s.garrison);
+    if (current >= target) return;
+    const int packet =
+        std::min(target - current, std::max(1, target >> 4));
+    auto gr = generate_garrison(packet,
+                                [&runtime] { return rand01_(runtime); },
+                                gs.nextMacroSpawnOrdinal);
+    gs.nextMacroSpawnOrdinal += std::uint32_t(gr.garrison.size());
+    int taken = 0;
+    for (const SoldierRecord& rec : gr.garrison) {
+        if (!s.garrison.push(rec)) break;
+        ++taken;
+    }
+    s.population = std::max(0, s.population - taken);
 }
 
 // ── Village daily tick ────────────────────────────────────────
@@ -303,7 +313,6 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
 // farmers hauling real units into this same inventory (npc_ai.cpp).
 void tick_villages_(GameState& gs, int day, WorldTickRuntime& runtime,
                     EconFactSink sink, void* user) {
-    (void)runtime;
     for (auto& v : gs.landmarks) {
         if (v.type != LandmarkType::Village) continue;
         EconFactRelay relay{sink, user, v.id};
@@ -319,6 +328,11 @@ void tick_villages_(GameState& gs, int day, WorldTickRuntime& runtime,
                              ? std::max(1, v.population / kHeadsPerCityWorker)
                              : 0,
                          v.population, rs, ru);
+
+        // The village keeps its own small army now (§42 Инк 7, the ONE
+        // garrison law by column): board and pay before the day settles,
+        // recruits after — the same two calls the city loop makes.
+        garrison_upkeep_(gs, v, day);
 
         // The village's suzerain is its market city (CANON S24).
         assess_tithe_(v, day, landmark_by_id(gs, v.nearestCityId) != nullptr);
@@ -338,6 +352,7 @@ void tick_villages_(GameState& gs, int day, WorldTickRuntime& runtime,
             record_landmark_fact(gs, FactKind::Died, v.id, v.x, v.y,
                                  headsBefore);
         }
+        garrison_recruit_(gs, v, runtime);
         push_history_(v.history, day, v.population);
     }
 }

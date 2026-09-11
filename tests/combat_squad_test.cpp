@@ -79,12 +79,10 @@ int main() {
         return fail("soldier death removal did not remove exactly one record");
     }
 
-    const std::uint32_t dayOneBase = sm::garrison_soldier_id_base(12, 1);
-    const std::uint32_t dayTwoBase = sm::garrison_soldier_id_base(12, 2);
-    if (dayOneBase == dayTwoBase
-        || dayOneBase + 9u == dayTwoBase
-        || sm::npc_hire_price_base(sm::NPCType::Guard) != expectedPrice) {
-        return fail("garrison id base or preview hire price is unstable");
+    // (garrison_soldier_id_base died with §42 Инк 7 — garrison souls draw
+    // from THE one macro ordinal issuer now, like every other soldier.)
+    if (sm::npc_hire_price_base(sm::NPCType::Guard) != expectedPrice) {
+        return fail("preview hire price is unstable");
     }
 
     // The discount parameter is the derived sheet's tradeDiscountPct column
@@ -96,7 +94,9 @@ int main() {
     }
 
     FixedRng rng{};
-    const sm::GarrisonResult generated = sm::generate_garrison(900, rng, 5000u);
+    // §42 Инк 7: the argument is the recruiting BUDGET now (the caller
+    // derives it from population >> the registry shift), not a population.
+    const sm::GarrisonResult generated = sm::generate_garrison(9, rng, 5000u);
     if (generated.garrison.empty()) {
         return fail("population garrison generator returned empty squad");
     }

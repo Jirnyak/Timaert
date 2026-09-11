@@ -74,8 +74,8 @@ struct LandmarkCrewRow {
 // the street spawner («первые N — стража» as code). A role row is one such
 // post as DATA: the crowd's first bodies take the rows' types, in order,
 // `max(min, div ? crowd/div : 0)` each; the rest roll pick_crowd_row. The
-// City guard rows die into garrison records when §42's Инк 7 lands (street
-// guards = the place's own garrison, никаких бесплатных тел).
+// Guard rows DIED with Инк 7: street guards are the place's own GARRISON
+// records now (никаких бесплатных тел — убил стража, в гарнизоне дыра).
 struct LandmarkCrowdRole {
     NPCType      npc = NPCType::Peasant;
     std::uint8_t div = 0;   // one body per `div` souls of the crowd; 0 = none
@@ -160,6 +160,16 @@ struct LandmarkDef {
     // never be mistaken for "a kind that does not exist" — the class of
     // silence that kept half this registry stillborn for two refactors.
     bool             worldPlaces = false;
+    // ── The GARRISON law (§42 Инк 7, owner: «гарнизон = армия ландмарка»)
+    // Target strength = population >> this; 0xFF = the kind keeps no
+    // garrison (the honest default — a spire's «garrison» is its
+    // population, Инк 4). The garrison is the place's OWN army in the ONE
+    // roster form (SoldierSquad, S4: поимённо): born with the place, fed
+    // and paid by it, thinned by street deaths through the Garrison stock,
+    // hired from, patrolled out of. The old law — √pop×0.3 capped at 10 —
+    // sized a tavern recruit pool, not a defense force, and the pop/10
+    // street-guard fiction painted over it.
+    std::uint8_t     garrisonShift = 0xFF;
     // Which production TABLE this place works its benches as — the ordinal
     // of EconSite (macro/econ_day.h; world_tick.cpp cross-checks the pairing
     // where both vocabularies are visible). -1 = no benches: a spire or a
@@ -202,26 +212,24 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
     // (CANON S10, 2026-09-02): патрульный аукцион открывает её только когда
     // поле угрозы предъявило горячую округу дороже похода — тихий город
     // держит гарнизон дома за полцены содержания.
-    {LandmarkType::City,    "city",    "City",      0,  76, '#', 0xFFE7D27Au, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.5f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*inside*/0, /*born*/0, 0, /*places*/true, /*econ*/1,
+    {LandmarkType::City,    "city",    "City",      0,  76, '#', 0xFFE7D27Au, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.5f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*inside*/0, /*born*/0, 0, /*places*/true, /*garrison*/3, /*econ*/1,
      /*labour*/3, {{NPCType::TaxCollector, CrewGate::Suzerain, /*solo*/true},
                    {NPCType::Guard, CrewGate::Auction, /*solo*/false,
                     /*garrison*/true}}, 2,
-     /*crowdRoles*/{{NPCType::Guard, /*div*/10, /*min*/2},
-                    {NPCType::Merchant, 0, 1},
-                    {NPCType::Woodcutter, 0, 1}}, 3 },
+     /*crowdRoles*/{{NPCType::Merchant, 0, 1},
+                    {NPCType::Woodcutter, 0, 1}}, 2 },
     // Артели деревни — N ОДИНАКОВЫХ крестьянских строк (снос профессий,
     // CANON S10): каждая берёт поручение своим броском рулетки аукциона —
     // диверсификация без координации. N = одновременность артелей, крутилка
     // дубль-прогона (4 ≈ поле+лес+жила+сбыт живого мира; строки Vendor и
     // шести профессий умерли — их работу раздаёт аукцион).
-    {LandmarkType::Village, "village", "Village",   0, 101, 'v', 0xFFCCB068u, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.0f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*inside*/0, /*born*/0, 0, /*places*/true, /*econ*/0,
+    {LandmarkType::Village, "village", "Village",   0, 101, 'v', 0xFFCCB068u, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.0f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*inside*/0, /*born*/0, 0, /*places*/true, /*garrison*/3, /*econ*/0,
      /*labour*/1, {{NPCType::Peasant, CrewGate::Auction},
                    {NPCType::Peasant, CrewGate::Auction},
                    {NPCType::Peasant, CrewGate::Auction},
                    {NPCType::Peasant, CrewGate::Auction}}, 4,
-     /*crowdRoles*/{{NPCType::Guard, /*div*/10, /*min*/1},
-                    {NPCType::Merchant, 0, 1},
-                    {NPCType::Woodcutter, 0, 1}}, 3 },
+     /*crowdRoles*/{{NPCType::Merchant, 0, 1},
+                    {NPCType::Woodcutter, 0, 1}}, 2 },
     // Spire wild fauna returned to the GROUND (§42 Инк 5): its demons are
     // its POPULATION now — the mountain's own beasts roam the slopes, and
     // clearing the tower can never again be ambiguous between garrison and

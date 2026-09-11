@@ -26,12 +26,23 @@ struct WorldTickResult {
     bool dailyBudgetExhausted = false;
 };
 
-// A settlement's garrison recruits daily but nothing ever drains it; without
-// a ceiling it crossed the save-format guard (kMaxSoldiers=8192) around game
-// day 820 and silently broke the WHOLE save (audit II.4). Hard cap, po2.
-inline constexpr int kMaxGarrisonPerSettlement = 64;
-inline bool garrison_wants_recruits(int currentSoldiers) {
-    return currentSoldiers < kMaxGarrisonPerSettlement;
+// The garrison's TARGET strength (§42 Инк 7, owner: «гарнизон = армия
+// ландмарка», «у городов должны быть сотни»): population >> the registry
+// row's own garrisonShift; a kind whose column is 0xFF keeps none. The
+// old ceiling — kMaxGarrisonPerSettlement = 64, and the √pop×0.3-cap-10
+// packet under it — sized a tavern recruit pool, not a defense force. The
+// target is population-bound by construction (a shift of a bounded
+// number), so the runaway that once crossed the save guard (audit II.4)
+// cannot recur; the roster's own capacity (kMaxSquadMembers) is the one
+// physical wall left, and push refuses out loud at it.
+inline int garrison_target_strength(LandmarkType type, int population) {
+    const std::uint8_t shift = landmark_def(type).garrisonShift;
+    if (shift == 0xFFu || population <= 0) return 0;
+    return population >> shift;
+}
+inline bool garrison_wants_recruits(LandmarkType type, int population,
+                                    int currentSoldiers) {
+    return currentSoldiers < garrison_target_strength(type, population);
 }
 
 
