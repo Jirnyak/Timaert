@@ -16,15 +16,54 @@
 #pragma once
 #include <imgui.h>
 
+#include <cstdio>
 #include <string>
 
 #include "macro/attributes.h"
 #include "macro/character_sheet.h"
 #include "macro/currency.h"
 #include "macro/items.h"
+#include "macro/player_entity.h"   // player_effective_sheet — the haggler door
+#include "macro/squad.h"           // standing_bonuses_of
 #include "macro/state.h"
 
 namespace sm::ui {
+
+// ── THE one trade wrapper (Инк 5 меню-сессии, 2026-09-11) ────────────────
+// The DEAL was always one (barter_swap); what had split in two was the
+// WRAPPER around it — the NPC window and the settlement tab each kept its
+// own statics, its own five-line haggler resolve and its own copy of the
+// two-column layout. These three pieces are that wrapper, once:
+//   · PlayerHaggler / player_haggler — who is shopping, through the one
+//     effective-sheet door;
+//   · BarterWrapState — the staging state one counter keeps (each open
+//     window owns ONE: two counters can be open at once, their staged
+//     packages must not alias);
+//   · draw_barter_body — the two shelves and the one Deal button. The
+//     caller supplies only what genuinely differs: the shelf, its label,
+//     the two price laws (demand is the SUBJECT's business: a town prices
+//     by econSite + population, a lone trader has none) and the fact to
+//     record when the deal settles.
+
+struct PlayerHaggler {
+    CharacterSheet sheet{};     // the EFFECTIVE sheet (phase 4)
+    BonusTotals    standing{};  // same totals, for the derived carry cells
+    int cha = 0;
+    int trade = 0;              // the Trade rank haggling beside CHA (ph. 6)
+};
+
+inline PlayerHaggler player_haggler(ecs::World& w) {
+    PlayerHaggler h;
+    const entt::entity squad = player_squad_entity(w);
+    if (squad != entt::null) h.standing = standing_bonuses_of(w, squad);
+    h.sheet = player_effective_sheet(w);
+    h.cha   = h.sheet.attributes.of(AttributeId::Cha);
+    h.trade = h.sheet.skills.of(SkillId::Trade);
+    return h;
+}
+
+// (BarterWrapState — the third piece — is declared below BarterState,
+// which it wraps.)
 
 // `sheet` is the shopper's EFFECTIVE one (phase 4) — the caller owns the door
 // (player_effective_sheet); this line just prints what that back can hold.
@@ -117,6 +156,32 @@ struct BarterState {
     BarterPackage give;   // the player → them
     void clear() { take.clear(); give.clear(); }
     bool empty() const { return take.empty() && give.empty(); }
+};
+
+// One counter's whole wrapper state (Инк 5): the staged package, the
+// Amount step, the receipt line and whose counter it is. Each open trade
+// window owns ONE — two counters can be open at once, their staged
+// packages must not alias.
+struct BarterWrapState {
+    BarterState barter{};
+    int  amount = 1;            // shared staging step (Amount)
+    char message[160] = "";     // the last deal's receipt line
+    int  key = -1;              // whose counter this staging belongs to
+
+    // Another counterparty = another deal: drop the message AND the
+    // staged package (the law both old wrappers spelled by hand).
+    void reset(int newKey) {
+        key = newKey;
+        message[0] = '\0';
+        barter.clear();
+    }
+    void sync_to(int newKey) {
+        if (key != newKey) reset(newKey);
+    }
+    void set_deal_message(int gave, int took) {
+        std::snprintf(message, sizeof(message),
+                      "Deal: gave %d g, received %d g.", gave, took);
+    }
 };
 
 // Lines are keyed by SLOT of the source shelf (currency.h BarterLine —
@@ -259,6 +324,38 @@ inline bool draw_barter_deal_button(BarterState& st,
     if (!clearable) ImGui::EndDisabled();
     if (dealt) st.clear();
     return dealt;
+}
+
+// The BODY every counter shares: receipt line, the two shelves in two
+// columns, the one Deal button. `onDeal(gave, took)` fires on a settled
+// package — the caller records ITS fact (a squad's ordinal, a landmark's
+// id) and nothing else; the receipt message writes itself.
+template <class BuyFn, class SellFn, class OnDeal>
+inline void draw_barter_body(const char* stockLabel,
+                             BarterWrapState& st,
+                             Inventory& playerBag, Inventory& shelf,
+                             BuyFn buyUnit, SellFn sellUnit, OnDeal onDeal) {
+    if (st.message[0] != '\0') {
+        ImGui::Spacing();
+        ImGui::TextWrapped("%s", st.message);
+    }
+    ImGui::Separator();
+    ImGui::Columns(2, "barter_cols", true);
+    ImGui::TextUnformatted(stockLabel);
+    const int takeValue = draw_barter_column("##shelf", shelf,
+                                             st.barter.take, st.amount,
+                                             buyUnit);
+    ImGui::NextColumn();
+    ImGui::TextUnformatted("Your inventory");
+    const int giveValue = draw_barter_column("##player_shelf", playerBag,
+                                             st.barter.give, st.amount,
+                                             sellUnit);
+    ImGui::Columns(1);
+    if (draw_barter_deal_button(st.barter, playerBag, shelf,
+                                giveValue, takeValue)) {
+        st.set_deal_message(giveValue, takeValue);
+        onDeal(giveValue, takeValue);
+    }
 }
 
 } // namespace sm::ui

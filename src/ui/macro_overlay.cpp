@@ -606,10 +606,9 @@ inline int wrap_chebyshev(int d, int period) {
 entt::entity g_talk_npc = entt::null;
 const char*  g_talk_line = nullptr;
 entt::entity g_trade_npc = entt::null;
-entt::entity g_trade_message_npc = entt::null;
-char         g_trade_message[160] = "";
-int          g_trade_amount = 1;   // shared staging step (Amount)
-BarterState  g_npc_barter;         // the staged package deal
+// The ONE wrapper state of this counter (trade_widgets.h, Инк 5): staged
+// package + Amount + receipt, keyed by the counterparty entity.
+BarterWrapState g_npcTrade;
 // The universal interaction menu's subject (меню-сессия): kind == None
 // doubles as "no menu". Transient UI state, never save material.
 MapSubject   g_menu_subject{};
@@ -623,9 +622,7 @@ void clear_talk_popup() {
 
 void clear_trade_popup() {
     g_trade_npc = entt::null;
-    g_trade_message_npc = entt::null;
-    g_trade_message[0] = '\0';
-    g_npc_barter.clear();
+    g_npcTrade.reset(-1);
 }
 
 const char* npc_display_name(const NpcTypeDef& def, const ecs::NpcCharacter& ch) {
@@ -659,25 +656,6 @@ void sanitize_popup_state(const ecs::World& w) {
         && !live_npc_entity(w, g_menu_subject.squad)) {
         clear_interaction_menu();
     }
-}
-
-// Another trader = another deal: drop the message AND the staged package.
-void sync_trade_message_for(entt::entity e) {
-    if (g_trade_message_npc == e) return;
-    g_trade_message_npc = e;
-    g_trade_message[0] = '\0';
-    g_npc_barter.clear();
-}
-
-void reset_trade_message_for(entt::entity e) {
-    g_trade_message_npc = e;
-    g_trade_message[0] = '\0';
-    g_npc_barter.clear();
-}
-
-void set_deal_message(int gave, int took) {
-    std::snprintf(g_trade_message, sizeof(g_trade_message),
-                  "Deal: gave %d g, received %d g.", gave, took);
 }
 
 // A completed deal with a squad is a FACT of the world (S20.1) — the same
@@ -747,7 +725,7 @@ int trade_overlay_sell_price(int baseValue, int charisma, int bargaining,
 
 void open_npc_trade_panel(entt::entity npc) {
     clear_talk_popup();
-    reset_trade_message_for(npc);
+    g_npcTrade.reset(int(entt::to_integral(npc)));
     g_trade_npc = npc;
 }
 
@@ -1230,7 +1208,7 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                 // (CHA reaches every price through the one formula since the
                 // 2026-09-03 sweep: trade_price → cha_trade_discount, the
                 // same helper the derived sheet column reads.)
-                sync_trade_message_for(g_trade_npc);
+                g_npcTrade.sync_to(int(entt::to_integral(g_trade_npc)));
                 ImGui::SetNextWindowPos(ImVec2(float(viewW) * 0.5f, 190.0f),
                                         ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.0f));
                 ImGui::SetNextWindowSize(ImVec2(560, 420), ImGuiCond_FirstUseEver);
@@ -1240,23 +1218,16 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                     playerBagPtr ? *playerBagPtr : playerBagFallback;
                 if (ImGui::Begin("NPC Trade", nullptr,
                                  ImGuiWindowFlags_NoCollapse)) {
-                    // The EFFECTIVE sheet haggles and carries (phase 4) —
-                    // same door as the settlement counter (overlays.cpp).
-                    const entt::entity tradeSquad = player_squad_entity(w);
-                    const BonusTotals tradeStanding = tradeSquad != entt::null
-                        ? standing_bonuses_of(w, tradeSquad) : BonusTotals{};
-                    const CharacterSheet effTrade =
-                        player_effective_sheet(w);
-                    const int chaEff =
-                        effTrade.attributes.of(AttributeId::Cha);
-                    // ...and his TRADE rank haggles beside it (phase 6).
-                    const int tradeEff =
-                        effTrade.skills.of(SkillId::Trade);
+                    // ONE wrapper (Инк 5): the haggler, the state and the
+                    // body come from trade_widgets.h — this site keeps only
+                    // its price laws (a lone trader has NO town demand: his
+                    // scarcity is his own shelf) and its fact.
+                    const PlayerHaggler h = player_haggler(w);
                     ImGui::Text("%s  Coin %d", npcName,
                                 wallet_value(playerBag));
-                    draw_trade_carry_line(effTrade, playerBag, tradeStanding);
+                    draw_trade_carry_line(h.sheet, playerBag, h.standing);
                     draw_counterparty_gold(bag.inv);
-                    draw_trade_amount_input(&g_trade_amount);
+                    draw_trade_amount_input(&g_npcTrade.amount);
                     if (traits && traits->count > 0) {
                         ImGui::SameLine();
                         ImGui::TextDisabled("Traits:");
@@ -1265,25 +1236,13 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                             ImGui::TextDisabled("%s", npc_trait_label(traits->traits[ti]));
                         }
                     }
-                    if (g_trade_message[0] != '\0') {
-                        ImGui::Spacing();
-                        ImGui::TextWrapped("%s", g_trade_message);
-                    }
-                    ImGui::Separator();
-
-                    // Price FROM STOCK at POST-TRADE quantity — a lone
-                    // trader has no town demand: his scarcity is his own
-                    // shelf. Coin never reaches these lambdas (face value
-                    // inside draw_barter_column). The base is THE contextual
-                    // price of the INSTANCE (value_of — affixes priced, the
-                    // bare twin cheaper); scarcity still counts the KIND.
                     const auto buyUnit = [&](const ItemRef& ref,
                                              const ItemDef& def, int n) {
                         (void)def;
                         return trade_overlay_buy_price(
                             stock_price(value_of(ref),
                                         bag.inv.count_of(int(ref.def)) - n, 0),
-                            chaEff, tradeEff, traits);
+                            h.cha, h.trade, traits);
                     };
                     const auto sellUnit = [&](const ItemRef& ref,
                                               const ItemDef& def, int n) {
@@ -1291,31 +1250,17 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                         return trade_overlay_sell_price(
                             stock_price(value_of(ref),
                                         bag.inv.count_of(int(ref.def)) + n, 0),
-                            chaEff, tradeEff, traits);
+                            h.cha, h.trade, traits);
                     };
-
-                    ImGui::Columns(2, "npc_trade_cols", true);
-                    ImGui::TextUnformatted("Trader stock");
-                    const int takeValue = draw_barter_column(
-                        "##npc_stock", bag.inv, g_npc_barter.take,
-                        g_trade_amount, buyUnit);
-                    ImGui::NextColumn();
-                    ImGui::TextUnformatted("Your inventory");
-                    const int giveValue = draw_barter_column(
-                        "##npc_player_stock", playerBag,
-                        g_npc_barter.give, g_trade_amount, sellUnit);
-                    ImGui::Columns(1);
-
-                    if (draw_barter_deal_button(g_npc_barter,
-                                                playerBag, bag.inv,
-                                                giveValue, takeValue)) {
-                        set_deal_message(giveValue, takeValue);
-                        if (const auto* sid =
-                                w.reg.try_get<ecs::MacroSpawnId>(g_trade_npc)) {
-                            record_npc_deal_fact(gs, w, sid->index,
-                                                 giveValue, takeValue);
-                        }
-                    }
+                    draw_barter_body(
+                        "Trader stock", g_npcTrade, playerBag, bag.inv,
+                        buyUnit, sellUnit, [&](int gave, int took) {
+                            if (const auto* sid = w.reg.try_get<
+                                    ecs::MacroSpawnId>(g_trade_npc)) {
+                                record_npc_deal_fact(gs, w, sid->index,
+                                                     gave, took);
+                            }
+                        });
 
                     ImGui::TextDisabled("Stage lines with +/- on both sides; one Deal settles the package.");
                     if (ImGui::Button("Close", ImVec2(-FLT_MIN, 0))) {

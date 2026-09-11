@@ -256,28 +256,10 @@ namespace sm::ui
                             255);
         }
 
-        int g_settlement_trade_message_id = -1;
-        char g_settlement_trade_message[160] = "";
-        int  g_settlement_trade_amount = 1;   // shared staging step (Amount)
-        BarterState g_settlement_barter;      // the staged package deal
+        // The ONE wrapper state of this counter (trade_widgets.h, Инк 5):
+        // staged package + Amount + receipt, keyed by the landmark id.
+        BarterWrapState g_settlementTrade;
 
-        // Another settlement's panel = another deal: drop the message AND
-        // the staged package.
-        void clear_settlement_trade_state_for(int settlementId)
-        {
-            if (g_settlement_trade_message_id == settlementId)
-                return;
-            g_settlement_trade_message_id = settlementId;
-            g_settlement_trade_message[0] = '\0';
-            g_settlement_barter.clear();
-        }
-
-        void set_settlement_deal_message(int gave, int took)
-        {
-            std::snprintf(g_settlement_trade_message,
-                          sizeof(g_settlement_trade_message),
-                          "Deal: gave %d g, received %d g.", gave, took);
-        }
 
         // A completed deal is a FACT of the world (S20.1: a deal is a
         // transition by nature) — the same Traded the caravans file, with
@@ -1554,44 +1536,18 @@ namespace sm::ui
                     *tab = SettlementPanelTab::Trade;
                 if (tradeOpen)
                 {
-                    clear_settlement_trade_state_for(s->id);
-                    // (No DerivedBonuses here any more: prices go through the
-                    // ONE law in macro/economy.h, which takes the raw charisma
-                    // — the derived tradeDiscount is the canon's own business.)
-                    // The charisma that haggles is the EFFECTIVE sheet's
-                    // (phase 4): a +CHA amulet talks the price down the same
-                    // as a silver tongue grown by levels.
-                    const entt::entity tradeSquad = player_squad_entity(world);
-                    const BonusTotals tradeStanding = tradeSquad != entt::null
-                        ? standing_bonuses_of(world, tradeSquad)
-                        : BonusTotals{};
-                    const CharacterSheet effTrade =
-                        player_effective_sheet(world);
-                    const int chaEff =
-                        effTrade.attributes.of(AttributeId::Cha);
-                    // ...and his TRADE rank haggles beside it (phase 6).
-                    const int tradeEff =
-                        effTrade.skills.of(SkillId::Trade);
+                    g_settlementTrade.sync_to(s->id);
+                    // ONE wrapper (Инк 5): the haggler, the state and the
+                    // body come from trade_widgets.h — this site keeps only
+                    // its price laws (a town's demand = econSite +
+                    // population, its mood haggles) and its fact.
+                    const PlayerHaggler h = player_haggler(world);
                     ImGui::Text("Player coin: %d", wallet_value(playerBag));
                     ImGui::SameLine();
                     ImGui::TextDisabled("Mood: %s", mood_label(s->mood));
-                    draw_trade_carry_line(effTrade, playerBag, tradeStanding);
+                    draw_trade_carry_line(h.sheet, playerBag, h.standing);
                     draw_counterparty_gold(s->inventory);
-                    draw_trade_amount_input(&g_settlement_trade_amount);
-                    if (g_settlement_trade_message[0] != '\0')
-                    {
-                        ImGui::Spacing();
-                        ImGui::TextWrapped("%s", g_settlement_trade_message);
-                    }
-                    ImGui::Separator();
-
-                    // Price FROM STOCK at POST-TRADE quantity: every line
-                    // of the package pays its own slippage (the widget
-                    // passes n = the staged count; coin never gets here —
-                    // it is face value inside draw_barter_column). The base
-                    // is THE contextual price of the INSTANCE (value_of —
-                    // affixes priced, the bare twin cheaper); scarcity and
-                    // demand still count the KIND.
+                    draw_trade_amount_input(&g_settlementTrade.amount);
                     const auto buyUnit = [&](const ItemRef &ref,
                                              const ItemDef &def, int n) {
                         return trade_overlay_buy_price(
@@ -1601,7 +1557,7 @@ namespace sm::ui
                                             def.id, s->population,
                                             EconSite(landmark_def(
                                                 s->type).econSite))),
-                            chaEff, tradeEff, s->mood);
+                            h.cha, h.trade, s->mood);
                     };
                     const auto sellUnit = [&](const ItemRef &ref,
                                               const ItemDef &def, int n) {
@@ -1612,33 +1568,16 @@ namespace sm::ui
                                             def.id, s->population,
                                             EconSite(landmark_def(
                                                 s->type).econSite))),
-                            chaEff, tradeEff, s->mood);
+                            h.cha, h.trade, s->mood);
                     };
-
-                    ImGui::Columns(2, "trade_cols", true);
-                    ImGui::TextUnformatted("Settlement stock");
-                    const int takeValue = draw_barter_column(
-                        "##settlement_stock", s->inventory,
-                        g_settlement_barter.take, g_settlement_trade_amount,
-                        buyUnit);
-                    ImGui::NextColumn();
-                    ImGui::TextUnformatted("Your inventory");
-                    const int giveValue = draw_barter_column(
-                        "##player_stock", playerBag,
-                        g_settlement_barter.give, g_settlement_trade_amount,
-                        sellUnit);
-                    ImGui::Columns(1);
-
-                    if (draw_barter_deal_button(g_settlement_barter,
-                                                playerBag,
-                                                s->inventory,
-                                                giveValue, takeValue))
-                    {
-                        set_settlement_deal_message(giveValue, takeValue);
-                        record_settlement_deal_fact(gs, world, s->id,
-                                                    s->x, s->y,
-                                                    giveValue, takeValue);
-                    }
+                    draw_barter_body(
+                        "Settlement stock", g_settlementTrade,
+                        playerBag, s->inventory,
+                        buyUnit, sellUnit, [&](int gave, int took) {
+                            record_settlement_deal_fact(gs, world, s->id,
+                                                        s->x, s->y,
+                                                        gave, took);
+                        });
 
                     ImGui::EndTabItem();
                 }
