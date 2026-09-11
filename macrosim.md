@@ -161,7 +161,7 @@ subworld embodies their members. Everything below follows from that one line.
 * **Meeting is geometric, not scripted.** Run through the subworld onto a cell
   where a squad stands on the map, and you meet exactly those people there.
 * **Members come from the ONE table.** Each roster entry embodies as its row of
-  **`kNpcTypeDefs[30]`** (`macro/npc.h` — 11 roles + 19 creatures, one id
+  **`kNpcTypeDefs[52]`** (`macro/npc.h` — 16 roles + 36 creatures, one id
   space; there is no second fauna list, `fauna.h`'s `FaunaEntry` is a `using`
   alias of `NpcTypeDef`) through the single body birth `emplace_body` in
   `sub/spawn.cpp`: **everyone gets a character sheet** — peasant, mercenary,

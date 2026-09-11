@@ -183,6 +183,64 @@ inline constexpr RoleWeights kRoleWeights[int(NPCType::Count)] = {
     // не в оружейных рядах человека.
     {NPCType::Dragon, {8, 6, 4, 5, 3, 2, 1, 4},
      {0,0,0,0,0,0,0, 0,0,0,0, 0,0,0,0,0,0, 0,0, 0,0,0,0,0, 0,0,0,0, 0,0,0,0,0}},
+    // ── The populated bestiary (2026-09-11) ──────────────────────────────
+    // Same reading as the creature rows above: a beast fights through
+    // Armsmaster (its body IS the weapon) and wears Unarmored (its hide is
+    // the coat); a thing that carries a weapon names it. The sheet is what
+    // makes two rows with similar stat blocks feel different at level 5 —
+    // the ghoul spends its points on legs, the zombie on Body, so the gap
+    // between them WIDENS as the world's danger climbs.
+    // attrs: Str End Int Wil Spd Lck Cha Wis
+    // Giant rat — legs and teeth, nothing else.
+    {NPCType::GiantRat,     {1, 3, 1, 1, 5, 2, 1, 1},
+     {0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 2,0, 1,0,0,4,0, 0,2,2,0, 0,0,0,0,0}},
+    // Cave bat — the fastest thing in the table, and the frailest.
+    {NPCType::CaveBat,      {1, 2, 1, 1, 6, 2, 1, 1},
+     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 1,0,0,5,0, 0,3,3,0, 0,0,0,0,0}},
+    // Kobold — a scavenger with a knife: spear-and-dagger, and a forager's
+    // eye for what was dropped.
+    {NPCType::Kobold,       {2, 2, 2, 1, 4, 3, 1, 1},
+     {0,0,1,0,2,0,0, 0,1,1,0, 0,0,0,0,0,0, 2,0, 1,0,1,3,0, 1,2,2,0, 0,0,1,0,0}},
+    {NPCType::CaveSpider,   {3, 3, 1, 1, 4, 2, 1, 1},
+     {0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 3,0, 2,0,1,3,0, 0,2,1,0, 0,0,0,0,0}},
+    // Imp — a spark with legs: Fire is its one school and it never learns
+    // a second.
+    {NPCType::Imp,          {2, 2, 3, 2, 5, 3, 1, 2},
+     {0,0,0,0,0,0,0, 0,0,1,0, 3,0,0,0,0,0, 1,2, 1,0,0,4,0, 0,3,1,0, 0,0,0,0,0}},
+    // Zombie — all of it goes into Body. It does not dodge and does not run.
+    {NPCType::Zombie,       {4, 5, 1, 1, 1, 1, 1, 1},
+     {0,0,0,0,0,0,0, 0,0,3,0, 0,0,0,0,0,0, 3,0, 5,0,1,0,1, 0,0,0,0, 0,0,0,0,0}},
+    // Orc — a soldier by any other name: axe, heavy coat, march discipline.
+    {NPCType::Orc,          {4, 4, 1, 2, 3, 2, 1, 1},
+     {1,3,0,0,0,0,0, 2,0,1,0, 0,0,0,0,0,0, 3,0, 3,0,2,2,0, 1,0,1,0, 0,0,0,0,0}},
+    // Ghoul — the zombie's points, spent on legs instead of meat.
+    {NPCType::Ghoul,        {3, 3, 1, 1, 4, 2, 1, 1},
+     {0,0,0,0,1,0,0, 0,0,2,0, 0,0,0,0,0,0, 3,0, 2,0,1,3,0, 0,2,1,0, 0,0,0,0,0}},
+    {NPCType::Harpy,        {2, 3, 1, 2, 5, 3, 1, 1},
+     {0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,0,0, 2,0, 1,0,0,5,0, 0,3,2,0, 0,0,0,0,0}},
+    // Cultist — the crowd's only educated man: staff, Arcane, and the
+    // Learning that says he chose this.
+    {NPCType::Cultist,      {2, 2, 4, 4, 2, 2, 2, 3},
+     {0,0,0,0,0,0,2, 0,1,0,0, 2,0,0,0,3,1, 0,4, 1,3,0,1,0, 0,0,0,1, 0,0,0,2,0}},
+    // Gargoyle — masonry that flies: Earth in its fists, Body under them.
+    {NPCType::Gargoyle,     {5, 5, 1, 2, 2, 1, 1, 1},
+     {0,0,0,0,0,0,0, 0,0,4,0, 0,0,0,2,0,0, 3,0, 4,0,1,2,1, 0,0,0,0, 0,0,0,0,0}},
+    // Wraith — Void where the ice wraith keeps cold, and the Meditation
+    // that makes it a caster's problem rather than a brawler's.
+    {NPCType::Wraith,       {3, 3, 3, 4, 4, 2, 1, 2},
+     {0,0,0,0,0,0,0, 0,0,2,0, 0,0,0,0,1,3, 2,3, 1,3,0,3,0, 0,1,0,0, 0,0,0,0,0}},
+    // Ogre — the heaviest hands in the table under the dragon's.
+    {NPCType::Ogre,         {6, 6, 1, 1, 1, 1, 1, 1},
+     {0,0,0,2,0,0,0, 0,0,3,0, 0,0,0,0,0,0, 4,0, 5,0,1,0,2, 0,0,0,0, 0,0,0,0,0}},
+    // Minotaur — an ogre that kept its legs: the row that punishes running.
+    {NPCType::Minotaur,     {6, 5, 2, 2, 3, 1, 1, 1},
+     {1,2,0,0,0,0,0, 1,0,2,0, 0,0,0,0,0,0, 4,0, 4,0,2,2,0, 0,0,0,0, 0,0,0,0,0}},
+    {NPCType::Basilisk,     {4, 4, 1, 2, 3, 2, 1, 1},
+     {0,0,0,0,0,0,0, 0,0,3,0, 0,0,0,2,0,0, 4,0, 3,0,1,1,0, 0,0,1,0, 0,0,0,0,0}},
+    // Lich — the top of the climb: Will and Intellect above everything,
+    // Void and Arcane, and the deepest Spellpower in the table.
+    {NPCType::Lich,         {2, 3, 6, 6, 1, 2, 2, 5},
+     {0,0,0,0,0,0,2, 0,0,0,0, 1,0,0,0,3,4, 0,5, 1,4,0,0,0, 0,0,0,2, 0,0,0,3,0}},
 };
 
 static_assert(rows_in_enum_order(kRoleWeights, &RoleWeights::type),

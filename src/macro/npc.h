@@ -61,6 +61,18 @@ enum class NPCType : std::uint8_t {
     // (one envelope, one law), and the missile fireball is the ordinary
     // Missile columns every shooter row uses. Appended.
     Dragon,
+    // ── The bestiary of the populated places (content, 2026-09-11) ────────
+    // §42 gave every place its own population; a spire that fields three
+    // hundred demons out of five species is a wall of the same silhouette.
+    // These sixteen are the species that fill it — appended, so every saved
+    // ordinal above stays where it is, and ordered weakest→strongest because
+    // that is the order THE spawn law reads them in: a row's `spawn_strength`
+    // is derived from its own hp × dps, and `danger_match` puts it on the
+    // ground that deserves it. Nothing here is stronger than the dragon and
+    // nothing is weaker than a rabbit, so the normalisation of the existing
+    // rows is unmoved (verified row by row before authoring).
+    GiantRat, CaveBat, Kobold, CaveSpider, Imp, Zombie, Orc, Ghoul, Harpy,
+    Cultist, Gargoyle, Wraith, Ogre, Minotaur, Basilisk, Lich,
     Count,
 };
 
@@ -714,6 +726,242 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         /*weight*/0, /*loot*/nullptr, /*radius*/1.6f,
         {{}}, 0, {{}}, 0,
     },
+    // ── THE BESTIARY OF THE POPULATED PLACES (content, 2026-09-11) ────────
+    //
+    // Sixteen species authored against each other, not in isolation. Three
+    // things decide where each of them ends up standing, and all three are
+    // columns of this row — no spawn table names any of them by hand:
+    //
+    //   · `combat` decides its STRENGTH. `spawn_strength` (fauna.cpp) is
+    //     log₂(hp × dice/cooldown) normalised over this table, and
+    //     `danger_match` halves a row's odds per 25 bytes of mismatch with
+    //     the cell's danger. So authoring a stat block IS authoring a
+    //     habitat band: an ogre cannot wander into a starting meadow because
+    //     of what an ogre is, not because a list forbade it.
+    //   · `weight` decides how COMMON it is where it belongs — fodder 4-6,
+    //     the heavies 1-2, exactly the scale the older rows use.
+    //   · the habitat mask (fauna.cpp kSpawnHabitats) decides WHOSE ground
+    //     it is at all.
+    //
+    // The dice are authored spreads, which is what the scalar-era rows are
+    // owed (`CombatTemplate::dice`, «authored spreads are content-stage
+    // work»): a rat's 2d4 and an ogre's 3d12 have honest variance, so two
+    // fights with the same species are not the same fight. Damage COLUMNS
+    // are authored too — fang, blade, cold and void argue with different
+    // rows of the 9×9 armour table, which is what makes a mixed crowd a
+    // tactical problem instead of one damage number wearing costumes.
+    //
+    // Three of them FLY (`cruiseM` > 0, the v93 law): the bat cruises low
+    // enough to keep under a cave's ceiling, the harpy owns the crags and
+    // the gargoyle patrols a tower's airspace. They ride the same envelope
+    // the player does — no flying-monster system, one column.
+
+    // Giant rat — what lives under a floor nobody sweeps. Fast, weak, many.
+    {
+        NPCType::GiantRat, "giant_rat", "Giant Rat", SpriteId::GiantRat, 1,
+        AIBehaviour::Aggressive,
+        {14, {2,4}, 2.5f, 2.0f, 1.0f, "Rat", CombatTemplate::Melee, 0, 0,
+         0xFFFFFFFFu, /*bodyHeight*/0.5f, kNpcSightDefaultM, 100, 100,
+         DamageType::Pierce},
+        kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
+        /*weight*/6, /*loot*/nullptr, /*radius*/0.35f,
+        {{}}, 0, {{}}, 0,
+    },
+    // Cave bat — the first thing a torch finds. Cruises at 2.5 m: high
+    // enough to be a nuisance, low enough that a cave's ceiling still holds
+    // it (the envelope is shared, so a row that cruised into the rock would
+    // simply be pinned against it — a number, not a bug).
+    {
+        NPCType::CaveBat, "cave_bat", "Cave Bat", SpriteId::CaveBat, 1,
+        AIBehaviour::Aggressive,
+        {8, {1,6}, 3.0f, 2.0f, 0.9f, "Bat", CombatTemplate::Melee, 0, 0,
+         0xFFFFFFFFu, /*bodyHeight*/0.4f, kNpcSightDefaultM, 100, 100,
+         DamageType::Pierce, /*cruiseM*/2.5f},
+        kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
+        /*weight*/6, /*loot*/nullptr, /*radius*/0.3f,
+        {{}}, 0, {{}}, 0,
+    },
+    // Kobold — the goblin's smaller cousin, and the first thing in the game
+    // that carries a purse worth taking off it.
+    {
+        NPCType::Kobold, "kobold", "Kobold", SpriteId::Kobold, 1,
+        AIBehaviour::Aggressive,
+        {20, {2,4}, 2.2f, 3.0f, 1.1f, "Kbd", CombatTemplate::Melee, 0, 0,
+         0xFFFFFFFFu, /*bodyHeight*/1.1f, kNpcSightDefaultM, 100, 100,
+         DamageType::Pierce},
+        kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/10,
+        /*weight*/5, /*loot*/nullptr, /*radius*/0.45f,
+        {{"Skree","Yip","Gnash","Tikka","Vess"}}, 5,
+        {{"Not yours! Not yours!",
+          "Down the hole with you.",
+          "Sharp! Sharp and quick!"}}, 3,
+    },
+    // Cave spider — slow to notice, fast to close. Pierce fangs.
+    {
+        NPCType::CaveSpider, "cave_spider", "Cave Spider", SpriteId::CaveSpider, 2,
+        AIBehaviour::Aggressive,
+        {26, {2,6}, 2.4f, 2.0f, 1.0f, "Spd", CombatTemplate::Melee, 0, 0,
+         0xFFFFFFFFu, /*bodyHeight*/0.7f, kNpcSightDefaultM, 100, 100,
+         DamageType::Pierce},
+        kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/15,
+        /*weight*/4, /*loot*/nullptr, /*radius*/0.5f,
+        {{}}, 0, {{}}, 0,
+    },
+    // Imp — a spire's smallest servant: quick, burning, and never alone.
+    {
+        NPCType::Imp, "imp", "Imp", SpriteId::Imp, 2,
+        AIBehaviour::Aggressive,
+        {18, {2,5}, 2.8f, 2.0f, 0.9f, "Imp", CombatTemplate::Melee, 0, 0,
+         0xFFFFFFFFu, /*bodyHeight*/0.8f, kNpcSightDefaultM, 100, 100,
+         DamageType::Fire},
+        kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/15,
+        /*weight*/5, /*loot*/nullptr, /*radius*/0.35f,
+        {{}}, 0, {{}}, 0,
+    },
+    // Zombie — the slowest thing that will still kill you. Its threat is the
+    // 2.0 s cooldown meeting 55 hp: you cannot out-trade it, you walk away.
+    {
+        NPCType::Zombie, "zombie", "Zombie", SpriteId::Zombie, 2,
+        AIBehaviour::Aggressive,
+        {55, {2,8}, 0.8f, 3.0f, 2.0f, "Zmb", CombatTemplate::Melee, 0, 0,
+         0xFFFFFFFFu, /*bodyHeight*/1.75f, kNpcSightDefaultM, 100, 100,
+         DamageType::Blunt},
+        kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/15,
+        /*weight*/4, /*loot*/nullptr, /*radius*/0.55f,
+        {{}}, 0, {{}}, 0,
+    },
+    // Orc — the raider of the open land, and the one new row that belongs
+    // outdoors as much as underground.
+    {
+        NPCType::Orc, "orc", "Orc", SpriteId::Orc, 3,
+        AIBehaviour::Aggressive,
+        {60, {2,8}, 1.8f, 3.0f, 1.4f, "Orc", CombatTemplate::Melee, 0, 0,
+         0xFFFFFFFFu, /*bodyHeight*/1.9f, kNpcSightDefaultM, 100, 100,
+         DamageType::Slash},
+        kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/20,
+        /*weight*/4, /*loot*/nullptr, /*radius*/0.6f,
+        {{"Gruth","Mazgar","Ukk","Snaga","Dorgul","Brakk"}}, 6,
+        {{"Blood for the warband.",
+          "You walk where you should not.",
+          "Come on then. Come on!"}}, 3,
+    },
+    // Ghoul — the zombie's opposite reading of the same corpse: fast,
+    // lighter, three smaller dice instead of two big ones.
+    {
+        NPCType::Ghoul, "ghoul", "Ghoul", SpriteId::Ghoul, 3,
+        AIBehaviour::Aggressive,
+        {48, {3,6}, 2.4f, 3.0f, 1.2f, "Ghl", CombatTemplate::Melee, 0, 0,
+         0xFFFFFFFFu, /*bodyHeight*/1.7f, kNpcSightDefaultM, 100, 100,
+         DamageType::Slash},
+        kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/20,
+        /*weight*/3, /*loot*/nullptr, /*radius*/0.5f,
+        {{}}, 0, {{}}, 0,
+    },
+    // Harpy — the crags' own. Cruises at 8 m, which is above a man's reach
+    // and below a tower's crown: she is fought by looking UP.
+    {
+        NPCType::Harpy, "harpy", "Harpy", SpriteId::Harpy, 3,
+        AIBehaviour::Aggressive,
+        {30, {2,7}, 2.9f, 3.0f, 1.0f, "Hrp", CombatTemplate::Melee, 0, 0,
+         0xFFFFFFFFu, /*bodyHeight*/1.6f, kNpcSightDefaultM, 100, 100,
+         DamageType::Slash, /*cruiseM*/8.0f},
+        kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/20,
+        /*weight*/3, /*loot*/nullptr, /*radius*/0.55f,
+        {{}}, 0, {{}}, 0,
+    },
+    // Cultist — the man who serves the spire. The crowd's first SHOOTER:
+    // ordinary Missile columns, arcane bolt, no blast — he is dangerous
+    // because he stands behind the ogres, not because his numbers are big.
+    {
+        NPCType::Cultist, "cultist", "Cultist", SpriteId::Cultist, 4,
+        AIBehaviour::Aggressive,
+        {45, {3,6}, 1.5f, 22.0f, 2.2f, "Cul", CombatTemplate::Missile, 190,
+         0.0f, 0xFFA060E0u, /*bodyHeight*/1.8f, kNpcSightDefaultM, 100, 100,
+         DamageType::Arcane},
+        kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/25,
+        /*weight*/3, /*loot*/nullptr, /*radius*/0.55f,
+        {{"Brother Vas","Sister Ilm","Novice Korr","The Pale Hand","Acolyte Zeb"}}, 5,
+        {{"The tower drinks, and we pour.",
+          "You are late. It has already begun.",
+          "Kneel, and it will be quick."}}, 3,
+    },
+    // Gargoyle — a tower's airborne masonry. Earth damage against the armour
+    // table, Hulk silhouette, 90 hp: the first new row that must be planned
+    // for rather than met.
+    {
+        NPCType::Gargoyle, "gargoyle", "Gargoyle", SpriteId::Gargoyle, 5,
+        AIBehaviour::Aggressive,
+        {90, {3,8}, 1.4f, 3.0f, 1.6f, "Grg", CombatTemplate::Melee, 0, 0,
+         0xFFFFFFFFu, /*bodyHeight*/2.2f, kNpcSightDefaultM, 100, 100,
+         DamageType::Earth, /*cruiseM*/7.0f},
+        kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/30,
+        /*weight*/2, /*loot*/nullptr, /*radius*/0.9f,
+        {{}}, 0, {{}}, 0,
+    },
+    // Wraith — the ice wraith's rootless cousin: Void instead of cold, so a
+    // player kitted against one is not kitted against the other.
+    {
+        NPCType::Wraith, "wraith", "Wraith", SpriteId::Wraith, 5,
+        AIBehaviour::Aggressive,
+        {55, {3,8}, 2.0f, 4.0f, 1.4f, "Wrh", CombatTemplate::Melee, 0, 0,
+         0xFFFFFFFFu, /*bodyHeight*/1.9f, kNpcSightDefaultM, 100, 100,
+         DamageType::Void},
+        kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/30,
+        /*weight*/2, /*loot*/nullptr, /*radius*/0.6f,
+        {{}}, 0, {{}}, 0,
+    },
+    // Ogre — the wall of the crowd. 3d12 at 2.2 s: it hits like a siege and
+    // misses a fleeing man completely.
+    {
+        NPCType::Ogre, "ogre", "Ogre", SpriteId::Ogre, 6,
+        AIBehaviour::Aggressive,
+        {140, {3,12}, 1.2f, 4.0f, 2.2f, "Ogr", CombatTemplate::Melee, 0, 0,
+         0xFFFFFFFFu, /*bodyHeight*/3.0f, kNpcSightDefaultM, 100, 100,
+         DamageType::Blunt},
+        kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/35,
+        /*weight*/1, /*loot*/nullptr, /*radius*/1.2f,
+        {{}}, 0, {{}}, 0,
+    },
+    // Minotaur — the ogre's answer for a player who thought running was the
+    // answer: nearly the same weight of blow, at a man's speed.
+    {
+        NPCType::Minotaur, "minotaur", "Minotaur", SpriteId::Minotaur, 6,
+        AIBehaviour::Aggressive,
+        {130, {4,10}, 1.9f, 4.0f, 1.8f, "Min", CombatTemplate::Melee, 0, 0,
+         0xFFFFFFFFu, /*bodyHeight*/2.6f, kNpcSightDefaultM, 100, 100,
+         DamageType::Slash},
+        kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/35,
+        /*weight*/1, /*loot*/nullptr, /*radius*/1.0f,
+        {{}}, 0, {{}}, 0,
+    },
+    // Basilisk — the swamp's and the desert's heavy. Serpent silhouette, so
+    // the eye reads it instantly among the uprights.
+    {
+        NPCType::Basilisk, "basilisk", "Basilisk", SpriteId::Basilisk, 6,
+        AIBehaviour::Aggressive,
+        {95, {3,10}, 1.6f, 3.0f, 1.5f, "Bsk", CombatTemplate::Melee, 0, 0,
+         0xFFFFFFFFu, /*bodyHeight*/1.4f, kNpcSightDefaultM, 100, 100,
+         DamageType::Earth},
+        kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/35,
+        /*weight*/1, /*loot*/nullptr, /*radius*/0.8f,
+        {{}}, 0, {{}}, 0,
+    },
+    // Lich — what is at the top of the climb. The only new row that both
+    // shoots and blasts (3 m), the only one that hoards a purse, and the
+    // strongest thing in the table below the dragon.
+    {
+        NPCType::Lich, "lich", "Lich", SpriteId::Lich, 8,
+        AIBehaviour::Aggressive,
+        {110, {4,12}, 1.1f, 28.0f, 2.6f, "Lch", CombatTemplate::Missile, 210,
+         3.0f, 0xFF90FFB0u, /*bodyHeight*/1.9f, kNpcSightDefaultM, 100, 100,
+         DamageType::Void},
+        kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/45,
+        /*weight*/1, /*loot*/nullptr, /*radius*/0.6f,
+        {{"Vashkar","The Grey Crown","Ozimandel","Neth-Ur"}}, 4,
+        {{"I was old when your kingdom was a camp.",
+          "Breathe. It is a habit you will lose.",
+          "Come closer. I want to see it happen."}}, 3,
+    },
 };
 static_assert(rows_in_enum_order(kNpcTypeDefs, &NpcTypeDef::type),
               "kNpcTypeDefs row order must mirror NPCType");
@@ -802,6 +1050,30 @@ inline constexpr NpcPurseRow kNpcPurse[std::size_t(NPCType::Count)] = {
     // Дракон монет не носит — его богатство лежит в логове (артефакт-стол
     // положит клад контентом; кошелёк зверя честно пуст).
     {NPCType::Dragon, 0, 0},
+    // The bestiary's purses (2026-09-11). Deliberately THIN: a purse is a
+    // coin MINT at the moment a body dies, and a spire fields hundreds of
+    // bodies — a generous row here would pour more silver into the world in
+    // one raid than a season of villages earns (the wallet-tap tail, §34).
+    // So only the three rows that plausibly carry money carry any: the
+    // kobold scavenges, the orc raids, the cultist is tithed, the lich
+    // hoards. Beasts and constructs own nothing, which is also the honest
+    // answer to "what is in a rat".
+    {NPCType::GiantRat,   0, 0},
+    {NPCType::CaveBat,    0, 0},
+    {NPCType::Kobold,     1, 6},
+    {NPCType::CaveSpider, 0, 0},
+    {NPCType::Imp,        0, 0},
+    {NPCType::Zombie,     0, 0},
+    {NPCType::Orc,        2, 12},
+    {NPCType::Ghoul,      0, 0},
+    {NPCType::Harpy,      0, 0},
+    {NPCType::Cultist,    2, 14},
+    {NPCType::Gargoyle,   0, 0},
+    {NPCType::Wraith,     0, 0},
+    {NPCType::Ogre,       0, 0},
+    {NPCType::Minotaur,   0, 0},
+    {NPCType::Basilisk,   0, 0},
+    {NPCType::Lich,       8, 40},
 };
 static_assert(rows_in_enum_order(kNpcPurse, &NpcPurseRow::type),
               "kNpcPurse row order must mirror NPCType");
@@ -855,6 +1127,24 @@ inline constexpr NpcMapColorRow kNpcMapColor[std::size_t(NPCType::Count)] = {
     {NPCType::TaxCollector, 0xC8C8C8u},
     {NPCType::RoadAmbusher, 0xDC3C3Cu},   // bandit red — he is one
     {NPCType::Dragon,       0xB03030u},   // драконья киноварь — цвет спрайта
+    // The bestiary on the map: each row quotes its own sprite tint, so the
+    // pin and the body the player walks up to are the same colour.
+    {NPCType::GiantRat,     0x6A5A4Au},
+    {NPCType::CaveBat,      0x4A4048u},
+    {NPCType::Kobold,       0x8A6A3Au},
+    {NPCType::CaveSpider,   0x2A2A3Au},
+    {NPCType::Imp,          0xA03050u},
+    {NPCType::Zombie,       0x6A7A5Au},
+    {NPCType::Orc,          0x5A7A4Au},
+    {NPCType::Ghoul,        0x9A8A7Au},
+    {NPCType::Harpy,        0xB07850u},
+    {NPCType::Cultist,      0x50306Au},
+    {NPCType::Gargoyle,     0x60605Au},
+    {NPCType::Wraith,       0x7060A0u},
+    {NPCType::Ogre,         0x8A7050u},
+    {NPCType::Minotaur,     0x6A3A2Au},
+    {NPCType::Basilisk,     0x3A6A4Au},
+    {NPCType::Lich,         0xC0D0B0u},
 };
 static_assert(rows_in_enum_order(kNpcMapColor, &NpcMapColorRow::type),
               "kNpcMapColor row order must mirror NPCType");

@@ -368,6 +368,27 @@ constexpr NpcLootRow kNpcLootId[std::size_t(NPCType::Count)] = {
     {NPCType::RoadAmbusher, nullptr},
     // Дракон: пер-рольного лута нет — клад логова придёт артефакт-столом.
     {NPCType::Dragon, nullptr},
+    // The populated bestiary (2026-09-11): every row falls through to its
+    // faction's default profile, like every creature above it. Named drops
+    // (a lich's phylactery, an orc chieftain's blade) belong to the artefact
+    // table, which is its own content pass — a made-up id here would be a
+    // second loot vocabulary standing beside the one registry.
+    {NPCType::GiantRat,   nullptr},
+    {NPCType::CaveBat,    nullptr},
+    {NPCType::Kobold,     nullptr},
+    {NPCType::CaveSpider, nullptr},
+    {NPCType::Imp,        nullptr},
+    {NPCType::Zombie,     nullptr},
+    {NPCType::Orc,        nullptr},
+    {NPCType::Ghoul,      nullptr},
+    {NPCType::Harpy,      nullptr},
+    {NPCType::Cultist,    nullptr},
+    {NPCType::Gargoyle,   nullptr},
+    {NPCType::Wraith,     nullptr},
+    {NPCType::Ogre,       nullptr},
+    {NPCType::Minotaur,   nullptr},
+    {NPCType::Basilisk,   nullptr},
+    {NPCType::Lich,       nullptr},
 };
 static_assert(rows_in_enum_order(kNpcLootId, &NpcLootRow::type),
               "kNpcLootId row order must mirror NPCType");

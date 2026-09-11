@@ -57,7 +57,7 @@ README, which orchestrates them.
 | Zones | [zones.md](zones.md) | The danger CONTINUUM — one byte 0..255 per cell; the old 0–9 steps survive as display bands only |
 | Microcombat | [microcombat.md](microcombat.md) | Sword-and-magic ARPG combat (unified, in-subworld) |
 | Possession | [possession.md](possession.md) | Player = one `PlayerTag` flag on an ordinary body; вселение moves the flag; body-native stats; macro↔subworld projection; exit *as* the possessed lord (position + identity remap), save-stable via a spawn ordinal |
-| Bodies & Loot | [monsters.md](monsters.md) | ONE table of living things (roles + creatures, thirty rows) + ONE loot table, spawn/XP |
+| Bodies & Loot | [monsters.md](monsters.md) | ONE table of living things (roles + creatures, fifty-two rows) + ONE loot table, spawn/XP |
 | Macrosim | [macrosim.md](macrosim.md) | Mount-&-Blade / Dwarf-Fortress macro simulation |
 | Resources | [resources.md](resources.md) | THE resource-field registry: fields over macro cells, two storage dialects behind one door, the ONE growth law, the ledger every harvest settles through |
 | Chronicle | [chronicle.md](chronicle.md) | THE world's memory: a fact is a 32-byte POD of ordinals, two tiers (a ring the world is ASKED, annals the world REMEMBERS), renown that every macro entity earns and that the VICTIM prices, words derived at display, one memory across both layers |
@@ -283,7 +283,7 @@ README, which orchestrates them.
   player special-case in any universal path. See [possession.md](possession.md).
 - **ONE table of living things** (owner's ruling 2026-08-20): a peasant, a lord,
   a wolf and a troll are rows of the same registry (`macro/npc.h kNpcTypeDefs`,
-  thirty rows), a "kind" is simply an ordinal of it, and the `0x100 | catalog
+  fifty-two rows), a "kind" is simply an ordinal of it, and the `0x100 | catalog
   index` encoding that used to mark a monster is gone with the second table.
   One birth builds every body (`spawn_derived_body`), one sheet prices every
   body, one row lookup answers for every body. Three defects died with the

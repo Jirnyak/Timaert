@@ -117,6 +117,14 @@ enum class SpriteId : std::uint8_t {
     // Appended past Coins — ordinal discipline (the rows above never move).
     // Dragon: procedural Avian, дракон стола анкет (owner 2026-09-10).
     Dragon,
+    // ── The bestiary of the populated places (content, 2026-09-11) ──────
+    // §42 gave every place its own crowd; a crowd of four species is not a
+    // crowd, it is a texture. Sixteen pictures, all procedural: each names a
+    // body plan the shader already draws and a tint, so a species costs a
+    // row here and never a shader. Ordered weakest→strongest, the same order
+    // their NPCType rows are appended in.
+    GiantRat, CaveBat, Kobold, CaveSpider, Imp, Zombie, Orc, Ghoul, Harpy,
+    Cultist, Gargoyle, Wraith, Ogre, Minotaur, Basilisk, Lich,
     Count_,
 };
 
@@ -192,6 +200,45 @@ inline constexpr SpriteDef kSpriteRows[std::size_t(SpriteId::Count_)] = {
     {SpriteId::Coins,        "coins",         "coins.png",          kNoBody, 0u},
     {SpriteId::Dragon,       "dragon",        nullptr,
                                               std::uint8_t(CreatureArchetype::Avian),     0xB03030u},
+
+    // ── The populated bestiary (2026-09-11) ─────────────────────────────
+    // Tints are what tells two Bipeds apart at fifty metres, so they are
+    // chosen against each other rather than in isolation: the vermin are
+    // earthy, the undead bone-pale and cold, the demons hot, the constructs
+    // stone-grey. Nobody borrows a row — a picture the eye cannot separate
+    // from another is a species the player cannot learn.
+    {SpriteId::GiantRat,     "giant_rat",     nullptr,
+                                              std::uint8_t(CreatureArchetype::Quadruped), 0x6A5A4Au},
+    {SpriteId::CaveBat,      "cave_bat",      nullptr,
+                                              std::uint8_t(CreatureArchetype::Avian),     0x4A4048u},
+    {SpriteId::Kobold,       "kobold",        nullptr,
+                                              std::uint8_t(CreatureArchetype::Biped),     0x8A6A3Au},
+    {SpriteId::CaveSpider,   "cave_spider",   nullptr,
+                                              std::uint8_t(CreatureArchetype::Quadruped), 0x2A2A3Au},
+    {SpriteId::Imp,          "imp",           nullptr,
+                                              std::uint8_t(CreatureArchetype::Critter),   0xA03050u},
+    {SpriteId::Zombie,       "zombie",        nullptr,
+                                              std::uint8_t(CreatureArchetype::Undead),    0x6A7A5Au},
+    {SpriteId::Orc,          "orc",           nullptr,
+                                              std::uint8_t(CreatureArchetype::Biped),     0x5A7A4Au},
+    {SpriteId::Ghoul,        "ghoul",         nullptr,
+                                              std::uint8_t(CreatureArchetype::Undead),    0x9A8A7Au},
+    {SpriteId::Harpy,        "harpy",         nullptr,
+                                              std::uint8_t(CreatureArchetype::Avian),     0xB07850u},
+    {SpriteId::Cultist,      "cultist",       nullptr,
+                                              std::uint8_t(CreatureArchetype::Biped),     0x50306Au},
+    {SpriteId::Gargoyle,     "gargoyle",      nullptr,
+                                              std::uint8_t(CreatureArchetype::Hulk),      0x60605Au},
+    {SpriteId::Wraith,       "wraith",        nullptr,
+                                              std::uint8_t(CreatureArchetype::Undead),    0x7060A0u},
+    {SpriteId::Ogre,         "ogre",          nullptr,
+                                              std::uint8_t(CreatureArchetype::Hulk),      0x8A7050u},
+    {SpriteId::Minotaur,     "minotaur",      nullptr,
+                                              std::uint8_t(CreatureArchetype::Biped),     0x6A3A2Au},
+    {SpriteId::Basilisk,     "basilisk",      nullptr,
+                                              std::uint8_t(CreatureArchetype::Serpent),   0x3A6A4Au},
+    {SpriteId::Lich,         "lich",          nullptr,
+                                              std::uint8_t(CreatureArchetype::Undead),    0xC0D0B0u},
 };
 
 static_assert(rows_in_enum_order(kSpriteRows, &SpriteDef::id),

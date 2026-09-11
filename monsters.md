@@ -2,8 +2,8 @@
 
 **ONE table of living things and ONE loot table — both single sources of
 truth.** A peasant, a lord, a wolf and a troll are rows of the SAME registry
-(`macro/npc.h kNpcTypeDefs`, thirty rows: eleven roles and nineteen creatures);
-every drop resolves through the one loot registry. Adding content is one data
+(`macro/npc.h kNpcTypeDefs`, fifty-two rows: sixteen roles and thirty-six
+creatures); every drop resolves through the one loot registry. Adding content is one data
 row, never an `if`-chain.
 
 > **The monster catalog is gone (2026-08-20, owner's ruling).** There used to be
@@ -19,7 +19,7 @@ row, never an `if`-chain.
 > fought battle were costing creatures by two different laws, and a squad led by
 > a beast vanished on projection, roster and all. See CANON.md S16.
 
-- **Code:** [macro/npc.h](src/macro/npc.h) (`kNpcTypeDefs[30]` — THE table of
+- **Code:** [macro/npc.h](src/macro/npc.h) (`kNpcTypeDefs[52]` — THE table of
   bodies, roles and creatures alike),
   [macro/behaviour.h](src/macro/behaviour.h) (the one `AIBehaviour` column),
   [macro/fauna.h](src/macro/fauna.h),
@@ -39,7 +39,7 @@ row, never an `if`-chain.
 ## The table of bodies
 
 `NpcTypeDef` ([macro/npc.h](src/macro/npc.h)) is the row schema and
-`kNpcTypeDefs[30]` holds the rows — every living thing in the game, roles and
+`kNpcTypeDefs[52]` holds the rows — every living thing in the game, roles and
 creatures in ONE contiguous id space. `FaunaEntry`
 ([macro/fauna.h](src/macro/fauna.h)) is a `using` alias of `NpcTypeDef`, kept
 only so the spawn tables read as what they are: lists of rows a place may roll.
@@ -255,6 +255,67 @@ of the one body table — a townsman with an axe: a crowd flavour on the
 kHabTown stripe, a street post (crowd role row), and a cut of the garrison
 mix (60/25/15). If the name ever misleads, the fix is a rename of one row
 — nothing behavioural hangs on the word.
+
+## The bestiary of the populated places (content, 2026-09-11)
+
+§42 gave every place its own population, and the spire smoke promptly stood
+356 bodies in a tower yard — out of **five** species. A crowd of five
+silhouettes repeated three hundred times is a texture, not a bestiary, so
+sixteen species were authored in one pass (`NPCType` tail, appended; the
+sprite rows are all procedural — an archetype and a tint, no shader, no
+asset). Measured after: a spire's throng rolls **14 distinct species**
+(`fauna_registry_test`), a low-danger ruin rolls vermin and kobolds with the
+odd skeleton, and no catalog row is unreachable.
+
+**Nothing about placement was written by hand.** Where a species ends up is
+what its own columns say, through the law that already existed:
+
+| Column | Decides | How |
+|---|---|---|
+| `combat` (hp × dice/cooldown) | its DANGER BAND | `spawn_strength` normalises it over the table; `danger_match` halves its odds per 25 bytes of mismatch with the cell |
+| `weight` | how COMMON it is where it belongs | fodder 4–6, heavies 1–2 |
+| habitat mask (`kSpawnHabitats`) | WHOSE ground it is | `kHabRuin` (also what a cave rolls), `kHabSpire`, biome bits |
+
+So an ogre cannot wander into a starting meadow because of *what an ogre is*,
+not because a list forbade it — and authoring a stat block IS authoring a
+habitat band. Verified before authoring that nothing here is stronger than
+the dragon or weaker than a rabbit, so the normalisation of every existing
+row is **unmoved, byte for byte**.
+
+| Species | Body plan | Ground | Note |
+|---|---|---|---|
+| Giant rat, Cave bat | Quadruped, Avian | ruin / cave / mountain | fodder; the bat cruises at 2.5 m — under a cave's ceiling |
+| Kobold | Biped | ruin / cave / forest / mountain | scavenger, the first purse worth taking |
+| Cave spider | Quadruped | ruin / cave / forest / mountain | closes fast |
+| Imp | Critter | spire / ruin | Fire, never alone |
+| Zombie | Undead | ruin / spire / swamp | 0.8 march, 2.0 s swing — you walk away, you do not out-trade it |
+| Orc | Biped | forest / steppe / valley / ruin | the one new row that belongs outdoors |
+| Ghoul | Undead | ruin / spire | the zombie's points spent on legs |
+| Harpy | Avian | mountain / spire | cruises at 8 m — fought by looking UP |
+| Cultist | Biped | spire / ruin | the crowd's first SHOOTER (arcane bolt, 22 m) |
+| Gargoyle | Hulk | spire / mountain | flying masonry, Earth damage |
+| Wraith | Undead | spire / ruin | Void where the ice wraith keeps cold |
+| Ogre | Hulk | ruin / forest / mountain | 3d12 at 2.2 s — a siege that misses a runner |
+| Minotaur | Biped | ruin / spire | the ogre that kept its legs; punishes running |
+| Basilisk | Serpent | swamp / desert / ruin | reads instantly among the uprights |
+| Lich | Undead | spire ONLY | shoots and blasts; the strongest row under the dragon |
+
+Damage COLUMNS are authored too (fang, blade, cold, Earth, Void, Arcane, Fire)
+— a mixed crowd argues with different rows of the 9×9 armour table, which is
+what makes it a tactical problem instead of one damage number in costumes. The
+dice are authored spreads (2d4 … 4d12), which is what the scalar-era rows are
+owed: two fights with the same species are no longer the same fight.
+
+**Purses are deliberately thin.** A purse MINTS coin the moment a body dies,
+and a spire fields hundreds of bodies — a generous row would pour more silver
+into the world in one raid than a season of villages earns (the wallet-tap
+tail, problems.md §34). Only four rows carry money at all: kobold 1–6, orc
+2–12, cultist 2–14, lich 8–40. Beasts and constructs own nothing.
+
+**Named drops are NOT here.** Every row falls through to its faction's default
+loot profile; a lich's phylactery and an orc chieftain's blade belong to the
+artefact table, which is its own content pass — a made-up `lootId` here would
+be a second loot vocabulary standing beside the one registry.
 
 ## Spawn paths (three, one table)
 

@@ -42,6 +42,24 @@ static const FaunaEntry& kSwampThing = kNpcTypeDefs[std::size_t(NPCType::SwampTh
 static const FaunaEntry& kIceWraith = kNpcTypeDefs[std::size_t(NPCType::IceWraith)];
 static const FaunaEntry& kSandScorpion = kNpcTypeDefs[std::size_t(NPCType::SandScorpion)];
 static const FaunaEntry& kStoneGolem = kNpcTypeDefs[std::size_t(NPCType::StoneGolem)];
+// The populated bestiary (2026-09-11) — sixteen more names for rows of the
+// same one table, so the catalog below still reads like a bestiary.
+static const FaunaEntry& kGiantRat = kNpcTypeDefs[std::size_t(NPCType::GiantRat)];
+static const FaunaEntry& kCaveBat = kNpcTypeDefs[std::size_t(NPCType::CaveBat)];
+static const FaunaEntry& kKobold = kNpcTypeDefs[std::size_t(NPCType::Kobold)];
+static const FaunaEntry& kCaveSpider = kNpcTypeDefs[std::size_t(NPCType::CaveSpider)];
+static const FaunaEntry& kImp = kNpcTypeDefs[std::size_t(NPCType::Imp)];
+static const FaunaEntry& kZombie = kNpcTypeDefs[std::size_t(NPCType::Zombie)];
+static const FaunaEntry& kOrc = kNpcTypeDefs[std::size_t(NPCType::Orc)];
+static const FaunaEntry& kGhoul = kNpcTypeDefs[std::size_t(NPCType::Ghoul)];
+static const FaunaEntry& kHarpy = kNpcTypeDefs[std::size_t(NPCType::Harpy)];
+static const FaunaEntry& kCultist = kNpcTypeDefs[std::size_t(NPCType::Cultist)];
+static const FaunaEntry& kGargoyle = kNpcTypeDefs[std::size_t(NPCType::Gargoyle)];
+static const FaunaEntry& kWraith = kNpcTypeDefs[std::size_t(NPCType::Wraith)];
+static const FaunaEntry& kOgre = kNpcTypeDefs[std::size_t(NPCType::Ogre)];
+static const FaunaEntry& kMinotaur = kNpcTypeDefs[std::size_t(NPCType::Minotaur)];
+static const FaunaEntry& kBasilisk = kNpcTypeDefs[std::size_t(NPCType::Basilisk)];
+static const FaunaEntry& kLich = kNpcTypeDefs[std::size_t(NPCType::Lich)];
 
 namespace {
 
@@ -122,6 +140,38 @@ constexpr SpawnHabitatRow kSpawnHabitats[std::size_t(NPCType::Count)] = {
     // Амбиент дракона не поднимает: он приходит ТОЛЬКО строкой стола
     // анкет (вершина массива), как засадник — рукой пролога.
     {NPCType::Dragon,        0},
+    // ── The bestiary's ground (content, 2026-09-11) ──────────────────────
+    // WHOSE ground, and nothing else: how strong a row is, and therefore
+    // which danger band it actually appears in, is already decided by its
+    // combat columns (spawn_strength × danger_match). So these masks are
+    // read as "could this thing live here at all", and the law does the
+    // rest — an ogre carries the Ruin bit and still never stands in a
+    // starting-zone ruin, because the match term buries him there.
+    //
+    // The dens overlap ON PURPOSE. kHabRuin is what a CAVE rolls too
+    // (dungeon kind rows name the Ruin family), so the rows that carry it
+    // are the ones that make a hole in a hillside worth entering; kHabSpire
+    // is the tower's own crowd. A row in both reads as "found where men do
+    // not light, whatever the roof is made of".
+    {NPCType::GiantRat,   kHabRuin | hab(Mountain), -1, "wildlife"},
+    {NPCType::CaveBat,    kHabRuin | hab(Mountain), -1, "wildlife"},
+    {NPCType::Kobold,     kHabRuin | kHabForest | hab(Mountain), -1, "demons"},
+    {NPCType::CaveSpider, kHabRuin | kHabForest | hab(Mountain), -1, "wildlife"},
+    {NPCType::Imp,        kHabSpire | kHabRuin, -1, "demons"},
+    {NPCType::Zombie,     kHabRuin | kHabSpire | hab(Swamp), -1, "demons"},
+    {NPCType::Orc,        kHabForest | kHabRuin | hab(Steppe) | hab(Valley),
+                          -1, "demons"},
+    {NPCType::Ghoul,      kHabRuin | kHabSpire, -1, "demons"},
+    {NPCType::Harpy,      kHabSpire | hab(Mountain), -1, "demons"},
+    {NPCType::Cultist,    kHabSpire | kHabRuin, -1, "demons"},
+    {NPCType::Gargoyle,   kHabSpire | hab(Mountain), -1, "demons"},
+    {NPCType::Wraith,     kHabSpire | kHabRuin, -1, "demons"},
+    {NPCType::Ogre,       kHabRuin | kHabForest | hab(Mountain), -1, "demons"},
+    {NPCType::Minotaur,   kHabRuin | kHabSpire, -1, "demons"},
+    {NPCType::Basilisk,   kHabRuin | hab(Swamp) | hab(Desert), -1, "demons"},
+    // Верхушка подъёма: только шпиль. Лич — не то, на что натыкаются в
+    // норе; его находят там, где мир хуже всего.
+    {NPCType::Lich,       kHabSpire, -1, "demons"},
 };
 static_assert(rows_in_enum_order(kSpawnHabitats, &SpawnHabitatRow::type),
               "every body row states its ground — the table IS the system");
@@ -300,6 +350,13 @@ static const FaunaEntry* const kCreatureCatalog[] = {
     &kFrog, &kGoat, &kEagle, &kCroc,
     &kGoblin, &kSkeleton, &kTroll, &kSwampThing, &kIceWraith,
     &kSandScorpion, &kStoneGolem,
+    // Appended 2026-09-11 (the populated bestiary) — append-only, exactly as
+    // the header promises: this list serves id-string lookups, and reordering
+    // it would re-key nothing in the world but would break every content
+    // file and console command that names a species.
+    &kGiantRat, &kCaveBat, &kKobold, &kCaveSpider, &kImp, &kZombie, &kOrc,
+    &kGhoul, &kHarpy, &kCultist, &kGargoyle, &kWraith, &kOgre, &kMinotaur,
+    &kBasilisk, &kLich,
 };
 
 std::span<const FaunaEntry* const> creature_catalog() {

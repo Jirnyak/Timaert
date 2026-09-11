@@ -1308,7 +1308,7 @@ the ten years.
   settlement markup multiplies HP or damage after the spawn roll. A creature is
   exactly its row — which is what §1's "the world does not care who is looking"
   requires mechanically.
-- ONE table of bodies — `kNpcTypeDefs[30]` in `src/macro/npc.h` (11 roles + 19
+- ONE table of bodies — `kNpcTypeDefs[52]` in `src/macro/npc.h` (16 roles + 36
   creatures, one id space). "Is this a monster" is no longer a question the
   engine asks; the fiction's "kill anyone, become anyone" has no second
   vocabulary to trip over.
