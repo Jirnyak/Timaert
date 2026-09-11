@@ -19,6 +19,9 @@
 #include "macro/npc.h"
 #include "macro/npc_ai.h"
 #include "macro/npc_spawn.h"
+#include "macro/resource_field.h"   // kGrowthEpochDays — the regrow epoch
+#include "macro/spells.h"           // the spire's tier (regrow context score)
+#include "macro/zones.h"            // the ruin's danger byte (same)
 #include "macro/scent_field.h"
 #include "macro/threat_field.h"
 #include "core/rng.h"
@@ -367,6 +370,33 @@ void tick_player_daily_(PlayerState& p, ecs::World* world) {
 
 } // namespace
 
+// The kind's own context score, resolved the way its GENESIS pass resolved
+// it (spires.cpp reads the spell's tier, ruins.cpp the site's danger byte)
+// — the cell_facts precedent: the score's source is inherently per-kind
+// context, and it is recomputed rather than stored so the save never
+// carries a second copy of what the world already knows.
+static int landmark_context_score(const MacroWorld& w, const Landmark& lm) {
+    if (lm.type == LandmarkType::Spire) {
+        return lm.spellId < std::uint32_t(kSpellCount)
+                   ? kSpellDefs[lm.spellId].tier
+                   : 1;
+    }
+    return w.zones ? int(w.zones->at(lm.x, lm.y)) : 0;
+}
+
+void regrow_dungeon_populations(const MacroWorld& w, int day) {
+    if (!w.gs) return;
+    for (auto& lm : w.gs->landmarks) {
+        const LandmarkDef& def = landmark_def(lm.type);
+        if (def.bornPopBase == 0) continue;   // settlements keep their own law
+        if (lm.population <= 0) continue;     // wiped clean stays dead
+        if ((lm.id % kGrowthEpochDays) != (day % kGrowthEpochDays)) continue;
+        const int mean = int(def.bornPopBase)
+                       + int(def.bornPopPerScore) * landmark_context_score(w, lm);
+        if (lm.population < mean) ++lm.population;
+    }
+}
+
 void reset_world_tick_runtime(WorldTickRuntime& runtime, std::uint32_t seed) {
     runtime = WorldTickRuntime{};
     runtime.jitter = Rng{seed ^ 0xC0FFEEu};
@@ -452,6 +482,9 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
             // что и threat; вклады пишет think-свип, здесь только физика.
             scent_ensure(gs.scent, gs.mapW, gs.mapH);
             scent_field_daily(gs.scent, day);
+            // The dungeon garrisons regrow by the fauna law (§42): one
+            // soul per epoch while alive, wiped clean stays dead.
+            regrow_dungeon_populations(*macro, day);
             // The labour rotation (npc_ai.h): yesterday's crews dissolve
             // into the population, today's are raised to its size.
             rotate_worker_squads(*macro, day);

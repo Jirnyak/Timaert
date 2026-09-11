@@ -52,6 +52,17 @@ void settle_landmark_day(Landmark& lm,
                          bool& diedOut,
                          EconFactSink sink = nullptr, void* user = nullptr);
 
+// The dungeon garrisons' regrowth (§42, owner: «как фауна — медленно,
+// выбитое подчистую мертво»): one soul per kGrowthEpochDays (32 days, the
+// fauna epoch) while the place still LIVES (population > 0) and stands
+// below its born MEAN (recomputed from the registry's born columns × the
+// kind's context score — nothing stored, nothing to fold into the save).
+// A place cleared to zero never regrows — resurrection belongs to the S9
+// transition. Each landmark regrows on its own day of the epoch
+// (id-staggered, the growth_cell_due pattern), so the world never pulses
+// in lockstep. Public so the genesis test can witness the law directly.
+void regrow_dungeon_populations(const MacroWorld& w, int day);
+
 void reset_world_tick_runtime(WorldTickRuntime& runtime, std::uint32_t seed);
 
 // Advance the clock by whole world ticks and queue one daily simulation tick

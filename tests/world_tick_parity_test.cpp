@@ -378,8 +378,46 @@ void test_population_dies_honestly_to_zero() {
 
 } // namespace
 
+// §42: dungeon garrisons regrow by the fauna law — one soul per epoch
+// while ALIVE and under the born mean; wiped clean stays dead forever.
+void test_dungeon_population_regrows_like_fauna() {
+    sm::GameState gs{};
+    gs.mapW = 8;
+    gs.mapH = 8;
+    sm::Landmark ruin{};
+    ruin.type = sm::LandmarkType::Ruin;
+    ruin.id = 5;
+    ruin.x = 1;
+    ruin.y = 1;
+    ruin.population = 10;
+    gs.landmarks.push_back(ruin);
+    sm::Landmark dead = ruin;
+    dead.id = 6;
+    dead.population = 0;   // cleared to the last soul
+    gs.landmarks.push_back(dead);
+    sm::MacroWorld w{};
+    w.gs = &gs;   // no zones layer: the ruin's score is the honest zero,
+                  // so its mean is the born base alone (64)
+
+    const int dueDay = 5 % sm::kGrowthEpochDays;
+    sm::regrow_dungeon_populations(w, dueDay + 1);
+    CHECK(gs.landmarks[0].population == 10,
+          "a landmark regrows only on its own day of the epoch");
+    sm::regrow_dungeon_populations(w, dueDay);
+    CHECK(gs.landmarks[0].population == 11,
+          "on its due day a living garrison regrows one soul");
+    sm::regrow_dungeon_populations(w, 6 % sm::kGrowthEpochDays);
+    CHECK(gs.landmarks[1].population == 0,
+          "wiped clean stays dead — resurrection is the S9 transition's");
+    gs.landmarks[0].population = 64;   // at the born mean already
+    sm::regrow_dungeon_populations(w, dueDay);
+    CHECK(gs.landmarks[0].population == 64,
+          "the born mean is the regrow ceiling");
+}
+
 int main() {
     test_garrison_never_exceeds_its_cap();
+    test_dungeon_population_regrows_like_fauna();
     test_hour_rollover();
     test_many_small_advances_equal_one_big_one();
     test_subworld_steps_lose_nothing_when_split();
