@@ -1004,55 +1004,53 @@ namespace sm::ui
                     // should, and no category is restated here.
                     if (!lastUseMessage.empty())
                         ImGui::TextDisabled("%s", lastUseMessage.c_str());
-                    if (ImGui::BeginTable("bag", 5,
-                                          ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg))
+                    // THE 16×16 GRID (владелец 2026-09-11): the bag draws
+                    // the very shape the data always had — one widget, the
+                    // same the two trade counters draw. Click selects; the
+                    // detail line below names the stack and offers Use.
+                    static int selectedSlot = -1;
+                    const GridClick click =
+                        draw_inventory_grid("##charbag", playerBag);
+                    if (click.slot >= 0)
+                        selectedSlot = click.slot;
+                    if (selectedSlot >= 0
+                        && (playerBag.slots[std::size_t(selectedSlot)].empty()))
+                        selectedSlot = -1;
+                    ImGui::Separator();
+                    if (selectedSlot >= 0)
                     {
-                        ImGui::TableSetupColumn("Item");
-                        ImGui::TableSetupColumn("Qty", ImGuiTableColumnFlags_WidthFixed, 48.0f);
-                        ImGui::TableSetupColumn("Effect");
-                        ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthFixed, 64.0f);
-                        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 64.0f);
-                        ImGui::TableHeadersRow();
-                        for (int slot = 0; slot < kMaxInventorySlots; ++slot)
+                        const ItemRef &st =
+                            playerBag.slots[std::size_t(selectedSlot)];
+                        if (const ItemDef *def = item_def_at(int(st.def)))
                         {
-                            const ItemRef &st = playerBag.slots[std::size_t(slot)];
-                            if (st.empty()) continue;
-                            const ItemDef *def = item_def_at(int(st.def));
-                            if (!def) continue;
-                            ImGui::TableNextRow();
-                            ImGui::TableNextColumn();
                             draw_item_ref_name(st, *def);
-                            ImGui::TextDisabled("%s", def->id);
-                            ImGui::TableNextColumn();
-                            ImGui::Text("x%d", st.count);
-                            ImGui::TableNextColumn();
+                            ImGui::SameLine();
+                            ImGui::Text("x%d   %d g", st.count, value_of(st));
                             draw_item_ref_bonuses(st, *def);
-                            ImGui::TableNextColumn();
-                            ImGui::Text("%d", value_of(st));
-                            ImGui::TableNextColumn();
-                            const bool drinkable =
-                                item_type_consumable(def->type);
-                            if (drinkable)
+                            if (def->description && def->description[0])
+                                ImGui::TextWrapped("%s", def->description);
+                            if (item_type_consumable(def->type)
+                                && ImGui::SmallButton("Use"))
                             {
-                                ImGui::PushID(slot);
-                                if (ImGui::SmallButton("Use"))
-                                {
-                                    PlayerCombatSlice pc{
-                                        pools.hp, pools.maxHp,
-                                        pools.mp, pools.maxMp,
-                                        pools.sp, pools.maxSp};
-                                    lastUseMessage = use_item(playerBag, def->id, pc);
-                                    pools.hp = pc.currentHp;
-                                    pools.mp = pc.currentMp;
-                                    pools.sp = pc.currentSp;
-                                }
-                                ImGui::PopID();
+                                PlayerCombatSlice pc{
+                                    pools.hp, pools.maxHp,
+                                    pools.mp, pools.maxMp,
+                                    pools.sp, pools.maxSp};
+                                lastUseMessage =
+                                    use_item(playerBag, def->id, pc);
+                                pools.hp = pc.currentHp;
+                                pools.mp = pc.currentMp;
+                                pools.sp = pc.currentSp;
                             }
                         }
-                        ImGui::EndTable();
                     }
-                    if (playerBag.used_slots() == 0)
-                        ImGui::TextDisabled("(empty)");
+                    else
+                    {
+                        ImGui::TextDisabled(
+                            playerBag.used_slots() == 0
+                                ? "(empty)"
+                                : "Click a stack to inspect it.");
+                    }
                     ImGui::EndTabItem();
                 }
 

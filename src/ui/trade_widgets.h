@@ -223,74 +223,122 @@ inline void barter_clamp(BarterPackage& pkg, const Inventory& shelf) {
     }
 }
 
-// One shelf column. Every STACK stages into `pkg` by +/− (step = Amount);
-// prices come from `unitPrice(ref, def, n)` — the caller's own law columns
-// (stock, charisma, context) at POST-TRADE quantity n, so every line pays
-// its slippage — except currency, which is ALWAYS face value. The callback
-// takes the INSTANCE (owner verdict 2026-09-07 «цена везде через value_of»):
-// a rolled stack prices its affixes, its bare twin two slots down does not,
-// and each is its own line. Returns the staged package's total value.
-template <class UnitPriceFn>
-inline int draw_barter_column(const char* childId, const Inventory& shelf,
-                              BarterPackage& pkg, int step,
-                              UnitPriceFn unitPrice) {
-    barter_clamp(pkg, shelf);
-    int total = 0;
-    ImGui::BeginChild(childId, ImVec2(0, 260), true);
-    if (shelf.used_slots() == 0) ImGui::TextDisabled("(empty)");
-    // Walk the OCCUPIED slots of the flat store. `i` is the slot index — the
-    // package's own key, so a row's ImGui identity and its staged line both
-    // follow the STACK rather than a name two stacks share.
-    for (int i = 0; i < kMaxInventorySlots; ++i) {
-        const ItemRef& ref = shelf.slots[std::size_t(i)];
-        if (ref.empty()) continue;
-        const ItemDef* def = item_def_at(int(ref.def));
-        const int count = ref.count;
-        const bool coin = def && is_currency_item(def->id);
-        const int staged = barter_staged(pkg, i);
-        const int next = staged + step > count ? count : staged + step;
-        ImGui::PushID(i);
-        const bool canAdd = def && staged < count;
-        if (!canAdd) ImGui::BeginDisabled();
-        if (ImGui::Button("+", ImVec2(24, 0)))
-            barter_stage(pkg, i, ref.def, next);
-        if (!canAdd) ImGui::EndDisabled();
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !def)
-            ImGui::SetTooltip("Unknown item id");
-        ImGui::SameLine();
-        if (staged <= 0) ImGui::BeginDisabled();
-        if (ImGui::Button("-", ImVec2(24, 0)))
-            barter_stage(pkg, i, ref.def,
-                         staged - step < 0 ? 0 : staged - step);
-        if (staged <= 0) ImGui::EndDisabled();
-        ImGui::SameLine();
-        // The row previews the unit price of the NEXT press; the staged
-        // line below is valued at its own post-trade quantity.
-        const int unit = !def ? 0
-                         : coin ? def->value
-                                : unitPrice(ref, *def, next > 0 ? next : step);
-        if (def) {
-            // The ONE shopfront spelling: a rolled stack shows its suffix
-            // and tint on the counter exactly as in the bag.
-            draw_item_ref_name(ref, *def);
-            ImGui::SameLine();
-            ImGui::Text("x%d  %d g", count, unit);
-        } else {
-            ImGui::Text("(unknown) x%d", count);
+// ── THE INVENTORY GRID (владелец 2026-09-11: «инвентарь-СЕТКА 16×16») ────
+// One widget for every container view — the character's bag and both
+// counters of a deal draw THE SAME grid. The data always was this shape
+// (kMaxInventorySlots = 256 «16×16, the player's grid»); only the UI drew
+// a list. A cell shows the item's short mark and count; hovering names it
+// in full (title, affixes, bonuses, value + the caller's own lines).
+// `staged` (nullable) draws the deal's RESERVATION on the very stack it
+// comes from — «резервировать то, что на продажу, в стеке продающего»
+// (владелец): no third grid, the goods stay where they lie, the cell shows
+// «count−staged» and a gold border. Returns the clicked slot; the CALLER
+// decides what a click means (select, stage, release).
+struct GridClick { int slot = -1; bool right = false; };
+
+template <class TooltipExtraFn>
+inline GridClick draw_inventory_grid(const char* strId, const Inventory& inv,
+                                     const BarterPackage* staged,
+                                     TooltipExtraFn tooltipExtra) {
+    GridClick out;
+    constexpr int kGridCols = 16;
+    static_assert(kMaxInventorySlots % kGridCols == 0,
+                  "the grid draws every slot of the flat store");
+    const float cell = ImGui::GetTextLineHeight() * 1.8f;
+    ImGui::PushID(strId);
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    for (int slot = 0; slot < kMaxInventorySlots; ++slot) {
+        if (slot % kGridCols != 0) ImGui::SameLine(0.0f, 2.0f);
+        const ItemRef& ref = inv.slots[std::size_t(slot)];
+        const ItemDef* def =
+            ref.empty() ? nullptr : item_def_at(int(ref.def));
+        ImGui::PushID(slot);
+        const ImVec2 p = ImGui::GetCursorScreenPos();
+        ImGui::InvisibleButton("c", ImVec2(cell, cell));
+        const bool hovered = ImGui::IsItemHovered();
+        if (hovered && def) {
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+                out = GridClick{slot, false};
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+                out = GridClick{slot, true};
         }
-        draw_trade_item_tooltip(def);
-        if (staged > 0 && def) {
-            const int lineValue = coin ? def->value * staged
-                                       : unitPrice(ref, *def, staged) * staged;
-            total += lineValue;
-            ImGui::SameLine();
-            ImGui::TextDisabled("| deal x%d = %d g", staged, lineValue);
+        const int stagedN = staged ? barter_staged(*staged, slot) : 0;
+        const ImU32 bg = def ? IM_COL32(38, 32, 24, 255)
+                             : IM_COL32(24, 22, 18, 160);
+        const ImU32 border =
+            stagedN > 0        ? IM_COL32(255, 210, 90, 255)
+            : (hovered && def) ? IM_COL32(220, 220, 220, 200)
+                               : IM_COL32(90, 80, 60, 120);
+        dl->AddRectFilled(p, ImVec2(p.x + cell, p.y + cell), bg, 3.0f);
+        dl->AddRect(p, ImVec2(p.x + cell, p.y + cell), border, 3.0f);
+        if (def) {
+            // Short mark: the name's first two letters, tinted like the
+            // shopfront title (one lerp, no second rarity dictionary).
+            char mark[3] = {def->name[0],
+                            def->name[0] ? def->name[1] : '\0', '\0'};
+            dl->AddText(ImVec2(p.x + 3.0f, p.y + 2.0f),
+                        ImGui::GetColorU32(affix_tint(affix_count(ref))),
+                        mark);
+            char cnt[16];
+            if (stagedN > 0)
+                std::snprintf(cnt, sizeof(cnt), "%d", ref.count - stagedN);
+            else
+                std::snprintf(cnt, sizeof(cnt), "%d", ref.count);
+            const ImVec2 ts = ImGui::CalcTextSize(cnt);
+            dl->AddText(ImVec2(p.x + cell - ts.x - 2.0f,
+                               p.y + cell - ts.y - 1.0f),
+                        stagedN > 0 ? IM_COL32(255, 210, 90, 255)
+                                    : IM_COL32(225, 225, 225, 220),
+                        cnt);
+            if (hovered) {
+                ImGui::BeginTooltip();
+                draw_item_ref_name(ref, *def);
+                ImGui::TextDisabled("%s", def->id);
+                draw_item_ref_bonuses(ref, *def);
+                ImGui::Text("x%d   value %d g", ref.count, value_of(ref));
+                if (stagedN > 0)
+                    ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.4f, 1.0f),
+                                       "reserved for the deal: %d", stagedN);
+                tooltipExtra(ref, *def, stagedN);
+                ImGui::EndTooltip();
+            }
         }
         ImGui::PopID();
     }
-    ImGui::EndChild();
+    ImGui::PopID();
+    return out;
+}
+
+inline GridClick draw_inventory_grid(const char* strId, const Inventory& inv,
+                                     const BarterPackage* staged = nullptr) {
+    return draw_inventory_grid(strId, inv, staged,
+                               [](const ItemRef&, const ItemDef&, int) {});
+}
+
+// A staged package's value against its shelf — the sum draw_barter_column
+// used to accumulate while drawing rows; the grid separates the ink from
+// the arithmetic. Coin is ALWAYS face value.
+template <class UnitPriceFn>
+inline int barter_package_value(const BarterPackage& pkg,
+                                const Inventory& shelf,
+                                UnitPriceFn unitPrice) {
+    int total = 0;
+    for (const BarterLine& line : pkg) {
+        if (line.slot < 0 || line.slot >= kMaxInventorySlots) continue;
+        const ItemRef& ref = shelf.slots[std::size_t(line.slot)];
+        if (ref.empty()) continue;
+        const ItemDef* def = item_def_at(int(ref.def));
+        if (!def) continue;
+        total += is_currency_item(def->id)
+            ? def->value * line.count
+            : unitPrice(ref, *def, line.count) * line.count;
+    }
     return total;
 }
+
+// (draw_barter_column — the LIST shelf — died 2026-09-11 with the grid:
+// the 16x16 grid above is THE container view, list and grid were becoming
+// two parallel shopfronts.)
 
 // The footer: the two totals face each other and ONE button settles the
 // whole package. Returns true on a settled deal — the caller writes its
@@ -326,10 +374,13 @@ inline bool draw_barter_deal_button(BarterState& st,
     return dealt;
 }
 
-// The BODY every counter shares: receipt line, the two shelves in two
-// columns, the one Deal button. `onDeal(gave, took)` fires on a settled
-// package — the caller records ITS fact (a squad's ordinal, a landmark's
-// id) and nothing else; the receipt message writes itself.
+// The BODY every counter shares: receipt line, the two 16×16 grids, the
+// one Deal button. Staging is IN-PLACE (владелец: «резервировать то, что
+// на продажу, в стеке продающего»): LMB reserves +Amount from the stack
+// under the cursor, RMB releases — no third grid, the goods stay where
+// they lie, the gold border and «count−staged» show the reservation.
+// `onDeal(gave, took)` fires on a settled package — the caller records
+// ITS fact and nothing else; the receipt message writes itself.
 template <class BuyFn, class SellFn, class OnDeal>
 inline void draw_barter_body(const char* stockLabel,
                              BarterWrapState& st,
@@ -339,18 +390,45 @@ inline void draw_barter_body(const char* stockLabel,
         ImGui::Spacing();
         ImGui::TextWrapped("%s", st.message);
     }
+    ImGui::TextDisabled("LMB reserves +Amount for the deal, RMB releases.");
     ImGui::Separator();
+    barter_clamp(st.barter.take, shelf);
+    barter_clamp(st.barter.give, playerBag);
+    const auto stage_click = [&](GridClick c, BarterPackage& pkg,
+                                 const Inventory& bag) {
+        if (c.slot < 0) return;
+        const ItemRef& ref = bag.slots[std::size_t(c.slot)];
+        if (ref.empty()) return;
+        const int step = st.amount > 1 ? st.amount : 1;
+        const int cur = barter_staged(pkg, c.slot);
+        int want = c.right ? cur - step : cur + step;
+        if (want < 0) want = 0;
+        if (want > ref.count) want = ref.count;
+        barter_stage(pkg, c.slot, ref.def, want);
+    };
     ImGui::Columns(2, "barter_cols", true);
     ImGui::TextUnformatted(stockLabel);
-    const int takeValue = draw_barter_column("##shelf", shelf,
-                                             st.barter.take, st.amount,
-                                             buyUnit);
+    stage_click(
+        draw_inventory_grid("##shelf", shelf, &st.barter.take,
+                            [&](const ItemRef& r, const ItemDef& d, int n) {
+                                ImGui::Text("buy at %d g each",
+                                            buyUnit(r, d, n > 0 ? n : 1));
+                            }),
+        st.barter.take, shelf);
     ImGui::NextColumn();
     ImGui::TextUnformatted("Your inventory");
-    const int giveValue = draw_barter_column("##player_shelf", playerBag,
-                                             st.barter.give, st.amount,
-                                             sellUnit);
+    stage_click(
+        draw_inventory_grid("##player_shelf", playerBag, &st.barter.give,
+                            [&](const ItemRef& r, const ItemDef& d, int n) {
+                                ImGui::Text("sell at %d g each",
+                                            sellUnit(r, d, n > 0 ? n : 1));
+                            }),
+        st.barter.give, playerBag);
     ImGui::Columns(1);
+    const int takeValue =
+        barter_package_value(st.barter.take, shelf, buyUnit);
+    const int giveValue =
+        barter_package_value(st.barter.give, playerBag, sellUnit);
     if (draw_barter_deal_button(st.barter, playerBag, shelf,
                                 giveValue, takeValue)) {
         st.set_deal_message(giveValue, takeValue);
