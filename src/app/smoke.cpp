@@ -6522,7 +6522,12 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 smoke_fail(app, "open_npc_trade found no live NPC with inventory");
                 break;
             }
-            sm::ui::open_npc_trade_panel(target);
+            // The ONE subject panel, opened on the squad's Trade tab —
+            // the same door a row click opens (App state, no module hook).
+            app.subjectSquad = target;
+            app.ui.settlementId = -1;
+            app.ui.settlementTab = sm::ui::SettlementPanelTab::Trade;
+            app.ui.settlement = true;
             std::fprintf(stderr,
                          "[smoke] npc_trade open entity=%u type=%d stock=%d playerItems=%d gold=%d\n",
                          static_cast<unsigned>(entt::to_integral(target)),

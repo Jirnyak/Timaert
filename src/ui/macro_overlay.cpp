@@ -600,145 +600,23 @@ inline int wrap_chebyshev(int d, int period) {
     return d;
 }
 
-// Random talk-line popup state — module-static so the panel function
-// stays stateless. `entity` doubles as a dirty bit (entt::null = no
-// popup).
-entt::entity g_talk_npc = entt::null;
-const char*  g_talk_line = nullptr;
-// THE SQUAD PANEL's subject (владелец: «меню города — хороший пример, его
-// обобщить»; никакого промежуточного генерик-окна): клик по ряду открывает
-// сразу окно сквада со вкладками, как у поселения его панель. Trade — его
-// вкладка, не отдельное окно.
-entt::entity g_trade_npc = entt::null;
-// Which tab the opener wants selected: 0 none, 1 Info, 2 Trade.
-int          g_squadPanelWantTab = 0;
-// The ONE wrapper state of this counter (trade_widgets.h, Инк 5): staged
-// package + Amount + receipt, keyed by the counterparty entity.
-BarterWrapState g_npcTrade;
-
-void clear_talk_popup() {
-    g_talk_npc = entt::null;
-    g_talk_line = nullptr;
-}
-
-void clear_trade_popup() {
-    g_trade_npc = entt::null;
-    g_npcTrade.reset(-1);
-}
-
 const char* npc_display_name(const NpcTypeDef& def, const ecs::NpcCharacter& ch) {
     if (def.nameCount > 0) return def.names[ch.nameIdx % def.nameCount];
     return def.label;
 }
 
-bool live_npc_entity(const ecs::World& w, entt::entity e) {
-    if (e == entt::null || !w.reg.valid(e)) return false;
-    const auto* hp = w.reg.try_get<ecs::Pools>(e);
-    return hp && hp->hp > 0.0f;
-}
-
-bool valid_panel_npc_entity(const ecs::World& w, entt::entity e) {
-    // You cannot interact with yourself: the player's squad carries the same
-    // components every NPC does (owner's merge, 2026-08-27), so the panel
-    // has to name the one party that is not a counterparty. The Trade TAB
-    // additionally wants a bag — that is the tab's own gate, not the
-    // window's.
-    return live_npc_entity(w, e) &&
-           !w.reg.all_of<ecs::PlayerSquadTag>(e) &&
-           w.reg.all_of<ecs::NPCKind, ecs::NpcCharacter>(e);
-}
-
-void sanitize_popup_state(const ecs::World& w) {
-    if (g_talk_npc != entt::null && !live_npc_entity(w, g_talk_npc)) {
-        clear_talk_popup();
-    }
-    if (g_trade_npc != entt::null && !valid_panel_npc_entity(w, g_trade_npc)) {
-        clear_trade_popup();
-    }
-}
-
-// A completed deal with a squad is a FACT of the world (S20.1) — the same
-// Traded the caravans file: subject = the player, object = the trader's
-// squad by its save-stable ordinal, worth what changed hands either way.
-// His journal learns it by participation; no log line is kept anywhere.
-// Filed through THE one deed door (macro/squad.h record_deed), like the
-// caravans' own record_landmark_fact: the named bits are DERIVED from each
-// party's renown — a hand-written `true` filed the player as a figure he had
-// not yet become — and the deal pays the doer like every other deed.
-void record_npc_deal_fact(GameState& gs, ecs::World& w,
-                          std::uint32_t traderOrdinal, int gave, int took) {
-    WorldFact f{};
-    f.day = gs.worldTime.day();
-    f.kind = std::uint16_t(FactKind::Traded);
-    f.subjectKind = std::uint8_t(FactSubject::Squad);
-    f.subject = ecs::kPlayerSquadOrdinal;
-    f.objectKind = std::uint8_t(FactSubject::Squad);
-    f.object = traderOrdinal;
-    const ecs::MacroCell* pc = player_flag_cell(w);
-    f.x = std::int16_t(pc ? ecs::cell_x(*pc, gs.mapW) : 0);
-    f.y = std::int16_t(pc ? ecs::cell_y(*pc, gs.mapW) : 0);
-    f.amount = gave + took;
-    record_deed(w, gs, f);
-}
-
-const char* npc_trait_label(std::uint8_t raw) {
-    switch (static_cast<NPCTrait>(raw)) {
-        case NPCTrait::Greedy:     return "Greedy";
-        case NPCTrait::Honorable:  return "Honorable";
-        case NPCTrait::Cowardly:   return "Cowardly";
-        case NPCTrait::Brave:      return "Brave";
-        case NPCTrait::Aggressive: return "Aggressive";
-        case NPCTrait::Generous:   return "Generous";
-        case NPCTrait::Suspicious: return "Suspicious";
-        case NPCTrait::Curious:    return "Curious";
-        default:                   return "?";
-    }
-}
-
-// (npc_has_trait moved with the temperament column into
-// macro/economy.cpp — the law's home owns its own predicate.)
-
-// (The temperament column moved to the law's own home — macro/economy.h
-// trait_price_mult.)
-
-// `bargaining` is the shopper's TRADE rank (phase 6, off the effective
-// sheet) — the price law's own argument, fed a literal 0 until the skill
-// woke. Required, not defaulted: a default would silently un-train every
-// haggler at a new call site.
-int trade_overlay_buy_price(int baseValue,
-                            int charisma, int bargaining,
-                            const ecs::NpcTraits* traits) {
-    return sm::trade_price(baseValue, charisma, bargaining,
-                                  sm::trait_price_mult(traits, true),
-                                  /*buying*/ true);
-}
-
-int trade_overlay_sell_price(int baseValue, int charisma, int bargaining,
-                             const ecs::NpcTraits* traits) {
-    return sm::trade_price(baseValue, charisma, bargaining,
-                                  sm::trait_price_mult(traits, false),
-                                  /*buying*/ false);
-}
+// (The talk/trade popups, the squad window and their price/fact helpers
+// moved into the ONE subject panel — ui/overlays.cpp draw_settlement:
+// «система меню единая», one window, one pause law. This file only builds
+// the proximity rows and reports clicks.)
 
 } // namespace
-
-void open_npc_trade_panel(entt::entity npc) {
-    clear_talk_popup();
-    g_npcTrade.reset(int(entt::to_integral(npc)));
-    g_trade_npc = npc;
-    g_squadPanelWantTab = 2;   // straight to the Trade tab (smoke hook)
-}
-
-bool npc_proximity_popup_open() {
-    return g_talk_npc != entt::null || g_trade_npc != entt::null;
-}
 
 NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                                             int viewW, int viewH,
                                             bool showRows, float scale) {
     NpcProximityResult result{};
     if (gs.mapW <= 0 || gs.mapH <= 0) return result;
-    sanitize_popup_state(w);
 
     // Right-edge anchor; width matches Svelte (`w-52` ~= 208px).
     constexpr float kPanelW = 220.0f;
@@ -750,8 +628,7 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
     int rowBudget = std::max(1, int(availableH / kRowStep));
     if (rowBudget > kMaxProximityRows) rowBudget = kMaxProximityRows;
 
-    const bool drawRowsEnabled = showRows && !npc_proximity_popup_open();
-    if (drawRowsEnabled) {
+    if (showRows) {
 
         auto view = w.reg.view<ecs::MacroCell, ecs::NPCKind, ecs::Pools,
                                ecs::NpcLevel, ecs::NpcCharacter>(
@@ -1026,13 +903,8 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                     if (ImGui::IsItemHovered()) {
                         ImGui::SetTooltip("Interact");
                         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-                            clear_talk_popup();
-                            clear_trade_popup();
                             if (isSquad) {
-                                g_trade_npc = r.subject.squad;
-                                g_npcTrade.reset(int(
-                                    entt::to_integral(r.subject.squad)));
-                                g_squadPanelWantTab = 1;   // Info first
+                                result.openSquad = r.subject.squad;
                             } else {
                                 result.openSettlementId =
                                     int(r.subject.landmark);
@@ -1052,205 +924,10 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
         }
     }
 
-    // (The intermediate generic verb window lived here for one increment —
-    // владелец: «выглядит плохо и костыльно, вообще его вырезать»: a row's
-    // click opens the subject's OWN tabbed panel directly.)
+    // (The talk popup and the squad window moved into the ONE subject
+    // panel — ui/overlays.cpp draw_settlement. The rows above only report
+    // the click; the app routes it.)
 
-    // Talk-line popup — shows the most recent line until the player
-    // clicks Close or another NPC. Kept lightweight; will be replaced
-    // by the real interaction overlay when it lands.
-    if (g_talk_npc != entt::null && g_talk_line) {
-        ImGui::SetNextWindowPos(ImVec2(float(viewW) * 0.5f, 120.0f),
-                                ImGuiCond_Always, ImVec2(0.5f, 0.0f));
-        ImGui::SetNextWindowSize(ImVec2(360, 0));
-        if (ImGui::Begin("Talk", nullptr,
-                         ImGuiWindowFlags_NoCollapse |
-                         ImGuiWindowFlags_NoResize)) {
-            ImGui::TextWrapped("%s", g_talk_line);
-            ImGui::Spacing();
-            if (ImGui::Button("Close", ImVec2(-FLT_MIN, 0))) {
-                clear_talk_popup();
-            }
-            if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
-                clear_talk_popup();
-            }
-        }
-        ImGui::End();
-    }
-
-    // ── THE SQUAD PANEL — «меню города — хороший пример, его обобщить»
-    // (владелец): the one tabbed window a squad row opens, the same shape
-    // the settlement panel has. Header = who he is + the actions that are
-    // BUTTONS (Talk — the S27 hook; Attack — reported to the app, which
-    // walks the attacker to the defender's cell: THE transfer law). Tabs =
-    // Info and, when he carries a bag, Trade (the Инк 5 shared body).
-    if (g_trade_npc != entt::null) {
-        if (!valid_panel_npc_entity(w, g_trade_npc)) {
-            clear_trade_popup();
-        } else {
-            const auto& kind = w.reg.get<ecs::NPCKind>(g_trade_npc);
-            const auto& ch = w.reg.get<ecs::NpcCharacter>(g_trade_npc);
-            auto* bag = w.reg.try_get<ecs::NpcInventory>(g_trade_npc);
-            const auto* pools = w.reg.try_get<ecs::Pools>(g_trade_npc);
-            const auto* lvl = w.reg.try_get<ecs::NpcLevel>(g_trade_npc);
-            const ecs::NpcTraits* traits =
-                w.reg.try_get<ecs::NpcTraits>(g_trade_npc);
-            const NPCType t = npc_type_or_default(kind.type);
-            const auto& def = npc_def(t);
-            {
-                const char* npcName = npc_display_name(def, ch);
-                const FactionDef* fd = faction_def_by_index(kind.factionIdx);
-                // (CHA reaches every price through the one formula since the
-                // 2026-09-03 sweep: trade_price → cha_trade_discount, the
-                // same helper the derived sheet column reads.)
-                g_npcTrade.sync_to(int(entt::to_integral(g_trade_npc)));
-                ImGui::SetNextWindowPos(ImVec2(float(viewW) * 0.5f, 190.0f),
-                                        ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.0f));
-                ImGui::SetNextWindowSize(ImVec2(560, 460), ImGuiCond_FirstUseEver);
-                Inventory* playerBagPtr = player_inventory(w);
-                Inventory playerBagFallback{};
-                Inventory& playerBag =
-                    playerBagPtr ? *playerBagPtr : playerBagFallback;
-                bool panelOpen = true;
-                if (ImGui::Begin("Squad", &panelOpen,
-                                 ImGuiWindowFlags_NoCollapse)) {
-                    ImGui::SetWindowFontScale(scale);
-                    // ── Banner (the settlement panel's shape) ─────────
-                    {
-                        const float side =
-                            ImGui::GetTextLineHeightWithSpacing() * 2.0f;
-                        const Sprite* sp = sprite_get(npc_sprite(t));
-                        if (sp && sp->tex)
-                            ImGui::Image(sp->tex, ImVec2(side, side));
-                        else
-                            ImGui::Dummy(ImVec2(side, side));
-                        ImGui::SameLine();
-                        ImGui::BeginGroup();
-                        ImGui::TextColored(ImVec4(1.0f, 0.92f, 0.50f, 1.0f),
-                                           "%s", npcName);
-                        ImGui::TextDisabled("%s — %s   Lv.%d   HP %d/%d",
-                                            def.label,
-                                            fd ? fd->name : "?",
-                                            lvl ? int(lvl->value) : 0,
-                                            pools ? int(pools->hp) : 0,
-                                            pools ? int(pools->maxHp) : 0);
-                        ImGui::EndGroup();
-                    }
-                    if (ImGui::Button("Talk")) {
-                        g_talk_npc = g_trade_npc;
-                        g_talk_line = def.talkCount > 0
-                            ? def.talkLines[ch.visualSeed
-                                            % std::uint32_t(def.talkCount)]
-                            : "...";
-                    }
-                    ImGui::SameLine();
-                    if (ImGui::Button("Attack")) {
-                        result.attackNpc = g_trade_npc;
-                        clear_trade_popup();
-                    }
-                    ImGui::Separator();
-
-                    // ── Tabs ──────────────────────────────────────────
-                    if (ImGui::BeginTabBar("##squadtab")) {
-                    const int wantTab = g_squadPanelWantTab;
-                    g_squadPanelWantTab = 0;
-                    if (ImGui::BeginTabItem("Info", nullptr,
-                                            wantTab == 1
-                                                ? ImGuiTabItemFlags_SetSelected
-                                                : 0)) {
-                        if (ImGui::BeginTable("squad_info", 2,
-                                              ImGuiTableFlags_BordersInnerH
-                                                  | ImGuiTableFlags_RowBg)) {
-                            auto row = [](const char* k, int v) {
-                                ImGui::TableNextRow();
-                                ImGui::TableNextColumn();
-                                ImGui::TextUnformatted(k);
-                                ImGui::TableNextColumn();
-                                ImGui::Text("%d", v);
-                            };
-                            row("Level", lvl ? int(lvl->value) : 0);
-                            row("HP", pools ? int(pools->hp) : 0);
-                            if (const auto* roster =
-                                    w.reg.try_get<ecs::SquadRoster>(
-                                        g_trade_npc)) {
-                                row("Soldiers",
-                                    total_soldiers(roster->squad));
-                            }
-                            if (bag) {
-                                row("Carries (value)",
-                                    inventory_value(bag->inv));
-                            }
-                            ImGui::EndTable();
-                        }
-                        if (traits && traits->count > 0) {
-                            ImGui::TextDisabled("Traits:");
-                            for (std::uint8_t ti = 0;
-                                 ti < traits->count && ti < 2; ++ti) {
-                                ImGui::SameLine();
-                                ImGui::TextDisabled(
-                                    "%s", npc_trait_label(traits->traits[ti]));
-                            }
-                        }
-                        ImGui::EndTabItem();
-                    }
-                    // Trade — the tab exists only when he carries a bag
-                    // (the tab's own gate; the window opens regardless).
-                    if (bag)
-                    if (ImGui::BeginTabItem("Trade", nullptr,
-                                            wantTab == 2
-                                                ? ImGuiTabItemFlags_SetSelected
-                                                : 0)) {
-                    // ONE wrapper (Инк 5): the haggler, the state and the
-                    // body come from trade_widgets.h — this site keeps only
-                    // its price laws (a lone trader has NO town demand: his
-                    // scarcity is his own shelf) and its fact.
-                    const PlayerHaggler h = player_haggler(w);
-                    ImGui::Text("Player coin: %d", wallet_value(playerBag));
-                    draw_trade_carry_line(h.sheet, playerBag, h.standing);
-                    draw_counterparty_gold(bag->inv);
-                    draw_trade_amount_input(&g_npcTrade.amount);
-                    const auto buyUnit = [&](const ItemRef& ref,
-                                             const ItemDef& def, int n) {
-                        (void)def;
-                        return trade_overlay_buy_price(
-                            stock_price(value_of(ref),
-                                        bag->inv.count_of(int(ref.def)) - n,
-                                        0),
-                            h.cha, h.trade, traits);
-                    };
-                    const auto sellUnit = [&](const ItemRef& ref,
-                                              const ItemDef& def, int n) {
-                        (void)def;
-                        return trade_overlay_sell_price(
-                            stock_price(value_of(ref),
-                                        bag->inv.count_of(int(ref.def)) + n,
-                                        0),
-                            h.cha, h.trade, traits);
-                    };
-                    draw_barter_body(
-                        "Trader stock", g_npcTrade, playerBag, bag->inv,
-                        buyUnit, sellUnit, [&](int gave, int took) {
-                            if (const auto* sid = w.reg.try_get<
-                                    ecs::MacroSpawnId>(g_trade_npc)) {
-                                record_npc_deal_fact(gs, w, sid->index,
-                                                     gave, took);
-                            }
-                        });
-
-                    ImGui::TextDisabled("Stage lines with +/- on both sides; one Deal settles the package.");
-                        ImGui::EndTabItem();
-                    }
-                    ImGui::EndTabBar();
-                    }
-                    if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
-                        clear_trade_popup();
-                    }
-                }
-                ImGui::End();
-                if (!panelOpen) clear_trade_popup();
-            }
-        }
-    }
     return result;
 }
 

@@ -140,8 +140,8 @@ constexpr float kPlayerLightB = 0.42f;
 constexpr std::uint32_t kFnvOffset =
     std::uint32_t{2147483647} + std::uint32_t{18652614};
 constexpr std::uint32_t kFnvPrime = std::uint32_t{16777619};
-constexpr std::uint32_t kCellSeedX = std::uint32_t{73856093};
-constexpr std::uint32_t kCellSeedY = std::uint32_t{19349663};
+// (kCellSeedX/Y — THE cell-seed law — moved to sub/map_data.h: the
+// settlement panel's map preview must hash the very same seed.)
 constexpr std::uint32_t kSquadSpawnSalt =
     std::uint32_t{2147483647} + std::uint32_t{622657538};
 constexpr std::uint32_t kMacroProjectionSalt =

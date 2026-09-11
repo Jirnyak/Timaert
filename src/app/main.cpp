@@ -489,6 +489,7 @@ void refresh_available_settlement_quests(App& app) {
 }
 
 void toggle_settlement_panel(App& app) {
+    app.subjectSquad = entt::null;   // T names the PLACE, not a neighbour
     refresh_player_settlement(app);
     if (app.cursor.hoverSettlementId >= 0) {
         app.ui.settlementId = app.cursor.hoverSettlementId;
@@ -500,6 +501,7 @@ void toggle_settlement_panel(App& app) {
 }
 
 void open_settlement_panel(App& app, sm::ui::SettlementPanelTab tab) {
+    app.subjectSquad = entt::null;
     refresh_player_settlement(app);
     if (app.cursor.hoverSettlementId >= 0) {
         app.ui.settlementId = app.cursor.hoverSettlementId;
@@ -5708,18 +5710,46 @@ void frame(App& app, int simSteps) {
                 sm::ui::draw_diplomacy(app.gs, &app.ui.diplomacy, app.uiSettings.scale(sm::ui::UiElementId::PanelDiplomacy));
             if (app.uiSettings.visible(sm::ui::UiElementId::PanelCharacter))
                 sm::ui::draw_character_panel(app.gs, app.ecs, &app.ui.character, &app.ui.characterTab, app.uiSettings.scale(sm::ui::UiElementId::PanelCharacter));
-            if (app.ui.settlement) refresh_available_settlement_quests(app);
-            if (app.uiSettings.visible(sm::ui::UiElementId::PanelSettlement))
+            if (app.ui.settlement && app.subjectSquad == entt::null)
+                refresh_available_settlement_quests(app);
+            if (app.uiSettings.visible(sm::ui::UiElementId::PanelSettlement)) {
+                // ОДНА панель субъекта: сквад или ландмарк — окно, пауза и
+                // вкладочная система одни. Attack докладывается сюда, и
+                // ЗАКОН ПЕРЕНОСА исполняет app: атакующий, объявляя бой,
+                // ДОХОДИТ (player_jump_to_cell в клетку защитника) — вся
+                // встреча всегда одна клетка, позиции макромира целы.
+                entt::entity attackReq = entt::null;
+                sm::MacroWorld panelMw = macro_world(app);
                 sm::ui::draw_settlement(app.gs,
                                         app.ecs,
                                         app.ui.settlementId,
+                                        app.subjectSquad,
+                                        &panelMw,
                                         app.availableSettlementQuests,
                                         app.activeQuests,
                                         app.quests,
                                         app.bus,
                                         &app.ui.settlementTab,
                                         &app.ui.settlement,
+                                        &attackReq,
                                         app.uiSettings.scale(sm::ui::UiElementId::PanelSettlement));
+                if (!app.ui.settlement) app.subjectSquad = entt::null;
+                if (attackReq != entt::null) {
+                    if (const auto* cell = app.ecs.reg.try_get<
+                            sm::ecs::MacroCell>(attackReq)) {
+                        sm::player_jump_to_cell(
+                            app.gs, app.ecs,
+                            sm::ecs::cell_x(*cell, app.gs.mapW),
+                            sm::ecs::cell_y(*cell, app.gs.mapW));
+                    }
+                    app.subjectSquad = entt::null;
+                    app.preBattleNpc = attackReq;
+                    app.encounterTalkLine.clear();
+                    app.gs.subState.kind = sm::GameSubStateKind::PreBattle;
+                    app.cursor.path.clear();
+                    app.cursor.pathIdx = 0;
+                }
+            }
             if (app.uiSettings.visible(sm::ui::UiElementId::PanelQuestLog)) {
                 // The Close button quotes the LIVE Quests binding (S22).
                 const SDL_Scancode questsSc =
@@ -5923,7 +5953,7 @@ void frame(App& app, int simSteps) {
             const bool showNpcRows = !macro_overlay_blocks_npc_proximity(app);
             if (!app.subworld.active()
                 && app.uiSettings.visible(sm::ui::UiElementId::NpcProximity)
-                && (showNpcRows || sm::ui::npc_proximity_popup_open())) {
+                && showNpcRows) {
                 int logicalW = app.width, logicalH = app.height;
                 SDL_GetWindowSize(app.window, &logicalW, &logicalH);
                 const sm::ui::NpcProximityResult npcResult =
@@ -5931,36 +5961,16 @@ void frame(App& app, int simSteps) {
                                                      logicalW, logicalH,
                                                      showNpcRows,
                                                      app.uiSettings.scale(sm::ui::UiElementId::NpcProximity));
-                if (npcResult.attackNpc != entt::null) {
-                    // ОДНА дверь встречи (вердикт владельца 2026-09-11,
-                    // PLAY-6 «если универсально»): кнопка ведёт в ту же
-                    // форс-встречу, что геометрия — Fight/Auto/Pay/Flee, и
-                    // Fight сведёт тела кольцом. Прямой вход в субмир
-                    // ставил игрока в пустое поле: враг-проекция стоял на
-                    // СВОЕЙ клетке, за сотни тайлов.
-                    // ЗАКОН ПЕРЕНОСА (вердикт владельца 2026-09-11):
-                    // атакующий, объявляя бой, ДОХОДИТ — игрок встаёт в
-                    // клетку защитника ТОЙ ЖЕ дверью, что любой макро-
-                    // прыжок (player_jump_to_cell). Вся встреча всегда
-                    // одна клетка: детектор, грация, гейт отрыва и
-                    // Flee-отпрыг работают в своих предпосылках, позиции
-                    // макромира не рассинхронизируются никогда.
-                    if (const auto* cell = app.ecs.reg.try_get<
-                            sm::ecs::MacroCell>(npcResult.attackNpc)) {
-                        sm::player_jump_to_cell(
-                            app.gs, app.ecs,
-                            sm::ecs::cell_x(*cell, app.gs.mapW),
-                            sm::ecs::cell_y(*cell, app.gs.mapW));
-                    }
-                    app.preBattleNpc = npcResult.attackNpc;
-                    app.encounterTalkLine.clear();
-                    app.gs.subState.kind = sm::GameSubStateKind::PreBattle;
-                    app.cursor.path.clear();
-                    app.cursor.pathIdx = 0;
+                // Клик по ряду = СРАЗУ панель субъекта («система меню
+                // единая»): одна и та же панель, у сквада своя ветка.
+                if (npcResult.openSquad != entt::null) {
+                    app.subjectSquad = npcResult.openSquad;
+                    app.ui.settlementId = -1;
+                    app.ui.settlementTab = sm::ui::SettlementPanelTab::Info;
+                    app.ui.settlement = true;
                 }
-                // Клик по ландмарк-ряду = сразу его панель (Info; дальше
-                // игрок ходит по вкладкам сам — «система меню единая»).
                 if (npcResult.openSettlementId >= 0) {
+                    app.subjectSquad = entt::null;
                     app.ui.settlementId = npcResult.openSettlementId;
                     app.ui.settlementTab = sm::ui::SettlementPanelTab::Info;
                     refresh_available_settlement_quests(app);

@@ -12,6 +12,7 @@
 namespace sm {
 struct TerrainData;
 struct ZoneLayer;
+struct MacroWorld;
 class  EventBus;
 namespace sub { class SeamlessSubworldManager; struct MinimapBlip; }
 namespace content { struct StoryDef; }
@@ -76,15 +77,28 @@ void draw_diplomacy(GameState& gs, bool* open, float scale = 1.0f);
 // sits above every layer and may read from them; it still owns no game logic.
 void draw_character_panel(GameState& gs, ecs::World& world, bool* open,
                           CharacterPanelTab* tab, float scale = 1.0f);
+// THE subject panel (меню-сессия, фидбек владельца 2026-09-11: «сделай
+// единую систему... меню города хороший пример, его обобщить»). ONE window,
+// one pause law, one tab bar — the SUBJECT decides the branch:
+//   * squadSubject != null — a macro squad: banner (name/faction/Lv/HP) +
+//     Talk/Attack buttons, tabs Info / Trade (the Инк 5 shared body).
+//     Attack is reported through `attackRequest`; the app walks the attacker
+//     to the defender's cell (the transfer law) and opens the встреча.
+//   * else — the landmark named by settlementId, tabs by its actions column.
+// `mw` (nullable) feeds the Map tab's preview the REAL cell facts, so the
+// picture is the town you actually enter.
 void draw_settlement(GameState& gs,
                      ecs::World& world,
                      int settlementId,
+                     entt::entity squadSubject,
+                     const MacroWorld* mw,
                      const std::vector<Quest>& availableQuests,
                      std::vector<Quest>& activeQuests,
                      QuestEngine& questEngine,
                      EventBus& bus,
                      SettlementPanelTab* tab,
                      bool* open,
+                     entt::entity* attackRequest,
                      float scale = 1.0f);
 // `closeKeyName` is the LIVE name of the key that toggles this panel
 // (SDL_GetScancodeName of the Quests binding) — the Close button quotes it,

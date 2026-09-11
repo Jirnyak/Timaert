@@ -324,6 +324,10 @@ struct App {
     // material, and a loaded PreBattle kind with no live target fails closed.
     entt::entity preBattleNpc      = entt::null;
     entt::entity encounterGraceNpc = entt::null;
+    // THE subject panel's squad (меню-сессия: одна панель на всех — клик по
+    // сквад-ряду открывает её на нём; entt::null = панель показывает
+    // ландмарк ui.settlementId). Runtime-only, как preBattleNpc.
+    entt::entity subjectSquad      = entt::null;
     std::string  encounterTalkLine;
     // Toolbar `>>` / dev console: how many world ticks a turn buys (1.0 =
     // normal). Only the interactive loop honours it; scripted/smoke steps keep

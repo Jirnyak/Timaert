@@ -1,4 +1,5 @@
 #include "ui/overlays.h"
+#include "macro/cell_facts.h"   // the Map preview's REAL cell context
 #include "macro/player_entity.h"
 #include "macro/squad.h"   // record_deed — THE deed door (S20.1)
 #include "ui/trade_widgets.h"
@@ -259,6 +260,75 @@ namespace sm::ui
         // The ONE wrapper state of this counter (trade_widgets.h, Инк 5):
         // staged package + Amount + receipt, keyed by the landmark id.
         BarterWrapState g_settlementTrade;
+        // ...and the squad counter's own (two counters may be open at once).
+        BarterWrapState g_squadTrade;
+        // The squad banner's Talk stub (the S27 hook): the line shown inline
+        // under the banner, keyed by the subject so another squad's panel
+        // never inherits a stranger's words.
+        entt::entity g_squadTalkFor = entt::null;
+        const char*  g_squadTalkLine = nullptr;
+
+        const char* npc_display_name(const NpcTypeDef& def,
+                                     const ecs::NpcCharacter& ch)
+        {
+            if (def.nameCount > 0) return def.names[ch.nameIdx % def.nameCount];
+            return def.label;
+        }
+
+        const char* npc_trait_label(std::uint8_t raw)
+        {
+            switch (static_cast<NPCTrait>(raw)) {
+                case NPCTrait::Greedy:     return "Greedy";
+                case NPCTrait::Honorable:  return "Honorable";
+                case NPCTrait::Cowardly:   return "Cowardly";
+                case NPCTrait::Brave:      return "Brave";
+                case NPCTrait::Aggressive: return "Aggressive";
+                case NPCTrait::Generous:   return "Generous";
+                case NPCTrait::Suspicious: return "Suspicious";
+                case NPCTrait::Curious:    return "Curious";
+                default:                   return "?";
+            }
+        }
+
+        // The lone trader's price law (moved here with the squad branch —
+        // one panel, one file): trait multipliers instead of a town mood.
+        int trade_overlay_buy_price(int baseValue, int charisma,
+                                    int bargaining,
+                                    const ecs::NpcTraits* traits)
+        {
+            return trade_price(baseValue, charisma, bargaining,
+                               trait_price_mult(traits, true),
+                               /*buying*/ true);
+        }
+        int trade_overlay_sell_price(int baseValue, int charisma,
+                                     int bargaining,
+                                     const ecs::NpcTraits* traits)
+        {
+            return trade_price(baseValue, charisma, bargaining,
+                               trait_price_mult(traits, false),
+                               /*buying*/ false);
+        }
+
+        // A completed deal with a squad is a FACT of the world (S20.1) —
+        // subject = the player, object = the trader's squad by its
+        // save-stable ordinal; filed through THE one deed door.
+        void record_npc_deal_fact(GameState& gs, ecs::World& w,
+                                  std::uint32_t traderOrdinal,
+                                  int gave, int took)
+        {
+            WorldFact f{};
+            f.day = gs.worldTime.day();
+            f.kind = std::uint16_t(FactKind::Traded);
+            f.subjectKind = std::uint8_t(FactSubject::Squad);
+            f.subject = ecs::kPlayerSquadOrdinal;
+            f.objectKind = std::uint8_t(FactSubject::Squad);
+            f.object = traderOrdinal;
+            const ecs::MacroCell* pc = player_flag_cell(w);
+            f.x = std::int16_t(pc ? ecs::cell_x(*pc, gs.mapW) : 0);
+            f.y = std::int16_t(pc ? ecs::cell_y(*pc, gs.mapW) : 0);
+            f.amount = gave + took;
+            record_deed(w, gs, f);
+        }
 
 
         // A completed deal is a FACT of the world (S20.1: a deal is a
@@ -371,12 +441,18 @@ namespace sm::ui
             return cache;
         }
 
-        std::uint32_t settlement_preview_seed(std::uint32_t worldSeed, int settlementId)
+        // THE cell-seed law (sub/map_data.h kCellSeedX/Y) applied to the
+        // landmark's OWN cell — the preview must hash the very seed the
+        // engine's resolve_context hashes, or the Map tab shows a town
+        // that does not exist (владелец, 2026-09-11: «карта в меню города
+        // вообще другая»). The old formula (worldSeed + id*123) was a
+        // parallel seed law with exactly that disease.
+        std::uint32_t settlement_preview_seed(std::uint32_t worldSeed,
+                                              const Landmark &s)
         {
-            const std::uint32_t id = settlementId >= 0
-                                       ? std::uint32_t(settlementId)
-                                       : 0u;
-            return worldSeed + id * 123u;
+            return worldSeed
+                 ^ (std::uint32_t(s.x) * sub::kCellSeedX)
+                 ^ (std::uint32_t(s.y) * sub::kCellSeedY);
         }
 
         // THE tile → colour dictionary of every 2D subworld rendering in this
@@ -416,10 +492,11 @@ namespace sm::ui
 
         bool ensure_settlement_preview(SettlementPreviewCache &cache,
                                        const Landmark &s,
-                                       std::uint32_t worldSeed)
+                                       std::uint32_t worldSeed,
+                                       const MacroWorld *mw)
         {
             const std::uint32_t previewSeed =
-                settlement_preview_seed(worldSeed, s.id);
+                settlement_preview_seed(worldSeed, s);
             if (cache.ready &&
                 cache.tex != 0 &&
                 cache.worldSeed == worldSeed &&
@@ -430,16 +507,22 @@ namespace sm::ui
                 return true;
             }
 
+            // The REAL context of the landmark's cell — the same facts the
+            // engine resolves when you actually walk in (macro/cell_facts.h;
+            // a missing envelope degrades to the old meadow stand-in).
             sub::CellContext ctx{};
-            ctx.cx = 0;
-            ctx.cy = 0;
+            ctx.cx = s.x;
+            ctx.cy = s.y;
             ctx.macroHeight = 0.55f;
             ctx.biome = Meadow;
             ctx.feature = FT_None;
             ctx.landmark.id = s.id;
             ctx.landmark.size = s.population;
-            ctx.landmark.kind = LandmarkType::City;
+            ctx.landmark.kind = s.type;
+            ctx.landmark.factionIdx = int(s.factionIdx);
+            ctx.landmark.depleted = s.depleted;
             ctx.seed = previewSeed;
+            ctx.worldSeed = worldSeed;
 
             float nbHeights[9]{};
             Biome nbBiome[9]{};
@@ -449,6 +532,27 @@ namespace sm::ui
                 nbHeights[i] = 0.55f;
                 nbBiome[i] = Meadow;
                 nbFeature[i] = std::uint8_t(FT_None);
+            }
+            if (mw)
+            {
+                const CellFacts cf = cell_facts(*mw, s.x, s.y);
+                ctx.macroHeight = cf.height01;
+                ctx.biome = cf.biome;
+                ctx.feature = cf.feature;
+                // Neighbours in the seamless manager's own order
+                // (ni = yy*3 + xx, offsets −1..1).
+                for (int yy = 0; yy < 3; ++yy)
+                {
+                    for (int xx = 0; xx < 3; ++xx)
+                    {
+                        const CellFacts nf =
+                            cell_facts(*mw, s.x + xx - 1, s.y + yy - 1);
+                        const int ni = yy * 3 + xx;
+                        nbHeights[ni] = nf.height01;
+                        nbBiome[ni] = nf.biome;
+                        nbFeature[ni] = std::uint8_t(nf.feature);
+                    }
+                }
             }
 
             sub::SubworldMapData map{};
@@ -1377,12 +1481,15 @@ namespace sm::ui
     void draw_settlement(GameState &gs,
                          ecs::World &world,
                          int settlementId,
+                         entt::entity squadSubject,
+                         const MacroWorld *mw,
                          const std::vector<Quest> &availableQuests,
                          std::vector<Quest> &activeQuests,
                          QuestEngine &questEngine,
                          EventBus &bus,
                          SettlementPanelTab *tab,
                          bool *open,
+                         entt::entity *attackRequest,
                          float scale)
     {
         if (!open || !*open)
@@ -1391,6 +1498,195 @@ namespace sm::ui
         Inventory *bagPtr = player_inventory(world);
         Inventory bagFallback{};
         Inventory &playerBag = bagPtr ? *bagPtr : bagFallback;
+
+        // ── THE SQUAD BRANCH of the one subject panel ────────────────────
+        // Same window, same pause law, same tab bar as a settlement —
+        // «система меню единая» (владелец): only the banner and the tab
+        // set differ, and both come from the subject.
+        if (squadSubject != entt::null)
+        {
+            const bool alive = world.reg.valid(squadSubject)
+                && world.reg.all_of<ecs::NPCKind, ecs::NpcCharacter,
+                                    ecs::Pools>(squadSubject)
+                && !world.reg.all_of<ecs::PlayerSquadTag>(squadSubject);
+            const ecs::Pools *pools = alive
+                ? &world.reg.get<ecs::Pools>(squadSubject) : nullptr;
+            if (!alive || pools->hp <= 0.0f)
+            {
+                *open = false;   // the counterparty is gone: fail closed
+                return;
+            }
+            const auto &kind = world.reg.get<ecs::NPCKind>(squadSubject);
+            const auto &ch = world.reg.get<ecs::NpcCharacter>(squadSubject);
+            const NPCType t =
+                kind.type < std::uint16_t(NPCType::Count)
+                    ? NPCType(std::uint8_t(kind.type)) : NPCType::Peasant;
+            const auto &def = npc_def(t);
+            const auto *lvl = world.reg.try_get<ecs::NpcLevel>(squadSubject);
+            const auto *traits =
+                world.reg.try_get<ecs::NpcTraits>(squadSubject);
+            auto *bag = world.reg.try_get<ecs::NpcInventory>(squadSubject);
+            const char *npcName = npc_display_name(def, ch);
+            const FactionDef *fd = faction_def_by_index(kind.factionIdx);
+            g_squadTrade.sync_to(int(entt::to_integral(squadSubject)));
+            if (g_squadTalkFor != squadSubject)
+            {
+                g_squadTalkFor = entt::null;
+                g_squadTalkLine = nullptr;
+            }
+            const SettlementPanelTab current =
+                tab ? *tab : SettlementPanelTab::Info;
+
+            ImGui::SetNextWindowSize(ImVec2(760 * scale, 620 * scale),
+                                     ImGuiCond_FirstUseEver);
+            char title[96];
+            std::snprintf(title, sizeof(title), "%s###Settlement", npcName);
+            if (ImGui::Begin(title, open))
+            {
+                ImGui::SetWindowFontScale(scale);
+                // ── Banner (the settlement banner's shape) ──
+                ImGui::PushFont(nullptr);
+                ImGui::TextColored(ImVec4(1.0f, 0.92f, 0.50f, 1.0f),
+                                   "%s", npcName);
+                ImGui::PopFont();
+                ImGui::SameLine();
+                ImGui::TextDisabled("(%s)", def.label);
+                ImGui::Text("Faction: %s   Lv.%d   HP %d/%d",
+                            fd ? fd->name : "?",
+                            lvl ? int(lvl->value) : 0,
+                            int(pools->hp), int(pools->maxHp));
+                if (ImGui::Button("Talk"))
+                {
+                    g_squadTalkFor = squadSubject;
+                    g_squadTalkLine = def.talkCount > 0
+                        ? def.talkLines[ch.visualSeed
+                                        % std::uint32_t(def.talkCount)]
+                        : "...";
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Attack"))
+                {
+                    if (attackRequest) *attackRequest = squadSubject;
+                    *open = false;
+                }
+                if (g_squadTalkFor == squadSubject && g_squadTalkLine)
+                {
+                    ImGui::TextWrapped("\"%s\"", g_squadTalkLine);
+                }
+                ImGui::Separator();
+
+                // ── Tabs (the same bar the settlement branch draws) ──
+                if (ImGui::BeginTabBar("##settab"))
+                {
+                    const bool infoOpen = ImGui::BeginTabItem("Info", nullptr,
+                        selected_tab(current, SettlementPanelTab::Info));
+                    if (tab && ImGui::IsItemClicked())
+                        *tab = SettlementPanelTab::Info;
+                    if (infoOpen)
+                    {
+                        if (ImGui::BeginTable("squad_info", 2,
+                                              ImGuiTableFlags_BordersInnerH
+                                                  | ImGuiTableFlags_RowBg))
+                        {
+                            draw_info_overview_row("Level",
+                                                   lvl ? int(lvl->value) : 0);
+                            draw_info_overview_row("HP", int(pools->hp));
+                            draw_info_overview_row(
+                                "Faction index", int(kind.factionIdx));
+                            if (const auto *roster =
+                                    world.reg.try_get<ecs::SquadRoster>(
+                                        squadSubject))
+                            {
+                                draw_info_overview_row(
+                                    "Soldiers",
+                                    total_soldiers(roster->squad));
+                            }
+                            if (bag)
+                            {
+                                draw_info_overview_row(
+                                    "Carries (value)",
+                                    inventory_value(bag->inv));
+                            }
+                            ImGui::EndTable();
+                        }
+                        if (traits && traits->count > 0)
+                        {
+                            ImGui::TextDisabled("Traits:");
+                            for (std::uint8_t ti = 0;
+                                 ti < traits->count && ti < 2; ++ti)
+                            {
+                                ImGui::SameLine();
+                                ImGui::TextDisabled(
+                                    "%s",
+                                    npc_trait_label(traits->traits[ti]));
+                            }
+                        }
+                        ImGui::EndTabItem();
+                    }
+                    // Trade — only when he carries a bag (the tab's own
+                    // gate, the same law a spire has no Trade tab by).
+                    if (bag)
+                    {
+                        const bool tradeOpen = ImGui::BeginTabItem(
+                            "Trade", nullptr,
+                            selected_tab(current, SettlementPanelTab::Trade));
+                        if (tab && ImGui::IsItemClicked())
+                            *tab = SettlementPanelTab::Trade;
+                        if (tradeOpen)
+                        {
+                            const PlayerHaggler h = player_haggler(world);
+                            ImGui::Text("Player coin: %d",
+                                        wallet_value(playerBag));
+                            draw_trade_carry_line(h.sheet, playerBag,
+                                                  h.standing);
+                            draw_counterparty_gold(bag->inv);
+                            draw_trade_amount_input(&g_squadTrade.amount);
+                            const auto buyUnit = [&](const ItemRef &ref,
+                                                     const ItemDef &d,
+                                                     int n) {
+                                (void)d;
+                                return trade_overlay_buy_price(
+                                    stock_price(
+                                        value_of(ref),
+                                        bag->inv.count_of(int(ref.def)) - n,
+                                        0),
+                                    h.cha, h.trade, traits);
+                            };
+                            const auto sellUnit = [&](const ItemRef &ref,
+                                                      const ItemDef &d,
+                                                      int n) {
+                                (void)d;
+                                return trade_overlay_sell_price(
+                                    stock_price(
+                                        value_of(ref),
+                                        bag->inv.count_of(int(ref.def)) + n,
+                                        0),
+                                    h.cha, h.trade, traits);
+                            };
+                            draw_barter_body(
+                                "Trader stock", g_squadTrade,
+                                playerBag, bag->inv,
+                                buyUnit, sellUnit,
+                                [&](int gave, int took) {
+                                    if (const auto *sid =
+                                            world.reg.try_get<
+                                                ecs::MacroSpawnId>(
+                                                squadSubject))
+                                    {
+                                        record_npc_deal_fact(
+                                            gs, world, sid->index,
+                                            gave, took);
+                                    }
+                                });
+                            ImGui::EndTabItem();
+                        }
+                    }
+                    ImGui::EndTabBar();
+                }
+            }
+            ImGui::End();
+            return;
+        }
         // The panel opens for ANY landmark («меню города — хороший пример,
         // его обобщить») — the City hardcode is dead; which TABS a kind
         // shows is the actions column's business below.
@@ -1400,7 +1696,10 @@ namespace sm::ui
         const SettlementPanelTab current = tab ? *tab : SettlementPanelTab::Info;
 
         ImGui::SetNextWindowSize(ImVec2(760 * scale, 620 * scale), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Settlement", open))
+        char lmTitle[96];
+        std::snprintf(lmTitle, sizeof(lmTitle), "%s###Settlement",
+                      s ? s->name.c_str() : "Settlement");
+        if (ImGui::Begin(lmTitle, open))
         {
             ImGui::SetWindowFontScale(scale);
             if (!s)
@@ -1699,7 +1998,7 @@ namespace sm::ui
                 {
                     SettlementPreviewCache &preview = settlement_preview_cache();
                     const std::uint32_t previewSeed =
-                        settlement_preview_seed(gs.worldSeed, s->id);
+                        settlement_preview_seed(gs.worldSeed, *s);
                     ImGui::TextDisabled("Settlement preview");
                     ImGui::SameLine();
                     if (ImGui::Button("Refresh"))
@@ -1709,7 +2008,8 @@ namespace sm::ui
                     }
                     ImGui::Spacing();
 
-                    if (ensure_settlement_preview(preview, *s, gs.worldSeed))
+                    if (ensure_settlement_preview(preview, *s, gs.worldSeed,
+                                                  mw))
                     {
                         const float avail = ImGui::GetContentRegionAvail().x;
                         const float side = std::min(360.0f, std::max(180.0f, avail));

@@ -184,6 +184,15 @@ struct LandmarkContext {
     bool depleted = false;
 };
 
+// THE cell-seed law: a subworld cell's generation seed is the world seed
+// hashed with its WRAPPED macro coordinates. One pair of constants for
+// every deriver — the engine's resolve_context AND the settlement panel's
+// map preview must hash identically, or the preview shows a town that
+// does not exist (владелец, 2026-09-11: «карта в меню города вообще
+// другая»).
+inline constexpr std::uint32_t kCellSeedX = 73856093u;
+inline constexpr std::uint32_t kCellSeedY = 19349663u;
+
 // CellContext — what the macroworld knows about a single cell.
 struct CellContext {
     // WHICH CELL OF THE WORLD this is — the wrapped macro index, [0, worldCells).

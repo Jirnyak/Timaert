@@ -41,15 +41,11 @@ struct MacroCursor {
 
 // What the proximity panel asked the app to do this frame (меню-сессия
 // 2026-09-11: ряд = один клик → СРАЗУ панель субъекта). The panel never
-// mutates world state itself — it reports and the app routes:
-//   * attackNpc — the squad panel's Attack button; the app walks the
-//     attacker to the defender's cell (THE transfer law) and opens the
-//     встреча;
-//   * openSettlementId — a landmark row was clicked; the app opens the
-//     settlement panel for that id.
+// mutates world state itself — it reports the clicked subject and the app
+// opens the ONE subject panel (ui/overlays.h draw_settlement) on it.
 struct NpcProximityResult {
-    entt::entity attackNpc = entt::null;
-    int  openSettlementId = -1;
+    entt::entity openSquad = entt::null;   // a squad row was clicked
+    int  openSettlementId = -1;            // a landmark row was clicked
 };
 
 using MacroWalkReachedFn = void (*)(void* user, int x, int y);
@@ -106,9 +102,8 @@ NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                                             bool showRows = true,
                                             float scale = 1.0f);
 
-// Test/runtime hook used by smoke scripts and non-mouse callers. It opens the
-// same NPC trade popup as the proximity panel's Trade button.
-void open_npc_trade_panel(entt::entity npc);
-bool npc_proximity_popup_open();
+// (open_npc_trade_panel / npc_proximity_popup_open died with the module's
+// own popups: the subject panel is app state now — a smoke or a caller sets
+// App::subjectSquad + ui.settlement and the ONE panel opens.)
 
 } // namespace sm::ui
