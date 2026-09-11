@@ -93,6 +93,15 @@ constexpr int kMaxSubworldEntityReaps = 2048;
 // to a man walking in and a man walking out.
 constexpr const char* kDisengageBlockedMsg =
     "Cannot break away — hostiles are too close in this danger zone.";
+// Red proximity — «it is on you before you can walk away»: ~a second of
+// closing at a fast chaser's pace (the 35–50 speed band of the combat
+// rows). ONE number for the HUD gem's red band AND the disengage gate —
+// the gate used to hold the DETECTION radius (200 m, «замечен»), which
+// barred a rooftop hatch because a throng stood 128 m straight DOWN in
+// the yard: the threat distance is honest 3D (dist3sq), so what was wrong
+// was the band, not the geometry (owner 2026-09-11). Being seen does not
+// pin you; a hostile on you does.
+constexpr float kDangerProximityM = 40.0f;
 // kHitFlashDuration now lives in sub/spell_effects.h — one constant for every
 // weapon's on-hit flash.
 // kPlayerMeleeRange / kPlayerMeleeCooldown / kPlayerBaseMeleeDamage moved to
@@ -724,16 +733,14 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     // cell. The macro entities stay authoritative and untouched (the macro tick
     // is frozen while a subworld is active). Runs AFTER the world fill and BEFORE
     // the player entity so projections are part of the scene the player enters.
-    bool projectionTruncated = false;
     const int projected = project_macro_npcs_into_subworld(ecs, mgr_, cx, cy,
         gs.mapW, gs.mapH,
         gs.worldSeed ^ kMacroProjectionSalt ^ (std::uint32_t(cx) << 8)
-            ^ std::uint32_t(cy), &projectionTruncated, &structIndex_);
+            ^ std::uint32_t(cy), &structIndex_);
     if (projected > 0) {
         char msg[80];
-        std::snprintf(msg, sizeof(msg), "%d overworld figure%s nearby%s",
-                      projected, projected == 1 ? "" : "s",
-                      projectionTruncated ? " (and more beyond the cap)" : "");
+        std::snprintf(msg, sizeof(msg), "%d overworld figure%s nearby",
+                      projected, projected == 1 ? "" : "s");
         set_status(msg);
     }
     // Materialise the player as a real ECS entity (the movable PlayerTag flag /
@@ -1390,7 +1397,7 @@ void SubworldEngine::repopulate_after_recenter(int dx, int dy) {
         project_macro_npcs_into_subworld(*ecs_, mgr_, cx, cy,
             gs_->mapW, gs_->mapH,
             gs_->worldSeed ^ kMacroProjectionSalt ^ (std::uint32_t(cx) << 8)
-                ^ std::uint32_t(cy), nullptr, &structIndex_);
+                ^ std::uint32_t(cy), &structIndex_);
     }
 }
 
@@ -2087,11 +2094,9 @@ DangerLevel SubworldEngine::danger_level() const {
     // What this measures is PROXIMITY OF THE NEAREST HOSTILE for the HUD gem
     // (and the exit gate below) — not any weapon's reach. The old name here
     // was kMeleeRange, a liar 8× the real melee identity (kPlayerMeleeRange
-    // is 5 m, sub/engine.h). Red means "it is on you before you can walk
-    // away": 40 m is about a second of closing at a fast chaser's pace (the
-    // 35–50 speed band of the guard/bandit/wolf combat rows). Yellow is
-    // "noticed" — inside the one detection radius; Green is nothing near.
-    constexpr float kDangerProximityM = 40.0f;
+    // is 5 m, sub/engine.h). Red = kDangerProximityM (file scope above —
+    // the disengage gate shares it); Yellow is "noticed" — inside the one
+    // detection radius; Green is nothing near.
     constexpr float kDangerProximity2 = kDangerProximityM * kDangerProximityM;
     const float detection2 = kDetectionRadius * kDetectionRadius;
     if (playerThreatD2_ > detection2) return DangerLevel::Green;
@@ -2103,7 +2108,9 @@ bool SubworldEngine::exit_blocked_by_danger() const {
     if (!active_ || !zones_ || zones_->data.empty()) return false;
     const int danger = int(zones_->at(mgr_.center_cx(), mgr_.center_cy()));
     if (danger <= kSafeExitDanger) return false;
-    return has_hostile_near_player(kDetectionRadius);
+    // The RED band, not detection: «cannot break away» means a hostile is
+    // ON you, not that one has seen you (see kDangerProximityM above).
+    return has_hostile_near_player(kDangerProximityM);
 }
 
 // ── The ONE interaction rule ────────────────────────────────────────────────
@@ -2930,11 +2937,10 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
             const int lvl = normalize_soldier_level(level ? level->value : 1);
 
             if (reg.any_of<ecs::PlayerSoldierTag>(e)) {
-                if (const auto* link = reg.try_get<ecs::SoldierLink>(e)) {
-                    if (SoldierSquad* army = player_roster(*ecs_)) {
-                        remove_one_soldier_by_entity_id(*army, link->entityId);
-                    }
-                }
+                // His roster record was struck by THE settle above (§42
+                // Инк 6): the player's soldier carries the same Roster loan
+                // as any lord's man, so the hand-written removal that stood
+                // here — the player being special one last time — is dead.
                 reg.destroy(e);
                 continue;
             }

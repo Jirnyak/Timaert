@@ -47,6 +47,7 @@ enum class SmokeAction : std::uint8_t {
     DungeonCave,
     PrologueRoad,
     SpireClimb,
+    SpirePerf,
     TriggerBattleStart,
     WaitVisible,
     OpenSettlementBuild,

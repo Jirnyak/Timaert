@@ -99,6 +99,7 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"dungeon_cave", SmokeAction::DungeonCave},
     {"prologue_road", SmokeAction::PrologueRoad},
     {"spire_climb", SmokeAction::SpireClimb},
+    {"spire_perf", SmokeAction::SpirePerf},
     {"trigger_battle_start", SmokeAction::TriggerBattleStart},
     {"wait_visible", SmokeAction::WaitVisible},
     {"open_settlement_build", SmokeAction::OpenSettlementBuild},
@@ -2007,9 +2008,16 @@ bool run_subworld_exit_gate_smoke(App& app) {
     // "bandits" NAMED, not defaulted: this scenario needs a body the player is
     // actually at war with (it asserts the exit gate stays shut while a hostile
     // is near). The default is now the realm owning this ground, whose guards
-    // would let you walk right out.
+    // would let you walk right out. Placed AT ARM'S REACH deliberately (§42
+    // Инк 6): the gate holds the RED band — «it is on you», ~40 m, honest 3D
+    // — not the 200 m detection radius, and on a mountain slope the old ring
+    // spawn (18–34 tiles + the slope's height) can honestly fall OUTSIDE red.
+    const float gatePx = app.subworld.player_x();
+    const float gatePy = app.subworld.player_y();
+    const float banditPos[2] = {gatePx + 10.0f, gatePy};
     if (!app.subworld.spawn_npc_body("bandit", "Smoke Gate Bandit", 3,
-                                     app.gs.worldSeed ^ 0xE917u, "bandits")) {
+                                     app.gs.worldSeed ^ 0xE917u, "bandits",
+                                     nullptr, banditPos)) {
         restore();
         smoke_fail(app, "subworld_exit_gate hostile spawn failed");
         return false;
@@ -2026,16 +2034,26 @@ bool run_subworld_exit_gate_smoke(App& app) {
     app.subworld.leave(false);
     const bool blocked = app.subworld.active();
     const bool statusSet = app.subworld.status_line()[0] != '\0';
+
+    // The NEGATIVE arm (§42 Инк 6): being SEEN is not being PINNED. Walk 80
+    // tiles off — the same living hostile still has the player inside its
+    // 200 m detection, but outside the red band — and the gate must open.
+    app.subworld.set_player_pos(gatePx + 80.0f, gatePy);
+    advance_sim_seconds(app, 0.05f, false);
+    app.subworld.leave(false);
+    const bool freed = !app.subworld.active();
+
     const int zone = int(app.zones.at(cellX, cellY));
     restore();
 
     std::fprintf(stderr,
                  "[smoke] subworld_exit_gate zone=%d cell=%d,%d "
-                 "blocked=%d status=%d\n",
-                 zone, cellX, cellY, blocked ? 1 : 0, statusSet ? 1 : 0);
+                 "blocked=%d status=%d freed=%d\n",
+                 zone, cellX, cellY, blocked ? 1 : 0, statusSet ? 1 : 0,
+                 freed ? 1 : 0);
     std::fflush(stderr);
 
-    if (!blocked || !statusSet) {
+    if (!blocked || !statusSet || !freed) {
         smoke_fail(app, "subworld_exit_gate invariant");
         return false;
     }
@@ -3099,6 +3117,61 @@ bool run_prologue_road_smoke(App& app) {
     return true;
 }
 
+// spire_perf — an honest MEASUREMENT, not a verdict (the balance_run
+// doctrine): teleport to the tallest spire, enter its open-air scene with
+// the born throng ALIVE and hostile (§42 Инк 5: hundreds in the yard), run
+// a fixed count of simulation ticks and say the cost out loud — bodies,
+// ms/tick against the 64 tps budget (15.625 ms). No ceiling hides in here:
+// the owner reads the number and decides (CANON S28, «потолков нет»).
+bool run_spire_perf_smoke(App& app) {
+    const sm::Landmark* target = nullptr;
+    for (const auto& sp : app.gs.landmarks) {
+        if (sp.type != sm::LandmarkType::Spire) continue;
+        if (sp.spellId >= std::uint32_t(sm::kSpellCount)) continue;
+        if (!target || sm::kSpellDefs[sp.spellId].tier
+                           > sm::kSpellDefs[target->spellId].tier) {
+            target = &sp;
+        }
+    }
+    if (!target) {
+        smoke_fail(app, "spire_perf found no spire");
+        return false;
+    }
+    const float oldX = smoke_player_x(app);
+    const float oldY = smoke_player_y(app);
+    smoke_teleport_player(app, target->x, target->y);
+    app.gs.subState.settlementId = -1;
+    enter_subworld(app);
+    if (!app.subworld.active()) {
+        smoke_fail(app, "spire_perf could not enter the spire cell");
+        return false;
+    }
+    app.subworld.tick(0.015625f);   // settle one step before the clock runs
+
+    int bodies = 0;
+    for ([[maybe_unused]] auto e :
+         app.ecs.reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind>()) {
+        ++bodies;
+    }
+    constexpr int kPerfTicks = 512;
+    constexpr double kTickBudgetMs = 1000.0 / 64.0;
+    const auto t0 = std::chrono::steady_clock::now();
+    for (int i = 0; i < kPerfTicks; ++i) app.subworld.tick(0.015625f);
+    const auto t1 = std::chrono::steady_clock::now();
+    const double totalMs =
+        std::chrono::duration<double, std::milli>(t1 - t0).count();
+    const double perTick = totalMs / double(kPerfTicks);
+    std::fprintf(stderr,
+                 "[smoke] spire_perf pop=%d bodies=%d ticks=%d "
+                 "ms_per_tick=%.3f tick_budget_ms=%.3f sim_load=%.1f%%\n",
+                 target->population, bodies, kPerfTicks, perTick,
+                 kTickBudgetMs, perTick * 100.0 / kTickBudgetMs);
+    std::fflush(stderr);
+    if (app.subworld.active()) app.subworld.leave(true);
+    smoke_teleport_player(app, int(oldX), int(oldY));
+    return true;
+}
+
 // spire_climb — the whole spire loop in one live pass: teleport to a spire
 // whose spell the player does not know, enter the scorched cell, walk the
 // gate, climb every storey through its demon guard, take the roof hatch onto
@@ -3334,12 +3407,10 @@ bool run_spire_climb_smoke(App& app) {
         const float wx = float(sm::sub::kCellSize) + chx;
         const float wy = float(sm::sub::kCellSize) + chy;
         // Stepping out onto the crown re-raised the overworld scene, and the
-        // spire's remaining THRONG re-embodied in the yard below (§42 Инк 5:
-        // a spire is born with hundreds of souls). The danger law bars a
-        // door while hostiles stand near — so clear them first, the way a
-        // player must, exactly as at the gate.
-        app.subworld.dev_kill_all_hostiles();
-        app.subworld.tick(0.016f);
+        // spire's remaining THRONG re-embodied in the yard 128 m below (§42
+        // Инк 5). The disengage gate holds the RED band (a hostile ON you,
+        // 3D), not detection — so the hatch up here must open with the yard
+        // alive, and this interact WITNESSES that law (owner 2026-09-11).
         app.subworld.set_player_pos(wx, wy + 2.0f);
         app.subworld.rotate_camera(
             std::atan2(-2.0f, 0.0f) - app.subworld.cam_yaw(), 0.0f);
@@ -5962,6 +6033,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr, "[smoke] action=spire_climb\n");
             std::fflush(stderr);
             if (run_spire_climb_smoke(app)) ++app.smoke.cursor;
+            break;
+        case SmokeAction::SpirePerf:
+            std::fprintf(stderr, "[smoke] action=spire_perf\n");
+            std::fflush(stderr);
+            if (run_spire_perf_smoke(app)) ++app.smoke.cursor;
             break;
         case SmokeAction::SubworldLootXp:
             std::fprintf(stderr, "[smoke] action=subworld_loot_xp\n");

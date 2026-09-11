@@ -358,15 +358,14 @@ void spawn_player_squad(ecs::World& w,
 // Enter-only: it does NOT re-run on a seam crossing, so a macro NPC in a newly
 // entered neighbour cell is not yet materialised — an accepted v1 scope, since
 // the persistent macro entity is never lost. Returns the number of bodies
-// projected, members included (bounded by kMaxProjectedMacroNpcs). `seed`
-// should be the world seed mixed with the window centre so a re-entry
-// reproduces the same scene. The raw-tiles form exists for tests, like the
-// squad spawn above; the mgr form delegates to it.
+// projected, members included — EVERY macro body standing in the window
+// (§42 Инк 6, owner: «потолков нет» — kMaxProjectedMacroNpcs is dead; an
+// army of hundreds walks in whole, and the one physical bound left is the
+// scene crowd grid, which already shouts when it binds). `seed` should be
+// the world seed mixed with the window centre so a re-entry reproduces the
+// same scene. The raw-tiles form exists for tests, like the squad spawn
+// above; the mgr form delegates to it.
 //
-// `truncated` (optional): set to true when the projection CAP refused bodies
-// that stand in this window — the ceiling may not cut the crowd silently
-// (CANON S26, the crowdGatherTruncated_ pattern); the caller says it out
-// loud. Never set to false: the caller owns the reset.
 // `solids` (optional): the scene's solidity index. A water tile that carries
 // a solid above the water plane (a bridge deck, a jetty, a wall walk) is DRY
 // FOOTING (sub/height.h is_dry_footing) and a body may materialise on it —
@@ -376,7 +375,6 @@ int project_macro_npcs_into_subworld(ecs::World& w,
                                      int centerCx, int centerCy,
                                      int mapW, int mapH,
                                      std::uint32_t seed,
-                                     bool* truncated = nullptr,
                                      const StructureIndex* solids = nullptr);
 
 int project_macro_npcs_into_subworld(ecs::World& w,
@@ -384,7 +382,6 @@ int project_macro_npcs_into_subworld(ecs::World& w,
                                      int centerCx, int centerCy,
                                      int mapW, int mapH,
                                      std::uint32_t seed,
-                                     bool* truncated = nullptr,
                                      const StructureIndex* solids = nullptr);
 
 // ── Exit remap query (Inc 5e-1) ──────────────────────────────────────────

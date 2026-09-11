@@ -154,9 +154,20 @@ One healthy core the system lands on:
   now), asserted with the genesis witnesses in spire_generation_test.
 
 ## Debt (approved increments, each under its own owner "да")
-- **Инк 6 — the projection cap (128) dies**; player-squad Roster loan +
-  recenter idempotence; honest FPS measurement of mass combat, said out
-  loud.
+- **Инк 6 (2026-09-11)** — no ceilings, no special player, numbers out
+  loud. `kMaxProjectedMacroNpcs` (128) is dead with its `truncated`
+  plumbing: every macro body standing in the window walks in — an army of
+  hundreds meets you as hundreds; the one physical bound left is the scene
+  crowd grid, which already shouts. The player's soldiers carry the same
+  Roster loan as any lord's men (subject = the player squad's reserved
+  ordinal) — the hand-written roster removal in the death path died, one
+  settle door for every army. The disengage gate holds the RED band
+  («it is on you», ~40 m, honest 3D `dist3sq`) instead of the 200 m
+  detection radius: being seen does not pin you, a throng 128 m below a
+  rooftop hatch does not bar it (owner 2026-09-11) — witnessed both ways
+  by subworld_exit_gate (blocked at arm's reach, freed at 80 tiles). THE
+  MEASUREMENT: `spire_perf` smoke — tier-5 spire, 364 live hostile bodies,
+  512 ticks: **0.654 ms/tick of the 15.625 ms budget = 4.2 % sim load**.
 - **Инк 7 — street guards = garrison records** (the pop/10 street-guard
   share dies).
 

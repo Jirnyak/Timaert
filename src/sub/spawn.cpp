@@ -29,11 +29,9 @@ constexpr int kMaxSubworldSpawnReaps = 2048;
 // speeds depending on which spawner made them (32 vs 48).
 constexpr float kBodyVisualCatchUp = 32.0f;
 constexpr float kBodyWanderSpeedFraction = 0.35f;
-// Safety valve for the macro→subworld projection (Inc 5d). Only macro NPCs whose
-// integer cell falls in the 3×3 window are projected, so in normal play this is
-// a handful; the cap merely bounds a pathological single-cell cluster and is not
-// expected to bind. The projection's return count reflects what was projected.
-constexpr int kMaxProjectedMacroNpcs = 128;
+// (kMaxProjectedMacroNpcs — the projection's 128-body ceiling — died with
+// §42 Инк 6, owner: «потолков нет». The window filter alone decides who
+// stands; the crowd grid is the one physical bound and it shouts.)
 
 // Does something CARRY a body above the water plane here? The universal half
 // of the wet-tile question (sub/height.h): the tile says what the ground is,
@@ -985,11 +983,12 @@ void spawn_player_squad(ecs::World& w,
         // Before this, the squad had its own hand-written birth that forgot
         // `NpcCharacter` — which is precisely why an army of ten was invisible.
         //
-        // A soldier is DERIVED: the roster line says WHO stands here, the seed
-        // says everything else. Nothing is lent yet — the roster becomes a macro
-        // stock of its own when squads become the macro entity (macrosim.md,
-        // "Squad as THE macro entity"), and on that day this call gains a loan
-        // and nothing else changes.
+        // A soldier is DERIVED: the roster line says WHO stands here, the
+        // seed says everything else — and he is LENT like any lord's man
+        // (§42 Инк 6, «игрок не особен»): the receipt names the player
+        // squad's reserved ordinal and this member's entityId, so his death
+        // strikes the roster through THE one settle door
+        // (macro_stock.cpp "roster"), exactly as every other army pays.
         const auto e = spawn_derived_body(reg,
             BodySpec{
                 type, fx, fy, faction, level,
@@ -998,7 +997,11 @@ void spawn_player_squad(ecs::World& w,
                     ^ std::uint32_t(level),
                 /*combatant*/true},
             /*faceSalt*/std::uint32_t(i) * 2654435761u,
-            BodyLoan::none(), squadBonuses);
+            BodyLoan::from(MacroStock::Roster,
+                           MacroStockKey{
+                               std::int32_t(ecs::kPlayerSquadOrdinal), 0, 0,
+                               std::int32_t(soldier.entityId)}),
+            squadBonuses);
         reg.emplace<ecs::PlayerSoldierTag>(e);
         reg.emplace<ecs::SoldierLink>(e, soldier.entityId, soldier.kind,
                                       std::int16_t(level));
@@ -1011,18 +1014,17 @@ int project_macro_npcs_into_subworld(ecs::World& w,
                                      const SeamlessSubworldManager& mgr,
                                      int centerCx, int centerCy,
                                      int mapW, int mapH,
-                                     std::uint32_t seed, bool* truncated,
+                                     std::uint32_t seed,
                                      const StructureIndex* solids) {
     return project_macro_npcs_into_subworld(w, mgr.tiles(), centerCx, centerCy,
-                                            mapW, mapH, seed, truncated,
-                                            solids);
+                                            mapW, mapH, seed, solids);
 }
 
 int project_macro_npcs_into_subworld(ecs::World& w,
                                      const std::vector<std::uint8_t>& tiles,
                                      int centerCx, int centerCy,
                                      int mapW, int mapH,
-                                     std::uint32_t seed, bool* truncated,
+                                     std::uint32_t seed,
                                      const StructureIndex* solids) {
     auto& reg = w.reg;
     const bool tilesUsable =
@@ -1076,18 +1078,10 @@ int project_macro_npcs_into_subworld(ecs::World& w,
         if (std::find(alreadyProjected.begin(), alreadyProjected.end(), macro)
             != alreadyProjected.end()) continue;
 
-        // The cap, checked AFTER the window filter so it only fires for a
-        // body that WOULD stand here — and it fires out loud (CANON S26):
-        // the macro entity persists untouched, but the scene is blind to it
-        // and the caller must be able to say so. Standing projections count
-        // against it — a recenter's fresh cells fill the REMAINDER of one
-        // scene budget, not a second one.
-        if (int(alreadyProjected.size()) + projected
-            >= kMaxProjectedMacroNpcs) {
-            if (truncated) *truncated = true;
-            break;
-        }
-
+        // (The projection cap that stood here — kMaxProjectedMacroNpcs, 128
+        // for the whole scene — died with §42 Инк 6, owner: «потолков нет».
+        // Every macro body standing in the window walks in; the one physical
+        // bound is the crowd grid, and it already shouts when it binds.)
         const auto& kind = reg.get<ecs::NPCKind>(macro);
 
         // Deterministic per-(cell, type, index) stream: the same overworld state
@@ -1169,19 +1163,13 @@ int project_macro_npcs_into_subworld(ecs::World& w,
         // the squad's MacroSpawnId ordinal, detail = this member's entityId).
         // Placed on a tight ring around the leader, dodging water like every
         // other placement here; a member that finds no land stands ON the
-        // leader's spot rather than being lost. Counted against the same
-        // projection cap as everyone else.
+        // leader's spot rather than being lost. The whole roster walks in —
+        // no ceiling (§42 Инк 6): an army of hundreds meets you as hundreds.
         if (const auto* roster = reg.try_get<ecs::SquadRoster>(macro)) {
             const auto* sid = reg.try_get<ecs::MacroSpawnId>(macro);
             constexpr float kTau = 6.2831853f;
             const int memberCount = int(roster->squad.size());
             for (int m = 0; m < memberCount; ++m) {
-                if (projected >= kMaxProjectedMacroNpcs) {
-                    // Roster rows past the ceiling stay safe in the macro
-                    // roster — but never disappear from the scene silently.
-                    if (truncated) *truncated = true;
-                    break;
-                }
                 const SoldierRecord& rec = roster->squad[std::size_t(m)];
                 if (!valid_npc_kind(rec.kind)) continue;
 

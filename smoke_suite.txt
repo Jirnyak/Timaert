@@ -90,3 +90,4 @@ subworld_enter,fauna_kill_writeback,subworld_exit_remap,save_game,open_load,load
 
 return_title
 console
+spire_perf
