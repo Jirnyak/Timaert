@@ -64,6 +64,9 @@ force_encounter
 stats_settle
 open_map
 open_stats
+# The bench tab + the reaction round trip (craft → white base → scrap back);
+# the capture photographs the OPEN Craft tab one frame after the mutation.
+open_craft,capture_frame
 spend_attribute_end
 spend_skill_bodybuilding
 macro_travel_sp

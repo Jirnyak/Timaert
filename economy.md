@@ -377,3 +377,34 @@ a 1/32 step cannot represent the average of a small stock. Pre-scaling the
 stored average would, and was declined: the tithe's weight is a balance
 question for a measured run, not a defect. The comment at the site now says
 all of this, because it used to claim a symmetry that was never there.
+
+## 2026-09-11/12 — matter merged into the catalog (owner: «ВСЁ СЛИВАЕМ И ОБРЕЗАЕМ»)
+
+The recipe table's INPUT columns are dead. «Из чего сделан хлеб» lived in two
+tables — `kRecipes[].inputs` for the production day and (arriving) the item
+composition for craft/scrap — which is exactly the drift the one-dictionary
+ruling exists to forbid. Now there is ONE matter table: the catalog row's own
+composition (`macro/items.h item_parts`, up to 4 `{catalog ordinal, count}`
+pairs, authored in `items.cpp kPartsAuthoring` — the bread..statue numbers
+moved verbatim, so the balance did not move). A `RecipeDef` names only
+LABOUR: what is worked on, how fast, where. CANON «Крафт/Скрап» carries the
+owner's verdicts (4 slots, terminals, floor(n/2) entropy, variant byte).
+
+- **Consumers of the one matter**: `econ_produce_day` (resolved parts, store
+  asked by catalog ordinal directly), `daily_demand_for` (derived demand
+  flows down the composition), the caravan buy order (needs unrolled to
+  parts), the craft door, the scrap door, the auto-scrap.
+- **The mint stays a PRICE law, not a composition** (`kMintMetal`): a coin is
+  1/32 silver — no u8 part can say it — so coin rows are terminal for the
+  universal scrap, the metal enters the mint row directly, and melting coin
+  back is the future REVERSE of the mint recipe, never the scrap door's.
+- **Slot hygiene rides the daily tick** (CANON: «склад не забивается
+  говном»): past half occupancy (>128 slots) the cheapest NON-FUNGIBLE
+  stacks (rolled/affixed — plain rows stack and cannot clog) melt back to
+  matter; wired in `econ_consume_day` (fact `Scrapped`) and in
+  `feed_squads_daily` for the AI squads' bags. The player's bag never passes
+  through either — his scrap is a manual act (the Inventory tab's button;
+  craft is the Craft tab of the same panel).
+- **No-arbitrage is a table law now** (`item_parts_test`): a white base is
+  worth at least its own halved scrap return, so buy → scrap → sell loses at
+  every stall by construction, the same way round trips lose to slippage.

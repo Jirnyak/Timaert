@@ -117,6 +117,7 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"stats_settle", SmokeAction::StatsSettle},
     {"open_map", SmokeAction::OpenMap},
     {"open_stats", SmokeAction::OpenStats},
+    {"open_craft", SmokeAction::OpenCraft},
     {"spend_attribute_end", SmokeAction::SpendAttributeEnd},
     {"spend_skill_bodybuilding", SmokeAction::SpendSkillBodybuilding},
     {"macro_travel_sp", SmokeAction::MacroTravelSp},
@@ -7007,6 +7008,61 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          sm::player_sheet(app.ecs)->skills.of(sm::SkillId::Bodybuilding),
                          player_pools(app).maxHp);
             std::fflush(stderr);
+            ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::OpenCraft: {
+            // The bench tab (CANON «Крафт/Скрап») + the two doors run
+            // through the honest bag: 2 iron craft a sword (white base),
+            // the sword scraps back to floor(2/2) = 1 iron. The panel is
+            // photographed by a following capture_frame (≥1 frame later,
+            // the mutate-then-photograph law).
+            std::fprintf(stderr, "[smoke] action=open_craft\n");
+            std::fflush(stderr);
+            if (!app.worldLoaded) {
+                smoke_fail(app, "open_craft without world");
+                break;
+            }
+            app.ui.character = true;
+            app.ui.characterTab = sm::ui::CharacterPanelTab::Craft;
+            app.ui.map = false;
+            app.ui.quest = false;
+            app.ui.codex = false;
+            sm::Inventory& bag = player_bag(app);
+            const int sword = sm::item_index("wpn_sword");
+            const int ironBefore = bag.count("iron");
+            const int swordBefore = bag.count_of(sword);
+            bag.add("iron", 2);
+            const bool crafted = sm::craft_item(bag, sword, 1);
+            const bool whiteBase = [&] {
+                for (const sm::ItemRef& s : bag.slots) {
+                    if (!s.empty() && s.def == std::uint16_t(sword)
+                        && s.seed == 0 && sm::affix_count(s) == 0) {
+                        return true;
+                    }
+                }
+                return false;
+            }();
+            // Scrap the crafted stack back — find its slot the honest way.
+            bool scrapped = false;
+            for (int sl = 0; sl < sm::kMaxInventorySlots && !scrapped; ++sl) {
+                const sm::ItemRef& s = bag.slots[std::size_t(sl)];
+                if (!s.empty() && s.def == std::uint16_t(sword) && s.seed == 0) {
+                    scrapped = sm::scrap_at(bag, sl, 1);
+                }
+            }
+            const bool conserved = bag.count("iron") == ironBefore + 1
+                && bag.count_of(sword) == swordBefore;
+            std::fprintf(stderr,
+                         "[smoke] craft open crafted=%d white_base=%d "
+                         "scrap_back=%d iron_roundtrip=%d\n",
+                         crafted ? 1 : 0, whiteBase ? 1 : 0,
+                         scrapped ? 1 : 0, conserved ? 1 : 0);
+            std::fflush(stderr);
+            if (!crafted || !whiteBase || !scrapped || !conserved) {
+                smoke_fail(app, "craft/scrap round trip broke");
+                break;
+            }
             ++app.smoke.cursor;
             break;
         }

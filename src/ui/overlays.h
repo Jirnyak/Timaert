@@ -26,6 +26,10 @@ enum class CharacterPanelTab : std::uint8_t {
     Army,
     Equipment,
     Spells,
+    // The bench of the reversible reaction (CANON «Крафт/Скрап»): craft is a
+    // manual act over the player's own bag, so it lives IN the character
+    // panel — a tab, never a parallel window (the menu-session lesson).
+    Craft,
 };
 
 enum class SettlementPanelTab : std::uint8_t {

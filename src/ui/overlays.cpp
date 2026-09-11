@@ -11,6 +11,7 @@
 #include "macro/landmark_iter.h"
 #include "ui/landmark_draw.h"
 #include "macro/npc.h"
+#include "macro/commodity.h"   // the raw rows the scrap variant byte names
 #include "macro/economy.h"
 #include "macro/faction.h"
 #include "macro/items.h"
@@ -1042,6 +1043,72 @@ namespace sm::ui
                                 pools.mp = pc.currentMp;
                                 pools.sp = pc.currentSp;
                             }
+                            // SCRAP — the reverse ход of the one reaction
+                            // (CANON «Крафт/Скрап»: «игрок разбирает
+                            // осознанно»). Like Use above, the row itself
+                            // says whether it applies: a composition on the
+                            // catalog row puts the button here, terminals
+                            // (raw matter, coins) simply never show it. The
+                            // preview prints the door's own arithmetic —
+                            // floor(count/2) per part, variant byte
+                            // substituting part 0 — so the player reads the
+                            // entropy price before paying it.
+                            const auto parts = item_parts(int(st.def));
+                            if (!parts.empty())
+                            {
+                                std::string back;
+                                for (std::size_t pi = 0; pi < parts.size(); ++pi)
+                                {
+                                    int mat = int(parts[pi].def);
+                                    if (pi == 0 && st.material != 0
+                                        && int(st.material) <= kRawCommodityCount)
+                                    {
+                                        const int sub = item_index(
+                                            kCommodities[st.material - 1].id);
+                                        if (sub >= 0) mat = sub;
+                                    }
+                                    const int n = int(parts[pi].count) / 2;
+                                    if (n <= 0) continue;
+                                    const ItemDef *md = item_def_at(mat);
+                                    if (!md) continue;
+                                    if (!back.empty()) back += ", ";
+                                    back += std::to_string(n);
+                                    back += "x ";
+                                    back += md->name;
+                                }
+                                ImGui::TextDisabled(
+                                    back.empty()
+                                        ? "Scraps to slag: %s"
+                                        : "Scraps into (per unit): %s",
+                                    back.empty() ? "the parts burn whole"
+                                                 : back.c_str());
+                                const auto scrap = [&](int n) {
+                                    const int slot = selectedSlot;
+                                    if (scrap_at(playerBag, slot, n))
+                                    {
+                                        lastUseMessage = "Scrapped ";
+                                        lastUseMessage += def->name;
+                                        lastUseMessage += back.empty()
+                                            ? ": all of it burnt to slag."
+                                            : (": +" + back + " per unit.");
+                                    }
+                                    else
+                                    {
+                                        // The door is all-or-nothing: the
+                                        // one honest refusal here is a bag
+                                        // with no room for the returns.
+                                        lastUseMessage =
+                                            "No room for the scrap returns.";
+                                    }
+                                };
+                                if (ImGui::SmallButton("Scrap 1")) scrap(1);
+                                if (st.count > 1)
+                                {
+                                    ImGui::SameLine();
+                                    if (ImGui::SmallButton("Scrap all"))
+                                        scrap(st.count);
+                                }
+                            }
                         }
                     }
                     else
@@ -1050,6 +1117,103 @@ namespace sm::ui
                             playerBag.used_slots() == 0
                                 ? "(empty)"
                                 : "Click a stack to inspect it.");
+                    }
+                    ImGui::EndTabItem();
+                }
+
+                // CRAFT — the forward ход of the one reaction (CANON
+                // «Крафт/Скрап»): full price in materials, a WHITE base out
+                // (seed 0 — affixes are born in the world, never at a
+                // bench). The list is the CATALOG's own answer: every row
+                // with a composition, minus coin (чеканка = право двора,
+                // the door refuses it anyway) — nothing is restated here.
+                const bool craftOpen = ImGui::BeginTabItem("Craft", nullptr,
+                                                           selected_tab(current, CharacterPanelTab::Craft));
+                if (tab && ImGui::IsItemClicked())
+                    *tab = CharacterPanelTab::Craft;
+                if (craftOpen)
+                {
+                    static std::string lastCraftMessage;
+                    ImGui::TextDisabled(
+                        "Craft pays the full composition; scrap returns half"
+                        " (the Inventory tab's button on any crafted thing).");
+                    if (!lastCraftMessage.empty())
+                        ImGui::TextDisabled("%s", lastCraftMessage.c_str());
+                    if (ImGui::BeginTable("craft_grid", 3,
+                                          ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg))
+                    {
+                        ImGui::TableSetupColumn("Item");
+                        ImGui::TableSetupColumn("Materials");
+                        ImGui::TableSetupColumn("");
+                        ImGui::TableHeadersRow();
+                        const auto catalog = item_catalog();
+                        for (int ci = 0; ci < int(catalog.size()); ++ci)
+                        {
+                            const auto parts = item_parts(ci);
+                            if (parts.empty() || item_is_currency(ci))
+                                continue;
+                            const ItemDef &row = catalog[std::size_t(ci)];
+                            ImGui::TableNextRow();
+                            ImGui::TableNextColumn();
+                            ImGui::Text("%s", row.name);
+                            if (ImGui::IsItemHovered())
+                            {
+                                ImGui::BeginTooltip();
+                                ImGui::Text("%d g   %.1f kg", row.value,
+                                            double(row.weight));
+                                if (row.description && row.description[0])
+                                    ImGui::TextWrapped("%s", row.description);
+                                ImGui::EndTooltip();
+                            }
+                            ImGui::TableNextColumn();
+                            bool can = true;
+                            bool first = true;
+                            for (const ItemPart &part : parts)
+                            {
+                                const ItemDef *md = item_def_at(int(part.def));
+                                if (!md) continue;
+                                const int have =
+                                    playerBag.count_of(int(part.def));
+                                const bool enough = have >= int(part.count);
+                                can = can && enough;
+                                if (!first) ImGui::SameLine();
+                                first = false;
+                                // Short of a material = the line says so in
+                                // red; the button below stays honest for
+                                // free (the door re-checks regardless).
+                                if (enough)
+                                    ImGui::Text("%dx %s (%d)",
+                                                int(part.count), md->name,
+                                                have);
+                                else
+                                    ImGui::TextColored(
+                                        ImVec4(0.9f, 0.35f, 0.3f, 1.0f),
+                                        "%dx %s (%d)", int(part.count),
+                                        md->name, have);
+                            }
+                            ImGui::TableNextColumn();
+                            ImGui::PushID(ci);
+                            ImGui::BeginDisabled(!can);
+                            if (ImGui::SmallButton("Craft"))
+                            {
+                                if (craft_item(playerBag, ci, 1))
+                                {
+                                    lastCraftMessage = "Crafted ";
+                                    lastCraftMessage += row.name;
+                                    lastCraftMessage += ".";
+                                }
+                                else
+                                {
+                                    // Materials were shown green, so the one
+                                    // honest refusal left is a full bag.
+                                    lastCraftMessage =
+                                        "No room in the bag for it.";
+                                }
+                            }
+                            ImGui::EndDisabled();
+                            ImGui::PopID();
+                        }
+                        ImGui::EndTable();
                     }
                     ImGui::EndTabItem();
                 }
