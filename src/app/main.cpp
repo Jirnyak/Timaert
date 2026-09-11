@@ -405,12 +405,13 @@ long file_size_bytes(const std::string& path) {
 }
 
 
-// «Поселение» = ландмарк, объявивший хоть один глагол поселения (колонка
-// actions, PLAY-2): деревня отвечает той же дверью, что и город; шпиль/руина
-// панели не имеют — их минимум живёт в попапе взаимодействия.
+// Панель субъекта открывается для ЛЮБОГО ландмарка («меню города — хороший
+// пример, его обобщить»): у шпиля/руины это шапка + Info, поселенческие
+// вкладки гейтятся колонкой действий внутри. События же входа/выхода и
+// клавиша T остаются за поселениями (settlement_at_player ниже).
 const sm::Landmark* settlement_by_id(const sm::GameState& gs, int id) {
     const sm::Landmark* lm = sm::landmark_by_id(gs, id);
-    return (lm && sm::landmark_has_settlement_panel(lm->type)) ? lm : nullptr;
+    return (lm && lm->type != sm::LandmarkType::None) ? lm : nullptr;
 }
 
 int settlement_at_player(const sm::GameState& gs, sm::ecs::World& world,
@@ -421,7 +422,7 @@ int settlement_at_player(const sm::GameState& gs, sm::ecs::World& world,
     const float py = float(sm::ecs::cell_y(*pc, gs.mapW));
     const float r2 = radius * radius;
     for (const auto& s : gs.landmarks) {
-        if (!sm::landmark_has_settlement_panel(s.type)) continue;
+        if (!sm::landmark_is_settlement(s.type)) continue;
         if (sm::torus_dist_sq(px, py,
                               float(s.x), float(s.y),
                               float(gs.mapW), float(gs.mapH)) <= r2) {
@@ -5937,26 +5938,31 @@ void frame(App& app, int simSteps) {
                     // Fight сведёт тела кольцом. Прямой вход в субмир
                     // ставил игрока в пустое поле: враг-проекция стоял на
                     // СВОЕЙ клетке, за сотни тайлов.
+                    // ЗАКОН ПЕРЕНОСА (вердикт владельца 2026-09-11):
+                    // атакующий, объявляя бой, ДОХОДИТ — игрок встаёт в
+                    // клетку защитника ТОЙ ЖЕ дверью, что любой макро-
+                    // прыжок (player_jump_to_cell). Вся встреча всегда
+                    // одна клетка: детектор, грация, гейт отрыва и
+                    // Flee-отпрыг работают в своих предпосылках, позиции
+                    // макромира не рассинхронизируются никогда.
+                    if (const auto* cell = app.ecs.reg.try_get<
+                            sm::ecs::MacroCell>(npcResult.attackNpc)) {
+                        sm::player_jump_to_cell(
+                            app.gs, app.ecs,
+                            sm::ecs::cell_x(*cell, app.gs.mapW),
+                            sm::ecs::cell_y(*cell, app.gs.mapW));
+                    }
                     app.preBattleNpc = npcResult.attackNpc;
                     app.encounterTalkLine.clear();
                     app.gs.subState.kind = sm::GameSubStateKind::PreBattle;
                     app.cursor.path.clear();
                     app.cursor.pathIdx = 0;
                 }
-                // Глаголы ландмарк-ряда универсального меню (меню-сессия):
-                // Enter = та же дверь, что клавиша Enter; Trade/Hire/
-                // Contracts открывают панель поселения НА ВКЛАДКЕ глагола.
-                if (npcResult.enterRequested && !app.subworld.active()) {
-                    enter_subworld(app);
-                }
+                // Клик по ландмарк-ряду = сразу его панель (Info; дальше
+                // игрок ходит по вкладкам сам — «система меню единая»).
                 if (npcResult.openSettlementId >= 0) {
                     app.ui.settlementId = npcResult.openSettlementId;
-                    app.ui.settlementTab =
-                        npcResult.settlementVerb == sm::kMapActHire
-                            ? sm::ui::SettlementPanelTab::Recruit
-                        : npcResult.settlementVerb == sm::kMapActQuests
-                            ? sm::ui::SettlementPanelTab::Quests
-                            : sm::ui::SettlementPanelTab::Trade;
+                    app.ui.settlementTab = sm::ui::SettlementPanelTab::Info;
                     refresh_available_settlement_quests(app);
                     app.ui.settlement = true;
                 }

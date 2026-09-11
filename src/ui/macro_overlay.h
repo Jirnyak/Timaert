@@ -39,16 +39,17 @@ struct MacroCursor {
     std::size_t pathIdx = 0;
 };
 
-// What the proximity panel's INTERACTION MENU asked the app to do this
-// frame (меню-сессия 2026-09-11: ряд = один клик → меню, глаголы — данные
-// macro/map_actions.h). The panel never mutates world state itself — it
-// reports the verb and the app routes it, exactly as Attack always worked.
+// What the proximity panel asked the app to do this frame (меню-сессия
+// 2026-09-11: ряд = один клик → СРАЗУ панель субъекта). The panel never
+// mutates world state itself — it reports and the app routes:
+//   * attackNpc — the squad panel's Attack button; the app walks the
+//     attacker to the defender's cell (THE transfer law) and opens the
+//     встреча;
+//   * openSettlementId — a landmark row was clicked; the app opens the
+//     settlement panel for that id.
 struct NpcProximityResult {
-    entt::entity attackNpc = entt::null;   // Attack verb of a squad row
-    bool enterRequested = false;           // Enter verb of a landmark row
-    int  openSettlementId = -1;            // открыть панель поселения id…
-    std::uint16_t settlementVerb = 0;      // …на вкладке этого глагола
-                                           //   (kMapActTrade/Hire/Quests)
+    entt::entity attackNpc = entt::null;
+    int  openSettlementId = -1;
 };
 
 using MacroWalkReachedFn = void (*)(void* user, int x, int y);
@@ -95,10 +96,11 @@ std::size_t step_macro_walk(GameState& gs, ecs::World& w, MacroCursor& cursor,
 // Right-edge stack of clickable badges for every INTERACTABLE map object on
 // the player's cell or any of the 8 adjacent cells (Chebyshev distance <= 1,
 // with torus wrap): squads AND landmarks, one row shape (меню-сессия). A row
-// is ONE button — clicking it opens the universal interaction menu, whose
-// verbs come from the data (actions_of): talk/trade/attack for a squad,
-// enter/trade/hire/contracts for a place. The old per-row button scatter
-// (PLAY-1) is dead.
+// is ONE button — clicking it opens the subject's OWN tabbed panel directly
+// (владелец: «меню города — хороший пример, его обобщить»): a squad the
+// Squad window (Info/Trade tabs + Talk/Attack buttons), a landmark the
+// settlement panel. The old per-row button scatter (PLAY-1) and the interim
+// generic verb window are both dead.
 NpcProximityResult draw_npc_proximity_panel(GameState& gs, ecs::World& w,
                                             int viewW, int viewH,
                                             bool showRows = true,

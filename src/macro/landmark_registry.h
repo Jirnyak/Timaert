@@ -262,12 +262,13 @@ inline constexpr const LandmarkDef& landmark_def(LandmarkType t) {
     return kLandmarks[std::size_t(t)];
 }
 
-// Does this KIND open the settlement panel at all? The data answers: a kind
-// that declares at least one settlement verb (trade / hire / contract board)
-// has a panel; a spire or a ruin — the walk-in minimum — does not. This
-// predicate is what killed the LandmarkType::City hardcode of the old panel
-// gate (PLAY-2): a village answers the same door a city does.
-inline constexpr bool landmark_has_settlement_panel(LandmarkType t) {
+// Is this KIND a SETTLEMENT — a place the player «прибывает в», with enter/
+// leave events and the T-key panel default? The data answers: a kind that
+// declares at least one settlement verb (trade / hire / contract board).
+// This predicate killed the LandmarkType::City hardcode (PLAY-2): a village
+// answers the same door a city does. The subject PANEL itself opens for ANY
+// landmark by click — which tabs it shows is the actions column's business.
+inline constexpr bool landmark_is_settlement(LandmarkType t) {
     return landmark_def(t).actions != 0;
 }
 

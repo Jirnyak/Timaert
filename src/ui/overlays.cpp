@@ -1391,11 +1391,11 @@ namespace sm::ui
         Inventory *bagPtr = player_inventory(world);
         Inventory bagFallback{};
         Inventory &playerBag = bagPtr ? *bagPtr : bagFallback;
-        // The panel opens for ANY kind that declares settlement verbs
-        // (actions column, PLAY-2) — the City hardcode is dead, the village
-        // walked in through the same door.
+        // The panel opens for ANY landmark («меню города — хороший пример,
+        // его обобщить») — the City hardcode is dead; which TABS a kind
+        // shows is the actions column's business below.
         Landmark *s = landmark_by_id(gs, settlementId);
-        if (s && !landmark_has_settlement_panel(s->type))
+        if (s && s->type == LandmarkType::None)
             s = nullptr;
         const SettlementPanelTab current = tab ? *tab : SettlementPanelTab::Info;
 
