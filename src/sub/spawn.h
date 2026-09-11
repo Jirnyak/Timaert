@@ -204,12 +204,22 @@ int interior_household_share(std::uint32_t worldSeed, int cellX, int cellY,
                              std::uint16_t ordinal, int level,
                              int landmarkPop);
 
-// The interior reserve of ONE CELL: the sum of every household its doors
-// keep. Walks the structures for this cell's House-opening doors and asks
-// the household law above for each storey — the same pure functions over
-// the same inputs the engine uses when a door is opened. Street crowd =
-// population − this (the §42 partition witness asserts the sum exactly).
+// The garrison share of ONE storey of a place's own interior (a spire
+// tower's floor): the souls kept inside are `pop - (pop >> the registry's
+// crowdOutsideShift)`, split evenly over the storeys with the remainder to
+// the lower floors. Pure arithmetic of the LIVE population — clearing a
+// floor thins the place, and every re-derived share thins with it.
+int interior_garrison_share(LandmarkType landmark, int landmarkPop,
+                            int storeys, int level);
+
+// The interior reserve of ONE CELL: the sum of every soul its doors keep
+// behind them — households behind House doors, the garrison behind a
+// tower's gate — each asked of the same pure laws the engine uses when a
+// door is opened (which law a door speaks is the dungeon kind ROW's own
+// columns: householdAbove / placeGarrison). Street crowd = population −
+// this (the §42 partition witness asserts the sum exactly).
 int interior_reserve_for_cell(const std::vector<Structure>& structures,
+                              LandmarkType landmark,
                               std::uint32_t worldSeed,
                               int cellX, int cellY,
                               float originX, float originY,
@@ -241,7 +251,11 @@ int spawn_dungeon_residents(ecs::World& w,
                             int count,
                             const std::vector<StandPoint>& floorCatalog,
                             float originX, float originY,
-                            MacroStockKey populationKey);
+                            MacroStockKey populationKey,
+                            // Role is CONTEXT, not a second spawner: a
+                            // hearth's family lives its errands (false), a
+                            // garrisoned storey FIGHTS for its place (true).
+                            bool combatant = false);
 
 // The vermin of ONE interior (a cellar, a cave floor): creatures rolled from
 // the SAME global monster table the open world uses — `tableKind` picks the

@@ -133,6 +133,13 @@ struct DungeonKindRow {
     bool householdAbove;     // storeys ≥0 borrow RESIDENTS from Population
     bool verminAbove;        // storeys ≥0 draw VERMIN from FaunaCount
                              //   (a cellar, level<0, is always a den)
+    bool placeGarrison;      // this scene IS its landmark's own interior
+                             //   (§42/CANON S28): when the door cell names a
+                             //   place that keeps a crowd, storeys draw the
+                             //   PLACE's population — its crowd family, as
+                             //   fighters — and the wild FaunaCount den law
+                             //   stands down. A spire's demons are the
+                             //   spire's souls, never the mountain's game.
     LandmarkType denFamily;  // whose monster-table family the den draws
     bool shaftLadder;        // pads are directional (W climbs, E descends)
                              //   instead of fixed storey pairs
@@ -204,6 +211,11 @@ static_assert(kSpireTowerHallRadiusTiles >= kInteriorFightSpanTiles,
               "a tower storey must seat a fight, not a clinch");
 // Storey count of the tower (= clamped ordinal = the spell's tier).
 int dungeon_spire_tower_floors(const DungeonRef& ref);
+
+// Storey count of ANY interior — the garrison partition's denominator (a
+// place's souls split over the storeys they man). Module dispatch, like
+// dungeon_room: a tower answers its tier, everything else is one storey.
+int dungeon_storey_count(const DungeonRef& ref);
 
 // Prologue road (sub/dgn/prologue_road.cpp — self-contained module). The
 // demo's opening pocket: a forest road under the honest sky, TOROIDALLY

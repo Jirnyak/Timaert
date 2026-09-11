@@ -1285,6 +1285,21 @@ CellContext SubworldEngine::resolve_context(int x, int y) const {
 // resolved at its true macro coordinate. This is why an off-centre city fills
 // with citizens (it no longer depends on being the centre cell), and why the
 // procedural fauna is deterministic per cell (seeded from ctx.seed).
+
+// WHOSE banner a place's crowd wears — one resolve for the street and the
+// interiors (§42): the registry's spawnFaction column wins when the row
+// names one (a spire's crowd IS demons, exactly like its wild rolls),
+// otherwise the owning kingdom's faction as ever.
+static std::uint16_t landmark_crowd_faction(const Politik& politik,
+                                            LandmarkType kind,
+                                            int kingdomIdx) {
+    const char* placeFaction = landmark_def(kind).spawnFaction;
+    if (placeFaction != nullptr) {
+        return std::uint16_t(faction_index(placeFaction));
+    }
+    return faction_index_for_kingdom(politik, kingdomIdx);
+}
+
 void SubworldEngine::spawn_cell(int ox, int oy) {
     if (!ecs_ || !gs_ || !terrain_ || terrain_->width <= 0
         || terrain_->height <= 0) {
@@ -1301,11 +1316,12 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
     const int W = terrain_->width, H = terrain_->height;
     const int wcx = wrapi(ccx, W);
     const int wcy = wrapi(ccy, H);
-    // Citizens belong to the kingdom that owns this cell's settlement — resolved
-    // HERE, where the GameState is, and handed to the spawner as a plain index
-    // so sub/spawn.cpp stays free of macro state (macro/politik.h owns the rule).
-    const std::uint16_t settlementFaction =
-        faction_index_for_kingdom(gs_->politik, ctx.landmark.kingdomIdx);
+    // Citizens belong to the kingdom that owns this cell's settlement — or to
+    // the place's own banner where the registry names one (a spire's crowd IS
+    // demons). Resolved HERE, where the GameState is, and handed to the
+    // spawner as a plain index so sub/spawn.cpp stays free of macro state.
+    const std::uint16_t settlementFaction = landmark_crowd_faction(
+        gs_->politik, ctx.landmark.kind, ctx.landmark.kingdomIdx);
     // The wild headcount standing on this cell — the honest CAP on how many
     // creatures embody (macro/macro_stock.h fauna row: spawn-table capacity
     // minus what the hunt has taken). Asked HERE, where the GameState is,
@@ -3224,7 +3240,8 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
     ses.settlementId = doorCtx.landmark.id;   // ONE landmark id space (v54)
     ses.landmarkPop = doorCtx.landmark.size;
     ses.landmarkKind = doorCtx.landmark.kind;
-    ses.faction = faction_index_for_kingdom(gs_->politik, doorCtx.landmark.kingdomIdx);
+    ses.faction = landmark_crowd_faction(gs_->politik, doorCtx.landmark.kind,
+                                         doorCtx.landmark.kingdomIdx);
     // In off the street — or down through the crown, which lands on the roof
     // pad instead of the south threshold (a storey above the ground has no
     // threshold to land on at all).
@@ -3418,6 +3435,36 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
             mgr_.cell_stand_points(4),
             float(kCellSize), float(kCellSize), popKey);
     }
+    // THE PLACE'S OWN GARRISON (§42 Инк 4, CANON S28): a scene that IS its
+    // landmark's interior (kind row placeGarrison) draws its storey's share
+    // of the PLACE's population — its crowd family, fighting — through the
+    // same residents spawner and the same Population loan, so clearing the
+    // climb thins the spire itself, not the mountain's game. Which storey
+    // gets how many is pure arithmetic of the live number
+    // (interior_garrison_share), the same shares the street subtracts as
+    // its reserve: outside picket + Σ storeys == population, always.
+    const bool placeGarrison = kindRow.placeGarrison
+        && ses.settlementId >= 0
+        && landmark_def(ses.landmarkKind).crowdHabitat != 0;
+    if (placeGarrison && ecs_) {
+        MacroWorld mw = mw_;
+        const MacroStockKey popKey{ses.settlementId,
+                                   std::int16_t(ses.doorCx),
+                                   std::int16_t(ses.doorCy)};
+        const int popNow = macro_stock_read(mw, MacroStock::Population, popKey);
+        const int share = std::min(popNow,
+            interior_garrison_share(ses.landmarkKind, popNow,
+                                    dungeon_storey_count(ses.ref),
+                                    int(ses.ref.level)));
+        spawn_dungeon_residents(*ecs_,
+            dungeon_scene_seed(worldSeed, ses.doorCx, ses.doorCy,
+                               ses.ref.ordinal, ses.ref.level) ^ 0x6A441501u,
+            ses.faction, ses.landmarkKind,
+            doorFacts.zone, doorFacts.depositsNear, share,
+            mgr_.cell_stand_points(4),
+            float(kCellSize), float(kCellSize), popKey,
+            /*combatant*/true);
+    }
     // What lives in the dark. A cellar and a cavern hold the same thing by
     // the same law: the RUIN row family of the one monster table (what creeps
     // into places men do not light), borrowed from the cell's OWN fauna_count
@@ -3429,12 +3476,12 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     // headcount. What the den's creatures are WORTH is their rows — the danger
     // zone does not price them here any more than it does outdoors (CANON.md
     // S12); when it earns a say it will weight the table, not the bodies.
-    // A spire tower is garrisoned on EVERY storey — the spire's demons are
-    // the cell's own headcount (kTblSpire is what a spire cell's FaunaCount
-    // capacity already counts), so clearing the climb thins the spire
-    // through the same receipt a hunt settles, and the one growth law is
-    // what re-summons the guard.
-    const bool denOfBeasts = ses.ref.level < 0 || kindRow.verminAbove;
+    // A garrisoned scene never doubles as a wild den: the spire's storeys
+    // are manned by the spire's OWN souls above; only where the place keeps
+    // no crowd (a wild hillside cave, a cellar under a town house) does the
+    // dark fill from the cell's fauna by the den law.
+    const bool denOfBeasts =
+        (ses.ref.level < 0 || kindRow.verminAbove) && !placeGarrison;
     if (denOfBeasts && ecs_) {
         MacroWorld mw = mw_;
         const MacroStockKey faunaKey{-1, std::int16_t(ses.doorCx),

@@ -50,25 +50,32 @@ Tile dungeon_floor_tile(const DungeonRef& ref) {
 // water, ring, scene biome (rock ring for interiors), wrap block (0 = static)
 constexpr DungeonKindRow kDungeonKindRows[] = {
     { DungeonRef::None,       "none",   nullptr,
-                              false, false, LandmarkType::Ruin,
+                              false, false, /*garrison*/false,
+                              LandmarkType::Ruin,
                               false, false, 0.0f, DungeonRef::Void,
                               Biome::Mountain, 0 },
     { DungeonRef::House,      "house",  nullptr,
-                              true,  false, LandmarkType::Ruin,
+                              true,  false, /*garrison*/false,
+                              LandmarkType::Ruin,
                               false, false, 0.0f, DungeonRef::Void,
                               Biome::Mountain, 0 },
+    // A cave garrisons from its place the day a Lair stands on the map; on
+    // a wild cell (no landmark) the same row falls through to FaunaCount.
     { DungeonRef::Cave,       "cave",   nullptr,
-                              false, true,  LandmarkType::Ruin,
+                              false, true,  /*garrison*/true,
+                              LandmarkType::Ruin,
                               false, false, 0.0f, DungeonRef::Void,
                               Biome::Mountain, 0 },
     { DungeonRef::SpireTower, "spire_tower", nullptr,
-                              false, true,  LandmarkType::Spire,
+                              false, true,  /*garrison*/true,
+                              LandmarkType::Spire,
                               true,  true,  0.0f, DungeonRef::Void,
                               Biome::Mountain, 0 },
     // The one place in the world where dying is a story beat: the witch
     // takes the body the road took (release.md §3 scene 2).
     { DungeonRef::PrologueRoad, "prologue_road", "prologue_main",
-                              false, false, LandmarkType::Ruin,
+                              false, false, /*garrison*/false,
+                              LandmarkType::Ruin,
                               false, false, 0.0f, DungeonRef::Void,
                               Biome::Taiga, 3 },
 };
@@ -99,6 +106,13 @@ DungeonRoom dungeon_room(const DungeonRef& ref) {
         case DungeonRef::SpireTower:   return dungeon_spire_tower_room(ref);
         case DungeonRef::PrologueRoad: return dungeon_prologue_road_room(ref);
         default:                       return DungeonRoom{};
+    }
+}
+
+int dungeon_storey_count(const DungeonRef& ref) {
+    switch (ref.kind) {
+        case DungeonRef::SpireTower: return dungeon_spire_tower_floors(ref);
+        default:                     return 1;
     }
 }
 

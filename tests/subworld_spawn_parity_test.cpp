@@ -1036,6 +1036,36 @@ int main() {
               "derived strength orders rabbit < wolf < troll");
     }
 
+    // ── The garrison partition (§42 Инк 4, CANON S28) ──
+    // Pure arithmetic law: outside picket + Σ storey shares == population,
+    // soul for soul, for any population and any storey count — the same
+    // shares the street reserve subtracts and each storey embodies. A
+    // remainder must land on the LOWER floors, never vanish.
+    {
+        const int pops[] = {0, 1, 3, 5, 100, 383, 8192};
+        bool holds = true;
+        for (int pop : pops) {
+            for (int storeys = 1; storeys <= 5 && holds; ++storeys) {
+                const int outside =
+                    pop >> sm::landmark_def(sm::LandmarkType::Spire)
+                               .crowdOutsideShift;
+                int inside = 0;
+                for (int level = 0; level < storeys; ++level) {
+                    inside += sm::sub::interior_garrison_share(
+                        sm::LandmarkType::Spire, pop, storeys, level);
+                }
+                holds = (outside + inside == pop);
+            }
+            if (!holds) break;
+        }
+        CHECK(holds, "picket + storeys == the spire's population, always");
+        CHECK(sm::sub::interior_garrison_share(sm::LandmarkType::Spire,
+                                               100, 3, 0)
+                  >= sm::sub::interior_garrison_share(sm::LandmarkType::Spire,
+                                                      100, 3, 2),
+              "a share remainder lands on the lower floors, never vanishes");
+    }
+
     CHECK(true, "every gate above held");
     return sm::test::report("subworld_spawn_parity_test");
 }

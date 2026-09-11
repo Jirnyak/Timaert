@@ -120,10 +120,22 @@ One healthy core the system lands on:
   Village min 1); the City/Village branch and the per-kind street seeds
   are dead.
 
+- **Инк 4 (2026-09-11)** — interiors draw from THEIR place. A scene that
+  IS its landmark's interior (dungeon kind row column `placeGarrison`:
+  SpireTower, Cave) draws its storey's share of the PLACE's population —
+  its crowd family, as fighters, the place's own banner
+  (`landmark_crowd_faction`: the registry's spawnFaction wins, else the
+  kingdom) — through the same residents spawner and the same Population
+  loan: clearing the climb thins the spire itself. The garrison partition
+  (`interior_garrison_share`): picket outside = `pop >>
+  crowdOutsideShift` (Spire = 2, a quarter), the rest split evenly over
+  the storeys, remainder to the lower floors — **picket + Σ storeys ==
+  population**, asserted in subworld_spawn_parity_test; the street's
+  reserve walk subtracts the same shares (a tower's gate reserves its
+  whole garrison). A wild cave (no landmark) honestly stays on FaunaCount,
+  and a garrisoned scene never doubles as a wild den.
+
 ## Debt (approved increments, each under its own owner "да")
-- **Инк 4 — interiors draw from THEIR place.** A spire storey's bodies come
-  from the spire's Population, not the mountain's FaunaCount; a wild cave
-  (no landmark) honestly stays on FaunaCount.
 - **Инк 5 — genesis.** Ruins placed on the map (surface generator already
   exists); contextual population columns; the registry watchman: every
   kLandmarks row is either placed by a pass or explicitly marked "the world

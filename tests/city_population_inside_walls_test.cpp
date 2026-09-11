@@ -252,7 +252,8 @@ int main() {
         // sum to the town's population, soul for soul — the double
         // embodiment (a soul on the square AND in a house) is dead.
         const int reserve = sm::sub::interior_reserve_for_cell(
-            mgr.structures(), /*worldSeed*/0xC17015Eu, 0, 0,
+            mgr.structures(), sm::LandmarkType::City,
+            /*worldSeed*/0xC17015Eu, 0, 0,
             float(sm::sub::kCellSize), float(sm::sub::kCellSize), 1200);
         if (reserve <= 0) return fail("a 1200-soul city kept nobody at home");
         if (s.citizens + reserve != 1200) {
@@ -292,7 +293,8 @@ int main() {
 
         // The same partition witness at village scale.
         const int reserve = sm::sub::interior_reserve_for_cell(
-            mgr.structures(), /*worldSeed*/0x71114Eu, 0, 0,
+            mgr.structures(), sm::LandmarkType::Village,
+            /*worldSeed*/0x71114Eu, 0, 0,
             float(sm::sub::kCellSize), float(sm::sub::kCellSize), 400);
         if (reserve <= 0) return fail("a 400-soul village kept nobody at home");
         if (s.citizens + reserve != 400) {

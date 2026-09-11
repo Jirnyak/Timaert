@@ -310,7 +310,7 @@ void spawn_landmark_population(ecs::World& w,
     // households come OFF the street — a door's residents are a SHARE of
     // this number, never a second helping on top of it.
     const int reserve = interior_reserve_for_cell(
-        mgr.structures(), worldSeed,
+        mgr.structures(), landmark, worldSeed,
         int(populationKey.cellX), int(populationKey.cellY),
         float(originX), float(originY), pop);
     const int target = std::max(0, pop - reserve);
@@ -531,13 +531,29 @@ int interior_household_share(std::uint32_t worldSeed, int cellX, int cellY,
     return 1 + int((dSeed >> 8) % 3u) + (landmarkPop >= 128 ? 1 : 0);
 }
 
-// The reserve walk (CANON S28 partition): the composite's House-opening
-// doors of this cell, each storey asked of the ONE household law above —
-// the same pure functions the engine asks when a door is actually opened,
-// over the same inputs (ordinal = the door prop's tag, footprint = the
-// prop's own half-extents), so the street and the interior can never
-// disagree about who is home.
+// THE garrison partition (CANON S28): souls kept inside = pop minus the
+// picket (pop >> crowdOutsideShift), split evenly over the storeys with
+// the remainder to the lower floors — Σ over storeys + picket == pop, and
+// every term re-derives from the LIVE number, so a cleared floor thins the
+// whole place the way one organism thins.
+int interior_garrison_share(LandmarkType landmark, int landmarkPop,
+                            int storeys, int level) {
+    if (landmarkPop <= 0 || storeys <= 0 || level < 0 || level >= storeys) {
+        return 0;
+    }
+    const LandmarkDef& def = landmark_def(landmark);
+    const int inside = landmarkPop - (landmarkPop >> def.crowdOutsideShift);
+    return inside / storeys + (level < inside % storeys ? 1 : 0);
+}
+
+// The reserve walk (CANON S28 partition): every soul this cell's doors
+// keep behind them — households behind House doors, the garrison behind a
+// tower's gate — asked of the same pure laws the engine asks when a door
+// is actually opened, over the same inputs (ordinal = the door prop's tag,
+// footprint = the prop's own half-extents). WHICH law a door speaks is the
+// dungeon kind row's own columns, never a branch here on the kind's name.
 int interior_reserve_for_cell(const std::vector<Structure>& structures,
+                              LandmarkType landmark,
                               std::uint32_t worldSeed,
                               int cellX, int cellY,
                               float originX, float originY,
@@ -546,21 +562,32 @@ int interior_reserve_for_cell(const std::vector<Structure>& structures,
     const float x1 = originX + float(kCellSize);
     const float y1 = originY + float(kCellSize);
     for (const Structure& s : structures) {
-        if (structure_opens(s.kind) != DungeonRef::House) continue;
+        const std::uint8_t opens = structure_opens(s.kind);
+        if (opens == DungeonRef::None) continue;
         if (structure_opens_top(s.kind)) continue;
         if (s.x < originX || s.x >= x1 || s.y < originY || s.y >= y1) {
             continue;
         }
+        const DungeonKindRow& row = dungeon_kind_row(opens);
         DungeonRef ref{};
-        ref.kind = DungeonRef::House;
+        ref.kind = opens;
         ref.ordinal = s.tag;
         ref.footHx = structure_half_x(s);
         ref.footHy = structure_half_y(s);
-        reserve += interior_household_share(worldSeed, cellX, cellY,
-                                            s.tag, 0, landmarkPop);
-        if (dungeon_has_upper(ref)) {
+        if (row.householdAbove) {
             reserve += interior_household_share(worldSeed, cellX, cellY,
-                                                s.tag, 1, landmarkPop);
+                                                s.tag, 0, landmarkPop);
+            if (dungeon_has_upper(ref)) {
+                reserve += interior_household_share(worldSeed, cellX, cellY,
+                                                    s.tag, 1, landmarkPop);
+            }
+        } else if (row.placeGarrison
+                   && landmark_def(landmark).crowdHabitat != 0) {
+            const int storeys = dungeon_storey_count(ref);
+            for (int level = 0; level < storeys; ++level) {
+                reserve += interior_garrison_share(landmark, landmarkPop,
+                                                   storeys, level);
+            }
         }
     }
     return reserve;
@@ -604,7 +631,8 @@ int spawn_dungeon_residents(ecs::World& w,
                             int count,
                             const std::vector<StandPoint>& floorCatalog,
                             float originX, float originY,
-                            MacroStockKey populationKey) {
+                            MacroStockKey populationKey,
+                            bool combatant) {
     if (count <= 0) return 0;
     if (floorCatalog.empty()) {
         std::fprintf(stderr,
@@ -633,13 +661,15 @@ int spawn_dungeon_residents(ecs::World& w,
         // The same derived-citizen birth as the street (one row of one law):
         // level from his own row, loan from the SAME population stock — a death
         // in here pays the town back exactly like a death on the square.
+        // Whether it fights is CONTEXT: a hearth's family flees, a garrisoned
+        // storey stands its ground.
         spawn_derived_body(w.reg,
             BodySpec{
                 type, fx, fy, settlementFaction,
                 normalize_soldier_level(npc_def(type).baseLevel
                                         + int(rng.next_u32() % 3u)),
                 seed ^ (std::uint32_t(i) * 7919u),
-                /*combatant*/false},
+                combatant},
             /*faceSalt*/std::uint32_t(i) * 7919u,
             BodyLoan::from(MacroStock::Population, populationKey));
         ++placed;

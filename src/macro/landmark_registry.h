@@ -138,6 +138,13 @@ struct LandmarkDef {
     // (§42: the crowd's family is the place's COLUMN, never a name baked
     // into the picker). Cross-checked against fauna.h beside the bits.
     std::uint16_t    crowdHabitat = 0;
+    // For a kind whose interior GARRISONS from its population (dungeon kind
+    // rows, placeGarrison): how many souls stand OUTSIDE — pop >> this,
+    // the picket; the rest man the storeys (the §42 partition: interiors
+    // reserve, the street is the remainder). 0 = everyone outside — the
+    // honest default for a kind with no garrisoned interior (a ruin's
+    // crowd haunts its surface). A po2 shift, not a percentage.
+    std::uint8_t     crowdOutsideShift = 0;
     // Which production TABLE this place works its benches as — the ordinal
     // of EconSite (macro/econ_day.h; world_tick.cpp cross-checks the pairing
     // where both vocabularies are visible). -1 = no benches: a spire or a
@@ -180,7 +187,7 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
     // (CANON S10, 2026-09-02): патрульный аукцион открывает её только когда
     // поле угрозы предъявило горячую округу дороже похода — тихий город
     // держит гарнизон дома за полцены содержания.
-    {LandmarkType::City,    "city",    "City",      0,  76, '#', 0xFFE7D27Au, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.5f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*econ*/1,
+    {LandmarkType::City,    "city",    "City",      0,  76, '#', 0xFFE7D27Au, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.5f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*outside*/0, /*econ*/1,
      /*labour*/3, {{NPCType::TaxCollector, CrewGate::Suzerain, /*solo*/true},
                    {NPCType::Guard, CrewGate::Auction, /*solo*/false,
                     /*garrison*/true}}, 2,
@@ -192,7 +199,7 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
     // диверсификация без координации. N = одновременность артелей, крутилка
     // дубль-прогона (4 ≈ поле+лес+жила+сбыт живого мира; строки Vendor и
     // шести профессий умерли — их работу раздаёт аукцион).
-    {LandmarkType::Village, "village", "Village",   0, 101, 'v', 0xFFCCB068u, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.0f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*econ*/0,
+    {LandmarkType::Village, "village", "Village",   0, 101, 'v', 0xFFCCB068u, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.0f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*outside*/0, /*econ*/0,
      /*labour*/1, {{NPCType::Peasant, CrewGate::Auction},
                    {NPCType::Peasant, CrewGate::Auction},
                    {NPCType::Peasant, CrewGate::Auction},
@@ -200,7 +207,7 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
      /*crowdRoles*/{{NPCType::Guard, /*div*/10, /*min*/1},
                     {NPCType::Merchant, 0, 1},
                     {NPCType::Woodcutter, 0, 1}}, 3 },
-    {LandmarkType::Spire,   "spire",   "Spire",   128, 255, 'I', 0xFFA86CFFu, true, 0xFFA86CFFu, 200.0f, "demons", /*wealth*/1.25f, /*hab*/1u << 13, 4, 9, kLandmarkFaunaCapGround, /*crowd*/1u << 13 },
+    {LandmarkType::Spire,   "spire",   "Spire",   128, 255, 'I', 0xFFA86CFFu, true, 0xFFA86CFFu, 200.0f, "demons", /*wealth*/1.25f, /*hab*/1u << 13, 4, 9, kLandmarkFaunaCapGround, /*crowd*/1u << 13, /*outside*/2 },
     {LandmarkType::Ruin,    "ruin",    "Ruin",     51, 229, 'r', 0xFF8E8576u, true, 0xFF8E8576u,  40.0f, "demons", /*wealth*/0.5f,  /*hab*/1u << 12, 2, 6, kLandmarkFaunaCapGround, /*crowd*/1u << 12 },
     {LandmarkType::Lair,    "lair",    "Lair",    102, 255, 'L', 0xFF883A3Au, true, 0xFF883A3Au,  70.0f, nullptr, /*wealth*/1.25f, kLandmarkFaunaGround, 0, 0, kLandmarkFaunaCapGround, /*crowd*/1u << 12 },
     {LandmarkType::Shrine,  "shrine",  "Shrine",   25, 178, '+', 0xFFE2E2E2u, true, 0xFFE2E2E2u,  90.0f },
