@@ -16,6 +16,7 @@
 
 #include "macro/landmark_registry.h"
 #include "macro/map_generator.h"
+#include "macro/ruins.h"
 #include "macro/spells.h"
 #include "macro/spires.h"
 #include "macro/state.h"
@@ -244,10 +245,83 @@ void test_named_places_veto_their_cells() {
 
 } // namespace
 
+// ── §42 Инк 5: places are BORN WITH SOULS, ruins exist, the watchman ──────
+void test_genesis_births_souls_and_ruins() {
+    const TerrainData terrain = banded_terrain();
+    const ZoneLayer zones = banded_zones();
+    GameState gs = world(12345u);
+    generate_spires(gs, zones, terrain, kSea8);
+    generate_ruins(gs, zones, terrain, kSea8);
+
+    // Spires are born garrisoned: the registry's born columns × the spell's
+    // tier, a bell — never zero, never one fixed number for all.
+    int spirePops = 0, distinctPops = 0;
+    std::set<int> seenPop;
+    for (const auto& lm : gs.landmarks) {
+        if (lm.type != LandmarkType::Spire) continue;
+        CHECK(lm.population > 0, "a spire is born with its garrison");
+        ++spirePops;
+        if (seenPop.insert(lm.population).second) ++distinctPops;
+    }
+    CHECK(spirePops > 0, "the sweep saw spires at all");
+    CHECK(distinctPops > 1,
+          "born garrisons differ spire to spire (a bell, not a constant)");
+
+    // Ruins exist — the §42 stillborn kind lives, inside its own band, born
+    // haunted from the site's danger byte.
+    const LandmarkDef& ruinDef = landmark_def(LandmarkType::Ruin);
+    int ruins = 0;
+    for (const auto& lm : gs.landmarks) {
+        if (lm.type != LandmarkType::Ruin) continue;
+        ++ruins;
+        CHECK(!terrain.is_water(lm.x, lm.y, kSea8), "a ruin stands on land");
+        const int z = int(zones.at(lm.x, lm.y));
+        CHECK(z >= int(ruinDef.minZone) && z <= int(ruinDef.maxZone),
+              "a ruin stands inside its registry zone band");
+        CHECK(lm.population > 0, "a ruin is born haunted");
+    }
+    CHECK(ruins > 0, "the world places ruins");
+
+    // Determinism: the same seed births the same ruins, souls included.
+    GameState b = world(12345u);
+    generate_spires(b, zones, terrain, kSea8);
+    generate_ruins(b, zones, terrain, kSea8);
+    CHECK_OR_RETURN(b.landmarks.size() == gs.landmarks.size(),
+                    "same seed, same landmark census");
+    bool same = true;
+    for (std::size_t i = 0; i < gs.landmarks.size(); ++i) {
+        const Landmark& p = gs.landmarks[i];
+        const Landmark& q = b.landmarks[i];
+        if (p.type != q.type || p.x != q.x || p.y != q.y
+            || p.population != q.population) {
+            same = false;
+        }
+    }
+    CHECK(same, "genesis is a fact of the seed, souls included");
+
+    // THE REGISTRY WATCHMAN (§42): what genesis placed obeys the column,
+    // and the placing kinds this harness ran really do declare themselves —
+    // "a kind nobody rolled" can never again pose as "a kind that does not
+    // exist".
+    for (const auto& lm : gs.landmarks) {
+        CHECK(landmark_def(lm.type).worldPlaces,
+              "no pass places a kind whose row says the world does not");
+    }
+    CHECK(landmark_def(LandmarkType::Spire).worldPlaces
+              && landmark_def(LandmarkType::Ruin).worldPlaces,
+          "the placing kinds declare worldPlaces");
+    CHECK(!landmark_def(LandmarkType::Lair).worldPlaces
+              && !landmark_def(LandmarkType::Shrine).worldPlaces
+              && !landmark_def(LandmarkType::Mine).worldPlaces
+              && !landmark_def(LandmarkType::Tower).worldPlaces,
+          "the deliberately-unplaced kinds say so in their rows");
+}
+
 int main() {
     test_one_spire_per_spell_in_the_band();
     test_placement_is_a_fact_of_the_seed();
     test_no_admissible_ground_places_nothing();
     test_named_places_veto_their_cells();
+    test_genesis_births_souls_and_ruins();
     return sm::test::report("spire_generation_test");
 }

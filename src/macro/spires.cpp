@@ -111,6 +111,16 @@ void generate_spires(GameState& gs, const ZoneLayer& zones,
         sp.y        = bestY;
         sp.spellId  = std::uint32_t(ord);
         sp.depleted = false;
+        // Born with its garrison (§42 Инк 5): the registry row's own born
+        // columns × the spell's tier, a discrete bell around the mean. Its
+        // OWN stream (world salt × spell ordinal) so the placement draws
+        // above stay bit-for-bit what they were.
+        {
+            Rng popRng(gs.worldSeed ^ 0xB0125EEDu
+                       ^ (std::uint32_t(ord) * 2654435761u));
+            sp.population = landmark_born_population(
+                int(def.bornPopBase), int(def.bornPopPerScore), tier, popRng);
+        }
         gs.landmarks.push_back(std::move(sp));
     }
 }

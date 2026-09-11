@@ -77,8 +77,9 @@ inline constexpr std::uint16_t hab(Biome b) {
 }
 // The landmark registry's faunaHabitat column quotes these bits as data
 // (its header cannot include this one) — a drifted quote refuses to compile.
-static_assert(landmark_def(LandmarkType::Ruin).faunaHabitat == kHabRuin
-           && landmark_def(LandmarkType::Spire).faunaHabitat == kHabSpire,
+// (The Spire line died with §42 Инк 5: its wild fauna returned to the
+// ground — the spire's demons are its POPULATION, not the cell's game.)
+static_assert(landmark_def(LandmarkType::Ruin).faunaHabitat == kHabRuin,
               "kLandmarks fauna columns must quote fauna.h's habitat bits");
 // Same guard for the CROWD column (§42): the crowd's family is the place's
 // registry row, and the quoted bits must be the real ones.

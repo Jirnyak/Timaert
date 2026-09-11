@@ -1036,19 +1036,22 @@ int main() {
               "derived strength orders rabbit < wolf < troll");
     }
 
-    // ── The garrison partition (§42 Инк 4, CANON S28) ──
-    // Pure arithmetic law: outside picket + Σ storey shares == population,
+    // ── The garrison partition (§42 Инк 4/5, CANON S28) ──
+    // Pure arithmetic law: street throng + Σ storey shares == population,
     // soul for soul, for any population and any storey count — the same
-    // shares the street reserve subtracts and each storey embodies. A
-    // remainder must land on the LOWER floors, never vanish.
+    // shares the street reserve subtracts and each storey embodies. The
+    // storeys keep pop >> crowdInsideShift (the owner's eye: «снаружи
+    // больше сотни, внутри десятки на ярус»); a remainder must land on
+    // the LOWER floors, never vanish.
     {
         const int pops[] = {0, 1, 3, 5, 100, 383, 8192};
         bool holds = true;
         for (int pop : pops) {
             for (int storeys = 1; storeys <= 5 && holds; ++storeys) {
-                const int outside =
+                const int insideTotal =
                     pop >> sm::landmark_def(sm::LandmarkType::Spire)
-                               .crowdOutsideShift;
+                               .crowdInsideShift;
+                const int outside = pop - insideTotal;
                 int inside = 0;
                 for (int level = 0; level < storeys; ++level) {
                     inside += sm::sub::interior_garrison_share(
@@ -1058,7 +1061,7 @@ int main() {
             }
             if (!holds) break;
         }
-        CHECK(holds, "picket + storeys == the spire's population, always");
+        CHECK(holds, "throng + storeys == the spire's population, always");
         CHECK(sm::sub::interior_garrison_share(sm::LandmarkType::Spire,
                                                100, 3, 0)
                   >= sm::sub::interior_garrison_share(sm::LandmarkType::Spire,

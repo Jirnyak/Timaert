@@ -323,6 +323,7 @@ endif()
 # the regression-guard law test lands separately once the laws are earned.
 add_executable(balance_run tests/balance_run.cpp
     src/macro/world_gen.cpp
+    src/macro/ruins.cpp
     src/macro/state.cpp
     src/macro/politik.cpp
     src/macro/settlement_score.cpp
@@ -1178,7 +1179,8 @@ timaert_test(crop_stock_test
 # list arrives as plain SpireSpellSpec data, the same way main.cpp passes it).
 timaert_test(spire_generation_test
     SOURCES
-        src/macro/spires.cpp)
+        src/macro/spires.cpp
+        src/macro/ruins.cpp)
 
 timaert_test(fauna_stock_test
     SOURCES

@@ -3217,13 +3217,16 @@ bool run_spire_climb_smoke(App& app) {
     }
 
     // Climb: every storey holds its guard (counted on arrival, then cleared —
-    // the stairs obey the danger law, so a climb IS a fight).
+    // the stairs obey the danger law, so a climb IS a fight). The storeys
+    // are manned by the SPIRE'S OWN SOULS (§42 Инк 4: MacroStock::Population
+    // of the spire, its crowd family) — the FaunaCount this used to count
+    // was the old world, where a tower's guard was the mountain's game.
     auto count_guards = [&]() {
         int n = 0;
         for (auto e
              : app.ecs.reg.view<sm::ecs::MacroDebt, sm::ecs::SubworldTag>()) {
             if (app.ecs.reg.get<sm::ecs::MacroDebt>(e).stock
-                == std::uint8_t(sm::MacroStock::FaunaCount)) {
+                == std::uint8_t(sm::MacroStock::Population)) {
                 ++n;
             }
         }
@@ -3330,6 +3333,13 @@ bool run_spire_climb_smoke(App& app) {
         sm::sub::spire_crown_hatch_point(chx, chy);
         const float wx = float(sm::sub::kCellSize) + chx;
         const float wy = float(sm::sub::kCellSize) + chy;
+        // Stepping out onto the crown re-raised the overworld scene, and the
+        // spire's remaining THRONG re-embodied in the yard below (§42 Инк 5:
+        // a spire is born with hundreds of souls). The danger law bars a
+        // door while hostiles stand near — so clear them first, the way a
+        // player must, exactly as at the gate.
+        app.subworld.dev_kill_all_hostiles();
+        app.subworld.tick(0.016f);
         app.subworld.set_player_pos(wx, wy + 2.0f);
         app.subworld.rotate_camera(
             std::atan2(-2.0f, 0.0f) - app.subworld.cam_yaw(), 0.0f);
@@ -3388,9 +3398,9 @@ bool run_spire_climb_smoke(App& app) {
         // ...and the crown's own hatch takes him back to the storey he
         // climbed from, not to the foot of the whole climb.
         || !backInside || backLevel != tier - 1
-        // The garrison is ONE headcount: the yard's roamers and the storey
-        // guards borrow from the same FaunaCount, so between them a fresh
-        // spire must have fielded somebody.
+        // The garrison is ONE headcount — the spire's own POPULATION (§42):
+        // the yard's throng and the storey guards are shares of one number,
+        // so between them a fresh spire must have fielded somebody.
         || yardGuards + guardsSeen < 1 || !learned || !depletedFlag
         || orbsAfter != 0 || !logged
         // The world above must remember what was done below.

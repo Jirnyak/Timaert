@@ -531,18 +531,19 @@ int interior_household_share(std::uint32_t worldSeed, int cellX, int cellY,
     return 1 + int((dSeed >> 8) % 3u) + (landmarkPop >= 128 ? 1 : 0);
 }
 
-// THE garrison partition (CANON S28): souls kept inside = pop minus the
-// picket (pop >> crowdOutsideShift), split evenly over the storeys with
-// the remainder to the lower floors — Σ over storeys + picket == pop, and
-// every term re-derives from the LIVE number, so a cleared floor thins the
-// whole place the way one organism thins.
+// THE garrison partition (CANON S28; owner's eye 2026-09-11: «снаружи
+// больше сотни, внутри десятки на ярус»): the storeys keep pop >>
+// crowdInsideShift, split evenly with the remainder to the lower floors;
+// the THRONG is outside — Σ over storeys + street == pop, and every term
+// re-derives from the LIVE number, so a cleared floor thins the whole
+// place the way one organism thins.
 int interior_garrison_share(LandmarkType landmark, int landmarkPop,
                             int storeys, int level) {
     if (landmarkPop <= 0 || storeys <= 0 || level < 0 || level >= storeys) {
         return 0;
     }
     const LandmarkDef& def = landmark_def(landmark);
-    const int inside = landmarkPop - (landmarkPop >> def.crowdOutsideShift);
+    const int inside = landmarkPop >> def.crowdInsideShift;
     return inside / storeys + (level < inside % storeys ? 1 : 0);
 }
 

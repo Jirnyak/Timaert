@@ -25,6 +25,7 @@
 #include "macro/spawners.h"
 #include "macro/spells.h"
 #include "macro/spires.h"
+#include "macro/ruins.h"
 #include "macro/state.h"
 #include "macro/tree_layer.h"
 #include "macro/world_tick.h"
@@ -216,6 +217,11 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     // (boot_world_from_save), exactly like settlements.
     {
         generate_spires(gs, *out.zones, *out.terrain, sea8);
+        // Ruins follow the same zone-field law (§42 Инк 5): the row, the
+        // subworld route and the surface generator stood ready for months —
+        // this call is the ONE missing genesis pass that kept the kind
+        // stillborn. After the settlement passes, whose cells it avoids.
+        generate_ruins(gs, *out.zones, *out.terrain, sea8);
         // The landmark set is complete — bake the cell → landmark index the
         // whole game asks (macro/landmark_grid.h).
         *out.landmarkGrid = build_landmark_grid(gs);

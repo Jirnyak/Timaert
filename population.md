@@ -135,11 +135,25 @@ One healthy core the system lands on:
   whole garrison). A wild cave (no landmark) honestly stays on FaunaCount,
   and a garrisoned scene never doubles as a wild den.
 
+- **Инк 5 (2026-09-11)** — genesis. Places are BORN WITH SOULS: the born
+  law is registry columns (`bornPopBase + bornPopPerScore ×` the kind's
+  context score — a spire's spell tier, a ruin's danger byte), rolled as a
+  discrete bell (`landmark_born_population`, two dice — the house gauss),
+  each place its own stream off the world salt: no two cells repeat.
+  Spire = 128 + 64×tier (tier 5 ≈ 448 ± bell); Ruin = 64 + zone (redder
+  land haunts harder). `generate_ruins` (macro/ruins.cpp) places one ruin
+  per city plus 4, Mitchell-spread over the row's own zone band — the §42
+  stillborn kind lives, and the demo's scene 4 has targets. The garrison
+  shift FLIPPED to the owner's eye («снаружи больше сотни, внутри десятки
+  на ярус»): storeys keep `pop >> crowdInsideShift` (Spire = 2), the
+  THRONG is outside — witnessed live by the spire_climb smoke (yard 350,
+  storey guards 26, all shares of one number). Spire wild fauna returned
+  to the GROUND (its demons are its population; Ruin keeps kHabRuin — the
+  den dictionary). THE REGISTRY WATCHMAN: column `worldPlaces` — every row
+  either places or says it does not (Lair/Shrine/Mine/Tower say no, for
+  now), asserted with the genesis witnesses in spire_generation_test.
+
 ## Debt (approved increments, each under its own owner "да")
-- **Инк 5 — genesis.** Ruins placed on the map (surface generator already
-  exists); contextual population columns; the registry watchman: every
-  kLandmarks row is either placed by a pass or explicitly marked "the world
-  does not place this kind".
 - **Инк 6 — the projection cap (128) dies**; player-squad Roster loan +
   recenter idempotence; honest FPS measurement of mass combat, said out
   loud.

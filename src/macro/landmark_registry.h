@@ -10,6 +10,7 @@
 // LandmarkEntry — had no callers and is gone with landmark_registry.cpp.)
 #pragma once
 #include <cstdint>
+#include "core/rng.h"    // the ONE generator (landmark_born_population)
 #include "core/table_guard.h"
 #include "macro/npc.h"   // NPCType — the crew rows below name who a place raises
 #include <string_view>
@@ -139,12 +140,26 @@ struct LandmarkDef {
     // into the picker). Cross-checked against fauna.h beside the bits.
     std::uint16_t    crowdHabitat = 0;
     // For a kind whose interior GARRISONS from its population (dungeon kind
-    // rows, placeGarrison): how many souls stand OUTSIDE — pop >> this,
-    // the picket; the rest man the storeys (the §42 partition: interiors
-    // reserve, the street is the remainder). 0 = everyone outside — the
-    // honest default for a kind with no garrisoned interior (a ruin's
-    // crowd haunts its surface). A po2 shift, not a percentage.
-    std::uint8_t     crowdOutsideShift = 0;
+    // rows, placeGarrison): how many souls man the STOREYS — pop >> this;
+    // the rest are the crowd OUTSIDE (the owner's eye, 2026-09-11: «снаружи
+    // больше сотни, внутри десятки на ярус» — the street is the throng, the
+    // tower keeps a quarter). 0 = everyone outside — the honest default for
+    // a kind with no garrisoned interior (a ruin's crowd haunts its
+    // surface). A po2 shift, not a percentage.
+    std::uint8_t     crowdInsideShift = 0;
+    // ── Born souls (§42 Инк 5): the genesis law's own columns ─────────────
+    // mean = bornPopBase + bornPopPerScore × the kind's context score (a
+    // spire's spell tier, a ruin's danger byte), rolled as a discrete bell
+    // (settlement_score.h landmark_born_population). 0/0 = the kind is not
+    // born with souls this way (settlements keep their own site-score law).
+    std::uint16_t    bornPopBase = 0;
+    std::uint16_t    bornPopPerScore = 0;
+    // THE REGISTRY WATCHMAN (§42): true = a genesis pass PLACES this kind
+    // on the map; false = the world deliberately does not place it (yet).
+    // Either way the answer is written HERE, so "a kind nobody rolled" can
+    // never be mistaken for "a kind that does not exist" — the class of
+    // silence that kept half this registry stillborn for two refactors.
+    bool             worldPlaces = false;
     // Which production TABLE this place works its benches as — the ordinal
     // of EconSite (macro/econ_day.h; world_tick.cpp cross-checks the pairing
     // where both vocabularies are visible). -1 = no benches: a spire or a
@@ -187,7 +202,7 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
     // (CANON S10, 2026-09-02): патрульный аукцион открывает её только когда
     // поле угрозы предъявило горячую округу дороже похода — тихий город
     // держит гарнизон дома за полцены содержания.
-    {LandmarkType::City,    "city",    "City",      0,  76, '#', 0xFFE7D27Au, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.5f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*outside*/0, /*econ*/1,
+    {LandmarkType::City,    "city",    "City",      0,  76, '#', 0xFFE7D27Au, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.5f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*inside*/0, /*born*/0, 0, /*places*/true, /*econ*/1,
      /*labour*/3, {{NPCType::TaxCollector, CrewGate::Suzerain, /*solo*/true},
                    {NPCType::Guard, CrewGate::Auction, /*solo*/false,
                     /*garrison*/true}}, 2,
@@ -199,7 +214,7 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
     // диверсификация без координации. N = одновременность артелей, крутилка
     // дубль-прогона (4 ≈ поле+лес+жила+сбыт живого мира; строки Vendor и
     // шести профессий умерли — их работу раздаёт аукцион).
-    {LandmarkType::Village, "village", "Village",   0, 101, 'v', 0xFFCCB068u, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.0f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*outside*/0, /*econ*/0,
+    {LandmarkType::Village, "village", "Village",   0, 101, 'v', 0xFFCCB068u, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.0f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*inside*/0, /*born*/0, 0, /*places*/true, /*econ*/0,
      /*labour*/1, {{NPCType::Peasant, CrewGate::Auction},
                    {NPCType::Peasant, CrewGate::Auction},
                    {NPCType::Peasant, CrewGate::Auction},
@@ -207,8 +222,14 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
      /*crowdRoles*/{{NPCType::Guard, /*div*/10, /*min*/1},
                     {NPCType::Merchant, 0, 1},
                     {NPCType::Woodcutter, 0, 1}}, 3 },
-    {LandmarkType::Spire,   "spire",   "Spire",   128, 255, 'I', 0xFFA86CFFu, true, 0xFFA86CFFu, 200.0f, "demons", /*wealth*/1.25f, /*hab*/1u << 13, 4, 9, kLandmarkFaunaCapGround, /*crowd*/1u << 13, /*outside*/2 },
-    {LandmarkType::Ruin,    "ruin",    "Ruin",     51, 229, 'r', 0xFF8E8576u, true, 0xFF8E8576u,  40.0f, "demons", /*wealth*/0.5f,  /*hab*/1u << 12, 2, 6, kLandmarkFaunaCapGround, /*crowd*/1u << 12 },
+    // Spire wild fauna returned to the GROUND (§42 Инк 5): its demons are
+    // its POPULATION now — the mountain's own beasts roam the slopes, and
+    // clearing the tower can never again be ambiguous between garrison and
+    // game. The Ruin row keeps kHabRuin: that bit is ALSO the den
+    // dictionary (what creeps into cellars and caves), and a ruin's ground
+    // honestly crawls.
+    {LandmarkType::Spire,   "spire",   "Spire",   128, 255, 'I', 0xFFA86CFFu, true, 0xFFA86CFFu, 200.0f, "demons", /*wealth*/1.25f, /*hab*/kLandmarkFaunaGround, 0, 0, kLandmarkFaunaCapGround, /*crowd*/1u << 13, /*inside*/2, /*born*/128, 64, /*places*/true },
+    {LandmarkType::Ruin,    "ruin",    "Ruin",     51, 229, 'r', 0xFF8E8576u, true, 0xFF8E8576u,  40.0f, "demons", /*wealth*/0.5f,  /*hab*/1u << 12, 2, 6, kLandmarkFaunaCapGround, /*crowd*/1u << 12, /*inside*/0, /*born*/64, 1, /*places*/true },
     {LandmarkType::Lair,    "lair",    "Lair",    102, 255, 'L', 0xFF883A3Au, true, 0xFF883A3Au,  70.0f, nullptr, /*wealth*/1.25f, kLandmarkFaunaGround, 0, 0, kLandmarkFaunaCapGround, /*crowd*/1u << 12 },
     {LandmarkType::Shrine,  "shrine",  "Shrine",   25, 178, '+', 0xFFE2E2E2u, true, 0xFFE2E2E2u,  90.0f },
     {LandmarkType::Mine,    "mine",    "Mine",     51, 203, 'M', 0xFF8B6332u, true, 0xFF8B6332u,  60.0f, nullptr, /*wealth*/1.25f },
@@ -219,6 +240,25 @@ static_assert(rows_in_enum_order(kLandmarks, &LandmarkDef::type),
 
 inline constexpr const LandmarkDef& landmark_def(LandmarkType t) {
     return kLandmarks[std::size_t(t)];
+}
+
+// ── Born souls of a DUNGEON landmark (§42 Инк 5, CANON S28) ──────────────
+// mean = base + perScore × the kind's own context number (a spire's spell
+// tier, a ruin's danger byte) — the row's columns above, never literals in
+// a genesis pass. The roll is a DISCRETE BELL around the mean (two dice
+// summed — the house gauss, no float), spread = mean/4: two spires of one
+// tier differ, two ruins of one zone differ, and the caller seeds the
+// stream from the world salt and the place's own identity so no two cells
+// repeat.
+inline int landmark_born_population(int base, int perScore, int score,
+                                    Rng& rng) {
+    const int mean = base + perScore * (score > 0 ? score : 0);
+    if (mean <= 0) return 0;
+    const std::uint32_t s = std::uint32_t(mean >= 4 ? mean >> 2 : 1);
+    const int bell = int(rng.next_u32() % (s + 1u))
+                   + int(rng.next_u32() % (s + 1u)) - int(s);
+    const int born = mean + bell;
+    return born > 1 ? born : 1;
 }
 
 } // namespace sm
