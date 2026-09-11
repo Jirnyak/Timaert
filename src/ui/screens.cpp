@@ -395,13 +395,13 @@ ShellResult draw_custom_new_game(CustomGameParams& p,
         p.seed = std::uint32_t(seedI);
     }
 
-    // City count: scales every kingdom's min/max proportionally.
+    // City count: scales every realm's min/max proportionally.
     if (p.cityCountTarget < 10)  p.cityCountTarget = 10;
     if (p.cityCountTarget > 400) p.cityCountTarget = 400;
     ImGui::SliderInt("Total cities", &p.cityCountTarget, 10, 400, "%d");
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Approximate total city count across all kingdoms.\n"
-                          "Each kingdom is scaled proportionally; capitals always present.");
+        ImGui::SetTooltip("Approximate total city count across all realms.\n"
+                          "Each realm is scaled proportionally; capitals always present.");
 
     ImGui::Separator();
     ImGui::TextDisabled("Terrain generation");

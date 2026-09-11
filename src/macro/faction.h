@@ -189,13 +189,13 @@ inline constexpr FactionDef kFactionDefs[] = {
      "Feudal lords ruling by might and steel.",
      0xef4444, Temperament::Savage,     0, false, "coin_barbar"},
     // ── The unruled ───────────────────────────────────────────────────────
-    // Everyone who answers to no crown: a settlement no kingdom owns, a town
+    // Everyone who answers to no crown: a settlement no faction owns, a town
     // that has thrown its lord out, a landmark held by whoever lives in it.
     // This is what a place WITHOUT an owner is, and it exists so that "unowned"
     // never has to be spelled as "imperial" — the fallback that used to hand
     // every ownerless town to the Empire of Light. Mercantile: at war with
     // raiders and the abyss, wary of cults, neutral toward the realms — free
-    // folk trade with everyone and bow to no one. A city whose kingdomIdx goes
+    // folk trade with everyone and bow to no one. A city whose factionIdx goes
     // to -1 (conquest lost, rebellion, a scripted secession) becomes theirs by
     // construction, with no code anywhere to change.
     {"freefolk",        "Free Folk",
@@ -255,6 +255,16 @@ inline const char* faction_id_for_index(std::uint16_t idx) {
 
 inline const FactionDef* faction_def_by_index(std::uint16_t idx) {
     return idx < std::uint16_t(kFactionCount) ? &kFactionDefs[idx] : nullptr;
+}
+
+// THE ownerless-ground law (owner 2026-09-11: «королевств нет, только
+// фракции — одна система»): a stored faction index that names nobody — a
+// landmark's -1, a cellOwner 0xff, a stale byte — resolves to the FREE FOLK,
+// the registry row for everyone who answers to no crown. It used to be the
+// tail of faction_index_for_kingdom; the kingdom is gone, the law stays.
+inline std::uint16_t faction_or_freefolk(int idx) {
+    if (idx >= 0 && idx < kFactionCount) return std::uint16_t(idx);
+    return std::uint16_t(faction_index("freefolk"));
 }
 
 // Is killing a member of this faction a crime the world holds against you?

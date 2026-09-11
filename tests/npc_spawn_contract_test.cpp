@@ -22,7 +22,7 @@ sm::Landmark make_settlement(int id, int x, int y) {
     s.y = y;
     s.population = 1000;
     s.mood = sm::SettlementMood::Stable;
-    s.kingdomIdx = 0;
+    s.factionIdx = 0;
     return s;
 }
 

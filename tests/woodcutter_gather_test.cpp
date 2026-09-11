@@ -450,7 +450,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
     vil.id = 3;
     vil.x = 16;
     vil.y = 10;
-    vil.nearestCityId = 1;
+    vil.suzerainLandmarkId = 1;
     vil.population = 50;
     vil.inventory.add("grain", 500);
     vil.inventory.add("coin_timaert", 50 * 2);

@@ -181,15 +181,13 @@ void test_snapshot_carries_the_ordinal() {
 }
 
 void test_king_peasant_births_by_home_faction() {
-    // Мир с ВАРВАРСКИМ городом: политика несёт королевство barbarian_north,
-    // город им владеем — и фикстурные freefolk-города рядом, чтобы фильтр
-    // префикса был утверждением, а не единственностью.
+    // Мир с ВАРВАРСКИМ городом: город несёт фракцию barbarian_north СВОЕЙ
+    // колонкой (королевства вырезаны 2026-09-11) — и фикстурные
+    // freefolk-города рядом, чтобы фильтр префикса был утверждением, а не
+    // единственностью.
     GameState gs = make_world();   // города 1 (freefolk) хватает для Варнавы
-    Kingdom barb{};
-    barb.id = "barbarian_north";
-    gs.politik.kingdoms.push_back(barb);
     Landmark barbCity = make_landmark(9, LandmarkType::City, 50, 20);
-    barbCity.kingdomIdx = 0;
+    barbCity.factionIdx = std::int16_t(faction_index("barbarian_north"));
     gs.landmarks.push_back(barbCity);
 
     const TerrainData terrain = make_terrain();

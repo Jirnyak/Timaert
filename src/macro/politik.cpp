@@ -86,12 +86,25 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
     const bool useTerrain = terrain_matches_map(terrain, mapW, mapH);
 
     Rng r(seed ^ 0xC001CAFE);
-    const auto& defs = kingdom_defs();
+    const auto& defs = realm_seed_defs();
 
-    // ── Per-kingdom scaling for total city count ───────────────────
+    // Per-realm working state (was struct Kingdom): the faction each realm
+    // IS, its naming tongue (derived, language.h faction_language), and its
+    // city list for the MST/bridge passes below. All local to generation —
+    // the Politik that leaves this function carries cities and ground only.
+    std::vector<std::int16_t>       realmFaction(defs.size(), -1);
+    std::vector<Language>           realmLang(defs.size());
+    std::vector<std::vector<int>>   realmCities(defs.size());
+    auto realm_of_faction = [&](std::int16_t f) -> int {
+        for (std::size_t k = 0; k < realmFaction.size(); ++k)
+            if (realmFaction[k] == f) return int(k);
+        return -1;
+    };
+
+    // ── Per-realm scaling for total city count ─────────────────────
     // Registry mid-points sum to N0; if the caller requested `target`,
-    // scale each kingdom by `target/N0` and round to the nearest int
-    // (clamped to ≥1 so every kingdom keeps at least its capital).
+    // scale each realm by `target/N0` and round to the nearest int
+    // (clamped to ≥1 so every realm keeps at least its capital).
     int registryTotal = 0;
     for (const auto& d : defs)
         registryTotal += (d.minCities + d.maxCities + 1) / 2;
@@ -116,19 +129,18 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
         return terrain->rgba[std::size_t(y * mapW + x) * 4 + 0] >= seaLevel8;
     };
 
-    // Seed capitals + cities per kingdom.
+    // Seed capitals + cities per realm.
     for (int k = 0; k < int(defs.size()); ++k) {
         const auto& def = defs[std::size_t(k)];
-        Kingdom kg;
-        kg.id = def.id;
-        // Identity comes from the ONE registry; a kingdom id without a
-        // registry row is a data error caught by faction_relations_test.
-        const int fi = faction_index(def.id);
-        const FactionDef* fd = fi >= 0 ? &kFactionDefs[fi] : nullptr;
-        kg.name = fd ? fd->name : def.id;
-        kg.temperament = fd ? fd->temperament : Temperament::Lawful;
-        kg.color = fd ? fd->color : 0xffffffu;
-        kg.language = create_language(seed ^ std::uint32_t(k * 0x9E3779B1));
+        // Identity IS the ONE registry row; a realm whose faction id has no
+        // registry row is a data error caught by faction_relations_test and
+        // degrades to the free folk rather than a garbage index.
+        const std::int16_t fIdx =
+            std::int16_t(faction_or_freefolk(faction_index(def.factionId)));
+        realmFaction[std::size_t(k)] = fIdx;
+        realmLang[std::size_t(k)] =
+            faction_language(seed, std::uint16_t(fIdx));
+        const Language& lang = realmLang[std::size_t(k)];
 
         int effMin = std::max(1, int(std::lround(float(def.minCities) * cityScale)));
         int effMax = std::max(effMin, int(std::lround(float(def.maxCities) * cityScale)));
@@ -139,7 +151,7 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
         // capital will hold anyway; beyond it is another city's ground).
         // Only when the whole disk holds nothing does the walk keep going
         // to 2×spacing and take the first valid cell, vetoes waived — a
-        // kingdom is crowned even in a wasteland (the old 120-cell spiral's
+        // realm is crowned even in a wasteland (the old 120-cell spiral's
         // one honest job).
         int cx = wrapi(int(def.cx * mapW), mapW);
         int cy = wrapi(int(def.cy * mapH), mapH);
@@ -173,15 +185,16 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
             }
             cx = bestX; cy = bestY;
         }
-        kg.capitalCityIdx = int(P.cities.size());
+        const int capIdx = int(P.cities.size());
         City cap; cap.x = cx; cap.y = cy;
-        cap.name = generate_name(kg.language, std::uint32_t(P.cities.size()) * 2654435761u);
-        cap.kingdomIdx = k;
+        cap.name = generate_name(lang, std::uint32_t(P.cities.size()) * 2654435761u);
+        cap.factionIdx = fIdx;
+        cap.isCapital = true;
         for (int& c : cap.connections) c = -1;
         // Souls derive from the ground the crown chose (settlement_score.h).
         cap.population = capital_population(city_site_score(site, cx, cy));
         P.cities.push_back(std::move(cap));
-        kg.cityIdxs.push_back(kg.capitalCityIdx);
+        realmCities[std::size_t(k)].push_back(capIdx);
 
         // Scatter remaining cities with **organic growth** clustering:
         // each new city picks a random already-placed kingdom city as
@@ -191,14 +204,15 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
         // annulus [spacing, 2×spacing] of its parent: towns sprout near
         // towns). The score judges ALL the draws and the best valid one
         // is settled; a neighbourhood whose every draw is water or
-        // vetoed ground simply yields no city — the kingdom stays
+        // vetoed ground simply yields no city — the realm stays
         // smaller, which is the ground's honest answer.
+        auto& mine = realmCities[std::size_t(k)];
         const int jitter = 2 * minDist;
         for (int n = 1; n < target; ++n) {
             int bestX = 0, bestY = 0, bestScore = -1;
             for (int tries = 0; tries < kCityCandidateDraws; ++tries) {
-                const int anchorIdx = kg.cityIdxs[std::size_t(
-                    r.next_u32() % std::uint32_t(kg.cityIdxs.size()))];
+                const int anchorIdx = mine[std::size_t(
+                    r.next_u32() % std::uint32_t(mine.size()))];
                 const int ax = P.cities[std::size_t(anchorIdx)].x;
                 const int ay = P.cities[std::size_t(anchorIdx)].y;
                 const int rx = wrapi(ax + int(r.next_u32()
@@ -216,22 +230,20 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
             if (bestScore < 0) continue;
             int idx = int(P.cities.size());
             City c; c.x = bestX; c.y = bestY;
-            c.name = generate_name(kg.language, std::uint32_t(idx) * 2654435761u);
-            c.kingdomIdx = k;
+            c.name = generate_name(lang, std::uint32_t(idx) * 2654435761u);
+            c.factionIdx = fIdx;
             for (int& cc : c.connections) cc = -1;
             c.population = city_population(bestScore);
             P.cities.push_back(std::move(c));
-            kg.cityIdxs.push_back(idx);
+            mine.push_back(idx);
         }
-        P.kingdoms.push_back(std::move(kg));
     }
 
     // ── Global top-up pass ─────────────────────────────────────────
-    // If per-kingdom scattering came up short of `targetTotalCities`
+    // If per-realm scattering came up short of `targetTotalCities`
     // (common on huge maps where capitals start clustered), do a global
-    // dart-throw assigning each new city to the nearest kingdom by
-    // toroidal capital distance. Cap attempts so we never spin forever
-    // on saturated maps.
+    // dart-throw assigning each new city to its anchor's realm. Cap
+    // attempts so we never spin forever on saturated maps.
     if (targetTotalCities > 0
         && int(P.cities.size()) < targetTotalCities
         && useTerrain
@@ -272,21 +284,23 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
                 if (!budgetLeft) break;
                 continue;
             }
-            // Inherit anchor's kingdom — clusters stay politically coherent.
-            const int bestK = P.cities[std::size_t(bestAnchor)].kingdomIdx;
+            // Inherit anchor's faction — clusters stay politically coherent.
+            const std::int16_t f = P.cities[std::size_t(bestAnchor)].factionIdx;
+            const int bestK = realm_of_faction(f);
+            if (bestK < 0) continue;   // an anchor no realm owns: skip it
             const int idx = int(P.cities.size());
             City c; c.x = bestX; c.y = bestY;
-            c.name = generate_name(P.kingdoms[std::size_t(bestK)].language,
+            c.name = generate_name(realmLang[std::size_t(bestK)],
                                    std::uint32_t(idx) * 2654435761u);
-            c.kingdomIdx = bestK;
+            c.factionIdx = f;
             for (int& cc : c.connections) cc = -1;
             c.population = city_population(bestScore);
             P.cities.push_back(std::move(c));
-            P.kingdoms[std::size_t(bestK)].cityIdxs.push_back(idx);
+            realmCities[std::size_t(bestK)].push_back(idx);
         }
     }
 
-    // ── Per-kingdom MST (Prim's) rooted at the capital, plus 1 extra ──
+    // ── Per-realm MST (Prim's) rooted at the capital, plus 1 extra ──
     // nearest unconnected edge per city for redundancy (max 8 conns).
     auto add_conn = [&](int a, int b) {
         for (int& c : P.cities[std::size_t(a)].connections)
@@ -315,8 +329,7 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
     // wide-angle loops (genuine alternate routes) survive, shallow fans don't.
     const float kRoadFanCosThreshold = 0.90f;
 
-    for (auto& kg : P.kingdoms) {
-        const auto& idxs = kg.cityIdxs;
+    for (const auto& idxs : realmCities) {
         if (idxs.size() < 2) continue;
 
         // Prim's MST seeded from capital (idxs[0]).
@@ -345,7 +358,7 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
         // A→C fanning off almost parallel to A→B: a doubled diagonal that adds
         // no real alternate route. The guard is strictly subtractive — it only
         // suppresses near-parallel fans, never removes an MST edge nor adds a
-        // long cross-map road — so it cannot disconnect the kingdom.
+        // long cross-map road — so it cannot disconnect the realm.
         //
         // shadows_existing(from,to): does the edge from→to run nearly parallel
         // to a road `from` already has? Checked at BOTH ends below, because the
@@ -377,7 +390,7 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
         }
     }
 
-    // ── Bridge adjacent kingdoms: one road between the closest city pair, ──
+    // ── Bridge adjacent realms: one road between the closest city pair, ──
     // skip if absurdly distant (> 35% of half-diagonal squared, TS parity).
     {
         const double mapDiag2 = double(mapW) * double(mapW)
@@ -385,10 +398,10 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
         const int bridgeMaxD2 = int(std::min<double>(
             (0.35 * 0.35) * mapDiag2,
             double(std::numeric_limits<int>::max())));
-        for (std::size_t i = 0; i < P.kingdoms.size(); ++i) {
-            for (std::size_t j = i + 1; j < P.kingdoms.size(); ++j) {
-                const auto& A = P.kingdoms[i].cityIdxs;
-                const auto& B = P.kingdoms[j].cityIdxs;
+        for (std::size_t i = 0; i < realmCities.size(); ++i) {
+            for (std::size_t j = i + 1; j < realmCities.size(); ++j) {
+                const auto& A = realmCities[i];
+                const auto& B = realmCities[j];
                 int bestA = -1, bestB = -1, bestD = (1 << 30);
                 for (int a : A) for (int b : B) {
                     int d = torus_d2(a, b);
@@ -401,7 +414,9 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
         }
     }
 
-    // Voronoi cellOwner — flood toroidal nearest-city.
+    // Voronoi cellOwner — flood toroidal nearest-city. The byte stored is
+    // the owning FACTION's registry index (kMaxFactions = 64 fits), 0xff
+    // for ground no city claims.
     for (int y = 0; y < mapH; ++y) {
         for (int x = 0; x < mapW; ++x) {
             int best = -1; float bd = 1e30f;
@@ -409,9 +424,10 @@ Politik generate_politik(std::uint32_t seed, int mapW, int mapH,
                 float d = torus_dist_sq(float(x), float(y),
                                         float(P.cities[i].x), float(P.cities[i].y),
                                         float(mapW), float(mapH));
-                if (d < bd) { bd = d; best = P.cities[i].kingdomIdx; }
+                if (d < bd) { bd = d; best = P.cities[i].factionIdx; }
             }
-            P.cellOwner[std::size_t(y) * mapW + x] = std::uint8_t(best & 0xff);
+            P.cellOwner[std::size_t(y) * mapW + x] =
+                best < 0 ? std::uint8_t(0xff) : std::uint8_t(best & 0xff);
         }
     }
     return P;
@@ -443,7 +459,7 @@ void snap_cities_to_land(Politik& p, const TerrainData& td,
 }
 
 // ── Multi-source BFS Voronoi over land cells (TS buildCellOwnership). ──
-// Plus lake-snap for any kingdom whose def has capital_requires_lake.
+// Plus lake-snap for any realm whose seed def has capital_requires_lake.
 void finalize_politik(Politik& p, const TerrainData& td, std::uint8_t seaLevel8) {
     if (!td.has_rgba_storage()) return;
     const int W = td.width, H = td.height;
@@ -466,40 +482,43 @@ void finalize_politik(Politik& p, const TerrainData& td, std::uint8_t seaLevel8)
     // capital already at a lake" test and the search below — they once drifted
     // (6 vs 8), so a capital could be moved to a cell it would then fail.
     constexpr int kLakeScanRadius = 8;
-    const auto& defs = kingdom_defs();
-    for (std::size_t k = 0; k < defs.size() && k < p.kingdoms.size(); ++k) {
-        if (!defs[k].capital_requires_lake) continue;
-        Kingdom& kg = p.kingdoms[k];
-        if (kg.capitalCityIdx < 0) continue;
-        City& cap = p.cities[std::size_t(kg.capitalCityIdx)];
-        if (count_local_water(cap.x, cap.y, kLakeScanRadius) >= 4) continue;
+    for (const auto& def : realm_seed_defs()) {
+        if (!def.capital_requires_lake) continue;
+        const int fi = faction_index(def.factionId);
+        if (fi < 0) continue;
+        City* cap = nullptr;
+        for (auto& c : p.cities)
+            if (c.isCapital && int(c.factionIdx) == fi) { cap = &c; break; }
+        if (!cap) continue;
+        if (count_local_water(cap->x, cap->y, kLakeScanRadius) >= 4) continue;
         bool placed = false;
         for (int r = 1; r < 80 && !placed; ++r) {
             for (int dy = -r; dy <= r && !placed; ++dy) {
                 for (int dx = -r; dx <= r && !placed; ++dx) {
                     if (std::max(std::abs(dx), std::abs(dy)) != r) continue;
-                    int x = wrapi(cap.x + dx, W), y = wrapi(cap.y + dy, H);
+                    int x = wrapi(cap->x + dx, W), y = wrapi(cap->y + dy, H);
                     if (!is_land(x, y)) continue;
                     if (count_local_water(x, y, kLakeScanRadius) >= 4) {
-                        cap.x = x; cap.y = y; placed = true;
+                        cap->x = x; cap->y = y; placed = true;
                     }
                 }
             }
         }
     }
 
-    // Multi-source BFS — each city is a seed. owner = kingdomIdx + 1, 0 = unowned.
+    // Multi-source BFS — each city is a seed. owner = factionIdx + 1,
+    // 0 = unowned (kMaxFactions is 64, so +1 rides a byte with room).
     const std::size_t n = std::size_t(W) * H;
     std::vector<std::uint8_t> owner(n, 0);
     std::vector<int> queue;
     queue.reserve(n);
     for (const City& c : p.cities) {
-        if (c.kingdomIdx < 0) continue;
+        if (c.factionIdx < 0) continue;
         int x = wrapi(c.x, W), y = wrapi(c.y, H);
         if (!is_land(x, y)) continue;
         std::size_t idx = std::size_t(y) * W + x;
         if (owner[idx]) continue;
-        owner[idx] = std::uint8_t(c.kingdomIdx + 1);
+        owner[idx] = std::uint8_t(c.factionIdx + 1);
         queue.push_back(int(idx));
     }
     for (std::size_t head = 0; head < queue.size(); ++head) {

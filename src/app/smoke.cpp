@@ -2519,7 +2519,7 @@ bool run_dungeon_house_smoke(App& app) {
         }
         if (town != nullptr && chest != nullptr && town->inventory.used_slots() != 0) {
             const char* fid = sm::faction_id_for_index(
-                sm::faction_index_for_kingdom(app.gs.politik, town->kingdomIdx));
+                sm::faction_or_freefolk(town->factionIdx));
             storeBefore = town->inventory.total();
             bagBefore = player_bag(app).total();
             repBefore = sm::player_reputation(&app.gs, fid);

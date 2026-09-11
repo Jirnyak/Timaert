@@ -203,23 +203,14 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
                              : 0,
                          s.population, rs, ru,
                          currency_for_faction_id(faction_id_for_index(
-                             faction_index_for_kingdom(gs.politik,
-                                                       s.kingdomIdx))));
+                             faction_or_freefolk(s.factionIdx))));
 
         garrison_upkeep_(gs, s, day);
 
-        // The city's suzerain is its kingdom's capital — a capital owes
-        // nobody above itself.
-        {
-            const bool hasSuzerain =
-                s.kingdomIdx >= 0
-                && s.kingdomIdx < int(gs.politik.kingdoms.size())
-                && gs.politik.kingdoms[std::size_t(s.kingdomIdx)]
-                           .capitalLandmarkId >= 0
-                && gs.politik.kingdoms[std::size_t(s.kingdomIdx)]
-                           .capitalLandmarkId != s.id;
-            assess_tithe_(s, day, hasSuzerain);
-        }
+        // ONE suzerain edge (S24): a place owes whoever the column names;
+        // a capital (and any masterless place) names nobody.
+        assess_tithe_(s, day,
+                      landmark_by_id(gs, s.suzerainLandmarkId) != nullptr);
 
         bool famine = false, revolt = false, died = false;
         const int headsBefore = s.population;
@@ -334,8 +325,8 @@ void tick_villages_(GameState& gs, int day, WorldTickRuntime& runtime,
         // recruits after — the same two calls the city loop makes.
         garrison_upkeep_(gs, v, day);
 
-        // The village's suzerain is its market city (CANON S24).
-        assess_tithe_(v, day, landmark_by_id(gs, v.nearestCityId) != nullptr);
+        // The village owes its market city — the same one edge (CANON S24).
+        assess_tithe_(v, day, landmark_by_id(gs, v.suzerainLandmarkId) != nullptr);
 
         bool famine = false, revolt = false, died = false;
         const int headsBefore = v.population;

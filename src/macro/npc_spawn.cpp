@@ -213,16 +213,14 @@ entt::entity make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
     return e;
 }
 
-// A settlement's faction is its KINGDOM's faction. The resolver itself lives in
-// macro/politik.h (faction_index_for_kingdom) because the subworld citizen
-// spawn and the procedural quest generator need the very same answer — this
-// file used to own a private copy, which is exactly how the two layers drifted
-// apart. It replaced two legacy hacks at once: a latitude-band position
-// heuristic (settlement_faction) that could return "barbarians" (an id no
-// registry ever contained), and a first-letter id matcher that then collapsed it
-// onto "bandits" — so north-eastern towns spawned bandit-faction peasants.
-std::uint16_t settlement_faction_index(const GameState& gs, int kingdomIdx) {
-    return faction_index_for_kingdom(gs.politik, kingdomIdx);
+// A settlement's faction is its OWN column now (Landmark::factionIdx — owner
+// 2026-09-11: «королевств нет, только фракции»); this helper is just the
+// ownerless-ground fallback applied to it, so every consumer keeps one
+// spelling of «whose place». It replaced the kingdomIdx indirection, which
+// itself replaced two legacy hacks (a latitude-band heuristic and a
+// first-letter matcher that dressed north-eastern towns in bandit colours).
+std::uint16_t settlement_faction_index(const Landmark& lm) {
+    return faction_or_freefolk(lm.factionIdx);
 }
 
 } // namespace
@@ -250,7 +248,7 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
         if (lm.type == LandmarkType::City) cities.push_back(&lm);
     for (Landmark* cp : cities) {
         auto& s = *cp;
-        const std::uint16_t fIdx = settlement_faction_index(gs, s.kingdomIdx);
+        const std::uint16_t fIdx = settlement_faction_index(s);
 
         // No eternal gatherers here any more (owner 2026-08-30, CANON S10):
         // working crews are TRANSIENT — raised from the population by the
@@ -281,7 +279,7 @@ void spawn_macro_npcs(GameState& gs, ecs::World& w,
         // id it already carries), not of a guild — same rule as its merchant.
         // Born ON the town cell (owner 2026-08-31).
         make_npc(w, NPCType::Caravan,
-                 settlement_faction_index(gs, home.kingdomIdx),
+                 settlement_faction_index(home),
                  home.x, home.y, gs.mapW, home.id, rng, spawnIndex);
     }
 
@@ -418,7 +416,7 @@ void spawn_design_characters(GameState& gs, ecs::World& w,
                 if (lm.type != row.homeType) continue;
                 if (row.homeFactionPrefix != nullptr) {
                     const char* fid = faction_id_for_index(
-                        faction_index_for_kingdom(gs.politik, lm.kingdomIdx));
+                        settlement_faction_index(lm));
                     if (std::strncmp(fid, row.homeFactionPrefix,
                                      std::strlen(row.homeFactionPrefix))
                         != 0) {
@@ -440,7 +438,7 @@ void spawn_design_characters(GameState& gs, ecs::World& w,
         const std::uint16_t factionIdx = row.factionId != nullptr
             ? std::uint16_t(faction_index(row.factionId))
             : (home != nullptr
-                   ? faction_index_for_kingdom(gs.politik, home->kingdomIdx)
+                   ? settlement_faction_index(*home)
                    : std::uint16_t(faction_index("freefolk")));
         const entt::entity e = make_npc(
             w, row.body, factionIdx,
@@ -566,15 +564,16 @@ entt::entity spawn_squad(GameState& gs, ecs::World& w,
     //
     // ФРАКЦИЯ ЖИТЕЛЯ — СОБСТВЕННИК ЕГО ЛАНДМАРКА (CANON S24, владелец
     // 2026-09-02: «у каждого ландмарка уже есть собственник»): артель носит
-    // фракцию королевства-собственника ДОМА — politik.h и так объявляет
-    // faction_index_for_kingdom THE резолвером поселений. Клеточный резолвер
-    // на границах одевал деревню и её же город в воюющие фракции — крестьяне
-    // резали крестьян на общей дороге (измерено, [death-1299] сид 7).
-    // «Земля решает» остаётся правилом БЕЗДОМНЫХ и контекстных спавнов.
+    // фракцию ДОМА — теперь это собственная колонка ландмарка
+    // (Landmark::factionIdx, королевства вырезаны 2026-09-11). Клеточный
+    // резолвер на границах одевал деревню и её же город в воюющие фракции —
+    // крестьяне резали крестьян на общей дороге (измерено, [death-1299]
+    // сид 7). «Земля решает» остаётся правилом БЕЗДОМНЫХ и контекстных
+    // спавнов.
     const Landmark* home = landmark_by_id(gs, spec.homeSettlementId);
     const std::uint16_t f = spec.factionIndex >= 0
         ? std::uint16_t(spec.factionIndex)
-        : home ? faction_index_for_kingdom(gs.politik, home->kingdomIdx)
+        : home ? settlement_faction_index(*home)
                : faction_index_for_cell(gs.politik, p.x, p.y);
 
     const entt::entity leader =

@@ -75,9 +75,9 @@ int main() {
             return fail("faction_id_for_index does not match the registry");
         }
     }
-    for (const auto& kd : kingdom_defs()) {
-        if (faction_index(kd.id) < 0) {
-            return fail("kingdom id has no registry row — identity would vanish");
+    for (const auto& kd : realm_seed_defs()) {
+        if (faction_index(kd.factionId) < 0) {
+            return fail("realm faction id has no registry row — identity would vanish");
         }
     }
     // Sentinels degrade safely, never alias a real faction.

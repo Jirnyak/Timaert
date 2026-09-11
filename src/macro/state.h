@@ -326,7 +326,9 @@ namespace sm {
 // v93 (2026-09-10): ПОЛЁТ + ЛОГОВО — MacroNpcRuntime вырос тремя полями
 // (flying-кэш колонки cruiseM, lairX/lairY дом-клетка модели LairSorties);
 // runtime едет в записи POD-ом, его раскладка = формат.
-constexpr int kSaveVersion = 93;
+constexpr int kSaveVersion = 94;   // v94: kingdoms cut — Landmark carries
+                                   //   factionIdx + suzerainLandmarkId
+                                   //   (kingdomIdx / nearestCityId died)
 
 enum class SettlementMood : std::uint8_t {
     Prosperous, Stable, Tense, Unrest, Revolt, Count
@@ -428,8 +430,18 @@ struct Landmark {
     Inventory inventory;
     SettlementHistory history;
     SoldierSquad garrison;       // empty unless the kind keeps one (cities)
-    int kingdomIdx = -1;
-    int nearestCityId = -1;      // a village's market city; -1 elsewhere
+    // WHOSE place this is — a faction registry index (owner 2026-09-11:
+    // «королевств нет, только фракции — одна система»). -1 = nobody's,
+    // which resolves to the free folk through faction_or_freefolk. It
+    // replaced kingdomIdx, which named a row of a Kingdom vector that was
+    // itself just a materialized copy of the registry.
+    std::int16_t factionIdx = -1;
+    // THE suzerain edge (CANON S24: «каждый узел знает только сюзерена»):
+    // the landmark this one owes its tithe to — a village's market city
+    // (was nearestCityId), a city's capital (was Kingdom::capitalLandmarkId).
+    // -1 = owes nobody: a capital, a masterless place. ONE column for the
+    // whole feudal graph, stamped at genesis by populate_landmarks.
+    int suzerainLandmarkId = -1;
     // The honest economy's daily readouts (v29): yesterday's hunger and
     // comfort shortfall (for the eye and the mood), the famine edge flag,
     // and the fractional carry of the LOGISTIC population law.

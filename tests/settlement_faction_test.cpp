@@ -1,17 +1,17 @@
-// Settlement allegiance contract — a town's people belong to its KINGDOM.
+// Settlement allegiance contract — a town's people belong to its FACTION
+// (owner 2026-09-11: «королевств нет, только фракции — одна система»; the
+// column is Landmark::factionIdx, persisted in the save since v94).
 //
 // The bug this pins: both the subworld citizen spawn and the procedural quest
 // generator hardcoded faction_index("empire"), so a city of Old Magica fielded
 // imperial guards on foot while the very same city fielded Magica guards on the
-// map, and a quest for a Magica town paid reputation to the empire. Ownership
-// was never unknown — Settlement/Village::kingdomIdx is computed by the politik
-// layer and persisted in the save; the spawn sites simply ignored it.
+// map, and a quest for a Magica town paid reputation to the empire.
 //
-// There is now exactly ONE resolver (macro/politik.h faction_index_for_kingdom)
-// and this test comes at it from both ends:
+// The resolver is faction_or_freefolk over the stored index (the ownerless
+// fallback law, macro/faction.h) and faction_index_for_cell for the ground;
+// this test comes at both from both ends:
 //
-//   1. The resolver itself — real kingdom, unowned settlement, out-of-range
-//      index, and a kingdom whose id is not a registry row.
+//   1. The fallback law — a real index, an unowned -1, an out-of-range byte.
 //   2. The shipping subworld spawn path (spawn_cell_npcs → citizens): a city
 //      handed a non-empire faction produces citizens of THAT faction and NOT
 //      ONE imperial body. That negative control is the whole point — a test
@@ -58,42 +58,21 @@ sm::sub::CellContext meadow_cell(int cx, int cy) {
     return c;
 }
 
-sm::Kingdom make_kingdom(const char* id) {
-    sm::Kingdom k{};
-    k.id = id;
-    k.name = id;
-    k.temperament = sm::Temperament::Magical;
-    k.capitalCityIdx = 0;
-    k.color = 0u;
-    return k;
-}
-
-// ── 1. The resolver ─────────────────────────────────────────────────────────
+// ── 1. The fallback law over the stored column ──────────────────────────────
 bool run_resolver_contract() {
-    sm::Politik politik{};
-    politik.kingdoms.push_back(make_kingdom("old_magica"));
-    politik.kingdoms.push_back(make_kingdom("timaert"));
-    // A kingdom id with no registry row: a data error that must degrade to the
-    // documented fallback, never to a garbage index.
-    politik.kingdoms.push_back(make_kingdom("atlantis"));
-
     // An ownerless place belongs to the free folk — never quietly to the empire.
     const int freeIdx = sm::faction_index("freefolk");
     if (freeIdx < 0) return false;
     const std::uint16_t freefolk = std::uint16_t(freeIdx);
 
-    if (sm::faction_index_for_kingdom(politik, 0)
-        != std::uint16_t(sm::faction_index("old_magica"))) return false;
-    if (sm::faction_index_for_kingdom(politik, 1)
-        != std::uint16_t(sm::faction_index("timaert"))) return false;
-    if (sm::faction_index_for_kingdom(politik, 2) != freefolk) return false; // unknown id
-    if (sm::faction_index_for_kingdom(politik, -1) != freefolk) return false; // unowned
-    if (sm::faction_index_for_kingdom(politik, 99) != freefolk) return false; // out of range
+    const int magica = sm::faction_index("old_magica");
+    if (sm::faction_or_freefolk(magica) != std::uint16_t(magica)) return false;
+    if (sm::faction_or_freefolk(-1) != freefolk) return false;   // unowned
+    if (sm::faction_or_freefolk(9999) != freefolk) return false; // garbage byte
+    if (sm::faction_or_freefolk(int(sm::kNoFaction)) != freefolk) return false;
     // The unruled are their own realm, not an alias of a crown.
     if (freeIdx == sm::faction_index("empire")) return false;
-
-    // And a resolved kingdom is a real registry row, not a lucky zero.
-    if (sm::faction_index("old_magica") == sm::faction_index("empire")) return false;
+    if (magica == sm::faction_index("empire")) return false;
     return true;
 }
 
@@ -105,14 +84,15 @@ bool run_resolver_contract() {
 bool run_ground_owner_contract() {
     const std::uint16_t freefolk = std::uint16_t(sm::faction_index("freefolk"));
 
+    // The byte IS the faction registry index now (kingdoms cut 2026-09-11).
     sm::Politik politik{};
-    politik.kingdoms.push_back(make_kingdom("old_magica"));
-    politik.kingdoms.push_back(make_kingdom("timaert"));
     politik.mapW = 4;
     politik.mapH = 2;
     politik.cellOwner.assign(8, 0xffu);
-    politik.cellOwner[0] = 0u;   // (0,0) Old Magica
-    politik.cellOwner[5] = 1u;   // (1,1) Timaert
+    politik.cellOwner[0] =
+        std::uint8_t(sm::faction_index("old_magica"));   // (0,0)
+    politik.cellOwner[5] =
+        std::uint8_t(sm::faction_index("timaert"));      // (1,1)
 
     if (sm::faction_index_for_cell(politik, 0, 0)
         != std::uint16_t(sm::faction_index("old_magica"))) return false;
@@ -128,7 +108,6 @@ bool run_ground_owner_contract() {
     // No ownership map at all (a world mid-generation, a bare test fixture):
     // unclaimed, not a garbage index off the end of the vector.
     sm::Politik empty{};
-    empty.kingdoms.push_back(make_kingdom("old_magica"));
     if (sm::faction_index_for_cell(empty, 0, 0) != freefolk) return false;
     // A truncated map is rejected the same way rather than indexed into.
     sm::Politik torn = politik;
@@ -217,8 +196,8 @@ int main() {
 
     if (!run_resolver_contract()) {
         sm::sub::clear_saved_subworlds();
-        return fail("faction_index_for_kingdom wrong "
-                    "(kingdom id not resolved / fallback not empire)");
+        return fail("faction_or_freefolk wrong "
+                    "(real index not passed through / fallback not free folk)");
     }
     if (!run_ground_owner_contract()) {
         sm::sub::clear_saved_subworlds();

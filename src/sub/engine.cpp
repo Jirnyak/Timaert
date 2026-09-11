@@ -1274,7 +1274,7 @@ CellContext SubworldEngine::resolve_context(int x, int y) const {
     c.landmark.id         = f.landmark.id;
     c.landmark.size       = f.landmark.size;
     c.landmark.tier       = f.landmark.tier;
-    c.landmark.kingdomIdx = f.landmark.kingdomIdx;
+    c.landmark.factionIdx = f.landmark.factionIdx;
     c.landmark.depleted   = f.landmark.depleted;
     c.seed = gs_->worldSeed
            ^ (std::uint32_t(f.x) * kCellSeedX)
@@ -1296,15 +1296,14 @@ CellContext SubworldEngine::resolve_context(int x, int y) const {
 // WHOSE banner a place's crowd wears — one resolve for the street and the
 // interiors (§42): the registry's spawnFaction column wins when the row
 // names one (a spire's crowd IS demons, exactly like its wild rolls),
-// otherwise the owning kingdom's faction as ever.
-static std::uint16_t landmark_crowd_faction(const Politik& politik,
-                                            LandmarkType kind,
-                                            int kingdomIdx) {
+// otherwise the place's OWN faction column (kingdoms cut 2026-09-11).
+static std::uint16_t landmark_crowd_faction(LandmarkType kind,
+                                            int factionIdx) {
     const char* placeFaction = landmark_def(kind).spawnFaction;
     if (placeFaction != nullptr) {
         return std::uint16_t(faction_index(placeFaction));
     }
-    return faction_index_for_kingdom(politik, kingdomIdx);
+    return faction_or_freefolk(factionIdx);
 }
 
 void SubworldEngine::spawn_cell(int ox, int oy) {
@@ -1328,7 +1327,7 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
     // demons). Resolved HERE, where the GameState is, and handed to the
     // spawner as a plain index so sub/spawn.cpp stays free of macro state.
     const std::uint16_t settlementFaction = landmark_crowd_faction(
-        gs_->politik, ctx.landmark.kind, ctx.landmark.kingdomIdx);
+        ctx.landmark.kind, ctx.landmark.factionIdx);
     // The wild headcount standing on this cell — the honest CAP on how many
     // creatures embody (macro/macro_stock.h fauna row: spawn-table capacity
     // minus what the hunt has taken). Asked HERE, where the GameState is,
@@ -3271,8 +3270,8 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
     ses.settlementId = doorCtx.landmark.id;   // ONE landmark id space (v54)
     ses.landmarkPop = doorCtx.landmark.size;
     ses.landmarkKind = doorCtx.landmark.kind;
-    ses.faction = landmark_crowd_faction(gs_->politik, doorCtx.landmark.kind,
-                                         doorCtx.landmark.kingdomIdx);
+    ses.faction = landmark_crowd_faction(doorCtx.landmark.kind,
+                                         doorCtx.landmark.factionIdx);
     // In off the street — or down through the crown, which lands on the roof
     // pad instead of the south threshold (a storey above the ground has no
     // threshold to land on at all).
@@ -3355,7 +3354,7 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
         ctx.feature = FT_None;
         ctx.landmark.id = -1;
         ctx.landmark.size = 0;
-        ctx.landmark.kingdomIdx = -1;
+        ctx.landmark.factionIdx = -1;
         ctx.worldSeed = worldSeed;
         if (wrapCells > 0) {
             // TOROIDAL pocket: the scene is an N×N block of variant cells
@@ -3685,7 +3684,7 @@ bool SubworldEngine::search_chest(const Structure& chest) {
             lm && lm->x == dungeon_.doorCx && lm->y == dungeon_.doorCy) {
             store = &lm->inventory;
             factionId = faction_id_for_index(
-                faction_index_for_kingdom(gs_->politik, lm->kingdomIdx));
+                faction_or_freefolk(lm->factionIdx));
         }
     }
     if (!store || store->used_slots() == 0) {

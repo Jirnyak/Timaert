@@ -385,7 +385,7 @@ sm::GameState make_state() {
     settlement.history.push(12, 777);
     add_soldiers(settlement.garrison, sm::NPCType::Guard, 5, 2000u);
     add_soldiers(settlement.garrison, sm::NPCType::Peasant, 1, 2100u);
-    settlement.kingdomIdx = 2;
+    settlement.factionIdx = 2;
     // Honest-day readouts (v29) — every field non-default.
     settlement.starvedYesterday = 12;
     settlement.unmetYesterday = 34;
@@ -404,8 +404,8 @@ sm::GameState make_state() {
     village.inventory.add("food_meat", 4);
     village.history.push(3, 90);
     village.history.push(10, 111);
-    village.nearestCityId = settlement.id;
-    village.kingdomIdx = 2;
+    village.suzerainLandmarkId = settlement.id;
+    village.factionIdx = 2;
     village.starvedYesterday = 5;
     village.unmetYesterday = 7;
     village.famineActive = 1;

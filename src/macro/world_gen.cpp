@@ -129,7 +129,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
         for (const Landmark* cp : cityRows) {
             bool has = false;
             for (const Landmark* vp : villageRows)
-                if (vp->nearestCityId == cp->id) { has = true; break; }
+                if (vp->suzerainLandmarkId == cp->id) { has = true; break; }
             if (!has) ++villageless;
         }
         // And how far apart they actually stand: the mean nearest-neighbour
@@ -142,7 +142,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
             int nearest = 1 << 20;
             for (const Landmark* op : villageRows) {
                 const auto& o = *op;
-                if (op == vp || o.nearestCityId != v.nearestCityId) continue;
+                if (op == vp || o.suzerainLandmarkId != v.suzerainLandmarkId) continue;
                 const int ddx = std::min(std::abs(v.x - o.x),
                                          gs.mapW - std::abs(v.x - o.x));
                 const int ddy = std::min(std::abs(v.y - o.y),
@@ -270,7 +270,7 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
             VillageRoadSite site{};
             site.x = v.x;
             site.y = v.y;
-            if (const Landmark* s = landmark_by_id(gs, v.nearestCityId);
+            if (const Landmark* s = landmark_by_id(gs, v.suzerainLandmarkId);
                 s && s->type == LandmarkType::City) {
                 site.cityX = s->x;
                 site.cityY = s->y;

@@ -105,10 +105,10 @@ void make_settled_world(World& w) {
     w.gs.politik.mapH = kH;
     w.gs.politik.cities.clear();
     City a{};
-    a.x = 34; a.y = 20; a.kingdomIdx = -1; a.population = 1000;
+    a.x = 34; a.y = 20; a.factionIdx = -1; a.population = 1000;
     for (int& c : a.connections) c = -1;
     City b{};
-    b.x = 84; b.y = 40; b.kingdomIdx = -1; b.population = 1000;
+    b.x = 84; b.y = 40; b.factionIdx = -1; b.population = 1000;
     for (int& c : b.connections) c = -1;
     w.gs.politik.cities.push_back(a);
     w.gs.politik.cities.push_back(b);
@@ -202,9 +202,9 @@ void test_villages_feed_themselves() {
         const SettlementSiteTerms t = settlement_site_terms(ctx, v.x, v.y);
         const bool feeds = t.arable >= kVillageArableGate
                         || t.deposit >= kVillageDepositGate;
-        if (!feeds && v.nearestCityId >= 0
-            && std::size_t(v.nearestCityId) < failedOf.size())
-            ++failedOf[std::size_t(v.nearestCityId)];
+        if (!feeds && v.suzerainLandmarkId >= 0
+            && std::size_t(v.suzerainLandmarkId) < failedOf.size())
+            ++failedOf[std::size_t(v.suzerainLandmarkId)];
     }
     for (const int n : failedOf) {
         CHECK(n <= 1, "beyond the forced first hamlet, every village can "
@@ -289,7 +289,7 @@ void test_villages_scatter_around_their_town() {
         if (hinterland_scores(w, c).empty()) continue;
         int mine = 0;
         for (const auto* vp : villages)
-            if (vp->nearestCityId == s.id) ++mine;
+            if (vp->suzerainLandmarkId == s.id) ++mine;
         CHECK(mine >= 1, "a city with admissible ground is never hamlet-less");
     }
 }
@@ -304,7 +304,7 @@ void test_count_derives_from_capacity() {
     const auto villages = villages_of(w.gs);
     const int lushCityId = cities.empty() ? -1 : cities[0]->id;
     for (const auto* vp : villages) {
-        if (vp->nearestCityId == lushCityId) ++lush;
+        if (vp->suzerainLandmarkId == lushCityId) ++lush;
         else ++dry;
     }
     CHECK(lush >= 1, "the river belt hinterland feeds at least one village");
@@ -399,13 +399,7 @@ void test_cities_read_the_ground() {
         CHECK(!w.td.is_water(c.x, c.y, kSeaLevel8), "no city on water");
         const int score = settlement_site_score(
             ctx, SettlementScoreRow::City, c.x, c.y);
-        const bool isCapital = [&] {
-            for (const auto& kg : scored.kingdoms)
-                if (kg.capitalCityIdx >= 0
-                    && &scored.cities[std::size_t(kg.capitalCityIdx)] == &c)
-                    return true;
-            return false;
-        }();
+        const bool isCapital = c.isCapital;
         CHECK(c.population == (isCapital ? capital_population(score)
                                          : city_population(score)),
               "a city's souls follow the population law, never dice");

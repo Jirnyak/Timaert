@@ -34,6 +34,16 @@ struct Language {
 
 // Construct a Language deterministically from `seed`.
 Language create_language(std::uint32_t seed);
+
+// A FACTION's naming language, derived — never stored (owner 2026-09-11:
+// kingdoms are gone, so the realm language that lived on struct Kingdom
+// derives from the world seed and the faction registry index instead;
+// genesis and later namers get the same tongue by construction).
+inline Language faction_language(std::uint32_t worldSeed,
+                                 std::uint16_t factionIdx) {
+    return create_language(worldSeed
+                           ^ (std::uint32_t(factionIdx) * 0x9E3779B1u));
+}
 Language create_language(std::uint32_t seed,
                          const std::vector<std::string>& vowels,
                          const std::vector<std::string>& consonants);

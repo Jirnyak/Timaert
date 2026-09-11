@@ -211,12 +211,8 @@ namespace sm::ui
                 ImGui::Text("%-16s  rep:%4d", fd ? fd->name : fid,
                             player_reputation(&gs, fid));
             }
-            ImGui::Separator();
-            ImGui::Text("Kingdoms: %zu", gs.politik.kingdoms.size());
-            for (const auto &k : gs.politik.kingdoms)
-            {
-                ImGui::Text("  - %s  (%zu cities)", k.name.c_str(), k.cityIdxs.size());
-            }
+            // (The "Kingdoms: N" tail died 2026-09-11 with the kingdoms —
+            // the panel above IS the one system: faction rows + reputation.)
         }
         ImGui::End();
     }
@@ -1429,21 +1425,17 @@ namespace sm::ui
                 return;
             }
 
-            // ── Banner ──
-            const char *lineage = "?";
-            const char *kingdom = "Unaligned";
-            if (s->kingdomIdx >= 0 && s->kingdomIdx < int(gs.politik.kingdoms.size()))
-            {
-                const auto &k = gs.politik.kingdoms[std::size_t(s->kingdomIdx)];
-                kingdom = k.name.c_str();
-                lineage = temperament_label(k.temperament);
-            }
+            // ── Banner ── (one system: the place's faction registry row)
+            const sm::FactionDef *fd =
+                sm::faction_def_by_index(sm::faction_or_freefolk(s->factionIdx));
             ImGui::PushFont(nullptr);
             ImGui::TextColored(ImVec4(1.0f, 0.92f, 0.50f, 1.0f), "%s", s->name.c_str());
             ImGui::PopFont();
             ImGui::SameLine();
             ImGui::TextDisabled("(City)");
-            ImGui::Text("Kingdom: %s   Lineage: %s", kingdom, lineage);
+            ImGui::Text("Faction: %s   Temperament: %s",
+                        fd ? fd->name : "Unaligned",
+                        fd ? temperament_label(fd->temperament) : "?");
             ImGui::Text("Population: %d", s->population);
             ImGui::TextColored(ImColor(mood_color(s->mood)), "Mood: %s", mood_label(s->mood));
             ImGui::Text("Starved yesterday: %d   Comfort unmet: %d%s",
@@ -1474,7 +1466,7 @@ namespace sm::ui
                         ImGui::TableHeadersRow();
                         draw_info_overview_row("Population", s->population);
                         draw_info_overview_row("Mood", mood_label(s->mood));
-                        draw_info_overview_row("Kingdom index", s->kingdomIdx);
+                        draw_info_overview_row("Faction index", int(s->factionIdx));
                         draw_info_overview_row("Starved yesterday", int(s->starvedYesterday));
                         draw_info_overview_row("Comfort unmet", int(s->unmetYesterday));
                         draw_info_overview_row("Garrison units", total_soldiers(s->garrison));
@@ -1511,7 +1503,7 @@ namespace sm::ui
                     ImGui::TextUnformatted("Build actions are disabled.");
                     ImGui::Spacing();
                     ImGui::TextWrapped("The TS SettlementOverlay.svelte currently exposes info, quests, rest, recruit, map, and history tabs only. It does not define build projects, costs, construction time, or effects.");
-                    ImGui::TextWrapped("The native Settlement record persists population, mood, inventory, history, garrison, economy, kingdom index, and economy archetype. It has no buildings list or construction queue.");
+                    ImGui::TextWrapped("The native Settlement record persists population, mood, inventory, history, garrison, faction and suzerain. It has no buildings list or construction queue.");
                     ImGui::Spacing();
                     if (ImGui::BeginTable("build_missing_contracts", 2,
                                           ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg))

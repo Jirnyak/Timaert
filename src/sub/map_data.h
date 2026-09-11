@@ -173,12 +173,11 @@ struct LandmarkContext {
     int  size = 0;
     // The spire's spell tier (storey count of its tower); 0 elsewhere.
     int  tier = 0;
-    // Owning kingdom (index into Politik::kingdoms; -1 = none / unowned). The
-    // subworld does not know what a kingdom IS — it carries the index so the
-    // engine can resolve the citizens' faction through the one macro resolver
-    // (faction_index_for_kingdom), instead of every settlement in the world
-    // fielding imperial guards.
-    int  kingdomIdx = -1;
+    // Owning faction (registry index; -1 = none / unowned — resolves to the
+    // free folk through faction_or_freefolk). The kingdoms died 2026-09-11;
+    // the landmark's own column rides down here so the citizens' faction is
+    // the place's, instead of every settlement fielding imperial guards.
+    int  factionIdx = -1;
     // Consumed (today: a depleted spire — the orb is gone and its light with
     // it). Generation reads it like any other context fact, so the scene
     // truthfully shows what the macro world remembers.

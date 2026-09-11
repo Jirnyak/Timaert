@@ -1733,7 +1733,7 @@ bool boot_world_from_save(App& app, const std::string& path) {
     // that can still be forgotten is a new field genesis owns, and that list
     // is short, closed, and written out right here:
     //
-    //   politik     — kingdoms, capitals, the map's ownership. Derived from
+    //   politik     â cities, capitals, the map’s ownership. Derived from
     //                 worldSeed by generate_macro_world and NOT in the file
     //                 (save.h's opening line says so: the terrain/politik
     //                 layers are regenerated). boot_world just built it for
@@ -3662,8 +3662,7 @@ void draw_debug_ui(App& app) {
     std::size_t dbgVillages = 0;
     for (const auto& lm : app.gs.landmarks)
         if (lm.type == sm::LandmarkType::Village) ++dbgVillages;
-    ImGui::Text("Kingdoms %zu  Cities %zu  Villages %zu",
-                app.gs.politik.kingdoms.size(),
+    ImGui::Text("Cities %zu  Villages %zu",
                 app.gs.politik.cities.size(),
                 dbgVillages);
     ImGui::Text("Subworld: %s", app.subworld.active() ? "ACTIVE" : "off");
@@ -5109,10 +5108,8 @@ void build_world_preview(App& app, int side = 384) {
         const int py = c.y * side / td.height;
         stamp(px, py, 1, 240, 200, 60);
     }
-    for (const auto& kg : app.gs.politik.kingdoms) {
-        if (kg.capitalCityIdx < 0
-            || kg.capitalCityIdx >= int(app.gs.politik.cities.size())) continue;
-        const auto& c = app.gs.politik.cities[std::size_t(kg.capitalCityIdx)];
+    for (const auto& c : app.gs.politik.cities) {
+        if (!c.isCapital) continue;
         const int px = c.x * side / td.width;
         const int py = c.y * side / td.height;
         stamp(px, py, 2, 255, 240, 120);

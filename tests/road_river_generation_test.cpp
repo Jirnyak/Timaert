@@ -39,7 +39,7 @@ sm::City make_city(int x, int y, int connection)
     sm::City c{};
     c.x = x;
     c.y = y;
-    c.kingdomIdx = 0;
+    c.factionIdx = 0;
     c.population = 100;
     for (int& v : c.connections)
     {

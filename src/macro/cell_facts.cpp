@@ -58,18 +58,10 @@ CellFacts cell_facts(const MacroWorld& w, int x, int y) {
         f.seasonTempOffset = season_temp_offset(w.gs->worldTime.day());
         f.cropHarvested = resource_field_scar(*w.gs, ResourceFieldId::Wheat,
                                               std::uint32_t(idx));
-        // Land owner — the politik layer's per-cell kingdom (0xff = unowned).
-        const Politik& pk = w.gs->politik;
-        if (pk.mapW == td.width && pk.mapH == td.height
-            && pk.cellOwner.size() == std::size_t(pk.mapW) * pk.mapH) {
-            const std::uint8_t owner = pk.cellOwner[idx];
-            f.ownerKingdom = owner == 0xFFu ? std::int8_t(-1)
-                                            : std::int8_t(owner);
-        }
     }
 
     // WHO stands here — the baked index (one lookup, one priority order);
-    // the named thing's LIVE fields — population, tier, kingdom, depleted —
+    // the named thing's LIVE fields — population, tier, faction, depleted —
     // resolved from GameState now, because they drift daily. The by-id find
     // runs only on the rare cell the grid says is owned.
     const LandmarkRef lm = w.landmarks ? w.landmarks->at(f.x, f.y)
@@ -86,7 +78,7 @@ CellFacts cell_facts(const MacroWorld& w, int x, int y) {
                        ? kSpellDefs[rec->spellId].tier : 1)
                 : 0;
             f.landmark = {rec->type, rec->id, rec->population, tier,
-                          rec->kingdomIdx, rec->depleted};
+                          int(rec->factionIdx), rec->depleted};
         }
     }
     return f;

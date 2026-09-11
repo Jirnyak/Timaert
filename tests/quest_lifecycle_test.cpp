@@ -1184,7 +1184,7 @@ void test_item_delivery_direct_path() {
     settlement.y = 18;
     settlement.population = 1000;
     settlement.mood = sm::SettlementMood::Stable;
-    settlement.kingdomIdx = 0;
+    settlement.factionIdx = 0;
     gs.landmarks.push_back(settlement);
 
     sm::Quest q{};
@@ -1677,7 +1677,7 @@ void test_village_protect_generator_spawn_event() {
     village.y = 22;
     village.population = 80;
     village.mood = sm::SettlementMood::Tense;
-    village.nearestCityId = city.id;
+    village.suzerainLandmarkId = city.id;
     gs.landmarks.push_back(village);
 
     sm::Quest selected{};
@@ -1741,7 +1741,7 @@ void test_offer_provenance_is_unique_per_slot_and_day() {
     village.y = 22;
     village.population = 80;
     village.mood = sm::SettlementMood::Tense;
-    village.nearestCityId = city.id;
+    village.suzerainLandmarkId = city.id;
     gs.landmarks.push_back(village);
 
     const auto cityQuests =
@@ -1834,7 +1834,7 @@ void test_generated_delivery_quest_flow() {
     settlement.y = 18;
     settlement.population = 1000;
     settlement.mood = sm::SettlementMood::Stable;
-    settlement.kingdomIdx = 0;
+    settlement.factionIdx = 0;
     settlement.inventory.add("bread", 2048);
     settlement.inventory.add("cloth", 128);
     settlement.inventory.add("bricks", 128);

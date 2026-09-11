@@ -38,7 +38,7 @@ struct LandmarkFacts {
     // The spire's spell tier (its strength column, asked from the spell
     // registry); 0 for every other kind. Its OWN field, never smuggled.
     int  tier = 0;
-    int  kingdomIdx = -1;  // owning kingdom; -1 = none
+    int  factionIdx = -1;  // owning faction (registry index); -1 = none
     bool depleted = false; // a spire whose orb is gone
 };
 
@@ -60,7 +60,8 @@ struct CellFacts {
     std::uint8_t zone = 0;    // the danger byte (macro/zones.h continuum)
     std::uint8_t depositsNear = 0; // live DepositKind bits within the
                                    //   profession reach (kGathererReach)
-    std::int8_t  ownerKingdom = -1; // land owner (politik cellOwner); -1 none
+    // (ownerKingdom died 2026-09-11 with the kingdoms: it was written and
+    // never read — ground ownership answers через faction_index_for_cell.)
     int  cropHarvested = 0;   // the wheat scar: what the sickle already took
     bool water = false;       // biome == Water, pre-answered for one-fact
                               //   consumers

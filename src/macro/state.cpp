@@ -119,10 +119,10 @@ GameState default_game_state(std::uint32_t seed, int mapW, int mapH,
 // rest of the macro tick + UI consume. This helper closes that loop:
 //
 //   1. Each politik city becomes a `Settlement` (id = index, naming
-//      from the kingdom language, default mood Stable, garrison empty,
+//      from its faction's language, default mood Stable, garrison empty,
 //      economy state with one local resource roll based on biome).
 //   2. Each settlement spawns 1–3 satellite villages on land cells in
-//      a small ring (4–14 cells away) — same kingdom, smaller pop.
+//      a small ring (4–14 cells away) — same faction, smaller pop.
 //   3. Markers refreshed so the codex / overlay tooltip / quest engine
 //      see the new POIs.
 //
@@ -139,6 +139,20 @@ void populate_landmarks_from_politik(GameState& gs,
 
     Rng rng(gs.worldSeed ^ 0xC1A05E1Du);
 
+    // The naming tongue of a faction, derived once per faction that
+    // actually names something here (language.h faction_language — the
+    // realm language that used to sit on struct Kingdom).
+    std::array<Language, std::size_t(kMaxFactions)> langCache{};
+    std::array<std::uint8_t, std::size_t(kMaxFactions)> langReady{};
+    auto lang_of = [&](std::int16_t f) -> const Language& {
+        const std::size_t k = std::size_t(faction_or_freefolk(f));
+        if (!langReady[k]) {
+            langCache[k] = faction_language(gs.worldSeed, std::uint16_t(k));
+            langReady[k] = 1;
+        }
+        return langCache[k];
+    };
+
     const auto& cities = gs.politik.cities;
     gs.landmarks.reserve(cities.size());
 
@@ -150,7 +164,7 @@ void populate_landmarks_from_politik(GameState& gs,
         s.id          = int(gs.nextLandmarkOrdinal++);
         s.x           = c.x;
         s.y           = c.y;
-        s.kingdomIdx  = c.kingdomIdx;
+        s.factionIdx  = c.factionIdx;
         // Politik prices every city's souls from its ground (R2); the old
         // 200+rng%800 fallback was the last population dice standing.
         s.population  = std::max(1, c.population);
@@ -176,29 +190,37 @@ void populate_landmarks_from_politik(GameState& gs,
         // what a town actually HAS now lives in this one inventory.)
         seed_landmark_inventory(
             s.inventory, s.population, EconSite(landmark_def(s.type).econSite),
-            currency_for_faction_id(faction_id_for_index(std::uint16_t(
-                faction_index_for_kingdom(gs.politik, s.kingdomIdx)))));
-        // Naming via the owning kingdom's procedural language.
-        if (c.kingdomIdx >= 0
-            && c.kingdomIdx < int(gs.politik.kingdoms.size())) {
-            s.name = !c.name.empty()
-                ? c.name
-                : generate_name(gs.politik.kingdoms[c.kingdomIdx].language, rng);
+            currency_for_faction_id(
+                faction_id_for_index(faction_or_freefolk(s.factionIdx))));
+        // Naming via the owning faction's procedural language.
+        if (c.factionIdx >= 0) {
+            s.name = !c.name.empty() ? c.name
+                                     : generate_name(lang_of(c.factionIdx), rng);
         } else {
             s.name = !c.name.empty() ? c.name : "Outpost";
         }
-        // The capital's landmark ID (owner 2026-08-31): this loop is the
-        // one place that knows which landmark politik city `i` became —
-        // stamp the kingdom's suzerain edge here, never resolve it by
-        // coordinates again.
-        if (s.kingdomIdx >= 0
-            && s.kingdomIdx < int(gs.politik.kingdoms.size())
-            && gs.politik.kingdoms[std::size_t(s.kingdomIdx)]
-                       .capitalCityIdx == int(i)) {
-            gs.politik.kingdoms[std::size_t(s.kingdomIdx)]
-                .capitalLandmarkId = s.id;
-        }
         gs.landmarks.push_back(std::move(s));
+    }
+
+    // THE suzerain edges (CANON S24), stamped here — the one place that
+    // knows which landmark each politik city became. City landmarks sit at
+    // gs.landmarks[i] for politik city i (the loop above, in order): every
+    // city owes its faction's capital; the capital itself owes nobody.
+    {
+        std::array<int, std::size_t(kMaxFactions)> capitalOf{};
+        capitalOf.fill(-1);
+        for (std::size_t i = 0; i < cities.size(); ++i) {
+            if (cities[i].isCapital && cities[i].factionIdx >= 0) {
+                capitalOf[std::size_t(cities[i].factionIdx)] =
+                    gs.landmarks[i].id;
+            }
+        }
+        for (std::size_t i = 0; i < cities.size(); ++i) {
+            Landmark& lm = gs.landmarks[i];
+            const int cap = lm.factionIdx >= 0
+                ? capitalOf[std::size_t(lm.factionIdx)] : -1;
+            lm.suzerainLandmarkId = (cap == lm.id) ? -1 : cap;
+        }
     }
 
     // ── Villages: the settlement FIELD decides (owner 2026-08-31,
@@ -240,12 +262,12 @@ void populate_landmarks_from_politik(GameState& gs,
     // Snapshot the cities before appending villages: the loop below pushes
     // into the SAME gs.landmarks vector, and a live iterator would not
     // survive the growth.
-    struct CityRef { int id, x, y, kingdomIdx; };
+    struct CityRef { int id, x, y; std::int16_t factionIdx; };
     std::vector<CityRef> cityRefs;
     cityRefs.reserve(cities.size());
     for (const auto& lm : gs.landmarks) {
         if (lm.type == LandmarkType::City) {
-            cityRefs.push_back(CityRef{lm.id, lm.x, lm.y, lm.kingdomIdx});
+            cityRefs.push_back(CityRef{lm.id, lm.x, lm.y, lm.factionIdx});
         }
     }
 
@@ -322,14 +344,15 @@ void populate_landmarks_from_politik(GameState& gs,
             vil.id            = int(gs.nextLandmarkOrdinal++);   // v54: same issuer
             vil.x             = c.x;
             vil.y             = c.y;
-            vil.kingdomIdx    = s.kingdomIdx;
+            vil.factionIdx    = s.factionIdx;
             // Souls = the owner's scale, never the score (CANON S25):
             // a hundred-odd, the ~200 tail included.
             vil.population    = kVillageBornBase
                               + int(rng.next_u32()
                                     % std::uint32_t(kVillageBornSpread));
             vil.mood          = SettlementMood::Stable;
-            vil.nearestCityId = s.id;
+            // The village's suzerain IS its market city (one edge, S24).
+            vil.suzerainLandmarkId = s.id;
             // The village's own small army, by the SAME one law (§42 Инк 7).
             {
                 Rng grng(gs.worldSeed ^ 0x6A121500u
@@ -345,15 +368,11 @@ void populate_landmarks_from_politik(GameState& gs,
             seed_landmark_inventory(
                 vil.inventory, vil.population,
                 EconSite(landmark_def(vil.type).econSite),
-                currency_for_faction_id(faction_id_for_index(std::uint16_t(
-                    faction_index_for_kingdom(gs.politik, vil.kingdomIdx)))));
-            if (s.kingdomIdx >= 0
-                && s.kingdomIdx < int(gs.politik.kingdoms.size())) {
-                vil.name = generate_name(
-                    gs.politik.kingdoms[s.kingdomIdx].language, rng);
-            } else {
-                vil.name = "Hamlet";
-            }
+                currency_for_faction_id(
+                    faction_id_for_index(faction_or_freefolk(vil.factionIdx))));
+            vil.name = s.factionIdx >= 0
+                ? generate_name(lang_of(s.factionIdx), rng)
+                : "Hamlet";
             gs.landmarks.push_back(std::move(vil));
         }
     }

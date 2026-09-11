@@ -42,7 +42,7 @@ GameState make_world(int villagePop) {
     vil.x = 10;
     vil.y = 10;
     vil.population = villagePop;
-    vil.nearestCityId = 9;
+    vil.suzerainLandmarkId = 9;
     gs.landmarks.push_back(vil);
     Landmark city{};
     city.type = LandmarkType::City;
@@ -147,7 +147,7 @@ void test_auction_raises_errand_bearing_peasants() {
 void test_refusal_is_the_auctions_verdict() {
     // Миру нечего предъявить: ни жил, ни леса, ни рынка, пустой склад.
     GameState gs = make_world(/*pop*/100);
-    gs.landmarks[0].nearestCityId = -1;
+    gs.landmarks[0].suzerainLandmarkId = -1;
     ecs::World w;
     TerrainData absent{};
     MacroWorld mw{.gs = &gs, .world = &w, .terrain = &absent};

@@ -41,7 +41,7 @@ struct QuestGenCtx {
     int y = 0;
     bool isCity = false;
     SettlementMood mood = SettlementMood::Stable;
-    int kingdomIdx = -1;
+    int factionIdx = -1;
     const Inventory* store = nullptr;   // the landmark's universal inventory
     const GameState* gs = nullptr;
     Rng* rng = nullptr;
@@ -49,14 +49,13 @@ struct QuestGenCtx {
 
 using GeneratorFn = bool (*)(const QuestGenCtx&, Quest&);
 
-// Whose standing does this quest move? The giver's realm — the same
-// settlement→faction rule the spawners use (macro/politik.h), so doing a job for
-// Old Magica raises Old Magica, not the empire. An unowned settlement keeps the
-// empire fallback the resolver defines.
+// Whose standing does this quest move? The giver's own faction column — the
+// same rule the spawners use (Landmark::factionIdx, kingdoms cut 2026-09-11),
+// so doing a job for Old Magica raises Old Magica, not the empire. An unowned
+// settlement resolves to the free folk like everywhere else.
 std::string faction_of(const QuestGenCtx& ctx) {
     if (!ctx.gs) return "empire";
-    return faction_id_for_index(
-        faction_index_for_kingdom(ctx.gs->politik, ctx.kingdomIdx));
+    return faction_id_for_index(faction_or_freefolk(ctx.factionIdx));
 }
 
 std::string direction_name(float angle) {
@@ -462,7 +461,7 @@ std::vector<Quest> generate_quests_for_settlement(const Landmark& s,
     ctx.y = s.y;
     ctx.isCity = true;
     ctx.mood = s.mood;
-    ctx.kingdomIdx = s.kingdomIdx;
+    ctx.factionIdx = s.factionIdx;
     ctx.store = &s.inventory;
     ctx.gs = &gs;
     ctx.rng = &rng;
@@ -480,7 +479,7 @@ std::vector<Quest> generate_quests_for_village(const Landmark& v,
     ctx.y = v.y;
     ctx.isCity = false;
     ctx.mood = v.mood;
-    ctx.kingdomIdx = v.kingdomIdx;
+    ctx.factionIdx = v.factionIdx;
     ctx.store = &v.inventory;
     ctx.gs = &gs;
     ctx.rng = &rng;

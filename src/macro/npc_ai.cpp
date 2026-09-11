@@ -1652,9 +1652,9 @@ void ai_caravan(entt::entity self, MacroPos& p,
 }
 
 // The village vendor (owner 2026-08-30: the village ALWAYS sells at its
-// nearest city's market). One run a day: load the home surplus, walk to the
-// city the world already assigned this village (nearestCityId — known by
-// construction, not by rumour), sell everything, buy the home's lacks,
+// own city's market). One run a day: load the home surplus, walk to the
+// city the world already assigned this village (its suzerain edge — known
+// by construction, not by rumour), sell everything, buy the home's lacks,
 // walk back. The labour rotation raises and dissolves the crew like any
 // working squad.
 void ai_vendor(entt::entity self, MacroPos& p,
@@ -1702,7 +1702,8 @@ void ai_vendor(entt::entity self, MacroPos& p,
             }
             return;
         }
-        Landmark* market = landmark_by_id(*ctx.mw.gs, homeLm->nearestCityId);
+        Landmark* market = landmark_by_id(*ctx.mw.gs,
+                                          homeLm->suzerainLandmarkId);
         if (!market || market->type != LandmarkType::City) {
             ai_home_wanderer(p, rt, pools, ctx);
             return;
@@ -1909,20 +1910,14 @@ void ai_vendor(entt::entity self, MacroPos& p,
     }
 }
 
-// The capital LANDMARK of a town's kingdom — the one suzerain edge a city
-// knows (CANON S24: «каждый узел знает только прямых подчинённых и
-// сюзерена»). Resolved by the politik's capitalCityIdx coordinates.
+// The SUZERAIN landmark a town owes — the one feudal edge a place knows
+// (CANON S24: «каждый узел знает только прямых подчинённых и сюзерена»),
+// stamped as Landmark::suzerainLandmarkId at populate_landmarks_from_politik
+// — the edge survives any future S9 transition that moves what stands on
+// the cell. A capital (suzerain -1) answers nullptr: it owes nobody.
 Landmark* capital_of_(const TickContext& ctx, const Landmark& town) {
-    const auto& pk = ctx.mw.gs->politik;
-    if (town.kingdomIdx < 0
-        || town.kingdomIdx >= int(pk.kingdoms.size())) return nullptr;
-    // By ID (owner 2026-08-31: «у столицы айди — убрать координаты»),
-    // stamped at populate_landmarks_from_politik — the edge survives any
-    // future S9 transition that moves what stands on the cell.
-    const int capId = pk.kingdoms[std::size_t(town.kingdomIdx)]
-                          .capitalLandmarkId;
-    if (capId < 0) return nullptr;
-    Landmark* cap = landmark_by_id(*ctx.mw.gs, capId);
+    if (town.suzerainLandmarkId < 0) return nullptr;
+    Landmark* cap = landmark_by_id(*ctx.mw.gs, town.suzerainLandmarkId);
     return cap && cap->type == LandmarkType::City ? cap : nullptr;
 }
 
@@ -3664,7 +3659,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             // (base − stock_price: чем дешевле дома, тем дороже увезти).
             // Локальность закона: никакого знания цен рынка — только СВОЙ
             // склад; сама сделка честно решится на месте (ai_vendor).
-            const Landmark* city = landmark_by_id(gs, s.nearestCityId);
+            const Landmark* city = landmark_by_id(gs, s.suzerainLandmarkId);
             if (city && city->type == LandmarkType::City
                 && city->id != s.id) {
                 long long value = s.titheOwedCoin > 0 ? s.titheOwedCoin : 0;
@@ -3820,14 +3815,10 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 case CrewGate::Suzerain: {
                     // The capital pays nobody above itself — the old
                     // hardcode raised a courier in EVERY city, and the
-                    // capital's one walked to its own gate.
-                    if (s.kingdomIdx < 0
-                        || s.kingdomIdx >= int(gs.politik.kingdoms.size()))
-                        break;
-                    const int cap =
-                        gs.politik.kingdoms[std::size_t(s.kingdomIdx)]
-                            .capitalLandmarkId;
-                    open = cap >= 0 && cap != s.id;
+                    // capital's one walked to its own gate. The edge is
+                    // the landmark's own column now (S24).
+                    open = s.suzerainLandmarkId >= 0
+                        && s.suzerainLandmarkId != s.id;
                     break;
                 }
             }
