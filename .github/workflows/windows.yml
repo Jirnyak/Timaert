@@ -139,10 +139,15 @@ jobs:
           if [ -n "$missing" ]; then echo "НЕ ХВАТАЕТ DLL:$missing"; exit 1; fi
           echo "замыкание полное: $(ls dist/*.dll | wc -l) DLL"
           # Шейдеры — такая же обязательная часть поставки, как DLL: без .spv
-          # рендер падает на первом кадре. 30 штук по списку в CMakeLists.
-          n=$(ls dist/shaders/*.spv | wc -l)
-          echo "SPIR-V в поставке: $n"
-          [ "$n" -ge 30 ] || { echo "ШЕЙДЕРОВ МАЛО"; exit 1; }
+          # рендер падает на первом кадре. Сторож сверяет поставку с тем, что
+          # НАПЛАВИЛА сборка, а не с числом из головы: число шейдеров растёт
+          # вместе с игрой, и прибитый порог однажды соврёт — первый же заход
+          # на этот сторож так и вышло (29 против моих «не меньше 30»).
+          built=$(ls build-mingw/shaders/*.spv | wc -l)
+          shipped=$(ls dist/shaders/*.spv | wc -l)
+          echo "SPIR-V: собрано $built, в поставке $shipped"
+          [ "$shipped" -eq "$built" ] && [ "$shipped" -gt 0 ] \
+            || { echo "ПОСТАВКА НЕ СОВПАЛА СО СБОРКОЙ"; exit 1; }
 
       - name: Readme for testers
         run: cp .github/dist-README.txt dist/README-RU.txt
@@ -201,10 +206,20 @@ jobs:
           "$sdk\Bin"        >> $env:GITHUB_PATH
 
       # Генератор Visual Studio, а не Ninja: не нужен developer prompt и
-      # сторонний экшен, который его зовёт.
+      # сторонний экшен, который его зовёт. Имя генератора СПРАШИВАЕМ у машины
+      # через vswhere, а не вбиваем: раннер уже приехал с VS 18 (2026), и
+      # прибитая «Visual Studio 17 2022» дала «could not find any instance of
+      # Visual Studio» — образ раннера меняется, наш yml меняться не должен.
       - name: Configure
         run: |
-          cmake -S . -B build-msvc -G "Visual Studio 17 2022" -A x64 `
+          $ErrorActionPreference = 'Stop'
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $ver = & $vswhere -latest -property installationVersion
+          $major = $ver.Split('.')[0]
+          $gen = @{ '17' = 'Visual Studio 17 2022'; '18' = 'Visual Studio 18 2026' }[$major]
+          if (-not $gen) { throw "Неизвестная мажорная версия Visual Studio: $ver" }
+          Write-Host "VS $ver -> генератор '$gen'"
+          cmake -S . -B build-msvc -G "$gen" -A x64 `
             -DCMAKE_BUILD_TYPE=Release `
             -DSDL2_DIR="$env:SDL2_DIR" -DSDL2_mixer_DIR="$env:SDL2_mixer_DIR"
 
@@ -223,9 +238,12 @@ jobs:
           Copy-Item "$env:SDL2_DIR\..\lib\x64\SDL2.dll" dist\
           Copy-Item "$env:SDL2_mixer_DIR\..\lib\x64\SDL2_mixer.dll" dist\
           Copy-Item .github\dist-README.txt dist\README-RU.txt
-          $n = (Get-ChildItem dist\shaders\*.spv).Count
-          Write-Host "SPIR-V в поставке: $n"
-          if ($n -lt 30) { throw "ШЕЙДЕРОВ МАЛО" }
+          # Сверяем поставку с тем, что наплавила сборка, а не с числом из
+          # головы — см. тот же сторож в джобе MinGW.
+          $built = (Get-ChildItem build-msvc\shaders\*.spv).Count
+          $shipped = (Get-ChildItem dist\shaders\*.spv).Count
+          Write-Host "SPIR-V: собрано $built, в поставке $shipped"
+          if ($shipped -ne $built -or $shipped -eq 0) { throw "ПОСТАВКА НЕ СОВПАЛА СО СБОРКОЙ" }
           Get-ChildItem dist
 
       - uses: actions/upload-artifact@v4
