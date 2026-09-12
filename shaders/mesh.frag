@@ -81,6 +81,11 @@ const float kNormShape = 3.0;
 // second. Quoted as a frequency because that is what the sine wants.
 const float kCoverSwayHz = 1.6;
 
+// How fast the JOINT between two materials wanders: one bend every ~3 m, with
+// a ragged octave four times finer on top. That is the scale a real margin
+// has — a shoreline bends at the stride, and frays at the hand.
+const float kJointFreq = 0.35;
+
 // Cap on any normal tilt, ground or cover: tan(35 deg). A finite difference
 // across a step discontinuity (the crack in a stone plate) has an unbounded
 // slope, and an uncapped tilt flips the shading normal — one pixel then
@@ -217,8 +222,8 @@ vec3 synth_space(vec3 p, uint mid) {
 //
 // Returns the coverage it painted; tints the albedo and tilts the normal
 // through their references.
-float cover_apply(uint cid, float density, vec3 P, vec3 Pabs, vec3 N, vec3 V,
-                  float px, float time, vec2 wind,
+float cover_apply(uint cid, float density, vec3 Pabs, vec3 N, vec3 V,
+                  float px, float time, vec2 wind, bool withTilt,
                   inout vec3 albedo, inout vec3 nrm) {
     if (cid == 0u || density <= 0.001) return 0.0;
     vec4 cp = kCoverParams[min(cid, kCoverCount - 1u)];
@@ -236,7 +241,7 @@ float cover_apply(uint cid, float density, vec3 P, vec3 Pabs, vec3 N, vec3 V,
     // vector the clouds drift on (lighting.glsl skyParams), so the grass and
     // the cloud shadows crossing it move with one weather.
     q += wind * (cp.z * hM * 0.35)
-         * sin(time * kCoverSwayHz + P.x * 0.7 + P.z * 0.5);
+         * sin(time * kCoverSwayHz + Pabs.x * 0.7 + Pabs.z * 0.5);
 
     float d = resolved(px, f);  // strands dissolve into a flat tint at range
 
@@ -261,7 +266,7 @@ float cover_apply(uint cid, float density, vec3 P, vec3 Pabs, vec3 N, vec3 V,
     // are still resolved — past that range they are a tint, and a tint has
     // no normal. That early-out is what keeps the far half of a frame from
     // paying for grass it cannot see.
-    if (d <= 0.001) return cov;
+    if (!withTilt || d <= 0.001) return cov;
     float e = max(px, 0.5 / f);
     vec2 g = vec2(grain(q + vec2(e, 0.0), f) - s0,
                   grain(q + vec2(0.0, e), f) - s0) / e;
@@ -273,51 +278,28 @@ float cover_apply(uint cid, float density, vec3 P, vec3 Pabs, vec3 N, vec3 V,
     return cov;
 }
 
-void main() {
-    // Per-fragment tile material id (R8 stored as id/255) → 0..14 scale, and
-    // clamped: the id arrives from a texture byte, and an out-of-range read
-    // of a const array is undefined in GLSL.
-    float mat = texture(u_material, vUv).r * 255.0;
-    uint mid = min(uint(mat + 0.5), kGroundCount - 1u);
+// ── ONE GROUND, WHOLE ────────────────────────────────────────────────────────
+// Everything one material id is: its albedo through the three bands, its
+// cover, and the normal its relief tilts. Written as a function because the
+// JOINT between two materials calls it twice (see the blend in main) — and
+// because "what a material looks like" is one thing, whether it is drawn
+// alone or mixed with its neighbour.
+struct Ground {
+    vec3 albedo;
+    vec3 nrm;
+};
+
+// `withNormal` is false for the NEIGHBOUR at a joint: its relief costs two
+// extra taps of the height field and two of the strand field, and the tilt
+// they produce is then averaged into the centre material's anyway. Blending
+// two albedos is the point of the joint; blending two micro-reliefs is not
+// worth a third of the frame's ground cost. (Measured: it was.)
+Ground ground_of(uint mid, vec2 gWorld, vec3 Pabs, vec3 N, vec3 V,
+                 float px, float height01, float time, vec2 wind,
+                 bool withNormal) {
     uint fam = kGroundFamily[mid];
     vec4 srf = kGroundSurface[mid];          // sigma, meso freq, chroma, relief
     float gf = kGroundGrainFreq[mid];
-
-    vec3 N = normalize(vNormal);
-    // Anchor the procedural detail to ABSOLUTE world coords. vWorld is
-    // window-relative (composite-centred), so at a seam recentre it reindexes by
-    // ±kCellSize for a fixed physical point — resampling every noise/stripe/crack
-    // term and re-mottling brightness, which reads as a texture AND lighting
-    // "pop". The renderer packs the composite's absolute origin into the
-    // otherwise-unused sunDir.w / sunColor.w lanes (0 in the gpu_smoke3d
-    // harness → identity), mirroring the absolute seeding trees already use.
-    //
-    // The origin is folded in MODULO the synth period, and that is not a
-    // detail: it is a multiple of the recentre step (the origin is whole
-    // macro cells), so the wrap is exact and the anchor is unchanged — while
-    // the coordinate handed to the synth stays inside one period instead of
-    // running to a million metres, where a float32 has 6 cm of resolution
-    // left and the grain quantises into visible blocks. See kSynthPeriod.
-    // Lighting/shadow math keep window vWorld.
-    vec2 gWorld = vWorld.xz
-                  + mod(vec2(pc.sunDir.w, pc.sunColor.w), kSynthPeriod);
-    vec3 Pabs = vec3(gWorld.x, vWorld.y, gWorld.y);
-
-    // The world size of one pixel, taken from the position itself so it is
-    // honest on every slope and at every range. It is the argument to every
-    // resolved() below — THE defence against a high frequency crawling under
-    // a moving camera, and the reason this synth needs no mipmaps.
-    //
-    // GEOMETRIC MEAN of the two screen axes, not their max. Ground is almost
-    // always seen at a grazing angle: one pixel then covers centimetres ACROSS
-    // the view and half a metre ALONG it. The max is the footprint of the
-    // longer axis, and taking it erased every surface frequency past a few
-    // metres — the whole middle distance went back to being flat plastic. The
-    // geometric mean is the footprint of an AREA-equivalent square, the same
-    // quantity a mip level is chosen by, and it keeps the detail the short
-    // axis can still resolve.
-    float px = sqrt(max(length(dFdx(vWorld)), 1e-5)
-                    * max(length(dFdy(vWorld)), 1e-5));
 
     // Synth space: the ploughed field's twin turns here (see synth_space).
     vec3 Ps = synth_space(Pabs, mid);
@@ -337,7 +319,7 @@ void main() {
     // taken IN it and applied back THROUGH it, so the choice cancels.
     vec3 Nb = N;
     float mesoD = resolved(px, srf.y);
-    if (mesoD > 0.001 && srf.w > 0.0) {
+    if (withNormal && mesoD > 0.001 && srf.w > 0.0) {
         vec3 T = normalize(cross(N, aN.y > 0.9 ? vec3(1.0, 0.0, 0.0)
                                                : vec3(0.0, 1.0, 0.0)));
         vec3 B = cross(N, T);
@@ -380,18 +362,12 @@ void main() {
     // column — sand, lake bed and peat differ by their number, not by a
     // branch that names them.
     base *= 1.0 - kGroundDamp[mid] * 0.28
-                      * (1.0 - smoothstep(0.40, 0.47, vHeight));
+                      * (1.0 - smoothstep(0.40, 0.47, height01));
 
     // ── COVER ──
-    // Its context: the world's own wind and clock, read from the sky lanes of
-    // the light buffer this pass already binds (lighting.glsl skyParams) — no
-    // new descriptor, and the grass moves with the weather rather than with a
-    // constant of its own.
-    vec3 V = normalize(pc.camPos.xyz - vWorld);
     vec2 cover = kGroundCover[mid];
-    cover_apply(uint(cover.x + 0.5), cover.y, vWorld, Pabs, N, V, px,
-                u_pointLights.skyParams.x, u_pointLights.skyParams.yz,
-                base, Nb);
+    cover_apply(uint(cover.x + 0.5), cover.y, Pabs, N, V, px,
+                time, wind, withNormal, base, Nb);
 
     // THE PLACE, applied LAST — over the cover, not under it. The macro
     // patchwork is a property of the GROUND, not of the material: a drier
@@ -406,6 +382,107 @@ void main() {
         vec3 ax = kGroundChromaAxis[mid] * srf.z;
         base *= exp(macroZ * ax - 0.5 * ax * ax);
     }
+
+    Ground g;
+    g.albedo = base;
+    g.nrm = Nb;
+    return g;
+}
+
+void main() {
+    vec3 N = normalize(vNormal);
+    // Anchor the procedural detail to ABSOLUTE world coords. vWorld is
+    // window-relative (composite-centred), so at a seam recentre it reindexes by
+    // ±kCellSize for a fixed physical point — resampling every noise/stripe/crack
+    // term and re-mottling brightness, which reads as a texture AND lighting
+    // "pop". The renderer packs the composite's absolute origin into the
+    // otherwise-unused sunDir.w / sunColor.w lanes (0 in the gpu_smoke3d
+    // harness → identity), mirroring the absolute seeding trees already use.
+    //
+    // The origin is folded in MODULO the synth period, and that is not a
+    // detail: it is a multiple of the recentre step (the origin is whole
+    // macro cells), so the wrap is exact and the anchor is unchanged — while
+    // the coordinate handed to the synth stays inside one period instead of
+    // running to a million metres, where a float32 has 6 cm of resolution
+    // left and the grain quantises into visible blocks. See kSynthPeriod.
+    // Lighting/shadow math keep window vWorld.
+    vec2 gWorld = vWorld.xz
+                  + mod(vec2(pc.sunDir.w, pc.sunColor.w), kSynthPeriod);
+    vec3 Pabs = vec3(gWorld.x, vWorld.y, gWorld.y);
+
+    // The world size of one pixel, taken from the position itself so it is
+    // honest on every slope and at every range. It is the argument to every
+    // resolved() below — THE defence against a high frequency crawling under
+    // a moving camera, and the reason this synth needs no mipmaps.
+    //
+    // GEOMETRIC MEAN of the two screen axes, not their max. Ground is almost
+    // always seen at a grazing angle: one pixel then covers centimetres ACROSS
+    // the view and half a metre ALONG it. The max is the footprint of the
+    // longer axis, and taking it erased every surface frequency past a few
+    // metres — the whole middle distance went back to being flat plastic. The
+    // geometric mean is the footprint of an AREA-equivalent square, the same
+    // quantity a mip level is chosen by, and it keeps the detail the short
+    // axis can still resolve.
+    float px = sqrt(max(length(dFdx(vWorld)), 1e-5)
+                    * max(length(dFdy(vWorld)), 1e-5));
+
+    // ── THE JOINT ─────────────────────────────────────────────────────────
+    // Per-fragment tile material id (R8 stored as id/255) → 0..14 scale, and
+    // clamped: the id arrives from a texture byte, and an out-of-range read
+    // of a const array is undefined in GLSL.
+    uint mid = min(uint(texture(u_material, vUv).r * 255.0 + 0.5),
+                   kGroundCount - 1u);
+
+    // The material texture is one texel per world TILE, sampled NEAREST —
+    // deliberately, because that is what keeps a one-tile road connected
+    // instead of dissolving between terrain vertices 16 m apart. Its price is
+    // that every joint between two materials is a 1 m axis-aligned staircase
+    // (owner, 2026-09-12: «стыки тайловые, очень резкие»).
+    //
+    // So the SECOND sample is taken a metre or so away, along a noise field:
+    // two octaves, one wandering at ~3 m and one ragged at ~0.7 m, which is
+    // the shape a real margin has. How far it may wander is the CENTRE
+    // material's own `edge_m` — a property of the ground, and data: a road
+    // keeps a small number and stays a road, sand creeps into grass with a
+    // large one. Amplitude in metres IS amplitude in texels here (a tile is a
+    // metre, kTileMeters), so the texture's own size converts it.
+    float edgeM = kGroundEdge[mid];
+    vec2 edge = vec2(0.0);
+    uint midB = mid;
+    if (edgeM > 0.0) {
+        vec2 wander = vec2(wnoise(gWorld + 3.1, kJointFreq),
+                           wnoise(gWorld + 91.7, kJointFreq)) - 0.5;
+        vec2 ragged = vec2(wnoise(gWorld + 57.3, kJointFreq * 4.0),
+                           wnoise(gWorld + 13.9, kJointFreq * 4.0)) - 0.5;
+        edge = (wander * 2.0 + ragged * 0.7) * edgeM;
+        vec2 texelUv = 1.0 / vec2(textureSize(u_material, 0));
+        midB = min(uint(texture(u_material, vUv + edge * texelUv).r * 255.0
+                            + 0.5),
+                   kGroundCount - 1u);
+    }
+
+    vec3 V = normalize(pc.camPos.xyz - vWorld);
+    float time = u_pointLights.skyParams.x;
+    vec2 wind = u_pointLights.skyParams.yz;
+
+    Ground g = ground_of(mid, gWorld, Pabs, N, V, px, vHeight, time, wind,
+                         true);
+    if (midB != mid) {
+        // The two materials INTERLOCK rather than abut: where the jittered
+        // sample lands on a different ground, both are synthesised and mixed
+        // by a third noise at the ragged scale. That is the difference
+        // between a boundary that is a curve and one that is a blend — a
+        // beach's sand does not stop at a line, it thins into the grass.
+        // Paid only in the band the jitter can reach, which is a thin sliver
+        // of any frame (this branch is why `edge_m` is a per-material number
+        // and not a global: it is also the width of what this costs).
+        Ground h = ground_of(midB, gWorld, Pabs, N, V, px, vHeight, time,
+                             wind, false);
+        float w = wnoise(gWorld + 77.1, kJointFreq * 4.0);
+        g.albedo = mix(g.albedo, h.albedo, w);
+    }
+    vec3 base = g.albedo;
+    vec3 Nb = g.nrm;
 
     // Surface marks: alpha-over onto the albedo, gated by the validity ring
     // (Chebyshev — the sliding canvas is square). Window vWorld is the right

@@ -163,6 +163,28 @@ const float kGroundGrainFreq[15] = float[15](
     25.00000   // 14 field_v
 );
 
+// How far this ground's own margin wanders into its neighbour,
+// in metres — the amplitude of mesh.frag's second material
+// sample. A built thing (a road) keeps a small number and stays
+// crisp; sand creeps with a large one.
+const float kGroundEdge[15] = float[15](
+    1.00000,  //  0 tundra
+    1.20000,  //  1 taiga
+    1.50000,  //  2 snow
+    1.00000,  //  3 valley
+    1.00000,  //  4 meadow
+    1.40000,  //  5 swamp
+    1.60000,  //  6 desert
+    1.00000,  //  7 steppe
+    1.20000,  //  8 tropics
+    0.40000,  //  9 field
+    1.60000,  // 10 shore
+    1.20000,  // 11 rock
+    0.30000,  // 12 road
+    1.00000,  // 13 waterbed
+    0.40000   // 14 field_v
+);
+
 // How much this ground darkens inside the shoreline height band.
 const float kGroundDamp[15] = float[15](
     0.00000,  //  0 tundra

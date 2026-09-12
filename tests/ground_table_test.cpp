@@ -227,8 +227,8 @@ void test_generated_table_matches_the_csvs() {
           "kCoverCount is the cover CSV's row count");
 
     // 2. Every number, re-derived.
-    std::vector<double> albedo, family, surface, macro, grain, damp, chroma,
-        cover;
+    std::vector<double> albedo, family, surface, macro, grain, edge, damp,
+        chroma, cover;
     bool famKnown = true, coverKnown = true, bareIsBare = true;
     for (std::size_t i = 0; i < mats.rows.size(); ++i) {
         albedo.push_back(mats.num(i, "albedo_r"));
@@ -248,6 +248,7 @@ void test_generated_table_matches_the_csvs() {
 
         macro.push_back(sigma_of_cv(mats.num(i, "macro_cv")));
         grain.push_back(1.0 / mats.num(i, "micro_m"));
+        edge.push_back(mats.num(i, "edge_m"));
         damp.push_back(mats.num(i, "damp"));
 
         chroma.push_back(mats.num(i, "chroma_r"));
@@ -274,6 +275,7 @@ void test_generated_table_matches_the_csvs() {
     check_array(glsl_array(glsl, "kGroundMacroSigma"), macro,
                 "kGroundMacroSigma");
     check_array(glsl_array(glsl, "kGroundGrainFreq"), grain, "kGroundGrainFreq");
+    check_array(glsl_array(glsl, "kGroundEdge"), edge, "kGroundEdge");
     check_array(glsl_array(glsl, "kGroundDamp"), damp, "kGroundDamp");
     check_array(glsl_array(glsl, "kGroundChromaAxis"), chroma,
                 "kGroundChromaAxis");
@@ -326,7 +328,7 @@ void test_the_one_hardcoded_id_still_means_what_the_shader_thinks() {
     bool twins = true;
     for (const char* col : {"family", "albedo_r", "albedo_g", "albedo_b", "cv",
                             "macro_cv", "meso_m", "micro_m", "chroma_sigma",
-                            "chroma_r",
+                            "chroma_r", "edge_m",
                             "chroma_g", "chroma_b", "relief_m", "damp",
                             "cover", "cover_density"}) {
         if (mats.at(9, col) != mats.at(14, col)) {

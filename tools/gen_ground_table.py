@@ -118,7 +118,7 @@ def main():
 
     names, fams, albedo, surf, micro, chroma, damp, cover, notes = (
         [], [], [], [], [], [], [], [], [])
-    macro = []
+    macro, edge = [], []
     heads = []
     for i, row in enumerate(mats):
         if int(row["id"]) != i:
@@ -155,6 +155,7 @@ def main():
                        fnum(row, "chroma_sigma", i, 0.0, 1.0),
                        fnum(row, "relief_m", i, 0.0, 4.0)))
         macro.append("%.5f" % sigma_of_cv(fnum(row, "macro_cv", i, 0.0, 2.0)))
+        edge.append("%.5f" % fnum(row, "edge_m", i, 0.0, 8.0))
         micro.append("%.5f" % (1.0 / micro_m))
         damp.append("%.5f" % fnum(row, "damp", i, 0.0, 1.0))
         chroma.append("vec3(%.5f, %.5f, %.5f)"
@@ -245,6 +246,15 @@ def main():
     o.append("const float kGroundGrainFreq[%d] = float[%d]("
              % (len(mats), len(mats)))
     elements(o, micro, names, "grain")
+    o.append(");")
+    o.append("")
+    o.append("// How far this ground's own margin wanders into its neighbour,")
+    o.append("// in metres — the amplitude of mesh.frag's second material")
+    o.append("// sample. A built thing (a road) keeps a small number and stays")
+    o.append("// crisp; sand creeps with a large one.")
+    o.append("const float kGroundEdge[%d] = float[%d]("
+             % (len(mats), len(mats)))
+    elements(o, edge, names, "edge")
     o.append(");")
     o.append("")
     o.append("// How much this ground darkens inside the shoreline height band.")

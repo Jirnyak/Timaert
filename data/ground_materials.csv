@@ -32,24 +32,33 @@
 #               bump scale: the shader differentiates the same field the
 #               albedo reads, so a crevice is dark AND indented, and the sun
 #               and the shadow map already in place do the shading for free.
+# edge_m      — how far THIS ground's own margin wanders into its
+#               neighbour, in metres. The material id is a per-tile byte,
+#               so a joint between two materials is a 1 m axis-aligned
+#               staircase; the shader takes its second sample this far
+#               away along a noise field, which turns the staircase into
+#               an organic margin and interlocks the two surfaces there.
+#               A BUILT thing keeps a small number and stays crisp (a road
+#               is 0.3 — wider than half its own width would eat it);
+#               sand and peat creep with a large one. 0 = no wander.
 # damp        — how much this ground darkens inside the shoreline height band
 #               (wet sand, lake bed, peat). 0 for everything that lives above
 #               the water table.
 # cover,cover_density — which row of data/ground_cover.csv grows on this
 #               ground and how densely (0 = bare).
-id,name,family,albedo_r,albedo_g,albedo_b,cv,macro_cv,meso_m,micro_m,chroma_sigma,chroma_r,chroma_g,chroma_b,relief_m,damp,cover,cover_density,note
-0,tundra,turf,0.50,0.52,0.45,0.16,0.20,1.2,0.05,0.06,1.05,1.00,0.90,0.09,0.0,grass,0.35,lichen mat over frozen ground — low tussocks and sparse cover
-1,taiga,turf,0.22,0.38,0.28,0.22,0.24,0.9,0.04,0.09,0.90,1.10,0.85,0.12,0.0,grass,0.60,needle litter and moss between the trunks
-2,snow,soil,0.62,0.66,0.70,0.07,0.05,2.0,0.06,0.02,1.00,1.00,1.05,0.05,0.0,snow,1.00,the GROUND of the snow biome is frozen earth — the white is COVER at density 1; take the cover away and the ground underneath is honest
-3,valley,soil,0.55,0.52,0.32,0.18,0.20,1.4,0.05,0.08,1.10,1.00,0.80,0.08,0.0,grass,0.45,dry river-valley loam
-4,meadow,turf,0.40,0.52,0.28,0.20,0.22,0.8,0.04,0.08,1.00,1.10,0.80,0.10,0.0,grass,0.75,the default ground of the temperate world
-5,swamp,mud,0.24,0.36,0.20,0.24,0.24,1.6,0.05,0.10,0.95,1.05,0.85,0.07,0.6,grass,0.50,peat flats with standing water — reeds where it drains
-6,desert,sand,0.82,0.72,0.48,0.10,0.10,1.1,0.03,0.04,1.05,1.00,0.85,0.10,0.0,none,0.00,wind ripples are the whole structure of a dune field
-7,steppe,turf,0.68,0.60,0.32,0.19,0.22,1.0,0.04,0.07,1.05,1.00,0.85,0.10,0.0,grass,0.50,dry bunch grass over pale loess
-8,tropics,turf,0.12,0.36,0.12,0.26,0.26,0.7,0.04,0.10,0.90,1.15,0.85,0.12,0.0,grass,0.90,closed herb layer — the ground barely shows
-9,field,furrow,0.55,0.48,0.26,0.20,0.14,4.5,0.04,0.07,1.10,1.00,0.80,0.14,0.0,grass,0.25,ridge-and-furrow: one ridge pair every meso_m (4.5 m is the historic strip width) with ploughed lines eight to the ridge; rows run EAST-WEST — the north-south twin is id 14 and the pick is field_furrows_vertical (sub/material.h)
-10,shore,sand,0.76,0.68,0.46,0.12,0.12,0.9,0.03,0.05,1.05,1.00,0.90,0.07,1.0,none,0.00,wave-combed sand; damp 1 = the band below the shoreline reads wet
-11,rock,stone,0.45,0.43,0.39,0.15,0.20,2.2,0.06,0.05,1.00,1.00,1.00,0.22,0.0,moss,0.18,"bare massif — plates split by cracks, moss only along the joints"
-12,road,track,0.42,0.34,0.23,0.14,0.10,3.0,0.03,0.05,1.05,1.00,0.90,0.04,0.0,none,0.00,packed dirt and gravel — the surface a thousand feet made flat
-13,waterbed,mud,0.38,0.35,0.29,0.13,0.14,1.3,0.05,0.05,0.95,1.00,1.05,0.05,1.0,none,0.00,"lake and river bed, seen through the water plane"
-14,field_v,furrow,0.55,0.48,0.26,0.20,0.14,4.5,0.04,0.07,1.10,1.00,0.80,0.14,0.0,grass,0.25,the same ploughed field as id 9 with the ridges running NORTH-SOUTH
+id,name,family,albedo_r,albedo_g,albedo_b,cv,macro_cv,meso_m,micro_m,chroma_sigma,chroma_r,chroma_g,chroma_b,relief_m,edge_m,damp,cover,cover_density,note
+0,tundra,turf,0.50,0.52,0.45,0.16,0.20,1.2,0.05,0.06,1.05,1.00,0.90,0.09,1.0,0.0,grass,0.35,lichen mat over frozen ground — low tussocks and sparse cover
+1,taiga,turf,0.22,0.38,0.28,0.22,0.24,0.9,0.04,0.09,0.90,1.10,0.85,0.12,1.2,0.0,grass,0.60,needle litter and moss between the trunks
+2,snow,soil,0.62,0.66,0.70,0.07,0.05,2.0,0.06,0.02,1.00,1.00,1.05,0.05,1.5,0.0,snow,1.00,the GROUND of the snow biome is frozen earth — the white is COVER at density 1; take the cover away and the ground underneath is honest
+3,valley,soil,0.55,0.52,0.32,0.18,0.20,1.4,0.05,0.08,1.10,1.00,0.80,0.08,1.0,0.0,grass,0.45,dry river-valley loam
+4,meadow,turf,0.40,0.52,0.28,0.20,0.22,0.8,0.04,0.08,1.00,1.10,0.80,0.10,1.0,0.0,grass,0.75,the default ground of the temperate world
+5,swamp,mud,0.24,0.36,0.20,0.24,0.24,1.6,0.05,0.10,0.95,1.05,0.85,0.07,1.4,0.6,grass,0.50,peat flats with standing water — reeds where it drains
+6,desert,sand,0.82,0.72,0.48,0.10,0.10,1.1,0.03,0.04,1.05,1.00,0.85,0.10,1.6,0.0,none,0.00,wind ripples are the whole structure of a dune field
+7,steppe,turf,0.68,0.60,0.32,0.19,0.22,1.0,0.04,0.07,1.05,1.00,0.85,0.10,1.0,0.0,grass,0.50,dry bunch grass over pale loess
+8,tropics,turf,0.12,0.36,0.12,0.26,0.26,0.7,0.04,0.10,0.90,1.15,0.85,0.12,1.2,0.0,grass,0.90,closed herb layer — the ground barely shows
+9,field,furrow,0.55,0.48,0.26,0.20,0.14,4.5,0.04,0.07,1.10,1.00,0.80,0.14,0.4,0.0,grass,0.25,ridge-and-furrow: one ridge pair every meso_m (4.5 m is the historic strip width) with ploughed lines eight to the ridge; rows run EAST-WEST — the north-south twin is id 14 and the pick is field_furrows_vertical (sub/material.h)
+10,shore,sand,0.76,0.68,0.46,0.12,0.12,0.9,0.03,0.05,1.05,1.00,0.90,0.07,1.6,1.0,none,0.00,wave-combed sand; damp 1 = the band below the shoreline reads wet
+11,rock,stone,0.45,0.43,0.39,0.15,0.20,2.2,0.06,0.05,1.00,1.00,1.00,0.22,1.2,0.0,moss,0.18,"bare massif — plates split by cracks, moss only along the joints"
+12,road,track,0.42,0.34,0.23,0.14,0.10,3.0,0.03,0.05,1.05,1.00,0.90,0.04,0.3,0.0,none,0.00,packed dirt and gravel — the surface a thousand feet made flat
+13,waterbed,mud,0.38,0.35,0.29,0.13,0.14,1.3,0.05,0.05,0.95,1.00,1.05,0.05,1.0,1.0,none,0.00,"lake and river bed, seen through the water plane"
+14,field_v,furrow,0.55,0.48,0.26,0.20,0.14,4.5,0.04,0.07,1.10,1.00,0.80,0.14,0.4,0.0,grass,0.25,the same ploughed field as id 9 with the ridges running NORTH-SOUTH

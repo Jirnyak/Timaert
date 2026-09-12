@@ -61,7 +61,9 @@ exactly the colour the table says — texture never darkens or lightens the
 material it decorates. Anchors, from the reference project's *measured* set:
 smooth concrete 0.08, bare soil 0.22, corroded metal 0.44.
 
-`relief_m` is likewise physical: the peak height of the relief **in metres**.
+`relief_m` is likewise physical: the peak height of the relief **in metres**,
+and `edge_m` is the distance in metres that this ground's margin wanders into
+its neighbour (see the joint section below).
 
 ## Families
 
@@ -137,46 +139,72 @@ erased every surface frequency past a few metres and put the whole middle
 distance back to flat plastic. The geometric mean is the footprint of an
 area-equivalent square, the same quantity a mip level is chosen by.
 
-## OPEN DECISION — the joints between materials
+## The joint between two materials
 
 Raised by the owner 2026-09-12, looking at a hillside: *«стыки разных
-материалов — они тайловые, очень резкие»*. Not this file's synth; put here
-because this is where the ground is documented and the fix would land next to
-it. **Nothing below is built. It is a menu, and the owner picks.**
+материалов — они тайловые, очень резкие»*. **Built the same day (options A+B
+of the four that were tabled; the owner picked both).**
 
-**Diagnosis.** `u_material` is an R8 texture, **one texel per world tile (1 m),
-sampled NEAREST** — deliberately, because that per-fragment lookup is what
-keeps a 1-tile road connected instead of dissolving between the terrain mesh's
-16 m vertices (see [render.md](render.md)). The price is that a boundary
-between two materials is a 1 m axis-aligned staircase with no blend anywhere.
-Two different things then read as "tiled":
+**Why it happened.** `u_material` is an R8 texture, **one texel per world tile
+(1 m), sampled NEAREST** — deliberately, because that per-fragment lookup is
+what keeps a 1-tile road connected instead of dissolving between the terrain
+mesh's 16 m vertices (see [render.md](render.md)). The price is that a joint
+between two materials was a 1 m axis-aligned staircase with no blend anywhere.
+Ground↔ground biome boundaries were already softened — `pick_ground_biome`
+dithers two climates across a ~250-tile band — but the AUTHORED boundary
+(`material_is_authored`: road, field, shore, rock, water) is crisp by design,
+and that is what the eye was catching.
 
-1. **Areas** — road, shore, rock, field meeting grass along straight
-   rectangular edges. Ground↔ground biome boundaries are *already* softened:
-   `pick_ground_biome` dithers the two climates across a ~250-tile band. What
-   is NOT dithered is the AUTHORED boundary (`material_is_authored`), by
-   design — an authored tile is supposed to be crisp.
-2. **Confetti** — the treeline scatters SINGLE tiles of rock through grass
-   (`treeline_is_rock`, a per-tile hash), and each one is a hard-edged 1 m
-   rectangle. Close up that reads as grey litter dropped on a lawn rather than
-   as stone showing through turf. This is the louder of the two artefacts in
-   the owner's screenshot.
+**What it does now.** Two samples of the material texture, not one:
 
-**Options.**
+1. the centre sample says which ground this is, and its row's **`edge_m`** says
+   how far its own margin may wander;
+2. the second sample is taken that far away along a noise field — two octaves,
+   one bending every ~3 m and one fraying four times finer, which is the shape
+   a real margin has. The staircase is gone: the joint is a curve finer than
+   the tile that draws it.
+3. Where the two samples disagree, **both grounds are synthesised and mixed**
+   by a third noise at the ragged scale. The materials interlock instead of
+   abutting — a beach's sand does not stop at a line, it thins into the grass.
 
-| | what | cost | risk |
-|---|---|---|---|
-| **A** | Jitter the lookup: sample `u_material` at `vUv` + a noise offset of a metre or so. Every joint becomes an organic curve at sub-tile scale. | ~2 noise samples/pixel (≈0.05 ms) | an amplitude wider than half a thin feature chews it — a 1-tile road would go dashed. Amplitude is data, safe around 0.5–1 m. |
-| **B** | A, plus a real blend: where the jittered id differs from the centre id, synthesise BOTH materials and mix. A true interlock, not just a ragged line. | 2× the ground synth, but only in the boundary band (branchy) — est. +0.3–0.5 ms worst case | a branch that diverges inside a quad; needs the early-out to be honest |
-| **C** | Fix it at the source: extend the existing dither in `sub/material.h` to authored↔ground boundaries, so the BAKED tile grid is ragged. | free at runtime; the 2D map inherits it | still quantised to 1 m squares (ragged squares, not a curve); it changes what the world IS — tiles are read by collision, roads and pathing — and must stay deterministic across a seam recentre |
-| **D** | Make the treeline's rock appear in CLUMPS (threshold a noise field) instead of per-tile confetti. Touches only the scatter, not the boundary law. | one CPU function, free | changes the treeline's look everywhere at once (three consumers share the band: tree scatter, 3D material, 2D map) |
+`edge_m` is per material because it is a property of the ground: a BUILT thing
+keeps a small number and stays crisp (road 0.3 m — more than half its own width
+would eat it), sand and peat creep with a large one (1.6 m). It is also the
+width of what the blend costs, which is why it is not one global number.
 
-**Recommendation: D first, then A.** D removes the confetti, which is the
-artefact that reads as a bug rather than as a style; A softens every remaining
-joint for the price of two noise samples and touches no world data. B is the
-upgrade if a ragged line still is not enough. C is the one option that changes
-the world itself, and should only be taken if the owner wants the 2D map to
-change too.
+The neighbour's synth deliberately runs **without its relief**: its two height
+taps and two strand taps would be averaged into the centre material's normal
+anyway. Blending two albedos is the point of a joint; blending two
+micro-reliefs is not worth a third of the ground's cost. (Measured: it was.)
+
+**Cost, measured** — the owner's own cell (162,148), pitch −12, 3000 bodies,
+interleaved A/B of the shader alone:
+
+| | scene | over no joint |
+|---|---|---|
+| no joint (the previous commit) | 7.48 ms | — |
+| A alone — one jittered sample, no blend | 7.64 ms | +0.16 |
+| **A+B as shipped** | **8.38 ms** | **+0.90** |
+| A+B with the neighbour's relief too | 9.04 ms | +1.56 |
+
+That cell is the WORST case on purpose: its treeline scatters single tiles of
+rock through the grass, so a large share of its pixels sit inside a joint. My
+estimate before measuring was +0.3–0.5 ms for B; the true figure at that cell
+is +0.74 ms over A, and the estimate was wrong for a reason worth remembering —
+the blend's cost scales with how much of the frame is *near a boundary*, and
+confetti makes that nearly everything.
+
+**Still open — option D.** The treeline scatters rock as SINGLE tiles
+(`treeline_is_rock`, a per-tile hash). The joint work made each one an
+irregular stone instead of a grey rectangle, which is most of the fix, but they
+are still scattered singles where real scree lies in patches. Thresholding a
+noise field instead of hashing per tile would clump them — one CPU function,
+free at runtime, and it would also tidy the 2D map, which reads the same band.
+Not taken: it changes what the world IS, and that is the owner's call.
+
+Two options were tabled and NOT taken: **C** (dither the authored boundary in
+the baked tile grid — free, but it changes the world's own data, which
+collision, roads and pathing all read) and the do-nothing.
 
 ## Measured
 
