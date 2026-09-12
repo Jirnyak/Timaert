@@ -1,0 +1,269 @@
+name: Windows build
+
+# Сборка игры под Windows на раннере GitHub. Две дороги сразу — MinGW-w64 и
+# MSVC. MinGW ест те же флаги и прагмы, что clang на маке, поэтому правок в
+# коде должен требовать меньше; MSVC родной для платформы. Какая зазеленеет
+# первой — та и едет к тестерам, обе живут параллельно и не блокируют друг
+# друга.
+#
+# Что уходит в поставку (см. как игра ищет файлы):
+#   timaert.exe          — сам бинарь
+#   shaders/*.spv        — SDL_GetBasePath() + "shaders/" (src/sub/vk_renderer_3d.cpp:352)
+#   assets/**            — от РАБОЧЕЙ директории (src/ui/ui_image.cpp, src/macro/audio.cpp)
+#   *.dll                — SDL2 и его замыкание
+# Двойной клик по exe ставит cwd в папку exe, поэтому обе схемы путей сходятся.
+# vulkan-1.dll НЕ кладём: загрузчик Vulkan ставит драйвер видеокарты в
+# System32, свой рядом с игрой только создаст перекос версий.
+# data/*.csv в поставке не нужны — они только исходник для сгенерированного
+# shaders/ground_surface.glsl (CMakeLists.txt:249), в рантайме не читаются.
+# Сейвы игра пишет в SDL_GetPrefPath (src/app/main.cpp:379), не рядом с exe,
+# так что распаковка в Program Files прав не потребует.
+
+on:
+  push:
+    branches: [main, 'ci/**']
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VULKAN_SDK_VERSION: 1.4.357.0
+  SDL2_VERSION: 2.32.10
+  SDL2_MIXER_VERSION: 2.8.2
+
+jobs:
+  # ────────────────────────────────────────────────────────────────────────
+  mingw:
+    name: MinGW-w64 (MSYS2)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    env:
+      CCACHE_DIR: ${{ github.workspace }}\.ccache
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            git
+            zip
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-ccache
+            mingw-w64-x86_64-SDL2
+            mingw-w64-x86_64-SDL2_mixer
+            mingw-w64-x86_64-vulkan-devel
+            mingw-w64-x86_64-shaderc
+
+      # Один и тот же исходник компилируется десятки раз, пока чиним портацию.
+      # Кэш режет круг итерации с двадцати минут до пары.
+      - name: ccache cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}\.ccache
+          key: ccache-mingw-${{ github.sha }}
+          restore-keys: ccache-mingw-
+
+      - name: Versions
+        run: |
+          g++ --version | head -1
+          cmake --version | head -1
+          glslc --version | head -1
+
+      - name: Configure
+        run: |
+          cmake -S . -B build-mingw -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++"
+
+      # Только игра и её шейдеры. Тесты и смоук-харнессы на раннере не нужны:
+      # мы проверяем, что игра СОБИРАЕТСЯ под Windows, а не гоняем набор.
+      - name: Build
+        run: cmake --build build-mingw --target timaert
+
+      - name: Package
+        run: |
+          set -e
+          rm -rf dist && mkdir -p dist
+          cp build-mingw/timaert.exe dist/
+          cp -R build-mingw/shaders dist/shaders
+          cp -R assets dist/assets
+
+          # ТРАНЗИТИВНОЕ замыкание импортов, а не список из трёх DLL на глазок.
+          # Windows разрешает импорты при ЗАГРУЗКЕ: нехватка одной DLL даёт не
+          # «нет звука», а «приложение не запускается» ещё до первого кадра.
+          # Своим считаем всё, что лежит в /mingw64/bin; остальное — системное.
+          skip="vulkan-1.dll"
+          queue="dist/timaert.exe"
+          while [ -n "$queue" ]; do
+            next=""
+            for bin in $queue; do
+              for dep in $(objdump -p "$bin" | sed -n 's/^[[:space:]]*DLL Name:[[:space:]]*//p'); do
+                case " $skip " in *" $dep "*) continue;; esac
+                if [ -f "/mingw64/bin/$dep" ] && [ ! -f "dist/$dep" ]; then
+                  cp "/mingw64/bin/$dep" dist/
+                  next="$next dist/$dep"
+                fi
+              done
+            done
+            queue="$next"
+          done
+          echo "DLL в поставке:"; ls dist/*.dll
+
+      - name: Verify DLL closure
+        run: |
+          set -e
+          # Механическая гарантия вместо честного слова: обходим ВСЕ импорты
+          # поставки и валим сборку, если хоть один зовёт DLL из /mingw64/bin,
+          # которой в папке нет. Игрок узнал бы об этом окном «не найден
+          # libstdc++-6.dll», а мы узнаём здесь.
+          skip="vulkan-1.dll"
+          missing=""
+          for bin in dist/timaert.exe dist/*.dll; do
+            for dep in $(objdump -p "$bin" | sed -n 's/^[[:space:]]*DLL Name:[[:space:]]*//p'); do
+              case " $skip " in *" $dep "*) continue;; esac
+              if [ ! -f "dist/$dep" ] && [ -f "/mingw64/bin/$dep" ]; then
+                missing="$missing $dep(<-$(basename $bin))"
+              fi
+            done
+          done
+          if [ -n "$missing" ]; then echo "НЕ ХВАТАЕТ DLL:$missing"; exit 1; fi
+          echo "замыкание полное: $(ls dist/*.dll | wc -l) DLL"
+          # Шейдеры — такая же обязательная часть поставки, как DLL: без .spv
+          # рендер падает на первом кадре. 30 штук по списку в CMakeLists.
+          n=$(ls dist/shaders/*.spv | wc -l)
+          echo "SPIR-V в поставке: $n"
+          [ "$n" -ge 30 ] || { echo "ШЕЙДЕРОВ МАЛО"; exit 1; }
+
+      - name: Readme for testers
+        run: cp .github/dist-README.txt dist/README-RU.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Timaert-Windows-MinGW
+          path: dist/
+
+  # ────────────────────────────────────────────────────────────────────────
+  msvc:
+    name: MSVC (Visual Studio 2022)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      # Официальные VC-пакеты SDL, ровно те же, что владелец ставил локально
+      # (MANIFEST.md § Windows / MSVC). Готовые бинари и cmake-конфиги — ни
+      # vcpkg, ни сборки зависимостей из исходников. MP3 в SDL2_mixer 2.8
+      # встроен (dr_mp3), внешние кодек-DLL не нужны — потому и не кладём.
+      - name: Fetch SDL2 + SDL2_mixer (VC)
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path deps | Out-Null
+          Invoke-WebRequest -Uri "https://github.com/libsdl-org/SDL/releases/download/release-$env:SDL2_VERSION/SDL2-devel-$env:SDL2_VERSION-VC.zip" -OutFile deps\sdl2.zip
+          Invoke-WebRequest -Uri "https://github.com/libsdl-org/SDL_mixer/releases/download/release-$env:SDL2_MIXER_VERSION/SDL2_mixer-devel-$env:SDL2_MIXER_VERSION-VC.zip" -OutFile deps\sdl2_mixer.zip
+          Expand-Archive deps\sdl2.zip -DestinationPath deps
+          Expand-Archive deps\sdl2_mixer.zip -DestinationPath deps
+          "SDL2_DIR=$PWD\deps\SDL2-$env:SDL2_VERSION\cmake"             >> $env:GITHUB_ENV
+          "SDL2_mixer_DIR=$PWD\deps\SDL2_mixer-$env:SDL2_MIXER_VERSION\cmake" >> $env:GITHUB_ENV
+
+      - name: Cache Vulkan SDK
+        id: vulkan-cache
+        uses: actions/cache@v4
+        with:
+          path: C:\VulkanSDK
+          key: vulkan-sdk-${{ env.VULKAN_SDK_VERSION }}
+
+      - name: Install Vulkan SDK
+        if: steps.vulkan-cache.outputs.cache-hit != 'true'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $url = "https://sdk.lunarg.com/sdk/download/$env:VULKAN_SDK_VERSION/windows/vulkan_sdk.exe"
+          Invoke-WebRequest -Uri $url -OutFile vulkan_sdk.exe
+          .\vulkan_sdk.exe --root "C:\VulkanSDK\$env:VULKAN_SDK_VERSION" `
+            --accept-licenses --default-answer --confirm-command install | Out-Host
+
+      - name: Expose Vulkan SDK
+        run: |
+          $sdk = "C:\VulkanSDK\$env:VULKAN_SDK_VERSION"
+          if (-not (Test-Path "$sdk\Bin\glslc.exe")) { throw "glslc.exe не встал в $sdk" }
+          "VULKAN_SDK=$sdk" >> $env:GITHUB_ENV
+          "$sdk\Bin"        >> $env:GITHUB_PATH
+
+      # Генератор Visual Studio, а не Ninja: не нужен developer prompt и
+      # сторонний экшен, который его зовёт.
+      - name: Configure
+        run: |
+          cmake -S . -B build-msvc -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DSDL2_DIR="$env:SDL2_DIR" -DSDL2_mixer_DIR="$env:SDL2_mixer_DIR"
+
+      - name: Build
+        run: cmake --build build-msvc --config Release --target timaert
+
+      - name: Package
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item build-msvc\Release\timaert.exe dist\
+          # Шейдеры CMake кладёт мимо конфигурационной подпапки.
+          Copy-Item -Recurse build-msvc\shaders dist\shaders
+          Copy-Item -Recurse assets dist\assets
+          Copy-Item "$env:SDL2_DIR\..\lib\x64\SDL2.dll" dist\
+          Copy-Item "$env:SDL2_mixer_DIR\..\lib\x64\SDL2_mixer.dll" dist\
+          Copy-Item .github\dist-README.txt dist\README-RU.txt
+          $n = (Get-ChildItem dist\shaders\*.spv).Count
+          Write-Host "SPIR-V в поставке: $n"
+          if ($n -lt 30) { throw "ШЕЙДЕРОВ МАЛО" }
+          Get-ChildItem dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Timaert-Windows-MSVC
+          path: dist/
+
+  # ────────────────────────────────────────────────────────────────────────
+  # Тег vX.Y → публичный Release. Artifact из Actions качается только с
+  # аккаунтом GitHub, ассет релиза — прямой ссылкой кому угодно.
+  release:
+    name: Release
+    needs: [mingw, msvc]
+    if: always() && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: builds
+          pattern: Timaert-Windows-*
+
+      # Собираем то, что зазеленело. Если одна из двух дорог упала — релиз
+      # всё равно уезжает со второй, а не ждёт починки обеих.
+      - name: Zip what built
+        run: |
+          set -e
+          shopt -s nullglob
+          mkdir -p out
+          for d in builds/Timaert-Windows-*; do
+            name=$(basename "$d")
+            (cd "$d" && zip -qr "../../out/${name}-${GITHUB_REF_NAME}.zip" .)
+          done
+          ls -la out
+          [ -n "$(ls -A out)" ] || { echo "Нечего релизить: обе сборки упали"; exit 1; }
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: out/*.zip
+          generate_release_notes: true
