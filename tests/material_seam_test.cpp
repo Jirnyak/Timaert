@@ -58,6 +58,8 @@
 // MEASURED something. A sampling loop that never ran is not a passing test.
 #include "check.h"
 
+#include <array>
+
 #include "sub/material.h"
 #include "sub/map_data.h"
 
@@ -468,6 +470,91 @@ void test_ground_boundary_law_is_correlated_and_unbiased() {
           "the treeline's patches are independent of the seam's");
 }
 
+
+// ── 6c. The row form is the same law ───────────────────────────────────────
+// The renderer's million-tile fill draws the boundary field ONCE PER ROW
+// (GroundDitherRow) because a field is constant over its lattice — that is
+// what makes it cheaper per tile than the coin it replaced, and the seam's
+// load time is the one number in this game only ever allowed to go down
+// (owner, 2026-09-12). Cheaper is worth nothing if it answers differently.
+//
+// BIT-exactness is NOT the bar, and that is a finding, not a shrug: this TU
+// ships with -ffast-math, so each inlined site may contract its own
+// multiply-add and the two forms part company in the last bit (measured:
+// ~1e-7 on a quarter of a sweep). The height self-check reached the same
+// verdict for the same reason. What must agree is the DECISION — the byte a
+// tile ends up with — so that is what is checked, over every threshold a
+// decision can turn on.
+void test_row_form_equals_the_one_shot() {
+    // (a) the field agrees to float tolerance, and the worst delta is small
+    //     enough that a decision can only differ when a threshold lands
+    //     within 1e-6 of the value — which (b) then rules out by sweeping.
+    int rows = 0;
+    float worst = 0.0f;
+    std::array<float, 256> row{};
+    for (long long y : {-4097LL, -1LL, 0LL, 7LL, 1024LL, 99991LL}) {
+        for (long long x0 : {-8193LL, -25LL, 0LL, 23LL, 4096LL, 123457LL}) {
+            sub::GroundDitherRow walk;
+            walk.begin(y);
+            for (int i = 0; i < int(row.size()); ++i)
+                row[std::size_t(i)] = walk.at(x0 + i);
+            for (int i = 0; i < int(row.size()); ++i) {
+                const float d = std::fabs(row[std::size_t(i)]
+                                          - sub::ground_dither01(x0 + i, y));
+                if (d > worst) worst = d;
+            }
+            ++rows;
+        }
+    }
+    CHECK(rows == 36, "the sweep ran every row it meant to");
+    CHECK(worst < 1e-5f, "the row form equals the one-shot to tolerance");
+    std::fprintf(stderr, "  [row] worst field delta %.3g\n", double(worst));
+
+    // (b) THE DECISIONS. Both doors the renderer calls must answer exactly
+    //     like their one-shot twins — this is the byte-for-byte claim, made
+    //     where bytes are actually decided.
+    int treeCases = 0, treeBad = 0, pickCases = 0, pickBad = 0;
+    const Biome ring[9] = {Biome::Taiga,  Biome::Taiga,  Biome::Meadow,
+                           Biome::Taiga,  Biome::Meadow, Biome::Meadow,
+                           Biome::Valley, Biome::Meadow, Biome::Swamp};
+    sub::GroundAxis axis[64];
+    sub::ground_axis_table(64, axis);
+    for (long long y = -60; y < 60; ++y) {
+        sub::GroundDitherRow seamWalk, treeWalk;
+        seamWalk.begin(y);
+        treeWalk.begin(y - 7919);
+        std::array<float, 256> treeR{};
+        for (int i = 0; i < int(row.size()); ++i) {
+            row[std::size_t(i)] = seamWalk.at(i);
+            treeR[std::size_t(i)] = treeWalk.at(i + 9973);
+        }
+        for (int x = 0; x < 64; ++x) {
+            const sub::GroundAxis ay = axis[std::size_t((y + 64) % 64)];
+            sub::GroundDitherRow pickWalk;
+            pickWalk.begin(y);
+            if (sub::pick_ground_biome_axis(ring, axis[std::size_t(x)], ay,
+                                            pickWalk, x)
+                != sub::pick_ground_biome_axis(ring, axis[std::size_t(x)], ay,
+                                               x, y)) ++pickBad;
+            ++pickCases;
+            for (float h : {0.60f, 0.73f, 0.80f, 0.86f, 0.91f, 0.95f}) {
+                if (sub::apply_mountain_treeline_at(Biome::Meadow, h,
+                                                    treeR[std::size_t(x)])
+                    != sub::apply_mountain_treeline(Biome::Meadow, h, x, y))
+                    ++treeBad;
+                ++treeCases;
+            }
+        }
+    }
+    CHECK(pickCases > 5000 && pickBad == 0,
+          "the row-fed biome pick answers exactly like the one-shot");
+    CHECK(treeCases > 30000 && treeBad == 0,
+          "the row-fed treeline answers exactly like the one-shot");
+    if (pickBad || treeBad)
+        std::fprintf(stderr, "    decisions differed: pick %d/%d tree %d/%d\n",
+                     pickBad, pickCases, treeBad, treeCases);
+}
+
 int main() {
     test_pick_is_deterministic();
     test_cell_core_is_pure_owner();
@@ -478,5 +565,6 @@ int main() {
     test_authored_tiles_pass_through();
     test_structure_shade_survives_a_recentre();
     test_ground_boundary_law_is_correlated_and_unbiased();
+    test_row_form_equals_the_one_shot();
     return sm::test::report("material_seam_test");
 }

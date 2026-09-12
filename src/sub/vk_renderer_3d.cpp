@@ -1672,9 +1672,29 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
             // their unflooded climate ground — see material.h RING CONTRACT.
             const Biome* ring = mgr.cell_ground_ring(idx);
             std::uint8_t lut[256];
-            for (int t = 0; t < 256; ++t)
+            // …and the same answer for "does this tile ignore the biome?".
+            // material_is_authored is a switch, and the fill asked it once per
+            // tile — 9.4 million times on a full build. A byte table answers
+            // it with a load. The question still has ONE owner; this is its
+            // answer tabulated, exactly as `lut` tabulates the material.
+            // …and the same answer for "does this tile ignore the biome?".
+            // material_is_authored is a switch, and the fill asked it once per
+            // tile — 9.4 million times on a full build. A byte table answers
+            // it with a load. The question keeps ONE owner; this is its answer
+            // tabulated, exactly as `lut` tabulates the material.
+            //
+            // A SECOND table — the material for every biome the ring can
+            // offer, replacing terrain_material_for's two switches — was
+            // tried and REVERTED: 11 × 256 bytes in the hot loop measured
+            // 20.8 → 22.3 ms. The switch is cheaper than the cache line it
+            // would have cost.
+            std::uint8_t authoredLut[256];
+            for (int t = 0; t < 256; ++t) {
                 lut[t] = static_cast<std::uint8_t>(terrain_material_for(
                     static_cast<std::uint8_t>(t), ring[4]));
+                authoredLut[t] = material_is_authored(
+                    static_cast<std::uint8_t>(t)) ? 1u : 0u;
+            }
             // Ploughed fields furrow the way the MAP paints this cell:
             // orientation was resolved from the wrapped macro coords at
             // resolve time (field_furrows_vertical) and travels with the
@@ -1810,17 +1830,38 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 const std::uint8_t vBelow = matFor(
                     ring[4] == Biome::Mountain ? Biome::Meadow : ring[4]);
                 const float bandT = treeline_t(flatH);
+                GroundDitherRow bandRow;
                 for (int y = 0; y < kCellSize; ++y) {
                     std::uint8_t* d =
                         dst + std::size_t(dstY0 + y) * dstStride + dstX0;
+                    // The treeline reads the field at its own offset — row
+                    // begun at y - 7919, asked at x + 9973 — because that is
+                    // the offset the law uses (treeline_is_rock). Both halves
+                    // or neither.
+                    bandRow.begin(absY0 + y - 7919);
                     for (int x = 0; x < kCellSize; ++x) {
-                        d[x] = treeline_is_rock(bandT, absX0 + x, absY0 + y)
+                        d[x] = treeline_is_rock_at(
+                                   bandT, bandRow.at(absX0 + x + 9973))
                                    ? vRock : vBelow;
                     }
                 }
                 if (kSelfCheck) verifyFlatCell(dst);
                 return;
             }
+            // THE BOUNDARY FIELD, WALKED BY THE ROW. Both boundaries this
+            // loop draws — the biome seam and the treeline — consult the one
+            // correlated field (material.h GroundDitherRow), whose corner
+            // hashes refresh once per lattice column instead of once per
+            // tile. That is what makes the field cheaper than the coin it
+            // replaced, and it must be, because this runs a million times per
+            // cell on a seam crossing and the seam's load time is the one
+            // number in this game allowed to move in only one direction.
+            //
+            // ASKED ONLY WHERE THE COIN WAS FLIPPED. The treeline's field is
+            // drawn for tiles INSIDE the band and nowhere else — a row buffer
+            // filled up front made that work unconditional and measured
+            // slower than the coin it was meant to beat.
+            GroundDitherRow seamRow, treeRow;
             for (int y = 0; y < kCellSize; ++y) {
                 const std::size_t srcRow =
                     std::size_t(oy * kCellSize + y) * kFullSize
@@ -1833,17 +1874,23 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                     continue;
                 }
                 const GroundAxis ay = groundAxis[std::size_t(y)];
+                seamRow.begin(absY0 + y);
+                treeRow.begin(absY0 + y - 7919);
+
                 for (int x = 0; x < kCellSize; ++x) {
                     const std::uint8_t t = tiles[srcRow + std::size_t(x)];
-                    if (material_is_authored(t)) {
+                    if (authoredLut[t]) {
                         d[x] = lut[t];
                     } else {
                         Biome b = pick_ground_biome_axis(
                             ring, groundAxis[std::size_t(x)], ay,
-                            absX0 + x, absY0 + y);
-                        b = apply_mountain_treeline(
-                            b, hm[srcRow + std::size_t(x)],
-                            absX0 + x, absY0 + y);
+                            seamRow, absX0 + x);
+                        // The row goes in, not a value: the band test lives
+                        // inside the law, and the field is drawn only for the
+                        // tiles that are actually inside the band.
+                        b = apply_mountain_treeline_row(
+                            b, hm[srcRow + std::size_t(x)], treeRow,
+                            absX0 + x);
                         d[x] = b == ring[4]
                             ? lut[t]
                             : static_cast<std::uint8_t>(

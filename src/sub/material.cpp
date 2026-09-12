@@ -79,8 +79,25 @@ void ground_axis_table(int cellSize, GroundAxis* out) {
 Biome pick_ground_biome_axis(const Biome nbBiome[9],
                              const GroundAxis& ax, const GroundAxis& ay,
                              long long absX, long long absY) {
+    // The one-shot form: stand a one-row walker up and answer through the
+    // bulk body, so there is one body and not two. Its 32 divisions are paid
+    // by the map preview and by tests, never by the million-tile fill.
+    GroundDitherRow row;
+    row.begin(absY);
+    return pick_ground_biome_axis(nbBiome, ax, ay, row, absX);
+}
+
+// THE BULK BODY: the caller brings the boundary field walked along its row
+// (material.h GroundDitherRow) and the tile's absolute x. The one-shot
+// overload above is this one with a one-row walker stood up on the spot, so
+// the law has one body and the million-tile fill copies nothing.
+Biome pick_ground_biome_axis(const Biome nbBiome[9],
+                             const GroundAxis& ax, const GroundAxis& ay,
+                             GroundDitherRow& row, long long absX) {
     // Deep inside the cell both ramps saturate → the single corner is the
-    // owner; skip the hash entirely (the common case).
+    // owner; skip the field entirely (the common case, and the reason the
+    // field is drawn from the ROW rather than handed in: handing it in made
+    // this early-out pay for a field it never uses, and doubled the fill).
     //
     // The ring is a GROUND ring (never Water — see the header contract), so
     // there is no water special-casing here. There used to be: water corners
@@ -102,9 +119,10 @@ Biome pick_ground_biome_axis(const Biome nbBiome[9],
     const Biome cand[4] = {b00, b10, b01, b11};
     const float w[4] = {(1.0f - fx) * (1.0f - fy), fx * (1.0f - fy),
                         (1.0f - fx) * fy,          fx * fy};
-    // THE ground-boundary law (material.h ground_dither01): the same field
-    // the treeline consults, so a boundary is one act with one answer.
-    const float r = ground_dither01(absX, absY);
+    // THE ground-boundary law (material.h GroundDitherRow): the same field
+    // the treeline consults, so a boundary is one act with one answer — and
+    // drawn HERE, after the early-out above, never before it.
+    const float r = row.at(absX);
     float acc = 0.0f;
     for (int i = 0; i < 4; ++i) {
         acc += w[i];
@@ -124,6 +142,24 @@ Biome pick_ground_biome(const Biome nbBiome[9],
 
 Biome apply_mountain_treeline(Biome picked, float hNorm,
                               long long absX, long long absY) {
+    // Draw the field here, answer through the row form: one body.
+    return apply_mountain_treeline_at(
+        picked, hNorm, ground_dither01(absX + 9973, absY - 7919));
+}
+
+Biome apply_mountain_treeline_row(Biome picked, float hNorm,
+                                  GroundDitherRow& row, long long absX) {
+    // The band test first, the field only inside it — the same laziness the
+    // coin had, kept where the law lives instead of in the caller.
+    const float t = treeline_t(hNorm);
+    if (t >= 1.0f) return Biome::Mountain;
+    const Biome below = (picked == Biome::Mountain) ? Biome::Meadow : picked;
+    if (t <= 0.0f) return below;
+    return treeline_is_rock_at(t, row.at(absX + 9973)) ? Biome::Mountain
+                                                       : below;
+}
+
+Biome apply_mountain_treeline_at(Biome picked, float hNorm, float dither) {
     // Stone is a function of ALTITUDE, not of which cell's biome won the
     // pick: heights are seamless across cell borders, so keying the rock on
     // hNorm alone makes the stone line follow the iso-height contour
@@ -138,7 +174,7 @@ Biome apply_mountain_treeline(Biome picked, float hNorm,
     if (t <= 0.0f) return below;
     // Dither through the band with the same style of absolute-keyed hash the
     // seam dither uses — stone gains ground exactly as the trees thin.
-    return treeline_is_rock(t, absX, absY) ? Biome::Mountain : below;
+    return treeline_is_rock_at(t, dither) ? Biome::Mountain : below;
 }
 
 } // namespace sm::sub

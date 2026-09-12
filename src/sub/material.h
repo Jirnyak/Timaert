@@ -30,6 +30,7 @@
 // toroidal shift can relocate baked material bytes across a re-centre and
 // a from-scratch recompute still matches byte-for-byte (seam selfcheck).
 #pragma once
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include "sub/map_data.h"
@@ -100,6 +101,21 @@ namespace sm::sub
     Biome pick_ground_biome_axis(const Biome nbBiome[9],
                                  const GroundAxis &ax, const GroundAxis &ay,
                                  long long absX, long long absY);
+    // THE BULK FORM, and the body the one-shot above delegates to: the caller
+    // brings the boundary field walked along its row (GroundDitherRow below)
+    // plus the tile's absolute x.
+    //
+    // It takes the ROW, not a float, on purpose. Deep inside a cell all four
+    // ring corners agree and the answer needs no field at all — the common
+    // case — and the original coin was flipped lazily, after that early-out.
+    // Handing a value in made it EAGER and doubled the material fill
+    // (19.4 → 39.1 ms over the 9.4M tiles of a full build, measured). A field
+    // must be drawn exactly where the coin was flipped: after the early-out,
+    // never before it.
+    struct GroundDitherRow;
+    Biome pick_ground_biome_axis(const Biome nbBiome[9],
+                                 const GroundAxis &ax, const GroundAxis &ay,
+                                 GroundDitherRow &row, long long absX);
 
     // Mountain ground by ALTITUDE — stone is for the PEAKS only. Below the
     // treeline band the massif is alive (grass, trees), so its ground reads
@@ -163,25 +179,133 @@ namespace sm::sub
     // Value noise over the tile hash: one lattice cell per kGroundPatchTiles,
     // smoothstep between. Integer floor-division that also works below zero —
     // absolute tile coordinates are signed and the torus does reach there.
-    inline float ground_field01(long long ax, long long ay, long long cell) {
-        const long long ix = (ax >= 0 ? ax : ax - cell + 1) / cell;
-        const long long iy = (ay >= 0 ? ay : ay - cell + 1) / cell;
-        const float fx = float(ax - ix * cell) / float(cell);
-        const float fy = float(ay - iy * cell) / float(cell);
-        const float sx = fx * fx * (3.0f - 2.0f * fx);
-        const float sy = fy * fy * (3.0f - 2.0f * fy);
-        const float a = tile_hash01(ix, iy), b = tile_hash01(ix + 1, iy);
-        const float c = tile_hash01(ix, iy + 1), d = tile_hash01(ix + 1, iy + 1);
+    // The bilinear and the smoothstep in ONE place each, so the one-shot and
+    // the row walker below are the same arithmetic and not two copies that
+    // agree by inspection. (They still cannot agree bit for bit: this TU ships
+    // with -ffast-math, so each inlined site contracts its own multiply-add
+    // and the two part company at ~1e-7 — the same verdict the height
+    // self-check already recorded. What must agree is the DECISION, and
+    // material_seam_test sweeps every threshold one can turn on.)
+    inline float ground_smooth(float f) { return f * f * (3.0f - 2.0f * f); }
+    inline float ground_lerp4(float a, float b, float c, float d,
+                              float sx, float sy) {
         const float t0 = a + (b - a) * sx;
         const float t1 = c + (d - c) * sx;
         return t0 + (t1 - t0) * sy;
     }
 
-    inline float ground_dither01(long long ax, long long ay) {
-        return ground_field01(ax, ay, kGroundPatchTiles) * 0.72f
-             + ground_field01(ax + 8191, ay - 5779,
-                              kGroundPatchTiles / 3) * 0.28f;
+    inline float ground_field01(long long ax, long long ay, long long cell) {
+        const long long ix = (ax >= 0 ? ax : ax - cell + 1) / cell;
+        const long long iy = (ay >= 0 ? ay : ay - cell + 1) / cell;
+        const float sx = ground_smooth(float(ax - ix * cell) / float(cell));
+        const float sy = ground_smooth(float(ay - iy * cell) / float(cell));
+        return ground_lerp4(tile_hash01(ix, iy), tile_hash01(ix + 1, iy),
+                            tile_hash01(ix, iy + 1),
+                            tile_hash01(ix + 1, iy + 1), sx, sy);
     }
+
+    // ONE octave, not two. A second, finer octave would fray the patch's
+    // edge — and mesh.frag already frays every boundary it draws, by up to
+    // edge_m metres, with a field of its own (ground.md, "the joint"). Paying
+    // for the same fringe twice would cost the material fill a second field
+    // per tile, and the fill runs 9.4 million times on a full build.
+    inline float ground_dither01(long long ax, long long ay) {
+        return ground_field01(ax, ay, kGroundPatchTiles);
+    }
+
+    // ── THE SAME LAW, WALKED BY THE ROW ───────────────────────────────────
+    // This is how a FIELD comes out cheaper per tile than the coin it
+    // replaced, and it had to, because the material fill runs 9.4 million
+    // times on a full build and the seam's load time is the one number in
+    // this game allowed to move in exactly one direction (owner, 2026-09-12).
+    //
+    // A coin must be flipped per tile: a 64-bit mix, every time. A field is
+    // CONSTANT over its lattice, so walking a row east:
+    //   • the four corner hashes refresh once per lattice column — once per
+    //     24 tiles for the coarse octave, once per 8 for the fine one;
+    //   • the y smoothstep is a row constant;
+    //   • the x smoothstep depends only on the offset inside the column, so
+    //     the row builds a table of `cell` entries once and indexes it;
+    //   • east is an increment, so no division falls per tile.
+    // Three lerps and a table read is what remains.
+    //
+    // THE TRAP, twice paid for: hoisting turns CONDITIONAL work
+    // unconditional. A first version filled whole rows into buffers, which
+    // drew the treeline's field for every tile in cells that have no band at
+    // all; a second handed the pick a ready float, which drew the seam's
+    // field for every tile deep inside a cell where all four ring corners
+    // agree and no field is needed. Both measured SLOWER than the coin. Hence
+    // a walker with `at()`: the caller asks exactly where it used to ask.
+    // The x smoothstep depends only on a tile's offset inside the lattice
+    // column, and the lattice has ONE size in this world — so the table is
+    // built once per process, not once per row. Built per row it cost 24
+    // divisions × 1024 rows × 9 cells, which measured as 1.2 ms of the
+    // material fill: hoisting is only hoisting if it leaves the loop for
+    // good.
+    inline const std::array<float, std::size_t(kGroundPatchTiles)>
+        kGroundSmoothX = [] {
+            std::array<float, std::size_t(kGroundPatchTiles)> t{};
+            for (int i = 0; i < int(kGroundPatchTiles); ++i)
+                t[std::size_t(i)] =
+                    ground_smooth(float(i) / float(kGroundPatchTiles));
+            return t;
+        }();
+
+    // The boundary field for ONE ROW, walked east. `begin` once per row,
+    // `at` exactly where the coin used to be flipped — and nowhere else,
+    // because above and below a band, and deep inside a cell, the answer
+    // needs no field at all.
+    //
+    // WHAT WAS TRIED AND LOST, so nobody spends the afternoon again (all
+    // measured on the material fill of a full 9-cell build, 9.4M tiles,
+    // against the coin's 19.4 ms):
+    //   • the field drawn per tile, eagerly, by handing the pick a ready
+    //     float — 39.1 ms. Hoisting turned the early-out's laziness into
+    //     eager work: the single worst mistake of the whole exercise.
+    //   • whole rows pre-filled into buffers — ~39 ms, same disease: cells
+    //     with no treeline band paid for a treeline field.
+    //   • a second, finer octave — 25.5 ms. mesh.frag already frays every
+    //     boundary it draws; paying for the fringe twice is what it cost.
+    //   • the lattice hashed once per CELL (44² corners, no hash in the
+    //     loop) — 27.3 ms. Hashes were never the cost; an 8 KB table in the
+    //     hot loop is.
+    //   • the material tabulated for every ring biome — 22.3 ms. The two
+    //     switches are cheaper than the cache line.
+    // What is left — a row walker, one octave, a shared smoothstep table,
+    // and asking only where the coin was flipped — costs 20.9 ms.
+    struct GroundDitherRow {
+        long long ix = 0, iy = 0, nextAx = 0;
+        int off = 0;
+        bool primed = false;
+        float a = 0, b = 0, c = 0, d = 0, sy = 0;
+
+        void refresh() {
+            a = tile_hash01(ix, iy);
+            b = tile_hash01(ix + 1, iy);
+            c = tile_hash01(ix, iy + 1);
+            d = tile_hash01(ix + 1, iy + 1);
+        }
+        void begin(long long ay) {
+            constexpr long long cell = kGroundPatchTiles;
+            iy = (ay >= 0 ? ay : ay - cell + 1) / cell;
+            sy = ground_smooth(float(ay - iy * cell) / float(cell));
+            primed = false;
+        }
+        float at(long long ax) {
+            constexpr long long cell = kGroundPatchTiles;
+            if (primed && ax == nextAx) {
+                if (++off == int(cell)) { off = 0; ++ix; refresh(); }
+            } else {
+                ix = (ax >= 0 ? ax : ax - cell + 1) / cell;
+                off = int(ax - ix * cell);
+                refresh();
+                primed = true;
+            }
+            nextAx = ax + 1;
+            return ground_lerp4(a, b, c, d,
+                                kGroundSmoothX[std::size_t(off)], sy);
+        }
+    };
 
     // Where a height sits in the treeline band: <=0 all ground, >=1 all rock.
     inline float treeline_t(float hNorm) {
@@ -199,6 +323,10 @@ namespace sm::sub
     inline bool treeline_is_rock(float t, long long absX, long long absY) {
         return ground_dither01(absX + 9973, absY - 7919) < t;
     }
+    // Row form of the same line: a caller that has already drawn the field
+    // (GroundDitherRow at the treeline's offset) hands the value in. The
+    // comparison stays HERE, so the formula keeps exactly one home.
+    inline bool treeline_is_rock_at(float t, float r) { return r < t; }
 
     // Per-structure shade wobble, as a property of the WORLD.
     //
@@ -217,5 +345,17 @@ namespace sm::sub
 
     Biome apply_mountain_treeline(Biome picked, float hNorm,
                                   long long absX, long long absY);
+    // The same law for a caller that already drew the boundary field for this
+    // tile. The one-shot above is this one with the field drawn on the spot,
+    // so the million-tile fill copies NO law of its own — it only brings its
+    // own field, and only for the tiles inside the band (treeline_t below is
+    // the gate, and it is THE band function, not a copy).
+    Biome apply_mountain_treeline_at(Biome picked, float hNorm, float dither);
+    // ...and the bulk form, which takes the ROW for the same reason the pick
+    // does: above and below the band the answer needs no field, so the field
+    // must not be drawn there. The caller brings its row and its absolute x
+    // and copies no part of the law — not even the band test.
+    Biome apply_mountain_treeline_row(Biome picked, float hNorm,
+                                      GroundDitherRow &row, long long absX);
 
 } // namespace sm::sub
