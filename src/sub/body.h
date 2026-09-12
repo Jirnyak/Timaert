@@ -33,6 +33,7 @@
 #include "ecs/components.h"
 #include "macro/npc.h"
 #include "macro/fauna.h"
+#include "sub/height.h"   // kBodyEyeM — the number body_eye_m() hands out
 
 namespace sm::sub {
 
@@ -64,6 +65,29 @@ inline float body_radius(const entt::registry& reg, entt::entity e) {
     if (const auto* ai = reg.try_get<ecs::SubworldAi>(e)) return ai->radius;
     if (const auto* sp = reg.try_get<ecs::Sprite>(e)) return sp->scale;
     return kBodyRadiusFallback;
+}
+
+// THE height THIS body looks and shoots from, in world units (≈ metres) above
+// its feet. The question `sub/height.h kBodyEyeM` answers in the abstract,
+// asked OF A BODY — which is the form that header always said this should
+// take: «when bodies want their own — a goblin shooting lower than a troll —
+// this becomes a per-body lookup and every caller keeps working, because they
+// all ask for "the muzzle height of THIS body" rather than adding a constant
+// themselves».
+//
+// They were not all asking. The constant was applied at three separate sites —
+// the camera, the aim ray, and both ends of a missile inside the spawner — so
+// "where a body's eyes are" had three authors, and the aim ray had already
+// drifted from the other two (it started at the FEET). Two of those now ask
+// here; the third is the missile spawner below.
+//
+// One height for every body still (owner's call, 2026-08-05) — so this returns
+// the same number it always did, and nothing moves. What changed is that there
+// is now somewhere for a row to answer FROM: give `kNpcTypeDefs` an eye column
+// and every caster, archer and camera in the game follows it at once.
+inline float body_eye_m(const entt::registry& reg, entt::entity e) {
+    (void)reg; (void)e;   // the row does not speak yet; the door already does
+    return kBodyEyeM;
 }
 
 // ── How TALL is this body ─────────────────────────────────────────────────

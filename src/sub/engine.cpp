@@ -379,19 +379,27 @@ void spawn_npc_missile(entt::registry& reg,
                        Rng& combatRng,
                        float targetX,
                        float targetY,
-                       float targetZ) {
+                       float targetZ,
+                       entt::entity target = entt::null) {
     const auto* missile = reg.try_get<ecs::MissileAttack>(attacker);
     const float speed = missile && missile->speed > 0.0f
         ? missile->speed
         : 200.0f;
-    // EYE TO EYE, not foot to foot. Both ends rise by the same kBodyEyeM, so a
-    // shot between two bodies standing on level ground stays level — but it now
-    // flies 1.7 m over the dirt instead of grazing it, and a missile aimed at a
-    // torso no longer has to be aimed at a pair of boots. Raising only ONE end
-    // would tilt every shot; the fix is that both ends measure from the same
-    // place, which is the whole point of having one height.
-    const float originZ = origin.z + kBodyEyeM;
-    const float aimZ = targetZ + kBodyEyeM;
+    // EYE TO EYE, not foot to foot. The shot leaves the SHOOTER's eye and is
+    // aimed at the mark's — each end asks the one door for the body it belongs
+    // to (sub/body.h body_eye_m) instead of adding a constant here, which is
+    // what this spawner used to do and what made it a third author of "where a
+    // body's eyes are". While every body answers the same height the shot stays
+    // level exactly as before; when a row finally says a troll's eyes are
+    // higher than a goblin's, the goblin aims up with no code here.
+    //
+    // `target` is optional because not every shot is aimed at a BODY: the
+    // player's bow aims at a point on his own crosshair ray, which is already
+    // stated at the height he is looking from, so the mark's end measures from
+    // the shooter.
+    const entt::entity markBody = target != entt::null ? target : attacker;
+    const float originZ = origin.z + body_eye_m(reg, attacker);
+    const float aimZ = targetZ + body_eye_m(reg, markBody);
     const float dx = targetX - origin.x;
     const float dy = targetY - origin.y;
     const float dz = aimZ - originZ;
@@ -2944,7 +2952,8 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
         if (c.kind == ecs::Combat::Missile) {
             const auto& p = reg.get<ecs::Position>(e);
             const auto& tp = reg.get<ecs::Position>(targetEnt);
-            spawn_npc_missile(reg, e, p, c, combatRng_, tp.x, tp.y, tp.z);
+            spawn_npc_missile(reg, e, p, c, combatRng_, tp.x, tp.y, tp.z,
+                              targetEnt);
             c.recoverySteps = steps_from_seconds(c.cooldown);
             continue;
         }
@@ -4053,7 +4062,10 @@ bool SubworldEngine::try_exit_dungeon() {
 }
 
 float SubworldEngine::player_muzzle_z() const {
-    return playerZ_ + kBodyEyeM;
+    // The body he is IN answers, not a constant: possession puts him in a
+    // wolf, and a wolf sights along a wolf's head.
+    return playerZ_ + (ecs_ ? body_eye_m(ecs_->reg, player_entity())
+                            : kBodyEyeM);
 }
 
 entt::entity SubworldEngine::player_entity() const {
