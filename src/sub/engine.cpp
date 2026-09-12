@@ -108,12 +108,15 @@ constexpr float kDangerProximityM = 40.0f;
 // kPlayerMeleeRange / kPlayerMeleeCooldown / kPlayerBaseMeleeDamage moved to
 // sub/engine.h (Session 15): the macro encounter's auto-resolve must price
 // the player with the same numbers this file arms his body with.
-// Player combat body radius (BodyRadius component) — READ from its one home,
-// kSpellCasterRadius (content/spells/casting.h), not a twin literal "kept in
-// lockstep" by a comment: the player is struck at the same range through
-// every universal path (melee, projectile, blast) and his own bolts clear
-// the same shell they strike.
-constexpr float kPlayerBodyRadius = kSpellCasterRadius;
+// The player's body width is no longer stated here at all. It was
+// `kSpellCasterRadius` — 1.5 m, a number that belongs to the GEOMETRY OF A
+// SPELL MUZZLE — and through ecs::BodyRadius it became his physical size:
+// three times a guardsman's 0.55, so he was wider than any doorway his own
+// soldiers walk through, and the crowd pass shoved bodies away at 2.36 m.
+// The hero body carries no NPCKind, so sub/body.h answers it with the
+// man-shaped default every other humanoid gets, and a POSSESSED body answers
+// with its own row's width (a wolf has a wolf's shoulders). See
+// player_body_radius().
 // Player carried-light (LightEmitter component). The player is the first honest
 // point-light emitter: a warm lantern/torch glow gathered through the SAME
 // universal path (view<Position, LightEmitter, SubworldTag>) that every future
@@ -920,7 +923,10 @@ void SubworldEngine::spawn_player_entity() {
         pools.hp = std::clamp(pools.hp, 0, pools.maxHp);
         reg.emplace<ecs::Pools>(e, pools);
     }
-    reg.emplace<ecs::BodyRadius>(e, ecs::BodyRadius{kPlayerBodyRadius});
+    // NO BodyRadius override. That component is the "sized deliberately"
+    // escape hatch (sub/body.h), and using it here is what let a spell's
+    // muzzle constant become the hero's shoulders. Saying nothing makes him
+    // answer the width question exactly like every other body does.
     // The strike: the ONE assembly (macro/anatomy.h hand_strike_fields) from
     // the sheet and the weapon actually in hand on the SQUAD entity — gear is
     // macro state, the body is its projection. Refreshed each tick beside the
@@ -2556,6 +2562,10 @@ float SubworldEngine::ground_height_at(float x, float y) const {
     return renderer3dVk_.sample_height_m(x, y);
 }
 
+bool SubworldEngine::solid_at(float x, float y, float z) const {
+    return structIndex_.solid_at(x, y, z);
+}
+
 float SubworldEngine::player_ground_travel_weight() const {
     return ground_travel_weight_at(playerX_, playerY_);
 }
@@ -4033,7 +4043,7 @@ bool SubworldEngine::try_exit_dungeon() {
         const float expected = renderer3dVk_.sample_height_m(playerX_, playerY_)
                              + kSpireTowerHeightM;
         const float support = structIndex_.support_at(
-            playerX_, playerY_, kPlayerBodyRadius, expected + course, course);
+            playerX_, playerY_, player_body_radius(), expected + course, course);
         playerZ_ = support > expected - course ? support : expected;
         playerVz_ = 0.0f;
         playerGrounded_ = true;
@@ -4057,6 +4067,16 @@ entt::entity SubworldEngine::player_entity() const {
     if (!ecs_) return entt::null;
     auto v = ecs_->reg.view<ecs::AvatarTag>();
     return v.empty() ? entt::null : v.front();
+}
+
+// How wide the body he is CURRENTLY IN is — asked of the one door every other
+// body is measured by. A constant could not answer this: possession moves him
+// into a foreign body, and the walls he fits through are that body's business,
+// not the hero's. Between scenes there is no body, and the man-shaped default
+// is the honest stand-in for the scalars that still have to be placed.
+float SubworldEngine::player_body_radius() const {
+    const entt::entity e = player_entity();
+    return e == entt::null ? kBodyRadiusFallback : body_radius(ecs_->reg, e);
 }
 
 bool SubworldEngine::flying() const {
@@ -4100,7 +4120,7 @@ float SubworldEngine::footing_height_m(float x, float y) const {
     float z = renderer3dVk_.sample_height_m(x, y);
     if (!structIndex_.empty()) {
         z = std::max(z, structIndex_.support_at(
-            x, y, kPlayerBodyRadius, kSeaLevelM + kDryFootingProbeM,
+            x, y, player_body_radius(), kSeaLevelM + kDryFootingProbeM,
             /*stepUp*/0.0f));
     }
     return z;
@@ -4114,16 +4134,16 @@ void SubworldEngine::sync_player_vertical(float dt) {
         const float dz = playerIntentVz_ * dt;
         const bool intoSolid =
             !structIndex_.empty()
-            && structIndex_.blocked_at(playerX_, playerY_, kPlayerBodyRadius,
+            && structIndex_.blocked_at(playerX_, playerY_, player_body_radius(),
                                        playerZ_ + dz)
-            && !structIndex_.blocked_at(playerX_, playerY_, kPlayerBodyRadius,
+            && !structIndex_.blocked_at(playerX_, playerY_, player_body_radius(),
                                         playerZ_);
         if (!intoSolid) playerZ_ += dz;
     }
     float supportZ = renderer3dVk_.sample_height_m(playerX_, playerY_);
     if (!structIndex_.empty()) {
         supportZ = std::max(supportZ, structIndex_.support_at(
-            playerX_, playerY_, kPlayerBodyRadius, playerZ_));
+            playerX_, playerY_, player_body_radius(), playerZ_));
     }
     if (flying()) {
         const float ceilZ = renderer3dVk_.max_height_m()
@@ -4142,7 +4162,7 @@ void SubworldEngine::sync_player_vertical(float dt) {
         if (playerGrounded_ && prevVz < 0.0f && !godMode_ && ecs_) {
             const auto e = player_entity();
             const int dmg = e != entt::null
-                ? apply_fall_damage(ecs_->reg, e, -prevVz, kPlayerBodyRadius,
+                ? apply_fall_damage(ecs_->reg, e, -prevVz, player_body_radius(),
                                     bus_)
                 : 0;
             if (dmg > 0) {
@@ -4233,12 +4253,12 @@ void SubworldEngine::move_player(float dx, float dy) {
     // always walk out.
     if (!structIndex_.empty()) {
         structIndex_.resolve_step(fromX, fromY, playerX_, playerY_,
-                                  kPlayerBodyRadius, playerZ_);
+                                  player_body_radius(), playerZ_);
         if (dz != 0.0f
-            && structIndex_.blocked_at(playerX_, playerY_, kPlayerBodyRadius,
+            && structIndex_.blocked_at(playerX_, playerY_, player_body_radius(),
                                        playerZ_ + dz)
             && !structIndex_.blocked_at(playerX_, playerY_,
-                                        kPlayerBodyRadius, playerZ_)) {
+                                        player_body_radius(), playerZ_)) {
             // Vertical component: refuse rising/descending INTO a solid (a
             // lintel overhead, a wall top below) — the honest head-bump.
             dz = 0.0f;

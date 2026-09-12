@@ -370,6 +370,11 @@ public:
     // Height of the terrain surface under a composite-window tile, in metres —
     // the same authority the vertical rule uses every tick.
     float ground_height_at(float x, float y) const;
+    // Is there MASONRY at this point — the second half of "can something pass
+    // through here", and the same question a bolt in flight asks. Public
+    // beside the ground query because the two are never asked apart: a line of
+    // fire that clears the hills and ends in a wall is not a line of fire.
+    bool solid_at(float x, float y, float z) const;
     // What would CARRY a body there: max(terrain, the solid top it can stand
     // on). Exposed so a harness can assert the obvious — a body that just
     // arrived is standing ON something, not above it — without calling the
@@ -520,6 +525,8 @@ public:
     void  set_flying(bool enabled);
     bool  flying() const;
     entt::entity player_entity() const;
+    // The half-width of the body he is in right now (sub/body.h body_radius).
+    float player_body_radius() const;
     void  rotate_camera(float dyaw, float dpitch);
     float spell_rng01() { return spellRng_.next_f01(); }
     // The stream a cast's WOUND is rolled from (spell_strike) — the same

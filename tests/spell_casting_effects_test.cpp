@@ -6,6 +6,7 @@
 #include "ecs/systems.h"
 #include "ecs/world.h"
 #include "sub/spell_effects.h"
+#include "sub/body.h"
 
 #include <cmath>
 #include <cstdio>
@@ -350,10 +351,18 @@ int main() {
     if (magicBolt.kind != sm::ecs::Projectile::Bolt
         || magicBolt.blastRadius != 0.0f
         || !nearf(magicBolt.radius, 1.5f)
-        // Muzzle spawn = caster.x(100) + caster_spawn_offset =
-        // playerRadius(1.5) + projectileRadius(1.5) + 2 = 5.0 (Inc 4b geometry:
-        // projectileRadius was added so the clearance also holds for fat bolts).
-        || !nearf(magicBoltPos.x, 105.0f)
+        // WHAT THE MUZZLE IS FOR, stated as the law instead of as the number
+        // it happens to produce: the bolt is born clear of the caster's own
+        // shell AND of its own body, so it can never detonate on the one who
+        // cast it. The old assertion restated 5.0 = 1.5 + 1.5 + 2, and that
+        // first 1.5 was ONE constant standing in for every caster's shell —
+        // the same constant that, through ecs::BodyRadius, had become the
+        // player's physical width. The shell belongs to the body now, so an
+        // expectation that names a width names the wrong thing.
+        || !(magicBoltPos.x - 100.0f
+             > sm::sub::body_radius(world.reg, entt::entity(0))
+                   + magicBolt.radius)
+        || !nearf(magicBoltPos.y, 100.0f)
         || !nearf(magicBoltPos.y, 100.0f)
         || !nearf(magicBolt.maxLifeTimer, 3.0f)) {
         return fail("magic_bolt descriptor wrong");
@@ -543,8 +552,11 @@ int main() {
     sm::ecs::Projectile beamDesc{};
     if (!find_projectile_by_spell(world, "energy_beam", beamDesc)
         || !nearf(beamDesc.radius, 1.5f)
-        // Beam origin uses the same muzzle offset: 100 + 1.5+1.5+2 = 105.0.
-        || !nearf(beamDesc.originX, 105.0f)
+        // The beam's origin obeys the same muzzle law as a bolt, and is
+        // asserted as that law rather than as the number it came to.
+        || !(beamDesc.originX - 100.0f
+             > sm::sub::body_radius(world.reg, entt::entity(0))
+                   + beamDesc.radius)
         || !nearf(beamDesc.originY, 100.0f)) {
         return fail("energy_beam radius drifted from TS spawn radius");
     }

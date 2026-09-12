@@ -390,7 +390,13 @@ bool run_subworld_walk_smoke(App& app) {
     auto pace_on = [&](std::uint8_t tile) {
         std::vector<std::uint8_t> was = app.subworld.debug_paint_ground(tile);
         if (groundWas.empty()) groundWas = std::move(was);   // the real world
-        app.subworld.set_player_pos(startX, startY);
+        // AWAY FROM HIS ESCORT, for the same reason the skid below is: he
+        // enters inside a ring of his own squad and bodies push each other
+        // apart, so a speed sampled in the crowd is part ground law and part
+        // shove. The pace runs used to be measured in the middle of it and
+        // only read clean because the player's body was three times a man's
+        // width and the separation happened to balance around him.
+        app.subworld.set_player_pos(startX + 400.0f, startY + 400.0f);
         // Straight ahead at full pace, held down for the whole run the way a
         // key is held (the input path restates the intent every step).
         app.subworld.debug_hold_intent(0.0f, sm::kSubworldWalkTilesPerSecond,
@@ -7420,10 +7426,24 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // другие.
             const float muzzleZ = app.subworld.player_muzzle_z();
             float spellDist = 43.5f;
-            for (float d = 2.0f; d <= 43.5f; d += 1.0f) {
-                const float gz = app.subworld.ground_height_at(
-                    app.subworld.player_x() + d, app.subworld.player_y());
-                if (gz >= muzzleZ - 0.5f) {
+            // A quarter of a metre, because the thing being looked for is a
+            // WALL and a wall is thinner than a stride: at one-metre steps the
+            // probe walked straight past masonry that then stopped the bolt
+            // (measured, seed 7 — wall at 29.05, samples at 29 and 30).
+            constexpr float kLineProbeStepM = 0.25f;
+            for (float d = 2.0f; d <= 43.5f; d += kLineProbeStepM) {
+                const float px = app.subworld.player_x() + d;
+                const float py = app.subworld.player_y();
+                // BOTH halves of "is the line clear", because a bolt asks
+                // both. This probe used to ask only about hills, so on a seed
+                // whose player stands with a wall down-range the fixture put
+                // the target BEHIND the masonry and then demanded a hit. The
+                // bolt was right and the witness was wrong — it only ever
+                // looked green because the projectile's world test sampled
+                // points a stride apart and could straddle a wall without
+                // touching it.
+                if (app.subworld.ground_height_at(px, py) >= muzzleZ - 0.5f
+                    || app.subworld.solid_at(px, py, muzzleZ)) {
                     spellDist = std::max(6.0f, d - 2.0f);
                     break;
                 }
@@ -7523,10 +7543,18 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 app.ecs.reg.try_get<sm::ecs::Pools>(spellTarget);
             const auto& book = smoke_player_book(app);
             std::fprintf(stderr,
-                         "[smoke] spell_projectile active=%s projectiles=%d->%d alive=%d "
+                         "[smoke] spell_projectile active=%s dist=%.2f muzzleZ=%.2f "
+                         "shell=%.2f projectiles=%d->%d alive=%d "
                          "targetHp=%.1f mp=%d cd=%zu event=%d flash=%.3f log=\"%s\"\n",
                          sm::spell_ordinal_ok(book.activeSpell)
                              ? sm::kSpellDefs[book.activeSpell].id : "(none)",
+                         // The three numbers that decide whether a bolt can
+                         // arrive at all: how far the fixture put the target,
+                         // the height of the line it flies along, and the
+                         // caster shell the muzzle clears — the last is no
+                         // longer one constant, it is this body's own width.
+                         double(spellDist), double(muzzleZ),
+                         double(app.subworld.player_body_radius()),
                          beforeProjectiles,
                          afterProjectiles,
                          liveProjectiles,

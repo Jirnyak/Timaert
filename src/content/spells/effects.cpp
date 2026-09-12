@@ -12,6 +12,7 @@
 
 #include "ecs/components.h"
 #include "ecs/world.h"
+#include "sub/body.h"   // body_radius — the caster shell the muzzle clears
 
 namespace sm {
 
@@ -43,14 +44,14 @@ std::uint32_t armageddon_seed(const SpellSpawnContext& c) {
 }
 
 // Push the projectile far enough ahead that it spawns fully clear of the
-// caster's own hit shell (playerRadius + projectileRadius) and then flies away,
+// caster's own hit shell (casterRadius + projectileRadius) and then flies away,
 // so it can never detonate on the caster at the muzzle. The universal "any
 // projectile can hit anyone" rule is unchanged — the caster simply never
 // overlaps their own outgoing bolt, and the projectile's own radius is added
 // so the clearance also holds for fat bolts (e.g. the fireball, radius 2.5,
 // which a bare +2 margin did not clear).
 float caster_spawn_offset(const SpellSpawnContext& c, float projectileRadius) {
-    return c.playerRadius + projectileRadius + 2.0f;
+    return c.casterRadius + projectileRadius + 2.0f;
 }
 
 // ── Spell-bolt point light (graphics) ──────────────────────────────────────
@@ -250,7 +251,11 @@ bool cast_spell(ecs::World& w, std::string_view id,
     if (!s) return false;
     SpellSpawnContext ctx{px, py,
                           0.0f,
-                          kSpellCasterRadius,
+                          // Same law as spellbook_cast: the shell belongs to
+                          // the body that casts.
+                          w.reg.valid(entt::entity(playerId))
+                              ? sub::body_radius(w.reg, entt::entity(playerId))
+                              : sub::kBodyRadiusFallback,
                           nx, ny, 0.0f,
                           // No sheet, no stream: the row's own expectation.
                           dice_mean_x2(s->dice) / 2,

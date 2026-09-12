@@ -2,6 +2,7 @@
 #include "core/time.h"
 #include "ecs/components.h"
 #include "ecs/world.h"
+#include "sub/body.h"   // body_radius — the caster shell the muzzle clears
 
 #include <cstddef>
 #include <cmath>
@@ -142,8 +143,11 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, ecs::Pools& combat,
     // the field a sword swing charges and tick_combat_recovery drains. A
     // harness world with no such body (or the world map) carries no gate.
     ecs::Combat* gate = nullptr;
-    if (const auto body = static_cast<entt::entity>(pid); w.reg.valid(body))
+    entt::entity caster = entt::null;
+    if (const auto body = static_cast<entt::entity>(pid); w.reg.valid(body)) {
+        caster = body;
         gate = w.reg.try_get<ecs::Combat>(body);
+    }
     if (!spellbook_can_cast_ex(sb, combat, spellOrd, inMicro,
                                gate ? gate->recoverySteps : 0u).ok)
         return false;
@@ -178,7 +182,13 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, ecs::Pools& combat,
     SpellSpawnContext ctx{
         px, py,
         pz,
-        kSpellCasterRadius,
+        // The shell the muzzle must clear is THIS caster's, read from the body
+        // the bolt will belong to. It used to be one constant for everybody,
+        // so a 0.55 m NPC mage spawned his bolt a metre further out than the
+        // muzzle-hit guard (spell_effects.cpp) would look for it, and that
+        // guard silently never ran for any NPC.
+        caster != entt::null ? sub::body_radius(w.reg, caster)
+                             : sub::kBodyRadiusFallback,
         nx, ny, nz,
         strike.amount,
         d->speed > 0.0f ? d->speed : 300.0f,

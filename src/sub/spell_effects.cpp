@@ -20,6 +20,17 @@ constexpr int kMaxSpellReaps = 512;
 constexpr std::uint32_t kSpellEventIdMask =
     std::uint32_t{std::numeric_limits<std::int32_t>::max()};
 
+// How finely a projectile's step is walked when asking the WORLD (ground,
+// masonry) whether it got through. Derived, not chosen: it is one TILE, and a
+// tile is a metre here (vk_renderer_3d.cpp kTileMeters) — the resolution the
+// heightfield and the solidity index are built at. Finer would sample the same
+// two cells twice and buy nothing that exists; coarser would step over terrain
+// the world genuinely has. The sample count is therefore bounded by the
+// FASTEST projectile's per-step reach (400 u/s ÷ 64 steps/s = 6.25 m ⇒ 7
+// samples), not by how many projectiles are in the air, so a sky full of
+// arrows costs the same per arrow as a single one.
+constexpr float kProjectileSweepStepM = 1.0f;
+
 // Combat hit radius: THE one in sub/body.h, the same call melee makes. This file
 // used to keep a private copy that promised in a comment to stay in lockstep
 // with the melee one and did not — it never consulted the monster or NPC tables,
@@ -421,7 +432,46 @@ void tick_spell_projectiles(ecs::World& w,
         pos.x += p.vx * dt;
         pos.y += p.vy * dt;
         pos.z += p.vz * dt;
-        const float groundM = heightFn ? heightFn(heightUser, pos.x, pos.y) : 0.0f;
+
+        // ── THE WORLD IS MET ALONG THE WHOLE STEP ────────────────────────
+        // A bolt does not visit the points between two ticks: at 400 u/s on a
+        // 1/64 s step it JUMPS 6.25 units. Bodies were already swept over that
+        // jump; the ground and the masonry were not — they were sampled at the
+        // landing point alone, so whatever stood between the two was simply not
+        // there. A ridge shorter than one step was flown through, and which
+        // side of a slope a bolt died on was decided by where its samples
+        // happened to fall: shifting a muzzle by one metre changed the whole
+        // grid of samples for the rest of the flight, and with it whether the
+        // shot arrived at all (measured, 2026-09-12 — two seeds in four).
+        //
+        // So the step is walked at the resolution the world is BUILT at: one
+        // tile. Nothing thinner than a tile exists to be missed, and nothing
+        // wider than a step is ever walked, so the cost is bounded by the
+        // fastest projectile's reach and the pass stays O(N).
+        auto world_hit_along_step = [&](float& hx, float& hy, float& hz,
+                                        bool& onGround) {
+            const float sx = pos.x - prevX, sy = pos.y - prevY,
+                        sz = pos.z - prevZ;
+            const float len = std::sqrt(sx * sx + sy * sy + sz * sz);
+            const int steps = std::max(1, int(len / kProjectileSweepStepM) + 1);
+            for (int s = 1; s <= steps; ++s) {
+                const float t = float(s) / float(steps);
+                const float cx = prevX + sx * t;
+                const float cy = prevY + sy * t;
+                const float cz = prevZ + sz * t;
+                const float gm = heightFn ? heightFn(heightUser, cx, cy) : 0.0f;
+                if (cz < gm) {
+                    hx = cx; hy = cy; hz = gm; onGround = true;
+                    return true;
+                }
+                if (solidFn && solidFn(solidUser, cx, cy, cz)) {
+                    hx = cx; hy = cy; hz = cz; onGround = false;
+                    return true;
+                }
+            }
+            return false;
+        };
+
         // LEFT THE BOX. Four walls and now the lid, checked together because
         // they are one rule: the 3×3 window is a closed volume and a projectile
         // that leaves it is gone, whichever face it crossed. Nothing detonates
@@ -434,33 +484,20 @@ void tick_spell_projectiles(ecs::World& w,
             continue;
         }
 
-        if (pos.z < groundM) {
-            // Hit the ground! Snap to ground level for the blast effect.
-            pos.z = groundM;
-            if (p.blastRadius > 0.0f) {
-                apply_spell_blast(w, reaps, reapCount, bus, pos, p, logFn,
-                                  logUser, canHitFn, canHitUser,
-                                  neighborsFn, neighborsUser);
-            }
-            queue_reap(reaps, reapCount, e);
-            continue;
-        }
-
-        if (solidFn && solidFn(solidUser, pos.x, pos.y, pos.z)) {
-            // Flew into a solid structure (wall, house, gate lintel): the same
-            // honest collision as terrain — blast where it struck, with an
-            // impact burst so a bolt dying on masonry flashes like any other.
-            if (p.blastRadius > 0.0f) {
-                apply_spell_blast(w, reaps, reapCount, bus, pos, p, logFn,
-                                  logUser, canHitFn, canHitUser,
-                                  neighborsFn, neighborsUser);
-            }
-            if (fxFn) fxFn(fxUser, SpellFxEvent::Impact, std::uint32_t(e),
-                           pos.x, pos.y, pos.z, pos.x, pos.y, pos.z,
-                           p.blastRadius);
-            queue_reap(reaps, reapCount, e);
-            continue;
-        }
+        // Ground and masonry are ONE question — "did the world stop it?" —
+        // asked once over the whole step. It struck where the world is, not
+        // where the tick happened to land it.
+        float wx = 0.0f, wy = 0.0f, wz = 0.0f;
+        bool onGround = false;
+        // Where the world stops it ENDS THE STEP — it does not end the step's
+        // reckoning. Whatever is nearest along the path wins, and a man
+        // standing in front of a wall is nearer than the wall: reaping here
+        // would have flown the bolt through him to die on the masonry two
+        // metres behind his back (measured, 2026-09-12). So the flight is
+        // merely shortened to the point of impact, and the body sweep below
+        // runs over what is left of it.
+        const bool worldStops = world_hit_along_step(wx, wy, wz, onGround);
+        if (worldStops) { pos.x = wx; pos.y = wy; pos.z = wz; }
 
         // Shed a trail over the segment the bolt just crossed (tinted engine-
         // side by the bolt's own Sprite). Bolts only — beams are visualOnly and
@@ -543,6 +580,23 @@ void tick_spell_projectiles(ecs::World& w,
             if (fxFn) fxFn(fxUser, SpellFxEvent::Impact, std::uint32_t(e),
                            pos.x, pos.y, pos.z, pos.x, pos.y, pos.z,
                            p.blastRadius);
+            queue_reap(reaps, reapCount, e);
+            continue;
+        }
+
+        // Nobody on the path, and the world was in the way: it dies where the
+        // world is. Masonry flashes, dirt does not — the one difference those
+        // two surfaces ever had, kept exactly as it was.
+        if (worldStops) {
+            if (p.blastRadius > 0.0f) {
+                apply_spell_blast(w, reaps, reapCount, bus, pos, p, logFn,
+                                  logUser, canHitFn, canHitUser,
+                                  neighborsFn, neighborsUser);
+            }
+            if (!onGround && fxFn) {
+                fxFn(fxUser, SpellFxEvent::Impact, std::uint32_t(e),
+                     pos.x, pos.y, pos.z, pos.x, pos.y, pos.z, p.blastRadius);
+            }
             queue_reap(reaps, reapCount, e);
         }
     }

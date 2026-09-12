@@ -19,7 +19,9 @@ using SpellRngFn = float (*)(void*);
 struct SpellSpawnContext {
     float px, py;
     float pz;              // caster altitude (metres above ground)
-    float playerRadius;
+    // The CASTER's shell, not "the player's": every shooter has one, and the
+    // muzzle clears whichever body is doing the casting.
+    float casterRadius;
     float nx, ny, nz;      // 3D aim direction (normalised)
     std::int32_t damage;   // ROLLED at cast (spell_strike) — the bolt carries
                            // its wound like an arrow does, integer like every
@@ -41,15 +43,14 @@ struct SpellSpawnContext {
 
 using SpellSpawnFn = void (*)(ecs::World&, const SpellSpawnContext&);
 
-// The player entity's body radius (metres) — and its ONE home (canon audit
-// 2026-08-29). The subworld arms the player's ecs::BodyRadius with exactly
-// this number (sub/engine.cpp kPlayerBodyRadius reads it — the two used to
-// be twin literals whose comments promised they "matched"), and spell
-// visuals spawn offset past it so a bolt never detonates on its own caster
-// at the muzzle. It lives in THIS deliberately light header rather than
-// sub/body.h because the spell binding layer may not drag the body tables
-// in, while the engine already includes everything.
-static constexpr float kSpellCasterRadius = 1.5f;
+// (`kSpellCasterRadius` lived here and is gone. It was introduced as the ONE
+// home of a caster's shell so the muzzle could clear it — but the subworld
+// then armed the PLAYER'S ecs::BodyRadius from it, and a number chosen for
+// muzzle geometry became his physical size. A caster's shell is a property of
+// the caster, so it is now read from the body: sub/body.h body_radius, the
+// same door the muzzle-hit guard in spell_effects.cpp already used. The two
+// sides of that guard used to disagree for every NPC caster, because only one
+// of them asked the body.)
 
 bool cast_spell(ecs::World& w, std::string_view id,
                 std::uint32_t playerId, float px, float py, float nx, float ny);
