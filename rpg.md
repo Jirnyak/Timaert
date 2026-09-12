@@ -63,7 +63,7 @@ items, inventory, equipment, loot.
   and the body it lands on fights on its OWN `CharacterSheet` — the flag
   marks *who you control*, it never copies the hero's stats onto the target.
   The player KEYBIND died 2026-09-06 (a possession SPELL replaces it); the
-  machinery stays — see [possession.md](possession.md).
+  machinery stays — вселение = перенос флажка (sub/spawn.h), не система.
 
 ## Attributes — the canon eight
 
@@ -445,4 +445,4 @@ XP is awarded to the killing blow's owner
 ([economy.md](economy.md)); rewards land here from quests; mana gates
 spells ([spells.md](spells.md)); the chronicle prices deeds
 ([chronicle.md](chronicle.md)); possession rides the flag
-([possession.md](possession.md)).
+(вселение = перенос флажка, sub/spawn.h).

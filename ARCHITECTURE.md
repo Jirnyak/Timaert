@@ -1054,10 +1054,14 @@ are, `project_macro_npcs_into_subworld(w, mgr, centerCx, centerCy, mapW, mapH,
 seed)` runs once on `enter()`. It snapshots every persistent macro NPC whose
 integer cell lies within ±1 of the window centre on the torus (the same nine cells
 the seamless manager loads) and CREATES a full combat body for each — the macro
-entity itself is never touched (the macro tick is frozen while a subworld is
-active). `NPCKind`/faction and `NpcCharacter` are copied verbatim, `Health.hp` is
-carried as body-native persistent state, `Combat` is DERIVED from a fresh universal
-`CharacterSheet` (citizen-path parity), hostility is data-driven off `NpcTypeDef.ai`
+entity itself keeps living its own macro life. A projection OWNS NOTHING (the
+mirror law, `sub/record.h`): its bars, its bag, what it wears and what it knows are
+the record's, read through one door, and its `Combat` is derived from the record's
+EFFECTIVE sheet — re-derived mid-scene only when `BonusTotals::operator==` says
+what stands on him changed. What the body carries of its own is the scene's copy of
+those bars, refreshed at every tick top so views can filter and the eye can draw.
+`NPCKind`/faction and `NpcCharacter` come from the record, hostility is data-driven
+off `NpcTypeDef.ai`
 (`Aggressive`→fight, else flee), and placement scatters within the cell's
 sub-region dodging water. Each projection carries a **`MacroOrigin{macro}`** runtime
 backlink to its source. Two reapers bracket its lifetime: the seam-crossing reaper
@@ -1068,41 +1072,30 @@ projections are session-scoped and gone on exit, the macro source persisting. It
 enter-only (a macro NPC entering a neighbour cell mid-session is not yet
 materialised — accepted v1 scope, the persistent entity is never lost).
 
-**Exit remap (Inc 5e-1).** On `leave()`, before the reaper destroys the body, the
-possessed body's `MacroOrigin` decides where the macro player resurfaces. The pure
-registry query `macro_exit_cell_for_body(w, body, mapW, mapH)` returns the origin's
-torus-wrapped cell when `body` carries a valid backlink, else "no remap"; the engine
-wrapper `remap_macro_player_to_origin()` writes `gs.player` from it, falling back to
-the window centre (`sync_macro_player_to_center`) for any un-possessed exit — the
-hero husk and ambient/citizen bodies carry no backlink. So possessing a lord and
-leaving lands you on *the lord's* macro cell ("exit AS the lord"), while a normal
-exit is unchanged. The position remap alone is runtime-only.
+**Выход: ты тот, в чьём теле стоишь.** On `leave()`, before the reaper destroys
+the body, `follow_flag_to_its_record()` asks THE door (`sub/record.h record_of`)
+whose record the flag-wearing body projects. His own squad ⇒ nothing moves and the
+macro player snaps to the window centre as always; somebody else's record ⇒ the
+single macro `PlayerTag` moves onto it and the one jump door clears the entry edge
+(he climbed out, he did not walk in). Possessing a lord and leaving therefore lands
+you on *the lord's* cell **as** the lord, and a normal exit is unchanged.
 
-**Identity remap (Inc 5e-2).** The exit doesn't merely land you *where* the lord
-stood but hands you the lord's *identity*: after the position remap,
-`adopt_possessed_macro_as_player(reg, macro)` moves the single macro `PlayerTag`
-onto the origin macro NPC itself, so the flag rides a real `MacroNpcRuntime` body
-and the vacated hero husk is reaped by the normal teardown (strip-not-destroy spares
-only `MacroNpcRuntime` holders, so exactly-one-`PlayerTag` still holds). Persistence
-is the macro snapshot's job (**v87**): every persistent macro NPC is serialized
-whole (Session 17), and `PlayerTag` rides the possessed record as its own honest
-byte (`MacroNpcRecord.playerFlag`) — restore re-stamps the flag on the very lord,
-and the load-path genesis raises no macro bodies at all. Owner verdict 2026-09-10:
-«сейв честно хранит снимок всего мира… и потом честно просто смотрится у кого
-флажок игрок». (The old shape — the ordinal stored beside the world in
-`PlayerState::possessedMacroSpawnId`, re-derived on load by
-`reattach_player_to_macro_spawn` — was a second store of "whom do I control", and
-it masked the load raising a SECOND player squad every door then pointed at:
-postdemoaudit SAVE-5.) The owner's
-decision was that the possessed identity **must** survive save/load. The remaining
-staged work (5e-3) is carrying possession through a *re-enter* — today re-entering a
-subworld while possessing drops the flag back to the hero (the lord survives as an
-autonomous NPC; nothing leaks).
-
-The player-as-entity → possession track (Inc 4 + Inc 5) has its own focused
-write-up — the flag model, the exactly-one invariant, the staged increments, and
-the data-driven "anything is possessable" extension — in
-[possession.md](possession.md).
+That is the whole of it, and the shape is the owner's ruling of 2026-09-12:
+**вселение is not a mechanic, it is the flag moving** («эффект для будущих
+спеллов»). Four things used to stand here — an exit-remap query
+(`macro_exit_cell_for_body`), a struct to carry its answer (`MacroExitCell`), an
+identity-ADOPTION door (`adopt_possessed_macro_as_player`), and a design doc
+describing the ceremony — and all four were cut on that word. They were only ever
+necessary because the seam carried COPIES down and had to reconcile two memories;
+under the mirror law (CANON «ЗЕРКАЛО ЦЕЛИКОМ», `sub/record.h`) the body you wear
+already fights, spends and carries as itself, because every such read goes to its
+own record. Persistence needs nothing new either: the flag IS the record of control
+(**v87**), riding the macro snapshot as that record's own honest byte
+(`MacroNpcRecord.playerFlag`) — owner, 2026-09-10: «сейв честно хранит снимок
+всего мира… и потом честно просто смотрится у кого флажок игрок». (The older shape
+— an ordinal stored beside the world in `PlayerState::possessedMacroSpawnId`,
+re-derived on load — was a second store of "whom do I control", and it masked the
+load raising a SECOND player squad: postdemoaudit SAVE-5.)
 
 Each of the 9 cells carries a **`CellContext`** ([sub/map_data.h](src/sub/map_data.h))
 — the macro facts of the cell plus generation-private extras. Since the

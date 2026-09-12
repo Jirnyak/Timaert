@@ -456,5 +456,8 @@ CANON S28.
 Reads the macroworld as source of truth ([macroworld.md](macroworld.md)).
 Hosts all combat ([microcombat.md](microcombat.md)) and spell visuals
 ([spells.md](spells.md)). The combatant crowd is CPU-simulated under the O(N) bound (CANON.md S5). Overworld NPCs within ±1 cell are projected into
-the 3×3 as real combat bodies and can be *possessed*; leaving as a possessed body
-remaps the macro player onto its overworld cell ([possession.md](possession.md)).
+the 3×3 as real combat bodies. A projection OWNS NOTHING — its bars, bag, gear and
+sheet are its macro record's, read through one door (`sub/record.h`), so what you
+do to it happens to HIM in the tick it happens, and nothing is folded back on the
+way out. The player's flag can move onto any of them, and on leaving he is whoever
+he was standing in — вселение is that flag move and nothing more.

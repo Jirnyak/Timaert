@@ -51,7 +51,7 @@ time at world scale — the strategic layer above microworld combat.
 - **Player = a flag.** The macro player is a minimal `PlayerTag` entity, not a
   bespoke object; *possession* (вселение) can move that flag onto any NPC — the
   seed of taking over a party by taking its leader (MASTER_PROMPT §9.4). See
-  [possession.md](possession.md).
+  CANON S4 «игрок == НПЦ».
 
 ## Data-driven extension
 
@@ -118,7 +118,7 @@ the record of what was approved — nothing in it may be hardcoded to
    `population` + the village's needs (`EconomyState`). A squad ROLE is a
    data row — `{job, ResourceId, target field/terrain, yield per trip}` —
    so miners/clay-diggers later are one row each, no engine branches.
-2. **Squad = macro party** (the M&B model, [possession.md](possession.md)):
+2. **Squad = macro party** (the M&B model, CANON S4):
    a leader NPC + roster. **Carry capacity is the sum of the members' own
    `get_carry_capacity(Attributes, Skills)`** — the same per-sheet weight
    system the player already uses; squad capacity is contextual from member

@@ -63,7 +63,7 @@ player spell direction.
   `Combat`/`Health` — possess a lord ⇒ strong, a rat ⇒ weak. `gs.player` (the
   hero) is the preserved revert target; the flagged body is what enemies target,
   what dies, and what the HUD reads (`player_display_hp`). Full model in
-  [possession.md](possession.md).
+  вселение = перенос флажка (sub/spawn.h).
 - **Projectiles are universal — everyone can hit everyone, the caster included.**
   A spell projectile just flies; it carries no exclusion of its own caster (4d
   removed the last one) and **no faction shield at all** (owner decision

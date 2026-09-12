@@ -1302,7 +1302,7 @@ the ten years.
 - The world runs without the player: macro NPCs, caravans, economy, kingdoms
   ([macrosim.md](macrosim.md)).
 - Possession — the player is a movable flag on an ordinary body
-  ([possession.md](possession.md)) — is the mechanical seed of "kill anyone,
+  (вселение = перенос флажка) — is the mechanical seed of "kill anyone,
   become anyone".
 - The hidden autolevel is **demolished** (2026-08-20, CANON S12): no zone or
   settlement markup multiplies HP or damage after the spawn roll. A creature is
@@ -1468,4 +1468,4 @@ spire grind ([zones.md](zones.md), [landmarks.md](landmarks.md),
 [spells.md](spells.md)); the class-defining feel of each faction's army
 ([microcombat.md](microcombat.md), [macrosim.md](macrosim.md)); the visible
 prosperity of a freed village ([economy.md](economy.md)); killing and becoming
-anyone ([possession.md](possession.md), [monsters.md](monsters.md)).
+anyone (вселение = перенос флажка, [monsters.md](monsters.md)).
