@@ -59,6 +59,15 @@ void test_table_laws() {
               "a row's parts fit the 4-slot ceiling");
         const int yield = item_yield(i);
         CHECK(yield >= 1, "a row's yield is at least one item per batch");
+        // LABOUR pairs with matter (owner 2026-09-12, «единая SP-система
+        // труда»): what is made by work states its tempo; raw matter is not
+        // made at all — so the hand's SP price (bar/labour) and the city's
+        // day (labour × workers) can never divide by zero or invent work.
+        if (parts.empty()) {
+            CHECK(item_labour(i) == 0, "terminal rows carry no labour");
+        } else {
+            CHECK(item_labour(i) >= 1, "every made row states its labour");
+        }
         long batchMatterValue = 0;
         for (const ItemPart& p : parts) {
             CHECK(int(p.count) > 0, "a part states a positive count");

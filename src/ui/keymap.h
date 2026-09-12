@@ -57,6 +57,9 @@ enum class ActionId : std::uint8_t {
     CastSpell,
     Jump,
     Interact,
+    // Gathering is WORK, not a weapon arc (owner verdict 2026-09-12, CANON
+    // «Вердикты ТРУДА»): its own action, its own SP price.
+    Harvest,
     // Possess died here 2026-09-06 (owner: вселение — не игроцкая кнопка;
     // придёт заклинанием). The engine doors (possess_aim/possess_by_id)
     // stay for the dev console, the smokes and the future spell.

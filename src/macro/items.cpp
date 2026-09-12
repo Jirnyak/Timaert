@@ -193,42 +193,51 @@ struct PartsAuthoringRow {
     // yield is pinned to the price anchor by the value-neutrality witness
     // (item_parts_test), so 32 here and silver's value 32 cannot drift.
     int yield = 1;
+    // LABOUR: batches per person-day (items.h item_labour — the one column
+    // the city's production day, the hand's SP price and a future craft
+    // skill all read). The economy rows carry their retired kRecipes tempo
+    // VERBATIM (self-play balance unmoved); the hand-craft rows are new
+    // round po2 authoring under the same witnesses.
+    int perDay = 1;
 };
 constexpr PartsAuthoringRow kPartsAuthoring[] = {
     // The MINT rows (CANON S10 unified 2026-09-12): one silver strikes 32
     // nominal-1 coins of any realm — the same matter table, the same scrap
     // door melts them back (64 coins → 1 silver by the pooled entropy law).
-    // What stays a RIGHT is striking them: craft_item refuses currency, the
-    // production day strikes only the town's own coin.
-    {"coin_empire",  {{"silver", 1}}, 32},
-    {"coin_magika",  {{"silver", 1}}, 32},
-    {"coin_timaert", {{"silver", 1}}, 32},
-    {"coin_barbar",  {{"silver", 1}}, 32},
+    // Labour 4 = the old mint tempo «4 металла на рабочий-день», the
+    // emission-rate balance knob.
+    {"coin_empire",  {{"silver", 1}}, 32, 4},
+    {"coin_magika",  {{"silver", 1}}, 32, 4},
+    {"coin_timaert", {{"silver", 1}}, 32, 4},
+    {"coin_barbar",  {{"silver", 1}}, 32, 4},
     // Consumables: alchemy is herb-matter; bread is the baking reaction
-    // (grain 1 → bread 1), the exact row the production day runs.
-    {"potion_hp",   {{"mat_herb", 2}}},
-    {"potion_mp",   {{"mat_herb", 2}}},
-    {"bread",       {{"grain", 1}}},
-    // The economy's goods — former kRecipes inputs, verbatim.
-    {"cloth",       {{"grain", 2}}},
-    {"bricks",      {{"clay", 1}}},
-    {"tools",       {{"iron", 1}, {"wood", 1}}},
-    {"furniture",   {{"wood", 2}}},
-    {"wagon",       {{"wood", 4}, {"iron", 1}}},
-    {"jewelry",     {{"iron", 1}, {"stone", 1}}},
-    {"carving",     {{"wood", 1}}},
-    {"statue",      {{"stone", 8}}},
+    // (grain 1 → bread 1), the exact row the production day runs. Bread's
+    // labour IS the productivity anchor (econ_day.h kGatherPerWorkerDay,
+    // «1 добытчик кормит 32 душ» chain-wide) — pinned by econ_v1_test.
+    {"potion_hp",   {{"mat_herb", 2}}, 1, 8},
+    {"potion_mp",   {{"mat_herb", 2}}, 1, 8},
+    {"bread",       {{"grain", 1}}, 1, 32},
+    // The economy's goods — former kRecipes inputs AND tempos, verbatim.
+    {"cloth",       {{"grain", 2}}, 1, 4},
+    {"bricks",      {{"clay", 1}}, 1, 8},
+    {"tools",       {{"iron", 1}, {"wood", 1}}, 1, 2},
+    {"furniture",   {{"wood", 2}}, 1, 2},
+    {"wagon",       {{"wood", 4}, {"iron", 1}}, 1, 1},
+    {"jewelry",     {{"iron", 1}, {"stone", 1}}, 1, 1},
+    {"carving",     {{"wood", 1}}, 1, 2},
+    {"statue",      {{"stone", 8}}, 1, 1},
     // Equipment: the metal ladder follows the swing-mass ladder (a mace is
     // more metal than a dagger); hafted rows carry their wood honestly so
-    // crafting one EATS wood and scrapping one returns it.
-    {"wpn_dagger",  {{"iron", 1}}},
-    {"wpn_sword",   {{"iron", 2}}},
-    {"wpn_spear",   {{"wood", 1}, {"iron", 1}}},
-    {"wpn_axe",     {{"iron", 2}, {"wood", 1}}},
-    {"wpn_mace",    {{"iron", 3}}},
-    {"wpn_staff",   {{"wood", 1}}},
-    {"wpn_bow",     {{"wood", 1}}},
-    {"arm_leather", {{"mat_hide", 3}}},
+    // crafting one EATS wood and scrapping one returns it. Labour: a blade
+    // is half a smith-day (2/day), the light rows turn faster (4/day).
+    {"wpn_dagger",  {{"iron", 1}}, 1, 4},
+    {"wpn_sword",   {{"iron", 2}}, 1, 2},
+    {"wpn_spear",   {{"wood", 1}, {"iron", 1}}, 1, 2},
+    {"wpn_axe",     {{"iron", 2}, {"wood", 1}}, 1, 2},
+    {"wpn_mace",    {{"iron", 3}}, 1, 2},
+    {"wpn_staff",   {{"wood", 1}}, 1, 4},
+    {"wpn_bow",     {{"wood", 1}}, 1, 2},
+    {"arm_leather", {{"mat_hide", 3}}, 1, 2},
 };
 
 // ── The mint is value-neutral, BY LITERAL (owner 2026-09-12) ───────────────
@@ -360,14 +369,21 @@ constexpr LootEntry kDemonsLoot[] = {
 // a kill does: the prop's kind names a loot profile (`structure_loot_id()` in
 // sub/map_data.h), the profile rolls items. Nothing about breaking a prop is
 // code — add a row here and a name there and the thing drops.
+// ONE exchange rate for gathered matter (owner verdict 2026-09-12, CANON
+// «Вердикты ТРУДА»: «1 рабочий рубит 1 дерево… 32 древесины с 32 деревьев»):
+// 1 felled tree = 1 wood — exactly what the macro crew's take already debits
+// from the tree layer (resource_field_apply, 1:1). The 2–5 roll this
+// replaces made the subworld axe ~3.5× more generous than the world's own
+// law, which is a money printer with extra steps.
 constexpr LootEntry kTreeLoot[] = {
-    {"wood",  1.00f, 2, 5, 0},
+    {"wood",  1.00f, 1, 1, 0},
 };
-// A wheat stand: rolls a couple of grain, then the harvest door scales by
-// the stand's own height against the kind's reference (sub/map_data.h
-// yieldRefHeightM) — so in practice a stalk pays a stalk's worth.
+// A wheat stand pays its one grain (the same 1:1 the macro harvest takes);
+// the harvest door still scales by the stand's own height against the
+// kind's reference (sub/map_data.h yieldRefHeightM) — so an unripe stalk
+// honestly pays nothing.
 constexpr LootEntry kCropLoot[] = {
-    {"grain", 1.00f, 1, 2, 0},
+    {"grain", 1.00f, 1, 1, 0},
 };
 
 // ── Unified loot registry ──────────────────────────────────────
@@ -661,6 +677,7 @@ struct ResolvedParts {
     ItemPart p[kMaxItemParts]{};
     int      n = 0;
     int      yield = 1;
+    int      perDay = 0;   // 0 = not made by work (terminal)
 };
 
 const std::array<ResolvedParts, std::size(kCatalog)>& parts_table() {
@@ -674,6 +691,7 @@ const std::array<ResolvedParts, std::size(kCatalog)>& parts_table() {
             if (idx < 0) continue;
             ResolvedParts& out = t[std::size_t(idx)];
             out.yield = row.yield > 1 ? row.yield : 1;
+            out.perDay = row.perDay > 0 ? row.perDay : 1;
             for (const auto& part : row.p) {
                 if (!part.mat || part.n <= 0) continue;
                 const int mi = item_index(part.mat);
@@ -700,6 +718,12 @@ int item_yield(int defIdx) noexcept {
     const auto& t = parts_table();
     if (defIdx < 0 || defIdx >= int(t.size())) return 1;
     return t[std::size_t(defIdx)].yield;
+}
+
+int item_labour(int defIdx) noexcept {
+    const auto& t = parts_table();
+    if (defIdx < 0 || defIdx >= int(t.size())) return 0;
+    return t[std::size_t(defIdx)].perDay;
 }
 
 bool craft_item(Inventory& inv, int defIdx, int n) {

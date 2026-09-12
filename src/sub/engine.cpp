@@ -28,6 +28,7 @@
 #include "macro/entry_context.h"
 #include "macro/npc.h"
 #include "macro/items.h"
+#include "macro/econ_day.h"   // kGatherPerWorkerDay — the harvest SP law
 #include "macro/attributes.h"
 #include "macro/character_sheet.h"
 #include "macro/map_generator.h"
@@ -1822,14 +1823,15 @@ void SubworldEngine::tick_player_melee() {
         &hostileCtx,
         &SubworldEngine::spell_neighbors_callback, this);
     if (target == entt::null) {
-        // No creature in reach — the same swing harvests the nearest lootable
-        // prop instead (tree, crop — whatever the kind table pays for; the
-        // +1.5 covers the trunk radius the melee point-range does not model).
-        const bool harvested = harvest_prop_near_player(pc->attackRange + 1.5f);
+        // No creature in reach: the swing whooshes through air, paid and
+        // heard, and nothing else. It used to harvest the nearest lootable
+        // prop as a fallback — killed by owner verdict 2026-09-12 (CANON
+        // «Вердикты ТРУДА»): «СБОР В СУБМИРЕ БУДЕТ НЕ ЧЕРЕЗ УДАР А ЧЕРЕЗ
+        // HARVEST» — gathering is WORK with an SP price (harvest_action),
+        // never a free side effect of a weapon arc.
         if (combatLog) {
-            std::fprintf(stderr,
-                         "[melee] swing target=none harvested=%d cd=%.2fs\n",
-                         harvested ? 1 : 0, double(strikeStats.cooldown));
+            std::fprintf(stderr, "[melee] swing target=none cd=%.2fs\n",
+                         double(strikeStats.cooldown));
         }
         return;
     }
@@ -1882,6 +1884,33 @@ void SubworldEngine::tick_player_melee() {
                   std::max(0, hit.applied),
                   swing.critical ? " (crit)" : "");
     set_status(status);
+}
+
+bool SubworldEngine::harvest_action(float reachOverride) {
+    if (!active_ || !ecs_ || !gs_) return false;
+    if (player_display_hp() <= 0) return false;
+    auto& reg = ecs_->reg;
+    // Arm's reach — the same envelope the melee swing measures with (+1.5
+    // covers the trunk radius the point-range does not model).
+    float reach = 1.5f;
+    entt::entity playerEnt = entt::null;
+    for (auto pe : reg.view<ecs::AvatarTag, ecs::Combat>()) {
+        reach = reg.get<ecs::Combat>(pe).attackRange + 1.5f;
+        playerEnt = pe;
+        break;
+    }
+    if (playerEnt == entt::null) return false;
+    if (reachOverride > 0.0f) reach = reachOverride;   // smoke lab only
+    if (!harvest_prop_near_player(reach)) return false;
+    // The gather law's SP price (CANON «Вердикты ТРУДА», owner 2026-09-12):
+    // one felled object = one unit = bar / kGatherPerWorkerDay — the exact
+    // rate a macro crew's quarter-bar cycle already pays for its 8 objects.
+    // Paid INTO THE NEGATIVE: the march's exhaustion law owns the bite,
+    // this door only spends.
+    if (auto* pools = reg.try_get<ecs::Pools>(playerEnt)) {
+        pools->sp -= std::max(1, pools->maxSp / kGatherPerWorkerDay);
+    }
+    return true;
 }
 
 bool SubworldEngine::harvest_prop_near_player(float maxDist,

@@ -58,15 +58,15 @@ inline bool recipe_runs_at(EconSite recipeSite, EconSite here) {
     return recipeSite == EconSite::Any || recipeSite == here;
 }
 
-// A recipe names only LABOUR — what is worked on, how fast, where. Its
-// MATTER is not a column any more (owner verdict 2026-09-11, CANON
-// «Крафт/Скрап»): the inputs of every produced good are the composition of
-// its own catalog row (macro/items.h item_parts) — the ONE matter table the
-// craft door, the scrap door and this production day all read. Two tables of
-// «из чего сделан хлеб» drifted apart exactly once before they were merged.
+// A recipe names only THE SCHEDULE — what this kind of place works on, and
+// where. Its MATTER became the catalog row's composition on 2026-09-11, and
+// its TEMPO followed on 2026-09-12 (owner: «единая SP-система труда»):
+// batches-per-person-day is the item's own labour column (macro/items.h
+// item_labour), the same number the hand's SP price divides by. Two tables
+// of «из чего хлеб» — and then two of «сколько труда в хлебе» — each
+// drifted apart exactly once before they were merged.
 struct RecipeDef {
     const char* output;          // commodity id
-    int outputPerWorkerDay;      // units one worker makes per day
     EconSite site;
 };
 
@@ -99,20 +99,21 @@ inline constexpr RecipeDef kRecipes[] = {
     // per worker-day × the 1/8 labour quota put the bake ceiling at exactly
     // the population — a knife-edge measured by the дубль-прогон: 150/210
     // villages starved daily sitting on 2.1M hoarded grain.
-    // (What each output CONSUMES lives on its catalog row — items.cpp
-    // kPartsAuthoring, moved verbatim from the input columns that stood here.)
-    {"bread",     kGatherPerWorkerDay, EconSite::Any},
-    // ЧЕКАНКА: все города (site City = право v1); 4 металла на рабочий-день
-    // — балансовая крутилка темпа эмиссии. Вход = kMintMetal (закон выше).
-    {kMintOutput, 4, EconSite::City},
-    {"bricks",    8, EconSite::City},
-    {"cloth",     4, EconSite::City},
-    {"tools",     2, EconSite::City},
-    {"furniture", 2, EconSite::City},
-    {"wagon",     1, EconSite::City},
-    {"jewelry",   1, EconSite::City},
-    {"carving",   2, EconSite::City},
-    {"statue",    1, EconSite::City},
+    // (What each output CONSUMES — and HOW FAST it turns — lives on its
+    // catalog row: items.cpp kPartsAuthoring composition + labour columns,
+    // moved verbatim from the input/tempo columns that stood here.)
+    {"bread",     EconSite::Any},
+    // ЧЕКАНКА: все города (site City = право v1); темп эмиссии = труд
+    // строки монеты (4 металла на рабочий-день, labour-колонка).
+    {kMintOutput, EconSite::City},
+    {"bricks",    EconSite::City},
+    {"cloth",     EconSite::City},
+    {"tools",     EconSite::City},
+    {"furniture", EconSite::City},
+    {"wagon",     EconSite::City},
+    {"jewelry",   EconSite::City},
+    {"carving",   EconSite::City},
+    {"statue",    EconSite::City},
 };
 inline constexpr int kRecipeCount = int(sizeof(kRecipes) / sizeof(kRecipes[0]));
 

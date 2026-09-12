@@ -280,13 +280,16 @@ static void test_roll_loot_profile() {
     CHECK(wood.size() == 1 && count_of(wood, "wood") == 7,
           "woodcutter/rng_high: only the certain drop, at max qty");
 
-    // World props pay through the same registry: the crop profile (Field Inc
-    // F2) rolls grain — the harvest door then scales by metric height.
+    // World props pay through the same registry, at the ONE exchange rate
+    // (owner 2026-09-12, CANON «Вердикты ТРУДА»): 1 stand = 1 grain, exactly
+    // what the macro harvest debits — the rate is a LAW now, so both ends of
+    // the rng are pinned to it (the harvest door still scales by height).
     auto crop = roll_loot_profile("crop", 1, rng_zero, 0);
     CHECK(crop.size() == 1 && count_of(crop, "grain") == 1,
-          "crop/rng_zero: grain at min qty");
+          "crop/rng_zero: one stand pays its one grain");
     auto cropHigh = roll_loot_profile("crop", 1, rng_high, 0);
-    CHECK(count_of(cropHigh, "grain") == 2, "crop/rng_high: grain at max qty");
+    CHECK(count_of(cropHigh, "grain") == 1,
+          "crop/rng_high: still one grain — the rate is a law, not a roll");
 
     // Unknown / empty id -> no items.
     CHECK(roll_loot_profile("does_not_exist", 5, rng_zero, 0).empty(),

@@ -236,6 +236,16 @@ public:
                                   int* outCellY = nullptr,
                                   int* outPrevCount = nullptr,
                                   const Structure::Kind* onlyKind = nullptr);
+    // The HARVEST action (owner verdict 2026-09-12, CANON «Вердикты ТРУДА»:
+    // «жмёшь Harvest — платишь SP»): fell the nearest lootable prop at arm's
+    // reach and pay the gather law's SP price — one felled object = one unit
+    // = bar/kGatherPerWorkerDay, the exact rate a macro crew's cycle already
+    // pays — INTO THE NEGATIVE (the march law bites exhaustion, not this
+    // door). The weapon swing no longer harvests anything.
+    // `reachOverride` is the smoke lab's seam ONLY (<0 = the honest arm's
+    // reach): spawn points sit on roads, so a deterministic witness of the
+    // SP law needs the window's reach — the game always calls bare.
+    bool harvest_action(float reachOverride = -1.0f);
     // Pay out a broken world prop through the ONE loot registry: its kind
     // names a profile (map_data.h structure_loot_id), the profile rolls items,
     // the yield scales by the prop's own metric height. Items go straight to

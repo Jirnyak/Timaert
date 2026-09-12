@@ -29,6 +29,7 @@
 #include "sub/spawn.h"     // current_player_body — «рука игрока» атрибуции
 #include "macro/codex.h"
 #include "macro/items.h"
+#include "macro/econ_day.h"   // kGatherPerWorkerDay — the harvest SP witness
 #include "macro/player_entity.h"
 #include <bit>
 
@@ -5359,6 +5360,44 @@ bool run_console_smoke(App& app) {
             if (!wasActive) app.subworld.leave(true);
             smoke_fail(app, "chop: felled tree paid no wood");
             return false;
+        }
+        // The HARVEST action's SP law (CANON «Вердикты ТРУДА», 2026-09-12):
+        // pressing Harvest fells and pays bar/32 into the body's own pool.
+        // Spawn points sit on roads — arm's reach holds nothing on any
+        // pinned seed — so the witness uses the action's smoke-lab reach
+        // seam (the whole window, same guarantee the chop above stands on)
+        // and the assertion is MANDATORY: a witness that may not fire is a
+        // dead detector (testing law #3).
+        {
+            int spBefore = 0, spAfter = 0, maxSp = 0;
+            for (auto pe : app.ecs.reg.view<sm::ecs::AvatarTag,
+                                            sm::ecs::Pools>()) {
+                spBefore = app.ecs.reg.get<sm::ecs::Pools>(pe).sp;
+                maxSp = app.ecs.reg.get<sm::ecs::Pools>(pe).maxSp;
+                (void)pe;
+                break;
+            }
+            if (!app.subworld.harvest_action(
+                    float(sm::sub::kFullSize) * 2.0f)) {
+                if (!wasActive) app.subworld.leave(true);
+                smoke_fail(app, "harvest action found nothing in the window");
+                return false;
+            }
+            for (auto pe : app.ecs.reg.view<sm::ecs::AvatarTag,
+                                            sm::ecs::Pools>()) {
+                spAfter = app.ecs.reg.get<sm::ecs::Pools>(pe).sp;
+                (void)pe;
+                break;
+            }
+            const int cost = std::max(1, maxSp / sm::kGatherPerWorkerDay);
+            if (maxSp <= 0 || spAfter != spBefore - cost) {
+                if (!wasActive) app.subworld.leave(true);
+                smoke_fail(app, "harvest action did not pay the SP law");
+                return false;
+            }
+            std::fprintf(stderr, "[smoke] harvest_action did=1 sp_paid=%d\n",
+                         spBefore - spAfter);
+            std::fflush(stderr);
         }
         if (!wasActive) app.subworld.leave(true);
         std::fprintf(stderr,

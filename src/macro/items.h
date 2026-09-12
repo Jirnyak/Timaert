@@ -382,6 +382,21 @@ std::span<const ItemPart> item_parts(int defIdx) noexcept;
 // apart unseen.
 int item_yield(int defIdx) noexcept;
 
+// The row's LABOUR: batches one person-day of work runs (owner verdicts
+// 2026-09-12, «единая SP-система труда»). ONE number serves three workers:
+//   · the CITY prices its production day with it (econ_produce_day — a
+//     person-day is what a population buys, «чем больше населения, тем
+//     больше SP на дела»);
+//   · the HAND pays SP with it: one person-day = one FULL SP bar (the
+//     anchor kGatherPerWorkerDay is already derived from the quarter-bar
+//     work cycle), so a batch costs maxSp / labour — into the negative,
+//     with the march's own exhaustion bite («как в Elin», no second labour
+//     law);
+//   · a future harvest/craft SKILL multiplies through this same column
+//     (owner: «потом расширяемо») — appended, not designed now.
+// 0 = the row is not made by work (terminal raw matter).
+int item_labour(int defIdx) noexcept;
+
 // ── The reversible reaction (CANON «Крафт/Скрап», owner 2026-09-11/12) ─────
 // FORWARD — craft: consume exactly n BATCHES of the composition (full
 // price), emit n × yield WHITE base items (seed 0, no affixes — «закон

@@ -43,6 +43,7 @@ const ActionSpec kActionSpec[kActionCount] = {
     {ActionId::CastSpell,    "act.cast",       "Cast active spell",     UiScope::Sub,  SDL_SCANCODE_S},
     {ActionId::Jump,         "act.jump",       "Jump",                  UiScope::Sub,  SDL_SCANCODE_SPACE},
     {ActionId::Interact,     "act.interact",   "Interact",              UiScope::Sub,  SDL_SCANCODE_E},
+    {ActionId::Harvest,      "act.harvest",    "Harvest",               UiScope::Sub,  SDL_SCANCODE_H},
 };
 
 static_assert(sizeof(kActionSpec) / sizeof(kActionSpec[0]) == kActionCount,

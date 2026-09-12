@@ -1225,6 +1225,18 @@ namespace sm::ui
                                         "%dx %s (%d)", int(part.count),
                                         md->name, have);
                             }
+                            // The SP price of ONE batch: a person-day is a
+                            // FULL bar (the kGatherPerWorkerDay anchor's own
+                            // derivation), so a batch costs bar / labour —
+                            // and it is paid INTO THE NEGATIVE (owner
+                            // 2026-09-12, «как в Elin», the march law): the
+                            // button never greys on fatigue, forging on an
+                            // empty bar simply leaves you exhausted for the
+                            // exhaustion bite to find.
+                            const int spCost = std::max(
+                                1, int(pools.maxSp) / item_labour(ci));
+                            ImGui::SameLine();
+                            ImGui::TextDisabled("SP %d", spCost);
                             ImGui::TableNextColumn();
                             ImGui::PushID(ci);
                             ImGui::BeginDisabled(!can);
@@ -1232,6 +1244,7 @@ namespace sm::ui
                             {
                                 if (craft_item(playerBag, ci, 1))
                                 {
+                                    pools.sp -= spCost;
                                     lastCraftMessage = "Crafted ";
                                     if (yield > 1)
                                     {

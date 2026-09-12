@@ -127,8 +127,12 @@ int main() {
             }
             if (int(part.count) <= 0) return fail("recipe qty <= 0");
         }
-        if (kRecipes[r].outputPerWorkerDay <= 0) {
-            return fail("outputPerWorkerDay <= 0");
+        // ...and its tempo = the same row's labour column (2026-09-12): a
+        // scheduled output nobody's day can turn is a dead recipe row. The
+        // mint's output resolves per town — its labour lives on the coin
+        // rows, checked with their composition below.
+        if (out >= 0 && item_labour(commodity_item_index(out)) <= 0) {
+            return fail("recipe output has no labour (batches/person-day)");
         }
     }
     for (int n = 0; n < kNeedCount; ++n) {
@@ -342,6 +346,12 @@ int main() {
         if (item_parts(item_index(c.itemId)).empty()) {
             return fail("a mint output (faction coin) has no composition");
         }
+    }
+    // The productivity ANCHOR (owner: «1 добытчик кормит 32 душ» chain-wide)
+    // is bread's labour column — the person-day the whole economy is scaled
+    // by. If this drifts, every balance number silently reprices.
+    if (item_labour(item_index("bread")) != kGatherPerWorkerDay) {
+        return fail("bread labour must equal the person-day anchor");
     }
 
     // ── 7б. The overflow law rides the consume day (CANON «Крафт/Скрап») ─

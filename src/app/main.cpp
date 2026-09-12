@@ -2490,6 +2490,12 @@ void handle_event_playing(App& app, const SDL_Event& e) {
             else if (is(ActionId::Interact)) {       // sub face of the E key
                 app.subworld.interact();
             }
+            else if (is(ActionId::Harvest)) {
+                // «Жмёшь Harvest — платишь SP» (owner 2026-09-12): fell the
+                // nearest lootable prop at the gather law's price. One press
+                // = one object; the SP purse is the rate limiter.
+                app.subworld.harvest_action();
+            }
             else if (is(ActionId::SpellsTab)) {
                 app.ui.character = true;
                 app.ui.characterTab = sm::ui::CharacterPanelTab::Spells;

@@ -119,12 +119,14 @@ int econ_produce_day(Inventory& store, EconSite site, int workers,
         // (the owner's-scale hundred, kVillageBornBase) lands at ×1½,
         // a 512-soul city at ×2¼. One law prices why the city bakes
         // better — never a second recipe row, never a site wall. The
-        // quarter is a balance-run tunable. Tempo counts BATCHES: for the
-        // mint that is metal units a day, exactly the old «4 металла».
+        // quarter is a balance-run tunable. Tempo = the OUTPUT ROW'S OWN
+        // labour column (items.h item_labour — the same number the hand's
+        // SP price divides by), in BATCHES: for the mint that is metal
+        // units a day, exactly the old «4 металла».
         const int popLog =
             population > 1 ? (std::bit_width(unsigned(population)) - 1) : 0;
         const int perDay =
-            std::max(1, kRecipes[i].outputPerWorkerDay * popLog / 4);
+            std::max(1, item_labour(outIdx) * popLog / 4);
         int wanted = (byInputs + perDay - 1) / perDay;
         wanted = std::min(wanted, workerCap);
         const int staffed = std::min(wanted, workersLeft);
