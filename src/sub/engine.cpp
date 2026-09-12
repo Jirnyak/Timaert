@@ -16,6 +16,7 @@
 #include "sub/movement.h"
 #include "sub/spell_effects.h"
 #include "sub/damage.h"
+#include "sub/record.h"   // record_of / pools_of — THE door of the seam
 #include "sub/base_generator.h"
 #include "sub/dgn/dispatch.h"
 #include "sub/body.h"
@@ -807,19 +808,35 @@ void SubworldEngine::sync_macro_player_to_center() {
     if (ecs_) player_jump_to_cell(*gs_, *ecs_, nx, ny);
 }
 
-entt::entity SubworldEngine::remap_macro_player_to_origin() {
-    if (!gs_ || !ecs_ || !terrain_ || terrain_->width <= 0 || terrain_->height <= 0) {
-        return entt::null;
+bool SubworldEngine::follow_flag_to_its_record() {
+    if (!gs_ || !ecs_ || !terrain_ || terrain_->width <= 0
+        || terrain_->height <= 0) {
+        return false;
     }
-    // The body currently wearing the player flag (never null mid-subworld); the
-    // pure query returns has == false for a normal un-possessed exit.
-    const entt::entity body = current_player_body(*ecs_);
-    const MacroExitCell cell =
-        macro_exit_cell_for_body(*ecs_, body, terrain_->width, terrain_->height);
-    if (!cell.has) return entt::null;
-    // Same as sync_macro_player_to_center: a remap is a jump, no entry edge.
-    player_jump_to_cell(*gs_, *ecs_, cell.cx, cell.cy);
-    return cell.macro;   // adopted by leave() as the persistent player (5e-2)
+    auto& reg = ecs_->reg;
+    // Whose body is he standing in? Since the mirror law that is one question
+    // with one door, and the hero husk answers it with his own squad — which is
+    // precisely the case where nothing moves.
+    const entt::entity rec = record_of(reg, current_player_body(*ecs_));
+    if (rec == entt::null || rec == player_squad_entity(*ecs_)) return false;
+    // A record that is not a macro body on the map is nothing to become.
+    if (!reg.all_of<ecs::MacroCell, ecs::MacroNpcRuntime>(rec)) return false;
+
+    // Move the ONE macro flag. Exactly-one holds by the move itself.
+    for (auto e : reg.view<ecs::PlayerTag>()) {
+        if (e != rec) reg.remove<ecs::PlayerTag>(e);
+    }
+    if (!reg.all_of<ecs::PlayerTag>(rec)) reg.emplace<ecs::PlayerTag>(rec);
+
+    // ...and now the jump door is asked about the NEW holder: his cell is
+    // already his own, so this sets nothing and clears what a climb-out must
+    // clear — the entry edge and the think cadence (player_entity.h). Reading
+    // his cell and writing it back is deliberate: one door owns «a jump is not
+    // a walk», and a second hand-written clear here would be the usual drift.
+    const auto& mc = reg.get<ecs::MacroCell>(rec);
+    player_jump_to_cell(*gs_, *ecs_, ecs::cell_x(mc, gs_->mapW),
+                        ecs::cell_y(mc, gs_->mapW));
+    return true;
 }
 
 // ── Player entity (Inc 4b) ──────────────────────────────────────────────
@@ -870,7 +887,7 @@ void SubworldEngine::spawn_player_entity() {
     // leave). Exactly one AvatarTag entity must exist while a subworld is live.
     clear_player_entity();
     auto& reg = ecs_->reg;
-    // Entering a subworld drops any macro-side possession (Inc 5e-2): the
+    // Entering a subworld drops any macro-side flag on somebody else: the
     // player becomes the hero husk built below, not the lord he may have
     // inhabited on the overworld. The lord survives as an autonomous NPC —
     // strip only the MACRO flag (this is the one macro act of this function,
@@ -894,6 +911,17 @@ void SubworldEngine::spawn_player_entity() {
     const entt::entity e = reg.create();
     reg.emplace<ecs::Position>(e, playerX_, playerY_, 0.0f);
     reg.emplace<ecs::AvatarTag>(e);
+    // WHOSE BODY THIS IS (mirror law, 2026-09-12 — sub/record.h): the same
+    // backlink every projected body carries, pointing at his own squad — the
+    // record that has held his bars, his bag, his gear and his sheet since
+    // landing 4 / посадка Б. Наличие ссылки — это и есть «он такой же»: the
+    // seam stops having a shape it must special-case, because «whose state is
+    // this?» is answered for the hero husk by the very line that answers it
+    // for a lord. Two things follow from this one emplace: the fold-up passes
+    // lose their reason to exist, and no damage/spend path needs to know which
+    // kind of body it is holding.
+    const entt::entity psq = player_squad_entity(*ecs_);
+    if (psq != entt::null) reg.emplace<ecs::MacroOrigin>(e, psq);
     // Inc 4b: the player is a full combat participant, not an inert anchor.
     //  - Pools mirror THE store — the squad entity's own block (landing 4);
     //    sync_player_entity_position pulls it in at each tick top and
@@ -934,13 +962,11 @@ void SubworldEngine::spawn_player_entity() {
     // macro state, the body is its projection. Refreshed each tick beside the
     // pace, so drawing a dagger changes the next swing, not the next descent.
     const ecs::BodyEquipment* eqp = nullptr;
-    if (const entt::entity sq = player_squad_entity(*ecs_); sq != entt::null)
-        eqp = reg.try_get<ecs::BodyEquipment>(sq);
+    if (psq != entt::null) eqp = reg.try_get<ecs::BodyEquipment>(psq);
     // The EFFECTIVE sheet swings and paces (phase 4): the ring's +STR is in
     // the blow, the sustained haste's +SPD is in the step. The totals are
     // assembled ONCE — the sheet copy takes the attr/skill cells, and the
     // derived cells (a worn MovePct row) meet the pace law below.
-    const entt::entity psq = player_squad_entity(*ecs_);
     const BonusTotals standing = (gs_ && psq != entt::null)
         ? standing_bonuses_of(*ecs_, psq) : BonusTotals{};
     const CharacterSheet* baseSheet = gs_ ? player_sheet(*ecs_) : nullptr;
@@ -1061,14 +1087,12 @@ void SubworldEngine::sync_player_entity_position() {
     // seam / HUD) still uses, so a possession that hopped the flag to a body at a
     // different Position is followed by all of them from the next tick.
     //
-    // Inc 5c (D3 body-native): only the HERO body is macro-driven. The hero body
-    // carries no NPCKind — that is the discriminator possess_entity maintains. For
-    // it, HP stays SQUAD-authoritative (pull squad Pools -> body here; combat
-    // mutates it in place; reconcile pushes it back onto currentHp at tick end)
-    // and outgoing melee damage tracks the sheet so a mid-subworld level-up / gear
-    // change lands on the next swing. A POSSESSED foreign body (has NPCKind) is
-    // left entirely alone here: it fights with its OWN Health + Combat, and
-    // gs.player is frozen as the preserved revert target.
+    // Only the HERO HUSK is handled below, and the discriminator is honest
+    // rather than political: a husk carries no NPCKind, so it has no creature
+    // row to project a swing from and must assemble one from his sheet and what
+    // his hands hold. Any other body — worn or not — already has a row, and its
+    // numbers come from its own record through the ordinary mirror
+    // (mirror_bodies_from_record / refresh_body_strike).
     auto pv = reg.view<ecs::AvatarTag, ecs::Position>();
     for (auto e : pv) {
         const auto& p = pv.get<ecs::Position>(e);
@@ -1076,17 +1100,12 @@ void SubworldEngine::sync_player_entity_position() {
         playerY_ = p.y;
         playerZ_ = p.z;
         if (gs_ && !reg.all_of<ecs::NPCKind>(e)) {
-            if (auto* h = reg.try_get<ecs::Pools>(e)) {
-                // Pull THE store (the squad entity's Pools — landing 4)
-                // into the body's mirror, whole block: a cast spends the
-                // squad pools, a potion lands there, and the body must say
-                // what the store says before combat mutates it in place.
-                if (const ecs::Pools* squadPools = player_pools(*ecs_)) {
-                    *h = *squadPools;
-                    h->maxHp = std::max(1, h->maxHp);
-                    h->hp = std::clamp(h->hp, 0, h->maxHp);
-                }
-            }
+            // (The bars used to be pulled here, by hand, for this one body.
+            // They are mirrored for EVERY body that stands for a record now —
+            // mirror_bodies_from_record, run just above this — so what is left
+            // in this branch is the hero husk's OUTGOING identity, which is
+            // genuinely his: a husk has no NPC row to derive a swing from, so
+            // it reads his sheet and what his hands hold.)
             if (auto* c = reg.try_get<ecs::Combat>(e)) {
                 // Per-tick refresh reads the same EFFECTIVE sheet the spawn
                 // did (phase 4) — equipping mid-fight changes the next swing.
@@ -1137,85 +1156,92 @@ void SubworldEngine::sync_player_entity_position() {
     }
 }
 
-void SubworldEngine::reconcile_tracked_bodies_to_macro() {
+void SubworldEngine::mirror_bodies_from_record() {
     if (!ecs_) return;
     auto& reg = ecs_->reg;
-    // THE RULE (owner, 2026-08-06): every subworld act with consequences owes a
-    // macro return, and it is paid in the tick it happens — no queue to lose on
-    // the way out. A tracked body IS a macro entity made visible, so its wounds
-    // are that entity's wounds: cut a lord down to a sliver, walk away, and he
-    // is a sliver on the map. Before this, leaving the subworld healed everyone
-    // you had failed to finish.
+    // THE RULE (owner, 2026-08-06) is unchanged: every subworld act with
+    // consequences owes a macro return, paid in the tick it happens. What
+    // changed is that it costs NOTHING to honour — the act lands on the record
+    // directly (sub/record.h), so there is no return trip to write and none to
+    // forget. Cut a lord to a sliver and he is a sliver on the map before the
+    // tick ends, because the bar you cut was his.
     //
-    // The wound crosses as a FRACTION, not as points, so neither layer has to
-    // know how the other computes a health bar (the same reason the body was
-    // born from a fraction — sub/spawn.cpp).
+    // What runs here is the other direction and it is not state: the SCENE's
+    // copy of those bars. Views filter on it, the eye draws it, and a body that
+    // had no such block would drop out of combat entirely. It is refreshed
+    // whole, from the one authority, at the top of every tick — the law the
+    // player's body has lived by since landing 4, now stated once for everyone.
     //
-    // Bodies still standing only: death is settled once, by the reaper, which
-    // has already put the origin at zero.
-    auto view = reg.view<ecs::MacroOrigin, ecs::Pools, ecs::SubworldTag>(
-        entt::exclude<ecs::Dead>);
-    for (auto e : view) {
-        const entt::entity macro = view.get<ecs::MacroOrigin>(e).macro;
-        if (!reg.valid(macro)) continue;
-        auto* mh = reg.try_get<ecs::Pools>(macro);
-        if (!mh || mh->maxHp <= 0) continue;
-        const auto& h = view.get<ecs::Pools>(e);
-        if (h.maxHp <= 0) continue;
-        const float fraction =
-            std::clamp(float(h.hp) / float(h.maxHp), 0.0f, 1.0f);
-        mh->hp = std::clamp(int(float(mh->maxHp) * fraction), 1, mh->maxHp);
+    // Nothing writes this block during a tick, which is what lets
+    // report_player_damage read it as «what the bar was when the tick began»
+    // without inventing a remembered field.
+    //
+    // Dead bodies included on purpose: the reaper settles a death by reading
+    // the record, and a corpse whose mirror still showed a live bar would be
+    // drawn standing for one frame.
+    for (auto [body, origin, mirror] :
+         reg.view<ecs::MacroOrigin, ecs::Pools, ecs::SubworldTag>().each()) {
+        (void)body;
+        if (!reg.valid(origin.macro)) continue;
+        const auto* record = reg.try_get<ecs::Pools>(origin.macro);
+        if (!record || record->maxHp <= 0) continue;
+        mirror = *record;
+        mirror.maxHp = std::max(1, mirror.maxHp);
+        mirror.hp = std::clamp(mirror.hp, 0, mirror.maxHp);
+        // ...and the other half of what a record decides: the body's SWING.
+        // Gated on «did what stands on him change», because the bars are a
+        // block copy and a swing is a sheet re-roll (sub/spawn.h).
+        refresh_body_strike(reg, body);
     }
 }
 
-void SubworldEngine::reconcile_player_hp_to_macro() {
+void SubworldEngine::report_player_damage() {
     if (!ecs_ || !gs_) return;
     auto& reg = ecs_->reg;
-    // Tick-end push: whatever damage the universal combat/projectile paths
-    // dealt to the player BODY's Pools this tick is written back onto THE
-    // store — the ordinary Pools on his squad entity (landing 4) — which is
-    // what drives the death screen. Incoming-hit feedback and godMode
-    // invulnerability are unified here — one place for both melee and
-    // projectile damage, since both mutate the same block.
-    // View includes Dead: a lethal hit must still reconcile the store to 0.
+    // What is left here after the write-back died: FEEDBACK, and the two rules
+    // that were never bookkeeping. The wound itself already landed on the
+    // record when the blow was struck (sub/damage.cpp through sub/record.h),
+    // whichever weapon struck it and whichever body wore the flag — the branch
+    // that used to stand here, «a possessed body owns its Pools, the hero's
+    // live on his squad», is gone with the selection it implemented (owner's
+    // verdict 2026-09-12: выборка власти полос умирает).
+    //
+    // THE STORE still matters for exactly one rule, stated below: dying inside
+    // a body you wear is your own death.
     ecs::Pools* squadPools = player_pools(*ecs_);
     if (!squadPools) return;
     auto pv = reg.view<ecs::AvatarTag, ecs::Pools>();
     for (auto e : pv) {
-        auto& h = pv.get<ecs::Pools>(e);
-        // Inc 5c (D3 body-native): a POSSESSED foreign body (has NPCKind) owns
-        // its Pools — do NOT reconcile them onto the player's squad, which
-        // stays frozen as the preserved revert target. The one thing that
-        // must still cross back is death: if the body you inhabit dies, your
-        // consciousness dies with it (game-over routed through the squad
-        // store, exactly like the hero). godMode keeps the inhabited body on
-        // its feet.
-        if (reg.all_of<ecs::NPCKind>(e)) {
-            if (godMode_) {
-                if (h.hp < 1.0f) h.hp = 1.0f;
-                reg.remove<ecs::Dead>(e);
-            } else if (h.hp <= 0) {
-                squadPools->hp = 0;
-            }
-            continue;
-        }
-        const int maxHp = std::max(1, squadPools->maxHp);
+        // The record this body spends — his own squad for the hero husk, the
+        // lord himself for a body he possesses. One question, one door.
+        ecs::Pools* record = pools_of(reg, e);
+        if (!record) continue;
+        const int maxHp = std::max(1, record->maxHp);
+        // «Before» is the MIRROR: nothing writes it during a tick, so it still
+        // holds what the bar was when this tick began. No remembered field, and
+        // no second memory to keep honest.
+        const ecs::Pools& mirror = pv.get<ecs::Pools>(e);
         if (godMode_) {
-            // Invulnerable: undo any incoming damage applied this tick and keep
-            // the entity out of the death path entirely.
-            h.hp = std::clamp(squadPools->hp, 0, maxHp);
+            // Invulnerable: put the record back where the tick found it and
+            // keep the body out of the death path entirely.
+            record->hp = std::clamp(mirror.hp, 0, maxHp);
             reg.remove<ecs::Dead>(e);
             continue;
         }
-        const int before = std::clamp(squadPools->hp, 0, maxHp);
-        const int after = std::clamp(int(std::round(h.hp)), 0, maxHp);
-        // Keep the Dead tag consistent with the reconciled scalar. A lethal hit
-        // (after == 0) leaves it on: the entity drops out of every combat view,
-        // matching the death screen. Any non-lethal outcome must clear a Dead
-        // that a hypothetical over-damage-then-refresh ordering could otherwise
-        // strand — a live-but-Dead player would be a zombie, silently excluded
-        // from all incoming combat for the rest of the session.
+        const int before = std::clamp(mirror.hp, 0, maxHp);
+        const int after = std::clamp(record->hp, 0, maxHp);
+        // Keep the Dead tag consistent with the bar. A lethal hit (after == 0)
+        // leaves it on: the entity drops out of every combat view, matching the
+        // death screen. Any non-lethal outcome must clear a Dead that a
+        // hypothetical over-damage-then-refresh ordering could otherwise strand
+        // — a live-but-Dead player would be a zombie, silently excluded from
+        // all incoming combat for the rest of the session.
         if (after > 0) reg.remove<ecs::Dead>(e);
+        // If the body you inhabit dies, your consciousness dies with it — the
+        // game-over runs through the squad store exactly as it does for the
+        // hero. Needs no possession branch: for the hero the record IS the
+        // store and this line is an identity.
+        if (after <= 0) squadPools->hp = 0;
         if (after < before) {
             const int dmg = before - after;
             // Label + compass from the LastHit any incoming path (melee strike
@@ -1245,7 +1271,6 @@ void SubworldEngine::reconcile_player_hp_to_macro() {
                           label, lethal ? "killed" : "hit", dmg);
             push_combat_log(logMsg);
         }
-        squadPools->hp = after;
     }
 }
 
@@ -1747,13 +1772,14 @@ bool SubworldEngine::possess_by_id(std::uint32_t entityId) {
 
 int SubworldEngine::player_display_hp() const {
     if (ecs_) {
-        // The flagged body's Pools ARE the display truth: for the hero they
-        // mirror the squad store (kept in sync each tick), for a possessed
-        // foreign body they are the body's own — so the HUD/flash follows
-        // possession with no squad mutation (D3 keeps the player's own squad
-        // frozen as the revert target).
+        // The flagged body's RECORD is the display truth — his own squad while
+        // he is himself, the lord's while he wears one — so the HUD follows
+        // possession without a branch, and shows this tick's wound rather than
+        // the mirror's tick-top value. (The player's own squad stays frozen as
+        // the revert target while possessed: it is simply not the record being
+        // read.)
         for (auto e : ecs_->reg.view<ecs::AvatarTag, ecs::Pools>()) {
-            return int(std::round(ecs_->reg.get<ecs::Pools>(e).hp));
+            if (const ecs::Pools* p = pools_of(ecs_->reg, e)) return p->hp;
         }
         if (const ecs::Pools* squadPools = player_pools(*ecs_)) {
             return squadPools->hp;
@@ -1939,15 +1965,14 @@ bool SubworldEngine::harvest_action(float reachOverride) {
     // Paid INTO THE NEGATIVE: the march's exhaustion law owns the bite,
     // this door only spends.
     //
-    // ...and paid to the AUTHORITATIVE pools (pools-on-body law, v85): the
-    // hero's bars ARE his squad store — the body block is a MIRROR re-pulled
-    // every tick top, and only HP reconciles back, so a charge written there
-    // evaporates one frame later (caught by the owner's own eyes: «повалил
-    // деревья, но SP не уменьшается»). A POSSESSED foreign body owns its
-    // block body-natively, exactly like its HP does.
-    ecs::Pools* pay = reg.all_of<ecs::NPCKind>(playerEnt)
-        ? reg.try_get<ecs::Pools>(playerEnt)
-        : player_pools(*ecs_);
+    // ...and paid to the AUTHORITATIVE pools — the RECORD's, through the one
+    // door (sub/record.h). The body's block is a mirror re-pulled every tick
+    // top, so a charge written there evaporates one frame later (caught by the
+    // owner's own eyes: «повалил деревья, но SP не уменьшается»). The pair of
+    // branches that stood here — store for the hero, body-native for a
+    // possessed body — was the «выборка власти полос» the mirror law retired:
+    // whoever you are wearing, you spend what that record has.
+    ecs::Pools* pay = pools_of(reg, playerEnt);
     if (pay) pay->sp -= std::max(1, pay->maxSp / kGatherPerWorkerDay);
     return true;
 }
@@ -3087,9 +3112,20 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
                 if (playerHand) apply_player_kill_reputation(gs_, kind);
             }
 
+            // WHAT HE HAD ON HIM — from his record, through the one door
+            // (sub/record.h). For a tracked body that is the lord's own bag, so
+            // the sword you find on the corpse is the sword the map says he
+            // owned; for a derived body the door answers with its own block and
+            // the roll below fills an empty one, exactly as before.
+            //
+            // ...and it LEAVES the record as it lands on the corpse. Two copies
+            // of one sword is the shape this whole landing exists to remove,
+            // and the record outlives this tick (the Dead sweep reaps it later),
+            // so «he is dead anyway» is not an argument.
             Inventory inv{};
-            if (const auto* bag = reg.try_get<ecs::NpcInventory>(e)) {
+            if (auto* bag = state_of<ecs::NpcInventory>(reg, e)) {
                 inv = bag->inv;
+                bag->inv = Inventory{};
             }
 
             const std::uint32_t seed = gs_->worldSeed
@@ -3181,7 +3217,6 @@ void SubworldEngine::leave(bool force) {
         set_status(kDisengageBlockedMsg);
         return;
     }
-    entt::entity possessedMacro = entt::null;   // set iff exit was AS a lord (5e-2)
     if (active_) {
         resolve_subworld_deaths(true);
         // The fight is over when the player leaves (owner ruling 3,
@@ -3208,20 +3243,18 @@ void SubworldEngine::leave(bool force) {
         // at `cellIdx + 0.5 + 0.5` = vertex of 4 cells. Snap to the centre
         // cell of the seamless 3×3 grid.
         //
-        // Inc 5e-1 (D5 exit remap): if the player possessed a macro-projected
-        // body (it carries a `MacroOrigin` backlink), land the macro player on
-        // THAT lord's macro cell instead — you "exit AS" the body you possessed.
-        // Must read the backlink here, BEFORE clear_subworld_entities below reaps
-        // every SubworldTag body. Falls back to the window centre for a normal
-        // un-possessed exit.
-        possessedMacro = remap_macro_player_to_origin();
+        // ...unless he is climbing out in somebody else's body, in which case he
+        // climbs out AS that somebody: the flag follows the record. Must run
+        // HERE, before clear_subworld_entities reaps every SubworldTag body,
+        // because the body is what names the record.
+        const bool becameSomebodyElse = follow_flag_to_its_record();
         // A DOORLESS pocket's window coordinates are virtual (and a wrapped
         // one's centre drifts with every torus loop): syncing them into the
         // macro player would teleport him across the real map. The pocket's
         // teardown leaves the macro player exactly where boot anchored him.
         const bool doorlessPocket =
             sceneKind_ == SceneKind::Dungeon && !dungeon_.hasDoor;
-        if (possessedMacro == entt::null && !doorlessPocket) {
+        if (!becameSomebodyElse && !doorlessPocket) {
             sync_macro_player_to_center();
         }
     }
@@ -3233,16 +3266,6 @@ void SubworldEngine::leave(bool force) {
         // of that incidental overlap and guarantees no PlayerTag entity leaks
         // into the macro world.
         clear_player_entity();
-        // Inc 5e-2 (identity remap): if the exit was AS a possessed lord, ADOPT
-        // that macro NPC as the persistent player — move the single flag onto
-        // it. clear_player_entity() just tore down the subworld body that wore
-        // the flag, and the macro entity (no SubworldTag) survived the reaper,
-        // so this re-homes the one flag cleanly. Un-possessed exits pass
-        // entt::null ⇒ no flag moves, and the next macro tick's
-        // ensure_macro_player_entity() re-claims it onto his squad. The flag
-        // IS the whole record of control since v87 — the save carries it as
-        // the possessed record's own byte, nothing else to write down.
-        adopt_possessed_macro_as_player(*ecs_, possessedMacro);
     }
     active_ = false;
     pendingUpload3d_ = {};
@@ -4436,6 +4459,10 @@ void SubworldEngine::tick(float dt) {
         // + Health) before combat runs; the entity then participates like any
         // other actor. It survives seamless re-centres because the respawn clear
         // now skips PlayerTag as well as PlayerSoldierTag.
+        // THE MIRROR, for every body that stands for a record — the player's
+        // included. Runs BEFORE the position sync, which is where the hero's
+        // own half of it used to be hand-written.
+        mirror_bodies_from_record();
         sync_player_entity_position();
         // Vertical simulation for every non-flying, non-projectile body: the
         // support surface under the feet is max(terrain, highest structure
@@ -4562,14 +4589,10 @@ void SubworldEngine::tick(float dt) {
         // resolved, so a killing blow still sprays from the body's live position.
         tick_damage_fx();
         resolve_subworld_deaths();
-        // Push the player entity's post-combat Health back onto the macro
-        // scalar. Incoming melee and projectile damage now both land on the
-        // entity's Health via the universal paths above; this is the single
-        // place that reconciles it to currentHp (and drives the death screen).
-        reconcile_player_hp_to_macro();
-        // …and the same courtesy for every OTHER body that stands for something
-        // above. The player was the only one who ever got it.
-        reconcile_tracked_bodies_to_macro();
+        // Nothing is pushed back up any more — the blows of this tick landed on
+        // the records when they were struck. What runs here is the scene's
+        // report of them: status line, combat log, the death rule and godMode.
+        report_player_damage();
     }
 
     // Advance the transient-VFX pool. Emitters (spell trails, impact bursts,

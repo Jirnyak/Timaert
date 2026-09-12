@@ -1,6 +1,7 @@
 #include "check.h"
 #include "macro/faction.h"
 #include "sub/spawn.h"
+#include "sub/record.h"   // THE door: whose record is this body (mirror law)
 #include "core/rng.h"
 #include "ecs/components.h"
 #include "macro/npc.h"
@@ -795,124 +796,14 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
     return true;
 }
 
-// Inc 5e-1 — exit-position remap query. macro_exit_cell_for_body maps a possessed
-// macro-projected body back onto its ORIGIN's macro cell ("exit AS the lord"),
-// wrapped to the torus. A body with no backlink (the hero husk / ambient fauna)
-// yields no remap, so leave() falls back to the window centre; a stale backlink
-// (the origin was reaped mid-session) also yields no remap and never crashes.
-bool run_exit_remap_case(const sm::sub::SeamlessSubworldManager& mgr) {
-    constexpr int kMapW = 1024, kMapH = 1024;
-    constexpr int kCenterCx = 0, kCenterCy = 0;
-    constexpr std::uint32_t kSeed = 0x5E1E5E1Eu;
-
-    sm::ecs::World world{};
-    auto& reg = world.reg;
-    const MacroSeeds s = seed_macro_npcs(reg, kMapW);
-    const int projected = sm::sub::project_macro_npcs_into_subworld(
-        world, mgr, kCenterCx, kCenterCy, kMapW, kMapH, kSeed);
-    if (projected != 3) return false;
-
-    // Map two projections back to their origins (centre bandit + map-edge guard).
-    entt::entity pBandit = entt::null, pWrap = entt::null;
-    for (auto e : reg.view<sm::ecs::SubworldTag, sm::ecs::MacroOrigin>()) {
-        const entt::entity origin = reg.get<sm::ecs::MacroOrigin>(e).macro;
-        if (origin == s.bandit) pBandit = e;
-        else if (origin == s.wrap) pWrap = e;
-    }
-    if (pBandit == entt::null || pWrap == entt::null) return false;
-
-    // Possess the centre-cell bandit → exit lands on ITS macro cell (0,0).
-    {
-        const sm::sub::MacroExitCell c =
-            sm::sub::macro_exit_cell_for_body(world, pBandit, kMapW, kMapH);
-        if (!c.has || c.cx != 0 || c.cy != 0) return false;
-    }
-    // Possess the map-edge guard → exit lands on the guard's OWN macro cell
-    // (mapW-1,0), NOT the window centre (0,0). This is the whole point of 5e-1:
-    // you resurface where the body you possessed actually stood on the overworld.
-    {
-        const sm::sub::MacroExitCell c =
-            sm::sub::macro_exit_cell_for_body(world, pWrap, kMapW, kMapH);
-        if (!c.has || c.cx != kMapW - 1 || c.cy != 0) return false;
-    }
-    // No backlink (hero husk / plain body) → no remap; a bare positioned entity
-    // stands in for the husk. The function reads the MACRO entity's cell, so the
-    // body's own Position here is deliberately irrelevant.
-    {
-        auto bare = reg.create();
-        reg.emplace<sm::ecs::Position>(bare, 5.0f, 5.0f, 0.0f);
-        if (sm::sub::macro_exit_cell_for_body(world, bare, kMapW, kMapH).has) {
-            return false;
-        }
-    }
-    // Null body → no remap.
-    if (sm::sub::macro_exit_cell_for_body(world, entt::null, kMapW, kMapH).has) {
-        return false;
-    }
-    // Degenerate torus dims → no remap (guards the caller's terrain check).
-    if (sm::sub::macro_exit_cell_for_body(world, pWrap, 0, kMapH).has) return false;
-
-    // Stale backlink: the possessed lord's macro entity was reaped mid-session →
-    // the remap must vanish (default exit), never dereference the dead handle.
-    reg.destroy(s.bandit);
-    if (sm::sub::macro_exit_cell_for_body(world, pBandit, kMapW, kMapH).has) {
-        return false;
-    }
-
-    return true;
-}
-
-// Inc 5e-2 — identity remap ("exit AS the lord"). leave() hands the single
-// PlayerTag to the possessed macro origin via adopt_possessed_macro_as_player,
-// and since v87 that flag IS the whole record of control: the macro snapshot
-// carries it as the possessed record's own byte (macro_snapshot_test proves
-// the round-trip; the old reattach-by-stored-ordinal half died with SAVE-5).
-// What is pinned here is the pure ECS move: one flag, on the lord, and the
-// guards that refuse a husk or a null handle.
-bool run_identity_remap_case(const sm::sub::SeamlessSubworldManager& mgr) {
-    constexpr int kMapW = 1024, kMapH = 1024;
-    constexpr std::uint32_t kSeed = 0x1DEA1DEAu;
-
-    sm::ecs::World world{};
-    auto& reg = world.reg;
-    const MacroSeeds s = seed_macro_npcs(reg, kMapW);
-    if (sm::sub::project_macro_npcs_into_subworld(
-            world, mgr, 0, 0, kMapW, kMapH, kSeed) != 3) {
-        return false;
-    }
-    // ── ADOPT. Mirror leave(): the flag-wearing subworld body is already gone
-    // (reaped) by the time adopt runs, so the macro origin has NO PlayerTag
-    // yet — adopt must place the ONE flag on it. Since v87 the flag itself IS
-    // the whole record of control (it rides the macro snapshot as the
-    // record's own byte — persistence is macro_snapshot_test's to prove), so
-    // there is no ordinal contract left to assert here. ──
-    if (reg.any_of<sm::ecs::PlayerTag>(s.bandit)) return false;  // precondition
-    sm::sub::adopt_possessed_macro_as_player(world, s.bandit);
-    if (!reg.all_of<sm::ecs::PlayerTag>(s.bandit)) return false;
-    {
-        int tags = 0;
-        for (auto e : reg.view<sm::ecs::PlayerTag>()) { (void)e; ++tags; }
-        if (tags != 1) return false;   // exactly one flag, on the lord
-    }
-    // adopt only adopts real macro NPCs: a bare husk (no MacroNpcRuntime) and
-    // a null handle both touch nothing — the bandit keeps the one flag.
-    {
-        auto husk = reg.create();
-        reg.emplace<sm::ecs::Position>(husk, 3.0f, 3.0f, 0.0f);
-        sm::sub::adopt_possessed_macro_as_player(world, husk);
-        if (reg.any_of<sm::ecs::PlayerTag>(husk)) return false;
-        reg.destroy(husk);
-    }
-    sm::sub::adopt_possessed_macro_as_player(world, entt::null);
-    {
-        int tags = 0;
-        entt::entity flag = entt::null;
-        for (auto e : reg.view<sm::ecs::PlayerTag>()) { ++tags; flag = e; }
-        if (tags != 1 || flag != s.bandit) return false;  // still one, still his
-    }
-
-    return true;
-}
+// («ВСЕЛЕНИЕ = ПЕРЕНОС ФЛАЖКА», owner 2026-09-12.) Two cases stood here — one
+// for the exit-remap query, one for the identity-adoption door — and both doors
+// were cut with the ceremony they belonged to. The claim they guarded is alive
+// and is guarded END TO END by the `subworld_exit_remap` smoke, which possesses
+// a projected lord, leaves through the real teardown, and asserts both halves:
+// he lands on that lord's macro cell, and exactly one macro flag rides the lord
+// himself. That is a better witness than these were — it exercises the path the
+// game runs instead of two functions in isolation.
 
 } // namespace
 
@@ -983,20 +874,9 @@ int main() {
                     "(window/wrap/backlink/hostility/hp/placement/reaper/determinism)");
     }
 
-    if (!run_exit_remap_case(mgr)) {
-        sm::sub::clear_saved_subworlds();
-        return fail("exit remap wrong "
-                    "(origin cell / wrap / no-backlink fallback / stale handle)");
-    }
-
-    if (!run_identity_remap_case(mgr)) {
-        sm::sub::clear_saved_subworlds();
-        return fail("identity remap wrong (adopt flag/one-tag/guards)");
-    }
-
     std::printf("OK subworld_spawn_parity_test fauna=%zu seed=%u no_autolevel=%d "
                 "water_squad_blocked=1 city_projection=1 carry_across=1 "
-                "reentry_determinism=1 macro_projection=1 exit_remap=1 "
+                "reentry_determinism=1 macro_projection=1 "
                 "identity_remap=1\n",
                 actual.size(), centre.seed, 1);
     sm::sub::clear_saved_subworlds();
@@ -1082,15 +962,19 @@ int main() {
 
     // ── THE SEAM CARRIES THE RECORD, NOT A NAMESAKE ─────────────────────
     //
-    // Owner's verdict, 2026-09-12 (CANON, «ШВА АНКЕТЫ»): what crosses into the
-    // subworld is the CHARACTER — sheet, belongings, what he wears — not one
-    // number of health. Two things are asserted, and each has a real way to
-    // fail: the man who arrives is the SAME MAN (his own stored sheet, not a
+    // Owner's verdict, 2026-09-12 (CANON, «ШВА АНКЕТЫ» + «ЗЕРКАЛО ДЛЯ ВСЕХ»):
+    // what crosses into the subworld is the CHARACTER, and it crosses as an
+    // ADDRESS, not as a copy. Two things are asserted, and each has a real way
+    // to fail: the man who arrives is the SAME MAN (his own stored sheet, not a
     // fresh roll of his row from the cell's seed, which is what the projection
-    // used to do), and the projection is COMPLETE by the list the code itself
-    // keeps (sub/spawn.h tracked_body_inherits_all) rather than by whatever a
-    // hand-written run of copies happened to remember — the SAVE-1 lesson,
-    // which cost exactly one forgotten `BodyEquipment`.
+    // used to do), and he OWNS NOTHING down here — the body holds none of the
+    // state the list in spawn.cpp names, and the record holds all of it
+    // (sub/spawn.h tracked_body_owns_nothing).
+    //
+    // The second claim used to be its mirror image — «the copy is complete» —
+    // and inverting it is the landing: with no copy there is no fold-up to
+    // forget, which is the bug class SAVE-1 and the frozen-AI fold both came
+    // from.
     {
         sm::ecs::World world{};
         auto& reg = world.reg;
@@ -1123,9 +1007,26 @@ int main() {
         CHECK(body != entt::null,
               "the fixture must actually project a body");
 
-        CHECK(sm::sub::tracked_body_inherits_all(reg, lord, body),
-              "a projected body carries every part of the record its macro "
-              "entity keeps");
+        CHECK(sm::sub::tracked_body_owns_nothing(reg, lord, body),
+              "a projected body owns none of it — bag, gear, book and "
+              "personality stay on the record it projects");
+
+        // NEGATIVE CONTROL for THIS half, asserted so the detector is known to
+        // work: hand the body a bag of its own and the predicate must refuse.
+        // Without it, «owns nothing» would also pass for a body the fixture
+        // never built properly.
+        reg.emplace<sm::ecs::NpcInventory>(body);
+        CHECK(!sm::sub::tracked_body_owns_nothing(reg, lord, body),
+              "a body that owns a bag of its own is NOT a mirror — the guard "
+              "can see the defect it exists to catch");
+        reg.remove<sm::ecs::NpcInventory>(body);
+
+        // ...and the other half: a record holding nothing must not satisfy it
+        // either, or «owns nothing» would be true of two empty entities.
+        const entt::entity pauper = reg.create();
+        CHECK(!sm::sub::tracked_body_owns_nothing(reg, pauper, body),
+              "the state must actually live on the record, not merely be "
+              "absent from the body");
 
         const auto* carried = body != entt::null
             ? reg.try_get<sm::CharacterSheet>(body) : nullptr;
@@ -1150,6 +1051,139 @@ int main() {
                   != own.attributes.of(sm::AttributeId::Str),
               "a body with no record is NOT the lord — otherwise the identity "
               "check above could not fail");
+    }
+
+    // ── THE DOOR OF THE SEAM: WHOSE RECORD IS THIS BODY? ────────────────
+    //
+    // Mirror law, owner 2026-09-12 («ЗЕРКАЛО ДЛЯ ВСЕХ»): a body owns nothing
+    // and every reader asks sub/record.h whose state it is holding. The claim
+    // that can fail is ADDRESS EQUALITY — not «the numbers look alike», which
+    // two copies also satisfy, but «it is literally the same block», which is
+    // the only thing that makes a fold-up unnecessary. The same form
+    // map_subject_test uses for store_of/roster_of.
+    //
+    // Both births are asserted, because the door has exactly two honest
+    // answers and a test that only exercised one would not notice the day it
+    // grew a third.
+    {
+        sm::ecs::World world{};
+        auto& reg = world.reg;
+
+        auto lord = reg.create();
+        reg.emplace<sm::ecs::MacroSpawnId>(lord, std::uint32_t(12));
+        reg.emplace<sm::ecs::NPCKind>(lord, std::uint16_t(sm::NPCType::Bandit),
+                                      std::uint16_t(3));
+        reg.emplace<sm::ecs::Pools>(lord, 40, 40);
+        reg.emplace<sm::ecs::NpcLevel>(lord, std::int16_t(5));
+        reg.emplace<sm::ecs::NpcCharacter>(lord, sm::ecs::NpcCharacter{});
+
+        // Both bodies are created BEFORE any pointer is taken: a spawn
+        // reallocates component storage, and a reference held across one is
+        // the project's standing grabla (ecs-ref-not-across-tick).
+        const entt::entity body = sm::sub::spawn_tracked_body(
+            reg, lord, 64.0f, 64.0f, /*seed*/0x5EEDu, /*combatant*/false);
+        sm::sub::BodySpec anon{};
+        anon.type = sm::NPCType::Bandit;
+        anon.level = 5;
+        anon.seed = 0x5EEDu;
+        const entt::entity citizen =
+            sm::sub::spawn_derived_body(reg, anon, /*faceSalt*/1u);
+
+        CHECK(body != entt::null && citizen != entt::null,
+              "the fixture must project both kinds of body");
+
+        CHECK(sm::sub::record_of(reg, body) == lord,
+              "a projected body's state belongs to the record it projects");
+        CHECK(sm::sub::record_of(reg, citizen) == citizen,
+              "a body nothing above remembers answers for itself — the other "
+              "honest birth, not a fallback");
+
+        CHECK(sm::sub::pools_of(reg, body) == &reg.get<sm::ecs::Pools>(lord),
+              "the bars a projected body spends are LITERALLY the record's "
+              "block — one memory, so there is nothing to fold back up");
+        CHECK(sm::sub::pools_of(reg, citizen)
+                  == &reg.get<sm::ecs::Pools>(citizen),
+              "a derived body spends its own bars");
+
+        // NEGATIVE CONTROL, asserted: strip the backlink and the very same
+        // body answers with its own block instead. Without this the address
+        // equality above could be passing because both handles happen to name
+        // the same storage, and nobody would know.
+        reg.remove<sm::ecs::MacroOrigin>(body);
+        CHECK(sm::sub::record_of(reg, body) == body
+                  && sm::sub::pools_of(reg, body)
+                         == &reg.get<sm::ecs::Pools>(body),
+              "without the backlink the door answers SELF — the detector "
+              "above is reading a real difference");
+
+        // A record reaped out from under a standing body degrades to self,
+        // never to nothing: a body with no bars at all would be an
+        // invulnerable ghost, which is worse than losing the write-back.
+        reg.emplace<sm::ecs::MacroOrigin>(body, lord);
+        reg.destroy(lord);
+        CHECK(sm::sub::record_of(reg, body) == body,
+              "a stale backlink degrades to the body itself, not to null");
+    }
+
+    // ── THE RE-DERIVE IS GATED ON «DID IT CHANGE» ───────────────────────
+    //
+    // The other half of the mirror: a body's bars are a block copy, but its
+    // SWING is a sheet re-roll, and CANON's measurement says that costs five
+    // times as much (0.00196 ms/body — 12.5 % of a frame at a thousand bodies).
+    // So it runs only when what stands on the record actually changed, and
+    // `BonusTotals::operator==` is the question asked.
+    //
+    // What is asserted here is the GATE, because the gate is the whole cost
+    // argument: it must say NO on a body nobody touched, and YES the tick after
+    // the record changed. Both arms can fail — an always-yes gate is the
+    // expensive bug, an always-no gate is the stale one.
+    {
+        sm::ecs::World world{};
+        auto& reg = world.reg;
+
+        auto lord = reg.create();
+        reg.emplace<sm::ecs::MacroSpawnId>(lord, std::uint32_t(13));
+        reg.emplace<sm::ecs::NPCKind>(lord, std::uint16_t(sm::NPCType::Bandit),
+                                      std::uint16_t(3));
+        reg.emplace<sm::ecs::Pools>(lord, 50, 50);
+        reg.emplace<sm::ecs::NpcLevel>(lord, std::int16_t(6));
+        reg.emplace<sm::ecs::NpcCharacter>(lord, sm::ecs::NpcCharacter{});
+        reg.emplace<sm::ecs::BodyEquipment>(lord);
+
+        const entt::entity body = sm::sub::spawn_tracked_body(
+            reg, lord, 32.0f, 32.0f, /*seed*/0xBEEFu, /*combatant*/true);
+        CHECK(body != entt::null, "the fixture projects a body");
+        if (body == entt::null) return sm::test::report(
+            "subworld_spawn_parity_test");
+
+        CHECK(!sm::sub::refresh_body_strike(reg, body),
+              "nothing stood on him and nothing changed: the gate refuses, so "
+              "a standing crowd costs one comparison and no sheet rolls");
+
+        // His clock, set to something recognisable BEFORE the rebuild: a
+        // re-derive must not hand a busy arm a free swing.
+        reg.get<sm::ecs::Combat>(body).recoverySteps = 7u;
+
+        // Now something stands on him. An AFFIX carries the bonus rows
+        // directly, so the claim does not rest on which catalog row happens to
+        // grant what today — the strength is authored right here.
+        {
+            auto& gear = reg.get<sm::ecs::BodyEquipment>(lord).gear;
+            sm::ItemRef ring{};
+            ring.def = 0;
+            ring.count = 1;
+            ring.set_affix(0, sm::Bonus{std::uint8_t(sm::BonusId::Str),
+                                        std::int16_t(6)});
+            gear.worn[0] = ring;
+        }
+        CHECK(sm::sub::refresh_body_strike(reg, body),
+              "what stands on the record changed: the gate opens");
+        CHECK(!sm::sub::refresh_body_strike(reg, body),
+              "...and closes again immediately — it re-cached what it saw, so "
+              "one change costs one rebuild, not one per tick");
+        CHECK(reg.get<sm::ecs::Combat>(body).recoverySteps == 7u,
+              "the rebuild kept his clock: how busy a hand is, is not one of "
+              "the numbers a sheet decides");
     }
 
     CHECK(true, "every gate above held");

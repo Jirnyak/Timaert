@@ -386,25 +386,23 @@ public:
     // (Inc 4d), exactly as NPC missiles carry their firer's id. Returns the
     // entt::null integral when no player entity exists (never mid-cast).
     std::uint32_t player_entity_id() const;
-    // Possession / вселение (Inc 5c). Take over the live body under the
-    // first-person reticle: pick the nearest enemy body inside a forward cone
-    // (targeting.h aim_target, using cam yaw), move the single player flag onto
-    // it (possess_entity), then snap the scalar mirror to it. Body-native (D3):
-    // the new body fights with its OWN Health/Combat; gs.player is preserved as
-    // the revert target. Returns true if a body was possessed; a no-op false
-    // outside a subworld or with nothing in the cone. The cone defaults to a
-    // ~45° half-angle reticle; a test may pass cosHalfAngle=-1 for the nearest
-    // body in any direction.
+    // ВСЕЛЕНИЕ — перенос флажка, и только (owner 2026-09-12). Take over the live
+    // body under the first-person reticle: pick the nearest enemy body inside a
+    // forward cone (targeting.h aim_target, using cam yaw), move the single
+    // scene flag onto it (possess_entity), then snap the scalar mirror to it.
+    // Nothing else happens, and nothing else needs to: the body already fights,
+    // spends and carries as ITSELF, because every such read goes to its own
+    // record (sub/record.h). His own squad is simply not the record in use.
+    // Returns true if a body was taken; a no-op false outside a subworld or with
+    // nothing in the cone. The cone defaults to a ~45° half-angle reticle; a
+    // test may pass cosHalfAngle=-1 for the nearest body in any direction.
     bool possess_aim(float cosHalfAngle = 0.70710678f, float maxRange = 120.0f);
-    // Debug possession by explicit entity id (the macro `control <id>` analogue,
-    // D1). Returns false if the id is not a live positioned scene body.
+    // The same flag move by explicit entity id (dev console / harness). Returns
+    // false if the id is not a live positioned scene body.
     bool possess_by_id(std::uint32_t entityId);
-    // Current HP of the body the player currently INHABITS, for HUD / hit-flash
-    // feedback that must follow possession (Inc 5c, D3) WITHOUT mutating
-    // gs.player (the frozen revert target). The flagged body always carries a
-    // Health: for the hero it mirrors the squad Pools; for a possessed foreign body
-    // it is that body's own pool. Falls back to the macro scalar only when no
-    // flagged Health exists (never expected mid-subworld).
+    // Current HP of the body the player is standing in, for HUD / hit-flash —
+    // read from its RECORD through the one door, so it follows the flag with no
+    // branch and shows this tick's wound rather than the mirror's tick-top value.
     int player_display_hp() const;
     float cam_yaw() const { return cam_.yaw; }
     float cam_pitch() const { return cam_.pitch; }
@@ -688,10 +686,20 @@ private:
         float radius = 0.0f;        // 0 = this slot is empty
         FactKind kind = FactKind::None;
         std::int32_t amount = 0;
-        // ONCE PER WORLD, not once per visit: the dedup is the world's own
-        // memory (chronicle_near_kind), because a place already remembers that
-        // somebody stood here. A separate "visited" flag would be a second
+        // ONCE, AS LONG AS THE WORLD REMEMBERS IT — not once per visit, and
+        // not literally forever. The dedup is the world's own memory
+        // (chronicle_near_kind), because a place already remembers that
+        // somebody stood here; a separate "visited" flag would be a second
         // truth about the same past, and it would have to be saved.
+        //
+        // What that buys is therefore the CHRONICLE's promise, and it has two
+        // honest edges the name cannot carry: the lookback is the fact row's
+        // own `interestDays` window (64 days at the longest), and the ring can
+        // evict an older fact before that window runs out. So a circle walked
+        // into, forgotten by the world and walked into again files a second
+        // time. That is the intended behaviour — the owner's ruling is that
+        // renown/memory is not to be touched — and this comment used to claim
+        // «ONCE PER WORLD», which promised something the mechanism never did.
         bool onceEver = true;
     };
     static constexpr int kMaxSubZones = 32;
@@ -746,15 +754,21 @@ private:
     // shift what a cast would have rolled. Seeded beside it on entry.
     Rng   combatRng_{1u};
     void sync_macro_player_to_center();
-    // Inc 5e-1/5e-2: exit-position remap. If the body currently carrying the
-    // player flag was PROJECTED from a macro NPC (it has a `MacroOrigin` backlink
-    // — i.e. the player possessed a lord/bandit/peasant), land the macro player on
-    // THAT macro entity's cell so you "exit AS" the body you possessed, and RETURN
-    // that macro entity so leave() can adopt it as the persistent player (5e-2).
-    // Returns entt::null (leaving `gs.player` for `sync_macro_player_to_center` to
-    // set) for a normal un-possessed exit — the hero husk and ambient/citizen
-    // bodies carry no backlink.
-    entt::entity remap_macro_player_to_origin();
+    // YOU ARE WHOEVER'S BODY YOU ARE STANDING IN — one sentence, run on the way
+    // out (owner 2026-09-12: «одержимость — это не более чем перенос флажка»).
+    // The macro flag moves onto the record of the body wearing the scene flag,
+    // and the jump door clears its entry edge — he arrived here by climbing out,
+    // not by walking in.
+    //
+    // Returns false when that record is his own squad (the ordinary exit), and
+    // the caller then snaps him to the window centre as always.
+    //
+    // This replaced four things: a query struct, an exit-remap door, an identity
+    // ADOPTION door, and the design doc that explained the ceremony. None of it
+    // survived the ruling, and nothing of it is missed — the flag IS the record
+    // of control (v87), and since the mirror law the body he wears already
+    // fights, spends and carries as itself.
+    bool follow_flag_to_its_record();
     CellContext resolve_context(int x, int y) const;
     // Terrain difficulty of the macro cell under a composite-window tile. Same
     // question as ground_faction_at, asked of the terrain instead of the crown.
@@ -823,12 +837,30 @@ private:
     void spawn_player_entity();
     void clear_player_entity();
     void sync_player_entity_position();
-    void reconcile_player_hp_to_macro();
-    // Wounds of TRACKED bodies (sub/spawn.h) written back to the macro entities
-    // they embody, every tick, as a fraction. The player's sibling of this has
-    // existed all along; nobody else had one, so the map healed everyone you
-    // failed to finish the moment you climbed out.
-    void reconcile_tracked_bodies_to_macro();
+    // THE MIRROR (owner's form, 2026-09-12 — «ЗЕРКАЛО ДЛЯ ВСЕХ»): at each tick
+    // top every body that stands for a record copies that record's bars onto
+    // its own block. The block is what the SCENE reads — views filter on it,
+    // the eye draws it; the RECORD is what the world remembers, and every
+    // writer (sub/damage.cpp, the spends) goes to it through sub/record.h.
+    //
+    // This one pass replaced two fold-ups running in the opposite direction —
+    // a per-tick hp FRACTION for tracked bodies and a hand-written push for the
+    // player. Both existed only because the seam carried copies down; with one
+    // memory there is nothing to carry back, which is exactly the verdict
+    // («свёртки вверх не будет»). It also retired the конверсия a fraction
+    // needed: the two layers no longer size a bar from two different sheets.
+    void mirror_bodies_from_record();
+    // What the fold-up was NOT: the player's damage FEEDBACK. The status line,
+    // the combat log and the compass to whoever hit you are scene facts, not
+    // state, and they stayed here when the write-back died — together with the
+    // two rules that are game law rather than bookkeeping: godMode keeps the
+    // flagged body on its feet, and dying INSIDE a body you possess is your own
+    // death (routed through the squad store, exactly like the hero's).
+    //
+    // It reads this tick's wound as (mirror at tick top) − (record now), which
+    // needs no remembered field: nothing writes the mirror during a tick, so it
+    // still holds the value the tick started with.
+    void report_player_damage();
     // 5a authority mirror: propagate the authoritative player-entity Position onto
     // the scalar mirror (pull) and vice-versa (push). Both are no-ops when no
     // AvatarTag+Position entity exists (0/1 entities, cheap). push_ is an

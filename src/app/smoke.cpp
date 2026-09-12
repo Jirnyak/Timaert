@@ -51,6 +51,27 @@ static void smoke_teleport_player(App& app, int x, int y) {
     sm::player_jump_to_cell(app.gs, app.ecs, x, y);
 }
 
+// A body projected from SOMEONE ELSE'S record — «an overworld figure you can
+// meet, possess, wound or kill».
+//
+// Until the mirror law (2026-09-12, sub/record.h) three sites here asked this
+// by looking for a `MacroOrigin` backlink, because only a foreign projection
+// had one. The hero husk carries one now — it points at his own squad, which
+// is the whole point: he is an ordinary projected body. So «has a backlink»
+// stopped being the question and «whose backlink» became it, and all three
+// sites would otherwise have grabbed the player's own body: exit_remap tried
+// to possess it, macro_kill_writeback would have wounded it and then asserted
+// about a lord, and the projection COUNT would have reported one figure more
+// than the scene holds. This is the §44 rule applied — a witness must ask
+// exactly the question the mechanism asks.
+static bool smoke_projects_foreign_record(App& app, entt::entity body) {
+    auto& reg = app.ecs.reg;
+    if (!reg.valid(body)) return false;
+    const auto* origin = reg.try_get<sm::ecs::MacroOrigin>(body);
+    if (!origin || !reg.valid(origin->macro)) return false;
+    return origin->macro != sm::player_squad_entity(app.ecs);
+}
+
 // His book, through the one door (v89) — scratch like the main app's own
 // wrapper: a harness line before the world exists reads zeros, not garbage.
 static sm::SpellBook& smoke_player_book(App& app) {
@@ -569,8 +590,7 @@ bool run_subworld_time_smoke(App& app) {
         int macroProjected = 0;
         for (auto e : app.ecs.reg.view<sm::ecs::MacroOrigin,
                                        sm::ecs::SubworldTag>()) {
-            (void)e;
-            ++macroProjected;
+            if (smoke_projects_foreign_record(app, e)) ++macroProjected;
         }
         std::fprintf(stderr, "[smoke] subworld_time macroProjected=%d\n",
                      macroProjected);
@@ -6026,8 +6046,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 int macroProjected = 0;
                 for (auto e : app.ecs.reg.view<sm::ecs::MacroOrigin,
                                                sm::ecs::SubworldTag>()) {
-                    (void)e;
-                    ++macroProjected;
+                    if (smoke_projects_foreign_record(app, e)) ++macroProjected;
                 }
                 std::fprintf(stderr,
                              "[smoke] subworld_enter macroProjected=%d\n",
@@ -6090,8 +6109,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 // Grab a projected body and its (valid, positioned) macro origin.
                 entt::entity body = entt::null, origin = entt::null;
                 for (auto e : reg.view<sm::ecs::SubworldTag, sm::ecs::MacroOrigin>()) {
+                    if (!smoke_projects_foreign_record(app, e)) continue;
                     const entt::entity m = reg.get<sm::ecs::MacroOrigin>(e).macro;
-                    if (reg.valid(m) && reg.all_of<sm::ecs::MacroCell>(m)) {
+                    if (reg.all_of<sm::ecs::MacroCell>(m)) {
                         body = e; origin = m; break;
                     }
                 }
@@ -6920,6 +6940,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 entt::entity body = entt::null;
                 for (auto e : reg.view<sm::ecs::MacroOrigin, sm::ecs::Pools,
                                        sm::ecs::SubworldTag>()) {
+                    if (!smoke_projects_foreign_record(app, e)) continue;
                     body = e;
                     break;
                 }
@@ -6936,13 +6957,28 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 app.smoke.trackedBody = body;
                 app.smoke.trackedMacro = macro;
                 app.smoke.trackedMacroHp0 = reg.get<sm::ecs::Pools>(macro).hp;
-                auto& h = reg.get<sm::ecs::Pools>(body);
-                h.hp = std::max(1, h.maxHp / 4);   // a quarter left
+                // The wound is STRUCK, through the one door every blow in this
+                // game goes through (sub/damage.cpp) — and `script` is the row
+                // authored for exactly this: settlement, not a weapon, so no
+                // breastplate argues with it.
+                //
+                // What stood here instead was `body.Pools.hp = maxHp / 4` — a
+                // number written straight into the component. Under the mirror
+                // law that block is the SCENE's copy of the record, refreshed
+                // at every tick top, so the poke evaporated one frame later and
+                // this witness would have been grading the harness's own hand
+                // rather than the seam. The §44 rule, a third time: ask what
+                // the mechanism asks.
+                const int wound =
+                    std::max(1, (int(app.smoke.trackedMacroHp0) * 3) / 4);
+                sm::sub::apply_damage(reg, body, sm::sub::DamageSource{}, wound,
+                                      sm::sub::DamageKind::Script,
+                                      sm::DamageType::Blunt, &app.bus);
                 std::fprintf(stderr,
-                             "[smoke] tracked body wounded to %.1f/%.1f "
-                             "(macro hp %.1f)\n",
-                             double(h.hp), double(h.maxHp),
-                             double(app.smoke.trackedMacroHp0));
+                             "[smoke] tracked body struck for %d "
+                             "(macro hp %.1f -> %.1f)\n",
+                             wound, double(app.smoke.trackedMacroHp0),
+                             double(reg.get<sm::ecs::Pools>(macro).hp));
                 std::fflush(stderr);
                 app.smoke.trackedPhase = 1;
                 break;      // let a tick carry it up

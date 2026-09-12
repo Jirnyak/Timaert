@@ -972,7 +972,11 @@ timaert_test(subworld_spawn_parity_test
         src/sub/dgn/spire_tower.cpp
         src/sub/dgn/prologue_road.cpp
         src/macro/player_entity.cpp
+        # A tracked body is born WEARING its record's gear (mirror law,
+        # 2026-09-12): spawn.cpp asks standing_bonuses_of, which asks the
+        # anatomy what is worn and the catalog what each row is worth.
         src/macro/anatomy.cpp
+        src/macro/items.cpp
     LINK_ENTT)
 # Pure-logic unit tests for the RPG spine (character_sheet.h) + unified loot
 # table (items.cpp). Header-only sheet code needs no extra deps; the loot
@@ -1432,7 +1436,11 @@ timaert_test(body_contract_test
         src/macro/chronicle.cpp
         src/macro/deposit_layer.cpp
         src/macro/tree_layer.cpp
+        # A tracked body is born WEARING its record's gear (mirror law,
+        # 2026-09-12): spawn.cpp asks standing_bonuses_of, which asks the
+        # anatomy what is worn and the catalog what each row is worth.
         src/macro/items.cpp
+        src/macro/anatomy.cpp
     LINK_ENTT)
 
 # The ledger between the layers (macro/macro_stock.{h,cpp}): what the subworld

@@ -13,6 +13,8 @@
 #include "macro/tree_layer.h"
 #include "macro/spell_book_state.h"   // SpellBook — part of the record a body inherits
 #include "macro/squad.h"              // sheet_of — THE door to "who is this"
+#include "macro/player_entity.h"      // player_squad_entity — «чья это запись»
+#include "sub/record.h"              // record_of / StandingMirror — дверь шва
 #include "sub/body.h"
 #include <algorithm>
 #include <array>
@@ -173,6 +175,29 @@ bool find_city_spawn_spot(const std::vector<std::uint8_t>& tiles,
 // The component set itself. Only two things about a body are not settled by its
 // row and its context — the face it wears and the wounds it already carries —
 // and those are exactly what the axis in spawn.h decides (derived vs tracked).
+// HOW A SHEET BECOMES A SWING — one place, read by birth and by the mirror's
+// re-derive (refresh_body_strike below).
+//
+// It used to be spelled out inline at the single site that needed it, which was
+// fine while nothing could change a body's numbers after it was born. Under the
+// mirror law a record CAN change under a standing body — he levels from a kill,
+// something is put on him — and a second copy of this assembly is exactly the
+// «two answers to one question» the project keeps paying for.
+//
+// `recoverySteps` is NOT a number this derives: it is the body's own clock, the
+// one «occupied» gate every action charges. Re-deriving it would cancel a swing
+// mid-recovery, so the refresh preserves it and birth starts it at zero.
+ecs::Combat combat_from_sheet(const CharacterSheet& sheet,
+                              const NpcTypeDef& def) {
+    const CombatTemplate pc = project_combat(sheet, def.combat);
+    return ecs::Combat{
+        pc.dice, pc.flatAdd, std::int16_t(100), pc.luck,
+        std::uint8_t(pc.dmgType), march_speed(pc.speedMarchMult),
+        pc.attackRange, pc.cooldown, /*recoverySteps*/0u,
+        pc.attackKind == CombatTemplate::Missile ? ecs::Combat::Missile
+                                                 : ecs::Combat::Melee};
+}
+
 // Everything below is the same for a peasant, a mercenary and a lord.
 entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
                           const ecs::NpcCharacter& face,
@@ -238,11 +263,7 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
                   "sub/map_data.h kCellSize must equal the macro side's "
                   "kSubworldTilesPerMacroCell — the parity anchor rides on it");
     const float bodySpeed = march_speed(pc.speedMarchMult);
-    reg.emplace<ecs::Combat>(e,
-        pc.dice, pc.flatAdd, std::int16_t(100), pc.luck,
-        std::uint8_t(pc.dmgType), bodySpeed, pc.attackRange, pc.cooldown, 0u,
-        pc.attackKind == CombatTemplate::Missile ? ecs::Combat::Missile
-                                                 : ecs::Combat::Melee);
+    reg.emplace<ecs::Combat>(e, combat_from_sheet(sheet, def));
     maybe_emplace_missile_attack(reg, e, pc);
     maybe_emplace_flying(reg, e, pc);
     reg.emplace<ecs::NpcLevel>(e, std::int16_t(body.level));
@@ -426,38 +447,50 @@ entt::entity spawn_derived_body(entt::registry& reg, const BodySpec& body,
     return e;
 }
 
-// ── WHAT A TRACKED BODY INHERITS ────────────────────────────────────────
+// ── WHAT A TRACKED BODY DOES NOT OWN ────────────────────────────────────
 //
-// One list, read by both the copy and the witness (spawn.h
-// tracked_body_inherits_all). Add a component here and it starts riding the
-// seam AND being guarded in the same edit — the alternative is a hand-written
-// run of `if (try_get) emplace` lines, which is exactly how BodyEquipment came
-// to be missing while the two components beside it were copied.
+// The same list, now answering the opposite question — and that inversion IS
+// the landing (owner's form 2026-09-12, «ЗЕРКАЛО ДЛЯ ВСЕХ»).
 //
-// CharacterSheet is NOT in this list and must not be: the sheet decides the
-// body's bars and its blow, so it is needed BEFORE the entity exists and rides
-// in through BodySpec instead (emplace_body above).
+// It used to name what got COPIED across the seam, and the copy was the bug:
+// a lord you stripped and looted underground climbed out dressed, because his
+// belongings down here were a duplicate nobody read back. A duplicate cannot be
+// fixed by remembering to fold it up — the fold-up is what drops fields
+// (BodyEquipment was missing from the hand-written run that preceded this very
+// list). So the copy is gone: the body carries none of these, and every reader
+// asks sub/record.h whose they are.
+//
+// The list survives because the WITNESS needs it: one place naming the kinds of
+// owned state, read by the guard below, so adding a kind adds its guard in the
+// same edit.
+//
+// CharacterSheet is deliberately absent, for the same reason as before: the
+// sheet decides a body's bars and its blow, so it is needed BEFORE the entity
+// exists and rides in through BodySpec (emplace_body above) — where it is read
+// from the record, not rolled.
 template <class... Cs>
-struct InheritedComponents {
-    static void carry(entt::registry& reg, entt::entity from, entt::entity to) {
-        (..., (reg.all_of<Cs>(from)
-                   ? void(reg.emplace_or_replace<Cs>(to, reg.get<Cs>(from)))
-                   : void()));
+struct OwnedState {
+    static bool none_on(const entt::registry& reg, entt::entity body) {
+        return (... && !reg.all_of<Cs>(body));
     }
-    static bool complete(const entt::registry& reg,
-                         entt::entity from, entt::entity to) {
-        return (... && (!reg.all_of<Cs>(from) || reg.all_of<Cs>(to)));
+    static bool any_on(const entt::registry& reg, entt::entity e) {
+        return (... || reg.all_of<Cs>(e));
     }
 };
 // The belongings, the personality, WHAT HE IS WEARING and what he knows.
 using TrackedInheritance =
-    InheritedComponents<ecs::NpcInventory, ecs::NpcTraits,
-                        ecs::BodyEquipment, SpellBook>;
+    OwnedState<ecs::NpcInventory, ecs::NpcTraits,
+               ecs::BodyEquipment, SpellBook>;
 
-bool tracked_body_inherits_all(const entt::registry& reg,
+bool tracked_body_owns_nothing(const entt::registry& reg,
                                entt::entity macro, entt::entity body) {
     if (!reg.valid(macro) || !reg.valid(body)) return false;
-    return TrackedInheritance::complete(reg, macro, body);
+    // Two halves, and both must hold or the claim is empty: the body carries
+    // none of it, AND the record it points at is where it actually lives. A
+    // body beside a record that holds nothing either would pass the first half
+    // for the wrong reason.
+    return TrackedInheritance::none_on(reg, body)
+        && TrackedInheritance::any_on(reg, macro);
 }
 
 entt::entity spawn_tracked_body(entt::registry& reg, entt::entity macro,
@@ -494,21 +527,67 @@ entt::entity spawn_tracked_body(entt::registry& reg, entt::entity macro,
     // HIMSELF, not a namesake: the record the macro layer keeps (owned by a
     // named lord, derived identically for a transient one) through the one
     // door that answers that question for anybody.
-    const CharacterSheet macroSheet = sheet_of(reg, macro);
+    // ...and he arrives WEARING it. The base sheet alone stood here, so a lord's
+    // enchanted ring and his burning haste took no part in his subworld swing —
+    // his gear protected him (the damage door read it) but never struck with
+    // him. Through the one effective door, like every other read of a body.
+    const BonusTotals standing = standing_bonuses_of(reg, macro);
+    const CharacterSheet macroSheet =
+        effective_sheet(sheet_of(reg, macro), standing);
     body.sheet = &macroSheet;
 
     const entt::entity e =
         emplace_body(reg, body, reg.get<ecs::NpcCharacter>(macro), fraction);
 
-    // The belongings and the personality are STATE up there, so they are copied,
-    // not rolled. A derived body has neither on purpose: its loot is rolled from
-    // its seed at the moment it dies, which costs a city of five thousand people
-    // exactly nothing to carry.
-    TrackedInheritance::carry(reg, macro, e);
+    // The belongings, the personality, the gear and the book are STATE up
+    // there, and they STAY up there: nothing is copied down. The line that
+    // stood here copied all four, and the copy is what made a stripped lord
+    // climb out dressed — what he owns is read through sub/record.h by whoever
+    // asks, and what happens to it down here happens to HIM.
+    //
+    // A derived body has none of it on purpose either: its loot is rolled from
+    // its seed at the moment it dies, which costs a city of five thousand
+    // people exactly nothing to carry.
+    //
     // The backlink is part of being tracked, not an extra the caller attaches:
-    // it is the address the return trip writes to.
+    // it is the ADDRESS — of the bars he spends, the bag he carries and the
+    // plate he wears. It used to be described as «where the return trip writes»;
+    // there is no return trip any more, because there is no copy to return.
     reg.emplace<ecs::MacroOrigin>(e, macro);
+    // What stood on him when the numbers above were derived — the comparison
+    // the per-tick re-derive is gated on (sub/record.h StandingMirror).
+    reg.emplace<StandingMirror>(e, standing);
     return e;
+}
+
+bool refresh_body_strike(entt::registry& reg, entt::entity body) {
+    if (!reg.valid(body)) return false;
+    auto* cache = reg.try_get<StandingMirror>(body);
+    if (!cache) return false;                  // not a mirror; nothing to track
+    const entt::entity rec = record_of(reg, body);
+    if (rec == entt::null) return false;
+    // A body with no row has no creature template to project a swing from —
+    // the hero husk is exactly that, and his hands are assembled elsewhere
+    // (hand_strike_fields), from the same effective sheet.
+    const auto* kind = reg.try_get<ecs::NPCKind>(body);
+    if (!kind || !valid_npc_kind(kind->type)) return false;
+    auto* combat = reg.try_get<ecs::Combat>(body);
+    if (!combat) return false;
+
+    // THE GATE. Everything below it is the expensive half (CANON's 0.00196 ms);
+    // everything above is the 0.00041 ms the owner accepted paying every tick.
+    const BonusTotals now = standing_bonuses_of(reg, rec);
+    if (now == cache->totals) return false;
+    cache->totals = now;
+
+    const NpcTypeDef& def = npc_def(NPCType(std::uint8_t(kind->type)));
+    const CharacterSheet eff = effective_sheet(sheet_of(reg, rec), now);
+    // His own clock survives the re-derive: it says how busy the hand is, not
+    // how strong it is (ecs::Combat::recoverySteps).
+    const std::uint32_t recovering = combat->recoverySteps;
+    *combat = combat_from_sheet(eff, def);
+    combat->recoverySteps = recovering;
+    return true;
 }
 
 // ── Universal per-humanoid component attachers (declared in spawn.h) ─────
@@ -1123,7 +1202,7 @@ int project_macro_npcs_into_subworld(ecs::World& w,
     // collect the persistent macro NPCs, then create their projections.
     // MacroNpcRuntime is the macro discriminator (subworld bodies never have it);
     // excluding SubworldTag/Dead keeps the source set to live overworld NPCs.
-    // PlayerTag skips a macro NPC the player is currently possessing (Inc 5e-2) —
+    // PlayerTag skips the macro record the player is currently being —
     // you don't meet a foreign projection of your own former body on enter.
     // PlayerSquadTag skips the player's OWN squad, which since the merge looks
     // exactly like any other party on the map. It is not a stranger to meet
@@ -1310,63 +1389,7 @@ int project_macro_npcs_into_subworld(ecs::World& w,
     return projected;
 }
 
-// ── Exit remap query (Inc 5e-1) ──────────────────────────────────────────
-
-MacroExitCell macro_exit_cell_for_body(ecs::World& w, entt::entity body,
-                                       int mapW, int mapH) {
-    MacroExitCell out{false, 0, 0, entt::null};
-    if (mapW <= 0 || mapH <= 0) return out;
-    auto& reg = w.reg;
-    if (body == entt::null || !reg.valid(body)) return out;
-    // Only a possessed macro-projected body carries the backlink.
-    if (!reg.all_of<ecs::MacroOrigin>(body)) return out;
-    const entt::entity macro = reg.get<ecs::MacroOrigin>(body).macro;
-    // The macro entity may have been reaped (e.g. it died in the meantime); a
-    // stale handle just means "no remap" → fall back to the window centre.
-    if (!reg.valid(macro) || !reg.all_of<ecs::MacroCell>(macro)) return out;
-    // The macro cell is ONE number on the torus (scale split) — the same
-    // space the player's own squad cell lives in; wrapped by construction.
-    const auto& mc = reg.get<ecs::MacroCell>(macro);
-    const int nx = ecs::cell_x(mc, mapW);
-    const int ny = ecs::cell_y(mc, mapW);
-    out.has = true;
-    out.cx = nx;
-    out.cy = ny;
-    out.macro = macro;
-    return out;
-}
-
-// ── Identity adoption (Inc 5e-2) ──────────────────────────────────────────
-
-void adopt_possessed_macro_as_player(ecs::World& w, entt::entity macro) {
-    auto& reg = w.reg;
-    // Null / stale / not a real macro NPC → nothing to adopt; leave the flag
-    // wherever the caller's teardown put it (this is the un-possessed exit path).
-    if (macro == entt::null || !reg.valid(macro)) return;
-    if (!reg.all_of<ecs::MacroNpcRuntime>(macro)) return;
-    // Move the single MACRO flag onto the lord you inhabited. Since the
-    // scale split (2026-09-10) PlayerTag never left the player's own squad
-    // during the scene (the body wore AvatarTag, and leave() reaped it), so
-    // adoption is a macro→macro transfer: strip the current holder(s), then
-    // flag the lord — the exactly-one invariant holds by this very move.
-    {
-        std::array<entt::entity, 8> holders{};
-        int held = 0;
-        for (auto e : reg.view<ecs::PlayerTag>()) {
-            if (e == macro) continue;
-            if (held >= int(holders.size())) break;
-            holders[std::size_t(held++)] = e;
-        }
-        for (int i = 0; i < held; ++i) {
-            reg.remove<ecs::PlayerTag>(holders[std::size_t(i)]);
-        }
-    }
-    if (!reg.all_of<ecs::PlayerTag>(macro)) reg.emplace<ecs::PlayerTag>(macro);
-    // Nothing to return since v87: the flag on the entity IS the persistence
-    // — the macro snapshot writes it as the record's own honest byte.
-}
-
-// ── Possession (Inc 5c) ──────────────────────────────────────────────────
+// ── Вселение = перенос флажка (spawn.h) ─────────────────────────────────
 
 entt::entity current_player_body(ecs::World& w) {
     // Exactly one AvatarTag flag is live while a subworld is active; return the

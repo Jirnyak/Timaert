@@ -16,6 +16,7 @@
 #include "check.h"
 
 #include "sub/spawn.h"
+#include "sub/record.h"   // state_of — whose bag/gear/book is this body's
 #include "sub/body.h"
 #include "sub/map_data.h"
 #include "ecs/components.h"
@@ -209,15 +210,26 @@ void test_a_tracked_body_is_the_entity_it_embodies() {
         CHECK(frac > 0.4f && frac < 0.6f,
               "a wounded entity arrives wounded, in proportion");
     }
-    // Belongings and personality are STATE up there, so they come down with it.
-    CHECK(reg.all_of<ecs::NpcInventory>(body)
-              && reg.get<ecs::NpcInventory>(body).inv.count("wood") == 3,
-          "a tracked body carries what its entity carries");
-    CHECK(reg.all_of<ecs::NpcTraits>(body)
-              && reg.get<ecs::NpcTraits>(body).count == 1,
-          "a tracked body keeps its entity's personality");
-    // The backlink is the address the return trip writes to — wounds up, death
-    // up. Without it the encounter is a stranger who happens to look like him.
+    // Belongings and personality are STATE up there, and they STAY up there
+    // (mirror law, 2026-09-12 — sub/record.h): the body holds none of it and
+    // reads all of it through the door. This assertion is the inverse of the
+    // one it replaced («a tracked body carries what its entity carries»), and
+    // the inversion is the point: a copy is what let a lord be stripped down
+    // here and climb out dressed.
+    CHECK(!reg.all_of<ecs::NpcInventory>(body)
+              && !reg.all_of<ecs::NpcTraits>(body),
+          "a tracked body owns neither bag nor personality of its own");
+    CHECK(sm::sub::state_of<ecs::NpcInventory>(reg, body) != nullptr
+              && sm::sub::state_of<ecs::NpcInventory>(reg, body)
+                     ->inv.count("wood") == 3,
+          "...and the door still answers with what its entity carries — it "
+          "moved, it did not vanish");
+    CHECK(sm::sub::state_of<ecs::NpcInventory>(reg, body)
+              == &reg.get<ecs::NpcInventory>(macro),
+          "LITERALLY the entity's bag: pick a sword up down here and it is in "
+          "his bag up there, with no trip to arrange");
+    // The backlink is the ADDRESS of all of the above — and of his bars. Without
+    // it the encounter is a stranger who happens to look like him.
     CHECK(reg.all_of<ecs::MacroOrigin>(body)
               && reg.get<ecs::MacroOrigin>(body).macro == macro,
           "a tracked body knows which entity it is");

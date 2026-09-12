@@ -194,13 +194,23 @@ void test_armour_softens_by_the_row_and_the_kind() {
 void test_players_worn_plate_stands_underground() {
     entt::registry reg;
 
-    // His body down here: AvatarTag (the scene flag), no equipment of its own.
+    // His body down here: AvatarTag (the scene flag) and the BACKLINK to the
+    // record it projects, which is how the engine builds it (mirror law,
+    // sub/record.h) — no equipment of its own.
+    //
+    // The backlink is what this test used to do without: the door found his
+    // gear by scanning the registry for a PlayerSquadTag, i.e. by knowing who
+    // the player is. It asks an address now, so the fixture must give the body
+    // the address the game gives it. Same claim, one less thing the damage door
+    // has to know about.
     const entt::entity body = make_body(reg, 100.0f, /*withKind*/false);
     reg.emplace<sm::ecs::AvatarTag>(body);
     // His squad on the map: the gear's one home. arm_leather is the phase's
     // own promise made flesh — «+2 END» AND a coat worth its column.
     const entt::entity squad = reg.create();
     reg.emplace<sm::ecs::PlayerSquadTag>(squad);
+    reg.emplace<sm::ecs::Pools>(squad, 100, 100);
+    reg.emplace<sm::ecs::MacroOrigin>(body, squad);
     auto& eq = reg.emplace<sm::ecs::BodyEquipment>(squad);
     const int coatIdx = sm::item_index("arm_leather");
     CHECK_OR_RETURN(coatIdx >= 0, "the catalog knows the leather coat");
@@ -228,7 +238,8 @@ void test_players_worn_plate_stands_underground() {
           "the worn column meets the hybrid law like any other armour");
 
     // Negative control: an ordinary body beside the same squad wears nothing
-    // of it — the macro read is keyed to the FLAG, not to proximity.
+    // of it — the read is keyed to the ADDRESS this body carries, not to
+    // proximity and not to who the player is.
     const entt::entity bystander = make_body(reg, 100.0f, /*withKind*/false);
     const DamageResult bare =
         apply_damage(reg, bystander, DamageSource{}, 20,
@@ -390,6 +401,65 @@ void test_zero_and_missing_target() {
     CHECK(none.applied == 0.0f, "a body without Health cannot be struck");
 }
 
+// THE BLOW LANDS ON THE RECORD, NOT ON THE MIRROR (owner's form 2026-09-12,
+// «ЗЕРКАЛО ДЛЯ ВСЕХ» — sub/record.h).
+//
+// A body in the subworld owns nothing: the bar it spends belongs to the macro
+// record it projects. This is the substitution that retired the fold-up, so it
+// is worth an assertion that can genuinely come out false — and the negative
+// control is the same body with its backlink removed, which must then spend its
+// own block.
+//
+// Deliberately NOT asserted here: that the mirror follows. That is the engine's
+// tick-top pass (mirror_bodies_from_record), and this door links no engine.
+void test_the_blow_lands_on_the_record() {
+    entt::registry reg;
+    sm::EventBus bus;
+
+    const entt::entity record = make_body(reg, 100);
+    const entt::entity body   = make_body(reg, 100);
+    reg.emplace<sm::ecs::MacroOrigin>(body, record);
+
+    const DamageResult hit =
+        apply_damage(reg, body, DamageSource{}, 30, DamageKind::Script,
+                     sm::DamageType::Blunt, &bus);
+    CHECK(hit.applied == 30, "the blow landed");
+    CHECK(reg.get<sm::ecs::Pools>(record).hp == 70,
+          "a projected body's wound is its RECORD's wound, in the tick it "
+          "lands — there is nothing left to fold up");
+    CHECK(reg.get<sm::ecs::Pools>(body).hp == 100,
+          "...and the body's own block is untouched: it is the scene's copy, "
+          "not a second memory the world must reconcile");
+
+    // The protocol still stamps the BODY — the flash, the corpse tag and the
+    // killer attribution describe the thing standing in the scene, which is
+    // what the eye and the reaper look at.
+    CHECK(reg.any_of<sm::ecs::HitFlash>(body)
+              && !reg.any_of<sm::ecs::HitFlash>(record),
+          "the visible protocol stamps the body, not the record");
+
+    // NEGATIVE CONTROL: no backlink, no record — the very same call spends the
+    // body's own bar. Without this, the assertion above could be passing for
+    // any reason at all.
+    const entt::entity orphan = make_body(reg, 100);
+    apply_damage(reg, orphan, DamageSource{}, 30, DamageKind::Script,
+                 sm::DamageType::Blunt, &bus);
+    CHECK(reg.get<sm::ecs::Pools>(orphan).hp == 70,
+          "a body nothing above remembers spends its own bar — the detector "
+          "above reads a real difference");
+
+    // A LETHAL blow judges by the record: the door must not read one bar and
+    // kill by another. Three more Script blows of 30 leave the record at -20.
+    for (int i = 0; i < 3; ++i) {
+        apply_damage(reg, body, DamageSource{}, 30, DamageKind::Script,
+                     sm::DamageType::Blunt, &bus);
+    }
+    CHECK(reg.any_of<sm::ecs::Dead>(body)
+              && reg.get<sm::ecs::Pools>(record).hp <= 0,
+          "lethality is judged on the record, and the corpse tag lands on the "
+          "body that fell");
+}
+
 } // namespace
 
 int main() {
@@ -403,5 +473,6 @@ int main() {
     test_no_second_blow();
     test_execution_helper();
     test_zero_and_missing_target();
+    test_the_blow_lands_on_the_record();
     return sm::test::report("damage_door_test");
 }

@@ -31,7 +31,7 @@ void tick_npc_ai(ecs::World& w, float px, float py,
 
     auto view = reg.view<ecs::Position, ecs::SubworldAi>();
     for (auto e : view) {
-        // A POSSESSED body carries AvatarTag (Inc 5c; the scene flag since the scale split): it is driven by player
+        // A body wearing the scene flag (AvatarTag) is driven by player
         // input (its authoritative Position is written by the engine), not by
         // its own brain. Skip it entirely so Wander/Flee never fights the
         // player. No component churn on possess/vacate — when the flag leaves,

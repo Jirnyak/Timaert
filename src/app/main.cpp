@@ -2065,10 +2065,10 @@ void tick_subworld_hit_flash(App& app, float dt) {
         return;
     }
 
-    // Inc 5c (D3): the flash tracks the body you INHABIT. player_display_hp()
-    // returns the flagged body's HP — the hero's while unpossessed, a possessed
-    // foreign body's while inhabiting it — so its wounds flash the screen while
-    // gs.player stays frozen as the preserved revert target.
+    // The flash tracks the body you stand in: player_display_hp() reads the
+    // RECORD of whoever wears the flag — his own squad while he is himself, the
+    // lord's while he wears one — so the wounds that flash the screen are the
+    // wounds actually being taken. His own squad simply is not the record in use.
     const int hp = app.subworld.player_display_hp();
     if (app.subworldLastPlayerHp < 0) {
         app.subworldLastPlayerHp = hp;

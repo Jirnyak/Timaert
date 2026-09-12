@@ -1,4 +1,5 @@
 #include "sub/damage.h"
+#include "sub/record.h"   // pools_of — a blow lands on the RECORD, not on a copy
 
 #include "ecs/components.h"
 #include "macro/npc.h"
@@ -29,33 +30,23 @@ int defense_of(entt::registry& reg, entt::entity target, DamageType type) {
             armour = npc_def(NPCType(std::uint8_t(kind->type))).armor.of(type);
         }
     }
-    // ...and what it WEARS, for the few bodies that wear anything. This is the
-    // one line the socket was waiting for: no damage site changed to gain it,
-    // and a body with no BodyEquipment is the limiting case rather than a
-    // branch — which is the same sentence armour 0 already was.
-    if (const auto* eq = reg.try_get<ecs::BodyEquipment>(target)) {
+    // ...and what it WEARS, asked through THE door (sub/record.h): gear is the
+    // RECORD's state, and a body wears what its record wears. A body with no
+    // gear anywhere stays the limiting case rather than a branch — the same
+    // sentence armour 0 already was.
+    //
+    // Two branches used to say this, and they said it twice: «what the body
+    // carries», plus a player-only arm that walked to his squad entity because
+    // «his gear is macro state, read where it lives». That arm had the law
+    // right and the shape wrong — under the mirror it is not his exception, it
+    // is everyone's rule, so it collapses into the line above.
+    if (const auto* eq = state_of<ecs::BodyEquipment>(reg, target)) {
         // Two contributions from the same gear, one law point: the rows'
         // authored columns (worn_armor) and the instances' Armor-target
         // bonus rows (bonus.h affix tail) — a rolled "+3 Fire Armor" lands
         // here and nowhere else, so it cannot be counted twice.
         armour += worn_armor(eq->gear).of(type)
                 + int(worn_bonuses(eq->gear).armor[std::size_t(type)]);
-    } else if (reg.any_of<ecs::AvatarTag>(target)) {
-        // The player's gear is MACRO state on his squad entity — one truth,
-        // read where it lives (owner, 2026-09-06: «макро — это контекст для
-        // микромира», no projected copy to go stale on a dungeon re-dress).
-        // The flagged body reads it the same way its strike already reads the
-        // weapon in hand (sub/engine.cpp hand_strike_fields via
-        // player_squad_entity); else-branch, so a body that one day carries
-        // its own equipment cannot be counted twice.
-        for (const auto sq : reg.view<ecs::PlayerSquadTag>()) {
-            if (const auto* worn = reg.try_get<ecs::BodyEquipment>(sq)) {
-                armour += worn_armor(worn->gear).of(type)
-                        + int(worn_bonuses(worn->gear)
-                                  .armor[std::size_t(type)]);
-            }
-            break;
-        }
     }
     return std::max(0, armour);
 }
@@ -88,7 +79,14 @@ DamageResult apply_damage(entt::registry& reg, entt::entity target,
                           DamageKind kind, DamageType type, EventBus* bus) {
     DamageResult out{};
     if (!reg.valid(target)) return out;
-    auto* hp = reg.try_get<ecs::Pools>(target);
+    // THE bar this blow spends is the RECORD's (mirror law, sub/record.h): a
+    // projected lord's wound is that lord's wound the instant it lands, and a
+    // hit on the player lands on the store that drives his death screen. The
+    // per-tick block on the body is a mirror of this one — it is what the eye
+    // reads, never what the world remembers. This single substitution is what
+    // retired the fold-up: there is no longer a second number to carry up, and
+    // no fraction to convert between two bars that were sized by two sheets.
+    auto* hp = pools_of(reg, target);
     if (hp == nullptr || hp->hp <= 0) return out;
     // A crit found the armour gap: mitigation is not in the way, exactly as
     // the Fall row's column says plate is not in the way of the ground.
@@ -143,7 +141,7 @@ DamageResult apply_damage(entt::registry& reg, entt::entity target,
 DamageResult apply_lethal_damage(entt::registry& reg, entt::entity target,
                                  const DamageSource& src, DamageKind kind,
                                  EventBus* bus) {
-    const auto* hp = reg.try_get<ecs::Pools>(target);
+    const auto* hp = pools_of(reg, target);
     if (hp == nullptr || hp->hp <= 0) return {};
     // The bar is integer now (4г), so "everything it has left" needs no ceil
     // — the whole remaining number is exactly one lethal blow.

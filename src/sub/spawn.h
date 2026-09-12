@@ -131,19 +131,40 @@ entt::entity spawn_tracked_body(entt::registry& reg, entt::entity macro,
                                 float x, float y, std::uint32_t seed,
                                 bool combatant);
 
-// Did the projection bring EVERYTHING the macro record keeps about this body?
+// Does this projection OWN NOTHING — is it an address rather than a copy?
 //
-// The list of what a tracked body inherits is written ONCE, in spawn.cpp, and
-// both the copier and this predicate read it — so a truth added to the record
-// is carried and guarded on the same day it is added. That is the whole point,
-// and it is the lesson SAVE-1 cost: the copier was a hand-written run of
-// `if (try_get) emplace` lines, and `BodyEquipment` was simply not among them,
-// so an armoured lord fought naked and nothing said a word.
+// The mirror law (owner 2026-09-12, sub/record.h): a projected body carries no
+// bag, no gear, no book and no personality of its own; all of it belongs to the
+// record it projects, and every reader goes through the door to reach it.
 //
-// Answers true when the macro entity holds nothing worth inheriting, which is
-// the ordinary case for a body the world has never written down.
-bool tracked_body_inherits_all(const entt::registry& reg,
+// This predicate is the inverse of the one it replaced, and the inversion is
+// the whole landing. `tracked_body_inherits_all` asked whether the COPY was
+// complete — a question that only makes sense while copies exist, and one the
+// project answered wrong once already (SAVE-1: the copier was a hand-written
+// run of `if (try_get) emplace` lines, `BodyEquipment` was not among them, and
+// an armoured lord fought naked while nothing said a word). With no copy there
+// is nothing to be incomplete.
+//
+// Both halves are checked, because either alone is satisfiable for the wrong
+// reason: the body must hold none of it, AND the record must be where it lives.
+bool tracked_body_owns_nothing(const entt::registry& reg,
                                entt::entity macro, entt::entity body);
+
+// Re-derive a standing body's OUTGOING numbers from its record — but only if
+// what stands on that record actually changed (sub/record.h StandingMirror,
+// `BonusTotals::operator==`). Returns true when it rebuilt.
+//
+// This is the half of the mirror that is NOT the bars: a body's swing comes
+// from its sheet through its row's template, and under the mirror law the
+// record can change while the body stands — he levels from a kill he lands,
+// something is put on him. Gated rather than unconditional because re-rolling
+// a sheet costs five times what comparing costs, and almost never changes
+// anything (the measurement is in CANON and in record.h).
+//
+// No-ops for anything that is not a tracked body: no cache, no record, no
+// creature row (the hero husk — his hands are assembled from the same effective
+// sheet by the engine, since a husk has no row to project from).
+bool refresh_body_strike(entt::registry& reg, entt::entity body);
 
 // ── Per-cell population (seamless persistence) ───────────────────────────
 //
@@ -422,50 +443,20 @@ int project_macro_npcs_into_subworld(ecs::World& w,
                                      std::uint32_t seed,
                                      const StructureIndex* solids = nullptr);
 
-// ── Exit remap query (Inc 5e-1) ──────────────────────────────────────────
+// ── ВСЕЛЕНИЕ: ЭТО ПЕРЕНОС ФЛАЖКА, И БОЛЬШЕ НИЧЕГО ───────────────────────
 //
-// Resolve where the macro player should land when leaving the subworld while
-// `body` wears the player flag. If `body` was PROJECTED from a macro NPC (it
-// carries a `MacroOrigin` whose macro entity is still valid and positioned) —
-// i.e. the player possessed a lord/bandit/peasant — the result is that macro
-// entity's cell wrapped to the map torus [0,mapW)×[0,mapH): you "exit AS" the
-// body you possessed (D5). Otherwise `has == false` and the caller falls back to
-// the window centre — the hero husk (`spawn_player_entity`) and ambient/citizen
-// bodies carry no backlink, so a normal un-possessed exit is unaffected. Pure
-// registry query: no engine / GameState coupling, unit-testable in isolation.
-// Runtime-only (`MacroOrigin` is never serialised); the save-stable identity
-// that Inc 5e-2 persists is the macro NPC's spawn ordinal, not this handle.
-// `macro` names the origin macro entity when `has` (entt::null otherwise) so the
-// caller can ADOPT it as the persistent player (adopt_possessed_macro_as_player).
-struct MacroExitCell { bool has; int cx; int cy; entt::entity macro; };
-MacroExitCell macro_exit_cell_for_body(ecs::World& w, entt::entity body,
-                                       int mapW, int mapH);
-
-// Inc 5e-2 (identity remap). After leave() lands the macro player on a possessed
-// body's origin cell, ADOPT that macro NPC as the persistent player: move the
-// single macro PlayerTag flag onto `macro` — the overworld player now IS the
-// lord/bandit/peasant you inhabited, fighting on its own sheet. Moves NO flag
-// when `macro` is null / invalid / not a real macro NPC (no MacroNpcRuntime).
-// The flag itself is the whole record of control (v87): the macro snapshot
-// carries it as the possessed record's honest byte, so there is no ordinal to
-// hand back for a second store. Pure registry mutation; the caller owns the
-// surrounding flag/husk lifecycle.
-void adopt_possessed_macro_as_player(ecs::World& w, entt::entity macro);
-
-// ── Possession / вселение (Inc 5c) ───────────────────────────────────────
+// Owner's ruling, 2026-09-12: «одержимость — это не более чем перенос флажка
+// (эффект для будущих спеллов)». It is not a system, it has no ceremony, and
+// the machinery that had grown around it — an exit-remap query, an identity
+// adoption door, a struct to carry the answer between them, and a design doc —
+// was cut on that word.
 //
-// The player is one AvatarTag flag riding an ECS body (the "player is an NPC
-// with a flag" model). Possession MOVES that single flag onto another live
-// body so the player inhabits it; because every consumer — camera, input,
-// incoming combat, minimap, and (on exit) the macro landing — was made
-// flag-following in Inc 5a, they all follow with no per-consumer change.
-//
-// D2 (literal flag move) + D3 (body-native): the possessed body keeps its OWN
-// Health / Combat / sheet — NO hero stats are stamped onto it, and gs.player is
-// preserved untouched as the revert target. The engine's sync/reconcile become
-// body-native by testing the ONE discriminator these functions maintain: the
-// hero body (spawn_player_entity) carries no NPCKind, every possessable scene
-// body does.
+// The whole of it follows from the model the project already has: the player is
+// an ordinary body carrying a flag (CANON S4, «игрок == НПЦ»), so moving the
+// flag to another body is moving the player. Every consumer — camera, input,
+// incoming combat, the minimap — follows the flag by construction, and since
+// the mirror law (sub/record.h) the body's bars, bag and gear are its RECORD's,
+// so an inhabited lord fights as himself without anybody arranging it.
 //
 // current_player_body: the single entity currently carrying AvatarTag, or
 // entt::null (never null mid-subworld — exactly one flag is always live).
@@ -473,7 +464,7 @@ entt::entity current_player_body(ecs::World& w);
 
 // Move the player flag onto `target` (must be a live, positioned scene body).
 // Removes AvatarTag from the current body; if that body was the hero husk (no
-// NPCKind) it is destroyed — the hero's canonical state lives in gs.player, so
+// NPCKind) it is destroyed — the husk is a projection of his macro record, so
 // nothing is lost and no inert, un-rendered, un-AI'd zombie is stranded in the
 // scene. A vacated FOREIGN body keeps all its components and, with the flag
 // gone, its AI / rendering / targetability resume automatically (every such

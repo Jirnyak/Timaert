@@ -288,13 +288,13 @@ inline CharacterSheet sheet_of(ecs::World& w, entt::entity e) {
 // his squad entity like on any lord's. Sustained magnitudes are scaled by
 // the BASE training on purpose: the standing sum cannot read the sheet it
 // is itself a term of.
-inline BonusTotals standing_bonuses_of(ecs::World& w, entt::entity e) {
+inline BonusTotals standing_bonuses_of(entt::registry& reg, entt::entity e) {
     BonusTotals t{};
-    if (const auto* eq = w.reg.try_get<ecs::BodyEquipment>(e)) {
+    if (const auto* eq = reg.try_get<ecs::BodyEquipment>(e)) {
         t += worn_bonuses(eq->gear);
     }
-    if (const auto* book = w.reg.try_get<SpellBook>(e)) {
-        const Skills base = sheet_of(w, e).skills;
+    if (const auto* book = reg.try_get<SpellBook>(e)) {
+        const Skills base = sheet_of(reg, e).skills;
         for (int ord = 0; ord < kSpellCount; ++ord) {
             if (!spellbook_has_sustained(*book, ord)) continue;
             const SpellDef& def = kSpellDefs[ord];
@@ -304,6 +304,11 @@ inline BonusTotals standing_bonuses_of(ecs::World& w, entt::entity e) {
         }
     }
     return t;
+}
+// Registry face of the same door (the sheet_of idiom): the subworld seam holds
+// a registry, not a World, and it must ask this question of a record.
+inline BonusTotals standing_bonuses_of(ecs::World& w, entt::entity e) {
+    return standing_bonuses_of(w.reg, e);
 }
 
 // The sheet the world should actually ask about ANY macro body — THE
