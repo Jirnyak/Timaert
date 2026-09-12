@@ -185,7 +185,21 @@ fractions are each tile's SHARE of this fragment:
   winner's already-computed shape and the place's already-computed patchwork,
   and its cover joins as the mean tint its density describes. Across a
   one-metre band a family's PATTERN is not legible; its hue and lightness are.
-  Measured, that choice is the whole cost of being correct (below).
+  Measured, that choice is the whole cost of being correct (below);
+* the width is the **pair's** margin, the wider of the two — a margin belongs
+  to the meeting, not to one side of it. Read from the point-sampled centre
+  instead, as it was at first, the width itself jumped at the tile line: a
+  discontinuity in how the discontinuity is hidden, which is the same mistake
+  one level down. (The jitter's amplitude may still be read that way, because
+  it scales a DISPLACEMENT, and a displacement stays continuous however
+  abruptly its amplitude changes.);
+* **the sward thins too.** Blending only the albedo left one hard thing at a
+  joint: the winner's cover was drawn at full strength up to the line and then
+  switched — strands, tilt and all. The cover's DENSITY now rides the same
+  shares: where the neighbour grows the same thing the density crosses over,
+  and where it grows something else this sward thins to nothing by the halfway
+  line, with the neighbour's own cover arriving as the mean tint. It costs
+  nothing — `cover_apply` already took the density as an argument.
 
 `edge_m` is per material because it is one fact about the ground — how far its
 margin reaches — read twice. A built thing keeps a small number (road 0.3 m)
@@ -200,7 +214,8 @@ chassis, the minimum does not):
 | no joint at all | 6.97 ms | 7.45 ms |
 | first attempt (jitter + binary blend) | 8.14 ms | 8.00 ms |
 | coverage + a full second synth | 8.92 ms | 8.30 ms |
-| **coverage + borrowed colour (shipped)** | **8.00 ms** | **8.13 ms** |
+| coverage + borrowed colour | 8.00 ms | 8.13 ms |
+| **+ pair's margin, thinning sward (shipped)** | **8.04 ms** | **8.15 ms** |
 
 So the correct construction costs what the incorrect one did — but only
 because the runner-up borrows the shape. Paying for its own synth was measured

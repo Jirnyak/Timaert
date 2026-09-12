@@ -324,7 +324,7 @@ vec3 ground_colour(uint mid, float surfZ, float macroZ, float height01) {
 // they produce is then averaged into the centre material's anyway. Blending
 // two albedos is the point of the joint; blending two micro-reliefs is not
 // worth a third of the frame's ground cost. (Measured: it was.)
-Ground ground_of(uint mid, vec2 gWorld, vec3 Pabs, vec3 N, vec3 V,
+Ground ground_of(uint mid, vec2 cover, vec2 gWorld, vec3 Pabs, vec3 N, vec3 V,
                  float px, float height01, float time, vec2 wind,
                  bool withNormal) {
     uint fam = kGroundFamily[mid];
@@ -395,7 +395,8 @@ Ground ground_of(uint mid, vec2 gWorld, vec3 Pabs, vec3 N, vec3 V,
                       * (1.0 - smoothstep(0.40, 0.47, height01));
 
     // ── COVER ──
-    vec2 cover = kGroundCover[mid];
+    // The row says what grows here; the CALLER says how much, because at a
+    // joint the sward thins into its neighbour (see the joint in main).
     cover_apply(uint(cover.x + 0.5), cover.y, Pabs, N, V, px,
                 time, wind, withNormal, base, Nb);
 
@@ -489,6 +490,8 @@ void main() {
     // how far is the ground's own `edge_m`: a road keeps 0.3 m and stays a
     // road, sand creeps into grass with 1.6. Metres are texels here (a tile
     // is a metre, kTileMeters), so the texture's own size converts them.
+    // This one amplitude is read from the point sample on purpose: it scales
+    // a DISPLACEMENT, which stays continuous however abruptly it changes.
     float edgeM = kGroundEdge[min(uint(texture(u_material, vUv).r * 255.0
                                        + 0.5),
                                   kGroundCount - 1u)];
@@ -505,26 +508,19 @@ void main() {
     // textureGather returns the 2×2 in the order (0,1) (1,1) (1,0) (0,0).
     vec4 ids = textureGather(u_material, uvJ) * 255.0;
     vec2 f = fract(uvJ * texSize - 0.5);
-    // The shares are bilinear, but SHARPENED to the material's own margin:
-    // raw bilinear spreads every transition across a full tile, which is
-    // right for a beach and wrong for a stone one tile wide — it would be in
-    // its own ramp everywhere and read as a stain rather than a stone. The
-    // same `edge_m` that says how far a margin wanders says how wide it is,
-    // because they are the same fact about the ground. A built thing (road
-    // 0.3) keeps a hand's width of margin and stays crisp.
-    float band = clamp(edgeM, 0.05, 1.0);
-    vec2 fs = clamp((f - 0.5) / band + 0.5, 0.0, 1.0);
-    vec4 share = vec4((1.0 - fs.x) * fs.y, fs.x * fs.y,
-                      fs.x * (1.0 - fs.y), (1.0 - fs.x) * (1.0 - fs.y));
 
     // Coverage per DISTINCT id: a tile counts once for every corner it owns,
     // so a material holding three of the four corners holds three quarters of
-    // this square metre.
+    // this square metre. Taken on the RAW bilinear shares — the sharpening
+    // below needs to know WHICH two grounds meet before it can ask them how
+    // wide their margin is.
+    vec4 raw = vec4((1.0 - f.x) * f.y, f.x * f.y,
+                    f.x * (1.0 - f.y), (1.0 - f.x) * (1.0 - f.y));
     vec4 cov;
     for (int k = 0; k < 4; ++k) {
         float c = 0.0;
         for (int j = 0; j < 4; ++j)
-            if (abs(ids[j] - ids[k]) < 0.5) c += share[j];
+            if (abs(ids[j] - ids[k]) < 0.5) c += raw[j];
         cov[k] = c;
     }
     int kTop = 0;
@@ -537,13 +533,28 @@ void main() {
 
     uint mid = min(uint(ids[kTop] + 0.5), kGroundCount - 1u);
     uint midB = kSnd < 0 ? mid : min(uint(ids[kSnd] + 0.5), kGroundCount - 1u);
+
+    // Now sharpen, with the margin of the PAIR — the wider of the two, because
+    // a margin belongs to the meeting, not to one side of it. (Read from the
+    // point-sampled centre instead, as it was at first, the width itself
+    // jumped at the tile line: a discontinuity in how the discontinuity is
+    // hidden, which is the same mistake one level down.)
+    float band = clamp(max(kGroundEdge[mid], kGroundEdge[midB]), 0.05, 1.0);
+    vec2 fs = clamp((f - 0.5) / band + 0.5, 0.0, 1.0);
+    vec4 share = vec4((1.0 - fs.x) * fs.y, fs.x * fs.y,
+                      fs.x * (1.0 - fs.y), (1.0 - fs.x) * (1.0 - fs.y));
+    float covTop = 0.0, covSnd = 0.0;
+    for (int j = 0; j < 4; ++j) {
+        if (abs(ids[j] - ids[kTop]) < 0.5) covTop += share[j];
+        else if (kSnd >= 0 && abs(ids[j] - ids[kSnd]) < 0.5) covSnd += share[j];
+    }
+
     // The runner-up's share of the pair. It reaches 0.5 exactly on the line
     // between two tile centres and falls to 0 at either centre — so the
-    // transition is one tile wide by construction, everywhere, and needs no
-    // number to set its width. The noise only ROUGHENS it: a margin is not a
+    // transition is a continuous function of position, with no region and no
+    // number setting its width. The noise only ROUGHENS it: a margin is not a
     // clean ramp.
-    float b = kSnd < 0 ? 0.0
-                       : cov[kSnd] / max(cov[kTop] + cov[kSnd], 1e-5);
+    float b = kSnd < 0 ? 0.0 : covSnd / max(covTop + covSnd, 1e-5);
     b *= 0.7 + 0.6 * wnoise(gWorld + 77.1, kJointFreq * 4.0);
     b = clamp(b, 0.0, 0.5);
 
@@ -551,8 +562,22 @@ void main() {
     float time = u_pointLights.skyParams.x;
     vec2 wind = u_pointLights.skyParams.yz;
 
-    Ground g = ground_of(mid, gWorld, Pabs, N, V, px, vHeight, time, wind,
-                         true);
+    // THE SWARD THINS TOO. Blending only the albedo left one hard thing at a
+    // joint: the winner's cover was drawn at full strength right up to the
+    // line and then switched — strands, tilt and all. So the cover's DENSITY
+    // is blended by the same shares. Where the neighbour grows the same thing
+    // the density simply crosses over; where it grows something else (or
+    // nothing) this sward thins to nothing by the halfway line, and the
+    // neighbour's own cover arrives as the mean tint inside ground_colour.
+    // One expression, no branch, and it costs nothing: cover_apply already
+    // took the density as an argument.
+    vec2 covA = kGroundCover[mid];
+    vec2 covB = kGroundCover[midB];
+    bool sameCover = abs(covA.x - covB.x) < 0.5;
+    vec2 cover = vec2(covA.x, mix(covA.y, sameCover ? covB.y : 0.0, b));
+
+    Ground g = ground_of(mid, cover, gWorld, Pabs, N, V, px, vHeight, time,
+                         wind, true);
     if (b > 0.02) {
         // The two grounds, mixed by their shares of this square metre. The
         // runner-up lends its COLOUR on the winner's shape (ground_colour) —
