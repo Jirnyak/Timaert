@@ -325,8 +325,22 @@ line at every cell border (the "texture wall" on mountain river banks).
 `sub/material.{h,cpp}` now picks the biome **per tile**: bilinear weights over
 the owning cell's captured 3×3 **ground ring** (same 0.5-centre convention as
 the heightmap, sharpened to a ~256-tile mixing band) and a **dither** keyed to
-absolute tile coordinates — taiga speckles into meadow the way foothills fade
+absolute tile coordinates — taiga gives way to meadow the way foothills fade
 into plains. Authored tiles (roads, fields, rock, shore, water) never dither.
+
+**THE GROUND-BOUNDARY LAW (2026-09-12).** That dither used to be an
+independent COIN flipped per square metre, and so did the treeline's grass↔
+stone — one mechanism, copied by hand into two places. A coin makes PEPPER
+where nature puts patches: a metre of stone, a metre of grass, a metre of
+stone, which the owner photographed on a treeline and correctly asked whether
+the defect was the mountain's or everyone's. It was everyone's. Both boundaries
+now consult ONE correlated field, `ground_dither01` (24 m lattice), so ground
+changes its mind in patches; the test measures a 34-tile run where the coin
+gave 2. `structure_shade` keeps its coin — a per-object wobble is not a
+boundary. The full account, the measured before/after and the four
+optimisations that paid for it are in **[ground.md](ground.md)**, which is THE
+document for everything the ground LOOKS like; this file remains THE document
+for how a tile's material is ROUTED.
 The ground ring is the biome ring through `ground_biome()` (map_data.h): a
 **flooded cell enters it as its unflooded climate ground** —
 `biome_from_climate` of its RAW temperature/moisture channels, resolved once
@@ -346,7 +360,14 @@ mismatch=0`). One `fillCellMaterial` helper replaced the renderer's five
 duplicated LUT loops; separable axis tables keep a full-cell fill ~2-3 ms, and a
 PLACEHOLDER cell — one tile id repeated across its whole 1024² — short-circuits
 to a memset (or, inside the treeline dither band, to a two-value select), which
-is what took a mountainous world's crossing from 19.7 ms to 2.6.
+is what took a mountainous world's crossing from 19.7 ms to 2.6. The fill was
+then hoisted again when the boundary law arrived (2026-09-12): the four grounds
+a tile blends are asked once per axis SPAN rather than per tile, the span
+bounds once per cell rather than per row, and a non-authored tile reads its
+material from an eleven-byte biome table instead of two switches — 19.4 → 16.9
+ms for a full 9-cell fill, which is **faster than before the law existed**.
+`sh ~/timaert_shotkit/seam_log.sh` prints those numbers plus the byte-level
+self-check for a crossing.
 Locked by `material_seam_test` (determinism, pure core, seam-continuity of the
 mix fraction with the old per-cell rule as negative control, the ground-alias
 law with the removed water fallback reimplemented as negative control,

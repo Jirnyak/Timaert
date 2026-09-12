@@ -6,11 +6,18 @@
 // BIOME GROUND fallback. The biome used for that fallback is NOT the flat
 // per-cell biome: like the height manifold, it blends across the 3×3
 // macro neighbourhood — `pick_ground_biome` bilinearly weights the owning
-// cell's GROUND ring and DITHERS between the candidates with a hash keyed
-// to ABSOLUTE tile coordinates. Near a cell border the two grounds
-// interleave in a ~250-tile band whose mix follows the bilinear weight,
-// so taiga fades into meadow the way foothills fade into plains — the
-// straight "texture wall" at every subworld seam is gone.
+// cell's GROUND ring and DITHERS between the candidates through
+// `ground_dither01`, THE ground-boundary law, keyed to ABSOLUTE tile
+// coordinates. Near a cell border the two grounds interleave in a
+// ~250-tile band whose mix follows the bilinear weight, so taiga fades
+// into meadow the way foothills fade into plains — the straight "texture
+// wall" at every subworld seam is gone.
+//
+// That dither used to be a COIN flipped per square metre, and a coin makes
+// pepper where nature puts patches (owner, 2026-09-12, photographed on a
+// treeline). It is now a correlated FIELD, and the same one for every
+// boundary this file draws — see THE GROUND-BOUNDARY LAW below, and
+// [ground.md] for the measured before/after.
 //
 // RING CONTRACT: the 9 entries are GROUND aliases, never Water — a flooded
 // cell (river/lake/coast) enters the ring as its unflooded climate ground

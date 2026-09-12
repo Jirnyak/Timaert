@@ -5,8 +5,10 @@
 // at every subworld cell border the ground colour flipped along a perfectly
 // straight line (the owner's "texture wall" screenshot — taiga vs meadow on
 // a mountain river bank). The fix picks the biome per tile by bilinearly
-// weighting the owning cell's 3×3 biome ring and dithering with a hash keyed
-// to ABSOLUTE tile coordinates.
+// weighting the owning cell's 3×3 biome ring and dithering through THE
+// ground-boundary law (material.h ground_dither01), keyed to ABSOLUTE tile
+// coordinates — a correlated field since 2026-09-12, a per-tile coin before
+// that (§6b below is why).
 //
 // Invariants:
 //   1. Determinism — same inputs, same pick (twice).

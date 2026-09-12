@@ -944,7 +944,7 @@ the renderer-side mechanics in brief:
   real terrain). The height path writes the value straight into the interior
   vertex block and samples only the four shared edges; the material path resolves
   the cell to one byte (a memset) — or, if its height lands inside the treeline
-  dither band, to two bytes chosen per tile by the hash. Together that is
+  dither band, to two bytes chosen per tile by the boundary field. Together that is
   3.10 → 0.19 ms of height and up to 19.7 → 2.60 ms of material on a crossing.
 - **Instance buffers are REUSED, not re-created.** Trees, boxes and cylinders keep
   their device-local allocation and are overwritten in place, growing by half

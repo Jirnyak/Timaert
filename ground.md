@@ -331,6 +331,36 @@ the material tabulated for every ring biome (22.3 — two switches are cheaper
 than a cache line), and moving the pick's body into the header (no change —
 LTO was already inlining it).
 
+## How to test it, with logs
+
+```
+sh ~/timaert_shotkit/seam_log.sh          # 3 crossings
+sh ~/timaert_shotkit/seam_log.sh 5 776,776  # 5, on a named cell
+```
+
+It runs the seam smoke N times WITHOUT the self-check (which recomputes the
+material and would inflate the very number being measured), then once WITH it,
+and prints:
+
+```
+ПОЛНАЯ застройка (9 клеток, 9.4 млн тайлов): med 17.06 мс   — до работы было 19.4
+ПЕРЕСЕЧЕНИЕ шва (доливка свежих клеток):     med 0.78 мс
+генерация клеток (её я не трогал):           med 7.73 мс
+[seam-selfcheck] material incremental mismatch=0
+смоук шва: 5 PASS, 0 FAIL
+```
+
+The last two lines are the ones that matter for correctness: `material
+incremental mismatch=0` means every material byte after a real crossing equals
+an honest from-scratch recompute. Two traps the script encodes so they are not
+re-learned: `subworld_seam` enters the subworld itself (adding
+`subworld_enter` ahead of it fails with "already active"), and
+`TIMAERT_SEAM_SELFCHECK` must be off in a timing run.
+
+For the LOOK rather than the cost, `~/timaert_shotkit/` has `cells.sh` /
+`rank.py` (frames without HUD, scored numerically) and `optD/` holds the
+before/after pair of the treeline patches.
+
 ## Measured
 
 Same seven cells, same seed 12345, same hour 11, same framing, before → after:
