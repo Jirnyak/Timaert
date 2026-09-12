@@ -270,49 +270,66 @@ expressed once on each side of the bus.
 
 **The seam is sacred.** A subworld crossing is where this game pays its only
 load, and the owner's rule on it is absolute: that number moves in one
-direction, down (2026-09-12). The first version of this law broke the rule and
-I reported it as "+0.6 ms, off the frame" from a single noisy sample. It was
-wrong by twenty times. Measured properly — `TIMAERT_SEAM_TRACE=1`, the
-`matFill` stage of a full 9-cell build, 9.4 million tiles, minimum of four
-runs:
+direction, down (2026-09-12). The first version of this law broke the rule,
+and I reported it as "+0.6 ms, off the frame" from a single noisy sample of
+the wrong stage. It was wrong by twenty times.
+
+The instrument that answers honestly is `TIMAERT_SEAM_TRACE=1` and its
+`matFill` stage — the material fill itself, 9.4 million tiles on a full 9-cell
+build, minimum of four runs:
 
 | | matFill |
 |---|---|
-| the coin it replaced | **19.4 ms** |
-| the law, first cut (what that report was about) | 32.6 ms |
-| the law as it ships now | **20.7 ms** |
+| the coin, before any of this work | 19.4 ms |
+| the law, first cut | 32.6 ms |
+| the law, after the row walker | 20.7 ms |
+| **the law + the fill hoisted (ships now)** | **16.9 ms** |
+
+**So the seam is faster than it was before the boundary law existed** — by
+2.5 ms on a full build, and about a third of that on a crossing, which
+refills three cells of nine. That is the only footing on which the law was
+allowed to stay.
 
 **Why a field can be nearly as cheap as a coin.** A coin must be flipped per
 tile — a 64-bit mix, every tile, forever. A field is CONSTANT over its
 lattice, so a row walker (`GroundDitherRow`) refreshes four corner hashes once
-per 24 tiles, keeps the y smoothstep as a row constant, indexes a shared
-table for the x one, and advances east by an increment. Three lerps and a
-table read is what a tile pays.
+per 24 tiles, keeps the y smoothstep as a row constant, indexes a shared table
+for the x one, and advances east by an increment. Three lerps and a table read
+is what a tile pays.
 
-**And the trap that cost the most, twice.** Hoisting turns CONDITIONAL work
-unconditional. The coin was flipped LAZILY — deep inside a cell all four ring
-corners agree and the pick returns before touching it; above and below the
-treeline band the answer needs no field either. Handing the pick a ready
+**And where the other 2.5 ms came from — the fill around it, never optimised
+before.** Three moves, each a claim that two expressions are the same, and
+`material_seam_test` now checks each claim tile by tile against the honest
+per-tile form:
+
+* a row crosses at most TWO axis spans, and inside a span the four grounds a
+  tile blends are the SAME four. They are asked once per span
+  (`ground_corners`) instead of once per tile, and where all four are one
+  ground the pick has nothing left to do at all;
+* those span boundaries are a property of the axis TABLE, which every row
+  shares — found once per cell, not re-scanned per row;
+* a tile that is not authored takes its material from the BIOME alone, so
+  `terrain_material_for`'s two switches leave the inner loop for an
+  eleven-byte table (`biome_ground_materials`, built from that same door so it
+  cannot drift). Copied onto the stack, because as a pointer it could alias
+  the byte output and the optimiser then reloads it every tile — that alone
+  was 20.7 → 23.5 → 18.4 ms.
+
+**The trap that cost the most, twice: hoisting turns CONDITIONAL work
+unconditional.** The coin was flipped LAZILY — deep inside a cell all four
+ring corners agree and the pick returns before touching it; above and below
+the treeline band the answer needs no field either. Handing the pick a ready
 float, and pre-filling rows into buffers, both made that work eager: 39 ms,
-double the coin. The fix is that the row goes IN and the field is drawn where
+double the coin. The fix is that the ROW goes in and the field is drawn where
 the coin was flipped — after the early-out, never before it.
 
-Four more attempts are recorded in the header with their numbers, so nobody
+Four more attempts are recorded in `material.h` with their numbers so nobody
 spends the afternoon again: a second finer octave (25.5 — mesh.frag already
 frays every boundary, so the fringe was paid for twice), the lattice hashed
 once per cell (27.3 — hashes were never the cost; 8 KB in the hot loop is),
 the material tabulated for every ring biome (22.3 — two switches are cheaper
 than a cache line), and moving the pick's body into the header (no change —
 LTO was already inlining it).
-
-**Where that leaves it: +1.3 ms on a full build, ~+0.4 ms on a crossing** (a
-crossing refills three cells of nine), off the frame, against a load the seam
-smoke's own `gen` number cannot even distinguish from noise (6.83 → 6.73 ms
-median). That is not "down", and the owner's rule says down. The remaining
-1.3 ms is the difference between three lerps and one integer hash, so it will
-not come out of this law — it has to come out of the fill around it, which
-has never been optimised and still asks `terrain_material_for` per tile
-through two switches.
 
 ## Measured
 

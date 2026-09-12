@@ -1,4 +1,6 @@
 #include "sub/material.h"
+
+#include <array>
 #include <algorithm>
 #include <cmath>
 
@@ -76,6 +78,31 @@ void ground_axis_table(int cellSize, GroundAxis* out) {
     for (int l = 0; l < cellSize; ++l) out[l] = ground_axis_for(l, cellSize);
 }
 
+GroundCorners ground_corners(const Biome nbBiome[9],
+                             const GroundAxis& ax, const GroundAxis& ay) {
+    GroundCorners c{};
+    c.b00 = nbBiome[ay.i0 * 3 + ax.i0];
+    c.b10 = nbBiome[ay.i0 * 3 + ax.i1];
+    c.b01 = nbBiome[ay.i1 * 3 + ax.i0];
+    c.b11 = nbBiome[ay.i1 * 3 + ax.i1];
+    c.uniform = c.b00 == c.b10 && c.b00 == c.b01 && c.b00 == c.b11;
+    return c;
+}
+
+const std::uint8_t* biome_ground_materials() {
+    // Built from terrain_material_for itself, with a tile the authored branch
+    // ignores — so this is that door's own answer, tabulated, and it cannot
+    // drift from it.
+    static const std::array<std::uint8_t, 11> table = [] {
+        std::array<std::uint8_t, 11> t{};
+        for (int i = 0; i < 11; ++i)
+            t[std::size_t(i)] = static_cast<std::uint8_t>(
+                terrain_material_for(TILE_EMPTY, static_cast<Biome>(i)));
+        return t;
+    }();
+    return table.data();
+}
+
 Biome pick_ground_biome_axis(const Biome nbBiome[9],
                              const GroundAxis& ax, const GroundAxis& ay,
                              long long absX, long long absY) {
@@ -94,6 +121,12 @@ Biome pick_ground_biome_axis(const Biome nbBiome[9],
 Biome pick_ground_biome_axis(const Biome nbBiome[9],
                              const GroundAxis& ax, const GroundAxis& ay,
                              GroundDitherRow& row, long long absX) {
+    return pick_ground_biome_corners(ground_corners(nbBiome, ax, ay),
+                                     ax.f, ay.f, row, absX);
+}
+
+Biome pick_ground_biome_corners(const GroundCorners& c, float fx, float fy,
+                                GroundDitherRow& row, long long absX) {
     // Deep inside the cell both ramps saturate → the single corner is the
     // owner; skip the field entirely (the common case, and the reason the
     // field is drawn from the ROW rather than handed in: handing it in made
@@ -109,14 +142,9 @@ Biome pick_ground_biome_axis(const Biome nbBiome[9],
     // whose scan winners differed (owner report 2026-08-29, screenshots).
     // The ground alias killed the whole branch: a flooded cell's banks are
     // simply the land its climate says, blended like any land↔land pair.
-    const Biome b00 = nbBiome[ay.i0 * 3 + ax.i0];
-    const Biome b10 = nbBiome[ay.i0 * 3 + ax.i1];
-    const Biome b01 = nbBiome[ay.i1 * 3 + ax.i0];
-    const Biome b11 = nbBiome[ay.i1 * 3 + ax.i1];
-    if (b00 == b10 && b00 == b01 && b00 == b11) return b00;
+    if (c.uniform) return c.b00;
 
-    const float fx = ax.f, fy = ay.f;
-    const Biome cand[4] = {b00, b10, b01, b11};
+    const Biome cand[4] = {c.b00, c.b10, c.b01, c.b11};
     const float w[4] = {(1.0f - fx) * (1.0f - fy), fx * (1.0f - fy),
                         (1.0f - fx) * fy,          fx * fy};
     // THE ground-boundary law (material.h GroundDitherRow): the same field
@@ -129,7 +157,7 @@ Biome pick_ground_biome_axis(const Biome nbBiome[9],
         if (r < acc) return cand[i];
     }
     // FP tail (the weights sum to ~1, r can graze it): the last corner.
-    return b11;
+    return c.b11;
 }
 
 Biome pick_ground_biome(const Biome nbBiome[9],

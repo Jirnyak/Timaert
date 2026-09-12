@@ -1689,6 +1689,11 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
             // 20.8 → 22.3 ms. The switch is cheaper than the cache line it
             // would have cost.
             std::uint8_t authoredLut[256];
+            // Copied onto the stack: as a POINTER it could alias the byte
+            // output the loop writes, and the optimiser must then reload it
+            // every tile (measured: 20.7 → 23.5 ms of the fill).
+            std::uint8_t biomeMat[11];
+            std::memcpy(biomeMat, biome_ground_materials(), sizeof(biomeMat));
             for (int t = 0; t < 256; ++t) {
                 lut[t] = static_cast<std::uint8_t>(terrain_material_for(
                     static_cast<std::uint8_t>(t), ring[4]));
@@ -1861,6 +1866,20 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
             // drawn for tiles INSIDE the band and nowhere else — a row buffer
             // filled up front made that work unconditional and measured
             // slower than the coin it was meant to beat.
+            // The axis spans are a property of the AXIS TABLE, which is the
+            // same for every row — so they are found once per cell, not
+            // re-scanned per row.
+            int spanEndX[4] = {kCellSize, kCellSize, kCellSize, kCellSize};
+            int spanCount = 0;
+            for (int x = 1; x <= kCellSize && spanCount < 3; ++x) {
+                if (x == kCellSize
+                    || groundAxis[std::size_t(x)].i0
+                           != groundAxis[std::size_t(x - 1)].i0
+                    || groundAxis[std::size_t(x)].i1
+                           != groundAxis[std::size_t(x - 1)].i1) {
+                    spanEndX[spanCount++] = x;
+                }
+            }
             GroundDitherRow seamRow, treeRow;
             for (int y = 0; y < kCellSize; ++y) {
                 const std::size_t srcRow =
@@ -1877,26 +1896,44 @@ void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldMa
                 seamRow.begin(absY0 + y);
                 treeRow.begin(absY0 + y - 7919);
 
-                for (int x = 0; x < kCellSize; ++x) {
-                    const std::uint8_t t = tiles[srcRow + std::size_t(x)];
-                    if (authoredLut[t]) {
-                        d[x] = lut[t];
-                    } else {
-                        Biome b = pick_ground_biome_axis(
-                            ring, groundAxis[std::size_t(x)], ay,
-                            seamRow, absX0 + x);
+                // A row crosses at most TWO axis spans (ground_axis_for maps
+                // a local coordinate to i0 ∈ {0,1}), and inside a span the
+                // four grounds a tile blends are the SAME four — so they are
+                // asked once per span instead of once per tile, and where all
+                // four are one ground the pick has nothing left to do.
+                // material.h owns that answer (GroundCorners); this loop only
+                // hoists it.
+                int x0 = 0;
+                for (int sp = 0; sp < spanCount; ++sp) {
+                    const int xEnd = spanEndX[sp];
+                    const GroundCorners corners = ground_corners(
+                        ring, groundAxis[std::size_t(x0)], ay);
+                    for (int x = x0; x < xEnd; ++x) {
+                        const std::uint8_t t = tiles[srcRow + std::size_t(x)];
+                        if (authoredLut[t]) {
+                            d[x] = lut[t];
+                            continue;
+                        }
+                        Biome b = corners.uniform
+                            ? corners.b00
+                            : pick_ground_biome_corners(
+                                  corners, groundAxis[std::size_t(x)].f, ay.f,
+                                  seamRow, absX0 + x);
                         // The row goes in, not a value: the band test lives
                         // inside the law, and the field is drawn only for the
                         // tiles that are actually inside the band.
                         b = apply_mountain_treeline_row(
                             b, hm[srcRow + std::size_t(x)], treeRow,
                             absX0 + x);
-                        d[x] = b == ring[4]
-                            ? lut[t]
-                            : static_cast<std::uint8_t>(
-                                  terrain_material_for(t, b));
+                        // A tile that is not authored takes its material from
+                        // the BIOME alone (material.h biome_ground_materials),
+                        // so the two switches of terrain_material_for leave
+                        // the inner loop for an eleven-byte table.
+                        d[x] = biomeMat[static_cast<int>(b)];
                     }
+                    x0 = xEnd;
                 }
+
             }
         };
         auto fillFullMaterial = [&](std::uint8_t* dst) {

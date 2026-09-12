@@ -555,6 +555,93 @@ void test_row_form_equals_the_one_shot() {
                      pickBad, pickCases, treeBad, treeCases);
 }
 
+
+// ── 6d. The fill's hoisted form is the honest form ─────────────────────────
+// The renderer's million-tile fill does not ask the law per tile any more. It
+// hoists the four grounds a tile blends once per axis SPAN (they are constant
+// along one), skips the pick entirely where all four are the same ground, and
+// reads the material out of an eleven-byte table instead of calling
+// terrain_material_for's two switches. That took the fill from 19.4 ms — its
+// cost before any of this work — down to 18.4, which is the only reason the
+// boundary law is allowed to exist: the seam's load time moves in one
+// direction (owner, 2026-09-12).
+//
+// Every one of those moves is a claim that two expressions are the same. This
+// checks the claim, tile by tile, against the honest per-tile form.
+void test_hoisted_fill_matches_the_honest_form() {
+    const Biome rings[3][9] = {
+        {Biome::Taiga, Biome::Taiga, Biome::Meadow,
+         Biome::Taiga, Biome::Meadow, Biome::Meadow,
+         Biome::Valley, Biome::Meadow, Biome::Swamp},
+        {Biome::Meadow, Biome::Meadow, Biome::Meadow,
+         Biome::Meadow, Biome::Meadow, Biome::Meadow,
+         Biome::Meadow, Biome::Meadow, Biome::Meadow},
+        {Biome::Snow, Biome::Tundra, Biome::Snow,
+         Biome::Tundra, Biome::Mountain, Biome::Tundra,
+         Biome::Snow, Biome::Tundra, Biome::Desert},
+    };
+    constexpr int kSide = 96;
+    sub::GroundAxis axis[kSide];
+    sub::ground_axis_table(kSide, axis);
+    const std::uint8_t* biomeMat = sub::biome_ground_materials();
+
+    // The spans, found the way the fill finds them.
+    int spanEnd[4] = {kSide, kSide, kSide, kSide};
+    int spans = 0;
+    for (int x = 1; x <= kSide && spans < 3; ++x)
+        if (x == kSide || axis[x].i0 != axis[x - 1].i0
+            || axis[x].i1 != axis[x - 1].i1)
+            spanEnd[spans++] = x;
+    CHECK(spans >= 1 && spans <= 3, "a row crosses at most three axis spans");
+
+    int cases = 0, bad = 0;
+    for (int r = 0; r < 3; ++r) {
+        const Biome* ring = rings[r];
+        for (int y = 0; y < kSide; y += 5) {
+            const sub::GroundAxis ay = axis[y];
+            sub::GroundDitherRow seamRow, treeRow;
+            seamRow.begin(y);
+            treeRow.begin(y - 7919);
+            int x0 = 0;
+            for (int sp = 0; sp < spans; ++sp) {
+                const sub::GroundCorners corners =
+                    sub::ground_corners(ring, axis[x0], ay);
+                for (int x = x0; x < spanEnd[sp]; ++x) {
+                    const float h = 0.55f + 0.005f * float((x * 7 + y) % 90);
+                    // HOISTED — what the fill now does.
+                    Biome bh = corners.uniform
+                        ? corners.b00
+                        : sub::pick_ground_biome_corners(corners, axis[x].f,
+                                                         ay.f, seamRow, x);
+                    bh = sub::apply_mountain_treeline_row(bh, h, treeRow, x);
+                    const std::uint8_t got = biomeMat[static_cast<int>(bh)];
+                    // HONEST — what it did before, per tile, through the
+                    // one-shot doors and the two switches.
+                    Biome bo = sub::pick_ground_biome_axis(ring, axis[x], ay,
+                                                           x, y);
+                    bo = sub::apply_mountain_treeline(bo, h, x, y);
+                    const std::uint8_t want = static_cast<std::uint8_t>(
+                        sub::terrain_material_for(TILE_EMPTY, bo));
+                    if (got != want) ++bad;
+                    ++cases;
+                }
+                x0 = spanEnd[sp];
+            }
+        }
+    }
+    CHECK(cases > 5000, "the sweep covered every span of every ring");
+    CHECK(bad == 0, "the hoisted fill writes the honest byte, tile for tile");
+    if (bad) std::fprintf(stderr, "    %d of %d tiles differed\n", bad, cases);
+
+    // And the eleven-byte table is the door's own answer for every biome.
+    int tabBad = 0;
+    for (int i = 0; i < 11; ++i)
+        if (biomeMat[i] != static_cast<std::uint8_t>(
+                sub::terrain_material_for(TILE_EMPTY, static_cast<Biome>(i))))
+            ++tabBad;
+    CHECK(tabBad == 0, "the biome-ground table cannot drift from its door");
+}
+
 int main() {
     test_pick_is_deterministic();
     test_cell_core_is_pure_owner();
@@ -566,5 +653,6 @@ int main() {
     test_structure_shade_survives_a_recentre();
     test_ground_boundary_law_is_correlated_and_unbiased();
     test_row_form_equals_the_one_shot();
+    test_hoisted_fill_matches_the_honest_form();
     return sm::test::report("material_seam_test");
 }

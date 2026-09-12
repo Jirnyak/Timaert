@@ -117,6 +117,33 @@ namespace sm::sub
                                  const GroundAxis &ax, const GroundAxis &ay,
                                  GroundDitherRow &row, long long absX);
 
+    // THE FOUR GROUNDS A TILE BLENDS, and whether they are all the same one.
+    //
+    // A row of a cell crosses at most TWO axis spans (ground_axis_for maps a
+    // local coordinate to i0 ∈ {0,1}), so along a row these four are constant
+    // over long stretches — and where they are all equal the pick has no work
+    // to do at all. Naming them lets the million-tile fill hoist them out of
+    // its inner loop without copying one line of the law: it asks here, once
+    // per span, and asks the pick below per tile only when `uniform` is false.
+    struct GroundCorners
+    {
+        Biome b00, b10, b01, b11;
+        bool uniform; // all four the same ground: the answer needs no field
+    };
+    GroundCorners ground_corners(const Biome nbBiome[9],
+                                 const GroundAxis &ax, const GroundAxis &ay);
+    // The pick given corners already in hand. pick_ground_biome_axis is this
+    // with ground_corners() called on the spot — one body, two entry points.
+    Biome pick_ground_biome_corners(const GroundCorners &c, float fx, float fy,
+                                    GroundDitherRow &row, long long absX);
+
+    // THE GROUND OF A BIOME, tabulated. For a tile that is NOT authored,
+    // terrain_material_for's answer depends on the biome ALONE — the tile
+    // byte only chooses whether the authored branch fires. So the fill needs
+    // no per-tile switch for it: eleven bytes, built from the door itself so
+    // the table cannot drift away from it.
+    const std::uint8_t *biome_ground_materials(); // [11], indexed by Biome
+
     // Mountain ground by ALTITUDE — stone is for the PEAKS only. Below the
     // treeline band the massif is alive (grass, trees), so its ground reads
     // as meadow; through the band grass and stone dither out exactly as the
