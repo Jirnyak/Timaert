@@ -5362,41 +5362,49 @@ bool run_console_smoke(App& app) {
             return false;
         }
         // The HARVEST action's SP law (CANON «Вердикты ТРУДА», 2026-09-12):
-        // pressing Harvest fells and pays bar/32 into the body's own pool.
-        // Spawn points sit on roads — arm's reach holds nothing on any
-        // pinned seed — so the witness uses the action's smoke-lab reach
-        // seam (the whole window, same guarantee the chop above stands on)
-        // and the assertion is MANDATORY: a witness that may not fire is a
-        // dead detector (testing law #3).
+        // pressing Harvest fells and pays bar/32 into the AUTHORITATIVE
+        // pools — the hero's squad store (pools-on-body law: the body block
+        // is a per-tick mirror; asserting on it was exactly how the charge
+        // that evaporated next frame slipped past this witness — caught by
+        // the owner's eyes, not the suite). A possessed avatar pays its own
+        // body block, the same selection the door makes. Spawn points sit
+        // on roads — arm's reach holds nothing on any pinned seed — so the
+        // witness uses the action's smoke-lab reach seam, and the assertion
+        // is MANDATORY: a witness that may not fire is a dead detector.
         {
-            int spBefore = 0, spAfter = 0, maxSp = 0;
-            for (auto pe : app.ecs.reg.view<sm::ecs::AvatarTag,
-                                            sm::ecs::Pools>()) {
-                spBefore = app.ecs.reg.get<sm::ecs::Pools>(pe).sp;
-                maxSp = app.ecs.reg.get<sm::ecs::Pools>(pe).maxSp;
-                (void)pe;
-                break;
+            const auto authoritative_pools = [&]() -> sm::ecs::Pools* {
+                for (auto pe : app.ecs.reg.view<sm::ecs::AvatarTag,
+                                                sm::ecs::Pools>()) {
+                    if (app.ecs.reg.all_of<sm::ecs::NPCKind>(pe)) {
+                        return &app.ecs.reg.get<sm::ecs::Pools>(pe);
+                    }
+                    break;
+                }
+                return sm::player_pools(app.ecs);
+            };
+            const sm::ecs::Pools* pay = authoritative_pools();
+            if (!pay) {
+                if (!wasActive) app.subworld.leave(true);
+                smoke_fail(app, "harvest: no authoritative pools");
+                return false;
             }
+            const int spBefore = pay->sp;
+            const int maxSp = pay->maxSp;
             if (!app.subworld.harvest_action(
                     float(sm::sub::kFullSize) * 2.0f)) {
                 if (!wasActive) app.subworld.leave(true);
                 smoke_fail(app, "harvest action found nothing in the window");
                 return false;
             }
-            for (auto pe : app.ecs.reg.view<sm::ecs::AvatarTag,
-                                            sm::ecs::Pools>()) {
-                spAfter = app.ecs.reg.get<sm::ecs::Pools>(pe).sp;
-                (void)pe;
-                break;
-            }
+            pay = authoritative_pools();
             const int cost = std::max(1, maxSp / sm::kGatherPerWorkerDay);
-            if (maxSp <= 0 || spAfter != spBefore - cost) {
+            if (!pay || maxSp <= 0 || pay->sp != spBefore - cost) {
                 if (!wasActive) app.subworld.leave(true);
                 smoke_fail(app, "harvest action did not pay the SP law");
                 return false;
             }
             std::fprintf(stderr, "[smoke] harvest_action did=1 sp_paid=%d\n",
-                         spBefore - spAfter);
+                         spBefore - pay->sp);
             std::fflush(stderr);
         }
         if (!wasActive) app.subworld.leave(true);

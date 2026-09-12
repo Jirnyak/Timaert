@@ -1907,9 +1907,17 @@ bool SubworldEngine::harvest_action(float reachOverride) {
     // rate a macro crew's quarter-bar cycle already pays for its 8 objects.
     // Paid INTO THE NEGATIVE: the march's exhaustion law owns the bite,
     // this door only spends.
-    if (auto* pools = reg.try_get<ecs::Pools>(playerEnt)) {
-        pools->sp -= std::max(1, pools->maxSp / kGatherPerWorkerDay);
-    }
+    //
+    // ...and paid to the AUTHORITATIVE pools (pools-on-body law, v85): the
+    // hero's bars ARE his squad store — the body block is a MIRROR re-pulled
+    // every tick top, and only HP reconciles back, so a charge written there
+    // evaporates one frame later (caught by the owner's own eyes: «повалил
+    // деревья, но SP не уменьшается»). A POSSESSED foreign body owns its
+    // block body-natively, exactly like its HP does.
+    ecs::Pools* pay = reg.all_of<ecs::NPCKind>(playerEnt)
+        ? reg.try_get<ecs::Pools>(playerEnt)
+        : player_pools(*ecs_);
+    if (pay) pay->sp -= std::max(1, pay->maxSp / kGatherPerWorkerDay);
     return true;
 }
 
