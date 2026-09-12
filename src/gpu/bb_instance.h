@@ -35,6 +35,7 @@
 // the lit pass and the shadow pass cannot disagree about a silhouette.
 #pragma once
 
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <vulkan/vulkan.h>
@@ -73,12 +74,12 @@ inline constexpr VkVertexInputAttributeDescription kBbInstanceAttrs[] = {
 };
 inline constexpr std::uint32_t kBbInstanceAttrCount = 6;
 
-// Reinterpret a float's bits for the `seed` lane (std::bit_cast spelled by
-// hand — the tree/creature seeds were always floats and must stay bit-exact).
-inline std::uint32_t bb_seed_bits(float v) {
-    std::uint32_t u;
-    __builtin_memcpy(&u, &v, sizeof u);
-    return u;
+// Reinterpret a float's bits for the `seed` lane: the tree/creature seeds were
+// always floats and must stay bit-exact. Was std::bit_cast spelled by hand
+// through __builtin_memcpy, which only clang and gcc know — MSVC stopped on it
+// as the ONE portability defect in the whole codebase (Windows build, 2026-09-12).
+inline constexpr std::uint32_t bb_seed_bits(float v) {
+    return std::bit_cast<std::uint32_t>(v);
 }
 
 inline std::uint32_t bb_pack_tint(std::uint8_t r, std::uint8_t g,
