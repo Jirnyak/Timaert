@@ -193,6 +193,25 @@ struct LandmarkContext {
 inline constexpr std::uint32_t kCellSeedX = 73856093u;
 inline constexpr std::uint32_t kCellSeedY = 19349663u;
 
+// ...and THE DOOR that applies it, because a law written only as constants is
+// a law every caller re-implements. It was re-implemented sixteen times: five
+// test fixtures and eleven call sites, of which three had copied the literals
+// rather than the names, one had dropped the Y term entirely (so a whole
+// column of the map shared one stream), and four had invented their own mixes
+// — `(cx << 8) ^ cy`, whose bits 8–9 collide so that EVERY cell of the torus
+// shares its seed with exactly three others, and `cx * 1000 + cy`, which gives
+// vertical neighbours seeds one apart (sm::Rng does not mix a seed, so their
+// first dice rolls came out near-identical).
+//
+// A caller that wants its own stream off the same place SALTS the result —
+// one place, one law, and any future improvement to the mixing lands
+// everywhere at once instead of in whichever copy someone remembers.
+inline constexpr std::uint32_t cell_seed(std::uint32_t worldSeed,
+                                         int cellX, int cellY) {
+    return worldSeed ^ (std::uint32_t(cellX) * kCellSeedX)
+                     ^ (std::uint32_t(cellY) * kCellSeedY);
+}
+
 // CellContext — what the macroworld knows about a single cell.
 struct CellContext {
     // WHICH CELL OF THE WORLD this is — the wrapped macro index, [0, worldCells).

@@ -675,8 +675,7 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
         // so a re-entry lands in the same place; if the whole band is water
         // (mid-sea cell) the mid-band point stands, as it always did.
         if (!is_dry_footing(footing_height_m(playerX_, playerY_))) {
-            Rng landing{gs.worldSeed ^ (std::uint32_t(cx) << 8)
-                        ^ std::uint32_t(cy) ^ 0xB21D6Eu};
+            Rng landing{cell_seed(gs.worldSeed, cx, cy) ^ 0xB21D6Eu};
             for (int attempt = 0; attempt < 20; ++attempt) {
                 const float tx = float(kCellSize) + entry_axis_pos(
                     sdx, entryTicks, float(kCellSize),
@@ -713,14 +712,10 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     // or a wall walk seats you on it instead of inside the water below.
     playerZ_ = footing_height_m(playerX_, playerY_);
     playerGrounded_ = true;
-    spellRng_ = Rng{gs.worldSeed
-        + std::uint32_t(cx) * std::uint32_t{1000}
-        + std::uint32_t(cy)};
+    spellRng_ = Rng{cell_seed(gs.worldSeed, cx, cy)};
     // Same cell identity, decorrelated stream (golden-ratio odd constant —
     // the standard stream-splitting mix, not a tunable).
-    combatRng_ = Rng{(gs.worldSeed
-        + std::uint32_t(cx) * std::uint32_t{1000}
-        + std::uint32_t(cy)) ^ 0x9E3779B9u};
+    combatRng_ = Rng{cell_seed(gs.worldSeed, cx, cy) ^ 0x9E3779B9u};
 
     // Fill all nine window cells from their own macro contexts (per-cell fauna
     // + settlement citizens), so the whole visible 3×3 is populated up front
@@ -737,7 +732,7 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     spawn_player_squad(ecs, player_roster(ecs) ? *player_roster(ecs)
                                               : SoldierSquad{},
                        mgr_, playerX_, playerY_,
-        gs.worldSeed ^ kSquadSpawnSalt ^ (std::uint32_t(cx) << 8) ^ std::uint32_t(cy),
+        cell_seed(gs.worldSeed, cx, cy) ^ kSquadSpawnSalt,
         std::uint16_t(faction_index(kPlayerFactionId)), &playerBonuses);
     // Project the persistent macro NPCs standing in this 3×3 window into the
     // scene as real combat bodies (Inc 5d) — the overworld lords / bandits /
@@ -748,8 +743,7 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     // the player entity so projections are part of the scene the player enters.
     const int projected = project_macro_npcs_into_subworld(ecs, mgr_, cx, cy,
         gs.mapW, gs.mapH,
-        gs.worldSeed ^ kMacroProjectionSalt ^ (std::uint32_t(cx) << 8)
-            ^ std::uint32_t(cy), &structIndex_);
+        cell_seed(gs.worldSeed, cx, cy) ^ kMacroProjectionSalt, &structIndex_);
     if (projected > 0) {
         char msg[80];
         std::snprintf(msg, sizeof(msg), "%d overworld figure%s nearby",
@@ -1293,9 +1287,7 @@ CellContext SubworldEngine::resolve_context(int x, int y) const {
     c.landmark.tier       = f.landmark.tier;
     c.landmark.factionIdx = f.landmark.factionIdx;
     c.landmark.depleted   = f.landmark.depleted;
-    c.seed = gs_->worldSeed
-           ^ (std::uint32_t(f.x) * kCellSeedX)
-           ^ (std::uint32_t(f.y) * kCellSeedY);
+    c.seed = cell_seed(gs_->worldSeed, f.x, f.y);
     c.worldSeed = gs_->worldSeed;
     return c;
 }
@@ -1419,8 +1411,7 @@ void SubworldEngine::repopulate_after_recenter(int dx, int dy) {
         const int cy = mgr_.center_cy();
         project_macro_npcs_into_subworld(*ecs_, mgr_, cx, cy,
             gs_->mapW, gs_->mapH,
-            gs_->worldSeed ^ kMacroProjectionSalt ^ (std::uint32_t(cx) << 8)
-                ^ std::uint32_t(cy), &structIndex_);
+            cell_seed(gs_->worldSeed, cx, cy) ^ kMacroProjectionSalt, &structIndex_);
     }
 }
 
@@ -2436,9 +2427,8 @@ bool SubworldEngine::spawn_npc_body(const char* npcTypeId,
             ? std::uint16_t(faction_index(factionId))
             : ground_faction_at(fx, fy);
     // The position-mixed seed keeps co-spawned hostiles distinct at one call site.
-    const std::uint32_t bodySeed = seed
-        ^ (std::uint32_t(int(fx)) * 73856093u)
-        ^ (std::uint32_t(int(fy)) * 19349663u);
+    const std::uint32_t bodySeed =
+        cell_seed(seed, int(fx), int(fy));
     const entt::entity e = spawn_derived_body(reg,
         BodySpec{type, fx, fy, bodyFaction, lvl, bodySeed,
                      /*combatant*/true},
@@ -2467,10 +2457,13 @@ bool SubworldEngine::spawn_tracked_npc_body(entt::entity macro) {
     // Same placement rule as a spawned encounter — the shared ring, so the
     // two paths cannot disagree about where a body may stand.
     const auto* mpos = reg.try_get<ecs::Position>(macro);
+    // Both coordinates, through the door. The hand-written mix here carried
+    // only X: every body on one column of the map drew the same stream.
     const std::uint32_t seed =
-        (gs_ ? gs_->worldSeed : 0u)
-        ^ (std::uint32_t(entt::to_integral(macro)) * 16777619u)
-        ^ (mpos ? std::uint32_t(int(mpos->x)) * 73856093u : 0u);
+        (mpos ? cell_seed(gs_ ? gs_->worldSeed : 0u,
+                          int(mpos->x), int(mpos->y))
+              : (gs_ ? gs_->worldSeed : 0u))
+        ^ (std::uint32_t(entt::to_integral(macro)) * 16777619u);
     Rng rng(seed);
     float fx = playerX_;
     float fy = playerY_;

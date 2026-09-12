@@ -1133,8 +1133,7 @@ int project_macro_npcs_into_subworld(ecs::World& w,
         // reprojects identically, yet two same-type NPCs in one cell still differ
         // (their integer coords or the running index diverge the salt).
         const std::uint32_t salt =
-            (std::uint32_t(mcx) * 73856093u) ^
-            (std::uint32_t(mcy) * 19349663u) ^
+            cell_seed(0u, mcx, mcy) ^
             (std::uint32_t(kind.type) << 11) ^
             (std::uint32_t(projected) * 2654435761u);
         Rng rng(seed ^ salt);

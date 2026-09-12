@@ -53,8 +53,7 @@ sm::sub::CellContext meadow_cell(int cx, int cy) {
     c.landmark.size = 0;
     c.landmark.kind = sm::LandmarkType::None;
     c.seed = 0x13570000u
-        ^ (std::uint32_t(cx) * 73856093u)
-        ^ (std::uint32_t(cy) * 19349663u);
+        ^ sm::sub::cell_seed(0u, cx, cy);
     return c;
 }
 

@@ -72,8 +72,7 @@ sm::sub::CellResolver settlement_resolver(sm::LandmarkType kind,
             c.landmark.size = pop;
             c.landmark.kind = kind;
         }
-        c.seed = 0x5E771EDu ^ (std::uint32_t(cx) * 73856093u)
-                            ^ (std::uint32_t(cy) * 19349663u);
+        c.seed = sm::sub::cell_seed(0x5E771EDu, cx, cy);
         return c;
     };
 }

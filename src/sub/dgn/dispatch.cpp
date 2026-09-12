@@ -15,11 +15,10 @@ std::uint32_t dungeon_scene_seed(std::uint32_t worldSeed, int cx, int cy,
                                  std::uint16_t ordinal, std::int8_t level) {
     constexpr std::uint32_t kSalt  = 2147483647u + 347922777u;
     constexpr std::uint32_t kPrime = 16777619u;
-    constexpr std::uint32_t kMixX  = 73856093u;
-    constexpr std::uint32_t kMixY  = 19349663u;
-    std::uint32_t h = worldSeed ^ kSalt;
-    h = (h ^ (std::uint32_t(cx) * kMixX)) * kPrime;
-    h = (h ^ (std::uint32_t(cy) * kMixY)) * kPrime;
+    // WHERE, through the one door (map_data.h cell_seed). This function used
+    // to re-declare the law's two primes as its own locals and interleave them
+    // by hand — a third copy of a law whose home it already includes.
+    std::uint32_t h = (cell_seed(worldSeed, cx, cy) ^ kSalt) * kPrime;
     h = (h ^ (std::uint32_t(ordinal) << 8
                 | std::uint32_t(std::uint8_t(level)))) * kPrime;
     return h;

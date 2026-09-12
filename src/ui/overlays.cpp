@@ -451,9 +451,7 @@ namespace sm::ui
         std::uint32_t settlement_preview_seed(std::uint32_t worldSeed,
                                               const Landmark &s)
         {
-            return worldSeed
-                 ^ (std::uint32_t(s.x) * sub::kCellSeedX)
-                 ^ (std::uint32_t(s.y) * sub::kCellSeedY);
+            return sub::cell_seed(worldSeed, s.x, s.y);
         }
 
         // THE tile → colour dictionary of every 2D subworld rendering in this
