@@ -11,6 +11,8 @@
 #include "macro/character_sheet.h"
 #include "macro/macro_stock.h"
 #include "macro/tree_layer.h"
+#include "macro/spell_book_state.h"   // SpellBook — part of the record a body inherits
+#include "macro/squad.h"              // sheet_of — THE door to "who is this"
 #include "sub/body.h"
 #include <algorithm>
 #include <array>
@@ -177,8 +179,14 @@ entt::entity emplace_body(entt::registry& reg, const BodySpec& body,
                           float healthFraction,
                           const BonusTotals* squadBonuses = nullptr) {
     const NpcTypeDef& def = npc_def(body.type);
-    CharacterSheet sheet =
-        make_character_sheet(body.type, body.level, body.seed);
+    // WHO HE IS. A record the world keeps wins over a fresh roll of his row:
+    // the projection used to call make_character_sheet with the CELL's seed,
+    // so a lord walking down into the subworld arrived as a DIFFERENT PERSON
+    // of the same type and rank, and the sheet the save has been keeping for
+    // him since v90 took no part in it.
+    CharacterSheet sheet = body.sheet
+        ? *body.sheet
+        : make_character_sheet(body.type, body.level, body.seed);
     // The leader's buff lands IN the sheet, before anything is projected from
     // it (character_sheet.h, ruling №2): from here down a buffed soldier is simply
     // a soldier whose sheet says more, and no formula ever meets a second
@@ -418,6 +426,40 @@ entt::entity spawn_derived_body(entt::registry& reg, const BodySpec& body,
     return e;
 }
 
+// ── WHAT A TRACKED BODY INHERITS ────────────────────────────────────────
+//
+// One list, read by both the copy and the witness (spawn.h
+// tracked_body_inherits_all). Add a component here and it starts riding the
+// seam AND being guarded in the same edit — the alternative is a hand-written
+// run of `if (try_get) emplace` lines, which is exactly how BodyEquipment came
+// to be missing while the two components beside it were copied.
+//
+// CharacterSheet is NOT in this list and must not be: the sheet decides the
+// body's bars and its blow, so it is needed BEFORE the entity exists and rides
+// in through BodySpec instead (emplace_body above).
+template <class... Cs>
+struct InheritedComponents {
+    static void carry(entt::registry& reg, entt::entity from, entt::entity to) {
+        (..., (reg.all_of<Cs>(from)
+                   ? void(reg.emplace_or_replace<Cs>(to, reg.get<Cs>(from)))
+                   : void()));
+    }
+    static bool complete(const entt::registry& reg,
+                         entt::entity from, entt::entity to) {
+        return (... && (!reg.all_of<Cs>(from) || reg.all_of<Cs>(to)));
+    }
+};
+// The belongings, the personality, WHAT HE IS WEARING and what he knows.
+using TrackedInheritance =
+    InheritedComponents<ecs::NpcInventory, ecs::NpcTraits,
+                        ecs::BodyEquipment, SpellBook>;
+
+bool tracked_body_inherits_all(const entt::registry& reg,
+                               entt::entity macro, entt::entity body) {
+    if (!reg.valid(macro) || !reg.valid(body)) return false;
+    return TrackedInheritance::complete(reg, macro, body);
+}
+
 entt::entity spawn_tracked_body(entt::registry& reg, entt::entity macro,
                                 float x, float y, std::uint32_t seed,
                                 bool combatant) {
@@ -449,6 +491,11 @@ entt::entity spawn_tracked_body(entt::registry& reg, entt::entity macro,
     body.level     = normalize_soldier_level(reg.get<ecs::NpcLevel>(macro).value);
     body.seed      = seed;
     body.combatant = combatant;
+    // HIMSELF, not a namesake: the record the macro layer keeps (owned by a
+    // named lord, derived identically for a transient one) through the one
+    // door that answers that question for anybody.
+    const CharacterSheet macroSheet = sheet_of(reg, macro);
+    body.sheet = &macroSheet;
 
     const entt::entity e =
         emplace_body(reg, body, reg.get<ecs::NpcCharacter>(macro), fraction);
@@ -457,12 +504,7 @@ entt::entity spawn_tracked_body(entt::registry& reg, entt::entity macro,
     // not rolled. A derived body has neither on purpose: its loot is rolled from
     // its seed at the moment it dies, which costs a city of five thousand people
     // exactly nothing to carry.
-    if (const auto* bag = reg.try_get<ecs::NpcInventory>(macro)) {
-        reg.emplace<ecs::NpcInventory>(e, *bag);
-    }
-    if (const auto* traits = reg.try_get<ecs::NpcTraits>(macro)) {
-        reg.emplace<ecs::NpcTraits>(e, *traits);
-    }
+    TrackedInheritance::carry(reg, macro, e);
     // The backlink is part of being tracked, not an extra the caller attaches:
     // it is the address the return trip writes to.
     reg.emplace<ecs::MacroOrigin>(e, macro);

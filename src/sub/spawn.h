@@ -83,6 +83,16 @@ struct BodySpec {
     // Role: what this body is DOING here. Citizens live their errands, soldiers
     // and hostiles fight. Everything else about them is identical.
     bool          combatant = false;
+    // WHO THIS ALREADY IS, when the world keeps a record of him. A projected
+    // lord is not a fresh roll of his own row — he is HIMSELF, and the macro
+    // layer has been storing his sheet since v90. Left null the body is drawn
+    // from `seed` as before, which is the honest answer for a citizen the
+    // world has never written down.
+    //
+    // Borrowed for the length of the call only (the ECS-ref grabla: a
+    // component reference does not survive a spawn, and spawning is exactly
+    // what happens next).
+    const CharacterSheet* sheet = nullptr;
 };
 
 // What the macro world LENT for a derived body. `MacroStock::Count` means it
@@ -120,6 +130,20 @@ entt::entity spawn_derived_body(entt::registry& reg, const BodySpec& body,
 entt::entity spawn_tracked_body(entt::registry& reg, entt::entity macro,
                                 float x, float y, std::uint32_t seed,
                                 bool combatant);
+
+// Did the projection bring EVERYTHING the macro record keeps about this body?
+//
+// The list of what a tracked body inherits is written ONCE, in spawn.cpp, and
+// both the copier and this predicate read it — so a truth added to the record
+// is carried and guarded on the same day it is added. That is the whole point,
+// and it is the lesson SAVE-1 cost: the copier was a hand-written run of
+// `if (try_get) emplace` lines, and `BodyEquipment` was simply not among them,
+// so an armoured lord fought naked and nothing said a word.
+//
+// Answers true when the macro entity holds nothing worth inheriting, which is
+// the ordinary case for a body the world has never written down.
+bool tracked_body_inherits_all(const entt::registry& reg,
+                               entt::entity macro, entt::entity body);
 
 // ── Per-cell population (seamless persistence) ───────────────────────────
 //

@@ -1080,6 +1080,78 @@ int main() {
               "a share remainder lands on the lower floors, never vanishes");
     }
 
+    // ── THE SEAM CARRIES THE RECORD, NOT A NAMESAKE ─────────────────────
+    //
+    // Owner's verdict, 2026-09-12 (CANON, «ШВА АНКЕТЫ»): what crosses into the
+    // subworld is the CHARACTER — sheet, belongings, what he wears — not one
+    // number of health. Two things are asserted, and each has a real way to
+    // fail: the man who arrives is the SAME MAN (his own stored sheet, not a
+    // fresh roll of his row from the cell's seed, which is what the projection
+    // used to do), and the projection is COMPLETE by the list the code itself
+    // keeps (sub/spawn.h tracked_body_inherits_all) rather than by whatever a
+    // hand-written run of copies happened to remember — the SAVE-1 lesson,
+    // which cost exactly one forgotten `BodyEquipment`.
+    {
+        sm::ecs::World world{};
+        auto& reg = world.reg;
+
+        auto lord = reg.create();
+        reg.emplace<sm::ecs::MacroSpawnId>(lord, std::uint32_t(11));
+        reg.emplace<sm::ecs::NPCKind>(lord, std::uint16_t(sm::NPCType::Bandit),
+                                      std::uint16_t(3));
+        reg.emplace<sm::ecs::Pools>(lord, 10, 10);
+        reg.emplace<sm::ecs::NpcLevel>(lord, std::int16_t(7));
+        reg.emplace<sm::ecs::NpcCharacter>(lord, sm::ecs::NpcCharacter{});
+
+        // HIS sheet — deliberately NOT the one his row and level would roll
+        // from the cell seed, so "he arrived as himself" is a claim that can
+        // come out false.
+        sm::CharacterSheet own =
+            sm::make_character_sheet(sm::NPCType::Bandit, 7, 0xA11CEu);
+        own.attributes[sm::AttributeId::Str] =
+            std::uint8_t(own.attributes.of(sm::AttributeId::Str) + 7);
+        reg.emplace<sm::CharacterSheet>(lord, own);
+
+        // ...and everything else the record may hold.
+        reg.emplace<sm::ecs::NpcInventory>(lord);
+        reg.emplace<sm::ecs::NpcTraits>(lord);
+        reg.emplace<sm::ecs::BodyEquipment>(lord);
+        reg.emplace<sm::SpellBook>(lord);
+
+        const entt::entity body = sm::sub::spawn_tracked_body(
+            reg, lord, 100.0f, 100.0f, /*seed*/0xD1FFu, /*combatant*/true);
+        CHECK(body != entt::null,
+              "the fixture must actually project a body");
+
+        CHECK(sm::sub::tracked_body_inherits_all(reg, lord, body),
+              "a projected body carries every part of the record its macro "
+              "entity keeps");
+
+        const auto* carried = body != entt::null
+            ? reg.try_get<sm::CharacterSheet>(body) : nullptr;
+        CHECK(carried != nullptr, "a body always has a sheet");
+        CHECK(carried && carried->attributes.of(sm::AttributeId::Str)
+                  == own.attributes.of(sm::AttributeId::Str),
+              "the man who walks into the subworld is the man the world "
+              "remembers, not a fresh roll of his row");
+
+        // The negative control, asserted so the detector is known to work: a
+        // body the world keeps NO record of is still drawn from its seed, so
+        // the check above is reading a real difference and not a tautology.
+        sm::sub::BodySpec anon{};
+        anon.type = sm::NPCType::Bandit;
+        anon.level = 7;
+        anon.seed = 0xD1FFu;
+        const entt::entity stranger =
+            sm::sub::spawn_derived_body(reg, anon, /*faceSalt*/0u);
+        const auto* strangerSheet = reg.try_get<sm::CharacterSheet>(stranger);
+        CHECK(strangerSheet != nullptr, "a derived body has a sheet");
+        CHECK(strangerSheet && strangerSheet->attributes.of(sm::AttributeId::Str)
+                  != own.attributes.of(sm::AttributeId::Str),
+              "a body with no record is NOT the lord — otherwise the identity "
+              "check above could not fail");
+    }
+
     CHECK(true, "every gate above held");
     return sm::test::report("subworld_spawn_parity_test");
 }

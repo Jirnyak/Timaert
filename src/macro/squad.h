@@ -256,22 +256,28 @@ inline entt::entity macro_entity_by_spawn_id(ecs::World& w,
 
 // The OWNED sheet, when this body has one — the writable store a level-up
 // or a future teacher mutates. nullptr = transient (derive instead).
+inline CharacterSheet* owned_sheet(entt::registry& reg, entt::entity e) {
+    return reg.try_get<CharacterSheet>(e);
+}
 inline CharacterSheet* owned_sheet(ecs::World& w, entt::entity e) {
-    return w.reg.try_get<CharacterSheet>(e);
+    return owned_sheet(w.reg, e);
 }
 
 // THE sheet, whoever asks: the owned component verbatim, or the generic
 // birth roll a transient IS. By value — the derive path builds one anyway,
 // and no caller may hold a reference across a tick (ecs-ref grabla).
-inline CharacterSheet sheet_of(ecs::World& w, entt::entity e) {
-    if (const CharacterSheet* own = owned_sheet(w, e)) return *own;
-    const auto* kind = w.reg.try_get<ecs::NPCKind>(e);
-    const auto* lvl  = w.reg.try_get<ecs::NpcLevel>(e);
-    const auto* sid  = w.reg.try_get<ecs::MacroSpawnId>(e);
+inline CharacterSheet sheet_of(entt::registry& reg, entt::entity e) {
+    if (const CharacterSheet* own = owned_sheet(reg, e)) return *own;
+    const auto* kind = reg.try_get<ecs::NPCKind>(e);
+    const auto* lvl  = reg.try_get<ecs::NpcLevel>(e);
+    const auto* sid  = reg.try_get<ecs::MacroSpawnId>(e);
     const NPCType type = kind && kind->type < std::uint16_t(NPCType::Count)
         ? NPCType(std::uint8_t(kind->type)) : NPCType::Peasant;
     return make_character_sheet(type, lvl ? int(lvl->value) : 1,
                                 leader_sheet_seed(sid ? sid->index : 0u));
+}
+inline CharacterSheet sheet_of(ecs::World& w, entt::entity e) {
+    return sheet_of(w.reg, e);
 }
 
 // WHAT STANDS ON A MACRO BODY, summed once: what it is wearing
