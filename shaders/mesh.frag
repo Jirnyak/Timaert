@@ -287,7 +287,37 @@ float cover_apply(uint cid, float density, vec3 Pabs, vec3 N, vec3 V,
 struct Ground {
     vec3 albedo;
     vec3 nrm;
+    // The two z-scores this ground was shaded with. They belong to the PLACE
+    // as much as to the material — the surface's own relief and the terrain's
+    // patchwork — so the neighbour at a joint borrows them instead of paying
+    // for its own (see ground_colour).
+    float surfZ;
+    float macroZ;
 };
+
+// A ground's COLOUR, given a shape and a place that were already computed.
+// This is what the runner-up lends to a joint: a transition is at most a tile
+// wide, and across one metre a family's PATTERN is not legible — its hue and
+// its lightness are. So the neighbour borrows the winner's shape and the
+// place's patchwork and costs no noise samples at all, only arithmetic. Its
+// cover joins as the mean tint its density describes, which is what a sward
+// looks like once you can no longer resolve a blade.
+vec3 ground_colour(uint mid, float surfZ, float macroZ, float height01) {
+    vec4 srf = kGroundSurface[mid];
+    vec3 base = kGroundAlbedo[mid] * mottle(srf.x, surfZ);
+    base *= 1.0 - kGroundDamp[mid] * 0.28
+                      * (1.0 - smoothstep(0.40, 0.47, height01));
+    vec2 cover = kGroundCover[mid];
+    uint cid = uint(cover.x + 0.5);
+    if (cid != 0u && cover.y > 0.001)
+        base = mix(base, kCoverColour[min(cid, kCoverCount - 1u)], cover.y);
+    base *= mottle(kGroundMacroSigma[mid], macroZ);
+    if (srf.z > 0.001) {
+        vec3 ax = kGroundChromaAxis[mid] * srf.z;
+        base *= exp(macroZ * ax - 0.5 * ax * ax);
+    }
+    return base;
+}
 
 // `withNormal` is false for the NEIGHBOUR at a joint: its relief costs two
 // extra taps of the height field and two of the strand field, and the tilt
@@ -386,6 +416,8 @@ Ground ground_of(uint mid, vec2 gWorld, vec3 Pabs, vec3 N, vec3 V,
     Ground g;
     g.albedo = base;
     g.nrm = Nb;
+    g.surfZ = (shape.x * 0.80 + shape.y * 0.60) * kNormShape;
+    g.macroZ = macroZ;
     return g;
 }
 
@@ -427,39 +459,93 @@ void main() {
                     * max(length(dFdy(vWorld)), 1e-5));
 
     // ── THE JOINT ─────────────────────────────────────────────────────────
-    // Per-fragment tile material id (R8 stored as id/255) → 0..14 scale, and
-    // clamped: the id arrives from a texture byte, and an out-of-range read
-    // of a const array is undefined in GLSL.
-    uint mid = min(uint(texture(u_material, vUv).r * 255.0 + 0.5),
-                   kGroundCount - 1u);
-
     // The material texture is one texel per world TILE, sampled NEAREST —
     // deliberately, because that is what keeps a one-tile road connected
     // instead of dissolving between terrain vertices 16 m apart. Its price is
-    // that every joint between two materials is a 1 m axis-aligned staircase
-    // (owner, 2026-09-12: «стыки тайловые, очень резкие»).
+    // that a point sample of it is a step function, and every joint between
+    // two materials is a 1 m axis-aligned staircase (owner, 2026-09-12:
+    // «стыки тайловые, очень резкие»).
     //
-    // So the SECOND sample is taken a metre or so away, along a noise field:
-    // two octaves, one wandering at ~3 m and one ragged at ~0.7 m, which is
-    // the shape a real margin has. How far it may wander is the CENTRE
-    // material's own `edge_m` — a property of the ground, and data: a road
-    // keeps a small number and stays a road, sand creeps into grass with a
-    // large one. Amplitude in metres IS amplitude in texels here (a tile is a
-    // metre, kTileMeters), so the texture's own size converts it.
-    float edgeM = kGroundEdge[mid];
-    vec2 edge = vec2(0.0);
-    uint midB = mid;
+    // THE ANSWER IS TO STOP POINT-SAMPLING IT. A fragment does not sit on one
+    // tile; it sits inside a square metre that two (or three, or four) tiles
+    // share. One textureGather hands back all four ids at once, and the
+    // bilinear fractions are each tile's SHARE of this fragment. Two grounds
+    // covering 0.6 and 0.4 of it do not meet at a line — the surface here IS
+    // 60 % one and 40 % the other, and mixing them by exactly those shares is
+    // a continuous function of position with no edge anywhere in it.
+    //
+    // This replaced a first attempt that sampled the id twice — once here,
+    // once a metre away — and blended wherever the two disagreed. It looked
+    // better than the staircase and was still wrong in kind: "the two samples
+    // disagree" is a BINARY region, and the silhouette of that region was
+    // simply the old hard edge in a new place (the owner saw the fingers and
+    // tongues it made along a beach).
+    vec2 texSize = vec2(textureSize(u_material, 0));
+    vec2 texelUv = 1.0 / texSize;
+
+    // The jitter survives, doing the one job it is actually good at: moving
+    // the boundary, not softening it. A margin in nature wanders — two
+    // octaves, one bending every ~3 m and one fraying four times finer — and
+    // how far is the ground's own `edge_m`: a road keeps 0.3 m and stays a
+    // road, sand creeps into grass with 1.6. Metres are texels here (a tile
+    // is a metre, kTileMeters), so the texture's own size converts them.
+    float edgeM = kGroundEdge[min(uint(texture(u_material, vUv).r * 255.0
+                                       + 0.5),
+                                  kGroundCount - 1u)];
+    vec2 uvJ = vUv;
     if (edgeM > 0.0) {
         vec2 wander = vec2(wnoise(gWorld + 3.1, kJointFreq),
                            wnoise(gWorld + 91.7, kJointFreq)) - 0.5;
         vec2 ragged = vec2(wnoise(gWorld + 57.3, kJointFreq * 4.0),
                            wnoise(gWorld + 13.9, kJointFreq * 4.0)) - 0.5;
-        edge = (wander * 2.0 + ragged * 0.7) * edgeM;
-        vec2 texelUv = 1.0 / vec2(textureSize(u_material, 0));
-        midB = min(uint(texture(u_material, vUv + edge * texelUv).r * 255.0
-                            + 0.5),
-                   kGroundCount - 1u);
+        uvJ += (wander * 2.0 + ragged * 0.7) * edgeM * texelUv;
     }
+
+    // The four ids that share this fragment, and their shares of it.
+    // textureGather returns the 2×2 in the order (0,1) (1,1) (1,0) (0,0).
+    vec4 ids = textureGather(u_material, uvJ) * 255.0;
+    vec2 f = fract(uvJ * texSize - 0.5);
+    // The shares are bilinear, but SHARPENED to the material's own margin:
+    // raw bilinear spreads every transition across a full tile, which is
+    // right for a beach and wrong for a stone one tile wide — it would be in
+    // its own ramp everywhere and read as a stain rather than a stone. The
+    // same `edge_m` that says how far a margin wanders says how wide it is,
+    // because they are the same fact about the ground. A built thing (road
+    // 0.3) keeps a hand's width of margin and stays crisp.
+    float band = clamp(edgeM, 0.05, 1.0);
+    vec2 fs = clamp((f - 0.5) / band + 0.5, 0.0, 1.0);
+    vec4 share = vec4((1.0 - fs.x) * fs.y, fs.x * fs.y,
+                      fs.x * (1.0 - fs.y), (1.0 - fs.x) * (1.0 - fs.y));
+
+    // Coverage per DISTINCT id: a tile counts once for every corner it owns,
+    // so a material holding three of the four corners holds three quarters of
+    // this square metre.
+    vec4 cov;
+    for (int k = 0; k < 4; ++k) {
+        float c = 0.0;
+        for (int j = 0; j < 4; ++j)
+            if (abs(ids[j] - ids[k]) < 0.5) c += share[j];
+        cov[k] = c;
+    }
+    int kTop = 0;
+    for (int k = 1; k < 4; ++k) if (cov[k] > cov[kTop]) kTop = k;
+    int kSnd = -1;
+    for (int k = 0; k < 4; ++k) {
+        if (abs(ids[k] - ids[kTop]) < 0.5) continue;
+        if (kSnd < 0 || cov[k] > cov[kSnd]) kSnd = k;
+    }
+
+    uint mid = min(uint(ids[kTop] + 0.5), kGroundCount - 1u);
+    uint midB = kSnd < 0 ? mid : min(uint(ids[kSnd] + 0.5), kGroundCount - 1u);
+    // The runner-up's share of the pair. It reaches 0.5 exactly on the line
+    // between two tile centres and falls to 0 at either centre — so the
+    // transition is one tile wide by construction, everywhere, and needs no
+    // number to set its width. The noise only ROUGHENS it: a margin is not a
+    // clean ramp.
+    float b = kSnd < 0 ? 0.0
+                       : cov[kSnd] / max(cov[kTop] + cov[kSnd], 1e-5);
+    b *= 0.7 + 0.6 * wnoise(gWorld + 77.1, kJointFreq * 4.0);
+    b = clamp(b, 0.0, 0.5);
 
     vec3 V = normalize(pc.camPos.xyz - vWorld);
     float time = u_pointLights.skyParams.x;
@@ -467,19 +553,13 @@ void main() {
 
     Ground g = ground_of(mid, gWorld, Pabs, N, V, px, vHeight, time, wind,
                          true);
-    if (midB != mid) {
-        // The two materials INTERLOCK rather than abut: where the jittered
-        // sample lands on a different ground, both are synthesised and mixed
-        // by a third noise at the ragged scale. That is the difference
-        // between a boundary that is a curve and one that is a blend — a
-        // beach's sand does not stop at a line, it thins into the grass.
-        // Paid only in the band the jitter can reach, which is a thin sliver
-        // of any frame (this branch is why `edge_m` is a per-material number
-        // and not a global: it is also the width of what this costs).
-        Ground h = ground_of(midB, gWorld, Pabs, N, V, px, vHeight, time,
-                             wind, false);
-        float w = wnoise(gWorld + 77.1, kJointFreq * 4.0);
-        g.albedo = mix(g.albedo, h.albedo, w);
+    if (b > 0.02) {
+        // The two grounds, mixed by their shares of this square metre. The
+        // runner-up lends its COLOUR on the winner's shape (ground_colour) —
+        // a second full synth was measured at twice the price of this one for
+        // a difference nobody can see across a one-metre band.
+        g.albedo = mix(g.albedo,
+                       ground_colour(midB, g.surfZ, g.macroZ, vHeight), b);
     }
     vec3 base = g.albedo;
     vec3 Nb = g.nrm;

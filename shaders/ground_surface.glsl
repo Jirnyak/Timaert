@@ -179,7 +179,7 @@ const float kGroundEdge[15] = float[15](
     1.20000,  //  8 tropics
     0.40000,  //  9 field
     1.60000,  // 10 shore
-    1.20000,  // 11 rock
+    0.60000,  // 11 rock
     0.30000,  // 12 road
     1.00000,  // 13 waterbed
     0.40000   // 14 field_v

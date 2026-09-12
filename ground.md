@@ -141,70 +141,88 @@ area-equivalent square, the same quantity a mip level is chosen by.
 
 ## The joint between two materials
 
-Raised by the owner 2026-09-12, looking at a hillside: *«стыки разных
-материалов — они тайловые, очень резкие»*. **Built the same day (options A+B
-of the four that were tabled; the owner picked both).**
+Raised by the owner 2026-09-12 (*«стыки разных материалов — они тайловые,
+очень резкие»*), built the same day, and then **rebuilt the same day**, which
+is the part worth writing down.
 
 **Why it happened.** `u_material` is an R8 texture, **one texel per world tile
 (1 m), sampled NEAREST** — deliberately, because that per-fragment lookup is
 what keeps a 1-tile road connected instead of dissolving between the terrain
-mesh's 16 m vertices (see [render.md](render.md)). The price is that a joint
-between two materials was a 1 m axis-aligned staircase with no blend anywhere.
-Ground↔ground biome boundaries were already softened — `pick_ground_biome`
-dithers two climates across a ~250-tile band — but the AUTHORED boundary
-(`material_is_authored`: road, field, shore, rock, water) is crisp by design,
-and that is what the eye was catching.
+mesh's 16 m vertices (see [render.md](render.md)). The price is that a POINT
+SAMPLE of it is a step function, so every joint was a 1 m axis-aligned
+staircase. Ground↔ground biome boundaries were already softened —
+`pick_ground_biome` dithers two climates across a ~250-tile band — but the
+AUTHORED boundary (`material_is_authored`: road, field, shore, rock, water) is
+crisp by design, and that is what the eye was catching.
 
-**What it does now.** Two samples of the material texture, not one:
+**The first attempt, and why it was wrong in KIND.** It sampled the id twice —
+here and a metre away along a noise field — and blended wherever the two
+disagreed. It looked better than the staircase and it was still not a fix:
+*"the two samples disagree"* is a BINARY region, and the silhouette of that
+region is just the old hard edge in a new place. The owner found it in one
+pass, on a beach, where it drew tongues and fingers of sand with knife edges.
+**A discontinuity cannot be hidden by putting a smooth fill inside a
+discontinuous outline.**
 
-1. the centre sample says which ground this is, and its row's **`edge_m`** says
-   how far its own margin may wander;
-2. the second sample is taken that far away along a noise field — two octaves,
-   one bending every ~3 m and one fraying four times finer, which is the shape
-   a real margin has. The staircase is gone: the joint is a curve finer than
-   the tile that draws it.
-3. Where the two samples disagree, **both grounds are synthesised and mixed**
-   by a third noise at the ragged scale. The materials interlock instead of
-   abutting — a beach's sand does not stop at a line, it thins into the grass.
+**What it does now — one idea, and it is continuous everywhere.** A fragment
+does not sit on one tile; it sits inside a square metre that up to four tiles
+share. ONE `textureGather` returns all four ids at once, and the bilinear
+fractions are each tile's SHARE of this fragment:
 
-`edge_m` is per material because it is a property of the ground: a BUILT thing
-keeps a small number and stays crisp (road 0.3 m — more than half its own width
-would eat it), sand and peat creep with a large one (1.6 m). It is also the
-width of what the blend costs, which is why it is not one global number.
+* the ground here is the one with the largest share, and the runner-up's share
+  of the pair is the blend weight. It reaches 0.5 exactly on the line between
+  two tile centres and falls to 0 at either centre — the transition is a
+  **continuous function of position**, with no region, no silhouette, and no
+  number needed to set its width;
+* `edge_m` sharpens those shares to the ground's own margin width, because raw
+  bilinear spreads every transition across a full tile — right for a beach,
+  wrong for a stone one tile across, which would then be inside its own ramp
+  everywhere and read as a stain rather than a stone;
+* the same `edge_m` jitters WHERE the gather is taken, along two noise octaves
+  (bending every ~3 m, fraying four times finer). That is the one job the
+  jitter is actually good at: moving a margin, not softening it;
+* the runner-up lends its **colour**, not a second synth: it borrows the
+  winner's already-computed shape and the place's already-computed patchwork,
+  and its cover joins as the mean tint its density describes. Across a
+  one-metre band a family's PATTERN is not legible; its hue and lightness are.
+  Measured, that choice is the whole cost of being correct (below).
 
-The neighbour's synth deliberately runs **without its relief**: its two height
-taps and two strand taps would be averaged into the centre material's normal
-anyway. Blending two albedos is the point of a joint; blending two
-micro-reliefs is not worth a third of the ground's cost. (Measured: it was.)
+`edge_m` is per material because it is one fact about the ground — how far its
+margin reaches — read twice. A built thing keeps a small number (road 0.3 m)
+and stays a road; sand and peat creep with a large one (1.6 m).
 
-**Cost, measured** — the owner's own cell (162,148), pitch −12, 3000 bodies,
-interleaved A/B of the shader alone:
+**Cost, measured** (`TIMAERT_GPU_STATS`, 3000 bodies, interleaved A/B of the
+shader alone, minimum over eight one-second windows — the mean drifts with the
+chassis, the minimum does not):
 
-| | scene | over no joint |
+| | 162,148 — treeline confetti, the worst case | 776,776 — an ordinary cell |
 |---|---|---|
-| no joint (the previous commit) | 7.48 ms | — |
-| A alone — one jittered sample, no blend | 7.64 ms | +0.16 |
-| **A+B as shipped** | **8.38 ms** | **+0.90** |
-| A+B with the neighbour's relief too | 9.04 ms | +1.56 |
+| no joint at all | 6.97 ms | 7.45 ms |
+| first attempt (jitter + binary blend) | 8.14 ms | 8.00 ms |
+| coverage + a full second synth | 8.92 ms | 8.30 ms |
+| **coverage + borrowed colour (shipped)** | **8.00 ms** | **8.13 ms** |
 
-That cell is the WORST case on purpose: its treeline scatters single tiles of
-rock through the grass, so a large share of its pixels sit inside a joint. My
-estimate before measuring was +0.3–0.5 ms for B; the true figure at that cell
-is +0.74 ms over A, and the estimate was wrong for a reason worth remembering —
-the blend's cost scales with how much of the frame is *near a boundary*, and
-confetti makes that nearly everything.
+So the correct construction costs what the incorrect one did — but only
+because the runner-up borrows the shape. Paying for its own synth was measured
+at roughly double the joint's price for a difference no one can see inside a
+metre.
 
-**Still open — option D.** The treeline scatters rock as SINGLE tiles
-(`treeline_is_rock`, a per-tile hash). The joint work made each one an
-irregular stone instead of a grey rectangle, which is most of the fix, but they
-are still scattered singles where real scree lies in patches. Thresholding a
-noise field instead of hashing per tile would clump them — one CPU function,
-free at runtime, and it would also tidy the 2D map, which reads the same band.
-Not taken: it changes what the world IS, and that is the owner's call.
+The worst case is a cell whose treeline scatters single tiles of rock through
+grass, so a large share of its pixels sit inside a joint. That is also the
+remaining open item:
 
-Two options were tabled and NOT taken: **C** (dither the authored boundary in
-the baked tile grid — free, but it changes the world's own data, which
-collision, roads and pathing all read) and the do-nothing.
+**Still open — option D.** `treeline_is_rock` scatters rock as SINGLE tiles (a
+per-tile hash). The joint work turned each one from a grey rectangle into a
+stone with a soft margin, which is most of the fix, but real scree lies in
+patches. Thresholding a noise field instead of hashing per tile would clump
+them — one CPU function, free at runtime, and it would tidy the 2D map, which
+reads the same band. It also halves what the joint costs in exactly the cells
+where the joint costs most. Not taken: it changes what the world IS, and that
+is the owner's call.
+
+A third option was tabled and not taken: dithering the authored boundary in
+the baked tile grid (free, but it changes the world's own data, which
+collision, roads and pathing all read).
 
 ## Measured
 
