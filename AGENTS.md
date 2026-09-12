@@ -258,9 +258,11 @@ even if everything compiles and passes.
   authority. A passing Windows build proves compilation only.
 - There is **no separate battle MODE, and ONE law of combat** (CANON.md S13).
   Fought combat is unified subworld play: every NPC kind carries
-  `CombatTemplate`, any hireable kind can serve as a soldier, and the danger
-  zone level controls subworld exit. Do not introduce a battle screen, RPS
-  damage table, or per-unit-type stats (see `ARCHITECTURE.md` §Combat System).
+  `CombatTemplate`, any hireable kind can serve as a soldier, and subworld
+  exit is gated strictly by immediate enemy proximity (HUD danger radius,
+  never zone byte — owner verdict 2026-09-11, problems.md §43). Do not introduce
+  a battle screen, RPS damage table, or per-unit-type stats (see
+  `ARCHITECTURE.md` §Combat System).
   **Auto-resolve is the world's PRIMARY battle path, and it is built**: the
   microworld exists only around the player, so every fight without him settles
   through `macro/auto_battle.h` (`resolve_auto_battle`,
