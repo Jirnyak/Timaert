@@ -1017,7 +1017,38 @@ bool run_subworld_seam_smoke(App& app) {
     const int beforeCy = app.subworld.mgr().center_cy();
     const float beforeX = app.subworld.player_x();
     const float beforeY = app.subworld.player_y();
-    app.subworld.move_player(0.0f, 1200.0f);
+
+    // ── A PLACE MUST NOT FOLLOW THE WINDOW (SUB-3) ──────────────────────
+    // Plant a meaning exactly where he stands, then walk him off it across a
+    // seam. A zone addressed by macro cell stays on the ground it names, so
+    // this circle files NOTHING: he left it and never came back.
+    //
+    // The radius is derived from the walk, not chosen: he moves kSeamWalk and
+    // the re-centre shifts him back by kCellSize, so a circle that rode the
+    // WINDOW instead of the world would end up |kSeamWalk − kCellSize| away
+    // from him. Anything strictly between that residue and the full walk
+    // separates the two outcomes — a zone left behind is out of reach, a zone
+    // dragged along swallows him.
+    constexpr float kSeamWalk = 1200.0f;
+    constexpr float kZoneRadius = 256.0f;
+    static_assert(kZoneRadius > kSeamWalk - float(sm::sub::kCellSize),
+                  "a dragged zone must provably contain him");
+    static_assert(kZoneRadius < kSeamWalk,
+                  "a zone left behind must provably not");
+    // Its own `amount`, so the count below reads THIS circle and not a spire
+    // that may legitimately stand on the same cell.
+    constexpr int kZoneMark = 424242;
+    app.subworld.add_sub_zone(beforeCx, beforeCy,
+                              beforeX - float(sm::sub::kCellSize),
+                              beforeY - float(sm::sub::kCellSize),
+                              kZoneRadius, sm::FactKind::Explored, kZoneMark);
+    if (app.subworld.sub_zone_count() < 1) {
+        smoke_fail(app, "subworld_seam zone not planted");
+        app.subworld.leave(true);
+        return false;
+    }
+
+    app.subworld.move_player(0.0f, kSeamWalk);
     std::fprintf(stderr, "[smoke] subworld_seam moved player=%.1f,%.1f\n",
                  app.subworld.player_x(), app.subworld.player_y());
     std::fflush(stderr);
@@ -1083,9 +1114,24 @@ bool run_subworld_seam_smoke(App& app) {
 
     const float afterX = app.subworld.player_x();
     const float afterY = app.subworld.player_y();
+    int zoneFired = 0;
+    sm::chronicle_recent(app.gs.chronicle, /*sinceDay*/0, /*limit*/64,
+                         [](void* u, const sm::WorldFact& f) {
+                             if (f.kind == std::uint16_t(sm::FactKind::Explored)
+                                 && f.amount == kZoneMark) {
+                                 ++*static_cast<int*>(u);
+                             }
+                         }, &zoneFired);
     app.subworld.leave(true);
     if (app.subworld.active()) {
         smoke_fail(app, "subworld_seam leave failed");
+        return false;
+    }
+    if (zoneFired != 0) {
+        // The circle he walked away from filed a visit anyway — it was riding
+        // the window, so the re-centre re-seated it under his feet and the
+        // chronicle now remembers an exploration that never happened.
+        smoke_fail(app, "subworld_seam zone followed the window");
         return false;
     }
 

@@ -320,7 +320,8 @@ public:
     // the player crossing in. Today enter() seeds the one zone (the spire's
     // power circle, at the generator's exported tower placement) — a scene
     // that wants another calls this, not a mechanism.
-    void add_sub_zone(float x, float y, float radius, FactKind kind,
+    void add_sub_zone(int cellX, int cellY, float localX, float localY,
+                      float radius, FactKind kind,
                       std::int32_t amount = 0, bool onceEver = true);
     int sub_zone_count() const { return subZoneCount_; }
 
@@ -641,8 +642,10 @@ private:
     MacroWorld          mw_{};
     // The 3×3 window's SP weights, resolved once per (enter / re-centre /
     // dungeon scene) — the door's performance contract (macro/cell_facts.h):
-    // the per-tick walk price is an array read, never a facts assembly. A
-    // negative slot = not cached (fail-open to a live resolve).
+    // the per-tick walk price is an array read, never a facts assembly.
+    // Invalid only between construction and the first resolve: `enter()` gates
+    // on a live terrain before it fills these, and every scene change refills
+    // them, so a live session never reads an unfilled slot.
     std::array<float, 9> winStepWeight_{};
     bool winStepWeightValid_ = false;
     void refresh_window_step_weights();
@@ -666,7 +669,15 @@ private:
     // handful of meanings, and a generator that wants one adds a row rather
     // than a mechanism.
     struct SubZone {
-        float x = 0.0f, y = 0.0f;   // subworld tiles
+        // WHERE, in the address that survives a re-centre: the MACRO CELL that
+        // owns the place, plus the offset inside it. Window tiles are a view,
+        // not an address — a zone stored in them held its window position while
+        // the window slid out from under it, so the circle re-seated itself on
+        // the middle of whatever cell had moved into that spot, and filed its
+        // fact there. The cell is also who the fact belongs to, so the address
+        // and the filing are now one truth (SUB-3).
+        int   cellX = 0, cellY = 0;
+        float localX = 0.0f, localY = 0.0f;   // tiles inside that cell
         float radius = 0.0f;        // 0 = this slot is empty
         FactKind kind = FactKind::None;
         std::int32_t amount = 0;

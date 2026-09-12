@@ -516,8 +516,12 @@ float SubworldEngine::crosshair_stance() const {
     const float fy = std::sin(cam_.yaw) * cp;
     const float fz = std::sin(cam_.pitch);
     constexpr float kMaxRange = 200.0f;
-    // Ray segment: player position → player + dir * kMaxRange.
-    const float ax = playerX_, ay = playerY_, az = playerZ_;
+    // Ray segment: player EYE → eye + dir * kMaxRange. The eye, not the feet:
+    // the direction comes from the camera, which sits a body height up, so a
+    // ray started at `playerZ_` ran parallel to the look 1.7 m below it and
+    // missed every target the moment the player aimed off level (sub/height.h
+    // describes exactly this class of gap). One door answers the height.
+    const float ax = playerX_, ay = playerY_, az = player_muzzle_z();
 
     entt::entity best = entt::null;
     float bestT = kMaxRange;
@@ -639,6 +643,11 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     // needs.
     structIndex_.rebuild(mgr_.structures(),
                          &SubworldEngine::ground_height_callback, this);
+    // The props of the scene follow the same signal as its solids — said here
+    // rather than left to the first tick. It used to be reached only because
+    // `spawn_all_cells()` raises the SOLIDITY flag, so the flag for walls was
+    // what happened to refill the shortlist the interaction prompt reads.
+    rebuild_prop_cache();
     structIndexDirty_ = false;
     // Entry-side placement (macro/entry_context.h): the player lands in the
     // CENTRE cell on the side they actually walked in from, at a depth that
@@ -762,17 +771,18 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     // and a generator that wants another writes `add_sub_zone`, not a
     // mechanism.
     //
-    // The zone sits in the CENTRE cell of the window, which is the macro cell
-    // the player entered: the spire stands on its own square of the map, and
-    // WHERE on that square is the generator's exported placement
-    // (dgn/dispatch.h kSpireTowerLocalCenter) — window offset + tower axis.
+    // The zone belongs to the spire's OWN square of the map, and WHERE on that
+    // square is the generator's exported placement (dgn/dispatch.h
+    // kSpireTowerLocalCenter). Said as the cell plus that offset, the circle
+    // needs no maintenance at a seam: it is already in the coordinates the
+    // world keeps.
     subZoneCount_ = 0;
     subZonesEntered_ = 0;
     for (const auto& sp : gs.landmarks) {
         if (sp.type != LandmarkType::Spire) continue;
         if (sp.x != cx || sp.y != cy) continue;
-        const float mid = float(kCellSize) + kSpireTowerLocalCenter;
-        add_sub_zone(mid, mid, float(kCellSize) * 0.5f, FactKind::Explored,
+        add_sub_zone(sp.x, sp.y, kSpireTowerLocalCenter, kSpireTowerLocalCenter,
+                     float(kCellSize) * 0.5f, FactKind::Explored,
                      int(sp.spellId) + 1);
         break;
     }
@@ -1434,7 +1444,8 @@ void SubworldEngine::player_macro_cell(int& cx, int& cy) const {
     if (cy < 0) cy += mapH;
 }
 
-void SubworldEngine::add_sub_zone(float x, float y, float radius,
+void SubworldEngine::add_sub_zone(int cellX, int cellY,
+                                  float localX, float localY, float radius,
                                   FactKind kind, std::int32_t amount,
                                   bool onceEver) {
     if (subZoneCount_ >= kMaxSubZones || radius <= 0.0f
@@ -1442,7 +1453,8 @@ void SubworldEngine::add_sub_zone(float x, float y, float radius,
         return;   // a scene holds a handful of meanings; refuse, never drop
     }
     SubZone& z = subZones_[std::size_t(subZoneCount_++)];
-    z.x = x; z.y = y; z.radius = radius;
+    z.cellX = cellX; z.cellY = cellY;
+    z.localX = localX; z.localY = localY; z.radius = radius;
     z.kind = kind; z.amount = amount; z.onceEver = onceEver;
 }
 
@@ -1457,16 +1469,28 @@ void SubworldEngine::add_sub_zone(float x, float y, float radius,
 // with a save field to keep true.
 void SubworldEngine::tick_zones() {
     if (!gs_ || subZoneCount_ == 0) return;
-    int cx = 0, cy = 0;
-    player_macro_cell(cx, cy);
     const std::int32_t today = gs_->worldTime.day();
 
     for (int i = 0; i < subZoneCount_; ++i) {
         const SubZone& z = subZones_[std::size_t(i)];
         if (z.radius <= 0.0f) continue;
         const std::uint32_t bit = 1u << std::uint32_t(i);
-        const float dx = playerX_ - z.x;
-        const float dy = playerY_ - z.y;
+        // The zone's window position, asked fresh every step from its macro
+        // address — so a re-centre moves the circle with the ground it belongs
+        // to instead of leaving it behind. A cell outside the loaded 3×3 has no
+        // window position at all, and the player cannot be standing in it.
+        const int ox = toroidal_cell_offset(z.cellX, mgr_.center_cx(),
+                                            gs_->mapW);
+        const int oy = toroidal_cell_offset(z.cellY, mgr_.center_cy(),
+                                            gs_->mapH);
+        if (ox < -1 || ox > 1 || oy < -1 || oy > 1) {
+            subZonesEntered_ &= ~bit;
+            continue;
+        }
+        const float zx = float((ox + 1) * kCellSize) + z.localX;
+        const float zy = float((oy + 1) * kCellSize) + z.localY;
+        const float dx = playerX_ - zx;
+        const float dy = playerY_ - zy;
         const bool inside = (dx * dx + dy * dy) <= (z.radius * z.radius);
         if (!inside) { subZonesEntered_ &= ~bit; continue; }
         if (subZonesEntered_ & bit) continue;   // already inside since last step
@@ -1474,14 +1498,16 @@ void SubworldEngine::tick_zones() {
 
         if (z.onceEver) {
             int seen = 0;
-            chronicle_near_kind(gs_->chronicle, cx, cy, /*radiusCells*/0,
-                                z.kind, today,
+            chronicle_near_kind(gs_->chronicle, z.cellX, z.cellY,
+                                /*radiusCells*/0, z.kind, today,
                                 [](void* u, const WorldFact&) {
                                     ++*static_cast<int*>(u);
                                 }, &seen);
             if (seen > 0) continue;   // the world already remembers this
         }
-        record_world_fact(z.kind, cx, cy, z.amount);
+        // Filed at the PLACE's own cell, which is the one the zone was built
+        // on — not at whichever cell the player's feet happen to resolve to.
+        record_world_fact(z.kind, z.cellX, z.cellY, z.amount);
     }
 }
 
@@ -2029,13 +2055,8 @@ void SubworldEngine::tick_damage_fx() {
     // out from the torso rather than the feet. One constant, not per-creature —
     // the archetype only chooses blood vs dust, never geometry.
     constexpr float kSprayHeightM = 1.1f;
-    std::array<entt::entity, kMaxSubworldEntityReaps> consumed{};
-    int consumedCount = 0;
     auto view = reg.view<ecs::DamageFx, ecs::Position>();
     for (auto e : view) {
-        if (consumedCount < kMaxSubworldEntityReaps) {
-            consumed[std::size_t(consumedCount++)] = e;
-        }
         // The player body's damage feedback is the HUD hit-flash; a world burst
         // would spawn on the camera and clip the near plane. Skip it (still
         // consumed below so the tag never lingers).
@@ -2091,31 +2112,33 @@ void SubworldEngine::tick_damage_fx() {
             }
         }
     }
-    for (int i = 0; i < consumedCount; ++i) {
-        const entt::entity e = consumed[std::size_t(i)];
-        if (reg.valid(e) && reg.all_of<ecs::DamageFx>(e)) {
-            reg.remove<ecs::DamageFx>(e);
-        }
-    }
+    // EVERY spray is consumed, not the first batch of them. The mark is a
+    // one-shot read by exactly this pass, so the whole set goes at once —
+    // a body left holding its DamageFx bled again on the next tick, and on
+    // every tick after, because the overflow was never reached.
+    reg.clear<ecs::DamageFx>();
 }
 
 void SubworldEngine::tick_hit_flashes(float dt) {
     if (!ecs_ || dt <= 0.0f) return;
     auto& reg = ecs_->reg;
-    std::array<entt::entity, kMaxSubworldEntityReaps> expired{};
-    int expiredCount = 0;
     auto view = reg.view<ecs::HitFlash>();
-    for (auto e : view) {
-        auto& flash = view.get<ecs::HitFlash>(e);
-        flash.timer -= dt;
-        if (flash.timer <= 0.0f && expiredCount < kMaxSubworldEntityReaps) {
-            expired[std::size_t(expiredCount++)] = e;
+    for (auto e : view) view.get<ecs::HitFlash>(e).timer -= dt;
+    // Then DRAIN the burnt-out ones — repeating while the batch fills, the way
+    // clear_subworld_entities drains. Removal is deferred because a view may
+    // not be mutated while it is walked; truncating at the batch instead left
+    // the surplus lit with a timer already past zero, and nothing ever came
+    // back for them.
+    for (int taken = kMaxSubworldEntityReaps; taken == kMaxSubworldEntityReaps;) {
+        std::array<entt::entity, kMaxSubworldEntityReaps> expired{};
+        taken = 0;
+        for (auto e : reg.view<ecs::HitFlash>()) {
+            if (reg.get<ecs::HitFlash>(e).timer > 0.0f) continue;
+            expired[std::size_t(taken++)] = e;
+            if (taken == kMaxSubworldEntityReaps) break;
         }
-    }
-    for (int i = 0; i < expiredCount; ++i) {
-        const entt::entity e = expired[std::size_t(i)];
-        if (reg.valid(e) && reg.all_of<ecs::HitFlash>(e)) {
-            reg.remove<ecs::HitFlash>(e);
+        for (int i = 0; i < taken; ++i) {
+            reg.remove<ecs::HitFlash>(expired[std::size_t(i)]);
         }
     }
 }
@@ -3353,6 +3376,13 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
     statusTimer_ = 0.0f;
     combatLogCount_ = 0;
     playerThreatD2_ = kNoThreatDistance2;
+    // An interior is a DIFFERENT SPACE that happens to be drawn in the same
+    // window: its local coordinates are the floor's, not the map square's, so
+    // the surface's circles mean nothing in here. Every way into an interior
+    // (a door, the stairs between floors, the prologue's pocket) lands in this
+    // one function, so the scene's meanings are dropped once, here.
+    subZoneCount_ = 0;
+    subZonesEntered_ = 0;
     // New floor, new ground: the stain canvas forgets the overworld's marks
     // (and vice versa on the way back through enter()).
     stampRing_.clear();
@@ -4711,7 +4741,7 @@ void SubworldEngine::record_shadow(VkCommandBuffer cmd) {
     if (gs_) {
         float wx = 0, wz = 0;
         Renderer3DVk::tile_to_world(playerX_, playerY_, wx, wz);
-        cam_.pos = {wx, playerZ_ + kBodyEyeM, wz};
+        cam_.pos = {wx, player_muzzle_z(), wz};
     }
     renderer3dVk_.record_shadow(cmd, cam_, render_time());
 }

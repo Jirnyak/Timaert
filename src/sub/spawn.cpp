@@ -48,18 +48,6 @@ bool carried_above_water(const StructureIndex* solids, float x, float y) {
     return is_dry_footing(top);
 }
 
-// Signed toroidal offset of macro cell `a` from window centre `c` on a torus of
-// circumference `n`, folded to (-n/2, n/2]. A result in {-1,0,1} means `a` is in
-// the 3×3 window at that cell offset; anything else is outside it. Matches the
-// wrap semantics the macro AI uses (core/torus.h), so "in the window" here means
-// exactly the same cells the seamless manager loads.
-int toroidal_cell_offset(int a, int c, int n) {
-    if (n <= 0) return a - c;
-    int d = ((a - c) % n + n) % n;   // [0, n)
-    if (d * 2 > n) d -= n;           // fold to (-n/2, n/2]
-    return d;
-}
-
 // The face of a DERIVED body: appearance and name rolled from its seed, never
 // stored anywhere above. `tintBase` used to be 150 here and 160 in the other two
 // spawners — a difference nobody could see (no pass reads NpcCharacter's tint)
@@ -401,6 +389,16 @@ void spawn_landmark_population(ecs::World& w,
 }
 
 } // namespace
+
+// Folded to (-n/2, n/2]. Matches the wrap semantics the macro AI uses
+// (core/torus.h), so "in the window" here means exactly the same cells the
+// seamless manager loads.
+int toroidal_cell_offset(int a, int c, int n) {
+    if (n <= 0) return a - c;
+    int d = ((a - c) % n + n) % n;   // [0, n)
+    if (d * 2 > n) d -= n;           // fold to (-n/2, n/2]
+    return d;
+}
 
 // ── The two forms of birth (declared in spawn.h) ─────────────────────────
 

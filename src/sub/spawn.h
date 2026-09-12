@@ -296,6 +296,13 @@ void clear_subworld_world_entities(ecs::World& w);
 // window instead of drifting by one macro cell each crossing.
 void rebase_subworld_entities(ecs::World& w, float dxTiles, float dyTiles);
 
+// Signed toroidal offset of macro cell `a` from window centre `c` on a torus of
+// circumference `n`. A result in {-1,0,1} means `a` is in the loaded 3×3 window
+// at that cell offset; anything else is outside it. THE translation from a
+// world address to a window one — everything that must survive a re-centre
+// stores the macro cell and asks this at the moment it needs a window position.
+int toroidal_cell_offset(int a, int c, int n);
+
 // Destroy world-owned subworld creatures whose Position now lies outside the
 // composite window [0,kFullSize)²; player-side projections are never evicted.
 // Run after rebase on a re-centre to evict exactly the cells that left the 3×3.
