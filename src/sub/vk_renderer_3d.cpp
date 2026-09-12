@@ -69,11 +69,16 @@ struct MeshPush {
     float sunColor[4];
     float ambient[4];
     float lightMvp[16];
-    // Stain-canvas validity (Inc C): xy = camera world XZ (the canvas centre),
-    // z = valid radius (m, Chebyshev — the canvas is square), w = enable.
-    // Texels beyond the radius hold marks from the toroidal far side and must
-    // read as clean ground; w=0 (the harness) makes the whole term inert.
-    float stain[4];
+    // xyz = camera world position. Two readers, one value: the ground's cover
+    // layer needs the view vector to look INTO the grass (mesh.frag
+    // cover_apply), and the stain canvas is centred on the camera — it used
+    // to carry its own copy of the same XZ.
+    // w = the stain canvas's valid radius (m, Chebyshev — the canvas is
+    // square). Texels beyond it hold marks from the toroidal far side and
+    // must read as clean ground; w <= 0 means there is no canvas at all,
+    // which is how the harness (and a frame before the stamp pipeline
+    // exists) opts the whole term out.
+    float camPos[4];
 };
 
 // Push-constant block for the procedural sky — matches sky.frag.
@@ -2878,13 +2883,15 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
     // it does not "pop" when the seamless window recentres at a seam crossing.
     push.sunDir[3]   = groundOriginX_;
     push.sunColor[3] = groundOriginY_;
-    // Stain canvas: centred on the CAMERA (it follows the camera, not the
-    // player). Valid ring 500 tiles — half the canvas minus a margin for the
-    // strips cleared this frame.
-    push.stain[0] = cam.pos.x;
-    push.stain[1] = cam.pos.z;
-    push.stain[2] = 500.0f;
-    push.stain[3] = (stampPipe_.pipeline != VK_NULL_HANDLE) ? 1.0f : 0.0f;
+    // The camera, once: the ground's cover layer looks along it and the stain
+    // canvas is centred on it (it follows the camera, not the player). Valid
+    // ring 500 tiles — half the canvas minus a margin for the strips cleared
+    // this frame; 0 while there is no stamp pipeline, which switches the
+    // canvas lookup off.
+    push.camPos[0] = cam.pos.x;
+    push.camPos[1] = cam.pos.y;
+    push.camPos[2] = cam.pos.z;
+    push.camPos[3] = (stampPipe_.pipeline != VK_NULL_HANDLE) ? 500.0f : 0.0f;
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       terrainPipe_.pipeline);

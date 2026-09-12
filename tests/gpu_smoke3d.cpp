@@ -98,11 +98,13 @@ namespace
         float sunColor[4]; // rgb = sun colour
         float ambient[4];  // rgb = ambient (sky / moon)
         float lightMvp[16];
-        // Stain-canvas validity (mesh.frag pc.stain). Zero-init everywhere in
-        // the harness: w=0 disables the term, and binding 1 below is a 1x1
-        // transparent dummy — the shared shader stays byte-identical to
-        // shipping while the harness scene has no canvas.
-        float stain[4];
+        // xyz = camera world position (mesh.frag pc.camPos — the view vector
+        // its cover layer looks along), w = the stain canvas's valid radius.
+        // The harness fills the camera and leaves the radius 0: that disables
+        // the canvas term, and binding 1 below is a 1x1 transparent dummy —
+        // the shared shader stays byte-identical to shipping while the
+        // harness scene has no canvas.
+        float camPos[4];
     };
 
     struct ShadowPush
@@ -1866,6 +1868,11 @@ int main(int, char**)
             push.ambient[1] = ambient.y;
             push.ambient[2] = ambient.z;
             std::memcpy(push.lightMvp, lightMvp.m, sizeof(push.lightMvp));
+            // The eye the ground's cover layer looks along; radius stays 0
+            // (no stain canvas here — see the struct's comment).
+            push.camPos[0] = eye.x;
+            push.camPos[1] = eye.y;
+            push.camPos[2] = eye.z;
             vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS,
                               pipeline.pipeline);
             const VkDescriptorSet terrainSets[2] = {shadowSet, materialSet};

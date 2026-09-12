@@ -560,10 +560,14 @@ drop may fall through a roof — the cover-height mask is a post-demo item.
   crossing, re-pointed to the ping-pong sibling image after an on-GPU relocation
   (see §Seam crossing below and [seamless-crossing.md](seamless-crossing.md)).
 
-  *Next polish:* the per-material **surface** variation still reads
-  "fabric-like" (a woven micro-pattern) rather than natural ground. The material
-  routing above is correct and shipped; it is the texture synth inside
-  `groundColor` that still needs a pass.
+  **The synth itself is now data** — three frequency bands, a normal
+  perturbation the sun and the shadow map shade for free, and a cover layer
+  (grass / snow / moss today) over the top, with every number in
+  `data/ground_materials.csv` + `data/ground_cover.csv` and not one in the
+  shader. This closes the "reads fabric-like rather than natural ground" note
+  that stood here: **[ground.md](ground.md) is THE document** for it — the
+  bands, the CV calibration, the families, the cover contract, the 1024 m
+  tiling law and the measured before/after.
 - **Trees** — **instanced procedural billboards**. One `vkCmdDraw(6, treeCount)`
   draws the whole forest: the quad corners come from `gl_VertexIndex`, and a
   per-instance buffer supplies `{vec3 pos, halfWidth, height, species, seed}` —

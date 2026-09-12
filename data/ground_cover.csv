@@ -1,0 +1,28 @@
+# THE cover vocabulary: what GROWS OR LIES on top of the ground. One row per
+# cover id; data/ground_materials.csv names the row and the density per ground.
+#
+# A cover is rendered by the ground shader itself — no new mesh, no new draw,
+# no new descriptor. The contract is (id, density, height): the ground row
+# picks the id and the density, the row below carries the rest, and ONE
+# function in mesh.frag draws every one of them. Adding ash, dust, fallen
+# leaves or a film of water is a ROW here plus a name in the ground CSV — it
+# is never a new branch in the shader.
+#
+# colour_*     — mean linear colour of the cover. At density 1 the ground
+#                beneath is fully hidden (snow); below that the two mix.
+# strand_per_m — how many blades / flakes / clumps to a metre. Its reciprocal
+#                is the structure wavelength; the pixel footprint dissolves it
+#                into a flat tint at range instead of letting it shimmer.
+# height_m     — how tall the layer stands. It buys two things at once: the
+#                parallax shift that makes tall cover lean away from the eye,
+#                and the strand slope (height × strand_per_m) that tilts the
+#                normal, so the sun already in the frame shades the blades.
+# wind         — how far the top of the layer is carried by the world wind
+#                (0 = it does not move: snow, moss, dust).
+# cv           — coefficient of variation of the cover's own luminance, the
+#                same calibrated knob the ground rows use.
+id,name,colour_r,colour_g,colour_b,strand_per_m,height_m,wind,cv,note
+0,none,1.00,1.00,1.00,0.0,0.00,0.0,0.00,"the absence of cover — density is ignored, the ground is bare"
+1,grass,0.27,0.40,0.16,7.0,0.28,1.0,0.26,the first instance: upright blades that bend with the same wind the clouds ride
+2,snow,0.90,0.93,0.98,2.5,0.10,0.0,0.08,"a blanket rather than blades — same function, strands wide and flat, wind zero"
+3,moss,0.24,0.36,0.18,14.0,0.03,0.0,0.18,fine felt in the cracks of stone; too low to sway

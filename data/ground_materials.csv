@@ -1,0 +1,55 @@
+# THE ground vocabulary of the subworld. One row per TerrainMaterial id
+# (sub/material.h) — the ordinal IS the id the material texture carries, so
+# rows are append-only and never reordered.
+#
+# Lines starting with '#' are comments; tools/gen_ground_table.py and
+# ground_table_test both skip them.
+#
+# family      — which procedural shape the ground wears (soil / turf / sand /
+#               furrow / stone / track / mud). A family is a SHAPE, not a
+#               material: several materials share one and differ by numbers.
+# albedo_*    — mean linear colour of the unlit ground.
+# cv          — target coefficient of variation of luminance (lum_std / mean,
+#               linear). This is the ONE knob for "how blotchy": the generator
+#               turns it into the lognormal sigma that reproduces it exactly,
+#               so the number stays comparable across materials instead of
+#               being a per-material taste. Authored here, anchored on the
+#               measured set of the reference project (smooth concrete 0.08,
+#               bare soil 0.22, corroded metal 0.44).
+# macro_cv    — the same coefficient of variation, but for the TERRAIN-scale
+#               patchwork (tens of metres): how blotchy the ground looks from
+#               a hillside, which is a different property from how grainy it
+#               is underfoot. It is what carries a bare biome at range, where
+#               the pixel footprint has already eaten every finer band.
+# meso_m      — wavelength IN METRES of the family's structure (the 0.3–2 m
+#               band the eye reads as surface). Its reciprocal is the
+#               frequency the shader uses.
+# micro_m     — wavelength in metres of the grain (2–8 cm). Damped by the
+#               pixel footprint, so it never aliases into shimmer.
+# chroma_*    — lognormal width and RGB axis of the HUE drift (mean-preserving
+#               like cv, applied along the axis: >1 channels warm, <1 cool).
+# relief_m    — peak height of the procedural relief IN METRES. This is the
+#               bump scale: the shader differentiates the same field the
+#               albedo reads, so a crevice is dark AND indented, and the sun
+#               and the shadow map already in place do the shading for free.
+# damp        — how much this ground darkens inside the shoreline height band
+#               (wet sand, lake bed, peat). 0 for everything that lives above
+#               the water table.
+# cover,cover_density — which row of data/ground_cover.csv grows on this
+#               ground and how densely (0 = bare).
+id,name,family,albedo_r,albedo_g,albedo_b,cv,macro_cv,meso_m,micro_m,chroma_sigma,chroma_r,chroma_g,chroma_b,relief_m,damp,cover,cover_density,note
+0,tundra,turf,0.50,0.52,0.45,0.16,0.20,1.2,0.05,0.06,1.05,1.00,0.90,0.09,0.0,grass,0.35,lichen mat over frozen ground — low tussocks and sparse cover
+1,taiga,turf,0.22,0.38,0.28,0.22,0.24,0.9,0.04,0.09,0.90,1.10,0.85,0.12,0.0,grass,0.60,needle litter and moss between the trunks
+2,snow,soil,0.62,0.66,0.70,0.07,0.05,2.0,0.06,0.02,1.00,1.00,1.05,0.05,0.0,snow,1.00,the GROUND of the snow biome is frozen earth — the white is COVER at density 1; take the cover away and the ground underneath is honest
+3,valley,soil,0.55,0.52,0.32,0.18,0.20,1.4,0.05,0.08,1.10,1.00,0.80,0.08,0.0,grass,0.45,dry river-valley loam
+4,meadow,turf,0.40,0.52,0.28,0.20,0.22,0.8,0.04,0.08,1.00,1.10,0.80,0.10,0.0,grass,0.75,the default ground of the temperate world
+5,swamp,mud,0.24,0.36,0.20,0.24,0.24,1.6,0.05,0.10,0.95,1.05,0.85,0.07,0.6,grass,0.50,peat flats with standing water — reeds where it drains
+6,desert,sand,0.82,0.72,0.48,0.10,0.10,1.1,0.03,0.04,1.05,1.00,0.85,0.10,0.0,none,0.00,wind ripples are the whole structure of a dune field
+7,steppe,turf,0.68,0.60,0.32,0.19,0.22,1.0,0.04,0.07,1.05,1.00,0.85,0.10,0.0,grass,0.50,dry bunch grass over pale loess
+8,tropics,turf,0.12,0.36,0.12,0.26,0.26,0.7,0.04,0.10,0.90,1.15,0.85,0.12,0.0,grass,0.90,closed herb layer — the ground barely shows
+9,field,furrow,0.55,0.48,0.26,0.20,0.14,4.5,0.04,0.07,1.10,1.00,0.80,0.14,0.0,grass,0.25,ridge-and-furrow: one ridge pair every meso_m (4.5 m is the historic strip width) with ploughed lines eight to the ridge; rows run EAST-WEST — the north-south twin is id 14 and the pick is field_furrows_vertical (sub/material.h)
+10,shore,sand,0.76,0.68,0.46,0.12,0.12,0.9,0.03,0.05,1.05,1.00,0.90,0.07,1.0,none,0.00,wave-combed sand; damp 1 = the band below the shoreline reads wet
+11,rock,stone,0.45,0.43,0.39,0.15,0.20,2.2,0.06,0.05,1.00,1.00,1.00,0.22,0.0,moss,0.18,"bare massif — plates split by cracks, moss only along the joints"
+12,road,track,0.42,0.34,0.23,0.14,0.10,3.0,0.03,0.05,1.05,1.00,0.90,0.04,0.0,none,0.00,packed dirt and gravel — the surface a thousand feet made flat
+13,waterbed,mud,0.38,0.35,0.29,0.13,0.14,1.3,0.05,0.05,0.95,1.00,1.05,0.05,1.0,none,0.00,"lake and river bed, seen through the water plane"
+14,field_v,furrow,0.55,0.48,0.26,0.20,0.14,4.5,0.04,0.07,1.10,1.00,0.80,0.14,0.0,grass,0.25,the same ploughed field as id 9 with the ridges running NORTH-SOUTH

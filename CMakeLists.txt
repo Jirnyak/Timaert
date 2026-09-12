@@ -244,7 +244,12 @@ set(_timaert_shader_incs
     ${CMAKE_SOURCE_DIR}/shaders/creature_sprite.glsl
     ${CMAKE_SOURCE_DIR}/shaders/shadow_common.glsl
     ${CMAKE_SOURCE_DIR}/shaders/lighting.glsl
-    ${CMAKE_SOURCE_DIR}/shaders/clouds.glsl)
+    ${CMAKE_SOURCE_DIR}/shaders/clouds.glsl
+    ${CMAKE_SOURCE_DIR}/shaders/surface_lib.glsl
+    # GENERATED from data/ground_materials.csv + data/ground_cover.csv by
+    # tools/gen_ground_table.py; committed, so the build needs no Python.
+    # `ground_table_test` fails if it drifts from the CSVs.
+    ${CMAKE_SOURCE_DIR}/shaders/ground_surface.glsl)
 foreach(_sh fullscreen.vert macro.frag mesh.vert mesh.frag billboard.vert tree.frag sky.frag shadow_mesh.vert shadow_mesh.frag shadow_bb.vert shadow_tree.frag water.vert water.frag struct.vert struct.frag struct_cyl.vert shadow_cyl.vert shadow_struct.vert shadow_struct.frag body.frag shadow_body.frag particle.vert particle.frag particle_matter.vert particle_matter.frag stamp.vert stamp.frag rain.vert rain.frag)
     add_custom_command(
         OUTPUT ${_timaert_spv_dir}/${_sh}.spv
@@ -1572,6 +1577,17 @@ timaert_test(bonus_registry_test)
 # THE sheet's two id spaces are registries: an attribute and a skill are ROWS
 # under a fixed envelope, and every number they govern asks one door.
 timaert_test(sheet_registry_test)
+
+# THE ground vocabulary is a registry too, and its consumer is a shader: the
+# test re-derives shaders/ground_surface.glsl from the two CSVs and fails on
+# drift, so tuning the look stays an edit to data and can never become an edit
+# to the generated file. Reads the tree at its source path — hence the define.
+timaert_test(ground_table_test
+    SOURCES
+        # sub/material.h is the authority on the id space the table indexes.
+        src/sub/material.cpp)
+target_compile_definitions(ground_table_test
+    PRIVATE TIMAERT_REPO_DIR="${CMAKE_SOURCE_DIR}")
 
 # ── CTest registration ─────────────────────────────────────────────────────
 # There is nothing here any more, and that is the point: timaert_test() calls
