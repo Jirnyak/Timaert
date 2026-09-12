@@ -32,6 +32,16 @@
 //      the band edge — the ground-band walls of 2026-08-29.
 //   6. Authored passthrough — road/field/rock/shore/water tiles keep their
 //      material id regardless of biome.
+//   6b. THE GROUND-BOUNDARY LAW (material.h ground_dither01) — the field that
+//      decides which of two close claims owns a tile is CORRELATED, and every
+//      boundary in the micro world consults that one field. A per-tile coin
+//      (what this was until 2026-09-12) makes pepper: a metre of stone, a
+//      metre of grass, a metre of stone, where nature puts patches. The
+//      owner photographed it on a mountainside and asked whether the defect
+//      was the mountain's or everyone's — it was everyone's, because the
+//      treeline and the biome seam each flipped their own copy of the same
+//      coin. NEGATIVE CONTROL: the coin is reimplemented here and shown to
+//      break into runs of ~2 tiles where the field holds ~20.
 //   7. Structure shade is a property of the WORLD, not of the 3×3 window.
 //      Same defect class as #3 in different clothing: the shade wobble used to
 //      be keyed to the structure's COMPOSITE coordinate, so a crossing — which
@@ -187,7 +197,7 @@ Biome removed_water_law_pick(const Biome nb[9],
             if (nb[i] != Water) return nb[i];
         return Water;
     }
-    const float r = tile_hash01(absX, absY) * total;
+    const float r = ground_dither01(absX, absY) * total;
     float acc = 0.0f;
     for (int i = 0; i < 4; ++i) {
         acc += w[i];
@@ -368,6 +378,96 @@ void test_structure_shade_survives_a_recentre() {
 
 } // namespace
 
+
+// ── 6b. The ground-boundary law ─────────────────────────────────────────────
+// Three properties, and the third is the one the owner can see.
+void test_ground_boundary_law_is_correlated_and_unbiased() {
+    // (a) UNBIASED. The field replaces a uniform coin, so it must still be
+    //     uniform in the mean — otherwise the AMOUNT of stone in a treeline
+    //     band (or of one biome in a seam) would silently change with the
+    //     arrangement, which is not what was being fixed.
+    double sum = 0.0;
+    int n = 0, lo = 0, hi = 0, outOfRange = 0;
+    for (long long y = -500; y < 500; y += 7) {
+        for (long long x = -500; x < 500; x += 7) {
+            const float r = sub::ground_dither01(x, y);
+            if (!(r >= 0.0f && r <= 1.0f)) ++outOfRange;
+            sum += r;
+            ++n;
+            if (r < 0.25f) ++lo;
+            if (r > 0.75f) ++hi;
+        }
+    }
+    CHECK(outOfRange == 0, "the boundary field stays inside [0,1]");
+    const double mean = sum / double(n);
+    CHECK(mean > 0.45 && mean < 0.55, "the boundary field is unbiased");
+    CHECK(lo > n / 20 && hi > n / 20,
+          "...and it spans its range, not just the middle");
+
+    // (b) CORRELATED. Neighbouring metres must agree far more often than a
+    //     coin does. A coin agrees 50% of the time on which side of a
+    //     threshold it lands; a field with a 24 m correlation length agrees
+    //     almost always.
+    int agreeField = 0, agreeCoin = 0, pairs = 0;
+    for (long long y = 0; y < 400; ++y) {
+        for (long long x = 0; x < 400; ++x) {
+            const bool a = sub::ground_dither01(x, y) < 0.5f;
+            const bool b = sub::ground_dither01(x + 1, y) < 0.5f;
+            const bool ca = sub::tile_hash01(x, y) < 0.5f;
+            const bool cb = sub::tile_hash01(x + 1, y) < 0.5f;
+            if (a == b) ++agreeField;
+            if (ca == cb) ++agreeCoin;
+            ++pairs;
+        }
+    }
+    CHECK(agreeField > pairs * 9 / 10,
+          "neighbouring metres land on the same side of the field");
+    CHECK(agreeCoin < pairs * 3 / 5,
+          "...which the coin it replaced did not (negative control)");
+
+    // (c) NO PEPPER, measured as the owner sees it: walk a line through the
+    //     middle of a treeline band and count how long a stretch of one
+    //     answer lasts. The coin gives runs of ~2 tiles — that IS the pepper.
+    //     A patch is tens of metres.
+    auto meanRun = [](bool useField) {
+        const float t = 0.5f; // mid-band: the hardest case, 50/50 by claim
+        int runs = 0, total = 0;
+        bool prev = false;
+        for (long long x = 0; x < 4000; ++x) {
+            const bool rock = useField
+                ? sub::treeline_is_rock(t, x, 12345)
+                : (sub::tile_hash01(x * 7 + 3, 12345 * 7 - 5) < t);
+            if (x == 0 || rock != prev) ++runs;
+            prev = rock;
+            ++total;
+        }
+        return double(total) / double(runs);
+    };
+    const double runField = meanRun(true);
+    const double runCoin = meanRun(false);
+    CHECK(runField > 8.0, "stone comes in patches, not in grains");
+    CHECK(runCoin < 3.0, "...where the coin gave grains (negative control)");
+    std::fprintf(stderr,
+                 "  [law] mean run: field %.1f tiles, coin %.1f tiles\n",
+                 runField, runCoin);
+
+    // (d) ONE law, TWO consumers, decorrelated by an OFFSET — the treeline and
+    //     the seam must not draw the same blotches on top of each other, and
+    //     the offset (never a coordinate scale, which would shrink the patch)
+    //     is what keeps them apart.
+    int same = 0, cmp = 0;
+    for (long long y = 0; y < 200; y += 3) {
+        for (long long x = 0; x < 200; x += 3) {
+            const bool a = sub::ground_dither01(x, y) < 0.5f;
+            const bool b = sub::ground_dither01(x + 9973, y - 7919) < 0.5f;
+            if (a == b) ++same;
+            ++cmp;
+        }
+    }
+    CHECK(same > cmp / 5 && same < cmp * 4 / 5,
+          "the treeline's patches are independent of the seam's");
+}
+
 int main() {
     test_pick_is_deterministic();
     test_cell_core_is_pure_owner();
@@ -377,5 +477,6 @@ int main() {
     test_axis_table_matches_the_one_shot_form();
     test_authored_tiles_pass_through();
     test_structure_shade_survives_a_recentre();
+    test_ground_boundary_law_is_correlated_and_unbiased();
     return sm::test::report("material_seam_test");
 }

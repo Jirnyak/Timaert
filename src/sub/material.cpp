@@ -102,7 +102,9 @@ Biome pick_ground_biome_axis(const Biome nbBiome[9],
     const Biome cand[4] = {b00, b10, b01, b11};
     const float w[4] = {(1.0f - fx) * (1.0f - fy), fx * (1.0f - fy),
                         (1.0f - fx) * fy,          fx * fy};
-    const float r = tile_hash01(absX, absY);
+    // THE ground-boundary law (material.h ground_dither01): the same field
+    // the treeline consults, so a boundary is one act with one answer.
+    const float r = ground_dither01(absX, absY);
     float acc = 0.0f;
     for (int i = 0; i < 4; ++i) {
         acc += w[i];

@@ -226,18 +226,46 @@ The worst case is a cell whose treeline scatters single tiles of rock through
 grass, so a large share of its pixels sit inside a joint. That is also the
 remaining open item:
 
-**Still open — option D.** `treeline_is_rock` scatters rock as SINGLE tiles (a
-per-tile hash). The joint work turned each one from a grey rectangle into a
-stone with a soft margin, which is most of the fix, but real scree lies in
-patches. Thresholding a noise field instead of hashing per tile would clump
-them — one CPU function, free at runtime, and it would tidy the 2D map, which
-reads the same band. It also halves what the joint costs in exactly the cells
-where the joint costs most. Not taken: it changes what the world IS, and that
-is the owner's call.
+**And the crumb is gone — one law, both boundaries.** The owner asked the
+question that changed the shape of the fix: *«у нас же это не единственный
+переход между биомами? такой крупой она универсальная или у гор своя?»* It was
+universal. Two call sites in `sub/material.{h,cpp}` each flipped their own copy
+of the same per-tile coin — the biome pick across a cell border, and the
+treeline's grass against stone — and the treeline's own comment said outright
+that it used "the same style of hash the seam dither uses". One mechanism,
+copied by hand rather than shared.
 
-A third option was tabled and not taken: dithering the authored boundary in
-the baked tile grid (free, but it changes the world's own data, which
-collision, roads and pathing all read).
+A coin flipped per square metre makes PEPPER: a metre of stone, a metre of
+grass, a metre of stone, where nature puts patches. Only the mountain showed it
+because only the mountain has the contrast — the biome seam mixes two green
+grounds across a ~250-tile band, so its pepper is a metre of one green among
+another.
+
+So there is now ONE door, `ground_dither01` (sub/material.h), and every ground
+boundary the micro world draws goes through it. It is a correlated field —
+value noise over the same tile hash, one lattice cell per 24 m (`a stand of
+scrub, a spill of scree`) plus an octave at a third of that for the fringe.
+Measured by the test that pins the law: **a stretch of one answer runs 34 tiles
+where the coin gave 2.** Mean stays 1/2, so the AMOUNT of stone in a band is
+exactly what it was — only its arrangement changed. Still a pure function of
+absolute tile coordinates, so the seam contract is untouched.
+
+Two details that are easy to get wrong and are written into the code:
+
+* the treeline is decorrelated from the seam by an **offset**, never by scaling
+  the coordinate. Scaling was right for a coin (it only reshuffled it) and is
+  wrong for a field: the old `absX * 7` would divide the patch down to three
+  metres and hand the pepper straight back;
+* `structure_shade` keeps the coin. It is a per-OBJECT wobble, not a boundary —
+  correlating it would paint neighbouring houses the same brightness, which is
+  the opposite of its job.
+
+**The two layers now say the same thing.** The CPU decides WHICH ground owns a
+tile, with patches instead of grains; the shader reads that tile field as a
+COVERAGE and blends the two grounds that share a fragment. One idea — a
+boundary is a competition between two claims, resolved continuously — expressed
+once on each side of the bus. Cost on the CPU: the cell bake's seam generation
+went 6.65 → 7.22 ms, paid once per cell crossing, off the frame.
 
 ## Measured
 

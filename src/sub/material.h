@@ -126,6 +126,63 @@ namespace sm::sub
         return float(h >> 40) * (1.0f / 16777216.0f);
     }
 
+    // ── THE GROUND-BOUNDARY LAW ──────────────────────────────────────────
+    //
+    // EVERY boundary the micro world draws between two grounds goes through
+    // this one field: biome against biome across a cell border
+    // (pick_ground_biome_axis) and grass against stone through the treeline
+    // (treeline_is_rock). A boundary is always the same act — two claims are
+    // close, and something has to say which one owns this square metre — so
+    // there is one thing that says it.
+    //
+    // It is CORRELATED, and that is the whole point. It used to be
+    // tile_hash01: an independent coin flipped per square metre, which turns
+    // a boundary into PEPPER — a metre of stone, a metre of grass, a metre of
+    // stone — where nature puts patches. The owner photographed it on a
+    // mountainside (2026-09-12) and asked the right question: is that the
+    // mountain's defect or everyone's? It was everyone's. Two call sites, one
+    // mechanism, copied by hand rather than shared; the treeline's own comment
+    // said outright that it used "the same style of hash the seam dither
+    // uses". The biome one simply hid: it mixes two green grounds across a
+    // ~250-tile band, so its pepper is a metre of one green among another.
+    //
+    // kGroundPatchTiles = 24 m is the correlation length — a stand of scrub, a
+    // spill of scree, the scale at which ground actually changes its mind. The
+    // second octave at a third of it gives a patch its fringe.
+    //
+    // What is NOT swept in: structure_shade below. That is a per-OBJECT wobble,
+    // not a boundary — correlating it would paint neighbouring houses the same
+    // brightness, which is the opposite of its job. It keeps the coin.
+    //
+    // The seam contract is untouched: like the hash, this is a pure function of
+    // ABSOLUTE tile coordinates, so one physical metre answers the same before
+    // and after a window recentre. Mean stays 1/2, so the AMOUNT of each ground
+    // in a band is what it always was — only its arrangement changes.
+    constexpr long long kGroundPatchTiles = 24;
+
+    // Value noise over the tile hash: one lattice cell per kGroundPatchTiles,
+    // smoothstep between. Integer floor-division that also works below zero —
+    // absolute tile coordinates are signed and the torus does reach there.
+    inline float ground_field01(long long ax, long long ay, long long cell) {
+        const long long ix = (ax >= 0 ? ax : ax - cell + 1) / cell;
+        const long long iy = (ay >= 0 ? ay : ay - cell + 1) / cell;
+        const float fx = float(ax - ix * cell) / float(cell);
+        const float fy = float(ay - iy * cell) / float(cell);
+        const float sx = fx * fx * (3.0f - 2.0f * fx);
+        const float sy = fy * fy * (3.0f - 2.0f * fy);
+        const float a = tile_hash01(ix, iy), b = tile_hash01(ix + 1, iy);
+        const float c = tile_hash01(ix, iy + 1), d = tile_hash01(ix + 1, iy + 1);
+        const float t0 = a + (b - a) * sx;
+        const float t1 = c + (d - c) * sx;
+        return t0 + (t1 - t0) * sy;
+    }
+
+    inline float ground_dither01(long long ax, long long ay) {
+        return ground_field01(ax, ay, kGroundPatchTiles) * 0.72f
+             + ground_field01(ax + 8191, ay - 5779,
+                              kGroundPatchTiles / 3) * 0.28f;
+    }
+
     // Where a height sits in the treeline band: <=0 all ground, >=1 all rock.
     inline float treeline_t(float hNorm) {
         return (hNorm - kMtnGrassTopH) / (kMtnRockBaseH - kMtnGrassTopH);
@@ -134,8 +191,13 @@ namespace sm::sub
     // on stone? Both apply_mountain_treeline and any caller that has already
     // hoisted the constant parts out of its loop go through here, so the
     // pattern cannot fork.
+    //
+    // Decorrelated from the biome boundary by an OFFSET, never by scaling the
+    // coordinate. Scaling was right for a coin (it only reshuffled it) and is
+    // wrong for a field: multiplying by 7, as this line used to, would divide
+    // the patch down to three metres and hand the pepper straight back.
     inline bool treeline_is_rock(float t, long long absX, long long absY) {
-        return tile_hash01(absX * 7 + 3, absY * 7 - 5) < t;
+        return ground_dither01(absX + 9973, absY - 7919) < t;
     }
 
     // Per-structure shade wobble, as a property of the WORLD.
