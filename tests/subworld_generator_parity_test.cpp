@@ -749,12 +749,14 @@ int main() {
     for (const Structure& s : cityOut.structures) {
         if (s.kind == Structure::House) ++cityHouses;
         if (s.kind == Structure::Wall) ++cityWalls;
-        if (s.kind == Structure::House
-            && s.height >= 9.5f
-            && std::fabs(s.x - float(center)) < 16.0f
-            && s.y < float(center)) {
-            ++cityKeeps;
-        }
+        // THE keep, identified by what it IS rather than by where it stands.
+        // This used to demand a tall house within 16 tiles of the cell centre
+        // and north of it — the old placement law, back when the keep sat on
+        // the market square. A castle stands on the wall, on the highest
+        // ground it can find (owner, 2026-09-13), so position is no longer the
+        // keep's defining property; out-topping every dwelling is. Ordinary
+        // houses run 5–9 m; the keep clears the curtain by two courses.
+        if (s.kind == Structure::House && s.height >= 15.0f) ++cityKeeps;
     }
     for (const std::uint8_t tile : cityOut.tiles) {
         if (tile == TILE_FIELD) ++cityFields;

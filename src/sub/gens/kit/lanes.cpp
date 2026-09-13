@@ -10,6 +10,21 @@ namespace sm::sub::kit {
 
 namespace {
 
+// Does this straight run meet masonry anywhere along it?
+bool crosses_masonry(const SubworldMapData& out,
+                     float x0, float y0, float x1, float y1) {
+    const float dx = x1 - x0, dy = y1 - y0;
+    const int steps = std::max(1, int(std::ceil(std::sqrt(dx * dx + dy * dy))));
+    for (int i = 0; i <= steps; ++i) {
+        const float t = float(i) / float(steps);
+        const int x = int(std::floor(x0 + dx * t));
+        const int y = int(std::floor(y0 + dy * t));
+        if (x < 0 || y < 0 || x >= kCellSize || y >= kCellSize) return true;
+        if (out.tiles[std::size_t(y) * kCellSize + x] == TILE_WALL) return true;
+    }
+    return false;
+}
+
 // A man's width, the unit every lane is measured in (macro/npc.h).
 constexpr float kBodyWidth = 1.1f;   // 2 × kNpcBodyRadiusDefault
 
@@ -79,6 +94,17 @@ LaneNet grow_lanes(SubworldMapData& out, const Outline& area, float wallInset,
     };
     auto inside = [&](float x, float y) {
         return area.contains(x, y, wallInset);
+    };
+    // THE law a street obeys about masonry: it does not cross it. The way
+    // through a wall is the gate the road that was there first left in it.
+    //
+    // Without this a lane simply stopped being painted on the wall's tiles and
+    // carried on beyond them, so from the air a street ran straight "under" an
+    // inner wall with no gate — exactly what the owner reported (2026-09-13).
+    // The lane was never crossing the wall; it was pretending the wall was not
+    // there, which looks the same and is worse.
+    auto crosses_wall = [&](float x0, float y0, float x1, float y1) {
+        return crosses_masonry(out, x0, y0, x1, y1);
     };
 
     float laid = 0.0f;      // total lane length so far
@@ -212,6 +238,7 @@ LaneNet grow_lanes(SubworldMapData& out, const Outline& area, float wallInset,
             const float nx = t.x + std::cos(t.dir) * plan.stepTiles;
             const float ny = t.y + std::sin(t.dir) * plan.stepTiles;
             if (!inside(nx, ny)) break;                    // the wall stops it
+            if (crosses_wall(t.x, t.y, nx, ny)) break;     // …and so does masonry
 
             // Both questions below are asked AHEAD of the tip, past its own
             // trail. A lane serves the ground beside it, so a tip that asked
@@ -262,7 +289,9 @@ void carve_pomerium(SubworldMapData& out, const Outline& area, float inset,
         const float rr = std::max(1.0f, area.r[std::size_t(b)] - inset);
         const float nx = area.cx + std::cos(ang) * rr;
         const float ny = area.cy + std::sin(ang) * rr;
-        if (i > 0) {
+        // The wall lane is interrupted where the castle backs into the
+        // curtain — it does not tunnel through the enceinte, it stops at it.
+        if (i > 0 && !crosses_masonry(out, px, py, nx, ny)) {
             carve_lane(out, px, py, nx, ny, half);
             net.segs.push_back({px, py, nx, ny, LaneRank::Alley});
         }

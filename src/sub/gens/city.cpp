@@ -46,19 +46,19 @@ using namespace kit;
 
 namespace {
 
-// A city's curtain is three courses of the wall module; each ring outward from
-// the core is a course taller, because the newest ring is the one that has to
-// answer the current age's siege. The module itself is the prop table's
-// minimum wall height — the one brick this world builds masonry out of.
-inline float city_curtain_height(int ring) {
-    return structure_min_height(Structure::Wall) * float(3 + ring);
+// A city's curtain is three courses of the wall module — the prop table's
+// minimum wall height, the one brick this world builds masonry out of. There
+// is ONE curtain: a town moved its wall outward as it grew and pulled the old
+// one down, it did not keep a set of nested rings.
+inline float city_curtain_height() {
+    return structure_min_height(Structure::Wall) * 3.0f;
 }
 
 // The BERM: the clear strip a wall keeps outside its own foot — its ditch, its
 // footing, and the room to walk around it. One curtain height, because that is
 // the distance the wall itself occupies when it falls, and it is what stops a
 // besieger's cover (a ploughed strip or an orchard) touching the masonry.
-inline float city_berm(int ring) { return city_curtain_height(ring); }
+inline float city_berm() { return city_curtain_height(); }
 
 // THE street plan a city grows (see sub/gens/kit/lanes.h). Every number is a
 // statement about traffic, not a look:
@@ -105,7 +105,6 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
     const int centre = kCellSize / 2;
     const float cf = float(centre);
     const int population = ctx.landmark.size;   // floored by city_wall_radius
-    const int ringCount = city_wall_rings(population);
 
     // The wall draws its shape from its OWN stream. It used to share one with
     // the house and field loops and was stamped after them, so the ring's
@@ -133,19 +132,57 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
                                        city_target_area(population),
                                        city_max_radius(population));
 
-    // Outlines first: the wall's shape is what every later step is measured
-    // against, so it is decided before a single tile is built on. Inner rings
-    // are the SAME shape scaled — a town's older cores stood on the same
-    // ground and were bent by the same hills.
-    const float nominal = std::max(1.0f, float(city_wall_radius(population)));
-    std::array<Outline, 5> rings{};
-    static_assert(5 == 1 + 4, "city_wall_rings caps at five concentric rings");
-    for (int ring = 0; ring < ringCount; ++ring) {
-        rings[std::size_t(ring)] = wall_ring_noise(
-            shape.scaled(city_ring_wall_radius(population, ring) / nominal),
-            city_wall_roughness(ring), rWall);
+    // ONE curtain. The wall's shape is what every later step is measured
+    // against, so it is decided before a single tile is built on.
+    const Outline rim = wall_ring_noise(shape, city_wall_roughness(), rWall);
+
+    // ── THE CASTLE stands on the wall, not in the middle ──────────────────
+    // On the highest ground the curtain reaches, backed into it, with its own
+    // gate OUTWARD past the town. That is where castles were built and why:
+    // supply under siege, and a way out when it is the townsmen who are
+    // besieging you. A keep at the exact centre of a ring of walls is a
+    // diagram — and it was ours until 2026-09-13.
+    int castleBin = 0;
+    {
+        float best = -1.0f;
+        for (int b = 0; b < Outline::kBearings; ++b) {
+            const float ang = float(b) * Outline::kTwoPi / float(Outline::kBearings);
+            // Sample where the castle would actually sit: a little inside the
+            // curtain, since that is the ground it must stand on.
+            const float d = std::max(1.0f, rim.r[std::size_t(b)]
+                                         - city_castle_radius(population));
+            const int x = std::clamp(int(cf + std::cos(ang) * d), 0, kCellSize - 1);
+            const int y = std::clamp(int(cf + std::sin(ang) * d), 0, kCellSize - 1);
+            const float h = out.heightmap[std::size_t(y) * kCellSize + x];
+            if (h > best) { best = h; castleBin = b; }
+        }
     }
-    const Outline& rim = rings[std::size_t(ringCount - 1)];
+    const float castleAng = float(castleBin) * Outline::kTwoPi
+                          / float(Outline::kBearings);
+    const float castleR = city_castle_radius(population);
+    const float castleDist = std::max(1.0f, rim.at(castleAng) - castleR * 0.75f);
+    const float castleX = cf + std::cos(castleAng) * castleDist;
+    const float castleY = cf + std::sin(castleAng) * castleDist;
+    const Outline castle = wall_ring_noise(
+        Outline::disk(castleX, castleY, castleR),
+        city_wall_roughness(), rWall);
+
+    // Its road: from the castle's own yard, outward past the curtain. One
+    // carve opens a gate in BOTH walls — the castle's and the city's — because
+    // a gate is wherever a ring finds paving under itself.
+    {
+        const float reach = castleR + city_berm() * 2.0f
+                          + rim.at(castleAng) - castleDist;
+        carve_organic_road(out,
+            int(castleX), int(castleY),
+            int(std::floor(castleX + std::cos(castleAng) * reach)),
+            int(std::floor(castleY + std::sin(castleAng) * reach)),
+            ctx.seed ^ 0xCA571E1u);
+        // …and its road INTO the town, so the castle is not a sealed island:
+        // the lord's men ride down to the market.
+        carve_organic_road(out, int(castleX), int(castleY), centre, centre,
+                           ctx.seed ^ 0xCA57102u);
+    }
 
     // A town with no road neighbour is still a town people leave: without one
     // track out, the ring would find no paving under itself and close solid.
@@ -153,26 +190,26 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
     // put it and nowhere else.
     if (!axes.anchored) {
         const float ang = float(ctx.seed & 0xFFFFu) / 65535.0f * 6.2831853f;
-        const float reach = rim.at(ang) + city_berm(ringCount - 1);
+        const float reach = rim.at(ang) + city_berm();
         carve_organic_road(out, centre, centre,
                            int(std::floor(cf + std::cos(ang) * reach)),
                            int(std::floor(cf + std::sin(ang) * reach)),
                            ctx.seed ^ 0x9057E54u);
     }
 
-    // ── 2. The wall ───────────────────────────────────────────────────────
-    // Inner rings are the town's older cores; the outermost is what encloses
-    // it, and its gates are the ones the hinterland comes back to.
+    // ── 2. The walls ──────────────────────────────────────────────────────
+    // The curtain first — its gates are the ones the hinterland comes back to
+    // — then the castle's enceinte, which is taller: a castle out-tops the
+    // town it watches, or it cannot watch it.
     std::array<WallGate, 16> gates{};
-    int gateCount = 0;
-    for (int ring = 0; ring < ringCount; ++ring) {
-        const bool outermost = ring == ringCount - 1;
-        const int cut = stamp_wall(out, rings[std::size_t(ring)],
-                                   WallStyle{city_curtain_height(ring), true},
-                                   outermost ? gates.data() : nullptr,
-                                   outermost ? int(gates.size()) : 0);
-        if (outermost) gateCount = std::min(cut, int(gates.size()));
-    }
+    int gateCount = std::min(
+        stamp_wall(out, rim, WallStyle{city_curtain_height(), true},
+                   gates.data(), int(gates.size())),
+        int(gates.size()));
+    stamp_wall(out, castle,
+               WallStyle{city_curtain_height() + structure_min_height(Structure::Wall),
+                         true},
+               nullptr, 0);
 
     // ── 3. The streets, grown ─────────────────────────────────────────────
     // From the tract and the market outward, branching and joining, dying on
@@ -198,19 +235,20 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
     // without threading a yard. An alley, just inside the building line.
     carve_pomerium(out, rim, city_layout().streetWallInset, lanes);
 
-    // The market and the keep. The plaza grows with the town it serves, and
-    // the keep stands ON its edge rather than in it — stamped clear, so the
-    // paving no longer eats the citadel's own footprint tiles.
+    // The MARKET stays where the roads meet, in the middle of the town. That
+    // is what a market is: the place everyone's road passes through.
     stamp_rect(out, centre - squareSize / 2, centre - squareSize / 2,
                squareSize, squareSize, TILE_SQUARE, 1);
 
+    // The KEEP stands in its own castle out on the wall, not on the market.
+    // It out-tops the curtain by two courses — the whole point of a keep is
+    // that the last defence is also the highest one.
     const int keepBase = std::clamp(4 + population / 1500, 6, 16);
     const int keepW = keepBase + int(rBuild.next_u32() % 3u);
     const int keepH = keepBase + int(rBuild.next_u32() % 3u);
-    const float keepY = cf - float(squareSize) * 0.5f - float(keepH) * 0.5f - 1.0f;
-    const bool keepPlaced = stamp_landmark_house(out, rBuild, cf, keepY,
-                                                 keepW, keepH,
-                                                 city_curtain_height(0));
+    const bool keepPlaced = stamp_landmark_house(
+        out, rBuild, castleX, castleY, keepW, keepH,
+        city_curtain_height() + structure_min_height(Structure::Wall) * 2.0f);
 
     // ── 4. The houses, FRONTING the streets ───────────────────────────────
     // A town is its street frontage. Plots are laid down both sides of every
@@ -262,7 +300,7 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
     stamp_village_green(out, centre, ctx.seed ^ 0x3E11A0u);
 
     // ── 5. The hinterland ─────────────────────────────────────────────────
-    const float berm = city_berm(ringCount - 1);
+    const float berm = city_berm();
     const int targetFields = std::min(80, std::max(6, population / 50));
     std::array<int, 80> fieldX{};
     std::array<int, 80> fieldY{};

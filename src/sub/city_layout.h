@@ -237,9 +237,8 @@ inline constexpr SettlementWallRing kSettlementWallRing = {
     /* villageRoughness     */ 0.12f,
 };
 
-inline constexpr float city_wall_roughness(int ring) {
-    return kSettlementWallRing.cityRoughness
-         + float(ring) * kSettlementWallRing.cityRoughnessPerRing;
+inline constexpr float city_wall_roughness() {
+    return kSettlementWallRing.cityRoughness;
 }
 
 // The innermost tile a ring of this nominal radius can ever reach: mean radius
@@ -253,22 +252,28 @@ inline float wall_inner_bound(float radius, float roughness) {
     return std::max(1.0f, radius * (1.0f - worst) - W.halfThickness);
 }
 
-// Concentric wall rings of a city. A big city keeps its older cores as inner
-// walls; the OUTERMOST ring is the one that encloses the town.
-inline constexpr int city_wall_rings(int population) {
-    return 1 + (population >= 2000  ? 1 : 0)
-             + (population >= 5000  ? 1 : 0)
-             + (population >= 10000 ? 1 : 0)
-             + (population >= 20000 ? 1 : 0);
-}
+// ── ONE CURTAIN, and a CASTLE that is not a ring ──────────────────────────
+// A city used to raise up to five concentric rings, one per population step,
+// each at a fraction of the footprint radius. Concentric circles are not what
+// a town is; they are a pattern. What real towns had were TWO DIFFERENT
+// THINGS: one city curtain (moved outward as the town grew, the old one
+// demolished or built into the houses), and a castle's own small enceinte —
+// sized to what it encloses, not to a share of the city.
+//
+// So there is one curtain, and `city_castle_radius` below is the other object.
+// The owner's eye caught the pattern from the air (2026-09-13); the streets
+// running "under" the inner rings were the same defect seen from the ground,
+// because those rings were walls nothing was allowed to cross and nothing had
+// asked permission to.
 
-// Nominal radius of city wall ring `ring` (0 = innermost).
-inline float city_ring_wall_radius(int population, int ring) {
-    const int rings = city_wall_rings(std::max(kSettlementFootprint.cityPopFloor,
-                                               population));
-    const int r = std::clamp(ring, 0, rings - 1);
-    const float fraction = float(r + 1) / float(rings);
-    return float(city_wall_radius(population)) * fraction + float(r) * 8.0f;
+// The castle's enceinte: it holds the keep and the bailey a keep needs to be a
+// PLACE — room to turn a cart, stable a horse and stand a guard — so it is
+// derived from the keep it encloses and from nothing about the city's size.
+inline float city_castle_radius(int population) {
+    // The keep's own footprint (gen_city raises it at this scale) plus a
+    // bailey of the same span again on every side.
+    const float keepSpan = float(std::clamp(4 + population / 1500, 6, 16));
+    return keepSpan * 2.0f;
 }
 
 // THE query the citizen spawner asks: within what radius of the cell centre are
@@ -277,12 +282,9 @@ inline float city_ring_wall_radius(int population, int ring) {
 // no wall is bounded by its house core alone.
 inline float settlement_population_radius(bool city, int population) {
     if (city) {
-        const int outer = city_wall_rings(
-            std::max(kSettlementFootprint.cityPopFloor, population)) - 1;
         // The GUARANTEED part of the town, since this function answers with a
-        // scalar and the town is no longer a disk. The outer ring is the core
-        // scaled by that ring's own share of the footprint, then reduced by
-        // the ring noise's worst inward excursion.
+        // scalar and the town is no longer a disk: the core, reduced by the
+        // ring noise's worst inward excursion.
         //
         // The cost of answering conservatively is real and known: the lobes a
         // city grows down its tract hold houses and streets but no crowd, so
@@ -291,11 +293,9 @@ inline float settlement_population_radius(bool city, int population) {
         // generator already computes one (sub/gens/kit/outline.h) and the
         // subworld map is never serialized, so it can simply carry it. That is
         // the next increment, not a hidden debt.
-        const float ringShare = city_ring_wall_radius(population, outer)
-                              / std::max(1.0f, float(city_wall_radius(population)));
         return std::min(city_house_radius(population),
-                        wall_inner_bound(city_core_radius(population) * ringShare,
-                                         city_wall_roughness(outer)));
+                        wall_inner_bound(city_core_radius(population),
+                                         city_wall_roughness()));
     }
     const float core = village_core_radius(population);
     if (!village_is_walled(population)) return core;

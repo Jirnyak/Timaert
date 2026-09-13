@@ -101,8 +101,39 @@ things the world already knew about itself:
   ground, which is the whole reason towns are long rather than round.
 
 The area is fixed and the shape is free: a population always gets the room it
-needs and no more, but the ground decides its outline. Inner wall rings are the
-SAME outline scaled — a town's older cores stood on the same hills.
+needs and no more, but the ground decides its outline.
+
+### One curtain, and a castle that is not a ring
+
+A city used to raise up to five concentric rings, one per population step, each
+at a fraction of the footprint radius. Concentric circles are not what a town
+is — they are a pattern, and the owner caught it from the air. Real towns had
+two DIFFERENT things: one city curtain (moved outward as the town grew, the old
+one pulled down or built into the houses), and a castle's own small enceinte.
+
+So there is **one curtain**, and the **castle** is the other object:
+
+- it stands on the HIGHEST ground the curtain reaches, backed into it — which
+  is where castles were built and why: supply under siege, and a way out when
+  it is the townsmen doing the besieging;
+- its enceinte is sized by what it encloses (the keep plus a bailey a keep
+  needs to be a place), not by a share of the city;
+- it has **its own gate outward**, past the town, and a road down to the
+  market. One carve opens a gate in both walls, because a gate is wherever a
+  ring finds paving under itself;
+- the KEEP moved off the market square into it, and out-tops the curtain by two
+  courses: the last defence is also the highest one. The market stays where the
+  roads meet — that is what a market is.
+
+### A street does not cross a wall
+
+The way through masonry is the gate the road that was there first left in it.
+Without that law a lane simply stopped being painted on the wall's tiles and
+carried on beyond them, so from the air a street ran straight "under" an inner
+wall with no gate — the lane was never crossing the wall, it was pretending the
+wall was not there, which looks the same and is worse. The pomerium obeys it
+too: the wall lane is interrupted where the castle backs into the curtain
+rather than tunnelling through the enceinte.
 
 The result is one `Outline` (`gens/kit/outline.h`, a radius per bearing about
 the heart) and **every placer downstream reads it**: the wall is raised on it,
