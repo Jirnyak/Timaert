@@ -250,18 +250,44 @@ void check_town(const char* what, LandmarkType kind, std::uint32_t seed,
                   what, a.walled, a.bearings);
     CHECK(a.walled > a.bearings / 2, msg);
 
-    // Towers stand where the ring turns — a parameter-free rule, so the count
-    // is whatever the shape asks for. It must not be zero (a curtain with no
-    // tower does not read as fortified) and must not be every node (that was
-    // the old "every other node" lattice, which scaled with the node count
-    // rather than with the wall).
-    int towers = 0;
-    for (const Structure& s : t.map.structures) {
-        if (s.kind == Structure::Wall && s.shape == Structure::Cylinder
-            && s.radius > 2.5f) ++towers;   // > a gate jamb
+    // WHAT WATCHES THE WALL — and the answer is not the same question for the
+    // two kinds, because they are not the same wall (owner's ruling,
+    // 2026-09-13; gens/village_palisade.h).
+    //
+    // A CITY's curtain is towered where the ring TURNS — a parameter-free
+    // rule, so the count is whatever the shape asks for. It must not be zero
+    // (a curtain with no tower does not read as fortified) and must not be
+    // every node (the old "every other node" lattice scaled with the node
+    // count rather than with the wall).
+    //
+    // A VILLAGE fields no garrison, so it mans no circuit: it keeps one watch
+    // platform, over the gate, where the road comes in. Demanding four stone
+    // towers of a hamlet is what produced a hamlet with four stone towers.
+    if (kind == LandmarkType::City) {
+        int towers = 0;
+        for (const Structure& s : t.map.structures) {
+            if (s.kind == Structure::Wall && s.shape == Structure::Cylinder
+                && s.radius > 2.5f) ++towers;   // > a gate jamb
+        }
+        std::snprintf(msg, sizeof msg, "%s: the ring is towered (%d towers)",
+                      what, towers);
+        CHECK(towers >= 4, msg);
+    } else {
+        // The platform is a LIFTED timber span standing on the gate beam —
+        // the only thing in a village that is both raised off the ground and
+        // higher than the beam's own thickness.
+        int watches = 0;
+        for (const Structure& s : t.map.structures) {
+            if (s.kind == Structure::Palisade && s.zBase > 0.0f
+                && s.height > structure_min_half_xy(Structure::Palisade) * 2.0f) {
+                ++watches;
+            }
+        }
+        std::snprintf(msg, sizeof msg,
+                      "%s: the gateway is watched (%d platforms)",
+                      what, watches);
+        CHECK(watches >= 1, msg);
     }
-    std::snprintf(msg, sizeof msg, "%s: the ring is towered (%d towers)", what, towers);
-    CHECK(towers >= 4, msg);
 
     const int cut = houses_in_masonry(t);
     std::snprintf(msg, sizeof msg, "%s: no house cuts the wall (%d tiles)", what, cut);

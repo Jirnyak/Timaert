@@ -428,8 +428,9 @@ struct Structure {
     enum Kind : std::uint8_t { Tree = 0, Rock, House, Wall, Bridge, Crop,
                                Fence, Furnish, Door, Lantern, Hatch,
                                Chest, CaveMouth, Well, Sign, SpireGate,
-                               SpireOrb, Kerb, Ladder, SpireHatch } kind;
-    static constexpr int kKindCount = int(SpireHatch) + 1;
+                               SpireOrb, Kerb, Ladder, SpireHatch,
+                               Palisade } kind;
+    static constexpr int kKindCount = int(Palisade) + 1;
     // Footprint silhouette. Box is the default; Cylinder renders (and collides)
     // as a round prism — wall towers, gate jambs, the spire. One byte, not a
     // new Kind: shape is orthogonal to what the thing IS.
@@ -767,6 +768,24 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
                   StructureKindRow::Material::Hatch,
                   InteractId::Door, DungeonRef::SpireTower, true, 0u, 0.0f, 0.0f,
                   kWalkTileTransparent},
+    // Palisade: a village's wall, and it is NOT a curtain in brown. A hamlet
+    // fields no masons and no garrison — what it raises is a row of felled
+    // trunks set shoulder to shoulder in the earth, which is why this is a
+    // KIND and not a material flag on Wall: it is drawn round because a log
+    // IS round, it is timber to everything that will ever ask what it is made
+    // of, and its dimensions come from the tree it was cut from rather than
+    // from a course of stone.
+    //
+    // Half a metre across is a trunk a village can actually fell, carry and
+    // set; four metres of it stands proud of the ground, which is two men —
+    // too high to vault, low enough that it reads as a stockade and not as a
+    // city. It lays masonry underfoot for the same reason a wall does: what
+    // you would be walking on, if you got up there, is the top of it.
+    { Structure::Palisade, "",     0.25f, 4.0f,  0.0f, true,  "",
+                  StructureKindRow::Draw::Solid,
+                  StructureKindRow::Material::Wood,
+                  InteractId::None, DungeonRef::None, false, 0u, 0.0f, 0.0f,
+                  std::uint8_t(TILE_WALL)},
 };
 static_assert(rows_in_enum_order(kStructureKindRows, &StructureKindRow::kind),
               "kStructureKindRows row order must mirror Structure::Kind");

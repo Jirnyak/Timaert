@@ -1261,8 +1261,16 @@ bool smoke_find_danger_land_cell(const App& app, int& outX, int& outY) {
 // First city of the ONE roster — the "front of gs.settlements" the smoke
 // scripts used to pin before the landmark merge (v62).
 const sm::Landmark* smoke_first_city(const App& app) {
+    // Which KIND of settlement a scenario wants (TIMAERT_SMOKE_SETTLEMENT).
+    // A city by default, because that is what every scenario here has always
+    // meant; a village on request, so the village's own generator can be
+    // photographed by the same scripts rather than by a second harness.
+    sm::LandmarkType want = sm::LandmarkType::City;
+    if (const char* k = std::getenv("TIMAERT_SMOKE_SETTLEMENT")) {
+        if (std::string_view(k) == "village") want = sm::LandmarkType::Village;
+    }
     for (const auto& lm : app.gs.landmarks) {
-        if (lm.type == sm::LandmarkType::City) return &lm;
+        if (lm.type == want) return &lm;
     }
     return nullptr;
 }
@@ -6530,12 +6538,20 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             int houses = 0;
             int walls = 0;
             int gates = 0;
+            // BOTH kinds of wall the world raises: a city's masonry and a
+            // village's trunks (sub/gens/village_palisade.h). One question,
+            // asked of whatever the place actually built.
+            auto is_wall = [](const sm::sub::Structure& st) {
+                return st.kind == sm::sub::Structure::Wall
+                    || st.kind == sm::sub::Structure::Palisade;
+            };
             for (const auto& st : app.subworld.mgr().structures()) {
                 if (st.kind == sm::sub::Structure::House) ++houses;
-                if (st.kind == sm::sub::Structure::Wall) ++walls;
-                // Gate lintels (zBase > 0) mark the real openings; print the
-                // first few so a capture run can aim a teleport at a gate.
-                if (st.kind == sm::sub::Structure::Wall && st.zBase > 0.0f
+                if (is_wall(st)) ++walls;
+                // Lifted spans (zBase > 0) mark the real openings — a stone
+                // lintel or a timber beam; print the first few so a capture
+                // run can aim a teleport at a gate.
+                if (is_wall(st) && st.zBase > 0.0f
                     && gates < 6) {
                     std::fprintf(stderr, "[smoke] gate_lintel %d at %.0f,%.0f\n",
                                  gates, st.x, st.y);
@@ -6642,7 +6658,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 int idx = 0;
                 float bestD2 = 0.0f;
                 for (const auto& st : structs) {
-                    if (st.kind != sm::sub::Structure::Wall
+                    // A gateway's crosspiece, whichever wall it belongs to:
+                    // the city's stone lintel or the village's timber beam.
+                    if ((st.kind != sm::sub::Structure::Wall
+                      && st.kind != sm::sub::Structure::Palisade)
                         || st.zBase <= 0.0f) {
                         continue;
                     }

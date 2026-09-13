@@ -354,17 +354,30 @@ void gen_dungeon_house(const CellContext& ctx, SubworldMapData& out) {
     if (level >= 0) {
         for (int i = 0; i < rectCount; ++i) {
             const RoomRect& r = rects[i];
-            (void)try_place_furnish(out, rng, r, 2.0f, 1.2f, 0.6f); // bed
-            (void)try_place_furnish(out, rng, r, 1.6f, 1.6f, 0.9f); // table
-            // The chest is the household's store made touchable — the same
-            // furniture placement, its own kind, so E on it reaches the
-            // town's inventory (engine search_chest).
+            // THE CHEST GOES IN FIRST, and the order is the point. It is the
+            // household's store made touchable — the one prop through which a
+            // door reaches the town's inventory at all (engine search_chest) —
+            // while a bed and a table are what the room is furnished WITH.
+            // Placed last, it was the piece that failed to fit in a small
+            // room: the bed and the table took the floor and the house behind
+            // that door had no way into the store it was keeping.
+            //
+            // It is also the smallest of the three, so putting it first costs
+            // the other two almost nothing: what now yields in a tight room is
+            // a table, which is furniture, not a mechanism.
+            //
+            // Caught 2026-09-13 because the city's layout shifted by one lane
+            // and `dungeon_house` walked through a different door. The smoke
+            // had been green on the luck of which house came first — exactly
+            // the class of green this project does not accept as evidence.
             (void)try_place_furnish(out, rng, r,
                                     structure_min_half_xy(Structure::Chest),
                                     structure_min_half_xy(Structure::Chest)
                                         * 0.75f,
                                     structure_min_height(Structure::Chest),
                                     Structure::Chest);
+            (void)try_place_furnish(out, rng, r, 2.0f, 1.2f, 0.6f); // bed
+            (void)try_place_furnish(out, rng, r, 1.6f, 1.6f, 0.9f); // table
         }
     }
 }

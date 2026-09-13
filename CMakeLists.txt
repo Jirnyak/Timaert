@@ -161,6 +161,7 @@ set(TIMAERT_GENS_SOURCES
     src/sub/gens/water.cpp
     src/sub/gens/city.cpp
     src/sub/gens/village.cpp
+    src/sub/gens/village_palisade.cpp
     src/sub/gens/ruin.cpp
     src/sub/gens/spire.cpp
     src/sub/gens/road.cpp

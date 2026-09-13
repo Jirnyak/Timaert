@@ -102,7 +102,12 @@ void fill_flat_neighbors(float nbH[9], sm::Biome nbB[9], std::uint8_t nbF[9],
 int wall_structures_on_protected_tiles(const sm::sub::SubworldMapData& map) {
     int blocked = 0;
     for (const sm::sub::Structure& s : map.structures) {
-        if (s.kind != sm::sub::Structure::Wall) continue;
+        // Both kinds of wall the world raises: the city's masonry and the
+        // village's trunks (gens/village_palisade.h). The question — "did a
+        // wall close over the way through" — is the same for either, and
+        // asking it of only one left every stockade unwatched.
+        if (s.kind != sm::sub::Structure::Wall
+         && s.kind != sm::sub::Structure::Palisade) continue;
         // Gate lintels (zBase > 0) legitimately BRIDGE the road: their solid
         // span starts above head height, so a record over a road tile is the
         // design, not a blocked gate.
@@ -817,7 +822,10 @@ int main() {
     const int villageBlockedWallRecords = wall_structures_on_protected_tiles(villageOut);
     for (const Structure& s : villageOut.structures) {
         if (s.kind == Structure::House) ++villageHouses;
-        if (s.kind == Structure::Wall) ++villageWalls;
+        // A village's wall is its OWN kind — trunks, not courses
+        // (gens/village_palisade.h). Asking for Structure::Wall here counted
+        // the city's masonry in a place that raises none.
+        if (s.kind == Structure::Palisade) ++villageWalls;
     }
     for (const std::uint8_t tile : villageOut.tiles) {
         if (tile == TILE_FIELD) ++villageFields;

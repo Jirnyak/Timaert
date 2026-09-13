@@ -15,6 +15,7 @@
 #include "sub/gens/kit/streets.h"
 #include "sub/gens/kit/tiles.h"
 #include "sub/gens/kit/wall.h"
+#include "sub/gens/village_palisade.h"
 
 #include "core/rng.h"
 
@@ -41,10 +42,11 @@ void gen_village(const GenInput& in, SubworldMapData& out) {
     const float cf = float(centre);
     const int population = std::max(kSettlementFootprint.villagePopFloor,
                                     ctx.landmark.size);
-    // A village palisade is two courses of the wall module — half a city's
-    // curtain, which is exactly what a place that fields no garrison can raise
-    // and maintain.
-    const float curtain = structure_min_height(Structure::Wall) * 2.0f;
+    // How tall the village's wall stands — asked of the trunk the village
+    // fells, because that is what the wall IS (gens/village_palisade.h). The
+    // berm and the postern's reach are measured off it, so a stockade keeps a
+    // strip clear of itself in ITS own terms rather than a city curtain's.
+    const float palisadeH = structure_min_height(Structure::Palisade);
 
     // Separate streams, same reason as the city: the wall's shape must not be
     // a function of how many houses the placement loop happened to try.
@@ -76,7 +78,7 @@ void gen_village(const GenInput& in, SubworldMapData& out) {
     // own fields — otherwise the ring finds no paving and closes solid.
     if (walled && !axes.anchored) {
         const float ang = float(ctx.seed & 0xFFFFu) / 65535.0f * 6.2831853f;
-        const float reach = area.at(ang) + curtain;
+        const float reach = area.at(ang) + palisadeH;
         carve_organic_road(out, centre, centre,
                            int(std::floor(cf + std::cos(ang) * reach)),
                            int(std::floor(cf + std::sin(ang) * reach)),
@@ -84,11 +86,17 @@ void gen_village(const GenInput& in, SubworldMapData& out) {
     }
 
     // ── 2. The palisade ───────────────────────────────────────────────────
+    // The village's OWN wall, raised by the village's own module: trunks set
+    // shoulder to shoulder, a timber frame where the road comes through, one
+    // watch platform over it. It used to call the city's masonry primitive
+    // with the height dialled down, and a hamlet stood behind eight metres of
+    // stone with round towers (owner's ruling, 2026-09-13 — see
+    // gens/village_palisade.h).
     std::array<WallGate, 8> gates{};
     int gateCount = 0;
     if (walled) {
-        gateCount = std::min(stamp_wall(out, area, WallStyle{curtain, true},
-                                        gates.data(), int(gates.size())),
+        gateCount = std::min(stamp_palisade(out, area, gates.data(),
+                                            int(gates.size())),
                              int(gates.size()));
     }
 
@@ -128,7 +136,7 @@ void gen_village(const GenInput& in, SubworldMapData& out) {
     }
 
     // ── 5. The fields ─────────────────────────────────────────────────────
-    const float berm = walled ? curtain : 5.0f;
+    const float berm = walled ? palisadeH : 5.0f;
     const float belt = std::min(float(kCellSize) * 0.08f,
                                 30.0f + float(population) * 0.3f);
     const int targetFields = std::min(40, std::max(2, population / 20));
