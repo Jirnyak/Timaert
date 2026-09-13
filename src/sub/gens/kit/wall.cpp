@@ -32,14 +32,18 @@ constexpr float kTowerRadius = kWallHalfThick * 3.0f;
 // the curtain does end there and the ends must be finished.
 constexpr float kGateMaxSpan = 18.0f;
 
-// Underside of the lintel above the roadway: a mounted body passes beneath it.
-// kBodyEyeM is a walking man's eye; a rider sits about one body-eye higher
-// again, and the arch clears his head — so three eye-heights is the span's
-// clear, not a number chosen to look right.
-constexpr float kGateClearM = kBodyEyeM * 3.0f;
-
 // The gate jamb: the tower that finishes a curtain end. Same stone, same rule.
 constexpr float kGateJambR = kTowerRadius * 0.5f;
+
+// The ground under a point of the cell, IN METRES — the space a structure's
+// zBase is stated in. The map itself is normalised; one scale converts
+// (sub/height.h), and it is the same one the renderer and the collision index
+// read, so a seat computed here and a seat drawn there are the same height.
+float ground_m(const SubworldMapData& out, float fx, float fy) {
+    const int x = std::clamp(int(std::floor(fx)), 0, kCellSize - 1);
+    const int y = std::clamp(int(std::floor(fy)), 0, kCellSize - 1);
+    return out.heightmap[std::size_t(y) * kCellSize + x] * kHeightScaleM;
+}
 
 } // namespace
 
@@ -245,6 +249,11 @@ int stamp_wall(SubworldMapData& out, const Outline& outline,
                 l.hx = span * 0.5f + 1.2f;
                 l.hy = kWallHalfThick;
                 l.radius = l.hx;
+                // The PROMISE, plainly stated: this much air over the way
+                // through. What it has to be measured FROM is not known yet —
+                // the ground under a gateway is still being cut by the road
+                // smoothing that runs after every generator — so the seat is
+                // settled by seat_lifted_spans once the map is final.
                 l.zBase = kGateClearM;
                 l.height = std::max(2.0f, style.height - kGateClearM);
                 out.structures.push_back(l);
@@ -318,6 +327,46 @@ int stamp_wall(SubworldMapData& out, const Outline& outline,
         }
     }
     return gateCount;
+}
+
+void seat_lifted_spans(SubworldMapData& out) {
+    for (Structure& s : out.structures) {
+        // A world-levelled span answers to the world, not to the bed under it
+        // (a bridge deck is level because the water is) — it has no seat to
+        // settle. A grounded solid has no lift to place.
+        if (s.zWorld || s.zBase <= 0.0f) continue;
+        // THE SPAN RESTS ON ITS ENDS. Its clear therefore belongs to the
+        // HIGHEST ground it bridges — the uphill jamb's foot — and never to
+        // the midpoint, which is the one sample the lift is resolved against
+        // (map_data.h structure_solid_span; the renderer and the collision
+        // index both read it that way). Add the difference and the promise
+        // holds at every point across the opening, on any slope.
+        //
+        // Seated from the middle, a gate on a ridge kept 1.6 m of air where it
+        // promises 5.1: the bar sinks into the roadway and the gateway reads
+        // from the ground as a hole with nothing over it — the missing lintel
+        // the owner photographed (2026-09-13). city_gate_lintel_test holds the
+        // numbers, on sloping country, because every other settlement fixture
+        // in the suite stands on a flat one and cannot see this at all.
+        const float cs = std::cos(s.yaw);
+        const float sn = std::sin(s.yaw);
+        const float hx = structure_half_x(s);
+        const float hy = structure_half_y(s);
+        const float seat = ground_m(out, s.x, s.y);
+        float rise = 0.0f;
+        const int nx = std::max(2, int(hx * 2.0f));
+        const int ny = std::max(2, int(hy * 2.0f));
+        for (int iy = 0; iy <= ny; ++iy) {
+            const float ly = -hy + 2.0f * hy * float(iy) / float(ny);
+            for (int ix = 0; ix <= nx; ++ix) {
+                const float lx = -hx + 2.0f * hx * float(ix) / float(nx);
+                rise = std::max(rise,
+                    ground_m(out, s.x + lx * cs - ly * sn,
+                                  s.y + lx * sn + ly * cs) - seat);
+            }
+        }
+        s.zBase += rise;
+    }
 }
 
 } // namespace sm::sub::kit

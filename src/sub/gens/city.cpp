@@ -279,6 +279,19 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
         upperLanes = grow_lanes(out, castle, city_layout().streetWallInset * 0.5f,
                                 ugx.data(), ugy.data(), ugc,
                                 castleX, castleY, up, rLanes);
+        // …and its own wall lane. A ring of masonry without one is a ring its
+        // garrison cannot reach: the frontage below lines every lane there is,
+        // so with no alley behind the enceinte the houses close over the
+        // approach to the quarter's own gates and the men who hold that wall
+        // walk through somebody's yard to get to it (owner, 2026-09-13 — two
+        // gates of the quarter photographed with a house in the mouth).
+        //
+        // This step existed for the curtain and was simply missing here: the
+        // quarter is a hand-written second copy of the town's build order, and
+        // a copy loses a field silently. city_wall_integrity_test now asserts
+        // the property for EVERY ring, so the next district cannot lose it.
+        carve_pomerium(out, castle, city_layout().streetWallInset * 0.5f,
+                       upperLanes);
     }
 
     // The KEEP stands in the upper quarter and out-tops the curtain by two

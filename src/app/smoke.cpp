@@ -128,6 +128,7 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"open_settlement_trade", SmokeAction::OpenSettlementTrade},
     {"open_settlement_map", SmokeAction::OpenSettlementMap},
     {"enter_first_settlement", SmokeAction::EnterFirstSettlement},
+    {"city_gate_probe", SmokeAction::CityGateProbe},
     {"focus_npc_panel", SmokeAction::FocusNpcPanel},
     {"open_npc_trade", SmokeAction::OpenNpcTrade},
     {"attack_first_npc", SmokeAction::AttackFirstNpc},
@@ -6560,6 +6561,209 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 break;
             }
             ++app.smoke.cursor;
+            break;
+        }
+        case SmokeAction::CityGateProbe: {
+            // THE gate witness. A lintel's seat is a NUMBER — the ground under
+            // its own centre plus its zBase lift (sub/gens/kit/wall.cpp, drawn
+            // by vk_renderer_3d) — and on a slope that number has nothing to
+            // do with the ground under the ends it bridges. So this action
+            // measures the seat against the ground the PICTURE uses
+            // (ground_height_at == the renderer's own sampler, so what is
+            // printed and what is drawn cannot be two different hills), and
+            // then stands the player outside the opening and looks at it.
+            //
+            // It frames the UPPER QUARTER's gate specifically: the quarter is
+            // the compartment holding the keep, and the keep is the tallest
+            // House the generator laid (sub/gens/city.cpp stamps it two
+            // courses above the curtain), so "nearest lintel to the tallest
+            // roof" needs no coordinate handed in from outside.
+            if (app.smoke.gateAimFrames >= 0) {
+                // Held frames: the teleport re-seats the camera in the engine
+                // tick, which runs AFTER this frame was recorded — so re-aim
+                // every held frame and arm the capture only at the end.
+                float wx = 0.0f, wz = 0.0f, tx = 0.0f, tz = 0.0f;
+                sm::sub::Renderer3DVk::tile_to_world(app.subworld.player_x(),
+                                                     app.subworld.player_y(),
+                                                     wx, wz);
+                sm::sub::Renderer3DVk::tile_to_world(app.smoke.gateAimX,
+                                                     app.smoke.gateAimY,
+                                                     tx, tz);
+                const float wantYaw = std::atan2(tz - wz, tx - wx);
+                const float flat = std::sqrt((tx - wx) * (tx - wx)
+                                           + (tz - wz) * (tz - wz));
+                const float wantPitch = std::atan2(
+                    app.smoke.gateAimZ - app.subworld.cam_height_m(),
+                    std::max(0.001f, flat));
+                app.subworld.rotate_camera(wantYaw - app.subworld.cam_yaw(),
+                                           wantPitch - app.subworld.cam_pitch());
+                if (app.smoke.gateAimFrames == 0) {
+                    app.smoke.capturePending = true;
+                    app.smoke.captureActionIndex = app.smoke.cursor;
+                    app.smoke.gateAimFrames = -1;
+                    ++app.smoke.cursor;
+                } else {
+                    --app.smoke.gateAimFrames;
+                }
+                break;
+            }
+            std::fprintf(stderr, "[smoke] action=city_gate_probe\n");
+            std::fflush(stderr);
+            if (!app.subworld.active()) {
+                smoke_fail(app, "city_gate_probe without a subworld");
+                break;
+            }
+            const auto& structs = app.subworld.mgr().structures();
+            // The keep: the tallest roof in the scene.
+            const sm::sub::Structure* keep = nullptr;
+            for (const auto& st : structs) {
+                if (st.kind != sm::sub::Structure::House) continue;
+                if (keep == nullptr || st.height > keep->height) keep = &st;
+            }
+            if (keep == nullptr) {
+                smoke_fail(app, "city_gate_probe found no houses");
+                break;
+            }
+            // EVERY opening gets measured, not just the framed one — a defect
+            // that lives on one gate of seven is invisible to a probe that
+            // looks at one gate. The run prints the whole table; the frame
+            // then goes to the one named by TIMAERT_GATE_INDEX (default: the
+            // nearest to the keep, i.e. the upper quarter's own way out).
+            std::fprintf(stderr,
+                         "[smoke] gate_probe keep at %.0f,%.0f h=%.1f\n",
+                         double(keep->x), double(keep->y),
+                         double(keep->height));
+            const sm::sub::Structure* gate = nullptr;
+            {
+                int want = -1;
+                if (const char* gi = std::getenv("TIMAERT_GATE_INDEX")) {
+                    want = std::atoi(gi);
+                }
+                int idx = 0;
+                float bestD2 = 0.0f;
+                for (const auto& st : structs) {
+                    if (st.kind != sm::sub::Structure::Wall
+                        || st.zBase <= 0.0f) {
+                        continue;
+                    }
+                    const float dKeep = std::sqrt(
+                        (st.x - keep->x) * (st.x - keep->x)
+                      + (st.y - keep->y) * (st.y - keep->y));
+                    // The worst ground under the bar decides whether the arch
+                    // is an arch at all (see the walk below for why).
+                    const float hl = sm::sub::structure_half_x(st);
+                    const float cx = std::cos(st.yaw);
+                    const float cy = std::sin(st.yaw);
+                    float worst = app.subworld.ground_height_at(st.x, st.y);
+                    const int n = std::max(2, int(hl * 2.0f));
+                    for (int s = 0; s <= n; ++s) {
+                        const float t = -hl + 2.0f * hl * float(s) / float(n);
+                        worst = std::max(worst, app.subworld.ground_height_at(
+                            st.x + cx * t, st.y + cy * t));
+                    }
+                    const float under =
+                        app.subworld.ground_height_at(st.x, st.y) + st.zBase;
+                    std::fprintf(stderr,
+                                 "[smoke] gate_probe lintel %d at %.0f,%.0f "
+                                 "span=%.1f dKeep=%.0f clear=%.2f "
+                                 "crown=%.1f\n",
+                                 idx, double(st.x), double(st.y),
+                                 double(hl * 2.0f), double(dKeep),
+                                 double(under - worst),
+                                 double(st.zBase + st.height));
+                    const float d2 = dKeep * dKeep;
+                    if (want >= 0 ? idx == want
+                                  : (gate == nullptr || d2 < bestD2)) {
+                        gate = &st;
+                        bestD2 = d2;
+                    }
+                    ++idx;
+                }
+                std::fprintf(stderr, "[smoke] gate_probe lintels=%d\n", idx);
+            }
+            if (gate == nullptr) {
+                smoke_fail(app, "city_gate_probe found no gate lintel");
+                break;
+            }
+            // ── The measurement. The bar runs along its own yaw; its ends are
+            // where the jambs stand. Walk it end to end and ask the ground at
+            // every step, because a bar is buried by the WORST point under it,
+            // not by its midpoint. ──
+            const float halfLen = sm::sub::structure_half_x(*gate);
+            const float ux = std::cos(gate->yaw);
+            const float uy = std::sin(gate->yaw);
+            const float gc = app.subworld.ground_height_at(gate->x, gate->y);
+            const float z0 = gc + gate->zBase;         // underside, as drawn
+            const float z1 = z0 + gate->height;        // crown
+            float worstGround = gc;
+            float worstAt = 0.0f;
+            const int steps = std::max(2, int(halfLen * 2.0f));
+            for (int s = 0; s <= steps; ++s) {
+                const float t = -halfLen + 2.0f * halfLen * float(s)
+                                        / float(steps);
+                const float g = app.subworld.ground_height_at(
+                    gate->x + ux * t, gate->y + uy * t);
+                if (g > worstGround) { worstGround = g; worstAt = t; }
+            }
+            // The clear the gate actually offers: from the worst ground under
+            // the bar up to the bar. Negative = the opening is inside the hill.
+            const float clearM = z0 - worstGround;
+            std::fprintf(stderr,
+                         "[smoke] gate_probe at %.1f,%.1f yaw=%.2f half=%.1f "
+                         "zBase=%.2f h=%.2f\n",
+                         double(gate->x), double(gate->y), double(gate->yaw),
+                         double(halfLen), double(gate->zBase),
+                         double(gate->height));
+            std::fprintf(stderr,
+                         "[smoke] gate_probe ground centre=%.2f worst=%.2f "
+                         "(at t=%+.1f) span=[%.2f,%.2f] clear=%.2f\n",
+                         double(gc), double(worstGround), double(worstAt),
+                         double(z0), double(z1), double(clearM));
+            std::fflush(stderr);
+            // ── The viewpoint: on the ROAD through the opening, which runs
+            // across the masonry — i.e. along the bar's normal, not along the
+            // bearing from the keep (that ray runs down the wall and parks the
+            // camera inside the nearest house). The side chosen is the one
+            // AWAY from the keep, so the quarter is seen from the city the way
+            // a man walking up to its gate sees it. Then step outward until
+            // the eye is in open air: a viewpoint inside masonry photographs
+            // masonry, which is how a present arch reads as a missing one. ──
+            float ox = -std::sin(gate->yaw);
+            float oy =  std::cos(gate->yaw);
+            if ((gate->x + ox - keep->x) * (gate->x - keep->x)
+              + (gate->y + oy - keep->y) * (gate->y - keep->y)
+                < (gate->x - keep->x) * (gate->x - keep->x)
+                + (gate->y - keep->y) * (gate->y - keep->y)) {
+                ox = -ox;
+                oy = -oy;
+            }
+            float px = gate->x + ox * (halfLen * 2.0f + 6.0f);
+            float py = gate->y + oy * (halfLen * 2.0f + 6.0f);
+            for (int back = int(halfLen * 2.0f + 6.0f); back <= 40; ++back) {
+                const float cx2 = gate->x + ox * float(back);
+                const float cy2 = gate->y + oy * float(back);
+                const float eye = app.subworld.ground_height_at(cx2, cy2)
+                                + sm::sub::kBodyEyeM;
+                if (!app.subworld.solid_at(cx2, cy2, eye)) {
+                    px = cx2;
+                    py = cy2;
+                    break;
+                }
+            }
+            app.subworld.set_player_pos(px, py);
+            app.smoke.gateAimX = gate->x;
+            app.smoke.gateAimY = gate->y;
+            // Look at the middle of the opening — between the worst ground
+            // under the bar and the bar's own underside. If the arch is buried
+            // the frame shows exactly that.
+            app.smoke.gateAimZ = (worstGround + z0) * 0.5f;
+            // Four frames: one for the window to settle the teleport, the rest
+            // for the camera to hold the aim against the engine's own seating.
+            app.smoke.gateAimFrames = 4;
+            std::fprintf(stderr,
+                         "[smoke] gate_probe stand %.1f,%.1f look_z=%.2f\n",
+                         double(px), double(py), double(app.smoke.gateAimZ));
+            std::fflush(stderr);
             break;
         }
         case SmokeAction::FocusNpcPanel: {

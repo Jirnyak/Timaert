@@ -50,6 +50,9 @@ open_settlement_build
 open_settlement_trade
 open_settlement_map
 enter_first_settlement
+# Measures every gateway of a real town against the clear it promises, and
+# photographs one. Needs a settlement scene, hence the line above.
+enter_first_settlement,city_gate_probe
 focus_npc_panel
 open_npc_trade
 attack_first_npc

@@ -875,6 +875,21 @@ timaert_test(city_wall_integrity_test
         src/sub/dgn/prologue_road.cpp
     LINK_SDL)
 
+# Asks what a RIDER asks at a gateway on sloping ground: is the arch still
+# above the road at every point across the opening? (The lintel's seat is
+# measured at its own centre; the ground under its ends was never consulted,
+# and every other settlement fixture stands on flat country.)
+timaert_test(city_gate_lintel_test
+    SOURCES
+        src/sub/base_generator.cpp
+        ${TIMAERT_GENS_SOURCES}
+        src/sub/dgn/dispatch.cpp
+        src/sub/dgn/house.cpp
+        src/sub/dgn/cave.cpp
+        src/sub/dgn/spire_tower.cpp
+        src/sub/dgn/prologue_road.cpp
+    LINK_SDL)
+
 timaert_test(material_seam_test
     SOURCES
         src/sub/material.cpp)

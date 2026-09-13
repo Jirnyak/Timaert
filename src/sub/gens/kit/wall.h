@@ -28,11 +28,22 @@
 // them to know what "inside the walls" means.
 #pragma once
 #include "sub/gens/kit/outline.h"
+#include "sub/height.h"
 #include "sub/map_data.h"
 
 #include "core/rng.h"
 
 namespace sm::sub::kit {
+
+// THE GATE'S PROMISE: how much open air a gateway keeps under its lintel. A
+// mounted body passes beneath it — kBodyEyeM is a walking man's eye, a rider
+// sits about one body-eye higher again, and the arch clears his head, so three
+// eye-heights is the span's clear rather than a number chosen to look right.
+//
+// Stated in the header because it is a PROMISE, not an implementation detail:
+// the witness that a gate is passable on sloped ground asserts against this
+// very number rather than restating one of its own (tests law 4).
+inline constexpr float kGateClearM = kBodyEyeM * 3.0f;
 
 // Perturb a shape into a BUILT ring: the two harmonics and the per-bearing
 // jitter of kSettlementWallRing, then smoothed twice. The base may be a plain
@@ -72,5 +83,26 @@ struct WallGate {
 int stamp_wall(SubworldMapData& out, const Outline& outline,
                const WallStyle& style, WallGate* gates, int maxGates,
                const Outline* clip = nullptr);
+
+// Settle every LIFTED span onto the ground it actually bridges.
+//
+// A lifted solid states its clear as a height above ONE terrain sample — the
+// one under its own centre (map_data.h). That is the right seat only when the
+// ground under the whole span is that height. It never is on a hillside, and a
+// gate lintel is the span this matters to: promise five metres of air over the
+// road, measure them from the middle of a slope, and the uphill half of the
+// arch is inside the hill.
+//
+// It is a separate pass, and deliberately so: the ground a gateway stands on
+// is STILL BEING CUT when the wall goes up — every generator's roads are
+// smoothed into the relief afterwards (gens/dispatch.cpp smooth_road_heights)
+// — so a seat computed at stamp time is measured against a hill that no longer
+// exists. Run this once the map is final and there is exactly one place that
+// knows the law.
+//
+// Today the overworld's only lifted-on-ground spans are gate lintels; bridge
+// decks, piers and kerbs state absolute world heights (zWorld) and are left
+// alone, because a span over water answers to the water.
+void seat_lifted_spans(SubworldMapData& out);
 
 } // namespace sm::sub::kit

@@ -10,6 +10,7 @@
 
 #include "sub/gens/gens.h"
 #include "sub/gens/kit/tiles.h"
+#include "sub/gens/kit/wall.h"
 #include "sub/dgn/dispatch.h"
 #include "sub/base_generator.h"
 #include "macro/tree_layer.h"
@@ -171,6 +172,9 @@ void dispatch_generate(const CellContext& ctx, const float nbHeights[9],
     // its bumps. No-op when the cell has no roads. Mirrors `smoothRoadHeights`
     // applied at the end of `BaseGenerator.generateHeightmap` in TS.
     smooth_road_heights(out.heightmap, out.tiles, kCellSize, kCellSize);
+    // …and only NOW does a lifted span know what it bridges: the pass above
+    // was still cutting the roadway a gateway stands on (kit/wall.h).
+    kit::seat_lifted_spans(out);
     kit::sync_water_tiles_from_heightmap(out);
 }
 

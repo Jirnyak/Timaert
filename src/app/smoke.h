@@ -54,6 +54,7 @@ enum class SmokeAction : std::uint8_t {
     OpenSettlementTrade,
     OpenSettlementMap,
     EnterFirstSettlement,
+    CityGateProbe,
     FocusNpcPanel,
     OpenNpcTrade,
     AttackFirstNpc,
@@ -121,6 +122,14 @@ struct SmokeScript {
     int probeSettleFrames = -1;
     entt::entity probeEntity = entt::null;
     float probeX = 0.0f, probeY = 0.0f;
+    // city_gate_probe aims the camera at a gate it just measured, then holds
+    // for the same reason light_probe_capture does — a teleport re-seats the
+    // camera in the ENGINE tick, which runs after this frame was recorded, so
+    // arming the capture in the same tick photographs the old viewpoint. The
+    // aim is re-applied every held frame because the engine's own look logic
+    // owns the camera between them. -1 = idle.
+    int gateAimFrames = -1;
+    float gateAimX = 0.0f, gateAimY = 0.0f, gateAimZ = 0.0f;
     // wait_visible reads the PRESENTED frame back instead of assuming it.
     // The scenario arms a capture on one frame and samples it on the next —
     // the same defer-by-a-frame rule every other capture action obeys, for the
