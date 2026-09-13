@@ -173,6 +173,17 @@ struct SubworldAi {
     std::uint32_t seq = 0;
 };
 
+// GOING HOME. A townsman the day's pump has sent indoors, and the door he is
+// walking to (window tiles). He un-embodies when he reaches it.
+//
+// Data, not a second brain: the ordinary wander skips a body wearing this and
+// one pass aims its existing intent (SubworldAi.wantVx/wantVy) at the door, so
+// the mover, the ground law and the collision index all stay exactly as they
+// were. A citizen who is home is simply not embodied — his town never lost him
+// (no MacroDebt is settled; that happens only where a body DIES), and opening
+// his door finds him inside, because the interior draws from the same stock.
+struct GoingHome { float x, y; };
+
 // Per-NPC level (matches TS `npc.level`). Drives loot tables, combat
 // scaling, and visual badges in the proximity panel.
 struct NpcLevel { std::int16_t value; };

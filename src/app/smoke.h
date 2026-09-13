@@ -55,6 +55,7 @@ enum class SmokeAction : std::uint8_t {
     OpenSettlementMap,
     EnterFirstSettlement,
     CityGateProbe,
+    CityDayPump,
     FocusNpcPanel,
     OpenNpcTrade,
     AttackFirstNpc,

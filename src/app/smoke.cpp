@@ -26,6 +26,7 @@
 
 #include "macro/anatomy.h"
 #include "sub/ai.h"        // kDetectionRadius — the ambush's own wait line
+#include "sub/city_layout.h"  // city_house_target — what the town ASKED for
 #include "sub/spawn.h"     // current_player_body — «рука игрока» атрибуции
 #include "macro/codex.h"
 #include "macro/items.h"
@@ -129,6 +130,7 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"open_settlement_map", SmokeAction::OpenSettlementMap},
     {"enter_first_settlement", SmokeAction::EnterFirstSettlement},
     {"city_gate_probe", SmokeAction::CityGateProbe},
+    {"city_day_pump", SmokeAction::CityDayPump},
     {"focus_npc_panel", SmokeAction::FocusNpcPanel},
     {"open_npc_trade", SmokeAction::OpenNpcTrade},
     {"attack_first_npc", SmokeAction::AttackFirstNpc},
@@ -6566,9 +6568,40 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 (void)e;
                 ++citizens;
             }
+            // HOW LAZY IS THE TOWN'S GROUND. The layout law asks for one
+            // hearth per household (sub/city_layout.h city_house_target) and
+            // the placers seat only some of them — the rest of the ground
+            // stays bare, which is the "empty lots" the owner sees from the
+            // street. Counted over the centre cell only, so neighbours'
+            // meadows do not dilute it.
+            const int wantHouses = sm::sub::city_house_target(s.population);
+            int bare = 0, built = 0;
+            {
+                // Bounded to the ground INSIDE THE WALL — the town's own
+                // radius (city_layout.h). Counted over the whole cell the
+                // number is meaningless: it is mostly hinterland, and a town
+                // is not lazy for failing to build on its own fields.
+                const auto& tiles = app.subworld.mgr().tiles();
+                const int o = sm::sub::kCellSize;
+                const float c = float(o) + float(o) * 0.5f;
+                const float r = float(sm::sub::city_wall_radius(s.population));
+                for (int y = o; y < o * 2; ++y) {
+                    for (int x = o; x < o * 2; ++x) {
+                        const float dx = float(x) + 0.5f - c;
+                        const float dy = float(y) + 0.5f - c;
+                        if (dx * dx + dy * dy > r * r) continue;
+                        const std::uint8_t t =
+                            tiles[std::size_t(y) * sm::sub::kFullSize + x];
+                        if (sm::sub::tile_is(t, sm::sub::kTileBuilt)) ++built;
+                        else if (t == sm::sub::TILE_GRASS) ++bare;
+                    }
+                }
+            }
             std::fprintf(stderr,
-                         "[smoke] settlement_subworld id=%d pop=%d houses=%d walls=%d citizens=%d center=%d,%d\n",
-                         s.id, s.population, houses, walls, citizens,
+                         "[smoke] settlement_subworld id=%d pop=%d houses=%d/%d "
+                         "walls=%d citizens=%d built=%d bare=%d center=%d,%d\n",
+                         s.id, s.population, houses, wantHouses, walls, citizens,
+                         built, bare,
                          app.subworld.mgr().center_cx(),
                          app.subworld.mgr().center_cy());
             std::fflush(stderr);
@@ -6816,6 +6849,60 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          "[smoke] gate_probe stand %.1f,%.1f look_z=%.2f\n",
                          double(px), double(py), double(app.smoke.gateAimZ));
             std::fflush(stderr);
+            break;
+        }
+        case SmokeAction::CityDayPump: {
+            // THE DAY'S PUMP, watched from the street. The spawner gets the
+            // split right at the moment a cell is entered; what this asks is
+            // whether it STAYS right while the clock runs and the player never
+            // moves — the thing a player does when he stands in a market at
+            // dusk. Counted on bodies, not on the law, so a law that is right
+            // on paper and never moves anybody still reddens.
+            std::fprintf(stderr, "[smoke] action=city_day_pump\n");
+            std::fflush(stderr);
+            if (!app.subworld.active()) {
+                smoke_fail(app, "city_day_pump without a subworld");
+                break;
+            }
+            auto street = [&app]() {
+                int n = 0;
+                auto v = app.ecs.reg.view<sm::ecs::SubworldTag,
+                                          sm::ecs::NpcCharacter,
+                                          sm::ecs::MacroDebt>();
+                for (auto e : v) {
+                    const auto& d = v.get<sm::ecs::MacroDebt>(e);
+                    if (d.stock != std::uint8_t(sm::MacroStock::Population)) {
+                        continue;
+                    }
+                    ++n;
+                }
+                return n;
+            };
+            const int atEntry = street();
+            // Midnight, forced the way every other clock-bending scenario
+            // forces it, then let the world RUN: the surplus has to walk to
+            // its doors on its own legs, so a count taken the same step would
+            // grade the town before anybody had moved.
+            app.gs.worldTime = sm::world_time_at(app.gs.worldTime.day(), 0, 0);
+            sm::reset_world_tick_runtime(app.gs.worldTickRt, app.gs.worldSeed);
+            advance_sim_steps(app, 900, /*allowInput*/false);
+            const int atNight = street();
+            std::fprintf(stderr,
+                         "[smoke] day_pump street entry=%d midnight=%d\n",
+                         atEntry, atNight);
+            std::fflush(stderr);
+            if (atEntry <= 0) {
+                smoke_fail(app, "city_day_pump found no crowd to pump");
+                break;
+            }
+            // Half is a floor, not a target: what is asserted is that the town
+            // visibly empties, and the exact figure belongs to the law's own
+            // witness (city_population_inside_walls_test walks all 24 hours).
+            if (atNight * 2 >= atEntry) {
+                smoke_fail(app, "the street did not empty as night fell");
+                break;
+            }
+            ++app.smoke.cursor;
             break;
         }
         case SmokeAction::FocusNpcPanel: {

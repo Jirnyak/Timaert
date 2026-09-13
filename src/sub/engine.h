@@ -919,6 +919,14 @@ private:
 
     // Watch for the player crossing INTO a zone. Called from tick().
     void tick_zones();
+    // THE DAY'S PUMP — the town's people following the sun between its streets
+    // and its hearths while the player stands in it (sub/city_layout.h
+    // crowd_outdoor_share01). Without it the count is only right at the moment
+    // a cell is entered: stand on the square from dusk to dark and the crowd
+    // never thins. Runs when the WORLD CLOCK ticks, not per frame — the share
+    // cannot move between two steps of the same tick.
+    void tick_day_pump(float dt);
+    std::uint64_t pumpTick_ = 0;   // world tick the pump last ran on
 
     // Where the player is standing, in MACRO cells — the seam's own
     // coordinate, and the only translation the layers need between them.

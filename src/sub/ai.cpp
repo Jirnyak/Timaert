@@ -29,7 +29,12 @@ void tick_npc_ai(ecs::World& w, float px, float py,
                  void* heightUser) {
     auto& reg = w.reg;
 
-    auto view = reg.view<ecs::Position, ecs::SubworldAi>();
+    // A body walking home is steered by the day's pump (engine tick_day_pump),
+    // not by its own errands — excluded here so the two never write the same
+    // intent in one step. The exclusion is the WHOLE integration: no new brain
+    // kind, no branch inside Wander.
+    auto view = reg.view<ecs::Position, ecs::SubworldAi>(
+        entt::exclude<ecs::GoingHome>);
     for (auto e : view) {
         // A body wearing the scene flag (AvatarTag) is driven by player
         // input (its authoritative Position is written by the engine), not by

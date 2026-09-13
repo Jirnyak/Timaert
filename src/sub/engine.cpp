@@ -1501,6 +1501,177 @@ void SubworldEngine::add_sub_zone(int cellX, int cellY,
 // next visit, because a place that somebody has already stood in remembers
 // that — and a second "visited" flag would be a second truth about one past,
 // with a save field to keep true.
+// ── THE DAY'S PUMP ────────────────────────────────────────────────────────
+//
+// A town's people are a conserved quantity in two vessels, and the sun moves
+// them (sub/city_layout.h crowd_outdoor_share01). The spawner gets the split
+// right at the moment a cell is entered; this keeps it right while the player
+// STANDS there and the clock runs on. Without it you could watch a market
+// square from dusk into the dark and see the same crowd at midnight.
+//
+// It is not a second population law. It reads the SAME partition the spawner
+// reads, compares it to the bodies actually standing there, and moves the
+// difference — which is why the two can never disagree about how many people
+// a town has on its streets.
+//
+// Scope: the CENTRE cell. A macro cell is a kilometre across and the player
+// stands in one of them; a neighbour's street settles the moment the window
+// re-centres on it, through the spawner's own use of the same law.
+void SubworldEngine::tick_day_pump(float dt) {
+    if (!gs_ || !ecs_) return;
+    if (sceneKind_ == SceneKind::Dungeon) return;   // an interior has no street
+    auto& reg = ecs_->reg;
+
+    // ── Every step: walk the leavers home. ──
+    // The body keeps its own legs, its own mover and its own ground law; all
+    // that is written here is the INTENT it already had a field for.
+    {
+        auto walking = reg.view<ecs::Position, ecs::SubworldAi, ecs::GoingHome>();
+        std::array<entt::entity, 256> arrived{};
+        int arrivedCount = 0;
+        for (auto e : walking) {
+            const auto& p = walking.get<ecs::Position>(e);
+            auto& a = walking.get<ecs::SubworldAi>(e);
+            const auto& h = walking.get<ecs::GoingHome>(e);
+            const float dx = h.x - p.x;
+            const float dy = h.y - p.y;
+            const float d = std::sqrt(dx * dx + dy * dy);
+            // Arm's length of the door is home: the threshold is a tile wide
+            // and a body that has to hit a point exactly never gets there.
+            if (d <= a.radius + 1.0f) {
+                if (arrivedCount < int(arrived.size())) {
+                    arrived[std::size_t(arrivedCount++)] = e;
+                }
+                continue;
+            }
+            a.wantVx = dx / d * a.wanderSpeed;
+            a.wantVy = dy / d * a.wanderSpeed;
+        }
+        // HE IS HOME, so he is no longer embodied — and nothing is settled.
+        // A macro debt is paid where a body DIES (the reaper above); a man who
+        // walked through his own door owes his town nothing, and opening that
+        // door finds him inside because the interior draws on the same stock.
+        for (int i = 0; i < arrivedCount; ++i) {
+            if (reg.valid(arrived[std::size_t(i)])) {
+                reg.destroy(arrived[std::size_t(i)]);
+            }
+        }
+    }
+    (void)dt;
+
+    // ── On the world's own tick: decide who goes and who comes. ──
+    // Not per frame: the share is a function of the clock, and the clock does
+    // not move between two steps of one tick.
+    const std::uint64_t nowTick = gs_->worldTime.tick;
+    if (nowTick == pumpTick_) return;
+    pumpTick_ = nowTick;
+
+    const CellContext ctx = resolve_context(mgr_.center_cx(), mgr_.center_cy());
+    const int pop = ctx.landmark.size;
+    if (pop <= 0 || ctx.landmark.id < 0) return;
+    if (landmark_def(ctx.landmark.kind).crowdHabitat == 0) return;
+
+    const float originX = float(kCellSize);
+    const float originY = float(kCellSize);
+    const int reserve = interior_reserve_for_cell(
+        mgr_.structures(), ctx.landmark.kind, ctx.worldSeed,
+        mgr_.center_cx(), mgr_.center_cy(), originX, originY, pop,
+        gs_->worldTime);
+    const int target = std::max(0, pop - reserve);
+
+    // The doors this town keeps — where a man goes home to, and where one
+    // steps out of at first light.
+    std::vector<const Structure*> doors;
+    doors.reserve(256);
+    for (const Structure& s : mgr_.structures()) {
+        if (structure_opens(s.kind) == DungeonRef::None) continue;
+        if (structure_opens_top(s.kind)) continue;
+        if (!dungeon_kind_row(structure_opens(s.kind)).householdAbove) continue;
+        if (s.x < originX || s.x >= originX + float(kCellSize)) continue;
+        if (s.y < originY || s.y >= originY + float(kCellSize)) continue;
+        doors.push_back(&s);
+    }
+    if (doors.empty()) return;
+
+    // Who is standing on this town's streets right now — asked of the LOAN
+    // each citizen carries (MacroDebt), because that is what says whose
+    // townsman a body is. A leaver still stands there but is already spoken
+    // for, so he is counted apart.
+    std::vector<entt::entity> onStreet;
+    std::vector<entt::entity> leaving;
+    onStreet.reserve(512);
+    auto crowd = reg.view<ecs::Position, ecs::SubworldAi, ecs::MacroDebt>();
+    for (auto e : crowd) {
+        const auto& d = crowd.get<ecs::MacroDebt>(e);
+        if (d.stock != std::uint8_t(MacroStock::Population)) continue;
+        if (d.subject != ctx.landmark.id) continue;
+        if (reg.any_of<ecs::AvatarTag, ecs::PlayerSoldierTag>(e)) continue;
+        if (reg.all_of<ecs::GoingHome>(e)) leaving.push_back(e);
+        else                               onStreet.push_back(e);
+    }
+
+    const int staying = int(onStreet.size());
+    int surplus = staying - target;
+    if (surplus > 0) {
+        // Home is the NEAREST door — a man does not cross his town to sleep.
+        for (int i = 0; i < surplus && i < int(onStreet.size()); ++i) {
+            const entt::entity e = onStreet[std::size_t(i)];
+            const auto& p = reg.get<ecs::Position>(e);
+            const Structure* best = doors.front();
+            float bestD2 = 1e30f;
+            for (const Structure* d : doors) {
+                const float dx = d->x - p.x, dy = d->y - p.y;
+                const float d2 = dx * dx + dy * dy;
+                if (d2 < bestD2) { bestD2 = d2; best = d; }
+            }
+            reg.emplace<ecs::GoingHome>(e, ecs::GoingHome{best->x, best->y});
+        }
+        return;
+    }
+
+    // The sun is climbing: doors open. A man already on his way home turns
+    // round first — cheaper than birth, and truer, since he never left.
+    int deficit = target - staying;
+    while (deficit > 0 && !leaving.empty()) {
+        const entt::entity e = leaving.back();
+        leaving.pop_back();
+        if (reg.valid(e)) reg.remove<ecs::GoingHome>(e);
+        --deficit;
+    }
+    if (deficit <= 0) return;
+
+    // …and the rest step out of their doors, born by the one birth the street
+    // crowd has always used, with the same loan on the same stock.
+    SpawnContext townCtx{};
+    townCtx.biome = ctx.biome;
+    townCtx.forest = is_forest_cell(ctx.treeCount);
+    townCtx.landmark = ctx.landmark.kind;
+    townCtx.danger = ctx.zone;
+    townCtx.depositsNear = ctx.depositsNear;
+    const std::uint16_t faction = landmark_crowd_faction(
+        ctx.landmark.kind, ctx.landmark.factionIdx);
+    const MacroStockKey popKey{ctx.landmark.id,
+                               std::int16_t(mgr_.center_cx()),
+                               std::int16_t(mgr_.center_cy())};
+    Rng rng(ctx.seed ^ 0xDA47B00Du);
+    for (int i = 0; i < deficit; ++i) {
+        const Structure* d = doors[std::size_t(rng.next_u32() % doors.size())];
+        std::uint32_t ts = rng.state;
+        const NPCType type = pick_crowd_row(townCtx, ts);
+        rng.state = ts;
+        spawn_derived_body(reg,
+            BodySpec{type, d->x, d->y, faction,
+                     normalize_soldier_level(npc_def(type).baseLevel
+                                             + int(rng.next_u32() % 3u)),
+                     ctx.seed ^ (std::uint32_t(nowTick) * 7919u
+                                 + std::uint32_t(i)),
+                     /*combatant*/false},
+            /*faceSalt*/std::uint32_t(nowTick) * 2654435761u
+                        + std::uint32_t(i),
+            BodyLoan::from(MacroStock::Population, popKey));
+    }
+}
+
 void SubworldEngine::tick_zones() {
     if (!gs_ || subZoneCount_ == 0) return;
     const std::int32_t today = gs_->worldTime.day();
@@ -4385,6 +4556,8 @@ void SubworldEngine::tick(float dt) {
     pull_player_entity_to_scalars();
     // A place that means something notices him crossing into it.
     tick_zones();
+    // …and the town he is standing in keeps following the sun.
+    tick_day_pump(dt);
     int prevCx = mgr_.center_cx(), prevCy = mgr_.center_cy();
     seamShiftCellsX_ = 0;
     seamShiftCellsY_ = 0;
