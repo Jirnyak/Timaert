@@ -1087,13 +1087,56 @@ void spawn_cell_npcs(ecs::World& w,
         const TownShape townShape = measure_town(
             tiles, centerX, centerY,
             std::max(radius * 2.0f, float(kCellSize) * 0.45f), radius);
+        // HALF THE WATCH STANDS IN THE UPPER QUARTER (owner, 2026-09-13:
+        // «стража везде, просто в верхнем квартале её больше, например
+        // половина»). The quarter is about a tenth of the town's ground, so
+        // half the garrison on it is a watch several times as thick as the
+        // streets below — which is what a lord's own quarter looks like, and
+        // it falls out of one number rather than a density dial.
+        //
+        // The quarter is FOUND, not handed over: its keep is the tallest roof
+        // the generator raised, and its size is a pure function of the
+        // population the generator used (city_layout.h city_upper_radius). So
+        // the spawner needs no channel to the generator to know where the
+        // lord's district is — the same way it measures the town's shape off
+        // the ground rather than trusting a scalar.
+        float keepX = centerX, keepY = centerY;
+        bool haveKeep = false;
+        if (landmark == LandmarkType::City) {
+            const Structure* keep = nullptr;
+            for (const Structure& st : mgr.structures()) {
+                if (st.kind != Structure::House) continue;
+                if (st.x < float(originX) || st.x >= float(originX + kCellSize)) continue;
+                if (st.y < float(originY) || st.y >= float(originY + kCellSize)) continue;
+                if (keep == nullptr || st.height > keep->height) keep = &st;
+            }
+            if (keep != nullptr) {
+                keepX = keep->x;
+                keepY = keep->y;
+                haveKeep = true;
+            }
+        }
+        const float quarterR = city_upper_radius(landmarkPop);
         int refused = 0;
         for (int i = 0; i < garrison->size(); ++i) {
             const SoldierRecord& rec = (*garrison)[i];
             if (!valid_npc_kind(rec.kind)) continue;
+            // Every other man of the roll takes the quarter, so the split is
+            // exact for any roster size and needs no second roll to decide it.
+            const bool inQuarter = haveKeep && (i % 2) == 0;
             float fx = 0.0f, fy = 0.0f;
-            if (!find_city_spawn_spot(tiles, grng, centerX, centerY,
-                                      radius, townShape, fx, fy)) {
+            // A man who cannot stand in the quarter still stands somewhere:
+            // the district is small and dense, and when it is full the rest of
+            // the watch takes the streets below. Measured on a city of 5 488:
+            // 104 of a wanted 392 fit, and eight further tries each moved the
+            // number by nothing — the quarter is FULL, not unlucky.
+            const bool stood = inQuarter
+                && find_city_spawn_spot(tiles, grng, keepX, keepY,
+                                        quarterR, townShape, fx, fy);
+            if (stood) {
+                // stood in the quarter
+            } else if (!find_city_spawn_spot(tiles, grng, centerX, centerY,
+                                             radius, townShape, fx, fy)) {
                 ++refused;
                 continue;
             }

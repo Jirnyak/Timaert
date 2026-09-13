@@ -6678,6 +6678,30 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             // looks at one gate. The run prints the whole table; the frame
             // then goes to the one named by TIMAERT_GATE_INDEX (default: the
             // nearest to the keep, i.e. the upper quarter's own way out).
+            // THE WATCH, and where it stands. The garrison embodies on the
+            // town's streets; half of it belongs to the upper quarter, which
+            // is a tenth of the ground — so the count inside the quarter's
+            // radius of the keep is the whole claim, measured rather than
+            // asserted.
+            {
+                const sm::Landmark* lm = smoke_first_city(app);
+                const int lmPop = lm ? lm->population : 0;
+                const float qr = sm::sub::city_upper_radius(lmPop);
+                int watch = 0, inQuarter = 0;
+                auto gv = app.ecs.reg.view<sm::ecs::Position,
+                                           sm::ecs::MacroDebt>();
+                for (auto e : gv) {
+                    const auto& d = gv.get<sm::ecs::MacroDebt>(e);
+                    if (d.stock != std::uint8_t(sm::MacroStock::Garrison)) continue;
+                    ++watch;
+                    const auto& p = gv.get<sm::ecs::Position>(e);
+                    const float dx = p.x - keep->x, dy = p.y - keep->y;
+                    if (dx * dx + dy * dy <= qr * qr) ++inQuarter;
+                }
+                std::fprintf(stderr,
+                             "[smoke] gate_probe watch=%d in_quarter=%d "
+                             "quarterR=%.0f\n", watch, inQuarter, double(qr));
+            }
             std::fprintf(stderr,
                          "[smoke] gate_probe keep at %.0f,%.0f h=%.1f\n",
                          double(keep->x), double(keep->y),
