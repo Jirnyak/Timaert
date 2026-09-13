@@ -124,6 +124,31 @@ int lay_backland_houses(SubworldMapData& out, Rng& r,
                         const FrontagePlan& plan, int maxHouses,
                         const KeepOut* keepOut = nullptr, int keepOutCount = 0);
 
+// ── THE YARD: what stands on the ground between the houses ────────────────
+//
+// The land-per-house law already BUDGETS this ground — a burgage plot runs
+// back three times the house's own depth, eighty-one tiles of the hundred and
+// seventeen a household takes (sub/city_layout.h kPlotYardDepth) — and the
+// measurement agrees with it to three per cent. So the bald patches a town
+// shows are not missing houses: they are yards with nothing in them.
+//
+// This puts the yard in them, and it introduces no system to do it:
+//   · the KITCHEN GARDEN is ploughed ground, TILE_FIELD — the same tile the
+//     furlongs outside the wall use, so the town's one existing sower
+//     (scatter_field_crops) sows it without being told a garden exists;
+//   · the HURDLE is a Wattle row of the prop table, which is what a kind is;
+//   · the WELL is the well the green already stands on, in a yard instead of
+//     on the square.
+//
+// It reads only the HOUSES standing on the ground — not the lanes, not the
+// wall, not the fields — so it is a pass over a result rather than a module
+// reaching into a neighbour. `housesPerWell` is the caller's own block size:
+// a well serves the households that can carry water from it, and only the town
+// knows how long its blocks are.
+//
+// Returns how many yards it dressed.
+int lay_yards(SubworldMapData& out, Rng& r, int housesPerWell);
+
 // Plough a rectangle, if nothing built (and no open water) is under it.
 bool add_field_rect(SubworldMapData& out, int cx, int cy, int w, int h);
 

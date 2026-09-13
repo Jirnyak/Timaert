@@ -408,6 +408,20 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
                             mouths.data(), mouthCount);
     }
 
+    // ── THE YARDS ─────────────────────────────────────────────────────────
+    // The ground between the houses is BUDGETED as yard by the land-per-house
+    // law (eighty-one tiles of a hundred and seventeen), and until now nothing
+    // stood on it — which is why a town read as bald from the street though
+    // its density was right to three per cent. Gardens, hurdles and a well per
+    // block (kit/plots.h lay_yards).
+    //
+    // A well serves the households that can carry water from it, and how many
+    // that is belongs to the STREET PLAN: a block is branchEvery tiles of
+    // lane, a plot takes kPlotFace of frontage, and a lane fronts two sides.
+    const int housesPerBlock = std::max(1,
+        int(city_lane_plan(population, 0.0f, 0.0f).branchEvery / kPlotFace) * 2);
+    lay_yards(out, rBuild, housesPerBlock);
+
     // Street lighting: a town that keeps a wall keeps lamps along its
     // thoroughfares. Spacing is the lantern's own reach from the prop table.
     scatter_street_lanterns(out, centre, int(rim.max_radius()),

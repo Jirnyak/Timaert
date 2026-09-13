@@ -308,6 +308,84 @@ int lay_backland_houses(SubworldMapData& out, Rng& r,
     return placed;
 }
 
+int lay_yards(SubworldMapData& out, Rng& r, int housesPerWell) {
+    // The houses standing when this pass runs. Collected first: the pass adds
+    // structures, and a range being walked while it grows is a defect waiting
+    // for a reallocation.
+    std::vector<std::size_t> houses;
+    houses.reserve(out.structures.size());
+    for (std::size_t i = 0; i < out.structures.size(); ++i) {
+        if (out.structures[i].kind == Structure::House) houses.push_back(i);
+    }
+
+    int dressed = 0;
+    int sinceWell = 0;
+    for (std::size_t k = 0; k < houses.size(); ++k) {
+        const Structure h = out.structures[houses[k]];   // copy: the vector grows
+        // THE BACK OF THE PLOT. A house's door hangs on its local +Y
+        // (add_house_obb), so its yard is behind it — which is what makes a
+        // burgage plot a plot rather than a ring of ground.
+        const float cs = std::cos(h.yaw), sn = std::sin(h.yaw);
+        const float bx = -(-sn), by = -(cs);    // local −Y in world terms
+        const float half = structure_half_x(h);
+        const float depth = structure_half_y(h);
+
+        // The garden: ploughed ground behind the house, as deep as the plot
+        // runs back and only ever on ground nobody has spoken for.
+        const int reach = int(kPlotYardDepth * 0.5f);
+        bool ploughed = false;
+        for (int d = 1; d <= reach; ++d) {
+            for (float t = -half; t <= half; t += 1.0f) {
+                const float px = h.x + cs * t + bx * (depth + float(d));
+                const float py = h.y + sn * t + by * (depth + float(d));
+                const int xi = int(std::floor(px));
+                const int yi = int(std::floor(py));
+                if (xi < 1 || yi < 1 || xi >= kCellSize - 1 || yi >= kCellSize - 1) {
+                    continue;
+                }
+                const std::size_t idx = std::size_t(yi) * kCellSize + xi;
+                if (out.tiles[idx] != TILE_GRASS) continue;   // bare ground only
+                out.tiles[idx] = TILE_FIELD;
+                ploughed = true;
+            }
+        }
+        if (!ploughed) continue;   // no room behind this one: no yard to dress
+        ++dressed;
+
+        // The hurdle across the back of the garden — what makes the ground a
+        // YARD and not simply a patch of someone's crop.
+        Structure w{};
+        w.kind = Structure::Wattle;
+        w.x = h.x + bx * (depth + float(reach) + 0.5f);
+        w.y = h.y + by * (depth + float(reach) + 0.5f);
+        w.yaw = h.yaw;
+        w.hx = half;
+        w.hy = structure_min_half_xy(Structure::Wattle);
+        w.radius = w.hx;
+        w.height = structure_min_height(Structure::Wattle);
+        out.structures.push_back(w);
+
+        // …and a well for the block. Not one per yard: a well serves the
+        // households that can walk to it, and how many that is belongs to the
+        // caller's own street plan.
+        if (housesPerWell > 0 && ++sinceWell >= housesPerWell) {
+            sinceWell = 0;
+            Structure well{};
+            well.kind = Structure::Well;
+            const float off = float(reach) * (0.3f + r.next_f01() * 0.4f);
+            well.x = h.x + bx * (depth + off);
+            well.y = h.y + by * (depth + off) + (r.next_f01() - 0.5f);
+            well.hx = structure_min_half_xy(Structure::Well);
+            well.hy = well.hx;
+            well.radius = well.hx;
+            well.height = structure_min_height(Structure::Well);
+            well.shape = Structure::Cylinder;
+            out.structures.push_back(well);
+        }
+    }
+    return dressed;
+}
+
 bool add_field_rect(SubworldMapData& out, int cx, int cy, int w, int h) {
     const int x = cx - w / 2;
     const int y = cy - h / 2;

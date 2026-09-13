@@ -3120,6 +3120,7 @@ namespace sm::ui
                     draw_map_disc(rgba, side, px, py,
                                   std::max(1, r), IM_COL32(92, 92, 98, 255), 0.95f);
                     break;
+                case sub::Structure::Wattle:
                 case sub::Structure::Palisade:
                     // A village's own wall: the same rampart mark as masonry,
                     // in timber's colour — from the air a stockade reads as a

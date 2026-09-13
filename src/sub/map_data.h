@@ -429,8 +429,8 @@ struct Structure {
                                Fence, Furnish, Door, Lantern, Hatch,
                                Chest, CaveMouth, Well, Sign, SpireGate,
                                SpireOrb, Kerb, Ladder, SpireHatch,
-                               Palisade } kind;
-    static constexpr int kKindCount = int(Palisade) + 1;
+                               Palisade, Wattle } kind;
+    static constexpr int kKindCount = int(Wattle) + 1;
     // Footprint silhouette. Box is the default; Cylinder renders (and collides)
     // as a round prism — wall towers, gate jambs, the spire. One byte, not a
     // new Kind: shape is orthogonal to what the thing IS.
@@ -786,6 +786,18 @@ inline constexpr StructureKindRow kStructureKindRows[Structure::kKindCount] = {
                   StructureKindRow::Material::Wood,
                   InteractId::None, DungeonRef::None, false, 0u, 0.0f, 0.0f,
                   std::uint8_t(TILE_WALL)},
+    // Wattle: the woven hurdle a townsman puts round his own yard. Its own
+    // kind and not a Fence in brown, for the reason the palisade is not a
+    // curtain in brown: a Fence is the dry-stone balk a ploughman piles at the
+    // edge of his strip, and these two are made of different things by
+    // different people for different reasons. Knee-high like the balk, because
+    // what either of them keeps out is a pig, not a man — you step over both,
+    // which is why both are solid and neither is a wall.
+    { Structure::Wattle, "",     0.2f, 0.5f,  0.0f, true,  "",
+                  StructureKindRow::Draw::Solid,
+                  StructureKindRow::Material::Wood,
+                  InteractId::None, DungeonRef::None, false, 0u, 0.0f, 0.0f,
+                  kWalkTileTransparent},
 };
 static_assert(rows_in_enum_order(kStructureKindRows, &StructureKindRow::kind),
               "kStructureKindRows row order must mirror Structure::Kind");
