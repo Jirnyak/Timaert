@@ -1,5 +1,6 @@
 #include "sub/gens/kit/plots.h"
 
+#include "sub/city_layout.h"   // kPlotYardDepth — the room a house is owed
 #include "sub/gens/kit/noise.h"
 #include "sub/gens/kit/tiles.h"
 
@@ -233,6 +234,74 @@ int lay_frontage(SubworldMapData& out, Rng& r,
                     ++placed;
                 }
                 along += w + gap;
+            }
+        }
+    }
+    return placed;
+}
+
+int lay_backland_houses(SubworldMapData& out, Rng& r,
+                        const Outline& area, float inset,
+                        const FrontagePlan& plan, int maxHouses,
+                        const KeepOut* keepOut, int keepOutCount) {
+    if (maxHouses <= 0) return 0;
+    int placed = 0;
+    const int reach = int(area.max_radius()) + 1;
+    const int cx0 = int(area.cx);
+    const int cy0 = int(area.cy);
+
+    // Is the neighbourhood clear for `pad` tiles around this spot? That is
+    // what makes the pass fill bald GROUND rather than squeeze into the gaps
+    // between plots that already stand.
+    auto clear_around = [&](int x, int y, int pad) {
+        for (int yy = y - pad; yy <= y + pad; yy += 2) {
+            for (int xx = x - pad; xx <= x + pad; xx += 2) {
+                if (xx < 0 || yy < 0 || xx >= kCellSize || yy >= kCellSize) {
+                    return false;
+                }
+                if (tile_is(out.tiles[std::size_t(yy) * kCellSize + xx],
+                            kTileBuilt)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    };
+
+    // From a yard's depth down to a single tile: the emptiest ground first.
+    for (int pad = int(kPlotYardDepth); pad >= 1 && placed < maxHouses;
+         pad /= 2) {
+        // Walk the disc on the stride the neighbourhood test implies, so two
+        // candidates of one pass cannot claim the same patch.
+        const int step = std::max(2, pad);
+        for (int y = cy0 - reach; y <= cy0 + reach && placed < maxHouses;
+             y += step) {
+            for (int x = cx0 - reach; x <= cx0 + reach && placed < maxHouses;
+                 x += step) {
+                if (!area.contains(float(x), float(y), inset)) continue;
+                if (!clear_around(x, y, pad)) continue;
+                const float w = plan.widthMin
+                    + r.next_f01() * (plan.widthMax - plan.widthMin);
+                const float d = plan.depthMin
+                    + r.next_f01() * (plan.depthMax - plan.depthMin);
+                bool forbidden = false;
+                const float rr = std::sqrt(w * w + d * d) * 0.5f;
+                for (int k = 0; k < keepOutCount; ++k) {
+                    const float kx = float(x) - keepOut[k].x;
+                    const float ky = float(y) - keepOut[k].y;
+                    const float lim = keepOut[k].r + rr;
+                    if (kx * kx + ky * ky < lim * lim) { forbidden = true; break; }
+                }
+                if (forbidden) continue;
+                const float height = plan.heightMin
+                    + r.next_f01() * (plan.heightMax - plan.heightMin);
+                // A free lean: a cottage on the backlands answers to no
+                // street, so nothing decides which way it faces but the ground.
+                const float yaw = r.next_f01() * 3.14159265f;
+                if (add_house_obb(out, float(x), float(y), w * 0.5f, d * 0.5f,
+                                  yaw, height, /*requireClear=*/true)) {
+                    ++placed;
+                }
             }
         }
     }

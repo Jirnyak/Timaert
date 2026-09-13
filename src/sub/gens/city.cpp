@@ -374,6 +374,18 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
             ++placedHouses;
         }
     }
+    // …and the rest go on the BACKLANDS. Both placers above want a lane — one
+    // fronts it, the other wants paving within ten tiles — so between them
+    // they seated about three quarters of the town and a quarter of its
+    // households had no door at all. The remainder now takes the bald ground
+    // inside the walls, biggest patch first (kit/plots.h lay_backland_houses);
+    // owner, 2026-09-13: «пустыри всё равно без улиц есть, пусть там будут
+    // дома». It costs the yards about a twelfth of their ground, which is what
+    // the measurement said before the argument did.
+    placedHouses += lay_backland_houses(out, rBuild, rim,
+                                        kSettlementFootprint.cityHouseInset,
+                                        fp, houses - placedHouses,
+                                        mouths.data(), mouthCount);
 
     // …and the garrison's own houses, along the quarter's own lanes.
     if (!upperLanes.segs.empty()) {
@@ -383,9 +395,17 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
             ux1.push_back(sg.x1); uy1.push_back(sg.y1);
             uhw.push_back(lane_half_width(sg.rank));
         }
-        lay_frontage(out, rBuild, ux0.data(), uy0.data(), ux1.data(), uy1.data(),
-                     uhw.data(), int(ux0.size()), fp, upperHouses,
-                     mouths.data(), mouthCount);
+        const int upperPlaced = lay_frontage(
+            out, rBuild, ux0.data(), uy0.data(), ux1.data(), uy1.data(),
+            uhw.data(), int(ux0.size()), fp, upperHouses,
+            mouths.data(), mouthCount);
+        // The quarter owes its garrison as many roofs as the town owes its
+        // townsmen, so its backlands fill by the same law — inside its OWN
+        // ring, which is what keeps the barracks in the compartment.
+        lay_backland_houses(out, rBuild, castle,
+                            city_layout().streetWallInset * 0.5f,
+                            fp, upperHouses - upperPlaced,
+                            mouths.data(), mouthCount);
     }
 
     // Street lighting: a town that keeps a wall keeps lamps along its

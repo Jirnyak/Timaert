@@ -97,6 +97,33 @@ int lay_frontage(SubworldMapData& out, Rng& r,
                  const FrontagePlan& plan, int maxHouses,
                  const KeepOut* keepOut = nullptr, int keepOutCount = 0);
 
+// ── THE BACKLANDS: houses on ground no lane ever reached ──────────────────
+//
+// A town asks for one hearth per household and its placers seat about three
+// quarters of them: the frontage runs out of lane, and the road-gated scatter
+// refuses every spot with no paving within ten tiles. The remaining quarter of
+// the population had no door at all — which stopped being invisible the day
+// the sun began sending people home, and reads from the street as bald patches
+// inside the walls.
+//
+// So this lays the remainder where the lanes never went, and it does not ask
+// for a road, because that requirement is exactly what was refusing them
+// (owner, 2026-09-13: «пустыри всё равно без улиц есть, пусть там будут
+// дома»). It is its own function rather than a flag on the road-gated scatter
+// because it answers a DIFFERENT question — that one asks "is there frontage
+// here", this one asks "is there room here" — and a primitive that answers two
+// questions by a boolean is the dial this module has been getting rid of.
+//
+// It fills the EMPTIEST ground first: a candidate must sit in a clear
+// neighbourhood, and the search runs that neighbourhood down from a burgage
+// plot's yard depth (the room a house is entitled to) to a single tile, so the
+// biggest bald patches take houses before the gaps between existing plots do.
+// Returns how many stood.
+int lay_backland_houses(SubworldMapData& out, Rng& r,
+                        const Outline& area, float inset,
+                        const FrontagePlan& plan, int maxHouses,
+                        const KeepOut* keepOut = nullptr, int keepOutCount = 0);
+
 // Plough a rectangle, if nothing built (and no open water) is under it.
 bool add_field_rect(SubworldMapData& out, int cx, int cy, int w, int h);
 
