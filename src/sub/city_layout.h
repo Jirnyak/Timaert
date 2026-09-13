@@ -27,12 +27,65 @@
 #pragma once
 
 #include "sub/map_data.h"
+#include "sub/sky.h"       // time_of_day01 — the one clock the sun reads
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 
 namespace sm::sub {
+
+// ── THE DAY'S PUMP: how a town's people move between street and hearth ────
+//
+// A settlement's population is a CONSERVED quantity that lives in two vessels.
+// Nothing is created at dawn and nothing dies at dusk: the same souls move,
+// and what moves them is the light. So there is one number here, it is a pure
+// function of the world clock, and everything else follows from it.
+//
+// It is the SUN ITSELF, at full swing. `sun_dir(tod).y` is already the height
+// of the sun over the horizon — +1 at noon, 0 at sunrise and at sunset, −1 at
+// midnight — so mapping that range onto [0, 1] costs no invented number at
+// all, and the curve is continuous across every minute of the day.
+//
+// What it deliberately is NOT: a clamp. `max(0, sunY)` was the first cut and
+// it is a ceiling wearing a floor's clothes — it pins the value flat for half
+// the day, so from dusk to dawn there is no gradient left to pump anything
+// with, and the town changes by a switch instead of by degrees.
+//
+// Seasons come free the day the sun's arc learns about them, because this
+// reads the arc rather than the hour.
+inline float crowd_outdoor_share01(const WorldTime& t) {
+    return (sun_dir(time_of_day01(t)).y + 1.0f) * 0.5f;
+}
+
+// How many of a hearth's `souls` are BEHIND THE DOOR at this hour.
+//
+// The arithmetic is `souls × (1 − share)`, and the interesting part is what
+// happens to the fraction. Rounded, every house in a town flips at the same
+// minute and a city of fourteen hundred doors empties like a switch thrown.
+// So the fraction is resolved by the DOOR'S OWN PHASE — a constant drawn from
+// its seed, uniform in [0, 1) — which is dithering, the same trick the ground
+// uses to resolve a fractional shade without banding.
+//
+// What that buys, and why it is the whole point:
+//   · the expectation over doors is exactly `souls × (1 − share)`, so the
+//     partition law is not approximated — it is exact in the aggregate;
+//   · every house has its OWN threshold, so one household is up at first light
+//     and its neighbour sits until dark. A town's windows light one by one;
+//   · it is deterministic and cheap — one multiply, one add, one floor. There
+//     is no loop over people anywhere: the law reads a COUNT, as it should
+//     with thousands of them.
+inline int hearth_indoors_now(int souls, std::uint32_t doorSeed,
+                              const WorldTime& t) {
+    if (souls <= 0) return 0;
+    // The door's phase: 24 bits of its seed as a fraction of one. Taken from
+    // the high end because the low bits of a hash are the ones a stepping
+    // ordinal correlates through.
+    const float phase = float((doorSeed >> 8) & 0xFFFFFFu) / 16777216.0f;
+    const float indoors = float(souls) * (1.0f - crowd_outdoor_share01(t))
+                        + phase;
+    return std::clamp(int(indoors), 0, souls);
+}
 
 // ── Settlement footprint — where the town physically IS ────────────────────
 //
@@ -86,21 +139,41 @@ inline constexpr SettlementFootprint kSettlementFootprint = {
 
 // ── THE HEARTH: how many souls one door holds ─────────────────────────────
 // This law was written inline in the interior populator (sub/spawn.cpp
-// interior_household_share, CANON S28): one to three souls behind a door, and
-// one more where the town is crowded rather than a hamlet. It is stated HERE
-// because the GENERATOR needs the same number — a town has as many houses as
-// its people have hearths, and that is the only honest answer to "how many
-// houses". Two places, one law; the populator reads these same constants.
-inline constexpr int kHearthSoulsMin     = 1;   // a door is never empty
-inline constexpr int kHearthSoulsSpread  = 3;   // …+0..2 more
+// interior_household_share, CANON S28) and is stated HERE because the
+// GENERATOR needs the same number: a town has as many houses as its people
+// have hearths, and that is the only honest answer to "how many houses".
+//
+// THE NUMBER BELOW IS A MEAN, and that correction is load-bearing (owner,
+// 2026-09-13). It used to be a CEILING: the house count divided the population
+// by the largest a hearth could be, while the populator rolled each door
+// somewhere between one soul and that ceiling — so the doors of a town held,
+// between them, about five eighths of its people and the rest had no door at
+// all. Invisible while everyone stood outside anyway; the day the sun started
+// sending them home it showed as a city that stayed half full at midnight,
+// because four hundred and fifty of its twelve hundred had nowhere to go.
+//
+// So the roll is now centred on this number instead of topped by it — a
+// household is this many souls ON AVERAGE and may be half that or twice it.
+// Which is also the honest medieval figure: four under one roof is a small
+// household, not a full one.
+inline constexpr int kHearthSoulsMean    = 3;   // a hall, its family, its help
 inline constexpr int kHearthCrowdedPop   = 128; // a town, not a hamlet…
-inline constexpr int kHearthSoulsCrowded = 1;   // …squeezes in one more
+inline constexpr int kHearthSoulsCrowded = 1;   // …packs one more in per door
 
-// The most one hearth holds — which is what decides how many hearths a
-// population needs.
-inline constexpr int hearth_souls_max(int population) {
-    return kHearthSoulsMin + (kHearthSoulsSpread - 1)
+// The souls one hearth holds ON AVERAGE — which is what decides how many
+// hearths a population needs, and what the per-door roll is centred on.
+inline constexpr int hearth_souls_mean(int population) {
+    return kHearthSoulsMean
          + (population >= kHearthCrowdedPop ? kHearthSoulsCrowded : 0);
+}
+
+// The widest a single household gets. The roll is uniform over
+// [1, 2·mean − 1]: symmetric about the mean, so the doors of a town hold its
+// people EXACTLY in expectation — which is the property the house count
+// depends on and the old ceiling law could not give. A crowded town therefore
+// runs one to seven behind a door, four being ordinary.
+inline constexpr int hearth_souls_span(int population) {
+    return 2 * hearth_souls_mean(population) - 1;
 }
 
 
@@ -116,7 +189,7 @@ inline constexpr int hearth_souls_max(int population) {
 // (city_target_area below), so a place with few souls is simply a small place.
 inline int city_house_target(int population) {
     const int p = population > 0 ? population : 0;
-    return p / hearth_souls_max(p);
+    return p / hearth_souls_mean(p);
 }
 
 // ── WHAT ONE HOUSE OCCUPIES OF THE TOWN ───────────────────────────────────
@@ -245,7 +318,7 @@ inline float village_max_radius(int population) {
 // undivined divisor and a cap that flattened every village above 600 souls.
 inline int village_house_target(int population) {
     const int p = population > 0 ? population : 0;
-    return p / hearth_souls_max(p);
+    return p / hearth_souls_mean(p);
 }
 
 // Does a village of this size raise a wall at all? Hamlets do not.
@@ -326,7 +399,7 @@ inline int city_upper_population(int population) {
 
 inline int city_upper_houses(int population) {
     const int soldiers = city_upper_population(population);
-    return soldiers / hearth_souls_max(std::max(1, soldiers));
+    return soldiers / hearth_souls_mean(std::max(1, soldiers));
 }
 
 inline float city_upper_area(int population) {

@@ -2861,7 +2861,11 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
     const float aspect = static_cast<float>(ext.width)
                          / static_cast<float>(std::max(ext.height, 1u));
     const float fovRad = cam.fovDeg * 0.0174533f;
-    mat4 proj = vk_perspective(fovRad, aspect, 0.5f, 1500.0f);
+    // Дальняя плоскость покрывает ВЕСЬ композит: полуразмер мира 1536 м
+    // (kFullSize=3072 тайла), диагональ из центра до угла ~2172 м, плюс запас
+    // на взгляд с башни и полёт. 1500 м обрезали дальнюю землю в небо, и это
+    // читалось как предел видимости — тумана по дальности в субмире нет.
+    mat4 proj = vk_perspective(fovRad, aspect, 0.5f, 4096.0f);
     vec3 fwd  = cam.forward();
     vec3 rgt  = cam.right();
     vec3 upv  = cross(rgt, fwd);

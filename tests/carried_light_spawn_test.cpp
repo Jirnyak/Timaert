@@ -118,7 +118,10 @@ bool run_spawn_attach_contract(const sm::sub::SeamlessSubworldManager& mgr) {
                              /*landmarkPop*/4000,
                              /*landmarkSubjectId*/0,
                              /*macroCellX*/0, /*macroCellY*/0,
-                             /*faunaCount*/-1, &wall);
+                             /*faunaCount*/-1, &wall,
+                             // Noon: the fullest street a town ever fields,
+                             // which is what a lantern census wants to count.
+                             sm::world_time_at(1, 12, 0));
 
     const sm::NpcTypeDef& guardDef = sm::npc_def(sm::NPCType::Guard);
 

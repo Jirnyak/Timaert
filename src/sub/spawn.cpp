@@ -402,7 +402,8 @@ void spawn_landmark_population(ecs::World& w,
                                int landmarkPop,
                                int originX,
                                int originY,
-                               MacroStockKey populationKey) {
+                               MacroStockKey populationKey,
+                               const WorldTime& now) {
     // THE gate of the population door (§42): a place with souls and a crowd
     // family embodies — City, Village, Spire, Ruin, Lair alike. The literal
     // `!= City && != Village` that stood here outlived the refactor that
@@ -418,7 +419,7 @@ void spawn_landmark_population(ecs::World& w,
     const int reserve = interior_reserve_for_cell(
         mgr.structures(), landmark, worldSeed,
         int(populationKey.cellX), int(populationKey.cellY),
-        float(originX), float(originY), pop);
+        float(originX), float(originY), pop, now);
     const int target = std::max(0, pop - reserve);
     if (target == 0) return;
 
@@ -739,12 +740,45 @@ void maybe_emplace_carried_light(entt::registry& reg,
 // the engine's interior spawn clamps it by the live stock, the street
 // spawner subtracts the same shares as its reserve — the partition cannot
 // drift because there is nothing to drift between.
+int doors_in_cell(const std::vector<Structure>& structures,
+                  float originX, float originY) {
+    int doors = 0;
+    const float x1 = originX + float(kCellSize);
+    const float y1 = originY + float(kCellSize);
+    for (const Structure& s : structures) {
+        if (structure_opens(s.kind) == DungeonRef::None) continue;
+        if (structure_opens_top(s.kind)) continue;
+        if (!dungeon_kind_row(structure_opens(s.kind)).householdAbove) continue;
+        if (s.x < originX || s.x >= x1 || s.y < originY || s.y >= y1) continue;
+        ++doors;
+    }
+    return doors;
+}
+
 int interior_household_share(std::uint32_t worldSeed, int cellX, int cellY,
                              std::uint16_t ordinal, int level,
-                             int landmarkPop) {
+                             int landmarkPop, int doorsInCell,
+                             const WorldTime& now) {
     const std::uint32_t dSeed = dungeon_scene_seed(
         worldSeed, cellX, cellY, ordinal, std::int8_t(level));
-    return 1 + int((dSeed >> 8) % 3u) + (landmarkPop >= 128 ? 1 : 0);
+    // WHO LIVES HERE — a uniform roll over [1, 2·mean − 1]: symmetric about
+    // the mean, so the doors of a town hold its people EXACTLY in expectation.
+    //
+    // The mean is the town's people over the town's DOORS, counted on the
+    // ground (doors_in_cell) rather than taken from the count the layout law
+    // wished for — a settlement seats about three quarters of the houses it
+    // asks for, and sizing hearths from the wish left the remainder homeless.
+    // A hamlet of few doors therefore packs them; a town that got all its
+    // houses runs at the layout's own figure.
+    const int mean = doorsInCell > 0
+        ? std::max(1, landmarkPop / doorsInCell)
+        : hearth_souls_mean(landmarkPop);
+    const int souls = 1 + int((dSeed >> 8) % std::uint32_t(2 * mean - 1));
+    // …and HOW MANY OF THEM ARE IN at this hour. The same population, moved
+    // by the sun between the street and the hearth (city_layout.h
+    // crowd_outdoor_share01) — never created and never destroyed, which is
+    // what keeps the partition exact while the town breathes.
+    return hearth_indoors_now(souls, dSeed, now);
 }
 
 // THE garrison partition (CANON S28; owner's eye 2026-09-11: «снаружи
@@ -774,7 +808,8 @@ int interior_reserve_for_cell(const std::vector<Structure>& structures,
                               std::uint32_t worldSeed,
                               int cellX, int cellY,
                               float originX, float originY,
-                              int landmarkPop) {
+                              int landmarkPop, const WorldTime& now) {
+    const int doors = doors_in_cell(structures, originX, originY);
     int reserve = 0;
     const float x1 = originX + float(kCellSize);
     const float y1 = originY + float(kCellSize);
@@ -793,10 +828,12 @@ int interior_reserve_for_cell(const std::vector<Structure>& structures,
         ref.footHy = structure_half_y(s);
         if (row.householdAbove) {
             reserve += interior_household_share(worldSeed, cellX, cellY,
-                                                s.tag, 0, landmarkPop);
+                                                s.tag, 0, landmarkPop,
+                                                doors, now);
             if (dungeon_has_upper(ref)) {
                 reserve += interior_household_share(worldSeed, cellX, cellY,
-                                                    s.tag, 1, landmarkPop);
+                                                    s.tag, 1, landmarkPop,
+                                                    doors, now);
             }
         } else if (row.placeGarrison
                    && landmark_def(landmark).crowdHabitat != 0) {
@@ -807,7 +844,17 @@ int interior_reserve_for_cell(const std::vector<Structure>& structures,
             }
         }
     }
-    return reserve;
+    // A TOWN CANNOT KEEP MORE PEOPLE THAN IT HAS. Household sizes are a roll
+    // centred on the mean the house count was derived from (city_layout.h), so
+    // their sum tracks the population but scatters about it by a soul or two —
+    // and on a night when the scatter lands high, an unclamped reserve would
+    // claim more souls than the place owns and leave the street a negative
+    // number of people. The street is the REMAINDER, so the remainder is what
+    // the clamp protects: street + kept == population, exactly, at every hour.
+    //
+    // The door-open path pays the same respect from its own side, clamping its
+    // household by the LIVE stock — so an emptied town opens on empty houses.
+    return std::min(reserve, std::max(0, landmarkPop));
 }
 
 namespace {
@@ -990,7 +1037,8 @@ void spawn_cell_npcs(ecs::World& w,
                      int macroCellX,
                      int macroCellY,
                      int faunaCount,
-                     const SoldierSquad* garrison) {
+                     const SoldierSquad* garrison,
+                     const WorldTime& now) {
     auto& reg = w.reg;
     const int originX = (ox + 1) * kCellSize;
     const int originY = (oy + 1) * kCellSize;
@@ -1016,7 +1064,8 @@ void spawn_cell_npcs(ecs::World& w,
                               landmarkPop, originX, originY,
                               MacroStockKey{landmarkSubjectId,
                                             std::int16_t(macroCellX),
-                                            std::int16_t(macroCellY)});
+                                            std::int16_t(macroCellY)},
+                              now);
 
     // THE PLACE'S STANDING ARMY on its streets (§42 Инк 7): every garrison
     // record at home embodies as a FIGHTING body of its own row and level,

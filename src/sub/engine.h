@@ -84,6 +84,12 @@ struct DungeonSession {
     // reads no strength from the place: a body is its row (CANON.md S12).
     int settlementId = -1;        // landmark id; -1 = a wilderness building
     int landmarkPop = 0;          // settlement population (household-size term)
+    // How many doors the STREET had, counted the moment this one was opened.
+    // The hearth is sized from the town's people over the town's doors
+    // (sub/spawn.h doors_in_cell), and by the time the interior is built the
+    // window holds the interior — the street's doors are gone. So the count
+    // travels in with the session, like every other fact about the place.
+    int doorsInCell = 0;
     // The door cell's landmark KIND — whose crowd stripe the household rolls
     // (§42: the interior's people are the PLACE's people, not always a town's).
     LandmarkType landmarkKind = LandmarkType::None;

@@ -121,7 +121,8 @@ std::array<float, kWallBins> outer_wall_profile(
 }
 
 Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
-               sm::LandmarkType landmark, int pop, std::uint32_t seed) {
+               sm::LandmarkType landmark, int pop, std::uint32_t seed,
+               const sm::WorldTime& now) {
     Spread s{};
     sm::ecs::World world{};
     sm::sub::spawn_cell_npcs(world,
@@ -135,7 +136,12 @@ Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
                              seed,
                              /*worldSeed*/seed,
                              std::uint16_t(sm::faction_index("empire")),
-                             pop);
+                             pop,
+                             /*landmarkSubjectId*/-1,
+                             /*macroCellX*/0, /*macroCellY*/0,
+                             /*faunaCount*/-1,
+                             /*garrison*/nullptr,
+                             now);
 
     const bool city = landmark == sm::LandmarkType::City;
     const float radius = sm::sub::settlement_population_radius(city, pop);
@@ -275,8 +281,12 @@ int main() {
         sm::sub::SeamlessSubworldManager mgr;
         mgr.init(0, 0, settlement_resolver(sm::LandmarkType::City, 1200));
         mgr.consume_composite_dirty();
+        // NOON, because the spatial assertions below want the fullest street
+        // the town ever has — at midnight the crowd is a handful and a claim
+        // about angular coverage would be measuring the hour, not the layout.
+        const sm::WorldTime noon = sm::world_time_at(1, 12, 0);
         const Spread s = measure(mgr, sm::LandmarkType::City, 1200,
-                                 0xC17015Eu);
+                                 0xC17015Eu, noon);
         sm::sub::clear_saved_subworlds();
 
         if (s.citizens < 100) return fail("a 1200-soul city fielded no crowd");
@@ -299,15 +309,48 @@ int main() {
         // The street crowd plus the hearth reserves behind the doors must
         // sum to the town's population, soul for soul — the double
         // embodiment (a soul on the square AND in a house) is dead.
-        const int reserve = sm::sub::interior_reserve_for_cell(
-            mgr.structures(), sm::LandmarkType::City,
-            /*worldSeed*/0xC17015Eu, 0, 0,
-            float(sm::sub::kCellSize), float(sm::sub::kCellSize), 1200);
-        if (reserve <= 0) return fail("a 1200-soul city kept nobody at home");
-        if (s.citizens + reserve != 1200) {
-            std::fprintf(stderr, "  street %d + hearths %d != pop 1200\n",
-                         s.citizens, reserve);
-            return fail("the street and the hearths do not sum to the town");
+        // …AND IT HOLDS AT EVERY HOUR. A town's people are a CONSERVED
+        // quantity moved between two vessels by the sun (city_layout.h
+        // crowd_outdoor_share01): nothing is born at dawn and nothing dies at
+        // dusk. So the sum is asserted around the whole clock, and the shape
+        // of the pump is asserted with it — fullest street at noon, emptiest
+        // at midnight — because a law that conserves the total while never
+        // moving anything would pass a sum check in silence.
+        int streetAt[24] = {};
+        for (int hour = 0; hour < 24; ++hour) {
+            const sm::WorldTime t = sm::world_time_at(1, hour, 0);
+            const Spread h = measure(mgr, sm::LandmarkType::City, 1200,
+                                     0xC17015Eu, t);
+            const int keptIn = sm::sub::interior_reserve_for_cell(
+                mgr.structures(), sm::LandmarkType::City,
+                /*worldSeed*/0xC17015Eu, 0, 0,
+                float(sm::sub::kCellSize), float(sm::sub::kCellSize), 1200, t);
+            streetAt[hour] = h.citizens;
+            if (h.citizens + keptIn != 1200) {
+                std::fprintf(stderr, "  %02d:00 street %d + hearths %d != 1200\n",
+                             hour, h.citizens, keptIn);
+                return fail("the day's pump created or destroyed people");
+            }
+        }
+        std::fprintf(stderr,
+                     "  street by the clock: 00h=%d 06h=%d 12h=%d 18h=%d\n",
+                     streetAt[0], streetAt[6], streetAt[12], streetAt[18]);
+        if (streetAt[12] <= streetAt[6] || streetAt[6] <= streetAt[0]) {
+            return fail("the street does not fill as the sun rises");
+        }
+        if (streetAt[18] >= streetAt[12]) {
+            return fail("the street does not empty as the sun sets");
+        }
+        // Dawn and dusk stand at the same height of sun, so they must field
+        // the same crowd — the curve is the sun's, not a hand-drawn day.
+        if (streetAt[6] != streetAt[18]) {
+            return fail("dawn and dusk disagree though the sun does not");
+        }
+
+        // The hearths must actually FILL as the sun goes down — the sum alone
+        // would be satisfied by a law that never moved anybody.
+        if (1200 - streetAt[0] <= 1200 - streetAt[12]) {
+            return fail("the hearths do not fill as the sun goes down");
         }
     }
 
@@ -320,8 +363,9 @@ int main() {
         mgr.init(0, 0,
                  settlement_resolver(sm::LandmarkType::Village, 400));
         mgr.consume_composite_dirty();
+        const sm::WorldTime vnoon = sm::world_time_at(1, 12, 0);
         const Spread s = measure(mgr, sm::LandmarkType::Village, 400,
-                                 0x71114Eu);
+                                 0x71114Eu, vnoon);
         sm::sub::clear_saved_subworlds();
 
         if (s.citizens < 50) return fail("a 400-soul village fielded no crowd");
@@ -339,12 +383,26 @@ int main() {
         }
         if (s.emptySectors != 0) return fail("village has an empty angular sector");
 
-        // The same partition witness at village scale.
+        // The same partition witness at village scale — asked at MIDNIGHT,
+        // because at noon a place is meant to keep nobody at home and "the
+        // hearths are empty" is the correct answer rather than a fault.
+        const sm::WorldTime vnight = sm::world_time_at(1, 0, 0);
+        const Spread night = measure(mgr, sm::LandmarkType::Village, 400,
+                                     0x71114Eu, vnight);
+        const int kept = sm::sub::interior_reserve_for_cell(
+            mgr.structures(), sm::LandmarkType::Village,
+            /*worldSeed*/0x71114Eu, 0, 0,
+            float(sm::sub::kCellSize), float(sm::sub::kCellSize), 400, vnight);
+        if (kept <= 0) return fail("a 400-soul village kept nobody at home at night");
+        if (night.citizens + kept != 400) {
+            std::fprintf(stderr, "  night street %d + hearths %d != 400\n",
+                         night.citizens, kept);
+            return fail("the village's day pump created or destroyed people");
+        }
         const int reserve = sm::sub::interior_reserve_for_cell(
             mgr.structures(), sm::LandmarkType::Village,
             /*worldSeed*/0x71114Eu, 0, 0,
-            float(sm::sub::kCellSize), float(sm::sub::kCellSize), 400);
-        if (reserve <= 0) return fail("a 400-soul village kept nobody at home");
+            float(sm::sub::kCellSize), float(sm::sub::kCellSize), 400, vnoon);
         if (s.citizens + reserve != 400) {
             std::fprintf(stderr, "  street %d + hearths %d != pop 400\n",
                          s.citizens, reserve);

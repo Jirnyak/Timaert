@@ -216,28 +216,34 @@ void spawn_cell_npcs(ecs::World& w,
                      // (interior_household_share keys households off it).
                      std::uint32_t worldSeed,
                      std::uint16_t settlementFaction,
-                     int landmarkPop = 0,
+                     int landmarkPop,
                      // Which macro stock the citizens are borrowed FROM: the
                      // settlement/village id and the cell it stands in. Every
                      // citizen is stamped with it (macro/macro_stock.h), so a
                      // death in the subworld is paid back to the map above.
                      // -1 means "no named place here" — nothing is borrowed.
-                     int landmarkSubjectId = -1,
-                     int macroCellX = 0,
-                     int macroCellY = 0,
+                     int landmarkSubjectId,
+                     int macroCellX,
+                     int macroCellY,
                      // The wild headcount standing on this cell — the honest
                      // CAP on how many creatures embody (macro_stock fauna
                      // row). Each one is stamped with the cell's FaunaCount
                      // debt, so a kill thins the cell for good; -1 = no macro
                      // context wired (tests/harness) = the old unbounded roll.
-                     int faunaCount = -1,
+                     int faunaCount,
                      // The place's STANDING ARMY at home (§42 Инк 7:
                      // Landmark::garrison — the roster whose owner is a
                      // landmark). Every record embodies as a fighting body
                      // with the Garrison loan: killed on the wall = struck
                      // from the roll; out on patrol / hired away = not in
                      // this roster = not on the street. nullptr = none.
-                     const SoldierSquad* garrison = nullptr);
+                     const SoldierSquad* garrison,
+                     // WHAT HOUR IT IS, and it is not optional. How many of a
+                     // place's people stand on its streets is a question about
+                     // the sun (city_layout.h crowd_outdoor_share01); the rest
+                     // are behind their own doors. A caller that did not have
+                     // to say would be a caller silently asking for midnight.
+                     const WorldTime& now);
 
 // ── Dungeon residents (sub/dgn interiors) ────────────────────────────────
 //
@@ -254,7 +260,23 @@ void spawn_cell_npcs(ecs::World& w,
 // (worldSeed, door cell, building ordinal, storey).
 int interior_household_share(std::uint32_t worldSeed, int cellX, int cellY,
                              std::uint16_t ordinal, int level,
-                             int landmarkPop);
+                             int landmarkPop, int doorsInCell,
+                             const WorldTime& now);
+
+// How many doors this cell actually has to keep people behind.
+//
+// THE HEARTH IS SIZED FROM THIS, not from the house count the layout law asked
+// for, and the difference is the whole point: a town wants `pop / mean` houses
+// but seats only about three quarters of them — the frontage runs out of lane
+// and the fallback scatter runs out of ground. Sized from the wish, the doors
+// of a city of twelve hundred held eight hundred people and four hundred had
+// nowhere to sleep, which showed the first night the sun sent them home.
+//
+// Sized from the doors that EXIST, the town's people fill the town's houses
+// however many the ground allowed. Both readers of the hearth law count the
+// same way over the same list, so they cannot disagree.
+int doors_in_cell(const std::vector<Structure>& structures,
+                  float originX, float originY);
 
 // The garrison share of ONE storey of a place's own interior (a spire
 // tower's floor): the souls kept inside are `pop - (pop >> the registry's
@@ -275,7 +297,7 @@ int interior_reserve_for_cell(const std::vector<Structure>& structures,
                               std::uint32_t worldSeed,
                               int cellX, int cellY,
                               float originX, float originY,
-                              int landmarkPop);
+                              int landmarkPop, const WorldTime& now);
 
 // stock system, никакой второй копии). Placement is the scene's OWN floor
 // catalog (map_data.h StandPoint, CANON S28) — a uniform draw without

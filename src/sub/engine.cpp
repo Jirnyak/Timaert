@@ -1394,7 +1394,11 @@ void SubworldEngine::spawn_cell(int ox, int oy) {
                     // (macro/macro_stock.h) instead of vanishing without trace.
                     ctx.landmark.id,
                     wcx, wcy, faunaCount,
-                    lmRec ? &lmRec->garrison : nullptr);
+                    lmRec ? &lmRec->garrison : nullptr,
+                    // THE CLOCK, because how many of this cell's people are on
+                    // its streets is a question about the hour (city_layout.h
+                    // crowd_outdoor_share01) — the rest are behind their doors.
+                    gs_ ? gs_->worldTime : WorldTime{});
 }
 
 // Clean fill of all nine window cells — enter() / fresh scene. The player's
@@ -3364,6 +3368,9 @@ bool SubworldEngine::enter_dungeon_by_door(const Structure& door) {
     // numbers the street spawner reads (spawn_cell), captured once here.
     ses.settlementId = doorCtx.landmark.id;   // ONE landmark id space (v54)
     ses.landmarkPop = doorCtx.landmark.size;
+    ses.doorsInCell = doors_in_cell(mgr_.structures(),
+                                    float(winCellX * kCellSize),
+                                    float(winCellY * kCellSize));
     ses.landmarkKind = doorCtx.landmark.kind;
     ses.faction = landmark_crowd_faction(doorCtx.landmark.kind,
                                          doorCtx.landmark.factionIdx);
@@ -3555,7 +3562,9 @@ void SubworldEngine::enter_dungeon_scene(const MacroWorld& mw,
         const int household = std::min(popNow,
             interior_household_share(worldSeed, ses.doorCx, ses.doorCy,
                                      ses.ref.ordinal, ses.ref.level,
-                                     ses.landmarkPop));
+                                     ses.landmarkPop,
+                                     ses.doorsInCell,
+                                     gs_ ? gs_->worldTime : WorldTime{}));
         // Placement is the scene's OWN floor catalog (CANON S28): every
         // standable tile the generator emitted, not a rectangle guessed
         // from the door's footprint. The interior lives in the window's

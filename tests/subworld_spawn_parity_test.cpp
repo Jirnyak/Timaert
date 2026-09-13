@@ -297,7 +297,11 @@ void spawn_cell_at(sm::ecs::World& world,
                              sm::LandmarkType::None, /*danger*/0, /*depositsNear*/0, mgr,
                              ox, oy, c.seed, /*worldSeed*/c.seed,
                              std::uint16_t(sm::faction_index("empire")),
-                             0);
+                             0,
+/*landmarkSubjectId*/-1,
+                             /*macroCellX*/0, /*macroCellY*/0,
+                             /*faunaCount*/-1, /*garrison*/nullptr,
+                             sm::world_time_at(1, 12, 0));
 }
 
 // Fill all nine window cells for a manager centred on macro (0,0): window offset
@@ -359,7 +363,8 @@ bool run_city_population_projection_case(
                              4000,
                              0,
                              /*macroCellX*/0, /*macroCellY*/0,
-                             /*faunaCount*/-1, &wall);
+                             /*faunaCount*/-1, &wall,
+                             sm::world_time_at(1, 12, 0));
 
     int count = 0;
     int guards = 0;
@@ -422,7 +427,11 @@ bool run_population_does_not_scale_bodies_case(
                                  0xFACEB00Cu,
                                  /*worldSeed*/0xFACEB00Cu,
                                  std::uint16_t(sm::faction_index("empire")),
-                                 t.pop);
+                                 t.pop,
+                                 /*landmarkSubjectId*/-1,
+                                 /*macroCellX*/0, /*macroCellY*/0,
+                                 /*faunaCount*/-1, /*garrison*/nullptr,
+                                 sm::world_time_at(1, 12, 0));
         auto view = world.reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
                                    sm::ecs::NpcLevel, sm::ecs::NpcCharacter>();
         for (auto e : view) {
