@@ -208,15 +208,24 @@ Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
 // ── 5. The hoisted formulas still describe the old walls ────────────────────
 bool run_footprint_formula_parity() {
     for (int pop : {0, 10, 49, 50, 200, 1000, 2000, 6000, 20000, 100000}) {
-        // gen_city's literal, verbatim from before the hoist.
-        const int cityPop = pop > 50 ? pop : 50;
-        const int oldWallR = int(std::min(360.0f,
-            std::max(90.0f, 70.0f + std::sqrt(float(cityPop)) * 3.0f)));
-        if (sm::sub::city_wall_radius(pop) != oldWallR) return false;
-        if (std::fabs(sm::sub::city_house_radius(pop)
-                      - (float(oldWallR) - 10.0f)) > 0.001f) return false;
+        // THE CITY'S RADIUS IS NO LONGER PINNED HERE, and deliberately so.
+        //
+        // This guard was written for a pure HOIST: the footprint moved out of
+        // gen_city into the header and must not have shifted a single wall, so
+        // it re-derived `70 + 3·√population` clamped to [90, 360] and demanded
+        // the header agree. That formula has since been REPLACED (owner,
+        // 2026-09-13) because it was a number from nowhere and, being
+        // independent of the house count, made a town's density an accident:
+        // the same city read dense at one population and half-empty at
+        // another. A city's area is now its houses' ground plus its market,
+        // and its radius is the circle of that area — so pinning the old
+        // literal would pin exactly the defect that was removed.
+        //
+        // What replaces it as a guard is `city_density_holds` below: the
+        // relationship the new law asserts, checked at every size.
 
-        // gen_village's literals, verbatim.
+        // gen_village's literals, verbatim — the village footprint did NOT
+        // change, so its hoist guard still stands.
         const int vilPop = pop > 10 ? pop : 10;
         const float oldSettleR = std::min(float(sm::sub::kCellSize) * 0.07f,
             30.0f + std::sqrt(float(vilPop)) * 3.0f);
@@ -227,6 +236,29 @@ bool run_footprint_formula_parity() {
         const float oldVilWallR = std::max(15.0f, oldSettleR + 6.0f);
         if (std::fabs(sm::sub::village_wall_radius(pop) - oldVilWallR) > 0.001f) {
             return false;
+        }
+    }
+    return true;
+}
+
+// The new law, in place of the old literal: a city's area IS its houses'
+// ground plus its market, at every population. This is the assertion the
+// radius formula could never make — density can no longer drift with size.
+bool city_density_holds() {
+    constexpr float kPi = 3.14159265f;
+    for (int pop : {50, 200, 1000, 2000, 6000, 20000, 100000}) {
+        const int houses = sm::sub::city_house_target(pop);
+        if (houses <= 0) return false;
+        const float want = float(houses) * sm::sub::kTownGroundPerHouse
+                         + sm::sub::city_market_area(houses);
+        if (std::fabs(sm::sub::city_target_area(pop) - want) > 1.0f) return false;
+        // …and the radius is that area's circle, unless the CELL bounds it.
+        const float r = float(sm::sub::city_wall_radius(pop));
+        const float cap = float(sm::sub::kCellSize) * 0.30f;
+        if (r < cap - 0.5f) {
+            const float area = kPi * r * r;
+            // Integer radius, so allow the rounding it costs.
+            if (std::fabs(area - want) > 2.0f * kPi * r + 4.0f) return false;
         }
     }
     return true;
@@ -320,10 +352,15 @@ int main() {
         }
     }
 
+    if (!city_density_holds()) {
+        return fail("a city's area is no longer its houses' ground plus its "
+                    "market — the density law broke");
+    }
+
     if (!run_footprint_formula_parity()) {
-        return fail("hoisting the footprint into sub/city_layout.h moved a wall "
-                    "(city_wall_radius / village_core_radius disagree with the "
-                    "literals gen_city / gen_village used to carry)");
+        return fail("hoisting the footprint into sub/city_layout.h moved a "
+                    "VILLAGE wall (village_core_radius / village_wall_radius "
+                    "disagree with the literals gen_village used to carry)");
     }
 
     std::printf("PASS city_population_inside_walls_test\n");

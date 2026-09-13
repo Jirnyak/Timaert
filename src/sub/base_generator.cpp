@@ -95,10 +95,20 @@ TerrainMod terrain_mod_for(LandmarkType landmark, FeatureType feature) {
     // ONE data table: how strongly each macro content class calms the terrain
     // it stands on. damp scales down ridge/noise for the whole cell; plateauR
     // is the radius (tiles) of the radial pull toward the cell-centre height.
+    // A SETTLEMENT'S GROUND IS NOT A TABLE (owner, 2026-09-13). A city used to
+    // damp its whole cell to nothing and pull 280 tiles of it flat — so the
+    // town grew on a plate, and the growth that is supposed to run long down a
+    // valley and stop at a bluff (sub/gens/kit/growth.h) had no relief left to
+    // read. Every city came out a circle, and the cause was here, not there.
+    //
+    // What must be flat is the HEART: the market and the streets that meet on
+    // it. The outskirts keep their land. `plateauR` is therefore the market and
+    // one block of approach on each side, and `damp` leaves the cell most of
+    // its character instead of erasing it.
     TerrainMod m{};
     switch (landmark) {
-        case LandmarkType::City:    m = {1.0f, 280.0f}; break;
-        case LandmarkType::Village: m = {0.9f, 200.0f}; break;
+        case LandmarkType::City:    m = {0.6f,  96.0f}; break;
+        case LandmarkType::Village: m = {0.5f,  64.0f}; break;
         case LandmarkType::Ruin:    m = {0.6f, 120.0f}; break;
         case LandmarkType::Spire:   m = {0.6f, 120.0f}; break;
         // Registry kinds no world places yet (Lair/Shrine/Mine/Tower): bare

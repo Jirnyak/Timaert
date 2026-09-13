@@ -100,10 +100,36 @@ things the world already knew about itself:
 - **the tract** — ground within a block of a road is worth twice ordinary
   ground, which is the whole reason towns are long rather than round.
 
+A settlement's ground is **not a table**: a city used to damp its whole cell to
+nothing and pull 280 tiles of it flat, so the town grew on a plate and the
+growth had no relief left to read — every city came out a circle, and the cause
+was in `terrain_mod_for`, not in the growth. What must be flat is the HEART:
+the market and the streets that meet on it. The plateau is now the market and a
+block of approach, and the outskirts keep their land.
+
 The area is fixed and the shape is free: a population always gets the room it
 needs and no more, but the ground decides its outline.
 
-### One curtain, and a castle that is not a ring
+### The town is as big as its houses need
+
+A town's AREA came from `70 + 3·√population` — a formula from nowhere — while
+its HOUSES came from the hearth law, so their ratio (the density) was an
+accident that happened to look right at one population and nowhere else. The
+owner photographed the consequence as empty lots.
+
+Now there is one number: **what one house occupies of the town**, spelled out
+in its three parts because each is a fact about the plots the generator
+actually lays — the house itself (its street face by its depth), its share of
+the lane it fronts (half the width across its own frontage), and its yard (a
+burgage plot runs back three times the house's own depth). The town's area is
+its houses times that, plus its market; its wall radius is that area's circle.
+
+**The market** is sized the same way: the room its sellers need on market day —
+one household in ten keeps a stall, a stall with its aisle takes eight tiles,
+and half the square again is room to move between them. ~40 tiles across for a
+town of six thousand, where it used to be a 6×6 stamp.
+
+### One curtain, and an UPPER QUARTER that is not a ring
 
 A city used to raise up to five concentric rings, one per population step, each
 at a fraction of the footprint radius. Concentric circles are not what a town
@@ -111,13 +137,22 @@ is — they are a pattern, and the owner caught it from the air. Real towns had
 two DIFFERENT things: one city curtain (moved outward as the town grew, the old
 one pulled down or built into the houses), and a castle's own small enceinte.
 
-So there is **one curtain**, and the **castle** is the other object:
+So there is **one curtain**, and the **upper quarter** is the other object —
+a walled DISTRICT inside the city with its own gates, its own streets and its
+own houses, holding the keep. (The first cut made it a castle-sized ring stuck
+to the wall; the owner called that what it was.)
 
+- **Who lives there decides how big it is**, and that number was already in the
+  world: a place's garrison is `population >> garrisonShift` (§42, «гарнизон =
+  армия ландмарка»). The garrison and its lord are the quarter's population;
+  its hearths follow by the hearth law and its ground by the same
+  ground-per-house as the city's. So the quarter is a fraction of the city only
+  as a CONSEQUENCE, never as a chosen share — ~13 % at six thousand souls.
+- Its streets grow from its gates toward its own heart: the same kit, a second
+  call. That is what makes it a quarter rather than a walled yard.
 - it stands on the HIGHEST ground the curtain reaches, backed into it — which
-  is where castles were built and why: supply under siege, and a way out when
-  it is the townsmen doing the besieging;
-- its enceinte is sized by what it encloses (the keep plus a bailey a keep
-  needs to be a place), not by a share of the city;
+  is where upper towns were built and why: supply under siege, and a way out
+  when it is the townsmen doing the besieging;
 - it has **its own gate outward**, past the town, and a road down to the
   market. One carve opens a gate in both walls, because a gate is wherever a
   ring finds paving under itself;

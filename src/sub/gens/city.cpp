@@ -105,6 +105,9 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
     const int centre = kCellSize / 2;
     const float cf = float(centre);
     const int population = ctx.landmark.size;   // floored by city_wall_radius
+    // The garrison's houses stand in the upper quarter, not on the town's
+    // streets: the town lays the REST (sub/city_layout.h).
+    const int upperHouses = city_upper_houses(population);
 
     // The wall draws its shape from its OWN stream. It used to share one with
     // the house and field loops and was stamped after them, so the ring's
@@ -136,12 +139,16 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
     // against, so it is decided before a single tile is built on.
     const Outline rim = wall_ring_noise(shape, city_wall_roughness(), rWall);
 
-    // ── THE CASTLE stands on the wall, not in the middle ──────────────────
-    // On the highest ground the curtain reaches, backed into it, with its own
-    // gate OUTWARD past the town. That is where castles were built and why:
-    // supply under siege, and a way out when it is the townsmen who are
-    // besieging you. A keep at the exact centre of a ring of walls is a
-    // diagram — and it was ours until 2026-09-13.
+    // ── THE UPPER QUARTER ─────────────────────────────────────────────────
+    // A walled DISTRICT inside the city, sized by the garrison that lives in
+    // it (sub/city_layout.h), with its own gates, its own streets and its own
+    // houses — not a castle-sized ring stuck to the curtain, which is what the
+    // first cut produced and what the owner rightly called ridiculous.
+    //
+    // It backs onto the wall at the highest ground the curtain reaches. That
+    // is where upper towns were built and why: the high ground, and a gate
+    // OUTWARD past the city — supply under siege, and a way out when it is the
+    // townsmen doing the besieging.
     int castleBin = 0;
     {
         float best = -1.0f;
@@ -150,7 +157,7 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
             // Sample where the castle would actually sit: a little inside the
             // curtain, since that is the ground it must stand on.
             const float d = std::max(1.0f, rim.r[std::size_t(b)]
-                                         - city_castle_radius(population));
+                                         - city_upper_radius(population));
             const int x = std::clamp(int(cf + std::cos(ang) * d), 0, kCellSize - 1);
             const int y = std::clamp(int(cf + std::sin(ang) * d), 0, kCellSize - 1);
             const float h = out.heightmap[std::size_t(y) * kCellSize + x];
@@ -159,7 +166,7 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
     }
     const float castleAng = float(castleBin) * Outline::kTwoPi
                           / float(Outline::kBearings);
-    const float castleR = city_castle_radius(population);
+    const float castleR = city_upper_radius(population);
     const float castleDist = std::max(1.0f, rim.at(castleAng) - castleR * 0.75f);
     const float castleX = cf + std::cos(castleAng) * castleDist;
     const float castleY = cf + std::sin(castleAng) * castleDist;
@@ -221,10 +228,13 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
     }
     // How much street this town needs: every house wants a street face, and a
     // lane offers two of them — one down each side.
-    const int houses = city_house_target(population);
+    const int houses = std::max(0, city_house_target(population) - upperHouses);
     constexpr float kPlotFace = 6.0f;   // mean of widthMin..Max + gapMin..Max
     const float frontage = float(houses) * kPlotFace * 0.5f;
-    const int squareSize = std::clamp(5 + population / 5000, 5, 10);
+    // THE MARKET, sized by the sellers it must hold (sub/city_layout.h) —
+    // ~40 tiles across for a town of six thousand, not the 6x6 stamp it was.
+    const int squareSize = std::max(5, int(std::sqrt(
+        city_market_area(city_house_target(population)))));
     Rng rLanes(ctx.seed ^ 0x51A7E11u);
     LaneNet lanes = grow_lanes(out, rim, city_layout().streetWallInset,
                                gx.data(), gy.data(), gateCount, cf, cf,
@@ -240,9 +250,35 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
     stamp_rect(out, centre - squareSize / 2, centre - squareSize / 2,
                squareSize, squareSize, TILE_SQUARE, 1);
 
-    // The KEEP stands in its own castle out on the wall, not on the market.
-    // It out-tops the curtain by two courses — the whole point of a keep is
-    // that the last defence is also the highest one.
+    // ── The UPPER QUARTER's own life ──────────────────────────────────────
+    // Its streets grow from its gates toward its own heart, exactly as the
+    // city's grow from theirs — the same kit, a second call. That is what
+    // makes it a quarter rather than a walled yard: lanes, frontage and houses
+    // of its own, for the garrison that lives in it.
+    LaneNet upperLanes;
+    if (upperHouses > 0) {
+        std::array<float, 8> ugx{}, ugy{};
+        int ugc = 0;
+        for (int g = 0; g < gateCount && ugc < int(ugx.size()); ++g) {
+            const float dx = gates[std::size_t(g)].x - castleX;
+            const float dy = gates[std::size_t(g)].y - castleY;
+            if (dx * dx + dy * dy > castleR * castleR * 4.0f) continue;
+            ugx[std::size_t(ugc)] = gates[std::size_t(g)].x;
+            ugy[std::size_t(ugc)] = gates[std::size_t(g)].y;
+            ++ugc;
+        }
+        LanePlan up = city_lane_plan(population,
+                                     float(upperHouses) * kPlotFrontage * 0.5f,
+                                     castleR * 0.25f);
+        up.heartSpokes = 3;
+        upperLanes = grow_lanes(out, castle, city_layout().streetWallInset * 0.5f,
+                                ugx.data(), ugy.data(), ugc,
+                                castleX, castleY, up, rLanes);
+    }
+
+    // The KEEP stands in the upper quarter and out-tops the curtain by two
+    // courses — the whole point of a keep is that the last defence is also the
+    // highest one.
     const int keepBase = std::clamp(4 + population / 1500, 6, 16);
     const int keepW = keepBase + int(rBuild.next_u32() % 3u);
     const int keepH = keepBase + int(rBuild.next_u32() % 3u);
@@ -291,6 +327,18 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
                                    3, 5, 5.0f + rBuild.next_f01() * 4.0f)) {
             ++placedHouses;
         }
+    }
+
+    // …and the garrison's own houses, along the quarter's own lanes.
+    if (!upperLanes.segs.empty()) {
+        std::vector<float> ux0, uy0, ux1, uy1, uhw;
+        for (const LaneSeg& sg : upperLanes.segs) {
+            ux0.push_back(sg.x0); uy0.push_back(sg.y0);
+            ux1.push_back(sg.x1); uy1.push_back(sg.y1);
+            uhw.push_back(lane_half_width(sg.rank));
+        }
+        lay_frontage(out, rBuild, ux0.data(), uy0.data(), ux1.data(), uy1.data(),
+                     uhw.data(), int(ux0.size()), fp, upperHouses);
     }
 
     // Street lighting: a town that keeps a wall keeps lamps along its
