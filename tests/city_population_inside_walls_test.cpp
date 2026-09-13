@@ -79,7 +79,7 @@ sm::sub::CellResolver settlement_resolver(sm::LandmarkType kind,
 
 struct Spread {
     int   citizens = 0;
-    int   outsideRadius = 0;      // beyond the built-up radius
+    int   outsideReach = 0;       // beyond any ground this town could hold
     int   outsideMasonry = 0;     // beyond the nearest stamped wall tile
     int   onSolid = 0;            // born in water / house / wall
     float maxR = 0.0f;
@@ -139,6 +139,18 @@ Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
 
     const bool city = landmark == sm::LandmarkType::City;
     const float radius = sm::sub::settlement_population_radius(city, pop);
+    // The furthest a place of this size may ever reach (sub/city_layout.h).
+    // For a village that is its palisade, which stands OUTSIDE the guaranteed
+    // radius by design — the conservative scalar was never the village's edge
+    // either, it was only the part of it that needed no terrain to be true.
+    const float reach = city
+        ? sm::sub::city_max_radius(pop)
+        : std::max(radius, sm::sub::village_max_radius(pop)
+                               * (sm::sub::village_is_walled(pop)
+                                  ? sm::sub::village_wall_radius(pop)
+                                    / std::max(1.0f,
+                                        sm::sub::village_core_radius(pop))
+                                  : 1.0f));
     // The centre window cell (ox=0) occupies [kCellSize, 2·kCellSize); both
     // generators build on that cell's centre.
     const float cx = float(sm::sub::kCellSize) * 1.5f;
@@ -160,7 +172,12 @@ Spread measure(const sm::sub::SeamlessSubworldManager& mgr,
         const float dy = p.y - cy;
         const float d = std::sqrt(dx * dx + dy * dy);
         if (d > s.maxR) s.maxR = d;
-        if (d > radius + 1.5f) ++s.outsideRadius;   // +1.5: tile-centre rounding
+        // The GUARANTEED radius is no longer the town's edge — a city's
+        // outline is grown over the terrain and runs past it wherever the
+        // ground was cheap (sub/gens/kit/growth.h), and the crowd rightly
+        // follows into those lobes. What must still hold is that nobody
+        // stands beyond any ground this town could possibly have taken.
+        if (d > reach + 1.5f) ++s.outsideReach;
         if (d > radius * 0.5f) ++outerHalf;
         float a = std::atan2(dy, dx);
         if (a < 0.0f) a += kTwoPi;
@@ -231,9 +248,9 @@ int main() {
         sm::sub::clear_saved_subworlds();
 
         if (s.citizens < 100) return fail("a 1200-soul city fielded no crowd");
-        if (s.outsideRadius != 0) {
-            std::fprintf(stderr, "  %d/%d citizens outside the built-up radius "
-                         "(maxR %.1f)\n", s.outsideRadius, s.citizens, s.maxR);
+        if (s.outsideReach != 0) {
+            std::fprintf(stderr, "  %d/%d citizens beyond the town's reach "
+                         "(maxR %.1f)\n", s.outsideReach, s.citizens, s.maxR);
             return fail("city citizens spawned outside the settlement");
         }
         if (s.outsideMasonry != 0) {
@@ -276,9 +293,9 @@ int main() {
         sm::sub::clear_saved_subworlds();
 
         if (s.citizens < 50) return fail("a 400-soul village fielded no crowd");
-        if (s.outsideRadius != 0) {
-            std::fprintf(stderr, "  %d/%d villagers outside the built-up radius "
-                         "(maxR %.1f)\n", s.outsideRadius, s.citizens, s.maxR);
+        if (s.outsideReach != 0) {
+            std::fprintf(stderr, "  %d/%d villagers beyond the town's reach "
+                         "(maxR %.1f)\n", s.outsideReach, s.citizens, s.maxR);
             return fail("villagers spawned outside the village");
         }
         if (s.outsideMasonry != 0) {

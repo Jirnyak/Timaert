@@ -141,6 +141,31 @@ file(GLOB_RECURSE SAMOSBOR_SOURCES CONFIGURE_DEPENDS
 # GPU (Vulkan) sources, also reused standalone by the gpu_smoke bring-up target.
 file(GLOB TIMAERT_GPU_SOURCES CONFIGURE_DEPENDS src/gpu/*.cpp)
 
+# Open-air subworld generators: the shared kit plus ONE TU per kind (mirrors
+# src/sub/dgn/). Named once because fourteen test targets link them — the old
+# single `src/sub/gens/dispatch.cpp` was spelled out fourteen times, so every
+# new generator module would have meant fourteen edits and one forgotten.
+set(TIMAERT_GENS_SOURCES
+    src/sub/gens/dispatch.cpp
+    src/sub/gens/kit/tiles.cpp
+    src/sub/gens/kit/streets.cpp
+    src/sub/gens/kit/growth.cpp
+    src/sub/gens/kit/lanes.cpp
+    src/sub/gens/kit/plots.cpp
+    src/sub/gens/kit/props.cpp
+    src/sub/gens/kit/wall.cpp
+    src/sub/gens/open.cpp
+    src/sub/gens/forest.cpp
+    src/sub/gens/swamp.cpp
+    src/sub/gens/mountain.cpp
+    src/sub/gens/water.cpp
+    src/sub/gens/city.cpp
+    src/sub/gens/village.cpp
+    src/sub/gens/ruin.cpp
+    src/sub/gens/spire.cpp
+    src/sub/gens/road.cpp
+    src/sub/gens/field.cpp)
+
 add_executable(${PROJECT_NAME} ${SAMOSBOR_SOURCES})
 target_sources(${PROJECT_NAME} PRIVATE ${IMGUI_SOURCES})
 target_include_directories(${PROJECT_NAME} PRIVATE
@@ -811,7 +836,7 @@ timaert_test(biome_classifier_test
 timaert_test(subworld_generator_parity_test
     SOURCES
         src/sub/base_generator.cpp
-        src/sub/gens/dispatch.cpp
+        ${TIMAERT_GENS_SOURCES}
         src/sub/dgn/dispatch.cpp
         src/sub/dgn/house.cpp
         src/sub/dgn/cave.cpp
@@ -828,7 +853,21 @@ timaert_test(tree_layer_test
 timaert_test(city_distribution_test
     SOURCES
         src/sub/base_generator.cpp
-        src/sub/gens/dispatch.cpp
+        ${TIMAERT_GENS_SOURCES}
+        src/sub/dgn/dispatch.cpp
+        src/sub/dgn/house.cpp
+        src/sub/dgn/cave.cpp
+        src/sub/dgn/spire_tower.cpp
+        src/sub/dgn/prologue_road.cpp
+    LINK_SDL)
+
+# Asks the question a player asks with his feet: can you get into the town
+# without passing a gate? (Holes in the ring, and gates with no road under
+# them — neither was visible to any counting assertion.)
+timaert_test(city_wall_integrity_test
+    SOURCES
+        src/sub/base_generator.cpp
+        ${TIMAERT_GENS_SOURCES}
         src/sub/dgn/dispatch.cpp
         src/sub/dgn/house.cpp
         src/sub/dgn/cave.cpp
@@ -844,7 +883,7 @@ timaert_test(structure_collide_test
     SOURCES
         src/sub/collide.cpp
         src/sub/base_generator.cpp
-        src/sub/gens/dispatch.cpp
+        ${TIMAERT_GENS_SOURCES}
         src/sub/dgn/dispatch.cpp
         src/sub/dgn/house.cpp
         src/sub/dgn/cave.cpp
@@ -855,7 +894,7 @@ timaert_test(structure_collide_test
 timaert_test(house_pad_flatten_test
     SOURCES
         src/sub/base_generator.cpp
-        src/sub/gens/dispatch.cpp
+        ${TIMAERT_GENS_SOURCES}
         src/sub/dgn/dispatch.cpp
         src/sub/dgn/house.cpp
         src/sub/dgn/cave.cpp
@@ -869,7 +908,7 @@ timaert_test(house_pad_flatten_test
 timaert_test(dungeon_house_test
     SOURCES
         src/sub/base_generator.cpp
-        src/sub/gens/dispatch.cpp
+        ${TIMAERT_GENS_SOURCES}
         src/sub/dgn/dispatch.cpp
         src/sub/dgn/house.cpp
         src/sub/dgn/cave.cpp
@@ -885,7 +924,7 @@ timaert_test(dungeon_house_test
 timaert_test(dungeon_cave_test
     SOURCES
         src/sub/base_generator.cpp
-        src/sub/gens/dispatch.cpp
+        ${TIMAERT_GENS_SOURCES}
         src/sub/dgn/dispatch.cpp
         src/sub/dgn/house.cpp
         src/sub/dgn/cave.cpp
@@ -899,7 +938,7 @@ timaert_test(dungeon_cave_test
 timaert_test(dungeon_prologue_test
     SOURCES
         src/sub/base_generator.cpp
-        src/sub/gens/dispatch.cpp
+        ${TIMAERT_GENS_SOURCES}
         src/sub/dgn/dispatch.cpp
         src/sub/dgn/house.cpp
         src/sub/dgn/cave.cpp
@@ -913,7 +952,7 @@ timaert_test(dungeon_prologue_test
 timaert_test(spire_tower_test
     SOURCES
         src/sub/base_generator.cpp
-        src/sub/gens/dispatch.cpp
+        ${TIMAERT_GENS_SOURCES}
         src/sub/dgn/dispatch.cpp
         src/sub/dgn/house.cpp
         src/sub/dgn/cave.cpp
@@ -928,7 +967,7 @@ timaert_test(spire_tower_test
 timaert_test(prop_interaction_test
     SOURCES
         src/sub/base_generator.cpp
-        src/sub/gens/dispatch.cpp
+        ${TIMAERT_GENS_SOURCES}
         src/sub/dgn/dispatch.cpp
         src/sub/dgn/house.cpp
         src/sub/dgn/cave.cpp
@@ -946,7 +985,7 @@ timaert_test(subworld_async_seam_test
         src/sub/seamless_manager.cpp
         src/sub/base_generator.cpp
         src/sub/map_factory.cpp
-        src/sub/gens/dispatch.cpp
+        ${TIMAERT_GENS_SOURCES}
         src/sub/dgn/dispatch.cpp
         src/sub/dgn/house.cpp
         src/sub/dgn/cave.cpp
@@ -965,7 +1004,7 @@ timaert_test(subworld_spawn_parity_test
         src/sub/seamless_manager.cpp
         src/sub/base_generator.cpp
         src/sub/map_factory.cpp
-        src/sub/gens/dispatch.cpp
+        ${TIMAERT_GENS_SOURCES}
         src/sub/dgn/dispatch.cpp
         src/sub/dgn/house.cpp
         src/sub/dgn/cave.cpp
@@ -1354,7 +1393,7 @@ timaert_test(settlement_faction_test
         src/sub/seamless_manager.cpp
         src/sub/base_generator.cpp
         src/sub/map_factory.cpp
-        src/sub/gens/dispatch.cpp
+        ${TIMAERT_GENS_SOURCES}
         src/sub/dgn/dispatch.cpp
         src/sub/dgn/house.cpp
         src/sub/dgn/cave.cpp
@@ -1376,7 +1415,7 @@ timaert_test(carried_light_spawn_test
         src/sub/seamless_manager.cpp
         src/sub/base_generator.cpp
         src/sub/map_factory.cpp
-        src/sub/gens/dispatch.cpp
+        ${TIMAERT_GENS_SOURCES}
         src/sub/dgn/dispatch.cpp
         src/sub/dgn/house.cpp
         src/sub/dgn/cave.cpp
@@ -1402,7 +1441,7 @@ timaert_test(city_population_inside_walls_test
         src/sub/seamless_manager.cpp
         src/sub/base_generator.cpp
         src/sub/map_factory.cpp
-        src/sub/gens/dispatch.cpp
+        ${TIMAERT_GENS_SOURCES}
         src/sub/dgn/dispatch.cpp
         src/sub/dgn/house.cpp
         src/sub/dgn/cave.cpp

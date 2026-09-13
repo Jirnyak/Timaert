@@ -70,37 +70,106 @@ is the macro map / minimap, not a subworld mode.
   billboards → BODY billboards (drawn or procedural, one pass) → point lights
   at entity altitude.
 
-## Settlements — city street plan
+## Settlements — a town grown, not drawn
 
-A subworld **city** (`gens/dispatch.cpp` `gen_city`) is a walled disk of houses,
-fields and a central plaza + keep. The interior street network is
-**radial-concentric** rather than a centre-rooted starburst:
+A subworld **city** (`gens/city.cpp`) is built in the order the thing itself
+was built, because each step reads what the last one left on the ground:
 
-- **Avenues** — radial roads from the plaza to the rim, evenly spaced over the
-  full circle from a seed-derived base rotation, so a city is symmetric in every
-  direction *regardless of which neighbours carry roads*;
-- **Ring roads** — concentric polygons (subdivided so they read as round) tying
-  the avenues into blocks and spreading circumferential road density;
-- **Frontage streets** — short tangential streets fanning from every
-  avenue×ring node, so the road-gated house scatter finds frontage across the
-  whole footprint instead of piling downtown.
+1. **the TRACT** arrives first — the macro map stamps a road on every city
+   cell, and the module carves it to the seam anchors its neighbours aim back
+   at;
+2. **the WALL** is raised across it and opens exactly where it finds paving
+   under itself;
+3. **the STREETS** grow inside, unable to breach it;
+4. **the HOUSES** line those streets, fronting them;
+5. **the FIELDS** take the hinterland beyond the berm, their tracks returning
+   to a gate.
 
-The old design grew every street as a ray from the cell centre and, with no
-road-bearing neighbour, defaulted its axis to angle 0 — so houses clumped into
-the east/south-east corner with whole quadrants empty (the "one clump" report).
-Measured on the parity-test city, the plan moves houses from **4 of 8 angular
-sectors empty** (min/max 0.00) to **all 8 populated** (min/max ≈ 0.68) and lifts
-the outer-half fraction from 0.44 to 0.63.
+### The shape is grown (`gens/kit/growth.h`)
 
-All layout tunables — avenue/ring/street counts vs population, ring radii, house
-count curve — live in **[`src/sub/city_layout.h`](src/sub/city_layout.h)** as one
-`CityLayout` config + pure `city_*()` response curves (the `seasons.h` /
-`BiomeConfig` idiom), so retuning a city is data, not code. The street RNG is
-seeded off `ctx.seed` so it never perturbs the r-stream that drives keep / house
-/ field / wall placement (determinism + save-stability preserved). The spread is
-locked by `tests/city_distribution_test.cpp` (no empty sector, angular balance,
-radial spread across seeds/populations); counts stay locked by
-`subworld_generator_parity_test`.
+A town used to be a disk: one radius from population, perturbed ±8 % so the
+wall wandered. From inside, that reads as exactly what it was. The outline is
+now GROWN — from a core the town holds regardless, outward over the cheapest
+ground, until it covers the area its population needs. "Cheapest" is three
+things the world already knew about itself:
+
+- **slope**, priced by the one law the roads use (`kGradePenalty`) — a town may
+  not sprawl up a hillside its own streets refuse to climb;
+- **wet ground is not taken at all** — the mason refuses what the plough
+  refuses (`kWetEdgeTop`), which is what puts a town ON the river, not in it;
+- **the tract** — ground within a block of a road is worth twice ordinary
+  ground, which is the whole reason towns are long rather than round.
+
+The area is fixed and the shape is free: a population always gets the room it
+needs and no more, but the ground decides its outline. Inner wall rings are the
+SAME outline scaled — a town's older cores stood on the same hills.
+
+The result is one `Outline` (`gens/kit/outline.h`, a radius per bearing about
+the heart) and **every placer downstream reads it**: the wall is raised on it,
+streets stop short of it, houses stand inside it, fields begin beyond it, the
+tree line is cleared to it. That is why the shape could stop being a circle
+without a single change to any of them.
+
+### The streets are hyphae (`gens/kit/lanes.h`)
+
+The radial-concentric plan that stood here — evenly spaced avenues, concentric
+ring roads, tangential frontage stubs — drew geometry and hoped it would read
+as a town. It did not, and every reason was visible from one aerial frame
+(owner, 2026-09-13): the avenues were spaced from a random rotation and so
+lined up with nothing, least of all the gates the traffic comes through; the
+outer ring road sat at 0.92 of the usable radius, which is to say scraping the
+curtain; the frontage stubs fired off at random angles to die in the grass; and
+every one of them was the same width.
+
+A hypha grows toward food, and a street's food is somewhere to go:
+
+- **the trunks already exist** — the tract, carved before the wall; the growth
+  WALKS them, seeding the side streets that branch off, rather than laying a
+  twin down the same line;
+- **a tip branches** at block intervals, each generation NARROWER than its
+  parent, which is where the hierarchy comes from rather than being assigned;
+- **a tip dies** on ground another lane already serves, at the wall, in the
+  water — which is what makes coverage even without a global plan;
+- **a tip that meets a lane JOINS it** (anastomosis) instead of running
+  alongside: that is where the loops and the blocks come from, and it is what
+  killed the parallel duplicates;
+- **and it colonises** — every other tip is aimed at ground nothing reaches.
+  Branching alone spends the whole budget along the trunks it sprang from, and
+  the town comes out built along its roads and empty between them (measured:
+  angular min/max 0.14 against the 0.20 floor, `city_distribution_test`).
+
+**Width is derived, not chosen.** A man is 1.1 tiles wide
+(`kNpcBodyRadiusDefault`), so an alley is two men abreast, a street a cart
+passing a man, a high street two carts passing. The **pomerium** — the alley
+running the whole way round just inside the wall — is how a garrison reaches
+any stretch of its own curtain without threading a yard; it is the ring road
+that used to graze the masonry, put where it belongs.
+
+**The growth stops when the network can front the town's buildings**: length ×
+two sides ÷ a plot's street face. Growing to an arbitrary cap instead gave a
+town twenty times the street it could ever build on.
+
+### Houses front the street (`gens/kit/plots.h lay_frontage`)
+
+Houses used to be rejection-sampled anywhere within ten tiles of paving, so
+they sat BESIDE streets at random angles — from the air, buildings dropped on a
+meadow. Plots are now laid down both sides of every lane: a plot's face on the
+street, its door opening onto it (the orientation is computed, not rolled), its
+neighbour a yard away. The door law is untouched — one door per house, carrying
+the ordinal the engine counts back.
+
+### How many houses — every soul has a hearth
+
+`city_house_target` was `pow(population, 0.80)` clamped to `[20, 380]`. The
+exponent came from nowhere and the cap bound at 1 750 souls, so every city in
+the world above that — market town and capital alike — had exactly 380 houses.
+
+The number was already in the world: the hearth law (`interior_household_share`,
+CANON S28) says a door holds one to three souls, and one more where the town is
+crowded. So **houses = population ÷ what a hearth holds**, and the only bound
+left is the GROUND's — a town cannot raise more houses than its footprint has
+room for. A 5 824-soul city went from 380 houses to 1 456, with 4 400 souls
+behind doors instead of on the street.
 
 ### A town's people live in the town
 
@@ -112,16 +181,27 @@ out of the whole 1024×1024 macro cell. A city walls 4–8 % of its cell and a
 village ~1 %: **92–99 % of every settlement's population was born in the fields
 and forests outside its own gates**, and the streets inside stood empty.
 
-The footprint is now one set of pure curves — `city_wall_radius`,
-`city_house_radius`, `village_core_radius`, `village_wall_radius`,
-`city_wall_rings`, `city_ring_wall_radius` — read by the generator that stamps
-the walls AND by the populator that fills them, so they cannot describe
-different towns. Citizens are sampled in that disk with `r = R·√u` (uniform in
-AREA — sampling the radius linearly would pile the whole population onto the
-market square), water/house/wall tiles rejected as before.
+The footprint is one set of pure curves — `city_wall_radius`,
+`city_core_radius`, `city_target_area`, `village_core_radius`,
+`village_wall_radius`, `city_wall_rings`, `city_ring_wall_radius` — read by the
+generator that stamps the walls AND by the populator that fills them, so they
+cannot describe different towns.
 
-`R` is not the mean wall radius: `stamp_settlement_wall` perturbs the ring by
-two harmonics plus a per-segment jitter, so the built wall wanders *inward* by
+Since the town stopped being a disk, a scalar radius can only describe the part
+of it that is GUARANTEED (`city_core_radius` — the disk holding half the target
+area, which the growth never dips below). Filling that disk while the streets
+and houses spread past it put a round crowd inside a shape that is not round —
+visible at a glance on the minimap. So the populator **measures the shape off
+the ground**: it walks out along each bearing and remembers the furthest
+masonry (`measure_town`, `sub/spawn.cpp`). That is not a second definition of
+the shape — the generator decides where the wall goes, the populator reads
+where it went, exactly as the wall-integrity test audits the ring without
+re-implementing it. Citizens are sampled over the town's reach with `r = R·√u`
+(uniform in AREA) and kept only where that measured outline holds them;
+water/house/wall tiles rejected as before.
+
+`R` is not the mean wall radius: `wall_ring_noise` perturbs the outline by
+two harmonics plus a per-bearing jitter, so the built wall wanders *inward* by
 up to `roughness·(0.32 + 0.18 + 0.18)`. Those amplitudes live in the same header
 (`SettlementWallRing`), the generator reads them, and `wall_inner_bound()`
 derives the radius that is inside the ring's **worst inward excursion** — the
@@ -144,18 +224,35 @@ Structures are **oriented volumes**, not axis-aligned squares
   to its mean (same pad rationale as below), and emitted as ONE oriented
   record. The keep gets a modest random lean.
 - **City walls** are yawed chords following the smoothed ring's curvature
-  (`stamp_settlement_wall` pass 2): the whole ring is walked at ~1-tile steps,
+  (`kit/wall.cpp stamp_wall` pass 2): the whole ring is walked at ~1-tile steps,
   classified, and each wall run becomes short (≤8-tile) oriented pieces that
   drape the relief — no more string of overlapping axis-aligned blobs.
-- **Gates** have LINEAR width (`kGateHalfWidth`, ~8-tile opening) instead of
-  the old angular arc that grew to ~64 tiles at big radii. An opening is ANY
-  road crossing the ring — outer main-road gates and interior avenues punching
-  inner rings alike — and each bounded opening gets two round **jamb towers**
-  plus a **lintel**: a bar whose solid span starts `kGateClearM` (5 m) above
-  the road (`zBase`), so bodies walk through beneath while wall-walk defenders
-  cross on top.
-- **Towers** (every other ring vertex) and the spire are `Shape::Cylinder` —
-  round prisms in render AND collision.
+- **A GATE IS WHERE THE ROAD IS.** It used to be a fixed-width corridor cut
+  along the pure compass bearing of a road-bearing neighbour — but the road it
+  existed for runs to a jittered edge anchor up to 153 tiles off that bearing,
+  so a town got an empty arch over grass AND a second opening where the real
+  road crossed, often a few tiles apart. That is the "two gates side by side"
+  the owner photographed. The corridor is gone: roads are carved FIRST and the
+  ring opens exactly where it finds paving under itself. Each opening gets two
+  round **jamb towers** plus a **lintel** — a bar whose solid span starts
+  three body-eye-heights above the road (`zBase`), so a rider passes beneath
+  while wall-walk defenders cross on top. A breach too wide to arch keeps its
+  jambs and goes without.
+- **Towers stand WHERE THE RING TURNS** — at local maxima of the outline's
+  curvature, which is parameter-free, self-tuning with the shape, and puts
+  towers on the salients of an organically grown town instead of on a lattice.
+  A tower rises one full course of the wall module above the curtain: clearing
+  a defender's eyes alone (+1.7 m on 12 m) is invisible from the ground, which
+  is the same as not building it. Towers, jambs and the spire are
+  `Shape::Cylinder` — round prisms in render AND collision.
+- **Walls are raised BEFORE anything is built inside them.** They used to be
+  stamped last, after houses and fields, and yielded to both — so a house grown
+  into an inward dip of the ring produced no wall tiles and no wall solids
+  there at all: a hole you could walk through. `tests/city_wall_integrity_test`
+  now asks the question a player asks with his feet — is every opening in the
+  curtain a gate? — and carries a negative control that knocks a breach in a
+  sound town and demands the audit see it. It exposed three blind detectors
+  before the surviving one; the lessons are written in its header.
 - **Ruin walls** lean along their own segments (oriented rubble with honest
   gaps).
 

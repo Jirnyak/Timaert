@@ -28,6 +28,65 @@ enum Tile : std::uint8_t {
     TILE_COUNT,
 };
 
+// ── "Has a generator already decided what this ground IS?" ────────────────
+// ONE question, which the tree carried TEN hand-written answers to: the water
+// sync, the house clearance, the field stamp, the wall stamper, the mountain
+// stamp, the tree scatter, the road smoother and the citizen spawner each
+// spelled out their own `t == TILE_ROAD || t == TILE_HOUSE || ...` list. They
+// had already drifted — one forgot water, one added shore — and every new
+// generator (castle, camp, graveyard) would have written an eleventh.
+//
+// Each caller genuinely needs a slightly DIFFERENT answer: the wall stamper
+// must not count its own masonry, the plough must also refuse open water. So
+// the law is a MASK over one classification, and a caller states its delta as
+// an expression at the point of use (`kTileBuilt & ~TILE_M_WALL`). The delta
+// is then visible and reviewable; a rewritten list is neither.
+//
+// This lives with the Tile ids rather than in any one generator because the
+// question is the vocabulary's, not a module's — the subworld generators, the
+// base terrain pass and the populator all ask it and must get one answer.
+enum TileMask : std::uint16_t {
+    TILE_M_ROAD   = 1u << 0,
+    TILE_M_SQUARE = 1u << 1,
+    TILE_M_HOUSE  = 1u << 2,
+    TILE_M_WALL   = 1u << 3,
+    TILE_M_FIELD  = 1u << 4,
+    TILE_M_WATER  = 1u << 5,
+    TILE_M_SHORE  = 1u << 6,
+    TILE_M_TREE   = 1u << 7,
+    TILE_M_ROCK   = 1u << 8,
+};
+
+// BUILT ground — the five tiles a generator authors by deciding to. Nature
+// (water, shore, scree, canopy litter) is not built: it is where it is because
+// the terrain put it there, so it is not in this set and a caller that means
+// "and not into the sea" says so.
+inline constexpr std::uint16_t kTileBuilt =
+    TILE_M_ROAD | TILE_M_SQUARE | TILE_M_HOUSE | TILE_M_WALL | TILE_M_FIELD;
+
+// PAVED ground — what men walk a town on. The subset of built ground that is
+// a surface rather than a solid.
+inline constexpr std::uint16_t kTilePaved = TILE_M_ROAD | TILE_M_SQUARE;
+
+inline constexpr std::uint16_t tile_mask(std::uint8_t t) {
+    switch (t) {
+        case TILE_ROAD:       return TILE_M_ROAD;
+        case TILE_SQUARE:     return TILE_M_SQUARE;
+        case TILE_HOUSE:      return TILE_M_HOUSE;
+        case TILE_WALL:       return TILE_M_WALL;
+        case TILE_FIELD:      return TILE_M_FIELD;
+        case TILE_WATER:      return TILE_M_WATER;
+        case TILE_SHORE:      return TILE_M_SHORE;
+        case TILE_TREE_DECOR: return TILE_M_TREE;
+        case TILE_ROCK:       return TILE_M_ROCK;
+        default:              return 0u;   // EMPTY / GRASS — bare ground
+    }
+}
+
+inline constexpr bool tile_is(std::uint8_t t, std::uint16_t mask) {
+    return (tile_mask(t) & mask) != 0u;
+}
+
 // ── Ground movement: ONE law, both scales (owner's ruling, 2026-08-30) ─────
 // How hard each ground type is to cross — and it is the SAME question the
 // macro march answers, so it may not have a second answer. Until now it had

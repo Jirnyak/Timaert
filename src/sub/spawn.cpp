@@ -91,6 +91,88 @@ bool resolve_stand(int attempts, NextPoint next, Accept ok,
     return false;
 }
 
+// ── The town's shape, READ BACK OFF THE GROUND ────────────────────────────
+// A settlement is no longer a disk: its outline is grown over the terrain, so
+// it runs long down its tract and stops at a bluff (sub/gens/kit/growth.h).
+// A scalar radius can therefore only describe the part of it that is
+// guaranteed — and filling that disk with people while the streets and houses
+// spread past it puts a round crowd inside a shape that is not round.
+//
+// This is NOT a second definition of the shape. The generator decides where
+// the wall goes; this MEASURES where it went, by walking out along each
+// bearing and remembering the furthest masonry. One authority, and no
+// plumbing between two systems that would then have to be kept in step — the
+// same reasoning the wall-integrity test uses to audit the ring without
+// re-implementing it.
+struct TownShape {
+    static constexpr int kBearings = 256;   // ~1.4°, finer than any gateway
+    float cx = 0.0f, cy = 0.0f;
+    std::array<float, kBearings> r{};       // outermost masonry per bearing
+
+    bool holds(float x, float y, float inset) const {
+        const float dx = x - cx, dy = y - cy;
+        constexpr float kTau = 6.2831853f;
+        float a = std::atan2(dy, dx);
+        if (a < 0.0f) a += kTau;
+        int b = int(a / kTau * float(kBearings));
+        if (b >= kBearings) b = kBearings - 1;
+        const float bound = r[std::size_t(b)] - inset;
+        if (bound <= 0.0f) return false;
+        return dx * dx + dy * dy <= bound * bound;
+    }
+};
+
+// The furthest the town's masonry reaches — the disk the sampler must cover to
+// be able to land anywhere inside it.
+float shape_reach(const TownShape& s) {
+    float m = 0.0f;
+    for (float v : s.r) m = std::max(m, v);
+    return m;
+}
+
+TownShape measure_town(const std::vector<std::uint8_t>& tiles,
+                       float cx, float cy, float maxRadius, float fallback) {
+    TownShape s{};
+    s.cx = cx;
+    s.cy = cy;
+    s.r.fill(0.0f);
+    if (tiles.size() < std::size_t(kFullSize) * std::size_t(kFullSize)) {
+        s.r.fill(fallback);
+        return s;
+    }
+    constexpr float kTau = 6.2831853f;
+    for (int b = 0; b < TownShape::kBearings; ++b) {
+        const float ang = float(b) * kTau / float(TownShape::kBearings);
+        const float ca = std::cos(ang), sa = std::sin(ang);
+        for (float d = 1.0f; d <= maxRadius; d += 1.0f) {
+            const int x = int(cx + ca * d);
+            const int y = int(cy + sa * d);
+            if (x < 0 || y < 0 || x >= kFullSize || y >= kFullSize) break;
+            if (tiles[std::size_t(y) * kFullSize + x] == TILE_WALL) {
+                s.r[std::size_t(b)] = d;      // keep the FURTHEST: the outer ring
+            }
+        }
+    }
+    // A bearing that met no masonry is a gateway (or an unwalled place): take
+    // what its neighbours know, so a gate does not read as a hole in the crowd.
+    for (int b = 0; b < TownShape::kBearings; ++b) {
+        if (s.r[std::size_t(b)] > 0.0f) continue;
+        float lo = 0.0f, hi = 0.0f;
+        for (int k = 1; k < TownShape::kBearings; ++k) {
+            const std::size_t j = std::size_t((b - k + TownShape::kBearings)
+                                              % TownShape::kBearings);
+            if (s.r[j] > 0.0f) { lo = s.r[j]; break; }
+        }
+        for (int k = 1; k < TownShape::kBearings; ++k) {
+            const std::size_t j = std::size_t((b + k) % TownShape::kBearings);
+            if (s.r[j] > 0.0f) { hi = s.r[j]; break; }
+        }
+        const float best = std::max(lo, hi);
+        s.r[std::size_t(b)] = best > 0.0f ? best : fallback;
+    }
+    return s;
+}
+
 // Find a spot for one inhabitant of the settlement centred at (cx, cy) with
 // built-up radius `radius` (sub/city_layout.h — the SAME number the generator
 // stamped its walls from).
@@ -108,6 +190,7 @@ bool find_city_spawn_spot(const std::vector<std::uint8_t>& tiles,
                           float cx,
                           float cy,
                           float radius,
+                          const TownShape& shape,
                           float& fx,
                           float& fy) {
     if (tiles.size() < std::size_t(kFullSize) * std::size_t(kFullSize)) {
@@ -115,20 +198,28 @@ bool find_city_spawn_spot(const std::vector<std::uint8_t>& tiles,
     }
     if (!(radius > 0.0f)) return false;
     constexpr float kTau = 6.2831853f;
-    // Through THE placement door: the disk is this computer's own point law
-    // (uniform in AREA), the tile filter its own ground question. Same RNG
-    // stream, same attempt count as before the door — bit for bit.
+    // Sample the town's REACH and keep what its outline holds. Sampling the
+    // guaranteed disk instead would put a round crowd in a town that is not
+    // round — visible at a glance on the minimap, and wrong on the ground:
+    // the lobes a city grows down its tract would hold houses and no people.
+    const float reach = std::max(radius, shape_reach(shape));
     const bool found = resolve_stand(
         64,
         [&](float& sx, float& sy) {
             const float a = rng.next_f01() * kTau;
-            const float r = radius * std::sqrt(rng.next_f01());
+            const float r = reach * std::sqrt(rng.next_f01());
             sx = cx + std::cos(a) * r;
             sy = cy + std::sin(a) * r;
         },
         [&](float sx, float sy) {
             const int x = int(sx), y = int(sy);
             if (x < 0 || x >= kFullSize || y < 0 || y >= kFullSize) {
+                return false;
+            }
+            // Inside the walls the generator actually built — per bearing, so
+            // an organic footprint is respected exactly. The inset keeps a
+            // body off the masonry's own thickness.
+            if (!shape.holds(sx, sy, kSettlementWallRing.halfThickness + 1.0f)) {
                 return false;
             }
             const std::uint8_t t = tiles[std::size_t(y) * kFullSize + x];
@@ -350,6 +441,14 @@ void spawn_landmark_population(ecs::World& w,
     // remainder: souls at their hearths do not shrink the town.
     const float populationRadius =
         settlement_population_radius(landmark == LandmarkType::City, pop);
+    // …and the shape the generator actually built, measured once off the
+    // ground. The scalar above stays the FLOOR (an unwalled hamlet has no
+    // masonry to measure, and a place whose walls did not reach still holds
+    // its guaranteed core).
+    const TownShape townShape = measure_town(
+        tiles, centerX, centerY,
+        std::max(populationRadius * 2.0f, float(kCellSize) * 0.45f),
+        populationRadius);
 
     // Fixed posts as DATA (registry crowd role rows): the first bodies take
     // the rows' types in order — max(min, div ? target/div : 0) each — and
@@ -367,7 +466,7 @@ void spawn_landmark_population(ecs::World& w,
         float fx = 0.0f;
         float fy = 0.0f;
         if (!find_city_spawn_spot(tiles, rng, centerX, centerY,
-                                  populationRadius, fx, fy)) {
+                                  populationRadius, townShape, fx, fy)) {
             // A soul that found no ground is COUNTED and said below — never
             // dropped silently (CANON S28: no silent truncation anywhere).
             ++refused;
@@ -933,13 +1032,19 @@ void spawn_cell_npcs(ecs::World& w,
         const float radius = settlement_population_radius(
             landmark == LandmarkType::City, landmarkPop);
         const auto& tiles = mgr.tiles();
+        // The garrison stands in the same town its citizens do — same shape,
+        // measured the same way, so the wall's defenders are not confined to
+        // a disk inside a town that is not one.
+        const TownShape townShape = measure_town(
+            tiles, centerX, centerY,
+            std::max(radius * 2.0f, float(kCellSize) * 0.45f), radius);
         int refused = 0;
         for (int i = 0; i < garrison->size(); ++i) {
             const SoldierRecord& rec = (*garrison)[i];
             if (!valid_npc_kind(rec.kind)) continue;
             float fx = 0.0f, fy = 0.0f;
             if (!find_city_spawn_spot(tiles, grng, centerX, centerY,
-                                      radius, fx, fy)) {
+                                      radius, townShape, fx, fy)) {
                 ++refused;
                 continue;
             }

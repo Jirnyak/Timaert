@@ -84,6 +84,30 @@ inline constexpr SettlementFootprint kSettlementFootprint = {
     /* villageWallMin     */ 15.0f,
 };
 
+// ── THE HEARTH: how many souls one door holds ─────────────────────────────
+// This law was written inline in the interior populator (sub/spawn.cpp
+// interior_household_share, CANON S28): one to three souls behind a door, and
+// one more where the town is crowded rather than a hamlet. It is stated HERE
+// because the GENERATOR needs the same number — a town has as many houses as
+// its people have hearths, and that is the only honest answer to "how many
+// houses". Two places, one law; the populator reads these same constants.
+inline constexpr int kHearthSoulsMin     = 1;   // a door is never empty
+inline constexpr int kHearthSoulsSpread  = 3;   // …+0..2 more
+inline constexpr int kHearthCrowdedPop   = 128; // a town, not a hamlet…
+inline constexpr int kHearthSoulsCrowded = 1;   // …squeezes in one more
+
+// The most one hearth holds — which is what decides how many hearths a
+// population needs.
+inline constexpr int hearth_souls_max(int population) {
+    return kHearthSoulsMin + (kHearthSoulsSpread - 1)
+         + (population >= kHearthCrowdedPop ? kHearthSoulsCrowded : 0);
+}
+
+// What one house occupies of the town's ground: its own plot (a burgage's
+// narrow street face by its depth) plus its share of the lane in front and the
+// yard behind. Roughly a plot's face × three times its depth.
+inline constexpr float kTownGroundPerHouse = 54.0f;
+
 // Radius of a city's outer wall, tiles from the cell centre. Integer because
 // the generator stamps the ring on an integer radius.
 inline int city_wall_radius(int population) {
@@ -100,12 +124,76 @@ inline float city_house_radius(int population) {
         float(city_wall_radius(population)) - kSettlementFootprint.cityHouseInset);
 }
 
+// ── The CORE: the ground a city holds whatever the land says ──────────────
+// A city's outline is no longer a circle. It is GROWN outward from this disk,
+// taking the cheapest ground first — down its tract, along the flat, never
+// into the marsh (sub/gens/kit/growth.h) — until it has the AREA a circle of
+// `city_wall_radius` would have had. So the town is the same size as before
+// and a completely different shape, long where the road runs and pinched
+// where the hill is.
+//
+// That leaves one thing everyone else needs to know: how much of the town is
+// guaranteed, independent of terrain. This is it, and the factor is not a
+// taste: 1/√2 is the radius of the disk holding HALF the target area. Half is
+// the honest split — the heart of a town is a real place that the ground does
+// not get a vote on, and the other half is exactly the part the ground shapes.
+//
+// Everything that must be right without consulting the terrain — above all
+// the citizen populator, which knows only a radius — reads this.
+inline float city_core_radius(int population) {
+    constexpr float kHalfAreaRadius = 0.70710678f;   // 1/√2
+    return float(city_wall_radius(population)) * kHalfAreaRadius;
+}
+
+// The area a city of this population covers, tiles². The growth stops here,
+// so the shape is free but the SIZE is not: a population always gets the room
+// it needs and never more, however the ground lets it sprawl.
+inline float city_target_area(int population) {
+    const float r = float(city_wall_radius(population));
+    return 3.14159265f * r * r;
+}
+
+// How far a city may reach along its best bearing. A town that ran the whole
+// cell would meet its own fields and its neighbour's seam; half again its
+// nominal radius is as long as a place can be and still read as one town.
+inline float city_max_radius(int population) {
+    return std::min(float(kCellSize) * 0.42f,
+                    float(city_wall_radius(population)) * 1.5f);
+}
+
 // Radius of a village's built-up core (the disk its houses line).
 inline float village_core_radius(int population) {
     const SettlementFootprint& F = kSettlementFootprint;
     const float p = float(std::max(F.villagePopFloor, population));
     return std::min(float(kCellSize) * F.villageMaxCellFrac,
                     F.villageBase + std::sqrt(p) * F.villagePerSqrtPop);
+}
+
+// A village takes its ground the same way a city does — grown outward from a
+// guaranteed core over the cheapest land, which is what makes a hamlet on a
+// tract a RIBBON rather than a blob. Same three laws, same half-the-area
+// split; only the scale differs.
+inline float village_core_radius_guaranteed(int population) {
+    constexpr float kHalfAreaRadius = 0.70710678f;   // 1/√2
+    return village_core_radius(population) * kHalfAreaRadius;
+}
+inline float village_target_area(int population) {
+    const float r = village_core_radius(population);
+    return 3.14159265f * r * r;
+}
+inline float village_max_radius(int population) {
+    return std::min(float(kCellSize) * 0.20f,
+                    village_core_radius(population) * 1.5f);
+}
+
+// A village counts its houses by the same law a city does — every soul has a
+// hearth — bounded by its own ground. The old `min(120, pop/5)` had both an
+// undivined divisor and a cap that flattened every village above 600 souls.
+inline int village_house_target(int population) {
+    const int p = population > 0 ? population : 0;
+    const int hearths = p / hearth_souls_max(p);
+    const int room = int(village_target_area(p) / kTownGroundPerHouse);
+    return std::min(hearths, room);
 }
 
 // Does a village of this size raise a wall at all? Hamlets do not.
@@ -191,8 +279,22 @@ inline float settlement_population_radius(bool city, int population) {
     if (city) {
         const int outer = city_wall_rings(
             std::max(kSettlementFootprint.cityPopFloor, population)) - 1;
+        // The GUARANTEED part of the town, since this function answers with a
+        // scalar and the town is no longer a disk. The outer ring is the core
+        // scaled by that ring's own share of the footprint, then reduced by
+        // the ring noise's worst inward excursion.
+        //
+        // The cost of answering conservatively is real and known: the lobes a
+        // city grows down its tract hold houses and streets but no crowd, so
+        // the rim reads quieter than the heart. Closing that means handing the
+        // populator the town's actual outline instead of a number — the
+        // generator already computes one (sub/gens/kit/outline.h) and the
+        // subworld map is never serialized, so it can simply carry it. That is
+        // the next increment, not a hidden debt.
+        const float ringShare = city_ring_wall_radius(population, outer)
+                              / std::max(1.0f, float(city_wall_radius(population)));
         return std::min(city_house_radius(population),
-                        wall_inner_bound(city_ring_wall_radius(population, outer),
+                        wall_inner_bound(city_core_radius(population) * ringShare,
                                          city_wall_roughness(outer)));
     }
     const float core = village_core_radius(population);
@@ -221,10 +323,12 @@ struct CityLayout {
     float streetLenMin;      // shortest local street, tiles
     float streetLenMax;      // longest local street, tiles
 
-    // ── Houses (count only; placement stays the road-gated scatter). ──
-    float houseCountExp;    // houses ≈ pow(population, exp)
-    int   houseCountMin;    // floor so even a tiny city has a hamlet's worth
-    int   houseCountMax;    // ceiling so a metropolis stays within the cell
+    // ── Houses ──
+    // Nothing. The COUNT is derived from the hearth law (city_house_target
+    // below): a town has as many houses as its people have hearths, bounded
+    // only by the ground it stands on. There is no floor and no ceiling to
+    // configure — a bracket like the old [20, 380] is not a model of anything,
+    // and the 380 made every city above 1 750 souls identical.
 
     // ── Geometry. ──
     float streetWallInset;  // usableR = wallR − inset; keeps streets inside walls
@@ -249,9 +353,6 @@ inline constexpr CityLayout kCityLayout = {
     /* streetsPerNodeMax  */ 3,
     /* streetLenMin       */ 22.0f,
     /* streetLenMax       */ 54.0f,
-    /* houseCountExp      */ 0.80f,
-    /* houseCountMin      */ 20,
-    /* houseCountMax      */ 380,
     /* streetWallInset    */ 14.0f,
 };
 
@@ -302,15 +403,23 @@ inline constexpr int city_streets_per_node(int population) {
     return s;
 }
 
-// Target house count for a city of `population`. Not constexpr because std::pow
-// is not portably constant-evaluable; the curve still lives here as the one
-// definition the generator and tests share.
+// Target house count for a city of `population`: EVERY SOUL HAS A HEARTH.
+//
+// What this replaces: pow(population, 0.80) clamped to 380. The exponent came
+// from nowhere, and the cap bound at 1 750 souls — so every city in the world
+// above that size, market town and capital alike, had exactly 380 houses. A
+// number that stops distinguishing the things it is about has stopped being a
+// model of them.
+//
+// The ceiling that remains is the GROUND's, not a design knob: a town cannot
+// hold more houses than its own footprint has room for.
 inline int city_house_target(int population) {
-    const float p = float(population > 0 ? population : 0);
-    int h = int(std::pow(p, kCityLayout.houseCountExp));
-    if (h < kCityLayout.houseCountMin) h = kCityLayout.houseCountMin;
-    if (h > kCityLayout.houseCountMax) h = kCityLayout.houseCountMax;
-    return h;
+    const int p = population > 0 ? population : 0;
+    const int hearths = p / hearth_souls_max(p);
+    // The only bound is the GROUND's: a town cannot raise more houses than its
+    // own footprint has room for. That is a fact about the place, not a knob.
+    const int room = int(city_target_area(p) / kTownGroundPerHouse);
+    return std::min(hearths, room);
 }
 
 } // namespace sm::sub
