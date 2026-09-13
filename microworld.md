@@ -154,7 +154,7 @@ to the wall; the owner called that what it was.)
   is where upper towns were built and why: supply under siege, and a way out
   when it is the townsmen doing the besieging;
 - and its wall is only the ARC THAT STANDS INSIDE THE TOWN: its outer side IS
-  the city wall. `stamp_wall` takes an optional `clip` outline and builds
+  the city wall. `stamp_city_wall` takes an optional `clip` outline and builds
   nothing beyond it, because a full circle there raised a second wall running
   alongside the curtain with the quarter bulging out past the town — which is
   what "backed into the wall" must not mean;
@@ -236,11 +236,61 @@ exponent came from nowhere and the cap bound at 1 750 souls, so every city in
 the world above that — market town and capital alike — had exactly 380 houses.
 
 The number was already in the world: the hearth law (`interior_household_share`,
-CANON S28) says a door holds one to three souls, and one more where the town is
-crowded. So **houses = population ÷ what a hearth holds**, and the only bound
-left is the GROUND's — a town cannot raise more houses than its footprint has
-room for. A 5 824-soul city went from 380 houses to 1 456, with 4 400 souls
-behind doors instead of on the street.
+CANON S28). So **houses = population ÷ what a hearth holds**, and the only bound
+left is the GROUND's. A 5 824-soul city went from 380 houses to 1 456.
+
+**The hearth is a MEAN, not a ceiling** (2026-09-13). The count divided the
+population by the LARGEST a hearth could be while the populator rolled each door
+between one soul and that ceiling — so a town's doors held about five eighths of
+its people and the rest had no door at all. Invisible while everyone stood
+outside anyway; the day the sun began sending them home it showed as a city that
+stayed half full at midnight. The roll is now uniform over `[1, 2·mean − 1]`,
+symmetric about the mean, so the doors hold the town's people exactly in
+expectation — and the mean itself is read off the doors that were actually
+BUILT (`doors_in_cell`), not off the count the layout law wished for.
+
+**The last quarter goes on the backlands** (`lay_backland_houses`). Between them
+the frontage (wants a lane) and the road-gated scatter (wants paving within ten
+tiles) seated about three quarters of the town. The remainder now takes the
+baldest ground inside the walls, biggest patch first, and asks for no street at
+all — owner, 2026-09-13: «пустыри всё равно без улиц есть, пусть там будут
+дома». A 5 488-soul city went from 1 036 houses to 1 205 of the 1 372 it asks
+for; the residue is the upper quarter's, which has no more ground.
+
+### The yard is dressed (`gens/kit/plots.h lay_yards`)
+
+The land-per-house law budgets **81 tiles of 117** as yard, and measurement
+agrees with it to three per cent — so a town's bald ground was never missing
+houses, it was yards with nothing on them. Each plot now carries a kitchen
+garden, a hurdle across the back, and a well per block.
+
+Nothing new was introduced to do it. The garden is `TILE_FIELD` — the same tile
+the furlongs outside the wall use — so the town's one existing sower
+(`scatter_field_crops`) sows it without being told a garden exists. The hurdle is
+a `Wattle` row of the prop table, its own kind rather than a `Fence` in brown,
+because a Fence is the dry-stone balk a ploughman piles at the edge of his strip
+and a hurdle is what a townsman weaves round his own yard. The pass reads only
+the HOUSES standing on the ground — not the lanes, not the wall, not the fields
+— so it is a pass over a result, not a module reaching into a neighbour.
+
+### The day pumps the town (CANON S28)
+
+A settlement's population is a conserved quantity in two vessels and the light
+moves it. `crowd_outdoor_share01` is the sun itself — `sun_dir(tod).y` mapped
+from its own `[-1, +1]` swing onto `[0, 1]`, so noon is full, dawn and dusk are
+half, midnight is empty, and no number was invented. Clamping it at zero for the
+dark half was the first cut and is forbidden: it leaves no gradient to pump with.
+
+The fraction of a hearth is resolved by the DOOR'S OWN PHASE (a constant from its
+seed), so the expectation is exact while every house switches at its own moment —
+a town's windows light one by one rather than by a thrown switch. There is no
+loop over people anywhere: the law reads a count.
+
+While the player stands in the town the pump keeps it honest (`tick_day_pump`):
+the surplus walks to the nearest door and un-embodies there, the deficit is born
+at doors. Walking home settles no macro debt — that is paid where a body DIES —
+so the town never loses anybody, and opening that door finds him inside. A city
+of 1 200 fields 1 200 on its streets at noon and 34 at midnight.
 
 ### A town's people live in the town
 
@@ -295,7 +345,7 @@ Structures are **oriented volumes**, not axis-aligned squares
   to its mean (same pad rationale as below), and emitted as ONE oriented
   record. The keep gets a modest random lean.
 - **City walls** are yawed chords following the smoothed ring's curvature
-  (`kit/wall.cpp stamp_wall` pass 2): the whole ring is walked at ~1-tile steps,
+  (`gens/city_wall.cpp stamp_city_wall` pass 2): the whole ring is walked at ~1-tile steps,
   classified, and each wall run becomes short (≤8-tile) oriented pieces that
   drape the relief — no more string of overlapping axis-aligned blobs.
 - **A GATE IS WHERE THE ROAD IS.** It used to be a fixed-width corridor cut
@@ -326,6 +376,45 @@ Structures are **oriented volumes**, not axis-aligned squares
   before the surviving one; the lessons are written in its header.
 - **Ruin walls** lean along their own segments (oriented rubble with honest
   gaps).
+
+### Each kind raises its OWN wall (owner's ruling, 2026-09-13)
+
+There used to be one `stamp_wall` with a `WallStyle{height, towers}` dial, and
+the city's curtain, the upper quarter's enceinte and the village's wall all came
+out of it. The bill was visible from the road: a hamlet of a hundred and thirty
+souls stood behind **eight metres of ashlar**, flanked by round stone towers and
+entered under a stone arch, because it was the city's wall with a number turned
+down.
+
+So the masonry is the city's (`gens/city_wall.cpp`) and the stockade is the
+village's (`gens/village_palisade.cpp`), and the kit keeps only what is
+literally one question for both — the SHAPE of a ring (`kit/outline`). Two
+modules that look alike in places are not a debt; one module with dials for
+three different things is (AGENTS.md, data-oriented law 5).
+
+The **palisade** derives nothing from masonry: trunks set shoulder to shoulder,
+each driven into its own patch of earth (so a stockade drapes over broken ground
+without the gaps a straight stone chord leaves hanging at one end); a gate of two
+posts and a head of timber that STANDS PROUD of the wall, because the clear a
+gateway owes a rider is more than a stockade is tall — which is why a real
+stockade gate is the tallest thing in a village; and one watch platform over that
+gate and none around the circuit, since a village fields no garrison to man one.
+
+### A lifted span sits on what it bridges (`sub/height.h seat_lifted_spans`)
+
+A lifted solid states its clear as a height above ONE terrain sample — the one
+under its own centre. That is the right seat only while the ground under the
+whole span is that height, and on a hillside it never is: a gate on a ridge kept
+**1.61 m** of air where it promises 5.10, so the arch sank into the roadway and
+the gateway read from the ground as a hole with nothing over it.
+
+The seat is therefore taken from the HIGHEST ground under the span, and it is
+taken in a pass of its own AFTER the map is final — every generator's roads are
+smoothed into the relief afterwards, so a seat computed at stamp time is measured
+against a hill that no longer exists. It lives in `sub/height.h` because it is a
+law of heights, not of walls: a rider is a rider whether the arch is stone or
+timber. `tests/city_gate_lintel_test` holds it on sloping country, which every
+other settlement fixture in the suite lacks.
 
 ### Solid structures — collision & support (sub/collide.h)
 

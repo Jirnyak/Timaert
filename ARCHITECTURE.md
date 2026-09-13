@@ -962,8 +962,8 @@ rendering position uses all three:
 | [core/math.h](src/core/math.h)                          | mat4/vec3 PODs | `subworld/math3d.ts` |
 | [sub/base_generator.{h,cpp}](src/sub/base_generator.h)  | Universal foundation: heightmap, `BiomeConfig`, coastal sculpting | `subworld/base-generator.ts` |
 | [sub/gens/dispatch.{h,cpp}](src/sub/gens/dispatch.h) + [gens/gens.h](src/sub/gens/gens.h) | Mode resolver and the `kGenKindRows` registry; owns the two passes that belong to no module (terrain before, water reconciliation after) | `subworld/mode-resolver.ts` |
-| `sub/gens/{open,forest,swamp,mountain,water,city,village,ruin,spire,road,field}.cpp` | ONE self-contained module per mode — its content, its numbers, its composition; never includes a sibling | `subworld/city-generator.ts` … `subworld/road-generator.ts`, `subworld/spire.ts` |
-| [sub/gens/kit/](src/sub/gens/kit/) `tiles` `streets` `plots` `props` `wall` `noise` | The shared placement primitives every module builds from — the floor that makes sibling independence possible without duplication | — |
+| `sub/gens/{open,forest,swamp,mountain,water,city,city_wall,village,village_palisade,ruin,spire,road,field}.cpp` | ONE self-contained module per mode — its content, its numbers, its composition; never includes a sibling | `subworld/city-generator.ts` … `subworld/road-generator.ts`, `subworld/spire.ts` |
+| [sub/gens/kit/](src/sub/gens/kit/) `outline` `growth` `lanes` `tiles` `streets` `plots` `props` `noise` | The shared GEOMETRY and placement primitives every module builds from. Walls are NOT here: each kind raises its own (`gens/city_wall`, `gens/village_palisade`) — owner's ruling 2026-09-13 | — |
 | [sub/sky.h](src/sub/sky.h) + [shaders/sky.frag](shaders/sky.frag) (drawn by `vk_renderer_3d`) | The sky submodule behind ONE door (`SkyContext` — everything the sky is allowed to know): procedural gradient, sun, phased moons, constellations, FBM clouds, seasonal tint | `subworld/sky.ts` |
 | [sub/lighting.h](src/sub/lighting.h)                    | `compute_sun(WorldTime)` / `compute_light_parameters` → direction, colour, intensity | `subworld/lighting.ts` |
 | [sub/spawn.{h,cpp}](src/sub/spawn.h)                    | Per-biome ambient spawn from THE one table of living things (the old `0x100 \| catalogIndex` monster encoding died with the second table, 2026-08-20) | `subworld/spawn.ts` |
@@ -1273,15 +1273,25 @@ What a module may lean on is the layer BELOW it, and only that:
   `tiles` (stamp, probe, water reconciliation), `streets` (the seam-anchor
   contract, the grade-aware carve, the lane rasteriser), `plots` (oriented
   buildings, the house-ordinal law, street frontage, field rectangles, crop
-  sowing), `props` (lamps, well and sign), `wall` (the one ring model, gates
-  where the roads are, towers where the ring turns), `noise`
-  (global-lattice value noise).
+  sowing, the backlands fill, and the yard), `props` (lamps, well and sign),
+  `noise` (global-lattice value noise).
 
-Duplication between modules is **not** "intentional independence" — it is
-a debt. Independence is guaranteed by the shared floor, not by each module
-rewriting the wall: a ring model written twice drifts, and the populator
-that derives "inside the walls" from its amplitudes (`sub/city_layout.h`)
-can only be right about one of them.
+**THE KIT IS GEOMETRY AND PLACEMENT — NOT WALLS** (owner's ruling,
+2026-09-13). It used to carry `wall`, "the one ring model", and that one
+model served the city's curtain, the upper quarter's enceinte and the
+village at once through a `WallStyle{height, towers}` dial. The bill was
+visible from the road: a hamlet stood behind eight metres of ashlar with
+round stone towers. So the masonry moved to `gens/city_wall.{h,cpp}` and
+the stockade to `gens/village_palisade.{h,cpp}`; what stayed in the kit is
+the SHAPE of a ring (`outline`), because that is literally one question
+whatever is raised on it — and the populator that derives "inside the
+walls" from the ring's amplitudes (`sub/city_layout.h`) reads that one
+shape.
+
+Duplication between modules is therefore **not** a debt (AGENTS.md,
+data-oriented law 5): two modules that look alike in places answer
+different questions. What IS a debt is one module with dials for three
+different things.
 
 ### Props and interactions — one table, one keypress
 
