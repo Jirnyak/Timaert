@@ -18,7 +18,14 @@
 // about its heart — every point of it is reachable from the centre without
 // leaving it — which is exactly what a medieval town IS, and what makes
 // "inside" answerable in constant time by everyone who asks.
+//
+// THE KIT IS GEOMETRY AND NOTHING ELSE (owner's ruling, 2026-09-13). A ring's
+// SHAPE is the same question whichever kind of wall is raised on it — masonry,
+// a stockade, a ruin's stub — so it is shared; what is BUILT on that shape is
+// each settlement module's own business and lives with that module.
 #pragma once
+
+#include "core/rng.h"
 
 #include <algorithm>
 #include <array>
@@ -86,5 +93,31 @@ struct Outline {
         return o;
     }
 };
+
+// An opening a ring left for a road, reported back so the caller can route to
+// it (a track from an outlying field belongs at a gate, not at an arbitrary
+// cardinal point outside the wall). Geometry, not masonry: a city's arch and a
+// village's timber frame are both THIS to everyone downstream.
+struct WallGate {
+    float x, y;      // midpoint of the opening
+    float angle;     // its bearing from the heart
+    float span;      // how wide it is, jamb to jamb — a gateway's own measure
+                     // of itself, and therefore the measure of the room it
+                     // needs on either side (a way through is at least as
+                     // deep as it is wide).
+};
+
+// Perturb a shape into a BUILT ring: the two harmonics and the per-bearing
+// jitter of kSettlementWallRing, then smoothed twice. The base may be a plain
+// circle (a village keeps its core) or a grown, organic outline (a city's, see
+// kit/growth.h) — the ring's own irregularity rides on top of whatever shape
+// the place actually took.
+//
+// Consumes `r` — hand it a stream of its own, or the ring's shape becomes a
+// function of how many houses the caller happened to place first.
+Outline wall_ring_noise(const Outline& base, float roughness, Rng& r);
+
+// The circle case, spelled out: a ring of this nominal radius about (cx, cy).
+Outline wall_outline(float cx, float cy, float radius, float roughness, Rng& r);
 
 } // namespace sm::sub::kit

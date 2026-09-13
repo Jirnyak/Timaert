@@ -30,7 +30,7 @@
 #include "sub/gens/kit/props.h"
 #include "sub/gens/kit/streets.h"
 #include "sub/gens/kit/tiles.h"
-#include "sub/gens/kit/wall.h"
+#include "sub/gens/city_wall.h"
 
 #include "core/rng.h"
 
@@ -210,7 +210,7 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
     // town it watches, or it cannot watch it.
     std::array<WallGate, 16> gates{};
     int gateCount = std::min(
-        stamp_wall(out, rim, WallStyle{city_curtain_height(), true},
+        stamp_city_wall(out, rim, CurtainStyle{city_curtain_height(), true},
                    gates.data(), int(gates.size())),
         int(gates.size()));
     // …clipped by the curtain, so the quarter's own wall is only the arc that
@@ -218,10 +218,36 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
     // "backed into the curtain" means, and stamping a full circle there gave
     // two walls running alongside each other with the quarter bulging out past
     // the town (owner, 2026-09-13).
-    stamp_wall(out, castle,
-               WallStyle{city_curtain_height() + structure_min_height(Structure::Wall),
-                         true},
-               nullptr, 0, &rim);
+    std::array<WallGate, 8> upperGates{};
+    const int upperGateCount = std::min(
+        stamp_city_wall(out, castle,
+            CurtainStyle{city_curtain_height()
+                         + structure_min_height(Structure::Wall), true},
+            upperGates.data(), int(upperGates.size()), &rim),
+        int(upperGates.size()));
+
+    // ── THE MOUTHS OF THE GATEWAYS ────────────────────────────────────────
+    // Ground the town has already spoken for, handed to its own plot layer
+    // below. A gateway is a way THROUGH, and a way through needs room on both
+    // sides of the masonry — but the frontage lines every lane the town has,
+    // so without being told, a plot lands across the opening. The owner
+    // photographed exactly that at two gates of the upper quarter
+    // (2026-09-13): a house standing in the mouth, with the garrison's road
+    // running into its back wall.
+    //
+    // The reach is the GATEWAY'S OWN WIDTH (kit/outline.h WallGate::span), so
+    // no distance is invented here. And it is the CITY that states it, not the
+    // placer that infers it: the wall and the plots are the same module's
+    // work, which is the whole reason this is data and not a special case
+    // somewhere else (owner's ruling on module encapsulation, 2026-09-13).
+    std::array<KeepOut, 24> mouths{};
+    int mouthCount = 0;
+    auto claim_mouth = [&](const WallGate& g) {
+        if (mouthCount >= int(mouths.size())) return;
+        mouths[std::size_t(mouthCount++)] = {g.x, g.y, g.span};
+    };
+    for (int g = 0; g < gateCount; ++g)      claim_mouth(gates[std::size_t(g)]);
+    for (int g = 0; g < upperGateCount; ++g) claim_mouth(upperGates[std::size_t(g)]);
 
     // ── 3. The streets, grown ─────────────────────────────────────────────
     // From the tract and the market outward, branching and joining, dying on
@@ -335,14 +361,16 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
         + lay_frontage(out, rBuild, fx0.data(), fy0.data(),
                        fx1.data(), fy1.data(), fhw.data(),
                        int(fx0.size()), fp,
-                       std::max(0, houses - (keepPlaced ? 1 : 0)));
+                       std::max(0, houses - (keepPlaced ? 1 : 0)),
+                       mouths.data(), mouthCount);
     // Whatever frontage could not seat (a town with few lanes, a seed where
     // the plots collided) falls back to the scatter, so the house COUNT the
     // population law asks for is still met.
     for (int attempt = 0; placedHouses < houses && attempt < houses * 24; ++attempt) {
         if (try_add_roadside_house(out, rBuild, rim,
                                    kSettlementFootprint.cityHouseInset,
-                                   3, 5, 5.0f + rBuild.next_f01() * 4.0f)) {
+                                   3, 5, 5.0f + rBuild.next_f01() * 4.0f,
+                                   mouths.data(), mouthCount)) {
             ++placedHouses;
         }
     }
@@ -356,7 +384,8 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
             uhw.push_back(lane_half_width(sg.rank));
         }
         lay_frontage(out, rBuild, ux0.data(), uy0.data(), ux1.data(), uy1.data(),
-                     uhw.data(), int(ux0.size()), fp, upperHouses);
+                     uhw.data(), int(ux0.size()), fp, upperHouses,
+                     mouths.data(), mouthCount);
     }
 
     // Street lighting: a town that keeps a wall keeps lamps along its

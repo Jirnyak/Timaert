@@ -1,4 +1,4 @@
-#include "sub/gens/kit/wall.h"
+#include "sub/gens/city_wall.h"
 
 #include "sub/city_layout.h"
 #include "sub/height.h"
@@ -8,7 +8,10 @@
 #include <cmath>
 #include <vector>
 
-namespace sm::sub::kit {
+namespace sm::sub {
+
+using kit::Outline;
+using kit::WallGate;
 
 namespace {
 
@@ -35,62 +38,11 @@ constexpr float kGateMaxSpan = 18.0f;
 // The gate jamb: the tower that finishes a curtain end. Same stone, same rule.
 constexpr float kGateJambR = kTowerRadius * 0.5f;
 
-// The ground under a point of the cell, IN METRES — the space a structure's
-// zBase is stated in. The map itself is normalised; one scale converts
-// (sub/height.h), and it is the same one the renderer and the collision index
-// read, so a seat computed here and a seat drawn there are the same height.
-float ground_m(const SubworldMapData& out, float fx, float fy) {
-    const int x = std::clamp(int(std::floor(fx)), 0, kCellSize - 1);
-    const int y = std::clamp(int(std::floor(fy)), 0, kCellSize - 1);
-    return out.heightmap[std::size_t(y) * kCellSize + x] * kHeightScaleM;
-}
-
 } // namespace
 
-Outline wall_ring_noise(const Outline& base, float roughness, Rng& r) {
-    Outline o = base;
-    // Ring noise amplitudes live in sub/city_layout.h: the citizen populator
-    // derives the ring's worst INWARD excursion from them (wall_inner_bound)
-    // so nobody is placed in a dip of the wall — i.e. outside their own town.
-    // Same model for every ring; one authority.
-    const float phase1 = r.next_f01() * Outline::kTwoPi;
-    const float phase2 = r.next_f01() * Outline::kTwoPi;
-    for (int i = 0; i < Outline::kBearings; ++i) {
-        const float angle = float(i) * Outline::kTwoPi / float(Outline::kBearings);
-        const float harmonic =
-            std::sin(angle * 3.0f + phase1) * kSettlementWallRing.harmonic3Amp
-          + std::sin(angle * 5.0f + phase2) * kSettlementWallRing.harmonic5Amp;
-        // The amplitudes scale with the LOCAL radius, so a town that runs long
-        // down its tract wanders proportionally everywhere rather than
-        // wobbling hugely at its narrow waist.
-        const float base_r = base.r[std::size_t(i)];
-        const float jitter = (r.next_f01() * 2.0f - 1.0f) * base_r * roughness
-                           * kSettlementWallRing.jitterAmp;
-        o.r[std::size_t(i)] = base_r + base_r * roughness * harmonic + jitter;
-    }
-    // Two 1-2-1 passes. `wall_inner_bound`'s conservative bound depends on
-    // this smoothing only ever pulling the extremes IN, never pushing them
-    // out — which a symmetric averaging kernel cannot do.
-    for (int pass = 0; pass < 2; ++pass) {
-        std::array<float, Outline::kBearings> next = o.r;
-        for (int i = 0; i < Outline::kBearings; ++i) {
-            const std::size_t prev = std::size_t((i + Outline::kBearings - 1) % Outline::kBearings);
-            const std::size_t cur  = std::size_t(i);
-            const std::size_t nxt  = std::size_t((i + 1) % Outline::kBearings);
-            next[cur] = (o.r[prev] + o.r[cur] * 2.0f + o.r[nxt]) * 0.25f;
-        }
-        o.r = next;
-    }
-    return o;
-}
-
-Outline wall_outline(float cx, float cy, float radius, float roughness, Rng& r) {
-    return wall_ring_noise(Outline::disk(cx, cy, radius), roughness, r);
-}
-
-int stamp_wall(SubworldMapData& out, const Outline& outline,
-               const WallStyle& style, WallGate* gates, int maxGates,
-               const Outline* clip) {
+int stamp_city_wall(SubworldMapData& out, const Outline& outline,
+                    const CurtainStyle& style, WallGate* gates,
+                    int maxGates, const Outline* clip) {
     // A point this ring is not allowed to build on: beyond the boundary it
     // shares with (see the header).
     auto clipped = [&](float x, float y) {
@@ -253,14 +205,14 @@ int stamp_wall(SubworldMapData& out, const Outline& outline,
                 // through. What it has to be measured FROM is not known yet —
                 // the ground under a gateway is still being cut by the road
                 // smoothing that runs after every generator — so the seat is
-                // settled by seat_lifted_spans once the map is final.
+                // settled by seat_lifted_spans (sub/height.h) once the map is final.
                 l.zBase = kGateClearM;
                 l.height = std::max(2.0f, style.height - kGateClearM);
                 out.structures.push_back(l);
             }
             if (gates != nullptr && gateCount < maxGates) {
                 gates[gateCount] = {mx, my,
-                    std::atan2(my - outline.cy, mx - outline.cx)};
+                    std::atan2(my - outline.cy, mx - outline.cx), span};
             }
             ++gateCount;
         };
@@ -329,44 +281,4 @@ int stamp_wall(SubworldMapData& out, const Outline& outline,
     return gateCount;
 }
 
-void seat_lifted_spans(SubworldMapData& out) {
-    for (Structure& s : out.structures) {
-        // A world-levelled span answers to the world, not to the bed under it
-        // (a bridge deck is level because the water is) — it has no seat to
-        // settle. A grounded solid has no lift to place.
-        if (s.zWorld || s.zBase <= 0.0f) continue;
-        // THE SPAN RESTS ON ITS ENDS. Its clear therefore belongs to the
-        // HIGHEST ground it bridges — the uphill jamb's foot — and never to
-        // the midpoint, which is the one sample the lift is resolved against
-        // (map_data.h structure_solid_span; the renderer and the collision
-        // index both read it that way). Add the difference and the promise
-        // holds at every point across the opening, on any slope.
-        //
-        // Seated from the middle, a gate on a ridge kept 1.6 m of air where it
-        // promises 5.1: the bar sinks into the roadway and the gateway reads
-        // from the ground as a hole with nothing over it — the missing lintel
-        // the owner photographed (2026-09-13). city_gate_lintel_test holds the
-        // numbers, on sloping country, because every other settlement fixture
-        // in the suite stands on a flat one and cannot see this at all.
-        const float cs = std::cos(s.yaw);
-        const float sn = std::sin(s.yaw);
-        const float hx = structure_half_x(s);
-        const float hy = structure_half_y(s);
-        const float seat = ground_m(out, s.x, s.y);
-        float rise = 0.0f;
-        const int nx = std::max(2, int(hx * 2.0f));
-        const int ny = std::max(2, int(hy * 2.0f));
-        for (int iy = 0; iy <= ny; ++iy) {
-            const float ly = -hy + 2.0f * hy * float(iy) / float(ny);
-            for (int ix = 0; ix <= nx; ++ix) {
-                const float lx = -hx + 2.0f * hx * float(ix) / float(nx);
-                rise = std::max(rise,
-                    ground_m(out, s.x + lx * cs - ly * sn,
-                                  s.y + lx * sn + ly * cs) - seat);
-            }
-        }
-        s.zBase += rise;
-    }
-}
-
-} // namespace sm::sub::kit
+} // namespace sm::sub

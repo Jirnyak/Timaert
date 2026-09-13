@@ -20,7 +20,7 @@
 //     broken ground without the gaps a stone chord leaves hanging at one end.
 //   · A GATE OF TIMBER FRAMING, not an arch. Two heavier posts and a beam laid
 //     across them — and the frame STANDS PROUD of the wall it pierces, because
-//     the clear a gateway owes a rider (kit/wall.h kGateClearM) is more than a
+//     the clear a gateway owes a rider (sub/height.h kGateClearM) is more than a
 //     stockade is tall. That is not a compromise; it is why a real stockade
 //     gate is the tallest thing in a village.
 //   · A WATCH PLATFORM over that gate, and nowhere else. A village keeps no
@@ -28,7 +28,6 @@
 //     keeps them where the road comes in.
 #pragma once
 #include "sub/gens/kit/outline.h"
-#include "sub/gens/kit/wall.h"   // WallGate — an opening, reported back
 #include "sub/map_data.h"
 
 namespace sm::sub {

@@ -6682,14 +6682,47 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     }
                     const float under =
                         app.subworld.ground_height_at(st.x, st.y) + st.zBase;
+                    // Is the WAY THROUGH clear? A gateway needs room on
+                    // both sides of the masonry, and a house standing in it
+                    // blocks the gate as completely as a wall would. Walked
+                    // across the wall, out to the gate's own width.
+                    const float nx2 = -std::sin(st.yaw);
+                    const float ny2 =  std::cos(st.yaw);
+                    // A HOUSE, specifically. Masonry across the way is the
+                    // wall doing its job — the quarter is backed into the
+                    // curtain, so one of its gates legitimately looks at it.
+                    // What must never stand there is a building.
+                    int blocked = 0;
+                    for (int side = -1; side <= 1; side += 2) {
+                        for (int d = 2; d <= int(hl * 2.0f); ++d) {
+                            const float qx = st.x + nx2 * float(side * d);
+                            const float qy = st.y + ny2 * float(side * d);
+                            for (const auto& h : structs) {
+                                if (h.kind != sm::sub::Structure::House) continue;
+                                const float hc = std::cos(h.yaw);
+                                const float hs = std::sin(h.yaw);
+                                const float ddx = qx - h.x, ddy = qy - h.y;
+                                if (std::fabs( ddx * hc + ddy * hs)
+                                        <= sm::sub::structure_half_x(h)
+                                 && std::fabs(-ddx * hs + ddy * hc)
+                                        <= sm::sub::structure_half_y(h)) {
+                                    ++blocked;
+                                    break;
+                                }
+                            }
+                            if (blocked) break;
+                        }
+                        if (blocked) break;
+                    }
                     std::fprintf(stderr,
                                  "[smoke] gate_probe lintel %d at %.0f,%.0f "
                                  "span=%.1f dKeep=%.0f clear=%.2f "
-                                 "crown=%.1f\n",
+                                 "crown=%.1f mouth=%s\n",
                                  idx, double(st.x), double(st.y),
                                  double(hl * 2.0f), double(dKeep),
                                  double(under - worst),
-                                 double(st.zBase + st.height));
+                                 double(st.zBase + st.height),
+                                 blocked ? "BLOCKED" : "clear");
                     const float d2 = dKeep * dKeep;
                     if (want >= 0 ? idx == want
                                   : (gate == nullptr || d2 < bestD2)) {

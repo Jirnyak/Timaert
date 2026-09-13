@@ -153,13 +153,14 @@ set(TIMAERT_GENS_SOURCES
     src/sub/gens/kit/lanes.cpp
     src/sub/gens/kit/plots.cpp
     src/sub/gens/kit/props.cpp
-    src/sub/gens/kit/wall.cpp
+    src/sub/gens/kit/outline.cpp
     src/sub/gens/open.cpp
     src/sub/gens/forest.cpp
     src/sub/gens/swamp.cpp
     src/sub/gens/mountain.cpp
     src/sub/gens/water.cpp
     src/sub/gens/city.cpp
+    src/sub/gens/city_wall.cpp
     src/sub/gens/village.cpp
     src/sub/gens/village_palisade.cpp
     src/sub/gens/ruin.cpp

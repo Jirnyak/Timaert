@@ -6,7 +6,7 @@
 #include "sub/gens/kit/props.h"
 #include "sub/gens/kit/streets.h"
 #include "sub/gens/kit/tiles.h"
-#include "sub/gens/kit/wall.h"
+#include "sub/gens/kit/outline.h"
 #include "sub/city_layout.h"
 #include "core/rng.h"
 #include "sub/height.h"

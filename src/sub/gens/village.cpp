@@ -14,7 +14,6 @@
 #include "sub/gens/kit/props.h"
 #include "sub/gens/kit/streets.h"
 #include "sub/gens/kit/tiles.h"
-#include "sub/gens/kit/wall.h"
 #include "sub/gens/village_palisade.h"
 
 #include "core/rng.h"

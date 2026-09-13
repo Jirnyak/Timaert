@@ -1,7 +1,7 @@
 // Is a GATE still a gate on sloping ground?
 //
 // A lintel is a Box lifted by `kGateClearM` above the terrain under ITS OWN
-// CENTRE (sub/gens/kit/wall.cpp; the renderer and the collision index both
+// CENTRE (sub/height.h kGateClearM; the renderer and the collision index both
 // resolve the lift against that one sample). The jambs it bridges stand on
 // their own ground, and so does the roadway beneath it. On a flat cell those
 // are the same height and the arch is exactly as high as it promises. On a
@@ -15,12 +15,11 @@
 // the law. This one puts the town on a real hillside and asks what a rider
 // asks: can I ride through, anywhere across the opening?
 //
-// The promise asserted is the gate's own published one (kit/wall.h
+// The promise asserted is the gate's own published one (sub/height.h
 // kGateClearM), not a number restated here.
 
 #include "check.h"
 #include "sub/gens/dispatch.h"
-#include "sub/gens/kit/wall.h"
 #include "sub/height.h"
 #include "sub/map_data.h"
 
@@ -105,11 +104,60 @@ float gate_clear(const SubworldMapData& m, const Structure& lintel) {
     return lintel.zBase - rise;
 }
 
+// Is this point inside a building's footprint?
+bool inside_a_house(const SubworldMapData& m, float px, float py) {
+    for (const Structure& s : m.structures) {
+        if (s.kind != Structure::House) continue;
+        const float cs = std::cos(s.yaw), sn = std::sin(s.yaw);
+        const float dx = px - s.x, dy = py - s.y;
+        const float lx =  dx * cs + dy * sn;
+        const float ly = -dx * sn + dy * cs;
+        if (std::fabs(lx) <= structure_half_x(s)
+         && std::fabs(ly) <= structure_half_y(s)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// THE MOUTH OF THE GATE. A gateway is a way through, and a way through needs
+// room on BOTH sides of the masonry — the road does not begin at the wall.
+// Nothing forbade a house from standing in that room, and two gates of the
+// upper quarter were photographed with one doing exactly that (owner,
+// 2026-09-13). The town now hands its own gateways to its own plot layer as
+// ground already spoken for (gens/city.cpp, kit/plots.h KeepOut).
+//
+// The reach asked for is the GATE'S OWN WIDTH — a way through is at least as
+// deep as it is wide — so no distance is invented here either.
+int gates_with_a_blocked_mouth(const SubworldMapData& m) {
+    int blocked = 0;
+    for (const Structure& s : m.structures) {
+        if (s.kind != Structure::Wall || s.zBase <= 0.0f) continue;
+        const float nx = -std::sin(s.yaw);   // across the masonry: the road
+        const float ny =  std::cos(s.yaw);
+        const float span = structure_half_x(s) * 2.0f;
+        bool bad = false;
+        for (int side = -1; side <= 1 && !bad; side += 2) {
+            // Start clear of the wall's own thickness; walk out one span.
+            for (int d = 2; d <= int(span); ++d) {
+                if (inside_a_house(m, s.x + nx * float(side * d),
+                                      s.y + ny * float(side * d))) {
+                    bad = true;
+                    break;
+                }
+            }
+        }
+        if (bad) ++blocked;
+    }
+    return blocked;
+}
+
 struct GateReport {
     int lintels = 0;
     float worstClear = 0.0f;
     float worstX = 0.0f, worstY = 0.0f;
     float relief = 0.0f;       // height range across the built-up disk
+    int blockedMouths = 0;
 };
 
 GateReport audit(const SubworldMapData& m) {
@@ -131,6 +179,7 @@ GateReport audit(const SubworldMapData& m) {
     float lo = 1e9f, hi = -1e9f;
     for (float h : m.heightmap) { lo = std::min(lo, h); hi = std::max(hi, h); }
     r.relief = hi - lo;
+    r.blockedMouths = gates_with_a_blocked_mouth(m);
     return r;
 }
 
@@ -148,9 +197,14 @@ void check_slope(const char* what, std::uint32_t seed, int population,
     std::snprintf(msg, sizeof msg,
                   "%s: every gate keeps its promised clear "
                   "(worst %.2f m of %.2f at %.0f,%.0f; cell relief %.1f m)",
-                  what, double(r.worstClear), double(kit::kGateClearM),
+                  what, double(r.worstClear), double(kGateClearM),
                   double(r.worstX), double(r.worstY), double(r.relief));
-    CHECK(r.worstClear >= kit::kGateClearM, msg);
+    CHECK(r.worstClear >= kGateClearM, msg);
+
+    std::snprintf(msg, sizeof msg,
+                  "%s: no house stands in a gateway's mouth (%d of %d gates)",
+                  what, r.blockedMouths, r.lintels);
+    CHECK(r.blockedMouths == 0, msg);
 }
 
 // NEGATIVE CONTROL — the detector must be shown to go red, or a green run is
@@ -162,7 +216,7 @@ void check_detector_has_teeth() {
     SubworldMapData m = make_town(4242u, 6000, flat);
     const GateReport sound = audit(m);
     CHECK(sound.lintels > 0, "control: the town has gates to break");
-    CHECK(sound.worstClear >= kit::kGateClearM,
+    CHECK(sound.worstClear >= kGateClearM,
           "control: the flat town's gates are sound first");
 
     for (Structure& s : m.structures) {
@@ -173,7 +227,7 @@ void check_detector_has_teeth() {
     std::snprintf(msg, sizeof msg,
                   "control: an unlifted lintel is SEEN (clear %.2f m)",
                   double(broken.worstClear));
-    CHECK(broken.worstClear < kit::kGateClearM, msg);
+    CHECK(broken.worstClear < kGateClearM, msg);
 }
 
 } // namespace

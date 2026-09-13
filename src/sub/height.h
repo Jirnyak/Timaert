@@ -171,6 +171,75 @@ namespace sm::sub
         return false;
     }
 
+    // ── THE CLEAR A GATEWAY OWES, and where a lifted span's underside sits ──
+    //
+    // Both live here because both are HEIGHT laws, not wall laws. Every kind
+    // of wall the world raises asks them — the city's masonry arch and the
+    // village's timber frame alike — and neither is derived from what the wall
+    // is made of. A rider is a rider.
+
+    // Underside of a gateway's crosspiece above the roadway: a mounted body
+    // passes beneath it. kBodyEyeM is a walking man's eye; a rider sits about
+    // one body-eye higher again, and the head of the gate clears him — so
+    // three eye-heights is the span's clear, not a number chosen to look
+    // right.
+    constexpr float kGateClearM = kBodyEyeM * 3.0f;
+
+    // Settle every LIFTED span onto the ground it actually bridges.
+    //
+    // A lifted solid states its clear as a height above ONE terrain sample:
+    // the one under its own centre (map_data.h structure_solid_span — the
+    // renderer and the collision index both resolve it that way). That is the
+    // right seat only while the ground under the whole span is that height. It
+    // never is on a hillside, and a gateway's crosspiece is the span it
+    // matters to: promise five metres of air over the road, measure them from
+    // the middle of a slope, and the uphill half of the opening is inside the
+    // hill — a gate that reads from the ground as a hole with nothing over it
+    // (owner, 2026-09-13; city_gate_lintel_test holds the numbers).
+    //
+    // THIS IS A SEPARATE PASS ON PURPOSE. The ground a gateway stands on is
+    // still being cut when the wall goes up: every generator's roads are
+    // smoothed into the relief afterwards (gens/dispatch.cpp
+    // smooth_road_heights), so a seat computed at stamp time is measured
+    // against a hill that no longer exists. Run once the map is final and
+    // there is exactly one place that knows the law — which is also why it
+    // does not live in either wall module: they both run too early.
+    //
+    // A world-levelled span (zWorld) is left alone: a bridge deck answers to
+    // the water, not to the bed under it.
+    inline void seat_lifted_spans(SubworldMapData& out) {
+        auto ground_m = [&out](float fx, float fy) {
+            const int x = std::clamp(int(std::floor(fx)), 0, kCellSize - 1);
+            const int y = std::clamp(int(std::floor(fy)), 0, kCellSize - 1);
+            return out.heightmap[std::size_t(y) * kCellSize + x] * kHeightScaleM;
+        };
+        for (Structure& s : out.structures) {
+            if (s.zWorld || s.zBase <= 0.0f) continue;
+            // THE SPAN RESTS ON ITS ENDS, so its clear belongs to the HIGHEST
+            // ground it bridges — the uphill jamb's foot — and never to the
+            // midpoint. Add the difference and the promise holds at every
+            // point across the opening, on any slope.
+            const float cs = std::cos(s.yaw);
+            const float sn = std::sin(s.yaw);
+            const float hx = structure_half_x(s);
+            const float hy = structure_half_y(s);
+            const float seat = ground_m(s.x, s.y);
+            float rise = 0.0f;
+            const int nx = std::max(2, int(hx * 2.0f));
+            const int ny = std::max(2, int(hy * 2.0f));
+            for (int iy = 0; iy <= ny; ++iy) {
+                const float ly = -hy + 2.0f * hy * float(iy) / float(ny);
+                for (int ix = 0; ix <= nx; ++ix) {
+                    const float lx = -hx + 2.0f * hx * float(ix) / float(nx);
+                    rise = std::max(rise,
+                        ground_m(s.x + lx * cs - ly * sn,
+                                 s.y + lx * sn + ly * cs) - seat);
+                }
+            }
+            s.zBase += rise;
+        }
+    }
+
     // GLSL echoes (shaders can't include this header): mesh.vert normalises
     // vertex Y with the literal 1500.0 (= kHeightScaleM); mesh.frag's shore
     // band smoothstep(0.40, 0.47, h) starts at WATER_LEVEL; water.vert takes

@@ -45,12 +45,31 @@ bool add_house_obb(SubworldMapData& out, float cx, float cy,
 bool stamp_landmark_house(SubworldMapData& out, Rng& r,
                           float cx, float cy, int w, int h, float height);
 
+// GROUND THE PLOTS MAY NOT TAKE. Plain discs, handed in by whoever knows what
+// they are — this placer never learns the word "gate", and nothing has to be
+// encoded into the tile byte to reach it.
+//
+// Why it exists: a town's frontage lines EVERY lane there is, so a plot lands
+// wherever a lane passes — including across the mouth of a gateway, which the
+// owner photographed at two gates of the upper quarter (2026-09-13). The road
+// itself is paved and refused, but the road wanders, and the strip beside it
+// inside the opening is bare ground the placer was entitled to. Teaching the
+// placer about gates would be a module reaching into a neighbour's business;
+// paving a fake apron to trip its own refusal rule would be a patch. A list of
+// forbidden discs is neither: it is the caller stating a fact about ITS ground.
+struct KeepOut {
+    float x, y;
+    float r;
+};
+
 // Rejection-sample one house onto ground that FRONTS A LANE, inside `area`
 // pulled in by `inset`. Independent continuous width/length and a free yaw, so
 // houses range from square to ~1:2 barns and no two sit on the same grid.
 bool try_add_roadside_house(SubworldMapData& out, Rng& r,
                             const Outline& area, float inset,
-                            int minSize, int maxSize, float height);
+                            int minSize, int maxSize, float height,
+                            const KeepOut* keepOut = nullptr,
+                            int keepOutCount = 0);
 
 // ── FRONTAGE: houses stand ON a street, not near one ──────────────────────
 // The rejection scatter below (`try_add_roadside_house`) asks only "is there a
@@ -75,7 +94,8 @@ int lay_frontage(SubworldMapData& out, Rng& r,
                  const float* x0, const float* y0,
                  const float* x1, const float* y1,
                  const float* halfWidth, int segCount,
-                 const FrontagePlan& plan, int maxHouses);
+                 const FrontagePlan& plan, int maxHouses,
+                 const KeepOut* keepOut = nullptr, int keepOutCount = 0);
 
 // Plough a rectangle, if nothing built (and no open water) is under it.
 bool add_field_rect(SubworldMapData& out, int cx, int cy, int w, int h);

@@ -130,7 +130,8 @@ bool stamp_landmark_house(SubworldMapData& out, Rng& r,
 bool try_add_roadside_house(SubworldMapData& out, Rng& r,
                             const Outline& area, float inset,
                             int minSize, int maxSize,
-                            float height) {
+                            float height,
+                            const KeepOut* keepOut, int keepOutCount) {
     // Sample the outline's bounding box and reject by bearing, rather than by
     // a scalar radius: a place is not a disk, and a house that obeyed the MEAN
     // radius of a wandering wall stood in the masonry wherever the wall dipped
@@ -152,6 +153,18 @@ bool try_add_roadside_house(SubworldMapData& out, Rng& r,
         const float w = float(minSize) + r.next_f01() * sizeRange;
         const float h = float(minSize) + r.next_f01() * sizeRange;
         const float yaw = r.next_f01() * 3.14159265f;
+        // Ground somebody else has spoken for — the same discs the frontage
+        // obeys, because a scatter house in a gateway's mouth blocks it just
+        // as completely as a fronted one does.
+        bool forbidden = false;
+        const float reach = std::sqrt(w * w + h * h) * 0.5f;
+        for (int k = 0; k < keepOutCount; ++k) {
+            const float kx = float(hxT) - keepOut[k].x;
+            const float ky = float(hyT) - keepOut[k].y;
+            const float lim = keepOut[k].r + reach;
+            if (kx * kx + ky * ky < lim * lim) { forbidden = true; break; }
+        }
+        if (forbidden) continue;
         if (add_house_obb(out, float(hxT), float(hyT),
                           w * 0.5f, h * 0.5f, yaw, height,
                           /*requireClear=*/true)) {
@@ -165,7 +178,8 @@ int lay_frontage(SubworldMapData& out, Rng& r,
                  const float* x0, const float* y0,
                  const float* x1, const float* y1,
                  const float* halfWidth, int segCount,
-                 const FrontagePlan& plan, int maxHouses) {
+                 const FrontagePlan& plan, int maxHouses,
+                 const KeepOut* keepOut, int keepOutCount) {
     int placed = 0;
     for (int s = 0; s < segCount && placed < maxHouses; ++s) {
         const float dx = x1[s] - x0[s];
@@ -202,8 +216,20 @@ int lay_frontage(SubworldMapData& out, Rng& r,
 
                 const float height = plan.heightMin
                     + r.next_f01() * (plan.heightMax - plan.heightMin);
-                if (add_house_obb(out, cx, cy, w * 0.5f, d * 0.5f, yaw, height,
-                                  /*requireClear=*/true)) {
+                // Ground somebody else has spoken for. Measured to the plot's
+                // own corner, not its centre, so a house cannot lean into the
+                // disc with half of itself.
+                bool forbidden = false;
+                const float reach = std::sqrt(w * w + d * d) * 0.5f;
+                for (int k = 0; k < keepOutCount; ++k) {
+                    const float kx = cx - keepOut[k].x;
+                    const float ky = cy - keepOut[k].y;
+                    const float lim = keepOut[k].r + reach;
+                    if (kx * kx + ky * ky < lim * lim) { forbidden = true; break; }
+                }
+                if (!forbidden
+                    && add_house_obb(out, cx, cy, w * 0.5f, d * 0.5f, yaw, height,
+                                     /*requireClear=*/true)) {
                     ++placed;
                 }
                 along += w + gap;

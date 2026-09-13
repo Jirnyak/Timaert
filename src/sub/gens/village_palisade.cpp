@@ -181,7 +181,7 @@ int stamp_palisade(SubworldMapData& out, const kit::Outline& outline,
         // roadway and it does not go missing either: it stands at the EDGE of
         // it, so walk outward along the wall's own line until the ground is
         // the village's to build on.
-        const float postH = kit::kGateClearM + kBeamThickM;
+        const float postH = kGateClearM + kBeamThickM;
         float px[2], py[2];
         for (int side = 0; side < 2; ++side) {
             const float dir = side == 0 ? -1.0f : 1.0f;
@@ -204,7 +204,7 @@ int stamp_palisade(SubworldMapData& out, const kit::Outline& outline,
         // stacked ones. Physically they are one piece of carpentry — the
         // crosspiece with a plank walk decked over it — and structurally it
         // matters, because a lifted span is settled onto the worst ground
-        // under its OWN footprint (kit/wall.h seat_lifted_spans). Two bodies
+        // under its OWN footprint (sub/height.h seat_lifted_spans). Two bodies
         // with two footprints get two answers, and the walk parts company with
         // the beam it is supposed to be nailed to. One body cannot.
         // The head is carried BY THE POSTS, so it is measured from them — it
@@ -222,14 +222,14 @@ int stamp_palisade(SubworldMapData& out, const kit::Outline& outline,
             head.hx = legSpan * 0.5f + kPostR;
             head.hy = kWatchHalfDepth;
             head.radius = head.hx;
-            head.zBase = kit::kGateClearM;
+            head.zBase = kGateClearM;
             head.height = kBeamThickM + kWatchH;
             out.structures.push_back(head);
         }
 
         if (gates != nullptr && gateCount < maxGates) {
             gates[gateCount] = {mx, my,
-                std::atan2(my - outline.cy, mx - outline.cx)};
+                std::atan2(my - outline.cy, mx - outline.cx), span};
         }
         ++gateCount;
     };
