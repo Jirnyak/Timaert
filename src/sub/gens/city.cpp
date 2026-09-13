@@ -213,10 +213,15 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
         stamp_wall(out, rim, WallStyle{city_curtain_height(), true},
                    gates.data(), int(gates.size())),
         int(gates.size()));
+    // …clipped by the curtain, so the quarter's own wall is only the arc that
+    // stands INSIDE the town. Its outer side IS the city wall — that is what
+    // "backed into the curtain" means, and stamping a full circle there gave
+    // two walls running alongside each other with the quarter bulging out past
+    // the town (owner, 2026-09-13).
     stamp_wall(out, castle,
                WallStyle{city_curtain_height() + structure_min_height(Structure::Wall),
                          true},
-               nullptr, 0);
+               nullptr, 0, &rim);
 
     // ── 3. The streets, grown ─────────────────────────────────────────────
     // From the tract and the market outward, branching and joining, dying on

@@ -62,7 +62,15 @@ struct WallGate {
 
 // Raise the wall. Returns how many gates it cut, writing up to `maxGates` of
 // them; openings beyond that are still cut, just not reported.
+//
+// `clip`, when given, is a boundary this ring may not cross: samples outside it
+// are not built at all. That is how an inner enclosure SHARES a side with the
+// curtain instead of running its own wall alongside it — the upper quarter is
+// backed into the city wall, so the arc that would have stood outside the town
+// is simply the city wall, and stamping it again gave the doubled wall the
+// owner photographed (2026-09-13).
 int stamp_wall(SubworldMapData& out, const Outline& outline,
-               const WallStyle& style, WallGate* gates, int maxGates);
+               const WallStyle& style, WallGate* gates, int maxGates,
+               const Outline* clip = nullptr);
 
 } // namespace sm::sub::kit

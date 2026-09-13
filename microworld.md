@@ -153,6 +153,11 @@ to the wall; the owner called that what it was.)
 - it stands on the HIGHEST ground the curtain reaches, backed into it — which
   is where upper towns were built and why: supply under siege, and a way out
   when it is the townsmen doing the besieging;
+- and its wall is only the ARC THAT STANDS INSIDE THE TOWN: its outer side IS
+  the city wall. `stamp_wall` takes an optional `clip` outline and builds
+  nothing beyond it, because a full circle there raised a second wall running
+  alongside the curtain with the quarter bulging out past the town — which is
+  what "backed into the wall" must not mean;
 - it has **its own gate outward**, past the town, and a road down to the
   market. One carve opens a gate in both walls, because a gate is wherever a
   ring finds paving under itself;

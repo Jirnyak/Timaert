@@ -85,7 +85,13 @@ Outline wall_outline(float cx, float cy, float radius, float roughness, Rng& r) 
 }
 
 int stamp_wall(SubworldMapData& out, const Outline& outline,
-               const WallStyle& style, WallGate* gates, int maxGates) {
+               const WallStyle& style, WallGate* gates, int maxGates,
+               const Outline* clip) {
+    // A point this ring is not allowed to build on: beyond the boundary it
+    // shares with (see the header).
+    auto clipped = [&](float x, float y) {
+        return clip != nullptr && !clip->contains(x, y, 0.0f);
+    };
     constexpr int kNodes = Outline::kBearings;
     std::array<float, kNodes> xs{};
     std::array<float, kNodes> ys{};
@@ -116,6 +122,7 @@ int stamp_wall(SubworldMapData& out, const Outline& outline,
         const int steps = std::max(1, int(std::ceil(dist * 2.0f)));
         for (int s = 0; s <= steps; ++s) {
             const float t = float(s) / float(steps);
+            if (clipped(x1 + dx * t, y1 + dy * t)) continue;
             const int x = int(std::floor(x1 + dx * t));
             const int y = int(std::floor(y1 + dy * t));
             for (int oy = -1; oy <= 1; ++oy) {
@@ -140,7 +147,7 @@ int stamp_wall(SubworldMapData& out, const Outline& outline,
     // short ORIENTED chords following the curvature, an opening as a real
     // gate (two round jambs plus a lintel lifted clear of the roadway —
     // bodies walk through beneath it, defenders cross on top). ──
-    enum class RingCls : std::uint8_t { Wall, Gate };
+    enum class RingCls : std::uint8_t { Wall, Gate, Shared };
     struct RingSample { float x, y; RingCls cls; };
     std::vector<RingSample> ringPts;
     for (int i = 0; i < kNodes; ++i) {
@@ -159,9 +166,11 @@ int stamp_wall(SubworldMapData& out, const Outline& outline,
             const int ty = std::clamp(int(std::floor(py)), 0, kCellSize - 1);
             const std::uint8_t tile = out.tiles[std::size_t(ty) * kCellSize + tx];
             // THE gate rule: the ring opens where a road already runs. Nothing
-            // else opens it, and every opening is therefore a road.
+            // else opens it, and every opening is therefore a road. A SHARED
+            // stretch is neither: the boundary wall stands there already.
             ringPts.push_back({px, py,
-                tile_is(tile, kTilePaved) ? RingCls::Gate : RingCls::Wall});
+                clipped(px, py)             ? RingCls::Shared :
+                tile_is(tile, kTilePaved)   ? RingCls::Gate   : RingCls::Wall});
         }
     }
 
@@ -254,8 +263,9 @@ int stamp_wall(SubworldMapData& out, const Outline& outline,
             // last opening to be emitted.
             const RingCls cls = (k == n) ? RingCls::Wall : at(k).cls;
             if (k < n && cls == runCls) continue;
-            if (runCls == RingCls::Wall) emit_wall_run(runStart, k - 1);
-            else                         emit_gate_run(runStart, k - 1);
+            if (runCls == RingCls::Wall)      emit_wall_run(runStart, k - 1);
+            else if (runCls == RingCls::Gate) emit_gate_run(runStart, k - 1);
+            // Shared: nothing to build — the other wall is already there.
             runStart = k;
             runCls = cls;
         }
@@ -295,6 +305,7 @@ int stamp_wall(SubworldMapData& out, const Outline& outline,
             if (t <= turn[std::size_t((i + 1) % kNodes)]) continue;
             const float nx = xs[std::size_t(i)];
             const float ny = ys[std::size_t(i)];
+            if (clipped(nx, ny)) continue;          // that side is not ours
             if (tile_protected(nx, ny)) continue;   // never in a gateway
             Structure tw{};
             tw.kind = Structure::Wall;
