@@ -1904,7 +1904,16 @@ bool SubworldEngine::possess_aim(float cosHalfAngle, float maxRange) {
         set_status("Nothing in reach to possess");
         return false;
     }
-    if (!possess_entity(*ecs_, target)) return false;
+    if (!possess_entity(*ecs_, target)) {
+        // A REFUSAL MUST SAY SO. The only way to be refused a body you can
+        // actually see is the record law (sub/spawn.h): a derived birth — a
+        // wolf, a citizen rolled from a cell seed, a console spawn — is nobody
+        // the map remembers, so there is no record for the macro flag to stand
+        // on. Without this line the door failed silently and the console echoed
+        // whatever status happened to be left over from before.
+        set_status("Nothing remembers that one — no record to inhabit");
+        return false;
+    }
     // The flag now rides the new body; mirror its Position onto the scalars so
     // the camera, seam, melee origin, and HUD snap to it this very frame.
     pull_player_entity_to_scalars();
@@ -1917,7 +1926,10 @@ bool SubworldEngine::possess_aim(float cosHalfAngle, float maxRange) {
 
 bool SubworldEngine::possess_by_id(std::uint32_t entityId) {
     if (!active_ || !ecs_) return false;
-    if (!possess_entity(*ecs_, entt::entity(entityId))) return false;
+    if (!possess_entity(*ecs_, entt::entity(entityId))) {
+        set_status("Nothing remembers that one — no record to inhabit");
+        return false;
+    }
     pull_player_entity_to_scalars();
     set_status("Possessed (by id)");
     return true;

@@ -4793,8 +4793,11 @@ void register_console_commands(App& app) {
 
     con.register_cmd("possess", "possess [id]",
         "вселение: take over a live body. No arg = the one under your reticle "
-        "(forward cone); with an entity id = that body (debug). The possessed "
-        "body fights with its OWN stats; leaving the subworld reverts to you.",
+        "(forward cone); with an entity id = that body (debug). You BECOME it: "
+        "its bars, sheet, bag and book are yours, you climb out as it, and "
+        "dying in it wakes you in your own body (game over if that one is "
+        "dead). Only a body the map REMEMBERS can be taken — a wolf or a "
+        "console spawn has no macro record to stand the flag on.",
         [&app](Con& c, const std::vector<std::string>& a) {
             if (!app.subworld.active()) {
                 c.error("possess works only inside a subworld");

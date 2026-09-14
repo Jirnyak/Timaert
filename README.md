@@ -148,8 +148,14 @@ key with an action.
 | S | Cast the active spell |
 | **Space** | **Jump** (1 m apex — a kerb, a crate, a low ledge) |
 | E | Interact |
-| V | вселение — possess the body under the reticle |
+| H | Harvest — gathering is WORK, its own action and its own SP price |
 | Enter | Leave, back to the map |
+
+There is no possession key. It died 2026-09-06 (owner: вселение — не игроцкая
+кнопка, придёт заклинанием); until that spell exists the door is the dev console
+(`possess`), and the law it obeys is in [CANON.md](CANON.md) — both flags move at
+the moment of taking, you may only take a body that HAS a macro record, and dying
+in a worn body wakes you in your own.
 | Esc | Game menu (fixed) |
 
 ### Both layers
