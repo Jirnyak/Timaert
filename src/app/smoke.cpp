@@ -119,6 +119,7 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"subworld_sp_drain", SmokeAction::SubworldSpDrain},
     {"subworld_enter", SmokeAction::SubworldEnter},
     {"subworld_exit_remap", SmokeAction::SubworldExitRemap},
+    {"possessed_death", SmokeAction::PossessedDeath},
     {"dungeon_house", SmokeAction::DungeonHouse},
     {"dungeon_cave", SmokeAction::DungeonCave},
     {"prologue_road", SmokeAction::PrologueRoad},
@@ -6062,6 +6063,159 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fflush(stderr);
             ++app.smoke.cursor;
             break;
+        case SmokeAction::PossessedDeath: {
+            // СМЕРТЬ В НОСИМОМ ТЕЛЕ, ЧЕРЕЗ НАСТОЯЩИЙ РАНТАЙМ (2026-09-14).
+            //
+            // «Одержимость — эффект заклинания, и его единственное отличие в
+            // том, что смерть это возвращение в оригинал… если оригинал жив то
+            // возвращает в него, если мёртв и ты умираешь в посессии то гейм
+            // овер» (владелец). Обе половины, и вторая важнее: она — ЕДИНСТВЕННОЕ
+            // место, где игра кончается не от твоей смерти, а от отсутствия
+            // адреса.
+            //
+            // Закон возврата сам по себе сторожит юнит-кейс
+            // (player_is_a_squad_test). Здесь сторожится СВЯЗКА, у которой
+            // свидетеля не было: выйти из сцены → разбудить → Dead, если некуда.
+            // Она гоняется через advance_sim_seconds, то есть через тот же
+            // рантайм, что и игра, — иначе проверялась бы не она.
+            //
+            // Убийство пишется одной строкой — `player_pools(app).hp = 0` — и
+            // после хода 2 эта строка ЗНАЧИТ «убить того, кем я сейчас есть».
+            // В этом весь ход 2: у харнесса нет и не нужно отдельного способа
+            // убить носимое тело.
+            std::fprintf(stderr, "[smoke] action=possessed_death\n");
+            std::fflush(stderr);
+            if (!app.worldLoaded) {
+                smoke_fail(app, "possessed_death without world");
+                break;
+            }
+            // Встать на ближайшего макро-НПЦ и войти — так сцена ГАРАНТИРОВАННО
+            // содержит тело с записью (то же, чем пользуется exit_remap: взять
+            // можно только того, у кого запись есть).
+            auto stand_on_a_neighbour_and_enter = [&]() -> bool {
+                if (app.subworld.active()) app.subworld.leave(true);
+                const int pcx = int(smoke_player_x(app));
+                const int pcy = int(smoke_player_y(app));
+                int bestX = -1, bestY = -1;
+                long bestD = 1L << 60;
+                for (auto e : app.ecs.reg.view<sm::ecs::MacroNpcRuntime,
+                                               sm::ecs::MacroCell>(
+                         entt::exclude<sm::ecs::PlayerSquadTag, sm::ecs::Dead>)) {
+                    const auto& c = app.ecs.reg.get<sm::ecs::MacroCell>(e);
+                    const int nx = sm::ecs::cell_x(c, app.gs.mapW);
+                    const int ny = sm::ecs::cell_y(c, app.gs.mapW);
+                    const long dx = nx - pcx, dy = ny - pcy;
+                    const long d = dx * dx + dy * dy;
+                    if (d < bestD) { bestD = d; bestX = nx; bestY = ny; }
+                }
+                if (bestX < 0) return false;
+                smoke_teleport_player(app, bestX, bestY);
+                app.gs.subState.settlementId = -1;
+                app.ui.settlementId = -1;
+                enter_subworld(app);
+                return app.subworld.active();
+            };
+            // Взять первое спроецированное ЖИВОЕ тело в сцене.
+            //
+            // «Живое» — не придирка, а условие осмысленности: вторая половина
+            // сперва брала ПЕРВОЕ подходящее тело и получала труп, оставшийся от
+            // первой (та же запись, уже с нулём в полосе). Игра кончалась на
+            // первом же тике — по правильному закону и не по той причине,
+            // которую половина проверяла. Свидетельница, взявшая мертвеца,
+            // проверяет не то, что написано в её названии.
+            auto take_a_projected_body = [&]() -> entt::entity {
+                auto& reg = app.ecs.reg;
+                for (auto e : reg.view<sm::ecs::SubworldTag,
+                                       sm::ecs::MacroOrigin>()) {
+                    if (!smoke_projects_foreign_record(app, e)) continue;
+                    const entt::entity m = reg.get<sm::ecs::MacroOrigin>(e).macro;
+                    if (!reg.all_of<sm::ecs::MacroCell>(m)) continue;
+                    if (reg.all_of<sm::ecs::Dead>(m)) continue;
+                    const auto* mp = reg.try_get<sm::ecs::Pools>(m);
+                    if (!mp || mp->hp <= 0.0f) continue;
+                    if (!app.subworld.possess_by_id(
+                            static_cast<std::uint32_t>(entt::to_integral(e)))) {
+                        continue;
+                    }
+                    return m;
+                }
+                return entt::null;
+            };
+
+            // ── ПОЛОВИНА 1: оригинал ЖИВ ⇒ очнулся дома, игра идёт ──────
+            if (!stand_on_a_neighbour_and_enter()) {
+                smoke_fail(app, "possessed_death: no neighbour to enter beside");
+                break;
+            }
+            const entt::entity home = sm::player_squad_entity(app.ecs);
+            entt::entity worn = take_a_projected_body();
+            if (worn == entt::null || home == entt::null) {
+                smoke_fail(app, "possessed_death: nothing with a record to take");
+                break;
+            }
+            // Где стоит ТВОЁ тело — оно всё это время стоит без сознания там,
+            // где ты его оставил, и проснуться ты обязан именно там.
+            const int homeX = int(sm::ecs::cell_x(
+                app.ecs.reg.get<sm::ecs::MacroCell>(home), app.gs.mapW));
+            const int homeY = int(sm::ecs::cell_y(
+                app.ecs.reg.get<sm::ecs::MacroCell>(home), app.gs.mapW));
+
+            smoke_clear_modal_overlays(app);
+            player_pools(app).hp = 0;      // ← убить ТОГО, КЕМ Я ЕСТЬ
+            sm::app::advance_sim_seconds(app, 0.016f, false);
+
+            const bool alive      = app.state == sm::ui::AppState::Playing;
+            const bool wokeHome   = sm::player_flag_entity(app.ecs) == home;
+            const bool sceneEnded = !app.subworld.active();
+            const bool atOwnCell  = int(smoke_player_x(app)) == homeX
+                                 && int(smoke_player_y(app)) == homeY;
+            std::fprintf(stderr,
+                         "[smoke] possessed_death return alive=%d woke_home=%d "
+                         "scene_ended=%d at_own_cell=%d cell=%d,%d\n",
+                         alive ? 1 : 0, wokeHome ? 1 : 0, sceneEnded ? 1 : 0,
+                         atOwnCell ? 1 : 0, homeX, homeY);
+            std::fflush(stderr);
+            if (!alive || !wokeHome || !sceneEnded || !atOwnCell) {
+                smoke_fail(app, "possessed_death: a living original was not woken up in");
+                break;
+            }
+
+            // ── ПОЛОВИНА 2: оригинал МЁРТВ ⇒ гейм овер ──────────────────
+            // Тот же сценарий, отличается ОДНО число — полоса оставленного
+            // тела. Без этой половины первая доказывала бы лишь «смерть в
+            // одержимости не убивает», что неверно.
+            if (!stand_on_a_neighbour_and_enter()) {
+                smoke_fail(app, "possessed_death: no neighbour for the second half");
+                break;
+            }
+            worn = take_a_projected_body();
+            if (worn == entt::null) {
+                smoke_fail(app, "possessed_death: nothing to take for the second half");
+                break;
+            }
+            // Пока тебя нет, твоё тело убивают. Ты этого не замечаешь — дверь
+            // смерти спрашивает про ТЕБЯ, а ты сейчас лорд.
+            app.ecs.reg.get<sm::ecs::Pools>(home).hp = 0.0f;
+            smoke_clear_modal_overlays(app);
+            sm::app::advance_sim_seconds(app, 0.016f, false);
+            const bool survivedHomeDeath = app.state == sm::ui::AppState::Playing;
+
+            // …и теперь умирает носимое тело. Возвращаться не во что.
+            player_pools(app).hp = 0;
+            sm::app::advance_sim_seconds(app, 0.016f, false);
+            const bool gameOver = app.state == sm::ui::AppState::Dead;
+            std::fprintf(stderr,
+                         "[smoke] possessed_death no_address survived_home_death=%d "
+                         "game_over=%d\n",
+                         survivedHomeDeath ? 1 : 0, gameOver ? 1 : 0);
+            std::fflush(stderr);
+            if (!survivedHomeDeath || !gameOver) {
+                smoke_fail(app, "possessed_death: a dead original did not end the game");
+                break;
+            }
+            ++app.smoke.cursor;
+            break;
+        }
         case SmokeAction::SubworldExitRemap: {
             // ВСЕЛЕНИЕ ОТ НАЧАЛА ДО КОНЦА (2026-09-14). Possess a macro-projected
             // body, then leave. Two laws, and the second one changed:

@@ -20,6 +20,7 @@ subworld_seam
 subworld_audio
 subworld_exit_gate
 subworld_exit_remap
+possessed_death
 subworld_loot_xp
 subworld_enemy_feedback
 subworld_missile_feedback
