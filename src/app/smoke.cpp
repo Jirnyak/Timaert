@@ -6175,6 +6175,43 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     smoke_fail(app, "exit_remap: hero husk survived the take");
                     break;
                 }
+
+                // ── ЗАКОН 3: СЕМЬЯ `player_*` ИДЁТ ЗА ФЛАЖКОМ (ход 2) ───
+                // Эти двери сменили смысл — и вся сюита осталась зелёной,
+                // потому что НИ ОДНА свидетельница не спрашивала их вселённым.
+                // Молчание сюиты на смену закона — это §45, а не успех.
+                //
+                // Сначала доказываем, что вопрос вообще РАЗЛИЧАЕТ: оригинал и
+                // носимая запись — разные сущности с разными блоками. Без этой
+                // строки всё, что ниже, могло бы пройти на совпадении.
+                const entt::entity home = sm::player_squad_entity(app.ecs);
+                if (home == entt::null || home == origin) {
+                    smoke_fail(app, "exit_remap: original and worn record do not differ");
+                    break;
+                }
+                const bool poolsFollow =
+                    sm::player_pools(app.ecs) == reg.try_get<sm::ecs::Pools>(origin)
+                    && sm::player_pools(app.ecs) != reg.try_get<sm::ecs::Pools>(home);
+                const bool bagFollows =
+                    sm::player_inventory(app.ecs) != nullptr
+                    && sm::player_inventory(app.ecs) != [&] {
+                           auto* b = reg.try_get<sm::ecs::NpcInventory>(home);
+                           return b ? &b->inv : nullptr;
+                       }();
+                const bool bookFollows =
+                    sm::player_spellbook(app.ecs) == reg.try_get<sm::SpellBook>(origin)
+                    && sm::player_spellbook(app.ecs)
+                           != reg.try_get<sm::SpellBook>(home);
+                std::fprintf(stderr,
+                             "[smoke] subworld_exit_remap family pools=%d bag=%d "
+                             "book=%d\n",
+                             poolsFollow ? 1 : 0, bagFollows ? 1 : 0,
+                             bookFollows ? 1 : 0);
+                std::fflush(stderr);
+                if (!poolsFollow || !bagFollows || !bookFollows) {
+                    smoke_fail(app, "exit_remap: player_* doors did not follow the flag");
+                    break;
+                }
                 // The taken body keeps its OWN components — nothing is stripped.
                 if (!reg.all_of<sm::ecs::NPCKind, sm::ecs::Pools,
                                 sm::ecs::Combat>(body)) {

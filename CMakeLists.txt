@@ -1631,6 +1631,11 @@ timaert_test(chronicle_test
 timaert_test(journal_test
     SOURCES
         src/macro/chronicle.cpp
+        # «Носит ли он кого-то» стало вопросом К ФЛАЖКУ (player_entity.h), а не
+        # сравнением ординала с константой — и дверь живёт в .cpp. Обычная цена
+        # обобщения закона: заголовок, который был самодостаточным, тянет
+        # символ. См. ту же графу в mirror-треке.
+        src/macro/player_entity.cpp
     LINK_ENTT)
 
 # ONE table every modifier is a row of: a bonus names an address the sheet

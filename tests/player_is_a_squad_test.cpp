@@ -121,6 +121,54 @@ void test_the_mark_survives_losing_the_flag() {
           "and the borrowed body is not");
 }
 
+// ── 2b. Возвращение в оригинал, и цена его отсутствия ────────────────────
+//
+// «Если это эффект посессии, единственное отличие — что смерть это возвращение
+// в оригинал… если оригинал жив то возвращает в него, если мёртв и ты умираешь
+// в посессии то гейм овер» (владелец, 2026-09-14). Три случая, и третий —
+// причина, по которой `PlayerSquadTag` пережил ход 2: он и есть обратный
+// адрес, а адрес бывает мёртвым.
+void test_death_in_a_worn_body_wakes_him_at_home() {
+    GameState gs{};
+    gs.mapW = gs.mapH = 64;
+    ecs::World w;
+    ensure_macro_player_entity(gs, w);
+    const entt::entity mine = player_squad_entity(w);
+
+    // (a) В СЕБЕ. Возвращаться некуда, потому что незачем — умер ты сам, и
+    //     дверь обязана сказать «нет» ровно этим же «нет».
+    CHECK(!player_wears_another_body(w), "by default he is himself");
+    CHECK(!wake_player_in_original_body(w),
+          "dying as yourself is the end — there is no return to make");
+    CHECK(w.reg.all_of<ecs::PlayerTag>(mine), "and the flag did not wander");
+
+    // (b) В ЧУЖОМ ТЕЛЕ, ОРИГИНАЛ ЖИВ. Флажок едет домой одним движением.
+    const entt::entity lord = npc_squad(w, 30.0f, 30.0f, 7u, 2);
+    w.reg.remove<ecs::PlayerTag>(mine);
+    w.reg.emplace<ecs::PlayerTag>(lord);
+    CHECK(player_wears_another_body(w), "wearing a lord is asked of the flag");
+    CHECK(wake_player_in_original_body(w), "a living original is woken up in");
+    CHECK(w.reg.all_of<ecs::PlayerTag>(mine) && !w.reg.all_of<ecs::PlayerTag>(lord),
+          "exactly one flag, and it is home");
+
+    // (c) В ЧУЖОМ ТЕЛЕ, ОРИГИНАЛ МЁРТВ. Просыпаться не в чем ⇒ конец игры.
+    //     Негативный контроль к (b): та же расстановка, отличается ОДНО число.
+    w.reg.remove<ecs::PlayerTag>(mine);
+    w.reg.emplace<ecs::PlayerTag>(lord);
+    w.reg.get<ecs::Pools>(mine).hp = 0.0f;
+    CHECK(!wake_player_in_original_body(w),
+          "a dead original is nothing to wake up in — that is the game over");
+    CHECK(w.reg.all_of<ecs::PlayerTag>(lord),
+          "and a refused return leaves the flag exactly where it was");
+
+    // …и тег `Dead` отвечает на тот же вопрос, что и ноль в полосе: тело может
+    // простоять тик на нуле прежде, чем жнец его пометит, и наоборот.
+    w.reg.get<ecs::Pools>(mine).hp = 10.0f;
+    w.reg.emplace<ecs::Dead>(mine);
+    CHECK(!wake_player_in_original_body(w),
+          "a reaped original is dead however full its bar reads");
+}
+
 // ── 3. The AI never drives the player's squad ────────────────────────────
 void test_ai_leaves_the_player_squad_standing() {
     GameState gs{};
@@ -420,6 +468,7 @@ int main() {
     test_player_carries_everything_a_squad_carries();
     test_the_sheet_door_reads_what_is_standing();
     test_the_mark_survives_losing_the_flag();
+    test_death_in_a_worn_body_wakes_him_at_home();
     test_ai_leaves_the_player_squad_standing();
     test_the_players_men_never_desert();
     test_the_entity_numbers_are_not_stale();

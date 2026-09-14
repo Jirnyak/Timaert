@@ -104,6 +104,23 @@ inline void player_jump_to_cell(GameState& gs, ecs::World& world,
     }
 }
 
+// ОЧНУТЬСЯ В СВОЁМ ТЕЛЕ — the one thing that makes possession an EFFECT rather
+// than a bare flag swap (owner 2026-09-14: «если это эффект посессии,
+// единственное отличие — что смерть это возвращение в оригинал»). Called the
+// moment a possession ENDS: the worn body dying today, a spell expiring
+// tomorrow. The flag moves home in one movement — the same one displacement
+// that took the body, run backwards.
+//
+// Returns FALSE when there is nothing to wake up in, and that is the end of the
+// game (owner, same day): «если оригинал жив то возвращает в него, если мёртв и
+// ты умираешь в посессии то гейм овер». The original is known without storing
+// anything — it is the reserved ordinal, which is exactly the job
+// `ecs::PlayerSquadTag` exists to do.
+//
+// No-op returning false if he was never wearing anyone: then the man who died
+// is himself, and there is no return to make.
+bool wake_player_in_original_body(ecs::World& world);
+
 // THE player's squad entity, by its reserved ordinal — and his ROSTER, which
 // is an ordinary ecs::SquadRoster on it (owner, 2026-08-27). It used to be
 // `PlayerState::army`, a squad of its own kind sitting beside the entity, and
@@ -111,6 +128,18 @@ inline void player_jump_to_cell(GameState& gs, ecs::World& world,
 // before the world exists; callers treat that as "no men", which is what an
 // absent squad means.
 entt::entity player_squad_entity(ecs::World& world);
+
+// «Я СЕЙЧАС НЕ В СЕБЕ» — the flag stands on somebody other than the original.
+// THE one honest way to ask «вселён ли я»: the fact IS the two entities being
+// different, and nothing else. Before this door the chronicle asked it by
+// comparing a spawn ordinal to a magic number (macro/journal.h) — a second,
+// hand-written answer to a question the flag already answers.
+inline bool player_wears_another_body(ecs::World& world) {
+    const entt::entity flag = player_flag_entity(world);
+    const entt::entity home = player_squad_entity(world);
+    return flag != entt::null && home != entt::null && flag != home;
+}
+
 SoldierSquad* player_roster(ecs::World& world);
 const SoldierSquad* player_roster(const ecs::World& world);
 
@@ -144,9 +173,11 @@ const ecs::Pools* player_pools(const ecs::World& world);
 // entity, the block every macro body is born with (§41 root 3, v89). It was
 // PlayerState::spellBook: a one-copy store that made casting, sustained
 // drains and spire-teaching player-only mechanics. Same family as
-// player_pools/player_inventory: HIS OWN squad by the reserved ordinal —
-// body-native casting through a possessed body's book arrives the day NPC
-// casting does. nullptr before the world exists.
+// player_pools/player_inventory: the book of the man THE FLAG IS ON. This line
+// used to read «his own squad by the reserved ordinal — casting through a
+// possessed body's book arrives the day NPC casting does»; that day was
+// 2026-09-14, and it arrived not as a feature but as the removal of the wrong
+// question. nullptr before the world exists.
 SpellBook* player_spellbook(ecs::World& world);
 const SpellBook* player_spellbook(const ecs::World& world);
 

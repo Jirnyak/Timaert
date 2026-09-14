@@ -184,8 +184,49 @@ entt::entity player_squad_entity(ecs::World& world) {
     return find_player_squad(world);
 }
 
+bool wake_player_in_original_body(ecs::World& world) {
+    auto& reg = world.reg;
+    const entt::entity flag = player_flag_entity(world);
+    const entt::entity home = find_player_squad(world);
+    // He was never wearing anyone — the man who died is himself.
+    if (flag == entt::null || home == entt::null || flag == home) return false;
+    // ВОЗВРАЩАТЬСЯ ЕСТЬ КУДА, ТОЛЬКО ПОКА ЖИВ ОРИГИНАЛ. Asked of the record the
+    // same way the world asks it of every other body — the tag the reaper
+    // stamps, and the bars themselves, because a body can be at zero for a tick
+    // before anything marks it.
+    if (reg.all_of<ecs::Dead>(home)) return false;
+    const auto* homePools = reg.try_get<ecs::Pools>(home);
+    if (!homePools || homePools->hp <= 0.0f) return false;
+    // One displacement of one flag — вселение, проигранное назад. Exactly-one
+    // holds by the move itself (sub/spawn.h possess_entity does the same).
+    for (auto e : reg.view<ecs::PlayerTag>()) {
+        if (e != home) reg.remove<ecs::PlayerTag>(e);
+    }
+    if (!reg.all_of<ecs::PlayerTag>(home)) reg.emplace<ecs::PlayerTag>(home);
+    return true;
+}
+
+// ── ВСЁ НИЖЕ СПРАШИВАЕТ ФЛАЖОК, А НЕ ОРДИНАЛ (2026-09-14) ────────────────
+//
+// Девять дверей: лист, эффективный лист, ростер, сумка, spCarry, полосы,
+// книга, память, refresh. До этого дня каждая звала `find_player_squad` —
+// «запись с зарезервированным номером», то есть ТВОЁ РОДНОЕ ТЕЛО, всегда. Это
+// и был корень: вопрос «чьи это полосы» имел ответ «мои», даже когда ты стоял
+// в чужом теле, и потому выпитое в теле лорда зелье лечило оставленную
+// оболочку (problems.md §48).
+//
+// Теперь они зовут `player_flag_entity` — «тот, на ком флажок». Ни одна из
+// ~30 точек вызова не изменилась: они всегда спрашивали правильную вещь, это
+// дверь отвечала не про того. Ты ПОЛНОСТЬЮ тот, в чьём теле стоишь: его лист,
+// его люди, его сумка, его книга (вердикт владельца 2026-09-14 — «вся семья»).
+// Твоя сумка не пропала, она на твоём теле, там, где ты его оставил стоять.
+//
+// `player_squad_entity` ВЫШЕ остаётся ординальной — и это не исключение, а
+// другой вопрос: «КТО ОРИГИНАЛ», обратный адрес одержимости. Смотри
+// `wake_player_in_original_body` ниже: именно потому третий тег и переживает
+// эту правку — у него появилась собственная работа.
 CharacterSheet* player_sheet(ecs::World& world) {
-    const entt::entity e = find_player_squad(world);
+    const entt::entity e = player_flag_entity(world);
     if (e == entt::null) return nullptr;
     return world.reg.try_get<CharacterSheet>(e);
 }
@@ -197,13 +238,13 @@ const CharacterSheet* player_sheet(const ecs::World& world) {
 CharacterSheet player_effective_sheet(ecs::World& world) {
     // The universal effective door asked about his own squad (посадка Б) —
     // a missing world answers with the empty sheet a missing body IS.
-    const entt::entity e = find_player_squad(world);
+    const entt::entity e = player_flag_entity(world);
     if (e == entt::null) return CharacterSheet{};
     return effective_sheet_of(world, e);
 }
 
 SoldierSquad* player_roster(ecs::World& world) {
-    const entt::entity e = find_player_squad(world);
+    const entt::entity e = player_flag_entity(world);
     if (e == entt::null) return nullptr;
     auto* roster = world.reg.try_get<ecs::SquadRoster>(e);
     return roster ? &roster->squad : nullptr;
@@ -214,7 +255,7 @@ const SoldierSquad* player_roster(const ecs::World& world) {
 }
 
 Inventory* player_inventory(ecs::World& world) {
-    const entt::entity e = find_player_squad(world);
+    const entt::entity e = player_flag_entity(world);
     if (e == entt::null) return nullptr;
     auto* bag = world.reg.try_get<ecs::NpcInventory>(e);
     return bag ? &bag->inv : nullptr;
@@ -225,14 +266,14 @@ const Inventory* player_inventory(const ecs::World& world) {
 }
 
 float* player_sp_carry(ecs::World& world) {
-    const entt::entity e = find_player_squad(world);
+    const entt::entity e = player_flag_entity(world);
     if (e == entt::null) return nullptr;
     auto* pools = world.reg.try_get<ecs::Pools>(e);
     return pools ? &pools->spCarry : nullptr;
 }
 
 ecs::Pools* player_pools(ecs::World& world) {
-    const entt::entity e = find_player_squad(world);
+    const entt::entity e = player_flag_entity(world);
     if (e == entt::null) return nullptr;
     return world.reg.try_get<ecs::Pools>(e);
 }
@@ -242,7 +283,7 @@ const ecs::Pools* player_pools(const ecs::World& world) {
 }
 
 void refresh_player_body(ecs::World& world) {
-    const entt::entity e = find_player_squad(world);
+    const entt::entity e = player_flag_entity(world);
     if (e == entt::null) return;
     auto* pools = world.reg.try_get<ecs::Pools>(e);
     if (!pools) return;
@@ -255,7 +296,7 @@ void refresh_player_body(ecs::World& world) {
 }
 
 SpellBook* player_spellbook(ecs::World& world) {
-    const entt::entity e = find_player_squad(world);
+    const entt::entity e = player_flag_entity(world);
     if (e == entt::null) return nullptr;
     return world.reg.try_get<SpellBook>(e);
 }
@@ -265,7 +306,7 @@ const SpellBook* player_spellbook(const ecs::World& world) {
 }
 
 AgentMemory* player_head(ecs::World& world) {
-    const entt::entity e = find_player_squad(world);
+    const entt::entity e = player_flag_entity(world);
     if (e == entt::null) return nullptr;
     return world.reg.try_get<AgentMemory>(e);
 }

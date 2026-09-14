@@ -44,17 +44,22 @@ inline void player_journal_capture(GameState& gs, ecs::World& world) {
     const ecs::MacroCell* pcell = player_flag_cell(world);
     const int px = pcell ? ecs::cell_x(*pcell, gs.mapW) : -1;
     const int py = pcell ? ecs::cell_y(*pcell, gs.mapW) : -1;
-    // Participation is by the ordinal his deeds FILE UNDER — and while he
-    // wears a possessed lord (possession.md) that is the LORD's ordinal,
-    // wherever the deed happened: «узнаётся УЧАСТИЕ, где бы ни случилось».
-    // "Whom does he wear" is asked of the world itself — the ONE holder of
-    // ecs::PlayerTag (v87: the out-of-snapshot double of this answer died
-    // with SAVE-4). A capture keyed to his own squad alone learned a
-    // possessed reign only by standing on its cell.
+    // Participation is by the ordinal his deeds FILE UNDER — and while he wears
+    // a possessed lord that is the LORD's ordinal, wherever the deed happened:
+    // «узнаётся УЧАСТИЕ, где бы ни случилось». A capture keyed to his own squad
+    // alone learned a possessed reign only by standing on its cell.
+    //
+    // «Носит ли он кого-то» is asked through THE door (player_entity.h). It
+    // used to be asked right here, by scanning the flag and comparing its spawn
+    // ordinal to the reserved magic number — a second, hand-written answer to a
+    // question the flag already answers, and one that would have drifted the
+    // day «кто оригинал» stopped being spelled as that constant.
     int possessed = -1;
-    for (auto e : world.reg.view<ecs::PlayerTag, ecs::MacroSpawnId>()) {
-        const std::uint32_t idx = world.reg.get<ecs::MacroSpawnId>(e).index;
-        if (idx != ecs::kPlayerSquadOrdinal) possessed = int(idx);
+    if (player_wears_another_body(world)) {
+        if (const auto* sid =
+                world.reg.try_get<ecs::MacroSpawnId>(player_flag_entity(world))) {
+            possessed = int(sid->index);
+        }
     }
     const auto isHis = [possessed](std::uint8_t kind, std::uint32_t ordinal) {
         if (fact_subject_kind(kind) != std::uint8_t(FactSubject::Squad))

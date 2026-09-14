@@ -36,12 +36,22 @@ WorldFact fact(int day, FactKind kind, std::uint8_t subjKind,
 // Locality is the flag holder's CELL now (подпосадка 4): "standing at" is
 // a flagged entity with a MacroCell, moved by writing that cell — exactly
 // what the walker and the jump door do in the game.
+// The player standing somewhere — and standing there AS HIMSELF, which since
+// 2026-09-14 means the fixture must raise an honest ORIGINAL: the reserved
+// ordinal is what «кто оригинал» is spelled as, and «ношу ли я чужое тело» is
+// the flag and the original being different entities (player_entity.h). A
+// stand-in with only PlayerTag used to be enough because the question was then
+// asked by comparing the FLAG's own ordinal to the constant — one entity, one
+// read. It is not enough now, and that is the fixture's debt, not the law's:
+// a world without an original is a world that cannot exist.
 void stand_at(ecs::World& w, int x, int y) {
     entt::entity e = entt::null;
     for (auto ent : w.reg.view<ecs::PlayerTag>()) e = ent;
     if (e == entt::null) {
         e = w.reg.create();
         w.reg.emplace<ecs::PlayerTag>(e);
+        w.reg.emplace<ecs::MacroSpawnId>(e,
+                                         ecs::MacroSpawnId{ecs::kPlayerSquadOrdinal});
     }
     w.reg.emplace_or_replace<ecs::MacroCell>(e, ecs::cell_index(x, y, 64));
 }
@@ -147,9 +157,9 @@ void test_the_journal_never_forgets_and_the_cap_is_loud() {
           "the cap is loud, never a silent drop of his past");
 }
 
-// While the player WEARS a possessed lord (possession.md), his deeds file
-// under the LORD's ordinal — and participation is learned wherever it
-// happened, exactly as with his own squad.
+// While the player WEARS a possessed lord, his deeds file under the LORD's
+// ordinal — and participation is learned wherever it happened, exactly as with
+// his own squad.
 void test_a_possessed_lords_deeds_are_his_participation() {
     GameState gs{};
     gs.mapW = 64;

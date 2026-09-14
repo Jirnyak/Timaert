@@ -1092,6 +1092,25 @@ live here (`follow_flag_to_its_record`, jumping you to the lord's own macro cell
 existed only because the flag arrived late; it and the guard it needed were
 deleted 2026-09-14 when the flag started moving on time.
 
+**И ты тот, в чьём теле стоишь, ПОЛНОСТЬЮ.** The nine `player_*` doors
+(`macro/player_entity.cpp`: sheet, effective sheet, roster, bag, spCarry, pools,
+spellbook, head, refresh) resolve through `player_flag_entity` — «тот, на ком
+флажок» — and not through the reserved ordinal they used until 2026-09-14. His
+sheet, his men, his bag, his book. Not one of the ~30 call sites changed: they
+had always asked the right question, the door answered about the wrong man
+(problems.md §49). Your own bag did not vanish — it is on your own body, where
+you left it standing.
+
+**Смерть — единственное, что отличает эффект от голого переноса флажка.**
+`wake_player_in_original_body` runs the moment a possession ENDS (the worn body
+dying today, a spell expiring tomorrow): the flag moves home in one movement,
+the same displacement run backwards. It returns FALSE when there is nothing to
+wake up in — a dead or missing original — and that is the game over (owner
+2026-09-14). The original is known without storing anything: it is the reserved
+ordinal, which is precisely the job `ecs::PlayerSquadTag` exists to do, and why
+the third tag is not a duplicate of the flag but the answer to its own question —
+**«кто оригинал»**.
+
 That is the whole of it, and the shape is the owner's ruling of 2026-09-12:
 **вселение is not a mechanic, it is the flag moving** («эффект для будущих
 спеллов»). Four things used to stand here — an exit-remap query

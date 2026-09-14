@@ -3563,6 +3563,20 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
             sm::sub::dungeon_kind_row(app.subworld.dungeon_kind()).deathNode;
         if (app.subworld.in_dungeon() && storyNode != nullptr) {
             end_scene_by_death(app, storyNode);
+        } else if (sm::player_wears_another_body(app.ecs)) {
+            // Умерло НОСИМОЕ тело, не ты. Одержимость — эффект, и его
+            // единственное отличие от голого переноса флажка в том, что смерть
+            // возвращает в оригинал (владелец 2026-09-14).
+            //
+            // Выйти из сцены надо ПОКА ФЛАЖОК ЕЩЁ НА МЕРТВЕЦЕ: leave() сносит
+            // центр окна на держателя флага, и забрать этот снос должен тот,
+            // кто сюда пришёл ногами, — а твоё тело всё это время стояло там,
+            // где ты его оставил, и приезжать ему сюда незачем.
+            if (app.subworld.active()) app.subworld.leave(true);
+            if (!sm::wake_player_in_original_body(app.ecs)) {
+                // Просыпаться не в чем — оригинала убили, пока тебя не было.
+                app.state = sm::ui::AppState::Dead;
+            }
         } else {
             app.state = sm::ui::AppState::Dead;
         }
