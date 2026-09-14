@@ -809,9 +809,11 @@ bool run_macro_projection_case(const sm::sub::SeamlessSubworldManager& mgr) {
 // for the exit-remap query, one for the identity-adoption door — and both doors
 // were cut with the ceremony they belonged to. The claim they guarded is alive
 // and is guarded END TO END by the `subworld_exit_remap` smoke, which possesses
-// a projected lord, leaves through the real teardown, and asserts both halves:
-// he lands on that lord's macro cell, and exactly one macro flag rides the lord
-// himself. That is a better witness than these were — it exercises the path the
+// a projected lord, leaves through the real teardown, and asserts the law as it
+// stands since 2026-09-14: BOTH flags move at the moment of taking (the scene
+// one onto the body, the macro one onto its record), and he then climbs out
+// where he STOOD — the window centre, not the lord's own cell — still being the
+// lord. That is a better witness than these were — it exercises the path the
 // game runs instead of two functions in isolation.
 
 } // namespace

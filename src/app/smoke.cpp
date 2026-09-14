@@ -28,6 +28,7 @@
 #include "sub/ai.h"        // kDetectionRadius — the ambush's own wait line
 #include "sub/city_layout.h"  // city_house_target — what the town ASKED for
 #include "sub/spawn.h"     // current_player_body — «рука игрока» атрибуции
+#include "sub/record.h"    // record_of / pools_of — дверь шва «чья это запись»
 #include "macro/codex.h"
 #include "macro/items.h"
 #include "macro/econ_day.h"   // kGatherPerWorkerDay — the harvest SP witness
@@ -5304,18 +5305,27 @@ bool run_console_smoke(App& app) {
         restore(); smoke_fail(app, "console killall left bandit-typed bodies"); return false;
     }
 
-    // ── Possession / вселение (Inc 5c) ───────────────────────────────
-    // Take over a live foreign body: the single AvatarTag flag MOVES onto it
-    // (D2), the hero husk is destroyed (its canonical state lives in gs.player),
-    // and the possessed body keeps its OWN stats — no hero stats are stamped
-    // (D3, body-native). Isolated here after killall: it spawns its own target
-    // so it perturbs none of the earlier hostile-count checks. restore() below
-    // force-leaves and resets gs.player, so leaving in the possessed state is
-    // safe (the SubworldTag reaper destroys the possessed body on leave).
+    // ── Вселение: ЗАКОН ЗАПИСИ (2026-09-14) ──────────────────────────
+    // ВСЕЛИТЬСЯ МОЖНО ТОЛЬКО В ТОГО, У КОГО ЕСТЬ ЗАПИСЬ. record.h knows two
+    // honest births, and a console-spawned bandit is the DERIVED one: nothing
+    // above remembers it, `record_of` answers with the body itself, and it dies
+    // with the scene. The macro flag is macro-only and would have nowhere to
+    // land, so possess_entity REFUSES — and refuses without disturbing either
+    // flag. This is the whole negative half of the law, witnessed on the one
+    // kind of body this smoke can guarantee.
+    //
+    // (The POSITIVE half — taking a projected lord, both flags moving together,
+    // the husk destroyed, the HUD going body-native — lives in
+    // subworld_exit_remap, which teleports onto the nearest macro NPC and is
+    // therefore GUARANTEED a body that has a record. It cannot live here:
+    // whether any macro NPC stands in this window is a property of the seed.)
+    //
+    // Isolated here after killall: it spawns its own target so it perturbs none
+    // of the earlier hostile-count checks.
     {
         auto& reg = app.ecs.reg;
         con.execute("spawn bandit 3");
-        // A fresh, non-player-side bandit to inhabit.
+        // A fresh, non-player-side bandit.
         entt::entity target = entt::null;
         {
             auto tv = reg.view<sm::ecs::SubworldTag, sm::ecs::NPCKind,
@@ -5330,70 +5340,50 @@ bool run_console_smoke(App& app) {
         if (target == entt::null) {
             restore(); smoke_fail(app, "possess: no target bandit spawned"); return false;
         }
-        // The hero husk: the sole current flag-holder, which carries NO NPCKind
-        // (that is precisely the discriminator body-native sync relies on).
+        // THE PREMISE, asserted rather than assumed (§45): this witness is only
+        // about derived bodies, so it must SAY that its target is one. The day a
+        // console spawn starts backlinking a macro record, this line fails loudly
+        // instead of the test below silently passing for the wrong reason.
+        if (sm::sub::record_of(reg, target) != target) {
+            restore();
+            smoke_fail(app, "possess: console-spawned bandit is not a derived body");
+            return false;
+        }
+        // The hero husk: the sole current scene-flag holder, which carries NO
+        // NPCKind (that is precisely what tells a husk from a foreign body).
         entt::entity husk = entt::null;
         for (auto e : reg.view<sm::ecs::AvatarTag>()) { husk = e; break; }
         if (husk == entt::null || reg.all_of<sm::ecs::NPCKind>(husk)) {
             restore(); smoke_fail(app, "possess: hero husk missing or not a hero body"); return false;
         }
-        // Invariants possession must preserve.
-        const float bodyMaxHp   = reg.get<sm::ecs::Pools>(target).maxHp;
-        const int   heroHpBefore  = player_pools(app).hp;
-        const int   heroMaxBefore = player_pools(app).maxHp;
-        const float tx = reg.get<sm::ecs::Position>(target).x;
-        const float ty = reg.get<sm::ecs::Position>(target).y;
+        entt::entity macroFlagBefore = entt::null;
+        for (auto e : reg.view<sm::ecs::PlayerTag>()) { macroFlagBefore = e; break; }
 
-        if (!app.subworld.possess_by_id(
+        if (app.subworld.possess_by_id(
                 static_cast<std::uint32_t>(entt::to_integral(target)))) {
-            restore(); smoke_fail(app, "possess: possess_by_id returned false"); return false;
+            restore();
+            smoke_fail(app, "possess: a record-less body was inhabited");
+            return false;
         }
-        // Exactly one flag, now solely on the target.
-        int tags = 0; entt::entity holder = entt::null;
-        for (auto e : reg.view<sm::ecs::AvatarTag>()) { ++tags; holder = e; }
-        if (tags != 1 || holder != target) {
-            restore(); smoke_fail(app, "possess: flag not solely on the target body"); return false;
+        // A refusal changes NOTHING: the scene flag is still solely on the husk,
+        // the husk is still alive, and the macro flag never moved.
+        int sceneTags = 0; entt::entity sceneHolder = entt::null;
+        for (auto e : reg.view<sm::ecs::AvatarTag>()) { ++sceneTags; sceneHolder = e; }
+        int macroTags = 0; entt::entity macroHolder = entt::null;
+        for (auto e : reg.view<sm::ecs::PlayerTag>()) { ++macroTags; macroHolder = e; }
+        if (sceneTags != 1 || sceneHolder != husk || !reg.valid(husk)) {
+            restore();
+            smoke_fail(app, "possess: refused take still moved the scene flag");
+            return false;
         }
-        // The possessed body keeps its OWN combat components (nothing stripped).
-        if (!reg.all_of<sm::ecs::NPCKind, sm::ecs::Pools, sm::ecs::Combat>(target)) {
-            restore(); smoke_fail(app, "possess: possessed body lost its own components"); return false;
-        }
-        // The hero husk is destroyed — no stranded, un-AI'd, un-rendered zombie.
-        if (reg.valid(husk)) {
-            restore(); smoke_fail(app, "possess: hero husk not destroyed"); return false;
-        }
-        // The scalar mirror snapped to the new body (every legacy reader follows).
-        auto near_half = [](float a, float b) {
-            float d = a - b; if (d < 0.0f) d = -d; return d <= 0.5f;
-        };
-        if (!near_half(app.subworld.player_x(), tx) ||
-            !near_half(app.subworld.player_y(), ty)) {
-            restore(); smoke_fail(app, "possess: scalars did not snap to the new body"); return false;
-        }
-        // Body-native (D3): a tick must NOT stamp hero stats onto the body, and
-        // must NOT mutate gs.player — the preserved revert target. (Pre-5c the
-        // sync path stamped gs.player HP/maxHp onto the flagged body; this is
-        // the assertion that the NPCKind gate now suppresses that.)
-        app.subworld.tick(0.016f);
-        if (std::fabs(double(reg.get<sm::ecs::Pools>(target).maxHp - bodyMaxHp)) > 0.01) {
-            restore(); smoke_fail(app, "possess: tick stamped hero maxHp onto the body"); return false;
-        }
-        if (player_pools(app).hp != heroHpBefore ||
-            player_pools(app).maxHp   != heroMaxBefore) {
-            restore(); smoke_fail(app, "possess: gs.player mutated (revert target not preserved)"); return false;
-        }
-        // HUD / hit-flash follows the inhabited body (D3): player_display_hp()
-        // reports the possessed body's own HP, NOT the frozen hero scalar. With a
-        // level-3 body (maxHp≈99) vs the level-1 hero (110) these are distinct.
-        const int dispHp = app.subworld.player_display_hp();
-        const int bodyHp = int(std::lround(reg.get<sm::ecs::Pools>(target).hp));
-        if (dispHp != bodyHp || dispHp == player_pools(app).hp) {
-            restore(); smoke_fail(app, "possess: player_display_hp() not body-native"); return false;
+        if (macroTags != 1 || macroHolder != macroFlagBefore) {
+            restore();
+            smoke_fail(app, "possess: refused take still moved the macro flag");
+            return false;
         }
         std::fprintf(stderr,
-                     "[smoke] possess flag_moved=1 husk_destroyed=1 body_native=1 "
-                     "body_maxhp=%.0f display_hp=%d hero_preserved=%d/%d\n",
-                     double(bodyMaxHp), dispHp, heroHpBefore, heroMaxBefore);
+                     "[smoke] possess_gate derived_refused=1 scene_flag_held=1 "
+                     "macro_flag_held=1\n");
         std::fflush(stderr);
     }
 
@@ -6073,9 +6063,17 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             ++app.smoke.cursor;
             break;
         case SmokeAction::SubworldExitRemap: {
-            // Inc 5e-1 end-to-end: possess a macro-projected body, then leave —
-            // the macro player must resurface on the POSSESSED body's macro
-            // origin cell ("exit AS the lord"), not the window centre.
+            // ВСЕЛЕНИЕ ОТ НАЧАЛА ДО КОНЦА (2026-09-14). Possess a macro-projected
+            // body, then leave. Two laws, and the second one changed:
+            //   1. BOTH flags move AT THE MOMENT OF TAKING — AvatarTag onto the
+            //      body, PlayerTag onto its record. Not on the way out: there is
+            //      no span in which the scene says one man and the map another.
+            //   2. ТЫ ВЫЛЕЗАЕШЬ ТАМ, ГДЕ СТОИШЬ — the window centre, whoever you
+            //      are. The lord's stale macro cell is NOT where you surface; the
+            //      old "exit AS the lord onto HIS cell" remap is gone, and with
+            //      it the only branch in the exit law.
+            // The origin is forced OFF-CENTRE below precisely so that landing on
+            // the centre is provably the law and not a coincidence.
             std::fprintf(stderr, "[smoke] action=subworld_exit_remap\n");
             std::fflush(stderr);
             if (!app.worldLoaded) {
@@ -6137,32 +6135,91 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 const int ocy = ((ccy + 5) % H + H) % H;
                 reg.get<sm::ecs::MacroCell>(origin).idx =
                     sm::ecs::cell_index(ocx, ocy, app.gs.mapW);
-                // Possess the body, then leave via the real teardown path.
+                // The hero husk before the take, and where the target stands —
+                // the take must destroy the one and snap the scalars onto the
+                // other.
+                entt::entity husk = entt::null;
+                for (auto e : reg.view<sm::ecs::AvatarTag>()) { husk = e; break; }
+                const float bx = reg.get<sm::ecs::Position>(body).x;
+                const float by = reg.get<sm::ecs::Position>(body).y;
+
                 if (!app.subworld.possess_by_id(
                         static_cast<std::uint32_t>(entt::to_integral(body)))) {
                     smoke_fail(app, "exit_remap: possess_by_id returned false");
                     break;
                 }
+
+                // ── ЗАКОН 1: оба флажка переехали ТЕМ ЖЕ движением ──────
+                // Asserted HERE, before any leave: the macro flag must already
+                // ride the record. Until 2026-09-14 it did not — it waited for
+                // the climb-out — and every «кто я» asked in between answered
+                // with the man he used to be.
+                int sceneTags = 0; entt::entity sceneHolder = entt::null;
+                for (auto e : reg.view<sm::ecs::AvatarTag>()) { ++sceneTags; sceneHolder = e; }
+                int macroTags = 0; entt::entity macroHolder = entt::null;
+                for (auto e : reg.view<sm::ecs::PlayerTag>()) { ++macroTags; macroHolder = e; }
+                std::fprintf(stderr,
+                             "[smoke] subworld_exit_remap take scene_tags=%d "
+                             "scene_on_body=%d macro_tags=%d macro_on_record=%d\n",
+                             sceneTags, sceneHolder == body ? 1 : 0,
+                             macroTags, macroHolder == origin ? 1 : 0);
+                std::fflush(stderr);
+                if (sceneTags != 1 || sceneHolder != body
+                    || macroTags != 1 || macroHolder != origin) {
+                    smoke_fail(app, "exit_remap: the two flags did not move together");
+                    break;
+                }
+                // The husk has no independent existence — destroyed, not left
+                // standing as an inert, un-AI'd, un-rendered zombie.
+                if (husk != entt::null && reg.valid(husk)) {
+                    smoke_fail(app, "exit_remap: hero husk survived the take");
+                    break;
+                }
+                // The taken body keeps its OWN components — nothing is stripped.
+                if (!reg.all_of<sm::ecs::NPCKind, sm::ecs::Pools,
+                                sm::ecs::Combat>(body)) {
+                    smoke_fail(app, "exit_remap: taken body lost its own components");
+                    break;
+                }
+                // …and its numbers are its RECORD's (the mirror law): the HUD
+                // reports the lord he is wearing, not the husk he left.
+                const sm::ecs::Pools* recPools = sm::sub::pools_of(reg, body);
+                const int dispHp = app.subworld.player_display_hp();
+                if (!recPools || dispHp != int(std::lround(recPools->hp))) {
+                    smoke_fail(app, "exit_remap: display hp is not the record's");
+                    break;
+                }
+                // The scene scalars snapped onto the new body this very call.
+                auto near_half = [](float a, float b) {
+                    float d = a - b; if (d < 0.0f) d = -d; return d <= 0.5f;
+                };
+                if (!near_half(app.subworld.player_x(), bx) ||
+                    !near_half(app.subworld.player_y(), by)) {
+                    smoke_fail(app, "exit_remap: scalars did not snap to the new body");
+                    break;
+                }
+
+                // ── ЗАКОН 2: вылезаешь ТАМ, ГДЕ СТОИШЬ ──────────────────
                 app.subworld.leave(true);
                 const int gx = int(smoke_player_x(app));
                 const int gy = int(smoke_player_y(app));
-                const bool onOrigin  = (gx == ocx && gy == ocy);
+                const bool onCentre  = (gx == ccx && gy == ccy);
                 const bool offCentre = (ocx != ccx || ocy != ccy);
                 std::fprintf(stderr,
-                             "[smoke] subworld_exit_remap onOrigin=%d off_centre=%d "
-                             "landed=%d,%d origin=%d,%d centre=%d,%d\n",
-                             onOrigin ? 1 : 0, offCentre ? 1 : 0,
+                             "[smoke] subworld_exit_remap onCentre=%d off_centre=%d "
+                             "landed=%d,%d lords_cell=%d,%d centre=%d,%d\n",
+                             onCentre ? 1 : 0, offCentre ? 1 : 0,
                              gx, gy, ocx, ocy, ccx, ccy);
                 std::fflush(stderr);
-                if (!onOrigin || !offCentre) {
-                    smoke_fail(app, "exit_remap: did not land on the possessed origin cell");
+                if (!onCentre || !offCentre) {
+                    smoke_fail(app, "exit_remap: did not climb out where he stood");
                     break;
                 }
-                // Inc 5e-2 (identity remap): leaving AS a lord must also ADOPT it.
-                // Exactly one PlayerTag must now ride the macro ORIGIN itself — a
-                // real MacroNpcRuntime NPC, not a bare hero husk. The flag IS the
-                // whole record of control (v87): the macro snapshot writes it as
-                // the possessed record's own byte, so there is no scalar to check.
+                // …and he is STILL the lord: leaving is not a revert. Exactly one
+                // PlayerTag, still on the macro ORIGIN — a real MacroNpcRuntime
+                // NPC, not a bare husk. The flag IS the whole record of control
+                // (v87): the macro snapshot writes it as the possessed record's
+                // own byte, so there is no scalar to check.
                 int tags = 0;
                 entt::entity flag = entt::null;
                 for (auto e : reg.view<sm::ecs::PlayerTag>()) { ++tags; flag = e; }
@@ -6175,7 +6232,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                              tags, onMacroNpc ? 1 : 0, ridesOrigin ? 1 : 0);
                 std::fflush(stderr);
                 if (tags != 1 || !onMacroNpc || !ridesOrigin) {
-                    smoke_fail(app, "exit_remap: possessed identity not adopted on exit");
+                    smoke_fail(app, "exit_remap: possessed identity not kept on exit");
                     break;
                 }
                 // Restore a clean single-husk macro state for a self-contained

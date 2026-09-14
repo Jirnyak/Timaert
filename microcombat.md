@@ -57,13 +57,16 @@ player spell direction.
   each player-cast projectile's `ownerId` exactly as an NPC missile carries its
   firer's, so the old `ownerId == 0` sentinel is retired — ownership is decided
   purely by the owner entity's tags (`PlayerTag`/`PlayerSoldierTag`).
-- **Possession is body-native.** The player is one movable `PlayerTag` flag;
-  `possess_entity` hops it onto a body you aim at (`aim_target` cone, keybind
-  **V** / console) and the inhabited body fights on its OWN sheet-derived
-  `Combat`/`Health` — possess a lord ⇒ strong, a rat ⇒ weak. `gs.player` (the
-  hero) is the preserved revert target; the flagged body is what enemies target,
-  what dies, and what the HUD reads (`player_display_hp`). Full model in
-  вселение = перенос флажка (sub/spawn.h).
+- **Вселение = перенос флажка.** The player is two flags — `AvatarTag` in the
+  scene, `PlayerTag` on the map — and `possess_entity` moves BOTH onto a body you
+  aim at and its record, in one movement (`aim_target` cone; console, the keybind
+  died 2026-09-06 and a SPELL replaces it). The inhabited body fights on its own
+  sheet-derived `Combat`/`Pools`: take a lord ⇒ strong, a rat ⇒ weak, and nothing
+  branches to make it so — under the mirror law every body reads its own record
+  (`sub/record.h`). The flagged body is what enemies target, what dies, and what
+  the HUD reads (`player_display_hp`). Taking a body with NO record is refused:
+  a derived birth answers `record_of` with itself and dies with the scene, so the
+  macro flag has nowhere to land. Full model in `sub/spawn.h`.
 - **Projectiles are universal — everyone can hit everyone, the caster included.**
   A spell projectile just flies; it carries no exclusion of its own caster (4d
   removed the last one) and **no faction shield at all** (owner decision

@@ -808,36 +808,14 @@ void SubworldEngine::sync_macro_player_to_center() {
     if (ecs_) player_jump_to_cell(*gs_, *ecs_, nx, ny);
 }
 
-bool SubworldEngine::follow_flag_to_its_record() {
-    if (!gs_ || !ecs_ || !terrain_ || terrain_->width <= 0
-        || terrain_->height <= 0) {
-        return false;
-    }
-    auto& reg = ecs_->reg;
-    // Whose body is he standing in? Since the mirror law that is one question
-    // with one door, and the hero husk answers it with his own squad — which is
-    // precisely the case where nothing moves.
-    const entt::entity rec = record_of(reg, current_player_body(*ecs_));
-    if (rec == entt::null || rec == player_squad_entity(*ecs_)) return false;
-    // A record that is not a macro body on the map is nothing to become.
-    if (!reg.all_of<ecs::MacroCell, ecs::MacroNpcRuntime>(rec)) return false;
-
-    // Move the ONE macro flag. Exactly-one holds by the move itself.
-    for (auto e : reg.view<ecs::PlayerTag>()) {
-        if (e != rec) reg.remove<ecs::PlayerTag>(e);
-    }
-    if (!reg.all_of<ecs::PlayerTag>(rec)) reg.emplace<ecs::PlayerTag>(rec);
-
-    // ...and now the jump door is asked about the NEW holder: his cell is
-    // already his own, so this sets nothing and clears what a climb-out must
-    // clear — the entry edge and the think cadence (player_entity.h). Reading
-    // his cell and writing it back is deliberate: one door owns «a jump is not
-    // a walk», and a second hand-written clear here would be the usual drift.
-    const auto& mc = reg.get<ecs::MacroCell>(rec);
-    player_jump_to_cell(*gs_, *ecs_, ecs::cell_x(mc, gs_->mapW),
-                        ecs::cell_y(mc, gs_->mapW));
-    return true;
-}
+// (follow_flag_to_its_record stood here until 2026-09-14. It moved the macro
+// flag onto the worn body's record ON THE WAY OUT — the last remnant of the
+// idea that possession is a ceremony with a beginning and an end. It is not:
+// it is one displacement of one flag, and it now happens where it means
+// something, at the moment the body is taken (sub/spawn.h possess_entity).
+// What died with it: a second jump law for the possessed exit, the guard that
+// law needed, and the whole window of time in which «кем я хожу» had two
+// answers.)
 
 // ── Player entity (Inc 4b) ──────────────────────────────────────────────
 //
@@ -3418,18 +3396,25 @@ void SubworldEngine::leave(bool force) {
         // at `cellIdx + 0.5 + 0.5` = vertex of 4 cells. Snap to the centre
         // cell of the seamless 3×3 grid.
         //
-        // ...unless he is climbing out in somebody else's body, in which case he
-        // climbs out AS that somebody: the flag follows the record. Must run
-        // HERE, before clear_subworld_entities reaps every SubworldTag body,
-        // because the body is what names the record.
-        const bool becameSomebodyElse = follow_flag_to_its_record();
+        // ТЫ ВЫЛЕЗАЕШЬ ТАМ, ГДЕ СТОИШЬ — whoever you are (owner verdict
+        // 2026-09-14). There used to be a second law here for the possessed
+        // case: climb out in a lord's body and you were jumped to HIS macro
+        // cell instead. It existed only because the macro flag arrived late —
+        // it was still on the husk's record while you walked, so leave() had
+        // to move it and then say where the new man stood. Since the flag
+        // moves at the moment the body is taken (sub/spawn.h possess_entity),
+        // the man standing here IS the flag holder, and the window centre is
+        // honestly the cell he walked to. One law, no branch, and the guard
+        // that branch needed («требует ЧУЖУЮ запись», or an ordinary exit
+        // teleported him back to his entry cell) has nothing left to guard.
+        //
         // A DOORLESS pocket's window coordinates are virtual (and a wrapped
         // one's centre drifts with every torus loop): syncing them into the
         // macro player would teleport him across the real map. The pocket's
         // teardown leaves the macro player exactly where boot anchored him.
         const bool doorlessPocket =
             sceneKind_ == SceneKind::Dungeon && !dungeon_.hasDoor;
-        if (!becameSomebodyElse && !doorlessPocket) {
+        if (!doorlessPocket) {
             sync_macro_player_to_center();
         }
     }

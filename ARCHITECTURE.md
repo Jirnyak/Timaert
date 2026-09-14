@@ -1032,18 +1032,17 @@ since the scale split are **exactly one `PlayerTag` at all times (macro
 only)** and **exactly one `AvatarTag` while a scene is live (scene only)** —
 two flags, two questions, and no pass can mistake one scale for the other.
 
-**Possession / вселение (Inc 5c).** The `control` command MOVES the flag of
-its scale onto a live body: in a scene `possess_entity(reg, target)` does
-`remove<AvatarTag>(old); emplace<AvatarTag>(target)` — the vacated body reverts to
-an ordinary NPC. Targeting is scale-split: in the subworld you look at a body and
-possess it (`possess_aim` uses the `aim_target` forward-cone primitive on the
-camera yaw; dev console `possess` — the player keybind V died 2026-09-06,
-a possession SPELL replaces it), with `possess_by_id` as the debug
-by-id path. Possession is **body-native**: the inhabited body fights with its OWN
-`CharacterSheet`/`Combat`/`Health` (possess a lord ⇒ strong; a rat ⇒ weak), and
-`gs.player` (the hero) is preserved untouched as the revert target — the
-discriminator is `NPCKind`, which the hero husk lacks and every scene body has, so
-the sync/reconcile paths branch on it. Because the flag simply moves, every
+**Possession / вселение.** `possess_entity(w, target)` MOVES the player's two
+flags onto a live body — `AvatarTag` on the body, `PlayerTag` on its record — and
+the vacated body reverts to an ordinary NPC by construction (every AI / draw /
+targetability path is `AvatarTag`-gated). Targeting: in the subworld you look at
+a body and take it (`possess_aim` uses the `aim_target` forward-cone primitive on
+the camera yaw; dev console `possess` — the player keybind V died 2026-09-06, a
+possession SPELL replaces it), with `possess_by_id` as the debug by-id path. The
+inhabited body fights with its OWN sheet-derived `Combat`/`Pools` (take a lord ⇒
+strong; a rat ⇒ weak) — not because anything branches on who you are, but because
+under the mirror law every body reads its own record (`sub/record.h`). Because
+the flag simply moves, every
 universal path already respects it: enemies target the inhabited body, its death
 is game-over, and the renderer/minimap/AI exclude it (`entt::exclude<PlayerTag>` /
 an `any_of<PlayerTag>` skip) so the camera body never billboards or self-drives.
@@ -1074,13 +1073,24 @@ projections are session-scoped and gone on exit, the macro source persisting. It
 enter-only (a macro NPC entering a neighbour cell mid-session is not yet
 materialised — accepted v1 scope, the persistent entity is never lost).
 
-**Выход: ты тот, в чьём теле стоишь.** On `leave()`, before the reaper destroys
-the body, `follow_flag_to_its_record()` asks THE door (`sub/record.h record_of`)
-whose record the flag-wearing body projects. His own squad ⇒ nothing moves and the
-macro player snaps to the window centre as always; somebody else's record ⇒ the
-single macro `PlayerTag` moves onto it and the one jump door clears the entry edge
-(he climbed out, he did not walk in). Possessing a lord and leaving therefore lands
-you on *the lord's* cell **as** the lord, and a normal exit is unchanged.
+**Ты тот, в чьём теле стоишь — с той секунды, как ты в нём.** Taking a body is
+ONE displacement of ONE flag, and `possess_entity` (`sub/spawn.h`) performs both
+halves of it at once: `AvatarTag` onto the scene body, `PlayerTag` onto that
+body's record (`sub/record.h record_of`). There is no span in which the scene
+says one man and the map says another.
+
+It gates on the same door it moves through: `record_of` answers with the macro
+entity for a PROJECTION and with the body ITSELF for a DERIVED birth (a wolf, a
+citizen rolled from a cell seed, a console spawn). A derived body is one-of-many
+that nothing above remembers and it dies with the scene, so the macro flag has
+nowhere to land — **вселиться можно только в того, у кого есть запись**, and the
+take is refused. One test, asked of everyone, no player branch.
+
+`leave()` therefore has no possession case at all: **ты вылезаешь там, где
+стоишь** — the window centre, whoever you are. The second exit law that used to
+live here (`follow_flag_to_its_record`, jumping you to the lord's own macro cell)
+existed only because the flag arrived late; it and the guard it needed were
+deleted 2026-09-14 when the flag started moving on time.
 
 That is the whole of it, and the shape is the owner's ruling of 2026-09-12:
 **вселение is not a mechanic, it is the flag moving** («эффект для будущих

@@ -759,22 +759,13 @@ private:
     // this window draws from here. Separate from spellRng_ so a swing cannot
     // shift what a cast would have rolled. Seeded beside it on entry.
     Rng   combatRng_{1u};
+    // WHERE HE CLIMBS OUT — the window centre, the cell he actually walked to,
+    // and there is only this one answer now (owner 2026-09-14). The possessed
+    // exit used to have a second one (follow_flag_to_its_record, deleted): it
+    // existed because the macro flag arrived late. It no longer does —
+    // possess_entity moves it with the body — so the man standing at the centre
+    // is already the flag holder, and this door is asked about him.
     void sync_macro_player_to_center();
-    // YOU ARE WHOEVER'S BODY YOU ARE STANDING IN — one sentence, run on the way
-    // out (owner 2026-09-12: «одержимость — это не более чем перенос флажка»).
-    // The macro flag moves onto the record of the body wearing the scene flag,
-    // and the jump door clears its entry edge — he arrived here by climbing out,
-    // not by walking in.
-    //
-    // Returns false when that record is his own squad (the ordinary exit), and
-    // the caller then snaps him to the window centre as always.
-    //
-    // This replaced four things: a query struct, an exit-remap door, an identity
-    // ADOPTION door, and the design doc that explained the ceremony. None of it
-    // survived the ruling, and nothing of it is missed — the flag IS the record
-    // of control (v87), and since the mirror law the body he wears already
-    // fights, spends and carries as itself.
-    bool follow_flag_to_its_record();
     CellContext resolve_context(int x, int y) const;
     // Terrain difficulty of the macro cell under a composite-window tile. Same
     // question as ground_faction_at, asked of the terrain instead of the crown.
