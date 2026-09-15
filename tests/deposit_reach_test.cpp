@@ -36,17 +36,20 @@ using namespace sm;
 // gatherer's reach of this cell? This is the code the field replaced.
 bool vein_within_reach(const DepositLayer& layer, DepositKind kind,
                        int x, int y) {
-    for (const auto& [idx, remaining] : layer.cells[std::size_t(kind)]) {
-        (void)remaining;                       // every entry is ALIVE
+    bool found = false;
+    layer.cells[std::size_t(kind)].for_each_live(
+            [&](std::uint32_t idx, std::int32_t remaining) {
+        (void)remaining;                       // every live cell holds units
+        if (found) return;
         const int vx = int(idx % std::uint32_t(layer.width));
         const int vy = int(idx / std::uint32_t(layer.width));
         const float d2 = torus_dist_sq(float(vx), float(vy),
                                        float(x), float(y),
                                        float(layer.width),
                                        float(layer.height));
-        if (d2 <= float(kGathererReach) * float(kGathererReach)) return true;
-    }
-    return false;
+        if (d2 <= float(kGathererReach) * float(kGathererReach)) found = true;
+    });
+    return found;
 }
 
 // Sweep the whole map, every kind. Returns the number of cells where the field
@@ -95,11 +98,11 @@ TerrainData make_world() {
 
 // The first live cell of a kind, as a coordinate pair.
 bool first_vein(const DepositLayer& layer, DepositKind kind, int& x, int& y) {
-    const auto& m = layer.cells[std::size_t(kind)];
-    if (m.empty()) return false;
-    const std::uint32_t idx = m.begin()->first;
-    x = int(idx % std::uint32_t(layer.width));
-    y = int(idx / std::uint32_t(layer.width));
+    const ResourceGrid& g = layer.cells[std::size_t(kind)];
+    const std::uint32_t idx = g.first_live();
+    if (idx == ResourceGrid::kNoCell) return false;
+    x = g.x_of(idx);
+    y = g.y_of(idx);
     return true;
 }
 
@@ -115,7 +118,7 @@ int main() {
     // that nothing is near anything (AGENTS testing law 2/3).
     {
         int live = 0;
-        for (const auto& m : layer.cells) live += int(m.size());
+        for (const auto& g : layer.cells) live += int(g.liveCells);
         CHECK(live > 0, "the fixture world has veins at all");
         int near = 0, far = 0;
         for (int y = 0; y < layer.height; ++y)
@@ -190,9 +193,9 @@ int main() {
               "a loaded world's reach field is re-derived, not restored");
         // ...and it is the LOADED geology it describes, not the fixture's.
         int live = 0;
-        for (const auto& m : fresh.cells) live += int(m.size());
+        for (const auto& g : fresh.cells) live += int(g.liveCells);
         int liveSrc = 0;
-        for (const auto& m : layer.cells) liveSrc += int(m.size());
+        for (const auto& g : layer.cells) liveSrc += int(g.liveCells);
         CHECK(live == liveSrc && liveSrc > 0,
               "the load really did carry the mutated geology across");
     }

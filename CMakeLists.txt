@@ -495,6 +495,8 @@ timaert_test(recovery_law_test
 
 timaert_test(save_roundtrip_test
     SOURCES
+        # the deposit fixture sizes its vein FIELDS through the layer's door
+        src/macro/deposit_layer.cpp
         src/events/event_bus.cpp
         src/events/quests/quest_engine.cpp
         src/macro/save.cpp
@@ -519,6 +521,8 @@ timaert_test(knowledge_test
 
 timaert_test(macro_snapshot_test
     SOURCES
+        # the load path sizes the vein FIELDS to the world it just read
+        src/macro/deposit_layer.cpp
         src/macro/save.cpp
         # the save carries the world's own memory (macro/chronicle.h)
         src/macro/chronicle.cpp

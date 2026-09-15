@@ -92,31 +92,48 @@ void deposits_write(savefmt::Writer& w, const WorldFieldStores& st) {
     // it needs no bytes here — and the v55 stored counter died with that.
     for (std::size_t k = 0; k < std::size_t(kDepositKindCount); ++k) {
         if (!st.deposits) { w.count(0, kMaxFieldCells); continue; }
-        const auto& cellsOfKind = st.deposits->cells[k];
-        if (!w.count(cellsOfKind.size(), kMaxFieldCells)) continue;
-        std::vector<std::pair<std::uint32_t, std::int32_t>> cells(
-            cellsOfKind.begin(), cellsOfKind.end());
-        std::sort(cells.begin(), cells.end());
-        for (const auto& [idx, remaining] : cells) {
+        // SPARSE ON THE WIRE, dense in the world: the file carries the live
+        // cells because that is a FILE FORMAT decision, and the live layer is
+        // a field because that is a MODEL decision (CANON S5, amended
+        // 2026-09-16). Writing the field out sparsely costs one walk and
+        // spares the save a megabyte of zeroes per kind.
+        const ResourceGrid& g = st.deposits->cells[k];
+        if (!w.count(std::size_t(g.liveCells), kMaxFieldCells)) continue;
+        // A field walks itself in index order, so the stream is deterministic
+        // by construction — the sort that stood here was needed only because a
+        // hash iterates in an unspecified order and the payload is checksummed.
+        g.for_each_live([&](std::uint32_t idx, std::int32_t remaining) {
             w.pod(idx);
             w.pod(remaining);
-        }
+        });
     }
 }
 bool deposits_read(savefmt::Reader& r, const WorldFieldStoresMut& st) {
+    // A FIELD needs a world to be a field over, and the wire carries only cell
+    // indices — so the staging layer is sized from the world state the reader
+    // has already filled. (The hash this replaced needed no dimensions, which
+    // is exactly the property that let it pretend the world was a bag of
+    // keys.) Sizing here rather than at the call site keeps "a field is always
+    // a field over THIS world" true for every reader there will ever be.
+    if (st.deposits && st.gs && st.gs->mapW > 0 && st.gs->mapH > 0
+        && !st.deposits->cells[0].live()) {
+        allocate_deposit_fields(*st.deposits, st.gs->mapW, st.gs->mapH);
+    }
     for (std::size_t k = 0; k < std::size_t(kDepositKindCount); ++k) {
         std::uint32_t n = 0;
         if (!savefmt::read_count(r, n, kMaxFieldCells)) return false;
         if (!st.deposits) { r.ok = false; return false; }
-        auto& cellsOfKind = st.deposits->cells[k];
-        cellsOfKind.clear();
-        cellsOfKind.reserve(n);
+        ResourceGrid& g = st.deposits->cells[k];
         for (std::uint32_t i = 0; i < n && r.ok; ++i) {
             std::uint32_t idx = 0;
             std::int32_t remaining = 0;
             r.pod(idx);
             r.pod(remaining);
-            if (r.ok) cellsOfKind[idx] = remaining;
+            // The load store is a staging layer the boot overlays through
+            // restore_deposit_cells, and its grid may not be sized yet — a
+            // file's own index is the only width it can be trusted about, so
+            // the write goes through the grid's coordinates once it has some.
+            if (r.ok && g.live()) g.write(g.x_of(idx), g.y_of(idx), remaining);
         }
     }
     return r.ok;

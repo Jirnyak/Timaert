@@ -187,10 +187,10 @@ void test_iron_is_born_where_scarce() {
     const TerrainData td = make_terrain();
     DepositLayer deposits = build_deposit_layer(td, gs.worldSeed, 0.4f);
     const auto ironCells = [&] {
-        return deposits.cells[std::size_t(DepositKind::Iron)].size();
+        return std::size_t(deposits.grid(DepositKind::Iron).liveCells);
     };
     const auto stoneCells = [&] {
-        return deposits.cells[std::size_t(DepositKind::Stone)].size();
+        return std::size_t(deposits.grid(DepositKind::Stone).liveCells);
     };
     CHECK_OR_RETURN(stoneCells() > 0, "the mountain band yields stone hosts");
     CHECK_OR_RETURN(ironCells() > 0, "the fixture holds iron to exhaust");
@@ -203,10 +203,11 @@ void test_iron_is_born_where_scarce() {
 
     // Mine the world's iron OUT through the registry door.
     std::vector<std::uint32_t> veins;
-    for (const auto& [idx, rem] : deposits.cells[std::size_t(DepositKind::Iron)]) {
-        (void)rem;
-        veins.push_back(idx);
-    }
+    deposits.grid(DepositKind::Iron).for_each_live(
+        [&](std::uint32_t idx, std::int32_t rem) {
+            (void)rem;
+            veins.push_back(idx);
+        });
     for (const std::uint32_t idx : veins) {
         resource_field_apply(w, ResourceFieldId::Iron,
                              int(idx % std::uint32_t(kW)),
@@ -233,12 +234,13 @@ void test_iron_is_born_where_scarce() {
           "every strike landed IN a quarry and deleted no stone");
     // The fresh vein holds real metal on a stone host.
     bool freshOnStone = false;
-    for (const auto& [idx, rem] : deposits.cells[std::size_t(DepositKind::Iron)]) {
-        if (rem > 0
-            && deposits.cells[std::size_t(DepositKind::Stone)].count(idx)) {
-            freshOnStone = true;
-        }
-    }
+    deposits.grid(DepositKind::Iron).for_each_live(
+        [&](std::uint32_t idx, std::int32_t rem) {
+            if (rem > 0
+                && deposits.grid(DepositKind::Stone).at_index(idx) != 0) {
+                freshOnStone = true;
+            }
+        });
     CHECK(freshOnStone, "the fresh vein carries metal and shares its cell "
                         "with the host quarry");
 
@@ -276,8 +278,8 @@ void test_iron_is_born_where_scarce() {
                              int(idx / std::uint32_t(kW)), -1000000);
     }
     run_days(w2, 256);
-    CHECK(deposits2.cells[std::size_t(DepositKind::Iron)]
-              == deposits.cells[std::size_t(DepositKind::Iron)],
+    CHECK(deposits2.grid(DepositKind::Iron)
+              == deposits.grid(DepositKind::Iron),
           "the same seed and calendar strike the same veins - growth is a "
           "pure function of the world");
 }

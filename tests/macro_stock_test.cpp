@@ -394,12 +394,9 @@ void test_deposits_are_carrier_rows() {
     using namespace sm;
     sm::GameState gs = make_world();
     sm::DepositLayer deposits;
-    deposits.width = gs.mapW;
-    deposits.height = gs.mapH;
-    deposits.cells[std::size_t(DepositKind::Stone)]
-        [deposits.wrap_index(9, 9)] = 1000;
-    deposits.cells[std::size_t(DepositKind::Iron)]
-        [deposits.wrap_index(9, 9)] = 64;   // a vein IN the quarry
+    allocate_deposit_fields(deposits, gs.mapW, gs.mapH);
+    deposits.grid(DepositKind::Stone).write(9, 9, 1000);
+    deposits.grid(DepositKind::Iron).write(9, 9, 64);   // a vein IN the quarry
     MacroWorld w{&gs, nullptr, nullptr, nullptr, &deposits};
 
     CHECK(resource_field_read(w, ResourceFieldId::Stone, 9, 9) == 1000
@@ -413,14 +410,13 @@ void test_deposits_are_carrier_rows() {
 
     resource_field_apply(w, ResourceFieldId::Clay, 9, 9, +500);
     CHECK(resource_field_read(w, ResourceFieldId::Clay, 9, 9) == 0
-              && deposits.cells[std::size_t(DepositKind::Clay)].empty(),
+              && deposits.grid(DepositKind::Clay).liveCells == 0,
           "a kind the cell does not hold refuses the write: mining invents "
           "no geology");
 
     resource_field_apply(w, ResourceFieldId::Iron, 9, 9, -100);
     CHECK(resource_field_read(w, ResourceFieldId::Iron, 9, 9) == 0
-              && deposits.cells[std::size_t(DepositKind::Iron)].count(
-                     deposits.wrap_index(9, 9)) == 0,
+              && deposits.grid(DepositKind::Iron).at(9, 9) == 0,
           "an over-drained vein is ANNIHILATED - no dead cell lingers (v55)");
 
     for (std::size_t f : {std::size_t(ResourceFieldId::Clay),

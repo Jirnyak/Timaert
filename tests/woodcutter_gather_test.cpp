@@ -334,10 +334,9 @@ void test_the_mine_runs_while_the_player_is_away() {
     gs.landmarks.push_back(vil);
 
     DepositLayer deposits;
-    deposits.width = kMap;
-    deposits.height = kMap;
+    allocate_deposit_fields(deposits, kMap, kMap);
     const std::uint32_t veinIdx = 10u * std::uint32_t(kMap) + 14u;
-    deposits.cells[std::size_t(DepositKind::Iron)][veinIdx] = 20;
+    deposits.grid(DepositKind::Iron).write(14, 10, 20);
 
     ecs::World w;
     auto& reg = w.reg;
@@ -379,9 +378,8 @@ void test_the_mine_runs_while_the_player_is_away() {
 
     // Annihilation (v55): a vein worked all the way out within the run has
     // LEFT the map — absent reads as 0, exactly what "worked" means here.
-    const auto& mineIron = deposits.cells[std::size_t(DepositKind::Iron)];
     const int veinLeft =
-        mineIron.count(veinIdx) ? int(mineIron.at(veinIdx)) : 0;
+        int(deposits.grid(DepositKind::Iron).at_index(veinIdx));
     CHECK(20 - veinLeft > 0,
           "the mine is worked while the player is underground, exactly as it "
           "is worked while he is on the map");
@@ -555,10 +553,9 @@ void test_the_miner_works_the_vein() {
     gs.landmarks.push_back(vil);
 
     DepositLayer deposits;
-    deposits.width = kMap;
-    deposits.height = kMap;
+    allocate_deposit_fields(deposits, kMap, kMap);
     const std::uint32_t veinIdx = 10u * std::uint32_t(kMap) + 14u;
-    deposits.cells[std::size_t(DepositKind::Iron)][veinIdx] = 20;
+    deposits.grid(DepositKind::Iron).write(14, 10, 20);
 
     ecs::World w;
     auto& reg = w.reg;
@@ -596,9 +593,8 @@ void test_the_miner_works_the_vein() {
         tick_macro_npc_ai(mw, art, kAiTicks, /*allowAutoBattle=*/true);
     }
 
-    const auto& ironCells = deposits.cells[std::size_t(DepositKind::Iron)];
-    const int veinLeft =
-        ironCells.count(veinIdx) ? int(ironCells.at(veinIdx)) : 0;
+    const auto& ironCells = deposits.grid(DepositKind::Iron);
+    const int veinLeft = int(ironCells.at_index(veinIdx));
     const int veinLost = 20 - veinLeft;
     const int storeGained = gs.landmarks[0].inventory.count("iron");
     const int inBag = w.reg.get<ecs::NpcInventory>(e).inv.count("iron");
@@ -612,8 +608,8 @@ void test_the_miner_works_the_vein() {
     // 2026-08-28) the worked-out vein is a vein that no longer exists: the
     // cell leaves the map, the counter keeps the scarcity baseline, and the
     // chronicle (below) is the only record of what stood here.
-    CHECK(ironCells.count(veinIdx) == 0,
-          "the worked-out vein is ANNIHILATED - no dead cell lingers");
+    CHECK(ironCells.at_index(veinIdx) == 0,
+          "the worked-out vein is ANNIHILATED - in a field, that is 0");
     CHECK(storeGained + inBag == 20,
           "everything the vein ever held is accounted for");
 

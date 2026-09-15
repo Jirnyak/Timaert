@@ -150,7 +150,8 @@ std::vector<std::uint16_t> build_deposit_reach_field(const DepositLayer& dl,
     // lookups per generation.
     for (int k = 0; k < kDepositKindCount; ++k) {
         const int worth = kDepositDefs[k].siteWorth;
-        for (const auto& [idx, remaining] : dl.cells[std::size_t(k)]) {
+        dl.cells[std::size_t(k)].for_each_live(
+                [&](std::uint32_t idx, std::int32_t remaining) {
             (void)remaining;   // presence is what settles people
             const int cx = int(idx % std::uint32_t(mapW));
             const int cy = int(idx / std::uint32_t(mapW));
@@ -173,7 +174,7 @@ std::vector<std::uint16_t> build_deposit_reach_field(const DepositLayer& dl,
                         std::min(kTermMax, std::max(int(slot), v)));
                 }
             }
-        }
+        });
     }
     return field;
 }

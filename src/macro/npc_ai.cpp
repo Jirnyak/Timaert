@@ -820,8 +820,8 @@ bool find_home_deposit(const TickContext& ctx, ResourceFieldId row,
     if (!ctx.mw.deposits || ctx.mapW <= 0) return false;
     const DepositKind kind =
         DepositKind(std::uint8_t(row) - std::uint8_t(ResourceFieldId::Clay));
-    const auto& cells = ctx.mw.deposits->cells[std::size_t(kind)];
-    if (cells.empty()) return false;
+    const ResourceGrid& cells = ctx.mw.deposits->grid(kind);
+    if (cells.liveCells == 0) return false;
     const int hx = int(home.x), hy = int(home.y);
     NavWorld* nv = ctx.mw.nav;
     const bool navReady = nv && nav_ensure(ctx.mw, *nv);
@@ -832,14 +832,18 @@ bool find_home_deposit(const TickContext& ctx, ResourceFieldId row,
     XY dryAt{}, gapVein{}, gapCell{};
     bool haveDry = false, haveGap = false, haveNear = false;
     XY nearAt{};
-    for (const auto& [idx, remaining] : cells) {
-        (void)remaining;   // every entry is ALIVE (annihilation law, v55)
-        const int x = int(idx % std::uint32_t(ctx.mapW));
-        const int y = int(idx / std::uint32_t(ctx.mapW));
-        const int dx = fold_d(x - hx, ctx.mapW);
-        const int dy = fold_d(y - hy, ctx.mapH);
-        if (std::abs(dx) > kNavHandReach || std::abs(dy) > kNavHandReach)
-            continue;   // за радиусом рук — не работа этого дома
+    // THE ERRAND IS A NEIGHBOURHOOD QUESTION, so it walks a neighbourhood.
+    // The box below is the same one the old scan filtered by — a vein outside
+    // the hands' reach was never this home's work — but finding the box used
+    // to mean walking every vein in the world (69 624 of stone) and throwing
+    // away 98 % of them. A field is indexed by the torus, so the box IS the
+    // loop: 33×33 reads, no candidates discarded, and the answer is the same
+    // one by construction (problems.md §52 is the same lesson, one door over).
+    for (int dy = -kNavHandReach; dy <= kNavHandReach; ++dy) {
+    for (int dx = -kNavHandReach; dx <= kNavHandReach; ++dx) {
+        const int x = wrapi(hx + dx, ctx.mapW);
+        const int y = wrapi(hy + dy, ctx.mapH);
+        if (cells.at(x, y) == 0) continue;   // no vein standing here
         if (!navReady) {
             const float dsq = float(dx * dx + dy * dy);
             if (dsq < bestSq) {
@@ -887,6 +891,7 @@ bool find_home_deposit(const TickContext& ctx, ResourceFieldId row,
                 }
             }
         }
+    }
     }
     if (!navReady) {
         if (haveNear) out = nearAt;

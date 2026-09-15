@@ -27,7 +27,7 @@ using namespace sm;
 
 int total_cells(const DepositLayer& layer) {
     int n = 0;
-    for (const auto& m : layer.cells) n += int(m.size());
+    for (const auto& g : layer.cells) n += int(g.liveCells);
     return n;
 }
 
@@ -80,7 +80,8 @@ void test_deposits_obey_the_world() {
     bool affinityHolds = true;
     long long mineralHeightSum = 0, mineralCells = 0;
     for (int k = 0; k < kDepositKindCount; ++k) {
-        for (const auto& [idx, remaining] : layer.cells[k]) {
+        layer.cells[k].for_each_live(
+                [&](std::uint32_t idx, std::int32_t remaining) {
             const int x = int(idx % std::uint32_t(td.width));
             const int y = int(idx / std::uint32_t(td.width));
             const bool water =
@@ -100,7 +101,7 @@ void test_deposits_obey_the_world() {
                 mineralHeightSum += td.height_at(x, y);
                 ++mineralCells;
             }
-        }
+        });
     }
     CHECK(affinityHolds,
           "water holds nothing; clay crests only by the river here");
@@ -108,26 +109,26 @@ void test_deposits_obey_the_world() {
     CHECK(mineralHeightSum / mineralCells > landMean,
           "minerals stand on higher ground than the land's average — the "
           "height-weight affinity, never a hard gate");
-    CHECK(!layer.cells[std::size_t(DepositKind::Stone)].empty(),
+    CHECK(layer.grid(DepositKind::Stone).liveCells > 0,
           "the mountain band yields stone");
     // NESTS: the field law clusters — somewhere a kind holds two adjacent
     // cells. This is the meat the mine's consolidation folds; the hash law
     // this replaced scattered lone veins and this check is red against it.
     bool nested = false;
     for (int k = 0; k < kDepositKindCount && !nested; ++k) {
-        for (const auto& [idx, rem] : layer.cells[std::size_t(k)]) {
+        layer.cells[std::size_t(k)].for_each_live(
+                [&](std::uint32_t idx, std::int32_t rem) {
             (void)rem;
+            if (nested) return;
             const int x = int(idx % std::uint32_t(td.width));
             const int y = int(idx / std::uint32_t(td.width));
             for (int dy = -1; dy <= 1 && !nested; ++dy)
                 for (int dx = -1; dx <= 1 && !nested; ++dx) {
                     if (dx == 0 && dy == 0) continue;
-                    if (layer.cells[std::size_t(k)].count(
-                            layer.wrap_index(x + dx, y + dy)))
+                    if (layer.cells[std::size_t(k)].at(x + dx, y + dy) != 0)
                         nested = true;
                 }
-            if (nested) break;
-        }
+        });
     }
     CHECK(nested, "the field law grows NESTS — adjacent same-kind veins");
 
@@ -148,18 +149,19 @@ void test_deposits_obey_the_world() {
 void test_the_quantity_door_and_the_load_path() {
     const TerrainData td = make_world();
     DepositLayer layer = build_deposit_layer(td, 777u, 0.4f);
-    CHECK_OR_RETURN(!layer.cells[std::size_t(DepositKind::Stone)].empty(),
+    CHECK_OR_RETURN(layer.grid(DepositKind::Stone).liveCells > 0,
                     "fixture holds stone");
 
-    const auto first = layer.cells[std::size_t(DepositKind::Stone)].begin();
-    const int x = int(first->first % std::uint32_t(layer.width));
-    const int y = int(first->first / std::uint32_t(layer.width));
+    const ResourceGrid& stone = layer.grid(DepositKind::Stone);
+    const std::uint32_t firstIdx = stone.first_live();
+    const int x = stone.x_of(firstIdx);
+    const int y = stone.y_of(firstIdx);
 
     const std::uint32_t rev0 = layer.revision;
     CHECK(set_deposit_remaining(layer, DepositKind::Stone, x, y, 5),
           "the door mutates a real deposit");
-    const std::int32_t* rem = layer.remaining_at(DepositKind::Stone, x, y);
-    CHECK(rem != nullptr && *rem == 5, "the layer shows the drained vein");
+    CHECK(layer.remaining_at(DepositKind::Stone, x, y) == 5,
+          "the layer shows the drained vein");
     CHECK(layer.revision > rev0, "the mutation moved the revision");
 
     // Draining to (or below) zero ANNIHILATES: a worked-out vein is a vein
@@ -169,8 +171,8 @@ void test_the_quantity_door_and_the_load_path() {
         layer.virginUnits[std::size_t(DepositKind::Stone)];
     CHECK(set_deposit_remaining(layer, DepositKind::Stone, x, y, -3),
           "over-draining annihilates, not refuses");
-    rem = layer.remaining_at(DepositKind::Stone, x, y);
-    CHECK(rem == nullptr, "a worked-out vein leaves the map entirely");
+    CHECK(layer.remaining_at(DepositKind::Stone, x, y) == 0,
+          "a worked-out vein leaves the map entirely - in a field, that is 0");
     CHECK(layer.virginUnits[std::size_t(DepositKind::Stone)] == virgin0
               && virgin0 > 0,
           "the born-with baseline is untouched by the death - it is derived, "
@@ -181,8 +183,7 @@ void test_the_quantity_door_and_the_load_path() {
     CHECK(!set_deposit_remaining(layer, DepositKind::Stone, 1, 8, 100),
           "a non-deposit cell refuses the quantity door");
     CHECK(!set_deposit_remaining(layer, DepositKind::Iron, x, y, 100)
-              || layer.cells[std::size_t(DepositKind::Iron)].count(
-                     layer.wrap_index(x, y)),
+              || layer.grid(DepositKind::Iron).at(x, y) != 0,
           "a kind the cell does not hold refuses the door");
 
     // The load path (v37/v55): the save carries the live cells AND the
@@ -190,8 +191,8 @@ void test_the_quantity_door_and_the_load_path() {
     // reproduces the mutated world — the dead vein stays dead.
     DepositLayer loaded = build_deposit_layer(td, 777u, 0.4f);
     restore_deposit_cells(loaded, layer);
-    rem = loaded.remaining_at(DepositKind::Stone, x, y);
-    CHECK(rem == nullptr, "the annihilated vein stays gone through a load");
+    CHECK(loaded.remaining_at(DepositKind::Stone, x, y) == 0,
+          "the annihilated vein stays gone through a load");
     CHECK(loaded.virginUnits[std::size_t(DepositKind::Stone)] == virgin0,
           "the re-derived layer carries the same born-with baseline");
     CHECK(total_cells(loaded) == total_cells(layer),

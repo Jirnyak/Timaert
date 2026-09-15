@@ -209,8 +209,8 @@ void test_peasants_pay_the_threat_price() {
     GameState gs = make_world();
     NavWorld nv = make_nav(gs);
     DepositLayer dep{};
-    dep.cells[std::size_t(DepositKind::Iron)]
-        [10u * std::uint32_t(kMap) + 44u] = 64;   // жила округи деревни
+    allocate_deposit_fields(dep, kMap, kMap);
+    dep.grid(DepositKind::Iron).write(44, 10, 64);   // жила округи деревни
     gs.landmarks[1].inventory.add("bread", 200);
     gs.landmarks[1].titheOwedCoin = 200;
 

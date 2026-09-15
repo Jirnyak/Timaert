@@ -77,8 +77,8 @@ void test_auction_raises_errand_bearing_peasants() {
     gs.landmarks[0].titheOwedCoin = 200;            // и долг дани сверху
 
     DepositLayer dep{};
-    dep.cells[std::size_t(DepositKind::Iron)]
-        [10u * std::uint32_t(kMap) + 14u] = 64;     // жила в радиусе рук
+    allocate_deposit_fields(dep, kMap, kMap);
+    dep.grid(DepositKind::Iron).write(14, 10, 64);  // жила в радиусе рук
     std::vector<TreePoint> trees{{12, 12}};
     TreeGrid grid;
     build_tree_grid(grid, trees, kMap, kMap, 32);

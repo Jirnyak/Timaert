@@ -25,9 +25,9 @@
 // owns its kind of renewal.
 #pragma once
 #include "core/table_guard.h"
+#include "macro/resource_field.h"   // ResourceGrid — THE shape of a row
 #include "core/torus.h"
 #include <cstdint>
-#include <unordered_map>
 #include <vector>
 
 #include "macro/features.h"      // the kind's own mine feature (v71)
@@ -76,59 +76,41 @@ const char* deposit_commodity_id(DepositKind kind);
 struct DepositLayer {
     int width = 0;
     int height = 0;
-    // kind → (cell index → remaining units), every entry ALIVE (> 0).
-    // ANNIHILATION LAW (owner, 2026-08-28): a worked-out vein is a vein that
-    // no longer exists — the cell leaves the map the moment it runs dry and
-    // the chronicle keeps the deed. The old law ("a dry vein stays at 0")
-    // kept dead geology around solely to derive scarcity; the DERIVED
-    // baseline below carries that instead. Mutate through the registry only.
-    std::unordered_map<std::uint32_t, std::int32_t>
-        cells[kDepositKindCount];
-    // WHAT THE WORLD WAS BORN WITH, in units per kind — the scarcity
-    // baseline (owner, 2026-08-28: "суммарно железа в мире"). DERIVED, never
-    // saved: build_deposit_layer is a pure function of terrain + seed, and
-    // the load path re-derives the layer before overlaying the save's cells,
-    // so the baseline is recomputed for free every boot. Scarcity =
-    // 1 − live/virgin; discovery may push live ABOVE virgin, which simply
-    // reads as "no scarcity". 64-bit because stone on an all-mountain 1024²
-    // map is ~2^30 units and the growth law sums in 64-bit anyway.
+    // kind -> THE FIELD of that kind: units per cell, 0 = no vein here.
+    //
+    // This was `unordered_map<cellIdx, units>` from the layer's first commit
+    // (81379bf6), whose own message claimed "the proven tree-layer discipline"
+    // while the struct did the opposite. A hash keeps the values and throws the
+    // world's CONNECTEDNESS away — it answers "what is at exactly this key" and
+    // nothing else — so the day geology was asked "is there a vein NEAR here"
+    // the answer became a scan of every vein, per cell (problems.md §52). The
+    // array over the torus IS the connected world, and it carries the reach
+    // field that makes the neighbourhood question O(1) (resource_field.h).
+    //
+    // ANNIHILATION LAW (owner, 2026-08-28): a worked-out vein is a vein that no
+    // longer exists. In a field that is the value 0 — the cell stays, as every
+    // cell of the world does, and holds nothing. The DERIVED virgin baseline
+    // below carries the scarcity the old "dry cells linger at 0" kept around
+    // for. Mutate through the doors, never the array: the doors are what keep
+    // the live count and the reach discs true.
+    ResourceGrid cells[kDepositKindCount];
+    // WHAT THE WORLD WAS BORN WITH, in units per kind — the scarcity baseline
+    // (owner, 2026-08-28: "суммарно железа в мире"). DERIVED, never saved:
+    // build_deposit_layer is a pure function of terrain + seed, and the load
+    // path re-derives the layer before overlaying the save's cells, so the
+    // baseline is recomputed for free every boot. Scarcity = 1 - live/virgin;
+    // discovery may push live ABOVE virgin, which simply reads as "no
+    // scarcity". 64-bit because stone on an all-mountain 1024^2 map is ~2^30
+    // units and the growth law sums in 64-bit anyway.
     std::int64_t virginUnits[kDepositKindCount] = {};
     // Runtime dirty counter for future consumers; never serialized.
     std::uint32_t revision = 0;
 
-    // ── THE REACH FIELD ──────────────────────────────────────────────────
-    // "Is a live vein of this kind within a gatherer's reach of this cell?"
-    // — asked per CELL, by the context assembler (macro/cell_facts.h
-    // depositsNear, the street crowd's trade gate). It used to be answered by
-    // scanning the whole vein list: 69 624 entries in a real world, and the
-    // early break only fires for the rare cell that HAS one nearby, so the
-    // scan was full for almost every caller. Measured: 161 µs per
-    // resolve_context, 4.3 ms of a seam crossing's 6.8 ms — on the sacred
-    // seam, for one byte (problems.md §52).
-    //
-    // A radius question over a sparse point set is a FIELD, never a scan
-    // (AGENTS.md's O(N) bound says exactly this; the rule had simply never
-    // been pointed at the context assembler). So the answer is stamped where
-    // geology changes instead of recomputed where it is asked: a disc of
-    // kGathererReach is written into this grid when a vein is born and erased
-    // when it runs dry, and the question becomes one array read.
-    //
-    // COUNTS, not flags, because discs overlap: a cell reached by three veins
-    // must survive two of them running dry. u16 because a cell can sit inside
-    // the reach of at most (2r+1)² = 1089 veins of one kind, which does not
-    // reach 65535 — and overlap that dense is exactly what a quarry field is.
-    //
-    // DERIVED, never saved (world_fields.h's own distinction): it is a pure
-    // function of the vein set, so the load path re-stamps it after overlaying
-    // the save's cells and the file learns nothing new.
-    std::vector<std::uint16_t> reach[kDepositKindCount];
-
-    // THE question, in O(1). False for a layer with no reach field built —
-    // fail-closed: "no vein near" is the answer that grants nothing.
-    bool kind_near(DepositKind kind, int x, int y) const {
-        const auto& g = reach[std::size_t(kind)];
-        if (width <= 0 || height <= 0 || g.empty()) return false;
-        return g[wrap_index(x, y)] != 0u;
+    ResourceGrid& grid(DepositKind kind) {
+        return cells[std::size_t(kind)];
+    }
+    const ResourceGrid& grid(DepositKind kind) const {
+        return cells[std::size_t(kind)];
     }
 
     // Packs a WRAPPED cell into a flat index. The wrap itself is the one in
@@ -137,23 +119,29 @@ struct DepositLayer {
         return std::uint32_t(wrapi(y, height)) * std::uint32_t(width)
              + std::uint32_t(wrapi(x, width));
     }
-    // The kind's units standing at a WRAPPED cell; null = no deposit here
-    // (a worked-out one is annihilated, so "dry" is not a state a cell has).
-    const std::int32_t* remaining_at(DepositKind kind, int x, int y) const {
-        if (width <= 0 || height <= 0) return nullptr;
-        const auto& m = cells[std::size_t(kind)];
-        const auto it = m.find(wrap_index(x, y));
-        return it == m.end() ? nullptr : &it->second;
+    // The kind's units standing at a WRAPPED cell; 0 = no deposit here (a
+    // worked-out one is annihilated, so "dry" is not a state a cell has).
+    std::int32_t remaining_at(DepositKind kind, int x, int y) const {
+        return cells[std::size_t(kind)].at(x, y);
     }
     // Any deposit of any kind here? (worldgen reporting, map tooltips)
     bool any_at(int x, int y) const {
-        if (width <= 0 || height <= 0) return false;
-        const std::uint32_t i = wrap_index(x, y);
-        for (const auto& m : cells)
-            if (m.count(i)) return true;
+        for (const auto& g : cells) if (g.at(x, y) != 0) return true;
         return false;
     }
+    // THE neighbourhood question, in O(1) — "is a live vein of this kind
+    // within a gatherer's reach of here". The field behind it is the row's
+    // own (resource_field.h reachCells), stamped by the grid's writes.
+    bool kind_near(DepositKind kind, int x, int y) const {
+        return cells[std::size_t(kind)].near(x, y);
+    }
 };
+
+// Size every kind's field to a world, zeroed, each carrying the reach radius
+// its registry row declares. Worldgen calls it; so must any fixture that
+// hand-places veins, because a field that was never allocated silently
+// swallows every write.
+void allocate_deposit_fields(DepositLayer& layer, int width, int height);
 
 // Derive the deposit sites from terrain + seed. Deterministic; density and
 // base amounts are the po2 constants in deposit_layer.cpp (clay 1/64 of
@@ -174,12 +162,6 @@ bool set_deposit_remaining(DepositLayer& layer, DepositKind kind,
 void create_deposit(DepositLayer& layer, DepositKind kind,
                     int x, int y, std::int32_t amount);
 
-// Re-stamp the whole reach field from the vein set. The two doors above keep
-// it in step incrementally, so this is only for the paths that install a vein
-// set wholesale — worldgen's own build and the save overlay. Calling it after
-// any number of door writes is a no-op in effect: the field is a pure function
-// of the cells, which is also how `deposit_reach_test` checks the doors.
-void rebuild_deposit_reach(DepositLayer& layer);
 
 // Load path (v37): overwrite the live cells with the save's (the save
 // carries them whole). Width/height stay the layer's own — the version gate

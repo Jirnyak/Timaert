@@ -269,6 +269,32 @@ struct ResourceGrid {
         }
     }
 
+    // The lowest-indexed cell that holds something; kNoCell when the row is
+    // empty. For the callers that want "any one of them" rather than all.
+    static constexpr std::uint32_t kNoCell = ~0u;
+    std::uint32_t first_live() const {
+        if (!live()) return kNoCell;
+        for (std::size_t i = 0; i < cells.size(); ++i) {
+            if (cells[i] != 0) return std::uint32_t(i);
+        }
+        return kNoCell;
+    }
+
+    // A flat index back into coordinates — the inverse of index(), for the
+    // callers that walk the array and then need to know WHERE they are.
+    int x_of(std::uint32_t i) const { return int(i % std::uint32_t(width)); }
+    int y_of(std::uint32_t i) const { return int(i / std::uint32_t(width)); }
+    std::int32_t at_index(std::uint32_t i) const {
+        return i < cells.size() ? cells[i] : 0;
+    }
+
+    // Two fields are the same field when they cover the same world and hold
+    // the same values. `reach` is derived from `cells`, so it cannot disagree
+    // while they agree — comparing it would test the stamp, not the state.
+    bool operator==(const ResourceGrid& o) const {
+        return width == o.width && height == o.height && cells == o.cells;
+    }
+
     // Size the field to a world, zeroed, with its reach field iff it reaches.
     void allocate(int w, int h, int reachRadiusCells) {
         width = w;

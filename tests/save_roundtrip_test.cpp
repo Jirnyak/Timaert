@@ -467,18 +467,27 @@ std::vector<std::uint16_t> make_tree_counts() {
     return treeCounts;
 }
 
-// v37: the deposit cells ride the save whole, one sparse map per kind. The
-// fixture holds a part-drained stone cell, a DRY iron cell (remaining 0 is a
-// visible fact, not an absence), and one cell carrying BOTH kinds — the
-// discovered-vein-in-a-quarry case the per-kind storage exists for.
+// The deposit fields ride the save (sparse ON THE WIRE, dense in the world —
+// the file format is not the model, CANON S5). The fixture holds a
+// part-drained stone cell, one cell carrying BOTH kinds — the
+// discovered-vein-in-a-quarry case per-kind storage exists for — and a clay
+// cell far from either.
+//
+// The old fixture also held a "DRY iron cell (remaining 0 is a visible fact,
+// not an absence)". That was the pre-v55 law; the ANNIHILATION ruling
+// (2026-08-28) already made a worked-out vein leave the world, and in a field
+// zero IS absence — there is no cell-shaped hole to store. The case is gone
+// from the fixture because it is gone from the world.
 sm::DepositLayer make_deposits() {
     sm::DepositLayer d;
-    d.width = 512;
-    d.height = 256;
-    d.cells[std::size_t(sm::DepositKind::Stone)][99u] = 1500;
-    d.cells[std::size_t(sm::DepositKind::Iron)][100u] = 0;
-    d.cells[std::size_t(sm::DepositKind::Stone)][100u] = 60000;
-    d.cells[std::size_t(sm::DepositKind::Clay)][7u] = 4096;
+    sm::allocate_deposit_fields(d, 512, 256);
+    auto put = [&](sm::DepositKind k, std::uint32_t idx, std::int32_t v) {
+        auto& g = d.grid(k);
+        g.write(g.x_of(idx), g.y_of(idx), v);
+    };
+    put(sm::DepositKind::Stone, 99u, 1500);
+    put(sm::DepositKind::Stone, 100u, 60000);
+    put(sm::DepositKind::Clay, 7u, 4096);
     return d;
 }
 
@@ -988,10 +997,12 @@ void run_roundtrip() {
             FAIL_BAIL("deposit cells lost (kind block mismatch)");
         }
     }
-    if (loadedDeposits.cells[std::size_t(sm::DepositKind::Iron)].at(100u) != 0
-        || loadedDeposits.cells[std::size_t(sm::DepositKind::Stone)].at(100u)
-               != 60000) {
-        FAIL_BAIL("the dry vein and its host quarry did not both survive");
+    {
+        const auto& iron = loadedDeposits.grid(sm::DepositKind::Iron);
+        const auto& stone = loadedDeposits.grid(sm::DepositKind::Stone);
+        if (iron.at_index(100u) != 0 || stone.at_index(100u) != 60000) {
+            FAIL_BAIL("the quarry survived and no iron was invented under it");
+        }
     }
     if (loadedTrees != treeCounts) FAIL_BAIL("tree grid lost");
     if (loadedTrees.at(7) != 0u || loadedTrees.at(17) != 12000u) {

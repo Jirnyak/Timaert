@@ -206,15 +206,14 @@ static_assert(int(ResourceFieldId::Iron) == int(ResourceFieldId::Clay) + 1
 template <DepositKind K>
 int deposit_read(const MacroWorld& w, int x, int y) {
     if (!w.deposits) return 0;
-    const std::int32_t* r = w.deposits->remaining_at(K, x, y);
-    return r ? int(*r) : 0;
+    return int(w.deposits->remaining_at(K, x, y));
 }
 template <DepositKind K>
 void deposit_apply(MacroWorld& w, int x, int y, int delta) {
     if (!w.deposits || delta == 0) return;
-    const std::int32_t* r = w.deposits->remaining_at(K, x, y);
-    if (!r) return;   // fail closed: no vein here to move
-    set_deposit_remaining(*w.deposits, K, x, y, *r + delta);
+    const std::int32_t r = w.deposits->remaining_at(K, x, y);
+    if (r == 0) return;   // fail closed: no vein here to move
+    set_deposit_remaining(*w.deposits, K, x, y, r + delta);
 }
 
 // ── The growth laws — the per-row CONTEXT of the one birth mechanism ──────
@@ -322,6 +321,21 @@ constexpr ResourceFieldDef kResourceFields[] = {
 static_assert(sizeof(kResourceFields) / sizeof(kResourceFields[0])
                   == std::size_t(ResourceFieldId::Count),
               "every ResourceFieldId needs its def — the table IS the system");
+// THE VEIN ROWS' REACH, pinned where the decision would be made. The deposit
+// layer sizes its fields with kGathererReach directly (its table cannot link
+// this one — the growth laws below drag the ECS with them), so this is what
+// keeps "the radius is the ROW's column" true rather than merely intended: a
+// row that ever wants a different reach reddens here, at the table.
+static_assert(kResourceFields[std::size_t(ResourceFieldId::Clay)].reachCells
+                  == kGathererReach
+              && kResourceFields[std::size_t(ResourceFieldId::Iron)].reachCells
+                  == kGathererReach
+              && kResourceFields[std::size_t(ResourceFieldId::Stone)].reachCells
+                  == kGathererReach
+              && kResourceFields[std::size_t(ResourceFieldId::Silver)].reachCells
+                  == kGathererReach,
+              "deposit_layer.cpp sizes the vein fields with kGathererReach; "
+              "give a vein row its own reach and teach it that first");
 
 std::unordered_map<std::uint32_t, std::uint16_t>&
 scars_of(GameState& gs, ResourceFieldId f) {
@@ -492,7 +506,10 @@ void resource_fields_daily_growth(MacroWorld& w, int day) {
             const int lump = def.growthAt(w, 0, 0);
             if (lump <= 0 || virgin <= 0) break;
             std::int64_t remaining = 0;
-            for (const auto& [idx, rem] : own) { (void)idx; remaining += rem; }
+            own.for_each_live([&](std::uint32_t idx, std::int32_t rem) {
+                (void)idx;
+                remaining += rem;
+            });
             // Discovery can push the live stock ABOVE the born level; a
             // richer-than-born world simply misses nothing (a negative
             // deficit cast to unsigned would prospect every day, forever).
@@ -505,20 +522,20 @@ void resource_fields_daily_growth(MacroWorld& w, int day) {
             const std::uint64_t bar =
                 std::uint64_t(deficit * (1 << 24) / (virgin * 8));
             if (hash24 >= bar) break;
-            // Candidates: host cells not yet holding this row, in SORTED
-            // order (the map's iteration order is unspecified — the pick
-            // must not depend on it).
-            const auto& host =
-                w.deposits->cells[std::size_t(deposit_kind_of(
-                    def.growthHost))];
+            // Candidates: host cells not yet holding this row. A FIELD walks
+            // itself in index order, so the list comes out sorted by
+            // construction — the explicit sort that used to stand here existed
+            // only because a hash's iteration order is unspecified and the
+            // pick must never depend on it.
+            const ResourceGrid& host =
+                w.deposits->grid(deposit_kind_of(def.growthHost));
             std::vector<std::uint32_t> candidates;
-            candidates.reserve(host.size());
-            for (const auto& [idx, rem] : host) {
+            candidates.reserve(std::size_t(host.liveCells));
+            host.for_each_live([&](std::uint32_t idx, std::int32_t rem) {
                 (void)rem;
-                if (!own.count(idx)) candidates.push_back(idx);
-            }
+                if (own.at_index(idx) == 0) candidates.push_back(idx);
+            });
             if (candidates.empty()) break;
-            std::sort(candidates.begin(), candidates.end());
             const std::uint32_t pick =
                 hash3(std::uint32_t(day), 0x51F7u, w.gs->worldSeed)
                 % std::uint32_t(candidates.size());
