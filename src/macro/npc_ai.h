@@ -41,12 +41,11 @@ inline constexpr float kAiPeriodSeconds =
 inline constexpr float kAiTickGameHours =
     24.0f * float(kAiTicks) / float(kTicksPerDay);
 
-// A profession works ITS OWN village's ground: half the live worlds'
-// village spacing (~21-23 cells, derive_city_spacing/2) rounded to po2 —
-// a work trip stays inside the home hinterland, never the neighbour's.
-// The spawn side reads the same number: ore inside this reach raises the
-// profession, and the man it raises can actually walk to the ore.
-inline constexpr int kGathererReach = 16;
+// kGathererReach moved to macro/resource_field.h (2026-09-16): the reach
+// field the deposit layer stamps needs the SAME number, and deposit_layer.cpp
+// cannot include this header — it drags EnTT into targets that do not link it.
+// A constant two modules must agree on lives below both of them, never inside
+// one of them.
 
 // The automaton's CAMP threshold: legs below this fraction of the bar on
 // campable ground pitch camp NOW, before any debt — an eighth is the margin

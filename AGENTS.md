@@ -326,6 +326,37 @@ is CANON.md S26; these are the working rules that follow from it.
    a second answer to ONE question about the world — two "what stands on this
    cell", two faction dictionaries, two damage laws. Two content modules with
    structurally similar code answer DIFFERENT questions and are not that.
+7. **A WORLD LAYER IS A FLAT ARRAY OVER THE CELLS — no exceptions, and no
+   sparse spelling of one.** Rules 1-2 said this about entities and the gap let
+   a world layer through: `DepositLayer` was born on 2026-08-07 as
+   `unordered_map<idx, cell>` in the very commit whose message claimed "the
+   proven tree-layer discipline" (`81379bf6`) — the prose asserted the flat
+   array and the struct did the opposite, on day one, and nothing compared the
+   two. `TreeLayer`'s `std::vector<std::uint16_t>` is the shape; a `vector`
+   sized by the map IS a flat array, not a container.
+   *Why it matters more than speed:* **a flat array over the torus IS the
+   connected world.** `idx = wrap(y)*w + wrap(x)` — a neighbouring cell is
+   neighbouring memory and "near" is arithmetic. A hash of indices keeps the
+   values and throws the CONNECTEDNESS away: you may ask it about one exact
+   key and nothing else, so every question about a neighbourhood gets rebuilt
+   as a brute-force scan by whoever asks it next. That is what happened
+   (problems.md §52: 69 624 veins scanned per cell, 4.3 ms of a 6.8 ms seam
+   crossing, for one byte). Sparse is legal for the SAVE WIRE, which is a file
+   format, never for the live layer.
+8. **ANY MEMORY COMPRESSION NEEDS THE OWNER'S EXPLICIT APPROVAL** (owner,
+   2026-09-16). Not a review note — a gate. If a design shrinks a world layer
+   or a component below its flat, dense, one-value-per-slot form — a hash, a
+   sparse override map, bit-packing, an index indirection, "only store the
+   interesting ones" — STOP AND ASK, with the number: how many bytes does it
+   save, and what does it stop being able to answer.
+   *Why a gate and not taste:* the argument for compression is always locally
+   true and that is exactly the trap. Veins really do occupy 7 % of cells; the
+   hash really did save ~25 MB. The trade was 25 MB against the structure of
+   the world, in a game whose own rules call 48 MB "ни о чём", whose save
+   budget is a gigabyte, and which keeps 256 inventory slots on every one of
+   16 384 entities. Nobody would have approved that trade if it had been
+   stated as a trade — it was never stated, because saving memory reads as
+   virtue and needs no defence. It needs one.
 
 ## ECS Conventions (EnTT)
 

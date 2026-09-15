@@ -9,6 +9,9 @@
 #include "core/field_noise.h"   // the ONE noise stack of the world's fields
 #include "core/table_guard.h"
 #include "macro/biomes.h"
+// kGathererReach — the reach field's radius IS the profession's reach, read
+// from the resource rows rather than restated here.
+#include "macro/resource_field.h"
 
 namespace sm {
 
@@ -163,7 +166,61 @@ DepositLayer build_deposit_layer(const TerrainData& terrain,
                  (long long)layer.virginUnits[3],
                  layer.cells[0].size(), layer.cells[1].size(),
                  layer.cells[2].size(), layer.cells[3].size());
+    // The reach field is derived from the veins just placed, so it is born
+    // with them rather than on first use — a field built lazily is a field
+    // whose first reader pays for everyone.
+    rebuild_deposit_reach(layer);
     return layer;
+}
+
+// ── THE REACH FIELD (deposit_layer.h, problems.md §52) ────────────────────
+// One vein's contribution to the field: the disc of cells from which a
+// gatherer standing there could work it.
+//
+// THE DISC IS THE LAW'S OWN SHAPE. The question this field replaces measured
+// `torus_dist_sq <= kGathererReach²` — a circle — so the stamp walks a circle,
+// row by row, with the row's half-width taken from the same inequality. A
+// square would have been separable and faster and would have handed the corner
+// cells a trade they cannot reach: the stamp is an implementation of the
+// question, and it is not allowed to answer a different one.
+//
+// Torus-wrapped through the layer's own index door, so a vein at the world's
+// edge reaches across the seam exactly as the distance metric always said it
+// did (core/torus.h torus_dist_sq wraps too).
+static void stamp_reach(DepositLayer& layer, DepositKind kind,
+                        int x, int y, int delta) {
+    auto& g = layer.reach[std::size_t(kind)];
+    if (g.empty()) return;             // no field built: nothing to keep in step
+    constexpr int R = kGathererReach;
+    for (int dy = -R; dy <= R; ++dy) {
+        // The widest dx that still satisfies dx² + dy² <= R².
+        const int span = int(std::sqrt(double(R * R - dy * dy)));
+        for (int dx = -span; dx <= span; ++dx) {
+            std::uint16_t& c = g[layer.wrap_index(x + dx, y + dy)];
+            // A count can only be walked down by a vein that walked it up, so
+            // the floor is a statement about the callers, not a clamp. Guarded
+            // anyway: an underflow here would grant a trade forever.
+            if (delta > 0) ++c;
+            else if (c > 0u) --c;
+        }
+    }
+}
+
+void rebuild_deposit_reach(DepositLayer& layer) {
+    if (layer.width <= 0 || layer.height <= 0) return;
+    const std::size_t n =
+        std::size_t(layer.width) * std::size_t(layer.height);
+    for (std::size_t k = 0; k < std::size_t(kDepositKindCount); ++k) {
+        layer.reach[k].assign(n, std::uint16_t(0));
+    }
+    for (std::size_t k = 0; k < std::size_t(kDepositKindCount); ++k) {
+        for (const auto& [idx, remaining] : layer.cells[k]) {
+            (void)remaining;   // every entry is ALIVE (annihilation law)
+            stamp_reach(layer, DepositKind(k),
+                        int(idx % std::uint32_t(layer.width)),
+                        int(idx / std::uint32_t(layer.width)), +1);
+        }
+    }
 }
 
 bool set_deposit_remaining(DepositLayer& layer, DepositKind kind,
@@ -173,6 +230,10 @@ bool set_deposit_remaining(DepositLayer& layer, DepositKind kind,
     auto it = m.find(layer.wrap_index(x, y));
     if (it == m.end()) return false;   // mining invents no geology
     if (remaining <= 0) {
+        // The vein leaves the world, so it leaves the reach field with it —
+        // here, at the door, because a field kept in step anywhere else is a
+        // field that drifts the first time someone adds a second caller.
+        stamp_reach(layer, kind, x, y, -1);
         // ANNIHILATION (owner, 2026-08-28): a worked-out vein is a vein that
         // no longer exists. Scarcity needs no memorial — the derived
         // virginUnits baseline is what the world misses it against.
@@ -190,7 +251,14 @@ void create_deposit(DepositLayer& layer, DepositKind kind,
     // Every entry is ALIVE (annihilation law): genesis of an empty vein
     // would mint the "dry cell" state back into existence.
     if (amount <= 0) return;
-    layer.cells[std::size_t(kind)][layer.wrap_index(x, y)] = amount;
+    // A REFILL is not a birth: the disc is already standing. Only a cell that
+    // was not there before adds one, or a re-opened vein would count twice and
+    // its eventual death would leave a phantom trade behind.
+    const std::uint32_t idx = layer.wrap_index(x, y);
+    auto& m = layer.cells[std::size_t(kind)];
+    const bool isBirth = m.find(idx) == m.end();
+    m[idx] = amount;
+    if (isBirth) stamp_reach(layer, kind, x, y, +1);
     ++layer.revision;
 }
 
@@ -209,6 +277,10 @@ void restore_deposit_cells(DepositLayer& layer, const DepositLayer& loaded) {
         // was built from terrain + seed, which is exactly the baseline the
         // loaded world was born with.
     }
+    // A wholesale vein swap, so the derived field is re-derived whole. This is
+    // the path world_fields.h calls "rebaked from what IS saved": the reach
+    // field is never in the file, it is recomputed here for free every load.
+    rebuild_deposit_reach(layer);
     ++layer.revision;
 }
 
@@ -244,6 +316,7 @@ int consolidate_deposit_cluster(DepositLayer& layer, DepositKind kind,
                 seen.push_back(idx);
                 sum += it->second;
                 m.erase(it);           // the absorbed vein leaves the map
+                stamp_reach(layer, kind, nx, ny, -1);   // ...and its disc
                 ++absorbed;
                 frontier.emplace_back(nx, ny);
             }

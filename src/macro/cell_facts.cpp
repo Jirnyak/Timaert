@@ -36,20 +36,16 @@ CellFacts cell_facts(const MacroWorld& w, int x, int y) {
     // Live veins within the profession reach — the same ground and the same
     // radius that raise a macro gatherer (npc_ai.h kGathererReach) put his
     // trade in this cell's street crowd (spawn law, fauna.h).
+    // One array read per kind. This used to scan the ENTIRE vein list — 69 624
+    // entries in a real world, and the early break only fires for the rare
+    // cell that has a vein near it, so almost every caller paid the full scan:
+    // 161 µs per cell_facts, 4.3 ms of a 6.8 ms seam crossing, for one byte.
+    // The radius question is a stamped field now (deposit_layer.h reach,
+    // problems.md §52) and the metric is the same circle it always was.
     if (w.deposits) {
         for (std::size_t k = 0; k < std::size_t(kDepositKindCount); ++k) {
-            for (const auto& [idx, remaining] : w.deposits->cells[k]) {
-                (void)remaining;   // every entry is ALIVE (annihilation law)
-                const int dx = int(idx) % td.width;
-                const int dy = int(idx) / td.width;
-                const float d2 = torus_dist_sq(float(dx), float(dy),
-                                               float(f.x), float(f.y),
-                                               float(td.width),
-                                               float(td.height));
-                if (d2 <= float(kGathererReach) * float(kGathererReach)) {
-                    f.depositsNear |= std::uint8_t(1u << k);
-                    break;
-                }
+            if (w.deposits->kind_near(DepositKind(k), f.x, f.y)) {
+                f.depositsNear |= std::uint8_t(1u << k);
             }
         }
     }

@@ -28,6 +28,7 @@
 #include "core/torus.h"
 #include <cstdint>
 #include <unordered_map>
+#include <vector>
 
 #include "macro/features.h"      // the kind's own mine feature (v71)
 #include "macro/map_generator.h"
@@ -95,6 +96,41 @@ struct DepositLayer {
     // Runtime dirty counter for future consumers; never serialized.
     std::uint32_t revision = 0;
 
+    // ── THE REACH FIELD ──────────────────────────────────────────────────
+    // "Is a live vein of this kind within a gatherer's reach of this cell?"
+    // — asked per CELL, by the context assembler (macro/cell_facts.h
+    // depositsNear, the street crowd's trade gate). It used to be answered by
+    // scanning the whole vein list: 69 624 entries in a real world, and the
+    // early break only fires for the rare cell that HAS one nearby, so the
+    // scan was full for almost every caller. Measured: 161 µs per
+    // resolve_context, 4.3 ms of a seam crossing's 6.8 ms — on the sacred
+    // seam, for one byte (problems.md §52).
+    //
+    // A radius question over a sparse point set is a FIELD, never a scan
+    // (AGENTS.md's O(N) bound says exactly this; the rule had simply never
+    // been pointed at the context assembler). So the answer is stamped where
+    // geology changes instead of recomputed where it is asked: a disc of
+    // kGathererReach is written into this grid when a vein is born and erased
+    // when it runs dry, and the question becomes one array read.
+    //
+    // COUNTS, not flags, because discs overlap: a cell reached by three veins
+    // must survive two of them running dry. u16 because a cell can sit inside
+    // the reach of at most (2r+1)² = 1089 veins of one kind, which does not
+    // reach 65535 — and overlap that dense is exactly what a quarry field is.
+    //
+    // DERIVED, never saved (world_fields.h's own distinction): it is a pure
+    // function of the vein set, so the load path re-stamps it after overlaying
+    // the save's cells and the file learns nothing new.
+    std::vector<std::uint16_t> reach[kDepositKindCount];
+
+    // THE question, in O(1). False for a layer with no reach field built —
+    // fail-closed: "no vein near" is the answer that grants nothing.
+    bool kind_near(DepositKind kind, int x, int y) const {
+        const auto& g = reach[std::size_t(kind)];
+        if (width <= 0 || height <= 0 || g.empty()) return false;
+        return g[wrap_index(x, y)] != 0u;
+    }
+
     // Packs a WRAPPED cell into a flat index. The wrap itself is the one in
     // core/torus.h; it used to be written out twice inline right here.
     std::uint32_t wrap_index(int x, int y) const {
@@ -137,6 +173,13 @@ bool set_deposit_remaining(DepositLayer& layer, DepositKind kind,
 // growth law. Inserts (or refills) the kind's cell and bumps the revision.
 void create_deposit(DepositLayer& layer, DepositKind kind,
                     int x, int y, std::int32_t amount);
+
+// Re-stamp the whole reach field from the vein set. The two doors above keep
+// it in step incrementally, so this is only for the paths that install a vein
+// set wholesale — worldgen's own build and the save overlay. Calling it after
+// any number of door writes is a no-op in effect: the field is a pure function
+// of the cells, which is also how `deposit_reach_test` checks the doors.
+void rebuild_deposit_reach(DepositLayer& layer);
 
 // Load path (v37): overwrite the live cells with the save's (the save
 // carries them whole). Width/height stay the layer's own — the version gate
