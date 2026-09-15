@@ -172,15 +172,21 @@ it appends when its work is decided (CANON S14).
 - **THE LEARN LAW: rank 0 is ignorance.** There is no separate "known" bit —
   rank 0 IS not knowing the skill, and `spend_skill_point` refuses it
   ("unknown: learn first"). `learn_skill` / `spend_learn_pick` are the one
-  door out, fed by creation's 5 picks today and by teachers/events tomorrow.
+  door out, fed by creation's starter picks (K-K-K law) today and by teachers/events tomorrow.
   Mastery is reachable and means something: rank 100 is 1 learned + 99
   spends — a hundred levels poured into a single craft.
 
-- **The grant is 1:1:** `try_level_up` gives +1 attribute point and +1 skill
-  point, nothing else. (A perk point every 10th level is a COMMENT awaiting
-  the perk redesign — no code.) `exp_to_next_level(level) =
-  1000·level·(0.1·level+1)`; `award_exp` scales by `expMultPct` rounding
-  half up.
+- **Creation budget is K-K-K & level grant is 1-1-1 (CANON S14, owner 2026-09-14):**
+  Creation grants the unified starter budget **K-K-K** (base **5-5-5**: 5 attribute
+  points, 5 learned skills $0 \to 1$, 5 perk points for starter spoke paths; tunable
+  to **10-10-10** during balance playtests). Every level-up is isotropic:
+  `try_level_up` gives +1 attribute point, +1 skill point, AND +1 perk point
+  EVERY level. Total level isotropy: no special levels, no artificial level
+  gates. The perk system is a topological constellation graph (256 nodes,
+  flat constexpr array, 32-byte bitmask); topological distance (~15–20 steps
+  to Keystones like Mana Shield / Blood Magic) replaces arbitrary level
+  requirements. `exp_to_next_level(level) = 1000·level·(0.1·level+1)`;
+  `award_exp` scales by `expMultPct` rounding half up.
 
 - **One skill, one meaning.** `athletics` makes you FASTER, `travel` makes
   you get FURTHER on one bar of stamina — never both, or the sheet stops
