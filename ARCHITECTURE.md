@@ -1506,8 +1506,12 @@ detail: [render.md](render.md) §Dynamic lighting.
   overhead, cool blue for the moon.
 - Ambient colour: a **low** cool-blue moonlight floor at night → neutral during
   day (kept low so the directional moonlight does the sculpting).
-- Terrain/structure diffuse quantised to 4 bands for the pixel-retro aesthetic;
-  billboards use a flat term.
+- STRUCTURE diffuse quantised to 4 bands for the pixel-retro aesthetic;
+  billboards use a flat term; TERRAIN is shaded smooth — posterising a
+  smooth-shaded body draws edges with no cause in the world (ground.md).
+- Every lit pass ends on `aerial_perspective()`: the air between eye and
+  surface, absorption and in-scatter in one exponential, its colour the same
+  one the sky dome takes for its horizon fog.
 
 **Sprite shadows:**
 - Shipped: billboards cast (a depth-only silhouette of the same sprite frame)

@@ -425,6 +425,14 @@ public:
     std::uint32_t light_debug_mask() const {
         return renderer3dVk_.light_debug_mask();
     }
+    // Diagnostic: `grounddbg` bisect of the procedural ground's bands (see
+    // Renderer3DVk::set_ground_debug_mask for the bit meanings).
+    void set_ground_debug_mask(std::uint32_t m) {
+        renderer3dVk_.set_ground_debug_mask(m);
+    }
+    std::uint32_t ground_debug_mask() const {
+        return renderer3dVk_.ground_debug_mask();
+    }
     // ЧИТЫ И ДИАГНОСТИКА — инструменты СЕССИИ, не настройки (вердикт
     // владельца 2026-09-11, PLAY-3: «читы работают только в своей сессии,
     // при новой игре/загрузке — дефолт»; тот же закон, что 2026-08-11 для
@@ -436,6 +444,7 @@ public:
         godMode_ = false;
         sunFreeze_ = false;
         renderer3dVk_.set_light_debug_mask(0);
+        renderer3dVk_.set_ground_debug_mask(0);
     }
     float cam_height_m() const { return cam_.pos.y; }
     // Player feet altitude (metres). Kept under its historical name for the

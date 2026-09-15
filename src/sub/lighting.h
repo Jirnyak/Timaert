@@ -111,11 +111,26 @@ struct GpuLightBuffer {
                                     //     march apron; 0 = no heightfield),
                                     // w = composite origin Z (cloud anchor;
                                     //     origin X rides sunDirW.w)
+    // The air between the eye and the surface (haze_color / kHazeEFoldM
+    // above), and the eye itself. They ride this buffer for the same reason
+    // everything else here does: it is the one set-0 descriptor EVERY lit pass
+    // already binds, so aerial perspective reaches the ground, the walls, the
+    // trees, the bodies and the water through one law and zero new plumbing.
+    // A lit shader needs no camera push lane of its own to compute a distance.
+    float         aerial[4];        // xyz = haze colour (linear),
+                                    // w = 1 / e-fold distance in metres.
+                                    // 0 disables it — exp(-d*0) is 1, so the
+                                    // off state needs no branch anywhere (the
+                                    // gpu_smoke3d harness opts out this way).
+    float         viewParams[4];    // xyz = camera position in WINDOW space —
+                                    //       the space vWorld lives in, never
+                                    //       the absolute synth coord;
+                                    // w = `grounddbg` bisect mask (0 = off)
     float         lightMvpFar[16];
     GpuLight      lights[kSubworldMaxLights];
 };
 static_assert(sizeof(GpuLightBuffer)
-                  == 16 + 16 + 32 + 64 + 32 * kSubworldMaxLights,
+                  == 16 + 16 + 32 + 32 + 64 + 32 * kSubworldMaxLights,
               "GpuLightBuffer must match the std430 SSBO layout");
 
 // Cull a candidate light set down to the SSBO budget, keeping the ones NEAREST
@@ -256,6 +271,60 @@ inline LightParameters compute_light_parameters(int day, float tod) {
         0.15f + dayF * 0.25f,
     };
     return p;
+}
+
+// ── AERIAL PERSPECTIVE ───────────────────────────────────────────────────
+// Air is not empty. Over distance it absorbs what a surface sent toward the
+// eye and scatters its OWN light in to replace it, and both go as the same
+// exponential in the optical depth, so one factor does both:
+//
+//     seen = surface * exp(-d/D) + haze * (1 - exp(-d/D))
+//
+// The subworld had none of this, and that is half of why its far ground read
+// as a bad LOD rather than as distance: a hill 600 m away arrived at exactly
+// the contrast and saturation of the grass underfoot, so the eye had no depth
+// cue left and read the surface variation as dirt on the texture. (The far
+// plane's own comment records the other half of the same hole — 1500 m used
+// to CLIP the distant ground into the sky, "тумана по дальности в субмире
+// нет". Now there is, and the clip is a fade.)
+//
+// THE E-FOLD DISTANCE, in metres: how far a surface travels before the air has
+// taken 1/e of it. Not a taste number — it is the world's own half-span, the
+// composite's 3072 tiles at a metre each, halved. That puts the far corner of
+// the loaded window (a diagonal of ~2172 m) at about a quarter of itself and
+// three quarters haze, and a hill at 600 m a third of the way in. A player can
+// never see ground the world does not load, so the world's size is exactly the
+// right scale for the air inside it.
+constexpr float kHazeEFoldM = 1536.0f;
+
+// THE AIR'S OWN COLOUR. Two derivations, one line.
+//
+// Rayleigh scattering goes as 1/lambda^4, so with RGB at 600/550/450 nm the
+// relative amounts are 0.32 / 0.45 / 1.00 — very blue, which is the clear
+// zenith. Real ground haze also carries aerosol (Mie), which is very nearly
+// wavelength-flat. Half of each, normalised to leave the mean brightness
+// alone, is the axis below: distinctly cool, nowhere near sky-blue.
+constexpr float kAirTintR = 0.77f;
+constexpr float kAirTintG = 0.88f;
+constexpr float kAirTintB = 1.35f;
+
+// How much of the directional light the air returns. The haze faces every
+// direction at once, so its N·L is the average of max(N·L, 0) over a whole
+// sphere, which is exactly 1/4 — no fitting involved.
+constexpr float kHazeSunGain = 0.25f;
+
+// The colour the air glows with, from the light the frame ALREADY has. Warm at
+// sunset because sunColor is warm, dark blue at night because ambient is and
+// the moon is weak, and white-blue at noon. It follows the sky for free, with
+// no second copy of the day/night curve to keep in step — and it is the same
+// value the sky dome takes for its horizon fog, so the land and the sky it
+// fades into can never disagree.
+inline vec3 haze_color(const LightParameters& p) {
+    return {
+        (p.ambientColor.x + p.sunColor.x * kHazeSunGain) * kAirTintR,
+        (p.ambientColor.y + p.sunColor.y * kHazeSunGain) * kAirTintG,
+        (p.ambientColor.z + p.sunColor.z * kHazeSunGain) * kAirTintB,
+    };
 }
 
 inline LightParameters compute_sun(const WorldTime& t) {

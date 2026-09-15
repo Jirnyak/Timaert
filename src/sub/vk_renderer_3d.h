@@ -145,9 +145,16 @@ public:
     // flight ceiling derives from it (sub/height.h). 0 until first upload.
     float max_height_m() const { return maxHeightM_; }
     // `lightdbg` bisect mask (lighting.glsl lit_surface): bit0 march, bit1
-    // clouds, bit2 object maps, bit3 N·L — set bit lifts that term to 1.
+    // clouds, bit2 object maps, bit3 N·L, bit4 haze — a set bit lifts that
+    // term out of the frame.
     void set_light_debug_mask(std::uint32_t m) { lightDebugMask_ = m; }
     std::uint32_t light_debug_mask() const { return lightDebugMask_; }
+    // `grounddbg` bisect mask (mesh.frag kGdbg*): bit0 terrain patchwork,
+    // bit1 family shape, bit2 surface roughness, bit3 cover, bit4 relief.
+    // Same idea as `lightdbg` one layer down — which BAND of the procedural
+    // ground draws a given look is a question for the eye.
+    void set_ground_debug_mask(std::uint32_t m) { groundDebugMask_ = m; }
+    std::uint32_t ground_debug_mask() const { return groundDebugMask_; }
     static void tile_to_world(float px, float py, float& wx, float& wz);
 
 private:
@@ -164,10 +171,14 @@ private:
     // is done reading it (see create_host_mapped).
     // skyParams is copied into the SSBO's sky lane (time, wind, cloudiness —
     // the cloud-shadow context every lit pass reads; see sub/lighting.h).
+    // `haze` is the air's own colour (sub/lighting.h haze_color); it rides the
+    // same lane write as camPos, which every lit pass then measures its aerial
+    // distance from.
     void gather_point_lights(ecs::World* ecs, std::uint32_t slot,
                              const sm::vec3& camPos,
                              const float (&skyParams)[4],
-                             const sm::vec3& sunDir);
+                             const sm::vec3& sunDir,
+                             const sm::vec3& haze);
     const gpu::VulkanDevice* dev_ = nullptr;
     VkRenderPass pass_ = VK_NULL_HANDLE;
     bool uploaded_ = false;
@@ -227,7 +238,8 @@ private:
     gpu::VulkanBuffer  lightFieldStaging_[kFramesInFlight] = {};
     std::vector<std::uint8_t> lightFieldPixels_;
     std::uint32_t lightFieldFrame_ = 0;
-    std::uint32_t lightDebugMask_ = 0; // `lightdbg`; 0 in shipping frames
+    std::uint32_t lightDebugMask_ = 0;  // `lightdbg`; 0 in shipping frames
+    std::uint32_t groundDebugMask_ = 0; // `grounddbg`; 0 in shipping frames
     void rebuild_light_field(VkCommandBuffer cmd, ecs::World* ecs,
                              const sm::vec3& camPos, std::uint32_t slot);
     // Absolute world-space origin (metres) of the current composite: the world

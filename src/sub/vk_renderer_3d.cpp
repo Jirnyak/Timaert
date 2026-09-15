@@ -2876,14 +2876,6 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
     SunInfo sun = compute_sun(time);
     const float tod = skyCtx.tod;
 
-    // The light SSBO write needs the frame's celestial direction (the
-    // terrain-occlusion march follows it), so the gather runs here, after
-    // compute_sun and before any draw. camPos (world metres) is the cull
-    // origin — see gather_point_lights: when more than kSubworldMaxLights
-    // emitters are live, the nearest to the camera survive, so the player's
-    // own light (riding the camera) is never dropped.
-    gather_point_lights(ecs, slot, cam.pos, skyParams, sun.sunDir);
-
     // Lightning: a pure function of the render clock (sub/sky.h). The flash
     // is ADDED TO AMBIENT — the one channel every lit pass already receives —
     // so the whole world blinks cool-white for the instant with zero new
@@ -2895,6 +2887,22 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
         sun.ambientColor.y += 0.60f * stormFlash;
         sun.ambientColor.z += 0.75f * stormFlash;
     }
+
+    // THE AIR. One colour for the haze every lit pass fades into AND for the
+    // sky dome's horizon, taken from the light the frame already has
+    // (sub/lighting.h haze_color) — so the land can never fade toward a
+    // different sky than the one drawn behind it. Computed AFTER the flash, so
+    // a lightning stroke lights the air as well as the ground.
+    const vec3 haze = sub::haze_color(sun);
+
+    // The light SSBO write needs the frame's celestial direction (the
+    // terrain-occlusion march follows it) and the air above, so the gather
+    // runs here, after compute_sun and before any draw. camPos (world metres)
+    // is BOTH the cull origin — see gather_point_lights: when more than
+    // kSubworldMaxLights emitters are live, the nearest to the camera survive,
+    // so the player's own light (riding the camera) is never dropped — and the
+    // eye every lit pass measures its aerial distance from.
+    gather_point_lights(ecs, slot, cam.pos, skyParams, sun.sunDir, haze);
 
     mat4 lightMvp = lightMvp_;
 
@@ -2912,9 +2920,13 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
         sky.p0[1] = static_cast<float>(ext.height);
         sky.p0[2] = fovRad;
         sky.p0[3] = tod;
-        sky.p1[0] = sun.ambientColor.x; // fog = ambient for now
-        sky.p1[1] = sun.ambientColor.y;
-        sky.p1[2] = sun.ambientColor.z;
+        // The dome's horizon fog is THE haze the land fades into — one value,
+        // one home (sub/lighting.h haze_color). It used to be a copy of
+        // ambient marked "for now", which was harmless only because nothing
+        // but the sky read it.
+        sky.p1[0] = haze.x;
+        sky.p1[1] = haze.y;
+        sky.p1[2] = haze.z;
         sky.p1[3] = elapsed;
         // The sun the sky DRAWS is the sun the world is LIT by — celestial.h's
         // arc, not a second in-shader copy of the formula.
@@ -3356,7 +3368,8 @@ void Renderer3DVk::rebuild_light_field(VkCommandBuffer cmd, ecs::World* ecs,
 void Renderer3DVk::gather_point_lights(ecs::World* ecs, std::uint32_t slot,
                                        const sm::vec3& camPos,
                                        const float (&skyParams)[4],
-                                       const sm::vec3& sunDir) {
+                                       const sm::vec3& sunDir,
+                                       const sm::vec3& haze) {
     if (slot >= kFramesInFlight || lightBuf_[slot].mapped == nullptr) return;
     auto* buf = static_cast<GpuLightBuffer*>(lightBuf_[slot].mapped);
     buf->skyParams[0] = skyParams[0];
@@ -3384,6 +3397,21 @@ void Renderer3DVk::gather_point_lights(ecs::World* ecs, std::uint32_t slot,
     buf->terrainParams[2] =
         float(kHeightExtFactor) * float(kFullSize) * kTileMeters;
     buf->terrainParams[3] = groundOriginY_; // cloud anchor, see sunDirW above
+    // THE AIR, and THE EYE. One write here reaches every lit pass, because
+    // this is the one set-0 buffer they all bind: the ground, the walls, the
+    // trees, the bodies and the water all fade toward the same haze over the
+    // same distance with no per-shader plumbing at all.
+    buf->aerial[0] = haze.x;
+    buf->aerial[1] = haze.y;
+    buf->aerial[2] = haze.z;
+    buf->aerial[3] = 1.0f / kHazeEFoldM;
+    // WINDOW space, the space vWorld lives in — never the absolute synth
+    // coordinate mesh.frag builds for the ground detail. camPos arrives in
+    // exactly that space (it is the cull origin the lights were packed in).
+    buf->viewParams[0] = camPos.x;
+    buf->viewParams[1] = camPos.y;
+    buf->viewParams[2] = camPos.z;
+    buf->viewParams[3] = float(groundDebugMask_); // `grounddbg`, 0 = off
     // The wide shadow level's matrix, computed by record_shadow just before
     // this (frame(): prepare → shadow → main); receivers rebuild the far
     // light-clip from vWorld (lighting.glsl far_light_clip).

@@ -348,7 +348,18 @@ int main(int, char**)
             std::fprintf(stderr, "[gpu_smoke3d] light SSBO alloc FAILED\n");
             return 9;
         }
-        static_cast<sm::sub::GpuLightBuffer*>(lightBuf.mapped)->count = 0;
+        // ZERO THE WHOLE STRUCT, not just the count. Host-mapped memory
+        // arrives with whatever was in it, and this harness deliberately
+        // writes only the lanes it knows about — so every lane the SHIPPING
+        // renderer adds later would be read by the shared shaders as garbage.
+        // (Caught by exactly that: the aerial-perspective lanes landed in the
+        // buffer and the harness would have hazed its frame by an undefined
+        // distance and toggled undefined `grounddbg` bands.) Zeroing once here
+        // makes "a lane this harness does not know about reads as OFF" a
+        // property of the harness instead of a line somebody must remember to
+        // add — and every lane in this struct is defined so that zero is off.
+        *static_cast<sm::sub::GpuLightBuffer*>(lightBuf.mapped) =
+            sm::sub::GpuLightBuffer{};
 
         // Binding 2 mirrors the shipping heightfield slot (lighting.glsl
         // u_heightM). The harness's toy world has no heightfield texture, so

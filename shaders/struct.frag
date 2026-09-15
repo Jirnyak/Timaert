@@ -176,5 +176,5 @@ void main() {
     // Additive positional lights on walls/roofs (window vWorld space, matching the
     // sun/shadow math). Inert until the light buffer is populated (Inc 3+).
     col += base * point_lights(vWorld, N);
-    outColor = vec4(col, 1.0);
+    outColor = vec4(aerial_perspective(col, vWorld), 1.0);
 }

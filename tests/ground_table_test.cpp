@@ -18,8 +18,12 @@
 //   1. every CSV row stands at its own ordinal, and that ordinal is the
 //      TerrainMaterial id the material texture carries (sub/material.h);
 //   2. every number in the GLSL is the number the CSV says, including the
-//      DERIVED ones — sigma from the coefficient of variation, frequency from
-//      the wavelength — so the calibration cannot be quietly hand-tuned;
+//      DERIVED ones — the mean colour from the two constituents it is the
+//      midpoint of, the frequency from the wavelength, the ladder's span from
+//      the two ends the row names — so none of it can be quietly hand-tuned;
+//   2b. every constituent colour is a real colour in 0..1, which is what makes
+//      "the shader cannot show a colour nobody authored" true rather than
+//      merely intended;
 //   3. a cover named by a ground row exists, and a bare ground has no density;
 //   4. the one material id the shader hardcodes (the ploughed field's
 //      north-south twin, whose axes it swaps) is still that field.
@@ -27,6 +31,7 @@
 
 #include "sub/material.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <fstream>
@@ -164,13 +169,14 @@ double glsl_scalar(const std::string& src, const std::string& name) {
     return std::stod(src.substr(eq + 1));
 }
 
-// The calibration this whole table rests on: the mean-preserving lognormal
-// exp(sigma*z - sigma^2/2) has coefficient of variation sqrt(exp(sigma^2)-1),
-// so a measured CV inverts to exactly this sigma. Re-derived here rather than
-// read from anywhere, which is the point of the test.
-double sigma_of_cv(double cv) { return std::sqrt(std::log(1.0 + cv * cv)); }
-
 bool near_eq(double a, double b) { return std::fabs(a - b) < 1e-4; }
+
+// The coarse end of every ladder, in cycles per metre — one patch per ~28 m,
+// the scale at which ground reads as TERRAIN rather than as surface. Mirrors
+// tools/gen_ground_table.py LADDER_FLOOR_FREQ; it is the one ladder number the
+// generator does NOT emit (nothing in the shader reads it), so it is spelled
+// here to keep the re-derivation honest.
+const double kLadderFloorFreq = 0.035;
 
 const char* kFamilies[] = {"soil", "turf", "sand", "furrow",
                            "stone", "track", "mud"};
@@ -227,13 +233,36 @@ void test_generated_table_matches_the_csvs() {
           "kCoverCount is the cover CSV's row count");
 
     // 2. Every number, re-derived.
-    std::vector<double> albedo, family, surface, macro, grain, edge, damp,
-        chroma, cover;
+    std::vector<double> fresh, worn, family, surface, spread, ladder,
+        edge, damp, cover;
+    // THE BOUND the whole colour model rests on: every colour the shader can
+    // show lies on the segment between a row's two constituents, so a ladder
+    // that cannot leave 0..1 cannot leave the palette. Nothing downstream can
+    // restore that guarantee if a constituent is out of range, which is why
+    // it is checked here rather than trusted.
+    bool constituentsSane = true;
+    // The ladder's two shared constants come from the GLSL, so the span and
+    // the normalisers below are re-derived against whatever the generator
+    // actually emitted — a hand-edit to either constant is then caught by the
+    // arrays disagreeing, not merely by the constant looking different.
+    const double lac = glsl_scalar(glsl, "kLadderLacunarity");
+    const double gain = glsl_scalar(glsl, "kLadderGain");
+    CHECK(lac > 1.0 && gain > 0.0 && gain < 1.0,
+          "the ladder's lacunarity is a real step and its gain a real decay");
     bool famKnown = true, coverKnown = true, bareIsBare = true;
     for (std::size_t i = 0; i < mats.rows.size(); ++i) {
-        albedo.push_back(mats.num(i, "albedo_r"));
-        albedo.push_back(mats.num(i, "albedo_g"));
-        albedo.push_back(mats.num(i, "albedo_b"));
+        // The two constituents. Their midpoint — what the mix settles to at
+        // range — is documentation on the row's header line, not an array:
+        // nothing reads it, and a table that carries numbers nobody reads is
+        // how a reader learns to distrust the ones that matter.
+        for (const char* ch : {"r", "g", "b"}) {
+            const double f = mats.num(i, std::string("fresh_") + ch);
+            const double w = mats.num(i, std::string("worn_") + ch);
+            if (f < 0.0 || f > 1.0 || w < 0.0 || w > 1.0)
+                constituentsSane = false;
+            fresh.push_back(f);
+            worn.push_back(w);
+        }
 
         int fam = -1;
         for (int f = 0; f < int(sizeof(kFamilies) / sizeof(kFamilies[0])); ++f)
@@ -241,19 +270,36 @@ void test_generated_table_matches_the_csvs() {
         if (fam < 0) { famKnown = false; fam = 0; }
         family.push_back(double(fam));
 
-        surface.push_back(sigma_of_cv(mats.num(i, "cv")));
         surface.push_back(1.0 / mats.num(i, "meso_m"));
-        surface.push_back(mats.num(i, "chroma_sigma"));
         surface.push_back(mats.num(i, "relief_m"));
 
-        macro.push_back(sigma_of_cv(mats.num(i, "macro_cv")));
-        grain.push_back(1.0 / mats.num(i, "micro_m"));
+        spread.push_back(mats.num(i, "sd"));
+        spread.push_back(mats.num(i, "macro_sd"));
+
+        // THE LADDER, re-derived exactly as tools/gen_ground_table.py does it:
+        // the span is the two ends the row already names — the patchwork floor
+        // and the row's own grain — snapped to whole octaves around its meso
+        // frequency, and the normalisers are the full-resolution standard
+        // deviations of each half. Nothing here is authored, so what this pins
+        // is that the shader's octaves still follow the CSV's wavelengths: an
+        // edit to meso_m or micro_m MUST move the ladder, and a hand-tuned
+        // ladder that no longer matches them is the drift this test exists for.
+        const double mesoF = 1.0 / mats.num(i, "meso_m");
+        const double grainF = 1.0 / mats.num(i, "micro_m");
+        const double iLo = std::min(
+            std::round(std::log(kLadderFloorFreq / mesoF) / std::log(lac)), -1.0);
+        const double iHi = std::max(
+            std::round(std::log(grainF / mesoF) / std::log(lac)), 1.0);
+        double coarse = 0.0, fine = 0.0;
+        for (int k = int(iLo); k < 0; ++k) coarse += std::pow(gain, 2 * k);
+        for (int k = 0; k <= int(iHi); ++k) fine += std::pow(gain, 2 * k);
+        ladder.push_back(iLo);
+        ladder.push_back(iHi);
+        ladder.push_back(1.0 / std::sqrt(coarse));
+        ladder.push_back(1.0 / std::sqrt(fine));
+
         edge.push_back(mats.num(i, "edge_m"));
         damp.push_back(mats.num(i, "damp"));
-
-        chroma.push_back(mats.num(i, "chroma_r"));
-        chroma.push_back(mats.num(i, "chroma_g"));
-        chroma.push_back(mats.num(i, "chroma_b"));
 
         // 3. A named cover must exist, and bare ground must be bare.
         int cid = -1;
@@ -269,29 +315,37 @@ void test_generated_table_matches_the_csvs() {
     CHECK(coverKnown, "every ground names a cover row that exists");
     CHECK(bareIsBare, "bare ground carries no cover density");
 
-    check_array(glsl_array(glsl, "kGroundAlbedo"), albedo, "kGroundAlbedo");
+    check_array(glsl_array(glsl, "kGroundFresh"), fresh, "kGroundFresh");
+    check_array(glsl_array(glsl, "kGroundWorn"), worn, "kGroundWorn");
     check_array(glsl_array(glsl, "kGroundFamily"), family, "kGroundFamily");
     check_array(glsl_array(glsl, "kGroundSurface"), surface, "kGroundSurface");
-    check_array(glsl_array(glsl, "kGroundMacroSigma"), macro,
-                "kGroundMacroSigma");
-    check_array(glsl_array(glsl, "kGroundGrainFreq"), grain, "kGroundGrainFreq");
+    check_array(glsl_array(glsl, "kGroundSpread"), spread, "kGroundSpread");
+    check_array(glsl_array(glsl, "kGroundLadder"), ladder, "kGroundLadder");
     check_array(glsl_array(glsl, "kGroundEdge"), edge, "kGroundEdge");
     check_array(glsl_array(glsl, "kGroundDamp"), damp, "kGroundDamp");
-    check_array(glsl_array(glsl, "kGroundChromaAxis"), chroma,
-                "kGroundChromaAxis");
     check_array(glsl_array(glsl, "kGroundCover"), cover, "kGroundCover");
 
-    std::vector<double> ccol, cpar;
+    // The cover wears the SAME two-constituent law, so it gets the same
+    // guarantee and the same check.
+    std::vector<double> cfresh, cworn, cpar;
     for (std::size_t i = 0; i < covers.rows.size(); ++i) {
-        ccol.push_back(covers.num(i, "colour_r"));
-        ccol.push_back(covers.num(i, "colour_g"));
-        ccol.push_back(covers.num(i, "colour_b"));
+        for (const char* ch : {"r", "g", "b"}) {
+            const double f = covers.num(i, std::string("fresh_") + ch);
+            const double w = covers.num(i, std::string("worn_") + ch);
+            if (f < 0.0 || f > 1.0 || w < 0.0 || w > 1.0)
+                constituentsSane = false;
+            cfresh.push_back(f);
+            cworn.push_back(w);
+        }
         cpar.push_back(covers.num(i, "strand_per_m"));
         cpar.push_back(covers.num(i, "height_m"));
         cpar.push_back(covers.num(i, "wind"));
-        cpar.push_back(sigma_of_cv(covers.num(i, "cv")));
+        cpar.push_back(covers.num(i, "sd"));
     }
-    check_array(glsl_array(glsl, "kCoverColour"), ccol, "kCoverColour");
+    CHECK(constituentsSane,
+          "every constituent colour, ground and cover, is in 0..1");
+    check_array(glsl_array(glsl, "kCoverFresh"), cfresh, "kCoverFresh");
+    check_array(glsl_array(glsl, "kCoverWorn"), cworn, "kCoverWorn");
     check_array(glsl_array(glsl, "kCoverParams"), cpar, "kCoverParams");
 
     // The family constants the shader dispatches on are emitted by the same
@@ -326,10 +380,9 @@ void test_the_one_hardcoded_id_still_means_what_the_shader_thinks() {
     // tunes id 9 and forgets 14, half the world's fields change and half do
     // not — and only on cells whose plough happened to run the other way.
     bool twins = true;
-    for (const char* col : {"family", "albedo_r", "albedo_g", "albedo_b", "cv",
-                            "macro_cv", "meso_m", "micro_m", "chroma_sigma",
-                            "chroma_r", "edge_m",
-                            "chroma_g", "chroma_b", "relief_m", "damp",
+    for (const char* col : {"family", "fresh_r", "fresh_g", "fresh_b",
+                            "worn_r", "worn_g", "worn_b", "sd", "macro_sd",
+                            "meso_m", "micro_m", "relief_m", "edge_m", "damp",
                             "cover", "cover_density"}) {
         if (mats.at(9, col) != mats.at(14, col)) {
             twins = false;

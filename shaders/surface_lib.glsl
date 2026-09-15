@@ -99,30 +99,65 @@ float grain(vec2 q, float freq) {
     return wnoise(q, freq) * 0.62 + wnoise(q, freq * 3.73) * 0.38;
 }
 
-// Standard deviations of the two primitives above, inverted: multiplying
-// (sample - 0.5) by these turns a noise sample into a unit-variance z-score.
-// wnoise: 1/0.2143. grain: 1/(0.2143*sqrt(0.62^2+0.38^2)) = 1/0.1559.
+// Standard deviation of wnoise, inverted: multiplying (sample - 0.5) by this
+// turns a noise sample into a unit-variance z-score. 1/0.2143.
+//
+// There used to be a second one here for grain(), and a mottle() beside them —
+// the mean-preserving lognormal exp(sigma*z - sigma^2/2) that every surface
+// multiplied its colour by. Both are gone with the model they served. A
+// multiply can land a surface on ANY colour, including ones no material
+// authored, and that is what the subworld ground's "dirt" turned out to be
+// (owner, 2026-09-14/15). Colour now comes from mixing between authored
+// constituents, which is bounded by construction; see mesh.frag ground_worn.
+// Nothing here multiplies a colour any more, and nothing should.
 const float kNormNoise = 4.665;
-const float kNormGrain = 6.413;
 
-// MEAN-PRESERVING variation: exp(sigma*z - sigma^2/2) has expectation exactly
-// 1 for a unit-variance z, so texture can be added at any strength without
-// shifting the surface's average brightness — the lit result stays the colour
-// the material table says it is. Its coefficient of variation is
-// sqrt(exp(sigma^2)-1), which is how tools/gen_ground_table.py calibrates
-// sigma from a measured (or authored) CV instead of tuning it by eye.
-float mottle(float sigma, float z) {
-    return exp(sigma * z - 0.5 * sigma * sigma);
-}
-
-// THE anti-aliasing rule, and the reason a 4 cm grain does not shimmer at
-// thirty metres. `px` is the world-space size of one pixel's footprint and
-// `freq` the feature frequency in the same units: once a cycle no longer
-// spans a pixel it is faded out rather than point-sampled. This replaces
-// mipmaps for a synthesised surface — and the frequency it kills is exactly
-// the one that would otherwise crawl when the camera moves.
+// THE anti-aliasing rule for a band's SLOPE, and the reason a 4 cm grain does
+// not shimmer at thirty metres. `px` is the world-space size of one pixel's
+// footprint and `freq` the feature frequency in the same units: once a cycle
+// no longer spans a pixel it is faded out rather than point-sampled. This
+// replaces mipmaps for a synthesised surface — and the frequency it kills is
+// exactly the one that would otherwise crawl when the camera moves.
+//
+// Reaching exactly ZERO is the point here, and it is also CORRECT: averaging a
+// stationary field's slope over a footprint wider than its own wavelength
+// gives zero, because every rise is matched by a fall inside the same pixel.
+// Relief that the screen cannot resolve does not shade — it is not merely
+// faint, it is absent. (It is also what keeps the callers' early-outs live:
+// the relief taps are the most expensive thing on the ground path and a band
+// at weight 0 is skipped outright.)
 float resolved(float px, float freq) {
     return clamp(1.0 - px * freq * 2.2, 0.0, 1.0);
+}
+
+// A cycle needs about this many pixels to read as a cycle rather than as
+// dither. It is the screen's carrying limit, not a taste knob: below four
+// samples per period the interpolated lattice stops being a shape on screen
+// and starts being noise that crawls when the camera moves.
+const float kResolveCycles = 4.0;
+
+// The floor a band's weight is soft-thresholded against. A band under it
+// cannot move a channel by one 8-bit step (its weight times a material's
+// sigma, ~0.2, times a mid albedo lands below 1/255), so it is dropped — and
+// subtracting the floor rather than comparing against it keeps the fade
+// continuous all the way down to the exact zero the early-outs want.
+const float kResolveFloor = 0.02;
+
+// THE same question asked of a band's VALUE — and it has a different answer,
+// which is why this is a second function and not a second caller of the one
+// above. A pixel whose footprint covers N of a field's cells shows their
+// AVERAGE, and the average of N independent samples keeps sigma/sqrt(N) of the
+// variation, not none of it: N = (px*freq)^2, so the contrast falls as
+// 1/(px*freq) and never reaches nothing. Far ground is genuinely less blotchy
+// than near ground; it is not genuinely FLAT, and a band that snaps to flat is
+// the "low-quality LOD" the eye names on sight.
+//
+// So: full weight while the screen can carry the cycle, then the standard-error
+// tail. The two meet in one expression with no branch and no second constant.
+float averaged(float px, float freq) {
+    float n = px * freq * kResolveCycles;
+    float w = inversesqrt(1.0 + n * n);
+    return max(w - kResolveFloor, 0.0) / (1.0 - kResolveFloor);
 }
 
 #endif // TIMAERT_SURFACE_LIB

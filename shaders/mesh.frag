@@ -1,24 +1,63 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
 // Subworld 3D terrain mesh fragment stage. Procedural per-biome ground synth
-// (no atlas) lit by a 4-band quantised NdotL sun + ambient, with a PCF
-// shadow-map lookup so cast shadows (terrain + trees) land on the surface.
+// (no atlas) lit by a smooth NdotL sun + ambient, with a PCF shadow-map lookup
+// so cast shadows (terrain + trees) land on the surface. The 4-band quantise
+// that built objects wear is deliberately NOT here — see the light block in
+// main() for the law that decides where posterisation belongs.
 //
-// THREE FREQUENCY BANDS, and the reason the ground reads as a surface:
-//   macro ~28 m — the biome patchwork. Colour only: a drier patch of grass
-//                 is not a hill.
-//   meso  0.3–4.5 m — the family's STRUCTURE (tussocks, ripples, plates,
-//                 furrows). This is the band the eye reads as "surface", and
-//                 it was the one that did not exist: the synth used to jump
-//                 straight from 28 m patches to a 4.5 cm white-noise hash,
-//                 which averages to a flat colour past two metres.
-//   micro 2–6 cm — the grain, damped by the pixel footprint so it fades out
-//                 instead of crawling when the camera moves.
-// The meso and micro bands are ONE field (ground_field), read twice: its
-// VALUE tints the albedo and its SLOPE tilts the normal. That is why a
-// crevice here is dark AND indented — and why the sun, the relief march and
-// the shadow map already in the frame shade the relief for free, with no new
-// pass, no new texture and no new descriptor.
+// ONE LADDER, and the reason the ground reads as a surface at every range.
+// A ground's colour is a single field with a CONTINUOUS spectrum: octave i at
+// the row's meso frequency times kLadderLacunarity^i carrying amplitude
+// kLadderGain^i, from the terrain patchwork (~20–40 m) down to the grain
+// (3–7 cm) — six or seven rungs, spelled out per material in kGroundLadder
+// (ground_surface.glsl, derived from the CSV, never authored).
+//
+// It replaces three NAMED bands — a 28 m patchwork, the family's ~1 m
+// structure, a 4 cm grain — which had nothing between them. On the meadow row
+// that was content at 28.6, 7.1, 0.80, 0.30, 0.040 and 0.011 m and two holes
+// almost a decade wide, and it failed in a way the owner named on sight
+// (2026-09-14, the city screenshot): past the range where the pixel footprint
+// had eaten the family band — about 300 m — the ONLY thing left was the 28 m
+// patchwork, at full contrast, because that band alone was exempt from the
+// footprint law. One spatial frequency by itself does not read as ground; it
+// reads as blotches on paint. Nature shows a continuum, and an octave that
+// fades must always have a coarser neighbour to fade INTO.
+//
+// The two halves answer two questions and carry two spreads from the CSV:
+//   i <  0  the TERRAIN's patchwork (macro_sd) — how patchy this ground looks
+//           from a hillside. Planar, never triplanar: directionless mottle has
+//           no direction to smear down a cliff.
+//   i >= 0  the SURFACE's own roughness (sd), whose rung 0 is not sampled here
+//           at all — the family SHAPE stands in it. That shape is the one term
+//           with a direction (ripples run, furrows run, plates tile), so it is
+//           the one term projected onto a cliff, and the one term read TWICE:
+//           once into the mix and once as a HEIGHT. That is why a hollow here
+//           is both indented and fresher — which is what a hollow is, since it
+//           is where moisture and growth collect — and why the sun, the relief
+//           march and the shadow map already in the frame shade it for free,
+//           with no new pass, texture or descriptor.
+//
+// WHAT THE LADDER DRIVES, which is the other half of the story and the half
+// that was wrong for longer. The two halves ADD into ONE fraction in 0..1 —
+// how WORN this spot is — and the colour is read off the segment between the
+// two constituents the row authored (ground_worn below). The ladder never
+// touches brightness. The model before it multiplied a single colour by a
+// lognormal and drifted its hue along an authored vector, and so could land on
+// any colour at all: the olives and teals nobody chose were what "dirty
+// ground" meant (owner, 2026-09-14/15). A bounded fraction means a bounded
+// palette, and that bound is a guarantee no amount of retuning could buy.
+//
+// Each rung is weighted by averaged() — what a pixel of this footprint keeps
+// of a band's VALUE, which is the standard error of a mean and so never quite
+// reaches zero. The relief keeps resolved(), which does reach zero, because
+// the average of a stationary field's SLOPE genuinely is nothing: every rise
+// inside the pixel is matched by a fall. Two laws for two quantities; both
+// derivations live in shaders/surface_lib.glsl.
+//
+// Which band is doing what to a frame is a question for the eye, not for
+// arithmetic: the console's `grounddbg` lifts any one of them out (the same
+// bisect `lightdbg` gives the sun-visibility product).
 //
 // Every NUMBER lives in shaders/ground_surface.glsl, generated from
 // data/ground_materials.csv + data/ground_cover.csv (tools/gen_ground_table.py,
@@ -65,14 +104,30 @@ layout(location = 0) out vec4 outColor;
 #include "surface_lib.glsl"
 #include "ground_surface.glsl"
 
-// The biome patchwork band: one patch per ~28 m. That is the scale at which
-// ground reads as TERRAIN (a dry hollow, a mossier slope) rather than as
-// surface — below it the family's meso band takes over.
-const float kMacroFreq = 0.035;
+// ── THE BISECT ─────────────────────────────────────────────────────────────
+// Console `grounddbg` (src/app/main.cpp), the surface's answer to `lightdbg`:
+// a bit mask riding the light SSBO that lifts ONE term of the ground out of
+// the frame, so which band draws a given look is a question the eye answers
+// instead of arithmetic. 0 in shipping frames — the whole thing compiles to
+// nothing when the mask is zero because every gate is a uniform branch.
+const uint kGdbgTerrain = 1u;  // the ladder below the meso frequency
+const uint kGdbgShape   = 2u;  // the family's own shape — rung 0
+const uint kGdbgSurface = 4u;  // the ladder above it
+const uint kGdbgCover   = 8u;  // grass, snow, moss
+const uint kGdbgRelief  = 16u; // the normal the shape tilts
+
+// The amplitude under which a ladder rung is dropped outright. A rung's reach
+// is its own amplitude times what the footprint leaves of it, and at 2 % of
+// the family shape's the product with a material's sigma (~0.2) cannot move a
+// channel by one 8-bit step. Since both factors fall monotonically with the
+// rung index, the first rung under this floor is also the last — which is what
+// lets the loop leave early and what makes a seven-rung ladder cost about what
+// three disconnected bands did.
+const float kLadderFloor = 0.02;
 
 // The family shapes below are authored to live in about [-1,1] with a
 // standard deviation near 1/3, so ONE constant turns any of them into a
-// z-score for mottle() — and the same value read as METRES needs no second
+// z-score for the ladder — and the same value read as METRES needs no second
 // table. (A shape whose peak is 1 and whose sigma is 1/3 is the same
 // convention the reference project's families use.)
 const float kNormShape = 3.0;
@@ -161,46 +216,74 @@ float ground_meso(uint fam, vec2 q, float f) {
     return (a * 0.70 + b * 0.30) * 2.0 - 1.0;
 }
 
-// THE ground field: x = the meso shape, y = the grain, both faded out by the
-// pixel footprint at the range where they stop being resolvable. Read by the
-// albedo (as a value) and by the normal (as a slope) — one field, so the two
-// can never disagree.
-vec2 ground_field(uint fam, vec2 q, float f, float gf, float px) {
-    return vec2(ground_meso(fam, q, f) * resolved(px, f),
-                (grain(q, gf) - 0.5) * 2.0 * resolved(px, gf));
+// THE LADDER, walked once. Octave i sits at `mesoF * kLadderLacunarity^i`
+// carrying amplitude `kLadderGain^i` and is weighted by what a pixel of this
+// footprint keeps of its VALUE. Rung 0 is SKIPPED — that is the row's own meso
+// frequency, and the family shape stands in it (the caller adds it, because it
+// is the one rung that needs the cliff projection and the one whose slope the
+// relief also wants).
+//
+// Returns the two halves as z-scores: x = the terrain's patchwork (i < 0),
+// y = the surface's roughness (i > 0). Both leave here unit-variance at full
+// resolution and SMALLER at range — normalised by the row's constants, never
+// by the per-fragment weighted sum, because dividing by what the footprint
+// actually left would renormalise the far view straight back to full contrast
+// and undo the whole thing.
+//
+// The loop leaves early on amplitude, not on rung count: see kLadderFloor.
+vec2 ground_ladder(vec2 q, vec4 lad, float mesoF, float px) {
+    vec2 z = vec2(0.0);
+    float amp = pow(kLadderGain, lad.x);
+    float f = mesoF * pow(kLadderLacunarity, lad.x);
+    for (int i = int(lad.x); i <= int(lad.y); ++i) {
+        float a = amp * averaged(px, f);
+        if (a <= kLadderFloor) break;
+        // The offset only separates rungs that happen to snap to the same
+        // lattice count; the frequencies already differ, so this is belt and
+        // braces. A CONSTANT shift keeps the field tileable (surface_lib.glsl
+        // kSynthPeriod) — anything position-dependent would not.
+        if (i != 0)
+            z[i < 0 ? 0 : 1] += a * (wnoise(q + float(i) * 37.0, f) - 0.5)
+                                    * kNormNoise;
+        amp *= kLadderGain;
+        f *= kLadderLacunarity;
+    }
+    return z * lad.zw;
 }
 
-// Projection. The ground is a heightfield, so the horizontal plane is the
-// right one almost everywhere; on a cliff face it would stretch the pattern
-// into vertical smears, so the dominant VERTICAL plane is crossfaded in by
-// the geometric normal. Flat ground pays for one evaluation — the second is
-// only taken where the ground actually tips over.
-vec2 ground_at(uint fam, vec3 p, vec3 aN, float f, float gf, float px) {
-    vec2 h = ground_field(fam, p.xz, f, gf, px);
+// The family SHAPE, projected — rung 0 of the ladder, and the only term in the
+// whole field that has a DIRECTION. The ground is a heightfield, so the
+// horizontal plane is the right one almost everywhere; on a cliff face it
+// would stretch the ripples and furrows into vertical smears, so the dominant
+// VERTICAL plane is crossfaded in by the geometric normal. Flat ground pays
+// for one evaluation — the second is only taken where the ground tips over.
+float ground_shape(uint fam, vec3 p, vec3 aN, float f) {
+    float h = ground_meso(fam, p.xz, f);
     float wy = smoothstep(0.55, 0.88, aN.y);
     if (wy >= 0.999) return h;
     vec2 pv = (aN.x > aN.z) ? p.zy : p.xy;
-    return mix(ground_field(fam, pv, f, gf, px), h, wy);
+    return mix(ground_meso(fam, pv, f), h, wy);
 }
 
-// The MESO shape alone, projected — the height the normal is taken from. The
-// grain is deliberately NOT in it: its depth would be a tenth of its own 4 cm
-// wavelength, which is at most a couple of pixels wide before resolved() has
-// already faded it, and a slope measured across two pixels is noise, not
-// relief. The grain speaks through the albedo, where its amplitude is
-// calibrated; the relief speaks through the normal. Skipping it also halves
-// what each gradient tap below costs.
+// The height the normal is taken from: the family shape alone, in metres.
+// The rest of the ladder is deliberately NOT in it. The rungs BELOW the shape
+// are tens of metres across — relief at that scale is the terrain heightfield's
+// job, not a per-fragment normal's — and the rungs ABOVE it are finer than the
+// footprint long before their depth (a tenth of their own wavelength) could
+// shade anything, so a slope measured across them is noise, not relief. They
+// speak through the albedo, where their amplitude is calibrated; the shape
+// speaks through both.
+//
+// resolved(), not averaged(), and that is the whole difference between the two
+// laws: a band the screen cannot carry contributes NO slope, because inside
+// one pixel every rise is matched by a fall. Reaching exactly zero is what
+// keeps the early-out below live, and the relief taps are the most expensive
+// thing on this path.
 float ground_height_m(uint fam, vec3 p, vec3 aN, float f, float reliefM,
                       float px) {
     float d = resolved(px, f);
     if (d <= 0.0) return 0.0;
-    float h = ground_meso(fam, p.xz, f);
-    float wy = smoothstep(0.55, 0.88, aN.y);
-    if (wy < 0.999) {
-        vec2 pv = (aN.x > aN.z) ? p.zy : p.xy;
-        h = mix(ground_meso(fam, pv, f), h, wy);
-    }
-    return h * d * reliefM;
+    return ground_shape(fam, p, aN, f) * d * reliefM;
 }
 
 // The ploughed field's north-south twin (id 14) is the SAME family with its
@@ -222,8 +305,8 @@ vec3 synth_space(vec3 p, uint mid) {
 //
 // Returns the coverage it painted; tints the albedo and tilts the normal
 // through their references.
-float cover_apply(uint cid, float density, vec3 Pabs, vec3 N, vec3 V,
-                  float px, float time, vec2 wind, bool withTilt,
+float cover_apply(uint cid, float density, float worn, vec3 Pabs, vec3 N,
+                  vec3 V, float px, float time, vec2 wind, bool withTilt,
                   inout vec3 albedo, inout vec3 nrm) {
     if (cid == 0u || density <= 0.001) return 0.0;
     vec4 cp = kCoverParams[min(cid, kCoverCount - 1u)];
@@ -252,14 +335,24 @@ float cover_apply(uint cid, float density, vec3 Pabs, vec3 N, vec3 V,
     float cov = clamp((clump - 1.0 + density * 1.6) * 3.0, 0.0, 1.0);
     if (cov <= 0.001) return 0.0;
 
-    // The strand field. Faded by `d`: where the strands are not resolved
-    // there is nothing to stand up, which is what keeps distant cover from
-    // sparkling — it settles into the flat tint its mean colour describes.
+    // The strand field, and what it is allowed to do: thin the COVERAGE, not
+    // tint the blades. A sparser patch of sward is a patch where more ground
+    // shows between the stems — which is what a sward actually does, and what
+    // keeps the layer inside the two colours its row authored. (It used to
+    // multiply the cover's colour by a lognormal, and multiplying a colour is
+    // exactly how a layer invents shades nobody chose.) Mean-preserving, and
+    // faded by `d` so distant cover settles to its plain mean coverage
+    // instead of sparkling.
     float s0 = grain(q, f);
-    albedo = mix(albedo,
-                 kCoverColour[min(cid, kCoverCount - 1u)]
-                     * mottle(cp.w, (s0 - 0.5) * kNormGrain * d),
-                 cov);
+    cov = clamp(cov * (1.0 + (s0 - 0.5) * 2.0 * cp.w * d), 0.0, 1.0);
+
+    // THE COVER'S OWN MIX, read with the GROUND's wornness — not a field of
+    // its own. That is what makes a drier hollow carry paler soil AND paler
+    // grass at once: one fact about the place, answered by every layer
+    // standing on it. Under the multiplicative model this needed a whole
+    // extra band applied after the cover; here it is structural.
+    uint c = min(cid, kCoverCount - 1u);
+    albedo = mix(albedo, mix(kCoverFresh[c], kCoverWorn[c], worn), cov);
 
     // The strands' own slope. Height × pitch IS the slope of a blade, so the
     // tilt needs no number of its own. Two taps, and only where the strands
@@ -279,42 +372,60 @@ float cover_apply(uint cid, float density, vec3 Pabs, vec3 N, vec3 V,
 }
 
 // ── ONE GROUND, WHOLE ────────────────────────────────────────────────────────
-// Everything one material id is: its albedo through the three bands, its
-// cover, and the normal its relief tilts. Written as a function because the
-// JOINT between two materials calls it twice (see the blend in main) — and
-// because "what a material looks like" is one thing, whether it is drawn
-// alone or mixed with its neighbour.
+// Everything one material id is: its colour through the mix, its cover, and
+// the normal its relief tilts. Written as a function because the JOINT between
+// two materials calls it twice (see the blend in main) — and because "what a
+// material looks like" is one thing, whether it is drawn alone or mixed with
+// its neighbour.
 struct Ground {
     vec3 albedo;
     vec3 nrm;
-    // The two z-scores this ground was shaded with. They belong to the PLACE
-    // as much as to the material — the surface's own relief and the terrain's
+    // The two z-scores this ground was read with. They belong to the PLACE as
+    // much as to the material — the surface's own roughness and the terrain's
     // patchwork — so the neighbour at a joint borrows them instead of paying
     // for its own (see ground_colour).
     float surfZ;
     float macroZ;
 };
 
-// A ground's COLOUR, given a shape and a place that were already computed.
-// This is what the runner-up lends to a joint: a transition is at most a tile
-// wide, and across one metre a family's PATTERN is not legible — its hue and
-// its lightness are. So the neighbour borrows the winner's shape and the
-// place's patchwork and costs no noise samples at all, only arithmetic. Its
-// cover joins as the mean tint its density describes, which is what a sward
-// looks like once you can no longer resolve a blade.
+// HOW WORN this spot is: the whole ladder collapsed into one number in 0..1.
+// Both halves ADD, because "how worn is this place" is a single fact measured
+// at two scales — the terrain's patchwork and the surface's own intermixing —
+// and a spot is not separately worn at 20 m and at 20 cm.
+//
+// THE CLAMP IS THE LAW, not a safety rail. Everything downstream reads a
+// colour by mixing along this fraction, so a bounded fraction means a bounded
+// palette: the shader cannot put a colour on screen that is not between the
+// two the CSV authored. The model this replaced multiplied one colour by a
+// lognormal and drifted its hue along a vector, and could therefore land
+// anywhere at all — which is what "dirty ground" was (owner, 2026-09-14/15):
+// not too much texture, but olives and teals nobody chose.
+//
+// At range both z-scores shrink toward zero (averaged(), surface_lib.glsl), so
+// the mix settles to 0.5 — the midpoint, which IS the row's mean colour. Far
+// ground converges to exactly what the table says the ground is.
+float ground_worn(uint mid, float surfZ, float macroZ) {
+    vec2 sd = kGroundSpread[mid];
+    return clamp(0.5 + surfZ * sd.x + macroZ * sd.y, 0.0, 1.0);
+}
+
+// A ground's COLOUR, given a place that was already read. This is what the
+// runner-up lends to a joint: a transition is at most a tile wide, and across
+// one metre a family's PATTERN is not legible — its colour is. So the
+// neighbour borrows the winner's z-scores and costs no noise samples at all,
+// only arithmetic. Its cover joins as the mean tint its density describes,
+// which is what a sward looks like once you can no longer resolve a blade.
 vec3 ground_colour(uint mid, float surfZ, float macroZ, float height01) {
-    vec4 srf = kGroundSurface[mid];
-    vec3 base = kGroundAlbedo[mid] * mottle(srf.x, surfZ);
+    float worn = ground_worn(mid, surfZ, macroZ);
+    vec3 base = mix(kGroundFresh[mid], kGroundWorn[mid], worn);
     base *= 1.0 - kGroundDamp[mid] * 0.28
                       * (1.0 - smoothstep(0.40, 0.47, height01));
     vec2 cover = kGroundCover[mid];
     uint cid = uint(cover.x + 0.5);
-    if (cid != 0u && cover.y > 0.001)
-        base = mix(base, kCoverColour[min(cid, kCoverCount - 1u)], cover.y);
-    base *= mottle(kGroundMacroSigma[mid], macroZ);
-    if (srf.z > 0.001) {
-        vec3 ax = kGroundChromaAxis[mid] * srf.z;
-        base *= exp(macroZ * ax - 0.5 * ax * ax);
+    if ((ground_debug_bits() & kGdbgCover) != 0u) cover.y = 0.0;
+    if (cid != 0u && cover.y > 0.001) {
+        uint c = min(cid, kCoverCount - 1u);
+        base = mix(base, mix(kCoverFresh[c], kCoverWorn[c], worn), cover.y);
     }
     return base;
 }
@@ -328,14 +439,57 @@ Ground ground_of(uint mid, vec2 cover, vec2 gWorld, vec3 Pabs, vec3 N, vec3 V,
                  float px, float height01, float time, vec2 wind,
                  bool withNormal) {
     uint fam = kGroundFamily[mid];
-    vec4 srf = kGroundSurface[mid];          // sigma, meso freq, chroma, relief
-    float gf = kGroundGrainFreq[mid];
+    vec2 srf = kGroundSurface[mid];          // meso frequency, relief height
+    vec4 lad = kGroundLadder[mid];           // iLow, iHigh, normTerrain, normSurf
+    uint dbg = ground_debug_bits();
 
     // Synth space: the ploughed field's twin turns here (see synth_space).
     vec3 Ps = synth_space(Pabs, mid);
     vec3 aN = abs(synth_space(N, mid));
 
-    vec2 shape = ground_at(fam, Ps, aN, srf.y, gf, px);
+    // ── THE FIELD ──
+    // One ladder, two halves, one walk. Seeded apart per MATERIAL so two
+    // biomes meeting at a border do not blotch in step — the same offset the
+    // patchwork band carried before, now serving every rung at once.
+    vec2 lz = ground_ladder(gWorld + float(mid) * 11.0, lad, srf.x, px);
+    if ((dbg & kGdbgTerrain) != 0u) lz.x = 0.0;
+    if ((dbg & kGdbgSurface) != 0u) lz.y = 0.0;
+    // Rung 0: the family's own shape, at its own scale, on the same law and
+    // the same normaliser. Skipped whole when the footprint has eaten it —
+    // that early-out is what spares the far half of a frame the cliff
+    // projection's second sample.
+    float shapeW = averaged(px, srf.x);
+    if (shapeW > kLadderFloor && (dbg & kGdbgShape) == 0u)
+        lz.y += ground_shape(fam, Ps, aN, srf.x) * kNormShape * shapeW * lad.w;
+    float surfZ = lz.y;
+    float macroZ = lz.x;
+
+    // ── COLOUR ──
+    // ONE mix along ONE fraction. No multiply, no hue axis, no lognormal: the
+    // field says how worn this spot is and the colour is read off the segment
+    // between what the ground is made of. Everything that used to modulate
+    // brightness after the fact — the surface sigma, the terrain patchwork
+    // applied over the cover, the chroma drift — is now the same number
+    // arriving in one place, which is why the place still reaches the grass
+    // (below) without a second band to keep in step.
+    float worn = ground_worn(mid, surfZ, macroZ);
+    vec3 base = mix(kGroundFresh[mid], kGroundWorn[mid], worn);
+    // DAMP: ground inside the shoreline height band reads wet. A film of
+    // standing water is the one honest MULTIPLY left here — it darkens
+    // whatever lies under it rather than choosing between constituents, and a
+    // scalar cannot invent a hue. One law, one column: sand, lake bed and
+    // peat differ by their number, not by a branch that names them.
+    base *= 1.0 - kGroundDamp[mid] * 0.28
+                      * (1.0 - smoothstep(0.40, 0.47, height01));
+
+    // ── COVER ──
+    // The row says what grows here; the CALLER says how much, because at a
+    // joint the sward thins into its neighbour (see the joint in main). It
+    // reads the SAME wornness, so a drier hollow gets paler soil and paler
+    // grass out of one fact about the place.
+    vec3 Nb = N;
+    float cov = cover_apply(uint(cover.x + 0.5), cover.y, worn, Pabs, N, V, px,
+                            time, wind, withNormal, base, Nb);
 
     // ── THE NORMAL ──
     // The relief's slope, from two extra taps of the height a HALF PIXEL
@@ -345,79 +499,43 @@ Ground ground_of(uint mid, vec2 cover, vec2 gWorld, vec3 Pabs, vec3 N, vec3 V,
     // field this fine the near ground broke into hard L-shaped blocks.
     // Measured cost of honesty: 0.7 ms of scene time at 3000 bodies.)
     //
+    // AFTER the cover, and scaled by what the cover left showing. You do not
+    // see a meadow's tussocks — you see the grass standing on them, and the
+    // grass has its own strands and its own tilt two lines above. Shading the
+    // ground's relief at full strength UNDER a closed sward drew both, and at
+    // a low sun the second one is what made the green crunch: at 22° the
+    // four-band quantise puts the whole field in one step and the bump delta
+    // then carries every bit of the visible variation. One factor, and it is
+    // not a taste knob — it is the fraction of ground you can actually see.
+    //
     // Tangent frame: any orthonormal pair works, because the gradient is
     // taken IN it and applied back THROUGH it, so the choice cancels.
-    vec3 Nb = N;
-    float mesoD = resolved(px, srf.y);
-    if (withNormal && mesoD > 0.001 && srf.w > 0.0) {
+    float relief = (1.0 - cov) * srf.y;
+    if (withNormal && resolved(px, srf.x) > 0.001 && relief > 0.0) {
         vec3 T = normalize(cross(N, aN.y > 0.9 ? vec3(1.0, 0.0, 0.0)
                                                : vec3(0.0, 1.0, 0.0)));
         vec3 B = cross(N, T);
         float eps = max(px, 0.02);
-        float h0 = ground_height_m(fam, Ps, aN, srf.y, srf.w, px);
+        float h0 = ground_height_m(fam, Ps, aN, srf.x, relief, px);
         float hT = ground_height_m(fam, synth_space(Pabs + T * eps, mid), aN,
-                                   srf.y, srf.w, px);
+                                   srf.x, relief, px);
         float hB = ground_height_m(fam, synth_space(Pabs + B * eps, mid), aN,
-                                   srf.y, srf.w, px);
+                                   srf.x, relief, px);
         // The normal of a height field z = h(x,y) is (-dh/dx, -dh/dy, 1) in
         // its own tangent frame — that is the whole of the bump mapping.
         vec3 tilt = -((hT - h0) * T + (hB - h0) * B) / eps;
         float tl = length(tilt);
         if (tl > kMaxTilt) tilt *= kMaxTilt / tl;
-        Nb = normalize(N + tilt);
-    }
-
-    // ── ALBEDO ──
-    vec3 base = kGroundAlbedo[mid];
-    // MACRO band: the terrain-scale patchwork — two octaves, ~28 m and a
-    // quarter of that, seeded apart per material so two biomes meeting at a
-    // border do not blotch in step. Colour only: a drier patch of grass is
-    // not a hill. This is the band that reaches the HORIZON — past a couple
-    // of hundred metres the pixel footprint has eaten the meso structure and
-    // all of the grain, and without this the far ground is one flat colour,
-    // which is what the measured "one bucket covers 46% of the frame" was.
-    // The 0.75/0.66 split is the same unit-variance identity as below.
-    // (`patch` is a reserved word in GLSL — tessellation.)
-    float biomePatch = (wnoise(gWorld + float(mid) * 11.0, kMacroFreq) - 0.5)
-                           * 0.75
-                       + (wnoise(gWorld + float(mid) * 7.0, kMacroFreq * 4.0)
-                          - 0.5) * 0.66;
-    float macroZ = biomePatch * kNormNoise;
-    // MESO + MICRO through the one mean-preserving law. The 0.8/0.6 split is
-    // an identity, not a taste: 0.8^2 + 0.6^2 = 1, so the two bands together
-    // still carry exactly the unit variance the row's sigma was calibrated
-    // for (CV = sqrt(exp(sigma^2)-1), see tools/gen_ground_table.py).
-    base *= mottle(srf.x, (shape.x * 0.80 + shape.y * 0.60) * kNormShape);
-    // DAMP: ground inside the shoreline height band reads wet. One law, one
-    // column — sand, lake bed and peat differ by their number, not by a
-    // branch that names them.
-    base *= 1.0 - kGroundDamp[mid] * 0.28
-                      * (1.0 - smoothstep(0.40, 0.47, height01));
-
-    // ── COVER ──
-    // The row says what grows here; the CALLER says how much, because at a
-    // joint the sward thins into its neighbour (see the joint in main).
-    cover_apply(uint(cover.x + 0.5), cover.y, Pabs, N, V, px,
-                time, wind, withNormal, base, Nb);
-
-    // THE PLACE, applied LAST — over the cover, not under it. The macro
-    // patchwork is a property of the GROUND, not of the material: a drier
-    // hollow has paler soil AND paler grass over it. Applied before the
-    // cover it was erased wherever the sward closed, and a fully covered
-    // ground (a meadow, snow) went back to being one flat colour at range —
-    // measured: the covered cells were the only ones whose single-bucket
-    // share got WORSE. Luminance and hue ride the same sample: a patch that
-    // is drier is both paler and warmer.
-    base *= mottle(kGroundMacroSigma[mid], macroZ);
-    if (srf.z > 0.001) {
-        vec3 ax = kGroundChromaAxis[mid] * srf.z;
-        base *= exp(macroZ * ax - 0.5 * ax * ax);
+        // ADDED to Nb, not replacing it: the cover already tilted for its
+        // strands, and the two reliefs are both offsets from the same
+        // geometric normal.
+        Nb = normalize(Nb + tilt);
     }
 
     Ground g;
     g.albedo = base;
     g.nrm = Nb;
-    g.surfZ = (shape.x * 0.80 + shape.y * 0.60) * kNormShape;
+    g.surfZ = surfZ;
     g.macroZ = macroZ;
     return g;
 }
@@ -575,9 +693,16 @@ void main() {
     vec2 covB = kGroundCover[midB];
     bool sameCover = abs(covA.x - covB.x) < 0.5;
     vec2 cover = vec2(covA.x, mix(covA.y, sameCover ? covB.y : 0.0, b));
+    // The two bisect gates that belong to the CALLER: strip the sward, or
+    // strip the relief the family shape tilts. Taking the cover out here
+    // rather than inside ground_of is what makes the neighbour at a joint
+    // lose it too — ground_colour reads the same density.
+    uint gdbg = ground_debug_bits();
+    if ((gdbg & kGdbgCover) != 0u) cover.y = 0.0;
+    bool withRelief = (gdbg & kGdbgRelief) == 0u;
 
     Ground g = ground_of(mid, cover, gWorld, Pabs, N, V, px, vHeight, time,
-                         wind, true);
+                         wind, withRelief);
     if (b > 0.02) {
         // The two grounds, mixed by their shares of this square metre. The
         // runner-up lends its COLOUR on the winner's shape (ground_colour) —
@@ -603,12 +728,40 @@ void main() {
     vec3 L = normalize(pc.sunDir.xyz);
     float ndlGeo = max(dot(N, L), 0.0);
     float ndlBump = max(dot(Nb, L), 0.0);
-    // The LAND keeps its 4-band quantise — that stylised step across a hill
-    // is the look of this world. The SURFACE's own relief is added as the
-    // difference the bumped normal makes, smoothly: quantising a per-pixel
-    // micro-normal would step and crawl, and the relief is what we came for.
-    float ndl = floor(ndlGeo * 4.0) / 4.0 + (ndlBump - ndlGeo);
-    ndl = clamp(ndl, 0.0, 1.0);
+    // HOW THE LAND TAKES THE LIGHT. The SURFACE's own relief is always added
+    // as the difference the bumped normal makes, smoothly — quantising a
+    // per-pixel micro-normal would step and crawl, and the relief is what we
+    // came for. What is in question is the LAND under it.
+    //
+    // A 4-band quantise used to run here unconditionally, and it is why the
+    // terrain wore hard-edged blotches (owner, 2026-09-15). The law it breaks
+    // is worth writing down, because it decides the whole question:
+    //
+    //     A VISIBLE EDGE MUST HAVE A CAUSE IN THE WORLD.
+    //
+    // Posterising N·L draws its steps along the level sets of dot(N, L). On a
+    // structure that is harmless: a wall is one flat facet, so the whole facet
+    // lands in one band and the only edges are the wall's own corners. On a
+    // billboard it never happens at all — sprites take a flat sun term. But
+    // the LAND is the one smooth-shaded body in this world: its normal varies
+    // continuously, so the bands cut it along curves that match no ridge and
+    // no hollow, and that move with the sun rather than with the ground. How
+    // many of them you see is set by the sun's elevation (a low sun spreads
+    // N·L across two or three band edges, a high sun across one) — a pattern
+    // whose density is a property of the hour and not of the land is exactly
+    // what the eye names as dirt.
+    //
+    // So the land is shaded SMOOTH and the stylisation stays where it reads as
+    // stylisation: struct.frag keeps its quantise unchanged, and billboards
+    // keep the flat sun term they always had. Nothing is lost that was ever
+    // legible — only the one surface the law was never right for.
+    //
+    // Two other readings were built and looked at side by side before this one
+    // was kept (owner, 2026-09-15): quantising the triangle's OWN plane, which
+    // does give every band edge a real cause but turns the land faceted at the
+    // 16 m mesh, and the old interpolated quantise. Recorded so nobody spends
+    // the evening rediscovering them.
+    float ndl = clamp(ndlBump, 0.0, 1.0);
     float sh = shadowFactorHandoff(u_shadow, u_shadowFar,
                                    pc.lightMvp * vec4(vWorld, 1.0),
                                    far_light_clip(vWorld), ndlGeo,
@@ -618,5 +771,7 @@ void main() {
     // — the same space as the sun/shadow math — not the absolute gWorld synth coord.
     // Inert while the light buffer count is 0 (until an emitter is gathered, Inc 3+).
     col += base * point_lights(vWorld, Nb);
-    outColor = vec4(col, 1.0);
+    // THE AIR, last — after the additive lights, because a torch's glow
+    // travels the same air the surface under it does.
+    outColor = vec4(aerial_perspective(col, vWorld), 1.0);
 }

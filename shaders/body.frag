@@ -72,5 +72,6 @@ void main() {
     surface.rgb = lit_surface(base, pc.ambient.rgb, pc.sunColor.rgb, 0.7, sh,
                               vWorld);
     surface.rgb += base * point_lights_flat(vWorld);
+    surface.rgb = aerial_perspective(surface.rgb, vWorld);
     outColor = surface;
 }

@@ -112,11 +112,43 @@ layout(std430, set = 0, binding = 1) readonly buffer TimaertLights {
     // how a heightfield-less scene like the smoke harness opts out).
     vec4          sunDirW;
     vec4          terrainParams;
+    // The air, and the eye (sub/lighting.h haze_color / kHazeEFoldM):
+    // aerial.rgb = the haze colour, aerial.w = 1 / e-fold distance in metres
+    // (0 = off, and exp(-d*0) is 1, so the off state costs no branch);
+    // viewParams.xyz = the camera in WINDOW space, viewParams.w = the
+    // `grounddbg` bisect mask. Here rather than in six push blocks because
+    // this one set-0 buffer is what every lit pass already binds.
+    vec4          aerial;
+    vec4          viewParams;
     // The full-window object-shadow level's world→light-clip matrix (the
     // crisp near level rides the push constants as it always has).
     mat4          lightMvpFar;
     GpuPointLight lights[];
 } u_pointLights;
+
+// ── AERIAL PERSPECTIVE ─────────────────────────────────────────────────────
+// Air absorbs what the surface sent and scatters its own light in to replace
+// it. Both go as the same exponential in the optical depth, so ONE factor does
+// both and the result is a plain mix — see sub/lighting.h for the derivation
+// of the distance and of the colour.
+//
+// Deliberately NOT folded into lit_surface(): the additive terms a shader adds
+// afterwards (torches, spell glows, water glints) are light that travels the
+// same air and must be hazed too. So this is the LAST line of a lit shader,
+// applied to the finished colour, and the sky is the one surface that never
+// calls it — the sky IS the haze, at infinite distance.
+vec3 aerial_perspective(vec3 col, vec3 worldPos) {
+    if ((light_debug_bits() & 16u) != 0u) return col;  // `lightdbg haze`
+    float d = distance(worldPos, u_pointLights.viewParams.xyz);
+    float t = exp(-d * u_pointLights.aerial.w);
+    return mix(u_pointLights.aerial.rgb, col, t);
+}
+
+// The `grounddbg` surface bisect (mesh.frag kGdbg*), read where the mask
+// lives. 0 in shipping frames.
+uint ground_debug_bits() {
+    return uint(u_pointLights.viewParams.w);
+}
 
 // The wide-level light-clip position of a world-space point — feed to
 // shadowFactorHandoff beside the near clip the push constant produced.

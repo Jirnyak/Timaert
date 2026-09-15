@@ -8,8 +8,16 @@
 # leaves or a film of water is a ROW here plus a name in the ground CSV — it
 # is never a new branch in the shader.
 #
-# colour_*     — mean linear colour of the cover. At density 1 the ground
-#                beneath is fully hidden (snow); below that the two mix.
+# fresh_*,worn_* — THE SAME TWO-CONSTITUENT LAW the ground rows carry, one
+#                layer up: a sward is green blades AND the straw among them,
+#                and which you see is the same "how worn is this spot" the
+#                ground underneath is answering. Looked up with the ground's
+#                OWN mix fraction, not one of its own — that is what makes a
+#                drier hollow have paler soil AND paler grass over it, with no
+#                multiply anywhere and no second field to keep in step. (Under
+#                the multiplicative model this took a whole extra band applied
+#                after the cover; it is now structural.) At density 1 the
+#                ground beneath is fully hidden (snow); below that the two mix.
 # strand_per_m — how many blades / flakes / clumps to a metre. Its reciprocal
 #                is the structure wavelength; the pixel footprint dissolves it
 #                into a flat tint at range instead of letting it shimmer.
@@ -19,10 +27,14 @@
 #                normal, so the sun already in the frame shades the blades.
 # wind         — how far the top of the layer is carried by the world wind
 #                (0 = it does not move: snow, moss, dust).
-# cv           — coefficient of variation of the cover's own luminance, the
-#                same calibrated knob the ground rows use.
-id,name,colour_r,colour_g,colour_b,strand_per_m,height_m,wind,cv,note
-0,none,1.00,1.00,1.00,0.0,0.00,0.0,0.00,"the absence of cover — density is ignored, the ground is bare"
-1,grass,0.27,0.40,0.16,7.0,0.28,1.0,0.26,the first instance: upright blades that bend with the same wind the clouds ride
-2,snow,0.90,0.93,0.98,2.5,0.10,0.0,0.08,"a blanket rather than blades — same function, strands wide and flat, wind zero"
-3,moss,0.24,0.36,0.18,14.0,0.03,0.0,0.18,fine felt in the cracks of stone; too low to sway
+# sd           — how much the strand field swings the COVERAGE, as a fraction
+#                of it. The strands decide how much ground shows between them,
+#                never what colour the blades are: a thinner patch of sward is
+#                a patch where more soil shows through, which is what a sward
+#                actually does. (It used to tint the blades instead, and
+#                tinting is how a cover invents colours nobody authored.)
+id,name,fresh_r,fresh_g,fresh_b,worn_r,worn_g,worn_b,strand_per_m,height_m,wind,sd,note
+0,none,1.00,1.00,1.00,1.00,1.00,1.00,0.0,0.00,0.0,0.00,"the absence of cover — density is ignored, the ground is bare"
+1,grass,0.27,0.40,0.16,0.45,0.42,0.22,7.0,0.28,1.0,0.26,"the first instance: upright blades that bend with the same wind the clouds ride — green where it thrives, straw where it has dried"
+2,snow,0.92,0.95,1.00,0.86,0.89,0.94,2.5,0.10,0.0,0.08,"a blanket rather than blades — same function, strands wide and flat, wind zero; fresh fall against wind-scoured crust"
+3,moss,0.22,0.38,0.16,0.28,0.34,0.22,14.0,0.03,0.0,0.18,fine felt in the cracks of stone; too low to sway

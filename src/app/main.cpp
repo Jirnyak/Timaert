@@ -3805,7 +3805,7 @@ void register_console_commands(App& app) {
             return true;
         });
 
-    con.register_cmd("lightdbg", "lightdbg [march|clouds|map|nl|off]",
+    con.register_cmd("lightdbg", "lightdbg [march|clouds|map|nl|haze|off]",
         "bisect the sun-visibility product: toggle one term off per call "
         "(diagnostic; `off` restores all)",
         [&app](Con& c, const std::vector<std::string>& args) {
@@ -3816,6 +3816,7 @@ void register_console_commands(App& app) {
                 else if (a == "clouds") m ^= 2u;
                 else if (a == "map")    m ^= 4u;
                 else if (a == "nl")     m ^= 8u;
+                else if (a == "haze")   m ^= 16u;
                 else if (a == "off")    m = 0u;
                 else {
                     c.printfln(Lvl::Error, "unknown term '%s'", a.c_str());
@@ -3824,9 +3825,44 @@ void register_console_commands(App& app) {
                 app.subworld.set_light_debug_mask(m);
             }
             c.printfln(Lvl::Ok,
-                       "light terms: march=%s clouds=%s objectmap=%s nl=%s",
+                       "light terms: march=%s clouds=%s objectmap=%s nl=%s "
+                       "haze=%s",
                        (m & 1u) ? "OFF" : "on", (m & 2u) ? "OFF" : "on",
-                       (m & 4u) ? "OFF" : "on", (m & 8u) ? "OFF" : "on");
+                       (m & 4u) ? "OFF" : "on", (m & 8u) ? "OFF" : "on",
+                       (m & 16u) ? "OFF" : "on");
+            return true;
+        });
+
+    // The SURFACE's bisect, one layer below lightdbg's. A procedural ground is
+    // a sum of bands, and "which band makes it look like that" is a question
+    // the eye answers in one frame and arithmetic argues about for an hour —
+    // so every band the ladder carries gets a switch (mesh.frag kGdbg*).
+    con.register_cmd("grounddbg",
+        "grounddbg [terrain|shape|surface|cover|relief|off]",
+        "bisect the procedural ground: toggle one band off per call "
+        "(diagnostic; `off` restores all)",
+        [&app](Con& c, const std::vector<std::string>& args) {
+            std::uint32_t m = app.subworld.ground_debug_mask();
+            if (!args.empty()) {
+                const std::string& a = args[0];
+                if      (a == "terrain") m ^= 1u;   // the ladder below meso
+                else if (a == "shape")   m ^= 2u;   // the family's own rung
+                else if (a == "surface") m ^= 4u;   // the ladder above it
+                else if (a == "cover")   m ^= 8u;   // grass / snow / moss
+                else if (a == "relief")  m ^= 16u;  // every normal tilt
+                else if (a == "off")     m = 0u;
+                else {
+                    c.printfln(Lvl::Error, "unknown band '%s'", a.c_str());
+                    return true;
+                }
+                app.subworld.set_ground_debug_mask(m);
+            }
+            c.printfln(Lvl::Ok,
+                       "ground bands: terrain=%s shape=%s surface=%s cover=%s "
+                       "relief=%s",
+                       (m & 1u) ? "OFF" : "on", (m & 2u) ? "OFF" : "on",
+                       (m & 4u) ? "OFF" : "on", (m & 8u) ? "OFF" : "on",
+                       (m & 16u) ? "OFF" : "on");
             return true;
         });
 

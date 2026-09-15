@@ -182,5 +182,5 @@ void main() {
     // night exactly as the same light pools on the ground beside it. Inert until
     // an emitter exists (returns 0 when the light buffer is empty).
     col += point_lights_spec(vWorld, N, V);
-    outColor = vec4(col, alpha);
+    outColor = vec4(aerial_perspective(col, vWorld), alpha);
 }

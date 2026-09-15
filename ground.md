@@ -28,7 +28,8 @@ tree crowns. Three causes, all structural:
 1. **No middle band.** The synth jumped from a 28 m biome patch straight to a
    4.5 cm white-noise hash. Everything between — the 0.3–2 m scale the eye
    reads as *surface* — was missing, so past two metres the hash averaged into
-   a flat colour (and shimmered while it did).
+   a flat colour (and shimmered while it did). The first fix named a third
+   band; the real fix was a continuous spectrum, see below.
 2. **No normal perturbation at all.** There was nothing for the sun, the
    relief march or the shadow map to play on. Dynamic light cannot show a
    surface that has no slope.
@@ -36,34 +37,132 @@ tree crowns. Three causes, all structural:
    range, so it crawled when the camera moved. Amplitude was never the
    problem; the absence of a pixel-footprint fade was.
 
-## The three bands
+## The three bands, and why they became one ladder (2026-09-14/15)
 
-| band | scale | what it is | what it does |
-|---|---|---|---|
-| macro | ~28 m and a quarter of that | the terrain-scale patchwork (`macro_cv`) | the only band that reaches the horizon — it is what keeps a bare biome from being one flat plane |
-| meso | 0.3–4.5 m (`meso_m`) | the family's STRUCTURE — tussocks, wind ripples, stone plates, plough ridges | the band the eye reads as "surface"; also the band the NORMAL is taken from |
-| micro | 2–6 cm (`micro_m`) | the grain | the close-range texture, faded out by the pixel footprint before it can crawl |
+The first cut named three bands — a ~28 m patchwork, the family's ~1 m
+structure, a 2–6 cm grain — and left **nothing between them**. On the meadow
+row that is content at 28.6, 7.1, 0.80, 0.30, 0.040 and 0.011 m, two holes
+almost a decade wide. Worse, the patchwork band was exempted from the
+pixel-footprint fade so the horizon would not go flat. Both decisions failed
+together on the city screenshot: past ~300 m the footprint had eaten the family
+band and the **only** thing left was 28 m blotches at full contrast.
 
-The meso and micro bands are ONE field, read twice: its VALUE tints the albedo
-and its SLOPE tilts the normal. That is why a crevice is dark *and* indented,
-and why the shading needs no new pass, texture or descriptor — the sun and the
-PCF shadow map already in the frame do it.
+> **One spatial frequency alone does not read as ground — it reads as blotches
+> on paint.** Nature shows a continuum, and an octave that fades must always
+> have a coarser neighbour to fade INTO.
 
-## Calibration, not taste
+So there is now ONE ladder with a continuous spectrum: octave *i* at the row's
+meso frequency × `kLadderLacunarity^i`, amplitude `kLadderGain^i`, running from
+the patchwork floor (0.035 cycles/m, one patch per ~29 m) down to the row's own
+grain, snapped to whole octaves. Six or seven rungs per material, **derived**
+from `meso_m` and `micro_m` — never authored (`ladder_span` in the generator,
+`kGroundLadder` in the table).
 
-Every "how blotchy" number in the CSVs is a **coefficient of variation** of
-luminance (`lum_std / mean`, linear) — the quantity you can measure off a
-photograph. The shader applies the mean-preserving lognormal
-`exp(σz − σ²/2)`, whose CV is `sqrt(exp(σ²) − 1)`; the generator inverts that
-to `σ = sqrt(ln(1 + cv²))`. So the numbers are comparable across materials
-instead of being one author's eye, and the surface's average brightness is
-exactly the colour the table says — texture never darkens or lightens the
-material it decorates. Anchors, from the reference project's *measured* set:
-smooth concrete 0.08, bare soil 0.22, corroded metal 0.44.
+| | |
+|---|---|
+| rungs `i < 0` | the TERRAIN's patchwork (`macro_sd`) — how patchy the ground looks from a hillside. Planar, never triplanar: directionless mottle has no direction to smear down a cliff |
+| rung `i = 0` | NOT sampled — the family SHAPE stands in it. The one term with a direction (ripples run, furrows run, plates tile), so the one term projected onto a cliff, and the one read TWICE: into the mix and as a HEIGHT |
+| rungs `i > 0` | the SURFACE's own roughness (`sd`) |
+
+The loop leaves early on amplitude, not on rung count, so the live rung count
+is nearly constant with range: seven at the camera, five past 300 m, four past
+a kilometre. Measured cost of the whole change: **+0.11 ms/frame**.
+
+## The colour model: a MIX, never a multiply
+
+This is the part that took two passes to get right, and the law is short:
+
+> **The field chooses WHAT you are looking at, never how bright it is.**
+
+A ground is not one colour with noise on it. It is a **mixture of two real
+constituents**: `fresh` is what accumulates (sward, lichen, soft snow, the silt
+in a hollow), `worn` is what exposure leaves (litter and bare earth, scoured
+crust, the polished crest of a dune). Both halves of the ladder ADD into ONE
+fraction in 0..1 — how worn this spot is — and the colour is read off the
+segment between them. The cover reads the **same** fraction, which is what
+makes a drier hollow carry paler soil *and* paler grass out of one fact about
+the place, with no second field to keep in step.
+
+The bound is the whole point:
+
+> **The shader cannot put a colour on screen that is not between two the CSV
+> authored.**
+
+What it replaced multiplied one colour by a mean-preserving lognormal and
+drifted its hue along an authored RGB axis — and so could land anywhere at all.
+The olives and teals nobody chose were exactly what "dirty ground" meant
+(owner, 2026-09-14/15). No amount of retuning a multiply could have bought the
+guarantee; only changing what the field drives could.
+
+Gone with it: `mottle()`, the `σ = sqrt(ln(1 + cv²))` calibration, the chroma
+axis, `kGroundMacroSigma`, `kCoverColour`, `kNormGrain`. Three mechanisms
+became one `mix()`, and the CSV went from nine authored numbers per row to
+eight. The row's mean colour is the constituents' midpoint — what the mix
+settles to once the footprint has averaged the field away — and it is
+documentation on the row's header line, not an array, because nothing reads it.
+
+`sd` and `macro_sd` are still measurable off a photograph, and more directly
+than the coefficients of variation they replace: they are the fraction of the
+frame that reads as fully worn, at the surface scale and at the terrain scale.
 
 `relief_m` is likewise physical: the peak height of the relief **in metres**,
 and `edge_m` is the distance in metres that this ground's margin wanders into
 its neighbour (see the joint section below).
+
+## Two laws for two quantities
+
+`surface_lib.glsl` holds both, and the difference between them is not a detail:
+
+* **`averaged(px, freq)` — what a pixel keeps of a band's VALUE.** A pixel whose
+  footprint covers N cells shows their AVERAGE, and an average of N samples
+  keeps `σ/√N` of the variation, not none of it. Full weight while the screen
+  can carry the cycle (about four pixels to a period), then the standard-error
+  tail `1/(px·freq)`, which never reaches zero. Far ground is genuinely less
+  varied than near ground; it is not genuinely FLAT, and a band that snaps to
+  flat is the "low-quality LOD" the eye names on sight.
+* **`resolved(px, freq)` — what it keeps of the band's SLOPE.** This one *does*
+  reach zero, and correctly: averaging a stationary field's slope over a
+  footprint wider than its wavelength gives nothing, because every rise is
+  matched by a fall inside the same pixel. Relief the screen cannot resolve does
+  not shade — it is absent, not faint. Reaching exact zero is also what keeps
+  the relief taps (the most expensive thing on the ground path) skippable.
+
+## Where posterisation belongs
+
+The land used to wear the same 4-band N·L quantise as built things, and it drew
+hard-edged blotches across the hills. The law it broke:
+
+> **A visible edge must have a cause in the world.**
+
+Posterising N·L draws its steps along the level sets of `dot(N, L)`. On a wall
+that is harmless — one flat facet lands wholly in one band, so the only edges
+are the wall's own corners. On a billboard it never arises: sprites take a flat
+sun term. But the LAND is the one smooth-shaded body in this world, so the
+bands cut it along curves that match no ridge and no hollow, and that move with
+the sun rather than with the ground. How many you saw was set by the hour (a
+low sun spreads N·L across two or three band edges, a high sun across one) — a
+pattern whose density is a property of the time of day and not of the land.
+
+So the land is shaded smooth, and the stylisation stays where it reads as
+stylisation: `struct.frag` keeps its quantise unchanged, billboards keep their
+flat sun term. Two other readings were built and compared by eye first
+(2026-09-15): quantising the triangle's OWN plane — which does give every band
+edge a real cause, but turns the land faceted at the 16 m mesh — and the old
+interpolated quantise. Recorded so nobody spends the evening rediscovering them.
+
+## The air between
+
+Distance was the other half of why the far ground read as a bad LOD: a hill
+600 m away arrived at exactly the contrast and saturation of the grass
+underfoot, so the eye had no depth cue and read the surface variation as dirt.
+Air absorbs what a surface sent and scatters its own light in to replace it,
+both as the same exponential, so one factor does both and the result is a mix
+(`aerial_perspective` in `lighting.glsl`). Its colour is built from the light
+the frame already has (`haze_color` in `sub/lighting.h`) and is the SAME value
+the sky dome takes for its horizon fog, so the land can never fade toward a
+different sky than the one drawn behind it. The e-fold distance is the world's
+own half-span, 1536 m. It is applied by every lit pass as its last line — after
+the additive lights, because a torch's glow travels the same air.
 
 ## Families
 
@@ -387,3 +486,23 @@ of a frame.
 The sea bed is the one cell the work does not reach: it is read through the
 water plane, which the water pass shades. That is the water shader's surface,
 not this one's.
+
+### The 2026-09-14/15 pass, measured honestly
+
+The **ladder** cost **+0.11 ms/frame**: minimum of five 4000-frame runs of
+`gpu_smoke3d`, A/B against HEAD in the same session, 9.06 → 9.50 s wall clock.
+
+The **mix model** is **unmeasured**, and that is worth writing down rather than
+guessing at. The wall-clock harness stopped measuring between sessions: the
+window came up vsync-locked at 120 Hz, so every configuration reported the same
+33.5 s. It briefly looked like a 3.5× regression. Two checks killed that:
+HEAD *also* reported 33.5 s, and reducing the whole ground shader to a constant
+colour *still* reported 33.5 s. The instrument was blind, not the code slow.
+Arithmetically the mix is cheaper than what it replaced — three `exp()` calls
+out, one `mix` and two table reads in — but that is a reasoning, not a number,
+and it is not recorded as one.
+
+**The lesson, which is §47's twin:** a perf number is only worth the proof that
+the instrument was still measuring. `TIMAERT_GPU_STATS=1` reads GPU timestamps
+and is immune to vsync; wall clock is not. Measure the stage you changed, with
+an instrument you have just proved responds to changing it.

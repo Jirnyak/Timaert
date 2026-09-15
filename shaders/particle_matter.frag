@@ -58,6 +58,7 @@ void main() {
     vec3 rgb = lit_surface(base, pc.ambient.rgb, pc.sunColor.rgb, 0.7, sh,
                            vWorldC);
     rgb += base * point_lights_flat(vWorldC);
+    rgb = aerial_perspective(rgb, vWorldC);
 
     // Straight alpha out: the pipeline's blend factors (SRC_ALPHA /
     // ONE_MINUS_SRC_ALPHA) do the compositing.

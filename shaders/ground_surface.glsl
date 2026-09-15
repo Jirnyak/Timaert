@@ -26,58 +26,95 @@ const uint kGfMud = 6u;
 const uint kGroundCount = 15u;
 const uint kCoverCount = 4u;
 
-//  0 tundra    turf    CV 0.16/0.20  meso 1.20 m  grain 0.05 m  relief 0.090 m  cover grass 0.35
-//    lichen mat over frozen ground — low tussocks and sparse cover
-//  1 taiga     turf    CV 0.22/0.24  meso 0.90 m  grain 0.04 m  relief 0.120 m  cover grass 0.60
-//    needle litter and moss between the trunks
-//  2 snow      soil    CV 0.07/0.05  meso 2.00 m  grain 0.06 m  relief 0.050 m  cover snow 1.00
+//  0 tundra    turf    sd 0.16/0.20  meso 1.20 m  grain 0.05 m  relief 0.090 m  cover grass 0.35  ladder 32.4 m..44 mm  mean 0.50/0.52/0.45
+//    lichen mat over frozen ground — low tussocks and sparse cover; fresh
+//    is the lichen, worn the bare frozen earth between it
+//  1 taiga     turf    sd 0.22/0.24  meso 0.90 m  grain 0.04 m  relief 0.120 m  cover grass 0.60  ladder 24.3 m..33 mm  mean 0.22/0.38/0.28
+//    moss between the trunks against the brown needle litter that buries it
+//  2 snow      soil    sd 0.07/0.05  meso 2.00 m  grain 0.06 m  relief 0.050 m  cover snow 1.00  ladder 18.0 m..74 mm  mean 0.62/0.66/0.70
 //    the GROUND of the snow biome is frozen earth — the white is COVER at
 //    density 1; take the cover away and the ground underneath is honest
-//  3 valley    soil    CV 0.18/0.20  meso 1.40 m  grain 0.05 m  relief 0.080 m  cover grass 0.45
-//    dry river-valley loam
-//  4 meadow    turf    CV 0.20/0.22  meso 0.80 m  grain 0.04 m  relief 0.100 m  cover grass 0.75
-//    the default ground of the temperate world
-//  5 swamp     mud     CV 0.24/0.24  meso 1.60 m  grain 0.05 m  relief 0.070 m  cover grass 0.50
-//    peat flats with standing water — reeds where it drains
-//  6 desert    sand    CV 0.10/0.10  meso 1.10 m  grain 0.03 m  relief 0.100 m  cover none 0.00
-//    wind ripples are the whole structure of a dune field
-//  7 steppe    turf    CV 0.19/0.22  meso 1.00 m  grain 0.04 m  relief 0.100 m  cover grass 0.50
-//    dry bunch grass over pale loess
-//  8 tropics   turf    CV 0.26/0.26  meso 0.70 m  grain 0.04 m  relief 0.120 m  cover grass 0.90
-//    closed herb layer — the ground barely shows
-//  9 field     furrow  CV 0.20/0.14  meso 4.50 m  grain 0.04 m  relief 0.140 m  cover grass 0.25
+//  3 valley    soil    sd 0.18/0.20  meso 1.40 m  grain 0.05 m  relief 0.080 m  cover grass 0.45  ladder 37.8 m..52 mm  mean 0.55/0.52/0.32
+//    river-valley loam: damp dark earth where it holds, dusty pale where it
+//    has dried
+//  4 meadow    turf    sd 0.20/0.22  meso 0.80 m  grain 0.04 m  relief 0.100 m  cover grass 0.75  ladder 21.6 m..30 mm  mean 0.40/0.52/0.28
+//    the default ground of the temperate world — green sward against dry
+//    stems and the soil showing between them
+//  5 swamp     mud     sd 0.24/0.24  meso 1.60 m  grain 0.05 m  relief 0.070 m  cover grass 0.50  ladder 43.2 m..59 mm  mean 0.24/0.36/0.20
+//    peat flats with standing water — black wet peat where it drowns,
+//    drained and paler where it drains
+//  6 desert    sand    sd 0.10/0.10  meso 1.10 m  grain 0.03 m  relief 0.100 m  cover none 0.00  ladder 29.7 m..41 mm  mean 0.82/0.72/0.48
+//    wind ripples are the whole structure of a dune field: the shaded
+//    coarse trough against the polished crest
+//  7 steppe    turf    sd 0.19/0.22  meso 1.00 m  grain 0.04 m  relief 0.100 m  cover grass 0.50  ladder 27.0 m..37 mm  mean 0.68/0.60/0.32
+//    dry bunch grass over pale loess — the tufts and the bare ground they
+//    stand in
+//  8 tropics   turf    sd 0.26/0.26  meso 0.70 m  grain 0.04 m  relief 0.120 m  cover grass 0.90  ladder 18.9 m..26 mm  mean 0.12/0.36/0.12
+//    closed herb layer — the ground barely shows; what varies is deep green
+//    against fallen leaf litter
+//  9 field     furrow  sd 0.20/0.14  meso 4.50 m  grain 0.04 m  relief 0.140 m  cover grass 0.25  ladder 40.5 m..56 mm  mean 0.55/0.48/0.26
 //    ridge-and-furrow: one ridge pair every meso_m (4.5 m is the historic
 //    strip width) with ploughed lines eight to the ridge; rows run
 //    EAST-WEST — the north-south twin is id 14 and the pick is
-//    field_furrows_vertical (sub/material.h)
-// 10 shore     sand    CV 0.12/0.12  meso 0.90 m  grain 0.03 m  relief 0.070 m  cover none 0.00
+//    field_furrows_vertical (sub/material.h). Fresh is turned damp earth in
+//    the furrow, worn the dried crust on the ridge
+// 10 shore     sand    sd 0.12/0.12  meso 0.90 m  grain 0.03 m  relief 0.070 m  cover none 0.00  ladder 24.3 m..33 mm  mean 0.76/0.68/0.46
 //    wave-combed sand; damp 1 = the band below the shoreline reads wet
-// 11 rock      stone   CV 0.15/0.20  meso 2.20 m  grain 0.06 m  relief 0.220 m  cover moss 0.18
-//    bare massif — plates split by cracks, moss only along the joints
-// 12 road      track   CV 0.14/0.10  meso 3.00 m  grain 0.03 m  relief 0.040 m  cover none 0.00
-//    packed dirt and gravel — the surface a thousand feet made flat
-// 13 waterbed  mud     CV 0.13/0.14  meso 1.30 m  grain 0.05 m  relief 0.050 m  cover none 0.00
-//    lake and river bed, seen through the water plane
-// 14 field_v   furrow  CV 0.20/0.14  meso 4.50 m  grain 0.04 m  relief 0.140 m  cover grass 0.25
+// 11 rock      stone   sd 0.15/0.20  meso 2.20 m  grain 0.06 m  relief 0.220 m  cover moss 0.18  ladder 19.8 m..81 mm  mean 0.45/0.43/0.39
+//    bare massif — plates split by cracks; fresh is the lichen stain that
+//    follows the joints, worn the clean face
+// 12 road      track   sd 0.14/0.10  meso 3.00 m  grain 0.03 m  relief 0.040 m  cover none 0.00  ladder 27.0 m..37 mm  mean 0.42/0.34/0.23
+//    packed dirt and gravel — the surface a thousand feet made flat; damp
+//    earth in the ruts, dry dust on the crown
+// 13 waterbed  mud     sd 0.13/0.14  meso 1.30 m  grain 0.05 m  relief 0.050 m  cover none 0.00  ladder 35.1 m..48 mm  mean 0.38/0.35/0.29
+//    lake and river bed, seen through the water plane: soft silt against
+//    the gravel the current has swept
+// 14 field_v   furrow  sd 0.20/0.14  meso 4.50 m  grain 0.04 m  relief 0.140 m  cover grass 0.25  ladder 40.5 m..56 mm  mean 0.55/0.48/0.26
 //    the same ploughed field as id 9 with the ridges running NORTH-SOUTH
 
-// Mean linear colour of the unlit ground.
-const vec3 kGroundAlbedo[15] = vec3[15](
-    vec3(0.50000, 0.52000, 0.45000),  //  0 tundra
-    vec3(0.22000, 0.38000, 0.28000),  //  1 taiga
-    vec3(0.62000, 0.66000, 0.70000),  //  2 snow
-    vec3(0.55000, 0.52000, 0.32000),  //  3 valley
-    vec3(0.40000, 0.52000, 0.28000),  //  4 meadow
-    vec3(0.24000, 0.36000, 0.20000),  //  5 swamp
-    vec3(0.82000, 0.72000, 0.48000),  //  6 desert
-    vec3(0.68000, 0.60000, 0.32000),  //  7 steppe
-    vec3(0.12000, 0.36000, 0.12000),  //  8 tropics
-    vec3(0.55000, 0.48000, 0.26000),  //  9 field
-    vec3(0.76000, 0.68000, 0.46000),  // 10 shore
-    vec3(0.45000, 0.43000, 0.39000),  // 11 rock
-    vec3(0.42000, 0.34000, 0.23000),  // 12 road
-    vec3(0.38000, 0.35000, 0.29000),  // 13 waterbed
-    vec3(0.55000, 0.48000, 0.26000)   // 14 field_v
+// THE TWO CONSTITUENTS each ground is made of, as linear
+// colours. `fresh` is what ACCUMULATES on it (sward, lichen,
+// soft snow, the silt in a hollow); `worn` is what EXPOSURE
+// leaves (litter and bare earth, scoured crust, the polished
+// crest of a dune). The procedural field chooses the
+// PROPORTION, never the brightness — so every colour the
+// ground can show lies on the segment between these two, and
+// the shader cannot manufacture one nobody authored. That
+// bound is the law; see mesh.frag ground_of.
+const vec3 kGroundFresh[15] = vec3[15](
+    vec3(0.42000, 0.50000, 0.40000),  //  0 tundra
+    vec3(0.14000, 0.42000, 0.30000),  //  1 taiga
+    vec3(0.66000, 0.70000, 0.76000),  //  2 snow
+    vec3(0.46000, 0.44000, 0.26000),  //  3 valley
+    vec3(0.30000, 0.54000, 0.22000),  //  4 meadow
+    vec3(0.16000, 0.34000, 0.16000),  //  5 swamp
+    vec3(0.74000, 0.64000, 0.42000),  //  6 desert
+    vec3(0.58000, 0.58000, 0.26000),  //  7 steppe
+    vec3(0.08000, 0.38000, 0.10000),  //  8 tropics
+    vec3(0.46000, 0.40000, 0.22000),  //  9 field
+    vec3(0.68000, 0.60000, 0.40000),  // 10 shore
+    vec3(0.40000, 0.42000, 0.34000),  // 11 rock
+    vec3(0.36000, 0.29000, 0.19000),  // 12 road
+    vec3(0.32000, 0.31000, 0.26000),  // 13 waterbed
+    vec3(0.46000, 0.40000, 0.22000)   // 14 field_v
+);
+
+const vec3 kGroundWorn[15] = vec3[15](
+    vec3(0.58000, 0.54000, 0.50000),  //  0 tundra
+    vec3(0.30000, 0.34000, 0.26000),  //  1 taiga
+    vec3(0.58000, 0.62000, 0.64000),  //  2 snow
+    vec3(0.64000, 0.60000, 0.38000),  //  3 valley
+    vec3(0.50000, 0.50000, 0.34000),  //  4 meadow
+    vec3(0.32000, 0.38000, 0.24000),  //  5 swamp
+    vec3(0.90000, 0.80000, 0.54000),  //  6 desert
+    vec3(0.78000, 0.62000, 0.38000),  //  7 steppe
+    vec3(0.16000, 0.34000, 0.14000),  //  8 tropics
+    vec3(0.64000, 0.56000, 0.30000),  //  9 field
+    vec3(0.84000, 0.76000, 0.52000),  // 10 shore
+    vec3(0.50000, 0.44000, 0.44000),  // 11 rock
+    vec3(0.48000, 0.39000, 0.27000),  // 12 road
+    vec3(0.44000, 0.39000, 0.32000),  // 13 waterbed
+    vec3(0.64000, 0.56000, 0.30000)   // 14 field_v
 );
 
 // Which shape each ground wears.
@@ -99,68 +136,89 @@ const uint kGroundFamily[15] = uint[15](
     3u   // 14 field_v
 );
 
-// x = lognormal sigma reproducing the row's target luminance CV,
-// y = meso structure frequency (cycles per metre, = 1/meso_m),
-// z = chroma sigma (lognormal width of the hue drift),
-// w = relief height in METRES — the normal-perturbation scale.
-const vec4 kGroundSurface[15] = vec4[15](
-    vec4(0.15899, 0.83333, 0.06000, 0.09000),  //  0 tundra
-    vec4(0.21741, 1.11111, 0.09000, 0.12000),  //  1 taiga
-    vec4(0.06991, 0.50000, 0.02000, 0.05000),  //  2 snow
-    vec4(0.17857, 0.71429, 0.08000, 0.08000),  //  3 valley
-    vec4(0.19804, 1.25000, 0.08000, 0.10000),  //  4 meadow
-    vec4(0.23665, 0.62500, 0.10000, 0.07000),  //  5 swamp
-    vec4(0.09975, 0.90909, 0.04000, 0.10000),  //  6 desert
-    vec4(0.18832, 1.00000, 0.07000, 0.10000),  //  7 steppe
-    vec4(0.25576, 1.42857, 0.10000, 0.12000),  //  8 tropics
-    vec4(0.19804, 0.22222, 0.07000, 0.14000),  //  9 field
-    vec4(0.11957, 1.11111, 0.05000, 0.07000),  // 10 shore
-    vec4(0.14917, 0.45455, 0.05000, 0.22000),  // 11 rock
-    vec4(0.13932, 0.33333, 0.05000, 0.04000),  // 12 road
-    vec4(0.12946, 0.76923, 0.05000, 0.05000),  // 13 waterbed
-    vec4(0.19804, 0.22222, 0.07000, 0.14000)   // 14 field_v
+// x = meso structure frequency (cycles per metre, = 1/meso_m),
+// y = relief height in METRES — the normal-perturbation scale.
+const vec2 kGroundSurface[15] = vec2[15](
+    vec2(0.83333, 0.09000),  //  0 tundra
+    vec2(1.11111, 0.12000),  //  1 taiga
+    vec2(0.50000, 0.05000),  //  2 snow
+    vec2(0.71429, 0.08000),  //  3 valley
+    vec2(1.25000, 0.10000),  //  4 meadow
+    vec2(0.62500, 0.07000),  //  5 swamp
+    vec2(0.90909, 0.10000),  //  6 desert
+    vec2(1.00000, 0.10000),  //  7 steppe
+    vec2(1.42857, 0.12000),  //  8 tropics
+    vec2(0.22222, 0.14000),  //  9 field
+    vec2(1.11111, 0.07000),  // 10 shore
+    vec2(0.45455, 0.22000),  // 11 rock
+    vec2(0.33333, 0.04000),  // 12 road
+    vec2(0.76923, 0.05000),  // 13 waterbed
+    vec2(0.22222, 0.14000)   // 14 field_v
 );
 
-// Lognormal sigma of the TERRAIN-scale patchwork (from macro_cv).
-// The band that survives to the horizon: past a couple of
-// hundred metres the pixel footprint has eaten every finer one,
-// and this is all that keeps a bare biome from being a flat
-// plane of one colour.
-const float kGroundMacroSigma[15] = float[15](
-    0.19804,  //  0 tundra
-    0.23665,  //  1 taiga
-    0.04997,  //  2 snow
-    0.19804,  //  3 valley
-    0.21741,  //  4 meadow
-    0.23665,  //  5 swamp
-    0.09975,  //  6 desert
-    0.21741,  //  7 steppe
-    0.25576,  //  8 tropics
-    0.13932,  //  9 field
-    0.11957,  // 10 shore
-    0.19804,  // 11 rock
-    0.09975,  // 12 road
-    0.13932,  // 13 waterbed
-    0.13932   // 14 field_v
+// THE LADDER a ground's colour is built from: one field with a
+// continuous spectrum, read as octave i at meso_freq *
+// kLadderLacunarity^i carrying amplitude kLadderGain^i. Index 0
+// IS the row's meso frequency — the octave the family SHAPE
+// stands in for — so the two halves below are the TERRAIN's
+// patchwork (i < 0, wearing macro_sd) and the SURFACE's own
+// roughness (i >= 0, wearing sd). The span is derived from the
+// row: it runs from the patchwork floor (0.035 cycles/m, one
+// patch per ~29 m) down to the row's own grain, snapped to
+// whole octaves. Nothing here is authored; see
+// tools/gen_ground_table.py ladder_span.
+//
+// x = coarsest octave index, y = finest,
+// z = unit-variance normaliser of the terrain half,
+// w = unit-variance normaliser of the surface half. Both are
+//     FULL-RESOLUTION constants: the ladder must LOSE contrast
+//     with range, so it is never renormalised per fragment.
+const float kLadderLacunarity = 3.0;
+const float kLadderGain = 0.75;
+const vec4 kGroundLadder[15] = vec4[15](
+    vec4( -3.0,  3.0, 0.30777, 0.69726),  //  0 tundra
+    vec4( -3.0,  3.0, 0.30777, 0.69726),  //  1 taiga
+    vec4( -2.0,  3.0, 0.45000, 0.69726),  //  2 snow
+    vec4( -3.0,  3.0, 0.30777, 0.69726),  //  3 valley
+    vec4( -3.0,  3.0, 0.30777, 0.69726),  //  4 meadow
+    vec4( -3.0,  3.0, 0.30777, 0.69726),  //  5 swamp
+    vec4( -3.0,  3.0, 0.30777, 0.69726),  //  6 desert
+    vec4( -3.0,  3.0, 0.30777, 0.69726),  //  7 steppe
+    vec4( -3.0,  3.0, 0.30777, 0.69726),  //  8 tropics
+    vec4( -2.0,  4.0, 0.45000, 0.68089),  //  9 field
+    vec4( -3.0,  3.0, 0.30777, 0.69726),  // 10 shore
+    vec4( -2.0,  3.0, 0.45000, 0.69726),  // 11 rock
+    vec4( -2.0,  4.0, 0.45000, 0.68089),  // 12 road
+    vec4( -3.0,  3.0, 0.30777, 0.69726),  // 13 waterbed
+    vec4( -2.0,  4.0, 0.45000, 0.68089)   // 14 field_v
 );
 
-// Grain frequency in cycles per metre (= 1/micro_m).
-const float kGroundGrainFreq[15] = float[15](
-    20.00000,  //  0 tundra
-    25.00000,  //  1 taiga
-    16.66667,  //  2 snow
-    20.00000,  //  3 valley
-    25.00000,  //  4 meadow
-    20.00000,  //  5 swamp
-    33.33333,  //  6 desert
-    25.00000,  //  7 steppe
-    25.00000,  //  8 tropics
-    25.00000,  //  9 field
-    33.33333,  // 10 shore
-    16.66667,  // 11 rock
-    33.33333,  // 12 road
-    20.00000,  // 13 waterbed
-    25.00000   // 14 field_v
+// How far each half of the ladder swings the mix, as a standard
+// deviation of the mix fraction (which lives in 0..1 about the
+// midpoint). x = the surface half, at and above this ground's
+// own meso frequency: how intermixed it is underfoot. y = the
+// terrain half below it: how patchy it looks from a hillside.
+// They ADD into ONE fraction, because "how worn is this spot"
+// is a single fact measured at two scales — which is also why
+// the cover reads the SAME fraction and a drier hollow gets
+// paler soil AND paler grass with no second field to keep in
+// step.
+const vec2 kGroundSpread[15] = vec2[15](
+    vec2(0.16000, 0.20000),  //  0 tundra
+    vec2(0.22000, 0.24000),  //  1 taiga
+    vec2(0.07000, 0.05000),  //  2 snow
+    vec2(0.18000, 0.20000),  //  3 valley
+    vec2(0.20000, 0.22000),  //  4 meadow
+    vec2(0.24000, 0.24000),  //  5 swamp
+    vec2(0.10000, 0.10000),  //  6 desert
+    vec2(0.19000, 0.22000),  //  7 steppe
+    vec2(0.26000, 0.26000),  //  8 tropics
+    vec2(0.20000, 0.14000),  //  9 field
+    vec2(0.12000, 0.12000),  // 10 shore
+    vec2(0.15000, 0.20000),  // 11 rock
+    vec2(0.14000, 0.10000),  // 12 road
+    vec2(0.13000, 0.14000),  // 13 waterbed
+    vec2(0.20000, 0.14000)   // 14 field_v
 );
 
 // How far this ground's own margin wanders into its neighbour,
@@ -204,25 +262,6 @@ const float kGroundDamp[15] = float[15](
     0.00000   // 14 field_v
 );
 
-// RGB axis the hue drift travels along (>1 warms a channel).
-const vec3 kGroundChromaAxis[15] = vec3[15](
-    vec3(1.05000, 1.00000, 0.90000),  //  0 tundra
-    vec3(0.90000, 1.10000, 0.85000),  //  1 taiga
-    vec3(1.00000, 1.00000, 1.05000),  //  2 snow
-    vec3(1.10000, 1.00000, 0.80000),  //  3 valley
-    vec3(1.00000, 1.10000, 0.80000),  //  4 meadow
-    vec3(0.95000, 1.05000, 0.85000),  //  5 swamp
-    vec3(1.05000, 1.00000, 0.85000),  //  6 desert
-    vec3(1.05000, 1.00000, 0.85000),  //  7 steppe
-    vec3(0.90000, 1.15000, 0.85000),  //  8 tropics
-    vec3(1.10000, 1.00000, 0.80000),  //  9 field
-    vec3(1.05000, 1.00000, 0.90000),  // 10 shore
-    vec3(1.00000, 1.00000, 1.00000),  // 11 rock
-    vec3(1.05000, 1.00000, 0.90000),  // 12 road
-    vec3(0.95000, 1.00000, 1.05000),  // 13 waterbed
-    vec3(1.10000, 1.00000, 0.80000)   // 14 field_v
-);
-
 // x = cover row id (0 = bare), y = density on this ground.
 const vec2 kGroundCover[15] = vec2[15](
     vec2(1.00000, 0.35000),  //  0 tundra
@@ -246,30 +285,43 @@ const vec2 kGroundCover[15] = vec2[15](
 //    the absence of cover — density is ignored, the ground is bare
 // cover 1 grass
 //    the first instance: upright blades that bend with the same wind the
-//    clouds ride
+//    clouds ride — green where it thrives, straw where it has dried
 // cover 2 snow
 //    a blanket rather than blades — same function, strands wide and flat,
-//    wind zero
+//    wind zero; fresh fall against wind-scoured crust
 // cover 3 moss
 //    fine felt in the cracks of stone; too low to sway
 
-// Mean linear colour of each cover layer.
-const vec3 kCoverColour[4] = vec3[4](
+// The SAME two-constituent law one layer up: a sward is green
+// blades and the straw among them. Looked up with the GROUND's
+// mix fraction, not one of its own — that is what makes a drier
+// hollow carry paler soil and paler grass at once, structurally,
+// with no multiply and no second field.
+const vec3 kCoverFresh[4] = vec3[4](
     vec3(1.00000, 1.00000, 1.00000),  //  0 none
     vec3(0.27000, 0.40000, 0.16000),  //  1 grass
-    vec3(0.90000, 0.93000, 0.98000),  //  2 snow
-    vec3(0.24000, 0.36000, 0.18000)   //  3 moss
+    vec3(0.92000, 0.95000, 1.00000),  //  2 snow
+    vec3(0.22000, 0.38000, 0.16000)   //  3 moss
+);
+
+const vec3 kCoverWorn[4] = vec3[4](
+    vec3(1.00000, 1.00000, 1.00000),  //  0 none
+    vec3(0.45000, 0.42000, 0.22000),  //  1 grass
+    vec3(0.86000, 0.89000, 0.94000),  //  2 snow
+    vec3(0.28000, 0.34000, 0.22000)   //  3 moss
 );
 
 // x = strands per metre, y = layer height in metres,
-// z = wind response, w = lognormal sigma of the cover's own
-// luminance. The strand SLOPE — what tilts the normal — is
-// the product y*x, never a fourth number to keep in step.
+// z = wind response, w = how far the strand field swings the
+// COVERAGE. The strands decide how much ground shows between
+// them, never what colour the blades are. The strand SLOPE —
+// what tilts the normal — is the product y*x, never a fourth
+// number to keep in step.
 const vec4 kCoverParams[4] = vec4[4](
     vec4(0.00000, 0.00000, 0.00000, 0.00000),  //  0 none
-    vec4(7.00000, 0.28000, 1.00000, 0.25576),  //  1 grass
-    vec4(2.50000, 0.10000, 0.00000, 0.07987),  //  2 snow
-    vec4(14.00000, 0.03000, 0.00000, 0.17857)   //  3 moss
+    vec4(7.00000, 0.28000, 1.00000, 0.26000),  //  1 grass
+    vec4(2.50000, 0.10000, 0.00000, 0.08000),  //  2 snow
+    vec4(14.00000, 0.03000, 0.00000, 0.18000)   //  3 moss
 );
 
 #endif // TIMAERT_GROUND_SURFACE

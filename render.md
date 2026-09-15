@@ -265,9 +265,26 @@ Every lit fragment stage — terrain ([mesh.frag](shaders/mesh.frag)), structure
 `#include "lighting.glsl"` and calls
 `lit_surface()`, so the day/night response lives in **one place** and cannot
 drift or be re-implemented (subtly wrong) per shader. Only the `sunTerm`
-differs: terrain and structures quantise `N·L` to 4 bands for a pixel-retro
-look; billboards pass a flat constant (`0.7`) since they have no meaningful
-per-pixel normal.
+differs: **structures** quantise `N·L` to 4 bands for a pixel-retro look;
+billboards pass a flat constant (`0.7`) since they have no meaningful
+per-pixel normal; **terrain is shaded smooth**.
+
+> Terrain used to quantise too, and it drew hard-edged blotches across the
+> hills (owner, 2026-09-15). **A visible edge must have a cause in the world.**
+> Posterising `N·L` steps along the level sets of `dot(N, L)`: harmless on a
+> wall, whose flat facet lands wholly in one band so the only edges are the
+> wall's own corners — but the land is the one smooth-shaded body in this
+> world, so the bands cut it along curves matching no ridge and no hollow, and
+> moving with the sun rather than with the ground. How many you saw was set by
+> the hour, not by the land. The stylisation stays where it reads as
+> stylisation. Full account in [ground.md](ground.md).
+
+Every lit pass also ends on `aerial_perspective()` — the air between the eye
+and the surface, one exponential doing absorption and in-scatter at once. It
+is the LAST line rather than part of `lit_surface()` because the additive
+terms a shader adds afterwards (torches, spell glows, water glints) travel the
+same air. The sky is the one surface that never calls it: the sky IS the haze,
+at infinite distance.
 
 > This paragraph described the NPC pass as lit for a long time while it was
 > not, and named a constant (`0.75`) that existed in no shader. When the
@@ -550,8 +567,10 @@ drop may fall through a roof — the cover-height mask is a post-demo item.
   between vertices and dissolves. Sampling the id *per-fragment* from the
   full-res grid keeps thin features crisp and continuous, exactly like the TS
   authority's per-fragment `u_tileGrid` lookup (`v_uv = a_pos` in renderer-3d).
-  The synth then layers the quantised pixel-art per-material variation on top (no
-  atlas, same philosophy as the macro synth). In the shipping game the ids come
+  The synth then layers the per-material variation on top (no atlas, same
+  philosophy as the macro synth) — a MIX between the material's two authored
+  constituents, never a multiply, so it cannot show a colour nobody authored
+  ([ground.md](ground.md)). In the shipping game the ids come
   from the seamless tile grid ([src/sub/vk_renderer_3d.h](src/sub/vk_renderer_3d.h)),
   resolved once per biome cell while baking; the harness fakes a small grid
   (biome-by-height + a cross road) so the standalone smoke drives the identical

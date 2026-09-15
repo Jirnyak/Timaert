@@ -50,5 +50,5 @@ void main() {
     // Additive positional lights (flat sprite form — distance only, no N·L) so a
     // tree standing in a torch / spell pool glows with it. Inert until count>0.
     col += base * point_lights_flat(vWorld);
-    outColor = vec4(col, 1.0);
+    outColor = vec4(aerial_perspective(col, vWorld), 1.0);
 }
