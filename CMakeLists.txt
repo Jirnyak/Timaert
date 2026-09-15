@@ -1186,6 +1186,12 @@ timaert_test(item_parts_test
 timaert_test(deposit_layer_test
     SOURCES
         src/macro/deposit_layer.cpp)
+# The reach field the vein layer stamps (problems.md §52): the field is only
+# true while EVERY door that moves a vein also moves its disc, and a door that
+# forgets fails silently. Drives all of them and re-checks the invariant.
+timaert_test(deposit_reach_test
+    SOURCES
+        src/macro/deposit_layer.cpp)
 # R2 — settlement derives from resources: the veto/percentile/negative-control
 # contract on village placement (macro/settlement_score.{h,cpp} + the
 # hinterland scan in state.cpp). Links the whole generation chain the score
@@ -1651,6 +1657,12 @@ timaert_test(sheet_registry_test)
 # test re-derives shaders/ground_surface.glsl from the two CSVs and fails on
 # drift, so tuning the look stays an edit to data and can never become an edit
 # to the generated file. Reads the tree at its source path — hence the define.
+# THE AIR is a law of the canon that executes on the GPU, so the only way to
+# assert it is the CPU mirror in sub/lighting.h (the arrangement biome_at has
+# with the shader's bt_biome). Relations only — no pinned numbers — so retuning
+# the air moves the picture and never the verdict.
+timaert_test(air_law_test)
+
 timaert_test(ground_table_test
     SOURCES
         # sub/material.h is the authority on the id space the table indexes.

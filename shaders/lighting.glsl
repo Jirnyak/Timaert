@@ -112,14 +112,17 @@ layout(std430, set = 0, binding = 1) readonly buffer TimaertLights {
     // how a heightfield-less scene like the smoke harness opts out).
     vec4          sunDirW;
     vec4          terrainParams;
-    // The air, and the eye (sub/lighting.h haze_color / kHazeEFoldM):
-    // aerial.rgb = the haze colour, aerial.w = 1 / e-fold distance in metres
-    // (0 = off, and exp(-d*0) is 1, so the off state costs no branch);
-    // viewParams.xyz = the camera in WINDOW space, viewParams.w = the
-    // `grounddbg` bisect mask. Here rather than in six push blocks because
-    // this one set-0 buffer is what every lit pass already binds.
+    // The air, and the eye (sub/lighting.h haze_color / kAirEFoldM /
+    // kAirScaleHeightM): aerial.rgb = the haze colour, aerial.w = 1 /
+    // SEA-LEVEL e-fold in metres (0 = off, and exp(-d*0*f) is 1, so the off
+    // state costs no branch); viewParams.xyz = the camera in WINDOW space,
+    // viewParams.w = the `grounddbg` bisect mask; airParams.x = 1 / the air's
+    // scale height, airParams.y = the sea-level datum in metres. Here rather
+    // than in six push blocks because this one set-0 buffer is what every lit
+    // pass already binds.
     vec4          aerial;
     vec4          viewParams;
+    vec4          airParams;
     // The full-window object-shadow level's world→light-clip matrix (the
     // crisp near level rides the push constants as it always has).
     mat4          lightMvpFar;
@@ -137,10 +140,32 @@ layout(std430, set = 0, binding = 1) readonly buffer TimaertLights {
 // same air and must be hazed too. So this is the LAST line of a lit shader,
 // applied to the finished colour, and the sky is the one surface that never
 // calls it — the sky IS the haze, at infinite distance.
+// THE AIR HAS A HEIGHT (sub/lighting.h kAirScaleHeightM, CANON.md S18.1).
+// Density falls as exp(-h/H) above the sea, so the optical depth is the ray's
+// MEAN density times its length — a ray up to a crest travels thin air, a ray
+// along the valley beside it travels thick air over the same distance. Two
+// exps and one divide buy the whole law: the ridge floats over a sea of haze,
+// and climbing opens the world, with no code for either case.
 vec3 aerial_perspective(vec3 col, vec3 worldPos) {
     if ((light_debug_bits() & 16u) != 0u) return col;  // `lightdbg haze`
-    float d = distance(worldPos, u_pointLights.viewParams.xyz);
-    float t = exp(-d * u_pointLights.aerial.w);
+    vec3  eye = u_pointLights.viewParams.xyz;
+    float d   = distance(worldPos, eye);
+    // Altitudes in SCALE HEIGHTS above the sea datum. Y is absolute metres in
+    // window space (sub/height.h layer 2) — only X and Z are window-relative.
+    float a0 = (eye.y      - u_pointLights.airParams.y) * u_pointLights.airParams.x;
+    float a1 = (worldPos.y - u_pointLights.airParams.y) * u_pointLights.airParams.x;
+    float da = a1 - a0;
+    // Mean of exp(-a) over the segment. The guard is a FLOAT guard, not a
+    // maths one: the limit da -> 0 is exp(-a0) and the quotient approaches it
+    // smoothly, but the numerator is a difference of two nearly equal values,
+    // and with seven digits a 0.35 m height difference is where cancellation
+    // starts eating the answer. Below that the limit IS the answer to more
+    // places than the quotient could give (the integral's own error there is
+    // da/2 = 0.05 %).
+    float f = (abs(da) > 1e-3)
+                ? (exp(-a0) - exp(-a1)) / da
+                : exp(-a0);
+    float t = exp(-d * u_pointLights.aerial.w * f);
     return mix(u_pointLights.aerial.rgb, col, t);
 }
 

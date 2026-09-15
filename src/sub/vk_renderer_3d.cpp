@@ -3404,7 +3404,7 @@ void Renderer3DVk::gather_point_lights(ecs::World* ecs, std::uint32_t slot,
     buf->aerial[0] = haze.x;
     buf->aerial[1] = haze.y;
     buf->aerial[2] = haze.z;
-    buf->aerial[3] = 1.0f / kHazeEFoldM;
+    buf->aerial[3] = 1.0f / kAirEFoldM;
     // WINDOW space, the space vWorld lives in — never the absolute synth
     // coordinate mesh.frag builds for the ground detail. camPos arrives in
     // exactly that space (it is the cull origin the lights were packed in).
@@ -3412,6 +3412,13 @@ void Renderer3DVk::gather_point_lights(ecs::World* ecs, std::uint32_t slot,
     buf->viewParams[1] = camPos.y;
     buf->viewParams[2] = camPos.z;
     buf->viewParams[3] = float(groundDebugMask_); // `grounddbg`, 0 = off
+    // The air's VERTICAL half: the scale height its density falls by 1/e over,
+    // and the datum it is measured from. The shader gets the datum rather than
+    // echoing it as a literal so sub/height.h stays the one vertical authority.
+    buf->airParams[0] = 1.0f / kAirScaleHeightM;
+    buf->airParams[1] = kSeaLevelM;
+    buf->airParams[2] = 0.0f;
+    buf->airParams[3] = 0.0f;
     // The wide shadow level's matrix, computed by record_shadow just before
     // this (frame(): prepare → shadow → main); receivers rebuild the far
     // light-clip from vWorld (lighting.glsl far_light_clip).

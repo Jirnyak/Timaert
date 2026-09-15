@@ -16,8 +16,10 @@
 // context: dark new-moon nights are a feature).
 #pragma once
 #include "core/math.h"
+#include "macro/biomes.h"   // kMountainBiomeLevel — the air's scale height
 #include "macro/celestial.h"
 #include "macro/state.h"
+#include "sub/height.h"     // kHeightScaleM / kSeaLevelM — the air's datum
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -111,26 +113,32 @@ struct GpuLightBuffer {
                                     //     march apron; 0 = no heightfield),
                                     // w = composite origin Z (cloud anchor;
                                     //     origin X rides sunDirW.w)
-    // The air between the eye and the surface (haze_color / kHazeEFoldM
-    // above), and the eye itself. They ride this buffer for the same reason
-    // everything else here does: it is the one set-0 descriptor EVERY lit pass
-    // already binds, so aerial perspective reaches the ground, the walls, the
-    // trees, the bodies and the water through one law and zero new plumbing.
-    // A lit shader needs no camera push lane of its own to compute a distance.
+    // The air between the eye and the surface (haze_color / kAirEFoldM /
+    // kAirScaleHeightM above), and the eye itself. They ride this buffer for
+    // the same reason everything else here does: it is the one set-0 descriptor
+    // EVERY lit pass already binds, so aerial perspective reaches the ground,
+    // the walls, the trees, the bodies and the water through one law and zero
+    // new plumbing. A lit shader needs no camera push lane of its own to
+    // compute a distance — nor any world constant of its own to compute an
+    // altitude: the datum arrives here too, so height.h stays the one authority
+    // and no GLSL literal has to be kept in step with it.
     float         aerial[4];        // xyz = haze colour (linear),
-                                    // w = 1 / e-fold distance in metres.
-                                    // 0 disables it — exp(-d*0) is 1, so the
+                                    // w = 1 / sea-level e-fold in metres.
+                                    // 0 disables it — exp(-d*0*f) is 1, so the
                                     // off state needs no branch anywhere (the
                                     // gpu_smoke3d harness opts out this way).
     float         viewParams[4];    // xyz = camera position in WINDOW space —
                                     //       the space vWorld lives in, never
                                     //       the absolute synth coord;
                                     // w = `grounddbg` bisect mask (0 = off)
+    float         airParams[4];     // x = 1 / scale height (1/m),
+                                    // y = sea-level datum (m; kSeaLevelM),
+                                    // zw = free (the far world takes them)
     float         lightMvpFar[16];
     GpuLight      lights[kSubworldMaxLights];
 };
 static_assert(sizeof(GpuLightBuffer)
-                  == 16 + 16 + 32 + 32 + 64 + 32 * kSubworldMaxLights,
+                  == 16 + 16 + 32 + 48 + 64 + 32 * kSubworldMaxLights,
               "GpuLightBuffer must match the std430 SSBO layout");
 
 // Cull a candidate light set down to the SSBO budget, keeping the ones NEAREST
@@ -288,14 +296,75 @@ inline LightParameters compute_light_parameters(int day, float tod) {
 // to CLIP the distant ground into the sky, "тумана по дальности в субмире
 // нет". Now there is, and the clip is a fade.)
 //
-// THE E-FOLD DISTANCE, in metres: how far a surface travels before the air has
-// taken 1/e of it. Not a taste number — it is the world's own half-span, the
-// composite's 3072 tiles at a metre each, halved. That puts the far corner of
-// the loaded window (a diagonal of ~2172 m) at about a quarter of itself and
-// three quarters haze, and a hill at 600 m a third of the way in. A player can
-// never see ground the world does not load, so the world's size is exactly the
-// right scale for the air inside it.
-constexpr float kHazeEFoldM = 1536.0f;
+// THE AIR HAS A HEIGHT, not only a density (CANON.md S18.1). Density falls
+// exponentially with altitude above the sea, so the optical depth of a ray is
+// the INTEGRAL of that density along it, not the length of it:
+//
+//     tau = d/D0 * f,   f = H/(h1-h0) * (exp(-h0/H) - exp(-h1/H))
+//                       f = exp(-h0/H)                  (limit h1 -> h0)
+//
+// with h measured from kSeaLevelM. f is the ray's MEAN density in sea-level
+// units, so a ray up to a summit travels thin air and a ray along a valley
+// travels thick air over the very same distance. That is the whole point: the
+// ridge floats over a sea of haze, and climbing one opens the world — with no
+// special code for either, both fall out of the integral.
+//
+// Uniform density (the previous `exp(-d/1536)`) could not express this: it
+// hazed a crest and the valley beside it identically, which is why the far
+// world read as a flat wash and why there was nothing to be gained by height.
+//
+// THE SEA-LEVEL E-FOLD, in metres: how far dense air carries a surface before
+// it has taken 1/e of it. SIXTEEN MACRO CELLS of 1024 m — 2^14, on the same
+// discrete cell ladder everything else in this world stands on. It is NOT a
+// draw distance: nothing is clipped at it, and the canon forbids such a
+// constant. It is where the LOWLAND dissolves; a summit, sitting where the air
+// is 7.7 % as dense (see H below), keeps its silhouette some thirteen times
+// further — ~100 cells. That 1:13 ratio between what a valley shows and what a
+// ridge shows is a consequence of H, not a second knob.
+constexpr float kAirEFoldM = 16384.0f;
+
+// THE AIR'S SCALE HEIGHT, in metres: the altitude over which density falls by
+// 1/e. It is THE MOUNTAIN BAND OF THIS WORLD — the normalised height between
+// the line where land becomes mountain (kMountainBiomeLevel, 0.75) and the top
+// of the range (1.0), in metres. The air thins over exactly the vertical
+// distance a massif rises, which states the canon's law as an identity rather
+// than fitting it: the mountain line at 525 m above the sea sits at 1.4 scale
+// heights (25 % of sea-level air), a 960 m summit at 2.6 (7.7 %), while the
+// whole lowland lives inside the first one. No physics is claimed — this world
+// has no g and no lapse rate; the air is scaled to the relief it stands over.
+constexpr float kAirScaleHeightM =
+    (1.0f - kMountainBiomeLevel) * kHeightScaleM;
+static_assert(kAirScaleHeightM > 0.0f && kAirScaleHeightM < kSeaLevelM,
+              "the dense air must be a layer INSIDE the world's relief: "
+              "taller than nothing, shorter than the sea-level datum itself");
+
+// THE OPTICAL DEPTH of a ray, and the CPU mirror of what lighting.glsl's
+// `aerial_perspective` computes — the same relationship `biome_at` has to the
+// shader's `bt_biome`: one law, two executions, kept in step by hand and by
+// `air_law_test`. Nothing in the game calls this during a frame (the GPU does
+// the work); it exists so the law can be MEASURED, because a law that only
+// lives in GLSL cannot be asserted by anything.
+//
+// `distanceM` is the ray's length; `eyeM` / `surfaceM` are the two endpoints'
+// ABSOLUTE altitudes (the space sub/height.h layer 2 defines, the space the
+// camera Y and vWorld.y already live in).
+inline float air_optical_depth(float distanceM, float eyeM, float surfaceM) {
+    const float a0 = (eyeM     - kSeaLevelM) / kAirScaleHeightM;
+    const float a1 = (surfaceM - kSeaLevelM) / kAirScaleHeightM;
+    const float da = a1 - a0;
+    // The mean of exp(-a) along the segment. The guard is a FLOAT guard, not a
+    // maths one — see the same lines in lighting.glsl for why 1e-3 and not 0.
+    const float f = (std::fabs(da) > 1e-3f)
+                        ? (std::exp(-a0) - std::exp(-a1)) / da
+                        : std::exp(-a0);
+    return distanceM / kAirEFoldM * f;
+}
+
+// How much of a surface survives the air between it and the eye. 1 = nothing
+// taken, 0 = pure haze.
+inline float air_transmittance(float distanceM, float eyeM, float surfaceM) {
+    return std::exp(-air_optical_depth(distanceM, eyeM, surfaceM));
+}
 
 // THE AIR'S OWN COLOUR. Two derivations, one line.
 //
