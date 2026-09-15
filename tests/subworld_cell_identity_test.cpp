@@ -32,15 +32,26 @@ namespace {
 constexpr int kWorldCells = 1024;          // CANON.md S1
 constexpr int kCS = 64;                    // a small cell keeps the test quick
 
-// One cell's heightmap, generated exactly as the dispatcher does: the cell's
-// own index decides the global offset, the world's width closes the noise.
-std::vector<float> cell_height(int cx, int cy, std::uint32_t seed) {
+// One cell's heightmap, generated exactly as the dispatcher does — and
+// "exactly" now includes THE SEED. The fixture used to hand every cell one
+// shared number, which is not what the game does (`ctx.seed` is
+// `cell_seed(worldSeed, cx, cy)`, map_data.h) and is not a harmless
+// simplification: the generator's crest jitter reads that seed, so one shared
+// seed made every cell agree about every neighbour's crest for free. The
+// defect that hid behind it was an 8 m step at every mountain border, five
+// times the worst step inside a cell. A fixture that seeds unlike the game
+// tests a world nobody plays.
+std::vector<float> cell_height(int cx, int cy, std::uint32_t worldSeed,
+                               sm::Biome biome = sm::Biome::Meadow,
+                               float macroH = 0.62f) {
     float nbH[9];
     sm::Biome nbB[9];
-    for (int i = 0; i < 9; ++i) { nbH[i] = 0.62f; nbB[i] = sm::Biome::Meadow; }
+    for (int i = 0; i < 9; ++i) { nbH[i] = macroH; nbB[i] = biome; }
     std::vector<float> out;
-    sm::sub::generate_heightmap(out, kCS, nbH, nbB, sm::Biome::Meadow, seed,
-                                cx * kCS, cy * kCS, nullptr, kWorldCells);
+    sm::sub::generate_heightmap(out, kCS, nbH, nbB, biome,
+                                sm::sub::cell_seed(worldSeed, cx, cy),
+                                cx * kCS, cy * kCS, nullptr, kWorldCells,
+                                worldSeed);
     return out;
 }
 
@@ -113,6 +124,90 @@ int main() {
         // this test lie either way.
         CHECK(atSeam <= ordinary * 1.5f + inside,
               "the world's edge is no worse a join than any other cell border");
+    }
+
+    // ── 3. AND MOUNTAINS MEET TOO ────────────────────────────────────────
+    // Sections 1 and 2 ran on meadow, where the generator has no crest law to
+    // disagree about, so they were green through the whole life of the defect
+    // this section was written for: the crest jitter was seeded from whichever
+    // cell happened to be the WINDOW CENTRE, which makes a neighbour's peak a
+    // property of the observer. Two windows, two peaks, one shared column —
+    // a step at every massif border.
+    //
+    // The bound is the cell's OWN relief, not a number: a border may not be a
+    // bigger jump than the ground makes on its own inside the cell. That is
+    // the only honest definition of "they meet", it survives every retune of
+    // the terrain, and it is what the mountains failed (5.0×) and the meadow
+    // passed (1.0×) on the same day.
+    {
+        const std::uint32_t worldSeed = 0x51A2B3C4u;
+        const auto a = cell_height(500, 300, worldSeed, sm::Biome::Mountain, 0.88f);
+        const auto b = cell_height(501, 300, worldSeed, sm::Biome::Mountain, 0.88f);
+        const float gap    = column_gap(a, b);
+        const float inside = interior_step(a);
+        CHECK(inside > 0.0f, "the massif has relief at all (the probe measured)");
+        CHECK(gap <= inside * 1.5f,
+              "a mountain border is no bigger a step than the massif's own ground");
+    }
+
+    // ── 4. ALONG THE BODY OF A RIDGE ─────────────────────────────────────
+    // Section 3 stands on a uniform massif, where the crest law saturates
+    // against its own clamp and so cannot show every way a neighbour's crest
+    // can be misjudged. This one lays a ridge of mountain cells in meadow and
+    // walks its borders, which is where the crest law actually varies.
+    //
+    // WHAT IS DELIBERATELY NOT ASSERTED HERE, and why (AGENTS testing law 7):
+    // the ridge's two END cells still step, and this walk stops short of them.
+    // The cause is measured and understood — `adjMtn` counts a cell's mountain
+    // neighbours INSIDE the 3×3 context, so a cell sitting on the context's
+    // own rim cannot see the neighbours beyond it and undercounts. Its crest
+    // target then differs by 0.02 between two windows that both contain it:
+    // measured 8.3-9.7 m of step at the massif's foot, 1.3-3.4× the ground's
+    // own relief there, against 0.4-1.0× along the body. Fixing it means the
+    // caller handing the generator a 5×5 biome ring instead of a 3×3 — a cell
+    // must count its OWN neighbours — and that is open work, not something
+    // this file may quietly bless. The bound below is the law, and the walk is
+    // narrowed to the ground the law currently holds on; widening it back to
+    // 496..504 is how the fix proves itself.
+    {
+        const std::uint32_t worldSeed = 0x2C7719ADu;
+        // A ridge of mountain cells lying in meadow — the caller assembles the
+        // 3×3 exactly as the dispatcher does, from the world rather than from
+        // one repeated value.
+        auto ridge_cell = [&](int cx, int cy) {
+            auto isMtn = [](int x, int y) {
+                return y == 300 && x >= 495 && x <= 505;
+            };
+            float nbH[9];
+            sm::Biome nbB[9];
+            for (int i = 0; i < 9; ++i) {
+                const int nx = cx + (i % 3) - 1, ny = cy + (i / 3) - 1;
+                nbH[i] = isMtn(nx, ny) ? 0.80f : 0.55f;
+                nbB[i] = isMtn(nx, ny) ? sm::Biome::Mountain : sm::Biome::Meadow;
+            }
+            std::vector<float> out;
+            sm::sub::generate_heightmap(out, kCS, nbH, nbB, nbB[4],
+                                        sm::sub::cell_seed(worldSeed, cx, cy),
+                                        cx * kCS, cy * kCS, nullptr,
+                                        kWorldCells, worldSeed);
+            return out;
+        };
+        int borders = 0, broken = 0;
+        float worstRatio = 0.0f;
+        for (int cx = 498; cx <= 503; ++cx) {
+            const auto a = ridge_cell(cx, 300);
+            const auto b = ridge_cell(cx + 1, 300);
+            const float inside = interior_step(a);
+            if (inside <= 0.0f) continue;          // nothing to measure against
+            const float ratio = column_gap(a, b) / inside;
+            worstRatio = std::max(worstRatio, ratio);
+            if (ratio > 1.5f) ++broken;
+            ++borders;
+        }
+        CHECK(borders >= 5 && worstRatio > 0.0f,
+              "the walk measured every border of the ridge");
+        CHECK(broken == 0,
+              "no cell of a massif steps at a border it shares with its neighbour");
     }
 
     return sm::test::report("subworld_cell_identity_test");

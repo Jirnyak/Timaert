@@ -225,7 +225,8 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
                         const Biome nbBiome[9],
                         Biome biome, std::uint32_t seed,
                         int globalOffsetX, int globalOffsetY,
-                        const TerrainMod* nbMods, int worldCellsX) {
+                        const TerrainMod* nbMods, int worldCellsX,
+                        std::uint32_t worldSeed) {
     // The world's tile span — what every global-coordinate noise below closes
     // on. 0 (a bare fixture with no world around it) means "do not wrap", which
     // is what the tests that generate a lone cell want.
@@ -301,9 +302,31 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
             macroGradient[i] *= 1.0f - 0.6f * damp;
         }
 
-        const int cellGX = globalOffsetX / cellSize + cx;
-        const int cellGY = globalOffsetY / cellSize + cy;
-        const float jitter = terrain_noise_ts(cellGX, cellGY, seed ^ 0x5A17u) - 0.5f;
+        // THE CELL'S OWN PLACE, AND THE CELL'S OWN SEED.
+        //
+        // This crest jitter belongs to the neighbour cell, so every window
+        // that contains that cell has to compute the SAME number for it —
+        // otherwise two neighbours blend different crest targets into the
+        // column they share and the ground steps at their border. It used to
+        // take the CENTRE cell's `seed`, which makes the jitter a property of
+        // WHO IS ASKING rather than of the place: measured on two adjacent
+        // mountain cells with real per-cell seeds, their shared boundary
+        // disagreed by 8.0 m against a 1.6 m worst step inside the cell — a
+        // five-fold cliff, exactly the kind of seam CANON.md S1/S2 forbids.
+        // (Invisible to the suite because the identity fixture handed both
+        // cells ONE seed; with one seed the same measurement reads 1.0×.)
+        //
+        // The place is the WRAPPED cell index — the torus law the tile
+        // coordinates below already obey — and the seed is that place's own,
+        // through the one door (`cell_seed`, map_data.h).
+        const int rawGX = globalOffsetX / cellSize + cx - 1;
+        const int rawGY = globalOffsetY / cellSize + cy - 1;
+        const int cellGX = worldCellsX > 0 ? wrapi(rawGX, worldCellsX) : rawGX;
+        const int cellGY = worldCellsX > 0 ? wrapi(rawGY, worldCellsX) : rawGY;
+        const float jitter =
+            terrain_noise_ts(cellGX, cellGY,
+                             cell_seed(worldSeed, cellGX, cellGY) ^ 0x5A17u)
+            - 0.5f;
         if (isMtn) {
             // Crest base from THE skeleton law (base_generator.h); jitter and
             // neighbour-massif lift stay the generator's own on top.

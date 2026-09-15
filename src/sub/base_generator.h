@@ -142,7 +142,17 @@ namespace sm::sub
                             // itself at the world's edge instead of stepping
                             // (CANON.md S1). 0 = a lone cell with no world
                             // around it (fixtures): do not wrap.
-                            int worldCellsX = 0);
+                            int worldCellsX = 0,
+                            // THE WORLD seed, not the centre cell's hash above.
+                            // The per-cell crest jitter is a property of the
+                            // CELL, so every neighbour must derive it the same
+                            // — which is only possible from the world seed plus
+                            // the cell's own place (CellContext::worldSeed
+                            // exists for exactly this, and the field-plot
+                            // lattice already travels on it). 0 is a legal
+                            // deterministic value for a fixture; what is NOT
+                            // legal is deriving it from whoever is asking.
+                            std::uint32_t worldSeed = 0);
 
     // Fill base tiles for a biome (open ground / forest scatter / desert).
     void fill_base_tiles(std::vector<std::uint8_t> &tiles, int cellSize,
