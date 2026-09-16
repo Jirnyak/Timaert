@@ -91,6 +91,11 @@ static float smooth_noise_ts(float x, float y, std::uint32_t seed,
 // "for reference"; base_generator.h still owns the real constants.)
 constexpr float kWaterLevel = WATER_LEVEL;
 
+float crest_jitter01(int cellGX, int cellGY, std::uint32_t worldSeed) {
+    return terrain_noise_ts(cellGX, cellGY,
+                            cell_seed(worldSeed, cellGX, cellGY) ^ 0x5A17u);
+}
+
 TerrainMod terrain_mod_for(LandmarkType landmark, FeatureType feature) {
     // ONE data table: how strongly each macro content class calms the terrain
     // it stands on. damp scales down ridge/noise for the whole cell; plateauR
@@ -149,9 +154,9 @@ static float soft_compress_peak(float h) {
     return 1.0f + 0.20f * (1.0f - std::exp(-excess / 0.20f));
 }
 
-static float apply_mountain_ridges(float h, int gx, int gy, float macroH,
-                                   float peakTarget, float rw,
-                                   float worldTiles) {
+float mountain_ridges01(float h, int gx, int gy, float macroH,
+                        float peakTarget, float rw,
+                        float worldTiles, bool coarseOnly) {
     if (rw <= 0.01f) return h;
     constexpr std::uint32_t kRidgeSeed = 0xD37A115u;
     // Every octave below closes on the world: the period handed to the noise is
@@ -191,8 +196,15 @@ static float apply_mountain_ridges(float h, int gx, int gy, float macroH,
     // away (mountains must keep more mesh-scale character than meadows —
     // mountain_mesh_smoothness_test parity) at a slope cost of only a few
     // degrees. λ=120 tiles stays well above the 32-tile mesh Nyquist.
-    const float crag = smooth_noise_ts(wx * 0.0085f, wy * 0.0085f,
-                                       kRidgeSeed ^ 0x9E3779B9u, per(0.0085f));
+    // The crag grain is THE fine octave, and the far world stops before it
+    // (CANON S18.1). ~6 m at a ~120-tile wavelength: under a pixel long before
+    // anything a far ring draws, so carrying it would be paying to render what
+    // the air already ate.
+    const float crag = coarseOnly
+        ? 0.5f   // the octave's own mean — removing detail must not MOVE the
+                 // ground, only stop varying it
+        : smooth_noise_ts(wx * 0.0085f, wy * 0.0085f,
+                          kRidgeSeed ^ 0x9E3779B9u, per(0.0085f));
     const float cragAmp = 0.004f + 0.004f * ridge; // crags live on the ridges
     // Valley floor must track the surrounding macro altitude, not collapse
     // to half of it. The original `macroH * 0.5f` produced a 400+ m trench
@@ -335,20 +347,12 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
         const int rawGY = globalOffsetY / cellSize + cy - 1;
         const int cellGX = worldCellsX > 0 ? wrapi(rawGX, worldCellsX) : rawGX;
         const int cellGY = worldCellsX > 0 ? wrapi(rawGY, worldCellsX) : rawGY;
-        const float jitter =
-            terrain_noise_ts(cellGX, cellGY,
-                             cell_seed(worldSeed, cellGX, cellGY) ^ 0x5A17u)
-            - 0.5f;
-        if (isMtn) {
-            // Crest base from THE skeleton law (base_generator.h); jitter and
-            // neighbour-massif lift stay the generator's own on top.
-            peakHeight[i] = std::clamp(skeleton_cell_height01(mh, false, true)
-                                      + adjMtn * 0.02f
-                                      + jitter * 0.045f, 0.80f, 1.04f);
-        } else {
-            peakHeight[i] = std::clamp(remapped[i] + 0.07f + adjMtn * 0.015f
-                                      + jitter * 0.03f, kWaterLevel + 0.10f, 1.05f);
-        }
+        // THE crest law, through its one door (base_generator.h) — the same
+        // one the far world builds its massifs with, so the ridge seen from
+        // thirty kilometres is the ridge you walk up to (CANON S18.1).
+        peakHeight[i] = skeleton_cell_peak01(mh, nbBiome[i] == Biome::Water,
+                                             isMtn, adjMtn,
+                                             cellGX, cellGY, worldSeed);
     }
 
     // Any settlement plateau in the 3×3 ring? (Pixel-loop guard.)
@@ -469,8 +473,8 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
             float h = macroH + (noise - 0.5f) * relief * localHS * localMtn;
 
             if (rw > 0.0f) {
-                h = apply_mountain_ridges(h, gxi, gyi, macroH, localPeak, rw,
-                                          worldTiles);
+                h = mountain_ridges01(h, gxi, gyi, macroH, localPeak, rw,
+                                      worldTiles, /*coarseOnly=*/false);
             }
 
             if (needsDune) {

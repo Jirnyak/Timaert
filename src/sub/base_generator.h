@@ -68,6 +68,86 @@ namespace sm::sub
         return kLandFloor + (macroH - kMacroSeaLevel) * landScale;
     }
 
+    // The crest's per-cell jitter — hash noise of the cell's own PLACE and the
+    // world seed. Declared here because the crest law above is inline and the
+    // far world needs both; defined in base_generator.cpp beside the rest of
+    // the noise stack.
+    float crest_jitter01(int cellGX, int cellGY, std::uint32_t worldSeed);
+
+    // THE cell-skeleton CREST law (normalised 0..1) — the peak a cell's ridges
+    // aim at, and the twin of skeleton_cell_height01 above. Extracted from the
+    // generator's own loop so there is exactly ONE of it: the far world builds
+    // the same massifs the near world does, or the canon's «та же гора»
+    // (S18.1) is a wish rather than a property.
+    //
+    // Every input is a property of the CELL'S PLACE — its macro height, whether
+    // it is mountain, how many of its four neighbours are, and its wrapped
+    // index — so two windows containing the same cell compute the same crest.
+    // (They did not always: the jitter used to be seeded from whichever cell
+    // was the window CENTRE, and massif borders stepped 8 m for it.)
+    inline float skeleton_cell_peak01(float macroH, bool isWater,
+                                      bool isMountain, int adjMountain,
+                                      int cellGX, int cellGY,
+                                      std::uint32_t worldSeed) {
+        const float jitter = crest_jitter01(cellGX, cellGY, worldSeed) - 0.5f;
+        if (isMountain) {
+            // Crest base from the skeleton law; jitter and the neighbour-massif
+            // lift are the crest's own on top.
+            return std::clamp(skeleton_cell_height01(macroH, false, true)
+                                  + float(adjMountain) * 0.02f
+                                  + jitter * 0.045f,
+                              0.80f, 1.04f);
+        }
+        return std::clamp(skeleton_cell_height01(macroH, isWater, false)
+                              + 0.07f + float(adjMountain) * 0.015f
+                              + jitter * 0.03f,
+                          WATER_LEVEL + 0.10f, 1.05f);
+    }
+
+    // THE MOUNTAIN SILHOUETTE — and THE far world's, because it is the same
+    // function (CANON S18.1: «дальний рельеф не имеет права быть похожим шумом,
+    // он обязан быть той же функцией, усечённой»).
+    //
+    // `coarseOnly` drops the fine octave the near ground carries — a ~6 m crag
+    // grain at a ~120-tile wavelength, which at any distance where the far
+    // world is drawn has been under a pixel for kilometres. That is the canon's
+    // law of distance made literal: DETAIL IS REMOVED, never substituted. What
+    // survives is the massif: the same warp, the same two crest octaves, the
+    // same compression, the same period closing on the same world.
+    //
+    // `h` is the manifold the ridges rise out of; `macroH` / `peakTarget` /
+    // `ridgeWeight` are the cell columns blended at this tile; `gx, gy` are
+    // WORLD TILE coordinates (wrapped by the caller — the noise closes on
+    // `worldTiles` and a tile is its place).
+    float mountain_ridges01(float h, int gx, int gy, float macroH,
+                            float peakTarget, float ridgeWeight,
+                            float worldTiles, bool coarseOnly);
+
+    // THE FAR WORLD'S GROUND, in normalised height. It is the near generator
+    // with its detail removed and nothing added: the macro manifold the cells
+    // blend into, plus the massif that rises out of it at its coarse octaves.
+    //
+    // What is deliberately ABSENT is every term that is detail by nature —
+    // the multi-octave ground noise, dunes, swamp dips, the settlement
+    // plateau. None of them is visible at the ranges this draws, and a far
+    // world that carried them would be paying to render what the air has
+    // already eaten.
+    //
+    // The caller supplies the cell columns already blended at this tile (the
+    // same bilinear over the four nearest cell CENTRES the near generator
+    // does), because a far mesh samples a coarse cell grid once and reads many
+    // tiles out of it — asking per tile would re-derive the same nine cells
+    // for every vertex.
+    inline float far_height01(int gx, int gy, float macroH01, float peak01,
+                              float ridgeWeight, float worldTiles) {
+        const float h = macroH01;   // the manifold, with no detail on it
+        if (ridgeWeight <= 0.01f) return std::clamp(h, 0.0f, 2.0f);
+        return std::clamp(mountain_ridges01(h, gx, gy, macroH01, peak01,
+                                            ridgeWeight, worldTiles,
+                                            /*coarseOnly=*/true),
+                          0.0f, 2.0f);
+    }
+
     struct BiomeConfig
     {
         float treeDensity;
