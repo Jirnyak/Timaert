@@ -81,10 +81,16 @@ int main() {
         const std::size_t dim = std::size_t(2 * n + 1);
         CHECK(mesh.stepM == 64 && mesh.halfSpanM > 0.0f,
               "the build reports the spacing and reach it actually used");
-        CHECK(mesh.vtx.size() == dim * dim,
-              "one vertex per grid point, no more and no fewer");
-        CHECK(mesh.idx.size() == (dim - 1) * (dim - 1) * 6u,
-              "two triangles per quad, and every quad has them");
+        CHECK(mesh.vtx.size() >= dim * dim,
+              "one vertex per grid point, plus whatever the skirts hang");
+        // Two triangles per quad, PLUS the skirts that close the sheet's
+        // edges. The old form pinned the count exactly and was right only
+        // while the sheet had open edges — which is the defect the skirts
+        // exist to close (the owner saw it as a vertical wall at the join).
+        CHECK(mesh.idx.size() >= (dim - 1) * (dim - 1) * 6u,
+              "every quad has its two triangles");
+        CHECK(mesh.idx.size() > (dim - 1) * (dim - 1) * 6u,
+              "...and the rim carries MORE than that: its edges are closed");
         std::uint32_t worst = 0;
         for (std::uint32_t i : mesh.idx) worst = std::max(worst, i);
         CHECK(worst + 1u == std::uint32_t(mesh.vtx.size()),
@@ -139,14 +145,36 @@ int main() {
               "every vertex stands exactly where the height law puts it");
     }
 
+    // ── 2b. THE SKIRTS HANG, AND THEY HANG FROM THE EDGE ──────────────────
+    // A curtain that is not below its own edge closes nothing. Asserted as a
+    // relation to the SURFACE's own lowest point, so a retune of the terrain
+    // cannot make it lie: the mesh must reach below the ground it is made of.
+    {
+        const int n = int(mesh.halfSpanM) / mesh.stepM;
+        const std::size_t surface = std::size_t(2 * n + 1)
+                                  * std::size_t(2 * n + 1);
+        float surfaceLow = 1e30f, meshLow = 1e30f;
+        for (std::size_t i = 0; i < mesh.vtx.size(); ++i) {
+            meshLow = std::min(meshLow, mesh.vtx[i].py);
+            if (i < surface) surfaceLow = std::min(surfaceLow, mesh.vtx[i].py);
+        }
+        CHECK(mesh.vtx.size() > surface,
+              "the sheet grew vertices beyond its grid — the skirts exist");
+        CHECK(meshLow < surfaceLow,
+              "and they hang BELOW the ground they close the edge of");
+    }
+
     // ── 3. THE SHEET HAS A MASSIF IN IT ───────────────────────────────────
     // Without this the file could pass on a flat plane by agreeing that
     // nothing is anywhere (AGENTS testing law 3).
     {
+        const int n = int(mesh.halfSpanM) / mesh.stepM;
+        const std::size_t surface = std::size_t(2 * n + 1)
+                                  * std::size_t(2 * n + 1);
         float lo = 1e30f, hi = -1e30f;
-        for (const FarVertex& v : mesh.vtx) {
-            lo = std::min(lo, v.py);
-            hi = std::max(hi, v.py);
+        for (std::size_t i = 0; i < surface; ++i) {   // the GROUND, not its skirts
+            lo = std::min(lo, mesh.vtx[i].py);
+            hi = std::max(hi, mesh.vtx[i].py);
         }
         CHECK(hi - lo > 200.0f,
               "the far ground has a mountain's worth of relief in it — the "
@@ -201,7 +229,7 @@ int main() {
         const float mtnMat = float(biomeMat[std::size_t(Biome::Mountain)]);
         const float lowMat = float(biomeMat[std::size_t(Biome::Meadow)]);
         int foreign = 0, sawMtn = 0, sawLow = 0;
-        for (const FarVertex& v : mesh.vtx) {
+        for (const FarVertex& v : mesh.vtx) {   // skirts carry their edge's own
             if (v.material == mtnMat) ++sawMtn;
             else if (v.material == lowMat) ++sawLow;
             else ++foreign;

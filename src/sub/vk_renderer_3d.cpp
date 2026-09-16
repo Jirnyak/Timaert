@@ -1398,6 +1398,7 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
                 camCx + x - kFarCellRadius, camCy + y - kFarCellRadius,
                 worldSeed);
             col.ridgeW = mtn ? 1.0f : 0.0f;
+            col.waterW = water ? 1.0f : 0.0f;
             col.material = biomeMat[std::size_t(b)];
             grid.cells[i] = col;
         }

@@ -65,6 +65,12 @@ struct FarCellColumn {
     float        gradient01  = 0.0f;
     float        heightScale = 0.0f;
     float        mtnScale    = 0.0f;
+    // 1 on a water cell. A far SEABED has to lie BELOW the water plane, not on
+    // it: the skeleton's water curve reaches exactly WATER_LEVEL at the
+    // shoreline, so without this the far ground and the sea surface occupy the
+    // same height and the result reads as "water, then land at sea level, then
+    // water again" — which is what the owner photographed.
+    float        waterW      = 0.0f;
     std::uint8_t material = 0;      // biome_ground_materials()[biome]
 };
 
@@ -192,6 +198,8 @@ inline void build_far_mesh(FarMesh& out, const FarCellGrid& grid,
                        + c01.heightScale * w01 + c11.heightScale * w11;
         const float ms = c00.mtnScale * w00 + c10.mtnScale * w10
                        + c01.mtnScale * w01 + c11.mtnScale * w11;
+        const float wet = c00.waterW * w00 + c10.waterW * w10
+                        + c01.waterW * w01 + c11.waterW * w11;
         // The tile this point stands on, in WORLD tile coordinates, wrapped —
         // the generator's noise closes on the world and a tile is its place.
         const int rawX = camCx * kCellSize + int(std::floor(wx));
@@ -202,9 +210,19 @@ inline void build_far_mesh(FarMesh& out, const FarCellGrid& grid,
         // least twice its own spacing, and no shorter one — see
         // base_generator.h terrain_detail01. Halving the step doubles what the
         // ground may show, which is how detail comes BACK as you approach.
-        const float farM = far_height01(gx, gz, skel, peak, ridge, worldTiles,
-                                        grad, hs, ms, 2.0f * float(stepM))
-                         * kHeightScaleM;
+        float far01 = far_height01(gx, gz, skel, peak, ridge, worldTiles,
+                                   grad, hs, ms, 2.0f * float(stepM));
+        // A SEABED IS UNDER THE SEA. The ceiling comes down as the ground
+        // becomes water, and it stops one kLandMargin below the plane — the
+        // very margin the LAND is lifted by on the other side of the same
+        // line (base_generator.h), so the two rules are one rule read from
+        // both banks.
+        const float wetCeil = WATER_LEVEL - kLandMargin;
+        if (wet > 0.0f) {
+            const float ceil01 = 2.0f * (1.0f - wet) + wetCeil * wet;
+            far01 = std::min(far01, ceil01);
+        }
+        const float farM = far01 * kHeightScaleM;
         if (blendBandM <= 0.0f || holeHalfM <= 0.0f) return farM;
         // How far this point lies OUTSIDE the composite, Chebyshev — the
         // composite is a square and so is the band around it.
@@ -279,6 +297,24 @@ inline void build_far_mesh(FarMesh& out, const FarCellGrid& grid,
         }
     }
 
+    // ── THE QUADS, AND THE SKIRTS THAT CLOSE THEIR EDGES ──────────────────
+    // A ring's edge is a CLIFF unless something closes it: two grounds that
+    // carry different octaves meet at different heights however honestly both
+    // are derived, and the gap between them is a hole you can see the world
+    // through. The owner saw exactly that — a vertical brown wall standing at
+    // the join with water on both sides of it.
+    //
+    // The canon's own remedy (S18.1): «трещины между кольцами лечатся ЮБКАМИ —
+    // вертикальная занавеска на пару метров вниз по краю каждого кольца». A
+    // skirt hangs straight down from the edge and fills the crack with itself;
+    // at the distances a far ring is drawn it is already under a pixel.
+    //
+    // ONE RULE FOR ALL THREE EDGES, and that is the point of doing it this
+    // way: any quad edge with no emitted quad on the other side gets a skirt —
+    // the sheet's outer rim, the hole around the composite, and the border
+    // between this ring and the next one. Three seams, no special cases.
+    std::vector<bool> emitted(std::size_t(dim - 1) * std::size_t(dim - 1),
+                              false);
     out.idx.reserve(std::size_t(dim - 1) * std::size_t(dim - 1) * 6u);
     for (int iz = 0; iz + 1 < dim; ++iz) {
         for (int ix = 0; ix + 1 < dim; ++ix) {
@@ -295,12 +331,54 @@ inline void build_far_mesh(FarMesh& out, const FarCellGrid& grid,
                 const float maxAbsZ = std::max(std::fabs(qz0), std::fabs(qz));
                 if (maxAbsX <= holeHalfM && maxAbsZ <= holeHalfM) continue;
             }
+            emitted[std::size_t(iz) * std::size_t(dim - 1)
+                    + std::size_t(ix)] = true;
             const std::uint32_t a = std::uint32_t(iz * dim + ix);
             const std::uint32_t b = a + 1;
             const std::uint32_t c = a + std::uint32_t(dim);
             const std::uint32_t d = c + 1;
             out.idx.push_back(a); out.idx.push_back(c); out.idx.push_back(b);
             out.idx.push_back(b); out.idx.push_back(c); out.idx.push_back(d);
+        }
+    }
+
+    // HOW FAR THE CURTAIN HANGS. Not a taste number: it must outreach the
+    // worst height two neighbouring grounds can disagree by, and that is
+    // bounded by how steeply the ground can fall across the spacing that
+    // separates them — four steps of it is past generous, and at the ranges
+    // these rings are drawn a curtain of any depth is a line of pixels.
+    const float skirtM = 4.0f * float(stepM);
+    const auto emittedAt = [&](int ix, int iz) {
+        if (ix < 0 || iz < 0 || ix + 1 >= dim || iz + 1 >= dim) return false;
+        return bool(emitted[std::size_t(iz) * std::size_t(dim - 1)
+                            + std::size_t(ix)]);
+    };
+    // A skirt quad hangs from two neighbouring TOP vertices; its two bottom
+    // vertices are new, and they carry the same normal and material so the
+    // curtain is lit as the ground it hangs from rather than as a wall.
+    const auto hang = [&](std::uint32_t t0, std::uint32_t t1) {
+        const FarVertex& v0 = out.vtx[t0];
+        const FarVertex& v1 = out.vtx[t1];
+        FarVertex b0 = v0; b0.py -= skirtM;
+        FarVertex b1 = v1; b1.py -= skirtM;
+        const std::uint32_t i0 = std::uint32_t(out.vtx.size());
+        out.vtx.push_back(b0);
+        out.vtx.push_back(b1);
+        const std::uint32_t i1 = i0 + 1;
+        out.idx.push_back(t0); out.idx.push_back(i0); out.idx.push_back(t1);
+        out.idx.push_back(t1); out.idx.push_back(i0); out.idx.push_back(i1);
+    };
+    for (int iz = 0; iz + 1 < dim; ++iz) {
+        for (int ix = 0; ix + 1 < dim; ++ix) {
+            if (!emittedAt(ix, iz)) continue;
+            const std::uint32_t a = std::uint32_t(iz * dim + ix);
+            const std::uint32_t b = a + 1;
+            const std::uint32_t c = a + std::uint32_t(dim);
+            const std::uint32_t d = c + 1;
+            if (!emittedAt(ix, iz - 1)) hang(a, b);   // north edge
+            if (!emittedAt(ix, iz + 1)) hang(c, d);   // south edge
+            if (!emittedAt(ix - 1, iz)) hang(a, c);   // west edge
+            if (!emittedAt(ix + 1, iz)) hang(b, d);   // east edge
         }
     }
 }
