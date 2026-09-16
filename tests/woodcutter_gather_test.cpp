@@ -208,18 +208,27 @@ void test_the_farmer_works_the_field() {
         tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle=*/true);
     }
     const int grain = gs.landmarks[0].inventory.count("grain");
+    const int inBag = w.reg.get<ecs::NpcInventory>(e).inv.count("grain");
     CHECK(grain > 0, "the farmer's grain reached the village store");
-    // One law of labour (owner 2026-08-30): a cycle takes kGatherPerCycle ×
-    // headcount and costs the squad a quarter of its bar — the person-day is
-    // DERIVED (econ_day.h kWorkCyclesPerBar), so the haul is whole cycles.
-    CHECK(grain % kGatherPerCycle == 0,
-          "grain arrives in whole cycle-yields - one law of labour");
-    // CONSERVATION (Field Inc F4): every grain in the store left the world —
-    // the field cell carries a harvest scar exactly as deep as the haul.
+    // THE BATCH LAW THIS USED TO PIN IS GONE (owner, 2026-09-16). It read
+    // `grain % kGatherPerCycle == 0` — "the haul arrives in whole cycle
+    // yields" — and it was true only while a take was a declared batch of
+    // eight. A take is now ONE object per hand, at exactly the price the
+    // player pays for one, and the TRIP emerges from the backs and the bar
+    // instead of from a constant. Nothing is pinned in its place because
+    // nothing quantised survives: the honest statement left is conservation,
+    // below, and it is the one that was load-bearing all along.
+    //
+    // CONSERVATION (Field Inc F4): every grain that reached anybody left the
+    // world — the field's scar is exactly as deep as store PLUS bag. The bag
+    // half is new and it is not bookkeeping: the farmer can now be caught
+    // mid-trip with grain on his back, where the old single-take cycle always
+    // ended at the door.
     const std::uint32_t fieldIdx = 10u * std::uint32_t(kMap) + 12u;
     const auto scar = gs.resourceScars[std::size_t(sm::ResourceFieldId::Wheat)].find(fieldIdx);
-    CHECK(scar != gs.resourceScars[std::size_t(sm::ResourceFieldId::Wheat)].end() && int(scar->second) == grain,
-          "grain gained by the store == stands the field lost");
+    CHECK(scar != gs.resourceScars[std::size_t(sm::ResourceFieldId::Wheat)].end()
+              && int(scar->second) == grain + inBag,
+          "grain gained by store AND bag == stands the field lost");
     CHECK(gs.resourceScars[std::size_t(sm::ResourceFieldId::Wheat)].size() == 1,
           "the farmer scars only the field he works");
 }

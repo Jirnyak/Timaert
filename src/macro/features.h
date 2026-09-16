@@ -118,37 +118,63 @@ struct FeatureDef {
     // Not a sentinel to branch on: it is the legal zero of the column, and a
     // cell that works nothing simply holds nothing.
     ResourceFieldId worksRow;
+    // HOW MANY OF THIS A BODY RAISES IN A DAY — the feature's own rate, and
+    // therefore its SP price through the one labour law (CANON S14.1:
+    // price = bar / rate). Ploughing a parcel, spanning a gap, sinking a
+    // shaft: they are all BUILDING, so they are all priced here, in the table
+    // of the thing being built, rather than by three literals at three call
+    // sites. Owner, 2026-09-16: «распашка и стройка это технически постройки,
+    // им надо выдать цену в SP просто типа как в таблицу фич».
+    //
+    // 0 = hands do not raise this one. A road is laid by the road planner, a
+    // beached hull is what is left of a voyage; neither is a day's work
+    // somebody chooses to spend.
+    //
+    // HANDS DO NOT MULTIPLY A BUILD, and that is the law's boundary rather
+    // than a hole in it (the boundary was miswritten as a defect once): a
+    // span is one span and a shaft is one shaft, so ten pairs of hands have
+    // nothing to make ten of. Hands multiply a QUANTITY — ore, grain, timber
+    // — and a building is not one.
+    int buildsPerDay;
 };
+
+// A DAY'S WORK RAISES FOUR. The number the three build sites used to spell as
+// `bar / 4` each, named once and hung on the thing being built: a body that
+// spends a quarter of its bar on a parcel, a span or a shaft raises four of
+// them between rests. Every buildable row carries it today because no build
+// has yet earned a rate of its own — the column exists so that the day one
+// does (a keep? a mill?), it is a number in a row and not a fourth literal.
+inline constexpr int kBuildsPerDay = 4;
 
 inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
     //                     bed   optics  civ   works
-    {FT_None,     0.0f, 1.00f, 0.0f, ResourceFieldId::Count},
-    {FT_Road,     1.0f, 0.65f, 0.35f, ResourceFieldId::Count},
-    {FT_DirtRoad, 1.5f, 0.85f, 0.22f, ResourceFieldId::Count},
+    {FT_None,     0.0f, 1.00f, 0.0f, ResourceFieldId::Count,  0},
+    {FT_Road,     1.0f, 0.65f, 0.35f, ResourceFieldId::Count, 0},
+    {FT_DirtRoad, 1.5f, 0.85f, 0.22f, ResourceFieldId::Count, 0},
     // The ploughed parcel works the ARABLE row. Which crop it is sown with
     // is a matter of the feature TYPE, not of a second row: a potato field
     // and a poppy field are new rows of THIS table, working the same number.
-    {FT_Field,    1.8f, 1.00f, 0.0f, ResourceFieldId::Wheat},
+    {FT_Field,    1.8f, 1.00f, 0.0f, ResourceFieldId::Wheat,  kBuildsPerDay},
     // The bridge carries the stone road's own columns: its deck IS the paved
     // bed (the march never notices the river under it), it is the same open
     // corridor to light and sight, and it seeds the same civilization pull.
-    {FT_Bridge,   1.0f, 0.65f, 0.35f, ResourceFieldId::Count},
+    {FT_Bridge,   1.0f, 0.65f, 0.35f, ResourceFieldId::Count, kBuildsPerDay},
     // Mines share the field's columns: worked ground, not an engineered
     // bed (0 = the biome's own footing), nothing to hide behind, and a
     // workplace that is tended, not garrisoned.
-    {FT_ClayPit,    0.0f, 1.00f, 0.0f, ResourceFieldId::Clay},
-    {FT_IronMine,   0.0f, 1.00f, 0.0f, ResourceFieldId::Iron},
-    {FT_Quarry,     0.0f, 1.00f, 0.0f, ResourceFieldId::Stone},
-    {FT_SilverMine, 0.0f, 1.00f, 0.0f, ResourceFieldId::Silver},
+    {FT_ClayPit,    0.0f, 1.00f, 0.0f, ResourceFieldId::Clay,   kBuildsPerDay},
+    {FT_IronMine,   0.0f, 1.00f, 0.0f, ResourceFieldId::Iron,   kBuildsPerDay},
+    {FT_Quarry,     0.0f, 1.00f, 0.0f, ResourceFieldId::Stone,  kBuildsPerDay},
+    {FT_SilverMine, 0.0f, 1.00f, 0.0f, ResourceFieldId::Silver, kBuildsPerDay},
     // Planks march like the dirt lane (bed 1.5 — the same half-again the
     // paved bed dirt pays), carry the bridge's open sight line, and seed
     // the dirt lane's own modest civilization pull.
-    {FT_WoodBridge, 1.5f, 0.65f, 0.22f, ResourceFieldId::Count},
+    {FT_WoodBridge, 1.5f, 0.65f, 0.22f, ResourceFieldId::Count, kBuildsPerDay},
     // The harbour is worked shore: a plank apron (dirt-lane bed), open to
     // sight, with the dirt lane's modest civilization pull.
-    {FT_Port,        1.5f, 0.85f, 0.22f, ResourceFieldId::Count},
+    {FT_Port,        1.5f, 0.85f, 0.22f, ResourceFieldId::Count, kBuildsPerDay},
     // A beached hull builds nothing and guards nothing — it just waits.
-    {FT_BeachedShip, 0.0f, 1.00f, 0.0f, ResourceFieldId::Count},
+    {FT_BeachedShip, 0.0f, 1.00f, 0.0f, ResourceFieldId::Count, 0},
 };
 static_assert(rows_in_enum_order(kFeatureDefs, &FeatureDef::type),
               "kFeatureDefs row order must mirror FeatureType — a new "
@@ -164,6 +190,13 @@ inline constexpr ResourceFieldId feature_works_row(FeatureType f) {
 }
 inline constexpr bool feature_is_worked(FeatureType f) {
     return feature_works_row(f) != ResourceFieldId::Count;
+}
+
+// How many of this a body raises in a day — the rate its SP price is the bar
+// divided by (CANON S14.1). 0 = hands do not raise it.
+inline constexpr int feature_builds_per_day(FeatureType f) {
+    return kFeatureDefs[std::size_t(f) < std::size_t(FT_Count)
+                            ? std::size_t(f) : 0].buildsPerDay;
 }
 
 inline constexpr const FeatureDef& feature_def(FeatureType t) {

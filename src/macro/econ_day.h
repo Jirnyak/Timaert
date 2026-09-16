@@ -145,17 +145,14 @@ inline constexpr int kNeedCount = int(sizeof(kNeeds) / sizeof(kNeeds[0]));
 // eighth of a town.
 inline constexpr int kHeadsPerCityWorker = 8;
 
-// The working rhythm (owner 2026-08-30, CANON S10/S14: work burns the SAME
-// SP the march does — no second labour law). One work cycle costs a quarter
-// of the squad's full bar, so a rested worker BESIDE his parcel makes four
-// hauls a day: kGatherPerWorkerDay is now the DERIVED day of such a worker
-// (4 cycles × the per-cycle take below), and a far vein pays part of the
-// bar to the road and honestly loses hauls. Headcount multiplies the yield,
-// never the price — the bar belongs to the squad.
-inline constexpr int kWorkCyclesPerBar = 4;
-static_assert(kGatherPerWorkerDay % kWorkCyclesPerBar == 0,
-              "the person-day must divide into whole cycle takes");
-inline constexpr int kGatherPerCycle = kGatherPerWorkerDay / kWorkCyclesPerBar;
+// (THE WORKING RHYTHM died here, 2026-09-16. `kWorkCyclesPerBar` = 4 declared
+// how many hauls a rested worker made in a day, and `kGatherPerCycle` = 32/4
+// derived how much one haul brought — a number honestly derived from a number
+// nobody could derive. Both are gone: a worker now takes ONE object per act at
+// the player's own price, an ARTEL takes one per hand, and the trip home
+// happens when the backs are full, the bar is spent, or the ground gives
+// nothing. How many trips that makes is a consequence of carrying capacity and
+// stamina — a property of the world instead of a knob. CANON S14.1.)
 
 // ── THE PRICE OF AN ACTION (CANON S14.1) ─────────────────────────────────
 // Every action costs SP, and the price is one sentence: THE BAR DIVIDED BY

@@ -1072,8 +1072,11 @@ void ai_gatherer(entt::entity self, MacroPos& p,
         const float dsq = torus_dist_sq(p.x, p.y, rt.targetX, rt.targetY,
                                         float(ctx.mapW), float(ctx.mapH));
         if (dsq <= 2.5f) {   // standing at the bank beside the gap
+            // A SPAN IS A BUILD, so its price is its own row's (CANON S14.1,
+            // features.h buildsPerDay). Stone and timber lay different decks
+            // but are the same day's work, so either row answers the same.
             const int cycleCost =
-                sp_price(int(pools.maxSp), kWorkCyclesPerBar);
+                sp_price(int(pools.maxSp), feature_builds_per_day(FT_Bridge));
             auto* bag = ctx.mw.world
                 ? ctx.mw.world->reg.try_get<ecs::NpcInventory>(self)
                 : nullptr;
@@ -1132,12 +1135,15 @@ void ai_gatherer(entt::entity self, MacroPos& p,
     if (rt.state == std::uint8_t(NS::Working)) {
         --rt.stateTimer;
         if (rt.stateTimer <= 0) {
-            // WORK COSTS SP through the one stamina law (owner 2026-08-30;
-            // econ_day.h kWorkCyclesPerBar carries the derivation). A squad
-            // too spent for a cycle goes home to rest instead of working on
-            // an empty bar — the same sentence the march pays.
+            // WORK COSTS SP through the one stamina law (CANON S14.1): the
+            // bar divided by the rate. A gatherer's rate is OBJECTS IN A DAY
+            // — the very number the player pays by when he fells a tree in
+            // the subworld — so a crew and a hero now price one act of
+            // taking identically, and the crew's advantage is its HANDS,
+            // never a cheaper hand. A squad too spent for one goes home to
+            // rest instead of working on an empty bar.
             const int cycleCost =
-                sp_price(int(pools.maxSp), kWorkCyclesPerBar);
+                sp_price(int(pools.maxSp), kGatherPerWorkerDay);
             if (int(pools.sp) < cycleCost) {
                 rt.targetX = home.x;
                 rt.targetY = home.y;
@@ -1148,6 +1154,7 @@ void ai_gatherer(entt::entity self, MacroPos& p,
             // the profession's registry row and rides home in the OWN bag.
             // A row whose layers are not wired reads 0 and takes nothing —
             // the fail-closed rule every gatherer shares.
+            bool tookSomething = false;
             if (ctx.mw.world) {
                 const int tx = int(rt.targetX);
                 const int ty = int(rt.targetY);
@@ -1217,8 +1224,15 @@ void ai_gatherer(entt::entity self, MacroPos& p,
                         rt.carryCap - inventory_weight(bag->inv);
                     carryMax = std::max(0, int(freeKg / unitKg));
                 }
-                const int take = std::min(
-                    std::min(kGatherPerCycle * workers, have), carryMax);
+                // ONE OBJECT PER HAND (owner, 2026-09-16). Each worker takes
+                // one — exactly what the player takes for exactly the same
+                // price — and the crew's yield is that times its hands. The
+                // batch of eight this replaced was a HAUL, and the haul is not
+                // gone: it emerges below from the backs and the bar instead of
+                // being declared by a constant nobody could derive.
+                const int take =
+                    std::min(std::min(workers, have), carryMax);
+                tookSomething = take > 0;
                 // Credit BEFORE debit (CANON S5): the field pays only what
                 // the OWN bag actually took — a bagless walker, or a bag
                 // with no room, drains nothing and writes no Drained fact.
@@ -1256,7 +1270,7 @@ void ai_gatherer(entt::entity self, MacroPos& p,
                 // same ±3 box find_home_field harvests) and walk there;
                 // arrival works the day's second cycle into a new field.
                 if (def->row == ResourceFieldId::Wheat
-                    && have < kGatherPerCycle * workers
+                    && have < workers
                     && int(pools.sp) >= cycleCost && ctx.mw.features) {
                     int bestWheat = 0;
                     XY plot{};
@@ -1285,6 +1299,40 @@ void ai_gatherer(entt::entity self, MacroPos& p,
                     }
                 }
             }
+            // THE HAUL IS EMERGENT (owner, 2026-09-16). The crew used to walk
+            // home after ONE take because the take was a whole trip's worth by
+            // declaration — `kGatherPerCycle`, a number derived from a second
+            // number («four cycles to a bar») that was itself only declared.
+            // Both are gone. A worker takes one object, and the crew keeps
+            // taking while its BACKS have room and its BAR has another act in
+            // it; the trip home is what happens when one of those runs out.
+            // The day's yield is unchanged — a full bar still buys the same
+            // number of objects — but no constant says how many trips that is.
+            {
+                const auto* bagNow = ctx.mw.world
+                    ? ctx.mw.world->reg.try_get<ecs::NpcInventory>(self)
+                    : nullptr;
+                bool backsFull = false;
+                if (bagNow) {
+                    const ItemDef* idef = item_def(def->commodity);
+                    const float unitKg =
+                        idef && idef->weight > 0.0f ? idef->weight : 1.0f;
+                    backsFull =
+                        rt.carryCap - inventory_weight(bagNow->inv) < unitKg;
+                }
+                const bool barSpent = int(pools.sp) < cycleCost;
+                // GROUND THAT GAVE NOTHING is the third reason to leave, and
+                // the one that matters most: without it a crew standing on an
+                // emptied cell would work forever, taking nothing and paying
+                // nothing, and never walk home again. The old code could not
+                // meet this case because it left after a single act whatever
+                // happened.
+                if (tookSomething && !backsFull && !barSpent) {
+                    // Still standing at the worksite, still able: work again.
+                    rt.stateTimer = 1;
+                    return;
+                }
+            }
             rt.targetX = home.x; rt.targetY = home.y;
             rt.state = std::uint8_t(NS::Returning);
         }
@@ -1292,8 +1340,10 @@ void ai_gatherer(entt::entity self, MacroPos& p,
     }
     if (rt.state == std::uint8_t(NS::Plowing)) {
         if (at_target(p, rt, ctx)) {
+            // PLOUGHING IS A BUILD — it raises FT_Field — so it is priced by
+            // that row like every other build (CANON S14.1).
             const int cycleCost =
-                sp_price(int(pools.maxSp), kWorkCyclesPerBar);
+                sp_price(int(pools.maxSp), feature_builds_per_day(FT_Field));
             if (int(pools.sp) >= cycleCost && ctx.mw.features && ctx.mw.gs
                 && plough_field_cell(*ctx.mw.features, ctx.mw,
                                      int(rt.targetX), int(rt.targetY))) {
