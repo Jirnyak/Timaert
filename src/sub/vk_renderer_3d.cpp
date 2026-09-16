@@ -1421,14 +1421,26 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
                         kFarFineHalfM, worldCellsX,
                         /*holeHalfM=*/kWorldExtent,
                         compositeHeightM, kFarStitchBandM);
+    // THE COARSE RING STITCHES TO THE FINE RING'S OWN LAW, exactly as the
+    // fine one stitches to the composite. I first assumed they would agree by
+    // construction — they do not, and cannot: the fine ring carries the
+    // ground's 125 m octave and the coarse one cannot, so they differ by that
+    // octave's amplitude, tens of metres. Leaving that to a SKIRT is what made
+    // the skirts enormous and visible; resolving it here is what lets them go
+    // back to being metres.
+    //
+    // The sampler answers with the FINE ring's height at a point — the same
+    // law, asked with the fine ring's own Nyquist — so the coarse ring leaves
+    // that answer and arrives at its own over the band.
+    const auto fineHeightM = [&](float wx, float wz) {
+        return sub::far_point_height_m(grid, camCx, camCy, wx, wz,
+                                       worldCellsX, kFarFineStepM);
+    };
     sub::FarMesh coarse;
-    // The coarse ring stitches to the FINE ring's own edge law, not to the
-    // composite: by the time it starts, the fine ring has already arrived at
-    // the far ground, so the two agree there by construction and need no band.
     sub::build_far_mesh(coarse, grid, camCx, camCy, kFarCoarseStepM,
                         kFarWorldHalfSpanM, worldCellsX,
                         /*holeHalfM=*/kFarFineHalfM,
-                        compositeHeightM, /*blendBandM=*/0.0f);
+                        fineHeightM, kFarStitchBandM);
     // The two rings ride ONE pair of buffers: they are the same sheet at two
     // resolutions and there is nothing to tell them apart at draw time.
     {

@@ -139,8 +139,62 @@ inline void far_cell_weights(float fx, float fy, int& x0, int& y0,
 // and filled the whole sky with its underside. The near ground is the same
 // ground with its octaves back, so where the composite exists the far sheet
 // must simply not be. 0 = no hole (a bare fixture with no composite).
-// `compositeHeightM(wx, wz)` — the NEAR ground's own height at a window-space
-// point, or a sampler that returns a negative number where it has none. It is
+// THE FAR GROUND AT ONE POINT, in metres — the law a ring of a given spacing
+// would answer with here. Pulled out of the builder because a ring needs to
+// ask what its INNER neighbour says in order to arrive at it: the two carry
+// different octaves by construction (that is what a LOD ladder IS), so they
+// have to be stitched rather than assumed to agree.
+inline float far_point_height_m(const FarCellGrid& grid, int camCx, int camCy,
+                                float wx, float wz, int worldCellsX,
+                                int stepM) {
+    const float cellSpanM = float(kCellSize) * 1.0f;   // a tile is a metre
+    const float worldTiles =
+        float(worldCellsX > 0 ? worldCellsX : 0) * float(kCellSize);
+    const float fx = wx / cellSpanM + float(grid.radiusCells);
+    const float fy = wz / cellSpanM + float(grid.radiusCells);
+    int x0 = 0, y0 = 0; float tx = 0.0f, ty = 0.0f;
+    detail::far_cell_weights(fx, fy, x0, y0, tx, ty);
+    const FarCellColumn& c00 = grid.at(x0,     y0);
+    const FarCellColumn& c10 = grid.at(x0 + 1, y0);
+    const FarCellColumn& c01 = grid.at(x0,     y0 + 1);
+    const FarCellColumn& c11 = grid.at(x0 + 1, y0 + 1);
+    const float w00 = (1 - tx) * (1 - ty), w10 = tx * (1 - ty);
+    const float w01 = (1 - tx) * ty,       w11 = tx * ty;
+    const float skel = c00.skel01 * w00 + c10.skel01 * w10
+                     + c01.skel01 * w01 + c11.skel01 * w11;
+    const float peak = c00.peak01 * w00 + c10.peak01 * w10
+                     + c01.peak01 * w01 + c11.peak01 * w11;
+    const float ridge = c00.ridgeW * w00 + c10.ridgeW * w10
+                      + c01.ridgeW * w01 + c11.ridgeW * w11;
+    const float grad = c00.gradient01 * w00 + c10.gradient01 * w10
+                     + c01.gradient01 * w01 + c11.gradient01 * w11;
+    const float hs = c00.heightScale * w00 + c10.heightScale * w10
+                   + c01.heightScale * w01 + c11.heightScale * w11;
+    const float ms = c00.mtnScale * w00 + c10.mtnScale * w10
+                   + c01.mtnScale * w01 + c11.mtnScale * w11;
+    const float wet = c00.waterW * w00 + c10.waterW * w10
+                    + c01.waterW * w01 + c11.waterW * w11;
+    const int rawX = camCx * kCellSize + int(std::floor(wx));
+    const int rawZ = camCy * kCellSize + int(std::floor(wz));
+    const int gx = worldTiles > 0.0f ? wrapi(rawX, int(worldTiles)) : rawX;
+    const int gz = worldTiles > 0.0f ? wrapi(rawZ, int(worldTiles)) : rawZ;
+    float h01 = far_height01(gx, gz, skel, peak, ridge, worldTiles,
+                             grad, hs, ms, 2.0f * float(stepM));
+    // A SEABED IS UNDER THE SEA. The ceiling comes down as the ground becomes
+    // water and stops one kLandMargin below the plane — the very margin the
+    // LAND is lifted by on the other side of the same line, so the two rules
+    // are one rule read from both banks.
+    if (wet > 0.0f) {
+        const float ceil01 = 2.0f * (1.0f - wet)
+                           + (WATER_LEVEL - kLandMargin) * wet;
+        h01 = std::min(h01, ceil01);
+    }
+    return h01 * kHeightScaleM;
+}
+
+// `innerHeightM(wx, wz)` — the height of whatever ground lies INSIDE this
+// ring: the composite for the first ring, the previous ring for every one
+// after it. Negative where there is none. It is
 // what stitches the two grounds together, and without it the join is a CLIFF:
 // ring 0 at 32 m carries wavelengths down to 64 m, the composite's 16 m mesh
 // carries them down to 32 m, so the two disagree by metres at the rim however
@@ -156,7 +210,7 @@ template <class HeightSampler>
 inline void build_far_mesh(FarMesh& out, const FarCellGrid& grid,
                            int camCx, int camCy, int stepM, float halfSpanM,
                            int worldCellsX, float holeHalfM,
-                           const HeightSampler& compositeHeightM,
+                           const HeightSampler& innerHeightM,
                            float blendBandM) {
     out.vtx.clear();
     out.idx.clear();
@@ -164,74 +218,27 @@ inline void build_far_mesh(FarMesh& out, const FarCellGrid& grid,
     out.stepM = 0;
     if (!grid.live() || stepM <= 0 || halfSpanM <= 0.0f) return;
 
-    const int   n         = int(halfSpanM) / stepM;        // per side
-    const int   dim       = 2 * n + 1;                     // vertices per row
+    const int   n   = int(halfSpanM) / stepM;              // per side
+    const int   dim = 2 * n + 1;                           // vertices per row
     const float cellSpanM = float(kCellSize) * 1.0f;       // a tile is a metre
-    const float worldTiles =
-        float(worldCellsX > 0 ? worldCellsX : 0) * float(kCellSize);
     out.halfSpanM = float(n * stepM);
     out.stepM = stepM;
     out.vtx.reserve(std::size_t(dim) * std::size_t(dim));
 
-    // Height of one point, in METRES, from the world's own generator.
+    // Height of one point, in METRES, from the world's own generator — and
+    // then STITCHED to whatever ground lies inside this ring.
     const auto height_m = [&](float wx, float wz) {
-        // Where this point stands, in cells from the grid's origin.
-        const float fx = wx / cellSpanM + float(grid.radiusCells);
-        const float fy = wz / cellSpanM + float(grid.radiusCells);
-        int x0 = 0, y0 = 0; float tx = 0.0f, ty = 0.0f;
-        detail::far_cell_weights(fx, fy, x0, y0, tx, ty);
-        const FarCellColumn& c00 = grid.at(x0,     y0);
-        const FarCellColumn& c10 = grid.at(x0 + 1, y0);
-        const FarCellColumn& c01 = grid.at(x0,     y0 + 1);
-        const FarCellColumn& c11 = grid.at(x0 + 1, y0 + 1);
-        const float w00 = (1 - tx) * (1 - ty), w10 = tx * (1 - ty);
-        const float w01 = (1 - tx) * ty,       w11 = tx * ty;
-        const float skel = c00.skel01 * w00 + c10.skel01 * w10
-                         + c01.skel01 * w01 + c11.skel01 * w11;
-        const float peak = c00.peak01 * w00 + c10.peak01 * w10
-                         + c01.peak01 * w01 + c11.peak01 * w11;
-        const float ridge = c00.ridgeW * w00 + c10.ridgeW * w10
-                          + c01.ridgeW * w01 + c11.ridgeW * w11;
-        const float grad = c00.gradient01 * w00 + c10.gradient01 * w10
-                         + c01.gradient01 * w01 + c11.gradient01 * w11;
-        const float hs = c00.heightScale * w00 + c10.heightScale * w10
-                       + c01.heightScale * w01 + c11.heightScale * w11;
-        const float ms = c00.mtnScale * w00 + c10.mtnScale * w10
-                       + c01.mtnScale * w01 + c11.mtnScale * w11;
-        const float wet = c00.waterW * w00 + c10.waterW * w10
-                        + c01.waterW * w01 + c11.waterW * w11;
-        // The tile this point stands on, in WORLD tile coordinates, wrapped —
-        // the generator's noise closes on the world and a tile is its place.
-        const int rawX = camCx * kCellSize + int(std::floor(wx));
-        const int rawZ = camCy * kCellSize + int(std::floor(wz));
-        const int gx = worldTiles > 0.0f ? wrapi(rawX, int(worldTiles)) : rawX;
-        const int gz = worldTiles > 0.0f ? wrapi(rawZ, int(worldTiles)) : rawZ;
-        // NYQUIST: this mesh may carry any octave whose wavelength is at
-        // least twice its own spacing, and no shorter one — see
-        // base_generator.h terrain_detail01. Halving the step doubles what the
-        // ground may show, which is how detail comes BACK as you approach.
-        float far01 = far_height01(gx, gz, skel, peak, ridge, worldTiles,
-                                   grad, hs, ms, 2.0f * float(stepM));
-        // A SEABED IS UNDER THE SEA. The ceiling comes down as the ground
-        // becomes water, and it stops one kLandMargin below the plane — the
-        // very margin the LAND is lifted by on the other side of the same
-        // line (base_generator.h), so the two rules are one rule read from
-        // both banks.
-        const float wetCeil = WATER_LEVEL - kLandMargin;
-        if (wet > 0.0f) {
-            const float ceil01 = 2.0f * (1.0f - wet) + wetCeil * wet;
-            far01 = std::min(far01, ceil01);
-        }
-        const float farM = far01 * kHeightScaleM;
+        const float farM = far_point_height_m(grid, camCx, camCy, wx, wz,
+                                              worldCellsX, stepM);
         if (blendBandM <= 0.0f || holeHalfM <= 0.0f) return farM;
-        // How far this point lies OUTSIDE the composite, Chebyshev — the
-        // composite is a square and so is the band around it.
+        // How far this point lies OUTSIDE the ground it must agree with,
+        // Chebyshev — that ground is a square and so is the band around it.
         const float outX = std::max(0.0f, std::fabs(wx) - holeHalfM);
         const float outZ = std::max(0.0f, std::fabs(wz) - holeHalfM);
         const float out = std::max(outX, outZ);
         if (out >= blendBandM) return farM;
-        const float nearM = compositeHeightM(wx, wz);
-        if (nearM < 0.0f) return farM;      // no composite here to agree with
+        const float nearM = innerHeightM(wx, wz);
+        if (nearM < 0.0f) return farM;      // nothing inside to agree with
         const float t = out / blendBandM;
         // Smoothstep, not a straight lerp: a C1 arrival means the band has no
         // crease of its own at either end, which is the whole point of it.
@@ -342,12 +349,18 @@ inline void build_far_mesh(FarMesh& out, const FarCellGrid& grid,
         }
     }
 
-    // HOW FAR THE CURTAIN HANGS. Not a taste number: it must outreach the
-    // worst height two neighbouring grounds can disagree by, and that is
-    // bounded by how steeply the ground can fall across the spacing that
-    // separates them — four steps of it is past generous, and at the ranges
-    // these rings are drawn a curtain of any depth is a line of pixels.
-    const float skirtM = 4.0f * float(stepM);
+    // HOW FAR THE CURTAIN HANGS — and the answer is METRES, because every
+    // edge it closes is STITCHED first. A skirt is not a way to hide a
+    // disagreement; it is a way to hide the numerical slop left after the
+    // disagreement has been resolved. Sized as a disagreement it becomes
+    // visible ITSELF: at four steps it hung 128 m on the fine ring and 512 m
+    // on the coarse, lit by its edge's upward normal, and the owner
+    // photographed it as yellow bands along every boundary.
+    //
+    // A quarter of a step is past enough for a seam whose two sides already
+    // agree, and at the ranges these rings are drawn it is under a pixel —
+    // which is what the canon meant by «на пару метров вниз».
+    const float skirtM = 0.25f * float(stepM);
     const auto emittedAt = [&](int ix, int iz) {
         if (ix < 0 || iz < 0 || ix + 1 >= dim || iz + 1 >= dim) return false;
         return bool(emitted[std::size_t(iz) * std::size_t(dim - 1)
