@@ -1404,14 +1404,30 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
     }
 
     const int worldCellsX = mgr.resolve_cell(camCx, camCy).worldCellsX;
+    // THE STITCH. The composite's own height, asked in window metres — this is
+    // what makes the join a continuation instead of a cliff. Negative where
+    // there is no composite to agree with (a harness with no window built).
+    const auto compositeHeightM = [this](float wx, float wz) {
+        if (heightVtxM_.empty()) return -1.0f;
+        return sample_height_m(wx + kWorldExtent, wz + kWorldExtent);
+    };
+    // HALF A MACRO CELL of band, the generator's own blend scale and the very
+    // number the march apron feathers over for the same reason.
+    constexpr float kFarStitchBandM = 0.5f * float(kCellSize) * kTileMeters;
+
     sub::FarMesh mesh;
     sub::build_far_mesh(mesh, grid, camCx, camCy, kFarFineStepM,
                         kFarFineHalfM, worldCellsX,
-                        /*holeHalfM=*/kWorldExtent);
+                        /*holeHalfM=*/kWorldExtent,
+                        compositeHeightM, kFarStitchBandM);
     sub::FarMesh coarse;
+    // The coarse ring stitches to the FINE ring's own edge law, not to the
+    // composite: by the time it starts, the fine ring has already arrived at
+    // the far ground, so the two agree there by construction and need no band.
     sub::build_far_mesh(coarse, grid, camCx, camCy, kFarCoarseStepM,
                         kFarWorldHalfSpanM, worldCellsX,
-                        /*holeHalfM=*/kFarFineHalfM);
+                        /*holeHalfM=*/kFarFineHalfM,
+                        compositeHeightM, /*blendBandM=*/0.0f);
     // The two rings ride ONE pair of buffers: they are the same sheet at two
     // resolutions and there is nothing to tell them apart at draw time.
     {

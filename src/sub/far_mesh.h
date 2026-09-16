@@ -133,9 +133,25 @@ inline void far_cell_weights(float fx, float fy, int& x0, int& y0,
 // and filled the whole sky with its underside. The near ground is the same
 // ground with its octaves back, so where the composite exists the far sheet
 // must simply not be. 0 = no hole (a bare fixture with no composite).
+// `compositeHeightM(wx, wz)` — the NEAR ground's own height at a window-space
+// point, or a sampler that returns a negative number where it has none. It is
+// what stitches the two grounds together, and without it the join is a CLIFF:
+// ring 0 at 32 m carries wavelengths down to 64 m, the composite's 16 m mesh
+// carries them down to 32 m, so the two disagree by metres at the rim however
+// honestly both are derived. Caught by the owner's eyes: «3×3 норм, а дальше
+// разрыв и потом норм лод уже».
+//
+// `blendBandM` is how far out that disagreement is dissolved — the far ground
+// leaves the composite's exact height and arrives at its own over this
+// distance. The march apron feathers into its skeleton the same way and for
+// the same reason (vk_renderer_3d.cpp): a raw step at a boundary reads as a
+// phantom cliff, and half a macro cell is the generator's own blend scale.
+template <class HeightSampler>
 inline void build_far_mesh(FarMesh& out, const FarCellGrid& grid,
                            int camCx, int camCy, int stepM, float halfSpanM,
-                           int worldCellsX, float holeHalfM = 0.0f) {
+                           int worldCellsX, float holeHalfM,
+                           const HeightSampler& compositeHeightM,
+                           float blendBandM) {
     out.vtx.clear();
     out.idx.clear();
     out.halfSpanM = 0.0f;
@@ -186,9 +202,23 @@ inline void build_far_mesh(FarMesh& out, const FarCellGrid& grid,
         // least twice its own spacing, and no shorter one — see
         // base_generator.h terrain_detail01. Halving the step doubles what the
         // ground may show, which is how detail comes BACK as you approach.
-        return far_height01(gx, gz, skel, peak, ridge, worldTiles,
-                            grad, hs, ms, 2.0f * float(stepM))
-             * kHeightScaleM;
+        const float farM = far_height01(gx, gz, skel, peak, ridge, worldTiles,
+                                        grad, hs, ms, 2.0f * float(stepM))
+                         * kHeightScaleM;
+        if (blendBandM <= 0.0f || holeHalfM <= 0.0f) return farM;
+        // How far this point lies OUTSIDE the composite, Chebyshev — the
+        // composite is a square and so is the band around it.
+        const float outX = std::max(0.0f, std::fabs(wx) - holeHalfM);
+        const float outZ = std::max(0.0f, std::fabs(wz) - holeHalfM);
+        const float out = std::max(outX, outZ);
+        if (out >= blendBandM) return farM;
+        const float nearM = compositeHeightM(wx, wz);
+        if (nearM < 0.0f) return farM;      // no composite here to agree with
+        const float t = out / blendBandM;
+        // Smoothstep, not a straight lerp: a C1 arrival means the band has no
+        // crease of its own at either end, which is the whole point of it.
+        const float w = t * t * (3.0f - 2.0f * t);
+        return nearM * (1.0f - w) + farM * w;
     };
 
     // HEIGHTS ONCE, NOT FIVE TIMES. A vertex needs its own height and its four

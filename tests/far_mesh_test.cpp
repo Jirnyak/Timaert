@@ -68,8 +68,12 @@ int main() {
     CHECK(grid.live(), "the fixture grid is a grid");
 
     FarMesh mesh;
+    // No composite in this fixture: the sampler says so by answering negative,
+    // which is how a far sheet with nothing to stitch to behaves.
+    const auto noComposite = [](float, float) { return -1.0f; };
     build_far_mesh(mesh, grid, kCamCx, kCamCy, /*stepM*/64,
-                   /*halfSpanM*/3072.0f, kWorldCells);
+                   /*halfSpanM*/3072.0f, kWorldCells, /*holeHalfM*/0.0f,
+                   noComposite, /*blendBandM*/0.0f);
 
     // ── 1. IT BUILT SOMETHING, AND SAYS WHAT ──────────────────────────────
     {
@@ -215,11 +219,13 @@ int main() {
     {
         FarMesh empty;
         FarCellGrid none;
-        build_far_mesh(empty, none, kCamCx, kCamCy, 64, 3072.0f, kWorldCells);
+        build_far_mesh(empty, none, kCamCx, kCamCy, 64, 3072.0f, kWorldCells,
+                       0.0f, noComposite, 0.0f);
         CHECK(empty.vtx.empty() && empty.idx.empty(),
               "no cells, no ground — the far world is not invented");
         FarMesh zeroStep;
-        build_far_mesh(zeroStep, grid, kCamCx, kCamCy, 0, 3072.0f, kWorldCells);
+        build_far_mesh(zeroStep, grid, kCamCx, kCamCy, 0, 3072.0f, kWorldCells,
+                       0.0f, noComposite, 0.0f);
         CHECK(zeroStep.vtx.empty(), "a spacing of nothing builds nothing");
     }
 
