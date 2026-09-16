@@ -277,7 +277,7 @@ set(_timaert_shader_incs
     # tools/gen_ground_table.py; committed, so the build needs no Python.
     # `ground_table_test` fails if it drifts from the CSVs.
     ${CMAKE_SOURCE_DIR}/shaders/ground_surface.glsl)
-foreach(_sh fullscreen.vert macro.frag mesh.vert mesh.frag billboard.vert tree.frag sky.frag shadow_mesh.vert shadow_mesh.frag shadow_bb.vert shadow_tree.frag water.vert water.frag struct.vert struct.frag struct_cyl.vert shadow_cyl.vert shadow_struct.vert shadow_struct.frag body.frag shadow_body.frag particle.vert particle.frag particle_matter.vert particle_matter.frag stamp.vert stamp.frag rain.vert rain.frag)
+foreach(_sh fullscreen.vert macro.frag mesh.vert mesh.frag billboard.vert tree.frag sky.frag shadow_mesh.vert shadow_mesh.frag shadow_bb.vert shadow_tree.frag water.vert water.frag struct.vert struct.frag struct_cyl.vert shadow_cyl.vert shadow_struct.vert shadow_struct.frag body.frag shadow_body.frag particle.vert particle.frag particle_matter.vert particle_matter.frag stamp.vert stamp.frag rain.vert rain.frag far.vert far.frag)
     add_custom_command(
         OUTPUT ${_timaert_spv_dir}/${_sh}.spv
         COMMAND ${Vulkan_GLSLC_EXECUTABLE} -O

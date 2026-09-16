@@ -10,6 +10,7 @@
 
 #include <vulkan/vulkan.h>
 
+#include <climits>
 #include <cstdint>
 #include <vector>
 
@@ -121,6 +122,11 @@ public:
     // per seam crossing, plus a buffer destroy the in-flight frame could still
     // be reading (audit III.9/III.14). `dirty` scopes the work exactly as
     // before: full rebuild, seam shift, or only the stitched cells.
+    // Rebuild the far sheet around the manager's centre cell. Cheap no-op
+    // when the cell has not changed — the sheet is a function of the place.
+    void rebuild_far_world(const gpu::VulkanDevice& dev,
+                           const SeamlessSubworldManager& mgr);
+
     void upload(const gpu::VulkanDevice& dev, const SeamlessSubworldManager& mgr,
                 const CompositeDirty& dirty);
 
@@ -184,6 +190,28 @@ private:
     bool uploaded_ = false;
     sm::mat4 lightMvp_{};    // crisp near shadow level (camera-fitted ±256 m)
     sm::mat4 lightMvpFar_{}; // wide shadow level (the whole loaded window)
+
+    // ── A0: THE FAR WORLD (CANON S18.1) ──
+    // The ground beyond the loaded window: one camera-centred sheet built from
+    // the near generator's own height law with its detail removed
+    // (sub/far_mesh.h). Drawn BEFORE the composite — depth sorts them, and
+    // where they overlap the composite simply wins, which is the right
+    // answer: the near ground is the same ground with its octaves back.
+    //
+    // PROBE-GRADE and deliberately so. It is one sheet, not the nine rings of
+    // the finished thing; it has no skirts and no hole under the composite,
+    // because those exist to hide cracks BETWEEN rings and there is one ring.
+    // Its buffers are host-mapped rather than staged: this machine has unified
+    // memory, the sheet is rebuilt only when the camera changes macro cell,
+    // and the whole point of the probe is to be LOOKED at before anything is
+    // invested in geometry (S18.1: «если дали не проявятся — ход 2 не нужен»).
+    gpu::VulkanPipeline farPipe_{};
+    gpu::VulkanBuffer   farVtx_{};
+    gpu::VulkanBuffer   farIdx_{};
+    std::uint32_t       farIndexCount_ = 0;
+    // Which macro cell the sheet was built around; INT_MIN = never built.
+    int                 farBuiltCx_ = INT_MIN;
+    int                 farBuiltCy_ = INT_MIN;
 
     // ── A1: Terrain mesh ──
     gpu::VulkanPipeline terrainPipe_{};

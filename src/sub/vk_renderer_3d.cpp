@@ -1,4 +1,5 @@
 #include "sub/vk_renderer_3d.h"
+#include "sub/far_mesh.h"
 #include "sub/vk_camera_math.h"
 #include "sub/base_generator.h"
 #include "sub/camera.h"
@@ -44,6 +45,14 @@ namespace {
 // Physical scale — must match the GL Renderer3D exactly.
 constexpr float kTileMeters  = 1.0f;
 constexpr float kWorldExtent = float(kFullSize) * kTileMeters * 0.5f; // 1536 m
+
+// HOW MUCH FAR GROUND IS BUILT — not how far one can see (S18.1 forbids such a
+// constant). Twenty-four macro cells: a little past the lowland's own reach
+// through this air (its e-fold is ~28 km), which is enough to show whether the
+// law reads before any ring geometry is invested in. The camera's far plane is
+// DERIVED from it below, so building more can never be silently clipped away.
+constexpr float kFarWorldHalfSpanM = 24.0f * 1024.0f;
+
 
 // Per-vertex layout: position (3) + normal (3) + grid UV (2). The material id
 // is NOT carried per-vertex — the fragment shader samples a full-resolution
@@ -637,6 +646,36 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
         std::fprintf(stderr, "[Renderer3DVk] terrain pipeline FAILED\n");
     }
 
+    // A0: THE FAR WORLD's sheet (far.vert + far.frag). Same push block and the
+    // same set 0 as the terrain — it is the same world, lit by the same light
+    // and hazed by the same air; what it does NOT take is set 1, because out
+    // there no tile material grid exists and the cell's material id rides the
+    // vertex instead.
+    spv_path(vpath, sizeof vpath, "far.vert");
+    spv_path(fpath, sizeof fpath, "far.frag");
+    VkVertexInputAttributeDescription farAttrs[3]{};
+    farAttrs[0].location = 0;
+    farAttrs[0].binding  = 0;
+    farAttrs[0].format   = VK_FORMAT_R32G32B32_SFLOAT;
+    farAttrs[0].offset   = 0;
+    farAttrs[1].location = 1;
+    farAttrs[1].binding  = 0;
+    farAttrs[1].format   = VK_FORMAT_R32G32B32_SFLOAT;
+    farAttrs[1].offset   = sizeof(float) * 3;
+    farAttrs[2].location = 2;
+    farAttrs[2].binding  = 0;
+    farAttrs[2].format   = VK_FORMAT_R32_SFLOAT;
+    farAttrs[2].offset   = sizeof(float) * 6;
+    const VkDescriptorSetLayout farSets[1] = { shadowSetLayout_ };
+    if (!farPipe_.create_mesh(dev, mainPass, vpath, fpath,
+                              sizeof(MeshPush), sizeof(sub::FarVertex),
+                              farAttrs, 3,
+                              /*instanced=*/false, /*depthTest=*/true,
+                              /*depthWrite=*/true, /*blend=*/false,
+                              /*cullBack=*/false, farSets, 1)) {
+        std::fprintf(stderr, "[Renderer3DVk] far-world pipeline FAILED\n");
+    }
+
     // A2: Sky pipeline (fullscreen.vert + sky.frag, no vertex input, depth
     // off) + the constellation-star UBO at set 0: authored star directions
     // (macro/celestial.h) written ONCE here — static data, static buffer.
@@ -946,6 +985,8 @@ void Renderer3DVk::init(const gpu::VulkanDevice& dev, VkRenderPass mainPass) {
 // destroy — free all GPU resources.
 // ──────────────────────────────────────────────────────────────────────
 void Renderer3DVk::destroy(const gpu::VulkanDevice& dev) {
+    farIdx_.destroy(dev);
+    farVtx_.destroy(dev);
     terrainIdx_.destroy(dev);
     terrainVtx_.destroy(dev);
     terrainPipe_.destroy(dev);
@@ -1269,8 +1310,118 @@ void Renderer3DVk::stage_stamps(VkCommandBuffer cmd, const StampInstance* cmds,
 // (renderer_3d.cpp lines 853-935).
 // ──────────────────────────────────────────────────────────────────────
 
+// ── THE FAR WORLD (CANON S18.1) ──────────────────────────────────────────
+// Build the sheet of ground beyond the window, around the camera's own macro
+// cell. A function of the PLACE: the same cell builds the same sheet, so this
+// is a no-op until the player crosses into a new one.
+void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
+                                     const SeamlessSubworldManager& mgr) {
+    const int camCx = mgr.center_cx();
+    const int camCy = mgr.center_cy();
+    if (camCx == farBuiltCx_ && camCy == farBuiltCy_
+        && farIndexCount_ > 0) {
+        return;   // the sheet already belongs to this place
+    }
+
+    // HOW FAR THE PROBE REACHES, and it is NOT a draw distance (S18.1 forbids
+    // one): it is how much sheet is built. What is SEEN is decided by the air
+    // — the lowland dissolves over ~28 km on its own and a summit outlives it.
+    // 24 cells of the map is a bit more than the lowland's own reach, which is
+    // exactly enough to show whether the law reads.
+    constexpr int kFarCellRadius = 25;                   // +1 for the bilinear
+    constexpr int kFarStepM      = 128;                  // vertex spacing
+
+    sub::FarCellGrid grid;
+    grid.radiusCells = kFarCellRadius;
+    const int n = grid.span();
+    grid.cells.assign(std::size_t(n) * std::size_t(n), sub::FarCellColumn{});
+    const std::uint8_t* biomeMat = sub::biome_ground_materials();
+    // The cell's biome, once, into a scratch row-major block — the crest law
+    // needs each cell's FOUR neighbours, and resolving them per cell would ask
+    // the macro world five times for what it can be asked once.
+    std::vector<Biome> biomes(std::size_t(n) * std::size_t(n), Biome::Meadow);
+    std::vector<float> heights(std::size_t(n) * std::size_t(n), 0.0f);
+    for (int y = 0; y < n; ++y) {
+        for (int x = 0; x < n; ++x) {
+            const CellContext c = mgr.resolve_cell(camCx + x - kFarCellRadius,
+                                                   camCy + y - kFarCellRadius);
+            const std::size_t i = std::size_t(y) * std::size_t(n) + std::size_t(x);
+            biomes[i] = c.biome;
+            heights[i] = c.macroHeight;
+        }
+    }
+    const std::uint32_t worldSeed = mgr.resolve_cell(camCx, camCy).worldSeed;
+    for (int y = 0; y < n; ++y) {
+        for (int x = 0; x < n; ++x) {
+            const std::size_t i = std::size_t(y) * std::size_t(n) + std::size_t(x);
+            const Biome b = biomes[i];
+            const bool mtn = b == Biome::Mountain;
+            const bool water = b == Biome::Water;
+            // A cell counts its OWN four neighbours — the same law the near
+            // generator follows since the 5×5 ring (base_generator.h), and for
+            // the same reason: a crest that depends on who is asking makes the
+            // massif a different massif from every direction.
+            int adj = 0;
+            if (x > 0     && biomes[i - 1] == Biome::Mountain) ++adj;
+            if (x + 1 < n && biomes[i + 1] == Biome::Mountain) ++adj;
+            if (y > 0     && biomes[i - std::size_t(n)] == Biome::Mountain) ++adj;
+            if (y + 1 < n && biomes[i + std::size_t(n)] == Biome::Mountain) ++adj;
+            sub::FarCellColumn col{};
+            col.skel01 = sub::skeleton_cell_height01(heights[i], water, mtn);
+            col.peak01 = sub::skeleton_cell_peak01(
+                heights[i], water, mtn, adj,
+                camCx + x - kFarCellRadius, camCy + y - kFarCellRadius,
+                worldSeed);
+            col.ridgeW = mtn ? 1.0f : 0.0f;
+            col.material = biomeMat[std::size_t(b)];
+            grid.cells[i] = col;
+        }
+    }
+
+    sub::FarMesh mesh;
+    sub::build_far_mesh(mesh, grid, camCx, camCy, kFarStepM,
+                        kFarWorldHalfSpanM,
+                        mgr.resolve_cell(camCx, camCy).worldCellsX,
+                        /*holeHalfM=*/kWorldExtent);
+    if (mesh.idx.empty()) return;
+
+    const VkDeviceSize vBytes =
+        VkDeviceSize(mesh.vtx.size() * sizeof(sub::FarVertex));
+    const VkDeviceSize iBytes =
+        VkDeviceSize(mesh.idx.size() * sizeof(std::uint32_t));
+    // Host-mapped, and said out loud: unified memory on this machine, a sheet
+    // that changes only when the player crosses a macro cell, and a probe
+    // whose job is to be looked at before geometry is invested in.
+    if (farVtx_.buffer == VK_NULL_HANDLE
+        && !farVtx_.create_host_mapped(dev, vBytes,
+                                       VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)) {
+        std::fprintf(stderr, "[Renderer3DVk] far vertex buffer FAILED\n");
+        return;
+    }
+    if (farIdx_.buffer == VK_NULL_HANDLE
+        && !farIdx_.create_host_mapped(dev, iBytes,
+                                       VK_BUFFER_USAGE_INDEX_BUFFER_BIT)) {
+        std::fprintf(stderr, "[Renderer3DVk] far index buffer FAILED\n");
+        return;
+    }
+    std::memcpy(farVtx_.mapped, mesh.vtx.data(), std::size_t(vBytes));
+    std::memcpy(farIdx_.mapped, mesh.idx.data(), std::size_t(iBytes));
+    farIndexCount_ = std::uint32_t(mesh.idx.size());
+    farBuiltCx_ = camCx;
+    farBuiltCy_ = camCy;
+    std::fprintf(stderr,
+                 "[far] sheet cell=%d,%d verts=%zu tris=%u span=%.0fm step=%dm\n",
+                 camCx, camCy, mesh.vtx.size(), farIndexCount_ / 3u,
+                 double(mesh.halfSpanM), mesh.stepM);
+    std::fflush(stderr);
+}
+
 void Renderer3DVk::upload(const gpu::VulkanDevice& dev, const SeamlessSubworldManager& mgr,
                           const CompositeDirty& dirty) {
+    // THE FAR WORLD first: it is a function of which macro cell the window is
+    // centred on, and that is exactly what a seam crossing changes.
+    rebuild_far_world(dev, mgr);
+
     const int N   = kMeshDim;
     const int Nv  = N + 1;
     const int step = kFullSize / N;
@@ -2861,11 +3012,22 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
     const float aspect = static_cast<float>(ext.width)
                          / static_cast<float>(std::max(ext.height, 1u));
     const float fovRad = cam.fovDeg * 0.0174533f;
-    // Дальняя плоскость покрывает ВЕСЬ композит: полуразмер мира 1536 м
-    // (kFullSize=3072 тайла), диагональ из центра до угла ~2172 м, плюс запас
-    // на взгляд с башни и полёт. 1500 м обрезали дальнюю землю в небо, и это
-    // читалось как предел видимости — тумана по дальности в субмире нет.
-    mat4 proj = vk_perspective(fovRad, aspect, 0.5f, 4096.0f);
+    // ДАЛЬНЯЯ ПЛОСКОСТЬ ПОКРЫВАЕТ ТО, ЧТО ПОСТРОЕНО, и ничего не решает сама.
+    // «Константы дальности прорисовки не существует» (CANON S18.1): что видно
+    // — решает ВОЗДУХ, равнина растворяется сама, вершина сама доживает. Эта
+    // плоскость обязана лишь не обрезать построенную геометрию раньше, чем это
+    // сделает воздух; она инструмент, а не закон.
+    //
+    // Она уже дважды была таким законом по ошибке: 1500 м обрезали дальнюю
+    // землю в небо и читались как предел видимости, а 4096 м (полуразмер
+    // композита плюс запас) обрезали ДАЛЬНИЙ ЛИСТ и красили полнеба цветом
+    // дымки — второе поймано глазами в первом же кадре, где лист появился.
+    // Теперь она выводится из того, что построено: диагональ листа плюс
+    // диагональ композита, чтобы взгляд из угла окна на угол листа не упёрся
+    // ни во что.
+    const float farPlaneM =
+        kFarWorldHalfSpanM * 1.4143f + kWorldExtent * 1.4143f;
+    mat4 proj = vk_perspective(fovRad, aspect, 0.5f, farPlaneM);
     vec3 fwd  = cam.forward();
     vec3 rgt  = cam.right();
     vec3 upv  = cross(rgt, fwd);
@@ -2992,6 +3154,30 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
     push.camPos[1] = cam.pos.y;
     push.camPos[2] = cam.pos.z;
     push.camPos[3] = (stampPipe_.pipeline != VK_NULL_HANDLE) ? 500.0f : 0.0f;
+
+    // ── A0: THE FAR WORLD, before the composite (CANON S18.1) ──
+    // Where they overlap the near ground wins on depth, and that is the right
+    // answer rather than a trick: the composite IS this ground with its
+    // octaves back. Same push block, same light, same air — the only thing it
+    // does not bind is the tile material set, which does not exist out there.
+    if (farIndexCount_ > 0 && farPipe_.pipeline != VK_NULL_HANDLE
+        && farVtx_.buffer != VK_NULL_HANDLE) {
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          farPipe_.pipeline);
+        if (litSet != VK_NULL_HANDLE) {
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    farPipe_.layout, 0, 1, &litSet, 0,
+                                    nullptr);
+        }
+        VkDeviceSize farOff = 0;
+        vkCmdBindVertexBuffers(cmd, 0, 1, &farVtx_.buffer, &farOff);
+        vkCmdBindIndexBuffer(cmd, farIdx_.buffer, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdPushConstants(cmd, farPipe_.layout,
+                           VK_SHADER_STAGE_VERTEX_BIT
+                               | VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0, sizeof(push), &push);
+        vkCmdDrawIndexed(cmd, farIndexCount_, 1, 0, 0, 0);
+    }
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       terrainPipe_.pipeline);

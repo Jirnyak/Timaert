@@ -118,9 +118,17 @@ inline void far_cell_weights(float fx, float fy, int& x0, int& y0,
 // reaches; both are the CALLER's business — this is a probe, and the rings of
 // the finished thing will choose them per ring. `worldCellsX` closes the
 // noise on the world, exactly as the near generator's does.
+// `holeHalfM` is THE HOLE UNDER THE COMPOSITE, and it is not an optimisation.
+// The far sheet is the coarse answer — no detail octaves, no settlement table —
+// so under the camera it misses the near ground by tens of metres. Measured on
+// the first frame that ever drew it: the sheet stood at 1501 m where the ground
+// the player was standing on was 1480.9 m, which put the camera UNDERNEATH it
+// and filled the whole sky with its underside. The near ground is the same
+// ground with its octaves back, so where the composite exists the far sheet
+// must simply not be. 0 = no hole (a bare fixture with no composite).
 inline void build_far_mesh(FarMesh& out, const FarCellGrid& grid,
                            int camCx, int camCy, int stepM, float halfSpanM,
-                           int worldCellsX) {
+                           int worldCellsX, float holeHalfM = 0.0f) {
     out.vtx.clear();
     out.idx.clear();
     out.halfSpanM = 0.0f;
@@ -203,6 +211,19 @@ inline void build_far_mesh(FarMesh& out, const FarCellGrid& grid,
     out.idx.reserve(std::size_t(dim - 1) * std::size_t(dim - 1) * 6u);
     for (int iz = 0; iz + 1 < dim; ++iz) {
         for (int ix = 0; ix + 1 < dim; ++ix) {
+            // Inside the composite the near ground answers, so no quad is
+            // emitted there. Tested on the quad's FAR corner: a quad that
+            // straddles the edge stays, so the sheet always reaches under the
+            // composite's rim rather than leaving a gap at it.
+            if (holeHalfM > 0.0f) {
+                const float qx = float((ix + 1 - n) * stepM);
+                const float qz = float((iz + 1 - n) * stepM);
+                const float qx0 = float((ix - n) * stepM);
+                const float qz0 = float((iz - n) * stepM);
+                const float maxAbsX = std::max(std::fabs(qx0), std::fabs(qx));
+                const float maxAbsZ = std::max(std::fabs(qz0), std::fabs(qz));
+                if (maxAbsX <= holeHalfM && maxAbsZ <= holeHalfM) continue;
+            }
             const std::uint32_t a = std::uint32_t(iz * dim + ix);
             const std::uint32_t b = a + 1;
             const std::uint32_t c = a + std::uint32_t(dim);
