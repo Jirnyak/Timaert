@@ -1073,7 +1073,7 @@ void ai_gatherer(entt::entity self, MacroPos& p,
                                         float(ctx.mapW), float(ctx.mapH));
         if (dsq <= 2.5f) {   // standing at the bank beside the gap
             const int cycleCost =
-                std::max(1, int(pools.maxSp) / kWorkCyclesPerBar);
+                sp_price(int(pools.maxSp), kWorkCyclesPerBar);
             auto* bag = ctx.mw.world
                 ? ctx.mw.world->reg.try_get<ecs::NpcInventory>(self)
                 : nullptr;
@@ -1137,7 +1137,7 @@ void ai_gatherer(entt::entity self, MacroPos& p,
             // too spent for a cycle goes home to rest instead of working on
             // an empty bar — the same sentence the march pays.
             const int cycleCost =
-                std::max(1, int(pools.maxSp) / kWorkCyclesPerBar);
+                sp_price(int(pools.maxSp), kWorkCyclesPerBar);
             if (int(pools.sp) < cycleCost) {
                 rt.targetX = home.x;
                 rt.targetY = home.y;
@@ -1199,8 +1199,8 @@ void ai_gatherer(entt::entity self, MacroPos& p,
                 // «SP тратится столько же, добывают кратно больше»).
                 const auto* roster =
                     ctx.mw.world->reg.try_get<ecs::SquadRoster>(self);
-                const int workers =
-                    1 + (roster ? roster->squad.size() : 0);
+                const int workers = production_hands(
+                    roster ? int(roster->squad.size()) : 0);
                 auto* bag = ctx.mw.world->reg.try_get<ecs::NpcInventory>(self);
                 // «Берёт ПО СВОЕЙ ГРУЗОПОДЪЁМНОСТИ» — CANON S10 дословно:
                 // спины сквада ограничивают тейк. Без этой скобы артель
@@ -1293,7 +1293,7 @@ void ai_gatherer(entt::entity self, MacroPos& p,
     if (rt.state == std::uint8_t(NS::Plowing)) {
         if (at_target(p, rt, ctx)) {
             const int cycleCost =
-                std::max(1, int(pools.maxSp) / kWorkCyclesPerBar);
+                sp_price(int(pools.maxSp), kWorkCyclesPerBar);
             if (int(pools.sp) >= cycleCost && ctx.mw.features && ctx.mw.gs
                 && plough_field_cell(*ctx.mw.features, ctx.mw,
                                      int(rt.targetX), int(rt.targetY))) {

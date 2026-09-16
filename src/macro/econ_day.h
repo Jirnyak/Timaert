@@ -157,6 +157,41 @@ static_assert(kGatherPerWorkerDay % kWorkCyclesPerBar == 0,
               "the person-day must divide into whole cycle takes");
 inline constexpr int kGatherPerCycle = kGatherPerWorkerDay / kWorkCyclesPerBar;
 
+// ── THE PRICE OF AN ACTION (CANON S14.1) ─────────────────────────────────
+// Every action costs SP, and the price is one sentence: THE BAR DIVIDED BY
+// THE RATE — how many such actions the body does in a day. Marching, felling,
+// mining, ploughing, building, crafting: one purse, one formula, no second
+// labour law.
+//
+// It is a DOOR because the sentence was written five times in three dialects
+// — `maxSp / kWorkCyclesPerBar` (three copies in npc_ai.cpp), `maxSp /
+// kGatherPerWorkerDay` (the player's harvest), `maxSp / item_labour` (a craft
+// batch) — each with its own `max(1, …)`. The numbers agreed; the spelling did
+// not, and the sixth author would have got the divisor wrong in silence.
+//
+// The floor of 1 is the law, not a guard: an action a body can perform is an
+// action it can be tired by, so no rate however generous makes work free.
+//
+// `ratePerDay` is a COLUMN of whatever is acting — cycles in a bar, objects in
+// a day, batches in a person-day. A new action names its rate; it does not
+// rewrite this.
+inline constexpr int sp_price(int maxSp, int ratePerDay) {
+    return ratePerDay > 0 ? (maxSp / ratePerDay > 1 ? maxSp / ratePerDay : 1)
+                          : maxSp;
+}
+
+// HOW MANY HANDS a production has. Hands multiply the YIELD and never the
+// price: the bar belongs to the SQUAD (it is the leader body's own bar and
+// does not grow with the roster), so N souls do N workers' work for one
+// action's price. Owner, verbatim: «каждый работник рубит по дереву, SP
+// тратится как у игрока, просто деревьев в число людей больше».
+//
+// The leader is a hand too — that is the +1, and it is why a lone walker is
+// not a special case of anything.
+inline constexpr int production_hands(int rosterSize) {
+    return 1 + (rosterSize > 0 ? rosterSize : 0);
+}
+
 // ── Facts ────────────────────────────────────────────────────────────────
 
 struct EconFact {

@@ -1,3 +1,4 @@
+#include "macro/econ_day.h"   // sp_price — THE one price of an action
 #include "ui/overlays.h"
 #include "macro/cell_facts.h"   // the Map preview's REAL cell context
 #include "macro/player_entity.h"
@@ -1231,8 +1232,8 @@ namespace sm::ui
                             // button never greys on fatigue, forging on an
                             // empty bar simply leaves you exhausted for the
                             // exhaustion bite to find.
-                            const int spCost = std::max(
-                                1, int(pools.maxSp) / item_labour(ci));
+                            const int spCost =
+                                sp_price(int(pools.maxSp), item_labour(ci));
                             ImGui::SameLine();
                             ImGui::TextDisabled("SP %d", spCost);
                             ImGui::TableNextColumn();

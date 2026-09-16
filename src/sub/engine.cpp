@@ -2138,7 +2138,11 @@ bool SubworldEngine::harvest_action(float reachOverride) {
     // possessed body — was the «выборка власти полос» the mirror law retired:
     // whoever you are wearing, you spend what that record has.
     ecs::Pools* pay = pools_of(reg, playerEnt);
-    if (pay) pay->sp -= std::max(1, pay->maxSp / kGatherPerWorkerDay);
+    // ONE price law (CANON S14.1): the bar divided by the rate. The player's
+    // rate is objects-in-a-day — he fells one tree per action, where a crew
+    // fells kGatherPerCycle × hands per action at the cycle rate. Per unit the
+    // two come out identical, which is the law being one rather than two.
+    if (pay) pay->sp -= sp_price(pay->maxSp, kGatherPerWorkerDay);
     return true;
 }
 
