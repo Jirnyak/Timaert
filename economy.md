@@ -174,10 +174,15 @@ owner session, every step driven by the headless balance run
   spend the WHOLE purse down the home needs ladder to a season's stock —
   «деревня не копит капитал»). Fleet law: a city without a caravan outfits
   one from its population; vendors rotate with the labour crews.
-- **Labour is SP** (kWorkCyclesPerBar; the person-day is derived), crews
-  are transient (rotate_worker_squads), a squad's carry is the SUM of its
-  backs, and one gatherer covers TENS of souls (kGatherPerWorkerDay = 32,
-  the owner's productivity anchor).
+- **Labour is SP, and the price is ONE law: the bar divided by the rate**
+  (`sp_price`, econ_day.h — CANON S14.1). The rate is a COLUMN of whatever
+  acts: objects-in-a-day for gathering (kGatherPerWorkerDay = 32, the
+  owner's productivity anchor, and the very number the player pays by),
+  `FeatureDef::buildsPerDay` for raising a parcel / a span / a shaft,
+  `item_labour` for a craft batch. Hands multiply the YIELD and never the
+  price — the bar belongs to the squad. Crews are transient
+  (rotate_worker_squads), a squad's carry is the SUM of its backs, and that
+  carry is now what ENDS a trip rather than a constant.
 - **Fields live**: a parcel regrows its whole potential in one season
   (kWheatSeasonsToRegrow, macro_stock.h) — world bread went 7/day → ~12k/day.
 - **Demand is derived**: daily_demand_for flows recipe-output demand down

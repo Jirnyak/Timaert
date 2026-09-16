@@ -69,7 +69,7 @@ own write-up — **[resources.md](resources.md)** — and is COMPLETE through
 the living-fields track (2026-08-13): every resource of the world is a row
 of ONE registry (`macro/resource_field.h`) — Wheat, Fauna, Trees, Clay,
 Iron, Stone — with two storage dialects behind the one
-`resource_field_read`/`apply` door (sparse scars for baseline-capped rows;
+`resource_field_read`/`apply` door (scars for baseline-capped rows;
 whole CARRIERS for fields that outgrow their derivation), and ONE growth
 law (`resource_fields_daily_growth`, epoch slices of 32 days): the forest
 plants the forest, beasts breed where beasts are, wheat replants its
@@ -93,8 +93,13 @@ force it:
 
 - **Deposits** — striking a new vein CHANGES a cell's kind (stone →
   iron). Creating geology is not a subtraction — SOLVED (2026-08-13) by
-  the CARRIER dialect: one sparse map per KIND (a discovered vein lives IN
-  its host quarry, nothing vanishes) and a deliberate genesis door.
+  one store per KIND (a discovered vein lives IN its host quarry, nothing
+  vanishes) and a deliberate genesis door. The STORE became a flat array
+  over the cells on 2026-09-16 (CANON S5 as amended): a hash keeps the
+  values and throws the world's connectedness away, so the day geology was
+  asked "is there a vein NEAR this cell" the answer degenerated into a scan
+  of all 69 624 veins — 4.3 ms of a 6.8 ms seam crossing, for one byte
+  (problems.md §52). Per-kind stays; sparse does not.
 - **Trees** — `TreeLayer.data` holds the CURRENT count and the renderer
   uploads exactly that grid as `u_treeMap` — SOLVED (same day) by making
   the grid itself the carrier row's live state: the registry maintains the

@@ -156,11 +156,17 @@ Planned on the same rows, no new dialects (owner's design intent,
   ~7 grain a day; the seasonal-pulse harvest stays deferred with field
   seasonality, this is its smooth stand-in.
 * **Crews are transient and work costs SP** (`rotate_worker_squads`,
-  npc_ai.h; kWorkCyclesPerBar/kGatherPerCycle, econ_day.h): a settlement
-  raises its crew pool across its roster rows at dawn (goals by auction)
-  and dissolves the returners next dawn; a work cycle burns a quarter of
-  the squad's bar at a fixed squad price, the roster multiplies the yield
-  (owner: «SP тратится столько же, добывают кратно больше»), and one
+  npc_ai.h; `sp_price` / kGatherPerWorkerDay, econ_day.h — CANON S14.1): a
+  settlement raises its crew pool across its roster rows at dawn (goals by
+  auction) and dissolves the returners next dawn. ONE act of taking costs
+  bar/32 — exactly what the player pays to fell one tree in the subworld —
+  and yields ONE object PER HAND, so the roster multiplies the yield and
+  never the price (owner: «SP тратится столько же, добывают кратно больше»;
+  «каждый работник рубит по дереву»). The TRIP home is emergent: the crew
+  works on while its backs have room and its bar has another act in it.
+  (Until 2026-09-16 a take was a declared batch of eight and a bar bought
+  four of them; both numbers are gone — the trip count is now a consequence
+  of carrying capacity and stamina.) One
   gatherer covers TENS of souls (kGatherPerWorkerDay = 32, the owner's
   productivity anchor — CANON S10).
 * **`econ_gather_day` is DELETED** (owner 2026-08-31: «уже собирают

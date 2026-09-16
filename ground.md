@@ -160,9 +160,23 @@ both as the same exponential, so one factor does both and the result is a mix
 (`aerial_perspective` in `lighting.glsl`). Its colour is built from the light
 the frame already has (`haze_color` in `sub/lighting.h`) and is the SAME value
 the sky dome takes for its horizon fog, so the land can never fade toward a
-different sky than the one drawn behind it. The e-fold distance is the world's
-own half-span, 1536 m. It is applied by every lit pass as its last line — after
-the additive lights, because a torch's glow travels the same air.
+different sky than the one drawn behind it. It is applied by every lit pass as
+its last line — after the additive lights, because a torch's glow travels the
+same air.
+
+THE AIR HAS A HEIGHT since 2026-09-15 (CANON S18.1). The uniform `exp(-d/1536)`
+this section used to describe is gone: optical depth is the INTEGRAL of an
+exponential atmosphere along the ray, so a ray up to a crest travels thin air
+and a ray along the valley beside it travels thick air over the same distance.
+Two numbers, both derived from the world's own relief — `kAirScaleHeightM` =
+(1 − kMountainBiomeLevel) × kHeightScaleM = 375 m (the MOUNTAIN BAND: the air
+thins over exactly the height a massif rises above the line where land becomes
+mountain) and `kAirEFoldM` = 16384 m (sixteen macro cells, the sea-level
+e-fold, and NOT a draw distance — nothing is clipped at it). The consequences
+are the point: a ridge floats over a sea of haze, and climbing opens the world,
+neither of them coded for. `air_law_test` holds the law as relations; the CPU
+mirror it tests (`air_optical_depth`) stands to the shader exactly as
+`biome_at` stands to `bt_biome`.
 
 ## Families
 
