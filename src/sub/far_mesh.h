@@ -58,6 +58,13 @@ struct FarCellColumn {
     float        skel01   = 0.0f;   // skeleton_cell_height01 of the cell
     float        peak01   = 0.0f;   // skeleton_cell_peak01 of the cell
     float        ridgeW   = 0.0f;   // 1 on a mountain cell, 0 elsewhere
+    // The three columns the ground's own detail is scaled by — the same ones
+    // the near generator blends (base_generator.cpp macroGradient /
+    // heightScale / mountainScale). Without them the far lowland is a
+    // billiard table, which is exactly how the first probe looked.
+    float        gradient01  = 0.0f;
+    float        heightScale = 0.0f;
+    float        mtnScale    = 0.0f;
     std::uint8_t material = 0;      // biome_ground_materials()[biome]
 };
 
@@ -163,14 +170,50 @@ inline void build_far_mesh(FarMesh& out, const FarCellGrid& grid,
                          + c01.peak01 * w01 + c11.peak01 * w11;
         const float ridge = c00.ridgeW * w00 + c10.ridgeW * w10
                           + c01.ridgeW * w01 + c11.ridgeW * w11;
+        const float grad = c00.gradient01 * w00 + c10.gradient01 * w10
+                         + c01.gradient01 * w01 + c11.gradient01 * w11;
+        const float hs = c00.heightScale * w00 + c10.heightScale * w10
+                       + c01.heightScale * w01 + c11.heightScale * w11;
+        const float ms = c00.mtnScale * w00 + c10.mtnScale * w10
+                       + c01.mtnScale * w01 + c11.mtnScale * w11;
         // The tile this point stands on, in WORLD tile coordinates, wrapped —
         // the generator's noise closes on the world and a tile is its place.
         const int rawX = camCx * kCellSize + int(std::floor(wx));
         const int rawZ = camCy * kCellSize + int(std::floor(wz));
         const int gx = worldTiles > 0.0f ? wrapi(rawX, int(worldTiles)) : rawX;
         const int gz = worldTiles > 0.0f ? wrapi(rawZ, int(worldTiles)) : rawZ;
-        return far_height01(gx, gz, skel, peak, ridge, worldTiles)
+        // NYQUIST: this mesh may carry any octave whose wavelength is at
+        // least twice its own spacing, and no shorter one — see
+        // base_generator.h terrain_detail01. Halving the step doubles what the
+        // ground may show, which is how detail comes BACK as you approach.
+        return far_height01(gx, gz, skel, peak, ridge, worldTiles,
+                            grad, hs, ms, 2.0f * float(stepM))
              * kHeightScaleM;
+    };
+
+    // HEIGHTS ONCE, NOT FIVE TIMES. A vertex needs its own height and its four
+    // neighbours' to get a normal, and asking the generator for each of them
+    // per vertex costs five evaluations where one will do: the neighbour a
+    // vertex wants is the vertex next door. Measured before this: 52 ms to
+    // build the sheet, on the crossing, against a seam of 2.2 ms — the kind of
+    // number that decides whether a probe is even allowed to exist.
+    //
+    // One ring of MARGIN so the rim's normals are real slopes rather than
+    // one-sided guesses (a rim lit differently from its neighbour draws a
+    // bright frame around the world).
+    const int mDim = dim + 2;
+    std::vector<float> h(std::size_t(mDim) * std::size_t(mDim), 0.0f);
+    for (int iz = 0; iz < mDim; ++iz) {
+        const float wz = float((iz - 1 - n) * stepM);
+        for (int ix = 0; ix < mDim; ++ix) {
+            const float wx = float((ix - 1 - n) * stepM);
+            h[std::size_t(iz) * std::size_t(mDim) + std::size_t(ix)] =
+                height_m(wx, wz);
+        }
+    }
+    const auto hAt = [&](int ix, int iz) {
+        return h[std::size_t(iz + 1) * std::size_t(mDim)
+                 + std::size_t(ix + 1)];
     };
 
     for (int iz = 0; iz < dim; ++iz) {
@@ -180,17 +223,15 @@ inline void build_far_mesh(FarMesh& out, const FarCellGrid& grid,
             FarVertex v{};
             v.px = wx;
             v.pz = wz;
-            v.py = height_m(wx, wz);
-            // The NORMAL from the surface itself — central differences at the
-            // grid's own spacing. Not a stored field: a normal that disagreed
-            // with the height it stands on would light a mountain that is not
-            // there.
-            const float hL = height_m(wx - float(stepM), wz);
-            const float hR = height_m(wx + float(stepM), wz);
-            const float hD = height_m(wx, wz - float(stepM));
-            const float hU = height_m(wx, wz + float(stepM));
-            const float dx = (hR - hL) / (2.0f * float(stepM));
-            const float dz = (hU - hD) / (2.0f * float(stepM));
+            v.py = hAt(ix, iz);
+            // The NORMAL from the surface itself — central differences over
+            // the neighbours already computed. Not a stored field: a normal
+            // that disagreed with the height it stands on would light a
+            // mountain that is not there, and only a moving sun would show it.
+            const float dx = (hAt(ix + 1, iz) - hAt(ix - 1, iz))
+                           / (2.0f * float(stepM));
+            const float dz = (hAt(ix, iz + 1) - hAt(ix, iz - 1))
+                           / (2.0f * float(stepM));
             const float inv = 1.0f / std::sqrt(dx * dx + dz * dz + 1.0f);
             v.nx = -dx * inv;
             v.ny = inv;
@@ -198,8 +239,8 @@ inline void build_far_mesh(FarMesh& out, const FarCellGrid& grid,
             // The material of the cell this vertex stands in — NEAREST, not
             // blended: a material id is an ordinal into a table, and the
             // average of two ordinals is a third material nobody authored.
-            // What blends is the COLOUR, and that happens in the shader over
-            // the fragment, where blending is legal.
+            // What blends is the COLOUR, in the shader, over the fragment,
+            // where blending is legal.
             const float fx = wx / cellSpanM + float(grid.radiusCells);
             const float fy = wz / cellSpanM + float(grid.radiusCells);
             v.material = float(grid.at(int(std::floor(fx)),

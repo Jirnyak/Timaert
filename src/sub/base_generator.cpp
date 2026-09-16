@@ -91,6 +91,31 @@ static float smooth_noise_ts(float x, float y, std::uint32_t seed,
 // "for reference"; base_generator.h still owns the real constants.)
 constexpr float kWaterLevel = WATER_LEVEL;
 
+// The near generator's detail stack, with the octaves a mesh cannot draw left
+// out (base_generator.h). The frequencies, weights and normalisation are the
+// ones the ground itself is made of — this is the same noise, sampled by
+// somebody who can only afford some of it.
+float terrain_detail01(int gx, int gy, float worldTiles,
+                       float minWavelengthTiles) {
+    constexpr std::uint32_t kDetailSeed = 0xD37A115u;
+    constexpr float kFreqs[2]   = {0.008f, 0.02f};
+    constexpr float kWeights[2] = {0.5f,   0.25f};
+    const auto per = [worldTiles](float freq) { return worldTiles * freq; };
+    float sum = 0.0f, norm = 0.0f;
+    for (int o = 0; o < 2; ++o) {
+        // λ = 1/freq tiles. An octave shorter than the mesh can resolve is not
+        // removed for taste: sampling it would only alias.
+        if (1.0f / kFreqs[o] < minWavelengthTiles) continue;
+        sum += smooth_noise_ts(float(gx) * kFreqs[o], float(gy) * kFreqs[o],
+                               kDetailSeed, per(kFreqs[o])) * kWeights[o];
+        norm += kWeights[o];
+    }
+    // No octave survives: the honest answer is the field's own mean, so the
+    // ground neither rises nor falls for what it cannot show.
+    if (norm <= 0.0f) return 0.5f;
+    return std::clamp(sum / norm, 0.0f, 1.0f);
+}
+
 float crest_jitter01(int cellGX, int cellGY, std::uint32_t worldSeed) {
     return terrain_noise_ts(cellGX, cellGY,
                             cell_seed(worldSeed, cellGX, cellGY) ^ 0x5A17u);

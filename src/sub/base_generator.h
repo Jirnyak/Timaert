@@ -123,6 +123,24 @@ namespace sm::sub
                             float peakTarget, float ridgeWeight,
                             float worldTiles, bool coarseOnly);
 
+    // THE GROUND'S OWN DETAIL, and the law of WHICH octaves a mesh may carry.
+    //
+    // The near generator lays two octaves over its macro manifold: λ≈125 and
+    // λ≈50 tiles. Dropping both from the far world was the mistake that made
+    // its lowland a billiard table — at three kilometres a 125 m feature
+    // spans 2.4° of screen, which is not detail, it is the ground.
+    //
+    // What decides is not a flag but NYQUIST: an octave whose wavelength is
+    // shorter than twice the mesh's spacing cannot be drawn by that mesh at
+    // all — sampling it only aliases. So `minWavelengthTiles` = 2 × step, and
+    // the law reads: carry every octave the mesh can represent, drop exactly
+    // those it cannot. That is «деталь УБИРАЕТСЯ, а не подменяется» with a
+    // measure attached, and it is also why the finished far world is RINGS:
+    // halving the step doubles the octaves it may carry, so the detail comes
+    // back as you approach instead of being switched on.
+    float terrain_detail01(int gx, int gy, float worldTiles,
+                           float minWavelengthTiles);
+
     // THE FAR WORLD'S GROUND, in normalised height. It is the near generator
     // with its detail removed and nothing added: the macro manifold the cells
     // blend into, plus the massif that rises out of it at its coarse octaves.
@@ -139,8 +157,23 @@ namespace sm::sub
     // tiles out of it — asking per tile would re-derive the same nine cells
     // for every vertex.
     inline float far_height01(int gx, int gy, float macroH01, float peak01,
-                              float ridgeWeight, float worldTiles) {
-        const float h = macroH01;   // the manifold, with no detail on it
+                              float ridgeWeight, float worldTiles,
+                              float gradient01 = 0.0f,
+                              float heightScale = 0.0f,
+                              float mtnScale = 0.0f,
+                              float minWavelengthTiles = 0.0f) {
+        // The manifold, plus every octave of ground the mesh can carry. The
+        // relief term is the near generator's own: macroH² concentrates the
+        // ground's own variation on high land and keeps lowlands calm, and the
+        // biome-edge gradient lifts it where two kinds of land meet.
+        float h = macroH01;
+        if (minWavelengthTiles > 0.0f && heightScale > 0.0f
+            && mtnScale > 0.0f) {
+            const float noise = terrain_detail01(gx, gy, worldTiles,
+                                                 minWavelengthTiles);
+            const float relief = macroH01 * macroH01 + gradient01;
+            h += (noise - 0.5f) * relief * heightScale * mtnScale;
+        }
         if (ridgeWeight <= 0.01f) return std::clamp(h, 0.0f, 2.0f);
         return std::clamp(mountain_ridges01(h, gx, gy, macroH01, peak01,
                                             ridgeWeight, worldTiles,

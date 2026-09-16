@@ -1316,6 +1316,7 @@ void Renderer3DVk::stage_stamps(VkCommandBuffer cmd, const StampInstance* cmds,
 // is a no-op until the player crosses into a new one.
 void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
                                      const SeamlessSubworldManager& mgr) {
+    const auto t0 = std::chrono::steady_clock::now();
     const int camCx = mgr.center_cx();
     const int camCy = mgr.center_cy();
     if (camCx == farBuiltCx_ && camCy == farBuiltCy_
@@ -1329,7 +1330,18 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
     // 24 cells of the map is a bit more than the lowland's own reach, which is
     // exactly enough to show whether the law reads.
     constexpr int kFarCellRadius = 25;                   // +1 for the bilinear
-    constexpr int kFarStepM      = 128;                  // vertex spacing
+    // TWO RINGS, and the second is not a refinement of the first — it is the
+    // NYQUIST law made geometry. A mesh may carry any octave whose wavelength
+    // is at least twice its spacing, so a 32 m ring carries the ground's 125 m
+    // octave and a 128 m ring cannot. Near the composite's rim, where that
+    // octave still spans degrees of screen, the fine ring is what makes the
+    // far ground continue the near one instead of flattening into a table.
+    // Further out the same octave is under a pixel and the coarse ring is the
+    // honest answer — which is the canon's «деталь убирается» with a measure
+    // on it, and the reason the finished thing is a ladder of rings.
+    constexpr int kFarFineStepM  = 32;
+    constexpr float kFarFineHalfM = 6.0f * 1024.0f;      // 6 macro cells
+    constexpr int kFarCoarseStepM = 128;
 
     sub::FarCellGrid grid;
     grid.radiusCells = kFarCellRadius;
@@ -1367,6 +1379,19 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
             if (y > 0     && biomes[i - std::size_t(n)] == Biome::Mountain) ++adj;
             if (y + 1 < n && biomes[i + std::size_t(n)] == Biome::Mountain) ++adj;
             sub::FarCellColumn col{};
+            // The ground's own detail columns, exactly as the near generator
+            // derives them: the biome's height scale, the mountain influence
+            // (own cell or neighbour-of-a-massif), and the macro gradient that
+            // roughens a biome edge.
+            const sub::BiomeConfig& bc = sub::biome_config(b);
+            col.heightScale = bc.heightScale;
+            col.mtnScale = mtn ? 0.15f : (0.1f + float(adj) * 0.1f);
+            float maxDiff = 0.0f;
+            if (x > 0)     maxDiff = std::max(maxDiff, std::fabs(heights[i] - heights[i - 1]));
+            if (x + 1 < n) maxDiff = std::max(maxDiff, std::fabs(heights[i] - heights[i + 1]));
+            if (y > 0)     maxDiff = std::max(maxDiff, std::fabs(heights[i] - heights[i - std::size_t(n)]));
+            if (y + 1 < n) maxDiff = std::max(maxDiff, std::fabs(heights[i] - heights[i + std::size_t(n)]));
+            col.gradient01 = maxDiff;
             col.skel01 = sub::skeleton_cell_height01(heights[i], water, mtn);
             col.peak01 = sub::skeleton_cell_peak01(
                 heights[i], water, mtn, adj,
@@ -1378,11 +1403,23 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
         }
     }
 
+    const int worldCellsX = mgr.resolve_cell(camCx, camCy).worldCellsX;
     sub::FarMesh mesh;
-    sub::build_far_mesh(mesh, grid, camCx, camCy, kFarStepM,
-                        kFarWorldHalfSpanM,
-                        mgr.resolve_cell(camCx, camCy).worldCellsX,
+    sub::build_far_mesh(mesh, grid, camCx, camCy, kFarFineStepM,
+                        kFarFineHalfM, worldCellsX,
                         /*holeHalfM=*/kWorldExtent);
+    sub::FarMesh coarse;
+    sub::build_far_mesh(coarse, grid, camCx, camCy, kFarCoarseStepM,
+                        kFarWorldHalfSpanM, worldCellsX,
+                        /*holeHalfM=*/kFarFineHalfM);
+    // The two rings ride ONE pair of buffers: they are the same sheet at two
+    // resolutions and there is nothing to tell them apart at draw time.
+    {
+        const std::uint32_t base = std::uint32_t(mesh.vtx.size());
+        mesh.vtx.insert(mesh.vtx.end(), coarse.vtx.begin(), coarse.vtx.end());
+        mesh.idx.reserve(mesh.idx.size() + coarse.idx.size());
+        for (std::uint32_t i : coarse.idx) mesh.idx.push_back(base + i);
+    }
     if (mesh.idx.empty()) return;
 
     const VkDeviceSize vBytes =
@@ -1392,6 +1429,8 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
     // Host-mapped, and said out loud: unified memory on this machine, a sheet
     // that changes only when the player crosses a macro cell, and a probe
     // whose job is to be looked at before geometry is invested in.
+    // The two rings' vertex count is a function of the SPANS, not of the
+    // world, so it never changes between builds — create once, overwrite.
     if (farVtx_.buffer == VK_NULL_HANDLE
         && !farVtx_.create_host_mapped(dev, vBytes,
                                        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)) {
@@ -1410,9 +1449,12 @@ void Renderer3DVk::rebuild_far_world(const gpu::VulkanDevice& dev,
     farBuiltCx_ = camCx;
     farBuiltCy_ = camCy;
     std::fprintf(stderr,
-                 "[far] sheet cell=%d,%d verts=%zu tris=%u span=%.0fm step=%dm\n",
+                 "[far] sheet cell=%d,%d verts=%zu tris=%u span=%.0fm step=%dm "
+                 "build=%.2fms\n",
                  camCx, camCy, mesh.vtx.size(), farIndexCount_ / 3u,
-                 double(mesh.halfSpanM), mesh.stepM);
+                 double(mesh.halfSpanM), mesh.stepM,
+                 std::chrono::duration<double, std::milli>(
+                     std::chrono::steady_clock::now() - t0).count());
     std::fflush(stderr);
 }
 
@@ -3371,7 +3413,13 @@ void Renderer3DVk::record_main(VkCommandBuffer cmd, VkExtent2D ext,
         wp.params[0] = elapsed;                   // animated wave time
         wp.params[1] = sun.ambientColor.y;         // ambient intensity
         wp.params[2] = waterLevel * kHeightScaleM;  // world-space water Y
-        wp.params[3] = kWorldExtent;               // half terrain span
+        // THE WATER REACHES AS FAR AS THE GROUND DOES (CANON S18.1: «вода —
+        // та же вода, та же плоскость»). It used to stop at the composite's
+        // own half-span, which was invisible while nothing was drawn beyond
+        // it — and the moment the far world appeared, a sea read as MEADOW
+        // right where the near shore ended. Caught by the owner's eyes in the
+        // first frame he took of it, on a coast.
+        wp.params[3] = kFarWorldHalfSpanM + kWorldExtent;
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           waterPipe_.pipeline);
         // set 0 = shadow sampler + point-light SSBO (reflected as glints on the
