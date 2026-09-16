@@ -1193,6 +1193,13 @@ timaert_test(deposit_layer_test
 # The reach field the vein layer stamps (problems.md §52): the field is only
 # true while EVERY door that moves a vein also moves its disc, and a door that
 # forgets fails silently. Drives all of them and re-checks the invariant.
+# THE far world as GEOMETRY: the sheet really carries far_height01's answer,
+# its normals agree with its own surface, and a material id stays an ordinal.
+timaert_test(far_mesh_test
+    SOURCES
+        src/sub/base_generator.cpp
+        src/sub/material.cpp)
+
 # THE far world is the near generator TRUNCATED, and that is a property to be
 # asserted rather than intended (CANON S18.1 «та же гора»): one crest law, and
 # a coarse pass that removes the crag octave without moving the shape.
