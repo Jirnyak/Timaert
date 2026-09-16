@@ -8,6 +8,7 @@
 // Mountain biome with a high tree count, no feature byte involved.
 #pragma once
 #include "core/table_guard.h"
+#include "macro/resource_field.h"   // ResourceFieldId — what a built cell works
 #include "core/torus.h"
 #include <cstddef>
 #include <cstdint>
@@ -95,38 +96,75 @@ struct FeatureDef {
     // (zones.cpp): how strongly a built thing pushes the wilderness back.
     // 0 = builds no safety of its own (a field is tended, not garrisoned).
     float civStrength;
+    // WHAT THIS BUILT CELL WORKS — the discriminator of the WORKED LAYER
+    // (CANON S5 «два слоя, и постройка — перенос между ними»).
+    //
+    // The world carries two kinds of resource field. NATURE has one array per
+    // kind (ore, forest, beasts, fertility): it lies on every cell, needs no
+    // discriminator because the array IS the kind, and coexists with
+    // everything. The WORKED layer is ONE array over the world, and a number
+    // in it means whatever the feature standing on that cell says it means —
+    // which is unambiguous because a cell is worked exactly one way («1 шахта
+    // в клетке одно поле в клетке»).
+    //
+    // BUILDING IS THE TRANSFER between them: a mine, going up, swallows the
+    // connected cluster of its kind out of nature's array and lays the sum in
+    // the worked array beneath itself. A plough does the same movement with
+    // fertility — except fertility is not spent by it (owner, 2026-09-16:
+    // land does not grow poorer for being tilled), so there it is the CAP the
+    // standing crop grows back toward.
+    //
+    // `Count` means "this feature works nothing" — a road, a bridge, a port.
+    // Not a sentinel to branch on: it is the legal zero of the column, and a
+    // cell that works nothing simply holds nothing.
+    ResourceFieldId worksRow;
 };
 
 inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
-    //                     bed   optics  civ
-    {FT_None,     0.0f, 1.00f, 0.0f },
-    {FT_Road,     1.0f, 0.65f, 0.35f},
-    {FT_DirtRoad, 1.5f, 0.85f, 0.22f},
-    {FT_Field,    1.8f, 1.00f, 0.0f },
+    //                     bed   optics  civ   works
+    {FT_None,     0.0f, 1.00f, 0.0f, ResourceFieldId::Count},
+    {FT_Road,     1.0f, 0.65f, 0.35f, ResourceFieldId::Count},
+    {FT_DirtRoad, 1.5f, 0.85f, 0.22f, ResourceFieldId::Count},
+    // The ploughed parcel works the ARABLE row. Which crop it is sown with
+    // is a matter of the feature TYPE, not of a second row: a potato field
+    // and a poppy field are new rows of THIS table, working the same number.
+    {FT_Field,    1.8f, 1.00f, 0.0f, ResourceFieldId::Wheat},
     // The bridge carries the stone road's own columns: its deck IS the paved
     // bed (the march never notices the river under it), it is the same open
     // corridor to light and sight, and it seeds the same civilization pull.
-    {FT_Bridge,   1.0f, 0.65f, 0.35f},
+    {FT_Bridge,   1.0f, 0.65f, 0.35f, ResourceFieldId::Count},
     // Mines share the field's columns: worked ground, not an engineered
     // bed (0 = the biome's own footing), nothing to hide behind, and a
     // workplace that is tended, not garrisoned.
-    {FT_ClayPit,    0.0f, 1.00f, 0.0f },
-    {FT_IronMine,   0.0f, 1.00f, 0.0f },
-    {FT_Quarry,     0.0f, 1.00f, 0.0f },
-    {FT_SilverMine, 0.0f, 1.00f, 0.0f },
+    {FT_ClayPit,    0.0f, 1.00f, 0.0f, ResourceFieldId::Clay},
+    {FT_IronMine,   0.0f, 1.00f, 0.0f, ResourceFieldId::Iron},
+    {FT_Quarry,     0.0f, 1.00f, 0.0f, ResourceFieldId::Stone},
+    {FT_SilverMine, 0.0f, 1.00f, 0.0f, ResourceFieldId::Silver},
     // Planks march like the dirt lane (bed 1.5 — the same half-again the
     // paved bed dirt pays), carry the bridge's open sight line, and seed
     // the dirt lane's own modest civilization pull.
-    {FT_WoodBridge, 1.5f, 0.65f, 0.22f},
+    {FT_WoodBridge, 1.5f, 0.65f, 0.22f, ResourceFieldId::Count},
     // The harbour is worked shore: a plank apron (dirt-lane bed), open to
     // sight, with the dirt lane's modest civilization pull.
-    {FT_Port,        1.5f, 0.85f, 0.22f},
+    {FT_Port,        1.5f, 0.85f, 0.22f, ResourceFieldId::Count},
     // A beached hull builds nothing and guards nothing — it just waits.
-    {FT_BeachedShip, 0.0f, 1.00f, 0.0f },
+    {FT_BeachedShip, 0.0f, 1.00f, 0.0f, ResourceFieldId::Count},
 };
 static_assert(rows_in_enum_order(kFeatureDefs, &FeatureDef::type),
               "kFeatureDefs row order must mirror FeatureType — a new "
               "feature IS its row here");
+
+// WHAT THE CELL UNDER THIS FEATURE WORKS. `ResourceFieldId::Count` = nothing.
+// THE one door: the worked layer never asks a switch what a feature means, it
+// reads the feature's own row — so a new kind of mine or a new crop is a row
+// here and nowhere else.
+inline constexpr ResourceFieldId feature_works_row(FeatureType f) {
+    return kFeatureDefs[std::size_t(f) < std::size_t(FT_Count)
+                            ? std::size_t(f) : 0].worksRow;
+}
+inline constexpr bool feature_is_worked(FeatureType f) {
+    return feature_works_row(f) != ResourceFieldId::Count;
+}
 
 inline constexpr const FeatureDef& feature_def(FeatureType t) {
     return std::size_t(t) < std::size_t(FT_Count)

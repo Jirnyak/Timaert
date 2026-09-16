@@ -51,12 +51,8 @@ inline float rand_f01(const TickContext& ctx) { return ctx.rng->next_f01(); }
 
 struct XY { float x, y; };
 
-// Торовая складка разности координат в бокс-офсет.
-inline int fold_d(int d, int period) {
-    if (d > period / 2) return d - period;
-    if (d < -period / 2) return d + period;
-    return d;
-}
+// (`fold_d` — торова складка разности координат — умерла вместе со сканом жил:
+// обход бокса от дома строит смещения сам, складывать нечего.)
 
 // ── КОРАБЛИ У ФИЧИ (CANON S10, владелец 2026-09-02) ──────────────────────
 // Одна дверь счётчика: «у поля урожай, у шахты залежи, у порта корабли».
