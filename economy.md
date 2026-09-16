@@ -174,6 +174,42 @@ owner session, every step driven by the headless balance run
   spend the WHOLE purse down the home needs ladder to a season's stock —
   «деревня не копит капитал»). Fleet law: a city without a caravan outfits
   one from its population; vendors rotate with the labour crews.
+### THE EMERGENT HAUL — measured, 2026-09-16
+
+The take used to be a declared batch (`kGatherPerCycle` = 8) and a bar bought
+four of them, so a crew walked home after EVERY armful. Both numbers are gone
+(CANON S14.1): a worker takes ONE object per act at the player's own price, a
+crew takes one per HAND, and the trip ends when the BACKS are full, the BAR is
+spent, or the ground gives nothing.
+
+Double run, seed 12345 × 256 days, against the immediate parent commit — so the
+difference contains the emergent haul and the build column and nothing else.
+Both runs exit 0 with every law green.
+
+| | before | after | |
+|---|---|---|---|
+| population | 122 300 | 175 629 | **+44 %** |
+| famines started | 34 | 13 | −62 % |
+| starved | 56 076 | 37 968 | −32 % |
+| grain gathered (day 257) | 115 524 | 186 867 | **+62 %** |
+| bread produced | 103 189 | 248 531 | +141 % |
+| grain STOCK | 1 309 163 | 25 583 016 | **+1854 %** |
+| bread STOCK | 890 946 | 16 882 355 | +1795 % |
+| wood stock | 2 753 474 | 3 497 253 | +27 % |
+| iron stock | 229 | 1 252 | +447 % |
+| trades | 110 | 182 | +65 % |
+
+**THE CAUSE IS THE ROAD, not the rate.** The price of taking did not change.
+What changed is that the bar used to be split between FOUR walks and four
+takes; now there is one walk and as many takes as the bar affords, so three
+quarters of the walking went back into work. A ~60 % flow, compounded over 256
+days against roughly unchanged eating, is the 19× stock.
+
+**KEPT (owner, 2026-09-16): the new model is better** — a crew that walked to
+the forest works the day there instead of running home with every armful. What
+it exposes is that the world now drowns in food, and the lever for that is NOT
+a balance constant: it is CARRYING CAPACITY, below.
+
 - **Labour is SP, and the price is ONE law: the bar divided by the rate**
   (`sp_price`, econ_day.h — CANON S14.1). The rate is a COLUMN of whatever
   acts: objects-in-a-day for gathering (kGatherPerWorkerDay = 32, the
@@ -183,6 +219,21 @@ owner session, every step driven by the headless balance run
   price — the bar belongs to the squad. Crews are transient
   (rotate_worker_squads), a squad's carry is the SUM of its backs, and that
   carry is now what ENDS a trip rather than a constant.
+- **CARRYING CAPACITY IS THE ECONOMY'S RPG SEAM, and it is unfinished** (owner,
+  2026-09-16: «надо просто разобраться с грузоподъёмностью универсальной
+  системой и будет идеально»). `rt.carryCap` =
+  `get_carry_capacity(attributes, skills, standing) × npc_def.haulMult` — a
+  number out of the CHARACTER SHEET, not out of the economy — and since the
+  haul became emergent it is what ENDS a working day. A stronger crew with
+  better gear now literally works longer before walking home.
+  Overload is already universal (owner 2026-08-27 «перегруз универсальный
+  всем»): kilograms over capacity become an SP SURCHARGE PER MARCHED CELL
+  (`overload_charge_from_capacity`, travel.h). It has a known failure mode,
+  measured: a miner with 2400 kg of silver against 2145 kg of backs paid
+  256 SP/cell on a bar of 110 — unpayable even after a full rest, so the crew
+  FREEZES forever. The gather take is clamped to what fits precisely because of
+  that. Polishing this into one system — one capacity law, one overload law,
+  one place where the sheet meets the economy — is open work.
 - **Fields live**: a parcel regrows its whole potential in one season
   (kWheatSeasonsToRegrow, macro_stock.h) — world bread went 7/day → ~12k/day.
 - **Demand is derived**: daily_demand_for flows recipe-output demand down
