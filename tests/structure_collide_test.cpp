@@ -185,7 +185,7 @@ void part_b_generated_city() {
     nbF[5] = std::uint8_t(FT_DirtRoad);  // east neighbour carries a road
 
     SubworldMapData out{};
-    dispatch_generate(city, nbH, nbB, nbF, out);
+    dispatch_generate(city, nbH, nbB, /*nbBiome5*/nullptr, nbF, out);
 
     // Structure inventory: oriented walls, round towers, gate lintels,
     // rotated houses with independent extents.

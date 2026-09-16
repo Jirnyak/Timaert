@@ -95,7 +95,7 @@ SubworldMode resolve_mode(const CellContext& ctx) {
 }
 
 void dispatch_generate(const CellContext& ctx, const float nbHeights[9],
-                       const Biome nbBiome[9],
+                       const Biome nbBiome[9], const Biome* nbBiome5,
                        const std::uint8_t nbFeature[9],
                        SubworldMapData& out,
                        const LandmarkType* nbLandmark,
@@ -150,7 +150,7 @@ void dispatch_generate(const CellContext& ctx, const float nbHeights[9],
     }
 
     out.heightmap.clear();
-    generate_heightmap(out.heightmap, kCellSize, nbHeights, nbBiome,
+    generate_heightmap(out.heightmap, kCellSize, nbHeights, nbBiome, nbBiome5,
                        safeCtx.biome, safeCtx.seed,
                        safeCtx.cx * kCellSize, safeCtx.cy * kCellSize,
                        nbMods, safeCtx.worldCellsX, safeCtx.worldSeed);

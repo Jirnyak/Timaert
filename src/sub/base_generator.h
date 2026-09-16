@@ -132,6 +132,26 @@ namespace sm::sub
                             int cellSize,
                             const float nbHeights[9],
                             const Biome nbBiome[9],
+                            // THE CONTEXT IS ONE RING WIDER THAN THE CELLS IT
+                            // BUILDS, and it has to be. The generator asks each
+                            // of its nine cells "how many of YOUR four
+                            // neighbours are mountain" — a question about that
+                            // cell's own place — and a 3×3 cannot answer it for
+                            // its own rim: a rim cell cannot see outward, so it
+                            // undercounts, and its crest target becomes a
+                            // function of WHICH WINDOW is asking. Measured at
+                            // the foot of a massif, where it bites hardest:
+                            // 8.3-9.7 m of step across a shared border, 1.3-3.4×
+                            // the ground's own relief there, against 0.4-1.0×
+                            // along the body of the same ridge.
+                            //
+                            // 25 entries, row-major, the SAME grid one ring
+                            // wider: index (1+cy)*5 + (1+cx) is the 3×3 cell
+                            // i = cy*3 + cx. Null is legal and means "no world
+                            // around this fixture" — then the rim undercounts
+                            // exactly as it always did, which is honest for a
+                            // lone cell that has no neighbours to miss.
+                            const Biome* nbBiome5,
                             Biome biome,
                             std::uint32_t seed,
                             int globalOffsetX = 0,

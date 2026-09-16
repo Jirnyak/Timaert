@@ -555,8 +555,23 @@ namespace sm::ui
                 }
             }
 
+            // THE WIDER RING, from the same assembler the 3×3 came from, so
+            // the settlement PREVIEW is built by exactly the law the cell you
+            // walk into is built by. (The preview once ran on a fake context
+            // with its own seed and showed a town that did not exist — the
+            // lesson is that a preview is not allowed a shortcut.)
+            Biome nbBiome5[25]{};
+            for (int i = 0; i < 25; ++i) nbBiome5[i] = Meadow;
+            if (mw != nullptr) {
+                for (int yy = 0; yy < 5; ++yy)
+                    for (int xx = 0; xx < 5; ++xx) {
+                        nbBiome5[yy * 5 + xx] =
+                            cell_facts(*mw, s.x + xx - 2, s.y + yy - 2).biome;
+                    }
+            }
             sub::SubworldMapData map{};
-            sub::dispatch_generate(ctx, nbHeights, nbBiome, nbFeature, map);
+            sub::dispatch_generate(ctx, nbHeights, nbBiome, nbBiome5,
+                                   nbFeature, map);
             const std::size_t expected =
                 std::size_t(sub::kCellSize) * sub::kCellSize;
             if (map.tiles.size() < expected || map.heightmap.size() < expected)

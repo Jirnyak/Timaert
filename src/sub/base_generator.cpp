@@ -223,6 +223,7 @@ static float apply_mountain_ridges(float h, int gx, int gy, float macroH,
 void generate_heightmap(std::vector<float>& out, int cellSize,
                         const float nbHeights[9],
                         const Biome nbBiome[9],
+                        const Biome* nbBiome5,
                         Biome biome, std::uint32_t seed,
                         int globalOffsetX, int globalOffsetY,
                         const TerrainMod* nbMods, int worldCellsX,
@@ -258,12 +259,23 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
         // Mountains are a biome now (elevation-classified), so ridge/peak
         // amplification keys off the neighbour biome, not a feature byte.
         const bool isMtn = nbBiome[i] == Biome::Mountain;
-        int adjMtn = 0;
         const int cx = i % 3, cy = i / 3;
-        if (cx > 0 && nbBiome[i - 1] == Biome::Mountain) ++adjMtn;
-        if (cx < 2 && nbBiome[i + 1] == Biome::Mountain) ++adjMtn;
-        if (cy > 0 && nbBiome[i - 3] == Biome::Mountain) ++adjMtn;
-        if (cy < 2 && nbBiome[i + 3] == Biome::Mountain) ++adjMtn;
+        // A CELL COUNTS ITS OWN NEIGHBOURS. With the wider ring every one of
+        // the nine can, including the rim; without it the rim sees only
+        // inward and its count depends on who is looking (base_generator.h).
+        int adjMtn = 0;
+        if (nbBiome5 != nullptr) {
+            const int X = cx + 1, Y = cy + 1;          // into the 5×5
+            if (nbBiome5[Y * 5 + X - 1] == Biome::Mountain) ++adjMtn;
+            if (nbBiome5[Y * 5 + X + 1] == Biome::Mountain) ++adjMtn;
+            if (nbBiome5[(Y - 1) * 5 + X] == Biome::Mountain) ++adjMtn;
+            if (nbBiome5[(Y + 1) * 5 + X] == Biome::Mountain) ++adjMtn;
+        } else {
+            if (cx > 0 && nbBiome[i - 1] == Biome::Mountain) ++adjMtn;
+            if (cx < 2 && nbBiome[i + 1] == Biome::Mountain) ++adjMtn;
+            if (cy > 0 && nbBiome[i - 3] == Biome::Mountain) ++adjMtn;
+            if (cy < 2 && nbBiome[i + 3] == Biome::Mountain) ++adjMtn;
+        }
         mountainScale[i] = isMtn ? 0.15f : (0.1f + adjMtn * 0.1f);
         ridgeWeight  [i] = isMtn ? 1.0f : 0.0f;
 

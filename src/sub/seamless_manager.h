@@ -18,6 +18,14 @@
 namespace sm::sub {
 
 using CellResolver = sm::SmallFunction<CellContext(int cx, int cy)>;
+// JUST THE BIOME OF A MACRO CELL — a far cheaper question than the whole
+// context, and the only one the generator's WIDER RING asks (base_generator.h
+// nbBiome5: sixteen cells whose biome decides a neighbour count and nothing
+// else). Asking the full resolver for them cost 79 µs of a 2.2 ms crossing,
+// measured — a CellContext carries landmark, features, trees, fertility,
+// scars and seeds, and the ring wanted one enum. The seam's number only ever
+// goes down, so the ring gets its own door.
+using BiomeResolver = sm::SmallFunction<Biome(int cx, int cy)>;
 
 struct LoadedCell {
     int cx = 0, cy = 0;
@@ -134,7 +142,8 @@ class SeamlessSubworldManager {
 public:
     ~SeamlessSubworldManager();
 
-    void init(int centerCx, int centerCy, CellResolver resolver);
+    void init(int centerCx, int centerCy, CellResolver resolver,
+              BiomeResolver biomeResolver = {});
     // Re-center if player crosses a boundary; loads/unloads as needed.
     void check_boundary(float& playerX, float& playerY);
     // Returns whether anything changed and clears all dirty state. Kept as the
@@ -226,6 +235,13 @@ public:
 private:
     int cx_ = 0, cy_ = 0;
     CellResolver resolver_;
+    BiomeResolver biomeResolver_;   // the wider ring's cheap door
+    // The ring's biome, through the cheap door when there is one and
+    // through the full context when there is not (bare harnesses).
+    Biome ring_biome(int cx, int cy) const {
+        return biomeResolver_ ? biomeResolver_(cx, cy)
+                              : resolver_(cx, cy).biome;
+    }
     std::array<LoadedCell, 9> cells_;
     std::vector<std::uint8_t> composite_tiles_;
     std::vector<float>        composite_height_;
@@ -321,6 +337,10 @@ private:
         CellContext ctx{};
         float nbHeights[9]{};
         Biome nbBiome[9]{};
+        // The SAME grid one ring wider — what lets every cell of the 3×3 count
+        // its own mountain neighbours instead of only the ones this window
+        // happens to contain (base_generator.h nbBiome5, CANON S1/S2).
+        Biome nbBiome5[25]{};
         // Ground aliases of nbBiome (map_data.h ground_biome) — the material
         // ring the finished cell will hand the dither.
         Biome nbGround[9]{};

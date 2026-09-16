@@ -638,8 +638,17 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     }
 
     auto resolver = [this](int x, int y) { return resolve_context(x, y); };
+    // The wider ring asks only "what biome stands here", so it gets the macro
+    // map's own CLASSIFIER — one wrapped index into the terrain image and the
+    // climate matrix — instead of an assembled context. Going through
+    // cell_facts would drag the landmark, the features, the trees, the
+    // fertility, the vein reach and the season along for an enum, and the
+    // seam would pay for all of it sixteen times per generated cell.
+    auto biomeResolver = [this](int x, int y) {
+        return mw_.terrain ? biome_at_cell(*mw_.terrain, x, y) : Biome::Meadow;
+    };
 
-    mgr_.init(cx, cy, resolver);
+    mgr_.init(cx, cy, resolver, biomeResolver);
     // First upload is unconditionally full inside the renderer (device buffers
     // and images not yet created). Consume the manager's dirty (load_all marked
     // it full) and hand it straight to upload(), then clear the accumulator.

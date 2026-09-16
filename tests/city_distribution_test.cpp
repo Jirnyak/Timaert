@@ -74,7 +74,7 @@ Spread measure_city(int cx, int cy, std::uint32_t seed, int population) {
     }
 
     SubworldMapData out{};
-    dispatch_generate(city, nbH, nbB, nbF, out);
+    dispatch_generate(city, nbH, nbB, /*nbBiome5*/nullptr, nbF, out);
 
     const float center = float(kCellSize / 2);
     Spread s{};

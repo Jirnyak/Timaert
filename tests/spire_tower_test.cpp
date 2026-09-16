@@ -71,7 +71,7 @@ void generate(const CellContext& ctx, SubworldMapData& out) {
         nbB[i] = ctx.biome;
         nbF[i] = std::uint8_t(FT_None);
     }
-    dispatch_generate(ctx, nbH, nbB, nbF, out);
+    dispatch_generate(ctx, nbH, nbB, /*nbBiome5*/nullptr, nbF, out);
 }
 
 bool walkable(std::uint8_t t) {

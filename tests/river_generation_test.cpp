@@ -308,7 +308,7 @@ DescentSample sample_river_descent(float landMH, sm::Biome landBiome)
     for (int i = 0; i < 9; ++i) { rNbH[i] = landMH; rNbB[i] = landBiome; }
     rNbH[4] = riverMH; rNbB[4] = Biome::Water;
     std::vector<float> river;
-    generate_heightmap(river, CS, rNbH, rNbB, Biome::Water, 12345u, 0, 0);
+    generate_heightmap(river, CS, rNbH, rNbB, /*nbBiome5*/nullptr, Biome::Water, 12345u, 0, 0);
 
     // Adjacent land cell: centre = land, east neighbour = the river cell. Used
     // to confirm the land itself stays dry (the no-submerged-land invariant
@@ -319,7 +319,7 @@ DescentSample sample_river_descent(float landMH, sm::Biome landBiome)
     for (int i = 0; i < 9; ++i) { lNbH[i] = landMH; lNbB[i] = landBiome; }
     lNbH[5] = riverMH; lNbB[5] = Biome::Water;
     std::vector<float> land;
-    generate_heightmap(land, CS, lNbH, lNbB, landBiome, 12345u, 0, 0);
+    generate_heightmap(land, CS, lNbH, lNbB, /*nbBiome5*/nullptr, landBiome, 12345u, 0, 0);
 
     const int y = CS / 2;
     DescentSample s{};

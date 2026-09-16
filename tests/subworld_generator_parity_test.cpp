@@ -342,7 +342,7 @@ int main() {
     for (int i = 0; i < 9; ++i) nbForest[i] = kMaxTreesPerCell;
 
     SubworldMapData out{};
-    dispatch_generate(ctx, nbH, nbB, nbF, out, nullptr, nbForest);
+    dispatch_generate(ctx, nbH, nbB, /*nbBiome5*/nullptr, nbF, out, nullptr, nbForest);
 
     if (resolve_mode(ctx) != SubworldMode::Forest) {
         return fail("forest-class tree count did not resolve to Forest mode");
@@ -408,7 +408,7 @@ int main() {
     nbF[3] = std::uint8_t(FT_Road);
     nbF[5] = std::uint8_t(FT_DirtRoad);
     SubworldMapData grassTrailOut{};
-    dispatch_generate(grassTrail, nbH, nbB, nbF, grassTrailOut);
+    dispatch_generate(grassTrail, nbH, nbB, /*nbBiome5*/nullptr, nbF, grassTrailOut);
     if (resolve_mode(grassTrail) != SubworldMode::Grassland
         || anchor_is_road(grassTrailOut, grassTrail, -1, 0)
         || anchor_is_road(grassTrailOut, grassTrail, 1, 0)
@@ -427,7 +427,7 @@ int main() {
     nbF[1] = std::uint8_t(FT_Road);
     nbF[7] = std::uint8_t(FT_DirtRoad);
     SubworldMapData forestTrailOut{};
-    dispatch_generate(forestTrail, nbH, nbB, nbF, forestTrailOut, nullptr,
+    dispatch_generate(forestTrail, nbH, nbB, /*nbBiome5*/nullptr, nbF, forestTrailOut, nullptr,
                       nbForest);
     if (anchor_is_road(forestTrailOut, forestTrail, 0, -1)
         || anchor_is_road(forestTrailOut, forestTrail, 0, 1)
@@ -450,7 +450,7 @@ int main() {
     fill_flat_neighbors(nbH, nbB, nbF, Swamp, FT_None);
     nbF[5] = std::uint8_t(FT_Road);
     SubworldMapData swampTrailOut{};
-    dispatch_generate(swampTrail, nbH, nbB, nbF, swampTrailOut);
+    dispatch_generate(swampTrail, nbH, nbB, /*nbBiome5*/nullptr, nbF, swampTrailOut);
     if (resolve_mode(swampTrail) != SubworldMode::Swamp
         || anchor_is_road(swampTrailOut, swampTrail, 1, 0)
         || swampTrailOut.tiles[std::size_t(center) * kCellSize + center]
@@ -472,7 +472,7 @@ int main() {
     fill_flat_neighbors(nbH, nbB, nbF, Mountain, FT_None);
     nbF[1] = std::uint8_t(FT_Road);
     SubworldMapData mountainTrailOut{};
-    dispatch_generate(mountainTrail, nbH, nbB, nbF, mountainTrailOut);
+    dispatch_generate(mountainTrail, nbH, nbB, /*nbBiome5*/nullptr, nbF, mountainTrailOut);
     if (resolve_mode(mountainTrail) != SubworldMode::Mountain
         || anchor_is_road(mountainTrailOut, mountainTrail, 0, -1)
         || mountainTrailOut.tiles[std::size_t(center) * kCellSize + center]
@@ -494,7 +494,7 @@ int main() {
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
 
     SubworldMapData spireOut{};
-    dispatch_generate(spire, nbH, nbB, nbF, spireOut);
+    dispatch_generate(spire, nbH, nbB, /*nbBiome5*/nullptr, nbF, spireOut);
     if (resolve_mode(spire) != SubworldMode::Spire) {
         return fail("spire landmark did not resolve to Spire mode");
     }
@@ -686,7 +686,7 @@ int main() {
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
 
     SubworldMapData ruinOut{};
-    dispatch_generate(ruin, nbH, nbB, nbF, ruinOut);
+    dispatch_generate(ruin, nbH, nbB, /*nbBiome5*/nullptr, nbF, ruinOut);
     if (resolve_mode(ruin) != SubworldMode::Ruin) {
         return fail("ruin landmark did not resolve to Ruin mode");
     }
@@ -714,7 +714,7 @@ int main() {
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
     nbF[5] = std::uint8_t(FT_Road);
     SubworldMapData ruinRoadOut{};
-    dispatch_generate(ruin, nbH, nbB, nbF, ruinRoadOut);
+    dispatch_generate(ruin, nbH, nbB, /*nbBiome5*/nullptr, nbF, ruinRoadOut);
     int ruinEastX, ruinEastY;
     expected_edge_anchor(ruin, 1, 0, ruinEastX, ruinEastY);
     int ruinRoadTiles = 0;
@@ -740,7 +740,7 @@ int main() {
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
 
     SubworldMapData cityOut{};
-    dispatch_generate(city, nbH, nbB, nbF, cityOut);
+    dispatch_generate(city, nbH, nbB, /*nbBiome5*/nullptr, nbF, cityOut);
     if (resolve_mode(city) != SubworldMode::City) {
         return fail("city landmark did not resolve to City mode");
     }
@@ -785,7 +785,7 @@ int main() {
     nbF[3] = std::uint8_t(FT_Road);
     nbF[5] = std::uint8_t(FT_DirtRoad);
     SubworldMapData cityAlignedOut{};
-    dispatch_generate(city, nbH, nbB, nbF, cityAlignedOut);
+    dispatch_generate(city, nbH, nbB, /*nbBiome5*/nullptr, nbF, cityAlignedOut);
     int cityWestX, cityWestY, cityEastX, cityEastY;
     expected_edge_anchor(city, -1, 0, cityWestX, cityWestY);
     expected_edge_anchor(city, 1, 0, cityEastX, cityEastY);
@@ -810,7 +810,7 @@ int main() {
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
 
     SubworldMapData villageOut{};
-    dispatch_generate(village, nbH, nbB, nbF, villageOut);
+    dispatch_generate(village, nbH, nbB, /*nbBiome5*/nullptr, nbF, villageOut);
     if (resolve_mode(village) != SubworldMode::Village) {
         return fail("village landmark did not resolve to Village mode");
     }
@@ -847,7 +847,7 @@ int main() {
     nbF[3] = std::uint8_t(FT_Road);
     nbF[5] = std::uint8_t(FT_DirtRoad);
     SubworldMapData villageAlignedOut{};
-    dispatch_generate(village, nbH, nbB, nbF, villageAlignedOut);
+    dispatch_generate(village, nbH, nbB, /*nbBiome5*/nullptr, nbF, villageAlignedOut);
     int villageWestX, villageWestY, villageEastX, villageEastY;
     expected_edge_anchor(village, -1, 0, villageWestX, villageWestY);
     expected_edge_anchor(village, 1, 0, villageEastX, villageEastY);
@@ -887,7 +887,7 @@ int main() {
     nbF[5] = std::uint8_t(FT_Road);
 
     SubworldMapData roadOut{};
-    dispatch_generate(road, nbH, nbB, nbF, roadOut);
+    dispatch_generate(road, nbH, nbB, /*nbBiome5*/nullptr, nbF, roadOut);
     if (resolve_mode(road) != SubworldMode::Road) {
         return fail("water road feature did not resolve to Road mode");
     }
@@ -922,7 +922,7 @@ int main() {
     for (int i = 0; i < 9; ++i) nbH[i] = 0.30f;   // honest water, as above
     nbF[5] = std::uint8_t(FT_Road);
     SubworldMapData roadSingleOut{};
-    dispatch_generate(road, nbH, nbB, nbF, roadSingleOut);
+    dispatch_generate(road, nbH, nbB, /*nbBiome5*/nullptr, nbF, roadSingleOut);
     int roadSingleEastX, roadSingleEastY;
     expected_edge_anchor(road, 1, 0, roadSingleEastX, roadSingleEastY);
     // TS road-generator: a single-connection cell carves from the edge anchor
@@ -962,7 +962,7 @@ int main() {
     nbF[5] = std::uint8_t(FT_Road);
     nbF[7] = std::uint8_t(FT_Road);        // the passer-by
     SubworldMapData forkOut{};
-    dispatch_generate(road, nbH, nbB, nbF, forkOut);
+    dispatch_generate(road, nbH, nbB, /*nbBiome5*/nullptr, nbF, forkOut);
     {
         int spanChords = 0;
         for (const Structure& s : forkOut.structures) {
@@ -1028,7 +1028,7 @@ int main() {
     fill_flat_neighbors(nbH, nbB, nbF, Meadow, FT_None);
 
     SubworldMapData grassOut{};
-    dispatch_generate(grass, nbH, nbB, nbF, grassOut);
+    dispatch_generate(grass, nbH, nbB, /*nbBiome5*/nullptr, nbF, grassOut);
     if (resolve_mode(grass) != SubworldMode::Grassland
         || std::fabs(grassOut.waterLevel - WATER_LEVEL) > 0.0001f) {
         return fail("plain wilderness did not resolve to TS grassland/waterLevel");
@@ -1040,7 +1040,7 @@ int main() {
     nbF[0] = 255u;
     nbF[4] = 255u;
     SubworldMapData invalidFeatureGrassOut{};
-    dispatch_generate(invalidFeatureGrass, nbH, nbB, nbF, invalidFeatureGrassOut);
+    dispatch_generate(invalidFeatureGrass, nbH, nbB, /*nbBiome5*/nullptr, nbF, invalidFeatureGrassOut);
     if (invalidFeatureGrassOut.tiles != grassOut.tiles
         || invalidFeatureGrassOut.trav != grassOut.trav
         || invalidFeatureGrassOut.structures.size() != grassOut.structures.size()
@@ -1065,9 +1065,9 @@ int main() {
         plainsNbB[i] = Meadow;
         mountainNbB[i] = Mountain;
     }
-    generate_heightmap(directPlainsHeightmap, 32, directNbH, plainsNbB,
+    generate_heightmap(directPlainsHeightmap, 32, directNbH, plainsNbB, /*nbBiome5*/nullptr,
                        Meadow, grass.seed);
-    generate_heightmap(directMountainHeightmap, 32, directNbH, mountainNbB,
+    generate_heightmap(directMountainHeightmap, 32, directNbH, mountainNbB, /*nbBiome5*/nullptr,
                        Mountain, grass.seed);
     const auto vertical_range = [](const std::vector<float>& hm) {
         float lo = 99.0f, hi = -99.0f;
@@ -1106,7 +1106,7 @@ int main() {
     for (float& h : nbH) h = water.macroHeight;
 
     SubworldMapData waterOut{};
-    dispatch_generate(water, nbH, nbB, nbF, waterOut);
+    dispatch_generate(water, nbH, nbB, /*nbBiome5*/nullptr, nbF, waterOut);
     int waterTiles = 0;
     int waterTrees = 0;
     for (const std::uint8_t tile : waterOut.tiles) {
@@ -1132,7 +1132,7 @@ int main() {
     nbH[8] = 0.62f; nbB[8] = Meadow;
 
     SubworldMapData coastOut{};
-    dispatch_generate(coast, nbH, nbB, nbF, coastOut);
+    dispatch_generate(coast, nbH, nbB, /*nbBiome5*/nullptr, nbF, coastOut);
     int coastWater = 0;
     int coastShore = 0;
     int coastLand = 0;
@@ -1176,7 +1176,7 @@ int main() {
     fill_flat_neighbors(nbH, nbB, nbF, Swamp, FT_None);
 
     SubworldMapData swampOut{};
-    dispatch_generate(swamp, nbH, nbB, nbF, swampOut);
+    dispatch_generate(swamp, nbH, nbB, /*nbBiome5*/nullptr, nbF, swampOut);
     int swampTrees = 0;
     for (const Structure& s : swampOut.structures) {
         if (s.kind == Structure::Tree) ++swampTrees;
@@ -1200,7 +1200,7 @@ int main() {
     fill_flat_neighbors(nbH, nbB, nbF, Mountain, FT_None);
 
     SubworldMapData mountainOut{};
-    dispatch_generate(mountain, nbH, nbB, nbF, mountainOut);
+    dispatch_generate(mountain, nbH, nbB, /*nbBiome5*/nullptr, nbF, mountainOut);
     float mountainMin = 99.0f;
     float mountainMax = -99.0f;
     for (const float h : mountainOut.heightmap) {
@@ -1242,7 +1242,7 @@ int main() {
     }
 
     SubworldMapData fieldOut{};
-    dispatch_generate(field, nbH, nbB, nbF, fieldOut, nullptr, nbFewTrees);
+    dispatch_generate(field, nbH, nbB, /*nbBiome5*/nullptr, nbF, fieldOut, nullptr, nbFewTrees);
     std::size_t fieldTiles = 0;
     std::size_t wetFieldTiles = 0;
     for (std::size_t i = 0; i < fieldOut.tiles.size(); ++i) {
@@ -1361,7 +1361,7 @@ int main() {
         nbRoadEast[4] = std::uint8_t(FT_Field);
         nbRoadEast[5] = std::uint8_t(FT_Road);   // east neighbour is a road
         SubworldMapData lanedOut{};
-        dispatch_generate(field, nbH, nbB, nbRoadEast, lanedOut, nullptr,
+        dispatch_generate(field, nbH, nbB, /*nbBiome5*/nullptr, nbRoadEast, lanedOut, nullptr,
                           nbFewTrees);
         if (!anchor_is_road(lanedOut, field, 1, 0)) {
             return fail("field cell grew no lane at the shared road anchor");
@@ -1377,7 +1377,7 @@ int main() {
         nbFieldWest[4] = std::uint8_t(FT_Road);
         nbFieldWest[3] = std::uint8_t(FT_Field);  // west neighbour = fields
         SubworldMapData roadOut2{};
-        dispatch_generate(roadCell, nbH, nbB, nbFieldWest, roadOut2, nullptr,
+        dispatch_generate(roadCell, nbH, nbB, /*nbBiome5*/nullptr, nbFieldWest, roadOut2, nullptr,
                           nbFewTrees);
         if (!anchor_is_road(roadOut2, roadCell, -1, 0)) {
             return fail("road cell grew no spur at the shared field anchor");
@@ -1393,8 +1393,8 @@ int main() {
         poor.fertility01 = 0.35f;
         SubworldMapData richOut{};
         SubworldMapData poorOut{};
-        dispatch_generate(rich, nbH, nbB, nbF, richOut, nullptr, nbFewTrees);
-        dispatch_generate(poor, nbH, nbB, nbF, poorOut, nullptr, nbFewTrees);
+        dispatch_generate(rich, nbH, nbB, /*nbBiome5*/nullptr, nbF, richOut, nullptr, nbFewTrees);
+        dispatch_generate(poor, nbH, nbB, /*nbBiome5*/nullptr, nbF, poorOut, nullptr, nbFewTrees);
         std::size_t richTiles = 0;
         std::size_t poorTiles = 0;
         for (const std::uint8_t t : richOut.tiles)
@@ -1421,9 +1421,9 @@ int main() {
         right.seed = 0x22222222u;
         SubworldMapData leftOut{};
         SubworldMapData rightOut{};
-        dispatch_generate(left, nbH, nbB, nbAllField, leftOut, nullptr,
+        dispatch_generate(left, nbH, nbB, /*nbBiome5*/nullptr, nbAllField, leftOut, nullptr,
                           nbFewTrees);
-        dispatch_generate(right, nbH, nbB, nbAllField, rightOut, nullptr,
+        dispatch_generate(right, nbH, nbB, /*nbBiome5*/nullptr, nbAllField, rightOut, nullptr,
                           nbFewTrees);
         dump_ppm(leftOut, "seam_left");
         dump_ppm(rightOut, "seam_right");
@@ -1464,7 +1464,7 @@ int main() {
         nbShoreB[i] = Biome::Water;
     }
     SubworldMapData shoreOut{};
-    dispatch_generate(shoreField, nbShoreH, nbShoreB, nbShoreF, shoreOut,
+    dispatch_generate(shoreField, nbShoreH, nbShoreB, /*nbBiome5*/nullptr, nbShoreF, shoreOut,
                       nullptr, nbFewTrees);
     std::size_t shoreUnderwater = 0;
     std::size_t shoreWetField = 0;
@@ -1490,7 +1490,7 @@ int main() {
         return fail("bare meadow stopped resolving to Grassland");
     }
     SubworldMapData bareOut{};
-    dispatch_generate(bareMeadow, nbH, nbB, nbF, bareOut, nullptr, nbFewTrees);
+    dispatch_generate(bareMeadow, nbH, nbB, /*nbBiome5*/nullptr, nbF, bareOut, nullptr, nbFewTrees);
     for (const std::uint8_t t : bareOut.tiles) {
         if (t == TILE_FIELD) {
             return fail("grassland invented field tiles without the feature");
@@ -1530,7 +1530,7 @@ int main() {
     const int scarK = std::min(5, cropStands);
     scarredField.cropHarvested = scarK;
     SubworldMapData scarOut{};
-    dispatch_generate(scarredField, nbH, nbB, nbF, scarOut, nullptr,
+    dispatch_generate(scarredField, nbH, nbB, /*nbBiome5*/nullptr, nbF, scarOut, nullptr,
                       nbFewTrees);
     int scarStands = 0;
     for (const Structure& s : scarOut.structures) {
@@ -1542,7 +1542,7 @@ int main() {
     CellContext razedField = field;
     razedField.cropHarvested = 1 << 20;
     SubworldMapData razedOut{};
-    dispatch_generate(razedField, nbH, nbB, nbF, razedOut, nullptr,
+    dispatch_generate(razedField, nbH, nbB, /*nbBiome5*/nullptr, nbF, razedOut, nullptr,
                       nbFewTrees);
     for (const Structure& s : razedOut.structures) {
         if (s.kind == Structure::Crop) {

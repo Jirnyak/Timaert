@@ -84,7 +84,7 @@ Town make_town(LandmarkType kind, std::uint32_t seed, int population,
     }
 
     Town t{};
-    dispatch_generate(c, nbH, nbB, nbF, t.map);
+    dispatch_generate(c, nbH, nbB, /*nbBiome5*/nullptr, nbF, t.map);
     return t;
 }
 

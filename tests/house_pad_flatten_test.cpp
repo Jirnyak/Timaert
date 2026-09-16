@@ -95,7 +95,7 @@ PadStat measure(int cx, int cy, std::uint32_t seed, int population,
     }
 
     SubworldMapData out{};
-    dispatch_generate(ctx, nbH, nbB, nbF, out);
+    dispatch_generate(ctx, nbH, nbB, /*nbBiome5*/nullptr, nbF, out);
 
     PadStat st{};
     float hmin = 1e9f, hmax = -1e9f;

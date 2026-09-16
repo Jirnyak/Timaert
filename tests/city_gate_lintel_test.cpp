@@ -66,7 +66,7 @@ SubworldMapData make_town(std::uint32_t seed, int population,
     }
 
     SubworldMapData map;
-    dispatch_generate(c, nbH, nbB, nbF, map);
+    dispatch_generate(c, nbH, nbB, /*nbBiome5*/nullptr, nbF, map);
     return map;
 }
 

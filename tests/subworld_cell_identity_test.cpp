@@ -48,7 +48,12 @@ std::vector<float> cell_height(int cx, int cy, std::uint32_t worldSeed,
     sm::Biome nbB[9];
     for (int i = 0; i < 9; ++i) { nbH[i] = macroH; nbB[i] = biome; }
     std::vector<float> out;
-    sm::sub::generate_heightmap(out, kCS, nbH, nbB, biome,
+    // A UNIFORM world: every cell of the wider ring is the same biome, so the
+    // ring is built rather than passed null — this fixture must exercise the
+    // path the game takes.
+    sm::Biome nbB5[25];
+    for (int i = 0; i < 25; ++i) nbB5[i] = biome;
+    sm::sub::generate_heightmap(out, kCS, nbH, nbB, nbB5, biome,
                                 sm::sub::cell_seed(worldSeed, cx, cy),
                                 cx * kCS, cy * kCS, nullptr, kWorldCells,
                                 worldSeed);
@@ -150,25 +155,30 @@ int main() {
               "a mountain border is no bigger a step than the massif's own ground");
     }
 
-    // ── 4. ALONG THE BODY OF A RIDGE ─────────────────────────────────────
+    // ── 4. THE WHOLE RIDGE, ENDS INCLUDED ────────────────────────────────
     // Section 3 stands on a uniform massif, where the crest law saturates
     // against its own clamp and so cannot show every way a neighbour's crest
     // can be misjudged. This one lays a ridge of mountain cells in meadow and
     // walks its borders, which is where the crest law actually varies.
     //
-    // WHAT IS DELIBERATELY NOT ASSERTED HERE, and why (AGENTS testing law 7):
-    // the ridge's two END cells still step, and this walk stops short of them.
-    // The cause is measured and understood — `adjMtn` counts a cell's mountain
-    // neighbours INSIDE the 3×3 context, so a cell sitting on the context's
-    // own rim cannot see the neighbours beyond it and undercounts. Its crest
-    // target then differs by 0.02 between two windows that both contain it:
-    // measured 8.3-9.7 m of step at the massif's foot, 1.3-3.4× the ground's
-    // own relief there, against 0.4-1.0× along the body. Fixing it means the
-    // caller handing the generator a 5×5 biome ring instead of a 3×3 — a cell
-    // must count its OWN neighbours — and that is open work, not something
-    // this file may quietly bless. The bound below is the law, and the walk is
-    // narrowed to the ground the law currently holds on; widening it back to
-    // 496..504 is how the fix proves itself.
+    // THE ENDS OF THE RIDGE ARE IN THE WALK NOW, and they are why it exists.
+    // `adjMtn` — a cell's count of its own mountain neighbours — used to be
+    // taken inside the 3×3 context, so a cell sitting on the context's rim
+    // could not see past it, undercounted, and got a crest target that
+    // depended on WHICH WINDOW was asking. It bit hardest exactly at a
+    // massif's foot, where the count actually varies: 8.3-9.7 m of step
+    // across a shared border, 1.3-3.4× the ground's own relief, against
+    // 0.4-1.0× along the body of the same ridge. The walk was narrowed to
+    // the body while that was true and said so; widening it back to the ends
+    // IS the proof of the fix, which is why the numbers above are written
+    // down — a green test that never showed the defect proves nothing.
+    //
+    // The caller now hands the generator a 5×5 biome ring, so every cell of
+    // the 3×3 counts its OWN neighbours. Measured cost on the sacred seam:
+    // 0.7-2.3 µs per generated cell against a crossing of ~2.2 ms — and the
+    // same sixteen lookups cost 2.6 ms each before the context assembler
+    // stopped scanning the vein list (problems.md §52). The order of those
+    // two fixes was not a preference.
     {
         const std::uint32_t worldSeed = 0x2C7719ADu;
         // A ridge of mountain cells lying in meadow — the caller assembles the
@@ -185,8 +195,16 @@ int main() {
                 nbH[i] = isMtn(nx, ny) ? 0.80f : 0.55f;
                 nbB[i] = isMtn(nx, ny) ? sm::Biome::Mountain : sm::Biome::Meadow;
             }
+            // THE RING, from the world — this is the whole point of section 4:
+            // a cell on the window's rim must count the neighbours BEYOND it.
+            sm::Biome nbB5[25];
+            for (int i = 0; i < 25; ++i) {
+                const int nx = cx + (i % 5) - 2, ny = cy + (i / 5) - 2;
+                nbB5[i] = isMtn(nx, ny) ? sm::Biome::Mountain
+                                        : sm::Biome::Meadow;
+            }
             std::vector<float> out;
-            sm::sub::generate_heightmap(out, kCS, nbH, nbB, nbB[4],
+            sm::sub::generate_heightmap(out, kCS, nbH, nbB, nbB5, nbB[4],
                                         sm::sub::cell_seed(worldSeed, cx, cy),
                                         cx * kCS, cy * kCS, nullptr,
                                         kWorldCells, worldSeed);
@@ -194,7 +212,7 @@ int main() {
         };
         int borders = 0, broken = 0;
         float worstRatio = 0.0f;
-        for (int cx = 498; cx <= 503; ++cx) {
+        for (int cx = 495; cx <= 505; ++cx) {
             const auto a = ridge_cell(cx, 300);
             const auto b = ridge_cell(cx + 1, 300);
             const float inside = interior_step(a);
@@ -204,7 +222,7 @@ int main() {
             if (ratio > 1.5f) ++broken;
             ++borders;
         }
-        CHECK(borders >= 5 && worstRatio > 0.0f,
+        CHECK(borders >= 10 && worstRatio > 0.0f,
               "the walk measured every border of the ridge");
         CHECK(broken == 0,
               "no cell of a massif steps at a border it shares with its neighbour");

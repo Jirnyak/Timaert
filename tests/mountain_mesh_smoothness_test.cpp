@@ -67,7 +67,7 @@ std::vector<float> composite(Biome b, std::uint32_t seed, float macroH) {
     for (int oy = 0; oy < 3; ++oy)
         for (int ox = 0; ox < 3; ++ox) {
             std::vector<float> cell;
-            generate_heightmap(cell, kCellSize, nbH, nbB, b, seed,
+            generate_heightmap(cell, kCellSize, nbH, nbB, /*nbBiome5*/nullptr, b, seed,
                                ox * kCellSize, oy * kCellSize);
             for (int y = 0; y < kCellSize; ++y)
                 for (int x = 0; x < kCellSize; ++x)

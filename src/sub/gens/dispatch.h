@@ -31,6 +31,10 @@ SubworldMode resolve_mode(const CellContext& ctx);
 void dispatch_generate(const CellContext& ctx,
                        const float nbHeights[9],
                        const Biome nbBiome[9],
+                       // One ring wider than the cells built, so every cell of
+                       // the 3×3 can count its OWN neighbours (base_generator.h
+                       // nbBiome5). Null = a bare fixture with no world round it.
+                       const Biome* nbBiome5,
                        const std::uint8_t nbFeature[9],
                        SubworldMapData& out,
                        const LandmarkType* nbLandmark = nullptr,

@@ -107,9 +107,11 @@ SeamlessSubworldManager::~SeamlessSubworldManager() {
     shutdown_worker();
 }
 
-void SeamlessSubworldManager::init(int cx, int cy, CellResolver r) {
+void SeamlessSubworldManager::init(int cx, int cy, CellResolver r,
+                                   BiomeResolver br) {
     shutdown_worker();
     cx_ = cx; cy_ = cy; resolver_ = std::move(r);
+    biomeResolver_ = std::move(br);
     nextGeneration_ = 1;
     clear_composite_dirty();
     lastTiming_ = {};
@@ -278,7 +280,7 @@ void SeamlessSubworldManager::worker_loop(std::stop_token stop) {
             for (int i = 0; i < 9; ++i) done.nbGround[i] = job.nbGround[i];
             done.macroTemperature = job.ctx.macroTemperature;
             done.fieldFurrowsVert = job.ctx.fieldFurrowsVert;
-            dispatch_generate(job.ctx, job.nbHeights, job.nbBiome,
+            dispatch_generate(job.ctx, job.nbHeights, job.nbBiome, job.nbBiome5,
                               job.nbFeature, done.data, job.nbLandmark,
                               job.nbTreeCount, job.nbFertility);
             if (job.saved) {
@@ -307,6 +309,7 @@ void SeamlessSubworldManager::generate_one(int idx, int acx, int acy) {
     CellContext ctx = resolver_(acx, acy);
     float nb[9];
     Biome nbBiome[9];
+    Biome nbBiome5[25];
     Biome nbGround[9];
     std::uint8_t nbFeature[9];
     LandmarkType nbLandmark[9];
@@ -324,6 +327,19 @@ void SeamlessSubworldManager::generate_one(int idx, int acx, int acy) {
             nbFertility[yy * 3 + xx] = nctx.fertility01;
         }
     }
+    // THE WIDER RING. Sixteen extra macro lookups per generated cell — measured
+    // at 0.7-2.3 µs, against a crossing of ~2.2 ms — and they buy every cell of
+    // the window the right to count its own neighbours. (The same sixteen cost
+    // 2.6 ms each before the context assembler stopped scanning the vein list;
+    // the order of these two fixes was not optional — problems.md §52.)
+    for (int yy = 0; yy < 5; ++yy) {
+        for (int xx = 0; xx < 5; ++xx) {
+            nbBiome5[yy * 5 + xx] =
+                (xx >= 1 && xx <= 3 && yy >= 1 && yy <= 3)
+                    ? nbBiome[(yy - 1) * 3 + (xx - 1)]
+                    : ring_biome(acx + xx - 2, acy + yy - 2);
+        }
+    }
     auto& cell = cells_[std::size_t(idx)];
     cell.cx = ctx.cx;
     cell.cy = ctx.cy;
@@ -336,7 +352,7 @@ void SeamlessSubworldManager::generate_one(int idx, int acx, int acy) {
     cell.fieldFurrowsVert = ctx.fieldFurrowsVert;
     cell.placeholder = false;
     cell.generation = 0;
-    dispatch_generate(ctx, nb, nbBiome, nbFeature, cell.data, nbLandmark,
+    dispatch_generate(ctx, nb, nbBiome, nbBiome5, nbFeature, cell.data, nbLandmark,
                       nbTreeCount, nbFertility);
     if (std::shared_ptr<const SavedSubworld> sv =
             find_saved_subworld_ref(ctx.seed, cell.mode)) {
@@ -578,6 +594,15 @@ void SeamlessSubworldManager::queue_generation(const CellContext& ctx,
             job.nbLandmark[ni] = effective_landmark(nctx);
             job.nbTreeCount[ni] = nctx.treeCount;
             job.nbFertility[ni] = nctx.fertility01;
+        }
+    }
+    // The wider ring, gathered once beside the 3×3 it widens (see generate_one).
+    for (int yy = 0; yy < 5; ++yy) {
+        for (int xx = 0; xx < 5; ++xx) {
+            job.nbBiome5[yy * 5 + xx] =
+                (xx >= 1 && xx <= 3 && yy >= 1 && yy <= 3)
+                    ? job.nbBiome[(yy - 1) * 3 + (xx - 1)]
+                    : ring_biome(ctx.cx + xx - 2, ctx.cy + yy - 2);
         }
     }
     const SubworldMode mode = resolve_mode(job.ctx);
