@@ -5,6 +5,7 @@
 // owes the base terrain generator nothing.
 #pragma once
 #include "sub/map_data.h"
+#include "macro/npc.h"  // kAdventurerCombat — the arm the manoeuvre floor is sized to
 
 namespace sm::sub {
 
@@ -55,11 +56,18 @@ void spire_crown_hatch_point(float& x, float& y);
 
 // ── The manoeuvre floor ─────────────────────────────────────────────────────
 // The span an interior room needs to be a room you FIGHT in rather than a
-// corridor you clinch in: melee reach (kPlayerMeleeRange = 5 tiles) on both
-// sides of a doorway, with furniture clearance to spare. Shared, because it
-// is one quantity: the house splits its hall while both halves keep it, and
-// the tower's hall is guarded against it below.
+// corridor you clinch in: the ARM's reach (the Adventurer row's attackRange —
+// the same one quantity the husk swings and interacts at, вердикт №7
+// 2026-09-17) on both sides of a doorway, with furniture clearance to spare.
+// Shared, because it is one quantity: the house splits its hall while both
+// halves keep it, and the tower's hall is guarded against it below. The
+// authored literal is DESIGN; the assert binds it to the reach it claims to
+// be derived from, so a retuned row shouts here instead of drifting.
 inline constexpr float kInteriorFightSpanTiles = 12.0f;
+static_assert(kInteriorFightSpanTiles
+                  >= 2.0f * kAdventurerCombat.attackRange,
+              "the fight span must give the arm its reach on both sides of a "
+              "doorway — it claims derivation from the Adventurer row");
 
 // ── Storeys ─────────────────────────────────────────────────────────────────
 // A house is up to three levels: cellar (-1) ↔ ground (0) ↔ upper (+1),

@@ -3,6 +3,7 @@
 // is a projection of the door's Structure record — same seed, same footprint
 // ⇒ byte-identical rooms and furniture, nothing persisted.
 #include "sub/dgn/dispatch.h"
+#include "macro/npc.h"  // kAdventurerCombat — the arm the hall out-reaches
 
 #include "core/rng.h"
 
@@ -16,9 +17,13 @@ namespace sm::sub {
 // proportions and multiplies them. ×4 is derived from the combat invariant:
 // the smallest roadside house is ~4×4 facade tiles (gens/dispatch city band),
 // so its hall becomes 16×16 — a half-width of 8 tiles, strictly wider than
-// kPlayerMeleeRange (5), so even the tightest interior fight has room to
-// manoeuvre instead of collapsing into a doorway clinch.
+// the arm's reach (kAdventurerCombat.attackRange, вердикт №7 — the one
+// quantity the husk swings at), so even the tightest interior fight has room
+// to manoeuvre instead of collapsing into a doorway clinch.
 constexpr float kInteriorScale = 4.0f;
+static_assert(4.0f * kInteriorScale * 0.5f > kAdventurerCombat.attackRange,
+              "the smallest hall's half-width must out-reach the arm — the "
+              "×4 scale claims this derivation");
 // The room may never touch its cell's edge: the dungeon window's ring cells
 // are sealed Void filler that must stay OUTSIDE the playable geometry. One
 // wall thickness + one body diameter of apron, rounded to a power of two.

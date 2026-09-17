@@ -8,6 +8,7 @@
 // chain of chambers joined by winding galleries, carved OUT of solid rock —
 // everything the walk does not open stays stone.
 #include "sub/dgn/dispatch.h"
+#include "macro/npc.h"  // kAdventurerCombat — the arm chambers are sized to
 
 #include "core/rng.h"
 
@@ -20,10 +21,15 @@ namespace sm::sub {
 
 // ── Cavern constants ───────────────────────────────────────────────────────
 // The mouth chamber's half-span, and the floor every other chamber is drawn
-// against. A body is 3 tiles across and swings 5 (kPlayerMeleeRange): 10 keeps
-// a fight in a chamber from being a corridor brawl, which is the same
-// manoeuvre floor the house partitions respect.
+// against. A body is 3 tiles across and swings the Adventurer row's arm
+// (kAdventurerCombat.attackRange — вердикт №7, the one reach the husk fights
+// and interacts at): 10 keeps a fight in a chamber from being a corridor
+// brawl, which is the same manoeuvre floor the house partitions respect.
 constexpr float kChamberMinHalf = 10.0f;
+static_assert(kChamberMinHalf
+                  >= 2.0f * kAdventurerCombat.attackRange + 3.0f,
+              "a chamber must fit two arms' reach and a body across — the "
+              "comment above claims this derivation");
 constexpr float kChamberMaxHalf = 22.0f;
 // Galleries are two bodies wide: one to walk, one to be met in. Narrower and
 // the mass-battle steering has nowhere to resolve separation.

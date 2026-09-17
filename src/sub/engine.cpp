@@ -107,7 +107,7 @@ constexpr const char* kDisengageBlockedMsg =
 constexpr float kDangerProximityM = 40.0f;
 // kHitFlashDuration now lives in sub/spell_effects.h — one constant for every
 // weapon's on-hit flash.
-// kPlayerMeleeRange / kPlayerMeleeCooldown / kPlayerBaseMeleeDamage moved to
+// kPlayerMeleeCooldown / kPlayerBaseMeleeDamage (dead) are chronicled in
 // sub/engine.h (Session 15): the macro encounter's auto-resolve must price
 // the player with the same numbers this file arms his body with.
 // The player's body width is no longer stated here at all. It was
@@ -986,12 +986,20 @@ void SubworldEngine::spawn_player_entity() {
                : 1.0f);
     // Delivery rides the same fields (shooting law, 2026-09-09): a bow in
     // hand makes this body a Missile attacker with the ROW's reach, exactly
-    // the pair every NPC shooter's table authors.
+    // the pair every NPC shooter's table authors. The MELEE arm is the ROW's
+    // too (вердикт №7): the flag record's own attackRange — the Adventurer's
+    // for himself, the worn record's for a possession.
+    float armReach = kAdventurerCombat.attackRange;
+    if (flagRec != entt::null) {
+        if (const auto* k = reg.try_get<ecs::NPCKind>(flagRec)) {
+            armReach = npc_def(NPCType(k->type)).combat.attackRange;
+        }
+    }
     reg.emplace<ecs::Combat>(
         e, ecs::Combat{hs.dice, hs.flatAdd, hs.multPct, hs.luck,
                        std::uint8_t(hs.dmgType), playerPace,
                        hs.delivery == Delivery::Missile && hs.range > 0.0f
-                           ? hs.range : kPlayerMeleeRange,
+                           ? hs.range : armReach,
                        seconds_from_steps(std::uint32_t(hs.recoverySteps)), 0u,
                        hs.delivery == Delivery::Missile
                            ? ecs::Combat::Missile : ecs::Combat::Melee});
@@ -1140,9 +1148,18 @@ void SubworldEngine::sync_player_entity_position() {
                 // row's range; put it away and the arm is a melee arm again.
                 c->kind = hs.delivery == Delivery::Missile
                               ? ecs::Combat::Missile : ecs::Combat::Melee;
-                c->attackRange =
-                    c->kind == ecs::Combat::Missile && hs.range > 0.0f
-                        ? hs.range : kPlayerMeleeRange;
+                {
+                    float armReach = kAdventurerCombat.attackRange;
+                    if (rec != entt::null) {
+                        if (const auto* k = reg.try_get<ecs::NPCKind>(rec)) {
+                            armReach =
+                                npc_def(NPCType(k->type)).combat.attackRange;
+                        }
+                    }
+                    c->attackRange =
+                        c->kind == ecs::Combat::Missile && hs.range > 0.0f
+                            ? hs.range : armReach;
+                }
                 // HIS PACE, on his body, like every other body carries it.
                 // It was zero — the player was the one thing in the world
                 // with no speed of its own, because his legs used to live in
@@ -1916,6 +1933,18 @@ std::uint32_t SubworldEngine::player_entity_id() const {
 
 // (possess_aim/possess_by_id вырезаны 2026-09-17: вселение — спелл possession,
 // его эффект зовёт sub/possess.h; скаляры тянет за флажком обычный тик.)
+
+float SubworldEngine::player_arm_reach() const {
+    if (ecs_) {
+        for (auto e : ecs_->reg.view<ecs::AvatarTag>()) {
+            if (const auto* c = ecs_->reg.try_get<ecs::Combat>(e)) {
+                return c->attackRange;
+            }
+            break;
+        }
+    }
+    return kAdventurerCombat.attackRange;
+}
 
 int SubworldEngine::player_display_hp() const {
     if (ecs_) {
@@ -4031,7 +4060,8 @@ bool SubworldEngine::try_take_dungeon_stairs() {
                               : (level == 0 && hasUpper) || level == 1;
     const bool padNE = ladder ? level > 0
                               : (level == 0 && hasCellar) || level == -1;
-    const float reach2 = kPlayerMeleeRange * kPlayerMeleeRange;
+    const float armReach = player_arm_reach();
+    const float reach2 = armReach * armReach;
     // The top storey's climb leaves the tower: a hatched kind's roof pad is
     // the last rung of the same ladder, and what it opens on is the crown
     // instead of another hall. One prop family, one verb, one law — the scene
@@ -4150,8 +4180,8 @@ bool SubworldEngine::try_exit_dungeon() {
         dungeon_roof_hatch_point(dungeon_.ref, hx, hy);
         const float dx = playerX_ - (float(kCellSize) + hx);
         const float dy = playerY_ - (float(kCellSize) + hy);
-        roofExit = dx * dx + dy * dy
-                <= kPlayerMeleeRange * kPlayerMeleeRange;
+        const float armReach = player_arm_reach();
+        roofExit = dx * dx + dy * dy <= armReach * armReach;
     }
     if (!roofExit) {
         // From an upper room or a cellar the only way out is back down/up
@@ -4168,7 +4198,8 @@ bool SubworldEngine::try_exit_dungeon() {
         const float wy = float(kCellSize) + ey;
         const float dx = playerX_ - wx;
         const float dy = playerY_ - wy;
-        if (dx * dx + dy * dy > kPlayerMeleeRange * kPlayerMeleeRange) {
+        const float armReach = player_arm_reach();
+        if (dx * dx + dy * dy > armReach * armReach) {
             set_status("Nothing to interact with.");
             return false;
         }

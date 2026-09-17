@@ -178,7 +178,7 @@ float segment_closest_t(float ax, float ay, float az,
 // A magic bolt covers 6.25 units per tick (400 u/s at 1/64 s) while its contact
 // radius against an ordinary body is only ~2, so the old test probed at 11.25,
 // 17.5, 23.75 … and was blind everywhere in between: a dead zone from the muzzle
-// out to ~8.5 units — which swallows the whole melee band, kPlayerMeleeRange
+// out to ~8.5 units — which swallows the whole melee band, the arm's reach
 // being 5 — plus a periodic ~0.85-unit gap in every 6.25 further out.
 //
 // It also made speed a LIABILITY: the faster the spell, the longer its stride
@@ -516,7 +516,7 @@ void tick_spell_projectiles(ecs::World& w,
 
         // THE MUZZLE STRETCH, birth tick only. A bolt is born
         // caster_spawn_offset ahead of its caster (1.5 + 1.5 + 2.0 = 5.0 units
-        // for a magic bolt) — which is exactly kPlayerMeleeRange, so an enemy in
+        // for a magic bolt) — which is exactly the arm's reach, so an enemy in
         // your face stood INSIDE that gap and the bolt was born behind him.
         // Nothing had ever swept the stretch between the hand and the muzzle, so
         // point-blank casting could not connect at all.

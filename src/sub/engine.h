@@ -105,17 +105,15 @@ struct CombatLogEntry {
     float age = 0.0f;
 };
 
-// The player's melee identity — PUBLIC because it is read in two places that
-// must agree (the same-game guarantee): spawn_player_entity builds the
-// subworld body's Combat from it, and the macro encounter composes the
-// player's auto-battle side from it (hp × (base + rawPhysDamage) per
-// cooldown). One set of numbers, or the auto-resolve and the fought fight
-// would price the same player differently.
+// kPlayerMeleeRange is DEAD (вердикт №7, 2026-09-17: «никаких плеер
+// специфик говноконстант»): the arm's reach is the ROW's own column —
+// Combat.attackRange of the body the flag stands in, projected from the
+// record's row at spawn (the Adventurer's 3.0 for the hero husk, a worn
+// body's own for a possession). One quantity, one door: player_arm_reach().
 // kPlayerMeleeCooldown is DEAD (recovery door, CANON S14 2026-09-07): the
 // swing's tempo comes from the held weapon's MASS through hand_strike_fields
 // (.recoverySteps — anatomy.h weapon_swing_seconds ÷ Spd asymptote ÷
 // Armsmaster), refreshed each tick like the dice.
-constexpr float kPlayerMeleeRange      = 5.0f;
 // kPlayerBaseMeleeDamage is DEAD (phase 3): the bare hand is the fist's own
 // dice row now (macro/anatomy.h kFistDice) and a weapon brings its own. The
 // historical 10 survives only as the armour scale's anchor (kArmorHalving).
@@ -400,6 +398,11 @@ public:
     // read from its RECORD through the one door, so it follows the flag with no
     // branch and shows this tick's wound rather than the mirror's tick-top value.
     int player_display_hp() const;
+    // ДАЛЬНОСТЬ РУКИ носимого тела (вердикт №7, 2026-09-17): его собственный
+    // Combat.attackRange — у хаска спроецирован из строки записи флага, у
+    // одержимого тела всегда был его строки. Интеракции данжа (порог, люк,
+    // пады шахт) тянутся этой же рукой; kPlayerMeleeRange умер.
+    float player_arm_reach() const;
     float cam_yaw() const { return cam_.yaw; }
     float cam_pitch() const { return cam_.pitch; }
     // Diagnostic: freeze the WorldTime the RENDERER sees (sun/moon stop; the

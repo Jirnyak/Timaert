@@ -4026,11 +4026,19 @@ bool run_subworld_player_melee_smoke(App& app) {
     auto& reg = app.ecs.reg;
     const float px = app.subworld.player_x();
     const float py = app.subworld.player_y();
+    // ВНУТРИ ДАЛЬНОСТИ РУКИ, спрошенной у той же двери, что меряет замах
+    // (player_arm_reach — строка носимого тела, вердикт №7): литерал 4.0
+    // был правдой эпохи kPlayerMeleeRange=5 и молча ставил цель за рукой.
+    // Минус метр и НА ЗЕМЛЕ: пик 3D по поверхности (gap = dist − радиус
+    // тела), и склон под целью честно съедает часть руки — цель на самом
+    // пределе промахивалась на сантиметры рельефа (рука 5 это прощала).
+    const float armX = std::min(
+        px + std::max(1.0f, app.subworld.player_arm_reach() - 1.0f),
+        float(sm::sub::kFullSize - 2));
+    const float armZ = app.subworld.ground_height_at(armX, py);
     const entt::entity target = reg.create();
-    reg.emplace<sm::ecs::Position>(target,
-        std::min(px + 4.0f, float(sm::sub::kFullSize - 2)), py, 0.0f);
-    reg.emplace<sm::ecs::VisualPos>(target,
-        std::min(px + 4.0f, float(sm::sub::kFullSize - 2)), py, 0.0f);
+    reg.emplace<sm::ecs::Position>(target, armX, py, armZ);
+    reg.emplace<sm::ecs::VisualPos>(target, armX, py, armZ);
     reg.emplace<sm::ecs::NPCKind>(
         target,
         sm::ecs::NPCKind{
@@ -4187,7 +4195,7 @@ bool run_subworld_player_bow_smoke(App& app) {
         return false;
     }
 
-    // +8: past the melee arm's reach (kPlayerMeleeRange 5) so only a SHOT
+    // +8: past the melee arm's reach (the Adventurer row's 3) so only a SHOT
     // can wound it, yet short enough that no seed's rising terrain eats the
     // level arrow mid-flight (seed 1 did exactly that at +20 — the fireball
     // smoke's old referendum-on-terrain failure mode).
