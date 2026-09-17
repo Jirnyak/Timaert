@@ -61,8 +61,8 @@ enum class ActionId : std::uint8_t {
     // «Вердикты ТРУДА»): its own action, its own SP price.
     Harvest,
     // Possess died here 2026-09-06 (owner: вселение — не игроцкая кнопка;
-    // придёт заклинанием). The engine doors (possess_aim/possess_by_id)
-    // stay for the dev console, the smokes and the future spell.
+    // придёт заклинанием) — и ПРИШЛО им 2026-09-17: спелл possession,
+    // кастуется кнопкой CastSpell как любой другой; движковых дверей нет.
     Count
 };
 

@@ -392,20 +392,10 @@ public:
     // (Inc 4d), exactly as NPC missiles carry their firer's id. Returns the
     // entt::null integral when no player entity exists (never mid-cast).
     std::uint32_t player_entity_id() const;
-    // ВСЕЛЕНИЕ — перенос флажка, и только (owner 2026-09-12). Take over the live
-    // body under the first-person reticle: pick the nearest enemy body inside a
-    // forward cone (targeting.h aim_target, using cam yaw), move the single
-    // scene flag onto it (possess_entity), then snap the scalar mirror to it.
-    // Nothing else happens, and nothing else needs to: the body already fights,
-    // spends and carries as ITSELF, because every such read goes to its own
-    // record (sub/record.h). His own squad is simply not the record in use.
-    // Returns true if a body was taken; a no-op false outside a subworld or with
-    // nothing in the cone. The cone defaults to a ~45° half-angle reticle; a
-    // test may pass cosHalfAngle=-1 for the nearest body in any direction.
-    bool possess_aim(float cosHalfAngle = 0.70710678f, float maxRange = 120.0f);
-    // The same flag move by explicit entity id (dev console / harness). Returns
-    // false if the id is not a live positioned scene body.
-    bool possess_by_id(std::uint32_t entityId);
+    // (possess_aim/possess_by_id вырезаны 2026-09-17 — «МАШИНЕРИЮ ВСЕЛЕНИЯ
+    // ВЫРЕЗАТЬ»: вселение — спелл possession (macro/spells.h) со своим гейтом
+    // уровня; его эффект зовёт header-only дверь sub/possess.h, а скалярное
+    // зеркало тянет за флажком обычный тик — pull_player_entity_to_scalars.)
     // Current HP of the body the player is standing in, for HUD / hit-flash —
     // read from its RECORD through the one door, so it follows the flag with no
     // branch and shows this tick's wound rather than the mirror's tick-top value.

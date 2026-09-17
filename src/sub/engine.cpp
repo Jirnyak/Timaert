@@ -1902,48 +1902,8 @@ std::uint32_t SubworldEngine::player_entity_id() const {
         entt::to_integral(static_cast<entt::entity>(entt::null)));
 }
 
-bool SubworldEngine::possess_aim(float cosHalfAngle, float maxRange) {
-    if (!active_ || !ecs_) return false;
-    auto& reg = ecs_->reg;
-    // The current body is excluded as an aim candidate (a shooter never targets
-    // itself); aim_target already skips every player-side entity too.
-    const entt::entity self = current_player_body(*ecs_);
-    const entt::entity target = aim_target(reg, playerX_, playerY_, cam_.yaw,
-                                           maxRange, cosHalfAngle, self);
-    if (target == entt::null) {
-        set_status("Nothing in reach to possess");
-        return false;
-    }
-    if (!possess_entity(*ecs_, target)) {
-        // A REFUSAL MUST SAY SO. The only way to be refused a body you can
-        // actually see is the record law (sub/spawn.h): a derived birth — a
-        // wolf, a citizen rolled from a cell seed, a console spawn — is nobody
-        // the map remembers, so there is no record for the macro flag to stand
-        // on. Without this line the door failed silently and the console echoed
-        // whatever status happened to be left over from before.
-        set_status("Nothing remembers that one — no record to inhabit");
-        return false;
-    }
-    // The flag now rides the new body; mirror its Position onto the scalars so
-    // the camera, seam, melee origin, and HUD snap to it this very frame.
-    pull_player_entity_to_scalars();
-    char msg[128]{};
-    std::snprintf(msg, sizeof(msg), "Possessed %s",
-                  subworld_attacker_label(reg, target));
-    set_status(msg);
-    return true;
-}
-
-bool SubworldEngine::possess_by_id(std::uint32_t entityId) {
-    if (!active_ || !ecs_) return false;
-    if (!possess_entity(*ecs_, entt::entity(entityId))) {
-        set_status("Nothing remembers that one — no record to inhabit");
-        return false;
-    }
-    pull_player_entity_to_scalars();
-    set_status("Possessed (by id)");
-    return true;
-}
+// (possess_aim/possess_by_id вырезаны 2026-09-17: вселение — спелл possession,
+// его эффект зовёт sub/possess.h; скаляры тянет за флажком обычный тик.)
 
 int SubworldEngine::player_display_hp() const {
     if (ecs_) {
