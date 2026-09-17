@@ -2915,11 +2915,16 @@ void SubworldEngine::tick_subworld_bodies(float dt) {
         // stamps its owner's faction and the gather simply interns it, which is
         // what will let a projected city garrison fight as its city with no code
         // here. Only the hero husk keeps an override: it carries no NPCKind at
-        // all (spawn_player_entity), so there is nothing to read.
+        // all (spawn_player_entity), so there is nothing to read — and it is
+        // ONLY the husk (A4, 2026-09-17): a possessed body HAS a row, and it
+        // keeps its own colours. «Ты полностью тот, в чьём теле стоишь» — в
+        // том числе для чужих глаз; перекраска любого AvatarTag-тела в
+        // «player» делала одержимого лорда предателем собственных стен.
+        const auto* bodyKind = reg.try_get<ecs::NPCKind>(e);
         d.faction = std::int16_t(
-            isPlayer ? crowdPlayerFaction_
-                     : crowdFactions_.intern(
-                           faction_id_for_kind(reg.try_get<ecs::NPCKind>(e))));
+            isPlayer && !bodyKind
+                ? crowdPlayerFaction_
+                : crowdFactions_.intern(faction_id_for_kind(bodyKind)));
 
         // ONE MOVER, and since 2026-08-30 it means ONE (owner: «БОЙ В ИГРЕ
         // НИЧЕМ НЕ ОСОБЕННЫЙ… нет никакого боя, просто если НПЦ видят врага,
