@@ -83,6 +83,71 @@ static sm::SpellBook& smoke_player_book(App& app) {
     return book ? *book : scratch;
 }
 
+// ВСЕЛЕНИЕ — ТЕПЕРЬ СПЕЛЛ (2026-09-17), и харнесс берёт тело так же, как
+// игрок: выучить possession, взвести, поставить цель под прицел и кастануть
+// через cast_active_spell — тот же рантайм, та же дверь, тот же гейт уровня.
+// Фикстурная часть честно названа фикстурной: полный котёл маны, уровень
+// кастера с запасом и цель, подвинутая на луч взгляда, — это ОБСТАНОВКА
+// сцены; сам перенос флажка идёт только через спелл. Возвращает успех
+// ПЕРЕНОСА (сценовый флажок встал на цель). Не тикает мир — снап скаляров
+// на новом теле берёт первый же advance вызывающего.
+// Обстановка сцены под каст: цель — на луч взгляда, ВСЕ прочие кандидаты
+// прицела — ЗА спину, вне конуса (aim берёт ближнего в конусе, и случайный
+// горожанин на луче превратил бы свидетеля в лотерею сида); книга выучена и
+// взведена, котёл полон, рука свободна (гейт рекавери — чужой закон). Это
+// ФИКСТУРА; сам перенос флажка идёт только через каст.
+static void smoke_stage_possession_cast(App& app, entt::entity target) {
+    auto& reg = app.ecs.reg;
+    const int ord = sm::spell_ordinal("possession");
+    sm::spellbook_learn(smoke_player_book(app), ord);
+    sm::spellbook_set_active(smoke_player_book(app), ord);
+    player_pools(app).mp = std::max(player_pools(app).mp, 1000);
+    const float yaw = app.subworld.cam_yaw();
+    const float fx = std::cos(yaw), fy = std::sin(yaw);
+    const float px = app.subworld.player_x();
+    const float py = app.subworld.player_y();
+    {
+        auto cv = reg.view<sm::ecs::Position, sm::ecs::Pools, sm::ecs::NPCKind,
+                           sm::ecs::SubworldTag>(entt::exclude<sm::ecs::Dead>);
+        for (auto e : cv) {
+            if (e == target) continue;
+            if (reg.any_of<sm::ecs::AvatarTag, sm::ecs::PlayerSoldierTag>(e))
+                continue;
+            auto& op = cv.get<sm::ecs::Position>(e);
+            op.x = px - fx * 12.0f;
+            op.y = py - fy * 12.0f;
+        }
+    }
+    const float tx = px + fx * 6.0f;
+    const float ty = py + fy * 6.0f;
+    auto& pos = reg.get<sm::ecs::Position>(target);
+    pos.x = tx; pos.y = ty;
+    if (auto* vp = reg.try_get<sm::ecs::VisualPos>(target)) {
+        vp->vx = tx; vp->vy = ty;
+    }
+    for (auto e : reg.view<sm::ecs::AvatarTag, sm::ecs::Combat>()) {
+        reg.get<sm::ecs::Combat>(e).recoverySteps = 0u;
+    }
+}
+
+static bool smoke_possess_via_spell(App& app, entt::entity target) {
+    auto& reg = app.ecs.reg;
+    if (!reg.valid(target) || !app.subworld.active()) return false;
+    // Кастер заведомо выше порога: свидетели ПЕРЕНОСА меряют перенос, гейт
+    // уровня меряет своя половина possess_gate.
+    if (auto* cs = sm::player_sheet(app.ecs)) {
+        cs->levelData.level = std::max(cs->levelData.level, 50);
+    }
+    if (auto* lvl = reg.try_get<sm::ecs::NpcLevel>(target)) {
+        lvl->value = std::min<std::int16_t>(lvl->value, 1);
+    } else {
+        reg.emplace<sm::ecs::NpcLevel>(target, std::int16_t(1));
+    }
+    smoke_stage_possession_cast(app, target);
+    if (!cast_active_spell(app)) return false;
+    return reg.valid(target) && reg.all_of<sm::ecs::AvatarTag>(target);
+}
+
 constexpr int kSubworldSmokeFrames = 1000;
 constexpr int kSubworldSeamSmokeSettleFrames = 120;
 constexpr int kSmokeMacroTravelSteps = 3;
@@ -5307,20 +5372,18 @@ bool run_console_smoke(App& app) {
         restore(); smoke_fail(app, "console killall left bandit-typed bodies"); return false;
     }
 
-    // ── Вселение: ЗАКОН ЗАПИСИ (2026-09-14) ──────────────────────────
-    // ВСЕЛИТЬСЯ МОЖНО ТОЛЬКО В ТОГО, У КОГО ЕСТЬ ЗАПИСЬ. record.h knows two
-    // honest births, and a console-spawned bandit is the DERIVED one: nothing
-    // above remembers it, `record_of` answers with the body itself, and it dies
-    // with the scene. The macro flag is macro-only and would have nowhere to
-    // land, so possess_entity REFUSES — and refuses without disturbing either
-    // flag. This is the whole negative half of the law, witnessed on the one
-    // kind of body this smoke can guarantee.
-    //
-    // (The POSITIVE half — taking a projected lord, both flags moving together,
-    // the husk destroyed, the HUD going body-native — lives in
-    // subworld_exit_remap, which teleports onto the nearest macro NPC and is
-    // therefore GUARANTEED a body that has a record. It cannot live here:
-    // whether any macro NPC stands in this window is a property of the seed.)
+    // ── Вселение: СПЕЛЛ И ЕГО ГЕЙТ (2026-09-17) ──────────────────────
+    // Одержимость — эффект спелла possession, и оба его закона свидетелятся
+    // на теле, которое этот смоук может гарантировать — консольном бандите
+    // (ПРОИЗВОДНОМ, record.h):
+    //   1. ГЕЙТ УРОВНЯ: цель НЕ СТРОГО ниже порога (casterLevel + ранг
+    //      VoidMagic) устояла — ни один флажок не шелохнулся, а мана и
+    //      рекавери СГОРЕЛИ, как замах меча мимо (вердикт владельца);
+    //   2. ЗАКОН ШВА, производная половина: тело без записи БЕРЁТСЯ — но
+    //      только сценовым флажком; макро-флаг остаётся дома, и потому сброс
+    //      на выходе не написан нигде — тело просто умирает со сценой.
+    // (Носительская половина — лорд, оба флажка, хаск уничтожен — живёт в
+    // subworld_exit_remap, которому гарантирован сосед с записью.)
     //
     // Isolated here after killall: it spawns its own target so it perturbs none
     // of the earlier hostile-count checks.
@@ -5361,32 +5424,81 @@ bool run_console_smoke(App& app) {
         entt::entity macroFlagBefore = entt::null;
         for (auto e : reg.view<sm::ecs::PlayerTag>()) { macroFlagBefore = e; break; }
 
-        if (app.subworld.possess_by_id(
-                static_cast<std::uint32_t>(entt::to_integral(target)))) {
-            restore();
-            smoke_fail(app, "possess: a record-less body was inhabited");
-            return false;
+        // ── ПОЛОВИНА 1: гейт уровня — ровня устояла, мана сгорела ────
+        // Порог ТЕМИ ЖЕ дверями, какими его читает каст: уровень — лист
+        // записи, ранг школы — эффективный лист.
+        const int possessionOrd = sm::spell_ordinal("possession");
+        const int casterLevel =
+            sm::player_sheet(app.ecs) ? sm::player_sheet(app.ecs)->levelData.level : 0;
+        const int voidRank = int(sm::player_effective_sheet(app.ecs)
+                                     .skills.of(sm::SkillId::VoidMagic));
+        const int threshold = casterLevel + voidRank;
+        if (auto* lvl = reg.try_get<sm::ecs::NpcLevel>(target)) {
+            lvl->value = std::int16_t(threshold);
+        } else {
+            reg.emplace<sm::ecs::NpcLevel>(target, std::int16_t(threshold));
         }
-        // A refusal changes NOTHING: the scene flag is still solely on the husk,
-        // the husk is still alive, and the macro flag never moved.
+        smoke_stage_possession_cast(app, target);
+        const int mpBefore = int(player_pools(app).mp);
+        if (!cast_active_spell(app)) {
+            restore(); smoke_fail(app, "possess: possession cast did not fire"); return false;
+        }
+        const bool manaBurned =
+            int(player_pools(app).mp) == mpBefore - sm::kSpellDefs[possessionOrd].manaCost;
+        // Устоявшая цель меняет НИЧЕГО: сценовый флажок на хаске, макро дома.
         int sceneTags = 0; entt::entity sceneHolder = entt::null;
         for (auto e : reg.view<sm::ecs::AvatarTag>()) { ++sceneTags; sceneHolder = e; }
         int macroTags = 0; entt::entity macroHolder = entt::null;
         for (auto e : reg.view<sm::ecs::PlayerTag>()) { ++macroTags; macroHolder = e; }
-        if (sceneTags != 1 || sceneHolder != husk || !reg.valid(husk)) {
-            restore();
-            smoke_fail(app, "possess: refused take still moved the scene flag");
-            return false;
-        }
-        if (macroTags != 1 || macroHolder != macroFlagBefore) {
-            restore();
-            smoke_fail(app, "possess: refused take still moved the macro flag");
-            return false;
-        }
         std::fprintf(stderr,
-                     "[smoke] possess_gate derived_refused=1 scene_flag_held=1 "
-                     "macro_flag_held=1\n");
+                     "[smoke] possess_gate level_refused=%d mana_burned=%d "
+                     "scene_flag_held=%d macro_flag_held=%d threshold=%d\n",
+                     reg.all_of<sm::ecs::AvatarTag>(target) ? 0 : 1,
+                     manaBurned ? 1 : 0,
+                     (sceneTags == 1 && sceneHolder == husk) ? 1 : 0,
+                     (macroTags == 1 && macroHolder == macroFlagBefore) ? 1 : 0,
+                     threshold);
         std::fflush(stderr);
+        if (reg.all_of<sm::ecs::AvatarTag>(target)
+            || sceneTags != 1 || sceneHolder != husk || !reg.valid(husk)
+            || macroTags != 1 || macroHolder != macroFlagBefore) {
+            restore();
+            smoke_fail(app, "possess: an equal-leveled target was taken");
+            return false;
+        }
+        if (!manaBurned) {
+            restore();
+            smoke_fail(app, "possess: a resisted cast did not burn its mana");
+            return false;
+        }
+
+        // ── ПОЛОВИНА 2: производное тело БЕРЁТСЯ — сценовый флажок один ──
+        if (!smoke_possess_via_spell(app, target)) {
+            restore();
+            smoke_fail(app, "possess: the spell did not take a derived body");
+            return false;
+        }
+        sceneTags = 0; sceneHolder = entt::null;
+        for (auto e : reg.view<sm::ecs::AvatarTag>()) { ++sceneTags; sceneHolder = e; }
+        macroTags = 0; macroHolder = entt::null;
+        for (auto e : reg.view<sm::ecs::PlayerTag>()) { ++macroTags; macroHolder = e; }
+        std::fprintf(stderr,
+                     "[smoke] possess_gate derived_taken=%d husk_gone=%d "
+                     "macro_flag_home=%d\n",
+                     (sceneTags == 1 && sceneHolder == target) ? 1 : 0,
+                     reg.valid(husk) ? 0 : 1,
+                     (macroTags == 1 && macroHolder == macroFlagBefore) ? 1 : 0);
+        std::fflush(stderr);
+        if (sceneTags != 1 || sceneHolder != target || reg.valid(husk)
+            || macroTags != 1 || macroHolder != macroFlagBefore) {
+            restore();
+            smoke_fail(app, "possess: derived take moved the wrong flags");
+            return false;
+        }
+        // Сброс производной одержимости — это просто выход: тело умирает со
+        // сценой, макро-флаг никуда и не уезжал. Следующий блок войдёт заново
+        // и получит свежий хаск.
+        app.subworld.leave(true);
     }
 
     // ── tree-count writeback: felling one tree costs its macro cell EXACTLY
@@ -6134,10 +6246,9 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     if (reg.all_of<sm::ecs::Dead>(m)) continue;
                     const auto* mp = reg.try_get<sm::ecs::Pools>(m);
                     if (!mp || mp->hp <= 0.0f) continue;
-                    if (!app.subworld.possess_by_id(
-                            static_cast<std::uint32_t>(entt::to_integral(e)))) {
-                        continue;
-                    }
+                    // Взятие — СПЕЛЛОМ, сквозь тот же рантайм, что у игрока
+                    // (2026-09-17): выучить, взвести, кастануть в прицел.
+                    if (!smoke_possess_via_spell(app, e)) continue;
                     return m;
                 }
                 return entt::null;
@@ -6290,19 +6401,24 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                 const int ocy = ((ccy + 5) % H + H) % H;
                 reg.get<sm::ecs::MacroCell>(origin).idx =
                     sm::ecs::cell_index(ocx, ocy, app.gs.mapW);
-                // The hero husk before the take, and where the target stands —
-                // the take must destroy the one and snap the scalars onto the
-                // other.
+                // The hero husk before the take — the take must destroy it and
+                // (by the next engine tick) snap the scalars onto the body.
                 entt::entity husk = entt::null;
                 for (auto e : reg.view<sm::ecs::AvatarTag>()) { husk = e; break; }
-                const float bx = reg.get<sm::ecs::Position>(body).x;
-                const float by = reg.get<sm::ecs::Position>(body).y;
 
-                if (!app.subworld.possess_by_id(
-                        static_cast<std::uint32_t>(entt::to_integral(body)))) {
-                    smoke_fail(app, "exit_remap: possess_by_id returned false");
+                // Взятие — СПЕЛЛОМ, сквозь тот же рантайм, что у игрока
+                // (2026-09-17): выучить possession, взвести, кастануть в
+                // прицел. Фикстура ставит тело на луч взгляда, так что его
+                // координаты читаются ПОСЛЕ взятия.
+                if (!smoke_possess_via_spell(app, body)) {
+                    smoke_fail(app, "exit_remap: the possession cast did not take");
                     break;
                 }
+                const float bx = reg.get<sm::ecs::Position>(body).x;
+                const float by = reg.get<sm::ecs::Position>(body).y;
+                // Один кадр рантайма: скалярное зеркало след за флажком тянет
+                // тик движка (pull_player_entity_to_scalars) — как в игре.
+                sm::app::advance_sim_seconds(app, 0.016f, false);
 
                 // ── ЗАКОН 1: оба флажка переехали ТЕМ ЖЕ движением ──────
                 // Asserted HERE, before any leave: the macro flag must already
