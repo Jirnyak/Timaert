@@ -2,7 +2,9 @@
 #include "sub/map_data.h"
 #include "ecs/components.h"
 #include "core/rng.h"
+#include "macro/macro_stock.h" // MacroStock::Roster — чьи люди стоят без чувств
 #include "macro/npc.h"   // cruiseM — крейсерская высота рода летуна
+#include "sub/record.h"  // record_of — «без сознания» читается через зеркало
 #include <cmath>
 #include <algorithm>
 
@@ -29,6 +31,25 @@ void tick_npc_ai(ecs::World& w, float px, float py,
                  void* heightUser) {
     auto& reg = w.reg;
 
+    // БЕЗ СОЗНАНИЯ (вердикт владельца №6, 2026-09-17): у брошенного сквада
+    // игрока нет флажка, и «без сознания» — не состояние, а ЕГО ОТСУТСТВИЕ,
+    // прочитанное на единственной двери ИИ. Пока владелец ходит в чужом теле,
+    // его собственный сквад стоит в сцене видимым и недвижимым: лидер — тело,
+    // чья запись (через зеркало) и есть сквад без PlayerTag; его люди — тела
+    // с ростерным займом на тот же сквад. Флажок вернулся — мозги проснулись
+    // на следующем же тике, без единого компонента.
+    std::int32_t unconsciousSubject = -1;
+    entt::entity unconsciousRec = entt::null;
+    for (auto sq : reg.view<ecs::PlayerSquadTag>()) {
+        if (!reg.all_of<ecs::PlayerTag>(sq)) {
+            unconsciousRec = sq;
+            if (const auto* sid = reg.try_get<ecs::MacroSpawnId>(sq)) {
+                unconsciousSubject = std::int32_t(sid->index);
+            }
+        }
+        break;
+    }
+
     // A body walking home is steered by the day's pump (engine tick_day_pump),
     // not by its own errands — excluded here so the two never write the same
     // intent in one step. The exclusion is the WHOLE integration: no new brain
@@ -42,6 +63,22 @@ void tick_npc_ai(ecs::World& w, float px, float py,
         // player. No component churn on possess/vacate — when the flag leaves,
         // the body's AI resumes automatically on the very next tick.
         if (reg.any_of<ecs::AvatarTag>(e)) continue;
+        // …и тело брошенного сквада стоит без чувств (предикат выше): сам
+        // сквад — по записи, его люди — по ростерному займу.
+        if (unconsciousRec != entt::null) {
+            if (record_of(reg, e) == unconsciousRec) {
+                auto& stillA = view.get<ecs::SubworldAi>(e);
+                stillA.wantVx = stillA.wantVy = 0.0f;
+                continue;
+            }
+            if (const auto* debt = reg.try_get<ecs::MacroDebt>(e);
+                debt && debt->stock == std::uint8_t(MacroStock::Roster)
+                && debt->subject == unconsciousSubject) {
+                auto& stillA = view.get<ecs::SubworldAi>(e);
+                stillA.wantVx = stillA.wantVy = 0.0f;
+                continue;
+            }
+        }
         auto& p = view.get<ecs::Position>(e);
         auto& a = view.get<ecs::SubworldAi>(e);
         // Deterministic per-decision seed: entity bits, the DECISION COUNTER

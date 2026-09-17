@@ -6583,6 +6583,35 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     smoke_fail(app, "exit_remap: entering while possessed dropped the flag");
                     break;
                 }
+
+                // ── ВЕРДИКТ №6 (2026-09-17): брошенный сквад СТОИТ в сцене —
+                // видимый, бездумный. Его клетка — центр окна (ты вошёл там,
+                // где вылез), так что проекция обязана существовать, а её
+                // намерение после кадра рантайма — нулевое: «без сознания» =
+                // отсутствие флажка, прочитанное дверью ИИ через зеркало.
+                sm::app::advance_sim_seconds(app, 0.016f, false);
+                entt::entity abandoned = entt::null;
+                for (auto b : reg.view<sm::ecs::SubworldTag,
+                                       sm::ecs::MacroOrigin>()) {
+                    if (reg.get<sm::ecs::MacroOrigin>(b).macro == home
+                        && !reg.any_of<sm::ecs::AvatarTag>(b)) {
+                        abandoned = b;
+                        break;
+                    }
+                }
+                const auto* aai = abandoned != entt::null
+                    ? reg.try_get<sm::ecs::SubworldAi>(abandoned) : nullptr;
+                const bool stands =
+                    aai && aai->wantVx == 0.0f && aai->wantVy == 0.0f;
+                std::fprintf(stderr,
+                             "[smoke] subworld_exit_remap abandoned present=%d "
+                             "stands=%d\n",
+                             abandoned != entt::null ? 1 : 0, stands ? 1 : 0);
+                std::fflush(stderr);
+                if (abandoned == entt::null || !stands) {
+                    smoke_fail(app, "exit_remap: abandoned squad absent or walking");
+                    break;
+                }
                 app.subworld.leave(true);
 
                 // Restore a clean single-husk macro state for a self-contained

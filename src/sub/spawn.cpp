@@ -1406,18 +1406,20 @@ int project_macro_npcs_into_subworld(ecs::World& w,
     // collect the persistent macro NPCs, then create their projections.
     // MacroNpcRuntime is the macro discriminator (subworld bodies never have it);
     // excluding SubworldTag/Dead keeps the source set to live overworld NPCs.
-    // PlayerTag skips the macro record the player is currently being —
-    // you don't meet a foreign projection of your own former body on enter.
-    // PlayerSquadTag skips the player's OWN squad, which since the merge looks
-    // exactly like any other party on the map. It is not a stranger to meet
-    // underground, and projecting it would open a second writeback path into
-    // the same numbers PlayerState already owns.
+    // PlayerTag skips the macro record the player is currently BEING — his
+    // body in the scene is the tracked avatar, not a foreign projection.
+    // The player's OWN squad is NOT excluded any more (вердикт владельца №6,
+    // 2026-09-17): while he wears somebody else, his abandoned party stands
+    // in the world — so standing on its cell it projects like any other
+    // party, visibly and senselessly (the ai door reads «флажка на мне нет»
+    // through the mirror). The old writeback fear died with the mirror law:
+    // a projected body owns nothing, it reads and writes THE record. While
+    // he is HIMSELF the squad carries PlayerTag, so nothing double-projects.
     std::vector<entt::entity> sources;
     {
         auto view = reg.view<ecs::MacroNpcRuntime, ecs::MacroCell, ecs::NPCKind,
                              ecs::Pools, ecs::NpcLevel, ecs::NpcCharacter>(
-            entt::exclude<ecs::Dead, ecs::PlayerTag,
-                          ecs::PlayerSquadTag>);
+            entt::exclude<ecs::Dead, ecs::PlayerTag>);
         for (auto macro : view) sources.push_back(macro);
     }
 
