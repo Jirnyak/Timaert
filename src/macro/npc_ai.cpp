@@ -2979,18 +2979,28 @@ void scent_squad_deposit(entt::entity e, const MacroPos& p,
 }
 
 // След игрока: его сквад — обычный сквад (auto_battle_side_of отвечает за
-// обоих), но think-свип его осознанно не водит, так что вклад кладёт свип
-// целиком — раз, рядом с nav_ensure. Бандит охотится на игрока тем же
-// рефлексом, что на караван: петля демо «убегай от бандитов к страже».
+// обоих), но think-свип осознанно не водит ДВА сквада — держателя флажка
+// (им ходит игрок) и брошенный оригинал (стоит без сознания). Пахнут ОБА
+// (2026-09-17): ходящий — там, где идёт, кем бы он ни был (запись ФЛАГА, а
+// не ординал: до правки одержимый лорд шёл без следа, а стоящий оригинал
+// пах как ходячий); стоящий — там, где стоит: бандит находит по следу и
+// того, и другого. Петля демо «убегай от бандитов к страже».
 void scent_player_deposit(const TickContext& ctx) {
     if (!ctx.mw.world) return;
-    auto view = ctx.mw.world->reg.view<ecs::PlayerSquadTag, ecs::MacroCell,
-                                       ecs::NPCKind>(entt::exclude<ecs::Dead>);
-    for (auto e : view) {
-        const auto& c = view.get<ecs::MacroCell>(e);
+    auto& reg = ctx.mw.world->reg;
+    const auto put = [&](entt::entity e) {
+        if (e == entt::null || !reg.valid(e)) return;
+        if (reg.any_of<ecs::Dead>(e)) return;
+        if (!reg.all_of<ecs::MacroCell, ecs::NPCKind>(e)) return;
+        const auto& c = reg.get<ecs::MacroCell>(e);
         const MacroPos p{float(ecs::cell_x(c, ctx.mapW)),
                          float(ecs::cell_y(c, ctx.mapW))};
-        scent_squad_deposit(e, p, view.get<ecs::NPCKind>(e), ctx);
+        scent_squad_deposit(e, p, reg.get<ecs::NPCKind>(e), ctx);
+    };
+    const entt::entity flag = player_flag_entity(*ctx.mw.world);
+    put(flag);
+    for (auto e : reg.view<ecs::PlayerSquadTag>()) {
+        if (e != flag) put(e);
     }
 }
 
