@@ -582,15 +582,17 @@ sm::AutoBattleSide player_auto_battle_side(App& app) {
     // Combat from it), so the resolver pricing the same fight from the same
     // ring must read the same sheet or the two verdicts disagree.
     const sm::CharacterSheet eff = player_effective_sheet(app);
-    // The door reads his OWNED component itself (посадка Б) — no parameter
-    // to pass, no caller able to forget it.
+    // ОДИН человек по обе стороны цены (A3, 2026-09-17): лист выше читается
+    // по флажку, значит и сторона боя, и гир — запись ФЛАГА, кем бы он ни
+    // ходил. До этого ростер/полосы шли по ординалу оригинала — §45 «два
+    // ответа» об одном бое.
     sm::AutoBattleSide s = sm::auto_battle_side_of(
-        app.ecs, sm::player_squad_entity(app.ecs));
+        app.ecs, sm::player_flag_entity(app.ecs));
     // The player's swing, credited exactly as the fought path rolls it: the
     // ONE assembly (hand_strike_fields) over the weapon actually in hand,
     // taken at its expectation like every auto-resolve number.
     const sm::ecs::BodyEquipment* eqp = nullptr;
-    if (const entt::entity sq = sm::player_squad_entity(app.ecs);
+    if (const entt::entity sq = sm::player_flag_entity(app.ecs);
         sq != entt::null)
         eqp = app.ecs.reg.try_get<sm::ecs::BodyEquipment>(sq);
     const sm::StrikeFields hs = sm::hand_strike_fields(

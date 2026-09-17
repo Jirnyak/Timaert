@@ -903,11 +903,14 @@ inline void settle_auto_battle(const MacroWorld& mw,
 }
 
 // Settle the PLAYER's auto-resolve against a macro squad (Inc 6 — the M&B
-// button). The player is the same shape as any leader (his entity is the
-// leader, PlayerState::army is his roster), so the enemy half goes through
-// exactly the halves above; the player half lands where the player's truth
-// lives — army rows removed by name, the wound fraction into the ordinary
-// Pools on his squad entity (THE store since landing 4), XP through
+// button). The player is the same shape as any leader — and «the player» is
+// the FLAG record (A3, 2026-09-17): the man he is on the map, his own squad
+// as himself, the worn lord's while he wears one. Until then the sheet
+// priced the fight by the flag while roster, wound and facts settled into
+// the ordinal original — the §45 «два ответа» shape, fought and paid by two
+// different men. The enemy half goes through exactly the halves above; the
+// player half lands where the flag record's truth lives — army rows removed
+// by name, the wound fraction into its ordinary Pools, XP through
 // award_exp with the wis dividend. By the resolver's own law his head is
 // never diced: he reaches 0 only when his whole army died with him — and a
 // zero hp in the store is the same game-over the fought version ends in.
@@ -941,7 +944,7 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
     // settle_squad_casualties over his own entity, ledger and all. The
     // hand-written removal that used to stand here was one of the four
     // player-specific paths.
-    if (const entt::entity playerSquad = player_squad_entity(w);
+    if (const entt::entity playerSquad = player_flag_entity(w);
         playerSquad != entt::null) {
         settle_squad_casualties(gs, w, playerSquad, playerCas);
     }
@@ -951,7 +954,7 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
     // because since landing 4 there is nowhere else for a bar to live. The
     // back-copy onto PlayerState that used to follow this call was the last
     // breath of the two-store era.
-    if (const entt::entity playerSquad = player_squad_entity(w);
+    if (const entt::entity playerSquad = player_flag_entity(w);
         playerSquad != entt::null) {
         settle_leader_fraction(w, playerSquad,
                                std::clamp(playerFraction, 0.0f, 1.0f));
@@ -1018,7 +1021,7 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
     // 2026-09-02): осиротевшие дома жертв игрока получают Died, и
     // ненависть/цена опасности/поле угрозы видят игрока-мясника так же,
     // как любого лорда.
-    if (const entt::entity playerSquad = player_squad_entity(w);
+    if (const entt::entity playerSquad = player_flag_entity(w);
         playerSquad != entt::null) {
         const entt::entity pw = playerWon ? playerSquad : enemy;
         const entt::entity pl = playerWon ? enemy : playerSquad;
@@ -1034,7 +1037,7 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
     if (xp > 0) {
         // ОДНА дверь оплаты (корень 5): игрок — просто лидер своего
         // сквада, WIS-дивиденд и рост листа внутри award_kill_xp.
-        award_kill_xp(w, player_squad_entity(w), xp);
+        award_kill_xp(w, player_flag_entity(w), xp);
     }
     return xp;
 }
