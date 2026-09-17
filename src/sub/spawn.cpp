@@ -1282,9 +1282,12 @@ void spawn_player_squad(ecs::World& w,
                         float playerY,
                         std::uint32_t seed,
                         std::uint16_t faction,
-                        const BonusTotals* squadBonuses) {
+                        const BonusTotals* squadBonuses,
+                        std::int32_t rosterSubject,
+                        std::int16_t rosterCx,
+                        std::int16_t rosterCy) {
     spawn_player_squad(w, squad, mgr.tiles(), playerX, playerY, seed, faction,
-                       squadBonuses);
+                       squadBonuses, rosterSubject, rosterCx, rosterCy);
 }
 
 void spawn_player_squad(ecs::World& w,
@@ -1294,7 +1297,10 @@ void spawn_player_squad(ecs::World& w,
                         float playerY,
                         std::uint32_t seed,
                         std::uint16_t faction,
-                        const BonusTotals* squadBonuses) {
+                        const BonusTotals* squadBonuses,
+                        std::int32_t rosterSubject,
+                        std::int16_t rosterCx,
+                        std::int16_t rosterCy) {
     if (squad.empty()) return;
 
     auto& reg = w.reg;
@@ -1348,8 +1354,9 @@ void spawn_player_squad(ecs::World& w,
         //
         // A soldier is DERIVED: the roster line says WHO stands here, the
         // seed says everything else — and he is LENT like any lord's man
-        // (§42 Инк 6, «игрок не особен»): the receipt names the player
-        // squad's reserved ordinal and this member's entityId, so his death
+        // (§42 Инк 6, «игрок не особен»): the receipt names the OWNING
+        // squad's MacroSpawnId (the flag record's — a worn lord's men are
+        // HIS stock, A2 2026-09-17) and this member's entityId, so his death
         // strikes the roster through THE one settle door
         // (macro_stock.cpp "roster"), exactly as every other army pays.
         const auto e = spawn_derived_body(reg,
@@ -1362,7 +1369,7 @@ void spawn_player_squad(ecs::World& w,
             /*faceSalt*/std::uint32_t(i) * 2654435761u,
             BodyLoan::from(MacroStock::Roster,
                            MacroStockKey{
-                               std::int32_t(ecs::kPlayerSquadOrdinal), 0, 0,
+                               rosterSubject, rosterCx, rosterCy,
                                std::int32_t(soldier.entityId)}),
             squadBonuses);
         reg.emplace<ecs::PlayerSoldierTag>(e);

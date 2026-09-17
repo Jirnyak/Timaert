@@ -392,6 +392,11 @@ void despawn_subworld_entities_outside_window(ecs::World& w);
 // squad_bonuses over his owned component, squad.h sheet_of) and applied into
 // every member's sheet at birth. nullptr = a leaderless context, nothing
 // applied.
+// `rosterSubject`/`rosterCx`/`rosterCy` — WHOSE roster stock the members'
+// death receipts strike (macro/macro_stock.h "roster"): the FLAG record's own
+// MacroSpawnId and cell, read at the call site — a worn lord's men pay their
+// deaths back into HIS squad, not into the player ordinal (A2, 2026-09-17).
+// Defaults name the ordinary hero squad, which is what every fixture has.
 void spawn_player_squad(ecs::World& w,
                         const SoldierSquad& squad,
                         const SeamlessSubworldManager& mgr,
@@ -399,7 +404,11 @@ void spawn_player_squad(ecs::World& w,
                         float playerY,
                         std::uint32_t seed,
                         std::uint16_t faction,
-                        const BonusTotals* squadBonuses = nullptr);
+                        const BonusTotals* squadBonuses = nullptr,
+                        std::int32_t rosterSubject =
+                            std::int32_t(ecs::kPlayerSquadOrdinal),
+                        std::int16_t rosterCx = 0,
+                        std::int16_t rosterCy = 0);
 
 void spawn_player_squad(ecs::World& w,
                         const SoldierSquad& squad,
@@ -408,7 +417,11 @@ void spawn_player_squad(ecs::World& w,
                         float playerY,
                         std::uint32_t seed,
                         std::uint16_t faction,
-                        const BonusTotals* squadBonuses = nullptr);
+                        const BonusTotals* squadBonuses = nullptr,
+                        std::int32_t rosterSubject =
+                            std::int32_t(ecs::kPlayerSquadOrdinal),
+                        std::int16_t rosterCx = 0,
+                        std::int16_t rosterCy = 0);
 
 // ── Macro→subworld projection (Inc 5d) ───────────────────────────────────
 //

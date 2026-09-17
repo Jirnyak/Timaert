@@ -6543,10 +6543,55 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                     smoke_fail(app, "exit_remap: possessed identity not kept on exit");
                     break;
                 }
+
+                // ── ЗАКОН ШВА, обратная сторона (A2, 2026-09-17): ВХОД
+                // одержимым не срывает флаг. До правки вход оставлял мир
+                // вовсе без PlayerTag до следующего макро-тика: под землёй
+                // все двери player_* отвечали nullptr — пустой лист, немой
+                // смерть-чек. Теперь носимое тело сцены — проекция записи
+                // ФЛАГА: ты лорд и под землёй.
+                enter_subworld(app);
+                const bool reentered = app.subworld.active();
+                int tags2 = 0; entt::entity flag2 = entt::null;
+                for (auto e : reg.view<sm::ecs::PlayerTag>()) {
+                    ++tags2; flag2 = e;
+                }
+                entt::entity av = entt::null;
+                for (auto e : reg.view<sm::ecs::AvatarTag>()) { av = e; break; }
+                // Двери говорят про ЛОРДА и под землёй: полосы — его блок
+                // (не nullptr, которым дыра A2 отвечала до правки), а лист —
+                // ровно та правда, что у записи есть (безымянная анкета
+                // листа не хранит, и дверь честно молчит про неё ВЕЗДЕ).
+                const bool doorsAlive =
+                    sm::player_pools(app.ecs) != nullptr
+                    && sm::player_pools(app.ecs)
+                           == reg.try_get<sm::ecs::Pools>(origin)
+                    && (sm::player_sheet(app.ecs) != nullptr)
+                           == reg.all_of<sm::CharacterSheet>(origin);
+                const bool bodyIsHis =
+                    av != entt::null
+                    && sm::sub::record_of(reg, av) == origin;
+                std::fprintf(stderr,
+                             "[smoke] subworld_exit_remap reenter ok=%d tags=%d "
+                             "rides_origin=%d doors_alive=%d body_is_his=%d\n",
+                             reentered ? 1 : 0, tags2,
+                             flag2 == origin ? 1 : 0,
+                             doorsAlive ? 1 : 0, bodyIsHis ? 1 : 0);
+                std::fflush(stderr);
+                if (!reentered || tags2 != 1 || flag2 != origin
+                    || !doorsAlive || !bodyIsHis) {
+                    smoke_fail(app, "exit_remap: entering while possessed dropped the flag");
+                    break;
+                }
+                app.subworld.leave(true);
+
                 // Restore a clean single-husk macro state for a self-contained
                 // process: strip the flag off the lord (it reverts to an autonomous
                 // NPC) and re-claim it onto the ordinary hero squad.
-                reg.remove<sm::ecs::PlayerTag>(flag);
+                for (auto e : reg.view<sm::ecs::PlayerTag>()) {
+                    reg.remove<sm::ecs::PlayerTag>(e);
+                    break;
+                }
                 sm::ensure_macro_player_entity(app.gs, app.ecs);
             }
             ++app.smoke.cursor;

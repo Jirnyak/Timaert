@@ -741,18 +741,36 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     // and neighbouring cities are alive before you ever step toward them.
     refresh_window_step_weights();
     spawn_all_cells();
-    // The squad wears its owner's colours — the player's own realm row. The
-    // rule lives at the call site because the owner is what the call site knows.
-    // The owner's AURA rides the same way (character_sheet.h squad_bonuses): the player leads this
-    // squad, so the player's sheet buffs every soldier born here — the
-    // EFFECTIVE sheet (phase 4): a leader in a +CHA crown leads like one.
+    // The squad wears its owner's colours — the FLAG RECORD's own row (banner
+    // rule): his own realm as himself, the lord's realm while he wears one
+    // (закон шва, 2026-09-17 — the flag survives the seam now). The rule
+    // lives at the call site because the owner is what the call site knows.
+    // The owner's AURA rides the same way (character_sheet.h squad_bonuses):
+    // whoever leads this squad buffs every soldier born here — the EFFECTIVE
+    // sheet (phase 4), which already follows the flag by its door.
     const BonusTotals playerBonuses =
         squad_bonuses(player_effective_sheet(ecs));
+    const entt::entity flagRec = player_flag_entity(ecs);
+    std::int32_t rosterSubject = std::int32_t(ecs::kPlayerSquadOrdinal);
+    std::int16_t rosterCx = 0, rosterCy = 0;
+    std::uint16_t squadFaction = std::uint16_t(faction_index(kPlayerFactionId));
+    if (flagRec != entt::null) {
+        if (const auto* sid = ecs.reg.try_get<ecs::MacroSpawnId>(flagRec)) {
+            rosterSubject = std::int32_t(sid->index);
+        }
+        if (const auto* mc = ecs.reg.try_get<ecs::MacroCell>(flagRec)) {
+            rosterCx = std::int16_t(ecs::cell_x(*mc, gs.mapW));
+            rosterCy = std::int16_t(ecs::cell_y(*mc, gs.mapW));
+        }
+        if (const auto* kind = ecs.reg.try_get<ecs::NPCKind>(flagRec)) {
+            squadFaction = kind->factionIdx;
+        }
+    }
     spawn_player_squad(ecs, player_roster(ecs) ? *player_roster(ecs)
                                               : SoldierSquad{},
                        mgr_, playerX_, playerY_,
         cell_seed(gs.worldSeed, cx, cy) ^ kSquadSpawnSalt,
-        std::uint16_t(faction_index(kPlayerFactionId)), &playerBonuses);
+        squadFaction, &playerBonuses, rosterSubject, rosterCx, rosterCy);
     // Project the persistent macro NPCs standing in this 3×3 window into the
     // scene as real combat bodies (Inc 5d) — the overworld lords / bandits /
     // peasants are physically MET where they roam, and each projection carries a
@@ -875,41 +893,33 @@ void SubworldEngine::spawn_player_entity() {
     // leave). Exactly one AvatarTag entity must exist while a subworld is live.
     clear_player_entity();
     auto& reg = ecs_->reg;
-    // Entering a subworld drops any macro-side flag on somebody else: the
-    // player becomes the hero husk built below, not the lord he may have
-    // inhabited on the overworld. The lord survives as an autonomous NPC —
-    // strip only the MACRO flag (this is the one macro act of this function,
-    // moved here from clear_player_entity when the flags split: leave() must
-    // NOT strip the squad's own flag). The ensure door re-claims the flag
-    // onto his squad on the next macro tick. (Nothing else to clear since
-    // v87: the flag itself IS the record of control — the save carries it as
-    // the possessed record's own byte, and the out-of-snapshot ordinal died.)
-    {
-        std::array<entt::entity, 8> holders{};
-        int held = 0;
-        for (auto e : reg.view<ecs::PlayerTag>()) {
-            if (reg.any_of<ecs::PlayerSquadTag>(e)) continue;   // his own
-            if (held >= int(holders.size())) break;
-            holders[std::size_t(held++)] = e;
-        }
-        for (int i = 0; i < held; ++i) {
-            reg.remove<ecs::PlayerTag>(holders[std::size_t(i)]);
-        }
+    // ФЛАЖОК ПЕРЕЖИВАЕТ ШОВ (A2, закон шва 2026-09-17): вход в субмир больше
+    // НЕ срывает макро-флаг с носимого лорда. Дыра была ровно здесь: срыв
+    // оставлял мир вовсе без PlayerTag до следующего макро-тика, и под землёй
+    // все двери player_* отвечали nullptr — пустой лист, немой смерть-чек.
+    // Теперь носимое тело сцены — проекция ЗАПИСИ ФЛАГА, кем бы она ни была:
+    // его собственный сквад как собой, анкета лорда — пока он лорд. Един-
+    // ственный дефенсив: мира без флага не бывает — потерянный флаг
+    // возвращается на собственный сквад.
+    const entt::entity psq = player_squad_entity(*ecs_);
+    entt::entity flagRec = player_flag_entity(*ecs_);
+    if (flagRec == entt::null && psq != entt::null) {
+        reg.emplace<ecs::PlayerTag>(psq);
+        flagRec = psq;
     }
     const entt::entity e = reg.create();
     reg.emplace<ecs::Position>(e, playerX_, playerY_, 0.0f);
     reg.emplace<ecs::AvatarTag>(e);
     // WHOSE BODY THIS IS (mirror law, 2026-09-12 — sub/record.h): the same
-    // backlink every projected body carries, pointing at his own squad — the
-    // record that has held his bars, his bag, his gear and his sheet since
-    // landing 4 / посадка Б. Наличие ссылки — это и есть «он такой же»: the
-    // seam stops having a shape it must special-case, because «whose state is
-    // this?» is answered for the hero husk by the very line that answers it
-    // for a lord. Two things follow from this one emplace: the fold-up passes
-    // lose their reason to exist, and no damage/spend path needs to know which
-    // kind of body it is holding.
-    const entt::entity psq = player_squad_entity(*ecs_);
-    if (psq != entt::null) reg.emplace<ecs::MacroOrigin>(e, psq);
+    // backlink every projected body carries — pointing at the FLAG record,
+    // the one that holds the bars, bag, gear and sheet of the man he IS.
+    // Наличие ссылки — это и есть «он такой же»: the seam stops having a
+    // shape it must special-case, because «whose state is this?» is answered
+    // for the hero husk by the very line that answers it for a lord. Two
+    // things follow from this one emplace: the fold-up passes lose their
+    // reason to exist, and no damage/spend path needs to know which kind of
+    // body it is holding.
+    if (flagRec != entt::null) reg.emplace<ecs::MacroOrigin>(e, flagRec);
     // Inc 4b: the player is a full combat participant, not an inert anchor.
     //  - Pools mirror THE store — the squad entity's own block (landing 4);
     //    sync_player_entity_position pulls it in at each tick top and
@@ -946,17 +956,17 @@ void SubworldEngine::spawn_player_entity() {
     // muzzle constant become the hero's shoulders. Saying nothing makes him
     // answer the width question exactly like every other body does.
     // The strike: the ONE assembly (macro/anatomy.h hand_strike_fields) from
-    // the sheet and the weapon actually in hand on the SQUAD entity — gear is
+    // the sheet and the weapon actually in hand on the FLAG record — gear is
     // macro state, the body is its projection. Refreshed each tick beside the
     // pace, so drawing a dagger changes the next swing, not the next descent.
     const ecs::BodyEquipment* eqp = nullptr;
-    if (psq != entt::null) eqp = reg.try_get<ecs::BodyEquipment>(psq);
+    if (flagRec != entt::null) eqp = reg.try_get<ecs::BodyEquipment>(flagRec);
     // The EFFECTIVE sheet swings and paces (phase 4): the ring's +STR is in
     // the blow, the sustained haste's +SPD is in the step. The totals are
     // assembled ONCE — the sheet copy takes the attr/skill cells, and the
     // derived cells (a worn MovePct row) meet the pace law below.
-    const BonusTotals standing = (gs_ && psq != entt::null)
-        ? standing_bonuses_of(*ecs_, psq) : BonusTotals{};
+    const BonusTotals standing = (gs_ && flagRec != entt::null)
+        ? standing_bonuses_of(*ecs_, flagRec) : BonusTotals{};
     const CharacterSheet* baseSheet = gs_ ? player_sheet(*ecs_) : nullptr;
     const CharacterSheet effBody = baseSheet
         ? effective_sheet(*baseSheet, standing) : CharacterSheet{};
@@ -1097,18 +1107,20 @@ void SubworldEngine::sync_player_entity_position() {
             if (auto* c = reg.try_get<ecs::Combat>(e)) {
                 // Per-tick refresh reads the same EFFECTIVE sheet the spawn
                 // did (phase 4) — equipping mid-fight changes the next swing.
-                const entt::entity psq = player_squad_entity(*ecs_);
-                const BonusTotals st = psq != entt::null
-                    ? standing_bonuses_of(*ecs_, psq) : BonusTotals{};
+                // The record is the husk's own backlink (mirror law): the
+                // FLAG record, not the ordinal — a worn lord swings by HIS
+                // gear and his standing effects (A2, §45 «два ответа»).
+                const entt::entity rec = record_of(reg, e);
+                const BonusTotals st = rec != entt::null
+                    ? standing_bonuses_of(*ecs_, rec) : BonusTotals{};
                 const CharacterSheet* base = player_sheet(*ecs_);
                 const CharacterSheet eff = base
                     ? effective_sheet(*base, st) : CharacterSheet{};
                 const DerivedBonuses d = calculate_derived(
                     eff.attributes, eff.skills, st);
                 const ecs::BodyEquipment* eqp = nullptr;
-                if (const entt::entity sq = player_squad_entity(*ecs_);
-                    sq != entt::null)
-                    eqp = reg.try_get<ecs::BodyEquipment>(sq);
+                if (rec != entt::null)
+                    eqp = reg.try_get<ecs::BodyEquipment>(rec);
                 const StrikeFields hs = hand_strike_fields(
                     eff.attributes, eff.skills,
                     eqp ? &eqp->gear : nullptr);

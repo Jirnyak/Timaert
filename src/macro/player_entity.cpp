@@ -291,8 +291,15 @@ void refresh_player_body(ecs::World& world) {
     if (!own) return;
     auto* rt = world.reg.try_get<ecs::MacroNpcRuntime>(e);
     const BonusTotals st = standing_bonuses_of(world, e);
+    // The ROW is the record's own (A1, 2026-09-17): the door follows the
+    // flag, so its row must too — a worn lord's ceilings and haul are his
+    // row's, not the Adventurer's. His own squad IS an Adventurer by birth
+    // (ensure above), so the fallback for a record without a row says the
+    // same thing the old literal did — for exactly the body it was true of.
+    const auto* kind = world.reg.try_get<ecs::NPCKind>(e);
     refresh_body_from_sheet(*pools, rt, effective_sheet(*own, st),
-                            NPCType::Adventurer, &st);
+                            kind ? NPCType(kind->type) : NPCType::Adventurer,
+                            &st);
 }
 
 SpellBook* player_spellbook(ecs::World& world) {
