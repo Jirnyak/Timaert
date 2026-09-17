@@ -570,6 +570,8 @@ timaert_test(spell_casting_effects_test
         src/sub/spell_effects.cpp
         # spell_effects strikes through THE damage door now.
         src/sub/damage.cpp
+        # possession's Targeted pick goes through the one aim primitive.
+        src/sub/targeting.cpp
         # the door asks what a body WEARS (macro/anatomy.h worn_armor), and
         # that asks the catalog what each worn row is worth (macro/items.cpp)
         src/macro/anatomy.cpp

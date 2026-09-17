@@ -39,6 +39,13 @@ struct SpellSpawnContext {
     // door. Appended with defaults so positional builders stay whole.
     std::uint8_t dmgType = 2;  // DamageType::Blunt
     bool critical = false;
+    // Who the caster IS, for effects whose law argues with the target's
+    // person rather than its armour (possession's level gate): his sheet's
+    // level and his trained rank in this spell's own school. Filled by
+    // spellbook_cast from the record the caster's body mirrors; zero in a
+    // fixture with no sheet, which is an honest novice.
+    std::int16_t casterLevel = 0;
+    std::uint8_t schoolRank = 0;
 };
 
 using SpellSpawnFn = void (*)(ecs::World&, const SpellSpawnContext&);

@@ -1586,63 +1586,7 @@ int project_macro_npcs_into_subworld(ecs::World& w,
     return projected;
 }
 
-// ── Вселение = перенос флажка (spawn.h) ─────────────────────────────────
-
-entt::entity current_player_body(ecs::World& w) {
-    // Exactly one AvatarTag flag is live while a subworld is active; return the
-    // first (and only) holder. entt::null before enter / after leave.
-    for (auto e : w.reg.view<ecs::AvatarTag>()) return e;
-    return entt::null;
-}
-
-bool possess_entity(ecs::World& w, entt::entity target) {
-    auto& reg = w.reg;
-    if (target == entt::null || !reg.valid(target)) return false;
-    if (!reg.all_of<ecs::Position>(target)) return false; // must be a real body
-    const entt::entity cur = current_player_body(w);
-    if (cur == target) return false;                      // already inhabiting it
-
-    // ВСЕЛИТЬСЯ МОЖНО ТОЛЬКО В ТОГО, У КОГО ЕСТЬ ЗАПИСЬ — and that is not a
-    // rule invented here, it is record.h's two honest births read out loud. A
-    // PROJECTION answers `record_of` with the macro entity it backlinks; a
-    // DERIVED body — a wolf, a citizen rolled from a cell seed, a console
-    // spawn — answers with ITSELF, because nothing above remembers it. The
-    // macro flag needs a macro record to stand on (PlayerTag is macro-only,
-    // components.h) and a derived body dies with the scene, so moving the flag
-    // onto one would strand it on a doomed entity and lose it silently at
-    // leave. One test, asked of everyone, no player branch.
-    const entt::entity rec = record_of(reg, target);
-    if (rec == entt::null || rec == target) return false;
-
-    if (reg.valid(cur)) {
-        reg.remove<ecs::AvatarTag>(cur);
-        // Hero husk (no NPCKind) has no independent existence — since the
-        // mirror law it is a projection of his macro record like any other
-        // body, so destroying it loses nothing and strands no inert,
-        // un-rendered, un-AI'd zombie in the scene. A vacated FOREIGN body
-        // keeps every component; with the flag gone its AI / draw /
-        // targetability all resume by construction (each is AvatarTag-gated).
-        if (!reg.all_of<ecs::NPCKind>(cur)) reg.destroy(cur);
-    }
-    if (!reg.all_of<ecs::AvatarTag>(target)) reg.emplace<ecs::AvatarTag>(target);
-
-    // …AND THE MACRO FLAG RIDES THE SAME MOVEMENT. «Одержимость — не более чем
-    // перенос флажка» (owner 2026-09-12): one displacement, one moment. It used
-    // to be deferred to leave() — AvatarTag moved here, PlayerTag followed on
-    // the way out — and for the whole span between them the question «кем я
-    // хожу» had two answers standing on two different records. That is the §45
-    // shape exactly, and it is why a potion drunk in a lord's body healed the
-    // husk the player had left behind.
-    //
-    // Exactly-one holds by the move itself: every other holder is stripped
-    // before the new one is stamped. (Removing the component of the entity a
-    // view is currently visiting is the permitted case; the emplace is after
-    // the loop.)
-    for (auto e : reg.view<ecs::PlayerTag>()) {
-        if (e != rec) reg.remove<ecs::PlayerTag>(e);
-    }
-    if (!reg.all_of<ecs::PlayerTag>(rec)) reg.emplace<ecs::PlayerTag>(rec);
-    return true;
-}
+// (Вселение = перенос флажка живёт в sub/possess.h — header-only, чтобы
+// эффект спелла possession не линковал слой спавна.)
 
 } // namespace sm::sub

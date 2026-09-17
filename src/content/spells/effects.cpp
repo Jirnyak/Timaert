@@ -12,7 +12,9 @@
 
 #include "ecs/components.h"
 #include "ecs/world.h"
-#include "sub/body.h"   // body_radius — the caster shell the muzzle clears
+#include "sub/body.h"      // body_radius — the caster shell the muzzle clears
+#include "sub/possess.h"   // possess_entity — THE flag-move door
+#include "sub/targeting.h" // aim_target — the Targeted delivery's pick
 
 namespace sm {
 
@@ -201,6 +203,52 @@ void spawn_armageddon(ecs::World& w, const SpellSpawnContext& c) {
     }
 }
 
+// ── Possession (CANON S4, вердикты владельца 2026-09-17) ──────────────────
+// The effect IS the caster's control flag moving (sub/spawn.h possess_entity)
+// — nothing else happens, and nothing else needs to: under the mirror law the
+// taken body already fights, spends and carries as itself. Three laws live
+// here, all the spell's own:
+//   · the Targeted pick — the body under the reticle within the row's reach
+//     (beamLength), through the same aim primitive the reticle always used;
+//   · the 1-hop ban (CANON S4, 2026-09-17): casting FROM a borrowed body is
+//     refused — the «Каскадное вселение» keystone exists as the lifting of
+//     exactly this;
+//   · the level gate: targetLevel < casterLevel + school rank, STRICTLY.
+// A cast that fires and finds nothing — or is resisted — still happened: the
+// mana and the recovery are already in the pot, like a sword swing that
+// misses (owner verdict 2026-09-17). Refusal changes no flag.
+constexpr float kTargetedConeCosHalfAngle = 0.70710678f; // the ~45° reticle
+
+void spawn_possession(ecs::World& w, const SpellSpawnContext& c) {
+    auto& reg = w.reg;
+    const entt::entity caster = entt::entity(c.playerId);
+    // Only a body that IS someone's control flag has a flag to move. An NPC
+    // casting this row fires and transfers nothing — the cast is generic, the
+    // effect argues with a flag the caster does not carry.
+    if (!reg.valid(caster) || !reg.all_of<ecs::AvatarTag>(caster)) return;
+    // 1-hop ban: the hero husk mirrors his own squad's record; any other
+    // record under the avatar means the caster is already wearing somebody.
+    entt::entity home = entt::null;
+    for (auto e : reg.view<ecs::PlayerSquadTag>()) { home = e; break; }
+    if (home != entt::null && sub::record_of(reg, caster) != home) return;
+    // The body under the reticle, within THIS row's reach. The row is this
+    // function's own binding (kSpellEffects), so reading it back is the
+    // ordinal law, not a lookup of somebody else's numbers.
+    const SpellDef* row = spell_find("possession");
+    const float reach = row ? row->beamLength : 0.0f;
+    const float yaw = std::atan2(c.ny, c.nx);
+    const entt::entity target = sub::aim_target(
+        reg, c.px, c.py, yaw, reach, kTargetedConeCosHalfAngle, caster);
+    if (target == entt::null) return;          // poured into empty air
+    // THE GATE: strictly weaker in level, each trained rank of the school
+    // raising the threshold by one (owner formula, 2026-09-17). A body with
+    // no level row is a nobody — level 0.
+    const auto* lvl = reg.try_get<ecs::NpcLevel>(target);
+    const int targetLevel = lvl ? int(lvl->value) : 0;
+    if (targetLevel >= int(c.casterLevel) + int(c.schoolRank)) return;
+    sub::possess_entity(w, target);
+}
+
 // ── The binding table ──────────────────────────────────────────────────────
 // Row i binds kSpellDefs[i]. nullptr = the spell has no subworld spawn (self
 // buffs — the spellbook applies them without an effect entity).
@@ -218,6 +266,7 @@ constexpr SpellEffectRow kSpellEffects[] = {
     {"armageddon",      &spawn_armageddon},
     {"haste",           nullptr},
     {"flight",          nullptr},
+    {"possession",      &spawn_possession},
 };
 
 static_assert(sizeof(kSpellEffects) / sizeof(kSpellEffects[0])

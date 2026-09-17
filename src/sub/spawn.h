@@ -465,45 +465,8 @@ int project_macro_npcs_into_subworld(ecs::World& w,
                                      std::uint32_t seed,
                                      const StructureIndex* solids = nullptr);
 
-// ── ВСЕЛЕНИЕ: ЭТО ПЕРЕНОС ФЛАЖКА, И БОЛЬШЕ НИЧЕГО ───────────────────────
-//
-// Owner's ruling, 2026-09-12: «одержимость — это не более чем перенос флажка
-// (эффект для будущих спеллов)». It is not a system, it has no ceremony, and
-// the machinery that had grown around it — an exit-remap query, an identity
-// adoption door, a struct to carry the answer between them, and a design doc —
-// was cut on that word.
-//
-// The whole of it follows from the model the project already has: the player is
-// an ordinary body carrying a flag (CANON S4, «игрок == НПЦ»), so moving the
-// flag to another body is moving the player. Every consumer — camera, input,
-// incoming combat, the minimap — follows the flag by construction, and since
-// the mirror law (sub/record.h) the body's bars, bag and gear are its RECORD's,
-// so an inhabited lord fights as himself without anybody arranging it.
-//
-// current_player_body: the single entity currently carrying AvatarTag, or
-// entt::null (never null mid-subworld — exactly one flag is always live).
-entt::entity current_player_body(ecs::World& w);
-
-// Move the player flag onto `target` (must be a live, positioned scene body).
-// BOTH flags, in one movement: AvatarTag onto the body, PlayerTag onto that
-// body's RECORD (record_of). «Одержимость — не более чем перенос флажка»
-// (owner 2026-09-12) — so there is no span in which the scene says one man and
-// the map says another, and every `player_*` door answers about the man you
-// actually are.
-//
-// Removes AvatarTag from the current body; if that body was the hero husk (no
-// NPCKind) it is destroyed — the husk is a projection of his macro record, so
-// nothing is lost and no inert, un-rendered, un-AI'd zombie is stranded in the
-// scene. A vacated FOREIGN body keeps all its components and, with the flag
-// gone, its AI / rendering / targetability resume automatically (every such
-// path is AvatarTag-gated).
-//
-// No-op returning false if target is null / invalid / unpositioned / already
-// the player — OR IF IT HAS NO RECORD. That last one is the law, not a guard:
-// a DERIVED body (record_of answers with the body itself) is one-of-many that
-// nothing above remembers, and it dies with the scene; a macro flag has
-// nowhere to land on it. Pure ECS: the caller re-mirrors the position scalars
-// from the new body afterwards.
-bool possess_entity(ecs::World& w, entt::entity target);
+// (Вселение — перенос флажка — живёт в sub/possess.h: header-only дверь,
+// которую зовут эффект спелла possession и харнесс, без линковки слоя
+// спавна.)
 
 } // namespace sm::sub

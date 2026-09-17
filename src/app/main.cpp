@@ -73,6 +73,8 @@
 #include "content/quests/procedural.h"
 #include "sub/engine.h"
 #include "sub/damage.h"
+#include "sub/record.h"   // pools_of/record_of — the death check asks the
+                          // body the player is STANDING IN, mirror-law wise
 #include "sub/dgn/dispatch.h"
 #include "sub/height.h"
 #include "sub/map_data.h"
@@ -3548,9 +3550,26 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
     // engine files into the very macro cell he stands in.
     sm::player_journal_capture(app.gs, app.ecs);
     tick_subworld_hit_flash(app, dt);
-    // The REAL pools only: the scratch fallback is all zeros, and a frame
-    // before the squad entity exists must not read as a death.
-    if (const sm::ecs::Pools* pools = sm::player_pools(app.ecs);
+    // The bar that says «я умер» belongs to the body he is STANDING IN — its
+    // record's, through the mirror door: his own squad as himself, the lord's
+    // while he wears one, and a borrowed DERIVED body's own block, which no
+    // macro door can see because possession of a nobody never moves the macro
+    // flag (закон шва, 2026-09-17). Off-scene the flag record answers, as
+    // always. The REAL pools only: the scratch fallback is all zeros, and a
+    // frame before the squad entity exists must not read as a death.
+    const sm::ecs::Pools* deathPools = nullptr;
+    entt::entity avatarBody = entt::null;
+    if (app.subworld.active()) {
+        for (auto e : app.ecs.reg.view<sm::ecs::AvatarTag>()) {
+            avatarBody = e;
+            break;
+        }
+        if (avatarBody != entt::null) {
+            deathPools = sm::sub::pools_of(app.ecs.reg, avatarBody);
+        }
+    }
+    if (!deathPools) deathPools = sm::player_pools(app.ecs);
+    if (const sm::ecs::Pools* pools = deathPools;
         pools && pools->hp <= 0) {
         // Death is the end of the game — that is the law (CANON S17) — and a
         // PLACE may say otherwise about itself: the pocket's own kind row
@@ -3561,9 +3580,17 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
         // the damage door and the game-over path stay untouched.
         const char* storyNode =
             sm::sub::dungeon_kind_row(app.subworld.dungeon_kind()).deathNode;
+        // «Чужое» спрашивается у СЦЕНЫ, когда она есть: носимый лорд И
+        // носимый генерик — оба «запись тела ≠ мой оригинал», хотя у генерика
+        // макро-флаг никуда не переезжал и player_wears_another_body молчит.
+        const entt::entity home = sm::player_squad_entity(app.ecs);
+        const bool foreignBody =
+            avatarBody != entt::null
+                ? sm::sub::record_of(app.ecs.reg, avatarBody) != home
+                : sm::player_wears_another_body(app.ecs);
         if (app.subworld.in_dungeon() && storyNode != nullptr) {
             end_scene_by_death(app, storyNode);
-        } else if (sm::player_wears_another_body(app.ecs)) {
+        } else if (foreignBody) {
             // Умерло НОСИМОЕ тело, не ты. Одержимость — эффект, и его
             // единственное отличие от голого переноса флажка в том, что смерть
             // возвращает в оригинал (владелец 2026-09-14).
@@ -3573,8 +3600,18 @@ RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput) {
             // кто сюда пришёл ногами, — а твоё тело всё это время стояло там,
             // где ты его оставил, и приезжать ему сюда незачем.
             if (app.subworld.active()) app.subworld.leave(true);
-            if (!sm::wake_player_in_original_body(app.ecs)) {
-                // Просыпаться не в чем — оригинала убили, пока тебя не было.
+            sm::wake_player_in_original_body(app.ecs);
+            // Жив ⇔ флажок стоит ДОМА на живом оригинале: смерть лорда
+            // разбудила (флажок переехал), смерть генерика не двигала флажок
+            // вовсе — а мёртвый оригинал это «просыпаться не в чем», гейм
+            // овер (владелец 2026-09-14).
+            const entt::entity flag = sm::player_flag_entity(app.ecs);
+            const auto* homePools =
+                home != entt::null
+                    ? app.ecs.reg.try_get<sm::ecs::Pools>(home) : nullptr;
+            const bool homeAlive = homePools && homePools->hp > 0
+                && !app.ecs.reg.all_of<sm::ecs::Dead>(home);
+            if (!(flag == home && homeAlive)) {
                 app.state = sm::ui::AppState::Dead;
             }
         } else {

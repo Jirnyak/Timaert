@@ -11,6 +11,7 @@
 #include "sub/lighting.h"
 #include "gpu/vk_device.h"
 #include "sub/spawn.h"
+#include "sub/possess.h"
 #include "sub/targeting.h"
 #include "sub/ai.h"
 #include "sub/movement.h"

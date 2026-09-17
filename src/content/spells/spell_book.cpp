@@ -2,7 +2,9 @@
 #include "core/time.h"
 #include "ecs/components.h"
 #include "ecs/world.h"
+#include "macro/character_sheet.h"  // the record's sheet — casterLevel
 #include "sub/body.h"   // body_radius — the caster shell the muzzle clears
+#include "sub/record.h" // record_of — whose sheet the casting body mirrors
 
 #include <cstddef>
 #include <cmath>
@@ -202,6 +204,19 @@ bool spellbook_cast(ecs::World& w, SpellBook& sb, ecs::Pools& combat,
     };
     ctx.dmgType = std::uint8_t(spell_damage_type(*d));
     ctx.critical = strike.critical;
+    // Who casts, for person-arguing effects (possession's level gate): the
+    // trained rank in this spell's own school from the same effective skills
+    // the damage law reads, and the level of the RECORD the casting body
+    // mirrors (sub/record.h) — a fixture body with no sheet is a novice.
+    const SkillId school = spell_school(*d);
+    ctx.schoolRank = std::uint8_t(
+        school != SkillId::Count ? skills.of(school) : 0);
+    if (caster != entt::null) {
+        const entt::entity rec = sub::record_of(w.reg, caster);
+        if (const auto* cs = w.reg.try_get<CharacterSheet>(rec)) {
+            ctx.casterLevel = std::int16_t(cs->levelData.level);
+        }
+    }
 
     if (!cast_spell(w, *d, ctx)) return false;
     spellbook_start_cast(sb, combat, spellOrd);

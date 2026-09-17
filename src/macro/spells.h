@@ -483,6 +483,43 @@ inline constexpr SpellDef kSpellDefs[] = {
                  "Strategic repositioning"},
         .cons = {"High mana drain", "No combat benefit", "Blocked indoors"},
     },
+    {
+        // ВСЕЛЕНИЕ — СПЕЛЛ (CANON S4, вердикты владельца 2026-09-17). The
+        // effect is the caster's control flag moving onto the body under the
+        // reticle (sub/spawn.h possess_entity); the WHOLE mechanic is this row
+        // plus its effect row — the hardcoded possess_aim/console door died
+        // the day this row was born. The level gate is the spell's own law:
+        // targetLevel < casterLevel + VoidMagic rank, STRICTLY — an equal is
+        // not taken, and every trained rank raises the threshold by one. A
+        // cast that fires and is resisted still burns its mana and recovery,
+        // like a sword swing that misses.
+        .id = "possession", .name = "Possession", .icon = "@",
+        .sourceIcon = "\xF0\x9F\x91\xBB",
+        .tag = SpellTag::Dark, .secondaryTag = SpellTag::Dark,
+        .rarity = SpellRarity::Epic, .shape = DeliveryShape::Targeted,
+        .tier = 4,
+        .manaCost = 200, .recovery = 4.0f,
+        .sustained = false, .manaDrain = 0.0f,
+        .hasMicro = true, .hasMacro = false,
+        .dice = {0, 1}, .baseHeal = 0.0f, .baseRadius = 0.0f,
+        .chainCount = 0, .chainDecayPct = 0,
+        .speed = 0.0f, .duration = 0.0f, .friendlyFire = false,
+        .statusEffect = "", .statusDuration = 0.0f,
+        .scalingPower = 0.0f, .scalingDuration = 0.0f, .scalingRadius = 0.0f,
+        .projectileRadius = 0.0f, .projectileLife = 0.0f,
+        // The Targeted delivery's REACH — the same column a beam states its
+        // length in: how far this delivery reaches from the caster.
+        .beamLength = 30.0f,
+        .description = "Pour your will into a weaker mind and wear its body "
+                       "as your own. A nameless creature is shed the moment "
+                       "you leave the place; a lord of the realm you may "
+                       "simply remain. Dying in a borrowed body throws you "
+                       "back into your own - if it still lives.",
+        .pros = {"Become the target entirely", "Keeps a lord across the seam",
+                 "Death returns you to your body"},
+        .cons = {"Only weaker-leveled targets", "High mana cost",
+                 "Game over if your body is dead"},
+    },
 };
 
 inline constexpr int kSpellCount =
