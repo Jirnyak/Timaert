@@ -257,11 +257,11 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
         gx[std::size_t(g)] = gates[std::size_t(g)].x;
         gy[std::size_t(g)] = gates[std::size_t(g)].y;
     }
-    // How much street this town needs: every house wants a street face, and a
-    // lane offers two of them — one down each side.
+    // How much street this town needs — THE one street-demand law
+    // (sub/city_layout.h city_street_demand), asked here for the town proper
+    // and below for its upper quarter with the same words.
     const int houses = std::max(0, city_house_target(population) - upperHouses);
-    constexpr float kPlotFace = 6.0f;   // mean of widthMin..Max + gapMin..Max
-    const float frontage = float(houses) * kPlotFace * 0.5f;
+    const float frontage = city_street_demand(houses);
     // THE MARKET, sized by the sellers it must hold (sub/city_layout.h) —
     // ~40 tiles across for a town of six thousand, not the 6x6 stamp it was.
     const int squareSize = std::max(5, int(std::sqrt(
@@ -283,9 +283,19 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
 
     // ── The UPPER QUARTER's own life ──────────────────────────────────────
     // Its streets grow from its gates toward its own heart, exactly as the
-    // city's grow from theirs — the same kit, a second call. That is what
-    // makes it a quarter rather than a walled yard: lanes, frontage and houses
-    // of its own, for the garrison that lives in it.
+    // city's grow from theirs — the same kit, the same LAWS, a second call.
+    // That is what makes it a quarter rather than a walled yard: lanes,
+    // frontage and houses of its own, for the garrison that lives in it.
+    //
+    // A COMPARTMENT, NOT A SECOND KIND OF TOWN (owner, 2026-09-18: «верхний
+    // квартал — это чисто архитектурная структурная вещь генерации города,
+    // типа компартменты; нигде кроме этого она не играет роли»). Nothing in
+    // the world knows this district exists — the word "upper" appears in no
+    // file but this one, and the people inside it keep house and walk the
+    // street by the same one law as everyone else. So what may differ here is
+    // a RING and a GATE LIST; arithmetic may not. Its street demand used to
+    // be multiplied by the plot FACE while the town's used the plot PITCH,
+    // which is how a quarter came out a quarter short of its own houses.
     LaneNet upperLanes;
     if (upperHouses > 0) {
         std::array<float, 8> ugx{}, ugy{};
@@ -299,7 +309,7 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
             ++ugc;
         }
         LanePlan up = city_lane_plan(population,
-                                     float(upperHouses) * kPlotFrontage * 0.5f,
+                                     city_street_demand(upperHouses),
                                      castleR * 0.25f);
         up.heartSpokes = 3;
         upperLanes = grow_lanes(out, castle, city_layout().streetWallInset * 0.5f,
@@ -351,10 +361,13 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
     fp.setback   = 1.0f;     // a step off the carriageway, no more
     fp.depthMin  = 4.0f;     // a room deep…
     fp.depthMax  = 8.0f;     // …to a workshop with a back room
-    fp.widthMin  = 3.0f;     // a burgage plot's narrow street face
-    fp.widthMax  = 6.0f;
-    fp.gapMin    = 0.0f;     // terraced where the town is dense…
-    fp.gapMax    = 3.0f;     // …to a gated yard between
+    // THE plot band, read from its one home (sub/city_layout.h) — the same
+    // numbers kPlotFrontage and kPlotPitch are the means of, so the land
+    // budget and the street demand can never disagree with what is laid.
+    fp.widthMin  = kPlotFaceMin;   // a burgage plot's narrow street face
+    fp.widthMax  = kPlotFaceMax;
+    fp.gapMin    = kPlotGapMin;    // terraced where the town is dense…
+    fp.gapMax    = kPlotGapMax;    // …to a gated yard between
     fp.heightMin = 5.0f;
     fp.heightMax = 9.0f;
     int placedHouses = (keepPlaced ? 1 : 0)
@@ -417,9 +430,9 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
     //
     // A well serves the households that can carry water from it, and how many
     // that is belongs to the STREET PLAN: a block is branchEvery tiles of
-    // lane, a plot takes kPlotFace of frontage, and a lane fronts two sides.
+    // lane, a plot STEPS kPlotPitch along it, and a lane fronts two sides.
     const int housesPerBlock = std::max(1,
-        int(city_lane_plan(population, 0.0f, 0.0f).branchEvery / kPlotFace) * 2);
+        int(city_lane_plan(population, 0.0f, 0.0f).branchEvery / kPlotPitch) * 2);
     lay_yards(out, rBuild, housesPerBlock);
 
     // Street lighting: a town that keeps a wall keeps lamps along its

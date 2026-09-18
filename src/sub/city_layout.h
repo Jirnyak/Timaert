@@ -214,10 +214,48 @@ inline int city_house_target(int population) {
 // HOUSES came from the hearth law, so their ratio — the density — was an
 // accident that happened to look right at one population and nowhere else.
 // Now there is one number and the area follows from it.
-inline constexpr float kPlotFrontage  = 4.5f;   // mean of the frontage band
+// ── THE PLOT BAND, ONCE ────────────────────────────────────────────────────
+// The band the generator actually lays (kit/plots.h FrontagePlan, which reads
+// these): a burgage face of 3..6 tiles, with 0..3 of gap to the neighbour —
+// terraced where the town is dense, a gated yard between where it is not.
+//
+// TWO different means of this ONE band matter, and they are DERIVED here so
+// that neither can ever be written by hand again:
+//
+//   · kPlotFrontage — the FACE: what the house itself takes of the street.
+//     This is what the LAND budget multiplies, because a yard runs back from
+//     the house, not from the gap beside it.
+//   · kPlotPitch — the STEP from one door to the next along a lane: face plus
+//     gap. This is what STREET DEMAND multiplies, because a lane has to be
+//     long enough to seat its houses at the spacing they are actually laid at.
+//
+// WHY THIS IS SPELLED OUT: they used to be two hand-written constants in two
+// files (4.5 here, `kPlotFace = 6.0` inside gens/city.cpp), and the two call
+// sites asking the SAME question — how much lane do N houses need — each
+// grabbed a different one. The town took the pitch and the upper quarter took
+// the face, so the quarter's streets came out a quarter short of its own
+// houses. The compartments of a town are compartments, not laws: what differs
+// between them is a ring and a gate list, never arithmetic.
+inline constexpr float kPlotFaceMin = 3.0f;
+inline constexpr float kPlotFaceMax = 6.0f;
+inline constexpr float kPlotGapMin  = 0.0f;
+inline constexpr float kPlotGapMax  = 3.0f;
+
+inline constexpr float kPlotFrontage  = (kPlotFaceMin + kPlotFaceMax) * 0.5f;
+inline constexpr float kPlotPitch     = kPlotFrontage
+                                      + (kPlotGapMin + kPlotGapMax) * 0.5f;
+
 inline constexpr float kPlotDepth     = 6.0f;   // mean building depth
 inline constexpr float kPlotLaneWidth = 4.0f;   // the lane it fronts
 inline constexpr float kPlotYardDepth = kPlotDepth * 3.0f;
+
+// THE street-demand law, and there is exactly one: N houses want N doors on a
+// lane, and a lane offers two rows of them — one down each side. Every walled
+// compartment of a town asks it the same way, because "which compartment" is
+// not a question the arithmetic can see.
+inline constexpr float city_street_demand(int houses) {
+    return float(houses > 0 ? houses : 0) * kPlotPitch * 0.5f;
+}
 
 inline constexpr float kTownGroundPerHouse =
       kPlotFrontage * kPlotDepth                    // the house       ~27
