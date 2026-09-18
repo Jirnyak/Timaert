@@ -20,6 +20,7 @@
 #pragma once
 #include <array>
 #include <cstdint>
+#include "macro/attributes.h"   // SkillId/Skills — ремесло открывает рецепт
 #include "macro/commodity.h"
 #include "macro/seasons.h"
 #include "macro/items.h"
@@ -52,10 +53,15 @@ int commodity_item_index(int commodityIdx);
 // the bread row moved here, because «деревня печёт хуже уже потому, что её
 // меньше»: the population-efficiency law below prices the difference, not a
 // second recipe and not a site wall.
-enum class EconSite : std::uint8_t { Village = 0, City = 1, Any = 2 };
+// (EconSite УМЕР 2026-09-18, вердикт владельца «сносим сайт». Он был стеной
+// ПО ВИДУ: деревне открыт хлеб, всё прочее — City-only, потому что City. Что
+// место УМЕЕТ, теперь говорит его анкета — те же скиллы, тот же лист, что у
+// всех в макромире, — а рецепт называет ремесло и ранг. Деревня не чеканит не
+// потому, что она деревня, а потому что её кузнечный ранг ноль.)
 
-inline bool recipe_runs_at(EconSite recipeSite, EconSite here) {
-    return recipeSite == EconSite::Any || recipeSite == here;
+// Рецепт открыт этим рукам? Один вопрос, один ответ, ноль веток по виду.
+inline bool recipe_known(const Skills& sk, SkillId craft, int minRank) {
+    return sk.of(craft) >= minRank;
 }
 
 // A recipe names only THE SCHEDULE — what this kind of place works on, and
@@ -66,12 +72,11 @@ inline bool recipe_runs_at(EconSite recipeSite, EconSite here) {
 // of «из чего хлеб» — and then two of «сколько труда в хлебе» — each
 // drifted apart exactly once before they were merged.
 struct RecipeDef {
-    const char* output;          // commodity id
-    EconSite site;
+    const char*  output;    // commodity id
+    SkillId      craft;     // ЧЬИ руки это делают
+    std::uint8_t minRank;   // и с какого ранга умеют
 };
 
-// Производство «обычно в городе» (owner) — v1 keeps every craft in the City;
-// a village-side craft later is one row with site=Village, no code.
 // The MINT output marker: not a commodity row — the produce scheduler
 // resolves it into the town's own faction coin (CANON S10: чеканка = рецепт;
 // выход монет из единицы металла = стоимость металла по единой таблице цен,
@@ -92,28 +97,38 @@ inline constexpr const char* kMintOutput = "coin";
 // Declared above the recipe table because the bread row derives from it.
 inline constexpr int kGatherPerWorkerDay = 32;
 
+// РЕМЕСЛО И РАНГ вместо вида места. Ранги расставлены редко и без претензии:
+// это РАННЯЯ ДЕМКА (владелец, 2026-09-18) — закладывается СИСТЕМА, а рецептов
+// у ремесла со временем станет много, и тогда шаг между ними станет узким сам
+// собой. Ремесло названо по МАТЕРИИ, с которой работают руки.
+//
+// ДЕРЕВООБРАБОТКИ отдельной строкой пока нет (пять ремёсел — слово владельца),
+// поэтому мебель и резьба квартируют у masonry как «что сложено и сколочено».
+// Переселить их = поменять одну колонку, кода это не касается.
 inline constexpr RecipeDef kRecipes[] = {
     // BREAD = the anchor made chain-wide: a baker's day turns exactly one
     // farmer's gather-day of grain (32) into 32 bread, so the farmer+baker
-    // pair feeds 16 and the slack pays for crafts and the road. The old 8
-    // per worker-day × the 1/8 labour quota put the bake ceiling at exactly
-    // the population — a knife-edge measured by the дубль-прогон: 150/210
-    // villages starved daily sitting on 2.1M hoarded grain.
+    // pair feeds 16 and the slack pays for crafts and the road.
     // (What each output CONSUMES — and HOW FAST it turns — lives on its
-    // catalog row: items.cpp kPartsAuthoring composition + labour columns,
-    // moved verbatim from the input/tempo columns that stood here.)
-    {"bread",     EconSite::Any},
-    // ЧЕКАНКА: все города (site City = право v1); темп эмиссии = труд
-    // строки монеты (4 металла на рабочий-день, labour-колонка).
-    {kMintOutput, EconSite::City},
-    {"bricks",    EconSite::City},
-    {"cloth",     EconSite::City},
-    {"tools",     EconSite::City},
-    {"furniture", EconSite::City},
-    {"wagon",     EconSite::City},
-    {"jewelry",   EconSite::City},
-    {"carving",   EconSite::City},
-    {"statue",    EconSite::City},
+    // catalog row: items.cpp kPartsAuthoring composition + labour columns.)
+    {"bread",     SkillId::Cooking,     1},
+    // ЧЕКАНКА — кузнечное дело высокого ранга. Права чеканки КОЛОНКОЙ не
+    // существует (канон, вердикт №12): чеканит тот, чьи руки умеют.
+    {kMintOutput, SkillId::Blacksmith, 30},
+    {"bricks",    SkillId::Masonry,     1},
+    {"cloth",     SkillId::Tailoring,   1},
+    {"tools",     SkillId::Blacksmith,  1},
+    {"furniture", SkillId::Masonry,    10},
+    {"wagon",     SkillId::Blacksmith, 15},
+    {"jewelry",   SkillId::Blacksmith, 20},
+    {"carving",   SkillId::Masonry,     5},
+    {"statue",    SkillId::Masonry,    25},
+    // ЗЕЛЬЯ ВАРЯТ (владелец, 2026-09-18). Состав у них в каталоге был всегда
+    // ({mat_herb 2} → 8), в производственном дне — не было. Пока травы в мир
+    // не приходят, строка честно варит ноль партий: у рецепта нет материи, а
+    // не нет рецепта.
+    {"potion_hp", SkillId::Alchemy,     1},
+    {"potion_mp", SkillId::Alchemy,    10},
 };
 inline constexpr int kRecipeCount = int(sizeof(kRecipes) / sizeof(kRecipes[0]));
 
@@ -290,7 +305,7 @@ using EconFactSink = void (*)(void* user, const EconFact& fact);
 // town's faction (its three nominals run gold-first, each off its own metal;
 // faction_coins resolves the free folk to the imperial family). -1 = this
 // place has no mint and the row simply does not run.
-int econ_produce_day(Inventory& store, EconSite site, int workers,
+int econ_produce_day(Inventory& store, const Skills& hands, int workers,
                      int population, EconFactSink sink, void* user,
                      int mintFactionIdx = -1);
 
@@ -390,7 +405,7 @@ inline int mood_band_from_wellbeing(float wellbeing) {
 //     add_value_in_coins), from population ± a quarter's spread off the
 //     world seed (`seedSalt` — world seed ⊕ the landmark's identity), so
 //     twin towns are born organically unequal (CANON S10, посев капитала).
-void seed_landmark_inventory(Inventory& inv, int population, EconSite site,
+void seed_landmark_inventory(Inventory& inv, int population, bool isCity,
                              int factionIdx, std::uint32_t seedSalt);
 
 } // namespace sm

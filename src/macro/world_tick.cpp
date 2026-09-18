@@ -11,6 +11,7 @@
 // world by exactly that many.
 
 #include "macro/world_tick.h"
+#include "macro/characters.h"   // landmark_sheet — анкета места (что оно умеет)
 #include "macro/econ_day.h"
 #include "macro/currency.h"
 #include "macro/fauna.h"
@@ -32,14 +33,9 @@ namespace sm {
 
 namespace {
 
-// The registry column speaks EconSite ordinals (landmark_registry.h econSite
-// documents this pairing); assert it where both vocabularies are visible, so
-// a reordered enum cannot silently swap the towns' and the villages' tables.
-static_assert(landmark_def(LandmarkType::City).econSite
-                  == std::int8_t(EconSite::City)
-              && landmark_def(LandmarkType::Village).econSite
-                  == std::int8_t(EconSite::Village),
-              "LandmarkDef::econSite must carry EconSite ordinals");
+// (Сторож пары EconSite↔колонка реестра умер вместе с EconSite,
+// 2026-09-18: что место УМЕЕТ, теперь говорит его анкета — characters.h
+// landmark_sheet, — а рецепт называет ремесло и ранг.)
 
 inline float rand01_(WorldTickRuntime& runtime) {
     return runtime.jitter.next_f01();
@@ -207,7 +203,7 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
         // The mint right, v1: every CITY strikes its own faction's coin
         // (owner 2026-08-30; the right becomes a landmark column when a
         // place ever differs from its kind).
-        econ_produce_day(s.inventory, EconSite(landmark_def(s.type).econSite),
+        econ_produce_day(s.inventory, landmark_sheet(s.type).skills,
                          s.population > 0
                              ? std::max(1, s.population / kHeadsPerCityWorker)
                              : 0,
@@ -339,7 +335,7 @@ void tick_villages_(GameState& gs, int day, WorldTickRuntime& runtime,
         // which is only true if this call exists: today no recipe carries
         // that site, so this makes nothing, and the day the row lands it
         // works with no code here either.
-        econ_produce_day(v.inventory, EconSite(landmark_def(v.type).econSite),
+        econ_produce_day(v.inventory, landmark_sheet(v.type).skills,
                          v.population > 0
                              ? std::max(1, v.population / kHeadsPerCityWorker)
                              : 0,

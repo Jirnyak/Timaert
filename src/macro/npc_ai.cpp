@@ -1650,8 +1650,7 @@ void ai_caravan(entt::entity self, MacroPos& p,
         // by station). Load the HOME surplus first — the stock above the
         // town's own daily demand. No deal here: the hold IS the city's
         // property (the loan law), and a town does not sell to itself.
-        const EconSite homeSite =
-            EconSite(landmark_def(homeLm->type).econSite);
+        const Skills& homeSite = landmark_sheet(homeLm->type).skills;
         for (int oi = 0; oi < kCommodityCount
                         && inventory_weight(bag->inv) < rt.carryCap / 2;
              ++oi) {
@@ -1900,8 +1899,7 @@ void ai_vendor(entt::entity self, MacroPos& p,
         }
         // Load the surplus above the home's own daily demand — never its
         // living stock.
-        const EconSite homeSite =
-            EconSite(landmark_def(homeLm->type).econSite);
+        const Skills& homeSite = landmark_sheet(homeLm->type).skills;
         for (int oi = 0; oi < kCommodityCount
                         && inventory_weight(bag->inv) < rt.carryCap;
              ++oi) {
@@ -2008,7 +2006,7 @@ void ai_vendor(entt::entity self, MacroPos& p,
             const CaravanDeal deal = trade_vendor_at_market(
                 bag->inv, rt.carryCap, *market, snap,
                 homeLm->population,
-                EconSite(landmark_def(homeLm->type).econSite),
+                landmark_sheet(homeLm->type).skills,
                 leader_charisma_(*ctx.mw.world, self),
                 /*bargaining=*/0);
             if (deal.movedTableValue > 0) {
@@ -3336,7 +3334,7 @@ CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
                                      int charisma, int bargaining) {
     CaravanDeal out{};
     Inventory& ms = market.inventory;
-    const EconSite site = EconSite(landmark_def(market.type).econSite);
+    const Skills& site = landmark_sheet(market.type).skills;
     for (int i = 0; i < kCommodityCount; ++i) {
         const char* id = kCommodities[i].id;
         const ItemDef* def = item_def(id);
@@ -3415,11 +3413,11 @@ CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
 CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
                                    Landmark& market,
                                    const MemoryEntry* homeSnapshot,
-                                   int homePopulation, EconSite homeSite,
+                                   int homePopulation, const Skills& homeSite,
                                    int charisma, int bargaining) {
     CaravanDeal out{};
     Inventory& ms = market.inventory;
-    const EconSite site = EconSite(landmark_def(market.type).econSite);
+    const Skills& site = landmark_sheet(market.type).skills;
     const auto base_value = [](const char* id) {
         const ItemDef* d = item_def(id);
         return d ? d->value : 0;
@@ -4004,7 +4002,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         };
         GoalBid bids[kGathererGoalCount + 1];
         int bidCount = -1;   // -1 = аукцион ещё не считан
-        const EconSite homeSite = EconSite(ld.econSite);
+        const Skills& homeSite = landmark_sheet(s.type).skills;
         const auto run_auction = [&] {
             if (bidCount >= 0) return;
             bidCount = 0;

@@ -8,6 +8,7 @@
 //     buy-81/sell-92 infinite money (audit III.2). The killer is the
 //     SLIPPAGE both sides pay: a buy prices the shelf it leaves behind
 //     (scarcer, dearer), a sell prices the glut it creates (cheaper).
+#include "macro/characters.h"   // landmark_sheet — руки места
 #include "check.h"
 
 #include "macro/economy.h"
@@ -15,6 +16,11 @@
 #include "macro/currency.h"
 
 namespace {
+// Руки города и деревни — анкета их рода (characters.h), а не вид места.
+static const sm::Skills& CITY =
+    sm::landmark_sheet(sm::LandmarkType::City).skills;
+static const sm::Skills& VILLAGE =
+    sm::landmark_sheet(sm::LandmarkType::Village).skills;
 
 using namespace sm;
 
@@ -26,9 +32,9 @@ void test_scarcity_shape() {
     CHECK(stock_scarcity(1 << 20, 0) == 0.25f, "glut clamps at 1/4 (po2)");
     CHECK(stock_price(10, 0, 100) == 40, "price = base x scarcity");
     CHECK(stock_price(10, 1 << 20, 0) >= 1, "a price never reaches zero");
-    CHECK(daily_demand_for("bread", 128, EconSite::City) == 128
-              && daily_demand_for("cloth", 128, EconSite::City) == 4
-              && daily_demand_for("wpn_dagger", 128, EconSite::City) == 0,
+    CHECK(daily_demand_for("bread", 128, CITY) == 128
+              && daily_demand_for("cloth", 128, CITY) == 4
+              && daily_demand_for("wpn_dagger", 128, CITY) == 0,
           "demand reads the ONE needs ladder");
 }
 

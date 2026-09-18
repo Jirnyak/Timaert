@@ -229,7 +229,7 @@ CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
 CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
                                    Landmark& market,
                                    const MemoryEntry* homeSnapshot,
-                                   int homePopulation, EconSite homeSite,
+                                   int homePopulation, const Skills& homeSite,
                                    int charisma, int bargaining);
 
 // ── ПОРУЧЕНИЕ: цель сквада = {глагол, объект} ────────────────────────────

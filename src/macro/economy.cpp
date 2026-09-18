@@ -66,7 +66,7 @@ namespace {
 // caravans saw no profit in hauling it, and stone outbid food (measured,
 // balance_run). Recursive over the recipe table with a small depth cap:
 // chains are data and may grow (ore → metal → tool), cycles must not hang.
-int demand_for_(const char* itemId, int population, EconSite site,
+int demand_for_(const char* itemId, int population, const Skills& hands,
                 int depth) {
     if (!itemId || population <= 0) return 0;
     int demand = 0;
@@ -79,20 +79,20 @@ int demand_for_(const char* itemId, int population, EconSite site,
     if (depth > 0) {
         const int target = item_index(itemId);
         for (const RecipeDef& r : kRecipes) {
-            // Derived demand exists only where the recipe CAN run: a
-            // village that bakes nothing wants no grain beyond its own
-            // needs, however hungry its future bakery would be — without
-            // this gate the growers' own granaries priced at the scarcity
+            // Derived demand exists only where the recipe CAN run: hands
+            // that bake nothing want no grain beyond their own needs,
+            // however hungry their future bakery would be — without this
+            // gate the growers' own granaries priced at the scarcity
             // ceiling and the caravans' loans bought a quarter of the lot
             // (measured, balance_run 2026-08-30).
-            if (!recipe_runs_at(r.site, site)) continue;
+            if (!recipe_known(hands, r.craft, r.minRank)) continue;
             // The recipe's matter = its output row's composition (the one
             // matter table, items.h). The mint's output is no catalog row
             // (-1 → empty span), and its silver demand was always zero:
             // nothing NEEDS coin down the needs ladder.
             for (const ItemPart& part : item_parts(item_index(r.output))) {
                 if (int(part.def) != target) continue;
-                demand += demand_for_(r.output, population, site, depth - 1)
+                demand += demand_for_(r.output, population, hands, depth - 1)
                           * int(part.count);
             }
         }
@@ -127,10 +127,11 @@ constexpr int weakest_need_per_unit_day() {
     return weakest;
 }
 
-int daily_demand_for(const char* itemId, int population, EconSite site) {
+int daily_demand_for(const char* itemId, int population,
+                     const Skills& hands) {
     // Depth 4 covers chains far past today's one-step recipes (ore → metal
     // → part → tool) and caps any future accidental cycle.
-    const int direct = demand_for_(itemId, population, site, 4);
+    const int direct = demand_for_(itemId, population, hands, 4);
     if (population <= 0) return direct;
     const int floorDemand = population / weakest_need_per_unit_day();
     return direct > floorDemand ? direct : floorDemand;

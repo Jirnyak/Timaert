@@ -14,6 +14,12 @@ namespace {
 // touch integers only (the faction-registry pattern).
 struct ResolvedRecipe {
     int output = -1;
+    // КАТАЛОЖНЫЙ ординал выхода — и он, а не товарный, делает вещь. Рецепт
+    // вправе выдавать строку, которой в товарной лестнице НЕТ: зелье — это
+    // предмет со своим составом, а не ярус нужд (владелец 2026-09-18,
+    // «поушоны будем варить»). Товарный индекс остаётся для ФАКТА и для
+    // «сегодняшнего стола» — там, где речь о нуждах населения.
+    int outItem = -1;
     // The mint row (econ_day.h kMintOutput): output resolves to the town's
     // faction coin at run time. NOTHING else about it is special (owner
     // verdict 2026-09-12, «единая система крафта; города производят как
@@ -37,6 +43,7 @@ const ResolvedTables& resolved() {
         for (int i = 0; i < kRecipeCount; ++i) {
             ResolvedRecipe& rr = r.recipes[i];
             rr.output = commodity_index(kRecipes[i].output);
+            rr.outItem = item_index(kRecipes[i].output);
             rr.isMint = std::strcmp(kRecipes[i].output, kMintOutput) == 0;
             for (int n = 0; n < kNeedCount; ++n) {
                 if (std::strcmp(kNeeds[n].commodity, kRecipes[i].output) == 0) {
@@ -65,7 +72,7 @@ void report(EconFactSink sink, void* user, EconFact::Kind kind,
 
 } // namespace
 
-int econ_produce_day(Inventory& store, EconSite site, int workers,
+int econ_produce_day(Inventory& store, const Skills& hands, int workers,
                      int population, EconFactSink sink, void* user,
                      int mintFactionIdx) {
     if (workers <= 0) return 0;
@@ -170,13 +177,13 @@ int econ_produce_day(Inventory& store, EconSite site, int workers,
             }
             return;
         }
-        run_recipe_out(rr, commodity_item_index(rr.output), unitCap,
-                       workerCap);
+        run_recipe_out(rr, rr.outItem, unitCap, workerCap);
     };
 
     // Pass 0 — today's table, by demand.
     for (int i = 0; i < kRecipeCount && workersLeft > 0; ++i) {
-        if (!recipe_runs_at(kRecipes[i].site, site)) continue;
+        if (!recipe_known(hands, kRecipes[i].craft, kRecipes[i].minRank))
+            continue;
         const ResolvedRecipe& rr = t.recipes[i];
         if (rr.output < 0 || rr.demandDivisor <= 0) continue;
         const int demand = population / rr.demandDivisor;
@@ -200,14 +207,15 @@ int econ_produce_day(Inventory& store, EconSite site, int workers,
     };
     int liveRecipes = 0;
     for (int i = 0; i < kRecipeCount; ++i) {
-        if (!recipe_runs_at(kRecipes[i].site, site)) continue;
+        if (!recipe_known(hands, kRecipes[i].craft, kRecipes[i].minRank))
+            continue;
         const ResolvedRecipe& rr = t.recipes[i];
         bool feedable = false;
         if (rr.isMint) {
             feedable = feedable_row(mintRows[0]) || feedable_row(mintRows[1])
                     || feedable_row(mintRows[2]);
         } else {
-            feedable = feedable_row(commodity_item_index(rr.output));
+            feedable = feedable_row(rr.outItem);
         }
         if (feedable) ++liveRecipes;
     }
@@ -217,7 +225,8 @@ int econ_produce_day(Inventory& store, EconSite site, int workers,
     // Pass 1 — fair shares; pass 2 — leftovers in table order.
     for (int pass = 1; pass <= 2 && workersLeft > 0; ++pass) {
         for (int i = 0; i < kRecipeCount && workersLeft > 0; ++i) {
-            if (!recipe_runs_at(kRecipes[i].site, site)) continue;
+            if (!recipe_known(hands, kRecipes[i].craft, kRecipes[i].minRank))
+            continue;
             if (t.recipes[i].output < 0 && !t.recipes[i].isMint) continue;
             run_recipe(i, 1 << 30, pass == 1 ? fairShare : workersLeft);
         }
@@ -313,7 +322,7 @@ int commodity_item_index(int commodityIdx) {
         ? kMap[std::size_t(commodityIdx)] : -1;
 }
 
-void seed_landmark_inventory(Inventory& inv, int population, EconSite site,
+void seed_landmark_inventory(Inventory& inv, int population, bool isCity,
                              int factionIdx, std::uint32_t seedSalt) {
     if (population <= 0) return;
     // Born MID-LIFE means born with LAST SEASON'S HARVEST IN THE BARN: the
@@ -323,7 +332,7 @@ void seed_landmark_inventory(Inventory& inv, int population, EconSite site,
     constexpr int kSeedVitalDays = kDaysPerSeason;
     static_assert(kSeedVitalDays == kDaysPerSeason,
                   "the seed larder must survive the first season window");
-    const int needDays = site == EconSite::City ? 32 : 8;   // a season / days
+    const int needDays = isCity ? 32 : 8;   // a season / days
     for (int i = 0; i < kNeedCount; ++i) {
         const int idx = commodity_index(kNeeds[i].commodity);
         if (idx < 0) continue;
@@ -340,7 +349,7 @@ void seed_landmark_inventory(Inventory& inv, int population, EconSite site,
     constexpr RawSeed kRawSeeds[] = {
         {"food", 0}, {"wood", 0}, {"stone", 1}, {"clay", 2}, {"iron", 3},
     };
-    const int siteMult = site == EconSite::Village ? 2 : 1;
+    const int siteMult = isCity ? 1 : 2;
     for (const RawSeed& r : kRawSeeds) {
         const int qty = (population >> r.shift) * siteMult;
         if (qty > 0) inv.add(r.id, qty);
@@ -358,7 +367,7 @@ void seed_landmark_inventory(Inventory& inv, int population, EconSite site,
     // per world. The value lands as the faction's own three coins,
     // change-made largest-first (add_value_in_coins).
     {
-        const int base = population * (site == EconSite::City ? 8 : 2);
+        const int base = population * (isCity ? 8 : 2);
         // One xorshift step spreads consecutive salts before the mask.
         std::uint32_t h = seedSalt;
         h ^= h << 13; h ^= h >> 17; h ^= h << 5;

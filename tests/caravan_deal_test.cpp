@@ -10,6 +10,7 @@
 //   4. THE CLAMP — every unit priced inside [base/4 .. 4×base].
 //   5. NEGATIVE CONTROL — a coinless market can buy nothing, and nothing is
 //      confiscated from it either.
+#include "macro/characters.h"   // landmark_sheet — руки места
 #include "check.h"
 
 #include "macro/agent_memory.h"
@@ -31,7 +32,6 @@ long long commodity_total(const sm::Inventory& a, const sm::Inventory& b,
 }  // namespace
 
 int main() {
-    using sm::EconSite;
 
     // ── The station stop ─────────────────────────────────────────────────
     // A city short of bread (none in store, pop 64 demands 64) and glutted
@@ -52,9 +52,9 @@ int main() {
     const long long breadBefore =
         commodity_total(hold, city.inventory, "bread");
     const int breadDemand = sm::daily_demand_for("bread", city.population,
-                                                 EconSite::City);
+                                                 sm::landmark_sheet(sm::LandmarkType::City).skills);
     const int woodDemand = sm::daily_demand_for("wood", city.population,
-                                                EconSite::City);
+                                                sm::landmark_sheet(sm::LandmarkType::City).skills);
 
     // Charisma 0 here: the corridor checks below stay the raw price law's;
     // the sheet edge is asserted separately at the end.
@@ -109,7 +109,7 @@ int main() {
         sm::coin_census_value(bag) + sm::coin_census_value(town.inventory);
     const sm::CaravanDeal vd = sm::trade_vendor_at_market(
         bag, 1e6f, town, &snap, /*homePopulation=*/50,
-        EconSite::Village, /*charisma=*/0, /*bargaining=*/0);
+        sm::landmark_sheet(sm::LandmarkType::Village).skills, /*charisma=*/0, /*bargaining=*/0);
 
     CHECK(sm::coin_census_value(bag) + sm::coin_census_value(town.inventory)
               == vCoinBefore,

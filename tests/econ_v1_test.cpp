@@ -15,6 +15,7 @@
 //      emits FamineEnded exactly once when bread arrives (facts fire on
 //      TRANSITIONS, not every day).
 
+#include "macro/characters.h"   // landmark_sheet — руки места
 #include "check.h"
 #include "macro/currency.h"
 #include "macro/econ_day.h"
@@ -25,6 +26,11 @@
 #include <cstring>
 
 namespace {
+// Руки города и деревни — анкета их рода (characters.h), а не вид места.
+static const sm::Skills& CITY =
+    sm::landmark_sheet(sm::LandmarkType::City).skills;
+static const sm::Skills& VILLAGE =
+    sm::landmark_sheet(sm::LandmarkType::Village).skills;
 
 int fail(const char* msg) {
     // Testing law #1: the verdict lives in the ONE check.h counter — the
@@ -104,11 +110,17 @@ int main() {
         // ItemDef.value, pinned positive by the link law of section 8 below.
     }
     for (int r = 0; r < kRecipeCount; ++r) {
+        // A recipe's output must be a real CATALOG row — that is what the
+        // production day actually makes (composition + yield + labour). Being
+        // a COMMODITY on top of that is a statement about the needs ladder,
+        // and not every made thing is one: the mint's output is the caller's
+        // faction coin (kMintOutput), and a potion is an item nobody eats by
+        // the ladder («поушоны будем варить», 2026-09-18).
         const int out = commodity_index(kRecipes[r].output);
-        // The mint row's output is the caller's faction COIN, not a
-        // commodity (econ_day.h kMintOutput) — the one sanctioned exception.
-        if (out < 0 && std::strcmp(kRecipes[r].output, kMintOutput) != 0)
-            return fail("recipe output id unknown");
+        const bool isMint = std::strcmp(kRecipes[r].output, kMintOutput) == 0;
+        if (!isMint && item_index(kRecipes[r].output) < 0)
+            return fail("recipe output names no catalog row");
+
         if (kCommodities[out].tier == CommodityTier::Raw) {
             return fail("recipe may not output raw (only deposits create raw)");
         }
@@ -197,7 +209,7 @@ int main() {
         // season of bread between boundaries, so steady-state production
         // must beat consumption + export with headroom, not sit on the old
         // daily knife-edge (measured: 8 workers banked 840 of the 1024).
-        econ_produce_day(city, EconSite::City, 12, cityPop + villagePop,
+        econ_produce_day(city, CITY, 12, cityPop + villagePop,
                          &sink, &led);
 
         // The return leg: the village's daily bread comes back.
@@ -354,7 +366,7 @@ int main() {
         // population 0: no demand pass — pure fair shares, the exact surface
         // the old hog bug lived on.
         const int made =
-            econ_produce_day(s, EconSite::City, 8, 0, nullptr, nullptr);
+            econ_produce_day(s, CITY, 8, 0, nullptr, nullptr);
         if (made <= 0) return fail("city with inputs and workers made nothing");
         if (s.count_of(commodity_item_index(commodity_index("bricks"))) <= 0) {
             return fail("first recipe hogged every worker - no output diversity");
@@ -435,7 +447,7 @@ int main() {
         const int pop = 640;
         Inventory city;
         const int empire = faction_index("empire");
-        seed_landmark_inventory(city, pop, EconSite::City, empire, 0x1234u);
+        seed_landmark_inventory(city, pop, true, empire, 0x1234u);
         if (city.count("bread") != pop * kDaysPerSeason) {
             return fail("birth larder must hold a SEASON of bread — a place "
                         "seeded thinner dies of arithmetic at its first "
@@ -448,7 +460,7 @@ int main() {
             }
         }
         Inventory village;
-        seed_landmark_inventory(village, pop, EconSite::Village, empire,
+        seed_landmark_inventory(village, pop, false, empire,
                                 0x1234u);
         if (village.count("food") <= city.count("food")) {
             return fail("a village's whole business is raw - it holds more");
@@ -457,7 +469,7 @@ int main() {
             return fail("a crafting city banks deeper crafted stocks");
         }
         Inventory again;
-        seed_landmark_inventory(again, pop, EconSite::City, empire, 0x1234u);
+        seed_landmark_inventory(again, pop, true, empire, 0x1234u);
         if (again.count("bread") != city.count("bread")
             || again.used_slots() != city.used_slots()) {
             return fail("birth stocks must be deterministic from population");
@@ -490,7 +502,7 @@ int main() {
             bool differs = false;
             for (std::uint32_t salt = 1; salt <= 4 && !differs; ++salt) {
                 Inventory other;
-                seed_landmark_inventory(other, pop, EconSite::City, empire,
+                seed_landmark_inventory(other, pop, true, empire,
                                         salt);
                 differs = treasury(other) != treasury(city);
             }
@@ -554,7 +566,7 @@ int main() {
         Inventory inv;
         inv.add("food", 100);
         inv.add("potion_hp", 3);   // NOT a commodity — must ride untouched
-        econ_produce_day(inv, EconSite::Village, /*workers*/4,
+        econ_produce_day(inv, VILLAGE, /*workers*/4,
                          /*population*/40, nullptr, nullptr);
         econ_consume_season(inv, /*population*/40, false, nullptr, nullptr);
         if (inv.count("potion_hp") != 3) {
@@ -571,7 +583,7 @@ int main() {
     {
         Inventory ghost;
         ghost.add("food", 100);
-        if (econ_produce_day(ghost, EconSite::City, /*workers*/0,
+        if (econ_produce_day(ghost, CITY, /*workers*/0,
                              /*population*/0, nullptr, nullptr) != 0) {
             return fail("zero workers produced something");
         }
@@ -614,7 +626,7 @@ int main() {
         long mintedCoins = 0;
         Inventory store;
         store.add("silver", 40);
-        econ_produce_day(store, EconSite::City, /*workers*/2, /*population*/2,
+        econ_produce_day(store, CITY, /*workers*/2, /*population*/2,
                          minted_sink, &mintedCoins, faction_index("empire"));
 
         const int spent = 40 - store.count("silver");
@@ -643,7 +655,7 @@ int main() {
         }
         full.add("silver", 40);
         if (!full.full()) return fail("the fixture's store is not full");
-        econ_produce_day(full, EconSite::City, /*workers*/2, /*population*/2,
+        econ_produce_day(full, CITY, /*workers*/2, /*population*/2,
                          nullptr, nullptr, faction_index("empire"));
         if (full.count("coin_empire_silver") != 0) {
             return fail("a full shelf accepted coins it had no slot for");

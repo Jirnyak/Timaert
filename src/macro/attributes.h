@@ -51,6 +51,13 @@ enum class SkillId : std::uint8_t {
     // are forever): the bare fist is a weapon type like any other, so an
     // unarmed monk is a build and not a gap in the law.
     Unarmed,
+    // РЕМЁСЛА (владелец, 2026-09-18) — пять строк, аппенд, ординалы вечны.
+    // Это НЕ новая система: система скиллов и система крафта уже есть, а эти
+    // пять — та колонка, по рангу которой открывается рецепт (econ_day.h
+    // kRecipes: craft + minRank). Ремесло названо по МАТЕРИИ, с которой
+    // работают руки, а не по товару: одно ремесло владеет многими рецептами,
+    // и «сколько их и на каких рангах» — контент, который дорастёт.
+    Cooking, Blacksmith, Tailoring, Masonry, Alchemy,
     Count
 };
 
@@ -169,13 +176,15 @@ inline constexpr int kMaxSkills = 64;
 struct Skills {
     std::array<std::uint8_t, kMaxSkills> rank{};
 
-    std::uint8_t& operator[](SkillId id) {
+    // constexpr: анкеты МЕСТ (characters.h kLandmarkSheets) собираются на
+    // этапе компиляции — одна на род, ни байта в рантайме и в сейве.
+    constexpr std::uint8_t& operator[](SkillId id) {
         return rank[std::size_t(id)];
     }
-    std::uint8_t operator[](SkillId id) const {
+    constexpr std::uint8_t operator[](SkillId id) const {
         return rank[std::size_t(id)];
     }
-    int of(SkillId id) const { return int(rank[std::size_t(id)]); }
+    constexpr int of(SkillId id) const { return int(rank[std::size_t(id)]); }
 };
 
 // What ONE RANK of a skill is worth, and which way it pushes.
@@ -288,6 +297,23 @@ inline constexpr SkillDef kSkillDefs[] = {
     // Appended v79 with its enum row — a weapon skill like the seven above.
     {SkillId::Unarmed,     "unarmed",     "Unarmed",
      "unarmed damage per rank",               10},
+    // ── РЕМЁСЛА (2026-09-18) ────────────────────────────────────────────
+    // pctPerRank = 0 СОЗНАТЕЛЬНО: ремесло не множит число, оно ОТКРЫВАЕТ
+    // рецепт. Проценты — язык скиллов, которые усиливают удар или дешевят
+    // цену; у этих строк власть иная, и врать процентом, которого нет, эта
+    // таблица не станет (колонка `effect` говорит, чем строка на самом деле
+    // распоряжается). Когда крафченая вещь станет ЛУЧШЕ от ранга — вот тогда
+    // у ремесла появится свой процент, и появится он здесь.
+    {SkillId::Cooking,     "cooking",     "Cooking",
+     "unlocks cooking recipes by rank",        0},
+    {SkillId::Blacksmith,  "blacksmith",  "Blacksmith",
+     "unlocks smithing recipes by rank",       0},
+    {SkillId::Tailoring,   "tailoring",   "Tailoring",
+     "unlocks tailoring recipes by rank",      0},
+    {SkillId::Masonry,     "masonry",     "Masonry",
+     "unlocks masonry recipes by rank",        0},
+    {SkillId::Alchemy,     "alchemy",     "Alchemy",
+     "unlocks alchemy recipes by rank",        0},
 };
 static_assert(sizeof(kSkillDefs) / sizeof(kSkillDefs[0])
                   == std::size_t(SkillId::Count),

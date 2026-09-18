@@ -17,6 +17,7 @@
 // per-skill multiplier as a column rather than flatten every skill to 1 %:
 // the ceiling is DERIVED per row now, and there is exactly one function that
 // turns a rank into a multiplier.
+#include "macro/econ_day.h"   // kRecipes — чей ранг открывает рецепт
 #include "check.h"
 
 #include "macro/attributes.h"
@@ -70,17 +71,36 @@ void test_attributes_are_an_envelope_and_a_table() {
 
 // ── The table is a table ─────────────────────────────────────────────────
 void test_the_registry_is_addressable_by_ordinal() {
-    CHECK(int(SkillId::Count) == 33,
-          "the canon thirty-two plus Unarmed (v79 append) stand in the "
-          "registry today");
+    CHECK(int(SkillId::Count) == 38,
+          "the canon thirty-two, Unarmed (v79) and the five crafts "
+          "(2026-09-18) stand in the registry today");
+    // A SKILL MUST HAVE POWER — and this used to say «power is a percent per
+    // rank», which is true of every skill that multiplies a blow or shaves a
+    // price and false of a CRAFT: a craft's rank does not scale a number, it
+    // OPENS A RECIPE. Weakening the rule to «or zero is fine too» would have
+    // let the next dead column in, so it is stated the strong way instead:
+    // every row either multiplies something per rank, or is named by at
+    // least one recipe of the production table. An alchemy skill nobody can
+    // brew with reddens here, which is exactly what it should do.
+    int craftRows = 0;
     for (int i = 0; i < int(SkillId::Count); ++i) {
         const SkillDef& d = skill_def(SkillId(i));
         CHECK(int(d.id) == i, "every row stands at its own ordinal");
         CHECK(d.key != nullptr && d.key[0] != '\0', "every row names itself");
         CHECK(d.label != nullptr && d.label[0] != '\0', "and labels itself");
-        CHECK(d.pctPerRank > 0,
-              "a skill that does nothing per rank is not a skill");
+        bool namedByRecipe = false;
+        for (const RecipeDef& r : kRecipes)
+            if (r.craft == SkillId(i)) { namedByRecipe = true; break; }
+        if (namedByRecipe) ++craftRows;
+        CHECK(d.pctPerRank > 0 || namedByRecipe,
+              "a skill must either multiply something per rank or unlock a "
+              "recipe — a row that does neither is a dead column");
     }
+    // The negative control of the sweep itself: it must have SEEN crafts, or
+    // the clause above proved nothing about them (testing law #3).
+    CHECK(craftRows == 5,
+          "five crafts are named by the recipe table — the sweep above "
+          "actually judged them");
 }
 
 // ── The ranks are a flat envelope, addressed by index ────────────────────

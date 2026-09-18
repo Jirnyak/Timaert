@@ -13,6 +13,7 @@
 #include "macro/landmark_iter.h"
 #include "ui/landmark_draw.h"
 #include "macro/npc.h"
+#include "macro/characters.h"   // landmark_sheet — что место умеет
 #include "macro/commodity.h"   // the raw rows the scrap variant byte names
 #include "macro/economy.h"
 #include "macro/faction.h"
@@ -2093,8 +2094,8 @@ namespace sm::ui
                                         s->inventory.count_of(int(ref.def)) - n,
                                         daily_demand_for(
                                             def.id, s->population,
-                                            EconSite(landmark_def(
-                                                s->type).econSite))),
+                                            landmark_sheet(
+                                                s->type).skills)),
                             h.cha, h.trade, s->mood);
                     };
                     const auto sellUnit = [&](const ItemRef &ref,
@@ -2104,8 +2105,8 @@ namespace sm::ui
                                         s->inventory.count_of(int(ref.def)) + n,
                                         daily_demand_for(
                                             def.id, s->population,
-                                            EconSite(landmark_def(
-                                                s->type).econSite))),
+                                            landmark_sheet(
+                                                s->type).skills)),
                             h.cha, h.trade, s->mood);
                     };
                     draw_barter_body(

@@ -18,6 +18,7 @@
 // где живут её типы (прецедент npc.h): её читают спавн-генезис и лестница
 // effective_behaviour, оба L1, и слой content сюда не нужен.
 #pragma once
+#include <array>
 #include <cstdint>
 #include "macro/behaviour.h"
 #include "macro/character_sheet.h"
@@ -153,6 +154,55 @@ inline constexpr DesignCharacterDef kDesignCharacterDefs[] = {
         DesignAgenda{.radiusCells = 10},
     },
 };
+
+// ── АНКЕТЫ МЕСТ (владелец, 2026-09-18) ────────────────────────────────────
+//
+// «У всего в макромире — ландмарки, сквады, лорды — есть анкета: у генерик
+// вещей вроде городов и сквадов генерик анкета, у лордов и царя-крестьянина
+// просто более детальная, с именем» (дословно). Сквады это УЖЕ умеют —
+// squad.h sheet_of: владеемый CharacterSheet-компонент у именованного, иначе
+// генерик-бросок от строки и уровня. Не умели только МЕСТА, и вот их анкета.
+//
+// Одна на РОД, не на экземпляр: «ландмарки — деревни, города и столицы —
+// потом будут иметь каждый по одной анкете, и там мы зададим скиллы и что
+// они умеют». Поэтому она живёт здесь константой и НЕ едет в сейв — ни байта
+// на 32 тысячи мест, ни бампа kSaveVersion.
+//
+// ЧТО ОНА РЕШАЕТ СЕГОДНЯ: какие рецепты месту открыты (econ_day.h kRecipes —
+// ремесло + ранг). Деревня не чеканит не потому, что она деревня, а потому
+// что её кузнечный ранг ноль. Стены по виду больше нет — есть руки.
+//
+// Столицы отдельным родом ещё не существует (LandmarkType её не знает;
+// столица сегодня — город без сюзерена), так что её строка придёт вместе с
+// родом. Незаполненный род = анкета в нулях: место, которое не умеет ничего,
+// — честный случай, а не дыра.
+inline constexpr std::array<CharacterSheet, std::size_t(LandmarkType::Count)>
+kLandmarkSheets = [] {
+    std::array<CharacterSheet, std::size_t(LandmarkType::Count)> a{};
+    CharacterSheet& city = a[std::size_t(LandmarkType::City)];
+    // Город умеет ВСЁ, чем сегодня живёт экономика, и чеканит: кузнечный
+    // ранг дотягивается до монетной строки (kRecipes minRank 30).
+    city.skills[SkillId::Cooking]    = 30;
+    city.skills[SkillId::Blacksmith] = 30;
+    city.skills[SkillId::Tailoring]  = 30;
+    city.skills[SkillId::Masonry]    = 30;
+    city.skills[SkillId::Alchemy]    = 10;
+    CharacterSheet& village = a[std::size_t(LandmarkType::Village)];
+    // Деревня ПЕЧЁТ (вердикт владельца: «не должно быть хуторов без пекаря —
+    // они через крафт-систему всё уметь производить должны, просто населения
+    // меньше, поэтому менее эффективно»). Ровно это ей разрешал и прежний
+    // EconSite; разница в том, что запрет на остальное — теперь НОЛЬ РАНГА,
+    // который можно вырастить, а не вид, которым она родилась.
+    village.skills[SkillId::Cooking] = 10;
+    // Руин, логов, шпилей и башен ремесло не касается — их анкета в нулях,
+    // и это честный случай, а не дыра: место, которое не умеет ничего.
+    return a;
+}();
+
+inline constexpr const CharacterSheet& landmark_sheet(LandmarkType t) {
+    return kLandmarkSheets[std::size_t(t) < std::size_t(LandmarkType::Count)
+                               ? std::size_t(t) : 0];
+}
 
 inline constexpr std::int16_t kDesignCharacterCount =
     std::int16_t(sizeof(kDesignCharacterDefs) / sizeof(kDesignCharacterDefs[0]));
