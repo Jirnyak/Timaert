@@ -326,6 +326,18 @@ void gen_city(const GenInput& in, SubworldMapData& out) {
         // quarter is a hand-written second copy of the town's build order, and
         // a copy loses a field silently. city_wall_integrity_test now asserts
         // the property for EVERY ring, so the next district cannot lose it.
+        //
+        // AND THE COPY STAYS — do not "fix" it into one compartment function
+        // (owner, 2026-09-18, asked directly): «если это всё в рамках модуля
+        // города и никуда не лезет, ничему не мешает, то оставь как есть — в
+        // будущем проще работать с модулями как отдельными мини-программами,
+        // типа DOD-инкапсуляция». The duplication is INSIDE one module and
+        // visible to nobody outside it, which is the case AGENTS' DOD rule 5
+        // calls fine («modularity beats dryness… similar-looking code is not a
+        // debt; the defect is CROSS-ENTANGLEMENT»). What was NOT allowed, and
+        // was merged the same day, is the two compartments holding different
+        // ARITHMETIC — the street-demand law is one (city_street_demand).
+        // The witness, not a shared function, is what keeps the copy honest.
         carve_pomerium(out, castle, city_layout().streetWallInset * 0.5f,
                        upperLanes);
     }
