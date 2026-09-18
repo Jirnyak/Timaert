@@ -22,9 +22,20 @@ inline int wrapi(int v, int size) {
     return int(m);
 }
 
+// THE float wrap. Contract: the answer lies in [0, size) — HALF-OPEN, `size`
+// itself is never returned. The half-open half of that had to be written out
+// and then enforced, because the obvious spelling does not deliver it: for a
+// small negative `v` (say −1e-7 on a 1024-wide world) `fmod` returns a tiny
+// negative, `m + size` rounds UP to exactly `size` in float, and the caller
+// gets a coordinate one past the last cell. That is the `next_f01()` hole
+// again (rng.h, problems.md) — a range documented open at the top and closed
+// by rounding — and at this door it is a seam: `int(wrapf(...))` indexes the
+// row after the last one.
 inline float wrapf(float v, float size) {
     float m = std::fmod(v, size);
-    return m < 0 ? m + size : m;
+    if (m < 0) m += size;
+    if (m >= size) m = 0.0f;   // rounded up onto the seam — that IS the origin
+    return m;
 }
 
 // THE signed shortest offset between two points of a wrapped axis: which way,

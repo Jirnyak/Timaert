@@ -22,7 +22,7 @@
 #include "core/torus.h"
 #include "macro/landmark_iter.h"
 
-#include <cassert>
+#include <cstdio>
 #include <cstdint>
 #include <vector>
 
@@ -72,8 +72,19 @@ inline LandmarkGrid build_landmark_grid(const GameState& gs) {
         // First landmark yielded at a cell owns it — the iterator's order is
         // the ONE priority (it is the same order resolve_context used to scan).
         if (s != LandmarkGrid::kNoLandmark) return;
-        assert(g.refs.size() < LandmarkGrid::kNoLandmark
-               && "landmark count exceeds the u16 slot space");
+        // THE CAP SPEAKS OUT LOUD (CANON S26). This used to be an `assert`,
+        // which is nothing at all in the build the player runs: past 65 534
+        // landmarks the u16 slot would have taken kNoLandmark's own value and
+        // every cell of that place would have answered «nothing stands here»
+        // — a world silently missing a town, in release only. The refusal is
+        // said and the cell is honestly left empty instead.
+        if (g.refs.size() >= LandmarkGrid::kNoLandmark) {
+            std::fprintf(stderr,
+                         "[landmark-grid] slot space exhausted at %zu "
+                         "landmarks — cell %d,%d left unowned\n",
+                         g.refs.size(), xi, yi);
+            return;
+        }
         s = std::uint16_t(g.refs.size());
         g.refs.push_back(LandmarkRef{lv.type, lv.id});
     });

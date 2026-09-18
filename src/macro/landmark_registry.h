@@ -12,6 +12,8 @@
 #include <cstdint>
 #include "core/rng.h"    // the ONE generator (landmark_born_population)
 #include "core/table_guard.h"
+#include "macro/econ_day.h"     // kHeadsPerCityWorker — the bench quota the
+                                // city's labourShift is log2 of (guard below)
 #include "macro/map_actions.h"  // the verb bits the `actions` column declares
 #include "macro/npc.h"   // NPCType — the crew rows below name who a place raises
 #include <string_view>
@@ -255,6 +257,17 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
 };
 static_assert(rows_in_enum_order(kLandmarks, &LandmarkDef::type),
               "kLandmarks row order must mirror LandmarkType");
+
+// THE two labour laws of a city meet at the same eighth of its people, and
+// until now that meeting was a claim in a COMMENT: the crew pool's shift
+// (labourShift, this table) and the bench quota (econ_day.h
+// kHeadsPerCityWorker) are one number spelled two ways, and nothing compared
+// them. Retune either alone and a city raises crews on one eighth while its
+// benches staff another — silently, because both numbers stay plausible.
+static_assert(
+    (1 << kLandmarks[std::size_t(LandmarkType::City)].labourShift)
+        == kHeadsPerCityWorker,
+    "city labourShift must be log2(kHeadsPerCityWorker)");
 
 inline constexpr const LandmarkDef& landmark_def(LandmarkType t) {
     return kLandmarks[std::size_t(t)];

@@ -1139,6 +1139,13 @@ void read_payload(Reader& r, GameState& s, std::vector<Quest>& activeQuests,
     for (std::uint32_t i = 0; i < n && r.ok; ++i) {
         Landmark lm{};
         read_landmark(r, lm);
+        // Self-heal the issuer ABOVE every restored landmark — the same law
+        // the quests below and macro_snapshot's spawn ordinal already apply.
+        // An issuer behind a living ordinal hands the next founded place an
+        // identity that is already standing on the map.
+        if (lm.id >= 0
+            && std::uint32_t(lm.id) >= s.nextLandmarkOrdinal)
+            s.nextLandmarkOrdinal = std::uint32_t(lm.id) + 1u;
         s.landmarks.push_back(std::move(lm));
     }
 
