@@ -774,10 +774,21 @@ void SubworldEngine::enter(const MacroWorld& mw, EventBus& bus,
     // Project the persistent macro NPCs standing in this 3×3 window into the
     // scene as real combat bodies (Inc 5d) — the overworld lords / bandits /
     // peasants are physically MET where they roam, and each projection carries a
-    // MacroOrigin backlink so leave() (5e) can land the player on the right macro
-    // cell. The macro entities stay authoritative and untouched (the macro tick
-    // is frozen while a subworld is active). Runs AFTER the world fill and BEFORE
-    // the player entity so projections are part of the scene the player enters.
+    // MacroOrigin backlink so leave() can land the player on the right macro
+    // cell — and so every lasting write reaches THE RECORD (sub/record.h), of
+    // which the projected body is only a mirror.
+    //
+    // TWO CLAIMS THAT STOOD HERE WERE BOTH FALSE. «Untouched»: the record is
+    // precisely what a wound, a spend and a loot roll do touch. «The macro
+    // tick is frozen while a subworld is active»: it is NOT frozen and must
+    // not be (AGENTS core invariants — «no cheats, on whichever unit runs
+    // it»; NPCs are never frozen or LOD-skipped). The overworld thinks on
+    // WORLD time, so underground it thinks as slowly as the day passes —
+    // main.cpp runs tick_macro_npc_ai_budgeted at kSubworldMacroNpcTicksPerStep
+    // every scene step. A lord you left walking is still walking.
+    //
+    // Runs AFTER the world fill and BEFORE the player entity so projections
+    // are part of the scene the player enters.
     const int projected = project_macro_npcs_into_subworld(ecs, mgr_, cx, cy,
         gs.mapW, gs.mapH,
         cell_seed(gs.worldSeed, cx, cy) ^ kMacroProjectionSalt, &structIndex_);
