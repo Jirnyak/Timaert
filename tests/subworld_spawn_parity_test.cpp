@@ -366,10 +366,15 @@ bool run_city_population_projection_case(
                              /*faunaCount*/-1, &wall,
                              sm::world_time_at(1, 12, 0));
 
+    // The street is Peasant + Guard and NOBODY else since 2026-09-18 (verdict
+    // №2 taken literally: «пусть пока в городе только стражники и пизанты»).
+    // The professions, the merchant and the witch keep their enum rows as
+    // dead save ordinals — a spawner raising one is exactly the regression
+    // this fixture now guards against.
     int count = 0;
     int guards = 0;
-    int merchants = 0;
-    int woodcutters = 0;
+    int peasants = 0;
+    int others = 0;
     auto view = world.reg.view<sm::ecs::SubworldTag,
                                sm::ecs::NPCKind,
                                sm::ecs::NpcCharacter,
@@ -381,12 +386,10 @@ bool run_city_population_projection_case(
         if (kind.type == std::uint16_t(sm::NPCType::Guard)
             && ai.kind == sm::ecs::SubworldAi::Combat) {
             ++guards;
-        }
-        if (kind.type == std::uint16_t(sm::NPCType::Merchant)) {
-            ++merchants;
-        }
-        if (kind.type == std::uint16_t(sm::NPCType::Woodcutter)) {
-            ++woodcutters;
+        } else if (kind.type == std::uint16_t(sm::NPCType::Peasant)) {
+            ++peasants;
+        } else {
+            ++others;
         }
     }
 
@@ -403,7 +406,7 @@ bool run_city_population_projection_case(
         }
     }
 
-    return count >= 24 && guards == 5 && merchants >= 1 && woodcutters >= 1;
+    return count >= 24 && guards == 5 && peasants >= 1 && others == 0;
 }
 
 // A place decides HOW MANY people stand in it — never how strong each of them is

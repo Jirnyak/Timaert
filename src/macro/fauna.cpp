@@ -89,17 +89,24 @@ struct SpawnHabitatRow {
     const char*   wildFaction = nullptr;
 };
 constexpr SpawnHabitatRow kSpawnHabitats[std::size_t(NPCType::Count)] = {
+    // THE town stripe is Peasant + Guard and nothing else (owner, 2026-09-18,
+    // verdict №2 of the second audit: professions are emergent — «профессии
+    // нет» — and the crowd verdict taken literally: «пусть пока в городе
+    // только стражники и пизанты»). Woodcutter/Miner/Quarryman/ClayDigger,
+    // Merchant and Witch keep their rows as dead save ordinals; no spawner
+    // raises them. (Known cost, accepted: ai_mage_hunt loses its ambient
+    // Magika prey until the crowd returns under its own law.)
     {NPCType::Peasant,      kHabTown},
-    {NPCType::Woodcutter,   kHabTown},
-    {NPCType::Merchant,     kHabTown},
+    {NPCType::Woodcutter,   0},
+    {NPCType::Merchant,     0},
     {NPCType::Caravan,      0},
     {NPCType::Bandit,       0},
     {NPCType::Guard,        kHabTown},
-    {NPCType::Witch,        kHabTown},
+    {NPCType::Witch,        0},
     {NPCType::Sorceress,    0},
-    {NPCType::Miner,        kHabTown, std::int8_t(DepositKind::Iron)},
-    {NPCType::Quarryman,    kHabTown, std::int8_t(DepositKind::Stone)},
-    {NPCType::ClayDigger,   kHabTown, std::int8_t(DepositKind::Clay)},
+    {NPCType::Miner,        0},
+    {NPCType::Quarryman,    0},
+    {NPCType::ClayDigger,   0},
     {NPCType::Rabbit,       hab(Meadow) | hab(Valley) | hab(Steppe) | hab(Taiga)
                           | hab(Tundra) | hab(Snow) | kHabForest, -1, "wildlife"},
     {NPCType::Deer,         hab(Meadow) | hab(Valley) | hab(Steppe)

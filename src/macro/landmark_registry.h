@@ -226,8 +226,7 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
      /*labour*/3, {{NPCType::TaxCollector, CrewGate::Suzerain, /*solo*/true},
                    {NPCType::Guard, CrewGate::Auction, /*solo*/false,
                     /*garrison*/true}}, 2,
-     /*crowdRoles*/{{NPCType::Merchant, 0, 1},
-                    {NPCType::Woodcutter, 0, 1}}, 2,
+     /*crowdRoles*/{}, 0,   // v96: fixed posts cut — the street IS the stripe
      /*actions*/ kMapActTrade | kMapActHire | kMapActQuests },
     // Артели деревни — N ОДИНАКОВЫХ крестьянских строк (снос профессий,
     // CANON S10): каждая берёт поручение своим броском рулетки аукциона —
@@ -239,8 +238,7 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
                    {NPCType::Peasant, CrewGate::Auction},
                    {NPCType::Peasant, CrewGate::Auction},
                    {NPCType::Peasant, CrewGate::Auction}}, 4,
-     /*crowdRoles*/{{NPCType::Merchant, 0, 1},
-                    {NPCType::Woodcutter, 0, 1}}, 2,
+     /*crowdRoles*/{}, 0,   // v96: fixed posts cut — the street IS the stripe
      /*actions*/ kMapActTrade | kMapActHire | kMapActQuests },
     // Spire wild fauna returned to the GROUND (§42 Инк 5): its demons are
     // its POPULATION now — the mountain's own beasts roam the slopes, and

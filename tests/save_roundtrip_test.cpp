@@ -381,8 +381,6 @@ sm::GameState make_state() {
     settlement.population = 777;
     settlement.mood = sm::SettlementMood::Tense;
     settlement.inventory.add("wood", 19);
-    settlement.history.push(1, 700);
-    settlement.history.push(12, 777);
     add_soldiers(settlement.garrison, sm::NPCType::Guard, 5, 2000u);
     add_soldiers(settlement.garrison, sm::NPCType::Peasant, 1, 2100u);
     settlement.factionIdx = 2;
@@ -402,8 +400,6 @@ sm::GameState make_state() {
     village.population = 111;
     village.mood = sm::SettlementMood::Stable;
     village.inventory.add("food_meat", 4);
-    village.history.push(3, 90);
-    village.history.push(10, 111);
     village.suzerainLandmarkId = settlement.id;
     village.factionIdx = 2;
     village.starvedYesterday = 5;
@@ -943,8 +939,6 @@ void run_roundtrip() {
     const sm::Landmark& city = *cityLm;
     if (city.name != "Round City" || city.mood != sm::SettlementMood::Tense
         || city.inventory.count("wood") != 19
-        || city.history.size() != 2 || city.history.population_at(1) != 777
-        || city.history.day_at(0) != 1
         || sm::count_soldiers_of_kind(
             city.garrison, static_cast<std::uint8_t>(sm::NPCType::Peasant)) != 1) {
         FAIL_BAIL("settlement details lost");

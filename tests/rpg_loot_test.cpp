@@ -223,11 +223,11 @@ static void test_sheet_determinism() {
 
 static void test_npc_loot_id() {
     CHECK(std::string(npc_loot_id(0)) == "peasant", "npc_loot_id(0)=peasant");
-    // Derived from the enum, never a pinned literal (Testing law #4): the
-    // last row is whatever type the registry ends on, and one PAST the end
-    // is out of range — both stay true however many professions are added.
-    CHECK(std::string(npc_loot_id(int(sm::NPCType::ClayDigger))) == "clay_digger",
-          "the last ROLE row names its loot profile");
+    // The crowd professions died 2026-09-18 (verdict №2: professions are
+    // emergent, no spawner raises those rows) — their ordinals stay in the
+    // enum for the save's sake, and their loot answer is the dead row's "".
+    CHECK(std::string(npc_loot_id(int(sm::NPCType::ClayDigger))).empty(),
+          "a dead profession ordinal dresses nobody");
     CHECK(std::string(npc_loot_id(int(sm::NPCType::Count))) == "",
           "one past the registry end is out of range");
     CHECK(std::string(npc_loot_id(-1)) == "", "npc_loot_id(-1)= (negative)");
@@ -239,9 +239,14 @@ static void test_npc_loot_id() {
     for (int t = 0; t < int(NPCType::Count); ++t) {
         const char* id = npc_loot_id(t);
         char msg[96];
-        if (sm::is_creature_row(NPCType(t))) {
+        // Dead profession ordinals (verdict №2, 2026-09-18) defer like
+        // creatures: nothing spawns them, so no profile dresses them.
+        const bool deadProfession = t == int(sm::NPCType::Miner)
+            || t == int(sm::NPCType::Quarryman)
+            || t == int(sm::NPCType::ClayDigger);
+        if (sm::is_creature_row(NPCType(t)) || deadProfession) {
             std::snprintf(msg, sizeof msg,
-                          "creature row %d defers its loot to its own column", t);
+                          "row %d defers its loot to its own column", t);
             CHECK(std::string(id).empty(), msg);
             continue;
         }

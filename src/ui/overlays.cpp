@@ -1999,8 +1999,6 @@ namespace sm::ui
                         draw_info_overview_row("Garrison units", total_soldiers(s->garrison));
                         draw_info_overview_row("Inventory stacks", s->inventory.used_slots());
                         draw_info_overview_row("Inventory items", s->inventory.total());
-                        draw_info_overview_row("History samples",
-                                               s->history.size());
                         ImGui::EndTable();
                     }
 
@@ -2299,35 +2297,9 @@ namespace sm::ui
                     }
                     ImGui::EndTabItem();
                 }
-                // History (population over time)
-                const bool historyOpen = ImGui::BeginTabItem("History", nullptr,
-                                                             selected_tab(current, SettlementPanelTab::History));
-                if (tab && ImGui::IsItemClicked())
-                    *tab = SettlementPanelTab::History;
-                if (historyOpen)
-                {
-                    if (s->history.empty())
-                    {
-                        ImGui::TextDisabled("(no history yet)");
-                    }
-                    else
-                    {
-                        // Oldest first, off the ring's own accessor — the seam
-                        // is the container's business, not the plot's. A fixed
-                        // buffer, so a panel drawn every frame allocates
-                        // nothing to draw a season.
-                        float v[kSettlementHistoryDays];
-                        const int n = s->history.size();
-                        for (int i = 0; i < n; ++i)
-                            v[i] = float(s->history.population_at(i));
-                        ImGui::PlotLines("Population", v, n,
-                                         0, nullptr, FLT_MAX, FLT_MAX, ImVec2(0, 100));
-                        ImGui::Text("Earliest: %d   Latest: %d",
-                                    s->history.population_at(0),
-                                    s->history.population_at(n - 1));
-                    }
-                    ImGui::EndTabItem();
-                }
+                // (The History tab — a per-settlement population plot — died
+                // 2026-09-18 with SettlementHistory itself, owner verdict №4:
+                // one memory of a place is the chronicle, CANON S20.1.)
                 // The inn is gone (owner, 2026-09-11: «отдых таверны
                 // вырезать вообще»): a paid full restore beside the ONE
                 // macro rest law was a second, cheaper law of recovery.

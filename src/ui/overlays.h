@@ -40,7 +40,6 @@ enum class SettlementPanelTab : std::uint8_t {
     Recruit,
     Map,
     Inventory,
-    History,
     Quests,
 };
 

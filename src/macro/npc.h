@@ -1260,9 +1260,11 @@ inline GarrisonResult generate_garrison(int budget, Rng01&& rng,
     if (budget <= 0) return r;
     for (int i = 0; i < budget; ++i) {
         const float roll = rng();
+        // 60 % soldiery, 40 % recruit tail. The tail is Peasant alone since
+        // 2026-09-18 (verdict №2: professions are emergent, no body IS a
+        // woodcutter) — the old 25 % Woodcutter share folds into it.
         NPCType kind = NPCType::Guard;
-        if      (roll >= 0.60f && roll < 0.85f) kind = NPCType::Woodcutter;
-        else if (roll >= 0.85f)                 kind = NPCType::Peasant;
+        if (roll >= 0.60f) kind = NPCType::Peasant;
         const int level = npc_def(kind).baseLevel;
         if (!r.garrison.push(make_soldier(
                 static_cast<std::uint8_t>(kind), level,

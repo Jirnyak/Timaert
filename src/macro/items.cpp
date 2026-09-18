@@ -305,18 +305,9 @@ constexpr LootEntry kWoodcutterLoot[] = {
     {"wood",   1.0f, 2, 7, 0},
     {"bread", 0.5f, 1, 2, 0},
 };
-constexpr LootEntry kMinerLoot[] = {
-    {"iron",  1.0f, 2, 7, 0},
-    {"bread", 0.5f, 1, 2, 0},
-};
-constexpr LootEntry kQuarrymanLoot[] = {
-    {"stone", 1.0f, 2, 7, 0},
-    {"bread", 0.5f, 1, 2, 0},
-};
-constexpr LootEntry kClayDiggerLoot[] = {
-    {"clay",  1.0f, 2, 7, 0},
-    {"bread", 0.5f, 1, 2, 0},
-};
+// (kMinerLoot / kQuarrymanLoot / kClayDiggerLoot died 2026-09-18 with the
+// crowd professions — verdict №2: no spawner raises those rows, so a loot
+// table for them was a profile of nobody.)
 constexpr LootEntry kMerchantLoot[] = {
     {"potion_hp",  0.7f, 1, 3, 0},
     {"bread", 0.6f, 2, 6, 0},
@@ -401,9 +392,6 @@ struct LootProfile {
 constexpr LootProfile kLootProfiles[] = {
     SM_LOOT_PROFILE("peasant",    kPeasantLoot),
     SM_LOOT_PROFILE("woodcutter", kWoodcutterLoot),
-    SM_LOOT_PROFILE("miner", kMinerLoot),
-    SM_LOOT_PROFILE("quarryman", kQuarrymanLoot),
-    SM_LOOT_PROFILE("clay_digger", kClayDiggerLoot),
     SM_LOOT_PROFILE("merchant",   kMerchantLoot),
     SM_LOOT_PROFILE("caravan",    kCaravanLoot),
     SM_LOOT_PROFILE("bandit",     kBanditLoot),
@@ -440,9 +428,11 @@ constexpr NpcLootRow kNpcLootId[std::size_t(NPCType::Count)] = {
     {NPCType::Guard,        "guard"},
     {NPCType::Witch,        "witch"},
     {NPCType::Sorceress,    "sorceress"},
-    {NPCType::Miner,        "miner"},
-    {NPCType::Quarryman,    "quarryman"},
-    {NPCType::ClayDigger,   "clay_digger"},
+    // Dead ordinals since 2026-09-18 (verdict №2): the rows stay for the
+    // save's sake, but nothing spawns them and no profile dresses them.
+    {NPCType::Miner,        nullptr},
+    {NPCType::Quarryman,    nullptr},
+    {NPCType::ClayDigger,   nullptr},
     // creatures — see npc.h `lootId` / `factionId`
     {NPCType::Rabbit,       nullptr},
     {NPCType::Deer,         nullptr},

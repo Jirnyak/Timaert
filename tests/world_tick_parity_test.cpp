@@ -150,43 +150,6 @@ void test_daily_processing_applies_player_upkeep_and_age() {
           "the paid wage burns into the world loot pool");
 }
 
-void test_settlement_history_keeps_a_rolling_window() {
-    // More days than the ring holds — the cap is the CONTAINER's now
-    // (kSettlementHistoryDays), so the test names it instead of restating a
-    // number that used to live in world_tick.cpp and could drift from it.
-    constexpr int kDaysRun = sm::kSettlementHistoryDays + 5;
-
-    sm::GameState gs{};
-    sm::Landmark s{};
-    s.type = sm::LandmarkType::City;
-    s.id = 1;
-    s.name = "Test City";
-    s.population = 10;
-    s.mood = sm::SettlementMood::Stable;
-    gs.landmarks.push_back(s);
-
-    sm::WorldTickRuntime runtime{};
-    sm::reset_world_tick_runtime(runtime, 321u);
-    runtime.pendingDailyTicks = kDaysRun;
-    runtime.nextDailyTickDay = 1;
-
-    const int processed = sm::process_world_daily_ticks(gs, runtime, 64);
-    CHECK(processed == kDaysRun && runtime.pendingDailyTicks == 0
-              && runtime.nextDailyTickDay == 0,
-          "a budget larger than the queue drains the whole queue");
-
-    const sm::SettlementHistory& history = gs.landmarks[0].history;
-    // The window is the RING's own size now — a season (kDaysPerSeason), the
-    // same span the forest grows by — and the cap lives in the container, so
-    // no caller can forget it and nothing shifts an array to enforce it.
-    CHECK(history.size() == sm::kSettlementHistoryDays,
-          "history fills its ring and stops there");
-    // Which days survive is a consequence of the ring, not a magic pair.
-    CHECK(!history.empty()
-              && history.day_at(history.size() - 1) == kDaysRun
-              && history.day_at(0) == kDaysRun - sm::kSettlementHistoryDays + 1,
-          "the ring keeps the NEWEST days, ending on the last day simulated");
-}
 
 // THE drift test the whole integer clock exists for: a thousand small advances
 // and one big one must land on the same instant, report the same elapsed time,
@@ -469,7 +432,6 @@ int main() {
     test_subworld_steps_lose_nothing_when_split();
     test_day_rollover_queues_budgeted_daily_tick();
     test_daily_processing_applies_player_upkeep_and_age();
-    test_settlement_history_keeps_a_rolling_window();
     test_a_famine_is_recorded_once_when_it_begins();
     test_population_dies_honestly_to_zero();
     return sm::test::report("world_tick_parity_test");

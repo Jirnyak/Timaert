@@ -45,12 +45,6 @@ inline float rand01_(WorldTickRuntime& runtime) {
     return runtime.jitter.next_f01();
 }
 
-void push_history_(SettlementHistory& hist, int day, int population) {
-    // One write and a wrap. The cap lives in the CONTAINER now, so nothing
-    // here can forget it and nothing shifts an array to enforce it.
-    hist.push(day, population);
-}
-
 } // namespace
 
 // The shared tail of every landmark's day (W2b-4): consume off the
@@ -245,8 +239,6 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
         }
 
         garrison_recruit_(gs, s, runtime);
-
-        push_history_(s.history, day, s.population);
     }
 }
 
@@ -369,7 +361,6 @@ void tick_villages_(GameState& gs, int day, WorldTickRuntime& runtime,
                                  headsBefore);
         }
         garrison_recruit_(gs, v, runtime);
-        push_history_(v.history, day, v.population);
     }
 }
 

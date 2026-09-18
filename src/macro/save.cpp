@@ -664,30 +664,6 @@ void read_chronicle(Reader& r, Chronicle& c) {
     }
 }
 
-void write_history(Writer& w, const SettlementHistory& h) {
-    if (!w.count(std::size_t(h.size()),
-                 std::uint32_t(kSettlementHistoryDays))) {
-        return;
-    }
-    for (int i = 0; i < h.size(); ++i) {
-        w.pod(h.day_at(i));
-        w.pod(h.population_at(i));
-    }
-}
-
-void read_history(Reader& r, SettlementHistory& h) {
-    h = SettlementHistory{};
-    std::uint32_t n = 0;
-    if (!read_count(r, n, std::uint32_t(kSettlementHistoryDays))) return;
-    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-        int day = 0;
-        int pop = 0;
-        r.pod(day);
-        r.pod(pop);
-        h.push(day, pop);   // oldest first, so the ring rebuilds in order
-    }
-}
-
 void write_player(Writer& w, const PlayerState& p) {
     w.str(p.name);
     w.pod(p.sexIdx);              // v78: the creation screen's nature pick
@@ -777,8 +753,7 @@ void write_landmark(Writer& w, const Landmark& lm) {
     w.pod(lm.population);
     write_enum8(w, lm.mood);
     write_inventory(w, lm.inventory);
-    write_history(w, lm.history);
-    write_squad(w, lm.garrison);
+    write_squad(w, lm.garrison);   // v96: history ring cut (verdict №4, S20.1)
     w.pod(lm.factionIdx);          // v94: faction registry index (kingdoms cut)
     w.pod(lm.suzerainLandmarkId);  // v94: the one feudal edge (S24)
     w.pod(lm.starvedYesterday);  // v29: the honest day's readouts
@@ -805,8 +780,7 @@ void read_landmark(Reader& r, Landmark& lm) {
     r.pod(lm.population);
     read_enum8(r, lm.mood, static_cast<std::uint8_t>(SettlementMood::Revolt));
     read_inventory(r, lm.inventory);
-    read_history(r, lm.history);
-    read_squad(r, lm.garrison);
+    read_squad(r, lm.garrison);   // v96: history ring cut (verdict №4, S20.1)
     r.pod(lm.factionIdx);          // v94
     r.pod(lm.suzerainLandmarkId);  // v94
     r.pod(lm.starvedYesterday);  // v29

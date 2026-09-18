@@ -329,7 +329,12 @@ namespace sm {
 // v95 (2026-09-17): СЕЗОННОЕ ОКНО БАЛАНСОВ (CANON S19.2) — Landmark carries
 // seasonWellbeing (the boundary window's verdict the daily population law
 // lives off until the next boundary).
-constexpr int kSaveVersion = 95;
+// v96 (2026-09-18, сессия В — снятие спецпутей): SettlementHistory вырезана
+// из Landmark (вердикт №4 — одна память места, летопись S20.1); монета —
+// просто товар (12 фракционных монет данными, ворота и список валют мертвы);
+// слой разработки + счётчики кораблей полем (shipsAtCell/resourceScars
+// умирают); металлы медь/золото. Старые сейвы ничего не стоят (закон P1).
+constexpr int kSaveVersion = 96;
 
 enum class SettlementMood : std::uint8_t {
     Prosperous, Stable, Tense, Unrest, Revolt, Count
@@ -369,44 +374,10 @@ inline constexpr const MoodRow& mood_row(SettlementMood m) {
                : kMoodRows[std::size_t(SettlementMood::Stable)];
 }
 
-// A settlement's recent past, as a fixed RING of a season (owner's decision,
-// 2026-08-27). It was two heap vectors per settlement with a cap enforced by
-// `erase(begin())` — an O(n) shift, per settlement, every single game day, on
-// a container that had a heap header for every town on the map.
-//
-// 32 is not a chosen number: it is `kDaysPerSeason`, the epoch the forest
-// grows by and the population's own carry accrues over, so "the recent past"
-// means the same span here as everywhere else. The old 30 was a month from
-// another calendar.
-inline constexpr int kSettlementHistoryDays = 32;
-
-struct SettlementHistory {
-    std::array<std::int32_t, kSettlementHistoryDays> day{};
-    std::array<std::int32_t, kSettlementHistoryDays> population{};
-    std::uint8_t count = 0;   // entries that are real; < kSettlementHistoryDays
-    std::uint8_t head  = 0;   // where the NEXT day is written
-
-    int size() const { return int(count); }
-    bool empty() const { return count == 0; }
-    // Oldest first, so a caller reads the past in the order it happened
-    // without knowing where the ring's seam is.
-    int day_at(int i) const {
-        const int first = int(count) < kSettlementHistoryDays
-                              ? 0 : int(head);
-        return day[std::size_t((first + i) % kSettlementHistoryDays)];
-    }
-    int population_at(int i) const {
-        const int first = int(count) < kSettlementHistoryDays
-                              ? 0 : int(head);
-        return population[std::size_t((first + i) % kSettlementHistoryDays)];
-    }
-    void push(int d, int pop) {
-        day[std::size_t(head)] = d;
-        population[std::size_t(head)] = pop;
-        head = std::uint8_t((int(head) + 1) % kSettlementHistoryDays);
-        if (int(count) < kSettlementHistoryDays) ++count;
-    }
-};
+// (SettlementHistory — the per-settlement population ring — died 2026-09-18,
+// owner verdict №4 of the second canon audit: «сноси, есть уже единая система
+// фактов и событий». One memory of a place exists — the chronicle, CANON
+// S20.1; a second per-landmark diary was a parallel memory system.)
 
 // ── THE landmark record (CANON S9, owner verdict 2026-08-29) ─────────────
 // One struct, one vector, a KIND COLUMN. City, village and spire used to be
@@ -429,7 +400,6 @@ struct Landmark {
     // its market, its granary and its warehouse in one — agents deliver into
     // it, the day-loop eats from it, the trade panel sells out of it.
     Inventory inventory;
-    SettlementHistory history;
     SoldierSquad garrison;       // empty unless the kind keeps one (cities)
     // WHOSE place this is — a faction registry index (owner 2026-09-11:
     // «королевств нет, только фракции — одна система»). -1 = nobody's,
