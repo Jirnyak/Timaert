@@ -214,38 +214,49 @@ ConsumeOutcome econ_consume_season(Inventory& store, int population,
         return out;
     }
     const ResolvedTables& t = resolved();
-    // A person is fed only if EVERY daily-vital need was covered — with one
-    // bread row this is the old rule at the season's scale.
+    // СЫТОСТЬ ПРОПОРЦИОНАЛЬНА (владелец 2026-09-18, CANON S25): накормлено
+    // столько, на сколько хватило. Кромка «всё или ничего» была про МЕСТО и
+    // била по малым квадратично: хутору на 30 душ нужда ложилась одним
+    // куском 960, и промах на единицу давал ПОЛНЫЙ голод при почти полных
+    // закромах (измерено: 94 645 душ-дней за 64 дня). Теперь кромка — про
+    // ДУШУ: душа сыта, если ЕЁ сезон покрыт целиком; остаток меньше одного
+    // душевого сезона честно лежит до следующего окна. Этим же движением
+    // «богато добывает → хорошо растёт» впервые становится измеримым — и
+    // недоед гасит рост в той же точке, что пустые полки комфорта
+    // (0.5 × 1.0 == 1.0 × 0.5, арифметика закона роста S25).
     int fed = population;
     for (int i = 0; i < kNeedCount; ++i) {
         const int idx = t.needIdx[i];
         if (idx < 0) continue;
-        // A SEASON of the need, judged whole (owner 2026-09-17): covered —
-        // the whole season leaves the store at once; short by even one unit —
-        // the store is NOT touched and the need is simply unmet this season.
-        // The edge is deliberately hard: the un-debited stock stays home, the
-        // population law shrinks the town until the need fits the store.
         const int demand = (population / kNeeds[i].popPerUnitDay)
                          * kDaysPerSeason;
         if (demand <= 0) continue;
-        const bool covered =
-            store.count_of(commodity_item_index(idx)) >= demand;
-        if (covered) {
-            store.remove_of(commodity_item_index(idx), demand);
-            report(sink, user, EconFact::Kind::Consumed, idx, demand);
-        }
+        const int have = store.count_of(commodity_item_index(idx));
         // THE hunger row, asked of the one door that knows which it is
         // (econ_day.h kHungerNeedRow — the same two columns this branch used
         // to re-derive inline). One definition, three eaters: the population
         // here, the garrison in world_tick, the squad in npc_ai.
         if (i == kHungerNeedRow) {
-            // An uncovered season is a hungry season.
-            if (!covered) fed = 0;
+            // Душ, чей сезон склад кроет целиком (голодная строка — 1 юнит
+            // на душу-день по построению, static_assert в econ_day.h).
+            const int fedHere =
+                std::min(population, have / kDaysPerSeason);
+            const int eaten = fedHere * kDaysPerSeason;
+            if (eaten > 0) {
+                store.remove_of(commodity_item_index(idx), eaten);
+                report(sink, user, EconFact::Kind::Consumed, idx, eaten);
+            }
+            fed = std::min(fed, fedHere);
         } else {
-            // EVERY other shortfall is counted — vital maintenance (cloth,
-            // bricks) included, all-or-nothing at the season scale.
+            // Комфорт тем же законом: съедено сколько есть, недостача
+            // считается пропорционально — благополучие читает доли.
+            const int eaten = have < demand ? have : demand;
+            if (eaten > 0) {
+                store.remove_of(commodity_item_index(idx), eaten);
+                report(sink, user, EconFact::Kind::Consumed, idx, eaten);
+            }
             out.comfortDemand += demand;
-            if (!covered) out.unmetComfort += demand;
+            out.unmetComfort += demand - eaten;
         }
     }
     out.fedPop = fed;

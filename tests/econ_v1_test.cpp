@@ -335,11 +335,13 @@ int main() {
         }
     }
 
-    // ── 5. Half a season of bread: NOT DEBITED, everyone starves ────────
-    // The window's hard edge IS the law (owner 2026-09-17: «просто не
-    // списывать, если не хватает — 1/8 = НЕ ПОКРЫТО»): a need short by any
-    // amount is not touched at all — the stock stays home and the season is
-    // hungry. NEGATIVE CONTROL against partial debits sneaking back.
+    // ── 5. Half a season of bread feeds HALF the town ───────────────────
+    // СЫТОСТЬ ПРОПОРЦИОНАЛЬНА (владелец 2026-09-18, CANON S25): кромка —
+    // про ДУШУ, не про место. Душа сыта, если ЕЁ сезон покрыт целиком;
+    // полсезона хлеба кормит полгорода и уходит со склада, вторая половина
+    // честно голодает. Старая кромка «всё или ничего» давала полный голод
+    // при почти полных закромах (измерено: 94 645 душ-дней за 64 дня у
+    // горных хуторов) и была снята вердиктом.
     {
         Inventory s{};
         const int pop = 128;
@@ -349,12 +351,30 @@ int main() {
         s.add_of(commodity_item_index(commodity_index("bread")), half);
         const ConsumeOutcome o =
             econ_consume_season(s, pop, false, nullptr, nullptr);
-        if (o.fedPop != 0 || o.starvedPop != pop || !o.famineActive) {
-            return fail("an uncovered season must starve the whole town");
+        if (o.fedPop != pop / 2 || o.starvedPop != pop - pop / 2
+            || !o.famineActive) {
+            return fail("half a season must feed exactly half the souls");
         }
+        // Съеденное — ровно сезоны накормленных душ: полсезона города =
+        // 64 души × сезон = весь запас; остаток меньше душевого сезона
+        // остался бы лежать (проверено нечётным кусочком ниже).
         if (s.count_of(commodity_item_index(commodity_index("bread")))
-            != half) {
-            return fail("an uncovered need must NOT be debited");
+            != half - (pop / 2) * kDaysPerSeason) {
+            return fail("the fed souls' seasons leave the store, no more");
+        }
+        // Нечётный хвост: кусок меньше одного душевого сезона не кормит
+        // никого и не трогается — негативный контроль дробного списания.
+        Inventory tail{};
+        tail.remove_of(commodity_item_index(commodity_index("bread")),
+                tail.count_of(commodity_item_index(commodity_index("bread"))));
+        tail.add_of(commodity_item_index(commodity_index("bread")),
+                    kDaysPerSeason - 1);
+        const ConsumeOutcome ot =
+            econ_consume_season(tail, pop, false, nullptr, nullptr);
+        if (ot.fedPop != 0
+            || tail.count_of(commodity_item_index(commodity_index("bread")))
+                   != kDaysPerSeason - 1) {
+            return fail("a sub-season scrap feeds nobody and stays home");
         }
     }
 
