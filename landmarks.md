@@ -145,10 +145,11 @@ next track.
 - ~~**`Settlement` + `Village` are two structs for one canon row.**~~ —
   **DEAD 2026-08-29** (the one-record verdict, v62). Its named fruit fell with
   it: the village production DOOR is open — `tick_villages_` calls
-  `econ_produce_day(…, EconSite::Village, …)` daily, so a producing village is
-  now one `site = Village` recipe row away (all nine `kRecipes` still say
-  City — a balance decision, no longer a structural wall;
-  [economy.md](economy.md)). Village quests are unblocked the same way.
+  `econ_produce_day(…, landmark_sheet(type).skills, …)` daily. Since
+  2026-09-18 there is no `EconSite` and no per-kind wall at all: what a place
+  can make is its ANKETA (`characters.h landmark_sheet`) against the recipe's
+  craft skill and rank ([economy.md](economy.md)). Village quests are
+  unblocked the same way.
 - ~~`landmark_registry.cpp` is entirely dead~~ — **axed 2026-08-24** (H7):
   the caller-less `collect_landmarks` aggregator and its glued-on TS-era half
   are gone; `landmark_registry.h` is now only the live `kLandmarks` table.

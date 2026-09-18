@@ -173,14 +173,12 @@ struct LandmarkDef {
     // sized a tavern recruit pool, not a defense force, and the pop/10
     // street-guard fiction painted over it.
     std::uint8_t     garrisonShift = 0xFF;
-    // Which production TABLE this place works its benches as — the ordinal
-    // of EconSite (macro/econ_day.h; world_tick.cpp cross-checks the pairing
-    // where both vocabularies are visible). -1 = no benches: a spire or a
-    // ruin crafts nothing, silently (CANON S6's legal zero). A column, not a
-    // caller branch (owner, 2026-08-29): the produce door's callers used to
-    // hardcode City/Village per loop, so an S9 transition (village→city)
-    // will re-profile production by flipping `type` alone.
-    std::int8_t      econSite = -1;
+    // (`econSite` УМЕР 2026-09-18 вместе с EconSite. Он отвечал «по какой
+    // ТАБЛИЦЕ это место работает», то есть на вопрос «что оно умеет» — а
+    // отвечает на него теперь АНКЕТА места: characters.h landmark_sheet,
+    // ранги ремёсел против ремесла и ранга рецепта. Место, которое не умеет
+    // ничего, — анкета в нулях; законный ноль S6 остался на месте, просто
+    // перестал быть отдельной колонкой.)
 
     // ── The labour law of the place (owner 2026-08-31, CANON S10) ─────────
     // Crew pool = population >> labourShift — the share of souls that walks
@@ -224,8 +222,7 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
     // (CANON S10, 2026-09-02): патрульный аукцион открывает её только когда
     // поле угрозы предъявило горячую округу дороже похода — тихий город
     // держит гарнизон дома за полцены содержания.
-    {LandmarkType::City,    "city",    "City",      0,  76, '#', 0xFFE7D27Au, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.5f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*inside*/0, /*born*/0, 0, /*places*/true, /*garrison*/3, /*econ*/1,
-     /*labour*/3, {{NPCType::TaxCollector, CrewGate::Suzerain, /*solo*/true},
+    {LandmarkType::City,    "city",    "City",      0,  76, '#', 0xFFE7D27Au, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.5f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*inside*/0, /*born*/0, 0, /*places*/true, /*garrison*/3, /*labour*/3, {{NPCType::TaxCollector, CrewGate::Suzerain, /*solo*/true},
                    {NPCType::Guard, CrewGate::Auction, /*solo*/false,
                     /*garrison*/true}}, 2,
      /*crowdRoles*/{}, 0,   // v96: fixed posts cut — the street IS the stripe
@@ -235,8 +232,7 @@ inline constexpr LandmarkDef kLandmarks[std::size_t(LandmarkType::Count)] = {
     // диверсификация без координации. N = одновременность артелей, крутилка
     // дубль-прогона (4 ≈ поле+лес+жила+сбыт живого мира; строки Vendor и
     // шести профессий умерли — их работу раздаёт аукцион).
-    {LandmarkType::Village, "village", "Village",   0, 101, 'v', 0xFFCCB068u, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.0f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*inside*/0, /*born*/0, 0, /*places*/true, /*garrison*/3, /*econ*/0,
-     /*labour*/1, {{NPCType::Peasant, CrewGate::Auction},
+    {LandmarkType::Village, "village", "Village",   0, 101, 'v', 0xFFCCB068u, true, 0xFFFFC76Bu,   0.0f, nullptr, /*wealth*/1.0f,  /*hab*/0u,       0, 0, /*cap*/2, /*crowd*/1u << 14, /*inside*/0, /*born*/0, 0, /*places*/true, /*garrison*/3, /*labour*/1, {{NPCType::Peasant, CrewGate::Auction},
                    {NPCType::Peasant, CrewGate::Auction},
                    {NPCType::Peasant, CrewGate::Auction},
                    {NPCType::Peasant, CrewGate::Auction}}, 4,

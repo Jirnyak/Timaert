@@ -388,9 +388,12 @@ pool down from 26M to ~1.5k.
   silence. Loot-gold **double mint** (`generate_loot_gold` on top of the
   spawn purse) remains open. Canon-audit B1–B3.
 - ~~The village production DOOR is open, its recipes are not written~~
-  (HALF-CLOSED 2026-08-30: bread is `EconSite::Any` — a village bakes, worse
-  only by the population-efficiency law log2(pop)/4; the other eight rows
-  stay City until the balance pass says otherwise).
+  (CLOSED 2026-09-18: `EconSite` is dead. What a place can MAKE is its own
+  ANKETA — `characters.h landmark_sheet`, craft ranks — against the recipe's
+  craft + minRank (`econ_day.h kRecipes`). A village bakes because its cooking
+  rank clears the bread row, and does not mint because its blacksmith rank is
+  zero — a number that can be RAISED, not a kind it was born as. The
+  population-efficiency law log2(pop)/4 still prices how well it bakes.)
 - ~~The caravan confiscates, it does not trade~~ (CLOSED 2026-08-30: the
   station and vendor deals above pay through `transfer_value` with
   conservation by construction; `caravan_deal_test` holds the corridor and
