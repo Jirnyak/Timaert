@@ -200,19 +200,22 @@ void test_scrap_door() {
           "pooled entropy: floor(2x1/2) = 1 iron survives");
 
     // COINS melt through this same door (owner 2026-09-12: no coin special
-    // case): 64 coins embody 2 silver of matter, half survives; a single
-    // coin is 1/32 silver and honestly burns to slag.
-    inv.clear();
-    inv.add("coin_empire_silver", 64);
+    // case): the melt is the pooled-entropy law over the coin row's OWN
+    // yield, so the numbers are DERIVED from the table, never pinned — the
+    // yield is a design knob the owner moved once already (32 → 128).
     const int coin = item_index("coin_empire_silver");
-    CHECK(scrap_at(inv, slot_of(inv, coin), 64), "a coin pile melts");
+    const int melt = item_yield(coin) * 2;   // coins that pool into 1 metal
+    inv.clear();
+    inv.add("coin_empire_silver", melt);
+    CHECK(scrap_at(inv, slot_of(inv, coin), melt), "a coin pile melts");
     CHECK(inv.count("silver") == 1 && inv.count("coin_empire_silver") == 0,
-          "64 coins -> floor(64x1/(2x32)) = 1 silver");
+          "2 x yield coins pool into exactly one unit of metal");
+    // One coin is 1/yield of a unit: it honestly burns whole to slag.
     inv.clear();
     inv.add("coin_empire_silver", 1);
     CHECK(scrap_at(inv, slot_of(inv, coin), 1), "one coin may still melt");
     CHECK(inv.count("silver") == 0 && inv.count("coin_empire_silver") == 0,
-          "one coin is 1/32 silver: it burns whole to slag");
+          "one coin is a fraction of a unit: it burns whole to slag");
 
     // Affixes burn with no return: the rolled instance pays the same iron.
     inv.clear();

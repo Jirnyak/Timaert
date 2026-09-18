@@ -32,7 +32,7 @@ constexpr ItemDef kCatalog[] = {
     // бартер; это буквально просто типы предметов… просто дата в таблицу
     // итемов»). Three coins per realm — copper 1 / silver 10 / gold 100 —
     // twelve plain rows of the one catalog. The nominal IS the value column;
-    // the mint IS the composition column ({металл 1} → 32, kPartsAuthoring);
+    // the mint IS the composition column ({металл 1} → 128, kPartsAuthoring);
     // WHO trades in which family is the faction registry's mint columns.
     // A coin's only edge over any other good is arithmetic: minimal weight
     // at maximal value, so value-dense payment reaches for it first.
@@ -80,19 +80,20 @@ constexpr ItemDef kCatalog[] = {
         "Building material", {}},
     {"iron",    "Iron Ore",        ItemType::Material,   15, 4.00f, "\xE2\x9B\x8F",
         "Smithing material", {}},
-    // The mint metals. Each value is DERIVED, never chosen: 32 coins a unit
-    // (the one mint yield, kPartsAuthoring) × the coin's nominal — copper
-    // 32×1, silver 32×10, gold 32×100. The value-neutrality witness
-    // (mint_is_value_neutral below) pins all three to the coin rows, so the
-    // world's money supply stays geology × one figure. Silver was 32 when
-    // the one coin was nominal 1; the owner's recalibration verdict
-    // (2026-09-18) keeps the world's VALUE ceiling by rescaling the silver
-    // veins ÷10 instead of cheapening the metal.
-    {"copper",  "Copper Ore",      ItemType::Material,   32, 4.00f, "\xF0\x9F\x9F\xA0",
+    // The mint metals. Each value is DERIVED, never chosen: 128 coins a unit
+    // (the one mint yield, kPartsAuthoring — owner's pick 2026-09-18) × the
+    // coin's nominal — copper 128×1, silver 128×10, gold 128×100. The
+    // value-neutrality witness (mint_is_value_neutral below) pins all three
+    // to the coin rows, so the world's money supply stays geology × one
+    // figure; the mass witness (mint_yield_is_mass_honest) pins the yield to
+    // the WEIGHT columns. Silver was 32 when the one coin was nominal 1; the
+    // owner's recalibration verdict keeps the world's VALUE ceiling by
+    // rescaling the VEINS (deposit_layer.cpp), never by cheapening metal.
+    {"copper",  "Copper Ore",      ItemType::Material,  128, 4.00f, "\xF0\x9F\x9F\xA0",
         "Mint metal", {}},
-    {"silver",  "Silver Ore",      ItemType::Material,  320, 4.00f, "\xE2\x9A\xAA",
+    {"silver",  "Silver Ore",      ItemType::Material, 1280, 4.00f, "\xE2\x9A\xAA",
         "Mint metal", {}},
-    {"gold",    "Gold Ore",        ItemType::Material, 3200, 4.00f, "\xF0\x9F\x9F\xA1",
+    {"gold",    "Gold Ore",        ItemType::Material, 12800, 4.00f, "\xF0\x9F\x9F\xA1",
         "Mint metal", {}},
     {"grain",   "Grain",           ItemType::Material,    5, 1.00f, "\xF0\x9F\x8C\xBE",
         "Raw grain, milled and baked into bread", {}},
@@ -236,21 +237,23 @@ constexpr PartsAuthoringRow kPartsAuthoring[] = {
     // door melts them back (64 coins → 1 silver by the pooled entropy law).
     // Labour 4 = the old mint tempo «4 металла на рабочий-день», the
     // emission-rate balance knob.
-    // Coins: 1 metal → 32 coins of ITS metal (owner verdict №1, дословно:
-    // «1 металл → 32 монеты своего металла»). One yield for all twelve rows;
+    // Coins: 1 metal → 128 coins of ITS metal (verdict №1, «1 металл → 32
+    // монеты своего металла», raised to 128 by the owner 2026-09-18: «128
+    // норм» — an ore grade of 32 % by the weight columns, see
+    // mint_yield_is_mass_honest). One yield for all twelve rows;
     // nominal × 32 == the metal's value, held by mint_is_value_neutral.
-    {"coin_empire_copper",  {{"copper", 1}}, 32, 4},
-    {"coin_empire_silver",  {{"silver", 1}}, 32, 4},
-    {"coin_empire_gold",    {{"gold",   1}}, 32, 4},
-    {"coin_magika_copper",  {{"copper", 1}}, 32, 4},
-    {"coin_magika_silver",  {{"silver", 1}}, 32, 4},
-    {"coin_magika_gold",    {{"gold",   1}}, 32, 4},
-    {"coin_timaert_copper", {{"copper", 1}}, 32, 4},
-    {"coin_timaert_silver", {{"silver", 1}}, 32, 4},
-    {"coin_timaert_gold",   {{"gold",   1}}, 32, 4},
-    {"coin_barbar_copper",  {{"copper", 1}}, 32, 4},
-    {"coin_barbar_silver",  {{"silver", 1}}, 32, 4},
-    {"coin_barbar_gold",    {{"gold",   1}}, 32, 4},
+    {"coin_empire_copper",  {{"copper", 1}}, 128, 4},
+    {"coin_empire_silver",  {{"silver", 1}}, 128, 4},
+    {"coin_empire_gold",    {{"gold",   1}}, 128, 4},
+    {"coin_magika_copper",  {{"copper", 1}}, 128, 4},
+    {"coin_magika_silver",  {{"silver", 1}}, 128, 4},
+    {"coin_magika_gold",    {{"gold",   1}}, 128, 4},
+    {"coin_timaert_copper", {{"copper", 1}}, 128, 4},
+    {"coin_timaert_silver", {{"silver", 1}}, 128, 4},
+    {"coin_timaert_gold",   {{"gold",   1}}, 128, 4},
+    {"coin_barbar_copper",  {{"copper", 1}}, 128, 4},
+    {"coin_barbar_silver",  {{"silver", 1}}, 128, 4},
+    {"coin_barbar_gold",    {{"gold",   1}}, 128, 4},
     // Consumables: alchemy is herb-matter; bread is the baking reaction
     // (grain 1 → bread 1), the exact row the production day runs. Bread's
     // labour IS the productivity anchor (econ_day.h kGatherPerWorkerDay,
@@ -289,6 +292,12 @@ constexpr PartsAuthoringRow kPartsAuthoring[] = {
 // value. Two literals state that one fact (silver's catalog value, the coin
 // rows' yield) — this guard is the product-of-two-knobs law: they cannot
 // drift apart and compile.
+constexpr float catalog_weight_of(std::string_view id) {
+    for (const ItemDef& d : kCatalog) {
+        if (std::string_view(d.id) == id) return d.weight;
+    }
+    return -1.0f;
+}
 constexpr int catalog_value_of(std::string_view id) {
     for (const ItemDef& d : kCatalog) {
         if (std::string_view(d.id) == id) return d.value;
@@ -325,6 +334,31 @@ constexpr bool mint_is_value_neutral() {
 static_assert(mint_is_value_neutral(),
               "the mint must be value-neutral: coin yield x nominal == the "
               "composition's value (S10) - these literals drifted apart");
+
+// WHY THE YIELD IS 128 (owner's question and pick, 2026-09-18: «из 1 — 32
+// обосновано? по массе, по стоимости? есть вариант 128» → «128 норм»): the
+// grounding is MASS, and both numbers are already in the table. A coin
+// weighs 0.01 kg (10 g — the weight of a real silver penny) and a unit of
+// ore weighs 4 kg, so a 128-coin batch is 1.28 kg of struck metal out of
+// 4 kg of rock: an ORE GRADE of 32 %, a rich ore or a smelted concentrate.
+// The guard below is the metal content itself: a struck batch may never
+// outweigh the rock it came out of, so the yield can be retuned freely and
+// the day it stops being physical the table refuses to compile.
+constexpr bool mint_yield_is_mass_honest() {
+    for (const PartsAuthoringRow& r : kPartsAuthoring) {
+        if (r.yield <= 1) continue;          // not a struck row
+        const float out = float(r.yield) * catalog_weight_of(r.id);
+        float in = 0.0f;
+        for (const auto& p : r.p) {
+            if (p.mat) in += float(p.n) * catalog_weight_of(p.mat);
+        }
+        if (in <= 0.0f || out > in) return false;
+    }
+    return true;
+}
+static_assert(mint_yield_is_mass_honest(),
+              "a struck batch cannot outweigh its own ore: yield x coin "
+              "weight <= the composition's weight (the 8% ore grade)");
 
 const std::unordered_map<std::string, const ItemDef*>& catalog_map() {
     static const std::unordered_map<std::string, const ItemDef*> m = []{

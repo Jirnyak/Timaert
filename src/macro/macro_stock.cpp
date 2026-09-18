@@ -277,15 +277,15 @@ int trees_growth_at(const MacroWorld& w, int x, int y) {
     return growth * std::min(base, 1024) / 1024;
 }
 
-// Iron: born where it is SCARCE (the owner's negative context) — the lump a
-// fresh vein opens with; the walker's Geology domain owns the global
-// scarcity roll and the host-cell pick (the W2c rule as a table row).
-int iron_growth_at(const MacroWorld&, int, int) { return iron_vein_lump(); }
-
-// Silver: the same born-where-scarce geology as iron, with the small lump a
-// precious vein opens with — the world's money supply regrows as slowly as
-// its metal (CANON S10).
-int silver_growth_at(const MacroWorld&, int, int) { return silver_vein_lump(); }
+// A VEIN KIND is born where it is SCARCE (the owner's negative context) —
+// the lump its own row opens with; the walker's Geology domain owns the
+// global scarcity roll and the host-cell pick (the W2c rule as a table row).
+// One template for every metal: iron_growth_at and silver_growth_at were two
+// copies of this line, and six metals would have been six.
+template <DepositKind K>
+int vein_growth_at(const MacroWorld&, int, int) {
+    return deposit_vein_lump(K);
+}
 
 constexpr ResourceFieldDef kResourceFields[] = {
     /* Wheat */ {"wheat", &wheat_baseline,
@@ -304,7 +304,7 @@ constexpr ResourceFieldDef kResourceFields[] = {
                  &deposit_read<DepositKind::Clay>,
                  &deposit_apply<DepositKind::Clay>, kGathererReach},
     /* Iron  */ {"iron",  nullptr,
-                 GrowthDomain::Geology, &iron_growth_at,
+                 GrowthDomain::Geology, &vein_growth_at<DepositKind::Iron>,
                  ResourceFieldId::Stone,
                  &deposit_read<DepositKind::Iron>,
                  &deposit_apply<DepositKind::Iron>, kGathererReach},
@@ -313,10 +313,22 @@ constexpr ResourceFieldDef kResourceFields[] = {
                  &deposit_read<DepositKind::Stone>,
                  &deposit_apply<DepositKind::Stone>, kGathererReach},
     /* Silver */ {"silver", nullptr,
-                 GrowthDomain::Geology, &silver_growth_at,
+                 GrowthDomain::Geology, &vein_growth_at<DepositKind::Silver>,
                  ResourceFieldId::Stone,
                  &deposit_read<DepositKind::Silver>,
                  &deposit_apply<DepositKind::Silver>, kGathererReach},
+    // The other two mint metals (v96): same born-where-scarce geology, same
+    // stone host, their own rows — «новый род = новый массив и строка закона».
+    /* Copper */ {"copper", nullptr,
+                 GrowthDomain::Geology, &vein_growth_at<DepositKind::Copper>,
+                 ResourceFieldId::Stone,
+                 &deposit_read<DepositKind::Copper>,
+                 &deposit_apply<DepositKind::Copper>, kGathererReach},
+    /* Gold  */ {"gold", nullptr,
+                 GrowthDomain::Geology, &vein_growth_at<DepositKind::Gold>,
+                 ResourceFieldId::Stone,
+                 &deposit_read<DepositKind::Gold>,
+                 &deposit_apply<DepositKind::Gold>, kGathererReach},
 };
 static_assert(sizeof(kResourceFields) / sizeof(kResourceFields[0])
                   == std::size_t(ResourceFieldId::Count),
@@ -333,6 +345,10 @@ static_assert(kResourceFields[std::size_t(ResourceFieldId::Clay)].reachCells
               && kResourceFields[std::size_t(ResourceFieldId::Stone)].reachCells
                   == kGathererReach
               && kResourceFields[std::size_t(ResourceFieldId::Silver)].reachCells
+                  == kGathererReach
+              && kResourceFields[std::size_t(ResourceFieldId::Copper)].reachCells
+                  == kGathererReach
+              && kResourceFields[std::size_t(ResourceFieldId::Gold)].reachCells
                   == kGathererReach,
               "deposit_layer.cpp sizes the vein fields with kGathererReach; "
               "give a vein row its own reach and teach it that first");

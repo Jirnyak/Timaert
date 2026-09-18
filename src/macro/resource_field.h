@@ -70,6 +70,10 @@ enum class ResourceFieldId : std::uint8_t {
     Iron,        // finite mountain veins — carrier row (deposit_layer.h)
     Stone,       // quasi-infinite quarries — carrier row (deposit_layer.h)
     Silver,      // the mint metal — finite veins (deposit_layer.h)
+    // The other two mint metals (v96, with the three coin nominals): a new
+    // род is a new array and a row of law, никакого кода (CANON S5).
+    Copper,
+    Gold,
     Count,
 };
 

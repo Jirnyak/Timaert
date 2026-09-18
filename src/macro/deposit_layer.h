@@ -37,10 +37,13 @@ namespace sm {
 
 enum class DepositKind : std::uint8_t {
     Clay = 0, Iron = 1, Stone = 2,
-    // The mint metal (CANON S10). Appended — saved kind blocks stay ordered.
-    Silver = 3,
+    // The mint metals (CANON S10). Appended — saved kind blocks stay ordered.
+    // Copper and Gold joined silver 2026-09-18 with the three coin nominals
+    // (verdict №1): a coin is struck from ITS OWN metal, so a world with one
+    // mint metal could only ever strike one nominal.
+    Silver = 3, Copper = 4, Gold = 5,
 };
-inline constexpr int kDepositKindCount = 4;
+inline constexpr int kDepositKindCount = 6;
 
 // ── THE deposit-kind registry (CANON S16) ────────────────────────────────
 // One row per kind: the commodity it yields into the ONE dictionary, and how
@@ -60,9 +63,11 @@ inline constexpr DepositDef kDepositDefs[kDepositKindCount] = {
     {DepositKind::Clay,  "clay",   8, FT_ClayPit},
     {DepositKind::Iron,  "iron",  16, FT_IronMine},
     {DepositKind::Stone, "stone",  8, FT_Quarry},
-    // A silver vein prices like iron for a settlement site: the mint is
+    // A mint vein prices like iron for a settlement site: the mint is
     // wealth, but the town still eats bread, not coins.
     {DepositKind::Silver, "silver", 16, FT_SilverMine},
+    {DepositKind::Copper, "copper", 16, FT_CopperMine},
+    {DepositKind::Gold,   "gold",   16, FT_GoldMine},
 };
 static_assert(rows_in_enum_order(kDepositDefs, &DepositDef::kind),
               "kDepositDefs row order must mirror DepositKind");
@@ -173,10 +178,13 @@ void restore_deposit_cells(DepositLayer& layer, const DepositLayer& loaded);
 // row's GrowthDomain::Geology walk in macro_stock.cpp, «железо родится где
 // мир оскудел», and the dead path guarded a second copy of it.)
 
-// The lump a fresh vein opens with (kIronBase) — the Iron row's growth
-// number, living at the deposit table's own door.
-int iron_vein_lump();
-int silver_vein_lump();
+// The lump a fresh vein of THIS KIND opens with — the Geology domain's
+// growth number, read off the kind's own generation row (the `veinBase`
+// column). One door for six metals: the two hand-written functions that
+// stood here (iron_vein_lump / silver_vein_lump) were a per-kind dialect,
+// and the third metal would have been a third copy. 0 = this kind does not
+// regrow.
+int deposit_vein_lump(DepositKind kind);
 
 // The MINE's consolidation (owner 2026-08-31, CANON S10 «шахта — фича, как
 // поле»): flood the locally CONNECTED cluster of same-kind veins

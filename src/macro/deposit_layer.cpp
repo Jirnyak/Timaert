@@ -51,29 +51,54 @@ struct DepositGenRow {
     // world's money supply IS its silver geology × catalog value 32).
     std::int32_t unitScale;
     std::uint32_t salt;
+    // The lump a FRESH vein opens with (the Geology growth domain's «born
+    // where it is scarce»). A column since 2026-09-18: it lived as two
+    // hand-written functions (iron_vein_lump / silver_vein_lump), which is
+    // exactly the shape that cannot grow to six metals without growing code.
+    // 0 = this kind does not regrow (clay and stone are not born scarce).
+    std::int32_t veinBase;
 };
 // Thresholds and scales are CALIBRATED against the hash law's world totals
 // (the fingerprint line below is the instrument): the money supply and the
 // tool economy must not jump an order of magnitude because the SHAPE of
 // geology changed. Targets (1024², seed-family means): clay ~1.2M units,
-// iron ~0.8M, stone ~100M (quasi-infinite), silver ~50k (× catalog value
-// 32 = the world's coin ceiling).
+// iron ~0.8M, stone ~100M (quasi-infinite).
+//
+// THE MINT METALS' VALUE CEILING (owner verdict 2026-09-18, «пересчёт жил
+// ÷10»): a metal's units × its catalog price is the world's coin ceiling in
+// that metal, and the price is the mint yield (32) × the nominal it strikes.
+// Silver went from nominal 1 to nominal 10 with the three-coin family, so
+// its price went 32 → 320 and its VEINS are rescaled ÷10 to hold the same
+// ceiling the balance runs were calibrated against (~16M of value).
+//
+// THE RARITY LADDER IS THE OWNER'S (2026-09-18): «медь чаще, серебро
+// среднее, золото самое редкое». It is spelled in TWO columns, because
+// rarity has two halves: the threshold decides HOW MANY cells carry the
+// metal at all (copper 0.90 → thousands of nests, silver 0.96 → a couple of
+// thousand, gold 0.995 → a few hundred), and unitScale decides how rich a
+// nest is. Measured at 1024² ([deposits] fingerprint below is the
+// instrument), one seed:
+//   copper 87k units over 6.2k cells × price 128   ≈ 11.2M of value
+//   silver  5k units over 2.3k cells × price 1280  ≈  6.4M
+//   gold   278 units over 278 cells  × price 12800 ≈  3.6M
+// — the ladder holds on both halves, and the world ceiling (~21M) is the
+// order the single-metal world was calibrated at (~16M). Every number here
+// is a balance-run tunable; the yield they are all divided against lives on
+// the coin rows (items.cpp), not here.
 constexpr DepositGenRow kDepositGen[kDepositKindCount] = {
-    //                       profile            affinity              period thresh scale  salt
-    {DepositKind::Clay,   OreProfile::Blob,  OreAffinity::RiverMoisture, 16.0f, 0.60f,  12288, 0xC1A70000u},
-    {DepositKind::Iron,   OreProfile::Ridge, OreAffinity::MountainHeight, 8.0f, 0.82f,   2048, 0x1F0E0000u},
-    {DepositKind::Stone,  OreProfile::Blob,  OreAffinity::MountainHeight, 8.0f, 0.60f,  65536, 0x570E0000u},
-    // The mint metal: the lowest period and the highest bar — few nests,
-    // truly rare, but a found one is a mining town's whole reason.
-    {DepositKind::Silver, OreProfile::Ridge, OreAffinity::MountainHeight, 6.0f, 0.96f,    384, 0x517E0000u},
+    //                       profile            affinity              period thresh scale  salt        vein
+    {DepositKind::Clay,   OreProfile::Blob,  OreAffinity::RiverMoisture, 16.0f, 0.60f,  12288, 0xC1A70000u,    0},
+    {DepositKind::Iron,   OreProfile::Ridge, OreAffinity::MountainHeight, 8.0f, 0.82f,   2048, 0x1F0E0000u, 2048},
+    {DepositKind::Stone,  OreProfile::Blob,  OreAffinity::MountainHeight, 8.0f, 0.60f,  65536, 0x570E0000u,    0},
+    // The mint metals: the lowest period and the highest bar — few nests,
+    // truly rare, but a found one is a mining town's whole reason. Copper is
+    // the base metal of the three, so its bar is the lowest of them.
+    {DepositKind::Silver, OreProfile::Ridge, OreAffinity::MountainHeight, 6.0f, 0.96f,      5, 0x517E0000u,    7},
+    {DepositKind::Copper, OreProfile::Ridge, OreAffinity::MountainHeight, 6.0f, 0.90f,     30, 0xC0BB0000u,   43},
+    {DepositKind::Gold,   OreProfile::Ridge, OreAffinity::MountainHeight, 6.0f, 0.995f,     1, 0x901D0000u,    1},
 };
 static_assert(rows_in_enum_order(kDepositGen, &DepositGenRow::kind),
               "kDepositGen row order must mirror DepositKind");
-
-// The vein a fresh discovery opens with (iron/silver Geology growth law) —
-// kept as the old per-vein lumps.
-constexpr std::int32_t kIronBase   = 2048;
-constexpr std::int32_t kSilverBase = 512;
 
 bool river_adjacent(const TerrainData& t, int x, int y) {
     if (!t.has_river_storage()) return false;
@@ -172,19 +197,20 @@ DepositLayer build_deposit_layer(const TerrainData& terrain,
             }
         }
     }
-    // The geology fingerprint — the calibration eye of the field law and
-    // the money supply's own birth certificate (silver × catalog value 32).
-    std::fprintf(stderr,
-                 "[deposits] clay=%lld iron=%lld stone=%lld silver=%lld "
-                 "(cells %zu/%zu/%zu/%zu)\n",
-                 (long long)layer.virginUnits[0],
-                 (long long)layer.virginUnits[1],
-                 (long long)layer.virginUnits[2],
-                 (long long)layer.virginUnits[3],
-                 std::size_t(layer.cells[0].liveCells),
-                 std::size_t(layer.cells[1].liveCells),
-                 std::size_t(layer.cells[2].liveCells),
-                 std::size_t(layer.cells[3].liveCells));
+    // The geology fingerprint — the calibration eye of the field law and the
+    // money supply's own birth certificate (a mint metal's units × its
+    // catalog price). Printed off the REGISTRY, one line per row: the
+    // hand-unrolled four-kind version silently stopped naming the metals the
+    // day a fifth row was born, which is the one thing a calibration
+    // instrument must never do (the fold-up lesson, problems §…).
+    std::fprintf(stderr, "[deposits]");
+    for (int k = 0; k < kDepositKindCount; ++k) {
+        std::fprintf(stderr, " %s=%lld/%zu",
+                     kDepositDefs[std::size_t(k)].commodityId,
+                     (long long)layer.virginUnits[std::size_t(k)],
+                     std::size_t(layer.cells[std::size_t(k)].liveCells));
+    }
+    std::fprintf(stderr, "  (units/cells)\n");
     return layer;
 }
 
@@ -236,8 +262,10 @@ void restore_deposit_cells(DepositLayer& layer, const DepositLayer& loaded) {
     ++layer.revision;
 }
 
-int iron_vein_lump() { return kIronBase; }
-int silver_vein_lump() { return kSilverBase; }
+int deposit_vein_lump(DepositKind kind) {
+    return std::size_t(kind) < std::size_t(kDepositKindCount)
+        ? int(kDepositGen[std::size_t(kind)].veinBase) : 0;
+}
 
 int consolidate_deposit_cluster(DepositLayer& layer, DepositKind kind,
                                 int x, int y) {

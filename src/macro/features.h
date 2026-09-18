@@ -42,6 +42,10 @@ enum FeatureType : std::uint8_t {
     // намерения: пристал к дикому берегу — корабль остаётся фичей («можно
     // много бросить»), вернёшься — уплывёшь.
     FT_Port = 10, FT_BeachedShip = 11,
+    // The other two mint metals' mines (v96, with the three coin nominals):
+    // «4 разных шахты — разные типы, множим сколько угодно» — a kind is a row
+    // here and a row in the deposit registry, and no code grows.
+    FT_CopperMine = 12, FT_GoldMine = 13,
     FT_Count,
 };
 
@@ -69,6 +73,8 @@ static_assert(FT_ClayPit == 5 && FT_IronMine == 6 && FT_Quarry == 7
 static_assert(FT_WoodBridge == 9, "FeatureType byte layout (v72)");
 static_assert(FT_Port == 10 && FT_BeachedShip == 11,
               "FeatureType byte layout (ships, v74)");
+static_assert(FT_CopperMine == 12 && FT_GoldMine == 13,
+              "FeatureType byte layout (mint metals, v96)");
 
 // ── THE feature registry (CANON S16, 2026-08-29) ─────────────────────────
 // Everything the world says ABOUT a feature is a column of ONE row. These
@@ -175,6 +181,10 @@ inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
     {FT_Port,        1.5f, 0.85f, 0.22f, ResourceFieldId::Count, kBuildsPerDay},
     // A beached hull builds nothing and guards nothing — it just waits.
     {FT_BeachedShip, 0.0f, 1.00f, 0.0f, ResourceFieldId::Count, 0},
+    // The other mint metals' shafts: the silver mine's own columns, working
+    // their own rows.
+    {FT_CopperMine, 0.0f, 1.00f, 0.0f, ResourceFieldId::Copper, kBuildsPerDay},
+    {FT_GoldMine,   0.0f, 1.00f, 0.0f, ResourceFieldId::Gold,   kBuildsPerDay},
 };
 static_assert(rows_in_enum_order(kFeatureDefs, &FeatureDef::type),
               "kFeatureDefs row order must mirror FeatureType — a new "
