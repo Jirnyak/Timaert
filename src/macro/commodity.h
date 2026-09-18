@@ -15,7 +15,7 @@
 //     {archetypeId, materialId, quality, seed} elsewhere — the same
 //     catalog+instance pattern the monster table and sprite resolver use.
 //
-// v1 scope (owner-approved): 5 raw + 3 goods per tier = 14 rows. Values and
+// v1 scope (owner-approved): 15 rows. Values and
 // weights are round house-style numbers; BALANCE is owned by the self-play
 // harness (tests/econ_v1_test.cpp conservation + no-starvation laws), not by
 // eyeballing these columns.
@@ -25,17 +25,17 @@
 
 namespace sm {
 
-enum class CommodityTier : std::uint8_t {
-    Raw = 0,         // сырьё; эти строки ЕСТЬ материалы будущего крафта
-    Vital = 1,       // жизненно необходимое: без него голод/упадок
-    Instrument = 2,  // инструментально-развитие: множители роста
-    Luxury = 3,      // роскошь: счастье/богатство
-};
+// (CommodityTier УМЕР 2026-09-18, вердикт владельца «у нас теперь просто
+// система итемов единая и точка». Он был ВТОРЫМ ответом на вопрос «что это за
+// вещь», а единственный даёт категория каталога — items.h ItemType: Material
+// = ресурсы, из них крафтят; Goods = товары, их производят и в них нуждаются;
+// Food — категория, в которой живёт голодная строка лестницы. Все три его
+// читателя — сев закромов, процедурный квест и голодная дверь — спрашивают
+// теперь категорию.)
 
 struct CommodityDef {
     const char*   id;            // stable string id — the ONE name everywhere
     const char*   name;          // display
-    CommodityTier tier;
     float         weightKg;      // carried weight (caravans, inventories)
     // NO price column — deliberately. The one price anchor is the same row's
     // ItemDef.value (macro/items.h, one-dictionary ruling): a second table of
@@ -49,10 +49,10 @@ struct CommodityDef {
 // Raw rows FIRST and contiguous — the material mask bit space is their index.
 inline constexpr CommodityDef kCommodities[] = {
     // ── Raw (материалы) ──────────────────────────────────────────────────
-    {"wood",      "Дерево",      CommodityTier::Raw,        2.0f,  0},
-    {"stone",     "Камень",      CommodityTier::Raw,        4.0f,  0},
-    {"iron",      "Железо",      CommodityTier::Raw,        4.0f,  0},
-    {"clay",      "Глина",       CommodityTier::Raw,        2.0f,  0},
+    {"wood",      "Дерево", 2.0f,  0},
+    {"stone",     "Камень", 4.0f,  0},
+    {"iron",      "Железо", 4.0f,  0},
+    {"clay",      "Глина", 2.0f,  0},
     // ПИЩА — ОДНА строка на всю еду мира (владелец, 2026-09-18: «обобщим
     // зерно до пищи, и из неё делается еда — тогда абстрактно добывается из
     // поля пищи и из фауны»). Источников много (пашня, охота, дальше рыба),
@@ -60,33 +60,36 @@ inline constexpr CommodityDef kCommodities[] = {
     // «хлеб ИЛИ мясо», а это новая система там, где нужен минимум. Зерно,
     // мясо и рыба остаются ВИДАМИ предмета для сумки — экономика говорит
     // одним словом.
-    {"food",      "Пища",        CommodityTier::Raw,        1.0f,  0},
+    {"food",      "Пища", 1.0f,  0},
     // Монетный металл (CANON S10 чеканка): жила → слиток → монета фракции.
-    {"silver",    "Серебро",     CommodityTier::Raw,        4.0f,  0},
+    {"silver",    "Серебро", 4.0f,  0},
     // ── Vital (жизненно необходимое) ─────────────────────────────────────
-    {"bread",     "Хлеб",        CommodityTier::Vital,      1.0f,  0},
-    {"bricks",    "Кирпичи",     CommodityTier::Vital,      4.0f,  0},
+    {"bread",     "Хлеб", 1.0f,  0},
+    {"bricks",    "Кирпичи", 4.0f,  0},
     // Одежда варится из зерна как из льна-заглушки: отдельная культура волокна
     // (лён/шерсть) — будущая строка сырья, рецепт тогда меняет один вход.
-    {"cloth",     "Одежда",      CommodityTier::Vital,      1.0f,  0},
+    {"cloth",     "Одежда", 1.0f,  0},
     // ── Instrument (инструментально-развитие) ───────────────────────────
-    {"tools",     "Инструменты", CommodityTier::Instrument, 2.0f,  0},
-    {"furniture", "Мебель",      CommodityTier::Instrument, 8.0f,  0},
-    {"wagon",     "Повозка",     CommodityTier::Instrument, 32.0f, 0},
+    {"tools",     "Инструменты", 2.0f,  0},
+    {"furniture", "Мебель", 8.0f,  0},
+    {"wagon",     "Повозка", 32.0f, 0},
     // ── Luxury (роскошь) ─────────────────────────────────────────────────
-    {"jewelry",   "Украшения",   CommodityTier::Luxury,     1.0f,  0},
-    {"carving",   "Резьба",      CommodityTier::Luxury,     2.0f,  0},
-    {"statue",    "Статуя",      CommodityTier::Luxury,     64.0f, 0},
+    {"jewelry",   "Украшения", 1.0f,  0},
+    {"carving",   "Резьба", 2.0f,  0},
+    {"statue",    "Статуя", 64.0f, 0},
 };
 
 inline constexpr int kCommodityCount =
     int(sizeof(kCommodities) / sizeof(kCommodities[0]));
 inline constexpr int kRawCommodityCount = 6;
 
-static_assert(kCommodityCount == 15, "v1 scope: 6 raw + 3 goods per tier");
-static_assert(kCommodities[kRawCommodityCount - 1].tier == CommodityTier::Raw
-                  && kCommodities[kRawCommodityCount].tier != CommodityTier::Raw,
-              "raw rows must be first and contiguous (material mask bit space)");
+static_assert(kCommodityCount == 15, "v1 scope of the economy's ordinals");
+// «Сырьё идёт первым и подряд» держал ярус товарной строки; ярус умер
+// 2026-09-18, а СМЫСЛ утверждения — битовое пространство materialMask — жив.
+// Сторожит его теперь свидетель (econ_v1_test), который спрашивает КАТЕГОРИЮ
+// каталога: первые kRawCommodityCount строк обязаны быть ItemType::Material,
+// следующая — нет. Компилятору это недоступно: каталог виден только своей
+// единице трансляции.
 static_assert(kRawCommodityCount <= 16,
               "materialMask is uint16 — widen it before adding a 17th raw row");
 

@@ -96,8 +96,15 @@ int main() {
                 return fail("duplicate commodity id");
             }
         }
-        if ((i < kRawCommodityCount)
-            != (kCommodities[i].tier == CommodityTier::Raw)) {
+        // СЫРЬЁ ИДЁТ ПЕРВЫМ И ПОДРЯД — это битовое пространство materialMask,
+        // и спрашивается оно у ЕДИНСТВЕННОГО словаря «что это за вещь»:
+        // категории каталога (ярус товарной строки умер 2026-09-18). Раньше
+        // это держал static_assert по ярусу; компилятору категория недоступна
+        // — каталог виден только своей единице трансляции, — поэтому закон
+        // переехал сюда целиком, не ослабнув.
+        const ItemDef* cd = item_def(kCommodities[i].id);
+        if (!cd) return fail("commodity id names no catalog row");
+        if ((i < kRawCommodityCount) != (cd->type == ItemType::Material)) {
             return fail("raw rows must be exactly the first kRawCommodityCount");
         }
         if (kCommodities[i].materialMask >> kRawCommodityCount) {
@@ -121,7 +128,8 @@ int main() {
         if (!isMint && item_index(kRecipes[r].output) < 0)
             return fail("recipe output names no catalog row");
 
-        if (kCommodities[out].tier == CommodityTier::Raw) {
+        const ItemDef* od = item_def(kRecipes[r].output);
+        if (!isMint && od && od->type == ItemType::Material) {
             return fail("recipe may not output raw (only deposits create raw)");
         }
         for (int r2 = r + 1; r2 < kRecipeCount; ++r2) {

@@ -336,9 +336,9 @@ void seed_landmark_inventory(Inventory& inv, int population, bool isCity,
     for (int i = 0; i < kNeedCount; ++i) {
         const int idx = commodity_index(kNeeds[i].commodity);
         if (idx < 0) continue;
-        const bool dailyVital = kNeeds[i].popPerUnitDay == 1
-            && kCommodities[idx].tier == CommodityTier::Vital;
-        const int qty = dailyVital
+        // ГОЛОДНАЯ строка — одной дверью (kHungerNeedRow), а не вторым
+        // выводом того же предиката.
+        const int qty = (i == kHungerNeedRow)
             ? population * kSeedVitalDays
             : (population / kNeeds[i].popPerUnitDay) * needDays;
         if (qty > 0) inv.add(kNeeds[i].commodity, qty);

@@ -120,7 +120,10 @@ bool gen_delivery(const QuestGenCtx& ctx, Quest& q) {
     int bestIdx = -1;
     int bestClass = 4;
     for (int i = 0; i < kCommodityCount; ++i) {
-        if (kCommodities[i].tier == CommodityTier::Raw) continue;
+        // Город просит ТОВАР, а не сырьё: категория каталога и есть ответ
+        // (items.h ItemType — ярус товарной таблицы умер 2026-09-18).
+        const ItemDef* d = item_def(kCommodities[i].id);
+        if (!d || d->type == ItemType::Material) continue;
         const int cls = stock_class(ctx.store->count(kCommodities[i].id));
         if (cls < bestClass) {
             bestClass = cls;

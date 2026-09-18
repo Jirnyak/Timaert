@@ -157,7 +157,9 @@ inline constexpr int kNeedCount = int(sizeof(kNeeds) / sizeof(kNeeds[0]));
 // Одна строка отвечает не за неуют, а за ГОЛОД. Она НЕ НАЗВАНА словом — она
 // УЗНАЁТСЯ, ровно по тем двум колонкам, по которым её и судит
 // econ_consume_season: нужда, у которой одна единица кроет один житель-день
-// (popPerUnitDay == 1) и которая жизненно необходима (tier == Vital).
+// (popPerUnitDay == 1). Что она из категории ЕДА — закон, который держит
+// свидетель: ярус товара (CommodityTier) умер 2026-09-18, «что это за вещь»
+// отвечает ОДНА категория каталога (items.h ItemType).
 //
 // ЗАЧЕМ ДВЕРЬ, А НЕ СЛОВО. Тот же харч списывают ТРОЕ, и до 2026-09-18 они
 // спрашивали его тремя способами: население — лестницу (честно), гарнизон
@@ -176,30 +178,24 @@ inline constexpr int kNeedCount = int(sizeof(kNeeds) / sizeof(kNeeds[0]));
 // плате, и только. «Армия хочет БОРД и ПЛАТУ» — это разница замысла, а не
 // недоделка, и дверь названа «голодная строка» именно поэтому: она отдаёт
 // ту единственную нужду, которую обязан покрыть всякий, кто кормит людей.
-constexpr bool need_id_eq_(const char* a, const char* b) {
-    while (*a && *a == *b) { ++a; ++b; }
-    return *a == *b;
-}
 constexpr int hunger_need_row_() {
     int found = -1, count = 0;
     for (int i = 0; i < kNeedCount; ++i) {
         if (kNeeds[i].popPerUnitDay != 1) continue;
-        for (int c = 0; c < kCommodityCount; ++c) {
-            if (!need_id_eq_(kCommodities[c].id, kNeeds[i].commodity)) continue;
-            if (kCommodities[c].tier != CommodityTier::Vital) continue;
-            if (found < 0) found = i;
-            ++count;
-        }
+        if (found < 0) found = i;
+        ++count;
     }
     return count == 1 ? found : -1;
 }
 // Строка лестницы, а не каталога: индекс в kNeeds.
 inline constexpr int kHungerNeedRow = hunger_need_row_();
 static_assert(kHungerNeedRow >= 0,
-              "the needs ladder must carry EXACTLY ONE hunger row — a need "
-              "that is Vital and served one unit per pop-day. Zero of them "
-              "means nobody can starve; two means the code that feeds the "
-              "world has to pick, and every eater would pick differently");
+              "the needs ladder must carry EXACTLY ONE hunger row — the need "
+              "served one unit per pop-day. Zero of them means nobody can "
+              "starve; two means the code that feeds the world has to pick, "
+              "and every eater would pick differently");
+// Что эта строка — ЕДА, проверяет свидетель (econ_v1_test): каталог виден
+// только своей единице трансляции, и врать компилятору про это нечем.
 
 // Голодная строка авторским КЛЮЧОМ — для дверей, которые берут строку
 // (haul_between). Пространства id лестницы и каталога едины, ключ один.

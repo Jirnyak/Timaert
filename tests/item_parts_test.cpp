@@ -96,12 +96,15 @@ void test_table_laws() {
     }
     CHECK(rowsWithParts > 0, "the matter table measured something");
 
-    // Coverage by TIER: the economy's produced goods are made of matter; raw
-    // rows ARE the matter (terminal, «состоит из себя»).
+    // Coverage by CATEGORY: the economy's produced goods are made of matter;
+    // РЕСУРСЫ и есть матерь (terminal, «состоит из себя»). Категория каталога
+    // — единственный словарь «что это за вещь» с 2026-09-18; ярус товарной
+    // строки, который стоял здесь, был вторым ответом на тот же вопрос.
     for (int c = 0; c < kCommodityCount; ++c) {
         const int idx = item_index(kCommodities[c].id);
         CHECK(idx >= 0, "every commodity resolves in the catalog");
-        if (kCommodities[c].tier == CommodityTier::Raw) {
+        const ItemDef* cd = item_def_at(idx);
+        if (cd && cd->type == ItemType::Material) {
             CHECK(is_terminal(idx), "raw commodity rows are terminal");
         } else {
             CHECK(!is_terminal(idx), "produced goods carry a composition");
