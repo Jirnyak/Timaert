@@ -2,6 +2,8 @@
 
 #include "sub/gens/kit/streets.h"
 
+#include "macro/npc.h"   // kNpcBodyRadiusDefault — the body a lane is sized to
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -25,8 +27,11 @@ bool crosses_masonry(const SubworldMapData& out,
     return false;
 }
 
-// A man's width, the unit every lane is measured in (macro/npc.h).
-constexpr float kBodyWidth = 1.1f;   // 2 × kNpcBodyRadiusDefault
+// A man's width, the unit every lane is measured in — DERIVED from the body
+// this world is built around, not copied from it: the 1.1 that stood here was
+// a hand-written 2 × kNpcBodyRadiusDefault, and a hand-written copy is a
+// street that stops fitting a man the day the man changes width.
+constexpr float kBodyWidth = 2.0f * kNpcBodyRadiusDefault;
 
 // The served grid: one cell per this many tiles. Four is the plot scale — a
 // quarter served at finer resolution than a house is a distinction nothing

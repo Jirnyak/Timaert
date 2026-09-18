@@ -74,9 +74,11 @@ void ships_add(const TickContext& ctx, int x, int y, int delta) {
 // вывод из kGatherPerWorkerDay, не назначение) — крутилка дубль-прогона.
 constexpr int kShipWoodUnits = 8 * kGatherPerWorkerDay;
 
-// Вода корабля — его мощёная дорога (бед-вес дороги; «корабль делает воду
-// дешёвой» — владелец, 2026-09-02).
-constexpr float kShipWaterWeight = 1.0f;
+// (Вода корабля жила здесь вторым литералом того же закона — «корабль делает
+// воду дешёвой», владелец 2026-09-02 — рядом с kNavSeaWeight, который печёт
+// ту же цену в поля-округи. Один закон двумя числами держится ровно до первой
+// перетюнёвки одного из них: маршрут, запечённый по одной цене, шагался по
+// другой. Имя теперь одно — macro/nav_field.h kNavSeaWeight.)
 
 // Штамп фичи на голую клетку + правда мира (строка Built, как мост/шахта).
 void stamp_feature_if_bare(const TickContext& ctx, int x, int y,
@@ -576,11 +578,12 @@ void try_move(MacroPos& p, ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
             // genesis accident, a shipwreck) may step wherever gets it out —
             // its unpayable steps bleed by the sea-bite law below.
             // Цена шага глазами ходока: под парусом вода — его дорога
-            // (kShipWaterWeight), суша — причал (обычная цена).
+            // (kNavSeaWeight — ТА ЖЕ цена, по которой запечён морской ярус
+            // полей-округ), суша — причал (обычная цена).
             const auto walker_w = [&](int nx2, int ny2) {
                 if (flying) return 1.0f;   // воздух — дорога летуна
                 if (sailing && cell_is_water(ctx, nx2, ny2))
-                    return kShipWaterWeight;
+                    return kNavSeaWeight;
                 return edge_weight(ctx, ix, iy, nx2, ny2);
             };
             // БРОД — исключение РЕФЛЕКСА, не маршрута (владелец 2026-09-02):

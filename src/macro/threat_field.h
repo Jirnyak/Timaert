@@ -77,7 +77,12 @@ inline std::uint32_t threat_on_route(const NavWorld& nv, std::uint16_t from,
         worst = std::max(worst, threat_of(nv, r));
         if (r == to) break;
         const std::uint16_t next = nv.routeNext[std::size_t(r) * R + to];
-        if (next == kNavUnreached || next == r) break;
+        // routeNext holds ОКРУГА, so its «нет ответа» is kNavNoRegion — the
+        // value nav_field.cpp fills the table with. This read used to name
+        // kNavUnreached, the sentinel of the DISTANCE planes: it worked only
+        // because the two happen to be the same 0xFFFF today, and would have
+        // gone silently wrong the day either moved.
+        if (next == kNavNoRegion || next == r) break;
         r = next;
     }
     return worst;

@@ -136,11 +136,13 @@ bool dungeon_has_upper(const DungeonRef& ref) {
     // climbed; an open pocket stands under the sky.
     if (ref.kind != DungeonRef::House) return false;
     // A storey is worth climbing only if it seats a room you can fight in:
-    // both interior half-spans at least the manoeuvre floor the partitions
-    // are cut to (sub/dgn/house.cpp kMinRoomSpanTiles = 12 — a doorway plus
-    // melee reach on either side). Smaller houses are one room and a roof.
+    // both interior half-spans at least THE manoeuvre floor (dispatch.h
+    // kInteriorFightSpanTiles — a doorway plus melee reach on either side,
+    // pinned to the Adventurer's own attackRange by the static_assert there).
+    // Smaller houses are one room and a roof. The 12.0 that stood here was a
+    // third hand-written copy of that floor.
     const DungeonRoom room = dungeon_room(ref);
-    return std::min(room.hx, room.hy) >= 12.0f;
+    return std::min(room.hx, room.hy) >= kInteriorFightSpanTiles;
 }
 
 bool dungeon_has_cellar(const DungeonRef& ref, std::uint32_t worldSeed,
