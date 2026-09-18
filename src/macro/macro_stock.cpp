@@ -9,6 +9,7 @@
 #include "macro/deposit_layer.h"
 #include "macro/fauna.h"
 #include "macro/map_generator.h"
+#include "macro/squad.h"     // record_deed — THE chronicle door (вердикт №9)
 #include "macro/spawners.h"   // the field-stamp contract this file defines
                               //   the runtime half of (plough_*)
 #include "macro/state.h"
@@ -599,7 +600,22 @@ void resource_fields_daily_growth(MacroWorld& w, int day) {
                 df.x = std::int16_t(x);
                 df.y = std::int16_t(y);
                 df.amount = int(f) + 1;
-                chronicle_record(w.gs->chronicle, df);
+                // THROUGH THE ONE DOOR (вердикт №9, 2026-09-17: прямые
+                // chronicle_record «сводим в одну систему»): record_deed
+                // files the fact AND settles what it was worth by the one
+                // law — a bare chronicle_record here was a writer that filed
+                // for free, and the two halves of S20.1 must never come
+                // apart. The land takes the credit, so no subject ordinal is
+                // handed over (a cell has no renown to earn, which the door
+                // answers with 0 rather than with a branch).
+                if (w.world) {
+                    record_deed(*w.world, *w.gs, df);
+                } else {
+                    // No ECS wired (a field-only test world): the fact is
+                    // still the world's memory — fail OPEN on the memory,
+                    // never on the deed.
+                    chronicle_record(w.gs->chronicle, df);
+                }
             }
             break;
         }
