@@ -2095,7 +2095,8 @@ namespace sm::ui
                                         daily_demand_for(
                                             def.id, s->population,
                                             landmark_sheet(
-                                                s->type).skills)),
+                                                s->type).skills,
+                                            &s->inventory)),
                             h.cha, h.trade, s->mood);
                     };
                     const auto sellUnit = [&](const ItemRef &ref,
@@ -2106,7 +2107,8 @@ namespace sm::ui
                                         daily_demand_for(
                                             def.id, s->population,
                                             landmark_sheet(
-                                                s->type).skills)),
+                                                s->type).skills,
+                                            &s->inventory)),
                             h.cha, h.trade, s->mood);
                     };
                     draw_barter_body(

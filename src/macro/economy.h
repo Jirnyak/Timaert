@@ -51,18 +51,22 @@ int trade_sell_price(int basePrice, int charisma, int bargaining);
 
 // ── Price FROM STOCK (the starcluster law, owner-approved) ───────────────
 //
-//     scarcity = (demand + 1) / (supply + 1),  clamped to [1/4, 4] (po2)
-//     price    = base × scarcity
+//     scarcity = (demand × season + 1) / (supply + 1) — NO corridor
+//     price    = base × scarcity, floor 1 («ничто не бесплатно»)
 //
 // `supply` is the counterparty's stock of the item; `demand` its DAILY
-// demand (the needs ladder × population; 0 for goods nobody eats — then
-// abundance discounts and absence returns base). The caller passes the
-// POST-TRADE supply — what remains after a buy, what piles up after a
-// sell — so every deal pays its own SLIPPAGE: buying leaves the shelf
-// scarcer and dearer, selling gluts it cheaper. That slippage is what
-// extinguishes arbitrage: a buy-then-sell round trip can never profit,
-// whatever the charisma and context multipliers say (price_law_test pins
-// it across the once-exploitable generous-merchant pair).
+// demand — the horizon lives inside the door (the world eats once a
+// season, S19.2; stock == a season's need ⇔ price == base). The caller
+// passes the POST-TRADE supply — what remains after a buy, what piles up
+// after a sell — so every deal pays its own SLIPPAGE: buying leaves the
+// shelf scarcer and dearer, selling gluts it cheaper. That slippage is
+// what extinguishes arbitrage: a buy-then-sell round trip can never
+// profit, whatever the charisma and context multipliers say
+// (price_law_test pins it across the once-exploitable generous pair).
+// The nominal price is UNBOUNDED by design (verdict 2026-09-18: цена
+// растёт и падает как угодно); what bounds every DEAL is realizability —
+// the payer's inventory value (max_affordable_lot_) — and what bounds
+// every DECISION WEIGHT is purchasing power, never a corridor.
 float stock_scarcity(int supply, int demandPerDay);
 int stock_price(int baseValue, int supply, int demandPerDay);
 
@@ -71,7 +75,17 @@ int stock_price(int baseValue, int supply, int demandPerDay);
 // city that bakes demands grain; a place whose cooking rank is zero does not
 // — owner track 2026-08-30, and since 2026-09-18 the gate is the place's own
 // ANKETA, not its kind). 0 for anything nobody here consumes.
+//
+// `store` — ЭТОГО места склад: производная половина спроса гасится запасом
+// ВЫХОДА (владелец 2026-09-18, «смотреть и на сезон, и на склад текущий»):
+// зерно нужно только на НЕДОПЕЧЁННЫЙ остаток сезонной нужды хлеба — полный
+// амбар не хочет зерна, пустой хочет в полную силу (выгода караванов с
+// зерном, ради которой производный спрос строился, живёт ровно там, где
+// она настоящая). nullptr = спрос без неттинга — для читателя, у которого
+// есть только классовый снимок чужого дома, а не склад (память крю).
 struct Skills;
-int daily_demand_for(const char* itemId, int population, const Skills& hands);
+struct Inventory;
+int daily_demand_for(const char* itemId, int population, const Skills& hands,
+                     const Inventory* store);
 
 } // namespace sm

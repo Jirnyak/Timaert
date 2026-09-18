@@ -1643,7 +1643,7 @@ void load_cheap_at_home_(Inventory& store, Inventory& bag, int population,
         const int base = d ? d->value : 0;
         if (base <= 0) continue;
         const int have = store.count(id);
-        const int demand = daily_demand_for(id, population, site);
+        const int demand = daily_demand_for(id, population, site, &store);
         const int loadable = have - demand * kDaysPerSeason;
         if (loadable <= 0) continue;
         if (stock_price(base, have, demand) >= base) continue;
@@ -3374,7 +3374,8 @@ CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
         const ItemDef* def = item_def(id);
         const int base = def ? def->value : 0;
         if (base <= 0) continue;
-        const int demand = daily_demand_for(id, market.population, site);
+        const int demand = daily_demand_for(id, market.population, site,
+                                            &ms);
         const int need = demand * kDaysPerSeason;
         const int have = ms.count(id);
         if (need > have) {
@@ -3448,7 +3449,8 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
         if (base <= 0) continue;
         int n = bag.count(id);
         if (n <= 0) continue;
-        const int demand = daily_demand_for(id, market.population, site);
+        const int demand = daily_demand_for(id, market.population, site,
+                                            &ms);
         const int have = ms.count(id);
         // Affordability by the exact door (max_affordable_lot_), as at the
         // station: the lot pays the post-trade shelf, so a famine ceiling
@@ -3501,15 +3503,18 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
             if (base <= 0) continue;
             const int have = ms.count(id);
             if (have <= 0) continue;
-            const int demand = daily_demand_for(id, market.population, site);
+            const int demand = daily_demand_for(id, market.population,
+                                                site, &ms);
             const int buyHere = trade_buy_price(
                 stock_price(base, have, demand), charisma, bargaining);
             // Чего это стоит ДОМА: запас — по классу своей памяти, спрос —
             // по своему населению и своему виду места.
             const int homeSupply =
                 stock_class_supply(market_stock_class(*homeSnapshot, i));
+            // У крю только классовый СНИМОК дома, не склад: спрос дома
+            // считается без неттинга (nullptr) — названо вслух в economy.h.
             const int homeDemand =
-                daily_demand_for(id, homePopulation, homeSite);
+                daily_demand_for(id, homePopulation, homeSite, nullptr);
             const int worthHome = stock_price(base, homeSupply, homeDemand);
             if (worthHome <= buyHere) continue;   // рейс не окупает закупку
             const float kg = def->weight > 0.0f ? def->weight : 1.0f;
@@ -3531,7 +3536,8 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
             const char* id = kCommodities[i].id;
             const ItemDef* def = item_def(id);
             const int base = def->value;
-            const int demand = daily_demand_for(id, market.population, site);
+            const int demand = daily_demand_for(id, market.population,
+                                                site, &ms);
             const int have = ms.count(id);
             const float kg = def->weight > 0.0f ? def->weight : 1.0f;
             int n = std::min({have, lots[li].homeCap,
@@ -4048,7 +4054,8 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 if (base <= 0) continue;
                 const int have = s.inventory.count(gd.commodity);
                 const int demand =
-                    daily_demand_for(gd.commodity, s.population, homeSite);
+                    daily_demand_for(gd.commodity, s.population, homeSite,
+                                     &s.inventory);
                 const int unitPrice = stock_price(base, have, demand);
                 // МЕСТО УЖЕ ИСКАЛО — артель ЧИТАЕТ (владелец, 2026-09-18).
                 // Жилы приходят строкой описи своей округи (survey_landmark_
@@ -4092,6 +4099,12 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             if (city && city->type == LandmarkType::City
                 && city->id != s.id) {
                 long long value = s.titheOwedCoin > 0 ? s.titheOwedCoin : 0;
+                // Проход ПРОДАЖИ: что повезём (дома дешевле базы, сверх
+                // сезонного амбара) — и это же ПОКУПАТЕЛЬНАЯ СПОСОБНОСТЬ
+                // рейса (владелец 2026-09-18: «у нас бартер-система —
+                // покупательная способность это суммарная стоимость
+                // инвентаря»). Дань — долг, не кошелёк.
+                long long purse = 0;
                 for (int c = 0; c < kCommodityCount; ++c) {
                     const char* id = kCommodities[c].id;
                     const ItemDef* d = item_def(id);
@@ -4100,18 +4113,41 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     if (s.titheOwedGoods[c] > 0)
                         value += (long long)s.titheOwedGoods[c] * base;
                     const int have = s.inventory.count(id);
-                    const int demand =
-                        daily_demand_for(id, s.population, homeSite);
+                    const int demand = daily_demand_for(id, s.population,
+                                                        homeSite,
+                                                        &s.inventory);
                     const int seasonNeed = demand * kDaysPerSeason;
                     const int homePrice =
                         stock_price(base, have, demand);
                     if (have > seasonNeed && homePrice < base) {
                         value += (long long)(have - seasonNeed)
                                  * (base - homePrice);
-                    } else if (have < seasonNeed && homePrice > base) {
-                        value += (long long)(seasonNeed - have)
-                                 * (homePrice - base);
+                        purse += (long long)(have - seasonNeed) * base;
                     }
+                }
+                // Проход ЗАКУПКИ, капнутый кошельком: дефицитная цена может
+                // быть сколь угодно громкой (коридора нет — и не будет), но
+                // РЕШЕНИЕ весит только то, что рейс способен ОПЛАТИТЬ своим
+                // грузом. Без капа пустая полка города весила миллионы и
+                // глушила и страх, и добычу (измерено, guard_patrol).
+                for (int c = 0; c < kCommodityCount && purse > 0; ++c) {
+                    const char* id = kCommodities[c].id;
+                    const ItemDef* d = item_def(id);
+                    const int base = d ? d->value : 0;
+                    if (base <= 0) continue;
+                    const int have = s.inventory.count(id);
+                    const int demand = daily_demand_for(id, s.population,
+                                                        homeSite,
+                                                        &s.inventory);
+                    const int seasonNeed = demand * kDaysPerSeason;
+                    const int homePrice =
+                        stock_price(base, have, demand);
+                    if (have >= seasonNeed || homePrice <= base) continue;
+                    const long long buyable = std::min<long long>(
+                        seasonNeed - have, purse / base);
+                    if (buyable <= 0) continue;
+                    value += buyable * (homePrice - base);
+                    purse -= buyable * base;
                 }
                 if (value > 0) {
                     const float road = std::sqrt(torus_dist_sq(

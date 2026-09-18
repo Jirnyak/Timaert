@@ -43,9 +43,9 @@ void test_scarcity_shape() {
           "price = base x scarcity");
     CHECK(stock_price(10, 1 << 20, 0) >= 1,
           "a price never reaches zero — «ничто не бесплатно» is the floor");
-    CHECK(daily_demand_for("bread", 128, CITY) == 128
-              && daily_demand_for("cloth", 128, CITY) == 4
-              && daily_demand_for("wpn_dagger", 128, CITY) == 0,
+    CHECK(daily_demand_for("bread", 128, CITY, nullptr) == 128
+              && daily_demand_for("cloth", 128, CITY, nullptr) == 4
+              && daily_demand_for("wpn_dagger", 128, CITY, nullptr) == 0,
           "demand reads the ONE needs ladder");
 }
 

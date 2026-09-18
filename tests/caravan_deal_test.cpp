@@ -53,10 +53,12 @@ int main() {
     const long long woodBefore = commodity_total(hold, city.inventory, "wood");
     const long long breadBefore =
         commodity_total(hold, city.inventory, "bread");
-    const int breadDemand = sm::daily_demand_for("bread", city.population,
-                                                 sm::landmark_sheet(sm::LandmarkType::City).skills);
-    const int woodDemand = sm::daily_demand_for("wood", city.population,
-                                                sm::landmark_sheet(sm::LandmarkType::City).skills);
+    const int breadDemand = sm::daily_demand_for(
+        "bread", city.population,
+        sm::landmark_sheet(sm::LandmarkType::City).skills, &city.inventory);
+    const int woodDemand = sm::daily_demand_for(
+        "wood", city.population,
+        sm::landmark_sheet(sm::LandmarkType::City).skills, &city.inventory);
 
     // Charisma 0 here: the corridor checks below stay the raw price law's;
     // the sheet edge is asserted separately at the end.

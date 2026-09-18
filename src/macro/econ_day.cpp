@@ -124,7 +124,7 @@ int econ_produce_day(Inventory& store, const Skills& hands, int workers,
         if (!def || def->value <= 0) return;
         cands[std::size_t(candCount++)] = Cand{
             outIdx, commodity, isMint,
-            daily_demand_for(def->id, population, hands),
+            daily_demand_for(def->id, population, hands, &store),
             std::max(1, item_labour(outIdx) * popLog / 4),
             item_yield(outIdx), def->value};
     };

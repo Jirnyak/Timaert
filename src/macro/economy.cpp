@@ -81,7 +81,7 @@ namespace {
 // balance_run). Recursive over the recipe table with a small depth cap:
 // chains are data and may grow (ore → metal → tool), cycles must not hang.
 int demand_for_(const char* itemId, int population, const Skills& hands,
-                int depth) {
+                const Inventory* store, int depth) {
     if (!itemId || population <= 0) return 0;
     int demand = 0;
     for (int i = 0; i < kNeedCount; ++i) {
@@ -104,10 +104,27 @@ int demand_for_(const char* itemId, int population, const Skills& hands,
             // matter table, items.h). The mint's output is no catalog row
             // (-1 → empty span), and its silver demand was always zero:
             // nothing NEEDS coin down the needs ladder.
-            for (const ItemPart& part : item_parts(item_index(r.output))) {
+            const int outIdx = item_index(r.output);
+            for (const ItemPart& part : item_parts(outIdx)) {
                 if (int(part.def) != target) continue;
-                demand += demand_for_(r.output, population, hands, depth - 1)
-                          * int(part.count);
+                const int outDaily = demand_for_(r.output, population,
+                                                 hands, store, depth - 1);
+                // НЕТТИНГ СКЛАДОМ ВЫХОДА (владелец 2026-09-18, «смотреть
+                // и на сезон, и на склад текущий»): вход нужен только на
+                // НЕДОПЕЧЁННЫЙ остаток сезонной нужды выхода. Полный амбар
+                // хлеба не хочет зерна — его пустая зерновая полка больше
+                // не «дефицит» и не взрывает ни цену, ни скор рейса;
+                // пустой амбар хочет в полную силу — выгода караванов с
+                // зерном жива ровно там, где она настоящая. Неттинг — на
+                // СЕЗОННОЙ шкале (шкала самой нужды, S19.2), обратно в
+                // дневную мерку той же дробью; без склада (nullptr) дробь
+                // сокращается в прежний outDaily точно.
+                long long outSeason = (long long)outDaily * kDaysPerSeason;
+                if (store) {
+                    outSeason -= store->count_of(outIdx);
+                    if (outSeason < 0) outSeason = 0;
+                }
+                demand += int(outSeason / kDaysPerSeason) * int(part.count);
             }
         }
     }
@@ -142,10 +159,10 @@ constexpr int weakest_need_per_unit_day() {
 }
 
 int daily_demand_for(const char* itemId, int population,
-                     const Skills& hands) {
+                     const Skills& hands, const Inventory* store) {
     // Depth 4 covers chains far past today's one-step recipes (ore → metal
     // → part → tool) and caps any future accidental cycle.
-    const int direct = demand_for_(itemId, population, hands, 4);
+    const int direct = demand_for_(itemId, population, hands, store, 4);
     if (population <= 0) return direct;
     const int floorDemand = population / weakest_need_per_unit_day();
     return direct > floorDemand ? direct : floorDemand;
