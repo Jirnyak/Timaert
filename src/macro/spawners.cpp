@@ -267,11 +267,20 @@ namespace sm
                 if (h < seaLevel + 0.03f || h > 0.80f)
                     continue;
 
-                // Biome exclusion via TS 3×3 climate matrix
-                // (row 0 col 0 = Tundra, row 0 col 2 = Snow, row 2 col 0 = Desert).
-                const int tRow = std::min(2, int(temp) / 86);
-                const int moistCol = std::min(2, int(moist) / 86);
-                if ((tRow == 0 && moistCol != 1) || (tRow == 2 && moistCol == 0))
+                // WHERE A FOREST REFUSES TO STAND, asked of THE ONE climate
+                // classifier (biomes.h biome_from_climate — the same door
+                // map_generator reads to paint the world's biome layer).
+                // A private copy stood here: `temp / 86`, a third cut of the
+                // 3×3 matrix with its OWN band edges (0.337/0.675 against the
+                // door's round-to-nearest 0.25/0.75), so the forest's idea of
+                // "this cell is tundra" disagreed with the map's by a band
+                // nearly a tenth of the climate range wide — pines on painted
+                // snow, bald ground on painted taiga.
+                const Biome b = biome_from_climate(float(temp) / 255.0f,
+                                                   float(moist) / 255.0f);
+                // Frozen ground and sand: the three rows of the matrix no
+                // forest grows on. Taiga, the cold MIDDLE, keeps its trees.
+                if (b == Tundra || b == Snow || b == Desert)
                     continue;
 
                 // Organic noise — domain-warped multi-scale FBM.
