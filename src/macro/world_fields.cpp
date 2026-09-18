@@ -139,36 +139,77 @@ bool deposits_read(savefmt::Reader& r, const WorldFieldStoresMut& st) {
     return r.ok;
 }
 
-// ── Scars: one generic sparse block per resource row (since v35) ────────
+// ── Scars: one block per resource row — a FIELD, sparse on the wire ─────
+// v96: the row's scars are a ResourceGrid over the world, so the stream is
+// deterministic by construction (a field walks itself in index order) and
+// the sort the hash needed died with the hash. Same wire shape as deposits.
 void scars_write(savefmt::Writer& w, const WorldFieldStores& st) {
     for (std::size_t f = 0; f < std::size_t(ResourceFieldId::Count); ++f) {
         if (!st.gs) { w.count(0, kMaxFieldCells); continue; }
-        const auto& scars = st.gs->resourceScars[f];
-        if (!w.count(scars.size(), kMaxFieldCells)) continue;
-        std::vector<std::pair<std::uint32_t, std::uint16_t>> cells(
-            scars.begin(), scars.end());
-        std::sort(cells.begin(), cells.end());
-        for (const auto& [idx, scar] : cells) {
+        const ResourceGrid& scars = st.gs->resourceScarCells[f];
+        if (!w.count(std::size_t(scars.liveCells), kMaxFieldCells)) continue;
+        scars.for_each_live([&](std::uint32_t idx, std::int32_t scar) {
             w.pod(idx);
             w.pod(scar);
-        }
+        });
     }
 }
+// A FIELD needs a world to be a field over (the deposits' own lesson): the
+// reader has already filled the dimensions, so a block sizes the grid it is
+// about to fill. Only the rows the FILE carries cells for get sized, which is
+// exactly the registry's rule — a carrier row writes no cells, so it grows no
+// scar field here either, and the load path needs no access to the table.
+bool size_for_world(const GameState& gs, ResourceGrid& g) {
+    if (g.live()) return true;
+    if (gs.mapW <= 0 || gs.mapH <= 0) return false;
+    g.allocate(gs.mapW, gs.mapH, 0);
+    return g.live();
+}
+
 bool scars_read(savefmt::Reader& r, const WorldFieldStoresMut& st) {
     for (std::size_t f = 0; f < std::size_t(ResourceFieldId::Count); ++f) {
         std::uint32_t n = 0;
         if (!savefmt::read_count(r, n, kMaxFieldCells)) return false;
         if (!st.gs) { r.ok = false; return false; }
-        auto& scars = st.gs->resourceScars[f];
-        scars.clear();
-        scars.reserve(n);
+        ResourceGrid& scars = st.gs->resourceScarCells[f];
+        if (n > 0 && !size_for_world(*st.gs, scars)) { r.ok = false; return false; }
         for (std::uint32_t i = 0; i < n && r.ok; ++i) {
             std::uint32_t idx = 0;
-            std::uint16_t scar = 0;
+            std::int32_t scar = 0;
             r.pod(idx);
             r.pod(scar);
-            if (r.ok) scars[idx] = scar;
+            if (r.ok && scars.live()) {
+                scars.write(scars.x_of(idx), scars.y_of(idx), scar);
+            }
         }
+    }
+    return r.ok;
+}
+
+// ── Worked: THE one layer of S5, sparse on the wire (v96) ───────────────
+// The number under a feature — hulls moored at a harbour today. One block,
+// because there is one layer: «1 шахта в клетке — одно поле в клетке».
+void worked_write_block(savefmt::Writer& w, const WorldFieldStores& st) {
+    if (!st.gs) { w.count(0, kMaxFieldCells); return; }
+    const ResourceGrid& g = st.gs->worked;
+    if (!w.count(std::size_t(g.liveCells), kMaxFieldCells)) return;
+    g.for_each_live([&](std::uint32_t idx, std::int32_t value) {
+        w.pod(idx);
+        w.pod(value);
+    });
+}
+bool worked_read_block(savefmt::Reader& r, const WorldFieldStoresMut& st) {
+    std::uint32_t n = 0;
+    if (!savefmt::read_count(r, n, kMaxFieldCells)) return false;
+    if (!st.gs) { r.ok = false; return false; }
+    ResourceGrid& g = st.gs->worked;
+    if (n > 0 && !size_for_world(*st.gs, g)) { r.ok = false; return false; }
+    for (std::uint32_t i = 0; i < n && r.ok; ++i) {
+        std::uint32_t idx = 0;
+        std::int32_t value = 0;
+        r.pod(idx);
+        r.pod(value);
+        if (r.ok && g.live()) g.write(g.x_of(idx), g.y_of(idx), value);
     }
     return r.ok;
 }
@@ -217,6 +258,7 @@ constexpr WorldFieldRow kWorldFields[std::size_t(WorldField::Count)] = {
     {WorldField::Deposits,  "deposits",  deposits_write,  deposits_read},
     {WorldField::Scars,     "scars",     scars_write,     scars_read},
     {WorldField::Built,     "built",     built_write,     built_read},
+    {WorldField::Worked,    "worked",    worked_write_block, worked_read_block},
 };
 static_assert(rows_in_enum_order(kWorldFields, &WorldFieldRow::id),
               "every WorldField needs its row — the table IS the system");

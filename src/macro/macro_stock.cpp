@@ -353,12 +353,31 @@ static_assert(kResourceFields[std::size_t(ResourceFieldId::Clay)].reachCells
               "deposit_layer.cpp sizes the vein fields with kGathererReach; "
               "give a vein row its own reach and teach it that first");
 
-std::unordered_map<std::uint32_t, std::uint16_t>&
-scars_of(GameState& gs, ResourceFieldId f) {
-    return gs.resourceScars[std::size_t(f)];
+ResourceGrid& scars_of(GameState& gs, ResourceFieldId f) {
+    return gs.resourceScarCells[std::size_t(f)];
 }
 
 } // namespace
+
+void allocate_world_fields(GameState& gs, int width, int height) {
+    if (width <= 0 || height <= 0) return;
+    for (std::size_t f = 0; f < std::size_t(ResourceFieldId::Count); ++f) {
+        ResourceGrid& g = gs.resourceScarCells[f];
+        // A CARRIER row keeps no scar of its own — its live state IS its
+        // carrier (the tree grid, the vein grids), so it pays for no field
+        // here. The registry says which, so nobody has to remember.
+        if (kResourceFields[f].carrierRead) continue;
+        if (g.width == width && g.height == height && g.live()) continue;
+        // Reach 0: the scar answers «сколько здесь», and no gate asks the
+        // neighbourhood question of a scar (the vein rows, which do get
+        // asked, own their reach inside the deposit layer).
+        g.allocate(width, height, 0);
+    }
+    if (!(gs.worked.width == width && gs.worked.height == height
+          && gs.worked.live())) {
+        gs.worked.allocate(width, height, 0);
+    }
+}
 
 // ── The plough: the runtime half of the field stamp (owner 2026-08-31) ───
 // Declared in spawners.h beside the worldgen stamp; DEFINED here because
@@ -419,10 +438,7 @@ int resource_field_read(const MacroWorld& w, ResourceFieldId f, int x, int y) {
     const ResourceFieldDef& def = resource_field_def(f);
     if (def.carrierRead) return def.carrierRead(w, x, y);
     if (!w.gs || !w.terrain || w.terrain->width <= 0) return 0;
-    const auto& scars = w.gs->resourceScars[std::size_t(f)];
-    int scar = 0;
-    const auto it = scars.find(field_cell_index(w, x, y));
-    if (it != scars.end()) scar = int(it->second);
+    const int scar = int(w.gs->resourceScarCells[std::size_t(f)].at(x, y));
     return std::max(0, def.baseline(w, x, y) - scar);
 }
 
@@ -432,27 +448,31 @@ void resource_field_apply(MacroWorld& w, ResourceFieldId f, int x, int y,
     const ResourceFieldDef& carrier = resource_field_def(f);
     if (carrier.carrierApply) { carrier.carrierApply(w, x, y, delta); return; }
     if (!w.gs || !w.terrain || w.terrain->width <= 0) return;
-    auto& scars = scars_of(*w.gs, f);
-    const std::uint32_t idx = field_cell_index(w, x, y);
-    int scar = 0;
-    const auto it = scars.find(idx);
-    if (it != scars.end()) scar = int(it->second);
+    ResourceGrid& scars = scars_of(*w.gs, f);
+    // THE write sizes the field over THIS world if nobody did yet — the same
+    // fail-open the worked layer's door keeps. A caller that has to remember
+    // to allocate is a caller that will forget, and a lost scar is invisible:
+    // the read simply answers "whole" (the fold-up lesson, applied to the one
+    // door instead of to every fixture).
+    if (!scars.live()) {
+        scars.allocate(w.terrain->width, w.terrain->height, 0);
+        if (!scars.live()) return;
+    }
     // Spending (−delta) deepens the scar, returning (+delta, regrowth)
     // heals it; the scar never exceeds the baseline, so a runaway writer
     // cannot wind a cell into a millennium of regrowth.
     const int cap = std::max(0, resource_field_def(f).baseline(w, x, y));
-    scar = std::clamp(scar - delta, 0, cap);
-    // A healed cell needs no override — the map self-cleans, so the
-    // persisted set stays "cells play has scarred", never the world.
-    if (scar <= 0) scars.erase(idx);
-    else           scars[idx] = std::uint16_t(scar);
+    const int scar = std::clamp(int(scars.at(x, y)) - delta, 0, cap);
+    // A healed cell is the field's own legal ZERO — no erase, no key, and
+    // the live count the grid keeps is what the wire writes out.
+    scars.write(x, y, std::int32_t(scar));
 }
 
 int resource_field_scar(const GameState& gs, ResourceFieldId f,
                         std::uint32_t cellIdx) {
-    const auto& scars = gs.resourceScars[std::size_t(f)];
-    const auto it = scars.find(cellIdx);
-    return it != scars.end() ? int(it->second) : 0;
+    const ResourceGrid& scars = gs.resourceScarCells[std::size_t(f)];
+    if (!scars.live() || cellIdx >= scars.cells.size()) return 0;
+    return int(scars.cells[cellIdx]);
 }
 
 void resource_fields_daily_growth(MacroWorld& w, int day) {
@@ -484,15 +504,19 @@ void resource_fields_daily_growth(MacroWorld& w, int day) {
         }
 
         case GrowthDomain::OwnScars: {
-            // Only scarred cells can grow (capacity is the baseline).
-            // Collect the due keys first: the write self-cleans a healed
-            // cell OUT of the map we are walking.
+            // Only scarred cells can grow (capacity is the baseline), and the
+            // row's own FIELD is walked — its live cells ARE the scarred
+            // ones, which is the same work the hash did without pretending
+            // the world was a bag of keys. The due indices are collected
+            // first because the write below heals cells out from under the
+            // walk (a grid's zero is a legal value, but the count moves).
             if (!w.terrain || w.terrain->width <= 0) break;
+            const ResourceGrid& scars = w.gs->resourceScarCells[f];
+            if (!scars.live()) break;
             std::vector<std::uint32_t> due;
-            for (const auto& [idx, scar] : w.gs->resourceScars[f]) {
-                (void)scar;
+            scars.for_each_live([&](std::uint32_t idx, std::int32_t) {
                 if (growth_cell_due(idx, day)) due.push_back(idx);
-            }
+            });
             for (const std::uint32_t idx : due) {
                 const int x = int(idx % std::uint32_t(w.terrain->width));
                 const int y = int(idx / std::uint32_t(w.terrain->width));

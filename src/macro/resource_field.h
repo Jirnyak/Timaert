@@ -152,6 +152,16 @@ struct ResourceFieldDef {
 // The registry row (macro_stock.cpp owns the table).
 const ResourceFieldDef& resource_field_def(ResourceFieldId f);
 
+// Give the world its own fields: the SCAR grid of every sparse-dialect row
+// (a carrier row's grid stays empty — its live state is its carrier) and the
+// ONE worked layer (CANON S5 «слой разработки — ОДНО поле на всё»). Called
+// where the world is born; idempotent, so a second call costs nothing.
+// Which rows are sparse is the REGISTRY's answer, which is why this lives
+// with the table and not in the state header — the load path, which cannot
+// link the table, sizes only the rows whose cells the file actually carries
+// (and a carrier row carries none, so the rule holds there by construction).
+void allocate_world_fields(GameState& gs, int width, int height);
+
 // The current count of a cell. Sparse rows: capacity − scar, floored at
 // zero, fail-closed without terrain. Carrier rows: the carrier's cell.
 int resource_field_read(const MacroWorld& w, ResourceFieldId f, int x, int y);

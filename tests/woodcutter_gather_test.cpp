@@ -224,12 +224,11 @@ void test_the_farmer_works_the_field() {
     // half is new and it is not bookkeeping: the farmer can now be caught
     // mid-trip with grain on his back, where the old single-take cycle always
     // ended at the door.
-    const std::uint32_t fieldIdx = 10u * std::uint32_t(kMap) + 12u;
-    const auto scar = gs.resourceScars[std::size_t(sm::ResourceFieldId::Wheat)].find(fieldIdx);
-    CHECK(scar != gs.resourceScars[std::size_t(sm::ResourceFieldId::Wheat)].end()
-              && int(scar->second) == grain + inBag,
+    const sm::ResourceGrid& wheatScars =
+        gs.resourceScarCells[std::size_t(sm::ResourceFieldId::Wheat)];
+    CHECK(wheatScars.at(12, 10) == grain + inBag,
           "grain gained by store AND bag == stands the field lost");
-    CHECK(gs.resourceScars[std::size_t(sm::ResourceFieldId::Wheat)].size() == 1,
+    CHECK(wheatScars.liveCells == 1,
           "the farmer scars only the field he works");
 }
 
@@ -287,7 +286,7 @@ void test_farmer_without_terrain_conjures_nothing() {
     }
     CHECK(gs.landmarks[0].inventory.count("grain") == 0,
           "no terrain wired: nothing to reap against, nothing conjured");
-    CHECK(gs.resourceScars[std::size_t(sm::ResourceFieldId::Wheat)].empty(),
+    CHECK(gs.resourceScarCells[std::size_t(sm::ResourceFieldId::Wheat)].liveCells == 0,
           "no terrain wired: no scar appears either");
 }
 

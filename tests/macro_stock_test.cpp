@@ -367,7 +367,7 @@ void test_trees_are_a_carrier_row() {
           "the registry reads the same grid back");
     CHECK(trees.revision == rev0 + 1,
           "a registry write moves the grid revision (u_treeMap refresh)");
-    CHECK(gs.resourceScars[std::size_t(ResourceFieldId::Trees)].empty(),
+    CHECK(gs.resourceScarCells[std::size_t(ResourceFieldId::Trees)].liveCells == 0,
           "the Trees scar slot stays EMPTY - the grid is the only state");
     CHECK(resource_field_scar(gs, ResourceFieldId::Trees, 6u * 64u + 5u) == 0,
           "a carrier row reports no scar");
@@ -382,7 +382,7 @@ void test_trees_are_a_carrier_row() {
     resource_fields_daily_growth(w, dueDay);
     CHECK(int(trees.at(5, 6)) > before,
           "a due visit among live forest births trees into the grid");
-    CHECK(gs.resourceScars[std::size_t(ResourceFieldId::Trees)].empty(),
+    CHECK(gs.resourceScarCells[std::size_t(ResourceFieldId::Trees)].liveCells == 0,
           "growth writes the carrier, never a scar");
 }
 
@@ -422,9 +422,9 @@ void test_deposits_are_carrier_rows() {
     for (std::size_t f : {std::size_t(ResourceFieldId::Clay),
                           std::size_t(ResourceFieldId::Iron),
                           std::size_t(ResourceFieldId::Stone)}) {
-        CHECK(gs.resourceScars[f].empty(),
-              "a deposit row's scar slot stays EMPTY - the cells are the "
-              "only state");
+        CHECK(!gs.resourceScarCells[f].live(),
+              "a deposit row pays for NO scar field - its carrier cells are "
+              "the only state (the registry's own rule)");
     }
 }
 

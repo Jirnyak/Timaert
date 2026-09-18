@@ -32,7 +32,6 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
-#include <unordered_map>
 #include <unordered_set>
 
 namespace sm {
@@ -55,25 +54,20 @@ struct XY { float x, y; };
 // (`fold_d` — торова складка разности координат — умерла вместе со сканом жил:
 // обход бокса от дома строит смещения сам, складывать нечего.)
 
-// ── КОРАБЛИ У ФИЧИ (CANON S10, владелец 2026-09-02) ──────────────────────
-// Одна дверь счётчика: «у поля урожай, у шахты залежи, у порта корабли».
-inline std::uint32_t ship_cell_key(const TickContext& ctx, int x, int y) {
-    return std::uint32_t(wrapi(y, ctx.mapH)) * std::uint32_t(ctx.mapW)
-         + std::uint32_t(wrapi(x, ctx.mapW));
-}
+// ── КОРАБЛИ = ЧИСЛО ФИЧИ В СЛОЕ РАЗРАБОТКИ (CANON S10/S5) ────────────────
+// «У фич часто свои счётчики: у поля урожай, у шахты залежи, у порта
+// корабли — элегантно». Счётчик стоит в ЕДИНОМ поле разработки на клетке
+// порта или брошенного корпуса (gs.worked): смысл числу задаёт фича,
+// стоящая ровно на той клетке, и второго числа там быть не может, потому
+// что клетка разрабатывается ровно одним способом. Хеш gs.shipsAtCell —
+// третий хеш мира — умер здесь же 2026-09-18 вместе со своим сканом.
 int ships_at(const TickContext& ctx, int x, int y) {
     if (!ctx.mw.gs) return 0;
-    const auto& m = ctx.mw.gs->shipsAtCell;
-    const auto it = m.find(ship_cell_key(ctx, x, y));
-    return it == m.end() ? 0 : int(it->second);
+    return worked_read(*ctx.mw.gs, x, y);
 }
 void ships_add(const TickContext& ctx, int x, int y, int delta) {
     if (!ctx.mw.gs) return;
-    auto& m = ctx.mw.gs->shipsAtCell;
-    const std::uint32_t k = ship_cell_key(ctx, x, y);
-    const int n = int(m[k]) + delta;
-    if (n <= 0) m.erase(k);
-    else m[k] = std::uint16_t(std::min(n, 65535));
+    worked_add(*ctx.mw.gs, x, y, delta);
 }
 
 // Корпус стоит недели заготовки: 8 человеко-дней леса (= 8 дневных нош,
@@ -102,17 +96,23 @@ void stamp_feature_if_bare(const TickContext& ctx, int x, int y,
     ctx.mw.gs->builtFeatures.push_back(BuiltFeature{x, y, std::uint8_t(ft)});
 }
 
-// Ближайший корпус МОЕЙ округи (причал): счётчики кораблей спарсны и
-// малы — скан дешевле любого поля. false = в округе ни одного корабля.
+// Ближайший корпус МОЕЙ округи (причал). Читается ЧЕСТНО: список фич,
+// которые построил мир (gs.builtFeatures — правда мира, строка сейва
+// Built), отфильтрован по виду «порт/брошенный корабль», и у каждой такой
+// клетки спрашивается её число в слое разработки. Скан хеша всех клеток
+// мира умер вместе с хешем: причалов в мире десятки, а обходить мир, чтобы
+// узнать «где ближайший», — фигура §52.
 bool nearest_region_ship(const TickContext& ctx, int x, int y,
                          std::uint16_t region, XY& out) {
     if (!ctx.mw.gs || !ctx.mw.nav || region == kNavNoRegion) return false;
     float best = 1e30f;
     bool found = false;
-    for (const auto& [cell, n] : ctx.mw.gs->shipsAtCell) {
-        if (n == 0) continue;
-        const int sx = int(cell % std::uint32_t(ctx.mapW));
-        const int sy = int(cell / std::uint32_t(ctx.mapW));
+    for (const BuiltFeature& bf : ctx.mw.gs->builtFeatures) {
+        const FeatureType ft = FeatureType(bf.ft);
+        if (ft != FT_Port && ft != FT_BeachedShip) continue;
+        const int sx = bf.x;
+        const int sy = bf.y;
+        if (worked_read(*ctx.mw.gs, sx, sy) <= 0) continue;
         if (nav_region_at(*ctx.mw.nav, sx, sy) != region) continue;
         const float d = torus_dist_sq(float(x), float(y), float(sx),
                                       float(sy), float(ctx.mapW),

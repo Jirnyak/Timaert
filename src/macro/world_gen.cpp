@@ -80,6 +80,11 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     }
     *out.deposits = build_deposit_layer(*out.terrain, gs.worldSeed,
                                         lp.seaLevel);
+    // The world's OWN fields are born with it (CANON S5, v96): the scar grid
+    // of every sparse row and the ONE worked layer. Born here rather than on
+    // first use for the same reason the deposit fields are — a field
+    // allocated lazily is one whose first reader pays for everyone.
+    allocate_world_fields(gs, gs.mapW, gs.mapH);
 
     // The score context politics reads (R2): the crown decides how many
     // and whose, the ground decides where and how large.

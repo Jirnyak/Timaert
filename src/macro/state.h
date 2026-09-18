@@ -5,7 +5,6 @@
 #include <cstring>
 #include <string>
 #include <vector>
-#include <unordered_map>
 #include "core/rng.h"
 #include "core/time.h"
 #include "macro/attributes.h"
@@ -787,14 +786,30 @@ struct GameState {
     // carries their live state whole — save.cpp takes the carriers alongside
     // the state.)
 
-    // The resource fields' scars (v35, macro/resource_field.h): one map per
-    // ResourceFieldId, cell index → units play has taken and regrowth has
-    // not yet returned. Sparse-dialect rows only (wheat, fauna) — the
-    // baseline is derived (pure terrain/climate), the scar is the only
-    // storage, a healed cell erases itself. Carrier rows (trees) keep this
-    // slot EMPTY: their live state is their carrier, saved whole.
-    std::unordered_map<std::uint32_t, std::uint16_t>
-        resourceScars[std::size_t(ResourceFieldId::Count)];
+    // ── THE TWO LAYERS OF S5, AND NEITHER IS A HASH (v96) ────────────────
+    // «Разрежённого хранения больше нет» (CANON S5, поправка владельца
+    // 2026-09-16): both of these are FIELDS over the connected world, dense
+    // in memory and sparse only on the wire, because that is a file format
+    // decision and not a model one. The two unordered_maps that lived here
+    // (resourceScars, and shipsAtCell below them) were the world's last
+    // hashes and the last thing that could only answer «сколько здесь» by
+    // scanning to answer «есть ли рядом» (problems.md §52).
+    //
+    // NATURE's own rows, as scars: cell → units play has taken and regrowth
+    // has not yet returned, one grid per sparse-dialect row (wheat, fauna;
+    // the baseline is derived from terrain/climate, the scar is the only
+    // storage, a healed cell zeroes itself). Carrier rows (trees, the vein
+    // kinds) keep their grid EMPTY: their live state is their own carrier.
+    ResourceGrid resourceScarCells[std::size_t(ResourceFieldId::Count)];
+    // THE WORKED LAYER — ONE field for the whole world («1 шахта в клетке —
+    // одно поле в клетке! в том и замысел!»): a number in it means whatever
+    // the FEATURE standing on that cell says it means, which is unambiguous
+    // because a cell is worked exactly one way. Its first honest tenant is
+    // the ships counter of a harbour or a beached hull («у поля урожай, у
+    // шахты залежи, у порта корабли — элегантно»); the standing crop of a
+    // parcel and the consolidated seam under a mine move here as their laws
+    // are rebuilt (CANON S5 «постройка — это перенос»).
+    ResourceGrid worked;
 
     // Features BUILT BY SQUADS (v71; owner 2026-08-31, CANON S10 «фичи
     // создаются сквадами»): the ploughed field today, the crew-laid road or
@@ -802,13 +817,10 @@ struct GameState {
     // grid, re-stamped onto the seed-baked grid at load (world_fields.h row
     // Built). The grid itself stays DERIVED; this list is the truth.
     std::vector<BuiltFeature> builtFeatures;
-    // ── КОРАБЛИ У ФИЧИ (CANON S10, владелец 2026-09-02; v74) ─────────────
-    // «У фич часто свои счётчики: у поля урожай, у шахты залежи, у порта
-    // корабли — элегантно». Ключ = клетка (y*mapW+x) порта или брошенного
-    // корабля, значение = сколько корпусов стоит. Корабль СТРОИТСЯ за
-    // дерево верфь-работой сквада; взял = −1, пришвартовался = +1. Спарс и
-    // в сейве целиком — прецедент живых клеток депозит-слоя (v37).
-    std::unordered_map<std::uint32_t, std::uint16_t> shipsAtCell;
+    // (gs.shipsAtCell — третий хеш мира со сканом — УМЕР 2026-09-18: счётчик
+    // пришвартованных стоит числом ФИЧИ в слое разработки `worked` выше,
+    // ровно как обещал канон S10, а «ближайший корпус округи» читается
+    // обходом builtFeatures вместо скана хеша.)
 };
 
 // ── The landmark-fact door: file the deed AND pay the fame ───────────────
@@ -833,6 +845,32 @@ inline const Landmark* landmark_by_id(const GameState& gs, int id) {
     if (id < 0) return nullptr;
     for (const auto& lm : gs.landmarks) if (lm.id == id) return &lm;
     return nullptr;
+}
+
+// ── THE WORKED LAYER'S DOOR (CANON S5, v96) ──────────────────────────────
+// The number under the feature standing on this cell: hulls moored at a
+// harbour or a beached hull today; a mine's consolidated seam and a parcel's
+// standing crop as their laws move here. It lives beside the field itself so
+// every layer of the game can read it — the load path cannot link the field
+// REGISTRY (that table drags the ECS behind it), and the worked layer needs
+// no registry: there is one of it, and the feature on the cell says what its
+// number means.
+//
+// The grid sizes itself from the world's own dimensions on the first write,
+// so no caller has to remember to allocate and a read off an unborn world
+// answers 0 — fail-closed by construction.
+inline int worked_read(const GameState& gs, int x, int y) {
+    return int(gs.worked.at(x, y));
+}
+inline void worked_write(GameState& gs, int x, int y, int value) {
+    if (!gs.worked.live()) {
+        if (gs.mapW <= 0 || gs.mapH <= 0) return;   // no world, no field
+        gs.worked.allocate(gs.mapW, gs.mapH, 0);
+    }
+    gs.worked.write(x, y, std::int32_t(value < 0 ? 0 : value));
+}
+inline void worked_add(GameState& gs, int x, int y, int delta) {
+    worked_write(gs, x, y, worked_read(gs, x, y) + delta);
 }
 
 // ONE action (S20.1: a writer that filed without paying would give a world

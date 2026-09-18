@@ -444,11 +444,24 @@ sm::GameState make_state() {
 
 
 
-    // v33: sparse fauna-count overrides — a hunted cell and an emptied one.
-    gs.resourceScars[std::size_t(sm::ResourceFieldId::Fauna)][42u * 1024u + 17u] = 3u;
-    gs.resourceScars[std::size_t(sm::ResourceFieldId::Fauna)][11u] = 0u;
-    // v34: sparse crop-harvest scars — a reaped cell.
-    gs.resourceScars[std::size_t(sm::ResourceFieldId::Wheat)][23u * 1024u + 5u] = 12u;
+    // v96: the scars are FIELDS over the world (the hash died with S5's
+    // amendment), so the fixture sizes them the way the world does and
+    // writes cells by coordinate. A zero scar is the field's legal zero —
+    // there is no "key with value 0" to round-trip any more.
+    // Sized the way a scar block sizes itself on load: over THIS world, and
+    // only for the rows that actually hold something (a carrier row grows no
+    // scar field — asserted below as the negative control).
+    for (const sm::ResourceFieldId row : {sm::ResourceFieldId::Fauna,
+                                          sm::ResourceFieldId::Wheat}) {
+        gs.resourceScarCells[std::size_t(row)].allocate(gs.mapW, gs.mapH, 0);
+    }
+    gs.resourceScarCells[std::size_t(sm::ResourceFieldId::Fauna)]
+        .write(17, 42, 3);
+    gs.resourceScarCells[std::size_t(sm::ResourceFieldId::Wheat)]
+        .write(5, 23, 12);
+    // v96: THE worked layer — hulls moored at a harbour, the number under
+    // the feature (CANON S5/S10). The layer's first tenant is its witness.
+    sm::worked_write(gs, 9, 4, 2);
 
     return gs;
 }
@@ -1002,14 +1015,27 @@ void run_roundtrip() {
     if (loadedTrees.at(7) != 0u || loadedTrees.at(17) != 12000u) {
         FAIL_BAIL("felled/thickened tree cells did not round-trip");
     }
-    if (loaded.resourceScars[std::size_t(sm::ResourceFieldId::Fauna)].size() != 2
-        || loaded.resourceScars[std::size_t(sm::ResourceFieldId::Fauna)].at(42u * 1024u + 17u) != 3u
-        || loaded.resourceScars[std::size_t(sm::ResourceFieldId::Fauna)].at(11u) != 0u) {
-        FAIL_BAIL("fauna overrides lost");
-    }
-    if (loaded.resourceScars[std::size_t(sm::ResourceFieldId::Wheat)].size() != 1
-        || loaded.resourceScars[std::size_t(sm::ResourceFieldId::Wheat)].at(23u * 1024u + 5u) != 12u) {
-        FAIL_BAIL("crop harvest scars lost");
+    {   // v96: the scar FIELDS and the worked layer
+        const sm::ResourceGrid& fauna =
+            loaded.resourceScarCells[std::size_t(sm::ResourceFieldId::Fauna)];
+        const sm::ResourceGrid& wheat =
+            loaded.resourceScarCells[std::size_t(sm::ResourceFieldId::Wheat)];
+        if (!fauna.live() || fauna.liveCells != 1 || fauna.at(17, 42) != 3) {
+            FAIL_BAIL("the hunted cell's scar did not round-trip");
+        }
+        if (!wheat.live() || wheat.liveCells != 1 || wheat.at(5, 23) != 12) {
+            FAIL_BAIL("the reaped cell's scar did not round-trip");
+        }
+        // A carrier row pays for no scar field of its own (its live state is
+        // its carrier) — the negative control on the registry's own rule.
+        if (loaded.resourceScarCells[std::size_t(sm::ResourceFieldId::Trees)]
+                .live()) {
+            FAIL_BAIL("a carrier row grew a scar field it must not have");
+        }
+        if (sm::worked_read(loaded, 9, 4) != 2
+            || loaded.worked.liveCells != 1) {
+            FAIL_BAIL("the worked layer's number did not round-trip");
+        }
     }
     if (loadedQuests.size() != 1 || loadedQuests[0].ordinal != 1u
         || loadedQuests[0].offerSlot != 4

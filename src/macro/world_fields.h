@@ -14,9 +14,12 @@
 //     Their list lives with the rebaker, because a rebake is a dependency
 //     CHAIN (zones read features, glow reads optics) and a flat table cannot
 //     express an order.
-//   - The storage dialects behind the rows (dense u16, dense u8, sparse
-//     maps) are implementations, which S5 explicitly allows — the row is the
-//     one door in front of each.
+//   - The storage dialect behind a row is a FILE FORMAT decision and only
+//     that (S5, поправка владельца 2026-09-16): every layer is a dense field
+//     over the connected world, and the wire carries its live cells because
+//     zeroes are not worth megabytes. The line that used to stand here —
+//     «sparse maps … which S5 explicitly allows» — was the comment the
+//     hashes were written under, and it was wrong.
 #pragma once
 #include "macro/save_stream.h"
 
@@ -37,6 +40,9 @@ enum class WorldField : std::uint8_t {
     Built,       // sparse — features squads built: ploughed fields… (v71).
                  //   The feature GRID stays derived (rebaked from seed);
                  //   this row is the truth the load re-stamps onto it.
+    Worked,      // THE worked layer, one field for the world (v96): the
+                 //   number under a feature — hulls moored at a harbour
+                 //   today (CANON S5 «слой разработки — ОДНО поле на всё»).
     Count,
 };
 

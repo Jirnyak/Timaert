@@ -48,7 +48,7 @@ void test_untouched_cell_reads_capacity() {
           "an untouched cell reads its own table capacity");
     CHECK(macro_stock_read(w, MacroStock::FaunaCount, cell_key(1, 1)) == cap,
           "reading is not spending");
-    CHECK(gs.resourceScars[std::size_t(ResourceFieldId::Fauna)].empty(),
+    CHECK(gs.resourceScarCells[std::size_t(ResourceFieldId::Fauna)].liveCells == 0,
           "the derived baseline writes NOTHING - overrides are scars only");
 }
 
@@ -84,14 +84,14 @@ void test_regrow_self_cleans_at_baseline() {
     const int cap = macro_stock_read(w, MacroStock::FaunaCount, cell_key(0, 3));
 
     macro_stock_apply(w, MacroStock::FaunaCount, cell_key(0, 3), -2);
-    CHECK(gs.resourceScars[std::size_t(ResourceFieldId::Fauna)].size() == 1, "the hunt scars exactly one cell");
+    CHECK(gs.resourceScarCells[std::size_t(ResourceFieldId::Fauna)].liveCells == 1, "the hunt scars exactly one cell");
     macro_stock_apply(w, MacroStock::FaunaCount, cell_key(0, 3), +1);
     CHECK(macro_stock_read(w, MacroStock::FaunaCount, cell_key(0, 3)) == cap - 1,
           "one head regrown");
     macro_stock_apply(w, MacroStock::FaunaCount, cell_key(0, 3), +999);
     CHECK(macro_stock_read(w, MacroStock::FaunaCount, cell_key(0, 3)) == cap,
           "regrowth caps at the cell's own baseline - never beyond");
-    CHECK(gs.resourceScars[std::size_t(ResourceFieldId::Fauna)].empty(),
+    CHECK(gs.resourceScarCells[std::size_t(ResourceFieldId::Fauna)].liveCells == 0,
           "a cell back at baseline erases its override - the map self-cleans");
 }
 
@@ -135,7 +135,7 @@ void test_no_context_fails_closed() {
     CHECK(macro_stock_read(w, MacroStock::FaunaCount, cell_key(1, 1)) == 0,
           "no terrain wired = nothing stands here");
     macro_stock_apply(w, MacroStock::FaunaCount, cell_key(1, 1), -3);
-    CHECK(gs.resourceScars[std::size_t(ResourceFieldId::Fauna)].empty(), "and nothing moves");
+    CHECK(gs.resourceScarCells[std::size_t(ResourceFieldId::Fauna)].liveCells == 0, "and nothing moves");
     CHECK(fauna_cell_capacity_at(MacroWorld{}, 0, 0) == 0,
           "null context capacity is zero, not a crash");
 }
