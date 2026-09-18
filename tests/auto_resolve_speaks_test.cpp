@@ -184,8 +184,13 @@ void test_spoils_are_rolled_not_scavenged() {
           "the fixture's premise: nobody here carries a bag");
     settle_player_auto_battle(mw, enemy, wipe_of(w, enemy, true), true);
 
-    const char* coin = currency_for_faction_id("empire");
-    CHECK(player_bag_of(w).count(coin) > 0,
+    // The realm's whole coin FAMILY (three nominals since verdict №1): a
+    // purse change-makes into whichever rows fit its value.
+    const auto realm_coin_value = [](const Inventory& inv, const char* id) {
+        return coin_census_value(inv) > 0
+            && faction_coins(faction_index(id))[0] != nullptr;
+    };
+    CHECK(realm_coin_value(player_bag_of(w), "empire"),
           "the fallen merchants pay coin of their own realm");
 
     // The negative control: a DEFEAT pays nothing. Loot is the victor's.
@@ -204,7 +209,7 @@ void test_spoils_are_rolled_not_scavenged() {
     loss.leaderFractionA = 0.0f;        // the player fell
     loss.leaderFractionB = 0.8f;
     settle_player_auto_battle(mw2, enemy2, loss, /*playerIsA*/true);
-    CHECK(player_bag_of(w2).count(coin) == 0,
+    CHECK(coin_census_value(player_bag_of(w2)) == 0,
           "a defeat pays the player nothing");
 }
 
@@ -221,7 +226,7 @@ void test_beasts_pay_no_coin() {
     ensure_macro_player_entity(gs, w);
     const entt::entity pack = squad(w, NPCType::Wolf, "wildlife", 3, 0, 9u);
     settle_player_auto_battle(mw, pack, wipe_of(w, pack, true), true);
-    CHECK(player_bag_of(w).count(currency_for_faction_id("wildlife")) == 0,
+    CHECK(coin_census_value(player_bag_of(w)) == 0,
           "a wolf pack pays no coin — the row has no pockets, on the map as "
           "underfoot");
 }

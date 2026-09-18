@@ -7,7 +7,7 @@
 #include "macro/items.h"
 #include "macro/anatomy.h"
 #include "macro/commodity.h"
-#include "macro/currency.h"
+#include "macro/faction.h"   // mint columns — what the neutrality witness walks
 #include "macro/npc.h"
 
 #include <algorithm>
@@ -26,17 +26,40 @@ namespace {
 
 constexpr ItemDef kCatalog[] = {
     // Currency / Resources
-    // Faction currencies (owner, W2d): money is a COMMODITY — every realm
-    // mints its own light coin; all at value 1 until exchange rates arrive
-    // (macro/currency.h owns the faction mapping and the wallet math).
-    {"coin_empire",  "Imperial Crown",  ItemType::Misc,        1, 0.01f, "\xF0\x9F\xAA\x99",
-        "Coin of the Empire of Light", {}},
-    {"coin_magika",  "Magika Sigil",    ItemType::Misc,        1, 0.01f, "\xF0\x9F\xAA\x99",
-        "Coin of the Magika realms", {}},
-    {"coin_timaert", "Republic Mark",   ItemType::Misc,        1, 0.01f, "\xF0\x9F\xAA\x99",
-        "Coin of the Republic of Timaert", {}},
-    {"coin_barbar",  "Northern Ring",   ItemType::Misc,        1, 0.01f, "\xF0\x9F\xAA\x99",
-        "Ring-money of the northern kingdoms", {}},
+    // Faction currencies (owner verdict №1 of the second audit, 2026-09-17,
+    // дословно: «монета это просто товар со стоимостью 10 для серебра 100
+    // для золота 1 для медяка — никаких особых механик и ворот, всё через
+    // бартер; это буквально просто типы предметов… просто дата в таблицу
+    // итемов»). Three coins per realm — copper 1 / silver 10 / gold 100 —
+    // twelve plain rows of the one catalog. The nominal IS the value column;
+    // the mint IS the composition column ({металл 1} → 32, kPartsAuthoring);
+    // WHO trades in which family is the faction registry's mint columns.
+    // A coin's only edge over any other good is arithmetic: minimal weight
+    // at maximal value, so value-dense payment reaches for it first.
+    {"coin_empire_copper",  "Copper Crown",  ItemType::Misc,   1, 0.01f, "\xF0\x9F\xAA\x99",
+        "Copper coin of the Empire of Light", {}},
+    {"coin_empire_silver",  "Silver Crown",  ItemType::Misc,  10, 0.01f, "\xF0\x9F\xAA\x99",
+        "Silver coin of the Empire of Light", {}},
+    {"coin_empire_gold",    "Gold Crown",    ItemType::Misc, 100, 0.01f, "\xF0\x9F\xAA\x99",
+        "Gold coin of the Empire of Light", {}},
+    {"coin_magika_copper",  "Copper Sigil",  ItemType::Misc,   1, 0.01f, "\xF0\x9F\xAA\x99",
+        "Copper coin of the Magika realms", {}},
+    {"coin_magika_silver",  "Silver Sigil",  ItemType::Misc,  10, 0.01f, "\xF0\x9F\xAA\x99",
+        "Silver coin of the Magika realms", {}},
+    {"coin_magika_gold",    "Gold Sigil",    ItemType::Misc, 100, 0.01f, "\xF0\x9F\xAA\x99",
+        "Gold coin of the Magika realms", {}},
+    {"coin_timaert_copper", "Copper Mark",   ItemType::Misc,   1, 0.01f, "\xF0\x9F\xAA\x99",
+        "Copper coin of the Republic of Timaert", {}},
+    {"coin_timaert_silver", "Silver Mark",   ItemType::Misc,  10, 0.01f, "\xF0\x9F\xAA\x99",
+        "Silver coin of the Republic of Timaert", {}},
+    {"coin_timaert_gold",   "Gold Mark",     ItemType::Misc, 100, 0.01f, "\xF0\x9F\xAA\x99",
+        "Gold coin of the Republic of Timaert", {}},
+    {"coin_barbar_copper",  "Copper Ring",   ItemType::Misc,   1, 0.01f, "\xF0\x9F\xAA\x99",
+        "Copper ring-money of the northern kingdoms", {}},
+    {"coin_barbar_silver",  "Silver Ring",   ItemType::Misc,  10, 0.01f, "\xF0\x9F\xAA\x99",
+        "Silver ring-money of the northern kingdoms", {}},
+    {"coin_barbar_gold",    "Gold Ring",     ItemType::Misc, 100, 0.01f, "\xF0\x9F\xAA\x99",
+        "Gold ring-money of the northern kingdoms", {}},
 
     // Consumables
     {"potion_hp",   "Health Potion",   ItemType::Potion,     50, 0.30f, "\xE2\x9D\xA4",
@@ -57,12 +80,19 @@ constexpr ItemDef kCatalog[] = {
         "Building material", {}},
     {"iron",    "Iron Ore",        ItemType::Material,   15, 4.00f, "\xE2\x9B\x8F",
         "Smithing material", {}},
-    // Value 32 = what one silver's worth of coin IS (po2): the mint yield
-    // lives on the COIN rows' composition ({silver 1} → 32, kPartsAuthoring
-    // — CANON S10 unified 2026-09-12, «состав монеты и есть монетный двор»),
-    // and the value-neutrality witness (item_parts_test) pins this number to
-    // that one, so the world's money supply stays geology × one figure.
-    {"silver",  "Silver Ore",      ItemType::Material,   32, 4.00f, "\xE2\x9A\xAA",
+    // The mint metals. Each value is DERIVED, never chosen: 32 coins a unit
+    // (the one mint yield, kPartsAuthoring) × the coin's nominal — copper
+    // 32×1, silver 32×10, gold 32×100. The value-neutrality witness
+    // (mint_is_value_neutral below) pins all three to the coin rows, so the
+    // world's money supply stays geology × one figure. Silver was 32 when
+    // the one coin was nominal 1; the owner's recalibration verdict
+    // (2026-09-18) keeps the world's VALUE ceiling by rescaling the silver
+    // veins ÷10 instead of cheapening the metal.
+    {"copper",  "Copper Ore",      ItemType::Material,   32, 4.00f, "\xF0\x9F\x9F\xA0",
+        "Mint metal", {}},
+    {"silver",  "Silver Ore",      ItemType::Material,  320, 4.00f, "\xE2\x9A\xAA",
+        "Mint metal", {}},
+    {"gold",    "Gold Ore",        ItemType::Material, 3200, 4.00f, "\xF0\x9F\x9F\xA1",
         "Mint metal", {}},
     {"grain",   "Grain",           ItemType::Material,    5, 1.00f, "\xF0\x9F\x8C\xBE",
         "Raw grain, milled and baked into bread", {}},
@@ -206,10 +236,21 @@ constexpr PartsAuthoringRow kPartsAuthoring[] = {
     // door melts them back (64 coins → 1 silver by the pooled entropy law).
     // Labour 4 = the old mint tempo «4 металла на рабочий-день», the
     // emission-rate balance knob.
-    {"coin_empire",  {{"silver", 1}}, 32, 4},
-    {"coin_magika",  {{"silver", 1}}, 32, 4},
-    {"coin_timaert", {{"silver", 1}}, 32, 4},
-    {"coin_barbar",  {{"silver", 1}}, 32, 4},
+    // Coins: 1 metal → 32 coins of ITS metal (owner verdict №1, дословно:
+    // «1 металл → 32 монеты своего металла»). One yield for all twelve rows;
+    // nominal × 32 == the metal's value, held by mint_is_value_neutral.
+    {"coin_empire_copper",  {{"copper", 1}}, 32, 4},
+    {"coin_empire_silver",  {{"silver", 1}}, 32, 4},
+    {"coin_empire_gold",    {{"gold",   1}}, 32, 4},
+    {"coin_magika_copper",  {{"copper", 1}}, 32, 4},
+    {"coin_magika_silver",  {{"silver", 1}}, 32, 4},
+    {"coin_magika_gold",    {{"gold",   1}}, 32, 4},
+    {"coin_timaert_copper", {{"copper", 1}}, 32, 4},
+    {"coin_timaert_silver", {{"silver", 1}}, 32, 4},
+    {"coin_timaert_gold",   {{"gold",   1}}, 32, 4},
+    {"coin_barbar_copper",  {{"copper", 1}}, 32, 4},
+    {"coin_barbar_silver",  {{"silver", 1}}, 32, 4},
+    {"coin_barbar_gold",    {{"gold",   1}}, 32, 4},
     // Consumables: alchemy is herb-matter; bread is the baking reaction
     // (grain 1 → bread 1), the exact row the production day runs. Bread's
     // labour IS the productivity anchor (econ_day.h kGatherPerWorkerDay,
@@ -254,18 +295,30 @@ constexpr int catalog_value_of(std::string_view id) {
     }
     return -1;
 }
+// The coins the witness walks are the FACTION REGISTRY's own mint columns —
+// the one place that says what is a coin (data about factions, never a
+// mechanic's gate: the old kCurrencyDefs list and its is_currency_item door
+// died 2026-09-18 with verdict №1, «никаких особых механик и ворот»).
 constexpr bool mint_is_value_neutral() {
-    for (const CurrencyDef& c : kCurrencyDefs) {
-        int yield = 1;
-        int batchValue = 0;
-        for (const PartsAuthoringRow& r : kPartsAuthoring) {
-            if (std::string_view(r.id) != c.itemId) continue;
-            yield = r.yield;
-            for (const auto& p : r.p) {
-                if (p.mat) batchValue += p.n * catalog_value_of(p.mat);
+    for (const FactionDef& f : kFactionDefs) {
+        for (const char* coin : f.mint) {
+            if (!coin || coin[0] == '\0') continue;
+            int yield = 1;
+            int batchValue = 0;
+            bool found = false;
+            for (const PartsAuthoringRow& r : kPartsAuthoring) {
+                if (std::string_view(r.id) != coin) continue;
+                found = true;
+                yield = r.yield;
+                for (const auto& p : r.p) {
+                    if (p.mat) batchValue += p.n * catalog_value_of(p.mat);
+                }
             }
+            // A named coin with no composition would be a mint with no
+            // metal — refuse to compile rather than strike from air.
+            if (!found) return false;
+            if (yield * catalog_value_of(coin) != batchValue) return false;
         }
-        if (yield * catalog_value_of(c.itemId) != batchValue) return false;
     }
     return true;
 }

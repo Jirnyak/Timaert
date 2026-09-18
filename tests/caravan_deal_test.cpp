@@ -40,14 +40,14 @@ int main() {
     city.type = sm::LandmarkType::City;
     city.population = 64;
     CHECK(city.inventory.add("wood", 2000), "fixture: city wood glut");
-    CHECK(city.inventory.add("coin_empire", 600), "fixture: city purse");
+    CHECK(city.inventory.add("coin_empire_copper", 600), "fixture: city purse");
 
     sm::Inventory hold;
     CHECK(hold.add("bread", 200), "fixture: hold bread");
-    CHECK(hold.add("coin_empire", 4000), "fixture: hold purse");
+    CHECK(hold.add("coin_empire_copper", 4000), "fixture: hold purse");
 
     const long long coinBefore =
-        sm::wallet_value(hold) + sm::wallet_value(city.inventory);
+        sm::coin_census_value(hold) + sm::coin_census_value(city.inventory);
     const long long woodBefore = commodity_total(hold, city.inventory, "wood");
     const long long breadBefore =
         commodity_total(hold, city.inventory, "bread");
@@ -61,7 +61,7 @@ int main() {
     const sm::CaravanDeal st = sm::trade_caravan_at_station(
         hold, /*capacityKg=*/1e6f, city, /*charisma=*/0, /*bargaining=*/0);
 
-    CHECK(sm::wallet_value(hold) + sm::wallet_value(city.inventory)
+    CHECK(sm::coin_census_value(hold) + sm::coin_census_value(city.inventory)
               == coinBefore,
           "station: coin is conserved");
     CHECK(commodity_total(hold, city.inventory, "wood") == woodBefore
@@ -95,7 +95,7 @@ int main() {
     town.type = sm::LandmarkType::City;
     town.population = 64;
     CHECK(town.inventory.add("tools", 50), "fixture: town tools");
-    CHECK(town.inventory.add("coin_empire", 2000), "fixture: town purse");
+    CHECK(town.inventory.add("coin_empire_copper", 2000), "fixture: town purse");
 
     sm::Inventory homeStore;   // the village store: grain-rich, tool-less
     CHECK(homeStore.add("grain", 5000), "fixture: home grain");
@@ -106,12 +106,12 @@ int main() {
     CHECK(bag.add("grain", 300), "fixture: vendor grain");
 
     const long long vCoinBefore =
-        sm::wallet_value(bag) + sm::wallet_value(town.inventory);
+        sm::coin_census_value(bag) + sm::coin_census_value(town.inventory);
     const sm::CaravanDeal vd = sm::trade_vendor_at_market(
         bag, 1e6f, town, &snap, /*homePopulation=*/50,
         EconSite::Village, /*charisma=*/0, /*bargaining=*/0);
 
-    CHECK(sm::wallet_value(bag) + sm::wallet_value(town.inventory)
+    CHECK(sm::coin_census_value(bag) + sm::coin_census_value(town.inventory)
               == vCoinBefore,
           "vendor: coin is conserved");
     CHECK(bag.count("grain") == 0 && town.inventory.count("grain") == 300,
@@ -144,10 +144,10 @@ int main() {
         m.type = sm::LandmarkType::City;
         m.population = 64;
         m.inventory.add("wood", 2000);
-        m.inventory.add("coin_empire", 600);
+        m.inventory.add("coin_empire_copper", 600);
         sm::Inventory h;
         h.add("bread", 200);
-        h.add("coin_empire", 4000);
+        h.add("coin_empire_copper", 4000);
         return sm::trade_caravan_at_station(h, 1e6f, m, cha, 0);
     };
     const sm::CaravanDeal plain = run_fixture(0);

@@ -148,7 +148,11 @@ void assess_tithe_(Landmark& lm, int day, bool hasSuzerain) {
             (std::int32_t(lm.inventory.count_of(commodity_item_index(c)))
              - lm.titheAvgGoods[c]) >> kTitheAvgShift;
     }
-    lm.titheAvgCoin += (std::int64_t(wallet_value(lm.inventory))
+    // The coin half of the assessment censuses COIN rows only
+    // (coin_census_value) — the goods half already averages the store's
+    // commodities right above, and a whole-bag valuation here would tithe
+    // the same grain twice.
+    lm.titheAvgCoin += (std::int64_t(coin_census_value(lm.inventory))
                         - lm.titheAvgCoin) >> kTitheAvgShift;
     // The CHARGE lands on the season boundary — the world's one window
     // (CANON S19.2; the per-ordinal pay-day smear is history, owner
@@ -208,8 +212,7 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
                              ? std::max(1, s.population / kHeadsPerCityWorker)
                              : 0,
                          s.population, rs, ru,
-                         currency_for_faction_id(faction_id_for_index(
-                             faction_or_freefolk(s.factionIdx))));
+                         faction_or_freefolk(s.factionIdx));
 
         // Порядок дня границы: НАСЕЛЕНИЕ ЕСТ ПЕРВЫМ (settle), потом гарнизон
         // ест и ПЛАТИТ — жалованье теперь стоимостью (натурой при пустой

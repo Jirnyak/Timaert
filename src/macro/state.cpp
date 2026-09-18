@@ -190,8 +190,8 @@ void populate_landmarks_from_politik(GameState& gs,
         // what a town actually HAS now lives in this one inventory.)
         seed_landmark_inventory(
             s.inventory, s.population, EconSite(landmark_def(s.type).econSite),
-            currency_for_faction_id(
-                faction_id_for_index(faction_or_freefolk(s.factionIdx))));
+            faction_or_freefolk(s.factionIdx),
+            gs.worldSeed ^ (std::uint32_t(s.x) << 16) ^ std::uint32_t(s.y));
         // Naming via the owning faction's procedural language.
         if (c.factionIdx >= 0) {
             s.name = !c.name.empty() ? c.name
@@ -368,8 +368,9 @@ void populate_landmarks_from_politik(GameState& gs,
             seed_landmark_inventory(
                 vil.inventory, vil.population,
                 EconSite(landmark_def(vil.type).econSite),
-                currency_for_faction_id(
-                    faction_id_for_index(faction_or_freefolk(vil.factionIdx))));
+                faction_or_freefolk(vil.factionIdx),
+                gs.worldSeed ^ (std::uint32_t(vil.x) << 16)
+                    ^ std::uint32_t(vil.y));
             vil.name = s.factionIdx >= 0
                 ? generate_name(lang_of(s.factionIdx), rng)
                 : "Hamlet";

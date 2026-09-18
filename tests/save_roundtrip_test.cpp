@@ -238,7 +238,7 @@ std::vector<sm::MacroNpcRecord> make_macro_records() {
             std::fprintf(stderr, "fixture: the coat did not go on\n");
         }
     }
-    player.inventory.add("coin_empire", 999);
+    player.inventory.add("coin_empire_copper", 999);
     player.inventory.add("misc_gem", 3);
     player.inventory.add("bread", 11);
     // The player's HEAD rides his record like any leader's (v28 column): a

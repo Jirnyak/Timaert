@@ -1,102 +1,22 @@
-// Faction currencies (owner's design, W2d): money is not a field, it is a
-// COMMODITY. Every realm MINTS its own coin — a light item of the one
-// catalog — and trade is honest BARTER: exchange anything for anything as
-// long as the VALUE matches. Internally every formula converts to universal
-// VALUE (inventory_value below); the coins are just the goods most often
-// carried to balance a deal, which is what a currency IS.
+// VALUE settlement over the one item catalog — the barter machinery.
 //
-// v1 keeps all coins at value 1 — no exchange rates yet. Rates, the
-// currency exchange, and minting coins FROM gold/silver arrive with the
-// wider economy (owner: «биржа валют потом»); adding a currency is a row
-// here and a row in the item catalog.
+// A COIN IS NOT A CONCEPT HERE (owner verdict №1 of the second audit,
+// 2026-09-17, дословно: «монета это просто товар со стоимостью 10 для
+// серебра 100 для золота 1 для медяка — никаких особых механик и ворот,
+// всё через бартер»). The kCurrencyDefs list, the is_currency_item gate and
+// the wallet trio (wallet_value / transfer_value / wallet_spend_up_to) that
+// walked that list died 2026-09-18. What a faction mints is the faction
+// registry's own mint columns (macro/faction.h faction_coins); everything
+// in THIS header prices and moves stacks by the one contextual value law,
+// and a coin wins purely by arithmetic — minimal weight at maximal value.
 #pragma once
-#include <cstring>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include "macro/faction.h"
 #include "macro/items.h"
 
 namespace sm {
-
-// The coins themselves — the currency rows of the one item catalog. WHO
-// trades in which coin is the faction registry's own column (FactionDef::
-// mint), not a second mapping here to drift against it.
-struct CurrencyDef {
-    const char* itemId;
-};
-
-inline constexpr CurrencyDef kCurrencyDefs[] = {
-    {"coin_empire"},
-    {"coin_magika"},
-    {"coin_timaert"},
-    {"coin_barbar"},
-};
-inline constexpr int kCurrencyCount =
-    int(sizeof(kCurrencyDefs) / sizeof(kCurrencyDefs[0]));
-
-inline bool is_currency_item(const char* id) {
-    for (const CurrencyDef& c : kCurrencyDefs) {
-        if (std::strcmp(c.itemId, id) == 0) return true;
-    }
-    return false;
-}
-
-// The mint that serves a faction: its registry row's own `mint` column
-// (macro/faction.h). Everyone without a mint of their own — beasts, bandits,
-// the free folk, an id the registry does not know — trades in imperial coin,
-// the de-facto reserve currency of v1. The strcmp chain that lived here was
-// an if-by-kind in general code (CANON S16); its "barbarians" branch named a
-// row that does not exist, so three of the four barbarian realms quietly
-// traded imperial.
-inline const char* currency_for_faction_id(const char* factionId) {
-    const int fi = faction_index(factionId);
-    if (fi >= 0 && kFactionDefs[fi].mint && kFactionDefs[fi].mint[0] != '\0') {
-        return kFactionDefs[fi].mint;
-    }
-    return "coin_empire";
-}
-
-// ── The wallet: universal value accounting over coin stacks ──────────────
-
-// What the coins in this bag are WORTH (coin value × count, all rows).
-inline int wallet_value(const Inventory& inv) {
-    int total = 0;
-    for (const CurrencyDef& c : kCurrencyDefs) {
-        const ItemDef* def = item_def(c.itemId);
-        total += inv.count(c.itemId) * (def ? def->value : 1);
-    }
-    return total;
-}
-
-// Move coin stacks worth `value` between bags — the SETTLEMENT half of a
-// barter: real coins travel, nothing is minted in a deal — and nothing is
-// BURNED either: the credit lands before the debit, so a stack the receiver
-// refuses (a full bag) simply STAYS with the payer (CANON S5). Greedy over
-// the currency rows; a short wallet moves nothing. Returns the value
-// actually moved — callers compare it against `value` to know the deal
-// settled whole.
-inline int transfer_value(Inventory& from, Inventory& to, int value) {
-    if (value <= 0) return 0;
-    if (wallet_value(from) < value) return 0;
-    int left = value;
-    int moved = 0;
-    for (const CurrencyDef& c : kCurrencyDefs) {
-        if (left <= 0) break;
-        const ItemDef* def = item_def(c.itemId);
-        const int unit = def && def->value > 0 ? def->value : 1;
-        const int have = from.count(c.itemId);
-        const int take = have < (left + unit - 1) / unit
-            ? have : (left + unit - 1) / unit;
-        if (take <= 0) continue;
-        if (!to.add(c.itemId, take)) continue;   // refused: stack stays put
-        from.remove(c.itemId, take);
-        left -= take * unit;
-        moved += take * unit;
-    }
-    return moved;
-}
 
 // ── The package deal: two bundles swap whole or not at all ───────────────
 
@@ -161,27 +81,33 @@ inline bool barter_swap(Inventory& a, Inventory& b,
     return true;
 }
 
-// Spend value INTO a counterparty-less sink (an upkeep, a fee): as much as
-// the wallet holds, capped by `value`. Returns what was actually paid —
-// the caller decides what an unpaid remainder means.
-inline int wallet_spend_up_to(Inventory& inv, int value) {
-    int left = value < 0 ? 0 : value;
-    int paid = 0;
-    for (const CurrencyDef& c : kCurrencyDefs) {
-        if (left <= 0) break;
-        const ItemDef* def = item_def(c.itemId);
-        const int unit = def && def->value > 0 ? def->value : 1;
-        const int have = inv.count(c.itemId);
-        const int take = have < left / unit ? have : left / unit;
-        if (take <= 0) continue;
-        inv.remove(c.itemId, take);
-        left -= take * unit;
-        paid += take * unit;
+// ── Payment by value — the ONE law of every debit ────────────────────────
+
+// The densest stack of the bag: the slot the value law reaches for first.
+// Плотнее — раньше: v/w больше ⇔ v·bestW > bestV·w (перекрёстно, без
+// деления; вес 0 бесконечно плотен и выигрывает всегда). -1 = nothing of
+// value left to pay with.
+inline int densest_value_slot(const Inventory& inv, int& outUnitValue) {
+    int best = -1;
+    int bestV = 0;
+    float bestW = 0.0f;
+    for (int i = 0; i < int(inv.slots.size()); ++i) {
+        const ItemRef& s = inv.slots[std::size_t(i)];
+        if (s.empty()) continue;
+        const int v = value_of(s);
+        if (v <= 0) continue;
+        const ItemDef* def = item_def_at(int(s.def));
+        const float w = def && def->weight > 0.0f ? def->weight : 0.0f;
+        const bool denser = best < 0
+            || float(v) * bestW > float(bestV) * w
+            || (float(v) * bestW == float(bestV) * w && v > bestV);
+        if (denser) { best = i; bestV = v; bestW = w; }
     }
-    return paid;
+    outUnitValue = bestV;
+    return best;
 }
 
-// ОПЛАТА СТОИМОСТЬЮ (владелец, 2026-09-18, дословно: «оплата может
+// ОПЛАТА СТОИМОСТЬЮ В СТОК (владелец, 2026-09-18, дословно: «оплата может
 // списываться по единой системе стоимости — натурой, по механике бартера…
 // и в чём особенны монеты? никакого хардкода: у них минимальный вес при
 // макс стоимости, поэтому дефолт — списание в монетах, но если монет нет,
@@ -196,32 +122,95 @@ inline int pay_value_dense(Inventory& inv, int value) {
     int left = value < 0 ? 0 : value;
     int paid = 0;
     while (left > 0) {
-        int best = -1;
-        int bestV = 0;
-        float bestW = 0.0f;
-        for (int i = 0; i < int(inv.slots.size()); ++i) {
-            const ItemRef& s = inv.slots[std::size_t(i)];
-            if (s.empty()) continue;
-            const int v = value_of(s);
-            if (v <= 0) continue;
-            const ItemDef* def = item_def_at(int(s.def));
-            const float w = def && def->weight > 0.0f ? def->weight : 0.0f;
-            // Плотнее — раньше: v/w больше ⇔ v·bestW > bestV·w (перекрёстно,
-            // без деления; вес 0 бесконечно плотен и выигрывает всегда).
-            const bool denser = best < 0
-                || float(v) * bestW > float(bestV) * w
-                || (float(v) * bestW == float(bestV) * w && v > bestV);
-            if (denser) { best = i; bestV = v; bestW = w; }
-        }
+        int unitV = 0;
+        const int best = densest_value_slot(inv, unitV);
         if (best < 0) break;   // платить больше нечем
         const ItemRef& s = inv.slots[std::size_t(best)];
-        const int want = (left + bestV - 1) / bestV;
+        const int want = (left + unitV - 1) / unitV;
         const int take = want < int(s.count) ? want : int(s.count);
         if (take <= 0 || !inv.remove_at(best, take)) break;
-        paid += take * bestV;
-        left -= take * bestV;
+        paid += take * unitV;
+        left -= take * unitV;
     }
     return paid;
+}
+
+// ОПЛАТА СТОИМОСТЬЮ КОНТРАГЕНТУ — the same density law with a receiver: the
+// stacks TRAVEL (whole identity, add_ref), nothing is minted and nothing is
+// burned. Credit-before-debit per stack: what the receiver's full bag
+// refuses simply STAYS with the payer (CANON S5). Returns the value actually
+// moved — callers compare it against `value` to know the deal settled whole.
+inline int transfer_value_dense(Inventory& from, Inventory& to, int value) {
+    int left = value < 0 ? 0 : value;
+    int moved = 0;
+    while (left > 0) {
+        int unitV = 0;
+        const int best = densest_value_slot(from, unitV);
+        if (best < 0) break;
+        const ItemRef& s = from.slots[std::size_t(best)];
+        const int want = (left + unitV - 1) / unitV;
+        const int take = want < int(s.count) ? want : int(s.count);
+        if (take <= 0) break;
+        ItemRef payload = s;
+        payload.count = std::uint16_t(take);
+        if (!to.add_ref(payload)) break;   // refused: the stack stays put
+        if (!from.remove_at(best, take)) break;
+        moved += take * unitV;
+        left -= take * unitV;
+    }
+    return moved;
+}
+
+// ── Granting value as coin — change-making over the mint family ──────────
+
+// Add `value` worth of a faction's OWN coin to a bag, largest nominal first
+// (gold → silver → copper; copper is nominal 1, so nothing is dropped).
+// This is where rewards, purses and treasury seeds are MINTED into rows —
+// plain change-making arithmetic over the registry's mint columns, never a
+// mechanic: the coins land as ordinary stacks and trade as ordinary goods.
+// A full bag refuses what it refuses; returns the value actually added.
+inline int add_value_in_coins(Inventory& inv, int factionIdx, int value) {
+    int left = value < 0 ? 0 : value;
+    int added = 0;
+    const char* const* coins = faction_coins(factionIdx);
+    for (int i = 2; i >= 0 && left > 0; --i) {
+        const ItemDef* def = item_def(coins[i]);
+        const int unit = def && def->value > 0 ? def->value : 1;
+        const int n = left / unit;
+        if (n <= 0) continue;
+        if (!inv.add(coins[i], n)) continue;   // full bag: try smaller coin
+        left -= n * unit;
+        added += n * unit;
+    }
+    return added;
+}
+
+// VALUE of the COIN rows of a bag — a census over the faction registry's
+// mint columns (deduped: culture groups fold onto their realm's family).
+// This is ANALYTICS for assessments that are defined over coin — the tithe's
+// coin half averages it so it never double-counts the goods half it stands
+// beside. No payment law branches on it: debits go by density, always.
+inline int coin_census_value(const Inventory& inv) {
+    struct CoinRow { int idx; int value; };
+    static const std::vector<CoinRow> rows = [] {
+        std::vector<CoinRow> r;
+        for (const FactionDef& f : kFactionDefs) {
+            for (const char* c : f.mint) {
+                if (!c || !c[0]) continue;
+                const int idx = item_index(c);
+                if (idx < 0) continue;
+                bool seen = false;
+                for (const CoinRow& e : r) seen = seen || e.idx == idx;
+                if (seen) continue;
+                const ItemDef* def = item_def_at(idx);
+                r.push_back({idx, def && def->value > 0 ? def->value : 1});
+            }
+        }
+        return r;
+    }();
+    int total = 0;
+    for (const CoinRow& e : rows) total += inv.count_of(e.idx) * e.value;
+    return total;
 }
 
 // The whole bag in universal VALUE — what every formula converts to

@@ -81,10 +81,10 @@ void test_arbitrage_dies_two_ways() {
     {
         Inventory player;
         Inventory merchant;
-        player.add("coin_empire", 1000);
-        merchant.add("coin_empire", 200);   // his whole purse
+        player.add("coin_empire_copper", 1000);
+        merchant.add("coin_empire_copper", 200);   // his whole purse
         merchant.add("bread", 64);
-        const int myStart = wallet_value(player);
+        const int myStart = coin_census_value(player);
         int rounds = 0;
         bool farmDied = false;
         for (; rounds < 10000; ++rounds) {
@@ -94,11 +94,11 @@ void test_arbitrage_dies_two_ways() {
             const int sellUnit = trade_price(
                 stock_price(100, supply, 0), 10, 0, 1.2f, false);
             if (sellUnit <= buyUnit) { farmDied = true; break; }   // profitless
-            if (wallet_value(player) < buyUnit) break;
-            if (!transfer_value(player, merchant, buyUnit)) break;
+            if (coin_census_value(player) < buyUnit) break;
+            if (!transfer_value_dense(player, merchant, buyUnit)) break;
             merchant.remove("bread", 1);
             player.add("bread", 1);
-            if (!transfer_value(merchant, player, sellUnit)) {
+            if (!transfer_value_dense(merchant, player, sellUnit)) {
                 // He cannot pay: the deal does not happen — put it back.
                 player.remove("bread", 1);
                 merchant.add("bread", 1);
@@ -108,14 +108,17 @@ void test_arbitrage_dies_two_ways() {
             player.remove("bread", 1);
             merchant.add("bread", 1);
         }
-        const int profit = wallet_value(player) - myStart;
+        const int profit = coin_census_value(player) - myStart;
         CHECK(rounds < 10000 && farmDied,
               "the farm DIES - profitless or purse-broke, never infinite");
         CHECK(profit > 0, "the generous drip was real before it died");
         CHECK(profit <= 200,
               "total extraction is bounded by the merchant's own purse");
-        CHECK(wallet_value(player) + wallet_value(merchant) == 1200,
+        CHECK(coin_census_value(player) + coin_census_value(merchant) == 1200,
               "coin CONSERVES across every round - nothing was minted");
+        // (The metric is the COIN CENSUS, not the bags' whole value: since
+        // verdict №1 a debit may travel as goods when they are denser, and
+        // what this law is about is that no coin was minted.)
     }
 }
 

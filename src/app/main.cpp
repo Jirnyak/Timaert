@@ -704,20 +704,21 @@ const PreBattleAction kPreBattleActions[] = {
                        encounter_payoff_cost(app, npc));
      },
      [](App& app, entt::entity npc) {
-         return sm::wallet_value(player_bag(app))
+         return sm::inventory_value(player_bag(app))
                     >= encounter_payoff_cost(app, npc);
      },
      [](App& app, entt::entity npc) {
          const int cost = encounter_payoff_cost(app, npc);
-         // The toll is REAL coin, into the bandit's own bag — rob him back
-         // later and it is there. What his bag refuses stays yours, and the
-         // line reports what actually changed hands.
+         // The toll is REAL goods by the one value law (coin first by
+         // density, №1) into the bandit's own bag — rob him back later and
+         // it is there. What his bag refuses stays yours, and the line
+         // reports what actually changed hands.
          int paid = cost;
          if (auto* bag =
                  app.ecs.reg.try_get<sm::ecs::NpcInventory>(npc)) {
-             paid = sm::transfer_value(player_bag(app), bag->inv, cost);
+             paid = sm::transfer_value_dense(player_bag(app), bag->inv, cost);
          } else {
-             paid = sm::wallet_spend_up_to(player_bag(app), cost);
+             paid = sm::pay_value_dense(player_bag(app), cost);
          }
          char line[96];
          std::snprintf(line, sizeof(line),
@@ -1687,7 +1688,9 @@ void boot_world(App& app, std::uint32_t seed,
     // Chargen content, so it stays app-side — a balance-harness world gets a
     // player squad but no gift.
     if (sm::Inventory* bag = sm::player_inventory(app.ecs)) {
-        bag->add("coin_empire", 1000);
+        // 1000 in imperial coins (change-made: ten golds), re-minted into
+        // the homeland's family once the creation screen names it.
+        sm::add_value_in_coins(*bag, sm::faction_index("empire"), 1000);
         bag->add("potion_hp", 2);
         bag->add("bread", 5);
     }
@@ -2953,14 +2956,22 @@ void apply_creation(App& app) {
     if (homeland) {
         sm::add_player_reputation(app.gs, homeland, 15);
         // The starting money is re-minted into the HOMELAND's own coin
-        // (owner: the player begins with his country's currency) — the boot
-        // seeded imperial as a placeholder.
-        const char* homeCoin = sm::currency_for_faction_id(homeland);
-        if (std::string_view(homeCoin) != "coin_empire") {
-            const int n = player_bag(app).count("coin_empire");
-            if (n > 0) {
-                player_bag(app).remove("coin_empire", n);
-                player_bag(app).add(homeCoin, n);
+        // family (owner: the player begins with his country's currency) —
+        // the boot seeded imperial as a placeholder. Same VALUE, the home
+        // banner's rows: walk the imperial family off the bag, change-make
+        // the sum back in home coins.
+        const int homeIdx = sm::faction_index(homeland);
+        if (sm::faction_coins(homeIdx) != sm::kImperialCoins) {
+            int value = 0;
+            for (const char* c : sm::kImperialCoins) {
+                const sm::ItemDef* def = sm::item_def(c);
+                const int n = player_bag(app).count(c);
+                if (n <= 0) continue;
+                player_bag(app).remove(c, n);
+                value += n * (def ? def->value : 1);
+            }
+            if (value > 0) {
+                sm::add_value_in_coins(player_bag(app), homeIdx, value);
             }
         }
     }
@@ -4242,9 +4253,10 @@ void register_console_commands(App& app) {
             if (n <= 0) { c.error("count must be positive"); return true; }
             const std::string& id = a[0];
             if (id == "gold") {
-                player_bag(app).add("coin_empire", n);
-                c.printfln(Lvl::Ok, "coin += %d  (now %d)", n,
-                           sm::wallet_value(player_bag(app)));
+                sm::add_value_in_coins(player_bag(app),
+                                       sm::faction_index("empire"), n);
+                c.printfln(Lvl::Ok, "value += %d  (bag now %d)", n,
+                           sm::inventory_value(player_bag(app)));
                 return true;
             }
             if (!sm::item_def(id)) {
@@ -4308,9 +4320,9 @@ void register_console_commands(App& app) {
             const std::string& id = a[0];
             if (id == "gold") {
                 const int taken =
-                    sm::wallet_spend_up_to(player_bag(app), n);
-                c.printfln(Lvl::Ok, "coin -= %d  (now %d)", taken,
-                           sm::wallet_value(player_bag(app)));
+                    sm::pay_value_dense(player_bag(app), n);
+                c.printfln(Lvl::Ok, "value -= %d  (bag now %d)", taken,
+                           sm::inventory_value(player_bag(app)));
                 return true;
             }
             if (player_bag(app).remove(id, n))
@@ -4327,10 +4339,14 @@ void register_console_commands(App& app) {
         [&app](Con& c, const std::vector<std::string>& a) {
             int delta = 0;
             if (!sm::dev::arg_int(a, 0, delta)) return false;
-            if (delta >= 0) player_bag(app).add("coin_empire", delta);
-            else sm::wallet_spend_up_to(player_bag(app), -delta);
-            c.printfln(Lvl::Ok, "coin = %d",
-                       sm::wallet_value(player_bag(app)));
+            if (delta >= 0) {
+                sm::add_value_in_coins(player_bag(app),
+                                       sm::faction_index("empire"), delta);
+            } else {
+                sm::pay_value_dense(player_bag(app), -delta);
+            }
+            c.printfln(Lvl::Ok, "bag value = %d",
+                       sm::inventory_value(player_bag(app)));
             return true;
         });
 
@@ -5062,7 +5078,7 @@ void draw_debug_panels(App& app) {
                             sm::ecs::cell_x(*pc, app.gs.mapW),
                             sm::ecs::cell_y(*pc, app.gs.mapW));
             }
-            ImGui::Text("coin    %d", wallet_value(player_bag(app)));
+            ImGui::Text("value   %d", inventory_value(player_bag(app)));
             {
                 const sm::CharacterSheet* ps = sm::player_sheet(app.ecs);
                 const sm::LevelData ld = ps ? ps->levelData : sm::LevelData{};

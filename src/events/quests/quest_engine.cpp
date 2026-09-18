@@ -71,13 +71,15 @@ static void emit_reward(const Reward& r, GameState& gs, Inventory* bag,
                     ? landmark_by_id(gs, giverSettlementId)
                     : nullptr;
                 if (giver) {
-                    delta = transfer_value(giver->inventory, *bag, r.amount);
+                    delta = transfer_value_dense(giver->inventory, *bag,
+                                                 r.amount);
                     if (delta < r.amount) {
                         session_feed_push(gs.sessionFeed,
                                           "The treasury runs thin — you are "
                                           "paid what it holds.");
                     }
-                } else if ((*bag).add("coin_empire", r.amount)) {
+                } else if (add_value_in_coins(*bag, faction_index("empire"),
+                                              r.amount) == r.amount) {
                     delta = r.amount;
                 } else {
                     session_feed_push(gs.sessionFeed,
@@ -89,7 +91,7 @@ static void emit_reward(const Reward& r, GameState& gs, Inventory* bag,
                 // DEBT FACT — «кто-то должен кому-то столько-то» (owner) —
                 // remembered entity-about-entity and summed by the fact
                 // arithmetic. When macro relations arrive, this bites.
-                const int paid = wallet_spend_up_to((*bag), -r.amount);
+                const int paid = pay_value_dense((*bag), -r.amount);
                 delta = -paid;
                 const int short_ = -r.amount - paid;
                 if (short_ > 0 && giverSettlementId >= 0 && head) {
@@ -102,7 +104,7 @@ static void emit_reward(const Reward& r, GameState& gs, Inventory* bag,
             }
             GameEvent ev{EventTag::PlayerGoldChange};
             ev.ix = delta;
-            ev.iy = wallet_value((*bag));
+            ev.iy = inventory_value((*bag));
             ev.b = kEventEffectAlreadyApplied;
             bus.emit(ev);
             break;

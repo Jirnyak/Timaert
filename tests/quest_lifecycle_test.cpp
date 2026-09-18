@@ -326,7 +326,7 @@ void test_effect_applicator_ts_verbs() {
     // drives a whole GameState; `player` stays a reference for readability.
     sm::GameState verbState{};
     sm::PlayerState& player = verbState.player;
-    bag.add("coin_empire", 10);
+    bag.add("coin_empire_copper", 10);
     sheet.levelData = sm::default_level_data();
     sheet.levelData.exp = 0;
     sheet.levelData.expToNext = 100;
@@ -428,7 +428,7 @@ void test_effect_applicator_ts_verbs() {
     // Money is coin now: the wallet drains to ZERO and cannot go negative —
     // the uncovered remainder of a penalty is a DEBT FACT, not a negative
     // number (owner's ruling; the event verb spends what the wallet holds).
-    CHECK_OR_RETURN(!(sm::wallet_value(bag) != 0),
+    CHECK_OR_RETURN(!(sm::inventory_value(bag) != 0),
         "PlayerGoldChange did not drain the wallet");
     // HP is 50 rather than 33: the razed verb took nothing, which is the
     // point of razing it.
@@ -1236,7 +1236,7 @@ void test_quest_reward_dispatch_order_and_application() {
     gs.worldTime = sm::world_time_at(0, 6, 0);
         g_playerCellX = 10;
     g_playerCellY = 10;
-    bag.add("coin_empire", 20);
+    bag.add("coin_empire_copper", 20);
     sheet.levelData = sm::default_level_data();
     sheet.levelData.exp = 0;
 
@@ -1284,7 +1284,10 @@ void test_quest_reward_dispatch_order_and_application() {
     int completedDuringGold = -1;
     int reputationSeenByListener = -1;
     bus.on(sm::EventTag::PlayerGoldChange, [&](const sm::GameEvent&) {
-        goldSeenByListener = sm::wallet_value(bag);
+        // The gold reward is MINTED as coins here (no giver), so the COIN
+        // census is the ledger — the gem reward that lands after it must not
+        // move this number.
+        goldSeenByListener = sm::coin_census_value(bag);
         completedDuringGold = int(gs.player.completedQuestCount);
     });
     bus.on(sm::EventTag::ReputationChange, [&](const sm::GameEvent&) {
@@ -1317,7 +1320,7 @@ void test_quest_reward_dispatch_order_and_application() {
         || completedDuringGold != 1
         || reputationSeenByListener != 3),
         "quest reward listeners did not see TS direct state mutation");
-    CHECK_OR_RETURN(!(sm::wallet_value(bag) != 27
+    CHECK_OR_RETURN(!(sm::coin_census_value(bag) != 27
         || sheet.levelData.exp != 11
         || sm::player_reputation(&gs, "guild") != 3
         || bag.count("misc_gem") != 2
@@ -1326,7 +1329,7 @@ void test_quest_reward_dispatch_order_and_application() {
 
     std::size_t applied = 0;
     apply_pending(bus, gs, applied);
-    CHECK_OR_RETURN(!(sm::wallet_value(bag) != 27
+    CHECK_OR_RETURN(!(sm::coin_census_value(bag) != 27
         || sheet.levelData.exp != 11
         || sm::player_reputation(&gs, "guild") != 3
         || bag.count("misc_gem") != 2
@@ -1334,7 +1337,7 @@ void test_quest_reward_dispatch_order_and_application() {
         "quest reward events duplicated direct TS state");
 
     apply_pending(bus, gs, applied);
-    CHECK_OR_RETURN(!(sm::wallet_value(bag) != 27
+    CHECK_OR_RETURN(!(sm::coin_census_value(bag) != 27
         || sheet.levelData.exp != 11
         || sm::player_reputation(&gs, "guild") != 3
         || bag.count("misc_gem") != 2
@@ -1824,7 +1827,7 @@ void test_generated_delivery_quest_flow() {
     gs.worldTime = sm::world_time_at(0, 6, 0);
         g_playerCellX = 12;
     g_playerCellY = 18;
-    bag.add("coin_empire", 100);
+    bag.add("coin_empire_copper", 100);
 
     sm::Landmark settlement{};
     settlement.type = sm::LandmarkType::City;
@@ -1864,7 +1867,6 @@ void test_generated_delivery_quest_flow() {
         || selected.objectives.front().targetSettlementId != settlement.id),
         "selected delivery quest does not follow economy resource demand");
 
-    const int startGold = sm::wallet_value(bag);
     const int rewardGold = gold_reward(selected);
     CHECK_OR_RETURN(!(rewardGold <= 0),
         "selected generated delivery quest has no gold reward");
@@ -1874,9 +1876,17 @@ void test_generated_delivery_quest_flow() {
     {
         sm::Landmark* giver = sm::landmark_by_id(gs, settlement.id);
         CHECK_OR_RETURN(!(giver == nullptr), "fixture: giver landmark");
-        giver->inventory.add("coin_empire", rewardGold * 4);
+        giver->inventory.add("coin_empire_copper", rewardGold * 4);
     }
-    bag.add("tools", selected.objectives.front().quantity);
+    const int deliverN = selected.objectives.front().quantity;
+    bag.add("tools", deliverN);
+    // The BAG'S VALUE is the ledger since verdict №1 (a reward may travel as
+    // whatever the giver's store holds densest, coin or goods), sampled with
+    // the delivery cargo already in — and the cargo LEAVES on completion, so
+    // the expected end state is start + reward − what was delivered.
+    const int startGold = sm::inventory_value(bag);
+    const sm::ItemDef* toolsRow = sm::item_def("tools");
+    const int deliveredValue = deliverN * (toolsRow ? toolsRow->value : 0);
 
     sm::EventBus bus;
     sm::QuestEngine engine;
@@ -1887,7 +1897,7 @@ void test_generated_delivery_quest_flow() {
         "accept did not add quest to active list");
     CHECK_OR_RETURN(!(!has_tag(bus, sm::EventTag::QuestStart)),
         "accept did not emit QuestStart");
-    CHECK_OR_RETURN(!(sm::wallet_value(bag) != startGold),
+    CHECK_OR_RETURN(!(sm::inventory_value(bag) != startGold),
         "accept applied reward before completion");
 
     bus.flush();
@@ -1902,12 +1912,18 @@ void test_generated_delivery_quest_flow() {
         "QuestComplete was not applied to player completion state");
     CHECK_OR_RETURN(!(active.empty() && gs.nextQuestOrdinal != 2u),
         "accepting the generated quest did not draw from the one issuer");
-    CHECK_OR_RETURN(!(sm::wallet_value(bag) != startGold + rewardGold),
-        "gold reward was not applied exactly once");
+    // The giver pays by DENSITY (verdict №1 + the 2026-09-18 payment law):
+    // coins first, and the LAST unit may overpay — «переплата последней
+    // единицы — щедрость плательщика». So the reward is a floor, and the
+    // idempotency claim is the second flush below adding nothing.
+    const int paidOnce = sm::inventory_value(bag) - startGold + deliveredValue;
+    CHECK_OR_RETURN(!(paidOnce < rewardGold),
+        "the gold reward was not paid in full");
 
     bus.flush();
     sm::apply_events(bus.tick_events(), gs, &bag, nullptr, nullptr, &sheet);
-    CHECK_OR_RETURN(!(sm::wallet_value(bag) != startGold + rewardGold),
+    CHECK_OR_RETURN(!(sm::inventory_value(bag) - startGold + deliveredValue
+                      != paidOnce),
         "empty post-flush tick reapplied reward");
 }
 

@@ -136,8 +136,15 @@ void apply_events(std::span<const GameEvent> events, GameState& gs,
             case EventTag::PlayerGoldChange:
                 if (ev.b != kEventEffectAlreadyApplied) {
                     if (!bag) break;
-                    if (ev.ix >= 0) bag->add("coin_empire", ev.ix);
-                    else wallet_spend_up_to(*bag, -ev.ix);
+                    // Gold is VALUE: granted as imperial coins (change-made,
+                    // largest first), taken by the one density law — a coin
+                    // pays first by arithmetic, never by a branch (№1).
+                    if (ev.ix >= 0) {
+                        add_value_in_coins(*bag, faction_index("empire"),
+                                           ev.ix);
+                    } else {
+                        pay_value_dense(*bag, -ev.ix);
+                    }
                 }
                 break;
             case EventTag::ApplyEffect:

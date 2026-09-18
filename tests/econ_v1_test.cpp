@@ -376,9 +376,14 @@ int main() {
             return fail("recipe with no inputs mints matter from nothing");
         }
     }
-    for (const CurrencyDef& c : kCurrencyDefs) {
-        if (item_parts(item_index(c.itemId)).empty()) {
-            return fail("a mint output (faction coin) has no composition");
+    // Every coin row named by the faction registry's mint columns (the
+    // kCurrencyDefs list died with verdict №1) carries matter.
+    for (const FactionDef& f : kFactionDefs) {
+        for (const char* coin : f.mint) {
+            if (!coin || !coin[0]) continue;
+            if (item_parts(item_index(coin)).empty()) {
+                return fail("a mint output (faction coin) has no composition");
+            }
         }
     }
     // The productivity ANCHOR (owner: «1 добытчик кормит 32 душ» chain-wide)
@@ -429,7 +434,8 @@ int main() {
     {
         const int pop = 640;
         Inventory city;
-        seed_landmark_inventory(city, pop, EconSite::City, "coin_empire");
+        const int empire = faction_index("empire");
+        seed_landmark_inventory(city, pop, EconSite::City, empire, 0x1234u);
         if (city.count("bread") != pop * kDaysPerSeason) {
             return fail("birth larder must hold a SEASON of bread — a place "
                         "seeded thinner dies of arithmetic at its first "
@@ -442,7 +448,8 @@ int main() {
             }
         }
         Inventory village;
-        seed_landmark_inventory(village, pop, EconSite::Village, "coin_empire");
+        seed_landmark_inventory(village, pop, EconSite::Village, empire,
+                                0x1234u);
         if (village.count("grain") <= city.count("grain")) {
             return fail("a village's whole business is raw - it holds more");
         }
@@ -450,16 +457,44 @@ int main() {
             return fail("a crafting city banks deeper crafted stocks");
         }
         Inventory again;
-        seed_landmark_inventory(again, pop, EconSite::City, "coin_empire");
+        seed_landmark_inventory(again, pop, EconSite::City, empire, 0x1234u);
         if (again.count("bread") != city.count("bread")
             || again.used_slots() != city.used_slots()) {
             return fail("birth stocks must be deterministic from population");
         }
         // The treasury (W2d): money is the kingdom's COIN, living in the
-        // SAME container, and a city's capital runs deep.
-        if (city.count("coin_empire") != pop * 8
-            || village.count("coin_empire") != pop * 2) {
-            return fail("the birth treasury must scale with the heads");
+        // SAME container, and a city's capital runs deep. Since verdict №1
+        // it lands as the family's three nominals (change-made) from
+        // population ± a QUARTER's spread off the world seed — so the check
+        // is a band around the base, not an equality.
+        const auto treasury = [](const Inventory& inv) {
+            return inv.count("coin_empire_gold") * 100
+                 + inv.count("coin_empire_silver") * 10
+                 + inv.count("coin_empire_copper");
+        };
+        const int cityBase = pop * 8;
+        const int vilBase = pop * 2;
+        if (treasury(city) < cityBase * 3 / 4
+            || treasury(city) > cityBase * 5 / 4
+            || treasury(village) < vilBase * 3 / 4
+            || treasury(village) > vilBase * 5 / 4) {
+            return fail("the birth treasury must scale with the heads "
+                        "within the quarter spread");
+        }
+        if (treasury(again) != treasury(city)) {
+            return fail("one salt must seed one treasury (determinism)");
+        }
+        // A different salt walks the spread: over a few salts at least one
+        // treasury must differ, or the spread is decorative.
+        {
+            bool differs = false;
+            for (std::uint32_t salt = 1; salt <= 4 && !differs; ++salt) {
+                Inventory other;
+                seed_landmark_inventory(other, pop, EconSite::City, empire,
+                                        salt);
+                differs = treasury(other) != treasury(city);
+            }
+            if (!differs) return fail("the quarter spread never spreads");
         }
     }
 
@@ -556,7 +591,15 @@ int main() {
         if (!metal || metal->value <= 0) {
             return fail("silver carries no catalog value for the mint to pay");
         }
-        const int yield = metal->value;   // the price table IS the mint
+        // COINS PER UNIT OF METAL is the coin row's own yield column («1
+        // металл → 32 монеты своего металла», verdict №1); the metal's price
+        // is that yield × the coin's nominal, which mint_is_value_neutral
+        // pins at compile time.
+        const int coinRow = item_index("coin_empire_silver");
+        const int yield = item_yield(coinRow);
+        if (yield <= 0 || metal->value != yield * item_def_at(coinRow)->value) {
+            return fail("the mint metal's price is not yield x nominal");
+        }
         auto minted_sink = [](void* user, const EconFact& f) {
             if (f.kind == EconFact::Kind::Minted) {
                 *static_cast<long*>(user) += f.amount;
@@ -572,10 +615,10 @@ int main() {
         Inventory store;
         store.add("silver", 40);
         econ_produce_day(store, EconSite::City, /*workers*/2, /*population*/2,
-                         minted_sink, &mintedCoins, "coin_empire");
+                         minted_sink, &mintedCoins, faction_index("empire"));
 
         const int spent = 40 - store.count("silver");
-        const int coins = store.count("coin_empire");
+        const int coins = store.count("coin_empire_silver");
         if (coins <= 0) return fail("the mint struck nothing from a store of silver");
         if (long(coins) != mintedCoins) {
             return fail("the Minted fact and the coins on the shelf disagree");
@@ -601,8 +644,8 @@ int main() {
         full.add("silver", 40);
         if (!full.full()) return fail("the fixture's store is not full");
         econ_produce_day(full, EconSite::City, /*workers*/2, /*population*/2,
-                         nullptr, nullptr, "coin_empire");
-        if (full.count("coin_empire") != 0) {
+                         nullptr, nullptr, faction_index("empire"));
+        if (full.count("coin_empire_silver") != 0) {
             return fail("a full shelf accepted coins it had no slot for");
         }
         if (full.count("silver") != 40) {

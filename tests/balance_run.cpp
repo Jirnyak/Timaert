@@ -84,12 +84,16 @@ void econ_fact_sink(void* user, const sm::EconFact& f) {
     }
 }
 
-// Every coin row of the currency registry, counted by catalog ordinal — the
-// money supply is a COUNT of coin goods (CANON S10: монета — товар), never a
-// valuation.
+// Every coin row of the faction registry's mint columns, counted by catalog
+// ordinal × NOMINAL (its value column): with three nominals per realm
+// (verdict №1, 2026-09-17) the money supply is the VALUE of the coin goods —
+// a gold piece is a hundred coppers of supply, not one.
 long long coins_in(const sm::Inventory& inv, const std::vector<int>& coinIdx) {
     long long total = 0;
-    for (int idx : coinIdx) total += inv.count_of(idx);
+    for (int idx : coinIdx) {
+        const sm::ItemDef* def = sm::item_def_at(idx);
+        total += (long long)inv.count_of(idx) * (def ? def->value : 1);
+    }
     return total;
 }
 
@@ -124,10 +128,20 @@ int main(int argc, char** argv) {
 #endif
 
     // Coin catalog ordinals, resolved once (strings are authoring keys).
+    // The coin rows are the faction registry's own mint columns (the
+    // kCurrencyDefs list died 2026-09-18 with verdict №1) — dedup because
+    // culture groups fold onto their realm's family.
     std::vector<int> coinIdx;
-    for (const auto& c : sm::kCurrencyDefs) {
-        const int idx = sm::item_index(c.itemId);
-        if (idx >= 0) coinIdx.push_back(idx);
+    for (const auto& f : sm::kFactionDefs) {
+        for (const char* c : f.mint) {
+            if (!c || !c[0]) continue;
+            const int idx = sm::item_index(c);
+            if (idx >= 0
+                && std::find(coinIdx.begin(), coinIdx.end(), idx)
+                       == coinIdx.end()) {
+                coinIdx.push_back(idx);
+            }
+        }
     }
 
     bool lawsHold = true;

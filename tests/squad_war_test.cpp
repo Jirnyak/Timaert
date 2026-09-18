@@ -490,7 +490,7 @@ void test_the_leaders_training_reads_at_the_new_doors() {
         for (const entt::entity e : {forager, untrained}) {
             auto& bag = w.reg.get<ecs::NpcInventory>(e).inv;
             bag.add("bread", stock);
-            bag.add("coin_empire", 8 * 3 * kDaysPerSeason * 4);
+            bag.add("coin_empire_copper", 8 * 3 * kDaysPerSeason * 4);
         }
         MacroWorld mw{&gs, nullptr, &w};
         CHECK(squad_season_window(mw, 2) == 0,

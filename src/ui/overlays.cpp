@@ -861,7 +861,7 @@ namespace sm::ui
                         ImGui::Text("HP %d / %d", pools.hp, pools.maxHp);
                         ImGui::Text("MP %d / %d", pools.mp, pools.maxMp);
                         ImGui::Text("SP %d / %d", pools.sp, pools.maxSp);
-                        ImGui::Text("Coin %d", wallet_value(playerBag));
+                        ImGui::Text("Value %d", inventory_value(playerBag));
                         ImGui::Text("Attr pts %d", sheet.levelData.attributePoints);
                         ImGui::Text("Skill pts %d", sheet.levelData.skillPoints);
                         if (sheet.levelData.learnPicks > 0)
@@ -1875,8 +1875,8 @@ namespace sm::ui
                         if (tradeOpen)
                         {
                             const PlayerHaggler h = player_haggler(world);
-                            ImGui::Text("Player coin: %d",
-                                        wallet_value(playerBag));
+                            ImGui::Text("Player value: %d",
+                                        inventory_value(playerBag));
                             draw_trade_carry_line(h.sheet, playerBag,
                                                   h.standing);
                             draw_counterparty_gold(bag->inv);
@@ -2079,7 +2079,8 @@ namespace sm::ui
                     // its price laws (a town's demand = econSite +
                     // population, its mood haggles) and its fact.
                     const PlayerHaggler h = player_haggler(world);
-                    ImGui::Text("Player coin: %d", wallet_value(playerBag));
+                    ImGui::Text("Player value: %d",
+                                inventory_value(playerBag));
                     ImGui::SameLine();
                     ImGui::TextDisabled("Mood: %s", mood_label(s->mood));
                     draw_trade_carry_line(h.sheet, playerBag, h.standing);
@@ -2160,7 +2161,8 @@ namespace sm::ui
                     *tab = SettlementPanelTab::Recruit;
                 if (recruitOpen)
                 {
-                    ImGui::Text("Player coin: %d", wallet_value(playerBag));
+                    ImGui::Text("Player value: %d",
+                                inventory_value(playerBag));
                     ImGui::Spacing();
                     for (int ti = 0; ti < npc_type_count(); ++ti)
                     {
@@ -2176,12 +2178,12 @@ namespace sm::ui
                             *playerArmy, static_cast<std::uint8_t>(t)) : 0;
                         ImGui::PushID(static_cast<int>(t));
                         bool can = avail > 0
-                                   && wallet_value(playerBag) >= cost;
+                                   && inventory_value(playerBag) >= cost;
                         if (!can)
                             ImGui::BeginDisabled();
                         if (ImGui::Button("Hire"))
                         {
-                            int purse = wallet_value(playerBag);
+                            int purse = inventory_value(playerBag);
                             const int paid = playerArmy
                                 ? hire_npc(*playerArmy, s->garrison, t, purse)
                                 : 0;
@@ -2192,13 +2194,13 @@ namespace sm::ui
                                 // inventory (CANON S10), not a sink. A store
                                 // that cannot take the whole fee refuses the
                                 // deal: coin back, recruit back.
-                                const int moved =
-                                    transfer_value(playerBag, s->inventory, paid);
+                                const int moved = transfer_value_dense(
+                                    playerBag, s->inventory, paid);
                                 if (moved != paid)
                                 {
                                     if (moved > 0)
-                                        transfer_value(s->inventory, playerBag,
-                                                       moved);
+                                        transfer_value_dense(s->inventory,
+                                                             playerBag, moved);
                                     const int last = playerArmy->size() - 1;
                                     if (last >= 0)
                                     {
@@ -2629,7 +2631,7 @@ namespace sm::ui
                                       ImVec2(-FLT_MIN, 0.0f)))
                     {
                         const int goldCost = dialog_choice_gold_cost(choice);
-                        if (goldCost > (bag ? wallet_value(*bag) : 0))
+                        if (goldCost > (bag ? inventory_value(*bag) : 0))
                         {
                             set_dialog_result(state, "Not enough gold!");
                         }

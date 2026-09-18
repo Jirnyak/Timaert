@@ -1589,11 +1589,13 @@ void ai_caravan(entt::entity self, MacroPos& p,
                          rt.carryCap / 2 - inventory_weight(bag->inv));
         }
         // The LOAN (CANON S5: имущество NPC — заём со склада родного
-        // ландмарка, не минт): purchasing power for the run — enough coin
+        // ландмарка, не минт): purchasing power for the run — enough VALUE
         // to fill the hold's free half with grain at BASE price (grain is
-        // what a city starves without), capped at HALF the town's wallet so
+        // what a city starves without), capped at HALF the store's worth so
         // k simultaneous departures shrink the treasury geometrically and
-        // never to zero. Repaid whole, with proceeds, at Returning.
+        // never to zero. The value travels by density (coins first by
+        // arithmetic, №1) — a coinless town honestly sends goods to barter
+        // with. Repaid whole, with proceeds, at Returning.
         {
             const ItemDef* grain = item_def("grain");
             const float kg =
@@ -1601,8 +1603,8 @@ void ai_caravan(entt::entity self, MacroPos& p,
             const int unitsFit =
                 int((rt.carryCap - inventory_weight(bag->inv)) / kg);
             const int need = unitsFit * (grain ? grain->value : 0);
-            const int cap = wallet_value(*homeStore) / 2;
-            transfer_value(*homeStore, bag->inv, std::min(need, cap));
+            const int cap = inventory_value(*homeStore) / 2;
+            transfer_value_dense(*homeStore, bag->inv, std::min(need, cap));
         }
         // The run: a few stops down the road, then home. «Несколько
         // остановок» (owner) — two or three legs keeps a run inside a
@@ -1697,8 +1699,8 @@ void ai_caravan(entt::entity self, MacroPos& p,
                     haul_between(bag->inv, *homeStore, kCommodities[i].id,
                                  1 << 30, 1e9f);
                 }
-                transfer_value(bag->inv, *homeStore,
-                               wallet_value(bag->inv));
+                transfer_value_dense(bag->inv, *homeStore,
+                                     inventory_value(bag->inv));
             }
             rt.state = std::uint8_t(NS::Idle);
             rt.stateTimer = std::int16_t(10 + rand_int(ctx, 15));
@@ -1815,10 +1817,10 @@ void ai_vendor(entt::entity self, MacroPos& p,
                          owed, rt.carryCap - inventory_weight(bag->inv));
         }
         if (homeLm->titheOwedCoin > 0) {
-            transfer_value(homeLm->inventory, bag->inv,
+            transfer_value_dense(homeLm->inventory, bag->inv,
                            int(std::min<std::int64_t>(
                                homeLm->titheOwedCoin,
-                               wallet_value(homeLm->inventory))));
+                               inventory_value(homeLm->inventory))));
         }
         // Load the surplus above the home's own daily demand — never its
         // living stock.
@@ -1837,7 +1839,7 @@ void ai_vendor(entt::entity self, MacroPos& p,
                          rt.carryCap - inventory_weight(bag->inv));
         }
         if (inventory_weight(bag->inv) <= 0.0f
-            && wallet_value(bag->inv) <= 0) {
+            && inventory_value(bag->inv) <= 0) {
             // Nothing to sell and nothing owed: wait out the morning.
             rt.stateTimer = std::int16_t(40 + rand_int(ctx, 40));
             return;
@@ -1910,11 +1912,11 @@ void ai_vendor(entt::entity self, MacroPos& p,
                     paidValue += (long long)moved * (d ? d->value : 0);
                 }
                 if (homeLm->titheOwedCoin > 0) {
-                    const int coins = transfer_value(
+                    const int coins = transfer_value_dense(
                         bag->inv, market->inventory,
                         int(std::min<std::int64_t>(
                             homeLm->titheOwedCoin,
-                            wallet_value(bag->inv))));
+                            inventory_value(bag->inv))));
                     homeLm->titheOwedCoin -= coins;
                     paidValue += coins;
                 }
@@ -1956,8 +1958,8 @@ void ai_vendor(entt::entity self, MacroPos& p,
                     haul_between(bag->inv, homeLm->inventory,
                                  kCommodities[i].id, 1 << 30, 1e9f);
                 }
-                transfer_value(bag->inv, homeLm->inventory,
-                               wallet_value(bag->inv));
+                transfer_value_dense(bag->inv, homeLm->inventory,
+                               inventory_value(bag->inv));
             }
             rt.state = std::uint8_t(NS::Idle);
             rt.stateTimer = std::int16_t(10 + rand_int(ctx, 15));
@@ -2034,10 +2036,10 @@ void ai_taxrun(entt::entity self, MacroPos& p,
             loaded += (long long)moved * (d ? d->value : 0);
         }
         if (homeLm->titheOwedCoin > 0) {
-            loaded += transfer_value(
+            loaded += transfer_value_dense(
                 homeLm->inventory, bag->inv,
                 int(std::min<std::int64_t>(homeLm->titheOwedCoin,
-                                           wallet_value(homeLm->inventory))));
+                                           inventory_value(homeLm->inventory))));
         }
         rt.taxCarried = int(std::min<long long>(loaded, 1 << 30));
         if (rt.taxCarried <= 0) {
@@ -2086,10 +2088,10 @@ void ai_taxrun(entt::entity self, MacroPos& p,
                 paid += (long long)moved * (d ? d->value : 0);
             }
             if (homeLm->titheOwedCoin > 0) {
-                const int coins = transfer_value(
+                const int coins = transfer_value_dense(
                     bag->inv, cap->inventory,
                     int(std::min<std::int64_t>(homeLm->titheOwedCoin,
-                                               wallet_value(bag->inv))));
+                                               inventory_value(bag->inv))));
                 homeLm->titheOwedCoin -= coins;
                 paid += coins;
             }
@@ -2117,8 +2119,8 @@ void ai_taxrun(entt::entity self, MacroPos& p,
                     haul_between(bag->inv, homeLm->inventory,
                                  kCommodities[i].id, 1 << 30, 1e9f);
                 }
-                transfer_value(bag->inv, homeLm->inventory,
-                               wallet_value(bag->inv));
+                transfer_value_dense(bag->inv, homeLm->inventory,
+                               inventory_value(bag->inv));
             }
             rt.state = std::uint8_t(NS::Idle);
             rt.stateTimer = std::int16_t(10 + rand_int(ctx, 15));
@@ -3274,7 +3276,7 @@ CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
             // more supply only cheapens the unit further.
             int n = std::min(hold.count(id), demand - have);
             if (n <= 0) continue;
-            const int wallet = wallet_value(ms);
+            const int wallet = inventory_value(ms);
             const int priceCeil = stock_price(base, have, demand);
             int afford = wallet / std::max(1, priceCeil);
             if (afford < n) {
@@ -3293,7 +3295,7 @@ CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
             const int price = trade_sell_price(
                 stock_price(base, have + moved, demand),
                 charisma, bargaining);
-            out.soldValue += transfer_value(ms, hold, moved * price);
+            out.soldValue += transfer_value_dense(ms, hold, moved * price);
             out.movedTableValue += base * moved;
         } else if (have > demand) {
             // BUY the surplus above the market's own demand — never its
@@ -3306,7 +3308,7 @@ CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
             // supply behind, which only CHEAPENS the unit, so the shrunk
             // lot is affordable by monotonicity.
             int price = stock_price(base, have - n, demand);
-            const int purse = wallet_value(hold);
+            const int purse = inventory_value(hold);
             if (n * price > purse) {
                 n = purse / std::max(1, price);
                 price = stock_price(base, have - n, demand);
@@ -3320,7 +3322,7 @@ CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
                 moved * trade_buy_price(
                             stock_price(base, have - moved, demand),
                             charisma, bargaining);
-            out.boughtValue += transfer_value(hold, ms, cost);
+            out.boughtValue += transfer_value_dense(hold, ms, cost);
             out.movedTableValue += base * moved;
         }
     }
@@ -3357,7 +3359,7 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
         const int have = ms.count(id);
         // Affordability refined once, exactly as at the station: a glut lot
         // prices far below the ceiling, so the ceiling alone under-sells.
-        const int wallet = wallet_value(ms);
+        const int wallet = inventory_value(ms);
         const int priceCeil = stock_price(base, have, demand);
         int afford = wallet / std::max(1, priceCeil);
         if (afford < n) {
@@ -3373,7 +3375,7 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
         // is the whole difference.
         const int price = trade_sell_price(
             stock_price(base, have + moved, demand), charisma, bargaining);
-        out.soldValue += transfer_value(ms, bag, moved * price);
+        out.soldValue += transfer_value_dense(ms, bag, moved * price);
         out.movedTableValue += base * moved;
     }
     // BUY with the WHOLE purse (owner 2026-08-30: «деревня не копит
@@ -3406,7 +3408,7 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
                               int((capacityKg - inventory_weight(bag)) / kg)});
             if (n <= 0) continue;
             int price = stock_price(base, have - n, demand);
-            const int purse = wallet_value(bag);
+            const int purse = inventory_value(bag);
             if (n * price > purse) {
                 n = purse / std::max(1, price);
                 price = stock_price(base, have - n, demand);
@@ -3420,7 +3422,7 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
                 moved * trade_buy_price(
                             stock_price(base, have - moved, demand),
                             charisma, bargaining);
-            out.boughtValue += transfer_value(bag, ms, cost);
+            out.boughtValue += transfer_value_dense(bag, ms, cost);
             out.movedTableValue += base * moved;
         }
     }
@@ -3626,8 +3628,8 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             for (int c = 0; c < kCommodityCount; ++c)
                 haul_between(bag->inv, lm.inventory, kCommodities[c].id,
                              1 << 30, 1e9f);
-            transfer_value(bag->inv, lm.inventory,
-                           wallet_value(bag->inv));
+            transfer_value_dense(bag->inv, lm.inventory,
+                           inventory_value(bag->inv));
         }
         const auto& kind = reg.get<ecs::NPCKind>(e);
         if (garrison_row_of_type(landmark_def(lm.type), kind.type)) {
@@ -3717,7 +3719,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             for (int c = 0; c < kCommodityCount; ++c)
                 haul_between(bag->inv, lm.inventory, kCommodities[c].id,
                              1 << 30, 1e9f);
-            transfer_value(bag->inv, lm.inventory, wallet_value(bag->inv));
+            transfer_value_dense(bag->inv, lm.inventory, inventory_value(bag->inv));
         }
         int souls = 1;
         if (const auto* roster = reg.try_get<ecs::SquadRoster>(e))
@@ -3741,9 +3743,9 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             haul_between(lm.inventory, bag->inv, "bread",
                          needs.bread - haveBread, 1e9f);
         }
-        const int haveCoin = wallet_value(bag->inv);
+        const int haveCoin = inventory_value(bag->inv);
         if (needs.wage > haveCoin) {
-            transfer_value(lm.inventory, bag->inv, needs.wage - haveCoin);
+            transfer_value_dense(lm.inventory, bag->inv, needs.wage - haveCoin);
         }
     };
 

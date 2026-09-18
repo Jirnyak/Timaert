@@ -1,5 +1,7 @@
 #include "macro/econ_day.h"
 
+#include "macro/currency.h"   // add_value_in_coins — the treasury seed
+
 #include <algorithm>
 #include <bit>
 #include <cstring>
@@ -65,8 +67,18 @@ void report(EconFactSink sink, void* user, EconFact::Kind kind,
 
 int econ_produce_day(Inventory& store, EconSite site, int workers,
                      int population, EconFactSink sink, void* user,
-                     const char* mintCurrencyId) {
+                     int mintFactionIdx) {
     if (workers <= 0) return 0;
+    // The mint's outputs: the faction's own coin family, GOLD FIRST — the
+    // same metal-per-day tempo strikes 100× the value when the store holds
+    // gold, which is exactly the nominal's point. Each nominal consumes its
+    // OWN metal through the one craft door; a metal the town lacks simply
+    // runs zero batches.
+    int mintRows[3] = {-1, -1, -1};
+    if (mintFactionIdx >= 0) {
+        const char* const* coins = faction_coins(mintFactionIdx);
+        for (int i = 0; i < 3; ++i) mintRows[i] = item_index(coins[2 - i]);
+    }
     const ResolvedTables& t = resolved();
     int total = 0;
     // v1 scheduler, three passes over the table. A recipe used to staff
@@ -83,22 +95,14 @@ int econ_produce_day(Inventory& store, EconSite site, int workers,
     int workersLeft = workers;
     int fairShare = 0;
 
-    // The OUTPUT catalog row a recipe makes: the table's own commodity for
-    // goods, THIS town's coin for the mint — the one datum the mint right
-    // supplies. From that row on, everything (matter, yield, the making
-    // itself) is THE craft system, verbatim.
-    const auto output_row_of = [&](const ResolvedRecipe& rr) {
-        if (rr.isMint) {
-            return mintCurrencyId ? item_index(mintCurrencyId) : -1;
-        }
-        return commodity_item_index(rr.output);
-    };
-
-    auto run_recipe = [&](int i, int unitCap, int workerCap) {
-        const ResolvedRecipe& rr = t.recipes[i];
-        // -1 = a mint with no coin named (no right here) or a dead id —
+    // One recipe slot, one OUTPUT catalog row: the table's own commodity for
+    // goods, one of THIS town's coin rows for the mint (the mint slot fans
+    // out over the family — see run_recipe). From that row on, everything
+    // (matter, yield, the making itself) is THE craft system, verbatim.
+    auto run_recipe_out = [&](const ResolvedRecipe& rr, int outIdx,
+                              int unitCap, int workerCap) {
+        // -1 = a mint with no coin named (no mint here) or a dead id —
         // fail closed like every unwired layer.
-        const int outIdx = output_row_of(rr);
         if (outIdx < 0) return;
         const auto parts = item_parts(outIdx);
         const int yield = item_yield(outIdx);
@@ -154,6 +158,22 @@ int econ_produce_day(Inventory& store, EconSite site, int workers,
         }
     };
 
+    // A recipe SLOT: one output for goods; for the mint, the whole family in
+    // nominal order (gold→silver→copper, mintRows above) — each coin runs
+    // off its own metal through the same door, so the town strikes whatever
+    // its store can feed.
+    auto run_recipe = [&](int i, int unitCap, int workerCap) {
+        const ResolvedRecipe& rr = t.recipes[i];
+        if (rr.isMint) {
+            for (int m = 0; m < 3 && workersLeft > 0; ++m) {
+                run_recipe_out(rr, mintRows[m], unitCap, workerCap);
+            }
+            return;
+        }
+        run_recipe_out(rr, commodity_item_index(rr.output), unitCap,
+                       workerCap);
+    };
+
     // Pass 0 — today's table, by demand.
     for (int i = 0; i < kRecipeCount && workersLeft > 0; ++i) {
         if (!recipe_runs_at(kRecipes[i].site, site)) continue;
@@ -166,16 +186,28 @@ int econ_produce_day(Inventory& store, EconSite site, int workers,
     }
 
     // Fair shares are computed AFTER the table is served, over the recipes
-    // that still have inputs (one whole batch feedable).
+    // that still have inputs (one whole batch feedable). The mint slot
+    // counts ONCE if any of its metals can feed a batch — it is one bench
+    // however many nominals it knows.
+    const auto feedable_row = [&](int outIdx) {
+        if (outIdx < 0) return false;
+        const auto parts = item_parts(outIdx);
+        if (parts.empty()) return false;
+        for (const ItemPart& part : parts) {
+            if (store.count_of(int(part.def)) < int(part.count)) return false;
+        }
+        return true;
+    };
     int liveRecipes = 0;
     for (int i = 0; i < kRecipeCount; ++i) {
         if (!recipe_runs_at(kRecipes[i].site, site)) continue;
-        const int outIdx = output_row_of(t.recipes[i]);
-        if (outIdx < 0) continue;
-        bool feedable = true;
-        for (const ItemPart& part : item_parts(outIdx)) {
-            feedable = feedable
-                && store.count_of(int(part.def)) >= int(part.count);
+        const ResolvedRecipe& rr = t.recipes[i];
+        bool feedable = false;
+        if (rr.isMint) {
+            feedable = feedable_row(mintRows[0]) || feedable_row(mintRows[1])
+                    || feedable_row(mintRows[2]);
+        } else {
+            feedable = feedable_row(commodity_item_index(rr.output));
         }
         if (feedable) ++liveRecipes;
     }
@@ -279,7 +311,7 @@ int commodity_item_index(int commodityIdx) {
 }
 
 void seed_landmark_inventory(Inventory& inv, int population, EconSite site,
-                             const char* currencyId) {
+                             int factionIdx, std::uint32_t seedSalt) {
     if (population <= 0) return;
     // Born MID-LIFE means born with LAST SEASON'S HARVEST IN THE BARN: the
     // season window (econ_consume_season) debits a whole season of bread on
@@ -315,8 +347,20 @@ void seed_landmark_inventory(Inventory& inv, int population, EconSite site,
     // A city's capital is deep (8 a head); a village keeps a modest chest.
     // The treasury is what the market PAYS FROM: a town that runs dry stops
     // buying — the arbitrage-killer's other half.
-    if (currencyId && currencyId[0]) {
-        inv.add(currencyId, population * (site == EconSite::City ? 8 : 2));
+    //
+    // ± a QUARTER's spread off the world seed (owner verdict S10, посев
+    // капитала «от популяции ± четверть разброса от мирового сида»): the
+    // factor walks 768..1279 over 1024 — 3/4..5/4 in po2 arithmetic — so
+    // two towns of one size are born organically unequal, деterministically
+    // per world. The value lands as the faction's own three coins,
+    // change-made largest-first (add_value_in_coins).
+    {
+        const int base = population * (site == EconSite::City ? 8 : 2);
+        // One xorshift step spreads consecutive salts before the mask.
+        std::uint32_t h = seedSalt;
+        h ^= h << 13; h ^= h >> 17; h ^= h << 5;
+        const int seeded = int(std::int64_t(base) * (768 + (h & 511)) / 1024);
+        add_value_in_coins(inv, factionIdx, seeded);
     }
 }
 

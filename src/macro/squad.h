@@ -663,7 +663,12 @@ inline void roll_fallen_spoils(const MacroWorld& mw, std::uint16_t kind,
     const int coins =
         generate_loot_gold(int(type), level, ctx, &squad_loot_rng_f01);
     gSquadLootRng = nullptr;
-    if (coins > 0) into.add(currency_for_faction_id(factionId), coins);
+    // The purse lands as the banner's own coins, change-made largest-first
+    // (a merchant's 200 is two silver hundreds… i.e. 20 silver, not 200
+    // coppers) — plain arithmetic over the mint columns, no currency gate.
+    if (coins > 0) {
+        add_value_in_coins(into, faction_index(factionId), coins);
+    }
 }
 
 // Every death this side suffered, told once: the roster rows by their record

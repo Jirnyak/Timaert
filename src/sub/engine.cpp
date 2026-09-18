@@ -2540,10 +2540,13 @@ bool SubworldEngine::interact() {
     // Credit FIRST, corpse second (the grant_prop_loot rule above): a full
     // bag REFUSES, and what it refuses stays ON the body — the corpse is
     // only destroyed once it holds nothing, never over evaporated spoils.
-    // Coin loot lands as imperial coin in the bag (the victim's own purse
-    // coins already ride CorpseLoot as items; this int is the derived-body
-    // roll — faction mint when the death path learns it).
-    if (loot.gold > 0 && player_bag_of(ecs_).add("coin_empire", loot.gold)) {
+    // Coin loot lands as imperial coins in the bag, change-made largest
+    // first (the victim's own purse coins already ride CorpseLoot as items;
+    // this int is the derived-body roll — faction mint when the death path
+    // learns it).
+    if (loot.gold > 0
+        && add_value_in_coins(player_bag_of(ecs_), faction_index("empire"),
+                              loot.gold) == loot.gold) {
         loot.gold = 0;
     }
     bool leftBehind = loot.gold > 0;

@@ -44,21 +44,21 @@ void test_swap_moves_both_packages() {
     town.add("bread", 10);
     town.add("cloth", 4);
     player.add("wood", 6);
-    player.add("coin_empire", 30);
+    player.add("coin_empire_copper", 30);
 
     CHECK(barter_swap(player, town,
                       /*fromPlayer*/ {line(player, "wood", 5),
-                                      line(player, "coin_empire", 7)},
+                                      line(player, "coin_empire_copper", 7)},
                       /*fromTown*/ {line(town, "bread", 3),
                                     line(town, "cloth", 1)}),
           "a covered deal settles");
-    CHECK(player.count("wood") == 1 && player.count("coin_empire") == 23,
+    CHECK(player.count("wood") == 1 && player.count("coin_empire_copper") == 23,
           "the given lines left the player");
     CHECK(player.count("bread") == 3 && player.count("cloth") == 1,
           "the taken lines arrived");
     CHECK(town.count("bread") == 7 && town.count("cloth") == 3,
           "the town gave exactly the package");
-    CHECK(town.count("wood") == 5 && town.count("coin_empire") == 7,
+    CHECK(town.count("wood") == 5 && town.count("coin_empire_copper") == 7,
           "coin swaps like any ware - nothing minted, nothing lost");
 }
 

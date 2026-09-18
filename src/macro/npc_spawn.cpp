@@ -202,8 +202,10 @@ entt::entity make_npc(ecs::World& w, NPCType type, std::uint16_t factionIdx,
         const NpcPurseRow& purse = npc_purse(type);
         const int coins = purse.min
             + int(rng.next_u32() % std::uint32_t(purse.max - purse.min + 1));
-        bag.inv.add(currency_for_faction_id(faction_id_for_index(factionIdx)),
-                    coins);
+        // The purse value lands as the banner's own coins, change-made
+        // largest first (a labourer's 1..10 is coppers; a merchant's
+        // 50..200 is silvers and change) — arithmetic, never a coin gate.
+        add_value_in_coins(bag.inv, int(factionIdx), coins);
     }
     w.reg.emplace<ecs::NpcInventory>(e, std::move(bag));
 

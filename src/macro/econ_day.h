@@ -222,11 +222,13 @@ using EconFactSink = void (*)(void* user, const EconFact& fact);
 // workers across recipes with inputs (the surplus), then leftovers in table
 // order. Returns total units produced. Conservation: inputs leave the store
 // as outputs enter.
-// `mintCurrencyId`: the faction coin the kMintOutput recipe strikes —
-// null = this place has no mint right and the row simply does not run.
+// `mintFactionIdx`: whose coin FAMILY the kMintOutput recipe strikes — the
+// town's faction (its three nominals run gold-first, each off its own metal;
+// faction_coins resolves the free folk to the imperial family). -1 = this
+// place has no mint and the row simply does not run.
 int econ_produce_day(Inventory& store, EconSite site, int workers,
                      int population, EconFactSink sink, void* user,
-                     const char* mintCurrencyId = nullptr);
+                     int mintFactionIdx = -1);
 
 struct ConsumeOutcome {
     int fedPop = 0;         // pops whose vital need was met today
@@ -320,7 +322,11 @@ inline int mood_band_from_wellbeing(float wellbeing) {
 //     in a crafting City, days in a gathering Village;
 //   · raw stocks are a production buffer per head — doubled in a Village,
 //     whose whole business is raw.
+//   · the treasury seeds as the faction's own three coins (change-making,
+//     add_value_in_coins), from population ± a quarter's spread off the
+//     world seed (`seedSalt` — world seed ⊕ the landmark's identity), so
+//     twin towns are born organically unequal (CANON S10, посев капитала).
 void seed_landmark_inventory(Inventory& inv, int population, EconSite site,
-                             const char* currencyId);
+                             int factionIdx, std::uint32_t seedSalt);
 
 } // namespace sm

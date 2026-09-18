@@ -4877,7 +4877,9 @@ bool run_console_smoke(App& app) {
     }
 
     // Snapshot everything the commands below touch, so we can fully restore.
-    const int    oldGold         = sm::wallet_value(player_bag(app));
+    // Gold is VALUE now (№1: coin is a good) — the bag's whole worth is the
+    // ledger the gold commands move.
+    const int    oldGold         = sm::inventory_value(player_bag(app));
     const auto   oldInv          = player_bag(app);
     const auto   oldLevel        = sm::player_sheet(app.ecs)->levelData;
     const sm::ecs::Pools oldPools = player_pools(app);
@@ -4894,14 +4896,7 @@ bool run_console_smoke(App& app) {
             app.subworld.set_flying(false);
             app.subworld.leave(true);
         }
-        {   // restore the wallet to its recorded value
-            const int now = sm::wallet_value(player_bag(app));
-            if (now > oldGold)
-                sm::wallet_spend_up_to(player_bag(app), now - oldGold);
-            else if (now < oldGold)
-                player_bag(app).add("coin_empire", oldGold - now);
-        }
-        player_bag(app)   = oldInv;
+        player_bag(app)   = oldInv;   // the whole bag IS the wallet (№1)
         sm::player_sheet(app.ecs)->levelData   = oldLevel;
         player_pools(app)         = oldPools;
         smoke_player_book(app)   = oldSpellBook;
@@ -4922,7 +4917,7 @@ bool run_console_smoke(App& app) {
     }
 
     con.execute("gold 500");
-    if (sm::wallet_value(player_bag(app)) != oldGold + 500) {
+    if (sm::inventory_value(player_bag(app)) != oldGold + 500) {
         restore(); smoke_fail(app, "console gold add"); return false;
     }
 
@@ -4935,8 +4930,11 @@ bool run_console_smoke(App& app) {
     if (player_bag(app).count("potion_hp") != potBefore + 2) {
         restore(); smoke_fail(app, "console take item"); return false;
     }
+    // Value moved by the potions above rides in the bag too, so the check
+    // is a DELTA around this one command, not a running total.
+    const int vBeforeGive = sm::inventory_value(player_bag(app));
     con.execute("give gold 250");
-    if (sm::wallet_value(player_bag(app)) != oldGold + 750) {
+    if (sm::inventory_value(player_bag(app)) != vBeforeGive + 250) {
         restore(); smoke_fail(app, "console give gold"); return false;
     }
 
@@ -4968,9 +4966,9 @@ bool run_console_smoke(App& app) {
     }
 
     // A usage error (missing arg) must print but never mutate state.
-    const int goldPreUsage = sm::wallet_value(player_bag(app));
+    const int goldPreUsage = sm::inventory_value(player_bag(app));
     con.execute("gold");
-    if (sm::wallet_value(player_bag(app)) != goldPreUsage) {
+    if (sm::inventory_value(player_bag(app)) != goldPreUsage) {
         restore(); smoke_fail(app, "console usage-error mutated state"); return false;
     }
     // An unknown command must be handled gracefully (output, no crash).
@@ -5611,7 +5609,7 @@ bool run_console_smoke(App& app) {
     }
 
     // Capture reporting values before restoring the world.
-    const int         rGold   = sm::wallet_value(player_bag(app));
+    const int         rGold   = sm::inventory_value(player_bag(app));
     const int         rLevel  = sm::player_sheet(app.ecs)->levelData.level;
     const std::size_t rSpells =
         std::size_t(sm::spellbook_learned_count(smoke_player_book(app)));
@@ -6918,7 +6916,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          int(s.mood),
                          s.inventory.used_slots(),
                          player_bag(app).total(),
-                         sm::wallet_value(player_bag(app)));
+                         sm::inventory_value(player_bag(app)));
             std::fflush(stderr);
             ++app.smoke.cursor;
             break;
@@ -7468,7 +7466,7 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
                          type,
                          stock,
                          player_bag(app).total(),
-                         sm::wallet_value(player_bag(app)));
+                         sm::inventory_value(player_bag(app)));
             std::fflush(stderr);
             ++app.smoke.cursor;
             break;

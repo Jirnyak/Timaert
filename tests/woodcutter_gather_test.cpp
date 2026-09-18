@@ -450,7 +450,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
     // deadlock the payment law exists to refuse. Purses follow the genesis
     // seeding law (econ_day.cpp seed_landmark_inventory): pop × 8 for a
     // city, pop × 2 for a village.
-    city.inventory.add("coin_timaert", 100 * 8);
+    city.inventory.add("coin_timaert_copper", 100 * 8);
     gs.landmarks.push_back(city);      // grain: NONE — the import
     Landmark vil{};
     vil.type = LandmarkType::Village;
@@ -460,7 +460,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
     vil.suzerainLandmarkId = 1;
     vil.population = 50;
     vil.inventory.add("grain", 500);
-    vil.inventory.add("coin_timaert", 50 * 2);
+    vil.inventory.add("coin_timaert_copper", 50 * 2);
     gs.landmarks.push_back(vil);
 
     ecs::World w;
@@ -516,12 +516,12 @@ void test_the_vendor_sells_at_the_nearest_city() {
           "CONSERVATION: cargo moves, it is never minted or dropped");
     // ...and the deal's other half obeys the same law: coin travels between
     // the three purses (city, village, hold) and is never minted or burned.
-    const int coinTotal = gs.landmarks[0].inventory.count("coin_timaert")
-                          + gs.landmarks[1].inventory.count("coin_timaert")
-                          + bag.count("coin_timaert");
+    const int coinTotal = gs.landmarks[0].inventory.count("coin_timaert_copper")
+                          + gs.landmarks[1].inventory.count("coin_timaert_copper")
+                          + bag.count("coin_timaert_copper");
     CHECK(coinTotal == 100 * 8 + 50 * 2,
           "CONSERVATION: coin moves through the deal, never minted");
-    CHECK(gs.landmarks[1].inventory.count("coin_timaert") > 0,
+    CHECK(gs.landmarks[1].inventory.count("coin_timaert_copper") > 0,
           "the village EARNED coin for its raw — the payment is real");
 
     // The DEAL is a fact of the world (S20.1): filed at the village the

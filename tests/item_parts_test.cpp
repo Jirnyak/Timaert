@@ -112,8 +112,10 @@ void test_table_laws() {
     // the reaction is VALUE-NEUTRAL — striking coin creates nothing, so no
     // gate needs to exist (the static_assert beside the table pins the same
     // fact at compile time; this is the runtime belt over those braces).
-    for (const CurrencyDef& c : kCurrencyDefs) {
-        const int idx = item_index(c.itemId);
+    for (const FactionDef& f : kFactionDefs) {
+      for (const char* coinId : f.mint) {
+        if (!coinId || !coinId[0]) continue;
+        const int idx = item_index(coinId);
         const auto coinParts = item_parts(idx);
         CHECK(!coinParts.empty(), "a coin row carries the mint composition");
         CHECK(item_yield(idx) > 1, "a coin's batch strikes many from one");
@@ -125,6 +127,7 @@ void test_table_laws() {
         CHECK(in == long(item_yield(idx))
                         * item_def_at(idx)->value,
               "the mint is value-neutral: batch matter == batch nominal");
+      }
     }
     CHECK(item_parts(-1).empty() && item_parts(1 << 14).empty(),
           "out-of-catalog ordinals answer terminal, never UB");
@@ -162,9 +165,9 @@ void test_craft_door() {
     // strikes the row's whole yield.
     Inventory mint;
     mint.add("silver", 1);
-    const int coin = item_index("coin_empire");
+    const int coin = item_index("coin_empire_silver");
     CHECK(craft_item(mint, coin, 1), "one silver strikes a batch of coin");
-    CHECK(mint.count("coin_empire") == item_yield(coin),
+    CHECK(mint.count("coin_empire_silver") == item_yield(coin),
           "the batch struck exactly the row's yield");
     CHECK(mint.count("silver") == 0, "the metal was consumed whole");
 }
@@ -200,15 +203,15 @@ void test_scrap_door() {
     // case): 64 coins embody 2 silver of matter, half survives; a single
     // coin is 1/32 silver and honestly burns to slag.
     inv.clear();
-    inv.add("coin_empire", 64);
-    const int coin = item_index("coin_empire");
+    inv.add("coin_empire_silver", 64);
+    const int coin = item_index("coin_empire_silver");
     CHECK(scrap_at(inv, slot_of(inv, coin), 64), "a coin pile melts");
-    CHECK(inv.count("silver") == 1 && inv.count("coin_empire") == 0,
+    CHECK(inv.count("silver") == 1 && inv.count("coin_empire_silver") == 0,
           "64 coins -> floor(64x1/(2x32)) = 1 silver");
     inv.clear();
-    inv.add("coin_empire", 1);
+    inv.add("coin_empire_silver", 1);
     CHECK(scrap_at(inv, slot_of(inv, coin), 1), "one coin may still melt");
-    CHECK(inv.count("silver") == 0 && inv.count("coin_empire") == 0,
+    CHECK(inv.count("silver") == 0 && inv.count("coin_empire_silver") == 0,
           "one coin is 1/32 silver: it burns whole to slag");
 
     // Affixes burn with no return: the rolled instance pays the same iron.

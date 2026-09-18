@@ -107,15 +107,16 @@ struct FactionDef {
     // added in CODE, in a file that has no business knowing who the outlaws
     // are. Now it is this column, and the reaper asks the registry.
     bool          killIsNoCrime = false;
-    // The COIN this faction trades in — an item id of the one catalog
-    // (macro/currency.h kCurrencyDefs). Realms with a mint of their own name
-    // it; culture groups name the realm's coin they fold onto (the Magica
-    // splinters and the Lake Duchy strike the Magika sigil). Empty = no mint
-    // → imperial coin, the de-facto reserve currency of v1. It was a strcmp
-    // if-chain inside currency_for_faction_id — an if-by-kind in general code
-    // (CANON S16) whose "barbarians" branch matched no registry row at all,
-    // so three of the four barbarian realms quietly traded imperial.
-    const char*   mint = "";
+    // The THREE coins this faction trades in — item ids of the one catalog,
+    // copper→silver→gold order (nominals 1/10/100 — owner verdict №1 of the
+    // second audit, 2026-09-17: «по 3 типа фракционных монет… просто дата в
+    // таблицу итемов»). Realms with a mint of their own name them; culture
+    // groups name the realm's family they fold onto (the Magica splinters
+    // and the Lake Duchy strike the Magika sigils). Empty = no mint →
+    // imperial family, the de-facto reserve currency of v1. Nothing about a
+    // coin is a mechanic: each id is a plain catalog row whose composition
+    // ({металл 1} → 32) IS the mint (CANON S10).
+    const char*   mint[3] = {"", "", ""};
 };
 
 // Sentinel for "no faction" in ecs::NPCKind.factionIdx: resolves to the empty
@@ -150,44 +151,44 @@ inline constexpr FactionDef kFactionDefs[] = {
      0x8b0000, Temperament::Abyssal, -100, /*killIsNoCrime*/true},
     {"cults",    "Demonic Cults",
      "Worshippers of the Old Ones. Hunted everywhere.",
-     0x581c87, Temperament::Cultist, -10, false, "coin_magika"},
+     0x581c87, Temperament::Cultist, -10, false, {"coin_magika_copper", "coin_magika_silver", "coin_magika_gold"}},
     // The wandering mage orders — previously emitted by the spawn vocabulary
     // but never registered, so every relation involving them silently read
     // neutral. A real faction now, closing that gap by construction.
     {"magika",   "Magika Orders",
      "Itinerant mages sworn to no single realm.",
-     0x8b5cf6, Temperament::Magical, 0, false, "coin_magika"},
+     0x8b5cf6, Temperament::Magical, 0, false, {"coin_magika_copper", "coin_magika_silver", "coin_magika_gold"}},
     // ── Kingdoms — ordinary rows; politik references them by id ───────────
     {"old_magica",      "Old Magica",
      "Ruled by powerful mages. High magic economy.",
-     0xa78bfa, Temperament::Magical,    0, false, "coin_magika"},
+     0xa78bfa, Temperament::Magical,    0, false, {"coin_magika_copper", "coin_magika_silver", "coin_magika_gold"}},
     {"northern_magica", "Northern Magica",
      "Ruled by powerful mages. High magic economy.",
-     0x7c3aed, Temperament::Magical,    0, false, "coin_magika"},
+     0x7c3aed, Temperament::Magical,    0, false, {"coin_magika_copper", "coin_magika_silver", "coin_magika_gold"}},
     {"lower_magica",    "Lower Magica",
      "Ruled by powerful mages. High magic economy.",
-     0xc4b5fd, Temperament::Magical,    0, false, "coin_magika"},
+     0xc4b5fd, Temperament::Magical,    0, false, {"coin_magika_copper", "coin_magika_silver", "coin_magika_gold"}},
     {"lake_duchy",      "Lake Duchy",
      "Ruled by powerful mages. High magic economy.",
-     0x60a5fa, Temperament::Magical,    0, false, "coin_magika"},
+     0x60a5fa, Temperament::Magical,    0, false, {"coin_magika_copper", "coin_magika_silver", "coin_magika_gold"}},
     {"empire",          "Empire of Light",
      "Theocratic empire. Magic is forbidden.",
-     0xf59e0b, Temperament::Lawful,     0, false, "coin_empire"},
+     0xf59e0b, Temperament::Lawful,     0, false, {"coin_empire_copper", "coin_empire_silver", "coin_empire_gold"}},
     {"timaert",         "Republic of Timaert",
      "Maritime trade republic. Neutral and wealthy.",
-     0x10b981, Temperament::Mercantile, 0, false, "coin_timaert"},
+     0x10b981, Temperament::Mercantile, 0, false, {"coin_timaert_copper", "coin_timaert_silver", "coin_timaert_gold"}},
     {"barbarian_north", "North Barbarians",
      "Feudal lords ruling by might and steel.",
-     0x991b1b, Temperament::Savage,     0, false, "coin_barbar"},
+     0x991b1b, Temperament::Savage,     0, false, {"coin_barbar_copper", "coin_barbar_silver", "coin_barbar_gold"}},
     {"barbarian_south", "South Barbarians",
      "Feudal lords ruling by might and steel.",
-     0xb91c1c, Temperament::Savage,     0, false, "coin_barbar"},
+     0xb91c1c, Temperament::Savage,     0, false, {"coin_barbar_copper", "coin_barbar_silver", "coin_barbar_gold"}},
     {"barbarian_west",  "West Barbarians",
      "Feudal lords ruling by might and steel.",
-     0xdc2626, Temperament::Savage,     0, false, "coin_barbar"},
+     0xdc2626, Temperament::Savage,     0, false, {"coin_barbar_copper", "coin_barbar_silver", "coin_barbar_gold"}},
     {"barbarian_east",  "East Barbarians",
      "Feudal lords ruling by might and steel.",
-     0xef4444, Temperament::Savage,     0, false, "coin_barbar"},
+     0xef4444, Temperament::Savage,     0, false, {"coin_barbar_copper", "coin_barbar_silver", "coin_barbar_gold"}},
     // ── The unruled ───────────────────────────────────────────────────────
     // Everyone who answers to no crown: a settlement no faction owns, a town
     // that has thrown its lord out, a landmark held by whoever lives in it.
@@ -234,6 +235,21 @@ inline constexpr int kFactionCount =
 static_assert(kFactionCount < int(kNoFaction), "sentinel must stay out of range");
 static_assert(kFactionCount <= kMaxFactions,
               "world limit: 64 factions (one uint64 enemy mask, CANON S10)");
+
+// The coin family that serves a faction: its registry row's own `mint`
+// columns, copper→silver→gold. Everyone without a mint of their own —
+// beasts, bandits, the free folk, an index out of range — trades in the
+// imperial family, the de-facto reserve currency of v1. Returns a pointer
+// to 3 ids, never null.
+inline constexpr const char* kImperialCoins[3] = {
+    "coin_empire_copper", "coin_empire_silver", "coin_empire_gold"};
+inline const char* const* faction_coins(int factionIdx) {
+    if (factionIdx >= 0 && factionIdx < kFactionCount) {
+        const auto& m = kFactionDefs[factionIdx].mint;
+        if (m[0] && m[0][0] != '\0') return m;
+    }
+    return kImperialCoins;
+}
 
 // Index of a faction id, -1 for null/empty/unknown. Pointer-first: ids are
 // string literals, so the common path never reaches strcmp.

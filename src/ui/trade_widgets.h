@@ -128,12 +128,12 @@ inline void draw_trade_amount_input(int* amount) {
     if (*amount < 1) *amount = 1;
 }
 
-// The counterparty's purse (owner, W2d): money is faction COIN living in
-// the same Inventory as the goods (macro/currency.h). Their coin rows are
-// wares like any other — this line is the at-a-glance sum of them.
+// The counterparty's purchasing power = the VALUE of their whole bag: a coin
+// is just a good (verdict №1, 2026-09-17), so what they can pay with is
+// everything they hold, priced by the one value law.
 inline void draw_counterparty_gold(const Inventory& theirs) {
     ImGui::SameLine();
-    ImGui::TextDisabled("Their coin: %d", wallet_value(theirs));
+    ImGui::TextDisabled("Their value: %d", inventory_value(theirs));
 }
 
 inline void draw_trade_item_tooltip(const ItemDef* item) {
@@ -317,7 +317,10 @@ inline GridClick draw_inventory_grid(const char* strId, const Inventory& inv,
 
 // A staged package's value against its shelf — the sum draw_barter_column
 // used to accumulate while drawing rows; the grid separates the ink from
-// the arithmetic. Coin is ALWAYS face value.
+// the arithmetic. EVERY row prices through the caller's one law — the
+// "coin is ALWAYS face value" branch died 2026-09-18 with verdict №1
+// («никаких особых механик и ворот»): a coin's price is its value_of, and
+// whether a market's modulation touches it is the price law's business.
 template <class UnitPriceFn>
 inline int barter_package_value(const BarterPackage& pkg,
                                 const Inventory& shelf,
@@ -329,9 +332,7 @@ inline int barter_package_value(const BarterPackage& pkg,
         if (ref.empty()) continue;
         const ItemDef* def = item_def_at(int(ref.def));
         if (!def) continue;
-        total += is_currency_item(def->id)
-            ? def->value * line.count
-            : unitPrice(ref, *def, line.count) * line.count;
+        total += unitPrice(ref, *def, line.count) * line.count;
     }
     return total;
 }

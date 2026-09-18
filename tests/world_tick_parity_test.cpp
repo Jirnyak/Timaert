@@ -73,7 +73,7 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     // The purse rides his squad entity now; the daily tick is handed it.
     sm::ecs::World world;
     sm::ensure_macro_player_entity(gs, world);
-    sm::player_inventory(world)->add("coin_empire", 5);
+    sm::player_inventory(world)->add("coin_empire_copper", 5);
     gs.player.ageDays = 1000;
     sm::player_sheet(world)->attributes[sm::AttributeId::Cha] = 0;
     // The player's men live on his SQUAD ENTITY now (owner, 2026-08-27), so
@@ -99,7 +99,7 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     // The daily wage died 2026-09-17 («общее содержание — игрок == нпц»,
     // CANON S19.2): an ordinary day charges NOTHING — balances live on the
     // season boundary, through THE one squad window below.
-    CHECK(sm::wallet_value((*sm::player_inventory(world))) == 5,
+    CHECK(sm::inventory_value((*sm::player_inventory(world))) == 5,
           "an ordinary day charges no upkeep: balances are the boundary's");
     CHECK(gs.player.ageDays == 1001,
           "one daily tick ages the player exactly one day");
@@ -116,7 +116,7 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     // A non-boundary day is a silent day — negative control.
     CHECK(sm::squad_season_window(mw, 12) == 0,
           "no window off the boundary: nobody deserts");
-    CHECK(sm::wallet_value((*sm::player_inventory(world))) == 5,
+    CHECK(sm::inventory_value((*sm::player_inventory(world))) == 5,
           "no window off the boundary: nothing debited");
 
     // An UNCOVERED window (5 coins against a season's wage, no bread):
@@ -125,7 +125,7 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     const std::size_t poolBefore = gs.deserterPool.size();
     CHECK(sm::squad_season_window(mw, 33) == 1,
           "an uncovered window bleeds an eighth (floor one) of the roster");
-    CHECK(sm::wallet_value((*sm::player_inventory(world))) == 5,
+    CHECK(sm::inventory_value((*sm::player_inventory(world))) == 5,
           "an uncovered wage is NOT debited");
     CHECK(gs.deserterPool.size() == poolBefore + 1,
           "the walker lands in the deserter pool");
@@ -139,12 +139,12 @@ void test_daily_processing_applies_player_upkeep_and_age() {
         static_cast<std::uint8_t>(sm::NPCType::Guard), 1, 78u));
     sm::Inventory* purse = sm::player_inventory(world);
     purse->add("bread", sm::kDaysPerSeason);
-    purse->add("coin_empire", wageSeason);   // + the 5 already there
+    purse->add("coin_empire_copper", wageSeason);   // + the 5 already there
     CHECK(sm::squad_season_window(mw, 65) == 0,
           "a covered window deserts nobody");
     CHECK(purse->count("bread") == 0,
           "a covered window eats the whole season of bread at once");
-    CHECK(sm::wallet_value(*purse) == 5,
+    CHECK(sm::inventory_value(*purse) == 5,
           "a covered window debits exactly the season's wage");
     CHECK(gs.lootPoolValue == wageSeason,
           "the paid wage burns into the world loot pool");
@@ -175,7 +175,7 @@ void test_garrison_never_exceeds_its_cap() {
           "the garrison target is the registry law: population >> shift");
     // The maintenance law bleeds a SHORTED garrison at once (2026-08-31),
     // and this test is about recruiting — keep the men fed and paid.
-    s.inventory.add("coin_empire", 1 << 16);
+    s.inventory.add("coin_empire_copper", 1 << 16);
     s.inventory.add("bread", 1 << 13);
     // Pin the season's verdict to the waterline (S19.2: wellbeing lives on
     // the landmark between windows): a newborn's fed default would GROW the
@@ -208,7 +208,7 @@ void test_garrison_never_exceeds_its_cap() {
     sm::Landmark hollow = s;
     hollow.garrison = sm::SoldierSquad{};
     hollow.inventory = sm::Inventory{};
-    hollow.inventory.add("coin_empire", 1 << 16);
+    hollow.inventory.add("coin_empire_copper", 1 << 16);
     hollow.inventory.add("bread", 1 << 13);
     slow.landmarks.push_back(hollow);
     sm::WorldTickRuntime slowRuntime{};
