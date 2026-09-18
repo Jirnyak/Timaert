@@ -335,7 +335,7 @@ void seed_landmark_inventory(Inventory& inv, int population, EconSite site,
     // Village, whose whole business is raw, holds double.
     struct RawSeed { const char* id; int shift; };
     constexpr RawSeed kRawSeeds[] = {
-        {"grain", 0}, {"wood", 0}, {"stone", 1}, {"clay", 2}, {"iron", 3},
+        {"food", 0}, {"wood", 0}, {"stone", 1}, {"clay", 2}, {"iron", 3},
     };
     const int siteMult = site == EconSite::Village ? 2 : 1;
     for (const RawSeed& r : kRawSeeds) {

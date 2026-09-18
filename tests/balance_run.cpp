@@ -240,7 +240,7 @@ int main(int argc, char** argv) {
                          "\tgrain\tcoin\n");
 
         const int breadIdx = sm::item_index("bread");
-        const int grainIdx = sm::item_index("grain");
+        const int grainIdx = sm::item_index("food");
         std::uint32_t ringCursor = gs.chronicle.nextSeq;
 
         // ── The days: the live loop's cadence without its frames ─────────
@@ -292,7 +292,7 @@ int main(int argc, char** argv) {
                  : ecs.reg.view<sm::ecs::NpcInventory>().each()) {
                 (void)e;
                 coinSquads += coins_in(bag.inv, coinIdx);
-                grainHolds += bag.inv.count(grainIdx >= 0 ? "grain" : "");
+                grainHolds += bag.inv.count(grainIdx >= 0 ? "food" : "");
             }
             // The day's DEALS, read off the chronicle ring by sequence — the
             // same shop window the witcher asks (S20.1): every Traded fact
@@ -363,7 +363,7 @@ int main(int argc, char** argv) {
                              cpools.sp, cpools.maxSp, crt.carryCap,
                              sm::inventory_weight(bag.inv),
                              coins_in(bag.inv, coinIdx),
-                             bag.inv.count("grain"), bag.inv.count("wood"),
+                             bag.inv.count("food"), bag.inv.count("wood"),
                              bag.inv.count("clay"));
             }
             std::fprintf(stderr,

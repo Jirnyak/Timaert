@@ -98,12 +98,12 @@ int main() {
     CHECK(town.inventory.add("coin_empire_copper", 2000), "fixture: town purse");
 
     sm::Inventory homeStore;   // the village store: grain-rich, tool-less
-    CHECK(homeStore.add("grain", 5000), "fixture: home grain");
+    CHECK(homeStore.add("food", 5000), "fixture: home grain");
     const sm::MemoryEntry snap =
         sm::pack_market_snapshot(homeStore, 7, /*day=*/1);
 
     sm::Inventory bag;
-    CHECK(bag.add("grain", 300), "fixture: vendor grain");
+    CHECK(bag.add("food", 300), "fixture: vendor grain");
 
     const long long vCoinBefore =
         sm::coin_census_value(bag) + sm::coin_census_value(town.inventory);
@@ -114,7 +114,7 @@ int main() {
     CHECK(sm::coin_census_value(bag) + sm::coin_census_value(town.inventory)
               == vCoinBefore,
           "vendor: coin is conserved");
-    CHECK(bag.count("grain") == 0 && town.inventory.count("grain") == 300,
+    CHECK(bag.count("food") == 0 && town.inventory.count("food") == 300,
           "vendor: the whole load was sold");
     CHECK(vd.soldValue > 0, "vendor: the sale paid real coin");
     CHECK(bag.count("tools") > 0,

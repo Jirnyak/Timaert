@@ -72,7 +72,7 @@ std::vector<Crew> live_crews(ecs::World& w) {
 
 void test_auction_raises_errand_bearing_peasants() {
     GameState gs = make_world(/*pop*/100);
-    gs.landmarks[0].inventory.add("grain", 5000);   // затоваривание — сбыт
+    gs.landmarks[0].inventory.add("food", 5000);   // затоваривание — сбыт
     // УСЛОВИЕ СОЗДАНИЯ (S19.2): при подъёме списывается СЕЗОН содержания —
     // склад обязан держать хлеб на 32 дня каждого рта, иначе артель не
     // поднимается. Сезонный амбар, не «провиант на рейс».
@@ -125,7 +125,7 @@ void test_auction_raises_errand_bearing_peasants() {
     for (int k = 0; k < 8; ++k) {
         const int day = 1 + k * kDaysPerSeason;
         GameState gsd = make_world(/*pop*/100);
-        gsd.landmarks[0].inventory.add("grain", 5000);
+        gsd.landmarks[0].inventory.add("food", 5000);
         gsd.landmarks[0].inventory.add("bread", 3200);
         gsd.landmarks[0].titheOwedCoin = 200;
         ecs::World wd;
@@ -199,7 +199,7 @@ void test_tithe_alone_raises_the_sell_run() {
 // не испаряются — консервация проверяется суммой.
 void test_boundary_court_resizes_standing_crews() {
     GameState gs = make_world(/*pop*/100);
-    gs.landmarks[0].inventory.add("grain", 5000);
+    gs.landmarks[0].inventory.add("food", 5000);
     gs.landmarks[0].inventory.add("bread", 3200 * 4);   // сезоны впрок
     gs.landmarks[0].titheOwedCoin = 200;
     DepositLayer dep{};

@@ -95,8 +95,8 @@ constexpr ItemDef kCatalog[] = {
         "Mint metal", {}},
     {"gold",    "Gold Ore",        ItemType::Material, 12800, 4.00f, "\xF0\x9F\x9F\xA1",
         "Mint metal", {}},
-    {"grain",   "Grain",           ItemType::Material,    5, 1.00f, "\xF0\x9F\x8C\xBE",
-        "Raw grain, milled and baked into bread", {}},
+    {"food",    "Provisions",      ItemType::Material,    5, 1.00f, "\xF0\x9F\x8C\xBE",
+        "Raw provisions — grain from the field, meat from the hunt", {}},
     {"stone",   "Stone",           ItemType::Material,    5, 4.00f, "\xF0\x9F\xAA\xA8",
         "Quarried stone", {}},
     {"clay",    "Clay",            ItemType::Material,    5, 2.00f, "\xF0\x9F\xBA",
@@ -260,9 +260,9 @@ constexpr PartsAuthoringRow kPartsAuthoring[] = {
     // «1 добытчик кормит 32 душ» chain-wide) — pinned by econ_v1_test.
     {"potion_hp",   {{"mat_herb", 2}}, 1, 8},
     {"potion_mp",   {{"mat_herb", 2}}, 1, 8},
-    {"bread",       {{"grain", 1}}, 1, 32},
+    {"bread",       {{"food", 1}}, 1, 32},
     // The economy's goods — former kRecipes inputs AND tempos, verbatim.
-    {"cloth",       {{"grain", 2}}, 1, 4},
+    {"cloth",       {{"food", 2}}, 1, 4},
     {"bricks",      {{"clay", 1}}, 1, 8},
     {"tools",       {{"iron", 1}, {"wood", 1}}, 1, 2},
     {"furniture",   {{"wood", 2}}, 1, 2},
@@ -461,7 +461,7 @@ constexpr LootEntry kTreeLoot[] = {
 // kind's reference (sub/map_data.h yieldRefHeightM) — so an unripe stalk
 // honestly pays nothing.
 constexpr LootEntry kCropLoot[] = {
-    {"grain", 1.00f, 1, 1, 0},
+    {"food", 1.00f, 1, 1, 0},
 };
 
 // ── Unified loot registry ──────────────────────────────────────

@@ -102,10 +102,38 @@ int demand_for_(const char* itemId, int population, EconSite site,
 
 }  // namespace
 
+// НУЛЕВОГО СПРОСА НЕ БЫВАЕТ (владелец, 2026-09-18, дословно: «надо сделать,
+// чтобы не было нулевого спроса — все ресурсы имеют спрос, универсальная
+// система ресурсов; другой вопрос — большой или малый. И естественно спрос
+// падает, если на складе много, но это уже должно быть тот же закон, что с
+// ценой — единый»).
+//
+// ПОЧЕМУ ЭТО БЫЛО ДЕФЕКТОМ, И ЧИСЛОМ: спрос 0 у всего, что здесь не едят,
+// ронял цену такого товара на ПОЛ кривой дефицита (0.25 × базы), а по этой
+// цене аукцион артелей оценивает рейс. Поэтому деревня, СТОЯЩАЯ НА ЖЕЛЕЗЕ,
+// никогда его не копала: зерно, которое она ест, всегда било металл, которым
+// она не питается. Мир не добывал ни железа, ни серебра за 256 дней.
+//
+// ПОЛ СПРОСА ВЫВЕДЕН, А НЕ НАЗНАЧЕН: он равен самой СЛАБОЙ нужде лестницы
+// (у статуи 1 на 512 жителей-дней) — «то, что никому не нужно, нужно так же
+// редко, как самое редкое из нужного». Растёт лестница — двигается и пол;
+// новой константы не рождается. Дальше всё делает ОДНА уже живущая кривая:
+// склад полон — цена падает, склад пуст — растёт.
+constexpr int weakest_need_per_unit_day() {
+    int weakest = 1;
+    for (const NeedDef& n : kNeeds) {
+        if (n.popPerUnitDay > weakest) weakest = n.popPerUnitDay;
+    }
+    return weakest;
+}
+
 int daily_demand_for(const char* itemId, int population, EconSite site) {
     // Depth 4 covers chains far past today's one-step recipes (ore → metal
     // → part → tool) and caps any future accidental cycle.
-    return demand_for_(itemId, population, site, 4);
+    const int direct = demand_for_(itemId, population, site, 4);
+    if (population <= 0) return direct;
+    const int floorDemand = population / weakest_need_per_unit_day();
+    return direct > floorDemand ? direct : floorDemand;
 }
 
 

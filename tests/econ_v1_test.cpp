@@ -143,7 +143,7 @@ int main() {
     }
 
     // ── 2+3. Self-play: village gathers, city crafts, both eat ──────────
-    const int grainIdx = commodity_index("grain");
+    const int grainIdx = commodity_index("food");
     const int woodIdx = commodity_index("wood");
     const int clayIdx = commodity_index("clay");
     const int ironIdx = commodity_index("iron");
@@ -345,9 +345,9 @@ int main() {
     // both are made.
     {
         Inventory s{};
-        s.remove_of(commodity_item_index(commodity_index("grain")),
-                s.count_of(commodity_item_index(commodity_index("grain"))));
-        s.add_of(commodity_item_index(commodity_index("grain")), 1024);
+        s.remove_of(commodity_item_index(commodity_index("food")),
+                s.count_of(commodity_item_index(commodity_index("food"))));
+        s.add_of(commodity_item_index(commodity_index("food")), 1024);
         s.remove_of(commodity_item_index(commodity_index("clay")),
                       s.count_of(commodity_item_index(commodity_index("clay"))));
         s.add_of(commodity_item_index(commodity_index("clay")), 64);
@@ -450,7 +450,7 @@ int main() {
         Inventory village;
         seed_landmark_inventory(village, pop, EconSite::Village, empire,
                                 0x1234u);
-        if (village.count("grain") <= city.count("grain")) {
+        if (village.count("food") <= city.count("food")) {
             return fail("a village's whole business is raw - it holds more");
         }
         if (village.count("cloth") >= city.count("cloth")) {
@@ -552,7 +552,7 @@ int main() {
     // disturb what is not the economy's.
     {
         Inventory inv;
-        inv.add("grain", 100);
+        inv.add("food", 100);
         inv.add("potion_hp", 3);   // NOT a commodity — must ride untouched
         econ_produce_day(inv, EconSite::Village, /*workers*/4,
                          /*population*/40, nullptr, nullptr);
@@ -560,7 +560,7 @@ int main() {
         if (inv.count("potion_hp") != 3) {
             return fail("a day of economy disturbed what is not a commodity");
         }
-        if (inv.count("grain") > 100) {
+        if (inv.count("food") > 100) {
             return fail("consumption cannot create grain");
         }
     }
@@ -570,7 +570,7 @@ int main() {
     // world_tick_parity_test, which links settle_landmark_day).
     {
         Inventory ghost;
-        ghost.add("grain", 100);
+        ghost.add("food", 100);
         if (econ_produce_day(ghost, EconSite::City, /*workers*/0,
                              /*population*/0, nullptr, nullptr) != 0) {
             return fail("zero workers produced something");

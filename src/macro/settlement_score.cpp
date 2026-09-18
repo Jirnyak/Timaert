@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-#include "macro/biomes.h"          // kMountainBiomeLevel
+#include "macro/biomes.h"
 #include "macro/deposit_layer.h"
 #include "macro/features.h"        // FeatureLayer::wrap_coord
 #include "macro/map_generator.h"
@@ -102,10 +102,16 @@ SettlementSiteTerms settlement_site_terms(const SettlementSiteContext& ctx,
     const int wx = FeatureLayer::wrap_coord(x, td.width);
     const int wy = FeatureLayer::wrap_coord(y, td.height);
 
-    // Vetoes: nobody builds on water, inside a forest massif, or on the
-    // mountain rock (fields already refuse it; so does the town).
+    // Vetoes: nobody builds on water, and nobody inside a forest massif.
+    // ГОРНОЕ ВЕТО СНЕСЕНО (владелец, 2026-09-18: «почему не бывает горных
+    // деревень? убрать говнозапрет, откуда он вообще»). Оно и правда взялось
+    // ни из чего — из довода «поля отказываются от скалы, значит и город»,
+    // который верен для ПАШНИ и ложен для места: рудный посёлок стоит на
+    // скале именно потому, что под ней руда. Следствие было измеримым: весь
+    // металл мира лежит в горах (affinity MountainHeight), деревень в горах
+    // не бывало, и мир не добывал ни железа, ни серебра ВООБЩЕ. Гора теперь
+    // просто плохая земля — её отговаривает пашенный терм, а не запрет.
     if (td.is_water(wx, wy, ctx.seaLevel8)) return t;
-    if (float(td.height_at(wx, wy)) / 255.0f >= kMountainBiomeLevel) return t;
     if (ctx.w.trees && is_forest_cell(int(ctx.w.trees->at(wx, wy)))) return t;
 
     t.arable  = arable_term(ctx, wx, wy);
@@ -122,10 +128,10 @@ int settlement_site_score(const SettlementSiteContext& ctx,
     const int wx = FeatureLayer::wrap_coord(x, td.width);
     const int wy = FeatureLayer::wrap_coord(y, td.height);
 
-    // Vetoes: nobody builds on water, inside a forest massif, or on the
-    // mountain rock (fields already refuse it; so does the town).
+    // Vetoes: water and the inside of a forest massif. The mountain veto died
+    // 2026-09-18 (see settlement_site_terms above): гора — плохая земля, а не
+    // запретная.
     if (td.is_water(wx, wy, ctx.seaLevel8)) return -1;
-    if (float(td.height_at(wx, wy)) / 255.0f >= kMountainBiomeLevel) return -1;
     if (ctx.w.trees && is_forest_cell(int(ctx.w.trees->at(wx, wy)))) return -1;
 
     const SettlementSiteTerms t = settlement_site_terms(ctx, wx, wy);

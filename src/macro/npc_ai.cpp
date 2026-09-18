@@ -241,6 +241,34 @@ bool find_home_field(const TickContext& ctx, float px, float py,
     return found;
 }
 
+// ГДЕ ОХОТИТЬСЯ: лучшая по поголовью клетка своей округи. Зверь — природа на
+// КАЖДОЙ клетке (биом задаёт вместимость), поэтому это не поиск редкости, а
+// выбор лучшей из ближних — тот же бокс и тот же вид ответа, что у пашни.
+bool find_home_fauna(const TickContext& ctx, float px, float py,
+                     const XY& home, XY& out) {
+    bool found = false;
+    int bestStock = 0;
+    float best = 1e30f;
+    for (int dy = -kSettlementReach; dy <= kSettlementReach; ++dy) {
+        for (int dx = -kSettlementReach; dx <= kSettlementReach; ++dx) {
+            const int cx = int(home.x) + dx;
+            const int cy = int(home.y) + dy;
+            const int stock =
+                resource_field_read(ctx.mw, ResourceFieldId::Fauna, cx, cy);
+            if (stock <= 0) continue;   // выбито — здесь не охотятся
+            const float d = torus_dist_sq(px, py, float(cx), float(cy),
+                                          float(ctx.mapW), float(ctx.mapH));
+            if (stock > bestStock || (stock == bestStock && d < best)) {
+                bestStock = stock;
+                best = d;
+                out = {float(cx), float(cy)};
+                found = true;
+            }
+        }
+    }
+    return found;
+}
+
 bool at_target(const MacroPos& p, const ecs::MacroNpcRuntime& rt,
                const TickContext& ctx) {
     return torus_dist_sq(p.x, p.y, rt.targetX, rt.targetY,
@@ -768,21 +796,42 @@ enum class Worksite : std::uint8_t {
     ForestCell,   // nearest forest-class cell (the TreeGrid index)
     HomeField,    // the home's nearest FT_Field parcel
     Deposit,      // the home's nearest deposit cell of the row's kind
+    // ОХОТА: зверь живёт на КАЖДОЙ клетке (поле фауны — природа, не фича),
+    // поэтому «где охотиться» — это лучшая по поголовью клетка своей округи,
+    // а не поиск редкости. Рыба придёт третьим таким же источником.
+    HomeFauna,
 };
 
 struct GathererDef {
     ResourceFieldId row;        // what leaves the world
     const char*     commodity;  // what rides the bag and lands in the store
     Worksite        worksite;
+    // СКОЛЬКО ОДИН РАБОТНИК БЕРЁТ ЗА ДЕНЬ — темп ЭТОГО источника. Колонка
+    // появилась с ПИЩЕЙ (владелец, 2026-09-18: «просто сделать, что охота не
+    // такая выгодная по добыче, как поле»): один и тот же товар честно
+    // приходит из разных источников с разной отдачей, и это ЧИСЛО, а не
+    // ветка. Якорь мира — kGatherPerWorkerDay (S10, «добытчик кормит 32»).
+    int perWorkerDay;
 };
 
 constexpr GathererDef kGathererDefs[] = {
-    {ResourceFieldId::Wheat,  "grain",  Worksite::HomeField},
-    {ResourceFieldId::Silver, "silver", Worksite::Deposit},
-    {ResourceFieldId::Trees,  "wood",   Worksite::ForestCell},
-    {ResourceFieldId::Iron,   "iron",   Worksite::Deposit},
-    {ResourceFieldId::Stone,  "stone",  Worksite::Deposit},
-    {ResourceFieldId::Clay,   "clay",   Worksite::Deposit},
+    // ПИЩА из двух источников: пашня — полный якорь, охота — четверть его
+    // (зверь бегает, а колос стоит; число — крутилка дубль-прогона). Именно
+    // это кормит хутор на скале, где пашни нет, а зверь есть.
+    {ResourceFieldId::Wheat,  "food",   Worksite::HomeField,
+     kGatherPerWorkerDay},
+    {ResourceFieldId::Fauna,  "food",   Worksite::HomeFauna,
+     kGatherPerWorkerDay / 4},
+    {ResourceFieldId::Silver, "silver", Worksite::Deposit,
+     kGatherPerWorkerDay},
+    {ResourceFieldId::Trees,  "wood",   Worksite::ForestCell,
+     kGatherPerWorkerDay},
+    {ResourceFieldId::Iron,   "iron",   Worksite::Deposit,
+     kGatherPerWorkerDay},
+    {ResourceFieldId::Stone,  "stone",  Worksite::Deposit,
+     kGatherPerWorkerDay},
+    {ResourceFieldId::Clay,   "clay",   Worksite::Deposit,
+     kGatherPerWorkerDay},
 };
 constexpr int kGathererGoalCount =
     int(sizeof(kGathererDefs) / sizeof(kGathererDefs[0]));
@@ -955,6 +1004,8 @@ bool find_worksite(const GathererDef& def, const TickContext& ctx,
         }
         case Worksite::HomeField:
             return find_home_field(ctx, p.x, p.y, home, out);
+        case Worksite::HomeFauna:
+            return find_home_fauna(ctx, p.x, p.y, home, out);
         case Worksite::Deposit:
             return find_home_deposit(ctx, def.row, home, out);
     }
@@ -1186,8 +1237,13 @@ void ai_gatherer(entt::entity self, MacroPos& p,
             // taking identically, and the crew's advantage is its HANDS,
             // never a cheaper hand. A squad too spent for one goes home to
             // rest instead of working on an empty bar.
+            // ЦЕНА ЦИКЛА — ПО ТЕМПУ СВОЕГО ИСТОЧНИКА (S14.1: цена = бар /
+            // темп). Рука берёт один объект всегда (вердикт 2026-09-16), а
+            // различие источников живёт в ЦЕНЕ: пашня 32 в день, охота 8 —
+            // значит зверь стоит вчетверо дороже за единицу, и день охоты
+            // честно даёт вчетверо меньше пищи. Ни ветки, ни второго закона.
             const int cycleCost =
-                sp_price(int(pools.maxSp), kGatherPerWorkerDay);
+                sp_price(int(pools.maxSp), def->perWorkerDay);
             if (int(pools.sp) < cycleCost) {
                 rt.targetX = home.x;
                 rt.targetY = home.y;
@@ -1614,7 +1670,7 @@ void ai_caravan(entt::entity self, MacroPos& p,
         // arithmetic, №1) — a coinless town honestly sends goods to barter
         // with. Repaid whole, with proceeds, at Returning.
         {
-            const ItemDef* grain = item_def("grain");
+            const ItemDef* grain = item_def("food");
             const float kg =
                 grain && grain->weight > 0.0f ? grain->weight : 1.0f;
             const int unitsFit =
@@ -3580,7 +3636,12 @@ int squad_season_window(MacroWorld& mw, int day) {
 }
 
 // ── ОПИСЬ ОКРУГИ (контракт в npc_ai.h) ───────────────────────────────────
+// Счётчики прибора: почему живая клетка рода не попала в опись.
+static long gSurveyDry = 0, gSurveyNoRegion = 0, gSurveyInRegion = 0,
+            gSurveyNoOwner = 0;
+
 int survey_landmark_regions(MacroWorld& mw, int day) {
+    gSurveyDry = gSurveyNoRegion = gSurveyInRegion = gSurveyNoOwner = 0;
     if (!mw.gs || !mw.deposits) return 0;
     GameState& gs = *mw.gs;
     NavWorld* nv = mw.nav;
@@ -3614,16 +3675,19 @@ int survey_landmark_regions(MacroWorld& mw, int day) {
             mw.deposits->grid(DepositKind(deposit_kind_ordinal(row)));
         if (!cells.live()) continue;
         cells.for_each_live([&](std::uint32_t idx, std::int32_t amount) {
-            if (amount <= 0) return;
+            if (amount <= 0) { ++gSurveyDry; return; }
             const int x = cells.x_of(idx), y = cells.y_of(idx);
             const std::uint16_t r = nav_region_at(*nv, x, y);
-            if (r == kNavNoRegion) return;   // водяной карман — мостовой закон
+            if (r == kNavNoRegion) { ++gSurveyNoRegion; return; }
+            ++gSurveyInRegion;
             const std::uint32_t d = nv->distHome[nv->cell(x, y)];
             const std::uint16_t dist =
                 d > 0xFFFEu ? 0xFFFEu : std::uint16_t(d);
+            bool anyOwner = false;
             for (auto it = std::lower_bound(owners.begin(), owners.end(),
                                             std::make_pair(r, 0));
                  it != owners.end() && it->first == r; ++it) {
+                anyOwner = true;
                 SurveyRow& sr = gs.landmarks[std::size_t(it->second)]
                                     .survey.rows[std::size_t(f)];
                 if (!sr.none() && sr.dist <= dist) continue;
@@ -3631,7 +3695,38 @@ int survey_landmark_regions(MacroWorld& mw, int day) {
                 sr.y = std::int16_t(y);
                 sr.dist = dist;
             }
+            if (!anyOwner) ++gSurveyNoOwner;
         });
+    }
+    // ОТПЕЧАТОК ОПИСИ — прибор калибровки этого закона, как [deposits] у
+    // геологии: сколько мест ВИДИТ каждый род и на каком расстоянии лежит
+    // ближайшая жила. Без него «мир не добывает железо» остаётся догадкой.
+    {
+        int seen[std::size_t(ResourceFieldId::Count)] = {};
+        std::uint32_t nearest[std::size_t(ResourceFieldId::Count)];
+        for (auto& n : nearest) n = 0xFFFFu;
+        for (const Landmark& lm : gs.landmarks) {
+            for (int f = 0; f < int(ResourceFieldId::Count); ++f) {
+                const SurveyRow& sr = lm.survey.rows[std::size_t(f)];
+                if (sr.none()) continue;
+                ++seen[std::size_t(f)];
+                if (sr.dist < nearest[std::size_t(f)])
+                    nearest[std::size_t(f)] = sr.dist;
+            }
+        }
+        std::fprintf(stderr, "[survey] day=%d places=%zu", day,
+                     gs.landmarks.size());
+        for (int f = 0; f < int(ResourceFieldId::Count); ++f) {
+            if (!resource_row_is_vein(ResourceFieldId(f))) continue;
+            std::fprintf(stderr, " %s=%d/min%u",
+                         resource_field_def(ResourceFieldId(f)).id,
+                         seen[std::size_t(f)], nearest[std::size_t(f)]);
+        }
+        std::fprintf(stderr, "  | cells inRegion=%ld noRegion=%ld noOwner=%ld"
+                             " owners=%zu\n",
+                     gSurveyInRegion, gSurveyNoRegion, gSurveyNoOwner,
+                     owners.size());
+        std::fflush(stderr);
     }
     return int(gs.landmarks.size());
 }
@@ -3957,7 +4052,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     home.x, home.y, site.x, site.y,
                     float(ctx.mapW), float(ctx.mapH)));
                 const float score = float(unitPrice)
-                                    * float(kGatherPerWorkerDay)
+                                    * float(gd.perWorkerDay)
                                     / (1.0f + road)
                                     - fear_of(site);
                 if (score <= 0.0f) continue;

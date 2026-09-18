@@ -207,8 +207,8 @@ void test_the_farmer_works_the_field() {
                       .features = &features};
         tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle=*/true);
     }
-    const int grain = gs.landmarks[0].inventory.count("grain");
-    const int inBag = w.reg.get<ecs::NpcInventory>(e).inv.count("grain");
+    const int grain = gs.landmarks[0].inventory.count("food");
+    const int inBag = w.reg.get<ecs::NpcInventory>(e).inv.count("food");
     CHECK(grain > 0, "the farmer's grain reached the village store");
     // THE BATCH LAW THIS USED TO PIN IS GONE (owner, 2026-09-16). It read
     // `grain % kGatherPerCycle == 0` — "the haul arrives in whole cycle
@@ -284,7 +284,7 @@ void test_farmer_without_terrain_conjures_nothing() {
         MacroWorld mw{.gs = &gs, .world = &w, .features = &features};
         tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle=*/true);
     }
-    CHECK(gs.landmarks[0].inventory.count("grain") == 0,
+    CHECK(gs.landmarks[0].inventory.count("food") == 0,
           "no terrain wired: nothing to reap against, nothing conjured");
     CHECK(gs.resourceScarCells[std::size_t(sm::ResourceFieldId::Wheat)].liveCells == 0,
           "no terrain wired: no scar appears either");
@@ -429,7 +429,7 @@ void test_agent_memory_is_bounded_and_current() {
     CHECK(market_stock_class(snap, commodity_index("bread")) == 3
               && market_stock_class(snap, commodity_index("wood")) == 2
               && market_stock_class(snap, commodity_index("iron")) == 1
-              && market_stock_class(snap, commodity_index("grain")) == 0,
+              && market_stock_class(snap, commodity_index("food")) == 0,
           "the snapshot packs stock classes per commodity");
 }
 
@@ -458,7 +458,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
     vil.y = 10;
     vil.suzerainLandmarkId = 1;
     vil.population = 50;
-    vil.inventory.add("grain", 500);
+    vil.inventory.add("food", 500);
     vil.inventory.add("coin_timaert_copper", 50 * 2);
     gs.landmarks.push_back(vil);
 
@@ -498,7 +498,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
     }
 
     const auto& bag = reg.get<ecs::NpcInventory>(e).inv;
-    const int cityGrain = gs.landmarks[0].inventory.count("grain");
+    const int cityGrain = gs.landmarks[0].inventory.count("food");
     const int vilBread = gs.landmarks[1].inventory.count("bread");
     CHECK(cityGrain > 0,
           "the vendor sold the village surplus at the nearest city");
@@ -507,8 +507,8 @@ void test_the_vendor_sells_at_the_nearest_city() {
     CHECK(recall(reg.get<AgentMemory>(e),
                  AgentMemoryKind::MarketSnapshot, 3) != nullptr,
           "the departure snapshot of the vendor's OWN home lives in memory");
-    const int grainTotal = cityGrain + bag.count("grain")
-                           + gs.landmarks[1].inventory.count("grain");
+    const int grainTotal = cityGrain + bag.count("food")
+                           + gs.landmarks[1].inventory.count("food");
     const int breadTotal = vilBread + bag.count("bread")
                            + gs.landmarks[0].inventory.count("bread");
     CHECK(grainTotal == 500 && breadTotal == 2000,
