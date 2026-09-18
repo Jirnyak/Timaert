@@ -42,9 +42,19 @@ SavedSubworld snapshot_subworld(std::uint32_t seed, SubworldMode mode,
     out.seed = seed;
     out.mode = mode;
     out.heightmap.resize(src.heightmap.size());
-    // Heightmap range is [0, 2.5] now that mountain peaks may exceed 1.0
-    // (apply_mountain_ridges allows peak = macroH + 1.0). Quantise into
-    // 16-bit with that range so saved/restored peaks aren't truncated.
+    // The quantiser's ceiling: peaks legitimately exceed 1.0, so the 16-bit
+    // range has to cover more than the unit interval or a saved mountain
+    // comes back with its top sawn off.
+    //
+    // WHAT BOUNDS A PEAK TODAY (`apply_mountain_ridges`, which the derivation
+    // here used to name, has not existed for a long time): the crest target
+    // is clamped to 1.04 (base_generator.h skeleton_cell_peak01) and the
+    // ridge pass runs it through soft_compress_peak (base_generator.cpp),
+    // whose excess term saturates at +0.20 — so the live ceiling is 1.20.
+    // 2.5 is therefore ~2× headroom over it, deliberately loose because the
+    // cost of slack is quantiser resolution (2.5 / 65535 ≈ 4e-5 of the unit
+    // range, invisible) and the cost of tightness is a clipped summit.
+    // Number unchanged; only its derivation is now true.
     constexpr float kHmaxQuant = 2.5f;
     for (std::size_t i = 0; i < src.heightmap.size(); ++i) {
         float v = std::clamp(src.heightmap[i] / kHmaxQuant, 0.0f, 1.0f);

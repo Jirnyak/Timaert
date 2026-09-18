@@ -28,7 +28,6 @@
 //     through the registry (resource_field_apply → this grid).
 #pragma once
 #include <cstdint>
-#include <unordered_map>
 #include <vector>
 #include "macro/biomes.h"
 #include "macro/features.h"

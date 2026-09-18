@@ -291,8 +291,17 @@ constexpr ResourceFieldDef kResourceFields[] = {
     /* Fauna */ {"fauna", &fauna_baseline,
                  GrowthDomain::OwnScars, &fauna_growth_at,
                  ResourceFieldId::Fauna, nullptr, nullptr, 0},
-    // The forest reaches nobody YET: no gate asks "is there wood near".
-    // The day one does it is this 0 becoming kGathererReach, and nothing else.
+    // The forest reaches nobody: no gate asks «is there wood near» today.
+    // And the day one does, this 0 is NOT the whole of it — the promise that
+    // used to stand here («and nothing else») was false in two ways. Trees
+    // are a CARRIER row: their live state is the TreeLayer, so
+    // allocate_world_fields skips them and there is no ResourceGrid whose
+    // reach disc could be stamped; and that allocator passes a literal 0 for
+    // every scar row anyway, never reading this column. The reach a row
+    // actually gets asked about today is the vein rows', owned by the deposit
+    // layer (deposit_layer.cpp, kGathererReach). Teaching the forest the
+    // neighbourhood question means giving the carrier rows a reach field of
+    // their own — a build, not a flipped digit.
     /* Trees */ {"trees", nullptr,
                  GrowthDomain::CarrierGrid, &trees_growth_at,
                  ResourceFieldId::Trees, &trees_read, &trees_apply, 0},

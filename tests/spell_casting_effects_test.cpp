@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cstdint>
 #include <cstring>
+#include <cctype>
 
 namespace {
 
@@ -258,9 +259,53 @@ int main() {
     if (fireDef->rule != sm::SpellRuleId::None
         || fireDef->effects[0].row != 0
         || fireDef->dice.n != 30 || fireDef->dice.m != 1
-        || sm::spell_flavor_count(fireDef->pros) != 3
-        || std::strcmp(fireDef->pros[1], "Burning DOT") != 0) {
+        || sm::spell_flavor_count(fireDef->pros) < 1) {
         return fail("fireball effect/flavor metadata wrong");
+    }
+    // A FLAVOUR LINE MAY NOT PROMISE A MECHANIC THAT DOES NOT EXIST.
+    // This assertion used to pin the literal "Burning DOT" in fireball's
+    // pros — and that line sold the `statusEffect` column, which NOTHING but
+    // the tooltip reads: the word "burning" is printed and never applied. So
+    // the test was guarding the defect (testing law #7), and it reddened the
+    // day the lie was cut instead of the day it was told.
+    //
+    // What replaces it is the LAW, swept over the whole table: no pros/cons
+    // line of any spell may quote its own statusEffect word. The negative
+    // control is the sweep itself — it must have looked at rows with a
+    // status word to have proved anything.
+    {
+        int statusRowsSeen = 0, promises = 0;
+        for (const sm::SpellDef& d : sm::kSpellDefs) {
+            if (!d.statusEffect || d.statusEffect[0] == '\0') continue;
+            ++statusRowsSeen;
+            // Case-insensitive stem match: "burning" finds "Burning DOT".
+            const auto quotes_status = [&](const char* line) {
+                if (!line) return false;
+                for (const char* h = line; *h; ++h) {
+                    const char* a = h;
+                    const char* b = d.statusEffect;
+                    while (*b && std::tolower((unsigned char)*a)
+                                     == std::tolower((unsigned char)*b)) {
+                        ++a; ++b;
+                    }
+                    if (!*b) return true;
+                }
+                return false;
+            };
+            const int np = sm::spell_flavor_count(d.pros);
+            for (int i = 0; i < np; ++i)
+                if (quotes_status(d.pros[i])) ++promises;
+            const int nc = sm::spell_flavor_count(d.cons);
+            for (int i = 0; i < nc; ++i)
+                if (quotes_status(d.cons[i])) ++promises;
+        }
+        sm::test::check(statusRowsSeen > 0,
+                        "the statusEffect sweep must have rows to judge",
+                        "tests/spell_casting_effects_test.cpp", 0);
+        sm::test::check(promises == 0,
+                        "no spell flavour line may promise its UI-only "
+                        "statusEffect as a mechanic",
+                        "tests/spell_casting_effects_test.cpp", 0);
     }
     if (!armDef || armDef->rule != sm::SpellRuleId::None
         || armDef->effects[0].row != 0

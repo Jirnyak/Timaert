@@ -16,6 +16,7 @@
 #include <iterator>
 #include <string>
 #include <string_view>
+#include <unordered_map>   // catalog_map — the authoring-key index, this TU only
 
 namespace sm {
 

@@ -274,7 +274,7 @@ void generate_heightmap(std::vector<float>& out, int cellSize,
     const float invCS = 1.0f / float(cellSize);
 
     // ── Per-cell traits (TS parity) ──
-    // Mountain influence: 0.3 in mountain cells, 0.1 + 0.15·adjMtn elsewhere.
+    // Mountain influence: 0.15 in mountain cells, 0.1 + 0.1·adjMtn elsewhere.
     // Ridge weight: 1 in mountain cells, 0 elsewhere — drives apply_mountain_ridges.
     // Macro gradient: max 4-conn |Δh| in macro space — boosts relief at biome
     // boundaries (steep shores get rougher noise than flat plains).

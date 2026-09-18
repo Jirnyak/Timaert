@@ -10,6 +10,15 @@
 //
 // Integer arithmetic — combat laws are integer by law (CANON S13); the float
 // halving formula died here 2026-09-05.
+//
+// «9×9» ABOVE IS THE STATE OF THE CODE, NOT THE TARGET. Owner's verdict,
+// verbatim: «НЕТ! 8 типов уронов и 8 типов брони это на всю игру! ни больше
+// не меньше» (CANON S15/S26) — the aim is 8 (2³), reached by folding the
+// second sharp-physical type away. The ninth column standing here today is a
+// TRANSITIONAL state with a known save mine in it (ArmorSlash, bonus.h), and
+// it is an acknowledged debt, not the design. The symmetry «as many armour
+// types as damage types, one enum for both» is what is permanent; the number
+// on both sides of the × is not.
 #pragma once
 
 #include "core/dice.h"

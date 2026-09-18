@@ -226,9 +226,12 @@ namespace sm::sub
 
     // Relief uplift is derived from `nbBiome[9]` directly: mountain cells
     // (Biome::Mountain, elevation-classified) get a per-cell mountainScale of
-    // 0.3 and ridgeWeight 1; neighbours of mountain cells get a gradient
-    // 0.1 + 0.15 × adjMtn, all bilinearly blended. Features never affect
+    // 0.15 and ridgeWeight 1; neighbours of mountain cells get a gradient
+    // 0.1 + 0.1 × adjMtn, all bilinearly blended. Features never affect
     // height — they scatter on top (trees) or carve tiles (roads).
+    // (The 0.3 / 0.15 this used to quote were the numbers before the mountain
+    // seam was flattened, 2026-09-16 — and the far world mirrors these very
+    // columns, so a stale number here is a stale number on the horizon.)
 
     // Build a kCellSize² heightmap using neighbour-aware blending. `nbHeights`
     // is 9 macro heights in row-major order [NW, N, NE, W, C, E, SW, S, SE];

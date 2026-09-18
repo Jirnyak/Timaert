@@ -218,8 +218,11 @@ void generate_macro_world(const WorldGenOut& out, const WorldGenParams& p) {
     // Spires need the zone field (their placement law), so they are the one
     // landmark placed after generate_zones rather than in
     // populate_landmarks_from_politik (which cleared the list). One spire per
-    // registered spell; a load overwrites gs.spires from the save afterwards
-    // (boot_world_from_save), exactly like settlements.
+    // registered spell; a load replaces the whole roster (gs.landmarks) from
+    // the save afterwards (boot_world_from_save), spires with everything
+    // else. (There is no gs.spires and no gs.settlements: the three parallel
+    // vectors became ONE roster in v54, CANON S9 — this comment named them
+    // for a month after they stopped existing.)
     {
         generate_spires(gs, *out.zones, *out.terrain, sea8);
         // Ruins follow the same zone-field law (§42 Инк 5): the row, the

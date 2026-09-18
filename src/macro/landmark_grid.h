@@ -30,7 +30,7 @@ namespace sm {
 
 struct LandmarkRef {
     LandmarkType type = LandmarkType::None;
-    std::int32_t id = -1;   // the landmark's id within its kind; -1 = none
+    std::int32_t id = -1;   // WORLD-unique landmark ordinal (v54); -1 = none
 };
 
 struct LandmarkGrid {

@@ -30,7 +30,7 @@ namespace sm {
 // the grid only answers WHO — macro/landmark_grid.h).
 struct LandmarkFacts {
     LandmarkType type = LandmarkType::None;
-    int  id = -1;          // id within its kind's register; -1 = none
+    int  id = -1;          // WORLD-unique landmark ordinal (v54); -1 = none
     // POPULATION, for every kind (§42: this field used to carry a spire's
     // spell TIER instead — an overload that would have handed a tier-3
     // spire a crowd of three demons the day the population door opened).

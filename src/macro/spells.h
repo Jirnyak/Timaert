@@ -176,6 +176,17 @@ inline constexpr float kDefaultProjectileLifeS = 3.0f;
 // Pure data — no behaviour, no ownership, everything points at string
 // literals. tag == secondaryTag means the spell has ONE tag. pros/cons are
 // null-terminated within their fixed arrays (spell_flavor_count).
+//
+// A FLAVOUR LINE MAY ONLY PROMISE A MECHANIC THAT EXISTS. Three did not, and
+// were cut 2026-09-18: «Burning DOT» (fireball) and «Shock interrupts»
+// (lightning_chain) sold what the `statusEffect` column would do if anything
+// but the UI read it — nothing does, so the word "burning" is printed and
+// never applied; and «No friendly fire» (ice_shard) sold a faction shield
+// that is forbidden by design, not merely missing (AGENTS core invariants,
+// CANON S13: projectiles strike whoever stands in their path). `friendlyFire`
+// is the AoE-blast marker, and its false on this row means «no blast», never
+// «spares your own». A tooltip that oversells is a bug report the player
+// files against a feature we never built.
 struct SpellDef {
     // ── identity ──
     const char* id;
@@ -306,7 +317,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .description = "Hurls a ball of fire that explodes on impact, burning "
                        "everything in the blast radius - allies included. The "
                        "classic.",
-        .pros = {"Strong AoE damage", "Burning DOT", "Good at chokepoints"},
+        .pros = {"Strong AoE damage", "Good at chokepoints"},
         .cons = {"Friendly fire", "Long recovery", "Higher mana cost"},
     },
     {
@@ -331,8 +342,7 @@ inline constexpr SpellDef kSpellDefs[] = {
         .description = "A razor-sharp shard of magical ice that pierces flesh "
                        "and numbs the soul. Excellent against bosses and "
                        "elites - useless against a horde.",
-        .pros = {"High single-target burst", "Chill slows enemy",
-                 "No friendly fire"},
+        .pros = {"High single-target burst", "Chill slows enemy"},
         .cons = {"Single target only", "Recovery still matters",
                  "Weak vs crowds"},
     },
@@ -379,7 +389,7 @@ inline constexpr SpellDef kSpellDefs[] = {
                        "enemies, losing force with each jump. Brilliant "
                        "against scattered groups - unreliable when you need "
                        "precision.",
-        .pros = {"Hits up to 5 targets", "Shock interrupts", "Instant arc"},
+        .pros = {"Hits up to 5 targets", "Instant arc"},
         .cons = {"Unpredictable jumps", "Damage decays per jump", "High mana"},
     },
     {

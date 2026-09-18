@@ -17,7 +17,9 @@ namespace sm {
 
 struct LandmarkView {
     LandmarkType type;
-    int  id;          // unique within its kind (the collection's own id)
+    int  id;          // WORLD-unique landmark ordinal (v54: one roster, one
+                      // issuer — nextLandmarkOrdinal; «id within its kind»
+                      // died with the three-vector storage it described)
     int  x, y;
     const char* name; // display name; never null, may be ""
     int  population;  // 0 where the kind has none

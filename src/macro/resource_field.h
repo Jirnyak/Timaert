@@ -39,7 +39,6 @@
 #include "core/torus.h"   // wrapi — a field is indexed by the TORUS
 #include <cmath>
 #include <cstdint>
-#include <unordered_map>
 #include <vector>
 
 namespace sm {
