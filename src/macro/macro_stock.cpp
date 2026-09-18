@@ -149,12 +149,8 @@ void write_garrison(MacroWorld& w, MacroStockKey k, int delta) {
 // sparse scar rows (fauna, wheat) and carrier rows (trees — the dense grid
 // the map renders). Deposits join as carrier rows in Inc B.
 
-std::uint32_t field_cell_index(const MacroWorld& w, int x, int y) {
-    const int wx = FeatureLayer::wrap_coord(x, w.terrain->width);
-    const int wy = FeatureLayer::wrap_coord(y, w.terrain->height);
-    return std::uint32_t(wy) * std::uint32_t(w.terrain->width)
-         + std::uint32_t(wx);
-}
+// (field_cell_index умер 2026-09-18 вместе с хешем шрамов: поле индексирует
+// себя само — клетка спрашивается координатами, а не ключом.)
 
 // Wheat potential: the climate's fertility channel (master G — the same
 // number the field stamp scores cells by), scaled to stands per cell by

@@ -179,4 +179,19 @@ inline int market_stock_class(const MemoryEntry& e, int commodityIdx) {
     return (e.payload[commodityIdx >> 1] >> ((commodityIdx & 1) * 4)) & 0xF;
 }
 
+// The band's REPRESENTATIVE count — what a trader means when he says "they
+// were stocked". Derived from the very thresholds above (each band's own
+// midpoint, po2), so a remembered class can be priced by the same scarcity
+// law an exact count is (economy.h stock_price) instead of by a second,
+// coarser pricing dialect. A merchant who remembers a glut must be able to
+// PRICE that glut, or his memory cannot tell him what is worth hauling.
+inline int stock_class_supply(int cls) {
+    switch (cls) {
+        case 0:  return 0;       // none
+        case 1:  return 32;      // scarce  (1..63)
+        case 2:  return 512;     // stocked (64..1023)
+        default: return 4096;    // plenty  (1024+)
+    }
+}
+
 } // namespace sm

@@ -497,6 +497,12 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
             // The dungeon garrisons regrow by the fauna law (§42): one
             // soul per epoch while alive, wiped clean stays dead.
             regrow_dungeon_populations(*macro, day);
+            // ОПИСЬ ОКРУГИ КАЖДОГО МЕСТА (npc_ai.h, владелец 2026-09-18) —
+            // ПЕРЕД ротацией, потому что аукцион этой же границы читает её
+            // строки вместо поиска: место описывает свою нав-округу, артель
+            // только решает, куда идти. Один проход по живым клеткам родов
+            // раз в сезон вместо поиска на каждую артель в каждом аукционе.
+            if (season_boundary(day)) survey_landmark_regions(*macro, day);
             // The labour rotation (npc_ai.h): yesterday's crews dissolve
             // into the population, today's are raised to its size.
             rotate_worker_squads(*macro, day);

@@ -161,9 +161,18 @@ bool home_pos(const ecs::MacroNpcRuntime& rt, const TickContext& ctx, XY& out) {
 
 // The agent's HOME STORE — where a gatherer's haul lands. The same universal
 // Inventory the market sells from, resolved by the honest id.
+// THE home place of a crew — one resolver, because two readers now ask for
+// different parts of it (the store it delivers into, the ОПИСЬ ОКРУГИ it
+// reads its worksite from).
+Landmark* home_landmark(const ecs::MacroNpcRuntime& rt,
+                        const TickContext& ctx) {
+    return ctx.mw.gs ? landmark_by_id(*ctx.mw.gs, rt.homeSettlementId)
+                     : nullptr;
+}
+
 Inventory* home_inventory(const ecs::MacroNpcRuntime& rt,
                           const TickContext& ctx) {
-    Landmark* lm = landmark_by_id(*ctx.mw.gs, rt.homeSettlementId);
+    Landmark* lm = home_landmark(rt, ctx);
     return lm ? &lm->inventory : nullptr;
 }
 
@@ -812,6 +821,20 @@ static_assert(kNavHandReach == kGathererReach,
 // (bridgeOut = the water cell to span; untouched when the pick is dry).
 // Without a baked NavWorld (bare test fixtures) the pick degrades to the
 // nearest vein in the box by straight line — the pre-v72 behaviour.
+// The sustained march pace every plan walks by: kMacroWalkCellsPerHour × 24
+// game hours, halved because the automaton rests to half a bar between
+// marches (think_gate) — half the calendar walks, half sleeps.
+constexpr float kSustainedMarchCellsPerDay =
+    kMacroWalkCellsPerHour * 24.0f / 2.0f;
+
+// (Тут стояла ДАЛЬНОСТЬ ИЗ ЦЕНЫ РЕЙСА — попытка вывести границу поиска из
+// окупаемости. Она снята 2026-09-18 в тот же день: у драгоценной строки
+// окупаемость покрывает весь мир, и поиск на артель стал стоить миллион
+// чтений — сюита перестала отвечать. Границу заменил не другой радиус, а
+// КАРТА ОКРУГИ: место описывает свою округу раз в сезон, артель читает
+// строку, поиска в тике не остаётся. Урок метода: когда закон упирается в
+// цену ПОИСКА, снимать надо сам поиск, а не подпирать его радиусом.)
+
 bool find_home_deposit(const TickContext& ctx, ResourceFieldId row,
                        const XY& home, XY& out, XY* bridgeOut = nullptr) {
     if (!ctx.mw.deposits || ctx.mapW <= 0) return false;
@@ -829,18 +852,17 @@ bool find_home_deposit(const TickContext& ctx, ResourceFieldId row,
     XY dryAt{}, gapVein{}, gapCell{};
     bool haveDry = false, haveGap = false, haveNear = false;
     XY nearAt{};
-    // THE ERRAND IS A NEIGHBOURHOOD QUESTION, so it walks a neighbourhood.
-    // The box below is the same one the old scan filtered by — a vein outside
-    // the hands' reach was never this home's work — but finding the box used
-    // to mean walking every vein in the world (69 624 of stone) and throwing
-    // away 98 % of them. A field is indexed by the torus, so the box IS the
-    // loop: 33×33 reads, no candidates discarded, and the answer is the same
-    // one by construction (problems.md §52 is the same lesson, one door over).
-    for (int dy = -kNavHandReach; dy <= kNavHandReach; ++dy) {
-    for (int dx = -kNavHandReach; dx <= kNavHandReach; ++dx) {
+    // THE ERRAND IS A NEIGHBOURHOOD QUESTION, so it walks a neighbourhood: the
+    // hand's own box (kNavHandReach), which is all this door answers now —
+    // «где ближайшая жила моей округи» переехало в ОПИСЬ МЕСТА
+    // (survey_landmark_regions), и здесь остался ровно мостовой случай, жила
+    // за одним водным разрывом, которая по определению лежит вплотную. A field
+    // is indexed by the torus, so the box IS the loop: 33×33 reads, no
+    // candidate discarded (problems.md §52 is the same lesson, one door over).
+    const auto consider = [&](int dx, int dy) {
         const int x = wrapi(hx + dx, ctx.mapW);
         const int y = wrapi(hy + dy, ctx.mapH);
-        if (cells.at(x, y) == 0) continue;   // no vein standing here
+        if (cells.at(x, y) == 0) return;   // no vein standing here
         if (!navReady) {
             const float dsq = float(dx * dx + dy * dy);
             if (dsq < bestSq) {
@@ -848,21 +870,21 @@ bool find_home_deposit(const TickContext& ctx, ResourceFieldId row,
                 nearAt = XY{float(x), float(y)};
                 haveNear = true;
             }
-            continue;
+            return;
         }
-        const std::uint16_t r = nav_region_at(*nv, x, y);
-        if (r == myRegion) {
+        const std::uint16_t reg = nav_region_at(*nv, x, y);
+        if (reg == myRegion) {
             const std::uint32_t d = nv->distHome[nv->cell(x, y)];
             if (d < bestDry) {
                 bestDry = d;
                 dryAt = XY{float(x), float(y)};
                 haveDry = true;
             }
-            continue;
+            return;
         }
-        if (r != kNavNoRegion) continue;   // чужая округа — сосед возьмёт
+        if (reg != kNavNoRegion) return;   // чужая округа — сосед возьмёт
         // Жила в водяном кармане: мостовой закон — РОВНО ОДИН разрыв от
-        // моей округи (та же метка 2, что несла волна).
+        // моей округи (та же метка, что несла волна).
         for (int wy = -1; wy <= 1; ++wy) {
             for (int wx = -1; wx <= 1; ++wx) {
                 if (wx == 0 && wy == 0) continue;
@@ -888,7 +910,11 @@ bool find_home_deposit(const TickContext& ctx, ResourceFieldId row,
                 }
             }
         }
-    }
+    };
+    for (int dy = -kNavHandReach; dy <= kNavHandReach; ++dy) {
+        for (int dx = -kNavHandReach; dx <= kNavHandReach; ++dx) {
+            consider(dx, dy);
+        }
     }
     if (!navReady) {
         if (haveNear) out = nearAt;
@@ -995,10 +1021,27 @@ void ai_gatherer(entt::entity self, MacroPos& p,
             }
             XY site;
             XY gap{-1.0f, -1.0f};
-            const bool found =
-                def->worksite == Worksite::Deposit
-                    ? find_home_deposit(ctx, def->row, home, site, &gap)
-                    : find_worksite(*def, ctx, p, home, site);
+            bool found = false;
+            if (def->worksite == Worksite::Deposit) {
+                // СНАЧАЛА ОПИСЬ СВОЕЙ ОКРУГИ: место уже нашло — артель
+                // читает. Поиск остаётся ровно на МОСТОВОЙ случай (жила за
+                // одним водным разрывом), который по определению лежит
+                // вплотную к своей округе, поэтому ему честно хватает бокса
+                // руки.
+                if (const Landmark* homeLm = home_landmark(rt, ctx)) {
+                    const SurveyRow& sr =
+                        homeLm->survey.rows[std::size_t(def->row)];
+                    if (!sr.none()) {
+                        site = XY{float(sr.x), float(sr.y)};
+                        found = true;
+                    }
+                }
+                if (!found) {
+                    found = find_home_deposit(ctx, def->row, home, site, &gap);
+                }
+            } else {
+                found = find_worksite(*def, ctx, p, home, site);
+            }
             if (found && gap.x >= 0.0f) {
                 // The route needs its BRIDGE first (owner 2026-08-31): load
                 // a span's worth of whichever material the home store holds
@@ -1430,36 +1473,10 @@ const std::array<int, std::size_t(kCommodityCount)>& value_dense_order() {
     }();
     return kOrder;
 }
+// (caravan_buy_order — белый список закупки «нужды дома → входы рецептов» —
+// СНЕСЁН 2026-09-18 по вердикту владельца: купец берёт то, что выгоднее по
+// цене относительно стоимости, и список решал бы за него, что бывает товаром.)
 
-const std::array<int, std::size_t(kCommodityCount)>& caravan_buy_order() {
-    static const auto kOrder = [] {
-        std::array<int, std::size_t(kCommodityCount)> order{};
-        bool seen[std::size_t(kCommodityCount)] = {};
-        int n = 0;
-        const auto push = [&](int idx) {
-            if (idx >= 0 && idx < kCommodityCount && !seen[idx]) {
-                seen[idx] = true;
-                order[std::size_t(n++)] = idx;
-            }
-        };
-        for (int i = 0; i < kNeedCount; ++i) {
-            for (const RecipeDef& r : kRecipes) {
-                if (std::strcmp(r.output, kNeeds[i].commodity) != 0) continue;
-                // The recipe's matter = the output row's own composition
-                // (items.h item_parts, the one matter table); part defs are
-                // catalog ordinals, bridged back to commodity rows by id.
-                for (const ItemPart& part : item_parts(item_index(r.output))) {
-                    if (const ItemDef* d = item_def_at(int(part.def))) {
-                        push(commodity_index(d->id));
-                    }
-                }
-            }
-        }
-        for (int i = 0; i < kCommodityCount; ++i) push(i);
-        return order;
-    }();
-    return kOrder;
-}
 
 int haul_between(Inventory& from, Inventory& to, const char* id,
                  int maxUnits, float capacityLeftKg) {
@@ -3386,25 +3403,67 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
     // — the one stint of foresight a place is allowed; whatever the market
     // cannot supply leaves the rest of the purse to ride home, where the
     // tax graph will claim it (CANON S24).
+    // ── ЧТО КУПЕЦ ПОКУПАЕТ: ОДИН ЗАКОН, А НЕ СПИСОК ────────────────────
+    // Владелец, 2026-09-18: «почему корованы не могут покупать вообще всё
+    // что угодно — покупай дёшево, продавай дорого, просто смотреть, что им
+    // выгоднее всего купить по цене относительно стоимости?». Белый список
+    // «нужды дома → входы рецептов» (caravan_buy_order) был спецпутём той же
+    // породы, что монетные ворота: он решал за купца, ЧТО бывает товаром, и
+    // поэтому руда никогда им не была.
+    //
+    // Закон один и обе его половины уже живут в коде: товар стоит СТОЛЬКО,
+    // сколько за него дадут ДОМА (домашняя цена по классу памяти — та же
+    // scarcity-кривая), и стоит СТОЛЬКО, сколько просят ЗДЕСЬ. Выгода рейса
+    // = разница, а ранжирование — на КИЛОГРАММ, потому что дорога везёт вес,
+    // а не строки. Отсюда даром: домашние нужды выигрывают САМИ (голодный
+    // дом = дефицит = высокая домашняя цена, до ×4), затоваренное отсеивается
+    // САМО (×0.25), а серебро с горы становится товаром без единой строки
+    // «металл — это нужда».
     if (homeSnapshot) {
-        for (int oi = 0; oi < kCommodityCount; ++oi) {
-            const int i = caravan_buy_order()[std::size_t(oi)];
+        struct Lot { int i; float gainPerKg; int homeCap; };
+        Lot lots[std::size_t(kCommodityCount)];
+        int lotCount = 0;
+        for (int i = 0; i < kCommodityCount; ++i) {
             const char* id = kCommodities[i].id;
             const ItemDef* def = item_def(id);
             const int base = def ? def->value : 0;
             if (base <= 0) continue;
-            // Season-stock cap: home demand × a season, minus what the
-            // snapshot says already sits there (class → its band's floor is
-            // unknown, so the CLASS gates only "already plentiful": 3).
-            if (market_stock_class(*homeSnapshot, i) >= 3) continue;
-            const int homeNeed =
-                daily_demand_for(id, homePopulation, homeSite)
-                * kDaysPerSeason;
-            if (homeNeed <= 0) continue;
+            const int have = ms.count(id);
+            if (have <= 0) continue;
+            const int demand = daily_demand_for(id, market.population, site);
+            const int buyHere = trade_buy_price(
+                stock_price(base, have, demand), charisma, bargaining);
+            // Чего это стоит ДОМА: запас — по классу своей памяти, спрос —
+            // по своему населению и своему виду места.
+            const int homeSupply =
+                stock_class_supply(market_stock_class(*homeSnapshot, i));
+            const int homeDemand =
+                daily_demand_for(id, homePopulation, homeSite);
+            const int worthHome = stock_price(base, homeSupply, homeDemand);
+            if (worthHome <= buyHere) continue;   // рейс не окупает закупку
+            const float kg = def->weight > 0.0f ? def->weight : 1.0f;
+            // ПОТОЛОК СТРОКИ остаётся прежним законом предвидения (сезон
+            // домашней нужды), но он больше НЕ ворота: у товара, который дома
+            // никто не ест, потолок — только трюм и кошелёк.
+            const int seasonCap = homeDemand > 0
+                ? homeDemand * kDaysPerSeason : (1 << 20);
+            lots[std::size_t(lotCount++)] =
+                Lot{i, float(worthHome - buyHere) / kg, seasonCap};
+        }
+        // Выгоднейшее — первым: трюм и кошелёк конечны, и купец грузит их
+        // тем, что несёт больше всего ценности на килограмм.
+        std::sort(lots, lots + lotCount, [](const Lot& a, const Lot& b) {
+            return a.gainPerKg > b.gainPerKg;
+        });
+        for (int li = 0; li < lotCount; ++li) {
+            const int i = lots[li].i;
+            const char* id = kCommodities[i].id;
+            const ItemDef* def = item_def(id);
+            const int base = def->value;
             const int demand = daily_demand_for(id, market.population, site);
             const int have = ms.count(id);
             const float kg = def->weight > 0.0f ? def->weight : 1.0f;
-            int n = std::min({have, homeNeed,
+            int n = std::min({have, lots[li].homeCap,
                               int((capacityKg - inventory_weight(bag)) / kg)});
             if (n <= 0) continue;
             int price = stock_price(base, have - n, demand);
@@ -3430,12 +3489,6 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
 }
 
 // ── Squads eat (contract in npc_ai.h) ────────────────────────────────────
-// The sustained march pace provisioning plans by: kMacroWalkCellsPerHour ×
-// 24 game hours, halved because the automaton rests to half a bar between
-// marches (think_gate) — half the calendar walks, half sleeps.
-constexpr float kSustainedMarchCellsPerDay =
-    kMacroWalkCellsPerHour * 24.0f / 2.0f;
-
 int provision_squad(Inventory& store, Inventory& bag, int soldiers,
                     float roundtripCells, float freeCarryKg) {
     if (soldiers <= 0) return 0;   // the leader is a subject — he needs nothing
@@ -3524,6 +3577,63 @@ int squad_season_window(MacroWorld& mw, int day) {
         }
     }
     return deserted;
+}
+
+// ── ОПИСЬ ОКРУГИ (контракт в npc_ai.h) ───────────────────────────────────
+int survey_landmark_regions(MacroWorld& mw, int day) {
+    if (!mw.gs || !mw.deposits) return 0;
+    GameState& gs = *mw.gs;
+    NavWorld* nv = mw.nav;
+    const bool navReady = nv && nav_ensure(mw, *nv);
+    // Чистый лист: карта — ОТВЕТ на состояние мира, а не его память. Жила,
+    // выработанная за сезон, обязана из описи уйти.
+    for (Landmark& lm : gs.landmarks) {
+        lm.survey = LandmarkSurvey{};
+        lm.survey.day = day;
+    }
+    if (!navReady) return 0;   // без запечённой навигации «своей земли» нет
+    // Кто владеет какой округой: у одной округи законно бывает несколько
+    // мест — они делят землю и честно за неё конкурируют (вердикт владельца).
+    std::vector<std::pair<std::uint16_t, int>> owners;   // (округа, индекс)
+    owners.reserve(gs.landmarks.size());
+    for (std::size_t i = 0; i < gs.landmarks.size(); ++i) {
+        const Landmark& lm = gs.landmarks[i];
+        const std::uint16_t r = nav_region_at(*nv, lm.x, lm.y);
+        if (r != kNavNoRegion) owners.push_back({r, int(i)});
+    }
+    if (owners.empty()) return 0;
+    std::sort(owners.begin(), owners.end());
+    // Каждая живая клетка рода относит себя к своей округе — и находит там
+    // хозяев. Обход идёт ПО ПОЛЮ рода (for_each_live), потому что поле
+    // индексировано тором и знает свои живые клетки: миллион пустых клеток
+    // мира никто не читает.
+    for (int f = 0; f < int(ResourceFieldId::Count); ++f) {
+        const ResourceFieldId row = ResourceFieldId(f);
+        if (!resource_row_is_vein(row)) continue;   // у леса своя дверь
+        const ResourceGrid& cells =
+            mw.deposits->grid(DepositKind(deposit_kind_ordinal(row)));
+        if (!cells.live()) continue;
+        cells.for_each_live([&](std::uint32_t idx, std::int32_t amount) {
+            if (amount <= 0) return;
+            const int x = cells.x_of(idx), y = cells.y_of(idx);
+            const std::uint16_t r = nav_region_at(*nv, x, y);
+            if (r == kNavNoRegion) return;   // водяной карман — мостовой закон
+            const std::uint32_t d = nv->distHome[nv->cell(x, y)];
+            const std::uint16_t dist =
+                d > 0xFFFEu ? 0xFFFEu : std::uint16_t(d);
+            for (auto it = std::lower_bound(owners.begin(), owners.end(),
+                                            std::make_pair(r, 0));
+                 it != owners.end() && it->first == r; ++it) {
+                SurveyRow& sr = gs.landmarks[std::size_t(it->second)]
+                                    .survey.rows[std::size_t(f)];
+                if (!sr.none() && sr.dist <= dist) continue;
+                sr.x = std::int16_t(x);
+                sr.y = std::int16_t(y);
+                sr.dist = dist;
+            }
+        });
+    }
+    return int(gs.landmarks.size());
 }
 
 int squad_bags_hygiene_daily(MacroWorld& mw) {
@@ -3823,18 +3933,30 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             // одного работника (kGatherPerWorkerDay — сквозной якорь S10).
             for (int g = 0; g < kGathererGoalCount; ++g) {
                 const GathererDef& gd = kGathererDefs[g];
-                XY site;
-                if (!find_worksite(gd, ctx, homePos, home, site)) continue;
                 const ItemDef* idef = item_def(gd.commodity);
                 const int base = idef ? idef->value : 0;
                 if (base <= 0) continue;
                 const int have = s.inventory.count(gd.commodity);
                 const int demand =
                     daily_demand_for(gd.commodity, s.population, homeSite);
+                const int unitPrice = stock_price(base, have, demand);
+                // МЕСТО УЖЕ ИСКАЛО — артель ЧИТАЕТ (владелец, 2026-09-18).
+                // Жилы приходят строкой описи своей округи (survey_landmark_
+                // regions на границе сезона); у леса и домашнего поля свои
+                // дешёвые двери, и они остаются ими.
+                XY site;
+                if (gd.worksite == Worksite::Deposit) {
+                    const SurveyRow& sr =
+                        s.survey.rows[std::size_t(gd.row)];
+                    if (sr.none()) continue;   // в округе такого рода нет
+                    site = XY{float(sr.x), float(sr.y)};
+                } else if (!find_worksite(gd, ctx, homePos, home, site)) {
+                    continue;
+                }
                 const float road = std::sqrt(torus_dist_sq(
                     home.x, home.y, site.x, site.y,
                     float(ctx.mapW), float(ctx.mapH)));
-                const float score = float(stock_price(base, have, demand))
+                const float score = float(unitPrice)
                                     * float(kGatherPerWorkerDay)
                                     / (1.0f + road)
                                     - fear_of(site);

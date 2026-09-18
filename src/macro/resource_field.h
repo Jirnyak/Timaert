@@ -152,6 +152,22 @@ struct ResourceFieldDef {
 // The registry row (macro_stock.cpp owns the table).
 const ResourceFieldDef& resource_field_def(ResourceFieldId f);
 
+// IS THIS ROW A VEIN — one of the deposit layer's kinds? The deposit rows are
+// a contiguous block of this enum and the guard below keeps that a fact, so
+// the question is arithmetic and every consumer asks it the same way (the
+// survey of a place's округа, the growth walker, the crews).
+inline constexpr bool resource_row_is_vein(ResourceFieldId f) {
+    return std::uint8_t(f) >= std::uint8_t(ResourceFieldId::Clay)
+        && std::uint8_t(f) < std::uint8_t(ResourceFieldId::Count);
+}
+// The row → the deposit layer's kind, as its ORDINAL (valid exactly when the
+// row is a vein). An ordinal rather than the enum because DepositKind lives in
+// the layer that includes THIS header — the caller casts, and the guard beside
+// the block above is what makes the cast a fact rather than a hope.
+inline constexpr int deposit_kind_ordinal(ResourceFieldId f) {
+    return int(std::uint8_t(f) - std::uint8_t(ResourceFieldId::Clay));
+}
+
 // Give the world its own fields: the SCAR grid of every sparse-dialect row
 // (a carrier row's grid stays empty — its live state is its carrier) and the
 // ONE worked layer (CANON S5 «слой разработки — ОДНО поле на всё»). Called

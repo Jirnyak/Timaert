@@ -309,6 +309,17 @@ AIBehaviour effective_behaviour(entt::registry& reg, entt::entity e,
 // here through the very same loop. Returns souls deserted.
 int squad_season_window(MacroWorld& mw, int day);
 
+// ── ОПИСЬ ОКРУГИ: место ищет, артель читает (владелец, 2026-09-18) ───────
+// Один проход на границе сезона заполняет карту округи КАЖДОГО ландмарка
+// (state.h LandmarkSurvey): для каждого рода полей — ближайшая его клетка в
+// СВОЕЙ нав-округе и путевое расстояние до неё. После этого в тике не
+// остаётся ни одного поиска жилы: аукцион и артель читают строку.
+//
+// Стоимость — по ЖИВЫМ клеткам родов (их десятки тысяч, не миллион) × числу
+// ландмарков своей округи, раз в 32 дня; прежний закон стоил обход округи на
+// КАЖДУЮ артель в КАЖДОМ аукционе. Возвращает число описанных мест.
+int survey_landmark_regions(MacroWorld& mw, int day);
+
 // Daily bag hygiene — the auto-scrap half of the old daily feed loop (CANON
 // «Крафт/Скрап»: авто-скрап ИИ по порогу >50%; the player's bag is NEVER
 // touched — his scrap is a manual act). Returns stacks melted.
