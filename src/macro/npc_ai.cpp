@@ -3407,7 +3407,6 @@ CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
             n = max_affordable_lot_(base, have, demand, /*selling=*/false,
                                     inventory_value(hold), n);
             if (n <= 0) continue;
-            const int price = stock_price(base, have - n, demand);
             const int moved =
                 haul_between(ms, hold, id, n,
                              capacityKg - inventory_weight(hold));
