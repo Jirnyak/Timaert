@@ -15,9 +15,14 @@
 //     built. `road_centreline` runs a coarse A* whose step cost punishes grade
 //     quadratically, so switchbacks emerge rather than being authored.
 //
-// What is NOT here: any particular town's street PLAN. A radial-concentric
-// city, a spoked village and a grid camp are each their own module's content;
-// they all come back to `carve_organic_road` to actually cut the ground.
+// What is NOT here: any particular town's street PLAN. A town's streets GROW
+// (kit/lanes.h — branching from the tract and the market, dying on ground
+// another lane already serves), a spoked village and a grid camp are each
+// their own module's content; they all come back to `carve_organic_road` to
+// actually cut the ground. (This line used to name «a radial-concentric
+// city» as the example. No module has drawn one since the lane kit landed,
+// and the plan's own header advertised itself as live for as long — a dead
+// example in a live file reads as a live option.)
 #pragma once
 #include "sub/map_data.h"
 
