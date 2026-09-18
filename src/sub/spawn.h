@@ -427,19 +427,24 @@ void spawn_player_squad(ecs::World& w,
 //
 // Project every persistent macro NPC standing in the current 3×3 window into the
 // subworld as a real, full combat body — so the lords, bandits, and peasants who
-// roam the overworld are physically MET (and, via possession, taken over) where
-// they actually are. The macro NPC entity stays authoritative and untouched (the
-// macro tick is frozen while a subworld is active); each projection carries a
-// `MacroOrigin` backlink to its source so the reaper spares it and leave() (5e)
-// can land the player back on the right macro cell.
+// roam the overworld are physically MET (and, with the possession spell, worn)
+// where they actually are. The macro RECORD is authoritative and the projected
+// body is its MIRROR: each projection carries a `MacroOrigin` backlink through
+// which every lasting write — wounds, spends, loot — goes to the record
+// (sub/record.h), so the reaper spares it and leave() can land the player back
+// on the right macro cell. («Authoritative AND UNTOUCHED», which this said
+// until 2026-09-18, was the fold-up architecture the mirror law replaced.)
 //
 // A macro NPC is "in the window" when its integer cell is within ±1 of the
 // window centre (centerCx,centerCy) on the map torus (mapW×mapH) — the SAME nine
 // cells the seamless manager loads. Each projection mirrors the settlement-
-// citizen layout: NPCKind/faction and NpcCharacter copied verbatim, HP copied as
-// body-native persistent state, Combat DERIVED from a fresh universal
-// CharacterSheet, SubworldAi hostility keyed off NpcTypeDef.ai (Aggressive→fight,
-// else flee). Placement scatters within the cell's sub-region, dodging water.
+// citizen layout: NPCKind/faction and NpcCharacter copied verbatim, HP MIRRORED
+// from the record (not «body-native persistent state» — that was the wording
+// of the era when a body owned its bars; mirror_bodies_from_record re-pulls
+// them every tick top, and the record is where a wound actually lands), Combat
+// DERIVED from a fresh universal CharacterSheet, SubworldAi hostility keyed off
+// NpcTypeDef.ai (Aggressive→fight, else flee). Placement scatters within the
+// cell's sub-region, dodging water.
 //
 // A macro NPC IS a squad (ecs::SquadRoster doctrine): the entity itself is the
 // leader — projected as the TRACKED body — and every roster row is one unit of

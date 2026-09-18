@@ -853,18 +853,26 @@ void SubworldEngine::sync_macro_player_to_center() {
 // Health + BodyRadius + Combat + SubworldTag. Because its signature now matches
 // the combat/projectile views, hostiles melee it and spells strike it through
 // exactly the same universal paths as any NPC — no player special-case in the
-// sim. Its scalars are a transient projection of the macro-authoritative
-// player: sync_player_entity_position pulls Position + Health in at each tick
-// top, combat mutates Health in place, and reconcile_player_hp_to_macro pushes
-// the result back onto the squad Pools (which drives the death screen).
+// sim. Its bars are a MIRROR of the record the flag stands in
+// (sub/record.h): mirror_bodies_from_record re-pulls them at each tick top and
+// sync_player_entity_position carries the authoritative Position back onto the
+// scalars every legacy reader uses. There is no push-back pass, and that is
+// the point — a blow lands on the RECORD when it is struck, whichever body is
+// wearing the flag, so nothing has to remember to reconcile anything.
+// (`reconcile_player_hp_to_macro`, which this used to credit for the write-back,
+// died with the fold-up architecture the mirror law replaced; what survives is
+// report_player_damage, and it is FEEDBACK plus the one rule that dying inside
+// a body you wear is your own death.)
 // Lifecycle is explicit and symmetric — spawn_player_entity() on enter,
 // clear_player_entity() on leave — so exactly one PlayerTag entity is live while
 // a subworld is active and none survives into the macro world. (The player
 // carries SubworldTag, so the cell-crossing reapers that skip PlayerTag in
 // spawn.cpp keep it across seams, while the leave-time clear_subworld_entities
 // would also catch it; clear_player_entity remains the authoritative teardown.)
-// Outgoing player damage is still input-driven (tick_player_melee) and the
-// entity's Combat is inert until Inc 4c routes the player's own attacks here.
+// Outgoing player damage is input-driven (tick_player_melee), and it reads
+// THIS entity's Combat — the component is the swing, not an inert placeholder.
+// (It was inert only until Inc 4c wired it, which the comment twelve lines
+// below has described as done for as long as this line has denied it.)
 void SubworldEngine::clear_player_entity() {
     if (!ecs_) return;
     auto& reg = ecs_->reg;
@@ -921,9 +929,9 @@ void SubworldEngine::spawn_player_entity() {
     // body it is holding.
     if (flagRec != entt::null) reg.emplace<ecs::MacroOrigin>(e, flagRec);
     // Inc 4b: the player is a full combat participant, not an inert anchor.
-    //  - Pools mirror THE store — the squad entity's own block (landing 4);
-    //    sync_player_entity_position pulls it in at each tick top and
-    //    reconcile_player_hp_to_macro pushes the post-combat result back out.
+    //  - Pools MIRROR the record the flag stands in (sub/record.h);
+    //    mirror_bodies_from_record re-pulls the block at each tick top, and
+    //    nothing pushes it back — the blow already wrote the record.
     //  - SubworldTag puts the entity in the combat actor set so hostiles pick
     //    it as a melee/projectile target through the SAME paths as any NPC.
     //  - BodyRadius gives it a sane hit size (it has no SubworldAi/Sprite to
@@ -3195,9 +3203,9 @@ void SubworldEngine::resolve_subworld_deaths(bool drainAll) {
             const entt::entity e = dead[std::size_t(i)];
             if (!reg.valid(e)) continue;
             // The player is a combat entity but never a corpse: its death is a
-            // game-over routed through the macro scalar (reconcile_player_hp_to_macro
-            // drives currentHp to 0 -> AppState::Dead), not a loot/XP/removal
-            // event, and the entity is reset on the next subworld enter().
+            // game-over read off THE RECORD (report_player_damage — the record's
+            // hp at 0 -> AppState::Dead), not a loot/XP/removal event, and the
+            // entity is reset on the next subworld enter().
             if (reg.any_of<ecs::AvatarTag>(e)) continue;
             // The fall is HEARD (SfxId queue, 2026-09-09) — but only on the
             // fight tick: the drainAll sweeps (leave, teardown) settle books,

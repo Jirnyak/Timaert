@@ -249,14 +249,22 @@ struct MacroDebt {
     std::int32_t  detail = -1;
 };
 
-// Backlink from a PROJECTED subworld body to the persistent macro NPC entity it
-// mirrors (Inc 5d). A macro NPC standing in (or beside) the entered cell is
+// Backlink from a PROJECTED subworld body to the persistent macro record it
+// stands for. A macro NPC standing in (or beside) the entered cell is
 // projected into the 3×3 window as a full combat body so the player can meet —
-// and, via possession, take over — the very lords/bandits/peasants that roam the
-// overworld. The macro entity stays authoritative and untouched for the whole
-// session (the macro tick is frozen while a subworld is active); this handle is
-// how leave() (Inc 5e) maps the flagged body back to a macro cell on exit, and
-// how the reaper (clear_subworld_world_entities) knows to leave projections be.
+// and, with the possession spell, wear — the very lords/bandits/peasants that
+// roam the overworld.
+//
+// THIS HANDLE IS THE SEAM'S ONE DOOR (sub/record.h record_of / pools_of): the
+// record is AUTHORITATIVE and the body is its MIRROR, re-pulled every tick
+// top, so a wound or a spend written on the body evaporates a frame later and
+// must go to the record instead. The line that stood here — «the macro entity
+// stays authoritative and untouched for the whole session» — was true of the
+// fold-up architecture that preceded the mirror and false after it: untouched
+// is exactly what the record is not.
+//
+// Also how leave() maps the flagged body back to a macro cell on exit, and how
+// the reaper (clear_subworld_world_entities) knows to leave projections be.
 // Runtime-only: never serialized, so it does not bump kSaveVersion.
 struct MacroOrigin { entt::entity macro; };
 

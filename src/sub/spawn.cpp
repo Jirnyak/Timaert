@@ -1428,9 +1428,11 @@ int project_macro_npcs_into_subworld(ecs::World& w,
     // this door again for the freshly-entered cells — before, projection ran
     // ONCE at enter() while the window reaper honestly despawned any lord
     // whose cell slid out, so stepping one cell away lost him until a full
-    // leave/enter. His wounds are safe across that despawn: the per-tick
-    // write-back (reconcile_tracked_bodies_to_macro) has already paid the
-    // fraction up before any reap can run.
+    // leave/enter. His wounds are safe across that despawn, and no write-back
+    // pass is what makes them safe: the blow landed on the RECORD when it was
+    // struck (sub/record.h), and the body was only ever a mirror of it. (The
+    // per-tick `reconcile_tracked_bodies_to_macro` this used to credit died
+    // with the fold-up architecture; the mirror law left nothing to pay up.)
     std::vector<entt::entity> alreadyProjected;
     for (auto [body, origin] :
          reg.view<ecs::MacroOrigin, ecs::SubworldTag>().each()) {
