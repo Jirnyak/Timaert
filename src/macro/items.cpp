@@ -37,29 +37,29 @@ constexpr ItemDef kCatalog[] = {
     // WHO trades in which family is the faction registry's mint columns.
     // A coin's only edge over any other good is arithmetic: minimal weight
     // at maximal value, so value-dense payment reaches for it first.
-    {"coin_empire_copper",  "Copper Crown",  ItemType::Misc,   1, 0.01f, "\xF0\x9F\xAA\x99",
+    {"coin_empire_copper",  "Copper Crown",  ItemType::Goods,   1, 0.01f, "\xF0\x9F\xAA\x99",
         "Copper coin of the Empire of Light", {}},
-    {"coin_empire_silver",  "Silver Crown",  ItemType::Misc,  10, 0.01f, "\xF0\x9F\xAA\x99",
+    {"coin_empire_silver",  "Silver Crown",  ItemType::Goods,  10, 0.01f, "\xF0\x9F\xAA\x99",
         "Silver coin of the Empire of Light", {}},
-    {"coin_empire_gold",    "Gold Crown",    ItemType::Misc, 100, 0.01f, "\xF0\x9F\xAA\x99",
+    {"coin_empire_gold",    "Gold Crown",    ItemType::Goods, 100, 0.01f, "\xF0\x9F\xAA\x99",
         "Gold coin of the Empire of Light", {}},
-    {"coin_magika_copper",  "Copper Sigil",  ItemType::Misc,   1, 0.01f, "\xF0\x9F\xAA\x99",
+    {"coin_magika_copper",  "Copper Sigil",  ItemType::Goods,   1, 0.01f, "\xF0\x9F\xAA\x99",
         "Copper coin of the Magika realms", {}},
-    {"coin_magika_silver",  "Silver Sigil",  ItemType::Misc,  10, 0.01f, "\xF0\x9F\xAA\x99",
+    {"coin_magika_silver",  "Silver Sigil",  ItemType::Goods,  10, 0.01f, "\xF0\x9F\xAA\x99",
         "Silver coin of the Magika realms", {}},
-    {"coin_magika_gold",    "Gold Sigil",    ItemType::Misc, 100, 0.01f, "\xF0\x9F\xAA\x99",
+    {"coin_magika_gold",    "Gold Sigil",    ItemType::Goods, 100, 0.01f, "\xF0\x9F\xAA\x99",
         "Gold coin of the Magika realms", {}},
-    {"coin_timaert_copper", "Copper Mark",   ItemType::Misc,   1, 0.01f, "\xF0\x9F\xAA\x99",
+    {"coin_timaert_copper", "Copper Mark",   ItemType::Goods,   1, 0.01f, "\xF0\x9F\xAA\x99",
         "Copper coin of the Republic of Timaert", {}},
-    {"coin_timaert_silver", "Silver Mark",   ItemType::Misc,  10, 0.01f, "\xF0\x9F\xAA\x99",
+    {"coin_timaert_silver", "Silver Mark",   ItemType::Goods,  10, 0.01f, "\xF0\x9F\xAA\x99",
         "Silver coin of the Republic of Timaert", {}},
-    {"coin_timaert_gold",   "Gold Mark",     ItemType::Misc, 100, 0.01f, "\xF0\x9F\xAA\x99",
+    {"coin_timaert_gold",   "Gold Mark",     ItemType::Goods, 100, 0.01f, "\xF0\x9F\xAA\x99",
         "Gold coin of the Republic of Timaert", {}},
-    {"coin_barbar_copper",  "Copper Ring",   ItemType::Misc,   1, 0.01f, "\xF0\x9F\xAA\x99",
+    {"coin_barbar_copper",  "Copper Ring",   ItemType::Goods,   1, 0.01f, "\xF0\x9F\xAA\x99",
         "Copper ring-money of the northern kingdoms", {}},
-    {"coin_barbar_silver",  "Silver Ring",   ItemType::Misc,  10, 0.01f, "\xF0\x9F\xAA\x99",
+    {"coin_barbar_silver",  "Silver Ring",   ItemType::Goods,  10, 0.01f, "\xF0\x9F\xAA\x99",
         "Silver ring-money of the northern kingdoms", {}},
-    {"coin_barbar_gold",    "Gold Ring",     ItemType::Misc, 100, 0.01f, "\xF0\x9F\xAA\x99",
+    {"coin_barbar_gold",    "Gold Ring",     ItemType::Goods, 100, 0.01f, "\xF0\x9F\xAA\x99",
         "Gold ring-money of the northern kingdoms", {}},
 
     // Consumables
@@ -102,21 +102,21 @@ constexpr ItemDef kCatalog[] = {
         "Quarried stone", {}},
     {"clay",    "Clay",            ItemType::Material,    5, 2.00f, "\xF0\x9F\xBA",
         "River clay for bricks", {}},
-    {"cloth",   "Cloth",           ItemType::Misc,       20, 1.00f, "\xF0\x9F\xA7\xB6",
+    {"cloth",   "Cloth",           ItemType::Goods,       20, 1.00f, "\xF0\x9F\xA7\xB6",
         "Woven clothing", {}},
-    {"bricks",  "Bricks",          ItemType::Misc,       10, 4.00f, "\xF0\x9F\xA7\xB1",
+    {"bricks",  "Bricks",          ItemType::Goods,       10, 4.00f, "\xF0\x9F\xA7\xB1",
         "Fired bricks for housing", {}},
-    {"tools",   "Tools",           ItemType::Misc,       40, 2.00f, "\xF0\x9F\x94\xA8",
+    {"tools",   "Tools",           ItemType::Goods,       40, 2.00f, "\xF0\x9F\x94\xA8",
         "Iron tools of the trades", {}},
-    {"furniture","Furniture",      ItemType::Misc,       40, 8.00f, "\xF0\x9F\xAA\x91",
+    {"furniture","Furniture",      ItemType::Goods,       40, 8.00f, "\xF0\x9F\xAA\x91",
         "Carpented furniture", {}},
-    {"wagon",   "Wagon",           ItemType::Misc,       80, 32.00f, "\xF0\x9F\x9B\x9E",
+    {"wagon",   "Wagon",           ItemType::Goods,       80, 32.00f, "\xF0\x9F\x9B\x9E",
         "A cart for hauling goods", {}},
-    {"jewelry", "Jewelry",         ItemType::Misc,      160, 1.00f, "\xF0\x9F\x92\x8D",
+    {"jewelry", "Jewelry",         ItemType::Goods,      160, 1.00f, "\xF0\x9F\x92\x8D",
         "Fine ornaments", {}},
-    {"carving", "Carving",         ItemType::Misc,       80, 2.00f, "\xF0\x9F\xAA\x86",
+    {"carving", "Carving",         ItemType::Goods,       80, 2.00f, "\xF0\x9F\xAA\x86",
         "Ornamental woodwork", {}},
-    {"statue",  "Statue",          ItemType::Misc,      320, 64.00f, "\xF0\x9F\x97\xBF",
+    {"statue",  "Statue",          ItemType::Goods,      320, 64.00f, "\xF0\x9F\x97\xBF",
         "A sculpted stone statue", {}},
     {"mat_bone",    "Bone",            ItemType::Material,    6, 0.50f, "\xF0\x9F\xA6\xB4",
         "Crafting material from monsters", {}},
@@ -610,7 +610,10 @@ static_assert(every_npc_loot_id_resolves(),
 // whatever the flail row says — new weapons join the affix system by
 // existing). No skill column means Unarmed, the same fallback the strike
 // law already answers for a swung sack of grain.
-inline constexpr int kItemTypeCount = 6;   // ItemType Weapon..Misc
+// Сколько категорий вещи знает мир — по enum'у, а не литералом: строка
+// аффикса обязана высказаться о КАЖДОЙ, и молчаливый ноль здесь означал бы
+// «этой категории аффиксы не достаются», сказанное не вслух.
+inline constexpr int kItemTypeCount = int(ItemType::Goods) + 1;
 
 struct AffixDef {
     const char*  key;
@@ -618,7 +621,9 @@ struct AffixDef {
     std::uint8_t bonusRow;      // BonusId ordinal; 0 = the item's own skill
     std::uint8_t step;          // bonus points per rolled unit
     std::uint8_t pricePerUnit;  // value_of's column (coin per rolled unit)
-    // Pick weight per ItemType: Weapon, Armor, Potion, Food, Material, Misc.
+    // Pick weight per ItemType: Weapon, Armor, Potion, Food, Material,
+    // Misc, Goods (товары наследуют вес Misc — они и лежали там до
+    // 2026-09-18, так что раскладка лута не сдвинулась ни на единицу).
     // The middle three never reach the door (slotMask 0 refuses them), their
     // 1s just keep the no-zero law honest if a wearable potion ever exists.
     std::uint8_t weight[kItemTypeCount];
@@ -626,32 +631,32 @@ struct AffixDef {
 
 constexpr AffixDef kAffixDefs[] = {
     // ── attributes: at home anywhere, fondest of jewelry ──────────────────
-    {"of_strength",  "of Strength",  std::uint8_t(BonusId::Str),  1, 25, {6, 6, 1, 1, 1, 8}},
-    {"of_endurance", "of Endurance", std::uint8_t(BonusId::End),  1, 25, {6, 6, 1, 1, 1, 8}},
-    {"of_will",      "of Will",      std::uint8_t(BonusId::Wil),  1, 25, {6, 6, 1, 1, 1, 8}},
-    {"of_intellect", "of Intellect", std::uint8_t(BonusId::Intl), 1, 25, {6, 6, 1, 1, 1, 8}},
-    {"of_wisdom",    "of Wisdom",    std::uint8_t(BonusId::Wis),  1, 25, {6, 6, 1, 1, 1, 8}},
-    {"of_luck",      "of Luck",      std::uint8_t(BonusId::Lck),  1, 25, {6, 6, 1, 1, 1, 8}},
-    {"of_charisma",  "of Charisma",  std::uint8_t(BonusId::Cha),  1, 25, {6, 6, 1, 1, 1, 8}},
-    {"of_speed",     "of Speed",     std::uint8_t(BonusId::Spd),  1, 25, {6, 6, 1, 1, 1, 8}},
+    {"of_strength",  "of Strength",  std::uint8_t(BonusId::Str),  1, 25, {6, 6, 1, 1, 1, 8, 8}},
+    {"of_endurance", "of Endurance", std::uint8_t(BonusId::End),  1, 25, {6, 6, 1, 1, 1, 8, 8}},
+    {"of_will",      "of Will",      std::uint8_t(BonusId::Wil),  1, 25, {6, 6, 1, 1, 1, 8, 8}},
+    {"of_intellect", "of Intellect", std::uint8_t(BonusId::Intl), 1, 25, {6, 6, 1, 1, 1, 8, 8}},
+    {"of_wisdom",    "of Wisdom",    std::uint8_t(BonusId::Wis),  1, 25, {6, 6, 1, 1, 1, 8, 8}},
+    {"of_luck",      "of Luck",      std::uint8_t(BonusId::Lck),  1, 25, {6, 6, 1, 1, 1, 8, 8}},
+    {"of_charisma",  "of Charisma",  std::uint8_t(BonusId::Cha),  1, 25, {6, 6, 1, 1, 1, 8, 8}},
+    {"of_speed",     "of Speed",     std::uint8_t(BonusId::Spd),  1, 25, {6, 6, 1, 1, 1, 8, 8}},
     // ── the class row: the item's own skill ───────────────────────────────
-    {"of_mastery",   "of Mastery",   0,                           1, 15, {8, 1, 1, 1, 1, 1}},
+    {"of_mastery",   "of Mastery",   0,                           1, 15, {8, 1, 1, 1, 1, 1, 1}},
     // ── armour columns: the physical three at home on armour ──────────────
-    {"of_slash_warding",  "of Slash Warding",  std::uint8_t(BonusId::ArmorSlash),  1, 10, {1, 6, 1, 1, 1, 2}},
-    {"of_pierce_warding", "of Pierce Warding", std::uint8_t(BonusId::ArmorPierce), 1, 10, {1, 6, 1, 1, 1, 2}},
-    {"of_blunt_warding",  "of Blunt Warding",  std::uint8_t(BonusId::ArmorBlunt),  1, 10, {1, 6, 1, 1, 1, 2}},
+    {"of_slash_warding",  "of Slash Warding",  std::uint8_t(BonusId::ArmorSlash),  1, 10, {1, 6, 1, 1, 1, 2, 2}},
+    {"of_pierce_warding", "of Pierce Warding", std::uint8_t(BonusId::ArmorPierce), 1, 10, {1, 6, 1, 1, 1, 2, 2}},
+    {"of_blunt_warding",  "of Blunt Warding",  std::uint8_t(BonusId::ArmorBlunt),  1, 10, {1, 6, 1, 1, 1, 2, 2}},
     // ...and the elemental six, rarer everywhere (the schools' wards)
-    {"of_fire_warding",   "of Fire Warding",   std::uint8_t(BonusId::ArmorFire),   1, 10, {1, 3, 1, 1, 1, 3}},
-    {"of_water_warding",  "of Water Warding",  std::uint8_t(BonusId::ArmorWater),  1, 10, {1, 3, 1, 1, 1, 3}},
-    {"of_air_warding",    "of Air Warding",    std::uint8_t(BonusId::ArmorAir),    1, 10, {1, 3, 1, 1, 1, 3}},
-    {"of_earth_warding",  "of Earth Warding",  std::uint8_t(BonusId::ArmorEarth),  1, 10, {1, 3, 1, 1, 1, 3}},
-    {"of_arcane_warding", "of Arcane Warding", std::uint8_t(BonusId::ArmorArcane), 1, 10, {1, 3, 1, 1, 1, 3}},
-    {"of_void_warding",   "of Void Warding",   std::uint8_t(BonusId::ArmorVoid),   1, 10, {1, 3, 1, 1, 1, 3}},
+    {"of_fire_warding",   "of Fire Warding",   std::uint8_t(BonusId::ArmorFire),   1, 10, {1, 3, 1, 1, 1, 3, 3}},
+    {"of_water_warding",  "of Water Warding",  std::uint8_t(BonusId::ArmorWater),  1, 10, {1, 3, 1, 1, 1, 3, 3}},
+    {"of_air_warding",    "of Air Warding",    std::uint8_t(BonusId::ArmorAir),    1, 10, {1, 3, 1, 1, 1, 3, 3}},
+    {"of_earth_warding",  "of Earth Warding",  std::uint8_t(BonusId::ArmorEarth),  1, 10, {1, 3, 1, 1, 1, 3, 3}},
+    {"of_arcane_warding", "of Arcane Warding", std::uint8_t(BonusId::ArmorArcane), 1, 10, {1, 3, 1, 1, 1, 3, 3}},
+    {"of_void_warding",   "of Void Warding",   std::uint8_t(BonusId::ArmorVoid),   1, 10, {1, 3, 1, 1, 1, 3, 3}},
     // ── the derived outputs ───────────────────────────────────────────────
-    {"of_wounding",  "of Wounding",  std::uint8_t(BonusId::DmgFlat),  1, 20, {8, 1, 1, 1, 1, 1}},
-    {"of_quickness", "of Quickness", std::uint8_t(BonusId::SwingPct), 5,  8, {4, 1, 1, 1, 1, 2}},
-    {"of_the_wind",  "of the Wind",  std::uint8_t(BonusId::MovePct),  5,  8, {1, 3, 1, 1, 1, 4}},
-    {"of_the_mule",  "of the Mule",  std::uint8_t(BonusId::CarryKg),  5,  3, {1, 4, 1, 1, 1, 3}},
+    {"of_wounding",  "of Wounding",  std::uint8_t(BonusId::DmgFlat),  1, 20, {8, 1, 1, 1, 1, 1, 1}},
+    {"of_quickness", "of Quickness", std::uint8_t(BonusId::SwingPct), 5,  8, {4, 1, 1, 1, 1, 2, 2}},
+    {"of_the_wind",  "of the Wind",  std::uint8_t(BonusId::MovePct),  5,  8, {1, 3, 1, 1, 1, 4, 4}},
+    {"of_the_mule",  "of the Mule",  std::uint8_t(BonusId::CarryKg),  5,  3, {1, 4, 1, 1, 1, 3, 3}},
 };
 
 // The class row's resolution: a SkillId to its rank's bonus ordinal, through
