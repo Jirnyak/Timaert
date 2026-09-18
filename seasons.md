@@ -88,6 +88,24 @@ periodic and total over non-positive days, and the offset ordering. Latest run:
 `OK seasons_test: 4x32-day year from day 1=Spring, pure+periodic, wraps
 non-positive days, offsets summer>spring(0)>=autumn>winter (year=128 days)`.
 
+## The season BOUNDARY — the world's one window (2026-09-17, CANON S19.2)
+
+The owner's ruling made the season the rhythm of GLOBAL CHANGE: «сезоны
+окончательно оформятся по смыслу — ИЗМЕНЕНИЯ ГЛОБАЛЬНЫЕ МИРА». On the
+boundary day (`season_boundary(day)`, day % 32 == 1 — day 1 is the first)
+the world settles EVERYTHING at once, and canon explicitly licenses a
+loading-screen-grade recompute there («можно бесплатно все алгосы даже
+сложнее O(N)»): every landmark's food for the season ahead, every
+garrison's board and pay, every squad's board and pay (the player's too —
+«игрок == нпц»), the tithe charge, and the landmarks' court over their
+perpetual crews. The per-ordinal payment smear is history («ДА, УМИРАЕТ»).
+Details and laws: CANON S19.2, [economy.md](economy.md) «The day».
+
+The CLIMATE half of the same session's verdicts — temperature as a stored
+int8 scalar field rebaked at the boundary, живая фертильность = f(T, M),
+snow as a field with memory, emergent ice below freezing — is CANON S19.1,
+designed and NOT yet built (increments 2+ of the seasons track).
+
 ## Seasons & Weather — the system to be (owner's vision, 2026-08-13)
 
 > Recorded ahead of its own track: «сезонность — это не ресурсы, а отдельная

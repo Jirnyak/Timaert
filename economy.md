@@ -87,12 +87,32 @@ a living edge; a valley emptied whole is extinct) — see
   the flat `kCaravanCapacityKg = 256` constant is dead, and the overload law
   prices the same number. Rob him and the cargo is yours.
 
-## The day
+## The day — and THE SEASON BOUNDARY (2026-09-17, CANON S19.2)
 
 Once a game day (`world_tick`): the city crafts — today's table first
-(needs-ladder demand), then fair shares — everyone eats down the ladder,
-and ONE continuous wellbeing (fed fraction × comfort) drives both the MOOD
-band and the population law: dP = r·P·drive, r quoted per season. There is
+(needs-ladder demand), then fair shares. But the BALANCES left the day:
+every economic debit lands on the SEASON BOUNDARY (day % 32 == 1), one
+global window, a season ahead — «все эконом соц списания балансы по
+сезонам, и город и армия». On the boundary: the landmark eats a season
+down the ladder (`econ_consume_season` — each need covered WHOLE or not
+debited at all; an uncovered season is a hungry season), the garrison eats
+and is PAID (both needs ×32, either miss = 1/8 of the roster once, wages
+burn into the loot pool BY VALUE — `pay_value_dense`, coins first by
+value/kg arithmetic, in kind when the purse is dry), the tithe is charged,
+the landmark judges its crew count (perpetual crews: raise on shortfall
+with a season of содержание as the condition of creation, dissolve the
+first returner on excess), and every squad with a roster — the player's
+included — settles board and pay out of its own bag through the ONE window
+(`squad_season_window`; peasants earn only their bread — «крестьяне просто
+за еду работают», wage rows 0). Between boundaries nobody eats as a
+balance: the season was paid for in advance. The seed larder is therefore
+a SEASON of bread (a place seeded thinner dies of arithmetic at its first
+window), and the sell-run's surplus is measured over the SEASON's need —
+a winter store is not a tradeable glut.
+
+ONE continuous wellbeing (fed fraction × comfort), parked on the landmark
+by the boundary window (`seasonWellbeing`), drives both the MOOD
+band and the population law daily: dP = r·P·drive, r quoted per season. There is
 **no K and no floor** (both crutches are dead): CANON S25 assigns no
 population ceiling — supply is the only cap (the old kPopCarryingCap =
 16384 died with canon-audit III.6) — and no minimum either: the old
