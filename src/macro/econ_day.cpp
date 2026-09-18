@@ -257,9 +257,12 @@ ConsumeOutcome econ_consume_season(Inventory& store, int population,
             store.remove_of(commodity_item_index(idx), demand);
             report(sink, user, EconFact::Kind::Consumed, idx, demand);
         }
-        const bool vital = kCommodities[idx].tier == CommodityTier::Vital;
-        if (kNeeds[i].popPerUnitDay == 1 && vital) {
-            // The hunger row: an uncovered season is a hungry season.
+        // THE hunger row, asked of the one door that knows which it is
+        // (econ_day.h kHungerNeedRow — the same two columns this branch used
+        // to re-derive inline). One definition, three eaters: the population
+        // here, the garrison in world_tick, the squad in npc_ai.
+        if (i == kHungerNeedRow) {
+            // An uncovered season is a hungry season.
             if (!covered) fed = 0;
         } else {
             // EVERY other shortfall is counted — vital maintenance (cloth,

@@ -3556,7 +3556,7 @@ int provision_squad(Inventory& store, Inventory& bag, int soldiers,
     const int portion = soldiers * days;
     // The haul door already speaks credit-before-debit and respects the
     // carry the loaf must ride on.
-    return haul_between(store, bag, "bread", portion, freeCarryKg);
+    return haul_between(store, bag, hunger_item_id(), portion, freeCarryKg);
 }
 
 SquadSeasonNeeds squad_season_needs(ecs::World& world, entt::entity e,
@@ -3581,7 +3581,7 @@ SquadSeasonNeeds squad_season_needs(ecs::World& world, entt::entity e,
     const int foragingRank =
         effective_sheet_of(world, e).skills.of(SkillId::Foraging);
     SquadSeasonNeeds needs{};
-    needs.bread = mouths * kDaysPerSeason
+    needs.board = mouths * kDaysPerSeason
         * skill_mult_pct_of(SkillId::Foraging, foragingRank) / 100;
     needs.wage = wageDay * kDaysPerSeason;
     return needs;
@@ -3599,15 +3599,17 @@ int squad_season_window(MacroWorld& mw, int day) {
         (void)kind; (void)rt;
         const SquadSeasonNeeds needs =
             squad_season_needs(*mw.world, e, roster.squad);
-        const int breadNeed = needs.bread;
+        const int boardNeed = needs.board;
         const int wageNeed = needs.wage;
-        if (breadNeed <= 0 && wageNeed <= 0) continue;
+        if (boardNeed <= 0 && wageNeed <= 0) continue;
         // Each need covered WHOLE or not debited at all (owner 2026-09-17:
         // «не списывать, если не хватает — 1/8 = НЕ ПОКРЫТО»).
         bool shorted = false;
-        if (breadNeed > 0) {
-            if (bag.inv.count("bread") >= breadNeed) {
-                bag.inv.remove("bread", breadNeed);
+        if (boardNeed > 0) {
+            // Голодная строка лестницы одной дверью (econ_day.h), не словом.
+            const int boardIdx = hunger_item_index();
+            if (bag.inv.count_of(boardIdx) >= boardNeed) {
+                bag.inv.remove_of(boardIdx, boardNeed);
             } else {
                 shorted = true;
             }
@@ -3946,10 +3948,10 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         if (!bag || !roster) return;
         const SquadSeasonNeeds needs =
             squad_season_needs(*mw.world, e, roster->squad);
-        const int haveBread = bag->inv.count("bread");
-        if (needs.bread > haveBread) {
-            haul_between(lm.inventory, bag->inv, "bread",
-                         needs.bread - haveBread, 1e9f);
+        const int haveBoard = bag->inv.count_of(hunger_item_index());
+        if (needs.board > haveBoard) {
+            haul_between(lm.inventory, bag->inv, hunger_item_id(),
+                         needs.board - haveBoard, 1e9f);
         }
         const int haveCoin = inventory_value(bag->inv);
         if (needs.wage > haveCoin) {
@@ -4147,7 +4149,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 }
             }
             const int wage = npc_upkeep_base(NPCType::Guard);
-            const ItemDef* bd = item_def("bread");
+            const ItemDef* bd = item_def(hunger_item_id());
             const int board = bd && bd->value > 0 ? bd->value : 1;
             const int premium =
                 (wage - (wage >> 1)) + (board - (board >> 1));
@@ -4346,7 +4348,8 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                         const int want = perCrew - 1;   // члены без лидера
                         int have = ro->squad.size();
                         const int canFeed =
-                            s.inventory.count("bread") / kDaysPerSeason;
+                            s.inventory.count_of(hunger_item_index())
+                                / kDaysPerSeason;
                         int take = std::min(want - have,
                                             std::max(0, canFeed - have));
                         take = std::min(take, s.population - 1);
@@ -4386,7 +4389,8 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             // Жалованье — стоимостью (pay_value_dense law); у крестьян оно
             // 0 («работают за еду», владелец 2026-09-18) и гейт сводится к
             // хлебу.
-            if (s.inventory.count("bread") < members * kDaysPerSeason
+            if (s.inventory.count_of(hunger_item_index())
+                        < members * kDaysPerSeason
                 || inventory_value(s.inventory)
                        < members * rowUpkeep * kDaysPerSeason) {
                 continue;

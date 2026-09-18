@@ -137,6 +137,70 @@ inline constexpr NeedDef kNeeds[] = {
 };
 inline constexpr int kNeedCount = int(sizeof(kNeeds) / sizeof(kNeeds[0]));
 
+// ── ГОЛОДНАЯ СТРОКА ЛЕСТНИЦЫ — одна дверь на всех, кто ест ────────────────
+//
+// Одна строка отвечает не за неуют, а за ГОЛОД. Она НЕ НАЗВАНА словом — она
+// УЗНАЁТСЯ, ровно по тем двум колонкам, по которым её и судит
+// econ_consume_season: нужда, у которой одна единица кроет один житель-день
+// (popPerUnitDay == 1) и которая жизненно необходима (tier == Vital).
+//
+// ЗАЧЕМ ДВЕРЬ, А НЕ СЛОВО. Тот же харч списывают ТРОЕ, и до 2026-09-18 они
+// спрашивали его тремя способами: население — лестницу (честно), гарнизон
+// места (world_tick garrison_upkeep_) и сквад в поле (npc_ai
+// squad_season_window) — литералом "bread". Литерал здесь хуже обычного
+// дрейфа: он держит в руках ответ на вопрос, который УМЕЕТ меняться. Сделай
+// голодной другую строку или переименуй эту — лестница поедет, а две армии
+// молча продолжат искать в закромах слово, которого там больше нет. И это
+// не выглядит как поломка: голод не наступит, наступит НЕсписание — армия
+// перестанет есть, останется сытой и бесплатной, а зелёная суита ничего не
+// заметит, потому что «съедено 0 из 0» ни одному инварианту не противоречит.
+//
+// АРМИЯ ЕСТ ТОЛЬКО ЭТУ СТРОКУ, И ЭТО НАМЕРЕННО (вердикт владельца
+// 2026-09-18, спрошено прямо): горожанин судится по ВСЕЙ лестнице (хлеб
+// голодит, остальное копится неудовлетворённым), а солдат — по харчу и
+// плате, и только. «Армия хочет БОРД и ПЛАТУ» — это разница замысла, а не
+// недоделка, и дверь названа «голодная строка» именно поэтому: она отдаёт
+// ту единственную нужду, которую обязан покрыть всякий, кто кормит людей.
+constexpr bool need_id_eq_(const char* a, const char* b) {
+    while (*a && *a == *b) { ++a; ++b; }
+    return *a == *b;
+}
+constexpr int hunger_need_row_() {
+    int found = -1, count = 0;
+    for (int i = 0; i < kNeedCount; ++i) {
+        if (kNeeds[i].popPerUnitDay != 1) continue;
+        for (int c = 0; c < kCommodityCount; ++c) {
+            if (!need_id_eq_(kCommodities[c].id, kNeeds[i].commodity)) continue;
+            if (kCommodities[c].tier != CommodityTier::Vital) continue;
+            if (found < 0) found = i;
+            ++count;
+        }
+    }
+    return count == 1 ? found : -1;
+}
+// Строка лестницы, а не каталога: индекс в kNeeds.
+inline constexpr int kHungerNeedRow = hunger_need_row_();
+static_assert(kHungerNeedRow >= 0,
+              "the needs ladder must carry EXACTLY ONE hunger row — a need "
+              "that is Vital and served one unit per pop-day. Zero of them "
+              "means nobody can starve; two means the code that feeds the "
+              "world has to pick, and every eater would pick differently");
+
+// Голодная строка авторским КЛЮЧОМ — для дверей, которые берут строку
+// (haul_between). Пространства id лестницы и каталога едины, ключ один.
+inline constexpr const char* hunger_item_id() {
+    return kNeeds[kHungerNeedRow].commodity;
+}
+
+// Она же каталожным ОРДИНАЛОМ — то, ЧЕМ её списывают из закромов. Строка
+// остаётся ключом авторским: резолв один раз за процесс, не поиск на доступ
+// (тот же контракт, что у commodity_item_index — и та же арифметика, потому
+// что мост между пространствами id ровно это и делает).
+inline int hunger_item_index() {
+    static const int idx = item_index(hunger_item_id());
+    return idx;
+}
+
 // One worker per this many heads (po2) — the BENCH quota: the share of
 // hands staffing the recipes (econ_produce_day). The daily CREWS are the
 // landmark's own law since 2026-08-31 (landmark_registry: crews rows +

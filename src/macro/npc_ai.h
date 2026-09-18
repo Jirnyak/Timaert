@@ -330,7 +330,12 @@ int squad_bags_hygiene_daily(MacroWorld& mw);
 // be a second truth of содержание). Bread is per soul whose own row is on
 // upkeep, foraging-scaled by the leader's effective sheet; wage is the one
 // upkeep law × the season.
-struct SquadSeasonNeeds { int bread = 0; int wage = 0; };
+// БОРД и ПЛАТА — ровно две нужды армии, и это вердикт, а не упрощение
+// (владелец 2026-09-18): горожанин судится по ВСЕЙ лестнице нужд, солдат —
+// по харчу и жалованью. Поле звалось `bread` и тем самым делало литерал
+// "bread" на месте списания «правильным на вид»; борд — это ГОЛОДНАЯ СТРОКА
+// лестницы, какой бы она ни была (econ_day.h hunger_item_index).
+struct SquadSeasonNeeds { int board = 0; int wage = 0; };
 SquadSeasonNeeds squad_season_needs(ecs::World& world, entt::entity e,
                                     const SoldierSquad& roster);
 

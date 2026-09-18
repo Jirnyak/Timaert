@@ -264,10 +264,15 @@ void garrison_upkeep_(GameState& gs, Landmark& s, int day) {
     if (landmark_def(s.type).garrisonShift == 0xFFu) return;
     if (total_soldiers(s.garrison) <= 0) return;
     bool shorted = false;
-    const int breadIdx = commodity_item_index(commodity_index("bread"));
+    // БОРД — голодная строка лестницы, спрошенная ДВЕРЬЮ (econ_day.h
+    // hunger_item_index), а не словом "bread", которое стояло здесь. Армия
+    // ест ровно эту строку и ничего сверх неё — вердикт владельца
+    // 2026-09-18: горожанин судится по всей лестнице, солдат по харчу и
+    // плате. Разница намеренная, потому дверь и отдаёт ОДНУ строку.
+    const int boardIdx = hunger_item_index();
     const int need = (total_soldiers(s.garrison) * kDaysPerSeason) >> 1;
-    if (s.inventory.count_of(breadIdx) >= need) {
-        s.inventory.remove_of(breadIdx, need);
+    if (s.inventory.count_of(boardIdx) >= need) {
+        s.inventory.remove_of(boardIdx, need);
     } else {
         shorted = true;
     }
