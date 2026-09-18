@@ -147,8 +147,11 @@ float mood_price_mult(SettlementMood mood, bool buying) {
 }
 
 float trait_price_mult(const ecs::NpcTraits* traits, bool buying) {
-    // The merchant's temperament: a greedy one charges more and pays less,
-    // a generous one the reverse.
+    // The merchant's temperament prices HIS side of the deal, and the numbers
+    // are columns of THE trait registry (npc.h kTraitPriceRows), beside the
+    // temper's name — the same shape as the mood registry above. A greedy man
+    // charges more and pays less; a generous one the reverse; every other
+    // temper has no opinion about money and its row says so.
     auto has = [&](NPCTrait t) {
         if (!traits) return false;
         const auto raw = std::uint8_t(t);
@@ -158,8 +161,10 @@ float trait_price_mult(const ecs::NpcTraits* traits, bool buying) {
         return false;
     };
     float mult = 1.0f;
-    if (has(NPCTrait::Greedy))   mult = buying ? 1.2f : 0.8f;
-    if (has(NPCTrait::Generous)) mult = buying ? 0.9f : 1.2f;
+    for (const TraitPriceRow& r : kTraitPriceRows) {
+        if (!r.pricesMarket || !has(r.trait)) continue;
+        mult = buying ? r.buyMul : r.sellMul;
+    }
     return mult;
 }
 

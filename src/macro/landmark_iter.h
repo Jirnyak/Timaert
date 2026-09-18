@@ -40,10 +40,15 @@ void for_each_landmark(const GameState& gs, F&& fn) {
     for (LandmarkType t : kLandmarkYieldOrder) {
         for (const auto& lm : gs.landmarks) {
             if (lm.type != t) continue;
+            // БЕЗЫМЯННЫЙ — ЧЕСТНЫЙ СЛУЧАЙ ИМЕНОВАННОГО ТИПА (вердикт
+            // владельца №10, 2026-09-17: «просто нули вместо чар строки
+            // имени»), и что он показывает — колонка `label` ЕГО строки
+            // реестра, одной системой для всех видов. Здесь стояла ветка
+            // по ВИДУ с именем «Spire» литералом: тот же текст, что в
+            // колонке рядом, только недоступный ни руине, ни логову, ни
+            // шахте — они показывали пустую строку, хотя их label ждал.
             const char* name = lm.name.c_str();
-            if (t == LandmarkType::Spire && lm.name.empty()) {
-                name = lm.depleted ? "Depleted Spire" : "Spire";
-            }
+            if (lm.name.empty()) name = landmark_def(t).label.data();
             fn(LandmarkView{lm.type, lm.id, lm.x, lm.y, name,
                             lm.population, lm.mood, lm.depleted});
         }

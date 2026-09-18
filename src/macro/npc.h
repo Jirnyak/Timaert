@@ -98,6 +98,40 @@ enum class NPCTrait : std::uint8_t {
     Count,
 };
 
+// ── THE trait registry's MARKET columns (CANON S16) ───────────────────────
+// What a temper does to a price is a COLUMN of that temper's row, exactly as
+// a town's temper prices its market from a column of kMoodRows (state.h).
+// This lived as an if-chain over two traits with four bare literals inside
+// economy.cpp — the shape the mood dictionary had before 2026-08-29, and the
+// shape a third priced temper would have extended by hand.
+//
+// `pricesMarket` is not a flag standing in for data: most tempers have
+// nothing to do with money, and the chain said so by simply having no branch
+// for them. A row that stays silent leaves the price where it was rather
+// than resetting it to 1.0 — which is why a Greedy-and-Brave merchant is
+// still greedy.
+//
+// Rows are read IN ENUM ORDER, so a merchant carrying two priced tempers is
+// priced by the LATER one — the assignment order of the chain, preserved.
+struct TraitPriceRow {
+    NPCTrait trait;          // MUST equal the row's index (guard below)
+    bool     pricesMarket;
+    float    buyMul;         // what he charges the traveller
+    float    sellMul;        // what he pays him
+};
+inline constexpr TraitPriceRow kTraitPriceRows[std::size_t(NPCTrait::Count)] = {
+    {NPCTrait::Greedy,     true,  1.2f, 0.8f},
+    {NPCTrait::Honorable,  false, 1.0f, 1.0f},
+    {NPCTrait::Cowardly,   false, 1.0f, 1.0f},
+    {NPCTrait::Brave,      false, 1.0f, 1.0f},
+    {NPCTrait::Aggressive, false, 1.0f, 1.0f},
+    {NPCTrait::Generous,   true,  0.9f, 1.2f},
+    {NPCTrait::Suspicious, false, 1.0f, 1.0f},
+    {NPCTrait::Curious,    false, 1.0f, 1.0f},
+};
+static_assert(rows_in_enum_order(kTraitPriceRows, &TraitPriceRow::trait),
+              "kTraitPriceRows row order must mirror NPCTrait");
+
 
 // Fixed-arity name / dialogue pools — POD-friendly.
 constexpr std::size_t kMaxNpcNames     = 16;
