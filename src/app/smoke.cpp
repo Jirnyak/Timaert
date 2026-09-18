@@ -907,12 +907,20 @@ bool run_subworld_recovery_smoke(App& app) {
     const int afterHp = player_pools(app).hp;
     const int afterMp = player_pools(app).mp;
     const int afterSp = player_pools(app).sp;
-    // The scale witness: the minute of scene ticks above must have left the
-    // wounded macro squad exactly where the map put it, visual included.
+    // The scale witness guards SUB-1: a SCENE tick must not drag a macro
+    // VISUAL in subworld units (systems.cpp's interpolator once walked all
+    // ~16k macro squads every sub-tick). The CELL is deliberately NOT
+    // pinned: the macro simulation is continuous (CANON S2 — «сквад не
+    // ждёт игрока под землёй, уходит своей клеткой»), so a squad with
+    // business lawfully walks while the player is below; pinning the cell
+    // held the witness green only while the first-in-view squad happened
+    // to idle (caught 2026-09-18, the need-driven trade run gave it a
+    // trip).
     if (scaleWitness != entt::null && app.ecs.reg.valid(scaleWitness)) {
         const auto& c = app.ecs.reg.get<sm::ecs::MacroCell>(scaleWitness);
         const auto& v = app.ecs.reg.get<sm::ecs::MacroVisual>(scaleWitness);
-        if (c.idx != wCellIdx || v.vx != wVx || v.vy != wVy) {
+        (void)wCellIdx;
+        if (v.vx != wVx || v.vy != wVy) {
             std::fprintf(stderr,
                          "[smoke] scale witness moved: cell %.2f,%.2f -> "
                          "%.2f,%.2f visual %.2f,%.2f -> %.2f,%.2f\n",

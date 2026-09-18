@@ -458,7 +458,11 @@ void test_the_vendor_sells_at_the_nearest_city() {
     vil.y = 10;
     vil.suzerainLandmarkId = 1;
     vil.population = 50;
-    vil.inventory.add("food", 500);
+    // A GENUINE surplus: the loading law keeps the seasonal larder home
+    // (S19.2 + verdict 2026-09-18 «дома дешевле базы» decides the load),
+    // and 50 souls bake through 50 grain a day — 1600 a season. Only what
+    // stands ABOVE that rides to market.
+    vil.inventory.add("food", 4000);
     vil.inventory.add("coin_timaert_copper", 50 * 2);
     gs.landmarks.push_back(vil);
 
@@ -511,7 +515,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
                            + gs.landmarks[1].inventory.count("food");
     const int breadTotal = vilBread + bag.count("bread")
                            + gs.landmarks[0].inventory.count("bread");
-    CHECK(grainTotal == 500 && breadTotal == 2000,
+    CHECK(grainTotal == 4000 && breadTotal == 2000,
           "CONSERVATION: cargo moves, it is never minted or dropped");
     // ...and the deal's other half obeys the same law: coin travels between
     // the three purses (city, village, hold) and is never minted or burned.

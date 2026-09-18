@@ -236,11 +236,17 @@ int main(int argc, char** argv) {
                          id, id, id, id, id, id);
         }
         std::fprintf(fw, "\n");
+        // cloth/iron per landmark: the horizon-split hypothesis (NEXT_SESSION
+        // 2026-09-18) is about MEDIANS across places — bread drowns the floor
+        // clamp while manufactured rows starve at the ceiling — and the world
+        // aggregate cannot show a median.
         std::fprintf(fl, "day\tid\ttype\tpop\tmood\tstarved\tunmet\tbread"
-                         "\tgrain\tcoin\n");
+                         "\tgrain\tcloth\tiron\tcoin\n");
 
         const int breadIdx = sm::item_index("bread");
         const int grainIdx = sm::item_index("food");
+        const int clothIdx = sm::item_index("cloth");
+        const int ironIdx = sm::item_index("iron");
         std::uint32_t ringCursor = gs.chronicle.nextSeq;
 
         // ── The days: the live loop's cadence without its frames ─────────
@@ -277,13 +283,16 @@ int main(int argc, char** argv) {
                                   || lm.type == sm::LandmarkType::Village;
                 if (settled) {
                     std::fprintf(fl,
-                                 "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%lld\n",
+                                 "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d"
+                                 "\t%lld\n",
                                  gs.worldTime.day(), lm.id, int(lm.type),
                                  lm.population, int(lm.mood),
                                  int(lm.starvedYesterday),
                                  int(lm.unmetYesterday),
                                  lm.inventory.count_of(breadIdx),
                                  lm.inventory.count_of(grainIdx),
+                                 lm.inventory.count_of(clothIdx),
+                                 lm.inventory.count_of(ironIdx),
                                  coins_in(lm.inventory, coinIdx));
                 }
             }

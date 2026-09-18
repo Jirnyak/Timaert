@@ -15,6 +15,7 @@
 
 #include "ecs/components.h"
 #include "macro/deposit_layer.h"
+#include "macro/econ_day.h"
 #include "macro/npc.h"
 #include "macro/npc_ai.h"
 #include "macro/resource_field.h"
@@ -54,6 +55,20 @@ GameState make_world(int villagePop) {
     return gs;
 }
 
+// Полки комфорта закрыты на сезон вперёд (pop 100): рейс сбыта-закупки
+// теперь ценит ОБА конца (вердикт 2026-09-18 «голодный дом едет ПОКУПАТЬ»),
+// и голая полка cloth/tools задрала бы его скор на порядки — рулетку было
+// бы не разглядеть. Закрытая полка глушит покупной конец, оставляя целям
+// дня сопоставимые скоры — ровно как до вердикта.
+void stock_comforts(Landmark& lm) {
+    for (const NeedDef& n : kNeeds) {
+        if (n.popPerUnitDay == 1) continue;   // хлеб фикстуры кладут сами
+        const int seasonNeed = (lm.population / n.popPerUnitDay)
+                             * kDaysPerSeason;
+        if (seasonNeed > 0) lm.inventory.add(n.commodity, seasonNeed);
+    }
+}
+
 struct Crew {
     std::uint8_t  verb;
     std::uint32_t object;
@@ -77,6 +92,7 @@ void test_auction_raises_errand_bearing_peasants() {
     // склад обязан держать хлеб на 32 дня каждого рта, иначе артель не
     // поднимается. Сезонный амбар, не «провиант на рейс».
     gs.landmarks[0].inventory.add("bread", 3200);
+    stock_comforts(gs.landmarks[0]);
     gs.landmarks[0].titheOwedCoin = 200;            // и долг дани сверху
 
     DepositLayer dep{};
@@ -127,6 +143,7 @@ void test_auction_raises_errand_bearing_peasants() {
         GameState gsd = make_world(/*pop*/100);
         gsd.landmarks[0].inventory.add("food", 5000);
         gsd.landmarks[0].inventory.add("bread", 3200);
+        stock_comforts(gsd.landmarks[0]);
         gsd.landmarks[0].titheOwedCoin = 200;
         ecs::World wd;
         MacroWorld mwd{.gs = &gsd, .world = &wd, .terrain = &absent,

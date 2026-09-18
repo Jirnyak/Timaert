@@ -1622,6 +1622,35 @@ int leader_trade_rank_(ecs::World& w, entt::entity self) {
 // (No own_type_ any more: sheet_of asks the entity itself — «the haggler's
 // numbers are whoever's numbers they are» is the door's own law now.)
 
+// ЧТО ГРУЗИТ РЕЙС — один закон двух погрузок, артели и каравана (владелец
+// 2026-09-18: «если деревня добывает что угодно, она это и продаёт,
+// буквально живёт этим»): едет то, что ДОМА ДЕШЕВЛЕ БАЗЫ — затоваривание
+// по той же кривой цены, что судит сделку на месте, — и никогда не едет
+// сезонный амбар (S19.2: мир ест раз в сезон; прежняя мерка «сверх
+// ДНЕВНОЙ нужды» звала запас зимы излишком и продавала его). Дефицитное
+// дома (цена выше базы) не грузится вовсе — оно нужно здесь.
+// ПОТОЛОК ПОГРУЗКИ ВРЕМЕННЫЙ: когда горизонт спроса самой кривой станет
+// сезонным (шаг 2 этого трека), «дома дешевле базы» скажет то же самое
+// одной ценой, и вычитание сезонной нужды умрёт.
+void load_cheap_at_home_(Inventory& store, Inventory& bag, int population,
+                         const Skills& site, float capKg) {
+    for (int oi = 0; oi < kCommodityCount
+                    && inventory_weight(bag) < capKg; ++oi) {
+        const int i = value_dense_order()[std::size_t(oi)];
+        const char* id = kCommodities[i].id;
+        const ItemDef* d = item_def(id);
+        const int base = d ? d->value : 0;
+        if (base <= 0) continue;
+        const int have = store.count(id);
+        const int demand = daily_demand_for(id, population, site);
+        const int loadable = have - demand * kDaysPerSeason;
+        if (loadable <= 0) continue;
+        if (stock_price(base, have, demand) >= base) continue;
+        haul_between(store, bag, id, loadable,
+                     capKg - inventory_weight(bag));
+    }
+}
+
 void ai_caravan(entt::entity self, MacroPos& p,
                 ecs::MacroNpcRuntime& rt, ecs::Pools& pools,
                 const TickContext& ctx) {
@@ -1647,22 +1676,12 @@ void ai_caravan(entt::entity self, MacroPos& p,
         --rt.stateTimer;
         if (rt.stateTimer > 0) return;
         // DEPARTURE (owner 2026-08-30: caravans walk CITY to CITY, station
-        // by station). Load the HOME surplus first — the stock above the
-        // town's own daily demand. No deal here: the hold IS the city's
+        // by station). Load what is cheap at home — the one loading law
+        // (load_cheap_at_home_). No deal here: the hold IS the city's
         // property (the loan law), and a town does not sell to itself.
         const Skills& homeSite = landmark_sheet(homeLm->type).skills;
-        for (int oi = 0; oi < kCommodityCount
-                        && inventory_weight(bag->inv) < rt.carryCap / 2;
-             ++oi) {
-            const int i = value_dense_order()[std::size_t(oi)];
-            const char* id = kCommodities[i].id;
-            const int surplus =
-                homeStore->count(id)
-                - daily_demand_for(id, homeLm->population, homeSite);
-            if (surplus <= 0) continue;
-            haul_between(*homeStore, bag->inv, id, surplus,
-                         rt.carryCap / 2 - inventory_weight(bag->inv));
-        }
+        load_cheap_at_home_(*homeStore, bag->inv, homeLm->population,
+                            homeSite, rt.carryCap / 2);
         // The LOAN (CANON S5: имущество NPC — заём со склада родного
         // ландмарка, не минт): purchasing power for the run — enough VALUE
         // to fill the hold's free half with grain at BASE price (grain is
@@ -1897,21 +1916,12 @@ void ai_vendor(entt::entity self, MacroPos& p,
                                homeLm->titheOwedCoin,
                                inventory_value(homeLm->inventory))));
         }
-        // Load the surplus above the home's own daily demand — never its
-        // living stock.
+        // Load what is cheap at home — the one loading law
+        // (load_cheap_at_home_): never the seasonal larder, never a row
+        // the home itself is short of.
         const Skills& homeSite = landmark_sheet(homeLm->type).skills;
-        for (int oi = 0; oi < kCommodityCount
-                        && inventory_weight(bag->inv) < rt.carryCap;
-             ++oi) {
-            const int i = value_dense_order()[std::size_t(oi)];
-            const char* id = kCommodities[i].id;
-            const int surplus =
-                homeLm->inventory.count(id)
-                - daily_demand_for(id, homeLm->population, homeSite);
-            if (surplus <= 0) continue;
-            haul_between(homeLm->inventory, bag->inv, id, surplus,
-                         rt.carryCap - inventory_weight(bag->inv));
-        }
+        load_cheap_at_home_(homeLm->inventory, bag->inv,
+                            homeLm->population, homeSite, rt.carryCap);
         if (inventory_weight(bag->inv) <= 0.0f
             && inventory_value(bag->inv) <= 0) {
             // Nothing to sell and nothing owed: wait out the morning.
@@ -4063,10 +4073,17 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     std::uint8_t(ErrandVerb::Gather), std::uint32_t(g),
                     site, score};
             }
-            // Рейс сбыта (излишки + дань-относ — цели крестьян, вердикт
-            // 2026-09-02): ценность = долг дани ПОЛНОЙ стоимостью (долг
-            // обязан ехать) + излишек × выигрыш от домашнего затоваривания
-            // (base − stock_price: чем дешевле дома, тем дороже увезти).
+            // Рейс сбыта-закупки (цели крестьян, вердикты 2026-09-02 и
+            // 2026-09-18: «рейс поднимать не по нужде, а просто — на
+            // складе то всяко что-то есть»; «голодный дом должен ехать
+            // ПОКУПАТЬ»): ценность рейса = долг дани ПОЛНОЙ стоимостью
+            // (долг обязан ехать) + ОБА конца одной кривой цены. Продать:
+            // что дома дешевле базы, сверх сезонного амбара (S19.2) —
+            // затоваривание само зовёт в город. Купить: чего дома не
+            // хватает до сезонной нужды, весом его дефицитной цены — тот
+            // самый хутор на дорогой руде едет за хлебом, потому что право
+            // на рейс растёт с голодом, а не с излишком. Гейт «только при
+            // излишке» умер этим вердиктом.
             // Локальность закона: никакого знания цен рынка — только СВОЙ
             // склад; сама сделка честно решится на месте (ai_vendor).
             const Landmark* city = landmark_by_id(gs, s.suzerainLandmarkId);
@@ -4083,16 +4100,16 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     const int have = s.inventory.count(id);
                     const int demand =
                         daily_demand_for(id, s.population, homeSite);
-                    // ИЗЛИШЕК — СВЕРХ СЕЗОННОЙ НУЖДЫ (S19.2: «зерна хватит
-                    // городу на сезон»): мир живёт сезонными амбарами, и
-                    // излишек против ДНЕВНОЙ нужды объявил бы собственный
-                    // запас на зиму товаром — деревня повезла бы продавать
-                    // свой же сезонный хлеб.
-                    const int surplus = have - demand * kDaysPerSeason;
-                    if (surplus <= 0) continue;
-                    const int gap = base - stock_price(base, have, demand);
-                    if (gap <= 0) continue;
-                    value += (long long)surplus * gap;
+                    const int seasonNeed = demand * kDaysPerSeason;
+                    const int homePrice =
+                        stock_price(base, have, demand);
+                    if (have > seasonNeed && homePrice < base) {
+                        value += (long long)(have - seasonNeed)
+                                 * (base - homePrice);
+                    } else if (have < seasonNeed && homePrice > base) {
+                        value += (long long)(seasonNeed - have)
+                                 * (homePrice - base);
+                    }
                 }
                 if (value > 0) {
                     const float road = std::sqrt(torus_dist_sq(
