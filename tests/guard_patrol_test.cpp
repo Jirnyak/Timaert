@@ -12,7 +12,9 @@
 #include "check.h"
 
 #include "ecs/components.h"
+#include "macro/characters.h"   // landmark_sheet — руки места
 #include "macro/deposit_layer.h"
+#include "macro/econ_day.h"
 #include "macro/nav_field.h"
 #include "macro/npc.h"
 #include "macro/npc_ai.h"
@@ -214,6 +216,23 @@ void test_peasants_pay_the_threat_price() {
     // Сезонный амбар: условие создания (S19.2) списывает при подъёме
     // 32 дня хлеба на каждый рот артели.
     gs.landmarks[1].inventory.add("bread", 8192);
+    // Полки комфорта И сырьё пекарни закрыты на сезон: рейс сбыта-закупки
+    // ценит ОБА конца (вердикт 2026-09-18), и голая полка — cloth ли, сырое
+    // ли зерно производного спроса — при сезонной цене без коридора даёт
+    // скор на порядки выше любого страха. А сторожит этот тест ТЕРМ
+    // ОПАСНОСТИ, не экономику дефицита: закрытые полки глушат покупной
+    // конец, оставляя страху скор прежнего масштаба.
+    for (const NeedDef& n : kNeeds) {
+        if (n.popPerUnitDay == 1) continue;   // хлеб выше, своей строкой
+        const int seasonNeed =
+            (gs.landmarks[1].population / n.popPerUnitDay) * kDaysPerSeason;
+        if (seasonNeed > 0)
+            gs.landmarks[1].inventory.add(n.commodity, seasonNeed);
+    }
+    gs.landmarks[1].inventory.add(
+        "food", daily_demand_for("food", gs.landmarks[1].population,
+                                 landmark_sheet(LandmarkType::Village).skills)
+                    * kDaysPerSeason);
     gs.landmarks[1].titheOwedCoin = 200;
 
     ecs::World w;

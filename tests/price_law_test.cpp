@@ -1,6 +1,10 @@
 // The price-from-stock law (starcluster, W2d final) and the death of
 // arbitrage. Pinned:
-//   · scarcity shape — absence is dear, glut is cheap, po2-clamped;
+//   · scarcity shape — absence is dear, glut is cheap, NO corridor (the
+//     [0.25…4] clamp died 2026-09-18: it did not guard against the generous
+//     merchant, it CREATED him — slippage vanishes only at saturation), and
+//     the horizon is the SEASON (S19.2: the world eats once a season, so
+//     stock == a season's need ⇔ price == base — the readable equilibrium);
 //   · demand comes from the ONE needs ladder;
 //   · ARBITRAGE IS EXTINCT: a buy-then-sell round trip can never profit,
 //     for any stock, amount, charisma and context multipliers — including
@@ -26,10 +30,19 @@ void test_scarcity_shape() {
     CHECK(stock_scarcity(0, 0) == 1.0f, "empty shelf, no demand = base");
     CHECK(stock_scarcity(1000, 8) < stock_scarcity(10, 8),
           "glut is cheaper than a modest stock");
-    CHECK(stock_scarcity(0, 100) == 4.0f, "hungry absence clamps at 4x (po2)");
-    CHECK(stock_scarcity(1 << 20, 0) == 0.25f, "glut clamps at 1/4 (po2)");
-    CHECK(stock_price(10, 0, 100) == 40, "price = base x scarcity");
-    CHECK(stock_price(10, 1 << 20, 0) >= 1, "a price never reaches zero");
+    // THE equilibrium of the seasonal horizon: a stock of exactly one
+    // season's need prices at base — derived from the same constant the
+    // law reads, not restated as a number.
+    CHECK(stock_scarcity(100 * kDaysPerSeason, 100) == 1.0f,
+          "stock == a season's need = base price (the world's equilibrium)");
+    CHECK(stock_scarcity(0, 100) == float(100 * kDaysPerSeason + 1),
+          "hungry absence prices the season's whole need — no ceiling");
+    CHECK(stock_scarcity(1 << 20, 0) < stock_scarcity(1 << 10, 0),
+          "a deeper glut keeps getting cheaper — no floor on the curve");
+    CHECK(stock_price(10, 0, 100) == 10 * (100 * kDaysPerSeason + 1),
+          "price = base x scarcity");
+    CHECK(stock_price(10, 1 << 20, 0) >= 1,
+          "a price never reaches zero — «ничто не бесплатно» is the floor");
     CHECK(daily_demand_for("bread", 128, CITY) == 128
               && daily_demand_for("cloth", 128, CITY) == 4
               && daily_demand_for("wpn_dagger", 128, CITY) == 0,
@@ -115,9 +128,12 @@ void test_arbitrage_dies_two_ways() {
         const int profit = coin_census_value(player) - myStart;
         CHECK(rounds < 10000 && farmDied,
               "the farm DIES - profitless or purse-broke, never infinite");
-        CHECK(profit > 0, "the generous drip was real before it died");
-        CHECK(profit <= 200,
-              "total extraction is bounded by the merchant's own purse");
+        // The generous DRIP itself died with the corridor (2026-09-18): the
+        // drip only ever existed at clamp saturation, where the price could
+        // not move and slippage vanished. With the corridor gone slippage
+        // lives on every shelf, so even the 0.9/1.2 pair profits NOTHING —
+        // the very defect the probe measured, now held as the law.
+        CHECK(profit <= 0, "no drip survives the corridor's death");
         CHECK(coin_census_value(player) + coin_census_value(merchant) == 1200,
               "coin CONSERVES across every round - nothing was minted");
         // (The metric is the COIN CENSUS, not the bags' whole value: since

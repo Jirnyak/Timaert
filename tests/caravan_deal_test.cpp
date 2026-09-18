@@ -4,10 +4,12 @@
 //
 //   1. CONSERVATION — coin and every commodity move, never minted or burned.
 //   2. THE STATION'S OWN BOUNDS — it sells only into a shortage (never past
-//      the market's daily demand) and buys only the surplus (never the
-//      market's living stock below its demand).
+//      the market's SEASONAL need, the price law's own horizon) and buys
+//      only the surplus (never the market's living stock below that need).
 //   3. THE VENDOR — sells the whole load, then buys the home's lacks.
-//   4. THE CLAMP — every unit priced inside [base/4 .. 4×base].
+//   4. THE PRICE BOUNDS — every lot priced between the floor (1/unit,
+//      «ничто не бесплатно») and the empty-shelf ceiling of the SAME law
+//      (the [0.25…4] corridor died 2026-09-18).
 //   5. NEGATIVE CONTROL — a coinless market can buy nothing, and nothing is
 //      confiscated from it either.
 #include "macro/characters.h"   // landmark_sheet — руки места
@@ -70,23 +72,25 @@ int main() {
           "station: goods are conserved");
     CHECK(st.soldValue > 0, "station: the shortage was sold into");
     CHECK(city.inventory.count("bread") > 0
-              && city.inventory.count("bread") <= breadDemand,
-          "station: sells only up to the market's own daily demand");
+              && city.inventory.count("bread")
+                     <= breadDemand * sm::kDaysPerSeason,
+          "station: sells only up to the market's own seasonal need");
     CHECK(st.boughtValue > 0, "station: the surplus was bought");
-    CHECK(city.inventory.count("wood") >= woodDemand,
-          "station: never buys below the market's own demand");
+    CHECK(city.inventory.count("wood") >= woodDemand * sm::kDaysPerSeason,
+          "station: never buys below the market's own seasonal need");
     CHECK(hold.count("wood") > 0, "station: the surplus rode away");
-    // The clamp corridor, derived from the same tables the code reads.
-    const int woodBase = sm::item_def("wood")->value;
+    // Price bounds derived from the SAME law the code reads: no unit is
+    // free (floor 1) and no unit costs more than the empty-shelf price of
+    // its own curve — a bound read off the door, never a recomputation.
     const int breadBase = sm::item_def("bread")->value;
     const int woodMoved = hold.count("wood");
     const int breadMoved = city.inventory.count("bread");
-    CHECK(st.boughtValue <= 4 * woodBase * woodMoved
-              && st.boughtValue >= woodMoved * std::max(1, woodBase / 4),
-          "station: surplus paid inside the price-law corridor");
-    CHECK(st.soldValue <= 4 * breadBase * breadMoved
-              && st.soldValue >= breadMoved * std::max(1, breadBase / 4),
-          "station: shortage paid inside the price-law corridor");
+    CHECK(st.boughtValue >= woodMoved,
+          "station: even a glut lot is never free (floor 1/unit)");
+    CHECK(st.soldValue <= (long long)breadMoved
+                              * sm::stock_price(breadBase, 0, breadDemand)
+              && st.soldValue >= breadMoved,
+          "station: shortage paid inside the law's own bounds");
 
     // ── The vendor run ───────────────────────────────────────────────────
     // A village crew brings grain to a town that lacks it; home lacks tools
@@ -95,7 +99,11 @@ int main() {
     town.type = sm::LandmarkType::City;
     town.population = 64;
     CHECK(town.inventory.add("tools", 50), "fixture: town tools");
-    CHECK(town.inventory.add("coin_empire_copper", 2000), "fixture: town purse");
+    // The purse covers the load at the SEASONAL famine price (the corridor
+    // died 2026-09-18): a starving shelf prices near base × seasonal need,
+    // and a fixture purse tuned to the old 4× ceiling could afford nothing —
+    // which is the affordability law working, not the vendor failing.
+    CHECK(town.inventory.add("coin_empire_copper", 20000), "fixture: town purse");
 
     sm::Inventory homeStore;   // the village store: grain-rich, tool-less
     CHECK(homeStore.add("food", 5000), "fixture: home grain");

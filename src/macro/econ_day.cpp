@@ -1,6 +1,7 @@
 #include "macro/econ_day.h"
 
 #include "macro/currency.h"   // add_value_in_coins — the treasury seed
+#include "macro/economy.h"    // stock_price — ranking asks THE price law
 
 #include <algorithm>
 #include <bit>
@@ -27,9 +28,6 @@ struct ResolvedRecipe {
     // own composition and the day makes it through the same craft door as
     // every other output — so no matter is stored here at all.
     bool isMint = false;
-    // popPerUnitDay of the need row this output serves, 0 = not a need —
-    // production plans "today's table" against this before any surplus.
-    int demandDivisor = 0;
 };
 
 struct ResolvedTables {
@@ -45,12 +43,6 @@ const ResolvedTables& resolved() {
             rr.output = commodity_index(kRecipes[i].output);
             rr.outItem = item_index(kRecipes[i].output);
             rr.isMint = std::strcmp(kRecipes[i].output, kMintOutput) == 0;
-            for (int n = 0; n < kNeedCount; ++n) {
-                if (std::strcmp(kNeeds[n].commodity, kRecipes[i].output) == 0) {
-                    rr.demandDivisor = kNeeds[n].popPerUnitDay;
-                    break;
-                }
-            }
         }
         for (int i = 0; i < kNeedCount; ++i) {
             r.needIdx[i] = commodity_index(kNeeds[i].commodity);
@@ -87,148 +79,124 @@ int econ_produce_day(Inventory& store, const Skills& hands, int workers,
         for (int i = 0; i < 3; ++i) mintRows[i] = item_index(coins[2 - i]);
     }
     const ResolvedTables& t = resolved();
-    int total = 0;
-    // v1 scheduler, three passes over the table. A recipe used to staff
-    // itself against the ENTIRE stockpile — bread claimed ceil(grainStock/8)
-    // workers and the whole town baked while bricks, cloth and tools never
-    // saw a worker-day. Now:
-    //   pass 0 — TODAY'S TABLE: each recipe whose output the town CONSUMES
-    //            (a needs-ladder row) staffs up to today's demand, in table
-    //            order — bread first by construction, never starved by a
-    //            fair share;
-    //   pass 1 — FAIR SHARES: the remaining workers split evenly across the
-    //            recipes that still have inputs — the surplus/exports;
-    //   pass 2 — LEFTOVERS flow in table order.
-    int workersLeft = workers;
-    int fairShare = 0;
 
-    // One recipe slot, one OUTPUT catalog row: the table's own commodity for
-    // goods, one of THIS town's coin rows for the mint (the mint slot fans
-    // out over the family — see run_recipe). From that row on, everything
-    // (matter, yield, the making itself) is THE craft system, verbatim.
-    auto run_recipe_out = [&](const ResolvedRecipe& rr, int outIdx,
-                              int unitCap, int workerCap) {
-        // -1 = a mint with no coin named (no mint here) or a dead id —
-        // fail closed like every unwired layer.
+    // РАНЖИРОВАНИЕ РУК (CANON S10, владелец 2026-09-18: «руки идут туда, где
+    // выше стоимость выхода на рабочий день»). Ни порога «работать или нет»,
+    // ни перевода единиц: каждый рабочий день уходит в рецепт с наибольшей
+    // стоимостью выхода по ТЕКУЩЕЙ цене склада (стоимость/день против
+    // стоимость/день). Цена пересчитывается после каждого назначения —
+    // слиппедж производства: полка растёт → цена падает → руки сами
+    // переходят к следующему рецепту; сезон проедает склад → цена растёт →
+    // возвращаются. Потолок выпечки ВЫВОДИТСЯ из цены, а не назначается.
+    // Три прохода «стол/честные доли/остатки» умерли вместе с «нуждой»
+    // `1 << 30`: они были грубым ранжированием, где все рецепты равно ценны,
+    // — ~300 из 315 городских рук пекли товар, которого никто не просил,
+    // и мир стоял у печи (замер 2026-09-18: хлеба на 17 сезонов, металла
+    // нет).
+    //
+    // Кандидат = выходная строка каталога: одна на товарный рецепт, по одной
+    // на каждый номинал монетного (каждый номинал ест СВОЙ металл через ту
+    // же дверь крафта — прежняя семантика слота минта, развёрнутая в строки).
+    struct Cand {
+        int outIdx;      // выходная строка каталога
+        int commodity;   // товарный ординал для факта (-1 у монеты)
+        bool isMint;
+        int demand;      // дневной спрос выхода ЗДЕСЬ — единый закон
+                         // (daily_demand_for: лестница + производный)
+        int perDay;      // партий на рабочий день (труд строки × КПД места)
+        int yield;       // единиц в партии
+        int base;        // ItemDef::value выхода
+    };
+    Cand cands[std::size_t(kRecipeCount) + 2];
+    int candCount = 0;
+    // THE population-efficiency law (owner 2026-08-30, CANON S10, ?31
+    // closed): КПД = log2(популяции)/4 — «город вдвое больше работает на
+    // четверть лучше». Integer log2 (bit width); темп = колонка труда
+    // выходной строки (items.h item_labour — то же число, которым платит
+    // рука в SP), в ПАРТИЯХ.
+    const int popLog =
+        population > 1 ? (std::bit_width(unsigned(population)) - 1) : 0;
+    const auto push_cand = [&](int outIdx, int commodity, bool isMint) {
+        // -1 = минт без монеты (не двор) или мёртвый id — fail closed.
         if (outIdx < 0) return;
-        const auto parts = item_parts(outIdx);
-        const int yield = item_yield(outIdx);
-        if (parts.empty()) return;   // no composition: nothing from nothing
-        // BATCHES this recipe could run from the store alone. Parts are
-        // catalog ordinals — the store is asked directly. unitCap arrives in
-        // OUTPUT units (today's demand); one batch makes `yield` of them.
-        int byInputs = unitCap >= (1 << 20)
-            ? (1 << 20) : (unitCap + yield - 1) / yield;
-        for (const ItemPart& part : parts) {
-            byInputs = std::min(byInputs, store.count_of(int(part.def))
-                                              / int(part.count));
-        }
-        if (byInputs <= 0) return;
-        // THE population-efficiency law (owner 2026-08-30, CANON S10, ?31
-        // closed): КПД = log2(популяции)/4 — «город вдвое больше работает
-        // на четверть лучше». Integer log2 (bit width); a born village
-        // (the owner's-scale hundred, kVillageBornBase) lands at ×1½,
-        // a 512-soul city at ×2¼. One law prices why the city bakes
-        // better — never a second recipe row, never a site wall. The
-        // quarter is a balance-run tunable. Tempo = the OUTPUT ROW'S OWN
-        // labour column (items.h item_labour — the same number the hand's
-        // SP price divides by), in BATCHES: for the mint that is metal
-        // units a day, exactly the old «4 металла».
-        const int popLog =
-            population > 1 ? (std::bit_width(unsigned(population)) - 1) : 0;
-        const int perDay =
-            std::max(1, item_labour(outIdx) * popLog / 4);
-        int wanted = (byInputs + perDay - 1) / perDay;
-        wanted = std::min(wanted, workerCap);
-        const int staffed = std::min(wanted, workersLeft);
-        const int made = std::min(byInputs, staffed * perDay);
-        if (made <= 0) return;
-        // THE craft door — the town makes goods and strikes coin exactly as
-        // a hand at the bench does (owner 2026-09-12: «город делает монеты
-        // через систему крафта по своему ИИ»). All-or-nothing lives in the
-        // door: a full store is a day that did not happen, the inputs never
-        // left, and no fact lies about goods that do not exist. (The hand
-        // written debit-refund pair that stood here — and once double-debited
-        // the mint's silver — died with it.)
-        if (!craft_item(store, outIdx, made)) return;
-        workersLeft -= staffed;
-        total += made;
-        if (rr.isMint) {
-            // The fact names the METAL spent (part 0's commodity row) — the
-            // money-supply counter balance_run watches.
-            const ItemDef* metal = item_def_at(int(parts[0].def));
-            report(sink, user, EconFact::Kind::Minted,
-                   metal ? commodity_index(metal->id) : -1, made * yield);
-        } else {
-            report(sink, user, EconFact::Kind::Produced, rr.output,
-                   made * yield);
-        }
+        if (item_parts(outIdx).empty()) return;   // без состава нет партий
+        const ItemDef* def = item_def_at(outIdx);
+        if (!def || def->value <= 0) return;
+        cands[std::size_t(candCount++)] = Cand{
+            outIdx, commodity, isMint,
+            daily_demand_for(def->id, population, hands),
+            std::max(1, item_labour(outIdx) * popLog / 4),
+            item_yield(outIdx), def->value};
     };
-
-    // A recipe SLOT: one output for goods; for the mint, the whole family in
-    // nominal order (gold→silver→copper, mintRows above) — each coin runs
-    // off its own metal through the same door, so the town strikes whatever
-    // its store can feed.
-    auto run_recipe = [&](int i, int unitCap, int workerCap) {
-        const ResolvedRecipe& rr = t.recipes[i];
-        if (rr.isMint) {
-            for (int m = 0; m < 3 && workersLeft > 0; ++m) {
-                run_recipe_out(rr, mintRows[m], unitCap, workerCap);
-            }
-            return;
-        }
-        run_recipe_out(rr, rr.outItem, unitCap, workerCap);
-    };
-
-    // Pass 0 — today's table, by demand.
-    for (int i = 0; i < kRecipeCount && workersLeft > 0; ++i) {
-        if (!recipe_known(hands, kRecipes[i].craft, kRecipes[i].minRank))
-            continue;
-        const ResolvedRecipe& rr = t.recipes[i];
-        if (rr.output < 0 || rr.demandDivisor <= 0) continue;
-        const int demand = population / rr.demandDivisor;
-        const int have = store.count_of(commodity_item_index(rr.output));
-        if (demand <= have) continue;   // yesterday's surplus covers today
-        run_recipe(i, demand - have, workersLeft);
-    }
-
-    // Fair shares are computed AFTER the table is served, over the recipes
-    // that still have inputs (one whole batch feedable). The mint slot
-    // counts ONCE if any of its metals can feed a batch — it is one bench
-    // however many nominals it knows.
-    const auto feedable_row = [&](int outIdx) {
-        if (outIdx < 0) return false;
-        const auto parts = item_parts(outIdx);
-        if (parts.empty()) return false;
-        for (const ItemPart& part : parts) {
-            if (store.count_of(int(part.def)) < int(part.count)) return false;
-        }
-        return true;
-    };
-    int liveRecipes = 0;
     for (int i = 0; i < kRecipeCount; ++i) {
         if (!recipe_known(hands, kRecipes[i].craft, kRecipes[i].minRank))
             continue;
         const ResolvedRecipe& rr = t.recipes[i];
-        bool feedable = false;
         if (rr.isMint) {
-            feedable = feedable_row(mintRows[0]) || feedable_row(mintRows[1])
-                    || feedable_row(mintRows[2]);
+            for (int m = 0; m < 3; ++m) push_cand(mintRows[m], -1, true);
         } else {
-            feedable = feedable_row(rr.outItem);
+            push_cand(rr.outItem, rr.output, false);
         }
-        if (feedable) ++liveRecipes;
     }
-    fairShare = liveRecipes > 0
-        ? (workersLeft + liveRecipes - 1) / liveRecipes : 0;
 
-    // Pass 1 — fair shares; pass 2 — leftovers in table order.
-    for (int pass = 1; pass <= 2 && workersLeft > 0; ++pass) {
-        for (int i = 0; i < kRecipeCount && workersLeft > 0; ++i) {
-            if (!recipe_known(hands, kRecipes[i].craft, kRecipes[i].minRank))
+    int total = 0;
+    long long madeBatches[std::size_t(kRecipeCount) + 2] = {};
+    for (int w = 0; w < workers; ++w) {
+        // Верхний рецепт дня: стоимость выхода на рабочий день по текущей
+        // полке = цена единицы × единиц за день. Пересчёт каждый раз —
+        // O(рецептов) целых операций, партий за день не больше
+        // workers × perDay (предохранитель переполнения жив арифметикой).
+        long long bestScore = 0;
+        int best = -1;
+        int bestBatches = 0;
+        for (int c = 0; c < candCount; ++c) {
+            const Cand& cd = cands[std::size_t(c)];
+            int batches = cd.perDay;
+            for (const ItemPart& part : item_parts(cd.outIdx)) {
+                batches = std::min(batches, store.count_of(int(part.def))
+                                                / int(part.count));
+            }
+            if (batches <= 0) continue;
+            const long long score =
+                (long long)stock_price(cd.base, store.count_of(cd.outIdx),
+                                       cd.demand)
+                * batches * cd.yield;
+            if (score > bestScore) {
+                bestScore = score;
+                best = c;
+                bestBatches = batches;
+            }
+        }
+        if (best < 0) break;   // ни один рецепт не кормим сырьём — руки без дела
+        // THE craft door — the town makes goods and strikes coin exactly as
+        // a hand at the bench does (owner 2026-09-12: «город делает монеты
+        // через систему крафта по своему ИИ»). All-or-nothing lives in the
+        // door: a full store is a day that did not happen, the inputs never
+        // left, and no fact lies about goods that do not exist.
+        if (!craft_item(store, cands[std::size_t(best)].outIdx,
+                        bestBatches)) {
+            // Склад не принял (переполнение слотов) — кандидат мёртв на
+            // сегодня, иначе рука зациклится на несостоявшемся дне.
+            cands[std::size_t(best)].perDay = 0;
             continue;
-            if (t.recipes[i].output < 0 && !t.recipes[i].isMint) continue;
-            run_recipe(i, 1 << 30, pass == 1 ? fairShare : workersLeft);
+        }
+        madeBatches[std::size_t(best)] += bestBatches;
+        total += bestBatches;
+    }
+    for (int c = 0; c < candCount; ++c) {
+        if (madeBatches[std::size_t(c)] <= 0) continue;
+        const Cand& cd = cands[std::size_t(c)];
+        const int units = int(madeBatches[std::size_t(c)] * cd.yield);
+        if (cd.isMint) {
+            // The fact names the METAL spent (part 0's commodity row) — the
+            // money-supply counter balance_run watches.
+            const ItemDef* metal =
+                item_def_at(int(item_parts(cd.outIdx)[0].def));
+            report(sink, user, EconFact::Kind::Minted,
+                   metal ? commodity_index(metal->id) : -1, units);
+        } else {
+            report(sink, user, EconFact::Kind::Produced, cd.commodity,
+                   units);
         }
     }
     return total;

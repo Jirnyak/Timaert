@@ -45,10 +45,24 @@ int trade_price(int baseValue, int charisma, int bargaining,
 }
 
 float stock_scarcity(int supply, int demandPerDay) {
-    const float s = float((supply < 0 ? 0 : supply) + 1);
-    const float d = float((demandPerDay < 0 ? 0 : demandPerDay) + 1);
-    const float scarcity = d / s;
-    return scarcity < 0.25f ? 0.25f : (scarcity > 4.0f ? 4.0f : scarcity);
+    // ОДНА кривая цены (CANON S10, пять законов): `value × (спрос+1)/(запас+1)`,
+    // КОРИДОРА НЕТ. Спрос — СЕЗОННЫЙ: мир ест раз в сезон (S19.2), поэтому
+    // мерка дефицита обязана совпасть с ритмом еды — дневная мерка читала
+    // сезонный амбар как «завались» и опаздывала ровно на сезон (хутор с 400
+    // хлеба при нужде 960 уходил в шахту и умирал). Обе половины спроса —
+    // прямая лестница И производная по рецептам — сидят в demandPerDay
+    // (daily_demand_for), так что горизонт у них один по построению (ловушка
+    // S10 «переводить обе половины» закрыта дверью, а не дисциплиной).
+    // Равновесие читаемо: склад == сезонная нужда ⇒ цена ровно по базе;
+    // любое отклонение цены от базы означает «здесь не хватает» или «здесь
+    // завал» — для каждого товара и места без исключений.
+    // Коридор [0.25…4.0] умер вердиктом 2026-09-18: он не защищал от
+    // «щедрого купца», а СОЗДАВАЛ его — в насыщении нет слиппеджа, и только
+    // там прокрутка была прибыльной (price_law_test держит обратное).
+    const long long s = (long long)(supply < 0 ? 0 : supply) + 1;
+    const long long d =
+        (long long)(demandPerDay < 0 ? 0 : demandPerDay) * kDaysPerSeason + 1;
+    return float(d) / float(s);
 }
 
 int stock_price(int baseValue, int supply, int demandPerDay) {

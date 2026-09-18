@@ -1177,9 +1177,11 @@ timaert_test(rpg_rules_test
         src/macro/economy.cpp
     LINK_ENTT)
 
-timaert_test(econ_v1_test
+timaert_test(econ_v1_test LINK_ENTT
     SOURCES
         src/macro/econ_day.cpp
+        # Ранжирование рук спрашивает ОДИН закон цены (stock_price).
+        src/macro/economy.cpp
         # The one-dictionary link law: every commodity is an item-catalog row.
         src/macro/items.cpp)
 

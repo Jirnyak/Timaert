@@ -1626,12 +1626,13 @@ int leader_trade_rank_(ecs::World& w, entt::entity self) {
 // 2026-09-18: «если деревня добывает что угодно, она это и продаёт,
 // буквально живёт этим»): едет то, что ДОМА ДЕШЕВЛЕ БАЗЫ — затоваривание
 // по той же кривой цены, что судит сделку на месте, — и никогда не едет
-// сезонный амбар (S19.2: мир ест раз в сезон; прежняя мерка «сверх
-// ДНЕВНОЙ нужды» звала запас зимы излишком и продавала его). Дефицитное
-// дома (цена выше базы) не грузится вовсе — оно нужно здесь.
-// ПОТОЛОК ПОГРУЗКИ ВРЕМЕННЫЙ: когда горизонт спроса самой кривой станет
-// сезонным (шаг 2 этого трека), «дома дешевле базы» скажет то же самое
-// одной ценой, и вычитание сезонной нужды умрёт.
+// сезонный амбар (S19.2: мир ест раз в сезон). Дефицитное дома (цена выше
+// базы) не грузится вовсе — оно нужно здесь.
+// Вычитание сезонной нужды — ЗАКРЫТАЯ ФОРМА правила «грузи, пока дома
+// дешевле базы»: при сезонном горизонте кривой (economy.cpp)
+// цена < базы ⇔ склад > сезонной нужды, и каждая погруженная единица
+// дорожает для следующей — погрузка сама остановилась бы ровно на
+// сезонной нужде. Вычитание считает эту точку без цикла.
 void load_cheap_at_home_(Inventory& store, Inventory& bag, int population,
                          const Skills& site, float capKg) {
     for (int oi = 0; oi < kCommodityCount
@@ -3330,15 +3331,38 @@ void dispatch(AIBehaviour b, entt::entity e, MacroPos& p,
 // (every lot pays its own slippage), and coin travels by transfer_value:
 // conservation is by construction, not by audit.
 
+// НАИБОЛЬШИЙ ЛОТ ПО КОШЕЛЬКУ — точная граница двоичным поиском по
+// монотонной стоимости лота `n × цена(послесделочная полка)`. Прежняя пара
+// «потолок → одно уточнение» была построена под коридор [0.25…4.0]: без
+// него цена ПЕРВОЙ единицы на голодной полке (база × сезонный спрос) давала
+// afford = 0, и рынок в голоде не мог купить НИЧЕГО — хотя честная точка
+// n > 0 существует, потому что лот целиком оплачивается по полке ПОСЛЕ
+// сделки и с каждой единицей дешевеет. selling: полка растёт (have + n);
+// покупка у рынка: полка тает (have − n) — стоимость растёт в обе стороны
+// монотонно, и максимум по кошельку ищется за log шагов.
+int max_affordable_lot_(int base, int have, int demand, bool selling,
+                        int wallet, int cap) {
+    if (cap <= 0 || wallet <= 0) return 0;
+    int lo = 0, hi = cap;
+    while (lo < hi) {
+        const int mid = lo + (hi - lo + 1) / 2;
+        const int shelf = selling ? have + mid : have - mid;
+        const long long cost =
+            (long long)mid * stock_price(base, shelf, demand);
+        if (cost <= wallet) lo = mid; else hi = mid - 1;
+    }
+    return lo;
+}
+
 // The STATION deal — a caravan standing on a CITY market. Symmetric and
-// purely local: a market short of a good (daily demand above supply) BUYS
-// from the hold up to its demand; a market glutted (supply above demand)
-// SELLS the surplus into the hold. The bounds fall straight out of the
-// price law — price > base ⇔ demand > supply — so «продай что здесь
-// дорого, купи что дёшево» needs no threshold constants at all, and the
-// trade drives every market it touches TOWARD its own demand. Arbitrage is
-// emergent: the surplus bought cheap here is exactly what the next hungry
-// station pays above base for.
+// purely local: a market short of a good (its SEASONAL need above supply —
+// the price law's own horizon, S19.2) BUYS from the hold up to that need; a
+// market glutted (supply above the seasonal need) SELLS the surplus into
+// the hold. The bounds fall straight out of the price law — price > base ⇔
+// seasonal need > supply — so «продай что здесь дорого, купи что дёшево»
+// needs no threshold constants at all, and the trade drives every market it
+// touches TOWARD its own need. Arbitrage is emergent: the surplus bought
+// cheap here is exactly what the next hungry station pays above base for.
 CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
                                      Landmark& market,
                                      int charisma, int bargaining) {
@@ -3351,23 +3375,15 @@ CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
         const int base = def ? def->value : 0;
         if (base <= 0) continue;
         const int demand = daily_demand_for(id, market.population, site);
+        const int need = demand * kDaysPerSeason;
         const int have = ms.count(id);
-        if (demand > have) {
-            // SELL into the shortage, up to the market's own demand. The
-            // affordability bound refines once: the ceiling price yields a
-            // small lot, the lot's own (cheaper) post-trade price affords a
-            // bigger one — and the bigger lot is still affordable because
-            // more supply only cheapens the unit further.
-            int n = std::min(hold.count(id), demand - have);
+        if (need > have) {
+            // SELL into the shortage, up to the market's own seasonal need,
+            // bounded by what its whole store can PAY (max_affordable_lot_).
+            int n = std::min(hold.count(id), need - have);
             if (n <= 0) continue;
-            const int wallet = inventory_value(ms);
-            const int priceCeil = stock_price(base, have, demand);
-            int afford = wallet / std::max(1, priceCeil);
-            if (afford < n) {
-                const int p1 = stock_price(base, have + afford, demand);
-                afford = wallet / std::max(1, p1);
-            }
-            n = std::min(n, afford);
+            n = max_affordable_lot_(base, have, demand, /*selling=*/true,
+                                    inventory_value(ms), n);
             if (n <= 0) continue;
             const int moved = haul_between(hold, ms, id, n, 1e9f);
             if (moved <= 0) continue;
@@ -3381,23 +3397,17 @@ CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
                 charisma, bargaining);
             out.soldValue += transfer_value_dense(ms, hold, moved * price);
             out.movedTableValue += base * moved;
-        } else if (have > demand) {
-            // BUY the surplus above the market's own demand — never its
-            // living stock.
+        } else if (have > need) {
+            // BUY the surplus above the market's own seasonal need — never
+            // its living stock; the lot is bounded by the caravan's purse
+            // through the same exact door (max_affordable_lot_).
             const float kg = def->weight > 0.0f ? def->weight : 1.0f;
-            int n = std::min(have - demand,
+            int n = std::min(have - need,
                              int((capacityKg - inventory_weight(hold)) / kg));
+            n = max_affordable_lot_(base, have, demand, /*selling=*/false,
+                                    inventory_value(hold), n);
             if (n <= 0) continue;
-            // A short purse shrinks the lot ONCE: shrinking n leaves more
-            // supply behind, which only CHEAPENS the unit, so the shrunk
-            // lot is affordable by monotonicity.
-            int price = stock_price(base, have - n, demand);
-            const int purse = inventory_value(hold);
-            if (n * price > purse) {
-                n = purse / std::max(1, price);
-                price = stock_price(base, have - n, demand);
-            }
-            if (n <= 0) continue;
+            const int price = stock_price(base, have - n, demand);
             const int moved =
                 haul_between(ms, hold, id, n,
                              capacityKg - inventory_weight(hold));
@@ -3441,16 +3451,11 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
         if (n <= 0) continue;
         const int demand = daily_demand_for(id, market.population, site);
         const int have = ms.count(id);
-        // Affordability refined once, exactly as at the station: a glut lot
-        // prices far below the ceiling, so the ceiling alone under-sells.
-        const int wallet = inventory_value(ms);
-        const int priceCeil = stock_price(base, have, demand);
-        int afford = wallet / std::max(1, priceCeil);
-        if (afford < n) {
-            const int p1 = stock_price(base, have + afford, demand);
-            afford = wallet / std::max(1, p1);
-        }
-        n = std::min(n, afford);
+        // Affordability by the exact door (max_affordable_lot_), as at the
+        // station: the lot pays the post-trade shelf, so a famine ceiling
+        // price never blanks a sale the market can genuinely afford.
+        n = max_affordable_lot_(base, have, demand, /*selling=*/true,
+                                inventory_value(ms), n);
         if (n <= 0) continue;
         const int moved = haul_between(bag, ms, id, n, 1e9f);
         if (moved <= 0) continue;
@@ -3532,13 +3537,11 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
             const float kg = def->weight > 0.0f ? def->weight : 1.0f;
             int n = std::min({have, lots[li].homeCap,
                               int((capacityKg - inventory_weight(bag)) / kg)});
-            if (n <= 0) continue;
-            int price = stock_price(base, have - n, demand);
-            const int purse = inventory_value(bag);
-            if (n * price > purse) {
-                n = purse / std::max(1, price);
-                price = stock_price(base, have - n, demand);
-            }
+            // Точная граница по кошельку (max_affordable_lot_): срез лота
+            // по цене ДО среза недокупал — оставшаяся полка дешевле, и
+            // честная точка выше.
+            n = max_affordable_lot_(base, have, demand, /*selling=*/false,
+                                    inventory_value(bag), n);
             if (n <= 0) continue;
             const int moved =
                 haul_between(ms, bag, id, n,

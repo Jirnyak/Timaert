@@ -446,10 +446,11 @@ void test_the_vendor_sells_at_the_nearest_city() {
     city.population = 100;
     city.inventory.add("bread", 2000);   // plenty: the export
     // The deal PAYS now (owner 2026-08-30): a coinless fixture is the
-    // deadlock the payment law exists to refuse. Purses follow the genesis
-    // seeding law (econ_day.cpp seed_landmark_inventory): pop × 8 for a
-    // city, pop × 2 for a village.
-    city.inventory.add("coin_timaert_copper", 100 * 8);
+    // deadlock the payment law exists to refuse. The purse covers the
+    // grain lot at the SEASONAL famine price (corridor died 2026-09-18) —
+    // a thin purse would pay the vendor in its own bread by value density,
+    // and the return leg would waddle home under a tonne of payment.
+    city.inventory.add("coin_timaert_copper", 40000);
     gs.landmarks.push_back(city);      // grain: NONE — the import
     Landmark vil{};
     vil.type = LandmarkType::Village;
@@ -522,7 +523,7 @@ void test_the_vendor_sells_at_the_nearest_city() {
     const int coinTotal = gs.landmarks[0].inventory.count("coin_timaert_copper")
                           + gs.landmarks[1].inventory.count("coin_timaert_copper")
                           + bag.count("coin_timaert_copper");
-    CHECK(coinTotal == 100 * 8 + 50 * 2,
+    CHECK(coinTotal == 40000 + 50 * 2,
           "CONSERVATION: coin moves through the deal, never minted");
     CHECK(gs.landmarks[1].inventory.count("coin_timaert_copper") > 0,
           "the village EARNED coin for its raw — the payment is real");
