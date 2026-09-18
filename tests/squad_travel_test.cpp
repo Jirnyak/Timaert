@@ -213,12 +213,13 @@ void test_ocean_drowns_who_cannot_reach_the_shore() {
     {   // Near the shore: out in debt, bled but alive.
         // The bar is what makes a shore NEAR — not the cell count. Water is
         // 20 SP a cell since the 2026-09-09 recalibration (kStaminaPerCell 2),
-        // and the bite takes the WHOLE outstanding debt every step, so an
-        // empty-legged body three cells out now owes 12 + 32 + 52 HP and drowns
-        // one step short: that is the law working, not a regression. A bar that
-        // covers most of the swim is what "near" has always meant — he wades
-        // the first cells on his legs and pays only the last one in blood.
-        auto e = make_walker(w, gs.mapW, 23.0f, 10.0f, 30.0f, 10.0f, /*maxSp*/40,
+        // and since 2026-09-17 the bite is QUADRATIC (CANON S14.1, «как в
+        // Elin»): debt² / kExhaustionBiteDivisor per spend-in-debt. A bar of
+        // 20 wades one cell free and pays the second in real blood (−20 →
+        // 400/32 = 12 HP) — deep enough to bleed, shallow enough to live.
+        // (The old bar of 40 left a −2 debt whose square sits under the
+        // divisor's honest floor: a scratch is not a bite any more.)
+        auto e = make_walker(w, gs.mapW, 23.0f, 10.0f, 30.0f, 10.0f, /*maxSp*/20,
                              /*hp*/30.0f);
         MacroNpcAiRuntime rt{};
         reset_macro_npc_ai_runtime(rt, 23u);

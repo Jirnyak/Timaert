@@ -784,6 +784,7 @@ void write_landmark(Writer& w, const Landmark& lm) {
     w.pod(lm.starvedYesterday);  // v29: the honest day's readouts
     w.pod(lm.unmetYesterday);
     w.pod(lm.famineActive);
+    w.pod(lm.seasonWellbeing);   // v95: the season window's verdict (S19.2)
     w.pod(lm.popGrowthCarry);
     w.pod(lm.renown);            // v53: a place's standing is world memory
     w.pod(lm.spellId);
@@ -811,6 +812,7 @@ void read_landmark(Reader& r, Landmark& lm) {
     r.pod(lm.starvedYesterday);  // v29
     r.pod(lm.unmetYesterday);
     r.pod(lm.famineActive);
+    r.pod(lm.seasonWellbeing);   // v95
     r.pod(lm.popGrowthCarry);
     r.pod(lm.renown);            // v53
     r.pod(lm.spellId);

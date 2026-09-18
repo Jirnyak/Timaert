@@ -71,6 +71,19 @@ inline constexpr const SeasonDef& season_def(Season s) {
     return kSeasons[std::size_t(s)];
 }
 
+// The season BOUNDARY — the one day the world settles its balances and
+// rebakes its slow truths (CANON S19.2: единое окно мира — food and pay for
+// every container a season ahead, the 1/8 arrears cut, the tithe charge, the
+// landmarks' squad court, the expensive field rebakes). Day 1 is the first
+// boundary: a new world pays for its first season the morning it is born,
+// off the mid-life stores it was seeded with. Total over any day, like
+// season_at.
+inline bool season_boundary(int day) {
+    int d = (day - 1) % kDaysPerSeason;
+    if (d < 0) d += kDaysPerSeason;
+    return d == 0;
+}
+
 // Convenience for the foliage consumer: the temperature nudge for a given day.
 inline float season_temp_offset(int day) {
     return season_def(season_at(day)).tempOffset;

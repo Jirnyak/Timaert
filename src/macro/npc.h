@@ -324,11 +324,18 @@ inline constexpr CombatTemplate kSorceressCombat {70,{22,1}, 1.25f, 25.0f,3.6f, 
 // bodyHeight 6 — башня, не человек (одна колонка, не ветка рендера).
 inline constexpr CombatTemplate kDragonCombat    {500,{3,20}, 1.6f, 40.0f,3.0f, "Drg", CombatTemplate::Missile, 260, 2.5f, 0xFF3060FFu, /*bodyHeight*/6.0f, /*sight*/60.0f, /*mp*/100, /*sp*/100, DamageType::Fire, /*cruiseM*/10.0f};
 
+// КРЕСТЬЯНЕ РАБОТАЮТ ЗА ЕДУ (владелец 2026-09-18: «пусть будут 0, чтобы не
+// нарушать единство систем — их зп 0 в деньгах»): upkeepGoldPerDay = 0 у
+// крестьянских родов значит «на содержании ЕДОЙ, жалованья не берёт» —
+// жалованье есть цена НАЁМНОЙ службы (гарнизоны, варбанды, ростер игрока).
+// kNpcUpkeepNone (−1) остаётся «не на содержании вовсе» (звери, монстры,
+// бандиты). Цена найма — своя колонка hireGold, от нуля жалованья не
+// зависит.
 inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // Peasant
     {
         NPCType::Peasant, "peasant", "Peasant", SpriteId::Peasant, 1,
-        AIBehaviour::Gatherer, kPeasantCombat, 1, true, 10,
+        AIBehaviour::Gatherer, kPeasantCombat, 0, true, 10,
         /*weight*/55, /*loot*/nullptr, /*radius*/0.0f,
         {{"Ivan","Pyotr","Sergey","Dmitry","Alexei","Nikolai","Vasily","Grigory",
           "Fedor","Andrei","Olga","Natalya","Katya","Masha","Dasha"}}, 15,
@@ -347,7 +354,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // Woodcutter
     {
         NPCType::Woodcutter, "woodcutter", "Woodcutter", SpriteId::Peasant, 1,
-        AIBehaviour::Gatherer, kWoodcutterCombat, 1, true, 12,
+        AIBehaviour::Gatherer, kWoodcutterCombat, 0, true, 12,
         /*weight*/21, /*loot*/nullptr, /*radius*/0.0f,
         {{"Borislav","Timofey","Yegor","Luka","Matvey"}}, 5,
         {{"These woods hold many secrets.",
@@ -457,7 +464,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // Miner — the iron villages' man (spawned where a vein anchors the home)
     {
         NPCType::Miner, "miner", "Miner", SpriteId::Peasant, 1,
-        AIBehaviour::Gatherer, kWoodcutterCombat, 1, true, 12,
+        AIBehaviour::Gatherer, kWoodcutterCombat, 0, true, 12,
         /*weight*/21, /*loot*/nullptr, /*radius*/0.0f,
         {{"Prokhor","Savva","Demyan","Zakhar","Foma"}}, 5,
         {{"The vein runs deep, but so do we.",
@@ -473,7 +480,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // Quarryman — stone out of the mountain, the same law of labour
     {
         NPCType::Quarryman, "quarryman", "Quarryman", SpriteId::Peasant, 1,
-        AIBehaviour::Gatherer, kWoodcutterCombat, 1, true, 12,
+        AIBehaviour::Gatherer, kWoodcutterCombat, 0, true, 12,
         /*weight*/21, /*loot*/nullptr, /*radius*/0.0f,
         {{"Gavril","Osip","Trofim","Nazar","Kondrat"}}, 5,
         {{"Stone does not grow back. Good thing there is a mountain of it.",
@@ -488,7 +495,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // Clay-digger — the riverbank's man
     {
         NPCType::ClayDigger, "clay_digger", "Clay-digger", SpriteId::Peasant, 1,
-        AIBehaviour::Gatherer, kWoodcutterCombat, 1, true, 12,
+        AIBehaviour::Gatherer, kWoodcutterCombat, 0, true, 12,
         /*weight*/21, /*loot*/nullptr, /*radius*/0.0f,
         {{"Yermolai","Panteley","Averyan","Selivan","Mitrofan"}}, 5,
         {{"Good clay wants a river and patience.",
@@ -653,7 +660,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     // (spawn_squad), and the rotation sizes the crew to the village.
     {
         NPCType::Vendor, "vendor", "Vendor", SpriteId::Peasant, 1,
-        AIBehaviour::VendorTrade, kWoodcutterCombat, 1, true, 12,
+        AIBehaviour::VendorTrade, kWoodcutterCombat, 0, true, 12,
         /*weight*/21, /*loot*/nullptr, /*radius*/0.0f,
         {{"Matvey","Luka","Yefim","Silanty","Avdey"}}, 5,
         {{"Fresh from the village, best prices before noon.",
@@ -668,7 +675,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     {
         NPCType::SilverMiner, "silver_miner", "Silver-miner",
         SpriteId::Peasant, 1,
-        AIBehaviour::Gatherer, kWoodcutterCombat, 1, true, 12,
+        AIBehaviour::Gatherer, kWoodcutterCombat, 0, true, 12,
         /*weight*/21, /*loot*/nullptr, /*radius*/0.0f,
         {{"Yakov","Naum","Tikhon","Arkhip","Kuzma"}}, 5,
         {{"The white metal pays better than iron, and weighs on the soul.",
@@ -683,7 +690,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
     {
         NPCType::TaxCollector, "tax_collector", "Tax-collector",
         SpriteId::Peasant, 2,
-        AIBehaviour::TaxRun, kWoodcutterCombat, 1, true, 12,
+        AIBehaviour::TaxRun, kWoodcutterCombat, 0, true, 12,
         /*weight*/21, /*loot*/nullptr, /*radius*/0.0f,
         {{"Foka","Yeremey","Lavrenty","Sofron","Nikanor"}}, 5,
         {{"The crown's eighth, weighed and sealed.",
@@ -1197,16 +1204,15 @@ inline int soldier_upkeep(const SoldierRecord& s) {
     return npc_upkeep_base(soldier_npc_type(s)) * soldier_level_factor(s.level);
 }
 
-// `tradeDiscountPct` is the ONE derived sheet's column (attributes.h
-// calculate_derived — cha × 1 %, whole percent since 4в), not a private copy
-// of that formula; the derived column is uncapped, so the 90 % ceiling stays
-// HERE, at the site that applies it to a payroll.
-inline int calculate_squad_upkeep(const SoldierSquad& squad,
-                                  int tradeDiscountPct = 0) {
+// Upkeep is MAINTENANCE, not a deal (owner 2026-09-17, сессия сезонов): the
+// CHA/Trade discount that used to haggle the player's payroll down was a
+// player-special path and died with the unified season window — bargaining
+// belongs to HIRE, which already prices through the trade law. One law, one
+// number, whoever's roster it is.
+inline int calculate_squad_upkeep(const SoldierSquad& squad) {
     int base = 0;
     for (const auto& s : squad) base += soldier_upkeep(s);
-    const int discountPct = std::clamp(tradeDiscountPct, 0, 90);
-    return base * (100 - discountPct) / 100;
+    return base;
 }
 
 // The row's price column × THE one level law (soldier_level_factor) — the

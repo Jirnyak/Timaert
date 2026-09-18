@@ -85,12 +85,14 @@ int main() {
         return fail("preview hire price is unstable");
     }
 
-    // The discount parameter is the derived sheet's tradeDiscountPct column
-    // now (cha × 1 %, whole percent since 4в): 50 charisma reads as 50.
-    const int baseUpkeep = sm::calculate_squad_upkeep(player, 0);
-    const int charismaUpkeep = sm::calculate_squad_upkeep(player, 50);
-    if (baseUpkeep <= 0 || charismaUpkeep >= baseUpkeep) {
-        return fail("NPC-kind upkeep or charisma discount invalid");
+    // Upkeep is MAINTENANCE, not a deal (owner 2026-09-17, CANON S14/S19.2):
+    // the CHA discount died as a player-special — the law is the plain sum
+    // of the soldier rows' own prices, whoever's roster it is.
+    const int baseUpkeep = sm::calculate_squad_upkeep(player);
+    int rowSum = 0;
+    for (const sm::SoldierRecord& s : player) rowSum += sm::soldier_upkeep(s);
+    if (baseUpkeep <= 0 || baseUpkeep != rowSum) {
+        return fail("squad upkeep must be the plain soldier-row sum");
     }
 
     FixedRng rng{};
@@ -240,9 +242,9 @@ int main() {
         return fail("a standing mind stopped deciding (seq missing from seed)");
     }
 
-    std::printf("OK combat_squad_test hired=%d garrison=%d upkeep=%d discounted=%d generated=%d projected=%d malformed_tiles=%d ai_owner=1 unique_ids=1\n",
+    std::printf("OK combat_squad_test hired=%d garrison=%d upkeep=%d generated=%d projected=%d malformed_tiles=%d ai_owner=1 unique_ids=1\n",
                 player.size(), garrison.size(),
-                baseUpkeep, charismaUpkeep, generated.garrison.size(),
+                baseUpkeep, generated.garrison.size(),
                 projected, malformedProjected);
     CHECK(true, "every gate above held");
     return sm::test::report("combat_squad_test");

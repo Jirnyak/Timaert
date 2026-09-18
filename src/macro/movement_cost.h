@@ -87,11 +87,20 @@ inline float travel_skill_efficiency(const Skills& s) {
     return skill_mult(s, SkillId::Travel);
 }
 
-// Death by exhaustion, and it is DESIGN, not an accident: past zero, every
-// further step costs HP equal to the WHOLE outstanding stamina debt, so the
-// deeper the hole the more each step takes. Pressing on is a real gamble rather
-// than a free ride on negative stamina. 1.0 = the full debt; lower is gentler.
-constexpr float kExhaustionBite = 1.0f;
+// Death by exhaustion, and it is DESIGN, not an accident — and since
+// 2026-09-17 the ONE law of zero is QUADRATIC (owner, CANON S14.1, дословно:
+// «один закон! ЛЮБАЯ ЗАТРАТА SP ниже 0 универсально квадратично бьёт по хп
+// (как в Elin)»): every spend that leaves the bar in debt bites HP by the
+// debt SQUARED over this divisor. Shallow debt is a gamble (−4 → 2 HP),
+// deep debt is a sentence — pressing on is priced, never gated: no writer
+// of SP refuses at zero, refusing is an AI head's DECISION.
+// The divisor is a дубль-прогон knob; po2, integer, house style. 32 crosses
+// the old linear curve at −32: shallower debt is GENTLER than before (−8 →
+// 2 HP, was 8 — a narrow ford costs blood, not life), deeper is crueller
+// (−64 → 128, was 64 — the open sea drowns faster). The floor is honest: a
+// debt whose square sits below the divisor bites nothing — the same
+// asymmetric floor the tithe average keeps by design.
+constexpr int kExhaustionBiteDivisor = 32;
 
 // How fast the macro march covers ground, in cells per GAME HOUR. Not per real
 // second — that is the whole point. Stamina is priced per cell and recovery per
@@ -295,18 +304,19 @@ inline float travel_stamina_cost(float weight, float cells,
     return (weight * kStaminaPerCell * efficiency + float(overloadCost)) * cells;
 }
 
-// THE bite, for a body of either scale (owner's ruling, 2026-08-27:
-// «истощение — это когда SP кончилось, и тогда отнимается HP от ДВИЖЕНИЯ по
-// миру; остановился — отдыхаешь»). What it takes for one step in debt, given
-// the debt. Zero while stamina lasts, so it can be asked unconditionally.
+// THE bite, for a body of either scale (owner's rulings, 2026-08-27 +
+// 2026-09-17): what one spend-in-debt takes, given the debt — QUADRATIC, the
+// one law of zero (CANON S14.1). Zero while stamina lasts, so it can be
+// asked unconditionally, and integer through and through.
 //
 // This used to be inlined in the player's charge and hand-copied in the macro
 // AI's per-think settle, where it was also gated on WATER: a squad marching
 // itself into the ground on dry meadow just made camp and paid nothing, while
-// the player bled for the same step. One law, one line, both scales.
+// the player bled for the same step. One law, one line, both scales — march,
+// labour and craft all bite here and nowhere else.
 inline int exhaustion_bite(int sp) {
     if (sp >= 0) return 0;
-    return int(std::lround(float(-sp) * kExhaustionBite));
+    return (-sp) * (-sp) / kExhaustionBiteDivisor;
 }
 
 // Charge whole SP, and let the exhaustion curve take the rest out of HP.

@@ -455,7 +455,8 @@ void test_the_leaders_training_reads_at_the_new_doors() {
         CHECK(trade_sell_price(1000, 0, 50) > trade_sell_price(1000, 0, 0),
               "and sells dearer through the same law");
     }
-    // 3. Foraging thins the daily bread draw. The trained forager is FOUND,
+    // 3. Foraging thins the SEASON'S bread draw (the daily feed died with
+    // the boundary window, CANON S19.2). The trained forager is FOUND,
     // not authored — leaders derive their sheets — so the scan pins that the
     // derivation can produce the rank at all; the Guard's role weights say 0
     // Foraging, which is the untrained control.
@@ -482,19 +483,32 @@ void test_the_leaders_training_reads_at_the_new_doors() {
         CHECK(make_character_sheet(NPCType::Guard, 3, leader_sheet_seed(999u))
                       .skills.of(SkillId::Foraging) == 0,
               "the Guard control is honestly untrained");
-        w.reg.get<ecs::NpcInventory>(forager).inv.add("bread", 64);
-        w.reg.get<ecs::NpcInventory>(untrained).inv.add("bread", 64);
+        // A season of bread and a season of wages in each bag: the window
+        // judges BOTH needs whole, and an uncovered wage would bleed the
+        // roster before the bread law under test ever showed.
+        const int stock = 8 * kDaysPerSeason * 2;
+        for (const entt::entity e : {forager, untrained}) {
+            auto& bag = w.reg.get<ecs::NpcInventory>(e).inv;
+            bag.add("bread", stock);
+            bag.add("coin_empire", 8 * 3 * kDaysPerSeason * 4);
+        }
         MacroWorld mw{&gs, nullptr, &w};
-        feed_squads_daily(mw);
+        CHECK(squad_season_window(mw, 2) == 0,
+              "no window off the boundary (negative control)");
+        CHECK(w.reg.get<ecs::NpcInventory>(untrained).inv.count("bread")
+                  == stock,
+              "an ordinary day draws no bread at all");
+        squad_season_window(mw, 1);
         const int foragerLeft =
             w.reg.get<ecs::NpcInventory>(forager).inv.count("bread");
         const int untrainedLeft =
             w.reg.get<ecs::NpcInventory>(untrained).inv.count("bread");
-        CHECK(untrainedLeft == 64 - 8,
-              "an untrained camp eats a loaf a head — the M&B law unchanged");
+        CHECK(untrainedLeft == stock - 8 * kDaysPerSeason,
+              "an untrained camp eats a season's loaf a head — the M&B law "
+              "at the window's scale");
         CHECK(foragerLeft > untrainedLeft,
               "a trained forager's camp lives partly off the land");
-        CHECK(foragerLeft < 64,
+        CHECK(foragerLeft < stock,
               "negative control: foraging thins the draw, it is not a "
               "free kitchen below rank 100");
     }

@@ -181,6 +181,49 @@ inline int wallet_spend_up_to(Inventory& inv, int value) {
     return paid;
 }
 
+// ОПЛАТА СТОИМОСТЬЮ (владелец, 2026-09-18, дословно: «оплата может
+// списываться по единой системе стоимости — натурой, по механике бартера…
+// и в чём особенны монеты? никакого хардкода: у них минимальный вес при
+// макс стоимости, поэтому дефолт — списание в монетах, но если монет нет,
+// списывается что-то другое, что выгодно по весу»). Никакого списка валют:
+// стаки уходят в порядке ПЛОТНОСТИ ЦЕННОСТИ (value/kg), и монета выигрывает
+// арифметикой веса, не веткой. Последняя единица может переплатить —
+// бартерный закон: отданное покрывает взятое, излишек — щедрость
+// плательщика. Возвращает уплаченную стоимость; на тощем контейнере платит
+// сколько есть — судья «покрыто/не покрыто» остаётся у вызывающего
+// (окно сравнивает inventory_value ДО платежа).
+inline int pay_value_dense(Inventory& inv, int value) {
+    int left = value < 0 ? 0 : value;
+    int paid = 0;
+    while (left > 0) {
+        int best = -1;
+        int bestV = 0;
+        float bestW = 0.0f;
+        for (int i = 0; i < int(inv.slots.size()); ++i) {
+            const ItemRef& s = inv.slots[std::size_t(i)];
+            if (s.empty()) continue;
+            const int v = value_of(s);
+            if (v <= 0) continue;
+            const ItemDef* def = item_def_at(int(s.def));
+            const float w = def && def->weight > 0.0f ? def->weight : 0.0f;
+            // Плотнее — раньше: v/w больше ⇔ v·bestW > bestV·w (перекрёстно,
+            // без деления; вес 0 бесконечно плотен и выигрывает всегда).
+            const bool denser = best < 0
+                || float(v) * bestW > float(bestV) * w
+                || (float(v) * bestW == float(bestV) * w && v > bestV);
+            if (denser) { best = i; bestV = v; bestW = w; }
+        }
+        if (best < 0) break;   // платить больше нечем
+        const ItemRef& s = inv.slots[std::size_t(best)];
+        const int want = (left + bestV - 1) / bestV;
+        const int take = want < int(s.count) ? want : int(s.count);
+        if (take <= 0 || !inv.remove_at(best, take)) break;
+        paid += take * bestV;
+        left -= take * bestV;
+    }
+    return paid;
+}
+
 // The whole bag in universal VALUE — what every formula converts to
 // (owner: «внутри всё равно учитывается стоимость»). Per stack through THE
 // contextual price (value_of — row + affixes; material/quality wake here

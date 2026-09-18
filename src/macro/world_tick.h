@@ -58,7 +58,13 @@ using EconFactSink = void (*)(void* user, const EconFact& fact);
 // (famine began / revolt began / the place died out), which is what the
 // chronicle files. Public so econ_v1_test can drive a landmark to its death.
 // `sink` receives the day's Consumed/Starved/Famine facts (null = silence).
-void settle_landmark_day(Landmark& lm,
+//
+// SEASONAL since 2026-09-17 (CANON S19.2): the CONSUME half runs only on
+// season_boundary(day) — a whole season of every need, covered whole or not
+// debited at all — and parks the season's wellbeing on the landmark
+// (seasonWellbeing); every other day reads that number into the same mood
+// band and population law. Daily slot hygiene rides along unchanged.
+void settle_landmark_day(Landmark& lm, int day,
                          bool& startedFamine, bool& startedRevolt,
                          bool& diedOut,
                          EconFactSink sink = nullptr, void* user = nullptr);

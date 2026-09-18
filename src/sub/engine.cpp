@@ -2154,7 +2154,10 @@ bool SubworldEngine::harvest_action(float reachOverride) {
     // it takes one object per HAND at this very price. The hero and the artel
     // are not two laws that happen to agree; they are one law, and the crew's
     // whole advantage is how many hands it brings.
-    if (pay) pay->sp -= sp_price(pay->maxSp, kGatherPerWorkerDay);
+    // THE spend door (movement_cost.h apply_stamina_cost): debit + the one
+    // QUADRATIC law of zero in a single move — felling on an empty bar is
+    // never refused, it bites HP at the spend (CANON S14.1, 2026-09-17).
+    if (pay) apply_stamina_cost(*pay, sp_price(pay->maxSp, kGatherPerWorkerDay));
     return true;
 }
 

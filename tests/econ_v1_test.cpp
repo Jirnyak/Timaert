@@ -173,8 +173,12 @@ int main() {
     bool villageFamine = false;
     bool cityFamine = false;
 
-    const int kDays = 64;
-    for (int day = 0; day < kDays; ++day) {
+    // Days are 1-based like the world's own (day 1 = the first boundary):
+    // production runs daily, the CONSUME lands on season boundaries only
+    // (CANON S19.2) — three windows inside 96 days.
+    const int kDays = 96;
+    int boundariesStarvedAfterWarmup = 0;
+    for (int day = 1; day <= kDays; ++day) {
         // Village: 7 workers on grain, 1 in the forest, 1 rotating the pits.
         gather(village, grainIdx, 7, led);
         gather(village, woodIdx, 1, led);
@@ -188,8 +192,12 @@ int main() {
         }
 
         // The city bakes for the PAIR — its own table plus the village's
-        // bread that rides back on the return leg.
-        econ_produce_day(city, EconSite::City, 8, cityPop + villagePop,
+        // bread that rides back on the return leg. Twelve workers, not the
+        // old eight: the seasonal window (S19.2) makes the city BANK a
+        // season of bread between boundaries, so steady-state production
+        // must beat consumption + export with headroom, not sit on the old
+        // daily knife-edge (measured: 8 workers banked 840 of the 1024).
+        econ_produce_day(city, EconSite::City, 12, cityPop + villagePop,
                          &sink, &led);
 
         // The return leg: the village's daily bread comes back.
@@ -198,32 +206,44 @@ int main() {
         city.remove_of(commodity_item_index(breadIdx), breadBack);
         village.add_of(commodity_item_index(breadIdx), breadBack);
 
-        // Consumption, ledgered by store diffs.
-        Inventory beforeV = village;
-        const ConsumeOutcome ov =
-            econ_consume_day(village, villagePop, villageFamine, &sink, &led);
-        villageFamine = ov.famineActive;
-        Inventory beforeC = city;
-        const ConsumeOutcome oc =
-            econ_consume_day(city, cityPop, cityFamine, &sink, &led);
-        cityFamine = oc.famineActive;
-        for (int c = 0; c < kCommodityCount; ++c) {
-            consumed[std::size_t(c)] +=
-                (beforeV.count_of(commodity_item_index(c)) - village.count_of(commodity_item_index(c)))
-                + (beforeC.count_of(commodity_item_index(c)) - city.count_of(commodity_item_index(c)));
-        }
-
-        // Law 3: after a two-day warm-up the pair feeds everyone, every day.
-        if (day >= 2 && (ov.starvedPop > 0 || oc.starvedPop > 0)) {
-            std::fprintf(stderr, "day=%d starvedV=%d starvedC=%d\n",
-                         day, ov.starvedPop, oc.starvedPop);
-            return fail("balanced scenario starved after warm-up");
+        // Consumption, ledgered by store diffs — on the BOUNDARY only, a
+        // whole season judged at once (S19.2). The day-1 window meets empty
+        // stores and honestly starves: that is the warm-up.
+        if (season_boundary(day)) {
+            Inventory beforeV = village;
+            const ConsumeOutcome ov = econ_consume_season(
+                village, villagePop, villageFamine, &sink, &led);
+            villageFamine = ov.famineActive;
+            Inventory beforeC = city;
+            const ConsumeOutcome oc = econ_consume_season(
+                city, cityPop, cityFamine, &sink, &led);
+            cityFamine = oc.famineActive;
+            for (int c = 0; c < kCommodityCount; ++c) {
+                consumed[std::size_t(c)] +=
+                    (beforeV.count_of(commodity_item_index(c)) - village.count_of(commodity_item_index(c)))
+                    + (beforeC.count_of(commodity_item_index(c)) - city.count_of(commodity_item_index(c)));
+            }
+            // Law 3: past the warm-up window the pair covers every season.
+            if (day > 1 && (ov.starvedPop > 0 || oc.starvedPop > 0)) {
+                std::fprintf(stderr,
+                             "day=%d starvedV=%d starvedC=%d "
+                             "breadV=%d breadC=%d grainC=%d\n",
+                             day, ov.starvedPop, oc.starvedPop,
+                             beforeV.count_of(commodity_item_index(breadIdx)),
+                             beforeC.count_of(commodity_item_index(breadIdx)),
+                             beforeC.count_of(commodity_item_index(grainIdx)));
+                ++boundariesStarvedAfterWarmup;
+            }
         }
         for (int c = 0; c < kCommodityCount; ++c) {
             if (village.count_of(commodity_item_index(c)) < 0 || city.count_of(commodity_item_index(c)) < 0) {
                 return fail("negative stock — bookkeeping bug");
             }
         }
+    }
+
+    if (boundariesStarvedAfterWarmup > 0) {
+        return fail("balanced scenario starved a season after warm-up");
     }
 
     // Law 2: the ledger balances to the unit for EVERY commodity.
@@ -245,62 +265,76 @@ int main() {
     // now — woodcutter_gather_test holds «layer loss == store gain» over
     // the live layers; the pure-step drain died with econ_gather_day.)
 
-    // ── Famine transitions fire once, not daily ─────────────────────────
+    // ── Famine transitions fire once, not every window ──────────────────
     Ledger fled{};
     Inventory poor{};
     bool famine = false;
-    for (int day = 0; day < 4; ++day) {
-        const ConsumeOutcome o = econ_consume_day(poor, 8, famine, &sink, &fled);
+    for (int window = 0; window < 4; ++window) {
+        const ConsumeOutcome o =
+            econ_consume_season(poor, 8, famine, &sink, &fled);
         famine = o.famineActive;
         if (o.starvedPop != 8) return fail("empty store must starve everyone");
     }
     if (fled.famineStarted != 1) return fail("FamineStarted must fire ONCE");
-    if (fled.starvedEvents != 4) return fail("Starved must report daily");
+    if (fled.starvedEvents != 4) return fail("Starved must report per window");
     poor.remove_of(commodity_item_index(breadIdx),
                   poor.count_of(commodity_item_index(breadIdx)));
-    poor.add_of(commodity_item_index(breadIdx), 64);
-    const ConsumeOutcome relief = econ_consume_day(poor, 8, famine, &sink, &fled);
+    poor.add_of(commodity_item_index(breadIdx), 8 * kDaysPerSeason);
+    const ConsumeOutcome relief =
+        econ_consume_season(poor, 8, famine, &sink, &fled);
     if (relief.starvedPop != 0 || relief.famineActive) {
-        return fail("bread must end the famine");
+        return fail("a season of bread must end the famine");
     }
     if (fled.famineEnded != 1) return fail("FamineEnded must fire ONCE");
 
     // ── 4. Consume: EVERY shortfall lands somewhere (Session 18) ────────
-    // Bread in full, everything else absent. The daily-vital row feeds; every
-    // other row's shortfall must be COUNTED — before the fix the two
-    // non-daily Vital rows (cloth, bricks) matched neither branch and fell
-    // into the void.
+    // A season of bread in full, everything else absent. The hunger row
+    // feeds; every other row's shortfall must be COUNTED — before the fix
+    // the two non-daily Vital rows (cloth, bricks) matched neither branch
+    // and fell into the void. All-or-nothing per row: an absent row's unmet
+    // is its WHOLE season of demand.
     {
         Inventory s{};
         const int pop = 256;
         s.remove_of(commodity_item_index(commodity_index("bread")),
                 s.count_of(commodity_item_index(commodity_index("bread"))));
-        s.add_of(commodity_item_index(commodity_index("bread")), pop);
-        const ConsumeOutcome o = econ_consume_day(s, pop, false, nullptr, nullptr);
+        s.add_of(commodity_item_index(commodity_index("bread")),
+                 pop * kDaysPerSeason);
+        const ConsumeOutcome o =
+            econ_consume_season(s, pop, false, nullptr, nullptr);
         if (o.fedPop != pop || o.starvedPop != 0) {
             return fail("bread-only pop must be fed in full");
         }
         int expectedUnmet = 0;
         for (int i = 0; i < kNeedCount; ++i) {
             if (std::strcmp(kNeeds[i].commodity, "bread") == 0) continue;
-            expectedUnmet += pop / kNeeds[i].popPerUnitDay;
+            expectedUnmet += (pop / kNeeds[i].popPerUnitDay) * kDaysPerSeason;
         }
         if (o.unmetComfort != expectedUnmet) {
             return fail("a non-daily shortfall fell into the void");
         }
     }
 
-    // ── 5. Half bread: fed + starved PARTITION the town ─────────────────
+    // ── 5. Half a season of bread: NOT DEBITED, everyone starves ────────
+    // The window's hard edge IS the law (owner 2026-09-17: «просто не
+    // списывать, если не хватает — 1/8 = НЕ ПОКРЫТО»): a need short by any
+    // amount is not touched at all — the stock stays home and the season is
+    // hungry. NEGATIVE CONTROL against partial debits sneaking back.
     {
         Inventory s{};
         const int pop = 128;
+        const int half = pop * kDaysPerSeason / 2;
         s.remove_of(commodity_item_index(commodity_index("bread")),
                 s.count_of(commodity_item_index(commodity_index("bread"))));
-        s.add_of(commodity_item_index(commodity_index("bread")), pop / 2);
-        const ConsumeOutcome o = econ_consume_day(s, pop, false, nullptr, nullptr);
-        if (o.fedPop != pop / 2 || o.starvedPop != pop - pop / 2
-            || o.fedPop + o.starvedPop != pop || !o.famineActive) {
-            return fail("fed + starved must partition the population");
+        s.add_of(commodity_item_index(commodity_index("bread")), half);
+        const ConsumeOutcome o =
+            econ_consume_season(s, pop, false, nullptr, nullptr);
+        if (o.fedPop != 0 || o.starvedPop != pop || !o.famineActive) {
+            return fail("an uncovered season must starve the whole town");
+        }
+        if (s.count_of(commodity_item_index(commodity_index("bread")))
+            != half) {
+            return fail("an uncovered need must NOT be debited");
         }
     }
 
@@ -371,9 +405,9 @@ int main() {
         if (s.used_slots() <= kAutoScrapSlots) {
             return fail("clog fixture did not overflow (negative control)");
         }
-        econ_consume_day(s, 4, false, nullptr, nullptr);
+        econ_store_hygiene(s, nullptr, nullptr);
         if (s.used_slots() > kAutoScrapSlots) {
-            return fail("consume day left the store clogged past 50%");
+            return fail("daily hygiene left the store clogged past 50%");
         }
     }
 
@@ -396,8 +430,10 @@ int main() {
         const int pop = 640;
         Inventory city;
         seed_landmark_inventory(city, pop, EconSite::City, "coin_empire");
-        if (city.count("bread") != pop * 4) {
-            return fail("birth larder must hold kSeedVitalDays of bread");
+        if (city.count("bread") != pop * kDaysPerSeason) {
+            return fail("birth larder must hold a SEASON of bread — a place "
+                        "seeded thinner dies of arithmetic at its first "
+                        "window (S19.2)");
         }
         for (int i = 0; i < kNeedCount; ++i) {
             if (pop / kNeeds[i].popPerUnitDay <= 0) continue;
@@ -485,7 +521,7 @@ int main() {
         inv.add("potion_hp", 3);   // NOT a commodity — must ride untouched
         econ_produce_day(inv, EconSite::Village, /*workers*/4,
                          /*population*/40, nullptr, nullptr);
-        econ_consume_day(inv, /*population*/40, false, nullptr, nullptr);
+        econ_consume_season(inv, /*population*/40, false, nullptr, nullptr);
         if (inv.count("potion_hp") != 3) {
             return fail("a day of economy disturbed what is not a commodity");
         }

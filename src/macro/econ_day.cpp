@@ -193,9 +193,9 @@ int econ_produce_day(Inventory& store, EconSite site, int workers,
     return total;
 }
 
-ConsumeOutcome econ_consume_day(Inventory& store, int population,
-                                bool famineWasActive,
-                                EconFactSink sink, void* user) {
+ConsumeOutcome econ_consume_season(Inventory& store, int population,
+                                   bool famineWasActive,
+                                   EconFactSink sink, void* user) {
     ConsumeOutcome out{};
     if (population <= 0) {
         out.famineActive = false;
@@ -205,41 +205,37 @@ ConsumeOutcome econ_consume_day(Inventory& store, int population,
         return out;
     }
     const ResolvedTables& t = resolved();
-    // A person is fed only if EVERY daily-vital need was met — with one bread
-    // row this is the old number, with a second daily food it is the min, not
-    // whichever row happened to run last (the overwrite bug).
+    // A person is fed only if EVERY daily-vital need was covered — with one
+    // bread row this is the old rule at the season's scale.
     int fed = population;
     for (int i = 0; i < kNeedCount; ++i) {
         const int idx = t.needIdx[i];
         if (idx < 0) continue;
-        const int demand = population / kNeeds[i].popPerUnitDay;
+        // A SEASON of the need, judged whole (owner 2026-09-17): covered —
+        // the whole season leaves the store at once; short by even one unit —
+        // the store is NOT touched and the need is simply unmet this season.
+        // The edge is deliberately hard: the un-debited stock stays home, the
+        // population law shrinks the town until the need fits the store.
+        const int demand = (population / kNeeds[i].popPerUnitDay)
+                         * kDaysPerSeason;
         if (demand <= 0) continue;
-        const int got = std::min(demand,
-                                 store.count_of(commodity_item_index(idx)));
-        store.remove_of(commodity_item_index(idx), got);
-        if (got > 0) {
-            report(sink, user, EconFact::Kind::Consumed, idx, got);
+        const bool covered =
+            store.count_of(commodity_item_index(idx)) >= demand;
+        if (covered) {
+            store.remove_of(commodity_item_index(idx), demand);
+            report(sink, user, EconFact::Kind::Consumed, idx, demand);
         }
         const bool vital = kCommodities[idx].tier == CommodityTier::Vital;
         if (kNeeds[i].popPerUnitDay == 1 && vital) {
-            // The hunger row: shortfall is people unfed today.
-            fed = std::min(fed, got);
+            // The hunger row: an uncovered season is a hungry season.
+            if (!covered) fed = 0;
         } else {
             // EVERY other shortfall is counted — vital maintenance (cloth,
-            // bricks) included. The old `!vital` guard sent exactly those
-            // two rows' deficits into the void: neither hunger nor unmet.
-            out.unmetComfort += demand - got;
+            // bricks) included, all-or-nothing at the season scale.
             out.comfortDemand += demand;
+            if (!covered) out.unmetComfort += demand;
         }
     }
-    // Slot hygiene rides the same daily tick (CANON «Крафт/Скрап»: авто-скрап
-    // ИИ по порогу >50%): a store clogged past the half mark by non-fungible
-    // lut melts its cheapest pieces back to matter, so bread and ore always
-    // have somewhere to land. Plain stacks are never touched, and the
-    // PLAYER'S bag never passes through this function at all.
-    report(sink, user, EconFact::Kind::Scrapped, -1,
-           auto_scrap_overflow(store));
-
     out.fedPop = fed;
     out.starvedPop = population - fed;
     out.famineActive = out.starvedPop > 0;
@@ -252,6 +248,19 @@ ConsumeOutcome econ_consume_day(Inventory& store, int population,
         report(sink, user, EconFact::Kind::FamineEnded, -1, 1);
     }
     return out;
+}
+
+int econ_store_hygiene(Inventory& store, EconFactSink sink, void* user) {
+    // Slot hygiene stays DAILY while the balances went seasonal (CANON
+    // «Крафт/Скрап»: авто-скрап ИИ по порогу >50%): a store clogged past the
+    // half mark by non-fungible lut melts its cheapest pieces back to matter,
+    // so bread and ore always have somewhere to land. Plain stacks are never
+    // touched, and the PLAYER'S bag never passes through this function.
+    const int scrapped = auto_scrap_overflow(store);
+    if (scrapped > 0) {
+        report(sink, user, EconFact::Kind::Scrapped, -1, scrapped);
+    }
+    return scrapped;
 }
 
 // A commodity's CATALOG ordinal. The two id spaces are one now; this is the
@@ -272,7 +281,13 @@ int commodity_item_index(int commodityIdx) {
 void seed_landmark_inventory(Inventory& inv, int population, EconSite site,
                              const char* currencyId) {
     if (population <= 0) return;
-    constexpr int kSeedVitalDays = 4;          // the larder
+    // Born MID-LIFE means born with LAST SEASON'S HARVEST IN THE BARN: the
+    // season window (econ_consume_season) debits a whole season of bread on
+    // the boundary day — a place seeded with less dies of arithmetic at its
+    // first window, before it has lived a day. The larder IS a season.
+    constexpr int kSeedVitalDays = kDaysPerSeason;
+    static_assert(kSeedVitalDays == kDaysPerSeason,
+                  "the seed larder must survive the first season window");
     const int needDays = site == EconSite::City ? 32 : 8;   // a season / days
     for (int i = 0; i < kNeedCount; ++i) {
         const int idx = commodity_index(kNeeds[i].commodity);

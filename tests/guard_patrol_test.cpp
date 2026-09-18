@@ -211,7 +211,9 @@ void test_peasants_pay_the_threat_price() {
     DepositLayer dep{};
     allocate_deposit_fields(dep, kMap, kMap);
     dep.grid(DepositKind::Iron).write(44, 10, 64);   // жила округи деревни
-    gs.landmarks[1].inventory.add("bread", 200);
+    // Сезонный амбар: условие создания (S19.2) списывает при подъёме
+    // 32 дня хлеба на каждый рот артели.
+    gs.landmarks[1].inventory.add("bread", 8192);
     gs.landmarks[1].titheOwedCoin = 200;
 
     ecs::World w;
@@ -230,7 +232,9 @@ void test_peasants_pay_the_threat_price() {
 
     nv.threat[1] = 1u << 20;   // резня в округе деревни
     const int popAfterCalm = gs.landmarks[1].population;
-    const int scared = rotate_worker_squads(mw, /*day*/2);
+    // Граница сезона: вне её подъёма не бывает вовсе (S19.2), и ноль был
+    // бы тривиален — страх обязан победить именно там, где подъём возможен.
+    const int scared = rotate_worker_squads(mw, /*day*/33);
     CHECK(scared == 0,
           "терм опасности: страх съедает скор — отказ рейса ценой");
     CHECK(gs.landmarks[1].population == popAfterCalm,

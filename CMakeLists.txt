@@ -1346,6 +1346,9 @@ timaert_test(goal_auction_test
         src/macro/npc_spawn.cpp
         src/macro/items.cpp
         src/macro/econ_day.cpp
+        # anatomy.cpp worn_bonuses — сезонные нужды артелей идут
+        # эффективным листом лидера (squad_season_needs).
+        src/macro/anatomy.cpp
     LINK_SDL LINK_ENTT)
 
 # Поле угрозы (CANON S10 «хемотаксис по графу округ»): источник = Died-факты
@@ -1406,6 +1409,9 @@ timaert_test(guard_patrol_test
         src/macro/npc_spawn.cpp
         src/macro/items.cpp
         src/macro/econ_day.cpp
+        # anatomy.cpp worn_bonuses — сезонные нужды артелей идут
+        # эффективным листом лидера (squad_season_needs).
+        src/macro/anatomy.cpp
     LINK_SDL LINK_ENTT)
 
 timaert_test(rng_contract_test)

@@ -290,18 +290,47 @@ int rotate_worker_squads(MacroWorld& mw, int day);
 AIBehaviour effective_behaviour(entt::registry& reg, entt::entity e,
                                 const ecs::NPCKind& kind);
 
-// Squads EAT (owner 2026-08-30/31; CANON S10, реф M&B): bread is for the
-// ROSTER only — the leader is a SUBJECT and needs nothing by himself («0
-// бойцов = 0 хлеба и жалования», owner 2026-08-31 — the M&B law, and why a
-// lone caravan is honestly immune to hunger). Each roster soul eats one
-// bread a day out of the squad's OWN bag; a short day bleeds an eighth of
-// the roster into the deserter pool AT ONCE (?34, one mechanic). Called
-// once per game day beside the labour rotation. Returns souls deserted.
-int feed_squads_daily(MacroWorld& mw);
+// THE SQUAD SEASON WINDOW (owner 2026-08-30/31 + 2026-09-17; CANON S10,
+// S19.2, реф M&B): board and pay are for the ROSTER only — the leader is a
+// SUBJECT and needs nothing by himself («0 бойцов = 0 хлеба и жалования» —
+// why a lone rider is honestly immune to hunger). On the season BOUNDARY
+// every squad with a roster settles BOTH needs a season ahead, out of its
+// OWN bag:
+//   · board — one bread a day per roster soul whose OWN row is on upkeep
+//     (upkeepGoldPerDay >= 0; beasts and monsters are not), scaled by the
+//     leader's Foraging like every reader of that skill;
+//   · pay — the one upkeep law × the season, and the paid coin BURNS into
+//     the world loot pool («жалованье сгорает»).
+// Each need is covered WHOLE or not debited at all; ANY miss bleeds an
+// eighth of the roster into the deserter pool ONCE per window («ВСЕ НУЖДЫ
+// ДОЛЖНЫ БЫТЬ ПОКРЫТЫ, иначе потеря 1/8»). The judge is the SOLDIER'S own
+// row, never the leader's — the old leader-typed gate was the player-special
+// Adventurer.upkeep=0 door, dead by «игрок == нпц»: the player's squad pays
+// here through the very same loop. Returns souls deserted.
+int squad_season_window(MacroWorld& mw, int day);
+
+// Daily bag hygiene — the auto-scrap half of the old daily feed loop (CANON
+// «Крафт/Скрап»: авто-скрап ИИ по порогу >50%; the player's bag is NEVER
+// touched — his scrap is a manual act). Returns stacks melted.
+int squad_bags_hygiene_daily(MacroWorld& mw);
+
+// A roster's SEASON of needs — the one arithmetic the boundary window bills
+// by and the landmark's crew-loading fills by (drift between the two would
+// be a second truth of содержание). Bread is per soul whose own row is on
+// upkeep, foraging-scaled by the leader's effective sheet; wage is the one
+// upkeep law × the season.
+struct SquadSeasonNeeds { int bread = 0; int wage = 0; };
+SquadSeasonNeeds squad_season_needs(ecs::World& world, entt::entity e,
+                                    const SoldierSquad& roster);
 
 // ── THE provisioning law of squad creation (owner 2026-08-31, CANON S10):
 // «универсальная механика создания сквада — он должен быть загружен
-// хлебом». The raising landmark loads the new squad's bag with bread for
+// хлебом». SINCE 2026-09-17 (S19.2) this is the GARRISON SORTIE'S law only:
+// a population crew is perpetual, its содержание is the boundary window's
+// balance (season loaded at creation/boundary — rotate's load_season_upkeep),
+// and the trip loaf died with the daily feed. A patrol still carries bread
+// for its march+dwell days.
+// The raising landmark loads the new squad's bag with bread for
 // its ROSTER (the leader eats nothing — the M&B law above):
 //   portion = soldiers × (roundtrip days to the destination + the work day)
 // Days derive from the squad's own errand — the same march that will walk

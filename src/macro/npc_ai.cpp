@@ -17,6 +17,7 @@
 #include "macro/player_entity.h"
 #include "macro/npc_spawn.h"
 #include "macro/recovery.h"  // recover_bar — ОДНА дверь отдыха на все тела
+#include "macro/seasons.h"   // season_boundary — окно сквадов (CANON S19.2)
 #include "macro/politik.h"          // derive_city_spacing — времянка §34.1
 #include "macro/settlement_score.h" // kSettlementReach — the home-field box
 #include "macro/spawners.h"
@@ -3444,49 +3445,73 @@ int provision_squad(Inventory& store, Inventory& bag, int soldiers,
     return haul_between(store, bag, "bread", portion, freeCarryKg);
 }
 
-int feed_squads_daily(MacroWorld& mw) {
+SquadSeasonNeeds squad_season_needs(ecs::World& world, entt::entity e,
+                                    const SoldierSquad& roster) {
+    // Board and pay are judged by each SOLDIER'S OWN row, never the
+    // leader's. The old gate on the leader's type was the player-special
+    // door in disguise (Adventurer.upkeep=0 kept the player's roster
+    // free), and it also fed a caravan's guards nothing because the
+    // CARAVAN row is unpriced. A beast in a roster stays free — its own
+    // row says kNpcUpkeepNone, the same column the payroll reads.
+    int mouths = 0;
+    int wageDay = 0;
+    for (const SoldierRecord& s : roster) {
+        if (npc_def(soldier_npc_type(s)).upkeepGoldPerDay < 0) continue;
+        ++mouths;
+        wageDay += soldier_upkeep(s);
+    }
+    // The leader's FORAGING lives off the land — the season's draw
+    // shrinks by THE cost-down skill law (-1 %/rank; rank 100 = the
+    // squad feeds itself whole). EVERY leader's rank is his EFFECTIVE
+    // sheet's (посадка Б): the player is nobody special here.
+    const int foragingRank =
+        effective_sheet_of(world, e).skills.of(SkillId::Foraging);
+    SquadSeasonNeeds needs{};
+    needs.bread = mouths * kDaysPerSeason
+        * skill_mult_pct_of(SkillId::Foraging, foragingRank) / 100;
+    needs.wage = wageDay * kDaysPerSeason;
+    return needs;
+}
+
+int squad_season_window(MacroWorld& mw, int day) {
     if (!mw.gs || !mw.world) return 0;
+    if (!season_boundary(day)) return 0;
     GameState& gs = *mw.gs;
     auto& reg = mw.world->reg;
     int deserted = 0;
     for (auto [e, kind, rt, bag, roster]
          : reg.view<ecs::NPCKind, ecs::MacroNpcRuntime, ecs::NpcInventory,
                     ecs::SquadRoster>().each()) {
-        (void)e; (void)kind;
-        // Camp-life slot hygiene (CANON «Крафт/Скрап»: авто-скрап ИИ по
-        // порогу >50% — «склад города ИЛИ МЕШОК СКВАДА»): the same daily
-        // overflow law the settlement store runs. The gate is not a player
-        // privilege but the seam of DECISION: this loop is the AI deciding
-        // for its bag, and the PlayerTag bag's decisions come from input —
-        // «автоматическое уничтожение вещей игрока строго запрещено».
-        if (!reg.any_of<ecs::PlayerTag>(e)) auto_scrap_overflow(bag.inv);
-        // A beast pays no upkeep and eats no bread here — its row already
-        // says so (kNpcUpkeepNone), the same column the payroll reads.
-        if (npc_upkeep_base(NPCType(kind.type)) <= 0) continue;
-        // Bread is for the ROSTER only (owner 2026-08-31, the M&B law): the
-        // leader is a SUBJECT — «0 бойцов = 0 хлеба и жалования». A lone
-        // rider is honestly immune to hunger; there is nobody to feed.
-        // Phase 6: the leader's FORAGING lives off the land — the daily
-        // draw shrinks by THE cost-down skill law (-1 %/rank; rank 100 =
-        // the squad feeds itself whole). EVERY leader's rank is his
-        // EFFECTIVE sheet's (посадка Б, the universal door): a lord in a
-        // +Foraging coat forages like the body actually wearing it, and
-        // the player is nobody special here.
-        const int foragingRank =
-            effective_sheet_of(*mw.world, e).skills.of(SkillId::Foraging);
-        // Through the table door, not an inline percent: the row's own
-        // pctPerRank walks the cost down (Trade learned this the hard way —
-        // an inline number is a second truth the tooltip never promised).
-        const int need = roster.squad.size()
-            * skill_mult_pct_of(SkillId::Foraging, foragingRank) / 100;
-        if (need <= 0) continue;
-        const int have = bag.inv.count("bread");
-        const int ate = std::min(need, have);
-        if (ate > 0) bag.inv.remove("bread", ate);
-        if (ate >= need) continue;
-        // A short day bleeds AT ONCE, proportionally (owner 2026-08-31):
-        // an eighth of the roster walks — the same immediate law the
-        // shorted garrison bleeds by (?34, one mechanic).
+        (void)kind; (void)rt;
+        const SquadSeasonNeeds needs =
+            squad_season_needs(*mw.world, e, roster.squad);
+        const int breadNeed = needs.bread;
+        const int wageNeed = needs.wage;
+        if (breadNeed <= 0 && wageNeed <= 0) continue;
+        // Each need covered WHOLE or not debited at all (owner 2026-09-17:
+        // «не списывать, если не хватает — 1/8 = НЕ ПОКРЫТО»).
+        bool shorted = false;
+        if (breadNeed > 0) {
+            if (bag.inv.count("bread") >= breadNeed) {
+                bag.inv.remove("bread", breadNeed);
+            } else {
+                shorted = true;
+            }
+        }
+        if (wageNeed > 0) {
+            // ОПЛАТА СТОИМОСТЬЮ (владелец 2026-09-18): монеты первыми
+            // арифметикой плотности value/kg, без монет — натурой
+            // (pay_value_dense). «ЖАЛОВАНИЕ СГОРАЕТ ЕСТЕСТВЕННО!» — the
+            // paid value leaves the economy into the loot pool.
+            if (inventory_value(bag.inv) >= wageNeed) {
+                gs.lootPoolValue += pay_value_dense(bag.inv, wageNeed);
+            } else {
+                shorted = true;
+            }
+        }
+        if (!shorted) continue;
+        // ANY uncovered need bleeds an eighth of the roster ONCE per window
+        // — the same law the shorted garrison bleeds by (?34, one mechanic).
         int walkers = std::max(1, roster.squad.size() / 8);
         while (walkers-- > 0 && roster.squad.size() > 0) {
             const int last = roster.squad.size() - 1;
@@ -3497,6 +3522,25 @@ int feed_squads_daily(MacroWorld& mw) {
         }
     }
     return deserted;
+}
+
+int squad_bags_hygiene_daily(MacroWorld& mw) {
+    if (!mw.gs || !mw.world) return 0;
+    auto& reg = mw.world->reg;
+    int melted = 0;
+    for (auto [e, kind, rt, bag]
+         : reg.view<ecs::NPCKind, ecs::MacroNpcRuntime,
+                    ecs::NpcInventory>().each()) {
+        (void)kind; (void)rt;
+        // Camp-life slot hygiene (CANON «Крафт/Скрап»: авто-скрап ИИ по
+        // порогу >50% — «склад города ИЛИ МЕШОК СКВАДА»): the same daily
+        // overflow law the settlement store runs. The gate is not a player
+        // privilege but the seam of DECISION: this loop is the AI deciding
+        // for its bag, and the PlayerTag bag's decisions come from input —
+        // «автоматическое уничтожение вещей игрока строго запрещено».
+        if (!reg.any_of<ecs::PlayerTag>(e)) melted += auto_scrap_overflow(bag.inv);
+    }
+    return melted;
 }
 
 // ── The daily labour rotation (contract in npc_ai.h) ─────────────────────
@@ -3526,9 +3570,23 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         return false;
     };
 
-    // 1) DISSOLVE yesterday's crews that made it home: souls and leftovers
-    //    return to the landmark. Collect first, destroy after — the
-    //    registry is never mutated under its own view.
+    // 1) COLLECT crews standing home Idle. С 2026-09-17 (CANON S19.2) они
+    //    БЕССРОЧНЫ: домой пришла — НЕ исчезла. Растворяются только (а)
+    //    вылазки гарнизона — их души всегда возвращаются в гарнизон, вылазка
+    //    не состав, а реакция на угрозу; (б) «первая вернувшаяся» по суду
+    //    перекомплекта ниже. Остальные стоят и получают пере-аукцион дня.
+    //    Collect first, mutate after — the registry is never touched under
+    //    its own view.
+    // Гарнизонная ли это строка дома — вернувшийся патруль растворяется В
+    // ГАРНИЗОН, не в население (CANON S10 «души из гарнизона», 2026-09-02).
+    const auto garrison_row_of_type = [](const LandmarkDef& ld,
+                                         std::uint16_t type) {
+        for (int i = 0; i < int(ld.crewCount); ++i)
+            if (ld.crews[i].garrison
+                && std::uint16_t(ld.crews[i].npc) == type) return true;
+        return false;
+    };
+    std::vector<entt::entity> homeIdle;
     std::vector<entt::entity> done;
     // exclude<Dead>: a dead crew at its home cell is NOT a crew coming home —
     // it is a corpse-row awaiting the drain (AI-2). Without the exclusion a
@@ -3551,17 +3609,12 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                           float(lm.x), float(lm.y),
                           float(gs.mapW), float(gs.mapH)) >= 4.0f)
             continue;
-        done.push_back(e);
+        if (garrison_row_of_type(landmark_def(lm.type), kind.type)) {
+            done.push_back(e);   // вылазка домой = души в гарнизон, всегда
+        } else {
+            homeIdle.push_back(e);
+        }
     }
-    // Гарнизонная ли это строка дома — вернувшийся патруль растворяется В
-    // ГАРНИЗОН, не в население (CANON S10 «души из гарнизона», 2026-09-02).
-    const auto garrison_row_of = [](const LandmarkDef& ld,
-                                    std::uint16_t type) {
-        for (int i = 0; i < int(ld.crewCount); ++i)
-            if (ld.crews[i].garrison
-                && std::uint16_t(ld.crews[i].npc) == type) return true;
-        return false;
-    };
     for (const entt::entity e : done) {
         const auto& rt = reg.get<ecs::MacroNpcRuntime>(e);
         const int row = row_of(rt.homeSettlementId);
@@ -3577,7 +3630,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                            wallet_value(bag->inv));
         }
         const auto& kind = reg.get<ecs::NPCKind>(e);
-        if (garrison_row_of(landmark_def(lm.type), kind.type)) {
+        if (garrison_row_of_type(landmark_def(lm.type), kind.type)) {
             // ДУШИ НАЗАД В ГАРНИЗОН: записи ростера как есть (роды и уровни
             // пережили вылазку), лидер — записью своего рода и уровня под
             // своим вечным ординалом. Гарнизону тесно (кап контейнера) —
@@ -3603,27 +3656,46 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         reg.destroy(e);
     }
 
-    // Which crew rows still have a squad OUT (on the road, at the field —
-    // anyone not dissolved above): those are not re-raised today. СЧЁТ ПО
-    // ТИПУ (владелец 2026-09-02, снос профессий): строки списка могут
-    // ПОВТОРЯТЬ тип (N×Peasant), так что живой крю типа T занимает ПЕРВУЮ
-    // свободную строку типа T своего дома — bit i = строка i занята.
-    // И СКОЛЬКО ДУШ КАЖДОГО ДОМА СЕЙЧАС В ПОЛЕ (владелец, 2026-09-02):
-    // сквады знают свой ландмарк — считаем на месте, ничего не помним.
+    // Which crew rows have a squad truly OUT (on the road, at the field):
+    // those are closed today. A crew standing home Idle does NOT close its
+    // row — it is the row's own crew awaiting the day's re-auction (S19.2,
+    // артели бессрочны). СЧЁТ ПО ТИПУ (владелец 2026-09-02, снос профессий):
+    // строки списка могут ПОВТОРЯТЬ тип (N×Peasant), так что живой крю типа
+    // T занимает ПЕРВУЮ свободную строку типа T своего дома — bit i =
+    // строка i занята. И СКОЛЬКО ДУШ КАЖДОГО ДОМА СЕЙЧАС В ПОЛЕ (владелец,
+    // 2026-09-02): сквады знают свой ландмарк — считаем на месте, ничего
+    // не помним.
     std::vector<std::uint8_t> outMask(gs.landmarks.size(), 0);
     std::vector<int> afield(gs.landmarks.size(), 0);
+    // Души артелей, СТОЯЩИХ ДОМА, — часть базы пула труда: суд границы,
+    // меривший пул одним населением, ужимал составы каждый сезон (души
+    // стоящих выпадали из базы — поймано свидетелем resize).
+    std::vector<int> standingSouls(gs.landmarks.size(), 0);
+    std::vector<std::pair<int, entt::entity>> idleByRow;
+    std::sort(homeIdle.begin(), homeIdle.end());
+    const auto is_home_idle = [&](entt::entity e) {
+        return std::binary_search(homeIdle.begin(), homeIdle.end(), e);
+    };
     for (auto [e, kind, rt]
          : reg.view<ecs::NPCKind, ecs::MacroNpcRuntime>().each()) {
         const int row = row_of(rt.homeSettlementId);
         if (row < 0) continue;
+        const LandmarkDef& ld =
+            landmark_def(gs.landmarks[std::size_t(row)].type);
+        bool standingHome = false;
         if (is_crew(kind.type)) {
             int souls = 1;
             if (const auto* roster = reg.try_get<ecs::SquadRoster>(e))
                 souls += roster->squad.size();
             afield[std::size_t(row)] += souls;
+            if (!garrison_row_of_type(ld, kind.type)
+                && is_home_idle(e)) {
+                standingHome = true;
+                standingSouls[std::size_t(row)] += souls;
+                idleByRow.push_back({row, e});
+            }
         }
-        const LandmarkDef& ld =
-            landmark_def(gs.landmarks[std::size_t(row)].type);
+        if (standingHome) continue;   // its row stays OPEN for re-dispatch
         for (int i = 0; i < int(ld.crewCount); ++i) {
             if (std::uint16_t(ld.crews[i].npc) != kind.type) continue;
             if (outMask[std::size_t(row)] & (1u << i)) continue;
@@ -3631,6 +3703,49 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             break;
         }
     }
+
+    // Роспуск населенской артели: души и остатки — домой (существующие
+    // двери), сущность умирает. Зовёт суд границы: «лишний сквад» = стоящая
+    // дома артель, которой не досталось СТРОКИ (закрылся гейт, строку
+    // держит полевая, пул ужался) — «просто распускает» (S19.2). Оба рычага
+    // живы (владелец 2026-09-18): строки правят ЧИСЛОМ сквадов, пул — их
+    // РАЗМЕРОМ (добор/ссадка в ветке стоящих ниже).
+    const auto dissolve_population_crew = [&](entt::entity e, Landmark& lm) {
+        if (auto* bag = reg.try_get<ecs::NpcInventory>(e)) {
+            // Leftovers home: cargo by the haul door, coin by the wallet
+            // door — a dissolved crew owns nothing (CANON S5, the loan law).
+            for (int c = 0; c < kCommodityCount; ++c)
+                haul_between(bag->inv, lm.inventory, kCommodities[c].id,
+                             1 << 30, 1e9f);
+            transfer_value(bag->inv, lm.inventory, wallet_value(bag->inv));
+        }
+        int souls = 1;
+        if (const auto* roster = reg.try_get<ecs::SquadRoster>(e))
+            souls += roster->squad.size();
+        lm.population += souls;
+        reg.destroy(e);
+        return souls;
+    };
+    // ── Сезонная погрузка содержания (S19.2): та же арифметика нужд, что
+    // у окна (squad_season_needs — вторых правд содержания не бывает);
+    // погрузка — перенос со склада в сумку, судит ОКНО в тот же день.
+    const bool boundary = season_boundary(day);
+    const auto load_season_upkeep = [&](Landmark& lm, entt::entity e) {
+        auto* bag = reg.try_get<ecs::NpcInventory>(e);
+        auto* roster = reg.try_get<ecs::SquadRoster>(e);
+        if (!bag || !roster) return;
+        const SquadSeasonNeeds needs =
+            squad_season_needs(*mw.world, e, roster->squad);
+        const int haveBread = bag->inv.count("bread");
+        if (needs.bread > haveBread) {
+            haul_between(lm.inventory, bag->inv, "bread",
+                         needs.bread - haveBread, 1e9f);
+        }
+        const int haveCoin = wallet_value(bag->inv);
+        if (needs.wage > haveCoin) {
+            transfer_value(lm.inventory, bag->inv, needs.wage - haveCoin);
+        }
+    };
 
     // 2) RAISE today's crews off the place's OWN registry row (owner
     //    2026-08-31, CANON S10): the crew pool is pop >> labourShift, split
@@ -3746,7 +3861,12 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     const int have = s.inventory.count(id);
                     const int demand =
                         daily_demand_for(id, s.population, homeSite);
-                    const int surplus = have - demand;
+                    // ИЗЛИШЕК — СВЕРХ СЕЗОННОЙ НУЖДЫ (S19.2: «зерна хватит
+                    // городу на сезон»): мир живёт сезонными амбарами, и
+                    // излишек против ДНЕВНОЙ нужды объявил бы собственный
+                    // запас на зиму товаром — деревня повезла бы продавать
+                    // свой же сезонный хлеб.
+                    const int surplus = have - demand * kDaysPerSeason;
                     if (surplus <= 0) continue;
                     const int gap = base - stock_price(base, have, demand);
                     if (gap <= 0) continue;
@@ -3950,19 +4070,107 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     prt.carryCap - inventory_weight(bag->inv));
             }
         }
-        // ГЕЙТ ОТЛУЧКИ (владелец, 2026-09-02: «дома должно быть больше,
-        // чем в поле — универсально, элегантно, ничего не помнить»):
-        // длинные рейсы сами снижают одновременность; стационар ~половина
-        // душ в работе. Без гейта многодневные морские рейсы выкачивали
-        // анклав в ноль за пять дней (измерено: 158 → 1).
-        if (s.population <= afield[row]) continue;
-        const int pool = s.population >> ld.labourShift;
+        // СЕЗОННАЯ ПОГРУЗКА стоящих дома артелей (S19.2): на границе дом
+        // грузит каждую свою стоящую артель содержанием на сезон вперёд —
+        // ДО окна сквадов (порядок дня: ротация раньше окна). Погрузка —
+        // перенос, судья — окно; артель В ПОЛЕ на границе платит из того,
+        // что несёт (локальность: чужих складов на расстоянии не бывает).
+        if (boundary) {
+            for (auto& [r2, e2] : idleByRow)
+                if (r2 == int(row) && e2 != entt::null)
+                    load_season_upkeep(s, e2);
+        }
+        // Заявка строки закрывается СТОЯЩЕЙ артелью первой — это и есть
+        // пере-аукцион дня живой артели (S19.2: «рейс → дом → пере-аукцион
+        // → новый рейс, домой вернулась — не исчезла»).
+        const auto claim_standing = [&](std::uint16_t type) -> entt::entity {
+            for (auto& [r2, e2] : idleByRow) {
+                if (r2 != int(row) || e2 == entt::null) continue;
+                if (reg.get<ecs::NPCKind>(e2).type != type) continue;
+                const entt::entity found = e2;
+                e2 = entt::null;
+                return found;
+            }
+            return entt::null;
+        };
+        // ДВА РЕГУЛЯТОРА, оба от состояния и контекста (владелец,
+        // 2026-09-18): строки × гейты дня = СКОЛЬКО сквадов, пул труда =
+        // КАКОГО РАЗМЕРА. Оба выводятся здесь и сейчас, ничего не хранится.
+        // База пула — ПОЛНОЕ число душ в распоряжении дома: население плюс
+        // души стоящих дома артелей (они не в population, но они дома).
+        const int pool =
+            (s.population + standingSouls[row]) >> ld.labourShift;
         const int perCrew =
             liveCount > 0 ? std::max(1, pool / liveCount) : 0;
         for (int li = 0; li < liveCount; ++li) {
-            if (perCrew <= 0 || s.population < perCrew) break;
+            const int i = live[li];
+            const entt::entity standing =
+                claim_standing(std::uint16_t(ld.crews[i].npc));
+            if (standing != entt::null) {
+                // ПОРУЧЕНИЕ НА СПИНУ (аукцион, CANON S10): пара {глагол,
+                // объект} — рулетка этой строки уже решила; рефлекс
+                // прерывает не спрашивая.
+                auto& prt = reg.get<ecs::MacroNpcRuntime>(standing);
+                prt.errandVerb = errandVerb[i];
+                prt.errandObject = errandObject[i];
+                prt.stateTimer = 0;   // новый рейс — этим же думом
+                // ПРИВЕДЕНИЕ СОСТАВА (S19.2, 2026-09-18): на границе
+                // стоящая артель дышит к пулу — добор из населения (дома,
+                // сколько прокормит склад: окно этого же дня спишет сезон
+                // с ПОЛНОГО состава), ссадка лишних обратно в население
+                // (перенос, не баланс). В поле состав не трогается.
+                if (boundary && perCrew > 0) {
+                    if (auto* ro = reg.try_get<ecs::SquadRoster>(standing)) {
+                        const int want = perCrew - 1;   // члены без лидера
+                        int have = ro->squad.size();
+                        const int canFeed =
+                            s.inventory.count("bread") / kDaysPerSeason;
+                        int take = std::min(want - have,
+                                            std::max(0, canFeed - have));
+                        take = std::min(take, s.population - 1);
+                        while (take-- > 0) {
+                            SoldierRecord rec{};
+                            rec.entityId = ++gs.nextMacroSpawnOrdinal;
+                            rec.kind = std::uint16_t(ld.crews[i].npc);
+                            rec.level = 1;
+                            if (!ro->squad.push(rec)) break;
+                            s.population -= 1;
+                        }
+                        for (have = ro->squad.size(); have > want; --have) {
+                            ro->squad.remove_at(ro->squad.size() - 1);
+                            s.population += 1;
+                        }
+                    }
+                }
+                continue;
+            }
+            // СОЗДАНИЕ — только на границе сезона (S19.2: «на начало
+            // сезона либо создаёт новых, если его состояние требует
+            // больше»); погибшая в поле артель — дыра до следующего суда.
+            if (!boundary) continue;
+            // ГЕЙТ ОТЛУЧКИ (владелец, 2026-09-02: «дома должно быть
+            // больше, чем в поле») — на СОЗДАНИЕ; стоящие уже в счёте.
+            if (s.population <= afield[row]) continue;
+            if (perCrew <= 0 || s.population < perCrew) continue;
+            // УСЛОВИЕ СОЗДАНИЯ (владелец 2026-09-17: «при создании артели
+            // сразу списывается её содержание за один сезон — условие
+            // создания»): склад обязан покрыть сезон рта и жалованья
+            // ростера ЦЕЛИКОМ, иначе артель не поднимается. Хлеб считан по
+            // рангу 0 форажинга — консервативно: скилл лидера может только
+            // удешевить, а лидера до спавна не существует.
+            const int members = perCrew - 1;
+            const int rowUpkeep =
+                npc_upkeep_base(NPCType(ld.crews[i].npc));
+            // Жалованье — стоимостью (pay_value_dense law); у крестьян оно
+            // 0 («работают за еду», владелец 2026-09-18) и гейт сводится к
+            // хлебу.
+            if (s.inventory.count("bread") < members * kDaysPerSeason
+                || inventory_value(s.inventory)
+                       < members * rowUpkeep * kDaysPerSeason) {
+                continue;
+            }
             SquadSpec spec{};
-            spec.leaderType = ld.crews[live[li]].npc;
+            spec.leaderType = ld.crews[i].npc;
             spec.x = s.x;
             spec.y = s.y;
             spec.homeSettlementId = s.id;
@@ -3980,31 +4188,24 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             if (ent != entt::null) {
                 s.population -= 1 + spec.members.size();
                 ++raised;
-                // ПОРУЧЕНИЕ НА СПИНУ (аукцион, CANON S10): пара {глагол,
-                // объект} — рулетка этой строки уже решила; пере-аукцион
-                // только по завершении (артель растворится — завтра решат
-                // заново), рефлекс прерывает не спрашивая.
                 auto& prt = reg.get<ecs::MacroNpcRuntime>(ent);
-                prt.errandVerb = errandVerb[live[li]];
-                prt.errandObject = errandObject[live[li]];
-                // THE provisioning law of squad creation (owner 2026-08-31;
-                // npc_ai.h provision_squad): bread for the roster, sized by
-                // the errand's own roundtrip — the auction resolved the
-                // destination, the loaf rides the crew's free carry.
-                if (auto* bag = reg.try_get<ecs::NpcInventory>(ent)) {
-                    const XY d = dest[live[li]];
-                    const float dist = std::sqrt(torus_dist_sq(
-                        home.x, home.y, d.x, d.y,
-                        float(ctx.mapW), float(ctx.mapH)));
-                    provision_squad(
-                        s.inventory, bag->inv, spec.members.size(),
-                        2.0f * dist,
-                        prt.carryCap - inventory_weight(bag->inv));
-                }
+                prt.errandVerb = errandVerb[i];
+                prt.errandObject = errandObject[i];
+                // Сезонный груз содержания вместо провианта на рейс: еда —
+                // баланс окна теперь, рейсовый ломоть умер у артелей
+                // (остался у вылазок гарнизона — они не подсудны суду
+                // состава).
+                load_season_upkeep(s, ent);
             }
         }
         for (int si = 0; si < soloCount; ++si) {
-            if (s.population <= 0) break;
+            // Живой одиночка (курьер дани) продолжает службу — его строка
+            // закрыта им самим; новый — только на границе.
+            if (claim_standing(std::uint16_t(ld.crews[solo[si]].npc))
+                != entt::null) {
+                continue;
+            }
+            if (!boundary || s.population <= 0) continue;
             SquadSpec spec{};
             spec.leaderType = ld.crews[solo[si]].npc;
             spec.x = s.x;
@@ -4014,6 +4215,17 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 != entt::null) {
                 s.population -= 1;
                 ++raised;
+            }
+        }
+        // ЛИШНИЙ СКВАД — «просто распускает» (S19.2, суд границы): стоящей
+        // дома артели не досталось СТРОКИ (гейт закрылся, строку держит
+        // полевая, пул ужался до меньшего числа сквадов) — души и остатки
+        // домой. Вне границы неприкаянная артель просто стоит до суда.
+        if (boundary) {
+            for (auto& [r2, e2] : idleByRow) {
+                if (r2 != int(row) || e2 == entt::null) continue;
+                dissolve_population_crew(e2, s);
+                e2 = entt::null;
             }
         }
     }

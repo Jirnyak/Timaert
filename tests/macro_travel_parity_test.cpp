@@ -160,33 +160,46 @@ void test_overload_and_drain_charge_per_cell() {
            "a rested body pays travel in stamina alone");
 }
 
-// Death by exhaustion is DESIGN: past zero every further step costs HP equal to
-// the whole outstanding debt, so the deeper the hole the worse each step. This
-// pins the curve at the boundary — the step that empties the bar, and the steps
-// after it — so it can never again become an accident of the accounting.
+// Death by exhaustion is DESIGN, and since 2026-09-17 the ONE law of zero is
+// QUADRATIC (owner, CANON S14.1, «как в Elin»): a spend that lands the bar in
+// debt bites HP by debt² / kExhaustionBiteDivisor — shallow debt is a gamble,
+// deep debt a sentence. Expectations are DERIVED from the law's own constant,
+// so retuning the divisor is a balance decision, not a test edit. This pins
+// the curve at the boundary so it can never again become an accident of the
+// accounting — and pins the QUADRATIC shape: bite(2d) > 2×bite(d) once the
+// floor is passed (a linear law cannot pass that gate).
 void test_exhaustion_curve_bites_deeper_each_step() {
     bag.clear();
+    const auto law = [](int sp) {
+        return sp >= 0 ? 0 : (-sp) * (-sp) / sm::kExhaustionBiteDivisor;
+    };
     sm::ecs::Pools cs{};
     cs.sp = 3;
-    cs.hp = 100;
+    cs.hp = 1000;
 
     // Still solvent: stamina pays, the body does not.
     CHECK(sm::apply_stamina_cost(cs, 3) == 0, "stamina pays while it lasts");
-    CHECK(cs.sp == 0 && cs.hp == 100,
+    CHECK(cs.sp == 0 && cs.hp == 1000,
            "reaching exactly zero costs no health");
 
-    // Past zero: each step charges the WHOLE outstanding debt.
-    CHECK(sm::apply_stamina_cost(cs, 2) == 2, "the first step over costs its deficit");
-    CHECK(cs.sp == -2 && cs.hp == 98, "debt is kept, health paid");
-    CHECK(sm::apply_stamina_cost(cs, 2) == 4, "the next step costs the whole debt");
-    CHECK(cs.sp == -4 && cs.hp == 94, "the bite grows with the debt");
-    CHECK(sm::apply_stamina_cost(cs, 2) == 6, "and keeps growing");
-    CHECK(cs.sp == -6 && cs.hp == 88,
-           "pressing on exhausted is a gamble, by design");
+    // Past zero: each spend bites the SQUARED outstanding debt.
+    int hp = 1000;
+    for (const int debt : {8, 16, 24}) {
+        const int bite = sm::apply_stamina_cost(cs, 8);
+        CHECK(bite == law(-debt), "the spend bites debt squared, from the law");
+        hp -= bite;
+        CHECK(cs.sp == -debt && cs.hp == hp, "debt is kept, health paid");
+    }
+    CHECK(law(-16) > 2 * law(-8) && law(-32) > 2 * law(-16),
+          "the curve is QUADRATIC: doubling the debt more than doubles the "
+          "bite (a linear law fails this gate)");
+    CHECK(law(-1) == 0,
+          "the shallow floor is honest, like the tithe average's: a debt "
+          "below the divisor's square root bites nothing");
 
     // A zero/negative charge is not a free heal or a free step.
     CHECK(sm::apply_stamina_cost(cs, 0) == 0, "a zero cost changes nothing");
-    CHECK(cs.sp == -6 && cs.hp == 88, "and touches neither pool");
+    CHECK(cs.sp == -24 && cs.hp == hp, "and touches neither pool");
 }
 
 // The two layers walk the same world, so the same journey costs the same:

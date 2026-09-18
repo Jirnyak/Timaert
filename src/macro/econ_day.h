@@ -236,11 +236,24 @@ struct ConsumeOutcome {
     bool famineActive = false;
 };
 
-// Population eats down the needs ladder. `famineWasActive` carries yesterday's
-// state so FamineStarted/FamineEnded fire exactly on the transitions.
-ConsumeOutcome econ_consume_day(Inventory& store, int population,
-                                bool famineWasActive,
-                                EconFactSink sink, void* user);
+// Population eats down the needs ladder ONCE A SEASON, a season ahead
+// (CANON S19.2 — единое окно мира; owner 2026-09-17: «все эконом соц списания
+// балансы по сезонам, и город и армия… зерна типа хватит сколько городу на
+// сезон»). Each need is A SEASON of demand and is either covered WHOLE or not
+// debited at all (owner: «просто не списывать, если не хватает — 1/8 = НЕ
+// ПОКРЫТО»; for a landmark the un-covered season is a hungry season and the
+// population law does the rest — no second mortality mechanic). Call it on
+// season_boundary(day) only; `famineWasActive` carries last season's state so
+// FamineStarted/FamineEnded fire exactly on the transitions.
+ConsumeOutcome econ_consume_season(Inventory& store, int population,
+                                   bool famineWasActive,
+                                   EconFactSink sink, void* user);
+
+// Daily slot hygiene, split out of the old daily consume (CANON «Крафт/
+// Скрап»): the store past half occupancy melts its cheapest non-fungible
+// stacks back to matter. Reports a Scrapped fact when anything melted.
+// Returns stacks melted.
+int econ_store_hygiene(Inventory& store, EconFactSink sink, void* user);
 
 // ── Population and mood (owner's law, W2b-4) ─────────────────────────────
 //

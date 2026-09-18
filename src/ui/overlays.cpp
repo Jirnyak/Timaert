@@ -1,4 +1,5 @@
 #include "macro/econ_day.h"   // sp_price — THE one price of an action
+#include "macro/seasons.h"    // kDaysPerSeason — the upkeep bill's horizon
 #include "ui/overlays.h"
 #include "macro/cell_facts.h"   // the Map preview's REAL cell context
 #include "macro/player_entity.h"
@@ -823,8 +824,11 @@ namespace sm::ui
                                                   effPanel.skills,
                                                   panelStanding);
         const int armyTotal = army ? total_soldiers(*army) : 0;
+        // Upkeep is maintenance, not a deal (2026-09-17): no CHA discount,
+        // and the bill is the SEASON'S — paid a season ahead at the boundary
+        // window, the same law every squad pays by.
         const int armyUpkeep = army
-            ? calculate_squad_upkeep(*army, derived.tradeDiscountPct) : 0;
+            ? calculate_squad_upkeep(*army) * kDaysPerSeason : 0;
 
         ImGui::SetNextWindowSize(ImVec2(760 * scale, 560 * scale), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("Character", open))
@@ -1258,7 +1262,13 @@ namespace sm::ui
                             {
                                 if (craft_item(playerBag, ci, 1))
                                 {
-                                    pools.sp -= spCost;
+                                    // THE spend door (movement_cost.h): the
+                                    // debit and the one QUADRATIC law of
+                                    // zero in a single move — forging into
+                                    // the negative bites HP right here, not
+                                    // on some later step (S14.1: «любая
+                                    // затрата ниже 0 бьёт»).
+                                    apply_stamina_cost(pools, spCost);
                                     lastCraftMessage = "Crafted ";
                                     if (yield > 1)
                                     {
@@ -1291,7 +1301,7 @@ namespace sm::ui
                     *tab = CharacterPanelTab::Army;
                 if (armyOpen)
                 {
-                    ImGui::Text("Total: %d  Upkeep: %d g/day", armyTotal, armyUpkeep);
+                    ImGui::Text("Total: %d  Upkeep: %d g/season", armyTotal, armyUpkeep);
                     if (ImGui::BeginTable("army_grid", 3,
                                           ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg))
                     {
@@ -1312,7 +1322,8 @@ namespace sm::ui
                             ImGui::TableNextColumn();
                             ImGui::Text("%d", count);
                             ImGui::TableNextColumn();
-                            ImGui::Text("%d g/day", npc_upkeep_base(t));
+                            ImGui::Text("%d g/season",
+                                        npc_upkeep_base(t) * kDaysPerSeason);
                         }
                         ImGui::EndTable();
                     }
@@ -2209,11 +2220,8 @@ namespace sm::ui
                     ImGui::Spacing();
                     if (const SoldierSquad* army = player_roster(world)) {
                         ImGui::TextDisabled(
-                            "Daily upkeep: %d g",
-                            calculate_squad_upkeep(
-                                *army,
-                                calculate_derived_effective(world)
-                                    .tradeDiscountPct));
+                            "Season upkeep: %d g",
+                            calculate_squad_upkeep(*army) * kDaysPerSeason);
                     }
                     ImGui::EndTabItem();
                 }

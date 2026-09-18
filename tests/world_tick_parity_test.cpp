@@ -9,6 +9,7 @@
 #include "check.h"
 
 #include "macro/npc.h"
+#include "macro/npc_ai.h"   // squad_season_window — THE boundary window
 #include "macro/world_tick.h"
 #include "macro/player_entity.h"
 #include "macro/macro_world.h"
@@ -88,28 +89,65 @@ void test_daily_processing_applies_player_upkeep_and_age() {
     sm::WorldTickRuntime runtime{};
     sm::reset_world_tick_runtime(runtime, 789u);
     runtime.pendingDailyTicks = 1;
-    runtime.nextDailyTickDay = 12;
-
-    // The expectation is DERIVED from the same law the tick pays by, so the
-    // upkeep table can be retuned without touching this file. The tick reads
-    // the EFFECTIVE sheet (phase 4) — and so does the expectation: the door's
-    // own clamp (an attribute never reads below 1) is part of the law.
-    const sm::CharacterSheet effSheet = sm::player_effective_sheet(world);
-    const int expectedUpkeep = sm::calculate_squad_upkeep(
-        *army, sm::calculate_derived(effSheet.attributes,
-                                     effSheet.skills)
-                   .tradeDiscountPct);
-    const int expectedGold = (5 - expectedUpkeep) > 0 ? (5 - expectedUpkeep) : 0;
+    runtime.nextDailyTickDay = 12;   // NOT a season boundary
 
     const int processed = sm::process_world_daily_ticks(gs, runtime, 1, &mw);
 
     CHECK(processed == 1 && runtime.pendingDailyTicks == 0
               && runtime.nextDailyTickDay == 0,
           "the daily processor drains exactly the one tick that was queued");
-    CHECK(sm::wallet_value((*sm::player_inventory(world))) == expectedGold,
-          "one daily tick charges exactly one day of squad upkeep");
+    // The daily wage died 2026-09-17 («общее содержание — игрок == нпц»,
+    // CANON S19.2): an ordinary day charges NOTHING — balances live on the
+    // season boundary, through THE one squad window below.
+    CHECK(sm::wallet_value((*sm::player_inventory(world))) == 5,
+          "an ordinary day charges no upkeep: balances are the boundary's");
     CHECK(gs.player.ageDays == 1001,
           "one daily tick ages the player exactly one day");
+
+    // ── THE SQUAD SEASON WINDOW, on the player himself («игрок == нпц») ──
+    // The expectation is DERIVED from the same law the window pays by:
+    // wage = the plain soldier-row sum × the season (no CHA haggling — the
+    // discount died as a player-special), board = a season of bread per
+    // roster soul whose own row is on upkeep.
+    const int wageSeason =
+        sm::calculate_squad_upkeep(*army) * sm::kDaysPerSeason;
+    CHECK(wageSeason > 0, "the Guard row prices the roster (fixture sanity)");
+
+    // A non-boundary day is a silent day — negative control.
+    CHECK(sm::squad_season_window(mw, 12) == 0,
+          "no window off the boundary: nobody deserts");
+    CHECK(sm::wallet_value((*sm::player_inventory(world))) == 5,
+          "no window off the boundary: nothing debited");
+
+    // An UNCOVERED window (5 coins against a season's wage, no bread):
+    // nothing is debited («не покрыто — не списывать») and an eighth of the
+    // roster — floor one soul — walks into the deserter pool, ONCE.
+    const std::size_t poolBefore = gs.deserterPool.size();
+    CHECK(sm::squad_season_window(mw, 33) == 1,
+          "an uncovered window bleeds an eighth (floor one) of the roster");
+    CHECK(sm::wallet_value((*sm::player_inventory(world))) == 5,
+          "an uncovered wage is NOT debited");
+    CHECK(gs.deserterPool.size() == poolBefore + 1,
+          "the walker lands in the deserter pool");
+    CHECK(gs.lootPoolValue == 0,
+          "an unpaid wage burns nothing into the loot pool");
+
+    // A COVERED window: re-arm the roster, fund a season of both needs —
+    // bread leaves whole, the wage BURNS into the loot pool («жалование
+    // сгорает»), the roster holds.
+    army->push(sm::make_soldier(
+        static_cast<std::uint8_t>(sm::NPCType::Guard), 1, 78u));
+    sm::Inventory* purse = sm::player_inventory(world);
+    purse->add("bread", sm::kDaysPerSeason);
+    purse->add("coin_empire", wageSeason);   // + the 5 already there
+    CHECK(sm::squad_season_window(mw, 65) == 0,
+          "a covered window deserts nobody");
+    CHECK(purse->count("bread") == 0,
+          "a covered window eats the whole season of bread at once");
+    CHECK(sm::wallet_value(*purse) == 5,
+          "a covered window debits exactly the season's wage");
+    CHECK(gs.lootPoolValue == wageSeason,
+          "the paid wage burns into the world loot pool");
 }
 
 void test_settlement_history_keeps_a_rolling_window() {
@@ -176,6 +214,11 @@ void test_garrison_never_exceeds_its_cap() {
     // and this test is about recruiting — keep the men fed and paid.
     s.inventory.add("coin_empire", 1 << 16);
     s.inventory.add("bread", 1 << 13);
+    // Pin the season's verdict to the waterline (S19.2: wellbeing lives on
+    // the landmark between windows): a newborn's fed default would GROW the
+    // town mid-test and move the garrison target out from under the check.
+    // 128/255 sits a hair above 0.5 — one day's carry stays below a head.
+    s.seasonWellbeing = 128;
     // One below the target: exactly one recruit wanted.
     for (int i = 0; i < target - 1; ++i) {
         s.garrison.push(sm::make_soldier(
@@ -356,9 +399,11 @@ void test_population_dies_honestly_to_zero() {
     int deaths = 0;
     int dayOfDeath = -1;
     bool sawBelowOldFloor = false;
-    for (int day = 0; day < 2048 && dayOfDeath < 0; ++day) {
+    // Days are the world's own, 1-based: day 1 is the first season boundary,
+    // where the empty larder fails the window and the season turns hungry.
+    for (int day = 1; day <= 2048 && dayOfDeath < 0; ++day) {
         bool famine = false, revolt = false, died = false;
-        sm::settle_landmark_day(lm, famine, revolt, died);
+        sm::settle_landmark_day(lm, day, famine, revolt, died);
         if (lm.population < 5) sawBelowOldFloor = true;
         if (died) { ++deaths; dayOfDeath = day; }
     }
@@ -366,9 +411,9 @@ void test_population_dies_honestly_to_zero() {
           "a starving settlement dies honestly to zero");
     CHECK(sawBelowOldFloor,
           "population passed the old floor: no crutch is back");
-    for (int day = 0; day < 100; ++day) {
+    for (int day = 1; day <= 100; ++day) {
         bool famine = false, revolt = false, died = false;
-        sm::settle_landmark_day(lm, famine, revolt, died);
+        sm::settle_landmark_day(lm, day, famine, revolt, died);
         if (died) ++deaths;
     }
     CHECK(lm.population == 0,

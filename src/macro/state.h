@@ -326,9 +326,10 @@ namespace sm {
 // v93 (2026-09-10): ПОЛЁТ + ЛОГОВО — MacroNpcRuntime вырос тремя полями
 // (flying-кэш колонки cruiseM, lairX/lairY дом-клетка модели LairSorties);
 // runtime едет в записи POD-ом, его раскладка = формат.
-constexpr int kSaveVersion = 94;   // v94: kingdoms cut — Landmark carries
-                                   //   factionIdx + suzerainLandmarkId
-                                   //   (kingdomIdx / nearestCityId died)
+// v95 (2026-09-17): СЕЗОННОЕ ОКНО БАЛАНСОВ (CANON S19.2) — Landmark carries
+// seasonWellbeing (the boundary window's verdict the daily population law
+// lives off until the next boundary).
+constexpr int kSaveVersion = 95;
 
 enum class SettlementMood : std::uint8_t {
     Prosperous, Stable, Tense, Unrest, Revolt, Count
@@ -448,6 +449,11 @@ struct Landmark {
     std::uint16_t starvedYesterday = 0;
     std::uint16_t unmetYesterday = 0;
     std::uint8_t  famineActive = 0;
+    // THE SEASON WINDOW'S VERDICT (v95, CANON S19.2): wellbeing quantized to
+    // a byte, written on the boundary day by econ_consume_season's outcome
+    // and read by the mood band + population law every day until the next
+    // boundary. Born 255: a landmark seeded mid-life starts its life fed.
+    std::uint8_t  seasonWellbeing = 255;
     float         popGrowthCarry = 0.0f;
     // WHAT THE WORLD THINKS OF THIS PLACE (macro/chronicle.h). Renown is not
     // a squad's private counter — it belongs to every MACRO entity that has an

@@ -11,7 +11,6 @@
 // world by exactly that many.
 
 #include "macro/world_tick.h"
-#include "macro/player_entity.h"
 #include "macro/econ_day.h"
 #include "macro/currency.h"
 #include "macro/fauna.h"
@@ -20,6 +19,7 @@
 #include "macro/npc_ai.h"
 #include "macro/npc_spawn.h"
 #include "macro/resource_field.h"   // kGrowthEpochDays — the regrow epoch
+#include "macro/seasons.h"          // season_boundary — единое окно мира (S19.2)
 #include "macro/spells.h"           // the spire's tier (regrow context score)
 #include "macro/zones.h"            // the ruin's danger byte (same)
 #include "macro/scent_field.h"
@@ -58,28 +58,36 @@ void push_history_(SettlementHistory& hist, int day, int population) {
 // mood and the LOGISTIC population law (owner's ruling — no flat heads per
 // day). At namespace scope (external linkage, the shuffled_order pattern)
 // so econ_v1_test can drive a landmark to its honest death directly.
-void settle_landmark_day(Landmark& lm,
+void settle_landmark_day(Landmark& lm, int day,
                          bool& startedFamine, bool& startedRevolt,
                          bool& diedOut,
                          EconFactSink sink, void* user) {
     startedFamine = false;
     startedRevolt = false;
     diedOut = false;
-    // Straight onto the ONE store — the twice-a-day conversion to a second
-    // container (and back, through a string lookup each way) is gone with the
-    // second index space it existed to bridge.
-    const ConsumeOutcome o = econ_consume_day(
-        lm.inventory, lm.population, lm.famineActive != 0, sink, user);
+    // THE SEASON WINDOW (CANON S19.2, единое окно мира): the balance debit
+    // happens once, on the boundary day, a season ahead — straight onto the
+    // ONE store. The outcome is parked on the landmark as a quantized
+    // wellbeing, and every day until the next boundary lives off that number:
+    // the mood band and the population law run daily, the debit does not.
+    if (season_boundary(day)) {
+        const ConsumeOutcome o = econ_consume_season(
+            lm.inventory, lm.population, lm.famineActive != 0, sink, user);
+        lm.starvedYesterday = std::uint16_t(std::min(o.starvedPop, 0xFFFF));
+        lm.unmetYesterday   = std::uint16_t(std::min(o.unmetComfort, 0xFFFF));
+        // The TRANSITIONS are the story, not the states. A town that has been
+        // hungry for a season is one famine, not thirty-two of them, and a
+        // chronicle that filed the state every day would bury the day it began.
+        startedFamine = o.famineActive && lm.famineActive == 0;
+        lm.famineActive = o.famineActive ? 1 : 0;
+        lm.seasonWellbeing = std::uint8_t(std::lround(
+            std::clamp(settlement_wellbeing(o, lm.population), 0.0f, 1.0f)
+            * 255.0f));
+    }
+    // Daily slot hygiene (CANON «Крафт/Скрап») — hygiene, not a balance.
+    econ_store_hygiene(lm.inventory, sink, user);
 
-    lm.starvedYesterday = std::uint16_t(std::min(o.starvedPop, 0xFFFF));
-    lm.unmetYesterday   = std::uint16_t(std::min(o.unmetComfort, 0xFFFF));
-    // The TRANSITIONS are the story, not the states. A town that has been
-    // hungry for a season is one famine, not thirty-two of them, and a
-    // chronicle that filed the state every day would bury the day it began.
-    startedFamine = o.famineActive && lm.famineActive == 0;
-    lm.famineActive = o.famineActive ? 1 : 0;
-
-    const float wellbeing = settlement_wellbeing(o, lm.population);
+    const float wellbeing = float(lm.seasonWellbeing) / 255.0f;
     const SettlementMood was = lm.mood;
     lm.mood = SettlementMood(mood_band_from_wellbeing(wellbeing));
     startedRevolt = lm.mood == SettlementMood::Revolt
@@ -148,7 +156,11 @@ void assess_tithe_(Landmark& lm, int day, bool hasSuzerain) {
     }
     lm.titheAvgCoin += (std::int64_t(wallet_value(lm.inventory))
                         - lm.titheAvgCoin) >> kTitheAvgShift;
-    if (day % kDaysPerSeason != lm.id % kDaysPerSeason) return;
+    // The CHARGE lands on the season boundary — the world's one window
+    // (CANON S19.2; the per-ordinal pay-day smear is history, owner
+    // 2026-09-17: «ДА, УМИРАЕТ»). The average above still feeds DAILY —
+    // memory is not a balance.
+    if (!season_boundary(day)) return;
     const int season = day / kDaysPerSeason;
     if (lm.titheSeasonAssessed == season) return;
     lm.titheSeasonAssessed = season;
@@ -205,16 +217,20 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
                          currency_for_faction_id(faction_id_for_index(
                              faction_or_freefolk(s.factionIdx))));
 
+        // Порядок дня границы: НАСЕЛЕНИЕ ЕСТ ПЕРВЫМ (settle), потом гарнизон
+        // ест и ПЛАТИТ — жалованье теперь стоимостью (натурой при пустой
+        // казне), и платёж раньше окна еды мог бы сжечь городской хлеб в
+        // пул лута перед собственным столом.
+        bool famine = false, revolt = false, died = false;
+        const int headsBefore = s.population;
+        settle_landmark_day(s, day, famine, revolt, died, rs, ru);
+
         garrison_upkeep_(gs, s, day);
 
         // ONE suzerain edge (S24): a place owes whoever the column names;
         // a capital (and any masterless place) names nobody.
         assess_tithe_(s, day,
                       landmark_by_id(gs, s.suzerainLandmarkId) != nullptr);
-
-        bool famine = false, revolt = false, died = false;
-        const int headsBefore = s.population;
-        settle_landmark_day(s, famine, revolt, died, rs, ru);
         if (famine) {
             record_landmark_fact(gs, FactKind::Starved, s.id, s.x, s.y,
                                  int(s.starvedYesterday));
@@ -240,28 +256,37 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
 // the City-only branches this replaces were the same class of gate the
 // population door wore for two refactors.
 //
-// UPKEEP (owner 2026-08-30/31; CANON S10): an army wants BOARD and PAY —
-// short of either, an eighth of the roster walks the same day. BOARD is
-// daily (bread off the place's store — the person-day anchor). PAY is
-// SEASONAL, on the place's own pay-day (ordinal % season), and the paid
-// wage leaves the economy INTO THE LOOT POOL. ДОМА — ВСЁ СОДЕРЖАНИЕ >>1
+// UPKEEP (owner 2026-08-30/31 + 2026-09-17; CANON S10, S19.2): an army wants
+// BOARD and PAY — both are judged ONCE, at the season boundary, a season
+// ahead. Each need is covered WHOLE or not debited at all («не покрыто — не
+// списывать»); ANY uncovered need costs an eighth of the roster, ONCE per
+// window («ВСЕ НУЖДЫ ДОЛЖНЫ БЫТЬ ПОКРЫТЫ, иначе потеря 1/8»). The paid wage
+// leaves the economy INTO THE LOOT POOL. ДОМА — ВСЁ СОДЕРЖАНИЕ >>1
 // («гарнизон платит пол цены содержания, как в Mount & Blade»); в поле —
 // полное, и разница — «доплата за поле» в скоре патрульного аукциона.
 void garrison_upkeep_(GameState& gs, Landmark& s, int day) {
+    if (!season_boundary(day)) return;
     if (landmark_def(s.type).garrisonShift == 0xFFu) return;
     if (total_soldiers(s.garrison) <= 0) return;
     bool shorted = false;
     const int breadIdx = commodity_item_index(commodity_index("bread"));
-    const int need = total_soldiers(s.garrison) >> 1;
-    const int can = std::min(need, s.inventory.count_of(breadIdx));
-    if (can > 0) s.inventory.remove_of(breadIdx, can);
-    shorted = shorted || can < need;
-    if (day % kDaysPerSeason == s.id % kDaysPerSeason) {
-        const int wage =
-            (calculate_squad_upkeep(s.garrison) * kDaysPerSeason) >> 1;
-        const int paid = wallet_spend_up_to(s.inventory, wage);
-        gs.lootPoolValue += paid;
-        shorted = shorted || paid < wage;
+    const int need = (total_soldiers(s.garrison) * kDaysPerSeason) >> 1;
+    if (s.inventory.count_of(breadIdx) >= need) {
+        s.inventory.remove_of(breadIdx, need);
+    } else {
+        shorted = true;
+    }
+    const int wage = (calculate_squad_upkeep(s.garrison) * kDaysPerSeason) >> 1;
+    if (wage > 0) {
+        // ОПЛАТА СТОИМОСТЬЮ (владелец 2026-09-18, currency.h
+        // pay_value_dense): дефолт — монеты, но арифметикой плотности
+        // value/kg, не веткой; пустая казна платит натурой. Уплаченная
+        // стоимость СГОРАЕТ в пул лута, переплата хвоста — щедрость.
+        if (inventory_value(s.inventory) >= wage) {
+            gs.lootPoolValue += pay_value_dense(s.inventory, wage);
+        } else {
+            shorted = true;
+        }
     }
     if (shorted) {
         int walkers = std::max(1, total_soldiers(s.garrison) / 8);
@@ -320,17 +345,17 @@ void tick_villages_(GameState& gs, int day, WorldTickRuntime& runtime,
                              : 0,
                          v.population, rs, ru);
 
-        // The village keeps its own small army now (§42 Инк 7, the ONE
-        // garrison law by column): board and pay before the day settles,
-        // recruits after — the same two calls the city loop makes.
+        // Порядок дня границы — как у города: население ест первым, потом
+        // гарнизон (жалованье стоимостью не выедает стол деревни), потом
+        // дань (§42 Инк 7, the ONE garrison law by column).
+        bool famine = false, revolt = false, died = false;
+        const int headsBefore = v.population;
+        settle_landmark_day(v, day, famine, revolt, died, rs, ru);
+
         garrison_upkeep_(gs, v, day);
 
         // The village owes its market city — the same one edge (CANON S24).
         assess_tithe_(v, day, landmark_by_id(gs, v.suzerainLandmarkId) != nullptr);
-
-        bool famine = false, revolt = false, died = false;
-        const int headsBefore = v.population;
-        settle_landmark_day(v, famine, revolt, died, rs, ru);
         if (famine) {
             record_landmark_fact(gs, FactKind::Starved, v.id, v.x, v.y,
                                  int(v.starvedYesterday));
@@ -352,25 +377,13 @@ void tick_villages_(GameState& gs, int day, WorldTickRuntime& runtime,
 
 namespace {
 
-// ── Daily player tick (upkeep + age) ──────────────────────────
-// The payroll haggles by his EFFECTIVE sheet (phase 4): a +CHA amulet talks
-// the wage down like every other price. No world = no squad = no wages
-// (посадка Б: the sheet lives ON the squad, so the old no-world fallback
-// sheet died with the field it read) — ageing needs no body.
-void tick_player_daily_(PlayerState& p, ecs::World* world) {
-    if (world) {
-        if (const SoldierSquad* roster = player_roster(*world)) {
-            const CharacterSheet eff = player_effective_sheet(*world);
-            const int upkeep = calculate_squad_upkeep(
-                *roster, calculate_derived(eff.attributes, eff.skills)
-                             .tradeDiscountPct);
-            // Pay what the wallet holds; an unpaid remainder is simply
-            // unpaid today (wage-debt desertion = the №3 pipeline's rule).
-            if (Inventory* purse = player_inventory(*world)) {
-                wallet_spend_up_to(*purse, upkeep);
-            }
-        }
-    }
+// ── Daily player tick (age only) ──────────────────────────────
+// The player's UPKEEP left this function on 2026-09-17 («общее содержание —
+// игрок == нпц», CANON S14/S19.2): his squad pays board and wage through THE
+// one season window every squad pays through (npc_ai squad_season_window) —
+// no CHA haggling (upkeep is maintenance, not a deal), the wage burns into
+// the loot pool like everyone's. Ageing needs no body.
+void tick_player_daily_(PlayerState& p) {
     p.ageDays += 1;
 }
 
@@ -453,8 +466,7 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
         const int day = runtime.nextDailyTickDay;
         tick_settlements_(gs, day, runtime, esink, euser);
         tick_villages_   (gs, day, runtime, esink, euser);
-        tick_player_daily_(gs.player,
-                           macro && macro->world ? macro->world : nullptr);
+        tick_player_daily_(gs.player);
 
         // The ONE growth/diffusion law (R2 track): every resource field is
         // born from time and context through the same walker — the forest
@@ -494,9 +506,13 @@ int process_world_daily_ticks(GameState& gs, WorldTickRuntime& runtime,
             // The labour rotation (npc_ai.h): yesterday's crews dissolve
             // into the population, today's are raised to its size.
             rotate_worker_squads(*macro, day);
-            // Squads eat (npc_ai.h): bread out of the marching bag, the
-            // maintenance counter past it.
-            feed_squads_daily(*macro);
+            // THE SQUAD SEASON WINDOW (npc_ai.h, CANON S19.2): on the
+            // boundary day every roster settles board AND pay a season
+            // ahead — covered whole or not debited, any miss = 1/8 once.
+            // The player's squad pays here like everyone («игрок == нпц»).
+            squad_season_window(*macro, day);
+            // Daily bag hygiene (the auto-scrap half of the old feed loop).
+            squad_bags_hygiene_daily(*macro);
         }
 
         --runtime.pendingDailyTicks;
