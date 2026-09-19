@@ -231,9 +231,13 @@ CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
 // spend the WHOLE purse down the home's needs ladder («деревня не копит
 // капитал», owner 2026-08-30) — each line up to a season's stock at home;
 // what the market cannot supply leaves coin to ride home for the tax graph.
+// `homeDebt` — живой счёт дома (Landmark::needDebt): закупка идёт по
+// НЕПОГАШЕННОЙ нужде дома — тот же класс живости, что homePopulation.
+// nullptr (фикстура) — спрос дома по лестнице населения.
 CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
                                    Landmark& market,
                                    const MemoryEntry* homeSnapshot,
+                                   const std::int32_t* homeDebt,
                                    int homePopulation, const Skills& homeSite,
                                    int myTradePct, int theirTradePct,
                                    EconFactSink sink = nullptr,

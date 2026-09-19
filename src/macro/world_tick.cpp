@@ -218,7 +218,8 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
         // The mint right, v1: every CITY strikes its own faction's coin
         // (owner 2026-08-30; the right becomes a landmark column when a
         // place ever differs from its kind).
-        econ_produce_day(s.inventory, landmark_sheet(s.type).skills,
+        econ_produce_day(s.inventory, s.needDebt,
+                         landmark_sheet(s.type).skills,
                          s.population > 0
                              ? std::max(1, s.population / kHeadsPerCityWorker)
                              : 0,
@@ -347,7 +348,8 @@ void tick_villages_(GameState& gs, int day, WorldTickRuntime& runtime,
         // which is only true if this call exists: today no recipe carries
         // that site, so this makes nothing, and the day the row lands it
         // works with no code here either.
-        econ_produce_day(v.inventory, landmark_sheet(v.type).skills,
+        econ_produce_day(v.inventory, v.needDebt,
+                         landmark_sheet(v.type).skills,
                          v.population > 0
                              ? std::max(1, v.population / kHeadsPerCityWorker)
                              : 0,

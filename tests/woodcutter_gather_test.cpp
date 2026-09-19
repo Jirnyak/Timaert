@@ -465,6 +465,11 @@ void test_the_vendor_sells_at_the_nearest_city() {
     // stands ABOVE that rides to market.
     vil.inventory.add("food", 4000);
     vil.inventory.add("coin_timaert_copper", 50 * 2);
+    // ДОМ ГОЛОДЕН СЧЁТОМ (CANON S10): «дома нет хлеба» = непогашенный
+    // сезонный счёт — из него и читается нужда, которую вендор едет
+    // закрывать покупкой.
+    vil.needDebt[commodity_index("bread")] =
+        vil.population * kDaysPerSeason;
     gs.landmarks.push_back(vil);
 
     ecs::World w;
@@ -513,8 +518,12 @@ void test_the_vendor_sells_at_the_nearest_city() {
     const int vilBread = gs.landmarks[1].inventory.count("bread");
     CHECK(cityGrain > 0,
           "the vendor sold the village surplus at the nearest city");
-    CHECK(vilBread > 0,
-          "the earnings bought the home's lack (bread) back to the village");
+    // ПОД ДОЛГОМ (CANON S10) «купил домой хлеб» видно СЧЁТОМ: привезённое
+    // гасит его в дверях прихода и съедается — полка держит только излишек.
+    const int vilBreadDebtPaid = 50 * kDaysPerSeason
+        - gs.landmarks[1].needDebt[commodity_index("bread")];
+    CHECK(vilBreadDebtPaid > 0,
+          "the earnings FED the home's lack — the bread bill fell");
     CHECK(recall(reg.get<AgentMemory>(e),
                  AgentMemoryKind::MarketSnapshot, 3) != nullptr,
           "the departure snapshot of the vendor's OWN home lives in memory");
@@ -522,8 +531,8 @@ void test_the_vendor_sells_at_the_nearest_city() {
                            + gs.landmarks[1].inventory.count("food");
     const int breadTotal = vilBread + bag.count("bread")
                            + gs.landmarks[0].inventory.count("bread");
-    CHECK(grainTotal == 4000 && breadTotal == 2000,
-          "CONSERVATION: cargo moves, it is never minted or dropped");
+    CHECK(grainTotal == 4000 && breadTotal + vilBreadDebtPaid == 2000,
+          "CONSERVATION: cargo moves or pays the bill — never dropped");
     // ...and the deal's other half obeys the same law: coin travels between
     // the three purses (city, village, hold) and is never minted or burned.
     const int coinTotal = gs.landmarks[0].inventory.count("coin_timaert_copper")

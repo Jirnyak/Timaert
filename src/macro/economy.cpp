@@ -44,49 +44,55 @@ int trade_price(int baseValue, int myTradePct, int theirTradePct,
                   : trade_sell_price(scaledBase, myTradePct, theirTradePct);
 }
 
-float stock_scarcity(int supply, int demandPerDay) {
+float stock_scarcity(int supply, int demandSeason) {
     // ОДНА кривая цены (CANON S10, пять законов): `value × (спрос+1)/(запас+1)`,
-    // КОРИДОРА НЕТ. Спрос — СЕЗОННЫЙ: мир ест раз в сезон (S19.2), поэтому
-    // мерка дефицита обязана совпасть с ритмом еды — дневная мерка читала
-    // сезонный амбар как «завались» и опаздывала ровно на сезон (хутор с 400
-    // хлеба при нужде 960 уходил в шахту и умирал). Обе половины спроса —
-    // прямая лестница И производная по рецептам — сидят в demandPerDay
-    // (daily_demand_for), так что горизонт у них один по построению (ловушка
-    // S10 «переводить обе половины» закрыта дверью, а не дисциплиной).
-    // Равновесие читаемо: склад == сезонная нужда ⇒ цена ровно по базе;
+    // КОРИДОРА НЕТ. Спрос приходит СЕЗОННЫМ ЧИСЛОМ, и календаря в этой
+    // двери больше нет (CANON S10, долг, 2026-09-19): прямая часть спроса =
+    // остаток СЧЁТА места — уже сезонная величина, тающая по мере оплаты, —
+    // производная по рецептам считается той же меркой (season_demand_for),
+    // так что горизонт у обеих половин один по построению (ловушка S10
+    // «переводить обе половины» закрыта дверью, а не дисциплиной).
+    // Равновесие читаемо: склад == непокрытая нужда ⇒ цена ровно по базе;
     // любое отклонение цены от базы означает «здесь не хватает» или «здесь
     // завал» — для каждого товара и места без исключений.
     // Коридор [0.25…4.0] умер вердиктом 2026-09-18: он не защищал от
     // «щедрого купца», а СОЗДАВАЛ его — в насыщении нет слиппеджа, и только
     // там прокрутка была прибыльной (price_law_test держит обратное).
     const long long s = (long long)(supply < 0 ? 0 : supply) + 1;
-    const long long d =
-        (long long)(demandPerDay < 0 ? 0 : demandPerDay) * kDaysPerSeason + 1;
+    const long long d = (long long)(demandSeason < 0 ? 0 : demandSeason) + 1;
     return float(d) / float(s);
 }
 
-int stock_price(int baseValue, int supply, int demandPerDay) {
-    const float p = float(baseValue) * stock_scarcity(supply, demandPerDay);
+int stock_price(int baseValue, int supply, int demandSeason) {
+    const float p = float(baseValue) * stock_scarcity(supply, demandSeason);
     const int v = int(jround(p));
     return v < 1 ? 1 : v;
 }
 
 namespace {
 
-// Demand is DIRECT (the needs ladder) plus DERIVED (owner track 2026-08-30):
-// a town that eats bread demands grain, because bread is MADE of it — the
-// demand of every recipe output flows down to its inputs × qty. Without
-// this a starving city priced grain at base (nobody "eats" grain), its
-// caravans saw no profit in hauling it, and stone outbid food (measured,
-// balance_run). Recursive over the recipe table with a small depth cap:
-// chains are data and may grow (ore → metal → tool), cycles must not hang.
-int demand_for_(const char* itemId, int population, const Skills& hands,
+// Demand is DIRECT (the place's DEBT, CANON S10 2026-09-19: «спрос кривой
+// дефицита читается из ДОЛГА» — непогашенный остаток счёта И ЕСТЬ
+// непокрытая нужда, сезонной меркой по построению) plus DERIVED (owner
+// track 2026-08-30): a town that eats bread demands grain, because bread
+// is MADE of it — the demand of every recipe output flows down to its
+// inputs × qty. Without this a starving city priced grain at base (nobody
+// "eats" grain), its caravans saw no profit in hauling it, and stone
+// outbid food (measured, balance_run). Recursive over the recipe table
+// with a small depth cap: chains are data and may grow (ore → metal →
+// tool), cycles must not hang.
+// Без счёта (needDebt == nullptr — снимок чужого дома, фикстура) прямая
+// часть честно падает на лестницу населения × сезон.
+int demand_for_(const char* itemId, const std::int32_t* needDebt,
+                int population, const Skills& hands,
                 const Inventory* store, int depth) {
     if (!itemId || population <= 0) return 0;
     int demand = 0;
     for (int i = 0; i < kNeedCount; ++i) {
         if (std::strcmp(kNeeds[i].commodity, itemId) == 0) {
-            demand += population / kNeeds[i].popPerUnitDay;
+            demand += needDebt
+                ? int(needDebt[commodity_index(itemId)])
+                : (population / kNeeds[i].popPerUnitDay) * kDaysPerSeason;
             break;
         }
     }
@@ -107,24 +113,22 @@ int demand_for_(const char* itemId, int population, const Skills& hands,
             const int outIdx = item_index(r.output);
             for (const ItemPart& part : item_parts(outIdx)) {
                 if (int(part.def) != target) continue;
-                const int outDaily = demand_for_(r.output, population,
-                                                 hands, store, depth - 1);
                 // НЕТТИНГ СКЛАДОМ ВЫХОДА (владелец 2026-09-18, «смотреть
                 // и на сезон, и на склад текущий»): вход нужен только на
-                // НЕДОПЕЧЁННЫЙ остаток сезонной нужды выхода. Полный амбар
-                // хлеба не хочет зерна — его пустая зерновая полка больше
-                // не «дефицит» и не взрывает ни цену, ни скор рейса;
-                // пустой амбар хочет в полную силу — выгода караванов с
-                // зерном жива ровно там, где она настоящая. Неттинг — на
-                // СЕЗОННОЙ шкале (шкала самой нужды, S19.2), обратно в
-                // дневную мерку той же дробью; без склада (nullptr) дробь
-                // сокращается в прежний outDaily точно.
-                long long outSeason = (long long)outDaily * kDaysPerSeason;
+                // НЕДОПЕЧЁННЫЙ остаток нужды выхода. Полный амбар хлеба не
+                // хочет зерна — его пустая зерновая полка больше не
+                // «дефицит» и не взрывает ни цену, ни скор рейса; пустой
+                // амбар хочет в полную силу. С долгом обе величины —
+                // СЕЗОННЫЕ ЧИСЛА по построению, дробь «туда-обратно» через
+                // дневную мерку умерла вместе с календарём кривой.
+                long long outSeason = demand_for_(r.output, needDebt,
+                                                  population, hands,
+                                                  store, depth - 1);
                 if (store) {
                     outSeason -= store->count_of(outIdx);
                     if (outSeason < 0) outSeason = 0;
                 }
-                demand += int(outSeason / kDaysPerSeason) * int(part.count);
+                demand += int(outSeason) * int(part.count);
             }
         }
     }
@@ -158,13 +162,17 @@ constexpr int weakest_need_per_unit_day() {
     return weakest;
 }
 
-int daily_demand_for(const char* itemId, int population,
-                     const Skills& hands, const Inventory* store) {
+int season_demand_for(const char* itemId, const std::int32_t* needDebt,
+                      int population, const Skills& hands,
+                      const Inventory* store) {
     // Depth 4 covers chains far past today's one-step recipes (ore → metal
     // → part → tool) and caps any future accidental cycle.
-    const int direct = demand_for_(itemId, population, hands, store, 4);
+    const int direct = demand_for_(itemId, needDebt, population, hands,
+                                   store, 4);
     if (population <= 0) return direct;
-    const int floorDemand = population / weakest_need_per_unit_day();
+    // Пол спроса — та же слабейшая нужда лестницы, сезонной меркой.
+    const int floorDemand =
+        (population / weakest_need_per_unit_day()) * kDaysPerSeason;
     return direct > floorDemand ? direct : floorDemand;
 }
 

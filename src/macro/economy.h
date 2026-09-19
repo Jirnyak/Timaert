@@ -69,27 +69,35 @@ int trade_sell_price(int basePrice, int myTradePct, int theirTradePct);
 //     scarcity = (demand × season + 1) / (supply + 1) — NO corridor
 //     price    = base × scarcity, floor 1 («ничто не бесплатно»)
 //
-// `supply` is the counterparty's stock of the item; `demand` its DAILY
-// demand — the horizon lives inside the door (the world eats once a
-// season, S19.2; stock == a season's need ⇔ price == base). The caller
-// passes the POST-TRADE supply — what remains after a buy, what piles up
-// after a sell — so every deal pays its own SLIPPAGE: buying leaves the
-// shelf scarcer and dearer, selling gluts it cheaper. That slippage is
-// what extinguishes arbitrage: a buy-then-sell round trip can never
-// profit, whatever the charisma and context multipliers say
-// (price_law_test pins it across the once-exploitable generous pair).
-// The nominal price is UNBOUNDED by design (verdict 2026-09-18: цена
-// растёт и падает как угодно); what bounds every DEAL is realizability —
-// the payer's inventory value (max_affordable_lot_) — and what bounds
-// every DECISION WEIGHT is purchasing power, never a corridor.
-float stock_scarcity(int supply, int demandPerDay);
-int stock_price(int baseValue, int supply, int demandPerDay);
+// `supply` is the counterparty's stock of the item; `demand` its SEASON
+// demand — С ДОЛГОМ (CANON S10, 2026-09-19) горизонт живёт в самой мере
+// спроса, а не в этой двери: остаток счёта УЖЕ сезонная величина, и
+// последняя зависимость цены от календаря снята (supply == остаток счёта
+// ⇔ price == base; долг погашен и полка пуста ⇒ цена около базы × пол
+// спроса). The caller passes the POST-TRADE supply — what remains after
+// a buy, what piles up after a sell — so every deal pays its own
+// SLIPPAGE: buying leaves the shelf scarcer and dearer, selling gluts it
+// cheaper. That slippage is what extinguishes arbitrage: a buy-then-sell
+// round trip can never profit, whatever the charisma and context
+// multipliers say (price_law_test pins it across the once-exploitable
+// generous pair). The nominal price is UNBOUNDED by design (verdict
+// 2026-09-18: цена растёт и падает как угодно); what bounds every DEAL
+// is realizability — the payer's inventory value (max_affordable_lot_) —
+// and what bounds every DECISION WEIGHT is purchasing power, never a
+// corridor.
+float stock_scarcity(int supply, int demandSeason);
+int stock_price(int baseValue, int supply, int demandSeason);
 
-// A settlement's daily demand for an item — the needs ladder over its
-// population PLUS the derived demand of every recipe ITS HANDS can run (a
-// city that bakes demands grain; a place whose cooking rank is zero does not
-// — owner track 2026-08-30, and since 2026-09-18 the gate is the place's own
-// ANKETA, not its kind). 0 for anything nobody here consumes.
+// A settlement's SEASON demand for an item (CANON S10 «спрос читается из
+// ДОЛГА»): прямая часть = ОСТАТОК СЧЁТА места по этой строке лестницы —
+// непогашенная нужда и есть спрос, — PLUS the derived demand of every
+// recipe ITS HANDS can run (a city that bakes demands grain; a place whose
+// cooking rank is zero does not — owner track 2026-08-30, and since
+// 2026-09-18 the gate is the place's own ANKETA, not its kind).
+//
+// `needDebt` — счёт места (Landmark::needDebt). nullptr = читателя без
+// счёта (снимок чужого дома, фикстура) — прямая часть честно падает на
+// старую лестницу населения × сезон.
 //
 // `store` — ЭТОГО места склад: производная половина спроса гасится запасом
 // ВЫХОДА (владелец 2026-09-18, «смотреть и на сезон, и на склад текущий»):
@@ -98,9 +106,13 @@ int stock_price(int baseValue, int supply, int demandPerDay);
 // зерном, ради которой производный спрос строился, живёт ровно там, где
 // она настоящая). nullptr = спрос без неттинга — для читателя, у которого
 // есть только классовый снимок чужого дома, а не склад (память крю).
+//
+// Пол спроса («нулевого спроса не бывает», владелец 2026-09-18) выведен из
+// слабейшей нужды лестницы, той же сезонной меркой.
 struct Skills;
 struct Inventory;
-int daily_demand_for(const char* itemId, int population, const Skills& hands,
-                     const Inventory* store);
+int season_demand_for(const char* itemId, const std::int32_t* needDebt,
+                      int population, const Skills& hands,
+                      const Inventory* store);
 
 } // namespace sm

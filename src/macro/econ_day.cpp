@@ -64,7 +64,8 @@ void report(EconFactSink sink, void* user, EconFact::Kind kind,
 
 } // namespace
 
-int econ_produce_day(Inventory& store, const Skills& hands, int workers,
+int econ_produce_day(Inventory& store, const std::int32_t* needDebt,
+                     const Skills& hands, int workers,
                      int population, EconFactSink sink, void* user,
                      int mintFactionIdx) {
     if (workers <= 0) return 0;
@@ -101,8 +102,8 @@ int econ_produce_day(Inventory& store, const Skills& hands, int workers,
         int outIdx;      // выходная строка каталога
         int commodity;   // товарный ординал для факта (-1 у монеты)
         bool isMint;
-        int demand;      // дневной спрос выхода ЗДЕСЬ — единый закон
-                         // (daily_demand_for: лестница + производный)
+        int demand;      // сезонный спрос выхода ЗДЕСЬ — единый закон
+                         // (season_demand_for: остаток счёта + производный)
         int perDay;      // партий на рабочий день (труд строки × КПД места)
         int yield;       // единиц в партии
         int base;        // ItemDef::value выхода
@@ -124,7 +125,7 @@ int econ_produce_day(Inventory& store, const Skills& hands, int workers,
         if (!def || def->value <= 0) return;
         cands[std::size_t(candCount++)] = Cand{
             outIdx, commodity, isMint,
-            daily_demand_for(def->id, population, hands, &store),
+            season_demand_for(def->id, needDebt, population, hands, &store),
             std::max(1, item_labour(outIdx) * popLog / 4),
             item_yield(outIdx), def->value};
     };

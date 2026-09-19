@@ -1799,15 +1799,14 @@ int landmark_trade_power_(const Landmark& lm) {
 // ЧТО ГРУЗИТ РЕЙС — один закон двух погрузок, артели и каравана (владелец
 // 2026-09-18: «если деревня добывает что угодно, она это и продаёт,
 // буквально живёт этим»): едет то, что ДОМА ДЕШЕВЛЕ БАЗЫ — затоваривание
-// по той же кривой цены, что судит сделку на месте, — и никогда не едет
-// сезонный амбар (S19.2: мир ест раз в сезон). Дефицитное дома (цена выше
-// базы) не грузится вовсе — оно нужно здесь.
-// Вычитание сезонной нужды — ЗАКРЫТАЯ ФОРМА правила «грузи, пока дома
-// дешевле базы»: при сезонном горизонте кривой (economy.cpp)
-// цена < базы ⇔ склад > сезонной нужды, и каждая погруженная единица
-// дорожает для следующей — погрузка сама остановилась бы ровно на
-// сезонной нужде. Вычитание считает эту точку без цикла.
-void load_cheap_at_home_(Inventory& store, Inventory& bag, int population,
+// по той же кривой цены, что судит сделку на месте. Дефицитное дома (цена
+// выше базы) не грузится вовсе — оно нужно здесь.
+// ВЫЧИТАНИЕ СЕЗОННОГО АМБАРА УМЕРЛО С ДОЛГОМ (CANON S10, 2026-09-19):
+// нужда съедается в момент прихода, на складе лежит только ИЗЛИШЕК —
+// «незачем беречь то, что уже проедено по дороге». Всё видимое свободно;
+// судит одна цена.
+void load_cheap_at_home_(Inventory& store, const std::int32_t* needDebt,
+                         Inventory& bag, int population,
                          const Skills& site, float capKg) {
     for (int oi = 0; oi < kCommodityCount
                     && inventory_weight(bag) < capKg; ++oi) {
@@ -1817,11 +1816,11 @@ void load_cheap_at_home_(Inventory& store, Inventory& bag, int population,
         const int base = d ? d->value : 0;
         if (base <= 0) continue;
         const int have = store.count(id);
-        const int demand = daily_demand_for(id, population, site, &store);
-        const int loadable = have - demand * kDaysPerSeason;
-        if (loadable <= 0) continue;
+        if (have <= 0) continue;
+        const int demand = season_demand_for(id, needDebt, population,
+                                             site, &store);
         if (stock_price(base, have, demand) >= base) continue;
-        haul_between(store, bag, id, loadable,
+        haul_between(store, bag, id, have,
                      capKg - inventory_weight(bag));
     }
 }
@@ -1855,8 +1854,8 @@ void ai_caravan(entt::entity self, MacroPos& p,
         // (load_cheap_at_home_). No deal here: the hold IS the city's
         // property (the loan law), and a town does not sell to itself.
         const Skills& homeSite = landmark_sheet(homeLm->type).skills;
-        load_cheap_at_home_(*homeStore, bag->inv, homeLm->population,
-                            homeSite, rt.carryCap / 2);
+        load_cheap_at_home_(*homeStore, homeLm->needDebt, bag->inv,
+                            homeLm->population, homeSite, rt.carryCap / 2);
         // The LOAN (CANON S5: имущество NPC — заём со склада родного
         // ландмарка, не минт): purchasing power for the run — enough VALUE
         // to fill the hold's free half with grain at BASE price (grain is
@@ -2108,10 +2107,10 @@ void ai_vendor(entt::entity self, MacroPos& p,
                                inventory_value(homeLm->inventory))));
         }
         // Load what is cheap at home — the one loading law
-        // (load_cheap_at_home_): never the seasonal larder, never a row
-        // the home itself is short of.
+        // (load_cheap_at_home_): never a row the home itself is short of
+        // (склад держит только излишек — долг съел нужду приходом).
         const Skills& homeSite = landmark_sheet(homeLm->type).skills;
-        load_cheap_at_home_(homeLm->inventory, bag->inv,
+        load_cheap_at_home_(homeLm->inventory, homeLm->needDebt, bag->inv,
                             homeLm->population, homeSite, rt.carryCap);
         if (inventory_weight(bag->inv) <= 0.0f
             && inventory_value(bag->inv) <= 0) {
@@ -2206,7 +2205,7 @@ void ai_vendor(entt::entity self, MacroPos& p,
             }
             const CaravanDeal deal = trade_vendor_at_market(
                 bag->inv, rt.carryCap, *market, snap,
-                homeLm->population,
+                homeLm->needDebt, homeLm->population,
                 landmark_sheet(homeLm->type).skills,
                 leader_trade_power_(*ctx.mw.world, self),
                 landmark_trade_power_(*market),
@@ -3570,9 +3569,11 @@ CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
         const ItemDef* def = item_def(id);
         const int base = def ? def->value : 0;
         if (base <= 0) continue;
-        const int demand = daily_demand_for(id, market.population, site,
-                                            &ms);
-        const int need = demand * kDaysPerSeason;
+        const int demand = season_demand_for(id, market.needDebt,
+                                             market.population, site, &ms);
+        // Спрос уже СЕЗОННЫЙ (остаток счёта + производный) — прежний
+        // множитель горизонта умер вместе с календарём кривой.
+        const int need = demand;
         const int have = ms.count(id);
         if (need > have) {
             // SELL into the shortage, up to the market's own seasonal need,
@@ -3629,6 +3630,7 @@ CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
 CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
                                    Landmark& market,
                                    const MemoryEntry* homeSnapshot,
+                                   const std::int32_t* homeDebt,
                                    int homePopulation, const Skills& homeSite,
                                    int myTradePct, int theirTradePct,
                                    EconFactSink sink, void* user) {
@@ -3648,8 +3650,8 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
         if (base <= 0) continue;
         int n = bag.count(id);
         if (n <= 0) continue;
-        const int demand = daily_demand_for(id, market.population, site,
-                                            &ms);
+        const int demand = season_demand_for(id, market.needDebt,
+                                             market.population, site, &ms);
         const int have = ms.count(id);
         // Affordability by the exact door (max_affordable_lot_), as at the
         // station: the lot pays the post-trade shelf, so a famine ceiling
@@ -3702,26 +3704,27 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
             if (base <= 0) continue;
             const int have = ms.count(id);
             if (have <= 0) continue;
-            const int demand = daily_demand_for(id, market.population,
-                                                site, &ms);
+            const int demand = season_demand_for(id, market.needDebt,
+                                                 market.population, site,
+                                                 &ms);
             const int buyHere = trade_buy_price(
                 stock_price(base, have, demand), myTradePct, theirTradePct);
             // Чего это стоит ДОМА: запас — по классу своей памяти, спрос —
-            // по своему населению и своему виду места.
+            // по ЖИВОМУ СЧЁТУ дома (тот же класс живости, что населённость
+            // homePopulation, которую крю всегда читало живой).
             const int homeSupply =
                 stock_class_supply(market_stock_class(*homeSnapshot, i));
             // У крю только классовый СНИМОК дома, не склад: спрос дома
             // считается без неттинга (nullptr) — названо вслух в economy.h.
-            const int homeDemand =
-                daily_demand_for(id, homePopulation, homeSite, nullptr);
+            const int homeDemand = season_demand_for(
+                id, homeDebt, homePopulation, homeSite, nullptr);
             const int worthHome = stock_price(base, homeSupply, homeDemand);
             if (worthHome <= buyHere) continue;   // рейс не окупает закупку
             const float kg = def->weight > 0.0f ? def->weight : 1.0f;
-            // ПОТОЛОК СТРОКИ остаётся прежним законом предвидения (сезон
-            // домашней нужды), но он больше НЕ ворота: у товара, который дома
-            // никто не ест, потолок — только трюм и кошелёк.
-            const int seasonCap = homeDemand > 0
-                ? homeDemand * kDaysPerSeason : (1 << 20);
+            // ПОТОЛОК СТРОКИ — сезон домашней нужды (спрос уже сезонный),
+            // но он больше НЕ ворота: у товара, который дома никто не ест,
+            // потолок — только трюм и кошелёк.
+            const int seasonCap = homeDemand > 0 ? homeDemand : (1 << 20);
             lots[std::size_t(lotCount++)] =
                 Lot{i, float(worthHome - buyHere) / kg, seasonCap};
         }
@@ -3735,8 +3738,9 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
             const char* id = kCommodities[i].id;
             const ItemDef* def = item_def(id);
             const int base = def->value;
-            const int demand = daily_demand_for(id, market.population,
-                                                site, &ms);
+            const int demand = season_demand_for(id, market.needDebt,
+                                                 market.population, site,
+                                                 &ms);
             const int have = ms.count(id);
             const float kg = def->weight > 0.0f ? def->weight : 1.0f;
             int n = std::min({have, lots[li].homeCap,
@@ -4338,9 +4342,9 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     const int base = idef ? idef->value : 0;
                     if (base <= 0) continue;
                     const int have = s.inventory.count(gd.commodity);
-                    const int demand =
-                        daily_demand_for(gd.commodity, s.population, homeSite,
-                                         &s.inventory);
+                    const int demand = season_demand_for(
+                        gd.commodity, s.needDebt, s.population, homeSite,
+                        &s.inventory);
                     unitPrice = stock_price(base, have, demand);
                 }
                 // МЕСТО УЖЕ ИСКАЛО — артель ЧИТАЕТ (владелец, 2026-09-18).
@@ -4422,16 +4426,17 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     if (s.titheOwedGoods[c] > 0)
                         value += (long long)s.titheOwedGoods[c] * base;
                     const int have = s.inventory.count(id);
-                    const int demand = daily_demand_for(id, s.population,
-                                                        homeSite,
-                                                        &s.inventory);
-                    const int seasonNeed = demand * kDaysPerSeason;
+                    // Спрос уже СЕЗОННЫЙ (остаток счёта + производный).
+                    const int demand = season_demand_for(id, s.needDebt,
+                                                         s.population,
+                                                         homeSite,
+                                                         &s.inventory);
                     const int homePrice =
                         stock_price(base, have, demand);
-                    if (have > seasonNeed && homePrice < base) {
-                        value += (long long)(have - seasonNeed)
+                    if (have > demand && homePrice < base) {
+                        value += (long long)(have - demand)
                                  * (base - homePrice);
-                        purse += (long long)(have - seasonNeed) * base;
+                        purse += (long long)(have - demand) * base;
                     }
                 }
                 // Проход ЗАКУПКИ, капнутый кошельком: дефицитная цена может
@@ -4445,15 +4450,15 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     const int base = d ? d->value : 0;
                     if (base <= 0) continue;
                     const int have = s.inventory.count(id);
-                    const int demand = daily_demand_for(id, s.population,
-                                                        homeSite,
-                                                        &s.inventory);
-                    const int seasonNeed = demand * kDaysPerSeason;
+                    const int demand = season_demand_for(id, s.needDebt,
+                                                         s.population,
+                                                         homeSite,
+                                                         &s.inventory);
                     const int homePrice =
                         stock_price(base, have, demand);
-                    if (have >= seasonNeed || homePrice <= base) continue;
+                    if (have >= demand || homePrice <= base) continue;
                     const long long buyable = std::min<long long>(
-                        seasonNeed - have, purse / base);
+                        demand - have, purse / base);
                     if (buyable <= 0) continue;
                     value += buyable * (homePrice - base);
                     purse -= buyable * base;

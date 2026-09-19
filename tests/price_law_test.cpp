@@ -30,23 +30,35 @@ void test_scarcity_shape() {
     CHECK(stock_scarcity(0, 0) == 1.0f, "empty shelf, no demand = base");
     CHECK(stock_scarcity(1000, 8) < stock_scarcity(10, 8),
           "glut is cheaper than a modest stock");
-    // THE equilibrium of the seasonal horizon: a stock of exactly one
-    // season's need prices at base — derived from the same constant the
-    // law reads, not restated as a number.
-    CHECK(stock_scarcity(100 * kDaysPerSeason, 100) == 1.0f,
-          "stock == a season's need = base price (the world's equilibrium)");
-    CHECK(stock_scarcity(0, 100) == float(100 * kDaysPerSeason + 1),
-          "hungry absence prices the season's whole need — no ceiling");
+    // РАВНОВЕСИЕ БЕЗ КАЛЕНДАРЯ (CANON S10, долг 2026-09-19): спрос приходит
+    // сезонным ЧИСЛОМ (остаток счёта), и «склад == непокрытая нужда» даёт
+    // базу без единого множителя горизонта в этой двери.
+    CHECK(stock_scarcity(100, 100) == 1.0f,
+          "stock == the unpaid need = base price (the world's equilibrium)");
+    CHECK(stock_scarcity(0, 100) == float(100 + 1),
+          "hungry absence prices the whole unpaid need — no ceiling");
     CHECK(stock_scarcity(1 << 20, 0) < stock_scarcity(1 << 10, 0),
           "a deeper glut keeps getting cheaper — no floor on the curve");
-    CHECK(stock_price(10, 0, 100) == 10 * (100 * kDaysPerSeason + 1),
+    CHECK(stock_price(10, 0, 100) == 10 * (100 + 1),
           "price = base x scarcity");
     CHECK(stock_price(10, 1 << 20, 0) >= 1,
           "a price never reaches zero — «ничто не бесплатно» is the floor");
-    CHECK(daily_demand_for("bread", 128, CITY, nullptr) == 128
-              && daily_demand_for("cloth", 128, CITY, nullptr) == 4
-              && daily_demand_for("wpn_dagger", 128, CITY, nullptr) == 0,
+    // Без счёта (nullptr) прямая часть — лестница населения × сезон; со
+    // счётом она читала бы ОСТАТОК долга (закон мира, юниты те же).
+    CHECK(season_demand_for("bread", nullptr, 128, CITY, nullptr)
+                  == 128 * kDaysPerSeason
+              && season_demand_for("cloth", nullptr, 128, CITY, nullptr)
+                  == 4 * kDaysPerSeason
+              && season_demand_for("wpn_dagger", nullptr, 128, CITY, nullptr)
+                  == 0,
           "demand reads the ONE needs ladder");
+    // СПРОС ЧИТАЕТ ДОЛГ: полупогашенный счёт хлеба — и спрос ровно он.
+    {
+        std::int32_t debt[kCommodityCount] = {};
+        debt[commodity_index("bread")] = 777;
+        CHECK(season_demand_for("bread", debt, 128, CITY, nullptr) == 777,
+              "the direct demand IS the unpaid bill");
+    }
 }
 
 void test_arbitrage_dies_two_ways() {

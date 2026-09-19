@@ -319,7 +319,11 @@ struct Depot {
 // town's faction (its three nominals run gold-first, each off its own metal;
 // faction_coins resolves the free folk to the imperial family). -1 = this
 // place has no mint and the row simply does not run.
-int econ_produce_day(Inventory& store, const Skills& hands, int workers,
+// `needDebt` — счёт места (CANON S10): спрос, по которому ранжируются
+// руки, читает ОСТАТОК ДОЛГА (season_demand_for); nullptr — фикстура без
+// счёта, прямая часть спроса падает на лестницу населения.
+int econ_produce_day(Inventory& store, const std::int32_t* needDebt,
+                     const Skills& hands, int workers,
                      int population, EconFactSink sink, void* user,
                      int mintFactionIdx = -1);
 

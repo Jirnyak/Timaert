@@ -2099,8 +2099,9 @@ namespace sm::ui
                         return trade_overlay_buy_price(
                             stock_price(value_of(ref),
                                         s->inventory.count_of(int(ref.def)) - n,
-                                        daily_demand_for(
-                                            def.id, s->population,
+                                        season_demand_for(
+                                            def.id, s->needDebt,
+                                            s->population,
                                             landmark_sheet(
                                                 s->type).skills,
                                             &s->inventory)),
@@ -2111,8 +2112,9 @@ namespace sm::ui
                         return trade_overlay_sell_price(
                             stock_price(value_of(ref),
                                         s->inventory.count_of(int(ref.def)) + n,
-                                        daily_demand_for(
-                                            def.id, s->population,
+                                        season_demand_for(
+                                            def.id, s->needDebt,
+                                            s->population,
                                             landmark_sheet(
                                                 s->type).skills,
                                             &s->inventory)),

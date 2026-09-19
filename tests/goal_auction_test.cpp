@@ -170,9 +170,17 @@ void test_auction_raises_errand_bearing_peasants() {
     for (int k = 0; k < 8; ++k) {
         const int day = 1 + k * kDaysPerSeason;
         GameState gsd = make_world(/*pop*/100);
-        gsd.landmarks[0].inventory.add("bread", 3200);
         stock_comforts(gsd.landmarks[0]);
         gsd.landmarks[0].titheOwedCoin = 200;
+        // МИР ПОСЛЕ ГРАНИЦЫ (CANON S10): счёт выставлен и оплачен посевным
+        // амбаром — склад держит излишек, не сезонный запас. Былой глут
+        // хлеба 3200 при нулевом счёте давил бы рулетку в argmax сбыта:
+        // цена глута падает на пол, и сбыт весил бы в сотню раз больше
+        // любой жилы — это сломанная под долгом фикстура, не закон.
+        econ_debt_boundary(gsd.landmarks[0].inventory,
+                           gsd.landmarks[0].needDebt,
+                           gsd.landmarks[0].population, false,
+                           nullptr, nullptr);
         ecs::World wd;
         MacroWorld mwd{.gs = &gsd, .world = &wd, .terrain = &absent,
                        .deposits = &dep, .treeGrid = &grid};
