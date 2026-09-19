@@ -27,24 +27,33 @@ std::string recovery_reason(std::uint32_t steps) {
 int spell_strength(const SpellDef& spell,
                    const Attributes& attributes,
                    const Skills& skills) {
+    // THE ADD, raw (CANON S14 «атрибут мощи → сырая прибавка к кубам»): the
+    // caster's INT, and nothing else. The `tierPct = 100 + 8·(tier−1)` that
+    // stood here died 2026-09-19 (session Е): a spell's TIER is its place in
+    // the spire ladder — what a zone gates and what a book costs — and canon
+    // gives it no lever over damage at all. It multiplied the caster's own
+    // attribute, so two mages of equal INT hit differently for a reason the
+    // canon never names; the row's own strength is its DICE, where it is now.
     const DerivedBonuses derived = calculate_derived(attributes, skills);
-    // +8 % per tier above the first, in the whole-percent house (4в) — the
-    // float twin was ×(1 + 0.08·(tier−1)) floored by every caller itself.
-    const int tierPct = 100 + 8 * (spell.tier - 1);
-    return derived.rawSpellDamage * tierPct / 100;
+    return derived.rawSpellDamage;
 }
 
-// The scaling column as the strike assembly's whole percent — one rounding,
-// one place. Phase 5 (CANON S15): the spell's own SCHOOL multiplies on top,
-// exactly where the weapon skill multiplies a swing (hand_strike_fields) —
-// the typed half of the damage stack; Spellcraft stays the generic half
-// inside rawSpellDamage. A sleeping tag (no school) multiplies by nothing,
-// which is the whole pre-school behaviour.
+// THE spell's percent — its SCHOOL, and nothing else (CANON S13: урон =
+// (бросок + добавка) · скилл-процент). Exactly where the weapon skill
+// multiplies a swing (hand_strike_fields): the typed half of the damage
+// stack, while Spellcraft stays the generic half — of TEMPO, through the
+// recovery door. A sleeping tag (no school) multiplies by nothing.
+//
+// The row's own `scalingPower` float was the second knob here until
+// 2026-09-19 (session Е, owner verdict «влить в кубы»): an author's
+// multiplier over the damage the row's dice already stated — a product of
+// two knobs, and the last float in the damage law. Each row's value moved
+// INTO its dice by mechanical translation, so no spell got weaker or
+// stronger at the bottom of the arc where the translation is exact.
 static int spell_mult_pct(const SpellDef& spell, const Skills& caster) {
-    const int base = int(spell.scalingPower * 100.0f + 0.5f);
     const SkillId school = spell_school(spell);
-    if (school == SkillId::Count) return base;
-    return base * skill_mult_pct(caster, school) / 100;
+    if (school == SkillId::Count) return 100;
+    return skill_mult_pct(caster, school);
 }
 
 int spell_damage(const SpellDef& spell,
@@ -74,8 +83,12 @@ int spell_heal(const SpellDef& spell,
                const Attributes& attributes,
                const Skills& skills) {
     if (spell.baseHeal <= 0.0f) return 0;
+    // Same shape as the strike: what the row states plus what the caster
+    // brings. (The `scalingPower` factor died with the damage knob — no row
+    // in the game heals today, so the translation had nothing to preserve,
+    // and the first healing row will be authored under the one law.)
     const int s = spell_strength(spell, attributes, skills);
-    return int(std::floor((spell.baseHeal + float(s)) * spell.scalingPower));
+    return int(std::floor(spell.baseHeal + float(s)));
 }
 
 int spell_radius(const SpellDef& spell,

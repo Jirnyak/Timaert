@@ -252,13 +252,15 @@ int main() {
         return fail("magic_bolt flavor metadata wrong");
     }
     // A DAMAGING spell carries no stat row and no rule: damage is a BLOW, and
-    // blows have exactly one door. Its DICE are what it strikes for (the
-    // scalar-era 30 is the mechanical 30d1), and that is the whole of it —
-    // the old `macroType = DamageRegion, macroPower = 10` was the same fact
+    // blows have exactly one door. Its DICE are THE WHOLE of what it strikes
+    // for — 36d1 since 2026-09-19 (session Е), when the `scalingPower` knob
+    // was folded into the row it was multiplying (30 × 1.2): a row's strength
+    // lives in ONE column, not in a column times a float beside it.
+    // The old `macroType = DamageRegion, macroPower = 10` was the same fact
     // told a second time, in a vocabulary nobody read.
     if (fireDef->rule != sm::SpellRuleId::None
         || fireDef->effects[0].row != 0
-        || fireDef->dice.n != 30 || fireDef->dice.m != 1
+        || fireDef->dice.n != 36 || fireDef->dice.m != 1
         || sm::spell_flavor_count(fireDef->pros) < 1) {
         return fail("fireball effect/flavor metadata wrong");
     }
@@ -365,6 +367,35 @@ int main() {
         }
         if (wrong != plain) {
             return fail("negative control: water training buys fire nothing");
+        }
+        // ── THE WHOLE FORMULA, stated (CANON S13, session Е 2026-09-19) ──
+        // урон = (бросок + добавка) · скилл-процент, and NOTHING else. Two
+        // undercanon multipliers stood between the dice and this line until
+        // today: `scalingPower` (an author's float over the row's own dice)
+        // and `tierPct` (the spire ladder's tier, multiplying the CASTER's
+        // attribute). Both are gone, so the expectation is computable in one
+        // line from the row and the sheet — and a third knob reappearing
+        // reddens here rather than drifting the balance silently.
+        const int add = caster.of(sm::AttributeId::Intl);
+        if (plain != int(fireDef->dice.n) + add) {
+            return fail("untrained: the expectation is dice + INT, exactly");
+        }
+        const int schoolPct = sm::skill_mult_pct(fireAdept,
+                                                 sm::SkillId::FireMagic);
+        if (trained != (int(fireDef->dice.n) + add) * schoolPct / 100) {
+            return fail("trained: the school percent is the ONLY multiplier");
+        }
+        // And the TIER buys nothing: armageddon is tier 5, magic_bolt tier 1,
+        // and neither tier appears in either expectation.
+        const sm::SpellDef* bolt = sm::spell_find("magic_bolt");
+        const sm::SpellDef* doom = sm::spell_find("armageddon");
+        if (!bolt || !doom || bolt->tier == doom->tier) {
+            return fail("fixture: the two rows must differ in tier");
+        }
+        if (sm::spell_damage(*bolt, caster, bare) != int(bolt->dice.n) + add
+            || sm::spell_damage(*doom, caster, bare)
+                   != int(doom->dice.n) + add) {
+            return fail("a spell's TIER is spire gating, never damage");
         }
     }
     // Both are castable on the map because their ROW says so — the old test

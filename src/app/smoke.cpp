@@ -4068,6 +4068,18 @@ bool run_turn_based_cycle_smoke(App& app) {
             std::uint8_t(255), 1.2f);
     }
 
+    // ENTERING raises windows — the arrival popup above all (a known trap:
+    // «arrival-попап паузит advance»). They are reasons the ONE pause holds,
+    // so a scene still standing behind one would redden the negative control
+    // below and blame the turn-based law for somebody else's window. Clear
+    // them AFTER the entry, not only before it, and refuse to measure until
+    // the world is genuinely free.
+    smoke_clear_modal_overlays(app);
+    if (world_paused(app)) {
+        smoke_fail(app, "turn_based_cycle: a window holds the world before "
+                        "the measurement even starts");
+        return false;
+    }
     // Settle any spawn-time recovery so the hand starts FREE.
     for (int i = 0; i < 600 && player_gate_steps(app) > 0; ++i)
         advance_sim_steps(app, 8, false);
