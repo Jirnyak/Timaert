@@ -177,11 +177,11 @@ void test_garrison_never_exceeds_its_cap() {
     // and this test is about recruiting — keep the men fed and paid.
     s.inventory.add("coin_empire_copper", 1 << 16);
     s.inventory.add("bread", 1 << 13);
-    // Pin the season's verdict to the waterline (S19.2: wellbeing lives on
-    // the landmark between windows): a newborn's fed default would GROW the
-    // town mid-test and move the garrison target out from under the check.
-    // 128/255 sits a hair above 0.5 — one day's carry stays below a head.
-    s.seasonWellbeing = 128;
+    // Место СТОИТ на месте, иначе оно вырастет под тестом и уведёт цель
+    // гарнизона из-под проверки. Благополучие 0 — это «стоим» (владелец
+    // 2026-09-19: ватерлинии нет, мера И ЕСТЬ ход роста); прежние 128 были
+    // половиной хода, а не покоем, и город прибавлял по девять душ в день.
+    s.seasonWellbeing = 0;
     // One below the target: exactly one recruit wanted. A standing army is
     // a GENERIC stack (CANON S4) — 624 souls is one slot, not a wall.
     s.garrison.push_stack(std::uint16_t(sm::NPCType::Guard), 1,
@@ -303,15 +303,14 @@ void test_a_famine_is_recorded_once_when_it_begins() {
     // ВЗЫСКАНИЕ: счёт выставляется первой границей (день 1), а смерть
     // приходит второй (день 33), когда сезон прожит неоплаченным. Сорок
     // дней кроют обе границы; место без прихода умирает целиком за одно
-    // взыскание — ровно та форма, что затопила бы наивного летописца,
-    // пиши он состояние, а не переход.
+    // взыскание, и летопись обязана записать РОВНО этот день — не тридцать
+    // два дня голодания вокруг него.
     sm::Landmark s{};
     s.type = sm::LandmarkType::City;
     s.id = 1;
     s.name = "Hungry";
     s.population = 100;
     s.x = 8; s.y = 8;
-    s.mood = sm::SettlementMood::Stable;
     gs.landmarks.push_back(s);
 
     sm::WorldTickRuntime runtime{};
@@ -321,7 +320,7 @@ void test_a_famine_is_recorded_once_when_it_begins() {
     runtime.nextDailyTickDay = 1;
     sm::process_world_daily_ticks(gs, runtime, 64);
 
-    struct Count { int famines = 0; int revolts = 0; int total = 0; };
+    struct Count { int famines = 0; int total = 0; };
     Count c;
     sm::chronicle_near(gs.chronicle, 8, 8, /*radiusCells*/1, /*sinceDay*/0,
                        [](void* u, const sm::WorldFact& f) {
@@ -329,16 +328,14 @@ void test_a_famine_is_recorded_once_when_it_begins() {
                            ++n.total;
                            if (f.kind == std::uint16_t(sm::FactKind::Starved))
                                ++n.famines;
-                           if (f.kind == std::uint16_t(sm::FactKind::Revolted))
-                               ++n.revolts;
                        }, &c);
 
-    CHECK(gs.landmarks[0].famineActive != 0,
-          "the fixture is honest: this town IS starving");
+    CHECK(gs.landmarks[0].starvedYesterday > 0,
+          "the fixture is honest: this town's bill took souls");
+    CHECK(gs.landmarks[0].seasonWellbeing == 0,
+          "an unpaid bill reads as zero wellbeing — the ONE measure of life");
     CHECK(c.famines == 1,
-          "twenty hungry days are ONE famine — the transition is the story");
-    CHECK(c.revolts <= 1,
-          "and a town falls into revolt once, not once a day");
+          "the boundary that took the souls is ONE fact, not thirty-two");
     CHECK(c.total >= 1, "the world remembered something about this place");
 
     // A landmark has a NAME the day it is founded, but figure-ness is
@@ -368,8 +365,8 @@ void test_population_dies_honestly_to_zero() {
     // Days are the world's own, 1-based: day 1 is the first season boundary,
     // where the empty larder fails the window and the season turns hungry.
     for (int day = 1; day <= 2048 && dayOfDeath < 0; ++day) {
-        bool famine = false, revolt = false, died = false;
-        sm::settle_landmark_day(lm, day, famine, revolt, died);
+        bool famine = false, died = false;
+        sm::settle_landmark_day(lm, day, famine, died);
         if (lm.population < 5) sawBelowOldFloor = true;
         if (died) { ++deaths; dayOfDeath = day; }
     }
@@ -378,8 +375,8 @@ void test_population_dies_honestly_to_zero() {
     CHECK(sawBelowOldFloor,
           "population passed the old floor: no crutch is back");
     for (int day = 1; day <= 100; ++day) {
-        bool famine = false, revolt = false, died = false;
-        sm::settle_landmark_day(lm, day, famine, revolt, died);
+        bool famine = false, died = false;
+        sm::settle_landmark_day(lm, day, famine, died);
         if (died) ++deaths;
     }
     CHECK(lm.population == 0,
@@ -443,7 +440,7 @@ void test_garrison_ceiling_trims_the_surplus() {
     v.type = sm::LandmarkType::Village;
     v.id = 1;
     v.name = "Stable";
-    v.population = 30;   // потолок населения: 30 >> 3 = 3 души
+    v.population = 30;   // паства 30 + 4 человека гарнизона ⇒ потолок 4
     v.x = 8; v.y = 8;
     // Богатства нет — потолок только населенческий. Стойло переполнено:
     // 4 стража (найм 30) + 8 лошадей (найм 240) при потолке 3.
@@ -458,14 +455,14 @@ void test_garrison_ceiling_trims_the_surplus() {
     sm::process_world_daily_ticks(gs, runtime, 64);
 
     sm::Landmark& out = gs.landmarks[0];
-    CHECK(sm::total_soldiers(out.garrison) == 3,
+    CHECK(sm::total_soldiers(out.garrison) == 4,
           "the surplus above the context ceiling is gone");
     // Слабейшие первыми: вся стража (30) ушла раньше первой лошади (240).
     CHECK(sm::count_soldiers_of_kind(
               out.garrison, std::uint16_t(sm::NPCType::Guard)) == 0,
           "the cheapest rows are cut first — no guard outlived a horse");
     CHECK(sm::count_soldiers_of_kind(
-              out.garrison, std::uint16_t(sm::NPCType::Horse)) == 3,
+              out.garrison, std::uint16_t(sm::NPCType::Horse)) == 4,
           "the ceiling keeps exactly what the place is worth");
     // Люди — в пул дезертиров (плюс один харчевой ходок окна содержания —
     // голодный гарнизон терял 1/8 и до потолка, тот закон не тронут).

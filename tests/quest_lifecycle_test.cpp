@@ -27,7 +27,7 @@
 // shuffled_order() has external linkage in procedural.cpp (deliberately kept out
 // of its anonymous namespace) so this test can exercise the Fisher-Yates
 // out-of-bounds guard directly. See src/content/quests/procedural.cpp.
-namespace sm { std::vector<int> shuffled_order(Rng& rng); }
+namespace sm { std::vector<int> shuffled_order(Rng& rng, int count); }
 
 namespace {
 
@@ -65,14 +65,6 @@ const sm::Quest* find_delivery_quest(const std::vector<sm::Quest>& quests,
     return nullptr;
 }
 
-const sm::Quest* find_wait_quest(const std::vector<sm::Quest>& quests) {
-    for (const auto& q : quests) {
-        for (const auto& obj : q.objectives) {
-            if (obj.kind == sm::ObjectiveKind::WaitAt) return &q;
-        }
-    }
-    return nullptr;
-}
 
 int gold_reward(const sm::Quest& q) {
     int total = 0;
@@ -1183,7 +1175,6 @@ void test_item_delivery_direct_path() {
     settlement.x = 12;
     settlement.y = 18;
     settlement.population = 1000;
-    settlement.mood = sm::SettlementMood::Stable;
     settlement.factionIdx = 0;
     gs.landmarks.push_back(settlement);
 
@@ -1652,61 +1643,9 @@ void test_abandon_emits_and_removes() {
         "abandon emitted duplicate event for missing quest");
 }
 
-void test_village_protect_generator_spawn_event() {
-    bag.clear();
-    head = sm::AgentMemory{};
-    sheet = sm::CharacterSheet{};
-    sm::GameState gs{};
-    gs.worldSeed = 0x51515151u;
-    gs.mapW = 128;
-    gs.mapH = 128;
-    gs.worldTime = sm::world_time_at(3, 0, 0);
+// (Свидетель квеста «защити деревню» вырезан 2026-09-19 вместе с самим
+// квестом и настроением, которое его поднимало: контент вернётся системно.)
 
-    sm::Landmark city{};
-    city.type = sm::LandmarkType::City;
-    city.id = 1;
-    city.name = "Anchor";
-    city.x = 20;
-    city.y = 20;
-    city.population = 500;
-    city.mood = sm::SettlementMood::Stable;
-    gs.landmarks.push_back(city);
-
-    sm::Landmark village{};
-    village.type = sm::LandmarkType::Village;
-    village.id = 44;
-    village.name = "Tense Hamlet";
-    village.x = 24;
-    village.y = 22;
-    village.population = 80;
-    village.mood = sm::SettlementMood::Tense;
-    village.suzerainLandmarkId = city.id;
-    gs.landmarks.push_back(village);
-
-    sm::Quest selected{};
-    bool found = false;
-    for (int day = 0; day < 256 && !found; ++day) {
-        gs.worldTime = sm::world_time_at(day, 0, 0);
-        const auto generated =
-            sm::generate_quests_for_village(village, gs, gs.worldSeed);
-        if (const sm::Quest* q = find_wait_quest(generated)) {
-            selected = *q;
-            found = true;
-        }
-    }
-    CHECK_OR_RETURN(!(!found),
-        "village generator did not produce protect WaitAt quest");
-    CHECK_OR_RETURN(!(selected.onAccept.empty()
-        || selected.onAccept[0].tag != sm::EventTag::SpawnEntity
-        || selected.onAccept[0].s1 != "bandit"
-        || selected.onAccept[0].a < 2u),
-        "protect quest did not carry SpawnEntity onAccept payload");
-}
-
-// (Was test_village_quest_ids_are_collision_safe, guarding the "_v7_" id
-// segment: two landmark kinds could share a numeric id then, and only the id
-// STRING kept their quests apart. One landmark ordinal issuer (v54) ended
-// same-id landmarks; what offers need now is the provenance contract below.)
 void test_offer_provenance_is_unique_per_slot_and_day() {
     bag.clear();
     head = sm::AgentMemory{};
@@ -1724,7 +1663,6 @@ void test_offer_provenance_is_unique_per_slot_and_day() {
     city.x = 20;
     city.y = 20;
     city.population = 500;
-    city.mood = sm::SettlementMood::Stable;
     // Steer gen_delivery through the honest surface: tools are the town's
     // SCARCEST consumed good (bread plentiful, everything else stocked).
     city.inventory.add("bread", 2048);
@@ -1743,7 +1681,6 @@ void test_offer_provenance_is_unique_per_slot_and_day() {
     village.x = 24;
     village.y = 22;
     village.population = 80;
-    village.mood = sm::SettlementMood::Tense;
     village.suzerainLandmarkId = city.id;
     gs.landmarks.push_back(village);
 
@@ -1782,8 +1719,10 @@ void test_offer_provenance_is_unique_per_slot_and_day() {
 // Regression: Fisher-Yates OOB in shuffled_order (procedural.cpp). next_f01() is
 // documented [0,1), but float(0xFFFFFFFF)/2^32 rounds up to exactly 1.0f, so
 // int(f * (i + 1)) could equal i + 1 and swap with order[i + 1] -- one past the
-// end of the 7-slot vector. The guard clamps j to i. Whatever the RNG yields,
-// the result must remain a valid permutation of {0,1,2,3,4,5,6}.
+// end of the vector. The guard clamps j to i. Whatever the RNG yields, the
+// result must remain a valid permutation of {0 … count-1} — и ДЛИНА тут
+// параметр, а не число в коде: список {0..6} пережил вырезанный генератор
+// и уводил индекс за край таблицы (bus error, 2026-09-19).
 //
 // States 1584200935 and 22372349 are xorshift32 states whose FIRST draw makes
 // next_f01() == 1.0f (1584200935 is the exact preimage of 0xFFFFFFFF), i.e. they
@@ -1793,12 +1732,13 @@ void test_shuffled_order_guards_rng_upper_bound() {
     bag.clear();
     head = sm::AgentMemory{};
     sheet = sm::CharacterSheet{};
-    auto is_permutation_0_6 = [](const std::vector<int>& order) -> bool {
-        if (order.size() != 7) return false;
-        bool seen[7] = {false, false, false, false, false, false, false};
+    constexpr int kSlots = 7;   // произвольная длина: закон не про число
+    auto is_permutation = [](const std::vector<int>& order, int n) -> bool {
+        if (int(order.size()) != n) return false;
+        std::vector<bool> seen(std::size_t(n), false);
         for (int v : order) {
-            if (v < 0 || v > 6 || seen[v]) return false;
-            seen[v] = true;
+            if (v < 0 || v >= n || seen[std::size_t(v)]) return false;
+            seen[std::size_t(v)] = true;
         }
         return true;
     };
@@ -1806,13 +1746,15 @@ void test_shuffled_order_guards_rng_upper_bound() {
     const std::uint32_t triggerStates[] = {1584200935u, 22372349u};
     for (std::uint32_t st : triggerStates) {
         sm::Rng rng(st);
-        CHECK_OR_RETURN(!(!is_permutation_0_6(sm::shuffled_order(rng))),
-            "shuffled_order broke the {0..6} permutation at RNG max draw (OOB)");
+        CHECK_OR_RETURN(
+            !(!is_permutation(sm::shuffled_order(rng, kSlots), kSlots)),
+            "shuffled_order broke the permutation at RNG max draw (OOB)");
     }
     for (std::uint32_t seed = 1; seed <= 4096u; ++seed) {
         sm::Rng rng(seed);
-        CHECK_OR_RETURN(!(!is_permutation_0_6(sm::shuffled_order(rng))),
-            "shuffled_order broke the {0..6} permutation on a normal seed");
+        CHECK_OR_RETURN(
+            !(!is_permutation(sm::shuffled_order(rng, kSlots), kSlots)),
+            "shuffled_order broke the permutation on a normal seed");
     }
 }
 
@@ -1836,7 +1778,6 @@ void test_generated_delivery_quest_flow() {
     settlement.x = 12;
     settlement.y = 18;
     settlement.population = 1000;
-    settlement.mood = sm::SettlementMood::Stable;
     settlement.factionIdx = 0;
     settlement.inventory.add("bread", 2048);
     settlement.inventory.add("cloth", 128);
@@ -1957,7 +1898,6 @@ int main() {
     test_destroy_npc_objective();
     test_interact_cell_objective();
     test_abandon_emits_and_removes();
-    test_village_protect_generator_spawn_event();
     test_offer_provenance_is_unique_per_slot_and_day();
     test_shuffled_order_guards_rng_upper_bound();
     return sm::test::report("quest_lifecycle_test");

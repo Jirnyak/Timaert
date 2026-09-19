@@ -228,7 +228,7 @@ int econ_pay_debt(Inventory& store, std::int32_t* needDebt,
 }
 
 ConsumeOutcome econ_debt_boundary(Inventory& store, std::int32_t* needDebt,
-                                  int population, bool famineWasActive,
+                                  int population,
                                   EconFactSink sink, void* user) {
     ConsumeOutcome out{};
     const ResolvedTables& t = resolved();
@@ -237,22 +237,20 @@ ConsumeOutcome econ_debt_boundary(Inventory& store, std::int32_t* needDebt,
         for (int i = 0; i < kNeedCount; ++i) {
             if (t.needIdx[i] >= 0) needDebt[t.needIdx[i]] = 0;
         }
-        out.famineActive = false;
-        if (famineWasActive) {
-            report(sink, user, EconFact::Kind::FamineEnded, -1, 1);
-        }
+        out.wellbeing = 0.0f;
         return out;
     }
     // 1. ВЗЫСКАНИЕ прошлого счёта. Хлеб: по душе за каждый непокрытый
     // душевой сезон — пропорция «доля долга × население» выходит сама,
     // хранить исходный счёт не нужно (счёт и был население × душевой
     // сезон); хвост меньше душевого сезона прощается — зеркало закона
-    // «кусок меньше сезона не кормит никого». Прочие строки: непогашенное
-    // гасит РОСТ (S25 «сытость × комфорт») — от нехватки ткани не умирают.
-    // Шкала комфорта пересчитана по СЕГОДНЯШНЕМУ населению: с выставления
-    // счёта оно дрейфует ростом, но доля читается на той же границе, где
-    // выставится новый счёт, — одна мера, не вторая.
+    // «кусок меньше сезона не кормит никого». Прочие строки не убивают:
+    // от нехватки ткани не умирают, она гасит РОСТ. Шкала комфорта — по
+    // СЕГОДНЯШНЕМУ населению: с выставления счёта оно дрейфует ростом, но
+    // доля читается на той же границе, где выставится новый счёт.
     int deaths = 0;
+    int comfortDemand = 0;
+    int unmetComfort = 0;
     for (int i = 0; i < kNeedCount; ++i) {
         const int idx = t.needIdx[i];
         if (idx < 0) continue;
@@ -265,24 +263,26 @@ ConsumeOutcome econ_debt_boundary(Inventory& store, std::int32_t* needDebt,
             const int demand = (population / kNeeds[i].popPerUnitDay)
                              * kDaysPerSeason;
             if (demand <= 0) continue;
-            out.comfortDemand += demand;
-            out.unmetComfort += remaining < demand ? int(remaining) : demand;
+            comfortDemand += demand;
+            unmetComfort += remaining < demand ? int(remaining) : demand;
         }
     }
-    // СМЕРТЬ — ЕДИНСТВЕННАЯ кара голода (вердикт владельца 2026-09-19):
-    // недоевшие умерли, выжившие сыты — рост судит только комфорт. Умерших
-    // вычитает из населения ВЫЗЫВАЮЩИЙ (settle_landmark_day).
     out.starvedPop = deaths;
-    out.fedPop = population - deaths;
-    out.famineActive = deaths > 0;
     if (deaths > 0) {
         report(sink, user, EconFact::Kind::Starved, -1, deaths);
     }
-    if (out.famineActive && !famineWasActive) {
-        report(sink, user, EconFact::Kind::FamineStarted, -1, deaths);
-    } else if (!out.famineActive && famineWasActive) {
-        report(sink, user, EconFact::Kind::FamineEnded, -1, 1);
-    }
+    // БЛАГОПОЛУЧИЕ — ОДНА МЕРА (владелец 2026-09-19): доля оплаченной еды ×
+    // доля оплаченного комфорта. Доля еды — это выжившие против населения
+    // ДО взыскания: смертей ровно столько, сколько душевых сезонов не
+    // оплачено, поэтому отношение И ЕСТЬ «оплачено / выставлено», без
+    // второго хранимого числа. Голодавший сезон гасит рост сам, и это не
+    // вторая кара: мёртвых уже не вернуть, а живые просто не плодятся,
+    // пока не прокормятся.
+    const float foodShare = float(population - deaths) / float(population);
+    const float comfortShare = comfortDemand > 0
+        ? 1.0f - float(unmetComfort) / float(comfortDemand)
+        : 1.0f;
+    out.wellbeing = foodShare * comfortShare;
     // 2. НОВЫЙ СЧЁТ — по населению ПОСЛЕ смертей, перезаписью: старый долг
     // не переносится (взыскали — выставили новый).
     const int popAfter = population - deaths;

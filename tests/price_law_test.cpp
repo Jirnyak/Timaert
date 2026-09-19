@@ -66,13 +66,10 @@ void test_arbitrage_dies_two_ways() {
     //
     // WALL 1 — SLIPPAGE: a full-shelf round trip (buy the lot, sell it
     // back) prices the buy against the EMPTIED shelf and the sell against
-    // the restocked one — the gap dominates every multiplier pair the game
-    // has, including the once-exploitable generous merchant (0.9 buy /
-    // 1.2 sell, the audit's buy-81/sell-92).
+    // the restocked one, and the gap eats the round. Контекстные множители
+    // (настроение места, нрав купца) вырезаны 2026-09-19 — свип по ним
+    // умер вместе с ними: у цены остались кривая и разница анкет.
     {
-        const float ctx[][2] = {
-            {1.0f, 1.0f}, {0.9f, 1.2f}, {1.2f, 0.9f}, {0.9f, 1.0f},
-        };
         int trips = 0;
         for (int s = 2; s <= 512; s *= 2) {
             // РАВНЫЕ АНКЕТЫ (S25): обе стороны называют одну торговую силу,
@@ -81,25 +78,22 @@ void test_arbitrage_dies_two_ways() {
             // закон теперь про РАЗНИЦУ, и «моя сила против нуля» — это уже
             // не прокрутка, а грабёж слабого (см. пин ниже).
             for (int cha = 0; cha <= 200; cha += 50) {
-                for (const auto& c : ctx) {
-                    for (int base : {5, 10, 100}) {
-                        for (int demand : {0, 8, 64}) {
-                            // A famine market (demand >= the whole shelf)
-                            // pins BOTH ends at the po2 clamp — no slippage
-                            // exists there and WALL 2 (the purse) is the
-                            // guard. Slippage's own law needs headroom.
-                            if (demand >= s) continue;
-                            const int buyUnit = trade_price(
-                                stock_price(base, 0, demand),
-                                cha, cha, c[0], /*buying=*/true);
-                            const int sellUnit = trade_price(
-                                stock_price(base, s, demand),
-                                cha, cha, c[1], /*buying=*/false);
-                            ++trips;
-                            CHECK(sellUnit <= buyUnit,
-                                  "full-shelf round trips never profit");
-                            if (sellUnit > buyUnit) return;
-                        }
+                for (int base : {5, 10, 100}) {
+                    for (int demand : {0, 8, 64}) {
+                        // A famine market (demand >= the whole shelf) pins
+                        // BOTH ends — no slippage exists there and WALL 2
+                        // (the purse) is the guard. Slippage needs headroom.
+                        if (demand >= s) continue;
+                        const int buyUnit = trade_price(
+                            stock_price(base, 0, demand),
+                            cha, cha, /*buying=*/true);
+                        const int sellUnit = trade_price(
+                            stock_price(base, s, demand),
+                            cha, cha, /*buying=*/false);
+                        ++trips;
+                        CHECK(sellUnit <= buyUnit,
+                              "full-shelf round trips never profit");
+                        if (sellUnit > buyUnit) return;
                     }
                 }
             }
@@ -115,14 +109,14 @@ void test_arbitrage_dies_two_ways() {
         const int shelf = 64, base = 10, demand = 8;
         const int strongBuys = trade_price(stock_price(base, 0, demand),
                                            /*mine=*/60, /*theirs=*/0,
-                                           1.0f, /*buying=*/true);
+                                           /*buying=*/true);
         const int strongSells = trade_price(stock_price(base, shelf, demand),
                                             /*mine=*/60, /*theirs=*/0,
-                                            1.0f, /*buying=*/false);
+                                            /*buying=*/false);
         const int evenBuys = trade_price(stock_price(base, 0, demand),
-                                         0, 0, 1.0f, true);
+                                         0, 0, true);
         const int evenSells = trade_price(stock_price(base, shelf, demand),
-                                          0, 0, 1.0f, false);
+                                          0, 0, false);
         CHECK(strongBuys < evenBuys && strongSells > evenSells,
               "перевес анкеты двигает ОБА конца в пользу сильного");
         CHECK(evenSells <= evenBuys,
@@ -130,11 +124,10 @@ void test_arbitrage_dies_two_ways() {
               "приносит ничего — работает только слиппедж");
     }
 
-    // WALL 2 — THE PURSE: whatever per-unit drip a favourable multiplier
-    // pair still yields (a GENEROUS merchant genuinely overpays — that is
-    // his temperament, not a bug), every profitable round DRAINS his finite
-    // coin, and the farm stops dead when the purse does. Simulated as the
-    // panels settle it: real coin transfers, all-or-nothing.
+    // WALL 2 — THE PURSE: прибыль в мире ЕСТЬ, и это закон (S25: сильная
+    // анкета обирает слабую). Стережёт её не кламп, которого нет, а КОШЕЛЁК
+    // контрагента: каждый прибыльный круг его осушает, и ферма встаёт.
+    // Simulated as the panels settle it: real coin transfers, all-or-nothing.
     {
         Inventory player;
         Inventory merchant;
@@ -144,12 +137,21 @@ void test_arbitrage_dies_two_ways() {
         const int myStart = coin_census_value(player);
         int rounds = 0;
         bool farmDied = false;
+        // ФЕРМА УМИРАЕТ ДВУМЯ СПОСОБАМИ, и оба надо узнавать: круг перестаёт
+        // быть выгодным (слиппедж) ЛИБО контрагенту нечем платить. Второй
+        // выглядит не как отказ, а как СТОЯЧИЙ круг: обчищенный купец
+        // отдаёт по крохе, и счётчик прибыли замирает.
+        int stale = 0;
         for (; rounds < 10000; ++rounds) {
+            const int purseBefore = coin_census_value(player);
             const int supply = merchant.count("bread");
+            // Сильная анкета против слабой: покупаю со скидкой, продаю с
+            // наценкой — прибыльный круг, который и должен упереться в его
+            // кошелёк.
             const int buyUnit = trade_price(
-                stock_price(100, supply - 1, 0), 10, 0, 0.9f, true);
+                stock_price(100, supply - 1, 0), 60, 0, true);
             const int sellUnit = trade_price(
-                stock_price(100, supply, 0), 10, 0, 1.2f, false);
+                stock_price(100, supply, 0), 60, 0, false);
             if (sellUnit <= buyUnit) { farmDied = true; break; }   // profitless
             if (coin_census_value(player) < buyUnit) break;
             if (!transfer_value_dense(player, merchant, buyUnit)) break;
@@ -164,16 +166,19 @@ void test_arbitrage_dies_two_ways() {
             }
             player.remove("bread", 1);
             merchant.add("bread", 1);
+            if (coin_census_value(player) <= purseBefore) {
+                if (++stale >= 3) { farmDied = true; break; }
+            } else {
+                stale = 0;
+            }
         }
         const int profit = coin_census_value(player) - myStart;
         CHECK(rounds < 10000 && farmDied,
               "the farm DIES - profitless or purse-broke, never infinite");
-        // The generous DRIP itself died with the corridor (2026-09-18): the
-        // drip only ever existed at clamp saturation, where the price could
-        // not move and slippage vanished. With the corridor gone slippage
-        // lives on every shelf, so even the 0.9/1.2 pair profits NOTHING —
-        // the very defect the probe measured, now held as the law.
-        CHECK(profit <= 0, "no drip survives the corridor's death");
+        // Прибыль сильного — не дефект (S25), поэтому пин здесь не «ноль»,
+        // а КОНЕЧНОСТЬ: сколько бы кругов ни прошло, взять больше, чем было
+        // у контрагента, невозможно — денег в мире не печатается.
+        CHECK(profit <= 200, "the profit can never exceed his whole purse");
         CHECK(coin_census_value(player) + coin_census_value(merchant) == 1200,
               "coin CONSERVES across every round - nothing was minted");
         // (The metric is the COIN CENSUS, not the bags' whole value: since

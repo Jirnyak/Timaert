@@ -51,22 +51,20 @@ inline bool garrison_wants_recruits(LandmarkType type, int population,
 struct EconFact;
 using EconFactSink = void (*)(void* user, const EconFact& fact);
 
-// One landmark's daily tail: consume off the universal inventory, band the
-// mood, run the LOGISTIC population law. No floor and no ceiling (CANON S25
-// + owner 2026-08-29): supply is the only cap, and population falls honestly
-// to an absorbing zero — the out-flags fire exactly on the transitions
-// (famine began / revolt began / the place died out), which is what the
-// chronicle files. Public so econ_v1_test can drive a landmark to its death.
-// `sink` receives the day's Consumed/Starved/Famine facts (null = silence).
+// One landmark's daily tail: the debt boundary off the universal inventory,
+// then the population law. No floor and no ceiling (CANON S25 + owner
+// 2026-08-29): supply is the only cap, and population falls honestly to an
+// absorbing zero. The out-flags are what the chronicle files: souls the
+// boundary took, and the day the place died out.
+// `sink` receives the day's Consumed/Starved facts (null = silence).
 //
-// SEASONAL since 2026-09-17 (CANON S19.2): the CONSUME half runs only on
-// season_boundary(day) — a whole season of every need, covered whole or not
-// debited at all — and parks the season's wellbeing on the landmark
-// (seasonWellbeing); every other day reads that number into the same mood
-// band and population law. Daily slot hygiene rides along unchanged.
-void settle_landmark_day(Landmark& lm, int day,
-                         bool& startedFamine, bool& startedRevolt,
-                         bool& diedOut,
+// SEASONAL since 2026-09-17 (CANON S19.2): the boundary runs only on
+// season_boundary(day) and parks ONE number on the landmark — благополучие
+// (seasonWellbeing), доля оплаченных нужд; every other day reads that number
+// into the population law. Второй меры «как живётся» в мире нет: настроение
+// и восстания вырезаны вердиктом владельца 2026-09-19. Daily slot hygiene
+// rides along unchanged.
+void settle_landmark_day(Landmark& lm, int day, bool& starved, bool& diedOut,
                          EconFactSink sink = nullptr, void* user = nullptr);
 
 // The dungeon garrisons' regrowth (§42, owner: «как фауна — медленно,

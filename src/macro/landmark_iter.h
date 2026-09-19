@@ -23,7 +23,6 @@ struct LandmarkView {
     int  x, y;
     const char* name; // display name; never null, may be ""
     int  population;  // 0 where the kind has none
-    SettlementMood mood = SettlementMood::Stable; // meaningful for City/Village
     bool depleted = false;                        // meaningful for Spire
 };
 
@@ -52,7 +51,7 @@ void for_each_landmark(const GameState& gs, F&& fn) {
             const char* name = lm.name.c_str();
             if (lm.name.empty()) name = landmark_def(t).label.data();
             fn(LandmarkView{lm.type, lm.id, lm.x, lm.y, name,
-                            lm.population, lm.mood, lm.depleted});
+                            lm.population, lm.depleted});
         }
     }
 }

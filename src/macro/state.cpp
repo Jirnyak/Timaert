@@ -119,7 +119,7 @@ GameState default_game_state(std::uint32_t seed, int mapW, int mapH,
 // rest of the macro tick + UI consume. This helper closes that loop:
 //
 //   1. Each politik city becomes a `Settlement` (id = index, naming
-//      from its faction's language, default mood Stable, garrison empty,
+//      from its faction's language, garrison empty,
 //      economy state with one local resource roll based on biome).
 //   2. Each settlement spawns 1–3 satellite villages on land cells in
 //      a small ring (4–14 cells away) — same faction, smaller pop.
@@ -168,7 +168,6 @@ void populate_landmarks_from_politik(GameState& gs,
         // Politik prices every city's souls from its ground (R2); the old
         // 200+rng%800 fallback was the last population dice standing.
         s.population  = std::max(1, c.population);
-        s.mood        = SettlementMood::Stable;
         // Born WITH its army (§42 Инк 7, the «born mid-life» precedent the
         // inventory set below): the registry target (pop >> garrisonShift),
         // souls honestly paid out of the population, identities from THE
@@ -348,7 +347,6 @@ void populate_landmarks_from_politik(GameState& gs,
             vil.population    = kVillageBornBase
                               + int(rng.next_u32()
                                     % std::uint32_t(kVillageBornSpread));
-            vil.mood          = SettlementMood::Stable;
             // The village's suzerain IS its market city (one edge, S24).
             vil.suzerainLandmarkId = s.id;
             // The village's own small army, by the SAME one law (§42 Инк 7).

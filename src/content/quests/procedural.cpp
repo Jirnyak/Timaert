@@ -20,8 +20,12 @@ namespace sm {
 // Fisher-Yates shuffle of the 7 quest-generator slots. Kept at namespace scope
 // (external linkage, not in the anonymous namespace below) so the out-of-bounds
 // guard can be white-box tested; see tests/quest_lifecycle_test.cpp.
-std::vector<int> shuffled_order(Rng& rng) {
-    std::vector<int> order = {0, 1, 2, 3, 4, 5, 6};
+// Порядок бросков — по РАЗМЕРУ таблицы генераторов, а не по числу в коде:
+// список {0..6} пережил вырезанный генератор и уводил индекс за край
+// (bus error, поймано 2026-09-19). Счёт строк знает только таблица.
+std::vector<int> shuffled_order(Rng& rng, int count) {
+    std::vector<int> order(std::size_t(count < 0 ? 0 : count));
+    for (int i = 0; i < int(order.size()); ++i) order[std::size_t(i)] = i;
     for (int i = int(order.size()) - 1; i > 0; --i) {
         // next_f01() is documented as [0,1), but float(0xFFFFFFFF)/2^32 rounds
         // up to exactly 1.0f, so int(f * (i + 1)) can equal i + 1 and index one
@@ -40,7 +44,6 @@ struct QuestGenCtx {
     int x = 0;
     int y = 0;
     bool isCity = false;
-    SettlementMood mood = SettlementMood::Stable;
     int factionIdx = -1;
     const Inventory* store = nullptr;   // the landmark's universal inventory
     const GameState* gs = nullptr;
@@ -254,48 +257,9 @@ bool gen_destroy(const QuestGenCtx& ctx, Quest& q) {
     return true;
 }
 
-bool gen_protect(const QuestGenCtx& ctx, Quest& q) {
-    if (ctx.isCity) return false;
-    if (ctx.mood != SettlementMood::Tense
-        && ctx.mood != SettlementMood::Unrest
-        && ctx.mood != SettlementMood::Revolt
-        && ctx.rng->next_f01() > 0.3f) {
-        return false;
-    }
-
-    const int hours = 4 + int(ctx.rng->next_f01() * 8.0f);
-    const int gold = int(std::round(40.0f + float(hours) * 8.0f
-        + ctx.rng->next_f01() * 20.0f));
-    int difficulty = int(std::ceil(float(hours) / 2.0f));
-    if (difficulty > 10) difficulty = 10;
-
-    add_common(q, ctx, QuestCategory::Procedural,
-               difficulty, 7);
-    q.title = "Defend " + ctx.name;
-    q.description = "Raiders threaten " + ctx.name + ". Stay and protect the villagers for "
-        + std::to_string(hours) + " hours.";
-
-    Objective o{};
-    o.kind = ObjectiveKind::WaitAt;
-    o.ix = ctx.x;
-    o.iy = ctx.y;
-    o.radius = 5.0f;
-    o.hoursRequired = hours;
-    q.objectives.push_back(o);
-
-    add_gold_xp_rewards(q, gold, 0.4f);
-    add_reputation_reward(q, ctx, 10);
-
-    GameEvent spawn{EventTag::SpawnEntity};
-    spawn.s1 = "bandit";
-    spawn.ix = wrapi(ctx.x + int(std::round((ctx.rng->next_f01() - 0.5f) * 60.0f)),
-                     ctx.gs->mapW);
-    spawn.iy = wrapi(ctx.y + int(std::round((ctx.rng->next_f01() - 0.5f) * 60.0f)),
-                     ctx.gs->mapH);
-    spawn.a = std::uint32_t(2 + int(ctx.rng->next_f01() * 3.0f));
-    q.onAccept.push_back(std::move(spawn));
-    return true;
-}
+// (gen_protect — квест «защити деревню» — ВЫРЕЗАН 2026-09-19 вместе с
+// настроением, которое его поднимало: контент вернётся системно, когда у
+// мира будет из чего его выводить, а не из мёртвой полосы настроения.)
 
 bool gen_fetch(const QuestGenCtx& ctx, Quest& q) {
     static constexpr const char* kItems[] = {"mat_herb", "iron", "wood"};
@@ -402,7 +366,6 @@ std::vector<Quest> generate_for_context(QuestGenCtx& ctx) {
         gen_delivery,
         gen_visit,
         gen_destroy,
-        gen_protect,
         gen_fetch,
         gen_scout,
         gen_sanctuary,
@@ -431,7 +394,8 @@ std::vector<Quest> generate_for_context(QuestGenCtx& ctx) {
         q.bornDay = ctx.gs->worldTime.day();
     };
 
-    std::vector<int> order = shuffled_order(*ctx.rng);
+    std::vector<int> order =
+        shuffled_order(*ctx.rng, int(std::size(kGenerators)));
     for (int idx : order) {
         if (int(out.size()) >= maxQuests) break;
         Quest q{};
@@ -463,7 +427,6 @@ std::vector<Quest> generate_quests_for_settlement(const Landmark& s,
     ctx.x = s.x;
     ctx.y = s.y;
     ctx.isCity = true;
-    ctx.mood = s.mood;
     ctx.factionIdx = s.factionIdx;
     ctx.store = &s.inventory;
     ctx.gs = &gs;
@@ -481,7 +444,6 @@ std::vector<Quest> generate_quests_for_village(const Landmark& v,
     ctx.x = v.x;
     ctx.y = v.y;
     ctx.isCity = false;
-    ctx.mood = v.mood;
     ctx.factionIdx = v.factionIdx;
     ctx.store = &v.inventory;
     ctx.gs = &gs;

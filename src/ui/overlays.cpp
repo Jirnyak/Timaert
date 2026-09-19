@@ -246,19 +246,12 @@ namespace sm::ui
             return nullptr;
         }
 
-        // Thin readers of THE mood registry (macro/state.h kMoodRows) — the
-        // three switch dictionaries that lived here (label / colour / an inn
-        // PRICE in UI code) are its columns now (CANON S16).
-        const char *mood_label(SettlementMood m)
+        // БЛАГОПОЛУЧИЕ — ЕДИНСТВЕННАЯ МЕРА ЖИЗНИ МЕСТА (владелец
+        // 2026-09-19): реестр полос настроения вырезан, глаз читает то же
+        // число, что и закон роста — долю оплаченных нужд, в процентах.
+        int wellbeing_pct(const sm::Landmark &lm)
         {
-            return mood_row(m).label;
-        }
-
-        ImU32 mood_color(SettlementMood m)
-        {
-            const std::uint32_t c = mood_row(m).color;
-            return IM_COL32((c >> 16) & 0xFFu, (c >> 8) & 0xFFu, c & 0xFFu,
-                            255);
+            return int(lm.seasonWellbeing) * 100 / 255;
         }
 
         // The ONE wrapper state of this counter (trade_widgets.h, Инк 5):
@@ -294,24 +287,10 @@ namespace sm::ui
             }
         }
 
-        // The lone trader's price law (moved here with the squad branch —
-        // one panel, one file): trait multipliers instead of a town mood.
-        int trade_overlay_buy_price(int baseValue, int charisma,
-                                    int bargaining,
-                                    const ecs::NpcTraits* traits)
-        {
-            return trade_price(baseValue, charisma, bargaining,
-                               trait_price_mult(traits, true),
-                               /*buying*/ true);
-        }
-        int trade_overlay_sell_price(int baseValue, int charisma,
-                                     int bargaining,
-                                     const ecs::NpcTraits* traits)
-        {
-            return trade_price(baseValue, charisma, bargaining,
-                               trait_price_mult(traits, false),
-                               /*buying*/ false);
-        }
+        // (Пара обёрток «цена по нраву купца» вырезана 2026-09-19 вместе с
+        // реестром нрава: у обеих панелей — одна и та же цена, потому что
+        // закон один. Обёртки ниже обслуживают и лавку места, и одинокого
+        // торговца.)
 
         // A completed deal with a squad is a FACT of the world (S20.1) —
         // subject = the player, object = the trader's squad by its
@@ -362,26 +341,25 @@ namespace sm::ui
             record_deed(world, gs, f);
         }
 
-        // (The mood column moved to the law's own home — macro/economy.h
-        // mood_price_mult — beside charisma and the merchant temperament.)
+        // (Колонка настроения в цене вырезана 2026-09-19 вместе с самим
+        // настроением: у цены остались кривая дефицита и разница торговых
+        // сил, третьего множителя не существует.)
 
         // `bargaining` is the shopper's TRADE rank (phase 6, off the
         // effective sheet) — the price law's own argument, fed a literal 0
         // until the skill woke. Required, not defaulted.
         int trade_overlay_buy_price(int baseValue, int charisma,
-                                    int bargaining, SettlementMood mood)
+                                    int bargaining)
         {
             return sm::trade_price(baseValue, charisma, bargaining,
-                                          sm::mood_price_mult(mood, true),
-                                          /*buying*/ true);
+                                   /*buying*/ true);
         }
 
         int trade_overlay_sell_price(int baseValue, int charisma,
-                                     int bargaining, SettlementMood mood)
+                                     int bargaining)
         {
             return sm::trade_price(baseValue, charisma, bargaining,
-                                          sm::mood_price_mult(mood, false),
-                                          /*buying*/ false);
+                                   /*buying*/ false);
         }
 
         const char *objective_kind_label(ObjectiveKind k)
@@ -1904,7 +1882,7 @@ namespace sm::ui
                                         value_of(ref),
                                         bag->inv.count_of(int(ref.def)) - n,
                                         0),
-                                    h.cha, h.trade, traits);
+                                    h.cha, h.trade);
                             };
                             const auto sellUnit = [&](const ItemRef &ref,
                                                       const ItemDef &d,
@@ -1915,7 +1893,7 @@ namespace sm::ui
                                         value_of(ref),
                                         bag->inv.count_of(int(ref.def)) + n,
                                         0),
-                                    h.cha, h.trade, traits);
+                                    h.cha, h.trade);
                             };
                             draw_barter_body(
                                 "Trader stock", g_squadTrade,
@@ -1977,10 +1955,9 @@ namespace sm::ui
                         fd ? fd->name : "Unaligned",
                         fd ? temperament_label(fd->temperament) : "?");
             ImGui::Text("Population: %d", s->population);
-            ImGui::TextColored(ImColor(mood_color(s->mood)), "Mood: %s", mood_label(s->mood));
-            ImGui::Text("Starved yesterday: %d   Comfort unmet: %d%s",
-                        int(s->starvedYesterday), int(s->unmetYesterday),
-                        s->famineActive ? "   FAMINE" : "");
+            ImGui::Text("Wellbeing: %d%%", wellbeing_pct(*s));
+            ImGui::Text("Starved last boundary: %d",
+                        int(s->starvedYesterday));
             ImGui::Separator();
 
             // ── Tabs ──
@@ -2006,10 +1983,11 @@ namespace sm::ui
                         ImGui::TableSetupColumn("Value");
                         ImGui::TableHeadersRow();
                         draw_info_overview_row("Population", s->population);
-                        draw_info_overview_row("Mood", mood_label(s->mood));
+                        draw_info_overview_row("Wellbeing %",
+                                               wellbeing_pct(*s));
                         draw_info_overview_row("Faction index", int(s->factionIdx));
-                        draw_info_overview_row("Starved yesterday", int(s->starvedYesterday));
-                        draw_info_overview_row("Comfort unmet", int(s->unmetYesterday));
+                        draw_info_overview_row("Starved last boundary",
+                                               int(s->starvedYesterday));
                         draw_info_overview_row("Garrison units", total_soldiers(s->garrison));
                         draw_info_overview_row("Inventory stacks", s->inventory.used_slots());
                         draw_info_overview_row("Inventory items", s->inventory.total());
@@ -2040,7 +2018,7 @@ namespace sm::ui
                     ImGui::TextUnformatted("Build actions are disabled.");
                     ImGui::Spacing();
                     ImGui::TextWrapped("The TS SettlementOverlay.svelte currently exposes info, quests, rest, recruit, map, and history tabs only. It does not define build projects, costs, construction time, or effects.");
-                    ImGui::TextWrapped("The native Settlement record persists population, mood, inventory, history, garrison, faction and suzerain. It has no buildings list or construction queue.");
+                    ImGui::TextWrapped("The native Settlement record persists population, wellbeing, inventory, garrison, faction and suzerain. It has no buildings list or construction queue.");
                     ImGui::Spacing();
                     if (ImGui::BeginTable("build_missing_contracts", 2,
                                           ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg))
@@ -2091,12 +2069,12 @@ namespace sm::ui
                     // ONE wrapper (Инк 5): the haggler, the state and the
                     // body come from trade_widgets.h — this site keeps only
                     // its price laws (a town's demand = econSite +
-                    // population, its mood haggles) and its fact.
+                    // population, its trade sheet haggles) and its fact.
                     const PlayerHaggler h = player_haggler(world);
                     ImGui::Text("Player value: %d",
                                 inventory_value(playerBag));
                     ImGui::SameLine();
-                    ImGui::TextDisabled("Mood: %s", mood_label(s->mood));
+                    ImGui::TextDisabled("Wellbeing: %d%%", wellbeing_pct(*s));
                     draw_trade_carry_line(h.sheet, playerBag, h.standing);
                     draw_counterparty_gold(s->inventory);
                     draw_trade_amount_input(&g_settlementTrade.amount);
@@ -2111,7 +2089,7 @@ namespace sm::ui
                                             landmark_sheet(
                                                 s->type).skills,
                                             &s->inventory)),
-                            h.cha, h.trade, s->mood);
+                            h.cha, h.trade);
                     };
                     const auto sellUnit = [&](const ItemRef &ref,
                                               const ItemDef &def, int n) {
@@ -2124,7 +2102,7 @@ namespace sm::ui
                                             landmark_sheet(
                                                 s->type).skills,
                                             &s->inventory)),
-                            h.cha, h.trade, s->mood);
+                            h.cha, h.trade);
                     };
                     draw_barter_body(
                         "Settlement stock", g_settlementTrade,

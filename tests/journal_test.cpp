@@ -77,7 +77,7 @@ void test_participation_locality_and_silence() {
     // (c) Somebody else's deed far away — the world knows, the player DOES
     // NOT: this is S11 applied to history, and the whole point of a journal.
     chronicle_record(gs.chronicle,
-                     fact(1, FactKind::Revolted,
+                     fact(1, FactKind::Starved,
                           std::uint8_t(FactSubject::Landmark), 3u, 40, 40));
 
     player_journal_capture(gs, w);

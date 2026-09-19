@@ -29,7 +29,6 @@ sm::Landmark settlement(int id, int x, int y) {
     s.x = x;
     s.y = y;
     s.population = 1000;
-    s.mood = sm::SettlementMood::Stable;
     s.factionIdx = 0;
     return s;
 }

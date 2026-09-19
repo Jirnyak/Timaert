@@ -346,45 +346,11 @@ namespace sm {
 // по вердикту владельца: графа осознанно нет) — LevelData вырос perkPoints,
 // CharacterSheet несёт 256-битную маску PerkMask (32 байта, S26); граф
 // сядет в этот конверт без движения сейва.
-constexpr int kSaveVersion = 100;
-
-enum class SettlementMood : std::uint8_t {
-    Prosperous, Stable, Tense, Unrest, Revolt, Count
-};
-
-// ── THE mood registry (CANON S16) ────────────────────────────────────────
-// Everything the game says ABOUT a temper band is a column of ONE row: the
-// label and colour the UI prints, and the market multipliers the economy
-// prices with (economy.cpp mood_price_mult — a prosperous town sells cheap
-// and pays well; one in revolt charges a risk premium and haggles the
-// traveller down). These lived as switch-shaped dictionaries across
-// ui/overlays.cpp and macro/economy.cpp until 2026-08-29. The inn-bed cost
-// column died with the inn (owner, 2026-09-11: «отдых таверны вырезать
-// вообще») — rest is the ONE macro rest law, never a paid full restore.
-struct MoodRow {
-    SettlementMood mood;      // MUST equal the row's index (guard below)
-    const char*    label;
-    std::uint32_t  color;     // 0xRRGGBB — the UI's tint for this band
-    float          buyMul;    // what the town charges the traveller
-    float          sellMul;   // what it pays him
-};
-inline constexpr MoodRow kMoodRows[std::size_t(SettlementMood::Count)] = {
-    {SettlementMood::Prosperous, "Prosperous", 0x5ADC78u, 0.9f, 1.1f},
-    {SettlementMood::Stable,     "Stable",     0xDCDCDCu, 1.0f, 1.0f},
-    {SettlementMood::Tense,      "Tense",      0xF0C850u, 1.0f, 1.0f},
-    {SettlementMood::Unrest,     "Unrest",     0xDC8250u, 1.2f, 0.85f},
-    {SettlementMood::Revolt,     "Revolt",     0xE64646u, 1.4f, 0.7f},
-};
-static_assert(rows_in_enum_order(kMoodRows, &MoodRow::mood),
-              "kMoodRows row order must mirror SettlementMood");
-
-inline constexpr const MoodRow& mood_row(SettlementMood m) {
-    // A byte from outside the band table answers as Stable — the neutral row
-    // the old switch defaults painted (colour and multipliers match).
-    return std::size_t(m) < std::size_t(SettlementMood::Count)
-               ? kMoodRows[std::size_t(m)]
-               : kMoodRows[std::size_t(SettlementMood::Stable)];
-}
+// v101 (2026-09-19): ОДНА МЕРА ЖИЗНИ (CANON S10/S16, вердикт владельца
+// «теперь только есть благополучие и оно даёт рост») — настроение, реестр
+// его полос, восстания и флаг голода ВЫРЕЗАНЫ; у места остались
+// seasonWellbeing и needDebt.
+constexpr int kSaveVersion = 101;
 
 // (SettlementHistory — the per-settlement population ring — died 2026-09-18,
 // owner verdict №4 of the second canon audit: «сноси, есть уже единая система
@@ -449,7 +415,6 @@ struct Landmark {
     std::string name;        // "" where the kind carries none (spires derive)
     int x = 0, y = 0;
     int population = 0;
-    SettlementMood mood = SettlementMood::Stable;
     // THE store (owner's ruling, W2): the landmark's universal Inventory is
     // its market, its granary and its warehouse in one — agents deliver into
     // it, the day-loop eats from it, the trade panel sells out of it.
@@ -473,8 +438,6 @@ struct Landmark {
     // comfort shortfall (for the eye and the mood), the famine edge flag,
     // and the fractional carry of the LOGISTIC population law.
     std::uint16_t starvedYesterday = 0;
-    std::uint16_t unmetYesterday = 0;
-    std::uint8_t  famineActive = 0;
     // THE SEASON WINDOW'S VERDICT (v95, CANON S19.2): wellbeing quantized to
     // a byte, written on the boundary day by econ_debt_boundary's outcome
     // and read by the mood band + population law every day until the next

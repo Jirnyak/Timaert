@@ -85,7 +85,6 @@ enum class FactKind : std::uint16_t {
     Gathered,        // subject took from the land       (amount = units)
     Built,           // subject raised something         (amount = units)
     Starved,         // subject went hungry              (amount = heads)
-    Revolted,        // subject rose against object      (amount = heads)
     OwnerChanged,    // object now belongs to subject
     Explored,        // subject learned a place          (amount = depth)
     // Took from the world something that does not come back — a spire's orb,
@@ -159,7 +158,6 @@ inline constexpr FactKindDef kFactKinds[] = {
     {FactKind::Gathered,     "gathered",      "Gathered",       8,      1},
     {FactKind::Built,        "built",         "Built",         64,     10},
     {FactKind::Starved,      "starved",       "Starved",       32,      0},
-    {FactKind::Revolted,     "revolted",      "Revolted",      64,     20},
     {FactKind::OwnerChanged, "owner_changed", "Changed hands", 64,     20},
     {FactKind::Explored,     "explored",      "Explored",      64,      2},
     {FactKind::Drained,      "drained",       "Drained",       64,     10},
@@ -290,7 +288,7 @@ inline constexpr std::uint32_t kChronicleAnnals = 1u << 20;   // 1M x 32 B = 32 
 
 // The ring's size is a FORMULA with one unmeasured term, and it is written
 // down rather than hidden: it must hold `longest interestDays × the world's
-// facts per day`. The longest span is 64 days (the Built/Revolted/Explored
+// facts per day`. The longest span is 64 days (the Built/Explored
 // rows); the world's daily rate has never been measured, which is exactly why
 // `Chronicle::factsToday` ships as part of the contract. 2^16 records is 2 MB
 // — by house rule not an argument (CANON S26) — and covers 64 days at a

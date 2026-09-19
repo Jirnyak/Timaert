@@ -7059,10 +7059,10 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             app.ui.quest = false;
             refresh_available_settlement_quests(app);
             std::fprintf(stderr,
-                         "[smoke] settlement_trade open id=%d name=\"%s\" mood=%d stock=%d playerItems=%d gold=%d\n",
+                         "[smoke] settlement_trade open id=%d name=\"%s\" wellbeing=%d stock=%d playerItems=%d gold=%d\n",
                          s.id,
                          s.name.c_str(),
-                         int(s.mood),
+                         int(s.seasonWellbeing),
                          s.inventory.used_slots(),
                          player_bag(app).total(),
                          sm::inventory_value(player_bag(app)));

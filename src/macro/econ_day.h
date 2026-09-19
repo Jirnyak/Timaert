@@ -328,12 +328,15 @@ int econ_produce_day(Inventory& store, const std::int32_t* needDebt,
                      int mintFactionIdx = -1);
 
 struct ConsumeOutcome {
-    int fedPop = 0;         // souls who lived through the boundary fed
     int starvedPop = 0;     // souls the unpaid hunger debt KILLED (caller
                             //   subtracts them from the population)
-    int unmetComfort = 0;   // non-hunger debt left unpaid (gates growth)
-    int comfortDemand = 0;  // total non-hunger season demand (unmet's scale)
-    bool famineActive = false;
+    // БЛАГОПОЛУЧИЕ — ЕДИНСТВЕННАЯ МЕРА «как живётся» (владелец 2026-09-19:
+    // «теперь только есть благополучие и оно даёт рост»). Доля оплаченной
+    // еды × доля оплаченного комфорта, 0…1: покрыл все нужды — 1.0 и полный
+    // ход роста, покрыл половину еды — вдвое ниже, комфорта ноль — стоим.
+    // Ватерлиния 0.5 умерла вместе с настроением: она была мостом между
+    // «голод усушивает» и «достаток растит», а усушку забрала смерть.
+    float wellbeing = 1.0f;
 };
 
 // ПОТРЕБЛЕНИЕ — ЭТО ДОЛГ, А НЕ СПИСАНИЕ (CANON S10, владелец 2026-09-19:
@@ -344,19 +347,20 @@ struct ConsumeOutcome {
 //      насмерть — по душе за каждый непокрытый душевой сезон (остаток /
 //      kDaysPerSeason; хвост меньше душевого сезона прощается — зеркало
 //      закона «кусок меньше сезона не кормит никого»). Смерть —
-//      ЕДИНСТВЕННАЯ кара голода (вердикт 2026-09-19): выжившие сыты,
-//      fedPop == population − starvedPop, и рост судит только комфорт.
-//      Непогашенные ПРОЧИЕ строки гасят РОСТ через unmetComfort — от
-//      нехватки ткани не умирают. Старый долг не переносится.
+//      ЕДИНСТВЕННАЯ кара голода (вердикт 2026-09-19): второй раз за тот же
+//      голод население не наказывают. Непогашенные ПРОЧИЕ строки не убивают
+//      вовсе — от нехватки ткани не умирают. Старый долг не переносится.
 //   2. НОВЫЙ СЧЁТ: сезонная нужда лестницы по населению ПОСЛЕ смертей,
 //      перезаписью в needDebt (товарный ординал — зеркало titheOwedGoods).
 //   3. НЕМЕДЛЕННОЕ ГАШЕНИЕ из склада (econ_pay_debt) — посевной амбар и
 //      прошлый излишек платят по счёту в ту же минуту.
-// `famineWasActive` carries last season's state so FamineStarted/FamineEnded
-// fire exactly on the transitions. Смерти применяет ВЫЗЫВАЮЩИЙ (дверь одна —
-// settle_landmark_day); мёртвому месту счёт закрывается.
+// И ОДНА МЕРА НА ВЫХОД — БЛАГОПОЛУЧИЕ: доля оплаченной еды × доля
+// оплаченного комфорта. Доля еды = выжившие / население ДО взыскания, что
+// арифметически и есть «оплачено / выставлено» (смертей ровно столько,
+// сколько душевых сезонов не оплачено). Смерти применяет ВЫЗЫВАЮЩИЙ (дверь
+// одна — settle_landmark_day); мёртвому месту счёт закрывается.
 ConsumeOutcome econ_debt_boundary(Inventory& store, std::int32_t* needDebt,
-                                  int population, bool famineWasActive,
+                                  int population,
                                   EconFactSink sink, void* user);
 
 // ГАШЕНИЕ ДОЛГА — одна дверь «склад платит по счёту» (CANON S10: «всё, что
@@ -374,18 +378,23 @@ int econ_pay_debt(Inventory& store, std::int32_t* needDebt,
 // Returns stacks melted.
 int econ_store_hygiene(Inventory& store, EconFactSink sink, void* user);
 
-// ── Population and mood (owner's law, W2b-4) ─────────────────────────────
+// ── Population (owner's law, W2b-4) ──────────────────────────────────────
 //
-// LOGISTIC growth, not flat heads per day: dP = r·P·(1−P/K)·drive, where
-// drive ∈ [−1, +1] comes from continuous WELLBEING (fed fraction, softened
-// by comfort shortfall).
+// PROPORTIONAL growth, not flat heads per day: dP = r·P·благополучие, where
+// благополучие ∈ [0, 1] is THE one measure of how a place lives — the share
+// of its needs it actually paid for (ConsumeOutcome::wellbeing).
+//
+// ОТРИЦАТЕЛЬНОГО РОСТА НЕТ, и это закон, а не пропуск (владелец 2026-09-19):
+// усушку делает СМЕРТЬ на границе долга, поэтому второй, плавной усушки
+// быть не должно — иначе голод карает дважды. Место либо растёт по мере
+// своего достатка, либо стоит.
 //
 // NO CARRYING CAP (CANON S25, the owner's word): «ни константы-потолка, ни
 // ёмкости как крышки быть не должно». The ceiling EMERGES from supply — a
-// town that outgrows its fields and its trade sees wellbeing fall and stops;
-// famine turns it around. A town on a crossroads may outgrow one on black
-// earth with no roads, and that is the right world. (The old kPopCarryingCap
-// = 16384 was one lid for every town on the map — canon-audit III.6.)
+// town that outgrows its fields and its trade pays less of its bill, its
+// wellbeing falls and growth stops before the cliff. A town on a crossroads
+// may outgrow one on black earth with no roads, and that is the right world.
+// (The old kPopCarryingCap = 16384 was one lid for every town — audit III.6.)
 //
 // The rate is quoted PER SEASON (owner 2026-08-24): a month IS a season here
 // — 32 days, the same epoch the forest grows by (kGrowthEpochDays) — and in
@@ -396,34 +405,12 @@ inline constexpr float kPopGrowthPerSeason = 1.0f / 8.0f;  // po2: +12.5%/season
 inline constexpr float kPopGrowthRatePerDay =
     kPopGrowthPerSeason / float(kDaysPerSeason);
 
-// Continuous wellbeing in [0, 1]: the fed fraction, softened by how much of
-// the comfort ladder went unmet. 0.5 is the waterline — above it the town
-// grows, below it shrinks.
-inline float settlement_wellbeing(const ConsumeOutcome& o, int population) {
-    if (population <= 0) return 0.5f;
-    const float fedFrac = float(o.fedPop) / float(population);
-    const float comfortFrac = o.comfortDemand > 0
-        ? 1.0f - float(o.unmetComfort) / float(o.comfortDemand)
-        : 1.0f;
-    return fedFrac * (0.5f + 0.5f * comfortFrac);
-}
-
 inline float population_delta_per_day(int population, float wellbeing) {
     if (population <= 0) return 0.0f;
-    const float drive = (wellbeing - 0.5f) * 2.0f;   // [-1, +1]
-    // Growth and decline ride the same season-quoted rate; nothing damps
-    // starvation and nothing caps plenty — supply is the only ceiling (S25).
-    return kPopGrowthRatePerDay * float(population) * drive;
-}
-
-// Mood is the SAME wellbeing banded for the eye (0 = Prosperous …
-// 4 = Revolt, matching SettlementMood's order) — context, not a second law.
-inline int mood_band_from_wellbeing(float wellbeing) {
-    if (wellbeing >= 0.8f) return 0;
-    if (wellbeing >= 0.6f) return 1;
-    if (wellbeing >= 0.4f) return 2;
-    if (wellbeing >= 0.2f) return 3;
-    return 4;
+    // Благополучие И ЕСТЬ ход роста: 1.0 — полные нужды и полные 12.5 % за
+    // сезон, 0.5 — половина, 0 — стоим. Ни клампа сверху (предел
+    // эмерджентен, S25), ни отрицательной ветки снизу (усушка = смерть).
+    return kPopGrowthRatePerDay * float(population) * wellbeing;
 }
 
 

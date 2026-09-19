@@ -757,14 +757,11 @@ void write_landmark(Writer& w, const Landmark& lm) {
     w.pod(lm.x);
     w.pod(lm.y);
     w.pod(lm.population);
-    write_enum8(w, lm.mood);
     write_inventory(w, lm.inventory);
     write_squad(w, lm.garrison);   // v96: history ring cut (verdict №4, S20.1)
     w.pod(lm.factionIdx);          // v94: faction registry index (kingdoms cut)
     w.pod(lm.suzerainLandmarkId);  // v94: the one feudal edge (S24)
     w.pod(lm.starvedYesterday);  // v29: the honest day's readouts
-    w.pod(lm.unmetYesterday);
-    w.pod(lm.famineActive);
     w.pod(lm.seasonWellbeing);   // v95: the season window's verdict (S19.2)
     w.pod(lm.popGrowthCarry);
     w.pod(lm.renown);            // v53: a place's standing is world memory
@@ -785,14 +782,11 @@ void read_landmark(Reader& r, Landmark& lm) {
     r.pod(lm.x);
     r.pod(lm.y);
     r.pod(lm.population);
-    read_enum8(r, lm.mood, static_cast<std::uint8_t>(SettlementMood::Revolt));
     read_inventory(r, lm.inventory);
     read_squad(r, lm.garrison);   // v96: history ring cut (verdict №4, S20.1)
     r.pod(lm.factionIdx);          // v94
     r.pod(lm.suzerainLandmarkId);  // v94
     r.pod(lm.starvedYesterday);  // v29
-    r.pod(lm.unmetYesterday);
-    r.pod(lm.famineActive);
     r.pod(lm.seasonWellbeing);   // v95
     r.pod(lm.popGrowthCarry);
     r.pod(lm.renown);            // v53

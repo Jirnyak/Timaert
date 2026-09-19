@@ -37,11 +37,10 @@ int trade_sell_price(int basePrice, int myTradePct, int theirTradePct) {
 }
 
 int trade_price(int baseValue, int myTradePct, int theirTradePct,
-                       float contextMult, bool buying) {
-    const int scaledBase = std::max(1,
-        static_cast<int>(jround(static_cast<float>(baseValue) * contextMult)));
-    return buying ? trade_buy_price(scaledBase, myTradePct, theirTradePct)
-                  : trade_sell_price(scaledBase, myTradePct, theirTradePct);
+                bool buying) {
+    const int base = std::max(1, baseValue);
+    return buying ? trade_buy_price(base, myTradePct, theirTradePct)
+                  : trade_sell_price(base, myTradePct, theirTradePct);
 }
 
 float stock_scarcity(int supply, int demandSeason) {
@@ -177,35 +176,8 @@ int season_demand_for(const char* itemId, const std::int32_t* needDebt,
 }
 
 
-float mood_price_mult(SettlementMood mood, bool buying) {
-    // A town's temper prices its market, and it prices BOTH sides of the deal
-    // (the merchant-temperament column beside this one always did). The
-    // numbers are columns of THE mood registry (state.h kMoodRows), beside
-    // the band's label and everything else said about it.
-    const MoodRow& r = mood_row(mood);
-    return buying ? r.buyMul : r.sellMul;
-}
-
-float trait_price_mult(const ecs::NpcTraits* traits, bool buying) {
-    // The merchant's temperament prices HIS side of the deal, and the numbers
-    // are columns of THE trait registry (npc.h kTraitPriceRows), beside the
-    // temper's name — the same shape as the mood registry above. A greedy man
-    // charges more and pays less; a generous one the reverse; every other
-    // temper has no opinion about money and its row says so.
-    auto has = [&](NPCTrait t) {
-        if (!traits) return false;
-        const auto raw = std::uint8_t(t);
-        for (std::uint8_t i = 0; i < traits->count && i < 2; ++i) {
-            if (traits->traits[i] == raw) return true;
-        }
-        return false;
-    };
-    float mult = 1.0f;
-    for (const TraitPriceRow& r : kTraitPriceRows) {
-        if (!r.pricesMarket || !has(r.trait)) continue;
-        mult = buying ? r.buyMul : r.sellMul;
-    }
-    return mult;
-}
+// (mood_price_mult и trait_price_mult вырезаны 2026-09-19 вместе со своими
+// реестрами: цена не умножается на характер — она выводится из кривой и
+// разницы торговых сил.)
 
 } // namespace sm

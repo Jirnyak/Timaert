@@ -7,7 +7,7 @@
 // loop are a rendering artifact and are skipped), and writes per-day TSV:
 //
 //   <out>/world_<seed>.tsv     one row per day: totals + per-commodity flows
-//   <out>/landmarks_<seed>.tsv one row per landmark per day: pop/mood/stocks
+//   <out>/landmarks_<seed>.tsv one row per landmark per day: pop/wellbeing/stocks
 //
 // Usage: balance_run [seedsCsv] [days] [outDir]
 //        defaults:    12345      256    balance_out
@@ -248,7 +248,7 @@ int main(int argc, char** argv) {
         // 2026-09-18) is about MEDIANS across places — bread drowns the floor
         // clamp while manufactured rows starve at the ceiling — and the world
         // aggregate cannot show a median.
-        std::fprintf(fl, "day\tid\ttype\tpop\tmood\tstarved\tunmet\tbread"
+        std::fprintf(fl, "day\tid\ttype\tpop\twellbeing\tstarved\tunmet\tbread"
                          "\tgrain\tcloth\tiron\tcoin\n");
 
         const int breadIdx = sm::item_index("bread");
@@ -294,9 +294,9 @@ int main(int argc, char** argv) {
                                  "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d"
                                  "\t%lld\n",
                                  gs.worldTime.day(), lm.id, int(lm.type),
-                                 lm.population, int(lm.mood),
+                                 lm.population, int(lm.seasonWellbeing),
                                  int(lm.starvedYesterday),
-                                 int(lm.unmetYesterday),
+                                 0,
                                  lm.inventory.count_of(breadIdx),
                                  lm.inventory.count_of(grainIdx),
                                  lm.inventory.count_of(clothIdx),

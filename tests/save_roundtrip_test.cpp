@@ -379,15 +379,12 @@ sm::GameState make_state() {
     settlement.x = 40;
     settlement.y = 80;
     settlement.population = 777;
-    settlement.mood = sm::SettlementMood::Tense;
     settlement.inventory.add("wood", 19);
     add_soldiers(settlement.garrison, sm::NPCType::Guard, 5, 2000u);
     add_soldiers(settlement.garrison, sm::NPCType::Peasant, 1, 2100u);
     settlement.factionIdx = 2;
     // Honest-day readouts (v29) — every field non-default.
     settlement.starvedYesterday = 12;
-    settlement.unmetYesterday = 34;
-    settlement.famineActive = 1;
     settlement.popGrowthCarry = 0.375f;
     gs.landmarks.push_back(settlement);
 
@@ -398,13 +395,10 @@ sm::GameState make_state() {
     village.x = 45;
     village.y = 85;
     village.population = 111;
-    village.mood = sm::SettlementMood::Stable;
     village.inventory.add("food_meat", 4);
     village.suzerainLandmarkId = settlement.id;
     village.factionIdx = 2;
     village.starvedYesterday = 5;
-    village.unmetYesterday = 7;
-    village.famineActive = 1;
     village.popGrowthCarry = -0.25f;
     gs.landmarks.push_back(village);
 
@@ -953,21 +947,18 @@ void run_roundtrip() {
         FAIL_BAIL("settlement lost");
     }
     const sm::Landmark& city = *cityLm;
-    if (city.name != "Round City" || city.mood != sm::SettlementMood::Tense
+    if (city.name != "Round City"
         || city.inventory.count("wood") != 19
         || sm::count_soldiers_of_kind(
             city.garrison, static_cast<std::uint8_t>(sm::NPCType::Peasant)) != 1) {
         FAIL_BAIL("settlement details lost");
     }
-    if (city.starvedYesterday != 12 || city.unmetYesterday != 34
-        || city.famineActive != 1 || !nearf(city.popGrowthCarry, 0.375f)) {
+    if (city.starvedYesterday != 12 || !nearf(city.popGrowthCarry, 0.375f)) {
         FAIL_BAIL("settlement honest-day readouts (v29) lost");
     }
     const sm::Landmark* vilLm = sm::landmark_by_id(loaded, 70);
     if (!vilLm || vilLm->type != sm::LandmarkType::Village
         || vilLm->starvedYesterday != 5
-        || vilLm->unmetYesterday != 7
-        || vilLm->famineActive != 1
         || !nearf(vilLm->popGrowthCarry, -0.25f)) {
         FAIL_BAIL("village honest-day readouts (v29) lost");
     }

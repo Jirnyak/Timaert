@@ -179,8 +179,7 @@ void test_auction_raises_errand_bearing_peasants() {
         // любой жилы — это сломанная под долгом фикстура, не закон.
         econ_debt_boundary(gsd.landmarks[0].inventory,
                            gsd.landmarks[0].needDebt,
-                           gsd.landmarks[0].population, false,
-                           nullptr, nullptr);
+                           gsd.landmarks[0].population, nullptr, nullptr);
         ecs::World wd;
         MacroWorld mwd{.gs = &gsd, .world = &wd, .terrain = &absent,
                        .deposits = &dep, .treeGrid = &grid};

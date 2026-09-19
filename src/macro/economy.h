@@ -11,30 +11,18 @@
 // until then the ONE player price law below serves every trade screen.
 //
 // Trade itself is UNIVERSAL (owner): an exchange between two Inventories —
-// a settlement's, an NPC's, one day a chest's — priced by this law with the
-// caller's ONE context multiplier (settlement mood / merchant temperament).
+// a settlement's, an NPC's, one day a chest's — priced by ONE law: the
+// scarcity curve and the difference of the two sides' trade power.
 #pragma once
 #include <cstdint>
 
 namespace sm {
 
-// ── Context contributions to the one price law (CANON S6, 2026-08-24) ─────
-// The named multiplier columns live HERE, beside the law they feed — they
-// used to be private helpers of two different screens (the settlement's mood
-// in overlays.cpp, the merchant's temperament in macro_overlay.cpp): the
-// same law with two homes, one of them buy-side only by accident of
-// location. 1.0 is a system with nothing to say. New context (war, season,
-// route danger) joins as another named column, never a screen helper.
-enum class SettlementMood : std::uint8_t;
-namespace ecs { struct NpcTraits; }
-// Both context columns answer the same shape — WHICH SIDE of the deal is being
-// priced — because a context that only knows how to make things dearer prices
-// one direction and forgets the other. The settlement's mood used to take no
-// `buying` flag, so a town in revolt charged the player a premium and then
-// paid him the ordinary price for his goods: the context applied to half the
-// trade by accident of its signature.
-float mood_price_mult(SettlementMood mood, bool buying);
-float trait_price_mult(const ecs::NpcTraits* traits, bool buying);
+// (КОНТЕКСТНЫЕ МНОЖИТЕЛИ ЦЕНЫ ВЫРЕЗАНЫ 2026-09-19, вердикт владельца «это
+// тоже сраньё, привести к одной системе»: настроение места и нрав купца
+// умножали цену поверх кривой — тот же класс назначенного коэффициента, что
+// спред ×0.7, пол 0.5 и потолок 1.5, убитые в S25. У цены остались ДВА
+// источника: кривая дефицита и разница торговых сил сторон.)
 
 // THE trade price — ОДИН закон и ДВЕ СТОРОНЫ (CANON S25, владелец
 // 2026-09-18: «лавки как таковой нет — есть две макросущности… просто
@@ -56,10 +44,8 @@ float trait_price_mult(const ecs::NpcTraits* traits, bool buying);
 // торговая сила.
 //
 // Пол цены 1 остаётся: это не кламп наценки, а закон «ничто не бесплатно».
-// `contextMult` — настроение места или нрав купца — по-прежнему ОДНА
-// колонка, которую разрешает вызывающий.
 int trade_price(int baseValue, int myTradePct, int theirTradePct,
-                       float contextMult, bool buying);
+                bool buying);
 
 int trade_buy_price (int basePrice, int myTradePct, int theirTradePct);
 int trade_sell_price(int basePrice, int myTradePct, int theirTradePct);

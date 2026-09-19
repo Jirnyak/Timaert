@@ -3,7 +3,7 @@
 // Drives:
 //   • Ticks elapsed → minute/hour/day rollover (core/time.h owns the ladder).
 //   • On day rollover: settlement + village daily simulation
-//     (economy, mood, garrison, history), trade-route settlement
+//     (economy, garrison, history), trade-route settlement
 //     and dispatch, player upkeep + ageing.
 //
 // This file no longer knows how long a day is in real seconds, or how much
@@ -43,74 +43,55 @@ inline float rand01_(WorldTickRuntime& runtime) {
 
 } // namespace
 
-// The shared tail of every landmark's day (W2b-4): consume off the
-// UNIVERSAL inventory, then let ONE continuous wellbeing drive both the
-// mood and the LOGISTIC population law (owner's ruling — no flat heads per
-// day). At namespace scope (external linkage, the shuffled_order pattern)
-// so econ_v1_test can drive a landmark to its honest death directly.
-void settle_landmark_day(Landmark& lm, int day,
-                         bool& startedFamine, bool& startedRevolt,
-                         bool& diedOut,
+// The shared tail of every landmark's day (W2b-4): the debt boundary off the
+// UNIVERSAL inventory, then ONE measure — благополучие — driving the
+// population law (owner's ruling — no flat heads per day). At namespace
+// scope (external linkage, the shuffled_order pattern) so econ_v1_test can
+// drive a landmark to its honest death directly.
+void settle_landmark_day(Landmark& lm, int day, bool& starved, bool& diedOut,
                          EconFactSink sink, void* user) {
-    startedFamine = false;
-    startedRevolt = false;
+    starved = false;
     diedOut = false;
     // THE SEASON WINDOW (CANON S19.2, единое окно мира) — теперь граница
     // ДОЛГА (CANON S10, вердикт 2026-09-19): взыскание прошлого счёта,
-    // новый счёт, немедленное гашение из склада. The outcome is parked on
-    // the landmark as a quantized wellbeing, and every day until the next
-    // boundary lives off that number: the mood band and the population law
-    // run daily, the boundary does not.
+    // новый счёт, немедленное гашение из склада. Её вердикт — ОДНО число,
+    // благополучие, которое место носит до следующей границы: по нему
+    // каждый день идёт рост, и второй меры («настроение») в мире больше
+    // нет (владелец 2026-09-19: «теперь только есть благополучие и оно
+    // даёт рост»).
     if (season_boundary(day)) {
         const ConsumeOutcome o = econ_debt_boundary(
-            lm.inventory, lm.needDebt, lm.population, lm.famineActive != 0,
-            sink, user);
-        // СМЕРТЬ — единственная кара голода (вердикт 2026-09-19): доля
-        // непогашенного хлеба уходит населением здесь, в единственной
-        // двери; рост выживших ниже судит только комфорт (fedPop равен
-        // населению после смертей — fedFrac == 1 по построению).
+            lm.inventory, lm.needDebt, lm.population, sink, user);
+        // СМЕРТЬ — единственная кара голода: доля непогашенного хлеба
+        // уходит населением здесь, в единственной двери.
         if (o.starvedPop > 0) {
             lm.population = std::max(lm.population - o.starvedPop, 0);
             diedOut = lm.population == 0;
         }
         lm.starvedYesterday = std::uint16_t(std::min(o.starvedPop, 0xFFFF));
-        lm.unmetYesterday   = std::uint16_t(std::min(o.unmetComfort, 0xFFFF));
-        // The TRANSITIONS are the story, not the states. A town that has been
-        // hungry for a season is one famine, not thirty-two of them, and a
-        // chronicle that filed the state every day would bury the day it began.
-        startedFamine = o.famineActive && lm.famineActive == 0;
-        lm.famineActive = o.famineActive ? 1 : 0;
+        starved = o.starvedPop > 0;
         lm.seasonWellbeing = std::uint8_t(std::lround(
-            std::clamp(settlement_wellbeing(o, lm.population), 0.0f, 1.0f)
-            * 255.0f));
+            std::clamp(o.wellbeing, 0.0f, 1.0f) * 255.0f));
     }
-    // ДНЕВНОЕ ГАШЕНИЕ — страховочный такт той же двери (порция Б проведёт
-    // её через двери прихода — «сразу» без лага): вчерашний привоз и
+    // ДНЕВНОЕ ГАШЕНИЕ — страховочный такт той же двери (двери прихода гасят
+    // долг сразу; этот такт кроет пути мимо них): вчерашний привоз и
     // сегодняшняя выпечка (econ_produce_day идёт ПЕРЕД этим днём) платят
     // по счёту не позже суток.
     econ_pay_debt(lm.inventory, lm.needDebt, sink, user);
     // Daily slot hygiene (CANON «Крафт/Скрап») — hygiene, not a balance.
     econ_store_hygiene(lm.inventory, sink, user);
 
-    const float wellbeing = float(lm.seasonWellbeing) / 255.0f;
-    const SettlementMood was = lm.mood;
-    lm.mood = SettlementMood(mood_band_from_wellbeing(wellbeing));
-    startedRevolt = lm.mood == SettlementMood::Revolt
-                    && was != SettlementMood::Revolt;
-
-    lm.popGrowthCarry += population_delta_per_day(lm.population, wellbeing);
+    lm.popGrowthCarry += population_delta_per_day(
+        lm.population, float(lm.seasonWellbeing) / 255.0f);
     const int whole = int(lm.popGrowthCarry);
     if (whole != 0) {
         lm.popGrowthCarry -= float(whole);
-        // No ceiling (CANON S25): supply is the only cap — wellbeing already
-        // turned negative growth on when the fields and the trade fell short.
-        // And NO FLOOR either (owner, 2026-08-29): the old minPop = 10/5
-        // minted people from air and made every settlement immortal
-        // (canon-audit B6). Population falls honestly to zero; zero is
-        // absorbing by the law itself (population_delta_per_day(0) = 0),
-        // and the DEATH is the story — the transition below files a Died
-        // fact, so the chronicle mourns the place the crutch used to hide.
-        // Turning the empty record into a Ruin is the S9-transition track.
+        // No ceiling (CANON S25): supply is the only cap — a place that
+        // outgrows its fields pays less of its bill, its wellbeing falls and
+        // the growth stops. And NO FLOOR either (owner, 2026-08-29): the old
+        // minPop = 10/5 minted people from air and made every settlement
+        // immortal (canon-audit B6). Убыль делает ТОЛЬКО смерть на границе;
+        // ноль поглощающий по самому закону (рост от нуля = 0).
         const int before = lm.population;
         lm.population = std::max(lm.population + whole, 0);
         diedOut = before > 0 && lm.population == 0;
@@ -232,9 +213,9 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
         // ест и ПЛАТИТ — жалованье теперь стоимостью (натурой при пустой
         // казне), и платёж раньше окна еды мог бы сжечь городской хлеб в
         // пул лута перед собственным столом.
-        bool famine = false, revolt = false, died = false;
+        bool famine = false, died = false;
         const int headsBefore = s.population;
-        settle_landmark_day(s, day, famine, revolt, died, rs, ru);
+        settle_landmark_day(s, day, famine, died, rs, ru);
 
         garrison_upkeep_(gs, s, day);
 
@@ -245,10 +226,6 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
         if (famine) {
             record_landmark_fact(gs, FactKind::Starved, s.id, s.x, s.y,
                                  int(s.starvedYesterday));
-        }
-        if (revolt) {
-            record_landmark_fact(gs, FactKind::Revolted, s.id, s.x, s.y,
-                                 s.population);
         }
         if (died) {
             record_landmark_fact(gs, FactKind::Died, s.id, s.x, s.y,
@@ -344,6 +321,13 @@ void garrison_recruit_(GameState& gs, Landmark& s,
 // сезон содержания базового стража, той же арифметикой, что окно
 // garrison_upkeep_ (харч полцены + жалование полцены). Ни одной новой
 // константы: обе половины выведены из уже живущих чисел (S26).
+//
+// БАЗА — ВСЯ ПАСТВА МЕСТА: население ПЛЮС люди его гарнизона. Рекрут
+// уходит ИЗ населения в гарнизон, поэтому потолок, считанный по одному
+// населению, падал ровно на только что набранных — набор и обрезка
+// воевали, качая людей в пул дезертиров каждый день (поймано свидетелем
+// 2026-09-19). Скот в базу не входит: лошадь — имущество, не паства, иначе
+// табун поднимал бы себе потолок сам.
 int garrison_cap_(const Landmark& s) {
     const ItemDef* bread = item_def_at(hunger_item_index());
     const int board = (kDaysPerSeason >> 1)
@@ -351,7 +335,8 @@ int garrison_cap_(const Landmark& s) {
     const int wage =
         (npc_def(NPCType::Guard).upkeepGoldPerDay * kDaysPerSeason) >> 1;
     const int perSoulSeason = std::max(1, board + wage);
-    return garrison_target_strength(s.type, s.population)
+    const int flock = s.population + count_human_souls(s.garrison);
+    return garrison_target_strength(s.type, flock)
          + inventory_value(s.inventory) / perSoulSeason;
 }
 
@@ -433,9 +418,9 @@ void tick_villages_(GameState& gs, int day, WorldTickRuntime& runtime,
         // Порядок дня границы — как у города: население ест первым, потом
         // гарнизон (жалованье стоимостью не выедает стол деревни), потом
         // дань (§42 Инк 7, the ONE garrison law by column).
-        bool famine = false, revolt = false, died = false;
+        bool famine = false, died = false;
         const int headsBefore = v.population;
-        settle_landmark_day(v, day, famine, revolt, died, rs, ru);
+        settle_landmark_day(v, day, famine, died, rs, ru);
 
         garrison_upkeep_(gs, v, day);
 
@@ -444,10 +429,6 @@ void tick_villages_(GameState& gs, int day, WorldTickRuntime& runtime,
         if (famine) {
             record_landmark_fact(gs, FactKind::Starved, v.id, v.x, v.y,
                                  int(v.starvedYesterday));
-        }
-        if (revolt) {
-            record_landmark_fact(gs, FactKind::Revolted, v.id, v.x, v.y,
-                                 v.population);
         }
         if (died) {
             record_landmark_fact(gs, FactKind::Died, v.id, v.x, v.y,
