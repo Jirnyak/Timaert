@@ -803,11 +803,17 @@ enum class Worksite : std::uint8_t {
     // поэтому «где охотиться» — это лучшая по поголовью клетка своей округи,
     // а не поиск редкости. Рыба придёт третьим таким же источником.
     HomeFauna,
+    // ПАСТБИЩЕ (CANON S10 «ЛОШАДЬ — ЮНИТ»): стоящая FT_Pasture с поголовьем,
+    // а без неё — лучшая огораживаемая клетка того же ±3 бокса: артель
+    // СНАЧАЛА поднимает пастбище (S10 «фичи создаются сквадами» — тот же
+    // бутстрап, что у шахты над жилой), назавтра ловит.
+    HomePasture,
 };
 
 struct GathererDef {
     ResourceFieldId row;        // what leaves the world
     const char*     commodity;  // what rides the bag and lands in the store
+                                // (nullptr when the yield is a CREATURE)
     Worksite        worksite;
     // СКОЛЬКО ОДИН РАБОТНИК БЕРЁТ ЗА ДЕНЬ — темп ЭТОГО источника. Колонка
     // появилась с ПИЩЕЙ (владелец, 2026-09-18: «просто сделать, что охота не
@@ -815,6 +821,11 @@ struct GathererDef {
     // приходит из разных источников с разной отдачей, и это ЧИСЛО, а не
     // ветка. Якорь мира — kGatherPerWorkerDay (S10, «добытчик кормит 32»).
     int perWorkerDay;
+    // ОДНА новая колонка канона (S10 «ЛОШАДЬ — ЮНИТ», дословно: «выход
+    // ложится в РОСТЕР, а не в сумку»): Count = обычный товар в сумку;
+    // строка существа = добытое встаёт ДУШОЙ в ростер артели, спина сразу
+    // в обозе (refresh_squad_carry). Овцы — следующая такая же строка.
+    NPCType rosterYield = NPCType::Count;
 };
 
 constexpr GathererDef kGathererDefs[] = {
@@ -835,6 +846,11 @@ constexpr GathererDef kGathererDefs[] = {
      kGatherPerWorkerDay},
     {ResourceFieldId::Clay,   "clay",   Worksite::Deposit,
      kGatherPerWorkerDay},
+    // ЛОШАДЬ-ЮНИТ: темп 1 — поимка стоит работнику ДЕНЬ (цикл = целый бар
+    // по закону цены труда S14.1), против 32 колосьев той же ценой; выход
+    // не товар, а существо (колонка rosterYield).
+    {ResourceFieldId::Horses, nullptr,  Worksite::HomePasture,
+     1, NPCType::Horse},
 };
 constexpr int kGathererGoalCount =
     int(sizeof(kGathererDefs) / sizeof(kGathererDefs[0]));
@@ -845,6 +861,64 @@ const GathererDef* gatherer_def_of(const ecs::MacroNpcRuntime& rt) {
     if (rt.errandVerb != std::uint8_t(ErrandVerb::Gather)) return nullptr;
     if (rt.errandObject >= std::uint32_t(kGathererGoalCount)) return nullptr;
     return &kGathererDefs[rt.errandObject];
+}
+
+// Пастбище артели: стоящая FT_Pasture с живым поголовьем — а если её нет,
+// лучшая ОГОРАЖИВАЕМАЯ клетка (pasture_cell_ok) того же бокса: вернувшись
+// с аукциона, артель первым делом её поднимет (акт ниже). Зеркало
+// find_home_field с bootstrap-веткой вместо мёртвого отказа.
+bool find_home_pasture(const TickContext& ctx, float px, float py,
+                       const XY& home, XY& out) {
+    if (!ctx.mw.features) return false;
+    bool found = false;
+    int bestStock = 0;
+    float best = 1e30f;
+    for (int dy = -kSettlementReach; dy <= kSettlementReach; ++dy) {
+        for (int dx = -kSettlementReach; dx <= kSettlementReach; ++dx) {
+            const int cx = int(home.x) + dx;
+            const int cy = int(home.y) + dy;
+            if (ctx.mw.features->at(cx, cy) != FT_Pasture) continue;
+            const int stock =
+                resource_field_read(ctx.mw, ResourceFieldId::Horses, cx, cy);
+            if (stock <= 0) continue;   // grazed bare — nothing to catch
+            const float d = torus_dist_sq(px, py, float(cx), float(cy),
+                                          float(ctx.mapW), float(ctx.mapH));
+            if (stock > bestStock || (stock == bestStock && d < best)) {
+                bestStock = stock;
+                best = d;
+                out = {float(cx), float(cy)};
+                found = true;
+            }
+        }
+    }
+    if (found) return true;
+    // A pasture stands but is grazed bare: the herd law regrows it by the
+    // season walker — fencing a SECOND meadow would sprawl one parcel per
+    // trip (measured: 8 928 pastures in eight days, сид 7).
+    for (int dy = -kSettlementReach; dy <= kSettlementReach; ++dy) {
+        for (int dx = -kSettlementReach; dx <= kSettlementReach; ++dx) {
+            if (ctx.mw.features->at(int(home.x) + dx, int(home.y) + dy)
+                == FT_Pasture)
+                return false;
+        }
+    }
+    // No pasture stands yet: the goal opens on the best fence-able cell.
+    for (int dy = -kSettlementReach; dy <= kSettlementReach; ++dy) {
+        for (int dx = -kSettlementReach; dx <= kSettlementReach; ++dx) {
+            if (dx == 0 && dy == 0) continue;  // the town
+            const int cx = int(home.x) + dx;
+            const int cy = int(home.y) + dy;
+            int herd = 0;
+            if (!pasture_cell_ok(*ctx.mw.features, ctx.mw, cx, cy, herd))
+                continue;
+            if (herd > bestStock) {
+                bestStock = herd;
+                out = {float(cx), float(cy)};
+                found = true;
+            }
+        }
+    }
+    return found;
 }
 
 } // namespace
@@ -1009,6 +1083,8 @@ bool find_worksite(const GathererDef& def, const TickContext& ctx,
             return find_home_field(ctx, p.x, p.y, home, out);
         case Worksite::HomeFauna:
             return find_home_fauna(ctx, p.x, p.y, home, out);
+        case Worksite::HomePasture:
+            return find_home_pasture(ctx, p.x, p.y, home, out);
         case Worksite::Deposit:
             return find_home_deposit(ctx, def.row, home, out);
     }
@@ -1058,9 +1134,12 @@ void ai_gatherer(entt::entity self, MacroPos& p,
             // слал её к жиле — даже с грузом, которому на жиле нечего взять.
             // Вечный челнок «шахта→привал→шахта» держал 536 серебра в одной
             // сумке 48 дней при пустом складе (измерено, сид 7).
-            if (auto* bagIdle = ctx.mw.world
+            if (auto* bagIdle = def->rosterYield == NPCType::Count
+                    && ctx.mw.world
                     ? ctx.mw.world->reg.try_get<ecs::NpcInventory>(self)
                     : nullptr) {
+                // (a CREATURE yield rides the roster, not the bag — there
+                // is no «full back» to send home early)
                 const ItemDef* idef = item_def(def->commodity);
                 const float unitKg =
                     idef && idef->weight > 0.0f ? idef->weight : 1.0f;
@@ -1270,6 +1349,15 @@ void ai_gatherer(entt::entity self, MacroPos& p,
                 // the save as a Built work (v71). The next cycle digs.
                 // A cell already carrying a feature (a road) digs bare —
                 // no shaft, no consolidation, exactly as before.
+                // ПАСТБИЩЕ ПЕРВЫМ (S10 «фичи создаются сквадами»): цель
+                // ловли стоит на неогороженной клетке — этот день артель
+                // тратит на ЗАБОР, тем же путём, каким пашет пашню; ловля —
+                // назавтра, как у шахты день шахты и день руды.
+                if (def->rosterYield != NPCType::Count && ctx.mw.features
+                    && ctx.mw.features->at(tx, ty) != FT_Pasture) {
+                    rt.state = std::uint8_t(NS::Plowing);
+                    return;   // target stays: the fence rises HERE
+                }
                 if (def->worksite == Worksite::Deposit && ctx.mw.features
                     && ctx.mw.deposits && ctx.mw.gs
                     && ctx.mw.features->at(tx, ty) == FT_None) {
@@ -1309,8 +1397,11 @@ void ai_gatherer(entt::entity self, MacroPos& p,
                 // «SP тратится столько же, добывают кратно больше»).
                 const auto* roster =
                     ctx.mw.world->reg.try_get<ecs::SquadRoster>(self);
+                // Руки — ЛЮДИ: лошадь в ростере — спина и рот, не рука
+                // (count_human_souls, npc.h) — иначе пойманный табун сам
+                // становился бы добытчиком и контур шёл вразнос.
                 const int workers = production_hands(
-                    roster ? int(roster->squad.size()) : 0);
+                    roster ? count_human_souls(roster->squad) : 0);
                 auto* bag = ctx.mw.world->reg.try_get<ecs::NpcInventory>(self);
                 // «Берёт ПО СВОЕЙ ГРУЗОПОДЪЁМНОСТИ» — CANON S10 дословно:
                 // спины сквада ограничивают тейк. Без этой скобы артель
@@ -1319,7 +1410,7 @@ void ai_gatherer(entt::entity self, MacroPos& p,
                 // 110 неоплатна и после полного отдыха — измерено: рудокоп
                 // с 2400 кг серебра на спине в 2145 кг, сид 7).
                 int carryMax = have;
-                if (bag) {
+                if (bag && def->rosterYield == NPCType::Count) {
                     const ItemDef* idef = item_def(def->commodity);
                     const float unitKg =
                         idef && idef->weight > 0.0f ? idef->weight : 1.0f;
@@ -1336,10 +1427,31 @@ void ai_gatherer(entt::entity self, MacroPos& p,
                 const int take =
                     std::min(std::min(workers, have), carryMax);
                 tookSomething = take > 0;
+                // «ВЫХОД ЛОЖИТСЯ В РОСТЕР, А НЕ В СУМКУ» (CANON S10,
+                // дословно): существо встаёт ДУШОЙ в отряд — генерик-стаком
+                // по закону слота — и его спина сразу считается в обозе
+                // (refresh_squad_carry, та же дверь, что у добора). Credit
+                // BEFORE debit: поле платит только за вставших.
+                if (take > 0 && def->rosterYield != NPCType::Count) {
+                    auto* ro =
+                        ctx.mw.world->reg.try_get<ecs::SquadRoster>(self);
+                    if (ro && ro->squad.push_stack(
+                            std::uint16_t(def->rosterYield),
+                            std::int16_t(npc_def(def->rosterYield).baseLevel),
+                            take)) {
+                        resource_field_apply(mw, def->row, tx, ty, -take);
+                        pools.spCarry -= float(cycleCost);
+                        settle_sp_carry(pools);
+                        refresh_squad_carry(*ctx.mw.world, self);
+                    } else {
+                        tookSomething = false;   // no slot — nothing conjured
+                    }
+                }
                 // Credit BEFORE debit (CANON S5): the field pays only what
                 // the OWN bag actually took — a bagless walker, or a bag
                 // with no room, drains nothing and writes no Drained fact.
-                if (take > 0 && bag && bag->inv.add(def->commodity, take)) {
+                else if (take > 0 && bag
+                         && bag->inv.add(def->commodity, take)) {
                     resource_field_apply(mw, def->row, tx, ty, -take);
                     // The cycle is PAID the moment it produced — through
                     // the same fractional carry the march charges
@@ -1416,7 +1528,7 @@ void ai_gatherer(entt::entity self, MacroPos& p,
                     ? ctx.mw.world->reg.try_get<ecs::NpcInventory>(self)
                     : nullptr;
                 bool backsFull = false;
-                if (bagNow) {
+                if (bagNow && def->rosterYield == NPCType::Count) {
                     const ItemDef* idef = item_def(def->commodity);
                     const float unitKg =
                         idef && idef->weight > 0.0f ? idef->weight : 1.0f;
@@ -1443,13 +1555,23 @@ void ai_gatherer(entt::entity self, MacroPos& p,
     }
     if (rt.state == std::uint8_t(NS::Plowing)) {
         if (at_target(p, rt, ctx)) {
-            // PLOUGHING IS A BUILD — it raises FT_Field — so it is priced by
-            // that row like every other build (CANON S14.1).
+            // PLOUGHING IS A BUILD — it raises the GOAL's own parcel (the
+            // arable field, or the pasture when the yield is a creature) —
+            // so it is priced by that row like every other build (S14.1).
+            const GathererDef* gd = gatherer_def_of(rt);
+            const bool fence = gd && gd->rosterYield != NPCType::Count;
+            const FeatureType parcel = fence ? FT_Pasture : FT_Field;
             const int cycleCost =
-                sp_price(int(pools.maxSp), feature_builds_per_day(FT_Field));
-            if (int(pools.sp) >= cycleCost && ctx.mw.features && ctx.mw.gs
-                && plough_field_cell(*ctx.mw.features, ctx.mw,
-                                     int(rt.targetX), int(rt.targetY))) {
+                sp_price(int(pools.maxSp), feature_builds_per_day(parcel));
+            const bool built = int(pools.sp) >= cycleCost && ctx.mw.features
+                && ctx.mw.gs
+                && (fence
+                        ? fence_pasture_cell(*ctx.mw.features, ctx.mw,
+                                             int(rt.targetX), int(rt.targetY))
+                        : plough_field_cell(*ctx.mw.features, ctx.mw,
+                                            int(rt.targetX),
+                                            int(rt.targetY)));
+            if (built) {
                 // The day of MAKING pays the same cycle the day of taking
                 // pays — one labour law (S14).
                 pools.spCarry -= float(cycleCost);
@@ -1458,7 +1580,7 @@ void ai_gatherer(entt::entity self, MacroPos& p,
                 // row and the load re-stamps it (state.h v71).
                 ctx.mw.gs->builtFeatures.push_back(BuiltFeature{
                     int(rt.targetX), int(rt.targetY),
-                    std::uint8_t(FT_Field)});
+                    std::uint8_t(parcel)});
             }
             rt.targetX = home.x;
             rt.targetY = home.y;
@@ -1473,7 +1595,10 @@ void ai_gatherer(entt::entity self, MacroPos& p,
         if (at_target(p, rt, ctx)) {
             // Home with the haul: everything gathered lands in the HOME
             // store — the same universal inventory the market sells from.
-            if (rt.state == std::uint8_t(NS::Returning)) {
+            if (rt.state == std::uint8_t(NS::Returning)
+                && def->commodity != nullptr) {
+                // (the herd stays in the ROSTER; the dissolve law hands it
+                // to the garrison — nothing rides the bag home)
                 deliver_bag_home(self, rt, ctx, def->commodity);
             }
             rt.state = std::uint8_t(NS::Idle);
@@ -3895,9 +4020,22 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 }
             }
         } else {
+            // ЗВЕРЬ — НЕ ДУША НАСЕЛЕНИЯ: лошади (и всякий creature-род)
+            // растворяющейся артели встают в ГАРНИЗОН места — «гарнизон =
+            // армия ландмарка», табун города живёт в его армии, виден,
+            // продаётся и грабится (вердикт 2026-09-19). Люди — в
+            // популяцию, как всегда.
             int souls = 1;
-            if (const auto* roster = reg.try_get<ecs::SquadRoster>(e))
-                souls += roster->squad.size();
+            if (const auto* roster = reg.try_get<ecs::SquadRoster>(e)) {
+                for (const SoldierSlot& sl : roster->squad) {
+                    if (is_monster_kind(sl.kind)) {
+                        if (!lm.garrison.push_slot(sl))
+                            gs.deserterPool.push_slot(sl);
+                    } else {
+                        souls += int(sl.count);
+                    }
+                }
+            }
             lm.population += souls;
         }
         reg.destroy(e);
@@ -3918,6 +4056,10 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
     // меривший пул одним населением, ужимал составы каждый сезон (души
     // стоящих выпадали из базы — поймано свидетелем resize).
     std::vector<int> standingSouls(gs.landmarks.size(), 0);
+    // Табун, УЖЕ стоящий в артелях этого дома (лошади живут в отрядах —
+    // «армия крестьян»), — вторая половина склада для дросселя ловли;
+    // овцы получат такой же счёт своей строкой.
+    std::vector<int> horsesStanding(gs.landmarks.size(), 0);
     std::vector<std::pair<int, entt::entity>> idleByRow;
     std::sort(homeIdle.begin(), homeIdle.end());
     const auto is_home_idle = [&](entt::entity e) {
@@ -3932,8 +4074,12 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
         bool standingHome = false;
         if (is_crew(kind.type)) {
             int souls = 1;
-            if (const auto* roster = reg.try_get<ecs::SquadRoster>(e))
-                souls += roster->squad.size();
+            if (const auto* roster = reg.try_get<ecs::SquadRoster>(e)) {
+                // Труд-гроссбух считает ЛЮДЕЙ; табун отряда — в дроссель.
+                souls += count_human_souls(roster->squad);
+                horsesStanding[std::size_t(row)] += count_soldiers_of_kind(
+                    roster->squad, std::uint16_t(NPCType::Horse));
+            }
             afield[std::size_t(row)] += souls;
             if (!garrison_row_of_type(ld, kind.type)
                 && is_home_idle(e)) {
@@ -4068,14 +4214,36 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             // одного работника (kGatherPerWorkerDay — сквозной якорь S10).
             for (int g = 0; g < kGathererGoalCount; ++g) {
                 const GathererDef& gd = kGathererDefs[g];
-                const ItemDef* idef = item_def(gd.commodity);
-                const int base = idef ? idef->value : 0;
-                if (base <= 0) continue;
-                const int have = s.inventory.count(gd.commodity);
-                const int demand =
-                    daily_demand_for(gd.commodity, s.population, homeSite,
-                                     &s.inventory);
-                const int unitPrice = stock_price(base, have, demand);
+                int unitPrice = 0;
+                if (gd.rosterYield != NPCType::Count) {
+                    // ЛОШАДЬ-ЮНИТ (вердикт 2026-09-19): существо ценится
+                    // своей строкой найма через ТУ ЖЕ кривую дефицита —
+                    // «склад» = табун, уже стоящий в гарнизоне места,
+                    // «нужда» = спины, которых просят рейсы: в поле выходит
+                    // pop >> labourShift рук, одна лошадь несёт haulMult
+                    // спин, значит табуну есть смысл расти до пул/haulMult.
+                    // Насытился — цель дешевеет, рулетка уводит руки.
+                    const NpcTypeDef& yieldRow = npc_def(gd.rosterYield);
+                    const int base = yieldRow.hireGold;
+                    if (base <= 0) continue;
+                    const int herd = count_soldiers_of_kind(
+                        s.garrison, std::uint16_t(gd.rosterYield))
+                        + horsesStanding[row];
+                    const int pool =
+                        s.population >> landmark_def(s.type).labourShift;
+                    const int backs = std::max(1, int(yieldRow.haulMult));
+                    const int wanted = std::max(1, pool / backs);
+                    unitPrice = stock_price(base, herd, wanted);
+                } else {
+                    const ItemDef* idef = item_def(gd.commodity);
+                    const int base = idef ? idef->value : 0;
+                    if (base <= 0) continue;
+                    const int have = s.inventory.count(gd.commodity);
+                    const int demand =
+                        daily_demand_for(gd.commodity, s.population, homeSite,
+                                         &s.inventory);
+                    unitPrice = stock_price(base, have, demand);
+                }
                 // МЕСТО УЖЕ ИСКАЛО — артель ЧИТАЕТ (владелец, 2026-09-18).
                 // Жилы приходят строкой описи своей округи (survey_landmark_
                 // regions на границе сезона); у леса и домашнего поля свои
@@ -4354,8 +4522,20 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             spec.homeSettlementId = s.id;
             // Души ИЗ ГАРНИЗОНА, записи как есть — роды и уровни переживают
             // вылазку; первая снятая — лицо патруля, её уровень носит лидер.
+            // Лидер вылазки — ЧЕЛОВЕК (S4: «по карте ходят только
+            // лидеры», процедурный лидер — душа с именем, не зверь): лошадь
+            // с хвоста гарнизона не может встать во главе патруля, но в
+            // ЧЛЕНЫ идёт свободно — обоз вылазки.
+            int leadSlot = -1;
+            for (int si = s.garrison.slot_count() - 1; si >= 0; --si) {
+                if (!is_monster_kind(s.garrison[si].kind)) {
+                    leadSlot = si;
+                    break;
+                }
+            }
+            if (leadSlot < 0) continue;   // a herd alone raises no patrol
             SoldierRecord lead{};
-            if (!s.garrison.pop_soul_back(lead)) continue;
+            if (!s.garrison.take_soul_at(leadSlot, lead)) continue;
             for (int t = 1; t < take; ++t) {
                 SoldierRecord rec{};
                 if (!s.garrison.pop_soul_back(rec)) break;
@@ -4444,7 +4624,7 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 if (boundary && perCrew > 0) {
                     if (auto* ro = reg.try_get<ecs::SquadRoster>(standing)) {
                         const int want = perCrew - 1;   // члены без лидера
-                        int have = ro->squad.size();
+                        int have = count_human_souls(ro->squad);
                         const int canFeed =
                             s.inventory.count_of(hunger_item_index())
                                 / kDaysPerSeason;
@@ -4461,9 +4641,23 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                             if (!ro->squad.push(rec)) break;
                             s.population -= 1;
                         }
-                        for (have = ro->squad.size(); have > want; --have) {
+                        // ССАДКА СУДИТ ЛЮДЕЙ: последняя человеческая
+                        // душа сходит в население; табун артели суду
+                        // состава не подсуден — лошадь не человек и в
+                        // want не входит (дроссель ловли — в аукционе).
+                        for (have = count_human_souls(ro->squad);
+                             have > want; --have) {
+                            int si = -1;
+                            for (int k = ro->squad.slot_count() - 1; k >= 0;
+                                 --k) {
+                                if (!is_monster_kind(ro->squad[k].kind)) {
+                                    si = k;
+                                    break;
+                                }
+                            }
                             SoldierRecord off{};
-                            if (!ro->squad.pop_soul_back(off)) break;
+                            if (si < 0 || !ro->squad.take_soul_at(si, off))
+                                break;
                             s.population += 1;
                         }
                         // Приведённый состав — приведённый обоз (squad.h):

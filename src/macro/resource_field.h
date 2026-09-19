@@ -65,6 +65,12 @@ enum class ResourceFieldId : std::uint8_t {
     Wheat = 0,   // standing-wheat potential — fertility (climate G channel)
     Fauna,       // wild headcount — biome capacity (macro/fauna.h)
     Trees,       // forest of a cell — carrier row (macro/tree_layer.h grid)
+    // ЛОШАДЬ — ЮНИТ (CANON S10, владелец 2026-09-19): the herd a cell's
+    // grass can feed — fertility-derived like wheat, healed like fauna.
+    // Placed BEFORE the vein block: resource_row_is_vein reads «Clay to the
+    // end», and a herd is not geology. v98 shifts the vein ordinals by one;
+    // old saves are worth nothing (закон P1).
+    Horses,
     Clay,        // alluvial pits — carrier row (macro/deposit_layer.h)
     Iron,        // finite mountain veins — carrier row (deposit_layer.h)
     Stone,       // quasi-infinite quarries — carrier row (deposit_layer.h)

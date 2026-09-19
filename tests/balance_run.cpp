@@ -233,7 +233,10 @@ int main(int argc, char** argv) {
         // едет»: мало рейсов или пустые сделки.
         std::fprintf(fw, "day\tpop\tcoinLandmarks\tcoinSquads\tcoinLootPool\tfamineStarts"
                          "\tstarvedPops\tminted\ttrades\ttradedValue\tgrainHolds"
-                         "\tcrewsGather\tcrewsSell\tcrewsOther\tdeserters");
+                         "\tcrewsGather\tcrewsSell\tcrewsOther\tdeserters"
+                         // ЛОШАДЬ-ЮНИТ (2026-09-19): свидетель контура —
+                         // табуны в гарнизонах и спины в отрядах, миром.
+                         "\thorsesGarr\thorsesSquads\tpastures");
         for (int c = 0; c < sm::kCommodityCount; ++c) {
             const char* id = sm::kCommodities[c].id;
             std::fprintf(fw, "\t%s_stock\t%s_gathered\t%s_produced"
@@ -308,6 +311,23 @@ int main(int argc, char** argv) {
                 coinSquads += coins_in(bag.inv, coinIdx);
                 grainHolds += bag.inv.count(grainIdx >= 0 ? "food" : "");
             }
+            long long horsesGarr = 0;
+            for (const sm::Landmark& lm : gs.landmarks) {
+                horsesGarr += sm::count_soldiers_of_kind(
+                    lm.garrison, std::uint16_t(sm::NPCType::Horse));
+            }
+            long long horsesSquads = 0;
+            for (auto [e, ro]
+                 : ecs.reg.view<sm::ecs::SquadRoster>().each()) {
+                (void)e;
+                horsesSquads += sm::count_soldiers_of_kind(
+                    ro.squad, std::uint16_t(sm::NPCType::Horse));
+            }
+            long long pastures = 0;
+            if (!features.data.empty()) {
+                for (const std::uint8_t f : features.data)
+                    if (f == sm::FT_Pasture) ++pastures;
+            }
             int crewsGather = 0, crewsSell = 0, crewsOther = 0;
             for (auto [e, kind, crt]
                  : ecs.reg.view<sm::ecs::NPCKind,
@@ -344,6 +364,8 @@ int main(int argc, char** argv) {
                          accum.mintedCoins, trades, tradedValue, grainHolds,
                          crewsGather, crewsSell, crewsOther,
                          int(gs.deserterPool.size()));
+            std::fprintf(fw, "\t%lld\t%lld\t%lld",
+                         horsesGarr, horsesSquads, pastures);
             for (int c = 0; c < sm::kCommodityCount; ++c) {
                 std::fprintf(fw, "\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld",
                              stock[c], accum.gathered[c], accum.produced[c],

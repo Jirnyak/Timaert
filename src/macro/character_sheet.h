@@ -241,6 +241,9 @@ inline constexpr RoleWeights kRoleWeights[int(NPCType::Count)] = {
     // Void and Arcane, and the deepest Spellpower in the table.
     {NPCType::Lich,         {2, 3, 6, 6, 1, 2, 2, 5},
      {0,0,0,0,0,0,2, 0,0,0,0, 1,0,0,0,3,4, 0,5, 1,4,0,0,0, 0,0,0,2, 0,0,0,3,0}},
+    // Horse — the goat's own build, a size up: body and speed, no craft.
+    {NPCType::Horse,        {4, 5, 1, 1, 4, 1, 1, 1},
+     {0,0,0,0,0,0,0, 0,0,1,0, 0,0,0,0,0,0, 1,0, 3,0,2,4,0, 3,3,0,0, 0,0,0,0,0}},
 };
 
 static_assert(rows_in_enum_order(kRoleWeights, &RoleWeights::type),

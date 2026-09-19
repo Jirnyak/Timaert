@@ -179,6 +179,10 @@ constexpr SpawnHabitatRow kSpawnHabitats[std::size_t(NPCType::Count)] = {
     // Верхушка подъёма: только шпиль. Лич — не то, на что натыкаются в
     // норе; его находят там, где мир хуже всего.
     {NPCType::Lich,       kHabSpire, -1, "demons"},
+    // Wild herds graze the open grass; weight 0 keeps them out of blind
+    // ambient rolls — the pasture crews are how the world meets them (S10).
+    {NPCType::Horse,      hab(Steppe) | hab(Meadow) | hab(Valley),
+                          -1, "wildlife"},
 };
 static_assert(rows_in_enum_order(kSpawnHabitats, &SpawnHabitatRow::type),
               "every body row states its ground — the table IS the system");

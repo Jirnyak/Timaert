@@ -637,9 +637,17 @@ int raise_deserter_bands(GameState& gs, ecs::World& w,
     // Slot 0 is the leader, always (CANON.md S4): the strongest man of the
     // group is the one the rest follow. Ties break on the earlier record so the
     // choice is deterministic.
-    int best = 0;
-    for (int i = 1; i < band.slot_count(); ++i) {
-        if (band[i].level > band[best].level) best = i;
+    // Slot 0 is the leader, always (CANON S4) — and the leader is a MAN
+    // (2026-09-19: «по карте ходят только лидеры»; a horse follows, it does
+    // not raise a band). A pool tail of nothing but beasts walks back.
+    int best = -1;
+    for (int i = 0; i < band.slot_count(); ++i) {
+        if (is_monster_kind(band[i].kind)) continue;
+        if (best < 0 || band[i].level > band[best].level) best = i;
+    }
+    if (best < 0) {
+        move_squad(pool, band);   // conservation: nobody dissolves
+        return 0;
     }
     SoldierRecord captain{};
     if (!band.take_soul_at(best, captain)) return 0;

@@ -336,7 +336,11 @@ namespace sm {
 // v97 (2026-09-19): РОСТЕР — ИНВЕНТАРЬ СУЩЕСТВ (CANON S4) — на диске
 // СЛОТ-строки {kind, level, count, entityId}, не по-душам: гарнизон в 752
 // души — два слота, не 752 записи, и int32-стак не разворачивается в стену.
-constexpr int kSaveVersion = 97;
+// v98 (2026-09-19): ЛОШАДЬ — ЮНИТ (CANON S10) — ResourceFieldId вырос
+// строкой Horses ПЕРЕД блоком жил (скар-блоки сейва сдвинулись), фича
+// FT_Pasture = байт 14, таблица NPC выросла строкой Horse. Старые сейвы
+// ничего не стоят (закон P1).
+constexpr int kSaveVersion = 98;
 
 enum class SettlementMood : std::uint8_t {
     Prosperous, Stable, Tense, Unrest, Revolt, Count

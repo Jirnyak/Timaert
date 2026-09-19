@@ -574,6 +574,7 @@ constexpr NpcLootRow kNpcLootId[std::size_t(NPCType::Count)] = {
     {NPCType::Minotaur,   nullptr},
     {NPCType::Basilisk,   nullptr},
     {NPCType::Lich,       nullptr},
+    {NPCType::Horse,      nullptr},
 };
 static_assert(rows_in_enum_order(kNpcLootId, &NpcLootRow::type),
               "kNpcLootId row order must mirror NPCType");

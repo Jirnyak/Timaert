@@ -277,6 +277,31 @@ int trees_growth_at(const MacroWorld& w, int x, int y) {
     return growth * std::min(base, 1024) / 1024;
 }
 
+// Horses: the herd a cell's GRASS can feed — the same fertility the wheat
+// row prices, read as mouths: a mouth eats kDaysPerSeason × 4 food a year
+// (one a day, the human ration the horse row shares), and the cell's grass
+// yields its wheat baseline a year — so the best land (4096) carries 32
+// head, lean land none. No new fertility door, no second constant.
+int horses_baseline(const MacroWorld& w, int x, int y) {
+    return wheat_baseline(w, x, y) / (kDaysPerSeason * 4);
+}
+
+// Horses breed where horses graze — the fauna law on the herd's own field:
+// one head per seasonal visit while at least half the 3×3 valley's capacity
+// is alive; an emptied range repopulates from its edges inward.
+int horses_growth_at(const MacroWorld& w, int x, int y) {
+    int alive = 0, cap = 0;
+    for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            cap   += horses_baseline(w, x + dx, y + dy);
+            alive += resource_field_read(w, ResourceFieldId::Horses,
+                                         x + dx, y + dy);
+        }
+    }
+    if (cap <= 0) return 0;
+    return (2 * alive >= cap) ? 1 : 0;
+}
+
 // A VEIN KIND is born where it is SCARCE (the owner's negative context) —
 // the lump its own row opens with; the walker's Geology domain owns the
 // global scarcity roll and the host-cell pick (the W2c rule as a table row).
@@ -308,6 +333,9 @@ constexpr ResourceFieldDef kResourceFields[] = {
     /* Trees */ {"trees", nullptr,
                  GrowthDomain::CarrierGrid, &trees_growth_at,
                  ResourceFieldId::Trees, &trees_read, &trees_apply, 0},
+    /* Horses */ {"horses", &horses_baseline,
+                 GrowthDomain::OwnScars, &horses_growth_at,
+                 ResourceFieldId::Horses, nullptr, nullptr, 0},
     /* Clay  */ {"clay",  nullptr,
                  GrowthDomain::None, nullptr, ResourceFieldId::Clay,
                  &deposit_read<DepositKind::Clay>,
@@ -400,9 +428,12 @@ int field_wheat_min() {
     return int(kFieldMoistureMin) * kMaxWheatStandsPerCell / 255;
 }
 
-bool plough_cell_ok(const FeatureLayer& fl, const MacroWorld& world,
-                    int x, int y, int& wheatOut, float seaLevel)
-{
+// The parcel GROUND gates, one truth for plough and fence alike (roads
+// win, water refuses, no rock terraces): what differs between a field and
+// a pasture is only WHICH row's fertility bars the gate, never the ground.
+static bool parcel_ground_ok_(const FeatureLayer& fl, const MacroWorld& world,
+                              int x, int y, float seaLevel,
+                              std::size_t& idxOut) {
     std::size_t total = 0;
     if (!FeatureLayer::cell_count_for(fl.width, fl.height, total)
         || fl.data.size() < total || !world.terrain)
@@ -420,8 +451,19 @@ bool plough_cell_ok(const FeatureLayer& fl, const MacroWorld& world,
     const float height01 = float(td.rgba[idx * 4u + 0]) / 255.0f;
     if (alpha == 0 || height01 < seaLevel) return false;   // water
     if (height01 >= kMountainBiomeLevel) return false;     // no rock terraces
+    idxOut = idx;
+    return true;
+}
+
+bool plough_cell_ok(const FeatureLayer& fl, const MacroWorld& world,
+                    int x, int y, int& wheatOut, float seaLevel)
+{
+    std::size_t idx = 0;
+    if (!parcel_ground_ok_(fl, world, x, y, seaLevel, idx)) return false;
     // The ONE fertility door: potential minus what play has taken.
-    wheatOut = resource_field_read(world, ResourceFieldId::Wheat, wx, wy);
+    wheatOut = resource_field_read(world, ResourceFieldId::Wheat,
+                                   FeatureLayer::wrap_coord(x, fl.width),
+                                   FeatureLayer::wrap_coord(y, fl.height));
     return wheatOut >= field_wheat_min();
 }
 
@@ -434,6 +476,31 @@ bool plough_field_cell(FeatureLayer& fl, const MacroWorld& world,
     const int wy = FeatureLayer::wrap_coord(y, fl.height);
     fl.data[std::size_t(wy) * std::size_t(fl.width) + std::size_t(wx)] =
         FT_Field;
+    return true;
+}
+
+bool pasture_cell_ok(const FeatureLayer& fl, const MacroWorld& world,
+                     int x, int y, int& herdOut, float seaLevel)
+{
+    // The plough's own ground gates; the bar is the HERD row's — one head
+    // must actually graze here, or the fence would enclose dust.
+    std::size_t idx = 0;
+    if (!parcel_ground_ok_(fl, world, x, y, seaLevel, idx)) return false;
+    herdOut = resource_field_read(world, ResourceFieldId::Horses,
+                                  FeatureLayer::wrap_coord(x, fl.width),
+                                  FeatureLayer::wrap_coord(y, fl.height));
+    return herdOut >= 1;
+}
+
+bool fence_pasture_cell(FeatureLayer& fl, const MacroWorld& world,
+                        int x, int y, float seaLevel)
+{
+    int herd = 0;
+    if (!pasture_cell_ok(fl, world, x, y, herd, seaLevel)) return false;
+    const int wx = FeatureLayer::wrap_coord(x, fl.width);
+    const int wy = FeatureLayer::wrap_coord(y, fl.height);
+    fl.data[std::size_t(wy) * std::size_t(fl.width) + std::size_t(wx)] =
+        FT_Pasture;
     return true;
 }
 

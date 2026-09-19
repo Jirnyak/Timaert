@@ -148,4 +148,13 @@ bool plough_cell_ok(const FeatureLayer& fl, const MacroWorld& world,
 bool plough_field_cell(FeatureLayer& fl, const MacroWorld& world,
                        int x, int y, float seaLevel = 0.40f);
 
+// The pasture's same two doors (CANON S10 «ЛОШАДЬ — ЮНИТ»): the plough
+// gates with the HERD row's fertility bar, laying FT_Pasture. There is no
+// worldgen stamp for pastures — a crew raises the first one the day the
+// horse goal wins its auction, which is the same bootstrap every mine has.
+bool pasture_cell_ok(const FeatureLayer& fl, const MacroWorld& world,
+                     int x, int y, int& herdOut, float seaLevel = 0.40f);
+bool fence_pasture_cell(FeatureLayer& fl, const MacroWorld& world,
+                        int x, int y, float seaLevel = 0.40f);
+
 } // namespace sm

@@ -680,6 +680,111 @@ void test_the_miner_works_the_vein() {
           "no deposit layer => no honest ore, and none minted from nothing");
 }
 
+// ЛОШАДЬ — ЮНИТ, А НЕ ПРЕДМЕТ (CANON S10, владелец 2026-09-19). Пинится
+// ровно новая колонка закона — «выход ложится в РОСТЕР, а не в сумку» — и
+// её сохранение: поле теряет ровно столько голов, сколько встало в отряд,
+// сумка при этом пуста, а обоз растёт спинами пойманных (haulMult 8).
+// Бутстрап тот же, что у шахты над жилой: первый день артель поднимает
+// ПАСТБИЩЕ, ловля — следующим днём.
+void test_the_catch_lands_in_the_roster() {
+    GameState gs{};
+    gs.mapW = kMap;
+    gs.mapH = kMap;
+    Landmark vil{};
+    vil.type = LandmarkType::Village;
+    vil.id = 3;
+    vil.x = 10;
+    vil.y = 10;
+    vil.population = 40;
+    gs.landmarks.push_back(vil);
+
+    FeatureLayer features;
+    features.resize(kMap, kMap);
+
+    // Fertile ground everywhere: the herd baseline is the wheat row's own
+    // fertility read as mouths, so grass is what a pasture needs.
+    TerrainData terrain;
+    terrain.width = kMap;
+    terrain.height = kMap;
+    terrain.rgba.assign(std::size_t(kMap) * kMap * 4u, 128);
+    for (std::size_t i = 1; i < terrain.rgba.size(); i += 4) {
+        terrain.rgba[i] = 255;   // G = fertility
+    }
+
+    ecs::World w;
+    auto& reg = w.reg;
+    const auto e = reg.create();
+    reg.emplace<ecs::MacroCell>(e, ecs::cell_index(10, 10, kMap));
+    reg.emplace<ecs::MacroVisual>(e, 10.0f, 10.0f, 0.0f);
+    reg.emplace<ecs::NPCKind>(e, std::uint16_t(NPCType::Peasant),
+                              std::uint16_t(faction_index("timaert")));
+    ecs::MacroNpcRuntime prt{};
+    prt.homeSettlementId = vil.id;
+    prt.targetSettlementId = -1;
+    prt.targetX = 10.0f;
+    prt.targetY = 10.0f;
+    prt.state = std::uint8_t(NPCState::Idle);
+    prt.stateTimer = 0;
+    ecs::Pools pools{};
+    refresh_body_from_sheet(
+        pools, &prt,
+        make_character_sheet(NPCType::Peasant, 2, leader_sheet_seed(77u)),
+        NPCType::Peasant);
+    pools.sp = pools.maxSp;
+    prt.errandVerb = std::uint8_t(ErrandVerb::Gather);
+    prt.errandObject = std::uint32_t(gather_goal_row(ResourceFieldId::Horses));
+    prt.carryPerSoul = 40.0f;
+    prt.carryCap = 40.0f;
+    reg.emplace<ecs::MacroNpcRuntime>(e, prt);
+    reg.emplace<ecs::MacroSpawnId>(e, 77u);
+    reg.emplace<ecs::NpcLevel>(e, std::int16_t(2));
+    pools.hp = pools.maxHp = 20;
+    reg.emplace<ecs::Pools>(e, pools);
+    reg.emplace<ecs::SquadRoster>(e);
+    reg.emplace<ecs::NpcInventory>(e);
+
+    MacroNpcAiRuntime rt{};
+    reset_macro_npc_ai_runtime(rt, 77u);
+    for (int i = 0; i < 400; ++i) {
+        MacroWorld mw{.gs = &gs, .world = &w, .terrain = &terrain,
+                      .features = &features};
+        tick_macro_npc_ai(mw, rt, kAiTicks, /*allowAutoBattle=*/true);
+    }
+
+    const SoldierSquad& roster = reg.get<ecs::SquadRoster>(e).squad;
+    const int caught = count_soldiers_of_kind(
+        roster, std::uint16_t(NPCType::Horse));
+    const ResourceGrid& herdScars =
+        gs.resourceScarCells[std::size_t(ResourceFieldId::Horses)];
+    int lost = 0;
+    herdScars.for_each_live([&](std::uint32_t, std::int32_t scar) {
+        lost += int(scar);
+    });
+
+    CHECK(caught > 0, "the catch landed in the ROSTER as souls");
+    CHECK(lost == caught,
+          "CONSERVATION: heads the herd field lost == souls that joined");
+    CHECK(roster.slot_count() == 1 && roster[0].entityId == 0,
+          "mass beasts are ONE generic stack — the slot law, not a wall");
+    CHECK(gs.landmarks[0].inventory.count("food") == 0
+              && reg.get<ecs::NpcInventory>(e).inv.count("food") == 0,
+          "a creature yield rides NO bag: nothing landed in the store");
+    // A pasture rose first — the crew fences before it catches (S10 «фичи
+    // создаются сквадами»), and the world remembers it as a Built row.
+    int pastures = 0;
+    for (const std::uint8_t f : features.data)
+        if (f == FT_Pasture) ++pastures;
+    CHECK(pastures == 1, "the crew fenced exactly ONE pasture to work");
+    CHECK(!gs.builtFeatures.empty(),
+          "the fence is WORLD TRUTH — it rides the save as a Built row");
+    // The backs GREW by the catch: refresh_squad_carry weighs each soul by
+    // its own haulMult column, so a horse in the roster hauls like eight men.
+    const auto& rtNow = reg.get<ecs::MacroNpcRuntime>(e);
+    CHECK(rtNow.carryCap
+              >= rtNow.carryPerSoul * (1.0f + 8.0f * float(caught)) - 0.5f,
+          "каждая пойманная лошадь — восемь спин в обозе (haulMult)");
+}
+
 int main() {
     test_the_chop_is_real_and_the_haul_comes_home();
     // Was DEFINED and never CALLED — found the day -Wunused-function came
@@ -692,5 +797,6 @@ int main() {
     test_the_mine_runs_while_the_player_is_away();
     test_agent_memory_is_bounded_and_current();
     test_the_vendor_sells_at_the_nearest_city();
+    test_the_catch_lands_in_the_roster();
     return sm::test::report("woodcutter_gather_test");
 }

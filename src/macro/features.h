@@ -46,6 +46,9 @@ enum FeatureType : std::uint8_t {
     // «4 разных шахты — разные типы, множим сколько угодно» — a kind is a row
     // here and a row in the deposit registry, and no code grows.
     FT_CopperMine = 12, FT_GoldMine = 13,
+    // ЛОШАДЬ — ЮНИТ (CANON S10, 2026-09-19): the fenced parcel that works
+    // the HERD row — the plough's exact sibling, sown with horses.
+    FT_Pasture = 14,
     FT_Count,
 };
 
@@ -71,6 +74,7 @@ static_assert(FT_ClayPit == 5 && FT_IronMine == 6 && FT_Quarry == 7
                   && FT_SilverMine == 8,
               "FeatureType byte layout (mines, v71)");
 static_assert(FT_WoodBridge == 9, "FeatureType byte layout (v72)");
+static_assert(FT_Pasture == 14, "FeatureType byte layout (v98)");
 static_assert(FT_Port == 10 && FT_BeachedShip == 11,
               "FeatureType byte layout (ships, v74)");
 static_assert(FT_CopperMine == 12 && FT_GoldMine == 13,
@@ -185,6 +189,10 @@ inline constexpr FeatureDef kFeatureDefs[std::size_t(FT_Count)] = {
     // their own rows.
     {FT_CopperMine, 0.0f, 1.00f, 0.0f, ResourceFieldId::Copper, kBuildsPerDay},
     {FT_GoldMine,   0.0f, 1.00f, 0.0f, ResourceFieldId::Gold,   kBuildsPerDay},
+    // The pasture carries the ploughed parcel's own columns — worked ground,
+    // waist-high grass hides nothing, tended not garrisoned — and works the
+    // herd row instead of the arable one.
+    {FT_Pasture,  1.8f, 1.00f, 0.0f, ResourceFieldId::Horses, kBuildsPerDay},
 };
 static_assert(rows_in_enum_order(kFeatureDefs, &FeatureDef::type),
               "kFeatureDefs row order must mirror FeatureType — a new "

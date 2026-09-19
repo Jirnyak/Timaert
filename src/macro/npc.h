@@ -73,6 +73,11 @@ enum class NPCType : std::uint8_t {
     // rows is unmoved (verified row by row before authoring).
     GiantRat, CaveBat, Kobold, CaveSpider, Imp, Zombie, Orc, Ghoul, Harpy,
     Cultist, Gargoyle, Wraith, Ogre, Minotaur, Basilisk, Lich,
+    // ЛОШАДЬ — ЮНИТ, А НЕ ПРЕДМЕТ (CANON S10, владелец 2026-09-19): the
+    // pasture's yield is a CREATURE into the roster, so it is a row of THIS
+    // table like every creature is — it eats by its upkeep column, hauls by
+    // its haulMult, sells through the one hire door. Appended.
+    Horse,
     Count,
 };
 
@@ -1003,6 +1008,29 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
           "Breathe. It is a habit you will lose.",
           "Come closer. I want to see it happen."}}, 3,
     },
+    // Horse — the roster's beast of burden (CANON S10 «ЛОШАДЬ — ЮНИТ»).
+    // A sturdy flighty grazer: hooves 1d4, faster than any march. It EATS
+    // (upkeep 0 = a mouth on the board law, no wage — the column humans
+    // use, the beast default kNpcUpkeepNone is exactly what this row must
+    // NOT say), and it is hireable: the town's herd sells through the one
+    // hire door, no horse-shop path.
+    {
+        NPCType::Horse, "horse", "Horse", SpriteId::Deer, 1,
+        AIBehaviour::Flee, {40, {1,4}, 2.2f, 1.2f, 1.6f, "Hrs"},
+        /*upkeep*/0, /*hireable*/true, /*xp = 5*(baseLevel+1)*/10,
+        /*weight*/0, /*loot*/nullptr, /*radius*/0.8f,
+        {{}}, 0, {{}}, 0,
+        /*lightRadius=*/0.0f, /*lightIntensity=*/0.0f,
+        /*lightR=*/0.0f, /*lightG=*/0.0f, /*lightB=*/0.0f,
+        /*lightHeight=*/0.0f,
+        // One horse carries eight men's backs — the pack saddle against the
+        // rucksack (a man hauls ~15 kg on foot, a pack horse ~120).
+        /*haulMult=*/8.0f,
+        /*armor=*/{},
+        // The price of the backs it replaces: eight peasant hires (30 each,
+        // the row above) — dearer than a soldier, cheaper than a house.
+        /*hireGold=*/240,
+    },
 };
 static_assert(rows_in_enum_order(kNpcTypeDefs, &NpcTypeDef::type),
               "kNpcTypeDefs row order must mirror NPCType");
@@ -1115,6 +1143,7 @@ inline constexpr NpcPurseRow kNpcPurse[std::size_t(NPCType::Count)] = {
     {NPCType::Minotaur,   0, 0},
     {NPCType::Basilisk,   0, 0},
     {NPCType::Lich,       8, 40},
+    {NPCType::Horse,      0, 0},
 };
 static_assert(rows_in_enum_order(kNpcPurse, &NpcPurseRow::type),
               "kNpcPurse row order must mirror NPCType");
@@ -1186,6 +1215,7 @@ inline constexpr NpcMapColorRow kNpcMapColor[std::size_t(NPCType::Count)] = {
     {NPCType::Minotaur,     0x6A3A2Au},
     {NPCType::Basilisk,     0x3A6A4Au},
     {NPCType::Lich,         0xC0D0B0u},
+    {NPCType::Horse,        0x8A6A42u},
 };
 static_assert(rows_in_enum_order(kNpcMapColor, &NpcMapColorRow::type),
               "kNpcMapColor row order must mirror NPCType");
@@ -1250,6 +1280,19 @@ inline int soldier_upkeep(const SoldierRecord& s) {
 }
 inline int soldier_upkeep(const SoldierSlot& s) {
     return soldier_upkeep(s.kind, s.level);
+}
+
+// The roster's PEOPLE — the souls that are hands, mouths of the labour
+// ledger and subjects of the crew суд. A beast in the roster is a BACK
+// (haulMult) and a mouth (upkeep column), never a hand: a horse does not
+// mine, does not count toward a crew's want, and must not dissolve into a
+// town's population as a person.
+inline int count_human_souls(const SoldierSquad& squad) {
+    int n = 0;
+    for (const SoldierSlot& s : squad) {
+        if (!is_monster_kind(s.kind)) n += int(s.count);
+    }
+    return n;
 }
 
 // Upkeep is MAINTENANCE, not a deal (owner 2026-09-17, сессия сезонов): the

@@ -84,6 +84,7 @@ SubworldMode resolve_mode(const CellContext& ctx) {
     if (feature == FT_Bridge)     return SubworldMode::Road;
     if (feature == FT_WoodBridge) return SubworldMode::Road;
     if (feature == FT_Field)    return SubworldMode::Field;
+    if (feature == FT_Pasture)  return SubworldMode::Field;
     if (ctx.biome == Biome::Mountain) return SubworldMode::Mountain;
     if (ctx.biome == Biome::Water)    return SubworldMode::Water;
     if (ctx.biome == Biome::Swamp)    return SubworldMode::Swamp;
