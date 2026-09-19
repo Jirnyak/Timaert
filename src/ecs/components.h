@@ -397,6 +397,16 @@ struct MacroNpcRuntime {
     // 2026-08-27: «перегруз универсальный всем» — a laden squad marches like a
     // laden man, and the pack a caravan carries is finally part of the price
     // of carrying it.
+    // СПИНА ОДНОЙ ДУШИ и СУММА СПИН — два числа, потому что второе ВЫВОДИТСЯ
+    // из первого и живого ростера (CANON S10: «берёт по своей
+    // грузоподъёмности — сумма листов членов»), а лист лидера меняется реже,
+    // чем состав. `carryPerSoul` — спина лидера по его листу и колонке его
+    // строки; `carryCap` — весь обоз сквада, пересчитывается дверью
+    // refresh_squad_carry в КАЖДОМ месте, где состав меняется. До 2026-09-19
+    // сумма считалась ОДИН раз при спавне и молча врала после любого добора,
+    // ссадки и дезертирства, а колонка haulMult душ не читалась вовсе — из-за
+    // чего лошадь в ростере не дала бы ни килограмма.
+    float         carryPerSoul = 0.0f;
     float         carryCap = 0.0f;
     std::int16_t  overloadCost = 0;
     // Fractional CELLS banked toward the next whole step: the march is quoted

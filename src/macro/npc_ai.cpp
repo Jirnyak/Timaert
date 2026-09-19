@@ -3665,6 +3665,9 @@ int squad_season_window(MacroWorld& mw, int day) {
             roster.squad.remove_at(last);
             ++deserted;
         }
+        // Состав изменился — обоз заново (squad.h): ушедшая душа унесла и
+        // свою спину.
+        refresh_squad_carry(*mw.world, e);
     }
     return deserted;
 }
@@ -4454,6 +4457,9 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                             ro->squad.remove_at(ro->squad.size() - 1);
                             s.population += 1;
                         }
+                        // Приведённый состав — приведённый обоз (squad.h):
+                        // добранная душа несёт свою спину, ссаженная уносит.
+                        refresh_squad_carry(*mw.world, standing);
                     }
                 }
                 continue;

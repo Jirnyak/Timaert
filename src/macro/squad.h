@@ -123,11 +123,44 @@ inline void refresh_body_from_sheet(ecs::Pools& pools,
             .moveSpeedPct)
         / 100.0f;
     const float haul = npc_def(type).haulMult;
-    rt->carryCap = (standing
+    rt->carryPerSoul = (standing
                         ? get_carry_capacity(sheet.attributes, sheet.skills,
                                              *standing)
                         : get_carry_capacity(sheet.attributes, sheet.skills))
                    * (haul > 0.0f ? haul : 1.0f);
+    // Лист обновился — обоз считается от него заново; состав добавит своё
+    // через refresh_squad_carry (эта дверь листа ростера не видит).
+    rt->carryCap = rt->carryPerSoul;
+}
+
+// ── ОБОЗ СКВАДА = СУММА СПИН, КАЖДАЯ ПО СВОЕЙ СТРОКЕ ─────────────────────
+// CANON S10 дословно: «берёт по своей грузоподъёмности — сумма листов
+// членов». Слагаемое души = спина лидера × (haulMult ЕЁ строки / haulMult
+// строки лидера): у крестьянина это ровно одна спина, у тяглового рода —
+// столько, сколько говорит его колонка. Отсюда даром получается лошадь в
+// ростере (владелец 2026-09-19): она не особый случай, а строка с большим
+// haulMult, и её вклад считает тот же закон.
+//
+// ПОЧЕМУ ДВЕРЬ, А НЕ ОДИН РАСЧЁТ ПРИ СПАВНЕ: состав ДЫШИТ (S19.2 — добор и
+// ссадка на границе, дезертирство 1/8, потери в поле). Кэш, посчитанный при
+// рождении, после первого же добора врёт — и врёт молча, потому что вес
+// груза он всё равно как-то ограничивает. Каждое место, меняющее ростер,
+// обязано позвать эту дверь.
+inline void refresh_squad_carry(ecs::World& w, entt::entity leader) {
+    auto* rt = w.reg.try_get<ecs::MacroNpcRuntime>(leader);
+    const auto* kind = w.reg.try_get<ecs::NPCKind>(leader);
+    if (!rt || !kind) return;
+    if (rt->carryPerSoul <= 0.0f) rt->carryPerSoul = rt->carryCap;
+    const float leaderHaul = npc_def(NPCType(kind->type)).haulMult;
+    const float lh = leaderHaul > 0.0f ? leaderHaul : 1.0f;
+    float souls = 1.0f;   // лидер — своя спина, она уже в carryPerSoul
+    if (const auto* ro = w.reg.try_get<ecs::SquadRoster>(leader)) {
+        for (const SoldierRecord& m : ro->squad) {
+            const float h = npc_def(soldier_npc_type(m)).haulMult;
+            souls += (h > 0.0f ? h : 1.0f) / lh;
+        }
+    }
+    rt->carryCap = rt->carryPerSoul * souls;
 }
 
 // Owner ruling 3 (macrosim.md): kill the leader and the squad lives on,

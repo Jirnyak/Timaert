@@ -591,15 +591,12 @@ entt::entity spawn_squad(GameState& gs, ecs::World& w,
         }
     }
     // The squad's carry is the SUM of its backs (CANON S10, literal: «берёт
-    // по своей грузоподъёмности — СУММА ЛИСТОВ ЧЛЕНОВ»). The leader's cache
-    // holds his own back; every roster soul adds one like it — a crew of
-    // sixty hauls sixty loads at the squad's one SP price, which is what
-    // 119 one-man handcarts crawling under a village's whole surplus
-    // measured out as the alternative (balance_run 2026-08-30).
-    if (roster.squad.size() > 0) {
-        auto& lrt = w.reg.get<ecs::MacroNpcRuntime>(leader);
-        lrt.carryCap *= float(1 + roster.squad.size());
-    }
+    // по своей грузоподъёмности — СУММА ЛИСТОВ ЧЛЕНОВ») — through THE door
+    // (squad.h refresh_squad_carry), which weighs every soul by ITS OWN row's
+    // haulMult column. The inline `*= 1 + size` that stood here counted heads
+    // and was computed once: a horse in the roster added nothing, and any
+    // later добор/ссадка/дезертирство left the number lying.
+    refresh_squad_carry(w, leader);
 
     // A route, only if the spec actually gives one (opt-in like the
     // component; its presence is the order).
