@@ -227,8 +227,13 @@ int main(int argc, char** argv) {
                          outDir.c_str());
             return 1;
         }
+        // ЗОНД РАСПРЕДЕЛЕНИЯ ПОРУЧЕНИЙ (2026-09-19): куда рулетка дела
+        // артелей — счёт живых крестьянских крю по глаголу поручения, плюс
+        // пул дезертиров (кровь закона 1/8). Ответ на «почему зерно не
+        // едет»: мало рейсов или пустые сделки.
         std::fprintf(fw, "day\tpop\tcoinLandmarks\tcoinSquads\tcoinLootPool\tfamineStarts"
-                         "\tstarvedPops\tminted\ttrades\ttradedValue\tgrainHolds");
+                         "\tstarvedPops\tminted\ttrades\ttradedValue\tgrainHolds"
+                         "\tcrewsGather\tcrewsSell\tcrewsOther\tdeserters");
         for (int c = 0; c < sm::kCommodityCount; ++c) {
             const char* id = sm::kCommodities[c].id;
             std::fprintf(fw, "\t%s_stock\t%s_gathered\t%s_produced"
@@ -303,6 +308,21 @@ int main(int argc, char** argv) {
                 coinSquads += coins_in(bag.inv, coinIdx);
                 grainHolds += bag.inv.count(grainIdx >= 0 ? "food" : "");
             }
+            int crewsGather = 0, crewsSell = 0, crewsOther = 0;
+            for (auto [e, kind, crt]
+                 : ecs.reg.view<sm::ecs::NPCKind,
+                                sm::ecs::MacroNpcRuntime>().each()) {
+                (void)e;
+                if (kind.type != std::uint16_t(sm::NPCType::Peasant))
+                    continue;
+                if (crt.errandVerb == std::uint8_t(sm::ErrandVerb::Gather))
+                    ++crewsGather;
+                else if (crt.errandVerb
+                         == std::uint8_t(sm::ErrandVerb::Sell))
+                    ++crewsSell;
+                else
+                    ++crewsOther;
+            }
             // The day's DEALS, read off the chronicle ring by sequence — the
             // same shop window the witcher asks (S20.1): every Traded fact
             // since yesterday's cursor.
@@ -317,11 +337,13 @@ int main(int argc, char** argv) {
 
             std::fprintf(fw,
                          "%d\t%lld\t%lld\t%lld\t%lld\t%d\t%d\t%lld\t%lld"
-                         "\t%lld\t%lld",
+                         "\t%lld\t%lld\t%d\t%d\t%d\t%d",
                          gs.worldTime.day(), popTotal, coinLm, coinSquads,
                          (long long)gs.lootPoolValue,
                          accum.famineStarts, accum.starvedPops,
-                         accum.mintedCoins, trades, tradedValue, grainHolds);
+                         accum.mintedCoins, trades, tradedValue, grainHolds,
+                         crewsGather, crewsSell, crewsOther,
+                         int(gs.deserterPool.size()));
             for (int c = 0; c < sm::kCommodityCount; ++c) {
                 std::fprintf(fw, "\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld",
                              stock[c], accum.gathered[c], accum.produced[c],
