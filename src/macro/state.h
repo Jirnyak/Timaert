@@ -333,7 +333,10 @@ namespace sm {
 // просто товар (12 фракционных монет данными, ворота и список валют мертвы);
 // слой разработки + счётчики кораблей полем (shipsAtCell/resourceScars
 // умирают); металлы медь/золото. Старые сейвы ничего не стоят (закон P1).
-constexpr int kSaveVersion = 96;
+// v97 (2026-09-19): РОСТЕР — ИНВЕНТАРЬ СУЩЕСТВ (CANON S4) — на диске
+// СЛОТ-строки {kind, level, count, entityId}, не по-душам: гарнизон в 752
+// души — два слота, не 752 записи, и int32-стак не разворачивается в стену.
+constexpr int kSaveVersion = 97;
 
 enum class SettlementMood : std::uint8_t {
     Prosperous, Stable, Tense, Unrest, Revolt, Count

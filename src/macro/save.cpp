@@ -36,7 +36,8 @@ constexpr std::uint32_t kMaxMarkers = 16384u;
 constexpr std::uint32_t kMaxQuests = 4096u;
 // (the field caps live with the rows: macro/world_fields.cpp)
 constexpr std::uint32_t kMaxQuestParts = 4096u;
-constexpr std::uint32_t kMaxSoldiers = 8192u;
+// (kMaxSoldiers 8192 died with v97: the disk row is a SLOT now, and the
+// slot cap is the roster's own kMaxSquadSlots — one number, one home.)
 // The macro-ECS snapshot (v23): one record per living macro NPC. The cap is
 // the owner's macro-squad ceiling — the same golden 2^14 the subworld uses.
 constexpr std::uint32_t kMaxMacroNpcs = 16384u;
@@ -356,44 +357,45 @@ void read_inventory(Reader& r, Inventory& inv) {
     }
 }
 
-// The soldier-row loop, shared by every roster the save carries: the player's
+// The roster loop, shared by every roster the save carries: the player's
 // army, the deserter pool, garrisons, and the macro snapshot's squad rosters.
-// The roster on DISK stays count-prefixed and only as long as the squad
-// actually is: the in-memory form is a flat 1024-slot array (macro/army.h), and
-// writing its empty tail would put megabytes of zeroes in every save for
-// nothing.
+// On DISK the roster is its SLOTS (v97, CANON S4 — the same stack law the
+// in-memory form obeys): count-prefixed slot rows, so a thousand-soul
+// generic stack is one 12-byte row, never a wall of per-soul records.
 void write_squad(Writer& w, const SoldierSquad& squad) {
-    if (!w.count(std::size_t(squad.size()), kMaxSoldiers)) return;
-    for (const SoulRef soul : squad.souls()) {
-        if (!valid_npc_kind(soul.kind)) {
+    if (!w.count(std::size_t(squad.slot_count()), kMaxSquadSlots)) return;
+    for (const SoldierSlot& s : squad) {
+        if (!valid_npc_kind(s.kind)) {
             w.ok = false;
             return;
         }
-        const SoldierRecord normalized =
-            make_soldier(soul.kind, soul.level, soul.entityId);
-        w.pod(normalized.entityId);
-        w.pod(normalized.kind);
-        w.pod(normalized.level);
+        w.pod(s.kind);
+        w.pod(s.level);
+        w.pod(s.count);
+        w.pod(s.entityId);
     }
 }
 
 void read_squad(Reader& r, SoldierSquad& squad) {
     std::uint32_t n = 0;
-    if (!read_count(r, n, kMaxSoldiers)) return;
+    if (!read_count(r, n, std::uint32_t(kMaxSquadSlots))) return;
     squad.clear();
     for (std::uint32_t i = 0; i < n && r.ok; ++i) {
-        SoldierRecord s{};
-        r.pod(s.entityId);
+        SoldierSlot s{};
         r.pod(s.kind);
         r.pod(s.level);
+        r.pod(s.count);
+        r.pod(s.entityId);
         if (!r.ok) break;
-        if (!valid_npc_kind(s.kind) || s.level <= 0) {
+        // A slot that breaks the roster's own invariants (army.h: levels
+        // are live, counts positive, a storied soul is exactly one) is a
+        // save from a different game: refuse it loudly.
+        if (!valid_npc_kind(s.kind) || s.level <= 0 || s.count <= 0
+            || (s.entityId != 0 && s.count != 1)) {
             r.ok = false;
             return;
         }
-        // A save that names more men than a squad can hold is a save from a
-        // different game: refuse it loudly rather than keep what fits.
-        if (!squad.push(make_soldier(s.kind, s.level, s.entityId))) {
+        if (!squad.push_slot(s)) {
             r.ok = false;
             return;
         }

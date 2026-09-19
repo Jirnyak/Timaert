@@ -126,6 +126,12 @@ struct SoldierRecord {
     std::int16_t  level    = 1;
 };
 
+inline int normalize_soldier_level(int level) {
+    if (level < 1) return 1;
+    if (level > kMaxSoldierLevel) return kMaxSoldierLevel;
+    return level;
+}
+
 inline bool operator==(const SoldierRecord& a, const SoldierRecord& b) {
     return a.entityId == b.entityId && a.kind == b.kind && a.level == b.level;
 }
@@ -245,6 +251,7 @@ struct SoldierSquad {
     // int32 overflow of the stack.
     bool push_stack(std::uint16_t kind, std::int16_t level, std::int32_t n) {
         if (n <= 0) return false;
+        level = std::int16_t(normalize_soldier_level(level));
         for (int i = 0; i < slotCount; ++i) {
             SoldierSlot& s = slots[std::size_t(i)];
             if (s.entityId != 0 || s.kind != kind || s.level != level)
@@ -264,8 +271,9 @@ struct SoldierSquad {
     bool push(const SoldierRecord& s) {
         if (s.entityId == 0) return push_stack(s.kind, s.level, 1);
         if (full()) return false;
-        slots[std::size_t(slotCount++)] =
-            SoldierSlot{s.kind, s.level, 1, s.entityId};
+        slots[std::size_t(slotCount++)] = SoldierSlot{
+            s.kind, std::int16_t(normalize_soldier_level(s.level)), 1,
+            s.entityId};
         return true;
     }
 
@@ -275,7 +283,9 @@ struct SoldierSquad {
         if (s.count <= 0) return false;
         if (s.entityId == 0) return push_stack(s.kind, s.level, s.count);
         if (full()) return false;
-        slots[std::size_t(slotCount++)] = s;
+        slots[std::size_t(slotCount++)] = SoldierSlot{
+            s.kind, std::int16_t(normalize_soldier_level(s.level)), 1,
+            s.entityId};
         return true;
     }
 
@@ -317,12 +327,6 @@ struct SoldierSquad {
 };
 
 inline SoldierSquad default_squad() { return {}; }
-
-inline int normalize_soldier_level(int level) {
-    if (level < 1) return 1;
-    if (level > kMaxSoldierLevel) return kMaxSoldierLevel;
-    return level;
-}
 
 inline SoldierRecord make_soldier(std::uint16_t kind, int level,
                                   std::uint32_t entityId) {
