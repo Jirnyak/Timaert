@@ -427,6 +427,66 @@ void test_dungeon_population_regrows_like_fauna() {
           "the born mean is the regrow ceiling");
 }
 
+// ── ПОТОЛОК ГАРНИЗОНА — ФУНКЦИЯ КОНТЕКСТА (CANON S4, 2026-09-19) ─────────
+// Цель набора была только целью НАБОРА: стойло, растущее двухтактным
+// обозом, не резалось вовсе (4 230 голов за 128 дней, монотонно). Потолок =
+// население >> shift + «место кормит тех, кто его стоит» (богатство /
+// сезон содержания стража). Излишек снимается со СЛАБЕЙШИХ; куда — решает
+// СТРОКА: человек в пул дезертиров, зверь по тегу Mount под нож — мясо
+// гасит долг места той же дверью гашения (S10).
+void test_garrison_ceiling_trims_the_surplus() {
+    sm::GameState gs{};
+    gs.mapW = 64;
+    gs.mapH = 64;
+    sm::chronicle_init(gs.chronicle, gs.mapW, gs.mapH);
+    sm::Landmark v{};
+    v.type = sm::LandmarkType::Village;
+    v.id = 1;
+    v.name = "Stable";
+    v.population = 30;   // потолок населения: 30 >> 3 = 3 души
+    v.x = 8; v.y = 8;
+    // Богатства нет — потолок только населенческий. Стойло переполнено:
+    // 4 стража (найм 30) + 8 лошадей (найм 240) при потолке 3.
+    v.garrison.push_stack(std::uint16_t(sm::NPCType::Guard), 3, 4);
+    v.garrison.push_stack(std::uint16_t(sm::NPCType::Horse), 1, 8);
+    gs.landmarks.push_back(v);
+
+    sm::WorldTickRuntime runtime{};
+    sm::reset_world_tick_runtime(runtime, 7u);
+    runtime.pendingDailyTicks = 1;   // день 1 = граница: счёт выставлен
+    runtime.nextDailyTickDay = 1;
+    sm::process_world_daily_ticks(gs, runtime, 64);
+
+    sm::Landmark& out = gs.landmarks[0];
+    CHECK(sm::total_soldiers(out.garrison) == 3,
+          "the surplus above the context ceiling is gone");
+    // Слабейшие первыми: вся стража (30) ушла раньше первой лошади (240).
+    CHECK(sm::count_soldiers_of_kind(
+              out.garrison, std::uint16_t(sm::NPCType::Guard)) == 0,
+          "the cheapest rows are cut first — no guard outlived a horse");
+    CHECK(sm::count_soldiers_of_kind(
+              out.garrison, std::uint16_t(sm::NPCType::Horse)) == 3,
+          "the ceiling keeps exactly what the place is worth");
+    // Люди — в пул дезертиров (плюс один харчевой ходок окна содержания —
+    // голодный гарнизон терял 1/8 и до потолка, тот закон не тронут).
+    CHECK(sm::count_soldiers_of_kind(
+              gs.deserterPool, std::uint16_t(sm::NPCType::Guard)) == 4,
+          "the cut men swell the deserter pool, they do not evaporate");
+    // Зверь — под нож по своей стоимости, и мясо платит по счёту В ТУ ЖЕ
+    // МИНУТУ (S10): на полке ноль, долг упал ровно на стоимость туш.
+    const int breadValue = sm::item_def("bread")->value;
+    const int meatPerHorse =
+        sm::hire_price_for(std::uint16_t(sm::NPCType::Horse), 1) / breadValue;
+    const int bill = 30 * sm::kDaysPerSeason;
+    const int debtNow =
+        out.needDebt[sm::commodity_index("bread")];
+    CHECK(debtNow < bill, "the knife fed the bill");
+    CHECK((bill - debtNow) % meatPerHorse == 0,
+          "the bill fell by whole carcasses, valued by the one price law");
+    CHECK(out.inventory.count("bread") == 0,
+          "meat above nothing: the hungry bill ate every unit on the spot");
+}
+
 int main() {
     test_garrison_never_exceeds_its_cap();
     test_dungeon_population_regrows_like_fauna();
@@ -436,6 +496,7 @@ int main() {
     test_day_rollover_queues_budgeted_daily_tick();
     test_daily_processing_applies_player_upkeep_and_age();
     test_a_famine_is_recorded_once_when_it_begins();
+    test_garrison_ceiling_trims_the_surplus();
     test_population_dies_honestly_to_zero();
     return sm::test::report("world_tick_parity_test");
 }

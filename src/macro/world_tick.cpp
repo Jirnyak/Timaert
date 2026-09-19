@@ -200,6 +200,8 @@ void relay_econ_fact_(void* user, const EconFact& fact) {
 // bodies below tick_settlements_, shared by both loops.
 void garrison_upkeep_(GameState& gs, Landmark& s, int day);
 void garrison_recruit_(GameState& gs, Landmark& s, WorldTickRuntime& runtime);
+void garrison_trim_(GameState& gs, Landmark& s,
+                    EconFactSink sink, void* user);
 
 void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
                        EconFactSink sink, void* user) {
@@ -254,6 +256,7 @@ void tick_settlements_(GameState& gs, int day, WorldTickRuntime& runtime,
         }
 
         garrison_recruit_(gs, s, runtime);
+        garrison_trim_(gs, s, rs, ru);
     }
 }
 
@@ -333,6 +336,78 @@ void garrison_recruit_(GameState& gs, Landmark& s,
     s.population = std::max(0, s.population - taken);
 }
 
+// ── ПОТОЛОК ГАРНИЗОНА — ФУНКЦИЯ КОНТЕКСТА МЕСТА (CANON S4, 2026-09-19) ──
+//
+// Население даёт цель набора (population >> garrisonShift — прежний закон,
+// теперь он же нижняя половина потолка), богатство держит охрану СВЕРХ неё:
+// «место кормит тех, кто его стоит» — столько душ, скольким склад оплатит
+// сезон содержания базового стража, той же арифметикой, что окно
+// garrison_upkeep_ (харч полцены + жалование полцены). Ни одной новой
+// константы: обе половины выведены из уже живущих чисел (S26).
+int garrison_cap_(const Landmark& s) {
+    const ItemDef* bread = item_def_at(hunger_item_index());
+    const int board = (kDaysPerSeason >> 1)
+                    * (bread && bread->value > 0 ? bread->value : 1);
+    const int wage =
+        (npc_def(NPCType::Guard).upkeepGoldPerDay * kDaysPerSeason) >> 1;
+    const int perSoulSeason = std::max(1, board + wage);
+    return garrison_target_strength(s.type, s.population)
+         + inventory_value(s.inventory) / perSoulSeason;
+}
+
+// ИЗЛИШЕК СНИМАЕТСЯ СО СЛАБЕЙШИХ (CANON S4, вердикт 2026-09-19):
+// прежний garrison_target_strength был только целью НАБОРА — гарнизон,
+// выросший иначе (двухтактный обоз ставит в стойло табун), не резался
+// вовсе, и лошади копились без предела (замер: 4 230 голов за 128 дней,
+// монотонно). Куда девается снятый — решает его СТРОКА, а не ветка:
+// зверь по тегу Mount идёт ПОД НОЖ — прямая конвертация в товар-еду по
+// своей стоимости, и мясо гасит долг места той же дверью гашения (S10);
+// человек уходит в ПУЛ ДЕЗЕРТИРОВ — опасность мира и есть переработанный
+// излишек. Слабейший = дешевейшая строка найма: место кормит тех, кто
+// его стоит, буквально.
+void garrison_trim_(GameState& gs, Landmark& s,
+                    EconFactSink sink, void* user) {
+    int excess = total_soldiers(s.garrison) - garrison_cap_(s);
+    if (excess <= 0) return;
+    const int breadIdx = hunger_item_index();
+    const ItemDef* bread = item_def_at(breadIdx);
+    const int breadValue = bread && bread->value > 0 ? bread->value : 1;
+    int meat = 0;
+    while (excess > 0) {
+        int weak = -1;
+        int weakPrice = 0;
+        for (int i = 0; i < s.garrison.slot_count(); ++i) {
+            const SoldierSlot& sl = s.garrison[i];
+            if (sl.count <= 0) continue;
+            const int p = hire_price_for(sl.kind, sl.level);
+            if (weak < 0 || p < weakPrice) {
+                weak = i;
+                weakPrice = p;
+            }
+        }
+        if (weak < 0) break;
+        SoldierSlot cut = s.garrison[weak];
+        const int take = std::min(excess, int(cut.count));
+        if (!s.garrison.remove_from_slot(weak, take)) break;
+        excess -= take;
+        if (is_mount_kind(cut.kind)) {
+            meat += take * (weakPrice / breadValue);
+        } else {
+            cut.count = take;
+            if (!gs.deserterPool.push_slot(cut)) {
+                s.garrison.push_slot(cut);   // pool full: the men stay
+                break;
+            }
+        }
+    }
+    if (meat > 0) {
+        s.inventory.add_of(breadIdx, meat);
+        // Мясо платит по счёту В ТУ ЖЕ МИНУТУ — дверь гашения (S10):
+        // голодное место режет лошадь и ест, на полку ложится излишек.
+        econ_pay_debt(s.inventory, s.needDebt, sink, user);
+    }
+}
+
 // ── Village daily tick ────────────────────────────────────────
 // No gather here any more: gathering is AGENTS now — woodcutters and
 // farmers hauling real units into this same inventory (npc_ai.cpp).
@@ -379,6 +454,7 @@ void tick_villages_(GameState& gs, int day, WorldTickRuntime& runtime,
                                  headsBefore);
         }
         garrison_recruit_(gs, v, runtime);
+        garrison_trim_(gs, v, rs, ru);
     }
 }
 
