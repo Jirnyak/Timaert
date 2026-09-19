@@ -34,10 +34,12 @@ one enum value plus one table row (the same *spec-table → auto UI* idiom as
   `key` is the stable prefs-file identifier (order-independent), `scope` is
   `UiScope::{Both, Macro, Sub}`, `def` the default `SDL_Scancode`.
 - `const ActionSpec kActionSpec[kActionCount]` — **the** table, one row per
-  action (a `static_assert` guards the count). ~27 rows: 12 Both (panels,
+  action (a `static_assert` guards the count). ~28 rows: 12 Both (panels,
   save/load, enter/leave, debug), 7 Macro (pause, rest, equipment, 4×pan),
-  8 Sub (4×move, attack, cast, jump, interact). The possess key died
-  2026-09-06 (owner: вселение — не игроцкая кнопка, придёт заклинанием);
+  9 Sub (4×move, attack, cast, jump, interact, harvest, **turn-based P** —
+  the M&M toggle, CANON S13; the mode itself is one derived pause reason
+  over the body's recovery gate, not a second input path). The possess key
+  died 2026-09-06 (owner: вселение — не игроцкая кнопка, придёт заклинанием);
   the engine doors stay for the dev console, the smokes and that spell.
 - `class Keymap` — `get(id)` / `set(id, sc)` (set applies the steal rule) /
   `reset_defaults()`, plus `pendingRebind`: the panel's “press a key now”
@@ -66,6 +68,14 @@ line per action (`0` = unbound). Missing file / unknown keys / junk values
 are non-fatal — defaults stand; a hand-edited duplicate within one world
 resolves to the LAST line, the earlier holder left visibly unbound. Saved on
 every rebind and on the panel's Reset.
+
+**Retired defaults migrate at load.** `save_keymap` dumps every row, chosen
+or not — so a prefs line that repeats an OLD table default is the old table
+talking, not the player, and it loads as the CURRENT default. Without this,
+the stale line stole the key through the steal rule and a newly added action
+came up unbound on every pre-existing install (caught by the owner on the
+turn-based P the day it shipped: `act.army 19` in an old `keymap.cfg`
+shadowed it; army loads as U now, P stays with the toggle).
 
 ## Tests
 

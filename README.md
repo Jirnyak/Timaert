@@ -149,6 +149,7 @@ key with an action.
 | **Space** | **Jump** (1 m apex — a kerb, a crate, a low ledge) |
 | E | Interact |
 | H | Harvest — gathering is WORK, its own action and its own SP price |
+| **P** | **Turn-based mode** (M&M, owner verdict 2026-09-17): the world flows only while your own recovery runs; recovery spent — the scene stands, the camera is free, and any action with a recovery (strike, cast) buys the world exactly its length. The hand at the right edge is the mode's indicator — bright while the turn is yours |
 | Enter | Leave, back to the map |
 
 There is no possession key. It died 2026-09-06 (owner: вселение — не игроцкая
@@ -163,7 +164,7 @@ in a worn body wakes you in your own.
 | Default | Action |
 |---|---|
 | I | Character panel (Inventory) |
-| P / B | Character panel → Army / Spells |
+| U / B | Character panel → Army / Spells (U, not P — P went to the turn-based toggle, 2026-09-19) |
 | E | On the map: character panel → Equipment |
 | T · Q · C · M · K | Settlement · Quests · Codex · World map · Diplomacy |
 | F3 | Debug HUD |

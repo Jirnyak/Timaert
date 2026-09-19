@@ -597,10 +597,10 @@ See [controls.md](controls.md).
 | Mouse wheel    | Zoom (macro view)                         |
 | Enter          | Enter / leave subworld                    |
 | I              | Toggle character panel (Inventory tab)    |
-| P              | Character panel → Army tab                |
+| U              | Character panel → Army tab (was P; P is the turn-based toggle since 2026-09-19) |
 | B              | Character panel → Spells tab              |
 | E              | Subworld: interact; overworld: character panel → Equipment tab |
-| V              | Subworld: вселение / possess the body under the reticle |
+| P              | Subworld: turn-based mode (M&M) — the scene stands while your recovery gate is free; hand indicator at the right edge |
 | Space          | Macro: pause / unpause the world; subworld: jump |
 | Z              | Macro: rest — stop the squad, fast-forward until SP is full |
 | A / Left click | Subworld: attack                          |
