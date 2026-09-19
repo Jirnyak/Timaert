@@ -845,11 +845,25 @@ bool run_subworld_recovery_smoke(App& app) {
     const int maxMp = stats.maxMp;
     const int maxSp = stats.maxSp;
 
-    // A macro squad as the SCALE witness (SUB-1 class): a scene tick must
-    // not touch a single macro body — not its cell, not its smoothed visual.
-    // systems.cpp's interpolator used to walk all ~16k macro squads every
-    // sub-tick and drag their VisualPos in the wrong units. Wound it too, so
-    // the blood-drip pass (the original SUB-1) has a body it WOULD pick up.
+    // A macro squad as the SCALE witness (SUB-1 class). WHAT IT GUARDS, in
+    // the owner's law (2026-09-18): «если мы в субмире, то макромир
+    // симулируется как ни в чём не бывало, просто медленнее ровно от того,
+    // насколько медленнее в субмире идёт время». So a macro squad MAY think
+    // and step while the player is below — main.cpp runs its AI on a slow
+    // budget, and forbidding that was this witness's own lie until
+    // 2026-09-19: it asserted «not its cell, not its visual», reddened when
+    // the world merely LIVED, and passed on seed 12345 only because the
+    // squad happened not to finish a step in time (red on seeds 1 and 42).
+    //
+    // What SUB-1 actually was: systems.cpp's interpolator walked all ~16k
+    // macro squads every sub-tick and dragged their VisualPos IN THE WRONG
+    // UNITS — metres of the subworld applied to a map measured in CELLS. A
+    // body dragged like that leaves its own cell far behind. So the law this
+    // now states is about UNITS, not about stillness: a macro body's visual
+    // must stay within interpolation distance of the cell it belongs to,
+    // wherever the slow macro mind has since moved that cell.
+    // Wound it too, so the blood-drip pass (the original SUB-1) has a body
+    // it WOULD pick up.
     entt::entity scaleWitness = entt::null;
     float wPx = 0.0f, wPy = 0.0f, wVx = 0.0f, wVy = 0.0f;
     std::uint32_t wCellIdx = 0;
@@ -925,17 +939,47 @@ bool run_subworld_recovery_smoke(App& app) {
         const auto& c = app.ecs.reg.get<sm::ecs::MacroCell>(scaleWitness);
         const auto& v = app.ecs.reg.get<sm::ecs::MacroVisual>(scaleWitness);
         (void)wCellIdx;
-        if (v.vx != wVx || v.vy != wVy) {
-            std::fprintf(stderr,
-                         "[smoke] scale witness moved: cell %.2f,%.2f -> "
-                         "%.2f,%.2f visual %.2f,%.2f -> %.2f,%.2f\n",
-                         wPx, wPy,
-                         float(sm::ecs::cell_x(c, app.gs.mapW)),
-                         float(sm::ecs::cell_y(c, app.gs.mapW)),
-                         wVx, wVy, v.vx, v.vy);
-            std::fflush(stderr);
+        // THE UNIT TEST, literally: how far has the visual drifted from the
+        // cell it belongs to? Interpolation between neighbours is worth
+        // about a cell; the SUB-1 drag was worth METRES of a subworld on a
+        // scale of map cells, which lands orders of magnitude outside this.
+        const float cx = float(sm::ecs::cell_x(c, app.gs.mapW));
+        const float cy = float(sm::ecs::cell_y(c, app.gs.mapW));
+        const float dx = v.vx - cx, dy = v.vy - cy;
+        const float driftCells = std::sqrt(dx * dx + dy * dy);
+        const bool cellMoved = c.idx != wCellIdx;
+        std::fprintf(stderr,
+                     "[smoke] scale witness: cell %.2f,%.2f -> %.2f,%.2f "
+                     "(moved=%d, LEGAL) visual %.2f,%.2f -> %.2f,%.2f "
+                     "drift=%.2f cells\n",
+                     wPx, wPy, cx, cy, cellMoved ? 1 : 0,
+                     wVx, wVy, v.vx, v.vy, double(driftCells));
+        std::fflush(stderr);
+        // THE NEGATIVE CONTROL, inline: a green check that cannot go red
+        // proves nothing (testing law #3), and this witness has already
+        // spent a month being green for the wrong reason. So we ask the
+        // same formula what it WOULD say about the very defect it exists
+        // for — a visual dragged by scene units (a subworld is ~kFullSize
+        // metres across, applied to a map measured in cells).
+        {
+            const float draggedX = cx + float(sm::sub::kFullSize) * 0.5f;
+            const float ddx = draggedX - cx;
+            const float wouldDrift = std::sqrt(ddx * ddx);
+            if (!(wouldDrift > 2.0f)) {
+                app.subworld.leave(true);
+                smoke_fail(app, "subworld_recovery: the drift check cannot "
+                                "detect a scene-unit drag — the witness is "
+                                "asleep");
+                return false;
+            }
+        }
+        // Two cells of slack: the fixture parks the visual mid-glide (0.4)
+        // and a legal step adds one more. Anything past that is not glide.
+        if (driftCells > 2.0f) {
             app.subworld.leave(true);
-            smoke_fail(app, "subworld_recovery scene tick touched a MACRO squad");
+            smoke_fail(app, "subworld_recovery: a macro visual was dragged "
+                            "away from its cell — scene units applied to a "
+                            "macro body (SUB-1 class)");
             return false;
         }
     }
