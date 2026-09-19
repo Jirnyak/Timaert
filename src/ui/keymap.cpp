@@ -17,9 +17,9 @@ namespace sm::ui {
 const ActionSpec kActionSpec[kActionCount] = {
     // id                       key              label                  scope          default
     {ActionId::Character,    "act.character",  "Character / inventory", UiScope::Both, SDL_SCANCODE_I},
-    // (O, not P: the owner's 2026-09-17 verdict gives P to the subworld
-    // turn-based toggle, and a Both-scope row sharing P would shadow it.)
-    {ActionId::ArmyTab,      "act.army",       "Party / army",          UiScope::Both, SDL_SCANCODE_O},
+    // (U, not P — owner 2026-09-19: P belongs to the subworld turn-based
+    // toggle, and a Both-scope row sharing P would shadow it.)
+    {ActionId::ArmyTab,      "act.army",       "Party / army",          UiScope::Both, SDL_SCANCODE_U},
     {ActionId::SpellsTab,    "act.spells",     "Spellbook",             UiScope::Both, SDL_SCANCODE_B},
     {ActionId::Codex,        "act.codex",      "Codex",                 UiScope::Both, SDL_SCANCODE_C},
     {ActionId::Map,          "act.map",        "Map",                   UiScope::Both, SDL_SCANCODE_M},
@@ -113,10 +113,20 @@ bool load_keymap(Keymap& m, const std::string& path) {
 
         for (const auto& spec : kActionSpec) {            // resolve key -> action
             if (std::strcmp(spec.key, key) != 0) continue; // unknown keys ignored
+            SDL_Scancode want = static_cast<SDL_Scancode>(sc);
+            // A RETIRED default: save_keymap dumps every row, chosen or not,
+            // so a prefs row repeating an old table default is the OLD TABLE
+            // talking, not the player. Loaded as the CURRENT default instead,
+            // so a new action can claim the freed key — without this, the
+            // stale line stole the key through set() and the new action came
+            // up unbound on every pre-existing install. (2026-09-19: army
+            // P → U; P went to the turn-based toggle by the owner's verdict.)
+            if (spec.id == ActionId::ArmyTab && want == SDL_SCANCODE_P)
+                want = spec.def;
             // Through Keymap::set, so the steal rule holds even for a
             // hand-edited file: a duplicate within one world resolves to the
             // LAST line, the earlier action left visibly unbound.
-            m.set(spec.id, static_cast<SDL_Scancode>(sc));
+            m.set(spec.id, want);
             break;
         }
     }
