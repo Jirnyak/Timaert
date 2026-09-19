@@ -183,7 +183,7 @@ void test_worn_sums_reach_the_one_currency() {
     leather.def = std::uint16_t(item_index("arm_leather"));
     leather.count = 1;
 
-    CHECK(worn_armor(eq).of(DamageType::Blunt) == 0,
+    CHECK(worn_armor(eq, Skills{}).of(DamageType::Blunt) == 0,
           "a naked body stops nothing");
     const BonusTotals bare = worn_bonuses(eq);
     CHECK(bare.attr[std::size_t(AttributeId::End)] == 0, "and grants nothing");
@@ -198,7 +198,7 @@ void test_worn_sums_reach_the_one_currency() {
     int columns = 0, drifted = 0;
     for (std::size_t t = 0; t < kDamageTypeCount; ++t) {
         ++columns;
-        if (worn_armor(eq).v[t] != def->armor.v[t]) ++drifted;
+        if (worn_armor(eq, Skills{}).v[t] != def->armor.v[t]) ++drifted;
     }
     CHECK(columns == int(kDamageTypeCount) && drifted == 0,
           "worn armour is the per-column sum of the rows worn, in the door's "
@@ -222,9 +222,73 @@ void test_worn_sums_reach_the_one_currency() {
           "and its AFFIX lands in the one currency the sheet reads");
 
     unequip(eq, rolledCell);
-    CHECK(worn_armor(eq).of(DamageType::Blunt) == 0 && worn_bonuses(eq).attr[
+    CHECK(worn_armor(eq, Skills{}).of(DamageType::Blunt) == 0 && worn_bonuses(eq).attr[
               std::size_t(AttributeId::End)] == 0,
           "take it off and both sums fall back to nothing: no residue");
+}
+
+// ── ARMOUR SKILLS: the rank multiplies its OWN kind (CANON S14, Е5) ──────
+// kSkillDefs promised «ранг множит защиту своего типа» and defense_of never
+// read a rank — the four rows were a tooltip. The род is the ROW's own
+// `skill` column (the same column a weapon states its skill in, owner
+// verdict 2026-09-19), so the law needs no second dictionary.
+void test_armor_skill_multiplies_its_own_kind() {
+    Equipment eq{};
+    ItemRef leather{};
+    leather.def = std::uint16_t(item_index("arm_leather"));
+    leather.count = 1;
+    const int cell = equip(eq, leather);
+    CHECK(cell >= 0, "the coat is on");
+    const ItemDef* def = item_def_at(int(leather.def));
+    CHECK(def != nullptr && def->skill == SkillId::LightArmor,
+          "the fixture's coat NAMES its kind in its own row — else the law "
+          "below has nothing to read");
+
+    const int bare = worn_armor(eq, Skills{}).of(DamageType::Blunt);
+    CHECK(bare == def->armor.of(DamageType::Blunt),
+          "untrained is x1: the law's floor is the old behaviour exactly");
+
+    Skills light{};
+    light[SkillId::LightArmor] = 10;              // 10 %/rank -> x2
+    CHECK(worn_armor(eq, light).of(DamageType::Blunt)
+              == bare * skill_mult_pct(light, SkillId::LightArmor) / 100,
+          "a trained rank multiplies the coat it governs, by THE skill law");
+
+    // The kinds do not leak into each other — the negative control that makes
+    // the check above a law and not an arithmetic accident.
+    Skills heavy{};
+    heavy[SkillId::HeavyArmor] = 10;
+    CHECK(worn_armor(eq, heavy).of(DamageType::Blunt) == bare,
+          "plate drill does nothing for a leather coat");
+
+    // A piece's OWN rolled affix is trained with the piece (one plate, one
+    // verdict): the armour affix rides the same multiplier as the row.
+    Equipment rolledEq{};
+    ItemRef rolled = leather;
+    rolled.seed = 11;
+    rolled.set_affix(0, {std::uint8_t(BonusId::ArmorBlunt), 4});
+    const int rolledCell = equip(rolledEq, rolled);
+    CHECK(rolledCell >= 0, "the rolled coat is on");
+    const int rolledBare =
+        worn_armor(rolledEq, Skills{}).of(DamageType::Blunt);
+    CHECK(rolledBare == bare + 4,
+          "its rolled armour affix lands in the same column as its row");
+    CHECK(worn_armor(rolledEq, light).of(DamageType::Blunt)
+              == rolledBare * skill_mult_pct(light, SkillId::LightArmor) / 100,
+          "and it is trained WITH the piece — not left untrained beside it");
+
+    // The creature-row half of the same law: the род of a hide is the
+    // WEARER's training, and a body that trained nothing stays its row.
+    CHECK(sheet_armor_mult_pct(Skills{}) == 100,
+          "an untrained body wears its row exactly as authored");
+    CHECK(sheet_armor_mult_pct(light)
+              == skill_mult_pct(light, SkillId::LightArmor),
+          "and a trained one multiplies it by his best living armour skill");
+    Skills unarmoredOnly{};
+    unarmoredOnly[SkillId::Unarmored] = 50;
+    CHECK(sheet_armor_mult_pct(unarmoredOnly) == 100,
+          "Unarmored SLEEPS (owner 2026-09-19): it multiplies nothing until "
+          "the world has the mechanic it reads");
 }
 
 // ── The strike reads the gear's derived rows (affix track step 1) ─────────
@@ -319,6 +383,7 @@ int main() {
     test_a_mask_of_types_fits_a_body_it_never_heard_of();
     test_blocks_mask_occupies_and_releases();
     test_worn_sums_reach_the_one_currency();
+    test_armor_skill_multiplies_its_own_kind();
     test_strike_reads_derived_affixes();
     test_missile_row_shoots_without_the_attribute();
     return sm::test::report("anatomy_equipment_test");

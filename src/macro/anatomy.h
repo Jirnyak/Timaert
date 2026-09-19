@@ -272,7 +272,39 @@ int worn_cells(const Equipment& eq);
 // Armour worn, summed per DamageType column (saturating at the column's 255
 // ceiling) — the addend `sub/damage.cpp defense_of` was waiting for. A
 // creature's own row profile and what it wears meet column by column.
-ArmorProfile worn_armor(const Equipment& eq);
+//
+// THE SHEET IS A MANDATORY ARGUMENT (CANON S14 «ранг множит защиту своего
+// типа», built 2026-09-19), the same way a spell's school is mandatory in
+// spell_bonus: each PIECE contributes (its row's columns + its own rolled
+// affixes) multiplied by the rank of the skill that piece's row names —
+// Heavy, Light or Shield. A default argument here would be a body fighting
+// without its own training, i.e. the defect the weapon door already does not
+// have. An untrained wearer is ×1, which is exactly the old behaviour.
+ArmorProfile worn_armor(const Equipment& eq, const Skills& skills);
+
+// The percent a CREATURE ROW's own armour is multiplied by (npc_def().armor —
+// a troll's hide, a guard's issued plate: bodies with no equipment component
+// at all). Its род is not on the hide, it is in the WEARER's training: the
+// best-trained of the living armour skills, exactly the shape the strike
+// takes for a row with no weapon in hand (sheet_strike_mult_pct, session Е).
+// A beast trains none of them and stays ×1, so the world's monsters do not
+// silently thicken.
+//
+// INLINE on purpose: it asks only for RANKS, so it must not drag the item
+// catalogue (anatomy.cpp) into every macro reader that wants it — the
+// auto-resolve is a header-only macro citizen and links no catalogue.
+inline int sheet_armor_mult_pct(const Skills& skills) {
+    int best = 100;
+    // The three LIVING rows only: Unarmored sleeps at pctPerRank 0 until the
+    // world has the mechanic it reads (attributes.h), so naming it here would
+    // change nothing today and would lie tomorrow.
+    for (SkillId id : {SkillId::HeavyArmor, SkillId::LightArmor,
+                       SkillId::Shield}) {
+        const int pct = skill_mult_pct(skills, id);
+        if (pct > best) best = pct;
+    }
+    return best;
+}
 
 // THE weapon actually in hand: the first weapon-typed row sitting on an
 // unblocked Grip-type cell. nullptr = bare hands.

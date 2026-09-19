@@ -1372,9 +1372,15 @@ namespace sm::ui
                         // the physical face of it (worn rows are uniform
                         // until per-column authoring lands) — a full 9-column
                         // readout is the phase-4 sheet door's business.
+                        // His EFFECTIVE training, so the panel prints the very
+                        // number the blow will meet (CANON S14: the armour
+                        // skill's rank multiplies its own kind) — a readout
+                        // computed without the sheet would quietly disagree
+                        // with the law the moment a rank was spent.
                         ImGui::Text("%s — armour %d",
                                     gear.shape().label,
-                                    worn_armor(gear).of(sm::DamageType::Blunt));
+                                    worn_armor(gear, effPanel.skills)
+                                        .of(sm::DamageType::Blunt));
                         if (ImGui::IsItemHovered())
                         {
                             ImGui::SetTooltip(

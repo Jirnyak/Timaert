@@ -4,6 +4,7 @@
 #include "ecs/components.h"
 #include "macro/npc.h"
 #include "macro/anatomy.h"
+#include "macro/character_sheet.h"  // the sheet the armour law asks for training
 #include <algorithm>
 #include <cmath>
 #include "events/event_bus.h"
@@ -24,10 +25,25 @@ namespace {
 // one line here when the equipment component lands, and no damage site
 // changes to gain it.
 int defense_of(entt::registry& reg, entt::entity target, DamageType type) {
+    // WHAT HE WAS TRAINED TO WEAR (CANON S14, built 2026-09-19). The sheet is
+    // the body's own — through THE door (record_of), like every other piece of
+    // its state — and a body without one (a prop, a headless test fixture)
+    // answers with the untrained ×1 the law already gave everyone.
+    static const Skills kUntrained{};
+    const Skills& skills = [&]() -> const Skills& {
+        if (const auto* cs = state_of<CharacterSheet>(reg, target))
+            return cs->skills;
+        return kUntrained;
+    }();
     int armour = 0;
     if (const auto* kind = reg.try_get<ecs::NPCKind>(target)) {
         if (kind->type < std::uint16_t(NPCType::Count)) {
-            armour = npc_def(NPCType(std::uint8_t(kind->type))).armor.of(type);
+            // A creature ROW's own armour — hide, scale, issued plate — times
+            // the wearer's training (sheet_armor_mult_pct: the род lives in
+            // the body's schooling, not on the hide). A beast trains none of
+            // the three and stays exactly as tough as its row says.
+            armour = npc_def(NPCType(std::uint8_t(kind->type))).armor.of(type)
+                     * sheet_armor_mult_pct(skills) / 100;
         }
     }
     // ...and what it WEARS, asked through THE door (sub/record.h): gear is the
@@ -41,12 +57,12 @@ int defense_of(entt::registry& reg, entt::entity target, DamageType type) {
     // right and the shape wrong — under the mirror it is not his exception, it
     // is everyone's rule, so it collapses into the line above.
     if (const auto* eq = state_of<ecs::BodyEquipment>(reg, target)) {
-        // Two contributions from the same gear, one law point: the rows'
-        // authored columns (worn_armor) and the instances' Armor-target
-        // bonus rows (bonus.h affix tail) — a rolled "+3 Fire Armor" lands
-        // here and nowhere else, so it cannot be counted twice.
-        armour += worn_armor(eq->gear).of(type)
-                + int(worn_bonuses(eq->gear).armor[std::size_t(type)]);
+        // ONE term now, not two: `worn_armor` sums each piece's row columns
+        // AND that piece's own rolled affixes, multiplied by the rank of the
+        // skill the piece names (Heavy / Light / Shield). The second term
+        // that used to stand here added the affixes UNTRAINED beside the
+        // trained coat they were rolled on — two laws for one plate.
+        armour += worn_armor(eq->gear, skills).of(type);
     }
     return std::max(0, armour);
 }

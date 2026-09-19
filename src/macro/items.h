@@ -122,9 +122,15 @@ struct ItemDef {
 
     // ── What a WEAPON row deals (CANON S13: урон = NdM строкой предмета) ──
     // dice{0,1} (every non-weapon) rolls nothing; dmgType names the armour
-    // column the blow argues with; skill names WHICH weapon skill multiplies
-    // a strike made with this row (SkillId::Count = none — the wielder falls
-    // back to Unarmed, which is honest for a swung sack of grain).
+    // column the blow argues with; skill names WHICH skill this row is
+    // GOVERNED BY — one question, one column (owner verdict 2026-09-19):
+    // on a Weapon row it is the weapon skill that multiplies a strike made
+    // with it (SkillId::Count = none — the wielder falls back to Unarmed,
+    // honest for a swung sack of grain), and on an ARMOR row it is the
+    // armour skill whose rank multiplies what this piece STOPS (Heavy /
+    // Light / Shield — CANON S14 «ранг множит защиту своего типа»).
+    // A second `armorKind` column beside this one would be two dictionaries
+    // answering the same question, which S26 forbids.
     // There is deliberately NO tempo column: a weapon's swing time is
     // DERIVED from its `weight` above (macro/anatomy.h weapon_swing_seconds
     // — owner verdict 2026-09-07: «скорость привязать к массе»), so every

@@ -246,8 +246,15 @@ inline constexpr SkillDef kSkillDefs[] = {
      "heavy armor protection per rank",       10},
     {SkillId::LightArmor,  "light_armor", "Light Armor",
      "light armor protection per rank",       10},
+    // СПИТ (вердикт владельца 2026-09-19, сессия Е): три брата множат ВКЛАД
+    // носимого рода, а у голого тела вклад НОЛЬ — множить нечего, и «ранг
+    // множит защиту своего типа» на этой строке не читается ни одним телом.
+    // Чтобы оно заработало, скилл должен СКЛАДЫВАТЬ броню (вторая форма
+    // закона) или читать уклонение — механики, которой мир ещё не сделал.
+    // Закон рамки скилла (S14) это прямо разрешает: строка ждёт свою систему
+    // с pctPerRank = 0, как ждут ремёсла, а не лжёт процентом в тултипе.
     {SkillId::Unarmored,   "unarmored",   "Unarmored",
-     "protection while unarmored per rank",   10},
+     "sleeps until the world has the mechanic it reads", 0},
     {SkillId::Shield,      "shield",      "Shield",
      "shield block per rank",                 10},
     {SkillId::FireMagic,   "fire_magic",  "Fire Magic",

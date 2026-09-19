@@ -222,17 +222,29 @@ StrikeFields hand_strike_fields(const Attributes& attributes,
     return out;
 }
 
-ArmorProfile worn_armor(const Equipment& eq) {
+ArmorProfile worn_armor(const Equipment& eq, const Skills& skills) {
     ArmorProfile sum{};
     const int n = eq.cells();
     for (int i = 0; i < n; ++i) {
         const ItemRef& r = eq.worn[std::size_t(i)];
         if (r.empty() || cell_blocked(r)) continue;
-        if (const ItemDef* def = item_def_at(int(r.def))) {
-            for (std::size_t t = 0; t < kDamageTypeCount; ++t) {
-                const int v = int(sum.v[t]) + int(def->armor.v[t]);
-                sum.v[t] = std::uint8_t(v > 255 ? 255 : v);
-            }
+        const ItemDef* def = item_def_at(int(r.def));
+        if (!def) continue;
+        // ONE piece, ONE verdict: its row's columns and its own rolled
+        // affixes are the same kind of thing (the affix track's whole point),
+        // so they are summed HERE, per piece, and the rank of the skill this
+        // row names multiplies the pair. Summing the affixes globally — as
+        // defense_of used to, in a second term beside this call — would have
+        // left a rolled «+3 Fire Armor» untrained while the coat it sits on
+        // was trained, i.e. two laws for one plate.
+        BonusTotals mine{};
+        for (int a = 0; a < kMaxItemAffixes; ++a) accumulate(mine, r.affix_at(a));
+        const int pct = def->skill != SkillId::Count
+                            ? skill_mult_pct(skills, def->skill) : 100;
+        for (std::size_t t = 0; t < kDamageTypeCount; ++t) {
+            const int mine_t = int(def->armor.v[t]) + int(mine.armor[t]);
+            const int v = int(sum.v[t]) + mine_t * pct / 100;
+            sum.v[t] = std::uint8_t(v > 255 ? 255 : v < 0 ? 0 : v);
         }
     }
     return sum;

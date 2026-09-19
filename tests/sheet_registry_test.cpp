@@ -82,7 +82,16 @@ void test_the_registry_is_addressable_by_ordinal() {
     // every row either multiplies something per rank, or is named by at
     // least one recipe of the production table. An alchemy skill nobody can
     // brew with reddens here, which is exactly what it should do.
+    // THE THIRD legal answer, added 2026-09-19 with the owner's verdict on
+    // Unarmored: a row may SLEEP — openly, by name, in this closed list —
+    // while the mechanic it would read does not exist yet (S14 «закон рамки
+    // скилла»: a skill that needs a system built under it is a design defect,
+    // so the row waits at pctPerRank 0 instead of lying in a tooltip). The
+    // list is spelled HERE, in the witness, so adding a sleeper costs a
+    // deliberate line in a test — not a silent zero in a table.
+    const SkillId kSleepers[] = {SkillId::Unarmored};
     int craftRows = 0;
+    int sleepers = 0;
     for (int i = 0; i < int(SkillId::Count); ++i) {
         const SkillDef& d = skill_def(SkillId(i));
         CHECK(int(d.id) == i, "every row stands at its own ordinal");
@@ -92,10 +101,22 @@ void test_the_registry_is_addressable_by_ordinal() {
         for (const RecipeDef& r : kRecipes)
             if (r.craft == SkillId(i)) { namedByRecipe = true; break; }
         if (namedByRecipe) ++craftRows;
-        CHECK(d.pctPerRank > 0 || namedByRecipe,
-              "a skill must either multiply something per rank or unlock a "
-              "recipe — a row that does neither is a dead column");
+        bool sleeps = false;
+        for (SkillId s : kSleepers) if (s == SkillId(i)) { sleeps = true; break; }
+        if (sleeps) {
+            ++sleepers;
+            CHECK(d.pctPerRank == 0,
+                  "a SLEEPING row promises nothing per rank — a sleeper with "
+                  "a live percent is the tooltip lie this list exists against");
+        }
+        CHECK(d.pctPerRank > 0 || namedByRecipe || sleeps,
+              "a skill must either multiply something per rank, unlock a "
+              "recipe, or be a NAMED sleeper — a row that does none of the "
+              "three is a dead column");
     }
+    CHECK(sleepers == 1,
+          "exactly one row sleeps today (Unarmored, owner 2026-09-19) — the "
+          "sweep above actually judged it");
     // The negative control of the sweep itself: it must have SEEN crafts, or
     // the clause above proved nothing about them (testing law #3).
     CHECK(craftRows == 5,

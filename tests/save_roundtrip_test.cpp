@@ -799,7 +799,10 @@ void run_roundtrip() {
             || coat.affix_at(0).value != 4) {
             FAIL_BAIL("the coat's rolled affix lost");
         }
-        if (sm::worn_armor(worn->gear).of(sm::DamageType::Blunt) <= 0) {
+        // Untrained (a bare Skills{}) is the law's ×1 — what this witness
+        // asks is that the ROW came back, not what a rank does to it.
+        if (sm::worn_armor(worn->gear, sm::Skills{}).of(sm::DamageType::Blunt)
+            <= 0) {
             FAIL_BAIL("and it stops nothing, so the row did not come back");
         }
     }

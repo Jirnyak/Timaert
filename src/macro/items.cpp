@@ -150,7 +150,10 @@ constexpr ItemDef kCatalog[] = {
         // A leather coat is worth a third of a plain blow (kArmorHalving);
         // uniform across the nine types — the mechanical scalar-era
         // translation, until armour rows author their columns.
-        /*armor*/uniform_armor(3)},
+        // Boiled leather is LIGHT armour: the row states which skill governs
+        // it in the same column a weapon states its own (2026-09-19).
+        /*armor*/uniform_armor(3), /*dice*/{}, /*dmgType*/DamageType::Blunt,
+        /*skill*/SkillId::LightArmor},
 
     // Valuables
     {"misc_gem",    "Gemstone",        ItemType::Misc,      100, 0.05f, "\xF0\x9F\x92\x8E",

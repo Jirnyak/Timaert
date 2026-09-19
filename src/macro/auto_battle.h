@@ -22,6 +22,7 @@
 #pragma once
 
 #include "core/rng.h"
+#include "macro/anatomy.h"   // sheet_armor_mult_pct — the armour law's training
 #include "macro/army.h"
 #include "macro/character_sheet.h"
 #include "macro/npc.h"
@@ -113,10 +114,15 @@ inline float fighter_power(NPCType type, int level, std::uint32_t seed,
     if (squadBonuses) sheet = effective_sheet(sheet, *squadBonuses);
     const NpcTypeDef& def = npc_def(type);
     const CombatTemplate pc = project_combat(sheet, def.combat);
+    // His armour is his ROW times his TRAINING — the same sentence the fought
+    // body reads (sub/damage.cpp defense_of), moved in the same commit for
+    // the same reason the strike was: two answers to «сколько держит НПЦ»
+    // would be two laws of battle (S13).
+    const int armour = auto_battle_armor(def.armor)
+                       * sheet_armor_mult_pct(sheet.skills) / 100;
     const float hp  = std::max(1.0f, std::floor(pc.hp)) *
                       std::clamp(healthFraction, 0.0f, 1.0f) *
-                      (float(kArmorHalving + auto_battle_armor(def.armor))
-                       / float(kArmorHalving));
+                      (float(kArmorHalving + armour) / float(kArmorHalving));
     // The swing is the strike's expectation (strike_mean_x2, the same
     // assembly the fought path rolls) — INCLUDING the sheet's typed skill
     // percent (project_combat.multPct, session Е 2026-09-19): the fought
