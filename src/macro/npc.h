@@ -18,6 +18,7 @@
 #include <cstdint>
 #include "macro/army.h"
 #include "macro/damage_types.h"
+#include "macro/spells.h"   // spell_ordinal — a casting row names its spell
 #include "macro/sprite_rows.h"
 
 namespace sm {
@@ -115,39 +116,9 @@ enum class NPCTrait : std::uint8_t {
     Count,
 };
 
-// ── THE trait registry's MARKET columns (CANON S16) ───────────────────────
-// What a temper does to a price is a COLUMN of that temper's row, exactly as
-// a town's temper prices its market from a column of kMoodRows (state.h).
-// This lived as an if-chain over two traits with four bare literals inside
-// economy.cpp — the shape the mood dictionary had before 2026-08-29, and the
-// shape a third priced temper would have extended by hand.
-//
-// `pricesMarket` is not a flag standing in for data: most tempers have
-// nothing to do with money, and the chain said so by simply having no branch
-// for them. A row that stays silent leaves the price where it was rather
-// than resetting it to 1.0 — which is why a Greedy-and-Brave merchant is
-// still greedy.
-//
-// Rows are read IN ENUM ORDER, so a merchant carrying two priced tempers is
-// priced by the LATER one — the assignment order of the chain, preserved.
-struct TraitPriceRow {
-    NPCTrait trait;          // MUST equal the row's index (guard below)
-    bool     pricesMarket;
-    float    buyMul;         // what he charges the traveller
-    float    sellMul;        // what he pays him
-};
-inline constexpr TraitPriceRow kTraitPriceRows[std::size_t(NPCTrait::Count)] = {
-    {NPCTrait::Greedy,     true,  1.2f, 0.8f},
-    {NPCTrait::Honorable,  false, 1.0f, 1.0f},
-    {NPCTrait::Cowardly,   false, 1.0f, 1.0f},
-    {NPCTrait::Brave,      false, 1.0f, 1.0f},
-    {NPCTrait::Aggressive, false, 1.0f, 1.0f},
-    {NPCTrait::Generous,   true,  0.9f, 1.2f},
-    {NPCTrait::Suspicious, false, 1.0f, 1.0f},
-    {NPCTrait::Curious,    false, 1.0f, 1.0f},
-};
-static_assert(rows_in_enum_order(kTraitPriceRows, &TraitPriceRow::trait),
-              "kTraitPriceRows row order must mirror NPCTrait");
+// (Реестр «нрав купца ↔ цена» — kTraitPriceRows — вырезан 2026-09-19 вместе
+// с настроением места: коэффициент поверх цены это тот же спред ×0.7, от
+// которого мир уже избавился. У сделки одна кривая и разница торговых сил.)
 
 
 // Fixed-arity name / dialogue pools — POD-friendly.
@@ -373,15 +344,25 @@ static_assert(kAdventurerCombat.hp == 100.0f && kAdventurerCombat.mp == 100
 // blow every 2.5 s against ~130 player HP is eleven blows — a real fight
 // that he loses, not an execution.
 inline constexpr CombatTemplate kAmbusherCombat  {100,{12,1}, 2.25f, 3.0f, 2.5f, "Amb", CombatTemplate::Melee,   0,   0, 0xFFFFFFFFu, /*bodyHeight*/0.0f, /*sight*/1000.0f};
-inline constexpr CombatTemplate kWitchCombat     {60,{18,1}, 1.5f, 20.0f,4.0f, "Wtc", CombatTemplate::Missile, 180, 0, 0xFFA070D0u};
-inline constexpr CombatTemplate kSorceressCombat {70,{22,1}, 1.25f, 25.0f,3.6f, "Src", CombatTemplate::Missile, 200, 6, 0xFF70C0E0u};
+// КАСТУЮЩИЕ РЯДЫ НАЗЫВАЮТ СВОЙ СПЕЛЛ (вердикт владельца 2026-09-17,
+// построено 2026-09-19): «каст у нас через систему спелов». Их собственные
+// кубы больше не читаются — как у игрока, у кастера есть ЛИСТ и СПЕЛЛ, а
+// не своя третья сила. Спеллы подобраны по СМЫСЛУ и близости прежней силы:
+// ведьма 18 → magic_bolt 12, сорка 22 → lightning_chain 22 (в точку),
+// дракон 3d20≈31 → fireball 36 (его огонь и его бласт — колонками спелла),
+// культист 3d6≈10 → magic_bolt 12, лич 4d12=26 → energy_beam 28.
+// ДОЛГ: у Void нет спелла с уроном, поэтому лич (Void) временно кастует
+// Arcane-луч — это строка КОНТЕНТА, которой Void ещё не написали (S15
+// «школа = набор спеллов»), а не дыра закона.
+inline constexpr CombatTemplate kWitchCombat     {60,{18,1}, 1.5f, 20.0f,4.0f, "Wtc", CombatTemplate::Missile, 180, 0, 0xFFA070D0u, /*bodyHeight*/0.0f, kNpcSightDefaultM, /*mp*/100, /*sp*/100, DamageType::Blunt, /*cruiseM*/0.0f, /*castSpell*/spell_ordinal("magic_bolt")};
+inline constexpr CombatTemplate kSorceressCombat {70,{22,1}, 1.25f, 25.0f,3.6f, "Src", CombatTemplate::Missile, 200, 6, 0xFF70C0E0u, /*bodyHeight*/0.0f, kNpcSightDefaultM, /*mp*/100, /*sp*/100, DamageType::Blunt, /*cruiseM*/0.0f, /*castSpell*/spell_ordinal("lightning_chain")};
 // Дракон (владелец 2026-09-10): «маленькая армия в одном теле» — hp 500,
 // огненный шар = обычные Missile-колонки (бласт 2.5 м — АоЕ, цвет огня),
 // урон 3d20 Fire (тип — колонка dmgType ниже дефолтов, авторится в строке
 // project_combat не трогается). ЛЕТУН: cruiseM 10 — честный полёт (конверт
 // игрока), рождается с ecs::Flying; на карте марш не платит рельеф.
 // bodyHeight 6 — башня, не человек (одна колонка, не ветка рендера).
-inline constexpr CombatTemplate kDragonCombat    {500,{3,20}, 1.6f, 40.0f,3.0f, "Drg", CombatTemplate::Missile, 260, 2.5f, 0xFF3060FFu, /*bodyHeight*/6.0f, /*sight*/60.0f, /*mp*/100, /*sp*/100, DamageType::Fire, /*cruiseM*/10.0f};
+inline constexpr CombatTemplate kDragonCombat    {500,{3,20}, 1.6f, 40.0f,3.0f, "Drg", CombatTemplate::Missile, 260, 2.5f, 0xFF3060FFu, /*bodyHeight*/6.0f, /*sight*/60.0f, /*mp*/100, /*sp*/100, DamageType::Fire, /*cruiseM*/10.0f, /*castSpell*/spell_ordinal("fireball")};
 
 // КРЕСТЬЯНЕ РАБОТАЮТ ЗА ЕДУ (владелец 2026-09-18: «пусть будут 0, чтобы не
 // нарушать единство систем — их зп 0 в деньгах»): upkeepGoldPerDay = 0 у
@@ -943,7 +924,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         AIBehaviour::Aggressive,
         {45, {3,6}, 1.5f, 22.0f, 2.2f, "Cul", CombatTemplate::Missile, 190,
          0.0f, 0xFFA060E0u, /*bodyHeight*/1.8f, kNpcSightDefaultM, 100, 100,
-         DamageType::Arcane},
+         DamageType::Arcane, /*cruiseM*/0.0f, /*castSpell*/spell_ordinal("magic_bolt")},
         kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/25,
         /*weight*/3, /*loot*/nullptr, /*radius*/0.55f,
         {{"Brother Vas","Sister Ilm","Novice Korr","The Pale Hand","Acolyte Zeb"}}, 5,
@@ -1020,7 +1001,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         AIBehaviour::Aggressive,
         {110, {4,12}, 1.1f, 28.0f, 2.6f, "Lch", CombatTemplate::Missile, 210,
          3.0f, 0xFF90FFB0u, /*bodyHeight*/1.9f, kNpcSightDefaultM, 100, 100,
-         DamageType::Void},
+         DamageType::Void, /*cruiseM*/0.0f, /*castSpell*/spell_ordinal("energy_beam")},
         kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/45,
         /*weight*/1, /*loot*/nullptr, /*radius*/0.6f,
         {{"Vashkar","The Grey Crown","Ozimandel","Neth-Ur"}}, 4,

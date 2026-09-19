@@ -316,13 +316,52 @@ void test_npc_strikes_with_his_sheet() {
     CHECK(project_combat(swordsman, cast).multPct == 100,
           "and a sword rank multiplies no cast — domains do not leak");
 
+    // ── РАСКЛЕЙКА КАСТА И ВЫСТРЕЛА (owner 2026-09-17, built 2026-09-19) ──
+    // A SHOT is a Missile row that names no spell: dice + typed weapon skill
+    // + LCK, and NO attribute add (CANON S14). Before the split, `Missile`
+    // MEANT "caster", so this row would have drawn an INT bonus to arrows.
+    CharacterSheet archer{};
+    archer.attributes[AttributeId::Intl] = 40;
+    archer.attributes[AttributeId::Str]  = 40;
+    archer.skills[SkillId::Bow] = 20;
+    CombatTemplate shot{};
+    shot.attackKind = CombatTemplate::Missile;      // castSpell stays null
+    const CombatTemplate shotOut = project_combat(archer, shot);
+    CHECK(shotOut.flatAdd == 0,
+          "a SHOT takes no attribute add — not INT, and not STR either");
+    CHECK(int(shotOut.multPct) == skill_mult_pct(archer.skills, SkillId::Bow),
+          "its typed lever is the weapon skill, like any other blow");
+    CHECK(project_combat(archer, melee).flatAdd
+              == std::int16_t(archer.attributes.of(AttributeId::Str)),
+          "negative control: a SWING still takes STR, so the zero above is "
+          "the shooting law and not a dead door");
+
+    // A CAST is a row that NAMES a spell: the blow is that spell's — its
+    // dice, its damage type, the caster's INT, its school's rank.
+    CombatTemplate casterRow{};
+    casterRow.attackKind = CombatTemplate::Missile;
+    casterRow.dice = Dice{1, 1};                    // the row's own dice…
+    casterRow.castSpell = spell_ordinal("fireball");               // …are not read at all
+    const SpellDef* fire = spell_find("fireball");
+    CHECK(fire != nullptr, "the fixture's spell exists");
+    CharacterSheet mage{};
+    mage.attributes[AttributeId::Intl] = 7;
+    mage.skills[SkillId::FireMagic] = 30;
+    const CombatTemplate castOut = project_combat(mage, casterRow);
+    CHECK(castOut.dice.n == fire->dice.n && castOut.dice.m == fire->dice.m,
+          "a caster has no dice of his own: the SPELL's dice are the blow");
+    CHECK(castOut.dmgType == spell_damage_type(*fire),
+          "and the spell's damage type is the column it argues with");
+    CHECK(castOut.flatAdd == std::int16_t(mage.attributes.of(AttributeId::Intl)),
+          "the add is the caster's INT — the cast is magic, and says so");
+    CHECK(int(castOut.multPct)
+              == skill_mult_pct(mage.skills, SkillId::FireMagic),
+          "and the lever is the rank of the spell's OWN school");
+
     CharacterSheet witch{};
     witch.skills[SkillId::FireMagic] = 30;
-    CHECK(int(project_combat(witch, cast).multPct)
-              == skill_mult_pct(witch.skills, SkillId::FireMagic),
-          "a Missile (cast) row multiplies by its school");
     CHECK(project_combat(witch, melee).multPct == 100,
-          "and a school rank multiplies no sword");
+          "a school rank multiplies no sword");
     // The fist is a weapon type like any other (S14, appended v79).
     CharacterSheet monk{};
     monk.skills[SkillId::Unarmed] = 40;

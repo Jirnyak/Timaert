@@ -5,6 +5,8 @@
 #include "macro/attributes.h"
 #include "macro/bonus.h"
 #include "macro/npc.h"
+#include "macro/spell_book_state.h"   // spell_ordinal_ok — the column's guard
+#include "macro/spells.h"   // the spell a casting row names (CANON S15)
 
 #include <cstddef>
 #include <cstdint>
@@ -473,21 +475,33 @@ inline BonusTotals squad_bonuses(const CharacterSheet&) {
 // Untrained = 100, exactly the player's bare fist. Same skill_mult_pct law,
 // same 100-scale currency the strike assembly multiplies by.
 inline int sheet_strike_mult_pct(const CharacterSheet& sheet,
-                                 CombatTemplate::AttackKind kind) {
-    int best = 100;
-    const auto consider = [&](SkillId id) {
-        const int pct = skill_mult_pct(sheet.skills, id);
-        if (pct > best) best = pct;
-    };
-    if (kind == CombatTemplate::Missile) {
-        for (int i = int(SkillId::FireMagic); i <= int(SkillId::VoidMagic); ++i)
-            consider(SkillId(std::uint8_t(i)));
-    } else {
-        for (int i = int(SkillId::Sword); i <= int(SkillId::Staff); ++i)
-            consider(SkillId(std::uint8_t(i)));
-        consider(SkillId::Unarmed);
+                                 const CombatTemplate& base) {
+    // A CAST reads the rank of the spell's OWN school — the very sentence the
+    // player's cast reads (spell_book.cpp spell_mult_pct). A sleeping tag
+    // (no school) multiplies by nothing, exactly as it does for the player.
+    if (spell_ordinal_ok(base.castSpell)) {
+        const SkillId school = spell_school(kSpellDefs[base.castSpell]);
+        return school == SkillId::Count
+                   ? 100 : skill_mult_pct(sheet.skills, school);
     }
-    return best;
+    // A SHOT reads the SHOOTING skill, and only it: a row that looses a
+    // missile is drawing a bow, whatever else its hands know. «Best of all
+    // weapon skills» would have let a swordsman shoot better for his sword —
+    // a lever reaching a domain it was never about.
+    if (base.attackKind == CombatTemplate::Missile)
+        return skill_mult_pct(sheet.skills, SkillId::Bow);
+    // Otherwise it is a SWING, and the typed lever is the weapon skill. An
+    // NPC row carries no item in a Grip, so the door the player walks
+    // through (hand_strike_fields, the worn weapon's own skill column) reads
+    // his TRAINING instead: the best-trained weapon skill, the fist
+    // included. Untrained = 100, exactly the player's bare hand.
+    int best = 100;
+    for (int i = int(SkillId::Sword); i <= int(SkillId::Staff); ++i) {
+        const int pct = skill_mult_pct(sheet.skills, SkillId(std::uint8_t(i)));
+        if (pct > best) best = pct;
+    }
+    const int fist = skill_mult_pct(sheet.skills, SkillId::Unarmed);
+    return fist > best ? fist : best;
 }
 
 inline CombatTemplate project_combat(const CharacterSheet& sheet,
@@ -498,9 +512,31 @@ inline CombatTemplate project_combat(const CharacterSheet& sheet,
                      int(base.hp), base.mp, base.sp);
     const DerivedBonuses d =
         calculate_derived(sheet.attributes, sheet.skills);
-    const float atkBonus = (base.attackKind == CombatTemplate::Missile)
-                               ? d.rawSpellDamage
-                               : d.rawPhysDamage;
+    // РАСКЛЕЙКА КАСТА И ВЫСТРЕЛА (owner verdict 2026-09-17, built
+    // 2026-09-19): three cases, and the ROW says which — no column has to
+    // mean something it never claimed.
+    //
+    //   CAST  — the row names a spell: the blow IS that spell. Its dice, its
+    //           damage type and the caster's INT, through the very doors the
+    //           player's hand casts through (owner: «кубы СПЕЛЛА»). A caster
+    //           has no dice of his own, exactly like the player.
+    //   SHOT  — Missile with no spell named: dice + typed skill + LCK and NO
+    //           attribute add (CANON S14 «урон стрелкового БЕЗ добавки
+    //           атрибута» — range is the compensation).
+    //   SWING — Melee: the row's dice plus STR, as always.
+    //
+    // Until the spell column existed, `Missile` MEANT "caster", so the first
+    // NPC archer would have drawn an INT bonus from a column about delivery.
+    const SpellDef* cast = spell_ordinal_ok(base.castSpell)
+                               ? &kSpellDefs[base.castSpell] : nullptr;
+    float atkBonus = 0.0f;
+    if (cast) {
+        out.dice    = cast->dice;
+        out.dmgType = spell_damage_type(*cast);
+        atkBonus    = float(d.rawSpellDamage);
+    } else if (base.attackKind != CombatTemplate::Missile) {
+        atkBonus    = float(d.rawPhysDamage);
+    }
     out.hp      = float(cs.maxHp);
     // Attributes ADD to the row's dice (CANON S14: «атрибуты складывают»),
     // floored to the int house — the strike assembly (roll_strike) does the
@@ -514,16 +550,19 @@ inline CombatTemplate project_combat(const CharacterSheet& sheet,
     // bandit genuinely strikes faster than a peasant with the same club. One
     // rounding, in the door; seconds again for the float carrier the strike
     // pass converts per swing (steps_from_seconds).
+    // The GENERIC of the act's own domain: Spellcraft paces a CAST, and
+    // Armsmaster paces every physical act — a swing and a SHOT alike (a bow
+    // is drawn by arms, not by a casting hand; before the split, the row's
+    // delivery column decided this too).
     out.cooldown = seconds_from_steps(std::uint32_t(recovery_steps(
         base.cooldown, sheet.attributes, sheet.skills,
-        base.attackKind == CombatTemplate::Missile ? SkillId::Spellcraft
-                                                   : SkillId::Armsmaster)));
+        cast ? SkillId::Spellcraft : SkillId::Armsmaster)));
     // The POWER half of the same split: the typed skill multiplies the dice
     // (the door above already gave the generic pair to TEMPO — one handle,
     // one lever). Both consumers read THIS field now: the fought body
     // (spawn combat_from_sheet) and the auto-resolve (fighter_power) — the
     // two ends of S13's one law of battle, moved in one commit on purpose.
-    out.multPct = std::int16_t(sheet_strike_mult_pct(sheet, base.attackKind));
+    out.multPct = std::int16_t(sheet_strike_mult_pct(sheet, base));
     return out;
 }
 

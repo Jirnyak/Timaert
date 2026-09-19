@@ -105,6 +105,31 @@ struct CombatTemplate {
     // платится, вода не требует корабля).
     float cruiseM = 0.0f;
 
+    // ЧТО ЭТА СТРОКА КАСТУЕТ (owner verdict 2026-09-17, built 2026-09-19 —
+    // РАСКЛЕЙКА КАСТА И ВЫСТРЕЛА): «каст у нас через систему спелов а есть
+    // ещё система стрельбы (метание/луки/арбалеты/мушкеты и тд)».
+    //
+    // ORDINAL of the spell registry row, ≥ 0 = this creature ATTACKS BY
+    // CASTING: its blow is then the SPELL's — the spell's dice, the spell's
+    // damage type, the caster's INT, the rank of the spell's own school —
+    // through the very doors the player's hand casts through. −1 = it does
+    // not cast, and then a Missile row is a SHOT: dice + the shooting skill,
+    // NO attribute add (CANON S14 «урон стрелкового БЕЗ добавки атрибута»).
+    //
+    // A NUMBER, not a string (owner, 2026-09-19: «а то засрём данные»): the
+    // registry law is «strings stay the AUTHORING key in tables, the runtime
+    // carries the ordinal» — the same law `faction_index` and every item row
+    // already obey. Rows author it as `spell_ordinal("fireball")`, which is
+    // constexpr, so the lookup happens in the COMPILER and a body's birth
+    // (project_combat, run per spawn, thousands per scene) never walks the
+    // spell table comparing strings.
+    //
+    // Until this column existed, `attackKind == Missile` MEANT "caster" —
+    // every Missile row in the game happened to be one — so the first
+    // NPC archer would have been handed an INT bonus to his arrows by a
+    // column that never claimed to speak about magic.
+    int castSpell = -1;
+
     // ── Filled by project_combat, never authored (a row has no sheet) ──────
     // The sheet's attribute ADD to every roll of the dice above (STR-derived
     // for melee rows, INT-derived for missile ones), floored to the int house.
