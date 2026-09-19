@@ -282,7 +282,7 @@ ecs::Combat combat_from_sheet(const CharacterSheet& sheet,
                               const NpcTypeDef& def) {
     const CombatTemplate pc = project_combat(sheet, def.combat);
     return ecs::Combat{
-        pc.dice, pc.flatAdd, std::int16_t(100), pc.luck,
+        pc.dice, pc.flatAdd, pc.multPct, pc.luck,
         std::uint8_t(pc.dmgType), march_speed(pc.speedMarchMult),
         pc.attackRange, pc.cooldown, /*recoverySteps*/0u,
         pc.attackKind == CombatTemplate::Missile ? ecs::Combat::Missile

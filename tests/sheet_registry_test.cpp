@@ -272,6 +272,44 @@ void test_the_third_currency_accrues() {
           "and neighbours stay untouched");
 }
 
+// ── An NPC hits with his SHEET (CANON S13/S14, session Е 2026-09-19) ─────
+// The largest «игрок == НПЦ» asymmetry: both consumers (spawn's
+// combat_from_sheet and auto_battle's fighter_power) hardcoded multPct 100,
+// so the points the generator spent into weapon skills and schools
+// multiplied nothing. One door now — project_combat.multPct, the
+// best-trained skill of the attack's domain — and both ends read it.
+void test_npc_strikes_with_his_sheet() {
+    CharacterSheet bare{};
+    CombatTemplate melee{};                      // Melee by default
+    CombatTemplate cast{};
+    cast.attackKind = CombatTemplate::Missile;   // today: always a caster row
+    CHECK(project_combat(bare, melee).multPct == 100,
+          "an untrained sheet swings at x1 — the player's bare fist");
+
+    CharacterSheet swordsman{};
+    swordsman.skills[SkillId::Sword] = 20;
+    const int swordPct = skill_mult_pct(swordsman.skills, SkillId::Sword);
+    CHECK(swordPct > 100, "negative control: the rank does move the law");
+    CHECK(int(project_combat(swordsman, melee).multPct) == swordPct,
+          "a melee row multiplies by the best-trained weapon skill");
+    CHECK(project_combat(swordsman, cast).multPct == 100,
+          "and a sword rank multiplies no cast — domains do not leak");
+
+    CharacterSheet witch{};
+    witch.skills[SkillId::FireMagic] = 30;
+    CHECK(int(project_combat(witch, cast).multPct)
+              == skill_mult_pct(witch.skills, SkillId::FireMagic),
+          "a Missile (cast) row multiplies by its school");
+    CHECK(project_combat(witch, melee).multPct == 100,
+          "and a school rank multiplies no sword");
+    // The fist is a weapon type like any other (S14, appended v79).
+    CharacterSheet monk{};
+    monk.skills[SkillId::Unarmed] = 40;
+    CHECK(int(project_combat(monk, melee).multPct)
+              == skill_mult_pct(monk.skills, SkillId::Unarmed),
+          "the unarmed monk is a build, not a gap in the law");
+}
+
 // ── A role's opinion of every skill is stated, not defaulted ─────────────
 void test_every_role_rates_every_skill() {
     for (int r = 0; r < int(NPCType::Count); ++r) {
@@ -324,6 +362,7 @@ int main() {
     test_one_door_and_the_row_decides();
     test_the_cap_belongs_to_the_law();
     test_the_third_currency_accrues();
+    test_npc_strikes_with_his_sheet();
     test_the_governed_numbers_follow_the_row();
     test_every_role_rates_every_skill();
     return sm::test::report("sheet_registry_test");

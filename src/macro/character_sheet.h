@@ -463,6 +463,33 @@ inline BonusTotals squad_bonuses(const CharacterSheet&) {
 // Every body passes through here — a wolf exactly like a spearman (CANON S14):
 // its row supplies the floor and the attack identity, its sheet supplies the
 // scaling.
+// The NPC's typed damage percent (CANON S13/S14, session Е 2026-09-19). An
+// NPC row carries no item in a Grip, so the door the player walks through
+// (anatomy.cpp hand_strike_fields — the worn weapon's own skill column)
+// reads his TRAINING instead: the best-trained skill of the attack's domain.
+// Melee — the eight weapon skills (the fist included); a Missile row today
+// is always a CAST (Witch/Sorceress/Dragon/Cultist/Lich), so its domain is
+// the six schools (the Е4 расклейка will split cast from shot honestly).
+// Untrained = 100, exactly the player's bare fist. Same skill_mult_pct law,
+// same 100-scale currency the strike assembly multiplies by.
+inline int sheet_strike_mult_pct(const CharacterSheet& sheet,
+                                 CombatTemplate::AttackKind kind) {
+    int best = 100;
+    const auto consider = [&](SkillId id) {
+        const int pct = skill_mult_pct(sheet.skills, id);
+        if (pct > best) best = pct;
+    };
+    if (kind == CombatTemplate::Missile) {
+        for (int i = int(SkillId::FireMagic); i <= int(SkillId::VoidMagic); ++i)
+            consider(SkillId(std::uint8_t(i)));
+    } else {
+        for (int i = int(SkillId::Sword); i <= int(SkillId::Staff); ++i)
+            consider(SkillId(std::uint8_t(i)));
+        consider(SkillId::Unarmed);
+    }
+    return best;
+}
+
 inline CombatTemplate project_combat(const CharacterSheet& sheet,
                                      const CombatTemplate& base) {
     CombatTemplate out = base; // keep attack identity + label + missile params
@@ -491,6 +518,12 @@ inline CombatTemplate project_combat(const CharacterSheet& sheet,
         base.cooldown, sheet.attributes, sheet.skills,
         base.attackKind == CombatTemplate::Missile ? SkillId::Spellcraft
                                                    : SkillId::Armsmaster)));
+    // The POWER half of the same split: the typed skill multiplies the dice
+    // (the door above already gave the generic pair to TEMPO — one handle,
+    // one lever). Both consumers read THIS field now: the fought body
+    // (spawn combat_from_sheet) and the auto-resolve (fighter_power) — the
+    // two ends of S13's one law of battle, moved in one commit on purpose.
+    out.multPct = std::int16_t(sheet_strike_mult_pct(sheet, base.attackKind));
     return out;
 }
 

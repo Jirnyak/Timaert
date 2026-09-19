@@ -118,11 +118,14 @@ inline float fighter_power(NPCType type, int level, std::uint32_t seed,
                       (float(kArmorHalving + auto_battle_armor(def.armor))
                        / float(kArmorHalving));
     // The swing is the strike's expectation (strike_mean_x2, the same
-    // assembly the fought path rolls; NPC skill percent is 100 until rows
-    // learn weapons). Crit expectation is uncredited like the threshold
-    // branch — both need the opponent, which a per-fighter scalar lacks.
-    const float dps = float(strike_mean_x2(pc.dice, pc.flatAdd, 100)) * 0.5f /
-                      std::max(0.1f, pc.cooldown);
+    // assembly the fought path rolls) — INCLUDING the sheet's typed skill
+    // percent (project_combat.multPct, session Е 2026-09-19): the fought
+    // body and this resolver moved off the hardcoded 100 in one commit,
+    // because two answers to «как бьёт НПЦ» is two laws of battle (S13).
+    // Crit expectation is uncredited like the threshold branch — both need
+    // the opponent, which a per-fighter scalar lacks.
+    const float dps = float(strike_mean_x2(pc.dice, pc.flatAdd, pc.multPct))
+                      * 0.5f / std::max(0.1f, pc.cooldown);
     return hp * dps;
 }
 
