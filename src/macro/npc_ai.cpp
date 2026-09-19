@@ -178,6 +178,37 @@ Inventory* home_inventory(const ecs::MacroNpcRuntime& rt,
     return lm ? &lm->inventory : nullptr;
 }
 
+// ТАКТ 1 — СДАЧА (двухтактный обоз, вердикт владельца 2026-09-19):
+// зеркало разгрузки сумки для РОСТЕРА. Отряд сдаёт домой ВСЁ ездовое, ровно
+// как рудокоп сдаёт всю руду: табун — имущество МЕСТА, а не личная
+// собственность артели. Артель не торгуется со своей деревней — это
+// перенос, а не сделка (закон займа S5).
+//
+// ПОЧЕМУ 100%, А НЕ ИЗЛИШЕК (измерено до правки): при «оставь себе по коню
+// на душу» ловцы приватизировали упряжку и переставали ловить — за 128 дней
+// сид 7 в стойлах мира стояла ОДНА голова против 11 964 в артелях, то есть
+// табун не принадлежал никому, кроме тех, кто его поймал. Выдача обратно —
+// такт 2 (outfit_crew_mounts ниже).
+void deliver_mounts_home(entt::entity self, const ecs::MacroNpcRuntime& rt,
+                         const TickContext& ctx) {
+    if (!ctx.mw.world) return;
+    auto* ro = ctx.mw.world->reg.try_get<ecs::SquadRoster>(self);
+    if (!ro) return;
+    Landmark* lm = home_landmark(rt, ctx);
+    if (!lm) return;
+    bool moved = false;
+    for (int i = ro->squad.slot_count() - 1; i >= 0; --i) {
+        if (!is_mount_kind(ro->squad[i].kind)) continue;
+        const SoldierSlot stall = ro->squad[i];
+        // Credit BEFORE debit (S5): a full garrison leaves the beasts IN
+        // the roster rather than burning them.
+        if (!lm->garrison.push_slot(stall)) continue;
+        ro->squad.remove_slot_at(i);
+        moved = true;
+    }
+    if (moved) refresh_squad_carry(*ctx.mw.world, self);
+}
+
 // Empty the gatherer's own bag of `id` into his home store — the shared
 // arrival half of every honest work-loop (woodcutter, farmer).
 void deliver_bag_home(entt::entity self, const ecs::MacroNpcRuntime& rt,
@@ -1424,8 +1455,7 @@ void ai_gatherer(entt::entity self, MacroPos& p,
                 // batch of eight this replaced was a HAUL, and the haul is not
                 // gone: it emerges below from the backs and the bar instead of
                 // being declared by a constant nobody could derive.
-                const int take =
-                    std::min(std::min(workers, have), carryMax);
+                int take = std::min(std::min(workers, have), carryMax);
                 tookSomething = take > 0;
                 // «ВЫХОД ЛОЖИТСЯ В РОСТЕР, А НЕ В СУМКУ» (CANON S10,
                 // дословно): существо встаёт ДУШОЙ в отряд — генерик-стаком
@@ -1435,7 +1465,13 @@ void ai_gatherer(entt::entity self, MacroPos& p,
                 if (take > 0 && def->rosterYield != NPCType::Count) {
                     auto* ro =
                         ctx.mw.world->reg.try_get<ecs::SquadRoster>(self);
-                    if (ro && ro->squad.push_stack(
+                    // ПОТОЛКА ЛОВЛИ НЕТ (двухтактный обоз): ловец гонит
+                    // ПАЧКУ и сдаёт её домой целиком, поэтому «не больше,
+                    // чем душ» тут было бы вечным кругом «поймал — отдал».
+                    // Тормоз — ЦЕНА: аукцион дешевеет по мере насыщения
+                    // стойла (стоимость строки × та же кривая дефицита),
+                    // и рулетка сама уводит руки в другую цель.
+                    if (take > 0 && ro && ro->squad.push_stack(
                             std::uint16_t(def->rosterYield),
                             std::int16_t(npc_def(def->rosterYield).baseLevel),
                             take)) {
@@ -1595,11 +1631,13 @@ void ai_gatherer(entt::entity self, MacroPos& p,
         if (at_target(p, rt, ctx)) {
             // Home with the haul: everything gathered lands in the HOME
             // store — the same universal inventory the market sells from.
-            if (rt.state == std::uint8_t(NS::Returning)
-                && def->commodity != nullptr) {
-                // (the herd stays in the ROSTER; the dissolve law hands it
-                // to the garrison — nothing rides the bag home)
-                deliver_bag_home(self, rt, ctx, def->commodity);
+            if (rt.state == std::uint8_t(NS::Returning)) {
+                // ОДИН ПРИХОД, ДВА КОНТЕЙНЕРА (S25): груз — на склад,
+                // лишние спины — в стойло. У существа нет товарной колонки,
+                // поэтому сумка его и не видит.
+                if (def->commodity != nullptr)
+                    deliver_bag_home(self, rt, ctx, def->commodity);
+                deliver_mounts_home(self, rt, ctx);
             }
             rt.state = std::uint8_t(NS::Idle);
             rt.stateTimer = std::int16_t(6 + rand_int(ctx, 12));
@@ -3703,6 +3741,40 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
 }
 
 // ── Squads eat (contract in npc_ai.h) ────────────────────────────────────
+// ТАКТ 2 — СНАРЯЖЕНИЕ ТЯГЛОМ (двухтактный обоз). Место выдаёт уходящей
+// артели ездовых из своего стойла по ЗАКОНУ УПРЯЖКИ (npc.h
+// mount_allowance: по одному на душу) — и столько, сколько в стойле стоит.
+// Стоит рядом с провиантом (provision_squad) намеренно: это тот же акт —
+// дом снаряжает свою артель на рейс из своих запасов, просто второй
+// контейнер (S25 «одна форма, разные контейнеры»).
+//
+// Тяжёлым работам тягло достаётся САМО, без прогноза груза: обоз есть сумма
+// спин (squad.h refresh_squad_carry), поэтому выданный конь — это +8 спин
+// тому, кто сегодня идёт за рудой, и ни одного нового числа.
+int outfit_crew_mounts(ecs::World& w, Landmark& home, entt::entity crew) {
+    auto* ro = w.reg.try_get<ecs::SquadRoster>(crew);
+    if (!ro) return 0;
+    int want = mount_allowance(ro->squad) - count_mount_souls(ro->squad);
+    int given = 0;
+    while (want > 0) {
+        int si = -1;
+        for (int i = home.garrison.slot_count() - 1; i >= 0; --i) {
+            if (is_mount_kind(home.garrison[i].kind)) { si = i; break; }
+        }
+        if (si < 0) break;   // стойло пусто — артель идёт пешей
+        SoldierRecord mount{};
+        if (!home.garrison.take_soul_at(si, mount)) break;
+        if (!ro->squad.push(mount)) {
+            home.garrison.push(mount);   // нет слота — конь остаётся дома
+            break;
+        }
+        ++given;
+        --want;
+    }
+    if (given > 0) refresh_squad_carry(w, crew);
+    return given;
+}
+
 int provision_squad(Inventory& store, Inventory& bag, int soldiers,
                     float roundtripCells, float freeCarryKg) {
     if (soldiers <= 0) return 0;   // the leader is a subject — he needs nothing
@@ -4229,10 +4301,14 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                     const int herd = count_soldiers_of_kind(
                         s.garrison, std::uint16_t(gd.rosterYield))
                         + horsesStanding[row];
-                    const int pool =
-                        s.population >> landmark_def(s.type).labourShift;
-                    const int backs = std::max(1, int(yieldRow.haulMult));
-                    const int wanted = std::max(1, pool / backs);
+                    // НУЖДА — ТОТ ЖЕ ЗАКОН УПРЯЖКИ (владелец 2026-09-19:
+                    // «по лошадке на душу»): месту нужно столько ездовых,
+                    // сколько душ оно выводит в поле — пул труда. Прежнее
+                    // «пул / haulMult» было вторым правилом о той же вещи
+                    // (дефект S26) и просило вшестеро меньше, чем отряды
+                    // способны вести.
+                    const int wanted = std::max(
+                        1, s.population >> landmark_def(s.type).labourShift);
                     unitPrice = stock_price(base, herd, wanted);
                 } else {
                     const ItemDef* idef = item_def(gd.commodity);
@@ -4616,6 +4692,10 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 prt.errandVerb = errandVerb[i];
                 prt.errandObject = errandObject[i];
                 prt.stateTimer = 0;   // новый рейс — этим же думом
+                // ТАКТ 2: дом снаряжает уходящую артель тяглом из стойла
+                // (по коню на душу, сколько стоит) — рядом с провиантом
+                // ниже, тот же акт над вторым контейнером.
+                outfit_crew_mounts(*mw.world, s, standing);
                 // ПРИВЕДЕНИЕ СОСТАВА (S19.2, 2026-09-18): на границе
                 // стоящая артель дышит к пулу — добор из населения (дома,
                 // сколько прокормит склад: окно этого же дня спишет сезон
@@ -4723,6 +4803,9 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 // (остался у вылазок гарнизона — они не подсудны суду
                 // состава).
                 load_season_upkeep(s, ent);
+                // ТАКТ 2 для новорождённой артели: то же стойло, тот же
+                // закон упряжки — дом снаряжает её тяглом, если оно есть.
+                outfit_crew_mounts(*mw.world, s, ent);
             }
         }
         for (int si = 0; si < soloCount; ++si) {

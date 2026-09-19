@@ -81,6 +81,18 @@ enum class NPCType : std::uint8_t {
     Count,
 };
 
+// ЧТО ЭТА СТРОКА ДЕЛАЕТ В ОТРЯДЕ — тег строки существа, ровно как ItemType
+// у предмета (владелец 2026-09-19: «лошадям дать тег mount — уже есть
+// система, что теги товары и теги еда у предметов»). ОДНА колонка на
+// строку, не маска: существо играет в ростере одну роль, и роли не
+// складываются. None = обычный боец/зверь.
+enum class NpcTag : std::uint8_t {
+    None = 0,
+    // ЕЗДОВОЕ/ВЬЮЧНОЕ: не рука и не боец в первую очередь, а СПИНА под
+    // человека. Отсюда закон упряжки ниже — их столько же, сколько душ.
+    Mount,
+};
+
 enum class NPCState : std::uint8_t {
     Idle = 0, Wandering, Traveling, Returning, Working, Chasing, Patrolling, Resting,
     // Running from a stronger hostile squad (Session 15): set by the universal
@@ -251,6 +263,7 @@ struct NpcTypeDef {
     // end costs no other row a comma.
     float haulMult = 1.0f;
 
+
     // ARMOUR THE ROW IS WEARING — the crowd's defence, as ROW DATA rather
     // than as instances (owner ruling, 2026-08-27: «броня массовки = ЧИСЛО ИЗ
     // СТРОКИ»). A troll's hide and a guard's plate are what those rows ARE;
@@ -276,6 +289,13 @@ struct NpcTypeDef {
     // (army.h soldier_level_factor), applied by the reader; 0 — every row
     // that omits it, i.e. everything with no upkeep — is not for sale.
     int hireGold = 0;
+
+    // Роль строки в ростере (NpcTag выше). Умолчание None: всякая строка,
+    // которая молчит, — обычный боец. Колонка, а не список «кто лошадь»:
+    // верблюд и мул становятся ездовыми, назвав ТЕГ, не тронув ни одной
+    // ветки (закон спецпутей — списка исключений не существует). Последняя
+    // на месте: opt-in колонка в хвосте не стоит остальным строкам запятой.
+    NpcTag tag = NpcTag::None;
 };
 
 // ── «ИМЕНОВАННОСТЬ» — субъектность рода (owner verdict 2026-09-10) ─────────
@@ -1030,6 +1050,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         // The price of the backs it replaces: eight peasant hires (30 each,
         // the row above) — dearer than a soldier, cheaper than a house.
         /*hireGold=*/240,
+        /*tag=*/NpcTag::Mount,
     },
 };
 static_assert(rows_in_enum_order(kNpcTypeDefs, &NpcTypeDef::type),
@@ -1280,6 +1301,40 @@ inline int soldier_upkeep(const SoldierRecord& s) {
 }
 inline int soldier_upkeep(const SoldierSlot& s) {
     return soldier_upkeep(s.kind, s.level);
+}
+
+// ЕЗДОВАЯ ЛИ ЭТА СТРОКА — ОДНА дверь тега, чтобы «лошадь» нигде не
+// называлась по имени рода (верблюд, мул и овца-вьюк станут ездовыми
+// строкой данных).
+inline bool is_mount_kind(std::uint16_t kind) {
+    return valid_npc_kind(kind) && npc_def(NPCType(kind)).tag == NpcTag::Mount;
+}
+
+// Сколько ездовых стоит в ростере — вторая половина закона упряжки.
+inline int count_mount_souls(const SoldierSquad& squad) {
+    int n = 0;
+    for (const SoldierSlot& s : squad) {
+        if (is_mount_kind(s.kind)) n += int(s.count);
+    }
+    return n;
+}
+
+// ЗАКОН УПРЯЖКИ (владелец, 2026-09-19: «по лошадке на душу»): отряд ведёт
+// столько ездовых, сколько в нём НЕ-ездовых душ — по одной на душу, и ни
+// одной лишней. Лидер — своя душа, он тоже ведёт коня, поэтому +1.
+//
+// Это МЕРА ВЫДАЧИ, а не право собственности: табун принадлежит МЕСТУ
+// (ДВУХТАКТНЫЙ ОБОЗ, вердикт владельца 2026-09-19) — на приходе отряд
+// сдаёт в стойло ВСЁ ездовое, на выходе место выдаёт ему столько, сколько
+// говорит эта мера и сколько стоит в стойле. Отсюда даром: табун можно
+// угнать в набеге, продать караваном и увидеть в анкете места, а тяглом
+// пользуется тот, кого дом сегодня послал за тяжёлым.
+inline int mount_allowance(const SoldierSquad& squad) {
+    int riders = 1;   // лидер
+    for (const SoldierSlot& s : squad) {
+        if (!is_mount_kind(s.kind)) riders += int(s.count);
+    }
+    return riders;
 }
 
 // The roster's PEOPLE — the souls that are hands, mouths of the labour

@@ -761,14 +761,21 @@ void test_the_catch_lands_in_the_roster() {
         lost += int(scar);
     });
 
-    CHECK(caught > 0, "the catch landed in the ROSTER as souls");
-    CHECK(lost == caught,
-          "CONSERVATION: heads the herd field lost == souls that joined");
-    CHECK(roster.slot_count() == 1 && roster[0].entityId == 0,
-          "mass beasts are ONE generic stack — the slot law, not a wall");
+    const int stabled = count_soldiers_of_kind(
+        gs.landmarks[0].garrison, std::uint16_t(NPCType::Horse));
+    CHECK(caught + stabled > 0, "the catch landed as SOULS, not as cargo");
+    CHECK(lost == caught + stabled,
+          "CONSERVATION через два контейнера: упряжка + стойло == голов, "
+          "которых лишилось поле");
+    CHECK(stabled > 0,
+          "ТАКТ 1: отряд сдал табун ДОМОЙ — стойло места, не карман артели");
     CHECK(gs.landmarks[0].inventory.count("food") == 0
               && reg.get<ecs::NpcInventory>(e).inv.count("food") == 0,
           "a creature yield rides NO bag: nothing landed in the store");
+    CHECK(is_mount_kind(std::uint16_t(NPCType::Horse)),
+          "строка лошади несёт тег Mount — закон спрашивает ТЕГ, не род");
+    CHECK(caught <= mount_allowance(roster),
+          "ТАКТ 2: отряд ведёт не больше ездовых, чем душ (закон упряжки)");
     // A pasture rose first — the crew fences before it catches (S10 «фичи
     // создаются сквадами»), and the world remembers it as a Built row.
     int pastures = 0;
@@ -777,12 +784,37 @@ void test_the_catch_lands_in_the_roster() {
     CHECK(pastures == 1, "the crew fenced exactly ONE pasture to work");
     CHECK(!gs.builtFeatures.empty(),
           "the fence is WORLD TRUTH — it rides the save as a Built row");
-    // The backs GREW by the catch: refresh_squad_carry weighs each soul by
-    // its own haulMult column, so a horse in the roster hauls like eight men.
-    const auto& rtNow = reg.get<ecs::MacroNpcRuntime>(e);
-    CHECK(rtNow.carryCap
-              >= rtNow.carryPerSoul * (1.0f + 8.0f * float(caught)) - 0.5f,
-          "каждая пойманная лошадь — восемь спин в обозе (haulMult)");
+    // ТАКТ 2 ОТДЕЛЬНО: стойло снаряжает уходящую артель. Дверь зовётся
+    // из суда ротации, здесь — прямо, чтобы свидетель судил ЗАКОН, а не
+    // расписание дня: место выдаёт по коню на душу и ни одного сверх.
+    {
+        auto& roMut = reg.get<ecs::SquadRoster>(e).squad;
+        while (roMut.slot_count() > 0) {          // пешая артель
+            SoldierRecord off{};
+            if (!roMut.pop_soul_back(off)) break;
+        }
+        Landmark& home = gs.landmarks[0];
+        const int stall = count_soldiers_of_kind(
+            home.garrison, std::uint16_t(NPCType::Horse));
+        CHECK(stall >= 2, "фикстура: в стойле есть из чего снаряжать");
+        // Лидер без членов — одна душа, значит ровно один конь.
+        const int given = outfit_crew_mounts(w, home, e);
+        CHECK(given == 1 && count_mount_souls(roMut) == 1,
+              "ТАКТ 2: дом выдал по ездовому на душу — одному лидеру коня");
+        CHECK(count_soldiers_of_kind(home.garrison,
+                                     std::uint16_t(NPCType::Horse))
+                  == stall - given,
+              "CONSERVATION такта 2: сколько вышло из стойла, столько и "
+              "встало в упряжку");
+        const int twice = outfit_crew_mounts(w, home, e);
+        CHECK(twice == 0,
+              "мера — потолок, а не запрос: снаряжённый отряд второго коня "
+              "не берёт, даже когда стойло полно");
+        // И обоз вырос ровно на спину коня — та же дверь, что у добора.
+        const auto& rtNow = reg.get<ecs::MacroNpcRuntime>(e);
+        CHECK(rtNow.carryCap >= rtNow.carryPerSoul * (1.0f + 8.0f) - 0.5f,
+              "выданный конь — восемь спин в обозе (haulMult)");
+    }
 }
 
 int main() {
