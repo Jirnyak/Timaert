@@ -9,9 +9,22 @@ items, inventory, equipment, loot.
 > the eight attributes, the skills, the learn law, creation. Phase 3 (v79):
 > dice, crit, the 9×9 hybrid armour, weapon-in-hand. Phases 4–6 (v80–v81):
 > the effective-sheet door, the integer derived house, school wiring, the
-> three world readers. **The perk system was PURGED whole 2026-09-03** pending
-> its redesign — the game carries no perk state at all (no enum, no bag, no
-> points, no save bytes); only the aura door survives, returning empty.
+> three world readers. **The perk system was PURGED whole 2026-09-03** and
+> its SKELETON returned 2026-09-19 as a deliberate STUB (session Е, save
+> v100, owner verdict: «сами перки мы делать не будем… пока просто
+> заглушка»): the third currency accrues (`LevelData.perkPoints`, 5 at
+> creation and +1 every level — the 1-1-1 budget) and every `CharacterSheet`
+> carries the 256-bit `PerkMask` (32 bytes, `has_perk`/`set_perk`) the
+> constellation graph will fill. The GRAPH itself — `kPerkNodes`, its edges,
+> the quadrants, the NPC's walk along a role vector — is content-stage and
+> consciously absent; nothing spends a point yet. The aura door still
+> stands, returning empty, and is where node rows will feed `BonusTotals`.
+>
+> **Session Е (2026-09-19) also closed four combat debts:** an NPC now
+> strikes with his own sheet (`multPct` from training, both ends of S13 in
+> one commit), the armour skills finally multiply their own kind, a spell's
+> strength is its dice alone (two undercanon multipliers removed), and the
+> CAST/SHOT split landed (a row NAMES its spell by ordinal).
 
 - **Code:** [macro/attributes.h](src/macro/attributes.h) (attributes, skills,
   `BarCeilings`, `DerivedBonuses`, the learn/spend doors),
@@ -141,8 +154,15 @@ floor = 1 simulation step (the time quantum, not an invented cap)
 `kSkillDefs` — **33 rows** (the canon 32 plus **Unarmed**, appended v79 as
 the eighth weapon skill), in a fixed 64-slot envelope so a new skill never
 moves the save. Groups: weapons ×8 (Sword, Axe, Spear, Mace, Dagger, Bow,
-Staff, Unarmed — 10%/rank), armour ×4 (Heavy, Light, Unarmored, Shield —
-10%/rank), the six schools (Fire/Water/Air/Earth/Arcane/Void Magic —
+Staff, Unarmed — 10%/rank), armour ×4 (Heavy, Light, Shield — 10%/rank,
+READ since 2026-09-19: each worn piece's contribution — its row's columns
+AND its own rolled affixes — is multiplied by the rank of the skill THAT
+PIECE names in its own `skill` column, the same column a weapon states its
+skill in; a creature ROW's armour is multiplied by its wearer's best living
+armour rank. **Unarmored SLEEPS at 0%/rank** — a naked body's contribution
+is zero, so «rank multiplies its own kind» has nothing to multiply there;
+it waits for the mechanic it would read, named as a sleeper in
+`sheet_registry_test` so the «no dead columns» law keeps its teeth), the six schools (Fire/Water/Air/Earth/Arcane/Void Magic —
 10%/rank), the generic pair (Armsmaster, Spellcraft — 5%/rank of TEMPO in
 their domain, the recovery door above; their pre-2026-09-07 damage role is
 dead), body ×5 (Bodybuilding, Meditation ×5%; Marathon, Athletics
@@ -252,8 +272,9 @@ Full law and rationale: [combat.md](combat.md), CANON S13.
 
 The school is a COLUMN of the spell-tag table (`kSpellTagDefs`: tag →
 dmgType + school), not of the skill table. A spell reads **ITS school's
-rank** into `spell_mult_pct` (school × `scalingPower`, the same shape as a
-weapon skill × a swing), and its stat-effects scale through `spell_bonus`
+rank** into `spell_mult_pct` (the school ALONE, the same shape as a
+weapon skill × a swing — the `scalingPower` float beside it died in session Е,
+2026-09-19: each row's value was folded into its own dice), and its stat-effects scale through `spell_bonus`
 (school is a REQUIRED argument). Spellcraft adds its 5% generic layer on
 top via `rawSpellDamage`. **Body and Mind tags SLEEP** (`SkillId::Count` —
 their spells scale by Spellcraft alone) «до апдейта паладинов и клериков»
@@ -366,7 +387,24 @@ rolled at loose, muzzle cleared, eye height both ends). NO ammo exists
 dice + typed skill + LCK; range is the compensation, a future firearm is
 the same law with fatter flat dice (worn DmgFlat affixes still speak: that
 is equipment's voice, not the body's). The loose pays the same recovery
-gate from the same kilogram. `Thrown` is the reserved third value — the
+gate from the same kilogram.
+
+**CAST vs SHOT — the NPC side of that same law (session Е, 2026-09-19;
+owner verdict 2026-09-17: «каст у нас через систему спелов а есть ещё
+система стрельбы»)**: a creature ROW has no item in a grip, so until this
+split `attackKind == Missile` MEANT "caster" — every Missile row in the
+game happened to be one, and the first NPC archer would have drawn an INT
+bonus to his arrows from a column about delivery. A row now NAMES its
+spell: `CombatTemplate::castSpell` is an ORDINAL of the spell registry
+(authored `spell_ordinal("fireball")` — constexpr, so the lookup happens in
+the compiler and a body's birth never walks the table comparing strings;
+strings stay the AUTHORING key, the runtime carries the ordinal). Three
+cases, and the row says which: a **CAST** (spell named) IS that spell — its
+dice, its damage type, the caster's INT, its school's rank, Spellcraft for
+tempo (a caster has no dice of his own, exactly like the player); a
+**SHOT** (Missile, no spell) takes the shooting skill and NO attribute add,
+Armsmaster for tempo (a bow is drawn by arms); a **SWING** takes STR.
+`Thrown` is the reserved third value — the
 item itself flies; it awakens after the demo.
 
 **Trade hangs off VALUE (built 2026-09-09, verdict 2026-09-07)**: both

@@ -31,8 +31,13 @@ plot/event arc** — driven by the L3 event system.
   level pays **+1 attribute and +1 skill point (1:1)**, spent through
   `spend_attribute_point` / `spend_skill_point`; a skill point spends only
   into a LEARNED skill (rank 0 = ignorance; `learn_skill` is the one door out
-  of it). The perk point returns with the perk system — every 10th level plus
-  one starter-pool pick at creation. Skills follow one law — a rank is its
+  of it). **+1 PERK point every level too** — the budget is
+  1-1-1 and creation is 5-5-5 (CANON S14, owner verdict 2026-09-14; the
+  «every 10th level» line was a leftover of the purged system and died with
+  the stub, 2026-09-19). The points accrue honestly; the constellation graph
+  they spend into is consciously absent for the demo (owner: «сами перки мы
+  делать не будем… пока просто заглушка»), and `CharacterSheet` already
+  carries the 256-bit `PerkMask` the graph will fill (save v100). Skills follow one law — a rank is its
   row's `pctPerRank`, capped at 100 — see [rpg.md](rpg.md).
 - **Spells:** learned / unlocked through the spell book ([spells.md](spells.md)).
 - **Plot:** L4 pure-data `LogicNode` factories (intro slides, chapters) applied
