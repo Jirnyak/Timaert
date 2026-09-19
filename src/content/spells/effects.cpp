@@ -269,6 +269,9 @@ constexpr SpellEffectRow kSpellEffects[] = {
     {"haste",           nullptr},
     {"flight",          nullptr},
     {"possession",      &spawn_possession},
+    // Стрела пустоты летит ТОЙ ЖЕ дверью, что магический болт — форма у них
+    // одна (снаряд), различие целиком в колонках строки (школа, кубы, цена).
+    {"void_arrow",      &spawn_magic_bolt},
 };
 
 static_assert(sizeof(kSpellEffects) / sizeof(kSpellEffects[0])

@@ -538,6 +538,39 @@ inline constexpr SpellDef kSpellDefs[] = {
         .cons = {"Only weaker-leveled targets", "High mana cost",
                  "Game over if your body is dead"},
     },
+    // СТРЕЛА ПУСТОТЫ — ЗАГЛУШКА школы Void (владелец, 2026-09-19: «добавим
+    // да сделай как заглушку стрела пустоты»). ПОВОД: у Void не было НИ
+    // ОДНОГО спелла с уроном, и лич — существо, чей урон Void, — вынужденно
+    // кастовал Arcane-луч. Это была не дыра закона, а ненаписанная строка
+    // (S15: «школа — просто набор спелов»), и вот она.
+    //
+    // APPEND, потому что ординалы вечны (шпили и книга носят их в сейвах).
+    // Числа — под лича (4d12 = 26 среднего), чтобы расклейка Е4 не двигала
+    // его силу: его прежний ряд перевёлся один в один. Void по канону —
+    // то, от чего нет брони (S13), так что цена высокая: мана 30 и
+    // рекавери 0.8 с — самый дорогой снаряд-однотаргет на своём ярусе.
+    {
+        .id = "void_arrow", .name = "Void Arrow", .icon = "}",
+        .sourceIcon = "\xE2\x9C\xA6",
+        .tag = SpellTag::Dark, .secondaryTag = SpellTag::Dark,
+        .rarity = SpellRarity::Rare, .shape = DeliveryShape::Projectile,
+        .tier = 3,
+        .manaCost = 30, .recovery = 0.8f,
+        .sustained = false, .manaDrain = 0.0f,
+        .hasMicro = true, .hasMacro = false,
+        .dice = {26, 1}, .baseHeal = 0.0f, .baseRadius = 0.0f,
+        .chainCount = 0, .chainDecayPct = 0,
+        .speed = 320.0f, .duration = 0.0f, .friendlyFire = false,
+        .statusEffect = "", .statusDuration = 0.0f,
+        .scalingDuration = 0.0f, .scalingRadius = 0.0f,
+        .projectileRadius = 1.5f, .projectileLife = kDefaultProjectileLifeS,
+        .beamLength = 0.0f,
+        .description = "A splinter of the nothing between things. It does not "
+                       "burn or freeze - it simply unmakes what it touches, "
+                       "and no armour has ever been forged against absence.",
+        .pros = {"Armour does not stop the void", "Single-target burst"},
+        .cons = {"Expensive in mana", "Long recovery", "No AoE"},
+    },
 };
 
 inline constexpr int kSpellCount =

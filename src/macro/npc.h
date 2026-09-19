@@ -1001,7 +1001,7 @@ inline constexpr NpcTypeDef kNpcTypeDefs[std::size_t(NPCType::Count)] = {
         AIBehaviour::Aggressive,
         {110, {4,12}, 1.1f, 28.0f, 2.6f, "Lch", CombatTemplate::Missile, 210,
          3.0f, 0xFF90FFB0u, /*bodyHeight*/1.9f, kNpcSightDefaultM, 100, 100,
-         DamageType::Void, /*cruiseM*/0.0f, /*castSpell*/spell_ordinal("energy_beam")},
+         DamageType::Void, /*cruiseM*/0.0f, /*castSpell*/spell_ordinal("void_arrow")},
         kNpcUpkeepNone, false, /*xp = 5*(baseLevel+1)*/45,
         /*weight*/1, /*loot*/nullptr, /*radius*/0.6f,
         {{"Vashkar","The Grey Crown","Ozimandel","Neth-Ur"}}, 4,
