@@ -108,13 +108,18 @@ entt::entity aim_target(entt::registry& reg,
         const auto& pos = view.get<ecs::Position>(e);
         const float dx = pos.x - px;
         const float dy = pos.y - py;
-        const float dz = pos.z - pz;
+        // Eye to EYE, through the one door (body_eye_m — the same height an
+        // NPC missile aims at: «оба конца на высоте глаз»). A body's
+        // Position.z is its FEET, and a bearing to feet drops a close target
+        // out of a level cone — the possess smokes caught exactly that when
+        // the cone first went 3D (2026-09-19).
+        const float dz = (pos.z + body_eye_m(reg, e)) - pz;
         const float d2 = dx * dx + dy * dy + dz * dz;
         if (d2 > maxR2) continue;
 
-        // Cone test. A co-located target (d2 ~ 0) has no defined bearing and is
+        // Cone test. An XY-co-located target has no defined bearing and is
         // treated as "in front" so it is never unreachable.
-        if (d2 > 1e-8f) {
+        if (dx * dx + dy * dy > 1e-8f) {
             const float cosang =
                 (fx * dx + fy * dy + fz * dz) / std::sqrt(d2);
             if (cosang < cosHalfAngle) continue;

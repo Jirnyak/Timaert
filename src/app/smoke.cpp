@@ -122,6 +122,10 @@ static void smoke_stage_possession_cast(App& app, entt::entity target) {
     const float ty = py + fy * 6.0f;
     auto& pos = reg.get<sm::ecs::Position>(target);
     pos.x = tx; pos.y = ty;
+    // Feet on the GROUND under the staged spot: the teleport used to move
+    // XY only, and the stale z put the target outside the now-3D aim cone
+    // (CANON S13) — the fixture lied, not the law.
+    pos.z = app.subworld.ground_height_at(tx, ty);
     if (auto* vp = reg.try_get<sm::ecs::VisualPos>(target)) {
         vp->vx = tx; vp->vy = ty;
     }

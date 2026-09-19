@@ -131,11 +131,14 @@ int main() {
 
     // ── THE THIRD DIMENSION (CANON S13 «всё в бою трёхмерно», session Е) ──
     // The old law measured cone and distance in XY: a body far overhead sat
-    // "in the cone" of a level shot, and looking up bought nothing.
+    // "in the cone" of a level shot, and looking up bought nothing. The aim
+    // point is the target's EYES (body_eye_m over its feet — the same door
+    // an NPC missile aims at), so every bearing below carries that offset.
     {
         entt::registry reg;
-        // XY-distance 3 (dead ahead), but 4 up: 3D bearing is 53° off a
-        // level look — outside the ±30° cone the XY law would have passed.
+        // XY-distance 3 (dead ahead), but 4 up (plus eye height): the 3D
+        // bearing is ~62° off a level look — far outside the ±30° cone the
+        // XY law would have passed.
         entt::entity high = make_enemy(reg, 103, 100, 4);
         CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0, 50.0f, cone30)
                   == entt::null,
