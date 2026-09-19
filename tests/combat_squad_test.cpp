@@ -90,7 +90,8 @@ int main() {
     // of the soldier rows' own prices, whoever's roster it is.
     const int baseUpkeep = sm::calculate_squad_upkeep(player);
     int rowSum = 0;
-    for (const sm::SoldierRecord& s : player) rowSum += sm::soldier_upkeep(s);
+    for (const sm::SoldierSlot& s : player)
+        rowSum += sm::soldier_upkeep(s) * s.count;
     if (baseUpkeep <= 0 || baseUpkeep != rowSum) {
         return fail("squad upkeep must be the plain soldier-row sum");
     }
@@ -98,16 +99,23 @@ int main() {
     FixedRng rng{};
     // §42 Инк 7: the argument is the recruiting BUDGET now (the caller
     // derives it from population >> the registry shift), not a population.
-    const sm::GarrisonResult generated = sm::generate_garrison(9, rng, 5000u);
+    const sm::GarrisonResult generated = sm::generate_garrison(9, rng);
     if (generated.garrison.empty()) {
         return fail("population garrison generator returned empty squad");
     }
-    for (const sm::SoldierRecord& s : generated.garrison) {
+    // The packet pours GENERIC stacks (CANON S4): no entityId, souls counted
+    // by the stack law, every head paid out of the population.
+    int generatedSouls = 0;
+    for (const sm::SoldierSlot& s : generated.garrison) {
         if (!sm::valid_npc_kind(s.kind)
             || !sm::npc_hireable(static_cast<sm::NPCType>(s.kind))
-            || s.entityId < 5000u) {
-            return fail("generated garrison contains invalid soldier record");
+            || s.entityId != 0 || s.count <= 0) {
+            return fail("generated garrison contains invalid soldier slot");
         }
+        generatedSouls += int(s.count);
+    }
+    if (generatedSouls != 9 || generated.popCost != 9) {
+        return fail("generated garrison does not pay its budget in souls");
     }
 
     if (sm::npc_xp_reward(sm::NPCType::Guard, 4)
@@ -117,11 +125,12 @@ int main() {
 
     sm::SoldierSquad selfAppend = generated.garrison;
     const int selfAppendBase = selfAppend.size();
+    const int selfAppendSlots = selfAppend.slot_count();
     sm::add_squad(selfAppend, selfAppend);
     if (selfAppend.size() != selfAppendBase * 2
-        || selfAppend[selfAppendBase].entityId
-            != selfAppend[0].entityId) {
-        return fail("self squad append is not stable");
+        || selfAppend.slot_count() != selfAppendSlots) {
+        return fail("self squad append is not stable: generic stacks must "
+                    "merge, souls must double");
     }
 
     sm::ecs::World world{};

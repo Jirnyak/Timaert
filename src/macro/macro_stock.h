@@ -85,6 +85,12 @@ struct MacroStockKey {
     // pattern — ids may use the high bit); -1 = no name, the stock is a plain
     // number. Anonymous rows ignore it, so every existing key stays valid.
     std::int32_t detail = -1;
+    // The GENERIC soul's name (CANON S4: a stack member has no entityId, it
+    // IS its {kind, level}). detailLevel > 0 marks the pair live — kind
+    // alone cannot, because Peasant is row 0. A named key may carry the pair
+    // too; the strike door prefers the entityId when one exists.
+    std::uint16_t detailKind = 0;
+    std::int16_t  detailLevel = 0;
     // (v54) The register bit is gone: every landmark draws its id from the ONE
     // issuer (GameState::nextLandmarkOrdinal), so the id alone names the place.
     // The bit existed because cities and villages were numbered from zero
@@ -113,7 +119,7 @@ inline void stamp_macro_debt(entt::registry& reg, entt::entity e,
                              std::uint16_t amount = 1) {
     reg.emplace_or_replace<ecs::MacroDebt>(
         e, std::uint8_t(stock), key.subject, key.cellX, key.cellY, amount,
-        key.detail);
+        key.detail, key.detailKind, key.detailLevel);
 }
 
 // Settle one debt. `sign` is -1 when the borrowed thing is consumed (a citizen

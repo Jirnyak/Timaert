@@ -121,7 +121,7 @@ ManualOutcome fight_by_hand(const AutoBattleSide& a, const AutoBattleSide& b) {
         add_fighter(s.leaderType, s.leaderLevel, s.leaderSeed, nullptr,
                     s.leaderHealthFraction, side);
         if (s.roster) {
-            for (const SoldierRecord& r : *s.roster) {
+            for (const SoulRef r : s.roster->souls()) {
                 if (!valid_npc_kind(r.kind)) continue;
                 add_fighter(NPCType(r.kind), normalize_soldier_level(r.level),
                             auto_battle_detail::member_seed(r), &s.bonuses,

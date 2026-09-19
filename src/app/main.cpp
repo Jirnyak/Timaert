@@ -910,8 +910,8 @@ void draw_pre_battle_modal(App& app) {
     if (const auto* roster = reg.try_get<sm::ecs::SquadRoster>(npc);
         roster && !roster->squad.empty()) {
         int byKind[int(sm::NPCType::Count)] = {};
-        for (const sm::SoldierRecord& r : roster->squad) {
-            if (sm::valid_npc_kind(r.kind)) ++byKind[r.kind];
+        for (const sm::SoldierSlot& r : roster->squad) {
+            if (sm::valid_npc_kind(r.kind)) byKind[r.kind] += int(r.count);
         }
         ImGui::TextUnformatted("At their back:");
         for (int k = 0; k < int(sm::NPCType::Count); ++k) {

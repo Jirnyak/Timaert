@@ -99,14 +99,17 @@ void write_roster(MacroWorld& w, MacroStockKey k, int delta) {
         return;
     }
     ecs::SquadRoster* r = find_roster(w, k.subject);
-    if (!r || k.detail == -1) return;   // a nameless death removes "one of
-                                        // them" — refuse; the receipt names
-                                        // its member or it pays nothing
+    if (!r) return;
+    // The receipt names its member or it pays nothing: by entityId for a
+    // storied soul, by {kind, level} for a generic one (detailLevel > 0 is
+    // the pair's liveness — kind alone cannot be, Peasant is row 0).
+    SoldierRecord who{};
+    who.entityId = k.detail == -1 ? 0u : std::uint32_t(k.detail);
+    who.kind = k.detailKind;
+    who.level = k.detailLevel;
+    if (who.entityId == 0 && who.level <= 0) return;
     for (int i = 0; i < -delta; ++i) {
-        if (!remove_one_soldier_by_entity_id(r->squad,
-                                             std::uint32_t(k.detail))) {
-            break;
-        }
+        if (!remove_one_soldier(r->squad, who)) break;
     }
 }
 
@@ -683,7 +686,8 @@ const char* macro_stock_id(MacroStock s) {
 void settle_macro_debt(MacroWorld& w, const ecs::MacroDebt& d, int sign) {
     if (d.stock >= std::uint8_t(MacroStock::Count) || d.amount == 0) return;
     macro_stock_apply(w, MacroStock(d.stock),
-                      MacroStockKey{d.subject, d.cellX, d.cellY, d.detail},
+                      MacroStockKey{d.subject, d.cellX, d.cellY, d.detail,
+                                    d.detailKind, d.detailLevel},
                       sign * int(d.amount));
 }
 

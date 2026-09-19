@@ -303,8 +303,9 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
     // is wiped — roster and leader both.
     AutoBattleOutcome win{};
     win.winner = 0;                       // player is side A
-    win.casualtiesA = {501u};
-    win.casualtiesB = {31u, 32u};
+    win.casualtiesA = {make_soldier(std::uint8_t(NPCType::Guard), 3, 501u)};
+    win.casualtiesB = {make_soldier(std::uint8_t(NPCType::Bandit), 2, 31u),
+                       make_soldier(std::uint8_t(NPCType::Bandit), 2, 32u)};
     win.leaderFractionA = 0.6f;
     win.leaderFractionB = 0.0f;
     // The settle takes THE envelope now (damage-door Inc 6): it needs the
@@ -342,7 +343,8 @@ void test_player_auto_resolve_settles_through_the_same_doors() {
                                       NPCType::Bandit, 5);
     AutoBattleOutcome loss{};
     loss.winner = 1;
-    loss.casualtiesA = {601u};            // one of two fell — not a wipe
+    loss.casualtiesA = {                  // one of two fell — not a wipe
+        make_soldier(std::uint8_t(NPCType::Guard), 3, 601u)};
     loss.leaderFractionA = 0.15f;
     loss.leaderFractionB = 0.9f;
     MacroWorld mw2{}; mw2.gs = &gs2; mw2.world = &w2;

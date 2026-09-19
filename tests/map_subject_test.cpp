@@ -123,8 +123,10 @@ void test_a_write_through_the_door_lands_in_the_world() {
     CHECK_OR_RETURN(garrison != nullptr && men != nullptr,
                     "both rosters open through the one door");
     const int before = total_soldiers(*garrison);
-    men->push(garrison->members[0]);
-    garrison->remove_at(0);
+    SoldierRecord moved{};
+    CHECK_OR_RETURN(garrison->take_soul_at(0, moved),
+                    "the garrison yields its first soul");
+    men->push(moved);
     CHECK(total_soldiers(*garrison) == before - 1 && total_soldiers(*men) == 2,
           "a garrison record moves into a squad roster: one type, no seam");
 }

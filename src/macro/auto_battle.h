@@ -68,9 +68,12 @@ enum class Ambush : std::uint8_t { None = 0, SideA, SideB };
 
 struct AutoBattleOutcome {
     int winner = 0;   // 0 = side A, 1 = side B
-    // The fallen, by the same name their deaths are settled under everywhere
-    // (SoldierRecord::entityId — the macro-stock roster row's `detail`).
-    std::vector<std::uint32_t> casualtiesA, casualtiesB;
+    // The fallen, by the same COIN their deaths are settled under everywhere
+    // (macro/army.h remove_one_soldier): a storied soul by its entityId, a
+    // generic one by {kind, level, 0} — one of its stack, which is all a
+    // generic ever was. The bare id list died with the roster-as-inventory
+    // (CANON S4): a generic death has no id to be listed by.
+    std::vector<SoldierRecord> casualtiesA, casualtiesB;
     // The leaders' post-battle health as the FRACTION wounds already travel
     // in (sub/spawn.h): 0 = dead, and the caller routes that through the one
     // tracked-death path. A winner limps out; a loser's leader dies ONLY if
@@ -129,8 +132,14 @@ inline float fighter_power(NPCType type, int level, std::uint32_t seed,
 // LEVEL, which fix the sheet's entire point budget; the seed only shuffles
 // its allocation. Deterministic from the member's own identity so the same
 // battle re-resolved is the same battle.
-inline std::uint32_t member_seed(const SoldierRecord& r) {
-    return (r.entityId * 2654435761u) ^ (std::uint32_t(r.kind) << 16)
+inline std::uint32_t member_seed(const SoulRef& r) {
+    // A generic soul has no name; its ADDRESS (slot, index) stands in, so
+    // the same composition re-resolved is the same battle (the id formula
+    // for storied souls is the historical one, verbatim).
+    const std::uint32_t name = r.entityId != 0
+        ? r.entityId
+        : ((std::uint32_t(r.slot) << 16) | (std::uint32_t(r.index) + 1u));
+    return (name * 2654435761u) ^ (std::uint32_t(r.kind) << 16)
          ^ std::uint32_t(r.level);
 }
 
@@ -151,7 +160,7 @@ inline float squad_power(const AutoBattleSide& s) {
                               /*aura*/nullptr, s.leaderHealthFraction);
     }
     if (s.roster) {
-        for (const SoldierRecord& r : *s.roster) {
+        for (const SoulRef r : s.roster->souls()) {
             if (!valid_npc_kind(r.kind)) continue;
             power += fighter_power(NPCType(r.kind),
                                    normalize_soldier_level(r.level),
@@ -203,22 +212,23 @@ inline AutoBattleOutcome resolve_auto_battle(const AutoBattleSide& a,
     // The leader is not a roster row: he takes the battle as wounds (winner)
     // and only a broken side can lose him outright.
     auto distribute = [&rng](const AutoBattleSide& side, float lossFrac,
-                             std::vector<std::uint32_t>& casualties) {
+                             std::vector<SoldierRecord>& casualties) {
         if (!side.roster || side.roster->empty()) return;
-        std::vector<std::uint32_t> ids;
-        ids.reserve(side.roster->size());
-        for (const SoldierRecord& r : *side.roster) {
-            if (valid_npc_kind(r.kind)) ids.push_back(r.entityId);
+        std::vector<SoldierRecord> souls;
+        souls.reserve(std::size_t(side.roster->size()));
+        for (const SoulRef r : side.roster->souls()) {
+            if (valid_npc_kind(r.kind))
+                souls.push_back(SoldierRecord{r.entityId, r.kind, r.level});
         }
-        const int n = int(ids.size());
+        const int n = int(souls.size());
         const int fallen = std::clamp(
             int(std::lround(lossFrac * float(n))), 0, n);
         // Partial Fisher-Yates: the first `fallen` slots are the dead.
         for (int i = 0; i < fallen; ++i) {
             const int j = i + int(rng.next_u32()
                                   % std::uint32_t(n - i));
-            std::swap(ids[std::size_t(i)], ids[std::size_t(j)]);
-            casualties.push_back(ids[std::size_t(i)]);
+            std::swap(souls[std::size_t(i)], souls[std::size_t(j)]);
+            casualties.push_back(souls[std::size_t(i)]);
         }
     };
     distribute(a, aWins ? winnerLoss : loserLoss, out.casualtiesA);
@@ -235,8 +245,8 @@ inline AutoBattleOutcome resolve_auto_battle(const AutoBattleSide& a,
     const auto roster_size = [](const AutoBattleSide& s) {
         int n = 0;
         if (s.roster) {
-            for (const SoldierRecord& r : *s.roster) {
-                if (valid_npc_kind(r.kind)) ++n;
+            for (const SoldierSlot& r : *s.roster) {
+                if (valid_npc_kind(r.kind)) n += int(r.count);
             }
         }
         return n;

@@ -584,9 +584,9 @@ entt::entity spawn_squad(GameState& gs, ecs::World& w,
 
     // The roster rows — through the same append every other producer uses.
     auto& roster = w.reg.get<ecs::SquadRoster>(leader);
-    for (const SoldierRecord& r : spec.members) {
+    for (const SoldierSlot& r : spec.members) {
         if (!valid_npc_kind(r.kind)) continue;
-        if (!roster.squad.push(make_soldier(r.kind, r.level, r.entityId))) {
+        if (!roster.squad.push_slot(r)) {
             break;   // the ceiling refuses out loud (macro/army.h)
         }
     }
@@ -625,18 +625,24 @@ int raise_deserter_bands(GameState& gs, ecs::World& w,
     // The freshest arrivals leave first — the men of the last rout, still
     // together, walk off before the old hands who have been drifting for weeks.
     SoldierSquad band{};
-    for (int i = poolSize - take; i < poolSize; ++i) band.push(pool[i]);
-    pool.count = std::int32_t(poolSize - take);
+    for (int i = 0; i < take; ++i) {
+        SoldierRecord rec{};
+        if (!pool.pop_soul_back(rec)) break;
+        if (!band.push(rec)) {
+            pool.push(rec);   // band form refused: the man stays pooled
+            break;
+        }
+    }
 
     // Slot 0 is the leader, always (CANON.md S4): the strongest man of the
     // group is the one the rest follow. Ties break on the earlier record so the
     // choice is deterministic.
     int best = 0;
-    for (int i = 1; i < band.size(); ++i) {
+    for (int i = 1; i < band.slot_count(); ++i) {
         if (band[i].level > band[best].level) best = i;
     }
-    const SoldierRecord captain = band[best];
-    band.remove_at(best);
+    SoldierRecord captain{};
+    if (!band.take_soul_at(best, captain)) return 0;
 
     // WHERE is not the pool's question (header): uniform land today, the blood
     // field tomorrow — this is the single line that changes then.
@@ -662,12 +668,13 @@ int raise_deserter_bands(GameState& gs, ecs::World& w,
         // return is a bookkeeping bug, and it says so out loud rather than
         // dissolving people in silence.
         const bool captainBack = pool.push(captain);
-        const int menBack = add_squad(pool, spec.members);
-        if (!captainBack || menBack != spec.members.size()) {
+        const int menExpected = spec.members.size();
+        const int menBack = move_squad(pool, spec.members);
+        if (!captainBack || menBack != menExpected) {
             std::fprintf(stderr,
                          "[deserters] pool refused the rollback of a failed "
                          "spawn (captain %d, men %d/%d) — men lost\n",
-                         int(captainBack), menBack, spec.members.size());
+                         int(captainBack), menBack, menExpected);
         }
         return 0;
     }

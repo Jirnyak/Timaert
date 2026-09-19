@@ -286,11 +286,13 @@ void garrison_upkeep_(GameState& gs, Landmark& s, int day) {
     }
     if (shorted) {
         int walkers = std::max(1, total_soldiers(s.garrison) / 8);
-        while (walkers-- > 0 && total_soldiers(s.garrison) > 0) {
-            const int last = s.garrison.size() - 1;
-            const SoldierRecord walker = s.garrison[last];
-            if (!gs.deserterPool.push(walker)) break;
-            s.garrison.remove_at(last);
+        while (walkers-- > 0 && !s.garrison.empty()) {
+            SoldierRecord walker{};
+            if (!s.garrison.pop_soul_back(walker)) break;
+            if (!gs.deserterPool.push(walker)) {
+                s.garrison.push(walker);   // pool full: the man stays
+                break;
+            }
         }
     }
 }
@@ -298,8 +300,9 @@ void garrison_upkeep_(GameState& gs, Landmark& s, int day) {
 // RECRUITING toward the registry target (population >> garrisonShift, §42
 // Инк 7): a day's packet is at most target >> 4 — a hole cut into the
 // defense heals over DAYS, the same gradualness desertion bleeds at (1/8),
-// never in one morning. Souls move population → garrison; identities come
-// from THE one macro ordinal issuer (the high-bit garrison id space died).
+// never in one morning. Souls move population → garrison as GENERIC stacks
+// (CANON S4): a mass recruit has no entityId — a name is what a soul earns
+// by leading, being hired into a story, or being possessed.
 void garrison_recruit_(GameState& gs, Landmark& s,
                        WorldTickRuntime& runtime) {
     if (s.population < 20) return;
@@ -309,14 +312,8 @@ void garrison_recruit_(GameState& gs, Landmark& s,
     const int packet =
         std::min(target - current, std::max(1, target >> 4));
     auto gr = generate_garrison(packet,
-                                [&runtime] { return rand01_(runtime); },
-                                gs.nextMacroSpawnOrdinal);
-    gs.nextMacroSpawnOrdinal += std::uint32_t(gr.garrison.size());
-    int taken = 0;
-    for (const SoldierRecord& rec : gr.garrison) {
-        if (!s.garrison.push(rec)) break;
-        ++taken;
-    }
+                                [&runtime] { return rand01_(runtime); });
+    const int taken = move_squad(s.garrison, gr.garrison);
     s.population = std::max(0, s.population - taken);
 }
 

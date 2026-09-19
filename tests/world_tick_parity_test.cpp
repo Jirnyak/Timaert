@@ -182,11 +182,10 @@ void test_garrison_never_exceeds_its_cap() {
     // town mid-test and move the garrison target out from under the check.
     // 128/255 sits a hair above 0.5 — one day's carry stays below a head.
     s.seasonWellbeing = 128;
-    // One below the target: exactly one recruit wanted.
-    for (int i = 0; i < target - 1; ++i) {
-        s.garrison.push(sm::make_soldier(
-            std::uint8_t(sm::NPCType::Guard), 1, std::uint32_t(1000 + i)));
-    }
+    // One below the target: exactly one recruit wanted. A standing army is
+    // a GENERIC stack (CANON S4) — 624 souls is one slot, not a wall.
+    s.garrison.push_stack(std::uint16_t(sm::NPCType::Guard), 1,
+                          std::int32_t(target - 1));
     gs.landmarks.push_back(s);
 
     sm::WorldTickRuntime runtime{};

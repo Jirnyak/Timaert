@@ -3054,10 +3054,11 @@ bool squad_threat_step(entt::entity self, MacroPos& p,
 static std::uint32_t roster_worth(ecs::World& w, entt::entity e) {
     std::uint32_t worth = 0;
     if (const auto* roster = w.reg.try_get<ecs::SquadRoster>(e)) {
-        for (const SoldierRecord& r : roster->squad) {
+        for (const SoldierSlot& r : roster->squad) {
             if (!valid_npc_kind(r.kind)) continue;
             worth += std::uint32_t(
-                std::max(0, npc_def(NPCType(std::uint8_t(r.kind))).hireGold));
+                std::max(0, npc_def(NPCType(std::uint8_t(r.kind))).hireGold))
+                * std::uint32_t(r.count);
         }
     }
     return worth;
@@ -3598,10 +3599,10 @@ SquadSeasonNeeds squad_season_needs(ecs::World& world, entt::entity e,
     // row says kNpcUpkeepNone, the same column the payroll reads.
     int mouths = 0;
     int wageDay = 0;
-    for (const SoldierRecord& s : roster) {
+    for (const SoldierSlot& s : roster) {
         if (npc_def(soldier_npc_type(s)).upkeepGoldPerDay < 0) continue;
-        ++mouths;
-        wageDay += soldier_upkeep(s);
+        mouths += int(s.count);
+        wageDay += soldier_upkeep(s) * s.count;
     }
     // The leader's FORAGING lives off the land — the season's draw
     // shrinks by THE cost-down skill law (-1 %/rank; rank 100 = the
@@ -3658,11 +3659,13 @@ int squad_season_window(MacroWorld& mw, int day) {
         // ANY uncovered need bleeds an eighth of the roster ONCE per window
         // — the same law the shorted garrison bleeds by (?34, one mechanic).
         int walkers = std::max(1, roster.squad.size() / 8);
-        while (walkers-- > 0 && roster.squad.size() > 0) {
-            const int last = roster.squad.size() - 1;
-            const SoldierRecord walker = roster.squad[last];
-            if (!gs.deserterPool.push(walker)) break;
-            roster.squad.remove_at(last);
+        while (walkers-- > 0 && !roster.squad.empty()) {
+            SoldierRecord walker{};
+            if (!roster.squad.pop_soul_back(walker)) break;
+            if (!gs.deserterPool.push(walker)) {
+                roster.squad.push(walker);   // pool full: the man stays
+                break;
+            }
             ++deserted;
         }
         // Состав изменился — обоз заново (squad.h): ушедшая душа унесла и
@@ -3887,8 +3890,8 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                 lead.entityId = sid->index;
             if (!lm.garrison.push(lead)) gs.deserterPool.push(lead);
             if (const auto* roster = reg.try_get<ecs::SquadRoster>(e)) {
-                for (const SoldierRecord& rec : roster->squad) {
-                    if (!lm.garrison.push(rec)) gs.deserterPool.push(rec);
+                for (const SoldierSlot& rec : roster->squad) {
+                    if (!lm.garrison.push_slot(rec)) gs.deserterPool.push_slot(rec);
                 }
             }
         } else {
@@ -4351,12 +4354,15 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             spec.homeSettlementId = s.id;
             // Души ИЗ ГАРНИЗОНА, записи как есть — роды и уровни переживают
             // вылазку; первая снятая — лицо патруля, её уровень носит лидер.
-            SoldierRecord lead = s.garrison[s.garrison.size() - 1];
-            s.garrison.remove_at(s.garrison.size() - 1);
+            SoldierRecord lead{};
+            if (!s.garrison.pop_soul_back(lead)) continue;
             for (int t = 1; t < take; ++t) {
-                const int last = s.garrison.size() - 1;
-                if (!spec.members.push(s.garrison[last])) break;
-                s.garrison.remove_at(last);
+                SoldierRecord rec{};
+                if (!s.garrison.pop_soul_back(rec)) break;
+                if (!spec.members.push(rec)) {
+                    s.garrison.push(rec);   // no slot: the man stands home
+                    break;
+                }
             }
             spec.leaderLevel = normalize_soldier_level(lead.level);
             const entt::entity ent =
@@ -4364,8 +4370,8 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             if (ent == entt::null) {
                 // Мир отказал в спавне — души назад, оборона цела.
                 s.garrison.push(lead);
-                for (const SoldierRecord& rec : spec.members)
-                    s.garrison.push(rec);
+                for (const SoldierSlot& rec : spec.members)
+                    s.garrison.push_slot(rec);
                 continue;
             }
             ++raised;
@@ -4454,7 +4460,8 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                             s.population -= 1;
                         }
                         for (have = ro->squad.size(); have > want; --have) {
-                            ro->squad.remove_at(ro->squad.size() - 1);
+                            SoldierRecord off{};
+                            if (!ro->squad.pop_soul_back(off)) break;
                             s.population += 1;
                         }
                         // Приведённый состав — приведённый обоз (squad.h):
@@ -4680,7 +4687,7 @@ namespace {
 
 // THE settlement of the dead, shared by both tick drivers (AI-2; owner
 // 2026-09-10: «мёртвые не должны стоять вообще», survivors to the pool
-// UNIVERSALLY). The pool CAN refuse (kMaxSquadMembers) — and a refusal used
+// UNIVERSALLY). The pool CAN refuse (kMaxSquadSlots) — and a refusal used
 // to leave the dead lord's band standing until the daily rotation returned
 // dead souls to a village as living population. Now the refusal UNLOADS the
 // pool on the spot through the very door the daily sim uses

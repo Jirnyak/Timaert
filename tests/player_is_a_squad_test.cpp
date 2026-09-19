@@ -406,8 +406,8 @@ void test_the_players_wound_settles_through_the_one_door() {
     o.winner = 0;                 // the player's side takes it
     o.leaderFractionA = 0.5f;     // ...limping
     o.leaderFractionB = 0.0f;
-    for (const SoldierRecord& r : w.reg.get<ecs::SquadRoster>(foe).squad) {
-        o.casualtiesB.push_back(r.entityId);
+    for (const SoulRef r : w.reg.get<ecs::SquadRoster>(foe).squad.souls()) {
+        o.casualtiesB.push_back(make_soldier(r.kind, r.level, r.entityId));
     }
     settle_player_auto_battle(mw, foe, o, /*playerIsA*/true);
 

@@ -1118,9 +1118,18 @@ void spawn_cell_npcs(ecs::World& w,
         }
         const float quarterR = city_upper_radius(landmarkPop);
         int refused = 0;
-        for (int i = 0; i < garrison->size(); ++i) {
-            const SoldierRecord& rec = (*garrison)[i];
+        int i = -1;
+        for (const SoulRef rec : garrison->souls()) {
+            ++i;
             if (!valid_npc_kind(rec.kind)) continue;
+            // The face and the seed: a storied soul keeps its entityId (the
+            // face survives re-entry for the same man); a generic one derives
+            // from its ADDRESS (slot, index) — CANON S4: «лицо генерика
+            // выводится, а не хранится».
+            const std::uint32_t soulId = rec.entityId != 0
+                ? rec.entityId
+                : ((std::uint32_t(rec.slot) << 16)
+                   | (std::uint32_t(rec.index) + 1u));
             // Every other man of the roll takes the quarter, so the split is
             // exact for any roster size and needs no second roll to decide it.
             const bool inQuarter = haveKeep && (i % 2) == 0;
@@ -1145,14 +1154,17 @@ void spawn_cell_npcs(ecs::World& w,
                     static_cast<NPCType>(rec.kind), fx, fy,
                     settlementFaction,
                     normalize_soldier_level(rec.level),
-                    cellSeed ^ (rec.entityId * 2654435761u),
+                    cellSeed ^ (soulId * 2654435761u),
                     /*combatant*/true},
-                /*faceSalt*/rec.entityId * 7919u,
+                /*faceSalt*/soulId * 7919u,
                 BodyLoan::from(MacroStock::Garrison,
                                MacroStockKey{landmarkSubjectId,
                                              std::int16_t(macroCellX),
                                              std::int16_t(macroCellY),
-                                             std::int32_t(rec.entityId)}));
+                                             rec.entityId != 0
+                                                 ? std::int32_t(rec.entityId)
+                                                 : -1,
+                                             rec.kind, rec.level}));
         }
         if (refused > 0) {
             std::fprintf(stderr,
@@ -1311,8 +1323,9 @@ void spawn_player_squad(ecs::World& w,
     const bool tilesUsable =
         tiles.size() >= std::size_t(kFullSize) * std::size_t(kFullSize);
 
-    for (int i = 0; i < count; ++i) {
-        const SoldierRecord& soldier = squad[i];
+    int i = -1;
+    for (const SoulRef soldier : squad.souls()) {
+        ++i;
         if (!valid_npc_kind(soldier.kind)) continue;
 
         const NPCType type = static_cast<NPCType>(soldier.kind);
@@ -1370,7 +1383,10 @@ void spawn_player_squad(ecs::World& w,
             BodyLoan::from(MacroStock::Roster,
                            MacroStockKey{
                                rosterSubject, rosterCx, rosterCy,
-                               std::int32_t(soldier.entityId)}),
+                               soldier.entityId != 0
+                                   ? std::int32_t(soldier.entityId)
+                                   : -1,
+                               soldier.kind, soldier.level}),
             squadBonuses);
         reg.emplace<ecs::PlayerSoldierTag>(e);
         reg.emplace<ecs::SoldierLink>(e, soldier.entityId, soldier.kind,
@@ -1542,8 +1558,9 @@ int project_macro_npcs_into_subworld(ecs::World& w,
             const auto* sid = reg.try_get<ecs::MacroSpawnId>(macro);
             constexpr float kTau = 6.2831853f;
             const int memberCount = int(roster->squad.size());
-            for (int m = 0; m < memberCount; ++m) {
-                const SoldierRecord& rec = roster->squad[std::size_t(m)];
+            int m = -1;
+            for (const SoulRef rec : roster->squad.souls()) {
+                ++m;
                 if (!valid_npc_kind(rec.kind)) continue;
 
                 float mfx = fx, mfy = fy;
@@ -1573,7 +1590,10 @@ int project_macro_npcs_into_subworld(ecs::World& w,
                           MacroStockKey{std::int32_t(sid->index),
                                         std::int16_t(mcx),
                                         std::int16_t(mcy),
-                                        std::int32_t(rec.entityId)})
+                                        rec.entityId != 0
+                                            ? std::int32_t(rec.entityId)
+                                            : -1,
+                                        rec.kind, rec.level})
                     : BodyLoan::none();
                 // ONE birth for every member — the sheet-less second birth is
                 // dead: man or beast, the row and level project a sheet through
@@ -1586,7 +1606,11 @@ int project_macro_npcs_into_subworld(ecs::World& w,
                         kind.factionIdx,
                         normalize_soldier_level(rec.level),
                         ((seed ^ salt) + std::uint32_t(m) * 2654435761u)
-                            ^ (rec.entityId << 7),
+                            ^ ((rec.entityId != 0
+                                    ? rec.entityId
+                                    : ((std::uint32_t(rec.slot) << 16)
+                                       | (std::uint32_t(rec.index) + 1u)))
+                               << 7),
                         /*combatant*/true},
                     /*faceSalt*/std::uint32_t(m) * 2654435761u ^ 0x9E3779B9u,
                     loan, &leaderBonuses);

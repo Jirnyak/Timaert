@@ -234,11 +234,11 @@ namespace sm::ui
             return static_cast<NPCType>(static_cast<std::uint8_t>(idx));
         }
 
-        const SoldierRecord* first_soldier_of_kind(const SoldierSquad& squad,
-                                                   NPCType kind)
+        const SoldierSlot* first_soldier_of_kind(const SoldierSquad& squad,
+                                                  NPCType kind)
         {
             const std::uint8_t raw = static_cast<std::uint8_t>(kind);
-            for (const SoldierRecord& soldier : squad)
+            for (const SoldierSlot& soldier : squad)
             {
                 if (soldier.kind == raw)
                     return &soldier;
@@ -2172,7 +2172,7 @@ namespace sm::ui
                         const NPCType t = npc_type_at(ti);
                         if (!npc_hireable(t))
                             continue;
-                        const SoldierRecord* offer = first_soldier_of_kind(s->garrison, t);
+                        const SoldierSlot* offer = first_soldier_of_kind(s->garrison, t);
                         int cost = offer ? hire_price_for(*offer) : npc_hire_price_base(t);
                         int avail = count_soldiers_of_kind(
                             s->garrison, static_cast<std::uint8_t>(t));
@@ -2204,12 +2204,9 @@ namespace sm::ui
                                     if (moved > 0)
                                         transfer_value_dense(s->inventory,
                                                              playerBag, moved);
-                                    const int last = playerArmy->size() - 1;
-                                    if (last >= 0)
-                                    {
-                                        s->garrison.push((*playerArmy)[last]);
-                                        playerArmy->remove_at(last);
-                                    }
+                                    SoldierRecord back{};
+                                    if (playerArmy->pop_soul_back(back))
+                                        s->garrison.push(back);
                                 }
                             }
                         }

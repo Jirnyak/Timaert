@@ -1214,10 +1214,18 @@ inline bool is_monster_kind(std::uint16_t raw) {
     return valid_npc_kind(raw) && is_creature_row(NPCType(raw));
 }
 
-// The row behind a record, or Peasant for a number that names none.
+// The row behind a record, or Peasant for a number that names none. One
+// resolver, three spellings: the raw kind is the identity, the record and
+// the slot are the two containers a soldier arrives in.
+inline NPCType soldier_npc_type(std::uint16_t kind) {
+    return kind < std::uint16_t(NPCType::Count) ? NPCType(kind)
+                                                : NPCType::Peasant;
+}
 inline NPCType soldier_npc_type(const SoldierRecord& s) {
-    return s.kind < std::uint16_t(NPCType::Count) ? NPCType(s.kind)
-                                                  : NPCType::Peasant;
+    return soldier_npc_type(s.kind);
+}
+inline NPCType soldier_npc_type(const SoldierSlot& s) {
+    return soldier_npc_type(s.kind);
 }
 
 inline bool npc_hireable(NPCType t) {
@@ -1234,8 +1242,14 @@ inline int npc_upkeep_base(NPCType t) {
 // authors `kNpcUpkeepNone`, which npc_upkeep_base reads as zero. The special
 // case that used to stand here asked whether the record was a monster, which
 // is a question about a class of thing rather than about this thing's column.
+inline int soldier_upkeep(std::uint16_t kind, int level) {
+    return npc_upkeep_base(soldier_npc_type(kind)) * soldier_level_factor(level);
+}
 inline int soldier_upkeep(const SoldierRecord& s) {
-    return npc_upkeep_base(soldier_npc_type(s)) * soldier_level_factor(s.level);
+    return soldier_upkeep(s.kind, s.level);
+}
+inline int soldier_upkeep(const SoldierSlot& s) {
+    return soldier_upkeep(s.kind, s.level);
 }
 
 // Upkeep is MAINTENANCE, not a deal (owner 2026-09-17, сессия сезонов): the
@@ -1245,7 +1259,7 @@ inline int soldier_upkeep(const SoldierRecord& s) {
 // number, whoever's roster it is.
 inline int calculate_squad_upkeep(const SoldierSquad& squad) {
     int base = 0;
-    for (const auto& s : squad) base += soldier_upkeep(s);
+    for (const SoldierSlot& s : squad) base += soldier_upkeep(s) * s.count;
     return base;
 }
 
@@ -1253,9 +1267,15 @@ inline int calculate_squad_upkeep(const SoldierSquad& squad) {
 // same product the old inline `upkeep × 30` computed, read from data
 // (CANON S25). An unpriced row (hireGold 0) costs nothing and npc_hireable
 // already refuses it.
+inline int hire_price_for(std::uint16_t kind, int level) {
+    return npc_def(soldier_npc_type(kind)).hireGold
+           * soldier_level_factor(level);
+}
 inline int hire_price_for(const SoldierRecord& s) {
-    return npc_def(soldier_npc_type(s)).hireGold
-           * soldier_level_factor(s.level);
+    return hire_price_for(s.kind, s.level);
+}
+inline int hire_price_for(const SoldierSlot& s) {
+    return hire_price_for(s.kind, s.level);
 }
 
 inline int npc_hire_price_base(NPCType t) {
@@ -1283,13 +1303,13 @@ struct GarrisonResult { SoldierSquad garrison; int popCost = 0; };
 // derives it from the registry law (population >> LandmarkDef::
 // garrisonShift, minus what already stands); the old law here — √pop×0.3
 // capped at 10 — sized a tavern recruit pool, not a defense force.
-// Composition is a soldiery with a recruit tail: 60 % Guard / 25 %
-// Woodcutter / 15 % Peasant (the hire pool lives on inside the army,
-// not the other way round). `idBase` = the first ordinal of a run drawn
-// from THE one issuer; the caller advances the issuer by the packet size.
+// Composition is a soldiery with a recruit tail: 60 % Guard / 40 %
+// Peasant (the hire pool lives on inside the army, not the other way
+// round). The packet pours GENERIC STACKS (CANON S4: mass fighters have no
+// entityId — the old per-soul ordinal draw died with the roster-as-
+// inventory), so a thousand-strong garrison is two slots, not a wall.
 template <class Rng01>
-inline GarrisonResult generate_garrison(int budget, Rng01&& rng,
-                                        std::uint32_t idBase) {
+inline GarrisonResult generate_garrison(int budget, Rng01&& rng) {
     GarrisonResult r{};
     if (budget <= 0) return r;
     for (int i = 0; i < budget; ++i) {
@@ -1300,9 +1320,8 @@ inline GarrisonResult generate_garrison(int budget, Rng01&& rng,
         NPCType kind = NPCType::Guard;
         if (roll >= 0.60f) kind = NPCType::Peasant;
         const int level = npc_def(kind).baseLevel;
-        if (!r.garrison.push(make_soldier(
-                static_cast<std::uint8_t>(kind), level,
-                idBase + std::uint32_t(i)))) {
+        if (!r.garrison.push_stack(std::uint16_t(kind),
+                                   std::int16_t(level), 1)) {
             break;   // a full roster refuses out loud; the town keeps the head
         }
         r.popCost += 1;
@@ -1315,17 +1334,20 @@ inline int hire_npc(SoldierSquad& playerSquad, SoldierSquad& garrison,
     if (!npc_hireable(kind)) return 0;
     // A recruit MOVES between two rosters — and the move can be refused at
     // either end: an empty garrison has nobody, a full squad has no room. The
-    // ceiling is the same one every squad has (kMaxSquadMembers): the player's
+    // ceiling is the same one every squad has (kMaxSquadSlots): the player's
     // army used to have none at all, which walked straight into the save's
     // 8192-record wall and made the whole file refuse to write.
-    for (int i = 0; i < garrison.size(); ++i) {
+    for (int i = 0; i < garrison.slot_count(); ++i) {
         if (garrison[i].kind != static_cast<std::uint8_t>(kind)) continue;
         const int cost = hire_price_for(garrison[i]);
         if (playerGold < cost) return 0;
-        if (playerSquad.full()) return 0;
+        SoldierRecord recruit{};
+        if (!garrison.take_soul_at(i, recruit)) return 0;
+        if (!playerSquad.push(recruit)) {
+            garrison.push(recruit);   // no room: the man stays home
+            return 0;
+        }
         playerGold -= cost;
-        playerSquad.push(garrison[i]);
-        garrison.remove_at(i);
         return cost;
     }
     return 0;

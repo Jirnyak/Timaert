@@ -364,12 +364,13 @@ void read_inventory(Reader& r, Inventory& inv) {
 // nothing.
 void write_squad(Writer& w, const SoldierSquad& squad) {
     if (!w.count(std::size_t(squad.size()), kMaxSoldiers)) return;
-    for (const auto& s : squad) {
-        if (!valid_npc_kind(s.kind)) {
+    for (const SoulRef soul : squad.souls()) {
+        if (!valid_npc_kind(soul.kind)) {
             w.ok = false;
             return;
         }
-        const SoldierRecord normalized = make_soldier(s.kind, s.level, s.entityId);
+        const SoldierRecord normalized =
+            make_soldier(soul.kind, soul.level, soul.entityId);
         w.pod(normalized.entityId);
         w.pod(normalized.kind);
         w.pod(normalized.level);
@@ -391,7 +392,7 @@ void read_squad(Reader& r, SoldierSquad& squad) {
             return;
         }
         // A save that names more men than a squad can hold is a save from a
-        // different game: refuse it loudly rather than keep the first 1024.
+        // different game: refuse it loudly rather than keep what fits.
         if (!squad.push(make_soldier(s.kind, s.level, s.entityId))) {
             r.ok = false;
             return;

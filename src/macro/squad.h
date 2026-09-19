@@ -155,9 +155,9 @@ inline void refresh_squad_carry(ecs::World& w, entt::entity leader) {
     const float lh = leaderHaul > 0.0f ? leaderHaul : 1.0f;
     float souls = 1.0f;   // лидер — своя спина, она уже в carryPerSoul
     if (const auto* ro = w.reg.try_get<ecs::SquadRoster>(leader)) {
-        for (const SoldierRecord& m : ro->squad) {
+        for (const SoldierSlot& m : ro->squad) {
             const float h = npc_def(soldier_npc_type(m)).haulMult;
-            souls += (h > 0.0f ? h : 1.0f) / lh;
+            souls += (h > 0.0f ? h : 1.0f) / lh * float(m.count);
         }
     }
     rt->carryCap = rt->carryPerSoul * souls;
@@ -182,20 +182,11 @@ inline int drain_dead_leader_squads(ecs::World& w, SoldierSquad& deserterPool) {
              entt::exclude<ecs::PlayerSquadTag>).each()) {
         (void)e;
         if (roster.squad.empty()) continue;
-        // The pool CAN refuse (its own kMaxSquadMembers ceiling): only the
+        // The pool CAN refuse (its own kMaxSquadSlots ceiling): only the
         // men it actually took leave the roster; the rest STAY as the dead
         // lord's band and the next sweep tries again — nobody is destroyed
         // for standing past a cap (CANON S26).
-        const int taken = add_squad(deserterPool, roster.squad);
-        moved += taken;
-        if (taken >= roster.squad.size()) {
-            roster.squad.clear();
-        } else {
-            for (int i = taken; i < roster.squad.size(); ++i) {
-                roster.squad[i - taken] = roster.squad[i];
-            }
-            roster.squad.count -= taken;
-        }
+        moved += move_squad(deserterPool, roster.squad);
     }
     return moved;
 }
@@ -704,25 +695,22 @@ inline void roll_fallen_spoils(const MacroWorld& mw, std::uint16_t kind,
     }
 }
 
-// Every death this side suffered, told once: the roster rows by their record
-// ids and the leader by his entity. Read BEFORE the settle removes the rows.
+// Every death this side suffered, told once: the roster rows by their fallen
+// records and the leader by his entity. The casualty coin carries its own
+// kind and level (CANON S4) — no roster scan; the resolver drew these FROM
+// the roster, and a generic record has no id a scan could match anyway.
 inline void report_battle_deaths(const MacroWorld& mw, entt::entity side,
-                                 const std::vector<std::uint32_t>& casualties,
+                                 const std::vector<SoldierRecord>& casualties,
                                  bool leaderFell, entt::entity killer) {
     if (!mw.facts || !mw.world) return;
     ecs::World& w = *mw.world;
     auto& reg = w.reg;
     const char* factionId = squad_faction_id(w, side);
-    if (const auto* roster = reg.try_get<ecs::SquadRoster>(side)) {
-        for (const SoldierRecord& r : roster->squad) {
-            for (std::uint32_t id : casualties) {
-                if (id != r.entityId) continue;
-                report_death(mw, r.kind, entt::null, killer,
-                             std::int32_t(id),
-                             normalize_soldier_level(r.level), factionId);
-                break;
-            }
-        }
+    for (const SoldierRecord& r : casualties) {
+        if (!valid_npc_kind(r.kind)) continue;
+        report_death(mw, r.kind, entt::null, killer,
+                     std::int32_t(r.entityId),
+                     normalize_soldier_level(r.level), factionId);
     }
     if (leaderFell) {
         const auto* kind = reg.try_get<ecs::NPCKind>(side);
@@ -733,10 +721,11 @@ inline void report_battle_deaths(const MacroWorld& mw, entt::entity side,
     }
 }
 
-// Roster deaths, by name, through the ledger row.
+// Roster deaths through the ledger row: a storied soul by its entityId, a
+// generic one by {kind, level} (the key's detailKind/detailLevel pair).
 inline void settle_squad_casualties(GameState& gs, ecs::World& w,
                                     entt::entity e,
-                                    const std::vector<std::uint32_t>& ids) {
+                                    const std::vector<SoldierRecord>& ids) {
     auto& reg = w.reg;
     const auto* sid = reg.try_get<ecs::MacroSpawnId>(e);
     const auto* cell = reg.try_get<ecs::MacroCell>(e);
@@ -747,8 +736,10 @@ inline void settle_squad_casualties(GameState& gs, ecs::World& w,
     key.subject = std::int32_t(sid->index);
     key.cellX = cell ? std::int16_t(ecs::cell_x(*cell, gs.mapW)) : std::int16_t(0);
     key.cellY = cell ? std::int16_t(ecs::cell_y(*cell, gs.mapW)) : std::int16_t(0);
-    for (std::uint32_t id : ids) {
-        key.detail = std::int32_t(id);
+    for (const SoldierRecord& r : ids) {
+        key.detail = r.entityId != 0 ? std::int32_t(r.entityId) : -1;
+        key.detailKind = r.kind;
+        key.detailLevel = r.level;
         macro_stock_apply(mw, MacroStock::Roster, key, -1);
     }
 }
@@ -773,21 +764,14 @@ inline void settle_leader_fraction(ecs::World& w, entt::entity e,
 // BEFORE the deaths settle — the reward needs the rows, settling removes
 // them. Includes the leader's own worth when the outcome killed him.
 inline int xp_for_fallen(ecs::World& w, entt::entity loser,
-                         const std::vector<std::uint32_t>& casualties,
+                         const std::vector<SoldierRecord>& casualties,
                          bool leaderFell) {
     auto& reg = w.reg;
     int xp = 0;
-    if (const auto* roster = reg.try_get<ecs::SquadRoster>(loser)) {
-        for (const SoldierRecord& r : roster->squad) {
-            if (!valid_npc_kind(r.kind)) continue;
-            for (std::uint32_t id : casualties) {
-                if (id == r.entityId) {
-                    xp += npc_xp_reward(NPCType(r.kind),
-                                        normalize_soldier_level(r.level));
-                    break;
-                }
-            }
-        }
+    for (const SoldierRecord& r : casualties) {
+        if (!valid_npc_kind(r.kind)) continue;
+        xp += npc_xp_reward(NPCType(r.kind),
+                            normalize_soldier_level(r.level));
     }
     if (leaderFell) {
         if (const auto* kind = reg.try_get<ecs::NPCKind>(loser);
@@ -829,7 +813,7 @@ inline void loot_fallen_owner(ecs::World& w, entt::entity fallen,
 //     (a NAMED band by its ordinal, a nameless one by its faction —
 //     owner's ruling): the record hatred, revenge quests and the danger
 //     term of the refusal price all READ instead of keeping counters.
-inline std::int32_t battle_dead(const std::vector<std::uint32_t>& casualties,
+inline std::int32_t battle_dead(const std::vector<SoldierRecord>& casualties,
                                 float leaderFraction) {
     return std::int32_t(casualties.size())
            + (leaderFraction <= 0.0f ? 1 : 0);
@@ -1026,17 +1010,12 @@ inline int settle_player_auto_battle(const MacroWorld& mw,
         Rng lootRng(hash3(std::uint32_t(entt::to_integral(enemy)),
                           std::uint32_t(enemyCas.size()),
                           gs.worldSeed));
-        if (const auto* roster = w.reg.try_get<ecs::SquadRoster>(enemy)) {
-            for (const SoldierRecord& r : roster->squad) {
-                for (std::uint32_t id : enemyCas) {
-                    if (id != r.entityId) continue;
-                    roll_fallen_spoils(mw, r.kind,
-                                       normalize_soldier_level(r.level),
-                                       cx, cy, enemyFaction, lootRng,
-                                       *playerBag);
-                    break;
-                }
-            }
+        for (const SoldierRecord& r : enemyCas) {
+            if (!valid_npc_kind(r.kind)) continue;
+            roll_fallen_spoils(mw, r.kind,
+                               normalize_soldier_level(r.level),
+                               cx, cy, enemyFaction, lootRng,
+                               *playerBag);
         }
         if (enemyFraction <= 0.0f) {
             const auto* kind = w.reg.try_get<ecs::NPCKind>(enemy);

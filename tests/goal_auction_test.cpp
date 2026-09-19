@@ -295,7 +295,10 @@ void test_boundary_court_resizes_standing_crews() {
     auto& ro = w.reg.get<ecs::SquadRoster>(first);
     CHECK(ro.squad.size() > 3, "ростер больше среза (фикстура)");
     const int cutTo = ro.squad.size() - 3;
-    while (ro.squad.size() > cutTo) ro.squad.remove_at(ro.squad.size() - 1);
+    while (ro.squad.size() > cutTo) {
+        SoldierRecord fallen{};
+        CHECK(ro.squad.pop_soul_back(fallen), "срез снимает душу с хвоста");
+    }
     const int soulsAfterLoss = souls_total();
 
     // Граница: суд ДОБИРАЕТ порезанную из населения — все стоящие артели

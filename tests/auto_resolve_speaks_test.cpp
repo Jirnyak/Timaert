@@ -74,8 +74,8 @@ AutoBattleOutcome wipe_of(ecs::World& w, entt::entity loser, bool loserIsB) {
     AutoBattleOutcome o{};
     o.winner = loserIsB ? 0 : 1;
     auto& cas = loserIsB ? o.casualtiesB : o.casualtiesA;
-    for (const SoldierRecord& r : w.reg.get<ecs::SquadRoster>(loser).squad) {
-        cas.push_back(r.entityId);
+    for (const SoulRef r : w.reg.get<ecs::SquadRoster>(loser).squad.souls()) {
+        cas.push_back(make_soldier(r.kind, r.level, r.entityId));
     }
     (loserIsB ? o.leaderFractionB : o.leaderFractionA) = 0.0f;
     (loserIsB ? o.leaderFractionA : o.leaderFractionB) = 0.75f;

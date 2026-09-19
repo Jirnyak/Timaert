@@ -245,8 +245,13 @@ struct MacroDebt {
     // TABLE rather than a count: the roster row stores the member's
     // SoldierRecord::entityId here (as a bit pattern — ids may use the high
     // bit), so a death removes the very soldier who fell, not "one of them".
-    // -1 = the stock is anonymous (population, trees) and needs no name.
+    // -1 = no name. A GENERIC soul (roster-as-inventory, CANON S4) HAS no
+    // entityId — its name IS {kind, level}, carried in the two fields below
+    // (detailLevel > 0 marks them live; kind alone cannot, Peasant == 0), and
+    // its death honestly removes "one of that stack".
     std::int32_t  detail = -1;
+    std::uint16_t detailKind = 0;
+    std::int16_t  detailLevel = 0;
 };
 
 // Backlink from a PROJECTED subworld body to the persistent macro record it
