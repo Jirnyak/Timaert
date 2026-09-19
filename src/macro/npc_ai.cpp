@@ -1131,8 +1131,15 @@ constexpr int kBridgeMaterialUnits = kGatherPerWorkerDay;
 bool march_is_stuck_(const MacroPos& p, float oldX, float oldY,
                      const ecs::MacroNpcRuntime& rt,
                      const ecs::Pools& pools);
-int haul_between(Inventory& from, Inventory& to, const char* id,
+int haul_between(Inventory& from, Depot to, const char* id,
                  int maxUnits, float capacityLeftKg);
+
+// Приёмник-МЕСТО (CANON S10): склад + счёт + канал фактов мира — дверь
+// прихода гасит долг СРАЗУ тем, что упало. Сумки в Depot не заворачиваются
+// (неявная конверсия из Inventory&, долга нет).
+inline Depot depot_(Landmark& lm, const MacroWorld& mw) {
+    return Depot(lm.inventory, lm.needDebt, mw.econFacts, mw.econFactsUser);
+}
 
 // The sell-run machine (defined with the trade behaviours below): the
 // peasant crew whose errand is Sell walks the SAME machine the vendor
@@ -1700,7 +1707,7 @@ const std::array<int, std::size_t(kCommodityCount)>& value_dense_order() {
 // цене относительно стоимости, и список решал бы за него, что бывает товаром.)
 
 
-int haul_between(Inventory& from, Inventory& to, const char* id,
+int haul_between(Inventory& from, Depot to, const char* id,
                  int maxUnits, float capacityLeftKg) {
     if (maxUnits <= 0 || capacityLeftKg <= 0.0f) return 0;
     const ItemDef* def = item_def(id);
@@ -1711,8 +1718,12 @@ int haul_between(Inventory& from, Inventory& to, const char* id,
     // Credit before debit (CANON S5): a hold with no free slot refuses, the
     // cargo stays where it was, and "units moved" is never said of goods
     // that evaporated between two bags.
-    if (!to.add(id, n)) return 0;
+    if (!to.inv.add(id, n)) return 0;
     from.remove(id, n);
+    // Приход в МЕСТО гасит долг СРАЗУ (CANON S10): упавшее по счёту
+    // съедено с фактом Consumed, на полке остаётся излишек. Вернувшееся n
+    // честно: сделка/дань состоялась — судьба груза дальше дело приёмника.
+    if (to.needDebt) econ_pay_debt(to.inv, to.needDebt, to.sink, to.user);
     return n;
 }
 
@@ -1913,7 +1924,8 @@ void ai_caravan(entt::entity self, MacroPos& p,
             const CaravanDeal deal = trade_caravan_at_station(
                 bag->inv, rt.carryCap, *market,
                 leader_trade_power_(*ctx.mw.world, self),
-                landmark_trade_power_(*market));
+                landmark_trade_power_(*market),
+                ctx.mw.econFacts, ctx.mw.econFactsUser);
             // The exchange is DONE — that one moment is the fact (S20.1: a
             // deal is a transition by nature; the ride on is the same
             // cargo, not a second deal). Subject = the home city whose
@@ -1956,10 +1968,10 @@ void ai_caravan(entt::entity self, MacroPos& p,
                 // mid-run drops the coin with its cargo instead — the loan
                 // law\'s honest downside.
                 for (int i = 0; i < kCommodityCount; ++i) {
-                    haul_between(bag->inv, *homeStore, kCommodities[i].id,
-                                 1 << 30, 1e9f);
+                    haul_between(bag->inv, depot_(*homeLm, ctx.mw),
+                                 kCommodities[i].id, 1 << 30, 1e9f);
                 }
-                transfer_value_dense(bag->inv, *homeStore,
+                transfer_value_dense(bag->inv, depot_(*homeLm, ctx.mw),
                                      inventory_value(bag->inv));
             }
             rt.state = std::uint8_t(NS::Idle);
@@ -2168,7 +2180,7 @@ void ai_vendor(entt::entity self, MacroPos& p,
                     if (owed <= 0) continue;
                     const char* id = kCommodities[c].id;
                     const int moved = haul_between(
-                        bag->inv, market->inventory, id, owed, 1e9f);
+                        bag->inv, depot_(*market, ctx.mw), id, owed, 1e9f);
                     if (moved <= 0) continue;
                     homeLm->titheOwedGoods[c] -= moved;
                     const ItemDef* d = item_def(id);
@@ -2176,7 +2188,7 @@ void ai_vendor(entt::entity self, MacroPos& p,
                 }
                 if (homeLm->titheOwedCoin > 0) {
                     const int coins = transfer_value_dense(
-                        bag->inv, market->inventory,
+                        bag->inv, depot_(*market, ctx.mw),
                         int(std::min<std::int64_t>(
                             homeLm->titheOwedCoin,
                             inventory_value(bag->inv))));
@@ -2197,7 +2209,8 @@ void ai_vendor(entt::entity self, MacroPos& p,
                 homeLm->population,
                 landmark_sheet(homeLm->type).skills,
                 leader_trade_power_(*ctx.mw.world, self),
-                landmark_trade_power_(*market));
+                landmark_trade_power_(*market),
+                ctx.mw.econFacts, ctx.mw.econFactsUser);
             if (deal.movedTableValue > 0) {
                 record_landmark_fact(*ctx.mw.gs, FactKind::Traded,
                                      rt.homeSettlementId,
@@ -2218,10 +2231,10 @@ void ai_vendor(entt::entity self, MacroPos& p,
                 // Home: purchases and earnings land on the home store; the
                 // rotation dissolves the crew at dawn.
                 for (int i = 0; i < kCommodityCount; ++i) {
-                    haul_between(bag->inv, homeLm->inventory,
+                    haul_between(bag->inv, depot_(*homeLm, ctx.mw),
                                  kCommodities[i].id, 1 << 30, 1e9f);
                 }
-                transfer_value_dense(bag->inv, homeLm->inventory,
+                transfer_value_dense(bag->inv, depot_(*homeLm, ctx.mw),
                                inventory_value(bag->inv));
             }
             rt.state = std::uint8_t(NS::Idle);
@@ -2343,8 +2356,8 @@ void ai_taxrun(entt::entity self, MacroPos& p,
                 const int owed = homeLm->titheOwedGoods[c];
                 if (owed <= 0) continue;
                 const char* id = kCommodities[c].id;
-                const int moved = haul_between(bag->inv, cap->inventory,
-                                               id, owed, 1e9f);
+                const int moved = haul_between(
+                    bag->inv, depot_(*cap, ctx.mw), id, owed, 1e9f);
                 if (moved <= 0) continue;
                 homeLm->titheOwedGoods[c] -= moved;
                 const ItemDef* d = item_def(id);
@@ -2352,7 +2365,7 @@ void ai_taxrun(entt::entity self, MacroPos& p,
             }
             if (homeLm->titheOwedCoin > 0) {
                 const int coins = transfer_value_dense(
-                    bag->inv, cap->inventory,
+                    bag->inv, depot_(*cap, ctx.mw),
                     int(std::min<std::int64_t>(homeLm->titheOwedCoin,
                                                inventory_value(bag->inv))));
                 homeLm->titheOwedCoin -= coins;
@@ -2379,10 +2392,10 @@ void ai_taxrun(entt::entity self, MacroPos& p,
                 // Anything undelivered rides back into the town store —
                 // wares now too, since the tribute is paid in kind (v71).
                 for (int i = 0; i < kCommodityCount; ++i) {
-                    haul_between(bag->inv, homeLm->inventory,
+                    haul_between(bag->inv, depot_(*homeLm, ctx.mw),
                                  kCommodities[i].id, 1 << 30, 1e9f);
                 }
-                transfer_value_dense(bag->inv, homeLm->inventory,
+                transfer_value_dense(bag->inv, depot_(*homeLm, ctx.mw),
                                inventory_value(bag->inv));
             }
             rt.state = std::uint8_t(NS::Idle);
@@ -3544,9 +3557,13 @@ int max_affordable_lot_(int base, int have, int demand, bool selling,
 // cheap here is exactly what the next hungry station pays above base for.
 CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
                                      Landmark& market,
-                                     int myTradePct, int theirTradePct) {
+                                     int myTradePct, int theirTradePct,
+                                     EconFactSink sink, void* user) {
     CaravanDeal out{};
     Inventory& ms = market.inventory;
+    // Рынок — МЕСТО (CANON S10): проданное ему падает в Depot и гасит его
+    // долг СРАЗУ — город, купивший хлеб, хлеб уже проел.
+    const Depot msd(market.inventory, market.needDebt, sink, user);
     const Skills& site = landmark_sheet(market.type).skills;
     for (int i = 0; i < kCommodityCount; ++i) {
         const char* id = kCommodities[i].id;
@@ -3565,7 +3582,7 @@ CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
             n = max_affordable_lot_(base, have, demand, /*selling=*/true,
                                     inventory_value(ms), n);
             if (n <= 0) continue;
-            const int moved = haul_between(hold, ms, id, n, 1e9f);
+            const int moved = haul_between(hold, msd, id, n, 1e9f);
             if (moved <= 0) continue;
             // The ONE trade-price law (economy.h): the seller's charisma
             // and trade skill claw back part of the house margin — a
@@ -3595,7 +3612,7 @@ CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
                 moved * trade_buy_price(
                             stock_price(base, have - moved, demand),
                             myTradePct, theirTradePct);
-            out.boughtValue += transfer_value_dense(hold, ms, cost);
+            out.boughtValue += transfer_value_dense(hold, msd, cost);
             out.movedTableValue += base * moved;
         }
     }
@@ -3613,9 +3630,12 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
                                    Landmark& market,
                                    const MemoryEntry* homeSnapshot,
                                    int homePopulation, const Skills& homeSite,
-                                   int myTradePct, int theirTradePct) {
+                                   int myTradePct, int theirTradePct,
+                                   EconFactSink sink, void* user) {
     CaravanDeal out{};
     Inventory& ms = market.inventory;
+    // Рынок — МЕСТО (CANON S10): проданное гасит его долг сразу.
+    const Depot msd(market.inventory, market.needDebt, sink, user);
     const Skills& site = landmark_sheet(market.type).skills;
     const auto base_value = [](const char* id) {
         const ItemDef* d = item_def(id);
@@ -3637,7 +3657,7 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
         n = max_affordable_lot_(base, have, demand, /*selling=*/true,
                                 inventory_value(ms), n);
         if (n <= 0) continue;
-        const int moved = haul_between(bag, ms, id, n, 1e9f);
+        const int moved = haul_between(bag, msd, id, n, 1e9f);
         if (moved <= 0) continue;
         // Same ONE trade-price law as the station: a village hand haggles
         // with a peasant's charisma, a caravan with a trader's — the sheet
@@ -3735,7 +3755,7 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
                 moved * trade_buy_price(
                             stock_price(base, have - moved, demand),
                             myTradePct, theirTradePct);
-            out.boughtValue += transfer_value_dense(bag, ms, cost);
+            out.boughtValue += transfer_value_dense(bag, msd, cost);
             out.movedTableValue += base * moved;
         }
     }
@@ -4070,9 +4090,9 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             // Leftovers home: cargo by the haul door, coin by the wallet
             // door — a dissolved crew owns nothing (CANON S5, the loan law).
             for (int c = 0; c < kCommodityCount; ++c)
-                haul_between(bag->inv, lm.inventory, kCommodities[c].id,
+                haul_between(bag->inv, depot_(lm, mw), kCommodities[c].id,
                              1 << 30, 1e9f);
-            transfer_value_dense(bag->inv, lm.inventory,
+            transfer_value_dense(bag->inv, depot_(lm, mw),
                            inventory_value(bag->inv));
         }
         const auto& kind = reg.get<ecs::NPCKind>(e);
@@ -4182,9 +4202,10 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             // Leftovers home: cargo by the haul door, coin by the wallet
             // door — a dissolved crew owns nothing (CANON S5, the loan law).
             for (int c = 0; c < kCommodityCount; ++c)
-                haul_between(bag->inv, lm.inventory, kCommodities[c].id,
+                haul_between(bag->inv, depot_(lm, mw), kCommodities[c].id,
                              1 << 30, 1e9f);
-            transfer_value_dense(bag->inv, lm.inventory, inventory_value(bag->inv));
+            transfer_value_dense(bag->inv, depot_(lm, mw),
+                                 inventory_value(bag->inv));
         }
         int souls = 1;
         if (const auto* roster = reg.try_get<ecs::SquadRoster>(e))

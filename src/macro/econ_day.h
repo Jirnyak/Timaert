@@ -289,6 +289,24 @@ struct EconFact {
 };
 using EconFactSink = void (*)(void* user, const EconFact& fact);
 
+// ── СТОРОНА-ПРИЁМНИК с долгом места (CANON S10, вердикт 2026-09-19) ──────
+//
+// «Любая смена инвентаря, которая добавляет предметы» — одна форма для
+// дверей прихода (haul_between, transfer_value_dense): сумка проходит
+// голым инвентарём (needDebt == nullptr, неявная конверсия), МЕСТО отдаёт
+// свой счёт и канал фактов — и дверь гасит долг СРАЗУ тем, что упало
+// (econ_pay_debt после кредита). Дневной такт settle_landmark_day остаётся
+// СТРАХОВКОЙ для путей мимо дверей (торговая панель игрока).
+struct Depot {
+    Inventory& inv;
+    std::int32_t* needDebt = nullptr;  // счёт места или null (сумка)
+    EconFactSink sink = nullptr;       // куда докладывать Consumed
+    void* user = nullptr;
+    Depot(Inventory& i) : inv(i) {}
+    Depot(Inventory& i, std::int32_t* debt, EconFactSink s, void* u)
+        : inv(i), needDebt(debt), sink(s), user(u) {}
+};
+
 // ── The day, in three pure steps ─────────────────────────────────────────
 
 // Workers run the site's recipes in three passes: today's TABLE first (each

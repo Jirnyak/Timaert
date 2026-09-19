@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include "macro/econ_day.h"   // Depot + econ_pay_debt — приход гасит долг (S10)
 #include "macro/faction.h"
 #include "macro/items.h"
 
@@ -140,7 +141,10 @@ inline int pay_value_dense(Inventory& inv, int value) {
 // burned. Credit-before-debit per stack: what the receiver's full bag
 // refuses simply STAYS with the payer (CANON S5). Returns the value actually
 // moved — callers compare it against `value` to know the deal settled whole.
-inline int transfer_value_dense(Inventory& from, Inventory& to, int value) {
+// Приёмник — Depot (CANON S10): платёж, упавший в МЕСТО, гасит его долг
+// СРАЗУ — город, взявший хлебом, хлеб тут же проел. Сумки проходят как
+// раньше (неявная конверсия, долга нет).
+inline int transfer_value_dense(Inventory& from, Depot to, int value) {
     int left = value < 0 ? 0 : value;
     int moved = 0;
     while (left > 0) {
@@ -153,10 +157,13 @@ inline int transfer_value_dense(Inventory& from, Inventory& to, int value) {
         if (take <= 0) break;
         ItemRef payload = s;
         payload.count = std::uint16_t(take);
-        if (!to.add_ref(payload)) break;   // refused: the stack stays put
+        if (!to.inv.add_ref(payload)) break;   // refused: the stack stays put
         if (!from.remove_at(best, take)) break;
         moved += take * unitV;
         left -= take * unitV;
+    }
+    if (moved > 0 && to.needDebt) {
+        econ_pay_debt(to.inv, to.needDebt, to.sink, to.user);
     }
     return moved;
 }

@@ -671,6 +671,9 @@ timaert_test(macro_npc_ai_parity_test
         src/macro/tree_layer.cpp
         # The caravan agent weighs its cargo hold (items.cpp).
         src/macro/items.cpp
+        # Приход в место гасит долг (CANON S10): двери haul/transfer зовут
+        # econ_pay_debt — дверь гашения живёт в econ_day.cpp.
+        src/macro/econ_day.cpp
         # ONE recovery law (CANON S14): the parity check asks the player's own
         # door for its answer and compares it to the lord's, so the two cannot
         # drift into two laws again.
@@ -727,6 +730,9 @@ timaert_test(squad_war_test
         # door — so the test links the spawner and the loot it rolls.
         src/macro/npc_spawn.cpp
         src/macro/items.cpp
+        # Приход в место гасит долг (CANON S10): двери haul/transfer зовут
+        # econ_pay_debt — дверь гашения живёт в econ_day.cpp.
+        src/macro/econ_day.cpp
     LINK_SDL LINK_ENTT)
 
 timaert_test(macro_travel_parity_test
@@ -779,6 +785,9 @@ timaert_test(squad_travel_test
         src/macro/fauna.cpp
         src/macro/tree_layer.cpp
         src/macro/items.cpp
+        # Приход в место гасит долг (CANON S10): двери haul/transfer зовут
+        # econ_pay_debt — дверь гашения живёт в econ_day.cpp.
+        src/macro/econ_day.cpp
     LINK_ENTT)
 
 timaert_test(item_use_parity_test
@@ -1643,6 +1652,9 @@ timaert_test(player_is_a_squad_test
         src/macro/fauna.cpp
         src/macro/tree_layer.cpp
         src/macro/items.cpp
+        # Приход в место гасит долг (CANON S10): двери haul/transfer зовут
+        # econ_pay_debt — дверь гашения живёт в econ_day.cpp.
+        src/macro/econ_day.cpp
     LINK_ENTT)
 
 # Anatomy is a ROW and equipment is a flat array over it: a slot mask names

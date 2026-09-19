@@ -219,9 +219,14 @@ struct CaravanDeal {
 // charisma/bargaining are the trader's SHEET (the one trade-price law of
 // economy.h modulates both halves): a caravan out-trades a peasant because
 // its row rolls better numbers — never a hardcode (owner 2026-08-30).
+// `sink`/`user` — канал фактов мира (Consumed при гашении долга рынка,
+// CANON S10): проданное в место по счёту съедается СРАЗУ. Тесты водят
+// сделку без канала — гашение то же, факты молчат.
 CaravanDeal trade_caravan_at_station(Inventory& hold, float capacityKg,
                                      Landmark& market,
-                                     int myTradePct, int theirTradePct);
+                                     int myTradePct, int theirTradePct,
+                                     EconFactSink sink = nullptr,
+                                     void* user = nullptr);
 // The village crew selling at its nearest city: unload everything, then
 // spend the WHOLE purse down the home's needs ladder («деревня не копит
 // капитал», owner 2026-08-30) — each line up to a season's stock at home;
@@ -230,7 +235,9 @@ CaravanDeal trade_vendor_at_market(Inventory& bag, float capacityKg,
                                    Landmark& market,
                                    const MemoryEntry* homeSnapshot,
                                    int homePopulation, const Skills& homeSite,
-                                   int myTradePct, int theirTradePct);
+                                   int myTradePct, int theirTradePct,
+                                   EconFactSink sink = nullptr,
+                                   void* user = nullptr);
 
 // ── ПОРУЧЕНИЕ: цель сквада = {глагол, объект} ────────────────────────────
 // (CANON S10 «универсальный ИИ сквадов», владелец 2026-09-02.) Один слой
