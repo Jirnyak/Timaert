@@ -22,10 +22,14 @@
 
 namespace sm::sub {
 
-// Forward direction is (cos yaw, sin yaw) in the tile-XY plane, matching the
-// camera / movement convention (engine.cpp:1425-1428, camera.h). `shooter` is
-// excluded from the candidate set (pass entt::null if there is no self entity).
-// Returns entt::null when no live enemy lies within both range and cone.
+// Forward direction is the NORMALISED 3D look vector (fx, fy, fz) — the same
+// one the projectile flies (casting.h CastContext n*), so the reticle and the
+// shot agree by construction. Distance and cone are 3D (CANON S13 «всё в бою
+// трёхмерно», session Е 2026-09-19: the XY-flat cone let a body far overhead
+// steal a level shot, and a dive-bombing caster could not aim down at all).
+// `shooter` is excluded from the candidate set (pass entt::null if there is
+// no self entity). Returns entt::null when no live enemy lies within both
+// range and cone.
 // The player-melee auto-aim (owner ruling 2026-08-05): HOSTILES FIRST — the
 // nearest body the `isHostile` oracle confirms wins; only when no hostile is
 // in reach does the swing fall back to the nearest body of any stripe, so
@@ -58,7 +62,8 @@ entt::entity melee_pick_target(entt::registry& reg,
                                void* neighborsUser = nullptr);
 
 entt::entity aim_target(entt::registry& reg,
-                        float px, float py, float yaw,
+                        float px, float py, float pz,
+                        float fx, float fy, float fz,
                         float maxRange, float cosHalfAngle,
                         entt::entity shooter = entt::null);
 

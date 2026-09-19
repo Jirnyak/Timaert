@@ -236,9 +236,11 @@ void spawn_possession(ecs::World& w, const SpellSpawnContext& c) {
     // ordinal law, not a lookup of somebody else's numbers.
     const SpellDef* row = spell_find("possession");
     const float reach = row ? row->beamLength : 0.0f;
-    const float yaw = std::atan2(c.ny, c.nx);
+    // The cast's own 3D look vector, verbatim — the old atan2(ny, nx)
+    // flattened the aim to XY against S13 «всё в бою трёхмерно».
     const entt::entity target = sub::aim_target(
-        reg, c.px, c.py, yaw, reach, kTargetedConeCosHalfAngle, caster);
+        reg, c.px, c.py, c.pz, c.nx, c.ny, c.nz,
+        reach, kTargetedConeCosHalfAngle, caster);
     if (target == entt::null) return;          // poured into empty air
     // THE GATE: strictly weaker in level, each trained rank of the school
     // raising the threshold by one (owner formula, 2026-09-17). A body with

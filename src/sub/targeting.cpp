@@ -81,13 +81,12 @@ entt::entity melee_pick_target(entt::registry& reg,
 }
 
 entt::entity aim_target(entt::registry& reg,
-                        float px, float py, float yaw,
+                        float px, float py, float pz,
+                        float fx, float fy, float fz,
                         float maxRange, float cosHalfAngle,
                         entt::entity shooter) {
     if (maxRange <= 0.0f) return entt::null;
 
-    const float fx = std::cos(yaw);
-    const float fy = std::sin(yaw);
     const float maxR2 = maxRange * maxRange;
 
     entt::entity best = entt::null;
@@ -109,13 +108,15 @@ entt::entity aim_target(entt::registry& reg,
         const auto& pos = view.get<ecs::Position>(e);
         const float dx = pos.x - px;
         const float dy = pos.y - py;
-        const float d2 = dx * dx + dy * dy;
+        const float dz = pos.z - pz;
+        const float d2 = dx * dx + dy * dy + dz * dz;
         if (d2 > maxR2) continue;
 
         // Cone test. A co-located target (d2 ~ 0) has no defined bearing and is
         // treated as "in front" so it is never unreachable.
         if (d2 > 1e-8f) {
-            const float cosang = (fx * dx + fy * dy) / std::sqrt(d2);
+            const float cosang =
+                (fx * dx + fy * dy + fz * dz) / std::sqrt(d2);
             if (cosang < cosHalfAngle) continue;
         }
 

@@ -14,10 +14,11 @@
 
 using namespace sm;
 
-// A live, targetable subworld enemy at (x,y).
-static entt::entity make_enemy(entt::registry& reg, float x, float y) {
+// A live, targetable subworld enemy at (x,y,z).
+static entt::entity make_enemy(entt::registry& reg, float x, float y,
+                               float z = 0.0f) {
     entt::entity e = reg.create();
-    reg.emplace<ecs::Position>(e, x, y, 0.0f);
+    reg.emplace<ecs::Position>(e, x, y, z);
     reg.emplace<ecs::Pools>(e, 10, 10);
     reg.emplace<ecs::NPCKind>(e, std::uint16_t(4), std::uint16_t(0)); // any kind
     reg.emplace<ecs::SubworldTag>(e);
@@ -29,8 +30,8 @@ static float cos_deg(float deg) {
     return std::cos(deg * 3.14159265358979f / 180.0f);
 }
 
-// yaw 0 -> forward = (cos0, sin0) = (+1, 0), i.e. facing +x.
-static constexpr float kFaceX = 0.0f;
+// The forward argument is the normalised 3D look vector; the flat-ground
+// tests face +x as (1, 0, 0). kFaceX (a yaw) died with the 2D signature.
 static constexpr float kFull  = -1.0f;       // 360° cone
 static constexpr float kCone30 = 0;          // placeholder, set in main via cos_deg
 
@@ -43,7 +44,7 @@ int main() {
         entt::entity a = make_enemy(reg, 105, 100); // ahead, dist 5
         make_enemy(reg, 110, 100);                  // ahead, dist 10 (farther)
         make_enemy(reg, 95, 100);                   // behind, dist 5 (out of cone)
-        entt::entity picked = sub::aim_target(reg, 100, 100, kFaceX, 50.0f, cone30);
+        entt::entity picked = sub::aim_target(reg, 100, 100, 0, 1, 0, 0,50.0f, cone30);
         CHECK(picked == a, "picks nearest enemy inside the forward cone");
     }
 
@@ -52,9 +53,9 @@ int main() {
         entt::registry reg;
         entt::entity a = make_enemy(reg, 105, 100); // dist 5
         make_enemy(reg, 110, 100);                  // dist 10
-        CHECK(sub::aim_target(reg, 100, 100, kFaceX, 8.0f, cone30) == a,
+        CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0,8.0f, cone30) == a,
               "range 8: near (5) selected, far (10) excluded");
-        CHECK(sub::aim_target(reg, 100, 100, kFaceX, 3.0f, cone30) == entt::null,
+        CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0,3.0f, cone30) == entt::null,
               "range 3: everything out of range -> null");
     }
 
@@ -62,9 +63,9 @@ int main() {
     {
         entt::registry reg;
         entt::entity behind = make_enemy(reg, 95, 100); // dist 5, bearing 180°
-        CHECK(sub::aim_target(reg, 100, 100, kFaceX, 50.0f, cone30) == entt::null,
+        CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0,50.0f, cone30) == entt::null,
               "narrow cone: target behind the shooter is not selected");
-        CHECK(sub::aim_target(reg, 100, 100, kFaceX, 50.0f, kFull) == behind,
+        CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0,50.0f, kFull) == behind,
               "full circle: behind target IS selected (reduces to melee)");
     }
 
@@ -73,7 +74,7 @@ int main() {
         entt::registry reg;
         make_enemy(reg, 105, 100);                  // ahead, dist 5
         entt::entity near = make_enemy(reg, 100, 103); // side, dist 3 (nearest)
-        CHECK(sub::aim_target(reg, 100, 100, kFaceX, 50.0f, kFull) == near,
+        CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0,50.0f, kFull) == near,
               "full circle: nearest overall selected irrespective of facing");
     }
 
@@ -85,7 +86,7 @@ int main() {
         reg.emplace<ecs::PlayerSoldierTag>(soldier);  // player's own -> skip
         entt::entity ptag = make_enemy(reg, 102, 100); // ahead, dist 2
         reg.emplace<ecs::AvatarTag>(ptag);            // the player body -> skip
-        CHECK(sub::aim_target(reg, 100, 100, kFaceX, 50.0f, cone30) == a,
+        CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0,50.0f, cone30) == a,
               "player-side entities excluded even when nearer");
     }
 
@@ -95,12 +96,12 @@ int main() {
         entt::entity a = make_enemy(reg, 106, 100); // ahead, dist 6
         entt::entity corpse = make_enemy(reg, 101, 100); // ahead, dist 1
         reg.emplace<ecs::Dead>(corpse);
-        CHECK(sub::aim_target(reg, 100, 100, kFaceX, 50.0f, cone30) == a,
+        CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0,50.0f, cone30) == a,
               "Dead entities excluded even when nearer");
         // Zero-HP but not yet tagged Dead is also excluded.
         entt::entity downed = make_enemy(reg, 102, 100);
         reg.get<ecs::Pools>(downed).hp = 0.0f;
-        CHECK(sub::aim_target(reg, 100, 100, kFaceX, 50.0f, cone30) == a,
+        CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0,50.0f, cone30) == a,
               "zero-HP entities excluded even when nearer");
     }
 
@@ -109,7 +110,7 @@ int main() {
         entt::registry reg;
         entt::entity self = make_enemy(reg, 100, 100); // co-located "body"
         entt::entity a = make_enemy(reg, 105, 100);
-        CHECK(sub::aim_target(reg, 100, 100, kFaceX, 50.0f, kFull, self) == a,
+        CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0,50.0f, kFull, self) == a,
               "shooter entity is never its own target");
     }
 
@@ -117,15 +118,40 @@ int main() {
     {
         entt::registry reg;
         entt::entity onTop = make_enemy(reg, 100, 100); // exactly at shooter
-        CHECK(sub::aim_target(reg, 100, 100, kFaceX, 50.0f, cone30) == onTop,
+        CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0,50.0f, cone30) == onTop,
               "co-located enemy is selected (treated as in-front)");
     }
 
     // ── empty world ───────────────────────────────────────────────────────
     {
         entt::registry reg;
-        CHECK(sub::aim_target(reg, 100, 100, kFaceX, 50.0f, kFull) == entt::null,
+        CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0,50.0f, kFull) == entt::null,
               "no candidates -> null");
+    }
+
+    // ── THE THIRD DIMENSION (CANON S13 «всё в бою трёхмерно», session Е) ──
+    // The old law measured cone and distance in XY: a body far overhead sat
+    // "in the cone" of a level shot, and looking up bought nothing.
+    {
+        entt::registry reg;
+        // XY-distance 3 (dead ahead), but 4 up: 3D bearing is 53° off a
+        // level look — outside the ±30° cone the XY law would have passed.
+        entt::entity high = make_enemy(reg, 103, 100, 4);
+        CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0, 50.0f, cone30)
+                  == entt::null,
+              "a level look does not select a body far overhead");
+        // Aim UP the actual 3-4-5 bearing and the same body is the target.
+        CHECK(sub::aim_target(reg, 100, 100, 0, 0.6f, 0, 0.8f, 50.0f, cone30)
+                  == high,
+              "looking up finds it: the cone follows the 3D look vector");
+    }
+    {
+        entt::registry reg;
+        // XY-distance 3 fits a 4.0 range; the true 3-4-5 distance is 5.
+        make_enemy(reg, 103, 100, 4);
+        CHECK(sub::aim_target(reg, 100, 100, 0, 1, 0, 0, 4.0f, kFull)
+                  == entt::null,
+              "range is 3D: the XY shadow of a high body does not reach");
     }
 
     // ── melee_pick_target: hostiles first, nearest-any as fallback ────────
