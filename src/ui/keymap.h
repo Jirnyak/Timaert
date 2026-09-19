@@ -60,6 +60,10 @@ enum class ActionId : std::uint8_t {
     // Gathering is WORK, not a weapon arc (owner verdict 2026-09-12, CANON
     // «Вердикты ТРУДА»): its own action, its own SP price.
     Harvest,
+    // Пошаговый режим «как в Might & Magic» (owner verdict 2026-09-17,
+    // CANON S13): the P key, subworld only. Not a second combat system —
+    // one derived pause reason over the one recovery gate (kPauseTurnStop).
+    TurnBased,
     // Possess died here 2026-09-06 (owner: вселение — не игроцкая кнопка;
     // придёт заклинанием) — и ПРИШЛО им 2026-09-17: спелл possession,
     // кастуется кнопкой CastSpell как любой другой; движковых дверей нет.

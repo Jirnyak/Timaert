@@ -1934,6 +1934,16 @@ bool gameplay_panel_open(const App& app) {
 // because there is nothing to forget.
 // (The PauseReason bits live in app/app_state.h beside App.)
 
+// The avatar body's ONE occupancy gate (ecs::Combat::recoverySteps) — 0 when
+// the hand is free, or when no body is on stage. Read-only: the turn stop
+// below derives from it, exactly as every action already charges into it.
+std::uint32_t player_gate_steps(const App& app) {
+    for (auto e : app.ecs.reg.view<const sm::ecs::AvatarTag,
+                                   const sm::ecs::Combat>())
+        return app.ecs.reg.get<const sm::ecs::Combat>(e).recoverySteps;
+    return 0u;
+}
+
 std::uint8_t pause_reasons(const App& app) {
     std::uint8_t mask = kPauseNone;
     // The pause the PLAYER asks for is the map's — a journey is a thing you
@@ -1947,6 +1957,19 @@ std::uint8_t pause_reasons(const App& app) {
     if (pausing_panel_open(app))                    mask |= kPausePanel;
     if (modal_overlay_active(app))                  mask |= kPauseModal;
     if (app.state != sm::ui::AppState::Playing)     mask |= kPauseMenu;
+    // ПОШАГОВЫЙ РЕЖИМ (owner verdict 2026-09-17, «как в меч и магия»):
+    // derived like every other reason — the scene stands while the player's
+    // body is FREE (its one recovery gate at 0) and nothing is asked of it.
+    // Any action that writes the gate (a swing, a cast, a shot) clears this
+    // bit for exactly the recovery it bought, so the world flows in slices
+    // the player's own tempo cuts. A held attack key arms the next tick
+    // (the swing it buys is what writes the gate); a cast fires on its
+    // keydown edge, which the pause never gated. Macro freezes WITH the
+    // scene — the owner's ruling — exactly as under a modal window.
+    if (app.turnBasedMode && app.subworld.active()
+        && player_gate_steps(app) == 0
+        && !app.subworld.player_attack_held())
+        mask |= kPauseTurnStop;
     return mask;
 }
 
@@ -2515,6 +2538,12 @@ void handle_event_playing(App& app, const SDL_Event& e) {
                 // cast from the sheet.
                 cast_active_spell(app);
             }
+            else if (is(ActionId::TurnBased)) {
+                // P — пошаговый режим (owner verdict 2026-09-17): one stored
+                // toggle; whether the scene actually stands is derived every
+                // frame from the body's recovery gate (pause_reasons).
+                app.turnBasedMode = !app.turnBasedMode;
+            }
             else if (is(ActionId::Pause)) {
                 // Map only by scope; the same physical key defaults to jump
                 // underground (a held action, read in poll_movement).
@@ -2698,6 +2727,25 @@ void poll_movement(App& app, float dt) {
     if (app.subworld.active()) {
         if (paused || gameplay_panel_open(app) || io.WantCaptureKeyboard
             || io.WantCaptureMouse) {
+            // THE TURN STOP is the one pause a hand plays THROUGH (owner
+            // verdict 2026-09-17, M&M): while the scene stands only because
+            // the player's body is free, the attack key stays live — holding
+            // it arms the next tick (pause_reasons reads the held flag), the
+            // swing writes the recovery gate, and that recovery keeps the
+            // scene flowing until it drains. The legs stay parked: walking
+            // needs the world to move (ruling «ходьба только пока мир идёт»),
+            // so the move intent is zero for the whole stop.
+            if (pause_reasons(app) == kPauseTurnStop
+                && !gameplay_panel_open(app) && !io.WantCaptureKeyboard
+                && !io.WantCaptureMouse) {
+                const Uint8* keys = SDL_GetKeyboardState(nullptr);
+                const Uint32 mouse = SDL_GetMouseState(nullptr, nullptr);
+                app.subworld.set_player_attack_held(
+                    keys[app.keymap.get(sm::ui::ActionId::Attack)]
+                    || (mouse & SDL_BUTTON(SDL_BUTTON_LEFT)) != 0u);
+                app.subworld.set_move_intent(0.0f, 0.0f);
+                return;
+            }
             app.subworld.set_player_attack_held(false);
             // HANDS OFF THE KEYS — and that now means SAYING SO. While the
             // legs were a displacement applied per call, not calling was
@@ -5913,6 +5961,42 @@ void frame(App& app, int simSteps) {
                         ImVec2(0.0f, 0.0f),
                         ImVec2(float(logicalW), float(logicalH)),
                         IM_COL32(220, 40, 40, int(alpha * 255.0f)));
+                }
+                // ПОШАГОВЫЙ РЕЖИМ — «рука справа» (owner verdict 2026-09-17,
+                // как в Might & Magic): the mode's one indicator, a small
+                // vector hand at the right edge. Bright when the scene
+                // STANDS and the hand is yours to play; dim while your own
+                // recovery lets the world flow.
+                if (app.turnBasedMode) {
+                    const bool standing =
+                        (pause_reasons(app) & kPauseTurnStop) != 0;
+                    ImDrawList* fg = ImGui::GetForegroundDrawList();
+                    const float hx = float(logicalW) - 58.0f;
+                    const float hy = float(logicalH) * 0.5f;
+                    const ImU32 col = standing
+                        ? IM_COL32(255, 214, 168, 235)
+                        : IM_COL32(255, 214, 168, 80);
+                    const ImU32 shade = IM_COL32(0, 0, 0, 120);
+                    // Palm + four fingers + thumb, in HUD parchment tones.
+                    auto hand = [&](float ox, float oy, ImU32 c) {
+                        fg->AddRectFilled(ImVec2(hx + ox, hy + oy),
+                                          ImVec2(hx + 26 + ox, hy + 22 + oy),
+                                          c, 4.0f);           // palm
+                        for (int f = 0; f < 4; ++f) {
+                            const float fx0 = hx + ox + 1.0f + float(f) * 6.5f;
+                            const float tall = (f == 1 || f == 2) ? 16.0f
+                                                                  : 12.0f;
+                            fg->AddRectFilled(
+                                ImVec2(fx0, hy + oy - tall),
+                                ImVec2(fx0 + 5.0f, hy + oy + 2.0f),
+                                c, 2.5f);                     // fingers
+                        }
+                        fg->AddRectFilled(ImVec2(hx + ox - 7.0f, hy + oy + 6),
+                                          ImVec2(hx + ox + 2.0f, hy + oy + 13),
+                                          c, 3.0f);           // thumb
+                    };
+                    hand(2.0f, 2.0f, shade);
+                    hand(0.0f, 0.0f, col);
                 }
                 // Centre-screen crosshair — four short lines with a gap at the
                 // centre, drawn as a shadow + bright pair for contrast on any

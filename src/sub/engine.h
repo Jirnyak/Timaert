@@ -528,6 +528,10 @@ public:
     // Returns the number killed; 0 outside a subworld.
     int   dev_kill_all_hostiles();
     void  set_player_attack_held(bool held) { playerAttackHeld_ = held; }
+    // Read back by the turn-based stop (pause_reasons): a held attack key
+    // ARMS the next tick — the swing it buys writes the recovery gate that
+    // keeps the scene flowing.
+    bool  player_attack_held() const { return playerAttackHeld_; }
     void  set_flying(bool enabled);
     bool  flying() const;
     entt::entity player_entity() const;

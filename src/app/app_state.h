@@ -262,6 +262,14 @@ struct App {
     // Session state: not saved.
     bool  playerPaused = false;
 
+    // Пошаговый режим «как в Might & Magic» (owner verdict 2026-09-17, CANON
+    // S13; built 2026-09-19): the P key's stored TOGGLE — whether the player
+    // WANTS turns. Whether the scene actually stands is derived every frame
+    // (kPauseTurnStop below): mode on ∧ subworld ∧ the body's one recovery
+    // gate at 0 ∧ no attack being asked. Session state like playerPaused:
+    // not saved — a loaded game starts flowing.
+    bool  turnBasedMode = false;
+
     bool  showDebug = false;
     bool  showDialogOpen = false;
     sm::GameEvent showDialogEvent{};
@@ -383,6 +391,11 @@ enum PauseReason : std::uint8_t {
     kPausePanel  = 1u << 1,   // derived: a panel opened over the world
     kPauseModal  = 1u << 2,   // derived: event dialog / story slides / Event substate
     kPauseMenu   = 1u << 3,   // derived: any screen that is not Playing
+    // derived: turn-based mode holds the scene while the player's body is
+    // FREE (recovery gate 0, no attack armed) — owner verdict 2026-09-17,
+    // «когда рековери закончилось всё застывает». Macro freezes WITH the
+    // scene, exactly as under any other reason of the one pause.
+    kPauseTurnStop = 1u << 4,
 };
 
 struct RuntimeFrameStats {
@@ -433,6 +446,9 @@ void process_world_events(App& app);
 void begin_scene(App& app, const sm::content::SceneDef& scene);
 RuntimeFrameStats tick_playing_runtime(App& app, bool allowInput);
 RuntimeFrameStats advance_sim_steps(App& app, int steps, bool allowInput);
+// The avatar body's one occupancy gate (ecs::Combat::recoverySteps), 0 when
+// free — the number the turn-based stop derives from (main.cpp).
+std::uint32_t player_gate_steps(const App& app);
 RuntimeFrameStats advance_sim_seconds(App& app, float seconds, bool allowInput);
 
 } // namespace sm::app

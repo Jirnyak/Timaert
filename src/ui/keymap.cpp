@@ -17,7 +17,9 @@ namespace sm::ui {
 const ActionSpec kActionSpec[kActionCount] = {
     // id                       key              label                  scope          default
     {ActionId::Character,    "act.character",  "Character / inventory", UiScope::Both, SDL_SCANCODE_I},
-    {ActionId::ArmyTab,      "act.army",       "Party / army",          UiScope::Both, SDL_SCANCODE_P},
+    // (O, not P: the owner's 2026-09-17 verdict gives P to the subworld
+    // turn-based toggle, and a Both-scope row sharing P would shadow it.)
+    {ActionId::ArmyTab,      "act.army",       "Party / army",          UiScope::Both, SDL_SCANCODE_O},
     {ActionId::SpellsTab,    "act.spells",     "Spellbook",             UiScope::Both, SDL_SCANCODE_B},
     {ActionId::Codex,        "act.codex",      "Codex",                 UiScope::Both, SDL_SCANCODE_C},
     {ActionId::Map,          "act.map",        "Map",                   UiScope::Both, SDL_SCANCODE_M},
@@ -44,6 +46,7 @@ const ActionSpec kActionSpec[kActionCount] = {
     {ActionId::Jump,         "act.jump",       "Jump",                  UiScope::Sub,  SDL_SCANCODE_SPACE},
     {ActionId::Interact,     "act.interact",   "Interact",              UiScope::Sub,  SDL_SCANCODE_E},
     {ActionId::Harvest,      "act.harvest",    "Harvest",               UiScope::Sub,  SDL_SCANCODE_H},
+    {ActionId::TurnBased,    "act.turnbased",  "Turn-based mode",       UiScope::Sub,  SDL_SCANCODE_P},
 };
 
 static_assert(sizeof(kActionSpec) / sizeof(kActionSpec[0]) == kActionCount,

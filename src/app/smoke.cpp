@@ -183,6 +183,7 @@ constexpr SmokeTokenRow kSmokeTokens[] = {
     {"subworld_tree_anchor", SmokeAction::SubworldTreeAnchor},
     {"subworld_recovery", SmokeAction::SubworldRecovery},
     {"subworld_sp_drain", SmokeAction::SubworldSpDrain},
+    {"turn_based_cycle", SmokeAction::TurnBasedCycle},
     {"subworld_enter", SmokeAction::SubworldEnter},
     {"subworld_exit_remap", SmokeAction::SubworldExitRemap},
     {"possessed_death", SmokeAction::PossessedDeath},
@@ -4008,6 +4009,125 @@ bool run_subworld_self_fireball_smoke(App& app) {
     return true;
 }
 
+// ПОШАГОВЫЙ РЕЖИМ (owner verdict 2026-09-17, CANON S13) — the full cycle
+// through the REAL runtime: a free hand freezes the scene, an armed attack
+// buys exactly one recovery of world-flow, the drain re-freezes, switching
+// the mode off releases the scene. Negative controls bracket both ends:
+// the world flows with the mode OFF, and flows DURING the player's own
+// recovery with the mode ON («двигаться во время своего рекавери можно»).
+// `ticked == false` is the WHOLE runtime refusing — sub scene, world clock
+// and macro alike, which is the owner's ruling on what the stop stops.
+bool run_turn_based_cycle_smoke(App& app) {
+    if (!smoke_boot_invariants_hold(app)) {
+        smoke_fail(app, "turn_based_cycle boot invariants");
+        return false;
+    }
+    smoke_clear_modal_overlays(app);
+    if (!app.subworld.active()) {
+        int cellX = 0;
+        int cellY = 0;
+        if (smoke_find_open_subworld_cell(app, cellX, cellY)
+            || smoke_find_danger_land_cell(app, cellX, cellY)) {
+            smoke_teleport_player(app, cellX, cellY);
+            app.gs.subState.settlementId = -1;
+            app.ui.settlementId = -1;
+        }
+        enter_subworld(app);
+    }
+    if (!app.subworld.active()) {
+        smoke_fail(app, "turn_based_cycle enter failed");
+        return false;
+    }
+
+    // A bandit within arm's reach, exactly the melee smoke's rig — the swing
+    // must LAND so it charges the gate the way a played turn does.
+    {
+        auto& reg = app.ecs.reg;
+        const float px = app.subworld.player_x();
+        const float py = app.subworld.player_y();
+        const float armX = std::min(
+            px + std::max(1.0f, app.subworld.player_arm_reach() - 1.0f),
+            float(sm::sub::kFullSize - 2));
+        const float armZ = app.subworld.ground_height_at(armX, py);
+        const entt::entity target = reg.create();
+        reg.emplace<sm::ecs::Position>(target, armX, py, armZ);
+        reg.emplace<sm::ecs::VisualPos>(target, armX, py, armZ);
+        reg.emplace<sm::ecs::NPCKind>(
+            target,
+            sm::ecs::NPCKind{std::uint16_t(sm::NPCType::Bandit),
+                             std::uint16_t(3)});
+        reg.emplace<sm::ecs::Pools>(target, 4000, 4000);
+        reg.emplace<sm::ecs::SubworldTag>(target);
+        reg.emplace<sm::ecs::Sprite>(
+            target, std::uint16_t(sm::NPCType::Bandit),
+            std::uint8_t(255), std::uint8_t(84), std::uint8_t(54),
+            std::uint8_t(255), 1.2f);
+    }
+
+    // Settle any spawn-time recovery so the hand starts FREE.
+    for (int i = 0; i < 600 && player_gate_steps(app) > 0; ++i)
+        advance_sim_steps(app, 8, false);
+    if (player_gate_steps(app) != 0) {
+        smoke_fail(app, "turn_based_cycle: gate never drained at boot");
+        return false;
+    }
+
+    // NEGATIVE CONTROL: mode off, free hand — the world flows.
+    if (!advance_sim_steps(app, 8, false).ticked) {
+        smoke_fail(app, "turn_based_cycle: world frozen with mode OFF");
+        return false;
+    }
+
+    // P. A free hand stands the scene still.
+    app.turnBasedMode = true;
+    if (advance_sim_steps(app, 32, false).ticked) {
+        app.turnBasedMode = false;
+        smoke_fail(app, "turn_based_cycle: free hand did not freeze");
+        return false;
+    }
+    // An armed attack unfreezes the next asked tick; the landed swing writes
+    // the body's one recovery gate.
+    app.subworld.set_player_attack_held(true);
+    const bool swingTicked = advance_sim_steps(app, 8, false).ticked;
+    app.subworld.set_player_attack_held(false);
+    const std::uint32_t gateAfterSwing = player_gate_steps(app);
+    if (!swingTicked || gateAfterSwing == 0) {
+        app.turnBasedMode = false;
+        smoke_fail(app, "turn_based_cycle: armed attack bought no recovery");
+        return false;
+    }
+    // The world flows for EXACTLY the recovery: every slice with the gate up
+    // ticks, and the first free-hand slice refuses again.
+    int guard = 0;
+    while (player_gate_steps(app) > 0 && guard++ < 4096) {
+        if (!advance_sim_steps(app, 4, false).ticked) {
+            app.turnBasedMode = false;
+            smoke_fail(app, "turn_based_cycle: froze DURING own recovery");
+            return false;
+        }
+    }
+    if (guard >= 4096) {
+        app.turnBasedMode = false;
+        smoke_fail(app, "turn_based_cycle: recovery never drained");
+        return false;
+    }
+    if (advance_sim_steps(app, 32, false).ticked) {
+        app.turnBasedMode = false;
+        smoke_fail(app, "turn_based_cycle: drained gate did not re-freeze");
+        return false;
+    }
+    // Off — the ordinary real-time scene returns.
+    app.turnBasedMode = false;
+    if (!advance_sim_steps(app, 8, false).ticked) {
+        smoke_fail(app, "turn_based_cycle: mode off did not release");
+        return false;
+    }
+    std::fprintf(stderr, "[smoke] turn_based_cycle gateAfterSwing=%u OK\n",
+                 unsigned(gateAfterSwing));
+    std::fflush(stderr);
+    return true;
+}
+
 bool run_subworld_player_melee_smoke(App& app) {
     if (!smoke_boot_invariants_hold(app)) {
         smoke_print_counts(app, "subworld_player_melee_boot_failed");
@@ -6724,6 +6844,11 @@ sm::ui::ShellResult tick_smoke_script(App& app) {
             std::fprintf(stderr, "[smoke] action=subworld_sp_drain\n");
             std::fflush(stderr);
             if (run_subworld_sp_drain_smoke(app)) ++app.smoke.cursor;
+            break;
+        case SmokeAction::TurnBasedCycle:
+            std::fprintf(stderr, "[smoke] action=turn_based_cycle\n");
+            std::fflush(stderr);
+            if (run_turn_based_cycle_smoke(app)) ++app.smoke.cursor;
             break;
         case SmokeAction::TriggerBattleStart: {
             std::fprintf(stderr, "[smoke] action=trigger_battle_start\n");
