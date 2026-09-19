@@ -4452,8 +4452,10 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
                                             std::max(0, canFeed - have));
                         take = std::min(take, s.population - 1);
                         while (take-- > 0) {
+                            // ГЕНЕРИК (CANON S4): массовый добор — стак,
+                            // без ординала; имя душа зарабатывает историей
+                            // (лидерство, найм в сюжет, вселение).
                             SoldierRecord rec{};
-                            rec.entityId = ++gs.nextMacroSpawnOrdinal;
                             rec.kind = std::uint16_t(ld.crews[i].npc);
                             rec.level = 1;
                             if (!ro->squad.push(rec)) break;
@@ -4506,10 +4508,10 @@ int rotate_worker_squads(MacroWorld& mw, int day) {
             spec.y = s.y;
             spec.homeSettlementId = s.id;
             for (int m = 1; m < perCrew; ++m) {
+                // ГЕНЕРИК (CANON S4): члены артели — один стак, не
+                // per-душевые ординалы (тот поток остаётся ИМЕНАМ:
+                // лидерам и душам с историей — CANON S20.1 не про толпу).
                 SoldierRecord rec{};
-                // Identity through the ONE persistent ordinal stream
-                // (CANON S20.1) — never a hash, never a second counter.
-                rec.entityId = ++gs.nextMacroSpawnOrdinal;
                 rec.kind = std::uint16_t(spec.leaderType);
                 rec.level = 1;
                 if (!spec.members.push(rec)) break;
